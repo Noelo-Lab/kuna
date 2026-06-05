@@ -36,6 +36,18 @@ upstream files). `sleigh_opt` and all 148 `.sla` build without libbfd.
 
 ## Log
 
+### 2026-06-05 — Post-port audit (PORT_PROBLEMS.md)
+- Full audit of the port for translation bugs: blob-hash sweep of all 1039 vendored
+  files vs upstream @ GHIDRA_REV (byte-identical, modes too), fresh clean rebuild
+  (148/148 specs), 204/204 + 675/675 PARITY OK, e2e decompile (name/addr/stripped +
+  error paths), every decompile.py console command and run_tests.py regex verified
+  against vendored harness sources, STAGE_MAPPING 115/115 + line anchors verified.
+- **Vendored translation is clean — zero content bugs.** 18 issues found in kuna-owned
+  glue, all adversarially verified and recorded in `PORT_PROBLEMS.md`: 2 major (both
+  future-sync risks in sync_upstream.py: --dry-run mutates UPSTREAM.md on the empty-diff
+  path; boundary-crossing renames corrupt/abort a sync), 13 minor, 3 info. None affect
+  current build/test/decompile correctness.
+
 ### 2026-06-05 — Session start, exploration & plan
 - Located decompiler source: `ghidra/Ghidra/Features/Decompiler/src/decompile/`
   (cpp: 115 .cc / 114 .hh; upstream Makefile builds `decomp_dbg`, `decomp_test_dbg`,
