@@ -3,6 +3,10 @@
 Findings from a full audit of the Ghidra → kuna port (2026-06-05). Every finding below
 was independently reproduced and survived an adversarial verification pass.
 
+> **Status: ALL 18 PROBLEMS FIXED (2026-06-05).** See the *Resolution* table at the
+> bottom for what was done about each one. The problem descriptions below are kept
+> as originally written (line numbers refer to the pre-fix tree).
+
 **Headline: the vendored translation itself is clean.** Every problem found lives in
 kuna-owned glue (Makefile wrapper, Python package, sync tooling, docs). None affects the
 correctness of the current build, test parity, or decompile output.
@@ -192,3 +196,30 @@ whose diff is actually only a file-mode change.)
 
 None are regressions in decompiler behavior; parity with pristine upstream holds exactly.
 The two majors are both future-sync safety issues in `tools/sync_upstream.py`.
+
+---
+
+## Resolution (2026-06-05)
+
+All 18 fixed; each fix verified by re-running the original reproduction. Vendored files
+untouched; PARITY OK re-confirmed after the changes (baseline regenerated for P15).
+
+| ID | Fix |
+|---|---|
+| P1 | Empty-diff branch now checks `args.dry_run` before `write_ghidra_rev()`; dry run prints what *would* happen. |
+| P2, P3 | The sync diff is now taken with `--no-renames`, so renames arrive as plain delete+add and can never straddle the vendored boundary; `rewrite_patch()` additionally hard-fails (`PatchRewriteError`) on any rename/copy/similarity marker and on `diff --git` headers naming two different paths. Header rewriting and marker scanning stop at the first `@@` hunk, so hunk content — even lines byte-identical to a `--- a/…` header — passes through verbatim. Verified end-to-end on synthetic repos: rename-out → clean delete, rename-in → clean add, no stray files. |
+| P4 | Diff taken with `core.quotepath=false` (non-ASCII paths arrive unquoted and rewrite correctly — verified with a `ünicode.cc`); any header git still quotes (quote/control chars) is a hard error instead of a silent pass-through. Unparseable preamble is also a hard error. |
+| P5 | `write_ghidra_rev()` uses `re.subn` and raises if no substitution happened; both call sites surface the error (the post-apply site notes the patch *was* applied). |
+| P6 | `.kuna_sync.patch` added to `.gitignore`. |
+| P7 | `analyze()` now filters through `map_path()` and reports kuna paths — only files that will actually be applied are counted/warned about. Also fixed adjacent gap: a diff touching only non-vendored files now reports "no changes to vendored paths" instead of failing `git apply --check` on an empty patch. |
+| P8 | `.NOTPARALLEL:` — the wrapper's targets are orchestration that must run serially (parallelism lives inside each sub-make). |
+| P9 | Sub-makes use `$(SUBJOBS)`, which expands to `-j$(NJOBS)` only when no parent jobserver exists in `MAKEFLAGS` (recipe-time expansion); under `make -jN` the inner builds share the parent's budget — no more "forced in submake" warnings. Serial builds keep the parallel inner default; `NJOBS=1 make` forces fully serial. |
+| P10 | `BFD_LIBDIR` is located by `$(wildcard …/usr/lib/*/libbfd.so)` instead of guessing a gcc triplet; `check-deps` and `fetch_bfd.sh` both verify `libbfd.so` exists (not just `bfd.h`) and print the real path. |
+| P11 | `NJOBS ?= $(shell nproc 2>/dev/null || echo 1)`. |
+| P12 | `make test` builds `binaries`/`specs` first **only if missing** (binary not executable / no `.sla` found), keeping the fast path fast while fixing the fresh-clone footgun. |
+| P13 | `_DATA_ERR` accepts the indented summary forms and the previously-unparsed `Execution failed for …`; errors are deduped (col-0 + summary) and must name a `*.xml` file, so a failing *test name* that mimics an error string is never miscounted. `main()` forces exit 1 when file-level data errors (or any parsed failure) are present despite harness exit 0. Verified with fake harnesses both ways. |
+| P14 | Negative (signal) return codes map to shell-style `128+signal` (SIGSEGV → 139). |
+| P15 | `_pass_keyset()` disambiguates repeated test names with a deterministic ` @dupN` suffix; `docs/baseline.json` regenerated — now 879 keys (204 unit + 675 data, matching the true assertion count), PARITY OK re-verified. |
+| P16 | `run()` raises `ValueError` for `names` with `mode='all'` (CLI guard retained). |
+| P17 | Accurate comment at the invocation site: `SLEIGHHOME` (recursively scanned) is the load-bearing mechanism; `-s` is kept for direct-languages-dir usage. |
+| P18 | UPSTREAM.md rewritten to describe the real strategy (`--check` → plain apply → `--3way` fallback, no `.rej` ever) plus the new `--no-renames`/hard-fail behavior; manual-fallback recipe updated; CLAUDE.md sync paragraph aligned. |

@@ -9,8 +9,10 @@ CLI:
         [--binary PATH] [--sleighpath DIR] [--datatests-dir DIR]
         [--baseline FILE] [--save-baseline FILE] [--json]
 
-Exit code mirrors the harness (number of failed tests, clamped at 255), or is
-forced non-zero on a baseline regression.
+Exit code mirrors the harness (number of failed tests, clamped at 255). It is
+forced non-zero on a baseline regression, on file-level datatest errors (which
+the harness does not always count -- e.g. a datatest producing no output), and
+maps a signal-killed harness to 128+signal.
 """
 import argparse
 import json
@@ -32,10 +34,19 @@ _DATA_PASS = re.compile(r"^Success -- (?P<name>.+?)\s*$")
 _DATA_FAIL = re.compile(r"^FAIL -- (?P<name>.+?)\s*$")
 _DATA_APPLIED = re.compile(r"^Total tests applied = (?P<n>\d+)\s*$")
 _DATA_PASSING = re.compile(r"^Total passing tests = (?P<n>\d+)\s*$")
+# File-level errors. "Error parsing/executing" and "Error: Did not apply" are
+# printed at column 0; "No output for" and "Execution failed for" only ever
+# appear two-space-indented in the harness's capped "Failures:" summary
+# (testfunction.cc runTests/runTestFiles), hence the leading \s*. Lines can
+# appear both at column 0 and in the summary -- _parse_data dedups. Every form
+# names the datatest FILE (always *.xml); requiring the .xml suffix keeps a
+# failing TEST whose name mimics one of these strings (bare names also land in
+# the indented summary) from being miscounted as a file error.
 _DATA_ERR = re.compile(
-    r"^(?:Error (?:parsing|executing) (?P<f1>.+?): .*"
-    r"|Error: Did not apply tests in (?P<f2>.+?)"
-    r"|No output for (?P<f3>.+?))\s*$"
+    r"^\s*(?:Error (?:parsing|executing) (?P<f1>.+?\.xml): .*"
+    r"|Error: Did not apply tests in (?P<f2>.+?\.xml)"
+    r"|No output for (?P<f3>.+?\.xml)"
+    r"|Execution failed for (?P<f4>.+?\.xml))\s*$"
 )
 
 
@@ -80,7 +91,8 @@ def _parse_data(stdout):
             continue
         m = _DATA_ERR.match(line)
         if m:
-            errors.append(m.group("f1") or m.group("f2") or m.group("f3"))
+            errors.append(m.group("f1") or m.group("f2") or m.group("f3")
+                          or m.group("f4"))
             continue
         m = _DATA_APPLIED.match(line)
         if m:
@@ -91,6 +103,8 @@ def _parse_data(stdout):
             passing_total = int(m.group("n"))
             continue
     footer = (applied, passing_total) if applied is not None else None
+    # Errors can be reported twice (column 0 + the indented Failures summary).
+    errors = list(dict.fromkeys(errors))
     return passing, failing, errors, footer
 
 
@@ -100,6 +114,10 @@ def _parse_data(stdout):
 def run(mode="all", names=None, binary=None, sleighpath=None, datatests_dir=None):
     """Invoke decomp_test_dbg and return a structured result dict."""
     names = names or []
+    if names and mode == "all":
+        # The harness only takes names after a unittests/datatests selector;
+        # silently running everything instead would be misleading.
+        raise ValueError("names= requires mode='unittests' or mode='datatests'")
     bin_path = str(paths.decomp_test_dbg()) if binary is None else os.path.abspath(str(binary))
     if not os.path.exists(bin_path):
         raise FileNotFoundError(
@@ -139,11 +157,27 @@ def run(mode="all", names=None, binary=None, sleighpath=None, datatests_dir=None
     }
 
 
+def _dedup_keys(prefix, names):
+    """Prefix names into keys, disambiguating repeats by emission order.
+
+    Upstream test names are not guaranteed unique (e.g. partialsplit.xml declares
+    two assertions both named "Partial splitting #9"); a plain set would collapse
+    them and a regression in one of the pair could never be NAMED by the parity
+    diff. Repeats get a deterministic " @dupN" suffix instead.
+    """
+    seen = {}
+    keys = set()
+    for n in names:
+        count = seen.get(n, 0) + 1
+        seen[n] = count
+        keys.add(prefix + n if count == 1 else "%s%s @dup%d" % (prefix, n, count))
+    return keys
+
+
 def _pass_keyset(result):
     """Fully-qualified set of passing test keys (for baseline diffing)."""
-    keys = set("unit:" + n for n in result["unit"]["passing"])
-    keys |= set("data:" + n for n in result["data"]["passing"])
-    return keys
+    return (_dedup_keys("unit:", result["unit"]["passing"])
+            | _dedup_keys("data:", result["data"]["passing"]))
 
 
 def _summary(result):
@@ -253,7 +287,18 @@ def main(argv=None):
 
     if parity_fail:
         return 1
-    return min(result["returncode"], 255)
+    rc = result["returncode"]
+    if rc < 0:
+        # Harness killed by a signal: report shell-style 128+signal, not a
+        # negative value (which min() would pass through).
+        return min(128 - rc, 255)
+    if rc == 0 and (result["data"]["errors"]
+                    or result["unit"]["failing"] or result["data"]["failing"]):
+        # File-level datatest errors (e.g. "No output for <file>") leave the
+        # harness exit code at 0 because the file's tests are never counted as
+        # applied -- force a failure exit.
+        return 1
+    return min(rc, 255)
 
 
 if __name__ == "__main__":

@@ -115,13 +115,16 @@ make test && python -m kuna.run_tests --baseline docs/baseline.json             
 # then review `git diff` and commit
 ```
 
-`sync_upstream.py` diffs the Ghidra checkout between `GHIDRA_REV` and the target,
-restricted to the vendored paths, rewrites the path prefixes to kuna's layout, applies
-with `git apply`, and bumps `GHIDRA_REV` on success. It reports added/deleted/renamed
-files and warns when a `.y`/`.l` changed without its regenerated `.cc` (would need
-bison/flex) or when a new datatest references an unvendored processor. A manual fallback
-is documented in `UPSTREAM.md`. Because vendored files are never edited locally, the
-apply should always be conflict-free.
+`sync_upstream.py` diffs the Ghidra checkout between `GHIDRA_REV` and the target
+(with `--no-renames`, so renames arrive as delete+add and never straddle the vendored
+boundary), restricted to the vendored paths, rewrites the path prefixes to kuna's
+layout, applies with `git apply` (plain apply, `--3way` fallback), and bumps
+`GHIDRA_REV` on success — never during `--dry-run`. It reports added/deleted vendored
+files, hard-fails on anything unusual (quoted paths, binary changes, rename/copy lines)
+instead of guessing, and warns when a `.y`/`.l` changed without its regenerated `.cc`
+(would need bison/flex) or when a new datatest references an unvendored processor. A
+manual fallback is documented in `UPSTREAM.md`. Because vendored files are never edited
+locally, the apply should always be conflict-free.
 
 When you update the baseline after an intentional upstream behavior change, regenerate
 `docs/baseline.json` with `kuna.run_tests --save-baseline` against the new pristine tree.

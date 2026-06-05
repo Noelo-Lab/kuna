@@ -59,20 +59,32 @@ python -m kuna.run_tests --baseline docs/baseline.json
 ```
 
 The script diffs the ghidra repo between `GHIDRA_REV` and `--to` restricted to the
-vendored upstream paths, rewrites the path prefixes per the table above, and applies the
-patch at the kuna root with `git apply -p1 --3way --reject`. Conflicts (`.rej` files)
-should only ever appear if someone violated the no-edits policy. The script also warns:
+vendored upstream paths. The diff is taken with `--no-renames` (renames arrive as plain
+delete+add pairs, so they can never straddle the vendored boundary) and
+`core.quotepath=false`. Path prefixes are rewritten per the table above, then the patch
+is applied at the kuna root: `git apply -p1 --check` first, then a plain
+`git apply -p1`; if the plain apply fails (only possible if someone violated the
+no-edits policy), it retries with `--3way`, which works because unmodified vendored
+files have the same blob hashes as upstream. No `.rej` files are ever produced. The
+rewritten patch is written to `.kuna_sync.patch` (gitignored) and removed after a
+successful apply; `--dry-run` stops after the `--check` and leaves it for inspection.
+`GHIDRA_REV` above is updated only on a successful apply (or an empty vendored diff)
+and never during a dry run.
+
+The script hard-fails rather than guessing on anything unusual in the patch:
+quoted/unparseable diff headers, rename/copy lines, or binary file changes — handle
+those manually. It also warns:
 
 - if a `.y`/`.l` changed without its regenerated `.cc` in the same diff (you would then
   need bison/flex locally),
-- if an added/changed datatest references a processor whose module is not vendored,
-- about added/deleted/renamed files (a deleted `.cc` changes the upstream Makefile's
+- if an added datatest references a processor whose module is not vendored,
+- about added/deleted vendored files (a deleted `.cc` changes the upstream Makefile's
   `$(wildcard *.cc)` behavior — rebuild and re-run tests after every sync).
 
 ### Manual fallback
 
 ```bash
-git -C ~/github/ghidra diff <GHIDRA_REV>..<newrev> -- \
+git -C ~/github/ghidra -c core.quotepath=false diff --no-renames <GHIDRA_REV>..<newrev> -- \
     Ghidra/Features/Decompiler/src/decompile/cpp \
     Ghidra/Features/Decompiler/src/decompile/unittests \
     Ghidra/Features/Decompiler/src/decompile/datatests > /tmp/up.patch

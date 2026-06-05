@@ -31,6 +31,9 @@ __pycache__/
 # Local libbfd prefix fetched by tools/fetch_bfd.sh (no-root builds)
 .bfdlocal/
 
+# Rewritten patch left by tools/sync_upstream.py (dry runs / failed applies)
+.kuna_sync.patch
+
 # Coverage / editor leftovers
 *.gcov
 *.gcno

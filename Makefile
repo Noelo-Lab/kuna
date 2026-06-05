@@ -19,23 +19,41 @@ ROOT   := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 CPPDIR := $(ROOT)/decompiler/cpp
 SPECS  := $(ROOT)/specs
 SLEIGH := $(CPPDIR)/sleigh_opt
-NJOBS  ?= $(shell nproc)
+NJOBS  ?= $(shell nproc 2>/dev/null || echo 1)
 
-# Optional local libbfd prefix (a dir containing usr/include/bfd.h and
-# usr/lib/<triplet>/libbfd.so), e.g. produced by tools/fetch_bfd.sh.
+# Parallelism for the inner (upstream) sub-makes. When this Makefile already runs
+# under a parent jobserver (`make -jN ...`), pass nothing so the sub-makes share
+# the parent's job budget instead of forcing their own -j (which would print
+# "warning: -jN forced in submake" and over-subscribe). Recursively expanded on
+# purpose: MAKEFLAGS only contains --jobserver-auth at recipe time.
+# (For a fully serial build run `NJOBS=1 make`; a bare `make -j1` cannot be
+# distinguished from a serial `make` here.)
+SUBJOBS = $(if $(findstring jobserver,$(MAKEFLAGS)),,-j$(NJOBS))
+
+# Optional local libbfd prefix (a dir containing usr/include/bfd.h and a
+# libbfd.so somewhere under usr/lib/, e.g. usr/lib/x86_64-linux-gnu/), as
+# produced by tools/fetch_bfd.sh. The lib dir is located by searching for the
+# actual libbfd.so rather than guessing a triplet: `gcc -dumpmachine` does not
+# always match the dpkg multiarch directory the .debs use.
 BFD_PREFIX ?=
 ifeq ($(BFD_PREFIX),)
   BFD_OVERRIDE :=
 else
-  BFD_TRIPLET := $(shell gcc -dumpmachine)
-  BFD_INC     := $(BFD_PREFIX)/usr/include
-  BFD_LIBDIR  := $(BFD_PREFIX)/usr/lib/$(BFD_TRIPLET)
+  BFD_INC    := $(BFD_PREFIX)/usr/include
+  BFD_SO     := $(firstword $(wildcard $(BFD_PREFIX)/usr/lib/*/libbfd.so) $(wildcard $(BFD_PREFIX)/usr/lib/libbfd.so))
+  BFD_LIBDIR := $(patsubst %/,%,$(dir $(BFD_SO)))
   # The embedded quotes are literal: make passes them through verbatim and the
   # recipe shell groups the space-bearing BFDLIB value into a single argument.
   BFD_OVERRIDE := ADDITIONAL_FLAGS="-I$(BFD_INC)" BFDLIB="-L$(BFD_LIBDIR) -Wl,-rpath,$(BFD_LIBDIR) -lbfd"
 endif
 
 .PHONY: all binaries sleigh specs test clean check-deps touch-generated
+
+# This wrapper orchestrates SERIAL sub-makes (each upstream binary must be built
+# in its own invocation; `binaries` and `specs` both produce sleigh_opt, so
+# running them concurrently would race). Parallelism happens INSIDE each
+# sub-make via SUBJOBS / an inherited jobserver.
+.NOTPARALLEL:
 
 all: binaries specs
 
@@ -51,6 +69,8 @@ ifeq ($(BFD_PREFIX),)
 else
 	@test -f "$(BFD_INC)/bfd.h" \
 	  || { echo "ERROR: no bfd.h under BFD_PREFIX=$(BFD_PREFIX) (run tools/fetch_bfd.sh)"; exit 1; }
+	@test -n "$(BFD_SO)" \
+	  || { echo "ERROR: no libbfd.so under $(BFD_PREFIX)/usr/lib (run tools/fetch_bfd.sh)"; exit 1; }
 endif
 
 # Defensive fix for the bison/flex timestamp pitfall: ensure every committed
@@ -62,13 +82,13 @@ touch-generated:
 
 # The sleigh compiler alone (needs no libbfd) -- used to build .sla spec files.
 sleigh: touch-generated
-	$(MAKE) -C $(CPPDIR) -j$(NJOBS) sleigh_opt
+	$(MAKE) -C $(CPPDIR) $(SUBJOBS) sleigh_opt
 
 binaries: check-deps touch-generated
-	$(MAKE) -C $(CPPDIR) -j$(NJOBS) sleigh_opt
-	$(MAKE) -C $(CPPDIR) -j$(NJOBS) $(BFD_OVERRIDE) decomp_dbg
-	$(MAKE) -C $(CPPDIR) -j$(NJOBS) $(BFD_OVERRIDE) decomp_opt
-	$(MAKE) -C $(CPPDIR) -j$(NJOBS) $(BFD_OVERRIDE) decomp_test_dbg
+	$(MAKE) -C $(CPPDIR) $(SUBJOBS) sleigh_opt
+	$(MAKE) -C $(CPPDIR) $(SUBJOBS) $(BFD_OVERRIDE) decomp_dbg
+	$(MAKE) -C $(CPPDIR) $(SUBJOBS) $(BFD_OVERRIDE) decomp_opt
+	$(MAKE) -C $(CPPDIR) $(SUBJOBS) $(BFD_OVERRIDE) decomp_test_dbg
 
 # Compile every vendored .slaspec -> .sla (written next to the spec, gitignored).
 specs: $(SLEIGH)
@@ -80,7 +100,11 @@ $(SLEIGH):
 # Run the upstream test harness: 204 C++ unit tests + 83 XML datatests.
 # Explicit -sleighpath/-path (never SLEIGHHOME) for reproducibility.
 # Exit code = number of failed tests.
+# Builds the harness/specs first ONLY if missing (a full `make specs` recompiles
+# all 148 slaspecs, so it is not an unconditional prerequisite here).
 test:
+	@test -x $(CPPDIR)/decomp_test_dbg || $(MAKE) binaries
+	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
 	cd $(CPPDIR) && ./decomp_test_dbg -sleighpath $(SPECS) -path $(ROOT)/decompiler/datatests
 
 clean:

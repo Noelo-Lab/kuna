@@ -36,6 +36,24 @@ upstream files). `sleigh_opt` and all 148 `.sla` build without libbfd.
 
 ## Log
 
+### 2026-06-05 — All 18 PORT_PROBLEMS fixed
+- sync_upstream.py hardened: --no-renames + core.quotepath=false diff, hard-fail
+  (PatchRewriteError) on quoted headers / rename-copy / binary markers, dry-run is
+  truly side-effect free, write_ghidra_rev verifies its substitution, analyze()
+  reports vendored-only kuna paths, all-skipped diffs short-circuit cleanly,
+  .kuna_sync.patch gitignored. Verified end-to-end on synthetic repos (boundary
+  renames, unicode, new processor module) + real-data reverse-sync dry-run.
+- Makefile: .NOTPARALLEL (P8 race), jobserver-aware SUBJOBS (P9), nproc fallback
+  (P11), libbfd.so located by wildcard not triplet guess + validated in check-deps
+  and fetch_bfd.sh (P10), make test builds binaries/specs only when missing (P12).
+- run_tests.py: indented/`Execution failed` error forms parsed + deduped and force
+  nonzero exit (P13), 128+signal exit on signal-killed harness (P14), duplicate
+  test names disambiguated with " @dupN" in the pass keyset (P15; baseline
+  regenerated -> 879 keys = 204 unit + 675 data, PARITY OK re-verified), run()
+  rejects names with mode='all' (P16). decompile.py: SLEIGHHOME-vs--s comment (P17).
+- Docs: UPSTREAM.md apply-strategy paragraph rewritten to match reality (P18),
+  CLAUDE.md sync paragraph aligned. Resolution table appended to PORT_PROBLEMS.md.
+
 ### 2026-06-05 — Post-port audit (PORT_PROBLEMS.md)
 - Full audit of the port for translation bugs: blob-hash sweep of all 1039 vendored
   files vs upstream @ GHIDRA_REV (byte-identical, modes too), fresh clean rebuild

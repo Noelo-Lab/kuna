@@ -14,7 +14,6 @@ CLI:
 """
 import argparse
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -104,6 +103,12 @@ def decompile(
     try:
         script = _build_script(binary, target, by_address, bfd_target, raw, out_path)
         env = dict(os.environ)
+        # SLEIGHHOME is the load-bearing mechanism: decomp_dbg scans it
+        # RECURSIVELY for Ghidra/Processors/*/data/languages dirs (the layout of
+        # kuna's specs/ root), overriding any hostile value in the caller's env.
+        # "-s" only adds the dir literally (non-recursive), which does nothing
+        # for the specs/ root but keeps `--sleighpath <dir-with-.ldefs>` working
+        # when pointed directly at a languages directory.
         env["SLEIGHHOME"] = specs
 
         try:

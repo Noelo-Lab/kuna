@@ -33,14 +33,21 @@ for deb in "$WORK"/*.deb; do
   dpkg-deb -x "$deb" "$PREFIX"
 done
 
-TRIPLET="$(gcc -dumpmachine)"
+# Verify both halves of what the Makefile's BFD_PREFIX support needs: the header
+# AND the shared lib. The lib lands under the dpkg multiarch dir (which need not
+# match `gcc -dumpmachine`), so locate it by searching rather than guessing.
+BFD_SO="$(find "$PREFIX/usr/lib" -name 'libbfd.so' -print -quit 2>/dev/null || true)"
 if [ ! -f "$PREFIX/usr/include/bfd.h" ]; then
   echo "error: bfd.h not found under $PREFIX/usr/include after extraction." >&2
+  exit 1
+fi
+if [ -z "$BFD_SO" ]; then
+  echo "error: libbfd.so not found under $PREFIX/usr/lib after extraction." >&2
   exit 1
 fi
 echo
 echo "libbfd ready at: $PREFIX"
 echo "  header: $PREFIX/usr/include/bfd.h"
-echo "  lib:    $PREFIX/usr/lib/$TRIPLET/libbfd.so"
+echo "  lib:    $BFD_SO"
 echo
 echo "Now build with:  make BFD_PREFIX=\"$PREFIX\" binaries"
