@@ -1,0 +1,53 @@
+<dwarf>
+	<register_mappings>
+		<register_mapping dwarf="0" ghidra="RAX"/>
+		<register_mapping dwarf="1" ghidra="RDX"/>
+		<register_mapping dwarf="2" ghidra="RCX"/>
+		<register_mapping dwarf="3" ghidra="RBX"/>
+		<register_mapping dwarf="4" ghidra="RSI"/>
+		<register_mapping dwarf="5" ghidra="RDI"/>
+		<register_mapping dwarf="6" ghidra="RBP"/>
+		<register_mapping dwarf="7" ghidra="RSP" stackpointer="true"/>
+		<register_mapping dwarf="8" ghidra="R8" auto_count="8"/> <!-- R8..R15 -->
+		<register_mapping dwarf="16" ghidra="RIP"/>
+		<register_mapping dwarf="17" ghidra="XMM0" auto_count="16"/> <!-- XMM0..XMM15 -->
+		<register_mapping dwarf="33" ghidra="ST0" auto_count="8"/> <!-- ST0..ST7 -->
+		<register_mapping dwarf="41" ghidra="MM0" auto_count="8"/> <!-- MM0..MM7 -->
+		<register_mapping dwarf="49" ghidra="rflags"/>
+		<register_mapping dwarf="50" ghidra="ES"/>
+		<register_mapping dwarf="51" ghidra="CS"/>
+		<register_mapping dwarf="52" ghidra="SS"/>
+		<register_mapping dwarf="53" ghidra="DS"/>
+		<register_mapping dwarf="54" ghidra="FS"/>
+		<register_mapping dwarf="55" ghidra="GS"/>
+		<!-- <register_mapping dwarf="58" ghidra="FSBASE"/> **not implemented** -->
+		<!-- <register_mapping dwarf="59" ghidra="GSBASE"/> **not implemented** -->
+		<register_mapping dwarf="62" ghidra="TR"/>
+		<register_mapping dwarf="63" ghidra="LDTR"/>
+		<register_mapping dwarf="64" ghidra="MXCSR"/>
+		<!-- <register_mapping dwarf="65" ghidra="FCW"/> **not implemented** -->
+		<!-- <register_mapping dwarf="66" ghidra="FSW"/> **not implemented** -->
+		<!-- <register_mapping dwarf="68" ghidra="XMM16" auto_count="16"/> **not implemented yet** --> <!-- XMM16..XMM31 -->
+		<!-- <register_mapping dwarf="118" ghidra="K0" auto_count="8"/>  **not implemented yet** -->
+	</register_mappings>
+
+	<!--
+		call_frame_cfa and stack_frame allow specifying static values for DWARF expressions that
+		calculate stack locations of params or variables, typically used in a func's 
+		DW_AT_frame_base attribute (later referenced via a DW_OP_fbreg instruction),
+		or in param/variable DW_AT_location attributes.
+		Using these values is controlled by dwarf import options, but not settable by the user currently.
+	-->	
+	
+	<!--
+		call_frame_cfa specifies the static offset of the func's CFA, which
+		technically should be looked up in the func's CIE structs.
+	-->
+	<call_frame_cfa value="8"/>
+	
+	<!--
+		stack_frame allows dwarf expressions that reference RBP to be converted to a ghidra stack
+		location without evaluating the actual RBP value via symbolic propagation.
+	 -->
+	<stack_frame register="RBP" offset="-8" />
+</dwarf>

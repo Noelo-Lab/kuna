@@ -1,0 +1,1317 @@
+
+define alignment=2;
+
+define space ram type=ram_space size=$(XLEN) default;
+define space register type=register_space size=4;
+
+define space csreg type=ram_space size=2 wordsize=$(XLEN); # really 12bit space, for 4096 registers
+
+define register offset=0x100 size=$(CONTEXTLEN) [ CONTEXT ];
+
+define register offset=0x1000 size=$(XLEN) [ pc ];
+
+
+#  08-31  reserved
+#  05-07  frm
+#         000 - RNE - round to nearest, ties to even
+#         001 - RTZ - round towards zero
+#         010 - RDN - round down (towards -inf)
+#         011 - RUP - round up (towards +inf)
+#         100 - RMM - round to nearest, ties to max magnitude
+#         101 - invalid
+#         110 - invalid
+#         111 - DYN - in rm field, selects dynamic rounding mode
+#                     in rounding mode register, invalid
+#  04     NV - invalid operation
+#  03     DZ - divide by zero
+#  02     OF - overflow
+#  01     UF - underflow
+#  00     NX - inexact
+#define register offset=0x1008 size=4 [ fcsr ];
+
+#TODO  FIXME
+#TODO  This is really broken
+#NOTE  This is stolen from ppc_common, so it has something similar
+define register offset=0x1010 size=$(XLEN) [ RESERVE_ADDRESS ];
+define register offset=0x1018 size=1 [ RESERVE ];
+define register offset=0x101C size=1 [ RESERVE_LENGTH ];
+#TODO  FIXME
+
+#ATTN  RV32E is the same instruction-set encoding, but only defines x0-x15
+# x0  x1  x2  x3  x4  x5  x6  x7  x8  x9  x10 x11 x12 x13 x14 x15
+# z   ra  sp  gp  tp  t0  t1  t2  s0  s1  a0  a1  a2  a3  a4  a5
+# x16 x17 x18 x19 x20 x21 x22 x23 x24 x25 x26 x27 x28 x29 x30 x31
+# a6  a7  s2  s3  s4  s5  s6  s7  s8  s9  s10 s11 t3  t4  t5  t6
+# register numbers 0x1000-0x101f
+define register offset=0x2000 size=$(XLEN) [ zero ra sp  gp  tp t0 t1 t2
+       			    	      	     s0   s1 a0  a1  a2 a3 a4 a5
+				       	     a6   a7 s2  s3  s4 s5 s6 s7
+				       	     s8   s9 s10 s11 t3 t4 t5 t6 ];
+
+# register numbers 0x1020-0x103f
+define register offset=0x3000 size=$(FLEN) [ ft0 ft1 ft2  ft3  ft4 ft5 ft6  ft7
+       			      	       	     fs0 fs1 fa0  fa1  fa2 fa3 fa4  fa5
+				       	     fa6 fa7 fs2  fs3  fs4 fs5 fs6  fs7
+				       	     fs8 fs9 fs10 fs11 ft8 ft9 ft10 ft11 ];
+
+#TODO  fix
+@define VLEN "32"
+define register offset=0x4000 size=$(VLEN) [ v0  v1  v2  v3  v4  v5  v6  v7
+       			      		     v8  v9  v10 v11 v12 v13 v14 v15
+					     v16 v17 v18 v19 v20 v21 v22 v23
+					     v24 v25 v26 v27 v28 v29 v30 v31 ];
+
+  
+  # SEE 3.1.1  Machine ISA Register  misa
+# (MXLEN-1, MXLEN-2) MXL - Machine XLEN  {1: 32, 2: 64, 3: 128}
+# Bit Character Description
+# 0   A         Atomic extension
+# 1   B         Tentatively reserved for Bit-Manipulation extension
+# 2   C         Compressed extension
+# 3   D         Double-precision floating-point extension
+# 4   E         RV32E base ISA
+# 5   F         Single-precision floating-point extension
+# 6   G         Additional standard extensions present
+# 7   H         Hypervisor extension
+# 8   I         RV32I/64I/128I base ISA
+# 9   J         Tentatively reserved for Dynamically Translated Languages extension
+# 10  K         Reserved
+# 11  L         Tentatively reserved for Decimal Floating-Point extension
+# 12  M         Integer Multiply/Divide extension
+# 13  N         User-level interrupts supported
+# 14  O         Reserved
+# 15  P         Tentatively reserved for Packed-SIMD extension
+# 16  Q         Quad-precision floating-point extension
+# 17  R         Reserved
+# 18  S         Supervisor mode implemented
+# 19  T         Tentatively reserved for Transactional Memory extension
+# 20  U         User mode implemented
+# 21  V         Tentatively reserved for Vector extension
+# 22  W         Reserved
+# 23  X         Non-standard extensions present
+# 24  Y         Reserved
+# 25  Z         Reserved
+
+
+# Moved most CSR registers to .pspec file.  Doing so will:
+#  - Allow new registers to be named in the .pspec file
+#  - Processor variants differing only in CSR registers can just use a variant.pspec
+#  - Read/Write references to registers not defined in sleigh
+#  - Registers defined here will not get references to them
+#  - Allow rename and comment by end user
+
+#
+#  Control registers reserved 0x0000-0x0fff
+@define CSR_REG_START "0x0000"
+
+## CSR definitions is done as a big table with undefined holes so that
+## the 32-bit and 64-bit tables can be defined with the same code.
+## Otherwise the byte offset of the address of each register
+## would need to be calculated and would be different for XLEN of 32 or 64 bit.
+define csreg offset=$(CSR_REG_START) size=$(XLEN) [
+# 0x000
+ _       fflags frm     fcsr     _       _       _       _      
+# 0x008
+ _       _       _       _       _       _       _       _      
+# 0x010
+ _       _       _       _       _       _       _       _      
+# 0x018
+ _       _       _       _       _       _       _       _      
+# 0x020
+ _       _       _       _       _       _       _       _      
+# 0x028
+ _       _       _       _       _       _       _       _      
+# 0x030
+ _       _       _       _       _       _       _       _      
+# 0x038
+ _       _       _       _       _       _       _       _      
+# 0x040
+ _       uepc    _       _       _       _       _       _      
+# 0x048
+ _       _       _       _       _       _       _       _      
+# 0x050
+ _       _       _       _       _       _       _       _      
+# 0x058
+ _       _       _       _       _       _       _       _      
+# 0x060
+ _       _       _       _       _       _       _       _      
+# 0x068
+ _       _       _       _       _       _       _       _      
+# 0x070
+ _       _       _       _       _       _       _       _      
+# 0x078
+ _       _       _       _       _       _       _       _      
+# 0x080
+ _       _       _       _       _       _       _       _      
+# 0x088
+ _       _       _       _       _       _       _       _      
+# 0x090
+ _       _       _       _       _       _       _       _      
+# 0x098
+ _       _       _       _       _       _       _       _      
+# 0x0a0
+ _       _       _       _       _       _       _       _      
+# 0x0a8
+ _       _       _       _       _       _       _       _      
+# 0x0b0
+ _       _       _       _       _       _       _       _      
+# 0x0b8
+ _       _       _       _       _       _       _       _      
+# 0x0c0
+ _       _       _       _       _       _       _       _      
+# 0x0c8
+ _       _       _       _       _       _       _       _      
+# 0x0d0
+ _       _       _       _       _       _       _       _      
+# 0x0d8
+ _       _       _       _       _       _       _       _      
+# 0x0e0
+ _       _       _       _       _       _       _       _      
+# 0x0e8
+ _       _       _       _       _       _       _       _      
+# 0x0f0
+ _       _       _       _       _       _       _       _      
+# 0x0f8
+ _       _       _       _       _       _       _       _      
+# 0x100
+ _       _       _       _       _       _       _       _      
+# 0x108
+ _       _       _       _       _       _       _       _      
+# 0x110
+ _       _       _       _       _       _       _       _      
+# 0x118
+ _       _       _       _       _       _       _       _      
+# 0x120
+ _       _       _       _       _       _       _       _      
+# 0x128
+ _       _       _       _       _       _       _       _      
+# 0x130
+ _       _       _       _       _       _       _       _      
+# 0x138
+ _       _       _       _       _       _       _       _      
+# 0x140
+ _       sepc    _       _       _       _       _       _      
+# 0x148
+ _       _       _       _       _       _       _       _      
+# 0x150
+ _       _       _       _       _       _       _       _      
+# 0x158
+ _       _       _       _       _       _       _       _      
+# 0x160
+ _       _       _       _       _       _       _       _      
+# 0x168
+ _       _       _       _       _       _       _       _      
+# 0x170
+ _       _       _       _       _       _       _       _      
+# 0x178
+ _       _       _       _       _       _       _       _  
+# 0x180    
+ _       _       _       _       _       _       _       _      
+# 0x188
+ _       _       _       _       _       _       _       _      
+# 0x190
+ _       _       _       _       _       _       _       _      
+# 0x198
+ _       _       _       _       _       _       _       _      
+# 0x1a0
+ _       _       _       _       _       _       _       _      
+# 0x1a8
+ _       _       _       _       _       _       _       _      
+# 0x1b0
+ _       _       _       _       _       _       _       _      
+# 0x1b8
+ _       _       _       _       _       _       _       _      
+# 0x1c0
+ _       _       _       _       _       _       _       _      
+# 0x1c8
+ _       _       _       _       _       _       _       _      
+# 0x1d0
+ _       _       _       _       _       _       _       _      
+# 0x1d8
+ _       _       _       _       _       _       _       _      
+# 0x1e0
+ _       _       _       _       _       _       _       _      
+# 0x1e8
+ _       _       _       _       _       _       _       _      
+# 0x1f0
+ _       _       _       _       _       _       _       _      
+# 0x1f8
+ _       _       _       _       _       _       _       _      
+# 0x200
+ _       _       _       _       _       _       _       _      
+# 0x208
+ _       _       _       _       _       _       _       _      
+# 0x210
+ _       _       _       _       _       _       _       _      
+# 0x218
+ _       _       _       _       _       _       _       _      
+# 0x220
+ _       _       _       _       _       _       _       _      
+# 0x228
+ _       _       _       _       _       _       _       _      
+# 0x230
+ _       _       _       _       _       _       _       _      
+# 0x238
+ _       _       _       _       _       _       _       _    
+# 0x240  
+ _       _       _       _       _       _       _       _      
+# 0x248
+ _       _       _       _       _       _       _       _      
+# 0x250
+ _       _       _       _       _       _       _       _      
+# 0x258
+ _       _       _       _       _       _       _       _      
+# 0x260
+ _       _       _       _       _       _       _       _      
+# 0x268
+ _       _       _       _       _       _       _       _      
+# 0x270
+ _       _       _       _       _       _       _       _      
+# 0x278
+ _       _       _       _       _       _       _       _    
+# 0x280
+ _       _       _       _       _       _       _       _      
+# 0x288
+ _       _       _       _       _       _       _       _      
+# 0x290
+ _       _       _       _       _       _       _       _      
+# 0x298
+ _       _       _       _       _       _       _       _      
+# 0x2a0
+ _       _       _       _       _       _       _       _      
+# 0x2a8
+ _       _       _       _       _       _       _       _      
+# 0x2b0
+ _       _       _       _       _       _       _       _      
+# 0x2b8
+ _       _       _       _       _       _       _       _      
+# 0x2c0
+ _       _       _       _       _       _       _       _      
+# 0x2c8
+ _       _       _       _       _       _       _       _      
+# 0x2d0
+ _       _       _       _       _       _       _       _      
+# 0x2d8
+ _       _       _       _       _       _       _       _      
+# 0x2e0
+ _       _       _       _       _       _       _       _      
+# 0x2e8
+ _       _       _       _       _       _       _       _      
+# 0x2f0
+ _       _       _       _       _       _       _       _      
+# 0x2f8
+ _       _       _       _       _       _       _       _   
+# 0x310   
+ _       _       _       _       _       _       _       _      
+# 0x308
+ _       _       _       _       _       _       _       _    
+# 0x310  
+ _       _       _       _       _       _       _       _      
+# 0x318
+ _       _       _       _       _       _       _       _      
+# 0x320
+ _       _       _       _       _       _       _       _      
+# 0x328
+ _       _       _       _       _       _       _       _      
+# 0x330
+ _       _       _       _       _       _       _       _      
+# 0x338
+ _       _       _       _       _       _       _       _      
+# 0x318
+ _       mepc       _       _       _       _       _       _          
+# 0x348
+ _       _       _       _       _       _       _       _      
+# 0x350
+ _       _       _       _       _       _       _       _      
+# 0x358
+ _       _       _       _       _       _       _       _      
+# 0x360
+ _       _       _       _       _       _       _       _      
+# 0x368
+ _       _       _       _       _       _       _       _      
+# 0x370
+ _       _       _       _       _       _       _       _      
+# 0x378
+ _       _       _       _       _       _       _       _      
+# 0x380
+ _       _       _       _       _       _       _       _      
+# 0x388
+ _       _       _       _       _       _       _       _      
+# 0x390
+ _       _       _       _       _       _       _       _      
+# 0x398
+ _       _       _       _       _       _       _       _      
+# 0x3a0
+ _       _       _       _       _       _       _       _      
+# 0x3a8
+ _       _       _       _       _       _       _       _      
+# 0x3b0
+ _       _       _       _       _       _       _       _      
+# 0x3b8
+ _       _       _       _       _       _       _       _      
+# 0x3c0
+ _       _       _       _       _       _       _       _      
+# 0x3c8
+ _       _       _       _       _       _       _       _      
+# 0x3d0
+ _       _       _       _       _       _       _       _      
+# 0x3d8
+ _       _       _       _       _       _       _       _      
+# 0x3e0
+ _       _       _       _       _       _       _       _      
+# 0x3e8
+ _       _       _       _       _       _       _       _      
+# 0x3f0
+ _       _       _       _       _       _       _       _      
+# 0x3f8
+ _       _       _       _       _       _       _       _      
+# 0x400
+ _       _       _       _       _       _       _       _      
+# 0x408
+ _       _       _       _       _       _       _       _      
+# 0x410
+ _       _       _       _       _       _       _       _      
+# 0x418
+ _       _       _       _       _       _       _       _      
+# 0x420
+ _       _       _       _       _       _       _       _      
+# 0x428
+ _       _       _       _       _       _       _       _      
+# 0x430
+ _       _       _       _       _       _       _       _      
+# 0x438
+ _       _       _       _       _       _       _       _      
+# 0x440
+ _       _       _       _       _       _       _       _      
+# 0x448
+ _       _       _       _       _       _       _       _      
+# 0x450
+ _       _       _       _       _       _       _       _      
+# 0x458
+ _       _       _       _       _       _       _       _      
+# 0x460
+ _       _       _       _       _       _       _       _      
+# 0x468
+ _       _       _       _       _       _       _       _      
+# 0x470
+ _       _       _       _       _       _       _       _      
+# 0x478
+ _       _       _       _       _       _       _       _      
+# 0x480
+ _       _       _       _       _       _       _       _      
+# 0x488
+ _       _       _       _       _       _       _       _      
+# 0x490
+ _       _       _       _       _       _       _       _      
+# 0x498
+ _       _       _       _       _       _       _       _      
+# 0x4a0
+ _       _       _       _       _       _       _       _      
+# 0x4a8
+ _       _       _       _       _       _       _       _      
+# 0x4b0
+ _       _       _       _       _       _       _       _      
+# 0x4b8
+ _       _       _       _       _       _       _       _      
+# 0x4c0
+ _       _       _       _       _       _       _       _      
+# 0x4c8
+ _       _       _       _       _       _       _       _      
+# 0x4d0
+ _       _       _       _       _       _       _       _      
+# 0x4d8
+ _       _       _       _       _       _       _       _      
+# 0x4e0
+ _       _       _       _       _       _       _       _      
+# 0x4e8
+ _       _       _       _       _       _       _       _      
+# 0x4f0
+ _       _       _       _       _       _       _       _      
+# 0x4f8
+ _       _       _       _       _       _       _       _      
+# 0x500
+ _       _       _       _       _       _       _       _      
+# 0x508
+ _       _       _       _       _       _       _       _      
+# 0x510
+ _       _       _       _       _       _       _       _      
+# 0x518
+ _       _       _       _       _       _       _       _      
+# 0x520
+ _       _       _       _       _       _       _       _      
+# 0x528
+ _       _       _       _       _       _       _       _      
+# 0x530
+ _       _       _       _       _       _       _       _      
+# 0x538
+ _       _       _       _       _       _       _       _      
+# 0x540
+ _       _       _       _       _       _       _       _      
+# 0x548
+ _       _       _       _       _       _       _       _      
+# 0x550
+ _       _       _       _       _       _       _       _      
+# 0x558
+ _       _       _       _       _       _       _       _      
+# 0x560
+ _       _       _       _       _       _       _       _      
+# 0x568
+ _       _       _       _       _       _       _       _      
+# 0x570
+ _       _       _       _       _       _       _       _      
+# 0x578
+ _       _       _       _       _       _       _       _      
+# 0x580
+ _       _       _       _       _       _       _       _      
+# 0x588
+ _       _       _       _       _       _       _       _      
+# 0x590
+ _       _       _       _       _       _       _       _      
+# 0x598
+ _       _       _       _       _       _       _       _      
+# 0x5a0
+ _       _       _       _       _       _       _       _ 
+# 0x5a8     
+ _       _       _       _       _       _       _       _      
+# 0x5b0
+ _       _       _       _       _       _       _       _      
+# 0x5b8
+ _       _       _       _       _       _       _       _      
+# 0x5c0
+ _       _       _       _       _       _       _       _      
+# 0x5c8
+ _       _       _       _       _       _       _       _      
+# 0x5d0
+ _       _       _       _       _       _       _       _      
+# 0x5d8
+ _       _       _       _       _       _       _       _      
+# 0x5e0
+ _       _       _       _       _       _       _       _      
+# 0x5e8
+ _       _       _       _       _       _       _       _      
+# 0x5f0
+ _       _       _       _       _       _       _       _      
+# 0x5f8
+ _       _       _       _       _       _       _       _     
+# 0x600 
+ _       _       _       _       _       _       _       _      
+# 0x608
+ _       _       _       _       _       _       _       _      
+# 0x610
+ _       _       _       _       _       _       _       _      
+# 0x618
+ _       _       _       _       _       _       _       _      
+# 0x620
+ _       _       _       _       _       _       _       _      
+# 0x628
+ _       _       _       _       _       _       _       _      
+# 0x630
+ _       _       _       _       _       _       _       _      
+# 0x638
+ _       _       _       _       _       _       _       _      
+# 0x640
+ _       _       _       _       _       _       _       _      
+# 0x648
+ _       _       _       _       _       _       _       _      
+# 0x650
+ _       _       _       _       _       _       _       _      
+# 0x658
+ _       _       _       _       _       _       _       _      
+# 0x660
+ _       _       _       _       _       _       _       _      
+# 0x668
+ _       _       _       _       _       _       _       _      
+# 0x670
+ _       _       _       _       _       _       _       _      
+# 0x678
+ _       _       _       _       _       _       _       _     
+# 0x680 
+ _       _       _       _       _       _       _       _      
+# 0x688
+ _       _       _       _       _       _       _       _      
+# 0x690
+ _       _       _       _       _       _       _       _      
+# 0x698
+ _       _       _       _       _       _       _       _      
+# 0x6a0
+ _       _       _       _       _       _       _       _   
+# 0x6a8   
+ _       _       _       _       _       _       _       _      
+# 0x6b0
+ _       _       _       _       _       _       _       _      
+# 0x6b8
+ _       _       _       _       _       _       _       _      
+# 0x6c0
+ _       _       _       _       _       _       _       _      
+# 0x6c8
+ _       _       _       _       _       _       _       _      
+# 0x6d0
+ _       _       _       _       _       _       _       _      
+# 0x6d8
+ _       _       _       _       _       _       _       _      
+# 0x6e0
+ _       _       _       _       _       _       _       _      
+# 0x6e8
+ _       _       _       _       _       _       _       _      
+# 0x6f0
+ _       _       _       _       _       _       _       _      
+# 0x6f8
+ _       _       _       _       _       _       _       _      
+# 0x700
+ _       _       _       _       _       _       _       _      
+# 0x708
+ _       _       _       _       _       _       _       _      
+# 0x710
+ _       _       _       _       _       _       _       _      
+# 0x718
+ _       _       _       _       _       _       _       _      
+# 0x720
+ _       _       _       _       _       _       _       _      
+# 0x728
+ _       _       _       _       _       _       _       _      
+# 0x730
+ _       _       _       _       _       _       _       _      
+# 0x738
+ _       _       _       _       _       _       _       _      
+# 0x740
+ _       _       _       _       _       _       _       _      
+# 0x748
+ _       _       _       _       _       _       _       _      
+# 0x750
+ _       _       _       _       _       _       _       _      
+# 0x758
+ _       _       _       _       _       _       _       _      
+# 0x760
+ _       _       _       _       _       _       _       _      
+# 0x768
+ _       _       _       _       _       _       _       _      
+# 0x770
+ _       _       _       _       _       _       _       _      
+# 0x778
+ _       _       _       _       _       _       _       _      
+# 0x780
+ _       _       _       _       _       _       _       _      
+# 0x788
+ _       _       _       _       _       _       _       _      
+# 0x790
+ _       _       _       _       _       _       _       _      
+# 0x798
+ _       _       _       _       _       _       _       _     
+# 0x7a0
+ _       _       _       _       _       _       _       _      
+# 0x7a8
+ _       _       _       _       _       _       _       _      
+# 0x7b0
+ dcsr dpc dscratch0 dscratch1 _       _       _       _      
+# 0x7b8
+ _       _       _       _       _       _       _       _      
+# 0x7c0
+ _       _       _       _       _       _       _       _      
+# 0x7c8
+ _       _       _       _       _       _       _       _      
+# 0x7d0
+ _       _       _       _       _       _       _       _      
+# 0x7d8
+ _       _       _       _       _       _       _       _      
+# 0x7e0
+ _       _       _       _       _       _       _       _      
+# 0x7e8
+ _       _       _       _       _       _       _       _      
+# 0x7f0
+ _       _       _       _       _       _       _       _      
+# 0x7f8
+ _       _       _       _       _       _       _       _      
+# 0x800
+ _       _       _       _       _       _       _       _      
+# 0x808
+ _       _       _       _       _       _       _       _      
+# 0x810
+ _       _       _       _       _       _       _       _      
+# 0x818
+ _       _       _       _       _       _       _       _      
+# 0x820
+ _       _       _       _       _       _       _       _      
+# 0x828
+ _       _       _       _       _       _       _       _      
+# 0x830
+ _       _       _       _       _       _       _       _      
+# 0x838
+ _       _       _       _       _       _       _       _      
+# 0x840
+ _       _       _       _       _       _       _       _      
+# 0x848
+ _       _       _       _       _       _       _       _      
+# 0x850
+ _       _       _       _       _       _       _       _      
+# 0x858
+ _       _       _       _       _       _       _       _      
+# 0x860
+ _       _       _       _       _       _       _       _      
+# 0x868
+ _       _       _       _       _       _       _       _      
+# 0x870
+ _       _       _       _       _       _       _       _      
+# 0x878
+ _       _       _       _       _       _       _       _      
+# 0x880
+ _       _       _       _       _       _       _       _      
+# 0x888
+ _       _       _       _       _       _       _       _      
+# 0x890
+ _       _       _       _       _       _       _       _      
+# 0x898
+ _       _       _       _       _       _       _       _      
+# 0x8a0
+ _       _       _       _       _       _       _       _      
+# 0x8a8
+ _       _       _       _       _       _       _       _      
+# 0x8b0
+ _       _       _       _       _       _       _       _      
+# 0x8b8
+ _       _       _       _       _       _       _       _      
+# 0x8c0
+ _       _       _       _       _       _       _       _      
+# 0x8c8
+ _       _       _       _       _       _       _       _      
+# 0x8d0
+ _       _       _       _       _       _       _       _      
+# 0x8d8
+ _       _       _       _       _       _       _       _      
+# 0x8e0
+ _       _       _       _       _       _       _       _      
+# 0x8e8
+ _       _       _       _       _       _       _       _      
+# 0x8f0
+ _       _       _       _       _       _       _       _      
+# 0x8f8
+ _       _       _       _       _       _       _       _      
+# 0x900
+ _       _       _       _       _       _       _       _      
+# 0x908
+ _       _       _       _       _       _       _       _      
+# 0x910
+ _       _       _       _       _       _       _       _      
+# 0x918
+ _       _       _       _       _       _       _       _      
+# 0x920
+ _       _       _       _       _       _       _       _      
+# 0x928
+ _       _       _       _       _       _       _       _      
+# 0x930
+ _       _       _       _       _       _       _       _      
+# 0x938
+ _       _       _       _       _       _       _       _      
+# 0x940
+ _       _       _       _       _       _       _       _      
+# 0x948
+ _       _       _       _       _       _       _       _      
+# 0x950
+ _       _       _       _       _       _       _       _      
+# 0x958
+ _       _       _       _       _       _       _       _      
+# 0x960
+ _       _       _       _       _       _       _       _      
+# 0x968
+ _       _       _       _       _       _       _       _      
+# 0x970
+ _       _       _       _       _       _       _       _      
+# 0x978
+ _       _       _       _       _       _       _       _      
+# 0x980
+ _       _       _       _       _       _       _       _      
+# 0x988
+ _       _       _       _       _       _       _       _      
+# 0x990
+ _       _       _       _       _       _       _       _      
+# 0x998
+ _       _       _       _       _       _       _       _      
+# 0x9a0
+ _       _       _       _       _       _       _       _      
+# 0x9a8
+ _       _       _       _       _       _       _       _      
+# 0x9b0
+ _       _       _       _       _       _       _       _      
+# 0x9b8
+ _       _       _       _       _       _       _       _      
+# 0x9c0
+ _       _       _       _       _       _       _       _      
+# 0x9c8
+ _       _       _       _       _       _       _       _      
+# 0x9d0
+ _       _       _       _       _       _       _       _      
+# 0x9d8
+ _       _       _       _       _       _       _       _      
+# 0x9e0
+ _       _       _       _       _       _       _       _      
+# 0x9e8
+ _       _       _       _       _       _       _       _      
+# 0x9f0
+ _       _       _       _       _       _       _       _      
+# 0x9f8
+ _       _       _       _       _       _       _       _      
+# 0xa00
+ _       _       _       _       _       _       _       _      
+# 0xa08
+ _       _       _       _       _       _       _       _      
+# 0xa10
+ _       _       _       _       _       _       _       _      
+# 0xa18
+ _       _       _       _       _       _       _       _      
+# 0xa20
+ _       _       _       _       _       _       _       _      
+# 0xa28
+ _       _       _       _       _       _       _       _      
+# 0xa30
+ _       _       _       _       _       _       _       _      
+# 0xa38
+ _       _       _       _       _       _       _       _      
+# 0xa40
+ _       _       _       _       _       _       _       _      
+# 0xa48
+ _       _       _       _       _       _       _       _      
+# 0xa50
+ _       _       _       _       _       _       _       _      
+# 0xa58
+ _       _       _       _       _       _       _       _      
+# 0xa60
+ _       _       _       _       _       _       _       _      
+# 0xa68
+ _       _       _       _       _       _       _       _      
+# 0xa70
+ _       _       _       _       _       _       _       _      
+# 0xa78
+ _       _       _       _       _       _       _       _      
+# 0xa80
+ _       _       _       _       _       _       _       _      
+# 0xa88
+ _       _       _       _       _       _       _       _      
+# 0xa90
+ _       _       _       _       _       _       _       _      
+# 0xa98
+ _       _       _       _       _       _       _       _      
+# 0xaa0
+ _       _       _       _       _       _       _       _      
+# 0xaa8
+ _       _       _       _       _       _       _       _      
+# 0xab0
+ _       _       _       _       _       _       _       _      
+# 0xab8
+ _       _       _       _       _       _       _       _      
+# 0xac0
+ _       _       _       _       _       _       _       _      
+# 0xac8
+ _       _       _       _       _       _       _       _      
+# 0xad0
+ _       _       _       _       _       _       _       _      
+# 0xad8
+ _       _       _       _       _       _       _       _      
+# 0xae0
+ _       _       _       _       _       _       _       _      
+# 0xae8
+ _       _       _       _       _       _       _       _      
+# 0xaf0
+ _       _       _       _       _       _       _       _      
+# 0xaf8
+ _       _       _       _       _       _       _       _      
+# 0xa00
+ _       _       _       _       _       _       _       _      
+# 0xa08
+ _       _       _       _       _       _       _       _      
+# 0xa10
+ _       _       _       _       _       _       _       _      
+# 0xa18
+ _       _       _       _       _       _       _       _      
+# 0xb20
+ _       _       _       _       _       _       _       _      
+# 0xb28
+ _       _       _       _       _       _       _       _      
+# 0xb30
+ _       _       _       _       _       _       _       _      
+# 0xb38
+ _       _       _       _       _       _       _       _      
+# 0xb40
+ _       _       _       _       _       _       _       _      
+# 0xb48
+ _       _       _       _       _       _       _       _      
+# 0xb50
+ _       _       _       _       _       _       _       _      
+# 0xb58
+ _       _       _       _       _       _       _       _      
+# 0xb60
+ _       _       _       _       _       _       _       _      
+# 0xb68
+ _       _       _       _       _       _       _       _      
+# 0xb70
+ _       _       _       _       _       _       _       _      
+# 0xb78
+ _       _       _       _       _       _       _       _      
+# 0xb80
+ _       _       _       _       _       _       _       _      
+# 0xb88
+ _       _       _       _       _       _       _       _      
+# 0xb90
+ _       _       _       _       _       _       _       _      
+# 0xb98
+ _       _       _       _       _       _       _       _      
+# 0xba0
+ _       _       _       _       _       _       _       _      
+# 0xba8
+ _       _       _       _       _       _       _       _      
+# 0xbb0
+ _       _       _       _       _       _       _       _      
+# 0xbb8
+ _       _       _       _       _       _       _       _      
+# 0xbc0
+ _       _       _       _       _       _       _       _      
+# 0xbc8
+ _       _       _       _       _       _       _       _      
+# 0xbd0
+ _       _       _       _       _       _       _       _      
+# 0xbd8
+ _       _       _       _       _       _       _       _      
+# 0xbe0
+ _       _       _       _       _       _       _       _      
+# 0xbe8
+ _       _       _       _       _       _       _       _      
+# 0xbf0
+ _       _       _       _       _       _       _       _      
+# 0xbf8
+ _       _       _       _       _       _       _       _      
+# 0xc00
+ _       _       _       _       _       _       _       _
+# 0xc08
+ _       _       _       _       _       _       _       _
+# 0xc10
+ _       _       _       _       _       _       _       _
+# 0xc18
+ _       _       _       _       _       _       _       _
+# 0xc20
+ _       _       _       _       _       _       _       _
+# 0xc28
+ _       _       _       _       _       _       _       _      
+# 0xc30
+ _       _       _       _       _       _       _       _      
+# 0xc38
+ _       _       _       _       _       _       _       _      
+# 0xc40
+ _       _       _       _       _       _       _       _      
+# 0xc48
+ _       _       _       _       _       _       _       _      
+# 0xc50
+ _       _       _       _       _       _       _       _      
+# 0xc58
+ _       _       _       _       _       _       _       _      
+# 0xc60
+ _       _       _       _       _       _       _       _      
+# 0xc68
+ _       _       _       _       _       _       _       _      
+# 0xc70
+ _       _       _       _       _       _       _       _      
+# 0xc78
+ _       _       _       _       _       _       _       _      
+# 0xc80
+ _       _       _       _       _       _       _       _      
+# 0xc88
+ _       _       _       _       _       _       _       _      
+# 0xc90
+ _       _       _       _       _       _       _       _      
+# 0xc98
+ _       _       _       _       _       _       _       _      
+# 0xca0
+ _       _       _       _       _       _       _       _      
+# 0xca8
+ _       _       _       _       _       _       _       _      
+# 0xcb0
+ _       _       _       _       _       _       _       _      
+# 0xcb8
+ _       _       _       _       _       _       _       _      
+# 0xcc0
+ _       _       _       _       _       _       _       _      
+# 0xcc8
+ _       _       _       _       _       _       _       _      
+# 0xcd0
+ _       _       _       _       _       _       _       _      
+# 0xcd8
+ _       _       _       _       _       _       _       _      
+# 0xce0
+ _       _       _       _       _       _       _       _      
+# 0xce8
+ _       _       _       _       _       _       _       _      
+# 0xcf0
+ _       _       _       _       _       _       _       _      
+# 0xcf8
+ _       _       _       _       _       _       _       _      
+# 0xd00
+ _       _       _       _       _       _       _       _      
+# 0xd08
+ _       _       _       _       _       _       _       _      
+# 0xd10
+ _       _       _       _       _       _       _       _      
+# 0xd18
+ _       _       _       _       _       _       _       _      
+# 0xd20
+ _       _       _       _       _       _       _       _      
+# 0xd28
+ _       _       _       _       _       _       _       _      
+# 0xd30
+ _       _       _       _       _       _       _       _      
+# 0xd38
+ _       _       _       _       _       _       _       _      
+# 0xd40
+ _       _       _       _       _       _       _       _      
+# 0xd48
+ _       _       _       _       _       _       _       _      
+# 0xd50
+ _       _       _       _       _       _       _       _      
+# 0xd58
+ _       _       _       _       _       _       _       _      
+# 0xd60
+ _       _       _       _       _       _       _       _      
+# 0xd68
+ _       _       _       _       _       _       _       _      
+# 0xd70
+ _       _       _       _       _       _       _       _      
+# 0xd78
+ _       _       _       _       _       _       _       _      
+# 0xd80
+ _       _       _       _       _       _       _       _      
+# 0xd88
+ _       _       _       _       _       _       _       _      
+# 0xd90
+ _       _       _       _       _       _       _       _      
+# 0xd98
+ _       _       _       _       _       _       _       _      
+# 0xda0
+ _       _       _       _       _       _       _       _      
+# 0xda8
+ _       _       _       _       _       _       _       _      
+# 0xdb0
+ _       _       _       _       _       _       _       _      
+# 0xdb8
+ _       _       _       _       _       _       _       _      
+# 0xdc0
+ _       _       _       _       _       _       _       _      
+# 0xdc8
+ _       _       _       _       _       _       _       _      
+# 0xdd0
+ _       _       _       _       _       _       _       _      
+# 0xdd8
+ _       _       _       _       _       _       _       _      
+# 0xde0
+ _       _       _       _       _       _       _       _      
+# 0xde8
+ _       _       _       _       _       _       _       _      
+# 0xdf0
+ _       _       _       _       _       _       _       _      
+# 0xdf8
+ _       _       _       _       _       _       _       _      
+# 0xe00
+ _       _       _       _       _       _       _       _      
+# 0xe08
+ _       _       _       _       _       _       _       _      
+# 0xe10
+ _       _       _       _       _       _       _       _      
+# 0xe18
+ _       _       _       _       _       _       _       _      
+# 0xe20
+ _       _       _       _       _       _       _       _      
+# 0xe28
+ _       _       _       _       _       _       _       _      
+# 0xe30
+ _       _       _       _       _       _       _       _      
+# 0xe38
+ _       _       _       _       _       _       _       _      
+# 0xe40
+ _       _       _       _       _       _       _       _      
+# 0xe48
+ _       _       _       _       _       _       _       _      
+# 0xe50
+ _       _       _       _       _       _       _       _      
+# 0xe58
+ _       _       _       _       _       _       _       _      
+# 0xe60
+ _       _       _       _       _       _       _       _      
+# 0xe68
+ _       _       _       _       _       _       _       _      
+# 0xe70
+ _       _       _       _       _       _       _       _      
+# 0xe78
+ _       _       _       _       _       _       _       _      
+# 0xe80
+ _       _       _       _       _       _       _       _      
+# 0xe88
+ _       _       _       _       _       _       _       _      
+# 0xe90
+ _       _       _       _       _       _       _       _      
+# 0xe98
+ _       _       _       _       _       _       _       _      
+# 0xea0
+ _       _       _       _       _       _       _       _      
+# 0xea8
+ _       _       _       _       _       _       _       _      
+# 0xeb0
+ _       _       _       _       _       _       _       _      
+# 0xeb8
+ _       _       _       _       _       _       _       _      
+# 0xec0
+ _       _       _       _       _       _       _       _      
+# 0xec8
+ _       _       _       _       _       _       _       _      
+# 0xed0
+ _       _       _       _       _       _       _       _      
+# 0xed8
+ _       _       _       _       _       _       _       _      
+# 0xee0
+ _       _       _       _       _       _       _       _      
+# 0xee8
+ _       _       _       _       _       _       _       _      
+# 0xef0
+ _       _       _       _       _       _       _       _      
+# 0xef8
+ _       _       _       _       _       _       _       _      
+# 0xf00
+ _       _       _       _       _       _       _       _      
+# 0xf08
+ _       _       _       _       _       _       _       _      
+# 0xf10
+ _       _       _       _       _       _       _       _      
+# 0xf18
+ _       _       _       _       _       _       _       _      
+# 0xf20
+ _       _       _       _       _       _       _       _      
+# 0xf28
+ _       _       _       _       _       _       _       _      
+# 0xf30
+ _       _       _       _       _       _       _       _      
+# 0xf38
+ _       _       _       _       _       _       _       _      
+# 0xf40
+ _       _       _       _       _       _       _       _      
+# 0xf48
+ _       _       _       _       _       _       _       _      
+# 0xf50
+ _       _       _       _       _       _       _       _      
+# 0xf58
+ _       _       _       _       _       _       _       _      
+# 0xf60
+ _       _       _       _       _       _       _       _      
+# 0xf68
+ _       _       _       _       _       _       _       _      
+# 0xf70
+ _       _       _       _       _       _       _       _      
+# 0xf78
+ _       _       _       _       _       _       _       _      
+# 0xf80
+ _       _       _       _       _       _       _       _      
+# 0xf88
+ _       _       _       _       _       _       _       _      
+# 0xf90
+ _       _       _       _       _       _       _       _      
+# 0xf98
+ _       _       _       _       _       _       _       _      
+# 0xfa0
+ _       _       _       _       _       _       _       _      
+# 0xfa8
+ _       _       _       _       _       _       _       _      
+# 0xfb0
+ _       _       _       _       _       _       _       _      
+# 0xfb8
+ _       _       _       _       _       _       _       _      
+# 0xfc0
+ _       _       _       _       _       _       _       _      
+# 0xfc8
+ _       _       _       _       _       _       _       _      
+# 0xfd0
+ _       _       _       _       _       _       _       _      
+# 0xfd8
+ _       _       _       _       _       _       _       _      
+# 0xfe0
+ _       _       _       _       _       _       _       _      
+# 0xfe8
+ _       _       _       _       _       _       _       _      
+# 0xff0
+ _       _       _       _       _       _       _       _      
+# 0xff8
+ _       _       _       _       _       _       _       _      
+];
+
+
+
+
+define context CONTEXT
+  reserved=(0,3)
+  MXL=(4,5)   # MXL - Machine XLEN  {1: 32, 2: 64, 3: 128}
+;
+
+
+define token instr (32)
+  op0001=(0,1)
+  op0006=(0,6)
+  op0204=(2,4)
+  op0506=(5,6)
+  op0707=(7,7)
+  op0711=(7,11)
+  r0711=(7,11)
+  fr0711=(7,11)
+  v0711=(7,11)
+  op0808=(8,8)
+  op0809=(8,9)
+  op0811=(8,11)
+  op0911=(9,11)
+  op1011=(10,11)
+  op1213=(12,13)
+  op1214=(12,14)
+  funct3=(12,14)
+  op1219=(12,19)
+  op1231=(12,31)
+  sop1231=(12,31) signed
+  op1414=(14,14)
+  op1516=(15,16)
+  op1519=(15,19)
+  sop1519=(15,19) signed
+  subf5=(15,19)
+  r1519=(15,19)
+  fr1519=(15,19)
+  v1519=(15,19)
+  op1527=(15,27)
+  op1531=(15,31)
+  op1719=(17,19)
+  op2020=(20,20)
+  op2022=(20,22)
+  succ=(20,23)
+  op2023=(20,23)
+  op2024=(20,24)
+  r2024=(20,24)
+  fr2024=(20,24)
+  v2024=(20,24)
+  op2025=(20,25)
+  op2026=(20,26)
+  csr_0=(20,27)
+  csr_1=(20,27)
+  csr_2=(20,27)
+  csr_3=(20,27)
+  csr_4=(20,27)
+  csr_50=(20,26)
+  csr_58=(20,25)
+  csr_5C=(20,25)
+  csr_60=(20,26)
+  csr_68=(20,25)
+  csr_6C=(20,25)
+  csr_70=(20,26)
+  csr_78=(20,24)
+  csr_7A=(20,23)
+  csr_7B=(20,23)
+  csr_7C=(20,25)
+  csr_8=(20,27)
+  csr_90=(20,26)
+  csr_98=(20,25)
+  csr_9C=(20,25)
+  csr_A0=(20,26)
+  csr_A8=(20,25)
+  csr_AC=(20,25)
+  csr_B0=(20,26)
+  csr_B8=(20,25)
+  csr_BC=(20,25)
+  csr_C0=(20,26)
+  csr_C8=(20,25)
+  csr_CC=(20,25)
+  csr_D0=(20,26)
+  csr_D8=(20,25)
+  csr_DC=(20,25)
+  csr_E0=(20,26)
+  csr_E8=(20,25)
+  csr_EC=(20,25)
+  csr_F0=(20,26)
+  csr_F8=(20,25)
+  csr_FC=(20,25)
+  op2030=(20,30)
+  op2031=(20,31)
+  sop2031=(20,31) signed
+  op2121=(21,21)
+  op2122=(21,22)
+  op2130=(21,30)
+  op2222=(22,22)
+  op2230=(22,30)
+  op2323=(23,23)
+  op2324=(23,24)
+  op2330=(23,30)
+  op2424=(24,24)
+  op2427=(24,27)
+  pred=(24,27)
+  op2525=(25,25)
+  op2526=(25,26)
+  op2527=(25,27)
+  op2529=(25,29)
+  op2530=(25,30)
+  op2531=(25,31)
+  sop2531=(25,31) signed
+  funct7=(25,31)
+  wd=(26,26)
+  op2626=(26,26)
+  op2627=(26,27)
+  op2631=(26,31)
+  op2731=(27,31)
+  amoop=(27,31)
+  funct5=(27,31)
+  op2727=(27,27)
+  r2731=(27,31)
+  fr2731=(27,31)
+  op2828=(28,28)
+  op2829=(28,29)
+  fm=(28,31)
+  op2931=(29,31)
+  op3030=(30,30)
+  op3031=(30,31)
+  op3131=(31,31)
+  sop3131=(31,31) signed
+;
+
+define token cinstr (16)
+  cop0001=(0,1)
+  cop0202=(2,2)
+  cop0203=(2,3)
+  cop0204=(2,4)
+  cr0204s=(2,4)
+  cfr0204s=(2,4)
+  cop0205=(2,5)
+  cop0206=(2,6)
+  cr0206=(2,6)
+  cfr0206=(2,6)
+  cop0212=(2,12)
+  cop0303=(3,3)
+  cop0304=(3,4)
+  cop0305=(3,5)
+  cop0404=(4,4)
+  cop0406=(4,6)
+  cop0505=(5,5)
+  cop0506=(5,6)
+  cop0512=(5,12)
+  cop0606=(6,6)
+  cop0707=(7,7)
+  cop0708=(7,8)
+  cop0709=(7,9)
+  cr0709s=(7,9)
+  cd0709s=(7,9)
+  cfr0709s=(7,9)
+  cop0710=(7,10)
+  cop0711=(7,11)
+  cr0711=(7,11)
+  cd0711NoSp=(7,11)
+  cd0711=(7,11)  
+  cfr0711=(7,11)
+  cop0712=(7,12)
+  cop0808=(8,8)
+  cop0909=(9,9)
+  cop0910=(9,10)
+  cop0912=(9,12)
+  cop1010=(10,10)
+  cop1011=(10,11)
+  cop1012=(10,12)
+  cop1111=(11,11)
+  cop1112=(11,12)
+  cop1212=(12,12)
+  scop1212=(12,12) signed
+  cop1315=(13,15)
+;
+
+

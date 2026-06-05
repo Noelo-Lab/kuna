@@ -1,0 +1,21 @@
+<opinions>
+  <constraint loader="Executable and Linking Format (ELF)">
+    <constraint compilerSpecID="gcc">
+      <!-- e_ident:  ELFCLASS64 or ELFCLASS32 -->
+      <!-- e_type: nothing specific           -->
+      <!-- e_machine: EM_RISCV, primary       -->
+      <!-- e_flags: used as secondary         -->
+      <!-- EF_RISCV_RVC               0x0001  -->
+      <!-- EF_RISCV_FLOAT_ABI_SINGLE  0x0002  -->
+      <!-- EF_RISCV_FLOAT_ABI_DOUBLE  0x0004  -->
+      <!-- EF_RISCV_ABI_QUAD          0x0006  -->
+      <!-- EF_RISCV_RVE               0x0008  -->
+      <!-- EF_RISCV_TSO               0x0010  -->
+      
+      <constraint primary="243" processor="RISCV" endian="little" size="32"/> <!-- must choose between 'default' and 'AndeStar' variants -->
+      <constraint primary="243" processor="RISCV" endian="little" size="64" variant="default"/>
+      
+    </constraint>
+    
+  </constraint>
+</opinions>

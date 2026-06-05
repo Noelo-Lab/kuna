@@ -1,0 +1,17 @@
+define endian=little;
+
+@define XLEN 8
+@define XLEN2 16
+@define FLEN 8
+
+@define CONTEXTLEN 4
+
+@define ADDRSIZE "64"
+@define FPSIZE "64"
+
+@include "riscv.reg.sinc"
+@include "riscv.table.sinc"
+@include "riscv.instr.sinc"
+
+@include "riscv.rv64k.sinc"    # current encoding is in custom space
+@include "riscv.custom.sinc"
