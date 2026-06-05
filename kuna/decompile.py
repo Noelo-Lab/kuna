@@ -46,11 +46,11 @@ class DecompileTimeout(DecompileError):
     """The decompiler subprocess exceeded its timeout."""
 
 
-_ADDR_RE = re.compile(r"^(0x)?[0-9a-fA-F]+$")
-
-
 def _looks_like_addr(target: str) -> bool:
-    return target.startswith("0x") or bool(re.fullmatch(r"[0-9a-fA-F]+", target))
+    # Only a 0x-prefixed token auto-selects address mode. A bare hex-looking token
+    # (e.g. "add", "dead", "face") is treated as a function name; use --addr for
+    # bare numeric addresses.
+    return target.startswith("0x") or target.startswith("0X")
 
 
 def decompile(
@@ -152,8 +152,12 @@ def _build_script(binary, target, by_address, bfd_target, raw, out_path):
     else:
         lines.append("load file %s" % binary)
 
+    # `load file` does not populate the symbol table; the console needs this
+    # explicitly (the XML datatests auto-read symbols, the BFD console path does not).
+    lines.append("read symbols")
+
     if by_address:
-        addr = target if target.startswith("0x") else "0x" + target
+        addr = target if (target.startswith("0x") or target.startswith("0X")) else "0x" + target
         lines.append("load addr %s" % addr)
     else:
         lines.append("load function %s" % target)
