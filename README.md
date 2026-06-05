@@ -24,6 +24,14 @@ sudo apt-get install -y binutils-dev zlib1g-dev   # libbfd + libz (required)
 sudo apt-get install -y bison flex                # only needed if you edit a .y/.l grammar
 ```
 
+No root? Fetch libbfd into a local prefix and point the build at it (the SLEIGH
+compiler and all `.sla` build fine without libbfd; only the console/test binaries need it):
+
+```bash
+./tools/fetch_bfd.sh                      # downloads libbfd into ./.bfdlocal (no root)
+make BFD_PREFIX="$(pwd)/.bfdlocal" all    # injected via upstream flags; upstream Makefile untouched
+```
+
 ## Build
 
 ```bash
@@ -47,7 +55,14 @@ python -m kuna.decompile ./a.out main
 python -m kuna.decompile ./stripped.bin 0x401040 --addr
 ```
 
+## Understanding the decompiler
+
+- `STAGES.md` — the 19 speculated decompiler stages (3 phases).
+- `STAGE_MAPPING.md` — every one of the 115 C++ source files mapped to a stage (or to
+  infrastructure), anchored to the real pass pipeline (`ActionDatabase::universalAction`).
+
 ## Provenance
 
 Vendored from Ghidra commit `cef869af04c4740a71ad31a55704045b1b0d1644`.
-See `UPSTREAM.md` for the exact path map and the procedure for porting upstream changes.
+See `UPSTREAM.md` for the exact path map and the procedure for porting upstream changes
+(`tools/sync_upstream.py`).
