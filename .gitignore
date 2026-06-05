@@ -1,0 +1,36 @@
+# Upstream Makefile build output dirs (created under decompiler/cpp/)
+decompiler/cpp/com_dbg/
+decompiler/cpp/com_opt/
+decompiler/cpp/test_dbg/
+decompiler/cpp/ghi_dbg/
+decompiler/cpp/ghi_opt/
+decompiler/cpp/sla_dbg/
+decompiler/cpp/sla_opt/
+
+# Built binaries
+decompiler/cpp/decomp_dbg
+decompiler/cpp/decomp_opt
+decompiler/cpp/decomp_test_dbg
+decompiler/cpp/sleigh_dbg
+decompiler/cpp/sleigh_opt
+decompiler/cpp/ghidra_dbg
+decompiler/cpp/ghidra_opt
+decompiler/cpp/*.a
+*.o
+
+# Generated SLEIGH artifacts (built by `make specs`)
+specs/**/*.sla
+specs/**/*.sla.lock
+
+# Python
+__pycache__/
+*.egg-info/
+*.pyc
+.pytest_cache/
+
+# Coverage / editor leftovers
+*.gcov
+*.gcno
+*.gcda
+TAGS
+*~
