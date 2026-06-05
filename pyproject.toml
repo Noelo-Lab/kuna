@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kuna"
+version = "0.1.0"
+description = "Standalone driver and Python wrapper for Ghidra's extracted C++ decompiler"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+kuna-decompile = "kuna.decompile:main"
+kuna-test = "kuna.run_tests:main"
+
+[tool.setuptools]
+packages = ["kuna"]
