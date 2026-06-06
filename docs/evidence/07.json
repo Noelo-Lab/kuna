@@ -1,0 +1,350 @@
+{
+ "decompiler": "angr decompiler",
+ "focus": "User-facing decompilation options surface, variable recovery integration with the knowledge base (KB), type inference via Typehoon, and feedback loops triggered by KB mutations (user renames/retypes)",
+ "pipeline": [
+  {
+   "name": "Option Parsing & Preset Selection",
+   "description": "Decompiler.__init__ parses DecompilationOption list and maps them to class-specific handlers (clinic, codegen, region_simplifier, recursive_structurer, region_identifier, decompiler). Options are grouped by category and cached if clears_cache=False. Presets in presets/ (basic.py, fast.py, full.py, malware.py) select optimization pass chains per architecture/platform.",
+   "anchor": "decompiler.py:65-130, decompilation_options.py:11-362",
+   "inputs": "options (list of DecompilationOption tuples), preset (str or DecompilationPreset object), optimization_passes override",
+   "outputs": "options_by_class dict (category -> param name), _optimization_passes list, _cache_parameters dict for cache key"
+  },
+  {
+   "name": "Clinic Stage Pipeline Execution",
+   "description": "ClinicStage enum (0-15) defines ordered transformation stages. Clinic._analyze() dispatches through stage-specific handlers (_stage_*) stored in stage_to_method dict. Each stage transforms the AIL graph and tracks state. RECOVER_VARIABLES (stage 13) runs VariableRecoveryFast. SEMANTIC_VARIABLE_NAMING (stage 14) applies usage-based naming.",
+   "anchor": "clinic.py:124-700",
+   "inputs": "AIL graph, function info, cfg, variable_kb (optional KB with pre-existing variables), reset_variable_names flag",
+   "outputs": "variable_kb (populated VariableManagerInternal with recovered variables and types), arg_vvars dict, type_constraints for Typehoon"
+  },
+  {
+   "name": "Variable Recovery (VariableRecoveryFast)",
+   "description": "clinic._recover_and_link_variables() invokes VariableRecoveryFast analysis on AIL graph. Identifies stack, register, memory, and constant variables via SimEngineVRAIL. Generates type constraints (Subtype, Equivalence, DerivedTypeVariable) for each variable-location pair. Tracks vvar_id (VirtualVariable ID) to SimVariable mapping. Returns var_to_typevars mapping.",
+   "anchor": "clinic.py:2251-2400, variable_recovery_fast.py:54-350, engine_ail.py:31-400",
+   "inputs": "ail_graph, arg_list, arg_vvars dict, vvar_to_vvar remap dict, type_hints list, func_args",
+   "outputs": "VariableRecoveryFastState with _variables region, type_constraints dict[TypeVariable -> set[TypeConstraint]], var_to_typevars dict[SimVariable -> set[TypeVariable]], stack_offset_typevars"
+  },
+  {
+   "name": "Ground-Truth Type Seeding",
+   "description": "Before Typehoon solver runs, clinic._recover_and_link_variables seeds ground_truth dict from: (1) kb.variables[func_addr].variables_with_manual_types (user-set types), (2) function.prototype.args (if not guessed). Ground truth overrides solver output for those TypeVariables. Stack variable max_sizes also constrain the solver.",
+   "anchor": "clinic.py:2277-2303",
+   "inputs": "var_manager.variables_with_manual_types, var_manager.variable_to_types, function.prototype, stackvar_max_sizes",
+   "outputs": "groundtruth dict[TypeVariable -> SimType], must_struct set[TypeVariable], tv_max_sizes dict[TypeVariable -> int]"
+  },
+  {
+   "name": "Type Inference (Typehoon Solver)",
+   "description": "Typehoon.analyze() runs SimpleSolver on type constraints. Constructs equivalence classes and subtype lattice over TypeVariables. Uses must_struct and ground_truth as fixed points. Generates simtypes_solution dict[TypeVariable -> SimType]. Then update_variable_types() writes inferred types back to var_manager.variable_to_types[SimVariable].",
+   "anchor": "typehoon.py:23-150, clinic.py:2320-2346",
+   "inputs": "type_constraints dict, func_var TypeVariable, ground_truth, must_struct, stackvar_max_sizes, constraint_set_degradation_threshold, tv_manager",
+   "outputs": "simtypes_solution, structs (inferred struct definitions), updated kb.variables[func_addr].variable_to_types"
+  },
+  {
+   "name": "Variable Unification & Naming",
+   "description": "clinic._recover_and_link_variables calls var_manager.unify_variables(interference) to merge SSA phi-related variables into canonical unified_variables. Then assign_unified_variable_names() applies heuristic naming (ip_r0, ip_s0, etc.) or preserves existing names if manually set. Semantic naming orchestrator runs multiple pattern classes in priority order (PointerNaming, ArrayIndexNaming, etc.), skipping already-renamed vars.",
+   "anchor": "clinic.py:2370-2387, variable_manager.py:1153-1250, semantic_naming/orchestrator.py:47-131",
+   "inputs": "variable_manager with all SSA variables, liveness.interference_graph(), kb.labels, function.prototype.arg_names, reset_variable_names flag",
+   "outputs": "_unified_variables set, _variables_to_unified_variables mapping, semantic_renamed variables, updated variable.name and variable.renamed flags"
+  },
+  {
+   "name": "Variable-to-AIL Linking",
+   "description": "clinic._link_variables_on_block() traverses every AIL block statement and expression, attaching resolved SimVariable refs to expressions via metadata. Enables code generation to later query which variable is used where. Uses find_variables_by_stmt(), find_variables_by_atom() from VariableManagerInternal.",
+   "anchor": "clinic.py:2390-2391",
+   "inputs": "ail_graph blocks, variable_manager with variables, types, accesses",
+   "outputs": "AIL expressions tagged with variable references for code generation"
+  },
+  {
+   "name": "Graph Simplification & Optimization Passes",
+   "description": "Optimization pass chain (selected by preset or explicit list) runs at multiple stages (AFTER_AIL_GRAPH_CREATION, BEFORE_REGION_ID, etc.) to simplify AIL graph. Some passes (e.g., StaticVVarRewriter) rewrite virtual variables. Late passes can trigger RegionIdentifier re-runs if they modify graph topology.",
+   "anchor": "clinic.py:1000-1200, optimization_passes/optimization_pass.py:42-100",
+   "inputs": "AIL graph, variable_kb, reaching_definitions",
+   "outputs": "Simplified/optimized AIL graph, possibly new block structure"
+  },
+  {
+   "name": "Region Identification & Structuring",
+   "description": "decompiler._recover_regions() runs RegionIdentifier on AIL graph to identify loops, if-else diamonds, etc. Then RecursiveStructurer (SAILR, DREAM, or Phoenix) structures identified regions into SequenceNode tree. Structuring algorithm choice affects multi-expression-statement generation.",
+   "anchor": "decompiler.py:384-426",
+   "inputs": "AIL graph, options_by_class['recursive_structurer'] (structurer_cls, use_multistmtexprs), condition_processor",
+   "outputs": "region_identifier.region (Region object), seq_node (SequenceNode tree)"
+  },
+  {
+   "name": "Code Generation",
+   "description": "CStructuredCodeGenerator (or RustStructuredCodeGenerator) traverses SequenceNode tree and generates pseudocode text. Queries variable types from variable_manager, generates C declarations, handles casts, comments, and const formats. Options control formatting (cstyle_ifs, show_casts, braces_on_own_lines, etc.). Returns text + position/instruction mappings.",
+   "anchor": "decompiler.py:468-484, structured_codegen/c.py:134-400",
+   "inputs": "seq_node, func, variable_kb, ail_graph, cfg, func_args, codegen options dict, notes/comments dicts",
+   "outputs": "codegen.text (C pseudocode), position mappings, instruction mappings"
+  },
+  {
+   "name": "LLM Refinement (Optional)",
+   "description": "If llm_refine option enabled, decompiler.llm_refine() calls LLM to suggest variable name/type improvements and function summaries. LLM can append notes to decompilation notes dict (persisted in cache). Does not auto-update KB; user must manually apply.",
+   "anchor": "decompiler.py:493-499",
+   "inputs": "codegen.text, codegen.cfunc, cached notes",
+   "outputs": "Suggested names/types/summaries (user manually applies to KB)"
+  }
+ ],
+ "feedback_loops": [
+  {
+   "name": "User Renames/Retypes -> Re-decompilation",
+   "trigger": "User calls kb.variables[func_addr].set_variable_type(var, ty, mark_manual=True) or directly modifies var.name and sets var.renamed=True",
+   "rewinds_to": "Typehoon type inference step (if re-running full decompile) OR direct codegen re-render (via reflow_variable_types)",
+   "mechanism": "variables_with_manual_types set is used as ground_truth seed in next Typehoon run. If only codegen needs refresh, reflow_variable_types() re-runs Typehoon solver with updated ground_truth, then re-calls codegen without re-running variable recovery.",
+   "anchor": "decompiler.py:699-830 (reflow_variable_types), variable_manager.py:1083-1127 (set_variable_type), clinic.py:2277-2284 (ground_truth from variables_with_manual_types)"
+  },
+  {
+   "name": "Function Prototype Update -> Variable Recovery Re-seed",
+   "trigger": "kb.functions[addr].prototype is set (or kb.functions[addr]._prototype_source changes from GUESSED to USER). Next decompilation sees is_prototype_guessed=False.",
+   "rewinds_to": "Variable recovery phase (clinic._recover_and_link_variables) OR only codegen if prototype is already in cache",
+   "mechanism": "Ground truth seeding injects function.prototype.args as type constraints on arg variables. If prototype changes, next full decompile will use new arg types. Cached codegen reflow also re-seeds with new prototype.",
+   "anchor": "clinic.py:2286-2290, decompiler.py:783-804 (prototype update in reflow)"
+  },
+  {
+   "name": "Option Change -> Cache Invalidation & Re-decompile",
+   "trigger": "User changes decompilation option (e.g., structurer_cls, llm_refine, remove_dead_memdefs). Option.clears_cache flag determines if cache is invalidated.",
+   "rewinds_to": "Earliest stage affected by option. If clears_cache=False (codegen options), only codegen re-renders. If clears_cache=True (clinic/optimization options), full decompile restarts.",
+   "mechanism": "decompiler._cache_parameters dict is computed from non-Display options at non-default values. _can_use_decompilation_cache() checks this. Mismatch triggers full re-decompile.",
+   "anchor": "decompiler.py:151-173, 224-229, 273-277"
+  },
+  {
+   "name": "Optimization Pass Graph Rewrites -> Region Identification Re-run",
+   "trigger": "Some optimization passes (stage DURING_REGION_IDENTIFICATION or later) modify AIL graph topology (add/remove edges, rewrite jumps) after initial RegionIdentifier has run.",
+   "rewinds_to": "RegionIdentifier._recover_regions() is re-invoked via _run_region_simplification_passes",
+   "mechanism": "delay_graph_updates flag controls whether initial region ID waits for late optimizations. If delays, graph updates trigger re-identification.",
+   "anchor": "decompiler.py:384-400"
+  },
+  {
+   "name": "Stack Variable Type Constraint -> Typehoon Re-run via reflow",
+   "trigger": "User inspects decompilation, realizes a stack variable should be a struct. Updates kb.variables[func_addr].set_variable_type(stack_var, StructType, mark_manual=True). Calls decompiler.reflow_variable_types(cache).",
+   "rewinds_to": "Typehoon solver (no re-variable-recovery needed, constraints already cached)",
+   "mechanism": "reflow_variable_types re-runs Typehoon with updated ground_truth from variables_with_manual_types, then re-calls codegen. Stack variable max_sizes also fed to solver for array/struct size inference.",
+   "anchor": "decompiler.py:699-830, clinic.py:2292-2302"
+  },
+  {
+   "name": "Calling Convention Analysis -> Prototype Inference -> Re-codegen",
+   "trigger": "CompleteCallingConventionsAnalysis runs (separately or as part of pipeline) and infers/updates function.prototype for uncovered functions. Sets prototype_source to something other than GUESSED.",
+   "rewinds_to": "If prototype was None/guessed, next decompile will use inferred prototype (no explicit rewind, just first-class behavior). If user wants to force re-codegen with new prototype, calls decompiler.reflow_variable_types().",
+   "mechanism": "Prototype inferred from arg/return dataflow. On decompile, ground_truth seeded with prototype.args. Reflow re-seeds without re-variable-recovery.",
+   "anchor": "complete_calling_conventions.py:52-200, function.py:392-420"
+  },
+  {
+   "name": "Type Constraint Solver Degradation -> Fallback",
+   "trigger": "Total type constraints exceed constraint_set_degradation_threshold (default 150). Solver may degrade or warn.",
+   "rewinds_to": "No rewind; solver degrades gracefully or logs warning. Next re-decompile with lower constraint count would produce cleaner types.",
+   "mechanism": "constraint_set_degradation_threshold parameter passed to Typehoon. If exceeded, may skip certain constraint classes. User can lower threshold or simplify code.",
+   "anchor": "clinic.py:2312-2318, typehoon.py:46"
+  }
+ ],
+ "decision_points": [
+  {
+   "name": "Preset vs. Explicit Optimization Passes",
+   "where": "Decompiler.__init__",
+   "decision": "If optimization_passes is provided, use it; else load preset (default or user-specified) and call preset.get_optimization_passes(arch, platform). Presets filter passes by architecture/platform support.",
+   "alternatives": "Different preset -> different optimization chain -> different graph simplification -> different variables recovered -> different code output. Explicit passes bypass presets entirely.",
+   "anchor": "decompiler.py:118-130",
+   "current_override": "preset parameter (str name or DecompilationPreset object), or optimization_passes kwarg"
+  },
+  {
+   "name": "Use Cache or Force Re-decompile",
+   "where": "Decompiler._decompile",
+   "decision": "If use_cache=True and cache parameters match, load cached codegen/clinic; else do full decompile. Match check excludes Display-category options.",
+   "alternatives": "use_cache=False forces full re-decompile even if cache exists. Cached codegen avoids variable recovery; cached clinic avoids AIL conversion.",
+   "anchor": "decompiler.py:252-271",
+   "current_override": "use_cache boolean parameter, update_cache boolean to control cache persistence"
+  },
+  {
+   "name": "Structuring Algorithm Selection",
+   "where": "Decompiler._decompile",
+   "decision": "Extract structurer_cls from recursive_structurer options; default is DEFAULT_STRUCTURER (SAILR). Algorithm affects fold_callexprs_into_conditions, force_loop_single_exit, complete_successors flags.",
+   "alternatives": "SAILR (simple), DREAM, Phoenix (schema-based) -> different loop handling, different multi-statement expression generation strategies.",
+   "anchor": "decompiler.py:298-309",
+   "current_override": "Structuring algorithm option with candidate_values ['SAILR', 'Phoenix', 'DREAM'], convert=structurer_class_from_name"
+  },
+  {
+   "name": "Variable Recovery Variable KB Source",
+   "where": "Clinic._recover_and_link_variables",
+   "decision": "If variable_kb provided, use it; else create tmp_kb from project KB. If func_addr already in variable_kb.variables, existing variables/types are preserved/merged.",
+   "alternatives": "Passing external variable_kb allows reusing variables across functions. No variable_kb means isolated per-function recovery.",
+   "anchor": "clinic.py:2260-2262",
+   "current_override": "variable_kb parameter to Clinic, variable_kb parameter to Decompiler (forwarded to Clinic)"
+  },
+  {
+   "name": "Reset Variable Names on Re-decompile",
+   "where": "Clinic._decompile",
+   "decision": "reset_variable_names = (func_addr not in variable_kb.variables). If func not previously analyzed, names auto-generated. If in KB, existing names preserved (unless manually toggled).",
+   "alternatives": "reset_variable_names=True forces auto-naming, losing user renames. reset_variable_names=False preserves KB state.",
+   "anchor": "decompiler.py:288-291",
+   "current_override": "_reset_variable_names (computed internally, no direct user option yet)"
+  },
+  {
+   "name": "Ground-Truth Type Seeding Scope",
+   "where": "clinic._recover_and_link_variables",
+   "decision": "Ground truth constructed from (1) var_manager.variables_with_manual_types (mark_manual=True), (2) function.prototype if not guessed. Only these types override solver.",
+   "alternatives": "Seeding all inferred types would remove solver freedom. Seeding none would ignore user edits. Current approach balances manual override + inference.",
+   "anchor": "clinic.py:2277-2290",
+   "current_override": "No explicit option; controlled by user calling kb.variables[addr].set_variable_type(..., mark_manual=True)"
+  },
+  {
+   "name": "Multi-Statement Expression Generation Mode",
+   "where": "RecursiveStructurer initialization",
+   "decision": "use_multistmtexprs parameter (MultiStmtExprMode enum: NEVER, MAX_ONE_CALL, UNLIMITED). Rust flavor forces NEVER. Controls whether structurer folds multiple statements into single expression statements.",
+   "alternatives": "NEVER -> explicit sequential statements, more readable. MAX_ONE_CALL -> max one function call per statement (default). UNLIMITED -> aggressive folding for compact output.",
+   "anchor": "decompiler.py:302-313",
+   "current_override": "Multi-expression statements generation option with candidate_values, convert=MultiStmtExprMode"
+  },
+  {
+   "name": "Semantic Variable Naming Enable/Disable",
+   "where": "Clinic initialization",
+   "decision": "semvar_naming option (bool, default True) controls if semantic naming orchestrator runs. If False, stage is skipped.",
+   "alternatives": "Disabled -> variables use heuristic names (ipXX). Enabled -> applied names like len, ptr, flag based on usage patterns.",
+   "anchor": "clinic.py:298, decompilation_options.py:82-90",
+   "current_override": "Name variables based on usage option (bool)"
+  },
+  {
+   "name": "Constrain Callee Prototypes from Call Sites",
+   "where": "Clinic (if option enabled, passed to analyses)",
+   "decision": "constrain_callee_prototypes option (bool, default True). If True, call site analysis constrains argument types of called functions, which may update their KB prototypes.",
+   "alternatives": "Disabled -> callee prototypes left as-is. Enabled -> interprocedural type flow improves callee signatures, affecting their decompilation.",
+   "anchor": "decompilation_options.py:326-339",
+   "current_override": "Constrain and improve callee function prototypes based on call site information option (bool)"
+  },
+  {
+   "name": "Dead Memdef Removal Aggressiveness",
+   "where": "Clinic graph simplification passes (controlled by clinic option)",
+   "decision": "remove_dead_memdefs option (bool, default False). Aggressive analysis to remove stack/memory variables deemed unused. Risk: false negatives.",
+   "alternatives": "Conservative (False) -> keep all recovered variables. Aggressive (True) -> cleaner output but may incorrectly remove used vars.",
+   "anchor": "decompilation_options.py:49-60",
+   "current_override": "Aggressively remove dead memdefs option (bool)"
+  },
+  {
+   "name": "Code Generation Flavor (C vs. Rust)",
+   "where": "Decompiler.__init__",
+   "decision": "flavor parameter (default 'pseudocode', can be 'rust'). Selects codegen class (CStructuredCodeGenerator vs. RustStructuredCodeGenerator) and TypeHoon variant. Rust forces certain options off (simplify_ifelse, use_multistmtexprs=NEVER).",
+   "alternatives": "C -> standard decompilation. Rust -> Rust-specific output, different naming/semantics.",
+   "anchor": "decompiler.py:110-202",
+   "current_override": "flavor parameter to Decompiler, implicit in codegen_cls selection"
+  }
+ ],
+ "intervention_surfaces": [
+  {
+   "name": "DecompilationOption catalog & defaults",
+   "kind": "option",
+   "description": "45+ configurable options across 7 categories (Variables, Display, Structuring, Graph, Types, Data flows, LLM). Each DecompilationOption has name, description, value_type, cls (target class), param (method parameter), default_value, clears_cache flag, candidate_values, convert callback.",
+   "affects": "All stages; options routed to clinic, codegen, region_simplifier, recursive_structurer, region_identifier, decompiler classes",
+   "anchor": "decompilation_options.py:11-362"
+  },
+  {
+   "name": "Decompilation Presets (basic, fast, full, malware)",
+   "kind": "preset",
+   "description": "Pre-curated optimization pass chains per preset, filtered by architecture and platform. Users can pass preset='fast' to Decompiler or define custom presets.",
+   "affects": "Optimization pass selection, which controls graph simplification order and scope",
+   "anchor": "presets/preset.py:8-37, presets/{basic,fast,full,malware}.py"
+  },
+  {
+   "name": "Knowledge Base variable_manager (kb.variables)",
+   "kind": "override",
+   "description": "Users read/write kb.variables[func_addr] VariableManagerInternal. Key mutations: set_variable_type(var, ty, mark_manual=True), var.name = 'newname', var.renamed = True. These persist across re-decompilations if mark_manual=True.",
+   "affects": "Typehoon ground-truth seeding, variable unification, codegen (variable lookup), variable naming",
+   "anchor": "variable_manager.py:1083-1127, decompiler.py:699-830"
+  },
+  {
+   "name": "Function prototype (kb.functions[addr].prototype)",
+   "kind": "override",
+   "description": "Users set kb.functions[addr].prototype = SimTypeFunction(...) or leave it guessed. Prototype is seeded as ground truth for argument types. Setting prototype_source to USER prevents re-inference.",
+   "affects": "Variable recovery (arg variable type constraints), codegen (function signature)",
+   "anchor": "function.py:392-442, clinic.py:2286-2290"
+  },
+  {
+   "name": "KB labels and debug info",
+   "kind": "annotation",
+   "description": "kb.labels dict maps address to label names. Used during variable naming to avoid collisions. Can be pre-populated from DWARF or user annotations.",
+   "affects": "Variable name assignment (assign_variable_names, assign_unified_variable_names)",
+   "anchor": "variable_manager.py:933-1040"
+  },
+  {
+   "name": "Variable recovery type_hints list",
+   "kind": "override",
+   "description": "User provides (VirtualVariable | MemoryLocation, type_string) tuples to Clinic (type_hints parameter). These constrain variable types early in recovery without modifying KB.",
+   "affects": "Variable recovery constraints generation (engine_ail)",
+   "anchor": "clinic.py:258, engine_ail.py:23-140"
+  },
+  {
+   "name": "External variable_kb parameter",
+   "kind": "API",
+   "description": "Pass pre-populated variable_kb (KnowledgeBase) to Decompiler/Clinic. Allows reusing/merging variable info across functions. If func_addr in variable_kb.variables, existing state is merged.",
+   "affects": "Variable recovery merging, type inference ground truth, codegen variable lookup",
+   "anchor": "decompiler.py:73, clinic.py:2260-2262"
+  },
+  {
+   "name": "Optimization pass whitelist/blacklist",
+   "kind": "override",
+   "description": "Decompiler accepts additional_opts and disable_opts to preset.get_optimization_passes(). Users can add custom optimization passes or skip specific ones.",
+   "affects": "Graph simplification, variable recovery constraints generation",
+   "anchor": "presets/preset.py:17-37"
+  },
+  {
+   "name": "Decompilation notes (DecompilationNote dict)",
+   "kind": "callback",
+   "description": "Decompiler.notes dict collects metadata about decompilation (warnings, inferred types, etc.). Passed to codegen and displayed in comments. Users can inspect/edit notes before re-codegen.",
+   "affects": "Codegen output (if display_notes option enabled)",
+   "anchor": "decompiler.py:193, notes/decompilation_note.py:18-48"
+  },
+  {
+   "name": "Cache invalidation control",
+   "kind": "option",
+   "description": "use_cache (bool) and update_cache (bool) parameters control caching. use_cache=False forces re-decompile. update_cache=False prevents cache writes. Option.clears_cache flag per option controls granular invalidation.",
+   "affects": "Which stages re-run on subsequent decompilations",
+   "anchor": "decompiler.py:88-89, 195-196, 224-229"
+  },
+  {
+   "name": "reflow_variable_types() re-solver API",
+   "kind": "API",
+   "description": "Decompiler.reflow_variable_types(cache) allows external agents to trigger Typehoon re-run without full re-decompile. Picks up updated ground_truth from kb.variables[func_addr].variables_with_manual_types.",
+   "affects": "Type inference re-run, codegen re-render, function prototype re-inference",
+   "anchor": "decompiler.py:699-830"
+  },
+  {
+   "name": "Custom peephole optimizations",
+   "kind": "override",
+   "description": "Decompiler peephole_optimizations parameter accepts iterable of PeepholeOptimizationExprBase / PeepholeOptimizationStmtBase classes. Applied during structuring to simplify expressions/statements.",
+   "affects": "Code generation output (expression/statement simplification)",
+   "anchor": "decompiler.py:74, structured_codegen/peephole_optimizations.py"
+  },
+  {
+   "name": "Desired variables & must_struct",
+   "kind": "override",
+   "description": "Decompiler desired_variables (set of variable idents to focus on) and vars_must_struct (set of variable idents that must be struct types) parameters constrain variable recovery and type inference.",
+   "affects": "Variable recovery focus, type inference must_struct set, codegen declaration order",
+   "anchor": "decompiler.py:75, 138, 743-750"
+  },
+  {
+   "name": "Static vvars and buffers",
+   "kind": "override",
+   "description": "static_vvars (dict of VirtualVariable rewrite rules) and static_buffers allow user to inject known-good variable definitions into AIL graph before variable recovery.",
+   "affects": "Variable recovery (vvar-to-vvar mapping), codegen declarations",
+   "anchor": "decompiler.py:96-97, 150-151"
+  },
+  {
+   "name": "Expr/stmt comments and const formats",
+   "kind": "annotation",
+   "description": "expr_comments, stmt_comments (dicts mapping location to comment string), const_formats (dict controlling constant rendering) passed to codegen. Preserved in cache for reuse.",
+   "affects": "Codegen output comments and constant formatting",
+   "anchor": "decompiler.py:77-80, 141, 263-264, 477-479"
+  },
+  {
+   "name": "Decompilation stage start/end/skip",
+   "kind": "override",
+   "description": "Clinic clinic_start_stage, clinic_end_stage, clinic_skip_stages parameters allow users to run partial pipelines (e.g., stop at RECOVER_VARIABLES, skip SEMANTIC_VARIABLE_NAMING) for debugging or custom workflows.",
+   "affects": "Which clinic stages execute, what output is available",
+   "anchor": "decompiler.py:93-95, clinic.py:226-299"
+  }
+ ],
+ "insights": [
+  "Variables and types are stored in the KB (kb.variables[func_addr]) and persist independently of decompilation. This is THE intervention surface: users modify SimVariable.name/renamed and call set_variable_type(..., mark_manual=True) to inject ground truth. A renamed variable survives re-decompilation if its ident matches.",
+  "The decompiler does NOT re-variable-recovery on codegen-only re-renders (use_cache=True with cached clinic); thus user-set types are only re-interpreted via Typehoon if called explicitly via reflow_variable_types(). This is intentional: codegen changes are decoupled from heavy analysis.",
+  "Type inference is a solver problem, not a pipeline: Typehoon is invoked once per decompile, but its constraints are cached (in DecompilationCache). User-injected ground_truth overrides solver results at specific TypeVariables. The solver is NOT iterative; no re-solving on user type edits\u2014only if you explicitly call reflow_variable_types().",
+  "Semantic naming orchestrator is deterministic but post-hoc: it runs AFTER variable recovery and type inference are complete. It renames variables based on patterns (pointer naming, array indexing, etc.). User renames with var.renamed=True bypass semantic renaming automatically.",
+  "The most surprising coupling: function.prototype is used both as an input (ground truth for arg types) AND as an output (inferred from variable recovery if guessed). This creates a loop: complete_calling_conventions can infer prototypes, which seed the next decompile, which may refine them further.",
+  "Feedback loops are NOT automatic; they require explicit user action or a scheduled re-decompile: changing a variable type does NOT auto-reflow codegen unless the user calls reflow_variable_types(). This gives users control but requires awareness.",
+  "Optimization passes are ordered and can trigger cascading effects: some passes (during DURING_REGION_IDENTIFICATION stage) can modify AIL graph topology, which triggers RegionIdentifier re-run. This is the primary within-pipeline feedback loop (no external KB mutation needed).",
+  "The cache is the critical state boundary: DecompilationCache stores clinic, codegen, type_constraints, var_to_typevar mapping. If cache is valid, clinic is reused entirely, skipping variable recovery. If cache is invalid (option change with clears_cache=True), full re-decompile restarts from Clinic.",
+  "Options are NOT first-class objects in the decompilation pipeline; they are converted to parameter dicts (options_to_params()) and scattered to different analyses (clinic, codegen, structurer). A user changing an option doesn't 'interrupt' a stage; the entire Decompiler is re-instantiated with new options, triggering cache invalidation logic.",
+  "Variable unification is a static analysis (no solver): unify_variables() merges SSA phi-related variables into canonical unified_variables based on interference graph. This is independent of type inference; variables can unify without type constraints being resolved."
+ ]
+}

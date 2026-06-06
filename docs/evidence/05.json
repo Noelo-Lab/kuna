@@ -1,0 +1,430 @@
+{
+ "decompiler": "angr",
+ "focus": "Decompiler optimization pass system, explicit stage hook points, and feedback loops between stages that re-trigger earlier passes when later-stage decisions (e.g., structuring success/failure) invalidate prior analyses.",
+ "pipeline": [
+  {
+   "name": "AIL Graph Creation",
+   "description": "Convert VEX IR to AIL (Angr IL), fix switch cases, rewrite ITEs, insert labels. Produces initial AIL graph.",
+   "anchor": "clinic.py:450-480",
+   "inputs": "VEX IR function blocks",
+   "outputs": "networkx.DiGraph of ailment.Block nodes"
+  },
+  {
+   "name": "AFTER_AIL_GRAPH_CREATION Optimization Passes",
+   "description": "Early graph-wide simplifications on fresh AIL. Currently runs SwitchDefaultCaseDuplicator and SwitchReusedEntryRewriter to undo compiler switch case reuse optimizations.",
+   "anchor": "clinic.py:462; optimization_pass.py:55",
+   "inputs": "Initial AIL graph",
+   "outputs": "Simplified AIL graph with modified switch structure",
+   "substeps": [
+    "SwitchDefaultCaseDuplicator: duplicate default-case nodes to undo compiler deduplication",
+    "SwitchReusedEntryRewriter: convert switch-case entry nodes with multiple predecessors to gotos"
+   ]
+  },
+  {
+   "name": "Indirect Jump/Tail Call Analysis",
+   "description": "Replace single-target indirect jumps with direct calls; convert tail calls.",
+   "anchor": "clinic.py:464-470",
+   "inputs": "AIL graph with indirect transitions",
+   "outputs": "AIL graph with normalized jump/call targets"
+  },
+  {
+   "name": "BEFORE_SSA_LEVEL0_TRANSFORMATION Passes",
+   "description": "Run X86GccGetPcSimplifier to simplify getpc() on x86 before SSA level 0.",
+   "anchor": "clinic.py:718; optimization_pass.py:56",
+   "inputs": "AIL graph",
+   "outputs": "Simplified AIL graph"
+  },
+  {
+   "name": "SSA Level 0 Transformation",
+   "description": "Convert to SSA with tmps (temporary variables) but not stack vars. Phi functions introduced for variable convergence points.",
+   "anchor": "clinic.py:1974-1989",
+   "inputs": "AIL graph",
+   "outputs": "SSA-form AIL graph with Phi expressions"
+  },
+  {
+   "name": "AFTER_SINGLE_BLOCK_SIMPLIFICATION Passes",
+   "description": "Run simplifications after single-block AIL simplification: RegisterSaveAreaSimplifier, ConditionConstantPropagation, ConstantDereferencesSimplifier, WinStackCanarySimplifier. These operate block-by-block.",
+   "anchor": "clinic.py:791; optimization_pass.py:57",
+   "inputs": "AIL blocks with SSA level 0 form",
+   "outputs": "Simplified AIL blocks"
+  },
+  {
+   "name": "BEFORE_SSA_LEVEL1_TRANSFORMATION Passes",
+   "description": "Simplify inlined string operations (memcpy, memset, strcpy, wcscpy, string transformations) before stack-var SSA.",
+   "anchor": "clinic.py:822; optimization_pass.py:58",
+   "inputs": "AIL graph",
+   "outputs": "Simplified AIL graph with inlined function patterns replaced"
+  },
+  {
+   "name": "SSA Level 1 Transformation",
+   "description": "Convert to full SSA with both tmps and stack vars. More aggressive phi/convergence handling.",
+   "anchor": "clinic.py:1992-2008",
+   "inputs": "SSA level 0 AIL graph",
+   "outputs": "Full SSA-form AIL graph with stack var phi expressions"
+  },
+  {
+   "name": "AFTER_SSA_LEVEL1_TRANSFORMATION Passes",
+   "description": "Late inlined function simplifications that depend on full SSA form: InlinedMemcpySimplifierLate, InlinedMemsetSimplifierLate, InlinedStrcpySimplifierLate, InlinedWcscpySimplifierLate.",
+   "anchor": "clinic.py:764; optimization_pass.py:59",
+   "inputs": "SSA level 1 AIL graph",
+   "outputs": "Simplified AIL graph"
+  },
+  {
+   "name": "Reaching Definitions Analysis",
+   "description": "Compute reaching definition information for use in constant propagation and other data-flow-dependent optimizations.",
+   "anchor": "clinic.py:~850",
+   "inputs": "SSA level 1 AIL graph",
+   "outputs": "Reaching definitions mapping"
+  },
+  {
+   "name": "AFTER_MAKING_CALLSITES Passes",
+   "description": "After call sites are normalized: CallStatementRewriter, RegisterSaveAreaSimplifierAdvanced.",
+   "anchor": "clinic.py:852; optimization_pass.py:60",
+   "inputs": "AIL graph with normalized calls",
+   "outputs": "Simplified AIL graph"
+  },
+  {
+   "name": "AFTER_GLOBAL_SIMPLIFICATION Passes",
+   "description": "Heavy lifting before region identification. Multiple de-optimization passes that revert compiler optimizations to improve decompilability: ReturnDuplicatorHigh, ITERegionConverter, ITEExprConverter, ExprOpSwapper, ConstantDereferencesSimplifier, DivSimplifier, ModSimplifier, BasePointerSaveSimplifier, RetAddrSaveSimplifier, MipsGpSettingSimplifier, StackCanarySimplifier, InlinedStrlenSimplifier, CodeMotionOptimization, DetermineLoadSizes, etc. These edit the AIL graph in semantically-altering ways.",
+   "anchor": "clinic.py:874; optimization_pass.py:61; decompiler.py:378-406",
+   "inputs": "Complete SSA AIL graph",
+   "outputs": "De-optimized AIL graph with restored control flow structure",
+   "substeps": [
+    "ReturnDuplicatorHigh: duplicate return-only blocks to break up gotos",
+    "ITERegionConverter/ITEExprConverter: convert if-then-else regions to ternary expressions",
+    "ExprOpSwapper: swap binary operator operands as requested",
+    "Various simplifiers: undo compiler-specific optimizations (canary checks, register saves, etc.)"
+   ]
+  },
+  {
+   "name": "BEFORE_VARIABLE_RECOVERY Passes",
+   "description": "Last chance to simplify before variable recovery. EagerStdStringConcatenationPass, EagerStdStringEvalPass, StaticVVarRewriter. These work on already-SSA code.",
+   "anchor": "clinic.py:912; optimization_pass.py:62",
+   "inputs": "AIL graph",
+   "outputs": "Simplified AIL graph"
+  },
+  {
+   "name": "Delay Graph Updates Decision",
+   "description": "Check if any DURING_REGION_IDENTIFICATION passes exist. If yes, defer graph updates from RegionIdentifier to allow those passes to run iteratively.",
+   "anchor": "decompiler.py:385-388",
+   "inputs": "Optimization passes list",
+   "outputs": "Boolean flag controlling RegionIdentifier.update_graph parameter"
+  },
+  {
+   "name": "Region Identification (First Pass)",
+   "description": "Recover high-level regions (loops, if-else chains, etc.) using Phoenix structuring algorithm schema matching. May create artificial blocks for loop successors without updating the AIL graph topology if update_graph=False.",
+   "anchor": "decompiler.py:388; optimization_pass.py:407-418",
+   "inputs": "De-optimized AIL graph, condition processor",
+   "outputs": "RegionIdentifier with recovered region tree and goto analysis"
+  },
+  {
+   "name": "BEFORE_REGION_IDENTIFICATION Passes",
+   "description": "Simplifications that must complete before region identification starts. Currently DeadblockRemover removes blocks with unsatisfiable conditions.",
+   "anchor": "decompiler.py:545-580",
+   "inputs": "AIL graph",
+   "outputs": "Simplified AIL graph"
+  },
+  {
+   "name": "DURING_REGION_IDENTIFICATION Passes (Structuring Loop)",
+   "description": "De-optimization passes that require iterative structuring: DuplicationReverter (ISM), CrossJumpReverter (ISC), ConstPropOptReverter, ReturnDuplicatorLow, ReturnDeduplicator, LoweredSwitchSimplifier (for certain structurers). These run inside a fixed-point loop with re-RegionIdentification after each graph edit.",
+   "anchor": "decompiler.py:610-663; optimization_pass.py:432-724",
+   "inputs": "AIL graph, initial RegionIdentifier",
+   "outputs": "De-optimized AIL graph, updated RegionIdentifier (via fixed-point iteration)",
+   "substeps": [
+    "For each DURING_REGION_IDENTIFICATION pass:",
+    "  - Run pass, check for graph changes",
+    "  - If changed, re-run RegionIdentifier",
+    "  - Continue until fixed point or max iterations",
+    "  - Validate graph remains structurable (or recover previous version)",
+    "  - Check goto count does not increase (prevent_new_gotos constraint)",
+    "  - Check relative quality metrics (loop/goto structure quality)"
+   ]
+  },
+  {
+   "name": "AFTER_VARIABLE_RECOVERY Passes",
+   "description": "Post-variable-recovery optimizations. Currently TagSlicer removes unmarked statements when desired_variables are specified.",
+   "anchor": "clinic.py:945; optimization_pass.py:63",
+   "inputs": "AIL graph with recovered variables",
+   "outputs": "Simplified AIL graph"
+  },
+  {
+   "name": "RecursiveStructurer (SAILR/Phoenix)",
+   "description": "Perform structuring of regions into control flow abstractions (loops, if-else, switch statements) using recursive schema matching (SAILR by default).",
+   "anchor": "decompiler.py:420-427",
+   "inputs": "RegionIdentifier region tree, condition processor",
+   "outputs": "Recursively structured sequence node tree"
+  },
+  {
+   "name": "RegionSimplifier",
+   "description": "Simplify regions: remove phi expressions, simplify gotos, apply structuring artifacts.",
+   "anchor": "decompiler.py:438-450",
+   "inputs": "Structured region tree",
+   "outputs": "Simplified sequence node, goto manager with goto information"
+  },
+  {
+   "name": "AFTER_STRUCTURING Passes",
+   "description": "Post-structuring optimizations on sequence nodes: FlipBooleanCmp, ExprOpSwapper, PostStructuringPeepholeOptimizationPass. These work on high-level structured IR.",
+   "anchor": "decompiler.py:452-458; optimization_pass.py:66; peephole_simplifier.py:29-77",
+   "inputs": "Sequence node tree",
+   "outputs": "Optimized sequence node tree",
+   "substeps": [
+    "FlipBooleanCmp: flip small boolean conditions to simplify else blocks",
+    "ExprOpSwapper: swap operands for readability",
+    "PostStructuringPeepholeOptimization: apply expression/statement-level peephole optimizations on structured code"
+   ]
+  },
+  {
+   "name": "Code Generation",
+   "description": "Generate C/Rust pseudocode from optimized sequence node tree.",
+   "anchor": "decompiler.py:469-484",
+   "inputs": "Sequence node tree, function signature, variable information",
+   "outputs": "CStructuredCodeGenerator or RustStructuredCodeGenerator with text property"
+  }
+ ],
+ "feedback_loops": [
+  {
+   "name": "Graph Edit Triggers RegionIdentifier Re-run",
+   "trigger": "Any DURING_REGION_IDENTIFICATION pass modifies the AIL graph (out_graph is not None)",
+   "rewinds_to": "Region Identification (First Pass) stage",
+   "mechanism": "decompiler.py:645-657 calls _recover_regions() after graph change detected; StructuringOptimizationPass._fixed_point_analyze() iterates up to max_opt_iters times",
+   "anchor": "decompiler.py:646-657, optimization_pass.py:563-591"
+  },
+  {
+   "name": "Graph Restructurability Failure Recovery",
+   "trigger": "RegionIdentifier or structuring fails to produce a valid structurable graph after optimization",
+   "rewinds_to": "Previous AIL graph (restore from backup)",
+   "mechanism": "StructuringOptimizationPass._fixed_point_analyze() catches structurability failure, restores self._prev_graph if recover_structure_fails=True, sets out_graph=None",
+   "anchor": "optimization_pass.py:572-587"
+  },
+  {
+   "name": "Structuring Quality Rejection",
+   "trigger": "must_improve_rel_quality check fails: optimization traded 'good' control structures (for loops) for 'bad' ones (while/do-while), or increased goto complexity",
+   "rewinds_to": "Reject optimization (discard out_graph), retry next pass",
+   "mechanism": "StructuringOptimizationPass.analyze() calls _improves_relative_quality() which examines ControlFlowStructureCounter metrics (loop types, goto counts); returns False causes out_graph=None",
+   "anchor": "optimization_pass.py:555-557, 662-724"
+  },
+  {
+   "name": "Goto Count Violation Recovery",
+   "trigger": "DURING_REGION_IDENTIFICATION pass violates prevent_new_gotos or strictly_less_gotos constraints",
+   "rewinds_to": "Reject optimization (discard out_graph)",
+   "mechanism": "StructuringOptimizationPass.analyze() checks _get_new_gotos() count against _initial_gotos, sets out_graph=None if constraint violated",
+   "anchor": "optimization_pass.py:546-553"
+  },
+  {
+   "name": "Block Simplifier Uses Cached Analysis Results",
+   "trigger": "OptimizationPass._simplify_block() called with cache parameter",
+   "rewinds_to": "Does not rewind; uses cached reaching definitions and propagation results to avoid recomputation",
+   "mechanism": "optimization_pass.py:361-384 caches reaching definitions and propagator results per block; BlockCache named tuple stores (rd, prop); cache checked/updated on each block simplification pass",
+   "anchor": "optimization_pass.py:32, 361-384"
+  },
+  {
+   "name": "SSA Form De-phi / Variable Mapping",
+   "trigger": "After structuring and before final code generation, phi expressions must be removed and SSA form normalized",
+   "rewinds_to": "Applies dephication mapping computed during structuring (one-pass transformation, not a rewind)",
+   "mechanism": "decompiler.py:461 calls transform_seqnode_from_ssa() which rewrites all phi references using dephi mapping computed earlier in clinic",
+   "anchor": "decompiler.py:461, clinic.py:2025-2038"
+  },
+  {
+   "name": "Preset-Specific Pass Ordering Affects Results",
+   "trigger": "User selects 'fast', 'full', 'basic', or 'malware' preset; different presets have different pass orderings and subsets",
+   "rewinds_to": "Entire optimization pipeline re-runs with different pass set; changes which optimizations are applied and in what order",
+   "mechanism": "decompiler.py:118-130 selects preset, calls preset.get_optimization_passes(); preset.py:17-37 filters passes by ARCHES/PLATFORMS",
+   "anchor": "presets/fast.py, presets/full.py, presets/basic.py"
+  },
+  {
+   "name": "Custom Pass Registration Modifies Global State",
+   "trigger": "Third party calls register_optimization_pass(OptPassClass, presets=['fast']) at runtime",
+   "rewinds_to": "Pass is added to ALL_OPTIMIZATION_PASSES and optionally to chosen presets; affects all future decompilations using that preset",
+   "mechanism": "optimization_passes/__init__.py:129-139 appends pass to list and inserts into preset.opt_passes",
+   "anchor": "optimization_passes/__init__.py:129-139"
+  }
+ ],
+ "decision_points": [
+  {
+   "name": "Delay Graph Updates Flag",
+   "where": "Region Identification setup (decompiler.py:385-388)",
+   "decision": "Are any DURING_REGION_IDENTIFICATION passes registered? If yes, defer graph topology updates from RegionIdentifier. If no, update immediately.",
+   "alternatives": "Updating immediately allows simpler control flow but prevents iterative structuring optimizations. Deferring allows SAILR de-optimizations to run but requires extra RegionIdentifier re-runs.",
+   "anchor": "decompiler.py:385-388, optimization_pass.py:46-52",
+   "current_override": "Dynamically computed from self._optimization_passes list; can be overridden by user via preset selection or custom optimization_passes parameter"
+  },
+  {
+   "name": "Preset Selection",
+   "where": "Decompiler.__init__ (decompiler.py:118-130)",
+   "decision": "Which preset to use: 'fast', 'full', 'basic', 'malware', or custom optimization_passes list?",
+   "alternatives": "fast: enables 38 passes including return duplicators and de-optimization reversers. full: 42 passes including aggressive duplication/cross-jump reversions. basic: 21 passes, minimal de-optimization. malware: tuned for obfuscated code.",
+   "anchor": "decompiler.py:118-130, presets/__init__.py:9-15",
+   "current_override": "preset parameter (str or DecompilationPreset), defaults to 'fast'. User can also pass optimization_passes list directly."
+  },
+  {
+   "name": "Graph Structurability Assertion Behavior",
+   "where": "StructuringOptimizationPass._graph_is_structurable (optimization_pass.py:592-643)",
+   "decision": "On structuring failure, should we recover the previous graph (recover_structure_fails=True) or discard changes (False)?",
+   "alternatives": "True: conservative, keeps decompilation working even if optimization failed. False: aggressive, may result in unparseable code but forces optimization to succeed or abort.",
+   "anchor": "optimization_pass.py:472-480, 582-587",
+   "current_override": "recover_structure_fails parameter in StructuringOptimizationPass.__init__, passed by individual pass subclasses (e.g., DuplicationReverter sets True)"
+  },
+  {
+   "name": "Relative Quality Improvement Check",
+   "where": "StructuringOptimizationPass._improves_relative_quality (optimization_pass.py:662-724)",
+   "decision": "Did this optimization improve the control flow structure quality relative to the initial state? Check via heuristics: loop type degradation, goto complexity increase.",
+   "alternatives": "If must_improve_rel_quality=True (default for SAILR passes), reject optimization if it trades for-loops for while-loops or increases backward gotos. If False, accept any structurable graph.",
+   "anchor": "optimization_pass.py:555-557, 662-724",
+   "current_override": "must_improve_rel_quality parameter in StructuringOptimizationPass.__init__; defaults to True for safety"
+  },
+  {
+   "name": "Peephole Optimization Suite Selection",
+   "where": "AILBlockSimplifier.__init__ / PostStructuringPeepholeOptimizationPass.__init__ (block_simplifier.py:88-120, peephole_simplifier.py:40-47)",
+   "decision": "Which peephole optimizations to run? Default to ALL_PEEPHOLE_OPTS (split into EXPR_OPTS, STMT_OPTS, MULTI_STMT_OPTS) or user-provided subset?",
+   "alternatives": "Custom peephole_optimizations list allows fine-grained control over expression/statement rewrites. Default set includes ~60+ optimizations (arithmetic simplification, bit manipulation, type conversions, string operations).",
+   "anchor": "block_simplifier.py:91-120, peephole_optimizations/__init__.py:62-118",
+   "current_override": "peephole_optimizations parameter passed through OptimizationPass and Clinic; None defaults to ALL_PEEPHOLE_OPTS"
+  },
+  {
+   "name": "Fixed-Point Iteration Limit",
+   "where": "StructuringOptimizationPass._fixed_point_analyze (optimization_pass.py:563-590)",
+   "decision": "How many times should we re-structure after each DURING_REGION_IDENTIFICATION pass graph edit? Default max_opt_iters=1 for most passes, 5 for DuplicationReverter.",
+   "alternatives": "Higher limits allow more aggressive de-optimization but increase compile time. Lower limits trade thoroughness for speed.",
+   "anchor": "optimization_pass.py:516-590, duplication_reverter.py:43-62",
+   "current_override": "max_opt_iters parameter in StructuringOptimizationPass.__init__; each SAILR pass subclass specifies its own value"
+  },
+  {
+   "name": "Block Caching Strategy for Simplification",
+   "where": "OptimizationPass._simplify_block (optimization_pass.py:353-384)",
+   "decision": "Should we cache reaching definitions and propagation results across block simplifications to avoid recomputation?",
+   "alternatives": "With cache: faster but may miss optimizations if analysis results become stale. Without cache: slower but always up-to-date.",
+   "anchor": "optimization_pass.py:361-384, BlockCache namedtuple at line 32",
+   "current_override": "cache parameter can be passed to _simplify_block; if None, no caching"
+  },
+  {
+   "name": "Goto Requirements Assertion",
+   "where": "StructuringOptimizationPass._analyze (optimization_pass.py:508-512)",
+   "decision": "If require_gotos=True, should we skip the optimization if there are no gotos in the initial graph? (Indicates pass is only useful for goto-heavy code.)",
+   "alternatives": "If True, pass skips when no gotos found. If False, pass always runs.",
+   "anchor": "optimization_pass.py:465, 508-512",
+   "current_override": "require_gotos parameter; DuplicationReverter and CrossJumpReverter set True"
+  }
+ ],
+ "intervention_surfaces": [
+  {
+   "name": "OptimizationPassStage Enum Hook Points",
+   "kind": "annotation",
+   "description": "Each OptimizationPass subclass declares STAGE = OptimizationPassStage.AFTER_AIL_GRAPH_CREATION (or other stage). This is the fundamental hook point mechanism.",
+   "affects": "Entire pipeline: determines when pass runs relative to global simplifications, SSA transformations, region identification, and structuring.",
+   "anchor": "optimization_pass.py:42-66"
+  },
+  {
+   "name": "register_optimization_pass() API",
+   "kind": "API",
+   "description": "Third-party code can call register_optimization_pass(MyOptPassClass, presets=['fast']) to dynamically add a custom optimization pass to the global ALL_OPTIMIZATION_PASSES list and optionally inject it into specified presets.",
+   "affects": "Global pass registry and preset configuration; affects all future decompilations.",
+   "anchor": "optimization_passes/__init__.py:129-139"
+  },
+  {
+   "name": "Preset System",
+   "kind": "option",
+   "description": "Four built-in presets define which passes run: 'fast' (38 passes), 'full' (42 passes, most aggressive), 'basic' (21 passes, minimal de-optimization), 'malware' (tuned for obfuscation). User selects via preset parameter.",
+   "affects": "Which passes run and their order; changes the entire decompilation output.",
+   "anchor": "presets/__init__.py:9-15, decompiler.py:118-130"
+  },
+  {
+   "name": "Custom optimization_passes Parameter",
+   "kind": "override",
+   "description": "Decompiler.__init__ accepts optimization_passes list directly, bypassing preset system. Allows fine-grained control over pass ordering and selection.",
+   "affects": "Overrides preset selection; allows per-decompilation pass customization.",
+   "anchor": "decompiler.py:71, 118-119"
+  },
+  {
+   "name": "peephole_optimizations Parameter",
+   "kind": "option",
+   "description": "Decompiler and all OptimizationPass classes accept peephole_optimizations iterable. If None, defaults to ALL_PEEPHOLE_OPTS (60+ optimizations). User can provide subset to focus optimization.",
+   "affects": "Block and expression simplification; affects both AFTER_*_BLOCK and AFTER_STRUCTURING passes.",
+   "anchor": "decompiler.py:74, block_simplifier.py:65-120, peephole_simplifier.py:40-47"
+  },
+  {
+   "name": "StructuringOptimizationPass Heuristic Parameters",
+   "kind": "option",
+   "description": "SAILR de-optimization passes accept parameters controlling behavior: prevent_new_gotos, strictly_less_gotos, recover_structure_fails, must_improve_rel_quality, max_opt_iters, require_gotos. These are set per-pass class.",
+   "affects": "When DURING_REGION_IDENTIFICATION passes accept/reject changes; controls balance between aggressiveness and safety.",
+   "anchor": "optimization_pass.py:454-480, duplication_reverter.py:43-62, cross_jump_reverter.py:25-35"
+  },
+  {
+   "name": "Force Loop Single Exit / Loop Refinement Flags",
+   "kind": "option",
+   "description": "OptimizationPass constructor accepts force_loop_single_exit, refine_loops_with_single_successor, complete_successors. These control how RegionIdentifier handles loop boundaries.",
+   "affects": "Loop recovery; affects which loops are identified and how they're structured.",
+   "anchor": "optimization_pass.py:142-145, decompiler.py:569-571"
+  },
+  {
+   "name": "Cache System (BlockCache)",
+   "kind": "override",
+   "description": "OptimizationPass._simplify_block accepts cache dict that stores reaching definitions and propagation results. User can pre-populate cache or let it auto-populate.",
+   "affects": "Block simplification performance and correctness; stale cache leads to missed optimizations.",
+   "anchor": "optimization_pass.py:32, 318-405"
+  },
+  {
+   "name": "Static VVar / Buffer Annotations",
+   "kind": "annotation",
+   "description": "Decompiler accepts static_vvars dict and static_buffers dict mapping addresses to type information. Used by StaticVVarRewriter and other passes.",
+   "affects": "Variable recovery and naming; improves decompilation of static/global variables.",
+   "anchor": "decompiler.py:96, 150-151"
+  },
+  {
+   "name": "Clinic-Level Optimization Scratch Space",
+   "kind": "API",
+   "description": "Clinic and Decompiler maintain optimization_scratch dict that can be used by passes to cache/share data across multiple passes.",
+   "affects": "Inter-pass communication; allows passes to build on prior pass results.",
+   "anchor": "decompiler.py:191, clinic.py:~400-450, optimization_pass.py:161"
+  },
+  {
+   "name": "ARCHES and PLATFORMS Attributes",
+   "kind": "annotation",
+   "description": "Each OptimizationPass declares ARCHES (list of arch names like ['x86', 'x86-64']) and PLATFORMS (like ['linux', 'windows']). Passes filtered by project.arch and project.simos.name.",
+   "affects": "Which passes run on specific architectures/platforms; allows arch-specific optimizations.",
+   "anchor": "optimization_pass.py:74-75, presets/preset.py:17-37"
+  },
+  {
+   "name": "STRUCTURING Attribute",
+   "kind": "annotation",
+   "description": "OptimizationPass.STRUCTURING lists compatible structuring algorithms (e.g., [SAILRStructurer.NAME]). Passes skipped if current structurer not in list.",
+   "affects": "DURING_REGION_IDENTIFICATION and AFTER_STRUCTURING passes; ensures passes only run with compatible structuring.",
+   "anchor": "optimization_pass.py:77-79, decompiler.py:549-554, 614-619"
+  },
+  {
+   "name": "Goto Manager State",
+   "kind": "state",
+   "description": "StructuringOptimizationPass maintains _goto_manager (GotoManager) that tracks all gotos in current graph. Passes can inspect/validate goto count changes.",
+   "affects": "DURING_REGION_IDENTIFICATION pass decisions; prevent_new_gotos and goto quality checks.",
+   "anchor": "optimization_pass.py:450, 559-561, 592-643"
+  },
+  {
+   "name": "Control Flow Structure Counters",
+   "kind": "state",
+   "description": "StructuringOptimizationPass computes ControlFlowStructureCounter (loop type counts, goto target frequency) before and after optimization to assess relative quality.",
+   "affects": "Quality validation; _improves_relative_quality() uses these to reject degrading optimizations.",
+   "anchor": "optimization_pass.py:655-660, 668-698"
+  },
+  {
+   "name": "Decompilation Notes",
+   "kind": "API",
+   "description": "Decompiler and passes can record DecompilationNote objects keyed by name. Notes propagate to codegen and can be used for human refinement.",
+   "affects": "Annotation of decompilation artifacts; guides LLM/human post-processing.",
+   "anchor": "decompiler.py:193, optimization_pass.py:150"
+  }
+ ],
+ "insights": [
+  "The decompiler is NOT a pure linear compiler pipeline. Although stages fire in order on first pass (AIL creation -> SSA L0 -> SSA L1 -> region ID -> structuring -> codegen), DURING_REGION_IDENTIFICATION passes trigger a fixed-point loop where RegionIdentifier is re-run after each graph edit. This is the fundamental feedback loop that distinguishes SAILR (angr's structuring system) from traditional compilers.",
+  "The unit of scheduling is NOT a monolithic 'pass' but an (OptimizationPassStage, graph_iteration) pair. The same pass class may execute multiple times with different graph state if structuring/region ID re-runs. This breaks the typical compiler IR assumption that a pass runs once with final data.",
+  "Graph topology changes are batched and deferred. RegionIdentifier may create synthetic blocks (for loop successors) without updating the original graph if update_graph=False, forcing later stages (region-simplification passes) to manage both the 'original' graph and the 'semantically-updated' regions. This dual representation is critical to SAILR's iterative de-optimization.",
+  "The critical state shared across passes is: (1) reaching_definitions (recomputed after graph edits), (2) block address/index mappings (updated after graph edits), (3) goto_manager state (tracks which edges are gotos, critical for de-optimization decisions), (4) control flow structure counters (loop/goto quality heuristics). These are rebuilt/refreshed after each graph change.",
+  "Peephole optimizations are invoked at TWO levels: (1) within block simplification (AFTER_SINGLE_BLOCK, AFTER_*_SIMPLIFICATION stages) as part of AILBlockSimplifier, and (2) post-structuring on sequence nodes. The block-level peephole suite is much larger (~60 optimizations) and operates on AIL expressions/statements; the post-structuring suite is smaller and operates on high-level structured code.",
+  "Pass ordering within a stage is significant. Within AFTER_GLOBAL_SIMPLIFICATION, passes are ordered to maximize de-optimization effectiveness: ReturnDuplicatorHigh runs before DeadblockRemover (which removes now-dead blocks created by duplication), and before more structural passes (ITERegionConverter, CrossJumpReverter) that depend on return structure.",
+  "The 'preset' system is a user-facing specialization mechanism but does NOT provide orthogonal configuration. Presets are pre-ordered lists of pass classes; there's no declarative 'enable/disable' flag per preset-pass pair. Custom passes must be injected via register_optimization_pass() or custom optimization_passes list.",
+  "The constraint system for DURING_REGION_IDENTIFICATION passes (prevent_new_gotos, must_improve_rel_quality, recover_structure_fails) acts as a 'rewind policy' that is PER-PASS-CLASS, not global. Different passes have different risk tolerance: DuplicationReverter requires relative quality improvement; CrossJumpReverter allows strictly fewer gotos but not equal.",
+  "Failure modes are recoverable but silent. If a DURING_REGION_IDENTIFICATION pass produces an unstructurable graph, it is silently reverted (if recover_structure_fails=True) or discarded (if False). No exception is raised; the pass simply 'doesn't apply' to that function. This allows graceful degradation on complex binaries.",
+  "The decompiler exhibits a form of 'optimistic concurrency control' where later-stage decisions (structuring success/failure, loop quality) retroactively validate earlier-stage decisions (graph edits). If structuring fails, the graph edit is rolled back. This is NOT typical in compilers, which usually fail-fast.",
+  "SAILR (SAI Lattice Reasoning) is implemented across multiple passes, not as a monolithic algorithm. DuplicationReverter (ISM - Instruction Stream Merging), CrossJumpReverter (ISC - Instruction Stream Consolidation), ConstPropOptReverter, and LoweredSwitchSimplifier together implement the SAILR doptimization framework. Each is independently schedulable and constrainable, allowing fine-grained control.",
+  "The reach-definitions analysis is recomputed AFTER every graph-edit in DURING_REGION_IDENTIFICATION, but NOT re-run during the fixed-point iteration of a single pass (e.g., DuplicationReverter's internal max_opt_iters loop). This is a trade-off: stale reaching definitions may miss some optimizations within a pass, but fresh definitions are expensive and only computed between passes.",
+  "Custom block-by-block simplification can be inserted via the 'cache' parameter to _simplify_block(), allowing external analysis tools to pre-populate reaching definitions and propagator state. This is an underdocumented but powerful extension point for domain-specific optimizations."
+ ]
+}

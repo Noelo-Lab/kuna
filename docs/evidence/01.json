@@ -1,0 +1,331 @@
+{
+ "decompiler": "Ghidra C++ (frontend bytecode \u2192 p-code CFG)",
+ "focus": "Control-flow generation (generateOps/generateBlocks in flow.cc/hh) from entry point through multistage jump-table recovery, with feedback loops where later-stage analysis triggers decompilation restart",
+ "pipeline": [
+  {
+   "name": "Flow Initialization",
+   "description": "FlowInfo object constructed with reference to Funcdata, PcodeOpBank, BlockGraph, and call-site list. Architecture's global flow options, max instruction count, and function address range are configured. Override system checked for flow-level directives.",
+   "anchor": "flow.cc:26-76, funcdata_op.cc:765-770",
+   "inputs": "Funcdata, Architecture config, Override table, range bounds",
+   "outputs": "FlowInfo state (flags, bounds, visited map, addrlist, tablelist, injectlist)"
+  },
+  {
+   "name": "Machine Instruction Decoding \u2192 P-code Emission",
+   "description": "Each machine instruction at reachable address is decoded via Architecture::translate\u2192oneInstruction(), producing raw p-code ops in the dead list. Errors (UnimplError, BadDataError) are caught: either artificial HALT ops inserted with warnings, or exceptions thrown depending on error mode flags. Visited address map tracks instruction size and SeqNum of first p-code op.",
+   "anchor": "flow.cc:383-482",
+   "inputs": "Machine instruction address, emitter state, error flags (ignore_unimplemented, error_unimplemented, error_baddata)",
+   "outputs": "PcodeOp ops in dead list, visited[address]={seqnum,size}, minaddr/maxaddr bounds, error flags set if unimplemented/baddata encountered",
+   "substeps": [
+    "flow.cc:421: oneInstruction(emitter,curaddr) \u2192 p-code ops",
+    "flow.cc:423-457: Error handling with flag updates",
+    "flow.cc:458-464: visited[curaddr] recording, bounds update",
+    "flow.cc:471-476: Flow override application (getFlowOverride\u2192overrideFlow)"
+   ]
+  },
+  {
+   "name": "Control-Flow Analysis per Instruction",
+   "description": "P-code ops from instruction are scanned for control-flow operations (BRANCH, CBRANCH, BRANCHIND, CALL, CALLIND, RETURN). Each is processed: branches add target addresses to addrlist (or mark as local block starts if relative branches within instruction); BRANCHIND ops added to tablelist for later jump-table recovery; CALL/CALLIND ops create FuncCallSpecs and check override/prototype info; CALLOTHER with injected type added to injectlist.",
+   "anchor": "flow.cc:264-372",
+   "inputs": "PcodeOp sequence for instruction, startbasic flag (whether next op starts block), FuncCallSpecs *fc (if injection in progress)",
+   "outputs": "Updated addrlist, tablelist, injectlist, data.opMarkStartBasic() calls on branch targets, FuncCallSpecs objects in qlst, block start markers",
+   "substeps": [
+    "flow.cc:277-328: CBRANCH/BRANCH/BRANCHIND case handling (relative vs absolute, new addresses)",
+    "flow.cc:329-343: RETURN/CALL/CALLIND handling with setupCallSpecs/setupCallindSpecs",
+    "flow.cc:344-349: CALLOTHER injection detection"
+   ]
+  },
+  {
+   "name": "Fall-through Instruction Sequence Processing",
+   "description": "Addresses in addrlist are popped and fall-thru instruction sequences processed until a non-fallthru is encountered (branch/return) or bound reached. For each address, processInstruction() is called to decode, analyze control-flow, and enqueue next address if fallthru. Bounds prevent revisiting already-seen instructions (reinterpreted error) and enforce forward progress.",
+   "anchor": "flow.cc:545-580",
+   "inputs": "addrlist, visited map, bounds (baddr,eaddr)",
+   "outputs": "Expanded visited map, expanded addrlist (with new branch targets), reinterpreted warnings if address overlaps prior instruction"
+  },
+  {
+   "name": "p-code Injection Handling (During Flow)",
+   "description": "After all basic fall-thru flow is traced (injectPcode phase 1), any CALLOTHER (user-defined op) needing injection, or CALL/CALLIND marked as inline/injected, is processed. For inline calls, the sub-function's Funcdata is looked up (queryCall), and inlineSubFunction or injectSubFunction is called to replace CALL with either cloned sub-function p-code (with recursion checking) or injected p-code from library. Marked RETURN ops in inlined functions become branches to return address. Changes may mark code as unreachable.",
+   "anchor": "flow.cc:1311-1339, 1226-1287",
+   "inputs": "injectlist, qlst (call specs), isInline/getInjectId flags, Funcdata lookup, FuncProto copy effects",
+   "outputs": "Injected p-code ops in dead list, call specs deleted or retained, possible_unreachable flag set",
+   "substeps": [
+    "flow.cc:656-672: queryCall() \u2014 lookup Funcdata, apply proto effects",
+    "flow.cc:1226-1261: inlineSubFunction() \u2014 recursion tracking, inlineFlow() call, hard/easy model detection",
+    "flow.cc:1268-1287: injectSubFunction() \u2014 payload lookup and injection"
+   ]
+  },
+  {
+   "name": "Jump-Table Recovery (Phase 1: Basic Model)",
+   "description": "For each BRANCHIND in tablelist, recoverJumpTable() is called on a partial Funcdata instance (using current p-code flow only). JumpModel hierarchy (JumpBasic, JumpBasic2, JumpBasicOverride, JumpAssisted) analyzes emulated paths from switch variable to BRANCHIND, extracts address table and case labels, detects guards. If recovery succeeds, new addresses from table are enqueued and additional fall-thru flow is traced. If partial (only 1 address recovered when more expected), marked as isPartial() for multistage re-analysis later.",
+   "anchor": "flow.cc:1411-1442, jumptable.cc:2620-2665 (recoverAddresses)",
+   "inputs": "BRANCHIND ops in tablelist, current visited map and p-code, emulation engine (EmulateFunction), JumpModel::recoverModel()",
+   "outputs": "JumpTable objects with address table (or partial table with 1 entry), marked as partial if incomplete, new addresses enqueued",
+   "substeps": [
+    "jumptable.hh:243-342: JumpModel hierarchy definition",
+    "jumptable.hh:374-427: JumpBasic \u2014 PathMeld construction, normalized variable detection, guard analysis",
+    "jumptable.cc:2612-2665: buildAddresses() \u2014 emulate paths, extract target addresses"
+   ]
+  },
+  {
+   "name": "Post-Injection and Multistage Check",
+   "description": "After injection and jump-table recovery loop, checkContainedCall() detects PIC constructions (calls to already-traced code converted to branches). Then checkMultistageJumptables() queries Override for multistage directives registered by earlier stages, marking JumpTables as partial and re-adding their BRANCHIND ops to tablelist if needed.",
+   "anchor": "flow.cc:798-805, 1345-1401",
+   "inputs": "Override::queryMultistageJumptable(), isPartial() flag on JumpTables, recoverCount",
+   "outputs": "tablelist repopulated if multistage needed, partial flag set, may trigger full loop restart via setRestartPending()"
+  },
+  {
+   "name": "Block Generation from P-code",
+   "description": "Once all p-code ops are generated in dead list, generateBlocks() organizes them into basic blocks. Unprocessed addresses are filled in with artificial HALT ops, edges collected from branch targets and fall-thru, p-code split into PcodeBlockBasic objects, and directed edges created between blocks. Entry block ensured to have no predecessors.",
+   "anchor": "flow.cc:808-829",
+   "inputs": "obank (dead list of all p-code ops), marked block-start ops, tablelist and unprocessed addresses",
+   "outputs": "bblocks (BlockGraph) with PcodeBlockBasic nodes and directed edges, address ranges assigned to blocks",
+   "substeps": [
+    "flow.cc:873-885: fillinBranchStubs() \u2014 create HALT ops for unprocessed addresses",
+    "flow.cc:890-961: collectEdges() \u2014 extract block edges from BRANCH/BRANCHIND/CBRANCH/fallthru targets",
+    "flow.cc:967-1001: splitBasic() \u2014 allocate PcodeBlockBasic, move p-code ops into blocks, assign ranges",
+    "flow.cc:1005-1021: connectBasic() \u2014 create BlockGraph edges from collected pairs"
+   ]
+  },
+  {
+   "name": "Call-Site Setup and Prototype Overrides",
+   "description": "During control-flow analysis, setupCallSpecs() creates FuncCallSpecs for each CALL op, applying any Override::applyPrototype() and then queryCall() to bind to discovered Funcdata and copy flow effects (isNoReturn, isInline). setupCallindSpecs() does similar for CALLIND, also checking Override::applyIndirect() to convert indirect to direct if overridden. If sub-function marked as noreturn, artificial HALT replaces fall-thru.",
+   "anchor": "flow.cc:680-723",
+   "inputs": "CALL/CALLIND ops, Override table (prototype, indirect, deadcode overrides), function symbol table lookup",
+   "outputs": "FuncCallSpecs in qlst, input Varnode replaced with VarnodeCallSpecs, noreturn HALTs inserted if needed",
+   "substeps": [
+    "flow.cc:688: applyPrototype(data,*res) \u2014 apply prototype override from Override",
+    "flow.cc:689: queryCall(*res) \u2014 lookup Funcdata, copy proto effects",
+    "flow.cc:636-651: checkForFlowModification() \u2014 detect isInline(), isNoReturn()"
+   ]
+  }
+ ],
+ "feedback_loops": [
+  {
+   "name": "Multistage Jump-Table Restart",
+   "trigger": "During matchModel (label recovery phase after simplification), if recovered model's table size != initial partial table size (typically 1\u2192many), and override has queried multistageJumptable for the address",
+   "rewinds_to": "generateOps full restart: Funcdata::setRestartPending(true) triggers ActionRestartGroup to re-run generateOps with updated flow information",
+   "mechanism": "jumptable.cc:2712-2717: matchModel() detects size mismatch, calls fd->getOverride().insertMultistageJump(opaddress) + setRestartPending(). Later action harness re-invokes generateOps with the multistage flag set, causing tablelist ops to be re-analyzed with additional simplified flow.",
+   "anchor": "jumptable.cc:2696-2721 (matchModel), jumptable.cc:2865-2878 (checkForMultistage), flow.cc:798-805 (multistage reinsert)"
+  },
+  {
+   "name": "Partial Jump-Table with Additional Flow",
+   "trigger": "Jump-table recovery yields only 1 address when more expected (isPartial=true), and there are multiple unrecovered BRANCHIND ops in same pass. recoverJumpTables marks as partial, enqueues to notreached list.",
+   "rewinds_to": "Jump-table recovery loop (same generateOps call, line 781-805): tablelist re-populated at line 801, loop continues to trace more flow",
+   "mechanism": "flow.cc:1431-1438: if (jt->isPartial()) and tablelist.size()>1 and recoverCount\u22641, save op to notreached. After inlining, notreached ops added back to tablelist (line 801), allowing re-recovery with more flow context.",
+   "anchor": "flow.cc:1411-1442, jumptable.cc:2620-2665"
+  },
+  {
+   "name": "Inline Sub-Function Flow Injection",
+   "trigger": "During xrefControlFlow processing, CALL op with isInline()=true is queued in injectlist. Later, injectPcode() calls inlineSubFunction() on FuncCallSpecs.",
+   "rewinds_to": "Same generateOps call: inlineFlow() clones Funcdata for sub-function, runs full FlowInfo::generateOps/generateBlocks on clone, then copies p-code and updated visited/addrlist into parent flow, allowing new addresses to be processed",
+   "mechanism": "flow.cc:1311-1339: injectPcode iterates injectlist, calls inlineSubFunction (line 1331) or injectSubFunction. inlineSubFunction (line 1226-1261) calls data.inlineFlow(fd, *this, fc->getOp()), which at funcdata_op.cc:867 generates ops on clone, then inlineClone (flow.cc:1058-1083) merges visited/addrlist back into parent, allowing fallthru() loop to continue with new addresses.",
+   "anchor": "flow.cc:1226-1261, funcdata_op.cc:853-900, flow.cc:1058-1083"
+  },
+  {
+   "name": "Override-Driven Flow Modification at Instruction",
+   "trigger": "During processInstruction, flowoverride flags are consulted. If Override::BRANCH/CALL/RETURN specified, overrideFlow() rewrites the primary control-flow op (CALL\u2192BRANCH, BRANCH\u2192RETURN, etc).",
+   "rewinds_to": "Same instruction processing: overrideFlow() modifies p-code ops in-place at line 475, then xrefControlFlow is re-executed on same ops, allowing new control-flow interpretation",
+   "mechanism": "flow.cc:415-418: flowoverride = data.getOverride().getFlowOverride(curaddr); flow.cc:474-476: if (flowoverride != Override::NONE) data.overrideFlow(curaddr,flowoverride); xrefControlFlow then processes modified ops.",
+   "anchor": "flow.cc:383-482, override.hh:50-92"
+  },
+  {
+   "name": "JumpTable Model Mismatch Restart (Second Stage)",
+   "trigger": "recoverLabels() phase (post-simplification) attempts to apply model to addresses recovered during flow generation. If model derived from partial flow doesn't match full address table size discovered during simplification, matchModel() triggers restart.",
+   "rewinds_to": "Complete function restart: ActionRestartGroup causes Funcdata to call clearJumpTables (clearing non-override models), then re-invoke generateOps/generateBlocks with preserved override and partial results",
+   "mechanism": "jumptable.cc:2696-2721: matchModel re-runs recoverModel(fd) on current Funcdata. If jmodel->getTableSize() != addresstable.size() and addresstable.size()==1 (incomplete), insertMultistageJump + setRestartPending trigger full restart.",
+   "anchor": "jumptable.cc:2696-2721, funcdata_block.cc:42-59 (clearJumpTables)"
+  },
+  {
+   "name": "PIC Detection and Call-to-Branch Conversion",
+   "trigger": "During checkContainedCall(), if a CALL target falls within already-traced code (detected by visited map overlap check), CALL is converted to BRANCH.",
+   "rewinds_to": "Block generation: convertedCall may make original fall-thru code unreachable. After block generation, if hasPossibleUnreachable(), calls removeUnreachableBlocks (false,true) to clean up.",
+   "mechanism": "flow.cc:1345-1389: visited map checked against call target address. If overlap detected, opSetOpcode(op, CPUI_BRANCH), qlst entry deleted, targets marked as block starts. Later, funcdata_block.cc checks this and removes unreachable blocks.",
+   "anchor": "flow.cc:1345-1389, flow.cc:827-828"
+  },
+  {
+   "name": "Unimplemented/BadData Truncation with Unreachable Code",
+   "trigger": "During processInstruction, if unimplemented or bad-instruction error occurs (and not in error mode), artificial HALT inserted, and stream terminates. This leaves addrlist entries unfollowed.",
+   "rewinds_to": "Block generation: findUnprocessed() collects unvisited addrlist entries as unprocessed. fillinBranchStubs() then creates artificial HALT ops for them. setPossibleUnreachable() flag ensures removeUnreachableBlocks is called after block generation.",
+   "mechanism": "flow.cc:393-405: if (insn_count >= insn_max) or error, artificialHalt inserted, warnings set. Line 401-403 sets toomanyinstructions_present flag. flow.cc:827-828 calls removeUnreachableBlocks if flag set.",
+   "anchor": "flow.cc:383-405, flow.cc:834-847, flow.cc:873-885"
+  },
+  {
+   "name": "Injection Recursion Prevention and Injection Cycle Detection",
+   "trigger": "During inlining or injection, if nested function call detected and marked as injected, recursion is prevented by queryCall checking if entry address matches current fc->getEntryAddress().",
+   "rewinds_to": "No rewind: prevention is in-line. setupCallSpecs line 690-693 cancels inject ID if cycle detected. However, if inlineSubFunction detects recursion via inline_recursion set, it warns and returns false, preventing inline and keeping original CALL.",
+   "mechanism": "flow.cc:690-693: if (fc->getEntryAddress() == res->getEntryAddress()) res->cancelInjectId(). flow.cc:1237-1242: inline_recursion->find() checks for already-inlined function.",
+   "anchor": "flow.cc:680-695, flow.cc:1226-1261"
+  }
+ ],
+ "decision_points": [
+  {
+   "name": "Error Handling Mode for Out-of-Bounds Flow",
+   "where": "Machine instruction decoding (processInstruction)",
+   "decision": "Global/local flags control whether out-of-bounds flow throws exception, truncates with warning, or is silently ignored. Flag: error_outofbounds (exception), ignore_outofbounds (silent), or warning-only (default).",
+   "alternatives": "If different flag set: exception halts immediately vs warning+truncation vs silent skip; downstream flow incomplete vs marked with flag.",
+   "anchor": "flow.hh:60-74 (enum), flow.cc:519-540 (handleOutOfBounds), funcdata_op.cc:766"
+  },
+  {
+   "name": "Unimplemented Instruction Response",
+   "where": "Machine instruction decode error handling",
+   "decision": "Three modes: ignore (treat as NOP, size=1), error (exception), or truncate (artificial HALT, warning). Controlled by ignore_unimplemented/error_unimplemented flags.",
+   "alternatives": "Ignore mode may miss real flow; error mode stops immediately; truncate mode logs but continues \u2014 each changes instruction count and unimplemented_present flag state.",
+   "anchor": "flow.cc:423-443, flow.hh:60-74",
+   "current_override": "setFlags() method, glb->flowoptions global setting, passed to FlowInfo constructor"
+  },
+  {
+   "name": "Maximum Instructions Threshold Handling",
+   "where": "processInstruction insn_count check",
+   "decision": "If insn_count >= insn_max (typically very large), either throw exception or truncate with warning. Controlled by error_toomanyinstructions flag.",
+   "alternatives": "Exception: immediate stop. Warning+truncate: inserts HALT, sets toomanyinstructions_present, continues block generation on partial flow.",
+   "anchor": "flow.cc:393-405, flow.hh:95",
+   "current_override": "setMaximumInstructions() method"
+  },
+  {
+   "name": "Inline vs. Inject Decision for Call Sites",
+   "where": "injectPcode() processing of FuncCallSpecs marked as inline",
+   "decision": "If fc->isInline(), check getInjectId() first (injected prototype from call-fixup); if >=0, use injection payload. Otherwise, attempt inlineSubFunction to clone sub-function p-code. If neither succeeds, CALL remains in place.",
+   "alternatives": "Injection chosen: payload p-code replaces CALL. Inline chosen: sub-function p-code cloned. Both skipped: CALL unchanged. Each affects data-flow and whether sub-function symbols are pulled in.",
+   "anchor": "flow.cc:1311-1339, flow.cc:1323-1335",
+   "current_override": "isInline() and getInjectId() flags on FuncCallSpecs, override system can set both"
+  },
+  {
+   "name": "Hard vs. Easy Inlining Model Selection",
+   "where": "inlineSubFunction \u2192 inlineFlow determination",
+   "decision": "inlineFlow() checks testHardInlineRestrictions and checkEZModel to determine if inlined function's p-code preserves addresses (hard) or collapses to single address (EZ). Affects recursion tracking and whether return-to-address branching is needed.",
+   "alternatives": "Easy model: all ops assigned call address, RETURN dropped. Hard model: ops preserve address, RETURN\u2192branch to return addr. Easy fails: hard attempted; hard fails: inlining aborts.",
+   "anchor": "funcdata_op.cc:853-900, flow.hh:153-158",
+   "current_override": "test results of testHardInlineRestrictions and checkEZModel"
+  },
+  {
+   "name": "Partial Jump-Table Persistence Across Multiple Recovery Attempts",
+   "where": "recoverJumpTables notreached handling",
+   "decision": "If JumpTable is partial (1 address) and there are >1 BRANCHIND ops in same pass and recoverCount\u22641, save to notreached and re-attempt later with more flow. Otherwise, mark complete.",
+   "alternatives": "If marked complete: no re-attempt, table assumed final. If re-queued: may recover more addresses after additional flow tracing. Affects final address table size and whether jump case labels are generated.",
+   "anchor": "flow.cc:1431-1438, jumptable.cc:2620-2665",
+   "current_override": "tablelist.size()>1 and recoverCount heuristic"
+  },
+  {
+   "name": "Jump-Table Recovery Model Hierarchy Selection",
+   "where": "JumpTable::recoverModel instantiation and attempt",
+   "decision": "Heuristic tries JumpBasic, falls back to JumpBasic2 (dual-path), then JumpModelTrivial (direct input as switch var). Override can force JumpBasicOverride (manual). Selection depends on PathMeld structure, guard detection, and whether multiple paths converge.",
+   "alternatives": "JumpBasic: standard model, may fail if guards too complex. JumpBasic2: handles dual default+range paths. Trivial: minimal analysis, uses BRANCHIND input as switch var. Override: ignores recovery, uses manual address table. Each affects case label accuracy and model complexity.",
+   "anchor": "jumptable.cc:2600-2665 (recoverModel), jumptable.hh:374-494 (hierarchy)",
+   "current_override": "Override system can pre-insert JumpBasicOverride; recoverModel heuristic chooses among others"
+  },
+  {
+   "name": "Multistage Jump-Table Trigger Condition",
+   "where": "checkForMultistage and matchModel restart logic",
+   "decision": "Multistage restart triggered if: (1) addresstable.size()==1 (partial), (2) partialTable==false (not already marked partial), (3) recoverCount\u22641 (first or second attempt), (4) queryMultistageJumptable returns true. Alternatively, matchModel detects mismatch and inserts override.",
+   "alternatives": "If condition fails: table accepted as final. If triggered: full function restart with multistage=true, re-analyzes with simplified flow. Affects whether switch recovery completes or cycles.",
+   "anchor": "jumptable.cc:2865-2878 (checkForMultistage), jumptable.cc:2712-2717 (matchModel mismatch)",
+   "current_override": "Override::insertMultistageJump() pre-registers addresses; matchModel heuristic auto-detects size mismatch"
+  },
+  {
+   "name": "Context-Dependent Instruction Decoding",
+   "where": "oneInstruction via ContextDatabase::getContext()",
+   "decision": "Before decoding each instruction, context bits (e.g. THUMB mode, endianness mode) are queried from ContextDatabase and passed to SLEIGH decoder. Context can change between instructions via ContextSet commitments.",
+   "alternatives": "Different context \u2192 different instruction set/sizes decoded. Mismatch in context assumption \u2192 wrong p-code. Affects reinterpreted detection.",
+   "anchor": "flow.cc:421, globalcontext.hh:118-177, context.hh:76-153",
+   "current_override": "ContextDatabase implementation (ContextInternal or ContextGhidra), setContextChangePoint/setContextRegion methods"
+  },
+  {
+   "name": "Relative vs. Absolute Branch Target Resolution",
+   "where": "branchTarget and findRelTarget in xrefControlFlow",
+   "decision": "If branch input is constant (relative SLEIGH offset), findRelTarget maps via sequence numbers to internal p-code op. If internal op found, use it. Otherwise, fall-thru address computed from visited map. If non-constant (absolute address), target(addr) looked up directly.",
+   "alternatives": "Relative resolution fails: may indicate branch to next instruction (fallthru) vs genuine internal branch. Affects whether relative branch creates explicit block edge vs increments fallthru count.",
+   "anchor": "flow.cc:149-199 (findRelTarget, branchTarget), flow.cc:280-293 (CBRANCH handling)"
+  }
+ ],
+ "intervention_surfaces": [
+  {
+   "name": "Flow Options (Global and Per-Function)",
+   "kind": "option",
+   "description": "Architecture::flowoptions bitmap passed to FlowInfo::setFlags(). Controls error mode (exception vs truncation) for out-of-bounds, unimplemented, reinterpreted, and too-many-instructions conditions.",
+   "affects": "processInstruction error handling (flow.cc:383-405, 519-540), clearProperties flag reset",
+   "anchor": "flow.hh:60-74, funcdata_op.cc:766"
+  },
+  {
+   "name": "Maximum Instructions Limit",
+   "kind": "option",
+   "description": "Architecture::max_instructions setting. Defines insn_max threshold; if reached, flow truncated or exception thrown.",
+   "affects": "processInstruction count check (flow.cc:393-405), artificial HALT insertion, toomanyinstructions_present flag",
+   "anchor": "flow.hh:95, funcdata_op.cc:770"
+  },
+  {
+   "name": "Override System (Comprehensive)",
+   "kind": "override",
+   "description": "Funcdata::getOverride() provides multiple override classes: insertForceGoto (branch destination), insertMultistageJump (trigger restart), insertIndirectOverride (call\u2192direct), insertProtoOverride (function signature), insertDeadcodeDelay, insertFlowOverride (CALL\u2194BRANCH). Consulted at multiple points during flow generation.",
+   "affects": "processInstruction flow override (line 474-475), setupCallSpecs prototype (line 688), setupCallindSpecs indirect\u2192direct conversion (line 711), checkForMultistage restart trigger (jumptable.cc:2873), injectPcode injection fallback (line 1324)",
+   "anchor": "override.hh:50-92, flow.cc:41, 474-475, 688, 711, 1323-1324"
+  },
+  {
+   "name": "Function Prototype Models and Inline Directives",
+   "kind": "annotation",
+   "description": "FuncProto::isInline() flag marks function for inlining during flow generation. FuncCallSpecs can be marked as isInline() via override or prototype discovery. getInjectId()\u22650 marks for injection instead of inlining.",
+   "affects": "injectPcode processing (flow.cc:1323-1335), inlineSubFunction vs injectSubFunction selection, queryCall proto copying (flow.cc:663-669)",
+   "anchor": "flow.cc:639-651, 1311-1339, funcdata.hh (FuncProto, FuncCallSpecs)"
+  },
+  {
+   "name": "Jump-Table Manual Override (JumpBasicOverride)",
+   "kind": "override",
+   "description": "setOverride() method on JumpTable allows manual specification of address table, normalized switch address, and hash. These are pre-set before recoverModel and bypass automated recovery.",
+   "affects": "JumpTable::recoverModel selection (jumptable.cc:2600-2665), avoids JumpBasic/JumpBasic2 recovery, uses override-provided addresses and labels",
+   "anchor": "jumptable.hh:455-494, jumptable.cc:2604 (setOverride)"
+  },
+  {
+   "name": "Context Database (SLEIGH Context Settings)",
+   "kind": "API",
+   "description": "ContextDatabase obtained via Architecture::context. Implementations include ContextInternal (in-memory) and ContextGhidra (Ghidra client). setContextChangePoint() and setContextRegion() register context changes at specific addresses. getContext() queries at each instruction decode.",
+   "affects": "Machine instruction decoding (oneInstruction line 421), determines which SLEIGH instruction set used, affects instruction size and p-code generation",
+   "anchor": "globalcontext.hh:118-177, 259-290, flow.cc:421"
+  },
+  {
+   "name": "User-Defined p-code Op Injection Library",
+   "kind": "API",
+   "description": "PcodeInjectLibrary provided by Architecture. getPayload(id) returns InjectPayload for call-fixup or callother-fixup. Payloads can be registered via decodeInject() (from XML) or manualCallFixup()/manualCallOtherFixup() (programmatically).",
+   "affects": "injectUserOp processing (flow.cc:1195-1220), injectSubFunction payload lookup (flow.cc:1279), injection into dead list during doInjection",
+   "anchor": "pcodeinject.hh:175-274, flow.cc:1132-1220"
+  },
+  {
+   "name": "Per-Function Restart Pending Flag",
+   "kind": "callback",
+   "description": "Funcdata::setRestartPending(true) signals that decompilation should restart this function. Action framework (ActionRestartGroup) checks flag and re-runs generateOps/generateBlocks with preserved state (override, partial models).",
+   "affects": "Multistage jump-table restart (jumptable.cc:2716), matchModel restart trigger, causes full loop restart in caller",
+   "anchor": "funcdata.hh (Funcdata::setRestartPending), jumptable.cc:2715-2716"
+  },
+  {
+   "name": "Possible Unreachable Code Flag and Removal",
+   "kind": "option",
+   "description": "If possible_unreachable flag set (by call-to-branch conversion, truncated flow, or inlining), removeUnreachableBlocks is called after block generation. Controls whether unreachable code is removed (true) or kept with warning.",
+   "affects": "Block graph cleanup (funcdata_block.cc checks), affects final CFG structure and following analysis phases",
+   "anchor": "flow.hh:71-72, flow.cc:827-828, flow.cc:1258 (setPossibleUnreachable)"
+  },
+  {
+   "name": "Jump-Table Partial Recovery and Re-attempt Heuristic",
+   "kind": "option",
+   "description": "Heuristic: if JumpTable is partial (1 address), and >1 BRANCHIND in pass, and recoverCount\u22641, queue to notreached for re-attempt. Adjustable via tablelist.size() and recoverCount logic.",
+   "affects": "Jump-table recovery loop (flow.cc:781-805), determines whether partial table is immediately completed or re-attempted with more flow",
+   "anchor": "flow.cc:1431-1438, jumptable.hh:596, 608"
+  },
+  {
+   "name": "Instruction Reinterpretation Error Handling",
+   "kind": "option",
+   "description": "If instruction at address overlaps previously-visited instruction at different boundary, reinterpreted() is called. Controlled by error_reinterpreted flag: exception vs warning.",
+   "affects": "Control-flow correctness validation (flow.cc:606-629), may abort analysis if self-modifying or SLEIGH address aliasing detected",
+   "anchor": "flow.hh:64, flow.cc:504-629"
+  }
+ ],
+ "insights": [
+  "Decompilers are NOT linear: although generateOps and generateBlocks fire in order, feedback loops are pervasive. Multistage jump-table recovery explicitly restarts the entire function when late-stage analysis (simplification) discovers control-flow mismatches. This is the canonical 'earlier stage must be re-run' pattern.",
+  "The unit of restart is the function, not the stage. When setRestartPending(true) is called (typically from matchModel or a post-simplification action), the entire Funcdata is reset via clearJumpTables(), and generateOps/generateBlocks re-execute, but with preserved Override directives and partial jump-table results. This allows incremental refinement of switch recovery across multiple passes.",
+  "Jump-table recovery is special: it spans both flow generation (initial model recovery via PathMeld) and simplification (label recovery via unnormalized variable backtracking). Partial results from early recovery are stored and re-matched later, with mismatch triggering restart. This splits recovery across two pipeline stages.",
+  "Injection is deeply coupled to flow following. Three flavors: (1) user-op injection (CALLOTHER), (2) function injection (call-fixup replaces CALL), (3) function inlining (clones sub-function p-code). Inlining and injection are queued during flow-following but executed after fall-thru flow is complete, allowing recursive inlining detection. Changes from inlining (new addresses, possible unreachable) trigger recursion through the fallthru() loop.",
+  "Override system is the main user-facing intervention point. It pre-registers decisions (force goto, multistage jump, indirect override, prototype, deadcode delay) before any analysis runs. Most overrides are checked during instruction processing (flow override at line 474), call setup (prototype/indirect at lines 688, 711), and jump-table recovery (multistage at jumptable.cc:2873). User annotations survive restarts and guide refinement.",
+  "Context bits (e.g. THUMB mode) are woven into every instruction decode. If context changes mid-function, oneInstruction() must account for it. Context commits from instruction execution are recorded but not applied until next instruction. This enables modeling context-sensitive instruction sequences but requires careful ContextSet tracking.",
+  "The visited map is the backbone of flow reachability. It records {address \u2192 {seqnum, size}} for every instruction decoded. Used to detect: (1) already-seen addresses (avoid re-decoding), (2) reinterpreted bytes (address overlaps), (3) fall-thru boundaries (for bound checking). It persists across inline cloning and partial recovery, allowing incremental flow refinement.",
+  "Error handling is mode-driven: each error type (out-of-bounds, unimplemented, bad-data, too-many-insts, reinterpreted) has three modes: ignore (silent), error (exception), or truncate (warning + halt). The choice is global (flowoptions) but can be localized by clearing/setting flags during analysis. Truncation inserts artificial HALT ops and marks flags (unimplemented_present, etc.) for post-processing.",
+  "Block generation is lazy. Until generateBlocks() is called, p-code ops exist only in the dead list. No CFG exists yet. This allows flow-following to be 'pure' (just ops and addresses), with block structure deferred. Once blocks are created, they are reused across restarts unless explicitly cleared (clearBlocks/clearJumpTables).",
+  "The tablelist and injectlist are work queues within a single generateOps call. They allow batching of BRANCHIND ops and injection targets, processed in a do-while loop. Inline cloning can repopulate these lists, and multistage checking can re-insert BRANCHIND ops, creating nested iterations within the same generateOps call.",
+  "Relative branch target resolution via sequence numbers is a Ghidra-specific trick. P-code relative branches refer to a (time offset relative to current op's time). The obank (PcodeOpBank) maps time \u2192 SeqNum \u2192 op. This allows compact internal representation of relative branches without storing full address tuples. Conversion to block edges happens only at generateBlocks time."
+ ]
+}

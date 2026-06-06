@@ -1,0 +1,352 @@
+{
+ "lens": "Proposal C \u2014 Scheduling/Feedback-centric. The taxonomy is organized around HOW work is scheduled, quiesced, and rewound. Stages are the dependency skeleton (the artifacts that must exist before others can); the centerpiece is the typed feedback-edge graph plus, for every stage, four scheduling properties: quiescence condition, invalidation trigger, rewind scope (op/block/region/function/program), and what surviving durable state guides the re-run. Pipeline variants (run a reduced pipeline to answer a sub-question) are first-class, not an afterthought.",
+ "executive_summary": "The 19-stage compiler list fails the evidence because all three decompilers are schedulers, not feed-forward pipelines: the real unit of work is not \"a stage\" but \"a (stage, artifact-version) re-entry driven by a trigger.\" I propose 9 stages keyed by the durable artifact each owns (S1 Recovered-Flow / pcode+CFG, S2 Call-Interface specs, S3 SSA/Heritage web, S4 Simplified-Dataflow, S5 Variables/Storage, S6 Types, S7 Structured-AST, S8 Lowered-Display model, S9 Emitted-text). Each feedback edge is precisely \"stage X invalidates the artifact of stage Y,\" and I type every edge with a refined version of H1. I split H1's mechanism types into six because the evidence shows two genuinely distinct \"global restart\" behaviors (restart-clear-and-replay vs reduced-pipeline-sub-query) and a distinct \"promotion/worklist re-entry\" used by Reko's scanner and Ghidra's flow that H1 lumps into (b). The decisive evidence: Ghidra's jumptable recovery (funcdata_block.cc:509 stageJumpTable) literally clones a partial Funcdata, switches the active root Action to the reduced 11-group \"jumptable\" pipeline (coreaction.cc buildDefaultGroups), runs reset+perform, and restores the prior pipeline \u2014 a recursive sub-decompilation with a reduced pipeline. angr expresses the same idea declaratively with ClinicStage start/end/skip and OptimizationPassStage, and SAILR's StructuringOptimizationPass.analyze (optimization_pass.py:500-560) is a textbook speculate-validate-rollback: edit graph, re-identify regions, measure gotos/loop-quality, accept or restore _prev_graph. The scheduling view also explains the durable-state axis cleanly: clearAnalysis (architecture.cc:335) wipes per-function state but Override/Symbol DB survive, angr's KB survives cache invalidation, and Reko's Program.User survives everything \u2014 so \"what survives a rewind\" is the property that makes interventions durable assertions rather than mid-pipeline edits (confirming H3). For kuna, this means the first thing to expose is not 19 stage boundaries but the restart driver, the Override/assertion store, and the ability to run a named reduced pipeline \u2014 because those three are what every feedback edge routes through.",
+ "stages": [
+  {
+   "id": "S1",
+   "name": "Flow & Code Recovery",
+   "artifact": "Raw p-code/AIL ops + basic-block CFG + jump/call/data work-queues (Ghidra dead-list+bblocks; angr AIL DiGraph; Reko RtlBlocks+ControlGraph+CallGraph)",
+   "description": "Decode bytes to IR ops and discover the reachable control-flow graph, including indirect-jump (switch) targets, inlined/injected callee bodies, and code-vs-data discovery. This stage owns reachability. It is heavily non-linear at the SUB-stage level: jump-table recovery is a recursive reduced-pipeline sub-query, and indirect targets re-feed the work-queue.",
+   "ghidra_evidence": "FlowInfo::generateOps/generateBlocks (flow.cc:383-829); jump-table recovery via Funcdata::recoverJumpTable -> stageJumpTable (funcdata_block.cc:509-560) which clones a partial Funcdata, runs the reduced 'jumptable' pipeline, restores prior action; multistage restart via setRestartPending (jumptable.cc:2712-2717); ActionStart/ActionConstbase (coreaction.cc:5624).",
+   "angr_evidence": "Clinic AIL_GRAPH_CONVERSION (ClinicStage=1, clinic.py:450-480); indirect-jump/tailcall fixups (clinic.py:464-475); SwitchDefaultCaseDuplicator/SwitchReusedEntryRewriter at AFTER_AIL_GRAPH_CREATION; CFG is an input from a prior angr.analyses.CFG.",
+   "reko_evidence": "Scanner.ProcessQueue priority worklist (Scanner.cs:1126-1166); VectorBuilder+Backwalker jump-table recovery re-enqueues targets (VectorBuilder.cs:98-135); DataScanner code-pointer discovery feeds procQueue; SplitBlock/PromoteBlockWorkItem mutate the proc graph mid-scan.",
+   "substages": [
+    {
+     "name": "Instruction decode / context resolution",
+     "decision": "Which decoder context (e.g. ARM THUMB) and error mode (ignore/error/truncate) applies at each address; a wrong context yields wrong ops for the whole downstream graph.",
+     "intervention": "Ghidra ContextDatabase setContextChangePoint/Region; Override flow rewrite (CALL<->BRANCH); Reko User.Patches (RtlStatement replacement), User.Processor/Segments. Assertion type: context/flow-override at address."
+    },
+    {
+     "name": "Indirect-jump (switch) target recovery",
+     "decision": "How many switch cases exist and their target addresses; partial recovery vs multistage re-run; which JumpModel (Basic/Basic2/Override) applies.",
+     "intervention": "Ghidra JumpBasicOverride manual table + insertMultistageJump (Override survives restart); Reko User.IndirectJumps / User.JumpTables (table addr/size/stride). Assertion type: jumptable-table assertion at branchind addr."
+    },
+    {
+     "name": "Inline / injection decision",
+     "decision": "Whether a call is inlined (clone callee body), p-code-injected (call-fixup), or left as a call; changes which addresses become reachable.",
+     "intervention": "Ghidra FuncProto isInline / getInjectId, PcodeInjectLibrary manual fixups; angr inline_functions set. Assertion type: inline/inject directive per call."
+    },
+    {
+     "name": "Code-vs-data / reachability",
+     "decision": "Which gaps are code (shingle/heuristic scan) and which call targets are noreturn (kills fall-through).",
+     "intervention": "Reko User.Heuristics('shingle'), Procedure.Characteristics(noreturn), User.Segments executable bits; Ghidra possible_unreachable removal. Assertion type: reachability/segment assertion."
+    }
+   ]
+  },
+  {
+   "id": "S2",
+   "name": "Call-Interface Recovery",
+   "artifact": "Per-call and per-function prototype/calling-convention specs: parameter & return storage, extrapop, ABI effects (Ghidra FuncCallSpecs/FuncProto/ParamActive trials; angr arg_vvars+function.prototype+callsite_prototypes; Reko ProcedureFlow signatures).",
+   "description": "Decide the interface contract at every call boundary and for the function itself: which storage locations are live-in parameters, which are returns, what the callee trashes/preserves. Inherently interprocedural and iterative; this is where the strongest staged-re-entry and outer-loop feedback live.",
+   "ghidra_evidence": "ActionDefaultParams/PrototypeTypes/FuncLink (coreaction.cc:5627-5632); ActionActiveParam ParamTrial system iterates to maxpass (coreaction.cc:1754-1800); ActionReturnRecovery (1937-1984); StackSolver extrapop (coreaction.cc:25-105); ActionFuncLinkOutOnly is the reduced 'noproto' variant used by jumptable pipeline.",
+   "angr_evidence": "Clinic MAKE_RETURN_SITES/MAKE_ARGUMENT_LIST/MAKE_CALLSITES/POST_CALLSITES (ClinicStage 2,3,6,7); _recover_calling_conventions two-pass (clinic.py:1196-1258); constrain_callee_prototypes; prototype recomputed when None/guessed (decompiler.py:321-359).",
+   "reko_evidence": "DataFlowAnalysis SCC interprocedural model (DataFlowAnalysis.cs:129-200); CallRewriter.EnsureSignature flows callee summaries up to callers (CallRewriter.cs:85-109); UnusedOutValuesRemover; UserSignatureBuilder preserves User sigs.",
+   "substages": [
+    {
+     "name": "Initial convention assignment",
+     "decision": "Which ABI/prototype model seeds each unknown call (fast default vs iterative recovery).",
+     "intervention": "Ghidra OptionDefaultPrototype, FuncProto input/output locks; Reko User.Procedures.Signature/CSignature; angr function.prototype source USER vs GUESSED. Assertion type: locked prototype."
+    },
+    {
+     "name": "Parameter/return trial resolution",
+     "decision": "Which putative storage trials are actually used (ancestral-use validation), and when to stop iterating (maxpass).",
+     "intervention": "Ghidra ParamActive.maxpass; setInputLocked aborts trials in favor of locked proto (coreaction.cc:1768). Assertion type: per-call param lock / extrapop override (OptionExtraPop)."
+    },
+    {
+     "name": "Callee trash/preserve summary",
+     "decision": "Whether calls respect ABI or trash is inferred; affects liveness and thus every signature in the SCC.",
+     "intervention": "Reko User.Heuristics(CallsRespectABI) (SsaTransform.cs:98); Procedure.Characteristics. Assertion type: ABI/trash assertion."
+    }
+   ]
+  },
+  {
+   "id": "S3",
+   "name": "SSA / Heritage Web",
+   "artifact": "SSA value graph: linked def-use, phi (MULTIEQUAL) placement, INDIRECT effects, per-space heritage coverage (Ghidra heritage LocationMap+HeritageInfo; angr SSA L0 register + L1 stack vvars; Reko SsaState).",
+   "description": "Build the data-flow web that all later reasoning depends on. Strongly phased (discover-then-link) and explicitly restartable: new varnodes appearing after dead-code removal bump deadcodedelay and restart the whole function. Two-level in angr (register then stack) gated on stack-pointer tracking.",
+   "ghidra_evidence": "Heritage multi-pass (heritage.cc:2663-2758); deadcodedelay bump + setRestartPending on post-removal varnode reappearance (heritage.cc:2571-2581, 2712-2730); per-space delay (heritage.hh:124); LoadGuard analysisState 0->1->2 (heritage.cc:150-152).",
+   "angr_evidence": "ClinicStage TRACK_STACK_POINTERS(4) -> SSA_LEVEL0(9) -> SSA_LEVEL1(11) ordering is non-negotiable (clinic.py:684-699); dephi mapping collected post-L1 (clinic.py:923-925); Ssailification vvar_id_start preserved across inlining.",
+   "reko_evidence": "SsaTransform per SCC, Braun-Buchwald-Hack (SsaTransform.cs:40-52); RenameFrameAccesses re-SSA after new stack vars discovered (SccWorker.cs:114-118,230-239); IndirectCallRewriter loop re-runs SSA while changes found (SccWorker.cs:234-240).",
+   "substages": [
+    {
+     "name": "Heritage phasing / delay",
+     "decision": "When a space is heritaged (per-space delay) and when dead-code removal is allowed (deadcodedelay) \u2014 premature removal forces a restart.",
+     "intervention": "Ghidra Override.insertDeadcodeDelay (survives restart) (heritage.cc:2815); Heritage.forceRestructure. Assertion type: deadcode-delay/heritage-delay per space."
+    },
+    {
+     "name": "Phi placement & renaming",
+     "decision": "Which merge points get phis; range fragmentation threshold for partial coverage.",
+     "intervention": "Mostly internal; exposed indirectly via storage assertions in S5. Assertion type: (rare) forced merge boundary."
+    },
+    {
+     "name": "Stack-pointer / frame SSA gate",
+     "decision": "Stack offset at each op, prerequisite for stack-var SSA; wrong sp tracking corrupts all stack variables.",
+     "intervention": "angr sp_tracker_track_memory; Reko StackPointerBackpropagator; Ghidra ActionStackPtrFlow + OptionExtraPop. Assertion type: assumed register/sp value (Reko User.RegisterValues/Assume)."
+    }
+   ]
+  },
+  {
+   "id": "S4",
+   "name": "Dataflow Simplification",
+   "artifact": "Simplified op graph: constant-folded, algebraically reduced, dead-code-eliminated, CSE'd IR (Ghidra oppool1/oppool2/actcleanup rule pools; angr AILSimplifier/BlockSimplifier + de-optimization OptimizationPasses; Reko ValuePropagator+Coalescer+DeadCode).",
+   "description": "The local-fixed-point heartland: opcode-indexed rule worklists that repeat to quiescence, plus de-optimization passes that revert compiler transforms. This stage both consumes and FEEDS S2/S3/S6 (simplification exposes new dead code -> restart; const-folding determines branches -> CFG change).",
+   "ghidra_evidence": "oppool1 131 rules with rule_repeatapply (coreaction.cc:5658); processOp opcode-change rewind (action.cc:860-863); mainloop repeats to quiescence (coreaction.cc:5636); ActionDeterminedBranch removes branches (coreaction.cc:537); actcleanup deferred post-fullloop for termination (coreaction.cc:5841).",
+   "angr_evidence": "AFTER_GLOBAL_SIMPLIFICATION de-opt passes (clinic.py:874); BlockSimplifier fixed point max 30 iters (block_simplifier.py:130-150); 4x _simplify_function (clinic.py:856-902); peephole suite ~60 opts.",
+   "reko_evidence": "ValuePropagator+ConditionCodeEliminator loop (SccWorker.cs:210-212); Coalescer+ValuePropagator loop (DataFlowAnalysis.cs:275-286); ExpressionSimplifier ~30 rules (ExpressionSimplifier.cs:36-65).",
+   "substages": [
+    {
+     "name": "Algebraic/peephole rule application",
+     "decision": "Which rules fire, in what order; an opcode change resets the rule list for that op.",
+     "intervention": "Ghidra OptionToggleRule / Rule::setDisable; Architecture extra_pool_rules (XML); angr peephole_optimizations list. Assertion type: rule enable/disable."
+    },
+    {
+     "name": "Dead-code elimination",
+     "decision": "Which ops are unconsumed (consume-bit propagation), gated by deadRemovalAllowed.",
+     "intervention": "Ghidra deadcodedelay (S3); angr/Reko remove_dead_memdefs aggressiveness. Assertion type: deadcode-delay / keep-alive."
+    },
+    {
+     "name": "De-optimization (SAILR reverters)",
+     "decision": "Whether to revert compiler optimizations (cross-jumps, dup returns, lowered switches) \u2014 accepted only if it improves structurability/goto count.",
+     "intervention": "angr StructuringOptimizationPass params (prevent_new_gotos, must_improve_rel_quality, max_opt_iters); preset selection. Assertion type: pass enable + quality policy."
+    }
+   ]
+  },
+  {
+   "id": "S5",
+   "name": "Variable & Storage Formation",
+   "artifact": "High-level variables: merged storage classes (HighVariable / unified SimVariable / Reko webs), stack-frame layout, explicit-vs-implied marking, names (Ghidra Merge+ScopeLocal+ActionNameVars; angr VariableRecoveryFast+unify_variables+naming; Reko WebBuilder+UnSsaTransform).",
+   "description": "Collapse SSA values into the variables a human sees: decide merges (forced/speculative/adjacent), stack-frame symbol layout, which values are explicit tokens, and names. Feeds back to S6 (struct layout) and is the primary user-naming surface.",
+   "ghidra_evidence": "Merge phase (coreaction.cc:5871-5882); ActionRestructureVarnode + ScopeLocal.restructure RangeHint conflict resolution (varmap.cc:126-157); ActionMarkExplicit/Implied; ActionNameVars (coreaction.cc:5891); HighVariable dirty-flag lazy recompute (variable.hh:120-152).",
+   "angr_evidence": "Clinic RECOVER_VARIABLES(13) VariableRecoveryFast + unify_variables via liveness interference (clinic.py:2371-2387); SEMANTIC_VARIABLE_NAMING(14); reset_variable_names; type_hints.",
+   "reko_evidence": "WebBuilder.Transform + UnSsaTransform (DataFlowAnalysis.cs); LinearInductionVariableFinder+StrengthReduction; DeclarationInserter.",
+   "substages": [
+    {
+     "name": "Variable merging",
+     "decision": "Forced (phi) vs speculative (heuristic) vs adjacent merges; over-merging fuses distinct variables.",
+     "intervention": "Ghidra Symbol::setIsolated blocks speculative merge; angr static_vvars. Assertion type: isolate / merge-block."
+    },
+    {
+     "name": "Stack-frame layout",
+     "decision": "Which stack offsets map to which symbols/types when RangeHints conflict (typelock>rangeType>specificity).",
+     "intervention": "Ghidra RangeHint typelock via locked symbol; AliasChecker boundaries; Reko User.Globals. Assertion type: stack symbol/type lock."
+    },
+    {
+     "name": "Naming & explicit/implied",
+     "decision": "Whether a value is inlined into its parent expression and what it is named.",
+     "intervention": "Ghidra namelock (database.hh:231), DynamicHash symbol attachment for temporaries; angr var.renamed=True; Reko User names. Assertion type: name lock / display."
+    }
+   ]
+  },
+  {
+   "id": "S6",
+   "name": "Type Reconstruction",
+   "artifact": "Datatypes on variables/expressions: primitives, pointers, structs/unions/arrays, casts (Ghidra ActionInferTypes lattice + ScoreUnionFields; angr Typehoon constraint solver; Reko TypeStore equivalence classes).",
+   "description": "Infer datatypes. Two architectural shapes appear: Ghidra interleaves a bounded (7-pass) lattice propagation INSIDE the mainloop with feedback to stack restructuring (S5) and prototypes (S2); angr/Reko run a SEPARATE constraint-solver phase that can be re-run cheaply (reflow) against ground-truth assertions without redoing S3-S5.",
+   "ghidra_evidence": "ActionInferTypes 7-pass limit + writeBack restart (coreaction.cc:5521-5563,5654); propagateTypeEdge typelock hard stop (coreaction.cc:5239); spacebase-type -> ActionRestructure feedback loop with arbitrary iteration limit (coreaction.cc:968-973); ActionSetCasts (5892); ScoreUnionFields/UnionFacetSymbol.",
+   "angr_evidence": "Typehoon solver (typehoon.py:23-150); ground_truth seeding from variables_with_manual_types + prototype (clinic.py:2277-2303); reflow_variable_types re-runs ONLY the solver+codegen (decompiler.py:699-830); constraint_set_degradation_threshold fallback.",
+   "reko_evidence": "TypeAnalyzer collect+equivalence+unify+rewrite (TypeAnalyzer.cs:77-112); decoupled from SSA, single-pass union-find; TypeCollector.EnsureSignatureTypeVariables honors User sigs (TypeCollector.cs:70-102).",
+   "substages": [
+    {
+     "name": "Constraint generation / propagation",
+     "decision": "Per-opcode type transfer direction; lattice flow; circular-struct iteration cutoff.",
+     "intervention": "Ghidra type lattice is internal; bounded by 7-pass + restart. Assertion type: none direct (shaped via locks)."
+    },
+    {
+     "name": "Ground-truth seeding & solve",
+     "decision": "Which TypeVariables are pinned by user/prototype before solving; degradation threshold.",
+     "intervention": "Ghidra Symbol typelock (database.hh:230); angr set_variable_type(mark_manual=True) + reflow; Reko User.Globals/Signature. Assertion type: type lock (the single most important durable assertion)."
+    },
+    {
+     "name": "Union/aggregate disambiguation",
+     "decision": "Which union field / struct shape a polymorphic access takes.",
+     "intervention": "Ghidra UnionFacetSymbol via DynamicHash (consulted first); angr vars_must_struct. Assertion type: union-facet / must-struct."
+    }
+   ]
+  },
+  {
+   "id": "S7",
+   "name": "Control-Flow Structuring",
+   "artifact": "Structured AST: nested if/while/for/switch/sequence with explicit gotos for residue (Ghidra BlockGraph via CollapseStructure; angr RegionIdentifier region tree + RecursiveStructurer seq_node; Reko Region graph + AbsynStatement tree).",
+   "description": "Recover high-level control structure from the (possibly de-optimized) CFG. This is where speculate-validate-rollback dominates: edit graph -> re-identify regions -> structure -> measure gotos/loop-quality -> accept or revert. Goto count is a first-class quality signal that drives the loop.",
+   "ghidra_evidence": "ActionBlockStructure twice (pre/post merge, coreaction.cc:5806,5884); CollapseStructure greedy ordered rules Goto/Cat/If/While/Switch (blockaction.cc:1797-1840); TraceDAG::selectGoto edge ranking; ActionStructureTransform/FinalStructure.",
+   "angr_evidence": "RegionIdentifier re-run after any DURING_REGION_IDENTIFICATION graph edit (decompiler.py:643-663); Phoenix GraphChangedNotification restart (phoenix.py:1266-1280); _refine_cyclic edge virtualization; StructuringOptimizationPass.analyze rollback on quality/goto regression (optimization_pass.py:500-560); SAILR _order_virtualizable_edges H1/H2/H3 (sailr.py:41-123).",
+   "reko_evidence": "StructureAnalysis do-while region reduction to convergence, 1000-iter last-resort gate (StructureAnalysis.cs:143-186); ProcessUnresolvedRegions VirtualizeReturn/RefineLoop/LastResort goto insertion; IfCascadeToSwitchRewriter; ForLoopRewriter.",
+   "substages": [
+    {
+     "name": "Region identification",
+     "decision": "Loop boundaries, single-exit enforcement, successor completeness \u2014 embeds 'what is a good region.'",
+     "intervention": "angr force_loop_single_exit / refine_loops_with_single_successor / complete_successors flags. Assertion type: region-shaping option."
+    },
+    {
+     "name": "Schema matching / structurer choice",
+     "decision": "Which structuring algorithm and rule order (if-else vs switch, while vs for).",
+     "intervention": "angr structurer_cls (Phoenix/SAILR/DREAM), improve_algorithm; Ghidra OptionAnalyzeForLoops, OptionJumpTableMax. Assertion type: structurer/option selection."
+    },
+    {
+     "name": "Edge virtualization / goto placement",
+     "decision": "Which edges become gotos to break unstructurable cycles; rollback if it worsens quality.",
+     "intervention": "angr per-pass goto policy (prevent_new_gotos, strictly_less_gotos, recover_structure_fails); Ghidra Override.insertForceGoto. Assertion type: force-goto / goto policy."
+    }
+   ]
+  },
+  {
+   "id": "S8",
+   "name": "Display Lowering",
+   "artifact": "Language-specific render model: cast set, operator forms, NULL/int formats, declaration placement, multi-statement-expression folding (Ghidra ActionSetCasts/PreferComplement/CopyMarker + CastStrategyC; angr post-structuring peephole + RegionSimplifier; Reko ProcedurePrettifier).",
+   "description": "Transform the structured, typed AST into a near-source model targeting a specific language. Mostly forward, but exposes many cheap codegen-only knobs that re-run WITHOUT touching analysis (the clears_cache=false class in angr).",
+   "ghidra_evidence": "ActionSetCasts (coreaction.cc:5892); ActionPreferComplement/NormalizeBranches (5867-5869); CastStrategyC (cast.hh:178); ActionCopyMarker explicit-print control.",
+   "angr_evidence": "AFTER_STRUCTURING passes FlipBooleanCmp/ExprOpSwapper/PostStructuringPeephole (decompiler.py:452-458); RegionSimplifier goto/if-else folding (region_simplifier.py:64-115); MultiStmtExprMode.",
+   "reko_evidence": "IfCascadeToSwitchRewriter, TailReturnRemover, ProcedurePrettifier (StructureAnalysis.cs:99-118).",
+   "substages": [
+    {
+     "name": "Cast & operator strategy",
+     "decision": "Minimal cast set; operand ordering; ternary folding depth.",
+     "intervention": "Ghidra OptionNoCastPrinting; angr ExprOpSwapper/binop_operators, expr_collapse_depth. Assertion type: codegen display option."
+    },
+    {
+     "name": "Literal & declaration formatting",
+     "decision": "Integer base, NULL keyword, declaration hoisting.",
+     "intervention": "Ghidra OptionIntegerFormat (+per-symbol displayFormat), OptionNullPrinting; angr const_formats. Assertion type: per-symbol/global format."
+    }
+   ]
+  },
+  {
+   "id": "S9",
+   "name": "Emission & Refinement",
+   "artifact": "Final text + position/instruction maps (+ optional LLM-suggested names/types) (Ghidra PrintC token stream; angr codegen.text + posmap; Reko AbsynCodeFormatter output).",
+   "description": "Serialize to text with source maps, and optionally invoke an external refiner (LLM) that proposes durable assertions for the NEXT run. This stage closes the outer human/agent loop: its output is read, assertions are written to the store, and re-decompilation occurs.",
+   "ghidra_evidence": "PrintC emission (printc.cc); ActionPrototypeWarnings/ActionStop (coreaction.cc:5894-5895).",
+   "angr_evidence": "CStructuredCodeGenerator.text + maps (decompiler.py:468-484); llm_refine proposes names/types/summary, writes notes, regenerates text but does NOT re-run analysis (decompiler.py:494-501); cache update (504-505).",
+   "reko_evidence": "WriteDecompiledProducts (.c/.h/.asm/.dis) (Decompiler.cs:743-752); OnProgramDecompiled script hook.",
+   "substages": [
+    {
+     "name": "Text + map emission",
+     "decision": "Token-to-address mapping for click-through; output file routing.",
+     "intervention": "Reko User.OutputFilePolicy/ProcedureSourceFiles; expr/stmt comments. Assertion type: comment/annotation."
+    },
+    {
+     "name": "External (LLM) refinement",
+     "decision": "Proposed renames/retypes/summaries that become assertions for the next run.",
+     "intervention": "angr llm_refine -> notes -> user applies set_variable_type/rename. Assertion type: any S2/S5/S6 assertion, applied durably."
+    }
+   ]
+  }
+ ],
+ "feedback_edges": [
+  {
+   "from_stage": "S1",
+   "to_stage": "S1",
+   "mechanism_type": "reduced-pipeline sub-query (refined H1c)",
+   "trigger_signal": "BRANCHIND with unrecovered targets / indirect jump operand",
+   "examples": "Ghidra stageJumpTable (funcdata_block.cc:509) clones partial Funcdata, sets current Action to reduced 'jumptable' group set (coreaction.cc buildDefaultGroups), reset+perform, restores prior pipeline; Reko VectorBuilder+Backwalker (VectorBuilder.cs:98-135) backwalks then re-enqueues targets; angr LoweredSwitchSimplifier during region-id."
+  },
+  {
+   "from_stage": "S1",
+   "to_stage": "S1",
+   "mechanism_type": "global restart with persisted hint (H1c)",
+   "trigger_signal": "multistage jumptable size mismatch (partial table, 1 entry where more expected)",
+   "examples": "Ghidra matchModel inserts Override.insertMultistageJump + setRestartPending (jumptable.cc:2712-2717); ActionRestartGroup clears analysis and replays, Override survives (action.cc:553-582)."
+  },
+  {
+   "from_stage": "S1",
+   "to_stage": "S1",
+   "mechanism_type": "worklist promotion / late binding (new H1f)",
+   "trigger_signal": "jump lands mid-block of a foreign procedure / data pointer reveals new code",
+   "examples": "Reko SplitBlock + PromoteBlockWorkItem mutate proc graph mid-scan (Scanner.cs:329-415); DataScanner code-pointer -> EnqueueImageSymbol (Scanner.cs:309-314); Ghidra inlineSubFunction repopulates addrlist/tablelist within generateOps."
+  },
+  {
+   "from_stage": "S4",
+   "to_stage": "S3",
+   "mechanism_type": "global restart with persisted hint (H1c)",
+   "trigger_signal": "free varnode reappears at an address after dead-code removal",
+   "examples": "Ghidra bumpDeadcodeDelay -> Override.insertDeadcodeDelay(+1) + setRestartPending (heritage.cc:2571-2581,2712-2730); restart replays from fullloop start with the delay surviving."
+  },
+  {
+   "from_stage": "S6",
+   "to_stage": "S5",
+   "mechanism_type": "staged re-entry on shared state (H1b)",
+   "trigger_signal": "spacebase-relative pointer type changes struct layout",
+   "examples": "Ghidra ActionInferTypes propagateSpacebaseRef updates local map -> ActionRestructureVarnode re-runs (numpass++), guarded by arbitrary iteration limit (coreaction.cc:968-984)."
+  },
+  {
+   "from_stage": "S6",
+   "to_stage": "S2",
+   "mechanism_type": "global restart with persisted hint (H1c)",
+   "trigger_signal": "inferred types refine a function prototype",
+   "examples": "Ghidra type inference feeds prototype recovery; proto-modifying actions call setRestartPending -> ActionRestartGroup replay (action.cc:553-581, propagateAcrossReturns coreaction.cc:5489-5520)."
+  },
+  {
+   "from_stage": "S2",
+   "to_stage": "S3",
+   "mechanism_type": "local fixed point + staged re-entry (H1a/H1b)",
+   "trigger_signal": "indirect call target resolved / new stack frame variable discovered",
+   "examples": "Reko IndirectCallRewriter loop re-runs ValuePropagator+SsaTransform while changed (SccWorker.cs:234-240); RenameFrameAccesses re-SSA after ComplexStackVariableTransformer (SccWorker.cs:114-118,230-239)."
+  },
+  {
+   "from_stage": "S2",
+   "to_stage": "S2",
+   "mechanism_type": "local fixed point (H1a) within an SCC",
+   "trigger_signal": "callee preserve/trash summary changes a caller signature in same SCC",
+   "examples": "Reko SCC bottom-up processing; CallRewriter.EnsureSignature flows callee summaries to callers (DataFlowAnalysis.cs:129-177); Ghidra ParamActive trials iterate to maxpass (coreaction.cc:1771-1787, action-level not full restart)."
+  },
+  {
+   "from_stage": "S4",
+   "to_stage": "S4",
+   "mechanism_type": "local fixed point (H1a)",
+   "trigger_signal": "any rule fires / opcode changes / block changes",
+   "examples": "Ghidra oppool1 rule_repeatapply + processOp opcode-change rewind (action.cc:836-870); mainloop quiescence (coreaction.cc:5636); angr BlockSimplifier while-loop max 30 (block_simplifier.py:130-150); Reko ValuePropagator+Coalescer loop (DataFlowAnalysis.cs:275-286)."
+  },
+  {
+   "from_stage": "S4",
+   "to_stage": "S1",
+   "mechanism_type": "staged re-entry on shared state (H1b)",
+   "trigger_signal": "constant-folded condition makes a branch determined -> CFG edge removed",
+   "examples": "Ghidra ActionDeterminedBranch (coreaction.cc:537) + ActionUnreachable + ActionBlockStructure rebuild inside mainloop; angr DeadblockRemover at BEFORE_REGION_IDENTIFICATION."
+  },
+  {
+   "from_stage": "S7",
+   "to_stage": "S1",
+   "mechanism_type": "speculate-validate-rollback (H1e)",
+   "trigger_signal": "de-optimization graph edit; measured goto count / loop-quality regression or unstructurable result",
+   "examples": "angr StructuringOptimizationPass.analyze: edit graph, _graph_is_structurable re-runs RegionIdentifier, check _get_new_gotos vs _initial_gotos and _improves_relative_quality, else restore _prev_graph (optimization_pass.py:500-590); DuplicationReverter max_opt_iters=5."
+  },
+  {
+   "from_stage": "S7",
+   "to_stage": "S7",
+   "mechanism_type": "local fixed point + exception-restart (H1a)",
+   "trigger_signal": "region graph changed by a schema match / region reduction succeeded",
+   "examples": "angr Phoenix GraphChangedNotification resets idx=0 and re-matches (phoenix.py:1266-1280); _refine_cyclic re-runs _analyze_acyclic; Reko StructureAnalysis do-while to convergence with 1000-iter last-resort (StructureAnalysis.cs:143-186)."
+  },
+  {
+   "from_stage": "S9",
+   "to_stage": "S6",
+   "mechanism_type": "outer assertion-store re-decompile (H1d) \u2014 partial (solver-only)",
+   "trigger_signal": "human/LLM sets a variable type or function prototype",
+   "examples": "angr reflow_variable_types re-runs ONLY Typehoon + codegen using variables_with_manual_types as ground truth (decompiler.py:699-830); no re-variable-recovery."
+  },
+  {
+   "from_stage": "S9",
+   "to_stage": "S1",
+   "mechanism_type": "outer assertion-store re-decompile (H1d) \u2014 full (clear-and-replay)",
+   "trigger_signal": "human/LLM edits Symbol DB / Override / User.* (type lock, name lock, force-goto, prototype, override)",
+   "examples": "Ghidra: edit Symbol/Override, call decompile() -> ActionStart from scratch, clearAnalysis wipes per-function state but Symbol DB+Override survive (architecture.cc:335, action.cc:574); angr option change with clears_cache=True; Reko OnProgramLoaded script mutates User.Procedures -> scanner re-enqueue (Scanner.cs:1126-1166)."
+  },
+  {
+   "from_stage": "S5",
+   "to_stage": "S5",
+   "mechanism_type": "staged re-entry on shared state (H1b)",
+   "trigger_signal": "dead op removed disconnects a varnode output / merge changes cover",
+   "examples": "Ghidra HighVariable dirty flags trigger lazy updateCover/updateType (variable.hh:120-152); ActionAssignHigh re-evaluates membership after ActionDeadCode (coreaction.cc:5870)."
+  }
+ ],
+ "intervention_model": "Interventions are durable ASSERTIONS in a per-program store, consulted by stages on (re-)run \u2014 never imperative mid-pipeline edits (confirms H3). The model has three parts. (1) Assertion store: each stage owns a set of assertion types keyed to an addressable anchor (address, varnode/vvar id, symbol, call-site, branchind op). The canonical stores are Ghidra's Symbol DB + Override table, angr's KnowledgeBase (kb.variables / kb.functions.prototype / static_vvars) + DecompilationOptions, and Reko's Program.User.*. (2) Re-run scope: an assertion declares the SMALLEST stage whose artifact it invalidates, which selects the rewind scope. This is the key refinement the scheduling lens adds \u2014 interventions are typed by which stage's quiescence they break: a display option (S8) re-runs only S8-S9 (angr clears_cache=False); a type lock (S6) can re-run the solver alone (angr reflow) or, in Ghidra, force a full clear-and-replay because S6 is interleaved in the mainloop; a flow/jumptable/deadcode-delay override (S1/S3) forces a full function restart but the assertion itself survives via the Override table; a prototype lock (S2) re-runs S2 onward; a force-goto (S7) re-runs structuring. (3) Survivability axis: the property that makes an assertion an assertion is that it lives OUTSIDE the per-function scratch that clearAnalysis/cache-invalidation wipes. Ghidra clearAnalysis (architecture.cc:335) calls fd->clear() but Symbol DB and Override persist in the Architecture/Scope; angr KB survives DecompilationCache invalidation; Reko User.* survives everything including a re-scan. For kuna, the intervention API should therefore be: assert(stage, anchor, assertion_type, value) writing to a durable store, with the scheduler computing the minimal rewind set from the stage. An LLM agent is just another writer of assertions (angr's llm_refine already produces name/type/summary suggestions that, when applied, are exactly S2/S5/S6 assertions). Locks are hard (typelock blocks propagateTypeEdge unconditionally, coreaction.cc:5239); options are soft (consulted but overridable by analysis); annotations (comments, names) are cosmetic and re-run only S8-S9.",
+ "hypothesis_critiques": [
+  "H1 is under-typed: it conflates two distinct 'global restart' behaviors and misses a worklist mechanism. I split it into six. (H1c-restart) Ghidra ActionRestartGroup is clear-and-replay of the SAME full pipeline with a persisted hint (deadcodedelay, multistage jump). (H1c-subquery, NEW) stageJumpTable runs a DIFFERENT, REDUCED pipeline ('jumptable' = 11 groups, noproto instead of protorecovery) on a cloned partial Funcdata, then discards it and returns only the recovered table \u2014 this is a recursive sub-decompilation, not a restart of the main one, and H1 cannot express it. (H1f, NEW) worklist promotion / late binding: Reko SplitBlock/PromoteBlockWorkItem and Ghidra inline repopulating addrlist are not 're-running an earlier analysis after edits' (H1b) \u2014 there is no earlier completed analysis to re-enter; work is appended to a still-draining queue. These are different scheduling primitives with different rewind costs.",
+  "H1's (e) speculate-validate-rollback is real but H1 frames it as SAILR-specific; the evidence shows the validate-or-rollback pattern is generic to structuring across tools. angr makes it explicit (recover_structure_fails restores _prev_graph, must_improve_rel_quality), Ghidra does a weaker form (ActionBlockStructure pre/post merge with a second analysis-only pass that locks structure), and Reko's last-resort goto insertion is the degenerate 'accept any structurable result' policy. So (e) should be modeled as a per-stage ACCEPT POLICY with a quality metric, not a single mechanism.",
+  "H2 is correct that all three evolved named hook points, but it over-claims alignment: the three enumerations are at DIFFERENT granularities and do not line up one-to-one. Ghidra's group tags are FILTERS over one universal action (subtractive), angr's ClinicStage(0-15) is a linear sub-stage index INSIDE one stage (my S2-S6) while OptimizationPassStage(0-11) is an orthogonal injection-point axis, and Reko's AnalysisStage is a sparse 2-point enum (AfterRegisterSsa, AfterExpressionCoalescing) for arch plugins. A taxonomy should treat hook points as TWO axes (stage boundary vs injection slot), not flatten them into sub-stages.",
+  "H3 is essentially right (interventions are durable assertions) but incomplete: it omits the re-run SCOPE that the assertion implies. The same nominal intervention (set a type) re-runs only the solver in angr (reflow) but forces a full clear-and-replay in Ghidra, because Ghidra interleaves type inference inside the mainloop while angr isolates it as a terminal solver. So 'assertion type' must carry a 'minimal invalidated stage,' which is decompiler-specific, not a property of the assertion alone.",
+  "H4 (stages keyed by owned artifact) is the strongest hypothesis and I adopt it as the stage skeleton \u2014 feedback edges ARE 'stage X invalidates artifact of stage Y.' The only caveat: Ghidra does NOT cleanly separate the S4/S5/S6 artifacts in time; they co-evolve inside one mainloop fixed point. So artifact-ownership defines the DEPENDENCY skeleton and the assertion targets, but the first-pass linear ORDER of S4/S5/S6 is partly a fiction for Ghidra \u2014 their true relationship is mutual fixed point. The taxonomy must say so rather than implying three sequential stages.",
+  "The 'stages trigger linearly on the first pass' definition is slightly violated by S1<->S2 in interprocedural tools: Reko recovers call interfaces (S2) bottom-up over SCCs that are only known after scanning (S1), and angr recovers calling conventions BEFORE AIL conversion for non-pcode arches but AFTER for pcode. So S1/S2 ordering is architecture/tool-conditional even on the first pass; the dependency skeleton has a small cycle there that the model represents as a first-pass local fixed point, not a strict order."
+ ],
+ "kuna_implications": "For a standalone extraction of Ghidra's C++ decompiler, the scheduling lens says the highest-value things to expose FIRST are not 19 stage boundaries but the three mechanisms every feedback edge routes through: (1) the restart driver (ActionRestartGroup + setRestartPending + clearAnalysis) as a first-class, instrumentable scheduler \u2014 kuna should surface 'why did this function restart' (deadcodedelay bump vs multistage jump vs prototype change) because that is the single most important non-linearity; (2) the durable assertion store (Override table + Symbol DB) as the public intervention API, with each assertion typed by the minimal stage it invalidates so kuna can compute rewind scope; (3) named reduced pipelines \u2014 kuna MUST be able to run the 'jumptable'/'normalize'/'paramid'/'register'/'firstpass' group sets as alternate pipelines, because jumptable recovery (stageJumpTable) is literally a reduced sub-pipeline and any extraction that hardcodes only 'decompile' will be unable to recover switches. Mapping to kuna's Action/Rule/group system is direct: a Stage (S1-S9) is a coarse band of the universal action delimited by group membership; a Sub-stage is a named Action or Rule-pool whose group tag can be toggled; a feedback edge is a setRestartPending source plus the Override/Symbol entry that survives it. Concretely, expose in order: S6 type locks (highest user value, and Ghidra already has Symbol typelock), S2 prototype locks, S1 jumptable/flow overrides (unlock switch recovery), S7 force-goto, then S8 display options. Implement an angr-style cheap 'reflow' path if feasible (re-run only S6+S8+S9 on a type-lock change) since Ghidra's full clear-and-replay is the main interactivity cost; the artifact-ownership skeleton (H4) is what makes that selective re-run sound. Finally, model the LLM agent as an assertion writer targeting S2/S5/S6, mirroring angr's llm_refine-to-notes flow, so kuna's agent loop reuses the same store and rewind-scope machinery as human edits."
+}

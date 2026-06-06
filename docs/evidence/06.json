@@ -1,0 +1,292 @@
+{
+ "decompiler": "angr decompiler (structuring subsystem)",
+ "focus": "Feedback loops in structuring: how late-stage decisions (goto count, condition extraction) feed back to earlier graph-modification stages, causing re-analysis of region identification and structural decisions. Key insight: SAILR and Phoenix use post-structuring metrics to drive edge-removal heuristics that re-trigger region identification and re-structuring cycles.",
+ "pipeline": [
+  {
+   "name": "AIL Conversion (Clinic)",
+   "description": "Convert function blocks to AIL blocks via Clinic analysis. This generates the base graph with AIL statements and handles call sites, returns, SSA, and variable recovery.",
+   "anchor": "/home/mahaloz/github/angr/angr/analyses/decompiler/decompiler.py:317-358",
+   "inputs": "Function CFG blocks from angr.analyses.CFG",
+   "outputs": "clinic.graph: networkx.DiGraph[ailment.Block], clinic.reaching_definitions, clinic.variable_kb"
+  },
+  {
+   "name": "Graph Simplification Passes (Before Region ID)",
+   "description": "Run optimization passes with stage BEFORE_REGION_IDENTIFICATION. These modify the graph structure (remove nodes, edges, inline, etc.) without yet knowing the region hierarchy.",
+   "anchor": "/home/mahaloz/github/angr/angr/analyses/decompiler/decompiler.py:526-580",
+   "inputs": "clinic.graph, reaching_definitions",
+   "outputs": "Modified clinic.graph; if out_graph is not None, updates addr_to_blocks and addr_and_idx_to_blocks"
+  },
+  {
+   "name": "Region Identification (RegionIdentifier)",
+   "description": "Recursively identify single-entry regions (SESE subgraphs) in the control flow. Finds loops via DFS back-edges, refines loop bounds, merges nodes, and builds GraphRegion hierarchy. This is the foundational step for structuring.",
+   "anchor": "/home/mahaloz/github/angr/angr/analyses/decompiler/region_identifier.py:115-512",
+   "inputs": "clinic.graph, condition_processor, force_loop_single_exit, refine_loops_with_single_successor, complete_successors flags",
+   "outputs": "RegionIdentifier.region: GraphRegion (tree of nested regions); regions_by_block_addrs; loop_headers"
+  },
+  {
+   "name": "Region Simplification Passes (During Region ID)",
+   "description": "Optimization passes with stage DURING_REGION_IDENTIFICATION. These can modify the graph and MUST be followed by re-identification if they change it. This is the key feedback loop trigger.",
+   "anchor": "/home/mahaloz/github/angr/angr/analyses/decompiler/decompiler.py:582-663",
+   "inputs": "clinic.graph, region_identifier from prior step, reaching_definitions",
+   "outputs": "Modified clinic.graph and RE-COMPUTED region_identifier (line 657 and 661 re-run _recover_regions if graph changed)"
+  },
+  {
+   "name": "Recursive Structuring (RecursiveStructurer + PhoenixStructurer/SAILRStructurer)",
+   "description": "Recursively structure each region in post-order DFS. For each leaf region, apply the chosen structurer (Phoenix or SAILR) to convert the region graph into a structured AST (SequenceNode, LoopNode, ConditionNode, etc.). Phoenix matches schemas in order: cyclic loops (while/do-while), then acyclic (sequence, ITE, switch). SAILR adds recursive structuring with edge virtualization.",
+   "anchor": "/home/mahaloz/github/angr/angr/analyses/decompiler/structuring/recursive_structurer.py:55-123 and /home/mahaloz/github/angr/angr/analyses/decompiler/structuring/phoenix.py:176-253",
+   "inputs": "region_identifier.region (GraphRegion tree), condition_processor, structurer_cls (Phoenix or SAILR)",
+   "outputs": "Structured AST (BaseNode tree): SequenceNode with nested LoopNode, ConditionNode, SwitchCaseNode; virtualized_edges set"
+  },
+  {
+   "name": "Region Simplification (RegionSimplifier)",
+   "description": "Simplify the structured AST by removing empty nodes, folding one-use expressions, simplifying if/else, loops, switches, and folding gotos. Produces goto_manager with all remaining gotos as a QUALITY SIGNAL.",
+   "anchor": "/home/mahaloz/github/angr/angr/analyses/decompiler/region_simplifiers/region_simplifier.py:64-115",
+   "inputs": "Structured AST (seq_node from RecursiveStructurer.result), variable_manager",
+   "outputs": "Simplified seq_node, goto_manager with gotos collected from GotoSimplifier"
+  },
+  {
+   "name": "Post-Structuring Simplification Passes",
+   "description": "Optimization passes with stage AFTER_STRUCTURING. These modify the AST only (seq_node), not the graph. Can rewrite conditions, fold expressions, etc.",
+   "anchor": "/home/mahaloz/github/angr/angr/analyses/decompiler/decompiler.py:665-684",
+   "inputs": "seq_node from RegionSimplifier, binop_operators, goto_manager",
+   "outputs": "Modified seq_node"
+  },
+  {
+   "name": "Code Generation (CStructuredCodeGenerator)",
+   "description": "Traverse the simplified AST and emit C code. Handle variable naming, type casts, expression folding, position mapping for click-mapping, and instruction-to-code mapping.",
+   "anchor": "/home/mahaloz/github/angr/angr/analyses/decompiler/structured_codegen/c.py:1-120",
+   "inputs": "seq_node, variable_kb, function prototype, AIL graph for reference",
+   "outputs": "C source code text, posmap (position mapping), instr_map (instruction mapping), variable types"
+  }
+ ],
+ "feedback_loops": [
+  {
+   "name": "Graph Modification \u2192 Region Re-identification Loop",
+   "trigger": "OptimizationPass (DURING_REGION_IDENTIFICATION stage) removes/modifies edges or nodes in clinic.graph, returning a.out_graph != None",
+   "rewinds_to": "Region Identification step. Re-runs _recover_regions() to rebuild the region hierarchy on the modified graph.",
+   "mechanism": "Explicit loop in _run_region_simplification_passes (decompiler.py:610-663). After each DURING_RI pass, if a.out_graph is truthy, line 657 re-executes RegionIdentifier._recover_regions(ail_graph) with update_graph=False, rebuilding regions from scratch on the modified graph.",
+   "anchor": "decompiler.py:610-663, especially lines 646-657: 'if a.out_graph: ... ri = self._recover_regions(ail_graph, cond_proc, update_graph=False)'"
+  },
+  {
+   "name": "Phoenix Cyclic Refinement \u2192 Graph Restart Loop",
+   "trigger": "PhoenixStructurer._match_cyclic_schemas (line 279-277) detects matching cyclic patterns (while, do-while) and marks edges with 'cyclic_refinement_outgoing'=True. These edges are then virtualized (removed) in _refine_cyclic, changing graph structure.",
+   "rewinds_to": "Within _analyze() of PhoenixStructurer: lines 199-217 check 'if progressed' and if no progress and no pre_refinement_region backup, enter _refine_cyclic(), updating graph, then re-run _analyze_acyclic and has_cycle checks.",
+   "mechanism": "Loop in PhoenixStructurer._analyze() (lines 191-241). After _analyze_cyclic matches patterns and removes edges (line 1010-1019 in _refine_cyclic_core), the next iteration of the while loop re-runs _analyze_acyclic (line 192) on the modified graph. If _refine_cyclic removes the loop entirely (has_cycle becomes False, line 217), the loop updates state and continues.",
+   "anchor": "phoenix.py:176-253 _analyze() and 889-1019 _refine_cyclic_core(). Key decision point at line 199-217: 'if has_cycle: progressed |= self._analyze_cyclic()...'"
+  },
+  {
+   "name": "Phoenix Schema Matching \u2192 Graph Change Notification",
+   "trigger": "During _match_acyclic_schemas (line 1294), if the graph is modified (nodes replaced, edges removed), a GraphChangedNotification exception is raised (line 59-63), which signals that schema matching must restart.",
+   "rewinds_to": "Back to the start of _match_acyclic_schemas loop in _analyze_acyclic (line 1256-1292). The try-except at line 1266-1280 catches GraphChangedNotification and resets idx=0, then continues the loop to re-match from the beginning.",
+   "mechanism": "Exception-based restart: PhoenixStructurer._analyze_acyclic() wraps _match_acyclic_schemas() in a try-except that catches GraphChangedNotification. On catch (line 1277), it resets idx=0 and continues the while True loop (line 1262), re-running _match_acyclic_schemas from scratch.",
+   "anchor": "phoenix.py:1256-1292 _analyze_acyclic() with try-except at line 1266-1280 catching GraphChangedNotification"
+  },
+  {
+   "name": "Edge Virtualization Heuristic Selection (SAILR)",
+   "trigger": "SAILR's _last_resort_refinement (inherited from Phoenix, lines 228-241) needs to choose which edges to virtualize (remove) to break cycles. SAILRStructurer._order_virtualizable_edges (sailr.py:41-123) ranks edges by heuristics: H1 (fewest siblings), H2 (most post-doms), H3 (goes to return).",
+   "rewinds_to": "Within the current _analyze() call, the selected edge is removed, potentially changing graph structure and cycle-ness. The while loop in _analyze (line 191) then re-runs _analyze_cyclic or continues to next iteration based on new 'has_cycle' value.",
+   "mechanism": "Heuristic-driven ordering (not explicit loop, but implicit via the while loop structure). SAILR's choice of which edge to virtualize affects which cycle patterns can be matched next, creating implicit feedback through the graph structure.",
+   "anchor": "sailr.py:41-123, especially H1 (lines 66-73), H2 (lines 75-106), H3 (lines 108-120). Used by phoenix.py:_last_resort_refinement to decide which edge to remove."
+  },
+  {
+   "name": "Goto Count as Quality Signal (Region Simplifier + Optimization Passes)",
+   "trigger": "RegionSimplifier produces seq_node with goto_manager.gotos collected. Post-structuring optimization passes can inspect goto_manager and seq_node to decide if further deoptimizations are needed (e.g., 'duplication reverter' passes).",
+   "rewinds_to": "Optimization passes marked with AFTER_STRUCTURING can modify seq_node based on goto count analysis. However, if a pass decides that the structure is unsatisfactory, it theoretically could feed back to earlier stages (though this is NOT currently implemented explicitly).",
+   "mechanism": "Implicit feedback through optimization passes. goto_manager is passed to post_structuring_simplification_passes (decompiler.py:452-458), which can inspect self.goto_manager and make decisions. SAILR's recursive design (recursive_structurer.py:56-123) allows sub-region structuring decisions to influence parent region handling.",
+   "anchor": "decompiler.py:452-458 (_run_post_structuring_simplification_passes with goto_manager); region_simplifiers/region_simplifier.py:62 (goto_manager assigned)"
+  },
+  {
+   "name": "Condition Processor \u2192 Reaching Condition Recovery Iteration",
+   "trigger": "ConditionProcessor.recover_reaching_conditions() (condition_processor.py) extracts boolean conditions from AIL statements and uses claripy to simplify them. For complex regions, the simplification may reveal new structural patterns.",
+   "rewinds_to": "Implicitly: if a condition simplification reveals that a previously matched schema was incorrect, the graph is modified, and region re-identification is triggered (via the Graph Modification \u2192 Region Re-identification Loop).",
+   "mechanism": "Not an explicit loop, but implicit through claripy-based condition simplification. When conditions are extracted (e.g., in region_identifier.py:609 _refine_loop_successors_to_guarded_successors), the simplified conditions may enable new structuring patterns in the structurer's _match_*_schemas() methods.",
+   "anchor": "condition_processor.py:250+ (ConditionProcessor class), region_identifier.py:593-699 (_refine_loop_successors_to_guarded_successors)"
+  }
+ ],
+ "decision_points": [
+  {
+   "name": "Structuring Algorithm Choice",
+   "where": "Decompiler._decompile()",
+   "decision": "Which structurer to use: PhoenixStructurer or SAILRStructurer. Decision is made based on DecompilationPreset and recursive_structurer_params['structurer_cls']. Also affects loop single-exit enforcement and multistmtexpr generation.",
+   "alternatives": "PhoenixStructurer (schema-based, single-pass) vs SAILRStructurer (recursive with post-dom heuristics). Affects whether certain optimization passes run (pass_.STRUCTURING check at decompiler.py:549, 614) and whether multi-stmt expressions are generated (phoenix.py:302-303).",
+   "anchor": "decompiler.py:299-309 where structurer_cls is set and issubclass(PhoenixStructurer) check determines flags",
+   "current_override": "DecompilationPreset configuration (default=PhoenixStructurer); can be overridden via decompilation options passed to Decompiler.__init__()"
+  },
+  {
+   "name": "Loop Single-Exit Enforcement",
+   "where": "RegionIdentifier._make_cyclic_region()",
+   "decision": "Whether to enforce single-exit loops via _refine_loop_successors_to_guarded_successors(). If force_loop_single_exit=True and region has multiple successors, convert to guarded successors using ConditionNode.",
+   "alternatives": "With force_loop_single_exit=True: multiple loop successors are converted to guarded branches. With False (SAILR mode): multiple successors allowed, affecting downstream structuring complexity.",
+   "anchor": "region_identifier.py:579-582; decompiler.py:295-306 where _force_loop_single_exit is set based on structurer_cls",
+   "current_override": "Set via decompiler.py:305-306 based on issubclass(PhoenixStructurer); passed to RegionIdentifier via force_loop_single_exit parameter"
+  },
+  {
+   "name": "Loop Refinement Strategy",
+   "where": "RegionIdentifier._refine_loop()",
+   "decision": "How aggressively to refine loop bounds. With refine_loops_with_single_successor=False, exit nodes are not included unless len(exit_nodes) <= 1. With True, more aggressive refinement including single-successor exit nodes.",
+   "alternatives": "Conservative (False, default for Phoenix): keep loop minimal, may produce multiple exit edges. Aggressive (True, optional for Phoenix): include single-successor nodes in loop, reducing exit count but potentially including more code.",
+   "anchor": "region_identifier.py:320-343; decompiler.py:296 sets _refine_loops_with_single_successor based on options",
+   "current_override": "Passed to RegionIdentifier; default False; can be set via decompilation options"
+  },
+  {
+   "name": "Complete Successors Mode",
+   "where": "RegionIdentifier._make_regions(), affects graph_with_successors handling",
+   "decision": "Whether to include successor nodes in graph_with_successors for cycle refinement. With complete_successors=True (SAILR), nodes reachable from loop exits are included.",
+   "alternatives": "With complete_successors=False: graph_with_successors may omit some successor nodes. With True (SAILR): more complete successor information for complex cycle refinement.",
+   "anchor": "decompiler.py:297-308 sets _complete_successors=True for PhoenixStructurer; passed to RegionIdentifier",
+   "current_override": "Set based on structurer_cls; passed to RegionIdentifier.complete_successors parameter"
+  },
+  {
+   "name": "Edge Virtualization Heuristic (SAILR)",
+   "where": "SAILRStructurer._order_virtualizable_edges()",
+   "decision": "Which edge(s) to virtualize (remove) when multiple exist. SAILRStructurer ranks by: H1 (fewest sibling in-edges), H2 (most post-dominators), H3 (goes to return).",
+   "alternatives": "H1 alone: minimal edge selection but may miss better choices. H1+H2: post-dom analysis (expensive) narrows to best edge. H1+H2+H3: return targets prioritized. H3 enables better duplication reversal later.",
+   "anchor": "sailr.py:41-123; sailr.py:66-73 (H1), 75-106 (H2), 108-120 (H3)",
+   "current_override": "SAILRStructurer._order_virtualizable_edges() uses all three heuristics in sequence; PhoenixStructurer._order_virtualizable_edges() uses simple address-based ordering"
+  },
+  {
+   "name": "Conditional Jump Rewriting to Break/Continue",
+   "where": "PhoenixStructurer._match_cyclic_while/_match_cyclic_dowhile()",
+   "decision": "When a loop is matched, which conditional jumps leaving the loop become 'break' vs which become 'continue'. Decision based on edge conditions (true vs false branch) and loop-back edge detection.",
+   "alternatives": "If wrong edge is chosen as 'back' edge: loop structure inverted. If continues/breaks mis-assigned: code semantics incorrect or generates extra gotos.",
+   "anchor": "phoenix.py:283-287, 289-296, 310-323 (rewrite calls after loop matching)",
+   "current_override": "Determined by _have_opposite_edge_conditions() check and edge condition recovery in condition_processor"
+  },
+  {
+   "name": "Switch-Case vs If-Else Decision",
+   "where": "PhoenixStructurer._match_acyclic_switch_cases() vs _match_acyclic_ite()",
+   "decision": "When acyclic schema matching, attempt switch-case detection before ITE. If a multi-way branch with address jumping is detected, treat as switch. Otherwise, if two-way conditional, treat as if-else.",
+   "alternatives": "If switch detection too aggressive: multi-case code mis-structured as nested if-else. If too conservative: switch not recognized, code unreadable.",
+   "anchor": "phoenix.py:1315-1330 (schema matching order: switch before ITE); 1345-1370 (_match_acyclic_switch_cases variants)",
+   "current_override": "Fixed schema order in _match_acyclic_schemas; switch matching has multiple strategies (memory-loaded addr, computed addr, incomplete head)"
+  },
+  {
+   "name": "Goto Simplification Depth",
+   "where": "RegionSimplifier._simplify_gotos() \u2192 GotoSimplifier",
+   "decision": "How many passes to run GotoSimplifier to remove unnecessary gotos. More passes catch more gotos but risk changing semantics.",
+   "alternatives": "Single pass: fast but may miss removable gotos. Multiple passes: thorough but slower. Affects final goto_manager content.",
+   "anchor": "region_simplifiers/region_simplifier.py:76-77, region_simplifiers/goto.py (GotoSimplifier implementation not shown but referenced)",
+   "current_override": "Fixed simplification pipeline in RegionSimplifier._simplify()"
+  },
+  {
+   "name": "Empty Node Removal Timing",
+   "where": "RegionSimplifier._simplify() calls _remove_empty_nodes() at multiple points",
+   "decision": "When to remove nodes with no non-label statements. Early removal may prevent pattern matching; late removal may leave dangling nodes.",
+   "alternatives": "Remove before each optimization: cleaner intermediate state but may hide patterns. Remove once at end: simpler but intermediate states messier.",
+   "anchor": "region_simplifiers/region_simplifier.py:73-111 (multiple _remove_empty_nodes calls at lines 75, 83, 87, 99, 111)",
+   "current_override": "Fixed multi-call pattern in RegionSimplifier._simplify()"
+  }
+ ],
+ "intervention_surfaces": [
+  {
+   "name": "DecompilationPreset Selection",
+   "kind": "preset",
+   "description": "Choose pre-configured decompilation profiles (default, basic, aggressive) that set optimization passes, structurer class, and flags. Affects which passes run and in what order.",
+   "affects": "Structurer choice, optimization passes, loop refinement settings, multistatement expression generation",
+   "anchor": "decompiler.py:118-130 (preset initialization and validation)"
+  },
+  {
+   "name": "Decompilation Options",
+   "kind": "option",
+   "description": "Fine-grained control via DecompilationOption instances passed to Decompiler(options=[...]). Options map to specific parameters in analyses (clinic, region_identifier, recursive_structurer, region_simplifier, codegen).",
+   "affects": "Any parameter that accepts options from the DecompilationOption enum; e.g., structurer_cls, use_multistmtexprs, simplify_switches, simplify_ifelse",
+   "anchor": "decompiler.py:232-243 (_parse_options); decompilation_options.py defines PARAM_TO_OPTION mapping"
+  },
+  {
+   "name": "Structurer Class Override",
+   "kind": "override",
+   "description": "Override structurer via options_to_params or direct structurer_cls setting. Choose between PhoenixStructurer, SAILRStructurer, RecursiveStructurer, or DreamStructurer.",
+   "affects": "Algorithm core: Phoenix schema-matching vs SAILR recursive matching; affects loop handling, goto production, optimization pass compatibility",
+   "anchor": "decompiler.py:299-300; recursive_structurer_params['structurer_cls']"
+  },
+  {
+   "name": "Region Identifier Flags",
+   "kind": "option",
+   "description": "Control loop refinement aggressiveness: force_loop_single_exit, refine_loops_with_single_successor, complete_successors. Passed to RegionIdentifier from decompiler.py.",
+   "affects": "Loop boundary detection, successor handling in cycle refinement, multi-successor loop conversion",
+   "anchor": "decompiler.py:295-308 (flag initialization and passing to RegionIdentifier at 518-522)"
+  },
+  {
+   "name": "Optimization Pass Configuration",
+   "kind": "option",
+   "description": "Enable/disable specific optimization passes (e.g., StackCanarySimplifier, CrossJumpReverter, DuplicationReverter) via preset or direct pass list. Passes with DURING_REGION_IDENTIFICATION stage trigger re-identification.",
+   "affects": "Which graph transformations occur before/after region identification, how many re-identification cycles run",
+   "anchor": "decompiler.py:120-135 (optimization_passes assignment); optimization_passes/optimization_pass.py defines STAGE enum"
+  },
+  {
+   "name": "Condition Processor Claripy Simplification",
+   "kind": "callback",
+   "description": "Condition extraction and simplification uses claripy solver to reduce conditions. Simplification depth and solver capabilities affect which patterns structuring can match.",
+   "affects": "Condition complexity in matched schemas; how many break/continue rewrites succeed",
+   "anchor": "condition_processor.py:250+ (ConditionProcessor class); claripy simplification in convert_claripy_bool_ast() and recover_edge_condition()"
+  },
+  {
+   "name": "Variable Manager Binding",
+   "kind": "option",
+   "description": "Bind a custom VariableManagerInternal to preserve variable names across structuring. Affects codegen variable naming.",
+   "affects": "Variable naming in output code, loop counter naming (loopctr_naming parameter)",
+   "anchor": "decompiler.py:285-286; region_simplifier.py:49 (_variable_manager parameter)"
+  },
+  {
+   "name": "Multi-Statement Expression Generation Mode",
+   "kind": "option",
+   "description": "Control whether to generate multi-statement expressions in PhoenixStructurer: NEVER, ALWAYS, or MAX_ONE_CALL. Affects readability vs verbosity.",
+   "affects": "Condition expression complexity, loop matching success rates (complex conditions may match fewer schemas)",
+   "anchor": "phoenix.py:66-74 (MultiStmtExprMode enum); phoenix.py:160-161 (_use_multistmtexprs, _multistmtexpr_stmt_threshold)"
+  },
+  {
+   "name": "Codegen Class Selection",
+   "kind": "option",
+   "description": "Choose code generator: CStructuredCodeGenerator (C) or RustStructuredCodeGenerator (Rust). Affects output language and some optimization decisions.",
+   "affects": "Output language, flag handling (Rust disables ifelse simplification), multi-statement expression generation",
+   "anchor": "decompiler.py:98, 200-202 (codegen_cls and flavor handling)"
+  },
+  {
+   "name": "Decompilation Cache",
+   "kind": "lock",
+   "description": "If use_cache=True, Decompiler caches clinic graph, optimization passes, and codegen results. Allows re-codegen without re-structuring. Set use_cache=False to force full recomputation.",
+   "affects": "Whether cached results from prior decompilation are reused or recomputed",
+   "anchor": "decompiler.py:252-271 (cache lookup and validation)"
+  },
+  {
+   "name": "Clinic Early Termination",
+   "kind": "option",
+   "description": "Set clinic_start_stage and clinic_end_stage to run only part of Clinic pipeline. E.g., RECOVER_VARIABLES onwards to skip some early steps.",
+   "affects": "Which Clinic stages run, affecting variable recovery completeness",
+   "anchor": "decompiler.py:178-180, 415-417 (clinic stage parameters and checks)"
+  },
+  {
+   "name": "Annotation and Customization Callbacks",
+   "kind": "callback",
+   "description": "Peephole optimizations (expr_comments, stmt_comments, ite_exprs, binop_operators) can be passed as custom implementations to codegen.",
+   "affects": "Expression simplification and comment generation in output code",
+   "anchor": "decompiler.py:142-143, 477-482 (peephole optimizations and comment/operator parameters passed to codegen)"
+  },
+  {
+   "name": "Phoenix Algorithm Improvement Flag",
+   "kind": "option",
+   "description": "PhoenixStructurer improve_algorithm parameter (default False for fidelity to paper, enable for better results). Adds optional pattern matches like cyclic_while_with_single_successor and short_circuit_conditions.",
+   "affects": "Which acyclic and cyclic loop patterns are recognized and matched",
+   "anchor": "phoenix.py:138-145 (improve_algorithm flag and its use in _improve_algorithm checks at lines 298, 631, 1333)"
+  },
+  {
+   "name": "SAILR Post-Dominance Limits",
+   "kind": "option",
+   "description": "SAILRStructurer postdom_max_edges and postdom_max_graph_size limit post-dominator analysis to avoid expensive computation. Adjust for performance vs accuracy.",
+   "affects": "Whether H2 (post-dominator) heuristic is used in edge virtualization; smaller limits skip it",
+   "anchor": "sailr.py:32-34, 75-106 (postdom_max_edges and postdom_max_graph_size parameters and H2 heuristic)"
+  }
+ ],
+ "insights": [
+  "Decompilers are NOT linear compilers: the angr decompiler has at least 3 major feedback loops that cause earlier stages to re-run. The key insight is that GraphChangedNotification exceptions (phoenix.py:59) and explicit re-identification calls (decompiler.py:657) serve as restart signals, allowing late-stage decisions (condition simplification, edge virtualization) to invalidate earlier region structures.",
+  "Goto count is a quality signal: The goto_manager collected during RegionSimplifier is not just diagnostic\u2014it influences decisions in later optimization passes. SAILR's recursive structuring uses the current structuring state to decide whether sub-regions should be re-optimized. This creates an implicit feedback loop through the optimization pass pipeline.",
+  "Region identification is NOT just graph analysis: The RegionIdentifier uses heuristics (largest_successor_tree_outside_loop, force_loop_single_exit, refine_loops_with_single_successor) that embed choices about what constitutes a 'good' region. These choices are surfaced as parameters precisely because they affect downstream structuring success.",
+  "Phoenix schema matching is order-dependent but restarts on graph changes: The schema matching order (cyclic before acyclic, switch before ITE) is fixed, but GraphChangedNotification allows re-starting from scratch if a prior match modified the graph. This creates a subtle non-linearity: a switch match that removes nodes can invalidate a prior partial match on an acyclic ITE.",
+  "Condition simplification is a hidden rewind: ConditionProcessor.recover_reaching_conditions() uses claripy to simplify conditions. These simplified conditions are used in edge condition recovery, which affects which jumps are rewritten to breaks/continues. If simplification reveals new structure, it's implicitly captured by the graph-modification-triggered re-identification loop.",
+  "State is preserved across feedback loops: Unlike traditional compilers, angr preserves node_order, parent_map, and case_entry_to_switch_head across re-identification and re-structuring cycles. These persistent data structures allow decisions in one iteration to inform the next, creating true feedback rather than independent re-runs.",
+  "SAILR's post-dominance heuristic is computationally expensive but order-sensitive: H2 (post-dominator count) only runs if len(edges) <= postdom_max_edges and len(graph) <= postdom_max_graph_size. Hitting these limits silently downgrades to H1-only heuristic, creating a hidden decision point that affects edge removal order without explicit notification.",
+  "Virtualized edges accumulate knowledge: PhoenixStructurer.virtualized_edges (set of edges removed during cyclic refinement) is passed to recursion and affects how sub-regions are replaced in parents (recursive_structurer.py:122). This creates a persistent record of what was considered 'non-essential' for the current structuring, informing parent-level decisions.",
+  "Graph modification during structuring is not idempotent: The same region can be structured differently depending on whether certain optimization passes ran before. For example, an edge removed by StackCanarySimplifier may change which loops are detected by RegionIdentifier, changing the shape of the entire region hierarchy.",
+  "The base unit of scheduling is not 'a pass' but 'a graph state': Due to re-identification triggered by any DURING_RI pass that modifies the graph, the actual unit of work is a (graph, region_hierarchy, current_region) tuple. Two passes may nominally be at the same STAGE but execute in different effective stages depending on what prior passes changed."
+ ]
+}

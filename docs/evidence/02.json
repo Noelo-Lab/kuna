@@ -1,0 +1,313 @@
+{
+ "decompiler": "Ghidra C++ (kuna/decompiler/cpp)",
+ "focus": "Middle-end analyses: SSA construction (heritage.cc/hh), prototype recovery (coreaction.cc, fspec.hh), stack/deadcode management (varmap.cc, rangeutil.cc), decision points and feedback loops",
+ "pipeline": [
+  {
+   "name": "Heritage (SSA Construction) - Pass 0+",
+   "description": "Builds Static Single Assignment form in multiple passes. Each pass heritages one or more address spaces, converting free Varnodes into linked SSA form. Performs phi-node (MULTIEQUAL) placement and renaming algorithm on specified address space.",
+   "anchor": "heritage.cc:2663-2758, heritage.hh:207-339",
+   "inputs": "free Varnodes, control-flow graph, LocationMap tracking previously heritaged ranges, HeritageInfo per address space with delay/deadcodedelay",
+   "outputs": "new Varnode instances linking, MULTIEQUAL ops for merge points, updated globaldisjoint coverage map, pass counter incremented"
+  },
+  {
+   "name": "Deadcode Delay Management (Feedback Loop Mechanism)",
+   "description": "Controls when dead code removal is safe by delaying removals until all Varnodes for a space have been heritaged. When new Varnodes appear after deadcode removal, bumps delay and triggers restart.",
+   "anchor": "heritage.cc:2571-2851, heritage.hh:122-135, 313-331",
+   "inputs": "deadremoved flag per HeritageInfo, current pass number, detected Varnodes appearing after heritage",
+   "outputs": "deadcodedelay incremented (bumpDeadcodeDelay), setRestartPending flag set, deadRemovalAllowed gate function"
+  },
+  {
+   "name": "Phi-node (MULTIEQUAL) Placement Algorithm",
+   "description": "Determines which control-flow merge points need MULTIEQUAL operations based on dominance frontier. Uses augmented dominator tree and priority-queued work-list by dominator depth.",
+   "anchor": "heritage.cc:2599-2645, heritage.hh:95-110, 208-213",
+   "inputs": "writevars: Varnodes written in blocks, readvars: Varnodes read, control-flow dominance tree, PriorityQueue(block,depth)",
+   "outputs": "merge vector populated with blocks needing MULTIEQUAL, new MULTIEQUAL ops inserted at block entries"
+  },
+  {
+   "name": "Renaming / SSA Link Phase",
+   "description": "Propagates data-flow definitions up the dominator tree via variable stacks. Links each Varnode use to its definition; populates MULTIEQUAL inputs with defined Varnodes.",
+   "anchor": "heritage.cc:2587-2593, 2479-2556",
+   "inputs": "MULTIEQUAL ops placed, VariableStack (per disjoint address range), dominator tree structure",
+   "outputs": "each non-input Varnode linked to defining PcodeOp, MULTIEQUAL inputs populated with defined Varnodes"
+  },
+  {
+   "name": "Load/Store Guard Range Analysis",
+   "description": "Detects LOAD ops reading from dynamically indexed locations and STORE ops to stack; creates guard logic and refines ranges via value-set analysis with three states (unanalyzed -> partial -> locked).",
+   "anchor": "heritage.hh:142-170, 251-252, heritage.cc:150-152 (LoadGuard.analysisState), 281-282 (generateLoadGuard), 2753 (analyzeNewLoadGuards)",
+   "inputs": "LOAD/STORE PcodeOps, discovered indexed stack pointers, ValueSetSolver for range determination",
+   "outputs": "LoadGuard/StoreGuard list, range bounds (minimumOffset, maximumOffset, step), INDIRECT ops created if needed"
+  },
+  {
+   "name": "Stack Pointer Flow Analysis (ActionStackPtrFlow, StackSolver)",
+   "description": "Solves linear equations over stack-pointer references to determine extrapop (stack changes across calls). Propagates solutions via companion indices for underdetermined systems.",
+   "anchor": "coreaction.cc:25-51 (StackSolver), 89-105 (ActionStackPtrFlow), 148-200 (build)",
+   "inputs": "stack-pointer Varnode references, CPUI_ADD/COPY/INDIRECT ops linking them, spacebase register data",
+   "outputs": "extrapop values filled in for each call, equations propagated via constraint solver"
+  },
+  {
+   "name": "Prototype Recovery - Parameter Discovery (ActionActiveParam, ParamTrial system)",
+   "description": "Discovers function call input parameters through trial list accumulation and ancestral use analysis. Data-flow based; repeated passes narrow down which putative inputs are actually used. Trial progression: active -> checked -> used.",
+   "anchor": "coreaction.cc:1754-1800, fspec.hh:285-337 (ParamActive, ParamTrial)",
+   "inputs": "FuncCallSpecs with input Varnodes (trials), AliasChecker for stack aliasing, maxpass threshold per call",
+   "outputs": "ParamTrial.isUsed() flags set, trials finalized once numpasses >= maxpass"
+  },
+  {
+   "name": "Prototype Recovery - Return Value Discovery (ActionReturnRecovery)",
+   "description": "Determines function return values by analyzing CPUI_RETURN ops via ancestral use validation. Similar trial-based approach to parameters but applied to outputs. Generates PIECE ops for multi-piece returns.",
+   "anchor": "coreaction.cc:1937-1984, 1865-1935 (buildReturnOutput)",
+   "inputs": "CPUI_RETURN ops, ParamActive output trials, AncestorRealistic validator for use plausibility",
+   "outputs": "return CPUI_RETURN inputs modified with concatenations (PIECE ops) if multiple pieces"
+  },
+  {
+   "name": "Function Linkage Setup (ActionFuncLink, ActionFuncLinkOutOnly)",
+   "description": "Establishes formal input/output Varnode structures for called functions. For locked prototypes, creates exact Varnodes; for unknown, initializes ParamActive trial system.",
+   "anchor": "coreaction.cc:706-735, fspec.hh:1695-1700",
+   "inputs": "FuncCallSpecs proto (locked or guessed), sub-function Funcdata if available",
+   "outputs": "input/output Varnodes created matching prototype, ParamActive trials initialized if recovery enabled"
+  },
+  {
+   "name": "Dead Code Elimination (ActionDeadCode, consume bit propagation)",
+   "description": "Marks and removes Varnodes that are never consumed. Uses bit-level consume propagation backward from sinks (branches, returns, calls); gates on deadRemovalAllowed() per address space to avoid removing before heritage completes.",
+   "anchor": "coreaction.cc:565-579 (class), 4070-4208 (apply), 4050-4068 (lastChanceLoad)",
+   "inputs": "all Varnodes and ops, deadRemovalAllowed per space, consume bits, autoLive marks on branches/returns",
+   "outputs": "unconsumed PcodeOps destroyed/output unset, dead Varnodes queued for cleanup, seenDeadcode(spc) called"
+  },
+  {
+   "name": "Stack Frame Restructuring (ActionRestructureVarnode, ScopeLocal.restructure)",
+   "description": "Maps stack locations to symbols by collecting RangeHint data-type hints and resolving conflicts via heuristic scoring. Iteratively refines stack frame layout.",
+   "anchor": "varmap.cc/hh, coreaction.cc:862-876 (Action), varmap.hh:212-266 (ScopeLocal)",
+   "inputs": "Varnodes on stack space, load guards, symbol metadata, RangeHint collection from varnodes/pointers",
+   "outputs": "symbols created/updated on stack, RangeHint conflicts resolved via preferred() heuristics (typelock > rangeType > type specificity)"
+  },
+  {
+   "name": "Value-Set Analysis (ValueSetSolver, CircleRange pullBack/pushForward)",
+   "description": "Computes abstract ranges of values reachable to each Varnode using weak-topological-order iteration with controlled widening. Supports constraint generation from branches for range refinement.",
+   "anchor": "rangeutil.hh:263-327, rangeutil.cc (1600+), heritage.cc:151-152 (guard invocation)",
+   "inputs": "source Varnodes (roots), sinks (targets), conditional branch constraints, Widener strategy (WidenerFull: iter 2,5 or WidenerNone: iter 3)",
+   "outputs": "ValueSet per Varnode (range, typeCode for spacebase-relative), ValueSetRead at each operation use point"
+  },
+  {
+   "name": "Type Inference (ActionInferTypes, propagateTypeEdge)",
+   "description": "Propagates data-type information across data-flow edges iteratively. Handles feedback with ActionRestructure over spacebase-relative pointers; includes iteration limit to prevent hangs on circular struct pointers.",
+   "anchor": "coreaction.cc:974-995",
+   "inputs": "initial Varnode types from operations, spacebase references to local map, recursion depth limit (arbitrary, line 972)",
+   "outputs": "narrowed Datatype on each Varnode, may trigger ActionRestructure re-run if spacebase types change"
+  },
+  {
+   "name": "Constant Pointer Resolution (ActionConstantPtr, space inference heuristics)",
+   "description": "Detects constants that represent addresses and marks them as pointers. Decision: explicit space attributes > usage context inference.",
+   "anchor": "coreaction.cc:188-203",
+   "inputs": "constant Varnodes, space attribute inference heuristic, symbol address ranges",
+   "outputs": "Varnode marked as pointer, underlying symbol reference established"
+  },
+  {
+   "name": "Determined Branch Simplification (ActionDeterminedBranch, value-set use)",
+   "description": "Removes conditional branches whose condition Varnode is determined to be constant, using value-set analysis results.",
+   "anchor": "coreaction.cc:537-545",
+   "inputs": "CBRANCH ops with constant-valued conditions (from value-set analysis)",
+   "outputs": "redundant CBRANCH ops removed, control flow simplified"
+  }
+ ],
+ "feedback_loops": [
+  {
+   "name": "Heritage Re-triggering on New Varnodes After Deadcode",
+   "trigger": "New free Varnode detected after dead code removal in collect phase (LocationMap detects address previously thought heritaged but Varnode re-appears)",
+   "rewinds_to": "Heritage main loop (heritage.cc:2663); entire function decompilation restarts with bumped deadcodedelay",
+   "mechanism": "Lines 2712-2730 detect prev==2 (fully contained in old) or partial overlap with deadremoved>0. Call bumpDeadcodeDelay(vn->getSpace()) which invokes fd->getOverride().insertDeadcodeDelay(...+1) and setRestartPending(true). Decompiler harness restarts function from beginning.",
+   "anchor": "heritage.cc:2712-2730 (detection logic), 2571-2581 (bumpDeadcodeDelay implementation)"
+  },
+  {
+   "name": "Type Propagation Feedback Loop with Stack Restructuring",
+   "trigger": "ActionInferTypes discovers new types for spacebase-relative pointers; these affect struct layouts learned by ActionRestructureVarnode",
+   "rewinds_to": "ActionRestructureVarnode runs again to rebuild symbol layout with new type information",
+   "mechanism": "When spacebase-relative pointer type changes, propagateSpacebaseRef(data, vn) updates local map struct types. ActionRestructure marks entries dirty (numpass incremented, coreaction.cc:870). Comment at lines 968-970 acknowledges feedback loop; arbitrary iteration limit (line 972) prevents infinite loop.",
+   "anchor": "coreaction.cc:968-973 (comment on feedback loop), 984 (propagateSpacebaseRef)"
+  },
+  {
+   "name": "ParamActive Trial Refinement Across Multiple Passes",
+   "trigger": "checkInputTrialUse detects active use of a trial Varnode in data-flow not confirmed in prior pass (or marks trial inactive if no use found)",
+   "rewinds_to": "ActionActiveParam applied again in next action iteration (not a full decompile restart, but action-level restart)",
+   "mechanism": "finishPass increments numpasses. If numpasses < maxpass and checkInputTrialUse found changes, count+=1 signals continue. Only when numpasses >= maxpass does markFullyChecked prevent re-entry. coreaction.cc:1774-1777 shows: if !isFullyChecked() -> count+=1 (retry).",
+   "anchor": "coreaction.cc:1771-1787, fspec.hh:300-309 (trial management), 312-315 (pass tracking)"
+  },
+  {
+   "name": "Load Guard Range Refinement via ValueSetSolver",
+   "trigger": "analyzeNewLoadGuards invokes ValueSetSolver to narrow guard range bounds from unanalyzed -> partial -> locked state",
+   "rewinds_to": "Potentially heritage if guard ranges change significantly (affects MULTIEQUAL/INDIRECT placement), but typically localized to load guard analysis",
+   "mechanism": "LoadGuard.analysisState progresses 0(unanalyzed)->1(partial)->2(locked) via establishRange/finalizeRange. ValueSetSolver computes value ranges at pointer definitions. If locked range is much smaller than initial [0, max], may invalidate prior alias assumptions, but no explicit re-heritage trigger (heritage.cc:2753 processes guards post-heritage).",
+   "anchor": "heritage.cc:150-152 (LoadGuard.analysisState), 281-282 (generateLoadGuard), 2753 (analyzeNewLoadGuards call)"
+  },
+  {
+   "name": "Call Prototype Locking Invalidates Recovery Trials",
+   "trigger": "User (or inference) locks a call's prototype (isInputLocked=true) after ParamActive trials begin",
+   "rewinds_to": "ActionFuncLink re-runs; trial system is abandoned in favor of locked prototype specification",
+   "mechanism": "In ActionActiveParam.apply (line 1768), check isInputActive(). If proto becomes locked between passes, isInputActive() may become false, causing function to skip trial processing and finalize from locked proto. coreaction.cc:1768-1784 shows: if (!fc->isInputActive()) skip trial processing.",
+   "anchor": "coreaction.cc:1768-1787, fspec.hh:1695-1700 (locked state flags)"
+  },
+  {
+   "name": "Extrapop Determination Triggers INDIRECT Placeholder Resolution",
+   "trigger": "ActionStackPtrFlow solves StackSolver equations for unknown extrapop values at calls",
+   "rewinds_to": "Varnode.resolveSpacebaseRelative called to finalize/fold INDIRECT ops after extrapop known",
+   "mechanism": "INDIRECT ops are inserted at call sites with unknown extrapop (ActionExtraPopSetup). Once ActionStackPtrFlow determines value via StackSolver.solve(), INDIRECT is replaced with COPY/ADD or resolved. coreaction.cc:95 checks checkClog and repair functions.",
+   "anchor": "coreaction.cc:89-105 (ActionStackPtrFlow), 25-51 (StackSolver)"
+  }
+ ],
+ "decision_points": [
+  {
+   "name": "Refinement Decision: Fragment Large Ranges",
+   "where": "Heritage placeMultiequals (line 2610)",
+   "decision": "If memory range size > 4 and collected reads don't cover full size (max < size), split range at gaps via refinement(). Otherwise, treat as single range for MULTIEQUAL placement. Heuristic: coarse 4-byte threshold.",
+   "alternatives": "Keep unsplit -> may place MULTIEQUALs covering unused bytes, slower narrowing; split aggressively -> more precise MULTIEQUALs but more refined ranges to process",
+   "anchor": "heritage.cc:2610-2615",
+   "current_override": "Hard threshold of 4 bytes (line 2610: if size > 4 && max < size)"
+  },
+  {
+   "name": "Deadcode Delay Bump Decision",
+   "where": "Heritage collection, lines 2712-2730",
+   "decision": "If new Varnode detected at address previously heritaged and deadremoved>0 for that space, should we bump deadcodedelay (restart pipeline) or ignore? Criterion: detection of prev==2 or partial overlap with deadremoved flag set.",
+   "alternatives": "Bump (current) -> restarts, safe but slow; ignore -> faster but risks incomplete analysis if more Varnodes appear later",
+   "anchor": "heritage.cc:2712-2730 (detection), 2571-2581 (bumpDeadcodeDelay)",
+   "current_override": "Always bump if needwarning=true (lines 2714, 2723) and !fd->isJumptableRecoveryOn()"
+  },
+  {
+   "name": "Trial Finalization Threshold in ParamActive",
+   "where": "ActionActiveParam.apply, lines 1774-1784",
+   "decision": "After numpasses iterations, decide if trials are 'fully checked'. Criterion: numpasses >= maxpass. If so, call resolveModel + buildInputFromTrials to finalize. Otherwise, count+=1 to schedule retry.",
+   "alternatives": "Conservative (higher maxpass, e.g., 10) -> more passes, better accuracy but slower; aggressive (lower maxpass, e.g., 2) -> faster but less certain of parameters",
+   "anchor": "coreaction.cc:1774-1784, fspec.hh:290, 313-314",
+   "current_override": "maxpass set per function prototype model; defaults visible in code appear to be low (~5-10 based on comment patterns), encourages multiple passes"
+  },
+  {
+   "name": "RangeHint Conflict Resolution via preferred()",
+   "where": "ScopeLocal.restructure, varmap.cc:126-157",
+   "decision": "When two RangeHints overlap, which data-type to keep? Multi-tier priority: (1) typelock > unlocked, (2) fixed > open, (3) type specificity (typeOrder).",
+   "alternatives": "Simple first-fit -> keeps old, misses better types; last-fit -> keeps new, may lose locks; by size -> may prefer wrong type; by frequency -> may bias common types",
+   "anchor": "varmap.cc:126-157, varmap.hh:117-127",
+   "current_override": "Multi-tier heuristic hardcoded; typelock is absolute override, then rangeType, then type::typeOrder"
+  },
+  {
+   "name": "ValueSet Widening Iteration Timing",
+   "where": "ValueSetSolver.solve iteration, rangeutil.hh:236-261",
+   "decision": "When iteration doesn't stabilize, apply widening at iteration N. If still not converged, apply full-range at iteration M. Widener strategy chosen at call site. Heuristic: balance precision vs. convergence speed.",
+   "alternatives": "WidenerFull (early widen) -> converges faster, less precise; WidenerNone (freeze early) -> captures initial values, shows step; no widening -> may not converge; late widening -> more precise but slower",
+   "anchor": "rangeutil.hh:240-261 (WidenerFull, default: widenIteration=2, fullIteration=5), 254-261 (WidenerNone, default: freezeIteration=3)",
+   "current_override": "WidenerFull uses fixed iteration numbers (2, 5); WidenerNone freezes at 3. Called from heritage.cc:151 (LoadGuard analysis)"
+  },
+  {
+   "name": "Constant-to-Address Interpretation Decision",
+   "where": "ActionConstantPtr.apply + helper functions (lines 188-203)",
+   "decision": "Given a constant Varnode, interpret as pointer or integer? Priority: (1) searchForSpaceAttribute (explicit annotation), (2) selectInferSpace (usage context heuristic).",
+   "alternatives": "Only explicit annotations -> miss inferred pointers; only inference -> may misclassify; mixed (current) -> balances annotation strength with inference",
+   "anchor": "coreaction.cc:188-203, selectInferSpace (line 191)",
+   "current_override": "Two-tier: space attribute > inference heuristic (selectInferSpace chooses best match from space list by operand types)"
+  },
+  {
+   "name": "Prototype Model Resolution (Recovery vs. Default)",
+   "where": "ActionFuncLink apply and ActionFuncLinkOutOnly context",
+   "decision": "For unknown call proto, enable ParamActive recovery (slow, iterative) or apply default model (fast, conservative)? Criterion: presence of protorecovery action group.",
+   "alternatives": "Recovery enabled -> iterative refinement, higher quality, slower; recovery disabled -> ActionFuncLinkOutOnly (output-only) -> fast but may miss inputs",
+   "anchor": "coreaction.cc:706-735, fspec.hh:1695-1700 (isInputActive, isOutputActive)",
+   "current_override": "Conditional on action group: if protorecovery in action list, enable; else fall back to FuncLinkOutOnly (seen in action list construction, coreaction.cc line 5646)"
+  },
+  {
+   "name": "Return Value Ancestral Use Validation Depth",
+   "where": "ActionReturnRecovery.apply, lines 1959-1961",
+   "decision": "For a return value in a trial, does CPUI_RETURN truly consume it or is it vacuous/dead? Use AncestorRealistic validator + ancestorOpUse(maxancestor, ...) depth check. Heuristic: realistic ancestor patterns + recursion limit.",
+   "alternatives": "Strict validation (low maxancestor) -> misses some valid returns; loose (high maxancestor) -> includes dead returns; no validation -> accepts all",
+   "anchor": "coreaction.cc:1947, 1959-1961",
+   "current_override": "maxancestor = data.getArch()->trim_recurse_max (architecture-wide setting); AncestorRealistic.execute validates op type"
+  },
+  {
+   "name": "Input Type Propagation Iteration Limit",
+   "where": "ActionInferTypes.apply iteration loop",
+   "decision": "Type propagation depth-first can loop on struct fields with circular pointers. Apply arbitrary iteration limit and warn. Heuristic: prevent hangs without affecting most functions.",
+   "alternatives": "No limit -> hangs on cycles; tight limit -> incomplete types; adaptive limit (per function complexity) -> complex heuristic; current -> simple, reliable",
+   "anchor": "coreaction.cc:968-973",
+   "current_override": "Arbitrary iteration limit mentioned (line 972: 'Arbitrary iteration limit') but constant not visible in header; warning issued if exceeded"
+  }
+ ],
+ "intervention_surfaces": [
+  {
+   "name": "deadcodedelay Override",
+   "kind": "override",
+   "description": "Per-address-space override to set delay before dead code removal allowed. Set via fd->getOverride().insertDeadcodeDelay(spc, newdelay). Prevents premature dead code removal before all Varnodes heritaged.",
+   "affects": "Heritage deadRemovalAllowed(spc) gate returns (pass > info->deadcodedelay); if false, dead code not removed, heritage continues next pass",
+   "anchor": "heritage.cc:2815-2821, 2833-2834, override.cc:225"
+  },
+  {
+   "name": "Locked Prototypes (FuncProto input/output locks)",
+   "kind": "annotation",
+   "description": "User can mark proto input/output as locked via setInputLocked(true), disabling ParamActive trial recovery. Locks set from declared proto or user override.",
+   "affects": "ActionActiveParam checks isInputActive (skip if locked); ActionReturnRecovery (skip if output locked); coreaction.cc:1768, 1810",
+   "anchor": "fspec.hh:1695-1700, coreaction.cc:1768, 1810"
+  },
+  {
+   "name": "Heritage Space Delay (per-space initial delay)",
+   "kind": "option",
+   "description": "Architecture/address space can specify initial heritage delay. Stack space typically has delay=1 to discover all stack Varnodes in pass 0 before linking in pass 1.",
+   "affects": "Heritage loop: pass < info->delay -> skip processing; heritage.cc:2687; allows phased discovery",
+   "anchor": "heritage.cc:2687, heritage.hh:124-126, space.hh:116"
+  },
+  {
+   "name": "Widener Strategy Selection (WidenerFull vs WidenerNone)",
+   "kind": "option",
+   "description": "ValueSetSolver.solve(maxiter, widener) accepts Widener object; WidenerFull widens at iteration 2/5, WidenerNone freezes at 3. Affects guard range precision/convergence.",
+   "affects": "LoadGuard.analyzeNewLoadGuards invokes solver with chosen widener; determines when range stabilizes; rangeutil.hh:236-261",
+   "anchor": "rangeutil.hh:236-261, heritage.cc:151"
+  },
+  {
+   "name": "PrototypeModel ParamList Configuration",
+   "kind": "preset",
+   "description": "Architecture defines ParamList models (p_standard, p_register, etc.) with ParamEntry locations. Trial resolution uses these to assign slot->address mapping.",
+   "affects": "ParamActive.resolveModel() and deriveInputMap determine final parameter positions; fspec.hh:425-433",
+   "anchor": "fspec.hh:425-433, fspec.cc (resolveModel, deriveInputMap)"
+  },
+  {
+   "name": "AliasChecker Stack Boundaries",
+   "kind": "option",
+   "description": "ScopeLocal aliasChecker configurable localBoundary and localExtreme from FuncProto. Defines parameter vs. local stack regions for alias analysis.",
+   "affects": "Stack restructuring: determines which stack offsets are aliased by pointers; varmap.cc:155, varmap.hh:151-152",
+   "anchor": "varmap.hh:137-166, varmap.cc:155 (deriveBoundaries)"
+  },
+  {
+   "name": "ParamActive.maxpass (max iterations)",
+   "kind": "option",
+   "description": "Maximum iterations before finalizing parameter trials. Once numpasses >= maxpass, trials marked as 'fully checked' and resolved.",
+   "affects": "ActionActiveParam finalization (lines 1774-1775); controls trial analysis effort",
+   "anchor": "fspec.hh:290, 313-314, coreaction.cc:1774-1775"
+  },
+  {
+   "name": "Jumptable Recovery Flag (isJumptableRecoveryOn)",
+   "kind": "option",
+   "description": "If true, certain heritage decisions skipped (e.g., deadcode delay bumping). Prevents restarts during jump-table-specific analysis.",
+   "affects": "Heritage lines 2714, 2723 check fd->isJumptableRecoveryOn(); if true, skips bumpDeadcodeDelay",
+   "anchor": "heritage.cc:2714, 2723"
+  },
+  {
+   "name": "Force Restructure (Heritage.forceRestructure)",
+   "kind": "override",
+   "description": "Set maxdepth=-1 to force full augmented dominator tree rebuild on next heritage pass. Useful if block structure changed externally.",
+   "affects": "Heritage buildADT() re-runs at line 2677; affects phi-node placement",
+   "anchor": "heritage.hh:333, heritage.cc:2676-2677"
+  },
+  {
+   "name": "RangeHint typelock Flag",
+   "kind": "annotation",
+   "description": "RangeHint marked typelock=true if data-type is user-locked or from locked symbol. Overrides reconciliation in preferred() heuristic.",
+   "affects": "varmap.cc preferred(): locked type always wins conflict; varmap.hh:102, varmap.cc:132-135",
+   "anchor": "varmap.hh:102, 117-118, varmap.cc:132-135"
+  }
+ ],
+ "insights": [
+  "Heritage is explicitly non-linear: deadcodedelay and bumpDeadcodeDelay mechanism detects new Varnodes post-removal and restarts entire decompilation with incremented delay. This is explicit architectural feedback, not an implicit loop.",
+  "SSA construction spans multiple per-space passes to decouple discovery (pass 0: collect all Varnodes) from linking (pass 1+: build SSA). Allows stack Varnodes (which are discovered incrementally from data-flow) to be fully collected before aggressive MULTIEQUAL/INDIRECT placement.",
+  "Phi-node placement and renaming are decoupled stages within a single heritage pass: placeMultiequals() places all MULTIEQUAL ops first for current ranges, then rename() links them. Avoids iteration within a pass.",
+  "ParamActive trial system is explicit iterative refinement: each ActionActiveParam pass checks trials for active use and marks them. Only when numpasses >= maxpass do trials finalize. This is action-level iteration, not a full decompile restart.",
+  "Type propagation over spacebase-relative pointers creates acknowledged feedback loop (coreaction.cc:968-970 comment): if struct types change, ActionRestructure re-runs, which may affect subsequent type inference. Arbitrary iteration limit (line 972) prevents infinite loop.",
+  "Value-set analysis uses explicit widening strategies (WidenerFull with fixed iterations 2,5; WidenerNone with freeze at 3) to trade precision for convergence. Not a natural fixed-point solver; widening is mandatory for termination.",
+  "Load/Store guards are two-phase: generateLoadGuard creates initial guards with full ranges [0, max]; analyzeNewLoadGuards refines ranges via ValueSetSolver post-heritage. LoadGuard.analysisState (0->1->2) tracks progression to locked state.",
+  "Deadcode removal gates on deadRemovalAllowed() per space, preventing removal before heritage completes. Restart via deadcodedelay is explicit architectural decision, triggered by detection in lines 2712-2730.",
+  "Constant-to-pointer interpretation (ActionConstantPtr) is two-tier: explicit space attributes override inference. selectInferSpace heuristic chooses best address space from symbol lists if multiple candidates.",
+  "ParamTrial slot numbering is relative to CALL input indices, not final parameter positions. Renumbering happens in resolveModel/deriveInputMap; final ordering determined by PrototypeModel ParamList."
+ ]
+}

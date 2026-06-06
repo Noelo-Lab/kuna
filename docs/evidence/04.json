@@ -1,0 +1,549 @@
+{
+ "decompiler": "angr",
+ "focus": "angr decompiler front/middle pipeline (Decompiler, Clinic, SSA, variable recovery, structuring, and their feedback loops)",
+ "pipeline": [
+  {
+   "name": "Cache Lookup",
+   "description": "Check if a cached decompilation result exists for this function with matching parameters (cfg, variable_kb, options, optimization_passes, etc.). If cache hit, extract codegen/clinic/ite_exprs/binop_operators and skip to type refinement.",
+   "anchor": "decompiler.py:250-271",
+   "inputs": "func.addr, _flavor, _cache_parameters, kb.decompilations dict",
+   "outputs": "cache (DecompilationCache or None), old_codegen, old_clinic"
+  },
+  {
+   "name": "Global Variables Setup",
+   "description": "Populate kb.variables['global'] with symbol information from loader (name, address, size) to enable later recognition of global memory accesses.",
+   "anchor": "decompiler.py:279-281, 686-697",
+   "inputs": "project.loader.main_object.symbols, kb.variables['global']",
+   "outputs": "kb.variables['global'] updated with SimMemoryVariable entries"
+  },
+  {
+   "name": "Clinic Invocation (AIL Conversion & Intermediate Stages)",
+   "description": "Core decompilation stage that converts CFG to AIL, applies two-level SSA, callsite construction, variable recovery, and type inference. This is the longest stage and calls many sub-stages internally.",
+   "anchor": "decompiler.py:322-353",
+   "inputs": "func (Function), cfg (CFGModel), kb (KnowledgeBase), optimization_passes, variable_kb, options",
+   "outputs": "clinic object with .graph (AIL), .arg_list, .arg_vvars, .variable_kb, .reaching_definitions"
+  },
+  {
+   "name": "Clinic Detailed Sub-Stages (Sequential)",
+   "description": "Clinic._decompilation_simplifications() executes 14 stages in strict order: return sites, argument list, stack pointer tracking, SSA Level0, constant propagation, callsites, pre-SSA-L1 simplifications, SSA Level1, post-SSA-L1 simplifications, variable recovery, semantic naming, externs collection.",
+   "anchor": "clinic.py:679-705, 684-699",
+   "inputs": "AIL graph from prior stage, reaching definitions, stack pointer info",
+   "outputs": "_ail_graph with SSA form, arg_vvars, variable_kb, vvar_to_vvar mapping"
+  },
+  {
+   "name": "Clinic Stage 1: Make Return Sites",
+   "description": "Add return value expressions to Return statements based on function prototype and calling convention. Simplify graph afterward.",
+   "anchor": "clinic.py:713-720",
+   "inputs": "function.prototype, function.calling_convention, _ail_graph",
+   "outputs": "_ail_graph with ret_exprs populated in Return statements"
+  },
+  {
+   "name": "Clinic Stage 2: Make Argument List",
+   "description": "Recover function arguments from calling convention and prototype. Create virtual variable (vvar) mappings for each argument.",
+   "anchor": "clinic.py:721-725",
+   "inputs": "function.calling_convention, function.prototype, reaching_definitions",
+   "outputs": "arg_list (list of SimVariable), arg_vvars (dict of vvar->SimVariable mappings)"
+  },
+  {
+   "name": "Clinic Stage 3: Track Stack Pointers",
+   "description": "Run StackPointerTracker analysis to determine stack offset at every instruction. Required before SSA Level1.",
+   "anchor": "clinic.py:752-753",
+   "inputs": "_ail_graph, project.arch",
+   "outputs": "self._spt (StackPointerTracker result)"
+  },
+  {
+   "name": "Clinic Stage 4: Pre-SSA Level0 Fixups",
+   "description": "Duplicate orphaned conditional jumps, rewrite jmp_rax calls. Prepares graph for first SSA transformation.",
+   "anchor": "clinic.py:727-731",
+   "inputs": "_ail_graph",
+   "outputs": "_ail_graph with fixups applied"
+  },
+  {
+   "name": "Clinic Stage 5: SSA Level0 (Register-Only)",
+   "description": "Transform AIL graph to partial-SSA form for register variables. Creates phi expressions for register definitions at join points. Does NOT convert stack variables.",
+   "anchor": "clinic.py:733-736",
+   "inputs": "_ail_graph, func_args (register vars only), dominance frontier",
+   "outputs": "_ail_graph in SSA Level0 form (register phi nodes inserted)"
+  },
+  {
+   "name": "Clinic Stage 6: Constant Propagation",
+   "description": "Run single-pass simplification with only_consts=True to fold constants and propagate constant values through expressions.",
+   "anchor": "clinic.py:738-750",
+   "inputs": "_ail_graph (SSA Level0), reaching definitions",
+   "outputs": "_ail_graph with constants propagated"
+  },
+  {
+   "name": "Clinic Stage 7: Pre-SSA Level1 Simplifications",
+   "description": "Block simplification (dead assignment elimination, copy propagation), simplify-function (multiple passes), and first callsite construction to identify stack arguments.",
+   "anchor": "clinic.py:772-823",
+   "inputs": "_ail_graph, stack pointer tracker, reaching definitions",
+   "outputs": "_ail_graph simplified, _stackarg_offsets identified"
+  },
+  {
+   "name": "Clinic Stage 8: SSA Level1 (Stack Variables)",
+   "description": "Transform stack variables (identified via stack pointer tracking) to SSA form. Creates phi expressions for stack definitions. Runs simplification passes after SSA insertion.",
+   "anchor": "clinic.py:755-770",
+   "inputs": "_ail_graph (SSA Level0), func_args, stack pointer offsets from _spt",
+   "outputs": "_ail_graph with stack variable phi nodes; _register_save_areas_removed=True"
+  },
+  {
+   "name": "Clinic Stage 9: Post-SSA Level1 Simplifications",
+   "description": "Four consecutive _simplify_function calls with unify_variables=True, narrow_expressions=True. Interspersed with optimization passes. Creates vvar_to_vvar dephi mapping.",
+   "anchor": "clinic.py:843-926",
+   "inputs": "_ail_graph (SSA Level0+L1), reaching definitions, arg_vvars",
+   "outputs": "_ail_graph fully simplified, vvar_to_vvar mapping for dephication, arg_list rebuilt"
+  },
+  {
+   "name": "Clinic Stage 10: Recover Variables",
+   "description": "Run VariableRecoveryFast on SSA AIL graph to identify variable boundaries. Run Typehoon type inference. Link variable annotations back to AIL expressions.",
+   "anchor": "clinic.py:930-955, 2252-2401",
+   "inputs": "_ail_graph (fully SSA+simplified), arg_vvars, vvar_to_vvar, function prototype",
+   "outputs": "variable_kb with unified variables, types, and variable-to-atom linkage"
+  },
+  {
+   "name": "Clinic Stage 11: Semantic Variable Naming",
+   "description": "Apply semantic-based patterns to rename variables according to usage context (e.g., input buffers, output buffers, counters).",
+   "anchor": "clinic.py:956-988",
+   "inputs": "variable_kb, _ail_graph, entry node",
+   "outputs": "variable_kb with updated variable names"
+  },
+  {
+   "name": "Clinic Stage 12: Collect Externs",
+   "description": "Identify external memory locations (global pointers, extern globals) referenced by the function.",
+   "anchor": "clinic.py:990-991",
+   "inputs": "_ail_graph, variable_kb",
+   "outputs": "self.externs (set of SimMemoryVariable)"
+  },
+  {
+   "name": "Graph Simplification Passes (Before Region ID)",
+   "description": "Run OptimizationPass instances with STAGE==BEFORE_REGION_IDENTIFICATION. These passes can modify blocks but not graph topology. Output becomes input to RegionIdentifier.",
+   "anchor": "decompiler.py:378-382, 526-580",
+   "inputs": "clinic.graph (SSA+simplified AIL), reaching definitions, optimization_passes",
+   "outputs": "clinic.graph after optimization"
+  },
+  {
+   "name": "Region Identification",
+   "description": "Identify single-entry-single-exit regions (SEXEs) recursively from CFG. Creates hierarchical GraphRegion tree. May modify jump targets to create new artificial blocks for loop refinement.",
+   "anchor": "decompiler.py:388",
+   "inputs": "clinic.graph, ConditionProcessor, entry_node_addr",
+   "outputs": "self.region_identifier (RegionIdentifier analysis result)"
+  },
+  {
+   "name": "Region Simplification Passes (During Region ID)",
+   "description": "Run OptimizationPass instances with STAGE==DURING_REGION_IDENTIFICATION. After each pass, if graph modified, re-run RegionIdentifier on new graph. Includes jump table recovery, cross-jump revertion, etc.",
+   "anchor": "decompiler.py:393-400, 582-663",
+   "inputs": "clinic.graph, region_identifier, reaching definitions, optimization_passes",
+   "outputs": "clinic.graph, region_identifier (possibly updated)"
+  },
+  {
+   "name": "Save AIL Graph Before Structuring",
+   "description": "Create a copy of clinic.graph to clinic.cc_graph (Clinic-CodeGen graph) before structuring removes non-critical edges. This copy is used for reference in codegen.",
+   "anchor": "decompiler.py:407-408",
+   "inputs": "clinic.graph",
+   "outputs": "clinic.cc_graph (snapshot of AIL)"
+  },
+  {
+   "name": "Structuring (RecursiveStructurer)",
+   "description": "Apply recursive schema-based structuring algorithm to convert regions into structured IR (if/while/for/sequences). Output is seq_node (SequenceNode tree).",
+   "anchor": "decompiler.py:421-427",
+   "inputs": "region_identifier.region, ConditionProcessor, function info, structurer options",
+   "outputs": "seq_node (structured intermediate representation)"
+  },
+  {
+   "name": "Region Simplification (RegionSimplifier)",
+   "description": "Simplify structured regions: merge sequences, remove unnecessary gotos, simplify if-else patterns (unless Rust flavor).",
+   "anchor": "decompiler.py:438-450",
+   "inputs": "seq_node (from structurer), ail_manager, variable manager, arg_vvars",
+   "outputs": "seq_node (simplified)"
+  },
+  {
+   "name": "Post-Structuring Simplification Passes",
+   "description": "Run OptimizationPass instances with STAGE==AFTER_STRUCTURING on seq_node. Can modify seq_node in place.",
+   "anchor": "decompiler.py:452-458",
+   "inputs": "seq_node, optimization_passes",
+   "outputs": "seq_node after passes"
+  },
+  {
+   "name": "SSA-to-Non-SSA Transformation (Dephication)",
+   "description": "Remove phi expressions from seq_node by replacing phi variables with their source variables using vvar_to_vvar mapping. Produces non-SSA seq_node.",
+   "anchor": "decompiler.py:460-461, 865-870",
+   "inputs": "seq_node (SSA form), vvar_to_vvar mapping from Clinic",
+   "outputs": "seq_node (non-SSA form)"
+  },
+  {
+   "name": "Memory Data Reference Discovery",
+   "description": "Walk seq_node to extract all Const expressions, check if they are valid memory addresses, and register them as data references in cfg.memory_data.",
+   "anchor": "decompiler.py:463-465, 813-849",
+   "inputs": "seq_node, cfg",
+   "outputs": "cfg.memory_data updated with discovered data references"
+  },
+  {
+   "name": "Code Generation (CStructuredCodeGenerator or RustStructuredCodeGenerator)",
+   "description": "Convert seq_node and variable_kb into C or Rust source code. Generates function signature, body, and comments. Output is codegen.text.",
+   "anchor": "decompiler.py:468-484",
+   "inputs": "seq_node, clinic.arg_list, variable_kb, cfg (for comments), function, options",
+   "outputs": "codegen object with .text (source code)"
+  },
+  {
+   "name": "LLM Refinement (Optional)",
+   "description": "If llm_refine option enabled, use LLM client to suggest improved variable names, function names, variable types, and function summary. Regenerates codegen.text if changes made.",
+   "anchor": "decompiler.py:494-501, 872-901",
+   "inputs": "codegen.text, variable_kb, function, llm_client config",
+   "outputs": "codegen.text (potentially updated), cache.function_summary"
+  },
+  {
+   "name": "Cache Update",
+   "description": "Store result (codegen, clinic, type constraints, etc.) in cache and kb.decompilations dict for future reuse.",
+   "anchor": "decompiler.py:504-505",
+   "inputs": "codegen, clinic, cache parameters",
+   "outputs": "kb.decompilations[(func.addr, flavor)] = cache"
+  }
+ ],
+ "feedback_loops": [
+  {
+   "name": "cache_invalidation_on_failed_decompile",
+   "trigger": "self.errors is non-empty after first _decompile() attempt",
+   "rewinds_to": "_decompile() entry, but with fallback preset (basic)",
+   "mechanism": "Exception handler wraps initial _decompile in try/except, clears errors, switches preset, calls _decompile() again at line 219",
+   "anchor": "decompiler.py:204-223"
+  },
+  {
+   "name": "region_id_re_execution_on_graph_modification",
+   "trigger": "Optimization pass returns out_graph != None during _run_region_simplification_passes",
+   "rewinds_to": "_recover_regions to recompute region hierarchy for new graph",
+   "mechanism": "After each DURING_REGION_IDENTIFICATION pass, if out_graph exists, rebuild addr_and_idx_to_blocks, call _recover_regions (line 657), recompute RI",
+   "anchor": "decompiler.py:643-663"
+  },
+  {
+   "name": "simplification_fixed_point_in_block_simplifier",
+   "trigger": "BlockSimplifier._simplify_block_once returns new_block != block (changes detected)",
+   "rewinds_to": "Loop start in BlockSimplifier._analyze, re-run _simplify_block_once on modified block",
+   "mechanism": "while True loop with break condition new_block == block; caches cleared on change; max iterations=30 (ctr)",
+   "anchor": "block_simplifier.py:130-150"
+  },
+  {
+   "name": "ail_simplifier_iteration_until_convergence",
+   "trigger": "Simplification pass modifies AIL graph (expressions/statements changed)",
+   "rewinds_to": "Re-run simplification on updated graph",
+   "mechanism": "AILSimplifier._simplify_function has iteration logic; BlockSimplifier called multiple times for each block",
+   "anchor": "ail_simplifier.py (full file); clinic.py:741-750, 810-817, 826-834, 856-902"
+  },
+  {
+   "name": "calling_convention_refinement_via_callsite_analysis",
+   "trigger": "Callee function has no calling convention or prototype (case 4 in _recover_calling_conventions)",
+   "rewinds_to": "After initial CallingConvention analysis, if successful, result cached in kb.callsite_prototypes; if AIL func_graph provided, may re-patch AIL call statements with ret_expr",
+   "mechanism": "Loop through all transition graph nodes, attempt CallingConvention analysis, update callsite prototypes or function prototype/CC",
+   "anchor": "clinic.py:1196-1258"
+  },
+  {
+   "name": "prototype_recomputation_when_missing_or_guessed",
+   "trigger": "Decompiler._decompile sees that function.prototype is None or stale after Clinic runs",
+   "rewinds_to": "Clinic re-runs (via _regen_clinic or cache miss) which calls _recover_calling_conventions and _make_function_prototype",
+   "mechanism": "Line 321 checks if regen_clinic OR old_clinic is None OR func.prototype is None; if any true, create new Clinic",
+   "anchor": "decompiler.py:321-359"
+  },
+  {
+   "name": "vvar_id_allocation_across_inlining_and_ssailification",
+   "trigger": "Inline call completes with new vvar IDs from callee Clinic; SSA transformation needs unique IDs",
+   "rewinds_to": "Ssailification uses vvar_id_start from Clinic.vvar_id_start (updated by inline) to allocate phi IDs without conflict",
+   "mechanism": "callee_clinic.vvar_id_start updated after inline (line 554), passed to Ssailification (indirectly via clinic's state); no explicit rewind but ID space preserved",
+   "anchor": "clinic.py:541-555, ssailification.py:119"
+  },
+  {
+   "name": "dephi_mapping_validation_and_update_in_dephication",
+   "trigger": "DephicationBase._collect_and_remap finds phi assignments and builds vvar_to_vvar mapping; if mapping already provided, uses it directly",
+   "rewinds_to": "If rewrite=True, GraphRewritingAnalysis applies mapping by rewriting vvars in all statements",
+   "mechanism": "Fixed-point iteration in _collect_and_remap (lines 55-69) until convergence on transitive phi relationships",
+   "anchor": "dephication_base.py:38-94"
+  },
+  {
+   "name": "type_inference_constraint_collection_and_resolution",
+   "trigger": "VariableRecoveryFast collects type constraints from AIL graph; Typehoon solves them; if constraints exceed threshold or solver fails, fallback to default types",
+   "rewinds_to": "No explicit rewind; on Typehoon exception, types remain unrefined (fallback to SimTypeBottom); on threshold exceeded, skip Typehoon entirely",
+   "mechanism": "Try-catch in _recover_and_link_variables (lines 2313-2361); if exception, log warning and continue without type info",
+   "anchor": "clinic.py:2312-2361"
+  },
+  {
+   "name": "variable_unification_and_liveness_merge",
+   "trigger": "Variable recovery completes, VariableRecoveryFast produces variable_manager with SSA vars; liveness analysis determines which vars interfere",
+   "rewinds_to": "var_manager.unify_variables called with interference graph from SLivenessAnalysis; merges SSA vars into unified vars",
+   "mechanism": "One-pass unification after liveness (no iteration); affects variable names assigned in subsequent codegen",
+   "anchor": "clinic.py:2371-2387"
+  },
+  {
+   "name": "optimization_pass_stage_filtering_and_reorder",
+   "trigger": "Decompiler._run_graph_simplification_passes or _run_region_simplification_passes iterates through self._optimization_passes and filters by STAGE",
+   "rewinds_to": "Each pass can return out_graph != None, triggering re-build of block maps and re-execution of RegionIdentifier",
+   "mechanism": "For-loop over passes, skip if STAGE != current; if pass returns out_graph, re-run RI; otherwise proceed to next pass",
+   "anchor": "decompiler.py:525-580, 582-663"
+  },
+  {
+   "name": "cache_reuse_with_prototype_invalidation",
+   "trigger": "Cache hit occurs but function.prototype changed since cache was created",
+   "rewinds_to": "Clinic.copy_graph() called to reuse old graph, but prototype comparison may cause re-analysis if prototype source changed",
+   "mechanism": "Line 357-358 restores cc_graph from cache; no explicit re-run, but downstream code may detect prototype mismatch",
+   "anchor": "decompiler.py:354-359"
+  }
+ ],
+ "decision_points": [
+  {
+   "name": "preset_selection",
+   "where": "Decompiler._decompile",
+   "decision": "Which optimization passes to use - determined by selecting a DecompilationPreset (default, basic, etc.) or explicitly providing a custom set. The preset dictates which optimization passes and their configurations get applied throughout the pipeline.",
+   "alternatives": "Different preset would mean different optimization passes run - e.g., 'basic' fallback runs if initial decompilation fails, resulting in simpler transformations and potentially different output",
+   "anchor": "decompiler.py:118-131",
+   "current_override": "explicit preset parameter, options system via DecompilationOption"
+  },
+  {
+   "name": "clinic_regen_decision",
+   "where": "Decompiler._decompile",
+   "decision": "Whether to regenerate the Clinic analysis or reuse cached results. If _regen_clinic=False and cache exists with valid prototype, old clinic is reused.",
+   "alternatives": "Not regenerating means stale prototype or arg_list from previous run could be used; regenerating means expensive re-analysis but guarantees fresh results",
+   "anchor": "decompiler.py:321-359",
+   "current_override": "_regen_clinic parameter, cache validation via _can_use_decompilation_cache"
+  },
+  {
+   "name": "cache_hit_determination",
+   "where": "Decompiler._decompile",
+   "decision": "Whether to use cached decompilation result based on _cache_parameters matching stored cache.parameters. Affects whether entire Clinic stage is skipped.",
+   "alternatives": "Cache miss forces full Clinic re-run; cache hit reuses codegen/clinic with ite_exprs/binop_operators optionally overridden",
+   "anchor": "decompiler.py:250-271",
+   "current_override": "use_cache and update_cache parameters; _can_use_decompilation_cache checks structural equality"
+  },
+  {
+   "name": "structurer_algorithm_selection",
+   "where": "Decompiler._decompile",
+   "decision": "Which structuring algorithm to use (DEFAULT_STRUCTURER vs PhoenixStructurer) - affects loop handling, successor completion, and callexpr folding.",
+   "alternatives": "Phoenix vs Recursive structurer changes _force_loop_single_exit, _complete_successors, fold_callexprs_into_conditions settings, impacting final IR structure",
+   "anchor": "decompiler.py:299-309",
+   "current_override": "structurer_cls option in options_by_class['recursive_structurer']"
+  },
+  {
+   "name": "ssa_level_depth",
+   "where": "Clinic._decompilation_simplifications",
+   "decision": "Two-level SSA transformation strategy: Level0 (register only) then Level1 (stack variables). Whether to include intermediate passes between them.",
+   "alternatives": "Skipping SSA levels would lose register/stack aliasing analysis; different ordering would affect phi placement",
+   "anchor": "clinic.py:684-699, ClinicStage enum 125-145",
+   "current_override": "start_stage and end_stage parameters control which stages execute"
+  },
+  {
+   "name": "constant_propagation_timing",
+   "where": "Clinic._stage_constant_propagation",
+   "decision": "Constant propagation runs once after SSA Level0 with only_consts=True and max_iterations=1, vs skipping it or iterating until fixed point.",
+   "alternatives": "Skipping would lose constant folding opportunities; fixed-point iteration would be more expensive but more complete",
+   "anchor": "clinic.py:738-750",
+   "current_override": "hardcoded as single pass with specific parameters, no option exposed"
+  },
+  {
+   "name": "callsite_construction_timing",
+   "where": "Clinic._stage_pre_ssa_level1_simplifications and _stage_make_function_callsites",
+   "decision": "Callsites are made twice: once before full SSA (to determine stack args), then again after SSA Level 1. Whether to make them at all.",
+   "alternatives": "Single callsite pass would miss variadic argument detection; skipping would lose calling convention recovery",
+   "anchor": "clinic.py:795-841",
+   "current_override": "hardcoded as two-pass approach in stages; cannot skip"
+  },
+  {
+   "name": "stack_variable_ssa_after_sp_tracking",
+   "where": "Clinic._stage_track_stack_pointers vs _stage_transform_to_ssa_level1",
+   "decision": "Stack pointer tracking must complete before SSA Level1 so that stack variable offsets are known for phi placement.",
+   "alternatives": "Reversing order would cause undefined stack variable offsets during SSA; skipping tracking would make SSA Level1 unusable",
+   "anchor": "clinic.py:687, 755-760, 1285-1310",
+   "current_override": "stage ordering in _decompilation_simplifications loop enforces this"
+  },
+  {
+   "name": "simplification_iteration_strategy",
+   "where": "Clinic._stage_post_ssa_level1_simplifications",
+   "decision": "Function is simplified 4 times in sequence (unify, narrow, etc. parameters toggled), with optimization passes between each. Fixed iteration count vs dynamic.",
+   "alternatives": "Single pass would miss transitive simplifications; dynamic fixed-point would be more expensive",
+   "anchor": "clinic.py:856-902",
+   "current_override": "hardcoded as exactly 4 _simplify_function calls with specific parameters"
+  },
+  {
+   "name": "variable_recovery_entry_point",
+   "where": "Clinic._stage_recover_variables",
+   "decision": "Variable recovery receives fully SSA-ified, simplified AIL graph and converts it to variable-level IR. Whether to run at all depends on _clinic_end_stage.",
+   "alternatives": "Skipping variable recovery loses variable names/types; running before SSA would cause inaccurate variable boundaries",
+   "anchor": "clinic.py:930-955, decompiler.py:415-416",
+   "current_override": "_clinic_end_stage >= ClinicStage.RECOVER_VARIABLES check"
+  },
+  {
+   "name": "dephi_mapping_collection",
+   "where": "Clinic._stage_post_ssa_level1_simplifications",
+   "decision": "After SSA completion, vvar_to_vvar dephi mapping is collected before variable recovery. This mapping is later used by dephication to remove phi variables.",
+   "alternatives": "Not collecting mapping would make dephication fail; collecting at wrong time would use stale SSA state",
+   "anchor": "clinic.py:923-925",
+   "current_override": "hardcoded in stage execution order, no override available"
+  },
+  {
+   "name": "calling_convention_recovery_pre_ail",
+   "where": "Clinic._decompilation_graph_recovery",
+   "decision": "Calling conventions for all callee functions recovered before VEX->AIL conversion (unless pcode arch). If missing, recovered post-AIL.",
+   "alternatives": "Post-conversion only would cause inaccurate call site prototype resolution; skipping would use default calling conventions",
+   "anchor": "clinic.py:437-439, 476-478",
+   "current_override": "is_pcode_arch check, constrain_callee_prototypes option"
+  },
+  {
+   "name": "indirect_jump_and_tailcall_handling",
+   "where": "Clinic._decompilation_fixups",
+   "decision": "Indirect jumps simplified to direct, tail jumps converted to tail calls, before graph simplification passes.",
+   "alternatives": "Not handling them would leave incorrect call/jump semantics; handling after simplification would interfere with simplifiers",
+   "anchor": "clinic.py:465-475",
+   "current_override": "hardcoded in fixup sequence"
+  },
+  {
+   "name": "graph_modification_after_region_id",
+   "where": "Decompiler._run_region_simplification_passes",
+   "decision": "If optimization pass modifies graph, RegionIdentifier is re-run. If no mods, return existing RI.",
+   "alternatives": "Not re-running would use stale region info; always re-running would be expensive",
+   "anchor": "decompiler.py:643-662",
+   "current_override": "conditional check: if a.out_graph is not None, re-run RI"
+  }
+ ],
+ "intervention_surfaces": [
+  {
+   "name": "Decompilation Preset",
+   "kind": "option",
+   "description": "DecompilationPreset (e.g., 'default', 'basic', 'full') determines which OptimizationPass instances and their parameters are selected. Presets are defined in decompilation_presets.py.",
+   "affects": "Decompiler._decompile -> _optimization_passes list, cascading to all optimization invocations",
+   "anchor": "decompiler.py:120-130"
+  },
+  {
+   "name": "Clinic Start/End/Skip Stages",
+   "kind": "override",
+   "description": "clinic_start_stage, clinic_end_stage, clinic_skip_stages parameters allow fine-grained control over which Clinic sub-stages execute. Useful for debugging or for decompilation-only-to-SSA use cases.",
+   "affects": "Clinic._decompilation_simplifications loop (lines 701-704)",
+   "anchor": "decompiler.py:178-180, clinic.py:260-262"
+  },
+  {
+   "name": "Cache Control",
+   "kind": "option",
+   "description": "use_cache (default True) and update_cache (default True) control whether cache is checked and whether results are stored. Setting both to False forces full re-analysis.",
+   "affects": "Decompiler._decompile cache lookup and storage (lines 250-271, 504-505)",
+   "anchor": "decompiler.py:88-89, 195-196"
+  },
+  {
+   "name": "Structuring Algorithm Selection",
+   "kind": "option",
+   "description": "structurer_cls option allows selecting between DEFAULT_STRUCTURER (RecursiveStructurer) and PhoenixStructurer. PhoenixStructurer changes behavior of loop exit handling and callexpr folding.",
+   "affects": "Decompiler._decompile -> _recursive_structurer_params -> RecursiveStructurer instantiation",
+   "anchor": "decompiler.py:299-309"
+  },
+  {
+   "name": "Optimization Passes",
+   "kind": "API",
+   "description": "optimization_passes parameter accepts list of OptimizationPass subclasses. Each pass has STAGE enum to determine when it runs. Custom passes can be injected or disabled.",
+   "affects": "Decompiler._decompile -> _run_graph_simplification_passes, _run_region_simplification_passes, _run_post_structuring_simplification_passes",
+   "anchor": "decompiler.py:71"
+  },
+  {
+   "name": "Variable Knowledge Base",
+   "kind": "option",
+   "description": "variable_kb parameter allows passing a pre-populated KnowledgeBase with existing variable types, manual renames, or constraints. If None, a fresh KB is created.",
+   "affects": "Clinic._decompilation_simplifications and _recover_and_link_variables",
+   "anchor": "decompiler.py:73, clinic.py:208"
+  },
+  {
+   "name": "Decompilation Options",
+   "kind": "option",
+   "description": "options parameter (list of (DecompilationOption, value) tuples) allows per-option configuration. Options are grouped by class (clinic, region_identifier, region_simplifier, codegen, decompiler) and passed as kwargs to respective analyses.",
+   "affects": "Decompiler.options_to_params -> cascades to Clinic, RegionIdentifier, RegionSimplifier, BaseStructuredCodeGenerator",
+   "anchor": "decompiler.py:70, 273-277, 1165-1179"
+  },
+  {
+   "name": "Flavor (Pseudocode vs Rust)",
+   "kind": "option",
+   "description": "flavor parameter selects language target: 'pseudocode' (C) or 'rust'. Rust flavor disables multi-statement expressions and simplifies if-else differently.",
+   "affects": "Decompiler._decompile -> _codegen_cls, _typehoon_cls, RecursiveStructurer options, RegionSimplifier simplify_ifelse",
+   "anchor": "decompiler.py:76, 132-133, 200-202, 301-303, 448"
+  },
+  {
+   "name": "Peephole Optimizations",
+   "kind": "option",
+   "description": "peephole_optimizations parameter allows custom peephole optimization rules to be injected into BlockSimplifier and AILSimplifier. Useful for arch-specific or domain-specific optimizations.",
+   "affects": "BlockSimplifier._analyze, AILSimplifier._simplify_block_once",
+   "anchor": "decompiler.py:74, clinic.py:205"
+  },
+  {
+   "name": "Generate Code Flag",
+   "kind": "option",
+   "description": "generate_code parameter (default True). If False, skips structuring, dephication, and code generation. Useful when only AIL analysis is needed.",
+   "affects": "Decompiler._decompile (lines 415-485 skipped if False)",
+   "anchor": "decompiler.py:87"
+  },
+  {
+   "name": "AIL Collapse Depth",
+   "kind": "option",
+   "description": "expr_collapse_depth (default 16) controls depth limit for expression folding in code generation. Deeper expressions are collapsed to variables to avoid overly nested output.",
+   "affects": "CStructuredCodeGenerator.binop_depth_cutoff parameter",
+   "anchor": "decompiler.py:90, 481"
+  },
+  {
+   "name": "Inline Functions",
+   "kind": "option",
+   "description": "inline_functions parameter specifies a set of Function objects to inline during Clinic analysis. Inlining creates separate Clinic runs for each callee.",
+   "affects": "Clinic._inline_child_functions (called from _decompilation_graph_recovery via _decompilation_simplifications)",
+   "anchor": "decompiler.py:83, clinic.py:407-409"
+  },
+  {
+   "name": "Desired Variables",
+   "kind": "option",
+   "description": "desired_variables parameter limits variable recovery to a specific set of variable names. Useful for targeted analysis of specific variables.",
+   "affects": "Clinic._slice_variables (via TagSlicer optimization pass)",
+   "anchor": "decompiler.py:84, clinic.py:413-414"
+  },
+  {
+   "name": "Reset Variable Names",
+   "kind": "option",
+   "description": "reset_variable_names (default False) forces variable recovery to regenerate all variable names instead of reusing existing names from variable_kb.",
+   "affects": "Clinic._recover_and_link_variables -> var_manager.assign_unified_variable_names reset parameter",
+   "anchor": "decompiler.py:289-291"
+  },
+  {
+   "name": "Constrain Callee Prototypes",
+   "kind": "option",
+   "description": "constrain_callee_prototypes option (default False) enables type constraint generation from callee prototypes, refining caller's type inference.",
+   "affects": "Clinic.constrain_callee_prototypes() invocation",
+   "anchor": "clinic.py:235, 350-355"
+  },
+  {
+   "name": "Decompilation Notes",
+   "kind": "annotation",
+   "description": "notes parameter (dict) allows external annotation of decompilation process. Stored in cache and accessible during structuring/codegen for debugging.",
+   "affects": "Stored in self.notes, passed to RegionIdentifier, RegionSimplifier, passed to codegen",
+   "anchor": "decompiler.py:193, clinic.py:232, 348"
+  },
+  {
+   "name": "Static Virtual Variables and Buffers",
+   "kind": "override",
+   "description": "static_vvars and static_buffers allow pre-defining variable values for specific SSA locations, bypassing standard variable recovery for those locations.",
+   "affects": "Clinic._recover_and_link_variables, potential use in optimization passes",
+   "anchor": "decompiler.py:96-97, clinic.py:232-233"
+  },
+  {
+   "name": "Stack Pointer Tracker Memory Tracking",
+   "kind": "option",
+   "description": "sp_tracker_track_memory (default True) enables memory operation tracking in stack pointer analysis. Disabling reduces analysis scope but speeds up analysis.",
+   "affects": "Clinic._track_stack_pointers invocation",
+   "anchor": "decompiler.py:72, clinic.py:199"
+  },
+  {
+   "name": "Type Constraint Degradation Threshold",
+   "kind": "option",
+   "description": "type_constraint_set_degradation_threshold (default 150) controls when Typehoon solver degrades constraint set complexity to avoid timeout. Lower values degrade earlier, reducing precision.",
+   "affects": "Clinic._recover_and_link_variables -> Typehoon instantiation",
+   "anchor": "clinic.py:224, 2329"
+  }
+ ],
+ "insights": [
+  "The decompiler is NOT a strict compiler pipeline; it is driven by a series of internal decision points (preset selection, caching, structuring algorithm) and frequent feedback loops where later analysis triggers re-execution of earlier stages (region identification re-runs after optimization, type inference fallback, SSA fixed-point iterations). These feedback loops are the most consequential design decisions.",
+  "The Clinic analysis (which handles AIL conversion and SSA) is the longest stage and includes 12 sub-stages with subtle interdependencies: SSA Level0 must precede stack pointer tracking recognition, stack pointer tracking must precede SSA Level1, and variable recovery must follow complete SSA to accurately identify variable boundaries. The sub-stage ordering in Clinic._decompilation_simplifications() is strictly enforced and non-negotiable.",
+  "Caching operates at multiple levels: DecompilationCache stores entire codegen/clinic/type_constraints, while BlockCache (in AILSimplifier) caches ReachingDefinitions per block. Cache hits are validated by structural equality (_cache_parameters comparison), not identity, so parameter changes invalidate cache.",
+  "Optimization passes are architecturally separate from the main pipeline stages, but their STAGE enum determines injection points (BEFORE/DURING/AFTER RegionID, AFTER structuring, etc.). Passes that modify graphs trigger RegionIdentifier re-execution, creating explicit feedback loops. A single pass's modification can force re-analysis of all downstream stages.",
+  "Variable recovery is a critical juncture where SSA form is interpreted as variable-level IR. It depends on VariableRecoveryFast (which analyzes SSA vvar definitions), Typehoon (type constraint solver), and SLivenessAnalysis (to unify SSA vars). Failures in any of these fall back to default types (SimTypeBottom) with logging but no retry.",
+  "The interprocedural model is implemented via calling convention recovery (CallingConvention analysis and CompleteCallingConventions) which infers callee prototypes from call sites if unavailable. This happens twice: before AIL conversion (for non-pcode) and after (for pcode). Incorrect or missing callee prototypes degrade call site accuracy but do not trigger re-analysis of the caller.",
+  "Dephication (SSA-to-non-SSA) uses a vvar_to_vvar mapping computed in _stage_post_ssa_level1_simplifications before variable recovery runs. This mapping is fixed at that point and does not re-compute if variable recovery reveals additional phi variables. The mapping is conservative: it only maps phi varids to their source varids without re-analysis.",
+  "The expression narrowing step (AIL simplifier) is invoked once after callsite construction via narrow_expressions=True. This identifies unused high bits and masks them, reducing expression width. No fixed-point iteration occurs; a single pass is applied.",
+  "Semantic variable naming is an optional, non-essential stage (can be skipped via _skip_stages) that applies pattern-matching heuristics to rename variables (e.g., 'input_buffer', 'return_code'). It runs after variable unification and has no feedback to earlier stages.",
+  "The LLM refinement pass is the final stage and is optional. It regenerates codegen.text if any changes (variable renames, type changes) were made, but does not re-run any analysis. Type changes via LLM do not re-run Typehoon."
+ ]
+}

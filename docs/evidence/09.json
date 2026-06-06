@@ -1,0 +1,341 @@
+{
+ "decompiler": "Reko Decompiler (C#, .NET)",
+ "focus": "Middle-end and backend: DataFlowAnalysis stage (SSA + expression building) -> Typing/Type Reconstruction -> Structure Analysis (CFG->AST) -> Output (code emission)",
+ "pipeline": [
+  {
+   "name": "Interprocedural Analysis via SCC",
+   "description": "Finds strongly connected components (SCCs) in the call graph using bottom-up topological order. Each SCC is processed as an atomic unit to enable interprocedural analysis of preserved/trashed registers and parameter usage across recursive/mutually-recursive procedures.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/DataFlowAnalysis.cs:129-200",
+   "inputs": "Program.Procedures, Program.CallGraph",
+   "outputs": "ProgramDataFlow (per-procedure signature summaries, preserved/trashed registers, live-in/live-out registers)",
+   "substeps": [
+    "SccFinder.Condense(ProcedureGraph) - find SCCs",
+    "per-SCC: CreateSccWorker(procs).Transform() - orchestrate all transforms for that SCC"
+   ]
+  },
+  {
+   "name": "SSA Transformation per SCC",
+   "description": "For each procedure in SCC: convert to SSA form while handling calls to already-visited procedures (via ProcedureFlow) or unvisited/computed calls (hell nodes). Handles register aliasing, stack-based frame variables, indirect calls iteratively.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/SccWorker.cs:88-277",
+   "inputs": "Procedure CFG in low-level form (assignments, calls with implicit register uses/defs)",
+   "outputs": "SsaState (SSA identifiers, phi functions, exception nodes)",
+   "substeps": [
+    "IntraBlockDeadRegisters.Apply()",
+    "AdjacentBranchCollector.Transform()",
+    "ConvertToSsa per proc (lines 160-277): creates SsaTransform, runs ~15 sub-transforms in sequence",
+    "  - SsaTransform.Transform() [lines 180]",
+    "  - RunAnalyses(AfterRegisterSsa)",
+    "  - UnalignedMemoryAccessFuser",
+    "  - LongAddRewriter [twice: lines 190, 205]",
+    "  - ValuePropagator [3x: lines 199, 212, 258]",
+    "  - ConditionCodeEliminator + ValuePropagator loop [lines 210-212]",
+    "  - LongComparisonFuser, StoreFuser, ComplexStackVariableTransformer",
+    "  - SsaTransform with RenameFrameAccesses=true [lines 231, 239, 259]",
+    "  - IndirectCallRewriter loop [lines 235-240]: repeats while changes found",
+    "  - FpuStackReturnGuesser, StackPointerBackpropagator, ArgumentGuesser",
+    "TrashedRegisterFinder.Compute()",
+    "ValuePropagator + SsaTransform loop [lines 113-118] for stack variables",
+    "ProjectionPropagator, StoreFuser [lines 126-134]",
+    "UsedRegisterFinder + live-in computation",
+    "RemoveDeadArgumentsFromCalls per procedure in SCC"
+   ]
+  },
+  {
+   "name": "Expression Building (Post-SSA)",
+   "description": "Per procedure (after all SCCs): apply expression coalescing, induction variable analysis, web building to convert low-level SSA into expression trees. Fixed-point iterations of ValuePropagator + Coalescer.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/DataFlowAnalysis.cs:243-325",
+   "inputs": "SsaState from SSA transformation",
+   "outputs": "High-level expression trees (phi webs, coalesced identifiers)",
+   "substeps": [
+    "ValuePropagator.Transform(ssa)",
+    "conditional: UnreachableBlockRemover if AggressiveBranchRemoval heuristic",
+    "ProjectionPropagator.Transform(ssa)",
+    "DeadCode.Eliminate(ssa)",
+    "Coalescer.Transform(ssa) [lines 279-281 loop: defines+uses -> single expression]",
+    "DeadCode.Eliminate(ssa)",
+    "ValuePropagator.Transform(ssa) [2nd pass]",
+    "RunAnalyses(AfterExpressionCoalescing) [arch-specific]",
+    "LinearInductionVariableFinder.Find() + StrengthReduction per induction var",
+    "DeadCode.Eliminate(ssa)",
+    "WebBuilder.Transform(ssa) [builds webs from phi functions]",
+    "UnSsaTransform(false) [converts SSA back to quasi-single-assignment form]"
+   ]
+  },
+  {
+   "name": "Type Collection & Equivalence Class Building",
+   "description": "Per program: collect data types from instructions and signatures, build equivalence classes of expressions that must have the same type via type variable unification.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Typing/TypeAnalyzer.cs:77-112, TypeCollector.cs, EquivalenceClassBuilder.cs",
+   "inputs": "Program with typed procedures, expressions in SSA form",
+   "outputs": "TypeStore with equivalence classes, TypeVariables unified",
+   "substeps": [
+    "ExpressionNormalizer.Transform(program) - standardize expr patterns",
+    "EquivalenceClassBuilder.Build(program) - assign type variables to each expr, collect constraints",
+    "TypeCollector.CollectTypes() - walk all instructions, meet/join types from uses and defs",
+    "TypeStore.BuildEquivalenceClassDataTypes() - union-find on type constraints"
+   ]
+  },
+  {
+   "name": "Type Inference & Reconstruction",
+   "description": "Per program: unify type variables, transform to concrete data types, inline structures, replace primitive-typed pointers, reconstruct complex types (structs, arrays), rewrite program expressions with inferred types.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Typing/TypeAnalyzer.cs:95-112",
+   "inputs": "TypeStore with equivalence classes, Program",
+   "outputs": "Program with TypedExpressions (casts applied, field accesses instead of memory ops), Type declarations",
+   "substeps": [
+    "TypeVariableReplacer.ReplaceTypeVariables() - union-find resolution",
+    "PtrPrimitiveReplacer.ReplaceAll() - upgrade primitive ptrs to typed ptrs",
+    "TypeTransformer.Transform() - apply inlining, complex type naming rules",
+    "ComplexTypeNamer.RenameAllTypes() - assign meaningful struct/union/array names",
+    "TypedExpressionRewriter.RewriteProgram() - rewrite ssa procedure statements with types"
+   ]
+  },
+  {
+   "name": "Control Flow Structuring (CFG -> Regions)",
+   "description": "Per procedure: convert flat CFG (blocks+jumps) into hierarchical regions (sequences, if-then-else, switches, loops) via iterative refinement, emitting high-level AbsynStatement trees.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Structure/StructureAnalysis.cs:84-186",
+   "inputs": "Procedure.ControlGraph (basic blocks, conditional branches)",
+   "outputs": "Procedure.Body (list of AbsynStatement: AbsynIf, AbsynLoop, AbsynSwitch, etc.)",
+   "substeps": [
+    "ControlFlowGraphCleaner.Transform() - remove unreachable blocks",
+    "CompoundConditionCoalescer.Transform() - merge adjacent branches into compound conditions",
+    "RegionGraphBuilder.Build() - convert CFG blocks to Region hierarchy",
+    "Iterative structuring loop until no more reductions (lines 143-186):",
+    "  DominatorGraph<Region> computation per iteration",
+    "  Post-order DFS traversal of region graph",
+    "  ReduceAcyclic(region): match and reduce if/switch/sequence patterns [lines 241-263]",
+    "  ReduceCyclic(region): match and reduce loop patterns if not acyclic",
+    "  ProcessUnresolvedRegions(): refinement queue for unstructured cases [lines 279-308]",
+    "    - VirtualizeReturn: insert return statements to break cycles",
+    "    - RefineLoop(header, backedges): emit while/do-while/loop regions",
+    "    - RefineIncSwitch(switchHead): virtualize edges to normalize switch pattern",
+    "    - CoalesceTailRegion: merge unreachable regions",
+    "    - LastResort: insert goto nodes when stuck",
+    "Post-processing:",
+    "  IfCascadeToSwitchRewriter - convert if-else chains to switch",
+    "  DeclarationInserter - add variable declarations",
+    "  ForLoopRewriter - recognize for loops from while",
+    "  TailReturnRemover - hoist tail returns",
+    "  ProcedurePrettifier - final AST cleanup"
+   ]
+  },
+  {
+   "name": "Absyn Statement Emission",
+   "description": "Convert Region hierarchy and Procedure.Body to text output via formatters. Decisions: indentation, casts insertion, operator precedence.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Structure/AbsynStatementEmitter.cs, src/Core/Output/",
+   "inputs": "Procedure with Body (AbsynStatements), Type information",
+   "outputs": "C-style source code text",
+   "substeps": [
+    "AbsynCodeFormatter walks Procedure.Body statements",
+    "AbsynStatementEmitter emits high-level language: if/while/do-while/switch/assignments",
+    "TypeFormatter emits typed declarations",
+    "GlobalDataWriter emits global variable declarations"
+   ]
+  }
+ ],
+ "feedback_loops": [
+  {
+   "name": "ValuePropagator + SsaTransform loop (indirect call resolution)",
+   "trigger": "IndirectCallRewriter.Rewrite() returns true (new call targets resolved)",
+   "rewinds_to": "ValuePropagator + SsaTransform with RenameFrameAccesses",
+   "mechanism": "While loop: IndirectCallRewriter.Rewrite() [lines 235-240 in SccWorker.cs] calls vp.Transform() then sst.Transform() if changed",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/SccWorker.cs:234-240"
+  },
+  {
+   "name": "ValuePropagator + ConditionCodeEliminator loop",
+   "trigger": "ConditionCodeEliminator uncovers more constant flags or condition patterns",
+   "rewinds_to": "ValuePropagator to propagate newly-eliminated condition code uses",
+   "mechanism": "Sequence: ConditionCodeEliminator.Transform() followed by vp.Transform() [lines 210-212]",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/SccWorker.cs:210-212"
+  },
+  {
+   "name": "Stack variable discovery + SSA rebuild",
+   "trigger": "ComplexStackVariableTransformer or StackPointerBackpropagator discovers new stack-based variables",
+   "rewinds_to": "SsaTransform with RenameFrameAccesses=true to re-SSA the new frame identifiers",
+   "mechanism": "SsaTransform.RenameFrameAccesses flag, called ~4 times after each frame-access-creating transform [lines 116, 231, 239, 259]",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/SccWorker.cs:114-118, 230-239"
+  },
+  {
+   "name": "Coalescer + ValuePropagator loop",
+   "trigger": "Coalescer subsumes definitions into uses, revealing new propagation opportunities",
+   "rewinds_to": "ValuePropagator to fold constants and propagate coalesced values",
+   "mechanism": "Sequence with DeadCode in between: Coalescer [279-280] -> DeadCode -> ValuePropagator [283] in DataFlowAnalysis.BuildExpressionTrees()",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/DataFlowAnalysis.cs:275-286"
+  },
+  {
+   "name": "Region reduction loop until convergence",
+   "trigger": "Each iteration: ReduceAcyclic or ReduceCyclic succeeds, reducing region count, or ProcessUnresolvedRegions refines stuck regions",
+   "rewinds_to": "Recompute DominatorGraph and re-traverse region graph in post-order",
+   "mechanism": "Outer do-while loop (lines 143-185): continues while regionGraph.Nodes.Count > 1; inner loop rebuilds doms per iteration",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Structure/StructureAnalysis.cs:143-186"
+  },
+  {
+   "name": "Type equivalence class unification (implicit fixed-point in union-find)",
+   "trigger": "Each MeetDataType or EqualTrait adds constraints; union-find implicitly converges when all constraints processed",
+   "rewinds_to": "Implied: re-traversal of constraints during BuildEquivalenceClassDataTypes or TypeTransformer, but not explicit restart",
+   "mechanism": "TypeStore uses union-find; constraints are one-pass; TypeTransformer may reveal inconsistencies but doesn't re-run type collection",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Typing/TypeAnalyzer.cs:95-111"
+  },
+  {
+   "name": "User-defined type constraints propagate backward through inference",
+   "trigger": "UserProcedure.Signature or UserGlobal.DataType provided in Program.User",
+   "rewinds_to": "Type inference: TypeCollector honors user signatures via EnsureSignatureTypeVariables before per-instruction analysis",
+   "mechanism": "TypeCollector.EnsureSignatureTypeVariables() called per procedure [TypeCollector.cs:81-92] before instruction walk",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Typing/TypeCollector.cs:70-102"
+  }
+ ],
+ "decision_points": [
+  {
+   "name": "Heuristic: CallsRespectABI",
+   "where": "SsaTransform constructor",
+   "decision": "Should implicit register uses/defs at call sites respect the platform ABI? If yes, use IsTrashedAbi; else use IsTrashedGuess heuristic.",
+   "alternatives": "If true: assume ABI-listed trashed registers are always killed by calls. If false: infer from data flow which registers are actually trashed by call targets.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/SsaTransform.cs:98-100",
+   "current_override": "Program.User.Heuristics collection; AnalysisHeuristics.CallsRespectABI constant"
+  },
+  {
+   "name": "Heuristic: AggressiveBranchRemoval",
+   "where": "BuildExpressionTrees in DataFlowAnalysis",
+   "decision": "Should UnreachableBlockRemover be run, aggressively removing blocks deemed unreachable? Default: false to preserve debug info.",
+   "alternatives": "If true: may remove blocks that confuse decompilers but may lose legitimate code. If false: preserve more conservative CFG.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/DataFlowAnalysis.cs:258-265",
+   "current_override": "Program.User.Heuristics.Contains(AnalysisHeuristics.AggressiveBranchRemoval)"
+  },
+  {
+   "name": "SCC vs. Single-Procedure Processing",
+   "where": "DataFlowAnalysis.RewriteProceduresToSsa (interprocedural model choice)",
+   "decision": "Are procedures in same SCC processed together (allowing inter-SCC analysis of preserve/trash) or individually?",
+   "alternatives": "SCC-based (current): bottom-up, allows callees to inform callers' register summaries. Per-procedure: faster but loses interprocedural precision.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/DataFlowAnalysis.cs:189-230",
+   "current_override": "Hardcoded: SccFinder.Condense(ProcedureGraph) always used"
+  },
+  {
+   "name": "When to stop region structuring iterations",
+   "where": "StructureAnalysis.Execute main loop",
+   "decision": "Stop when regionGraph.Nodes.Count <= 1 OR iterations > 1000 (hardcoded timeout)",
+   "alternatives": "Max iterations could be user-configurable; could use progress heuristic (% reduction per iteration) to escape earlier.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Structure/StructureAnalysis.cs:148-155",
+   "current_override": "Hardcoded 1000 iteration limit; no configuration option"
+  },
+  {
+   "name": "Switch vs. Else-If Cascade",
+   "where": "IfCascadeToSwitchRewriter post-processing",
+   "decision": "Convert long if-else chains into switch statements for readability?",
+   "alternatives": "If true: emit switch. If false: preserve cascading if-else (may be more faithful to original).",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Structure/StructureAnalysis.cs:99-100",
+   "current_override": "Hardcoded: always run; no user control"
+  },
+  {
+   "name": "Type unification strictness in EquivalenceClassBuilder",
+   "where": "Type reconstruction phase",
+   "decision": "How strict to be when unifying type variables? Allow unions of incompatible types, or fail?",
+   "alternatives": "Lenient: auto-widen to unions or void*. Strict: report error and skip.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Typing/TypeAnalyzer.cs:96-99",
+   "current_override": "Determined by TypeTransformer rules; no explicit user override visible"
+  },
+  {
+   "name": "Expression simplification rules applied in ValuePropagator",
+   "where": "ExpressionSimplifier with ~30+ reduction rules (Add_mul_id_c_id_Rule, IdBinIdc_Rule, etc.)",
+   "decision": "Which algebraic simplification rules are active? (e.g., constant folding, strength reduction, slice coalescing)",
+   "alternatives": "All rules active (current). Could disable specific rules for preservation of original patterns.",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Evaluation/ExpressionSimplifier.cs:36-65",
+   "current_override": "Hardcoded rule set instantiation; no configuration"
+  }
+ ],
+ "intervention_surfaces": [
+  {
+   "name": "Program.User.Procedures (UserProcedure)",
+   "kind": "annotation",
+   "description": "User can specify procedure entry addresses, names, signatures, and calling conventions. These override inferred signatures.",
+   "affects": "SSA parameter/return identification, CallRewriter, type inference",
+   "anchor": "/home/mahaloz/github/reko/src/Core/UserData.cs:39, 79"
+  },
+  {
+   "name": "Program.User.Globals (UserGlobal)",
+   "kind": "annotation",
+   "description": "User can specify global variable addresses, names, and data types. Type system respects these.",
+   "affects": "Type collection, memory access rewriting, type inference",
+   "anchor": "/home/mahaloz/github/reko/src/Core/UserData.cs:41, 89"
+  },
+  {
+   "name": "Program.User.Calls (UserCallData)",
+   "kind": "annotation",
+   "description": "User can annotate call sites with target procedure or signature overrides.",
+   "affects": "CallRewriter, type inference for arguments",
+   "anchor": "/home/mahaloz/github/reko/src/Core/UserData.cs:40, 84"
+  },
+  {
+   "name": "Program.User.Heuristics",
+   "kind": "option",
+   "description": "Set of string constants (e.g., 'aggressive-branch-removal', 'calls-respect-abi') to enable/disable analysis heuristics.",
+   "affects": "SsaTransform (ABI vs. inferred trash), DataFlowAnalysis (UnreachableBlockRemover)",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/AnalysisHeuristics.cs:26-38"
+  },
+  {
+   "name": "Program.User.DebugTraceProcedures",
+   "kind": "override",
+   "description": "Set of procedure names to enable verbose debug output (DumpWatchedProcedure) for tracing specific procedures.",
+   "affects": "DataFlowAnalysis phase logging and test output generation",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/DataFlowAnalysis.cs:407-441, 480-483"
+  },
+  {
+   "name": "IDecompilerEventListener.IsCanceled()",
+   "kind": "callback",
+   "description": "Decompiler checks this at every major loop to allow user cancellation. User can implement to return true to abort.",
+   "affects": "All stages: SccWorker loops, TypeAnalyzer, StructureAnalysis, DataFlowAnalysis",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/DataFlowAnalysis.cs:121, 135, 145, 169, etc."
+  },
+  {
+   "name": "IAnalysisFactory.CreateSsaAnalyses(stage, ssa, context)",
+   "kind": "API",
+   "description": "Architecture-specific extension point: processors can register custom SSA analyses (e.g., x86-specific instruction patterns) at specified AnalysisStage.",
+   "affects": "BuildExpressionTrees and ConvertToSsa: RunAnalyses() calls this for AfterRegisterSsa, AfterExpressionCoalescing stages",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Analysis/DataFlowAnalysis.cs:340-356, SccWorker.cs:183"
+  },
+  {
+   "name": "Program.NeedsSsaTransform",
+   "kind": "lock",
+   "description": "Some IR formats (e.g., LLVM) already have SSA; flag controls whether SsaTransform is even called.",
+   "affects": "DataFlowAnalysis.AnalyzeProgram() branching [line 175]",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Decompiler.cs:175"
+  },
+  {
+   "name": "Program.NeedsTypeReconstruction",
+   "kind": "lock",
+   "description": "Some IR formats may have types already; flag controls whether TypeAnalyzer.RewriteProgram() is called.",
+   "affects": "Decompiler.ReconstructTypes() [line 384]",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Decompiler.cs:384"
+  },
+  {
+   "name": "ExpressionSimplifier rule instances (static fields)",
+   "kind": "other",
+   "description": "The ~30 simplification rules in ExpressionSimplifier are statically instantiated. No runtime enable/disable, but future work could add rule registry.",
+   "affects": "ValuePropagator transform quality",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Evaluation/ExpressionSimplifier.cs:38-65"
+  },
+  {
+   "name": "TypeStore.UsedEquivalenceClasses",
+   "kind": "annotation",
+   "description": "Type inference tracks which equivalence classes are actually used; unused classes are not emitted. No direct user override, but affects output.",
+   "affects": "WriteDecompiledDeclarations phase",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Decompiler.cs:521"
+  },
+  {
+   "name": "Program.DebugProcedureRange (debug)",
+   "kind": "override",
+   "description": "[DEBUG BUILD ONLY] Restrict type analysis to a range of procedures for debugging.",
+   "affects": "TypeAnalyzer.RewriteProgram() via RestrictProcedures [line 94]",
+   "anchor": "/home/mahaloz/github/reko/src/Decompiler/Typing/TypeAnalyzer.cs:130-167"
+  }
+ ],
+ "insights": [
+  "Reko is fundamentally NOT a linear pipeline: SSA transformation contains ~15 nested mini-transforms with multiple re-runs of ValuePropagator + ConditionCodeEliminator + SsaTransform, triggered by downstream discoveries (indirect calls resolved, condition codes eliminated, stack variables found). This is a fixed-point iteration, not a sequence.",
+  "Interprocedural model via SCC processing is Reko's key differentiator: callee summaries (which registers are preserved/trashed, which parameters are used) flow UP to callers within an SCC, enabling inter-procedure optimization. This is more sophisticated than single-pass forward analysis, at the cost of re-processing each SCC until convergence.",
+  "Type reconstruction is SEPARATE from SSA: Reko doesn't infer types during SSA construction (as Ghidra does). Instead: (1) SSA builds expression trees with untyped identifiers, (2) separate type inference phase collects constraints from instructions and signatures, (3) unification happens via union-find, (4) TypedExpressionRewriter rewrites procedures with the unified types. This decoupling allows user types to constrain inference without re-running SSA.",
+  "The region structuring algorithm is iterative and sometimes unpredictable: when standard reduction rules (if/switch/sequence/loop) fail, it queues regions for refinement (virtualize edges, coalesce tails, last-resort goto insertion). It can iterate 1000+ times on complex, pathological CFGs. This is more robust than algorithms requiring perfect SESE structure, but less principled.",
+  "User annotations (signatures, globals, heuristics) flow through via Program.User, not via formal type signatures on decompilation methods. This means interventions are late-bound and scattered across many checks (e.g., 'if proc.User?.Signature, use it' appears in many places). No unified override mechanism.",
+  "Expression simplification is deeply embedded in ValuePropagator (via ExpressionSimplifier with 30+ rules). There's no way to disable specific rules or tune aggressiveness without code changes. Coalescer is separate and could be disabled.",
+  "The feedback loops are not symmetrical: SSA->ValuePropagator->SsaTransform is well-structured. But type inference has no explicit loop back to SSA; TypeTransformer can fail silently if unification discovers inconsistencies. TypeCollector is single-pass.",
+  "CFG structuring attempts to emit region-based code, but fallback 'last resort' and 'virtualize' steps can result in gotos if the input CFG is truly unstructured (e.g., irreducible loops, switch with irregular entries). This is pragmatic but means some decompiled code may have gotos despite goal to eliminate them.",
+  "The EventListener callback pattern is used for cancellation, progress, and error reporting. It does NOT support mid-stage checkpoints or phase interleaving. If a procedure fails in one stage, the whole decompilation continues; there's no per-procedure rollback.",
+  "Architecture-specific extensions (IAnalysisFactory) allow per-CPU analysis passes, but these are inserted as mini-pipelines within broader stages (AfterRegisterSsa, AfterExpressionCoalescing). No way for an architecture to inject a new top-level stage or replace a stage."
+ ]
+}

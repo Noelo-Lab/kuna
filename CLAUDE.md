@@ -14,19 +14,6 @@ Apache-2.0 licensed. The C++ source under `decompiler/` and the SLEIGH specs und
 commit (`GHIDRA_REV`) and path map. Upstream changes can be pulled in later; see
 **Porting upstream changes** below.
 
-## The one rule that matters: do not edit vendored code
-
-Files under `decompiler/` and `specs/` are **byte-identical to upstream and must stay
-that way.** This is what keeps the upstream sync a clean `git diff | rewrite-paths |
-git apply`. All kuna-specific logic lives in **new files only**:
-
-- top-level `Makefile` (wraps the untouched `decompiler/cpp/Makefile`)
-- `kuna/` (Python package), `tools/` (scripts), `*.md`, `pyproject.toml`
-
-If you think you need to change a vendored file, stop and reconsider — add a new file,
-or if it's genuinely an upstream fix, take it upstream and sync it back. `diff -r` of
-`decompiler/`+`specs/` against the upstream paths must remain empty.
-
 ## Layout
 
 | Path | What |
@@ -39,8 +26,8 @@ or if it's genuinely an upstream fix, take it upstream and sync it back. `diff -
 | `kuna/` | Python package: `decompile.py`, `run_tests.py`, `paths.py`. |
 | `tools/sync_upstream.py` | Port upstream Ghidra changes into kuna. |
 | `tools/fetch_bfd.sh` | Fetch libbfd without root (see Build). |
-| `STAGES.md` | The 19 speculated decompiler stages. |
-| `STAGE_MAPPING.md` | Every `.cc` mapped to a stage (or infrastructure), anchored to the real pass pipeline. |
+| `STAGES.md` | The normative stage model (P0 plane, S1–S9, Band B, feedback edges); full model in `docs/stage-model.md`. |
+| `STAGE_MAPPING.md` | Every `.cc` mapped to a stage (or infrastructure) — still on the **old 19-stage numbering**, remap pending. |
 | `docs/baseline.json` | Recorded test-pass oracle from the pristine upstream tree (parity check). |
 
 ## Build

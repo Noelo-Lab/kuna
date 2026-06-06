@@ -1,0 +1,630 @@
+{
+ "decompiler": "Ghidra's C++ Decompiler",
+ "focus": "ActionDatabase pass orchestration, Action/Rule/ActionGroup/ActionPool machinery, restart mechanism, rule application worklists, and feedback loops in universalAction",
+ "pipeline": [
+  {
+   "name": "ActionStart",
+   "description": "Entry point action. Initializes function data structure for analysis, marks it as ready for decompilation.",
+   "inputs": "Funcdata with raw p-code ops and CFG",
+   "outputs": "Funcdata prepared for downstream passes",
+   "anchor": "coreaction.cc:5624"
+  },
+  {
+   "name": "ActionConstbase",
+   "description": "Identifies and marks constant addresses in the p-code as base register or register references, allowing dataflow to track register identity through the function.",
+   "inputs": "Funcdata ops",
+   "outputs": "Varnode base register annotations",
+   "anchor": "coreaction.cc:5625"
+  },
+  {
+   "name": "ActionNormalizeSetup",
+   "description": "Prepares data structures for normal form analysis, used by the 'normalize' root action variant. Sets up context for algebraic normalization.",
+   "inputs": "Funcdata",
+   "outputs": "Normalization context initialized",
+   "anchor": "coreaction.cc:5626"
+  },
+  {
+   "name": "ActionDefaultParams",
+   "description": "Establishes default parameter passing convention for the function based on architecture ABI. Assigns initial parameter locations (registers, stack offsets).",
+   "inputs": "Funcdata, Architecture ABI rules",
+   "outputs": "Initial parameter varnodes and locations",
+   "anchor": "coreaction.cc:5627"
+  },
+  {
+   "name": "ActionExtraPopSetup",
+   "description": "Handles stack adjustments for variadic or extra pop instructions. Prepares stack space analysis.",
+   "inputs": "Funcdata, stack space info",
+   "outputs": "Stack offset corrections",
+   "anchor": "coreaction.cc:5629"
+  },
+  {
+   "name": "ActionPrototypeTypes",
+   "description": "Recovers function prototype (parameter and return types) from any available type information (debug symbols, type inference). Sets initial function signature.",
+   "inputs": "Funcdata, symbol table, type factory",
+   "outputs": "Function prototype with parameter/return types",
+   "anchor": "coreaction.cc:5630"
+  },
+  {
+   "name": "ActionFuncLink",
+   "description": "Links the function prototype to caller/callee functions for inter-procedural analysis. Refines parameter/return types based on known linked functions.",
+   "inputs": "Funcdata prototype, symbol table, call graph",
+   "outputs": "Refined prototype from linked analysis",
+   "anchor": "coreaction.cc:5631"
+  },
+  {
+   "name": "ActionFuncLinkOutOnly",
+   "description": "Links only outbound function calls (no inter-procedural data flow). Used in 'noproto' group when full proto recovery is disabled.",
+   "inputs": "Funcdata call ops",
+   "outputs": "Outbound call prototype info",
+   "anchor": "coreaction.cc:5632"
+  },
+  {
+   "name": "fullloop (ActionGroup rule_repeatapply)",
+   "description": "Outer repeat loop encapsulating mainloop plus post-mainloop refinement actions. Repeats until all fullloop actions reach quiescence.",
+   "inputs": "Funcdata from setup phase",
+   "outputs": "Fully refined dataflow and control structure",
+   "anchor": "coreaction.cc:5634-5836",
+   "substeps": [
+    "mainloop (ActionGroup rule_repeatapply) [lines 5636-5824]",
+    "ActionLikelyTrash [5826]",
+    "ActionDirectWrite protorecovery_a [5827]",
+    "ActionDirectWrite protorecovery_b [5828]",
+    "ActionDeadCode [5829]",
+    "ActionDoNothing [5830]",
+    "ActionSwitchNorm [5831]",
+    "ActionReturnSplit [5832]",
+    "ActionUnjustifiedParams [5833]",
+    "ActionStartTypes [5834]",
+    "ActionActiveReturn [5835]"
+   ]
+  },
+  {
+   "name": "mainloop (ActionGroup rule_repeatapply) - INNERMOST REPEAT",
+   "description": "Core analysis loop. Contains dataflow refinement, type inference, parameter/return recovery, dead code removal, and rule pools. Repeats until all mainloop actions stabilize (no changes).",
+   "inputs": "Funcdata with initial prototype",
+   "outputs": "Stabilized dataflow, refined types, identified dead code, block structure",
+   "anchor": "coreaction.cc:5636-5824",
+   "substeps": [
+    "ActionUnreachable [5637]",
+    "ActionVarnodeProps [5638]",
+    "ActionHeritage [5639]",
+    "ActionParamDouble [5640]",
+    "ActionSegmentize [5641]",
+    "ActionInternalStorage [5642]",
+    "ActionForceGoto [5643]",
+    "ActionDirectWrite protorecovery_a [5644]",
+    "ActionDirectWrite protorecovery_b [5645]",
+    "ActionActiveParam [5646]",
+    "ActionReturnRecovery [5647]",
+    "ActionRestrictLocal [5649]",
+    "ActionDeadCode [5650]",
+    "ActionDynamicMapping [5651]",
+    "ActionSpacebase [5652]",
+    "ActionNonzeroMask [5653]",
+    "ActionInferTypes [5654]",
+    "ActionRestructureVarnode [5655]",
+    "stackstall [ActionGroup rule_repeatapply] [5656-5804]",
+    "ActionRedundBranch [5805]",
+    "ActionBlockStructure [5806]",
+    "ActionConstantPtr [5807]",
+    "oppool2 [ActionPool rule_repeatapply] [5809-5818]",
+    "ActionDeterminedBranch [5819]",
+    "ActionUnreachable [5820]",
+    "ActionNodeJoin [5821]",
+    "ActionConditionalExe [5822]",
+    "ActionConditionalConst [5823]"
+   ]
+  },
+  {
+   "name": "stackstall (ActionGroup rule_repeatapply) - SECOND-LEVEL REPEAT",
+   "description": "Nested group for stack analysis and variable refinement. Repeats when any sub-action makes changes to propagate stack pointer and shadow variable updates.",
+   "inputs": "Funcdata with typed ops",
+   "outputs": "Refined stack layout, separated shadow variables, deindirected pointers",
+   "anchor": "coreaction.cc:5656-5804",
+   "substeps": [
+    "oppool1 (ActionPool rule_repeatapply) [5658-5798]",
+    "ActionLaneDivide [5799]",
+    "ActionMultiCse [5800]",
+    "ActionShadowVar [5801]",
+    "ActionDeindirect [5802]",
+    "ActionStackPtrFlow [5803]"
+   ]
+  },
+  {
+   "name": "oppool1 (ActionPool rule_repeatapply) - RULE WORKLIST",
+   "description": "Large pool of 131 algebraic and structural simplification rules. Applies all applicable rules to each op, repeating until no rule fires. Rules indexed by opcode for O(1) lookup. CPU-specific rules added at runtime.",
+   "inputs": "Funcdata ops",
+   "outputs": "Simplified op graph (constant folding, algebraic transforms, dead code marked)",
+   "anchor": "coreaction.cc:5658-5797",
+   "substeps": [
+    "RuleEarlyRemoval through RuleDoubleOut (131 rules)",
+    "Architecture extra_pool_rules appended [line 5794]"
+   ]
+  },
+  {
+   "name": "oppool2 (ActionPool rule_repeatapply) - TYPE-DRIVEN RULES",
+   "description": "Smaller pool of type-propagation rules. Applies after block structure is established. Rules operate on inferred type information.",
+   "inputs": "Funcdata with typed constants and block structure",
+   "outputs": "Type-refined ops (pointer arithmetic, struct field access)",
+   "anchor": "coreaction.cc:5809-5818",
+   "substeps": [
+    "RulePushPtr",
+    "RuleStructOffset0",
+    "RulePtrArith",
+    "RuleLoadVarnode",
+    "RuleStoreVarnode"
+   ]
+  },
+  {
+   "name": "ActionMappedLocalSync",
+   "description": "Synchronizes stack-mapped local variable information after fullloop. Aligns varnodes to stack locations.",
+   "inputs": "Funcdata with finalized stack ops",
+   "outputs": "Local variable stack mappings",
+   "anchor": "coreaction.cc:5838"
+  },
+  {
+   "name": "ActionStartCleanUp",
+   "description": "Marks beginning of cleanup phase. Prepares for final syntactic simplifications.",
+   "inputs": "Funcdata stabilized from fullloop",
+   "outputs": "Setup for cleanup rules",
+   "anchor": "coreaction.cc:5839"
+  },
+  {
+   "name": "actcleanup (ActionPool rule_repeatapply) - FINAL CLEANUP",
+   "description": "Post-fullloop rule pool for aggressive syntactic simplifications. Rules operate on stabilized IR without triggering proto or type changes. Includes bitfield extraction and string constant sequences.",
+   "inputs": "Funcdata from fullloop",
+   "outputs": "Syntactically cleaned IR ready for output",
+   "anchor": "coreaction.cc:5841-5864",
+   "substeps": [
+    "RuleMultNegOne through RuleInsertAbsorb (21 rules)"
+   ]
+  },
+  {
+   "name": "ActionPreferComplement (1st)",
+   "description": "First pass to prefer complement forms of expressions. Allows structural modifications. Runs before merging.",
+   "inputs": "Funcdata",
+   "outputs": "Expression preference annotations",
+   "anchor": "coreaction.cc:5867"
+  },
+  {
+   "name": "ActionStructureTransform (1st)",
+   "description": "First block structure transformation pass. Converts control flow to cleaner forms. Allows modifications before merging.",
+   "inputs": "Funcdata with block structure",
+   "outputs": "Transformed control structure",
+   "anchor": "coreaction.cc:5868"
+  },
+  {
+   "name": "ActionNormalizeBranches",
+   "description": "Normalizes branch conditions for consistency and readability.",
+   "inputs": "Funcdata",
+   "outputs": "Normalized branch conditions",
+   "anchor": "coreaction.cc:5869"
+  },
+  {
+   "name": "ActionAssignHigh",
+   "description": "Assigns 'high' varnode values for multi-word operations before merging.",
+   "inputs": "Funcdata",
+   "outputs": "High varnode assignments",
+   "anchor": "coreaction.cc:5870"
+  },
+  {
+   "name": "ActionMergeRequired",
+   "description": "Merges varnodes that must be merged. Initial required merge pass without speculation.",
+   "inputs": "Funcdata varnodes",
+   "outputs": "Required merges identified",
+   "anchor": "coreaction.cc:5871"
+  },
+  {
+   "name": "ActionMarkExplicit",
+   "description": "Marks varnodes for explicit merging (user annotation or system forced).",
+   "inputs": "Funcdata",
+   "outputs": "Explicit merge markings",
+   "anchor": "coreaction.cc:5872"
+  },
+  {
+   "name": "ActionMarkImplied",
+   "description": "Marks varnodes for implicit merging (same type, overlapping storage). Must run BEFORE speculative merging.",
+   "inputs": "Funcdata with types",
+   "outputs": "Implied merge markings",
+   "anchor": "coreaction.cc:5873"
+  },
+  {
+   "name": "ActionMergeMultiEntry",
+   "description": "Merges varnodes on multi-entry blocks (multiple control flow paths define same varnode).",
+   "inputs": "Funcdata with block structure",
+   "outputs": "Multi-entry merges",
+   "anchor": "coreaction.cc:5874"
+  },
+  {
+   "name": "ActionMergeCopy",
+   "description": "Merges varnodes connected by COPY p-code ops.",
+   "inputs": "Funcdata ops",
+   "outputs": "Copy-linked varnodes merged",
+   "anchor": "coreaction.cc:5875"
+  },
+  {
+   "name": "ActionDominantCopy",
+   "description": "Merges varnodes based on dominant relationships in copy chains.",
+   "inputs": "Funcdata",
+   "outputs": "Dominant copy merges",
+   "anchor": "coreaction.cc:5876"
+  },
+  {
+   "name": "ActionDynamicSymbols (1st)",
+   "description": "Identifies and applies dynamic symbol information. First pass before merging.",
+   "inputs": "Funcdata",
+   "outputs": "Dynamic symbol annotations",
+   "anchor": "coreaction.cc:5877"
+  },
+  {
+   "name": "ActionMarkIndirectOnly",
+   "description": "Marks varnodes for indirect-only merging. Controls speculation scope.",
+   "inputs": "Funcdata",
+   "outputs": "Indirect-only merge markings",
+   "anchor": "coreaction.cc:5878"
+  },
+  {
+   "name": "ActionMergeAdjacent",
+   "description": "Merges varnodes at adjacent storage locations representing same logical value.",
+   "inputs": "Funcdata varnodes",
+   "outputs": "Adjacent varnodes merged",
+   "anchor": "coreaction.cc:5879"
+  },
+  {
+   "name": "ActionMergeType",
+   "description": "Merges varnodes of compatible types. Final speculative merge pass based on types.",
+   "inputs": "Funcdata with type info",
+   "outputs": "Type-compatible merges",
+   "anchor": "coreaction.cc:5880"
+  },
+  {
+   "name": "ActionHideShadow",
+   "description": "Hides shadow variables (internal temporaries) by merging with their sources.",
+   "inputs": "Funcdata varnodes",
+   "outputs": "Shadow variables hidden",
+   "anchor": "coreaction.cc:5881"
+  },
+  {
+   "name": "ActionCopyMarker",
+   "description": "Marks varnodes that are copies for pretty-printing control (hides redundant assignments).",
+   "inputs": "Funcdata",
+   "outputs": "Copy markers",
+   "anchor": "coreaction.cc:5882"
+  },
+  {
+   "name": "ActionLateDoNothing",
+   "description": "Placeholder for late block recovery logic. Allows block structure re-evaluation.",
+   "inputs": "Funcdata",
+   "outputs": "Late block recovery context",
+   "anchor": "coreaction.cc:5883"
+  },
+  {
+   "name": "ActionBlockStructure (2nd)",
+   "description": "Second block structure pass after merging. Verifies no new dead blocks emerged. Final structure post-merge.",
+   "inputs": "Funcdata post-merge",
+   "outputs": "Final block structure",
+   "anchor": "coreaction.cc:5884"
+  },
+  {
+   "name": "ActionPreferComplement (2nd)",
+   "description": "Second preference pass without allowing modifications. Locks in expression forms after merge.",
+   "inputs": "Funcdata",
+   "outputs": "Final expression preferences",
+   "anchor": "coreaction.cc:5885"
+  },
+  {
+   "name": "ActionStructureTransform (2nd)",
+   "description": "Second block structure transform without modifications. Final structure, no changes.",
+   "inputs": "Funcdata",
+   "outputs": "Final block structure form",
+   "anchor": "coreaction.cc:5886"
+  },
+  {
+   "name": "ActionOutputPrototype",
+   "description": "Finalizes and outputs the function prototype. Writes parameter and return types to symbol table.",
+   "inputs": "Funcdata with inferred prototype",
+   "outputs": "Committed function prototype",
+   "anchor": "coreaction.cc:5887"
+  },
+  {
+   "name": "ActionInputPrototype",
+   "description": "Fixes input prototype once final. Prevents further prototype changes.",
+   "inputs": "Funcdata",
+   "outputs": "Locked prototype",
+   "anchor": "coreaction.cc:5888"
+  },
+  {
+   "name": "ActionMapGlobals",
+   "description": "Maps global variables referenced in the function to symbol table entries.",
+   "inputs": "Funcdata with global refs",
+   "outputs": "Global variable mappings",
+   "anchor": "coreaction.cc:5889"
+  },
+  {
+   "name": "ActionDynamicSymbols (2nd)",
+   "description": "Second dynamic symbol pass after merge. Refines dynamic symbol binding post-merge.",
+   "inputs": "Funcdata merged",
+   "outputs": "Final dynamic symbol annotations",
+   "anchor": "coreaction.cc:5890"
+  },
+  {
+   "name": "ActionNameVars",
+   "description": "Names all variables based on inferred types, merges, and symbol table. Produces final variable names.",
+   "inputs": "Funcdata with types and merges",
+   "outputs": "Named variables with human-readable names",
+   "anchor": "coreaction.cc:5891"
+  },
+  {
+   "name": "ActionSetCasts",
+   "description": "Inserts explicit type casts where type conversions occur. Controls cast output.",
+   "inputs": "Funcdata with type info",
+   "outputs": "Marked cast points",
+   "anchor": "coreaction.cc:5892"
+  },
+  {
+   "name": "ActionFinalStructure",
+   "description": "Final block structure lock-in. Prevents further structural changes. Prepares CFG for output.",
+   "inputs": "Funcdata",
+   "outputs": "Final locked block structure",
+   "anchor": "coreaction.cc:5893"
+  },
+  {
+   "name": "ActionPrototypeWarnings",
+   "description": "Issues warnings about prototype inconsistencies or unusual signatures discovered during analysis.",
+   "inputs": "Funcdata prototype",
+   "outputs": "Warning messages",
+   "anchor": "coreaction.cc:5894"
+  },
+  {
+   "name": "ActionStop",
+   "description": "Final action marking end of decompilation. Signals completion and cleanup.",
+   "inputs": "Fully analyzed Funcdata",
+   "outputs": "Decompilation complete",
+   "anchor": "coreaction.cc:5895"
+  }
+ ],
+ "feedback_loops": [
+  {
+   "name": "Restart After Override Addition",
+   "trigger": "Sub-action calls Funcdata.setRestartPending(true), indicating new override/constraint was added during analysis (e.g., jumptable recovery learned new edges, prototype refined).",
+   "rewinds_to": "ActionRestartGroup.apply() clears analysis state via data.getArch()->clearAnalysis(&data), resets all sub-actions, re-enters fullloop from its start.",
+   "mechanism": "Loop in ActionRestartGroup.apply (lines 559-581): if hasRestartPending() && !isJumptableRecoveryOn() && curstart < maxrestarts, increment curstart and re-execute ActionGroup::apply from line 560.",
+   "anchor": "action.cc:553-582 (ActionRestartGroup.apply), funcdata.hh:68,219,224 (restart_pending flag)"
+  },
+  {
+   "name": "Mainloop Repeat Until Quiescence",
+   "trigger": "Any action in mainloop makes a change (count > lcount after apply()).",
+   "rewinds_to": "Beginning of mainloop: ActionGroup.apply() returns count>0, triggering Action.perform() loop condition at line 350 (while (lcount<count && rule_repeatapply)), which re-enters apply().",
+   "mechanism": "Action.perform() (line 298) do-while loop: lcount=count before apply (line 314), apply returns count delta, line 350 loops if delta>0 and rule_repeatapply set. Resets status to status_repeat (line 349).",
+   "anchor": "action.cc:298-362 (perform loop), coreaction.cc:5636 (mainloop ActionGroup with rule_repeatapply)"
+  },
+  {
+   "name": "Oppool1 Repeat Until Quiescence",
+   "trigger": "Any rule in oppool1 (131 rules) successfully applies to any op.",
+   "rewinds_to": "oppool1 restart: ActionPool.apply() exits when all ops processed, but if rule_repeatapply set and count>0, Action.perform() loop restarts the pool from the first op.",
+   "mechanism": "ActionPool.apply (lines 877-888): iterates all ops once. If rule applies (res>0 from processOp), count increments. Action.perform caller checks lcount<count && rule_repeatapply, re-invokes apply(). op_state reinitialized at line 881.",
+   "anchor": "action.cc:877-888 (ActionPool.apply), coreaction.cc:5658 (oppool1 ActionPool with rule_repeatapply)"
+  },
+  {
+   "name": "Opcode Change During Rule Application",
+   "trigger": "A rule modifies a PcodeOp's opcode (detected at line 865: opc != op->code()).",
+   "rewinds_to": "Same op, reset rule list: line 862 sets rule_index=0, causing while loop at line 836 to restart from first rule of new opcode.",
+   "mechanism": "processOp loop (lines 836-870): while(rule_index < perop[opc].size()). After successful rule (res>0), check if opc changed (line 860-863). If yes, reset opc and rule_index.",
+   "anchor": "action.cc:822-875 (processOp)"
+  },
+  {
+   "name": "Full Fullloop Repeat via Restart",
+   "trigger": "Although fullloop doesn't have rule_repeatapply, fullloop can re-execute if restart pending and maxrestarts not exceeded.",
+   "rewinds_to": "ActionRestartGroup wrapper re-runs entire fullloop via ActionGroup::apply() reset at lines 577-580.",
+   "mechanism": "ActionRestartGroup.apply (line 560) calls ActionGroup::apply in for loop. After first iteration, if restart pending, clearAnalysis(), reset sub-actions, re-enter apply().",
+   "anchor": "action.cc:553-582 (ActionRestartGroup.apply loop), coreaction.cc:5634 (fullloop inside ActionRestartGroup)"
+  },
+  {
+   "name": "Dead Op Removal During Iteration",
+   "trigger": "Rule application marks an op as dead or op detected dead in processOp at line 829.",
+   "rewinds_to": "Current op: op_state increments (line 830), rule_index resets to 0 (line 832), opDeadAndGone() called. Next op iteration continues.",
+   "mechanism": "processOp checks isDead() at line 829 before processing. If dead, skips rule application, increments op_state and continues loop.",
+   "anchor": "action.cc:822-875 (processOp dead op handling)"
+  },
+  {
+   "name": "Prototype Changes Re-trigger Type Inference",
+   "trigger": "ActionPrototypeTypes or proto actions call Funcdata.setRestartPending(true) when param/return info changes.",
+   "rewinds_to": "Via ActionRestartGroup: full re-execution of fullloop. ActionInferTypes (inside mainloop) then runs again with updated prototype context.",
+   "mechanism": "Proto actions inside mainloop (lines 5640-5647). On change, setRestartPending(). Mainloop finishes, fullloop checks hasRestartPending(), ActionRestartGroup restarts.",
+   "anchor": "coreaction.cc:5630-5647 (proto actions in mainloop), action.cc:553-582 (restart mechanism)"
+  },
+  {
+   "name": "Dead Code Removal Enables New Analysis",
+   "trigger": "ActionDeadCode (line 5650) or cleanup phase rules remove dead ops, changing remaining graph structure.",
+   "rewinds_to": "Mainloop repeat: mainloop has rule_repeatapply, so if ActionDeadCode makes changes, entire mainloop reruns. Allows rules like ActionHeritage, ActionInferTypes to see simplified graph.",
+   "mechanism": "ActionDeadCode in mainloop (line 5650) increments count. Mainloop's Action.perform() sees count>lcount, loops back to start of mainloop.",
+   "anchor": "coreaction.cc:5650 (ActionDeadCode in mainloop), action.cc:506-527 (ActionGroup.apply iteration)"
+  },
+  {
+   "name": "Block Structure Invalidation",
+   "trigger": "Control-flow change invalidates cached block dominator tree (forced goto, conditional execution refinement, block merging).",
+   "rewinds_to": "ActionBlockStructure (lines 5806, 5884) rebuilds block hierarchy. Inside mainloop (5806), feeds back to subsequent actions like ActionRedundBranch (5805). After mainloop repeats, block structure recomputed.",
+   "mechanism": "ActionBlockStructure rebuilds block hierarchy. Subsequent mainloop actions depend on fresh blocks. If structure changes, subsequent actions may fire, triggering mainloop repeat.",
+   "anchor": "coreaction.cc:5806 (inside mainloop), 5884 (post-merge)"
+  }
+ ],
+ "decision_points": [
+  {
+   "name": "Universal vs Derived Actions",
+   "where": "ActionDatabase initialization",
+   "decision": "Whether to use the universal action (containing all possible groups) or derive a specialized root action by filtering with a grouplist. Default is 'decompile' group which includes 21 named groups.",
+   "alternatives": "Use 'jumptable', 'normalize', 'paramid', 'register', or 'firstpass' groupings instead\u2014each includes/excludes different analysis groups, affecting which rules and actions execute.",
+   "anchor": "coreaction.cc:5609-5896, action.hh:298-324, action.cc:1021-1026",
+   "current_override": "setGroup(), setCurrent(), toggleAction() API; buildDefaultGroups() presets 5 named groups"
+  },
+  {
+   "name": "Maximum Restart Count",
+   "where": "ActionRestartGroup construction",
+   "decision": "Universal root action allows exactly 1 restart (maxrestarts=1). Restart triggered when a sub-action calls Funcdata.setRestartPending(true).",
+   "alternatives": "If maxrestarts were increased, the entire fullloop would retry after analysis structure changes. Currently blocks restart inside jumptable recovery (data.isJumptableRecoveryOn()).",
+   "anchor": "coreaction.cc:5621, action.cc:553-582",
+   "current_override": "ActionRestartGroup constructor parameter maxrestarts; Funcdata.setRestartPending() call triggers it; Funcdata.isJumptableRecoveryOn() gate prevents nested restart"
+  },
+  {
+   "name": "Rule Repeat Strategy",
+   "where": "ActionPool.apply() and Action.perform()",
+   "decision": "Rules in a pool apply worklist-style: iterate all ops in function, for each op try all registered rules for that opcode. Pool has rule_repeatapply flag, causing entire pool to restart on any successful rule application (lcount < count check).",
+   "alternatives": "Without rule_repeatapply, pool would execute once per function call. With rule_repeatapply at ActionGroup level instead, entire sequential group would restart. Current design allows fine-grained control per pool/action.",
+   "anchor": "action.cc:877-888 (ActionPool), action.cc:298-362 (Action.perform loop on lcount<count), action.cc:822-875 (processOp worklist)",
+   "current_override": "flags field (rule_repeatapply bit); loops check (lcount<count)&&((flags&rule_repeatapply)!=0)"
+  },
+  {
+   "name": "Opcode-Indexed Rule Dispatch",
+   "where": "ActionPool construction and processOp",
+   "decision": "ActionPool maintains perop[CPUI_MAX]\u2014one vector of Rule pointers per opcode. processOp() jumps directly to rule_index into the opcode's rule list, avoiding O(rules) scan. If a rule changes the op's code, rule_index resets to 0.",
+   "alternatives": "Flat rule list scan would be O(rules*ops). Alternatively, rules could be applied in fixed order regardless of opcode, but opcode indexing avoids wasted checks on irrelevant rules.",
+   "anchor": "action.hh:262-285 (ActionPool class), action.cc:822-875 (processOp: lines 860-863 reset on opcode change)",
+   "current_override": "perop array indexed by opcode during addRule(); processOp resets rule_index on opcode changes"
+  },
+  {
+   "name": "Architecture-Specific Rule Injection",
+   "where": "Architecture.buildAction() and parseExtraRules()",
+   "decision": "Before universalAction is built, parseExtraRules() loads <experimental_rules> from XML config. Rules are added to Architecture.extra_pool_rules vector. When universalAction builds oppool1, it appends these via loop at line 5794-5796.",
+   "alternatives": "Rules could be registered in a separate ActionPool, applied separately, or baked into the binary. Current design allows per-architecture customization without recompiling, rules are absorbed into main pool.",
+   "anchor": "architecture.cc:585-591 (buildAction calls parseExtraRules then universalAction), architecture.cc:1354-1365 (parseExtraRules XML decode), coreaction.cc:5794-5796 (absorb extra_pool_rules), architecture.hh:188 (extra_pool_rules member)",
+   "current_override": "DocumentStorage config file parsing; extra_pool_rules vector cleared after absorption"
+  },
+  {
+   "name": "Mainloop Repeat Until Quiescence",
+   "where": "mainloop ActionGroup with rule_repeatapply",
+   "decision": "mainloop (nested inside fullloop) has rule_repeatapply flag. All actions in mainloop execute sequentially; if any makes changes, mainloop reruns from start until no changes occur (full quiescence of all mainloop actions).",
+   "alternatives": "Without repeat: mainloop would execute once per fullloop iteration. Other strategies: repeat only oppool1 (already does), or repeat at fullloop level (would also repeat post-mainloop actions).",
+   "anchor": "coreaction.cc:5636 (new ActionGroup(Action::rule_repeatapply,'mainloop')), action.cc:506-527 (ActionGroup.apply sequential iteration), action.cc:298-362 (perform() repeat on lcount<count)",
+   "current_override": "rule_repeatapply flag on actmainloop; sequence of actions in mainloop determines repeat scope"
+  },
+  {
+   "name": "Cleanup Pass Timing",
+   "where": "actcleanup ActionPool placement",
+   "decision": "actcleanup (ActionPool with rule_repeatapply) runs AFTER fullloop completes. This allows aggressive optimization during mainloop (with prototype/control flow feedback), then final syntactic cleanup after structure is stable.",
+   "alternatives": "If cleanup ran during mainloop, rules might trigger type-inference or prototype changes, restarting mainloop. By deferring, cleanup rules operate on stabilized IR. Could be placed earlier for more iterative feedback.",
+   "anchor": "coreaction.cc:5837-5865 (actfullloop added at 5837, actcleanup added at 5865 AFTER in universal)",
+   "current_override": "Sequential ordering in act->addAction(); ActionRestartGroup applies actions in list order"
+  },
+  {
+   "name": "Merge vs Block Structure Ordering",
+   "where": "Post-cleanup merge phase and block structure",
+   "decision": "ActionBlockStructure runs BEFORE merging phase (line 5806, inside mainloop), then again at line 5884 AFTER merge phase. Pre-merge block structure establishes control-flow hierarchy for dead-code removal. Post-merge re-confirms structure after variable merging.",
+   "alternatives": "Single block structure pass would miss structural changes caused by merge. Running merge first would risk incorrect block detection before variable consolidation.",
+   "anchor": "coreaction.cc:5806 (mainloop), 5884 (post-merge), 5885-5886 (second pass with false 'allow mods' param)",
+   "current_override": "Sequential positioning; ActionBlockStructure constructor parameter (true/false for allow_mods)"
+  },
+  {
+   "name": "Prototype Recovery Phases",
+   "where": "protorecovery_a vs protorecovery_b groups",
+   "decision": "Two ActionDirectWrite passes: line 5644 (protorecovery_a, true=early) inside mainloop, line 5645 (protorecovery_b, false=not early) also in mainloop, plus second a/b at lines 5827-5828 in fullloop. Boolean flag governs timing of output prototype finalization.",
+   "alternatives": "Single monolithic proto pass would lose feedback from dead-code removal (early) vs final output refinement (late). Separate early/late phases allow proto to be recomputed after each structural change.",
+   "anchor": "coreaction.cc:5644-5645 (mainloop), 5827-5828 (fullloop)",
+   "current_override": "ActionDirectWrite constructor (bool isEarly parameter); group membership controls which 'decompile' action set includes a/b variants"
+  }
+ ],
+ "intervention_surfaces": [
+  {
+   "name": "Root Action Selection (setCurrent)",
+   "kind": "API",
+   "description": "ActionDatabase::setCurrent(string actname) switches the active root action. Pre-configured options: 'decompile' (default, 21 groups), 'jumptable', 'normalize', 'paramid', 'register', 'firstpass'. Derives the action by cloning the universal action with the selected grouplist.",
+   "affects": "Which Actions and Rules execute; skipped groups have their actions completely omitted.",
+   "anchor": "action.cc:1021-1026, coreaction.cc:5571-5603 (buildDefaultGroups presets)"
+  },
+  {
+   "name": "Group Membership Toggle (toggleAction)",
+   "kind": "API",
+   "description": "ActionDatabase::toggleAction(string grp, string basegrp, bool val) adds or removes a group name from a root action's grouplist, then re-derives the action. E.g., 'toggleAction(\"decompile\", \"protorecovery\", false)' disables all proto-recovery actions.",
+   "affects": "Selectively enables/disables broad categories of analysis without creating a whole new root action.",
+   "anchor": "action.cc:1036-1053"
+  },
+  {
+   "name": "Group Membership Edit (addToGroup, removeFromGroup)",
+   "kind": "API",
+   "description": "ActionDatabase::addToGroup() and removeFromGroup() modify the grouplist for a root action, used when building custom action sets. Must be called before setCurrent if modifying current action.",
+   "affects": "Programmatic control over which groups to include in a custom root action.",
+   "anchor": "action.cc:1090-1109"
+  },
+  {
+   "name": "Custom Root Action Creation (setGroup)",
+   "kind": "API",
+   "description": "ActionDatabase::setGroup(string grp, const char **argv) creates a new root action by specifying a list of group names as a null-terminated string array. Example: custom action including only 'base', 'analysis', 'cleanup'.",
+   "affects": "Allows runtime definition of new root actions without code changes.",
+   "anchor": "action.cc:1059-1070"
+  },
+  {
+   "name": "Action Disable/Enable (disableRule, enableRule)",
+   "kind": "override",
+   "description": "Action::disableRule(specify) and Action::enableRule(specify) traverse the action tree and disable/enable a specific Rule by name. Example: 'disable RulePtrFlow to skip pointer analysis'.",
+   "affects": "Fine-grained control over individual rules within a pool, without affecting other rules.",
+   "anchor": "action.hh:106-107"
+  },
+  {
+   "name": "Breakpoint Flags (setBreakPoint)",
+   "kind": "annotation",
+   "description": "Action::setBreakPoint(uint4 tp, string specify) sets breakpoints on actions/rules: break_start (before execution), break_action (if changes made), tmpbreak_start (temporary). Applies to action or sub-action by name.",
+   "affects": "Debugging: causes perform() to return -1 (partial completion) to pause execution and allow inspection.",
+   "anchor": "action.cc:171-185, action.hh:73-78 (breakflags enum)"
+  },
+  {
+   "name": "Warning Toggles (setWarning)",
+   "kind": "annotation",
+   "description": "Action::setWarning(bool val, string specify) enables/disables warning messages when a specific action or rule applies. Helps identify unexpected rule firings.",
+   "affects": "Debug output; no effect on analysis behavior.",
+   "anchor": "action.cc:199-207"
+  },
+  {
+   "name": "Architecture Extra Rules (extra_pool_rules)",
+   "kind": "option",
+   "description": "Architecture maintains a vector of CPU-specific rules loaded from <experimental_rules> XML config. These are absorbed into oppool1 during universalAction build. Allows per-architecture rule customization without recompiling decompiler.",
+   "affects": "oppool1 rule application; additional CPU-specific transformations.",
+   "anchor": "architecture.hh:188, architecture.cc:1354-1365 (parseExtraRules), coreaction.cc:5794-5796 (absorption into oppool1)"
+  },
+  {
+   "name": "Max Restarts Hardcoded",
+   "kind": "option",
+   "description": "ActionRestartGroup(maxrestarts) parameter is hardcoded to 1 in universalAction (line 5621). To allow more restarts, ActionRestartGroup constructor would need modification. Currently blocks restart if already inside jumptable recovery mode.",
+   "affects": "Maximum number of fullloop re-executions if analysis adds new constraints. Currently capped at 1 for safety.",
+   "anchor": "coreaction.cc:5621, action.cc:569 (maxrestarts check)"
+  },
+  {
+   "name": "Rule Disable via isDisabled() Check",
+   "kind": "override",
+   "description": "During processOp (line 838), each rule is checked: 'if (rl->isDisabled()) continue;'. Rule::setDisable() and clearDisable() toggle the type_disable flag. Allows runtime disabling without removing from pool.",
+   "affects": "Individual rule execution within a pool; skips disabled rules on all ops.",
+   "anchor": "action.cc:838, action.hh:224-226 (setDisable, clearDisable)"
+  },
+  {
+   "name": "Action Clone via ActionGroupList Filter",
+   "kind": "callback",
+   "description": "Action::clone(const ActionGroupList &grouplist) recursively clones an action and its sub-actions, but only if the action's basegroup is in the grouplist. Used by ActionDatabase::deriveAction() to build a filtered root action.",
+   "affects": "Selection of which actions to include in a derived root action; skips actions whose group is not in the grouplist.",
+   "anchor": "action.hh:113-119, action.cc:391-406 (ActionGroup::clone example)"
+  },
+  {
+   "name": "Funcdata Restart Pending Flag",
+   "kind": "annotation",
+   "description": "Funcdata::setRestartPending(bool val) sets the restart_pending flag. Sub-actions call this when they discover constraints requiring re-analysis (new overrides, refined prototypes). ActionRestartGroup checks hasRestartPending() to trigger fullloop restart.",
+   "affects": "Whether ActionRestartGroup will re-execute the entire fullloop.",
+   "anchor": "funcdata.hh:219, 224, action.cc:562 (hasRestartPending check)"
+  },
+  {
+   "name": "Jumptable Recovery Mode Gate",
+   "kind": "lock",
+   "description": "ActionRestartGroup checks Funcdata::isJumptableRecoveryOn() before restarting. If true, restart is skipped (line 566-567), preventing nested restarts within jumptable recovery. setJumptableRecovery(bool) toggles jumptablerecovery_on flag.",
+   "affects": "Prevents restart loops when specialized jumptable analysis is in progress.",
+   "anchor": "action.cc:566-567, funcdata.hh:165 (isJumptableRecoveryOn)"
+  }
+ ],
+ "insights": [
+  "Decompilers violate the compiler pipeline model: they are NOT feed-forward. Ghidra exhibits multiple feedback loops (restart, mainloop repeat, opcode rewind, block structure invalidation) where late discovery of constraints rewinds and re-runs earlier passes. The restart mechanism (ActionRestartGroup) is the primary feedback: it detects when new override/structural facts emerge and re-executes the entire fullloop to propagate them.",
+  "The real unit of scheduling is not a 'stage' in the compiler sense, but a (Action, status, count) triple: an action retains state (status: start/mid/end) and count of changes across breakpoint-interrupted calls, allowing resumption. This is necessary because decompilation can be interactive and can encounter analysis bottlenecks.",
+  "Rule vs Action distinction is critical for scalability: Actions are applied sequentially to the entire function; Rules are pooled and applied via opcode-indexed worklists to each op. This allows ActionPool to apply 131+ rules in a single O(ops * avg_rules_per_op) pass, rather than O(ops * rules) if rules were Actions.",
+  "Group membership is the primary lever for customization. Rather than building separate action hierarchies, Ghidra maintains a single 'universal' action containing all components, then derives specialized root actions by filtering via ActionGroupList. This allows dynamic reconfiguration (toggleAction) without rebuilding.",
+  "Mainloop quiescence pattern: the innermost loop (mainloop with rule_repeatapply) runs until all its actions stabilize. Within mainloop, oppool1 also repeats internally. This double-repeat structure (oppool repeats internally, mainloop repeats the pool + other actions) ensures both rule-level and action-level fixed-point semantics.",
+  "The cleanup phase is deferred post-fullloop, not because it's less important, but because it operates on a stabilized IR. If cleanup ran during mainloop, its rule applications might trigger type-inference changes, which would restart mainloop, creating potential infinite cycles. By deferring, cleanup trades absolute optimality for predictable termination.",
+  "Proto recovery is split into protorecovery_a (early, inside mainloop) and protorecovery_b (late, inside mainloop but after changes). This reflects a two-pass refinement: early pass commits known parameters, late pass refines based on usage patterns seen in the stabilized graph. A third DirectWrite runs post-merge to finalize output prototype.",
+  "Block structure is computed twice: pre-merge (to identify dead blocks) and post-merge (to verify no new dead code emerged). This is expensive but necessary because merging varnodes can create new constant opportunities, which can mark ops dead, which can mark blocks unreachable.",
+  "Architecture customization via extra_pool_rules is absorbed into oppool1 (not a separate pool), meaning architecture-specific rules compete with general rules in the same repeat loop. This ensures they're subject to the same opcode-indexed dispatch and quiescence logic.",
+  "The isJumptableRecoveryOn() gate in ActionRestartGroup (line 566) suggests that jumptable recovery is a specialized sub-decompilation mode. Preventing restarts during jumptable recovery likely reflects the fact that jumptable recovery constructs alternate CFG interpretations and cannot afford the overhead of full re-analysis on each structural change."
+ ]
+}
