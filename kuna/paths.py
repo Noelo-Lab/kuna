@@ -32,6 +32,11 @@ def datatests_dir() -> Path:
     return repo_root() / "decompiler" / "datatests"
 
 
+def stage_datatests_dir() -> Path:
+    """kuna-owned stage-model issue testcases (see tests/stages/README.md)."""
+    return repo_root() / "tests" / "stages"
+
+
 def binary(name: str, env_var: str = None) -> Path:
     """Resolve a built binary under decompiler/cpp/, honoring an env override."""
     if env_var:

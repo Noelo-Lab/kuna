@@ -47,7 +47,7 @@ else
   BFD_OVERRIDE := ADDITIONAL_FLAGS="-I$(BFD_INC)" BFDLIB="-L$(BFD_LIBDIR) -Wl,-rpath,$(BFD_LIBDIR) -lbfd"
 endif
 
-.PHONY: all binaries sleigh specs test clean check-deps touch-generated
+.PHONY: all binaries sleigh specs test test-stages clean check-deps touch-generated
 
 # This wrapper orchestrates SERIAL sub-makes (each upstream binary must be built
 # in its own invocation; `binaries` and `specs` both produce sleigh_opt, so
@@ -106,6 +106,13 @@ test:
 	@test -x $(CPPDIR)/decomp_test_dbg || $(MAKE) binaries
 	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
 	cd $(CPPDIR) && ./decomp_test_dbg -sleighpath $(SPECS) -path $(ROOT)/decompiler/datatests
+
+# Run the kuna-owned stage-model issue testcases (tests/stages/, see its README).
+# Same harness, separate directory: the upstream baseline is never affected.
+test-stages:
+	@test -x $(CPPDIR)/decomp_test_dbg || $(MAKE) binaries
+	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
+	cd $(CPPDIR) && ./decomp_test_dbg -sleighpath $(SPECS) -path $(ROOT)/tests/stages datatests
 
 clean:
 	-$(MAKE) -C $(CPPDIR) reallyclean
