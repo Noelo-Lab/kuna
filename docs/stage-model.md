@@ -239,6 +239,7 @@ and two-level (L0 registers, L1 stack).
 | **Dead-definition gate** | when dead-code removal is allowed per space (`pass > deadcodedelay`); premature removal → restart | deadcode-delay (HARD, survives restart) | function (mechanism c) | Ghidra: `Override.insertDeadcodeDelay`; auto-bumped at heritage.cc:2571-2581, 2712-2730. angr: `remove_dead_memdefs` (coarse). Reko: **LATENT** |
 | Phi / range granularity | split a memory range at gaps before placing phis (hardcoded `size > 4 && max < size`) | none today | function | **LATENT everywhere** (heritage.cc:2610) — matters for struct-heavy frames |
 | Simplification quiescence | which algebraic/peephole rules fire; when the local fixed point is declared | per-rule enable/disable | op→function | Ghidra: `OptionToggleRule`, `Rule::setDisable`, arch `extra_pool_rules`. angr: `peephole_optimizations` list. Reko: **LATENT** (ExpressionSimplifier rules static) |
+| Comparison canonicalization *(kuna-exposed, GH-558)* | canonicalize `V <= c` to `V < c+1` for analysis; fires from the rule pool AND the structuring-time branch-flips (3 sites via `replaceLessequal`) | `compareform canonical/original` (pipeline-config) | function | kuna: group `canonicalcompare` + provenance bit + `ActionPresentCompareForm` at the S8→S9 boundary (`docs/prototypes/gh558.md`). Upstream Ghidra/angr/Reko: **LATENT** |
 
 *(The simplification fixed point operates on S2's op-graph artifact; it lives here because
 its gate — what may be deleted — is the definition web's concern. `ActionDeadCode` itself
@@ -349,6 +350,7 @@ the cheapest re-run scope (angr codegen-only options set `clears_cache=False`).
 | Naming policy | auto vs symbol-derived vs semantic-pattern names; preservation of user names | **name lock (HARD, cosmetic)** | S9 only | Ghidra: namelock (database.hh:231) + `ActionNameVars`. angr: `var.renamed=True` + `semvar_naming`. Reko: `User.*` names |
 | Cast policy | minimal-necessary vs always vs never (`CastStrategyC`, `ActionSetCasts` coreaction.cc:5892) | cast option | S9 only | Ghidra: `OptionNoCastPrinting` (global). angr: `show_casts`. **Per-expression LATENT everywhere** |
 | Literal / format policy | integer base, NULL-vs-0, per-symbol display format | format assertion (per-symbol or global) | S9 only | Ghidra: `OptionIntegerFormat`/`OptionNullPrinting` + `Symbol.displayFormat`. angr: `const_formats` (per-location). Reko: **LATENT** |
+| Pointer notation *(kuna-exposed, GH-558)* | render standalone `PTRADD` as `base + index` vs `&base[index]` | `arraynotation on/off` | S9 only | kuna: `OptionArrayNotation` → `PrintC::opPtradd` (`docs/prototypes/gh558.md`). Upstream Ghidra: **LATENT** (array form only inside load/store context) |
 | External (LLM) refinement | proposed renames/retypes/summaries — **an assertion writer into P0 for the next run**, not a new analysis | any P0 assertion | per assertion | angr: `llm_refine` → notes → user applies (decompiler.py:493-501). The agent loop generalizes this |
 
 ---
@@ -441,6 +443,7 @@ assert(stage, anchor, assertion_type, value, strength)  →  P0 store
 | Two distinct variables merged into one | S6 merge aggressiveness | `Symbol::setIsolated` on the victim | edge 14 (d): re-run; speculative merges skip it |
 | Locals look like raw offsets / no struct | S5 aggregate + S6 frame layout | stack symbol with locked struct type; `must_struct` hint | edges 4-5 (b): restructure ↔ re-infer |
 | Code missing entirely | S2 decode-error policy / S1 partition | patch bad instruction (Reko `User.Patches`); raise instruction limit; mark segment executable | edge 7 (f) + full re-run |
+| Comparison shows `< c+1` instead of source's `<= c`; pointer arith instead of `[i]` (GH-558) | S3 comparison canonicalization + S9 presentation | `option compareform original`; `option arraynotation on` (kuna) | re-decompile; restore happens at the S8→S9 boundary (`docs/prototypes/gh558.md`) |
 
 ---
 

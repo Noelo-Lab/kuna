@@ -18,7 +18,7 @@ commit (`GHIDRA_REV`) and path map. Upstream changes can be pulled in later; see
 
 | Path | What |
 |---|---|
-| `decompiler/cpp/` | Upstream C++ decompiler source (115 `.cc`, 114 `.hh`) + upstream Makefile. **Vendored, do not edit.** |
+| `decompiler/cpp/` | Upstream C++ decompiler source + upstream Makefile. **Diverged from upstream as of 2026-06 (GH-558 prototype)** — kuna additions live in `kuna_*.cc/.hh` (auto-linked); anchor edits to upstream files are minimal and tracked in `UPSTREAM.md` *Divergence*. |
 | `decompiler/unittests/` | Upstream C++ unit tests (204 tests). Vendored. |
 | `decompiler/datatests/` | Upstream XML regression tests (83 files → 675 assertions). Vendored. |
 | `specs/Ghidra/Processors/` | Vendored SLEIGH specs (all upstream modules). `.sla` are **built artifacts** (gitignored). |
@@ -110,8 +110,9 @@ layout, applies with `git apply` (plain apply, `--3way` fallback), and bumps
 files, hard-fails on anything unusual (quoted paths, binary changes, rename/copy lines)
 instead of guessing, and warns when a `.y`/`.l` changed without its regenerated `.cc`
 (would need bison/flex) or when a new datatest references an unvendored processor. A
-manual fallback is documented in `UPSTREAM.md`. Because vendored files are never edited
-locally, the apply should always be conflict-free.
+manual fallback is documented in `UPSTREAM.md`. **Since the 2026-06 divergence the
+apply is no longer guaranteed conflict-free** for the handful of modified vendored
+files listed in `UPSTREAM.md` *Divergence* — expect `--3way`/manual resolution there.
 
 When you update the baseline after an intentional upstream behavior change, regenerate
 `docs/baseline.json` with `kuna.run_tests --save-baseline` against the new pristine tree.
@@ -119,7 +120,14 @@ When you update the baseline after an intentional upstream behavior change, rege
 ## Conventions
 
 - Commit at milestones with descriptive messages; keep `PROGRESS.md` current.
-- New functionality → new files; never edit `decompiler/` or `specs/`.
+- New functionality → new files (`decompiler/cpp/kuna_*.cc/.hh` for decompiler code —
+  the upstream Makefile's `$(wildcard *.cc)` links them automatically). Edits to
+  upstream files are allowed when an anchor demands it, but keep them minimal, mark
+  them with a `(kuna)` comment, and record them in `UPSTREAM.md` *Divergence*.
+- kuna ElementIds use the 4000+ range (upstream max ~290); kuna PcodeOp addlflags
+  bits start at 0x1000.
+- Issue-derived stage-model testcases go in `tests/stages/` (`make test-stages`,
+  baseline `docs/baseline-stages.json`); see `tests/stages/README.md`.
 - Don't commit build artifacts (binaries, `*.o`, `*.sla`, `.bfdlocal/`) — they're gitignored.
 - To understand a source file's role, start from `STAGE_MAPPING.md` and the real pass
   order in `decompiler/cpp/coreaction.cc` (`ActionDatabase::universalAction`).

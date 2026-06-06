@@ -67,6 +67,14 @@ never imperative mid-pipeline edits: `assert(stage, anchor, type, value, strengt
 LLM agent is just another assertion writer driving the feedback edges deliberately.
 Symptom→sub-stage navigation table: `docs/stage-model.md` §13.
 
+## Prototypes
+
+- **GH-558** (`docs/prototypes/gh558.md`, `tests/stages/`): first working sub-stage
+  exposure — the comparison-canonicalization decision split into `canonicalcompare`
+  (Band B) + `presentcompare` (S8→S9 boundary) with provenance, plus the S9
+  pointer-notation decision (`arraynotation`). Both controlled by P0 `option`
+  assertions; default output byte-identical to upstream (PARITY OK).
+
 ---
 
 *Note: `STAGE_MAPPING.md` still maps source files to the **old** 19-stage numbering; the

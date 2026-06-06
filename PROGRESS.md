@@ -1,5 +1,43 @@
 # kuna Progress Log
 
+## Session goals (2026-06-06) — stage-model prototype: fix a real issue via finer-grained stages
+
+- [x] Pick a reproducible, dataset-backed Ghidra issue convertible to a kuna testcase
+      (chose **GH-558** from `~/github/PHADE/issue_dataset`: 58 reproduced issues triaged
+      by an 18-agent workflow; GH-558 = pure representation policy, zero plain-bug risk)
+- [x] New testcase family for stage-model issue testcases: `tests/stages/` +
+      `make test-stages` + `docs/baseline-stages.json` (upstream baseline untouched)
+- [x] Map the issue to the stage model and implement the fix as finer-grained stages
+- [x] Verify: testcases pass *because of* the stage split; upstream PARITY OK throughout
+- [x] Writeup: `docs/prototypes/gh558.md`
+
+## Results (2026-06-06)
+
+- **First intentional divergence from upstream** (authorized): vendored-file edits are
+  now permitted; tracked in `UPSTREAM.md` *Divergence*. kuna decompiler additions live
+  in `decompiler/cpp/kuna_*.{cc,hh}` (auto-linked via the upstream Makefile's wildcard).
+- **GH-558 fix 1 — `compareform`:** the `V <= c => V < c+1` canonicalization split into
+  `canonicalcompare` (Band B, named group) + `presentcompare` (`ActionPresentCompareForm`
+  at the S8→S9 boundary), connected by a provenance bit set in the single primitive
+  `Funcdata::replaceLessequal`. P0 assertion: `option compareform canonical|original`.
+- **GH-558 fix 2 — `arraynotation`:** standalone `PTRADD` rendering (`base + index` vs
+  `&base[index]`) exposed as `option arraynotation on|off` in `PrintC::opPtradd`.
+- **Key discovery:** the canonicalization decision fires from *three* sites across two
+  stages — the rule pool AND the structuring-time branch-flips (`opFlipInPlaceExecute`/
+  `opNormalizeFlip`); per-rule toggles can't reach it, and a cleanup-pool inverse runs
+  too early. The working placement (after the last flip pass, before prototype/cast
+  fixation) shows the model's S8→S9 boundary is a physical program point.
+- **Experiments:** forcing `compareform original` globally changes 12/675 upstream
+  assertions (pure text); removing `canonicalcompare` changes a *different* 9/675
+  (analysis effects) — empirical evidence the two sub-stages are distinct decisions.
+- **Honest assessment:** no decompiler behavior was "fixed" — defaults are byte-identical
+  (PARITY OK 204/204 + 675/675 at every milestone); the issue is resolved purely by
+  exposing decisions. Caveat recorded: assertions are currently function/global-grain;
+  per-op anchors (DynamicHash) are future work.
+- **Tests:** `make test-stages` → 4/4 (`gh558-compareform.xml`, `gh558-arraynotation.xml`
+  — the latter uses the issue's own attached binary; before/after `p->r + iVar2` →
+  `&p->r[iVar2]`).
+
 ## Session goals (2026-06-05)
 
 - [x] Find the Ghidra decompiler testcases (deep-decompiler only) and create a way to run them

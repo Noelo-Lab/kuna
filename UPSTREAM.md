@@ -23,9 +23,31 @@ which kuna never does), and `src/decompile/build.gradle` (Gradle/Eclipse glue).
 
 ## Local-modifications policy
 
-Files under `decompiler/` and `specs/` are **byte-identical to upstream — never edit
-them**. All kuna-specific logic lives in NEW files (top-level `Makefile`, `kuna/`,
-`tools/`, `*.md`). This keeps the sync below a clean diff/apply.
+**Until 2026-06-06** files under `decompiler/` and `specs/` were byte-identical to
+upstream. As of the GH-558 stage-model prototype, kuna **intentionally diverges**
+(authorized decision: kuna is now its own decompiler, not a tracking mirror). New
+kuna logic still prefers new files (`kuna_*.cc/.hh`, auto-linked by the upstream
+Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
+
+### Divergence (vendored files modified)
+
+| File | What |
+|---|---|
+| `decompiler/cpp/op.hh` | new `addlflags` bit `canonical_lessequal` (0x1000) + accessors |
+| `decompiler/cpp/funcdata_op.cc` | `replaceLessequal` records provenance on the rewritten op |
+| `decompiler/cpp/coreaction.cc` | `RuleIntLessEqual` regrouped `analysis`→`canonicalcompare`; `ActionPresentCompareForm` registered after the last branch-flip pass; group lists updated |
+| `decompiler/cpp/architecture.hh/.cc` | `present_lessequal` flag (default false) |
+| `decompiler/cpp/options.cc` | registers kuna options (`compareform`, `arraynotation`) |
+| `decompiler/cpp/printc.hh/.cc` | `option_arraynotation` + `&base[index]` mode in `opPtradd` |
+
+kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
+`kuna_arraynotation.{hh,cc}` (new files, not upstream edits).
+
+`sync_upstream.py`'s clean-apply guarantee **no longer holds** for the files in the
+table: a future sync touching them will need `--3way` or manual conflict resolution
+(added kuna `kuna_*` files and new-file additions are unaffected). The sync remains
+clean for `specs/`, `decompiler/unittests/`, `decompiler/datatests/`, and the ~110
+unmodified `.cc` files.
 
 Notes inherited from upstream:
 - The bison/flex outputs (`grammar.cc`, `xml.cc`, `pcodeparse.cc`, `slghparse.cc/.hh`,
