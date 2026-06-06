@@ -1,0 +1,52 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-558 (secondary complaint, and what the PHADE dataset repro keys on):
+    standalone pointer arithmetic is rendered as `p->r + i` instead of array
+    notation, because PrintC::opPtradd only uses subscript form inside a
+    load/store context.
+
+    Bytes: the `foo` function from the issue's own attached binary (foo.zip,
+    gcc 13.3 -O3, x86-64), at its original address 0x1120:
+
+        typedef struct { unsigned int n; unsigned int **r; } S;
+        extern void init(unsigned int *x);
+        void foo(S *p) {
+            for (int i = 0; i < p->n; i++)
+                init(p->r[i]);
+        }
+
+    Default output renders the PTRADD as `p->r + lVar` (pointer-arith form).
+
+    Stage model: which notation a standalone PTRADD gets is an S9
+    "literal/format policy" decision (LATENT upstream).  kuna exposes it as the
+    P0 assertion `option arraynotation on|off`; when on, PrintC::opPtradd emits
+    `&base[index]` instead of `base + index`.
+
+    Pass 1 (default) proves the issue reproduces; pass 2 (option on) proves the
+    stage-level intervention fixes the rendering.
+-->
+<bytechunk space="ram" offset="0x1050" readonly="true">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1120" readonly="true">
+f30f1efa8b0785c0742e554889fd5331db4883ec080f1f00488b4508488b3cd84883c301e807ffffff3b5d0072ea4883c4085b5dc30f1f00c3
+</bytechunk>
+<symbol space="ram" offset="0x1050" name="init"/>
+<symbol space="ram" offset="0x1120" name="foo"/>
+</binaryimage>
+<script>
+  <com>parse line struct S { uint4 n; uint4 **r; };</com>
+  <com>parse line extern void init(uint4 *x);</com>
+  <com>parse line extern void foo(S *p);</com>
+  <com>lo fu foo</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraynotation on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH558 #3: default pipeline renders p-&gt;r[i] as pointer arithmetic (bug reproduced)" min="1" max="1">= p-&gt;r \+ </stringmatch>
+<stringmatch name="GH558 #4: arraynotation on renders &amp;p-&gt;r[i] (stage-level fix)" min="1" max="1">= &amp;p-&gt;r\[</stringmatch>
+</decompilertest>

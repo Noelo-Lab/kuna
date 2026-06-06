@@ -149,6 +149,7 @@ protected:
   bool option_nocasts;		///< Don't print a cast if \b true
   bool option_unplaced;		///< Set to \b true if we should display unplaced comments
   bool option_hide_exts;	///< Set to \b true if we should hide implied extension operations
+  bool option_arraynotation;	///< (kuna) Render standalone PTRADD as &base[index] rather than base + index
   Emit::brace_style option_brace_func;		///< How function declaration braces should be formatted
   Emit::brace_style option_brace_ifelse;	///< How braces for if/else blocks are formatted
   Emit::brace_style option_brace_loop;		///< How braces for loop blocks are formatted
@@ -246,6 +247,7 @@ public:
   void setCPlusPlusStyleComments(void) { setCommentDelimeter("// ","",true); }	///< Set c++-style "//" comment delimiters
   void setDisplayUnplaced(bool val) { option_unplaced = val; }	///< Toggle whether \e unplaced comments are displayed in the header
   void setHideImpliedExts(bool val) { option_hide_exts = val; }	///< Toggle whether implied extensions are hidden
+  void setArrayNotation(bool val) { option_arraynotation = val; }	///< (kuna) Toggle &base[index] rendering of standalone PTRADD
   void setBraceFormatFunction(Emit::brace_style style) { option_brace_func = style; }	///< Set how function declarations are formatted
   void setBraceFormatIfElse(Emit::brace_style style) { option_brace_ifelse = style; }	///< Set how if/else blocks are formatted
   void setBraceFormatLoop(Emit::brace_style style) { option_brace_loop = style; }	///< Set how loop blocks are formatted

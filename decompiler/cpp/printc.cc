@@ -903,6 +903,10 @@ void PrintC::opPtradd(const PcodeOp *op)
   uint4 m = mods & ~(print_load_value|print_store_value);
   if (printval)			// Use array notation if we need value
     pushOp(&subscript,op);
+  else if (option_arraynotation) {	// (kuna) S9 pointer-notation sub-stage: EMIT &base[index]
+    pushOp(&addressof,op);
+    pushOp(&subscript,op);
+  }
   else				// just a '+'
     pushOp(&binary_plus,op);
   // implied vn's pushed on in reverse order for efficiency
@@ -1650,6 +1654,7 @@ void PrintC::resetDefaultsPrintC(void)
   option_nocasts = false;
   option_NULL = false;
   option_unplaced = false;
+  option_arraynotation = false;	// (kuna) default: upstream's `base + index` form
   option_brace_func = Emit::skip_line;
   option_brace_ifelse = Emit::same_line;
   option_brace_loop = Emit::same_line;

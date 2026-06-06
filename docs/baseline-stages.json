@@ -1,0 +1,14 @@
+{
+  "data_footer": [
+    4,
+    4
+  ],
+  "passing": [
+    "data:GH558 #1: default pipeline canonicalizes x <= 8 into x < 9 (bug reproduced)",
+    "data:GH558 #2: compareform original restores x <= 8 (stage-level fix)",
+    "data:GH558 #3: default pipeline renders p->r[i] as pointer arithmetic (bug reproduced)",
+    "data:GH558 #4: arraynotation on renders &p->r[i] (stage-level fix)"
+  ],
+  "returncode": 0,
+  "unit_footer": null
+}

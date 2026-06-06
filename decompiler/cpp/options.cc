@@ -18,6 +18,7 @@
 #include "flow.hh"
 #include "printc.hh"
 #include "kuna_compareform.hh"	// (kuna) OptionCompareForm
+#include "kuna_arraynotation.hh"	// (kuna) OptionArrayNotation
 
 namespace ghidra {
 
@@ -133,6 +134,7 @@ OptionDatabase::OptionDatabase(Architecture *g)
   registerOption(new OptionSplitDatatypes());
   registerOption(new OptionNanIgnore());
   registerOption(new OptionCompareForm());	// (kuna) comparison-form presentation sub-stage
+  registerOption(new OptionArrayNotation());	// (kuna) pointer-notation presentation sub-stage
 }
 
 OptionDatabase::~OptionDatabase(void)
