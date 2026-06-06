@@ -17,6 +17,7 @@
 #include "funcdata.hh"
 #include "flow.hh"
 #include "printc.hh"
+#include "kuna_compareform.hh"	// (kuna) OptionCompareForm
 
 namespace ghidra {
 
@@ -131,6 +132,7 @@ OptionDatabase::OptionDatabase(Architecture *g)
   registerOption(new OptionNamespaceStrategy());
   registerOption(new OptionSplitDatatypes());
   registerOption(new OptionNanIgnore());
+  registerOption(new OptionCompareForm());	// (kuna) comparison-form presentation sub-stage
 }
 
 OptionDatabase::~OptionDatabase(void)

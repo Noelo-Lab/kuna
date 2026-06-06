@@ -19,6 +19,7 @@
 #include "subflow.hh"
 #include "constseq.hh"
 #include "bitfield.hh"
+#include "kuna_compareform.hh"	// (kuna) comparison-form presentation sub-stage
 
 namespace ghidra {
 
@@ -5568,10 +5569,14 @@ void ActionDatabase::buildDefaultGroups(void)
 {
   if (isDefaultGroups) return;
   groupmap.clear();
+  // (kuna) "canonicalcompare" (comparison canonicalization, split out of "analysis")
+  // accompanies "analysis" in every variant; "presentcompare" (restore original
+  // comparison form for presentation) joins the full decompile pipeline only.
   const char *members[] = { "base", "protorecovery", "protorecovery_a", "deindirect", "localrecovery",
 			    "deadcode", "typerecovery", "stackptrflow",
 			    "blockrecovery", "stackvars", "deadcontrolflow", "switchnorm",
 			    "cleanup", "splitcopy", "splitpointer", "merge", "dynamic", "casts", "analysis",
+			    "canonicalcompare", "presentcompare",
 			    "fixateglobals", "fixateproto", "constsequence", "bitfields",
 			    "segment", "returnsplit", "nodejoin", "doubleload", "doubleprecis",
 			    "unreachable", "subvar", "floatprecision",
@@ -5579,24 +5584,24 @@ void ActionDatabase::buildDefaultGroups(void)
   setGroup("decompile",members);
 
   const char *jumptab[] = { "base", "noproto", "localrecovery", "deadcode", "stackptrflow",
-			    "stackvars", "analysis", "segment", "subvar", "normalizebranches", "conditionalexe", "" };
+			    "stackvars", "analysis", "canonicalcompare", "segment", "subvar", "normalizebranches", "conditionalexe", "" };
   setGroup("jumptable",jumptab);
 
  const  char *normali[] = { "base", "protorecovery", "protorecovery_b", "deindirect", "localrecovery",
 			    "deadcode", "stackptrflow", "normalanalysis",
-			    "stackvars", "deadcontrolflow", "analysis", "fixateproto", "nodejoin",
+			    "stackvars", "deadcontrolflow", "analysis", "canonicalcompare", "fixateproto", "nodejoin",
 			    "unreachable", "subvar", "floatprecision", "normalizebranches",
 			    "conditionalexe", "" };
   setGroup("normalize",normali);
 
   const  char *paramid[] = { "base", "protorecovery", "protorecovery_b", "deindirect", "localrecovery",
                              "deadcode", "typerecovery", "stackptrflow", "siganalysis",
-                             "stackvars", "deadcontrolflow", "analysis", "fixateproto",
+                             "stackvars", "deadcontrolflow", "analysis", "canonicalcompare", "fixateproto",
                              "unreachable", "subvar", "floatprecision",
                              "conditionalexe", "" };
   setGroup("paramid",paramid);
 
-  const char *regmemb[] = { "base", "analysis", "subvar", "" };
+  const char *regmemb[] = { "base", "analysis", "canonicalcompare", "subvar", "" };
   setGroup("register",regmemb);
 
   const char *firstmem[] = { "base", "" };
@@ -5665,7 +5670,7 @@ void ActionDatabase::universalAction(Architecture *conf)
 	actprop->addRule( new RulePushMulti("nodejoin"));
 	actprop->addRule( new RuleSborrow("analysis") );
 	actprop->addRule( new RuleScarry("analysis") );
-	actprop->addRule( new RuleIntLessEqual("analysis") );
+	actprop->addRule( new RuleIntLessEqual("canonicalcompare") );	// (kuna) was "analysis": comparison canonicalization is its own named sub-stage
 	actprop->addRule( new RuleTrivialArith("analysis") );
 	actprop->addRule( new RuleTrivialBool("analysis") );
 	actprop->addRule( new RuleTrivialShift("analysis") );
@@ -5884,6 +5889,10 @@ void ActionDatabase::universalAction(Architecture *conf)
   act->addAction( new ActionBlockStructure("blockrecovery") );
   act->addAction( new ActionPreferComplement("blockrecovery", false) );		// Don't allow mods
   act->addAction( new ActionStructureTransform("blockrecovery", false) );	// Don't allow mods
+  // (kuna) Comparison-presentation sub-stage: runs after the LAST branch-flip pass
+  // (PreferComplement/StructureTransform above both reach Funcdata::replaceLessequal)
+  // and before prototype/naming/cast fixation, i.e. at the S8 -> S9 boundary.
+  act->addAction( new ActionPresentCompareForm("presentcompare") );
   act->addAction( new ActionOutputPrototype("localrecovery") );
   act->addAction( new ActionInputPrototype("fixateproto") );
   act->addAction( new ActionMapGlobals("fixateglobals") );

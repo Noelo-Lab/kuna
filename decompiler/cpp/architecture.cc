@@ -1423,6 +1423,7 @@ void Architecture::resetDefaultsInternal(void)
   max_instructions = 100000;
   infer_pointers = true;
   analyze_for_loops = true;
+  present_lessequal = false;	// (kuna) default: keep upstream's canonical `<` form
   readonlypropagate = false;
   nan_ignore_all = false;
   nan_ignore_compare = true;	// Ignore only NaN operations associated with floating-point comparisons by default

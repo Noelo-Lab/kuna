@@ -15,7 +15,11 @@
     presentation decision (cleanup-pool group `presentcompare`), controlled by the
     P0 assertion `option compareform canonical|original`.
 
-    Assert #1 proves the issue reproduces under the default pipeline.
+    The script decompiles the function twice: pass 1 under the default pipeline
+    (assert #1 proves the issue reproduces), pass 2 with the P0 assertion set
+    (assert #2 proves the stage-level intervention restores the source form).
+    Both `print C` dumps land in one bulk stream, so each form must appear
+    exactly once.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 83ff087f06b801000000c331c0c3
@@ -27,7 +31,11 @@
   <com>lo fu gh558</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option compareform original</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="GH558 #1: default pipeline canonicalizes x &lt;= 8 into x &lt; 9 (bug reproduced)" min="1" max="1">if \(x &lt; 9\)</stringmatch>
+<stringmatch name="GH558 #2: compareform original restores x &lt;= 8 (stage-level fix)" min="1" max="1">if \(x &lt;= 8\)</stringmatch>
 </decompilertest>

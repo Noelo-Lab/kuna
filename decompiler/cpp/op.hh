@@ -117,7 +117,8 @@ public:
     concat_root = 0x100,	///< Output of \b this is root of a CONCAT tree
     no_indirect_collapse = 0x200,	///< Do not collapse \b this INDIRECT (via RuleIndirectCollapse)
     store_unmapped = 0x400,	///< If STORE collapses to a stack Varnode, force it to be unmapped
-    immed_copy = 0x800		///< Copy has propagated into input of \b this op
+    immed_copy = 0x800,		///< Copy has propagated into input of \b this op
+    canonical_lessequal = 0x1000	///< (kuna) INT_LESS/INT_SLESS produced by canonicalizing a LESSEQUAL (RuleIntLessEqual)
   };
 private:
   TypeOp *opcode;		///< Pointer to class providing behavioral details of the operation
@@ -216,6 +217,9 @@ public:
   bool stopsTypePropagation(void) const { return ((addlflags&stop_type_propagation)!=0); }	///< Is data-type propagation from below stopped
   void setStopTypePropagation(void) { addlflags |= stop_type_propagation; }	///< Stop data-type propagation from below
   void clearStopTypePropagation(void) { addlflags &= ~stop_type_propagation; }	///< Allow data-type propagation from below
+  bool isCanonicalLessequal(void) const { return ((addlflags&canonical_lessequal)!=0); }	///< (kuna) Was \b this comparison canonicalized from a LESSEQUAL
+  void setCanonicalLessequal(void) { addlflags |= canonical_lessequal; }	///< (kuna) Mark \b this comparison as canonicalized from a LESSEQUAL
+  void clearCanonicalLessequal(void) { addlflags &= ~canonical_lessequal; }	///< (kuna) Clear the canonicalized-LESSEQUAL mark
   bool holdOutput(void) const { return ((addlflags&hold_output)!=0); }	///< If \b true, do not remove output as dead code
   void setHoldOutput(void) { addlflags |= hold_output; }	///< Prevent output from being removed as dead code
   bool isPartialRoot(void) const { return ((addlflags&concat_root)!=0); }	///< Output is root of CONCAT tree

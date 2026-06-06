@@ -1061,6 +1061,12 @@ bool Funcdata::replaceLessequal(PcodeOp *op)
   Varnode *newvn = newConstant(vn->getSize(),res);
   newvn->copySymbol(vn);	// Preserve data-type (and any Symbol info)
   opSetInput(op,newvn,i);
+  // (kuna) Record provenance on the canonicalized comparison.  This is the single
+  // primitive implementing the "comparison canonicalization" sub-stage decision,
+  // reached from RuleIntLessEqual (Band B) and the branch-flip machinery
+  // (opFlipInPlaceExecute / opNormalizeFlip, fired during block structuring).
+  // ActionPresentCompareForm can invert it for presentation (GH-558).
+  op->setCanonicalLessequal();
   return true;
 }
 
