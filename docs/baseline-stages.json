@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    33,
-    33
+    35,
+    35
   ],
   "passing": [
     "data:GH1282 #1: 8051 carry/borrow flag survives as (bool << 7) >> 7 shift noise (bug reproduced, default off)",
@@ -20,6 +20,8 @@
     "data:GH7190 #2: option ovlesssimplify on collapses to a clean signed byte compare",
     "data:GH8471 #1: default pipeline renders Thumb funcptr as raw hex (bug reproduced)",
     "data:GH8471 #2: thumbfuncptr on preserves the symbolic form (stage-level fix)",
+    "data:GH8817 #1: V850 jmp [reg] renders as a computed call (bug reproduced)",
+    "data:GH8817 #2: v850indirectbranch on recovers the switch",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
     "data:KUNA-ASSERT #2: kassert list reports the S3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic S9 assertion as HINT via HARD mechanism",

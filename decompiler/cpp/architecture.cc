@@ -1424,6 +1424,7 @@ void Architecture::resetDefaultsInternal(void)
   infer_pointers = true;
   infer_funcentry = false;	// (kuna) default: upstream behavior (single-bit values stay integers)
   return_single = false;	// (kuna) default: upstream behavior (join register pairs)
+  v850_indirect_branch = false;	// (kuna) default: upstream behavior (V850 jmp [reg] stays CALLIND) (GH-8817)
   ov_less_simplify = false;	// (kuna) default: upstream behavior (OV-flag idiom left untouched) (GH-7190)
   fold_boolean_mask = false;	// (kuna) default: upstream behavior (shift idiom survives)
   analyze_for_loops = true;

@@ -178,6 +178,7 @@ public:
   bool infer_pointers;		///< True if we should infer pointers from constants that are likely addresses
   bool infer_funcentry;		///< (kuna) True if single-bit constants matching an exact function entry are inferred as pointers (GH-6930)
   bool return_single;		///< (kuna) True if multi-register return values are NOT joined (kept single) (GH-6990)
+  bool v850_indirect_branch;	///< (kuna) True if V850 "jmp [reg]" CALLIND is reclassified to BRANCHIND for switch recovery (GH-8817)
   bool ov_less_simplify;	///< (kuna) True if the OV-flag signed-less-than idiom is collapsed to a clean INT_SLESS (GH-7190)
   bool fold_boolean_mask;	///< (kuna) True if `(b<<k) s>> k` boolean sign-extension-mask idioms are folded (GH-1282)
   bool analyze_for_loops;	///< True if we should attempt conversion of \e whiledo loops to \e for loops

@@ -1,0 +1,59 @@
+<decompilertest>
+<binaryimage arch="V850:LE:32:default">
+<!--
+    GH-8817: V850 "jmp [reg]" switch dispatch not recovered as a jumptable.
+    https://github.com/NationalSecurityAgency/ghidra/issues/8817
+
+    V850 SLEIGH (Instructions/Special.sinc, "jmp [reg]" reg!=lp) lifts the
+    indirect jmp to "call [reg]" (CPUI_CALLIND).  A bounded compiler switch
+    dispatch
+        cmp 2,r10 ; bh default
+        mov table,r11 ; shl 2,r10 ; add r11,r10 ; ld.w 0[r10],r10
+        add r11,r10 ; jmp [r10]
+    therefore lifts the dispatch op to a CALLIND.  Jump-table recovery only
+    runs on CPUI_BRANCHIND (flow.cc / funcdata_block.cc / jumptable.cc), so the
+    switch is never recovered and the C renders a computed call to a function
+    pointer.
+
+    The 3-entry jump table lives at 0x2200 (4-byte LE entries, each an offset
+    added to the 0x2200 table base):
+        0x2200: 0xFFFFFF1E -> case 0 stub @ 0x211e (mov 1,r10 ; jmp [lp])
+        0x2204: 0xFFFFFF22 -> case 1 stub @ 0x2122 (mov 2,r10 ; jmp [lp])
+        0x2208: 0xFFFFFF26 -> case 2 stub @ 0x2126 (mov 3,r10 ; jmp [lp])
+    with the default stub @ 0x211a (mov 9,r10 ; jmp [lp]).
+
+    Stage model: S2 "flow-classification" sub-stage (call-vs-branch); the
+    mis-classification starves the S2 "switch-model" sub-stage downstream.
+    Fix surface = a default-off ArchOption (v850indirectbranch) that, at flow
+    time (FlowInfo::xrefControlFlow), reclassifies the V850 "jmp [reg]" CALLIND
+    to CPUI_BRANCHIND so jump-table recovery runs.
+
+    PREREQUISITE (already applied to the vendored specs): V850.cspec referenced
+    register "ctbp" but SLEIGH defines "CTBP" (case-sensitive); without that fix
+    V850 fails architecture init in the standalone decompiler.
+
+    Pass 1 (default, option off): assertion #1 proves the bug reproduces; the
+    dispatch renders as a computed call to a function pointer (*(code *)...)().
+    Pass 2 (option v850indirectbranch on): assertion #2 proves the switch is
+    recovered; the dispatch renders as switch(in_r10) { ... }.
+-->
+<bytechunk space="ram" offset="0x2104">
+6252AB0D2b0600220000c252cb512a570100cb516a0009527f0001527f0002527f0003527f00
+</bytechunk>
+<bytechunk space="ram" offset="0x2200">
+1EFFFFFF22FFFFFF26FFFFFF
+</bytechunk>
+<symbol space="ram" offset="0x2104" name="tjmp"/>
+</binaryimage>
+<script>
+  <com>lo fu tjmp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option v850indirectbranch on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH8817 #1: V850 jmp [reg] renders as a computed call (bug reproduced)" min="1" max="1">\(\*\(code \*\)</stringmatch>
+<stringmatch name="GH8817 #2: v850indirectbranch on recovers the switch" min="1" max="1">switch\(in_r10\)</stringmatch>
+</decompilertest>

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 #include "flow.hh"
+#include "kuna_v850indbranch.hh"	// (kuna) GH-8817: V850 jmp [reg] CALLIND -> BRANCHIND
 
 namespace ghidra {
 
@@ -273,6 +274,8 @@ PcodeOp *FlowInfo::xrefControlFlow(list<PcodeOp *>::const_iterator oiter,bool &s
       data.opMarkStartBasic(op);
       startbasic = false;
     }
+    if (kunaIsV850IndirectJmp(data,op))		// (kuna) GH-8817: reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery
+      data.opSetOpcode(op,CPUI_BRANCHIND);
     switch(op->code()) {
     case CPUI_CBRANCH:
     {
