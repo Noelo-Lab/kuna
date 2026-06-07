@@ -178,6 +178,7 @@ public:
   bool infer_pointers;		///< True if we should infer pointers from constants that are likely addresses
   bool analyze_for_loops;	///< True if we should attempt conversion of \e whiledo loops to \e for loops
   bool present_lessequal;	///< (kuna) True if canonicalized comparisons are restored to their original LESSEQUAL form for presentation
+  bool preserve_thumb_funcptr;	///< (kuna) True if mode-bit-encoded (Thumb) function pointers are kept symbolic (GH-8471)
   bool nan_ignore_all;		///< True if we should ignore NaN operations, i.e. nan() always returns false
   bool nan_ignore_compare;	///< True if we should ignore NaN operations protecting floating-point comparisons
   vector<AddrSpace *> inferPtrSpaces;	///< Set of address spaces in which a pointer constant is inferable

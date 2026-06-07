@@ -376,6 +376,7 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "option nanignore", kstage_s5, "", "float NaN-test simplification policy" },
   { "option compareform", kstage_s3, "comparison-canonicalization", "(kuna GH-558)" },
   { "option arraynotation", kstage_s9, "pointer-notation", "(kuna GH-558)" },
+  { "option thumbfuncptr", kstage_s5, "const-pointer", "(kuna GH-8471) preserve mode-bit-encoded function pointers" },
   { "force goto", kstage_s7, "edge-virtualization", "Override::insertForceGoto" },
   { "override jumptable", kstage_s2, "switch-model", "JumpBasicOverride" },
   { "override flow", kstage_s2, "flow-classification", "Override::insertFlowOverride" },

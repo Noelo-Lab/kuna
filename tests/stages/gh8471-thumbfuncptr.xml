@@ -1,0 +1,53 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    GH-8471: "Pointers to Thumb function are spuriously decompiled to hex"
+    https://github.com/NationalSecurityAgency/ghidra/issues/8471
+
+    A pointer to a Thumb function 'fn' carries the mode bit in its LSB
+    (value = fn_entry|1 = 0x10189).  ActionConstantPtr correctly recovers the
+    symbolic form PTRSUB(fn) + 1, but RulePtrsubUndo destroys it: the +1 does
+    not match the bounds of fn's code type (isPtrsubMatching fails), so the
+    constant collapses back to raw hex (upstream regression from the GP-4782
+    RulePtrsubUndo refactor; cf. upstream PR #8990).
+
+    Stage model: S5 "const-pointer" sub-stage.  The symptom surfaces at S9 but
+    the symbolic data is already destroyed in Band B; the fix must gate the
+    S5 rule.  P0 assertion: `option thumbfuncptr on|off` (default off =
+    upstream byte-identical).
+
+    Layout (reduced from the reporter's short_reproducer.so):
+       0x10174  call_function:  bx lr
+       0x10188  fn:             bx lr        (Thumb entry; LSB-encoded 0x10189)
+       0x1018c  call_fn_through_reference:
+                  ldr r0,[0x10194]; add r0,pc; b call_function (tail call)
+       0x10194  literal = 0xfffffff7 (so r0 = pc-9 = 0x10189)
+
+    Pass 1 (default): assertion #1 proves the bug (raw hex).
+    Pass 2 (option thumbfuncptr on): assertion #2 proves the symbolic form.
+-->
+<bytechunk space="ram" offset="0x10174" readonly="true">
+70470000000000000000000000000000
+000000007047000001487844f0e70000
+f7ffffff
+</bytechunk>
+</binaryimage>
+<script>
+  <com>option readonly on</com>
+  <com>set context TMode 1 [ram,0x10174] [ram,0x10197]</com>
+  <com>map function r0x10174 call_function</com>
+  <com>map function r0x10188 fn</com>
+  <com>map function r0x1018c call_fn_through_reference</com>
+  <com>parse line extern void call_function(void *param_1);</com>
+  <com>override flow r0x10190 callreturn</com>
+  <com>lo fu call_fn_through_reference</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option thumbfuncptr on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH8471 #1: default pipeline renders Thumb funcptr as raw hex (bug reproduced)" min="1" max="1">call_function\(\(void \*\)0x10189\)</stringmatch>
+<stringmatch name="GH8471 #2: thumbfuncptr on preserves the symbolic form (stage-level fix)" min="1" max="1">call_function\(fn \+ 1\)</stringmatch>
+</decompilertest>

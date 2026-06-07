@@ -17,6 +17,7 @@
 #include "coreaction.hh"
 #include "rangeutil.hh"
 #include "multiprecision.hh"
+#include "kuna_thumbfuncptr.hh"	// (kuna) GH-8471
 
 namespace ghidra {
 
@@ -7166,6 +7167,8 @@ int4 RulePtrsubUndo::applyOp(PcodeOp *op,Funcdata &data)
   int8 multiplier;
   int8 extra = getExtraOffset(op,multiplier);
   if (basevn->getTypeReadFacing(op)->isPtrsubMatching(val,extra,multiplier))
+    return 0;
+  if (kunaPreserveThumbFuncPtr(basevn,op,val,extra,multiplier,data.getArch()))	// (kuna) GH-8471
     return 0;
 
   data.opSetOpcode(op,CPUI_INT_ADD);

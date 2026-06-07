@@ -1424,6 +1424,7 @@ void Architecture::resetDefaultsInternal(void)
   infer_pointers = true;
   analyze_for_loops = true;
   present_lessequal = false;	// (kuna) default: keep upstream's canonical `<` form
+  preserve_thumb_funcptr = false;	// (kuna) default: upstream behavior (raw constant)
   readonlypropagate = false;
   nan_ignore_all = false;
   nan_ignore_compare = true;	// Ignore only NaN operations associated with floating-point comparisons by default

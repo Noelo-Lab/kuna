@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    23,
-    23
+    25,
+    25
   ],
   "passing": [
     "data:GH2786 #1: nested float negation parenthesized (default-flip fix)",
@@ -10,6 +10,8 @@
     "data:GH558 #2: compareform original restores x <= 8 (stage-level fix)",
     "data:GH558 #3: default pipeline renders p->r[i] as pointer arithmetic (bug reproduced)",
     "data:GH558 #4: arraynotation on renders &p->r[i] (stage-level fix)",
+    "data:GH8471 #1: default pipeline renders Thumb funcptr as raw hex (bug reproduced)",
+    "data:GH8471 #2: thumbfuncptr on preserves the symbolic form (stage-level fix)",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
     "data:KUNA-ASSERT #2: kassert list reports the S3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic S9 assertion as HINT via HARD mechanism",
