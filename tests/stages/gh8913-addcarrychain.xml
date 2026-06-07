@@ -1,0 +1,50 @@
+<decompilertest>
+<binaryimage arch="6502:LE:16:default">
+<!--
+  GH-8913: 6502 carry-chain 16-bit addition renders as CONCAT11(CARRY1(...)...)
+  https://github.com/NationalSecurityAgency/ghidra/issues/8913
+
+  6502 builds a 16-bit pointer from a base table + (index less-than-less-than 1) using the classic
+  two-instruction ADC idiom: ADC to the low byte, then LDA #0 / ADC #0 to
+  propagate the page-cross carry into the high byte.  The decompiler never
+  recognizes the pair as a single wide (16-bit) add, so the carry leaks as
+  CARRY1 / 0xNN compare and the result is reassembled with CONCAT11.
+
+  Bytes are the body of FUN_BANK00__92ef (issue attachment 92ef_bad_decomp.xml),
+  loaded at RAM:0x0 (the function entry is offset 0 of the raw blob).  The body
+  has two cursor_mode paths (3 and 5), each with two carry-chained adds:
+    * the FIRST add per path is the RuleCarryElim constant-folded carry form
+      ((0xNN less-than x) byte compare);
+    * the SECOND add per path keeps the raw CARRY1 intrinsic.
+
+  Pass 1 (default pipeline) reproduces the bug: the page-cross carry leaks as
+  CONCAT11((0xNN less-than ...)...) on both paths and as CONCAT11(...CARRY1(...))
+  on both paths.
+
+  Pass 2 (option addcarrychain on) fuses each ADC pair into a single 16-bit add
+  (base-pointer + zext(index)), so the CONCAT11/CARRY1 idiom is gone and the
+  first add per path renders as the readable literal-base add (0xd11a + index /
+  0xd2c6 + index).  The fix is gated behind a default-off Architecture flag
+  (option addcarrychain), so the default pipeline is byte-identical to upstream.
+-->
+<bytechunk space="RAM" offset="0x0">
+ad1a04c903f005c905f04360a91a8500a9d18501ad01040a1865008500a50169008501a000b1008502c8b1008503ad0b040a1865028502a50369008503a000b1028d2504c8b1028d2604209b8260a9c68500a9d28501ad01040a1865008500a50169008501a000b1008502c8b1008503ad0b040a1865028502a50369008503a000b1028d2504c8b1028d2604209b8260
+</bytechunk>
+<symbol space="RAM" offset="0x0" name="gh8913"/>
+<symbol space="RAM" offset="0x401" name="current_screen"/>
+<symbol space="RAM" offset="0x40b" name="current_hovered_object"/>
+</binaryimage>
+<script>
+  <com>lo fu gh8913</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option addcarrychain on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH8913 #1: page-cross carry leaks as CONCAT11((0xNN &lt; ...) (bug, both paths, pass-1 only)" min="2" max="2">CONCAT11\(\(0x[0-9a-f]+ &lt;</stringmatch>
+<stringmatch name="GH8913 #1b: second add leaks the raw CARRY1 intrinsic inside CONCAT11 (bug, both paths, pass-1 only)" min="2" max="2">CONCAT11\(.*CARRY1\(</stringmatch>
+<stringmatch name="GH8913 #2: addcarrychain on fuses path-3 first add into a single wide add (0xd11a + index)" min="1" max="1">\(int2 \*\)\(\(uint1\)\(\(char\)current_screen \* '\\x02'\) \+ 0xd11a\)</stringmatch>
+<stringmatch name="GH8913 #2b: addcarrychain on fuses path-5 first add into a single wide add (0xd2c6 + index)" min="1" max="1">\(int2 \*\)\(\(uint1\)\(\(char\)current_screen \* '\\x02'\) \+ 0xd2c6\)</stringmatch>
+</decompilertest>

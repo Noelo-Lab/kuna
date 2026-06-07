@@ -22,6 +22,7 @@
 #include "kuna_thumbfuncptr.hh"	// (kuna) OptionThumbFuncPtr
 #include "kuna_inferfuncentry.hh"	// (kuna) OptionInferFuncEntry
 #include "kuna_returnpair.hh"	// (kuna) OptionReturnPair
+#include "kuna_addcarrychain.hh"	// (kuna) OptionAddCarryChain
 #include "kuna_ovlesssimplify.hh"	// (kuna) OptionOvLessSimplify
 #include "kuna_booleanmask.hh"	// (kuna) OptionBooleanMask
 #include "kuna_v850indbranch.hh"	// (kuna) OptionV850IndirectBranch
@@ -144,6 +145,7 @@ OptionDatabase::OptionDatabase(Architecture *g)
   registerOption(new OptionThumbFuncPtr());	// (kuna) GH-8471 const-pointer sub-stage
   registerOption(new OptionInferFuncEntry());	// (kuna) GH-6930 const-pointer sub-stage
   registerOption(new OptionReturnPair());	// (kuna) GH-6990 trial-finalization sub-stage
+  registerOption(new OptionAddCarryChain());	// (kuna) GH-8913 carry-chain wide-add recovery
   registerOption(new OptionV850IndirectBranch());	// (kuna) GH-8817 S2 flow-classification sub-stage
   registerOption(new OptionOvLessSimplify());	// (kuna) GH-7190 S3 simplification-quiescence sub-stage
   registerOption(new OptionBooleanMask());	// (kuna) GH-1282 simplification-quiescence sub-stage

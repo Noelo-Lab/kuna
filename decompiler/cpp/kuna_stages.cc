@@ -377,6 +377,7 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "option compareform", kstage_s3, "comparison-canonicalization", "(kuna GH-558)" },
   { "option arraynotation", kstage_s9, "pointer-notation", "(kuna GH-558)" },
   { "option returnpair", kstage_s4, "trial-budget", "(kuna GH-6990) keep multi-register returns single" },
+  { "option addcarrychain", kstage_s3, "simplification-quiescence", "(kuna GH-8913) fuse 8-bit carry-chain 16-bit adds" },
   { "option booleanmask", kstage_s3, "simplification-quiescence", "(kuna GH-1282) fold (b<<k) s>> k boolean sign-extension-mask idioms" },
   { "option thumbfuncptr", kstage_s5, "const-pointer", "(kuna GH-8471) preserve mode-bit-encoded function pointers" },
   { "option inferfuncentry", kstage_s5, "const-pointer", "(kuna GH-6930) infer function entries at single-bit image bases" },

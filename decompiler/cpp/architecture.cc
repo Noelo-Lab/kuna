@@ -1427,6 +1427,7 @@ void Architecture::resetDefaultsInternal(void)
   v850_indirect_branch = false;	// (kuna) default: upstream behavior (V850 jmp [reg] stays CALLIND) (GH-8817)
   ov_less_simplify = false;	// (kuna) default: upstream behavior (OV-flag idiom left untouched) (GH-7190)
   fold_boolean_mask = false;	// (kuna) default: upstream behavior (shift idiom survives)
+  add_carry_chain = false;	// (kuna) default: upstream behavior (carry leaks as CONCAT11/CARRY1)
   analyze_for_loops = true;
   present_lessequal = false;	// (kuna) default: keep upstream's canonical `<` form
   preserve_thumb_funcptr = false;	// (kuna) default: upstream behavior (raw constant)

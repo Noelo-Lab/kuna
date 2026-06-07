@@ -21,6 +21,7 @@
 #include "bitfield.hh"
 #include "kuna_compareform.hh"	// (kuna) comparison-form presentation sub-stage
 #include "kuna_inferfuncentry.hh"	// (kuna) GH-6930 function-entry constant-pointer inference
+#include "kuna_addcarrychain.hh"	// (kuna) GH-8913 carry-chain wide-add recovery
 #include "kuna_ovlesssimplify.hh"	// (kuna) GH-7190 OV-flag signed-less-than simplification
 #include "kuna_booleanmask.hh"	// (kuna) GH-1282 boolean sign-extension-mask simplification
 
@@ -5706,6 +5707,7 @@ void ActionDatabase::universalAction(Architecture *conf)
 	actprop->addRule( new RuleShiftCompare("analysis") );
 	actprop->addRule( new RuleShift2Mult("analysis") );
 	actprop->addRule( new RuleShiftPiece("analysis") );
+	actprop->addRule( new RuleAddCarryChain("analysis") );	// (kuna) GH-8913 carry-chain wide-add recovery (arch-flag gated)
 	actprop->addRule( new RuleMultiCollapse("analysis") );
 	actprop->addRule( new RuleIndirectCollapse("analysis") );
 	actprop->addRule( new Rule2Comp2Mult("analysis") );
