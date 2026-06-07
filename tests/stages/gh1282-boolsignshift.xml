@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="8051:BE:16:default:default">
+<!--
+    GH-1282: "8051: Decompiling the simplest code."
+    https://github.com/NationalSecurityAgency/ghidra/issues/1282
+
+    Source (Keil, opt off):
+      byte xdata _buf[0x80];
+      void Fn1() { byte i; for (i=0; i<0x80; i++) _buf[i] = 0; }
+
+    8051 models the SUBB borrow / CY flag as bit 7 of PSW, so the loop bound
+    `i < 0x80` is lowered to `((i < 0x80) << 7) s>> 7` (boolean shifted into the
+    sign position and arithmetically shifted back = a 0/-1 sign-extended mask).
+    Upstream's RuleLeftRight cancels `(V << c) s>> c` only when c is a multiple
+    of 8, so for the boolean case (c==7) the shift-by-7 carry noise survives all
+    the way into the rendered C:
+
+      while (uVar1 = 0x80 - (((uVar2 < 0x80) << 7) >> 7), 0x80 < uVar1) {
+
+    Stage model: S3 "simplification-quiescence" (which algebraic/peephole rules
+    fire).  The kuna fix is a new simplification rule (group "analysis", gated by
+    the default-off arch flag fold_boolean_mask) that recognizes
+    `(b << k) s>> k` with NZMask(b) fitting in the low (width*8 - k) bits and
+    rewrites it to the sign-extended-mask form `0 - b`, eliminating the
+    shift-by-7 noise.  Enabled by `option booleanmask on`.
+
+    Pass 1 (default pipeline) reproduces the bug (assert #1 works today).
+    Pass 2 (after `option booleanmask on`) shows the shift-by-7 noise is gone
+    (assert #2): no `<< 7) >> 7` appears anywhere in the output.
+
+    Disassembly:
+      0000 e4        CLR  A
+      0001 ff        MOV  R7,A
+      0002 ef        MOV  A,R7
+      0003 c3        CLR  CY
+      0004 94 80     SUBB A,#0x80
+      0006 74 80     MOV  A,#0x80
+      0008 94 80     SUBB A,#0x80
+      000a 50 0f     JNC  LAB_001b
+      000c 74 00     MOV  A,#0x0
+      000e 2f        ADD  A,R7
+      000f f5 82     MOV  DPL,A
+      0011 e4        CLR  A
+      0012 34 00     ADDC A,#0x0
+      0014 f5 83     MOV  DPH,A
+      0016 e4        CLR  A
+      0017 f0        MOVX @DPTR,A
+      0018 0f        INC  R7
+      0019 80 e7     SJMP LAB_0002
+      001b 22        RET
+-->
+<bytechunk space="CODE" offset="0x0">
+e4ffefc3948074809480500f74002ff582e43400f583e4f00f80e722
+</bytechunk>
+<symbol space="CODE" offset="0x0" name="Fn1"/>
+</binaryimage>
+<script>
+  <com>lo fu Fn1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option booleanmask on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH1282 #1: 8051 carry/borrow flag survives as (bool &lt;&lt; 7) &gt;&gt; 7 shift noise (bug reproduced, default off)" min="1" max="1">&lt;&lt; 7\) &gt;&gt; 7</stringmatch>
+<stringmatch name="GH1282 #2: booleanmask on folds (b&lt;&lt;7)s&gt;&gt;7 so the shift-by-7 noise is gone (fix fires)" min="1" max="1">uVar1 = \(uVar2 &lt; 0x80\) \+ 0x80</stringmatch>
+</decompilertest>

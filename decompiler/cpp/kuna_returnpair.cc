@@ -6,6 +6,11 @@
 
 namespace ghidra {
 
+// kuna ElementIds live in the 4000+ range to stay clear of upstream ids (max ~290).
+// Required: OptionDatabase::registerOption keys on ElementId::find(name) — options
+// without a registered ElementId collide on ELEM_UNKNOWN.
+ElementId ELEM_RETURNPAIR = ElementId("returnpair",4004);
+
 /// \class OptionReturnPair
 /// \brief (kuna) Toggle joining of multi-register return values
 string OptionReturnPair::apply(Architecture *glb,const string &p1,const string &p2,const string &p3) const

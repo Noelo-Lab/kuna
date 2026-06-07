@@ -1,9 +1,11 @@
 {
   "data_footer": [
-    29,
-    29
+    31,
+    31
   ],
   "passing": [
+    "data:GH1282 #1: 8051 carry/borrow flag survives as (bool << 7) >> 7 shift noise (bug reproduced, default off)",
+    "data:GH1282 #2: booleanmask on folds (b<<7)s>>7 so the shift-by-7 noise is gone (fix fires)",
     "data:GH2786 #1: nested float negation parenthesized (default-flip fix)",
     "data:GH2786 #2: the mis-parsing predecrement token is gone",
     "data:GH558 #1: default pipeline canonicalizes x <= 8 into x < 9 (bug reproduced)",

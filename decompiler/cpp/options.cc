@@ -22,6 +22,7 @@
 #include "kuna_thumbfuncptr.hh"	// (kuna) OptionThumbFuncPtr
 #include "kuna_inferfuncentry.hh"	// (kuna) OptionInferFuncEntry
 #include "kuna_returnpair.hh"	// (kuna) OptionReturnPair
+#include "kuna_booleanmask.hh"	// (kuna) OptionBooleanMask
 
 namespace ghidra {
 
@@ -141,6 +142,7 @@ OptionDatabase::OptionDatabase(Architecture *g)
   registerOption(new OptionThumbFuncPtr());	// (kuna) GH-8471 const-pointer sub-stage
   registerOption(new OptionInferFuncEntry());	// (kuna) GH-6930 const-pointer sub-stage
   registerOption(new OptionReturnPair());	// (kuna) GH-6990 trial-finalization sub-stage
+  registerOption(new OptionBooleanMask());	// (kuna) GH-1282 simplification-quiescence sub-stage
 }
 
 OptionDatabase::~OptionDatabase(void)

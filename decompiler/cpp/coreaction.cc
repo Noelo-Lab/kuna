@@ -21,6 +21,7 @@
 #include "bitfield.hh"
 #include "kuna_compareform.hh"	// (kuna) comparison-form presentation sub-stage
 #include "kuna_inferfuncentry.hh"	// (kuna) GH-6930 function-entry constant-pointer inference
+#include "kuna_booleanmask.hh"	// (kuna) GH-1282 boolean sign-extension-mask simplification
 
 namespace ghidra {
 
@@ -5700,6 +5701,7 @@ void ActionDatabase::universalAction(Architecture *conf)
 	actprop->addRule( new RuleDoubleArithShift("analysis") );
 	actprop->addRule( new RuleConcatShift("analysis") );
 	actprop->addRule( new RuleLeftRight("analysis") );
+	actprop->addRule( new RuleBoolSignShift("analysis") );	// (kuna) GH-1282: gated by arch flag fold_boolean_mask (default off)
 	actprop->addRule( new RuleShiftCompare("analysis") );
 	actprop->addRule( new RuleShift2Mult("analysis") );
 	actprop->addRule( new RuleShiftPiece("analysis") );

@@ -1424,6 +1424,7 @@ void Architecture::resetDefaultsInternal(void)
   infer_pointers = true;
   infer_funcentry = false;	// (kuna) default: upstream behavior (single-bit values stay integers)
   return_single = false;	// (kuna) default: upstream behavior (join register pairs)
+  fold_boolean_mask = false;	// (kuna) default: upstream behavior (shift idiom survives)
   analyze_for_loops = true;
   present_lessequal = false;	// (kuna) default: keep upstream's canonical `<` form
   preserve_thumb_funcptr = false;	// (kuna) default: upstream behavior (raw constant)

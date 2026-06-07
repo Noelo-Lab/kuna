@@ -24,6 +24,8 @@
 
 namespace ghidra {
 
+extern ElementId ELEM_RETURNPAIR;	///< Marshaling element \<returnpair> (kuna)
+
 /// \brief (kuna) Set how multi-register return values are joined: `returnpair pair|single`
 class OptionReturnPair : public ArchOption {
 public:
