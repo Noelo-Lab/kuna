@@ -63,11 +63,15 @@ Template per stage:
 - **Restart observability (new)**: the multistage jump-table restart (edge 2) is now
   recorded and reported — the previously-silent switchmulti double-decompile is the
   testcase (`tests/stages/kuna-restarts.xml`).
-- **Issues fixed**: TBD-PHASE2.
+- **Issues fixed**: GH-8817 (`option v850indirectbranch` — V850 `jmp [reg]` CALLIND
+  reclassified to BRANCHIND at flow time so switch recovery runs; the
+  flow-classification sub-stage starving the switch-model sub-stage, both named S2
+  catalog rows).
 - **LATENT**: reachability pruning at user level; per-table switch-model *choice*
   (override exists; model selection among Basic/Basic2 does not).
 - **Assessment**: richest pre-existing assertion surface; kuna's work here was naming
-  and routing, plus making its feedback edge visible.
+  and routing, plus making its feedback edge visible — and GH-8817 proved the catalog's
+  adjacent-sub-stage structure describes real bugs.
 
 ## S3 — Definition Web (Band B)
 
@@ -79,7 +83,10 @@ Template per stage:
   canonical|original` (GH-558).
 - **Restart observability (new)**: deadcode-delay bumps (and suppressed bumps) are
   recorded with their space.
-- **Issues fixed**: GH-558 (prior session); TBD-PHASE2.
+- **Issues fixed**: GH-558 (prior session); GH-1282 (`option booleanmask` —
+  RuleBoolSignShift folds `(b<<k) s>>k` boolean masks past RuleLeftRight's byte-aligned
+  gate); GH-7190 (`option ovlesssimplify` — V850 S/OV-flag compare idiom rewritten to
+  the direct signed comparison).
 - **LATENT**: heritage staging per space; phi/range granularity (heritage.cc:2610).
 - **Assessment**: the GH-558 home stage; the simplification-quiescence sub-stage is
   where new-rule-option fixes land.
@@ -93,10 +100,13 @@ Template per stage:
   registry.
 - **Restart observability (new)**: late-prototype restarts (`deindirect`/`forceSet`,
   edge 5) recorded with the call site.
-- **Issues fixed**: TBD-PHASE2.
+- **Issues fixed**: GH-6990 (`option returnpair single` — buildReturnOutput keeps only
+  the first return register, collapsing SPARC's passive o0:o1 over-claim).
 - **LATENT**: trial finalization budget (`maxpass`); ABI trust as a per-program
   assertion; interprocedural regime.
-- **Assessment**: TBD-PHASE2.
+- **Assessment**: the trial-finalization sub-stage fit GH-6990 cleanly; the ablation
+  showed the flip breaks 3 upstream tests that genuinely need the pair — the textbook
+  case for an assertion (context-dependent right answer) over a default change.
 
 ## S5 — Value & Type Facts (Band B)
 
@@ -106,10 +116,16 @@ Template per stage:
 - **Exposures**: `kassert S5 type-propagation <symbol> <type>` (retype + typelock —
   the HARD stop in `propagateTypeEdge`); `map unionfacet` and `option
   inferconstptr`/`splitdatatype` routed in the registry.
-- **Issues fixed**: TBD-PHASE2.
+- **Issues fixed**: GH-8471 (`option thumbfuncptr`), GH-6930 (`option
+  inferfuncentry`) — both const-pointer decisions whose symptoms surface at S9;
+  GH-8913 (`option addcarrychain` — 6502 carry-chain wide-add recovery); GH-9230 +
+  GH-1537 (`option memsetrecover` — constant-fill runs become builtin_memset; 1537 was
+  fixed by 9230's option with zero new code).
 - **LATENT**: range/value-set assertions; solver budget (7-pass compile-time cap);
   union scoring weights.
-- **Assessment**: TBD-PHASE2.
+- **Assessment**: the load-bearing stage — five of the session's ten fixes. The
+  const-pointer sub-stage redirected two fixes away from their S9 symptom site, and
+  const-sequence generalized across issues. This is where the model earned its keep.
 
 ## S6 — Variable & Storage Model (Band B)
 
@@ -117,19 +133,24 @@ Template per stage:
   tagged S6; `varmap`/`variable`/`merge`/`cover`/`dynamic` files.
 - **Exposures**: `kassert S6 merge-aggressiveness <symbol>` (isolate — blocks
   speculative merge); `map hash`/`option aliasblock` routed in the registry.
-- **Issues fixed**: TBD-PHASE2.
+- **Issues fixed**: — (no viable S6 issue in the reproduced PHADE set).
 - **LATENT**: per-variable explicit/implied (high-value readability knob); alias
   boundary policy.
-- **Assessment**: TBD-PHASE2.
+- **Assessment**: fully routed (isolate via kassert, aliasblock, map hash) but
+  unexercised by the issue program — dataset bias (representation-heavy), not a model
+  gap; the surfaces are tested by the kuna-assert testcase.
 
 ## S7 — Region Hierarchy
 
 - **Registry**: `blockrecovery` tagged S7 (straddling S8); `blockaction` file.
 - **Exposures**: `kassert S7 edge-virtualization <branch> <dest>` (per-edge
   force-goto — upstream's only per-edge structuring assertion, now stage-addressed).
-- **Issues fixed**: TBD-PHASE2.
-- **LATENT**: loop refinement / single-exit policy; re-identification batching.
-- **Assessment**: TBD-PHASE2.
+- **Issues fixed**: — (GH-8748's blocker turned out to be an S7-grade limitation: see
+  S8 below and the critique §7.4).
+- **LATENT**: loop refinement / single-exit policy; re-identification batching; an
+  INDIRECT-aware region-duplication primitive (the missing piece under GH-8748).
+- **Assessment**: routed (per-edge force-goto via kassert) but unexercised; the
+  GH-8748 negative result sharpened what S7 surgery upstream actually supports.
 
 ## S8 — Structured AST & Goto Quality
 
@@ -141,9 +162,14 @@ Template per stage:
   `docs/stage-critique.md`).
 - **Exposures (routed)**: `kassert S8 readability-rewrites on|off`
   (analyzeforloops); `option jumptablemax`.
-- **Issues fixed**: TBD-PHASE2.
-- **LATENT**: schema precedence; the quality *acceptance* policy itself.
-- **Assessment**: TBD-PHASE2.
+- **Issues fixed**: GH-8748 partial — the decision (shared continuation block defeats
+  the else-if `t_if` collapse) was located exactly, but the fix needs SSA out-block phi
+  patching beyond `nodeSplit`'s envelope and was declined rather than shipped
+  unverified (critique §7.4).
+- **LATENT**: schema precedence; the quality *acceptance* policy itself; the
+  speculative-edit half of quality gating (blocked on the S7 duplication primitive).
+- **Assessment**: the measurement half (`quality`) landed and is regression-tested;
+  the structuring-edit half is honestly out of reach without new SSA machinery.
 
 ## S9 — Surface Rendering & Refinement
 
@@ -151,9 +177,13 @@ Template per stage:
 - **Exposures**: `kassert S9 naming-policy <old> <new>` (rename + namelock);
   `kassert S9 pointer-notation on|off` (GH-558); cast/format options routed in the
   registry.
-- **Issues fixed**: GH-558 arraynotation (prior session); TBD-PHASE2.
+- **Issues fixed**: GH-558 arraynotation (prior session); GH-2786 (default-flip DIV-1
+  — adjacent sign tokens parenthesized; 0/675 upstream churn).
 - **LATENT**: per-expression cast policy; per-variable explicit/implied consumption.
-- **Assessment**: the cheapest re-run scope and the densest issue cluster — TBD-PHASE2.
+- **Assessment**: the cheapest re-run scope, confirmed by ablation (S9 flips are
+  text-only) — but NOT the densest decision site: four issues that *look* S9 (8471,
+  6930, 9230, 1537) had their decisions in Band B. S9 is where bugs are seen, S5 is
+  where they live.
 
 ---
 

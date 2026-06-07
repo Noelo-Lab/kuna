@@ -1,5 +1,56 @@
 # kuna Progress Log
 
+## Session goals (2026-06-06/07) — stage-model physicalization: split the decompiler into stages, fix 10 PHADE issues
+
+- [x] Address each stage: implement the model physically (registry + console + assertions
+      + observability); per-stage changelog in `docs/stage-implementation.md`
+- [x] Verify all testcases pass after every change (PARITY OK at every one of the
+      session's commits; `make test-stages` grown 4 → 43 assertions)
+- [x] Critique the stages empirically (`docs/stage-critique.md`: per-issue stage-fit,
+      ablation matrix, §13-navigation score, per-stage verdicts)
+- [x] Fix + reproduce ≥10 PHADE issues through the stage model (10 fixed: GH-2786, 8471,
+      6930, 6990, 1282, 7190, 8817, 8913, 9230, 1537)
+
+## Results (2026-06-06/07)
+
+- **Infrastructure** (each component a commit, PARITY OK gated): `kuna_stages` (stage
+  registry: group→stage map, 40-row sub-stage catalog, surface routing — queryable via
+  `stage list/map/status`); `kuna_console` (self-registering `IfaceKunaCapability` —
+  console commands with ZERO upstream anchor edits); `kuna_assert` (`kassert
+  <stage> <substage> ...` typed assertion API over Override/SymbolDB/proto/options, with
+  computed minimal rewind scopes REPORTED per stage-model §12); `kuna_restartlog`
+  (mechanism-c restart reasons recorded at all 5 trigger sites; the switchmulti
+  multistage restart is now visible); `pipeline` (reduced-pipeline sub-queries,
+  mechanism c′ at the console); `quality` (goto-count metric — the measurement half of
+  roadmap #4). `STAGE_MAPPING.md` §0 remaps all 115 files to P0/S1–S9.
+- **10 issues fixed through the model**, all reproduced+fixed in `tests/stages/` (each
+  testcase asserts bug-under-default AND fix-under-assertion): 1 default-flip (GH-2786,
+  invalid `--x` C; DIV-1, 0/675 upstream churn), 8 option-gated exposures (S2..S5,
+  options `thumbfuncptr inferfuncentry returnpair booleanmask ovlesssimplify
+  v850indirectbranch addcarrychain memsetrecover`, ElementIds 4002–4009), and 1 pure
+  ROUTING fix (GH-1537 fixed by GH-9230's option with zero new code — exposed decisions
+  generalize). Plus `V850.cspec` `ctbp`→`CTBP` case fix (V850 could not load at all in
+  the case-sensitive C++ decompiler).
+- **Method**: 12-issue triage + 6 hard implementations ran as parallel worktree-isolated
+  subagent workflows; every fix gated on a default-off Architecture flag
+  (`if (!flag) return 0;`) so upstream parity is structural, not tested-for. Worktree
+  diffs replayed sequentially into master with per-issue gates.
+- **Key empirical findings** (full critique in `docs/stage-critique.md`): symptom-stage ≠
+  decision-stage (GH-8471/6930 look S9, live in S5 — the model's strongest validation);
+  ablation matrix separates text-only (S9) from analysis-bearing (Band B) flips, with
+  `returnpair single` breaking exactly the 3 upstream tests that need the pair (the
+  definition of an assertion-worthy decision); GH-8748 negative result — else-if tail
+  duplication is blocked by un-clonable live-out INDIRECT phis, scoping what
+  quality-gated structuring (roadmap #4) actually requires.
+- **Honest assessment**: defaults are byte-identical to upstream except DIV-1
+  (`docs/divergences.md`); 9 of 10 fixes are opt-in assertions, so nothing is "fixed"
+  for a user who never sets an option — the deliverable is named, tested, durable
+  decision surfaces (and one real bug fix). S6/S7 attracted no issues (dataset bias);
+  GH-28 deferred (repro diverges between debug/test harness builds); GH-8748 partial.
+- **Engineering hazard fixed**: `OptionDatabase::registerOption` keys on
+  `ElementId::find(name)` → options without registered ElementIds silently collide on
+  `ELEM_UNKNOWN`; all kuna options now allocate 4000+ ElementIds.
+
 ## Session goals (2026-06-06) — stage-model prototype: fix a real issue via finer-grained stages
 
 - [x] Pick a reproducible, dataset-backed Ghidra issue convertible to a kuna testcase
