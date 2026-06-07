@@ -1877,6 +1877,8 @@ void ActionReturnRecovery::buildReturnOutput(ParamActive *active,PcodeOp *retop,
     if (curtrial.getSlot() >= retop->numInput()) break;
     newparam.push_back(retop->getIn(curtrial.getSlot()));
   }
+  if (data.getArch()->return_single && newparam.size() > 2)	// (kuna) GH-6990: keep only the first return register
+    newparam.resize(2);
   if (newparam.size()<=2)	// Easy zero or one return varnode case
     data.opSetAllInput(retop,newparam);
   else if (newparam.size()==3) { // Two piece concatenation case

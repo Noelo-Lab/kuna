@@ -21,6 +21,7 @@
 #include "kuna_arraynotation.hh"	// (kuna) OptionArrayNotation
 #include "kuna_thumbfuncptr.hh"	// (kuna) OptionThumbFuncPtr
 #include "kuna_inferfuncentry.hh"	// (kuna) OptionInferFuncEntry
+#include "kuna_returnpair.hh"	// (kuna) OptionReturnPair
 
 namespace ghidra {
 
@@ -139,6 +140,7 @@ OptionDatabase::OptionDatabase(Architecture *g)
   registerOption(new OptionArrayNotation());	// (kuna) pointer-notation presentation sub-stage
   registerOption(new OptionThumbFuncPtr());	// (kuna) GH-8471 const-pointer sub-stage
   registerOption(new OptionInferFuncEntry());	// (kuna) GH-6930 const-pointer sub-stage
+  registerOption(new OptionReturnPair());	// (kuna) GH-6990 trial-finalization sub-stage
 }
 
 OptionDatabase::~OptionDatabase(void)
