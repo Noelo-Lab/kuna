@@ -56,5 +56,11 @@ public:
   virtual void execute(istream &s);
 };
 
+/// \brief (kuna) `restarts`: dump recorded restart-trigger events for the current function
+class IfcKunaRestarts : public IfaceDecompCommand {
+public:
+  virtual void execute(istream &s);
+};
+
 } // End namespace ghidra
 #endif

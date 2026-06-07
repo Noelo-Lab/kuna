@@ -4,6 +4,7 @@
  */
 #include "kuna_console.hh"
 #include "kuna_assert.hh"
+#include "kuna_restartlog.hh"
 #include "printc.hh"
 
 namespace ghidra {
@@ -24,6 +25,7 @@ void IfaceKunaCapability::registerCommands(IfaceStatus *status)
   status->registerCom(new IfcKunaStageMap(),"stage","map");
   status->registerCom(new IfcKunaStageStatus(),"stage","status");
   status->registerCom(new IfcKunaAssert(),"kassert");
+  status->registerCom(new IfcKunaRestarts(),"restarts");
 }
 
 /// \class IfcKunaStageList
@@ -154,6 +156,20 @@ void IfcKunaStageStatus::execute(istream &s)
   PrintC *lng = dynamic_cast<PrintC *>(dcp->conf->print);
   if (lng != (PrintC *)0)
     os << "arraynotation: " << (lng->getArrayNotation() ? "on" : "off") << endl;
+}
+
+/// \class IfcKunaRestarts
+/// \brief Dump the restart-trigger events recorded for the current function
+///
+/// The observable half of mechanism (c): WHY the function restarted
+/// (dead-definition gate bump, multistage jump, late prototype), as recorded
+/// by the kuna side table at each trigger site.
+void IfcKunaRestarts::execute(istream &s)
+
+{
+  if (dcp->fd == (Funcdata *)0)
+    throw IfaceExecutionError("No function selected");
+  kunaDumpRestarts(*status->fileoptr,*dcp->fd);	// bulk stream: assertable from datatests
 }
 
 } // End namespace ghidra

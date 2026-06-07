@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    15,
-    15
+    17,
+    17
   ],
   "passing": [
     "data:GH558 #1: default pipeline canonicalizes x <= 8 into x < 9 (bug reproduced)",
@@ -18,7 +18,9 @@
     "data:KUNA-CONSOLE #5: stage map routes force goto to the S7 edge-virtualization sub-stage",
     "data:KUNA-CONSOLE #6: stage map resolves the GH-558 sub-stage",
     "data:KUNA-CONSOLE #7: stage status reports the active pipeline variant",
-    "data:KUNA-CONSOLE #8: stage status reports kuna sub-stage option defaults"
+    "data:KUNA-CONSOLE #8: stage status reports kuna sub-stage option defaults",
+    "data:KUNA-RESTARTS #1: multistage jump-table restart is recorded with its trigger site",
+    "data:KUNA-RESTARTS #2: a function that never restarts reports none"
   ],
   "returncode": 0,
   "unit_footer": null

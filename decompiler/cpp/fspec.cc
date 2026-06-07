@@ -15,6 +15,7 @@
  */
 #include "fspec.hh"
 #include "funcdata.hh"
+#include "kuna_restartlog.hh"	// (kuna) restart observability
 
 namespace ghidra {
 
@@ -5469,6 +5470,7 @@ void FuncCallSpecs::deindirect(Funcdata &data,Funcdata *newfd)
     }
   }
   data.setRestartPending(true);
+  kunaRecordRestart(data,krestart_proto_deindirect,op->getAddr());	// (kuna)
 }
 
 /// \brief Force a more restrictive prototype on \b this call site
@@ -5501,6 +5503,7 @@ void FuncCallSpecs::forceSet(Funcdata &data,const FuncProto &fp)
     // Too late to make restrictions to correct prototype
     // Force a restart
     data.setRestartPending(true);
+    kunaRecordRestart(data,krestart_proto_forced,op->getAddr());	// (kuna)
   }
   // Regardless of what happened, lock the prototype so it doesn't happen again
   setInputLock(true);

@@ -39,11 +39,16 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/architecture.hh/.cc` | `present_lessequal` flag (default false) |
 | `decompiler/cpp/options.cc` | registers kuna options (`compareform`, `arraynotation`) |
 | `decompiler/cpp/printc.hh/.cc` | `option_arraynotation` (+ getter) + `&base[index]` mode in `opPtradd` |
+| `decompiler/cpp/heritage.cc` | include + 2 recorder calls in `bumpDeadcodeDelay` (restart observability) |
+| `decompiler/cpp/jumptable.cc` | include + 1 recorder call at the multistage-jump restart site |
+| `decompiler/cpp/fspec.cc` | include + 2 recorder calls (`deindirect`/`forceSet` late-prototype restarts) |
 
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands
-added with zero upstream edits) (new files, not upstream edits).
+added with zero upstream edits), `kuna_assert.{hh,cc}` (typed assertion API),
+`kuna_restartlog.{hh,cc}` (restart observability side table) (new files, not
+upstream edits).
 
 `sync_upstream.py`'s clean-apply guarantee **no longer holds** for the files in the
 table: a future sync touching them will need `--3way` or manual conflict resolution

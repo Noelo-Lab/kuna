@@ -1,0 +1,54 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna infrastructure test: restart observability (roadmap item 5).
+
+    Mechanism (c) - global restart with persisted hints - is the most
+    diagnostic feedback signal in the engine and was previously invisible.
+    This test reuses the upstream switchmulti binary
+    (decompiler/datatests/switchmulti.xml): its jump table is not fully
+    recovered during flow analysis, so JumpTable::recoverLabels installs an
+    Override::insertMultistageJump hint and restarts the function (edge 2 of
+    the stage model).  The kuna recorder at that trigger site makes the
+    `restarts` command report WHY.
+
+    Also asserts the empty path on a function that never restarts (gh558
+    bytes at a second symbol).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+f30f1efa4883ec2848897c24084889e7
+488974241048c704240000000048c744
+241800000000e8d50f00004c8b14244c
+8b5c241031c9488d3583000000bf6500
+000041b9030000004d85d2745b4d8d04
+0b4883f90677574863048e4801f03eff
+e0498d480aeb39498d48f6eb33496bc8
+07eb2d4c89c0489949f7f94889c1eb20
+4c89c0489948f7ff4889d1eb134c89c1
+4881f1ba0a0000eb074c89c14883c920
+4883f9637ea2eb0d4983c8ffeb0749c7
+c0feffffff4c89c04883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1000c0" readonly="true">
+a1ffffffa7ffffffadffffffb3ffffff
+c0ffffffcdffffffd9ffffff
+</bytechunk>
+<bytechunk space="ram" offset="0x200000" readonly="true">
+83ff087f06b801000000c331c0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="switchmulti"/>
+<symbol space="ram" offset="0x200000" name="norestart"/>
+</binaryimage>
+<script>
+  <com>option readonly on</com>
+  <com>lo fu switchmulti</com>
+  <com>decompile</com>
+  <com>restarts</com>
+  <com>lo fu norestart</com>
+  <com>decompile</com>
+  <com>restarts</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-RESTARTS #1: multistage jump-table restart is recorded with its trigger site" min="1" max="1">0: multistage jump-table hint \(S2 switch model, edge 2\)  \[0x0010005e\]</stringmatch>
+<stringmatch name="KUNA-RESTARTS #2: a function that never restarts reports none" min="1" max="1">No restart events recorded for norestart</stringmatch>
+</decompilertest>

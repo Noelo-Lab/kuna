@@ -16,6 +16,7 @@
 #include "jumptable.hh"
 #include "emulate.hh"
 #include "flow.hh"
+#include "kuna_restartlog.hh"	// (kuna) restart observability
 
 namespace ghidra {
 
@@ -2714,6 +2715,7 @@ void JumpTable::matchModel(Funcdata *fd)
       // The jumptable was not fully recovered during flow analysis, try to issue a restart
       fd->getOverride().insertMultistageJump(opaddress);
       fd->setRestartPending(true);
+      kunaRecordRestart(*fd,krestart_multistage_jump,opaddress);	// (kuna)
       return;
     }
     fd->warning("Could not find normalized switch variable to match jumptable",opaddress);

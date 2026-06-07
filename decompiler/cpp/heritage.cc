@@ -16,6 +16,7 @@
 #include "heritage.hh"
 #include "funcdata.hh"
 #include "prefersplit.hh"
+#include "kuna_restartlog.hh"	// (kuna) restart observability
 
 namespace ghidra {
 
@@ -2575,10 +2576,13 @@ void Heritage::bumpDeadcodeDelay(AddrSpace *spc)
     return;			// Not the right kind of space
   if (spc->getDelay() != spc->getDeadcodeDelay())
     return;			// there is already a global delay
-  if (fd->getOverride().hasDeadcodeDelay(spc))
+  if (fd->getOverride().hasDeadcodeDelay(spc)) {
+    kunaRecordRestart(*fd,krestart_deadcode_suppressed,spc->getName());	// (kuna)
     return;			// A delay has already been installed
+  }
   fd->getOverride().insertDeadcodeDelay(spc,spc->getDeadcodeDelay()+1);
   fd->setRestartPending(true);
+  kunaRecordRestart(*fd,krestart_deadcode_bump,spc->getName());	// (kuna)
 }
 
 /// \brief Perform the renaming algorithm for the current set of address ranges
