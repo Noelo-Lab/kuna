@@ -21,6 +21,7 @@
 #include "bitfield.hh"
 #include "kuna_compareform.hh"	// (kuna) comparison-form presentation sub-stage
 #include "kuna_inferfuncentry.hh"	// (kuna) GH-6930 function-entry constant-pointer inference
+#include "kuna_ovlesssimplify.hh"	// (kuna) GH-7190 OV-flag signed-less-than simplification
 #include "kuna_booleanmask.hh"	// (kuna) GH-1282 boolean sign-extension-mask simplification
 
 namespace ghidra {
@@ -5768,6 +5769,7 @@ void ActionDatabase::universalAction(Architecture *conf)
 	actprop->addRule( new RuleLessNotEqual("analysis") );
 	actprop->addRule( new RuleLessOne("analysis") );
 	actprop->addRule( new RuleRangeMeld("analysis") );
+	actprop->addRule( new RuleOvLessSimplify("analysis") );	// (kuna) GH-7190 (gated default-off by arch flag)
 	actprop->addRule( new RuleFloatRange("analysis") );
 	actprop->addRule( new RulePiece2Zext("analysis") );
 	actprop->addRule( new RulePiece2Sext("analysis") );

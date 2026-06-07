@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    31,
-    31
+    33,
+    33
   ],
   "passing": [
     "data:GH1282 #1: 8051 carry/borrow flag survives as (bool << 7) >> 7 shift noise (bug reproduced, default off)",
@@ -16,6 +16,8 @@
     "data:GH6930 #2: inferfuncentry on resolves 0x100000 to its function name (stage-level fix)",
     "data:GH6990 #1: default pipeline over-claims o0:o1 as 64-bit return (bug reproduced)",
     "data:GH6990 #2: returnpair single drops the o1 join (single-register return)",
+    "data:GH7190 #1: SXB;CMP;BLT yields the OV-flag garbage condition (bug reproduced, default off)",
+    "data:GH7190 #2: option ovlesssimplify on collapses to a clean signed byte compare",
     "data:GH8471 #1: default pipeline renders Thumb funcptr as raw hex (bug reproduced)",
     "data:GH8471 #2: thumbfuncptr on preserves the symbolic form (stage-level fix)",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",

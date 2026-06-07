@@ -48,6 +48,7 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `specs/.../V850/data/languages/V850.cspec` | register-name case fix `ctbp`→`CTBP` (matches SLEIGH `CTBP`; the case-sensitive C++ register lookup otherwise aborts V850 at arch init) |
 | `decompiler/cpp/coreaction.cc` | GH-6990: 1-line guard in `ActionReturnRecovery::buildReturnOutput` (single-register return) |
 | `decompiler/cpp/coreaction.cc` | GH-1282: include + `RuleBoolSignShift` registered in oppool1 (gated by `option booleanmask`) |
+| `decompiler/cpp/coreaction.cc` | GH-7190: include + `RuleOvLessSimplify` registered in oppool1 (gated by `option ovlesssimplify`) |
 
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
@@ -55,8 +56,8 @@ kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 added with zero upstream edits), `kuna_assert.{hh,cc}` (typed assertion API),
 `kuna_restartlog.{hh,cc}` (restart observability side table),
 `kuna_thumbfuncptr.{hh,cc}` (GH-8471), `kuna_inferfuncentry.{hh,cc}` (GH-6930),
-`kuna_returnpair.{hh,cc}` (GH-6990), `kuna_booleanmask.{hh,cc}` (GH-1282)
-(new files, not upstream edits).
+`kuna_returnpair.{hh,cc}` (GH-6990), `kuna_booleanmask.{hh,cc}` (GH-1282),
+`kuna_ovlesssimplify.{hh,cc}` (GH-7190) (new files, not upstream edits).
 
 `sync_upstream.py`'s clean-apply guarantee **no longer holds** for the files in the
 table: a future sync touching them will need `--3way` or manual conflict resolution

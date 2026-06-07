@@ -1,0 +1,37 @@
+<decompilertest>
+<binaryimage arch="V850:LE:32:default">
+<!--
+    GH-7190: V850 BranchLessThen (SXB; CMP; BLT) decompiles to overflow-flag garbage.
+
+    Source loop:   do { ... } while (cVar5 < 8);   (signed byte counter compare)
+    The V850 SLEIGH set_OV_neg macro models the OV flag via a sub-register sign
+    shift instead of `A s< 0`, so the BLT condition lifts to the p-code idiom
+      INT_SLESS(V+K,0) != ( byte_sign(V) && INT_SLESS(-1, V+K) ).
+    The default S3 simplification pool cannot see through the constant offset
+    (V + K) plus the sub-register sign test, so the convoluted boolean leaks into
+    the rendered C instead of collapsing to a clean signed less-than.
+
+    Stage / sub-stage: S3 simplification-quiescence (new named rule RuleOvLessSimplify).
+    P0 assertion: option ovlesssimplify off|on (default off = upstream byte-identical).
+    Pass 1 (default off): assertion #1 proves the bug reproduces today.
+    Pass 2 (option ovlesssimplify on): assertion #2 proves the rule collapses the
+    condition to a clean `cVar5 < '\b'` (signed byte compare against 8).
+-->
+<bytechunk space="ram" offset="0x0">
+06f0e7008056a5a5b51560085f3a007241f2ca660100a152c16e01002c69b205aa56f76b4172a10aae006872b6f5e039dfed7f00
+</bytechunk>
+<symbol space="ram" offset="0x0" name="FUN_00000000"/>
+</binaryimage>
+<script>
+  <com>map fun r0x0 FUN_00000000</com>
+  <com>lo fu FUN_00000000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option ovlesssimplify on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH7190 #1: SXB;CMP;BLT yields the OV-flag garbage condition (bug reproduced, default off)" min="1" max="1">while \(iVar6 \+ -8 &lt; 0 != \(cVar5 &gt;&gt; 7 &lt; '\\0' &amp;&amp; -1 &lt; iVar6 \+ -8\)\)</stringmatch>
+<stringmatch name="GH7190 #2: option ovlesssimplify on collapses to a clean signed byte compare" min="1" max="1">while \(cVar5 &lt; '\\b'\)</stringmatch>
+</decompilertest>
