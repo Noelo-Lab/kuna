@@ -1,13 +1,16 @@
 {
   "data_footer": [
-    12,
-    12
+    15,
+    15
   ],
   "passing": [
     "data:GH558 #1: default pipeline canonicalizes x <= 8 into x < 9 (bug reproduced)",
     "data:GH558 #2: compareform original restores x <= 8 (stage-level fix)",
     "data:GH558 #3: default pipeline renders p->r[i] as pointer arithmetic (bug reproduced)",
     "data:GH558 #4: arraynotation on renders &p->r[i] (stage-level fix)",
+    "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
+    "data:KUNA-ASSERT #2: kassert list reports the S3 config assertion with rewind scope",
+    "data:KUNA-ASSERT #3: kassert list reports the cosmetic S9 assertion as HINT via HARD mechanism",
     "data:KUNA-CONSOLE #1: stage list shows Band B membership",
     "data:KUNA-CONSOLE #2: stage list includes the S3 dead-definition gate sub-stage",
     "data:KUNA-CONSOLE #3: LATENT decisions are flagged in the catalog",

@@ -3,6 +3,7 @@
  * (see kuna_console.hh).
  */
 #include "kuna_console.hh"
+#include "kuna_assert.hh"
 #include "printc.hh"
 
 namespace ghidra {
@@ -22,6 +23,7 @@ void IfaceKunaCapability::registerCommands(IfaceStatus *status)
   status->registerCom(new IfcKunaStageList(),"stage","list");
   status->registerCom(new IfcKunaStageMap(),"stage","map");
   status->registerCom(new IfcKunaStageStatus(),"stage","status");
+  status->registerCom(new IfcKunaAssert(),"kassert");
 }
 
 /// \class IfcKunaStageList
