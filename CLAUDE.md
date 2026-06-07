@@ -26,8 +26,8 @@ commit (`GHIDRA_REV`) and path map. Upstream changes can be pulled in later; see
 | `kuna/` | Python package: `decompile.py`, `run_tests.py`, `paths.py`. |
 | `tools/sync_upstream.py` | Port upstream Ghidra changes into kuna. |
 | `tools/fetch_bfd.sh` | Fetch libbfd without root (see Build). |
-| `STAGES.md` | The normative stage model (P0 plane, S1–S9, Band B, feedback edges); full model in `docs/stage-model.md`. |
-| `STAGE_MAPPING.md` | Every `.cc` mapped to a stage: §0 = current model (P0/S1–S9, matches the runtime registry `kuna_stages.cc`); legacy 19-stage tables kept for per-file role descriptions. |
+| `docs/stages.md` | The normative stage model (P0 plane, S1–S9, Band B, feedback edges); full model in `docs/stage-model.md`. |
+| `docs/stage-mapping.md` | Every `.cc` mapped to a stage: §0 = current model (P0/S1–S9, matches the runtime registry `kuna_stages.cc`); legacy 19-stage tables kept for per-file role descriptions. |
 | `docs/baseline.json` | Recorded test-pass oracle (parity check) — the **kuna** oracle since DIV-2 (`docs/divergences.md`), no longer pristine-upstream. |
 
 ## Build
@@ -88,7 +88,7 @@ datatest results on **stdout**) and exits nonzero on any failure or baseline reg
 the documented, flippable assertion list — `--json` for an agent, `--markdown` to
 regenerate `docs/assertions.md`, `--check` to fail on catalog/registration drift (CI).
 The full catalog also renders to `docs/assertions.md`; the model behind it is
-`STAGES.md` / `docs/stage-model.md`, and the defaults are recorded in
+`docs/stages.md` / `docs/stage-model.md`, and the defaults are recorded in
 `docs/divergences.md`.
 
 ## Tests
@@ -145,5 +145,5 @@ When you update the baseline after an intentional upstream behavior change, rege
 - Issue-derived stage-model testcases go in `tests/stages/` (`make test-stages`,
   baseline `docs/baseline-stages.json`); see `tests/stages/README.md`.
 - Don't commit build artifacts (binaries, `*.o`, `*.sla`, `.bfdlocal/`) — they're gitignored.
-- To understand a source file's role, start from `STAGE_MAPPING.md` and the real pass
+- To understand a source file's role, start from `docs/stage-mapping.md` and the real pass
   order in `decompiler/cpp/coreaction.cc` (`ActionDatabase::universalAction`).

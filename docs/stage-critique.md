@@ -1,6 +1,6 @@
 # Critiquing the kuna stage model — empirical evidence
 
-Does the stage model (`STAGES.md`, `docs/stage-model.md`) actually help fix real
+Does the stage model (`docs/stages.md`, `docs/stage-model.md`) actually help fix real
 decompiler issues, or is it a taxonomy that looks tidy and does nothing? This document
 answers that from session evidence, not from first principles. The data come from the
 2026-06 session that physicalized the model (registry, `kassert`, observability) and

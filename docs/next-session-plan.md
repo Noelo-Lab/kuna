@@ -69,8 +69,8 @@ worktree diffs sequentially into `master` with per-issue gates. This is exactly 
 flow that landed the last 6 — see the prior workflow scripts under the session's
 `workflows/scripts/` if useful.
 
-**Where the conventions already live:** `CLAUDE.md` (build/test/Python), `STAGES.md` +
-`docs/stage-model.md` (the model + §13 symptom→sub-stage navigation), `STAGE_MAPPING.md`
+**Where the conventions already live:** `CLAUDE.md` (build/test/Python), `docs/stages.md` +
+`docs/stage-model.md` (the model + §13 symptom→sub-stage navigation), `docs/stage-mapping.md`
 §0 (file→stage), `docs/stage-implementation.md` (per-stage changelog),
 `docs/divergences.md` (DIV-1/DIV-2 + the default-flip recipe), `docs/assertions.md` +
 `kuna_stages.cc settableTable` (the catalog), `tests/stages/README.md` + the existing
@@ -82,7 +82,7 @@ flow that landed the last 6 — see the prior workflow scripts under the session
 
 We are extending the kuna stage-model work to **all remaining reproducible Ghidra issues**
 in the PHADE dataset, using strict test-based development. Read `docs/next-session-plan.md`
-(this file) top to bottom first, plus `CLAUDE.md`, `STAGES.md`, `docs/stage-model.md`,
+(this file) top to bottom first, plus `CLAUDE.md`, `docs/stages.md`, `docs/stage-model.md`,
 `docs/divergences.md`, and skim `docs/stage-implementation.md` and `tests/stages/*.xml`.
 
 Goals:
@@ -102,7 +102,7 @@ Goals:
       `docs/baseline-stages.json`) with one testcase per fixed issue.
 - [ ] Update the living docs as you go: `docs/stage-implementation.md` (per-stage),
       `docs/stage-critique.md` (per-issue stage-fit + any new ablations),
-      `STAGE_MAPPING.md` if new files land, `UPSTREAM.md` *Divergence*, `PROGRESS.md`
+      `docs/stage-mapping.md` if new files land, `UPSTREAM.md` *Divergence*, `PROGRESS.md`
       session block, and regenerate `docs/assertions.md` (`python -m kuna.catalog
       --markdown`).
 - [ ] Maintain a running ledger (a checklist in `PROGRESS.md` or a new

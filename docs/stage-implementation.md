@@ -1,9 +1,9 @@
 # Stage implementation manifest
 
-How kuna's code was modified to match the stage model (`STAGES.md`,
+How kuna's code was modified to match the stage model (`docs/stages.md`,
 `docs/stage-model.md`), stage by stage. This is the *session changelog against the
 model* — the model itself is normative and lives in those documents; per-file placement
-is `STAGE_MAPPING.md` §0. Updated per work session; honest entries ("nothing changed")
+is `docs/stage-mapping.md` §0. Updated per work session; honest entries ("nothing changed")
 are deliberate.
 
 **Session 2026-06-06 — stage-model physicalization.** Infrastructure: the stage
@@ -26,7 +26,7 @@ Template per stage:
 ## P0 — Knowledge & Configuration Plane
 
 - **Registry**: `database`/`override`/`options` promoted from INFRA to P0 in
-  `STAGE_MAPPING.md` §0 — they are the plane's artifact. The six pipeline variants
+  `docs/stage-mapping.md` §0 — they are the plane's artifact. The six pipeline variants
   (`buildDefaultGroups`) are P0 data, listed by `pipeline list`.
 - **Exposures (new)**: `kassert <stage> <substage> <args> [hard|hint]` — the uniform
   typed assertion writer of stage-model §12, dispatching to Override/Symbol-DB/

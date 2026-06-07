@@ -2,7 +2,7 @@
  * kuna-owned: the stage registry — the normative stage model made physical.
  *
  * This file is NOT part of upstream Ghidra.  It encodes the kuna stage model
- * (STAGES.md, docs/stage-model.md) as queryable static data:
+ * (docs/stages.md, docs/stage-model.md) as queryable static data:
  *
  *   - the stages themselves: P0 knowledge plane + S1..S9, with Band B (S3-S6)
  *     membership (the mutual fixed-point band — Ghidra's mainloop);
@@ -32,7 +32,7 @@
 
 namespace ghidra {
 
-/// \brief (kuna) The stages of the kuna stage model (STAGES.md)
+/// \brief (kuna) The stages of the kuna stage model (docs/stages.md)
 ///
 /// kstage_infra is a registry-only pseudo-stage for orchestration units
 /// (ActionStart/Stop, the cleanup pool's termination policy) that own no

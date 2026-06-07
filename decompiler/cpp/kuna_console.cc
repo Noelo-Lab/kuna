@@ -44,7 +44,7 @@ void IfcKunaStageList::execute(istream &s)
 
 {
   ostream &os( *status->fileoptr );
-  os << "Stages (kuna stage model, STAGES.md / docs/stage-model.md):" << endl;
+  os << "Stages (kuna stage model, docs/stages.md / docs/stage-model.md):" << endl;
   for(int4 i=0;i<=9;++i) {
     KunaStage stage = (KunaStage)i;
     os << "  " << kunaStageCode(stage) << "  " << kunaStageName(stage);

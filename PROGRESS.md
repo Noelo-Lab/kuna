@@ -22,7 +22,7 @@
   (mechanism-c restart reasons recorded at all 5 trigger sites; the switchmulti
   multistage restart is now visible); `pipeline` (reduced-pipeline sub-queries,
   mechanism c′ at the console); `quality` (goto-count metric — the measurement half of
-  roadmap #4). `STAGE_MAPPING.md` §0 remaps all 115 files to P0/S1–S9.
+  roadmap #4). `docs/stage-mapping.md` §0 remaps all 115 files to P0/S1–S9.
 - **10 issues fixed through the model**, all reproduced+fixed in `tests/stages/` (each
   testcase asserts bug-under-default AND fix-under-assertion): 1 default-flip (GH-2786,
   invalid `--x` C; DIV-1, 0/675 upstream churn), 8 option-gated exposures (S2..S5,

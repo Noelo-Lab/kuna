@@ -3,13 +3,13 @@
 A standalone extraction of [Ghidra](https://github.com/NationalSecurityAgency/ghidra)'s
 C++ decompiler (the "deep decompiler", often referred to alongside SLEIGH), broken out of
 the Ghidra Java application so the core decompilation pipeline can be studied, instrumented,
-and refined stage-by-stage (see `STAGES.md` / `STAGE_MAPPING.md`).
+and refined stage-by-stage (see `docs/stages.md` / `docs/stage-mapping.md`).
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `decompiler/cpp/` | Upstream C++ decompiler source, **byte-identical** to Ghidra (never edit; see `UPSTREAM.md`) |
+| `decompiler/cpp/` | Upstream C++ decompiler source. Vendored from Ghidra; **diverged** as of 2026-06 — kuna logic lives in `kuna_*.cc/.hh`, anchor edits tracked in `UPSTREAM.md` *Divergence* |
 | `decompiler/unittests/` | Upstream C++ unit tests (204 tests) |
 | `decompiler/datatests/` | Upstream XML decompilation regression tests (83 files) |
 | `specs/Ghidra/Processors/` | Vendored SLEIGH processor specs (all upstream modules); `.sla` are built artifacts |
@@ -53,13 +53,29 @@ python -m kuna.run_tests --baseline docs/baseline.json
 # Decompile a function from a real binary
 python -m kuna.decompile ./a.out main
 python -m kuna.decompile ./stripped.bin 0x401040 --addr
+
+# Discover the flippable stage-model assertions, then flip one per run (the LLM control API)
+python -m kuna.catalog --json
+python -m kuna.decompile ./a.out main --option compareform canonical
 ```
 
 ## Understanding the decompiler
 
-- `STAGES.md` — the 19 speculated decompiler stages (3 phases).
-- `STAGE_MAPPING.md` — every one of the 115 C++ source files mapped to a stage (or to
-  infrastructure), anchored to the real pass pipeline (`ActionDatabase::universalAction`).
+kuna is organized around an explicit **stage model** (P0 knowledge plane + S1–S9 with a
+Band-B fixed point and typed feedback edges), not a linear pipeline:
+
+- `docs/stages.md` — the stage model at a glance.
+- `docs/stage-model.md` — the full normative model (evidence, sub-stage catalogs, feedback
+  edges, code anchors).
+- `docs/stage-mapping.md` — every one of the 115 C++ source files mapped to a stage (§0 =
+  current P0/S1–S9 model; legacy 19-stage tables kept for per-file role descriptions),
+  anchored to the real pass pipeline (`ActionDatabase::universalAction`) and the runtime
+  registry (`decompiler/cpp/kuna_stages.cc`, queryable via the `stage list/map/catalog`
+  console commands).
+- `docs/assertions.md` — the LLM-settable sub-stage assertions (generated from the
+  registry; `python -m kuna.catalog`). `docs/divergences.md` records kuna's intentional
+  default changes; `docs/stage-implementation.md` / `docs/stage-critique.md` cover how the
+  model was applied and how well it held up.
 
 ## Provenance
 

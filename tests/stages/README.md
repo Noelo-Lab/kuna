@@ -2,7 +2,7 @@
 
 kuna-owned datatests derived from **real, open decompiler issues** (sourced from the
 PHADE issue dataset), each demonstrating that the issue is fixable through the kuna
-stage model (`STAGES.md`, `docs/stage-model.md`): a named sub-stage decision point,
+stage model (`docs/stages.md`, `docs/stage-model.md`): a named sub-stage decision point,
 controlled by a durable P0 assertion, instead of a hardcoded heuristic.
 
 These run with the same upstream harness as `decompiler/datatests/` but from a

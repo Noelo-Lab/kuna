@@ -27,7 +27,7 @@ feed-forward compiler. The evidence breaks that model in five ways:
 
 1. **Phantom stages.** Four of the 19 stages (`Dataflow`, `Memory`, `Aggregate Types`,
    `Interproc`) map to *no module in any of the three decompilers* (the old
-   `STAGE_MAPPING.md` already had to admit this). They are not stages; they are aspects of
+   19-stage mapping, now `docs/stage-mapping.md`, already had to admit this). They are not stages; they are aspects of
    other stages' fixed points.
 2. **Over-split artifacts.** `Loader/Decode/Lift/Disassembly/IR Containers` are five names
    for at most two artifacts; `Simplify/Dataflow/SSA/Range` are four names for one op-graph
