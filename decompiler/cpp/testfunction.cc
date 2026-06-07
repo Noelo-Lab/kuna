@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 #include "ifacedecomp.hh"
+#include <cstdlib>	// (kuna) getenv for KUNA_DUMP
 
 namespace ghidra {
 
@@ -319,6 +320,12 @@ void FunctionTestCollection::runTests(list<string> &lateStream)
   mainloop(console);
   console->optr = origStream;
   console->fileoptr = origStream;
+  if (getenv("KUNA_DUMP") != (char *)0) {	// (kuna) dump captured console output for triage/repro (even on error)
+    *console->optr << "===KUNA_DUMP_BEGIN " << fileName << "===\n";
+    *console->optr << bulkout.str();
+    *console->optr << "\n===KUNA_DUMP_MID===\n" << midBuffer.str();
+    *console->optr << "===KUNA_DUMP_END===" << endl;
+  }
   if (console->isInError()) {
     *console->optr << "Error: Did not apply tests in " << fileName << endl;
     *console->optr << midBuffer.str() << endl;

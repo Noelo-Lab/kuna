@@ -56,6 +56,7 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/constseq.hh` | GH-9230: `StringSequence` members widened private→protected (reused by `MemsetSequence`) |
 | `decompiler/cpp/architecture.cc`, `decompiler/cpp/printc.cc` | DIV-2: eight kuna option defaults flipped ON (`docs/divergences.md`) |
 | `decompiler/datatests/` (15 files, 22 assertions) | DIV-2: regexes re-pinned to kuna default output (compareform/arraynotation renderings); old forms in git history |
+| `decompiler/cpp/testfunction.cc` | (kuna) `<cstdlib>` include + env-gated `KUNA_DUMP` block in `runTests` that echoes the captured console output (triage/repro aid; default-off ⇒ no behavior change) |
 
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
