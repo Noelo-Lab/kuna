@@ -45,6 +45,7 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/printlanguage.cc` | GH-2786 default-flip: parenthesize adjacent identical sign tokens (`docs/divergences.md` DIV-1) |
 | `decompiler/cpp/ruleaction.cc` | GH-8471: include + 1-line guard in `RulePtrsubUndo::applyOp` (preserve Thumb funcptr) |
 | `decompiler/cpp/coreaction.cc` | GH-6930: include + 1-line guard in `ActionConstantPtr::isPointer` (function-entry inference) |
+| `specs/.../V850/data/languages/V850.cspec` | register-name case fix `ctbp`→`CTBP` (matches SLEIGH `CTBP`; the case-sensitive C++ register lookup otherwise aborts V850 at arch init) |
 
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
