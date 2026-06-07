@@ -77,5 +77,7 @@ Symptom→sub-stage navigation table: `docs/stage-model.md` §13.
 
 ---
 
-*Note: `STAGE_MAPPING.md` still maps source files to the **old** 19-stage numbering; the
-remap to this model is a pending follow-up. The old list is preserved there for reference.*
+*Note: `STAGE_MAPPING.md` §0 maps every source file to this model (P0/S1–S9), consistent
+with the runtime stage registry (`decompiler/cpp/kuna_stages.cc`, queryable via the
+`stage list`/`stage map` console commands). The legacy 19-stage mapping is preserved
+there for its per-file role descriptions.*

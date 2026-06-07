@@ -27,7 +27,7 @@ commit (`GHIDRA_REV`) and path map. Upstream changes can be pulled in later; see
 | `tools/sync_upstream.py` | Port upstream Ghidra changes into kuna. |
 | `tools/fetch_bfd.sh` | Fetch libbfd without root (see Build). |
 | `STAGES.md` | The normative stage model (P0 plane, S1–S9, Band B, feedback edges); full model in `docs/stage-model.md`. |
-| `STAGE_MAPPING.md` | Every `.cc` mapped to a stage (or infrastructure) — still on the **old 19-stage numbering**, remap pending. |
+| `STAGE_MAPPING.md` | Every `.cc` mapped to a stage: §0 = current model (P0/S1–S9, matches the runtime registry `kuna_stages.cc`); legacy 19-stage tables kept for per-file role descriptions. |
 | `docs/baseline.json` | Recorded test-pass oracle from the pristine upstream tree (parity check). |
 
 ## Build

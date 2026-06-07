@@ -1,8 +1,70 @@
 # Kuna Stage Mapping
 
-This document maps every source module of the extracted Ghidra C++ decompiler (`decompiler/cpp/`) to one of the 19 decompilation pipeline stages, or marks it as infrastructure. There are **115 translation units** (`.cc`), each with a matching header (`.hh`); a header always maps to the same stage as its `.cc`, so they are listed as a single `file` entry.
+This document maps every source module of the extracted Ghidra C++ decompiler (`decompiler/cpp/`) to the decompilation stage model. There are **115 upstream translation units** (`.cc`), each with a matching header (`.hh`); a header always maps to the same stage as its `.cc`, so they are listed as a single `file` entry.
 
-**Method.** Stages were assigned by combining three signals: (1) the Makefile/module partition of the source tree; (2) the canonical decompile pass order built by `ActionDatabase::universalAction` (`coreaction.cc:5609-5896`), which defines the Phase-2/Phase-3 sequence; and (3) the frontend/backend endpoints — bytes enter through `LoadImage`/`Translate` and source text leaves through `PrintLanguage`. A file's **primary** stage is where its core data structures or pass logic live; cross-cutting files additionally list **secondary** stages (Section 4). Files that are never invoked from `universalAction` and supply no per-function pipeline data structure are classed as infrastructure (Section 3).
+**Two numberings coexist here.** Section 0 maps every file to the **current normative model** (`STAGES.md` / `docs/stage-model.md`: P0 plane + S1–S9 with Band B) — this is the mapping to use. The remainder of the document retains the original **legacy 19-stage** mapping (Stage 00–18) for history and for its per-file role descriptions and source anchors, which remain accurate; only its stage *numbering* is superseded. The legacy model's four phantom stages (06 Dataflow, 10 Memory, 12 Aggregate Types, 15 Interproc) have no place in the new model — they dissolve into Band B fixed points (see `docs/stage-model.md` §1).
+
+**Method.** Stages were assigned by combining three signals: (1) the Makefile/module partition of the source tree; (2) the canonical decompile pass order built by `ActionDatabase::universalAction` (`coreaction.cc:5609-5896`); and (3) the frontend/backend endpoints — bytes enter through `LoadImage`/`Translate` and source text leaves through `PrintLanguage`. A file's **primary** stage is where its core data structures or pass logic live; straddlers are placed by *dominant owned artifact* per `docs/stage-model.md` §15. The new-model column is kept consistent with the kuna stage registry (`decompiler/cpp/kuna_stages.cc`), which maps action/rule *groups* the same way; a file's stage is the stage of its primary group.
+
+---
+
+## 0. New-model mapping (P0 / S1–S9)
+
+### 0.1 Legacy → new correspondence
+
+| Legacy 19-stage | New model | Note |
+|---|---|---|
+| 00 Loader | S1 | image & code partition (thin by design — §5 honesty note) |
+| 01 Decode, 02 P-code Lift, 03 Disassembly, 04 IR Containers | S2 | one artifact: lifted ops + CFG + jump tables + work queues (legacy over-split) |
+| 05 Simplify, 07 SSA | S3 *(Band B)* | definition web; simplification quiescence is S3's gate |
+| 06 Dataflow | — | phantom: dissolves into Band B fixed points |
+| 08 Calls | S4 *(Band B)* | call & prototype model |
+| 09 Stack | S6 *(Band B)* | stack-frame layout is the variable/storage model's concern |
+| 10 Memory | — | phantom: folded into S3 heritage of stack/global ranges |
+| 11 Scalar Types, 14 Range | S5 *(Band B)* | value & type facts |
+| 12 Aggregate Types | — | phantom: sub-concern of S5 (type system + union resolution) |
+| 13 Variables | S6 *(Band B)* | variable & storage model |
+| 15 Interproc | — | phantom: emergent from S4 prototypes + restarts (edge 5) |
+| 16 Structuring | S7 + S8 | region hierarchy vs schema/goto quality (one legacy stage, two artifacts) |
+| 17 C Lowering, 18 C Render | S9 | one inheritance chain (`PrintLanguage` → `PrintC`), one stage |
+| (no legacy home) | P0 | the knowledge/configuration plane: Symbol DB, Override, options |
+
+### 0.2 Per-file mapping
+
+| New stage | Files |
+|---|---|
+| **P0** | `database` (Symbol DB — the assertion store), `override` (per-function directives surviving restarts), `options` (pipeline configuration) — all legacy-INFRA, but they ARE the P0 artifact |
+| **S1** | `loadimage`, `loadimage_xml`, `loadimage_bfd`, `raw_arch`, `xml_arch`, `bfd_arch` |
+| **S2** | `translate`, `sleigh`, `sleighbase`, `sleigh_arch`, `globalcontext`, `context`, `pcoderaw`, `opcodes`, `opbehavior`, `float`, `userop`, `flow`, `pcodeinject`, `jumptable`, `varnode`, `op`, `block`, `address`, `space`, `funcdata`, `funcdata_op`, `funcdata_varnode`, `funcdata_block` |
+| **S3** *(Band B)* | `ruleaction`, `subflow`, `condexe`, `expression`, `transform`, `heritage` |
+| **S4** *(Band B)* | `fspec`, `modelrules` |
+| **S5** *(Band B)* | `type`, `typeop`, `unionresolve`, `rangeutil`, `double`, `bitfield`, `constseq`, `prefersplit` |
+| **S6** *(Band B)* | `varmap`, `variable`, `merge`, `cover`, `dynamic` |
+| **S7** | `blockaction` (spans S8: structuring actions own the region tree AND the schema matching — §15 straddler) |
+| **S8** | — (no dedicated file; schema matching and goto selection live in `blockaction`, quality signal in kuna's `quality` metric) |
+| **S9** | `printlanguage`, `cast`, `printc`, `printjava`, `stringmanage`, `prettyprint`, `comment` |
+| **INFRA** | everything in the legacy Infrastructure table except `database`/`override`/`options` (promoted to P0): serialization (`xml`, `marshal`, `slaformat`, `compression`, `crc32`, `filemanage`, `multiprecision`), framework (`architecture`, `action`, `coreaction`, `capability`, `graph`, `cpool`, `callgraph`, `libdecomp`), console (`interface`, `ifacedecomp`, `ifaceterm`, `consolemain`, `codedata`), SLEIGH compiler (`semantics`, `pcodecompile`, `pcodeparse`, `grammar`, `slgh_compile`, `slghparse`, `slghscan`, `slghsymbol`, `slghpatexpress`, `slghpattern`, `rulecompile`, `unify`), injection (`inject_sleigh`, `inject_ghidra`), Ghidra-IPC glue (`ghidra_*`, `comment_ghidra`, `cpool_ghidra`, `database_ghidra`, `loadimage_ghidra`, `string_ghidra`, `typegrp_ghidra`, `signature_ghidra`), emulator (`emulate`, `emulateutil`, `memstate`), signatures (`signature`, `analyzesigs`, `paramid`), tests (`test`, `testfunction`, `sleighexample`) |
+
+Straddler notes (placement by dominant owned artifact; see `docs/stage-model.md` §15):
+- `jumptable` → S2 home; phase-2 `matchModel`/`recoverLabels` runs post-Band-B and can restart (edge 2).
+- `block` → S2 home (BlockBasic/CFG containers); the structured-block hierarchy (`BlockIf`/`BlockWhileDo`…) is S7's artifact.
+- `funcdata*` → S2 home (the op-graph artifact owners); coordinate Band B and S7 (`jumpvec`/`bblocks`/`sblocks` are three distinct members).
+- `userop` → S2 home (lift semantics); volatile-memory modeling touches S3/S5; display control touches S9.
+- `heritage` → S3 home; LoadGuards refined by S5 value-set analysis (two-phase).
+- `ruleaction` → S3 home; many rules read/write S5 facts (the Band-B coupling, not a mis-mapping).
+- `cast` → S9 home (`ActionSetCasts` is render-prep); decisions derive from S5's type lattice.
+- `blockaction` → S7 home; schema precedence and goto selection are S8 decisions implemented by the same collapse engine.
+
+### 0.3 kuna-owned files (not part of the upstream 115)
+
+| File | Stage | Role |
+|---|---|---|
+| `kuna_stages` | P0 | the stage registry: group→stage map + sub-stage catalog + surface routing |
+| `kuna_console` | P0 | `IfaceKunaCapability`: `stage list/map/status`, `pipeline`, `quality`, `restarts` |
+| `kuna_assert` | P0 | `kassert` typed assertion API (stage-model.md §12) over the existing stores |
+| `kuna_restartlog` | P0 | restart observability side table (mechanism c reasons) |
+| `kuna_compareform` | S3→S9 | GH-558 comparison-canonicalization sub-stage split (`canonicalcompare`/`presentcompare`) |
+| `kuna_arraynotation` | S9 | GH-558 pointer-notation sub-stage (`option arraynotation`) |
 
 ---
 
