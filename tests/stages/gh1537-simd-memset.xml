@@ -1,0 +1,47 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-1537: "Compiler use of XMM registers for memset badly recognized"
+    https://github.com/NationalSecurityAgency/ghidra/issues/1537
+
+    Source:   char buf[64];  void f(void) { memset(buf, 0, sizeof(buf)); }
+    GCC -O2 inlines the memset as one pxor xmm0,xmm0 plus four 128-bit
+    movaps stores (RIP-relative to the global).  The decompiler decomposes
+    the wide SIMD zero-stores into 64 individual element writes
+    (buf[0]='\0'; ... buf[0x3f]='\0';) and never reconstructs the memset.
+
+    Bytes compiled from the issue's exact source on this machine (gcc -O2),
+    RIP displacements resolved for f@0x100000, buf@0x101000.
+
+    Stage model: S5 const-sequence - the SAME sub-stage decision as GH-9230
+    (constant-fill run recovery), exercised here on a GLOBAL destination and
+    RIP-relative SIMD stores rather than GH-9230's stack buffer.  No new
+    code: the fix is pure ROUTING through the existing P0 assertion
+    `option memsetrecover on` (kuna_memsetsequence, GH-9230) - direct
+    evidence that an exposed sub-stage generalizes across issues.
+
+    Pass 1 (default): assertion #1 reproduces the bug (element stores).
+    Pass 2 (memsetrecover on): assertion #2 proves the single memset.
+-->
+<bytechunk space="ram" offset="0x100000">
+f30f1efa660fefc00f2905f10f00000f
+2905fa0f00000f2905031000000f2905
+0c100000c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f"/>
+</binaryimage>
+<script>
+  <com>parse line extern void f(void);</com>
+  <com>map address r0x101000 char buf[64]</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option memsetrecover on</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH1537 #1: SIMD zero-fill decomposed into element stores (bug reproduced)" min="1" max="1">buf\[0x3f\] = '\\0';</stringmatch>
+<stringmatch name="GH1537 #2: memsetrecover on reconstructs the single memset (routing fix via the GH-9230 sub-stage)" min="1" max="1">builtin_memset\(buf,0,0x40\);</stringmatch>
+</decompilertest>
