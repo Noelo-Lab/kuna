@@ -1,0 +1,85 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna infrastructure test: reduced pipelines as sub-queries (roadmap item
+    3) + the goto-count structure-quality metric (observable half of roadmap
+    item 4).
+
+    Reuses the upstream elseif binary (decompiler/datatests/elseif.xml):
+    testElseIf structures with exactly one unstructured edge, carried by a
+    BlockIf goto target (`else if (b == 0x1d) goto ...`).
+
+      1. decompile + quality      -> 41 basic blocks, 1 if-goto edge
+      2. pipeline list            -> the six named variants, decompile current
+      3. pipeline normalize       -> sub-query under the reduced variant; the
+                                     `normalize` group filter has no
+                                     blockrecovery, so no structuring exists
+      4. quality                  -> reports no structured blocks (proves the
+                                     reduced pipeline genuinely reduced)
+      5. decompile + quality      -> full pipeline again (proves the root
+                                     action was restored after the sub-query)
+-->
+<bytechunk space="ram" offset="0x1006ca" readonly="true">
+                    554889e54883
+ec10897dfc8975f8837dfc0a75188b45
+f889c6488d3d3a030000b800000000e8
+9cfeffffeb17837dfc017511488d3d2a
+030000b800000000e883feffff837df8
+01751b8b45fc89c6488d3d05030000b8
+00000000e867feffffe9bb000000837d
+f80b751e8b45fc83c06489c6488d3de1
+020000b800000000e843feffffe99700
+0000837df815751b8b45fc6bc06489c6
+488d3dbd020000b800000000e81ffeff
+ffeb76837df81f751d8b55fc8b45f801
+d089c6488d3d9a020000b800000000e8
+fcfdffffeb53837df8f9751b8b45fc2b
+45f889c6488d3d79020000b800000000
+e8dbfdffffeb32837df800751b8b45fc
+83e80189c6488d3d58020000b8000000
+00e8bafdffffeb11488d3d53020000b8
+00000000e8a7fdffff8b45fc3b45f875
+1b8b45fc83e80289c6488d3d24020000
+b800000000e886fdffffeb28837dfc25
+7511488d3d1f020000b800000000e86d
+fdffff488d3d18020000b800000000e8
+5cfdffff8b45fc3b45f87d1b8b45fc83
+e80389c6488d3dd9010000b800000000
+e83bfdffffeb1e8b55fc8b45f801d083
+f80a7511488d3ddd010000b800000000
+e81bfdffff817df8c8000000751b8b45
+fc83c06789c6488d3d97010000b80000
+0000e8f9fcffffeb23817df8c9000000
+751a817dfc2b0100007f11488d3d7b01
+0000b800000000e8d4fcffff837df81b
+751b8b45fc83c01b89c6488d3d530100
+00b800000000e8b5fcffffeb5d837df8
+1d7557eb2e488d3d64010000e88ffcff
+ff837dfc64751b8b45f883c06f89c648
+8d3d4e010000b800000000e880fcffff
+eb1890837dfc677511488d3d3c010000
+b800000000e866fcffff488d3d310100
+00e84afcffff8345fc018b45fc3b45f8
+7ca390c9c3
+</bytechunk>
+</binaryimage>
+<script>
+  <com>map fun r0x1006ca testElseIf</com>
+  <com>map fun r0x100590 printf</com>
+  <com>parse line extern void testElseIf(int4 a,int4 b);</com>
+  <com>parse line extern void printf(char *,...);</com>
+  <com>lo fu testElseIf</com>
+  <com>decompile</com>
+  <com>quality</com>
+  <com>pipeline list</com>
+  <com>pipeline normalize</com>
+  <com>quality</com>
+  <com>decompile</com>
+  <com>quality</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-PIPELINE #1: pipeline list names the variants with decompile current" min="1" max="1">decompile  \(current\)</stringmatch>
+<stringmatch name="KUNA-PIPELINE #2: reduced normalize variant produces no structuring" min="1" max="1">No structured blocks for testElseIf</stringmatch>
+<stringmatch name="KUNA-QUALITY #1: full pipeline reports the single if-goto edge (before and after the sub-query)" min="2" max="2">if-goto edges: 1</stringmatch>
+<stringmatch name="KUNA-QUALITY #2: unstructured total is the goto-count quality signal" min="2" max="2">unstructured total: 1</stringmatch>
+</decompilertest>

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    17,
-    17
+    21,
+    21
   ],
   "passing": [
     "data:GH558 #1: default pipeline canonicalizes x <= 8 into x < 9 (bug reproduced)",
@@ -19,6 +19,10 @@
     "data:KUNA-CONSOLE #6: stage map resolves the GH-558 sub-stage",
     "data:KUNA-CONSOLE #7: stage status reports the active pipeline variant",
     "data:KUNA-CONSOLE #8: stage status reports kuna sub-stage option defaults",
+    "data:KUNA-PIPELINE #1: pipeline list names the variants with decompile current",
+    "data:KUNA-PIPELINE #2: reduced normalize variant produces no structuring",
+    "data:KUNA-QUALITY #1: full pipeline reports the single if-goto edge (before and after the sub-query)",
+    "data:KUNA-QUALITY #2: unstructured total is the goto-count quality signal",
     "data:KUNA-RESTARTS #1: multistage jump-table restart is recorded with its trigger site",
     "data:KUNA-RESTARTS #2: a function that never restarts reports none"
   ],

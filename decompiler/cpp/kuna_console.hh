@@ -62,5 +62,29 @@ public:
   virtual void execute(istream &s);
 };
 
+/// \brief (kuna) `pipeline [list|<variant>]`: run a named reduced pipeline as a sub-query
+///
+/// Exposes the stageJumpTable save/switch/restore idiom (mechanism c-prime)
+/// at the console: the current function is (re)processed under the named
+/// root action (jumptable/normalize/paramid/register/firstpass), leaving its
+/// state inspectable, and the previous root action is always restored so
+/// subsequent `decompile` commands run the full pipeline again.  The `list`
+/// sub-form is handled internally (see IfcKunaAssert for why).
+class IfcKunaPipeline : public IfaceDecompCommand {
+  void listPipelines(void);		///< Print the named pipeline variants
+public:
+  virtual void execute(istream &s);
+};
+
+/// \brief (kuna) `quality`: goto-count quality metric over the structured result
+///
+/// The observable half of quality-gated structuring (kuna roadmap item 4):
+/// counts BlockGoto nodes (and whether they formally print), BlockMultiGoto
+/// edges, and reports them against the block count.  Read-only; no rollback.
+class IfcKunaQuality : public IfaceDecompCommand {
+public:
+  virtual void execute(istream &s);
+};
+
 } // End namespace ghidra
 #endif

@@ -26,7 +26,14 @@ void IfaceKunaCapability::registerCommands(IfaceStatus *status)
   status->registerCom(new IfcKunaStageStatus(),"stage","status");
   status->registerCom(new IfcKunaAssert(),"kassert");
   status->registerCom(new IfcKunaRestarts(),"restarts");
+  status->registerCom(new IfcKunaPipeline(),"pipeline");
+  status->registerCom(new IfcKunaQuality(),"quality");
 }
+
+/// The named pipeline variants built by ActionDatabase::buildDefaultGroups
+static const char *PIPELINE_VARIANTS[] = {
+  "decompile", "jumptable", "normalize", "paramid", "register", "firstpass" };
+static const int4 NUM_PIPELINE_VARIANTS = 6;
 
 /// \class IfcKunaStageList
 /// \brief List the stage model: stages, Band B, and the sub-stage decision catalog
@@ -170,6 +177,125 @@ void IfcKunaRestarts::execute(istream &s)
   if (dcp->fd == (Funcdata *)0)
     throw IfaceExecutionError("No function selected");
   kunaDumpRestarts(*status->fileoptr,*dcp->fd);	// bulk stream: assertable from datatests
+}
+
+/// Print the named pipeline variants: `pipeline list`
+void IfcKunaPipeline::listPipelines(void)
+
+{
+  ostream &os( *status->fileoptr );
+  os << "Named pipeline variants (group filters over the universal action; P0 pipeline-variant sub-stage):" << endl;
+  for(int4 i=0;i<NUM_PIPELINE_VARIANTS;++i) {
+    os << "  " << PIPELINE_VARIANTS[i];
+    if (dcp->conf != (Architecture *)0 && dcp->conf->allacts.getCurrentName() == PIPELINE_VARIANTS[i])
+      os << "  (current)";
+    os << endl;
+  }
+}
+
+/// \class IfcKunaPipeline
+/// \brief Run a named reduced pipeline on the current function as a sub-query
+///
+/// Mirrors Funcdata::stageJumpTable's save/switch/restore of the root action
+/// (mechanism c-prime), but on the real function in the console rather than
+/// a clone: process under the reduced variant, leave the result inspectable,
+/// always restore the previous root action.
+void IfcKunaPipeline::execute(istream &s)
+
+{
+  string name;
+  s >> ws >> name;
+  if (name.empty() || name == "list") {
+    listPipelines();
+    return;
+  }
+  bool valid = false;
+  for(int4 i=0;i<NUM_PIPELINE_VARIANTS;++i)
+    if (name == PIPELINE_VARIANTS[i]) { valid = true; break; }
+  if (!valid)
+    throw IfaceParseError("Unknown pipeline variant: "+name+" (try `pipeline list`)");
+  if (dcp->conf == (Architecture *)0)
+    throw IfaceExecutionError("No load image present");
+  if (dcp->fd == (Funcdata *)0)
+    throw IfaceExecutionError("No function selected");
+  if (dcp->fd->hasNoCode()) {
+    *status->optr << "No code for " << dcp->fd->getName() << endl;
+    return;
+  }
+  if (dcp->fd->isProcStarted()) {
+    *status->optr << "Clearing old decompilation" << endl;
+    dcp->conf->clearAnalysis(dcp->fd);
+  }
+  string oldactname = dcp->conf->allacts.getCurrentName();	// Save off old action
+  int4 res = -1;
+  try {
+    dcp->conf->allacts.setCurrent(name);
+    *status->optr << "Processing " << dcp->fd->getName() << " under reduced pipeline `" << name << '`' << endl;
+    dcp->conf->allacts.getCurrent()->reset(*dcp->fd);
+    res = dcp->conf->allacts.getCurrent()->perform(*dcp->fd);
+    dcp->conf->allacts.setCurrent(oldactname);	// Restore old action
+  }
+  catch(LowlevelError &err) {
+    dcp->conf->allacts.setCurrent(oldactname);	// Always restore old action
+    throw IfaceExecutionError("Sub-query failed: "+err.explain);
+  }
+  if (res < 0)
+    *status->optr << "Break" << endl;
+  else
+    *status->optr << "Sub-query complete (root action restored to `" << oldactname << "`)" << endl;
+}
+
+/// Recursively count goto blocks/edges in the structured hierarchy.
+/// Unstructured edges live in three carriers: BlockGoto nodes, BlockMultiGoto
+/// edge lists, and BlockIf's optional goto target (`if (...) goto L`).  Edges
+/// typed break/continue are structured surrogates, not gotos.
+static void kunaCountGotos(const FlowBlock *bl,int4 &gotoNodes,int4 &printedGotos,int4 &multiEdges,int4 &ifGotos)
+
+{
+  FlowBlock::block_type bt = bl->getType();
+  if (bt == FlowBlock::t_goto) {
+    gotoNodes += 1;
+    if (((const BlockGoto *)bl)->gotoPrints())
+      printedGotos += 1;
+  }
+  else if (bt == FlowBlock::t_multigoto)
+    multiEdges += ((const BlockMultiGoto *)bl)->numGotos();
+  else if (bt == FlowBlock::t_if) {
+    const BlockIf *ifbl = (const BlockIf *)bl;
+    if (ifbl->getGotoTarget() != (FlowBlock *)0 && ifbl->getGotoType() == FlowBlock::f_goto_goto)
+      ifGotos += 1;
+  }
+  const BlockGraph *graph = dynamic_cast<const BlockGraph *>(bl);
+  if (graph != (const BlockGraph *)0) {
+    for(int4 i=0;i<graph->getSize();++i)
+      kunaCountGotos(graph->getBlock(i),gotoNodes,printedGotos,multiEdges,ifGotos);
+  }
+}
+
+/// \class IfcKunaQuality
+/// \brief Report the goto-count structure-quality metric for the current function
+void IfcKunaQuality::execute(istream &s)
+
+{
+  if (dcp->fd == (Funcdata *)0)
+    throw IfaceExecutionError("No function selected");
+  ostream &os( *status->fileoptr );	// bulk stream: assertable from datatests
+  if (dcp->fd->hasNoStructBlocks()) {
+    os << "No structured blocks for " << dcp->fd->getName() << " (decompile first)" << endl;
+    return;
+  }
+  int4 gotoNodes = 0;
+  int4 printedGotos = 0;
+  int4 multiEdges = 0;
+  int4 ifGotos = 0;
+  kunaCountGotos(&dcp->fd->getStructure(),gotoNodes,printedGotos,multiEdges,ifGotos);
+  int4 basicBlocks = dcp->fd->getBasicBlocks().getSize();
+  os << "Structure quality for " << dcp->fd->getName() << ':' << endl;
+  os << "  basic blocks: " << dec << basicBlocks << endl;
+  os << "  goto nodes: " << gotoNodes << " (printed: " << printedGotos << ")" << endl;
+  os << "  multi-goto edges: " << multiEdges << endl;
+  os << "  if-goto edges: " << ifGotos << endl;
+  os << "  unstructured total: " << (gotoNodes + multiEdges + ifGotos) << endl;
 }
 
 } // End namespace ghidra
