@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    39,
-    39
+    41,
+    41
   ],
   "passing": [
     "data:GH1282 #1: 8051 carry/borrow flag survives as (bool << 7) >> 7 shift noise (bug reproduced, default off)",
@@ -26,6 +26,8 @@
     "data:GH8913 #1b: second add leaks the raw CARRY1 intrinsic inside CONCAT11 (bug, both paths, pass-1 only)",
     "data:GH8913 #2: addcarrychain on fuses path-3 first add into a single wide add (0xd11a + index)",
     "data:GH8913 #2b: addcarrychain on fuses path-5 first add into a single wide add (0xd2c6 + index)",
+    "data:GH9230 #1: unrolled zero-fill emitted as char-array element stores (bug reproduced)",
+    "data:GH9230 #2: option memsetsequence collapses zero-fill into builtin_memset",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
     "data:KUNA-ASSERT #2: kassert list reports the S3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic S9 assertion as HINT via HARD mechanism",

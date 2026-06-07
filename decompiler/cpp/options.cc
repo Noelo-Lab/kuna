@@ -22,6 +22,7 @@
 #include "kuna_thumbfuncptr.hh"	// (kuna) OptionThumbFuncPtr
 #include "kuna_inferfuncentry.hh"	// (kuna) OptionInferFuncEntry
 #include "kuna_returnpair.hh"	// (kuna) OptionReturnPair
+#include "kuna_memsetsequence.hh"	// (kuna) OptionMemsetRecover
 #include "kuna_addcarrychain.hh"	// (kuna) OptionAddCarryChain
 #include "kuna_ovlesssimplify.hh"	// (kuna) OptionOvLessSimplify
 #include "kuna_booleanmask.hh"	// (kuna) OptionBooleanMask
@@ -149,6 +150,7 @@ OptionDatabase::OptionDatabase(Architecture *g)
   registerOption(new OptionV850IndirectBranch());	// (kuna) GH-8817 S2 flow-classification sub-stage
   registerOption(new OptionOvLessSimplify());	// (kuna) GH-7190 S3 simplification-quiescence sub-stage
   registerOption(new OptionBooleanMask());	// (kuna) GH-1282 simplification-quiescence sub-stage
+  registerOption(new OptionMemsetRecover());	// (kuna) GH-9230 constant-fill memset recovery sub-stage
 }
 
 OptionDatabase::~OptionDatabase(void)

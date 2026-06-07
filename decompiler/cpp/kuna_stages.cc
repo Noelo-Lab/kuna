@@ -381,6 +381,7 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "option booleanmask", kstage_s3, "simplification-quiescence", "(kuna GH-1282) fold (b<<k) s>> k boolean sign-extension-mask idioms" },
   { "option thumbfuncptr", kstage_s5, "const-pointer", "(kuna GH-8471) preserve mode-bit-encoded function pointers" },
   { "option inferfuncentry", kstage_s5, "const-pointer", "(kuna GH-6930) infer function entries at single-bit image bases" },
+  { "option memsetrecover", kstage_s5, "constsequence", "(kuna GH-9230) collapse constant-fill runs into builtin_memset" },
   { "option v850indirectbranch", kstage_s2, "flow-classification", "(kuna GH-8817) reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery" },
   { "option ovlesssimplify", kstage_s3, "simplification-quiescence", "(kuna GH-7190) collapse OV-flag signed-less-than idiom to a clean INT_SLESS" },
   { "force goto", kstage_s7, "edge-virtualization", "Override::insertForceGoto" },

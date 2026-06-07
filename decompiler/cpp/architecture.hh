@@ -178,6 +178,7 @@ public:
   bool infer_pointers;		///< True if we should infer pointers from constants that are likely addresses
   bool infer_funcentry;		///< (kuna) True if single-bit constants matching an exact function entry are inferred as pointers (GH-6930)
   bool return_single;		///< (kuna) True if multi-register return values are NOT joined (kept single) (GH-6990)
+  bool memset_recover;		///< (kuna) True if constant-fill store/copy runs are recovered as builtin_memset (GH-9230)
   bool add_carry_chain;		///< (kuna) True if 8-bit carry-chain 16-bit adds are fused into a single wide add (GH-8913)
   bool v850_indirect_branch;	///< (kuna) True if V850 "jmp [reg]" CALLIND is reclassified to BRANCHIND for switch recovery (GH-8817)
   bool ov_less_simplify;	///< (kuna) True if the OV-flag signed-less-than idiom is collapsed to a clean INT_SLESS (GH-7190)

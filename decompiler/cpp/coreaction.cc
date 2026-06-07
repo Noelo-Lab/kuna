@@ -21,6 +21,7 @@
 #include "bitfield.hh"
 #include "kuna_compareform.hh"	// (kuna) comparison-form presentation sub-stage
 #include "kuna_inferfuncentry.hh"	// (kuna) GH-6930 function-entry constant-pointer inference
+#include "kuna_memsetsequence.hh"	// (kuna) GH-9230 constant-fill memset recovery
 #include "kuna_addcarrychain.hh"	// (kuna) GH-8913 carry-chain wide-add recovery
 #include "kuna_ovlesssimplify.hh"	// (kuna) GH-7190 OV-flag signed-less-than simplification
 #include "kuna_booleanmask.hh"	// (kuna) GH-1282 boolean sign-extension-mask simplification
@@ -5870,6 +5871,7 @@ void ActionDatabase::universalAction(Architecture *conf)
     actcleanup->addRule( new RuleSplitStore("splitpointer") );
     actcleanup->addRule( new RuleStringCopy("constsequence"));
     actcleanup->addRule( new RuleStringStore("constsequence"));
+    actcleanup->addRule( new RuleMemsetCopy("constsequence"));	// (kuna) GH-9230 constant-fill -> builtin_memset (gated by option memsetrecover)
     actcleanup->addRule( new RuleBitFieldStore("bitfields"));
     actcleanup->addRule( new RuleBitFieldOut("bitfields"));
     actcleanup->addRule( new RuleBitFieldLoad("bitfields"));

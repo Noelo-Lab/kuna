@@ -64,6 +64,7 @@ public:
 /// transform() method is called, an explicit string is constructed, and the COPYs are replaced with a
 /// \b strncpy or similar CALLOTHER that takes the string as its source input.
 class StringSequence : public ArraySequence {
+protected:				// (kuna) widened to protected so kuna_memsetsequence can reuse the machinery
   Address rootAddr;		///< Address within the memory region associated with the root PcodeOp
   Address startAddr;		///< Starting address of the memory region
   SymbolEntry *entry;		///< Symbol at the root Address

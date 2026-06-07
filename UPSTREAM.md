@@ -51,6 +51,9 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/coreaction.cc` | GH-7190: include + `RuleOvLessSimplify` registered in oppool1 (gated by `option ovlesssimplify`) |
 | `decompiler/cpp/flow.cc` | GH-8817: include + 2-line gated reclassify V850 `jmp [reg]` CALLIND→BRANCHIND in `xrefControlFlow` |
 | `decompiler/cpp/coreaction.cc` | GH-8913: include + `RuleAddCarryChain` registered in oppool1 (gated by `option addcarrychain`) |
+| `decompiler/cpp/coreaction.cc` | GH-9230: include + `RuleMemsetCopy` registered in cleanup pool (gated by `option memsetrecover`) |
+| `decompiler/cpp/userop.hh/.cc` | GH-9230: `BUILTIN_MEMSET` (0x10000006) id + `registerBuiltin` case (`void *memset(void*,int,int)`) |
+| `decompiler/cpp/constseq.hh` | GH-9230: `StringSequence` members widened private→protected (reused by `MemsetSequence`) |
 
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
@@ -60,7 +63,8 @@ added with zero upstream edits), `kuna_assert.{hh,cc}` (typed assertion API),
 `kuna_thumbfuncptr.{hh,cc}` (GH-8471), `kuna_inferfuncentry.{hh,cc}` (GH-6930),
 `kuna_returnpair.{hh,cc}` (GH-6990), `kuna_booleanmask.{hh,cc}` (GH-1282),
 `kuna_ovlesssimplify.{hh,cc}` (GH-7190), `kuna_v850indbranch.{hh,cc}` (GH-8817),
-`kuna_addcarrychain.{hh,cc}` (GH-8913) (new files, not upstream edits).
+`kuna_addcarrychain.{hh,cc}` (GH-8913), `kuna_memsetsequence.{hh,cc}` (GH-9230)
+(new files, not upstream edits).
 
 `sync_upstream.py`'s clean-apply guarantee **no longer holds** for the files in the
 table: a future sync touching them will need `--3way` or manual conflict resolution
