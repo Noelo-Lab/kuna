@@ -42,6 +42,7 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/heritage.cc` | include + 2 recorder calls in `bumpDeadcodeDelay` (restart observability) |
 | `decompiler/cpp/jumptable.cc` | include + 1 recorder call at the multistage-jump restart site |
 | `decompiler/cpp/fspec.cc` | include + 2 recorder calls (`deindirect`/`forceSet` late-prototype restarts) |
+| `decompiler/cpp/printlanguage.cc` | GH-2786 default-flip: parenthesize adjacent identical sign tokens (`docs/divergences.md` DIV-1) |
 
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),

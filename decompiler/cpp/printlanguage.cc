@@ -289,6 +289,9 @@ bool PrintLanguage::parentheses(const OpToken *op2)
     if (topToken->precedence > op2->precedence) return true;
     if (topToken->precedence < op2->precedence) return false;
     //    if (associative && (this == &op2)) return false;
+    if (op2->type==OpToken::unary_prefix && topToken->print1 == op2->print1 &&
+	(topToken->print1 == "-" || topToken->print1 == "+"))
+      return true;	// (kuna) GH-2786: adjacent identical sign tokens would merge into the --/++ operator
     if ((op2->type==OpToken::unary_prefix)||(op2->type==OpToken::presurround)) return false;
     return true;
   case OpToken::postsurround:

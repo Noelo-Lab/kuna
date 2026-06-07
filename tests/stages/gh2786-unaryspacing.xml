@@ -1,0 +1,42 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default">
+<!--
+    GH-2786: "Decompiler produces incorrect syntax with double negation"
+    https://github.com/NationalSecurityAgency/ghidra/issues/2786
+
+    Two nested float negations (FLOAT_NEG of FLOAT_NEG, deliberately NOT folded
+    by analysis for NaN/sign correctness) rendered as the adjacent token pair
+    `minus` `minus` with no parentheses: `minus minus in_f0`, which C re-parses as the
+    pre-decrement operator: wrong semantics from valid-looking source.
+
+    Stage model: S9 surface rendering; the parentheses() unary_prefix case
+    (printlanguage.cc) allowed two identical sign tokens to abut.
+
+    This is a kuna DEFAULT-FLIP (docs/divergences.md DIV-1): emitting an
+    operator that re-parses as a different operator is an unambiguous bug, so
+    the fix is unconditional, not behind an option.  Assertion #1 proves the
+    fixed form; assertion #2 proves the buggy token is gone.  (The
+    bug-reproduces-by-default half of the usual GH-558 pattern is impossible
+    by design here; the pre-fix behavior is recorded in DIV-1.)
+
+    Bytes: the issue's MIPS:BE:32 function (LukeSerne's attachment) with a
+    trailing `jr ra; nop` appended so flow analysis terminates in the image.
+-->
+<bytechunk space="ram" offset="0x0" readonly="true">
+c7a2007c460004874406a00046009207
+46001087440540004407100027ae00dc
+27af00d827b900d4e7a00078afb90018
+afaf0014afae0010e7a200480c0053b4
+27a4008403e0000800000000
+</bytechunk>
+<symbol space="ram" offset="0x0" name="FUN_00000000"/>
+</binaryimage>
+<script>
+  <com>lo fu FUN_00000000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH2786 #1: nested float negation parenthesized (default-flip fix)" min="1" max="1">-\(-in_f0\)</stringmatch>
+<stringmatch name="GH2786 #2: the mis-parsing predecrement token is gone" min="0" max="0">--in_f0</stringmatch>
+</decompilertest>

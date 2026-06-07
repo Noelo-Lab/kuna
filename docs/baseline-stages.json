@@ -1,9 +1,11 @@
 {
   "data_footer": [
-    21,
-    21
+    23,
+    23
   ],
   "passing": [
+    "data:GH2786 #1: nested float negation parenthesized (default-flip fix)",
+    "data:GH2786 #2: the mis-parsing predecrement token is gone",
     "data:GH558 #1: default pipeline canonicalizes x <= 8 into x < 9 (bug reproduced)",
     "data:GH558 #2: compareform original restores x <= 8 (stage-level fix)",
     "data:GH558 #3: default pipeline renders p->r[i] as pointer arithmetic (bug reproduced)",
