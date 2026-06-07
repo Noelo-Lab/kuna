@@ -1654,7 +1654,7 @@ void PrintC::resetDefaultsPrintC(void)
   option_nocasts = false;
   option_NULL = false;
   option_unplaced = false;
-  option_arraynotation = false;	// (kuna) default: upstream's `base + index` form
+  option_arraynotation = true;	// (kuna) DIV-2 default-on: &base[index] form for standalone PTRADD (GH-558)
   option_brace_func = Emit::skip_line;
   option_brace_ifelse = Emit::same_line;
   option_brace_loop = Emit::same_line;

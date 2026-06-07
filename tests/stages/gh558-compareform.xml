@@ -31,11 +31,11 @@
   <com>lo fu gh558</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option compareform original</com>
+  <com>option compareform canonical</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH558 #1: default pipeline canonicalizes x &lt;= 8 into x &lt; 9 (bug reproduced)" min="1" max="1">if \(x &lt; 9\)</stringmatch>
-<stringmatch name="GH558 #2: compareform original restores x &lt;= 8 (stage-level fix)" min="1" max="1">if \(x &lt;= 8\)</stringmatch>
+<stringmatch name="GH558 #1: compareform canonical restores upstream x &lt; 9 (old behavior, opt-in)" min="1" max="1">if \(x &lt; 9\)</stringmatch>
+<stringmatch name="GH558 #2: default pipeline keeps the source form x &lt;= 8 (fix is DIV-2 default)" min="1" max="1">if \(x &lt;= 8\)</stringmatch>
 </decompilertest>

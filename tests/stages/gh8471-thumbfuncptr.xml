@@ -43,11 +43,11 @@ f7ffffff
   <com>lo fu call_fn_through_reference</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option thumbfuncptr on</com>
+  <com>option thumbfuncptr off</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH8471 #1: default pipeline renders Thumb funcptr as raw hex (bug reproduced)" min="1" max="1">call_function\(\(void \*\)0x10189\)</stringmatch>
-<stringmatch name="GH8471 #2: thumbfuncptr on preserves the symbolic form (stage-level fix)" min="1" max="1">call_function\(fn \+ 1\)</stringmatch>
+<stringmatch name="GH8471 #1: thumbfuncptr off restores the raw-hex form (old behavior, opt-in)" min="1" max="1">call_function\(\(void \*\)0x10189\)</stringmatch>
+<stringmatch name="GH8471 #2: default pipeline preserves the symbolic form, &amp;fn[1] via DIV-2 arraynotation (fix is DIV-2 default)" min="1" max="1">call_function\(&amp;fn\[1\]\)</stringmatch>
 </decompilertest>

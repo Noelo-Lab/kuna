@@ -21,7 +21,7 @@ e54883ec0848897df8c7052d09200000
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="No for-loop global call #1" min="1" max="1">while \(globvar &lt; 10\)</stringmatch>
+<stringmatch name="No for-loop global call #1" min="1" max="1">while \(globvar &lt;= 9\)</stringmatch>
 <stringmatch name="No for-loop global call #2" min="1" max="1">globvar = 0;</stringmatch>
 <stringmatch name="No for-loop global call #3" min="1" max="1">globvar = globvar \+ 1;</stringmatch>
 </decompilertest>

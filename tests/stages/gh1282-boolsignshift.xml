@@ -58,11 +58,11 @@ e4ffefc3948074809480500f74002ff582e43400f583e4f00f80e722
   <com>lo fu Fn1</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option booleanmask on</com>
+  <com>option booleanmask off</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH1282 #1: 8051 carry/borrow flag survives as (bool &lt;&lt; 7) &gt;&gt; 7 shift noise (bug reproduced, default off)" min="1" max="1">&lt;&lt; 7\) &gt;&gt; 7</stringmatch>
-<stringmatch name="GH1282 #2: booleanmask on folds (b&lt;&lt;7)s&gt;&gt;7 so the shift-by-7 noise is gone (fix fires)" min="1" max="1">uVar1 = \(uVar2 &lt; 0x80\) \+ 0x80</stringmatch>
+<stringmatch name="GH1282 #1: booleanmask off restores the (bool &lt;&lt; 7) &gt;&gt; 7 shift noise (old behavior, opt-in)" min="1" max="1">&lt;&lt; 7\) &gt;&gt; 7</stringmatch>
+<stringmatch name="GH1282 #2: default pipeline folds (b&lt;&lt;7)s&gt;&gt;7 (fix is DIV-2 default)" min="1" max="1">uVar1 = \(uVar2 &lt; 0x80\) \+ 0x80</stringmatch>
 </decompilertest>

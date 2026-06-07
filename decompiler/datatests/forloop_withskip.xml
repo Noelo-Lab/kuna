@@ -19,6 +19,6 @@
   <com>quit</com>
 </script>
 <stringmatch name="For-loop with skip #1" min="1" max="1">for.*iVar1 = 0; iVar1 &lt; globvar; iVar1 = iVar1 \+ 1</stringmatch>
-<stringmatch name="For-loop with skip #2" min="1" max="1">if \(10 &lt; val\)</stringmatch>
+<stringmatch name="For-loop with skip #2" min="1" max="1">if \(0xb &lt;= val\)</stringmatch>
 <stringmatch name="For-loop with skip #3" min="1" max="1">iVar1 = iVar1 \+ 1;</stringmatch>
 </decompilertest>

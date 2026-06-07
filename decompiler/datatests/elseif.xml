@@ -80,5 +80,5 @@ b800000000e866fcffff488d3d310100
 <stringmatch name="Else-if #11" min="1" max="1">else if \(b == 0x1d\) goto</stringmatch>
 <stringmatch name="Else-if #12" min="0" max="0">else if \(.* == 0x67\)</stringmatch>
 <stringmatch name="Else-if #13" min="1" max="1">if \(.* == 0x67\)</stringmatch>
-<stringmatch name="Else-if #14" min="1" max="1">else if \(\(b == 0xc9\) &amp;&amp; \(a &lt; 300\)\)</stringmatch>
+<stringmatch name="Else-if #14" min="1" max="1">else if \(\(b == 0xc9\) &amp;&amp; \(a &lt;= 299\)\)</stringmatch>
 </decompilertest>

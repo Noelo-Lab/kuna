@@ -36,12 +36,12 @@ f30f1efa660fefc00f2905f10f00000f
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option memsetrecover on</com>
+  <com>option memsetrecover off</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH1537 #1: SIMD zero-fill decomposed into element stores (bug reproduced)" min="1" max="1">buf\[0x3f\] = '\\0';</stringmatch>
-<stringmatch name="GH1537 #2: memsetrecover on reconstructs the single memset (routing fix via the GH-9230 sub-stage)" min="1" max="1">builtin_memset\(buf,0,0x40\);</stringmatch>
+<stringmatch name="GH1537 #1: memsetrecover off restores the element-store form (old behavior, opt-in)" min="1" max="1">buf\[0x3f\] = '\\0';</stringmatch>
+<stringmatch name="GH1537 #2: default pipeline reconstructs the single memset (fix is DIV-2 default; routing via the GH-9230 sub-stage)" min="1" max="1">builtin_memset\(buf,0,0x40\);</stringmatch>
 </decompilertest>

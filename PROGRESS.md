@@ -47,6 +47,16 @@
   for a user who never sets an option — the deliverable is named, tested, durable
   decision surfaces (and one real bug fix). S6/S7 attracted no issues (dataset bias);
   GH-28 deferred (repro diverges between debug/test harness builds); GH-8748 partial.
+- **Addendum (2026-06-07, user decision)**: **DIV-2** — the eight non-destructive fixes
+  are now ON BY DEFAULT (compareform=original, arraynotation, thumbfuncptr,
+  inferfuncentry, booleanmask, addcarrychain, ovlesssimplify, memsetrecover with a new
+  >=2-COPYs/>=16-bytes fill guard). `returnpair single` and `v850indirectbranch` stay
+  opt-in (ablation-proven destructive). 22/675 upstream datatest assertions re-pinned
+  in place to the new renderings (all compareform/arraynotation text forms; 15 files,
+  updated+verified by parallel subagents); both baselines regenerated; the nine
+  affected stage testcases inverted (default = fix, `option ... off` = old behavior).
+  Full record: `docs/divergences.md` DIV-2. Gates: 204/204 + 675/675 PARITY OK (kuna
+  oracle) + test-stages 43/43.
 - **Engineering hazard fixed**: `OptionDatabase::registerOption` keys on
   `ElementId::find(name)` → options without registered ElementIds silently collide on
   `ELEM_UNKNOWN`; all kuna options now allocate 4000+ ElementIds.

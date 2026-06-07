@@ -42,11 +42,11 @@ f30f1efa8b0785c0742e554889fd5331db4883ec080f1f00488b4508488b3cd84883c301e807ffff
   <com>lo fu foo</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option arraynotation on</com>
+  <com>option arraynotation off</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH558 #3: default pipeline renders p-&gt;r[i] as pointer arithmetic (bug reproduced)" min="1" max="1">= p-&gt;r \+ </stringmatch>
-<stringmatch name="GH558 #4: arraynotation on renders &amp;p-&gt;r[i] (stage-level fix)" min="1" max="1">= &amp;p-&gt;r\[</stringmatch>
+<stringmatch name="GH558 #3: arraynotation off restores upstream pointer arithmetic (old behavior, opt-in)" min="1" max="1">= p-&gt;r \+ </stringmatch>
+<stringmatch name="GH558 #4: default pipeline renders &amp;p-&gt;r[i] (fix is DIV-2 default)" min="1" max="1">= &amp;p-&gt;r\[</stringmatch>
 </decompilertest>

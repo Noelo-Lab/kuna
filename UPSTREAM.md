@@ -54,6 +54,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/coreaction.cc` | GH-9230: include + `RuleMemsetCopy` registered in cleanup pool (gated by `option memsetrecover`) |
 | `decompiler/cpp/userop.hh/.cc` | GH-9230: `BUILTIN_MEMSET` (0x10000006) id + `registerBuiltin` case (`void *memset(void*,int,int)`) |
 | `decompiler/cpp/constseq.hh` | GH-9230: `StringSequence` members widened private→protected (reused by `MemsetSequence`) |
+| `decompiler/cpp/architecture.cc`, `decompiler/cpp/printc.cc` | DIV-2: eight kuna option defaults flipped ON (`docs/divergences.md`) |
+| `decompiler/datatests/` (15 files, 22 assertions) | DIV-2: regexes re-pinned to kuna default output (compareform/arraynotation renderings); old forms in git history |
 
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),

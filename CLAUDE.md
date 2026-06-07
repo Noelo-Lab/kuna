@@ -28,7 +28,7 @@ commit (`GHIDRA_REV`) and path map. Upstream changes can be pulled in later; see
 | `tools/fetch_bfd.sh` | Fetch libbfd without root (see Build). |
 | `STAGES.md` | The normative stage model (P0 plane, S1–S9, Band B, feedback edges); full model in `docs/stage-model.md`. |
 | `STAGE_MAPPING.md` | Every `.cc` mapped to a stage: §0 = current model (P0/S1–S9, matches the runtime registry `kuna_stages.cc`); legacy 19-stage tables kept for per-file role descriptions. |
-| `docs/baseline.json` | Recorded test-pass oracle from the pristine upstream tree (parity check). |
+| `docs/baseline.json` | Recorded test-pass oracle (parity check) — the **kuna** oracle since DIV-2 (`docs/divergences.md`), no longer pristine-upstream. |
 
 ## Build
 
@@ -81,9 +81,12 @@ datatest results on **stdout**) and exits nonzero on any failure or baseline reg
 ## Tests
 
 Scope is the **deep (C++) decompiler only**: 204 unit tests + 83 datatests (675
-assertions), all run by the upstream `decomp_test_dbg`. The kuna build reproduces the
-pristine-Ghidra baseline **exactly** (`docs/baseline.json`). Ghidra's Java-side
-decompiler tests (`Ghidra/Features/Decompiler/src/test.slow/java/`) are intentionally
+assertions), all run by the upstream `decomp_test_dbg`. `docs/baseline.json` is the
+recorded **kuna oracle**: since DIV-2 (`docs/divergences.md`) kuna's defaults
+intentionally diverge from upstream — 22 datatest assertions were re-pinned in place to
+kuna's default output (eight stage-model sub-stage fixes on by default; per-option
+`option <name> off` restores the upstream rendering). Ghidra's Java-side decompiler
+tests (`Ghidra/Features/Decompiler/src/test.slow/java/`) are intentionally
 **excluded** — they go through the Java front-end/GUI, not the C++ codebase.
 
 Any change to the build or the vendored tree must keep `python -m kuna.run_tests

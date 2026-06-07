@@ -38,13 +38,13 @@ ad1a04c903f005c905f04360a91a8500a9d18501ad01040a1865008500a50169008501a000b10085
   <com>lo fu gh8913</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option addcarrychain on</com>
+  <com>option addcarrychain off</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH8913 #1: page-cross carry leaks as CONCAT11((0xNN &lt; ...) (bug, both paths, pass-1 only)" min="2" max="2">CONCAT11\(\(0x[0-9a-f]+ &lt;</stringmatch>
-<stringmatch name="GH8913 #1b: second add leaks the raw CARRY1 intrinsic inside CONCAT11 (bug, both paths, pass-1 only)" min="2" max="2">CONCAT11\(.*CARRY1\(</stringmatch>
-<stringmatch name="GH8913 #2: addcarrychain on fuses path-3 first add into a single wide add (0xd11a + index)" min="1" max="1">\(int2 \*\)\(\(uint1\)\(\(char\)current_screen \* '\\x02'\) \+ 0xd11a\)</stringmatch>
-<stringmatch name="GH8913 #2b: addcarrychain on fuses path-5 first add into a single wide add (0xd2c6 + index)" min="1" max="1">\(int2 \*\)\(\(uint1\)\(\(char\)current_screen \* '\\x02'\) \+ 0xd2c6\)</stringmatch>
+<stringmatch name="GH8913 #1: addcarrychain off leaks CONCAT11((0xNN &lt; ...) (old behavior, both paths)" min="2" max="2">CONCAT11\(\(0x[0-9a-f]+ &lt;</stringmatch>
+<stringmatch name="GH8913 #1b: addcarrychain off leaks raw CARRY1 inside CONCAT11 (old behavior, both paths)" min="2" max="2">CONCAT11\(.*CARRY1\(</stringmatch>
+<stringmatch name="GH8913 #2: default pipeline fuses path-3 first add into a wide add (fix is DIV-2 default)" min="1" max="1">\(int2 \*\)\(\(uint1\)\(\(char\)current_screen \* '\\x02'\) \+ 0xd11a\)</stringmatch>
+<stringmatch name="GH8913 #2b: default pipeline fuses path-5 first add into a wide add (fix is DIV-2 default)" min="1" max="1">\(int2 \*\)\(\(uint1\)\(\(char\)current_screen \* '\\x02'\) \+ 0xd2c6\)</stringmatch>
 </decompilertest>

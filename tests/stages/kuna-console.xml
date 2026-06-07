@@ -37,5 +37,5 @@
 <stringmatch name="KUNA-CONSOLE #5: stage map routes force goto to the S7 edge-virtualization sub-stage" min="1" max="1">surface "force goto" -&gt; S7 \(Region Hierarchy\) sub-stage edge-virtualization</stringmatch>
 <stringmatch name="KUNA-CONSOLE #6: stage map resolves the GH-558 sub-stage" min="1" max="1">sub-stage comparison-canonicalization -&gt; S3</stringmatch>
 <stringmatch name="KUNA-CONSOLE #7: stage status reports the active pipeline variant" min="1" max="1">pipeline variant: decompile</stringmatch>
-<stringmatch name="KUNA-CONSOLE #8: stage status reports kuna sub-stage option defaults" min="1" max="1">compareform: canonical</stringmatch>
+<stringmatch name="KUNA-CONSOLE #8: stage status reports kuna sub-stage option defaults (DIV-2: original)" min="1" max="1">compareform: original</stringmatch>
 </decompilertest>

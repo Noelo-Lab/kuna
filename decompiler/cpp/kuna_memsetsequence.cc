@@ -116,11 +116,12 @@ void MemsetSequence::formFillRun(void)
     expect = moveOps[i].offset + moveOps[i].slot;	// slot holds the COPY byte-size
     lastIdx = i;
   }
-  if (lastIdx < 0)
-    return;
+  if (lastIdx < 1)
+    return;					// A memset is a RUN: require at least 2 COPYs so a lone
+						// store (e.g. a string's NUL terminator) is never claimed
   int4 totalBytes = (int4)(expect - runStart);
-  if (totalBytes < MINIMUM_SEQUENCE_LENGTH)
-    return;
+  if (totalBytes < 16)
+    return;					// ...and a minimum fill footprint (16 = one SIMD store)
   if (lastIdx + 1 != (int4)moveOps.size())
     moveOps.resize(lastIdx + 1, WriteNode(0,(PcodeOp *)0,-1));	// Drop ops past the contiguous run
   rootAddr = startAddr + (int4)(runStart - startAddr.getOffset());	// Anchor pointer at run start

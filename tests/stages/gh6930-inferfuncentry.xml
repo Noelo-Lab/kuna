@@ -50,11 +50,11 @@ f30f1efa415741564155415455534883ec08488b6f104885ed74544889fb488b7d104989f44989d6
   <com>lo fu evhttp_send_reply_chunk_with_cb</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option inferfuncentry on</com>
+  <com>option inferfuncentry off</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH6930 #1: function at image base 0x100000 prints as bare literal (bug reproduced)" min="1" max="1">bufferevent_setcb\(\*\(xunknown8 \*\)\(iVar2 \+ 0x10\),0,0x100000,evhttp_error_cb,iVar2\)</stringmatch>
-<stringmatch name="GH6930 #2: inferfuncentry on resolves 0x100000 to its function name (stage-level fix)" min="1" max="1">bufferevent_setcb\(\*\(xunknown8 \*\)\(iVar2 \+ 0x10\),0,evhttp_write_cb,evhttp_error_cb,iVar2\)</stringmatch>
+<stringmatch name="GH6930 #1: inferfuncentry off restores the bare-literal form (old behavior, opt-in)" min="1" max="1">bufferevent_setcb\(\*\(xunknown8 \*\)\(iVar2 \+ 0x10\),0,0x100000,evhttp_error_cb,iVar2\)</stringmatch>
+<stringmatch name="GH6930 #2: default pipeline resolves 0x100000 to its function name (fix is DIV-2 default)" min="1" max="1">bufferevent_setcb\(\*\(xunknown8 \*\)\(iVar2 \+ 0x10\),0,evhttp_write_cb,evhttp_error_cb,iVar2\)</stringmatch>
 </decompilertest>
