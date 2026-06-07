@@ -1,0 +1,41 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna infrastructure test: the stage registry + console capability.
+
+    Proves that the kuna-owned IfaceKunaCapability self-registers its console
+    commands inside the datatest harness (testfunction.cc ConsoleCommands ->
+    IfaceCapability::registerAllCommands) with no upstream anchor edit, and
+    that the stage registry (kuna_stages.cc) answers queries:
+
+      stage list        - stages + Band B + sub-stage catalog (with LATENT)
+      stage map <name>  - group / surface / sub-stage resolution
+      stage status      - pipeline variant + kuna sub-stage option states
+
+    Reuses the GH-558 bytes purely as a loadable function for `stage status`.
+    Infrastructure only: nothing here perturbs decompilation output.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+83ff087f06b801000000c331c0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="gh558"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 gh558(int4 x);</com>
+  <com>lo fu gh558</com>
+  <com>stage list</com>
+  <com>stage map analysis</com>
+  <com>stage map force goto</com>
+  <com>stage map comparison-canonicalization</com>
+  <com>stage status</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-CONSOLE #1: stage list shows Band B membership" min="4" max="4">\[Band B\]</stringmatch>
+<stringmatch name="KUNA-CONSOLE #2: stage list includes the S3 dead-definition gate sub-stage" min="1" max="1">\[S3\] dead-definition-gate</stringmatch>
+<stringmatch name="KUNA-CONSOLE #3: LATENT decisions are flagged in the catalog" min="5" max="40">\(LATENT\)</stringmatch>
+<stringmatch name="KUNA-CONSOLE #4: stage map resolves the analysis rule group to S3" min="1" max="1">group analysis -&gt; S3</stringmatch>
+<stringmatch name="KUNA-CONSOLE #5: stage map routes force goto to the S7 edge-virtualization sub-stage" min="1" max="1">surface "force goto" -&gt; S7 \(Region Hierarchy\) sub-stage edge-virtualization</stringmatch>
+<stringmatch name="KUNA-CONSOLE #6: stage map resolves the GH-558 sub-stage" min="1" max="1">sub-stage comparison-canonicalization -&gt; S3</stringmatch>
+<stringmatch name="KUNA-CONSOLE #7: stage status reports the active pipeline variant" min="1" max="1">pipeline variant: decompile</stringmatch>
+<stringmatch name="KUNA-CONSOLE #8: stage status reports kuna sub-stage option defaults" min="1" max="1">compareform: canonical</stringmatch>
+</decompilertest>

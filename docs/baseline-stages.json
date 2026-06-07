@@ -1,13 +1,21 @@
 {
   "data_footer": [
-    4,
-    4
+    12,
+    12
   ],
   "passing": [
     "data:GH558 #1: default pipeline canonicalizes x <= 8 into x < 9 (bug reproduced)",
     "data:GH558 #2: compareform original restores x <= 8 (stage-level fix)",
     "data:GH558 #3: default pipeline renders p->r[i] as pointer arithmetic (bug reproduced)",
-    "data:GH558 #4: arraynotation on renders &p->r[i] (stage-level fix)"
+    "data:GH558 #4: arraynotation on renders &p->r[i] (stage-level fix)",
+    "data:KUNA-CONSOLE #1: stage list shows Band B membership",
+    "data:KUNA-CONSOLE #2: stage list includes the S3 dead-definition gate sub-stage",
+    "data:KUNA-CONSOLE #3: LATENT decisions are flagged in the catalog",
+    "data:KUNA-CONSOLE #4: stage map resolves the analysis rule group to S3",
+    "data:KUNA-CONSOLE #5: stage map routes force goto to the S7 edge-virtualization sub-stage",
+    "data:KUNA-CONSOLE #6: stage map resolves the GH-558 sub-stage",
+    "data:KUNA-CONSOLE #7: stage status reports the active pipeline variant",
+    "data:KUNA-CONSOLE #8: stage status reports kuna sub-stage option defaults"
   ],
   "returncode": 0,
   "unit_footer": null

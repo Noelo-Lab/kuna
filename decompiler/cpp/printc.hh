@@ -248,6 +248,7 @@ public:
   void setDisplayUnplaced(bool val) { option_unplaced = val; }	///< Toggle whether \e unplaced comments are displayed in the header
   void setHideImpliedExts(bool val) { option_hide_exts = val; }	///< Toggle whether implied extensions are hidden
   void setArrayNotation(bool val) { option_arraynotation = val; }	///< (kuna) Toggle &base[index] rendering of standalone PTRADD
+  bool getArrayNotation(void) const { return option_arraynotation; }	///< (kuna) Current state of the array-notation toggle
   void setBraceFormatFunction(Emit::brace_style style) { option_brace_func = style; }	///< Set how function declarations are formatted
   void setBraceFormatIfElse(Emit::brace_style style) { option_brace_ifelse = style; }	///< Set how if/else blocks are formatted
   void setBraceFormatLoop(Emit::brace_style style) { option_brace_loop = style; }	///< Set how loop blocks are formatted

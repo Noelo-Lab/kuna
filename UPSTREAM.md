@@ -38,10 +38,12 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/coreaction.cc` | `RuleIntLessEqual` regrouped `analysis`→`canonicalcompare`; `ActionPresentCompareForm` registered after the last branch-flip pass; group lists updated |
 | `decompiler/cpp/architecture.hh/.cc` | `present_lessequal` flag (default false) |
 | `decompiler/cpp/options.cc` | registers kuna options (`compareform`, `arraynotation`) |
-| `decompiler/cpp/printc.hh/.cc` | `option_arraynotation` + `&base[index]` mode in `opPtradd` |
+| `decompiler/cpp/printc.hh/.cc` | `option_arraynotation` (+ getter) + `&base[index]` mode in `opPtradd` |
 
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
-`kuna_arraynotation.{hh,cc}` (new files, not upstream edits).
+`kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
+`kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands
+added with zero upstream edits) (new files, not upstream edits).
 
 `sync_upstream.py`'s clean-apply guarantee **no longer holds** for the files in the
 table: a future sync touching them will need `--3way` or manual conflict resolution
