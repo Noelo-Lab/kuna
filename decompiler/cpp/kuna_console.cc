@@ -24,6 +24,7 @@ void IfaceKunaCapability::registerCommands(IfaceStatus *status)
   status->registerCom(new IfcKunaStageList(),"stage","list");
   status->registerCom(new IfcKunaStageMap(),"stage","map");
   status->registerCom(new IfcKunaStageStatus(),"stage","status");
+  status->registerCom(new IfcKunaStageCatalog(),"stage","catalog");
   status->registerCom(new IfcKunaAssert(),"kassert");
   status->registerCom(new IfcKunaRestarts(),"restarts");
   status->registerCom(new IfcKunaPipeline(),"pipeline");
@@ -163,6 +164,124 @@ void IfcKunaStageStatus::execute(istream &s)
   PrintC *lng = dynamic_cast<PrintC *>(dcp->conf->print);
   if (lng != (PrintC *)0)
     os << "arraynotation: " << (lng->getArrayNotation() ? "on" : "off") << endl;
+}
+
+/// Append \e str to \e os as a JSON string literal (quotes + minimal escaping).
+static void kunaJsonString(ostream &os,const char *str)
+
+{
+  os << '"';
+  for(const char *p=str;*p!='\0';++p) {
+    char c = *p;
+    if (c == '"' || c == '\\')
+      os << '\\' << c;
+    else if (c == '\n')
+      os << "\\n";
+    else if ((unsigned char)c < 0x20)
+      os << ' ';			// drop other control chars (none expected in the catalog)
+    else
+      os << c;
+  }
+  os << '"';
+}
+
+/// Read the live value of a kuna settable from the loaded Architecture, or "" if it
+/// cannot be determined (no program loaded, or no live reader for this option).
+static string kunaLiveValue(Architecture *conf,const string &option)
+
+{
+  if (conf == (Architecture *)0)
+    return "";
+  if (option == "compareform")
+    return conf->present_lessequal ? "original" : "canonical";
+  if (option == "arraynotation") {
+    PrintC *lng = dynamic_cast<PrintC *>(conf->print);
+    return (lng != (PrintC *)0) ? (lng->getArrayNotation() ? "on" : "off") : string("");
+  }
+  if (option == "thumbfuncptr")
+    return conf->preserve_thumb_funcptr ? "on" : "off";
+  if (option == "inferfuncentry")
+    return conf->infer_funcentry ? "on" : "off";
+  if (option == "booleanmask")
+    return conf->fold_boolean_mask ? "on" : "off";
+  if (option == "ovlesssimplify")
+    return conf->ov_less_simplify ? "on" : "off";
+  if (option == "addcarrychain")
+    return conf->add_carry_chain ? "on" : "off";
+  if (option == "memsetrecover")
+    return conf->memset_recover ? "on" : "off";
+  if (option == "returnpair")
+    return conf->return_single ? "single" : "pair";
+  if (option == "v850indirectbranch")
+    return conf->v850_indirect_branch ? "on" : "off";
+  return "";
+}
+
+/// Emit one settable as a JSON object onto \e os.  Splits the pipe-separated values
+/// string into a JSON array; joins the live current value from \e conf when known.
+static void kunaEmitSettableJson(ostream &os,const KunaSettable &st,Architecture *conf)
+
+{
+  os << "  {";
+  os << "\"option\": "; kunaJsonString(os,st.option);
+  os << ", \"values\": [";
+  string vals(st.values);
+  string::size_type pos = 0;
+  bool first = true;
+  while(pos <= vals.size()) {
+    string::size_type bar = vals.find('|',pos);
+    string tok = (bar == string::npos) ? vals.substr(pos) : vals.substr(pos,bar-pos);
+    if (!first) os << ", ";
+    kunaJsonString(os,tok.c_str());
+    first = false;
+    if (bar == string::npos) break;
+    pos = bar + 1;
+  }
+  os << "]";
+  os << ", \"default\": "; kunaJsonString(os,st.shipped);
+  string live = kunaLiveValue(conf,st.option);
+  if (!live.empty()) { os << ", \"current\": "; kunaJsonString(os,live.c_str()); }
+  os << ", \"destructive_as_default\": " << (st.destructive ? "true" : "false");
+  os << ", \"stage\": "; kunaJsonString(os,kunaStageCode(st.stage));
+  os << ", \"substage\": "; kunaJsonString(os,st.substage);
+  os << ", \"strength\": "; kunaJsonString(os,(st.strength==kstrength_hard)?"HARD":(st.strength==kstrength_hint)?"HINT":"NONE");
+  os << ", \"rewind\": "; kunaJsonString(os,kunaStageCode(st.rewind));
+  os << ", \"issue\": "; kunaJsonString(os,st.issue);
+  os << ", \"summary\": "; kunaJsonString(os,st.summary);
+  os << ", \"use_when\": "; kunaJsonString(os,st.use_when);
+  os << ", \"example\": "; kunaJsonString(os,st.example);
+  os << "}";
+}
+
+/// \class IfcKunaStageCatalog
+/// \brief Emit the LLM-settable assertion catalog as JSON
+///
+/// `stage catalog` dumps every settable; `stage catalog <option>` dumps one.  Works
+/// with no program loaded (static doc); the live "current" field is added per option
+/// when an Architecture is present.
+void IfcKunaStageCatalog::execute(istream &s)
+
+{
+  string option;
+  s >> ws >> option;
+  Architecture *conf = (dcp != (IfaceDecompData *)0) ? dcp->conf : (Architecture *)0;
+  ostream &os( *status->fileoptr );	// bulk stream: assertable + cleanly captured by kuna.catalog
+  if (!option.empty()) {
+    const KunaSettable *st = kunaLookupSettable(option);
+    if (st == (const KunaSettable *)0)
+      throw IfaceExecutionError("Unknown settable option: "+option+" (try `stage catalog`)");
+    kunaEmitSettableJson(os,*st,conf);
+    os << endl;
+    return;
+  }
+  os << "[" << endl;
+  for(int4 i=0;i<kunaNumSettables();++i) {
+    kunaEmitSettableJson(os,kunaSettableByIndex(i),conf);
+    if (i + 1 < kunaNumSettables())
+      os << ",";
+    os << endl;
+  }
+  os << "]" << endl;
 }
 
 /// \class IfcKunaRestarts

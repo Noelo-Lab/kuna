@@ -436,4 +436,83 @@ const KunaSurfaceEntry *kunaLookupSurface(const std::string &nm)
   return (const KunaSurfaceEntry *)0;
 }
 
+/// The LLM/agent-settable assertion catalog: one row per kuna ArchOption.  This is
+/// the single source of truth an external operator reads (via `stage catalog` JSON,
+/// `docs/assertions.md`, or `python -m kuna.catalog`) to choose and flip assertions.
+/// The `shipped` value reflects the post-DIV-2 defaults (docs/divergences.md); the
+/// LIVE current value is joined in by the `stage catalog` command from Architecture.
+/// A drift test (tests/stages/kuna-catalog.xml) enforces that every registered kuna
+/// option appears here exactly once.
+static const KunaSettable settableTable[] = {
+  { "compareform", "canonical|original", "original", false,
+    kstage_s3, "comparison-canonicalization", kstrength_hard, kstage_s3, "GH-558",
+    "Whether comparisons keep their source form (V <= c) or the analysis-canonical rewrite (V < c+1).",
+    "Flip to canonical only to reproduce upstream Ghidra output; original (default) is more faithful to source.",
+    "option compareform canonical" },
+  { "arraynotation", "on|off", "on", false,
+    kstage_s9, "pointer-notation", kstrength_hard, kstage_s9, "GH-558",
+    "Render standalone pointer arithmetic as &base[index] (on) vs base + index (off).",
+    "Flip off if the consumer expects raw pointer-arithmetic rendering; on (default) is more readable.",
+    "option arraynotation off" },
+  { "thumbfuncptr", "on|off", "on", false,
+    kstage_s5, "const-pointer", kstrength_hard, kstage_s5, "GH-8471",
+    "Preserve a Thumb function pointer (fn|1) as a symbolic &fn[1] rather than a raw hex literal.",
+    "Flip off only to see the raw constant; on (default) recovers the function symbol on ARM/Thumb.",
+    "option thumbfuncptr off" },
+  { "inferfuncentry", "on|off", "on", false,
+    kstage_s5, "const-pointer", kstrength_hard, kstage_s5, "GH-6930",
+    "Infer a function pointer when a constant equals an exact function entry at a single-bit image base (e.g. 0x100000).",
+    "Flip off only to reproduce the bare-literal form; on (default) names the function.",
+    "option inferfuncentry off" },
+  { "booleanmask", "on|off", "on", false,
+    kstage_s3, "simplification-quiescence", kstrength_hard, kstage_s3, "GH-1282",
+    "Fold the (b<<k) s>>k boolean sign-extension-mask idiom (flag-as-high-bit lowering) into a clean comparison.",
+    "Flip off only to see the raw shift idiom; on (default) cleans flag-modelled comparisons (8051 etc.).",
+    "option booleanmask off" },
+  { "ovlesssimplify", "on|off", "on", false,
+    kstage_s3, "simplification-quiescence", kstrength_hard, kstage_s3, "GH-7190",
+    "Simplify the explicit S/OV-flag compare idiom into a direct signed comparison.",
+    "Flip off only to see the raw overflow-flag arithmetic; on (default) cleans V850-style compares.",
+    "option ovlesssimplify off" },
+  { "addcarrychain", "on|off", "on", false,
+    kstage_s5, "simplification-quiescence", kstrength_hard, kstage_s5, "GH-8913",
+    "Recover an 8-bit carry-chain (ADC) pair into a single wide add instead of CONCAT11(CARRY1(...)).",
+    "Flip off only to see the raw carry intrinsics; on (default) recovers wide arithmetic (6502 etc.).",
+    "option addcarrychain off" },
+  { "memsetrecover", "on|off", "on", false,
+    kstage_s5, "constsequence", kstrength_hard, kstage_s5, "GH-9230/1537",
+    "Collapse a run of constant-fill stores (incl. inlined/SIMD bzero) into a single builtin_memset.",
+    "Flip off only to see the individual element stores; on (default) reconstructs the memset.",
+    "option memsetrecover off" },
+  { "returnpair", "pair|single", "pair", true,
+    kstage_s4, "trial-budget", kstrength_hard, kstage_s4, "GH-6990",
+    "Whether a passively-active second return register may be joined into a wide return (pair) or dropped (single).",
+    "Set single PER FUNCTION when a void/single-register function shows a spurious CONCAT44 return (e.g. SPARC); DESTRUCTIVE as a global default (truncates real multi-register returns).",
+    "option returnpair single" },
+  { "v850indirectbranch", "on|off", "off", true,
+    kstage_s2, "flow-classification", kstrength_hard, kstage_s2, "GH-8817",
+    "Reclassify a V850 jmp [reg] CALLIND to BRANCHIND so switch-table recovery runs.",
+    "Set on PER V850 PROGRAM to recover jump-table switches; DESTRUCTIVE as a global default (matches register-indirect calls on other architectures).",
+    "option v850indirectbranch on" }
+};
+
+int4 kunaNumSettables(void)
+{
+  return sizeof(settableTable) / sizeof(KunaSettable);
+}
+
+const KunaSettable &kunaSettableByIndex(int4 i)
+{
+  return settableTable[i];
+}
+
+const KunaSettable *kunaLookupSettable(const std::string &nm)
+{
+  for (int4 i=0;i<kunaNumSettables();++i) {
+    if (nm == settableTable[i].option)
+      return settableTable + i;
+  }
+  return (const KunaSettable *)0;
+}
+
 } // End namespace ghidra

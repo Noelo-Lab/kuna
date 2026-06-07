@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    43,
-    43
+    48,
+    48
   ],
   "passing": [
     "data:GH1282 #1: booleanmask off restores the (bool << 7) >> 7 shift noise (old behavior, opt-in)",
@@ -33,6 +33,11 @@
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
     "data:KUNA-ASSERT #2: kassert list reports the S3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic S9 assertion as HINT via HARD mechanism",
+    "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and S3 address",
+    "data:KUNA-CATALOG #2: arraynotation documented as default-on, S9 pointer-notation",
+    "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
+    "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
+    "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
     "data:KUNA-CONSOLE #1: stage list shows Band B membership",
     "data:KUNA-CONSOLE #2: stage list includes the S3 dead-definition gate sub-stage",
     "data:KUNA-CONSOLE #3: LATENT decisions are flagged in the catalog",

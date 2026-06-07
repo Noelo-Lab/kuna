@@ -59,6 +59,8 @@ def decompile(
     by_address=False,
     bfd_target=None,
     raw=False,
+    options=None,
+    kasserts=None,
     decomp_dbg=None,
     sleighpath=None,
     timeout=120,
@@ -73,6 +75,12 @@ def decompile(
         if ``target`` looks like ``0x...``.
     bfd_target : optional explicit BFD target for ``load file`` (e.g. ``elf64-x86-64``).
     raw : also emit the raw p-code listing (``print raw``) after the C.
+    options : iterable of ``(name, value)`` kuna/Ghidra options to set before
+        decompiling (program-scoped; e.g. ``("compareform", "canonical")``). These are
+        exactly the assertions documented by :mod:`kuna.catalog`; an LLM picks them
+        from that catalog. Set after the image loads, before the function is selected.
+    kasserts : iterable of kuna ``kassert`` argument strings, set after the function
+        loads (function-scoped; e.g. ``"S7 edge-virtualization 0x401000 0x401020"``).
     decomp_dbg : path to the decomp_dbg binary (defaults to the built one).
     sleighpath : SLEIGH specs root (defaults to ``<repo>/specs``).
     timeout : seconds before the subprocess is killed.
@@ -101,7 +109,9 @@ def decompile(
     out_file.close()
 
     try:
-        script = _build_script(binary, target, by_address, bfd_target, raw, out_path)
+        script = _build_script(
+            binary, target, by_address, bfd_target, raw, out_path, options, kasserts
+        )
         env = dict(os.environ)
         # SLEIGHHOME is the load-bearing mechanism: decomp_dbg scans it
         # RECURSIVELY for Ghidra/Processors/*/data/languages dirs (the layout of
@@ -149,7 +159,8 @@ def decompile(
             pass
 
 
-def _build_script(binary, target, by_address, bfd_target, raw, out_path):
+def _build_script(binary, target, by_address, bfd_target, raw, out_path,
+                  options=None, kasserts=None):
     lines = []
     if bfd_target:
         # Two-token form: `load file <target> <path>` (target first per IfcLoadFile).
@@ -161,11 +172,20 @@ def _build_script(binary, target, by_address, bfd_target, raw, out_path):
     # explicitly (the XML datatests auto-read symbols, the BFD console path does not).
     lines.append("read symbols")
 
+    # Program-scoped options (the kuna.catalog assertions) operate on the now-loaded
+    # Architecture, before any function is selected.
+    for name, value in (options or []):
+        lines.append("option %s %s" % (name, value))
+
     if by_address:
         addr = target if (target.startswith("0x") or target.startswith("0X")) else "0x" + target
         lines.append("load addr %s" % addr)
     else:
         lines.append("load function %s" % target)
+
+    # Function-scoped kuna assertions, after the function is loaded, before decompile.
+    for ka in (kasserts or []):
+        lines.append("kassert %s" % ka)
 
     lines.append("decompile")
     lines.append("openfile write %s" % out_path)
@@ -204,6 +224,15 @@ def main(argv=None):
     p.add_argument("--target", dest="bfd_target", default=None,
                    help="explicit BFD target for load file (e.g. elf64-x86-64)")
     p.add_argument("--raw", action="store_true", help="also print the raw p-code listing")
+    p.add_argument("--option", dest="options", nargs=2, action="append",
+                   metavar=("NAME", "VALUE"), default=[],
+                   help="set a decompiler option/assertion before decompiling "
+                        "(repeatable; see `python -m kuna.catalog`), e.g. "
+                        "--option compareform canonical")
+    p.add_argument("--kassert", dest="kasserts", action="append", default=[],
+                   metavar="ARGS",
+                   help="apply a function-scoped kuna kassert (repeatable), e.g. "
+                        "--kassert 'S7 edge-virtualization 0x401000 0x401020'")
     p.add_argument("--decomp-dbg", default=None, help="path to the decomp_dbg binary")
     p.add_argument("--sleighpath", default=None, help="SLEIGH specs root (default: <repo>/specs)")
     p.add_argument("--timeout", type=float, default=120, help="subprocess timeout in seconds")
@@ -216,6 +245,8 @@ def main(argv=None):
             by_address=args.addr,
             bfd_target=args.bfd_target,
             raw=args.raw,
+            options=[(n, v) for n, v in args.options],
+            kasserts=args.kasserts,
             decomp_dbg=args.decomp_dbg,
             sleighpath=args.sleighpath,
             timeout=args.timeout,

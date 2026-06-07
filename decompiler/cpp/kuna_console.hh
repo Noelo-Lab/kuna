@@ -56,6 +56,18 @@ public:
   virtual void execute(istream &s);
 };
 
+/// \brief (kuna) `stage catalog [<option>]`: emit the LLM-settable assertion catalog as JSON
+///
+/// The machine-readable discovery surface for an external operator (human or LLM):
+/// each kuna ArchOption with its legal values, shipped default, live current value
+/// (when a program is loaded), stage/sub-stage address, strength, reported rewind
+/// scope, originating issue, and symptom-keyed guidance.  Consumed by
+/// `python -m kuna.catalog` and rendered to `docs/assertions.md`.
+class IfcKunaStageCatalog : public IfaceDecompCommand {
+public:
+  virtual void execute(istream &s);
+};
+
 /// \brief (kuna) `restarts`: dump recorded restart-trigger events for the current function
 class IfcKunaRestarts : public IfaceDecompCommand {
 public:

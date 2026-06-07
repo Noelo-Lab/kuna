@@ -1,0 +1,39 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna infrastructure test: the LLM-settable assertion catalog (`stage catalog`).
+
+    This is the discovery surface an external operator (human or LLM) reads to choose
+    which sub-stage assertion to flip and how (then flips it via the
+    kuna.decompile option/kassert flags). The catalog is a single C++
+    table (kuna_stages.cc settableTable) emitted as JSON; `python -m kuna.catalog`
+    parses it and `docs/assertions.md` is generated from it.
+
+    These assertions pin the JSON contract the Python tooling depends on:
+      - the array opens (well-formed JSON the catalog parser balances);
+      - representative settables are present with their post-DIV-2 shipped defaults
+        (compareform=original, arraynotation=on) and stage/sub-stage address;
+      - the two destructive options are flagged opt-in (default + destructive marker)
+        so an agent does not enable them globally;
+      - the live `current` value is joined in when a program is loaded.
+
+    Reuses the GH-558 bytes as a loadable program for the `current` field.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+83ff087f06b801000000c331c0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="gh558"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 gh558(int4 x);</com>
+  <com>lo fu gh558</com>
+  <com>stage catalog</com>
+  <com>stage catalog returnpair</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and S3 address" min="1" max="1">"option": "compareform", "values": \["canonical", "original"\], "default": "original", "current": "original", "destructive_as_default": false, "stage": "S3"</stringmatch>
+<stringmatch name="KUNA-CATALOG #2: arraynotation documented as default-on, S9 pointer-notation" min="1" max="1">"option": "arraynotation", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "stage": "S9"</stringmatch>
+<stringmatch name="KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in" min="2" max="2">"option": "returnpair", "values": \["pair", "single"\], "default": "pair", "current": "pair", "destructive_as_default": true</stringmatch>
+<stringmatch name="KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)" min="1" max="1">"option": "v850indirectbranch", "values": \["on", "off"\], "default": "off", "current": "off", "destructive_as_default": true</stringmatch>
+<stringmatch name="KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator" min="10" max="40">"use_when": </stringmatch>
+</decompilertest>

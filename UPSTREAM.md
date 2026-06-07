@@ -66,7 +66,9 @@ added with zero upstream edits), `kuna_assert.{hh,cc}` (typed assertion API),
 `kuna_returnpair.{hh,cc}` (GH-6990), `kuna_booleanmask.{hh,cc}` (GH-1282),
 `kuna_ovlesssimplify.{hh,cc}` (GH-7190), `kuna_v850indbranch.{hh,cc}` (GH-8817),
 `kuna_addcarrychain.{hh,cc}` (GH-8913), `kuna_memsetsequence.{hh,cc}` (GH-9230)
-(new files, not upstream edits).
+(new files, not upstream edits). The `stage catalog` JSON command and the LLM
+assertion catalog (`settableTable`) live in the existing `kuna_stages`/`kuna_console`
+files; no new vendored edits.
 
 `sync_upstream.py`'s clean-apply guarantee **no longer holds** for the files in the
 table: a future sync touching them will need `--3way` or manual conflict resolution

@@ -86,6 +86,28 @@ struct KunaSurfaceEntry {
   const char *note;		///< Clarification, or ""
 };
 
+/// \brief (kuna) One LLM/agent-settable assertion: the machine-readable catalog row
+///
+/// This is the documentation surface an external operator (human or LLM) reads to
+/// decide WHICH assertion to flip and HOW.  It is emitted as JSON by the
+/// `stage catalog` console command (joined with the live current value), rendered
+/// to `docs/assertions.md`, and consumed by `python -m kuna.catalog`.  Every kuna
+/// ArchOption must have exactly one row here (a drift test enforces this).
+struct KunaSettable {
+  const char *option;		///< The option name (the `option <name> ...` token)
+  const char *values;		///< Pipe-separated legal values, e.g. "on|off" or "canonical|original"
+  const char *shipped;		///< The value kuna ships as the default (post-DIV-2 where applicable)
+  bool destructive;		///< true = NOT safe as a global default (kept opt-in; see docs/divergences.md)
+  KunaStage stage;		///< Owning stage
+  const char *substage;		///< Sub-stage name (in the §4-§10 catalog)
+  KunaStrength strength;	///< Assertion strength
+  KunaStage rewind;		///< Minimal invalidated stage (REPORTED; Ghidra-actual is whole-function)
+  const char *issue;		///< Originating issue (e.g. "GH-558"), or ""
+  const char *summary;		///< One line: the decision this assertion controls
+  const char *use_when;		///< Symptom -> when an operator should flip it away from the default
+  const char *example;		///< A ready-to-use console command, e.g. "option compareform canonical"
+};
+
 const char *kunaStageCode(KunaStage stage);	///< "P0".."S9" (or "--" for infra)
 const char *kunaStageName(KunaStage stage);	///< Long stage name
 const char *kunaStageArtifact(KunaStage stage);	///< The artifact the stage owns
@@ -103,6 +125,10 @@ const KunaSubStage *kunaLookupSubStage(const std::string &nm);	///< Find sub-sta
 int4 kunaNumSurfaces(void);				///< Number of surface routings
 const KunaSurfaceEntry &kunaSurfaceByIndex(int4 i);	///< Get i-th surface routing
 const KunaSurfaceEntry *kunaLookupSurface(const std::string &nm);	///< Find surface by exact string (null if missing)
+
+int4 kunaNumSettables(void);				///< Number of LLM-settable assertions in the catalog
+const KunaSettable &kunaSettableByIndex(int4 i);	///< Get i-th settable assertion
+const KunaSettable *kunaLookupSettable(const std::string &nm);	///< Find settable by option name (null if missing)
 
 } // End namespace ghidra
 #endif

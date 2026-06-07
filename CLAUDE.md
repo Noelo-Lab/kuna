@@ -71,12 +71,25 @@ python -m kuna.run_tests --all --baseline docs/baseline.json   # expect: PARITY 
 # Decompile a function from a binary
 python -m kuna.decompile ./a.out main
 python -m kuna.decompile ./stripped.bin 0x401040 --addr
+
+# Flip a stage-model assertion per decompilation (the LLM control surface)
+python -m kuna.catalog --json                                  # discover settable assertions
+python -m kuna.decompile ./a.out main --option compareform canonical
+python -m kuna.decompile ./sparc.elf main --option returnpair single
 ```
 
 `run_tests` parses the harness's two streams separately (unit results on **stderr**,
 datatest results on **stdout**) and exits nonzero on any failure or baseline regression.
 `decompile` drives `decomp_dbg` as a subprocess and captures `print C` via
-`openfile write` so interactive prompts never pollute the output.
+`openfile write` so interactive prompts never pollute the output; `--option NAME VALUE`
+(repeatable) and `--kassert "<args>"` flip stage-model sub-stage assertions per run.
+`catalog` is the **discovery half of the LLM control API**: it parses the decompiler's
+`stage catalog` JSON (single source of truth: `settableTable` in `kuna_stages.cc`) into
+the documented, flippable assertion list — `--json` for an agent, `--markdown` to
+regenerate `docs/assertions.md`, `--check` to fail on catalog/registration drift (CI).
+The full catalog also renders to `docs/assertions.md`; the model behind it is
+`STAGES.md` / `docs/stage-model.md`, and the defaults are recorded in
+`docs/divergences.md`.
 
 ## Tests
 
