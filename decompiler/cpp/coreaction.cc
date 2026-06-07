@@ -20,6 +20,7 @@
 #include "constseq.hh"
 #include "bitfield.hh"
 #include "kuna_compareform.hh"	// (kuna) comparison-form presentation sub-stage
+#include "kuna_inferfuncentry.hh"	// (kuna) GH-6930 function-entry constant-pointer inference
 
 namespace ghidra {
 
@@ -1142,7 +1143,8 @@ SymbolEntry *ActionConstantPtr::isPointer(AddrSpace *spc,Varnode *vn,PcodeOp *op
     if (spc->getPointerUpperBound() < vn->getOffset())
       return (SymbolEntry *)0;
     // Check if the constant looks like a single bit or mask
-    if (bit_transitions(vn->getOffset(),vn->getSize()) < 3)
+    if (bit_transitions(vn->getOffset(),vn->getSize()) < 3 &&
+	!kunaIsFunctionEntry(data,spc,vn,op))	// (kuna) GH-6930: keep single-bit values that are exact function entries
       return (SymbolEntry *)0;
     rampoint = glb->resolveConstant(spc,vn->getOffset(),vn->getSize(),op->getAddr(),fullEncoding);
   }

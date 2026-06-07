@@ -20,6 +20,7 @@
 #include "kuna_compareform.hh"	// (kuna) OptionCompareForm
 #include "kuna_arraynotation.hh"	// (kuna) OptionArrayNotation
 #include "kuna_thumbfuncptr.hh"	// (kuna) OptionThumbFuncPtr
+#include "kuna_inferfuncentry.hh"	// (kuna) OptionInferFuncEntry
 
 namespace ghidra {
 
@@ -137,6 +138,7 @@ OptionDatabase::OptionDatabase(Architecture *g)
   registerOption(new OptionCompareForm());	// (kuna) comparison-form presentation sub-stage
   registerOption(new OptionArrayNotation());	// (kuna) pointer-notation presentation sub-stage
   registerOption(new OptionThumbFuncPtr());	// (kuna) GH-8471 const-pointer sub-stage
+  registerOption(new OptionInferFuncEntry());	// (kuna) GH-6930 const-pointer sub-stage
 }
 
 OptionDatabase::~OptionDatabase(void)

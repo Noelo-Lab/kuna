@@ -1422,6 +1422,7 @@ void Architecture::resetDefaultsInternal(void)
   flowoptions = FlowInfo::error_toomanyinstructions;
   max_instructions = 100000;
   infer_pointers = true;
+  infer_funcentry = false;	// (kuna) default: upstream behavior (single-bit values stay integers)
   analyze_for_loops = true;
   present_lessequal = false;	// (kuna) default: keep upstream's canonical `<` form
   preserve_thumb_funcptr = false;	// (kuna) default: upstream behavior (raw constant)

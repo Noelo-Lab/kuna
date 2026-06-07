@@ -176,6 +176,7 @@ public:
   bool aggressive_ext_trim;	///< Aggressively trim inputs that look like they are sign extended
   bool readonlypropagate;	///< true if readonly values should be treated as constants
   bool infer_pointers;		///< True if we should infer pointers from constants that are likely addresses
+  bool infer_funcentry;		///< (kuna) True if single-bit constants matching an exact function entry are inferred as pointers (GH-6930)
   bool analyze_for_loops;	///< True if we should attempt conversion of \e whiledo loops to \e for loops
   bool present_lessequal;	///< (kuna) True if canonicalized comparisons are restored to their original LESSEQUAL form for presentation
   bool preserve_thumb_funcptr;	///< (kuna) True if mode-bit-encoded (Thumb) function pointers are kept symbolic (GH-8471)
