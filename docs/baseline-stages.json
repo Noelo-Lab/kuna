@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    118,
-    118
+    121,
+    121
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -98,6 +98,9 @@
     "data:GH9191 #2: switchmodbound on bounds the table and recovers the switch",
     "data:GH9203 #1: const COPY in loop body (= 0; present in default, gone after condexeplace on)",
     "data:GH9203 #2: loop structure preserved in both passes",
+    "data:GH9218 #1: inputvarnodeadjust on recovers a single merged input parameter (no abort)",
+    "data:GH9218 #2: overlapping stack inputs become SUBPIECEs of the new input (param_1._2_4_)",
+    "data:GH9218 #3: the low-level abort no longer fires under the fix",
     "data:GH9230 #1: memsetrecover off restores the element-store form (old behavior, opt-in)",
     "data:GH9230 #2: default pipeline collapses the zero-fill into builtin_memset (fix is DIV-2 default)",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",

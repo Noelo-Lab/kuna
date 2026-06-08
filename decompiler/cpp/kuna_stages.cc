@@ -385,6 +385,7 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "option v850indirectbranch", kstage_s2, "flow-classification", "(kuna GH-8817) reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery" },
   { "option sparcstructret", kstage_s2, "flow-classification", "(kuna GH-6882) SPARC struct-return post-call unimp falls through instead of becoming a non-returning CALLIND" },
   { "option ovlesssimplify", kstage_s3, "simplification-quiescence", "(kuna GH-7190) collapse OV-flag signed-less-than idiom to a clean INT_SLESS" },
+  { "option inputvarnodeadjust", kstage_s6, "stack-frame-layout", "(kuna GH-9218) absorb overlapping input varnodes instead of aborting on adjust" },
   { "option condexeplace", kstage_s3, "simplification-quiescence", "(kuna GH-9203) keep ActionConditionalConst from placing a const COPY in a loop block (malformed do/while)" },
   { "option arraystride", kstage_s3, "simplification-quiescence", "(kuna GH-8724) re-express a strided-induction offset accumulator as counter*stride to recover the array index" },
   { "option stackprobeloop", kstage_s2, "stack-pointer-normalization", "(kuna GH-8017/6858) resolve gcc stack-probe loop's stack-pointer MULTIEQUAL to a constant offset" },
@@ -541,7 +542,12 @@ static const KunaSettable settableTable[] = {
     kstage_s3, "simplification-quiescence", kstrength_hard, kstage_s3, "GH-9203",
     "Stop ActionConditionalConst from materializing a propagated constant as a COPY inside a loop predecessor block (a spurious `= 0` in the do/while body).",
     "Set on to clean up a malformed do/while whose body holds an out-of-place constant assignment; off (default) is upstream byte-identical.",
-    "option condexeplace on" }
+    "option condexeplace on" },
+  { "inputvarnodeadjust", "on|off", "off", false,
+    kstage_s6, "stack-frame-layout", kstrength_hard, kstage_s6, "GH-9218",
+    "Absorb an input Varnode overlapping the high end of a justified parameter container instead of aborting the function.",
+    "Set on PER FUNCTION when a frame aborts with 'Cannot properly adjust input varnodes' (overlapping stack params, e.g. mc68k link/unlk); off (default) preserves the upstream abort.",
+    "option inputvarnodeadjust on" }
 };
 
 int4 kunaNumSettables(void)

@@ -5045,6 +5045,26 @@ int4 ActionUnjustifiedParams::apply(Funcdata &data)
 	  vdata.size = endpoint - vdata.offset;
 	}
       }
+      if (data.getArch()->input_varnode_adjust) {	// (kuna) GH-9218: also absorb input varnodes that overlap the container and extend ABOVE its end
+	// The backward scan above only widens DOWNWARD; a larger overlapping input
+	// sitting one byte past the container (e.g. a 4-byte stack long overlapping
+	// a model-padded 2-byte word) is never seen, so adjustInputVarnodes would
+	// throw "Cannot properly adjust input varnodes".  Scan forward to its end.
+	VarnodeDefSet::const_iterator fiter,fenditer;
+	fiter = iter;
+	fenditer = data.endDef(Varnode::input);
+	while(fiter != fenditer) {
+	  Varnode *fvn = *fiter;
+	  ++fiter;
+	  if (fvn->getSpace() != vdata.space) continue;
+	  if (fvn->getOffset() >= vdata.offset + vdata.size) break;	// Past the (current) container; def-set is address-ordered
+	  uintb foffset = fvn->getOffset() + fvn->getSize()-1;	// Last offset in fvn
+	  if (foffset >= vdata.offset + vdata.size) {	// Overlaps container and extends above its end
+	    overlaps = true;
+	    vdata.size = (foffset + 1) - vdata.offset;	// Push container end out to fvn's last byte
+	  }
+	}
+      }
       if (!overlaps) break;	// Found no additional overlaps, go with current justified container
       // If there were overlaps, container may no longer be justified
       newcontainer = proto.unjustifiedInputParam(vdata.getAddr(),vdata.size,vdata);

@@ -28,6 +28,7 @@
 #include "kuna_booleanmask.hh"	// (kuna) OptionBooleanMask
 #include "kuna_flagcompare.hh"	// (kuna) OptionFlagCompare
 #include "kuna_v850indbranch.hh"	// (kuna) OptionV850IndirectBranch
+#include "kuna_inputvarnodeadjust.hh"	// (kuna) OptionInputVarnodeAdjust
 #include "kuna_condexeplace.hh"	// (kuna) OptionCondExePlace
 #include "kuna_sparcstructret.hh"	// (kuna) OptionSparcStructRet
 #include "kuna_arraystride.hh"	// (kuna) OptionArrayStride
@@ -156,6 +157,7 @@ OptionDatabase::OptionDatabase(Architecture *g)
   registerOption(new OptionReturnPair());	// (kuna) GH-6990 trial-finalization sub-stage
   registerOption(new OptionAddCarryChain());	// (kuna) GH-8913 carry-chain wide-add recovery
   registerOption(new OptionV850IndirectBranch());	// (kuna) GH-8817 S2 flow-classification sub-stage
+  registerOption(new OptionInputVarnodeAdjust());	// (kuna) GH-9218 input-varnode reconciliation sub-stage
   registerOption(new OptionCondExePlace());	// (kuna) GH-9203 conditional-constant COPY loop-block placement
   registerOption(new OptionSparcStructRet());	// (kuna) GH-6882 S2 flow-classification sub-stage
   registerOption(new OptionArrayStride());	// (kuna) GH-8724 S3 strided-induction array-index recovery

@@ -94,6 +94,8 @@ writeup, not here.
 
 | `gh9203-condexe-loopcopy.xml` | [GH-9203](https://github.com/NationalSecurityAgency/ghidra/issues/9203) | S3 simplification quiescence (ActionConditionalConst const-COPY block placement) | `option condexeplace on\|off` |
 
+| `gh9218-inputvarnodeadjust.xml` | [GH-9218](https://github.com/NationalSecurityAgency/ghidra/issues/9218) | S6 storage reconciliation (`stack-frame-layout`, overlapping input varnodes) | `option inputvarnodeadjust on\|off` |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

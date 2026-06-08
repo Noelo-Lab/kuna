@@ -98,7 +98,7 @@ Live triage (Phase B, 9-agent workflow) results. Buckets: **20 spec-fix · 12 st
 | 9184 | x86 | spec-fix | S2 | x86-avx-vector-width | easy | — | — | **committed** |
 | 9191 | x86_64 | stage-exposure | S2 | jumptable-modulo-bound | hard | 4011 | switchmodbound | **committed** |
 | 9203 | riscv64 | stage-exposure | S3 | condexe-multiequal-block-placement | hard | 4017 | condexeplace | **committed** |
-| 9218 | 68000 | stage-exposure | S2 | input-varnode-storage-reconcile | hard | 4018 | inputvarnodeadjust | triaged |
+| 9218 | 68000 | stage-exposure | S2 | input-varnode-storage-reconcile | hard | 4018 | inputvarnodeadjust | **committed** |
 
 ### Per-issue triage detail
 
