@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    60,
-    60
+    64,
+    64
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -40,6 +40,10 @@
     "data:GH8913 #2b: default pipeline fuses path-5 first add into a wide add (fix is DIV-2 default)",
     "data:GH9001 #1: BRN consumes rel8 (2-byte) so 0x02 is the next instruction, not 0x01",
     "data:GH9001 #2: the 0x05 rel8 byte is no longer mis-decoded as JMP ...,+IX",
+    "data:GH9184 #1: FMA accumulator is 256-bit (undefined1 [32]), not truncated to [16]",
+    "data:GH9184 #2: no 128-bit accumulator temp (undefined1 [16])",
+    "data:GH9184 #3: no per-iteration ZEXT1632 truncation round-trip on the FMA result",
+    "data:GH9184 #4: the vfmadd231ps_fma pcodeop is still emitted (sanity)",
     "data:GH9230 #1: memsetrecover off restores the element-store form (old behavior, opt-in)",
     "data:GH9230 #2: default pipeline collapses the zero-fill into builtin_memset (fix is DIV-2 default)",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",

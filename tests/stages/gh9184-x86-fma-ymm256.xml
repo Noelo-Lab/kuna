@@ -1,0 +1,51 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default">
+<!--
+    GH-9184: "FMA YMM definitions use 128-bit temp instead of 256-bit"
+    https://github.com/NationalSecurityAgency/ghidra/issues/9184
+
+    In x86 fma.sinc every 256-bit YMM/$(VEX_L256) FMA constructor declared its
+    pcodeop result in a 128-bit temp (`local tmp:16`) and then `ZmmReg1 =
+    zext(tmp)`.  Because the YMM operation is 256 bits wide, writing into a
+    16-byte temp truncated lanes 4-7 (ps) / 2-3 (pd) of every result.  The
+    decompiler renders the accumulator as `undefined1 [16]` and inserts a
+    per-iteration `ZEXT1632` truncation round-trip feeding the next FMA.
+
+    Fix (kuna GH-9184): widen the YMM temps to `local tmp:32`; the
+    XMM/$(VEX_L128) forms correctly keep `tmp:16`.
+
+    Bytes below are a `dot8_fma`-style 256-bit float accumulation loop:
+      vxorps  ymm0,ymm0,ymm0
+      xor     eax,eax
+    .L:
+      vmovups ymm1,[rdi+rax*4]
+      vmovups ymm2,[rsi+rax*4]
+      vfmadd231ps ymm0,ymm1,ymm2     ; c4 e2 75 b8 c2  (VEX.256.66.0F38.W0 B8)
+      add     eax,8
+      cmp     eax,edx
+      jl      .L
+      vmovups [rcx],ymm0
+      vzeroupper
+      ret
+
+    Stage: S1/S2 decode + pcode-semantics (SLEIGH spec-fix, no option).  This
+    testcase asserts the FIXED width: the FMA accumulator is a 256-bit value
+    (undefined1 [32]) with NO per-iteration ZEXT1632 truncation, and forbids
+    the buggy `undefined1 [16]` accumulator.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c5fc57c031c0c5fc100c87c5fc101486c4e275b8c283c00839d07ceac5fc1101c5f877c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="dot8_fma"/>
+</binaryimage>
+<script>
+  <com>lo fu dot8_fma</com>
+  <com>dec</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH9184 #1: FMA accumulator is 256-bit (undefined1 [32]), not truncated to [16]" min="1" max="1">axVar\w* \[32\];</stringmatch>
+<stringmatch name="GH9184 #2: no 128-bit accumulator temp (undefined1 [16])" min="0" max="0">xunknown1 \w+ \[16\];</stringmatch>
+<stringmatch name="GH9184 #3: no per-iteration ZEXT1632 truncation round-trip on the FMA result" min="0" max="0">ZEXT1632</stringmatch>
+<stringmatch name="GH9184 #4: the vfmadd231ps_fma pcodeop is still emitted (sanity)" min="1" max="1">vfmadd231ps_fma\(</stringmatch>
+</decompilertest>

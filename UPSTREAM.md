@@ -67,6 +67,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../x86/data/languages/ia.sinc` | GH-8790: added register-direct (mod=3) variants of the two prefetch/NOP opcodes — `:PREFETCH Rmr8` for `0f 0d /0` and `:NOP^"/reserved" Rmr8` for `0f 18 /0..3` — so e.g. `0f 0d c0` / `0f 18 c0` disassemble (as a NOP-like hint) instead of failing with "Unable to resolve constructor". Upstream only had the `m8` memory-operand forms. |
 
+| `specs/.../x86/data/languages/fma.sinc` | GH-9184: every 256-bit YMM/`$(VEX_L256)` FMA constructor now uses a 256-bit temp (`local tmp:32`) before `ZmmReg1 = zext(tmp)`; upstream used `local tmp:16`, truncating the upper 128 bits of every YMM FMA result (accumulator rendered `undefined1[16]` with a per-iteration `ZEXT1632` round-trip). XMM/`$(VEX_L128)` forms correctly keep `tmp:16`. |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands
