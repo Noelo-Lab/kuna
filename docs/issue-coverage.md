@@ -53,17 +53,17 @@ Live triage (Phase B, 9-agent workflow) results. Buckets: **20 spec-fix · 12 st
 
 | GH | Arch | Bucket | Stage | Family | Diff | EID | Option | Status |
 |---|---|---|---|---|---|---|---|---|
-| 766 | 68000 | spec-fix | S2 | m68k-abs-short-addr-sext | medium | — | — | triaged |
+| 766 | 68000 | not-viable | S2 | m68k-abs-short-addr-sext | medium | — | — | **not-viable** |
 | 809 | MIPS | not-viable | P0 | java-constant-reference-analyzer | hard | — | — | not-viable |
 | 1243 | 8051 | spec-fix | S2 | 8051-addc-carry-semantics | easy | — | — | **committed** |
 | 1276 | 8051 | stage-exposure | S5 | flag-bit-extraction-simplification | hard | 4010 | flagcompare | triaged |
 | 1708 | x86 | not-viable | S1 | x86-fma4-decode-catalog | hard | — | — | not-viable |
 | 1951 | AVR | spec-fix | S2 | avr8-rel-branch-wrap-mask | medium | — | — | **committed** |
 | 2033 | x86 | not-viable | S1 | x86-mishegos-decode-catalog | hard | — | — | not-viable |
-| 3723 | AARCH64 | spec-fix | S2 | arm-missing-instruction-decode | medium | — | — | triaged |
+| 3723 | AARCH64 | already-correct | S2 | arm-missing-instruction-decode | medium | — | — | **already-correct** |
 | 3847 | x86 | already-correct | S2 | x87-fpu-semantics | easy | — | — | already-correct |
 | 4788 | V850 | spec-fix | S2 | v850-rh850-missing-decode | medium | — | — | **committed** |
-| 5666 | x86 | spec-fix | S2 | x86-addrsize-stack-push | medium | — | — | triaged |
+| 5666 | x86 | not-viable | S2 | x86-addrsize-stack-push | medium | — | — | **not-viable** |
 | 5897 | ARM | spec-fix | S2 | arm-mnemonic-display | easy | — | — | **committed** |
 | 6333 | V850 | not-viable | S2 | v850-rh850-missing-decode | hard | — | — | not-viable |
 | 6342 | Xtensa | not-viable | S2 | xtensa-flix-bundle-width | hard | — | — | not-viable |
@@ -77,7 +77,7 @@ Live triage (Phase B, 9-agent workflow) results. Buckets: **20 spec-fix · 12 st
 | 6882 | Sparc | stage-exposure | S4 | sparc-struct-return-unimp-flow | hard | 4016 | sparcstructret | triaged |
 | 6904 | PowerPC | spec-fix | S2 | ppc-e500-32bit-over-64bit-reg | hard | — | — | **committed** |
 | 7139 | x86 | spec-fix | S1 | x86-16bit-disp-signedness | medium | — | — | **committed** |
-| 7332 | x86 | spec-fix | S6 | x86-alloca-chkstk-callfixup | medium | — | — | triaged |
+| 7332 | x86 | not-viable | S6 | x86-alloca-chkstk-callfixup | medium | — | — | **not-viable** |
 | 7377 | ARM | not-viable | S2 | missing-core-pcode-op-rotate | hard | — | — | not-viable |
 | 7418 | x86 | spec-fix | S2 | x86-addrsize-stack-push | easy | — | — | **committed** |
 | 7451 | RISC-V | spec-fix | S2 | riscv-zfa-missing-decode | medium | — | — | **committed** |
