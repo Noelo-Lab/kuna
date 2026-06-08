@@ -1,0 +1,35 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8-m">
+<!--
+    GH-8391: "Sleigh Cannot Decode Cortex-M33 Co-processor Instructions"
+    https://github.com/NationalSecurityAgency/ghidra/issues/8391
+
+    For ARM:LE:32:v8-m (Cortex-M33) the Thumb 64-bit coprocessor transfers
+    mrrc/mrrc2 (and mcrr/mcrr2) failed to decode: the ARM8m spec defines CDE, and
+    in ARMTHUMBinstructions.sinc the whole mcr/mcrr/mrc/mrrc family was wrapped in
+    "@ifndef CDE", so the constructors were compiled out under v8-m.  But only the
+    32-bit mcr/mcr2/mrc/mrc2 (op8=0xee/0xfe, i.e. thc0811=0xe) collide with the
+    CDE encoding space; the 64-bit mcrr/mcrr2/mrrc/mrrc2 (op4=0xec4/0xfc4/0xec5/
+    0xfc5, thc0811=0xc) do NOT, so they were excluded for no reason.
+
+    Bytes fc51 0408 (display halfwords; LE memory order 51 fc 08 04) at a Thumb
+    address decode to "mrrc2 p4,#0x0,r0,r1,c8" (kuna console renders it
+    "mrrc2 p4,0x0,r0,r1,cr8").  Previously the bytes yielded a bad/undefined
+    instruction.
+
+    Stage: S1 decode-table (SLEIGH spec-fix, no option).  The fix moves the 64-bit
+    mcrr/mrrc constructors OUT of the "@ifndef CDE" guards.  This testcase pins the
+    FIXED decode and forbids the bad/undefined "??" rendering.
+-->
+<bytechunk space="ram" offset="0x0">
+51fc0804
+</bytechunk>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x0] [ram,0x100]</com>
+  <com>disassemble 0x0 0x4</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH8391 #1: Thumb mrrc2 decodes under v8-m (CDE)" min="1" max="1">^0x00000000: mrrc2[ ]+p4,0x0,r0,r1,cr8</stringmatch>
+<stringmatch name="GH8391 #2: bytes no longer fail to decode" min="0" max="0">\?\?</stringmatch>
+</decompilertest>

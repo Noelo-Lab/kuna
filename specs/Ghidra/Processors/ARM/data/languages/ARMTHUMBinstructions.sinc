@@ -2614,7 +2614,12 @@ macro th_set_carry_for_lsr(op1,shift_count) {
   t_op2:4 = thopcode2;
   coprocessor_moveto(t_cpn,t_op1,t_op2,Rt1215,thCRn,thCRm);
 }
+@endif # CDE
 
+# (kuna GH-8391) The 64-bit coprocessor transfers mcrr/mcrr2 (op4=0xec4/0xfc4,
+# i.e. thc0811=0xc) do NOT overlap the CDE encoding space (CDE requires
+# thc0811=0xe), so they must remain available even when CDE is defined (v8-m,
+# Cortex-M33).  Only the 32-bit mcr/mcr2 (op8=0xee/0xfe) collide with CDE.
 :mcrr^ItCond thcpn,thopcode1,Rt1215,Rn0003,thCRm   is TMode=1 & ItCond & op4=0xec4 & Rn0003; Rt1215 & thcpn & thopcode1 & thCRm
 {
   build ItCond;
@@ -2630,7 +2635,6 @@ macro th_set_carry_for_lsr(op1,shift_count) {
   t_op:4 = thopcode1;
   coprocessor_moveto2(t_cpn,t_op,Rt1215,Rn0003,thCRm);
 }
-@endif # CDE
 
 :mov^CheckInIT_ZN^ItCond	Rd0810,Immed8		is TMode=1 & ItCond & op11=4 & Rd0810 & Immed8 & CheckInIT_ZN
 {
@@ -2745,7 +2749,13 @@ macro th_set_carry_for_lsr(op1,shift_count) {
   local tmp:4 = coprocessor_movefromRt(t_cpn,t_op1,t_op2,thCRn,thCRm);
   writeAPSR_nzcv(tmp);
 }
+@endif #CDE
 
+# (kuna GH-8391) The 64-bit coprocessor transfers mrrc/mrrc2 (op4=0xec5/0xfc5,
+# i.e. thc0811=0xc) do NOT overlap the CDE encoding space (CDE requires
+# thc0811=0xe), so they must remain available even when CDE is defined (v8-m,
+# Cortex-M33).  Only the 32-bit mrc/mrc2 (op8=0xee/0xfe) collide with CDE.
+# Symptom: 0x1000177c bytes fc51 0408 -> mrrc2 p4,#0x0,r0,r1,c8 (was ??).
 :mrrc^ItCond thcpn,thopcode1,Rt1215,Rn0003,thCRm   is TMode=1 & ItCond & op4=0xec5 & Rn0003; Rt1215 & thcpn & thopcode1 & thCRm
 {
   build ItCond;
@@ -2763,7 +2773,6 @@ macro th_set_carry_for_lsr(op1,shift_count) {
   Rt1215 = coprocessor_movefromRt(t_cpn,t_op,thCRm);
   Rn0003 = coprocessor_movefromRt2(t_cpn,t_op,thCRm);
 }
-@endif #CDE
 @if defined(VERSION_7M)
 
 define pcodeop getMainStackPointer;

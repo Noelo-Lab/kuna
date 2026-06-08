@@ -62,6 +62,8 @@ writeup, not here.
 
 | `gh8456-arm-mrs-banked.xml` | [GH-8456](https://github.com/NationalSecurityAgency/ghidra/issues/8456) | S1 decode-table (ARM spec-fix, no option) | SLEIGH MRS (Banked register) constructor added |
 
+| `gh8391-arm-thumb-mrrc.xml` | [GH-8391](https://github.com/NationalSecurityAgency/ghidra/issues/8391) | S1 decode-table (ARM spec-fix, no option) | Thumb `mrrc`/`mcrr` un-guarded from `@ifndef CDE` so v8-m (CDE) decodes them |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason
