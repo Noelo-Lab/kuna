@@ -79,7 +79,7 @@ Live triage (Phase B, 9-agent workflow) results. Buckets: **20 spec-fix · 12 st
 | 7139 | x86 | spec-fix | S1 | x86-16bit-disp-signedness | medium | — | — | triaged |
 | 7332 | x86 | spec-fix | S6 | x86-alloca-chkstk-callfixup | medium | — | — | triaged |
 | 7377 | ARM | not-viable | S2 | missing-core-pcode-op-rotate | hard | — | — | not-viable |
-| 7418 | x86 | spec-fix | S2 | x86-addrsize-stack-push | easy | — | — | triaged |
+| 7418 | x86 | spec-fix | S2 | x86-addrsize-stack-push | easy | — | — | **committed** |
 | 7451 | RISC-V | spec-fix | S2 | riscv-zfa-missing-decode | medium | — | — | triaged |
 | 7890 | ARM | spec-fix | S2 | arm-vfp-pseudoop-fpscr | hard | — | — | triaged |
 | 8017 | x86 | stage-exposure | S6 | x86-stack-clash-probe-loop | hard | 4012 | stackprobeloop | triaged |

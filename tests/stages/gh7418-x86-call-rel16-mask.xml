@@ -1,0 +1,33 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default">
+<!--
+    GH-7418: "x86-32 CALL rel16 zeroing out high bytes of EIP missing from
+    instruction specification"
+    https://github.com/NationalSecurityAgency/ghidra/issues/7418
+
+    In 32-bit x86, CALL rel16 (66 e8 cw) and likewise JMP/Jcc rel16 must compute
+      tempEIP := (EIP + DEST) AND 0000FFFFH
+    per the Intel SDM, masking the branch target to the low 16 bits (the high
+    bytes of EIP are ZEROED).  Ghidra's `rel16` operand instead preserved the
+    high bytes of inst_next:
+      reloc = ((inst_next >> 16) << 16) | ((inst_next + simm16) & 0xFFFF)
+    so from inst_next 0x10004 with rel16 0x7000 it produced the unmasked
+    0x17004 (0x10000 | 0x7004) instead of the correct 0x7004.
+
+    Bytes `66 e8 00 70` placed at 0x10000 (a 4-byte CALL rel16 whose
+    inst_next = 0x10004; 0x10004 + 0x7000 = 0x17004, which masks to 0x7004).
+
+    Stage: S1 decode / S2 p-code lift (SLEIGH spec-fix, no option).  This
+    testcase asserts the FIXED target 0x7004 and forbids the buggy 0x17004.
+-->
+<bytechunk space="ram" offset="0x10000">
+66e80070
+</bytechunk>
+</binaryimage>
+<script>
+  <com>disassemble 0x10000 0x10004</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH7418 #1: CALL rel16 target masks EIP to low 16 bits (0x7004)" min="1" max="1">^0x00010000: CALL +0x7004</stringmatch>
+<stringmatch name="GH7418 #2: the unmasked 0x17004 target no longer appears" min="0" max="0">CALL +0x17004</stringmatch>
+</decompilertest>

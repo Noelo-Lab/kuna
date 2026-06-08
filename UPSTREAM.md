@@ -61,6 +61,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../8051/data/languages/8051_main.sinc` | GH-1243: ADDC carry-in is now computed in a 2-byte `do_addc(op)` macro (`tmp:2 = zext(ACC)+zext(op)+zext(CY)`; `CY = tmp>0xff`; `ACC = tmp:1`) instead of the old 1-byte `tmp:1 = $(CY)+op` that truncated the carry-out, so CY propagates and ADD+ADDC multi-byte adds are recognised |
 
+| `specs/.../x86/data/languages/ia.sinc` | GH-7418: 32/16-bit `rel16` branch operand now masks the target to the low 16 bits (`(inst_next + simm16) & 0xFFFF`), zeroing the high bytes of EIP per Intel SDM `tempEIP := (EIP+DEST) AND 0000FFFFH`; the high-bit-preserving 64-bit form is kept under `@ifdef IA64` |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands

@@ -1147,7 +1147,11 @@ Mem: segWide^addr32 is $(LONGMODE_OFF) & addrsize=1 & segWide; addr32       		{ 
 Mem: segWide^addr32 is $(LONGMODE_OFF) & addrsize=1 & segWide & highseg=1; addr32 	{ tmp:$(SIZE) = segWide + zext(addr32); export tmp; }
 
 rel8: reloc is simm8        [ reloc=inst_next+simm8; ] { export *[ram]:$(SIZE) reloc; }
+@ifdef IA64
 rel16: reloc is simm16      [ reloc=((inst_next >> 16) << 16) | ((inst_next + simm16) & 0xFFFF); ] { export *[ram]:$(SIZE) reloc; }
+@else
+rel16: reloc is simm16      [ reloc=(inst_next + simm16) & 0xFFFF; ] { export *[ram]:$(SIZE) reloc; } # (kuna GH-7418) 16-bit operand-size branch in 32/16-bit mode masks tempEIP to the low 16 bits, zeroing the high bytes of EIP per Intel SDM
+@endif
 rel32: reloc is simm32      [ reloc=inst_next+simm32; ] { export *[ram]:$(SIZE) reloc; }
 
 
