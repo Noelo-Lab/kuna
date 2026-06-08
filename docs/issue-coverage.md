@@ -69,11 +69,11 @@ Live triage (Phase B, 9-agent workflow) results. Buckets: **20 spec-fix · 12 st
 | 6342 | Xtensa | not-viable | S2 | xtensa-flix-bundle-width | hard | — | — | not-viable |
 | 6389 | 8085 | spec-fix | S1 | 8085-undocumented-opcodes-missing | medium | — | — | **committed** |
 | 6664 | x86 | not-viable | S3 | x86-realmode-segmented-addr | hard | — | — | not-viable |
-| 6674 | V850 | stage-exposure | S2 | jumptable-modulo-bound | hard | 4011 | switchmodbound | triaged |
+| 6674 | V850 | stage-exposure | S2 | jumptable-modulo-bound | hard | 4011 | switchmodbound | **deferred** |
 | 6682 | x86 | not-viable | S2 | x86-realmode-mz-overlay-load | hard | — | — | not-viable |
 | 6723 | x86_64 | not-viable | S5 | x86-xor-zero-idiom-param-recovery | hard | — | — | not-viable |
 | 6836 | x86 | not-viable | S1 | coff-loader-section-layout | hard | — | — | not-viable |
-| 6858 | x86 | stage-exposure | S6 | x86-stack-clash-probe-loop | hard | 4012 | stackprobeloop | triaged |
+| 6858 | x86 | stage-exposure | S6 | x86-stack-clash-probe-loop | hard | 4012 | stackprobeloop | **deferred** |
 | 6882 | Sparc | stage-exposure | S4 | sparc-struct-return-unimp-flow | hard | 4016 | sparcstructret | **committed** |
 | 6904 | PowerPC | spec-fix | S2 | ppc-e500-32bit-over-64bit-reg | hard | — | — | **committed** |
 | 7139 | x86 | spec-fix | S1 | x86-16bit-disp-signedness | medium | — | — | **committed** |
@@ -408,3 +408,32 @@ catalog), 2033 (x86 decode catalog), 6333 (RH850 superset), 6342 (Xtensa FLIX VL
 real-mode segmented addr), 6682 (x86 real-mode MZ overlay), 6723 (PLT-reloc not C-reproducible),
 6836 (COFF loader), 7377 (new core INT_ROTATE opcode), 8028 (Java auto-analysis), 8694 (Java DWARF
 import), 8794 (x86 XOP catalog). **Already-correct (1):** 3847 (FYL2X handled in vendored ia.sinc).
+
+## Final session tally
+
+- **27 issues fixed** (one commit each, full parity OK at every commit):
+  - **17 via spec-fix** (16 commits; GH-1951/8844 share one avr8 edit): 9001, 1243, 7418,
+    7139, 8790, 9184, 5897, 8456, 8391, 7890, 1951, 8844, 4788, 6389, 7451, 6904.
+  - **10 via stage-exposure** (option-gated, default-off; 3 options shared by pairs):
+    1276+8777 (`flagcompare` 4010), 9191 (`switchmodbound` 4011), 8017 (`stackprobeloop`
+    4012), 8467 (`dynamichashmax` 4013), 8500 (`stackalias` 4014), 8724 (`arraystride`
+    4015), 6882 (`sparcstructret` 4016), 9203 (`condexeplace` 4017), 9218
+    (`inputvarnodeadjust` 4018).
+- **13 not-viable** (reasons in the table/detail): 809, 1708, 2033, 6333, 6342, 6664,
+  6682, 6723, 6836, 7377, 8028, 8694, 8794. Plus 3 reclassified spec→not-viable after
+  worktree investigation: 766 (would need a new 24-bit address model), 5666 (would need a
+  new x86 stack-size context register across the whole push family), 7332 (alloca/_chkstk
+  callfixup needs the Java analyzer to name the stub).
+- **1 already-correct**: 3847 (FYL2X handled in the vendored ia.sinc) — and 3723 was
+  reclassified already-correct (the bytes are ARM and decode as `udf`; the AArch64 "gap"
+  is a misfiled issue).
+- **2 deferred** (attempted, did not converge):
+  - **6674** (V850 jumptable): the `switchmodbound` option (which fixed the x86 LOAD-table
+    case 9191) does not cover V850's free-register switch dispatch — a distinct recovery
+    path; the bug persists with the option on.
+  - **6858** (stripped 32-bit PIE main): a distinct manifestation from 8017's gcc
+    stack-probe loop — the committed `stackprobeloop` fix does not change 6858's output
+    (`func_0x000010d0()` persists with the option on), and its full-function testcase
+    aborts the harness (SIGABRT, oversized decompile). Left as a genuine non-result.
+
+All 46 remaining issues are now in a terminal state (committed / not-viable / already-correct / deferred).
