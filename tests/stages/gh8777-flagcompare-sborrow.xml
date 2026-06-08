@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="PIC-24F:LE:24:default:default">
+<!--
+    GH-8777: "PIC24: signed branch lifts to a raw SBORROW flag idiom."
+    https://github.com/NationalSecurityAgency/ghidra/issues/8777
+
+    The PIC24 spec models `bra ge` explicitly as the condition-flag identity
+    N == V over the subtraction (V - K):
+        cond = (SRL_N && SRL_OV) || (!SRL_N && !SRL_OV)        (== XNOR(N,V))
+    where N = sign of (V - K)  (INT_SLESSEQUAL(0, V-K) / INT_SLESS(-1, V-K))
+    and   V = INT_SBORROW(V, K)  (signed overflow).  XNOR(N,V) is the textbook
+    signed `V >= K` test, but upstream has no rule for it, so the raw flag
+    algebra survives into the rendered loop condition:
+
+      for (iVar1 = 0; bVar2 = 0 <= iVar1 + -7,
+          (bVar2 || !SBORROW2(iVar1,7)) && (!bVar2 || SBORROW2(iVar1,7));
+          iVar1 = iVar1 + 1) { ... }
+
+    Stage model: S3 "simplification-quiescence" (which algebraic/peephole rules
+    fire).  kuna's RuleSborrowGe (group "analysis", gated by the default-off arch
+    flag fold_flag_compare) recognizes the XNOR(N,V) tree in either De-Morgan
+    dual form (AND-of-ORs or OR-of-ANDs) with N = sign(V-K) and V = SBORROW(V,K),
+    and rewrites the whole boolean tree to INT_SLESSEQUAL(K, V) == `V s>= K`.
+    Exposed by `option flagcompare on`.
+
+    Pass 1 (default pipeline) reproduces the bug: the SBORROW2 flag idiom
+    survives in the loop condition (assert #1).
+    Pass 2 (after `option flagcompare on`) the loop condition is the clean
+    signed comparison `7 <= iVar1` and no SBORROW2 remains (assert #2).
+
+    Disassembly:
+      0x000000 mov.w #0x0,W2
+      0x000002 mov.w #0x7,W3
+      0x000004 sub.w W2,W3,W12
+      0x000006 bra   ge,0x10
+      0x000008 mov.w #0x0,W0
+      0x00000a mov.w W0,0x80
+      0x00000c add.w W2,#0x1,W2
+      0x00000e bra   0x4
+      0x000010 return
+-->
+<bytechunk space="rom" offset="0x0">
+02002000730020000306510004003d00000020000004880061014100faff370000000600
+</bytechunk>
+<symbol space="rom" offset="0x0" name="FUN_0"/>
+</binaryimage>
+<script>
+  <com>lo fu FUN_0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option flagcompare on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH8777 #1: default pipeline keeps the raw SBORROW2 N==V flag idiom (bug reproduces)" min="1" max="1">\(bVar2 \|\| !SBORROW2\(iVar1,7\)\) &amp;&amp; \(!bVar2 \|\| SBORROW2\(iVar1,7\)\)</stringmatch>
+<stringmatch name="GH8777 #2: option flagcompare on folds it to a clean signed compare (fix, no SBORROW2 left)" min="1" max="1">for \(iVar1 = 0; 7 &lt;= iVar1; iVar1 = iVar1 \+ 1\)</stringmatch>
+</decompilertest>

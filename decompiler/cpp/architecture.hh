@@ -183,6 +183,7 @@ public:
   bool v850_indirect_branch;	///< (kuna) True if V850 "jmp [reg]" CALLIND is reclassified to BRANCHIND for switch recovery (GH-8817)
   bool ov_less_simplify;	///< (kuna) True if the OV-flag signed-less-than idiom is collapsed to a clean INT_SLESS (GH-7190)
   bool fold_boolean_mask;	///< (kuna) True if `(b<<k) s>> k` boolean sign-extension-mask idioms are folded (GH-1282)
+  bool fold_flag_compare;	///< (kuna) True if flag-modelled comparison idioms (boolean-into-sign-bit, N==V) are folded (GH-1276/8777)
   bool analyze_for_loops;	///< True if we should attempt conversion of \e whiledo loops to \e for loops
   bool present_lessequal;	///< (kuna) True if canonicalized comparisons are restored to their original LESSEQUAL form for presentation
   bool preserve_thumb_funcptr;	///< (kuna) True if mode-bit-encoded (Thumb) function pointers are kept symbolic (GH-8471)

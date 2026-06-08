@@ -384,6 +384,7 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "option memsetrecover", kstage_s5, "constsequence", "(kuna GH-9230) collapse constant-fill runs into builtin_memset" },
   { "option v850indirectbranch", kstage_s2, "flow-classification", "(kuna GH-8817) reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery" },
   { "option ovlesssimplify", kstage_s3, "simplification-quiescence", "(kuna GH-7190) collapse OV-flag signed-less-than idiom to a clean INT_SLESS" },
+  { "option flagcompare", kstage_s3, "simplification-quiescence", "(kuna GH-1276/8777) fold flag-modelled comparison idioms (boolean-into-sign-bit, N==V signed compare)" },
   { "force goto", kstage_s7, "edge-virtualization", "Override::insertForceGoto" },
   { "override jumptable", kstage_s2, "switch-model", "JumpBasicOverride" },
   { "override flow", kstage_s2, "flow-classification", "Override::insertFlowOverride" },
@@ -493,7 +494,12 @@ static const KunaSettable settableTable[] = {
     kstage_s2, "flow-classification", kstrength_hard, kstage_s2, "GH-8817",
     "Reclassify a V850 jmp [reg] CALLIND to BRANCHIND so switch-table recovery runs.",
     "Set on PER V850 PROGRAM to recover jump-table switches; DESTRUCTIVE as a global default (matches register-indirect calls on other architectures).",
-    "option v850indirectbranch on" }
+    "option v850indirectbranch on" },
+  { "flagcompare", "on|off", "off", false,
+    kstage_s3, "simplification-quiescence", kstrength_hard, kstage_s3, "GH-1276/8777",
+    "Fold flag-modelled comparison idioms into clean compares: a boolean shifted into the sign bit ((b<<k) s< 0) and the N==V signed-overflow idiom (bra ge).",
+    "Flip on to clean flag-as-bit comparisons on architectures that model condition flags explicitly (8051, PIC24, etc.); off (default) is upstream byte-identical.",
+    "option flagcompare on" }
 };
 
 int4 kunaNumSettables(void)

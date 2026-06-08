@@ -56,7 +56,7 @@ Live triage (Phase B, 9-agent workflow) results. Buckets: **20 spec-fix · 12 st
 | 766 | 68000 | not-viable | S2 | m68k-abs-short-addr-sext | medium | — | — | **not-viable** |
 | 809 | MIPS | not-viable | P0 | java-constant-reference-analyzer | hard | — | — | not-viable |
 | 1243 | 8051 | spec-fix | S2 | 8051-addc-carry-semantics | easy | — | — | **committed** |
-| 1276 | 8051 | stage-exposure | S5 | flag-bit-extraction-simplification | hard | 4010 | flagcompare | triaged |
+| 1276 | 8051 | stage-exposure | S5 | flag-bit-extraction-simplification | hard | 4010 | flagcompare | **committed** |
 | 1708 | x86 | not-viable | S1 | x86-fma4-decode-catalog | hard | — | — | not-viable |
 | 1951 | AVR | spec-fix | S2 | avr8-rel-branch-wrap-mask | medium | — | — | **committed** |
 | 2033 | x86 | not-viable | S1 | x86-mishegos-decode-catalog | hard | — | — | not-viable |
@@ -90,7 +90,7 @@ Live triage (Phase B, 9-agent workflow) results. Buckets: **20 spec-fix · 12 st
 | 8500 | x86_64 | stage-exposure | S3 | stack-alias-deadstore-elim | hard | 4014 | stackalias | triaged |
 | 8694 | x86_64 | not-viable | P0 | dwarf-local-import-trigger | medium | — | — | not-viable |
 | 8724 | x86_64 | stage-exposure | S5 | ptr-arith-array-struct-recovery | hard | 4015 | arraystride | triaged |
-| 8777 | PIC | stage-exposure | S5 | flag-bit-extraction-simplification | hard | 4010 | flagcompare | triaged |
+| 8777 | PIC | stage-exposure | S5 | flag-bit-extraction-simplification | hard | 4010 | flagcompare | **committed** |
 | 8790 | x86 | spec-fix | S1 | x86-prefetch-regform-modrm | easy | — | — | **committed** |
 | 8794 | x86 | not-viable | S1 | x86-xop-decode-catalog | hard | — | — | not-viable |
 | 8844 | AVR | spec-fix | S2 | avr8-rel-branch-wrap-mask | medium | — | — | **committed** |

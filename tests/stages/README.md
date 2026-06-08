@@ -76,6 +76,10 @@ writeup, not here.
 
 | `gh6904-ppc-e500-concat44.xml` | [GH-6904](https://github.com/NationalSecurityAgency/ghidra/issues/6904) | P-code lift (PowerPC e500 spec-fix, no option) | `or`/`or.` (`mr`/`mr.`) zero-extend their 32-bit result on the 64-bit-register e500, killing spurious CONCAT44 at function boundaries (partial) |
 
+| `gh1276-flagcompare-boolsign.xml` | [GH-1276](https://github.com/NationalSecurityAgency/ghidra/issues/1276) | S3 simplification quiescence (boolean-into-sign-bit compare) | `option flagcompare on\|off` |
+
+| `gh8777-flagcompare-sborrow.xml` | [GH-8777](https://github.com/NationalSecurityAgency/ghidra/issues/8777) | S3 simplification quiescence (N==V SBORROW signed compare) | `option flagcompare on\|off` |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

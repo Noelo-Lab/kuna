@@ -25,6 +25,7 @@
 #include "kuna_addcarrychain.hh"	// (kuna) GH-8913 carry-chain wide-add recovery
 #include "kuna_ovlesssimplify.hh"	// (kuna) GH-7190 OV-flag signed-less-than simplification
 #include "kuna_booleanmask.hh"	// (kuna) GH-1282 boolean sign-extension-mask simplification
+#include "kuna_flagcompare.hh"	// (kuna) GH-1276/8777 flag-modelled comparison folding
 
 namespace ghidra {
 
@@ -5705,6 +5706,8 @@ void ActionDatabase::universalAction(Architecture *conf)
 	actprop->addRule( new RuleConcatShift("analysis") );
 	actprop->addRule( new RuleLeftRight("analysis") );
 	actprop->addRule( new RuleBoolSignShift("analysis") );	// (kuna) GH-1282: gated by arch flag fold_boolean_mask (default off)
+	actprop->addRule( new RuleBoolSignLess("analysis") );	// (kuna) GH-1276: gated by arch flag fold_flag_compare (default off)
+	actprop->addRule( new RuleSborrowGe("analysis") );	// (kuna) GH-8777: fold N==V flag idiom (gated by arch flag fold_flag_compare, default off)
 	actprop->addRule( new RuleShiftCompare("analysis") );
 	actprop->addRule( new RuleShift2Mult("analysis") );
 	actprop->addRule( new RuleShiftPiece("analysis") );

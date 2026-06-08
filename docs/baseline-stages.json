@@ -1,12 +1,14 @@
 {
   "data_footer": [
-    100,
-    100
+    104,
+    104
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
     "data:GH1243 #2: buggy truncated-carry result P1 = 0 absent",
     "data:GH1243 #3: already-correct case still holds, P0 = 1",
+    "data:GH1276 #1: default pipeline keeps the (bool) << 7 s< 0 sign-bit idiom (bug reproduces, appears once)",
+    "data:GH1276 #2: option flagcompare on folds it to a clean comparison (fix, appears once)",
     "data:GH1282 #1: booleanmask off restores the (bool << 7) >> 7 shift noise (old behavior, opt-in)",
     "data:GH1282 #2: default pipeline folds (b<<7)s>>7 (fix is DIV-2 default)",
     "data:GH1537 #1: memsetrecover off restores the element-store form (old behavior, opt-in)",
@@ -61,6 +63,8 @@
     "data:GH8456 #2: bytes no longer fail to decode",
     "data:GH8471 #1: thumbfuncptr off restores the raw-hex form (old behavior, opt-in)",
     "data:GH8471 #2: default pipeline preserves the symbolic form, &fn[1] via DIV-2 arraynotation (fix is DIV-2 default)",
+    "data:GH8777 #1: default pipeline keeps the raw SBORROW2 N==V flag idiom (bug reproduces)",
+    "data:GH8777 #2: option flagcompare on folds it to a clean signed compare (fix, no SBORROW2 left)",
     "data:GH8790 #1: 0f0dc0 (PREFETCH reg-form) decodes at 0x1000",
     "data:GH8790 #2: 0f18c0 (prefetch/NOP-reserved reg-form) decodes at 0x1003",
     "data:GH8790 #3: stream re-aligned onto the trailing NOP at 0x1006 (both reg-forms were 3 bytes)",

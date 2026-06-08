@@ -206,6 +206,8 @@ static string kunaLiveValue(Architecture *conf,const string &option)
     return conf->fold_boolean_mask ? "on" : "off";
   if (option == "ovlesssimplify")
     return conf->ov_less_simplify ? "on" : "off";
+  if (option == "flagcompare")
+    return conf->fold_flag_compare ? "on" : "off";
   if (option == "addcarrychain")
     return conf->add_carry_chain ? "on" : "off";
   if (option == "memsetrecover")

@@ -87,6 +87,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../PowerPC/data/languages/ppc_instructions.sinc` | GH-6904: for the E500 variant, `or` / `or.` (the `mr`/`mr.` register-move idiom) now zero-extend a 32-bit result so the upper word of the 64-bit rD is cleared (`A = zext(S:4 | B:4)` under `@ifdef E500`), removing spurious CONCAT44/ulonglong artifacts on 32-bit Book E parameters. PARTIAL fix — a complete fix needs the upper word cleared in all ~239 e500 integer constructors. |
 
+| (kuna stage-exposure) | `architecture.hh` / `architecture.cc` (flag `fold_flag_compare` decl+init), `options.cc` (include + registerOption(OptionFlagCompare)), `kuna_console.cc` (per-option getter), `coreaction.cc` (include + register RuleBoolSignLess/RuleSborrowGe in oppool1 "analysis"), `kuna_stages.cc` (surfaceTable + settableTable rows) — all `(kuna) GH-1276/8777`, gated by default-off `fold_flag_compare`; new files `kuna_flagcompare.{hh,cc}` (ELEM_FLAGCOMPARE=4010). |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands

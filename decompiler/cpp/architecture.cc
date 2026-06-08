@@ -1428,6 +1428,7 @@ void Architecture::resetDefaultsInternal(void)
   v850_indirect_branch = false;	// (kuna) default: upstream behavior (V850 jmp [reg] stays CALLIND) (GH-8817)
   ov_less_simplify = true;	// (kuna) DIV-2 default-on: OV-flag compares simplify (GH-7190)
   fold_boolean_mask = true;	// (kuna) DIV-2 default-on: boolean sign-mask shifts fold (GH-1282)
+  fold_flag_compare = false;	// (kuna) default: upstream byte-identical (flag-compare idioms folded only under option flagcompare on) (GH-1276/8777)
   add_carry_chain = true;	// (kuna) DIV-2 default-on: carry-chain wide adds recover (GH-8913)
   analyze_for_loops = true;
   present_lessequal = true;	// (kuna) DIV-2 default-on: comparisons keep their original LESSEQUAL form (GH-558)
