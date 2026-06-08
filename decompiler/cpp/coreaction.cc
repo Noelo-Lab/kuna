@@ -29,6 +29,7 @@
 #include "kuna_flagcompare.hh"	// (kuna) GH-1276/8777 flag-modelled comparison folding
 #include "kuna_stackprobeloop.hh"	// (kuna) GH-8017/6858 stack-probe-loop stack-pointer resolution
 #include "kuna_condexeplace.hh"	// (kuna) GH-9203 conditional-constant COPY loop-block placement
+#include "kuna_loweredswitch.hh"	// (kuna) angr-port lowered comparison-cascade -> switch recovery
 #include "architecture.hh"	// (kuna) GH-9203 condexe_block_placement arch flag
 
 namespace ghidra {
@@ -5746,6 +5747,10 @@ void ActionDatabase::universalAction(Architecture *conf)
       actmainloop = new ActionGroup(Action::rule_repeatapply,"mainloop");
       actmainloop->addAction( new ActionUnreachable("base") );
       actmainloop->addAction( new ActionVarnodeProps("base") );
+      // (kuna) Install a previously-detected lowered switch BEFORE heritage, so SSA/phi
+      // are rebuilt over the corrected CFG (the cascade head becomes a BRANCHIND).  Inert
+      // unless a record exists for this function (set on the prior pass by the detector).
+      actmainloop->addAction( new ActionLowerSwitchInstall("switchnorm") );
       actmainloop->addAction( new ActionHeritage("base") );
       actmainloop->addAction( new ActionParamDouble("protorecovery") );
       actmainloop->addAction( new ActionSegmentize("base"));
@@ -5946,6 +5951,9 @@ void ActionDatabase::universalAction(Architecture *conf)
     actfullloop->addAction( new ActionDeadCode("deadcode") );
     actfullloop->addAction( new ActionDoNothing("deadcontrolflow") );
     actfullloop->addAction( new ActionSwitchNorm("switchnorm") );
+    // (kuna) Detect a compiler-lowered comparison cascade on the simplified CFG and
+    // request a restart; the install action (pre-heritage, above) replays it pre-SSA.
+    actfullloop->addAction( new ActionLowerSwitchDetect("switchnorm") );
     actfullloop->addAction( new ActionReturnSplit("returnsplit") );
     actfullloop->addAction( new ActionUnjustifiedParams("protorecovery") );
     actfullloop->addAction( new ActionStartTypes("typerecovery") );

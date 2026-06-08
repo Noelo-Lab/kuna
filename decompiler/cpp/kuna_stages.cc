@@ -423,7 +423,8 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "restarts", kstage_p0, "", "(kuna) feedback-edge observability (mechanism c)" },
   { "option switchmodbound", kstage_s2, "switch-model", "(kuna GH-9191) bound a LOAD-table jumptable by a modulo/and-mask on its index" },
   { "option dynamichashmax", kstage_s6, "alias-facets", "(kuna GH-8467) raise DynamicHash same-address collision budget 8->16 for dense unrolled code" },
-  { "option stackalias", kstage_s6, "alias-facets", "(kuna GH-8500) hold a store-through-a-stack-pointer-alias across the deadcode race" }
+  { "option stackalias", kstage_s6, "alias-facets", "(kuna GH-8500) hold a store-through-a-stack-pointer-alias across the deadcode race" },
+  { "option loweredswitch", kstage_s2, "switch-model", "(kuna angr-port) reconstruct a compiler-lowered comparison cascade into a switch jump-table" }
 };
 
 int4 kunaNumSurfaces(void)
@@ -547,7 +548,12 @@ static const KunaSettable settableTable[] = {
     kstage_s6, "stack-frame-layout", kstrength_hard, kstage_s6, "GH-9218",
     "Absorb an input Varnode overlapping the high end of a justified parameter container instead of aborting the function.",
     "Set on PER FUNCTION when a frame aborts with 'Cannot properly adjust input varnodes' (overlapping stack params, e.g. mc68k link/unlk); off (default) preserves the upstream abort.",
-    "option inputvarnodeadjust on" }
+    "option inputvarnodeadjust on" },
+  { "loweredswitch", "on|off", "off", true,
+    kstage_s2, "switch-model", kstrength_hard, kstage_s2, "angr-LoweredSwitchSimplifier",
+    "Reconstruct a compiler-lowered comparison cascade (a binary-search if/else tree over one variable) back into a switch with a synthesized BRANCHIND + jump-table (the S2 artifact Ghidra renders switches from).",
+    "Set on PER PROGRAM when an enum/char dispatch (e.g. a getopt option parser) renders as a deep if (x == 'p') ... else if (x == 't') ... chain instead of a switch; DESTRUCTIVE as a global default (synthesizes a BRANCHIND/JumpTable upstream never emits, and may convert a hand-written comparison chain).",
+    "option loweredswitch on" }
 };
 
 int4 kunaNumSettables(void)

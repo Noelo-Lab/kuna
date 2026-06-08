@@ -40,3 +40,4 @@ __pycache__/
 *.gcda
 TAGS
 *~
+.claude/

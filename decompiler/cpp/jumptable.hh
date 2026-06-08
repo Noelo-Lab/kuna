@@ -614,6 +614,7 @@ public:
   void setFoldedDefault(void) { defaultIsFolded = true; }	///< Mark that the \e default block is a folded CBRANCH target
   bool hasFoldedDefault(void) const { return defaultIsFolded; }	///< Return \b true if the \e default block is a folded CBRANCH target
   void addBlockToSwitch(BlockBasic *bl,uintb lab);		///< Force a given basic-block to be a switch destination
+  void kunaSetTrivialModel(void);		///< (kuna) Attach a no-op non-override model to a synthesized switch
   void switchOver(const FlowInfo &flow);				///< Convert absolute addresses to block indices
   uintb getLabelByIndex(int4 index) const { return label[index]; }	///< Given a \e case index, get its label
   void foldInNormalization(Funcdata *fd);		///< Hide the normalization code for the switch

@@ -1435,6 +1435,7 @@ void Architecture::resetDefaultsInternal(void)
   switch_modulo_bound = false;	// (kuna) default: upstream byte-identical (modulo/mask table bound off) (GH-9191)
   stack_alias_deadstore = false;	// (kuna) default: upstream byte-identical (GH-8500); flip on per-function
   recover_array_stride = true;	// (kuna) DIV-3 default-on: strided-induction index (GH-8724)
+  recover_lowered_switch = false;	// (kuna) default: upstream byte-identical (lowered comparison-cascade switch recovery off)
   condexe_block_placement = true;	// (kuna) DIV-3 default-on: keep const-COPY out of loop blocks (GH-9203)
   add_carry_chain = true;	// (kuna) DIV-2 default-on: carry-chain wide adds recover (GH-8913)
   model_stack_probe_loop = true;	// (kuna) DIV-3 default-on: resolve stack-probe loop SP (GH-8017)

@@ -57,6 +57,8 @@ const char *kunaRestartReasonName(KunaRestartReason reason)
     return "prototype discovered late at indirect call (S4, edge 5)";
   case krestart_proto_forced:
     return "prototype forced late at call site (S4, edge 5)";
+  case krestart_lowered_switch:
+    return "lowered comparison-cascade switch (S2 switch model, kuna angr-port)";
   }
   return "unknown";
 }

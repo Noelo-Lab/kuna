@@ -41,7 +41,8 @@ enum KunaRestartReason {
   krestart_deadcode_suppressed = 1,	///< Gate bump wanted but a delay was already installed - no restart
   krestart_multistage_jump = 2,	///< Jump-table size mismatch -> multistage hint - restart
   krestart_proto_deindirect = 3,	///< Prototype discovered too late at an indirect call - restart
-  krestart_proto_forced = 4	///< Restrictive prototype forced too late at a call site - restart
+  krestart_proto_forced = 4,	///< Restrictive prototype forced too late at a call site - restart
+  krestart_lowered_switch = 5	///< (kuna) Lowered comparison-cascade switch detected late -> restart to install pre-SSA
 };
 
 const char *kunaRestartReasonName(KunaRestartReason reason);	///< Human-readable reason name

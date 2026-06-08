@@ -36,6 +36,7 @@
 #include "kuna_dynamichashmax.hh"	// (kuna) OptionDynamicHashMax
 #include "kuna_stackprobeloop.hh"	// (kuna) OptionStackProbeLoop
 #include "kuna_switchmodbound.hh"	// (kuna) OptionSwitchModBound
+#include "kuna_loweredswitch.hh"	// (kuna) OptionLowerSwitch
 
 namespace ghidra {
 
@@ -169,6 +170,7 @@ OptionDatabase::OptionDatabase(Architecture *g)
   registerOption(new OptionFlagCompare());	// (kuna) GH-1276/8777 flag-modelled comparison folding sub-stage
   registerOption(new OptionMemsetRecover());	// (kuna) GH-9230 constant-fill memset recovery sub-stage
   registerOption(new OptionSwitchModBound());	// (kuna) GH-9191 S2 switch-model index-bound sub-stage
+  registerOption(new OptionLowerSwitch());	// (kuna) angr-port S2 lowered comparison-cascade -> switch recovery
 }
 
 OptionDatabase::~OptionDatabase(void)
