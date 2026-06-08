@@ -418,7 +418,8 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "quality", kstage_s8, "goto-quality-acceptance", "(kuna) goto-count metric, observable half" },
   { "restarts", kstage_p0, "", "(kuna) feedback-edge observability (mechanism c)" },
   { "option switchmodbound", kstage_s2, "switch-model", "(kuna GH-9191) bound a LOAD-table jumptable by a modulo/and-mask on its index" },
-  { "option dynamichashmax", kstage_s6, "alias-facets", "(kuna GH-8467) raise DynamicHash same-address collision budget 8->16 for dense unrolled code" }
+  { "option dynamichashmax", kstage_s6, "alias-facets", "(kuna GH-8467) raise DynamicHash same-address collision budget 8->16 for dense unrolled code" },
+  { "option stackalias", kstage_s6, "alias-facets", "(kuna GH-8500) hold a store-through-a-stack-pointer-alias across the deadcode race" }
 };
 
 int4 kunaNumSurfaces(void)
@@ -517,7 +518,12 @@ static const KunaSettable settableTable[] = {
     kstage_s6, "alias-facets", kstrength_hard, kstage_s6, "GH-8467",
     "Raise the DynamicHash same-address collision budget 8->16 so dense unrolled code can still resolve a unique dynamic symbol hash.",
     "Set on PER FUNCTION when decompilation aborts with 'Unable to find unique hash for varnode' (e.g. AArch64/Go NEON byte-search loops); off (default) is upstream byte-identical.",
-    "option dynamichashmax on" }
+    "option dynamichashmax on" },
+  { "stackalias", "on|off", "off", true,
+    kstage_s6, "alias-facets", kstrength_hard, kstage_s6, "GH-8500",
+    "Hold a store-through-a-stack-pointer-alias (int *p=&x; *p=x; return *p) alive across the deadcode race so it is not dropped to an uninitialized stack read.",
+    "Set on PER FUNCTION when a take-address-of-local + store-through-pointer returns a spurious uninitialized local (xStack_*); DESTRUCTIVE as a global default (conservatively pins stack stores live, suppressing legitimate dead-store removal).",
+    "option stackalias on" }
 };
 
 int4 kunaNumSettables(void)

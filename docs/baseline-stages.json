@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    110,
-    110
+    112,
+    112
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -67,6 +67,8 @@
     "data:GH8467 #2: recovered control flow reaches the tail block (no abort)",
     "data:GH8471 #1: thumbfuncptr off restores the raw-hex form (old behavior, opt-in)",
     "data:GH8471 #2: default pipeline preserves the symbolic form, &fn[1] via DIV-2 arraynotation (fix is DIV-2 default)",
+    "data:GH8500 #1: default pipeline drops the store-through-pointer, returns an uninitialized stack local (bug)",
+    "data:GH8500 #2: option stackalias on recovers the alias and returns the parameter (fix)",
     "data:GH8777 #1: default pipeline keeps the raw SBORROW2 N==V flag idiom (bug reproduces)",
     "data:GH8777 #2: option flagcompare on folds it to a clean signed compare (fix, no SBORROW2 left)",
     "data:GH8790 #1: 0f0dc0 (PREFETCH reg-form) decodes at 0x1000",

@@ -1431,6 +1431,7 @@ void Architecture::resetDefaultsInternal(void)
   dynamic_hash_maxdup_high = false;	// (kuna) default: upstream collision budget 8 (GH-8467)
   fold_flag_compare = false;	// (kuna) default: upstream byte-identical (flag-compare idioms folded only under option flagcompare on) (GH-1276/8777)
   switch_modulo_bound = false;	// (kuna) default: upstream byte-identical (modulo/mask table bound off) (GH-9191)
+  stack_alias_deadstore = false;	// (kuna) default: upstream byte-identical (GH-8500); flip on per-function
   add_carry_chain = true;	// (kuna) DIV-2 default-on: carry-chain wide adds recover (GH-8913)
   model_stack_probe_loop = false;	// (kuna) default: upstream byte-identical (stack-probe loop unresolved) (GH-8017/6858)
   analyze_for_loops = true;

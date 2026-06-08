@@ -87,7 +87,7 @@ Live triage (Phase B, 9-agent workflow) results. Buckets: **20 spec-fix · 12 st
 | 8391 | ARM | spec-fix | S2 | arm-thumb-cde-guard | medium | — | — | **committed** |
 | 8456 | ARM | spec-fix | S2 | arm-missing-instruction-decode | medium | — | — | **committed** |
 | 8467 | AARCH64 | stage-exposure | S6 | dynamic-hash-maxduplicates | medium | 4013 | dynamichashmax | **committed** |
-| 8500 | x86_64 | stage-exposure | S3 | stack-alias-deadstore-elim | hard | 4014 | stackalias | triaged |
+| 8500 | x86_64 | stage-exposure | S3 | stack-alias-deadstore-elim | hard | 4014 | stackalias | **committed** |
 | 8694 | x86_64 | not-viable | P0 | dwarf-local-import-trigger | medium | — | — | not-viable |
 | 8724 | x86_64 | stage-exposure | S5 | ptr-arith-array-struct-recovery | hard | 4015 | arraystride | triaged |
 | 8777 | PIC | stage-exposure | S5 | flag-bit-extraction-simplification | hard | 4010 | flagcompare | **committed** |

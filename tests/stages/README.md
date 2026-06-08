@@ -86,6 +86,8 @@ writeup, not here.
 
 | `gh8467-dynamichashmax.xml` | [GH-8467](https://github.com/NationalSecurityAgency/ghidra/issues/8467) | S6 alias-facets (dynamic-symbol DynamicHash collision budget) | `option dynamichashmax on\|off` |
 
+| `gh8500-stackalias.xml` | [GH-8500](https://github.com/NationalSecurityAgency/ghidra/issues/8500) | S6 alias-facets / heritage ordering (store-through stack-pointer-alias) | `option stackalias on\|off` |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

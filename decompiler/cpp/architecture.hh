@@ -187,6 +187,7 @@ public:
   bool model_stack_probe_loop;	///< (kuna) True if gcc stack-probe loops resolve the stack-pointer MULTIEQUAL to a constant offset (GH-8017/6858)
   bool fold_flag_compare;	///< (kuna) True if flag-modelled comparison idioms (boolean-into-sign-bit, N==V) are folded (GH-1276/8777)
   bool switch_modulo_bound;	///< (kuna) True if a modulo/and-mask on a LOAD-table jumptable index bounds the table (GH-9191)
+  bool stack_alias_deadstore;	///< (kuna) True if a store-through-a-stack-pointer-alias is held across the deadcode race (GH-8500)
   bool analyze_for_loops;	///< True if we should attempt conversion of \e whiledo loops to \e for loops
   bool present_lessequal;	///< (kuna) True if canonicalized comparisons are restored to their original LESSEQUAL form for presentation
   bool preserve_thumb_funcptr;	///< (kuna) True if mode-bit-encoded (Thumb) function pointers are kept symbolic (GH-8471)

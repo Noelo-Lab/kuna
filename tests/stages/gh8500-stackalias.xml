@@ -1,0 +1,73 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-8500: "stack address taken, stored, then dereferenced is mis-analysed."
+    https://github.com/NationalSecurityAgency/ghidra/issues/8500
+
+    Source (gcc -O0):
+      int identity(int x) {
+        int *p = &x;     // take the address of the (stack-resident) parameter
+        *p = x;          // store THROUGH the pointer back into the stack slot
+        return *p;        // read THROUGH the pointer
+      }
+
+    The address of the parameter's stack slot (s-0x1c) is spilled to another
+    stack slot (s-0x8 = `p`).  The value is then stored through `p` (`*p = x`)
+    and re-read through `p` (`return *p`).  Resolving the alias requires the
+    indirect STORE/LOAD through `p` to be recognized as touching s-0x1c.
+
+    Bug: the store-through-pointer is dropped.  The STORE `*p = x` is converted
+    to a stack varnode (s-0x1c = x) and then dead-code-eliminated in the SAME
+    main-loop iteration, one step BEFORE the aliasing LOAD `return *p`
+    collapses to read s-0x1c.  With the store already gone, the load re-heritages
+    s-0x1c with no reaching definition, so it resolves to an *uninitialized*
+    stack input.  The rendered C returns an undefined local:
+
+        return xStack_1c;
+
+    Stage model: S6 "alias-facets" / heritage ordering.  The kuna fix is an
+    option-gated extension of ActionDeadCode::lastChanceLoad (the existing
+    mechanism that already defers dead-store removal for not-yet-resolved
+    LOADs whose pointer is an "eventual constant"): when a LOAD dereferences a
+    pointer that is itself a value living on the stack (an unresolved
+    pointer-to-stack alias), it conservatively holds the stack stores alive for
+    that deadcode round, so the store survives until the alias resolves.
+    Gated by the default-off arch flag stack_alias_deadstore
+    (`option stackalias on`).
+
+    Pass 1 (default pipeline) reproduces the bug: the function returns the
+    uninitialized local `xStack_1c` (assert #1).
+    Pass 2 (after `option stackalias on`) recovers the store-through-pointer,
+    so the function returns the parameter (assert #2): no `xStack_1c` survives.
+
+    Disassembly (identity @ 0x1139):
+      1139 55              PUSH RBP
+      113a 4889e5          MOV  RBP,RSP
+      113d 897dec          MOV  dword ptr [RBP + -0x14],EDI
+      1140 488d45ec        LEA  RAX,[RBP + -0x14]
+      1144 488945f8        MOV  qword ptr [RBP + -0x8],RAX
+      1148 8b55ec          MOV  EDX,dword ptr [RBP + -0x14]
+      114b 488b45f8        MOV  RAX,qword ptr [RBP + -0x8]
+      114f 8910            MOV  dword ptr [RAX],EDX
+      1151 488b45f8        MOV  RAX,qword ptr [RBP + -0x8]
+      1155 8b00            MOV  EAX,dword ptr [RAX]
+      1157 5d              POP  RBP
+      1158 c3              RET
+-->
+<bytechunk space="ram" offset="0x1139" readonly="true">
+554889e5897dec488d45ec488945f88b55ec488b45f88910488b45f88b005dc3
+</bytechunk>
+<symbol space="ram" offset="0x1139" name="identity"/>
+</binaryimage>
+<script>
+  <com>lo fu identity</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option stackalias on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH8500 #1: default pipeline drops the store-through-pointer, returns an uninitialized stack local (bug)" min="1" max="1">return xStack_1c;</stringmatch>
+<stringmatch name="GH8500 #2: option stackalias on recovers the alias and returns the parameter (fix)" min="1" max="1">return param_1;</stringmatch>
+</decompilertest>

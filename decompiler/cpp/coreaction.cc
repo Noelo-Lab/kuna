@@ -4078,6 +4078,65 @@ bool ActionDeadCode::lastChanceLoad(Funcdata &data,vector<Varnode *> &worklist)
   return res;
 }
 
+/// \brief (kuna) GH-8500: Hold stack stores alive when an unresolved pointer-to-stack alias may read them
+///
+/// When the address of a stack slot is spilled to another stack slot and a value
+/// is stored THROUGH that pointer (`int *p=&x; *p=x; return *p;`), the indirect
+/// STORE is converted to a stack varnode and can be dead-code-eliminated in the
+/// SAME main-loop iteration -- one step BEFORE the aliasing LOAD collapses to read
+/// it.  Unlike lastChanceLoad (which only runs on heritage pass 1, when the LOAD's
+/// pointer is still register-relative), the deadcode that drops the store runs on a
+/// LATER pass, where the LOAD's pointer has become a stack varnode (the spilled
+/// pointer).  This helper, called on every deadcode pass when the option is on,
+/// detects such a LOAD (pointer lives in the stack space) and conservatively holds
+/// every written non-marker stack store alive for this round, so the
+/// store-through-pointer survives until the alias resolves and links to it.
+///
+/// \param data is the function being analyzed
+/// \param worklist is the container of consumed Varnodes to further process
+/// \return \b true if at least one stack store was held
+bool ActionDeadCode::holdStackAliasStores(Funcdata &data,vector<Varnode *> &worklist)
+
+{
+  if (!data.getArch()->stack_alias_deadstore) return false;	// (kuna) default-off
+  if (data.isJumptableRecoveryOn()) return false;
+  AddrSpace *stackspc = data.getArch()->getStackSpace();
+  if (stackspc == (AddrSpace *)0) return false;
+  // An unresolved pointer-to-stack alias is a LOAD or STORE whose POINTER operand
+  // is itself a varnode that lives in the stack space (the spilled pointer).
+  bool aliasPending = false;
+  list<PcodeOp *>::const_iterator iter = data.beginOp(CPUI_LOAD);
+  list<PcodeOp *>::const_iterator enditer = data.endOp(CPUI_LOAD);
+  while(iter != enditer) {
+    PcodeOp *op = *iter++;
+    if (op->isDead()) continue;
+    if (op->getIn(1)->getSpace() == stackspc) { aliasPending = true; break; }
+  }
+  if (!aliasPending) {
+    iter = data.beginOp(CPUI_STORE);
+    enditer = data.endOp(CPUI_STORE);
+    while(iter != enditer) {
+      PcodeOp *op = *iter++;
+      if (op->isDead()) continue;
+      if (op->getIn(1)->getSpace() == stackspc) { aliasPending = true; break; }
+    }
+  }
+  if (!aliasPending) return false;
+  bool res = false;
+  VarnodeLocSet::const_iterator viter = data.beginLoc(stackspc);
+  VarnodeLocSet::const_iterator vendviter = data.endLoc(stackspc);
+  while(viter != vendviter) {
+    Varnode *svn = *viter++;
+    if (!svn->isWritten()) continue;
+    PcodeOp *sdef = svn->getDef();
+    if (sdef->isMarker()) continue;	// leave INDIRECT/MULTIEQUAL placeholders to normal handling
+    pushConsumed(~(uintb)0, svn, worklist);
+    svn->setAutoLiveHold();
+    res = true;
+  }
+  return res;
+}
+
 int4 ActionDeadCode::apply(Funcdata &data)
 
 {
@@ -4174,6 +4233,11 @@ int4 ActionDeadCode::apply(Funcdata &data)
     propagateConsumed(worklist);
 
   if (lastChanceLoad(data, worklist)) {
+    while(!worklist.empty())
+      propagateConsumed(worklist);
+  }
+
+  if (holdStackAliasStores(data, worklist)) {	// (kuna) GH-8500: gated default-off
     while(!worklist.empty())
       propagateConsumed(worklist);
   }
