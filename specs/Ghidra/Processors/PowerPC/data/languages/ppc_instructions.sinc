@@ -2886,13 +2886,21 @@ CRM_val: crmval is CRM [crmval = CRM+0;] {export *[const]:1 crmval;}
 #or r0,r0,r0		0x7C 00 03 78
 :or A,S,B		is OP=31 & A & S & B & XOP_1_10=444 & Rc=0
 {
+@ifdef E500
+	A = zext( (S:4 | B:4) );		# (kuna GH-6904) 32-bit Book E op clears upper word
+@else
 	A = (S | B);
+@endif
 }
 
 #or. r0,r0,r0		0x7C 00 03 79
 :or. A,S,B		is OP=31 & A & S & B & XOP_1_10=444 & Rc=1
 {
+@ifdef E500
+	A = zext( (S:4 | B:4) );		# (kuna GH-6904) 32-bit Book E op clears upper word
+@else
 	A = (S | B);
+@endif
 	cr0flags(A);
 }
 

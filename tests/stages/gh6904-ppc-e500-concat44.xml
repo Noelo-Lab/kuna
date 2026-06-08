@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:e500">
+<!--
+    GH-6904: "PowerQUICC-III-e500 Register Size Issues"
+    https://github.com/NationalSecurityAgency/ghidra/issues/6904
+
+    The PowerPC:BE:32:e500 language models the 32 general-purpose registers as
+    64-bit (rX, REGISTER_SIZE 8 / BIT_64) because the SPE (Signal Processing
+    Engine) instructions genuinely use the full 64-bit register pairs.  But the
+    32-bit Book E integer instructions were lifted as if they operated on the
+    full 64-bit rX, so the upper word is never cleared.  A 32-bit parameter that
+    flows through `mr rD,rS` (encoded as `or` / `or.`) at a function boundary
+    carries an UNINITIALISED upper 32 bits, and the decompiler reconstructs the
+    value as CONCAT44(upper, lower) and an int8/ulonglong type.
+
+    Repro (issue's e500_test/e500_bug_1_O2.so, function some_funcptr_func):
+      some_funcptr_func(void **ptr, int call):
+        mr. r31,r3        (= or. r31,r3,r3)   ; ptr (r3) copied 64-bit-wide
+        if (CONCAT44(in_r3,ptr) != 0) ...     ; the bug
+
+    Fix (kuna GH-6904): for the E500 variant, `or` / `or.` (the `mr`/`mr.`
+    register-move idiom, the dominant boundary-widening op) zero-extend a 32-bit
+    result so the upper word of rD is cleared.  Guarded by @ifdef E500, so the
+    32-bit-register PowerPC:BE:32:default model is untouched.
+
+    NOTE (scope): this is a faithful but PARTIAL fix for a structural problem.
+    It removes the CONCAT44 in some_funcptr_func (the issue's repro target and
+    bug_regex), but a complete fix would have to clear the upper word in every
+    32-bit Book E integer constructor (add/cmpwi/bdnz/loads, ~239 sites): a
+    whole-instruction-set re-lift outside the SLEIGH-scope rule.
+
+    Stage: P-code lift (SLEIGH spec-fix, no option).  Asserts the FIXED output:
+    no CONCAT44 over r3, ptr tested as a plain 32-bit pointer.
+
+    bl at 0x620 patched 48000001 to 480000e1 so the relocated call to
+    get_funcptr (0x700) resolves inside this self-contained chunk, matching the
+    relocated .so the issue's headless repro analyses.
+-->
+  <bytechunk space="ram" offset="0x5fc" readonly="true">
+9421ffe093e1001c7c7f1b794182005093c100187c0802a67c9e23783860000090010024480000e12c1e0000907f000040820020800100247c6903a683c1001883e1001c382100207c0803a64e8004208001002483c100187c0803a683e1001c382100204e800020
+  </bytechunk>
+  <bytechunk space="ram" offset="0x700" readonly="true">
+4e800020
+  </bytechunk>
+<symbol space="ram" offset="0x5fc" name="some_funcptr_func"/>
+<symbol space="ram" offset="0x700" name="get_funcptr"/>
+</binaryimage>
+<script>
+  <com>map fun r0x5fc some_funcptr_func</com>
+  <com>map fun r0x700 get_funcptr</com>
+  <com>parse line extern void * get_funcptr(void *p);</com>
+  <com>parse line extern void some_funcptr_func(void **ptr, int4 call);</com>
+  <com>lo fu some_funcptr_func</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH6904 #1: r3/ptr compared as a plain 32-bit pointer (no widening)" min="1" max="1">if \(ptr != \(void \*\*\)0x0\)</stringmatch>
+<stringmatch name="GH6904 #2: no spurious CONCAT44 over the 64-bit r3 parameter" min="0" max="0">CONCAT44\(in_r3</stringmatch>
+<stringmatch name="GH6904 #3: no spurious CONCAT44 widening of ptr at all" min="0" max="0">CONCAT44\([^)]*ptr\)</stringmatch>
+</decompilertest>

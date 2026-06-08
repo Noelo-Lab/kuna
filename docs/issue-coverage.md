@@ -75,7 +75,7 @@ Live triage (Phase B, 9-agent workflow) results. Buckets: **20 spec-fix · 12 st
 | 6836 | x86 | not-viable | S1 | coff-loader-section-layout | hard | — | — | not-viable |
 | 6858 | x86 | stage-exposure | S6 | x86-stack-clash-probe-loop | hard | 4012 | stackprobeloop | triaged |
 | 6882 | Sparc | stage-exposure | S4 | sparc-struct-return-unimp-flow | hard | 4016 | sparcstructret | triaged |
-| 6904 | PowerPC | spec-fix | S2 | ppc-e500-32bit-over-64bit-reg | hard | — | — | triaged |
+| 6904 | PowerPC | spec-fix | S2 | ppc-e500-32bit-over-64bit-reg | hard | — | — | **committed** |
 | 7139 | x86 | spec-fix | S1 | x86-16bit-disp-signedness | medium | — | — | **committed** |
 | 7332 | x86 | spec-fix | S6 | x86-alloca-chkstk-callfixup | medium | — | — | triaged |
 | 7377 | ARM | not-viable | S2 | missing-core-pcode-op-rotate | hard | — | — | not-viable |

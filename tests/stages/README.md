@@ -74,6 +74,8 @@ writeup, not here.
 
 | `gh7451-riscvzfaflis.xml` | [GH-7451](https://github.com/NationalSecurityAgency/ghidra/issues/7451) | S1 decode-table (RISCV spec-fix, no option) | SLEIGH adds Zfa `fli.s` (constant table + `fli` pcodeop) |
 
+| `gh6904-ppc-e500-concat44.xml` | [GH-6904](https://github.com/NationalSecurityAgency/ghidra/issues/6904) | P-code lift (PowerPC e500 spec-fix, no option) | `or`/`or.` (`mr`/`mr.`) zero-extend their 32-bit result on the 64-bit-register e500, killing spurious CONCAT44 at function boundaries (partial) |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

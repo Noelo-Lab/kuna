@@ -85,6 +85,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../RISCV/data/languages/riscv.rv32f.sinc`, `riscv.table.sinc` | GH-7451: add the Zfa single-precision load-immediate `fli.s` (funct7=0x78 & op2024=0x1, disambiguated from `fmv.w.x`) — an `fliConstS` operand sub-table renders the Zfa constant table (index 8 -> 0.25) and the new `fli` pcodeop lifts the constant load; previously these bytes failed to decode (`??` undefined bytes / "Unable to resolve constructor") |
 
+| `specs/.../PowerPC/data/languages/ppc_instructions.sinc` | GH-6904: for the E500 variant, `or` / `or.` (the `mr`/`mr.` register-move idiom) now zero-extend a 32-bit result so the upper word of the 64-bit rD is cleared (`A = zext(S:4 | B:4)` under `@ifdef E500`), removing spurious CONCAT44/ulonglong artifacts on 32-bit Book E parameters. PARTIAL fix — a complete fix needs the upper word cleared in all ~239 e500 integer constructors. |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands
