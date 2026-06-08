@@ -184,6 +184,7 @@ public:
   bool sparc_struct_return;	///< (kuna) True if the SPARC struct-return `unimp` after a call falls through instead of becoming a non-returning CALLIND (GH-6882)
   bool ov_less_simplify;	///< (kuna) True if the OV-flag signed-less-than idiom is collapsed to a clean INT_SLESS (GH-7190)
   bool fold_boolean_mask;	///< (kuna) True if `(b<<k) s>> k` boolean sign-extension-mask idioms are folded (GH-1282)
+  bool condexe_block_placement;	///< (kuna) True if ActionConditionalConst declines to place a const COPY in a loop block (GH-9203)
   bool dynamic_hash_maxdup_high;	///< (kuna) True if DynamicHash::uniqueHash raises its same-address collision budget 8->16 (GH-8467)
   bool model_stack_probe_loop;	///< (kuna) True if gcc stack-probe loops resolve the stack-pointer MULTIEQUAL to a constant offset (GH-8017/6858)
   bool fold_flag_compare;	///< (kuna) True if flag-modelled comparison idioms (boolean-into-sign-bit, N==V) are folded (GH-1276/8777)

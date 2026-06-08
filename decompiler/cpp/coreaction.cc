@@ -28,6 +28,8 @@
 #include "kuna_arraystride.hh"	// (kuna) GH-8724 strided-induction array-index recovery
 #include "kuna_flagcompare.hh"	// (kuna) GH-1276/8777 flag-modelled comparison folding
 #include "kuna_stackprobeloop.hh"	// (kuna) GH-8017/6858 stack-probe-loop stack-pointer resolution
+#include "kuna_condexeplace.hh"	// (kuna) GH-9203 conditional-constant COPY loop-block placement
+#include "architecture.hh"	// (kuna) GH-9203 condexe_block_placement arch flag
 
 namespace ghidra {
 
@@ -4547,6 +4549,14 @@ void ActionConditionalConst::handlePhiNodes(Varnode *varVn,Varnode *constVn,vect
     PcodeOp *op = phiNodeEdges[i].op;
     int4 slot = phiNodeEdges[i].slot;
     BlockBasic *bl = (BlockBasic *)op->getParent()->getIn(slot);
+    if (data.getArch()->condexe_block_placement && bl->hasLoopIn()) {
+      // (kuna) GH-9203: the predecessor of this MULTIEQUAL edge is a loop block, so a
+      // freshly-materialized constant COPY placed at its bottom would be re-executed
+      // every iteration and render as a spurious `= 0` inside the loop body (a malformed
+      // do/while).  Decline the rewrite on this edge: leave the MULTIEQUAL input intact.
+      results[i] = 0;
+      continue;
+    }
     Varnode *outVn = placeCopy(op, bl, constVn, data);
     data.opSetInput(op,outVn,slot);
     count += 1;

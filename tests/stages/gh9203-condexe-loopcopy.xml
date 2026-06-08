@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="RISCV:LE:64:default">
+<!--
+    GH-9203: a late conditional-branch simplification inserts a MULTIEQUAL input
+    p-code op into the wrong (loop) block, manifesting as a malformed do/while
+    whose body holds a spurious constant assignment.
+
+    ActionConditionalConst (coreaction.cc) propagates a value known-constant along
+    a conditional out-edge.  When the value reaches a MULTIEQUAL on a disconnected
+    incoming edge, handlePhiNodes() materializes the constant as a fresh COPY op
+    placed at the BOTTOM of that edge's predecessor block and rewires the MULTIEQUAL
+    input to it.  Here the predecessor is a LOOP block, so the (tmp = 0) COPY lands
+    inside the loop body and is re-executed every iteration:
+
+      iVar1 = 7;
+      do {
+        iVar1 = iVar1 + -1;
+        xVar2 = 0;             // out-of-place: belongs outside the loop
+      } while (iVar1 != 0);
+
+    Stage model: S3 "simplification-quiescence" (WHERE a propagated constant is
+    materialized).  The kuna fix is an anchor-edit at the decision point in
+    handlePhiNodes(), gated by the default-off arch flag condexe_block_placement:
+    when the MULTIEQUAL edge predecessor block has a looping in-edge
+    (bl->hasLoopIn()), decline to place the constant COPY there and leave the
+    MULTIEQUAL input intact.  Enabled by (option condexeplace on).
+
+    Pass 1 (default pipeline, option off) reproduces the bug: the do/while body
+    carries the out-of-place (xVar2 = 0;), so a "= 0;" assignment is present.
+    Pass 2 (after option condexeplace on) shows the loop body no longer carries
+    a bare "= 0;" assignment.
+
+    Assert #1 keys on "= 0;" with min=max=1: it must appear exactly once across
+    both passes (present in pass 1, gone in pass 2), proving both the bug and the
+    fix at once.  Assert #2 keys on "do {" with min=max=2: the loop structure
+    itself is preserved in both passes (we did not destroy control flow).
+
+    repro: kprobe.py (arch RISCV:LE:64:default) over the bytechunk below, "print C".
+-->
+<bytechunk space="ram" offset="0x0">
+397106fc4af022f826f42e8411492400ef0030602a8909ed414585471d471d8f7dff4274a274e2704a85027921618280130910fafdb7
+</bytechunk>
+<symbol space="ram" offset="0x0" name="FUN_0"/>
+</binaryimage>
+<script>
+  <com>lo fu FUN_0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condexeplace on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH9203 #1: const COPY in loop body (= 0; present in default, gone after condexeplace on)" min="1" max="1">= 0;</stringmatch>
+<stringmatch name="GH9203 #2: loop structure preserved in both passes" min="2" max="2">do \{</stringmatch>
+</decompilertest>

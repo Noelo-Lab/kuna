@@ -92,6 +92,8 @@ writeup, not here.
 
 | `gh6882-sparcstructret.xml` | [GH-6882](https://github.com/NationalSecurityAgency/ghidra/issues/6882) | S2 flow classification (post-call `unimp` terminator) | `option sparcstructret on\|off` |
 
+| `gh9203-condexe-loopcopy.xml` | [GH-9203](https://github.com/NationalSecurityAgency/ghidra/issues/9203) | S3 simplification quiescence (ActionConditionalConst const-COPY block placement) | `option condexeplace on\|off` |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

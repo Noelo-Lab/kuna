@@ -385,6 +385,7 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "option v850indirectbranch", kstage_s2, "flow-classification", "(kuna GH-8817) reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery" },
   { "option sparcstructret", kstage_s2, "flow-classification", "(kuna GH-6882) SPARC struct-return post-call unimp falls through instead of becoming a non-returning CALLIND" },
   { "option ovlesssimplify", kstage_s3, "simplification-quiescence", "(kuna GH-7190) collapse OV-flag signed-less-than idiom to a clean INT_SLESS" },
+  { "option condexeplace", kstage_s3, "simplification-quiescence", "(kuna GH-9203) keep ActionConditionalConst from placing a const COPY in a loop block (malformed do/while)" },
   { "option arraystride", kstage_s3, "simplification-quiescence", "(kuna GH-8724) re-express a strided-induction offset accumulator as counter*stride to recover the array index" },
   { "option stackprobeloop", kstage_s2, "stack-pointer-normalization", "(kuna GH-8017/6858) resolve gcc stack-probe loop's stack-pointer MULTIEQUAL to a constant offset" },
   { "option flagcompare", kstage_s3, "simplification-quiescence", "(kuna GH-1276/8777) fold flag-modelled comparison idioms (boolean-into-sign-bit, N==V signed compare)" },
@@ -535,7 +536,12 @@ static const KunaSettable settableTable[] = {
     kstage_s2, "flow-classification", kstrength_hard, kstage_s2, "GH-6882",
     "Let the SPARC struct-return `unimp` after a call fall through instead of becoming a non-returning indirect call.",
     "Set on PER SPARC PROGRAM when a struct-returning callee makes a function render a bogus (*pcVar1)() and drop its tail; DESTRUCTIVE as a global default (an IllegalInstructionTrap-fed BRANCHIND elsewhere is suppressed).",
-    "option sparcstructret on" }
+    "option sparcstructret on" },
+  { "condexeplace", "on|off", "off", false,
+    kstage_s3, "simplification-quiescence", kstrength_hard, kstage_s3, "GH-9203",
+    "Stop ActionConditionalConst from materializing a propagated constant as a COPY inside a loop predecessor block (a spurious `= 0` in the do/while body).",
+    "Set on to clean up a malformed do/while whose body holds an out-of-place constant assignment; off (default) is upstream byte-identical.",
+    "option condexeplace on" }
 };
 
 int4 kunaNumSettables(void)

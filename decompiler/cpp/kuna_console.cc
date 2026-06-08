@@ -214,6 +214,8 @@ static string kunaLiveValue(Architecture *conf,const string &option)
     return conf->memset_recover ? "on" : "off";
   if (option == "returnpair")
     return conf->return_single ? "single" : "pair";
+  if (option == "condexeplace")
+    return conf->condexe_block_placement ? "on" : "off";
   if (option == "sparcstructret")
     return conf->sparc_struct_return ? "on" : "off";
   if (option == "arraystride")
