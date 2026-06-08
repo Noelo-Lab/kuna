@@ -1,0 +1,27 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7">
+<!--
+    GH-5897: "Ghidra Uses pre-UAL Syntax for register-to-register movs in armv7 le"
+    https://github.com/NationalSecurityAgency/ghidra/issues/5897
+
+    Bytes 07 c0 a0 e1 (word 0xe1a0c007) are a register-to-register MOV
+    (MOV r12,r7).  SLEIGH matched the pre-UAL ":cpy^COND Rd,rm" constructor and
+    rendered the deprecated mnemonic "cpy r12,r7" instead of the modern UAL
+    "mov r12,r7".  Other MOV forms in the same binary already render UAL "mov".
+
+    Stage: S1 decode-table (SLEIGH spec-fix, no option).  The fix renames the
+    register-copy ":cpy^COND Rd,rm" / ":cpy^COND lr,rm" constructor mnemonics to
+    "mov" (the UAL synonym; identical p-code).  This testcase pins the FIXED
+    mnemonic and forbids the deprecated "cpy" token.
+-->
+<bytechunk space="ram" offset="0x0">
+07c0a0e1
+</bytechunk>
+</binaryimage>
+<script>
+  <com>disassemble 0x0 0x4</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH5897 #1: reg-to-reg MOV renders UAL 'mov r12,r7'" min="1" max="1">^0x00000000: mov[ ]+r12,r7</stringmatch>
+<stringmatch name="GH5897 #2: deprecated pre-UAL 'cpy' mnemonic is gone" min="0" max="0">\bcpy\b</stringmatch>
+</decompilertest>

@@ -69,6 +69,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../x86/data/languages/fma.sinc` | GH-9184: every 256-bit YMM/`$(VEX_L256)` FMA constructor now uses a 256-bit temp (`local tmp:32`) before `ZmmReg1 = zext(tmp)`; upstream used `local tmp:16`, truncating the upper 128 bits of every YMM FMA result (accumulator rendered `undefined1[16]` with a per-iteration `ZEXT1632` round-trip). XMM/`$(VEX_L128)` forms correctly keep `tmp:16`. |
 
+| `specs/.../ARM/data/languages/ARMinstructions.sinc` | GH-5897: register-to-register move constructors `:cpy^COND Rd,rm` / `:cpy^COND lr,rm` renamed to `:mov^COND ...` so the UAL mnemonic `mov` is emitted instead of the deprecated pre-UAL `cpy` (identical p-code; control-flow `cpy pc,...` forms left unchanged) |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands

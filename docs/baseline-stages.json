@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    64,
-    64
+    66,
+    66
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -17,6 +17,8 @@
     "data:GH558 #2: default pipeline keeps the source form x <= 8 (fix is DIV-2 default)",
     "data:GH558 #3: arraynotation off restores upstream pointer arithmetic (old behavior, opt-in)",
     "data:GH558 #4: default pipeline renders &p->r[i] (fix is DIV-2 default)",
+    "data:GH5897 #1: reg-to-reg MOV renders UAL 'mov r12,r7'",
+    "data:GH5897 #2: deprecated pre-UAL 'cpy' mnemonic is gone",
     "data:GH6930 #1: inferfuncentry off restores the bare-literal form (old behavior, opt-in)",
     "data:GH6930 #2: default pipeline resolves 0x100000 to its function name (fix is DIV-2 default)",
     "data:GH6990 #1: default pipeline over-claims o0:o1 as 64-bit return (bug reproduced)",

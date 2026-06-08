@@ -64,7 +64,7 @@ Live triage (Phase B, 9-agent workflow) results. Buckets: **20 spec-fix · 12 st
 | 3847 | x86 | already-correct | S2 | x87-fpu-semantics | easy | — | — | already-correct |
 | 4788 | V850 | spec-fix | S2 | v850-rh850-missing-decode | medium | — | — | triaged |
 | 5666 | x86 | spec-fix | S2 | x86-addrsize-stack-push | medium | — | — | triaged |
-| 5897 | ARM | spec-fix | S2 | arm-mnemonic-display | easy | — | — | triaged |
+| 5897 | ARM | spec-fix | S2 | arm-mnemonic-display | easy | — | — | **committed** |
 | 6333 | V850 | not-viable | S2 | v850-rh850-missing-decode | hard | — | — | not-viable |
 | 6342 | Xtensa | not-viable | S2 | xtensa-flix-bundle-width | hard | — | — | not-viable |
 | 6389 | 8085 | spec-fix | S1 | 8085-undocumented-opcodes-missing | medium | — | — | triaged |

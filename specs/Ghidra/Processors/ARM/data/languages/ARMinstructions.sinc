@@ -2685,14 +2685,16 @@ ArmPCRelImmed12: reloff		is U23=0 & immed & rotate
   call [pc];
 }
 
-:cpy^COND lr,rm 	is $(AMODE) & ARMcond=1 & COND & c2027=0x1a & c1619=0 & c0411=0 & Rd=14 & lr & rm & Rm2=15
+# (kuna GH-5897) UAL renders the register-to-register copy as "mov", not the
+# deprecated pre-UAL synonym "cpy" (identical p-code).
+:mov^COND lr,rm 	is $(AMODE) & ARMcond=1 & COND & c2027=0x1a & c1619=0 & c0411=0 & Rd=14 & lr & rm & Rm2=15
                     [ LRset=1; globalset(inst_next,LRset); ]
 {
   build COND;
   lr = rm;
 }
 
-:cpy^COND Rd,rm 	is $(AMODE) & ARMcond=1 & COND & c2027=0x1a & c1619=0 & c0411=0 & Rd & rm
+:mov^COND Rd,rm 	is $(AMODE) & ARMcond=1 & COND & c2027=0x1a & c1619=0 & c0411=0 & Rd & rm
 {
   build COND;
   build rm;
