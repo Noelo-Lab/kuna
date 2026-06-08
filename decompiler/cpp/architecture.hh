@@ -181,6 +181,7 @@ public:
   bool memset_recover;		///< (kuna) True if constant-fill store/copy runs are recovered as builtin_memset (GH-9230)
   bool add_carry_chain;		///< (kuna) True if 8-bit carry-chain 16-bit adds are fused into a single wide add (GH-8913)
   bool v850_indirect_branch;	///< (kuna) True if V850 "jmp [reg]" CALLIND is reclassified to BRANCHIND for switch recovery (GH-8817)
+  bool sparc_struct_return;	///< (kuna) True if the SPARC struct-return `unimp` after a call falls through instead of becoming a non-returning CALLIND (GH-6882)
   bool ov_less_simplify;	///< (kuna) True if the OV-flag signed-less-than idiom is collapsed to a clean INT_SLESS (GH-7190)
   bool fold_boolean_mask;	///< (kuna) True if `(b<<k) s>> k` boolean sign-extension-mask idioms are folded (GH-1282)
   bool dynamic_hash_maxdup_high;	///< (kuna) True if DynamicHash::uniqueHash raises its same-address collision budget 8->16 (GH-8467)

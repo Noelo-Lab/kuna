@@ -15,6 +15,7 @@
  */
 #include "flow.hh"
 #include "kuna_v850indbranch.hh"	// (kuna) GH-8817: V850 jmp [reg] CALLIND -> BRANCHIND
+#include "kuna_sparcstructret.hh"	// (kuna) GH-6882: SPARC struct-return post-call unimp fall-through
 
 namespace ghidra {
 
@@ -322,6 +323,20 @@ PcodeOp *FlowInfo::xrefControlFlow(list<PcodeOp *>::const_iterator oiter,bool &s
       }
       break;
     case CPUI_BRANCHIND:
+      if (kunaIsSparcStructRetTrap(data,op)) {	// (kuna) GH-6882: SPARC struct-return `unimp` after a call
+	// The `unimp <structsize>` planted after a struct-return call lifts to
+	//   dest = IllegalInstructionTrap(N) ; goto [dest]
+	// which would otherwise become a non-returning CALLIND ("Does not
+	// return") and lose the rest of the function.  The struct-return callee
+	// returns to caller+12, skipping the `unimp`, so treat it as a
+	// fall-through no-op: drop the dead BRANCHIND and continue to the next
+	// instruction.  The IllegalInstructionTrap CALLOTHER (a harmless
+	// side-effect) is left in place.
+	data.opDestroyRaw(op);
+	op = (PcodeOp *)0;
+	isfallthru = true;
+	break;
+      }
       tablelist.push_back(op);	// Put off trying to recover the table
       if (op->getTime() >= maxtime) {
 	deleteRemainingOps(oiter);

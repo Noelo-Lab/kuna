@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default">
+<!--
+    GH-6882: SPARC struct-return `unimp N` after a call mis-handled.
+    https://github.com/NationalSecurityAgency/ghidra/issues/6882
+
+    The SPARC ABI for a function returning a structure has the callee return
+    to caller+12 (not caller+8), and the compiler plants an `unimp <structsize>`
+    instruction in the gap (caller+8) as a struct-size hint.  Per the SPARC
+    SLEIGH spec (SparcV9.sinc), `unimp`/`illtrap` lifts to
+
+        dest = IllegalInstructionTrap(N);
+        goto [dest];                       # "trap should not fall thru by default"
+
+    i.e. a CALLOTHER feeding a BRANCHIND.  Jump-table recovery cannot resolve
+    the indirect target, so flow.cc::truncateIndirectJump rewrites the BRANCHIND
+    into a non-returning CALLIND ("Does not return") and the C renders a bogus
+    indirect call `(*pcVar1)()`; and, because the trap is treated as a
+    terminator, the rest of the function (the second call, the return) is lost.
+
+    Two functions are present.  `f` @0x0 is a struct-return function whose body
+    ends with the struct-return tail `jmp %i7+12 ; restore` (SparcV9.sinc line
+    1026 already lifts this to `return`).  `p` @0x10 calls `f`, and the compiler
+    planted `unimp 0x8` right after the call (image 0x30); `p` then makes a
+    second call and returns normally.
+
+    Stage model: S2 "flow-classification" sub-stage (call-vs-branch / terminator
+    classification).  The mis-classification of the post-call `unimp` BRANCHIND
+    as a non-returning indirect call starves the rest of the function.
+
+    Fix surface = a default-off ArchOption (sparcstructret) that, at flow time
+    (FlowInfo::xrefControlFlow), recognises the SPARC struct-return idiom (a
+    BRANCHIND whose target is the result of an IllegalInstructionTrap CALLOTHER
+    in the same instruction) and makes it fall through instead of becoming a
+    non-returning CALLIND, so the rest of the function is recovered.
+
+    Pass 1 (default, option off): assertion #1 proves the bug reproduces; the
+    post-call `unimp` renders as a computed call to a function pointer
+    `(*pcVar1)()` and the function tail is lost.
+    Pass 2 (option sparcstructret on): assertion #2 proves the fix; the `unimp`
+    falls through, the rest of the function is recovered, and `p` renders its
+    real `return CONCAT44(...)` tail (the bogus `(*pcVar1)()` is gone).  The two
+    assertions are over the cumulative two-pass output: `(*pcVar1)()` appears
+    exactly once (pass 1 only) and `return CONCAT44` exactly once (pass 2 only).
+-->
+<bytechunk space="ram" offset="0x0">
+9de3bfa0f007a04081c7e00c81e800009de3bf98b007bff87ffffffaf023a04000000008f007bff87ffffff6f027bff4f007bff481c7e00891ee0008
+</bytechunk>
+<symbol space="ram" offset="0x0" name="f"/>
+<symbol space="ram" offset="0x10" name="p"/>
+</binaryimage>
+<script>
+  <com>lo fu p</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option sparcstructret on</com>
+  <com>lo fu p</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH6882 #1: post-call unimp renders as a computed call (bug reproduced)" min="1" max="1">\(\*pcVar1\)\(\)</stringmatch>
+<stringmatch name="GH6882 #2: sparcstructret on recovers the function tail (return CONCAT44)" min="1" max="1">return CONCAT44</stringmatch>
+</decompilertest>

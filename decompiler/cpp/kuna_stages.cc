@@ -383,6 +383,7 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "option inferfuncentry", kstage_s5, "const-pointer", "(kuna GH-6930) infer function entries at single-bit image bases" },
   { "option memsetrecover", kstage_s5, "constsequence", "(kuna GH-9230) collapse constant-fill runs into builtin_memset" },
   { "option v850indirectbranch", kstage_s2, "flow-classification", "(kuna GH-8817) reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery" },
+  { "option sparcstructret", kstage_s2, "flow-classification", "(kuna GH-6882) SPARC struct-return post-call unimp falls through instead of becoming a non-returning CALLIND" },
   { "option ovlesssimplify", kstage_s3, "simplification-quiescence", "(kuna GH-7190) collapse OV-flag signed-less-than idiom to a clean INT_SLESS" },
   { "option arraystride", kstage_s3, "simplification-quiescence", "(kuna GH-8724) re-express a strided-induction offset accumulator as counter*stride to recover the array index" },
   { "option stackprobeloop", kstage_s2, "stack-pointer-normalization", "(kuna GH-8017/6858) resolve gcc stack-probe loop's stack-pointer MULTIEQUAL to a constant offset" },
@@ -529,7 +530,12 @@ static const KunaSettable settableTable[] = {
     kstage_s3, "simplification-quiescence", kstrength_hard, kstage_s3, "GH-8724",
     "Re-express a strength-reduced array walk: rewrite a loop offset accumulator (acc += sizeof) as counter*stride so the array index is recovered.",
     "Set on when a strided loop renders a raw offset accumulator (e.g. iVar += 0x414) instead of an index; off (default) is upstream byte-identical.",
-    "option arraystride on" }
+    "option arraystride on" },
+  { "sparcstructret", "on|off", "off", true,
+    kstage_s2, "flow-classification", kstrength_hard, kstage_s2, "GH-6882",
+    "Let the SPARC struct-return `unimp` after a call fall through instead of becoming a non-returning indirect call.",
+    "Set on PER SPARC PROGRAM when a struct-returning callee makes a function render a bogus (*pcVar1)() and drop its tail; DESTRUCTIVE as a global default (an IllegalInstructionTrap-fed BRANCHIND elsewhere is suppressed).",
+    "option sparcstructret on" }
 };
 
 int4 kunaNumSettables(void)

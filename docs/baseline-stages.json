@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    114,
-    114
+    116,
+    116
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -37,6 +37,8 @@
     "data:GH6389 #7: RSTV 0xCB decodes",
     "data:GH6389 #8: JNK 0xDD decodes with addr16 operand",
     "data:GH6389 #9: JK 0xFD decodes with addr16 operand",
+    "data:GH6882 #1: post-call unimp renders as a computed call (bug reproduced)",
+    "data:GH6882 #2: sparcstructret on recovers the function tail (return CONCAT44)",
     "data:GH6904 #1: r3/ptr compared as a plain 32-bit pointer (no widening)",
     "data:GH6904 #2: no spurious CONCAT44 over the 64-bit r3 parameter",
     "data:GH6904 #3: no spurious CONCAT44 widening of ptr at all",
