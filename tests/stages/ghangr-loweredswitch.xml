@@ -20,9 +20,11 @@
     JumpTable) from the control-flow pattern, inverting the usual S1 to S2
     dependency, via a restart (the multistage-jump idiom): detect late on the
     simplified CFG, then install pre-SSA on the restart so heritage rebuilds phi.
-    Fix surface = a default-off ArchOption (loweredswitch).
 
-    Pass 1 (default, option off): assertion #1 proves the bug; no switch is
+    The option is DIV-4 default-on; the required binary-search-structure guard (a
+    range/jle split) keeps it off hand-written linear if/else-if chains, so pass 1
+    explicitly sets it OFF to show the upstream rendering.
+    Pass 1 (option loweredswitch off): assertion #1 proves the bug; no switch is
     emitted (the dispatch is a nested if/else chain).
     Pass 2 (option loweredswitch on): assertions #2 to #7 prove a single switch
     with the recovered getopt case labels plus default is emitted.  Negative
@@ -39,6 +41,7 @@
 <symbol space="ram" offset="0x2170" name="get_prefix"/>
 </binaryimage>
 <script>
+  <com>option loweredswitch off</com>
   <com>lo fu main</com>
   <com>decompile</com>
   <com>print C</com>
@@ -47,7 +50,7 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="angr-LoweredSwitch #1: exactly one switch (none in pass 1, one in pass 2)" min="1" max="1">switch\(</stringmatch>
+<stringmatch name="angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)" min="1" max="1">switch\(</stringmatch>
 <stringmatch name="angr-LoweredSwitch #2: default present" min="1" max="1">default:</stringmatch>
 <stringmatch name="angr-LoweredSwitch #3: case 0x70 (p) recovered" min="1" max="1">case 0x70:</stringmatch>
 <stringmatch name="angr-LoweredSwitch #4: case 0x74 (t) recovered" min="1" max="1">case 0x74:</stringmatch>

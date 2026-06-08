@@ -549,11 +549,11 @@ static const KunaSettable settableTable[] = {
     "Absorb an input Varnode overlapping the high end of a justified parameter container instead of aborting the function.",
     "Set on PER FUNCTION when a frame aborts with 'Cannot properly adjust input varnodes' (overlapping stack params, e.g. mc68k link/unlk); off (default) preserves the upstream abort.",
     "option inputvarnodeadjust on" },
-  { "loweredswitch", "on|off", "off", true,
+  { "loweredswitch", "on|off", "on", false,
     kstage_s2, "switch-model", kstrength_hard, kstage_s2, "angr-LoweredSwitchSimplifier",
-    "Reconstruct a compiler-lowered comparison cascade (a binary-search if/else tree over one variable) back into a switch with a synthesized BRANCHIND + jump-table (the S2 artifact Ghidra renders switches from).",
-    "Set on PER PROGRAM when an enum/char dispatch (e.g. a getopt option parser) renders as a deep if (x == 'p') ... else if (x == 't') ... chain instead of a switch; DESTRUCTIVE as a global default (synthesizes a BRANCHIND/JumpTable upstream never emits, and may convert a hand-written comparison chain).",
-    "option loweredswitch on" }
+    "Reconstruct a compiler-lowered comparison cascade (a GCC binary-search if/else tree over one variable) back into a switch with a synthesized BRANCHIND + jump-table (the S2 artifact Ghidra renders switches from).",
+    "On by default (DIV-4); the required binary-search-structure guard (a range/jle split) keeps it off hand-written linear if/else-if chains. Set OFF to restore the upstream if/else-if rendering of a lowered switch.",
+    "option loweredswitch off" }
 };
 
 int4 kunaNumSettables(void)

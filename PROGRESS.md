@@ -10,10 +10,19 @@ variable) back into a C `switch`. Validated on coreutils `fmt`/`main`.
 9 getopt cases + `default`** (0x70 'p', 0x74 't', 0x75 'u', 0x77 'w', 0x73 's', 0x67 'g',
 0x63 'c', and the two negative options -0x83/-0x82), correctly nested inside the getopt
 `while (... != -1)` loop — matching angr's expected output for
-`test_reverting_switch_clustering_and_lowering_fmt_main`. Default-off keeps upstream
-byte-identical: **204/204 unit + 675/675 datatests, PARITY OK, catalog OK**. New committed
-testcase `tests/stages/ghangr-loweredswitch.xml` (7 assertions; `docs/baseline-stages.json`
-→ 128 keys).
+`test_reverting_switch_clustering_and_lowering_fmt_main`. **DIV-4 default-on** and still
+**PARITY OK: 204/204 unit + 675/675 datatests, catalog OK** — see "Default-on flip" below.
+New committed testcase `tests/stages/ghangr-loweredswitch.xml` (7 assertions, pass-1 sets the
+option off; `docs/baseline-stages.json` → 128 keys).
+
+**Default-on flip (DIV-4).** Flipping `recover_lowered_switch` on naively regressed **10/675**
+upstream assertions: the pass also converted *hand-written* linear `if/else-if` chains
+(`elseif.xml` ×6, `copytrim.xml` ×3, `partialunion.xml` ×1) to switches. Discriminator added:
+**require the GCC binary-search structure** — the cascade must contain ≥1 range/`jle` split
+(`sawRange` in `recoverCascade`). A purely linear equality chain is a hand-written `if/else-if`
+and is left alone; a compiler-lowered switch has the balanced range-split tree. With the guard
+the ablation is **0/675 changed** and `fmt`/`main` still recovers. `option loweredswitch off`
+restores the upstream rendering. (`docs/divergences.md` DIV-4.)
 
 **The architectural problem (what made this hard).** angr edits its *structured region
 graph* (an S7 artifact) and emits a `SwitchCase` node. **Ghidra has no region-graph edit

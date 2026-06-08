@@ -220,6 +220,7 @@ static bool recoverCascade(Funcdata &data,BlockBasic *startbb,
   std::set<BlockBasic *> visited;
   std::vector<BlockBasic *> stack;
   stack.push_back(startbb);
+  bool sawRange = false;		// true once a range (binary-search) node is seen
 
   auto isCascade = [&](FlowBlock *fb)->BlockBasic * {
     if (fb == (FlowBlock *)0) return (BlockBasic *)0;
@@ -256,6 +257,7 @@ static bool recoverCascade(Funcdata &data,BlockBasic *startbb,
       else defaultVotes[targetStart(cn.contA)] += 1;
     }
     else {				// range node: both edges continue or fall to default
+      sawRange = true;
       FlowBlock *outs[2] = { cn.contA, cn.contB };
       for(int4 i=0;i<2;++i) {
 	BlockBasic *cb = isCascade(outs[i]);
@@ -267,6 +269,11 @@ static bool recoverCascade(Funcdata &data,BlockBasic *startbb,
 
   if (cases.size() < 3) return false;		// RULE3: need >= 3 cases
   if (defaultVotes.empty()) return false;
+  // Require the GCC binary-search structure (a range/jump-tree split).  A purely
+  // linear equality chain is a hand-written if/else-if, not a lowered switch, so
+  // leave it alone -- this is what keeps the default-on pass off upstream's
+  // elseif/copytrim/partialunion comparison chains.
+  if (!sawRange) return false;
 
   // Default = most-voted common sink.
   Address defAddr;

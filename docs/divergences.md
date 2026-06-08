@@ -93,3 +93,30 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   pinned under the new default (the two single-pass testcases gh8467/gh9218 assert the
   fix directly). `docs/baseline-stages.json` regenerated (121 assertions).
 - **Date**: 2026-06-08.
+
+---
+
+## DIV-4: lowered comparison-cascade switch recovery becomes the default
+
+- **Flip**: `loweredswitch` → **on** (the angr LoweredSwitchSimplifier port). Reconstructs a
+  GCC-lowered comparison cascade (a binary-search `if/else` tree over one variable) into a C
+  `switch` with a synthesized BRANCHIND + JumpTable; `option loweredswitch off` restores the
+  upstream `if/else-if` rendering. Unlike DIV-1..3 this is **not a correctness fix** — it is a
+  deliberate structure-recovery / readability default (SAILR-style), recorded here because it
+  changes default output.
+- **Corpus-clean guard**: the pass fires only on the GCC **binary-search structure** — the
+  cascade must contain at least one range/`jle` split. A purely linear equality chain is treated
+  as a hand-written `if/else-if` and left alone. This guard is exactly what keeps the default off
+  upstream's `elseif` / `copytrim` / `partialunion` comparison chains.
+- **Changed upstream assertions: 0 of 675** (204/204 unit unchanged); `docs/baseline.json` passes
+  as PARITY OK without regeneration. **Measured**: without the binary-search guard the flip
+  regressed **10** assertions (6 `elseif`, 3 `copytrim`, 1 `partialunion`) by converting
+  hand-written cascades to switches; adding the guard made the ablation clean while still
+  recovering the `fmt`/`main` getopt switch.
+- **Mechanism**: a stage-model feedback edge (mechanism c restart) — detect the cascade late on
+  the simplified CFG, then synthesize the S2 BRANCHIND+JumpTable artifact pre-SSA on the restart
+  so heritage rebuilds phi. See `PROGRESS.md` and `kuna_loweredswitch.{hh,cc}`.
+- **Stage-testcase**: `tests/stages/ghangr-loweredswitch.xml` (`fmt`/`main`) sets `option
+  loweredswitch off` for the bug pass so both directions stay pinned under the new default.
+  `docs/baseline-stages.json` (128 assertions).
+- **Date**: 2026-06-08.
