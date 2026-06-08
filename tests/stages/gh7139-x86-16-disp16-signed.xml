@@ -1,0 +1,36 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Real Mode">
+<!--
+    GH-7139: "Incorrect value displayed for the displacement constant in x86
+    16-bit assembly - ignoring the sign bit"
+    https://github.com/NationalSecurityAgency/ghidra/issues/7139
+
+    In x86 16-bit addressing a memory operand with a 16-bit displacement
+    (modrm mod=2) was decoded with the UNSIGNED `imm16` token, so a
+    displacement whose sign bit is set printed as a large positive value
+    (e.g. ES:[BX + 0xf7fc]) instead of the equivalent signed form
+    (ES:[BX + -0x804]).  The mod=1 disp8 forms already use the signed
+    `simm8_16` token; the mod=2 disp16 forms were inconsistent.
+
+    Bytes `66 26 ff b7 fc f7`:
+      66        operand-size override (PUSH dword)
+      26        ES segment override
+      ff /6     PUSH r/m
+      b7        modrm mod=2, reg=6 (PUSH), r/m=7 ([BX]+disp16)
+      fc f7     disp16 = 0xf7fc = signed -0x804
+
+    Stage: S1 decode / operand rendering (SLEIGH spec-fix, no option).  This
+    testcase asserts the FIXED signed rendering `-0x804` and forbids the buggy
+    unsigned `0xf7fc`.
+-->
+<bytechunk space="ram" offset="0x0">
+6626ffb7fcf7
+</bytechunk>
+</binaryimage>
+<script>
+  <com>disassemble 0x0 0x6</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH7139 #1: 16-bit disp16 rendered signed (BX + -0x804)" min="1" max="1">ES:\[BX \+ -0x804\]</stringmatch>
+<stringmatch name="GH7139 #2: the unsigned 0xf7fc displacement no longer appears" min="0" max="0">BX \+ 0xf7fc</stringmatch>
+</decompilertest>

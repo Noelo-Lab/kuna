@@ -63,6 +63,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../x86/data/languages/ia.sinc` | GH-7418: 32/16-bit `rel16` branch operand now masks the target to the low 16 bits (`(inst_next + simm16) & 0xFFFF`), zeroing the high bytes of EIP per Intel SDM `tempEIP := (EIP+DEST) AND 0000FFFFH`; the high-bit-preserving 64-bit form is kept under `@ifdef IA64` |
 
+| `specs/.../x86/data/languages/ia.sinc` | GH-7139: x86 16-bit modrm mod=2 displacement operands (`addr16`) now use the signed `simm16` token (matching the mod=1 `simm8_16` forms), so a disp16 with its sign bit set renders signed (`ES:[BX + -0x804]`) instead of unsigned (`0xf7fc`) — display-only, address arithmetic unchanged |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands

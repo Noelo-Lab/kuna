@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    55,
-    55
+    57,
+    57
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -21,6 +21,8 @@
     "data:GH6930 #2: default pipeline resolves 0x100000 to its function name (fix is DIV-2 default)",
     "data:GH6990 #1: default pipeline over-claims o0:o1 as 64-bit return (bug reproduced)",
     "data:GH6990 #2: returnpair single drops the o1 join (single-register return)",
+    "data:GH7139 #1: 16-bit disp16 rendered signed (BX + -0x804)",
+    "data:GH7139 #2: the unsigned 0xf7fc displacement no longer appears",
     "data:GH7190 #1: ovlesssimplify off restores the OV-flag garbage condition (old behavior; 0<= form via DIV-2 compareform)",
     "data:GH7190 #2: default pipeline collapses to a clean signed byte compare (fix is DIV-2 default)",
     "data:GH7418 #1: CALL rel16 target masks EIP to low 16 bits (0x7004)",

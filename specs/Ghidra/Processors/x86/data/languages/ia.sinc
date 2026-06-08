@@ -1043,14 +1043,15 @@ addr16: [SI + simm8_16]  is mod=1 & r_m=4 & SI; simm8_16        { local tmp=SI+s
 addr16: [DI + simm8_16]  is mod=1 & r_m=5 & DI; simm8_16        { local tmp=DI+simm8_16; export tmp; }
 addr16: [BP + simm8_16]  is mod=1 & r_m=6 & BP; simm8_16        { local tmp=BP+simm8_16; export tmp; }
 addr16: [BX + simm8_16]  is mod=1 & r_m=7 & BX; simm8_16        { local tmp=BX+simm8_16; export tmp; }
-addr16: [BX + SI + imm16]   is mod=2 & r_m=0 & BX & SI; imm16   { local tmp=BX+SI+imm16; export tmp; }
-addr16: [BX + DI + imm16]   is mod=2 & r_m=1 & BX & DI; imm16   { local tmp=BX+DI+imm16; export tmp; }
-addr16: [BP + SI + imm16]   is mod=2 & r_m=2 & BP & SI; imm16   { local tmp=BP+SI+imm16; export tmp; }
-addr16: [BP + DI + imm16]   is mod=2 & r_m=3 & BP & DI; imm16   {local tmp=BP+DI+imm16; export tmp; }
-addr16: [SI + imm16]  is mod=2 & r_m=4 & SI; imm16        { local tmp=SI+imm16; export tmp; }
-addr16: [DI + imm16]  is mod=2 & r_m=5 & DI; imm16        { local tmp=DI+imm16; export tmp; }
-addr16: [BP + imm16]  is mod=2 & r_m=6 & BP; imm16        { local tmp=BP+imm16; export tmp; }
-addr16: [BX + imm16]  is mod=2 & r_m=7 & BX; imm16        { local tmp=BX+imm16; export tmp; }
+# (kuna GH-7139) modrm mod=2 16-bit displacement is a signed disp16 (matches the mod=1 simm8_16 forms); render it signed so 0xf7fc prints as -0x804
+addr16: [BX + SI + simm16]   is mod=2 & r_m=0 & BX & SI; simm16   { local tmp=BX+SI+simm16; export tmp; }
+addr16: [BX + DI + simm16]   is mod=2 & r_m=1 & BX & DI; simm16   { local tmp=BX+DI+simm16; export tmp; }
+addr16: [BP + SI + simm16]   is mod=2 & r_m=2 & BP & SI; simm16   { local tmp=BP+SI+simm16; export tmp; }
+addr16: [BP + DI + simm16]   is mod=2 & r_m=3 & BP & DI; simm16   {local tmp=BP+DI+simm16; export tmp; }
+addr16: [SI + simm16]  is mod=2 & r_m=4 & SI; simm16        { local tmp=SI+simm16; export tmp; }
+addr16: [DI + simm16]  is mod=2 & r_m=5 & DI; simm16        { local tmp=DI+simm16; export tmp; }
+addr16: [BP + simm16]  is mod=2 & r_m=6 & BP; simm16        { local tmp=BP+simm16; export tmp; }
+addr16: [BX + simm16]  is mod=2 & r_m=7 & BX; simm16        { local tmp=BX+simm16; export tmp; }
 
 # 32-bit addressing modes   (the offset portion)
 addr32: [Rmr32]							is mod=0 & Rmr32  							 { export Rmr32; }
