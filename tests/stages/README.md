@@ -88,6 +88,8 @@ writeup, not here.
 
 | `gh8500-stackalias.xml` | [GH-8500](https://github.com/NationalSecurityAgency/ghidra/issues/8500) | S6 alias-facets / heritage ordering (store-through stack-pointer-alias) | `option stackalias on\|off` |
 
+| `gh8724-arraystride.xml` | [GH-8724](https://github.com/NationalSecurityAgency/ghidra/issues/8724) | S3 simplification quiescence (strided-induction array index → counter*stride) | `option arraystride on\|off` |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

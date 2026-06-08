@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-8724: a compiler-lowered `sizeof(*p)*i` array offset is not recovered as
+    an index.  https://github.com/NationalSecurityAgency/ghidra/issues/8724
+
+    Source (essence):  for (i = 0; i != n; i++) use( base[i].field[ base[i].k ] );
+                       where sizeof(base[i]) == 0x414.
+    Compiled (x86-64): the compiler strength-reduces the array walk into a
+                       loop-carried OFFSET accumulator that starts at 0 and is
+                       bumped by the element size (0x414) every iteration, in
+                       lock-step with the unit-step loop counter:
+                           3d0: xor %ebp,%ebp        ; offset acc = 0
+                           3d3: xor %ebx,%ebx        ; counter   = 0
+                           3e4: add $0x1,%rbx        ; counter += 1
+                           3eb: add $0x414,%rbp      ; acc     += 0x414  (stride)
+                       The original multiply `i * 0x414` never appears in the
+                       machine code, so Ghidra's pointer/PTRADD recovery has
+                       nothing to latch onto and the index `i` stays invisible.
+
+    Default output:    the raw strided accumulator survives into the rendered C
+                       (`iVar3 = iVar3 + 0x414;`), so the `+ 0x414` token appears.
+
+    Stage model: this is the S3 "simplification-quiescence" sub-stage.  In SSA the
+    two sibling loop-header phis
+        acc = MULTIEQUAL(#0, acc + 0x414)     // strided offset accumulator
+        cnt = MULTIEQUAL(#0, cnt + 1)         // unit-step counter
+    share predecessor edges and both start at 0, so `acc == cnt * 0x414` exactly
+    (the algebraic reverse of induction-variable strength reduction).  The P0
+    assertion `option arraystride on|off` (default off = upstream byte-identical)
+    gates RuleArrayStride, which rewrites the accumulator as `cnt * 0x414`,
+    re-exposing the index `i` (`* 0x414` token) and dropping the accumulator.
+
+    The script decompiles the function twice: pass 1 under the default pipeline
+    (assert #1 proves the issue reproduces: the `+ 0x414` accumulator), pass 2
+    with `option arraystride on` (assert #2 proves the stage-level intervention
+    recovers the index: the `* 0x414` multiply).  Each token occurs exactly once
+    across the combined stream, so each form must appear exactly once.
+-->
+<bytechunk space="ram" offset="0x3c0">
+4885f6745341554989fd41544989f45531ed5331db4883ec080f1f8000000000
+498b45004883c3014801e84881c514040000486390100400008bbc9000040000
+e8cbfeffff4939dc75d64883c4085b5d415c415dc30f1f00c3
+</bytechunk>
+<symbol space="ram" offset="0x3c0" name="test"/>
+</binaryimage>
+<script>
+  <com>lo fu test</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option arraystride on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH8724 #1: default pipeline leaves the raw strided accumulator (+ 0x414), index lost" min="1" max="1">\+ 0x414</stringmatch>
+<stringmatch name="GH8724 #2: option arraystride on recovers the array index as counter * 0x414" min="1" max="1">\* 0x414</stringmatch>
+</decompilertest>

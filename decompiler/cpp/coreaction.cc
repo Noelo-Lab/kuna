@@ -25,6 +25,7 @@
 #include "kuna_addcarrychain.hh"	// (kuna) GH-8913 carry-chain wide-add recovery
 #include "kuna_ovlesssimplify.hh"	// (kuna) GH-7190 OV-flag signed-less-than simplification
 #include "kuna_booleanmask.hh"	// (kuna) GH-1282 boolean sign-extension-mask simplification
+#include "kuna_arraystride.hh"	// (kuna) GH-8724 strided-induction array-index recovery
 #include "kuna_flagcompare.hh"	// (kuna) GH-1276/8777 flag-modelled comparison folding
 #include "kuna_stackprobeloop.hh"	// (kuna) GH-8017/6858 stack-probe-loop stack-pointer resolution
 
@@ -5791,6 +5792,7 @@ void ActionDatabase::universalAction(Architecture *conf)
 	actprop->addRule( new RuleThreeWayCompare("analysis") );
 	actprop->addRule( new RuleXorCollapse("analysis") );
 	actprop->addRule( new RuleAddMultCollapse("analysis") );
+	actprop->addRule( new RuleArrayStride("analysis") );	// (kuna) GH-8724: gated by arch flag recover_array_stride (default off)
 	actprop->addRule( new RuleCollapseConstants("analysis") );
 	actprop->addRule( new RuleTransformCpool("analysis") );
 	actprop->addRule( new RulePropagateCopy("analysis") );

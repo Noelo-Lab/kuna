@@ -384,6 +384,7 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "option memsetrecover", kstage_s5, "constsequence", "(kuna GH-9230) collapse constant-fill runs into builtin_memset" },
   { "option v850indirectbranch", kstage_s2, "flow-classification", "(kuna GH-8817) reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery" },
   { "option ovlesssimplify", kstage_s3, "simplification-quiescence", "(kuna GH-7190) collapse OV-flag signed-less-than idiom to a clean INT_SLESS" },
+  { "option arraystride", kstage_s3, "simplification-quiescence", "(kuna GH-8724) re-express a strided-induction offset accumulator as counter*stride to recover the array index" },
   { "option stackprobeloop", kstage_s2, "stack-pointer-normalization", "(kuna GH-8017/6858) resolve gcc stack-probe loop's stack-pointer MULTIEQUAL to a constant offset" },
   { "option flagcompare", kstage_s3, "simplification-quiescence", "(kuna GH-1276/8777) fold flag-modelled comparison idioms (boolean-into-sign-bit, N==V signed compare)" },
   { "force goto", kstage_s7, "edge-virtualization", "Override::insertForceGoto" },
@@ -523,7 +524,12 @@ static const KunaSettable settableTable[] = {
     kstage_s6, "alias-facets", kstrength_hard, kstage_s6, "GH-8500",
     "Hold a store-through-a-stack-pointer-alias (int *p=&x; *p=x; return *p) alive across the deadcode race so it is not dropped to an uninitialized stack read.",
     "Set on PER FUNCTION when a take-address-of-local + store-through-pointer returns a spurious uninitialized local (xStack_*); DESTRUCTIVE as a global default (conservatively pins stack stores live, suppressing legitimate dead-store removal).",
-    "option stackalias on" }
+    "option stackalias on" },
+  { "arraystride", "on|off", "off", false,
+    kstage_s3, "simplification-quiescence", kstrength_hard, kstage_s3, "GH-8724",
+    "Re-express a strength-reduced array walk: rewrite a loop offset accumulator (acc += sizeof) as counter*stride so the array index is recovered.",
+    "Set on when a strided loop renders a raw offset accumulator (e.g. iVar += 0x414) instead of an index; off (default) is upstream byte-identical.",
+    "option arraystride on" }
 };
 
 int4 kunaNumSettables(void)
