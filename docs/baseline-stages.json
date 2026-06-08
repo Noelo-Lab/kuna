@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    95,
-    95
+    97,
+    97
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -45,6 +45,8 @@
     "data:GH7190 #2: default pipeline collapses to a clean signed byte compare (fix is DIV-2 default)",
     "data:GH7418 #1: CALL rel16 target masks EIP to low 16 bits (0x7004)",
     "data:GH7418 #2: the unmasked 0x17004 target no longer appears",
+    "data:GH7451 #1: fli.s decodes (dest fa4, Zfa constant 0.25)",
+    "data:GH7451 #2: no longer an unresolved constructor",
     "data:GH7890 #1: vcvt lifts to native INT2FLOAT (no pseudo-op)",
     "data:GH7890 #1b: clean human-readable float cast in C",
     "data:GH7890 #2: no VectorSignedToFloat pseudo-op remains",

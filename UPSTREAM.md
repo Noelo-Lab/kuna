@@ -83,6 +83,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../8085/data/languages/8085.slaspec` | GH-6389: added the nine undocumented 8085 instructions (DSUB 0x08, ARHL 0x10, RDEL 0x18, LDSI 0x38, SHLX 0xD9, LHLX 0xED, RSTV 0xCB, JNK 0xDD, JK 0xFD) plus K/V undocumented flag registers, so their valid opcode bytes decode instead of failing constructor resolution (semantics per upstream commit 1577081; JK/JNK/RSTV flag effects added against kuna K_flag/V_flag) |
 
+| `specs/.../RISCV/data/languages/riscv.rv32f.sinc`, `riscv.table.sinc` | GH-7451: add the Zfa single-precision load-immediate `fli.s` (funct7=0x78 & op2024=0x1, disambiguated from `fmv.w.x`) — an `fliConstS` operand sub-table renders the Zfa constant table (index 8 -> 0.25) and the new `fli` pcodeop lifts the constant load; previously these bytes failed to decode (`??` undefined bytes / "Unable to resolve constructor") |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands

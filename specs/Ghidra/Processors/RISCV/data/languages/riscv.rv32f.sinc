@@ -152,10 +152,54 @@
 }
 
 
-# fmv.w.x D,s f0000053 fff0707f SIMPLE (0, 0) 
+# fmv.w.x D,s f0000053 fff0707f SIMPLE (0, 0)
 :fmv.w.x frd,rs1W is frd & rs1W & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x0 & funct7=0x78 & op2024=0x0
 {
 	fassignS(frd, rs1W);
+}
+
+# (kuna GH-7451) Zfa fli.s constant table: the rs1 field (op1519) is a 5-bit
+# index into the architectural fli constant table, not a register operand.
+# https://github.com/NationalSecurityAgency/ghidra/issues/7451
+fliConstS: "min"             is op1519=0  { export 0:$(SFLEN); }
+fliConstS: "min"             is op1519=1  { export 1:$(SFLEN); }
+fliConstS: "1.52587890625e-05" is op1519=2  { export 2:$(SFLEN); }
+fliConstS: "3.0517578125e-05"  is op1519=3  { export 3:$(SFLEN); }
+fliConstS: "0.00390625"      is op1519=4  { export 4:$(SFLEN); }
+fliConstS: "0.0078125"       is op1519=5  { export 5:$(SFLEN); }
+fliConstS: "0.0625"          is op1519=6  { export 6:$(SFLEN); }
+fliConstS: "0.125"           is op1519=7  { export 7:$(SFLEN); }
+fliConstS: "0.25"            is op1519=8  { export 8:$(SFLEN); }
+fliConstS: "0.3125"          is op1519=9  { export 9:$(SFLEN); }
+fliConstS: "0.375"           is op1519=10 { export 10:$(SFLEN); }
+fliConstS: "0.4375"          is op1519=11 { export 11:$(SFLEN); }
+fliConstS: "0.5"             is op1519=12 { export 12:$(SFLEN); }
+fliConstS: "0.625"           is op1519=13 { export 13:$(SFLEN); }
+fliConstS: "0.75"            is op1519=14 { export 14:$(SFLEN); }
+fliConstS: "0.875"           is op1519=15 { export 15:$(SFLEN); }
+fliConstS: "1.0"             is op1519=16 { export 16:$(SFLEN); }
+fliConstS: "1.25"            is op1519=17 { export 17:$(SFLEN); }
+fliConstS: "1.5"             is op1519=18 { export 18:$(SFLEN); }
+fliConstS: "1.75"            is op1519=19 { export 19:$(SFLEN); }
+fliConstS: "2.0"             is op1519=20 { export 20:$(SFLEN); }
+fliConstS: "2.5"             is op1519=21 { export 21:$(SFLEN); }
+fliConstS: "3.0"             is op1519=22 { export 22:$(SFLEN); }
+fliConstS: "4.0"             is op1519=23 { export 23:$(SFLEN); }
+fliConstS: "8.0"             is op1519=24 { export 24:$(SFLEN); }
+fliConstS: "16.0"            is op1519=25 { export 25:$(SFLEN); }
+fliConstS: "128.0"           is op1519=26 { export 26:$(SFLEN); }
+fliConstS: "256.0"           is op1519=27 { export 27:$(SFLEN); }
+fliConstS: "32768.0"         is op1519=28 { export 28:$(SFLEN); }
+fliConstS: "65536.0"         is op1519=29 { export 29:$(SFLEN); }
+fliConstS: "inf"             is op1519=30 { export 30:$(SFLEN); }
+fliConstS: "nan"             is op1519=31 { export 31:$(SFLEN); }
+
+# fli.s D,c f0100053 fff0707f Zfa (0, 0)
+# Zfa single-precision load-immediate.  Selected from fmv.w.x (same funct7=0x78)
+# by the rs2 field op2024=0x1; the rs1 field is the constant-table index.
+:fli.s frd,fliConstS is frd & fliConstS & op0001=0x3 & op0204=0x4 & op0506=0x2 & funct3=0x0 & funct7=0x78 & op2024=0x1
+{
+	fli(frd, fliConstS:1);
 }
 
 # fmv.x.w d,S e0000053 fff0707f SIMPLE (0, 0) 

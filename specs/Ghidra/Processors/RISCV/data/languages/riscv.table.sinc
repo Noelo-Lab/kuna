@@ -602,6 +602,8 @@ define pcodeop ebreak;
 define pcodeop ecall;
 define pcodeop fence;
 define pcodeop fence.i;
+# (kuna GH-7451) Zfa load-immediate: load a constant from the Zfa fli table.
+define pcodeop fli;
 
 
 # possible tokens:  r0711 r1519 r2024 r2731 cr0206 cr0711 cd0711

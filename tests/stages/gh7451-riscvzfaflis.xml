@@ -1,0 +1,37 @@
+<decompilertest>
+<binaryimage arch="RISCV:LE:32:default">
+<!--
+    GH-7451: "Ghidra does not recognize the RISC-V fli.s instruction"
+    https://github.com/NationalSecurityAgency/ghidra/issues/7451
+
+    The Zfa-extension single-precision load-immediate instruction fli.s
+    (encoding 0xf0140753 = bytes 53 07 14 f0) shares the FP-OP major opcode
+    (op0006=0x53) and funct7=0x78 with fmv.w.x, but is selected by the rs2
+    field op2024=0x1 (fmv.w.x has op2024=0x0).  The rs1 field op1519 is NOT a
+    register operand: it is a 5-bit index into the Zfa constant table.
+    Index 8 -> 0.25, dest fa4 (fr0711=0xe).
+
+    Before the fix the RISCV SLEIGH decode table had no constructor matching
+    funct7=0x78 & op2024=0x1, so the four valid bytes failed to decode:
+    Ghidra's listing showed four '?? NNh' undefined-byte code units and the
+    standalone decompiler reports "Unable to resolve constructor".
+
+    Fix (kuna GH-7451): add an fli.s constructor in riscv.rv32f.sinc with an
+    fliConstS operand sub-table that renders the Zfa constant table and lifts
+    the load via the new fli() pcodeop.  Stage S1 decode-table (SLEIGH
+    spec-fix, no option).
+
+    This testcase pins the FIXED decode: fli.s fa4,0.25, and forbids the buggy
+    "Unable to resolve constructor" failure.
+-->
+<bytechunk space="ram" offset="0x10010">
+530714f0
+</bytechunk>
+</binaryimage>
+<script>
+  <com>disassemble 0x10010 0x10014</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH7451 #1: fli.s decodes (dest fa4, Zfa constant 0.25)" min="1" max="1">^0x00010010: fli\.s\s+fa4,0\.25</stringmatch>
+<stringmatch name="GH7451 #2: no longer an unresolved constructor" min="0" max="0">Unable to resolve constructor</stringmatch>
+</decompilertest>
