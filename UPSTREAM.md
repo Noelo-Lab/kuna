@@ -77,6 +77,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../ARM/data/languages/ARMneon.sinc` | GH-7890: scalar VFP vcvt int<->float (`.f16/.f32/.f64` <- `.s32/.u32`) re-lifted from the `VectorSignedToFloat`/`VectorUnsignedToFloat` pseudo-ops (which read the FPSCR rounding-mode field `fpscr[22,2]`, injecting an `in_fpscr` artifact + noisy `(fpscr>>0x16)&3` and never optimizing away) to native SLEIGH `int2float` (sext/zext-to-8 idiom from ARMv8.sinc) |
 
+| `specs/.../Atmel/data/languages/avr8.sinc` | GH-1951, GH-8844: rel12addr/rel12dst now mask the RJMP/RCALL relative target with `& 0x0FFF` on the 16-bit (PCBYTESIZE==2) AVR8 variant, so a 12-bit relative branch wraps at the 4 KiW code-space boundary (small AVRs) instead of producing an out-of-range word like 0xf807/0xf817; PCBYTESIZE==3 (xmega/atmega256) is unchanged via `@else` |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands

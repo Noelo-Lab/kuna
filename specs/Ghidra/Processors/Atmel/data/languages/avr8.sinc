@@ -464,13 +464,28 @@ rel7dst: byteOffset  is op3to9signed & rel7addr [ byteOffset = (op3to9signed + i
   export rel7addr;
 }
 
-rel12addr: rel  is oplow12signed [ rel = oplow12signed + inst_start + 1; ] { 
+@if PCBYTESIZE == "2"
+# (kuna GH-1951, GH-8844) RJMP/RCALL have a 12-bit relative displacement and on
+# AVR8 the program counter wraps at the device's code-space boundary.  On the
+# 16-bit (small-AVR) variant the relative target must wrap at 4 KiW; without the
+# & 0x0FFF mask a negative offset wraps to an out-of-range word like 0xf807 /
+# 0xf817 instead of the in-range 0x807 / 0x817.
+rel12addr: rel  is oplow12signed [ rel = (oplow12signed + inst_start + 1) & 0x0FFF; ] {
   export *[code]:2 rel;
 }
 
-rel12dst: byteOffset  is oplow12signed & rel12addr [ byteOffset = (oplow12signed + inst_start + 1) << 1; ] { 
+rel12dst: byteOffset  is oplow12signed & rel12addr [ byteOffset = ((oplow12signed + inst_start + 1) & 0x0FFF) << 1; ] {
   export rel12addr;
 }
+@else
+rel12addr: rel  is oplow12signed [ rel = oplow12signed + inst_start + 1; ] {
+  export *[code]:2 rel;
+}
+
+rel12dst: byteOffset  is oplow12signed & rel12addr [ byteOffset = (oplow12signed + inst_start + 1) << 1; ] {
+  export rel12addr;
+}
+@endif
 
 abs22addr: loc  is op4to8 & opbit0; next16 [ loc = (op4to8 << 17) | (opbit0 << 16) | next16; ] { 
  export *[code]:2 loc;

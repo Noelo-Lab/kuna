@@ -66,6 +66,8 @@ writeup, not here.
 
 | `gh7890-arm-vcvt.xml` | [GH-7890](https://github.com/NationalSecurityAgency/ghidra/issues/7890) | S2 p-code lift (ARM scalar VFP vcvt, spec-fix, no option) | SLEIGH `vcvt.*32` lifts to native `int2float` (no `VectorSignedToFloat` pseudo-op / fpscr read) |
 
+| `gh1951-avr-rcallwrap.xml` | [GH-1951](https://github.com/NationalSecurityAgency/ghidra/issues/1951) | S1 decode-table / 02 P-code lift (avr8 SLEIGH spec-fix, no option) | SLEIGH rel12addr masks RJMP/RCALL target `& 0x0FFF` (4 KiW wrap) |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

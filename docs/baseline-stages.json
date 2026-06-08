@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    75,
-    75
+    83,
+    83
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -11,6 +11,10 @@
     "data:GH1282 #2: default pipeline folds (b<<7)s>>7 (fix is DIV-2 default)",
     "data:GH1537 #1: memsetrecover off restores the element-store form (old behavior, opt-in)",
     "data:GH1537 #2: default pipeline reconstructs the single memset (fix is DIV-2 default; routing via the GH-9230 sub-stage)",
+    "data:GH1951 #1: rcall disassembles to the in-range 4KiW-wrapped target 0x100e",
+    "data:GH1951 #2: lifted call targets the masked in-range word 0x0807",
+    "data:GH1951 #3: the unmasked out-of-range word 0xf807 must NOT appear",
+    "data:GH1951 #4: rcall must NOT render only as the bare relative operand -0xff2",
     "data:GH2786 #1: nested float negation parenthesized (default-flip fix)",
     "data:GH2786 #2: the mis-parsing predecrement token is gone",
     "data:GH558 #1: compareform canonical restores upstream x < 9 (old behavior, opt-in)",
@@ -45,6 +49,10 @@
     "data:GH8790 #3: stream re-aligned onto the trailing NOP at 0x1006 (both reg-forms were 3 bytes)",
     "data:GH8817 #1: V850 jmp [reg] renders as a computed call (bug reproduced)",
     "data:GH8817 #2: v850indirectbranch on recovers the switch",
+    "data:GH8844 #1: rjmp disassembles to the in-range 4KiW-wrapped target 0x102e",
+    "data:GH8844 #2: the wrapped goto lands at the in-range block 0x0817 (function decompiles)",
+    "data:GH8844 #3: the unmasked out-of-range word 0xf817 must NOT appear",
+    "data:GH8844 #4: rjmp must NOT render only as the bare relative operand -0xfd2",
     "data:GH8913 #1: addcarrychain off leaks CONCAT11((0xNN < ...) (old behavior, both paths)",
     "data:GH8913 #1b: addcarrychain off leaks raw CARRY1 inside CONCAT11 (old behavior, both paths)",
     "data:GH8913 #2: default pipeline fuses path-3 first add into a wide add (fix is DIV-2 default)",

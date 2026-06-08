@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="avr8:LE:16:default">
+<!--
+    GH-1951: "incorrect decompiled address for relative jumps with AVR8"
+    https://github.com/NationalSecurityAgency/ghidra/issues/1951
+
+    On small AVR8 devices (<= 4 KiW / 8 KiB flash, e.g. ATmega8/ATmega8535) the
+    RCALL/RJMP relative branch target must wrap at the 4 KiW code-space boundary:
+    the program counter is only 12 bits wide.  The avr8.sinc rel12addr / rel12dst
+    constructors computed  rel = oplow12signed + inst_start + 1  with no mask, so a
+    negative RCALL offset wrapped using full 16-bit arithmetic to an out-of-range
+    word like 0xf807 (byte 0x1f00e) instead of the in-range 0x807 (byte 0x100e).
+    The lift then carried that bogus target as  call ffunc_0xf807  and disassembly
+    could not follow flow into non-existing memory.
+
+    Bytes  06 d8  = RCALL with oplow12 = 0x806 (signed -2042) at word 0.
+      rel = -2042 + 0 + 1 = -2041 -> 16-bit word 0xf807 (BUGGY)
+      masked & 0x0FFF       -> word 0x807, byte 0x100e (CORRECT)
+
+    Stage: 02 P-code lift (SLEIGH semantic constructor) / surfaces in 03
+    disassembly.  Fix (kuna GH-1951, GH-8844): mask the rel12 target with
+    & 0x0FFF on the 16-bit (PCBYTESIZE==2) AVR8 variant.
+
+    A RET (0x9508 -> bytes 08 95) is mapped at word 0x807 (byte 0x100e) so the
+    masked call target resolves to a real in-range code address.  The first
+    assertion pins the fixed in-range target; the others forbid the buggy
+    out-of-range 0xf807 form.
+-->
+<bytechunk space="code" offset="0x0">
+06d80895
+</bytechunk>
+<bytechunk space="code" offset="0x100e">
+0895
+</bytechunk>
+<symbol space="code" offset="0x0" name="FUN_0"/>
+</binaryimage>
+<script>
+  <com>disassemble 0x0 0x4</com>
+  <com>load function FUN_0</com>
+  <com>decompile</com>
+  <com>print raw</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH1951 #1: rcall disassembles to the in-range 4KiW-wrapped target 0x100e" min="1" max="1">^0x0000: rcall     0x100e</stringmatch>
+<stringmatch name="GH1951 #2: lifted call targets the masked in-range word 0x0807" min="1" max="1">call ffunc_0x0807</stringmatch>
+<stringmatch name="GH1951 #3: the unmasked out-of-range word 0xf807 must NOT appear" min="0" max="0">0xf807</stringmatch>
+<stringmatch name="GH1951 #4: rcall must NOT render only as the bare relative operand -0xff2" min="0" max="0">rcall     -0xff2</stringmatch>
+</decompilertest>

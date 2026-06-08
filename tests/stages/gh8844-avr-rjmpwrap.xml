@@ -1,0 +1,51 @@
+<decompilertest>
+<binaryimage arch="avr8:LE:16:default">
+<!--
+    GH-8844: "AVR8: RJMP/RCALL on small AVRs wrap around at 4 Ki words"
+    https://github.com/NationalSecurityAgency/ghidra/issues/8844
+
+    Same root cause as GH-1951.  On AVR8 MCUs with <= 4 KiW (8 KiB) of flash, the
+    RJMP/RCALL relative branch target must wrap at the 4 KiW code-space boundary
+    (the program counter is 12 bits wide).  These small AVRs lack absolute
+    JMP/CALL, so RJMP/RCALL alone must address the whole codespace.  The avr8.sinc
+    rel12addr / rel12dst constructors did not mask the 12-bit relative target, so a
+    negative RJMP wrapped using full 16-bit arithmetic to the out-of-range word
+    0xf817 (byte 0x1f02e, LAB_code_f817) instead of the in-range 0x817 (byte
+    0x102e, FUN_code_0817).  Because RJMP follows flow, the unmasked target sent
+    disassembly/decompilation into non-existing memory.
+
+    Bytes  16 c8  = RJMP with oplow12 = 0x816 (signed -2026) at word 0.
+      rel = -2026 + 0 + 1 = -2025 -> 16-bit word 0xf817 (BUGGY, BRANCH code 0x1f02e)
+      masked & 0x0FFF       -> word 0x817, byte 0x102e (CORRECT)
+
+    Stage: 03 disassembly / 02 P-code lift.  Fix (kuna GH-1951, GH-8844): mask the
+    rel12 target with & 0x0FFF on the 16-bit (PCBYTESIZE==2) AVR8 variant.
+
+    A RET (0x9508 -> bytes 08 95) is mapped at byte 0x102e (word 0x817) so that the
+    masked goto target resolves to a real in-range code address and the function
+    decompiles.  With the bug the goto goes to the unmapped word 0xf817 and the
+    decompiler aborts ("Bytes at 0xf817 are not mapped").  Assertion #1 pins the
+    fixed in-range disassembly target; #2 proves the function now decompiles with
+    the goto landing at the wrapped in-range block 0x0817; the rest forbid the
+    buggy out-of-range 0xf817 form.
+-->
+<bytechunk space="code" offset="0x0">
+16c80895
+</bytechunk>
+<bytechunk space="code" offset="0x102e">
+0895
+</bytechunk>
+<symbol space="code" offset="0x0" name="FUN_0"/>
+</binaryimage>
+<script>
+  <com>disassemble 0x0 0x4</com>
+  <com>load function FUN_0</com>
+  <com>decompile</com>
+  <com>print raw</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH8844 #1: rjmp disassembles to the in-range 4KiW-wrapped target 0x102e" min="1" max="1">^0x0000: rjmp      0x102e</stringmatch>
+<stringmatch name="GH8844 #2: the wrapped goto lands at the in-range block 0x0817 (function decompiles)" min="1" max="1">Basic Block 0 0x0000-0x0817</stringmatch>
+<stringmatch name="GH8844 #3: the unmasked out-of-range word 0xf817 must NOT appear" min="0" max="0">0xf817</stringmatch>
+<stringmatch name="GH8844 #4: rjmp must NOT render only as the bare relative operand -0xfd2" min="0" max="0">rjmp      -0xfd2</stringmatch>
+</decompilertest>
