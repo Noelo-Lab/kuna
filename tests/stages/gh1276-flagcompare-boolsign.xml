@@ -30,6 +30,7 @@ e4fdfcc2998f992099100dedae0470010c14c394cdee943740ed3099037f01227f0022
 <symbol space="CODE" offset="0x0" name="FUN_0"/>
 </binaryimage>
 <script>
+  <com>option flagcompare off</com>
   <com>lo fu FUN_0</com>
   <com>decompile</com>
   <com>print C</com>

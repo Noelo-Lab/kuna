@@ -66,3 +66,30 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   default-interactions: GH-8471's symbolic pointer renders `&fn[1]` (arraynotation)
   and GH-7190's opt-out garbage shows `0 <=` (compareform).
 - **Date**: 2026-06-07.
+
+---
+
+## DIV-3: six more stage-model fixes become the default
+
+- **Flip** (this session, per the standing "auto-flip ablation-clean fixes" decision):
+  `flagcompare` → **on**, `stackprobeloop` → **on**, `dynamichashmax` → **on**,
+  `arraystride` → **on**, `condexeplace` → **on**, `inputvarnodeadjust` → **on**.
+  Every option remains settable; `option <name> off` restores the upstream behavior.
+- **Deliberately NOT flipped** (destructive, stay opt-in):
+  - `switchmodbound` — may over-bound an unrelated register-indirect jump on a program
+    whose switch genuinely has no modulo/and-mask guard; correct only per-program.
+  - `stackalias` — relaxes a dead-store race in alias analysis; sound on the repro but
+    a global default could keep a genuinely-dead store elsewhere.
+  - `sparcstructret` — reclassifies a post-call `unimp` as fall-through; correct for the
+    SPARC struct-return ABI but would mis-handle a real trap on another target.
+- **Justification**: all six resolve open upstream issues (GH-1276/8777, 8017, 8467,
+  8724, 9203, 9218) where the kuna output is strictly more faithful, and the ablation
+  (all six forced on, full 204+675 suite) changed **0 of 675** assertions — their fix
+  patterns do not occur in the upstream corpus.
+- **Changed upstream assertions: 0 of 675** (204/204 unit unchanged); `docs/baseline.json`
+  passes as PARITY OK without regeneration.
+- **Stage-testcase inversion**: the five two-pass testcases (gh1276, gh8777, gh8017,
+  gh8724, gh9203) now set `option <name> off` for the bug pass so both directions stay
+  pinned under the new default (the two single-pass testcases gh8467/gh9218 assert the
+  fix directly). `docs/baseline-stages.json` regenerated (121 assertions).
+- **Date**: 2026-06-08.

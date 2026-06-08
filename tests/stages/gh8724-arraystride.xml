@@ -45,6 +45,7 @@ e8cbfeffff4939dc75d64883c4085b5d415c415dc30f1f00c3
 <symbol space="ram" offset="0x3c0" name="test"/>
 </binaryimage>
 <script>
+  <com>option arraystride off</com>
   <com>lo fu test</com>
   <com>decompile</com>
   <com>print C</com>

@@ -63,6 +63,7 @@ e86efeffffb800000000c9c3
 <symbol space="ram" offset="0x100000" name="main"/>
 </binaryimage>
 <script>
+  <com>option stackprobeloop off</com>
   <com>lo fu main</com>
   <com>dec</com>
   <com>print C</com>
