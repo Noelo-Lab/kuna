@@ -70,6 +70,8 @@ writeup, not here.
 
 | `gh4788-v850-bcond-disp17.xml` | [GH-4788](https://github.com/NationalSecurityAgency/ghidra/issues/4788) | S1 decode-table (V850 spec-fix, no option) | SLEIGH adds the RH850 Bcond disp17 branch (`f9 07 49 fe` -> `bnc`, not `ld.hu`) |
 
+| `gh6389-8085-undoc.xml` | [GH-6389](https://github.com/NationalSecurityAgency/ghidra/issues/6389) | S1 decode-table (8085 spec-fix, no option) | Nine undocumented 8085 instructions (DSUB/ARHL/RDEL/LDSI/SHLX/LHLX/RSTV/JNK/JK) now decode |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

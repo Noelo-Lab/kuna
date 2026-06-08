@@ -21,6 +21,11 @@ define register offset=0x20 size=2 [ PC SP ];
 # S: Sign
 define register offset=0x30 size=1 [ S_flag Z_flag AC_flag P_flag CY_flag ];
 
+# Undocumented flag bits (kuna GH-6389):
+# K (a.k.a. X5/UI): underflow indicator, tested by JK/JNK
+# V: overflow indicator, tested by RSTV
+define register offset=0x35 size=1 [ K_flag V_flag ];
+
 define token opbyte (8)
    op0_8     = (0,7)
    op6_2     = (6,7)
@@ -547,5 +552,71 @@ cc: "M"             is bits3_3=0x7                              { export S_flag;
 
 :OUT IOAddr8  is op0_8=0xd3; IOAddr8 {
 	IOAddr8 = A;
+}
+
+################################################################
+# Undocumented 8085 instructions (kuna GH-6389)
+# Valid on real silicon but omitted by the official Intel ISA.
+# Opcodes and semantics follow upstream Ghidra commit 1577081
+# (Intel 8085 undocumented opcodes); the K/V flag effects of
+# JK/JNK/RSTV are modeled here against the kuna K_flag/V_flag.
+# https://github.com/NationalSecurityAgency/ghidra/issues/6389
+################################################################
+
+# DSUB - double subtraction: HL = HL - BC
+:DSUB HL,BC  is op0_8=0x08 & HL & BC {
+	setSubtractFlags(HL,BC);
+	HL = HL - BC;
+	setResultFlags(HL);
+}
+
+# ARHL - arithmetic shift right of HL (sign-preserving)
+:ARHL  is op0_8=0x10 {
+	CY_flag = HL:1 & 0x01;
+	HL = HL s>> 1;
+}
+
+# RDEL - rotate DE left through carry
+:RDEL  is op0_8=0x18 {
+	local hibit = DE >> 15;
+	DE = (DE << 1) | hibit;
+	CY_flag = hibit:1;
+}
+
+# LDSI - load DE with SP plus immediate byte
+:LDSI DE,(SP,imm8)  is op0_8=0x38 & DE & SP; imm8 {
+	local ptr:2 = SP + imm8;
+	DE = *:2 ptr;
+}
+
+# SHLX - store HL indirect through DE
+:SHLX HL,(DE)  is op0_8=0xd9 & HL & DE {
+	ptr:2 = DE;
+	*:2 ptr = HL;
+}
+
+# LHLX - load HL indirect through DE
+:LHLX HL,(DE)  is op0_8=0xed & HL & DE {
+	ptr:2 = DE;
+	HL = *:2 ptr;
+}
+
+# RSTV - restart on overflow (V flag): if V set, call to 0x40
+:RSTV  is op0_8=0xcb {
+	if (V_flag == 0) goto inst_next;
+	tmp:2 = inst_next;
+	push16(tmp);
+	target:2 = 0x40;
+	call [target];
+}
+
+# JNK - jump if K (X5) flag clear
+:JNK Addr16  is op0_8=0xdd; Addr16 {
+	if (K_flag == 0) goto Addr16;
+}
+
+# JK - jump if K (X5) flag set
+:JK Addr16  is op0_8=0xfd; Addr16 {
+	if (K_flag) goto Addr16;
 }
 

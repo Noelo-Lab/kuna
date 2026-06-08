@@ -1,0 +1,52 @@
+<decompilertest>
+<binaryimage arch="8085:LE:16:default">
+<!--
+    GH-6389: "8085 undocumented instructions are missing"
+    https://github.com/NationalSecurityAgency/ghidra/issues/6389
+
+    Ghidra's 8085 SLEIGH module follows the official Intel ISA and omits the
+    well-known undocumented 8085 instructions.  Their opcode bytes are valid on
+    real silicon but had no decode entry, so they failed to resolve a
+    constructor (the decompiler aborts; in Ghidra's listing they render as `??`
+    bad bytes).
+
+    Fix (kuna GH-6389, modeled on upstream Ghidra commit 1577081): add the nine
+    single-opcode undocumented instructions plus the undocumented K and V flag
+    registers:
+      DSUB 0x08, ARHL 0x10, RDEL 0x18, LDSI 0x38, SHLX 0xD9, LHLX 0xED,
+      RSTV 0xCB, JNK 0xDD, JK 0xFD.
+
+    Byte stream (one of each, with operands):
+      0x00 08          DSUB HL,BC
+      0x01 10          ARHL
+      0x02 18          RDEL
+      0x03 38 04       LDSI DE,(SP,0x4)
+      0x05 d9          SHLX HL,(DE)
+      0x06 ed          LHLX HL,(DE)
+      0x07 cb          RSTV
+      0x08 dd 34 12    JNK 0x1234
+      0x0b fd 78 56    JK  0x5678
+
+    Stage: S1 decode-table (SLEIGH spec-fix, no option). This testcase asserts
+    every undocumented opcode now decodes to its proper mnemonic, and that no
+    byte is left as an undecoded `??`.
+-->
+<bytechunk space="ram" offset="0x0">
+0810183804d9edcbdd3412fd7856
+</bytechunk>
+</binaryimage>
+<script>
+  <com>disassemble 0x0 0xe</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH6389 #1: DSUB 0x08 decodes" min="1" max="1">^0x0000: DSUB      HL,BC</stringmatch>
+<stringmatch name="GH6389 #2: ARHL 0x10 decodes" min="1" max="1">^0x0001: ARHL</stringmatch>
+<stringmatch name="GH6389 #3: RDEL 0x18 decodes" min="1" max="1">^0x0002: RDEL</stringmatch>
+<stringmatch name="GH6389 #4: LDSI 0x38 decodes with imm8 operand" min="1" max="1">^0x0003: LDSI      DE,\(SP,0x4\)</stringmatch>
+<stringmatch name="GH6389 #5: SHLX 0xD9 decodes" min="1" max="1">^0x0005: SHLX      HL,\(DE\)</stringmatch>
+<stringmatch name="GH6389 #6: LHLX 0xED decodes" min="1" max="1">^0x0006: LHLX      HL,\(DE\)</stringmatch>
+<stringmatch name="GH6389 #7: RSTV 0xCB decodes" min="1" max="1">^0x0007: RSTV</stringmatch>
+<stringmatch name="GH6389 #8: JNK 0xDD decodes with addr16 operand" min="1" max="1">^0x0008: JNK       0x1234</stringmatch>
+<stringmatch name="GH6389 #9: JK 0xFD decodes with addr16 operand" min="1" max="1">^0x000b: JK        0x5678</stringmatch>
+<stringmatch name="GH6389 #10: no undecoded bad bytes remain" min="0" max="0">\?\?</stringmatch>
+</decompilertest>

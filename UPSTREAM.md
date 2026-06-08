@@ -81,6 +81,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../V850/data/languages/{Helpers/Tokens.sinc, Helpers/Extras.sinc, Instructions/Special.sinc}` | GH-4788: add the RH850 (G3KH) Bcond disp17 conditional branch (`:b^c0003 adr17` with reg2 fixed to 0). New tokens `s0404`/`op1731` + `adr17` subtable; constructor is more specific than the overlapping `ld.hu disp16[reg1],reg2` (shared op0510=0x3F & word2.bit0=1), so `f9 07 49 fe` now decodes as `bnc +0x1963d8` instead of `ld.hu -0x1b8[r25], r0` |
 
+| `specs/.../8085/data/languages/8085.slaspec` | GH-6389: added the nine undocumented 8085 instructions (DSUB 0x08, ARHL 0x10, RDEL 0x18, LDSI 0x38, SHLX 0xD9, LHLX 0xED, RSTV 0xCB, JNK 0xDD, JK 0xFD) plus K/V undocumented flag registers, so their valid opcode bytes decode instead of failing constructor resolution (semantics per upstream commit 1577081; JK/JNK/RSTV flag effects added against kuna K_flag/V_flag) |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands
