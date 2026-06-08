@@ -85,7 +85,7 @@ Live triage (Phase B, 9-agent workflow) results. Buckets: **20 spec-fix · 12 st
 | 8017 | x86 | stage-exposure | S6 | x86-stack-clash-probe-loop | hard | 4012 | stackprobeloop | triaged |
 | 8028 | x86 | not-viable | S1 | java-autoanalysis-code-following | hard | — | — | not-viable |
 | 8391 | ARM | spec-fix | S2 | arm-thumb-cde-guard | medium | — | — | triaged |
-| 8456 | ARM | spec-fix | S2 | arm-missing-instruction-decode | medium | — | — | triaged |
+| 8456 | ARM | spec-fix | S2 | arm-missing-instruction-decode | medium | — | — | **committed** |
 | 8467 | AARCH64 | stage-exposure | S6 | dynamic-hash-maxduplicates | medium | 4013 | dynamichashmax | triaged |
 | 8500 | x86_64 | stage-exposure | S3 | stack-alias-deadstore-elim | hard | 4014 | stackalias | triaged |
 | 8694 | x86_64 | not-viable | P0 | dwarf-local-import-trigger | medium | — | — | not-viable |

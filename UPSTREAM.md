@@ -71,6 +71,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../ARM/data/languages/ARMinstructions.sinc` | GH-5897: register-to-register move constructors `:cpy^COND Rd,rm` / `:cpy^COND lr,rm` renamed to `:mov^COND ...` so the UAL mnemonic `mov` is emitted instead of the deprecated pre-UAL `cpy` (identical p-code; control-flow `cpy pc,...` forms left unchanged) |
 
+| `specs/.../ARM/data/languages/ARMinstructions.sinc` | GH-8456: add ARMv7-A/v8 MRS (Banked register) — new `bankRegM0`/`bankRegM1`/`mrsBankIdx` token fields, banked-GPR `attach names`, `define pcodeop readBankedReg`, and two `:mrs^COND Rd,bankReg*` constructors (R=0, both M halves). `00 02 09 E1` -> `mrs r0,r9_fiq` (was undecodable) |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands

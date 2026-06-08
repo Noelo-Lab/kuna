@@ -182,6 +182,9 @@ define token instrArm (32)
     c1621=(16,21)
     c1620=(16,20)
     c1619=(16,19)
+    bankRegM0=(16,19)	# (kuna GH-8456) MRS/MSR (Banked register) name field, M(bit8)=0
+    bankRegM1=(16,19)	# (kuna GH-8456) MRS/MSR (Banked register) name field, M(bit8)=1
+    mrsBankIdx=(16,19)	# (kuna GH-8456) numeric M1 field for the SYSm id passed to readBankedReg
     c1618=(16,18)
     c1617=(16,17)
     c1616=(16,16)
@@ -700,6 +703,12 @@ attach names [ thv_cpn ] [ p0 p1 p2 p3 p4 p5 p6 p7  ];
 attach names [ ibOption ] [ opt0 opt1 opt2 opt3 opt4 opt5 opt6 opt7 opt8 opt9 opt10 opt11 opt12 opt13 opt14 SY ];
 attach names [ dbOption ] [ opt0 opt1 OSHST OSH opt4 opt5 NSHST NSH opt8 opt9 ISHST ISH opt12 opt13 ST SY ];
 
+# (kuna GH-8456) MRS/MSR (Banked register): banked GPR names selected by
+# SYSm = {M(bit8) : M1(bits19:16)}.  M=0 covers the usr/fiq banked GPRs, M=1
+# covers the irq/svc/abt/und/mon/hyp banked GPRs.  Names are display-only.
+attach names [ bankRegM0 ] [ r8_usr r9_usr r10_usr r11_usr r12_usr sp_usr lr_usr _ r8_fiq r9_fiq r10_fiq r11_fiq r12_fiq sp_fiq lr_fiq _ ];
+attach names [ bankRegM1 ] [ lr_irq sp_irq lr_svc sp_svc lr_abt sp_abt lr_und sp_und _ _ _ _ lr_mon sp_mon elr_hyp sp_hyp ];
+
 macro addflags(op1,op2) {
  tmpCY = carry(op1,op2);
  tmpOV = scarry(op1,op2);
@@ -797,6 +806,7 @@ shift1: "#"^value 		is I25=1 & immed & rotate
 }
 
 ####################
+define pcodeop readBankedReg;		# (kuna GH-8456) MRS (Banked register): read banked reg by SYSm id
 define pcodeop coproc_moveto_Main_ID;
 define pcodeop coproc_moveto_Cache_Type;
 define pcodeop coproc_moveto_TCM_Status;
@@ -4261,6 +4271,23 @@ ArmPCRelImmed12: reloff		is U23=0 & immed & rotate
 {
   build COND;
   Rd = spsr;
+}
+
+# (kuna GH-8456) MRS (Banked register), ARMv7-A/v8: cond 00010 R 00 M1 Rd 001 M 0000
+# R=0 reads a banked general-purpose register selected by SYSm = {M(bit8):M1}.
+# e.g. 00 02 09 E1 (0xe1090200) -> mrs r0,r9_fiq.  The banked register is not a
+# modeled varnode, so the value is produced by a pcodeop tagged with the SYSm id.
+:mrs^COND Rd,bankRegM0 	is $(AMODE) & ARMcond=1 & COND & c2327=2 & c2222=0 & c2021=0 & bankRegM0 & mrsBankIdx & Rd & c1011=0 & c0909=1 & c0808=0 & c0407=0 & c0003=0
+{
+  build COND;
+  Rd = readBankedReg(mrsBankIdx:1);
+}
+
+:mrs^COND Rd,bankRegM1 	is $(AMODE) & ARMcond=1 & COND & c2327=2 & c2222=0 & c2021=0 & bankRegM1 & mrsBankIdx & Rd & c1011=0 & c0909=1 & c0808=1 & c0407=0 & c0003=0
+{
+  build COND;
+  local sysm:1 = mrsBankIdx + 16;
+  Rd = readBankedReg(sysm);
 }
 
 :msr^COND cpsrmask,shift1 	is $(AMODE) & ARMcond=1 & COND & c2027=50 & cpsrmask & c1215=15 & c2627=0 & shift1

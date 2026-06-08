@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    66,
-    66
+    68,
+    68
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -29,6 +29,8 @@
     "data:GH7190 #2: default pipeline collapses to a clean signed byte compare (fix is DIV-2 default)",
     "data:GH7418 #1: CALL rel16 target masks EIP to low 16 bits (0x7004)",
     "data:GH7418 #2: the unmasked 0x17004 target no longer appears",
+    "data:GH8456 #1: MRS (Banked) decodes to 'mrs r0,r9_fiq'",
+    "data:GH8456 #2: bytes no longer fail to decode",
     "data:GH8471 #1: thumbfuncptr off restores the raw-hex form (old behavior, opt-in)",
     "data:GH8471 #2: default pipeline preserves the symbolic form, &fn[1] via DIV-2 arraynotation (fix is DIV-2 default)",
     "data:GH8790 #1: 0f0dc0 (PREFETCH reg-form) decodes at 0x1000",
