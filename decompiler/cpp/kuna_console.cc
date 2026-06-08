@@ -216,6 +216,8 @@ static string kunaLiveValue(Architecture *conf,const string &option)
     return conf->return_single ? "single" : "pair";
   if (option == "v850indirectbranch")
     return conf->v850_indirect_branch ? "on" : "off";
+  if (option == "switchmodbound")
+    return conf->switch_modulo_bound ? "on" : "off";
   return "";
 }
 

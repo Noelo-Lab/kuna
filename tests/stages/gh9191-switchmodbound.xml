@@ -1,0 +1,45 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-9191: "Could not recover jumptable ... Too many branches" for a switch
+    whose table index is bounded by a modulo (index % N) rather than a guard.
+    https://github.com/NationalSecurityAgency/ghidra/issues/9191
+
+    The dispatch computes  goto *(LOAD( (index % 5) * 8 + 0x401089 ))  with a
+    5-entry address table at 0x401089:
+        0x401034, 0x401042, 0x401050, 0x40105e, 0x40106c
+    The basic jump-table model (jumptable.cc, JumpBasic) only bounds a table by
+    an explicit CBRANCH guard or a direct INT_AND mask on the switch variable.
+    A modulo bound (INT_REM/INT_SREM by a constant) on the LOAD-table index is
+    not recognized, so the normalized variable defaults to the full width of the
+    loaded value, the range exceeds maxtablesize, and recovery aborts.  The C
+    then renders the dispatch as a computed call through a function pointer.
+
+    Stage model: S2 "switch-model" sub-stage; the missing index bound starves
+    jump-table recovery.  Fix surface = a default-off ArchOption
+    (switchmodbound) that, when the normal model fails, walks the LOAD-table
+    pointer chain for a modulo/and-mask bound and rebuilds the model so the
+    table iterates the index over [0, N-1].
+
+    Pass 1 (default, option off): assertion #1 proves the bug reproduces; the
+    dispatch renders as a computed call to a function pointer (*(code *)...)().
+    Pass 2 (option switchmodbound on): assertion #2 proves the table is bounded
+    and the dispatch is recovered as a switch (no more "Too many branches").
+-->
+<bytechunk space="ram" offset="0x401014">
+b8270000000f0531d241ba0500000049f7f24989d04c8d1d5900000043ff24c3488d35c50f0000ba02000000eb38488d35b90f0000ba02000000eb2a488d35ad0f0000ba02000000eb1c488d35a10f0000ba02000000eb0e488d35950f0000ba02000000eb00b801000000bf010000000f0531c0c33410400000000000421040000000000050104000000000005e104000000000006c10400000000000
+</bytechunk>
+<symbol space="ram" offset="0x401014" name="jmpmod"/>
+</binaryimage>
+<script>
+  <com>lo fu jmpmod</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchmodbound on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH9191 #1: modulo-bounded switch renders as a computed call (bug reproduced)" min="1" max="1">\(\*\*\(code \*\*\)</stringmatch>
+<stringmatch name="GH9191 #2: switchmodbound on bounds the table and recovers the switch" min="1" max="1">switch\(</stringmatch>
+</decompilertest>

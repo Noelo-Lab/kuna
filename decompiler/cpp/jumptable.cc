@@ -1433,6 +1433,135 @@ JumpBasic::~JumpBasic(void)
     delete jrange;
 }
 
+/// \brief (kuna) Resolve a Varnode to a constant value through COPY/ZEXT/SEXT widening
+///
+/// SLEIGH often materializes a small constant divisor/mask as e.g. ZEXT816(#0x5),
+/// so the literal is not directly a constant Varnode.  This peels COPY / INT_ZEXT
+/// / INT_SEXT (which preserve the low value for a small non-negative constant)
+/// until it reaches a constant, returning \b true and the value.
+/// \param vn is the Varnode to resolve
+/// \param res holds the constant value on success
+/// \return \b true if \e vn is (a widening of) a constant
+static bool kunaResolveConst(Varnode *vn,uintb &res)
+
+{
+  for(int4 i=0;i<8;++i) {
+    if (vn->isConstant()) { res = vn->getOffset(); return true; }
+    if (!vn->isWritten()) return false;
+    PcodeOp *op = vn->getDef();
+    OpCode oc = op->code();
+    if (oc == CPUI_COPY || oc == CPUI_INT_ZEXT || oc == CPUI_INT_SEXT)
+      vn = op->getIn(0);
+    else
+      return false;
+  }
+  return false;
+}
+
+/// \brief (kuna) GH-9191: bound a LOAD-table jumptable by a modulo / and-mask on its index
+///
+/// Called from recoverModel() ONLY when the normal model failed to bound the
+/// table (range > maxtablesize) and the \b switch_modulo_bound arch flag is set
+/// (default-off: byte-identical upstream output otherwise).
+///
+/// The basic model recognizes a guard or a direct INT_AND on the switch
+/// variable, but not a modulo (`index % N`) that bounds a table index whose
+/// value happens to be (partially) constant-folded.  This walks the strictly
+/// linear chain from the BRANCHIND down through a table LOAD to the bounding op:
+///
+///   BRANCHIND <- LOAD( index*stride + base )
+///                       index = ... ( % N  |  & mask )
+///
+/// allowing only the realigning ops INT_ADD / INT_MULT / INT_LEFT / SUBPIECE /
+/// INT_ZEXT / INT_SEXT, each with a constant "other" input, between the LOAD and
+/// the modulo/mask leaf.  If found and the bound N (resp. mask+1) is in
+/// [2, maxtablesize], the model is rebuilt: pathMeld becomes this single linear
+/// path, the normalized switch variable is the bounded index, and jrange
+/// iterates [0, N-1].  buildAddresses() then emulates the LOAD for each index.
+///
+/// \param fd is the function containing the switch
+/// \param indop is the BRANCHIND
+/// \param maxtablesize is the maximum number of table entries allowed
+/// \return \b true if the table was successfully bounded and the model rebuilt
+bool JumpBasic::kunaTryModuloBoundTable(Funcdata *fd,PcodeOp *indop,uint4 maxtablesize)
+
+{
+  if (!fd->getArch()->switch_modulo_bound) return false;	// default-off gate
+
+  // Build the linear path BRANCHIND -> ... -> bounding-op, recording each edge.
+  vector<PcodeOpNode> path;
+  PcodeOp *curop = indop;
+  int4 curslot = 0;					// BRANCHIND input slot
+  uintb bound = 0;					// number of table entries, once found
+  bool sawLoad = false;
+  for(int4 step=0;step<12;++step) {			// hard cap on chain length
+    Varnode *vn = curop->getIn(curslot);
+    path.push_back(PcodeOpNode(curop,curslot));
+    if (!vn->isWritten()) return false;
+    PcodeOp *def = vn->getDef();
+    OpCode oc = def->code();
+    if (oc == CPUI_INT_REM || oc == CPUI_INT_SREM) {
+      // The bounding modulo:  index % N  with N constant.  The table has N entries.
+      // The bounded value is the modulo OUTPUT (== vn), already the last path edge's
+      // input; we do NOT descend into the modulo (its dividend is irrelevant once we
+      // iterate the output over [0, N-1]).
+      uintb nval;
+      if (!kunaResolveConst(def->getIn(1),nval)) return false;
+      if (nval < 2) return false;
+      bound = nval;
+      break;
+    }
+    if (oc == CPUI_INT_AND) {
+      // index & mask  -- mask must be a low contiguous run (covering mask) so [0, mask] is exact.
+      uintb maskval;
+      if (!kunaResolveConst(def->getIn(1),maskval)) return false;
+      uintb cover = coveringmask(maskval);
+      if (cover != maskval) return false;		// not a clean low-bit mask
+      bound = maskval + 1;
+      break;
+    }
+    if (oc == CPUI_LOAD) {
+      if (sawLoad) return false;			// only a single table indirection
+      sawLoad = true;
+      curop = def; curslot = 1;				// follow the pointer
+      continue;
+    }
+    // Realigning / widening ops: follow the single non-constant input.
+    if (oc == CPUI_INT_ADD || oc == CPUI_INT_MULT || oc == CPUI_INT_LEFT ||
+	oc == CPUI_SUBPIECE || oc == CPUI_INT_ZEXT || oc == CPUI_INT_SEXT) {
+      int4 nonconst = -1;
+      for(int4 j=0;j<def->numInput();++j) {
+	if (!def->getIn(j)->isConstant()) {
+	  if (nonconst >= 0) { nonconst = -1; break; }	// more than one variable input: not linear
+	  nonconst = j;
+	}
+      }
+      if (nonconst < 0) return false;
+      curop = def; curslot = nonconst;
+      continue;
+    }
+    return false;					// any other op: bail (stay parity-safe)
+  }
+
+  if (bound < 2 || bound > maxtablesize) return false;
+  if (!sawLoad) return false;				// require the table LOAD (the GH-9191 shape)
+
+  // Rebuild the model over the single linear path we just traced.
+  selectguards.clear();
+  pathMeld.clear();
+  pathMeld.set(path);
+  varnodeIndex = (int4)path.size() - 1;			// the bounded index is the last common varnode
+  Varnode *idxvn = pathMeld.getVarnode(varnodeIndex);
+  int4 idxsize = idxvn->getSize();
+
+  if (jrange != (JumpValuesRange *)0) delete jrange;
+  jrange = new JumpValuesRange();
+  jrange->setRange(CircleRange((uintb)0,bound,idxsize,1));	// [0, bound-1] step 1
+  jrange->setStartVn(idxvn);
+  jrange->setStartOp(pathMeld.getEarliestOp(varnodeIndex));
+  return true;
+}
+
 bool JumpBasic::recoverModel(Funcdata *fd,PcodeOp *indop,uint4 matchsize,uint4 maxtablesize)
 
 {
@@ -1443,8 +1572,15 @@ bool JumpBasic::recoverModel(Funcdata *fd,PcodeOp *indop,uint4 matchsize,uint4 m
   jrange = new JumpValuesRange();
   findDeterminingVarnodes(indop,0);
   findNormalized(fd,indop->getParent(),-1,matchsize,maxtablesize);
-  if (jrange->getSize() > maxtablesize)
+  if (jrange->getSize() > maxtablesize) {
+    // (kuna) GH-9191: the normal model could not bound the table.  If the option
+    // is on and the BRANCHIND value is a table LOAD whose index is bounded by a
+    // modulo (or and-mask), rebuild the model so the table is bounded to that many
+    // entries (default-off: byte-identical upstream when the flag is clear).
+    if (kunaTryModuloBoundTable(fd,indop,maxtablesize))
+      return true;
     return false;
+  }
   markFoldableGuards();
   return true;
 }

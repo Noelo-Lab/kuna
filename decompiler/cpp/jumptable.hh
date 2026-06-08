@@ -395,6 +395,7 @@ protected:
   bool flowsOnlyToModel(Varnode *vn,PcodeOp *trailOp);	///< Check if the given Varnode flows to anything other than \b this model
   bool checkCommonCbranch(vector<Varnode *> &varArray,BlockBasic *bl);	///< Check that all incoming blocks end with a CBRANCH
   void checkUnrolledGuard(BlockBasic *bl,int4 maxpullback,bool usenzmask);
+  bool kunaTryModuloBoundTable(Funcdata *fd,PcodeOp *indop,uint4 maxtablesize);	///< (kuna) GH-9191: bound a LOAD-table by a modulo/and-mask on its index
 
   /// \brief Eliminate the given guard to \b this switch
   ///

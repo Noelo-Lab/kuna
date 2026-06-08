@@ -28,6 +28,7 @@
 #include "kuna_booleanmask.hh"	// (kuna) OptionBooleanMask
 #include "kuna_flagcompare.hh"	// (kuna) OptionFlagCompare
 #include "kuna_v850indbranch.hh"	// (kuna) OptionV850IndirectBranch
+#include "kuna_switchmodbound.hh"	// (kuna) OptionSwitchModBound
 
 namespace ghidra {
 
@@ -153,6 +154,7 @@ OptionDatabase::OptionDatabase(Architecture *g)
   registerOption(new OptionBooleanMask());	// (kuna) GH-1282 simplification-quiescence sub-stage
   registerOption(new OptionFlagCompare());	// (kuna) GH-1276/8777 flag-modelled comparison folding sub-stage
   registerOption(new OptionMemsetRecover());	// (kuna) GH-9230 constant-fill memset recovery sub-stage
+  registerOption(new OptionSwitchModBound());	// (kuna) GH-9191 S2 switch-model index-bound sub-stage
 }
 
 OptionDatabase::~OptionDatabase(void)

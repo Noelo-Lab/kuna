@@ -80,6 +80,8 @@ writeup, not here.
 
 | `gh8777-flagcompare-sborrow.xml` | [GH-8777](https://github.com/NationalSecurityAgency/ghidra/issues/8777) | S3 simplification quiescence (N==V SBORROW signed compare) | `option flagcompare on\|off` |
 
+| `gh9191-switchmodbound.xml` | [GH-9191](https://github.com/NationalSecurityAgency/ghidra/issues/9191) | S2 switch model (modulo/and-mask LOAD-table index bound) | `option switchmodbound on\|off` |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

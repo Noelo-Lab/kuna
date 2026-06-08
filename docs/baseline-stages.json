@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    104,
-    104
+    106,
+    106
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -84,6 +84,8 @@
     "data:GH9184 #2: no 128-bit accumulator temp (undefined1 [16])",
     "data:GH9184 #3: no per-iteration ZEXT1632 truncation round-trip on the FMA result",
     "data:GH9184 #4: the vfmadd231ps_fma pcodeop is still emitted (sanity)",
+    "data:GH9191 #1: modulo-bounded switch renders as a computed call (bug reproduced)",
+    "data:GH9191 #2: switchmodbound on bounds the table and recovers the switch",
     "data:GH9230 #1: memsetrecover off restores the element-store form (old behavior, opt-in)",
     "data:GH9230 #2: default pipeline collapses the zero-fill into builtin_memset (fix is DIV-2 default)",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",

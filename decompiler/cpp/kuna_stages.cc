@@ -415,7 +415,8 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "kassert", kstage_p0, "assertion-admission", "(kuna) uniform typed assertion writer" },
   { "pipeline", kstage_p0, "pipeline-variant", "(kuna) reduced-pipeline sub-query (mechanism c-prime)" },
   { "quality", kstage_s8, "goto-quality-acceptance", "(kuna) goto-count metric, observable half" },
-  { "restarts", kstage_p0, "", "(kuna) feedback-edge observability (mechanism c)" }
+  { "restarts", kstage_p0, "", "(kuna) feedback-edge observability (mechanism c)" },
+  { "option switchmodbound", kstage_s2, "switch-model", "(kuna GH-9191) bound a LOAD-table jumptable by a modulo/and-mask on its index" }
 };
 
 int4 kunaNumSurfaces(void)
@@ -499,7 +500,12 @@ static const KunaSettable settableTable[] = {
     kstage_s3, "simplification-quiescence", kstrength_hard, kstage_s3, "GH-1276/8777",
     "Fold flag-modelled comparison idioms into clean compares: a boolean shifted into the sign bit ((b<<k) s< 0) and the N==V signed-overflow idiom (bra ge).",
     "Flip on to clean flag-as-bit comparisons on architectures that model condition flags explicitly (8051, PIC24, etc.); off (default) is upstream byte-identical.",
-    "option flagcompare on" }
+    "option flagcompare on" },
+  { "switchmodbound", "on|off", "off", true,
+    kstage_s2, "switch-model", kstrength_hard, kstage_s2, "GH-9191",
+    "Bound a LOAD-table jumptable by a modulo (index % N) or and-mask on its index when no guard bounds it.",
+    "Set on PER PROGRAM when a switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call; DESTRUCTIVE as a global default (may over-bound an unrelated indirect jump).",
+    "option switchmodbound on" }
 };
 
 int4 kunaNumSettables(void)
