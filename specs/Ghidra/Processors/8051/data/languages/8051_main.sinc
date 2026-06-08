@@ -399,6 +399,13 @@ macro resultflags(op1) { # Set N,Z flag for results
  $(Z) = op1 == 0;
 }
 
+macro do_addc(op1) { # (kuna GH-1243) ADDC: add carry-in in a wider temp so the carry-out is not truncated
+ tmp:2 = zext(ACC) + zext(op1) + zext($(CY));
+ $(CY) = (tmp > 0xff);   # carry-out of the full ACC + op + carry_in add
+ ACC = tmp:1;
+ resultflags(ACC);
+}
+
 macro push8(val) {
 @if defined(MCS251)
   SPX = SPX + 1;
@@ -709,10 +716,10 @@ Rel16:   relAddr is rel16		     [ relAddr=inst_next+rel16; ] { export *:1 relAdd
 :ADD Areg,Ri      is $(GROUP2) & ophi=2          & Areg & rifill=3 & Ri	 { addflags(ACC,Ri); ACC = ACC + Ri; resultflags(ACC); }
 :ADD Areg,Data    is $(GROUP1) & ophi=2 & oplo=4 & Areg; Data    { addflags(ACC,Data); ACC = ACC + Data; resultflags(ACC); }
 
-:ADDC Areg,rn     is $(GROUP2) & ophi=3          & Areg & rnfill=1 & rn	   { tmp:1 =$(CY)+ rn; addflags(ACC,tmp); ACC = ACC + tmp; resultflags(ACC); }
-:ADDC Areg,Direct is $(GROUP1) & ophi=3 & oplo=5 & Areg; Direct    { tmp:1 =$(CY)+ Direct; addflags(ACC,tmp); ACC = ACC + tmp; resultflags(ACC); }
-:ADDC Areg,Ri     is $(GROUP2) & ophi=3          & Areg & rifill=3 & Ri	   { tmp:1 =$(CY)+ Ri; addflags(ACC,tmp); ACC = ACC + tmp; resultflags(ACC); }
-:ADDC Areg,Data   is $(GROUP1) & ophi=3 & oplo=4 & Areg; Data      {  tmp:1 =$(CY)+ Data; addflags(ACC,tmp); ACC = ACC + tmp; resultflags(ACC); }
+:ADDC Areg,rn     is $(GROUP2) & ophi=3          & Areg & rnfill=1 & rn	   { do_addc(rn); }     # (kuna GH-1243)
+:ADDC Areg,Direct is $(GROUP1) & ophi=3 & oplo=5 & Areg; Direct    { do_addc(Direct); } # (kuna GH-1243)
+:ADDC Areg,Ri     is $(GROUP2) & ophi=3          & Areg & rifill=3 & Ri	   { do_addc(Ri); }     # (kuna GH-1243)
+:ADDC Areg,Data   is $(GROUP1) & ophi=3 & oplo=4 & Areg; Data      { do_addc(Data); }   # (kuna GH-1243)
 
 #TODO: which GROUP does AJMP belong to ??
 @if defined(MCS80390)

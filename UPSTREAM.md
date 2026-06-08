@@ -59,6 +59,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/testfunction.cc` | (kuna) `<cstdlib>` include + env-gated `KUNA_DUMP` block in `runTests` that echoes the captured console output (triage/repro aid; default-off ⇒ no behavior change) |
 | `specs/.../HCS12/data/languages/HCS_HC12.sinc` | GH-9001: `:BRN rel8 ... ; rel8` now consumes its operand (was a 1-byte epsilon `SkipNextInstr` that left the rel8 byte dangling), so BRN is a correct 2-byte no-op (upstream PR #5907) |
 
+| `specs/.../8051/data/languages/8051_main.sinc` | GH-1243: ADDC carry-in is now computed in a 2-byte `do_addc(op)` macro (`tmp:2 = zext(ACC)+zext(op)+zext(CY)`; `CY = tmp>0xff`; `ACC = tmp:1`) instead of the old 1-byte `tmp:1 = $(CY)+op` that truncated the carry-out, so CY propagates and ADD+ADDC multi-byte adds are recognised |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands
