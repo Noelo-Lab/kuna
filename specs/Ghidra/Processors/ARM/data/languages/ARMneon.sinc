@@ -1935,9 +1935,10 @@ roundMode: 		is TMode=1 & thv_c0707=1	{ export 3:1; } # Round towards zero
 	build COND;
 	build Sd;
 	build Sm;
-	local mode:1 = $(FPSCR_RMODE);
-	local Sm16:2 = Sm(0);
-	Sd = VectorSignedToFloat(Sm16,mode);
+	# (kuna GH-7890) re-lift to native int2float; drop VectorSignedToFloat pseudo-op + fpscr rounding-mode read
+	local tmp:8 = sext(Sm);
+	local f16:2 = int2float(tmp);
+	Sd = zext(f16);
 }
 
 :vcvt^COND^".f16.u32" Sd,Sm  is ( ($(AMODE) & ARMcond=1 & c2327=0x1d &     c1921=7 &     c1618=0 &     c1011=2 &     c0809=1 &     c0707=0 &     c0606=1 &     c0404=0) |
@@ -1946,9 +1947,10 @@ roundMode: 		is TMode=1 & thv_c0707=1	{ export 3:1; } # Round towards zero
 	build COND;
 	build Sd;
 	build Sm;
-	local mode:1 = $(FPSCR_RMODE);
-	local Sm16:2 = Sm(0);
-	Sd = VectorUnsignedToFloat(Sm16,mode);
+	# (kuna GH-7890) re-lift to native int2float; drop VectorUnsignedToFloat pseudo-op + fpscr rounding-mode read
+	local tmp:8 = zext(Sm);
+	local f16:2 = int2float(tmp);
+	Sd = zext(f16);
 }
 
 :vcvt^COND^".f64.s32" Dd,Sm  is ( ($(AMODE) & ARMcond=1 & c2327=0x1d &     c1921=7 &     c1618=0 &     c1011=2 &     c0809=3 &     c0707=1 &     c0606=1 &     c0404=0) |
@@ -1957,8 +1959,9 @@ roundMode: 		is TMode=1 & thv_c0707=1	{ export 3:1; } # Round towards zero
 	build COND;
 	build Dd;
 	build Sm;
-	mode:1 = $(FPSCR_RMODE);
-	Dd = VectorSignedToFloat(Sm,mode);
+	# (kuna GH-7890) re-lift to native int2float; drop VectorSignedToFloat pseudo-op + fpscr rounding-mode read
+	local tmp:8 = sext(Sm);
+	Dd = int2float(tmp);
 }
 
 :vcvt^COND^".f32.s32" Sd,Sm  is ( ($(AMODE) & ARMcond=1 & c2327=0x1d &     c1921=7 &     c1618=0 &     c1011=2 &     c0809=2 &     c0707=1 &     c0606=1 &     c0404=0) |
@@ -1967,8 +1970,9 @@ roundMode: 		is TMode=1 & thv_c0707=1	{ export 3:1; } # Round towards zero
 	build COND;
 	build Sd;
 	build Sm;
-	mode:1 = $(FPSCR_RMODE);
-	Sd = VectorSignedToFloat(Sm,mode);
+	# (kuna GH-7890) re-lift to native int2float; drop VectorSignedToFloat pseudo-op + fpscr rounding-mode read
+	local tmp:8 = sext(Sm);
+	Sd = int2float(tmp);
 }
 
 :vcvt^COND^".f32.u32" Sd,Sm  is ( ($(AMODE) & ARMcond=1 & c2327=0x1d &     c1921=7 &     c1618=0 &     c1011=2 &     c0809=2 &     c0707=0 &     c0606=1 &     c0404=0) | 
@@ -1977,8 +1981,9 @@ roundMode: 		is TMode=1 & thv_c0707=1	{ export 3:1; } # Round towards zero
 	build COND;
 	build Sd;
 	build Sm;
-	mode:1 = $(FPSCR_RMODE);
-	Sd = VectorUnsignedToFloat(Sm,mode);
+	# (kuna GH-7890) re-lift to native int2float; drop VectorUnsignedToFloat pseudo-op + fpscr rounding-mode read
+	local tmp:8 = zext(Sm);
+	Sd = int2float(tmp);
 }
 
 :vcvt^COND^".f64.u32" Dd,Sm  is  ( ($(AMODE) & ARMcond=1 & c2327=0x1d &     c1921=7 &     c1618=0 &     c1011=2 &     c0809=3 &     c0707=0 &     c0606=1 &     c0404=0) | 
@@ -1987,8 +1992,9 @@ roundMode: 		is TMode=1 & thv_c0707=1	{ export 3:1; } # Round towards zero
 	build COND;
 	build Dd;
 	build Sm;
-	mode:1 = $(FPSCR_RMODE);
-	Dd = VectorUnsignedToFloat(Sm,mode);
+	# (kuna GH-7890) re-lift to native int2float; drop VectorUnsignedToFloat pseudo-op + fpscr rounding-mode read
+	local tmp:8 = zext(Sm);
+	Dd = int2float(tmp);
 }
 
 @endif # VFPv2 || VFPv3

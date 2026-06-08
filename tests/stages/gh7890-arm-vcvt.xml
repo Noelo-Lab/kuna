@@ -1,0 +1,43 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8">
+<!--
+    GH-7890: "[ARMv6] vcvt instruction makes very un-human readable code"
+    https://github.com/NationalSecurityAgency/ghidra/issues/7890
+
+    The scalar VFP vcvt int<->float constructors in ARMneon.sinc lifted e.g.
+    `vcvt.f32.s32 s0,s0` to a VectorSignedToFloat CALLOTHER pseudo-op whose
+    second argument unpacked the FPSCR rounding-mode field
+    ($(FPSCR_RMODE) == fpscr[22,2]).  That injected a noisy
+    `(fpscr >> 0x16) & 3` shift/mask plus an unbound `in_fpscr` input into the
+    decompiled C, and because VectorSignedToFloat is a pseudo-op it could never
+    be optimized away even when the fpscr value folded to a constant.
+
+    The fix re-lifts these four scalar VFP int->float conversions to native
+    SLEIGH int2float (sext/zext to 8 bytes first, mirroring the canonical idiom
+    already in ARMv8.sinc), dropping the fpscr read and the pseudo-op entirely.
+
+    Bytes `c0 0a b8 ee` = 0xeeb80ac0 = `vcvt.f32.s32 s0,s0`, followed by
+    `bx lr` (1e ff 2f e1) so the harness can decompile a one-line function.
+
+    This testcase pins the FIXED lift: a plain int2float on s0, no
+    VectorSignedToFloat pseudo-op, and no `fpscr >> 0x16` rounding-mode read.
+-->
+<bytechunk space="ram" offset="0x0" readonly="true">
+c00ab8ee1eff2fe1
+</bytechunk>
+<symbol space="ram" offset="0x0" name="func"/>
+</binaryimage>
+<script>
+  <com>option readonly on</com>
+  <com>lo fu func</com>
+  <com>dec</com>
+  <com>print raw</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH7890 #1: vcvt lifts to native INT2FLOAT (no pseudo-op)" min="1" max="1">= INT2FLOAT\(</stringmatch>
+<stringmatch name="GH7890 #1b: clean human-readable float cast in C" min="1" max="1">return \(float4\)\(int8\)param_1;</stringmatch>
+<stringmatch name="GH7890 #2: no VectorSignedToFloat pseudo-op remains" min="0" max="0">VectorSignedToFloat</stringmatch>
+<stringmatch name="GH7890 #3: no fpscr rounding-mode shift/read" min="0" max="0">fpscr.* &gt;&gt; #?0x16</stringmatch>
+<stringmatch name="GH7890 #4: no unbound in_fpscr artifact in the C output" min="0" max="0">in_fpscr</stringmatch>
+</decompilertest>

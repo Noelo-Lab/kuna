@@ -75,6 +75,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../ARM/data/languages/ARMTHUMBinstructions.sinc` | GH-8391: move the 64-bit Thumb coprocessor transfers `mcrr`/`mcrr2`/`mrrc`/`mrrc2` (op4=0xec4/0xfc4/0xec5/0xfc5, thc0811=0xc) OUT of the `@ifndef CDE` guards — they don't overlap the CDE encoding space, so they must decode under ARM:LE:32:v8-m (Cortex-M33). 32-bit `mcr`/`mcr2`/`mrc`/`mrc2` (op8=0xee/0xfe) stay guarded. `fc51 0408` -> `mrrc2 p4,#0x0,r0,r1,c8` |
 
+| `specs/.../ARM/data/languages/ARMneon.sinc` | GH-7890: scalar VFP vcvt int<->float (`.f16/.f32/.f64` <- `.s32/.u32`) re-lifted from the `VectorSignedToFloat`/`VectorUnsignedToFloat` pseudo-ops (which read the FPSCR rounding-mode field `fpscr[22,2]`, injecting an `in_fpscr` artifact + noisy `(fpscr>>0x16)&3` and never optimizing away) to native SLEIGH `int2float` (sext/zext-to-8 idiom from ARMv8.sinc) |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands
