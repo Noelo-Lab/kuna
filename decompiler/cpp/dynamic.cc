@@ -431,6 +431,12 @@ void DynamicHash::uniqueHash(const Varnode *root,Funcdata *fd)
   uint8 tmphash;
   Address tmpaddr;
   uint4 maxduplicates = 8;
+  // (kuna) GH-8467: raise the same-address collision budget 8->16 when the
+  // dynamichashmax option is on, so dense unrolled code (e.g. AArch64 NEON
+  // byte-search loops) can still resolve a unique dynamic hash instead of
+  // throwing "Unable to find unique hash for varnode".  Default off = upstream.
+  if (fd->getArch()->dynamic_hash_maxdup_high)
+    maxduplicates = 16;
 
   for(method=0;method<4;++method) {
     clear();
@@ -492,6 +498,10 @@ void DynamicHash::uniqueHash(const PcodeOp *op,int4 slot,Funcdata *fd)
   uint8 tmphash;
   Address tmpaddr;
   uint4 maxduplicates = 8;
+  // (kuna) GH-8467: see the Varnode uniqueHash above -- same wider collision
+  // budget under the dynamichashmax option.  Default off = upstream (budget 8).
+  if (fd->getArch()->dynamic_hash_maxdup_high)
+    maxduplicates = 16;
 
   moveOffSkip(op, slot);
   if (op == (const PcodeOp *)0) {

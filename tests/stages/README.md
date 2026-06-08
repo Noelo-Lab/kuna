@@ -84,6 +84,8 @@ writeup, not here.
 
 | `gh8017-stackprobeloop.xml` | [GH-8017](https://github.com/NationalSecurityAgency/ghidra/issues/8017) | S2 stack-pointer normalization (stack-probe loop) | `option stackprobeloop on\|off` |
 
+| `gh8467-dynamichashmax.xml` | [GH-8467](https://github.com/NationalSecurityAgency/ghidra/issues/8467) | S6 alias-facets (dynamic-symbol DynamicHash collision budget) | `option dynamichashmax on\|off` |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

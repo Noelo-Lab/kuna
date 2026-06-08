@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    108,
-    108
+    110,
+    110
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -63,6 +63,8 @@
     "data:GH8391 #2: bytes no longer fail to decode",
     "data:GH8456 #1: MRS (Banked) decodes to 'mrs r0,r9_fiq'",
     "data:GH8456 #2: bytes no longer fail to decode",
+    "data:GH8467 #1: dynamichashmax on lets the function decompile to a full body (fix)",
+    "data:GH8467 #2: recovered control flow reaches the tail block (no abort)",
     "data:GH8471 #1: thumbfuncptr off restores the raw-hex form (old behavior, opt-in)",
     "data:GH8471 #2: default pipeline preserves the symbolic form, &fn[1] via DIV-2 arraynotation (fix is DIV-2 default)",
     "data:GH8777 #1: default pipeline keeps the raw SBORROW2 N==V flag idiom (bug reproduces)",

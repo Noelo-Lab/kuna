@@ -417,7 +417,8 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "pipeline", kstage_p0, "pipeline-variant", "(kuna) reduced-pipeline sub-query (mechanism c-prime)" },
   { "quality", kstage_s8, "goto-quality-acceptance", "(kuna) goto-count metric, observable half" },
   { "restarts", kstage_p0, "", "(kuna) feedback-edge observability (mechanism c)" },
-  { "option switchmodbound", kstage_s2, "switch-model", "(kuna GH-9191) bound a LOAD-table jumptable by a modulo/and-mask on its index" }
+  { "option switchmodbound", kstage_s2, "switch-model", "(kuna GH-9191) bound a LOAD-table jumptable by a modulo/and-mask on its index" },
+  { "option dynamichashmax", kstage_s6, "alias-facets", "(kuna GH-8467) raise DynamicHash same-address collision budget 8->16 for dense unrolled code" }
 };
 
 int4 kunaNumSurfaces(void)
@@ -511,7 +512,12 @@ static const KunaSettable settableTable[] = {
     kstage_s2, "stack-pointer-normalization", kstrength_hard, kstage_s2, "GH-8017/6858",
     "Resolve a gcc -fstack-check / stack-clash probe loop's stack-pointer MULTIEQUAL to a fixed offset from the input SP, so the frame and call arguments recover cleanly.",
     "Set on when a large-frame function shows &pxVar[-0x1000] page-probe noise or argument-less calls; shape-gated, so it is inert on functions without a probe loop.",
-    "option stackprobeloop on" }
+    "option stackprobeloop on" },
+  { "dynamichashmax", "on|off", "off", false,
+    kstage_s6, "alias-facets", kstrength_hard, kstage_s6, "GH-8467",
+    "Raise the DynamicHash same-address collision budget 8->16 so dense unrolled code can still resolve a unique dynamic symbol hash.",
+    "Set on PER FUNCTION when decompilation aborts with 'Unable to find unique hash for varnode' (e.g. AArch64/Go NEON byte-search loops); off (default) is upstream byte-identical.",
+    "option dynamichashmax on" }
 };
 
 int4 kunaNumSettables(void)

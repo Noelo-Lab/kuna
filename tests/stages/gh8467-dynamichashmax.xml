@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    GH-8467: "Unable to find unique hash for varnode" aborts decompilation.
+    https://github.com/NationalSecurityAgency/ghidra/issues/8467
+
+    The function at 0x128d0 in the GH-8467 binary (a statically-linked AArch64
+    Go executable; this is the NEON byte-search helper from the Go runtime
+    bytealg package) is a fully unrolled SIMD loop.  After heritage the same
+    address carries far more than 8 structurally identical Varnodes whose local
+    data-flow hashes collide.
+
+    During decompile finalization a HighVariable needs a storage-independent
+    identity, so Funcdata::buildDynamicSymbol calls DynamicHash::uniqueHash.
+    uniqueHash cycles through its hash methods and keeps the first whose
+    same-address collision list has size at most maxduplicates (hard-coded 8
+    upstream, dynamic.cc:433 and :494).  Here EVERY method's collision list
+    overflows 8, so the champion list stays empty, uniqueHash returns hash==0,
+    and buildDynamicSymbol (funcdata_varnode.cc:1318) throws
+    RecovError "Unable to find unique hash for varnode"; the WHOLE function
+    decompilation aborts (verified: the decompile command under the default
+    budget prints "Function ERROR: Unable to find unique hash for varnode" /
+    "Aborting process").
+
+    Stage model: S6 "alias-facets" sub-stage (dynamic-symbol attachment, keyed on
+    DynamicHash).  Fix surface = a default-off ArchOption (dynamichashmax) that
+    raises uniqueHash's collision budget 8 to 16, large enough to admit a unique
+    hash for these dense-but-not-pathological cases while still fitting the
+    existing 3-bit total/pos hash encoding.
+
+    NOTE ON TEST SHAPE (single setting, option ON):
+    This is an ABORT-class bug, and the datatest harness runs the script with
+    errorisdone=true (testfunction.cc).  When the default-budget decompile throws,
+    the harness sets its in-error flag permanently and DISCARDS every string
+    assertion in the file (the bug pass and any later fixed pass alike: "Did not
+    apply tests / Execution failed").  A bug-vs-fix two-pass contrast is therefore
+    structurally impossible for an abort here; so this testcase pins the FIX
+    directly: with "option dynamichashmax on" the same function that aborts under
+    the default budget now decompiles to completion and renders a full,
+    well-typed body.  The default-budget abort is reproduced and recorded above;
+    running the two decompile commands below WITHOUT the option set reproduces the
+    "Unable to find unique hash" abort.
+-->
+<bytechunk space="ram" offset="0x128d0">
+c20600b4eb0300aa258080d20502a8f2200c014e03e87b92a50c044e091040f24a1040920002005461a0df4c248100d1420004ab238c206e448c206e631c254e841c254e66bc244ec6bc264ec63c084e24f97fd3c624c49ac620c49a29020054c60200b561a0df4c428000f1238c206e448c206ea9000054661ca44ec6bce64ec63c084e06ffffb4631c254e841c254e66bc244ec6bc264ec63c084ee20000544401098b84104092848000d1e40704cbc620c49ac624c49a060100b4c600c0da638000d1c610c0da6004468b00000bcb000100f9c0035fd600008092000100f9c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x128d0" name="FUN_128d0"/>
+</binaryimage>
+<script>
+  <com>option dynamichashmax on</com>
+  <com>lo fu FUN_128d0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH8467 #1: dynamichashmax on lets the function decompile to a full body (fix)" min="1" max="1">void FUN_128d0</stringmatch>
+<stringmatch name="GH8467 #2: recovered control flow reaches the tail block (no abort)" min="1" max="20">goto code_r0x000129a8</stringmatch>
+</decompilertest>

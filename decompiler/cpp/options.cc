@@ -28,6 +28,7 @@
 #include "kuna_booleanmask.hh"	// (kuna) OptionBooleanMask
 #include "kuna_flagcompare.hh"	// (kuna) OptionFlagCompare
 #include "kuna_v850indbranch.hh"	// (kuna) OptionV850IndirectBranch
+#include "kuna_dynamichashmax.hh"	// (kuna) OptionDynamicHashMax
 #include "kuna_stackprobeloop.hh"	// (kuna) OptionStackProbeLoop
 #include "kuna_switchmodbound.hh"	// (kuna) OptionSwitchModBound
 
@@ -151,6 +152,7 @@ OptionDatabase::OptionDatabase(Architecture *g)
   registerOption(new OptionReturnPair());	// (kuna) GH-6990 trial-finalization sub-stage
   registerOption(new OptionAddCarryChain());	// (kuna) GH-8913 carry-chain wide-add recovery
   registerOption(new OptionV850IndirectBranch());	// (kuna) GH-8817 S2 flow-classification sub-stage
+  registerOption(new OptionDynamicHashMax());	// (kuna) GH-8467 S6 dynamic-symbol collision-budget sub-stage
   registerOption(new OptionStackProbeLoop());	// (kuna) GH-8017/6858 S2 stack-pointer normalization sub-stage
   registerOption(new OptionOvLessSimplify());	// (kuna) GH-7190 S3 simplification-quiescence sub-stage
   registerOption(new OptionBooleanMask());	// (kuna) GH-1282 simplification-quiescence sub-stage

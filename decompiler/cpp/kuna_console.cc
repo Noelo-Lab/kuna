@@ -214,6 +214,8 @@ static string kunaLiveValue(Architecture *conf,const string &option)
     return conf->memset_recover ? "on" : "off";
   if (option == "returnpair")
     return conf->return_single ? "single" : "pair";
+  if (option == "dynamichashmax")
+    return conf->dynamic_hash_maxdup_high ? "on" : "off";
   if (option == "stackprobeloop")
     return conf->model_stack_probe_loop ? "on" : "off";
   if (option == "v850indirectbranch")
