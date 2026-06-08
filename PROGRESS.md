@@ -1,5 +1,44 @@
 # kuna Progress Log
 
+## Session goals (2026-06-08) — extend stage-model fixes to ALL remaining reproduced PHADE issues
+
+- [x] Triage every remaining reproduced PHADE issue (46) — reproduce in `decomp_dbg`,
+      bucket as stage-exposure / spec-fix / not-viable, localize to a stage. Durable ledger
+      in `docs/issue-coverage.md`.
+- [x] Fix every viable stage-exposure and spec-fix via per-issue TDD (failing testcase →
+      gated fix → catalog/parity/test-stages gates → one commit each). PARITY OK and
+      `catalog --check` green at every commit.
+- [x] Flip the ablation-clean fixes default-on (DIV-3) after the full-suite ablation.
+- [x] Update living docs + ledger; one testcase per fixed issue in `tests/stages/`.
+
+### Results (2026-06-08)
+
+- **27 of 46 issues fixed** (one commit each, full parity 204/204 + 675/675 at every commit):
+  - **17 via SLEIGH spec-fix**: 9001 (HCS12 BRN), 1243 (8051 ADDC carry), 7418/7139/8790/9184
+    (x86 rel16 mask / disp16 sign / prefetch reg-form / FMA YMM256), 5897/8456/8391/7890
+    (ARM cpy→mov / MRS-banked / Thumb CDE mrrc / VFP vcvt), 1951+8844 (avr8 branch wrap),
+    4788 (V850 RH850 Bcond), 6389 (8085 undoc), 7451 (RISC-V Zfa fli.s), 6904 (PPC e500 mr).
+  - **10 via option-gated stage-exposure** (ElementIds 4010–4018): 1276+8777 `flagcompare`,
+    9191 `switchmodbound`, 8017 `stackprobeloop`, 8467 `dynamichashmax`, 8500 `stackalias`,
+    8724 `arraystride`, 6882 `sparcstructret`, 9203 `condexeplace`, 9218 `inputvarnodeadjust`.
+- **DIV-3**: six corpus-clean non-destructive options flipped default-on (ablation: 0/675
+  upstream assertions changed) — `flagcompare`, `stackprobeloop`, `dynamichashmax`,
+  `arraystride`, `condexeplace`, `inputvarnodeadjust`. The three destructive ones
+  (`switchmodbound`, `stackalias`, `sparcstructret`) stay opt-in. (`docs/divergences.md`.)
+- **13 not-viable** (precise reasons in the ledger): 809, 1708, 2033, 6333, 6342, 6664, 6682,
+  6723, 6836, 7377, 8028, 8694, 8794 — plus 3 reclassified spec→not-viable (766, 5666, 7332).
+- **2 already-correct**: 3847 (FYL2X) and 3723 (ARM `udf`, misfiled as AArch64).
+- **2 deferred** (attempted, non-convergent): 6674 (V850 free-register switch — distinct from
+  the x86 LOAD-table case `switchmodbound` fixes), 6858 (stripped-PIE main — distinct from
+  8017's gcc probe loop; full-function testcase aborts the harness).
+- **Tooling**: `KUNA_DUMP` env var on the test harness (echoes captured console output;
+  default-off, zero behavior change) — the triage/repro substrate for raw-byte issues.
+- **Method**: read-only triage workflow + worktree-isolated implementation workflows
+  (spec-fix and stage-exposure lanes), then serial replay on `main` with the binding
+  parity/catalog/test-stages gate per commit. `make` parallelism pinned to `NJOBS=4`
+  (an unbounded `-j` OOM-killed a mid-session build).
+- `tests/stages/` grew 48 → 121 assertions; all 46 remaining PHADE issues are now terminal.
+
 ## Session goals (2026-06-06/07) — stage-model physicalization: split the decompiler into stages, fix 10 PHADE issues
 
 - [x] Address each stage: implement the model physically (registry + console + assertions

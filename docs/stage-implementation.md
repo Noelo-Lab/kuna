@@ -195,3 +195,28 @@ the model). What changed: each artifact's groups are named and stage-addressed i
 registry, each stage's assertions are routable through `kassert`, and the band's two
 restart edges (3 and 5) are observable. Evidence on whether the band held up under
 issue fixes: `docs/stage-critique.md`.
+
+---
+
+## 2026-06-08 session addendum — all-remaining-issues wave
+
+This session extended the stage model to the remaining 46 reproduced PHADE issues
+(`docs/issue-coverage.md` is the full ledger). New stage-exposure sub-stage fixes
+(option-gated, ElementIds 4010–4018):
+
+- **S2** — `switchmodbound` (GH-9191, modulo/and-mask LOAD-table index bound in
+  `JumpBasic::kunaTryModuloBoundTable`); `stackprobeloop` (GH-8017, normalize the
+  stack pointer across a gcc stack-probe loop); `sparcstructret` (GH-6882, post-call
+  `unimp` fall-through reclassification in `flow.cc`).
+- **S3** — `flagcompare` (GH-1276/8777, fold `(b<<k) s< 0` and the N==V SBORROW
+  signed-compare idioms — two rules under one option, cousins of `booleanmask`/
+  `ovlesssimplify`); `arraystride` (GH-8724, strided-induction index recovery);
+  `condexeplace` (GH-9203, keep ActionConditionalConst const-COPY out of loop blocks).
+- **S6** — `dynamichashmax` (GH-8467, DynamicHash collision budget 8→16);
+  `stackalias` (GH-8500, preserve a store-through-a-stack-pointer-alias);
+  `inputvarnodeadjust` (GH-9218, absorb overlapping input varnodes instead of aborting).
+
+Plus 17 SLEIGH spec-fixes (no option; decode/lift corrections across HCS12, 8051, x86,
+ARM, avr8, V850, 8085, RISC-V, PowerPC). DIV-3 flipped the six corpus-clean
+non-destructive options default-on (ablation: 0/675). The three destructive options
+(`switchmodbound`, `stackalias`, `sparcstructret`) remain opt-in.

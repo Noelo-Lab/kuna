@@ -89,6 +89,12 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | (kuna stage-exposure) | `architecture.hh` / `architecture.cc` (flag `fold_flag_compare` decl+init), `options.cc` (include + registerOption(OptionFlagCompare)), `kuna_console.cc` (per-option getter), `coreaction.cc` (include + register RuleBoolSignLess/RuleSborrowGe in oppool1 "analysis"), `kuna_stages.cc` (surfaceTable + settableTable rows) — all `(kuna) GH-1276/8777`, gated by default-off `fold_flag_compare`; new files `kuna_flagcompare.{hh,cc}` (ELEM_FLAGCOMPARE=4010). |
 
+| `decompiler/cpp/jumptable.hh`, `decompiler/cpp/jumptable.cc` | GH-9191: `JumpBasic::kunaTryModuloBoundTable` (decl + def) bounds a LOAD-table jumptable by a modulo/and-mask on its index when no guard does; called from `recoverModel` (gated `option switchmodbound`, default-off) |
+| `decompiler/cpp/dynamic.cc` | GH-8467: `maxduplicates` in both `DynamicHash::uniqueHash` overloads reads `8` or `16` from `dynamic_hash_maxdup_high` (option `dynamichashmax`, DIV-3 default-on) |
+| `decompiler/cpp/flow.cc` | GH-6882: in `xrefControlFlow` a `kunaIsSparcStructRetTrap()`-matched BRANCHIND (post-call `unimp`) is dropped and made fall-through (option `sparcstructret`, default-off) |
+| `decompiler/cpp/coreaction.{cc,hh}` | GH-8500 (`stackalias`), GH-8724 (`arraystride`, DIV-3), GH-9203 (`condexeplace`, DIV-3), GH-9218 (`inputvarnodeadjust`, DIV-3), GH-8017 (`stackprobeloop`, DIV-3), GH-1276/8777 (`flagcompare` rules in oppool1, DIV-3): include lines + minimal `(kuna)`-gated blocks at the relevant Action/decision points |
+| `decompiler/cpp/architecture.{hh,cc}`, `decompiler/cpp/options.cc`, `decompiler/cpp/kuna_console.cc`, `decompiler/cpp/kuna_stages.cc` | the nine stage-exposure flags + option registrations + console getters + surface/settable rows (ElementIds 4010–4018); six flipped DIV-3 default-on (`docs/divergences.md`) |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands
@@ -97,7 +103,12 @@ added with zero upstream edits), `kuna_assert.{hh,cc}` (typed assertion API),
 `kuna_thumbfuncptr.{hh,cc}` (GH-8471), `kuna_inferfuncentry.{hh,cc}` (GH-6930),
 `kuna_returnpair.{hh,cc}` (GH-6990), `kuna_booleanmask.{hh,cc}` (GH-1282),
 `kuna_ovlesssimplify.{hh,cc}` (GH-7190), `kuna_v850indbranch.{hh,cc}` (GH-8817),
-`kuna_addcarrychain.{hh,cc}` (GH-8913), `kuna_memsetsequence.{hh,cc}` (GH-9230)
+`kuna_addcarrychain.{hh,cc}` (GH-8913), `kuna_memsetsequence.{hh,cc}` (GH-9230),
+`kuna_flagcompare.{hh,cc}` (GH-1276/8777), `kuna_switchmodbound.{hh,cc}` (GH-9191),
+`kuna_stackprobeloop.{hh,cc}` (GH-8017), `kuna_dynamichashmax.{hh,cc}` (GH-8467),
+`kuna_stackalias.{hh,cc}` (GH-8500), `kuna_arraystride.{hh,cc}` (GH-8724),
+`kuna_sparcstructret.{hh,cc}` (GH-6882), `kuna_condexeplace.{hh,cc}` (GH-9203),
+`kuna_inputvarnodeadjust.{hh,cc}` (GH-9218)
 (new files, not upstream edits). The `stage catalog` JSON command and the LLM
 assertion catalog (`settableTable`) live in the existing `kuna_stages`/`kuna_console`
 files; no new vendored edits.

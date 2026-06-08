@@ -250,3 +250,30 @@ degraded. Design:
   Ghidra's `CollapseStructure`/`ActionBlockStructure`.
 - The `quality` metric shipped this session is precisely the measurement primitive this
   policy needs; the rollback harness is the remaining work.
+
+---
+
+## 2026-06-08 — all-remaining-issues wave (per-issue fit + DIV-3 ablation)
+
+- **Triage of 46 issues** (`docs/issue-coverage.md`): 20 predicted spec-fix, 12
+  stage-exposure, 13 not-viable, 1 already-correct. Live reproduction corrected several
+  (766/5666/7332 spec→not-viable once the fix proved to need a whole new context-register /
+  address model / Java-analyzer naming; 3723 already-correct under the right language).
+- **Stage-fit**: the new fixes landed where the §13 symptom→stage navigation predicts,
+  with two instructive multi-stage cases — `sparcstructret` (S2 flow + S4 prototype) and
+  `stackprobeloop` (S2 op-graph + S6 stack frame) — reinforcing that Band-B/flow decisions
+  often surface as S9 text. `flagcompare` reused the exact S3 simplification-rule shape of
+  the prior `booleanmask`/`ovlesssimplify` fixes (one option, two De-Morgan-dual idioms).
+- **DIV-3 ablation** (all six non-destructive options forced on, full 204+675 suite):
+  **0 of 675** upstream assertions changed — their fix patterns (flag-compare idioms,
+  stack-probe loops, dense-hash collisions, strided indices, loop-block const-COPY,
+  overlapping input varnodes) do not occur in the upstream corpus, so the flip is
+  corpus-invisible. Flipped default-on.
+- **Deliberately opt-in** (ablation-clean on the corpus but context-destructive by
+  construction): `switchmodbound` (may over-bound an unrelated indirect jump),
+  `stackalias` (relaxes a dead-store race), `sparcstructret` (reclassifies a real trap on
+  non-SPARC). These match the `returnpair`/`v850indirectbranch` precedent: correct
+  per-program, unsafe as a global default.
+- **Negative results** (honest non-fits): 6674 (V850 free-register switch dispatch — a
+  recovery path `switchmodbound` does not reach) and 6858 (stripped-PIE main — distinct
+  from 8017's probe loop; the committed `stackprobeloop` option does not change its output).

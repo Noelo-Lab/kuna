@@ -65,6 +65,20 @@ Straddler notes (placement by dominant owned artifact; see `docs/stage-model.md`
 | `kuna_restartlog` | P0 | restart observability side table (mechanism c reasons) |
 | `kuna_compareform` | S3→S9 | GH-558 comparison-canonicalization sub-stage split (`canonicalcompare`/`presentcompare`) |
 | `kuna_arraynotation` | S9 | GH-558 pointer-notation sub-stage (`option arraynotation`) |
+| `kuna_thumbfuncptr` / `kuna_inferfuncentry` | S5 | const-pointer inference (GH-8471 / GH-6930) |
+| `kuna_returnpair` | S4 | trial-finalization return-register join (GH-6990) |
+| `kuna_booleanmask` / `kuna_ovlesssimplify` / `kuna_addcarrychain` | S3/S5 | simplification-quiescence rules (GH-1282 / GH-7190 / GH-8913) |
+| `kuna_memsetsequence` | S5 | const-sequence memset recovery (GH-9230/1537) |
+| `kuna_v850indbranch` | S2 | flow-classification reclassify (GH-8817) |
+| `kuna_flagcompare` | S3 | flag-modelled-compare folding — `(b<<k)s<0`, N==V SBORROW (GH-1276/8777) |
+| `kuna_switchmodbound` | S2 | modulo/and-mask LOAD-table jumptable index bound (GH-9191) |
+| `kuna_stackprobeloop` | S2/S6 | stack-pointer normalization across a stack-probe loop (GH-8017) |
+| `kuna_dynamichashmax` | S6 | DynamicHash collision budget 8→16 (GH-8467) |
+| `kuna_stackalias` | S3/S6 | preserve store-through-a-stack-pointer-alias (GH-8500) |
+| `kuna_arraystride` | S3/S5 | strided-induction array index recovery (GH-8724) |
+| `kuna_sparcstructret` | S2/S4 | SPARC struct-return post-call `unimp` fall-through (GH-6882) |
+| `kuna_condexeplace` | S3 | keep ActionConditionalConst const-COPY out of loop blocks (GH-9203) |
+| `kuna_inputvarnodeadjust` | S6 | absorb overlapping input varnodes instead of aborting (GH-9218) |
 
 ---
 
