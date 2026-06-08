@@ -13,8 +13,8 @@
 
 ### Results (2026-06-08)
 
-- **27 of 46 issues fixed** (one commit each, full parity 204/204 + 675/675 at every commit):
-  - **17 via SLEIGH spec-fix**: 9001 (HCS12 BRN), 1243 (8051 ADDC carry), 7418/7139/8790/9184
+- **26 of 46 issues fixed** (one commit each, full parity 204/204 + 675/675 at every commit):
+  - **16 via SLEIGH spec-fix**: 9001 (HCS12 BRN), 1243 (8051 ADDC carry), 7418/7139/8790/9184
     (x86 rel16 mask / disp16 sign / prefetch reg-form / FMA YMM256), 5897/8456/8391/7890
     (ARM cpy→mov / MRS-banked / Thumb CDE mrrc / VFP vcvt), 1951+8844 (avr8 branch wrap),
     4788 (V850 RH850 Bcond), 6389 (8085 undoc), 7451 (RISC-V Zfa fli.s), 6904 (PPC e500 mr).

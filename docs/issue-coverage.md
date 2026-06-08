@@ -411,8 +411,8 @@ import), 8794 (x86 XOP catalog). **Already-correct (1):** 3847 (FYL2X handled in
 
 ## Final session tally
 
-- **27 issues fixed** (one commit each, full parity OK at every commit):
-  - **17 via spec-fix** (16 commits; GH-1951/8844 share one avr8 edit): 9001, 1243, 7418,
+- **26 issues fixed** (one commit each, full parity OK at every commit):
+  - **16 via spec-fix** (15 commits; GH-1951/8844 share one avr8 edit): 9001, 1243, 7418,
     7139, 8790, 9184, 5897, 8456, 8391, 7890, 1951, 8844, 4788, 6389, 7451, 6904.
   - **10 via stage-exposure** (option-gated, default-off; 3 options shared by pairs):
     1276+8777 (`flagcompare` 4010), 9191 (`switchmodbound` 4011), 8017 (`stackprobeloop`
