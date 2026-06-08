@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    106,
-    106
+    108,
+    108
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -57,6 +57,8 @@
     "data:GH7890 #2: no VectorSignedToFloat pseudo-op remains",
     "data:GH7890 #3: no fpscr rounding-mode shift/read",
     "data:GH7890 #4: no unbound in_fpscr artifact in the C output",
+    "data:GH8017 #1: default pipeline leaves the &pxVar2[-0x1000] probe-loop noise (bug reproduces)",
+    "data:GH8017 #2: option stackprobeloop on removes all page noise (3 lines in default + 0 in fix = 3)",
     "data:GH8391 #1: Thumb mrrc2 decodes under v8-m (CDE)",
     "data:GH8391 #2: bytes no longer fail to decode",
     "data:GH8456 #1: MRS (Banked) decodes to 'mrs r0,r9_fiq'",

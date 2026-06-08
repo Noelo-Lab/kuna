@@ -183,6 +183,7 @@ public:
   bool v850_indirect_branch;	///< (kuna) True if V850 "jmp [reg]" CALLIND is reclassified to BRANCHIND for switch recovery (GH-8817)
   bool ov_less_simplify;	///< (kuna) True if the OV-flag signed-less-than idiom is collapsed to a clean INT_SLESS (GH-7190)
   bool fold_boolean_mask;	///< (kuna) True if `(b<<k) s>> k` boolean sign-extension-mask idioms are folded (GH-1282)
+  bool model_stack_probe_loop;	///< (kuna) True if gcc stack-probe loops resolve the stack-pointer MULTIEQUAL to a constant offset (GH-8017/6858)
   bool fold_flag_compare;	///< (kuna) True if flag-modelled comparison idioms (boolean-into-sign-bit, N==V) are folded (GH-1276/8777)
   bool switch_modulo_bound;	///< (kuna) True if a modulo/and-mask on a LOAD-table jumptable index bounds the table (GH-9191)
   bool analyze_for_loops;	///< True if we should attempt conversion of \e whiledo loops to \e for loops

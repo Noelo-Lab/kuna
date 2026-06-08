@@ -1,0 +1,76 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default">
+<!--
+    GH-8017: "gcc -fstack-check stack-probing loop breaks rsp tracking"
+    https://github.com/NationalSecurityAgency/ghidra/issues/8017
+
+    gcc emits a stack-clash / -fstack-check probing loop for a large frame:
+
+      lea    r11,[rsp-0x6000]     ; limit = SP_in + limit_const
+    .L: sub    rsp,0x1000          ; probe step = one page
+      or     QWORD PTR [rsp],0x0  ; touch the page
+      cmp    rsp,r11
+      jne    .L
+      sub    rsp,0x40
+
+    After heritage the loop-carried stack pointer is a spacebase MULTIEQUAL PHI
+    whose back-edge is `PHI - 0x1000`; the StackSolver/spacebase tracker cannot
+    break that self-referential cycle, so RSP never resolves to a constant past
+    the loop.  Every post-loop local then renders relative to the loop
+    induction variable as `&pxVar2[-0x1000]` page-probe noise:
+
+      do {
+        pxVar2 = pxVar1;
+        *(undefined8 *)&pxVar2[-0x1000] = *(undefined8 *)&pxVar2[-0x1000];
+        pxVar1 = &pxVar2[-0x1000];
+      } while (&pxVar2[-0x1000] != axStack_6008);
+      *(undefined8 *)&pxVar2[-0x1040] = ...
+
+    Stage model: S2 stack-pointer normalization (spacebase tracking /
+    ActionStackPtrFlow).  The kuna fix is a new simplification rule (group
+    "analysis", gated by the default-off arch flag model_stack_probe_loop) that
+    recognizes the probe loop (a 2-input spacebase MULTIEQUAL whose back-edge
+    is `PHI - page` and whose loop-exit compares `PHI - page` against a
+    stack-relative limit) and rewrites the MULTIEQUAL into the concrete
+    `INT_ADD(SP_in, limit_const - page)`.  Breaking the cycle lets the spacebase
+    tracker resolve the whole frame, eliminating the page-probe noise.
+    Enabled by `option stackprobeloop on`.
+
+    Pass 1 (default pipeline) reproduces the bug: the `&pxVar2[-0x1000]`
+    page-probe noise survives (assert #1, exactly 3 noisy lines).
+    Pass 2 (after `option stackprobeloop on`) resolves the stack PHI: NO
+    `[-0x1000]` line remains, so over both passes the count is still exactly 3
+    (assert #2: 3 in default + 0 in fix); were the fix to regress and leave any
+    probe noise, the count would exceed 3 and assert #2 would fail.
+
+    Disassembly (main, gcc -fstack-check, opt off):
+      1149 push rbp / mov rbp,rsp
+      114d lea  r11,[rsp-0x6000]
+      1155 sub  rsp,0x1000
+      115c or   QWORD PTR [rsp],0x0
+      1161 cmp  rsp,r11
+      1164 jne  1155
+      1166 sub  rsp,0x40
+      ... frame stores + two calls + ret
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+554889e54c8d9c2400a0ffff4881ec0010000048830c24004c39dc75ef4883ec40
+48830c24004881c420100000c745fc16000000c785e0afffff01000000c785e4af
+ffff1700000048c785e8afffff040000008b95e4afffff8b45fc01d08945f8488d
+05530e00004889c7e877feffff8b45f889c6488d05450e00004889c7b800000000
+e86efeffffb800000000c9c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="main"/>
+</binaryimage>
+<script>
+  <com>lo fu main</com>
+  <com>dec</com>
+  <com>print C</com>
+  <com>option stackprobeloop on</com>
+  <com>dec</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH8017 #1: default pipeline leaves the &amp;pxVar2[-0x1000] probe-loop noise (bug reproduces)" min="1" max="20">pxVar2\[-0x1000\]</stringmatch>
+<stringmatch name="GH8017 #2: option stackprobeloop on removes all page noise (3 lines in default + 0 in fix = 3)" min="3" max="3">\[-0x1000\]</stringmatch>
+</decompilertest>

@@ -384,6 +384,7 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "option memsetrecover", kstage_s5, "constsequence", "(kuna GH-9230) collapse constant-fill runs into builtin_memset" },
   { "option v850indirectbranch", kstage_s2, "flow-classification", "(kuna GH-8817) reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery" },
   { "option ovlesssimplify", kstage_s3, "simplification-quiescence", "(kuna GH-7190) collapse OV-flag signed-less-than idiom to a clean INT_SLESS" },
+  { "option stackprobeloop", kstage_s2, "stack-pointer-normalization", "(kuna GH-8017/6858) resolve gcc stack-probe loop's stack-pointer MULTIEQUAL to a constant offset" },
   { "option flagcompare", kstage_s3, "simplification-quiescence", "(kuna GH-1276/8777) fold flag-modelled comparison idioms (boolean-into-sign-bit, N==V signed compare)" },
   { "force goto", kstage_s7, "edge-virtualization", "Override::insertForceGoto" },
   { "override jumptable", kstage_s2, "switch-model", "JumpBasicOverride" },
@@ -505,7 +506,12 @@ static const KunaSettable settableTable[] = {
     kstage_s2, "switch-model", kstrength_hard, kstage_s2, "GH-9191",
     "Bound a LOAD-table jumptable by a modulo (index % N) or and-mask on its index when no guard bounds it.",
     "Set on PER PROGRAM when a switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call; DESTRUCTIVE as a global default (may over-bound an unrelated indirect jump).",
-    "option switchmodbound on" }
+    "option switchmodbound on" },
+  { "stackprobeloop", "on|off", "off", false,
+    kstage_s2, "stack-pointer-normalization", kstrength_hard, kstage_s2, "GH-8017/6858",
+    "Resolve a gcc -fstack-check / stack-clash probe loop's stack-pointer MULTIEQUAL to a fixed offset from the input SP, so the frame and call arguments recover cleanly.",
+    "Set on when a large-frame function shows &pxVar[-0x1000] page-probe noise or argument-less calls; shape-gated, so it is inert on functions without a probe loop.",
+    "option stackprobeloop on" }
 };
 
 int4 kunaNumSettables(void)

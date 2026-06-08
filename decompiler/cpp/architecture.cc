@@ -1431,6 +1431,7 @@ void Architecture::resetDefaultsInternal(void)
   fold_flag_compare = false;	// (kuna) default: upstream byte-identical (flag-compare idioms folded only under option flagcompare on) (GH-1276/8777)
   switch_modulo_bound = false;	// (kuna) default: upstream byte-identical (modulo/mask table bound off) (GH-9191)
   add_carry_chain = true;	// (kuna) DIV-2 default-on: carry-chain wide adds recover (GH-8913)
+  model_stack_probe_loop = false;	// (kuna) default: upstream byte-identical (stack-probe loop unresolved) (GH-8017/6858)
   analyze_for_loops = true;
   present_lessequal = true;	// (kuna) DIV-2 default-on: comparisons keep their original LESSEQUAL form (GH-558)
   preserve_thumb_funcptr = true;	// (kuna) DIV-2 default-on: Thumb function pointers stay symbolic (GH-8471)

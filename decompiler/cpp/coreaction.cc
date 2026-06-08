@@ -26,6 +26,7 @@
 #include "kuna_ovlesssimplify.hh"	// (kuna) GH-7190 OV-flag signed-less-than simplification
 #include "kuna_booleanmask.hh"	// (kuna) GH-1282 boolean sign-extension-mask simplification
 #include "kuna_flagcompare.hh"	// (kuna) GH-1276/8777 flag-modelled comparison folding
+#include "kuna_stackprobeloop.hh"	// (kuna) GH-8017/6858 stack-probe-loop stack-pointer resolution
 
 namespace ghidra {
 
@@ -5810,6 +5811,7 @@ void ActionDatabase::universalAction(Architecture *conf)
 	actprop->addRule( new RuleDoubleStore("doubleprecis") );
 	actprop->addRule( new RuleDoubleIn("doubleprecis") );
 	actprop->addRule( new RuleDoubleOut("doubleprecis") );
+	actprop->addRule( new RuleStackProbeLoop("analysis") );	// (kuna) GH-8017/6858: gated by arch flag model_stack_probe_loop
 	for(iter=conf->extra_pool_rules.begin();iter!=conf->extra_pool_rules.end();++iter)
 	  actprop->addRule( *iter ); // Add CPU specific rules
 	conf->extra_pool_rules.clear(); // Rules are now absorbed into universal

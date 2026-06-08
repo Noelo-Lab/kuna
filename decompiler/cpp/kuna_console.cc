@@ -214,6 +214,8 @@ static string kunaLiveValue(Architecture *conf,const string &option)
     return conf->memset_recover ? "on" : "off";
   if (option == "returnpair")
     return conf->return_single ? "single" : "pair";
+  if (option == "stackprobeloop")
+    return conf->model_stack_probe_loop ? "on" : "off";
   if (option == "v850indirectbranch")
     return conf->v850_indirect_branch ? "on" : "off";
   if (option == "switchmodbound")
