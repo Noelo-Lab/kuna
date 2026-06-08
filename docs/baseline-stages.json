@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    121,
-    121
+    128,
+    128
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -124,7 +124,14 @@
     "data:KUNA-QUALITY #1: full pipeline reports the single if-goto edge (before and after the sub-query)",
     "data:KUNA-QUALITY #2: unstructured total is the goto-count quality signal",
     "data:KUNA-RESTARTS #1: multistage jump-table restart is recorded with its trigger site",
-    "data:KUNA-RESTARTS #2: a function that never restarts reports none"
+    "data:KUNA-RESTARTS #2: a function that never restarts reports none",
+    "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1, one in pass 2)",
+    "data:angr-LoweredSwitch #2: default present",
+    "data:angr-LoweredSwitch #3: case 0x70 (p) recovered",
+    "data:angr-LoweredSwitch #4: case 0x74 (t) recovered",
+    "data:angr-LoweredSwitch #5: case 0x63 (c) recovered",
+    "data:angr-LoweredSwitch #6: negative case -0x82 (-130) recovered",
+    "data:angr-LoweredSwitch #7: negative case -0x83 (-131) recovered"
   ],
   "returncode": 0,
   "unit_footer": null

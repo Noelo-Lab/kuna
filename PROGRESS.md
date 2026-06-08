@@ -1,5 +1,79 @@
 # kuna Progress Log
 
+## Session (2026-06-08) — port angr's LoweredSwitchSimplifier (`option loweredswitch`)
+
+Implemented a port of angr's `LoweredSwitchSimplifier` (SAILR, USENIX Security 2024):
+reconstruct a GCC-lowered comparison cascade (a binary-search `if/else` tree over one
+variable) back into a C `switch`. Validated on coreutils `fmt`/`main`.
+
+**Result.** With `option loweredswitch on`, `fmt`/`main` renders `switch(iVar5)` with **all
+9 getopt cases + `default`** (0x70 'p', 0x74 't', 0x75 'u', 0x77 'w', 0x73 's', 0x67 'g',
+0x63 'c', and the two negative options -0x83/-0x82), correctly nested inside the getopt
+`while (... != -1)` loop — matching angr's expected output for
+`test_reverting_switch_clustering_and_lowering_fmt_main`. Default-off keeps upstream
+byte-identical: **204/204 unit + 675/675 datatests, PARITY OK, catalog OK**. New committed
+testcase `tests/stages/ghangr-loweredswitch.xml` (7 assertions; `docs/baseline-stages.json`
+→ 128 keys).
+
+**The architectural problem (what made this hard).** angr edits its *structured region
+graph* (an S7 artifact) and emits a `SwitchCase` node. **Ghidra has no region-graph edit
+hook**: a `BlockSwitch` is only ever produced by `CollapseStructure::ruleBlockSwitch` from a
+`BlockBasic` flagged `f_switch_out`, which is set only for a `CPUI_BRANCHIND`-terminated
+block backed by a `JumpTable` — i.e. a Ghidra `switch` is fundamentally an **S2 artifact**
+recovered from a *lifted indirect jump*. When the compiler lowered the switch to comparisons
+there is no BRANCHIND. So the port **synthesizes the S2 artifact** (a BRANCHIND + a
+hand-built, pre-labelled JumpTable) from the control-flow pattern and lets the existing
+structurer + printer emit the switch. This **inverts the usual S1→S2 dependency** (lifting
+produces the BRANCHIND that S2 explains; here a late pass produces it from a CFG pattern) —
+a stage-model feedback edge realized via the existing **restart (mechanism c)**:
+- `ActionLowerSwitchDetect` (S2 `switch-model`, placed after `ActionSwitchNorm`): on the
+  simplified CFG, cluster the cascade (Varnode-identity, range-node traversal, advancing past
+  the `-1` EOF sentinel guard), record it in a survives-`clear()` sticky side table, request a
+  restart.
+- `ActionLowerSwitchInstall` (before `ActionHeritage`, gated to the pre-SSA window by
+  `getHeritagePass()==0`): replay the recorded surgery — head CBRANCH → BRANCHIND(V), rewire
+  out-edges to the case targets + default, build the labelled JumpTable — so the following
+  heritage rebuilds phi over the corrected CFG. **No MULTIEQUAL/phi hand-patching** (the whole
+  reason for the restart-based, pre-SSA strategy).
+
+**Phase ideas this stressed / broke (documented).**
+- The model assumed S2 jump-table recovery is *downstream* of S1 lifting. This pass makes S2
+  the producer of a BRANCHIND that lifting never emitted — the S1→S2 inversion above. It is
+  the first kuna divergence that *creates* a CFG artifact rather than gating an existing
+  decision.
+- It is the first kuna pass that performs **CFG surgery** (op replacement + edge rewiring +
+  block removal). All prior divergences gate a rule/flag/label. This required the restart
+  vehicle to stay SSA-safe.
+
+**Limitations / what was not possible without more work (honest report):**
+1. **Post-SSA CFG surgery is effectively off-limits.** Doing the rewrite directly on the
+   simplified (post-heritage) CFG would require hand-repairing MULTIEQUAL input slots across
+   multi-edge additions and block deletions — the exact bug class the restart avoids. The
+   restart costs one extra decompilation pass per function.
+2. **`maxrestarts == 1` for the `universal` group** (coreaction.cc). A function that *also*
+   needs a genuine multi-stage-jump restart in the same invocation would lose ours (the switch
+   then stays an if-chain). Because the hint is sticky, a second decompilation recovers it;
+   raising the budget to 2 is a one-line global change if co-occurrence proves common.
+3. **`JumpTable::foldInGuards` is called unconditionally** even for a fully-labelled table, so
+   a synthetic table needs a non-null model. It must be a **non-override** model
+   (`JumpModelTrivial`): `clearJumpTables()` *preserves* override tables across a restart's
+   `clear()`, and `followFlow` then re-`switchOver`s the stale table and segfaults. Required a
+   1-line `(kuna)` `JumpTable::kunaSetTrivialModel` member (no public model setter existed).
+4. **MVP scope (conservative, fires on fmt/main):** single switch variable; pure
+   comparison-spine blocks only (case bodies/default fail the purity check and bound the
+   cascade as leaves); distinct case targets; ≥3 cases / ≥2 distinct targets; the `-1` EOF
+   sentinel is special-cased as the loop guard. angr's Type-A "extra statements before the
+   comparison" handling and shared-target (fall-through) cases are not yet supported.
+5. **Bytechunk regression test needs the binary's neighbours mapped + named** to bound main's
+   flow (it falls through past its own end after a `call error`), exactly as `read symbols`
+   does for the whole ELF; only `main` is decompiled.
+
+Anchor edits (all `(kuna)`-marked, in `UPSTREAM.md` *Divergence*): `funcdata.hh`,
+`jumptable.hh`, `architecture.{hh,cc}`, `options.cc`, `coreaction.cc`, `kuna_stages.cc`,
+`kuna_restartlog.{hh,cc}`. New files: `kuna_loweredswitch.{hh,cc}` (ElementId 4019).
+
+---
+
 ## Session goals (2026-06-08) — extend stage-model fixes to ALL remaining reproduced PHADE issues
 
 - [x] Triage every remaining reproduced PHADE issue (46) — reproduce in `decomp_dbg`,

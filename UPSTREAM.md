@@ -94,6 +94,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/flow.cc` | GH-6882: in `xrefControlFlow` a `kunaIsSparcStructRetTrap()`-matched BRANCHIND (post-call `unimp`) is dropped and made fall-through (option `sparcstructret`, default-off) |
 | `decompiler/cpp/coreaction.{cc,hh}` | GH-8500 (`stackalias`), GH-8724 (`arraystride`, DIV-3), GH-9203 (`condexeplace`, DIV-3), GH-9218 (`inputvarnodeadjust`, DIV-3), GH-8017 (`stackprobeloop`, DIV-3), GH-1276/8777 (`flagcompare` rules in oppool1, DIV-3): include lines + minimal `(kuna)`-gated blocks at the relevant Action/decision points |
 | `decompiler/cpp/architecture.{hh,cc}`, `decompiler/cpp/options.cc`, `decompiler/cpp/kuna_console.cc`, `decompiler/cpp/kuna_stages.cc` | the nine stage-exposure flags + option registrations + console getters + surface/settable rows (ElementIds 4010–4018); six flipped DIV-3 default-on (`docs/divergences.md`) |
+| `decompiler/cpp/funcdata.hh`, `decompiler/cpp/jumptable.hh` | angr LoweredSwitchSimplifier port: `Funcdata::kunaInstallLoweredSwitch` and `JumpTable::kunaSetTrivialModel` declarations (defs live in `kuna_loweredswitch.cc`; member functions for private `bblocks`/`jumpvec`/`jmodel` access) |
+| `decompiler/cpp/coreaction.cc` | angr port: include + 2 actions in `universalAction` — `ActionLowerSwitchInstall` before `ActionHeritage` (pre-SSA install), `ActionLowerSwitchDetect` after `ActionSwitchNorm` (detect+restart); `architecture.{hh,cc}` flag `recover_lowered_switch`, `options.cc` registerOption, `kuna_stages.cc` rows, `kuna_restartlog.{hh,cc}` `krestart_lowered_switch` — all `(kuna)`, gated by default-off `option loweredswitch` (ElementId 4019) |
 
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
@@ -108,7 +110,8 @@ added with zero upstream edits), `kuna_assert.{hh,cc}` (typed assertion API),
 `kuna_stackprobeloop.{hh,cc}` (GH-8017), `kuna_dynamichashmax.{hh,cc}` (GH-8467),
 `kuna_stackalias.{hh,cc}` (GH-8500), `kuna_arraystride.{hh,cc}` (GH-8724),
 `kuna_sparcstructret.{hh,cc}` (GH-6882), `kuna_condexeplace.{hh,cc}` (GH-9203),
-`kuna_inputvarnodeadjust.{hh,cc}` (GH-9218)
+`kuna_inputvarnodeadjust.{hh,cc}` (GH-9218),
+`kuna_loweredswitch.{hh,cc}` (angr LoweredSwitchSimplifier port, ELEM 4019)
 (new files, not upstream edits). The `stage catalog` JSON command and the LLM
 assertion catalog (`settableTable`) live in the existing `kuna_stages`/`kuna_console`
 files; no new vendored edits.
