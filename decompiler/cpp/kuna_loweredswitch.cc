@@ -268,6 +268,14 @@ static bool recoverCascade(Funcdata &data,BlockBasic *startbb,
   }
 
   if (cases.size() < 3) return false;		// RULE3: need >= 3 cases
+  // Fail-safe cap: a very large synthesized switch can make Ghidra's structurer
+  // mark some case edges as unstructured gotos (a t_multigoto switch block) and
+  // then abort with "Case block has become detached from switch", failing the
+  // whole function instead of falling back to the if-chain.  All angr SAILR
+  // lowered-switch examples are <= 11 cases; cap conservatively so an oversized
+  // sparse tree (e.g. stat's 68-case human_fstype) is left as an if-chain rather
+  // than regressing the function.  (Raising this needs structurer robustness work.)
+  if (cases.size() > 16) return false;
   if (defaultVotes.empty()) return false;
   // Require the GCC binary-search structure (a range/jump-tree split).  A purely
   // linear equality chain is a hand-written if/else-if, not a lowered switch, so

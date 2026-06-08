@@ -24,6 +24,36 @@ and is left alone; a compiler-lowered switch has the balanced range-split tree. 
 the ablation is **0/675 changed** and `fmt`/`main` still recovers. `option loweredswitch off`
 restores the upstream rendering. (`docs/divergences.md` DIV-4.)
 
+**Methodology extended to all of angr's SwitchLowering testcases.** Ran every angr
+`LoweredSwitchSimplifier` testcase through kuna (default-on) and recorded the outcome:
+
+| angr testcase | binary | kuna result |
+|---|---|---|
+| `..._fmt_main` | `fmt` (PIE) | ✅ **full** — `switch` + 9 cases + default. Committed: `ghangr-loweredswitch.xml`. |
+| `..._mv_o2_main` | `mv_-O2` (PIE) | ✅ **partial** — `switch` + 9 explicit cases + default; 3 special-return values (110, −131, −130) fold into the default's getopt loop. Committed: `ghangr-loweredswitch-mv.xml`. |
+| `..._stat_human_fstype_*` | `stat.o` | ⚠️ **capped** — a 68-case sparse binary-search tree; the synthesized switch makes Ghidra's structurer emit an unstructured (`t_multigoto`) switch and abort with *"Case block has become detached from switch"*. Now guarded by the **≤16-case fail-safe cap**, so it falls back to the if-chain (no crash). |
+| `..._cksum_digest_print_filename` | `cksum-digest.o` | ⚪ **n/a** — the cascade is a *linear* equality chain (10/13/92), which the binary-search guard correctly skips; the raw `.o` also has unapplied relocations. |
+| `..._filename_unescape` | `b2sum-digest.o` | ⚪ **n/a** — not a ≥3-case single-variable cascade in Ghidra's SSA view (the chars are reloaded); ON==OFF. |
+| `..._cat_main` (+ `_no_endpoint_dup`) | `cat.o` | ⚪ **n/a** — `main` is in `.text.startup` at section-offset 0 and collides with `.text` at vaddr 0 when kuna loads the raw `.o`, so the wrong function decompiles; also a real `.rodata` jump table. |
+
+**Two findings worth recording.**
+1. **Harness limitation, not a feature limitation:** kuna's `.o`-loading / bytechunk path does
+   not apply ELF relocations or resolve section overlaps, so the four relocatable-`.o` angr
+   testcases (`cksum`/`b2sum`/`cat`/`stat`) cannot be reproduced as committed kuna datatests the
+   way the linked PIEs (`fmt`, `mv`) can. Applying relocations on `.o` load is the prerequisite
+   to porting them.
+2. **Structurer ceiling:** very large synthesized switches (e.g. `stat`'s 68-case tree) exceed
+   Ghidra's `CollapseStructure` ability to form a clean `BlockSwitch` and abort the function. The
+   ≤16-case cap keeps the default-on pass fail-safe; lifting it needs structurer robustness work
+   (handle a `t_multigoto` switch block / detached case gracefully). All angr SAILR examples are
+   ≤11 cases, so the cap does not affect them.
+
+Committed second testcase: `tests/stages/ghangr-loweredswitch-mv.xml` (`mv_-O2`/main, PIE; 6
+assertions; `docs/baseline-stages.json` → 134 keys). The general/native angr switch tests
+(`test_decompiling_switch0/1/2`, `..._abnormal_switch_case_*`, etc.) are **real jump-table**
+switches recovered by Ghidra's existing `BRANCHIND` machinery, not comparison-cascade lowering,
+so they are out of scope for `loweredswitch`.
+
 **The architectural problem (what made this hard).** angr edits its *structured region
 graph* (an S7 artifact) and emits a `SwitchCase` node. **Ghidra has no region-graph edit
 hook**: a `BlockSwitch` is only ever produced by `CollapseStructure::ruleBlockSwitch` from a
