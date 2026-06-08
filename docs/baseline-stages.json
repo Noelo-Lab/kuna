@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    57,
-    57
+    60,
+    60
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -29,6 +29,9 @@
     "data:GH7418 #2: the unmasked 0x17004 target no longer appears",
     "data:GH8471 #1: thumbfuncptr off restores the raw-hex form (old behavior, opt-in)",
     "data:GH8471 #2: default pipeline preserves the symbolic form, &fn[1] via DIV-2 arraynotation (fix is DIV-2 default)",
+    "data:GH8790 #1: 0f0dc0 (PREFETCH reg-form) decodes at 0x1000",
+    "data:GH8790 #2: 0f18c0 (prefetch/NOP-reserved reg-form) decodes at 0x1003",
+    "data:GH8790 #3: stream re-aligned onto the trailing NOP at 0x1006 (both reg-forms were 3 bytes)",
     "data:GH8817 #1: V850 jmp [reg] renders as a computed call (bug reproduced)",
     "data:GH8817 #2: v850indirectbranch on recovers the switch",
     "data:GH8913 #1: addcarrychain off leaks CONCAT11((0xNN < ...) (old behavior, both paths)",

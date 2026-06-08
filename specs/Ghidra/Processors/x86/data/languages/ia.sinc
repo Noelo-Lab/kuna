@@ -4254,11 +4254,19 @@ define pcodeop swap_bytes;
 :PREFETCH     m8  is vexMode=0 & byte=0x0f; byte=0x0d; m8 & reg_opcode   ... { }  # rest aliased to /0
 :PREFETCHW    m8  is vexMode=0 & byte=0x0f; byte=0x0d; m8 & reg_opcode=1 ... { }
 :PREFETCHWT1  m8  is vexMode=0 & byte=0x0f; byte=0x0d; m8 & reg_opcode=2 ... { }
+# (kuna GH-8790) register-direct (mod=3) form of 0f 0d /0 (e.g. 0f 0d c0) is a NOP-like
+# hint on real hardware; decode it as PREFETCH with a register operand instead of failing.
+:PREFETCH     Rmr8 is vexMode=0 & byte=0x0f; byte=0x0d; mod=3 & Rmr8 & reg_opcode=0 { }
 
 :PREFETCHT0 m8  is vexMode=0 & byte=0x0f; byte=0x18; ( mod != 0b11 & reg_opcode=1 ) ... & m8 { }
 :PREFETCHT1 m8  is vexMode=0 & byte=0x0f; byte=0x18; ( mod != 0b11 & reg_opcode=2 ) ... & m8 { }
 :PREFETCHT2 m8  is vexMode=0 & byte=0x0f; byte=0x18; ( mod != 0b11 & reg_opcode=3 ) ... & m8 { }
 :PREFETCHNTA m8 is vexMode=0 & byte=0x0f; byte=0x18; ( mod != 0b11 & reg_opcode=0 ) ... & m8 { }
+# (kuna GH-8790) register-direct (mod=3) form of 0f 18 /r decodes as a reserved NOP on
+# real hardware (the existing NOP^"/reserved" forms above already cover reg_opcode_hb=1,
+# i.e. reg 4..7, via rm16/rm32 but only mem mod for the PREFETCHTx group); add the
+# reg-direct reg_opcode_hb=0 (reg 0..3) form so e.g. 0f 18 c0 disassembles instead of failing.
+:NOP^"/reserved" Rmr8 is vexMode=0 & byte=0x0f; byte=0x18; mod=3 & Rmr8 & reg_opcode_hb=0 { }
 
 define pcodeop ptwrite;
 

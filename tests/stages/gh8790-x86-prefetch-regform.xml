@@ -1,0 +1,38 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default">
+<!--
+    GH-8790: "x86-64 missing opcodes"
+    https://github.com/NationalSecurityAgency/ghidra/issues/8790
+
+    The x86 prefetch/NOP opcodes `0f 0d /r` (PREFETCH group) and `0f 18 /r`
+    (PREFETCHT0..NTA / NOP-reserved group) only had constructors for the
+    memory-operand form (`m8`, which requires mod != 0b11).  A register-direct
+    ModR/M (mod=0b11, e.g. byte `c0`) matched no constructor, so:
+        0f 0d c0     and     0f 18 c0
+    failed to disassemble ("Unable to resolve constructor").  Other x86 tools
+    treat the register-form encoding as a (multi-byte) NOP.
+
+    Fix (kuna GH-8790): add a mod=3 register-form variant to each of the two
+    prefetch/NOP constructors so the reg-direct encoding decodes instead of
+    aborting.
+
+    Bytes: 0f0dc0  0f18c0  90  (the trailing 0x90 is a real NOP anchor so we can
+    confirm the stream re-aligned and the two reg-form prefetches each consumed
+    exactly 3 bytes: 0x1000, 0x1003, 0x1006).
+
+    Stage: S1 decode-table (SLEIGH spec-fix, no option).  This testcase asserts
+    the FIXED decode: both reg-form opcodes disassemble (no "Unable to resolve
+    constructor"), and the byte stream re-aligns onto the 0x90 NOP at 0x1006.
+-->
+<bytechunk space="ram" offset="0x1000">
+0f0dc00f18c090
+</bytechunk>
+</binaryimage>
+<script>
+  <com>disassemble 0x1000 0x1007</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH8790 #1: 0f0dc0 (PREFETCH reg-form) decodes at 0x1000" min="1" max="1">^0x0+1000: PREFETCH</stringmatch>
+<stringmatch name="GH8790 #2: 0f18c0 (prefetch/NOP-reserved reg-form) decodes at 0x1003" min="1" max="1">^0x0+1003: (PREFETCH|NOP)</stringmatch>
+<stringmatch name="GH8790 #3: stream re-aligned onto the trailing NOP at 0x1006 (both reg-forms were 3 bytes)" min="1" max="1">^0x0+1006: NOP</stringmatch>
+</decompilertest>

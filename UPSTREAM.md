@@ -65,6 +65,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../x86/data/languages/ia.sinc` | GH-7139: x86 16-bit modrm mod=2 displacement operands (`addr16`) now use the signed `simm16` token (matching the mod=1 `simm8_16` forms), so a disp16 with its sign bit set renders signed (`ES:[BX + -0x804]`) instead of unsigned (`0xf7fc`) — display-only, address arithmetic unchanged |
 
+| `specs/.../x86/data/languages/ia.sinc` | GH-8790: added register-direct (mod=3) variants of the two prefetch/NOP opcodes — `:PREFETCH Rmr8` for `0f 0d /0` and `:NOP^"/reserved" Rmr8` for `0f 18 /0..3` — so e.g. `0f 0d c0` / `0f 18 c0` disassemble (as a NOP-like hint) instead of failing with "Unable to resolve constructor". Upstream only had the `m8` memory-operand forms. |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands

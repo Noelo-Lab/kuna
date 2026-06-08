@@ -54,6 +54,8 @@ writeup, not here.
 
 | `gh7139-x86-16-disp16-signed.xml` | [GH-7139](https://github.com/NationalSecurityAgency/ghidra/issues/7139) | S1 decode / operand rendering (x86 spec-fix, no option) | SLEIGH 16-bit disp16 (modrm mod=2) uses signed `simm16` |
 
+| `gh8790-x86-prefetch-regform.xml` | [GH-8790](https://github.com/NationalSecurityAgency/ghidra/issues/8790) | S1 decode-table (x86 spec-fix, no option) | SLEIGH prefetch `0f 0d`/`0f 18` gain a mod=3 register-form variant |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason
