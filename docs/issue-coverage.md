@@ -94,7 +94,7 @@ Live triage (Phase B, 9-agent workflow) results. Buckets: **20 spec-fix · 12 st
 | 8790 | x86 | spec-fix | S1 | x86-prefetch-regform-modrm | easy | — | — | triaged |
 | 8794 | x86 | not-viable | S1 | x86-xop-decode-catalog | hard | — | — | not-viable |
 | 8844 | AVR | spec-fix | S2 | avr8-rel-branch-wrap-mask | medium | — | — | triaged |
-| 9001 | HCS12 | spec-fix | S1 | hcs12-brn-operand-consume | easy | — | — | triaged |
+| 9001 | HCS12 | spec-fix | S1 | hcs12-brn-operand-consume | easy | — | — | **committed** |
 | 9184 | x86 | spec-fix | S2 | x86-avx-vector-width | easy | — | — | triaged |
 | 9191 | x86_64 | stage-exposure | S2 | jumptable-modulo-bound | hard | 4011 | switchmodbound | triaged |
 | 9203 | riscv64 | stage-exposure | S3 | condexe-multiequal-block-placement | hard | 4017 | condexeplace | triaged |

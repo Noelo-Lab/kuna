@@ -1,0 +1,35 @@
+<decompilertest>
+<binaryimage arch="HCS12:BE:24:default">
+<!--
+    GH-9001: "[HCS12] BRN fails to decode correctly"
+    https://github.com/NationalSecurityAgency/ghidra/issues/9001
+
+    BRN (branch never) was modeled as a 1-byte opcode (op8=0x21) plus an
+    epsilon `SkipNextInstr` sub-table that computed dest = inst_next + 1 but
+    never CONSUMED the rel8 operand byte.  So BRN disassembled as a single byte
+    and the following rel8 byte was mis-decoded as the start of the next
+    instruction (upstream Ghidra prints it as a `??` bad byte; kuna's console
+    greedily re-decodes it into a bogus instruction).
+
+    With bytes `21 05 21 00 21 fa 3d a7 a7 3d` the buggy decode is:
+      0x00 BRN 0x2          (1 byte!)
+      0x01 JMP 0x2, +IX     (eats the 0x05 rel8 byte)
+      ...
+    The fix (upstream PR #5907) makes `:BRN rel8 ... ; rel8` consume the operand
+    like LBRN, so BRN is a 2-byte no-op and the stream re-aligns.
+
+    Stage: S1 decode-table (SLEIGH spec-fix, no option). This testcase asserts the
+    FIXED decode: BRN consumes its rel8 byte (2-byte instruction), so the byte at
+    0x01 is the operand, NOT a new JMP instruction.
+-->
+<bytechunk space="RAM" offset="0x0">
+2105210021fa3da7a73d
+</bytechunk>
+</binaryimage>
+<script>
+  <com>disassemble 0x0 0xa</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH9001 #1: BRN consumes rel8 (2-byte) so 0x02 is the next instruction, not 0x01" min="1" max="1">^0x000002: BRN</stringmatch>
+<stringmatch name="GH9001 #2: the 0x05 rel8 byte is no longer mis-decoded as JMP ...,+IX" min="0" max="0">JMP       0x2, \+IX</stringmatch>
+</decompilertest>

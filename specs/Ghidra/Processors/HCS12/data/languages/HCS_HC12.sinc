@@ -1960,12 +1960,12 @@ with : XGATE=0 {
 	if (result == 0) goto rel8;
 }
 
-# branch never is a two-byte nop
-SkipNextInstr: dest is epsilon [ dest = inst_next + 1; ]  { export *[RAM]:1 dest; }
-
-:BRN SkipNextInstr                 is Prefix18=0 & op8=0x21 & SkipNextInstr
+# branch never: a 2-byte no-op that MUST consume its rel8 operand (kuna GH-9001).
+# The old form matched only op8=0x21 (1 byte) plus an epsilon sub-table, so the
+# rel8 byte was left dangling and mis-decoded as the next instruction.  Consuming
+# rel8 (like LBRN consumes rel16) makes BRN a correct 2-byte instruction.
+:BRN rel8                          is Prefix18=0 & op8=0x21; rel8
 {
-	goto SkipNextInstr;
 }
 
 :BRSET opr8a_8, msk8, rel8    is Prefix18=0 & op8=0x4E; opr8a_8; msk8; rel8
