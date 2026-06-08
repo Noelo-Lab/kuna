@@ -79,6 +79,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 
 | `specs/.../Atmel/data/languages/avr8.sinc` | GH-1951, GH-8844: rel12addr/rel12dst now mask the RJMP/RCALL relative target with `& 0x0FFF` on the 16-bit (PCBYTESIZE==2) AVR8 variant, so a 12-bit relative branch wraps at the 4 KiW code-space boundary (small AVRs) instead of producing an out-of-range word like 0xf807/0xf817; PCBYTESIZE==3 (xmega/atmega256) is unchanged via `@else` |
 
+| `specs/.../V850/data/languages/{Helpers/Tokens.sinc, Helpers/Extras.sinc, Instructions/Special.sinc}` | GH-4788: add the RH850 (G3KH) Bcond disp17 conditional branch (`:b^c0003 adr17` with reg2 fixed to 0). New tokens `s0404`/`op1731` + `adr17` subtable; constructor is more specific than the overlapping `ld.hu disp16[reg1],reg2` (shared op0510=0x3F & word2.bit0=1), so `f9 07 49 fe` now decodes as `bnc +0x1963d8` instead of `ld.hu -0x1b8[r25], r0` |
+
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
 `kuna_console.{hh,cc}` (self-registering `IfaceKunaCapability` — console commands

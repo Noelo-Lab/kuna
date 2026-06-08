@@ -68,6 +68,8 @@ writeup, not here.
 
 | `gh1951-avr-rcallwrap.xml` | [GH-1951](https://github.com/NationalSecurityAgency/ghidra/issues/1951) | S1 decode-table / 02 P-code lift (avr8 SLEIGH spec-fix, no option) | SLEIGH rel12addr masks RJMP/RCALL target `& 0x0FFF` (4 KiW wrap) |
 
+| `gh4788-v850-bcond-disp17.xml` | [GH-4788](https://github.com/NationalSecurityAgency/ghidra/issues/4788) | S1 decode-table (V850 spec-fix, no option) | SLEIGH adds the RH850 Bcond disp17 branch (`f9 07 49 fe` -> `bnc`, not `ld.hu`) |
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

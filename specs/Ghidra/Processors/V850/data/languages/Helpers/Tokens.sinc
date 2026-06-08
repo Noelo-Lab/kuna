@@ -18,6 +18,7 @@ define token instr(16)
 	op0015 	  = (0,15)
 	op0106 	  = (1,6)
 	op0406 	  = (4,6)
+	s0404 	  = (4,4) 	signed		# (kuna GH-4788) disp17 Bcond: disp[16] sign bit
 	op0410 	  = (4,10)
 	op0505	  = (5,5)
 	op0510	  = (5,10)
@@ -51,6 +52,7 @@ define token instr2(16)
 	op0_1720  = (1,4)
 	op1_1720  = (1,4)
 	s1731 	  = (1,15) 	signed
+	op1731 	  = (1,15)			# (kuna GH-4788) disp17 Bcond: disp[16:1] low bits
 	op1821 	  = (2,5)
 	s1821 	  = (2,5) 	signed
 	op2020 	  = (4,4)

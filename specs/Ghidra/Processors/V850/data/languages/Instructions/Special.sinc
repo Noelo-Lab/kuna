@@ -59,6 +59,15 @@
 	goto adr9;
 }
 
+# (kuna GH-4788) Bcond disp17 (RH850 G3KH) - 00000 011111 D cccc | dddddddddddddddd 1
+# reg2 field (op1115) is fixed to 0, distinguishing it from the overlapping
+# `ld.hu disp16[reg1],reg2` form (op0510=0x3F & word2.bit0=1) which has reg2 free.
+:b^c0003 adr17 is (op1115=0 & op0510=0x3F & c0003) ... & adr17
+{
+	if (c0003)
+		goto adr17;
+}
+
 # JARL disp22, reg2 - rrrrr11110dddddd|ddddddddddddddd0
 :jarl adr22, R1115 is (op0610=0x1E & R1115) ... & adr22
 {

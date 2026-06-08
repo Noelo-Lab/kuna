@@ -38,6 +38,18 @@ adr32i: res is op1631 & op1616=0; op3247
 	export *[const]:4 res;
 }
 
+# (kuna GH-4788) RH850 Bcond disp17 branch target.
+#   disp[16]   = s0404 (word1 bit 4, sign-extended MSB) -- matched in the
+#               instruction constructor (word1) and passed in via inst_start math.
+#   disp[16:1] = op1731 (word2 bits 1..15); bit 0 (op1616) is a marker = 1.
+#   disp[0] = 0 (halfword aligned).  The word1 sign bit s0404 is folded into the
+#   instruction pattern (op0410), so here we only need word2 + the global s0404.
+adr17: res is s0404; op1731 & op1616=1
+[ res = ((s0404 << 16) | (op1731 << 1)) + inst_start; ]
+{
+	export *:4 res;
+}
+
 reg4: op0_1720 is op2323=0 & op0_1720 { export op0_1720; }
 reg4: op1_1720 is op2323=1 & op1_1720 { export op1_1720; }
 

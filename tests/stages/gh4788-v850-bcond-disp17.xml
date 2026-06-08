@@ -1,0 +1,37 @@
+<decompilertest>
+<binaryimage arch="V850:LE:32:default">
+<!--
+    GH-4788: "RH850 branch disasembly not correct"
+    https://github.com/NationalSecurityAgency/ghidra/issues/4788
+
+    The RH850 (G3KH) Bcond disp17 conditional branch was missing from the V850
+    SLEIGH (Special.sinc).  The 4 bytes `f9 07 49 fe` are a `bnc` (Bcond, cond
+    code nc = 0x9) with a 17-bit displacement, but with the disp17 table entry
+    absent the decoder fell through to the overlapping `ld.hu disp16[reg1],reg2`
+    form (which shares op0510=0x3F & word2.bit0=1) and mis-decoded them as
+    `ld.hu -0x1b8[r25], r0`.  IDA/Trace32 decode this as a bnc/bnl branch.
+
+    Encoding (RH850 Bcond disp17):
+      word1: 00000 011111 D cccc   (op1115/reg2 = 0, op0510 = 0x3F,
+                                     bit4 = disp[16] sign, op0003 = cond)
+      word2: dddddddddddddddd 1    (bits15:1 = disp[16:1], bit0 marker = 1)
+      disp17 = sext((D<<16) | (word2[15:1]<<1)) ; here disp = -0x1b8 = -440.
+
+    Placed at 0x196590 (the issue's key address) the branch target is
+      0x196590 + (-440) = 0x1963d8.
+
+    Stage: S1 decode-table (SLEIGH spec-fix, no option).  This testcase asserts
+    the FIXED decode (a `bnc` conditional branch to 0x1963d8) and forbids the
+    buggy `ld.hu` form.
+-->
+<bytechunk space="ram" offset="0x196590">
+f90749fe
+</bytechunk>
+</binaryimage>
+<script>
+  <com>disassemble 0x196590 0x196594</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH4788 #1: disp17 Bcond decodes as bnc to 0x1963d8 (not ld.hu)" min="1" max="1">^0x00196590: bnc +0x1963d8$</stringmatch>
+<stringmatch name="GH4788 #2: the bytes are no longer mis-decoded as ld.hu" min="0" max="0">ld\.hu</stringmatch>
+</decompilertest>
