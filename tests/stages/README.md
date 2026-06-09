@@ -95,6 +95,7 @@ writeup, not here.
 | `gh9203-condexe-loopcopy.xml` | [GH-9203](https://github.com/NationalSecurityAgency/ghidra/issues/9203) | S3 simplification quiescence (ActionConditionalConst const-COPY block placement) | `option condexeplace on\|off` |
 
 | `gh9218-inputvarnodeadjust.xml` | [GH-9218](https://github.com/NationalSecurityAgency/ghidra/issues/9218) | S6 storage reconciliation (`stack-frame-layout`, overlapping input varnodes) | `option inputvarnodeadjust on\|off` |
+| `ghangr-ite-region-converter-missing-5db28e.xml` | angr `test_ite_region_converter_missing_break_statement` (StackCanarySimplifier) | S7 region recovery (`edge-virtualization`, strip the -fstack-protector canary epilogue so the shared-return goto is eliminated) | `option stackguard on\|off` |
 
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`

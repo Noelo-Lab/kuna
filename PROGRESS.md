@@ -1,5 +1,44 @@
 # kuna Progress Log
 
+## Session (2026-06-09) — ite-region-converter-missing-5db28e (option `stackguard`)
+
+**Opportunity.** angr `test_ite_region_converter_missing_break_statement::authenticate`
+(`binaries/tests/x86_64/ite_region_converter_missing_breaks`, x86-64 GCC,
+`-fstack-protector`). angr is shorter and goto-free (loc 21 vs 40, **gotos 0 vs 1**,
+labels 0 vs 1).
+
+**Why angr was better.** The function is compiled with the glibc stack protector: it
+saves the TLS canary at entry (`canary = *(fs:0x28)`) and at every exit reloads fs:0x28
+and runs `if (canary != reload) __stack_chk_fail(); return v;`. That canary check is a
+**single shared return point**, so a return deep inside the loop (the `Authenticated!`
+path) cannot return directly — Ghidra's structurer routes it through `goto label_<addr>`
+(+ a `label_<addr>:`). angr's `StackCanarySimplifier` strips the canary epilogue, after
+which the tail is a bare `return v` that `ActionReturnSplit` duplicates into each
+predecessor, killing the goto. (angr also folds the trailing `if(c) v=1 else v=0` into a
+ternary `c ? 1 : 0`; Ghidra's C printer has **no ternary operator**, so that rendering is
+out of scope — the canary strip is the reproducible win.)
+
+**Mechanism.** New `kuna_stackguard.{cc,hh}` adds `ActionStripStackGuard`
+(ElementId 4021), run in `actfullloop` immediately before `ActionReturnSplit`. Detection
+is **purely structural** (kuna's BFD console loader doesn't resolve the `__stack_chk_fail@plt`
+stub to its name — it renders as `sub_<addr>`): a CBRANCH whose `INT_EQUAL`/`INT_NOTEQUAL`
+boolean has BOTH operands deriving from a `LOAD` of `<base>+0x28`, with a handler `CALL`
+on the corrupted-canary branch. The corrupted branch is removed with the stock
+`Funcdata::removeBranch` (CBRANCH→fall-through, MULTIEQUALs patched) and
+`removeUnreachableBlocks` collects the orphaned `__stack_chk_fail` block; the dead canary
+load/store/compare are reaped by the next deadcode pass. Self-gates once no handler
+call remains. Anchors (all `(kuna)`): `architecture.{hh,cc}` flag `strip_stack_guard`,
+`options.cc` registration, `coreaction.cc` action, `kuna_stages.cc` settable+surface rows.
+
+**Ablation / default.** With the option default-ON, **3** upstream datatest assertions
+change (Multi-size return #1–3 — real canary-bearing functions). Stripping deletes real
+instructions, so the option is kept **default-OFF (opt-in)**; default output stays
+byte-identical (PARITY OK, no DIV entry). On `authenticate` with `option stackguard on`:
+the `goto`/`label`, the `__stack_chk_fail` call, and one `if` disappear, and the deep
+match path becomes `return 1;` directly. Test:
+`tests/stages/ghangr-ite-region-converter-missing-5db28e.xml` (two-pass: off proves the
+bug, on proves the fix); demo `tools/ite-region-converter-missing-5db28e_angr_demo.sh`.
+
 ## Session (2026-06-09) — continuous angr-inspired feature pipeline (`kuna.pipeline`)
 
 Turned the hand-driven "study angr, find where it's better, port one improvement at a

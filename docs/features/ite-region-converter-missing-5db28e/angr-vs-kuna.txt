@@ -1,0 +1,89 @@
+==============================================================================
+test_ite_region_converter_missing_break_statement :: authenticate   (angr 9.2.213 @ 0x4022e5)
+==============================================================================
+
+--- angr ---
+extern char hashes;
+
+unsigned int authenticate(void* a0, unsigned long a1)
+{
+    int i;  // [bp-0x2c]
+    char v1;  // [bp-0x28]
+
+    if (memcmp(a0, "admin\n", 7))
+        return 0;
+    MD5(&v1, a1, 100, a1);
+    for (i = 0; i <= 15; i += 1)
+    {
+        xor_(a1, &(&hashes)[16 * i], 16, &(&hashes)[16 * i]);
+        if (!memcmp(&(&hashes)[16 * i], &v1, 16))
+        {
+            puts("Authenticating...");
+            sleep(1);
+            puts("Authenticated!");
+            return 1;
+        }
+    }
+    return (!memcmp(a1, "Welcome to the admin console, trusted user!", 16) ? 1 : 0);
+}
+
+
+--- kuna (name mode) ---
+xunknown8 authenticate(xunknown8 a0,xunknown8 a1)
+
+{
+  int4 v1; // eax
+  xunknown8 v2; // rax
+  int8 v4; // fs_offset
+  int4 v5; // stack - 0x2c
+  xunknown1 v3 [24]; // stack - 0x28
+  int8 v6; // stack - 0x10
+  
+  v6 = *(int8 *)(v4 + 0x28);
+  v1 = sub_1110(a0,0x314c,7);
+  if (v1 == 0) {
+    MD5(v3,a1,100);
+    for (v5 = 0; v5 <= 0xf; v5 = v5 + 1) {
+      xor_(a1,(int8)v5 * 0x10 + 0x3020,0x10);
+      v1 = sub_1110((int8)v5 * 0x10 + 0x3020,v3,0x10);
+      if (v1 == 0) {
+        sub_10d0(0x3153);
+        sub_1150(1);
+        sub_10d0(0x3165);
+        v2 = 1;
+        goto label_2417;
+      }
+    }
+    v1 = sub_1110(a1,0x3120,0x10);
+    if (v1 == 0) {
+      v2 = 1;
+    }
+    else {
+      v2 = 0;
+    }
+  }
+  else {
+    v2 = 0;
+  }
+label_2417:
+  if (v6 != *(int8 *)(v4 + 0x28)) {
+    v2 = sub_10e0();
+  }
+  return v2;
+}
+
+--- metrics (reference | kuna) ---
+  loc            21 | 40  
+  gotos           0 | 1   
+  labels          0 | 1   
+  switches        0 | 0   
+  cases           0 | 0   
+  ifs             2 | 4   
+  loops           1 | 1   
+  ternaries       1 | 0   
+  casts           0 | 0   
+
+--- signals (candidate 'reference is better' hints) ---
+  * ref has fewer gotos (0 vs 1)
+  * ref has fewer labels (0 vs 1)
+  * ref is 48% shorter (21 vs 40 loc)

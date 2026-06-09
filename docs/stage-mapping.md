@@ -79,6 +79,7 @@ Straddler notes (placement by dominant owned artifact; see `docs/stage-model.md`
 | `kuna_sparcstructret` | S2/S4 | SPARC struct-return post-call `unimp` fall-through (GH-6882) |
 | `kuna_condexeplace` | S3 | keep ActionConditionalConst const-COPY out of loop blocks (GH-9203) |
 | `kuna_inputvarnodeadjust` | S6 | absorb overlapping input varnodes instead of aborting (GH-9218) |
+| `kuna_stackguard` | S7 | strip the -fstack-protector canary epilogue (angr StackCanarySimplifier port; `option stackguard`, default-off) so the shared-return goto is eliminated |
 
 ---
 
