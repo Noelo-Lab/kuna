@@ -112,12 +112,15 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 - `git add -A && git commit` with a descriptive subject `{{SLUG}}: <one line>` and the trailer
   `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
 - Write the PR body to `docs/features/{{SLUG}}/pr_body.md`: a short summary, a link to
-  `docs/features/{{SLUG}}/analysis.md`, the angr-vs-kuna before/after, the option name + how to flip it,
-  the ablation/parity result, and the line `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
-  (Commit that file too.)
-- Open the PR robustly: `tools/pipeline/open_pr.sh {{BRANCH}} "{{SLUG}}: <one line>" docs/features/{{SLUG}}/pr_body.md`.
-  This pushes the branch (SSH) and tries `gh pr create`; if the gh token lacks repo access it falls back to a
-  compare URL. The script prints the resulting URL on its last stdout line — capture it.
+  `docs/features/{{SLUG}}/analysis.md`, the mechanism, the option name + how to flip it, and the
+  ablation/parity result, ending with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+  Do NOT hand-write the before/after decompilation — `open_pr.sh` auto-appends a REAL captured
+  before/after (kuna with the option off vs on, on the feature's target function) + the reference
+  rendering, generated from `record.json`. So make sure `record.json` has correct `option`, `binary`,
+  `selector`, `func_addr`, `default_on`. (Commit pr_body.md too.)
+- Open the PR robustly: `tools/pipeline/open_pr.sh {{BRANCH}} "{{SLUG}}: <one line>" docs/features/{{SLUG}}/pr_body.md docs/features/{{SLUG}}/record.json`.
+  This pushes the branch (SSH), generates+embeds the before/after demo, then runs `gh pr create`
+  (compare-URL fallback if gh can't). The script prints the resulting URL on its last stdout line — capture it.
 - Record the URL: `{{KUNA_PY}} -m kuna.pipeline.state done --worker {{WORKER_ID}} --opportunity "{{OPPORTUNITY_ID}}" --pr "<url>"`.
 
 ## Definition of done

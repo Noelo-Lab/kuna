@@ -56,14 +56,15 @@ else
     echo "gh auth login failed"; exit 2; }
 fi
 
-# --- verify the token can actually open PRs on the repo ---------------------
-echo "verifying repo + PR scope on Noelo-Lab/kuna ..."
-if gh repo view Noelo-Lab/kuna --json viewerCanAdminister,nameWithOwner >/dev/null 2>&1; then
-  echo "OK: gh can read Noelo-Lab/kuna."
-  echo "    (PR creation requires the token's 'repo' scope; if `gh pr create` later"
-  echo "     returns 403, regenerate the token with repo scope and re-run gh auth login.)"
+# --- verify the token can actually reach the repo via the REST API ----------
+# Use `gh api` (REST), NOT `gh repo view`/`gh pr create` (GraphQL): GitHub's classic-Projects
+# sunset makes gh's GraphQL PR commands fail on this repo, so the pipeline opens PRs through
+# the REST API (see tools/pipeline/open_pr.sh) and this check mirrors that path.
+echo "verifying repo access on Noelo-Lab/kuna via REST ..."
+if gh api repos/Noelo-Lab/kuna -q .full_name >/dev/null 2>&1; then
+  echo "OK: gh REST API can reach Noelo-Lab/kuna; PR create/update will use REST."
 else
-  echo "WARNING: gh cannot view Noelo-Lab/kuna with this token — PR creation will fail."
+  echo "WARNING: gh cannot reach Noelo-Lab/kuna with this token — PR creation will fail."
   echo "         Provision a token with 'repo' scope and run: gh auth login --with-token"
   exit 3
 fi
