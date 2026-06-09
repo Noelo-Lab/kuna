@@ -88,11 +88,14 @@ log "launching claude -p (model $MODEL, timeout ${WORKER_TIMEOUT}s)"
 "$KUNA_PY" -m kuna.pipeline.state update --worker "$WORKER_ID" --phase analyze >>"$LOG" 2>&1
 
 RESULT_JSON="$LOG_DIR/$WORKER_ID.result.json"
-( cd "$WT" && timeout "$WORKER_TIMEOUT" claude -p "$(cat "$PROMPT_FILE")" \
+# env -u ANTHROPIC_API_KEY: a stale/invalid ANTHROPIC_API_KEY in the environment makes
+# headless `claude -p` fail with "Invalid API key"; unsetting it falls back to the working
+# session auth. </dev/null so claude does not wait on stdin.
+( cd "$WT" && env -u ANTHROPIC_API_KEY timeout "$WORKER_TIMEOUT" claude -p "$(cat "$PROMPT_FILE")" \
     --model "$MODEL" \
     --output-format json \
     --dangerously-skip-permissions \
-    > "$RESULT_JSON" 2>>"$LOG" )
+    < /dev/null > "$RESULT_JSON" 2>>"$LOG" )
 RC=$?
 
 # capture the session id so a reviewer can resume the exact session on the PR
