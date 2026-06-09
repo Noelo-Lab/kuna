@@ -45,10 +45,12 @@ def _git_worktrees():
 
 
 def _open_prs():
+    # Use the REST API (gh api), not `gh pr list` (GraphQL): GitHub's classic-Projects
+    # sunset makes gh's GraphQL PR commands fail/misreport on this repo.
     try:
         out = subprocess.run(
-            ["gh", "pr", "list", "--repo", "Noelo-Lab/kuna", "--state", "open",
-             "--json", "number,title,headRefName,url", "--limit", "50"],
+            ["gh", "api", "repos/Noelo-Lab/kuna/pulls?state=open&per_page=50",
+             "--jq", "[.[] | {number, title, headRefName: .head.ref, url: .html_url}]"],
             capture_output=True, text=True, timeout=30,
         )
         if out.returncode != 0:
