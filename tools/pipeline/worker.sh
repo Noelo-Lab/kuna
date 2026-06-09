@@ -25,6 +25,11 @@ BASE_BRANCH="${BASE_BRANCH:-main}"
 : "${SLUG:?need SLUG}"
 ARCH="${ARCH:-}"
 
+# Keep ALL pipeline state in the MAIN tree so `kuna.pipeline.status` (run from the main
+# tree) sees this worker's heartbeats. Without this, the worktree's KUNA_ROOT would route
+# state into the worktree's own .kuna-pipeline and the main-tree status would go stale.
+export KUNA_PIPELINE_STATE_DIR="$REPO/.kuna-pipeline"
+
 BRANCH="feat/angr-${SLUG}"
 WT_ROOT="$REPO/.kuna-pipeline/worktrees"
 WT="$WT_ROOT/$WORKER_ID"
