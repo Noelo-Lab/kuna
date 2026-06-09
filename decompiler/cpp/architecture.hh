@@ -193,6 +193,7 @@ public:
   bool stack_alias_deadstore;	///< (kuna) True if a store-through-a-stack-pointer-alias is held across the deadcode race (GH-8500)
   bool recover_array_stride;	///< (kuna) True if a strided-induction offset accumulator is re-expressed as counter*stride (GH-8724)
   bool recover_lowered_switch;	///< (kuna) True if a compiler-lowered comparison cascade is reconstructed into a switch (angr LoweredSwitchSimplifier port)
+  bool strip_stack_guard;	///< (kuna) True if the glibc -fstack-protector canary epilogue is stripped (angr StackCanarySimplifier port)
   bool name_style_angr;		///< (kuna) True if angr-style default naming (vN/aN/dat_/sub_/label_ + location comments) is active
   bool analyze_for_loops;	///< True if we should attempt conversion of \e whiledo loops to \e for loops
   bool present_lessequal;	///< (kuna) True if canonicalized comparisons are restored to their original LESSEQUAL form for presentation

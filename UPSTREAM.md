@@ -103,6 +103,7 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/fspec.cc` | DIV-5 angr naming: include + `FspecSpace::printRaw` angr branch (`sub_<addr>`) |
 | `decompiler/cpp/coreaction.cc` | DIV-5 angr naming: include + `ActionNameVars::makeRec` default-name guard switched to `kunaIsGeneratedName` (recognises `param_N` and the new `aN`/`vN`) |
 | `decompiler/cpp/options.cc`, `decompiler/cpp/kuna_stages.cc` | DIV-5 angr naming: `registerOption(OptionNameStyle)`; settable + surface rows for `option namestyle`; new files `kuna_naming.{hh,cc}` (ElementId 4020), `option namestyle angr` default (`docs/divergences.md`) |
+| `decompiler/cpp/coreaction.cc`, `decompiler/cpp/architecture.{hh,cc}`, `decompiler/cpp/options.cc`, `decompiler/cpp/kuna_stages.cc` | angr StackCanarySimplifier port: include + `ActionStripStackGuard` in `universalAction` (before `ActionReturnSplit`); flag `strip_stack_guard` (decl + default-off init); `registerOption(OptionStackGuard)`; settable + surface rows — all `(kuna)`, `option stackguard` (ElementId 4021), default-off opt-in (ablation: 3 datatest assertions change if default-on) |
 
 kuna-owned additions in the vendored directory: `kuna_compareform.{hh,cc}`,
 `kuna_arraynotation.{hh,cc}`, `kuna_stages.{hh,cc}` (stage registry),
@@ -119,7 +120,8 @@ added with zero upstream edits), `kuna_assert.{hh,cc}` (typed assertion API),
 `kuna_sparcstructret.{hh,cc}` (GH-6882), `kuna_condexeplace.{hh,cc}` (GH-9203),
 `kuna_inputvarnodeadjust.{hh,cc}` (GH-9218),
 `kuna_loweredswitch.{hh,cc}` (angr LoweredSwitchSimplifier port, ELEM 4019),
-`kuna_naming.{hh,cc}` (angr-style default naming, `option namestyle`, ELEM 4020, DIV-5)
+`kuna_naming.{hh,cc}` (angr-style default naming, `option namestyle`, ELEM 4020, DIV-5),
+`kuna_stackguard.{hh,cc}` (angr StackCanarySimplifier port, `option stackguard`, ELEM 4021, default-off)
 (new files, not upstream edits). The `stage catalog` JSON command and the LLM
 assertion catalog (`settableTable`) live in the existing `kuna_stages`/`kuna_console`
 files; no new vendored edits.

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    145,
-    145
+    149,
+    149
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -111,7 +111,7 @@
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
-    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle)",
+    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard)",
     "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array reconstructors (loweredswitch, arraystride)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
@@ -136,6 +136,10 @@
     "data:angr-LoweredSwitch #5: case 0x63 (c) recovered",
     "data:angr-LoweredSwitch #6: negative case -0x82 (-130) recovered",
     "data:angr-LoweredSwitch #7: negative case -0x83 (-131) recovered",
+    "data:angr-StackGuard #1: bug -- __stack_chk_fail call (sub_10e0) rendered only with option off",
+    "data:angr-StackGuard #2: bug -- a goto is emitted only with option off",
+    "data:angr-StackGuard #3: bug -- label (goto target + definition) emitted only with option off",
+    "data:angr-StackGuard #4: fix -- only the option-on pass inlines the deep match path as a direct return 1",
     "data:angr-mv #1: one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-mv #2: default present",
     "data:angr-mv #3: case 0x66 (102 f) recovered",

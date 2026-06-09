@@ -31,6 +31,7 @@
 #include "kuna_stackprobeloop.hh"	// (kuna) GH-8017/6858 stack-probe-loop stack-pointer resolution
 #include "kuna_condexeplace.hh"	// (kuna) GH-9203 conditional-constant COPY loop-block placement
 #include "kuna_loweredswitch.hh"	// (kuna) angr-port lowered comparison-cascade -> switch recovery
+#include "kuna_stackguard.hh"	// (kuna) angr-port strip -fstack-protector canary epilogue
 #include "architecture.hh"	// (kuna) GH-9203 condexe_block_placement arch flag
 
 namespace ghidra {
@@ -5955,6 +5956,10 @@ void ActionDatabase::universalAction(Architecture *conf)
     // (kuna) Detect a compiler-lowered comparison cascade on the simplified CFG and
     // request a restart; the install action (pre-heritage, above) replays it pre-SSA.
     actfullloop->addAction( new ActionLowerSwitchDetect("switchnorm") );
+    // (kuna) Strip the glibc -fstack-protector canary epilogue (angr StackCanarySimplifier)
+    // before return-split, so the collapsed bare-return tail is duplicated into each
+    // predecessor (eliminating the shared-return goto).  Inert unless `option stackguard on`.
+    actfullloop->addAction( new ActionStripStackGuard("returnsplit") );
     actfullloop->addAction( new ActionReturnSplit("returnsplit") );
     actfullloop->addAction( new ActionUnjustifiedParams("protorecovery") );
     actfullloop->addAction( new ActionStartTypes("typerecovery") );

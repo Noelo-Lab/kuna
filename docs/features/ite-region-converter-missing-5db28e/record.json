@@ -1,0 +1,61 @@
+{
+  "opportunity": "test_ite_region_converter_missing_break_statement::authenticate",
+  "test_name": "test_ite_region_converter_missing_break_statement",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/ite_region_converter_missing_breaks",
+  "selector": "authenticate",
+  "func_addr": "0x4022e5",
+  "angr_version": "9.2.213",
+  "option": "stackguard",
+  "flag": "strip_stack_guard",
+  "element_id": 4021,
+  "change_kind": "opt-in-tool",
+  "source_decompiler": "angr",
+  "inspiration": "test_ite_region_converter_missing_break_statement; angr StackCanarySimplifier (angr/analyses/decompiler/optimization_passes/stack_canary_simplifier.py); authenticate",
+  "default_on": false,
+  "ablation_changed": 3,
+  "parity": "OK",
+  "files": {
+    "new": [
+      "decompiler/cpp/kuna_stackguard.hh",
+      "decompiler/cpp/kuna_stackguard.cc",
+      "tests/stages/ghangr-ite-region-converter-missing-5db28e.xml",
+      "tools/ite-region-converter-missing-5db28e_angr_demo.sh"
+    ],
+    "anchors": [
+      "decompiler/cpp/architecture.hh",
+      "decompiler/cpp/architecture.cc",
+      "decompiler/cpp/options.cc",
+      "decompiler/cpp/coreaction.cc",
+      "decompiler/cpp/kuna_stages.cc"
+    ]
+  },
+  "gates": {
+    "catalog_check": "catalog OK",
+    "full_parity": "PARITY OK (204/204 unit, 675/675 datatest)",
+    "stage_tests": "149/149 pass",
+    "stage_baseline": "docs/baseline-stages.json regenerated (149 keys)"
+  },
+  "summary": "Port of angr's StackCanarySimplifier: strip the glibc -fstack-protector canary epilogue (entry canary save + exit `if (canary != *(fs:0x28)) __stack_chk_fail()` check) so the shared single-return point collapses and ActionReturnSplit eliminates the goto a deep return otherwise needs. Ghidra's C printer has no ternary operator, so angr's `c ? 1 : 0` rendering of the unrelated trailing if/else is out of scope; the canary strip is the reproducible win (gotos 1->0, the __stack_chk_fail call and one if removed, deep match path becomes a direct `return 1`).",
+  "decisions": [
+    {
+      "question": "Which decompiler stage/hook, what detection scope, does it generalize, and which CFG primitive vs the loweredswitch restart machinery?",
+      "decider": "general-purpose subagent (design review)",
+      "verdict": "1. Hook point CORRECT: in actfullloop immediately before ActionReturnSplit (SSA/call-specs settled; canary CBRANCH gone before return-split/structuring synthesize the shared return point). ActionDeadCode runs earlier in the same loop iteration, so the orphaned canary load/store/compare are reaped on the loop's next pass; fine because actfullloop is rule_repeatapply and self-gates. Do NOT move into actmainloop (too hot) nor after the loop (returnsplit would already have built the goto). 2. Detection key: name (__stack_chk_fail) PLUS the structural fs:0x28 INT_NOTEQUAL guard. [DEVIATION recorded below: kuna's BFD console loader does not resolve the PLT stub name, so the implementation is PURELY structural -- canary compare + handler CALL on the corrupted branch.] 3. Generalization SAFE for the canonical glibc pattern: requiring BOTH CBRANCH operands to peel to a base+0x28 LOAD plus a handler call is tight; removeBranch's MULTIEQUAL patching handles multi-return-path merges; deadcode self-protects the canary store if it has any other reader. 4. Primitives CORRECT: removeBranch + removeUnreachableBlocks is the right lightweight in-place deletion on an already-correct post-SSA CFG; the pre-SSA restart/side-table machinery in kuna_loweredswitch.cc is unwarranted here (that exists only to INSTALL a jump table before heritage)."
+    },
+    {
+      "question": "Can angr's exact output be matched?",
+      "decider": "analysis (this session)",
+      "verdict": "No. angr renders the trailing `if(c) v=1 else v=0` as a ternary `c ? 1 : 0`; Ghidra's printc.cc has no ternary/`?:` operator (it emits if/else or a (uint) cast of a boolean), so byte-identical match is impossible. The dominant *reproducible* gap -- the goto/label forced by the shared stack-canary epilogue -- is the chosen target; stripping the canary (angr StackCanarySimplifier) eliminates it."
+    },
+    {
+      "question": "Detection by callee name vs purely structural?",
+      "decider": "empirical (this session)",
+      "verdict": "The __stack_chk_fail@plt stub (0x10e0) is a PLT thunk whose imported name is NOT mapped by kuna's BFD console loader (the call renders as `sub_10e0`), so name-based detection (which the design review preferred as the primary signal) is unavailable for this binary. Implementation is therefore purely structural: the canary compare (both INT_EQUAL/INT_NOTEQUAL operands derive from a LOAD of base+0x28) plus a handler CALL on the corrupted-canary branch. This is canary-specific and the handler-call gate guards against an incidental ptr+0x28 compare."
+    },
+    {
+      "question": "Default on or off?",
+      "decider": "ablation (this session)",
+      "verdict": "OFF (opt-in). Ablation with default-ON changes 3 of 675 upstream datatest assertions (Multi-size return #1-3), and the transformation deletes real canary-check instructions (faithfulness loss). change_kind=opt-in-tool, destructive=true; default output stays byte-identical (PARITY OK), no DIV entry."
+    }
+  ]
+}
