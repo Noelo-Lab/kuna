@@ -127,4 +127,10 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 A pushed `{{BRANCH}}` + open PR adding exactly one `kuna_{{SLUG}}.{cc,hh}`, one LLM-discoverable `settableTable`
 option (provenance fields populated), one `tests/stages/ghangr-{{SLUG}}.xml` + baseline bump, the doc touches,
 a `PROGRESS.md` entry, a demo script, and a complete `docs/features/{{SLUG}}/` bundle — with catalog/parity/stage
-gates all green. If you cannot reach green, do NOT open a PR: set state failed and leave `record.json` explaining why.
+gates all green — opened via `tools/pipeline/open_pr.sh` so the before/after demo is embedded.
+
+**Negative result (you cannot reach a green, shippable feature** — e.g. the gap needs deeper restructuring than
+one option-gated pass, or no firing stage test can be synthesized): this is a legitimate outcome. Commit your
+analysis + `record.json` + any `*.patch` of the attempt to the LOCAL branch and set state
+`--status failed --note "<why>"`. Do **NOT** push the branch or open a PR — the worktree + local commit preserve
+it for review; leave no orphan remote branch.
