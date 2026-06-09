@@ -93,25 +93,25 @@ f8040fbec0034704c30fb647088d5001
 <stringmatch name="Bitfields #8" min="1" max="1">-\(uint4\)!loadptr-&gt;fieldb &amp; 900</stringmatch>
 <stringmatch name="Bitfields #9" min="1" max="1">return loadptr-&gt;field2;</stringmatch>
 <stringmatch name="Bitfields #10" min="1" max="1">return loadptr-&gt;field5 \+ loadptr-&gt;field2;</stringmatch>
-<stringmatch name="Bitfields #11" min="1" max="1">mStack_14\.fieldb = stki_a &lt;= 9;</stringmatch>
-<stringmatch name="Bitfields #12" min="1" max="1">mStack_14\.sfield4 = \(char\)stki_a \+ 1;</stringmatch>
-<stringmatch name="Bitfields #13" min="1" max="1">mStack_14\.field3 = stki_b;</stringmatch>
-<stringmatch name="Bitfields #14" min="1" max="1">mStack_14\.field2 = 1;</stringmatch>
-<stringmatch name="Bitfields #15" min="1" max="1">mStack_14\.field5 = 10;</stringmatch>
-<stringmatch name="Bitfields #16" min="1" max="1">mStack_14\.field7 = stki_c;</stringmatch>
-<stringmatch name="Bitfields #17" min="1" max="1">if \(mStack_c\.fieldb\)</stringmatch>
-<stringmatch name="Bitfields #18" min="1" max="1">uVar1 = mStack_c\.field3 \+ mStack_c\.field5;</stringmatch>
-<stringmatch name="Bitfields #19" min="1" max="1">if \(mStack_c\.sfield4 &lt; 0\)</stringmatch>
-<stringmatch name="Bitfields #20" min="1" max="1">uVar1 = mStack_c\.field2;</stringmatch>
-<stringmatch name="Bitfields #21" min="1" max="1">uVar1 = mStack_c\.field7;</stringmatch>
+<stringmatch name="Bitfields #11" min="1" max="1">v1\.fieldb = stki_a &lt;= 9;</stringmatch>
+<stringmatch name="Bitfields #12" min="1" max="1">v1\.sfield4 = \(char\)stki_a \+ 1;</stringmatch>
+<stringmatch name="Bitfields #13" min="1" max="1">v1\.field3 = stki_b;</stringmatch>
+<stringmatch name="Bitfields #14" min="1" max="1">v1\.field2 = 1;</stringmatch>
+<stringmatch name="Bitfields #15" min="1" max="1">v1\.field5 = 10;</stringmatch>
+<stringmatch name="Bitfields #16" min="1" max="1">v1\.field7 = stki_c;</stringmatch>
+<stringmatch name="Bitfields #17" min="1" max="1">if \(v2\.fieldb\)</stringmatch>
+<stringmatch name="Bitfields #18" min="1" max="1">v1 = v2\.field3 \+ v2\.field5;</stringmatch>
+<stringmatch name="Bitfields #19" min="1" max="1">if \(v2\.sfield4 &lt; 0\)</stringmatch>
+<stringmatch name="Bitfields #20" min="1" max="1">v1 = v2\.field2;</stringmatch>
+<stringmatch name="Bitfields #21" min="1" max="1">v1 = v2\.field7;</stringmatch>
 <stringmatch name="Bitfields #22" min="1" max="1">ptrcomp-&gt;field3 .= 5\)</stringmatch>
 <stringmatch name="Bitfields #23" min="1" max="1">ptrcomp-&gt;sfield4 .= -3\)</stringmatch>
 <stringmatch name="Bitfields #24" min="1" max="1">ptrcomp-&gt;fieldb\)</stringmatch>
 <stringmatch name="Bitfields #25" min="1" max="1">ptrcomp-&gt;field5 .= 0x1b\)</stringmatch>
 <stringmatch name="Bitfields #26" min="1" max="1">ptrcomp-&gt;field2 .= 0\)</stringmatch>
 <stringmatch name="Bitfields #27" min="1" max="1">ptrcomp-&gt;field7 .= 0x42\)</stringmatch>
-<stringmatch name="Bitfields #28" min="1" max="1">\(mStack_c\.field3 .= 5 .. mStack_c\.sfield4 .= -5\)</stringmatch>
-<stringmatch name="Bitfields #29" min="1" max="1">\(mStack_c\.field2 .= 0 .. mStack_c\.field7 .= 0x21\)</stringmatch>
+<stringmatch name="Bitfields #28" min="1" max="1">\(v2\.field3 .= 5 .. v2\.sfield4 .= -5\)</stringmatch>
+<stringmatch name="Bitfields #29" min="1" max="1">\(v2\.field2 .= 0 .. v2\.field7 .= 0x21\)</stringmatch>
 <stringmatch name="Bitfields #30" min="1" max="1">return ap-&gt;sfield4 \+ ap-&gt;d;</stringmatch>
 <stringmatch name="Bitfields #31" min="1" max="1">ip-&gt;field5 = ip-&gt;field5 \+ 1;</stringmatch>
 </decompilertest>

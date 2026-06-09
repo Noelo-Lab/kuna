@@ -70,14 +70,14 @@ f20f2cc24883c4505fc3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="Mixed float/int #1" min="1" max="1">float8 dldlll\(float8 param_1,int4 param_2,float8 param_3,int4 param_4,int4 param_5,int4 param_6\)</stringmatch>
-<stringmatch name="Mixed float/int #2" min="1" max="1">return.*param.*\+.*param.*\+.*param.*\+.*param.*\+.*param.*\+.*param.*;</stringmatch>
-<stringmatch name="Mixed float/int #3" min="1" max="1">float4 fi\(float4 param_1,int4 param_2\)</stringmatch>
-<stringmatch name="Mixed float/int #4" min="1" max="1">int4 id\(int4 param_1,float8 param_2\)</stringmatch>
-<stringmatch name="Mixed float/int #5" min="1" max="1">int4 ldld\(int4 param_1,float8 param_2,int4 param_3,float8 param_4\)</stringmatch>
-<stringmatch name="Mixed float/int #6" min="4" max="4">return.*param.*\+.*param.*;</stringmatch>
-<stringmatch name="Mixed float/int #7" min="1" max="1">fVar. = fi\(3\.0,param_1\);</stringmatch>
-<stringmatch name="Mixed float/int #8" min="1" max="1">uVar. = id\(param_1,2\.2\);</stringmatch>
-<stringmatch name="Mixed float/int #9" min="1" max="1">uVar. = ldld\(param_1,3\.0,param_1 \+ 1,5\.0\);</stringmatch>
-<stringmatch name="Mixed float/int #10" min="1" max="1">fVar. = dldlll\(7\.0,param_1,8\.0,param_1 \+ 1,param_1 \+ 2</stringmatch>
+<stringmatch name="Mixed float/int #1" min="1" max="1">float8 dldlll\(float8 a0,int4 a1,float8 a2,int4 a3,int4 a4,int4 a5\)</stringmatch>
+<stringmatch name="Mixed float/int #2" min="1" max="1">return.*a.*\+.*a.*\+.*a.*\+.*a.*\+.*a.*\+.*a.*;</stringmatch>
+<stringmatch name="Mixed float/int #3" min="1" max="1">float4 fi\(float4 a0,int4 a1\)</stringmatch>
+<stringmatch name="Mixed float/int #4" min="1" max="1">int4 id\(int4 a0,float8 a1\)</stringmatch>
+<stringmatch name="Mixed float/int #5" min="1" max="1">int4 ldld\(int4 a0,float8 a1,int4 a2,float8 a3\)</stringmatch>
+<stringmatch name="Mixed float/int #6" min="4" max="4">return.*a[0-9].*\+.*a[0-9].*;</stringmatch>
+<stringmatch name="Mixed float/int #7" min="1" max="1">v. = fi\(3\.0,a0\);</stringmatch>
+<stringmatch name="Mixed float/int #8" min="1" max="1">v. = id\(a0,2\.2\);</stringmatch>
+<stringmatch name="Mixed float/int #9" min="1" max="1">v. = ldld\(a0,3\.0,a0 \+ 1,5\.0\);</stringmatch>
+<stringmatch name="Mixed float/int #10" min="1" max="1">v. = dldlll\(7\.0,a0,8\.0,a0 \+ 1,a0 \+ 2</stringmatch>
 </decompilertest>

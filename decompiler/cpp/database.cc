@@ -15,6 +15,7 @@
  */
 #include "database.hh"
 #include "funcdata.hh"
+#include "kuna_naming.hh"	// (kuna) angr-style default naming policy
 #include "crc32.hh"
 #include <ctype.h>
 
@@ -1760,6 +1761,29 @@ Symbol *Scope::addUnionFacetSymbol(const string &nm,Datatype *dt,int4 fieldNum,c
 string Scope::buildDefaultName(Symbol *sym,int4 &base,Varnode *vn) const
 
 {
+  if (kunaAngrNaming(glb)) {	// (kuna) angr-style default naming: aN / dat_ / vN
+    if (sym->getCategory() == Symbol::function_parameter)
+      return makeNameUnique(kunaArgName(sym->getCategoryIndex()));
+    Address naddr;
+    uint4 nflags = 0;
+    if (vn != (Varnode *)0 && !vn->isConstant()) {
+      naddr = vn->getAddr();
+      nflags = vn->getFlags();
+    }
+    else if (sym->numEntries() != 0) {
+      SymbolEntry *entry = sym->getMapEntry(0);
+      naddr = entry->getAddr();
+      nflags = entry->getFirstUseAddress().isInvalid() ? Varnode::addrtied : 0;
+    }
+    if (!naddr.isInvalid() && (nflags & Varnode::persist) != 0) {
+      int4 sz = (sym->getType() != (Datatype *)0) ? sym->getType()->getSize() : 1;
+      if (glb->translate->getRegisterName(naddr.getSpace(),naddr.getOffset(),sz).empty())
+        return makeNameUnique(kunaGlobalDataName(naddr));	// global data -> dat_<addr>
+    }
+    ostringstream s;		// everything else (locals, stack, extraout, unaff, in) -> vN
+    s << 'v' << dec << base++;
+    return makeNameUnique(s.str());
+  }
   if (vn != (Varnode *)0 && !vn->isConstant()) {
     Address usepoint;
     if (!vn->isAddrTied() && fd != (Funcdata *)0)
@@ -2462,6 +2486,8 @@ string ScopeInternal::buildVariableName(const Address &addr,
     if (!spacename.empty())
       s << spacename;
     else {
+      if (kunaAngrNaming(glb))	// (kuna) angr-style: global data -> dat_<addr>
+	return makeNameUnique(kunaGlobalDataName(addr));
       if (ct != (Datatype *)0)
 	ct->printNameBase(s);
       spacename = addr.getSpace()->getName();

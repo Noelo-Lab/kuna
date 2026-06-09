@@ -14,6 +14,6 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="Skip Instruction #1" min="1" max="1">if \(param_1 != 5\)</stringmatch>
-<stringmatch name="Skip Instruction #2" min="1" max="1">iVar1 = param_2 \+ 10;</stringmatch>
+<stringmatch name="Skip Instruction #1" min="1" max="1">if \(a0 != 5\)</stringmatch>
+<stringmatch name="Skip Instruction #2" min="1" max="1">v1 = a1 \+ 10;</stringmatch>
 </decompilertest>

@@ -25,8 +25,8 @@ ec7cde904883c4185b5dc3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="No for-loop iterator used #1" min="1" max="1">while \(.*uVar1 &lt; max\)</stringmatch>
-<stringmatch name="No for-loop iterator used #2" min="1" max="1">uVar1 = 10;</stringmatch>
-<stringmatch name="No for-loop iterator used #3" min="1" max="1">uVar1 = uVar1 \+ 1;</stringmatch>
-<stringmatch name="No for-loop iterator used #4" min="1" max="1">globvar = uVar1 \* 100;</stringmatch>
+<stringmatch name="No for-loop iterator used #1" min="1" max="1">while \(.*v1 &lt; max\)</stringmatch>
+<stringmatch name="No for-loop iterator used #2" min="1" max="1">v1 = 10;</stringmatch>
+<stringmatch name="No for-loop iterator used #3" min="1" max="1">v1 = v1 \+ 1;</stringmatch>
+<stringmatch name="No for-loop iterator used #4" min="1" max="1">globvar = v1 \* 100;</stringmatch>
 </decompilertest>

@@ -62,20 +62,20 @@ c3
 </script>
 <stringmatch name="Concat #1" min="0" max="0">CONCAT</stringmatch>
 <stringmatch name="Concat #2" min="0" max="0">ZEXT</stringmatch>
-<stringmatch name="Concat #3" min="1" max="1">fVar1\.A = regp1;</stringmatch>
-<stringmatch name="Concat #4" min="1" max="1">fVar1\.B = regp2;</stringmatch>
-<stringmatch name="Concat #5" min="1" max="1">fVar1\.A = retp1;</stringmatch>
-<stringmatch name="Concat #6" min="1" max="1">fVar1\.B = retp2;</stringmatch>
-<stringmatch name="Concat #7" min="1" max="1">fVar1\.a = short1;</stringmatch>
-<stringmatch name="Concat #8" min="1" max="1">fVar1\.b = short2;</stringmatch>
-<stringmatch name="Concat #9" min="1" max="1">fVar1\.c = short3;</stringmatch>
-<stringmatch name="Concat #10" min="1" max="1">fVar1\.d = short4;</stringmatch>
+<stringmatch name="Concat #3" min="1" max="1">v1\.A = regp1;</stringmatch>
+<stringmatch name="Concat #4" min="1" max="1">v1\.B = regp2;</stringmatch>
+<stringmatch name="Concat #5" min="1" max="1">v1\.A = retp1;</stringmatch>
+<stringmatch name="Concat #6" min="1" max="1">v1\.B = retp2;</stringmatch>
+<stringmatch name="Concat #7" min="1" max="1">v1\.a = short1;</stringmatch>
+<stringmatch name="Concat #8" min="1" max="1">v1\.b = short2;</stringmatch>
+<stringmatch name="Concat #9" min="1" max="1">v1\.c = short3;</stringmatch>
+<stringmatch name="Concat #10" min="1" max="1">v1\.d = short4;</stringmatch>
 <stringmatch name="Concat #11" min="1" max="1">globshort\.b = replace1;</stringmatch>
 <stringmatch name="Concat #12" min="1" max="1">globshort\.d = replace2;</stringmatch>
 <stringmatch name="Concat #13" min="0" max="0">globshort\.a =</stringmatch>
 <stringmatch name="Concat #14" min="0" max="0">globshort\.c =</stringmatch>
-<stringmatch name="Concat #15" min="1" max="1">fVar1\.A = zero1;</stringmatch>
-<stringmatch name="Concat #16" min="1" max="1">fVar1\.B = 0;</stringmatch>
+<stringmatch name="Concat #15" min="1" max="1">v1\.A = zero1;</stringmatch>
+<stringmatch name="Concat #16" min="1" max="1">v1\.B = 0;</stringmatch>
 <stringmatch name="Concat #17" min="1" max="1">footwo\.A = zero_two1;</stringmatch>
 <stringmatch name="Concat #18" min="1" max="1">footwo\.B = 0;</stringmatch>
 </decompilertest>

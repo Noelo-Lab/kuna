@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr-naming: "Make default decompiler output read like angr"
+
+    kuna's default naming scheme (P0 surface-rendering, S9 sub-stage
+    `naming-policy`) renders angr-style names: locals/temps -> vN, arguments
+    -> aN, global data -> dat_<addr>, unnamed functions -> sub_<addr>, code
+    labels -> label_<addr>, plus a `// rax` / `// stack - 0x10` source-location
+    comment on each local declaration.  The master toggle is
+    `option namestyle angr|ghidra` (default `angr`).
+
+    Source (target @ 0x401114, x86-64, gcc -O1 -fno-stack-protector; bytes
+    verbatim below): a loop that calls an unnamed helper and writes a global:
+        int gcount;
+        int helper(int);
+        int target(int n) {
+            int acc = 0;
+            for (int i = 0; i < n; i++) acc += helper(i);
+            gcount = acc;
+            return acc;
+        }
+    The call target (helper @ 0x401106) and the global (gcount @ 0x40402c) are
+    left unnamed, so they exercise sub_/dat_; the parameter exercises aN, the
+    loop locals exercise vN.
+
+    Pass 1 (default, namestyle angr):  proves the angr scheme is the DEFAULT
+        (a0 / vN / dat_40402c / sub_401106).
+    Pass 2 (option namestyle ghidra):  proves the angr naming GOES AWAY and the
+        upstream Ghidra scheme returns (param_1 / iVar / uRam / func_0x).
+-->
+<bytechunk space="ram" offset="0x401114" readonly="true">
+f30f1efa4154555385ff7e2b4189fcbb00000000bd0000000089dfe8d2ffffff01c583c3014139dc75ef892de82e000089e85b5d415cc3bd00000000ebec
+</bytechunk>
+<symbol space="ram" offset="0x401114" name="target"/>
+</binaryimage>
+<script>
+  <com>lo fu target</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option namestyle ghidra</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<!-- Pass 1: angr is the DEFAULT scheme -->
+<stringmatch name="namestyle #1 default: argument renders as aN" min="1" max="1">int4 target\(int4 a0\)</stringmatch>
+<stringmatch name="namestyle #2 default: local renders as vN with a register source-location comment" min="1" max="1">int4 v1; // eax</stringmatch>
+<stringmatch name="namestyle #3 default: unnamed call target renders as sub_&lt;addr&gt;" min="1" max="1">v1 = sub_401106\(v2\);</stringmatch>
+<stringmatch name="namestyle #4 default: global data renders as dat_&lt;addr&gt; (lowercase, no leading zeros)" min="1" max="2">dat_40402c = v3;</stringmatch>
+<!-- Pass 2: option namestyle ghidra makes the angr naming GO AWAY (upstream scheme restored) -->
+<stringmatch name="namestyle #5 ghidra restores: argument renders as param_N" min="1" max="1">int4 target\(int4 param_1\)</stringmatch>
+<stringmatch name="namestyle #6 ghidra restores: local renders as iVar with no location comment" min="1" max="1">int4 iVar1;</stringmatch>
+<stringmatch name="namestyle #7 ghidra restores: unnamed call target renders as func_0x&lt;addr&gt;" min="1" max="1">iVar1 = func_0x00401106\(iVar2\);</stringmatch>
+</decompilertest>

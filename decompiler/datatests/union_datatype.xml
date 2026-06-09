@@ -176,8 +176,8 @@ ff90c9c3554889e548897df88975f489
 </script>
 <stringmatch name="Union #1" min="1" max="1">ptr\[i\]\.ifield = i \+ 10;</stringmatch>
 <stringmatch name="Union #2" min="1" max="1">ptr\[i\]\.ffield = \(float4\)i;</stringmatch>
-<stringmatch name="Union #3" min="1" max="1">iVar1 = ptr-\>a;</stringmatch>
-<stringmatch name="Union #4" min="1" max="1">iVar1 = ptr-\>arr\[index\];</stringmatch>
+<stringmatch name="Union #3" min="1" max="1">v1 = ptr-\>a;</stringmatch>
+<stringmatch name="Union #4" min="1" max="1">v1 = ptr-\>arr\[index\];</stringmatch>
 <stringmatch name="Union #5" min="1" max="1">displayint\(glob\.intfield / 3\);</stringmatch>
 <stringmatch name="Union #6" min="1" max="1">displayint\(\(int4\)\(glob\.floatfield \+ 11\.0\)\);</stringmatch>
 <stringmatch name="Union #7" min="1" max="1">glob\.uintfield = glob\.uintfield \>\> 3;</stringmatch>

@@ -30,10 +30,10 @@ e8bbfdffffc9c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="Piece Structure #1" min="1" max="1">Stack_18\.a = a;</stringmatch>
-<stringmatch name="Piece Structure #2" min="1" max="1">Stack_18\.b = b;</stringmatch>
-<stringmatch name="Piece Structure #3" min="1" max="1">Stack_18\.arr\[0\] = c;</stringmatch>
-<stringmatch name="Piece Structure #4" min="1" max="1">Stack_18\.arr\[1\] = d;</stringmatch>
-<stringmatch name="Piece Structure #5" min="1" max="1">Stack_18\.arr\[2\] = e;</stringmatch>
-<stringmatch name="Piece Structure #6" min="1" max="1">Stack_18\.arr\[3\] = f;</stringmatch>
+<stringmatch name="Piece Structure #1" min="1" max="1">v1\.a = a;</stringmatch>
+<stringmatch name="Piece Structure #2" min="1" max="1">v1\.b = b;</stringmatch>
+<stringmatch name="Piece Structure #3" min="1" max="1">v1\.arr\[0\] = c;</stringmatch>
+<stringmatch name="Piece Structure #4" min="1" max="1">v1\.arr\[1\] = d;</stringmatch>
+<stringmatch name="Piece Structure #5" min="1" max="1">v1\.arr\[2\] = e;</stringmatch>
+<stringmatch name="Piece Structure #6" min="1" max="1">v1\.arr\[3\] = f;</stringmatch>
 </decompilertest>

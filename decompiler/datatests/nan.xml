@@ -24,7 +24,7 @@ b8000000000f44f8e88cfffffff20f10
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="NaN operations #1" min="1" max="1">read_nan\(NAN\(param_1\)\);</stringmatch>
-<stringmatch name="NaN operations #2" min="1" max="1">read_compare\(param_2 &lt; 0\.75\);</stringmatch>
+<stringmatch name="NaN operations #1" min="1" max="1">read_nan\(NAN\(a0\)\);</stringmatch>
+<stringmatch name="NaN operations #2" min="1" max="1">read_compare\(a1 &lt; 0\.75\);</stringmatch>
 <stringmatch name="NaN operations #3" min="0" max="0">NAN\(param_2\)</stringmatch>
 </decompilertest>

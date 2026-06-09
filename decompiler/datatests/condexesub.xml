@@ -30,12 +30,12 @@
   <com>decompile</com>
   <com>print C</com>
 </script>
-<stringmatch name="Conditional Subpiece #1" min="1" max="1">if \(pfVar</stringmatch>
+<stringmatch name="Conditional Subpiece #1" min="1" max="1">if \(v</stringmatch>
 <stringmatch name="Conditional Subpiece #2" min="0" max="0">\(char\)</stringmatch>
 <stringmatch name="Conditional Subpiece #3" min="1" max="1">glob1-&gt;w = '\\x01';</stringmatch>
-<stringmatch name="Conditional Subpiece #4" min="1" max="1">pfVar1-&gt;x = '\\0';</stringmatch>
-<stringmatch name="Conditional Subpiece #5" min="1" max="1">pfVar1-&gt;y = '\\0';</stringmatch>
-<stringmatch name="Conditional Subpiece #6" min="1" max="1">pfVar1-&gt;z = '\\0';</stringmatch>
+<stringmatch name="Conditional Subpiece #4" min="1" max="1">v1-&gt;x = '\\0';</stringmatch>
+<stringmatch name="Conditional Subpiece #5" min="1" max="1">v1-&gt;y = '\\0';</stringmatch>
+<stringmatch name="Conditional Subpiece #6" min="1" max="1">v1-&gt;z = '\\0';</stringmatch>
 <stringmatch name="Conditional Add #1" min="1" max="1">if \(a</stringmatch>
 <stringmatch name="Conditional Add #2" min="1" max="1">\*iptr = b;
                                                        iptr\[2\] = c;</stringmatch>

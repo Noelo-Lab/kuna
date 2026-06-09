@@ -37,6 +37,7 @@
 #include "kuna_stackprobeloop.hh"	// (kuna) OptionStackProbeLoop
 #include "kuna_switchmodbound.hh"	// (kuna) OptionSwitchModBound
 #include "kuna_loweredswitch.hh"	// (kuna) OptionLowerSwitch
+#include "kuna_naming.hh"	// (kuna) OptionNameStyle
 
 namespace ghidra {
 
@@ -171,6 +172,7 @@ OptionDatabase::OptionDatabase(Architecture *g)
   registerOption(new OptionMemsetRecover());	// (kuna) GH-9230 constant-fill memset recovery sub-stage
   registerOption(new OptionSwitchModBound());	// (kuna) GH-9191 S2 switch-model index-bound sub-stage
   registerOption(new OptionLowerSwitch());	// (kuna) angr-port S2 lowered comparison-cascade -> switch recovery
+  registerOption(new OptionNameStyle());	// (kuna) angr-style default naming policy (P0 surface-rendering)
 }
 
 OptionDatabase::~OptionDatabase(void)

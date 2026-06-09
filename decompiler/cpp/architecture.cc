@@ -16,6 +16,7 @@
 // Set up decompiler for specific architectures
 
 #include "coreaction.hh"
+#include "kuna_naming.hh"	// (kuna) angr-style default naming policy
 #include "flow.hh"
 #ifdef CPUI_RULECOMPILE
 #include "rulecompile.hh"
@@ -538,6 +539,10 @@ void Architecture::restoreXml(DocumentStorage &store)
 void Architecture::nameFunction(const Address &addr,string &name) const
 
 {
+  if (kunaAngrNaming(this)) {	// (kuna) angr-style: sub_<addr>
+    name = kunaFunctionName(addr);
+    return;
+  }
   ostringstream defname;
   defname << "func_";
   addr.printRaw(defname);
@@ -1436,6 +1441,7 @@ void Architecture::resetDefaultsInternal(void)
   stack_alias_deadstore = false;	// (kuna) default: upstream byte-identical (GH-8500); flip on per-function
   recover_array_stride = true;	// (kuna) DIV-3 default-on: strided-induction index (GH-8724)
   recover_lowered_switch = true;	// (kuna) default-on: reconstruct lowered comparison-cascade switches (angr port)
+  name_style_angr = true;	// (kuna) default-on: angr-style default naming (vN/aN/dat_/sub_/label_ + location comments)
   condexe_block_placement = true;	// (kuna) DIV-3 default-on: keep const-COPY out of loop blocks (GH-9203)
   add_carry_chain = true;	// (kuna) DIV-2 default-on: carry-chain wide adds recover (GH-8913)
   model_stack_probe_loop = true;	// (kuna) DIV-3 default-on: resolve stack-probe loop SP (GH-8017)

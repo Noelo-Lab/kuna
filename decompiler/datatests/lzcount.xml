@@ -12,6 +12,6 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name = "Leading zeros count #1" min="1" max="1">return param_1 == 3;</stringmatch>
+<stringmatch name = "Leading zeros count #1" min="1" max="1">return a0 == 3;</stringmatch>
 <stringmatch name = "Leading zeros count #2" min="0" max="0">lzcount</stringmatch>
 </decompilertest>

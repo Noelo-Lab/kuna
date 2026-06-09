@@ -20,8 +20,8 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="Access packed fields #1" min="1" max="1">tVar1 = getstruct\(i\);</stringmatch>
-<stringmatch name="Access packed fields #2" min="1" max="1">tVar1\.a</stringmatch>
-<stringmatch name="Access packed fields #3" min="1" max="1">\(int4\)tVar1\.b</stringmatch>
-<stringmatch name="Access packed fields #4" min="1" max="1">\(int4\)tVar1\.c</stringmatch>
+<stringmatch name="Access packed fields #1" min="1" max="1">v1 = getstruct\(i\);</stringmatch>
+<stringmatch name="Access packed fields #2" min="1" max="1">v1\.a</stringmatch>
+<stringmatch name="Access packed fields #3" min="1" max="1">\(int4\)v1\.b</stringmatch>
+<stringmatch name="Access packed fields #4" min="1" max="1">\(int4\)v1\.c</stringmatch>
 </decompilertest>

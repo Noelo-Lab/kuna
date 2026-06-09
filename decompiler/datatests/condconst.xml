@@ -53,7 +53,7 @@ eb068b45ec8945fc8b45fc5dc3
 <stringmatch name="Conditional Constant #7" min="1" max="1">glob2 = d;</stringmatch>
 <stringmatch name="Conditional Constant #8" min="1" max="1">glob3 = 10;</stringmatch>
 <stringmatch name="Conditional Constant #9" min="1" max="1">glob4 = 10;</stringmatch>
-<stringmatch name="Conditional Constant #10" min="1" max="1">iStack_c = x;</stringmatch>
-<stringmatch name="Conditional Constant #11" min="1" max="1">iStack_c = 0x14;</stringmatch>
+<stringmatch name="Conditional Constant #10" min="1" max="1">v1 = x;</stringmatch>
+<stringmatch name="Conditional Constant #11" min="1" max="1">v1 = 0x14;</stringmatch>
 <stringmatch name="Conditional Constant #12" min="0" max="0">iStack_c = 10;</stringmatch>
 </decompilertest>

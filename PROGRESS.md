@@ -1,5 +1,38 @@
 # kuna Progress Log
 
+## Session (2026-06-09) — angr-style default naming (`option namestyle`, DIV-5)
+
+Re-skinned the decompiler's default output to read like the angr decompiler, behind a
+single master toggle `option namestyle angr|ghidra` (default `angr`; `ghidra` restores
+upstream naming byte-for-byte).
+
+**What changed (default output):**
+- locals/temps/`extraout_*`/`unaff_*`/`in_*` → `v1, v2, v3 …`; arguments → `a0, a1 …`.
+- global data (`<type>Ram<addr>`, volatile annotations) → `dat_<addr>` (lowercase, no
+  leading zeros, no `0x`); unnamed functions `func_0x…` → `sub_<addr>`; labels
+  `code_r0x…` → `label_<addr>`.
+- each **local declaration** gets a trailing source-location comment: `// rax` (register)
+  or `// stack - 0x10` (frame-relative). Real/recommended names are preserved.
+
+**Mechanism.** New `kuna_naming.{hh,cc}` (`OptionNameStyle`, helpers, ElementId 4020) +
+a per-`Architecture` flag `name_style_angr` (default on). Naming intercepted in
+`Scope::buildDefaultName` (aN/dat_/vN) and the `persist` arm of
+`ScopeInternal::buildVariableName`; functions in `Architecture::nameFunction`,
+`PrintC::genericFunctionName`, `FspecSpace::printRaw`; labels in `PrintC::emitLabel`;
+the comment in `PrintC::emitVarDeclStatement`; volatile data in `PrintC::pushAnnotation`.
+The cross-function default-name guard (`ActionNameVars::makeRec`) now uses
+`kunaIsGeneratedName` (recognises `param_N` + `aN`/`vN`).
+
+**Tests.** Re-pinned **185/675** datatest assertions across 50 files to the new default
+names (+ `pointerrel.xml` script `rename`/`retype` names), and **25** stages assertions
+across 17 `gh*.xml` files — all via parallel sub-agent workflows that dump each test's new
+output (`KUNA_DUMP=1`) and verify zero failures per file. New `tests/stages/namestyle.xml`
+decompiles a loop (unnamed-helper call + global write) once at the default and once under
+`option namestyle ghidra`, pinning both the angr names and the restored Ghidra names — the
+"it goes away when you flip the scheme" proof. **PARITY OK: 204/204 unit + 675/675
+datatests; stages 141/141; catalog OK.** `docs/divergences.md` DIV-5, `docs/baseline-stages.json`
+→ 141 keys, `docs/assertions.md` regenerated, `UPSTREAM.md` *Divergence* updated.
+
 ## Session (2026-06-08) — port angr's LoweredSwitchSimplifier (`option loweredswitch`)
 
 Implemented a port of angr's `LoweredSwitchSimplifier` (SAILR, USENIX Security 2024):

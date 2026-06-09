@@ -54,5 +54,5 @@ c20600b4eb0300aa258080d20502a8f2200c014e03e87b92a50c044e091040f24a10409200020054
   <com>quit</com>
 </script>
 <stringmatch name="GH8467 #1: dynamichashmax on lets the function decompile to a full body (fix)" min="1" max="1">void FUN_128d0</stringmatch>
-<stringmatch name="GH8467 #2: recovered control flow reaches the tail block (no abort)" min="1" max="20">goto code_r0x000129a8</stringmatch>
+<stringmatch name="GH8467 #2: recovered control flow reaches the tail block (no abort)" min="1" max="20">goto label_129a8</stringmatch>
 </decompilertest>

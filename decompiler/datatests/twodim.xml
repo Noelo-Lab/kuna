@@ -23,7 +23,7 @@ fc8d4a0a8b55e84863f24863d04889d0
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="Two dimension #1" min="1" max="1">iVar. = myarray\[globindex\]\[valin\];</stringmatch>
-<stringmatch name="Two dimension #2" min="1" max="1">myarray\[globindex\]\[valout\] = iVar. \+ 10;</stringmatch>
+<stringmatch name="Two dimension #1" min="1" max="1">v1 = myarray\[globindex\]\[valin\];</stringmatch>
+<stringmatch name="Two dimension #2" min="1" max="1">myarray\[globindex\]\[valout\] = v1 \+ 10;</stringmatch>
 <stringmatch name="Two dimension #3" min="0" max="0"> \* </stringmatch>
 </decompilertest>

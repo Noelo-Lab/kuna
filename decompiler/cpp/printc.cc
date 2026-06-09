@@ -15,6 +15,7 @@
  */
 #include "printc.hh"
 #include "funcdata.hh"
+#include "kuna_naming.hh"	// (kuna) angr-style default naming policy
 
 namespace ghidra {
 
@@ -1957,13 +1958,17 @@ void PrintC::pushAnnotation(const Varnode *vn,const PcodeOp *op)
     string regname = glb->translate->getRegisterName(vn->getSpace(),vn->getOffset(),size);
     if (regname.empty()) {
       AddrSpace *spc = vn->getSpace();
-      string spacename = spc->getName();
-      spacename[0] = toupper( spacename[0] ); // Capitalize space
-      ostringstream s;
-      s << spacename;
-      s << hex << setfill('0') << setw(2*spc->getAddrSize());
-      s << AddrSpace::byteToAddress( vn->getOffset(), spc->getWordSize() );
-      regname = s.str();
+      if (kunaAngrNaming(glb) && spc != glb->getStackSpace())	// (kuna) angr-style: unnamed data annotation -> dat_<addr>
+	regname = kunaGlobalDataName(Address(spc,vn->getOffset()));
+      else {
+	string spacename = spc->getName();
+	spacename[0] = toupper( spacename[0] ); // Capitalize space
+	ostringstream s;
+	s << spacename;
+	s << hex << setfill('0') << setw(2*spc->getAddrSize());
+	s << AddrSpace::byteToAddress( vn->getOffset(), spc->getWordSize() );
+	regname = s.str();
+      }
     }
     pushAtom(Atom(regname,vartoken,EmitMarkup::special_color,op,vn));
   }
@@ -2650,6 +2655,13 @@ void PrintC::emitVarDeclStatement(const Symbol *sym)
   emit->tagLine();
   emitVarDecl(sym);
   emit->print(SEMICOLON);
+  string loc;			// (kuna) angr-style: trailing source-location comment on each local
+  if (kunaAngrNaming(glb) && kunaStorageComment(glb,sym,loc)) {
+    const SymbolEntry *entry = sym->getFirstWholeMap();
+    const Address &addr(entry->getAddr());
+    emit->spaces(1);
+    emit->tagComment("// " + loc,EmitMarkup::comment_color,addr.getSpace(),addr.getOffset());
+  }
 }
 
 bool PrintC::emitScopeVarDecls(const Scope *symScope,int4 cat)
@@ -3321,14 +3333,19 @@ void PrintC::emitLabel(const FlowBlock *bl)
     }
   }
   ostringstream lb;
-  if (bb->isJoined())
-    lb << "joined_";
-  else if (bb->isDuplicated())
-    lb << "dup_";
-  else
-    lb << "code_";
-  lb << addr.getShortcut();
-  addr.printRaw(lb);
+  if (kunaAngrNaming(glb) && !bb->isJoined() && !bb->isDuplicated()) {
+    lb << kunaLabelName(addr);	// (kuna) angr-style: label_<addr>
+  }
+  else {
+    if (bb->isJoined())
+      lb << "joined_";
+    else if (bb->isDuplicated())
+      lb << "dup_";
+    else
+      lb << "code_";
+    lb << addr.getShortcut();
+    addr.printRaw(lb);
+  }
   emit->tagLabel(lb.str(),EmitMarkup::no_color,spc,off);
 }
 
@@ -3499,6 +3516,8 @@ void PrintC::emitBlockSwitch(const BlockSwitch *bl)
 string PrintC::genericFunctionName(const Address &addr)
 
 {
+  if (kunaAngrNaming(glb))	// (kuna) angr-style: sub_<addr>
+    return kunaFunctionName(addr);
   ostringstream s;
 
   s << "func_";

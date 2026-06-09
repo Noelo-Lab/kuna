@@ -296,9 +296,9 @@ static const KunaSubStage substageTable[] = {
     "options analyzeforloops / jumptablemax" },
   // --- S9 (s10) ---
   { "naming-policy", kstage_s9,
-    "auto vs symbol-derived vs semantic-pattern names; preservation of user names",
-    "name lock (cosmetic)", kstrength_hard, kstage_s9, false,
-    "commands rename / name varnode (namelock); option namespacestrategy" },
+    "auto vs symbol-derived vs semantic-pattern names; preservation of user names; angr-style (vN/aN/dat_/sub_/label_) vs Ghidra-style default names",
+    "name lock (cosmetic); namestyle angr|ghidra", kstrength_hard, kstage_s9, false,
+    "commands rename / name varnode (namelock); option namespacestrategy; option namestyle" },
   { "cast-policy", kstage_s9,
     "minimal-necessary vs always vs never (CastStrategyC)",
     "cast option", kstrength_hard, kstage_s9, false,
@@ -424,7 +424,8 @@ static const KunaSurfaceEntry surfaceTable[] = {
   { "option switchmodbound", kstage_s2, "switch-model", "(kuna GH-9191) bound a LOAD-table jumptable by a modulo/and-mask on its index" },
   { "option dynamichashmax", kstage_s6, "alias-facets", "(kuna GH-8467) raise DynamicHash same-address collision budget 8->16 for dense unrolled code" },
   { "option stackalias", kstage_s6, "alias-facets", "(kuna GH-8500) hold a store-through-a-stack-pointer-alias across the deadcode race" },
-  { "option loweredswitch", kstage_s2, "switch-model", "(kuna angr-port) reconstruct a compiler-lowered comparison cascade into a switch jump-table" }
+  { "option loweredswitch", kstage_s2, "switch-model", "(kuna angr-port) reconstruct a compiler-lowered comparison cascade into a switch jump-table" },
+  { "option namestyle", kstage_s9, "naming-policy", "(kuna angr-naming) master default-name scheme: angr vN/aN/dat_/sub_/label_ + location comments vs upstream Ghidra naming" }
 };
 
 int4 kunaNumSurfaces(void)
@@ -553,7 +554,12 @@ static const KunaSettable settableTable[] = {
     kstage_s2, "switch-model", kstrength_hard, kstage_s2, "angr-LoweredSwitchSimplifier",
     "Reconstruct a compiler-lowered comparison cascade (a GCC binary-search if/else tree over one variable) back into a switch with a synthesized BRANCHIND + jump-table (the S2 artifact Ghidra renders switches from).",
     "On by default (DIV-4); the required binary-search-structure guard (a range/jle split) keeps it off hand-written linear if/else-if chains. Set OFF to restore the upstream if/else-if rendering of a lowered switch.",
-    "option loweredswitch off" }
+    "option loweredswitch off" },
+  { "namestyle", "angr|ghidra", "angr", false,
+    kstage_s9, "naming-policy", kstrength_hard, kstage_s9, "angr-naming",
+    "Master default-name scheme: angr-style (locals vN, args aN, global data dat_<addr>, unnamed functions sub_<addr>, labels label_<addr>, plus a // rax / // stack - 0x10 source-location comment per local) vs upstream Ghidra (iVar/uVar/pcVar, param_N, <type>Ram<addr>, func_, code_).",
+    "Set to ghidra to reproduce upstream Ghidra naming byte-for-byte; angr (default) makes default output read like the angr decompiler.",
+    "option namestyle ghidra" }
 };
 
 int4 kunaNumSettables(void)

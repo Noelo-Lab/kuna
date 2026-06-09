@@ -23,15 +23,15 @@ d4ffffffecffffff04000000
   <com>quit</com>
 </script>
 <stringmatch name="If/Switch #1" min="1" max="1">default:
-                                                 return param_1 \+ -0xd;</stringmatch>
-<stringmatch name="If/Switch #2" min="1" max="1">if \(100 &lt;= param_1\) \{
-						 return param_1 \* 1000;</stringmatch>
+                                                 return a0 \+ -0xd;</stringmatch>
+<stringmatch name="If/Switch #2" min="1" max="1">if \(100 &lt;= a0\) \{
+						 return a0 \* 1000;</stringmatch>
 <stringmatch name="If/Switch #3" min="1" max="1">case 0:
 						 return 10;</stringmatch>
 <stringmatch name="If/Switch #4" min="1" max="1">case 1:
 						 case 10:
 						 case 0x14:
-						 return param_1 / 5;</stringmatch>
+						 return a0 / 5;</stringmatch>
 <stringmatch name="If/Switch #5" min="1" max="1">case 2:
 						 case 5:
 						 case 0x13:
@@ -40,5 +40,5 @@ d4ffffffecffffff04000000
 						 case 6:
 						 case 7:
 						 case 8:
-						 return param_1 \* 8;</stringmatch>
+						 return a0 \* 8;</stringmatch>
 </decompilertest>

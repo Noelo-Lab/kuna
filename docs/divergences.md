@@ -120,3 +120,44 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   loweredswitch off` for the bug pass so both directions stay pinned under the new default.
   `docs/baseline-stages.json` (128 assertions).
 - **Date**: 2026-06-08.
+
+## DIV-5: angr-style default naming becomes the default
+
+- **Flip**: `namestyle` → **angr** (master toggle; `option namestyle ghidra` restores the
+  upstream Ghidra scheme byte-for-byte). Default decompiler output is re-skinned to read like
+  the angr decompiler:
+  - locals / temps / `extraout_*` / `unaff_*` / `in_*` → `v1`, `v2`, `v3` … (sequential);
+  - arguments with a generated default name → `a0`, `a1` … (by signature slot);
+  - global data (`<type>Ram<addr>`, volatile annotations) → `dat_<addr>` (lowercase hex, no
+    leading zeros, no `0x`);
+  - unnamed functions `func_0x…` → `sub_<addr>`; code labels `code_r0x…` → `label_<addr>`;
+  - **every local declaration** gains a trailing source-location comment: `// rax` (register),
+    `// stack - 0x10` (frame-relative), `// rdx:rax` (a split/`join` value, decoded into its
+    register pieces), or `// tmp` (a decompiler-internal SSA temporary with no machine home —
+    `v1`/`v2`-style). Dynamic (merged) symbols are resolved to a representative Varnode via
+    `Funcdata::findLinkedVarnode` so they are annotated too. Symbols with real/recommended
+    names are untouched.
+  Like DIV-4 this is **not a correctness fix** — it is a deliberate presentation default
+  (P0 surface-rendering, S9 sub-stage `naming-policy`), recorded here because it changes
+  default output.
+- **Mechanism**: a per-`Architecture` flag `name_style_angr` (default on) read at every naming
+  site. Local/argument/global naming is intercepted in `Scope::buildDefaultName` and the
+  `persist` arm of `ScopeInternal::buildVariableName`; function names in
+  `Architecture::nameFunction`, `PrintC::genericFunctionName`, `FspecSpace::printRaw`; labels in
+  `PrintC::emitLabel`; the location comment in `PrintC::emitVarDeclStatement`; the volatile-data
+  annotation in `PrintC::pushAnnotation`. Helpers + the `OptionNameStyle` option live in
+  `kuna_naming.{hh,cc}`. The cross-function default-name guard in `ActionNameVars::makeRec`
+  now recognises both `param_N` and the new `aN`/`vN` defaults (`kunaIsGeneratedName`).
+- **Changed upstream assertions: 185 of 675 re-pinned in place** to the new default names
+  (50 datatest files; 204/204 unit unchanged); plus one script-name update (`pointerrel.xml`
+  `rename`/`retype` commands). `docs/baseline.json` keys are unchanged (same assertion names,
+  same pass set) and stay PARITY OK. `option namestyle ghidra` reproduces the pre-DIV-5
+  rendering for any consumer that needs upstream-identical names.
+- **Caveat**: a global symbol is named once in the persistent global scope, so toggling
+  `namestyle` mid-session does not re-name already-created globals (locals/args/functions do
+  re-derive on the next `decompile`). Set the option at startup for a uniform scheme.
+- **Stage-testcase**: `tests/stages/namestyle.xml` (a loop calling an unnamed helper and
+  writing a global) decompiles once at the default and once under `option namestyle ghidra`,
+  pinning both the angr names (`a0`/`v1; // eax`/`sub_401106`/`dat_40402c`) and the restored
+  Ghidra names (`param_1`/`iVar1`/`func_0x00401106`). `docs/baseline-stages.json` (141 assertions).
+- **Date**: 2026-06-09.

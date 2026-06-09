@@ -19,6 +19,7 @@
 #include "subflow.hh"
 #include "constseq.hh"
 #include "bitfield.hh"
+#include "kuna_naming.hh"	// (kuna) angr-style default naming policy
 #include "kuna_compareform.hh"	// (kuna) comparison-form presentation sub-stage
 #include "kuna_inferfuncentry.hh"	// (kuna) GH-6930 function-entry constant-pointer inference
 #include "kuna_memsetsequence.hh"	// (kuna) GH-9230 constant-fill memset recovery
@@ -2924,7 +2925,7 @@ void ActionNameVars::makeRec(ProtoParameter *param,Varnode *vn,map<HighVariable 
   }
   HighVariable *high = vn->getHigh();
   if (high->isAddrTied()) return;	// Don't propagate parameter name to address tied variable
-  if (param->getName().compare(0,6,"param_")==0) return;
+  if (kunaIsGeneratedName(param->getName())) return;	// (kuna) skip generated defaults (param_N / aN)
 
   map<HighVariable *,OpRecommend>::iterator iter = recmap.find(high);
   if (iter != recmap.end()) {	// We have seen this varnode before

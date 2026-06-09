@@ -35,9 +35,9 @@
   <com>print C</com>
 </script>
 <stringmatch name="Immediate Conditional #1" min="0" max="0">\(char\)ptrint</stringmatch>
-<stringmatch name="Immediate Conditional #2" min="1" max="1">return cVar1;</stringmatch>
-<stringmatch name="Immediate Conditional #3" min="1" max="1">cVar1 = '\\0';</stringmatch>
-<stringmatch name="Immediate Conditional #4" min="1" max="1">cVar1 = 'a';</stringmatch>
+<stringmatch name="Immediate Conditional #2" min="1" max="1">return v1;</stringmatch>
+<stringmatch name="Immediate Conditional #3" min="1" max="1">v1 = '\\0';</stringmatch>
+<stringmatch name="Immediate Conditional #4" min="1" max="1">v1 = 'a';</stringmatch>
 <stringmatch name="Immediate Conditional #5" min="1" max="1">\*tadd = tval;</stringmatch>
 <stringmatch name="Immediate Conditional #6" min="1" max="1">tval = tval \+ 7;</stringmatch>
 <stringmatch name="Immediate Conditional #7" min="1" max="1">return cptr\[8\] != 'a';</stringmatch>

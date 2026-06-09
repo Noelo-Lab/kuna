@@ -16,6 +16,7 @@
 #include "fspec.hh"
 #include "funcdata.hh"
 #include "kuna_restartlog.hh"	// (kuna) restart observability
+#include "kuna_naming.hh"	// (kuna) angr-style default naming policy
 
 namespace ghidra {
 
@@ -2158,6 +2159,9 @@ void FspecSpace::printRaw(ostream &s,uintb offset) const
 
   if (fc->getName().size() != 0)
     s << fc->getName();
+  else if (kunaAngrNaming((const Architecture *)getManager())) {	// (kuna) angr-style: sub_<addr>
+    s << kunaFunctionName(fc->getEntryAddress());
+  }
   else {
     s << "func_";
     fc->getEntryAddress().printRaw(s);

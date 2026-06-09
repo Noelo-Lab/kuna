@@ -53,8 +53,8 @@ ffffeb0a66e8b8fd8b0512ffffff83c0
 <stringmatch name="Partial Merge #1" min="1" max="1">a_simple = glob1\.a;</stringmatch>
 <stringmatch name="Partial Merge #2" min="1" max="1">return a_simple \+ 10;</stringmatch>
 <stringmatch name="Partial Merge #3" min="0" max="0">return glob1\.a \+ 10;</stringmatch>
-<stringmatch name="Partial Merge #4" min="1" max="1">param_2 = glob1\.a \+ param_2;</stringmatch>
-<stringmatch name="Partial Merge #5" min="1" max="1">return param_2 \+ 10;</stringmatch>
+<stringmatch name="Partial Merge #4" min="1" max="1">a1 = glob1\.a \+ a1;</stringmatch>
+<stringmatch name="Partial Merge #5" min="1" max="1">return a1 \+ 10;</stringmatch>
 <stringmatch name="Partial Merge #6" min="1" max="1">a_call = glob1\.a;</stringmatch>
 <stringmatch name="Partial Merge #7" min="1" max="1">return a_call;</stringmatch>
 <stringmatch name="Partial Merge #8" min="1" max="1">return a_call;</stringmatch>

@@ -50,6 +50,6 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH9230 #1: memsetrecover off restores the element-store form (old behavior, opt-in)" min="1" max="1">acStack_68\[0x50\] = '\\0';</stringmatch>
-<stringmatch name="GH9230 #2: default pipeline collapses the zero-fill into builtin_memset (fix is DIV-2 default)" min="1" max="1">builtin_memset\(acStack_68,0,100\);</stringmatch>
+<stringmatch name="GH9230 #1: memsetrecover off restores the element-store form (old behavior, opt-in)" min="1" max="1">v1\[0x50\] = '\\0';</stringmatch>
+<stringmatch name="GH9230 #2: default pipeline collapses the zero-fill into builtin_memset (fix is DIV-2 default)" min="1" max="1">builtin_memset\(v1,0,100\);</stringmatch>
 </decompilertest>

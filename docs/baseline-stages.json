@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    134,
-    134
+    141,
+    141
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -137,7 +137,14 @@
     "data:angr-mv #3: case 0x66 (102 f) recovered",
     "data:angr-mv #4: case 0x74 (116 t) recovered",
     "data:angr-mv #5: case 0x53 (83 S) recovered",
-    "data:angr-mv #6: case 0x80 (128) recovered"
+    "data:angr-mv #6: case 0x80 (128) recovered",
+    "data:namestyle #1 default: argument renders as aN",
+    "data:namestyle #2 default: local renders as vN with a register source-location comment",
+    "data:namestyle #3 default: unnamed call target renders as sub_<addr>",
+    "data:namestyle #4 default: global data renders as dat_<addr> (lowercase, no leading zeros)",
+    "data:namestyle #5 ghidra restores: argument renders as param_N",
+    "data:namestyle #6 ghidra restores: local renders as iVar with no location comment",
+    "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>"
   ],
   "returncode": 0,
   "unit_footer": null

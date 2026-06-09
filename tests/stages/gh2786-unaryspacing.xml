@@ -37,6 +37,6 @@ afaf0014afae0010e7a200480c0053b4
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH2786 #1: nested float negation parenthesized (default-flip fix)" min="1" max="1">-\(-in_f0\)</stringmatch>
-<stringmatch name="GH2786 #2: the mis-parsing predecrement token is gone" min="0" max="0">--in_f0</stringmatch>
+<stringmatch name="GH2786 #1: nested float negation parenthesized (default-flip fix)" min="1" max="1">-\(-v1\)</stringmatch>
+<stringmatch name="GH2786 #2: the mis-parsing predecrement token is gone" min="0" max="0">--v1</stringmatch>
 </decompilertest>
