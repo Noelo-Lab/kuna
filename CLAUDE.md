@@ -23,7 +23,8 @@ commit (`GHIDRA_REV`) and path map. Upstream changes can be pulled in later; see
 | `decompiler/datatests/` | Upstream XML regression tests (83 files → 675 assertions). Vendored. |
 | `specs/Ghidra/Processors/` | Vendored SLEIGH specs (all upstream modules). `.sla` are **built artifacts** (gitignored). |
 | `Makefile` | Build driver (kuna-owned). |
-| `kuna/` | Python package: `decompile.py`, `run_tests.py`, `paths.py`. |
+| `kuna/` | Python package: `decompile.py`, `run_tests.py`, `catalog.py`, `paths.py`, and `pipeline/` (the angr-inspired feature loop — see `docs/pipeline.md`). |
+| `tools/pipeline/` | Driver + worker for the continuous feature pipeline (`run.sh`, `worker.sh`, `worker_prompt.md`, `install_gh.sh`). |
 | `tools/sync_upstream.py` | Port upstream Ghidra changes into kuna. |
 | `tools/fetch_bfd.sh` | Fetch libbfd without root (see Build). |
 | `docs/stages.md` | The normative stage model (P0 plane, S1–S9, Band B, feedback edges); full model in `docs/stage-model.md`. |

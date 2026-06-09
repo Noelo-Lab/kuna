@@ -106,6 +106,9 @@ struct KunaSettable {
   const char *summary;		///< One line: the decision this assertion controls
   const char *use_when;		///< Symptom -> when an operator should flip it away from the default
   const char *example;		///< A ready-to-use console command, e.g. "option compareform canonical"
+  const char *source_decompiler;	///< (kuna) Which decompiler the behavior was observed/ported from: "ghidra-upstream"|"angr"|"kuna"|...
+  const char *inspiration;	///< (kuna) Concrete origin pointer (upstream issue/PR, or reference-decompiler class + testcase identity)
+  const char *change_kind;	///< (kuna) "correctness-fix"|"presentation-default"|"structure-recovery"|"opt-in-tool" -- gates default-on eligibility
 };
 
 const char *kunaStageCode(KunaStage stage);	///< "P0".."S9" (or "--" for infra)

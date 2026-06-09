@@ -14,4 +14,7 @@ kuna-decompile = "kuna.decompile:main"
 kuna-test = "kuna.run_tests:main"
 
 [tool.setuptools]
-packages = ["kuna"]
+packages = ["kuna", "kuna.pipeline", "kuna.pipeline.reference"]
+
+[tool.setuptools.package-data]
+"kuna.pipeline.reference" = ["_angr_runner.py"]

@@ -1,0 +1,153 @@
+"""Observe the running pipeline: how many workers, what each is doing, which PR.
+
+Aggregates three sources into one live view:
+  - the flock-guarded worker inventory (kuna.pipeline.state);
+  - `git worktree list` (the actual isolated workspaces on disk);
+  - open PRs via `gh pr list` (best-effort; skipped if gh is absent).
+
+    python -m kuna.pipeline.status            # one-shot table + "N workers active"
+    python -m kuna.pipeline.status --watch    # refresh every 2s
+    python -m kuna.pipeline.status --json      # machine-readable
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import time
+
+from . import config, state
+
+
+def _git_worktrees():
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(config.repo_root()), "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, timeout=20,
+        ).stdout
+    except Exception:
+        return []
+    trees = []
+    cur = {}
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            if cur:
+                trees.append(cur)
+            cur = {"path": line.split(" ", 1)[1]}
+        elif line.startswith("branch "):
+            cur["branch"] = line.split(" ", 1)[1].replace("refs/heads/", "")
+    if cur:
+        trees.append(cur)
+    # only the pipeline's worktrees
+    return [t for t in trees if ".kuna-pipeline" in t["path"] or "/kuna-wt-" in t["path"]
+            or (t.get("branch", "").startswith("feat/angr-"))]
+
+
+def _open_prs():
+    try:
+        out = subprocess.run(
+            ["gh", "pr", "list", "--repo", "Noelo-Lab/kuna", "--state", "open",
+             "--json", "number,title,headRefName,url", "--limit", "50"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if out.returncode != 0:
+            return None
+        return json.loads(out.stdout or "[]")
+    except Exception:
+        return None
+
+
+def collect():
+    data = state.snapshot()
+    workers = list(data["workers"].values())
+    now = time.time()
+    for w in workers:
+        w["elapsed_s"] = int(now - w.get("started_at", now))
+        w["stale_s"] = int(now - w.get("updated_at", now))
+    workers.sort(key=lambda w: w.get("started_at", 0))
+    active = [w for w in workers if w.get("status") == "running"]
+    return {
+        "workers": workers,
+        "active": len(active),
+        "claims": data["claims"],
+        "done": data["done"],
+        "worktrees": _git_worktrees(),
+        "prs": _open_prs(),
+        "ts": now,
+    }
+
+
+def _fmt_elapsed(s):
+    s = int(s)
+    if s < 60:
+        return "%ds" % s
+    if s < 3600:
+        return "%dm%02ds" % (s // 60, s % 60)
+    return "%dh%02dm" % (s // 3600, (s % 3600) // 60)
+
+
+def render(snap):
+    lines = []
+    lines.append("kuna pipeline — %d worker(s) active, %d done, %d claimed"
+                 % (snap["active"], len(snap["done"]), len(snap["claims"])))
+    lines.append("-" * 92)
+    if not snap["workers"]:
+        lines.append("  (no workers registered)")
+    else:
+        lines.append("  %-14s %-9s %-8s %-8s %-7s %-22s %s"
+                     % ("WORKER", "PHASE", "STATUS", "ELAPSED", "STALE", "SLUG", "PR"))
+        for w in snap["workers"]:
+            stale = w["stale_s"]
+            stale_mark = ("%ds" % stale) if stale < 120 else ("%ds!" % stale)
+            lines.append("  %-14s %-9s %-8s %-8s %-7s %-22s %s" % (
+                (w.get("worker") or "?")[:14],
+                (w.get("phase") or "?")[:9],
+                (w.get("status") or "?")[:8],
+                _fmt_elapsed(w["elapsed_s"]),
+                stale_mark,
+                (w.get("slug") or "?")[:22],
+                w.get("pr_url") or "-",
+            ))
+    wts = snap["worktrees"]
+    lines.append("-" * 92)
+    lines.append("  worktrees: %d" % len(wts))
+    for t in wts:
+        lines.append("    %s  [%s]" % (t["path"], t.get("branch", "?")))
+    if snap["prs"] is not None:
+        lines.append("  open PRs: %d" % len(snap["prs"]))
+        for pr in snap["prs"]:
+            lines.append("    #%s %s  (%s)" % (pr["number"], pr["title"][:50], pr["headRefName"]))
+    else:
+        lines.append("  open PRs: (gh unavailable)")
+    return "\n".join(lines)
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="python -m kuna.pipeline.status")
+    p.add_argument("--watch", action="store_true", help="refresh continuously")
+    p.add_argument("--interval", type=float, default=2.0)
+    p.add_argument("--json", action="store_true")
+    args = p.parse_args(argv)
+
+    if args.json and not args.watch:
+        print(json.dumps(collect(), indent=2, default=str))
+        return 0
+
+    if not args.watch:
+        print(render(collect()))
+        return 0
+
+    try:
+        while True:
+            snap = collect()
+            sys.stdout.write("\x1b[2J\x1b[H")  # clear + home
+            sys.stdout.write(render(snap) + "\n")
+            sys.stdout.flush()
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

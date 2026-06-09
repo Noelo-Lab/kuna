@@ -1,5 +1,44 @@
 # kuna Progress Log
 
+## Session (2026-06-09) — continuous angr-inspired feature pipeline (`kuna.pipeline`)
+
+Turned the hand-driven "study angr, find where it's better, port one improvement at a
+time" methodology (the `loweredswitch`/`namestyle` work) into an observable, mostly
+autonomous loop that opens one PR per feature.
+
+**Provenance schema (prep).** Added three self-describing fields to `KunaSettable`
+(`kuna_stages.hh`) and emitted them in `kunaEmitSettableJson` + `catalog.py`:
+`source_decompiler` (`angr`/`ghidra-upstream`/…), `inspiration` (concrete origin), and
+`change_kind` (`correctness-fix`|`presentation-default`|`structure-recovery`|`opt-in-tool`
+— the field an LLM reads to judge default-ON eligibility). Migrated all 21 catalog rows;
+extended `tests/stages/kuna-catalog.xml` (+4 assertions). So every pipeline feature is
+fully discoverable via `python -m kuna.catalog --json` without reading C++.
+
+**Pipeline (`kuna/pipeline/`, `tools/pipeline/`).**
+- `reference/` — a `ReferenceDecompiler` seam (angr first; reko/BN/IDA are future adapters);
+  `_angr_runner.py` runs under the angr venv (9.2.213, `KUNA_PIPELINE_ANGR_PYTHON`).
+- `worklist.py` — AST-parses angr's `test_decompiler.py` into 221 `(binary, function)`
+  targets (captures `arch`/`load_debug`/custom-options).
+- `compare.py` + `sweep.py` + `rank.py` — reference-vs-kuna structural comparison
+  (gotos/labels/switch/loops/loc), ranked into `docs/pipeline/{opportunities.json,matrix.md}`.
+  First x86 sweep: **185 functions, 83 where angr is structurally better** (dominated by
+  goto/label structuring — uncovered in kuna).
+- `state.py`/`status.py` — flock-guarded worker inventory + claims + `--watch` live view.
+- `select.py` — pick the next unclaimed, highest-score gap.
+- `tools/pipeline/{worker_prompt.md,worker.sh,run.sh,open_pr.sh,install_gh.sh}` — each
+  feature is implemented by a headless `claude -p` session in its own git worktree, gated
+  by the `loweredswitch` recipe + `catalog --check` + PARITY OK; PRs on `feat/angr-<slug>`
+  (branch push via SSH, `gh pr create` with a compare-URL fallback).
+
+**Policy.** A feature ships default-ON only if its full ablation changes **0/675** upstream
+assertions, else default-OFF opt-in — the loop never re-pins `docs/baseline.json`. Each PR
+carries a self-documenting `docs/features/<slug>/` bundle (analysis, angr-vs-kuna, plan,
+`record.json` incl. the resumable session id) so a reviewer can resume the Claude session.
+
+**Gates green for the prep:** 204/204 unit + 675/675 datatests **PARITY OK**; stages
+**145/145**; `catalog --check` OK; `docs/assertions.md` + `docs/baseline-stages.json`
+regenerated. See `docs/pipeline.md`.
+
 ## Session (2026-06-09) — angr-style default naming (`option namestyle`, DIV-5)
 
 Re-skinned the decompiler's default output to read like the angr decompiler, behind a

@@ -31,6 +31,10 @@ __pycache__/
 # Local libbfd prefix fetched by tools/fetch_bfd.sh (no-root builds)
 .bfdlocal/
 
+# kuna pipeline runtime state: worker inventory, heartbeats, logs, isolated worktrees.
+# The durable backlog (docs/pipeline/*.json, matrix.md) IS committed; live state is not.
+.kuna-pipeline/
+
 # Rewritten patch left by tools/sync_upstream.py (dry runs / failed applies)
 .kuna_sync.patch
 

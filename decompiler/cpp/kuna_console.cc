@@ -268,6 +268,9 @@ static void kunaEmitSettableJson(ostream &os,const KunaSettable &st,Architecture
   os << ", \"summary\": "; kunaJsonString(os,st.summary);
   os << ", \"use_when\": "; kunaJsonString(os,st.use_when);
   os << ", \"example\": "; kunaJsonString(os,st.example);
+  os << ", \"source_decompiler\": "; kunaJsonString(os,st.source_decompiler);
+  os << ", \"inspiration\": "; kunaJsonString(os,st.inspiration);
+  os << ", \"change_kind\": "; kunaJsonString(os,st.change_kind);
   os << "}";
 }
 

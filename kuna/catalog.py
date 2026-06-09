@@ -172,14 +172,17 @@ def to_markdown(entries):
         "`off`/`canonical` value."
     )
     lines.append("")
-    lines.append("| Option | Values | Default | Stage / sub-stage | Issue | Decision | When to flip |")
-    lines.append("|---|---|---|---|---|---|---|")
+    lines.append(
+        "| Option | Values | Default | Stage / sub-stage | Source | Kind | Decision | When to flip |"
+    )
+    lines.append("|---|---|---|---|---|---|---|---|")
     for e in entries:
         vals = " \\| ".join(e["values"])
         default = e["default"] + (" ⚠️ opt-in" if e.get("destructive_as_default") else "")
         stage = "%s / %s" % (e["stage"], e["substage"])
-        lines.append("| `%s` | %s | `%s` | %s | %s | %s | %s |" % (
-            e["option"], vals, default, stage, e.get("issue", ""),
+        lines.append("| `%s` | %s | `%s` | %s | %s | %s | %s | %s |" % (
+            e["option"], vals, default, stage,
+            e.get("source_decompiler", ""), e.get("change_kind", ""),
             e["summary"], e["use_when"],
         ))
     lines.append("")
@@ -251,6 +254,13 @@ def main(argv=None):
             ))
             print("    %s" % e["summary"])
             print("    when: %s" % e["use_when"])
+            src = e.get("source_decompiler", "")
+            kind = e.get("change_kind", "")
+            if src or kind:
+                print("    from: %s (%s)" % (src or "?", kind or "?"))
+            insp = e.get("inspiration", "")
+            if insp:
+                print("    inspiration: %s" % insp)
     return 0
 
 
