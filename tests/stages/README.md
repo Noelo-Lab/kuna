@@ -101,4 +101,6 @@ Infrastructure testcases (no GH issue; they regression-test the kuna stage machi
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason
 observability on the switchmulti multistage restart), `kuna-pipeline-quality.xml`
-(reduced-pipeline sub-queries + the goto-quality metric).
+(reduced-pipeline sub-queries + the goto-quality metric), `kuna-regions.xml`
+(S7 region-identification observability: `region tree/blocks/walk` from the angr
+RegionIdentifier port on a loop+diamond CFG; `docs/regions.md`).

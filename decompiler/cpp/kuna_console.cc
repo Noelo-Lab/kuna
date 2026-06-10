@@ -4,6 +4,7 @@
  */
 #include "kuna_console.hh"
 #include "kuna_assert.hh"
+#include "kuna_regionid.hh"
 #include "kuna_restartlog.hh"
 #include "printc.hh"
 
@@ -29,6 +30,9 @@ void IfaceKunaCapability::registerCommands(IfaceStatus *status)
   status->registerCom(new IfcKunaRestarts(),"restarts");
   status->registerCom(new IfcKunaPipeline(),"pipeline");
   status->registerCom(new IfcKunaQuality(),"quality");
+  status->registerCom(new IfcKunaRegionTree(),"region","tree");
+  status->registerCom(new IfcKunaRegionBlocks(),"region","blocks");
+  status->registerCom(new IfcKunaRegionWalk(),"region","walk");
 }
 
 /// The named pipeline variants built by ActionDatabase::buildDefaultGroups

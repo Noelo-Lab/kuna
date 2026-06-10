@@ -86,7 +86,9 @@ The model is physical in kuna:
 
 - **Registry & console**: every action/rule group, console surface, and settable
   assertion is stage-addressed in `kuna_stages.cc`; `stage list/map/status/catalog`,
-  `kassert`, `pipeline`, `quality`, `restarts` operate it.
+  `kassert`, `pipeline`, `quality`, `restarts` operate it. The S7 region tree is
+  directly observable via `region tree/blocks/walk` (the angr RegionIdentifier
+  port — `docs/regions.md`).
 - **Issues fixed through the model** (each pinned by a `tests/stages/` testcase
   asserting both directions of the decision): GH-558, 2786, 8471, 6930, 6990, 1282,
   7190, 8817, 8913, 9230, 1537. Per-stage changelog: `docs/stage-implementation.md`.

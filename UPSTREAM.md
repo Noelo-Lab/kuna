@@ -57,6 +57,7 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/architecture.cc`, `decompiler/cpp/printc.cc` | DIV-2: eight kuna option defaults flipped ON (`docs/divergences.md`) |
 | `decompiler/datatests/` (15 files, 22 assertions) | DIV-2: regexes re-pinned to kuna default output (compareform/arraynotation renderings); old forms in git history |
 | `decompiler/cpp/testfunction.cc` | (kuna) `<cstdlib>` include + env-gated `KUNA_DUMP` block in `runTests` that echoes the captured console output (triage/repro aid; default-off ⇒ no behavior change) |
+| `decompiler/unittests/testkunaregion.cc` | (kuna) **added** kuna-owned file inside the vendored unittests dir: unit tests for the angr RegionIdentifier port (`kuna_regionid.cc`; ports of angr `test_region_identifier_0/1` + a loop case). The port itself needed **zero** upstream anchor edits (console registration rides the existing `IfaceKunaCapability`). |
 | `specs/.../HCS12/data/languages/HCS_HC12.sinc` | GH-9001: `:BRN rel8 ... ; rel8` now consumes its operand (was a 1-byte epsilon `SkipNextInstr` that left the rel8 byte dangling), so BRN is a correct 2-byte no-op (upstream PR #5907) |
 
 | `specs/.../8051/data/languages/8051_main.sinc` | GH-1243: ADDC carry-in is now computed in a 2-byte `do_addc(op)` macro (`tmp:2 = zext(ACC)+zext(op)+zext(CY)`; `CY = tmp>0xff`; `ACC = tmp:1`) instead of the old 1-byte `tmp:1 = $(CY)+op` that truncated the carry-out, so CY propagates and ADD+ADDC multi-byte adds are recognised |

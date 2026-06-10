@@ -1,0 +1,50 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna infrastructure test: S7 region-identification observability
+    (KunaRegionIdentifier, ported from angr's RegionIdentifier; see
+    docs/regions.md).
+
+      region tree    - nested region tree (angr GraphRegion.dbg_print analog)
+      region blocks  - flat regions_by_block_addrs lists
+      region walk    - recursive region-order walk over every leaf block
+      stage map      - routes the surfaces to S7 / loop-refinement
+
+    Reuses the gh8724-arraystride bytes purely as a loadable loop+diamond CFG
+    (the arraystride option itself is never touched):
+
+      B0 0x3c0  entry `test rsi,rsi; je 0x418`  -> {B1, B4}
+      B1 0x3c5  setup                           -> B2
+      B2 0x3e0  single-block loop body, `jne 0x3e0` self-loop -> {B2, B3}
+      B3 0x40a  epilogue/ret
+      B4 0x418  early-out ret
+
+    The identifier must find the self-loop as a cyclic region at 0x3e0 (this
+    exercises angr's infinite-self-loop slice hack, RI l.109), root the tree
+    at the entry 0x3c0, and walk each block exactly once.
+
+    Analysis-only: the region commands never mutate the function; default
+    decompiler output is unchanged (hence no docs/divergences.md entry).
+-->
+<bytechunk space="ram" offset="0x3c0">
+4885f6745341554989fd41544989f45531ed5331db4883ec080f1f8000000000
+498b45004883c3014801e84881c514040000486390100400008bbc9000040000
+e8cbfeffff4939dc75d64883c4085b5d415c415dc30f1f00c3
+</bytechunk>
+<symbol space="ram" offset="0x3c0" name="test"/>
+</binaryimage>
+<script>
+  <com>lo fu test</com>
+  <com>decompile</com>
+  <com>region tree</com>
+  <com>region blocks</com>
+  <com>region walk</com>
+  <com>stage map region tree</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-REGIONS #1: region tree finds the single-block self-loop as a cyclic region at 0x3e0" min="1" max="1">region head=0x3e0 nodes=1 cyclic</stringmatch>
+<stringmatch name="KUNA-REGIONS #2: the region tree is rooted at the function entry 0x3c0" min="1" max="1">region head=0x3c0</stringmatch>
+<stringmatch name="KUNA-REGIONS #3: region blocks lists the single-block loop region on its own" min="1" max="1">\[0x3e0\]</stringmatch>
+<stringmatch name="KUNA-REGIONS #4: the recursive walker visits the entry block exactly once" min="1" max="1">walk 0x3c0</stringmatch>
+<stringmatch name="KUNA-REGIONS #5: stage map routes region tree to S7 loop-refinement" min="1" max="1">surface "region tree" -&gt; S7 \(Region Hierarchy\) sub-stage loop-refinement</stringmatch>
+</decompilertest>

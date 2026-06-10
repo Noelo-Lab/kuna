@@ -9,7 +9,7 @@ captured C is free of prompt/echo noise.
 
 CLI:
     python -m kuna.decompile <binary> <function-name-or-0xADDR> [--addr]
-                             [--target BFD_TARGET] [--raw]
+                             [--target BFD_TARGET] [--raw] [--regions]
                              [--decomp-dbg PATH] [--sleighpath DIR] [--timeout S]
 """
 import argparse
@@ -59,6 +59,7 @@ def decompile(
     by_address=False,
     bfd_target=None,
     raw=False,
+    regions=False,
     options=None,
     kasserts=None,
     decomp_dbg=None,
@@ -75,6 +76,10 @@ def decompile(
         if ``target`` looks like ``0x...``.
     bfd_target : optional explicit BFD target for ``load file`` (e.g. ``elf64-x86-64``).
     raw : also emit the raw p-code listing (``print raw``) after the C.
+    regions : also run the S7 region-identification commands (``region blocks`` /
+        ``region tree``, the angr RegionIdentifier port -- see docs/regions.md)
+        and return ``(c_text, regions_text)`` instead of just the C. Captured via
+        a second ``openfile write`` so the region dump never mixes with the C.
     options : iterable of ``(name, value)`` kuna/Ghidra options to set before
         decompiling (program-scoped; e.g. ``("compareform", "canonical")``). These are
         exactly the assertions documented by :mod:`kuna.catalog`; an LLM picks them
@@ -85,7 +90,7 @@ def decompile(
     sleighpath : SLEIGH specs root (defaults to ``<repo>/specs``).
     timeout : seconds before the subprocess is killed.
 
-    Returns the decompiled C as a string.
+    Returns the decompiled C as a string (or ``(c, regions)`` with ``regions=True``).
     """
     binary = os.path.abspath(str(binary))
     if not os.path.exists(binary):
@@ -108,9 +113,18 @@ def decompile(
     out_path = out_file.name
     out_file.close()
 
+    regions_path = None
+    if regions:
+        regions_file = tempfile.NamedTemporaryFile(
+            prefix="kuna_regions_", suffix=".txt", delete=False
+        )
+        regions_path = regions_file.name
+        regions_file.close()
+
     try:
         script = _build_script(
-            binary, target, by_address, bfd_target, raw, out_path, options, kasserts
+            binary, target, by_address, bfd_target, raw, out_path, options, kasserts,
+            regions_path=regions_path,
         )
         env = dict(os.environ)
         # SLEIGHHOME is the load-bearing mechanism: decomp_dbg scans it
@@ -151,16 +165,28 @@ def decompile(
                 "no C output for %r in %s; decompiler said:\n%s"
                 % (target, binary, combined.strip()[:2000])
             )
-        return c_text
+        if not regions:
+            return c_text
+        try:
+            with open(regions_path, "r") as fh:
+                regions_text = fh.read()
+        except OSError:
+            regions_text = ""
+        return c_text, regions_text.strip("\n")
     finally:
         try:
             os.unlink(out_path)
         except OSError:
             pass
+        if regions_path is not None:
+            try:
+                os.unlink(regions_path)
+            except OSError:
+                pass
 
 
 def _build_script(binary, target, by_address, bfd_target, raw, out_path,
-                  options=None, kasserts=None):
+                  options=None, kasserts=None, regions_path=None):
     lines = []
     if bfd_target:
         # Two-token form: `load file <target> <path>` (target first per IfcLoadFile).
@@ -193,6 +219,13 @@ def _build_script(binary, target, by_address, bfd_target, raw, out_path,
     if raw:
         lines.append("print raw")
     lines.append("closefile")
+    # S7 region identification (angr RegionIdentifier port): captured through a
+    # second openfile so the dump is cleanly separable from the C.
+    if regions_path is not None:
+        lines.append("openfile write %s" % regions_path)
+        lines.append("region blocks")
+        lines.append("region tree")
+        lines.append("closefile")
     lines.append("quit")
     return "\n".join(lines) + "\n"
 
@@ -224,6 +257,9 @@ def main(argv=None):
     p.add_argument("--target", dest="bfd_target", default=None,
                    help="explicit BFD target for load file (e.g. elf64-x86-64)")
     p.add_argument("--raw", action="store_true", help="also print the raw p-code listing")
+    p.add_argument("--regions", action="store_true",
+                   help="also print the S7 region-identification dump (angr "
+                        "RegionIdentifier port; see docs/regions.md)")
     p.add_argument("--option", dest="options", nargs=2, action="append",
                    metavar=("NAME", "VALUE"), default=[],
                    help="set a decompiler option/assertion before decompiling "
@@ -239,12 +275,13 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     try:
-        c = decompile(
+        result = decompile(
             args.binary,
             args.target,
             by_address=args.addr,
             bfd_target=args.bfd_target,
             raw=args.raw,
+            regions=args.regions,
             options=[(n, v) for n, v in args.options],
             kasserts=args.kasserts,
             decomp_dbg=args.decomp_dbg,
@@ -254,7 +291,14 @@ def main(argv=None):
     except DecompileError as e:
         print("error: %s" % e, file=sys.stderr)
         return 1
-    print(c)
+    if args.regions:
+        c, regions_text = result
+        print(c)
+        print()
+        print("// ==== kuna regions (S7) ====")
+        print(regions_text)
+    else:
+        print(result)
     return 0
 
 

@@ -1,5 +1,60 @@
 # kuna Progress Log
 
+## Session (2026-06-10) — port angr's RegionIdentifier (S7 region observability)
+
+Ported angr's region identification analysis (`region_identifier.py` 1349 LOC +
+`graph_region.py` + `utils/doms.py` + the five `utils/graph.py` helpers) to C++ as a
+faithful, **analysis-only** S7 artifact — the first standalone, inspectable region
+tree in kuna (previously implicit inside `ActionBlockStructure`'s collapse engine).
+
+**Mechanism.** Two new kuna-owned file pairs, zero upstream anchor edits:
+- `kuna_regiongraph.{hh,cc}` — deterministic mutable digraph (`KunaRegionNode`/
+  `KunaRegionGraph`, global `(addr, creation-ident)` order replacing Python dict
+  insertion order), DFS back edges, deterministic postorder, quasi-topological sort
+  (iterative Tarjan + `_append_scc` + panic mode), `subgraph_between_nodes` (per-succ
+  `has_path` → one reverse BFS), CHK immediate dominators, and the full
+  `IncrementalDominators` port (lazy dominance frontiers + `graph_updated` patching).
+- `kuna_regionid.{hh,cc}` — `KunaGraphRegion` (head/graph/successors/
+  graph_with_successors/full_graph/cyclic), `KunaRegionVisitor` (recursive block
+  walker), `KunaRegionIdentifier` (supergraph chain-merging with angr `MultiNode`,
+  cyclic phase: back-edge headers + 3-stage loop refinement + cyclic abstraction;
+  acyclic phase: postdom-tree climb + dominance-frontier `_check_region` + iterative
+  collapse), plus console commands. Builds its private graph from
+  `Funcdata::getBasicBlocks()` (read-only) or synthetic addr nodes (test mode).
+  Analysis-only divergences (AIL statement mutation omitted: loop-exit jump
+  insertion, `force_loop_single_exit` guarded successors) marked `(kuna)` in-source
+  and documented in `docs/regions.md`.
+
+**Exposure.** Console: `region tree` / `region blocks` / `region walk` (recompute
+per call, bulk stream); `stage map region tree` → S7 / `loop-refinement` (options
+stay LATENT; the commands are the observable half — exposure string updated).
+Python/LLM: `python -m kuna.decompile BIN FUNC --regions` (second `openfile write`;
+library returns `(c, regions)`). Three `surfaceTable` rows; **no** settable/option/
+ElementId (nothing flips, output unchanged → no DIV entry; `catalog --check` clean).
+
+**Verification.**
+- Unit tests `decompiler/unittests/testkunaregion.cc` (kuna-owned in vendored dir,
+  UPSTREAM.md row): ports of angr `test_region_identifier_0/1` (top region == 2
+  nodes) + a kuna loop case. 204→207, baseline re-saved (+3 keys only).
+- Datatest `tests/stages/kuna-regions.xml` (gh8724 bytes as loop+diamond CFG): cyclic
+  region at 0x3e0, root at entry, walker exactly-once, `stage map` routing. Stages
+  baseline 145→150 (+5 keys only).
+- Adversarial fidelity review (8-agent workflow, all 4 algorithm sections vs the
+  Python line-by-line): 2 confirmed findings, both fixed — 64-bit guard caps (old
+  `int4 2*n*n` overflowed/insta-threw at n≥32768 where angr completes) and
+  carry-aware `_sort_edge` compare (Python sums are arbitrary-precision); 2 findings
+  refuted (dead-code guards). All other methods verified faithful.
+- Stress: 158 + 141 real functions (bomb/awk/calc/loops/switch binaries) — 100%
+  region trees, zero errors; the 141 ran under `-DKUNA_REGIONID_DEBUG`, which
+  recomputes dominators+frontiers from scratch after **every** incremental update
+  (`verify()`, port of `_debug_check`) — zero divergence.
+- Gates: 207/207 unit + 675/675 datatests PARITY OK; stages 150/150 PARITY OK;
+  catalog OK; `--regions` CLI smoke on fauxware.
+
+Docs: new `docs/regions.md` (commands, stable dump grammar, walker API, divergences);
+rows/notes in `docs/stage-mapping.md`, `docs/stages.md`, `docs/stage-implementation.md`,
+`tests/stages/README.md`, `UPSTREAM.md`; counts in `CLAUDE.md`/`kuna/run_tests.py`.
+
 ## Session (2026-06-09) — ite-region-converter-missing-5db28e (option `stackguard`)
 
 **Opportunity.** angr `test_ite_region_converter_missing_break_statement::authenticate`

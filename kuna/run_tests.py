@@ -1,6 +1,6 @@
 """Run the extracted Ghidra C++ decompiler test suite, with baseline parity checking.
 
-Wraps the upstream ``decomp_test_dbg`` harness (204 C++ unit tests + 83 XML
+Wraps the upstream ``decomp_test_dbg`` harness (207 C++ unit tests + 83 XML
 datatests). Unit-test results are emitted on **stderr**, datatest results on
 **stdout**; this runner captures the two streams separately and parses each.
 

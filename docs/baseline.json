@@ -882,11 +882,14 @@
     "unit:paramstore_mips32be_stdcall",
     "unit:paramstore_ppc64be_stdcall",
     "unit:paramstore_x64",
+    "unit:regionid_diamond0",
+    "unit:regionid_diamond1",
+    "unit:regionid_loop",
     "unit:type_ordering"
   ],
   "returncode": 0,
   "unit_footer": [
-    204,
-    204
+    207,
+    207
   ]
 }

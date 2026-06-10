@@ -19,7 +19,7 @@ commit (`GHIDRA_REV`) and path map. Upstream changes can be pulled in later; see
 | Path | What |
 |---|---|
 | `decompiler/cpp/` | Upstream C++ decompiler source + upstream Makefile. **Diverged from upstream as of 2026-06 (GH-558 prototype)** — kuna additions live in `kuna_*.cc/.hh` (auto-linked); anchor edits to upstream files are minimal and tracked in `UPSTREAM.md` *Divergence*. |
-| `decompiler/unittests/` | Upstream C++ unit tests (204 tests). Vendored. |
+| `decompiler/unittests/` | Upstream C++ unit tests + kuna's `testkunaregion.cc` (207 tests). Vendored. |
 | `decompiler/datatests/` | Upstream XML regression tests (83 files → 675 assertions). Vendored. |
 | `specs/Ghidra/Processors/` | Vendored SLEIGH specs (all upstream modules). `.sla` are **built artifacts** (gitignored). |
 | `Makefile` | Build driver (kuna-owned). |
@@ -94,7 +94,7 @@ The full catalog also renders to `docs/assertions.md`; the model behind it is
 
 ## Tests
 
-Scope is the **deep (C++) decompiler only**: 204 unit tests + 83 datatests (675
+Scope is the **deep (C++) decompiler only**: 207 unit tests + 83 datatests (675
 assertions), all run by the upstream `decomp_test_dbg`. `docs/baseline.json` is the
 recorded **kuna oracle**: since DIV-2 (`docs/divergences.md`) kuna's defaults
 intentionally diverge from upstream — 22 datatest assertions were re-pinned in place to

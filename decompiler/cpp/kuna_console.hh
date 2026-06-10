@@ -18,7 +18,9 @@
  *                          for the loaded program (+ goto-quality metric)
  *
  * Commands from the other kuna components (kassert, pipeline, quality,
- * restarts) are also registered through this capability.
+ * restarts, and the S7 region commands `region tree` / `region blocks` /
+ * `region walk` from kuna_regionid.hh) are also registered through this
+ * capability.
  */
 #ifndef __KUNA_CONSOLE_HH__
 #define __KUNA_CONSOLE_HH__

@@ -80,6 +80,8 @@ Straddler notes (placement by dominant owned artifact; see `docs/stage-model.md`
 | `kuna_condexeplace` | S3 | keep ActionConditionalConst const-COPY out of loop blocks (GH-9203) |
 | `kuna_inputvarnodeadjust` | S6 | absorb overlapping input varnodes instead of aborting (GH-9218) |
 | `kuna_stackguard` | S7 | strip the -fstack-protector canary epilogue (angr StackCanarySimplifier port; `option stackguard`, default-off) so the shared-return goto is eliminated |
+| `kuna_regiongraph` | S7 | graph substrate for the angr RegionIdentifier port (mutable digraph, dominators, incremental frontiers) |
+| `kuna_regionid` | S7 | angr RegionIdentifier port: analysis-only nested region tree over bblocks; `region tree/blocks/walk` (`docs/regions.md`) |
 
 ---
 

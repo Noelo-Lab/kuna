@@ -144,7 +144,12 @@ Template per stage:
 
 - **Registry**: `blockrecovery` tagged S7 (straddling S8); `blockaction` file.
 - **Exposures**: `kassert S7 edge-virtualization <branch> <dest>` (per-edge
-  force-goto — upstream's only per-edge structuring assertion, now stage-addressed).
+  force-goto — upstream's only per-edge structuring assertion, now stage-addressed);
+  `region tree` / `region blocks` / `region walk` — the **first standalone S7
+  artifact**: an analysis-only nested region tree from the angr RegionIdentifier
+  port (`kuna_regionid.cc`, provenance `region_identifier.py`/`graph_region.py`;
+  `docs/regions.md`). The `loop-refinement` shaping *options* stay LATENT — these
+  commands are the observable half.
 - **Issues fixed**: — (GH-8748's blocker turned out to be an S7-grade limitation: see
   S8 below and the critique §7.4).
 - **LATENT**: loop refinement / single-exit policy; re-identification batching; an
