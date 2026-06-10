@@ -1,5 +1,39 @@
 # kuna Progress Log
 
+## Session (2026-06-10) — rust-port W0: verification machinery + workspace (branch `rust-port`)
+
+Started the full Rust port (plan: `docs/rust-port/plan.md`; user decisions: grind to
+full parity across sessions, pipeline port-mode to be launched, SLEIGH compiler
+deferred — C++ `sleigh_opt` stays the `.slaspec→.sla` builder). Strategy: parallel
+cargo workspace under `rust/`, C++ tree untouched as the oracle, Rust bins speak the
+same console surface so all oracles verify the port unchanged via `--engine rust`.
+
+**W0 landed (5 concurrent agents, all gates green):**
+- `rust/` workspace: 6 crates (kuna-base/num/sleigh/decomp/console/harness), bins
+  named `decomp_dbg`/`decomp_test_dbg`, clippy HashMap/HashSet ban proven live,
+  7 ADRs (`docs/rust-port/adr/`), `make rust` / `make rust-test` targets.
+- Engine switch: `kuna/paths.py` honors `KUNA_ENGINE=rust` (+`KUNA_RUST_PROFILE`);
+  `--engine {cpp,rust}` on run_tests/decompile/catalog; default path byte-identical.
+  `kuna/port_audit.py`: TEST↔#[test] 1:1 name audit (207 C++ tests inventoried).
+- Golden vectors: `decompiler/cpp/kuna_goldengen.{cc,hh}` (`golden
+  opbehavior|float|addrsort`, zero upstream edits) + `tools/rust-port/gen_vectors.py`
+  → `tests/golden/vectors/` (25k lines, deterministic, run-twice-diff-empty). Two
+  latent upstream bugs found and documented (`docs/rust-port/upstream-bugs.md`).
+- Goldens harness: `kuna/goldens.py` — all 131 corpus XMLs (83 datatests + 48 stage
+  tests) replay standalone in decomp_dbg via raw `<binaryimage>` + `load file`;
+  boundaries B0/B2/B3/B4/B5 = 1095 snapshot files (gitignored), 0 unreplayable;
+  cpp-vs-cpp determinism 131/131 identical; `compare` exits 1 on first divergence.
+  B3 anchors at `break start paramdouble` (LOSS-008), varnode-tree dumps normalized
+  for heap addresses (LOSS-009).
+- Backlog: `docs/rust-port/checklist.json` — 200 items (91 port + 91 paired verify +
+  18 infra/gates), 182,926 LOC scope, blob-sha pinned, validator + `--verify-sha`
+  green. Verifier protocol in `docs/rust-port/verification.md`; losses ledger seeded
+  LOSS-001..009.
+
+**Oracle parity re-verified after relink: 207/207 unit, 675/675 datatest, PARITY OK.**
+Next: W1 foundation port (xml/marshal/float/multiprec/space/address → 54 unit tests)
++ pipeline port mode.
+
 ## Session (2026-06-10) — port angr's RegionIdentifier (S7 region observability)
 
 Ported angr's region identification analysis (`region_identifier.py` 1349 LOC +

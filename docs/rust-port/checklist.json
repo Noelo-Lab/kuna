@@ -1,0 +1,5179 @@
+{
+ "version": 1,
+ "items": [
+  {
+   "id": "w0-infra-scaffold",
+   "kind": "infra",
+   "wave": "W0",
+   "crate": "workspace",
+   "title": "cargo workspace scaffold: 6 crates, lints, CI gate script",
+   "modules": [],
+   "depends_on": [],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo build --workspace && cargo clippy --workspace -- -D warnings",
+   "loc_estimate": 300,
+   "cpp_blob_sha": {},
+   "notes": "Crates: kuna-base, kuna-num, kuna-sleigh, kuna-decomp, kuna-console, kuna-harness. Workspace-level deny of todo!/unimplemented! in committed code via xtask/grep."
+  },
+  {
+   "id": "w0-infra-port-audit",
+   "kind": "infra",
+   "wave": "W0",
+   "crate": "workspace",
+   "title": "port_audit tool: mechanical checks the verifier protocol runs",
+   "modules": [],
+   "depends_on": [
+    "w0-infra-scaffold"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo run -p port-audit -- --self-test",
+   "loc_estimate": 400,
+   "cpp_blob_sha": {},
+   "notes": "Greps for todo!/unimplemented!/HashMap/sort_unstable/bare-as casts; per-item C++ blob-sha drift check against docs/rust-port/checklist.json."
+  },
+  {
+   "id": "w1-base-foundation",
+   "kind": "port",
+   "wave": "W1",
+   "crate": "kuna-base",
+   "title": "error/types + header-only generics (partmap, rangemap)",
+   "modules": [
+    "decompiler/cpp/error.hh",
+    "decompiler/cpp/types.h",
+    "decompiler/cpp/partmap.hh",
+    "decompiler/cpp/rangemap.hh"
+   ],
+   "depends_on": [
+    "W0-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-base",
+   "loc_estimate": 865,
+   "cpp_blob_sha": {
+    "decompiler/cpp/error.hh": "d294a993a3099553a6f719e6fb1d2cd235380b5f",
+    "decompiler/cpp/types.h": "ef752b59243b7d70630b4512b65920a1316f8969",
+    "decompiler/cpp/partmap.hh": "6bed941ed43fbc5e531e74b05b4b53070b871ce7",
+    "decompiler/cpp/rangemap.hh": "ba29f9886ffae0e59977b55be9ffd86369171c90"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w1-base-foundation-verify",
+   "kind": "verify",
+   "wave": "W1",
+   "crate": "kuna-base",
+   "title": "verify: error/types + header-only generics (partmap, rangemap)",
+   "modules": [
+    "decompiler/cpp/error.hh",
+    "decompiler/cpp/types.h",
+    "decompiler/cpp/partmap.hh",
+    "decompiler/cpp/rangemap.hh"
+   ],
+   "depends_on": [
+    "w1-base-foundation"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 865,
+   "cpp_blob_sha": {
+    "decompiler/cpp/error.hh": "d294a993a3099553a6f719e6fb1d2cd235380b5f",
+    "decompiler/cpp/types.h": "ef752b59243b7d70630b4512b65920a1316f8969",
+    "decompiler/cpp/partmap.hh": "6bed941ed43fbc5e531e74b05b4b53070b871ce7",
+    "decompiler/cpp/rangemap.hh": "ba29f9886ffae0e59977b55be9ffd86369171c90"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w1-base-xml",
+   "kind": "port",
+   "wave": "W1",
+   "crate": "kuna-base",
+   "title": "XML decoder (hand-written parser)",
+   "modules": [
+    "decompiler/cpp/xml.cc",
+    "decompiler/cpp/xml.hh"
+   ],
+   "depends_on": [
+    "w1-base-foundation",
+    "W0-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-base",
+   "loc_estimate": 2913,
+   "cpp_blob_sha": {
+    "decompiler/cpp/xml.cc": "6831da5a65c5d26b86b7391f95ee0f791904813d",
+    "decompiler/cpp/xml.hh": "72533012a133cac335f88a12bb9af749b2c72f92"
+   },
+   "notes": "LOSS-006: xml.y bison output ported as a hand-written parser; keep the Document/Element API and error strings."
+  },
+  {
+   "id": "w1-base-xml-verify",
+   "kind": "verify",
+   "wave": "W1",
+   "crate": "kuna-base",
+   "title": "verify: XML decoder (hand-written parser)",
+   "modules": [
+    "decompiler/cpp/xml.cc",
+    "decompiler/cpp/xml.hh"
+   ],
+   "depends_on": [
+    "w1-base-xml"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2913,
+   "cpp_blob_sha": {
+    "decompiler/cpp/xml.cc": "6831da5a65c5d26b86b7391f95ee0f791904813d",
+    "decompiler/cpp/xml.hh": "72533012a133cac335f88a12bb9af749b2c72f92"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w1-base-marshal",
+   "kind": "port",
+   "wave": "W1",
+   "crate": "kuna-base",
+   "title": "marshal encode/decode streams",
+   "modules": [
+    "decompiler/cpp/marshal.cc",
+    "decompiler/cpp/marshal.hh"
+   ],
+   "depends_on": [
+    "w1-base-xml",
+    "W0-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-base",
+   "loc_estimate": 2030,
+   "cpp_blob_sha": {
+    "decompiler/cpp/marshal.cc": "66b1562328cf1719a91f8c1b494e6c09a718e9eb",
+    "decompiler/cpp/marshal.hh": "9817f7b0131fd3edd83bce396ed7022653991356"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w1-base-marshal-verify",
+   "kind": "verify",
+   "wave": "W1",
+   "crate": "kuna-base",
+   "title": "verify: marshal encode/decode streams",
+   "modules": [
+    "decompiler/cpp/marshal.cc",
+    "decompiler/cpp/marshal.hh"
+   ],
+   "depends_on": [
+    "w1-base-marshal"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2030,
+   "cpp_blob_sha": {
+    "decompiler/cpp/marshal.cc": "66b1562328cf1719a91f8c1b494e6c09a718e9eb",
+    "decompiler/cpp/marshal.hh": "9817f7b0131fd3edd83bce396ed7022653991356"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w1-base-space-address",
+   "kind": "port",
+   "wave": "W1",
+   "crate": "kuna-base",
+   "title": "address spaces + Address",
+   "modules": [
+    "decompiler/cpp/space.cc",
+    "decompiler/cpp/space.hh",
+    "decompiler/cpp/address.cc",
+    "decompiler/cpp/address.hh"
+   ],
+   "depends_on": [
+    "w1-base-foundation",
+    "w1-base-marshal",
+    "W0-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-base",
+   "loc_estimate": 2953,
+   "cpp_blob_sha": {
+    "decompiler/cpp/space.cc": "dbaa2e775f32e63abb60c1c0b31457967ee52db7",
+    "decompiler/cpp/space.hh": "bc88fcd6c589d585490a395a69ec4755a37b0610",
+    "decompiler/cpp/address.cc": "3a3d33a2a06724e2b6e370c903f88eabde8bcd30",
+    "decompiler/cpp/address.hh": "510432e5a2f69358e49add35fc5734fcb60573a6"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w1-base-space-address-verify",
+   "kind": "verify",
+   "wave": "W1",
+   "crate": "kuna-base",
+   "title": "verify: address spaces + Address",
+   "modules": [
+    "decompiler/cpp/space.cc",
+    "decompiler/cpp/space.hh",
+    "decompiler/cpp/address.cc",
+    "decompiler/cpp/address.hh"
+   ],
+   "depends_on": [
+    "w1-base-space-address"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2953,
+   "cpp_blob_sha": {
+    "decompiler/cpp/space.cc": "dbaa2e775f32e63abb60c1c0b31457967ee52db7",
+    "decompiler/cpp/space.hh": "bc88fcd6c589d585490a395a69ec4755a37b0610",
+    "decompiler/cpp/address.cc": "3a3d33a2a06724e2b6e370c903f88eabde8bcd30",
+    "decompiler/cpp/address.hh": "510432e5a2f69358e49add35fc5734fcb60573a6"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w1-num-float-multiprec",
+   "kind": "port",
+   "wave": "W1",
+   "crate": "kuna-num",
+   "title": "float emulation + multiprecision ints",
+   "modules": [
+    "decompiler/cpp/float.cc",
+    "decompiler/cpp/float.hh",
+    "decompiler/cpp/multiprecision.cc",
+    "decompiler/cpp/multiprecision.hh"
+   ],
+   "depends_on": [
+    "w1-base-foundation",
+    "W0-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-num",
+   "loc_estimate": 1171,
+   "cpp_blob_sha": {
+    "decompiler/cpp/float.cc": "d4632819f4a1dffd874247cf47663dfd4b6a65e2",
+    "decompiler/cpp/float.hh": "44d525563409b8325d925ccc50d1e982e4e72ecf",
+    "decompiler/cpp/multiprecision.cc": "81fd99f38fba3739a4b27d41b26b8f64c04dfa68",
+    "decompiler/cpp/multiprecision.hh": "32d4e97144190253fc94a26820732df907905dd9"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w1-num-float-multiprec-verify",
+   "kind": "verify",
+   "wave": "W1",
+   "crate": "kuna-num",
+   "title": "verify: float emulation + multiprecision ints",
+   "modules": [
+    "decompiler/cpp/float.cc",
+    "decompiler/cpp/float.hh",
+    "decompiler/cpp/multiprecision.cc",
+    "decompiler/cpp/multiprecision.hh"
+   ],
+   "depends_on": [
+    "w1-num-float-multiprec"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1171,
+   "cpp_blob_sha": {
+    "decompiler/cpp/float.cc": "d4632819f4a1dffd874247cf47663dfd4b6a65e2",
+    "decompiler/cpp/float.hh": "44d525563409b8325d925ccc50d1e982e4e72ecf",
+    "decompiler/cpp/multiprecision.cc": "81fd99f38fba3739a4b27d41b26b8f64c04dfa68",
+    "decompiler/cpp/multiprecision.hh": "32d4e97144190253fc94a26820732df907905dd9"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w1-num-pcode-semantics",
+   "kind": "port",
+   "wave": "W1",
+   "crate": "kuna-num",
+   "title": "raw pcode + opcodes + constant op semantics",
+   "modules": [
+    "decompiler/cpp/pcoderaw.cc",
+    "decompiler/cpp/pcoderaw.hh",
+    "decompiler/cpp/opcodes.cc",
+    "decompiler/cpp/opcodes.hh",
+    "decompiler/cpp/opbehavior.cc",
+    "decompiler/cpp/opbehavior.hh"
+   ],
+   "depends_on": [
+    "w1-base-space-address",
+    "w1-num-float-multiprec",
+    "W0-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-num",
+   "loc_estimate": 1980,
+   "cpp_blob_sha": {
+    "decompiler/cpp/pcoderaw.cc": "dd589b62c2373f7d1cd995af9f0de0c013d3caf4",
+    "decompiler/cpp/pcoderaw.hh": "b3e48b5379bdf3af8b06a2e5bff9876d715da425",
+    "decompiler/cpp/opcodes.cc": "cdde06fa71c5cd173164b43ae75d0e7ce96cfbb9",
+    "decompiler/cpp/opcodes.hh": "ba5812135ee55f55b1a123ac3b9c36161fa5025d",
+    "decompiler/cpp/opbehavior.cc": "2d989384d40d1c75de0cdf022616f793eb3b91ec",
+    "decompiler/cpp/opbehavior.hh": "d1733c7ac2e8638cffc4677e0b5b17c23474ba77"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w1-num-pcode-semantics-verify",
+   "kind": "verify",
+   "wave": "W1",
+   "crate": "kuna-num",
+   "title": "verify: raw pcode + opcodes + constant op semantics",
+   "modules": [
+    "decompiler/cpp/pcoderaw.cc",
+    "decompiler/cpp/pcoderaw.hh",
+    "decompiler/cpp/opcodes.cc",
+    "decompiler/cpp/opcodes.hh",
+    "decompiler/cpp/opbehavior.cc",
+    "decompiler/cpp/opbehavior.hh"
+   ],
+   "depends_on": [
+    "w1-num-pcode-semantics"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1980,
+   "cpp_blob_sha": {
+    "decompiler/cpp/pcoderaw.cc": "dd589b62c2373f7d1cd995af9f0de0c013d3caf4",
+    "decompiler/cpp/pcoderaw.hh": "b3e48b5379bdf3af8b06a2e5bff9876d715da425",
+    "decompiler/cpp/opcodes.cc": "cdde06fa71c5cd173164b43ae75d0e7ce96cfbb9",
+    "decompiler/cpp/opcodes.hh": "ba5812135ee55f55b1a123ac3b9c36161fa5025d",
+    "decompiler/cpp/opbehavior.cc": "2d989384d40d1c75de0cdf022616f793eb3b91ec",
+    "decompiler/cpp/opbehavior.hh": "d1733c7ac2e8638cffc4677e0b5b17c23474ba77"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w1-base-util",
+   "kind": "port",
+   "wave": "W1",
+   "crate": "kuna-base",
+   "title": "crc32 + compression (flate2) + filemanage",
+   "modules": [
+    "decompiler/cpp/crc32.cc",
+    "decompiler/cpp/crc32.hh",
+    "decompiler/cpp/compression.cc",
+    "decompiler/cpp/compression.hh",
+    "decompiler/cpp/filemanage.cc",
+    "decompiler/cpp/filemanage.hh"
+   ],
+   "depends_on": [
+    "w1-base-foundation",
+    "W0-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-base",
+   "loc_estimate": 847,
+   "cpp_blob_sha": {
+    "decompiler/cpp/crc32.cc": "8e8f129b76673a5583cd467b8e30eb8b1460eb7d",
+    "decompiler/cpp/crc32.hh": "87c61ae86f95b896f35433ff8cda28355915dd98",
+    "decompiler/cpp/compression.cc": "81b8c59b9f6d8dc5e83421e23341dd5db1635048",
+    "decompiler/cpp/compression.hh": "1151d6d9cc862e233648924e93c0e0f4244a22d4",
+    "decompiler/cpp/filemanage.cc": "9e03ab2de3d4ea5ff8572834d8426aec5608bf7d",
+    "decompiler/cpp/filemanage.hh": "9c2ab1b6044353f585eab08a7f0e1cf272b9d9bc"
+   },
+   "notes": "LOSS-004: zlib deflate replaced by the flate2 crate; .sla payload round-trip must stay byte-identical."
+  },
+  {
+   "id": "w1-base-util-verify",
+   "kind": "verify",
+   "wave": "W1",
+   "crate": "kuna-base",
+   "title": "verify: crc32 + compression (flate2) + filemanage",
+   "modules": [
+    "decompiler/cpp/crc32.cc",
+    "decompiler/cpp/crc32.hh",
+    "decompiler/cpp/compression.cc",
+    "decompiler/cpp/compression.hh",
+    "decompiler/cpp/filemanage.cc",
+    "decompiler/cpp/filemanage.hh"
+   ],
+   "depends_on": [
+    "w1-base-util"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 847,
+   "cpp_blob_sha": {
+    "decompiler/cpp/crc32.cc": "8e8f129b76673a5583cd467b8e30eb8b1460eb7d",
+    "decompiler/cpp/crc32.hh": "87c61ae86f95b896f35433ff8cda28355915dd98",
+    "decompiler/cpp/compression.cc": "81b8c59b9f6d8dc5e83421e23341dd5db1635048",
+    "decompiler/cpp/compression.hh": "1151d6d9cc862e233648924e93c0e0f4244a22d4",
+    "decompiler/cpp/filemanage.cc": "9e03ab2de3d4ea5ff8572834d8426aec5608bf7d",
+    "decompiler/cpp/filemanage.hh": "9c2ab1b6044353f585eab08a7f0e1cf272b9d9bc"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w1-harness-unittests",
+   "kind": "port",
+   "wave": "W1",
+   "crate": "kuna-harness",
+   "title": "port unit tests: testmarshal, testmultiprec",
+   "modules": [
+    "decompiler/unittests/testmarshal.cc",
+    "decompiler/unittests/testmultiprec.cc"
+   ],
+   "depends_on": [
+    "w1-base-marshal",
+    "w1-num-float-multiprec",
+    "W0-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-harness",
+   "loc_estimate": 646,
+   "cpp_blob_sha": {
+    "decompiler/unittests/testmarshal.cc": "6b94553e4b3e202acd9c6817b84ada670dc040aa",
+    "decompiler/unittests/testmultiprec.cc": "529b8c815882d88560aa6a9a343624fdb4265cff"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w1-harness-unittests-verify",
+   "kind": "verify",
+   "wave": "W1",
+   "crate": "kuna-harness",
+   "title": "verify: port unit tests: testmarshal, testmultiprec",
+   "modules": [
+    "decompiler/unittests/testmarshal.cc",
+    "decompiler/unittests/testmultiprec.cc"
+   ],
+   "depends_on": [
+    "w1-harness-unittests"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 646,
+   "cpp_blob_sha": {
+    "decompiler/unittests/testmarshal.cc": "6b94553e4b3e202acd9c6817b84ada670dc040aa",
+    "decompiler/unittests/testmultiprec.cc": "529b8c815882d88560aa6a9a343624fdb4265cff"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w2-sleigh-translate",
+   "kind": "port",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "Translate interface + varnode data",
+   "modules": [
+    "decompiler/cpp/translate.cc",
+    "decompiler/cpp/translate.hh"
+   ],
+   "depends_on": [
+    "W1-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-sleigh",
+   "loc_estimate": 1658,
+   "cpp_blob_sha": {
+    "decompiler/cpp/translate.cc": "8cca59a574aa16a257dfa8004bd179ab7818f5c5",
+    "decompiler/cpp/translate.hh": "5abc6550f6ffcb1bfea674efd5fe40bb0b665b1b"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w2-sleigh-translate-verify",
+   "kind": "verify",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "verify: Translate interface + varnode data",
+   "modules": [
+    "decompiler/cpp/translate.cc",
+    "decompiler/cpp/translate.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-translate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1658,
+   "cpp_blob_sha": {
+    "decompiler/cpp/translate.cc": "8cca59a574aa16a257dfa8004bd179ab7818f5c5",
+    "decompiler/cpp/translate.hh": "5abc6550f6ffcb1bfea674efd5fe40bb0b665b1b"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w2-sleigh-context",
+   "kind": "port",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "context + globalcontext databases",
+   "modules": [
+    "decompiler/cpp/context.cc",
+    "decompiler/cpp/context.hh",
+    "decompiler/cpp/globalcontext.cc",
+    "decompiler/cpp/globalcontext.hh"
+   ],
+   "depends_on": [
+    "W1-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-sleigh",
+   "loc_estimate": 1569,
+   "cpp_blob_sha": {
+    "decompiler/cpp/context.cc": "272a3e376f277a54f2a7daed5eaa65bc2901d6fa",
+    "decompiler/cpp/context.hh": "abe1701de1001442faf114ec9e546b6b1777db2b",
+    "decompiler/cpp/globalcontext.cc": "ef2d8800c111bbfa2c24a5f5815ee3db0c339014",
+    "decompiler/cpp/globalcontext.hh": "2a9abad542207d5efaf7313c8aade438086c838c"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w2-sleigh-context-verify",
+   "kind": "verify",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "verify: context + globalcontext databases",
+   "modules": [
+    "decompiler/cpp/context.cc",
+    "decompiler/cpp/context.hh",
+    "decompiler/cpp/globalcontext.cc",
+    "decompiler/cpp/globalcontext.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-context"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1569,
+   "cpp_blob_sha": {
+    "decompiler/cpp/context.cc": "272a3e376f277a54f2a7daed5eaa65bc2901d6fa",
+    "decompiler/cpp/context.hh": "abe1701de1001442faf114ec9e546b6b1777db2b",
+    "decompiler/cpp/globalcontext.cc": "ef2d8800c111bbfa2c24a5f5815ee3db0c339014",
+    "decompiler/cpp/globalcontext.hh": "2a9abad542207d5efaf7313c8aade438086c838c"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w2-sleigh-pattern",
+   "kind": "port",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "instruction patterns + pattern expressions",
+   "modules": [
+    "decompiler/cpp/slghpattern.cc",
+    "decompiler/cpp/slghpattern.hh",
+    "decompiler/cpp/slghpatexpress.cc",
+    "decompiler/cpp/slghpatexpress.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-context",
+    "W1-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-sleigh",
+   "loc_estimate": 3344,
+   "cpp_blob_sha": {
+    "decompiler/cpp/slghpattern.cc": "6253ca118d03c7b36db1ae07125ea319c91239ce",
+    "decompiler/cpp/slghpattern.hh": "de90a885dd6bf9cf7c5e7e87e362f402d52a8559",
+    "decompiler/cpp/slghpatexpress.cc": "a724f3013f27d01217b11c8b7e93731be426cb76",
+    "decompiler/cpp/slghpatexpress.hh": "118fe3cc943b0b6fe308c07e392127e261328745"
+   },
+   "notes": "3.3k LOC: two tightly coupled files kept as one item."
+  },
+  {
+   "id": "w2-sleigh-pattern-verify",
+   "kind": "verify",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "verify: instruction patterns + pattern expressions",
+   "modules": [
+    "decompiler/cpp/slghpattern.cc",
+    "decompiler/cpp/slghpattern.hh",
+    "decompiler/cpp/slghpatexpress.cc",
+    "decompiler/cpp/slghpatexpress.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-pattern"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 3344,
+   "cpp_blob_sha": {
+    "decompiler/cpp/slghpattern.cc": "6253ca118d03c7b36db1ae07125ea319c91239ce",
+    "decompiler/cpp/slghpattern.hh": "de90a885dd6bf9cf7c5e7e87e362f402d52a8559",
+    "decompiler/cpp/slghpatexpress.cc": "a724f3013f27d01217b11c8b7e93731be426cb76",
+    "decompiler/cpp/slghpatexpress.hh": "118fe3cc943b0b6fe308c07e392127e261328745"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w2-sleigh-symbol",
+   "kind": "port",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "SLEIGH symbol table",
+   "modules": [
+    "decompiler/cpp/slghsymbol.cc",
+    "decompiler/cpp/slghsymbol.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-pattern",
+    "W1-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-sleigh",
+   "loc_estimate": 3187,
+   "cpp_blob_sha": {
+    "decompiler/cpp/slghsymbol.cc": "deadf3b53246e3fbacc7f75eebb15a8d2d539069",
+    "decompiler/cpp/slghsymbol.hh": "e3be244b3bc2a057a945818cc29ede5cc7587c7c"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w2-sleigh-symbol-verify",
+   "kind": "verify",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "verify: SLEIGH symbol table",
+   "modules": [
+    "decompiler/cpp/slghsymbol.cc",
+    "decompiler/cpp/slghsymbol.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-symbol"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 3187,
+   "cpp_blob_sha": {
+    "decompiler/cpp/slghsymbol.cc": "deadf3b53246e3fbacc7f75eebb15a8d2d539069",
+    "decompiler/cpp/slghsymbol.hh": "e3be244b3bc2a057a945818cc29ede5cc7587c7c"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w2-sleigh-semantics",
+   "kind": "port",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "constructor templates + pcode compile",
+   "modules": [
+    "decompiler/cpp/semantics.cc",
+    "decompiler/cpp/semantics.hh",
+    "decompiler/cpp/pcodecompile.cc",
+    "decompiler/cpp/pcodecompile.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-symbol",
+    "W1-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-sleigh",
+   "loc_estimate": 2066,
+   "cpp_blob_sha": {
+    "decompiler/cpp/semantics.cc": "7b06da8e0ba9f4bc725b6d0e9c853d9c621249f1",
+    "decompiler/cpp/semantics.hh": "2a768a7befdaeabe17442c7dc0717aa3bb731adb",
+    "decompiler/cpp/pcodecompile.cc": "a67a3de8493bf5e7c72c8534872ebc9d24d73688",
+    "decompiler/cpp/pcodecompile.hh": "3caa57c69f0beb47945a2fc3f2f180cd240ed8b8"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w2-sleigh-semantics-verify",
+   "kind": "verify",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "verify: constructor templates + pcode compile",
+   "modules": [
+    "decompiler/cpp/semantics.cc",
+    "decompiler/cpp/semantics.hh",
+    "decompiler/cpp/pcodecompile.cc",
+    "decompiler/cpp/pcodecompile.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-semantics"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2066,
+   "cpp_blob_sha": {
+    "decompiler/cpp/semantics.cc": "7b06da8e0ba9f4bc725b6d0e9c853d9c621249f1",
+    "decompiler/cpp/semantics.hh": "2a768a7befdaeabe17442c7dc0717aa3bb731adb",
+    "decompiler/cpp/pcodecompile.cc": "a67a3de8493bf5e7c72c8534872ebc9d24d73688",
+    "decompiler/cpp/pcodecompile.hh": "3caa57c69f0beb47945a2fc3f2f180cd240ed8b8"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w2-sleigh-pcodeparse",
+   "kind": "port",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "pcode snippet parser (hand-written)",
+   "modules": [
+    "decompiler/cpp/pcodeparse.cc",
+    "decompiler/cpp/pcodeparse.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-semantics",
+    "W1-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-sleigh",
+   "loc_estimate": 3404,
+   "cpp_blob_sha": {
+    "decompiler/cpp/pcodeparse.cc": "db0031309ae2d8c61aa5eecb2dbe0af4f4f6df6d",
+    "decompiler/cpp/pcodeparse.hh": "8be3185755bf95bb1e892e61c1e80bb3b1c61d2c"
+   },
+   "notes": "LOSS-006: pcodeparse.y bison output ported as a hand-written recursive-descent parser; used by inject_sleigh at runtime."
+  },
+  {
+   "id": "w2-sleigh-pcodeparse-verify",
+   "kind": "verify",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "verify: pcode snippet parser (hand-written)",
+   "modules": [
+    "decompiler/cpp/pcodeparse.cc",
+    "decompiler/cpp/pcodeparse.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-pcodeparse"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 3404,
+   "cpp_blob_sha": {
+    "decompiler/cpp/pcodeparse.cc": "db0031309ae2d8c61aa5eecb2dbe0af4f4f6df6d",
+    "decompiler/cpp/pcodeparse.hh": "8be3185755bf95bb1e892e61c1e80bb3b1c61d2c"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w2-sleigh-core",
+   "kind": "port",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "Sleigh engine + sleighbase + .sla format",
+   "modules": [
+    "decompiler/cpp/sleigh.cc",
+    "decompiler/cpp/sleigh.hh",
+    "decompiler/cpp/sleighbase.cc",
+    "decompiler/cpp/sleighbase.hh",
+    "decompiler/cpp/slaformat.cc",
+    "decompiler/cpp/slaformat.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-symbol",
+    "w2-sleigh-translate",
+    "w2-sleigh-loadimage",
+    "W1-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-sleigh",
+   "loc_estimate": 2280,
+   "cpp_blob_sha": {
+    "decompiler/cpp/sleigh.cc": "f6b718d6e0b0836fab4867c25f1770d4b418760a",
+    "decompiler/cpp/sleigh.hh": "95249cf18d6fd0cd5f4a4156477901e2c760e0d8",
+    "decompiler/cpp/sleighbase.cc": "26805d642e310991ea4c50dce1f5febd4308bd42",
+    "decompiler/cpp/sleighbase.hh": "5286d9ee80225507d4af4c03b2281b06dceff785",
+    "decompiler/cpp/slaformat.cc": "f8b3bcfa731777d597c6c8a9b6b2268aa8da9daf",
+    "decompiler/cpp/slaformat.hh": "a8eb11b63c825e98c3a10c071dadf4a1d16d257f"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w2-sleigh-core-verify",
+   "kind": "verify",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "verify: Sleigh engine + sleighbase + .sla format",
+   "modules": [
+    "decompiler/cpp/sleigh.cc",
+    "decompiler/cpp/sleigh.hh",
+    "decompiler/cpp/sleighbase.cc",
+    "decompiler/cpp/sleighbase.hh",
+    "decompiler/cpp/slaformat.cc",
+    "decompiler/cpp/slaformat.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-core"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2280,
+   "cpp_blob_sha": {
+    "decompiler/cpp/sleigh.cc": "f6b718d6e0b0836fab4867c25f1770d4b418760a",
+    "decompiler/cpp/sleigh.hh": "95249cf18d6fd0cd5f4a4156477901e2c760e0d8",
+    "decompiler/cpp/sleighbase.cc": "26805d642e310991ea4c50dce1f5febd4308bd42",
+    "decompiler/cpp/sleighbase.hh": "5286d9ee80225507d4af4c03b2281b06dceff785",
+    "decompiler/cpp/slaformat.cc": "f8b3bcfa731777d597c6c8a9b6b2268aa8da9daf",
+    "decompiler/cpp/slaformat.hh": "a8eb11b63c825e98c3a10c071dadf4a1d16d257f"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w2-sleigh-loadimage",
+   "kind": "port",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "LoadImage interface + XML loadimage",
+   "modules": [
+    "decompiler/cpp/loadimage.cc",
+    "decompiler/cpp/loadimage.hh",
+    "decompiler/cpp/loadimage_xml.cc",
+    "decompiler/cpp/loadimage_xml.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-translate",
+    "W1-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-sleigh",
+   "loc_estimate": 702,
+   "cpp_blob_sha": {
+    "decompiler/cpp/loadimage.cc": "558229946c1f32209bb7fe8ad44c1e32c0c8e8a0",
+    "decompiler/cpp/loadimage.hh": "76dce9bada7a7195968a2787a0cfc71c3ab022df",
+    "decompiler/cpp/loadimage_xml.cc": "6847a5ebcb6a31f83ba272ff22486e998969ea23",
+    "decompiler/cpp/loadimage_xml.hh": "350ccfba1c0b5c9c4b995cd7e1f7834c34be4823"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w2-sleigh-loadimage-verify",
+   "kind": "verify",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "verify: LoadImage interface + XML loadimage",
+   "modules": [
+    "decompiler/cpp/loadimage.cc",
+    "decompiler/cpp/loadimage.hh",
+    "decompiler/cpp/loadimage_xml.cc",
+    "decompiler/cpp/loadimage_xml.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-loadimage"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 702,
+   "cpp_blob_sha": {
+    "decompiler/cpp/loadimage.cc": "558229946c1f32209bb7fe8ad44c1e32c0c8e8a0",
+    "decompiler/cpp/loadimage.hh": "76dce9bada7a7195968a2787a0cfc71c3ab022df",
+    "decompiler/cpp/loadimage_xml.cc": "6847a5ebcb6a31f83ba272ff22486e998969ea23",
+    "decompiler/cpp/loadimage_xml.hh": "350ccfba1c0b5c9c4b995cd7e1f7834c34be4823"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w2-sleigh-emulate",
+   "kind": "port",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "emulator + memory state",
+   "modules": [
+    "decompiler/cpp/memstate.cc",
+    "decompiler/cpp/memstate.hh",
+    "decompiler/cpp/emulate.cc",
+    "decompiler/cpp/emulate.hh",
+    "decompiler/cpp/emulateutil.cc",
+    "decompiler/cpp/emulateutil.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-translate",
+    "w2-sleigh-loadimage",
+    "W1-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-sleigh",
+   "loc_estimate": 2534,
+   "cpp_blob_sha": {
+    "decompiler/cpp/memstate.cc": "874909f0dccbe15809859c4c3ba5a7987d50956a",
+    "decompiler/cpp/memstate.hh": "7f1ccfe498a5d510d58ffc5a33579eeb2206b932",
+    "decompiler/cpp/emulate.cc": "b26bf24d836fdd1fb40cbc701c2679913b59783e",
+    "decompiler/cpp/emulate.hh": "953b0450868c1689e5d3b87651f39d5af04be647",
+    "decompiler/cpp/emulateutil.cc": "73fcfec97f5c9a41be27d91ce58066d754883568",
+    "decompiler/cpp/emulateutil.hh": "314349419cfb6624813a79213a1902ff4089fd57"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w2-sleigh-emulate-verify",
+   "kind": "verify",
+   "wave": "W2",
+   "crate": "kuna-sleigh",
+   "title": "verify: emulator + memory state",
+   "modules": [
+    "decompiler/cpp/memstate.cc",
+    "decompiler/cpp/memstate.hh",
+    "decompiler/cpp/emulate.cc",
+    "decompiler/cpp/emulate.hh",
+    "decompiler/cpp/emulateutil.cc",
+    "decompiler/cpp/emulateutil.hh"
+   ],
+   "depends_on": [
+    "w2-sleigh-emulate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2534,
+   "cpp_blob_sha": {
+    "decompiler/cpp/memstate.cc": "874909f0dccbe15809859c4c3ba5a7987d50956a",
+    "decompiler/cpp/memstate.hh": "7f1ccfe498a5d510d58ffc5a33579eeb2206b932",
+    "decompiler/cpp/emulate.cc": "b26bf24d836fdd1fb40cbc701c2679913b59783e",
+    "decompiler/cpp/emulate.hh": "953b0450868c1689e5d3b87651f39d5af04be647",
+    "decompiler/cpp/emulateutil.cc": "73fcfec97f5c9a41be27d91ce58066d754883568",
+    "decompiler/cpp/emulateutil.hh": "314349419cfb6624813a79213a1902ff4089fd57"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w2-harness-floatemu",
+   "kind": "port",
+   "wave": "W2",
+   "crate": "kuna-harness",
+   "title": "port unit tests: testfloatemu",
+   "modules": [
+    "decompiler/unittests/testfloatemu.cc"
+   ],
+   "depends_on": [
+    "w2-sleigh-emulate",
+    "W1-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-harness",
+   "loc_estimate": 520,
+   "cpp_blob_sha": {
+    "decompiler/unittests/testfloatemu.cc": "2571f55f1a41796e342b94074f560f53ac97de76"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w2-harness-floatemu-verify",
+   "kind": "verify",
+   "wave": "W2",
+   "crate": "kuna-harness",
+   "title": "verify: port unit tests: testfloatemu",
+   "modules": [
+    "decompiler/unittests/testfloatemu.cc"
+   ],
+   "depends_on": [
+    "w2-harness-floatemu"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 520,
+   "cpp_blob_sha": {
+    "decompiler/unittests/testfloatemu.cc": "2571f55f1a41796e342b94074f560f53ac97de76"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w3-ir-varnode",
+   "kind": "port",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "Varnode + VarnodeBank",
+   "modules": [
+    "decompiler/cpp/varnode.cc",
+    "decompiler/cpp/varnode.hh"
+   ],
+   "depends_on": [
+    "W2-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2504,
+   "cpp_blob_sha": {
+    "decompiler/cpp/varnode.cc": "f444a6632b71daf2d770126f9fc9becca82bad0d",
+    "decompiler/cpp/varnode.hh": "aa2166aa036b8956d620556255f00a3d75dcebb7"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w3-ir-varnode-verify",
+   "kind": "verify",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "verify: Varnode + VarnodeBank",
+   "modules": [
+    "decompiler/cpp/varnode.cc",
+    "decompiler/cpp/varnode.hh"
+   ],
+   "depends_on": [
+    "w3-ir-varnode"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2504,
+   "cpp_blob_sha": {
+    "decompiler/cpp/varnode.cc": "f444a6632b71daf2d770126f9fc9becca82bad0d",
+    "decompiler/cpp/varnode.hh": "aa2166aa036b8956d620556255f00a3d75dcebb7"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w3-ir-op",
+   "kind": "port",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "PcodeOp + PcodeOpBank",
+   "modules": [
+    "decompiler/cpp/op.cc",
+    "decompiler/cpp/op.hh"
+   ],
+   "depends_on": [
+    "w3-ir-varnode",
+    "W2-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1605,
+   "cpp_blob_sha": {
+    "decompiler/cpp/op.cc": "dbd6ccbc3c59a18a402d178d012c10f7950a3cf7",
+    "decompiler/cpp/op.hh": "1cac600f7a912836831194b44a83049bfd3581b6"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w3-ir-op-verify",
+   "kind": "verify",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "verify: PcodeOp + PcodeOpBank",
+   "modules": [
+    "decompiler/cpp/op.cc",
+    "decompiler/cpp/op.hh"
+   ],
+   "depends_on": [
+    "w3-ir-op"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1605,
+   "cpp_blob_sha": {
+    "decompiler/cpp/op.cc": "dbd6ccbc3c59a18a402d178d012c10f7950a3cf7",
+    "decompiler/cpp/op.hh": "1cac600f7a912836831194b44a83049bfd3581b6"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w3-ir-block",
+   "kind": "port",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "FlowBlock hierarchy + BlockGraph",
+   "modules": [
+    "decompiler/cpp/block.cc",
+    "decompiler/cpp/block.hh"
+   ],
+   "depends_on": [
+    "w3-ir-op",
+    "W2-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 4704,
+   "cpp_blob_sha": {
+    "decompiler/cpp/block.cc": "aa154772f766acc1571d9254e3ee6cc80c206435",
+    "decompiler/cpp/block.hh": "1cae714ed7b17ba3f4d259d689f42f9cc1f6ab61"
+   },
+   "notes": "4.7k LOC single coherent file; exceeds the 2.5k budget by design."
+  },
+  {
+   "id": "w3-ir-block-verify",
+   "kind": "verify",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "verify: FlowBlock hierarchy + BlockGraph",
+   "modules": [
+    "decompiler/cpp/block.cc",
+    "decompiler/cpp/block.hh"
+   ],
+   "depends_on": [
+    "w3-ir-block"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 4704,
+   "cpp_blob_sha": {
+    "decompiler/cpp/block.cc": "aa154772f766acc1571d9254e3ee6cc80c206435",
+    "decompiler/cpp/block.hh": "1cae714ed7b17ba3f4d259d689f42f9cc1f6ab61"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w3-ir-funcdata",
+   "kind": "port",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "Funcdata core + block ops",
+   "modules": [
+    "decompiler/cpp/funcdata.cc",
+    "decompiler/cpp/funcdata.hh",
+    "decompiler/cpp/funcdata_block.cc"
+   ],
+   "depends_on": [
+    "w3-ir-block",
+    "W2-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 3090,
+   "cpp_blob_sha": {
+    "decompiler/cpp/funcdata.cc": "6571bfe9b56c3bf26f8e9c8a940f35a640d90e48",
+    "decompiler/cpp/funcdata.hh": "a9935d59665993998e6455c6a06753fab4e3fe24",
+    "decompiler/cpp/funcdata_block.cc": "cad42f18caa3cf214be49d0bd7552dcac86e1ecd"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w3-ir-funcdata-verify",
+   "kind": "verify",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "verify: Funcdata core + block ops",
+   "modules": [
+    "decompiler/cpp/funcdata.cc",
+    "decompiler/cpp/funcdata.hh",
+    "decompiler/cpp/funcdata_block.cc"
+   ],
+   "depends_on": [
+    "w3-ir-funcdata"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 3090,
+   "cpp_blob_sha": {
+    "decompiler/cpp/funcdata.cc": "6571bfe9b56c3bf26f8e9c8a940f35a640d90e48",
+    "decompiler/cpp/funcdata.hh": "a9935d59665993998e6455c6a06753fab4e3fe24",
+    "decompiler/cpp/funcdata_block.cc": "cad42f18caa3cf214be49d0bd7552dcac86e1ecd"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w3-ir-funcdata-op",
+   "kind": "port",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "Funcdata op management",
+   "modules": [
+    "decompiler/cpp/funcdata_op.cc"
+   ],
+   "depends_on": [
+    "w3-ir-funcdata",
+    "W2-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1541,
+   "cpp_blob_sha": {
+    "decompiler/cpp/funcdata_op.cc": "d3a0c4965965a97bca5ee246edfe42570d7a3f5f"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w3-ir-funcdata-op-verify",
+   "kind": "verify",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "verify: Funcdata op management",
+   "modules": [
+    "decompiler/cpp/funcdata_op.cc"
+   ],
+   "depends_on": [
+    "w3-ir-funcdata-op"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1541,
+   "cpp_blob_sha": {
+    "decompiler/cpp/funcdata_op.cc": "d3a0c4965965a97bca5ee246edfe42570d7a3f5f"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w3-ir-funcdata-varnode",
+   "kind": "port",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "Funcdata varnode management",
+   "modules": [
+    "decompiler/cpp/funcdata_varnode.cc"
+   ],
+   "depends_on": [
+    "w3-ir-funcdata",
+    "W2-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2285,
+   "cpp_blob_sha": {
+    "decompiler/cpp/funcdata_varnode.cc": "7be1bf1b61a3b9252d5d7de1295728ac0ea9e522"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w3-ir-funcdata-varnode-verify",
+   "kind": "verify",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "verify: Funcdata varnode management",
+   "modules": [
+    "decompiler/cpp/funcdata_varnode.cc"
+   ],
+   "depends_on": [
+    "w3-ir-funcdata-varnode"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2285,
+   "cpp_blob_sha": {
+    "decompiler/cpp/funcdata_varnode.cc": "7be1bf1b61a3b9252d5d7de1295728ac0ea9e522"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w3-ir-flow",
+   "kind": "port",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "FlowInfo instruction-following",
+   "modules": [
+    "decompiler/cpp/flow.cc",
+    "decompiler/cpp/flow.hh"
+   ],
+   "depends_on": [
+    "w3-ir-funcdata",
+    "W2-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1633,
+   "cpp_blob_sha": {
+    "decompiler/cpp/flow.cc": "f155217ada48c2400cf120ebec1e87a65296365c",
+    "decompiler/cpp/flow.hh": "360a8645877b2cb3d4e0b6b7308ac3f53aab90e9"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w3-ir-flow-verify",
+   "kind": "verify",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "verify: FlowInfo instruction-following",
+   "modules": [
+    "decompiler/cpp/flow.cc",
+    "decompiler/cpp/flow.hh"
+   ],
+   "depends_on": [
+    "w3-ir-flow"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1633,
+   "cpp_blob_sha": {
+    "decompiler/cpp/flow.cc": "f155217ada48c2400cf120ebec1e87a65296365c",
+    "decompiler/cpp/flow.hh": "360a8645877b2cb3d4e0b6b7308ac3f53aab90e9"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w3-ir-jumptable",
+   "kind": "port",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "jump table recovery",
+   "modules": [
+    "decompiler/cpp/jumptable.cc",
+    "decompiler/cpp/jumptable.hh"
+   ],
+   "depends_on": [
+    "w3-ir-flow",
+    "W2-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 3669,
+   "cpp_blob_sha": {
+    "decompiler/cpp/jumptable.cc": "c8a8ef30ff3b97ee7eec263dca6839d579651819",
+    "decompiler/cpp/jumptable.hh": "2fe58131a17c7ff1ddff573971ccbaaf8d65ac21"
+   },
+   "notes": "3.7k LOC single coherent file; exceeds the 2.5k budget by design."
+  },
+  {
+   "id": "w3-ir-jumptable-verify",
+   "kind": "verify",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "verify: jump table recovery",
+   "modules": [
+    "decompiler/cpp/jumptable.cc",
+    "decompiler/cpp/jumptable.hh"
+   ],
+   "depends_on": [
+    "w3-ir-jumptable"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 3669,
+   "cpp_blob_sha": {
+    "decompiler/cpp/jumptable.cc": "c8a8ef30ff3b97ee7eec263dca6839d579651819",
+    "decompiler/cpp/jumptable.hh": "2fe58131a17c7ff1ddff573971ccbaaf8d65ac21"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w3-ir-userop-inject",
+   "kind": "port",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "user ops + pcode injection",
+   "modules": [
+    "decompiler/cpp/userop.cc",
+    "decompiler/cpp/userop.hh",
+    "decompiler/cpp/pcodeinject.cc",
+    "decompiler/cpp/pcodeinject.hh",
+    "decompiler/cpp/inject_sleigh.cc",
+    "decompiler/cpp/inject_sleigh.hh"
+   ],
+   "depends_on": [
+    "w3-ir-op",
+    "W2-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2294,
+   "cpp_blob_sha": {
+    "decompiler/cpp/userop.cc": "dbffcc293f34ef48f4d46b51661176d13236aa03",
+    "decompiler/cpp/userop.hh": "5305650cf04eb49520e1a31069cc452388a1dbc1",
+    "decompiler/cpp/pcodeinject.cc": "f32232022871f4906ebfd5ded5fde419ce5114c2",
+    "decompiler/cpp/pcodeinject.hh": "f123ac769e008ab8776fdb7b82b0f75d089e3683",
+    "decompiler/cpp/inject_sleigh.cc": "4cd05df8a53c424f6fb0a9de085c3e12fd247f59",
+    "decompiler/cpp/inject_sleigh.hh": "5b240bb1be178691ce648dde860147c58d44e3ff"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w3-ir-userop-inject-verify",
+   "kind": "verify",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "verify: user ops + pcode injection",
+   "modules": [
+    "decompiler/cpp/userop.cc",
+    "decompiler/cpp/userop.hh",
+    "decompiler/cpp/pcodeinject.cc",
+    "decompiler/cpp/pcodeinject.hh",
+    "decompiler/cpp/inject_sleigh.cc",
+    "decompiler/cpp/inject_sleigh.hh"
+   ],
+   "depends_on": [
+    "w3-ir-userop-inject"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2294,
+   "cpp_blob_sha": {
+    "decompiler/cpp/userop.cc": "dbffcc293f34ef48f4d46b51661176d13236aa03",
+    "decompiler/cpp/userop.hh": "5305650cf04eb49520e1a31069cc452388a1dbc1",
+    "decompiler/cpp/pcodeinject.cc": "f32232022871f4906ebfd5ded5fde419ce5114c2",
+    "decompiler/cpp/pcodeinject.hh": "f123ac769e008ab8776fdb7b82b0f75d089e3683",
+    "decompiler/cpp/inject_sleigh.cc": "4cd05df8a53c424f6fb0a9de085c3e12fd247f59",
+    "decompiler/cpp/inject_sleigh.hh": "5b240bb1be178691ce648dde860147c58d44e3ff"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w3-kuna-flow-pack",
+   "kind": "port",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "kuna flow/jumptable/funcentry helpers",
+   "modules": [
+    "decompiler/cpp/kuna_v850indbranch.cc",
+    "decompiler/cpp/kuna_v850indbranch.hh",
+    "decompiler/cpp/kuna_switchmodbound.cc",
+    "decompiler/cpp/kuna_switchmodbound.hh",
+    "decompiler/cpp/kuna_thumbfuncptr.cc",
+    "decompiler/cpp/kuna_thumbfuncptr.hh",
+    "decompiler/cpp/kuna_inferfuncentry.cc",
+    "decompiler/cpp/kuna_inferfuncentry.hh",
+    "decompiler/cpp/kuna_sparcstructret.cc",
+    "decompiler/cpp/kuna_sparcstructret.hh"
+   ],
+   "depends_on": [
+    "w3-ir-jumptable",
+    "W2-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 488,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_v850indbranch.cc": "6cc95475aee245c1e4e848344953f47bb1eaf084",
+    "decompiler/cpp/kuna_v850indbranch.hh": "be76b86578eeb856c53df39e8a49a830399cfbbe",
+    "decompiler/cpp/kuna_switchmodbound.cc": "2236c193fcfa145e9cf590dc87be3426482bf348",
+    "decompiler/cpp/kuna_switchmodbound.hh": "9f55192bebc771346e107d503dba0645df283442",
+    "decompiler/cpp/kuna_thumbfuncptr.cc": "efdbd13c698ffcfe654fedf3cd0d531858613b38",
+    "decompiler/cpp/kuna_thumbfuncptr.hh": "5632aa10a5f16d8460d51ce56bf820fe67ee10b9",
+    "decompiler/cpp/kuna_inferfuncentry.cc": "9f695498078d7fa58da5413263690bb85f52c777",
+    "decompiler/cpp/kuna_inferfuncentry.hh": "e0a46f0143c68cd2def6f6f27d98fc2f1ac3e052",
+    "decompiler/cpp/kuna_sparcstructret.cc": "2d2cc89ec2b75d55a3f2687de39a6494bcf47998",
+    "decompiler/cpp/kuna_sparcstructret.hh": "e0e3a4b7cfe4fcc67b92448ac174e4bb1977a8ee"
+   },
+   "notes": "Five small kuna S2/S4/S5 hooks grouped (GH-8817, GH-9191, GH-8471, GH-6930, GH-6882)."
+  },
+  {
+   "id": "w3-kuna-flow-pack-verify",
+   "kind": "verify",
+   "wave": "W3",
+   "crate": "kuna-decomp",
+   "title": "verify: kuna flow/jumptable/funcentry helpers",
+   "modules": [
+    "decompiler/cpp/kuna_v850indbranch.cc",
+    "decompiler/cpp/kuna_v850indbranch.hh",
+    "decompiler/cpp/kuna_switchmodbound.cc",
+    "decompiler/cpp/kuna_switchmodbound.hh",
+    "decompiler/cpp/kuna_thumbfuncptr.cc",
+    "decompiler/cpp/kuna_thumbfuncptr.hh",
+    "decompiler/cpp/kuna_inferfuncentry.cc",
+    "decompiler/cpp/kuna_inferfuncentry.hh",
+    "decompiler/cpp/kuna_sparcstructret.cc",
+    "decompiler/cpp/kuna_sparcstructret.hh"
+   ],
+   "depends_on": [
+    "w3-kuna-flow-pack"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 488,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_v850indbranch.cc": "6cc95475aee245c1e4e848344953f47bb1eaf084",
+    "decompiler/cpp/kuna_v850indbranch.hh": "be76b86578eeb856c53df39e8a49a830399cfbbe",
+    "decompiler/cpp/kuna_switchmodbound.cc": "2236c193fcfa145e9cf590dc87be3426482bf348",
+    "decompiler/cpp/kuna_switchmodbound.hh": "9f55192bebc771346e107d503dba0645df283442",
+    "decompiler/cpp/kuna_thumbfuncptr.cc": "efdbd13c698ffcfe654fedf3cd0d531858613b38",
+    "decompiler/cpp/kuna_thumbfuncptr.hh": "5632aa10a5f16d8460d51ce56bf820fe67ee10b9",
+    "decompiler/cpp/kuna_inferfuncentry.cc": "9f695498078d7fa58da5413263690bb85f52c777",
+    "decompiler/cpp/kuna_inferfuncentry.hh": "e0a46f0143c68cd2def6f6f27d98fc2f1ac3e052",
+    "decompiler/cpp/kuna_sparcstructret.cc": "2d2cc89ec2b75d55a3f2687de39a6494bcf47998",
+    "decompiler/cpp/kuna_sparcstructret.hh": "e0e3a4b7cfe4fcc67b92448ac174e4bb1977a8ee"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w4-fw-action",
+   "kind": "port",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "Action/Rule framework",
+   "modules": [
+    "decompiler/cpp/action.cc",
+    "decompiler/cpp/action.hh"
+   ],
+   "depends_on": [
+    "W3-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1489,
+   "cpp_blob_sha": {
+    "decompiler/cpp/action.cc": "9a4e2e26d04d45805f14900fadcbbac01270a2f0",
+    "decompiler/cpp/action.hh": "e929dbb98e8e1fb23d7ac8e8d86e9f4f39fc998c"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w4-fw-action-verify",
+   "kind": "verify",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "verify: Action/Rule framework",
+   "modules": [
+    "decompiler/cpp/action.cc",
+    "decompiler/cpp/action.hh"
+   ],
+   "depends_on": [
+    "w4-fw-action"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1489,
+   "cpp_blob_sha": {
+    "decompiler/cpp/action.cc": "9a4e2e26d04d45805f14900fadcbbac01270a2f0",
+    "decompiler/cpp/action.hh": "e929dbb98e8e1fb23d7ac8e8d86e9f4f39fc998c"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w4-fw-options",
+   "kind": "port",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "ArchOption pipeline configuration",
+   "modules": [
+    "decompiler/cpp/options.cc",
+    "decompiler/cpp/options.hh"
+   ],
+   "depends_on": [
+    "W3-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1461,
+   "cpp_blob_sha": {
+    "decompiler/cpp/options.cc": "b59924dd3b108a8b33f7894e60c5cfdcfed143e6",
+    "decompiler/cpp/options.hh": "7a7f713b84f26f393d135fba673566e732c3afaa"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w4-fw-options-verify",
+   "kind": "verify",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "verify: ArchOption pipeline configuration",
+   "modules": [
+    "decompiler/cpp/options.cc",
+    "decompiler/cpp/options.hh"
+   ],
+   "depends_on": [
+    "w4-fw-options"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1461,
+   "cpp_blob_sha": {
+    "decompiler/cpp/options.cc": "b59924dd3b108a8b33f7894e60c5cfdcfed143e6",
+    "decompiler/cpp/options.hh": "7a7f713b84f26f393d135fba673566e732c3afaa"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w4-p0-database",
+   "kind": "port",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "Symbol database (P0 store)",
+   "modules": [
+    "decompiler/cpp/database.cc",
+    "decompiler/cpp/database.hh"
+   ],
+   "depends_on": [
+    "W3-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 4456,
+   "cpp_blob_sha": {
+    "decompiler/cpp/database.cc": "b73d17b07d89dfac5e26f37949d2489d167b7f27",
+    "decompiler/cpp/database.hh": "45e1bf5dcbf47badefef5bdf3e21a08ac9cd49cd"
+   },
+   "notes": "4.5k LOC single coherent file; exceeds the 2.5k budget by design."
+  },
+  {
+   "id": "w4-p0-database-verify",
+   "kind": "verify",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "verify: Symbol database (P0 store)",
+   "modules": [
+    "decompiler/cpp/database.cc",
+    "decompiler/cpp/database.hh"
+   ],
+   "depends_on": [
+    "w4-p0-database"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 4456,
+   "cpp_blob_sha": {
+    "decompiler/cpp/database.cc": "b73d17b07d89dfac5e26f37949d2489d167b7f27",
+    "decompiler/cpp/database.hh": "45e1bf5dcbf47badefef5bdf3e21a08ac9cd49cd"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w4-fw-architecture",
+   "kind": "port",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "Architecture + capability + libdecomp init",
+   "modules": [
+    "decompiler/cpp/architecture.cc",
+    "decompiler/cpp/architecture.hh",
+    "decompiler/cpp/capability.cc",
+    "decompiler/cpp/capability.hh",
+    "decompiler/cpp/libdecomp.cc",
+    "decompiler/cpp/libdecomp.hh"
+   ],
+   "depends_on": [
+    "w4-fw-action",
+    "w4-fw-options",
+    "w4-p0-database",
+    "W3-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2239,
+   "cpp_blob_sha": {
+    "decompiler/cpp/architecture.cc": "5bece5e770e6ebd765f9060549497caf274f03b9",
+    "decompiler/cpp/architecture.hh": "4237825d4d017843854d7b5a55c21b49308d4370",
+    "decompiler/cpp/capability.cc": "eaecfcda3bf7d07caf0b34fb4b72d5c2271f3f27",
+    "decompiler/cpp/capability.hh": "2c0701d12ed05da5e778cd1014cabd2c024cf62e",
+    "decompiler/cpp/libdecomp.cc": "869c131f53f97837414de530d33d045e9b3d7553",
+    "decompiler/cpp/libdecomp.hh": "1c1dcdd82731426c1440dc0e87f146e36d35b52f"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w4-fw-architecture-verify",
+   "kind": "verify",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "verify: Architecture + capability + libdecomp init",
+   "modules": [
+    "decompiler/cpp/architecture.cc",
+    "decompiler/cpp/architecture.hh",
+    "decompiler/cpp/capability.cc",
+    "decompiler/cpp/capability.hh",
+    "decompiler/cpp/libdecomp.cc",
+    "decompiler/cpp/libdecomp.hh"
+   ],
+   "depends_on": [
+    "w4-fw-architecture"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2239,
+   "cpp_blob_sha": {
+    "decompiler/cpp/architecture.cc": "5bece5e770e6ebd765f9060549497caf274f03b9",
+    "decompiler/cpp/architecture.hh": "4237825d4d017843854d7b5a55c21b49308d4370",
+    "decompiler/cpp/capability.cc": "eaecfcda3bf7d07caf0b34fb4b72d5c2271f3f27",
+    "decompiler/cpp/capability.hh": "2c0701d12ed05da5e778cd1014cabd2c024cf62e",
+    "decompiler/cpp/libdecomp.cc": "869c131f53f97837414de530d33d045e9b3d7553",
+    "decompiler/cpp/libdecomp.hh": "1c1dcdd82731426c1440dc0e87f146e36d35b52f"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w4-p0-override-comment",
+   "kind": "port",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "overrides + comment database",
+   "modules": [
+    "decompiler/cpp/override.cc",
+    "decompiler/cpp/override.hh",
+    "decompiler/cpp/comment.cc",
+    "decompiler/cpp/comment.hh"
+   ],
+   "depends_on": [
+    "w4-p0-database",
+    "W3-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1191,
+   "cpp_blob_sha": {
+    "decompiler/cpp/override.cc": "0c2b57342fef293bc1874ad17990bf7e93253a95",
+    "decompiler/cpp/override.hh": "693c2e62b31aa791bfbc148edd159534729f6e81",
+    "decompiler/cpp/comment.cc": "d9d2000e554165dbd6a156353fe0b5fc889865dd",
+    "decompiler/cpp/comment.hh": "fe2a251abaad8afe3d3530adce7d2ce05dbb9213"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w4-p0-override-comment-verify",
+   "kind": "verify",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "verify: overrides + comment database",
+   "modules": [
+    "decompiler/cpp/override.cc",
+    "decompiler/cpp/override.hh",
+    "decompiler/cpp/comment.cc",
+    "decompiler/cpp/comment.hh"
+   ],
+   "depends_on": [
+    "w4-p0-override-comment"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1191,
+   "cpp_blob_sha": {
+    "decompiler/cpp/override.cc": "0c2b57342fef293bc1874ad17990bf7e93253a95",
+    "decompiler/cpp/override.hh": "693c2e62b31aa791bfbc148edd159534729f6e81",
+    "decompiler/cpp/comment.cc": "d9d2000e554165dbd6a156353fe0b5fc889865dd",
+    "decompiler/cpp/comment.hh": "fe2a251abaad8afe3d3530adce7d2ce05dbb9213"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w4-fw-cpool-graph",
+   "kind": "port",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "constant pool + graph + callgraph",
+   "modules": [
+    "decompiler/cpp/cpool.cc",
+    "decompiler/cpp/cpool.hh",
+    "decompiler/cpp/graph.cc",
+    "decompiler/cpp/graph.hh",
+    "decompiler/cpp/callgraph.cc",
+    "decompiler/cpp/callgraph.hh"
+   ],
+   "depends_on": [
+    "W3-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1586,
+   "cpp_blob_sha": {
+    "decompiler/cpp/cpool.cc": "3b4fb1474447a6c27609dd6286de30944083f64b",
+    "decompiler/cpp/cpool.hh": "d838dfb7fa5e5dbafbbf95cae1fc2e50b4d9c737",
+    "decompiler/cpp/graph.cc": "af787c4727ee20f5765b093f564736fd85af0f73",
+    "decompiler/cpp/graph.hh": "ef65d6e886ad68cd06c008eabda8b96ae76c4331",
+    "decompiler/cpp/callgraph.cc": "c7dfbea0b12c505f2766fcb2eafc853671fb75aa",
+    "decompiler/cpp/callgraph.hh": "67be2bdba78f8acaac8a0b55bceeb6d040312e0a"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w4-fw-cpool-graph-verify",
+   "kind": "verify",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "verify: constant pool + graph + callgraph",
+   "modules": [
+    "decompiler/cpp/cpool.cc",
+    "decompiler/cpp/cpool.hh",
+    "decompiler/cpp/graph.cc",
+    "decompiler/cpp/graph.hh",
+    "decompiler/cpp/callgraph.cc",
+    "decompiler/cpp/callgraph.hh"
+   ],
+   "depends_on": [
+    "w4-fw-cpool-graph"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1586,
+   "cpp_blob_sha": {
+    "decompiler/cpp/cpool.cc": "3b4fb1474447a6c27609dd6286de30944083f64b",
+    "decompiler/cpp/cpool.hh": "d838dfb7fa5e5dbafbbf95cae1fc2e50b4d9c737",
+    "decompiler/cpp/graph.cc": "af787c4727ee20f5765b093f564736fd85af0f73",
+    "decompiler/cpp/graph.hh": "ef65d6e886ad68cd06c008eabda8b96ae76c4331",
+    "decompiler/cpp/callgraph.cc": "c7dfbea0b12c505f2766fcb2eafc853671fb75aa",
+    "decompiler/cpp/callgraph.hh": "67be2bdba78f8acaac8a0b55bceeb6d040312e0a"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w4-fw-arch-frontends",
+   "kind": "port",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "SleighArchitecture + raw/xml frontends",
+   "modules": [
+    "decompiler/cpp/sleigh_arch.cc",
+    "decompiler/cpp/sleigh_arch.hh",
+    "decompiler/cpp/raw_arch.cc",
+    "decompiler/cpp/raw_arch.hh",
+    "decompiler/cpp/xml_arch.cc",
+    "decompiler/cpp/xml_arch.hh"
+   ],
+   "depends_on": [
+    "w4-fw-architecture",
+    "W3-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1182,
+   "cpp_blob_sha": {
+    "decompiler/cpp/sleigh_arch.cc": "cb0848a4de0dc9dc78f6fe8598a4745cb0c97545",
+    "decompiler/cpp/sleigh_arch.hh": "3ee506bfa6fa92688e947f65fc544e058a4c0cea",
+    "decompiler/cpp/raw_arch.cc": "48dcc8b1b4ea1ded6b0855777f7fdfefeedb2189",
+    "decompiler/cpp/raw_arch.hh": "8952c5817169b596c84e05bf2076862e5fd18730",
+    "decompiler/cpp/xml_arch.cc": "ff76eac1a24d1b4e5f5e6ced57571be97a3fd191",
+    "decompiler/cpp/xml_arch.hh": "92a72b8aeabd38dc857d8c4295dd3676e35443b2"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w4-fw-arch-frontends-verify",
+   "kind": "verify",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "verify: SleighArchitecture + raw/xml frontends",
+   "modules": [
+    "decompiler/cpp/sleigh_arch.cc",
+    "decompiler/cpp/sleigh_arch.hh",
+    "decompiler/cpp/raw_arch.cc",
+    "decompiler/cpp/raw_arch.hh",
+    "decompiler/cpp/xml_arch.cc",
+    "decompiler/cpp/xml_arch.hh"
+   ],
+   "depends_on": [
+    "w4-fw-arch-frontends"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1182,
+   "cpp_blob_sha": {
+    "decompiler/cpp/sleigh_arch.cc": "cb0848a4de0dc9dc78f6fe8598a4745cb0c97545",
+    "decompiler/cpp/sleigh_arch.hh": "3ee506bfa6fa92688e947f65fc544e058a4c0cea",
+    "decompiler/cpp/raw_arch.cc": "48dcc8b1b4ea1ded6b0855777f7fdfefeedb2189",
+    "decompiler/cpp/raw_arch.hh": "8952c5817169b596c84e05bf2076862e5fd18730",
+    "decompiler/cpp/xml_arch.cc": "ff76eac1a24d1b4e5f5e6ced57571be97a3fd191",
+    "decompiler/cpp/xml_arch.hh": "92a72b8aeabd38dc857d8c4295dd3676e35443b2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w4-kuna-p0-pack",
+   "kind": "port",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "kuna stage registry + kassert + restart log",
+   "modules": [
+    "decompiler/cpp/kuna_stages.cc",
+    "decompiler/cpp/kuna_stages.hh",
+    "decompiler/cpp/kuna_assert.cc",
+    "decompiler/cpp/kuna_assert.hh",
+    "decompiler/cpp/kuna_restartlog.cc",
+    "decompiler/cpp/kuna_restartlog.hh"
+   ],
+   "depends_on": [
+    "w4-fw-architecture",
+    "W3-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1259,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_stages.cc": "e680fe1bb9b5cb550a0f32026edfb268a9c139b5",
+    "decompiler/cpp/kuna_stages.hh": "47744452c71d0239351782977a7c2f8dcdbcac69",
+    "decompiler/cpp/kuna_assert.cc": "2fd1e193ef9788b6c78d63d3666dd41dd459f200",
+    "decompiler/cpp/kuna_assert.hh": "20aa2e380c53fdf3fc8bb9a2c8caf0b832b4c92e",
+    "decompiler/cpp/kuna_restartlog.cc": "69b5b7c5f102b775d0d669549144073a39749eb4",
+    "decompiler/cpp/kuna_restartlog.hh": "d75475c247f57e39f10c8606c226adad0edcb953"
+   },
+   "notes": "The LLM control surface: settableTable is the single source of truth for `kuna.catalog`."
+  },
+  {
+   "id": "w4-kuna-p0-pack-verify",
+   "kind": "verify",
+   "wave": "W4",
+   "crate": "kuna-decomp",
+   "title": "verify: kuna stage registry + kassert + restart log",
+   "modules": [
+    "decompiler/cpp/kuna_stages.cc",
+    "decompiler/cpp/kuna_stages.hh",
+    "decompiler/cpp/kuna_assert.cc",
+    "decompiler/cpp/kuna_assert.hh",
+    "decompiler/cpp/kuna_restartlog.cc",
+    "decompiler/cpp/kuna_restartlog.hh"
+   ],
+   "depends_on": [
+    "w4-kuna-p0-pack"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1259,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_stages.cc": "e680fe1bb9b5cb550a0f32026edfb268a9c139b5",
+    "decompiler/cpp/kuna_stages.hh": "47744452c71d0239351782977a7c2f8dcdbcac69",
+    "decompiler/cpp/kuna_assert.cc": "2fd1e193ef9788b6c78d63d3666dd41dd459f200",
+    "decompiler/cpp/kuna_assert.hh": "20aa2e380c53fdf3fc8bb9a2c8caf0b832b4c92e",
+    "decompiler/cpp/kuna_restartlog.cc": "69b5b7c5f102b775d0d669549144073a39749eb4",
+    "decompiler/cpp/kuna_restartlog.hh": "d75475c247f57e39f10c8606c226adad0edcb953"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-heritage",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "SSA construction (heritage)",
+   "modules": [
+    "decompiler/cpp/heritage.cc",
+    "decompiler/cpp/heritage.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 3218,
+   "cpp_blob_sha": {
+    "decompiler/cpp/heritage.cc": "7e79c40e7dd69f22396a0a017267d09166345495",
+    "decompiler/cpp/heritage.hh": "804c96a5258f1b2c12a3666f528defc587ce6447"
+   },
+   "notes": "3.2k LOC single coherent file; exceeds the 2.5k budget by design."
+  },
+  {
+   "id": "w5-s3-heritage-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: SSA construction (heritage)",
+   "modules": [
+    "decompiler/cpp/heritage.cc",
+    "decompiler/cpp/heritage.hh"
+   ],
+   "depends_on": [
+    "w5-s3-heritage"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 3218,
+   "cpp_blob_sha": {
+    "decompiler/cpp/heritage.cc": "7e79c40e7dd69f22396a0a017267d09166345495",
+    "decompiler/cpp/heritage.hh": "804c96a5258f1b2c12a3666f528defc587ce6447"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-rules-1",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "ruleaction batch 1/8: RuleCollectTerms..RuleFloatRange (lines 1-1526)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 3135,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Split by line range (definition order): registration order in ActionDatabase::universalAction (coreaction.cc:5776-5995) interleaves rule groups across the whole file, so a clean registration-order split is not contiguous. Boundaries fall on rule-class boundaries. ruleaction.hh is shared across all 8 batches (its LOC counted here)."
+  },
+  {
+   "id": "w5-s3-rules-1-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: ruleaction batch 1/8: RuleCollectTerms..RuleFloatRange (lines 1-1526)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "w5-s3-rules-1"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 3135,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-rules-2",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "ruleaction batch 2/8: RuleAndCommute..RuleBooleanNegate (lines 1527-3007)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1481,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Split by line range (definition order): registration order in ActionDatabase::universalAction (coreaction.cc:5776-5995) interleaves rule groups across the whole file, so a clean registration-order split is not contiguous. Boundaries fall on rule-class boundaries. ruleaction.hh is shared across all 8 batches."
+  },
+  {
+   "id": "w5-s3-rules-2-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: ruleaction batch 2/8: RuleAndCommute..RuleBooleanNegate (lines 1527-3007)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "w5-s3-rules-2"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1481,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-rules-3",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "ruleaction batch 3/8: RuleBoolZext..RuleAddMultCollapse (lines 3008-4292)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1285,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Split by line range (definition order): registration order in ActionDatabase::universalAction (coreaction.cc:5776-5995) interleaves rule groups across the whole file, so a clean registration-order split is not contiguous. Boundaries fall on rule-class boundaries. ruleaction.hh is shared across all 8 batches."
+  },
+  {
+   "id": "w5-s3-rules-3-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: ruleaction batch 3/8: RuleBoolZext..RuleAddMultCollapse (lines 3008-4292)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "w5-s3-rules-3"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1285,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-rules-4",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "ruleaction batch 4/8: RuleLoadVarnode..RuleBoolNegate (lines 4293-5568)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1276,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Split by line range (definition order): registration order in ActionDatabase::universalAction (coreaction.cc:5776-5995) interleaves rule groups across the whole file, so a clean registration-order split is not contiguous. Boundaries fall on rule-class boundaries. ruleaction.hh is shared across all 8 batches."
+  },
+  {
+   "id": "w5-s3-rules-4-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: ruleaction batch 4/8: RuleLoadVarnode..RuleBoolNegate (lines 4293-5568)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "w5-s3-rules-4"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1276,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-rules-5",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "ruleaction batch 5/8: RuleLess2Zero..RulePtrsubUndo (lines 5569-7187)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1619,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Split by line range (definition order): registration order in ActionDatabase::universalAction (coreaction.cc:5776-5995) interleaves rule groups across the whole file, so a clean registration-order split is not contiguous. Boundaries fall on rule-class boundaries. ruleaction.hh is shared across all 8 batches."
+  },
+  {
+   "id": "w5-s3-rules-5-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: ruleaction batch 5/8: RuleLess2Zero..RulePtrsubUndo (lines 5569-7187)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "w5-s3-rules-5"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1619,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-rules-6",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "ruleaction batch 6/8: RuleMultNegOne..RuleDivChain (lines 7188-8479)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1292,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Split by line range (definition order): registration order in ActionDatabase::universalAction (coreaction.cc:5776-5995) interleaves rule groups across the whole file, so a clean registration-order split is not contiguous. Boundaries fall on rule-class boundaries. ruleaction.hh is shared across all 8 batches."
+  },
+  {
+   "id": "w5-s3-rules-6-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: ruleaction batch 6/8: RuleMultNegOne..RuleDivChain (lines 7188-8479)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "w5-s3-rules-6"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1292,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-rules-7",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "ruleaction batch 7/8: RuleSignForm..RuleInt2FloatCollapse (lines 8480-9934)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1455,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Split by line range (definition order): registration order in ActionDatabase::universalAction (coreaction.cc:5776-5995) interleaves rule groups across the whole file, so a clean registration-order split is not contiguous. Boundaries fall on rule-class boundaries. ruleaction.hh is shared across all 8 batches."
+  },
+  {
+   "id": "w5-s3-rules-7-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: ruleaction batch 7/8: RuleSignForm..RuleInt2FloatCollapse (lines 8480-9934)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "w5-s3-rules-7"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1455,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-rules-8",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "ruleaction batch 8/8: RuleFuncPtrEncoding..RuleExpandLoad (lines 9935-11032)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1098,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Split by line range (definition order): registration order in ActionDatabase::universalAction (coreaction.cc:5776-5995) interleaves rule groups across the whole file, so a clean registration-order split is not contiguous. Boundaries fall on rule-class boundaries. ruleaction.hh is shared across all 8 batches."
+  },
+  {
+   "id": "w5-s3-rules-8-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: ruleaction batch 8/8: RuleFuncPtrEncoding..RuleExpandLoad (lines 9935-11032)",
+   "modules": [
+    "decompiler/cpp/ruleaction.cc",
+    "decompiler/cpp/ruleaction.hh"
+   ],
+   "depends_on": [
+    "w5-s3-rules-8"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1098,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ruleaction.cc": "cb1ce08359c822d158dbfcde38718ae3fc071592",
+    "decompiler/cpp/ruleaction.hh": "5b8c80d2d0a409f3792b8c211e10635cb1e37bd2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-subflow",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "sub-variable flow (subflow + lanes)",
+   "modules": [
+    "decompiler/cpp/subflow.cc",
+    "decompiler/cpp/subflow.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 4606,
+   "cpp_blob_sha": {
+    "decompiler/cpp/subflow.cc": "d1e17ee80088bf0b5eca26412582bb8a0f8d1842",
+    "decompiler/cpp/subflow.hh": "1c87c941ed82a3a59dbba605e0e2043f5c59088f"
+   },
+   "notes": "4.6k LOC single coherent file; exceeds the 2.5k budget by design."
+  },
+  {
+   "id": "w5-s3-subflow-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: sub-variable flow (subflow + lanes)",
+   "modules": [
+    "decompiler/cpp/subflow.cc",
+    "decompiler/cpp/subflow.hh"
+   ],
+   "depends_on": [
+    "w5-s3-subflow"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 4606,
+   "cpp_blob_sha": {
+    "decompiler/cpp/subflow.cc": "d1e17ee80088bf0b5eca26412582bb8a0f8d1842",
+    "decompiler/cpp/subflow.hh": "1c87c941ed82a3a59dbba605e0e2043f5c59088f"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-condexe-expression",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "conditional execution + expression utilities",
+   "modules": [
+    "decompiler/cpp/condexe.cc",
+    "decompiler/cpp/condexe.hh",
+    "decompiler/cpp/expression.cc",
+    "decompiler/cpp/expression.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1952,
+   "cpp_blob_sha": {
+    "decompiler/cpp/condexe.cc": "97d7459eeb3ffadd75aab70610f30be9565681ab",
+    "decompiler/cpp/condexe.hh": "c5a7a42051cb2ef50cfa8d7341ee0ebda2a168d3",
+    "decompiler/cpp/expression.cc": "796b4104b1458a01e7954e44ed128a6eba41cfcd",
+    "decompiler/cpp/expression.hh": "e476310255d7d241e28c2c7063d57a07e68a3ab4"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w5-s3-condexe-expression-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: conditional execution + expression utilities",
+   "modules": [
+    "decompiler/cpp/condexe.cc",
+    "decompiler/cpp/condexe.hh",
+    "decompiler/cpp/expression.cc",
+    "decompiler/cpp/expression.hh"
+   ],
+   "depends_on": [
+    "w5-s3-condexe-expression"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1952,
+   "cpp_blob_sha": {
+    "decompiler/cpp/condexe.cc": "97d7459eeb3ffadd75aab70610f30be9565681ab",
+    "decompiler/cpp/condexe.hh": "c5a7a42051cb2ef50cfa8d7341ee0ebda2a168d3",
+    "decompiler/cpp/expression.cc": "796b4104b1458a01e7954e44ed128a6eba41cfcd",
+    "decompiler/cpp/expression.hh": "e476310255d7d241e28c2c7063d57a07e68a3ab4"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-transform",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "TransformManager (lane splitting)",
+   "modules": [
+    "decompiler/cpp/transform.cc",
+    "decompiler/cpp/transform.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1023,
+   "cpp_blob_sha": {
+    "decompiler/cpp/transform.cc": "538d47bc126b833d4e8ca3952fbf94c7ee18e75e",
+    "decompiler/cpp/transform.hh": "58bdecb44c8844e373f7f15807dc2f77c15856ba"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w5-s3-transform-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: TransformManager (lane splitting)",
+   "modules": [
+    "decompiler/cpp/transform.cc",
+    "decompiler/cpp/transform.hh"
+   ],
+   "depends_on": [
+    "w5-s3-transform"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1023,
+   "cpp_blob_sha": {
+    "decompiler/cpp/transform.cc": "538d47bc126b833d4e8ca3952fbf94c7ee18e75e",
+    "decompiler/cpp/transform.hh": "58bdecb44c8844e373f7f15807dc2f77c15856ba"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-s3-coreaction-early",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "coreaction 1/5: early flow/stack prep actions (lines 1-1640)",
+   "modules": [
+    "decompiler/cpp/coreaction.cc",
+    "decompiler/cpp/coreaction.hh"
+   ],
+   "depends_on": [
+    "w5-s3-heritage",
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2740,
+   "cpp_blob_sha": {
+    "decompiler/cpp/coreaction.cc": "28f6157fb06b959aaa44cbb728e909aa6093fd15",
+    "decompiler/cpp/coreaction.hh": "bc278439cc804f55eaf672da4a625220eff79ac2"
+   },
+   "notes": "ActionStart..ActionExtraPopSetup (S2/S3 setup). coreaction.cc split into 5 stage-aligned items; coreaction.hh shared (LOC counted here)."
+  },
+  {
+   "id": "w5-s3-coreaction-early-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: coreaction 1/5: early flow/stack prep actions (lines 1-1640)",
+   "modules": [
+    "decompiler/cpp/coreaction.cc",
+    "decompiler/cpp/coreaction.hh"
+   ],
+   "depends_on": [
+    "w5-s3-coreaction-early"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2740,
+   "cpp_blob_sha": {
+    "decompiler/cpp/coreaction.cc": "28f6157fb06b959aaa44cbb728e909aa6093fd15",
+    "decompiler/cpp/coreaction.hh": "bc278439cc804f55eaf672da4a625220eff79ac2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-kuna-rule-pack",
+   "kind": "port",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "kuna S3/S5 simplification rules",
+   "modules": [
+    "decompiler/cpp/kuna_addcarrychain.cc",
+    "decompiler/cpp/kuna_addcarrychain.hh",
+    "decompiler/cpp/kuna_booleanmask.cc",
+    "decompiler/cpp/kuna_booleanmask.hh",
+    "decompiler/cpp/kuna_ovlesssimplify.cc",
+    "decompiler/cpp/kuna_ovlesssimplify.hh",
+    "decompiler/cpp/kuna_flagcompare.cc",
+    "decompiler/cpp/kuna_flagcompare.hh",
+    "decompiler/cpp/kuna_stackalias.cc",
+    "decompiler/cpp/kuna_stackalias.hh",
+    "decompiler/cpp/kuna_arraystride.cc",
+    "decompiler/cpp/kuna_arraystride.hh",
+    "decompiler/cpp/kuna_condexeplace.cc",
+    "decompiler/cpp/kuna_condexeplace.hh"
+   ],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1268,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_addcarrychain.cc": "15be98d6443acfe3af79d8a6be764ff9db39cba7",
+    "decompiler/cpp/kuna_addcarrychain.hh": "8cbe449b4fd75149f4f1237bc27fc64c0e095027",
+    "decompiler/cpp/kuna_booleanmask.cc": "cdb7afdecc32e74d6abdd807d16295379a30e47e",
+    "decompiler/cpp/kuna_booleanmask.hh": "6440aa1a0dfb53d2f2bdbbad1ebb74c5cbf5cbe1",
+    "decompiler/cpp/kuna_ovlesssimplify.cc": "97f605890ea93ca761c588626f151574446446eb",
+    "decompiler/cpp/kuna_ovlesssimplify.hh": "a310cd49fd6e59f63f184204803ac3209cd8cea8",
+    "decompiler/cpp/kuna_flagcompare.cc": "48ae23b9f142396e321f5bee0ba527c3afa631ce",
+    "decompiler/cpp/kuna_flagcompare.hh": "b34e361b5fe75bc98d947f19901dd5f7829ef569",
+    "decompiler/cpp/kuna_stackalias.cc": "d6b5c2e14601605144b229dcfbc78231238257e0",
+    "decompiler/cpp/kuna_stackalias.hh": "6a798e2f9914dd035af1589541de66cf3b1d414e",
+    "decompiler/cpp/kuna_arraystride.cc": "db1b7c26c3f0c9d2c47ef9a2c9058556c35a16ca",
+    "decompiler/cpp/kuna_arraystride.hh": "273b572b07e06732b4567e8af395330a29893187",
+    "decompiler/cpp/kuna_condexeplace.cc": "0fd6848e452f13e257e8f7aaf5374bd7655f2174",
+    "decompiler/cpp/kuna_condexeplace.hh": "bc0f70cc80f679ecf03195e0701504213cc501b3"
+   },
+   "notes": "Seven arch-flag-gated kuna rules grouped (GH-8913, GH-1282, GH-7190, GH-1276/8777, GH-8500, GH-8724, GH-9203)."
+  },
+  {
+   "id": "w5-kuna-rule-pack-verify",
+   "kind": "verify",
+   "wave": "W5",
+   "crate": "kuna-decomp",
+   "title": "verify: kuna S3/S5 simplification rules",
+   "modules": [
+    "decompiler/cpp/kuna_addcarrychain.cc",
+    "decompiler/cpp/kuna_addcarrychain.hh",
+    "decompiler/cpp/kuna_booleanmask.cc",
+    "decompiler/cpp/kuna_booleanmask.hh",
+    "decompiler/cpp/kuna_ovlesssimplify.cc",
+    "decompiler/cpp/kuna_ovlesssimplify.hh",
+    "decompiler/cpp/kuna_flagcompare.cc",
+    "decompiler/cpp/kuna_flagcompare.hh",
+    "decompiler/cpp/kuna_stackalias.cc",
+    "decompiler/cpp/kuna_stackalias.hh",
+    "decompiler/cpp/kuna_arraystride.cc",
+    "decompiler/cpp/kuna_arraystride.hh",
+    "decompiler/cpp/kuna_condexeplace.cc",
+    "decompiler/cpp/kuna_condexeplace.hh"
+   ],
+   "depends_on": [
+    "w5-kuna-rule-pack"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1268,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_addcarrychain.cc": "15be98d6443acfe3af79d8a6be764ff9db39cba7",
+    "decompiler/cpp/kuna_addcarrychain.hh": "8cbe449b4fd75149f4f1237bc27fc64c0e095027",
+    "decompiler/cpp/kuna_booleanmask.cc": "cdb7afdecc32e74d6abdd807d16295379a30e47e",
+    "decompiler/cpp/kuna_booleanmask.hh": "6440aa1a0dfb53d2f2bdbbad1ebb74c5cbf5cbe1",
+    "decompiler/cpp/kuna_ovlesssimplify.cc": "97f605890ea93ca761c588626f151574446446eb",
+    "decompiler/cpp/kuna_ovlesssimplify.hh": "a310cd49fd6e59f63f184204803ac3209cd8cea8",
+    "decompiler/cpp/kuna_flagcompare.cc": "48ae23b9f142396e321f5bee0ba527c3afa631ce",
+    "decompiler/cpp/kuna_flagcompare.hh": "b34e361b5fe75bc98d947f19901dd5f7829ef569",
+    "decompiler/cpp/kuna_stackalias.cc": "d6b5c2e14601605144b229dcfbc78231238257e0",
+    "decompiler/cpp/kuna_stackalias.hh": "6a798e2f9914dd035af1589541de66cf3b1d414e",
+    "decompiler/cpp/kuna_arraystride.cc": "db1b7c26c3f0c9d2c47ef9a2c9058556c35a16ca",
+    "decompiler/cpp/kuna_arraystride.hh": "273b572b07e06732b4567e8af395330a29893187",
+    "decompiler/cpp/kuna_condexeplace.cc": "0fd6848e452f13e257e8f7aaf5374bd7655f2174",
+    "decompiler/cpp/kuna_condexeplace.hh": "bc0f70cc80f679ecf03195e0701504213cc501b3"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s4-fspec-1",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "fspec 1/3: ParamEntry/ParamTrial/ParamList (lines 1-2267)",
+   "modules": [
+    "decompiler/cpp/fspec.cc",
+    "decompiler/cpp/fspec.hh"
+   ],
+   "depends_on": [
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 4051,
+   "cpp_blob_sha": {
+    "decompiler/cpp/fspec.cc": "903b587e8930baac57fe56e9b87d889628acbf71",
+    "decompiler/cpp/fspec.hh": "6d1615b44923b1f2781a05641db79ee3bbdd907d"
+   },
+   "notes": "fspec.cc split by line range at class boundaries; fspec.hh shared across the 3 items (LOC counted here)."
+  },
+  {
+   "id": "w6-s4-fspec-1-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: fspec 1/3: ParamEntry/ParamTrial/ParamList (lines 1-2267)",
+   "modules": [
+    "decompiler/cpp/fspec.cc",
+    "decompiler/cpp/fspec.hh"
+   ],
+   "depends_on": [
+    "w6-s4-fspec-1"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 4051,
+   "cpp_blob_sha": {
+    "decompiler/cpp/fspec.cc": "903b587e8930baac57fe56e9b87d889628acbf71",
+    "decompiler/cpp/fspec.hh": "6d1615b44923b1f2781a05641db79ee3bbdd907d"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s4-fspec-2",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "fspec 2/3: ProtoModel + FuncProto (lines 2268-4928)",
+   "modules": [
+    "decompiler/cpp/fspec.cc",
+    "decompiler/cpp/fspec.hh"
+   ],
+   "depends_on": [
+    "w6-s4-fspec-1",
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2661,
+   "cpp_blob_sha": {
+    "decompiler/cpp/fspec.cc": "903b587e8930baac57fe56e9b87d889628acbf71",
+    "decompiler/cpp/fspec.hh": "6d1615b44923b1f2781a05641db79ee3bbdd907d"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w6-s4-fspec-2-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: fspec 2/3: ProtoModel + FuncProto (lines 2268-4928)",
+   "modules": [
+    "decompiler/cpp/fspec.cc",
+    "decompiler/cpp/fspec.hh"
+   ],
+   "depends_on": [
+    "w6-s4-fspec-2"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2661,
+   "cpp_blob_sha": {
+    "decompiler/cpp/fspec.cc": "903b587e8930baac57fe56e9b87d889628acbf71",
+    "decompiler/cpp/fspec.hh": "6d1615b44923b1f2781a05641db79ee3bbdd907d"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s4-fspec-3",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "fspec 3/3: FuncCallSpecs (lines 4929-5983)",
+   "modules": [
+    "decompiler/cpp/fspec.cc",
+    "decompiler/cpp/fspec.hh"
+   ],
+   "depends_on": [
+    "w6-s4-fspec-2",
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1055,
+   "cpp_blob_sha": {
+    "decompiler/cpp/fspec.cc": "903b587e8930baac57fe56e9b87d889628acbf71",
+    "decompiler/cpp/fspec.hh": "6d1615b44923b1f2781a05641db79ee3bbdd907d"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w6-s4-fspec-3-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: fspec 3/3: FuncCallSpecs (lines 4929-5983)",
+   "modules": [
+    "decompiler/cpp/fspec.cc",
+    "decompiler/cpp/fspec.hh"
+   ],
+   "depends_on": [
+    "w6-s4-fspec-3"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1055,
+   "cpp_blob_sha": {
+    "decompiler/cpp/fspec.cc": "903b587e8930baac57fe56e9b87d889628acbf71",
+    "decompiler/cpp/fspec.hh": "6d1615b44923b1f2781a05641db79ee3bbdd907d"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s4-modelrules",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "prototype model assign rules",
+   "modules": [
+    "decompiler/cpp/modelrules.cc",
+    "decompiler/cpp/modelrules.hh"
+   ],
+   "depends_on": [
+    "w6-s4-fspec-2",
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2284,
+   "cpp_blob_sha": {
+    "decompiler/cpp/modelrules.cc": "3f4bb8ef35e754a9a84731bed11ab13cf6b8db50",
+    "decompiler/cpp/modelrules.hh": "572a133be433a79d18630b7ead1ad24a5f1e9261"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w6-s4-modelrules-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: prototype model assign rules",
+   "modules": [
+    "decompiler/cpp/modelrules.cc",
+    "decompiler/cpp/modelrules.hh"
+   ],
+   "depends_on": [
+    "w6-s4-modelrules"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2284,
+   "cpp_blob_sha": {
+    "decompiler/cpp/modelrules.cc": "3f4bb8ef35e754a9a84731bed11ab13cf6b8db50",
+    "decompiler/cpp/modelrules.hh": "572a133be433a79d18630b7ead1ad24a5f1e9261"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s5-type-1",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "type 1/3: Datatype base + scalar/pointer/array (lines 1-1722)",
+   "modules": [
+    "decompiler/cpp/type.cc",
+    "decompiler/cpp/type.hh"
+   ],
+   "depends_on": [
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2759,
+   "cpp_blob_sha": {
+    "decompiler/cpp/type.cc": "9014a307b1c222be9414705e2151d5f50b29a23b",
+    "decompiler/cpp/type.hh": "0bafaef240058a69328f71a2ea632c661efef7ef"
+   },
+   "notes": "type.cc split by line range at class boundaries; type.hh shared across the 3 items (LOC counted here)."
+  },
+  {
+   "id": "w6-s5-type-1-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: type 1/3: Datatype base + scalar/pointer/array (lines 1-1722)",
+   "modules": [
+    "decompiler/cpp/type.cc",
+    "decompiler/cpp/type.hh"
+   ],
+   "depends_on": [
+    "w6-s5-type-1"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2759,
+   "cpp_blob_sha": {
+    "decompiler/cpp/type.cc": "9014a307b1c222be9414705e2151d5f50b29a23b",
+    "decompiler/cpp/type.hh": "0bafaef240058a69328f71a2ea632c661efef7ef"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s5-type-2",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "type 2/3: TypeStruct/TypeUnion/code types (lines 1723-3564)",
+   "modules": [
+    "decompiler/cpp/type.cc",
+    "decompiler/cpp/type.hh"
+   ],
+   "depends_on": [
+    "w6-s5-type-1",
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1842,
+   "cpp_blob_sha": {
+    "decompiler/cpp/type.cc": "9014a307b1c222be9414705e2151d5f50b29a23b",
+    "decompiler/cpp/type.hh": "0bafaef240058a69328f71a2ea632c661efef7ef"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w6-s5-type-2-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: type 2/3: TypeStruct/TypeUnion/code types (lines 1723-3564)",
+   "modules": [
+    "decompiler/cpp/type.cc",
+    "decompiler/cpp/type.hh"
+   ],
+   "depends_on": [
+    "w6-s5-type-2"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1842,
+   "cpp_blob_sha": {
+    "decompiler/cpp/type.cc": "9014a307b1c222be9414705e2151d5f50b29a23b",
+    "decompiler/cpp/type.hh": "0bafaef240058a69328f71a2ea632c661efef7ef"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s5-type-3",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "type 3/3: TypeFactory (lines 3565-5201)",
+   "modules": [
+    "decompiler/cpp/type.cc",
+    "decompiler/cpp/type.hh"
+   ],
+   "depends_on": [
+    "w6-s5-type-2",
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1637,
+   "cpp_blob_sha": {
+    "decompiler/cpp/type.cc": "9014a307b1c222be9414705e2151d5f50b29a23b",
+    "decompiler/cpp/type.hh": "0bafaef240058a69328f71a2ea632c661efef7ef"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w6-s5-type-3-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: type 3/3: TypeFactory (lines 3565-5201)",
+   "modules": [
+    "decompiler/cpp/type.cc",
+    "decompiler/cpp/type.hh"
+   ],
+   "depends_on": [
+    "w6-s5-type-3"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1637,
+   "cpp_blob_sha": {
+    "decompiler/cpp/type.cc": "9014a307b1c222be9414705e2151d5f50b29a23b",
+    "decompiler/cpp/type.hh": "0bafaef240058a69328f71a2ea632c661efef7ef"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s5-typeop",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "TypeOp behavior per opcode",
+   "modules": [
+    "decompiler/cpp/typeop.cc",
+    "decompiler/cpp/typeop.hh"
+   ],
+   "depends_on": [
+    "w6-s5-type-3",
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 3555,
+   "cpp_blob_sha": {
+    "decompiler/cpp/typeop.cc": "025b843019880be0cdde939c732ed25de8bceee4",
+    "decompiler/cpp/typeop.hh": "5a5fd1d5a90ba03a276dcc6e072fe18d8804ef21"
+   },
+   "notes": "3.6k LOC single coherent file; exceeds the 2.5k budget by design."
+  },
+  {
+   "id": "w6-s5-typeop-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: TypeOp behavior per opcode",
+   "modules": [
+    "decompiler/cpp/typeop.cc",
+    "decompiler/cpp/typeop.hh"
+   ],
+   "depends_on": [
+    "w6-s5-typeop"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 3555,
+   "cpp_blob_sha": {
+    "decompiler/cpp/typeop.cc": "025b843019880be0cdde939c732ed25de8bceee4",
+    "decompiler/cpp/typeop.hh": "5a5fd1d5a90ba03a276dcc6e072fe18d8804ef21"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s5-unionresolve",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "union facing resolution",
+   "modules": [
+    "decompiler/cpp/unionresolve.cc",
+    "decompiler/cpp/unionresolve.hh"
+   ],
+   "depends_on": [
+    "w6-s5-type-3",
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1516,
+   "cpp_blob_sha": {
+    "decompiler/cpp/unionresolve.cc": "0d7edd1f818daf1178066f8dd6806b46c69e7da7",
+    "decompiler/cpp/unionresolve.hh": "b01db68c522942b2f1c1640def4906339300c14c"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w6-s5-unionresolve-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: union facing resolution",
+   "modules": [
+    "decompiler/cpp/unionresolve.cc",
+    "decompiler/cpp/unionresolve.hh"
+   ],
+   "depends_on": [
+    "w6-s5-unionresolve"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1516,
+   "cpp_blob_sha": {
+    "decompiler/cpp/unionresolve.cc": "0d7edd1f818daf1178066f8dd6806b46c69e7da7",
+    "decompiler/cpp/unionresolve.hh": "b01db68c522942b2f1c1640def4906339300c14c"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s5-rangeutil",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "CircleRange value-set analysis",
+   "modules": [
+    "decompiler/cpp/rangeutil.cc",
+    "decompiler/cpp/rangeutil.hh"
+   ],
+   "depends_on": [
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 3015,
+   "cpp_blob_sha": {
+    "decompiler/cpp/rangeutil.cc": "4613c6002e7e85644d1eb93353a3161eb2fa9e20",
+    "decompiler/cpp/rangeutil.hh": "6c7cc058581b5bb4d5771cc27ae4c5ed85f89884"
+   },
+   "notes": "3.0k LOC single coherent file; exceeds the 2.5k budget by design."
+  },
+  {
+   "id": "w6-s5-rangeutil-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: CircleRange value-set analysis",
+   "modules": [
+    "decompiler/cpp/rangeutil.cc",
+    "decompiler/cpp/rangeutil.hh"
+   ],
+   "depends_on": [
+    "w6-s5-rangeutil"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 3015,
+   "cpp_blob_sha": {
+    "decompiler/cpp/rangeutil.cc": "4613c6002e7e85644d1eb93353a3161eb2fa9e20",
+    "decompiler/cpp/rangeutil.hh": "6c7cc058581b5bb4d5771cc27ae4c5ed85f89884"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s5-double",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "double-precision (split varnode) analysis",
+   "modules": [
+    "decompiler/cpp/double.cc",
+    "decompiler/cpp/double.hh"
+   ],
+   "depends_on": [
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 4022,
+   "cpp_blob_sha": {
+    "decompiler/cpp/double.cc": "858b64b499903a95e21fd7000aa330982b0ca776",
+    "decompiler/cpp/double.hh": "fb53fa330b67d06c3fbb6780e3e8946dc8fc22cb"
+   },
+   "notes": "4.0k LOC single coherent file; exceeds the 2.5k budget by design."
+  },
+  {
+   "id": "w6-s5-double-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: double-precision (split varnode) analysis",
+   "modules": [
+    "decompiler/cpp/double.cc",
+    "decompiler/cpp/double.hh"
+   ],
+   "depends_on": [
+    "w6-s5-double"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 4022,
+   "cpp_blob_sha": {
+    "decompiler/cpp/double.cc": "858b64b499903a95e21fd7000aa330982b0ca776",
+    "decompiler/cpp/double.hh": "fb53fa330b67d06c3fbb6780e3e8946dc8fc22cb"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s5-bitfield",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "bitfield recovery",
+   "modules": [
+    "decompiler/cpp/bitfield.cc",
+    "decompiler/cpp/bitfield.hh"
+   ],
+   "depends_on": [
+    "w6-s5-typeop",
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2671,
+   "cpp_blob_sha": {
+    "decompiler/cpp/bitfield.cc": "5d7d65036552c078806fa9e055b59eae903e9c09",
+    "decompiler/cpp/bitfield.hh": "e50ff577b19b5147c24bd042573152d931e8142d"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w6-s5-bitfield-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: bitfield recovery",
+   "modules": [
+    "decompiler/cpp/bitfield.cc",
+    "decompiler/cpp/bitfield.hh"
+   ],
+   "depends_on": [
+    "w6-s5-bitfield"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2671,
+   "cpp_blob_sha": {
+    "decompiler/cpp/bitfield.cc": "5d7d65036552c078806fa9e055b59eae903e9c09",
+    "decompiler/cpp/bitfield.hh": "e50ff577b19b5147c24bd042573152d931e8142d"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s5-constseq-prefersplit",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "constant sequences + preferred splits",
+   "modules": [
+    "decompiler/cpp/constseq.cc",
+    "decompiler/cpp/constseq.hh",
+    "decompiler/cpp/prefersplit.cc",
+    "decompiler/cpp/prefersplit.hh"
+   ],
+   "depends_on": [
+    "w6-s5-type-3",
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1881,
+   "cpp_blob_sha": {
+    "decompiler/cpp/constseq.cc": "046f60f9d94d7bdc8a22000e90ae6b78c588a3c4",
+    "decompiler/cpp/constseq.hh": "e9d461134226aa06121a10b1b7efbd18bc6009d4",
+    "decompiler/cpp/prefersplit.cc": "826ff069d101af97bb8b68fe1f810079adcf2039",
+    "decompiler/cpp/prefersplit.hh": "4f8d33a2d82243e209f987f1bdf7f4c8837f19b6"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w6-s5-constseq-prefersplit-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: constant sequences + preferred splits",
+   "modules": [
+    "decompiler/cpp/constseq.cc",
+    "decompiler/cpp/constseq.hh",
+    "decompiler/cpp/prefersplit.cc",
+    "decompiler/cpp/prefersplit.hh"
+   ],
+   "depends_on": [
+    "w6-s5-constseq-prefersplit"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1881,
+   "cpp_blob_sha": {
+    "decompiler/cpp/constseq.cc": "046f60f9d94d7bdc8a22000e90ae6b78c588a3c4",
+    "decompiler/cpp/constseq.hh": "e9d461134226aa06121a10b1b7efbd18bc6009d4",
+    "decompiler/cpp/prefersplit.cc": "826ff069d101af97bb8b68fe1f810079adcf2039",
+    "decompiler/cpp/prefersplit.hh": "4f8d33a2d82243e209f987f1bdf7f4c8837f19b6"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-s4-coreaction-protos",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "coreaction 2/5: call/prototype actions (lines 1641-2811)",
+   "modules": [
+    "decompiler/cpp/coreaction.cc",
+    "decompiler/cpp/coreaction.hh"
+   ],
+   "depends_on": [
+    "w6-s4-fspec-3",
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1171,
+   "cpp_blob_sha": {
+    "decompiler/cpp/coreaction.cc": "28f6157fb06b959aaa44cbb728e909aa6093fd15",
+    "decompiler/cpp/coreaction.hh": "bc278439cc804f55eaf672da4a625220eff79ac2"
+   },
+   "notes": "ActionFuncLink..ActionDefaultParams (S4)."
+  },
+  {
+   "id": "w6-s4-coreaction-protos-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: coreaction 2/5: call/prototype actions (lines 1641-2811)",
+   "modules": [
+    "decompiler/cpp/coreaction.cc",
+    "decompiler/cpp/coreaction.hh"
+   ],
+   "depends_on": [
+    "w6-s4-coreaction-protos"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1171,
+   "cpp_blob_sha": {
+    "decompiler/cpp/coreaction.cc": "28f6157fb06b959aaa44cbb728e909aa6093fd15",
+    "decompiler/cpp/coreaction.hh": "bc278439cc804f55eaf672da4a625220eff79ac2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-kuna-s4s5-pack",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "kuna S4/S5 sub-stage pack",
+   "modules": [
+    "decompiler/cpp/kuna_returnpair.cc",
+    "decompiler/cpp/kuna_returnpair.hh",
+    "decompiler/cpp/kuna_memsetsequence.cc",
+    "decompiler/cpp/kuna_memsetsequence.hh",
+    "decompiler/cpp/kuna_compareform.cc",
+    "decompiler/cpp/kuna_compareform.hh"
+   ],
+   "depends_on": [
+    "w6-s4-fspec-3",
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 517,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_returnpair.cc": "8fc8169d047be9a10f92eee994806c2a2165b0de",
+    "decompiler/cpp/kuna_returnpair.hh": "26468a96e659f3e6b47997da67679f47ac0e7fd4",
+    "decompiler/cpp/kuna_memsetsequence.cc": "3bc12382796b81930fb4700190c0e85f6f93e92f",
+    "decompiler/cpp/kuna_memsetsequence.hh": "e04810cb497b2d5e63f3dfcf2b0ad2aa41223398",
+    "decompiler/cpp/kuna_compareform.cc": "3c062864c8b9dfad53a79a045d9b9e0ac8c1eccf",
+    "decompiler/cpp/kuna_compareform.hh": "cea69dfa4c7e77a07fcb60b90f273ad00a8aaa79"
+   },
+   "notes": "GH-6990 returnpair, GH-9230 memset recovery, GH-558 comparison canonicalization sub-stage."
+  },
+  {
+   "id": "w6-kuna-s4s5-pack-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-decomp",
+   "title": "verify: kuna S4/S5 sub-stage pack",
+   "modules": [
+    "decompiler/cpp/kuna_returnpair.cc",
+    "decompiler/cpp/kuna_returnpair.hh",
+    "decompiler/cpp/kuna_memsetsequence.cc",
+    "decompiler/cpp/kuna_memsetsequence.hh",
+    "decompiler/cpp/kuna_compareform.cc",
+    "decompiler/cpp/kuna_compareform.hh"
+   ],
+   "depends_on": [
+    "w6-kuna-s4s5-pack"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 517,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_returnpair.cc": "8fc8169d047be9a10f92eee994806c2a2165b0de",
+    "decompiler/cpp/kuna_returnpair.hh": "26468a96e659f3e6b47997da67679f47ac0e7fd4",
+    "decompiler/cpp/kuna_memsetsequence.cc": "3bc12382796b81930fb4700190c0e85f6f93e92f",
+    "decompiler/cpp/kuna_memsetsequence.hh": "e04810cb497b2d5e63f3dfcf2b0ad2aa41223398",
+    "decompiler/cpp/kuna_compareform.cc": "3c062864c8b9dfad53a79a045d9b9e0ac8c1eccf",
+    "decompiler/cpp/kuna_compareform.hh": "cea69dfa4c7e77a07fcb60b90f273ad00a8aaa79"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w6-harness-unittests",
+   "kind": "port",
+   "wave": "W6",
+   "crate": "kuna-harness",
+   "title": "port unit tests: testfuncproto, testparamstore, testtypes, testcirclerange",
+   "modules": [
+    "decompiler/unittests/testfuncproto.cc",
+    "decompiler/unittests/testparamstore.cc",
+    "decompiler/unittests/testtypes.cc",
+    "decompiler/unittests/testcirclerange.cc"
+   ],
+   "depends_on": [
+    "w6-s4-fspec-3",
+    "w6-s5-type-3",
+    "w6-s5-rangeutil",
+    "W5-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-harness",
+   "loc_estimate": 2242,
+   "cpp_blob_sha": {
+    "decompiler/unittests/testfuncproto.cc": "963aae19c755ae79322294d21fdf1880e23bfd02",
+    "decompiler/unittests/testparamstore.cc": "1c1ef1f4b71beeaf89201ae57c9cb9c79fb1a929",
+    "decompiler/unittests/testtypes.cc": "eb41872baba597550d5cf07a0abdc37679d16a4b",
+    "decompiler/unittests/testcirclerange.cc": "e8a19937a8c91d125a62ba879fddf49e8eb9c5ec"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w6-harness-unittests-verify",
+   "kind": "verify",
+   "wave": "W6",
+   "crate": "kuna-harness",
+   "title": "verify: port unit tests: testfuncproto, testparamstore, testtypes, testcirclerange",
+   "modules": [
+    "decompiler/unittests/testfuncproto.cc",
+    "decompiler/unittests/testparamstore.cc",
+    "decompiler/unittests/testtypes.cc",
+    "decompiler/unittests/testcirclerange.cc"
+   ],
+   "depends_on": [
+    "w6-harness-unittests"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2242,
+   "cpp_blob_sha": {
+    "decompiler/unittests/testfuncproto.cc": "963aae19c755ae79322294d21fdf1880e23bfd02",
+    "decompiler/unittests/testparamstore.cc": "1c1ef1f4b71beeaf89201ae57c9cb9c79fb1a929",
+    "decompiler/unittests/testtypes.cc": "eb41872baba597550d5cf07a0abdc37679d16a4b",
+    "decompiler/unittests/testcirclerange.cc": "e8a19937a8c91d125a62ba879fddf49e8eb9c5ec"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w7-s6-varmap",
+   "kind": "port",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "stack-frame / scope layout (varmap)",
+   "modules": [
+    "decompiler/cpp/varmap.cc",
+    "decompiler/cpp/varmap.hh"
+   ],
+   "depends_on": [
+    "W6-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1889,
+   "cpp_blob_sha": {
+    "decompiler/cpp/varmap.cc": "27330a23c0221d459136a8312846bff614a7f433",
+    "decompiler/cpp/varmap.hh": "5143b24b18bfabcd4d26e5ce9e593ad48441e3dc"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w7-s6-varmap-verify",
+   "kind": "verify",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "verify: stack-frame / scope layout (varmap)",
+   "modules": [
+    "decompiler/cpp/varmap.cc",
+    "decompiler/cpp/varmap.hh"
+   ],
+   "depends_on": [
+    "w7-s6-varmap"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1889,
+   "cpp_blob_sha": {
+    "decompiler/cpp/varmap.cc": "27330a23c0221d459136a8312846bff614a7f433",
+    "decompiler/cpp/varmap.hh": "5143b24b18bfabcd4d26e5ce9e593ad48441e3dc"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w7-s6-variable-cover",
+   "kind": "port",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "HighVariable + cover",
+   "modules": [
+    "decompiler/cpp/variable.cc",
+    "decompiler/cpp/variable.hh",
+    "decompiler/cpp/cover.cc",
+    "decompiler/cpp/cover.hh"
+   ],
+   "depends_on": [
+    "W6-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2322,
+   "cpp_blob_sha": {
+    "decompiler/cpp/variable.cc": "18af26c1ff152be15bcb69dbd11d9a6cfe8ef2da",
+    "decompiler/cpp/variable.hh": "7b3ad4391c4cf88bb7a4460a51f6c3c48a6aead8",
+    "decompiler/cpp/cover.cc": "cfaed4e241c33c536a2511201aa9ad9c0c9ab8fc",
+    "decompiler/cpp/cover.hh": "7fd46e6256f750f1fcdd7442f54d57180549885f"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w7-s6-variable-cover-verify",
+   "kind": "verify",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "verify: HighVariable + cover",
+   "modules": [
+    "decompiler/cpp/variable.cc",
+    "decompiler/cpp/variable.hh",
+    "decompiler/cpp/cover.cc",
+    "decompiler/cpp/cover.hh"
+   ],
+   "depends_on": [
+    "w7-s6-variable-cover"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2322,
+   "cpp_blob_sha": {
+    "decompiler/cpp/variable.cc": "18af26c1ff152be15bcb69dbd11d9a6cfe8ef2da",
+    "decompiler/cpp/variable.hh": "7b3ad4391c4cf88bb7a4460a51f6c3c48a6aead8",
+    "decompiler/cpp/cover.cc": "cfaed4e241c33c536a2511201aa9ad9c0c9ab8fc",
+    "decompiler/cpp/cover.hh": "7fd46e6256f750f1fcdd7442f54d57180549885f"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w7-s6-merge",
+   "kind": "port",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "variable merging",
+   "modules": [
+    "decompiler/cpp/merge.cc",
+    "decompiler/cpp/merge.hh"
+   ],
+   "depends_on": [
+    "w7-s6-variable-cover",
+    "W6-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1872,
+   "cpp_blob_sha": {
+    "decompiler/cpp/merge.cc": "c9023e8efb8f74813514ab0ee136bf4fddd54a0e",
+    "decompiler/cpp/merge.hh": "4ff5c248020e96c23701301f2f049e56e2273924"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w7-s6-merge-verify",
+   "kind": "verify",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "verify: variable merging",
+   "modules": [
+    "decompiler/cpp/merge.cc",
+    "decompiler/cpp/merge.hh"
+   ],
+   "depends_on": [
+    "w7-s6-merge"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1872,
+   "cpp_blob_sha": {
+    "decompiler/cpp/merge.cc": "c9023e8efb8f74813514ab0ee136bf4fddd54a0e",
+    "decompiler/cpp/merge.hh": "4ff5c248020e96c23701301f2f049e56e2273924"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w7-s6-dynamic-pack",
+   "kind": "port",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "DynamicHash + kuna S6 helpers",
+   "modules": [
+    "decompiler/cpp/dynamic.cc",
+    "decompiler/cpp/dynamic.hh",
+    "decompiler/cpp/kuna_dynamichashmax.cc",
+    "decompiler/cpp/kuna_dynamichashmax.hh",
+    "decompiler/cpp/kuna_stackguard.cc",
+    "decompiler/cpp/kuna_stackguard.hh",
+    "decompiler/cpp/kuna_stackprobeloop.cc",
+    "decompiler/cpp/kuna_stackprobeloop.hh",
+    "decompiler/cpp/kuna_inputvarnodeadjust.cc",
+    "decompiler/cpp/kuna_inputvarnodeadjust.hh"
+   ],
+   "depends_on": [
+    "W6-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1521,
+   "cpp_blob_sha": {
+    "decompiler/cpp/dynamic.cc": "d1e616c72259acbd845bd9b9feb070d0fbff98bd",
+    "decompiler/cpp/dynamic.hh": "ca150ff5ef19d4fb0d243c549fb3f088d7c83618",
+    "decompiler/cpp/kuna_dynamichashmax.cc": "989da66faece9406a975ecbfa7230e6acdb66c88",
+    "decompiler/cpp/kuna_dynamichashmax.hh": "2fa44cab03912d0c98811d11e4361e9518acbfd5",
+    "decompiler/cpp/kuna_stackguard.cc": "2d31e18a1536430bf5be57c9161a119b7dc44c7c",
+    "decompiler/cpp/kuna_stackguard.hh": "29544ed97bc2ba7dbcca171db16ac8d4dbfa17eb",
+    "decompiler/cpp/kuna_stackprobeloop.cc": "0e60494e223c598773333b286bf3d07a825b03bd",
+    "decompiler/cpp/kuna_stackprobeloop.hh": "4efd07ebd71b6b4911178a535c1576f0268db70d",
+    "decompiler/cpp/kuna_inputvarnodeadjust.cc": "be06fc7aa476a71ce798dfddf830aa498eed6945",
+    "decompiler/cpp/kuna_inputvarnodeadjust.hh": "730036b32895faef08cd06e91ac15594b337fcb2"
+   },
+   "notes": "dynamic.cc grouped with kuna helpers: GH-8467 hash budget, stack-canary stripper (angr StackCanarySimplifier port), GH-8017 stack-probe loop, GH-9218 input-varnode adjust."
+  },
+  {
+   "id": "w7-s6-dynamic-pack-verify",
+   "kind": "verify",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "verify: DynamicHash + kuna S6 helpers",
+   "modules": [
+    "decompiler/cpp/dynamic.cc",
+    "decompiler/cpp/dynamic.hh",
+    "decompiler/cpp/kuna_dynamichashmax.cc",
+    "decompiler/cpp/kuna_dynamichashmax.hh",
+    "decompiler/cpp/kuna_stackguard.cc",
+    "decompiler/cpp/kuna_stackguard.hh",
+    "decompiler/cpp/kuna_stackprobeloop.cc",
+    "decompiler/cpp/kuna_stackprobeloop.hh",
+    "decompiler/cpp/kuna_inputvarnodeadjust.cc",
+    "decompiler/cpp/kuna_inputvarnodeadjust.hh"
+   ],
+   "depends_on": [
+    "w7-s6-dynamic-pack"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1521,
+   "cpp_blob_sha": {
+    "decompiler/cpp/dynamic.cc": "d1e616c72259acbd845bd9b9feb070d0fbff98bd",
+    "decompiler/cpp/dynamic.hh": "ca150ff5ef19d4fb0d243c549fb3f088d7c83618",
+    "decompiler/cpp/kuna_dynamichashmax.cc": "989da66faece9406a975ecbfa7230e6acdb66c88",
+    "decompiler/cpp/kuna_dynamichashmax.hh": "2fa44cab03912d0c98811d11e4361e9518acbfd5",
+    "decompiler/cpp/kuna_stackguard.cc": "2d31e18a1536430bf5be57c9161a119b7dc44c7c",
+    "decompiler/cpp/kuna_stackguard.hh": "29544ed97bc2ba7dbcca171db16ac8d4dbfa17eb",
+    "decompiler/cpp/kuna_stackprobeloop.cc": "0e60494e223c598773333b286bf3d07a825b03bd",
+    "decompiler/cpp/kuna_stackprobeloop.hh": "4efd07ebd71b6b4911178a535c1576f0268db70d",
+    "decompiler/cpp/kuna_inputvarnodeadjust.cc": "be06fc7aa476a71ce798dfddf830aa498eed6945",
+    "decompiler/cpp/kuna_inputvarnodeadjust.hh": "730036b32895faef08cd06e91ac15594b337fcb2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w7-s7-blockaction",
+   "kind": "port",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "structuring collapse engine (S7+S8)",
+   "modules": [
+    "decompiler/cpp/blockaction.cc",
+    "decompiler/cpp/blockaction.hh"
+   ],
+   "depends_on": [
+    "W6-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2730,
+   "cpp_blob_sha": {
+    "decompiler/cpp/blockaction.cc": "b1bec9b253d95c554f4db710129c895902c1838f",
+    "decompiler/cpp/blockaction.hh": "9f4cb5ac2c7ce8ac5974533b68c7d495b30d777d"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w7-s7-blockaction-verify",
+   "kind": "verify",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "verify: structuring collapse engine (S7+S8)",
+   "modules": [
+    "decompiler/cpp/blockaction.cc",
+    "decompiler/cpp/blockaction.hh"
+   ],
+   "depends_on": [
+    "w7-s7-blockaction"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2730,
+   "cpp_blob_sha": {
+    "decompiler/cpp/blockaction.cc": "b1bec9b253d95c554f4db710129c895902c1838f",
+    "decompiler/cpp/blockaction.hh": "9f4cb5ac2c7ce8ac5974533b68c7d495b30d777d"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w7-s7-kuna-regionid",
+   "kind": "port",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "kuna region identification (angr port)",
+   "modules": [
+    "decompiler/cpp/kuna_regionid.cc",
+    "decompiler/cpp/kuna_regionid.hh"
+   ],
+   "depends_on": [
+    "W6-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1667,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_regionid.cc": "673d8383a78719d226f9822785bace26ec7863f0",
+    "decompiler/cpp/kuna_regionid.hh": "cb4dd545ea76c067f2eea637ede9a28efeddc640"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w7-s7-kuna-regionid-verify",
+   "kind": "verify",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "verify: kuna region identification (angr port)",
+   "modules": [
+    "decompiler/cpp/kuna_regionid.cc",
+    "decompiler/cpp/kuna_regionid.hh"
+   ],
+   "depends_on": [
+    "w7-s7-kuna-regionid"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1667,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_regionid.cc": "673d8383a78719d226f9822785bace26ec7863f0",
+    "decompiler/cpp/kuna_regionid.hh": "cb4dd545ea76c067f2eea637ede9a28efeddc640"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w7-s7-kuna-regiongraph",
+   "kind": "port",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "kuna region graph",
+   "modules": [
+    "decompiler/cpp/kuna_regiongraph.cc",
+    "decompiler/cpp/kuna_regiongraph.hh"
+   ],
+   "depends_on": [
+    "w7-s7-kuna-regionid",
+    "W6-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 1231,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_regiongraph.cc": "fc3fe7f03dd33e5c5789b4f96c8905e8b22da084",
+    "decompiler/cpp/kuna_regiongraph.hh": "6450e2954058e7ffe8e64aa767b95f40083c3d7d"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w7-s7-kuna-regiongraph-verify",
+   "kind": "verify",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "verify: kuna region graph",
+   "modules": [
+    "decompiler/cpp/kuna_regiongraph.cc",
+    "decompiler/cpp/kuna_regiongraph.hh"
+   ],
+   "depends_on": [
+    "w7-s7-kuna-regiongraph"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1231,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_regiongraph.cc": "fc3fe7f03dd33e5c5789b4f96c8905e8b22da084",
+    "decompiler/cpp/kuna_regiongraph.hh": "6450e2954058e7ffe8e64aa767b95f40083c3d7d"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w7-s7-kuna-loweredswitch",
+   "kind": "port",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "kuna lowered-switch recovery",
+   "modules": [
+    "decompiler/cpp/kuna_loweredswitch.cc",
+    "decompiler/cpp/kuna_loweredswitch.hh"
+   ],
+   "depends_on": [
+    "w7-s7-kuna-regiongraph",
+    "W6-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 652,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_loweredswitch.cc": "66f092dcc26f0afc56d26ba24044bea18f3e4662",
+    "decompiler/cpp/kuna_loweredswitch.hh": "68af7d6ec1470c1b171e96d6d8d22f84fbae8cf0"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w7-s7-kuna-loweredswitch-verify",
+   "kind": "verify",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "verify: kuna lowered-switch recovery",
+   "modules": [
+    "decompiler/cpp/kuna_loweredswitch.cc",
+    "decompiler/cpp/kuna_loweredswitch.hh"
+   ],
+   "depends_on": [
+    "w7-s7-kuna-loweredswitch"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 652,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_loweredswitch.cc": "66f092dcc26f0afc56d26ba24044bea18f3e4662",
+    "decompiler/cpp/kuna_loweredswitch.hh": "68af7d6ec1470c1b171e96d6d8d22f84fbae8cf0"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w7-s37-coreaction-cleanup",
+   "kind": "port",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "coreaction 3/5: CFG cleanup/deadcode/switch (lines 3560-5629)",
+   "modules": [
+    "decompiler/cpp/coreaction.cc",
+    "decompiler/cpp/coreaction.hh"
+   ],
+   "depends_on": [
+    "w7-s7-blockaction",
+    "w7-s6-merge",
+    "W6-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2070,
+   "cpp_blob_sha": {
+    "decompiler/cpp/coreaction.cc": "28f6157fb06b959aaa44cbb728e909aa6093fd15",
+    "decompiler/cpp/coreaction.hh": "bc278439cc804f55eaf672da4a625220eff79ac2"
+   },
+   "notes": "ActionUnreachable..ActionInternalStorage."
+  },
+  {
+   "id": "w7-s37-coreaction-cleanup-verify",
+   "kind": "verify",
+   "wave": "W7",
+   "crate": "kuna-decomp",
+   "title": "verify: coreaction 3/5: CFG cleanup/deadcode/switch (lines 3560-5629)",
+   "modules": [
+    "decompiler/cpp/coreaction.cc",
+    "decompiler/cpp/coreaction.hh"
+   ],
+   "depends_on": [
+    "w7-s37-coreaction-cleanup"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2070,
+   "cpp_blob_sha": {
+    "decompiler/cpp/coreaction.cc": "28f6157fb06b959aaa44cbb728e909aa6093fd15",
+    "decompiler/cpp/coreaction.hh": "bc278439cc804f55eaf672da4a625220eff79ac2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w7-harness-kunaregion",
+   "kind": "port",
+   "wave": "W7",
+   "crate": "kuna-harness",
+   "title": "port unit tests: testkunaregion",
+   "modules": [
+    "decompiler/unittests/testkunaregion.cc"
+   ],
+   "depends_on": [
+    "w7-s7-kuna-regiongraph",
+    "W6-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-harness",
+   "loc_estimate": 191,
+   "cpp_blob_sha": {
+    "decompiler/unittests/testkunaregion.cc": "80e74da60460555d7ffa65df2ba50cb97990f03b"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w7-harness-kunaregion-verify",
+   "kind": "verify",
+   "wave": "W7",
+   "crate": "kuna-harness",
+   "title": "verify: port unit tests: testkunaregion",
+   "modules": [
+    "decompiler/unittests/testkunaregion.cc"
+   ],
+   "depends_on": [
+    "w7-harness-kunaregion"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 191,
+   "cpp_blob_sha": {
+    "decompiler/unittests/testkunaregion.cc": "80e74da60460555d7ffa65df2ba50cb97990f03b"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w8-s9-printlanguage-cast",
+   "kind": "port",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "PrintLanguage + cast strategy + PrintJava",
+   "modules": [
+    "decompiler/cpp/printlanguage.cc",
+    "decompiler/cpp/printlanguage.hh",
+    "decompiler/cpp/cast.cc",
+    "decompiler/cpp/cast.hh",
+    "decompiler/cpp/printjava.cc",
+    "decompiler/cpp/printjava.hh"
+   ],
+   "depends_on": [
+    "W7-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2632,
+   "cpp_blob_sha": {
+    "decompiler/cpp/printlanguage.cc": "e03e7b44849add40e0e1958d350d49e685447e1a",
+    "decompiler/cpp/printlanguage.hh": "222ac655b4f4e872ca9805b26f3122889c26496e",
+    "decompiler/cpp/cast.cc": "2f3590aee76b84d2cf398b60e66e80639111eb4c",
+    "decompiler/cpp/cast.hh": "8d315fed053824eebf5817988f05f8ae983d3503",
+    "decompiler/cpp/printjava.cc": "b9b0f2570ff0652644e0937fd88aa31cb9d1a6c2",
+    "decompiler/cpp/printjava.hh": "1c610063eefe95891fa55750e7124717f47e665a"
+   },
+   "notes": "2.6k LOC: slightly over budget; one inheritance chain."
+  },
+  {
+   "id": "w8-s9-printlanguage-cast-verify",
+   "kind": "verify",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "verify: PrintLanguage + cast strategy + PrintJava",
+   "modules": [
+    "decompiler/cpp/printlanguage.cc",
+    "decompiler/cpp/printlanguage.hh",
+    "decompiler/cpp/cast.cc",
+    "decompiler/cpp/cast.hh",
+    "decompiler/cpp/printjava.cc",
+    "decompiler/cpp/printjava.hh"
+   ],
+   "depends_on": [
+    "w8-s9-printlanguage-cast"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2632,
+   "cpp_blob_sha": {
+    "decompiler/cpp/printlanguage.cc": "e03e7b44849add40e0e1958d350d49e685447e1a",
+    "decompiler/cpp/printlanguage.hh": "222ac655b4f4e872ca9805b26f3122889c26496e",
+    "decompiler/cpp/cast.cc": "2f3590aee76b84d2cf398b60e66e80639111eb4c",
+    "decompiler/cpp/cast.hh": "8d315fed053824eebf5817988f05f8ae983d3503",
+    "decompiler/cpp/printjava.cc": "b9b0f2570ff0652644e0937fd88aa31cb9d1a6c2",
+    "decompiler/cpp/printjava.hh": "1c610063eefe95891fa55750e7124717f47e665a"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w8-s9-printc",
+   "kind": "port",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "C emitter (PrintC)",
+   "modules": [
+    "decompiler/cpp/printc.cc",
+    "decompiler/cpp/printc.hh"
+   ],
+   "depends_on": [
+    "w8-s9-printlanguage-cast",
+    "W7-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 3940,
+   "cpp_blob_sha": {
+    "decompiler/cpp/printc.cc": "c776ae0ac7c38ee9a09dba6b0d6f239304cbc199",
+    "decompiler/cpp/printc.hh": "a1c716dd9e582d917013762e4f084ea66b9dca7f"
+   },
+   "notes": "3.9k LOC single coherent file; exceeds the 2.5k budget by design."
+  },
+  {
+   "id": "w8-s9-printc-verify",
+   "kind": "verify",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "verify: C emitter (PrintC)",
+   "modules": [
+    "decompiler/cpp/printc.cc",
+    "decompiler/cpp/printc.hh"
+   ],
+   "depends_on": [
+    "w8-s9-printc"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 3940,
+   "cpp_blob_sha": {
+    "decompiler/cpp/printc.cc": "c776ae0ac7c38ee9a09dba6b0d6f239304cbc199",
+    "decompiler/cpp/printc.hh": "a1c716dd9e582d917013762e4f084ea66b9dca7f"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w8-s9-prettyprint",
+   "kind": "port",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "token emitter / pretty printer",
+   "modules": [
+    "decompiler/cpp/prettyprint.cc",
+    "decompiler/cpp/prettyprint.hh"
+   ],
+   "depends_on": [
+    "W7-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2446,
+   "cpp_blob_sha": {
+    "decompiler/cpp/prettyprint.cc": "f85f01854f7b411a1987d4f2b869b2d87841b989",
+    "decompiler/cpp/prettyprint.hh": "bd65f4e29222855ca6097e3927e73c76339c14e7"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w8-s9-prettyprint-verify",
+   "kind": "verify",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "verify: token emitter / pretty printer",
+   "modules": [
+    "decompiler/cpp/prettyprint.cc",
+    "decompiler/cpp/prettyprint.hh"
+   ],
+   "depends_on": [
+    "w8-s9-prettyprint"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2446,
+   "cpp_blob_sha": {
+    "decompiler/cpp/prettyprint.cc": "f85f01854f7b411a1987d4f2b869b2d87841b989",
+    "decompiler/cpp/prettyprint.hh": "bd65f4e29222855ca6097e3927e73c76339c14e7"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w8-s9-stringmanage-pack",
+   "kind": "port",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "string manager + kuna naming/array notation",
+   "modules": [
+    "decompiler/cpp/stringmanage.cc",
+    "decompiler/cpp/stringmanage.hh",
+    "decompiler/cpp/kuna_naming.cc",
+    "decompiler/cpp/kuna_naming.hh",
+    "decompiler/cpp/kuna_arraynotation.cc",
+    "decompiler/cpp/kuna_arraynotation.hh"
+   ],
+   "depends_on": [
+    "w8-s9-printc",
+    "W7-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 867,
+   "cpp_blob_sha": {
+    "decompiler/cpp/stringmanage.cc": "f042000ba2b55f050e62748e1806acc68a8a9ab5",
+    "decompiler/cpp/stringmanage.hh": "e4c1c4e32ecf9a489c6e44f2335ce99098a04f37",
+    "decompiler/cpp/kuna_naming.cc": "aed28df5cc50fb17e926d0c39a4b25a5e999e759",
+    "decompiler/cpp/kuna_naming.hh": "9ab0cee950541f135f18477c729ecdc282c3302f",
+    "decompiler/cpp/kuna_arraynotation.cc": "6538855fe411106773d2c19711cafc768de4ec21",
+    "decompiler/cpp/kuna_arraynotation.hh": "a4940a87a603837418d9d6efc4517a733380a241"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w8-s9-stringmanage-pack-verify",
+   "kind": "verify",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "verify: string manager + kuna naming/array notation",
+   "modules": [
+    "decompiler/cpp/stringmanage.cc",
+    "decompiler/cpp/stringmanage.hh",
+    "decompiler/cpp/kuna_naming.cc",
+    "decompiler/cpp/kuna_naming.hh",
+    "decompiler/cpp/kuna_arraynotation.cc",
+    "decompiler/cpp/kuna_arraynotation.hh"
+   ],
+   "depends_on": [
+    "w8-s9-stringmanage-pack"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 867,
+   "cpp_blob_sha": {
+    "decompiler/cpp/stringmanage.cc": "f042000ba2b55f050e62748e1806acc68a8a9ab5",
+    "decompiler/cpp/stringmanage.hh": "e4c1c4e32ecf9a489c6e44f2335ce99098a04f37",
+    "decompiler/cpp/kuna_naming.cc": "aed28df5cc50fb17e926d0c39a4b25a5e999e759",
+    "decompiler/cpp/kuna_naming.hh": "9ab0cee950541f135f18477c729ecdc282c3302f",
+    "decompiler/cpp/kuna_arraynotation.cc": "6538855fe411106773d2c19711cafc768de4ec21",
+    "decompiler/cpp/kuna_arraynotation.hh": "a4940a87a603837418d9d6efc4517a733380a241"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w8-s9-coreaction-render",
+   "kind": "port",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "coreaction 4/5: casts/naming/types (lines 2812-3559 + 5630-5674)",
+   "modules": [
+    "decompiler/cpp/coreaction.cc",
+    "decompiler/cpp/coreaction.hh"
+   ],
+   "depends_on": [
+    "w8-s9-printc",
+    "W7-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 793,
+   "cpp_blob_sha": {
+    "decompiler/cpp/coreaction.cc": "28f6157fb06b959aaa44cbb728e909aa6093fd15",
+    "decompiler/cpp/coreaction.hh": "bc278439cc804f55eaf672da4a625220eff79ac2"
+   },
+   "notes": "ActionSetCasts..ActionMarkImplied + ActionInferTypes."
+  },
+  {
+   "id": "w8-s9-coreaction-render-verify",
+   "kind": "verify",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "verify: coreaction 4/5: casts/naming/types (lines 2812-3559 + 5630-5674)",
+   "modules": [
+    "decompiler/cpp/coreaction.cc",
+    "decompiler/cpp/coreaction.hh"
+   ],
+   "depends_on": [
+    "w8-s9-coreaction-render"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 793,
+   "cpp_blob_sha": {
+    "decompiler/cpp/coreaction.cc": "28f6157fb06b959aaa44cbb728e909aa6093fd15",
+    "decompiler/cpp/coreaction.hh": "bc278439cc804f55eaf672da4a625220eff79ac2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w8-fw-universalaction",
+   "kind": "port",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "coreaction 5/5: ActionDatabase::universalAction (lines 5675-6034)",
+   "modules": [
+    "decompiler/cpp/coreaction.cc",
+    "decompiler/cpp/coreaction.hh"
+   ],
+   "depends_on": [
+    "w8-s9-coreaction-render",
+    "W7-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 360,
+   "cpp_blob_sha": {
+    "decompiler/cpp/coreaction.cc": "28f6157fb06b959aaa44cbb728e909aa6093fd15",
+    "decompiler/cpp/coreaction.hh": "bc278439cc804f55eaf672da4a625220eff79ac2"
+   },
+   "notes": "The full pass registration: requires every action/rule item from W5-W8 at link time; kuna registrations included."
+  },
+  {
+   "id": "w8-fw-universalaction-verify",
+   "kind": "verify",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "verify: coreaction 5/5: ActionDatabase::universalAction (lines 5675-6034)",
+   "modules": [
+    "decompiler/cpp/coreaction.cc",
+    "decompiler/cpp/coreaction.hh"
+   ],
+   "depends_on": [
+    "w8-fw-universalaction"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 360,
+   "cpp_blob_sha": {
+    "decompiler/cpp/coreaction.cc": "28f6157fb06b959aaa44cbb728e909aa6093fd15",
+    "decompiler/cpp/coreaction.hh": "bc278439cc804f55eaf672da4a625220eff79ac2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w8-sig-pack",
+   "kind": "port",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "signatures: signature + analyzesigs + paramid",
+   "modules": [
+    "decompiler/cpp/signature.cc",
+    "decompiler/cpp/signature.hh",
+    "decompiler/cpp/analyzesigs.cc",
+    "decompiler/cpp/analyzesigs.hh",
+    "decompiler/cpp/paramid.cc",
+    "decompiler/cpp/paramid.hh"
+   ],
+   "depends_on": [
+    "W7-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 2181,
+   "cpp_blob_sha": {
+    "decompiler/cpp/signature.cc": "1ce1a3dc93d41f81b8aab9f0cde82fc40e56572a",
+    "decompiler/cpp/signature.hh": "3d19697175e5ffb4c90958750be58f652554d0ff",
+    "decompiler/cpp/analyzesigs.cc": "d3c2bb4b363c1cd42bdcc901c1eba8e306f2cf45",
+    "decompiler/cpp/analyzesigs.hh": "33d0857bc794c80df4f83df1377ff36de455f0a8",
+    "decompiler/cpp/paramid.cc": "935f2fc2db19343cb6e5aaaf595ed1f783bad89b",
+    "decompiler/cpp/paramid.hh": "e2b18478394d8db4b492168b14a3c6dd8ca517e7"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w8-sig-pack-verify",
+   "kind": "verify",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "verify: signatures: signature + analyzesigs + paramid",
+   "modules": [
+    "decompiler/cpp/signature.cc",
+    "decompiler/cpp/signature.hh",
+    "decompiler/cpp/analyzesigs.cc",
+    "decompiler/cpp/analyzesigs.hh",
+    "decompiler/cpp/paramid.cc",
+    "decompiler/cpp/paramid.hh"
+   ],
+   "depends_on": [
+    "w8-sig-pack"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 2181,
+   "cpp_blob_sha": {
+    "decompiler/cpp/signature.cc": "1ce1a3dc93d41f81b8aab9f0cde82fc40e56572a",
+    "decompiler/cpp/signature.hh": "3d19697175e5ffb4c90958750be58f652554d0ff",
+    "decompiler/cpp/analyzesigs.cc": "d3c2bb4b363c1cd42bdcc901c1eba8e306f2cf45",
+    "decompiler/cpp/analyzesigs.hh": "33d0857bc794c80df4f83df1377ff36de455f0a8",
+    "decompiler/cpp/paramid.cc": "935f2fc2db19343cb6e5aaaf595ed1f783bad89b",
+    "decompiler/cpp/paramid.hh": "e2b18478394d8db4b492168b14a3c6dd8ca517e7"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w9-con-interface",
+   "kind": "port",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "console core: interface + ifaceterm + consolemain",
+   "modules": [
+    "decompiler/cpp/interface.cc",
+    "decompiler/cpp/interface.hh",
+    "decompiler/cpp/ifaceterm.cc",
+    "decompiler/cpp/ifaceterm.hh",
+    "decompiler/cpp/consolemain.cc"
+   ],
+   "depends_on": [
+    "W8-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-console",
+   "loc_estimate": 1500,
+   "cpp_blob_sha": {
+    "decompiler/cpp/interface.cc": "ab23a13cb766ef2b664890e6b781a2cc21f87420",
+    "decompiler/cpp/interface.hh": "d862fa2c36cbb217aee5a52e85d397160955c2ae",
+    "decompiler/cpp/ifaceterm.cc": "3d84ebbf2d4020f70c12d14ef9e788dedbebd724",
+    "decompiler/cpp/ifaceterm.hh": "82786532ecaac603bd7b8e4bf50b8a6c95de2773",
+    "decompiler/cpp/consolemain.cc": "87c13b8184bbb2b1781b5481508c3b71d9f8bc69"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w9-con-interface-verify",
+   "kind": "verify",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "verify: console core: interface + ifaceterm + consolemain",
+   "modules": [
+    "decompiler/cpp/interface.cc",
+    "decompiler/cpp/interface.hh",
+    "decompiler/cpp/ifaceterm.cc",
+    "decompiler/cpp/ifaceterm.hh",
+    "decompiler/cpp/consolemain.cc"
+   ],
+   "depends_on": [
+    "w9-con-interface"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 1500,
+   "cpp_blob_sha": {
+    "decompiler/cpp/interface.cc": "ab23a13cb766ef2b664890e6b781a2cc21f87420",
+    "decompiler/cpp/interface.hh": "d862fa2c36cbb217aee5a52e85d397160955c2ae",
+    "decompiler/cpp/ifaceterm.cc": "3d84ebbf2d4020f70c12d14ef9e788dedbebd724",
+    "decompiler/cpp/ifaceterm.hh": "82786532ecaac603bd7b8e4bf50b8a6c95de2773",
+    "decompiler/cpp/consolemain.cc": "87c13b8184bbb2b1781b5481508c3b71d9f8bc69"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w9-con-ifacedecomp",
+   "kind": "port",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "decompiler console commands",
+   "modules": [
+    "decompiler/cpp/ifacedecomp.cc",
+    "decompiler/cpp/ifacedecomp.hh"
+   ],
+   "depends_on": [
+    "w9-con-interface",
+    "W8-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-console",
+   "loc_estimate": 4368,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ifacedecomp.cc": "e62ab6ab084f8e198ae860df2a1aab1937b080f8",
+    "decompiler/cpp/ifacedecomp.hh": "5958f67c8810b01805914d8de0e7d9a4e888b6b2"
+   },
+   "notes": "4.4k LOC single coherent file; exceeds the 2.5k budget by design. This is the console-command surface the Python harness drives."
+  },
+  {
+   "id": "w9-con-ifacedecomp-verify",
+   "kind": "verify",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "verify: decompiler console commands",
+   "modules": [
+    "decompiler/cpp/ifacedecomp.cc",
+    "decompiler/cpp/ifacedecomp.hh"
+   ],
+   "depends_on": [
+    "w9-con-ifacedecomp"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 4368,
+   "cpp_blob_sha": {
+    "decompiler/cpp/ifacedecomp.cc": "e62ab6ab084f8e198ae860df2a1aab1937b080f8",
+    "decompiler/cpp/ifacedecomp.hh": "5958f67c8810b01805914d8de0e7d9a4e888b6b2"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w9-con-codedata",
+   "kind": "port",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "codedata dump commands",
+   "modules": [
+    "decompiler/cpp/codedata.cc",
+    "decompiler/cpp/codedata.hh"
+   ],
+   "depends_on": [
+    "w9-con-interface",
+    "W8-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-console",
+   "loc_estimate": 992,
+   "cpp_blob_sha": {
+    "decompiler/cpp/codedata.cc": "4a4235ca8b868e37700674e9e57a3b780b6ffde9",
+    "decompiler/cpp/codedata.hh": "29e676d7e1f5f9b6950db7d9cba97ad26a6ad9bc"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w9-con-codedata-verify",
+   "kind": "verify",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "verify: codedata dump commands",
+   "modules": [
+    "decompiler/cpp/codedata.cc",
+    "decompiler/cpp/codedata.hh"
+   ],
+   "depends_on": [
+    "w9-con-codedata"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 992,
+   "cpp_blob_sha": {
+    "decompiler/cpp/codedata.cc": "4a4235ca8b868e37700674e9e57a3b780b6ffde9",
+    "decompiler/cpp/codedata.hh": "29e676d7e1f5f9b6950db7d9cba97ad26a6ad9bc"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w9-con-kuna-console",
+   "kind": "port",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "kuna console commands (stage/pipeline/quality/restarts)",
+   "modules": [
+    "decompiler/cpp/kuna_console.cc",
+    "decompiler/cpp/kuna_console.hh"
+   ],
+   "depends_on": [
+    "w9-con-ifacedecomp",
+    "W8-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-console",
+   "loc_estimate": 549,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_console.cc": "d7837e3a61d9a14096fcd2032df0b09eba76b494",
+    "decompiler/cpp/kuna_console.hh": "419a4b06644c6a06105d2473bd14f659ed2fa3c7"
+   },
+   "notes": ""
+  },
+  {
+   "id": "w9-con-kuna-console-verify",
+   "kind": "verify",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "verify: kuna console commands (stage/pipeline/quality/restarts)",
+   "modules": [
+    "decompiler/cpp/kuna_console.cc",
+    "decompiler/cpp/kuna_console.hh"
+   ],
+   "depends_on": [
+    "w9-con-kuna-console"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 549,
+   "cpp_blob_sha": {
+    "decompiler/cpp/kuna_console.cc": "d7837e3a61d9a14096fcd2032df0b09eba76b494",
+    "decompiler/cpp/kuna_console.hh": "419a4b06644c6a06105d2473bd14f659ed2fa3c7"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w9-con-grammar",
+   "kind": "port",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "C declaration parser for `parse line` (hand-written)",
+   "modules": [
+    "decompiler/cpp/grammar.cc",
+    "decompiler/cpp/grammar.hh"
+   ],
+   "depends_on": [
+    "W8-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-console",
+   "loc_estimate": 3480,
+   "cpp_blob_sha": {
+    "decompiler/cpp/grammar.cc": "d93a492062b86abd599c58a5fc075dcd203db04e",
+    "decompiler/cpp/grammar.hh": "ca63db4aa27c1a5a2c6e1d5f992b993da4bb99d6"
+   },
+   "notes": "LOSS-006: grammar.y bison output ported as a hand-written parser. 3.5k LOC; exceeds the 2.5k budget by design."
+  },
+  {
+   "id": "w9-con-grammar-verify",
+   "kind": "verify",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "verify: C declaration parser for `parse line` (hand-written)",
+   "modules": [
+    "decompiler/cpp/grammar.cc",
+    "decompiler/cpp/grammar.hh"
+   ],
+   "depends_on": [
+    "w9-con-grammar"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 3480,
+   "cpp_blob_sha": {
+    "decompiler/cpp/grammar.cc": "d93a492062b86abd599c58a5fc075dcd203db04e",
+    "decompiler/cpp/grammar.hh": "ca63db4aa27c1a5a2c6e1d5f992b993da4bb99d6"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w9-con-rulecompile-unify",
+   "kind": "port",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "dynamic rule compiler (rulecompile + unify)",
+   "modules": [
+    "decompiler/cpp/rulecompile.cc",
+    "decompiler/cpp/rulecompile.hh",
+    "decompiler/cpp/unify.cc",
+    "decompiler/cpp/unify.hh"
+   ],
+   "depends_on": [
+    "W8-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-console",
+   "loc_estimate": 3576,
+   "cpp_blob_sha": {
+    "decompiler/cpp/rulecompile.cc": "fe8a413014496c0cece445ed8ec9ceaf4255f3e3",
+    "decompiler/cpp/rulecompile.hh": "28db9e0eca9f89c38d17f9d579babc028626a64b",
+    "decompiler/cpp/unify.cc": "3c2f67dc83005014b51d296999fac3770c86ea8c",
+    "decompiler/cpp/unify.hh": "267af627b521f038c29c8ee50ac152da12e8d55c"
+   },
+   "notes": "3.6k LOC; linked into decomp_dbg (EXTRA group). The ruleparse.y grammar itself is conditionally compiled (CPUI_RULECOMPILE) and not in the default oracle build; only the always-linked surface needs faithful porting."
+  },
+  {
+   "id": "w9-con-rulecompile-unify-verify",
+   "kind": "verify",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "verify: dynamic rule compiler (rulecompile + unify)",
+   "modules": [
+    "decompiler/cpp/rulecompile.cc",
+    "decompiler/cpp/rulecompile.hh",
+    "decompiler/cpp/unify.cc",
+    "decompiler/cpp/unify.hh"
+   ],
+   "depends_on": [
+    "w9-con-rulecompile-unify"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 3576,
+   "cpp_blob_sha": {
+    "decompiler/cpp/rulecompile.cc": "fe8a413014496c0cece445ed8ec9ceaf4255f3e3",
+    "decompiler/cpp/rulecompile.hh": "28db9e0eca9f89c38d17f9d579babc028626a64b",
+    "decompiler/cpp/unify.cc": "3c2f67dc83005014b51d296999fac3770c86ea8c",
+    "decompiler/cpp/unify.hh": "267af627b521f038c29c8ee50ac152da12e8d55c"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w9-harness-runner",
+   "kind": "port",
+   "wave": "W9",
+   "crate": "kuna-harness",
+   "title": "test harness: unit registry + XML datatest runner",
+   "modules": [
+    "decompiler/cpp/test.cc",
+    "decompiler/cpp/test.hh",
+    "decompiler/cpp/testfunction.cc",
+    "decompiler/cpp/testfunction.hh"
+   ],
+   "depends_on": [
+    "w9-con-ifacedecomp",
+    "W8-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-harness",
+   "loc_estimate": 797,
+   "cpp_blob_sha": {
+    "decompiler/cpp/test.cc": "cd982a461a0146fc68b71249b84d60a5f03169f5",
+    "decompiler/cpp/test.hh": "adf0e618a47fc81853efeb91e1fa4312e3ece414",
+    "decompiler/cpp/testfunction.cc": "e4f4cd9877cb037f588bcda730da552a032555b9",
+    "decompiler/cpp/testfunction.hh": "121032661d3c1490028f4a037441ebc95fd932fa"
+   },
+   "notes": "LOSS-007: FunctionTestProperty std::regex -> regex crate; must reproduce the stdout/stderr stream split kuna.run_tests parses."
+  },
+  {
+   "id": "w9-harness-runner-verify",
+   "kind": "verify",
+   "wave": "W9",
+   "crate": "kuna-harness",
+   "title": "verify: test harness: unit registry + XML datatest runner",
+   "modules": [
+    "decompiler/cpp/test.cc",
+    "decompiler/cpp/test.hh",
+    "decompiler/cpp/testfunction.cc",
+    "decompiler/cpp/testfunction.hh"
+   ],
+   "depends_on": [
+    "w9-harness-runner"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 797,
+   "cpp_blob_sha": {
+    "decompiler/cpp/test.cc": "cd982a461a0146fc68b71249b84d60a5f03169f5",
+    "decompiler/cpp/test.hh": "adf0e618a47fc81853efeb91e1fa4312e3ece414",
+    "decompiler/cpp/testfunction.cc": "e4f4cd9877cb037f588bcda730da552a032555b9",
+    "decompiler/cpp/testfunction.hh": "121032661d3c1490028f4a037441ebc95fd932fa"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w11-loader-object",
+   "kind": "port",
+   "wave": "W11",
+   "crate": "kuna-decomp",
+   "title": "real-ELF loader on the object crate",
+   "modules": [
+    "decompiler/cpp/bfd_arch.cc",
+    "decompiler/cpp/bfd_arch.hh",
+    "decompiler/cpp/loadimage_bfd.cc",
+    "decompiler/cpp/loadimage_bfd.hh"
+   ],
+   "depends_on": [
+    "W10-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp",
+   "loc_estimate": 628,
+   "cpp_blob_sha": {
+    "decompiler/cpp/bfd_arch.cc": "5a028a8864dab53e9b51d0656e9be2649c7424f5",
+    "decompiler/cpp/bfd_arch.hh": "69ab22e146a486804af287b0fa95d7c8653ca893",
+    "decompiler/cpp/loadimage_bfd.cc": "477c17e817be257e71f9786900e13c0bbabfaab4",
+    "decompiler/cpp/loadimage_bfd.hh": "2e9929db08b0bc0d47e0e9003a7796f765675e4d"
+   },
+   "notes": "LOSS-005: libbfd replaced by the object crate; BfdArchitecture semantics (default prototype, image base, symbol scan) preserved."
+  },
+  {
+   "id": "w11-loader-object-verify",
+   "kind": "verify",
+   "wave": "W11",
+   "crate": "kuna-decomp",
+   "title": "verify: real-ELF loader on the object crate",
+   "modules": [
+    "decompiler/cpp/bfd_arch.cc",
+    "decompiler/cpp/bfd_arch.hh",
+    "decompiler/cpp/loadimage_bfd.cc",
+    "decompiler/cpp/loadimage_bfd.hh"
+   ],
+   "depends_on": [
+    "w11-loader-object"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "verifier ACCEPT in docs/rust-port/reviews/",
+   "loc_estimate": 628,
+   "cpp_blob_sha": {
+    "decompiler/cpp/bfd_arch.cc": "5a028a8864dab53e9b51d0656e9be2649c7424f5",
+    "decompiler/cpp/bfd_arch.hh": "69ab22e146a486804af287b0fa95d7c8653ca893",
+    "decompiler/cpp/loadimage_bfd.cc": "477c17e817be257e71f9786900e13c0bbabfaab4",
+    "decompiler/cpp/loadimage_bfd.hh": "2e9929db08b0bc0d47e0e9003a7796f765675e4d"
+   },
+   "notes": "Protocol: docs/rust-port/verification.md"
+  },
+  {
+   "id": "w5-infra-lift-diff",
+   "kind": "infra",
+   "wave": "W5",
+   "crate": "kuna-harness",
+   "title": "kuna-lift-diff: per-instruction Rust-vs-C++ lift/output differ",
+   "modules": [],
+   "depends_on": [
+    "W4-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo run -p kuna-lift-diff -- --self-test",
+   "loc_estimate": 600,
+   "cpp_blob_sha": {},
+   "notes": "Drives decomp_dbg as the oracle subprocess (same trick as kuna/decompile.py) and diffs raw pcode / C output per function."
+  },
+  {
+   "id": "w9-infra-console-bins",
+   "kind": "infra",
+   "wave": "W9",
+   "crate": "kuna-console",
+   "title": "console binaries + harness --engine rust plumbing",
+   "modules": [],
+   "depends_on": [
+    "w9-harness-runner",
+    "w9-con-kuna-console",
+    "w9-con-codedata",
+    "w9-con-grammar"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "~/.virtualenvs/kuna/bin/python -m kuna.run_tests --all --engine rust  # runs end-to-end (M2)",
+   "loc_estimate": 500,
+   "cpp_blob_sha": {},
+   "notes": "bin targets decomp (decomp_dbg-compatible console surface) and decomp_test (decomp_test_dbg-compatible); kuna/run_tests.py and kuna/decompile.py gain --engine {cpp,rust}. M2 milestone."
+  },
+  {
+   "id": "w10-infra-parity-grind",
+   "kind": "infra",
+   "wave": "W10",
+   "crate": "workspace",
+   "title": "parity grind: drive datatests/stage-tests/catalog to PARITY OK",
+   "modules": [],
+   "depends_on": [
+    "W9-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "~/.virtualenvs/kuna/bin/python -m kuna.run_tests --all --engine rust --baseline docs/baseline.json  # PARITY OK 675/675 (M3)",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Iterate on divergences with kuna-lift-diff until 675/675 datatest assertions, 150/150 tests/stages, and `python -m kuna.catalog --check --engine rust` all pass. Each fix lands against the responsible port item; new behavioral losses go to losses.md."
+  },
+  {
+   "id": "w11-infra-pipeline-binding",
+   "kind": "infra",
+   "wave": "W11",
+   "crate": "workspace",
+   "title": "pipeline binding: kuna.decompile/pipeline drive the Rust engine",
+   "modules": [],
+   "depends_on": [
+    "w11-loader-object"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "~/.virtualenvs/kuna/bin/python -m kuna.decompile ./a.out main --engine rust  # real ELF (M4)",
+   "loc_estimate": 200,
+   "cpp_blob_sha": {},
+   "notes": "M4 milestone: real-ELF decompile parity on a smoke corpus plus tools/pipeline worker able to select --engine rust."
+  },
+  {
+   "id": "W0-gate",
+   "kind": "infra",
+   "wave": "W0",
+   "crate": "workspace",
+   "title": "W0 wave gate",
+   "modules": [],
+   "depends_on": [
+    "w0-infra-scaffold",
+    "w0-infra-port-audit"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo build --workspace && python3 tools/rust-port/check_checklist.py",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Wave exit: every item in W0 done (ports gated, verifies ACCEPTed)."
+  },
+  {
+   "id": "W1-gate",
+   "kind": "infra",
+   "wave": "W1",
+   "crate": "workspace",
+   "title": "W1 wave gate",
+   "modules": [],
+   "depends_on": [
+    "w1-base-foundation",
+    "w1-base-foundation-verify",
+    "w1-base-xml",
+    "w1-base-xml-verify",
+    "w1-base-marshal",
+    "w1-base-marshal-verify",
+    "w1-base-space-address",
+    "w1-base-space-address-verify",
+    "w1-num-float-multiprec",
+    "w1-num-float-multiprec-verify",
+    "w1-num-pcode-semantics",
+    "w1-num-pcode-semantics-verify",
+    "w1-base-util",
+    "w1-base-util-verify",
+    "w1-harness-unittests",
+    "w1-harness-unittests-verify"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-base -p kuna-num",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Wave exit: every item in W1 done (ports gated, verifies ACCEPTed)."
+  },
+  {
+   "id": "W2-gate",
+   "kind": "infra",
+   "wave": "W2",
+   "crate": "workspace",
+   "title": "W2 wave gate",
+   "modules": [],
+   "depends_on": [
+    "w2-sleigh-translate",
+    "w2-sleigh-translate-verify",
+    "w2-sleigh-context",
+    "w2-sleigh-context-verify",
+    "w2-sleigh-pattern",
+    "w2-sleigh-pattern-verify",
+    "w2-sleigh-symbol",
+    "w2-sleigh-symbol-verify",
+    "w2-sleigh-semantics",
+    "w2-sleigh-semantics-verify",
+    "w2-sleigh-pcodeparse",
+    "w2-sleigh-pcodeparse-verify",
+    "w2-sleigh-core",
+    "w2-sleigh-core-verify",
+    "w2-sleigh-loadimage",
+    "w2-sleigh-loadimage-verify",
+    "w2-sleigh-emulate",
+    "w2-sleigh-emulate-verify",
+    "w2-harness-floatemu",
+    "w2-harness-floatemu-verify"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-sleigh  # includes .sla decode + lift fixtures vs C++ capture",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Wave exit: every item in W2 done (ports gated, verifies ACCEPTed)."
+  },
+  {
+   "id": "W3-gate",
+   "kind": "infra",
+   "wave": "W3",
+   "crate": "workspace",
+   "title": "W3 wave gate",
+   "modules": [],
+   "depends_on": [
+    "w3-ir-varnode",
+    "w3-ir-varnode-verify",
+    "w3-ir-op",
+    "w3-ir-op-verify",
+    "w3-ir-block",
+    "w3-ir-block-verify",
+    "w3-ir-funcdata",
+    "w3-ir-funcdata-verify",
+    "w3-ir-funcdata-op",
+    "w3-ir-funcdata-op-verify",
+    "w3-ir-funcdata-varnode",
+    "w3-ir-funcdata-varnode-verify",
+    "w3-ir-flow",
+    "w3-ir-flow-verify",
+    "w3-ir-jumptable",
+    "w3-ir-jumptable-verify",
+    "w3-ir-userop-inject",
+    "w3-ir-userop-inject-verify",
+    "w3-kuna-flow-pack",
+    "w3-kuna-flow-pack-verify"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp  # IR construction fixtures",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Wave exit: every item in W3 done (ports gated, verifies ACCEPTed)."
+  },
+  {
+   "id": "W4-gate",
+   "kind": "infra",
+   "wave": "W4",
+   "crate": "workspace",
+   "title": "W4 wave gate",
+   "modules": [],
+   "depends_on": [
+    "w4-fw-action",
+    "w4-fw-action-verify",
+    "w4-fw-options",
+    "w4-fw-options-verify",
+    "w4-p0-database",
+    "w4-p0-database-verify",
+    "w4-fw-architecture",
+    "w4-fw-architecture-verify",
+    "w4-p0-override-comment",
+    "w4-p0-override-comment-verify",
+    "w4-fw-cpool-graph",
+    "w4-fw-cpool-graph-verify",
+    "w4-fw-arch-frontends",
+    "w4-fw-arch-frontends-verify",
+    "w4-kuna-p0-pack",
+    "w4-kuna-p0-pack-verify"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp  # arch init + P0 round-trip fixtures",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Wave exit: every item in W4 done (ports gated, verifies ACCEPTed)."
+  },
+  {
+   "id": "W5-gate",
+   "kind": "infra",
+   "wave": "W5",
+   "crate": "workspace",
+   "title": "W5 wave gate",
+   "modules": [],
+   "depends_on": [
+    "w5-s3-heritage",
+    "w5-s3-heritage-verify",
+    "w5-s3-rules-1",
+    "w5-s3-rules-1-verify",
+    "w5-s3-rules-2",
+    "w5-s3-rules-2-verify",
+    "w5-s3-rules-3",
+    "w5-s3-rules-3-verify",
+    "w5-s3-rules-4",
+    "w5-s3-rules-4-verify",
+    "w5-s3-rules-5",
+    "w5-s3-rules-5-verify",
+    "w5-s3-rules-6",
+    "w5-s3-rules-6-verify",
+    "w5-s3-rules-7",
+    "w5-s3-rules-7-verify",
+    "w5-s3-rules-8",
+    "w5-s3-rules-8-verify",
+    "w5-s3-subflow",
+    "w5-s3-subflow-verify",
+    "w5-s3-condexe-expression",
+    "w5-s3-condexe-expression-verify",
+    "w5-s3-transform",
+    "w5-s3-transform-verify",
+    "w5-s3-coreaction-early",
+    "w5-s3-coreaction-early-verify",
+    "w5-kuna-rule-pack",
+    "w5-kuna-rule-pack-verify",
+    "w5-infra-lift-diff"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp && cargo run -p kuna-lift-diff -- --self-test",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Wave exit: every item in W5 done (ports gated, verifies ACCEPTed)."
+  },
+  {
+   "id": "W6-gate",
+   "kind": "infra",
+   "wave": "W6",
+   "crate": "workspace",
+   "title": "W6 wave gate",
+   "modules": [],
+   "depends_on": [
+    "w6-s4-fspec-1",
+    "w6-s4-fspec-1-verify",
+    "w6-s4-fspec-2",
+    "w6-s4-fspec-2-verify",
+    "w6-s4-fspec-3",
+    "w6-s4-fspec-3-verify",
+    "w6-s4-modelrules",
+    "w6-s4-modelrules-verify",
+    "w6-s5-type-1",
+    "w6-s5-type-1-verify",
+    "w6-s5-type-2",
+    "w6-s5-type-2-verify",
+    "w6-s5-type-3",
+    "w6-s5-type-3-verify",
+    "w6-s5-typeop",
+    "w6-s5-typeop-verify",
+    "w6-s5-unionresolve",
+    "w6-s5-unionresolve-verify",
+    "w6-s5-rangeutil",
+    "w6-s5-rangeutil-verify",
+    "w6-s5-double",
+    "w6-s5-double-verify",
+    "w6-s5-bitfield",
+    "w6-s5-bitfield-verify",
+    "w6-s5-constseq-prefersplit",
+    "w6-s5-constseq-prefersplit-verify",
+    "w6-s4-coreaction-protos",
+    "w6-s4-coreaction-protos-verify",
+    "w6-kuna-s4s5-pack",
+    "w6-kuna-s4s5-pack-verify",
+    "w6-harness-unittests",
+    "w6-harness-unittests-verify"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp  # testfuncproto/testparamstore/testtypes/testcirclerange green",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Wave exit: every item in W6 done (ports gated, verifies ACCEPTed)."
+  },
+  {
+   "id": "W7-gate",
+   "kind": "infra",
+   "wave": "W7",
+   "crate": "workspace",
+   "title": "W7 wave gate",
+   "modules": [],
+   "depends_on": [
+    "w7-s6-varmap",
+    "w7-s6-varmap-verify",
+    "w7-s6-variable-cover",
+    "w7-s6-variable-cover-verify",
+    "w7-s6-merge",
+    "w7-s6-merge-verify",
+    "w7-s6-dynamic-pack",
+    "w7-s6-dynamic-pack-verify",
+    "w7-s7-blockaction",
+    "w7-s7-blockaction-verify",
+    "w7-s7-kuna-regionid",
+    "w7-s7-kuna-regionid-verify",
+    "w7-s7-kuna-regiongraph",
+    "w7-s7-kuna-regiongraph-verify",
+    "w7-s7-kuna-loweredswitch",
+    "w7-s7-kuna-loweredswitch-verify",
+    "w7-s37-coreaction-cleanup",
+    "w7-s37-coreaction-cleanup-verify",
+    "w7-harness-kunaregion",
+    "w7-harness-kunaregion-verify"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp  # testkunaregion green",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Wave exit: every item in W7 done (ports gated, verifies ACCEPTed)."
+  },
+  {
+   "id": "W8-gate",
+   "kind": "infra",
+   "wave": "W8",
+   "crate": "workspace",
+   "title": "W8 wave gate (milestone M1)",
+   "modules": [],
+   "depends_on": [
+    "w8-s9-printlanguage-cast",
+    "w8-s9-printlanguage-cast-verify",
+    "w8-s9-printc",
+    "w8-s9-printc-verify",
+    "w8-s9-prettyprint",
+    "w8-s9-prettyprint-verify",
+    "w8-s9-stringmanage-pack",
+    "w8-s9-stringmanage-pack-verify",
+    "w8-s9-coreaction-render",
+    "w8-s9-coreaction-render-verify",
+    "w8-fw-universalaction",
+    "w8-fw-universalaction-verify",
+    "w8-sig-pack",
+    "w8-sig-pack-verify"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test --workspace  # M1: 207/207 ported unit tests",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Wave exit: every item in W8 done (ports gated, verifies ACCEPTed)."
+  },
+  {
+   "id": "W9-gate",
+   "kind": "infra",
+   "wave": "W9",
+   "crate": "workspace",
+   "title": "W9 wave gate (milestone M2)",
+   "modules": [],
+   "depends_on": [
+    "w9-con-interface",
+    "w9-con-interface-verify",
+    "w9-con-ifacedecomp",
+    "w9-con-ifacedecomp-verify",
+    "w9-con-codedata",
+    "w9-con-codedata-verify",
+    "w9-con-kuna-console",
+    "w9-con-kuna-console-verify",
+    "w9-con-grammar",
+    "w9-con-grammar-verify",
+    "w9-con-rulecompile-unify",
+    "w9-con-rulecompile-unify-verify",
+    "w9-harness-runner",
+    "w9-harness-runner-verify",
+    "w9-infra-console-bins"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "~/.virtualenvs/kuna/bin/python -m kuna.run_tests --all --engine rust  # M2: runs end-to-end",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Wave exit: every item in W9 done (ports gated, verifies ACCEPTed)."
+  },
+  {
+   "id": "W10-gate",
+   "kind": "infra",
+   "wave": "W10",
+   "crate": "workspace",
+   "title": "W10 wave gate (milestone M3)",
+   "modules": [],
+   "depends_on": [
+    "w10-infra-parity-grind"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "~/.virtualenvs/kuna/bin/python -m kuna.run_tests --all --engine rust --baseline docs/baseline.json && make test-stages ENGINE=rust && ~/.virtualenvs/kuna/bin/python -m kuna.catalog --check --engine rust  # M3: PARITY OK 675/675 + 150/150",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Wave exit: every item in W10 done (ports gated, verifies ACCEPTed)."
+  },
+  {
+   "id": "W11-gate",
+   "kind": "infra",
+   "wave": "W11",
+   "crate": "workspace",
+   "title": "W11 wave gate (milestone M4)",
+   "modules": [],
+   "depends_on": [
+    "w11-loader-object",
+    "w11-loader-object-verify",
+    "w11-infra-pipeline-binding"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "~/.virtualenvs/kuna/bin/python -m kuna.decompile ./a.out main --engine rust  # M4: real-ELF + pipeline binding",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "Wave exit: every item in W11 done (ports gated, verifies ACCEPTed)."
+  }
+ ]
+}
