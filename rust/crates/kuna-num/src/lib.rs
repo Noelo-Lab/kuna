@@ -13,3 +13,9 @@
 //! truncation semantics are preserved exactly.
 //!
 //! Lints are inherited from the workspace (`[lints] workspace = true`).
+
+pub mod float;
+pub mod multiprecision;
+pub mod opcodes;
+pub mod pcoderaw;
+pub mod opbehavior;

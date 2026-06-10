@@ -19,3 +19,16 @@
 //!
 //! Lints are inherited from the workspace (`[lints] workspace = true`), which
 //! denies `std::collections::HashMap`/`HashSet` per ADR 0002.
+
+pub mod error;
+pub mod types;
+pub mod partmap;
+pub mod rangemap;
+pub mod xml;
+pub mod marshal;
+pub mod space;
+pub mod address;
+pub mod cfmt;
+pub mod crc32;
+pub mod compression;
+pub mod filemanage;
