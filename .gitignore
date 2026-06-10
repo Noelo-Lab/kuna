@@ -22,6 +22,12 @@ decompiler/cpp/*.a
 specs/**/*.sla
 specs/**/*.sla.lock
 
+# Rust port build output (rust/, see docs/rust-port/)
+rust/target/
+
+# Golden snapshot dumps produced by the Rust-port differential harness
+tests/golden/snapshots/
+
 # Python
 __pycache__/
 *.egg-info/

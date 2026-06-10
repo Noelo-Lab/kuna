@@ -1,0 +1,15 @@
+[package]
+name = "kuna-base"
+description = "kuna Rust port: foundation layer (addresses, spaces, marshaling, raw p-code)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+flate2.workspace = true
+
+[lints]
+workspace = true

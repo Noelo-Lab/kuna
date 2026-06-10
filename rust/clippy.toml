@@ -1,0 +1,10 @@
+# Workspace-wide clippy configuration (picked up by every crate under crates/).
+#
+# Enforced via `[workspace.lints.clippy] disallowed_types = "deny"` in the
+# workspace Cargo.toml. Rationale and the (verifier-gated) exception policy:
+# docs/rust-port/adr/0002-ordered-containers.md.
+
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "iteration order must be deterministic; use BTreeMap with a ported Ord comparator (ADR 0002)" },
+    { path = "std::collections::HashSet", reason = "iteration order must be deterministic; use BTreeSet with a ported Ord comparator (ADR 0002)" },
+]

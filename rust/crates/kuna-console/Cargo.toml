@@ -1,0 +1,22 @@
+[package]
+name = "kuna-console"
+description = "kuna Rust port: console front-end (decomp_dbg / decomp_test_dbg)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+kuna-decomp.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "decomp_dbg"
+path = "src/bin/decomp_dbg.rs"
+
+[[bin]]
+name = "decomp_test_dbg"
+path = "src/bin/decomp_test_dbg.rs"

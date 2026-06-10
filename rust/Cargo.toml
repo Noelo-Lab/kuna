@@ -1,0 +1,37 @@
+# kuna Rust port -- cargo workspace.
+#
+# A parallel reimplementation of the C++ decompiler under decompiler/cpp/
+# (the test ORACLE, which stays green throughout the port). Crate boundaries,
+# dependency edges, and the C++ -> crate file mapping are documented in each
+# crate's lib.rs and in docs/rust-port/.
+
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+license = "Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+# External
+thiserror = "2.0"
+flate2 = "1.1"
+smallvec = "1.15"
+slotmap = "1.0"
+# Intra-workspace
+kuna-base = { path = "crates/kuna-base" }
+kuna-num = { path = "crates/kuna-num" }
+kuna-sleigh = { path = "crates/kuna-sleigh" }
+kuna-decomp = { path = "crates/kuna-decomp" }
+kuna-console = { path = "crates/kuna-console" }
+
+[workspace.lints.clippy]
+# Wired to rust/clippy.toml: std::collections::HashMap / HashSet are banned
+# workspace-wide because decompiler output must be deterministic and hash-map
+# iteration order is not. Use BTreeMap/BTreeSet with ported Ord comparators
+# (see docs/rust-port/adr/0002-ordered-containers.md).
+disallowed_types = "deny"
