@@ -44,7 +44,10 @@ REQUIRED_FIELDS = {
     "notes": str,
 }
 KINDS = ("port", "verify", "infra")
-STATUSES = ("todo", "in-progress", "blocked", "done")
+# "landed" (port/infra item merged) and "verified" (verdict accepted+merged) are the
+# orchestrator's terminal statuses; "done" is kept for compatibility. The port-mode
+# selector (kuna.pipeline.select_port) treats all three as satisfying a dependency.
+STATUSES = ("todo", "in-progress", "blocked", "done", "landed", "verified")
 WAVE_RE = re.compile(r"^W(\d|10|11)$")
 WAVE_ORDER = ["W%d" % i for i in range(12)]
 

@@ -4806,7 +4806,7 @@
     "w0-infra-scaffold",
     "w0-infra-port-audit"
    ],
-   "status": "todo",
+   "status": "landed",
    "attempts": 0,
    "gate": "cd rust && cargo build --workspace && python3 tools/rust-port/check_checklist.py",
    "loc_estimate": 0,

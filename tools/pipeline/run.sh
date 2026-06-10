@@ -6,12 +6,20 @@
 #   PIPELINE_WORKERS=2 PIPELINE_HOURS=6 tools/pipeline/run.sh
 #   PIPELINE_WORKERS=1 tools/pipeline/run.sh --once     # do exactly one feature, then stop
 #
+# PIPELINE_MODE=port switches the backlog to the Rust-port checklist
+# (docs/rust-port/checklist.json via kuna.pipeline.select_port); workers then run the
+# porter/verifier prompts on rport/<item> branches off rust-port. Default ("feature")
+# behavior is unchanged. See docs/pipeline.md "Port mode".
+#
+#   PIPELINE_MODE=port PIPELINE_WORKERS=2 PIPELINE_HOURS=6 tools/pipeline/run.sh
+#
 # Stop gracefully any time: `touch .kuna-pipeline/STOP` (workers in flight finish first),
 # or Ctrl-C (same). Nothing ever lands on main without a human-reviewed PR.
 set -uo pipefail
 
 REPO="${KUNA_REPO:-$(git -C "$(dirname "$0")" rev-parse --show-toplevel)}"
 KUNA_PY="${KUNA_PY:-$HOME/.virtualenvs/kuna/bin/python}"
+MODE="${PIPELINE_MODE:-feature}"       # "feature" (default, unchanged) | "port"
 WORKERS="${PIPELINE_WORKERS:-1}"
 HOURS="${PIPELINE_HOURS:-0}"            # 0 = no time limit (run until backlog empty)
 POLL="${PIPELINE_POLL:-15}"            # seconds between scheduler ticks
@@ -63,6 +71,23 @@ gc_merged_worktrees() {
 
 spawn_worker() {
   local opp
+  if [ "$MODE" = "port" ]; then
+    opp="$("$KUNA_PY" -m kuna.pipeline.select_port --shell 2>/dev/null)" || return 1
+    eval "$opp"   # sets ITEM_ID KIND CRATE MODULES GATE SLUG TARGET_BRANCH
+    SEQ=$((SEQ+1))
+    local wid; wid="w$(date +%s)-$SEQ"
+    # claim atomically (keyed by checklist item id); if already taken (race), skip this tick
+    if ! "$KUNA_PY" -m kuna.pipeline.state claim --worker "$wid" --opportunity "$ITEM_ID" >/dev/null 2>&1; then
+      log "item $ITEM_ID already claimed; skipping"
+      return 1
+    fi
+    log "spawning $wid for port item $ITEM_ID (kind $KIND, crate $CRATE, target ${TARGET_BRANCH:-n/a})"
+    WORKER_ID="$wid" PIPELINE_MODE=port ITEM_ID="$ITEM_ID" KIND="$KIND" CRATE="$CRATE" \
+      MODULES="$MODULES" GATE="$GATE" SLUG="$SLUG" TARGET_BRANCH="$TARGET_BRANCH" \
+      bash "$REPO/tools/pipeline/worker.sh" >>"$STATE_DIR/logs/driver-$wid.log" 2>&1 &
+    WPID["$wid"]=$!
+    return 0
+  fi
   opp="$("$KUNA_PY" -m kuna.pipeline.select --shell 2>/dev/null)" || return 1
   eval "$opp"   # sets OPP_ID TEST_NAME BINARY SELECTOR ARCH SLUG SCORE KINDS
   SEQ=$((SEQ+1))
@@ -80,6 +105,7 @@ spawn_worker() {
   return 0
 }
 
+[ "$MODE" = "port" ] && log "mode=port (Rust-port checklist backlog; base branch rust-port)"
 log "starting (workers=$WORKERS, hours=${HOURS:-unbounded}, once=$ONCE)"
 SPAWNED=0
 while :; do
