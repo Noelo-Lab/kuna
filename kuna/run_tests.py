@@ -214,6 +214,8 @@ def main(argv=None):
     p.add_argument("--name", action="append", default=[], dest="names",
                    help="run only the named test(s); repeatable. Requires --unittests/--datatests")
     p.add_argument("--binary", default=None, help="path to decomp_test_dbg")
+    p.add_argument("--engine", choices=("cpp", "rust"), default=None,
+                   help="which port's binaries to run (sets KUNA_ENGINE; default: env, else cpp)")
     p.add_argument("--sleighpath", default=None, help="SLEIGH specs root")
     p.add_argument("--datatests-dir", default=None, help="datatests directory")
     p.add_argument("--baseline", default=None, help="compare against a saved baseline JSON")
@@ -223,6 +225,9 @@ def main(argv=None):
 
     if args.names and args.mode == "all":
         p.error("--name requires --unittests or --datatests")
+
+    if args.engine:
+        os.environ["KUNA_ENGINE"] = args.engine  # before any paths.binary() resolution
 
     try:
         result = run(args.mode, args.names, args.binary, args.sleighpath, args.datatests_dir)

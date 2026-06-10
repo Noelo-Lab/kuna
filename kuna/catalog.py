@@ -218,8 +218,13 @@ def main(argv=None):
     g.add_argument("--check", action="store_true",
                    help="verify the catalog matches the registered kuna options (exit nonzero on drift)")
     p.add_argument("--decomp-dbg", default=None, help="path to the decomp_dbg binary")
+    p.add_argument("--engine", choices=("cpp", "rust"), default=None,
+                   help="which port's binaries to run (sets KUNA_ENGINE; default: env, else cpp)")
     p.add_argument("--sleighpath", default=None, help="SLEIGH specs root (default: <repo>/specs)")
     args = p.parse_args(argv)
+
+    if args.engine:
+        os.environ["KUNA_ENGINE"] = args.engine  # before any paths.binary() resolution
 
     if args.check:
         try:

@@ -270,9 +270,14 @@ def main(argv=None):
                    help="apply a function-scoped kuna kassert (repeatable), e.g. "
                         "--kassert 'S7 edge-virtualization 0x401000 0x401020'")
     p.add_argument("--decomp-dbg", default=None, help="path to the decomp_dbg binary")
+    p.add_argument("--engine", choices=("cpp", "rust"), default=None,
+                   help="which port's binaries to run (sets KUNA_ENGINE; default: env, else cpp)")
     p.add_argument("--sleighpath", default=None, help="SLEIGH specs root (default: <repo>/specs)")
     p.add_argument("--timeout", type=float, default=120, help="subprocess timeout in seconds")
     args = p.parse_args(argv)
+
+    if args.engine:
+        os.environ["KUNA_ENGINE"] = args.engine  # before any paths.binary() resolution
 
     try:
         result = decompile(

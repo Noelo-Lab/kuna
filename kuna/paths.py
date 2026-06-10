@@ -38,11 +38,21 @@ def stage_datatests_dir() -> Path:
 
 
 def binary(name: str, env_var: str = None) -> Path:
-    """Resolve a built binary under decompiler/cpp/, honoring an env override."""
+    """Resolve a built binary, honoring an env override and the engine switch.
+
+    Resolution order: an explicit per-binary override (``env_var``, e.g.
+    KUNA_DECOMP_DBG) always wins; else ``KUNA_ENGINE=rust`` selects the Rust
+    port's build at ``rust/target/<KUNA_RUST_PROFILE or release>/<name>``
+    (the Rust binaries use the same names); else the C++ build under
+    ``decompiler/cpp/``.
+    """
     if env_var:
         env = os.environ.get(env_var)
         if env:
             return Path(env).resolve()
+    if os.environ.get("KUNA_ENGINE") == "rust":
+        profile = os.environ.get("KUNA_RUST_PROFILE") or "release"
+        return repo_root() / "rust" / "target" / profile / name
     return cpp_dir() / name
 
 
