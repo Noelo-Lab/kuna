@@ -49,10 +49,16 @@
 //! - `DecoderError` is [`KunaError::Decoder`] (see `error.rs`): it stays
 //!   *outside* the C++ `LowlevelError` hierarchy.
 //!
-//! Nesting depth note: bison's parse stack grows on the heap (up to
-//! `YYMAXDEPTH` 10000); the hand parser is *iterative* over element nesting
-//! (an explicit open-element stack), so deep documents cannot overflow the
-//! Rust call stack.
+//! Nesting depth note (LOSS-010): bison's parse stack grows on the heap up
+//! to a hard cap (`YYMAXDEPTH` 10000, xml.cc:971), so the C++ parser rejects
+//! deeply nested documents cleanly — element nesting to depth 4997 parses,
+//! depth >= 4998 fails with "memory exhausted" and `xml_parse` returns 2
+//! (xml.cc:2042-2043).  The hand parser is *iterative* over element nesting
+//! (an explicit open-element stack) and does **not** emulate the cap:
+//! arbitrarily deep documents are accepted, a documented accept/reject
+//! divergence on pathological input (`docs/rust-port/losses.md` LOSS-010).
+//! Teardown is likewise non-recursive ([`Element`]'s worklist `Drop`), so
+//! neither parsing nor dropping a deep DOM can overflow the Rust call stack.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -141,6 +147,7 @@ impl Attributes {
 
     /// Get the number of attributes associated with the element.
     pub fn get_length(&self) -> i32 {
+        // cast: size_t -> int4 narrowing, as the C++ `getLength` return
         self.name.len() as i32
     }
 
@@ -317,6 +324,7 @@ impl Element {
 
     /// Get the number of attributes for \b this element.
     pub fn get_num_attributes(&self) -> i32 {
+        // cast: size_t -> int4 narrowing, as the C++ `getNumAttributes` return
         self.attr.len() as i32
     }
 
@@ -328,6 +336,30 @@ impl Element {
     /// Get the value of the i-th attribute (C++ `getAttributeValue(int4)`).
     pub fn get_attribute_value_at(&self, i: i32) -> &[u8] {
         &self.value[i as usize]
+    }
+}
+
+/// Non-recursive teardown.  The C++ `Element::~Element` (xml.cc:2417-2424)
+/// deletes its children recursively — safe there only because bison's
+/// `YYMAXDEPTH` cap bounds the DOM depth below ~5000.  The Rust parser
+/// accepts unbounded nesting (LOSS-010), so the default (recursive) drop
+/// glue could overflow the call stack on a deep DOM; instead the subtree is
+/// drained iteratively through a worklist.
+impl Drop for Element {
+    fn drop(&mut self) {
+        let mut worklist: List = std::mem::take(&mut self.children);
+        while let Some(child) = worklist.pop() {
+            if let Ok(mut el) = Rc::try_unwrap(child) {
+                // Sole owner: steal the grandchildren so `el` drops at the
+                // end of this iteration with empty `children` (its own Drop
+                // then has nothing left to walk).
+                worklist.append(&mut el.children);
+            }
+            // else: the child is shared (e.g. registered in
+            // `DocumentStorage::tagmap`); dropping the handle only
+            // decrements the strong count, and the surviving owner tears
+            // the subtree down the same way later.
+        }
     }
 }
 
@@ -711,7 +743,7 @@ impl<'a> XmlScan<'a> {
             if !Self::is_char(self.next(0)) {
                 break;
             }
-            lvalue.push(self.getxmlchar() as u8);
+            lvalue.push(self.getxmlchar() as u8); // cast: (char) low byte, as C++ string +=
         }
         (CDATA_TOK, Some(lvalue)) // CData can be empty
     }
@@ -720,7 +752,7 @@ impl<'a> XmlScan<'a> {
     fn scan_char_ref(&mut self) -> ScanToken {
         let mut lvalue: Vec<u8> = Vec::new();
         if self.next(0) == ch(b'x') {
-            lvalue.push(self.getxmlchar() as u8);
+            lvalue.push(self.getxmlchar() as u8); // cast: (char) low byte, as C++ string +=
             while self.next(0) != -1 {
                 let v = self.next(0);
                 if v < ch(b'0') {
@@ -735,7 +767,7 @@ impl<'a> XmlScan<'a> {
                 if v > ch(b'f') {
                     break;
                 }
-                lvalue.push(self.getxmlchar() as u8);
+                lvalue.push(self.getxmlchar() as u8); // cast: (char) low byte, as C++ string +=
             }
             if lvalue.len() == 1 {
                 return (ch(b'x'), None); // Must be at least 1 hex digit
@@ -749,7 +781,7 @@ impl<'a> XmlScan<'a> {
                 if v > ch(b'9') {
                     break;
                 }
-                lvalue.push(self.getxmlchar() as u8);
+                lvalue.push(self.getxmlchar() as u8); // cast: (char) low byte, as C++ string +=
             }
             if lvalue.is_empty() {
                 return self.scan_single();
@@ -771,7 +803,7 @@ impl<'a> XmlScan<'a> {
             if self.next(0) == ch(b'&') {
                 break;
             }
-            lvalue.push(self.getxmlchar() as u8);
+            lvalue.push(self.getxmlchar() as u8); // cast: (char) low byte, as C++ string +=
         }
         if lvalue.is_empty() {
             return self.scan_single();
@@ -790,7 +822,7 @@ impl<'a> XmlScan<'a> {
             if !Self::is_char(self.next(0)) {
                 break;
             }
-            lvalue.push(self.getxmlchar() as u8);
+            lvalue.push(self.getxmlchar() as u8); // cast: (char) low byte, as C++ string +=
         }
         (COMMENT_TOK, Some(lvalue))
     }
@@ -800,12 +832,13 @@ impl<'a> XmlScan<'a> {
         if !Self::is_initial_name_char(self.next(0)) {
             return self.scan_single();
         }
+        // cast: (char) low byte, as C++ string +=
         let mut lvalue: Vec<u8> = vec![self.getxmlchar() as u8];
         while self.next(0) != -1 {
             if !Self::is_name_char(self.next(0)) {
                 break;
             }
-            lvalue.push(self.getxmlchar() as u8);
+            lvalue.push(self.getxmlchar() as u8); // cast: (char) low byte, as C++ string +=
         }
         (NAME_TOK, Some(lvalue))
     }
@@ -824,12 +857,13 @@ impl<'a> XmlScan<'a> {
             }
             return self.scan_single();
         }
+        // cast: (char) low byte, as C++ string +=
         let mut lvalue: Vec<u8> = vec![self.getxmlchar() as u8];
         while self.next(0) != -1 {
             if !Self::is_name_char(self.next(0)) {
                 break;
             }
-            lvalue.push(self.getxmlchar() as u8);
+            lvalue.push(self.getxmlchar() as u8); // cast: (char) low byte, as C++ string +=
         }
         if whitecount > 0 {
             return (SNAME_TOK, Some(lvalue));
@@ -870,6 +904,7 @@ fn print_content(handler: &mut dyn ContentHandler, s: &[u8]) {
             _ => break,
         }
     }
+    // cast: size_t -> int4, as the C++ `str.size()` call arguments
     if i == s.len() {
         handler.ignorable_whitespace(s, 0, s.len() as i32);
     } else {
