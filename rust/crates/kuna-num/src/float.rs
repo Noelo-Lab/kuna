@@ -510,7 +510,16 @@ impl FloatFormat {
                 }
             }
             let res = self.get_zero_encoding(sgn);
-            return self.set_fractional_code(res, signif >> (-exp));
+            // The round-carry-to-normal fixup above can leave exp == 1 (host
+            // value at/just below this format's smallest normal), making the
+            // C++ `signif >> (-exp)` a shift by -1: undefined behavior that
+            // the x86-64 oracle resolves by masking the count to 63 (SHR), so
+            // setFractionalCode drops the fraction to 0 and the signed zero
+            // encoding is returned.  Upstream bug, but oracle-observable:
+            // getEncoding(fmt4, bits 0x380fffffffffffff) == 0x0.
+            // wrapping_shr applies the identical count mask (& 63), keeping
+            // debug and release builds identical (ADR 0003).
+            return self.set_fractional_code(res, signif.wrapping_shr((-exp) as u32));
         }
 
         if Self::round_to_nearest_even(&mut signif, 8 * 8 - self.frac_size - 1) {
@@ -589,7 +598,13 @@ impl FloatFormat {
                 }
             }
             let res = self.get_zero_encoding(sgn);
-            return self.set_fractional_code(res, signif >> (-exp));
+            // Same upstream UB cell as in get_encoding: the carry fixup above
+            // can leave exp == 1 and the C++ `signif >> (-exp)` shifts by -1;
+            // the x86-64 oracle masks the count to 63 so the signed zero
+            // encoding comes back (convertEncoding fmt4<-fmt8 of
+            // 0x380fffffffffffff == 0x0).  wrapping_shr reproduces the masked
+            // shift, identical in debug and release (ADR 0003).
+            return self.set_fractional_code(res, signif.wrapping_shr((-exp) as u32));
         }
 
         if Self::round_to_nearest_even(&mut signif, 8 * 8 - self.frac_size - 1) {
