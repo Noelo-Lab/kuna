@@ -1,5 +1,26 @@
 # kuna Progress Log
 
+## Session (2026-06-12) — rust-port W4: framework wave (engine, Architecture, P0 registry)
+
+All eight W4 items verified: the Action/Rule engine (processOp dispatch transcribed
+exactly; SchedNode derivation proven identical to clone(grouplist)), options DB,
+the 4.5k-LOC symbol database over W1's rangemap, cpool/callgraph, Override+
+CommentDatabase (P0 stores), Architecture (clean ACCEPT — implemented the W3 seams,
+opened kuna-sleigh's emission API closing LOSS-031, proved injection end-to-end),
+the XML/Sleigh/Raw front-ends (corpus bootstrap across 8 architectures with opcode
+sequences checked against lift fixtures), and the kuna P0 pack: stages.toml +
+build.rs codegen + the catalog JSON emitter BYTE-COMPARED against the live C++
+'stage catalog' output — the LLM control surface preserved to the byte (39/40/90/22
+table rows).
+
+Gate: workspace tests green (1,135 at the 7/8 mark + frontends), clippy clean,
+losses through LOSS-052. Carried-forward blocker found by the frontends gate: W3
+left Funcdata::opSetOutput/newVarnodeOut/newCodeRef seamed (split-borrow), so real
+FlowInfo cannot link op outputs yet — targeted fix agent dispatched; required
+before the W5/W6 B2-grade differentials. W5 (dtype expansion + heritage + 8 rule
+batches + subflow + kuna rules) running concurrently.
+
+
 ## Session (2026-06-12) — rust-port W3: core IR complete (arenas, Funcdata, FlowInfo, jumptables)
 
 All ten W3 items ACCEPTed (one transient API failure mid-wave; chain relaunched, no

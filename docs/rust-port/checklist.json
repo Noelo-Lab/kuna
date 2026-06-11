@@ -1849,7 +1849,7 @@
     "w4-fw-architecture",
     "W3-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1182,
@@ -1880,7 +1880,7 @@
    "depends_on": [
     "w4-fw-arch-frontends"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1182,
@@ -4942,12 +4942,12 @@
     "w4-kuna-p0-pack",
     "w4-kuna-p0-pack-verify"
    ],
-   "status": "todo",
+   "status": "landed",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp  # arch init + P0 round-trip fixtures",
    "loc_estimate": 0,
    "cpp_blob_sha": {},
-   "notes": "Wave exit: every item in W4 done (ports gated, verifies ACCEPTed)."
+   "notes": "Wave exit: every item in W4 done (ports gated, verifies ACCEPTed). Gate 2026-06-12: all 8 W4 items verified; corpus bootstrap 8 archs; catalog byte-compat vs C++; workspace tests green."
   },
   {
    "id": "W5-gate",
