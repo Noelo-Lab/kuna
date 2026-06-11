@@ -1,0 +1,203 @@
+# kuna golden lift fixture (per-instruction raw p-code from the C++ oracle)
+# corpus: decompiler/datatests/boolless.xml
+# sla: Ghidra/Processors/8051/data/languages/8051.sla (relative to specs/)
+# cap: 80 instructions per lift point
+# lift-points (space:byte-offset name): CODE:0xa000=boolless
+# regenerate: python tools/rust-port/gen_lift.py  (see tests/golden/vectors/lift/README.md)
+# golden liftctx (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)
+archid 8051:BE:16:default:default
+languageid 8051:BE:16:default
+slafile 8051.sla
+endian big
+contextsize 0
+space const index=0 size=8 wordsize=1 bigendian=0
+space OTHER index=1 size=8 wordsize=1 bigendian=0
+space unique index=2 size=4 wordsize=1 bigendian=1
+space RAM index=3 size=1 wordsize=1 bigendian=1
+space CODE index=4 size=2 wordsize=1 bigendian=1
+space INTMEM index=5 size=1 wordsize=1 bigendian=1
+space EXTMEM index=6 size=2 wordsize=1 bigendian=1
+space SFR index=7 size=1 wordsize=1 bigendian=1
+space BITS index=8 size=1 wordsize=1 bigendian=1
+space register index=9 size=1 wordsize=1 bigendian=1
+space fspec index=10 size=8 wordsize=1 bigendian=0
+space iop index=11 size=8 wordsize=1 bigendian=0
+space join index=12 size=4 wordsize=1 bigendian=1
+space stack index=13 size=1 wordsize=1 bigendian=1
+# golden lift CODE:0xa000 80 (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)
+insn CODE:0xa000 2
+  COPY (register,0xb,1) (INTMEM,0x52,1)
+insn CODE:0xa002 3
+  INT_AND (unique,0x700,1) (register,0x48,1) (const,0x7f,1)
+  INT_LESS (unique,0x600,1) (register,0xb,1) (const,0xb,1)
+  INT_LEFT (unique,0x800,1) (unique,0x600,1) (const,0x7,4)
+  INT_OR (register,0x48,1) (unique,0x700,1) (unique,0x800,1)
+  INT_NOTEQUAL (unique,0x6f00,1) (register,0xb,1) (const,0xb,1)
+  CBRANCH - (CODE,0xa005,1) (unique,0x6f00,1)
+insn CODE:0xa005 2
+  INT_RIGHT (unique,0xa900,1) (register,0x48,1) (const,0x7,4)
+  INT_EQUAL (unique,0xaa00,1) (unique,0xa900,1) (const,0x0,1)
+  CBRANCH - (CODE,0xa009,1) (unique,0xaa00,1)
+insn CODE:0xa007 2
+  COPY (register,0xb,1) (const,0x1,1)
+insn CODE:0xa009 1
+  COPY (unique,0xe400,2) (const,0x0,2)
+  LOAD (unique,0x2200,1) (const,INTMEM,8) (register,0x40,1)
+  INT_SUB (register,0x40,1) (register,0x40,1) (const,0x1,1)
+  LOAD (unique,0x2500,1) (const,INTMEM,8) (register,0x40,1)
+  INT_SUB (register,0x40,1) (register,0x40,1) (const,0x1,1)
+  INT_ZEXT (unique,0x2700,2) (unique,0x2200,1)
+  INT_LEFT (unique,0x2800,2) (unique,0x2700,2) (const,0x8,4)
+  INT_ZEXT (unique,0x2900,2) (unique,0x2500,1)
+  INT_OR (unique,0xe400,2) (unique,0x2800,2) (unique,0x2900,2)
+  RETURN - (unique,0xe400,2)
+insn CODE:0xa00a 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa00b 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa00c 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa00d 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa00e 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa00f 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa010 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa011 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa012 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa013 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa014 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa015 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa016 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa017 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa018 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa019 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa01a 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa01b 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa01c 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa01d 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa01e 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa01f 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa020 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa021 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa022 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa023 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa024 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa025 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa026 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa027 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa028 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa029 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa02a 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa02b 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa02c 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa02d 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa02e 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa02f 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa030 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa031 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa032 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa033 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa034 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa035 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa036 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa037 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa038 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa039 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa03a 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa03b 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa03c 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa03d 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa03e 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa03f 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa040 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa041 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa042 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa043 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa044 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa045 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa046 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa047 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa048 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa049 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa04a 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa04b 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa04c 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa04d 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa04e 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa04f 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa050 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa051 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa052 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa053 1
+  CALLOTHER - (const,0x1,4)
+insn CODE:0xa054 1
+  CALLOTHER - (const,0x1,4)

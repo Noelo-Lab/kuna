@@ -5,6 +5,9 @@
 #include "kuna_goldengen.hh"
 #include "opbehavior.hh"
 #include "float.hh"
+#include "sleigh_arch.hh"
+#include "globalcontext.hh"
+#include "grammar.hh"
 
 namespace ghidra {
 
@@ -20,9 +23,31 @@ IfaceKunaGoldenCapability::IfaceKunaGoldenCapability(void)
 void IfaceKunaGoldenCapability::registerCommands(IfaceStatus *status)
 
 {
-  status->registerCom(new IfcKunaGoldenOpbehavior(),"golden","opbehavior");
-  status->registerCom(new IfcKunaGoldenFloat(),"golden","float");
-  status->registerCom(new IfcKunaGoldenAddrsort(),"golden","addrsort");
+  // Single word + internal dispatch: see kuna_goldengen.hh for why the kinds
+  // cannot be separate second command words ("lift" vs "liftctx" prefix quirk)
+  status->registerCom(new IfcKunaGolden(),"golden");
+}
+
+/// \class IfcKunaGolden
+/// \brief Dispatcher for the `golden <kind>` vector generators
+void IfcKunaGolden::execute(istream &s)
+
+{
+  string kind;
+  s >> ws >> kind;
+  if (kind == "opbehavior")
+    executeOpbehavior();
+  else if (kind == "float")
+    executeFloat();
+  else if (kind == "addrsort")
+    executeAddrsort();
+  else if (kind == "lift")
+    executeLift(s);
+  else if (kind == "liftctx")
+    executeLiftctx(s);
+  else
+    throw IfaceParseError("Unknown golden vector kind: \""+kind+
+			  "\" -- choose from: opbehavior float addrsort lift liftctx");
 }
 
 /// The sizes (in bytes) every vector matrix iterates over, in fixed order
@@ -116,7 +141,6 @@ static string goldenEvalBinary(const OpBehavior *beh,int4 sizeout,int4 sizein,ui
   }
 }
 
-/// \class IfcKunaGoldenOpbehavior
 /// \brief Emit OpBehavior evaluation vectors as CSV: `golden opbehavior`
 ///
 /// Iterates the OpBehavior table built by OpBehavior::registerInstructions in
@@ -127,7 +151,7 @@ static string goldenEvalBinary(const OpBehavior *beh,int4 sizeout,int4 sizein,ui
 /// because the CPUI_FLOAT_* behaviors hold the program's Translate to map an
 /// operand size to its FloatFormat (sizes without a format fall back to the
 /// base-class throw and emit ERR).
-void IfcKunaGoldenOpbehavior::execute(istream &s)
+void IfcKunaGolden::executeOpbehavior(void)
 
 {
   if (dcp->conf == (Architecture *)0)
@@ -236,7 +260,6 @@ static void goldenFloatEncodings(const FloatFormat &fmt,vector<uintb> &encs)
   }
 }
 
-/// \class IfcKunaGoldenFloat
 /// \brief Emit FloatFormat operation vectors as CSV: `golden float`
 ///
 /// Constructs FloatFormat(4) and FloatFormat(8) directly (default IEEE 754
@@ -245,7 +268,7 @@ static void goldenFloatEncodings(const FloatFormat &fmt,vector<uintb> &encs)
 /// rows, binary op rows over the full encoding cross product, opTrunc to each
 /// integer size, and opInt2Float from each integer size; then opFloat2Float
 /// 4->8 and 8->4.
-void IfcKunaGoldenFloat::execute(istream &s)
+void IfcKunaGolden::executeFloat(void)
 
 {
   ostream &os( *status->fileoptr );	// bulk stream: captured by openfile write
@@ -331,14 +354,13 @@ void IfcKunaGoldenFloat::execute(istream &s)
     os << "float2float,8,4," << goldenHex(encs[i]) << ',' << goldenHex(fmt8.opFloat2Float(encs[i],fmt4)) << '\n';
 }
 
-/// \class IfcKunaGoldenAddrsort
 /// \brief Emit Address comparator vectors as CSV: `golden addrsort`
 ///
 /// Builds an Address for every (space, fixed offset) combination of the loaded
 /// architecture, in space-index order, and emits the (<, ==, <=) decisions for
 /// every ordered pair.  Offsets are used as given (no wrapping), matching how
 /// the comparators themselves see them.
-void IfcKunaGoldenAddrsort::execute(istream &s)
+void IfcKunaGolden::executeAddrsort(void)
 
 {
   if (dcp->conf == (Architecture *)0)
@@ -364,6 +386,213 @@ void IfcKunaGoldenAddrsort::execute(istream &s)
 	 << b.getSpace()->getName() << ',' << goldenHex(b.getOffset()) << ','
 	 << ((a < b) ? 1 : 0) << ',' << ((a == b) ? 1 : 0) << ',' << ((a <= b) ? 1 : 0) << '\n';
     }
+  }
+}
+
+/// Render an address as `<space>:<0x-offset>` for the lift dump lines
+static string goldenAddr(const Address &addr)
+
+{
+  ostringstream ss;
+  ss << addr.getSpace()->getName() << ':' << "0x" << hex << addr.getOffset();
+  return ss.str();
+}
+
+/// Render one VarnodeData as `(space,offset,size)`.  Constants print their
+/// raw offset, EXCEPT spaceid pointer constants (\e spaceidConst): the raw
+/// offset of those is the heap address of the encoded AddrSpace -- the only
+/// nondeterministic value in a raw lift -- so the space NAME is printed
+/// instead, mirroring the Rust port's index-based representation
+/// (docs/rust-port/losses.md LOSS-015): both engines render the name and
+/// compare equal.  A space name can never be confused with a raw offset
+/// (offsets always print 0x-prefixed).
+static void goldenVarnode(ostream &os,const VarnodeData &vn,bool spaceidConst)
+
+{
+  os << '(' << vn.space->getName() << ',';
+  if (spaceidConst && vn.space->getType() == IPTR_CONSTANT)
+    os << vn.getSpaceFromConst()->getName();
+  else
+    os << goldenHex(vn.offset);
+  os << ',' << dec << vn.size << ')';
+}
+
+/// \brief PcodeEmit subclass that renders raw lifted ops into a line buffer
+///
+/// One line per op: two-space indent, opcode name, output varnode (or `-`),
+/// then each input varnode, all space separated.  Ops are buffered (not
+/// streamed) so the caller can print the per-instruction header line -- whose
+/// length field is only known after Translate::oneInstruction returns --
+/// BEFORE the op lines.  The instruction address passed to dump() is dropped:
+/// PcodeCacher::emit hands every op of an instruction (delay slots included)
+/// the same base address, which the header line already carries.
+class GoldenLiftEmit : public PcodeEmit {
+  ostringstream buf;		///< Rendered op lines for the current instruction
+public:
+  virtual void dump(const Address &addr,OpCode opc,VarnodeData *outvar,VarnodeData *vars,int4 isize);
+  string takeLines(void) { string res = buf.str(); buf.str(""); return res; }	///< Drain the buffer
+};
+
+void GoldenLiftEmit::dump(const Address &addr,OpCode opc,VarnodeData *outvar,VarnodeData *vars,int4 isize)
+
+{
+  buf << "  " << goldenOpName(opc) << ' ';
+  if (outvar == (VarnodeData *)0)
+    buf << '-';
+  else
+    goldenVarnode(buf,*outvar,false);
+  for(int4 i=0;i<isize;++i) {
+    buf << ' ';
+    // Raw SLEIGH output encodes an address space operand (the *[space] of a
+    // LOAD/STORE semantic) only as input 0 of CPUI_LOAD/CPUI_STORE
+    bool spaceidConst = (i == 0) && (opc == CPUI_LOAD || opc == CPUI_STORE);
+    goldenVarnode(buf,vars[i],spaceidConst);
+  }
+  buf << '\n';
+}
+
+/// \brief Emit per-instruction raw p-code lift fixtures: `golden lift <addr> <count>`
+///
+/// Decodes up to \e count instructions starting at \e addr (parse_machaddr
+/// syntax: `0x...` for the default code space, `[space,0x...]` explicit, or a
+/// symbol name).  Per instruction: a header `insn <space>:<offset> <length>`
+/// then the buffered op lines from GoldenLiftEmit.  The length is
+/// oneInstruction's fall-through offset (delay-slot bytes included) and is
+/// also the step to the next decode address.  Any decode failure
+/// (DataUnavailError / UnimplError / BadDataError / other LowlevelError)
+/// emits `lifterror <class> <space>:<offset> <message>` and ends the dump --
+/// the error text is part of the fixture (it is deterministic for a fixed
+/// program and spec).
+void IfcKunaGolden::executeLift(istream &s)
+
+{
+  if (dcp->conf == (Architecture *)0)
+    throw IfaceExecutionError("No load image present");
+  s >> ws;
+  if (s.eof())
+    throw IfaceParseError("Missing address: golden lift <addr> <count>");
+  int4 defaultsize;
+  Address addr = parse_machaddr(s,defaultsize,*dcp->conf->types);
+  int4 count = -1;
+  s >> ws >> dec >> count;
+  if (count <= 0)
+    throw IfaceParseError("Missing or non-positive instruction count: golden lift <addr> <count>");
+  ostream &os( *status->fileoptr );	// bulk stream: captured by openfile write
+  os << "# golden lift " << goldenAddr(addr) << ' ' << dec << count
+     << " (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)" << '\n';
+  const Translate *trans = dcp->conf->translate;
+  GoldenLiftEmit emit;
+  for(int4 i=0;i<count;++i) {
+    int4 len;
+    try {
+      len = trans->oneInstruction(emit,addr);
+    } catch(const DataUnavailError &err) {
+      os << "lifterror dataunavail " << goldenAddr(addr) << ' ' << err.explain << '\n';
+      break;
+    } catch(const UnimplError &err) {
+      os << "lifterror unimpl " << goldenAddr(addr) << ' ' << err.explain << '\n';
+      break;
+    } catch(const BadDataError &err) {
+      os << "lifterror baddata " << goldenAddr(addr) << ' ' << err.explain << '\n';
+      break;
+    } catch(const LowlevelError &err) {
+      os << "lifterror lowlevel " << goldenAddr(addr) << ' ' << err.explain << '\n';
+      break;
+    }
+    os << "insn " << goldenAddr(addr) << ' ' << dec << len << '\n';
+    os << emit.takeLines();
+    addr = addr + len;
+  }
+}
+
+// --- access to ContextInternal::variables (private) without an upstream edit.
+// Access checking is suspended for the template arguments of an explicit
+// instantiation (C++11 [temp.spec]p12: "The usual access checking rules do not
+// apply to names used to specify explicit instantiations"), so the explicit
+// instantiation below may name &ContextInternal::variables, and its friend
+// definition hands the member pointer back through ADL on the tag type.  This
+// is read-only introspection: `golden liftctx` needs to ENUMERATE the
+// registered context variables, and the only upstream surfaces holding the
+// name list (ContextInternal::variables, SleighBase::symtab) are non-public.
+typedef map<string,ContextBitRange> ContextVarMap;
+typedef ContextVarMap ContextInternal::*ContextVarsMemPtr;
+struct KunaContextVarsTag {
+  friend ContextVarsMemPtr kunaContextVarsPtr(KunaContextVarsTag);
+};
+template<ContextVarsMemPtr M>
+struct KunaContextVarsRob {
+  friend ContextVarsMemPtr kunaContextVarsPtr(KunaContextVarsTag) { return M; }
+};
+template struct KunaContextVarsRob<&ContextInternal::variables>;
+
+/// \brief Emit the decoding context: `golden liftctx [<addr>]`
+///
+/// Key/value lines pinning everything the Rust SLEIGH runtime needs to
+/// reproduce instruction decoding exactly:
+///   archid      full normalized architecture id (language id + compiler)
+///   languageid  the SLEIGH language id (archid minus the compiler field)
+///   slafile     .sla file name from the matching LanguageDescription (.ldefs)
+///   endian      `big` or `little` (Translate::isBigEndian)
+///   contextsize number of 32-bit words in a context blob
+///   space       one line per address space, in space-index order:
+///               `space <name> index=<i> size=<addrsize> wordsize=<w>
+///               bigendian=<0|1>` -- pins the space table, and gives
+///               tools/rust-port/gen_lift.py the wordsize it needs to convert
+///               the corpus XML's byte offsets into the word offsets the
+///               console's address parser expects (AddrSpace::read multiplies
+///               a typed offset by wordsize)
+///   context     one `context <name>=<value>` line per registered context
+///               variable, in name order (values in decimal).  Without an
+///               address argument the program defaults are reported (NOTE: a
+///               .pspec `<context_set>` paints values per address range, so
+///               defaults are usually all zero); with an address, the values
+///               in effect at that address (e.g. after a `set context` with a
+///               range) -- what instruction decoding there actually uses.
+void IfcKunaGolden::executeLiftctx(istream &s)
+
+{
+  if (dcp->conf == (Architecture *)0)
+    throw IfaceExecutionError("No load image present");
+  bool haveAddr = false;
+  Address addr;
+  s >> ws;
+  if (!s.eof()) {
+    int4 defaultsize;
+    addr = parse_machaddr(s,defaultsize,*dcp->conf->types);
+    haveAddr = true;
+  }
+  ostream &os( *status->fileoptr );	// bulk stream: captured by openfile write
+  os << "# golden liftctx (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)" << '\n';
+  const string &archid( dcp->conf->archid );
+  os << "archid " << archid << '\n';
+  string baseid = archid.substr(0,archid.rfind(':'));	// Strip compiler field (resolveArchitecture's rule)
+  os << "languageid " << baseid << '\n';
+  const vector<LanguageDescription> &descs( SleighArchitecture::getDescriptions() );
+  for(int4 i=0;i<descs.size();++i) {
+    if (descs[i].getId() == baseid) {
+      os << "slafile " << descs[i].getSlaFile() << '\n';
+      break;
+    }
+  }
+  os << "endian " << (dcp->conf->translate->isBigEndian() ? "big" : "little") << '\n';
+  ContextDatabase *ctxdb = dcp->conf->context;
+  os << "contextsize " << dec << ctxdb->getContextSize() << '\n';
+  for(int4 i=0;i<dcp->conf->numSpaces();++i) {
+    AddrSpace *spc = dcp->conf->getSpace(i);
+    if (spc == (AddrSpace *)0) continue;
+    os << "space " << spc->getName() << " index=" << dec << spc->getIndex()
+       << " size=" << spc->getAddrSize() << " wordsize=" << spc->getWordSize()
+       << " bigendian=" << (spc->isBigEndian() ? 1 : 0) << '\n';
+  }
+  ContextInternal *cint = dynamic_cast<ContextInternal *>(ctxdb);
+  if (cint == (ContextInternal *)0)
+    throw IfaceExecutionError("Context database is not a ContextInternal -- cannot enumerate variables");
+  const ContextVarMap &vars( cint->*kunaContextVarsPtr(KunaContextVarsTag()) );
+  map<string,ContextBitRange>::const_iterator iter;
+  for(iter=vars.begin();iter!=vars.end();++iter) {
+    const string &nm( (*iter).first );
+    uintm val = haveAddr ? ctxdb->getVariable(nm,addr) : ctxdb->getDefaultValue(nm);
+    os << "context " << nm << '=' << dec << val << '\n';
   }
 }
 

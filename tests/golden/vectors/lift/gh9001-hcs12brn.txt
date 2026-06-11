@@ -1,0 +1,394 @@
+# kuna golden lift fixture (per-instruction raw p-code from the C++ oracle)
+# corpus: tests/stages/gh9001-hcs12brn.xml
+# sla: Ghidra/Processors/HCS12/data/languages/HCS12X.sla (relative to specs/)
+# cap: 80 instructions per lift point
+# lift-points (space:byte-offset name): RAM:0x0
+# regenerate: python tools/rust-port/gen_lift.py  (see tests/golden/vectors/lift/README.md)
+# golden liftctx (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)
+archid HCS12:BE:24:default:default
+languageid HCS12:BE:24:default
+slafile HCS12X.sla
+endian big
+contextsize 1
+space const index=0 size=8 wordsize=1 bigendian=0
+space OTHER index=1 size=8 wordsize=1 bigendian=0
+space unique index=2 size=4 wordsize=1 bigendian=1
+space RAM index=3 size=3 wordsize=1 bigendian=1
+space register index=4 size=2 wordsize=1 bigendian=1
+space fspec index=5 size=8 wordsize=1 bigendian=0
+space iop index=6 size=8 wordsize=1 bigendian=0
+space join index=7 size=4 wordsize=1 bigendian=1
+space stack index=8 size=2 wordsize=1 bigendian=1
+context Prefix18=0
+context PrefixHCS12X=0
+context UseGPAGE=0
+context XGATE=0
+# golden lift RAM:0x0 80 (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)
+insn RAM:0x0 2
+insn RAM:0x2 2
+insn RAM:0x4 2
+insn RAM:0x6 1
+  COPY (unique,0xc3300,2) (const,0x0,2)
+  INT_ZEXT (unique,0x100,3) (register,0x2a,2)
+  INT_AND (unique,0x200,3) (unique,0x100,3) (const,0xfc00,3)
+  INT_EQUAL (unique,0x400,1) (unique,0x200,3) (const,0x0,3)
+  INT_AND (unique,0x500,3) (unique,0x100,3) (const,0xfc00,3)
+  INT_EQUAL (unique,0x700,1) (unique,0x500,3) (const,0x800,3)
+  INT_AND (unique,0x800,3) (unique,0x100,3) (const,0xfc00,3)
+  INT_EQUAL (unique,0xa00,1) (unique,0x800,3) (const,0xc00,3)
+  INT_AND (unique,0xb00,3) (unique,0x100,3) (const,0xf000,3)
+  INT_EQUAL (unique,0xd00,1) (unique,0xb00,3) (const,0x1000,3)
+  INT_AND (unique,0xe00,3) (unique,0x100,3) (const,0xf000,3)
+  INT_EQUAL (unique,0x1000,1) (unique,0xe00,3) (const,0x2000,3)
+  INT_AND (unique,0x1100,3) (unique,0x100,3) (const,0xf000,3)
+  INT_EQUAL (unique,0x1300,1) (unique,0x1100,3) (const,0x3000,3)
+  INT_AND (unique,0x1400,3) (unique,0x100,3) (const,0xc000,3)
+  INT_EQUAL (unique,0x1600,1) (unique,0x1400,3) (const,0x4000,3)
+  INT_AND (unique,0x1700,3) (unique,0x100,3) (const,0xc000,3)
+  INT_EQUAL (unique,0x1900,1) (unique,0x1700,3) (const,0x8000,3)
+  INT_AND (unique,0x1a00,3) (unique,0x100,3) (const,0xc000,3)
+  INT_EQUAL (unique,0x1c00,1) (unique,0x1a00,3) (const,0xc000,3)
+  INT_ZEXT (unique,0x1d00,3) (unique,0x400,1)
+  INT_MULT (unique,0x1e00,3) (unique,0x1d00,3) (const,0x0,3)
+  INT_ZEXT (unique,0x1f00,3) (unique,0x700,1)
+  INT_ZEXT (unique,0x2000,3) (RAM,0x17,1)
+  INT_LEFT (unique,0x2100,3) (unique,0x2000,3) (const,0xa,4)
+  INT_XOR (unique,0x2200,3) (unique,0x2100,3) (const,0x800,3)
+  INT_OR (unique,0x2300,3) (const,0x100000,3) (unique,0x2200,3)
+  INT_MULT (unique,0x2400,3) (unique,0x1f00,3) (unique,0x2300,3)
+  INT_ADD (unique,0x2500,3) (unique,0x1e00,3) (unique,0x2400,3)
+  INT_ZEXT (unique,0x2600,3) (unique,0xa00,1)
+  INT_LEFT (unique,0x2700,3) (const,0x4ff,3) (const,0xa,4)
+  INT_XOR (unique,0x2800,3) (unique,0x2700,3) (const,0xc00,3)
+  INT_MULT (unique,0x2900,3) (unique,0x2600,3) (unique,0x2800,3)
+  INT_ADD (unique,0x2a00,3) (unique,0x2500,3) (unique,0x2900,3)
+  INT_ZEXT (unique,0x2b00,3) (unique,0xd00,1)
+  INT_ZEXT (unique,0x2c00,3) (RAM,0x16,1)
+  INT_LEFT (unique,0x2d00,3) (unique,0x2c00,3) (const,0xc,4)
+  INT_XOR (unique,0x2e00,3) (unique,0x2d00,3) (const,0x1000,3)
+  INT_MULT (unique,0x2f00,3) (unique,0x2b00,3) (unique,0x2e00,3)
+  INT_ADD (unique,0x3000,3) (unique,0x2a00,3) (unique,0x2f00,3)
+  INT_ZEXT (unique,0x3100,3) (unique,0x1000,1)
+  INT_LEFT (unique,0x3200,3) (const,0xfe,3) (const,0xc,4)
+  INT_XOR (unique,0x3300,3) (unique,0x3200,3) (const,0x2000,3)
+  INT_MULT (unique,0x3400,3) (unique,0x3100,3) (unique,0x3300,3)
+  INT_ADD (unique,0x3500,3) (unique,0x3000,3) (unique,0x3400,3)
+  INT_ZEXT (unique,0x3600,3) (unique,0x1300,1)
+  INT_LEFT (unique,0x3700,3) (const,0xff,3) (const,0xc,4)
+  INT_XOR (unique,0x3800,3) (unique,0x3700,3) (const,0x3000,3)
+  INT_MULT (unique,0x3900,3) (unique,0x3600,3) (unique,0x3800,3)
+  INT_ADD (unique,0x3a00,3) (unique,0x3500,3) (unique,0x3900,3)
+  INT_ZEXT (unique,0x3b00,3) (unique,0x1600,1)
+  INT_XOR (unique,0x3c00,3) (const,0x3f4000,3) (const,0x4000,3)
+  INT_OR (unique,0x3d00,3) (const,0x400000,3) (unique,0x3c00,3)
+  INT_MULT (unique,0x3e00,3) (unique,0x3b00,3) (unique,0x3d00,3)
+  INT_ADD (unique,0x3f00,3) (unique,0x3a00,3) (unique,0x3e00,3)
+  INT_ZEXT (unique,0x4000,3) (unique,0x1900,1)
+  INT_ZEXT (unique,0x4100,3) (RAM,0x30,1)
+  INT_LEFT (unique,0x4200,3) (unique,0x4100,3) (const,0xe,4)
+  INT_XOR (unique,0x4300,3) (unique,0x4200,3) (const,0x8000,3)
+  INT_OR (unique,0x4400,3) (const,0x400000,3) (unique,0x4300,3)
+  INT_MULT (unique,0x4500,3) (unique,0x4000,3) (unique,0x4400,3)
+  INT_ADD (unique,0x4600,3) (unique,0x3f00,3) (unique,0x4500,3)
+  INT_ZEXT (unique,0x4700,3) (unique,0x1c00,1)
+  INT_XOR (unique,0x4800,3) (const,0x3fc000,3) (const,0xc000,3)
+  INT_OR (unique,0x4900,3) (const,0x400000,3) (unique,0x4800,3)
+  INT_MULT (unique,0x4a00,3) (unique,0x4700,3) (unique,0x4900,3)
+  INT_ADD (register,0x32,3) (unique,0x4600,3) (unique,0x4a00,3)
+  CALLOTHER (unique,0x14900,3) (const,0x0,4) (register,0x32,3) (register,0x2a,2)
+  LOAD (unique,0xc3300,2) (const,RAM,8) (unique,0x14900,3)
+  INT_ADD (register,0x2a,2) (register,0x2a,2) (const,0x2,2)
+  RETURN - (unique,0xc3300,2)
+insn RAM:0x7 1
+insn RAM:0x8 1
+insn RAM:0x9 1
+  COPY (unique,0xc3300,2) (const,0x0,2)
+  INT_ZEXT (unique,0x100,3) (register,0x2a,2)
+  INT_AND (unique,0x200,3) (unique,0x100,3) (const,0xfc00,3)
+  INT_EQUAL (unique,0x400,1) (unique,0x200,3) (const,0x0,3)
+  INT_AND (unique,0x500,3) (unique,0x100,3) (const,0xfc00,3)
+  INT_EQUAL (unique,0x700,1) (unique,0x500,3) (const,0x800,3)
+  INT_AND (unique,0x800,3) (unique,0x100,3) (const,0xfc00,3)
+  INT_EQUAL (unique,0xa00,1) (unique,0x800,3) (const,0xc00,3)
+  INT_AND (unique,0xb00,3) (unique,0x100,3) (const,0xf000,3)
+  INT_EQUAL (unique,0xd00,1) (unique,0xb00,3) (const,0x1000,3)
+  INT_AND (unique,0xe00,3) (unique,0x100,3) (const,0xf000,3)
+  INT_EQUAL (unique,0x1000,1) (unique,0xe00,3) (const,0x2000,3)
+  INT_AND (unique,0x1100,3) (unique,0x100,3) (const,0xf000,3)
+  INT_EQUAL (unique,0x1300,1) (unique,0x1100,3) (const,0x3000,3)
+  INT_AND (unique,0x1400,3) (unique,0x100,3) (const,0xc000,3)
+  INT_EQUAL (unique,0x1600,1) (unique,0x1400,3) (const,0x4000,3)
+  INT_AND (unique,0x1700,3) (unique,0x100,3) (const,0xc000,3)
+  INT_EQUAL (unique,0x1900,1) (unique,0x1700,3) (const,0x8000,3)
+  INT_AND (unique,0x1a00,3) (unique,0x100,3) (const,0xc000,3)
+  INT_EQUAL (unique,0x1c00,1) (unique,0x1a00,3) (const,0xc000,3)
+  INT_ZEXT (unique,0x1d00,3) (unique,0x400,1)
+  INT_MULT (unique,0x1e00,3) (unique,0x1d00,3) (const,0x0,3)
+  INT_ZEXT (unique,0x1f00,3) (unique,0x700,1)
+  INT_ZEXT (unique,0x2000,3) (RAM,0x17,1)
+  INT_LEFT (unique,0x2100,3) (unique,0x2000,3) (const,0xa,4)
+  INT_XOR (unique,0x2200,3) (unique,0x2100,3) (const,0x800,3)
+  INT_OR (unique,0x2300,3) (const,0x100000,3) (unique,0x2200,3)
+  INT_MULT (unique,0x2400,3) (unique,0x1f00,3) (unique,0x2300,3)
+  INT_ADD (unique,0x2500,3) (unique,0x1e00,3) (unique,0x2400,3)
+  INT_ZEXT (unique,0x2600,3) (unique,0xa00,1)
+  INT_LEFT (unique,0x2700,3) (const,0x4ff,3) (const,0xa,4)
+  INT_XOR (unique,0x2800,3) (unique,0x2700,3) (const,0xc00,3)
+  INT_MULT (unique,0x2900,3) (unique,0x2600,3) (unique,0x2800,3)
+  INT_ADD (unique,0x2a00,3) (unique,0x2500,3) (unique,0x2900,3)
+  INT_ZEXT (unique,0x2b00,3) (unique,0xd00,1)
+  INT_ZEXT (unique,0x2c00,3) (RAM,0x16,1)
+  INT_LEFT (unique,0x2d00,3) (unique,0x2c00,3) (const,0xc,4)
+  INT_XOR (unique,0x2e00,3) (unique,0x2d00,3) (const,0x1000,3)
+  INT_MULT (unique,0x2f00,3) (unique,0x2b00,3) (unique,0x2e00,3)
+  INT_ADD (unique,0x3000,3) (unique,0x2a00,3) (unique,0x2f00,3)
+  INT_ZEXT (unique,0x3100,3) (unique,0x1000,1)
+  INT_LEFT (unique,0x3200,3) (const,0xfe,3) (const,0xc,4)
+  INT_XOR (unique,0x3300,3) (unique,0x3200,3) (const,0x2000,3)
+  INT_MULT (unique,0x3400,3) (unique,0x3100,3) (unique,0x3300,3)
+  INT_ADD (unique,0x3500,3) (unique,0x3000,3) (unique,0x3400,3)
+  INT_ZEXT (unique,0x3600,3) (unique,0x1300,1)
+  INT_LEFT (unique,0x3700,3) (const,0xff,3) (const,0xc,4)
+  INT_XOR (unique,0x3800,3) (unique,0x3700,3) (const,0x3000,3)
+  INT_MULT (unique,0x3900,3) (unique,0x3600,3) (unique,0x3800,3)
+  INT_ADD (unique,0x3a00,3) (unique,0x3500,3) (unique,0x3900,3)
+  INT_ZEXT (unique,0x3b00,3) (unique,0x1600,1)
+  INT_XOR (unique,0x3c00,3) (const,0x3f4000,3) (const,0x4000,3)
+  INT_OR (unique,0x3d00,3) (const,0x400000,3) (unique,0x3c00,3)
+  INT_MULT (unique,0x3e00,3) (unique,0x3b00,3) (unique,0x3d00,3)
+  INT_ADD (unique,0x3f00,3) (unique,0x3a00,3) (unique,0x3e00,3)
+  INT_ZEXT (unique,0x4000,3) (unique,0x1900,1)
+  INT_ZEXT (unique,0x4100,3) (RAM,0x30,1)
+  INT_LEFT (unique,0x4200,3) (unique,0x4100,3) (const,0xe,4)
+  INT_XOR (unique,0x4300,3) (unique,0x4200,3) (const,0x8000,3)
+  INT_OR (unique,0x4400,3) (const,0x400000,3) (unique,0x4300,3)
+  INT_MULT (unique,0x4500,3) (unique,0x4000,3) (unique,0x4400,3)
+  INT_ADD (unique,0x4600,3) (unique,0x3f00,3) (unique,0x4500,3)
+  INT_ZEXT (unique,0x4700,3) (unique,0x1c00,1)
+  INT_XOR (unique,0x4800,3) (const,0x3fc000,3) (const,0xc000,3)
+  INT_OR (unique,0x4900,3) (const,0x400000,3) (unique,0x4800,3)
+  INT_MULT (unique,0x4a00,3) (unique,0x4700,3) (unique,0x4900,3)
+  INT_ADD (register,0x32,3) (unique,0x4600,3) (unique,0x4a00,3)
+  CALLOTHER (unique,0x14900,3) (const,0x0,4) (register,0x32,3) (register,0x2a,2)
+  LOAD (unique,0xc3300,2) (const,RAM,8) (unique,0x14900,3)
+  INT_ADD (register,0x2a,2) (register,0x2a,2) (const,0x2,2)
+  RETURN - (unique,0xc3300,2)
+insn RAM:0xa 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0xb,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0xb 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0xc,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0xc 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0xd,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0xd 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0xe,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0xe 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0xf,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0xf 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x10,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x10 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x11,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x11 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x12,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x12 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x13,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x13 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x14,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x14 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x15,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x15 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x16,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x16 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x17,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x17 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x18,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x18 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x19,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x19 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x1a,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x1a 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x1b,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x1b 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x1c,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x1c 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x1d,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x1d 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x1e,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x1e 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x1f,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x1f 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x20,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x20 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x21,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x21 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x22,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x22 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x23,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x23 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x24,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x24 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x25,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x25 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x26,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x26 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x27,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x27 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x28,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x28 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x29,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x29 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x2a,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x2a 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x2b,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x2b 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x2c,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x2c 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x2d,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x2d 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x2e,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x2e 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x2f,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x2f 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x30,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x30 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x31,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x31 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x32,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x32 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x33,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x33 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x34,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x34 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x35,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x35 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x36,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x36 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x37,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x37 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x38,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x38 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x39,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x39 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x3a,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x3a 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x3b,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x3b 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x3c,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x3c 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x3d,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x3d 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x3e,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x3e 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x3f,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x3f 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x40,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x40 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x41,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x41 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x42,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x42 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x43,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x43 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x44,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x44 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x45,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x45 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x46,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x46 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x47,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x47 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x48,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x48 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x49,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x49 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x4a,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x4a 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x4b,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x4b 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x4c,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x4c 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x4d,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x4d 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x4e,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x4e 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x4f,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x4f 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x50,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x50 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x51,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x51 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x52,3)
+  BRANCHIND - (register,0x23,3)
+insn RAM:0x52 1
+  CALLOTHER (register,0x23,3) (const,0x14,4) (const,0x53,3)
+  BRANCHIND - (register,0x23,3)

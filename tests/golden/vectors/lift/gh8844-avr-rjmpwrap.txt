@@ -1,0 +1,111 @@
+# kuna golden lift fixture (per-instruction raw p-code from the C++ oracle)
+# corpus: tests/stages/gh8844-avr-rjmpwrap.xml
+# sla: Ghidra/Processors/Atmel/data/languages/avr8.sla (relative to specs/)
+# cap: 80 instructions per lift point
+# lift-points (space:byte-offset name): code:0x0=FUN_0
+# regenerate: python tools/rust-port/gen_lift.py  (see tests/golden/vectors/lift/README.md)
+# golden liftctx (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)
+archid avr8:LE:16:default:default
+languageid avr8:LE:16:default
+slafile avr8.sla
+endian little
+contextsize 1
+space const index=0 size=8 wordsize=1 bigendian=0
+space OTHER index=1 size=8 wordsize=1 bigendian=0
+space unique index=2 size=4 wordsize=1 bigendian=0
+space code index=3 size=2 wordsize=2 bigendian=0
+space register index=4 size=2 wordsize=1 bigendian=0
+space mem index=5 size=2 wordsize=1 bigendian=0
+space codebyte index=6 size=2 wordsize=1 bigendian=0
+space fspec index=7 size=8 wordsize=1 bigendian=0
+space iop index=8 size=8 wordsize=1 bigendian=0
+space join index=9 size=4 wordsize=1 bigendian=0
+space stack index=10 size=2 wordsize=1 bigendian=0
+context phase=0
+context useSkipCond=0
+# golden lift code:0x0 80 (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)
+insn code:0x0 2
+  BRANCH - (code,0x102e,2)
+insn code:0x2 2
+  INT_ADD (register,0x3d,2) (register,0x3d,2) (const,0x1,2)
+  LOAD (register,0x42,2) (const,mem,8) (register,0x3d,2)
+  INT_ADD (register,0x3d,2) (register,0x3d,2) (const,0x1,2)
+  RETURN - (register,0x42,2)
+insn code:0x4 2
+insn code:0x6 2
+insn code:0x8 2
+insn code:0xa 2
+insn code:0xc 2
+insn code:0xe 2
+insn code:0x10 2
+insn code:0x12 2
+insn code:0x14 2
+insn code:0x16 2
+insn code:0x18 2
+insn code:0x1a 2
+insn code:0x1c 2
+insn code:0x1e 2
+insn code:0x20 2
+insn code:0x22 2
+insn code:0x24 2
+insn code:0x26 2
+insn code:0x28 2
+insn code:0x2a 2
+insn code:0x2c 2
+insn code:0x2e 2
+insn code:0x30 2
+insn code:0x32 2
+insn code:0x34 2
+insn code:0x36 2
+insn code:0x38 2
+insn code:0x3a 2
+insn code:0x3c 2
+insn code:0x3e 2
+insn code:0x40 2
+insn code:0x42 2
+insn code:0x44 2
+insn code:0x46 2
+insn code:0x48 2
+insn code:0x4a 2
+insn code:0x4c 2
+insn code:0x4e 2
+insn code:0x50 2
+insn code:0x52 2
+insn code:0x54 2
+insn code:0x56 2
+insn code:0x58 2
+insn code:0x5a 2
+insn code:0x5c 2
+insn code:0x5e 2
+insn code:0x60 2
+insn code:0x62 2
+insn code:0x64 2
+insn code:0x66 2
+insn code:0x68 2
+insn code:0x6a 2
+insn code:0x6c 2
+insn code:0x6e 2
+insn code:0x70 2
+insn code:0x72 2
+insn code:0x74 2
+insn code:0x76 2
+insn code:0x78 2
+insn code:0x7a 2
+insn code:0x7c 2
+insn code:0x7e 2
+insn code:0x80 2
+insn code:0x82 2
+insn code:0x84 2
+insn code:0x86 2
+insn code:0x88 2
+insn code:0x8a 2
+insn code:0x8c 2
+insn code:0x8e 2
+insn code:0x90 2
+insn code:0x92 2
+insn code:0x94 2
+insn code:0x96 2
+insn code:0x98 2
+insn code:0x9a 2
+insn code:0x9c 2
+insn code:0x9e 2
