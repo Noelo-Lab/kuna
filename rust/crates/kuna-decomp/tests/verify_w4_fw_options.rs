@@ -277,3 +277,173 @@ fn dispatch_unknown_id_is_parse_error_and_stable() {
     assert_eq!(e2.explain(), e1.explain());
     assert!(matches!(e1, KunaError::Parse { .. }));
 }
+
+// ---------------------------------------------------------------------------
+// ROUND 2 — F1-fix boundary regression guards (these MUST PASS: they prove the
+// new target-width saturation is faithful at the exact i32::MIN / unsigned
+// negate-modulo / >u64 edges, verified against a C++11 `istringstream >> T`
+// oracle).
+// ---------------------------------------------------------------------------
+
+/// The exact negative `int4` boundary.  C++ oracle: `"-2147483648">>int =
+/// -2147483648 fail=0` (parses exactly, NO failbit), `"-2147483649">>int =
+/// -2147483648 fail=1` (saturates to INT_MIN).  `maxinstruction` rejects both
+/// (`newMax < 0`), so we observe the value through `extrapop` instead (sentinel
+/// -300; neither boundary equals it).
+#[test]
+fn extrapop_int_min_boundary_exact_then_saturates() {
+    // |i32::MIN| parses exactly -> stored value is i32::MIN, not the sentinel.
+    let mut g = Ctx::default();
+    OptionExtraPop
+        .apply(&mut g, "-2147483648", "", "")
+        .expect("-2147483648 is exactly representable, must parse");
+    assert_eq!(
+        g.default_extra_pop,
+        int4::MIN,
+        "C++ stores INT_MIN for `-2147483648`; port stored {}",
+        g.default_extra_pop
+    );
+    // one past the boundary saturates to INT_MIN (failbit) — still not -300.
+    let mut g2 = Ctx::default();
+    OptionExtraPop
+        .apply(&mut g2, "-2147483649", "", "")
+        .expect("-2147483649 saturates to INT_MIN (not the -300 sentinel)");
+    assert_eq!(
+        g2.default_extra_pop,
+        int4::MIN,
+        "C++ saturates `-2147483649` to INT_MIN; port stored {}",
+        g2.default_extra_pop
+    );
+}
+
+/// Unsigned negate-modulo quirk at the in-range boundary.  C++ oracle:
+/// `"-4294967295">>unsigned = 1 fail=0` (in-range magnitude negated mod 2^32,
+/// NO failbit) but `"-0x100000000">>unsigned = 4294967295 fail=1` (magnitude
+/// overflows u32 before the negate, saturates).  `jumptablemax` accepts both
+/// (non-zero).
+#[test]
+fn jumptablemax_unsigned_negate_modulo_vs_overflow() {
+    // -4294967295: magnitude 4294967295 is in range, negate mod 2^32 == 1.
+    let mut g = Ctx::default();
+    OptionJumpTableMax
+        .apply(&mut g, "-4294967295", "", "")
+        .expect("magnitude in range -> negate-modulo == 1, accepted");
+    assert_eq!(
+        g.max_jumptable_size, 1,
+        "C++ `-4294967295`>>unsigned == 1; port stored {}",
+        g.max_jumptable_size
+    );
+    // -0x100000000: magnitude 2^32 overflows u32 -> saturates to UINT_MAX.
+    let mut g2 = Ctx::default();
+    OptionJumpTableMax
+        .apply(&mut g2, "-0x100000000", "", "")
+        .expect("magnitude overflow -> UINT_MAX, non-zero, accepted");
+    assert_eq!(
+        g2.max_jumptable_size,
+        uint4::MAX,
+        "C++ `-0x100000000`>>unsigned saturates to UINT_MAX; port stored {}",
+        g2.max_jumptable_size
+    );
+}
+
+/// A magnitude above u64 (the original F1 saturate path) still works after the
+/// width-saturation rework.  C++ oracle: `"99999999999999999999">>int =
+/// 2147483647 fail=1` (INT_MAX) and `>>unsigned = 4294967295`.
+#[test]
+fn above_u64_still_saturates_after_rework() {
+    let mut g = Ctx::default();
+    OptionMaxInstruction
+        .apply(&mut g, "99999999999999999999", "", "")
+        .expect("u64-overflow magnitude saturates to INT_MAX (>=0), accepted");
+    assert_eq!(g.max_instructions, int4::MAX);
+
+    let mut g2 = Ctx::default();
+    OptionJumpTableMax
+        .apply(&mut g2, "99999999999999999999", "", "")
+        .expect("u64-overflow magnitude saturates to UINT_MAX (!=0), accepted");
+    assert_eq!(g2.max_jumptable_size, uint4::MAX);
+}
+
+// ---------------------------------------------------------------------------
+// ROUND 2 — F3 (NEW): C++11 `num_get` stores 0 (NOT the sentinel) on a failed
+// extraction whose input is non-empty but has no leading digit (`"abc"`).  The
+// port's `parse_int_auto` returns `None` for such input, so the caller falls
+// back to the sentinel and the option ERRORS where C++ ACCEPTS with value 0.
+//
+// C++ oracle (g++ and clang++, -std=c++11):
+//   int    val=-1;   iss("abc") >> val;   => val = 0   fail=1   (overwrites -1)
+//   int    expop=-300; iss("abc") >> ...; => expop = 0 fail=1   (overwrites -300)
+//   int    val=-1;   iss("")    >> val;   => val = -1  fail=1   (empty: unchanged)
+//   unsigned val=0;  iss("abc") >> val;   => val = 0   fail=1
+// So `maxlinewidth "abc"` / `maxinstruction "abc"` / `extrapop "abc"` all
+// ACCEPT in C++ (value 0, which is >=0 / not the -300 sentinel), but the port
+// returns Err.  These tests document the divergence (currently FAILING).
+// ---------------------------------------------------------------------------
+
+/// `maxlinewidth "abc"`: C++ stores 0 (`val==-1` false) and ACCEPTS; the port
+/// returns `Err("Must specify integer linewidth")`.
+#[test]
+fn maxlinewidth_nonnumeric_input_accepts_as_zero_like_cpp() {
+    let mut g = Ctx { is_c_language: true, ..Default::default() };
+    let res = OptionMaxLineWidth.apply(&mut g, "abc", "", "");
+    assert!(
+        res.is_ok(),
+        "C++ `maxlinewidth abc` stores 0 (num_get failbit-with-zero) and accepts; \
+         port returned {res:?}"
+    );
+    assert!(
+        g.log.iter().any(|s| *s == "max_line=0"),
+        "C++ hands 0 to setMaxLineSize on non-numeric input; port log={:?}",
+        g.log
+    );
+}
+
+/// `maxinstruction "abc"`: C++ stores 0 (`newMax<0` false) and ACCEPTS; the port
+/// returns `Err("Bad maxinstruction parameter")`.
+#[test]
+fn maxinstruction_nonnumeric_input_accepts_as_zero_like_cpp() {
+    let mut g = Ctx::default();
+    let res = OptionMaxInstruction.apply(&mut g, "notanum", "", "");
+    assert!(
+        res.is_ok(),
+        "C++ `maxinstruction notanum` stores 0 (>=0) and accepts; port returned {res:?}"
+    );
+    assert_eq!(
+        g.max_instructions, 0,
+        "C++ stores 0 on non-numeric input; port stored {}",
+        g.max_instructions
+    );
+}
+
+/// `extrapop "abc"`: C++ stores 0 (`expop==-300` false) and ACCEPTS; the port
+/// returns `Err("Bad extrapop adjustment parameter")`.
+#[test]
+fn extrapop_nonnumeric_input_accepts_as_zero_like_cpp() {
+    let mut g = Ctx::default();
+    let res = OptionExtraPop.apply(&mut g, "abc", "", "");
+    assert!(
+        res.is_ok(),
+        "C++ `extrapop abc` stores 0 (not the -300 sentinel) and accepts; \
+         port returned {res:?}"
+    );
+    assert_eq!(
+        g.default_extra_pop, 0,
+        "C++ stores 0 on non-numeric input; port stored {}",
+        g.default_extra_pop
+    );
+}
+
+/// Control: a truly EMPTY string `""` DOES leave the sentinel unchanged in C++11
+/// (no characters extracted), so `maxlinewidth ""` errors in BOTH — this is the
+/// case the port's model is correct for, and isolates F3 to the non-empty case.
+#[test]
+fn maxlinewidth_empty_input_errors_in_both() {
+    let mut g = Ctx { is_c_language: true, ..Default::default() };
+    let res = OptionMaxLineWidth.apply(&mut g, "", "", "");
+    assert!(
+        res.is_err(),
+        "C++ `maxlinewidth \"\"` leaves val==-1 (empty extraction) and errors; \
+         port must also error"
+    );
+    assert_eq!(res.unwrap_err().explain(), "Must specify integer linewidth");
+}
