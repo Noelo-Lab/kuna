@@ -368,3 +368,141 @@ fn w4_p0_database_find_closest_fit_negative_diff_loses() {
         "non-negative size diff must beat a negative one"
     );
 }
+
+// ===========================================================================
+// Round-2 verifier additions (independent re-derivation).
+//
+// These target spots the round-2 re-derivation flagged as still-fragile after
+// round 1's overflow fix:
+//   - makeNameUnique's lower_bound boundary: a `<nm>_xNNNNN` (5-digit) form is
+//     parsed as the x-branch, so the next id rolls forward from it, NOT from a
+//     fresh _00 (exercises the `do {} while` digCount==5 arm and the +1 bump);
+//   - removeSymbol category-tail trimming followed by a re-add: the category
+//     slot index must be recomputed (the C++ `pop_back` of trailing nulls
+//     means the next FAKE_INPUT/EQUATE-category symbol reuses the freed index);
+//   - query_properties' finalscope arm: when no SymbolEntry contains the range
+//     but the (global) scope owns it, the returned flags must be
+//     mapped|addrtied|persist | get_property(addr) — not the symbol-entry flags.
+// ===========================================================================
+
+// makeNameUnique: an existing 5-digit x-form (`dat_6000_x00100`) is recognized
+// by the digCount==5 arm; the produced id is x-form value + 1 = 101, which is
+// still >= 100 so it renders as the 5-digit x-form `dat_6000_x00101`.
+#[test]
+fn w4_p0_database_make_name_unique_continues_xform() {
+    let m = build_manager();
+    let ram = space(&m, 2);
+    let (mut db, g) = db_with_global(m.num_spaces());
+    let arch = AngrArch { num_spaces: m.num_spaces() };
+
+    let addr = Address::new(Rc::clone(&ram), 0x6000);
+    let basebare = kuna_global_data_name(&addr); // dat_6000
+
+    // Seed the base name plus a single x-form entry at 100.
+    db.add_symbol(g, &basebare, dt(4)).unwrap();
+    db.add_symbol(g, &format!("{basebare}_x00100"), dt(4)).unwrap();
+
+    let mut index: int4 = 0;
+    let nm = db
+        .build_variable_name(
+            g,
+            &addr,
+            &Address::new_invalid(),
+            Some(&Datatype::new(4, type_metatype::TYPE_UNKNOWN)),
+            &mut index,
+            varnode_flags::persist,
+            &arch,
+        )
+        .unwrap();
+    // The largest matching name is the x-form 100; +1 -> 101 -> still x-form.
+    assert_eq!(
+        nm, "dat_6000_x00101",
+        "an existing 5-digit x-form must roll forward (digCount==5 arm)"
+    );
+}
+
+// removeSymbol trims trailing nulls from the category tail; a subsequent
+// category-1 (EQUATE) add must reuse the freed index (C++ catindex = list.size()
+// after pop_back).  Drives the addSymbolInternal `catindex = list.size()` path
+// for category > 0 through the public equate factory + removal.
+#[test]
+fn w4_p0_database_category_index_reused_after_tail_removal() {
+    let (mut db, g) = db_with_global(4);
+    let inv = Address::new_invalid();
+    // Three EQUATE-category symbols get catindex 0,1,2 (category 1 > 0, so the
+    // index is auto-assigned to the current list length).
+    let e0 = db
+        .add_equate_symbol(g, "e0", 0, 10, &inv, 0, dt(1))
+        .unwrap();
+    let e1 = db
+        .add_equate_symbol(g, "e1", 0, 11, &inv, 0, dt(1))
+        .unwrap();
+    let e2 = db
+        .add_equate_symbol(g, "e2", 0, 12, &inv, 0, dt(1))
+        .unwrap();
+    assert_eq!(db.symbol(e0).get_category_index(), 0);
+    assert_eq!(db.symbol(e1).get_category_index(), 1);
+    assert_eq!(db.symbol(e2).get_category_index(), 2);
+
+    // Remove the tail (e2): the category list pops its trailing slot back to
+    // length 2.  A new equate must then take catindex 2 again.
+    db.remove_symbol(e2);
+    let e3 = db
+        .add_equate_symbol(g, "e3", 0, 13, &inv, 0, dt(1))
+        .unwrap();
+    assert_eq!(
+        db.symbol(e3).get_category_index(),
+        2,
+        "after tail removal the freed category index must be reused"
+    );
+
+    // Removing a MIDDLE entry leaves a hole (not popped): the next add grows
+    // the list to index 3, it does NOT backfill the hole at index 1.
+    db.remove_symbol(e1); // hole at index 1, tail (e3) still at 2
+    let e4 = db
+        .add_equate_symbol(g, "e4", 0, 14, &inv, 0, dt(1))
+        .unwrap();
+    assert_eq!(
+        db.symbol(e4).get_category_index(),
+        3,
+        "a middle hole is not backfilled; new index is the current length"
+    );
+}
+
+// query_properties finalscope arm: a range owned by the (global) scope's
+// rangetree but covered by NO SymbolEntry returns the synthesized owner flags
+// mapped|addrtied|persist, OR'd with the address property bits — NOT zero and
+// NOT any symbol's flags.
+#[test]
+fn w4_p0_database_query_properties_finalscope_flags() {
+    let m = build_manager();
+    let ram = space(&m, 2);
+    let (mut db, g) = db_with_global(m.num_spaces());
+
+    // Give the global scope ownership of [0x8000, 0x80ff] and mark part of it
+    // read-only, but place NO symbol there.
+    db.add_range(g, Rc::clone(&ram), 0x8000, 0x80ff);
+    let a1 = Address::new(Rc::clone(&ram), 0x8000);
+    let a2 = Address::new(Rc::clone(&ram), 0x8010); // one-past-end of the ro run
+    db.set_property_range(varnode_flags::readonly, &a1, &a2);
+
+    let query = Address::new(Rc::clone(&ram), 0x8004);
+    let (res, flags) = db.query_properties(g, &query, 4, &Address::new_invalid());
+    assert!(res.is_none(), "no SymbolEntry should contain the range");
+    // global owner => mapped|addrtied|persist, plus the readonly property bit.
+    let expected = varnode_flags::mapped
+        | varnode_flags::addrtied
+        | varnode_flags::persist
+        | varnode_flags::readonly;
+    assert_eq!(
+        flags, expected,
+        "finalscope flags must be the synthesized global-owner set | property bits"
+    );
+
+    // Outside the scope's owned range and with no property: flags are just the
+    // (zero) property bits, since there is no finalscope and no entry.
+    let outside = Address::new(Rc::clone(&ram), 0x9000);
+    let (res2, flags2) = db.query_properties(g, &outside, 4, &Address::new_invalid());
+    assert!(res2.is_none());
+    assert_eq!(flags2, 0, "unowned, unpropertied range yields zero flags");
+}
