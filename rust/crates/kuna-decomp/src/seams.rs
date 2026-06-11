@@ -10,7 +10,11 @@
 //! the wave that fills it.  These let `varnode.rs` transcribe the member layout
 //! and link structure faithfully without pulling in the unported subsystems.
 
-use kuna_base::types::uint4;
+use std::rc::Rc;
+
+use kuna_base::address::Address;
+use kuna_base::space::AddrSpaceManager;
+use kuna_base::types::{int4, uint4};
 use kuna_num::opcodes::OpCode;
 use slotmap::new_key_type;
 
@@ -99,3 +103,89 @@ impl TypeOp {
         &self.name
     }
 }
+
+/// Global configuration data for the program being decompiled (C++
+/// `Architecture`, owned by `Funcdata` as `glb`).
+///
+/// SEAM(W4): the full `decompiler/cpp/architecture.{hh,cc}` `Architecture` is a
+/// large W4 subsystem (the address-space manager, the `TypeFactory`, the symbol
+/// table, the loader, prototype models, user-op table, the action database,
+/// p-code injection).  This skeleton carries only the slice the W3 `Funcdata`
+/// boot and its `funcdata_block`/`funcdata_op`/`funcdata_varnode` siblings reach
+/// at the IR-construction boundary:
+///
+///   - the [`AddrSpaceManager`] (`glb` *is-a* `AddrSpaceManager` in C++): the
+///     constant / unique / iop / fspec spaces and `getConstant`, needed by the
+///     varnode-creation factories (`newConstant`, `newUnique`, `newVarnodeIop`,
+///     `newVarnodeSpace`, `newCodeRef`) and by `VarnodeBank::new`;
+///   - `getMinimumLanedRegisterSize` (`minLanedSize` is initialized from it in
+///     the `Funcdata` constructor and reset in `clear`).
+///
+/// The `TypeFactory` (`glb->types`, W6 / [`crate::dtype`]), the symbol table /
+/// `ScopeLocal` (W4 / [`Scope`]), the loader, the prototype models, the user-op
+/// table, and the `ActionDatabase` (`glb->allacts`, used by `stageJumpTable`)
+/// are **not** part of this skeleton; the W3 callers that need them are either
+/// seam-noted with an explicit `Err`/`None` or take the value as an argument.
+pub struct Architecture {
+    /// The address-space manager (`Architecture` derives from
+    /// `AddrSpaceManager` in C++).  // SEAM(W4)
+    pub manage: AddrSpaceManager,
+    /// Minimum Varnode size to check as a laned register (C++
+    /// `Architecture::getMinimumLanedRegisterSize`).  // SEAM(W4)
+    pub min_laned_register_size: int4,
+}
+
+impl Architecture {
+    /// Construct the skeleton from an [`AddrSpaceManager`] (SEAM(W4)).
+    pub fn new(manage: AddrSpaceManager) -> Architecture {
+        // C++ default: getMinimumLanedRegisterSize() returns the configured
+        // minimum; the upstream default when unset is 4.
+        Architecture { manage, min_laned_register_size: 4 }
+    }
+
+    /// Borrow the address-space manager (C++ `glb` viewed as an
+    /// `AddrSpaceManager`).  // SEAM(W4)
+    pub fn manage(&self) -> &AddrSpaceManager {
+        &self.manage
+    }
+
+    /// Get the minimum laned-register size (C++
+    /// `Architecture::getMinimumLanedRegisterSize`).  // SEAM(W4)
+    pub fn get_minimum_laned_register_size(&self) -> int4 {
+        self.min_laned_register_size
+    }
+
+    /// Create a constant Varnode storage address in the constant space
+    /// (C++ `AddrSpaceManager::getConstant`).  // SEAM(W4)
+    pub fn get_constant(&self, val: u64) -> Address {
+        self.manage.get_constant(val)
+    }
+}
+
+/// The local-variable scope of a function (C++ `ScopeLocal`, `Funcdata::localmap`).
+///
+/// SEAM(W4): the symbol scope machinery (`decompiler/cpp/database.{hh,cc}`,
+/// `varmap.{hh,cc}`) is a W4 subsystem.  `Funcdata` holds an `Option<Scope>`
+/// where the C++ holds a `ScopeLocal *`; the W3 IR data-model never reads symbol
+/// state, so the placeholder is empty.  The varnode-property look-ups
+/// (`localmap->queryProperties`) that `setVarnodeProperties`/`newVarnode*` make
+/// resolve to "no entry, no extra flags" until W4 fills this in.
+#[derive(Debug, Clone, Default)]
+pub struct Scope;
+
+/// The recovered prototype of a function (C++ `FuncProto`, `Funcdata::funcp`).
+///
+/// SEAM(W4): the prototype model subsystem (`decompiler/cpp/fspec.{hh,cc}`) is
+/// W4.  `Funcdata` holds a `FuncProto` placeholder so the struct layout and the
+/// `getFuncProto` accessor exist; the W3 IR construction never queries the
+/// prototype.
+#[derive(Debug, Clone, Default)]
+pub struct FuncProto;
+
+/// Shared handle to the [`Architecture`] (C++ `Funcdata::glb`, a borrowed
+/// `Architecture *`).
+///
+/// SEAM(W4): the C++ `glb` is a non-owning back-pointer to the long-lived
+/// `Architecture`.  Modeled as `Rc<Architecture>` so multiple `Funcdata`
+/// snapshots (ADR 0007) can share it; the W3 code only reads through it.
+pub type ArchHandle = Rc<Architecture>;
