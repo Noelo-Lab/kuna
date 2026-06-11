@@ -81,7 +81,7 @@ fn assert_double_encoding(f: f64) {
     assert_eq!(true_encoding, encoding);
 }
 
-//// FloatFormat tests
+// FloatFormat tests (C++ `////` section divider; clippy four_forward_slashes)
 
 /// `std::numeric_limits<float>::denorm_min()`: smallest positive subnormal,
 /// 2^-149.
