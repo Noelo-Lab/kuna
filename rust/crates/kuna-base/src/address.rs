@@ -30,11 +30,14 @@
 //!   `PartialEq` transcribe that comparator; they are tree-equivalence, not
 //!   structural equality (C++ defines no `operator==` at all).
 //!
-//! Deferred to later waves (loss-listed): `Address::decode` inlines the
-//! (space,offset,size) scan of `VarnodeData::decode` (pcoderaw is a kuna-num
-//! item); the register-name (`ATTRIB_NAME`) branches of the decode methods
-//! and `Address::renormalize`'s join handling need `Translate`/`JoinRecord`
-//! and return `Err(KunaError::Lowlevel)` "not yet ported" markers.
+//! `Address::decode` inlines the (space,offset,size) scan of
+//! `VarnodeData::decode` (pcoderaw is a kuna-num item).  The register-name
+//! (`ATTRIB_NAME`) branches of the decode methods consult the
+//! [`RegisterLookup`](crate::space::RegisterLookup) installed on the
+//! `AddrSpaceManager` (erroring until the sleigh/architecture bootstrap — or
+//! a test stub — installs one), and `Address::renormalize` routes its join
+//! handling through an explicit `&AddrSpaceManager` parameter (the C++
+//! `getManager()` back-pointer).
 
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
@@ -360,12 +363,12 @@ impl Address {
     ///
     /// If \b this is (originally) a \e join address, reevaluate it in terms
     /// of its new \e offset and \e size, changing the space and offset if
-    /// necessary.
-    pub fn renormalize(&mut self, _size: i32) -> KunaResult<()> {
+    /// necessary.  The `manage` parameter replaces the C++
+    /// `base->getManager()` back-pointer.
+    /// \param size is the new size in bytes of the underlying object
+    pub fn renormalize(&mut self, size: i32, manage: &AddrSpaceManager) -> KunaResult<()> {
         if self.space().get_type() == spacetype::IPTR_JOIN {
-            return Err(KunaError::lowlevel(
-                "kuna rust port: renormalizeJoinAddress requires JoinRecord support (translate wave)",
-            ));
+            manage.renormalize_join_address(self, size)?;
         }
         Ok(())
     }
@@ -463,9 +466,20 @@ fn decode_varnode_attributes(
             space = Some(spc);
             break;
         } else if attrib_id == ATTRIB_NAME {
-            return Err(KunaError::lowlevel(
-                "kuna rust port: register-name address decode requires Translate (sleigh wave)",
-            ));
+            // C++: trans = decoder.getAddrSpaceManager()->getDefaultCodeSpace()
+            //              ->getTrans();
+            //      *this = trans->getRegister(decoder.readString());
+            let lookup = decoder
+                .get_addr_space_manager()
+                .register_lookup()
+                .cloned()
+                .ok_or_else(crate::space::no_register_lookup_err)?;
+            let point =
+                lookup.get_register(&String::from_utf8_lossy(&decoder.read_string()?))?;
+            space = point.space.clone();
+            offset = point.offset;
+            size = point.size;
+            break;
         }
     }
     decoder.close_element(elem_id)?;
@@ -708,10 +722,21 @@ impl Range {
         manage: &AddrSpaceManager,
     ) -> KunaResult<Range> {
         if properties.is_register {
-            // Requires Translate::getRegister
-            return Err(KunaError::lowlevel(
-                "kuna rust port: register-name Range requires Translate (sleigh wave)",
-            ));
+            // C++: trans = manage->getDefaultCodeSpace()->getTrans();
+            //      point = trans->getRegister(properties.spaceName);
+            let lookup = manage
+                .register_lookup()
+                .cloned()
+                .ok_or_else(crate::space::no_register_lookup_err)?;
+            let point = lookup.get_register(&properties.space_name)?;
+            let spc = point
+                .space
+                .clone()
+                .expect("register Range with a null space pointer (C++ UB downstream)");
+            let first = point.offset;
+            // last = (first-1) + point.size: uintb wraparound arithmetic
+            let last = first.wsub(1).wadd(u64::from(point.size));
+            return Ok(Range { spc, first, last });
         }
         let spc = match manage.get_space_by_name(&properties.space_name) {
             Some(spc) => Rc::clone(spc),
@@ -848,10 +873,25 @@ impl Range {
                 last = decoder.read_unsigned_integer()?;
                 seen_last = true;
             } else if attrib_id == ATTRIB_NAME {
-                // Requires Translate::getRegister
-                return Err(KunaError::lowlevel(
-                    "kuna rust port: register-name range decode requires Translate (sleigh wave)",
-                ));
+                // C++: trans = decoder.getAddrSpaceManager()
+                //              ->getDefaultCodeSpace()->getTrans();
+                //      point = trans->getRegister(decoder.readString());
+                let lookup = decoder
+                    .get_addr_space_manager()
+                    .register_lookup()
+                    .cloned()
+                    .ok_or_else(crate::space::no_register_lookup_err)?;
+                let point =
+                    lookup.get_register(&String::from_utf8_lossy(&decoder.read_string()?))?;
+                let spc = point
+                    .space
+                    .clone()
+                    .expect("register Range with a null space pointer (C++ UB downstream)");
+                let first = point.offset;
+                // last = (first-1) + point.size: uintb wraparound arithmetic
+                let last = first.wsub(1).wadd(u64::from(point.size));
+                // There should be no (space,first,last) attributes
+                return Ok(Range { spc, first, last });
             }
         }
         let spc = match spc {
