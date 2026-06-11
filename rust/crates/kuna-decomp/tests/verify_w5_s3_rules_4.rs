@@ -38,7 +38,7 @@ use kuna_decomp::action::{ActionGroupList, Rule};
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::ruleaction_4::{
-    RuleLoadVarnode, RuleShiftAnd, RuleStoreVarnode, RuleSubExtComm,
+    RuleHumptyOr, RuleLoadVarnode, RuleShiftAnd, RuleStoreVarnode, RuleSubExtComm, RuleSubZext,
 };
 use kuna_decomp::seams::{Architecture, BlockId, OpId, TypeOp, VarnodeId};
 use kuna_decomp::varnode::DefOpInfo;
@@ -251,4 +251,143 @@ fn subextcomm_sub_misses_ext_bits_to_copy() {
     // out-size(2) + subcut(0) <= invn-size(2) -> bypass; invn-size==out-size -> COPY.
     assert_eq!(fd.obank().get(subop).unwrap().code(), OpCode::CPUI_COPY);
     assert_eq!(fd.obank().get(subop).unwrap().get_in(0), Some(v));
+}
+
+// ===========================================================================
+// ROUND 2 — independent re-verification of the F1 repair, second fix site,
+// plus an adversarial slot-swap probe round 1 never touched.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// R2-A (F1 second site): RuleSubZext INT_RIGHT branch shifts a `uintb` mask by a
+// data-derived right-shift constant — `val >>= sa` at ruleaction.cc:5107, ported
+// at ruleaction_4.rs:1494.  Round 1's three shift-overflow tests only covered
+// RuleShiftAnd (ruleaction_4.rs:1212-1216); this is the *distinct* F1 fix site.
+// Pattern: `zext( sub(V,0) >> 64 )`.  On the x86 target C++ masks the count to
+// `64 & 63 == 0`, so `val = calc_mask(midsize)` is unchanged and the rule fires
+// (returns 1), folding the SUBPIECE+RIGHT+ZEXT into a shifted INT_AND with the
+// full truncated mask.  Under a bare `val >> 64u32` the debug build panics.
+#[test]
+fn subzext_right_shift_64_matches_cpp_no_panic() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    // base size 8 == zext out size; sub(base,0) size 4 (midsize, mask 0xffffffff).
+    let basevn = mk_vn(&mut fd, 8, 0x10);
+    let off0 = fd.new_constant(4, 0);
+    let subop = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_SUBPIECE);
+    fd.op_set_input(subop, basevn, 0).unwrap();
+    fd.op_set_input(subop, off0, 1).unwrap();
+    fd.op_insert(subop, bl, None);
+    let subout = mk_out(&mut fd, 4, subop);
+    // (subout) >> 64  -- the legal-but-oversized p-code shift count.
+    let d = fd.new_constant(4, 64);
+    let shop = mk_op(&mut fd, 2, 0x28, OpCode::CPUI_INT_RIGHT);
+    fd.op_set_input(shop, subout, 0).unwrap();
+    fd.op_set_input(shop, d, 1).unwrap();
+    fd.op_insert(shop, bl, None);
+    let shout = mk_out(&mut fd, 4, shop);
+    // zext(shout) out size 8 == base size.
+    let zop = mk_op(&mut fd, 1, 0x30, OpCode::CPUI_INT_ZEXT);
+    fd.op_set_input(zop, shout, 0).unwrap();
+    fd.op_insert(zop, bl, None);
+    let _zout = mk_out(&mut fd, 8, zop);
+
+    // C++ oracle: returns 1; op becomes INT_AND; the shift operand of the inner
+    // INT_RIGHT becomes sa = (64 & 63) + 0*8 == 64; the AND mask is the unshifted
+    // calc_mask(midsize=4) == 0xffffffff (since `64 & 63 == 0` masks nothing).
+    let res = RuleSubZext::new().apply_op(zop, &mut fd);
+    assert_eq!(res, 1, "x86-masked >>64 must fold (port must use wrapping shift, not panic)");
+    assert_eq!(fd.obank().get(zop).unwrap().code(), OpCode::CPUI_INT_AND);
+    let maskc = fd.obank().get(zop).unwrap().get_in(1).unwrap();
+    assert_eq!(
+        fd.vbank().get(maskc).unwrap().get_offset(),
+        0xffff_ffff,
+        "val >>= (64&63=0) leaves the full truncated mask"
+    );
+    // The inner shift's count was rewritten to the combined amount sa = 64.
+    let new_sa = fd.obank().get(shop).unwrap().get_in(1).unwrap();
+    assert_eq!(fd.vbank().get(new_sa).unwrap().get_offset(), 64);
+}
+
+// ---------------------------------------------------------------------------
+// R2-B (F1 third route): RuleShiftAnd reached via INT_MULT, whose multiplier is a
+// power of two so `leastsigbit_set` yields a *large* shift amount (40), which then
+// feeds `nzm <<= sa` / `mask <<= sa` (the INT_LEFT treatment) at
+// ruleaction_4.rs:1215-1216.  Round 1 drove INT_LEFT directly with sa==64; the
+// MULT path (sa from leastsigbit_set, sa < 64 but non-trivial) is its own
+// arithmetic provenance.  invn size 8 (fullmask MAX, nz==MAX); mask 0xffff,
+// multiplier 1<<40.  C++: `nzm <<= 40` (MAX<<40), `mask <<= 40` (0xffff<<40),
+// `nzm &= MAX`, `mask &= MAX`; `(mask & nzm) == mask == nzm`? nzm = MAX<<40 has
+// the top 24 bits set; mask = 0xffff<<40 = bits[40..56].  `(mask & nzm) == mask`
+// but nzm != mask, so `(mask & nzm) != nzm` -> returns 0 (AND NOT bypassed).
+#[test]
+fn shiftand_mult_power_of_two_large_sa_no_panic() {
+    let mut fd = build_fd();
+    let shop = build_shift_and(&mut fd, OpCode::CPUI_INT_MULT, 8, 0xffff, 1u64 << 40);
+    // C++ oracle: leastsigbit_set(1<<40)=40, testval==offset ok -> treat as LEFT.
+    // nzm(MAX)<<40 has bits[40..64]; mask(0xffff)<<40 has bits[40..56].
+    // (mask & nzm) == mask != nzm -> declines.  Must not panic on `<< 40`.
+    let res = RuleShiftAnd::new().apply_op(shop, &mut fd);
+    assert_eq!(res, 0, "MULT->LEFT with sa=40: (mask&nzm)!=nzm declines, no panic");
+}
+
+// A companion guard on the same MULT route: a non-power-of-two multiplier must be
+// rejected by the `testval != cvn->getOffset()` check (ruleaction.cc:4957-4959),
+// proving the MULT branch's leastsigbit/testval gate is transcribed, not skipped.
+#[test]
+fn shiftand_mult_non_power_of_two_rejected() {
+    let mut fd = build_fd();
+    // multiplier 0b110 = 6 -> leastsigbit_set==1, testval(1<<1==2) != 6 -> return 0.
+    let shop = build_shift_and(&mut fd, OpCode::CPUI_INT_MULT, 8, 0xffff, 6);
+    assert_eq!(RuleShiftAnd::new().apply_op(shop, &mut fd), 0);
+}
+
+// ---------------------------------------------------------------------------
+// R2-C (slot-swap hunt): RuleHumptyOr's `b == c` reassignment arm
+// (ruleaction.cc:5376-5380 -> ruleaction_4.rs:1923-1927) is the one branch that
+// *rewrites three of the four slots* (`b=a; a=c; c=d`).  A transposed assignment
+// here would compute `totalbits` from the wrong pair and emit a wrong mask while
+// still "succeeding".  Build `(W & V) | (V & X)` so the shared operand V sits in
+// slot 1 of and1 (==`b`) and slot 0 of and2 (==`c`): the `b == c` arm.  After the
+// swap a==V, b==W, c==X; totalbits = offset(W)|offset(X).  Choose W=0xff00,
+// X=0x00ff over a size-2 V -> totalbits 0xffff == calc_mask(2) -> COPY of V.
+// If the swap were transposed (e.g. produced a==W or c==b) the result varnode or
+// the all-bits test would differ.
+#[test]
+fn humptyor_b_eq_c_swap_picks_shared_operand() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let v = mk_vn(&mut fd, 2, 0x10); // the shared operand (a after swap)
+    let wconst = fd.new_constant(2, 0xff00); // and1 slot 0 == `a` pre-swap
+    let xconst = fd.new_constant(2, 0x00ff); // and2 slot 1 == `d` pre-swap
+    // and1 = (W & V): slot0=W(const), slot1=V  -> pre-swap a=W, b=V
+    let and1 = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_INT_AND);
+    fd.op_set_input(and1, wconst, 0).unwrap();
+    fd.op_set_input(and1, v, 1).unwrap();
+    fd.op_insert(and1, bl, None);
+    let and1out = mk_out(&mut fd, 2, and1);
+    // and2 = (V & X): slot0=V, slot1=X  -> pre-swap c=V, d=X.  b==c is V==V.
+    let and2 = mk_op(&mut fd, 2, 0x28, OpCode::CPUI_INT_AND);
+    fd.op_set_input(and2, v, 0).unwrap();
+    fd.op_set_input(and2, xconst, 1).unwrap();
+    fd.op_insert(and2, bl, None);
+    let and2out = mk_out(&mut fd, 2, and2);
+
+    let orop = mk_op(&mut fd, 2, 0x30, OpCode::CPUI_INT_OR);
+    fd.op_set_input(orop, and1out, 0).unwrap();
+    fd.op_set_input(orop, and2out, 1).unwrap();
+    fd.op_insert(orop, bl, None);
+    let _orout = mk_out(&mut fd, 2, orop);
+
+    // C++ oracle: a!=c, a!=d, b==c -> swap to a=V,b=W(0xff00),c=X(0x00ff).
+    // totalbits = 0xff00 | 0x00ff = 0xffff == calc_mask(size 2) -> COPY of V.
+    let res = RuleHumptyOr::new().apply_op(orop, &mut fd);
+    assert_eq!(res, 1);
+    assert_eq!(fd.obank().get(orop).unwrap().code(), OpCode::CPUI_COPY);
+    assert_eq!(fd.obank().get(orop).unwrap().num_input(), 1);
+    assert_eq!(
+        fd.obank().get(orop).unwrap().get_in(0),
+        Some(v),
+        "the b==c swap must leave the *shared* operand V as the COPY source"
+    );
 }
