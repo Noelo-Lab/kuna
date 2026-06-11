@@ -36,7 +36,7 @@
 //! Every seam is also recorded in this item's `losses` output.
 
 use kuna_base::address::{calc_mask, mostsigbit_set, popcount, signbit_negative};
-use kuna_base::types::{int4, uintb};
+use kuna_base::types::{int4, uintb, Wrap};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
@@ -343,9 +343,11 @@ impl Rule for RuleDivChain {
         } else {
             // Unsigned case with INT_RIGHT: int4 sa = constVn1->getOffset(); val1 = 1 << sa;
             let sa = vn_offset(data, const_vn1) as int4;
-            let mut v: uintb = 1;
-            v <<= sa;
-            v
+            // C++ `val1 <<= sa` on a uintb (u64) with x86 shift-count masking
+            // (count & 63). ADR-0003 mandates `wshl` here: `wrapping_shl` masks
+            // the count modulo 64, matching the C++ build's behavior so a
+            // degenerate `>> 64` yields `1 << (64 & 63) = 1` rather than panicking.
+            (1u64).wshl(sa as u32)
         };
         // Varnode *baseVn = divOp->getIn(0);
         let base_vn = op_in(data, div_op, 0).expect("divchain: divOp in0");
@@ -689,7 +691,11 @@ impl Rule for RuleSignNearMult {
         // uintb mask = calc_mask(shiftvn->getSize());
         let mut mask = calc_mask(vn_size(data, shiftvn));
         // mask = (mask<<n)&mask;
-        mask = (mask << n) & mask;
+        // C++ `mask << n` on a uintb with x86 shift-count masking (count & 63);
+        // for a >8-byte shiftvn `n` can exceed 63, so per ADR-0003 use `wshl`
+        // (`wrapping_shl` masks the count modulo 64) to wrap rather than panic.
+        // `n > 0` is guaranteed by the two `if n <= 0 { return 0 }` guards above.
+        mask = mask.wshl(n as u32) & mask;
         // if (mask != op->getIn(1)->getOffset()) return 0;
         if mask != vn_offset(data, in1) {
             return 0;
@@ -718,8 +724,9 @@ impl Rule for RuleSignNearMult {
         }
 
         // uintb pow = 1 << n;
-        let mut pow: uintb = 1;
-        pow <<= n;
+        // Same x86 shift-count masking as `mask` above; ADR-0003 `wshl` so a
+        // >8-byte shiftvn (`n` > 63) wraps instead of panicking. `n > 0` holds.
+        let pow: uintb = (1u64).wshl(n as u32);
         // PcodeOp *newdiv = data.newOp(2,op->getAddr());
         let addr = data.obank().get(op).expect("signnearmult: op").get_addr().clone();
         let newdiv = data.new_op(2, addr);
@@ -938,8 +945,12 @@ impl Rule for RuleSignMod2nOpt {
         // int4 n = a->getSize() * 8 - shiftAmt;
         let n = vn_size(data, a) * 8 - shift_amt;
         // uintb mask = (1 << n) - 1;
-        let mut mask: uintb = 1;
-        mask = (mask << n) - 1;
+        // C++ `mask << n` on a uintb with x86 shift-count masking (count & 63).
+        // With an 8-byte sign-extracted `a` and root shiftAmt == 0, n == 64, so
+        // C++ computes `1 << (64 & 63) = 1`, then `1 - 1 = 0`. ADR-0003 mandates
+        // `wshl` so this wraps to 1 (rather than panicking); the `- 1` then never
+        // underflows since the masked shift of `1` is always >= 1.
+        let mask: uintb = (1u64).wshl(n as u32) - 1;
         for multop in vn_descend(data, correct_vn) {
             if op_code(data, multop) != OpCode::CPUI_INT_MULT {
                 continue;

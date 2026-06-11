@@ -172,18 +172,18 @@ fn w5s3_divchain_right_small_shift_is_faithful() {
 }
 
 #[test]
-#[should_panic(expected = "shift")]
-fn w5s3_divchain_right_shift64_panics_but_cpp_wraps() {
-    // CONFIRMED DIVERGENCE (F1): C++ `val1 <<= 64` wraps (x86: => 1) and the rule
-    // continues (resval = 1*c2, bitcount small -> would FIRE collapsing to x/c2);
-    // the Rust port panics on the raw `1u64 << 64` before any guard.
-    //
-    // The `#[should_panic(expected = "shift")]` matches the debug overflow panic
-    // message ("attempt to shift left with overflow") and documents the bug.
+fn w5s3_divchain_right_shift64_wraps_like_cpp() {
+    // REPAIRED (F1): C++ `val1 <<= 64` wraps under x86 shift-count masking
+    // (`1 << (64 & 63) = 1`) and the rule continues: resval = 1*c2 = 3 (nonzero),
+    // bitcount = msb(1)+msb(3)+2 = 0+1+2 = 3 <= 64 -> FIRES, collapsing
+    // `(x >> 64) / 3` to `x / 3`. The port now uses `wshl`, so it matches the C++
+    // oracle (fire + collapse) instead of panicking on the raw `1u64 << 64`.
     let mut fd = build_fd();
     let root = build_divchain_right(&mut fd, 64, 3);
     let mut rule = RuleDivChain::new();
-    let _ = rule.apply_op(root, &mut fd); // panics here in Rust; C++ returns 1
+    assert_eq!(rule.apply_op(root, &mut fd), 1, "shift-64 divchain fires (wrapped val1=1)");
+    assert_eq!(op_of(&fd, root), OpCode::CPUI_INT_DIV, "root stays INT_DIV");
+    assert_eq!(in_off(&fd, root, 1), 3, "collapsed constant = (1<<64 wrapped to 1)*3 = 3");
 }
 
 // ===========================================================================
@@ -236,15 +236,15 @@ fn w5s3_signmod2nopt_in_range_is_faithful() {
 }
 
 #[test]
-#[should_panic(expected = "shift")]
-fn w5s3_signmod2nopt_shiftamt0_panics_but_cpp_returns_zero() {
-    // CONFIRMED DIVERGENCE (F2): with n == 64 the C++ computes mask via a wrapped
-    // shift and returns 0 (no match downstream); the Rust port panics on the raw
-    // `mask << 64`.
+fn w5s3_signmod2nopt_shiftamt0_returns_zero_like_cpp() {
+    // REPAIRED (F2): with n == 64 the C++ computes mask via a wrapped shift
+    // (`1 << (64 & 63) = 1`, then `mask = 1 - 1 = 0`) and returns 0 (no INT_MULT
+    // descends from the root output). The port now uses `wshl`, so it returns 0
+    // matching the C++ oracle instead of panicking on the raw `mask << 64`.
     let mut fd = build_fd();
     let root = build_signmod2nopt_shiftamt0(&mut fd);
     let mut rule = RuleSignMod2nOpt::new();
-    let _ = rule.apply_op(root, &mut fd); // panics in Rust; C++ returns 0
+    assert_eq!(rule.apply_op(root, &mut fd), 0, "n==64 wraps mask to 0 -> no fire");
 }
 
 // ===========================================================================
