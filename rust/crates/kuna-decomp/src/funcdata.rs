@@ -541,26 +541,50 @@ impl Funcdata {
     /// surface they use, declared here so they need no seam edit.
     pub fn replace_reads_thunk(obank: &mut PcodeOpBank) -> impl FnMut(&mut VarnodeBank, VarnodeId, VarnodeId) -> KunaResult<()> + '_ {
         move |bank: &mut VarnodeBank, oldvn: VarnodeId, newvn: VarnodeId| -> KunaResult<()> {
-            // for each op reading oldvn: repoint its slot to newvn, splice it
-            // onto newvn's descend list.  Iterate a snapshot since we mutate.
+            // Faithful transcription of `VarnodeBank::replace` (varnode.cc:1351).
+            // C++ walks oldvn's descend list (one entry per op-read of oldvn) and,
+            // for each non-skipped entry, severs *that one* link, repoints the
+            // single slot getSlot finds, and adds the op to newvn's descend:
+            //
+            //   while(iter!=oldvn->descend.end()) {
+            //     op = *iter; tmpiter = iter++;
+            //     if (op->output == newvn) continue;   // self-def: not an input
+            //     i = op->getSlot(oldvn);
+            //     oldvn->descend.erase(tmpiter);
+            //     op->clearInput(i); newvn->addDescend(op); op->setInput(newvn,i);
+            //   }
+            //
+            // Iterate a snapshot in descend (push_back) order since we mutate the
+            // list; mirror the `iter++` cursor by erasing exactly the visited link
+            // (not a blanket destroy) so the self-def skip leaves oldvn's link to
+            // that op intact, just as C++ does.
             let readers: Vec<OpId> = bank
                 .get(oldvn)
                 .map(|vn| vn.descend_iter().collect())
                 .unwrap_or_default();
             for op in readers {
-                // Repoint every slot of `op` that holds oldvn.
-                let ninput = obank.get(op).map(|o| o.num_input()).unwrap_or(0);
-                for slot in 0..ninput {
-                    if obank.get(op).and_then(|o| o.get_in(slot)) == Some(oldvn) {
-                        if let Some(o) = obank.get_mut(op) {
-                            o.set_input(Some(newvn), slot);
-                        }
-                        bank.add_descend(newvn, op)?;
-                    }
+                // `if (op->output == newvn) continue;` — an op cannot be an input
+                // to its own definition; leave its slot reading oldvn and leave
+                // oldvn's descend link to it untouched.
+                if obank.get(op).and_then(|o| o.get_out()) == Some(newvn) {
+                    continue;
+                }
+                // `i = op->getSlot(oldvn);` — the first slot reading oldvn; this
+                // descend entry corresponds to exactly that read.  (-1 only if a
+                // prior entry for the same op already consumed the read, leaving
+                // none — then there is no slot to repoint and no link to sever.)
+                let i = obank.get(op).map(|o| o.get_slot(oldvn)).unwrap_or(-1);
+                if i < 0 {
+                    continue;
+                }
+                // `oldvn->descend.erase(tmpiter);` — sever just this one link.
+                bank.erase_descend(oldvn, op);
+                // `op->clearInput(i); newvn->addDescend(op); op->setInput(newvn,i);`
+                bank.add_descend(newvn, op)?;
+                if let Some(o) = obank.get_mut(op) {
+                    o.set_input(Some(newvn), i);
                 }
             }
-            // oldvn no longer has descendants (it is about to be deleted).
-            bank.destroy_descend(oldvn);
             Ok(())
         }
     }

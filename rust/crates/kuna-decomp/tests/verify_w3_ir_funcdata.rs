@@ -5,8 +5,9 @@
 //!   - `replace_reads_thunk` vs the C++ `VarnodeBank::replace` (`varnode.cc:1351`)
 //!     — the read-repointing the varnode wave delegated here.  The C++ has an
 //!     `if (op->output == newvn) continue;` skip (an op cannot become an input
-//!     to its own definition).  The Rust thunk omits it.  `thunk_repoints_self_def_*`
-//!     traces this divergence directly against the C++ oracle.
+//!     to its own definition).  The repaired thunk reproduces it; the
+//!     `thunk_repoints_self_def_*` tests pin that the self-def slot stays on
+//!     oldvn and that an ordinary reader still repoints, against the C++ oracle.
 //!   - `BlockBasic::insert` SeqNum order assignment (`block.cc:2262`): the
 //!     midpoint computation, the `~0` overflow clamp when appending at the end,
 //!     and the `ordafter-ordbefore<=1` fallback to a full `setOrder()`.
@@ -124,18 +125,28 @@ fn thunk_repoints_self_def_input_cpp_skips_it() {
     }
 
     let in0 = obank.get(op).unwrap().get_in(0);
-    // C++ oracle: the skip leaves input[0] == oldvn (op never reads its own
-    // output).  The thunk repointed it to newvn -> op now reads its own output.
-    // This assertion documents the DIVERGENCE: it holds for the current Rust,
-    // and is the inverse of the C++ behavior.
+    // C++ oracle: `if (op->output == newvn) continue;` (varnode.cc:1362) skips
+    // this op, leaving input[0] == oldvn — an op never becomes an input to its
+    // own definition.  The repaired thunk now restores that skip.
     assert_eq!(
         in0,
-        Some(newvn),
-        "thunk repointed the self-definition input (C++ replace would have skipped it)"
+        Some(oldvn),
+        "self-definition input must stay reading oldvn (C++ replace skips op->output==newvn)"
     );
-    // And the C++-correct state would be `Some(oldvn)`; assert they differ so a
-    // future fix that restores the skip will flip this test (signal, not noise).
-    assert_ne!(in0, Some(oldvn), "if this fires, the C++ skip was restored — update the verdict");
+    assert_ne!(in0, Some(newvn), "self-def slot must NOT be repointed to newvn (would self-reference)");
+    // C++ leaves the skipped op's descend link on oldvn intact (the erase only
+    // runs for repointed entries); the blanket destroy is gone.
+    assert_eq!(
+        bank.get(oldvn).unwrap().descend_iter().filter(|&o| o == op).count(),
+        1,
+        "skipped self-def op keeps its descend link on oldvn"
+    );
+    // newvn gained no descend entry for the skipped op.
+    assert_eq!(
+        bank.get(newvn).unwrap().descend_iter().filter(|&o| o == op).count(),
+        0,
+        "self-def op is not added to newvn's descend"
+    );
 }
 
 // ---------------------------------------------------------------------------
