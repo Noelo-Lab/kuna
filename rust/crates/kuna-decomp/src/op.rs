@@ -1146,7 +1146,9 @@ pub fn get_nz_mask_local(
                     } else if sa >= 8 * usize_uintb {
                         // Full mask shifted over 8*sizeof(uintb)
                         resmask = calc_mask(sz1 - usize_uintb);
-                        resmask >>= sa - 8 * usize_uintb;
+                        // C++ `resmask >>= (sa-8*sizeof(uintb))` relies on x86
+                        // shift-count masking; sa can exceed 64 for >16-byte inputs.
+                        resmask = resmask.wshr((sa - 8 * usize_uintb) as u32);
                     } else {
                         // Fill in one bits from part of mask not originally calculated
                         let mut tmp: uintb = 0;
@@ -1169,7 +1171,9 @@ pub fn get_nz_mask_local(
                     resmask = pcode_right(resmask, sa); // Same as CPUI_INT_RIGHT
                 } else {
                     resmask = pcode_right(resmask, sa);
-                    resmask |= (fullmask >> sa) ^ fullmask; // Don't know new high bits
+                    // C++ `(fullmask >> sa)` relies on x86 shift-count masking;
+                    // a constant-folded sa can be >= 64 for a <=8-byte input.
+                    resmask |= fullmask.wshr(sa as u32) ^ fullmask; // Don't know new high bits
                 }
                 resmask
             }
