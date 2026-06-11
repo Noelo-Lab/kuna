@@ -1,0 +1,1629 @@
+# stages.toml -- the kuna stage registry (ADR 0006): the SINGLE SOURCE OF TRUTH
+# for the four static tables transcribed from decompiler/cpp/kuna_stages.cc
+# (groupTable, substageTable, surfaceTable, settableTable). build.rs reads this
+# file and generates the static tables, the typed OptionValues struct, and the
+# live-value match. Editing a row here is the one edit point; the codegen makes
+# any drift a build failure. DO NOT hand-edit the generated Rust.
+#
+# Counts (asserted in tests): group=39, substage=40, surface=90, settable=22.
+
+# ---------------------------------------------------------------------------
+# groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
+# ---------------------------------------------------------------------------
+[[group]]
+group = "base"
+stage = "infra"
+substage = ""
+note = "setup/teardown (ActionStart/Stop/Constbase) + core passes shared by every variant"
+
+[[group]]
+group = "protorecovery"
+stage = "S4"
+substage = "prototype-source"
+note = "ActionActiveParam/ActionReturnRecovery/ActionFuncLink trial recovery"
+
+[[group]]
+group = "protorecovery_a"
+stage = "S4"
+substage = "prototype-source"
+note = "ActionDirectWrite (propagation on)"
+
+[[group]]
+group = "protorecovery_b"
+stage = "S4"
+substage = "prototype-source"
+note = "ActionDirectWrite (propagation off)"
+
+[[group]]
+group = "noproto"
+stage = "S4"
+substage = "prototype-source"
+note = "jumptable-variant stand-in (ActionFuncLinkOutOnly)"
+
+[[group]]
+group = "siganalysis"
+stage = "S4"
+substage = ""
+note = "paramid/signature variant analysis"
+
+[[group]]
+group = "normalanalysis"
+stage = "infra"
+substage = ""
+note = "normalize-variant setup (ActionNormalizeSetup)"
+
+[[group]]
+group = "deindirect"
+stage = "S4"
+substage = "prototype-source"
+note = "indirect call -> direct (proto change may restart: edge 5)"
+
+[[group]]
+group = "localrecovery"
+stage = "S6"
+substage = "stack-frame-layout"
+note = "RestrictLocal/RestructureVarnode/MappedLocalSync/OutputPrototype"
+
+[[group]]
+group = "deadcode"
+stage = "S5"
+substage = ""
+note = "STRADDLER (s15): consume-bit fact propagation; destroys S2 ops; gated by S3 dead-definition gate (edge 3)"
+
+[[group]]
+group = "typerecovery"
+stage = "S5"
+substage = "type-propagation"
+note = "ActionInferTypes/ActionConstantPtr/oppool2 Ptr rules"
+
+[[group]]
+group = "stackptrflow"
+stage = "S6"
+substage = "stack-frame-layout"
+note = "ActionStackPtrFlow"
+
+[[group]]
+group = "blockrecovery"
+stage = "S7"
+substage = ""
+note = "STRADDLER (s15): BlockStructure/StructureTransform/FinalStructure span S7/S8; ForceGoto consumes the S7 force-goto assertion"
+
+[[group]]
+group = "stackvars"
+stage = "S6"
+substage = "stack-frame-layout"
+note = "Load/StoreVarnode rules (stack var promotion)"
+
+[[group]]
+group = "deadcontrolflow"
+stage = "S2"
+substage = "reachability-pruning"
+note = "ActionRedundBranch/ActionDoNothing (CFG edge removal)"
+
+[[group]]
+group = "switchnorm"
+stage = "S2"
+substage = "switch-model"
+note = "ActionSwitchNorm (jump-table phase-2 normalization)"
+
+[[group]]
+group = "cleanup"
+stage = "infra"
+substage = ""
+note = "cleanup pool: deferred after fullloop as termination policy (stage-model s14); rules act on S3's artifact"
+
+[[group]]
+group = "splitcopy"
+stage = "S5"
+substage = "aggregate-union"
+note = "RuleSplitCopy (splitdatatype option)"
+
+[[group]]
+group = "splitpointer"
+stage = "S5"
+substage = "aggregate-union"
+note = "RuleSplitLoad/Store via pointer (splitdatatype option)"
+
+[[group]]
+group = "merge"
+stage = "S6"
+substage = "merge-aggressiveness"
+note = "merge phalanx (HighVariable formation) + MarkExplicit/Implied + NameVars"
+
+[[group]]
+group = "dynamic"
+stage = "S6"
+substage = "alias-facets"
+note = "ActionDynamicMapping/ActionDynamicSymbols (DynamicHash symbols)"
+
+[[group]]
+group = "casts"
+stage = "S9"
+substage = "cast-policy"
+note = "ActionSetCasts"
+
+[[group]]
+group = "analysis"
+stage = "S3"
+substage = "simplification-quiescence"
+note = "the main simplification rule pool (oppool1) + MultiCse/ShadowVar/ConditionalConst"
+
+[[group]]
+group = "canonicalcompare"
+stage = "S3"
+substage = "comparison-canonicalization"
+note = "(kuna) GH-558: RuleIntLessEqual split out of analysis"
+
+[[group]]
+group = "presentcompare"
+stage = "S9"
+substage = "comparison-canonicalization"
+note = "(kuna) GH-558: ActionPresentCompareForm at the S8->S9 boundary"
+
+[[group]]
+group = "fixateglobals"
+stage = "S1"
+substage = "code-data-partition"
+note = "ActionMapGlobals: the C++ side's late write-back into the global/data map"
+
+[[group]]
+group = "fixateproto"
+stage = "S4"
+substage = "prototype-source"
+note = "ActionInputPrototype (commit recovered signature -> P0)"
+
+[[group]]
+group = "constsequence"
+stage = "S5"
+substage = ""
+note = "RuleStringCopy/RuleStringStore (builtin memcpy/strncpy recognition)"
+
+[[group]]
+group = "bitfields"
+stage = "S5"
+substage = "aggregate-union"
+note = "RuleBitfield*"
+
+[[group]]
+group = "segment"
+stage = "S2"
+substage = ""
+note = "RuleSegment/ActionSegmentize (segmented address spaces)"
+
+[[group]]
+group = "returnsplit"
+stage = "S4"
+substage = ""
+note = "ActionReturnSplit"
+
+[[group]]
+group = "nodejoin"
+stage = "S3"
+substage = ""
+note = "ActionNodeJoin (phi/def-web node joining)"
+
+[[group]]
+group = "doubleload"
+stage = "S5"
+substage = ""
+note = "double-precision load pairing"
+
+[[group]]
+group = "doubleprecis"
+stage = "S5"
+substage = ""
+note = "double-precision arithmetic recovery"
+
+[[group]]
+group = "unreachable"
+stage = "S2"
+substage = "reachability-pruning"
+note = "ActionDeterminedBranch/ActionUnreachable (edge 6: S5 facts remove CFG edges)"
+
+[[group]]
+group = "subvar"
+stage = "S3"
+substage = ""
+note = "subvariable-flow transforms"
+
+[[group]]
+group = "floatprecision"
+stage = "S5"
+substage = ""
+note = "float precision normalization"
+
+[[group]]
+group = "conditionalexe"
+stage = "S3"
+substage = ""
+note = "ActionConditionalExe/RuleOrPredicate"
+
+[[group]]
+group = "normalizebranches"
+stage = "S8"
+substage = ""
+note = "ActionNormalizeBranches (branch normalization for structuring)"
+
+# ---------------------------------------------------------------------------
+# substageTable: every named decision point (40 rows).
+# ---------------------------------------------------------------------------
+[[substage]]
+name = "assertion-admission"
+stage = "P0"
+decision = "is an incoming fact ground truth or a bias; does it clear caches or only reflow"
+assertion = "per-fact lock / cache policy"
+strength = "HARD"
+rewind = "P0"
+latent = true
+exposure = "LATENT: confidence-graded admission (roadmap 16.6); kuna kassert records hard|hint"
+
+[[substage]]
+name = "pipeline-variant"
+stage = "P0"
+decision = "which named pipeline/preset runs; restart budget"
+assertion = "configuration assertion"
+strength = "HARD"
+rewind = "S1"
+latent = false
+exposure = "option setaction; command pipeline (kuna)"
+
+[[substage]]
+name = "environment-binding"
+stage = "S1"
+decision = "loader, architecture, platform/ABI, load address"
+assertion = "environment assertion"
+strength = "HARD"
+rewind = "S1"
+latent = false
+exposure = "option setlanguage; .ldefs/.cspec selection at SleighArchitecture build"
+
+[[substage]]
+name = "code-data-partition"
+stage = "S1"
+decision = "which gaps are code; which data cells are code pointers; segment permissions"
+assertion = "segment/global annotation"
+strength = "HARD"
+rewind = "S1"
+latent = false
+exposure = "command global add/remove/spaces; command readonly; option readonly"
+
+[[substage]]
+name = "decode-context"
+stage = "S2"
+decision = "which decoder context (THUMB, addr16/32, ...) applies at each address"
+assertion = "context-set at address"
+strength = "HARD"
+rewind = "S2"
+latent = false
+exposure = "command set context; option allowcontextset"
+
+[[substage]]
+name = "decode-error-policy"
+stage = "S2"
+decision = "unimplemented/bad-data/out-of-bounds/too-many-instructions: truncate vs throw vs ignore"
+assertion = "flow option flags"
+strength = "HARD"
+rewind = "S2"
+latent = false
+exposure = "options ignoreunimplemented/errorunimplemented/errorreinterpreted/errortoomanyinstructions/maxinstruction"
+
+[[substage]]
+name = "flow-classification"
+stage = "S2"
+decision = "call-vs-branch (PIC, thunk, tail call); noreturn kills fall-through"
+assertion = "flow override"
+strength = "HARD"
+rewind = "S2"
+latent = false
+exposure = "command override flow; option noreturn"
+
+[[substage]]
+name = "inline-inject"
+stage = "S2"
+decision = "clone callee body vs splice fixup p-code vs keep call"
+assertion = "inline/inject directive"
+strength = "HARD"
+rewind = "S2"
+latent = false
+exposure = "option inline; command fixup call / fixup callother"
+
+[[substage]]
+name = "switch-model"
+stage = "S2"
+decision = "which model explains a BRANCHIND (Basic/Basic2/Trivial/Assisted/Override); table bounds; case count"
+assertion = "explicit jump table"
+strength = "HARD"
+rewind = "S2"
+latent = false
+exposure = "command override jumptable; Override::insertMultistageJump; options jumptablemax/jumpload"
+
+[[substage]]
+name = "reachability-pruning"
+stage = "S2"
+decision = "remove or keep unreachable blocks"
+assertion = "unreachable policy"
+strength = "HINT"
+rewind = "S2"
+latent = true
+exposure = "LATENT at user level (removeUnreachableBlocks flag-gated in flow)"
+
+[[substage]]
+name = "heritage-staging"
+stage = "S3"
+decision = "per-space order and delay of SSA construction (stack delayed to collect varnodes first)"
+assertion = "per-space delay"
+strength = "HARD"
+rewind = "S3"
+latent = true
+exposure = "LATENT at user level (HeritageInfo.delay from arch spec)"
+
+[[substage]]
+name = "dead-definition-gate"
+stage = "S3"
+decision = "when dead-code removal is allowed per space (pass > deadcodedelay); premature removal -> restart"
+assertion = "deadcode-delay"
+strength = "HARD"
+rewind = "S3"
+latent = false
+exposure = "command deadcode delay (Override::insertDeadcodeDelay; auto-bumped, survives restart - edge 3)"
+
+[[substage]]
+name = "phi-range-granularity"
+stage = "S3"
+decision = "split a memory range at gaps before placing phis (hardcoded size>4 && max<size)"
+assertion = "(none today)"
+strength = "NONE"
+rewind = "S3"
+latent = true
+exposure = "LATENT everywhere (matters for struct-heavy frames)"
+
+[[substage]]
+name = "simplification-quiescence"
+stage = "S3"
+decision = "which algebraic/peephole rules fire; when the local fixed point is declared"
+assertion = "per-rule enable/disable"
+strength = "HARD"
+rewind = "S3"
+latent = false
+exposure = "option togglerule; arch extra_pool_rules injection slot"
+
+[[substage]]
+name = "comparison-canonicalization"
+stage = "S3"
+decision = "canonicalize V <= c into V < c+1 for analysis (3 sites via replaceLessequal)"
+assertion = "compareform canonical|original"
+strength = "HARD"
+rewind = "S3"
+latent = false
+exposure = "(kuna GH-558) option compareform; groups canonicalcompare/presentcompare"
+
+[[substage]]
+name = "prototype-source"
+stage = "S4"
+decision = "locked/declared signature vs trial recovery"
+assertion = "locked prototype"
+strength = "HARD"
+rewind = "S4"
+latent = false
+exposure = "commands prototype lock / override prototype / parse line; map param/return"
+
+[[substage]]
+name = "trial-budget"
+stage = "S4"
+decision = "how many passes before param/return trials freeze (numpasses >= maxpass)"
+assertion = "pass budget"
+strength = "HINT"
+rewind = "S4"
+latent = true
+exposure = "LATENT as a user assertion (maxpass per prototype model)"
+
+[[substage]]
+name = "abi-trust"
+stage = "S4"
+decision = "trust platform ABI for trashed/preserved vs infer from dataflow"
+assertion = "ABI-trust flag"
+strength = "HINT"
+rewind = "S4"
+latent = false
+exposure = "options defaultprototype/protoeval"
+
+[[substage]]
+name = "extrapop"
+stage = "S4"
+decision = "stack adjustment across calls when underdetermined (StackSolver)"
+assertion = "extrapop override"
+strength = "HARD"
+rewind = "S4"
+latent = false
+exposure = "option extrapop"
+
+[[substage]]
+name = "interproc-regime"
+stage = "S4"
+decision = "per-function-with-restart vs bottom-up SCC summaries vs on-demand whole-program"
+assertion = "regime selection"
+strength = "NONE"
+rewind = "S4"
+latent = true
+exposure = "LATENT in all three decompilers (each regime hardcoded)"
+
+[[substage]]
+name = "range-facts"
+stage = "S5"
+decision = "widening strategy and iteration cutoffs; feeds S2 jump-table bounds and determined branches"
+assertion = "range assertion"
+strength = "HARD"
+rewind = "S5"
+latent = true
+exposure = "LATENT everywhere (only indirect: option jumptablemax caps case count)"
+
+[[substage]]
+name = "const-pointer"
+stage = "S5"
+decision = "is this constant an address? (space attribute > usage inference)"
+assertion = "pointer/equate annotation"
+strength = "HARD"
+rewind = "S5"
+latent = false
+exposure = "option inferconstptr; commands map address / global add"
+
+[[substage]]
+name = "type-propagation"
+stage = "S5"
+decision = "per-opcode flow direction; lattice solve; type locks are HARD stops"
+assertion = "type lock | type hint"
+strength = "HARD"
+rewind = "S5"
+latent = false
+exposure = "commands retype / type varnode (typelock); Ghidra-actual rewind: whole function"
+
+[[substage]]
+name = "aggregate-union"
+stage = "S5"
+decision = "when to synthesize struct/array; which union field wins (ScoreUnionFields weights)"
+assertion = "union facet | must-struct"
+strength = "HARD"
+rewind = "S5"
+latent = false
+exposure = "command map unionfacet (DynamicHash); option splitdatatype; scoring weights LATENT"
+
+[[substage]]
+name = "solver-budget"
+stage = "S5"
+decision = "type-propagation pass cap (7, compile-time)"
+assertion = "solver budget"
+strength = "HINT"
+rewind = "S5"
+latent = true
+exposure = "LATENT (compile-time constant)"
+
+[[substage]]
+name = "merge-aggressiveness"
+stage = "S6"
+decision = "forced (phi/address-tied) vs speculative (cover/type) vs adjacent merges"
+assertion = "isolate"
+strength = "HARD"
+rewind = "S6"
+latent = false
+exposure = "command isolate (Symbol::setIsolated blocks speculative merge)"
+
+[[substage]]
+name = "stack-frame-layout"
+stage = "S6"
+decision = "overlapping RangeHint conflict policy: typelock > rangeType > type specificity"
+assertion = "stack symbol + type lock"
+strength = "HARD"
+rewind = "S6"
+latent = false
+exposure = "command map address + retype (locked stack symbols)"
+
+[[substage]]
+name = "alias-facets"
+stage = "S6"
+decision = "which stack offsets a pointer may alias; binding symbols to temporaries by dataflow hash"
+assertion = "dynamic-hash symbol"
+strength = "HARD"
+rewind = "S6"
+latent = false
+exposure = "command map hash; option aliasblock (boundary policy itself LATENT)"
+
+[[substage]]
+name = "explicit-implied"
+stage = "S6"
+decision = "does a value get its own named token or inline into its parent expression"
+assertion = "per-variable visibility"
+strength = "HINT"
+rewind = "S9"
+latent = true
+exposure = "LATENT per-variable everywhere (high-value readability knob)"
+
+[[substage]]
+name = "loop-refinement"
+stage = "S7"
+decision = "how aggressively to absorb nodes into loops; force single-exit via guarded successors"
+assertion = "region-shaping options"
+strength = "HINT"
+rewind = "S7"
+latent = true
+exposure = "LATENT in Ghidra/Reko (angr-only options); kuna `region tree/blocks/walk` (KunaRegionIdentifier) = observable half"
+
+[[substage]]
+name = "edge-virtualization"
+stage = "S7"
+decision = "which edge to cut (become goto) when a region won't structure"
+assertion = "force-goto (per-edge)"
+strength = "HARD"
+rewind = "S7"
+latent = false
+exposure = "command force goto (Override::insertForceGoto)"
+
+[[substage]]
+name = "reident-batching"
+stage = "S7"
+decision = "defer graph-topology updates so de-optimization passes can iterate"
+assertion = "pass-set selection"
+strength = "HINT"
+rewind = "S7"
+latent = true
+exposure = "LATENT in Ghidra (angr delay_graph_updates)"
+
+[[substage]]
+name = "schema-precedence"
+stage = "S8"
+decision = "rule order when structuring patterns overlap (greedy: Goto,Cat,If,IfElse,While,DoWhile,InfLoop,Switch)"
+assertion = "structurer selection"
+strength = "HINT"
+rewind = "S8"
+latent = true
+exposure = "LATENT rule order in Ghidra/Reko (angr structurer_cls)"
+
+[[substage]]
+name = "goto-quality-acceptance"
+stage = "S8"
+decision = "accept or roll back a graph edit based on measured structure quality (goto count, loop shape)"
+assertion = "quality policy"
+strength = "HINT"
+rewind = "S8"
+latent = true
+exposure = "LATENT - no rollback in Ghidra (kuna command quality = observable half; roadmap 16.4)"
+
+[[substage]]
+name = "readability-rewrites"
+stage = "S8"
+decision = "switch-vs-if-cascade, for-recognition, condition complexity"
+assertion = "structuring options"
+strength = "HINT"
+rewind = "S8"
+latent = false
+exposure = "options analyzeforloops / jumptablemax"
+
+[[substage]]
+name = "naming-policy"
+stage = "S9"
+decision = "auto vs symbol-derived vs semantic-pattern names; preservation of user names; angr-style (vN/aN/dat_/sub_/label_) vs Ghidra-style default names"
+assertion = "name lock (cosmetic); namestyle angr|ghidra"
+strength = "HARD"
+rewind = "S9"
+latent = false
+exposure = "commands rename / name varnode (namelock); option namespacestrategy; option namestyle"
+
+[[substage]]
+name = "cast-policy"
+stage = "S9"
+decision = "minimal-necessary vs always vs never (CastStrategyC)"
+assertion = "cast option"
+strength = "HARD"
+rewind = "S9"
+latent = false
+exposure = "option nocastprinting (global; per-expression LATENT everywhere)"
+
+[[substage]]
+name = "literal-format"
+stage = "S9"
+decision = "integer base, NULL-vs-0, per-symbol display format"
+assertion = "format assertion (per-symbol or global)"
+strength = "HARD"
+rewind = "S9"
+latent = false
+exposure = "options integerformat/nullprinting; commands force varnode / force datatype / map convert"
+
+[[substage]]
+name = "pointer-notation"
+stage = "S9"
+decision = "render standalone PTRADD as base + index vs &base[index]"
+assertion = "arraynotation on|off"
+strength = "HARD"
+rewind = "S9"
+latent = false
+exposure = "(kuna GH-558) option arraynotation -> PrintC::opPtradd"
+
+[[substage]]
+name = "external-refinement"
+stage = "S9"
+decision = "proposed renames/retypes/summaries: an assertion writer into P0 for the next run"
+assertion = "any P0 assertion"
+strength = "HINT"
+rewind = "P0"
+latent = false
+exposure = "the console itself; kassert (kuna) is the uniform writer"
+
+# ---------------------------------------------------------------------------
+# surfaceTable: existing console/option surface -> sub-stage it operates (90).
+# ---------------------------------------------------------------------------
+[[surface]]
+surface = "option extrapop"
+stage = "S4"
+substage = "extrapop"
+note = ""
+
+[[surface]]
+surface = "option readonly"
+stage = "S1"
+substage = "code-data-partition"
+note = "treat read-only memory as constant"
+
+[[surface]]
+surface = "option defaultprototype"
+stage = "S4"
+substage = "abi-trust"
+note = ""
+
+[[surface]]
+surface = "option protoeval"
+stage = "S4"
+substage = "abi-trust"
+note = "evaluation model for called functions"
+
+[[surface]]
+surface = "option inferconstptr"
+stage = "S5"
+substage = "const-pointer"
+note = ""
+
+[[surface]]
+surface = "option analyzeforloops"
+stage = "S8"
+substage = "readability-rewrites"
+note = ""
+
+[[surface]]
+surface = "option inline"
+stage = "S2"
+substage = "inline-inject"
+note = ""
+
+[[surface]]
+surface = "option noreturn"
+stage = "S2"
+substage = "flow-classification"
+note = ""
+
+[[surface]]
+surface = "option warning"
+stage = "P0"
+substage = ""
+note = "diagnostic routing (cross-cutting)"
+
+[[surface]]
+surface = "option nullprinting"
+stage = "S9"
+substage = "literal-format"
+note = ""
+
+[[surface]]
+surface = "option inplaceops"
+stage = "S9"
+substage = "literal-format"
+note = "+=/-= rendering"
+
+[[surface]]
+surface = "option conventionprinting"
+stage = "S9"
+substage = "naming-policy"
+note = ""
+
+[[surface]]
+surface = "option nocastprinting"
+stage = "S9"
+substage = "cast-policy"
+note = ""
+
+[[surface]]
+surface = "option integerformat"
+stage = "S9"
+substage = "literal-format"
+note = ""
+
+[[surface]]
+surface = "option maxlinewidth"
+stage = "S9"
+substage = ""
+note = "pure formatting"
+
+[[surface]]
+surface = "option indentincrement"
+stage = "S9"
+substage = ""
+note = "pure formatting"
+
+[[surface]]
+surface = "option commentstyle"
+stage = "S9"
+substage = ""
+note = "pure formatting"
+
+[[surface]]
+surface = "option braceformat"
+stage = "S9"
+substage = ""
+note = "pure formatting"
+
+[[surface]]
+surface = "option setaction"
+stage = "P0"
+substage = "pipeline-variant"
+note = ""
+
+[[surface]]
+surface = "option currentaction"
+stage = "P0"
+substage = "pipeline-variant"
+note = ""
+
+[[surface]]
+surface = "option allowcontextset"
+stage = "S2"
+substage = "decode-context"
+note = ""
+
+[[surface]]
+surface = "option setlanguage"
+stage = "S1"
+substage = "environment-binding"
+note = ""
+
+[[surface]]
+surface = "option jumptablemax"
+stage = "S2"
+substage = "switch-model"
+note = "also S8 readability straddler"
+
+[[surface]]
+surface = "option jumpload"
+stage = "S2"
+substage = "switch-model"
+note = ""
+
+[[surface]]
+surface = "option togglerule"
+stage = "S3"
+substage = "simplification-quiescence"
+note = ""
+
+[[surface]]
+surface = "option aliasblock"
+stage = "S6"
+substage = "alias-facets"
+note = ""
+
+[[surface]]
+surface = "option maxinstruction"
+stage = "S2"
+substage = "decode-error-policy"
+note = ""
+
+[[surface]]
+surface = "option ignoreunimplemented"
+stage = "S2"
+substage = "decode-error-policy"
+note = ""
+
+[[surface]]
+surface = "option errorunimplemented"
+stage = "S2"
+substage = "decode-error-policy"
+note = ""
+
+[[surface]]
+surface = "option errorreinterpreted"
+stage = "S2"
+substage = "decode-error-policy"
+note = ""
+
+[[surface]]
+surface = "option errortoomanyinstructions"
+stage = "S2"
+substage = "decode-error-policy"
+note = ""
+
+[[surface]]
+surface = "option namespacestrategy"
+stage = "S9"
+substage = "naming-policy"
+note = ""
+
+[[surface]]
+surface = "option splitdatatype"
+stage = "S5"
+substage = "aggregate-union"
+note = ""
+
+[[surface]]
+surface = "option nanignore"
+stage = "S5"
+substage = ""
+note = "float NaN-test simplification policy"
+
+[[surface]]
+surface = "option compareform"
+stage = "S3"
+substage = "comparison-canonicalization"
+note = "(kuna GH-558)"
+
+[[surface]]
+surface = "option arraynotation"
+stage = "S9"
+substage = "pointer-notation"
+note = "(kuna GH-558)"
+
+[[surface]]
+surface = "option returnpair"
+stage = "S4"
+substage = "trial-budget"
+note = "(kuna GH-6990) keep multi-register returns single"
+
+[[surface]]
+surface = "option addcarrychain"
+stage = "S3"
+substage = "simplification-quiescence"
+note = "(kuna GH-8913) fuse 8-bit carry-chain 16-bit adds"
+
+[[surface]]
+surface = "option booleanmask"
+stage = "S3"
+substage = "simplification-quiescence"
+note = "(kuna GH-1282) fold (b<<k) s>> k boolean sign-extension-mask idioms"
+
+[[surface]]
+surface = "option thumbfuncptr"
+stage = "S5"
+substage = "const-pointer"
+note = "(kuna GH-8471) preserve mode-bit-encoded function pointers"
+
+[[surface]]
+surface = "option inferfuncentry"
+stage = "S5"
+substage = "const-pointer"
+note = "(kuna GH-6930) infer function entries at single-bit image bases"
+
+[[surface]]
+surface = "option memsetrecover"
+stage = "S5"
+substage = "constsequence"
+note = "(kuna GH-9230) collapse constant-fill runs into builtin_memset"
+
+[[surface]]
+surface = "option v850indirectbranch"
+stage = "S2"
+substage = "flow-classification"
+note = "(kuna GH-8817) reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery"
+
+[[surface]]
+surface = "option sparcstructret"
+stage = "S2"
+substage = "flow-classification"
+note = "(kuna GH-6882) SPARC struct-return post-call unimp falls through instead of becoming a non-returning CALLIND"
+
+[[surface]]
+surface = "option ovlesssimplify"
+stage = "S3"
+substage = "simplification-quiescence"
+note = "(kuna GH-7190) collapse OV-flag signed-less-than idiom to a clean INT_SLESS"
+
+[[surface]]
+surface = "option inputvarnodeadjust"
+stage = "S6"
+substage = "stack-frame-layout"
+note = "(kuna GH-9218) absorb overlapping input varnodes instead of aborting on adjust"
+
+[[surface]]
+surface = "option condexeplace"
+stage = "S3"
+substage = "simplification-quiescence"
+note = "(kuna GH-9203) keep ActionConditionalConst from placing a const COPY in a loop block (malformed do/while)"
+
+[[surface]]
+surface = "option arraystride"
+stage = "S3"
+substage = "simplification-quiescence"
+note = "(kuna GH-8724) re-express a strided-induction offset accumulator as counter*stride to recover the array index"
+
+[[surface]]
+surface = "option stackprobeloop"
+stage = "S2"
+substage = "stack-pointer-normalization"
+note = "(kuna GH-8017/6858) resolve gcc stack-probe loop's stack-pointer MULTIEQUAL to a constant offset"
+
+[[surface]]
+surface = "option flagcompare"
+stage = "S3"
+substage = "simplification-quiescence"
+note = "(kuna GH-1276/8777) fold flag-modelled comparison idioms (boolean-into-sign-bit, N==V signed compare)"
+
+[[surface]]
+surface = "option stackguard"
+stage = "S7"
+substage = "edge-virtualization"
+note = "(kuna angr-port) strip the -fstack-protector canary epilogue so the shared-return goto is eliminated"
+
+[[surface]]
+surface = "force goto"
+stage = "S7"
+substage = "edge-virtualization"
+note = "Override::insertForceGoto"
+
+[[surface]]
+surface = "override jumptable"
+stage = "S2"
+substage = "switch-model"
+note = "JumpBasicOverride"
+
+[[surface]]
+surface = "override flow"
+stage = "S2"
+substage = "flow-classification"
+note = "Override::insertFlowOverride"
+
+[[surface]]
+surface = "override prototype"
+stage = "S4"
+substage = "prototype-source"
+note = "Override::insertProtoOverride"
+
+[[surface]]
+surface = "deadcode delay"
+stage = "S3"
+substage = "dead-definition-gate"
+note = "Override::insertDeadcodeDelay"
+
+[[surface]]
+surface = "prototype lock"
+stage = "S4"
+substage = "prototype-source"
+note = "FuncProto input/output lock"
+
+[[surface]]
+surface = "prototype unlock"
+stage = "S4"
+substage = "prototype-source"
+note = ""
+
+[[surface]]
+surface = "parse line"
+stage = "S4"
+substage = "prototype-source"
+note = "declared signature (also seeds S5 types)"
+
+[[surface]]
+surface = "retype"
+stage = "S5"
+substage = "type-propagation"
+note = "symbol typelock - HARD stop in propagateTypeEdge"
+
+[[surface]]
+surface = "type varnode"
+stage = "S5"
+substage = "type-propagation"
+note = ""
+
+[[surface]]
+surface = "map unionfacet"
+stage = "S5"
+substage = "aggregate-union"
+note = "DynamicHash-keyed UnionFacetSymbol"
+
+[[surface]]
+surface = "map hash"
+stage = "S6"
+substage = "alias-facets"
+note = "DynamicHash symbol attachment"
+
+[[surface]]
+surface = "map address"
+stage = "S6"
+substage = "stack-frame-layout"
+note = "also S1 globals when address is global"
+
+[[surface]]
+surface = "map convert"
+stage = "S9"
+substage = "literal-format"
+note = ""
+
+[[surface]]
+surface = "force varnode"
+stage = "S9"
+substage = "literal-format"
+note = ""
+
+[[surface]]
+surface = "force datatype"
+stage = "S9"
+substage = "literal-format"
+note = ""
+
+[[surface]]
+surface = "rename"
+stage = "S9"
+substage = "naming-policy"
+note = "namelock"
+
+[[surface]]
+surface = "name varnode"
+stage = "S9"
+substage = "naming-policy"
+note = ""
+
+[[surface]]
+surface = "isolate"
+stage = "S6"
+substage = "merge-aggressiveness"
+note = "Symbol::setIsolated"
+
+[[surface]]
+surface = "set context"
+stage = "S2"
+substage = "decode-context"
+note = "ContextDatabase"
+
+[[surface]]
+surface = "global add"
+stage = "S1"
+substage = "code-data-partition"
+note = ""
+
+[[surface]]
+surface = "global remove"
+stage = "S1"
+substage = "code-data-partition"
+note = ""
+
+[[surface]]
+surface = "volatile"
+stage = "S1"
+substage = "code-data-partition"
+note = "userop semantics straddle S3/S5 (s15)"
+
+[[surface]]
+surface = "readonly"
+stage = "S1"
+substage = "code-data-partition"
+note = ""
+
+[[surface]]
+surface = "fixup call"
+stage = "S2"
+substage = "inline-inject"
+note = "p-code injection"
+
+[[surface]]
+surface = "fixup callother"
+stage = "S2"
+substage = "inline-inject"
+note = ""
+
+[[surface]]
+surface = "structure blocks"
+stage = "S7"
+substage = ""
+note = "direct structurer sub-query on an arbitrary graph"
+
+[[surface]]
+surface = "region tree"
+stage = "S7"
+substage = "loop-refinement"
+note = "(kuna angr-port) analysis-only nested region tree over bblocks (KunaRegionIdentifier; angr GraphRegion.dbg_print)"
+
+[[surface]]
+surface = "region blocks"
+stage = "S7"
+substage = "loop-refinement"
+note = "(kuna angr-port) flat regions_by_block_addrs dump per identified region"
+
+[[surface]]
+surface = "region walk"
+stage = "S7"
+substage = "loop-refinement"
+note = "(kuna angr-port) recursive region-order walk over every leaf basic block"
+
+[[surface]]
+surface = "kassert"
+stage = "P0"
+substage = "assertion-admission"
+note = "(kuna) uniform typed assertion writer"
+
+[[surface]]
+surface = "pipeline"
+stage = "P0"
+substage = "pipeline-variant"
+note = "(kuna) reduced-pipeline sub-query (mechanism c-prime)"
+
+[[surface]]
+surface = "quality"
+stage = "S8"
+substage = "goto-quality-acceptance"
+note = "(kuna) goto-count metric, observable half"
+
+[[surface]]
+surface = "restarts"
+stage = "P0"
+substage = ""
+note = "(kuna) feedback-edge observability (mechanism c)"
+
+[[surface]]
+surface = "option switchmodbound"
+stage = "S2"
+substage = "switch-model"
+note = "(kuna GH-9191) bound a LOAD-table jumptable by a modulo/and-mask on its index"
+
+[[surface]]
+surface = "option dynamichashmax"
+stage = "S6"
+substage = "alias-facets"
+note = "(kuna GH-8467) raise DynamicHash same-address collision budget 8->16 for dense unrolled code"
+
+[[surface]]
+surface = "option stackalias"
+stage = "S6"
+substage = "alias-facets"
+note = "(kuna GH-8500) hold a store-through-a-stack-pointer-alias across the deadcode race"
+
+[[surface]]
+surface = "option loweredswitch"
+stage = "S2"
+substage = "switch-model"
+note = "(kuna angr-port) reconstruct a compiler-lowered comparison cascade into a switch jump-table"
+
+[[surface]]
+surface = "option namestyle"
+stage = "S9"
+substage = "naming-policy"
+note = "(kuna angr-naming) master default-name scheme: angr vN/aN/dat_/sub_/label_ + location comments vs upstream Ghidra naming"
+
+# ---------------------------------------------------------------------------
+# settableTable: one row per kuna ArchOption -- the LLM control surface (22).
+# live_field/live_true/live_false give build.rs the typed OptionValues field +
+# the live-value reader mapping (the literal `flag ? live_true : live_false`
+# ternary of kuna_console.cc kunaLiveValue); the three options with no live
+# reader (loweredswitch/stackguard/namestyle) omit all three live_* keys.
+# ---------------------------------------------------------------------------
+[[settable]]
+option = "compareform"
+values = "canonical|original"
+default = "original"
+destructive = false
+stage = "S3"
+substage = "comparison-canonicalization"
+strength = "HARD"
+rewind = "S3"
+issue = "GH-558"
+summary = "Whether comparisons keep their source form (V <= c) or the analysis-canonical rewrite (V < c+1)."
+use_when = "Flip to canonical only to reproduce upstream Ghidra output; original (default) is more faithful to source."
+example = "option compareform canonical"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra upstream comparison rendering (GH-558 prototype)"
+change_kind = "presentation-default"
+live_field = "present_lessequal"
+live_true = "original"
+live_false = "canonical"
+
+[[settable]]
+option = "arraynotation"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S9"
+substage = "pointer-notation"
+strength = "HARD"
+rewind = "S9"
+issue = "GH-558"
+summary = "Render standalone pointer arithmetic as &base[index] (on) vs base + index (off)."
+use_when = "Flip off if the consumer expects raw pointer-arithmetic rendering; on (default) is more readable."
+example = "option arraynotation off"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra upstream pointer-arithmetic rendering"
+change_kind = "presentation-default"
+live_field = "__print_arraynotation"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "thumbfuncptr"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S5"
+substage = "const-pointer"
+strength = "HARD"
+rewind = "S5"
+issue = "GH-8471"
+summary = "Preserve a Thumb function pointer (fn|1) as a symbolic &fn[1] rather than a raw hex literal."
+use_when = "Flip off only to see the raw constant; on (default) recovers the function symbol on ARM/Thumb."
+example = "option thumbfuncptr off"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-8471 (ARM/Thumb function-pointer recovery)"
+change_kind = "correctness-fix"
+live_field = "preserve_thumb_funcptr"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "inferfuncentry"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S5"
+substage = "const-pointer"
+strength = "HARD"
+rewind = "S5"
+issue = "GH-6930"
+summary = "Infer a function pointer when a constant equals an exact function entry at a single-bit image base (e.g. 0x100000)."
+use_when = "Flip off only to reproduce the bare-literal form; on (default) names the function."
+example = "option inferfuncentry off"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-6930 (function-entry constant inference)"
+change_kind = "correctness-fix"
+live_field = "infer_funcentry"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "booleanmask"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S3"
+substage = "simplification-quiescence"
+strength = "HARD"
+rewind = "S3"
+issue = "GH-1282"
+summary = "Fold the (b<<k) s>>k boolean sign-extension-mask idiom (flag-as-high-bit lowering) into a clean comparison."
+use_when = "Flip off only to see the raw shift idiom; on (default) cleans flag-modelled comparisons (8051 etc.)."
+example = "option booleanmask off"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-1282 (boolean sign-extension-mask idiom)"
+change_kind = "correctness-fix"
+live_field = "fold_boolean_mask"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "ovlesssimplify"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S3"
+substage = "simplification-quiescence"
+strength = "HARD"
+rewind = "S3"
+issue = "GH-7190"
+summary = "Simplify the explicit S/OV-flag compare idiom into a direct signed comparison."
+use_when = "Flip off only to see the raw overflow-flag arithmetic; on (default) cleans V850-style compares."
+example = "option ovlesssimplify off"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-7190 (S/OV-flag compare idiom)"
+change_kind = "correctness-fix"
+live_field = "ov_less_simplify"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "addcarrychain"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S5"
+substage = "simplification-quiescence"
+strength = "HARD"
+rewind = "S5"
+issue = "GH-8913"
+summary = "Recover an 8-bit carry-chain (ADC) pair into a single wide add instead of CONCAT11(CARRY1(...))."
+use_when = "Flip off only to see the raw carry intrinsics; on (default) recovers wide arithmetic (6502 etc.)."
+example = "option addcarrychain off"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-8913 (8-bit ADC carry-chain recovery)"
+change_kind = "correctness-fix"
+live_field = "add_carry_chain"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "memsetrecover"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S5"
+substage = "constsequence"
+strength = "HARD"
+rewind = "S5"
+issue = "GH-9230/1537"
+summary = "Collapse a run of constant-fill stores (incl. inlined/SIMD bzero) into a single builtin_memset."
+use_when = "Flip off only to see the individual element stores; on (default) reconstructs the memset."
+example = "option memsetrecover off"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-9230/1537 (constant-fill store run -> builtin_memset)"
+change_kind = "correctness-fix"
+live_field = "memset_recover"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "returnpair"
+values = "pair|single"
+default = "pair"
+destructive = true
+stage = "S4"
+substage = "trial-budget"
+strength = "HARD"
+rewind = "S4"
+issue = "GH-6990"
+summary = "Whether a passively-active second return register may be joined into a wide return (pair) or dropped (single)."
+use_when = "Set single PER FUNCTION when a void/single-register function shows a spurious CONCAT44 return (e.g. SPARC); DESTRUCTIVE as a global default (truncates real multi-register returns)."
+example = "option returnpair single"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-6990 (wide return-register joining)"
+change_kind = "opt-in-tool"
+live_field = "return_single"
+live_true = "single"
+live_false = "pair"
+
+[[settable]]
+option = "v850indirectbranch"
+values = "on|off"
+default = "off"
+destructive = true
+stage = "S2"
+substage = "flow-classification"
+strength = "HARD"
+rewind = "S2"
+issue = "GH-8817"
+summary = "Reclassify a V850 jmp [reg] CALLIND to BRANCHIND so switch-table recovery runs."
+use_when = "Set on PER V850 PROGRAM to recover jump-table switches; DESTRUCTIVE as a global default (matches register-indirect calls on other architectures)."
+example = "option v850indirectbranch on"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-8817 (V850 jmp[reg] flow classification)"
+change_kind = "opt-in-tool"
+live_field = "v850_indirect_branch"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "flagcompare"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S3"
+substage = "simplification-quiescence"
+strength = "HARD"
+rewind = "S3"
+issue = "GH-1276/8777"
+summary = "Fold flag-modelled comparison idioms into clean compares: a boolean shifted into the sign bit ((b<<k) s< 0) and the N==V signed-overflow idiom (bra ge)."
+use_when = "Flip on to clean flag-as-bit comparisons on architectures that model condition flags explicitly (8051, PIC24, etc.); off (default) is upstream byte-identical."
+example = "option flagcompare on"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-1276/8777 (flag-modelled comparison idioms)"
+change_kind = "correctness-fix"
+live_field = "fold_flag_compare"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "switchmodbound"
+values = "on|off"
+default = "off"
+destructive = true
+stage = "S2"
+substage = "switch-model"
+strength = "HARD"
+rewind = "S2"
+issue = "GH-9191"
+summary = "Bound a LOAD-table jumptable by a modulo (index % N) or and-mask on its index when no guard bounds it."
+use_when = "Set on PER PROGRAM when a switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed call; DESTRUCTIVE as a global default (may over-bound an unrelated indirect jump)."
+example = "option switchmodbound on"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-9191 (modulo/and-mask jumptable bound)"
+change_kind = "opt-in-tool"
+live_field = "switch_modulo_bound"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "stackprobeloop"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S2"
+substage = "stack-pointer-normalization"
+strength = "HARD"
+rewind = "S2"
+issue = "GH-8017/6858"
+summary = "Resolve a gcc -fstack-check / stack-clash probe loop's stack-pointer MULTIEQUAL to a fixed offset from the input SP, so the frame and call arguments recover cleanly."
+use_when = "Set on when a large-frame function shows &pxVar[-0x1000] page-probe noise or argument-less calls; shape-gated, so it is inert on functions without a probe loop."
+example = "option stackprobeloop on"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-8017/6858 (stack-probe loop SP normalization)"
+change_kind = "correctness-fix"
+live_field = "model_stack_probe_loop"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "dynamichashmax"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S6"
+substage = "alias-facets"
+strength = "HARD"
+rewind = "S6"
+issue = "GH-8467"
+summary = "Raise the DynamicHash same-address collision budget 8->16 so dense unrolled code can still resolve a unique dynamic symbol hash."
+use_when = "Set on PER FUNCTION when decompilation aborts with 'Unable to find unique hash for varnode' (e.g. AArch64/Go NEON byte-search loops); off (default) is upstream byte-identical."
+example = "option dynamichashmax on"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-8467 (DynamicHash same-address collision budget)"
+change_kind = "correctness-fix"
+live_field = "dynamic_hash_maxdup_high"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "stackalias"
+values = "on|off"
+default = "off"
+destructive = true
+stage = "S6"
+substage = "alias-facets"
+strength = "HARD"
+rewind = "S6"
+issue = "GH-8500"
+summary = "Hold a store-through-a-stack-pointer-alias (int *p=&x; *p=x; return *p) alive across the deadcode race so it is not dropped to an uninitialized stack read."
+use_when = "Set on PER FUNCTION when a take-address-of-local + store-through-pointer returns a spurious uninitialized local (xStack_*); DESTRUCTIVE as a global default (conservatively pins stack stores live, suppressing legitimate dead-store removal)."
+example = "option stackalias on"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-8500 (stack-pointer-alias store liveness)"
+change_kind = "opt-in-tool"
+live_field = "stack_alias_deadstore"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "arraystride"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S3"
+substage = "simplification-quiescence"
+strength = "HARD"
+rewind = "S3"
+issue = "GH-8724"
+summary = "Re-express a strength-reduced array walk: rewrite a loop offset accumulator (acc += sizeof) as counter*stride so the array index is recovered."
+use_when = "Set on when a strided loop renders a raw offset accumulator (e.g. iVar += 0x414) instead of an index; off (default) is upstream byte-identical."
+example = "option arraystride on"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-8724 (strided-array index recovery)"
+change_kind = "structure-recovery"
+live_field = "recover_array_stride"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "sparcstructret"
+values = "on|off"
+default = "off"
+destructive = true
+stage = "S2"
+substage = "flow-classification"
+strength = "HARD"
+rewind = "S2"
+issue = "GH-6882"
+summary = "Let the SPARC struct-return `unimp` after a call fall through instead of becoming a non-returning indirect call."
+use_when = "Set on PER SPARC PROGRAM when a struct-returning callee makes a function render a bogus (*pcVar1)() and drop its tail; DESTRUCTIVE as a global default (an IllegalInstructionTrap-fed BRANCHIND elsewhere is suppressed)."
+example = "option sparcstructret on"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-6882 (SPARC struct-return unimp fallthrough)"
+change_kind = "opt-in-tool"
+live_field = "sparc_struct_return"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "condexeplace"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S3"
+substage = "simplification-quiescence"
+strength = "HARD"
+rewind = "S3"
+issue = "GH-9203"
+summary = "Stop ActionConditionalConst from materializing a propagated constant as a COPY inside a loop predecessor block (a spurious `= 0` in the do/while body)."
+use_when = "Set on to clean up a malformed do/while whose body holds an out-of-place constant assignment; off (default) is upstream byte-identical."
+example = "option condexeplace on"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-9203 (ActionConditionalConst loop-block COPY placement)"
+change_kind = "correctness-fix"
+live_field = "condexe_block_placement"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "inputvarnodeadjust"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S6"
+substage = "stack-frame-layout"
+strength = "HARD"
+rewind = "S6"
+issue = "GH-9218"
+summary = "Absorb an input Varnode overlapping the high end of a justified parameter container instead of aborting the function."
+use_when = "Set on PER FUNCTION when a frame aborts with 'Cannot properly adjust input varnodes' (overlapping stack params, e.g. mc68k link/unlk); off (default) preserves the upstream abort."
+example = "option inputvarnodeadjust on"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra GH-9218 (overlapping input-varnode absorb)"
+change_kind = "correctness-fix"
+live_field = "input_varnode_adjust"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "loweredswitch"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S2"
+substage = "switch-model"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-LoweredSwitchSimplifier"
+summary = "Reconstruct a compiler-lowered comparison cascade (a GCC binary-search if/else tree over one variable) back into a switch with a synthesized BRANCHIND + jump-table (the S2 artifact Ghidra renders switches from)."
+use_when = "On by default (DIV-4); the required binary-search-structure guard (a range/jle split) keeps it off hand-written linear if/else-if chains. Set OFF to restore the upstream if/else-if rendering of a lowered switch."
+example = "option loweredswitch off"
+source_decompiler = "angr"
+inspiration = "angr LoweredSwitchSimplifier (angr/analyses/decompiler/optimization_passes); test_decompiler.py switch-lowering cases"
+change_kind = "structure-recovery"
+
+[[settable]]
+option = "stackguard"
+values = "on|off"
+default = "off"
+destructive = true
+stage = "S7"
+substage = "edge-virtualization"
+strength = "HARD"
+rewind = "S7"
+issue = "angr-StackCanarySimplifier"
+summary = "Strip the glibc -fstack-protector canary epilogue (the `if (canary != *(fs:0x28)) __stack_chk_fail()` check + its no-return call block), collapsing the shared single-return point so each path returns directly (no goto/label)."
+use_when = "Set on to remove compiler-inserted stack-protector boilerplate and the shared-return goto it forces; off (default) is upstream byte-identical. DESTRUCTIVE as a global default: it deletes the real canary-check instructions (and may match an unusual non-glibc `ptr+0x28` compare guarding a call)."
+example = "option stackguard on"
+source_decompiler = "angr"
+inspiration = "test_ite_region_converter_missing_break_statement; angr StackCanarySimplifier (angr/analyses/decompiler/optimization_passes/stack_canary_simplifier.py); authenticate"
+change_kind = "opt-in-tool"
+
+[[settable]]
+option = "namestyle"
+values = "angr|ghidra"
+default = "angr"
+destructive = false
+stage = "S9"
+substage = "naming-policy"
+strength = "HARD"
+rewind = "S9"
+issue = "angr-naming"
+summary = "Master default-name scheme: angr-style (locals vN, args aN, global data dat_<addr>, unnamed functions sub_<addr>, labels label_<addr>, plus a // rax / // stack - 0x10 source-location comment per local) vs upstream Ghidra (iVar/uVar/pcVar, param_N, <type>Ram<addr>, func_, code_)."
+use_when = "Set to ghidra to reproduce upstream Ghidra naming byte-for-byte; angr (default) makes default output read like the angr decompiler."
+example = "option namestyle ghidra"
+source_decompiler = "angr"
+inspiration = "angr decompiler default naming scheme (vN / aN / sub_<addr> / dat_<addr> / label_<addr>)"
+change_kind = "presentation-default"
