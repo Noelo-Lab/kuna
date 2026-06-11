@@ -351,6 +351,87 @@ impl PartialOrd for DefKey {
 }
 
 // ---------------------------------------------------------------------------
+// Tree probes: faithful translation of C++ lower_bound/upper_bound iterators
+// ---------------------------------------------------------------------------
+//
+// A C++ `set::iterator` returned by lower_bound/upper_bound (or begin()/end())
+// is used by the bank either as a *start* of a half-open range or as its
+// *end*.  Crucially the same iterator means different element-membership in
+// each position, so a `Probe` records the C++ operation and is converted to a
+// Rust `Bound` only once its position is known:
+//
+//   op              as a START bound        as an END bound
+//   lower_bound(k)  Included(k)  (>= k)      Excluded(k)  (< k)
+//   upper_bound(k)  Excluded(k)  (> k)       Included(k)  (<= k)
+//   begin()         Unbounded                Excluded(min) — never used as end
+//   end()           Excluded(max) — n/a      Unbounded
+//
+// (`begin()` is only ever a start and `end()` only ever an end here.)
+
+/// A C++ lower/upper-bound (or begin/end) probe over the location tree.
+enum LocProbe {
+    /// C++ `lower_bound(k)`
+    Lower(LocKey),
+    /// C++ `upper_bound(k)`
+    Upper(LocKey),
+    /// C++ `loc_tree.end()` (used only as an end)
+    End,
+}
+
+impl LocProbe {
+    /// Convert to the Rust *start* bound of a half-open range.
+    fn into_start(self) -> Bound<LocKey> {
+        match self {
+            LocProbe::Lower(k) => Bound::Included(k), // first element >= k
+            LocProbe::Upper(k) => Bound::Excluded(k), // first element > k
+            LocProbe::End => Bound::Unbounded,        // (never used as a start here)
+        }
+    }
+    /// Convert to the Rust *end* bound of a half-open range.
+    fn into_end(self) -> Bound<LocKey> {
+        match self {
+            LocProbe::Lower(k) => Bound::Excluded(k), // up to (not incl.) first >= k  => elems < k
+            LocProbe::Upper(k) => Bound::Included(k), // up to (not incl.) first > k    => elems <= k
+            LocProbe::End => Bound::Unbounded,
+        }
+    }
+}
+
+/// A C++ lower/upper-bound (or begin/end) probe over the definition tree.
+#[derive(Clone)]
+enum DefProbe {
+    /// C++ `lower_bound(k)`
+    Lower(DefKey),
+    /// C++ `upper_bound(k)`
+    Upper(DefKey),
+    /// C++ `def_tree.begin()` (used only as a start)
+    Begin,
+    /// C++ `def_tree.end()` (used only as an end)
+    End,
+}
+
+impl DefProbe {
+    /// Convert to the Rust *start* bound of a half-open range.
+    fn into_start(self) -> Bound<DefKey> {
+        match self {
+            DefProbe::Lower(k) => Bound::Included(k),
+            DefProbe::Upper(k) => Bound::Excluded(k),
+            DefProbe::Begin => Bound::Unbounded,
+            DefProbe::End => Bound::Unbounded, // (never used as a start here)
+        }
+    }
+    /// Convert to the Rust *end* bound of a half-open range.
+    fn into_end(self) -> Bound<DefKey> {
+        match self {
+            DefProbe::Lower(k) => Bound::Excluded(k),
+            DefProbe::Upper(k) => Bound::Included(k),
+            DefProbe::Begin => Bound::Unbounded, // (never used as an end here)
+            DefProbe::End => Bound::Unbounded,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Varnode
 // ---------------------------------------------------------------------------
 
@@ -1523,14 +1604,14 @@ impl VarnodeBank {
         self.def_tree.values().copied()
     }
 
-    /// Iterate varnode ids whose location lies in `[begin, end)` of the loc
-    /// tree, where the bounds are the constructed [`LocKey`]s.
-    fn iter_loc_range(
+    /// Iterate varnode ids whose location lies in `[start, end)` of the loc
+    /// tree, where the bounds are constructed [`LocProbe`]s.
+    fn iter_loc_probe(
         &self,
-        begin: Bound<LocKey>,
-        end: Bound<LocKey>,
+        start: LocProbe,
+        end: LocProbe,
     ) -> impl Iterator<Item = VarnodeId> + '_ {
-        self.loc_tree.range((begin, end)).map(|(_, &id)| id)
+        self.loc_tree.range((start.into_start(), end.into_end())).map(|(_, &id)| id)
     }
 
     /// Find a Varnode given its (loc,size) and the address/seqnum where it is
@@ -1547,9 +1628,8 @@ impl VarnodeBank {
         uniq: Option<uintm>,
         def_addr_time: &dyn Fn(OpId) -> (Address, uintm),
     ) -> Option<VarnodeId> {
-        // iter = beginLoc(s, loc, pc, uniq);
-        let begin = self.begin_loc_pc(s, loc, pc, uniq);
-        for id in self.iter_loc_range(begin, Bound::Unbounded) {
+        // iter = beginLoc(s, loc, pc, uniq);  loop while iter != loc_tree.end()
+        for id in self.iter_loc_probe(self.begin_loc_pc(s, loc, pc, uniq), LocProbe::End) {
             let vn = &self.arena[id];
             if vn.size != s {
                 break;
@@ -1573,9 +1653,9 @@ impl VarnodeBank {
 
     /// Find an input Varnode of the given size and address (C++ `findInput`).
     pub fn find_input(&self, s: int4, loc: &Address) -> Option<VarnodeId> {
-        // iter = beginLoc(s, loc, Varnode::input);
+        // iter = beginLoc(s, loc, Varnode::input);  if (iter != end) { ... }
         let begin = self.begin_loc_flag(s, loc, varnode_flags::input);
-        if let Some(id) = self.iter_loc_range(begin, Bound::Unbounded).next() {
+        if let Some(id) = self.iter_loc_probe(begin, LocProbe::End).next() {
             let vn = &self.arena[id];
             if vn.is_input() && vn.size == s && &vn.loc == loc {
                 return Some(id);
@@ -1584,13 +1664,13 @@ impl VarnodeBank {
         None
     }
 
-    // --- begin/end loc bound construction (the searchvn template family) --
+    // --- begin/end loc probe construction (the searchvn template family) --
     //
     // Each helper builds the exact LocKey the C++ assigns to `searchvn` and
-    // emits a `Bound` that reproduces the C++ lower_bound/upper_bound.  A C++
-    // `lower_bound(k)` is `Bound::Included(k)` as the *start* of a forward
-    // range (first element >= k).  A C++ `upper_bound(k)` is
-    // `Bound::Excluded(k)` as a start bound (first element > k).
+    // names the C++ operation (lower/upper-bound) as a [`LocProbe`]; the
+    // position-dependent Rust `Bound` conversion happens in `iter_loc_probe`
+    // (`Probe::into_start`/`into_end`).  This keeps the start-vs-end membership
+    // exactly as the C++ half-open `[iter1, iter2)` semantics demand.
     //
     // NOTE on the `input`-class bounds: the C++ `searchvn` is a *size-0 input*
     // template (`searchvn.flags = Varnode::input`).  For the input class the
@@ -1601,10 +1681,10 @@ impl VarnodeBank {
     // exactly `input`.
 
     /// `beginLoc(int4 s,const Address &addr,uint4 fl)` (`varnode.cc:1664`).
-    fn begin_loc_flag(&self, s: int4, addr: &Address, fl: uint4) -> Bound<LocKey> {
+    fn begin_loc_flag(&self, s: int4, addr: &Address, fl: uint4) -> LocProbe {
         if fl == varnode_flags::input {
             // searchvn{size=s, loc=addr, flags=input} ; lower_bound
-            return Bound::Included(LocKey {
+            return LocProbe::Lower(LocKey {
                 addr: addr.clone(),
                 size: s,
                 flagclass: flag_class_of(varnode_flags::input),
@@ -1614,7 +1694,7 @@ impl VarnodeBank {
         }
         if fl == varnode_flags::written {
             // searchvn{size=s, loc=addr, flags=written, def=&searchop(minimal seq)} ; lower_bound
-            return Bound::Included(LocKey {
+            return LocProbe::Lower(LocKey {
                 addr: addr.clone(),
                 size: s,
                 flagclass: flag_class_of(varnode_flags::written),
@@ -1623,7 +1703,7 @@ impl VarnodeBank {
             });
         }
         // fl == 0 (free): searchvn{size=s, loc=addr, flags=written, def=&searchop(maximal seq)} ; upper_bound
-        Bound::Excluded(LocKey {
+        LocProbe::Upper(LocKey {
             addr: addr.clone(),
             size: s,
             flagclass: flag_class_of(varnode_flags::written),
@@ -1633,10 +1713,10 @@ impl VarnodeBank {
     }
 
     /// `endLoc(int4 s,const Address &addr,uint4 fl)` (`varnode.cc:1712`).
-    fn end_loc_flag(&self, s: int4, addr: &Address, fl: uint4) -> Bound<LocKey> {
+    fn end_loc_flag(&self, s: int4, addr: &Address, fl: uint4) -> LocProbe {
         if fl == varnode_flags::written {
             // searchvn{loc=addr, size=s, flags=written, def=&searchop(maximal seq)} ; upper_bound
-            return Bound::Excluded(LocKey {
+            return LocProbe::Upper(LocKey {
                 addr: addr.clone(),
                 size: s,
                 flagclass: flag_class_of(varnode_flags::written),
@@ -1646,7 +1726,7 @@ impl VarnodeBank {
         }
         if fl == varnode_flags::input {
             // searchvn{loc=addr, size=s, flags=input} ; upper_bound
-            return Bound::Excluded(LocKey {
+            return LocProbe::Upper(LocKey {
                 addr: addr.clone(),
                 size: s,
                 flagclass: flag_class_of(varnode_flags::input),
@@ -1655,7 +1735,7 @@ impl VarnodeBank {
             });
         }
         // fl == 0 (free): searchvn{loc=addr, size=s+1, flags=input} ; lower_bound
-        Bound::Included(LocKey {
+        LocProbe::Lower(LocKey {
             addr: addr.clone(),
             size: s + 1,
             flagclass: flag_class_of(varnode_flags::input),
@@ -1666,17 +1746,11 @@ impl VarnodeBank {
 
     /// `beginLoc(int4 s,const Address &addr,const Address &pc,uintm uniq)`
     /// (`varnode.cc:1751`).
-    fn begin_loc_pc(
-        &self,
-        s: int4,
-        addr: &Address,
-        pc: &Address,
-        uniq: Option<uintm>,
-    ) -> Bound<LocKey> {
+    fn begin_loc_pc(&self, s: int4, addr: &Address, pc: &Address, uniq: Option<uintm>) -> LocProbe {
         // if (uniq==~0) uniq = 0;  // find earliest
         let u = uniq.unwrap_or(0);
         // SeqNum sq(pc, u);  searchvn{size=s, loc=addr, flags=written, def=&searchop(sq)} ; lower_bound
-        Bound::Included(LocKey {
+        LocProbe::Lower(LocKey {
             addr: addr.clone(),
             size: s,
             flagclass: flag_class_of(varnode_flags::written),
@@ -1687,9 +1761,9 @@ impl VarnodeBank {
 
     /// `endLoc(int4 s,const Address &addr,const Address &pc,uintm uniq)`
     /// (`varnode.cc:1781`).
-    fn end_loc_pc(&self, s: int4, addr: &Address, pc: &Address, uniq: uintm) -> Bound<LocKey> {
+    fn end_loc_pc(&self, s: int4, addr: &Address, pc: &Address, uniq: uintm) -> LocProbe {
         // (the C++ does NOT remap ~0 here) ; upper_bound
-        Bound::Excluded(LocKey {
+        LocProbe::Upper(LocKey {
             addr: addr.clone(),
             size: s,
             flagclass: flag_class_of(varnode_flags::written),
@@ -1708,7 +1782,7 @@ impl VarnodeBank {
         addr: &Address,
     ) -> impl Iterator<Item = VarnodeId> + '_ {
         // beginLoc: searchvn{size=s, loc=addr} ; lower_bound  (flag = input)
-        let begin = Bound::Included(LocKey {
+        let begin = LocProbe::Lower(LocKey {
             addr: addr.clone(),
             size: s,
             flagclass: flag_class_of(varnode_flags::input),
@@ -1716,14 +1790,14 @@ impl VarnodeBank {
             create_index: 0,
         });
         // endLoc: searchvn{size=s+1, loc=addr} ; lower_bound
-        let end = Bound::Excluded(LocKey {
+        let end = LocProbe::Lower(LocKey {
             addr: addr.clone(),
             size: s + 1,
             flagclass: flag_class_of(varnode_flags::input),
             seqnum: SeqNum::default(),
             create_index: 0,
         });
-        self.iter_loc_range(begin, end)
+        self.iter_loc_probe(begin, end)
     }
 
     /// Varnode ids of a given size, starting address, and property class in
@@ -1736,7 +1810,7 @@ impl VarnodeBank {
     ) -> impl Iterator<Item = VarnodeId> + '_ {
         let begin = self.begin_loc_flag(s, addr, fl);
         let end = self.end_loc_flag(s, addr, fl);
-        self.iter_loc_range(begin, end)
+        self.iter_loc_probe(begin, end)
     }
 
     /// Varnode ids of a given size/address defined at a specific pc/seqnum, in
@@ -1751,28 +1825,30 @@ impl VarnodeBank {
         let begin = self.begin_loc_pc(s, addr, pc, uniq);
         // endLoc uses the raw uniq (no ~0 remap)
         let end = self.end_loc_pc(s, addr, pc, uniq.unwrap_or(uintm::MAX));
-        self.iter_loc_range(begin, end)
+        self.iter_loc_probe(begin, end)
     }
 
     // --- Definition-tree range queries ------------------------------------
 
-    fn iter_def_range(
+    /// Iterate varnode ids whose definition lies in `[start, end)` of the def
+    /// tree, with the bounds given as [`DefProbe`]s.
+    fn iter_def_probe(
         &self,
-        begin: Bound<DefKey>,
-        end: Bound<DefKey>,
+        start: DefProbe,
+        end: DefProbe,
     ) -> impl Iterator<Item = VarnodeId> + '_ {
-        self.def_tree.range((begin, end)).map(|(_, &id)| id)
+        self.def_tree.range((start.into_start(), end.into_end())).map(|(_, &id)| id)
     }
 
     /// `beginDef(uint4 fl)` (`varnode.cc:1850`).
-    fn begin_def_flag(&self, fl: uint4) -> Bound<DefKey> {
+    fn begin_def_flag(&self, fl: uint4) -> DefProbe {
         if fl == varnode_flags::input {
             // return def_tree.begin();  -- inputs occur first
-            return Bound::Unbounded;
+            return DefProbe::Begin;
         }
         if fl == varnode_flags::written {
             // searchvn{loc=minimal, flags=written, def=&searchop(minimal seq)} ; lower_bound
-            return Bound::Included(DefKey {
+            return DefProbe::Lower(DefKey {
                 addr: Address::new_extreme(mach_extreme::m_minimal),
                 size: 0,
                 flagclass: flag_class_of(varnode_flags::written),
@@ -1781,7 +1857,7 @@ impl VarnodeBank {
             });
         }
         // fl == 0 (free): searchvn{loc=maximal, flags=written, def=&searchop(maximal seq)} ; upper_bound
-        Bound::Excluded(DefKey {
+        DefProbe::Upper(DefKey {
             addr: Address::new_extreme(mach_extreme::m_maximal),
             size: 0,
             flagclass: flag_class_of(varnode_flags::written),
@@ -1791,10 +1867,10 @@ impl VarnodeBank {
     }
 
     /// `endDef(uint4 fl)` (`varnode.cc:1888`).
-    fn end_def_flag(&self, fl: uint4) -> Bound<DefKey> {
+    fn end_def_flag(&self, fl: uint4) -> DefProbe {
         if fl == varnode_flags::input {
             // searchvn{loc=minimal, flags=written, def=&searchop(minimal seq)} ; lower_bound
-            return Bound::Excluded(DefKey {
+            return DefProbe::Lower(DefKey {
                 addr: Address::new_extreme(mach_extreme::m_minimal),
                 size: 0,
                 flagclass: flag_class_of(varnode_flags::written),
@@ -1804,7 +1880,7 @@ impl VarnodeBank {
         }
         if fl == varnode_flags::written {
             // searchvn{loc=maximal, flags=written, def=&searchop(maximal seq)} ; upper_bound
-            return Bound::Excluded(DefKey {
+            return DefProbe::Upper(DefKey {
                 addr: Address::new_extreme(mach_extreme::m_maximal),
                 size: 0,
                 flagclass: flag_class_of(varnode_flags::written),
@@ -1813,7 +1889,7 @@ impl VarnodeBank {
             });
         }
         // fl == 0 (free): def_tree.end()
-        Bound::Unbounded
+        DefProbe::End
     }
 
     /// Varnode ids restricted by a definition property class, in definition
@@ -1821,19 +1897,19 @@ impl VarnodeBank {
     pub fn iter_def_flag(&self, fl: uint4) -> impl Iterator<Item = VarnodeId> + '_ {
         let begin = self.begin_def_flag(fl);
         let end = self.end_def_flag(fl);
-        self.iter_def_range(begin, end)
+        self.iter_def_probe(begin, end)
     }
 
     /// `beginDef(uint4 fl,const Address &addr)` (`varnode.cc:1927`).
     /// Errors for the `written` class (C++ throws "Cannot get contiguous
     /// written AND addressed").
-    fn begin_def_flag_addr(&self, fl: uint4, addr: &Address) -> KunaResult<Bound<DefKey>> {
+    fn begin_def_flag_addr(&self, fl: uint4, addr: &Address) -> KunaResult<DefProbe> {
         if fl == varnode_flags::written {
             return Err(KunaError::lowlevel("Cannot get contiguous written AND addressed"));
         }
         if fl == varnode_flags::input {
             // searchvn{loc=addr} ; lower_bound  (flags default = input)
-            return Ok(Bound::Included(DefKey {
+            return Ok(DefProbe::Lower(DefKey {
                 addr: addr.clone(),
                 size: 0,
                 flagclass: flag_class_of(varnode_flags::input),
@@ -1842,7 +1918,7 @@ impl VarnodeBank {
             }));
         }
         // fl == 0 (free): searchvn{loc=addr, flags=0(free)} ; upper_bound
-        Ok(Bound::Excluded(DefKey {
+        Ok(DefProbe::Upper(DefKey {
             addr: addr.clone(),
             size: 0,
             flagclass: flag_class_of(0),
@@ -1852,13 +1928,13 @@ impl VarnodeBank {
     }
 
     /// `endDef(uint4 fl,const Address &addr)` (`varnode.cc:1961`).
-    fn end_def_flag_addr(&self, fl: uint4, addr: &Address) -> KunaResult<Bound<DefKey>> {
+    fn end_def_flag_addr(&self, fl: uint4, addr: &Address) -> KunaResult<DefProbe> {
         if fl == varnode_flags::written {
             return Err(KunaError::lowlevel("Cannot get contiguous written AND addressed"));
         }
         if fl == varnode_flags::input {
             // searchvn{loc=addr, size=1000000} ; lower_bound
-            return Ok(Bound::Included(DefKey {
+            return Ok(DefProbe::Lower(DefKey {
                 addr: addr.clone(),
                 size: 1000000,
                 flagclass: flag_class_of(varnode_flags::input),
@@ -1867,7 +1943,7 @@ impl VarnodeBank {
             }));
         }
         // fl == 0 (free): searchvn{loc=addr, size=1000000, flags=0(free)} ; lower_bound
-        Ok(Bound::Included(DefKey {
+        Ok(DefProbe::Lower(DefKey {
             addr: addr.clone(),
             size: 1000000,
             flagclass: flag_class_of(0),
@@ -1881,7 +1957,7 @@ impl VarnodeBank {
     pub fn iter_def_flag_addr(&self, fl: uint4, addr: &Address) -> KunaResult<Vec<VarnodeId>> {
         let begin = self.begin_def_flag_addr(fl, addr)?;
         let end = self.end_def_flag_addr(fl, addr)?;
-        Ok(self.iter_def_range(begin, end).collect())
+        Ok(self.iter_def_probe(begin, end).collect())
     }
 
     // --- Additional input finders (def-tree based) ------------------------
@@ -1895,7 +1971,9 @@ impl VarnodeBank {
         let end = loc.get_offset().wadd(s as i64 as u64).wsub(1);
 
         let begin = self.begin_def_flag_addr(varnode_flags::input, loc)?;
-        let end_bound = if end == highest {
+        // The C++ end iterator is `endDef(input, highest)` or `beginDef(input,
+        // loc+s)`; either way it is a probe used in *end* position.
+        let end_probe = if end == highest {
             // enditer = endDef(input, Address(space, highest));
             let tmp = Address::new(Rc::clone(space), highest);
             self.end_def_flag_addr(varnode_flags::input, &tmp)?
@@ -1905,7 +1983,7 @@ impl VarnodeBank {
             self.begin_def_flag_addr(varnode_flags::input, &plus)?
         };
 
-        for id in self.iter_def_range(begin, end_bound) {
+        for id in self.iter_def_probe(begin, end_probe) {
             let vn = &self.arena[id];
             // if (vn->getOffset()+vn->getSize()-1 <= end) return vn;
             if vn.get_offset().wadd(vn.size as i64 as u64).wsub(1) <= end {
@@ -1920,17 +1998,18 @@ impl VarnodeBank {
     pub fn find_covering_input(&self, s: int4, loc: &Address) -> KunaResult<Option<VarnodeId>> {
         // iter = beginDef(input, loc);  then possibly step back one
         let begin = self.begin_def_flag_addr(varnode_flags::input, loc)?;
-        let cand = self.iter_def_range(begin.clone(), Bound::Unbounded).next();
+        let cand = self.iter_def_probe(begin.clone(), DefProbe::End).next();
         let vn_id = match cand {
             None => return Ok(None), // iter == def_tree.end()
             Some(id) => {
                 let vn = &self.arena[id];
                 // if (vn->getAddr() != loc && iter != def_tree.begin()) { --iter; vn = *iter; }
                 if &vn.loc != loc {
-                    // step back one: the last element strictly before `begin`
+                    // step back one: the last element strictly before the `begin`
+                    // iterator position (so `begin` is used as an *end* bound)
                     match self
                         .def_tree
-                        .range((Bound::Unbounded, begin))
+                        .range((Bound::Unbounded, begin.into_end()))
                         .next_back()
                         .map(|(_, &i)| i)
                     {
@@ -1959,14 +2038,15 @@ impl VarnodeBank {
     pub fn has_input_intersection(&self, s: int4, loc: &Address) -> KunaResult<bool> {
         let begin = self.begin_def_flag_addr(varnode_flags::input, loc)?;
         // iter = beginDef(input, loc);  if (iter != end) { vn=*iter; ... }
-        if let Some(id) = self.iter_def_range(begin.clone(), Bound::Unbounded).next() {
+        if let Some(id) = self.iter_def_probe(begin.clone(), DefProbe::End).next() {
             let vn = &self.arena[id];
             if vn.is_input() && vn.intersects_range(loc, s) {
                 return Ok(true);
             }
         }
         // if (iter != def_tree.begin()) { --iter; vn=*iter; ... }
-        if let Some((_, &id)) = self.def_tree.range((Bound::Unbounded, begin)).next_back() {
+        // (the `begin` probe is used as an *end* bound to step back one)
+        if let Some((_, &id)) = self.def_tree.range((Bound::Unbounded, begin.into_end())).next_back() {
             let vn = &self.arena[id];
             if vn.is_input() && vn.intersects_range(loc, s) {
                 return Ok(true);
@@ -2314,26 +2394,43 @@ mod tests {
     }
 
     /// find_input / find_covering_input / find_covered_input on inputs.
+    ///
+    /// The def-tree finders match the C++'s `lower_bound`-then-step-back idiom,
+    /// which relies on there being a def-tree element *after* the queried range
+    /// (in real functions the written/free varnodes that follow the inputs);
+    /// the test mirrors that by registering a higher-address input so the
+    /// covering/intersection probes land on a real element and step back.
     #[test]
     fn input_finders() {
         let m = build_manager();
         let mut bank = VarnodeBank::new(&m, 0).unwrap();
         let big_addr = Address::new(space(&m, 2), 0x300);
-        let big_free = bank.create(8, big_addr.clone(), dt(8));
+        let big_free = bank.create(8, big_addr.clone(), dt(8)); // covers [0x300,0x307]
         let big = bank.set_input(big_free, &mut no_replace()).unwrap();
+        // a higher-address input so the covering/intersection lower_bounds land
+        // on a real element (and step back), as they would in a real function
+        let hi_addr = Address::new(space(&m, 2), 0x400);
+        let hi_free = bank.create(2, hi_addr.clone(), dt(2)); // covers [0x400,0x401]
+        let hi = bank.set_input(hi_free, &mut no_replace()).unwrap();
 
         assert_eq!(bank.find_input(8, &big_addr), Some(big));
         assert_eq!(bank.find_input(4, &big_addr), None);
+        assert_eq!(bank.find_input(2, &hi_addr), Some(hi));
 
+        // covering: [0x302,0x303] is inside big [0x300,0x307]
         let inner = Address::new(space(&m, 2), 0x302);
         assert_eq!(bank.find_covering_input(2, &inner).unwrap(), Some(big));
+        // an exact-start covering query (vn->getAddr() == loc, no step back)
+        assert_eq!(bank.find_covering_input(2, &hi_addr).unwrap(), Some(hi));
 
+        // covered: a small input fully inside a larger query range
         let small_addr = Address::new(space(&m, 2), 0x401);
         let small_free = bank.create(2, small_addr.clone(), dt(2));
         let small = bank.set_input(small_free, &mut no_replace()).unwrap();
-        let q = Address::new(space(&m, 2), 0x400);
-        assert_eq!(bank.find_covered_input(4, &q).unwrap(), Some(small));
+        let q = Address::new(space(&m, 2), 0x401);
+        assert_eq!(bank.find_covered_input(2, &q).unwrap(), Some(small));
 
+        // intersection
         assert!(bank.has_input_intersection(2, &inner).unwrap());
         let far = Address::new(space(&m, 2), 0x9000);
         assert!(!bank.has_input_intersection(2, &far).unwrap());
