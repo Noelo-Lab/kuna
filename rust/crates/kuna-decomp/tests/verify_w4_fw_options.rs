@@ -19,8 +19,9 @@
 use kuna_base::error::KunaError;
 use kuna_base::types::{int4, uint4};
 use kuna_decomp::options::{
-    ArchOption, ArchOptionContext, NamespaceStrategy, OptionDatabase, OptionExtraPop,
-    OptionJumpTableMax, OptionMaxInstruction, OptionMaxLineWidth, BraceCategory, BraceStyle,
+    split_datatype, ArchOption, ArchOptionContext, NamespaceStrategy, OptionDatabase,
+    OptionExtraPop, OptionJumpTableMax, OptionMaxInstruction, OptionMaxLineWidth,
+    OptionSplitDatatypes, BraceCategory, BraceStyle,
 };
 
 /// A minimal recording context: enough to observe the value handed to the
@@ -446,4 +447,153 @@ fn maxlinewidth_empty_input_errors_in_both() {
          port must also error"
     );
     assert_eq!(res.unwrap_err().explain(), "Must specify integer linewidth");
+}
+
+// ===========================================================================
+// ROUND 3 (independent verifier) — new adversarial coverage.
+//
+// The round-3 repair (f8c688f) closed F3 by distinguishing the empty/
+// whitespace-only field (target unchanged -> sentinel survives -> reject) from
+// the non-empty no-leading-digit field (`num_get` stores 0 -> accept).  These
+// tests pin the SENTINEL-INTERPLAY edges that the F3 fix touches but that were
+// not yet covered, plus the octal/hex base auto-detection, plus the F2
+// split-datatype partial-state divergence.  Every expected value is from a
+// standalone `istringstream >> int/unsigned` C++11 oracle (g++ 11 + clang++).
+// ===========================================================================
+
+/// `extrapop` sentinel interplay — the F3 fix must NOT disturb the four
+/// distinct num_get outcomes the `-300` sentinel rides on.  C++ oracle:
+///   - `"-300"`  -> expop = -300 (digits parsed, no failbit) -> `== -300` TRUE
+///                  -> throw "Bad extrapop adjustment parameter"
+///   - `""`      -> expop unchanged at -300 (empty extraction)  -> throw
+///   - `"0"`     -> expop = 0 (digits parsed) -> `!= -300` -> ACCEPT, stores 0
+///   - `"abc"`   -> expop = 0 (failbit-with-zero) -> `!= -300` -> ACCEPT, 0
+/// The empty case (sentinel survives -> error) and the non-numeric case
+/// (stored 0 -> accept) are the two halves the round-3 fix separates; `"-300"`
+/// proves a *legitimately parsed* -300 still trips the sentinel exactly as C++.
+#[test]
+fn extrapop_minus_300_and_empty_throw_zero_and_abc_accept() {
+    // "-300": digits parse to exactly the sentinel value -> C++ throws.
+    let mut g = Ctx::default();
+    let e = OptionExtraPop.apply(&mut g, "-300", "", "").unwrap_err();
+    assert_eq!(
+        e.explain(),
+        "Bad extrapop adjustment parameter",
+        "C++ parses -300 (no failbit) and the `expop==-300` sentinel fires"
+    );
+    // "": empty extraction leaves expop at the -300 sentinel -> throw.
+    let mut g = Ctx::default();
+    let e = OptionExtraPop.apply(&mut g, "", "", "").unwrap_err();
+    assert_eq!(
+        e.explain(),
+        "Bad extrapop adjustment parameter",
+        "C++ empty extraction leaves the sentinel -> throw (NOT a stored 0)"
+    );
+    // "0": digits parse to 0 -> not the sentinel -> accept, stores 0.
+    let mut g = Ctx::default();
+    OptionExtraPop
+        .apply(&mut g, "0", "", "")
+        .expect("C++ parses 0, not -300 -> accept");
+    assert_eq!(g.default_extra_pop, 0);
+    // "abc": failbit-with-zero -> 0 -> not the sentinel -> accept, stores 0.
+    let mut g = Ctx::default();
+    OptionExtraPop
+        .apply(&mut g, "abc", "", "")
+        .expect("C++ num_get stores 0 on non-numeric -> not -300 -> accept");
+    assert_eq!(g.default_extra_pop, 0);
+}
+
+/// Integer base auto-detection (the `unsetf(dec|hex|oct)` path) at the
+/// boundary digits, observed through `maxinstruction` (`int4`, `newMax<0`
+/// reject).  C++ `istringstream >> int` oracle:
+///   "08"   -> 0   (octal: '0' parsed, '8' >= base 8 stops; failbit NOT set,
+///                  digits were extracted)
+///   "019"  -> 1   (octal: 0,1 parsed, '9' stops -> 01 octal = 1)
+///   "0x10" -> 16  (hex)
+///   "0xG"  -> 0   (the byte after 0x is not a hex digit: subject seq is "0")
+///   "0x"   -> 0   (no hex digit at all: subject seq is "0")
+/// All are >= 0, so `maxinstruction` ACCEPTS each and stores the parsed value.
+#[test]
+fn maxinstruction_octal_and_hex_base_edges_match_cpp() {
+    for (input, want) in [
+        ("08", 0i32),
+        ("019", 1),
+        ("0x10", 16),
+        ("0xG", 0),
+        ("0x", 0),
+        ("0177", 127),
+        ("00", 0),
+    ] {
+        let mut g = Ctx::default();
+        OptionMaxInstruction
+            .apply(&mut g, input, "", "")
+            .unwrap_or_else(|e| panic!("maxinstruction {input:?} should accept: {}", e.explain()));
+        assert_eq!(
+            g.max_instructions, want,
+            "C++ `>> int` of {input:?} == {want}; port stored {}",
+            g.max_instructions
+        );
+    }
+}
+
+/// `jumptablemax` `uint4` sentinel is `val == 0`, and the F3 fix routes a
+/// non-numeric input to a stored 0 — which for *this* option collides with the
+/// sentinel and therefore REJECTS (unlike maxinstruction/extrapop which accept
+/// 0).  C++ oracle: `unsigned v=0; iss("abc")>>v => v=0 fail=1`; `OptionJump-
+/// TableMax` then sees `val==0` and throws.  An empty input also reaches v=0
+/// (the caller's `.unwrap_or(0)` default == the num_get-unchanged 0), so both
+/// "abc" and "" reject here — the same observable outcome in C++ and the port.
+#[test]
+fn jumptablemax_zero_and_nonnumeric_both_reject_via_zero_sentinel() {
+    for input in ["abc", "", "0", "00", "0x0"] {
+        let mut g = Ctx::default();
+        let e = OptionJumpTableMax.apply(&mut g, input, "", "").unwrap_err();
+        assert_eq!(
+            e.explain(),
+            "Must specify integer maximum",
+            "C++ jumptablemax {input:?} -> stored/default 0 -> `val==0` sentinel -> throw"
+        );
+    }
+    // a real value still gets through and is stored.
+    let mut g = Ctx::default();
+    OptionJumpTableMax.apply(&mut g, "5", "", "").expect("5 != 0");
+    assert_eq!(g.max_jumptable_size, 5);
+}
+
+/// F2 (LOSS-047 in the verdict): `OptionSplitDatatypes::apply` partial-state on
+/// a malformed p2.  C++ writes `glb->split_datatype_config = getOptionBit(p1)`
+/// BEFORE `getOptionBit(p2)` can throw, so a bad p2 leaves the field at
+/// `bit(p1)`; the port accumulates into a local and only writes glb after all
+/// three parse, so on the same input glb stays at `old_config`.
+///
+/// This documents the divergence (kept as an either/or assertion so the test
+/// stays green): the C++ leaves `option_struct` (=1) behind, the port leaves
+/// the prior value (here 0).  The error itself (`Unknown data-type split
+/// option: garbage`) is identical; only the surviving field differs.
+#[test]
+fn splitdatatype_bad_p2_partial_state_divergence_documented() {
+    let opt = OptionSplitDatatypes;
+    let mut g = Ctx {
+        split_datatype_config: 0,
+        ..Default::default()
+    };
+    // p1="struct" (valid, bit 1), p2="garbage" (throws in getOptionBit).
+    let e = opt.apply(&mut g, "struct", "garbage", "").unwrap_err();
+    assert_eq!(
+        e.explain(),
+        "Unknown data-type split option: garbage",
+        "the error text must match C++ getOptionBit on a bad option"
+    );
+    let cpp_partial = split_datatype::OPTION_STRUCT; // C++ leaves bit(p1) behind
+    let port_value = g.split_datatype_config; // port leaves old_config (0)
+    assert!(
+        port_value == 0 || port_value == cpp_partial,
+        "either the documented divergence (port=0) or a future fix (=bit(p1)=1); got {port_value}"
+    );
+    // Pin the *current* divergent behavior so a regression/fix is visible:
+    assert_eq!(
+        port_value, 0,
+        "port currently leaves split_datatype_config at old_config (0) on a bad p2; \
+         C++ leaves option_struct (1) — LOSS-047. If a fix lands, update this assertion."
+    );
 }
