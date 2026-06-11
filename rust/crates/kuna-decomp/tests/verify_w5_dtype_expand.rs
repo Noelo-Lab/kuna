@@ -87,14 +87,13 @@ fn w5_dtype_spacebase_compare_dependency_distinguishes_localframe() {
     let a = spacebase(Some(Rc::clone(&spc)), Address::new(Rc::clone(&spc), 0x10));
     let b = spacebase(Some(Rc::clone(&spc)), Address::new(Rc::clone(&spc), 0x20));
 
-    match a.compare_dependency(&b) {
-        Ok(0) => panic!(
+    if let Ok(0) = a.compare_dependency(&b) {
+        panic!(
             "Datatype::compareDependency routed TYPE_SPACEBASE to the base body: \
              distinct-localframe spacebases compared EQUAL. C++ \
              TypeSpacebase::compareDependency (type.cc:3504) tie-breaks on \
              spaceid/localframe."
-        ),
-        Ok(_) | Err(_) => {}
+        );
     }
 }
 
@@ -156,4 +155,165 @@ fn w5_dtype_string2metatype_boundary_and_fallthrough() {
         "partenum"
     );
     assert!(string2metatype("partenum").is_err());
+}
+
+// =============================================================================
+// Round 2 verifier additions (independent re-derivation of the override routing)
+// =============================================================================
+//
+// Round 1 REJECTed on F1: `DatatypeKind::Spacebase` was routed to the base
+// `compare`/`compareDependency` body, silently returning Ok(0) for two distinct
+// spacebases. These tests independently pin the *fixed* routing and the rest of
+// the subclass-override partition, against type.hh's virtual-override map:
+//
+//   compare/compareDependency overriders : Pointer, Array, Struct, Union, Enum,
+//       Code, PartialStruct, PartialUnion, PartialEnum, PointerRel, Spacebase
+//   getSubType overriders                : Pointer, Array, Struct, Spacebase,
+//       PartialStruct, Code  (Union's getSubType is commented out -> base/null;
+//       Enum has none -> base/null)
+//   findCompatibleResolve overriders     : Pointer, Array, Struct, Union,
+//       PartialUnion  (type.hh:294/488/522/608/637/714)
+//   isPtrsubMatching overriders          : Pointer, PointerRel
+//   numDepend/getDepend for PointerRel inherit TypePointer's (1 / ptrto).
+
+use kuna_decomp::dtype::TypeField;
+
+/// F1 FIX CONFIRMATION. After the round-1 work order, `Spacebase` must NOT use
+/// the base `compare` body (which would equate distinct-localframe spacebases).
+/// The faithful interface answer is the SEAM error (the override is W6), so both
+/// `compare` and `compare_dependency` on a Spacebase must return `Err`, never
+/// `Ok` — and certainly never `Ok(0)`.
+#[test]
+fn w5r2_spacebase_compare_routes_to_seam_err() {
+    let spc = const_space();
+    let a = spacebase(Some(Rc::clone(&spc)), Address::new(Rc::clone(&spc), 0x1000));
+    let b = spacebase(Some(Rc::clone(&spc)), Address::new(Rc::clone(&spc), 0x2000));
+    assert!(
+        a.compare(&b, 10).is_err(),
+        "Spacebase::compare must SEAM(W6)-Err (F1 fix), not route to the base body"
+    );
+    assert!(
+        a.compare_dependency(&b).is_err(),
+        "Spacebase::compareDependency must SEAM(W6)-Err (F1 fix)"
+    );
+    // And a self-spacebase still must not sneak through the base body as Ok(0).
+    assert!(a.compare(&a.clone(), 10).is_err());
+}
+
+/// `find_compatible_resolve` partition (type.hh:294/488/522/608/637/714). The
+/// FIVE overriders (Pointer/Array/Struct/Union/PartialUnion) must SEAM-Err; every
+/// other kind returns the base default -1 (type.cc:600-604). PointerRel, Code,
+/// Spacebase, PartialStruct, PartialEnum are NOT overriders -> base -1.
+#[test]
+fn w5r2_find_compatible_resolve_override_partition() {
+    let int_t = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+
+    // Base default -1 for non-overriders.
+    assert_eq!(Datatype::new(4, type_metatype::TYPE_INT).find_compatible_resolve(&int_t).unwrap(), -1);
+    assert_eq!(Datatype::new(0, type_metatype::TYPE_VOID).find_compatible_resolve(&int_t).unwrap(), -1);
+    let mut code = Datatype::new_with_align(1, 1, type_metatype::TYPE_CODE);
+    code.kind = DatatypeKind::Code { proto: None };
+    assert_eq!(code.find_compatible_resolve(&int_t).unwrap(), -1);
+    let pe_parent = Rc::new(Datatype::new(4, type_metatype::TYPE_ENUM_INT));
+    let mut pe = Datatype::new_with_align(2, -1, type_metatype::TYPE_PARTIALENUM);
+    pe.kind = DatatypeKind::PartialEnum {
+        stripped: Rc::clone(&int_t),
+        parent: pe_parent,
+        offset: 0,
+    };
+    assert_eq!(pe.find_compatible_resolve(&int_t).unwrap(), -1);
+
+    // The five overriders SEAM-Err.
+    let mut s = Datatype::new_with_align(4, -1, type_metatype::TYPE_STRUCT);
+    s.kind = DatatypeKind::Struct { field: vec![], bitfield: vec![] };
+    assert!(s.find_compatible_resolve(&int_t).is_err());
+    let mut u = Datatype::new_with_align(4, -1, type_metatype::TYPE_UNION);
+    u.kind = DatatypeKind::Union { field: vec![] };
+    assert!(u.find_compatible_resolve(&int_t).is_err());
+    let mut p = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR);
+    p.kind = DatatypeKind::Pointer {
+        ptrto: Rc::clone(&int_t),
+        spaceid: None,
+        truncate: None,
+        wordsize: 1,
+    };
+    assert!(p.find_compatible_resolve(&int_t).is_err());
+    let mut a = Datatype::new_with_align(8, -1, type_metatype::TYPE_ARRAY);
+    a.kind = DatatypeKind::Array { arrayof: Rc::clone(&int_t), arraysize: 2 };
+    assert!(a.find_compatible_resolve(&int_t).is_err());
+}
+
+/// `get_sub_type` partition: Union and Enum are NOT getSubType overriders
+/// (Union's is commented out in type.hh:619; Enum has none), so they take the
+/// base body -> (None, off). Struct/Array/Pointer ARE overriders -> SEAM-Err.
+#[test]
+fn w5r2_get_sub_type_union_enum_are_base_not_seam() {
+    let mut u = Datatype::new_with_align(8, -1, type_metatype::TYPE_UNION);
+    u.kind = DatatypeKind::Union { field: vec![] };
+    let (sub, newoff) = u.get_sub_type(5).unwrap();
+    assert!(sub.is_none(), "TypeUnion::getSubType is base (null) — type.hh:619 commented out");
+    assert_eq!(newoff, 5, "base getSubType passes offset through unchanged");
+
+    let mut e = Datatype::new_with_align(4, -1, type_metatype::TYPE_ENUM_INT);
+    e.kind = DatatypeKind::Enum { namemap: std::collections::BTreeMap::new() };
+    let (sub, newoff) = e.get_sub_type(3).unwrap();
+    assert!(sub.is_none());
+    assert_eq!(newoff, 3);
+
+    // Struct DOES override -> SEAM.
+    let mut s = Datatype::new_with_align(8, -1, type_metatype::TYPE_STRUCT);
+    s.kind = DatatypeKind::Struct {
+        field: vec![TypeField::new(0, 0, "a", Rc::new(Datatype::new(4, type_metatype::TYPE_INT)))],
+        bitfield: vec![],
+    };
+    assert!(s.get_sub_type(0).is_err());
+}
+
+/// `PointerRel` inherits `TypePointer::numDepend()==1` and `getDepend(0)==ptrto`
+/// (it does NOT override them — type.hh:724-770). The port must report 1 / ptrto,
+/// and `is_ptrsub_matching` (an overrider for both Pointer and PointerRel) SEAMs.
+#[test]
+fn w5r2_pointer_rel_inherits_pointer_depend_and_ptrsub_seams() {
+    let ptrto = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+    let parent = Rc::new(Datatype::new(16, type_metatype::TYPE_STRUCT));
+    let mut pr = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTRREL);
+    pr.kind = DatatypeKind::PointerRel {
+        ptrto: Rc::clone(&ptrto),
+        wordsize: 1,
+        stripped: None,
+        parent: Rc::clone(&parent),
+        offset: 4,
+    };
+    assert_eq!(pr.num_depend(), 1, "PointerRel inherits TypePointer::numDepend()==1");
+    assert_eq!(pr.get_depend(0).unwrap().get_size(), 4, "inherited getDepend(0)==ptrto");
+    assert_eq!(pr.get_ptr_to().unwrap().get_size(), 4);
+    assert_eq!(pr.get_byte_offset(), Some(4));
+    assert_eq!(pr.get_rel_parent().unwrap().get_size(), 16);
+    // isPtrsubMatching overrides for PointerRel -> SEAM.
+    assert!(pr.is_ptrsub_matching(0, 0, 1).is_err());
+    // getPtrInto overrides for PointerRel -> SEAM (relative offset math is W6).
+    assert!(pr.get_ptr_into().is_err());
+}
+
+/// F2 SEAM behavior (the accepted loss). The base C++ `resolveInFlow`/`findResolve`
+/// return `this` for plain (non-union) types; the port SEAMs them to Err for every
+/// kind. This pins the *documented* divergence so a regression that silently makes
+/// it Ok (without the union resolution) would be caught, and so the loss stays
+/// visible. Faithful interface-stage answer == Err for a plain int.
+#[test]
+fn w5r2_resolve_in_flow_base_is_seamed_loss_f2() {
+    let int_t = Datatype::new(4, type_metatype::TYPE_INT);
+    // C++ base returns `this` (the int) here; the port seams it. Pin the Err so the
+    // loss is explicit and a future "return self" implementation is a deliberate change.
+    // OpId is a slotmap key newtype; its default (null) key is a valid opaque handle
+    // for this seam (the body never reads it).
+    let op = kuna_decomp::seams::OpId::default();
+    assert!(
+        int_t.resolve_in_flow(op, 0).is_err(),
+        "base resolveInFlow is SEAM(W6)'d (LOSS F2): C++ returns `this`"
+    );
+    assert!(
+        int_t.find_resolve(op, -1).is_err(),
+        "base findResolve is SEAM(W6)'d (LOSS F2): C++ returns `this`"
+    );
 }
