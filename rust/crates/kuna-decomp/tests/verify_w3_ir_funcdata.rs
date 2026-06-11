@@ -395,3 +395,197 @@ fn splice_clears_startbasic_on_merged_head() {
     let flags = fd.obank().get(head).unwrap().get_flags();
     assert_eq!(flags & pcodeop_flags::startbasic, 0, "startbasic must be cleared on the merged head");
 }
+
+// ===========================================================================
+// ROUND-2 verifier additions (item w3-ir-funcdata, attempt 2).
+//
+// The round-2 repair (commit 02e34c9) rewrote `replace_reads_thunk` to walk
+// oldvn's descend snapshot and, per non-skipped entry, sever exactly ONE link
+// (`erase_descend`) and repoint the single `getSlot(oldvn)` slot.  The most
+// fragile property this introduces is descend MULTIPLICITY: an op that reads
+// oldvn in N distinct slots has N descend entries, and the C++
+// `while` loop relies on `getSlot` returning successively higher slots as the
+// already-repointed slots stop matching oldvn.  The round-1 tests only cover
+// the single-read self-def / single-read ordinary cases; these pin the
+// multi-read interplay and the self-def-skip-amid-other-readers case directly
+// against the C++ `VarnodeBank::replace` oracle (varnode.cc:1351).
+//
+// To hold >1 descend entry oldvn must be non-free (the free-varnode invariant
+// forbids multiple descendants), so these make oldvn a formal input.
+// ===========================================================================
+
+fn no_replace() -> impl FnMut(&mut VarnodeBank, kuna_decomp::seams::VarnodeId, kuna_decomp::seams::VarnodeId) -> kuna_base::error::KunaResult<()> {
+    |_: &mut VarnodeBank, _, _| Ok(())
+}
+
+// An op reading oldvn in TWO slots has two descend entries.  C++ repoints both
+// (getSlot returns 0 then 1 as slot 0 stops matching), erases both links, and
+// adds the op to newvn's descend twice.  (varnode.cc:1359-1368, multi-read.)
+#[test]
+fn verify_r2_multi_slot_read_repoints_every_slot() {
+    let manage = build_manager();
+    let ram = Rc::clone(manage.get_space_by_name("ram").unwrap());
+    let ct = unk_type();
+    let mut bank = VarnodeBank::new(&manage, 0x10000000).unwrap();
+    let mut obank = PcodeOpBank::new();
+
+    // oldvn must be non-free to hold two descend entries -> make it an input.
+    let oldfree = bank.create(4, Address::new(Rc::clone(&ram), 0x100), Rc::clone(&ct));
+    let oldvn = bank.set_input(oldfree, &mut no_replace()).unwrap();
+    // newvn must also be non-free: C++ `addDescend` (and the port) reject a
+    // FREE varnode gaining a 2nd descendant ("Free varnode has multiple
+    // descendants", varnode.cc:336) — the survivor of a 2-read replace is a
+    // real SSA varnode, never free.
+    let newfree = bank.create(4, Address::new(Rc::clone(&ram), 0x200), Rc::clone(&ct));
+    let newvn = bank.set_input(newfree, &mut no_replace()).unwrap();
+
+    // op = ADD oldvn, oldvn  (reads oldvn in slot 0 AND slot 1); output is some
+    // unrelated varnode (NOT newvn) so the self-def skip does not apply.
+    let out = bank.create(4, Address::new(Rc::clone(&ram), 0x300), Rc::clone(&ct));
+    let op = obank.create_at(2, Address::new(Rc::clone(&ram), 0x1000));
+    obank.change_opcode(op, TypeOp::new(OpCode::CPUI_INT_ADD, 0, "INT_ADD"));
+    obank.get_mut(op).unwrap().set_output(Some(out));
+    obank.get_mut(op).unwrap().set_input(Some(oldvn), 0);
+    obank.get_mut(op).unwrap().set_input(Some(oldvn), 1);
+    // Two descend entries (one per read), as the op-graph would maintain.
+    bank.add_descend(oldvn, op).unwrap();
+    bank.add_descend(oldvn, op).unwrap();
+    assert_eq!(bank.get(oldvn).unwrap().num_descend(), 2);
+
+    {
+        let mut thunk = Funcdata::replace_reads_thunk(&mut obank);
+        thunk(&mut bank, oldvn, newvn).unwrap();
+    }
+
+    // C++ oracle: both slots now read newvn; oldvn fully detached; newvn's
+    // descend has exactly two entries for op.
+    assert_eq!(obank.get(op).unwrap().get_in(0), Some(newvn), "slot 0 -> newvn");
+    assert_eq!(obank.get(op).unwrap().get_in(1), Some(newvn), "slot 1 -> newvn");
+    assert_eq!(
+        bank.get(oldvn).unwrap().descend_iter().filter(|&o| o == op).count(),
+        0,
+        "oldvn loses both descend links"
+    );
+    assert_eq!(
+        bank.get(newvn).unwrap().descend_iter().filter(|&o| o == op).count(),
+        2,
+        "newvn gains one descend entry per repointed slot (multiplicity preserved)"
+    );
+}
+
+// Self-def skip must NOT starve OTHER readers.  Setup: op_self DEFINES newvn and
+// reads oldvn (skipped); op_other is an ordinary op that reads oldvn (repointed).
+// Both have a descend entry on oldvn.  C++ skips op_self, repoints op_other.
+#[test]
+fn verify_r2_self_def_skip_preserves_other_readers() {
+    let manage = build_manager();
+    let ram = Rc::clone(manage.get_space_by_name("ram").unwrap());
+    let ct = unk_type();
+    let mut bank = VarnodeBank::new(&manage, 0x10000000).unwrap();
+    let mut obank = PcodeOpBank::new();
+
+    let oldfree = bank.create(4, Address::new(Rc::clone(&ram), 0x100), Rc::clone(&ct));
+    let oldvn = bank.set_input(oldfree, &mut no_replace()).unwrap();
+    let newvn = bank.create(4, Address::new(Rc::clone(&ram), 0x200), Rc::clone(&ct));
+    let other_out = bank.create(4, Address::new(Rc::clone(&ram), 0x300), Rc::clone(&ct));
+
+    // op_self: output == newvn, reads oldvn in slot 0  (the SKIP case).
+    let op_self = obank.create_at(1, Address::new(Rc::clone(&ram), 0x1000));
+    obank.change_opcode(op_self, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
+    obank.get_mut(op_self).unwrap().set_output(Some(newvn));
+    obank.get_mut(op_self).unwrap().set_input(Some(oldvn), 0);
+
+    // op_other: output == other_out (!= newvn), reads oldvn in slot 0 (repoint).
+    let op_other = obank.create_at(1, Address::new(Rc::clone(&ram), 0x1004));
+    obank.change_opcode(op_other, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
+    obank.get_mut(op_other).unwrap().set_output(Some(other_out));
+    obank.get_mut(op_other).unwrap().set_input(Some(oldvn), 0);
+
+    // Descend order: op_self first, op_other second (push_back order).
+    bank.add_descend(oldvn, op_self).unwrap();
+    bank.add_descend(oldvn, op_other).unwrap();
+
+    {
+        let mut thunk = Funcdata::replace_reads_thunk(&mut obank);
+        thunk(&mut bank, oldvn, newvn).unwrap();
+    }
+
+    // C++ oracle: op_self skipped (slot 0 stays oldvn, descend link kept);
+    // op_other repointed (slot 0 -> newvn, descend moved to newvn).
+    assert_eq!(obank.get(op_self).unwrap().get_in(0), Some(oldvn), "self-def reader keeps oldvn");
+    assert_eq!(obank.get(op_other).unwrap().get_in(0), Some(newvn), "ordinary reader repoints");
+    // oldvn retains exactly the skipped op_self link; the op_other link is gone.
+    let old_descend: Vec<_> = bank.get(oldvn).unwrap().descend_iter().collect();
+    assert_eq!(old_descend, vec![op_self], "oldvn keeps only the skipped self-def reader");
+    // newvn gains exactly op_other (NOT op_self).
+    let new_descend: Vec<_> = bank.get(newvn).unwrap().descend_iter().collect();
+    assert_eq!(new_descend, vec![op_other], "newvn gains only the repointed ordinary reader");
+}
+
+// Mixed multiplicity: op_other reads oldvn TWICE and op_self (self-def) reads it
+// once.  After replace, op_other has both slots on newvn (2 descend entries) and
+// op_self is untouched (1 descend entry left on oldvn).  Order-sensitive: the
+// self-def entry is interleaved between the two op_other entries.
+#[test]
+fn verify_r2_interleaved_selfdef_and_double_reader() {
+    let manage = build_manager();
+    let ram = Rc::clone(manage.get_space_by_name("ram").unwrap());
+    let ct = unk_type();
+    let mut bank = VarnodeBank::new(&manage, 0x10000000).unwrap();
+    let mut obank = PcodeOpBank::new();
+
+    let oldfree = bank.create(4, Address::new(Rc::clone(&ram), 0x100), Rc::clone(&ct));
+    let oldvn = bank.set_input(oldfree, &mut no_replace()).unwrap();
+    // newvn non-free (it gains two descendants from op_dbl).
+    let newfree = bank.create(4, Address::new(Rc::clone(&ram), 0x200), Rc::clone(&ct));
+    let newvn = bank.set_input(newfree, &mut no_replace()).unwrap();
+    let other_out = bank.create(4, Address::new(Rc::clone(&ram), 0x300), Rc::clone(&ct));
+
+    let op_self = obank.create_at(1, Address::new(Rc::clone(&ram), 0x1000));
+    obank.change_opcode(op_self, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
+    obank.get_mut(op_self).unwrap().set_output(Some(newvn));
+    obank.get_mut(op_self).unwrap().set_input(Some(oldvn), 0);
+
+    let op_dbl = obank.create_at(2, Address::new(Rc::clone(&ram), 0x1004));
+    obank.change_opcode(op_dbl, TypeOp::new(OpCode::CPUI_INT_ADD, 0, "INT_ADD"));
+    obank.get_mut(op_dbl).unwrap().set_output(Some(other_out));
+    obank.get_mut(op_dbl).unwrap().set_input(Some(oldvn), 0);
+    obank.get_mut(op_dbl).unwrap().set_input(Some(oldvn), 1);
+
+    // Interleave: op_dbl(slot0), op_self, op_dbl(slot1).  C++ visits this exact
+    // descend order; the self-def skip in the middle must not disturb the two
+    // op_dbl repoints (getSlot must still yield 0 then 1 for op_dbl).
+    bank.add_descend(oldvn, op_dbl).unwrap();
+    bank.add_descend(oldvn, op_self).unwrap();
+    bank.add_descend(oldvn, op_dbl).unwrap();
+
+    {
+        let mut thunk = Funcdata::replace_reads_thunk(&mut obank);
+        thunk(&mut bank, oldvn, newvn).unwrap();
+    }
+
+    assert_eq!(obank.get(op_self).unwrap().get_in(0), Some(oldvn), "self-def stays oldvn");
+    assert_eq!(obank.get(op_dbl).unwrap().get_in(0), Some(newvn), "double-reader slot 0 -> newvn");
+    assert_eq!(obank.get(op_dbl).unwrap().get_in(1), Some(newvn), "double-reader slot 1 -> newvn");
+    // oldvn keeps exactly the one self-def link; both op_dbl links moved.
+    assert_eq!(
+        bank.get(oldvn).unwrap().descend_iter().filter(|&o| o == op_self).count(),
+        1,
+        "self-def link retained"
+    );
+    assert_eq!(
+        bank.get(oldvn).unwrap().descend_iter().filter(|&o| o == op_dbl).count(),
+        0,
+        "both double-reader links severed from oldvn"
+    );
+    assert_eq!(
+        bank.get(newvn).unwrap().descend_iter().filter(|&o| o == op_dbl).count(),
+        2,
+        "newvn gains exactly two double-reader links"
+    );
+    assert_eq!(
+        bank.get(newvn).unwrap().descend_iter().filter(|&o| o == op_self).count(),
+        0,
+        "self-def never added to newvn"
+    );
+}
