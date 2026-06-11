@@ -37,7 +37,9 @@ use kuna_base::types::int4;
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::op::pcodeop_flags;
-use kuna_decomp::ruleaction_5::{RuleBoolNegate, RuleEqual2Constant, RuleEqual2Zero};
+use kuna_decomp::ruleaction_5::{
+    RuleBoolNegate, RuleEqual2Constant, RuleEqual2Zero, RuleSLess2Zero,
+};
 use kuna_decomp::seams::{Architecture, OpId, TypeOp, VarnodeId};
 use kuna_decomp::varnode::DefOpInfo;
 use kuna_num::opcodes::OpCode;
@@ -326,4 +328,116 @@ fn equal2constant_mult_minus1_negates_constant() {
         "RuleEqual2Constant INT_MULT(-1): -c mismatch"
     );
     assert_eq!(expected, 0xEDCBA988); // -0x12345678 mod 2^32
+}
+
+// =============================================================================
+// ROUND 2 — RuleSLess2Zero INT_AND sign-bit shift (`>> (8*size - 1)`)
+// =============================================================================
+//
+// C++ (ruleaction.cc:5767 and :5839):
+//     uintb mask = maskVn->getOffset();
+//     mask >>= (8 * avn->getSize() - 1);   // Fetch sign-bit
+//     if ((mask & 1) != 0) { ... }
+//
+// Neither INT_AND branch guards `avn->getSize() <= 8` (only the SUBPIECE
+// branches do, at :5741/:5815).  For a 16-byte `avn`, `8*16 - 1 == 127`.  In
+// C++ `uintb >> 127` is UB-but-survives (x86 masks the count to 63, the rule
+// quietly fails the `& 1` test and `applyOp` returns 0 / no transform).  The
+// Rust port transcribes the same expression literally:
+//     let mask = mv.get_offset() >> (8 * avn_size - 1);
+// and a shift of a `u64` by `127` PANICS in debug ("attempt to shift right
+// with overflow").  A panic aborts the whole decompilation where upstream
+// returns cleanly — a faithful-port wrapping/width divergence (verifier hunt
+// list: "Wrapping ... Rust panics in debug").
+
+/// **THE DIVERGENCE.** `-1 s< (avn & mask)` where `avn` is 16 bytes.  Building
+/// this graph and applying the rule reproduces a Rust panic on the `>> 127`
+/// shift; C++ would simply return 0.  Wrapped in `catch_unwind` so the failure
+/// is reported as an assertion (a divergence trace) rather than a test abort,
+/// and so a future fix (guard / `wrapping_shr` / size check) flips it green.
+#[test]
+fn sless2zero_int_and_oversize_avn_shift_panics() {
+    let result = std::panic::catch_unwind(|| {
+        let mut fd = build_fd();
+        // feedOp: INT_AND(avn:16, mask:16) -> rvn:16
+        let and = mk_op(&mut fd, 2, 0x90, OpCode::CPUI_INT_AND);
+        let avn = mk_input(&mut fd, 0x10, 16);
+        // mask constant; value is irrelevant — the panic is at the shift, before `& 1`.
+        let mask = mk_const(&mut fd, 0x8000_0000_0000_0000, 16);
+        fd.op_set_input(and, avn, 0).unwrap();
+        fd.op_set_input(and, mask, 1).unwrap();
+        let rvn = mk_vn(&mut fd, 0x40, 16);
+        set_def(&mut fd, rvn, and);
+
+        // op: -1 s< rvn   (lvn is the -1 constant; rvn has a lone descendant = op)
+        let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_SLESS);
+        let m1 = mk_const(&mut fd, calc_mask(16), 16); // -1 for size 16 (all-ones offset)
+        fd.op_set_input(op, m1, 0).unwrap();
+        fd.op_set_input(op, rvn, 1).unwrap();
+
+        let mut rule = RuleSLess2Zero::new("analysis");
+        rule.apply_op(op, &mut fd)
+    });
+
+    // C++ ORACLE: returns 0 (sign bit of a 16-byte value is not in the low 64,
+    // `mask >> 63` clears bit 0 here, `& 1 == 0`, no transform).  A faithful
+    // port must NOT panic.  Today it does:
+    assert!(
+        result.is_err(),
+        "EXPECTED the current port to panic on `>> (8*16-1)` (16-byte avn). \
+         If this is now Ok, the shift was guarded — update the verdict to ACCEPT."
+    );
+}
+
+/// Control / boundary: an 8-byte `avn` makes the shift `>> 63` (the genuine
+/// sign bit of a 64-bit value), which does NOT overflow.  With the mask's top
+/// bit set, the rule fires: `-1 s< (avn & 0x8000...)  =>  -1 s< avn`
+/// (`opSetInput(op, avn, 1)`, opcode unchanged).  Proves the divergence is
+/// specifically the size > 8 case and the 8-byte path is correct.
+#[test]
+fn sless2zero_int_and_size8_fires_no_panic() {
+    let mut fd = build_fd();
+    let and = mk_op(&mut fd, 2, 0x90, OpCode::CPUI_INT_AND);
+    let avn = mk_input(&mut fd, 0x10, 8);
+    let mask = mk_const(&mut fd, 0x8000_0000_0000_0000, 8); // sign bit set
+    fd.op_set_input(and, avn, 0).unwrap();
+    fd.op_set_input(and, mask, 1).unwrap();
+    let rvn = mk_vn(&mut fd, 0x40, 8);
+    set_def(&mut fd, rvn, and);
+
+    let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_SLESS);
+    let m1 = mk_const(&mut fd, calc_mask(8), 8); // -1 for size 8
+    fd.op_set_input(op, m1, 0).unwrap();
+    fd.op_set_input(op, rvn, 1).unwrap();
+
+    let mut rule = RuleSLess2Zero::new("analysis");
+    assert_eq!(rule.apply_op(op, &mut fd), 1);
+    // Transform: input1 := avn, opcode unchanged (INT_SLESS), input0 untouched (-1).
+    assert_eq!(code_of(&fd, op), OpCode::CPUI_INT_SLESS);
+    assert_eq!(in_of(&fd, op, 1), avn);
+}
+
+/// Companion coverage: the second INT_AND branch (`(avn & mask) s< 0`, rvn==0
+/// const) at size 8 also fires and rewrites input0 := avn.  Guards the mirror
+/// path the module tests do not cover, at the non-panicking boundary.
+#[test]
+fn sless2zero_int_and_size8_lhs_form_fires() {
+    let mut fd = build_fd();
+    let and = mk_op(&mut fd, 2, 0x90, OpCode::CPUI_INT_AND);
+    let avn = mk_input(&mut fd, 0x10, 8);
+    let mask = mk_const(&mut fd, 0x8000_0000_0000_0000, 8);
+    fd.op_set_input(and, avn, 0).unwrap();
+    fd.op_set_input(and, mask, 1).unwrap();
+    let lvn = mk_vn(&mut fd, 0x40, 8);
+    set_def(&mut fd, lvn, and);
+
+    let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_SLESS);
+    let zero = mk_const(&mut fd, 0, 8);
+    fd.op_set_input(op, lvn, 0).unwrap();
+    fd.op_set_input(op, zero, 1).unwrap();
+
+    let mut rule = RuleSLess2Zero::new("analysis");
+    assert_eq!(rule.apply_op(op, &mut fd), 1);
+    assert_eq!(code_of(&fd, op), OpCode::CPUI_INT_SLESS);
+    assert_eq!(in_of(&fd, op, 0), avn);
 }
