@@ -1,0 +1,509 @@
+// Tests for the `funcdata_op` op-manipulation primitives (included into the
+// `mod tests` in funcdata_op.rs, hence plain `//` comments here).
+//
+// Covered:
+//   - op creation / SeqNum (uniq) allocation order via `new_op`/`new_op_seq`.
+//   - def-use link integrity after each input mutation primitive.
+//   - dead-list discipline (`op_insert`/`op_uninsert`/`op_unlink`/`op_destroy`).
+//   - block-relative insertion ordering invariants (MULTIEQUAL-first /
+//     INDIRECT-immediately-before / branch-last).
+//   - boolean-flip list tracing (`op_flip_in_place_test`).
+//   - scans (`get_first_return_op`, `find_primary_branch`).
+//   - control-flow walks (`op_next_op`/`op_previous_op`/`op_target`).
+
+use super::*; // Funcdata, OpCode, pcodeop_flags, OpId/VarnodeId/TypeOp from funcdata_op
+
+use std::rc::Rc;
+
+use kuna_base::address::{Address, SeqNum};
+use kuna_base::space::{
+    addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
+};
+
+use crate::dtype::{type_metatype, Datatype};
+use crate::seams::{Architecture, BlockId};
+
+fn build_manager() -> AddrSpaceManager {
+    let mut m = AddrSpaceManager::new();
+    m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+    m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+    m.insert_space(Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "ram",
+        false,
+        8,
+        1,
+        2,
+        addrspace_flags::hasphysical,
+        1,
+        1,
+    )))
+    .unwrap();
+    m
+}
+
+fn build_fd() -> Funcdata {
+    let manage = build_manager();
+    let glb = Rc::new(Architecture::new(manage));
+    let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+    let addr = Address::new(ram, 0x1000);
+    Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
+}
+
+fn ram_space(fd: &Funcdata) -> Rc<AddrSpace> {
+    Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap())
+}
+
+fn dt(size: int4) -> Rc<Datatype> {
+    Rc::new(Datatype::new(size, type_metatype::TYPE_UNKNOWN))
+}
+
+/// Create an op with `inputs` slots and a given opcode at `off`, returning its id.
+fn mk_op(fd: &mut Funcdata, inputs: int4, off: u64, opc: OpCode) -> OpId {
+    let ram = ram_space(fd);
+    let op = fd.new_op(inputs, Address::new(ram, off));
+    fd.obank_mut().change_opcode(op, TypeOp::new(opc, opcode_flags(opc), format!("{opc:?}")));
+    op
+}
+
+/// The minimal flag bits the ordering-invariant tests depend on (branch ops carry
+/// `branch`, BRANCHIND included; everything else 0).
+fn opcode_flags(opc: OpCode) -> kuna_base::types::uint4 {
+    match opc {
+        OpCode::CPUI_BRANCH
+        | OpCode::CPUI_CBRANCH
+        | OpCode::CPUI_BRANCHIND => pcodeop_flags::branch,
+        OpCode::CPUI_RETURN => pcodeop_flags::returns,
+        _ => 0,
+    }
+}
+
+/// A fresh basic block under the bblocks root.
+fn mk_block(fd: &mut Funcdata) -> BlockId {
+    let root = fd.bblocks_ref().root.expect("bblocks root");
+    fd.bblocks_mut().new_block_basic(root)
+}
+
+fn mk_vn(fd: &mut Funcdata, off: u64) -> VarnodeId {
+    let ram = ram_space(fd);
+    fd.vbank_mut().create(4, Address::new(ram, off), dt(4))
+}
+
+// --- op creation / SeqNum allocation ------------------------------------------
+
+#[test]
+fn new_op_allocates_uniq_monotonically() {
+    let mut fd = build_fd();
+    let a = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_COPY);
+    let b = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_COPY);
+    let c = mk_op(&mut fd, 0, 0x200, OpCode::CPUI_COPY);
+    assert_eq!(fd.obank().get(a).unwrap().get_time(), 0);
+    assert_eq!(fd.obank().get(b).unwrap().get_time(), 1);
+    assert_eq!(fd.obank().get(c).unwrap().get_time(), 2);
+    assert_eq!(fd.obank().get_uniq_id(), 3);
+    // all start on the dead list in creation order
+    assert_eq!(fd.obank().iter_dead().collect::<Vec<_>>(), vec![a, b, c]);
+}
+
+#[test]
+fn new_op_seq_bumps_uniqid() {
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    let sq = SeqNum::new(Address::new(ram, 0x10), 41);
+    let _id = fd.new_op_seq(1, sq);
+    assert_eq!(fd.obank().get_uniq_id(), 42);
+    let id2 = mk_op(&mut fd, 0, 0x20, OpCode::CPUI_COPY);
+    assert_eq!(fd.obank().get(id2).unwrap().get_time(), 42);
+}
+
+// --- def-use link integrity ---------------------------------------------------
+
+#[test]
+fn op_set_input_links_descend() {
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_ADD);
+    let v0 = mk_vn(&mut fd, 0x10);
+    let v1 = mk_vn(&mut fd, 0x20);
+    fd.op_set_input(op, v0, 0).unwrap();
+    fd.op_set_input(op, v1, 1).unwrap();
+    // op reads v0,v1; each varnode lists op as a descendant.
+    assert_eq!(fd.obank().get(op).unwrap().get_in(0), Some(v0));
+    assert_eq!(fd.obank().get(op).unwrap().get_in(1), Some(v1));
+    assert_eq!(fd.vbank().get(v0).unwrap().descend_iter().collect::<Vec<_>>(), vec![op]);
+    assert_eq!(fd.vbank().get(v1).unwrap().descend_iter().collect::<Vec<_>>(), vec![op]);
+}
+
+#[test]
+fn op_set_input_idempotent_when_same() {
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_COPY);
+    let v0 = mk_vn(&mut fd, 0x10);
+    fd.op_set_input(op, v0, 0).unwrap();
+    // setting the same vn again must NOT add a second descend entry.
+    fd.op_set_input(op, v0, 0).unwrap();
+    assert_eq!(fd.vbank().get(v0).unwrap().num_descend(), 1);
+}
+
+#[test]
+fn op_set_input_replaces_old_and_fixes_descend() {
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_COPY);
+    let v0 = mk_vn(&mut fd, 0x10);
+    let v1 = mk_vn(&mut fd, 0x20);
+    fd.op_set_input(op, v0, 0).unwrap();
+    // replace slot 0 with v1: v0 loses the descendant, v1 gains it.
+    fd.op_set_input(op, v1, 0).unwrap();
+    assert!(fd.vbank().get(v0).unwrap().has_no_descend());
+    assert_eq!(fd.vbank().get(v1).unwrap().descend_iter().collect::<Vec<_>>(), vec![op]);
+    assert_eq!(fd.obank().get(op).unwrap().get_in(0), Some(v1));
+}
+
+#[test]
+fn op_unset_input_severs_descend() {
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_COPY);
+    let v0 = mk_vn(&mut fd, 0x10);
+    fd.op_set_input(op, v0, 0).unwrap();
+    fd.op_unset_input(op, 0);
+    assert_eq!(fd.obank().get(op).unwrap().get_in(0), None);
+    assert!(fd.vbank().get(v0).unwrap().has_no_descend());
+}
+
+#[test]
+fn op_swap_input_does_not_touch_descend() {
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_SUB);
+    let v0 = mk_vn(&mut fd, 0x10);
+    let v1 = mk_vn(&mut fd, 0x20);
+    fd.op_set_input(op, v0, 0).unwrap();
+    fd.op_set_input(op, v1, 1).unwrap();
+    fd.op_swap_input(op, 0, 1);
+    assert_eq!(fd.obank().get(op).unwrap().get_in(0), Some(v1));
+    assert_eq!(fd.obank().get(op).unwrap().get_in(1), Some(v0));
+    // descend lists unchanged (each varnode still has exactly one descendant).
+    assert_eq!(fd.vbank().get(v0).unwrap().num_descend(), 1);
+    assert_eq!(fd.vbank().get(v1).unwrap().num_descend(), 1);
+}
+
+#[test]
+fn op_remove_input_renumbers_and_unlinks() {
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 3, 0x100, OpCode::CPUI_INT_ADD);
+    let v0 = mk_vn(&mut fd, 0x10);
+    let v1 = mk_vn(&mut fd, 0x20);
+    let v2 = mk_vn(&mut fd, 0x30);
+    fd.op_set_input(op, v0, 0).unwrap();
+    fd.op_set_input(op, v1, 1).unwrap();
+    fd.op_set_input(op, v2, 2).unwrap();
+    // remove slot 0: v0 unlinked, v1->0, v2->1.
+    fd.op_remove_input(op, 0);
+    assert_eq!(fd.obank().get(op).unwrap().num_input(), 2);
+    assert_eq!(fd.obank().get(op).unwrap().get_in(0), Some(v1));
+    assert_eq!(fd.obank().get(op).unwrap().get_in(1), Some(v2));
+    assert!(fd.vbank().get(v0).unwrap().has_no_descend());
+}
+
+#[test]
+fn op_insert_input_shifts_and_links() {
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_COPY);
+    let v0 = mk_vn(&mut fd, 0x10);
+    let v_new = mk_vn(&mut fd, 0x20);
+    fd.op_set_input(op, v0, 0).unwrap();
+    // insert v_new at slot 0: v0 shifts to slot 1.
+    fd.op_insert_input(op, v_new, 0).unwrap();
+    assert_eq!(fd.obank().get(op).unwrap().num_input(), 2);
+    assert_eq!(fd.obank().get(op).unwrap().get_in(0), Some(v_new));
+    assert_eq!(fd.obank().get(op).unwrap().get_in(1), Some(v0));
+    assert_eq!(fd.vbank().get(v_new).unwrap().descend_iter().collect::<Vec<_>>(), vec![op]);
+}
+
+#[test]
+fn op_set_all_input_resets_and_relinks() {
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_ADD);
+    let v0 = mk_vn(&mut fd, 0x10);
+    let v1 = mk_vn(&mut fd, 0x20);
+    let v2 = mk_vn(&mut fd, 0x30);
+    fd.op_set_input(op, v0, 0).unwrap();
+    fd.op_set_input(op, v1, 1).unwrap();
+    // replace all inputs with [v2, v1, v0] (resize 2->3).  Each free varnode may
+    // have at most one descendant, exactly as the C++ `addDescend` requires; the
+    // old links are unset first, so reusing v0/v1 in different slots is valid.
+    fd.op_set_all_input(op, &[v2, v1, v0]).unwrap();
+    assert_eq!(fd.obank().get(op).unwrap().num_input(), 3);
+    assert_eq!(fd.obank().get(op).unwrap().get_in(0), Some(v2));
+    assert_eq!(fd.obank().get(op).unwrap().get_in(1), Some(v1));
+    assert_eq!(fd.obank().get(op).unwrap().get_in(2), Some(v0));
+    // each varnode read exactly once now.
+    assert_eq!(fd.vbank().get(v0).unwrap().num_descend(), 1);
+    assert_eq!(fd.vbank().get(v1).unwrap().num_descend(), 1);
+    assert_eq!(fd.vbank().get(v2).unwrap().num_descend(), 1);
+}
+
+// --- dead-list discipline -----------------------------------------------------
+
+#[test]
+fn op_insert_marks_alive_and_uninsert_restores() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let op = mk_op(&mut fd, 0, 0x100, OpCode::CPUI_COPY);
+    assert!(fd.obank().get(op).unwrap().is_dead());
+    fd.op_insert(op, bl, None);
+    assert!(!fd.obank().get(op).unwrap().is_dead());
+    assert_eq!(fd.bb_op_head(bl), Some(op));
+    assert_eq!(fd.obank().get(op).unwrap().get_parent(), Some(bl));
+    // uninsert: back to dead, removed from block.
+    fd.op_uninsert(op);
+    assert!(fd.obank().get(op).unwrap().is_dead());
+    assert_eq!(fd.bb_op_head(bl), None);
+    assert_eq!(fd.obank().get(op).unwrap().get_parent(), None);
+}
+
+#[test]
+fn op_unlink_severs_io_and_removes_from_block() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let op = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_COPY);
+    let v0 = mk_vn(&mut fd, 0x10);
+    fd.op_set_input(op, v0, 0).unwrap();
+    fd.op_insert(op, bl, None);
+    fd.op_unlink(op);
+    // input severed, op back on dead list, no parent.
+    assert!(fd.vbank().get(v0).unwrap().has_no_descend());
+    assert!(fd.obank().get(op).unwrap().is_dead());
+    assert_eq!(fd.obank().get(op).unwrap().get_parent(), None);
+    assert_eq!(fd.bb_op_head(bl), None);
+}
+
+#[test]
+fn op_destroy_unsets_inputs_and_marks_dead() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_ADD);
+    let v0 = mk_vn(&mut fd, 0x10);
+    let v1 = mk_vn(&mut fd, 0x20);
+    fd.op_set_input(op, v0, 0).unwrap();
+    fd.op_set_input(op, v1, 1).unwrap();
+    fd.op_insert(op, bl, None);
+    fd.op_destroy(op);
+    assert!(fd.vbank().get(v0).unwrap().has_no_descend());
+    assert!(fd.vbank().get(v1).unwrap().has_no_descend());
+    assert!(fd.obank().get(op).unwrap().is_dead());
+    assert_eq!(fd.bb_op_head(bl), None);
+}
+
+// --- block-relative insertion ordering invariants -----------------------------
+
+#[test]
+fn op_insert_before_skips_preceding_indirects() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    // block: [copy0, indirect1, copy2]
+    let copy0 = mk_op(&mut fd, 0, 0x100, OpCode::CPUI_COPY);
+    let ind1 = mk_op(&mut fd, 0, 0x110, OpCode::CPUI_INDIRECT);
+    let copy2 = mk_op(&mut fd, 0, 0x120, OpCode::CPUI_COPY);
+    fd.op_insert(copy0, bl, None);
+    fd.op_insert(ind1, bl, None);
+    fd.op_insert(copy2, bl, None);
+    // insert a non-INDIRECT before copy2: it must skip back over ind1 and land
+    // before ind1 (INDIRECTs stay immediately before their op).
+    let newop = mk_op(&mut fd, 0, 0x130, OpCode::CPUI_INT_ADD);
+    fd.op_insert_before(newop, copy2);
+    assert_eq!(fd.bb_ops(bl), vec![copy0, newop, ind1, copy2]);
+}
+
+#[test]
+fn op_insert_before_indirect_stays_put() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let copy0 = mk_op(&mut fd, 0, 0x100, OpCode::CPUI_COPY);
+    let ind1 = mk_op(&mut fd, 0, 0x110, OpCode::CPUI_INDIRECT);
+    let copy2 = mk_op(&mut fd, 0, 0x120, OpCode::CPUI_COPY);
+    fd.op_insert(copy0, bl, None);
+    fd.op_insert(ind1, bl, None);
+    fd.op_insert(copy2, bl, None);
+    // inserting an INDIRECT before copy2 does NOT skip back; lands right before it.
+    let newind = mk_op(&mut fd, 0, 0x130, OpCode::CPUI_INDIRECT);
+    fd.op_insert_before(newind, copy2);
+    assert_eq!(fd.bb_ops(bl), vec![copy0, ind1, newind, copy2]);
+}
+
+#[test]
+fn op_insert_after_skips_following_multiequals() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    // block: [copy0, multi1, copy2]
+    let copy0 = mk_op(&mut fd, 0, 0x100, OpCode::CPUI_COPY);
+    let multi1 = mk_op(&mut fd, 0, 0x110, OpCode::CPUI_MULTIEQUAL);
+    let copy2 = mk_op(&mut fd, 0, 0x120, OpCode::CPUI_COPY);
+    fd.op_insert(copy0, bl, None);
+    fd.op_insert(multi1, bl, None);
+    fd.op_insert(copy2, bl, None);
+    // insert a non-MULTIEQUAL after copy0: skip forward over multi1, land before copy2.
+    let newop = mk_op(&mut fd, 0, 0x130, OpCode::CPUI_INT_ADD);
+    fd.op_insert_after(newop, copy0);
+    assert_eq!(fd.bb_ops(bl), vec![copy0, multi1, newop, copy2]);
+}
+
+#[test]
+fn op_insert_begin_respects_multiequal_first() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let multi0 = mk_op(&mut fd, 0, 0x100, OpCode::CPUI_MULTIEQUAL);
+    let copy1 = mk_op(&mut fd, 0, 0x110, OpCode::CPUI_COPY);
+    fd.op_insert(multi0, bl, None);
+    fd.op_insert(copy1, bl, None);
+    // a plain op inserted at begin lands after the leading MULTIEQUAL.
+    let newop = mk_op(&mut fd, 0, 0x120, OpCode::CPUI_INT_ADD);
+    fd.op_insert_begin(newop, bl);
+    assert_eq!(fd.bb_ops(bl), vec![multi0, newop, copy1]);
+    // a MULTIEQUAL inserted at begin lands first.
+    let newmulti = mk_op(&mut fd, 0, 0x130, OpCode::CPUI_MULTIEQUAL);
+    fd.op_insert_begin(newmulti, bl);
+    assert_eq!(fd.bb_ops(bl), vec![newmulti, multi0, newop, copy1]);
+}
+
+#[test]
+fn op_insert_end_keeps_branch_last() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let copy0 = mk_op(&mut fd, 0, 0x100, OpCode::CPUI_COPY);
+    let br = mk_op(&mut fd, 1, 0x110, OpCode::CPUI_BRANCH);
+    fd.op_insert(copy0, bl, None);
+    fd.op_insert(br, bl, None);
+    // inserting at end lands BEFORE the trailing branch (flow-break stays last).
+    let newop = mk_op(&mut fd, 0, 0x120, OpCode::CPUI_INT_ADD);
+    fd.op_insert_end(newop, bl);
+    assert_eq!(fd.bb_ops(bl), vec![copy0, newop, br]);
+}
+
+#[test]
+fn op_insert_end_no_branch_appends() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let copy0 = mk_op(&mut fd, 0, 0x100, OpCode::CPUI_COPY);
+    fd.op_insert(copy0, bl, None);
+    let newop = mk_op(&mut fd, 0, 0x110, OpCode::CPUI_INT_ADD);
+    fd.op_insert_end(newop, bl);
+    assert_eq!(fd.bb_ops(bl), vec![copy0, newop]);
+    // on an empty block, insert at end == only op.
+    let bl2 = mk_block(&mut fd);
+    let solo = mk_op(&mut fd, 0, 0x120, OpCode::CPUI_COPY);
+    fd.op_insert_end(solo, bl2);
+    assert_eq!(fd.bb_ops(bl2), vec![solo]);
+}
+
+// --- boolean-flip list tracing ------------------------------------------------
+
+#[test]
+fn op_flip_in_place_test_int_equal_normalizes_to_one() {
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_EQUAL);
+    let mut fliplist = Vec::new();
+    // INT_EQUAL -> push op, return 1 (denormalizing/ambivalent).
+    assert_eq!(fd.op_flip_in_place_test(op, &mut fliplist, false), 1);
+    assert_eq!(fliplist, vec![op]);
+}
+
+#[test]
+fn op_flip_in_place_test_notequal_returns_zero() {
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_NOTEQUAL);
+    let mut fliplist = Vec::new();
+    assert_eq!(fd.op_flip_in_place_test(op, &mut fliplist, false), 0);
+    assert_eq!(fliplist, vec![op]);
+}
+
+#[test]
+fn op_flip_in_place_test_bool_negate_needs_removal_flag() {
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_BOOL_NEGATE);
+    let mut fl = Vec::new();
+    // not allowed to remove -> 2 (impossible), nothing pushed.
+    assert_eq!(fd.op_flip_in_place_test(op, &mut fl, false), 2);
+    assert!(fl.is_empty());
+    // allowed -> push op, return 0.
+    assert_eq!(fd.op_flip_in_place_test(op, &mut fl, true), 0);
+    assert_eq!(fl, vec![op]);
+}
+
+#[test]
+fn op_flip_in_place_test_less_const_first_normalizes() {
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_LESS);
+    // in0 is a constant -> return 0; otherwise 1.
+    let cspace = Rc::clone(fd.get_arch().manage().get_space(0).unwrap());
+    let cvn = fd.vbank_mut().create(4, Address::new(cspace, 5), dt(4));
+    fd.op_set_input(op, cvn, 0).unwrap();
+    let mut fl = Vec::new();
+    assert_eq!(fd.op_flip_in_place_test(op, &mut fl, false), 0);
+    assert_eq!(fl, vec![op]);
+}
+
+// --- scans --------------------------------------------------------------------
+
+#[test]
+fn get_first_return_op_skips_dead_and_halt() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    // dead RETURN (never inserted) is skipped.
+    let dead_ret = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_RETURN);
+    // halt RETURN is skipped.
+    let halt_ret = mk_op(&mut fd, 1, 0x110, OpCode::CPUI_RETURN);
+    fd.op_insert(halt_ret, bl, None);
+    fd.op_mark_halt(halt_ret, pcodeop_flags::halt).unwrap();
+    // a live, non-halt RETURN is returned.
+    let good_ret = mk_op(&mut fd, 1, 0x120, OpCode::CPUI_RETURN);
+    fd.op_insert(good_ret, bl, None);
+    let _ = dead_ret;
+    assert_eq!(fd.get_first_return_op(), Some(good_ret));
+}
+
+#[test]
+fn find_primary_branch_picks_expected() {
+    let mut fd = build_fd();
+    let copy = mk_op(&mut fd, 0, 0x100, OpCode::CPUI_COPY);
+    let call = mk_op(&mut fd, 1, 0x110, OpCode::CPUI_CALL);
+    let ret = mk_op(&mut fd, 1, 0x120, OpCode::CPUI_RETURN);
+    let ops = vec![copy, call, ret];
+    // findcall -> the CALL.
+    assert_eq!(fd.find_primary_branch(&ops, false, true, false), Some(call));
+    // findreturn -> the RETURN.
+    assert_eq!(fd.find_primary_branch(&ops, false, false, true), Some(ret));
+    // none requested -> None.
+    assert_eq!(fd.find_primary_branch(&ops, false, false, false), None);
+}
+
+// --- control-flow walks -------------------------------------------------------
+
+#[test]
+fn op_previous_and_next_within_block() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let a = mk_op(&mut fd, 0, 0x100, OpCode::CPUI_COPY);
+    let b = mk_op(&mut fd, 0, 0x110, OpCode::CPUI_COPY);
+    fd.op_insert(a, bl, None);
+    fd.op_insert(b, bl, None);
+    assert_eq!(fd.op_previous_op(b), Some(a));
+    assert_eq!(fd.op_previous_op(a), None);
+    // single-out flow is needed for next across blocks; within the block, nextOp
+    // of `a` is `b`.
+    assert_eq!(fd.op_next_op(a), Some(b));
+    // `b` is last in the only block (no out edges) -> next is None.
+    assert_eq!(fd.op_next_op(b), None);
+}
+
+#[test]
+fn op_target_finds_instruction_start_in_deadlist() {
+    let mut fd = build_fd();
+    // dead ops in creation order: start(startmark), mid, tail.  target() of tail
+    // walks back to the startmark op.
+    let start = mk_op(&mut fd, 0, 0x100, OpCode::CPUI_COPY);
+    fd.obank_mut().get_mut(start).unwrap().set_flag(pcodeop_flags::startmark);
+    let mid = mk_op(&mut fd, 0, 0x104, OpCode::CPUI_COPY);
+    let tail = mk_op(&mut fd, 0, 0x108, OpCode::CPUI_COPY);
+    assert_eq!(fd.op_target(tail), start);
+    assert_eq!(fd.op_target(mid), start);
+    assert_eq!(fd.op_target(start), start);
+}
