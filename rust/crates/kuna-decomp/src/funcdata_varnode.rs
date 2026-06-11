@@ -508,7 +508,7 @@ impl Funcdata {
             if i < 0 {
                 continue;
             }
-            self.op_set_input(op, newvn, i)?;
+            self.op_set_input_local(op, newvn, i)?;
         }
         Ok(())
     }
@@ -516,9 +516,18 @@ impl Funcdata {
     /// Set input `slot` of `op` to read `vn` (C++ `Funcdata::opSetInput`,
     /// `funcdata_op.cc:104`), replicated for the `totalReplace` rewiring.
     ///
-    /// This is a faithful local copy of the op-side `opSetInput`; the canonical
-    /// public `opSetInput` is `funcdata_op`'s (it will supersede this private
-    /// helper when that wave lands — kept private `fn` so there is no clash).
+    /// This is a faithful local copy of the op-side `opSetInput`.  When this wave
+    /// was authored the canonical public `opSetInput` did not yet exist, so this
+    /// was a same-named private helper "kept private so there is no clash"; once
+    /// the `funcdata_op` wave landed its public `op_set_input` (an inherent method
+    /// on the same `Funcdata`), two inherent methods of identical name collided
+    /// (Rust forbids this regardless of visibility).  The W3-serial-chain
+    /// integration (`w3-ir-flow`) renamed this copy to `op_set_input_local` — a
+    /// minimal reconciliation that preserves this wave's constant-clone behavior
+    /// (which `funcdata_op`'s public copy seam-defers, so `total_replace` here
+    /// must retain the cloning the `total_replace_constant_clones_per_read` test
+    /// pins).  Recorded as a loss; the eventual single canonical `opSetInput`
+    /// should fold the constant-clone in and this local copy should disappear.
     ///
     /// ```text
     /// if (vn == op->getIn(slot)) return;            // Already set
@@ -528,7 +537,7 @@ impl Funcdata {
     /// if (op->getIn(slot) != 0) opUnsetInput(op,slot); // erase old descend+clear
     /// vn->addDescend(op); op->setInput(vn,slot);
     /// ```
-    fn op_set_input(&mut self, op: OpId, mut vn: VarnodeId, slot: int4) -> KunaResult<()> {
+    fn op_set_input_local(&mut self, op: OpId, mut vn: VarnodeId, slot: int4) -> KunaResult<()> {
         // if (vn == op->getIn(slot)) return;
         if self.obank().get(op).and_then(|o| o.get_in(slot)) == Some(vn) {
             return Ok(());
