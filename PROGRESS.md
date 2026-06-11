@@ -1,5 +1,24 @@
 # kuna Progress Log
 
+## Session (2026-06-11) — rust-port W2: SLEIGH runtime ported; Rust lifts byte-identical p-code
+
+All ten W2 items ACCEPTed (two relaunched on Opus after a session-limit failure):
+translate (restoring LOSS-012 join/spacebase/register arms in kuna-base), context,
+pattern, symbol, semantics, pcodeparse (hand parser; found UB-5: upstream keyword
+table violates its sorted-search contract), loadimage(+xml), emulate, sleigh-core
+(slaformat/SleighBase/Sleigh engine incl. ParserWalker, delay slots, label
+resolution), and testfloatemu (31 tests; 54/207 total).
+
+**Parity teeth: `golden lift` fixtures from the C++ oracle — 16 corpus images, 16
+distinct SLEIGH languages, 1,171 instructions — replay through the Rust engine
+text-exactly (16/16 green), including MIPS/SPARC delay slots, x86-16 context
+painting, and LOSS-015 spaceid normalization.** Workspace gate: 564 tests, 0
+failures, clippy clean. Losses LOSS-017..028 appended along the way (notable:
+ContextCache re-fetch semantics, join-table placement, crossbuild lazy-disassembly
+deferral). Oracle re-verified by the fixture agent: PARITY OK + stages 154/154.
+Next: W3 core IR (varnode/op/block/funcdata arenas per ADR 0001).
+
+
 ## Session (2026-06-11) — rust-port W1: foundation crates ported and verified
 
 Seven porter agents (isolated worktrees, dependency-ordered fork-after-merge) +

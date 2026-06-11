@@ -83,3 +83,15 @@ replicate them, and (b) they can be reported/ported upstream deliberately later.
   arithmetic exactly; the overrun becomes a slice-bounds panic (ADR 0004 UB state,
   pinned by `verify_w2emulate_unaligned_chunk_default_getpage_cpp_overrun_panics`) and
   the full-word overread zero-fills the missing bytes (module docs, anomalies 1-2).
+
+## UB-5: `pcodeparse.cc` keyword table violates its own sorted-binary-search contract
+
+- Found: 2026-06-11 (W2 port of pcodeparse, verified by standalone C++ probe).
+- Anchor: `decompiler/cpp/pcodeparse.cc` — the `idents[]` table is declared "Sorted"
+  and searched with binary search (`findIdentifier`), but `"||"` (0x7c7c) is listed
+  before `"abs"`, so the search FAILS to find `"||"` and `"abs"`: both lex as
+  STRING/identifier instead of OP_BOOL_OR / OP_ABS in `<pcode>` injection snippets.
+- Workaround: none — this is de facto oracle behavior; the Rust `find_identifier`
+  reproduces it exactly (pinned by `lexer_idents_table_has_upstream_sort_violation`).
+- Rust port requirement: keep the misordering faithfully; if upstream ever sorts the
+  table, `||` and `abs` start lexing as operators — re-pin then.

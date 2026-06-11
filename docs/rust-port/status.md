@@ -52,3 +52,18 @@ _(none yet)_
 | w1-base-space-address | fleet | independent | golden_addrsort | ACCEPT-WITH-LOSSES | 1549215 |
 | w1-num-pcode-semantics | fleet | independent | golden_opbehavior 20227 rows | ACCEPT-WITH-LOSSES | a922c92 |
 | w1-harness-unittests | fleet | independent | 23/23 exact-name TESTs | ACCEPT | f4df3da |
+
+## W2 (2026-06-11)
+
+| item | porter | verifier | gate | verdict | commit |
+|---|---|---|---|---|---|
+| w2-sleigh-translate | fleet | independent | LOSS-012 arms + tests | ACCEPT-WITH-LOSSES |  |
+| w2-sleigh-context | fleet | independent | cargo test kuna-sleigh | ACCEPT-WITH-LOSSES |  |
+| w2-sleigh-pattern | fleet | independent | cargo test kuna-sleigh | ACCEPT-WITH-LOSSES |  |
+| w2-sleigh-symbol | fleet | independent | cargo test kuna-sleigh | ACCEPT-WITH-LOSSES |  |
+| w2-sleigh-semantics | fleet | independent | cargo test kuna-sleigh | ACCEPT-WITH-LOSSES |  |
+| w2-sleigh-pcodeparse | fleet(opus) | independent(opus) | 22+ snippet accept tests | ACCEPT |  |
+| w2-sleigh-loadimage | fleet | independent | corpus binaryimage loads | ACCEPT |  |
+| w2-sleigh-core | fleet(opus) | independent(opus) | golden_lift 16/16 (1171 insns) | ACCEPT-WITH-LOSSES |  |
+| w2-sleigh-emulate | fleet | independent | memstate/emulate tests | ACCEPT-WITH-LOSSES |  |
+| w2-harness-floatemu | fleet | independent | 31/31 exact-name TESTs | ACCEPT-WITH-LOSSES |  |

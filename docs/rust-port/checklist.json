@@ -738,7 +738,7 @@
     "w2-sleigh-semantics",
     "W1-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-sleigh",
    "loc_estimate": 3404,
@@ -761,7 +761,7 @@
    "depends_on": [
     "w2-sleigh-pcodeparse"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 3404,
@@ -791,7 +791,7 @@
     "w2-sleigh-loadimage",
     "W1-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-sleigh",
    "loc_estimate": 2280,
@@ -822,7 +822,7 @@
    "depends_on": [
     "w2-sleigh-core"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2280,
@@ -4874,12 +4874,12 @@
     "w2-harness-floatemu",
     "w2-harness-floatemu-verify"
    ],
-   "status": "todo",
+   "status": "landed",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-sleigh  # includes .sla decode + lift fixtures vs C++ capture",
    "loc_estimate": 0,
    "cpp_blob_sha": {},
-   "notes": "Wave exit: every item in W2 done (ports gated, verifies ACCEPTed)."
+   "notes": "Wave exit: every item in W2 done (ports gated, verifies ACCEPTed). Gate 2026-06-11: golden_lift 16/16 fixtures (1171 insns, 16 languages) text-exact; workspace 564 tests 0 failed; clippy clean."
   },
   {
    "id": "W3-gate",
