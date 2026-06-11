@@ -289,17 +289,17 @@ impl SleighBase {
             offset: off,
             size: size as u32, // C++ assigns int4 -> uint4 (size is non-negative)
         };
-        // upper_bound: first key strictly greater than `key`.
-        let mut iter = self.varnode_xref.range((
-            std::ops::Bound::Excluded(&key),
-            std::ops::Bound::Unbounded,
-        ));
-        // C++ `if (iter == begin()) return ""` — i.e. nothing precedes the
-        // upper bound.  Walk back from the upper bound.
+        // C++:
+        //   iter = upper_bound(key);   // first key strictly greater than `key`
+        //   if (iter == begin()) return "";
+        //   iter--;                    // greatest element <= key
+        // `--upper_bound(key)` is the greatest element <= key, so the starting
+        // iterator is `range(.., Included(&key)).next_back()`.  (Using Excluded
+        // here would skip an exact match — the F1 bug.)  `next_back() == None`
+        // reproduces `iter == begin()` (nothing is <= key).
         let mut prev_iter = self
             .varnode_xref
-            .range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(&key)));
-        let _ = iter.next(); // (unused; the C++ only needs --iter)
+            .range((std::ops::Bound::Unbounded, std::ops::Bound::Included(&key)));
         let Some((point, name)) = prev_iter.next_back() else {
             return Vec::new();
         };
