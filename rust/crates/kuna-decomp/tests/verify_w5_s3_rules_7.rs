@@ -33,7 +33,9 @@ use kuna_base::types::{int4, uintb};
 use kuna_decomp::action::Rule;
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::funcdata::Funcdata;
-use kuna_decomp::ruleaction_7::{RuleDivChain, RuleSignMod2nOpt};
+use kuna_decomp::ruleaction_7::{
+    RuleDivChain, RuleSignForm2, RuleSignMod2Opt, RuleSignMod2nOpt,
+};
 use kuna_decomp::seams::{Architecture, OpId, TypeOp, VarnodeId};
 use kuna_decomp::varnode::{DefOpInfo, VarnodeBank};
 use kuna_num::opcodes::OpCode;
@@ -308,4 +310,267 @@ fn w5s3_divchain_resval_zero_rejects() {
     assert_eq!(op_of(&fd, root), OpCode::CPUI_INT_DIV, "unchanged");
     // calc_mask sanity (mask of 4 bytes = 0xffffffff).
     assert_eq!(calc_mask(4), 0xffff_ffff);
+}
+
+// ===========================================================================
+// ROUND 2 — positive-firing slot-logic coverage for the SREM-family rules
+// (round 1 only had shift/boundary tests; these exercise the `1-getSlot(...)`
+// and `1-aSlot`/`1-multSlot` index logic that the hunt list flags, on rules
+// that actually rewrite and report a change).
+// ===========================================================================
+
+fn in_vn(fd: &Funcdata, op: OpId, slot: int4) -> VarnodeId {
+    fd.obank().get(op).unwrap().get_in(slot).unwrap()
+}
+
+// ---------------------------------------------------------------------------
+// V1 — RuleSignMod2nOpt full positive fire (non-truncated form).
+//
+//   a              : 4-byte input
+//   sgn  = a s>> 31                       (checkSignExtraction of `a`)
+//   shr  = sgn >> 30  (INT_RIGHT, shiftAmt-correlated; shiftval==30==shiftAmt)
+//   add  = a + shr                        (a in slot 0 -> aSlot==0)
+//   and  = add & 3    (mask == (1<<(4*8-30))-1 == (1<<2)-1 == 3)
+//   m1   = and * -1   (INT_MULT by calc_mask(4))
+//   base = m1 + a     (INT_ADD; baseOp.getSlot(m1)==0 -> slot = 1-0 = 1 -> andOut
+//                      must be baseOp.getIn(1).  So `and` feeds slot 1 here and
+//                      `a`-ish slot 0 is irrelevant — baseOp.getIn(slot) is the
+//                      AND.  Wire AND into slot 1.)
+//   root = sgn >> 30  is the OP UNDER TEST (oplist CPUI_INT_RIGHT)?  No — the
+//          rule's root op is the INT_RIGHT whose in0 is checkSignExtraction and
+//          in1 is shiftAmt, and whose OUTPUT (correctVn) descends to the MULT.
+//
+// The C++ root `op` is the INT_RIGHT (`shr` above): its in0 = sgn (sign
+// extraction), in1 = shiftAmt(30), and its out (correctVn) is what the INT_MULT
+// reads.  n = a.size*8 - shiftAmt = 32-30 = 2 ; mask = 3 ; mask+1 = 4.
+// On fire: baseOp becomes  a s% 4.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn w5s3_signmod2nopt_positive_nontrunc_fires_to_srem() {
+    let mut fd = build_fd();
+    let a = make_input(&mut fd, 0x100, 4);
+
+    // sgn = a s>> 31   (sign extraction; insize*8-1 == 31)
+    let (sgnop, sgnout) = make_op(&mut fd, 0x200, OpCode::CPUI_INT_SRIGHT, 2, 4);
+    wire(&mut fd, a, sgnop, 0);
+    let c31 = konst(&mut fd, 4, 31);
+    wire(&mut fd, c31, sgnop, 1);
+
+    // root = sgn INT_RIGHT 30  (this is `op`; correctVn = its out)
+    let (root, correct) = make_op(&mut fd, 0x210, OpCode::CPUI_INT_RIGHT, 2, 4);
+    wire(&mut fd, sgnout, root, 0);
+    let c30 = konst(&mut fd, 4, 30);
+    wire(&mut fd, c30, root, 1);
+
+    // m1 = correct * -1     (INT_MULT by calc_mask(4))
+    let (m1, m1out) = make_op(&mut fd, 0x220, OpCode::CPUI_INT_MULT, 2, 4);
+    wire(&mut fd, correct, m1, 0);
+    let cneg = konst(&mut fd, 4, calc_mask(4));
+    wire(&mut fd, cneg, m1, 1);
+
+    // The INT_RIGHT(sgn, shiftAmt) that addOp's other input must be: reuse a
+    // second copy `shr2 = sgn >> 30` so checkSignExtraction(shr2.in0)==a and
+    // shiftval==30==shiftAmt.
+    let (shr2, shr2out) = make_op(&mut fd, 0x230, OpCode::CPUI_INT_RIGHT, 2, 4);
+    wire(&mut fd, sgnout, shr2, 0);
+    let c30b = konst(&mut fd, 4, 30);
+    wire(&mut fd, c30b, shr2, 1);
+
+    // addInner = a + shr2   (aSlot==0)
+    let (add_inner, add_inner_out) = make_op(&mut fd, 0x240, OpCode::CPUI_INT_ADD, 2, 4);
+    wire(&mut fd, a, add_inner, 0);
+    wire(&mut fd, shr2out, add_inner, 1);
+
+    // and = addInner & 3
+    let (andop, andout) = make_op(&mut fd, 0x250, OpCode::CPUI_INT_AND, 2, 4);
+    wire(&mut fd, add_inner_out, andop, 0);
+    let c3 = konst(&mut fd, 4, 3);
+    wire(&mut fd, c3, andop, 1);
+
+    // base = m1 + and   (baseOp; m1 in slot 0 => getSlot(m1)=0 => slot=1 => andOut
+    //   = baseOp.getIn(1) = `and`).  m1out must be the lone-descend into base.
+    let base = make_op_noout(&mut fd, 0x260, OpCode::CPUI_INT_ADD, 2);
+    wire(&mut fd, m1out, base, 0);
+    wire(&mut fd, andout, base, 1);
+
+    let mut rule = RuleSignMod2nOpt::new();
+    assert_eq!(rule.apply_op(root, &mut fd), 1, "non-trunc SREM form must fire");
+    // baseOp rewritten to  a s% 4
+    assert_eq!(op_of(&fd, base), OpCode::CPUI_INT_SREM, "baseOp -> INT_SREM");
+    assert_eq!(in_vn(&fd, base, 0), a, "SREM in0 == a");
+    assert_eq!(in_off(&fd, base, 1), 4, "SREM in1 == mask+1 == 4");
+}
+
+#[test]
+fn w5s3_signmod2nopt_rejects_when_mask_constant_wrong() {
+    // Identical graph but the AND mask is 7 instead of 3 (mask should be
+    // (1<<2)-1 = 3).  The `constVn->getOffset() != mask` guard must reject.
+    let mut fd = build_fd();
+    let a = make_input(&mut fd, 0x100, 4);
+    let (sgnop, sgnout) = make_op(&mut fd, 0x200, OpCode::CPUI_INT_SRIGHT, 2, 4);
+    wire(&mut fd, a, sgnop, 0);
+    let c31 = konst(&mut fd, 4, 31);
+    wire(&mut fd, c31, sgnop, 1);
+    let (root, correct) = make_op(&mut fd, 0x210, OpCode::CPUI_INT_RIGHT, 2, 4);
+    wire(&mut fd, sgnout, root, 0);
+    let c30 = konst(&mut fd, 4, 30);
+    wire(&mut fd, c30, root, 1);
+    let (m1, m1out) = make_op(&mut fd, 0x220, OpCode::CPUI_INT_MULT, 2, 4);
+    wire(&mut fd, correct, m1, 0);
+    let cneg = konst(&mut fd, 4, calc_mask(4));
+    wire(&mut fd, cneg, m1, 1);
+    let (shr2, shr2out) = make_op(&mut fd, 0x230, OpCode::CPUI_INT_RIGHT, 2, 4);
+    wire(&mut fd, sgnout, shr2, 0);
+    let c30b = konst(&mut fd, 4, 30);
+    wire(&mut fd, c30b, shr2, 1);
+    let (add_inner, add_inner_out) = make_op(&mut fd, 0x240, OpCode::CPUI_INT_ADD, 2, 4);
+    wire(&mut fd, a, add_inner, 0);
+    wire(&mut fd, shr2out, add_inner, 1);
+    let (andop, andout) = make_op(&mut fd, 0x250, OpCode::CPUI_INT_AND, 2, 4);
+    wire(&mut fd, add_inner_out, andop, 0);
+    let cwrong = konst(&mut fd, 4, 7); // WRONG: should be 3
+    wire(&mut fd, cwrong, andop, 1);
+    let base = make_op_noout(&mut fd, 0x260, OpCode::CPUI_INT_ADD, 2);
+    wire(&mut fd, m1out, base, 0);
+    wire(&mut fd, andout, base, 1);
+
+    let mut rule = RuleSignMod2nOpt::new();
+    assert_eq!(rule.apply_op(root, &mut fd), 0, "wrong AND mask -> no fire");
+    assert_eq!(op_of(&fd, base), OpCode::CPUI_INT_ADD, "baseOp unchanged");
+}
+
+// ---------------------------------------------------------------------------
+// V2 — RuleSignForm2 matches but reports NO change (deliberate trailing
+// `return 0` in the C++; the `opSetInput(op,a,0)` IS performed).  This pins the
+// inverted-return faithfulness: the rule must rewire input0 to `a` AND return 0.
+//
+//   a       : 4-byte input               (sizeout == 4)
+//   sext    = sext(a)                     (CPUI_INT_SEXT; a.size==sizeout)
+//   mult    = sext * k   (k const, k <= calc_mask(4) and 2*sizeout <= multSize)
+//   sub     = SUBPIECE(mult, c)  with c + sizeout == multSize (high part)
+//   root    = sub s>> (sizeout*8-1)       (op under test, INT_SRIGHT, in1==31)
+// multSize chosen 8 so 2*sizeout(8) <= 8 holds and c == multSize-sizeout == 4.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn w5s3_signform2_matches_but_returns_zero_and_rewires_in0() {
+    let mut fd = build_fd();
+    let a = make_input(&mut fd, 0x100, 4);
+
+    // sext = sext(a)  -> 8 bytes (multSize)
+    let (sextop, sextout) = make_op(&mut fd, 0x200, OpCode::CPUI_INT_SEXT, 1, 8);
+    wire(&mut fd, a, sextop, 0);
+
+    // mult = sext * k   (k constant, k <= calc_mask(4); 2*sizeout(8) <= multSize(8) ok)
+    let (multop, multout) = make_op(&mut fd, 0x210, OpCode::CPUI_INT_MULT, 2, 8);
+    wire(&mut fd, sextout, multop, 0);
+    let k = konst(&mut fd, 8, 5); // 5 <= 0xffffffff
+    wire(&mut fd, k, multop, 1);
+
+    // sub = SUBPIECE(mult, 4)   (c == 4, c + sizeout(4) == multSize(8): high part)
+    let (subop, subout) = make_op(&mut fd, 0x220, OpCode::CPUI_SUBPIECE, 2, 4);
+    wire(&mut fd, multout, subop, 0);
+    let c4 = konst(&mut fd, 4, 4);
+    wire(&mut fd, c4, subop, 1);
+
+    // root = sub s>> 31   (sizeout*8-1 == 31)
+    let root = make_op_noout(&mut fd, 0x230, OpCode::CPUI_INT_SRIGHT, 2);
+    wire(&mut fd, subout, root, 0);
+    let c31 = konst(&mut fd, 4, 31);
+    wire(&mut fd, c31, root, 1);
+
+    let mut rule = RuleSignForm2::new();
+    // Faithful: matches, performs opSetInput(op, a, 0), but returns 0.
+    assert_eq!(rule.apply_op(root, &mut fd), 0, "C++ returns 0 despite matching");
+    // The input rewrite DID happen (C++ ruleaction.cc:8562 opSetInput(op,a,0)).
+    assert_eq!(in_vn(&fd, root, 0), a, "input0 rewired to a even though return 0");
+    // Opcode is NOT changed (only opSetInput was called, no opSetOpcode).
+    assert_eq!(op_of(&fd, root), OpCode::CPUI_INT_SRIGHT, "opcode unchanged");
+}
+
+#[test]
+fn w5s3_signform2_rejects_when_const_too_large() {
+    // otherVn (the multiplier) constant must be <= calc_mask(sizeout) (== 0xffffffff
+    // for sizeout 4).  Use 0x1_0000_0000 (> mask) -> the `> calc_mask(sizeout)`
+    // guard rejects and input0 is NOT rewired.
+    let mut fd = build_fd();
+    let a = make_input(&mut fd, 0x100, 4);
+    let (sextop, sextout) = make_op(&mut fd, 0x200, OpCode::CPUI_INT_SEXT, 1, 8);
+    wire(&mut fd, a, sextop, 0);
+    let (multop, multout) = make_op(&mut fd, 0x210, OpCode::CPUI_INT_MULT, 2, 8);
+    wire(&mut fd, sextout, multop, 0);
+    let k = konst(&mut fd, 8, 0x1_0000_0000); // > calc_mask(4)
+    wire(&mut fd, k, multop, 1);
+    let (subop, subout) = make_op(&mut fd, 0x220, OpCode::CPUI_SUBPIECE, 2, 4);
+    wire(&mut fd, multout, subop, 0);
+    let c4 = konst(&mut fd, 4, 4);
+    wire(&mut fd, c4, subop, 1);
+    let root = make_op_noout(&mut fd, 0x230, OpCode::CPUI_INT_SRIGHT, 2);
+    wire(&mut fd, subout, root, 0);
+    let c31 = konst(&mut fd, 4, 31);
+    wire(&mut fd, c31, root, 1);
+
+    let mut rule = RuleSignForm2::new();
+    assert_eq!(rule.apply_op(root, &mut fd), 0, "oversized multiplier -> reject");
+    // input0 must still be the SUBPIECE output (NOT rewired to a).
+    assert_eq!(in_vn(&fd, root, 0), subout, "input0 untouched on reject");
+}
+
+// ---------------------------------------------------------------------------
+// V3 — RuleSignMod2Opt full positive fire (non-truncated `(V - sign)&1 + sign`).
+//
+//   a    : 4-byte input
+//   sgn  = a s>> 31                        (checkSignExtraction(multOp.in0)==a)
+//   m1   = sgn * -1                        (INT_MULT by calc_mask(4); multSlot)
+//   add  = m1 + a        (addOp; otherBase = addOp.getIn(1-multSlot) == a == base)
+//   and  = add & 1       (op under test, oplist CPUI_INT_AND, in1==1)
+//   sgn2 = a s>> 31      (root's other input: checkSignExtraction == a == base)
+//   root = and + sgn2    (INT_ADD descending from `and`)  => a s% 2
+// ---------------------------------------------------------------------------
+
+#[test]
+fn w5s3_signmod2opt_positive_nontrunc_fires_to_srem2() {
+    let mut fd = build_fd();
+    let a = make_input(&mut fd, 0x100, 4);
+
+    // sgn = a s>> 31
+    let (sgnop, sgnout) = make_op(&mut fd, 0x200, OpCode::CPUI_INT_SRIGHT, 2, 4);
+    wire(&mut fd, a, sgnop, 0);
+    let c31 = konst(&mut fd, 4, 31);
+    wire(&mut fd, c31, sgnop, 1);
+
+    // m1 = sgn * -1
+    let (m1, m1out) = make_op(&mut fd, 0x210, OpCode::CPUI_INT_MULT, 2, 4);
+    wire(&mut fd, sgnout, m1, 0);
+    let cneg = konst(&mut fd, 4, calc_mask(4));
+    wire(&mut fd, cneg, m1, 1);
+
+    // add = m1 + a   (multSlot==0; otherBase = addOp.getIn(1) == a == base)
+    let (addop, addout) = make_op(&mut fd, 0x220, OpCode::CPUI_INT_ADD, 2, 4);
+    wire(&mut fd, m1out, addop, 0);
+    wire(&mut fd, a, addop, 1);
+
+    // and = add & 1   (op under test)
+    let (andop, andout) = make_op(&mut fd, 0x230, OpCode::CPUI_INT_AND, 2, 4);
+    wire(&mut fd, addout, andop, 0);
+    let c1 = konst(&mut fd, 4, 1);
+    wire(&mut fd, c1, andop, 1);
+
+    // sgn2 = a s>> 31   (root's checkSignExtraction input)
+    let (sgn2, sgn2out) = make_op(&mut fd, 0x240, OpCode::CPUI_INT_SRIGHT, 2, 4);
+    wire(&mut fd, a, sgn2, 0);
+    let c31b = konst(&mut fd, 4, 31);
+    wire(&mut fd, c31b, sgn2, 1);
+
+    // root = and + sgn2   (slot = getSlot(andOut) = 0; in(1-0)=sgn2 -> base)
+    let root = make_op_noout(&mut fd, 0x250, OpCode::CPUI_INT_ADD, 2);
+    wire(&mut fd, andout, root, 0);
+    wire(&mut fd, sgn2out, root, 1);
+
+    let mut rule = RuleSignMod2Opt::new();
+    assert_eq!(rule.apply_op(andop, &mut fd), 1, "mod-2 SREM form must fire");
+    assert_eq!(op_of(&fd, root), OpCode::CPUI_INT_SREM, "rootOp -> INT_SREM");
+    assert_eq!(in_vn(&fd, root, 0), a, "SREM in0 == base == a");
+    assert_eq!(in_off(&fd, root, 1), 2, "SREM in1 == 2");
 }
