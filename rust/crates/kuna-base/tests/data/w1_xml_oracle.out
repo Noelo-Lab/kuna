@@ -1,0 +1,4663 @@
+ESCAPE \x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f !&quot;#$%&amp;&apos;()*+,-./0123456789:;&lt;=&gt;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\x5c]^_`abcdefghijklmnopqrstuvwxyz{|}~\x7f\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e\x8f\x90\x91\x92\x93\x94\x95\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e\x9f\xa0\xa1\xa2\xa3\xa4\xa5\xa6\xa7\xa8\xa9\xaa\xab\xac\xad\xae\xaf\xb0\xb1\xb2\xb3\xb4\xb5\xb6\xb7\xb8\xb9\xba\xbb\xbc\xbd\xbe\xbf\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7\xc8\xc9\xca\xcb\xcc\xcd\xce\xcf\xd0\xd1\xd2\xd3\xd4\xd5\xd6\xd7\xd8\xd9\xda\xdb\xdc\xdd\xde\xdf\xe0\xe1\xe2\xe3\xe4\xe5\xe6\xe7\xe8\xe9\xea\xeb\xec\xed\xee\xef\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9\xfa\xfb\xfc\xfd\xfe\xff
+CASE
+IN 
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN    
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a/>
+P startDocument
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <a/>\x0a
+P startDocument
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <a></a>
+P startDocument
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN   \x09\x0a<a/>
+P startDocument
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <a/>\x0a\x0a\x0a
+P startDocument
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <a/>x
+P startDocument
+P startElement a
+P endElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a/>\x0a<b/>
+P startDocument
+P startElement a
+P endElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a/><a/>
+P startDocument
+P startElement a
+P endElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a/><!--c-->
+P startDocument
+P startElement a
+P endElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a/> <!--c-->
+P startDocument
+P startElement a
+P endElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a/><!--c--> 
+P startDocument
+P startElement a
+P endElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a/><?pi?>
+P startDocument
+P startElement a
+P endElement a
+P setError Processing instructions are not supported
+P RET 1
+T ERR Processing instructions are not supported
+END
+CASE
+IN <a/>\x0a<?pi?>\x0a
+P startDocument
+P startElement a
+P endElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a/>&#32;
+P startDocument
+P startElement a
+P endElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN &#65;<a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--c-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--c1--><!--c2--><a/>
+P startDocument
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <?xml version='1.0'?><a/>
+P startDocument
+P setVersion 1.0
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <?xml version="1.0" encoding="UTF-8" ?>\x0a<a/>
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <?xml  version = '1.0'\x09encoding= "x" ?><a/>
+P startDocument
+P setVersion 1.0
+P setEncoding x
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <?xml version="1.0" encoding='L1'?><a/>
+P startDocument
+P setVersion 1.0
+P setEncoding L1
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <?xml version='1.0' ?  ><a/>
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' standalone='yes'?><a/>
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding='UTF-8'standalone?><a/>
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xmlversion='1.0'?><a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xm l?><a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xpi?><a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN  <?xml version='1.0'?><a/>
+P startDocument
+P setError Processing instructions are not supported
+P RET 1
+T ERR Processing instructions are not supported
+END
+CASE
+IN <?xml?><a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN  <!DOCTYPE x><a/>
+P startDocument
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <!--c--><!DOCTYPE x><a/>
+P startDocument
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <?xml version='1.0'?><!DOCTYPE x><a/>
+P startDocument
+P setVersion 1.0
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN  <!DOCTYPO><a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN  <!DOCTYP
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a>&lt;&gt;&amp;&quot;&apos;</a>
+P startDocument
+P startElement a
+P characters <
+P characters >
+P characters &
+P characters "
+P characters '
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT <>&"'
+END
+CASE
+IN <a>&bogus;</a>
+P startDocument
+P startElement a
+P characters \xff
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT \xff
+END
+CASE
+IN <a v='&bogus;'/>
+P startDocument
+P startElement a v=\xff
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT v=\xff
+T CT 
+END
+CASE
+IN <a>&#65;&#x41;&#x4a;&#x4A;</a>
+P startDocument
+P startElement a
+P characters A
+P characters A
+P characters J
+P characters J
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT AAJJ
+END
+CASE
+IN <a>&#256;&#x141;&#xc2;&#xa3;</a>
+P startDocument
+P startElement a
+P characters \x00
+P characters A
+P characters \xc2
+P characters \xa3
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT \x00A\xc2\xa3
+END
+CASE
+IN <a>&#4294967296;</a>
+P startDocument
+P startElement a
+P characters \x00
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT \x00
+END
+CASE
+IN <a>&#99999999999999999999;</a>
+P startDocument
+P startElement a
+P characters \xff
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT \xff
+END
+CASE
+IN <a>&#x100000041;</a>
+P startDocument
+P startElement a
+P characters A
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT A
+END
+CASE
+IN <a>&#2147483647;&#2147483648;</a>
+P startDocument
+P startElement a
+P characters \xff
+P characters \x00
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT \xff\x00
+END
+CASE
+IN <a>&#xffffffff;</a>
+P startDocument
+P startElement a
+P characters \xff
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT \xff
+END
+CASE
+IN <a>&#;</a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a>&#x;</a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a>&#xZ;</a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a>&amp</a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a>& amp;</a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a>&l-t;</a>
+P startDocument
+P startElement a
+P characters \xff
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT \xff
+END
+CASE
+IN <a>&LT;</a>
+P startDocument
+P startElement a
+P characters \xff
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT \xff
+END
+CASE
+IN <a>A&#32;B</a>
+P startDocument
+P startElement a
+P characters A
+P ignorableWhitespace  
+P characters B
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT AB
+END
+CASE
+IN <a v="A&#32;B"/>
+P startDocument
+P startElement a v=A B
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT v=A B
+T CT 
+END
+CASE
+IN <a v='&#38;&amp;x'/>
+P startDocument
+P startElement a v=&&x
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT v=&&x
+T CT 
+END
+CASE
+IN <a>&#x46;&#x6f;&#x6F;</a>
+P startDocument
+P startElement a
+P characters F
+P characters o
+P characters o
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT Foo
+END
+CASE
+IN <a b="1" c='two'/>
+P startDocument
+P startElement a b=1 c=two
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT b=1
+T AT c=two
+T CT 
+END
+CASE
+IN <a v='say "hi"'/>
+P startDocument
+P startElement a v=say "hi"
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT v=say "hi"
+T CT 
+END
+CASE
+IN <a v="it's"/>
+P startDocument
+P startElement a v=it's
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT v=it's
+T CT 
+END
+CASE
+IN <a v='>raw]]>ok'/>
+P startDocument
+P startElement a v=>raw]]>ok
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT v=>raw]]>ok
+T CT 
+END
+CASE
+IN <a v='val<'/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a v='unterminated
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a b=c/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a b='x'c='y'/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a  b = "v"  />
+P startDocument
+P startElement a b=v
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT b=v
+T CT 
+END
+CASE
+IN <a/ >
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a\x0ab='1'/>
+P startDocument
+P startElement a b=1
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT b=1
+T CT 
+END
+CASE
+IN <a b='1'\x09/>
+P startDocument
+P startElement a b=1
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT b=1
+T CT 
+END
+CASE
+IN <a b\x0a=\x0a'1'/>
+P startDocument
+P startElement a b=1
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT b=1
+T CT 
+END
+CASE
+IN <a v=''/>
+P startDocument
+P startElement a v=
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT v=
+T CT 
+END
+CASE
+IN <a v='l1\x0al2\x09end  '/>
+P startDocument
+P startElement a v=l1\x0al2\x09end  
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT v=l1\x0al2\x09end  
+T CT 
+END
+CASE
+IN < a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN </a>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <1a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a.b-c:d_e1 x:y='1'/>
+P startDocument
+P startElement a.b-c:d_e1 x:y=1
+P endElement a.b-c:d_e1
+P endDocument
+P RET 0
+T OK
+T EL 0 a.b-c:d_e1
+T AT x:y=1
+T CT 
+END
+CASE
+IN <<a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a 
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a b='v'
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a><b>t</wrong></a>
+P startDocument
+P startElement a
+P startElement b
+P characters t
+P endElement b
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+T EL 1 b
+T CT t
+END
+CASE
+IN <a><b/></a>
+P startDocument
+P startElement a
+P startElement b
+P endElement b
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+T EL 1 b
+T CT 
+END
+CASE
+IN <a> x <b/> y </a>
+P startDocument
+P startElement a
+P characters  x 
+P startElement b
+P endElement b
+P characters  y 
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT  x  y 
+T EL 1 b
+T CT 
+END
+CASE
+IN <a></ a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a></a >
+P startDocument
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <a></a\x09\x0a>
+P startDocument
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <a>x</a
+P startDocument
+P startElement a
+P characters x
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a><b></b></a>
+P startDocument
+P startElement a
+P startElement b
+P endElement b
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+T EL 1 b
+T CT 
+END
+CASE
+IN <a>text&lt;more</a>
+P startDocument
+P startElement a
+P characters text
+P characters <
+P characters more
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT text<more
+END
+CASE
+IN <a>text
+P startDocument
+P startElement a
+P characters text\x0a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a><![CDATA[<not>&amp;]]></a>
+P startDocument
+P startElement a
+P characters <not>&amp;
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT <not>&amp;
+END
+CASE
+IN <a><![CDATA[]]></a>
+P startDocument
+P startElement a
+P ignorableWhitespace 
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <a><![CDATA[a]]b]]></a>
+P startDocument
+P startElement a
+P characters a]]b
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT a]]b
+END
+CASE
+IN <a><![CDATA[]]]></a>
+P startDocument
+P startElement a
+P characters ]
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT ]
+END
+CASE
+IN <a><![CDATA[ ]]>x</a>
+P startDocument
+P startElement a
+P ignorableWhitespace  
+P characters x
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT x
+END
+CASE
+IN <a><![CDATA[abc</a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a><![CDATA [x]]></a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a><!--x--y--></a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a><!--c---></a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a><!----></a>
+P startDocument
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <a><!-- - --></a>
+P startDocument
+P startElement a
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <a><!--unterminated</a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a>]]></a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a>a]]b</a>
+P startDocument
+P startElement a
+P characters a]]b
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT a]]b
+END
+CASE
+IN <a>a]>b</a>
+P startDocument
+P startElement a
+P characters a]>b
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT a]>b
+END
+CASE
+IN <a>x\x00y</a>
+P startDocument
+P startElement a
+P characters x\x0a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x00<a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a>\xff</a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a v='\xff'/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \xff<a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a>\x80</a>
+P startDocument
+P startElement a
+P characters \x80
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT \x80
+END
+CASE
+IN <a>ab\xc3\xa9cd</a>
+P startDocument
+P startElement a
+P characters ab\xc3\xa9cd
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT ab\xc3\xa9cd
+END
+CASE
+IN <a v='\xc3\xa9'/>
+P startDocument
+P startElement a v=\xc3\xa9
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T AT v=\xc3\xa9
+T CT 
+END
+CASE
+IN <a><!--\xc3\xa9--></a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a><![CDATA[\xc3\xa9]]></a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a><!--\x01--></a>
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <\xc3a/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a \xc3='1'/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a>x<b/>\xffz</a>
+P startDocument
+P startElement a
+P characters x
+P startElement b
+P endElement b
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <a> \x09\x0d\x0a </a>
+P startDocument
+P startElement a
+P ignorableWhitespace  \x09\x0d\x0a 
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT 
+END
+CASE
+IN <a>x\x0d\x0ay</a>
+P startDocument
+P startElement a
+P characters x\x0d\x0ay
+P endElement a
+P endDocument
+P RET 0
+T OK
+T EL 0 a
+T CT x\x0d\x0ay
+END
+CASE
+IN <a><?pi?></a>
+P startDocument
+P startElement a
+P setError Processing instructions are not supported
+P RET 1
+T ERR Processing instructions are not supported
+END
+CASE
+IN <a><?pi data?></a>
+P startDocument
+P startElement a
+P setError Processing instructions are not supported
+P RET 1
+T ERR Processing instructions are not supported
+END
+CASE
+IN <!--\xc3  ki\xa9\xa9]--><!--n\xc3--><X.1\xa4g='&#2;fjnpp\xc3e' dc_] =' \x0a]k\xa9inhxx'><X:: d=''> y<!--\xa9\x0a--></X::>]dw&\x0a\x0a<![CDATA[r  ke]]]></X.1>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!-- --><!--j\xa9w--><:az-9 X_1a:='' d.0='qihx\xa9ihodkus\xc3nb'>&amp;</:az-9 >\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--yz\xc3\x0a]-->\x0a<z0 :b=''/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<Y1_.:><![CDATA[\xa9 i]]>d\x0a  e</Y1_.:> <!--t-->
+P startDocument
+P startElement Y1_.:
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><b01-->dlym\xc3zpn]\x0a ys![CDATA[r\x0d\xc3]\xc3]]></b01--\x00\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--b]cs]]--><!--va--><Z..zz Yc.0='\xa9h'></Z..zz>
+P startDocument
+P startElement Z..zz Yc.0=\xa9h
+P endElement Z..zz
+P endDocument
+P RET 0
+T OK
+T EL 0 Z..zz
+T AT Yc.0=\xa9h
+T CT 
+END
+CASE
+IN <?xml version='1.0'?><X.:0- g-='\xc3s\xa9]\xc3\x0a' gb-z.="&lt;&amp;">f\xa9]</X.:0- >\x0a
+P startDocument
+P setVersion 1.0
+P startElement X.:0- g-=\xc3s\xa9]\xc3\x0a gb-z.=<&
+P characters f\xa9]
+P endElement X.:0-
+P endDocument
+P RET 0
+T OK
+T EL 0 X.:0-
+T AT g-=\xc3s\xa9]\xc3\x0a
+T AT gb-z.=<&
+T CT f\xa9]
+END
+CASE
+IN <e:[0b- e= '\xa9m?\xc3b]\xc3'>?/e:0b->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><f_ zb0cz ='\xc3\xa9\xc3hmj\xc3' a='n]d\x0a'/>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement f_ zb0cz=\xc3\xa9\xc3hmj\xc3 a=n]d\x0a
+P endElement f_
+P endDocument
+P RET 0
+T OK
+T EL 0 f_
+T AT zb0cz=\xc3\xa9\xc3hmj\xc3
+T AT a=n]d\x0a
+T CT 
+END
+CASE
+IN <!DOCTYPE x>\x0a<gbc d= "" />
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?>\x0a<!--zy gli m'--><ga-z_ da="i " e.-9. ="\xc3nz \xc3\xa9t\xa9w"/>\x0a
+P startDocument
+P setVersion 1.0
+P startElement ga-z_ da=i  e.-9.=\xc3nz \xc3\xa9t\xa9w
+P endElement ga-z_
+P endDocument
+P RET 0
+T OK
+T EL 0 ga-z_
+T AT da=i 
+T AT e.-9.=\xc3nz \xc3\xa9t\xa9w
+T CT 
+END
+CASE
+IN <!DOCTPE x><!--]--><c9- Y="qfg &#65;" z0bb=""/=
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--\x0a --><!--\xc3ym\xc3--><a/> <!-t--
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--vok--><!--c\xa9m]a\xa9f]--><e-_0c e9z ='y'/> <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?>\x0a<e>i]]</e>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement e
+P characters i]]
+P endElement e
+P endDocument
+P RET 0
+T OK
+T EL 0 e
+T CT i]]
+END
+CASE
+IN <!DOCTYPE x><:1 Ya='' Z="rjoj"><![CDATA[c]]></:1>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<:b0z: Y.a-= "" X_-bc= '\xa9h\x0af hnp'>\xc3</:b0z:>
+P startDocument
+P startElement :b0z: Y.a-= X_-bc=\xa9h\x0af hnp
+P characters \xc3
+P endElement :b0z:
+P endDocument
+P RET 0
+T OK
+T EL 0 :b0z:
+T AT Y.a-=
+T AT X_-bc=\xa9h\x0af hnp
+T CT \xc3
+END
+CASE
+IN <?xml versio<='1.0' encod[ng="UTF-8"?><:: e=''>\xc3c\xa9\xa9]<![CDA\x9bTA[i] q]]><a/></:: > <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--e v\xc3t--><b-a X0azc= "&amp;" c="a] \xc3 \x0a"><![CDATA[y\xc3xe \x0a\xa9]]>f\x0alax</b-a>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <g-z_ :c='bfri\xa9ox\xc3h#'>lxall<a0b:c :-_c="" :1cb= ""/><![CDAT[A[nsa\xc3\xa9l]]></g-z_#\x0a
+P startDocument
+P startElement g-z_ :c=bfri\xa9ox\xc3h#
+P characters lxall
+P startElement a0b:c :-_c= :1cb=
+P endElement a0b:c
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<!--\xa9 r--><Zb1- g. ='' />
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <_-:-c d.="" Yzc-= '&lt;'><!--en ]jd\xa9 --></_-:-c><!--t-->
+P startDocument
+P startElement _-:-c d.= Yzc-=<
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN !!--]i ]q--><z0-></z0>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--ea]be--><e9c cc0="&nope;yuwz]]]" d9= '\x0a\xc3b]&amp;'/>\x0a
+P startDocument
+P startElement e9c cc0=\xffyuwz]]] d9=\x0a\xc3b]&
+P endElement e9c
+P endDocument
+P RET 0
+T OK
+T EL 0 e9c
+T AT cc0=\xffyuwz]]]
+T AT d9=\x0a\xc3b]&
+T CT 
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?>\x0a<!DOCTYPE x><a9. />\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <?xml version='1.0'?>\x0a<X :c-c1 ='' a-0 = " zmq\x0amd"/> <!--t-->
+P startDocument
+P setVersion 1.0
+P startElement X :c-c1= a-0= zmq\x0amd
+P endElement X
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x>!DOCTYPE x><Z0_c dba="q\xa9ka">\x0aetxnw&#7;&#5;</Z0_c>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><X:c:>\x0a\x0ai\x0a ]lhdf]\xc3]c</X::><!--t-->
+P startDocument
+P setVersion 1.0
+P startElement X:c:
+P characters \x0a\x0ai\x0a ]lhdf]\xc3]c
+P endElement X:c:
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<azzaa e0= '&amp;jcoc'><!--\xa9  tra-->\xc3h\xa9yl\x0a]</azzaa>\x0a
+P startDocument
+P startElement azzaa e0=&jcoc
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' ?><__0a e_:="qtm" _="">qgy\xa9y]] </__0a >
+P startDocument
+P setVersion 1.0
+P startElement __0a e_:=qtm _=
+P characters qgy\xa9y]] 
+P endElement __0a
+P endDocument
+P RET 0
+T OK
+T EL 0 __0a
+T AT e_:=qtm
+T AT _=
+T CT qgy\xa9y]] 
+END
+CASE
+IN <\x95z.a_b/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><g _:= ]''/><!--t--\x09
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a\x0a<b_>]
+P startDocument
+P startElement b_
+P characters ]\x0a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <X b1119='' g:_b\x0e'l\xa9\x0a\xa9\xc3#xv'><!-]x]\x0ax -->g\xa9\xc3 </X>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml versi\xe2n='1.0'?>\x0a\x0a<!--nhz --><a><!--u]tr--><![CDATA[w\xc3h]]><!--]\xa9g]zxy--></aa>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!-- we d--><!DOCTYPE x><d b1_09='jg]\xc3\xa9dn ' e="\xa9 y#] \xa9&#65;">p</d>\x0a
+P startDocument
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <!--\x0a\xa9\x0a --><bc_aZ!.-c9="">\x0a]\x0a t\x0a]\xa9if]x</bc_a>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><:a_ f-90= "no\xc3ya l\xa9yk\x0a" /><!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?>\x0a<f><![CDATA[s\x0a]\xa9\xc3p]]><f>fs\xa9 \xc3d]hsp\xa9]\xc3</f>  t\x0aze\xc3</f>\x0a
+P startDocument
+P setVersion 1.0
+P startElement f
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <b-_.>\xc3\xa9\x0a\xc3\xc3]\xa9\xa9um&#65;</b-_. ><--t-->
+P startDocument
+P startElement b-_.
+P characters \xc3\xa9\x0a\xc3\xc3]\xa9\xa9um
+P characters A
+P endElement b-_.
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <b \xba_\x09="" e\xea0z=""/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <dbcc><![CDATA[\xa9t\xa9v\xc3\xa9wf]]></dbcc>\x0a
+P startDocument
+P startElement dbcc
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><d.:z eb=' ns z]' e9= '  \xc3'>i]r\xc3\xc3\xc3\xa9b<![CDATA[lged\x0a]]></d.:z> <!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement d.:z eb= ns z] e9=  \xc3
+P characters i]r\xc3\xc3\xc3\xa9b
+P characters lged\x0a
+P endElement d.:z
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding"UTF-8"?><!DOCTYP? x><_:c0 a1 =""></_:c0>#\x0a
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <ba1>il\xa9]\xc3r<!--\xa9 \x0a\x0am\xa9\xa9--<></ba1>\x0a
+P startDocument
+P startElement ba1
+P characters il\xa9]\xc3r
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <Zc.1a Z= '&#x4a;\xa9ml\xc3\x0ap\xa9'></Zc.1a>\x0a
+P startDocument
+P startElement Zc.1a Z=J\xa9ml\xc3\x0ap\xa9
+P endElement Zc.1a
+P endDocument
+P RET 0
+T OK
+T EL 0 Zc.1a
+T AT Z=J\xa9ml\xc3\x0ap\xa9
+T CT 
+END
+CASE
+IN \x0a<e99b ::z ="l\xc3llq"></e99b>\x0a
+P startDocument
+P startElement e99b ::z=l\xc3llq
+P endElement e99b
+P endDocument
+P RET 0
+T OK
+T EL 0 e99b
+T AT ::z=l\xc3llq
+T CT 
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8" ?><Z91: Xb=''></Z91: >\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement Z91: Xb=
+P endElement Z91:
+P endDocument
+P RET 0
+T OK
+T EL 0 Z91:
+T AT Xb=
+T CT 
+END
+CASE
+IN <da1 a0 =' \x0abyudd' d_1.z='b\x0ax\x0a\xa9nq]'>\xc3]tit mb]\x0awc\xc3t&amp;</da1>\x0a
+P startDocument
+P startElement da1 a0= \x0abyudd d_1.z=b\x0ax\x0a\xa9nq]
+P characters \xc3]tit mb]\x0awc\xc3t
+P characters &
+P endElement da1
+P endDocument
+P RET 0
+T OK
+T EL 0 da1
+T AT a0= \x0abyudd
+T AT d_1.z=b\x0ax\x0a\xa9nq]
+T CT \xc3]tit mb]\x0awc\xc3t&
+END
+CASE
+IN \x0a<Z90ac fac-:= '\xc3w' Xca='d'><Z c="&#x14;" z:-9 = '&amp;bec\xc3 \xa9' /><![CDATA[]\x0a ]]></Z90ac>
+P startDocument
+P startElement Z90ac fac-:=\xc3w Xca=d
+P startElement Z c=\x14 z:-9=&bec\xc3 \xa9
+P endElement Z
+P characters ]\x0a 
+P endElement Z90ac
+P endDocument
+P RET 0
+T OK
+T EL 0 Z90ac
+T AT fac-:=\xc3w
+T AT Xca=d
+T CT ]\x0a 
+T EL 1 Z
+T AT c=\x14
+T AT z:-9=&bec\xc3 \xa9
+T CT 
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><!DOCTYPE x>\x0a<Xa ez9-a=']\xa9\x0a]hhex' gbz_=""/> <!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <!--m\xc3]\x0ad\xc3 --><a_><![CDATA[\xa9]q]]><![CDATA[\xc3v\xc3 ]]><![CDATA[ quz\x0ah]]]]></a_>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml ve/rsion='1.0' encoding="UT[F-8"?><fc.b bb.a='\xa9\xc3'>]]\xa9</fc.b>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!-- --><!--]j \xc3j\x0a\x0a--><X1 __za9= 'gq\xa9g]\x0a]'></X1>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <Z c0._b=" c\xc3\x0a]s "></Z>\x0a
+P startDocument
+P startElement Z c0._b= c\xc3\x0a]s 
+P endElement Z
+P endDocument
+P RET 0
+T OK
+T EL 0 Z
+T AT c0._b= c\xc3\x0a]s 
+T CT 
+END
+CASE
+IN \x0a">/f>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml ver\xfasion=1.0' encoding="UTF-8"?>\x0a\x0a<c/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <dz:9 :0a9a="\x0a\x0av\xac"><![CDATA[\x0aoi]]></d!z:9>\x0a
+P startDocument
+P startElement dz:9 :0a9a=\x0a\x0av\xac
+P characters \x0aoi
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><e/>\x0a
+P startDocument
+P setVersion 1.0
+P startElement e
+P endElement e
+P endDocument
+P RET 0
+T OK
+T EL 0 e
+T CT 
+END
+CASE
+IN <a::cc zz- ="&nope;" Y ="&#49749;"/>\x0a
+P startDocument
+P startElement a::cc zz-=\xff Y=U
+P endElement a::cc
+P endDocument
+P RET 0
+T OK
+T EL 0 a::cc
+T AT zz-=\xff
+T AT Y=U
+T CT 
+END
+CASE
+IN \x0a<!-- --><b zz9 = ""/>\x0a
+P startDocument
+P startElement b zz9=
+P endElement b
+P endDocument
+P RET 0
+T OK
+T EL 0 b
+T AT zz9=
+T CT 
+END
+CASE
+IN <e_ :1z= "&lt;&amp;" X="&nope;"><Z _ ="\xc3 \x0au]u\xa9a"/><!--l\x0ajnwfua-->\xa9\xc3</e_>\x0a
+P startDocument
+P startElement e_ :1z=<& X=\xff
+P startElement Z _=\xc3 \x0au]u\xa9a
+P endElement Z
+P characters \xa9\xc3
+P endElement e_
+P endDocument
+P RET 0
+T OK
+T EL 0 e_
+T AT :1z=<&
+T AT X=\xff
+T CT \xa9\xc3
+T EL 1 Z
+T AT _=\xc3 \x0au]u\xa9a
+T CT 
+END
+CASE
+IN <!DOCTYPE x>\x0a<dz_ Zaa ='\x0aa&#634750346;'>b<Y1 az="">j\xc3\xc3ye\xc3 <eza dzc.='i&lt;'><![CDATA[ubtz]e]]>\xc3\xc3lh </eza ></Y1><![CDATA[o\xa9f\x0a\x0ala]]></dz_>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><!--]s\x0anqh--><:>v\x0a\xa9st\xc3\xa9w\xa9] \xc3\xa9<!-- o\xc3x\xa9s--></:>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYP\xb4E x><cz1 c-01="&amp;" d0z_='\xc3\xc3hb&amp;'><cz1> <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><!--\xc3\x0az\xa9y\xa9--><Z.b..>i]\xa9xz\xc3 ]</Z.b.. >\x0a
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a\x0a<e9: :b=""><![CDATA[ n]\xc3t ]]><z000 dz.="&#17988394;">ab\xa9]<![CDATA[y\xc3a\xa9]]></z000><![CDATA[\xa9\x0a\xa9p\xc3\x0aoz]]></e9:>\x0a
+P startDocument
+P startElement e9: :b=
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><Zb g:-_b='pj\xc3\x0a\x0a\xc3gse\xa9 \xc3' f: ='\xa9h\xa9q f \x0a'><![CDATA[\xa9y\x0a ]]>\xc3nss\xa9]\xa9</Zb > <!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement Zb g:-_b=pj\xc3\x0a\x0a\xc3gse\xa9 \xc3 f:=\xa9h\xa9q f \x0a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCT\x0aYP x>\x0a<f00c _1:b:="m\xf0\xa9u" dz9= ''>&#x4a;&#65;</f00c>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?>\x0a<g0c1_ :=""> ]ue\xa9\x0a\xa9\x0ar\x0a</g0c1_>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement g0c1_ :=
+P characters  ]ue\xa9\x0a\xa9\x0ar\x0a
+P endElement g0c1_
+P endDocument
+P RET 0
+T OK
+T EL 0 g0c1_
+T AT :=
+T CT  ]ue\xa9\x0a\xa9\x0ar\x0a
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?>\x0a\x0a<gc9_><fc>df\xa9<!--ii--></fc>&nope;\xa9sr</gc9_>
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement gc9_
+P startElement fc
+P characters df\xa9
+P endElement fc
+P characters \xff
+P characters \xa9sr
+P endElement gc9_
+P endDocument
+P RET 0
+T OK
+T EL 0 gc9_
+T CT \xff\xa9sr
+T EL 1 fc
+T CT df\xa9
+END
+CASE
+IN <czz9  = "&#x4a;rc\x0a" dza= '&l;\x0a\x0a\xa9]wa'/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' ?><:a0.>l\xa9b<![CDATA[\xa9k] z  ]]><z Zz='' /></:a0. >
+P startDocument
+P setVersion 1.0
+P startElement :a0.
+P characters l\xa9b
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><Y_0-c>]m\x0a\xa9\xc3\xc3\xc3 \xa9b\x0a]]</Y_0-c>
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement Y_0-c
+P characters ]m\x0a\xa9\xc3\xc3\xc3 \xa9b\x0a]]
+P endElement Y_0-c
+P endDocument
+P RET 0
+T OK
+T EL 0 Y_0-c
+T CT ]m\x0a\xa9\xc3\xc3\xc3 \xa9b\x0a]]
+END
+CASE
+IN \x0a<!--\x0apv\xa9pa--><_a9 db= ']  zokg&#x4a;'></_a9> <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--b\x0apr\xa9t\xa9--><f-/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <Z01 />\x0a
+P startDocument
+P startElement Z01
+P endElement Z01
+P endDocument
+P RET 0
+T OK
+T EL 0 Z01
+T CT 
+END
+CASE
+IN \x0a\x0a<Xb>&#x4a;\x0al\xa9f\xa9Xb> <!-!-t-->
+P startDocument
+P startElement Xb
+P characters J
+P characters \x0al\xa9f\xa9Xb> 
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' ?><!DOCTYPE x><_a b0="\x0a\x0aoff]nzn\xc3\xa9"/> <!--t-->
+P startDocument
+P setVersion 1.0
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <!DOCTYPE x><!DOCTYPE x><19 X_--= "#x4a;" d_ = "">\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?>\x0a<X.z0/Z0a0="" ab1_ ="" />\x0a
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<z_az ba='&nope;a]\x0a' f_c=''></z_az>\x0a
+P startDocument
+P startElement z_az ba=\xffa]\x0a f_c=
+P endElement z_az
+P endDocument
+P RET 0
+T OK
+T EL 0 z_az
+T AT ba=\xffa]\x0a
+T AT f_c=
+T CT 
+END
+CASE
+IN <?xml versio\x18='1.0'?><Xb Y-09 = =''/><!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8" ?>\x0a<X1z Y = "]\xa9\x0a \x0a o&amp;" :_=""/>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement X1z Y=]\xa9\x0a \x0a o& :_=
+P endElement X1z
+P endDocument
+P RET 0
+T OK
+T EL 0 X1z
+T AT Y=]\xa9\x0a \x0a o&
+T AT :_=
+T CT 
+END
+CASE
+IN <dz-0z a=?'' g.c='  \x0a]tbu]\xa4\x0ank] 8/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a\x0a<:z__c a::0a =''/>\x0a
+P startDocument
+P startElement :z__c a::0a=
+P endElement :z__c
+P endDocument
+P RET 0
+T OK
+T EL 0 :z__c
+T AT a::0a=
+T CT 
+END
+CASE
+IN <?xml version='1.0'?><!DOCTYPE x><fb-: Xz0z ='&lt;\xa9]\x0av' f-za-=""></fb-: >\x0a
+P startDocument
+P setVersion 1.0
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <a9c:z>\xa9myb<a.1c a_ ="" Z="]sn\xa9]hej"/><![CDATA[\xa9e] ]]></a9c:z>\x0a
+P startDocument
+P startElement a9c:z
+P characters \xa9myb
+P startElement a.1c a_= Z=]sn\xa9]hej
+P endElement a.1c
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><Y.91b Y._ = "&nope;k" a9b = "&#x797;fq r">&lt;<!--l\xa9\x0a\xc3xg]c--><![CDATA[ c]]]></Y.91b> <!--t-->
+P startDocument
+P setVersion 1.0
+P startElement Y.91b Y._=\xffk a9b=\x97fq r
+P characters <
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN /xa />
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<Z_aa0>&#30929;<Z0: eaa="upnrrk" c_b= "&amp;]e">\xa9\xa9arq\x0aum\x0a</Z0:>\xa9</Z_aa0 > <!--t-->
+P startDocument
+P startElement Z_aa0
+P characters \xd1
+P startElement Z0: eaa=upnrrk c_b=&]e
+P characters \xa9\xa9arq\x0aum\x0a
+P endElement Z0:
+P characters \xa9
+P endElement Z_aa0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--pek\xa9rt-->\x0a<z.99 Z= "h\x0apuijt\xa9w]\x0ad" _-ba= "&amp;&#65;"/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><!DOCTYPE x><!DOCTYPE x><z1 f1= "&#x56;">\xc3zi\xa9db</z1>\x0a
+P startDocument
+P setVersion 1.0
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <?xml version='1.0'?><e0c_c z1cz= "\xc3\x0atxx \x0a\x0aa\x0a" e_za0=" \xa9\xc3a\x0ae&#x362638854;">ls\x0atj bd</e0c_c >
+P startDocument
+P setVersion 1.0
+P startElement e0c_c z1cz=\xc3\x0atxx \x0a\x0aa\x0a e_za0= \xa9\xc3a\x0aeT
+P characters ls\x0atj bd
+P endElement e0c_c
+P endDocument
+P RET 0
+T OK
+T EL 0 e0c_c
+T AT z1cz=\xc3\x0atxx \x0a\x0aa\x0a
+T AT e_za0= \xa9\xc3a\x0aeT
+T CT ls\x0atj bd
+END
+CASE
+IN <!DOCTYPE x>\x0a<Y.z><]Y.z>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<!--n\xa9btb--><Xb-- d_.='\xa9ds\xc3x' g..=" kw]\xa9 \xc3\x0a"></Xb--> <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<!-- ]--><dz1 a="\xa9">kf<!--p-->sxn  </dz1 >\x0a
+P startDocument
+P startElement dz1 a=\xa9
+P characters kf
+P characters sxn  
+P endElement dz1
+P endDocument
+P RET 0
+T OK
+T EL 0 dz1
+T AT a=\xa9
+T CT kfsxn  
+END
+CASE
+IN <?xml version='1.0' ?>\x0a\x0a<Y. :9a=''[</Y.> <!--t-->
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'><!DOCTYPE x>\x0a<g_za X1-0=/\xc3]]s\xc3a\xa9kh\xc3  rg"/>\x0a
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <:b></a:b>!--t-;>
+P startDocument
+P startElement :b
+P endElement :b
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><Y:_- c: =''>gnl\xc3]p\xa9</Y:_->\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<!DOCTYPE x><Ybc e91="" b-ac ="<]&#65;">]\x0a<#Ybc>\x0a
+P startDocument
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN \x0a<!--\xa9\xc3]a--><Y1a:a c="pynm p\xa9r&nope;" da1b= ""><!--\xa9lg--></Y1a:a > <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<X ea="" ea = "">&lt;</X><!--t-->
+P startDocument
+P startElement X ea= ea=
+P characters <
+P endElement X
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <Xa:-><!--mk]\x0a\xa9\x0aj\x0a--></Xa:->\x0a
+P startDocument
+P startElement Xa:-
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <. g_c='c\x0a\xc3oabb'>j \xc3<![CDAA[nja\xa9]]>\xa9\x0ai\x0aoti</_.>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encod\x09ing="UTF-8"?>\x0a<Y19c. e="azw\xc3my\xc3" />
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <g X:-=' m p'></g>\x0a
+P startDocument
+P startElement g X:-= m p
+P endElement g
+P endDocument
+P RET 0
+T OK
+T EL 0 g
+T AT X:-= m p
+T CT 
+END
+CASE
+IN <?xml version='1.0'?><!--\xa9\xc3cq--><!--w l\x0a--><Xa1-b/>
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><!--s]ovmgyj-->\x0a<f/>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement f
+P endElement f
+P endDocument
+P RET 0
+T OK
+T EL 0 f
+T CT 
+END
+CASE
+IN <ac-zc g.:z = " uac\xa9u" Yc_ ="&#65;">ojr swg</ac-zc>\x0a
+P startDocument
+P startElement ac-zc g.:z= uac\xa9u Yc_=A
+P characters ojr swg
+P endElement ac-zc
+P endDocument
+P RET 0
+T OK
+T EL 0 ac-zc
+T AT g.:z= uac\xa9u
+T AT Yc_=A
+T CT ojr swg
+END
+CASE
+IN <!DOCTYPE x><!DOCTYPE> x><fb.0 Z_9a="&amp;]hc]`] \x0aj">yp\xc3sp&#65;</fb.0><!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><!--]]y--><e Z1=""><![CDATA[\x0a]]>]zv\xa9b</e>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='.0'?>\x0a\x0a<ab0b></ab0b >\x0a
+P startDocument
+P setVersion .0
+P startElement ab0b
+P endElement ab0b
+P endDocument
+P RET 0
+T OK
+T EL 0 ab0b
+T CT 
+END
+CASE
+IN \x0a<!--l-- <f.1_ b/\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!xOCTYPE x>\x0a<:01z>p]]]h\x0a</:01z>=!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?>\x0a\x0a<c/>
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement c
+P endElement c
+P endDocument
+P RET 0
+T OK
+T EL 0 c
+T CT 
+END
+CASE
+IN <?xml version=\x9d1.0'?><zc01><![CDATA[b\xa9]]>c\xc3jyif </zc01>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <ga>&amp;;/ga><!--t-->
+P startDocument
+P startElement ga
+P characters &
+P characters ;/ga>
+P ignorableWhitespace \x0a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xmlversion=1.0' encoding="UTF-8"?><a9c e="ji\xa9]]dl-]"/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8" ?><X-0/>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement X-0
+P endElement X-0
+P endDocument
+P RET 0
+T OK
+T EL 0 X-0
+T CT 
+END
+CASE
+IN <DOCTYPE x> X:-b/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?>\x0a\x0a<c.a. c1 = "\x0a  qa\xc3j sg og\xc3">t\xc3\xa9wy]by cik\xc3ni</c.a. >\x0a
+P startDocument
+P setVersion 1.0
+P startElement c.a. c1=\x0a  qa\xc3j sg og\xc3
+P characters t\xc3\xa9wy]by cik\xc3ni
+P endElement c.a.
+P endDocument
+P RET 0
+T OK
+T EL 0 c.a.
+T AT c1=\x0a  qa\xc3j sg og\xc3
+T CT t\xc3\xa9wy]by cik\xc3ni
+END
+CASE
+IN \x0a<z1a _1c9= "ixi\xc3]kc\x0a\x0a\xa9" Ycab="&lt;&#x4a;">&#65; l kxpmu<X. g10. ='' cbcc="zdv\x0a&#x4a;"></X.></z1a >\x0a
+P startDocument
+P startElement z1a _1c9=ixi\xc3]kc\x0a\x0a\xa9 Ycab=<J
+P characters A
+P characters  l kxpmu
+P startElement X. g10.= cbcc=zdv\x0aJ
+P endElement X.
+P endElement z1a
+P endDocument
+P RET 0
+T OK
+T EL 0 z1a
+T AT _1c9=ixi\xc3]kc\x0a\x0a\xa9
+T AT Ycab=<J
+T CT A l kxpmu
+T EL 1 X.
+T AT g10.=
+T AT cbcc=zdv\x0aJ
+T CT 
+END
+CASE
+IN <d009. Za_:z='&#x4a' :0='h]y\x0a' />
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml versio]n='1.0' encoding="?TF-8"?>\x0a\x0a<e/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><!--lel\x0a\xa9--><e. Z_a.9=''></e. >\x0a
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <aa Xz-_b ="&amp;&amp;" z9-z1="&#398936307456;"/>\x0a
+P startDocument
+P startElement aa Xz-_b=&& z9-z1=\x00
+P endElement aa
+P endDocument
+P RET 0
+T OK
+T EL 0 aa
+T AT Xz-_b=&&
+T AT z9-z1=\x00
+T CT 
+END
+CASE
+IN <X0_><!--i-->mn]</X0_ >\x0a
+P startDocument
+P startElement X0_
+P characters mn]
+P endElement X0_
+P endDocument
+P RET 0
+T OK
+T EL 0 X0_
+T CT mn]
+END
+CASE
+IN <_9zzb :1_-='&#23270558779;&lt;' f =''>&#x4a;]</_9zzb<!--t-->
+P startDocument
+P startElement _9zzb :1_-=;< f=
+P characters J
+P characters ]
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0?<z19--]c1- ='dq&amp;' d0:-. ='\xa9b]qq]\xa9]&#65;'/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <Z09: z_=" &#x923774274;" d="&#\x0dx4a;&amp;"/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--\xa9j\x0a\xa9\x0aak--><c. z-:0b='' b.='\xc3vxj \x0a'><_ ab.__= ' phg\xc3 ]it\xa9l' />\xc3]ggtg]t</c.>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><f0_9 b... = ""/>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement f0_9 b...=
+P endElement f0_9
+P endDocument
+P RET 0
+T OK
+T EL 0 f0_9
+T AT b...=
+T CT 
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?>\x0a\x0a<_0z/> <!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement _0z
+P endElement _0z
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><!-- -&><X0b _="" d\xad--1=""></X0b>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?>\x0a\x0a<Y-_>i \xa9u\xc3\xa9\xa9\x0a</Y-_>\x0a
+P startDocument
+P setVersion 1.0
+P startElement Y-_
+P characters i \xa9u\xc3\xa9\xa9\x0a
+P endElement Y-_
+P endDocument
+P RET 0
+T OK
+T EL 0 Y-_
+T CT i \xa9u\xc3\xa9\xa9\x0a
+END
+CASE
+IN <!--bhg\xc3\xc3-->\x0a<a _19b=''/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--m\x0aqi\xc3llk--><b-9b1 />\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a\x0a<c-z>q</c\x09z>\x0a
+P startDocument
+P startElement c-z
+P characters q
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><g9.c gb='\x0a  \xa9 \xc3\xc3\xc3c vbv' :=' c'/> <!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement g9.c gb=\x0a  \xa9 \xc3\xc3\xc3c vbv := c
+P endElement g9.c
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><!--\xa9e--><: Z0= "fhi]\xa9\xc3\xa9t]\xa9"></: ><!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<!DOCTYPE x><b:1-: X:1_b=""></b:1-:><!--t-->
+P startDocument
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN \x0a<::c:9 f919="&x#;04111;&#65;" c="&amp;zr"></:c:9>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <:___ za99c='' Xc=''><![CDATA[\xc3h j \x0a]]>\x0ab]pp\xc3\x0a]</:___>\x0a
+P startDocument
+P startElement :___ za99c= Xc=
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--zio\xc3 ]ja--><!--\xa9\xc3]e\xa9--><ca:9 f.z- =""/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <bc0:: b.:="]r gj a]" f0="\xc3s \xc3t\x0a]"></bc0::>\x0a
+P startDocument
+P startElement bc0:: b.:=]r gj a] f0=\xc3s \xc3t\x0a]
+P endElement bc0::
+P endDocument
+P RET 0
+T OK
+T EL 0 bc0::
+T AT b.:=]r gj a]
+T AT f0=\xc3s \xc3t\x0a]
+T CT 
+END
+CASE
+IN <z g..-b='&#65;' Zz:b[=''/> <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!-\xc3dj\xa9\x0a\xc3ax--><e-c:1 b199 =''>&\x09t;<g Y1='' /><X0 X_b0.='km\xc3qy'></X0></e-c:1 <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><f1Z:b1 ="\x0dn\xc3\xa9">&#0;</f1 >
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' ?><a- e ='\xa9u/iez' Z-0z9 = 'dn]r]fr\xa9 b\xa9]\x0a\xc3q'>n\xc3sos\xc3&#7129208690;<!--n--></a->\x0a
+P startDocument
+P setVersion 1.0
+P startElement a- e=\xa9u/iez Z-0z9=dn]r]fr\xa9 b\xa9]\x0a\xc3q
+P characters n\xc3sos\xc3
+P characters r
+P endElement a-
+P endDocument
+P RET 0
+T OK
+T EL 0 a-
+T AT e=\xa9u/iez
+T AT Z-0z9=dn]r]fr\xa9 b\xa9]\x0a\xc3q
+T CT n\xc3sos\xc3r
+END
+CASE
+IN <?xml version='1.0' ?><!DOCTYPE x><a:c zcz= " z&amp;"><Xz: ac="" e='&#x1397968987;\xc3t\xc3\xc3'>\x0a\xa9d]go\xc3\x0a u&amp;</Xz:><!--\xa9d   \xa9\xc3z-->g\x0a]epo</a:c> <!--t-->
+P startDocument
+P setVersion 1.0
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <:_ za='' b:="\xa9\xc3;y&x4a;></:_ >\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <Xc X='&lt;&#6701300901;'/>
+P startDocument
+P startElement Xc X=<\xa5
+P endElement Xc
+P endDocument
+P RET 0
+T OK
+T EL 0 Xc
+T AT X=<\xa5
+T CT 
+END
+CASE
+IN <!-- \xa9]\xa9d--><Y..a Z. =""><![CDATA[\x0aa]uih ]]></Y..a>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <g.a_a X-9='&nope;h\xc3]l' f1:=''>tl]t\xa9</g.a_a>\x0a
+P startDocument
+P startElement g.a_a X-9=\xffh\xc3]l f1:=
+P characters tl]t\xa9
+P endElement g.a_a
+P endDocument
+P RET 0
+T OK
+T EL 0 g.a_a
+T AT X-9=\xffh\xc3]l
+T AT f1:=
+T CT tl]t\xa9
+END
+CASE
+IN <!DOCTYPE x><!--]\xa9a\xc3ckpw--><fz:- dz ='ljskn  sqy\xc3\xc3k'><![CDATA[\xa9f  \xc3x\xc3v]]>\xc3</fz:->\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF- 8"?><z1 _a='' f9:="&#65;]s\xc3\xa9\xa9]"/>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF- 8
+P startElement z1 _a= f9:=A]s\xc3\xa9\xa9]
+P endElement z1
+P endDocument
+P RET 0
+T OK
+T EL 0 z1
+T AT _a=
+T AT f9:=A]s\xc3\xa9\xa9]
+T CT 
+END
+CASE
+IN <!--t\xa9-->\x0a<_1>rs\xa9\xa9\xa9]ksgr</_1><!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><!-- er\x0aop-->\x0a<a1 c:_="\x0abp\xa9c" Y= "&#x4a;"></a1> <!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement a1 c:_=\x0abp\xa9c Y=J
+P endElement a1
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml verion='1.0' enc'ding="UTF-8"?><!DOCTYPE x><!DOCTYPE x\x0d<g>bb\xc3zi</g ><!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><a0c0 X9=''>aea\xc3\xc3\xa9\xa9g</a0c0> <!--t-->
+P startDocument
+P setVersion 1.0
+P startElement a0c0 X9=
+P characters aea\xc3\xc3\xa9\xa9g
+P endElement a0c0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><!--qyw--><d_ Z1z0="]k\xc3\x0ano&amp;"></d_>\x0a
+P startDocument
+P setVersion 1.0
+P startElement d_ Z1z0=]k\xc3\x0ano&
+P endElement d_
+P endDocument
+P RET 0
+T OK
+T EL 0 d_
+T AT Z1z0=]k\xc3\x0ano&
+T CT 
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><!--ku\xa9--><b := 'sj\xa9lm\x0ap'/><!--<-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<!--isgr\xa9m-->\x09<Z_0_ g-a=']goiy\xa9q&#x457693994855;' e-ca="ap]d]j\xc3pao\xa9i "></Z_0_>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><!DOCTYPE x><Xz a:--='\x0auk \xa9\xc3\xa9 ]b'/>\x0a
+P startDocument
+P setVersion 1.0
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <!--e\xa9\x17ie--><Yzc1 c= 'n \x0al \xc3j' gca_z= ''>]uw\x0as</Yzc1> <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <c- e:9-.-="">\xf3X->nqk</X- ></->\x0a
+P startDocument
+P startElement c- e:9-.-=
+P characters \xf3X->nqk
+P endElement c-
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<e1 eba9=""><::: e`_.c="">]n\xa9k]]-c\x0a</:::>lsqq<![CDATA[i\xa9f\xc3y\x0a]]></e1>\x0a
+P startDocument
+P startElement e1 eba9=
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<_0x/>\x0a
+P startDocument
+P startElement _0x
+P endElement _0x
+P endDocument
+P RET 0
+T OK
+T EL 0 _0x
+T CT 
+END
+CASE
+IN <:0b><!--\xa9\xc3r\xc3u-->\xc3pxb\xa9d</:0b > <!-\xaf-t-->
+P startDocument
+P startElement :0b
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <:-.b baz=""/>
+P startDocument
+P startElement :-.b baz=
+P endElement :-.b
+P endDocument
+P RET 0
+T OK
+T EL 0 :-.b
+T AT baz=
+T CT 
+END
+CASE
+IN <!--rme]--><Xz f ="]r>\x0a] \xc3\xc3xm"/>\x0a
+P startDocument
+P startElement Xz f=]r>\x0a] \xc3\xc3xm
+P endElement Xz
+P endDocument
+P RET 0
+T OK
+T EL 0 Xz
+T AT f=]r>\x0a] \xc3\xc3xm
+T CT 
+END
+CASE
+IN <!--us-->\x0a<e1.0: c0:z= "" :z010= '&lt;' /><!--t-->
+P startDocument
+P startElement e1.0: c0:z= :z010=<
+P endElement e1.0:
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<!DOCTYPE x><Z00 f--="" :-= '&#[x4a;&amp;'>]\xc3z wl<]b:0-1 bz="o " d ="dvcj]"><![CDATA[\xa9 a]]><!--hqu\xc3f--><![&CDATA[\x0azp]\x0au\xa9]]></b:0-1></Z00>\x0a
+P startDocument
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN \x0a<zaz zc_c=''><a_: a.0 =''></a_:><!--u\x0a]e--></zaz>\x0a
+P startDocument
+P startElement zaz zc_c=
+P startElement a_: a.0=
+P endElement a_:
+P endElement zaz
+P endDocument
+P RET 0
+T OK
+T EL 0 zaz
+T AT zc_c=
+T CT 
+T EL 1 a_:
+T AT a.0=
+T CT 
+END
+CASE
+IN <zc_a z_ = '&lt;\x0aq' X::a= ']l\xa9mzqu]'><![CDATA[\xc3\xa9\x0a]]><!-- b]\x0alg--><Yb/></zc_a>\x0a
+P startDocument
+P startElement zc_a z_=<\x0aq X::a=]l\xa9mzqu]
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--\x0a-->\x0a<a.:><b z: 9_ =""><!--ra]\xc3]wf-->\xc3\xc3\x0apt<![CDATA[gx] \x0ae]]></b>\xc3 fa</a.:>\x0a
+P startDocument
+P startElement a.:
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <_: a_0="" g="&#65;]\xc3dlv"><z g901_='h c' bz9='dm\xc3'></z ></_:>\x0a
+P startDocument
+P startElement _: a_0= g=A]\xc3dlv
+P startElement z g901_=h c bz9=dm\xc3
+P endElement z
+P endElement _:
+P endDocument
+P RET 0
+T OK
+T EL 0 _:
+T AT a_0=
+T AT g=A]\xc3dlv
+T CT 
+T EL 1 z
+T AT g901_=h c
+T AT bz9=dm\xc3
+T CT 
+END
+CASE
+IN \x0a<_><Y::0 e_='&#x4a;rswl '>\xc3 \xa9\xc3pik</Y::0>vt]]nf</_><!--t-->
+P startDocument
+P startElement _
+P startElement Y::0 e_=Jrswl 
+P characters \xc3 \xa9\xc3pik
+P endElement Y::0
+P characters vt]]nf
+P endElement _
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<f_1></f_1>\x0a
+P startDocument
+P startElement f_1
+P endElement f_1
+P endDocument
+P RET 0
+T OK
+T EL 0 f_1
+T CT 
+END
+CASE
+IN \x0a<d-a-><![CDATA[h ]\x0aug]\x0a]></d-\xc3- >\x0a
+P startDocument
+P startElement d-a-
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<!DOCTYPE x><d.:1 Yc="\xa9ax\xc3k&amp;" X:z_b = " q \xa9lmil"></d.:1>\x0a
+P startDocument
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><g99>&lt;\x0alqrb\x99</g99><!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement g99
+P characters <
+P characters \x0alqrb\x99
+P endElement g99
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <g><c>m\x0a\x0ap\x0av?&amp;</c></g >\x0a
+P startDocument
+P startElement g
+P startElement c
+P characters m\x0a\x0ap\x0av?
+P characters &
+P endElement c
+P endElement g
+P endDocument
+P RET 0
+T OK
+T EL 0 g
+T CT 
+T EL 1 c
+T CT m\x0a\x0ap\x0av?&
+END
+CASE
+IN <z01_ />\x0a
+P startDocument
+P startElement z01_
+P endElement z01_
+P endDocument
+P RET 0
+T OK
+T EL 0 z01_
+T CT 
+END
+CASE
+IN <X_ a:9z="&#x4a;"/>\x0a
+P startDocument
+P startElement X_ a:9z=J
+P endElement X_
+P endDocument
+P RET 0
+T OK
+T EL 0 X_
+T AT a:9z=J
+T CT 
+END
+CASE
+IN <!--\xc3]m-->\x0a<c.9.z b='\xc3\xc3i\xc3h ' _-991 ="&#x4a;"><Za. d = ']]u\xa9 f&#x244900113;' ba0 ="t&nope;"><!--\xc3--><!--\xa9i\x0a--></Za.>w\x0a fwfk\xa9<![CDATA[\xa9]\x0a\xc3]]></c.9.z >\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <X_b9z></X_b9z >
+P startDocument
+P startElement X_b9z
+P endElement X_b9z
+P endDocument
+P RET 0
+T OK
+T EL 0 X_b9z
+T CT 
+END
+CASE
+IN <_&_><!--\xa9l ybbl--><![CDATA[\x0am]]>\x0a p\xc3</__><!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN !<\x85DOCTYPE x><T!DOCTYPE x><c_1 ea= "" a="&#x4a;"/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <g Zz =']g\x0a\xa9m\x0a'>c<![CDAT\x09[w o\x0a]]> pfyw\xa9\x0ao</g>\x0a
+P startDocument
+P startElement g Zz=]g\x0a\xa9m\x0a
+P characters c
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><e Z1= 'hg]h' z1:9 =" \x0asd]jn\xc3sczlz\xc3ib">\xa9atmm&nope;</e>\x0a
+P startDocument
+P setVersion 1.0
+P startElement e Z1=hg]h z1:9= \x0asd]jn\xc3sczlz\xc3ib
+P characters \xa9atmm
+P characters \xff
+P endElement e
+P endDocument
+P RET 0
+T OK
+T EL 0 e
+T AT Z1=hg]h
+T AT z1:9= \x0asd]jn\xc3sczlz\xc3ib
+T CT \xa9atmm\xff
+END
+CASE
+IN \x0a<!DOCTYPE x><azbb e0.= "]f ] b&lt;" _za0 =''></azbb>\x0a
+P startDocument
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <?xml v=rsion='1.0'?><b:_:9><b1a Z:a = "i\xa9]\xa9e\x0a" bz='\xc3zxh\x0aed\xa9\x0a] jpo '>zg<e-.></e-.></b1a> oa]\x0axtewv]</b:_:9>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8" ?><!DOCTYPE x><Xacb g=" wj\xc3\xa9\xc3\x0a" f_-a1 =''>]qo<![CDATA[d\x0aqr]]></Xacb >\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <X_z_ ec= "" bc="">\x0ab \xa9rqndphs\xa9</X_z_> <!--t-->
+P startDocument
+P startElement X_z_ ec= bc=
+P characters \x0ab \xa9rqndphs\xa9
+P endElement X_z_
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN !--m\xc3]n\x0aa\xa9 --><bb9 _99z='&#x4a;&#65;' Y1= "]ncsh\xa9oyc>"></bb9>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml vesion='1.0'?>?\xad<!--u\xa9i-->\x0a<cz. zc:c= "y c\xa9k\x0a\x0a\xa9"/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><!DOCTYPE x>\x0a<ca/>\x0a
+P startDocument
+P setVersion 1.0
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <!DOCTYPE x><e />\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<f />
+P startDocument
+P startElement f
+P endElement f
+P endDocument
+P RET 0
+T OK
+T EL 0 f
+T CT 
+END
+CASE
+IN \x0a<!DOCTYPE x><d_0 e-: ="" Xbcb=""></d_0>\x0a
+P startDocument
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <!DOCTYPE x><!DOCTYPE x><___c0 e.:9=""/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <z_ zza=""></z_ >\x0a
+P startDocument
+P startElement z_ zza=
+P endElement z_
+P endDocument
+P RET 0
+T OK
+T EL 0 z_
+T AT zza=
+T CT 
+END
+CASE
+IN <!DOCTYPE x>\x0a<d9/><!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <1b\x0a> jj</f1b:>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--r--><b1:- d9=""/>\x0a
+P startDocument
+P startElement b1:- d9=
+P endElement b1:-
+P endDocument
+P RET 0
+T OK
+T EL 0 b1:-
+T AT d9=
+T CT 
+END
+CASE
+IN <dc-0 b9. = '&#x59;]]\xc3\x0ah\xc3c'><![CDATA[gs\x0a]]>  \xc3zqa\xc3]</dc-0 >\x0a
+P startDocument
+P startElement dc-0 b9.=Y]]\xc3\x0ah\xc3c
+P characters gs\x0a
+P characters   \xc3zqa\xc3]
+P endElement dc-0
+P endDocument
+P RET 0
+T OK
+T EL 0 dc-0
+T AT b9.=Y]]\xc3\x0ah\xc3c
+T CT gs\x0a  \xc3zqa\xc3]
+END
+CASE
+IN \x0a<zc- X_b9="&#x37;&amp;" Z= "d]yo">\xa9z]<dc><:_-1b><Zcb></Zcb>/[:_-1b></dc>[\x0a\xa9]\x0aq]</zc->
+P startDocument
+P startElement zc- X_b9=7& Z=d]yo
+P characters \xa9z]
+P startElement dc
+P startElement :_-1b
+P startElement Zcb
+P endElement Zcb
+P characters /[:_-1b>
+P endElement :_-1b
+P characters [\x0a\xa9]\x0aq]
+P endElement dc
+P ignorableWhitespace \x0a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8" ?><!DOCTYPE x>\x0a<z- z.= "&#65;" a0:1.=''><:.- d.-= "n ]j i\x0a\xc3f\x0ah">pb\xc3qh<X:_.>x\xa9m</X:_.></:.9 >&amp;&#65;</z-> <!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <!--]va\xa9 o--><!--i--><a Z.0="&#579851331705;fpqo yv">&lt;<Y _:._=' a\xa9yigf\x0a\xc3' _.1a_ ='&lt;' /></a >
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <f:a-a</f:a-a>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><cb f9= '&amp;&amp;' X="">yt\xa9ir<!--z\xc3\xa9zoeoy--></cb>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x>\x0a<X>i\xa9z\xc3pqq</X >\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><c_ Zcz =''></c_>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--\xc3--><_b-a><ba><!--\x0a\xa9\xa9--></ba></_b-a>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--\x0a\xc3k'\xa9 o-->\x0a<f c==" />\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <Xb:_ c9_:c=''>p\x0ah</Xb:_>\x0a
+P startDocument
+P startElement Xb:_ c9_:c=
+P characters p\x0ah
+P endElement Xb:_
+P endDocument
+P RET 0
+T OK
+T EL 0 Xb:_
+T AT c9_:c=
+T CT p\x0ah
+END
+CASE
+IN !<z0ab X:. ="">\xc3 b\xa9\x0a]</z0ab>\xa8\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x>\x0a<X19 f.: ='&amp;&nope;' gb01="]\x0a\xc3\xc3f]"><\x0a!--l\xc3 -->&\x0d#x4a;</X19>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?>\x0a<c Y='mrw&#x4a;' Zc="\x0a\xc3ru\xa9\xa9]&nope;"/>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement c Y=mrwJ Zc=\x0a\xc3ru\xa9\xa9]\xff
+P endElement c
+P endDocument
+P RET 0
+T OK
+T EL 0 c
+T AT Y=mrwJ
+T AT Zc=\x0a\xc3ru\xa9\xa9]\xff
+T CT 
+END
+CASE
+IN <Y9 fazb= "&#65;eu]\x0a\xa9eu "></Y9>\x0a
+P startDocument
+P startElement Y9 fazb=Aeu]\x0a\xa9eu 
+P endElement Y9
+P endDocument
+P RET 0
+T OK
+T EL 0 Y9
+T AT fazb=Aeu]\x0a\xa9eu 
+T CT 
+END
+CASE
+IN \x0a<!--\xa9\xa9\xc3\x0as--><aaz.a f1a9 ="=">&#x217334;<Xz><!--\xc3o\xc3--> w&#65;</Xz '><![CDATA[ \x0asju]]\xa9]]><<aaz.a > <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x>\x0a<a9c _-:z.='&#475993402;'"_0_9_=''></a9c><!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<a9zz- e..bc ='' b.= "a hlt \xc3\xc3kj ">\x0a]\x0au <![CDATA[r]]]><e9 /></a9zz->\x0a
+P startDocument
+P startElement a9zz- e..bc= b.=a hlt \xc3\xc3kj 
+P characters \x0a]\x0au 
+P characters r]
+P startElement e9
+P endElement e9
+P endElement a9zz-
+P endDocument
+P RET 0
+T OK
+T EL 0 a9zz-
+T AT e..bc=
+T AT b.=a hlt \xc3\xc3kj 
+T CT \x0a]\x0au r]
+T EL 1 e9
+T CT 
+END
+CASE
+IN <!DOCTYPE x><!DOCTYPE x><c9.c d_="dx\xa9k\xc3">&#65;y]]\x0an&nope;</c9.c>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?x'ml version='<.0'?>\x0a\x0a<_ Xc90='&#65;' Z-a.# =" "></_>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--]--><a><!--"\xa9s;t \xa9\xc3\x0a-->\xa9u< ![CDATA[ p\x0a]]]></a>\x0a
+P startDocument
+P startElement a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<_-bc_ _.:91 ='\xa9\xa9\x0au\xc3\xa9ab&lt;'/>\x0a
+P startDocument
+P startElement _-bc_ _.:91=\xa9\xa9\x0au\xc3\xa9ab<
+P endElement _-bc_
+P endDocument
+P RET 0
+T OK
+T EL 0 _-bc_
+T AT _.:91=\xa9\xa9\x0au\xc3\xa9ab<
+T CT 
+END
+CASE
+IN <!DOCTYPE x><z _ ='d\xa9'/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><!DOCTYPE x><e10 d_='&amp;' a0="">p\xc3jk<:>&#344236;vid\x0a\xc3m\xa9if</:>i</e10>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<:_ d:=']' Z9-01=";"/> <!--t-->
+P startDocument
+P startElement :_ d:=] Z9-01=;
+P endElement :_
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <_>=!--pj\xc3--><X:9_:></X:9_></>
+P startDocument
+P startElement _
+P characters =!--pj\xc3-->
+P startElement X:9_:
+P endElement X:9_:
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8" ?><!DOCTYPE x><_._9>w&amp;</_._9><!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <?xml version='1.0'?><:1-></:1->\x0a
+P startDocument
+P setVersion 1.0
+P startElement :1-
+P endElement :1-
+P endDocument
+P RET 0
+T OK
+T EL 0 :1-
+T CT 
+END
+CASE
+IN \x0a<Z0 bc.-.="&nope;"><![CDATA[/]n\xc3vq ]]></Z0 >\x0a
+P startDocument
+P startElement Z0 bc.-.=\xff
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--g\xc3t\xa9]--><d _ba='&#x4a;&#x4a;'>&lt;&#x4a;\xc3l]ivol</d>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <zc><![CDTA[g]"]></zc ><!--t->
+P startDocument
+P startElement zc
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><!DOCTYPE x><X _a_a = '&#x4a;' cz1="]s\xc3k]\xc3]"/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <c/>\x0a
+P startDocument
+P startElement c
+P endElement c
+P endDocument
+P RET 0
+T OK
+T EL 0 c
+T CT 
+END
+CASE
+IN <!-- p\x0au\xc3p->->\x0a<Xz: babcb= '&am p;'><!--]\x0ac\x0a--></Xz:>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><z_ X1.="j\xc3wzh\x0a" />\x0a
+P startDocument
+P setVersion 1.0
+P startElement z_ X1.=j\xc3wzh\x0a
+P endElement z_
+P endDocument
+P RET 0
+T OK
+T EL 0 z_
+T AT X1.=j\xc3wzh\x0a
+T CT 
+END
+CASE
+IN \x0a\x0a<Xa b ='&lt;&#x4a;'></Xa >\x0a
+P startDocument
+P startElement Xa b=<J
+P endElement Xa
+P endDocument
+P RET 0
+T OK
+T EL 0 Xa
+T AT b=<J
+T CT 
+END
+CASE
+IN <_1b><c:.b></c:.b >k  m \xc3</_1b>\x0a
+P startDocument
+P startElement _1b
+P startElement c:.b
+P endElement c:.b
+P characters k  m \xc3
+P endElement _1b
+P endDocument
+P RET 0
+T OK
+T EL 0 _1b
+T CT k  m \xc3
+T EL 1 c:.b
+T CT 
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8" ?>\x0a<za0- Z = '' ez1="s \xa9v\xa9 p\x0a\xa9">j\xa9sns\x0a]gfe</za0->\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement za0- Z= ez1=s \xa9v\xa9 p\x0a\xa9
+P characters j\xa9sns\x0a]gfe
+P endElement za0-
+P endDocument
+P RET 0
+T OK
+T EL 0 za0-
+T AT Z=
+T AT ez1=s \xa9v\xa9 p\x0a\xa9
+T CT j\xa9sns\x0a]gfe
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?>\x0a<!DOCTYPE x><gazzb b=''/>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <?xml version='1.0' encodin;="UTF-8"?><z. z-.-9 = "" b1:b1 = "&#x31\x86;"></z.>\x0a
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?>\x0a<e-__0 d:.:1 ='' />
+P startDocument
+P setVersion 1.0
+P startElement e-__0 d:.:1=
+P endElement e-__0
+P endDocument
+P RET 0
+T OK
+T EL 0 e-__0
+T AT d:.:1=
+T CT 
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8" ?><!-- f\xc3zo\x0a--><:-z><!--wfd]l j -->&#x4a;]kwr</:-z>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><X d.c="" f:zz="&amp;&">\xc3\x0a<Y_a_9 fz:='' z="&#65;&#65;">\x0ay\xa9 \x0ak\xc3\xc3<:z c="&#7439;\xc3v\xc3z" e19=""></:z ><z.0 : = ']n\xa9]\x0a\xa9'></z.0></Y_a_9>\x0a</X>
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--p-->\xce<_ __ ='  auw' fz='usq'/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?>\x0a<b: :-b= "\xa9" Z_="&lt;udu\xa9yd p">w\x0a\xc3f</b:>\x0a
+P startDocument
+P setVersion 1.0
+P startElement b: :-b=\xa9 Z_=<udu\xa9yd p
+P characters w\x0a\xc3f
+P endElement b:
+P endDocument
+P RET 0
+T OK
+T EL 0 b:
+T AT :-b=\xa9
+T AT Z_=<udu\xa9yd p
+T CT w\x0a\xc3f
+END
+CASE
+IN <!--ny\x0au--><X-1.c c= '&#x4a;&lt;'/>\x0a
+P startDocument
+P startElement X-1.c c=J<
+P endElement X-1.c
+P endDocument
+P RET 0
+T OK
+T EL 0 X-1.c
+T AT c=J<
+T CT 
+END
+CASE
+IN <X119>&#681;</X119>\x0a
+P startDocument
+P startElement X119
+P characters \xa9
+P endElement X119
+P endDocument
+P RET 0
+T OK
+T EL 0 X119
+T CT \xa9
+END
+CASE
+IN <g_ :a="\xc3] z\x0a\xa9\xa9" f=']f eb' />
+P startDocument
+P startElement g_ :a=\xc3] z\x0a\xa9\xa9 f=]f eb
+P endElement g_
+P endDocument
+P RET 0
+T OK
+T EL 0 g_
+T AT :a=\xc3] z\x0a\xa9\xa9
+T AT f=]f eb
+T CT 
+END
+CASE
+IN <?xml ver\xb5sion='1.0'?>\x0a<:b_b>y\xa9g s\xc3qd]\x0ae f</:b_b>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN [<c10/ >
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <Z-c Y ='' z:_="&nope;"/>\x0a
+P startDocument
+P startElement Z-c Y= z:_=\xff
+P endElement Z-c
+P endDocument
+P RET 0
+T OK
+T EL 0 Z-c
+T AT Y=
+T AT z:_=\xff
+T CT 
+END
+CASE
+IN <!DOCTYPE x>< !--odd\x0a--><e_1 Yc9a- ="\x0agd \xc3s" e= '\xc3'/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <:b;a9b:= '&nope; ev\x0aa'- zb-T="u]at  e"/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<z:a>#<![CDATA[ap\xc3fs]]> \xc3j</z!]>
+P startDocument
+P startElement z:a
+P characters #
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<Y::a ::0_:="\xa9\x0a\xc3 ]\x0ab\xc3" a9- ="&nope;">\xc3\x0ab\x0aa&nope;<!--\xc3--></Y::a> <!--t-->
+P startDocument
+P startElement Y::a ::0_:=\xa9\x0a\xc3 ]\x0ab\xc3 a9-=\xff
+P characters \xc3\x0ab\x0aa
+P characters \xff
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><!--]]f\x0a--><Yb. g__ ="h\x0apiap&amp;" fzb9=" fx\x0a  rz"></Yb.>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement Yb. g__=h\x0apiap& fzb9= fx\x0a  rz
+P endElement Yb.
+P endDocument
+P RET 0
+T OK
+T EL 0 Yb.
+T AT g__=h\x0apiap&
+T AT fzb9= fx\x0a  rz
+T CT 
+END
+CASE
+IN \x0a<d1 Xaa ='\x0akf' az= "edc]"><c>&#6\x09;h\xa9] o\x0a<a bz-aa = 'yr=a \xc3p\xa9\x0ay\xa9'><!--ho uh--><![CDATA[w\xa9]]><g1b0>&#65;</g1cb0></a></c><!--\x0awu\xa9e]i--></d1> <!--t-->
+P startDocument
+P startElement d1 Xaa=\x0akf az=edc]
+P startElement c
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--hqx\xa9p]-->\x0a<a.-><!-- \x0a\x0a\xc3]st\xc3--><![CDATA[ c]uk \xc3]]></a.->\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' enco[ing="UTF-8"?>\x0a\x0a/<z g-: ='\xc3l'><![CDATA[\xc3nh]]> \x0a\xc3c\xc3  ]</z>\x0a
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--\xa9o wl\xcer--><Z:_a Y1. ="fxe&lt;"><!-- ic\x0a]--><dz0ac a='' /></Z:_a>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?\x09ml version='1.0' encoding="UTF-8" ?>\x0a<bc: g= "">x]</b-c:>\x0a
+P startDocument
+P setError Processing instructions are not supported
+P RET 1
+T ERR Processing instructions are not supported
+END
+CASE
+IN \x0a<:9ac.>x\xa9p\xa9\xa9</:9ac.><!--tx->
+P startDocument
+P startElement :9ac.
+P characters x\xa9p\xa9\xa9
+P endElement :9ac.
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml versi\x0don='1.0['?><Y. X_.='i]\x0a\x0a\x0a&#65;'>  \x0avc\xc3\x0a</Y.>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <ea-1b Xab-='&#x4a;\x0a zUtttr' da=']xgjl\xc3\xc3v'>l<b g="\xc3 \xa9 \xc3\xa9" Z0za="&#x29757293;&l<t;"><ea.0.>&nope;</ea.0.></b></ea-1b >\x0a
+P startDocument
+P startElement ea-1b Xab-=J\x0a zUtttr da=]xgjl\xc3\xc3v
+P characters l
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOTYPE x>z-/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><gz X:b-0 ="&amp;" _="uj" />\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<c-0z>\x0a
+P startDocument
+P startElement c-0z
+P ignorableWhitespace \x0a\x0a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xl version='1.0' enco&ding="UTF-8" ?><f.1-:>] ]q]]uc</f.1-:> =<!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <:1_ Yb_= ']l \x0a]]hja' gac0a='k\xa9 d &amp;'></:1_> <!--t-->
+P startDocument
+P startElement :1_ Yb_=]l \x0a]]hja gac0a=k\xa9 d &
+P endElement :1_
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!OCTYP x><b.zab c.b= w''/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <:1a_b X.:: = "]\x0a\xc3]" X1ba='upr\x0akhhty'>]]\x0a</:1a_b>\x0a
+P startDocument
+P startElement :1a_b X.::=]\x0a\xc3] X1ba=upr\x0akhhty
+P characters ]]\x0a
+P endElement :1a_b
+P endDocument
+P RET 0
+T OK
+T EL 0 :1a_b
+T AT X.::=]\x0a\xc3]
+T AT X1ba=upr\x0akhhty
+T CT ]]\x0a
+END
+CASE
+IN <bz9 d1= "q\xc3\xa9se]\x0a" e1zcc =''></bz9> <!--t-->
+P startDocument
+P startElement bz9 d1=q\xc3\xa9se]\x0a e1zcc=
+P endElement bz9
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><_>&#x08366188116</__ > <!--t-->
+P startDocument
+P setVersion 1.0
+P startElement _
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--e]]\xc3f\x0a--><Xz g0:b='' z:= "\x0a\xa9migmjv]]\xc3">&nope;<![CDATA[]vcr\xa9\x0at]]><![CDATA[ ]]></Xz><!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--q oz t--><!--m--><b9 a0ba. ='ac o  '>i</b9 ><!--t-->
+P startDocument
+P startElement b9 a0ba.=ac o  
+P characters i
+P endElement b9
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' ?>\x0a<cb9 Z='ge\xc3s\xa9b&lt;'>b\xa9e\x0a !\x0a</cb9/>
+P startDocument
+P setVersion 1.0
+P startElement cb9 Z=ge\xc3s\xa9b<
+P characters b\xa9e\x0a !\x0a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><!DOCTYPE x><ebb Xab="&nope;" :- ='&lt;'/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version!='1.0'?><Yc.-a Z='lz]pj'/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <dzz:z f.. ="]e ]]g" <c_#.90="&lt;"><"dzz:z>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <z e__="x\x0a]"><!--k\xa9nc--><!--rtu-->\xa9 udm</z><!--t-->
+P startDocument
+P startElement z e__=x\x0a]
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <azac X1z.="kcmbyp "/>\x0a
+P startDocument
+P startElement azac X1z.=kcmbyp 
+P endElement azac
+P endDocument
+P RET 0
+T OK
+T EL 0 azac
+T AT X1z.=kcmbyp 
+T CT 
+END
+CASE
+IN \x0a<ez: />\x0a
+P startDocument
+P startElement ez:
+P endElement ez:
+P endDocument
+P RET 0
+T OK
+T EL 0 ez:
+T CT 
+END
+CASE
+IN \x0a<!--w kk\x0a--><Y9.-b X19= " \x0aw\xa9\xa9" c-_= "&#x4a;]\xa9\xc3\x0aze" />\x0a
+P startDocument
+P startElement Y9.-b X19= \x0aw\xa9\xa9 c-_=J]\xa9\xc3\x0aze
+P endElement Y9.-b
+P endDocument
+P RET 0
+T OK
+T EL 0 Y9.-b
+T AT X19= \x0aw\xa9\xa9
+T AT c-_=J]\xa9\xc3\x0aze
+T CT 
+END
+CASE
+IN \x0a\x0a<::/> <!--t-->
+P startDocument
+P startElement ::
+P endElement ::
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><ec1: z._0 ='&amp;'><!-z--></ec1:>\x0a
+P startDocument
+P setVersion 1.0
+P startElement ec1: z._0=&
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8" ?><X9 f='&#x5163;' ab.a = ''/>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement X9 f=c ab.a=
+P endElement X9
+P endDocument
+P RET 0
+T OK
+T EL 0 X9
+T AT f=c
+T AT ab.a=
+T CT 
+END
+CASE
+IN <?xml version='1.0' e"ncoding="UTF-8"?><fc z ="boj"></fc><!?-t-->
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><!--\xa9--><X></X><!--t-->
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<d0_ _.="&nope;" Xbc0 ='\xa9 w\xa9l]x]'>u \xc3a]zg\xc3\x0a</d0_>\x0a
+P startDocument
+P startElement d0_ _.=\xff Xbc0=\xa9 w\xa9l]x]
+P characters u \xc3a]zg\xc3\x0a
+P endElement d0_
+P endDocument
+P RET 0
+T OK
+T EL 0 d0_
+T AT _.=\xff
+T AT Xbc0=\xa9 w\xa9l]x]
+T CT u \xc3a]zg\xc3\x0a
+END
+CASE
+IN <!--pq-->!\x0a<:z9z b:="&l\xc4;"><![CDATA[\xa9\xc3\xa9]]><!--x--><!--\xc3\xa9\xa9\x0a\xc3\xc3p\xa9--></:z9#z>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><f.9.></f.9.>
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement f.9.
+P endElement f.9.
+P endDocument
+P RET 0
+T OK
+T EL 0 f.9.
+T CT 
+END
+CASE
+IN <?xml versi&n='1.0'?>\x0a<e-.. b ='&#x4a;\xa9'>&#x4a;] <_c09 /></e-..><\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x>\x0ae Z.00="\xa9t\xc3\xc3dg" /><!&-t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a\x0a<Y0b0_> </Y0b0>\x0a
+P startDocument
+P startElement Y0b0_
+P ignorableWhitespace  
+P endElement Y0b0_
+P endDocument
+P RET 0
+T OK
+T EL 0 Y0b0_
+T CT 
+END
+CASE
+IN <?xml version='1.0'?>\x0a<c9:b>\x0a]znc]]m<!--\x0a]\x0a\x0a\x0aqzw--></c9:b> <!--t-->
+P startDocument
+P setVersion 1.0
+P startElement c9:b
+P characters \x0a]znc]]m
+P endElement c9:b
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DO/CTYPE x><\x04--o \xa9 vx\xc3--><X:c z19c="b\xc3\x0ad\xa9"/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><!DOCTYPE x><eb_ba Z_ = '\x0a]s\xa9\x0axv]' a9="\x0ab" /> <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <\xeegz></g9zb >\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<Z1z\xa6 Y:-z=tnv] \xc3a \xa9n\xc3' ::a-0="&nope;"><g:.99 f= [r\xc3' /></Z1z>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a\x0a<c.bz g_ ="\x0avh]]\xc3a\xc3 mbu ">\xc3c<!--t--></c.bz> <!--t-->
+P startDocument
+P startElement c.bz g_=\x0avh]]\xc3a\xc3 mbu 
+P characters \xc3c
+P endElement c.bz
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' ecoding="UTF-8"?><!--\xa9p]xq--><d_:10 Z1z = '' b:c ='\x0a t\xa9jq'/>\x0a
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><e9:\x97 z = ''></e9:- >\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' ?>\x0a<Z11c a="e"></Z11c >\x0a
+P startDocument
+P setVersion 1.0
+P startElement Z11c a=e
+P endElement Z11c
+P endDocument
+P RET 0
+T OK
+T EL 0 Z11c
+T AT a=e
+T CT 
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><!--\xa9i--><za_ cz_="">&#39; vb \x0ayf</za_>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <:- b ='z\xc3lc\xc3\xa9\x0a\x0a' ="ag\xc3g] "/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a\x0a<Zaa0 c_c9 ='' a11.- ="]bq">bgn]a\xc3&amp;<cbb1>\xa9\x0a'</cbb1></Zaa0><!--t-->
+P startDocument
+P startElement Zaa0 c_c9= a11.-=]bq
+P characters bgn]a\xc3
+P characters &
+P startElement cbb1
+P characters \xa9\x0a'
+P endElement cbb1
+P endElement Zaa0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a\x0a<g></g>\x0a
+P startDocument
+P startElement g
+P endElement g
+P endDocument
+P RET 0
+T OK
+T EL 0 g
+T CT 
+END
+CASE
+IN \x0a\x0a<a.&<f0z bz1a =' '/>"</a.><!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><z _bz="&#648308366880;"/> <!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement z _bz= 
+P endElement z
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<c0-0 bz900= ''></c0-0>\x0a
+P startDocument
+P startElement c0-0 bz900=
+P endElement c0-0
+P endDocument
+P RET 0
+T OK
+T EL 0 c0-0
+T AT bz900=
+T CT 
+END
+CASE
+IN \x0a\x0a<_. __a ='u\xa9d \x0a\xc3\xa9 ' e0-c='&nope;' /><!--t-3>
+P startDocument
+P startElement _. __a=u\xa9d \x0a\xc3\xa9  e0-c=\xff
+P endElement _.
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?>\x0a<d1/>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement d1
+P endElement d1
+P endDocument
+P RET 0
+T OK
+T EL 0 d1
+T CT 
+END
+CASE
+IN y!DOCTPE <><e.z9z/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <b11z d9_a="\xc3\xc3x\xc3s y \xa9'">\x0avf\x0ac\xc3llr]\xa9r msu</b11z>\x0a
+P startDocument
+P startElement b11z d9_a=\xc3\xc3x\xc3s y \xa9'
+P characters \x0avf\x0ac\xc3llr]\xa9r msu
+P endElement b11z
+P endDocument
+P RET 0
+T OK
+T EL 0 b11z
+T AT d9_a=\xc3\xc3x\xc3s y \xa9'
+T CT \x0avf\x0ac\xc3llr]\xa9r msu
+END
+CASE
+IN <!-- --><!-- \xa9\x0a--><b:1: d:bz9= '' b_b-b="cj\x0a&#65;">g]\x0apcs<g dza_c ="&#0688640;&#65;" Z1='\xa9\xc3mw\xa9\xc3h\xc3\xc3\xc3' />&#65;</b:1:>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<X z_a = '' _-1c-="\x0a\x0appyl\xc3]l]f">&#x4a;<![CDATA[vg ]]>\x0ar</X>\x0a
+P startDocument
+P startElement X z_a= _-1c-=\x0a\x0appyl\xc3]l]f
+P characters J
+P characters vg 
+P characters \x0ar
+P endElement X
+P endDocument
+P RET 0
+T OK
+T EL 0 X
+T AT z_a=
+T AT _-1c-=\x0a\x0appyl\xc3]l]f
+T CT Jvg \x0ar
+END
+CASE
+IN <_1cz b0= 'kp\xa9\x0a  &lt; d_la_ =""/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml ver'sion='1.0'?>\x0a\x0a<d9_ a= "">![CDATA[\xc3\x0a\xa9\x0ah' ]]></d9_ >\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <X0-z><g__- dz_='&lt;&#x417863;'><:><!--\x0aw\xa9a ]l--></:></g__-><![CDATA[l\xa9\xa9 \x0a\x0a]]> \x0avf\xa9h\xa9\xa9</X0-z>\x0a
+P startDocument
+P startElement X0-z
+P startElement g__- dz_=<c
+P startElement :
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0ae0 -:\x09 =''/> <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<:c Y1 ="&nope;&#x4a;" /> <!--t-->
+P startDocument
+P startElement :c Y1=\xffJ
+P endElement :c
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--ffi\xc3--><!--]]u\xa9\xc3gs--><b><![CDATA[ \x0a\x0a]n ]]><!--\xc3kq]kfi--><![CDATA[v\x0a]aw\x0a\x0a\xa9]]></b>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><!DOCTYPE _x><z d:-= " rbg\x0a" __9z='&amp;&#x4a;'>]gt\xa9 \x0a&amp;</z >\x0a
+P startDocument
+P setVersion 1.0
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN \x0a\x0a<g_ba- e1--b ='sn]dw' Y-='&#x39749;\xa9pnr\xc3 h\xa9' /><!--t-->
+P startDocument
+P startElement g_ba- e1--b=sn]dw Y-=I\xa9pnr\xc3 h\xa9
+P endElement g_ba-
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <d0\x0dz/>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?>\x0a<:0_a bz_1="&#4439;]]zl\xc3d\xc3"/>\x0a
+P startDocument
+P setVersion 1.0
+P startElement :0_a bz_1=W]]zl\xc3d\xc3
+P endElement :0_a
+P endDocument
+P RET 0
+T OK
+T EL 0 :0_a
+T AT bz_1=W]]zl\xc3d\xc3
+T CT 
+END
+CASE
+IN \x0a<g::_ :z='\xc3\xc3]'/>\x0a
+P startDocument
+P startElement g::_ :z=\xc3\xc3]
+P endElement g::_
+P endDocument
+P RET 0
+T OK
+T EL 0 g::_
+T AT :z=\xc3\xc3]
+T CT 
+END
+CASE
+IN <?xml<versio='1.0'?>\x0a<f9a>\xc3\xa9i m]&lt;&#x4a;</f9a>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--\x0a fbn-->\x0a<zza9x Xz9zz ="g\xc3\xa9j yut]">\x0a f\xa9\xc3</zza9c ><!--t-->
+P startDocument
+P startElement zza9x Xz9zz=g\xc3\xa9j yut]
+P characters \x0a f\xa9\xc3
+P endElement zza9x
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding\xd7="UTF-8"?>\x0a\x0a<z1 __= ']\x0apd\xc3] \x0al\xa9q vtf' :0-1='&amp;\xa9\xc3\xc3]s\xc3l'><!--]ed\xa9kxr-->wj\xc3\xa9k</z1>\x0a
+P startDocument
+P setVersion 1.0
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><faa c=' bv\x0a\xa9 t\xa9\x97w u' gc. ="&#65;"></fa#>\x0a
+P startDocument
+P setVersion 1.0
+P startElement faa c= bv\x0a\xa9 t\xa9\x97w u gc.=A
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8"?><:z.0a e0c= '' :09_:=''>\xc3]n</:z.0a> <!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement :z.0a e0c= :09_:=
+P characters \xc3]n
+P endElement :z.0a
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--q]--><a c =''><![CD#TA[s]]]><![C\x0aATA[\x0a\xc3\x0a\x0auq]i]]><!--i\xa9\xa9\xc3\xc3\xa9z\x0a--></a> <!-t-->
+P startDocument
+P startElement a c=
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x>\x0a<X- Y1zz= "]x\xc3\x0am]k]pkher " Yb_0 ="&lt;&lt;">iw<![CDATA[ia]]></X->\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!DOCTYPE x><f0-.c := "] ]\xc3 a\x0a\xa9\x0a\xc3c\x0abt\x0a"></f0-.c>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--z\xc3--><!--\x0a \x0ai]s--><ab1 Ybz= '' &0 ='&amp;' />\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--\xa9\x0a\x0adbp--><e9 e9bca='l\x0alz]' Y =""><c1 e9 =''/>\xc3zn</e9>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<!DOCTYPE x><b-a></b-a>\x0a
+P startDocument
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <!--\xa9p\x0av--><!DOCTYP"E x>\x0acb..></cb.a.>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--x\xa9p--><!DOCTYPE x><_:_b></_:_b>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8" ?><!DOCTYPE x><!DOCTYPE x><f.bz. g:0='' Y0-0=""> ]\x0ar ]dr\xc3\x0aow<![CDATA[j b\xa9]]></f.bz. > <!--t-->
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P setError DTD's not supported
+P RET 1
+T ERR DTD's not supported
+END
+CASE
+IN <!--\xc3\xc3a]-->\x0a<g- :="b \xa9 j\xa9\xa9m" e9=''><![CDATA[\xa9\xc3m]]>\xc3[rd\xa9]\xa9]]]]\xa9w\xa9i</g-> <!--t-->
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!m--]wwx\xc3b --><bzb fb_ ="b"/>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0'?><:9c Yb9b ="">rmj] x\xa9 \xc3&#65;</:9c >\x0a
+P startDocument
+P setVersion 1.0
+P startElement :9c Yb9b=
+P characters rmj] x\xa9 \xc3
+P characters A
+P endElement :9c
+P endDocument
+P RET 0
+T OK
+T EL 0 :9c
+T AT Yb9b=
+T CT rmj] x\xa9 \xc3A
+END
+CASE
+IN <zc. e=''> ]\xa9</zc.>
+P startDocument
+P startElement zc. e=
+P characters  ]\xa9
+P endElement zc.
+P endDocument
+P RET 0
+T OK
+T EL 0 zc.
+T AT e=
+T CT  ]\xa9
+END
+CASE
+IN \x0a\x0a<:__ &:-z="" d="\x0ab\x0ap p< s]o"><!--cni\xc3-->buo\xc3\x0a<!--ylcflug\xc3--></:__>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' ?>\x0a\x0a<Y._ X= ''/>\x0a
+P startDocument
+P setVersion 1.0
+P startElement Y._ X=
+P endElement Y._
+P endDocument
+P RET 0
+T OK
+T EL 0 Y._
+T AT X=
+T CT 
+END
+CASE
+IN <f[-19></f-19>\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN \x0a<!--\x0a \xc3l\x0ak--><Z0_></Z0_>
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <!--]\xa9v-->\x0a<X:z:a Zz:-9 ='' />\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
+CASE
+IN <?xml version='1.0' encoding="UTF-8" ?>\x0a\x0a<:11 e9 = 'y\xa9z\xa9rkg\xc3 \xa9\xa9]p' Ya=''>\xa9pbs] \xc3\x0a\xc3!--cjap--></:11>\x0a
+P startDocument
+P setVersion 1.0
+P setEncoding UTF-8
+P startElement :11 e9=y\xa9z\xa9rkg\xc3 \xa9\xa9]p Ya=
+P characters \xa9pbs] \xc3\x0a\xc3!--cjap-->
+P endElement :11
+P endDocument
+P RET 0
+T OK
+T EL 0 :11
+T AT e9=y\xa9z\xa9rkg\xc3 \xa9\xa9]p
+T AT Ya=
+T CT \xa9pbs] \xc3\x0a\xc3!--cjap-->
+END
+CASE
+IN <!--\xa9\x0a\xa9--><b-1- _ = 'rn\xa9w\x0amr\xa9zy\x0as' Xb= "&#x4a;&#x4a;">\x0a</b-1->\x0a
+P startDocument
+P setError syntax error
+P RET 1
+T ERR syntax error
+END
