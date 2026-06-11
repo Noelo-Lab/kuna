@@ -1524,7 +1524,7 @@
    "depends_on": [
     "W3-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1489,
@@ -1547,7 +1547,7 @@
    "depends_on": [
     "w4-fw-action"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1489,
@@ -1570,7 +1570,7 @@
    "depends_on": [
     "W3-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1461,
@@ -1593,7 +1593,7 @@
    "depends_on": [
     "w4-fw-options"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1461,
@@ -1616,7 +1616,7 @@
    "depends_on": [
     "W3-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 4456,
@@ -1639,7 +1639,7 @@
    "depends_on": [
     "w4-p0-database"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 4456,
@@ -1669,7 +1669,7 @@
     "w4-p0-database",
     "W3-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 2239,
@@ -1700,7 +1700,7 @@
    "depends_on": [
     "w4-fw-architecture"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2239,
@@ -1730,7 +1730,7 @@
     "w4-p0-database",
     "W3-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1191,
@@ -1757,7 +1757,7 @@
    "depends_on": [
     "w4-p0-override-comment"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1191,
@@ -1786,7 +1786,7 @@
    "depends_on": [
     "W3-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1586,
@@ -1817,7 +1817,7 @@
    "depends_on": [
     "w4-fw-cpool-graph"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1586,
@@ -1912,7 +1912,7 @@
     "w4-fw-architecture",
     "W3-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1259,
@@ -1943,7 +1943,7 @@
    "depends_on": [
     "w4-kuna-p0-pack"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1259,
