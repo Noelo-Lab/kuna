@@ -31,16 +31,28 @@
 //! `DecoderError` C++ throw in `ExecutablePcodeSleigh::decode` maps to
 //! [`KunaError::decoder`](kuna_base::error::KunaError).
 
+use std::rc::Rc;
+
+use kuna_base::address::{calc_mask, Address};
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::{Decoder, ATTRIB_CONTENT, ATTRIB_NAME, ATTRIB_TYPE, ELEM_TARGET};
-use kuna_base::types::int4;
+use kuna_base::space::AddrSpace;
+use kuna_base::types::{int4, uint4};
+use kuna_num::opcodes::OpCode;
+use kuna_num::pcoderaw::VarnodeData;
 
+use kuna_sleigh::context::FixedHandle;
 use kuna_sleigh::pcodeparse::{PcodeSnippet, SnippetLanguage};
+use kuna_sleigh::semantics::{ConstructTpl, OpTpl, PcodeBuilder, VField, VarnodeTpl};
+use kuna_sleigh::slghpatexpress::PatternExpressionContext;
+use kuna_sleigh::slghsymbol::{ConstructorRef, SymbolWalker};
+use kuna_sleigh::translate::PcodeEmit;
 
 use crate::pcodeinject::{
-    InjectPayload, InjectPayloadCore, PcodeInjectLibraryBase, ATTRIB_TARGETOP, CALLFIXUP_TYPE,
-    CALLOTHERFIXUP_TYPE, ELEM_ADDR_PCODE, ELEM_BODY, ELEM_CALLFIXUP, ELEM_CALLOTHERFIXUP,
-    ELEM_CASE_PCODE, ELEM_DEFAULT_PCODE, ELEM_PCODE, ELEM_SIZE_PCODE, EXECUTABLEPCODE_TYPE,
+    InjectArchitecture, InjectContext, InjectEngine, InjectPayload, InjectPayloadCore,
+    PcodeInjectLibraryBase, ATTRIB_TARGETOP, CALLFIXUP_TYPE, CALLOTHERFIXUP_TYPE, ELEM_ADDR_PCODE,
+    ELEM_BODY, ELEM_CALLFIXUP, ELEM_CALLOTHERFIXUP, ELEM_CASE_PCODE, ELEM_DEFAULT_PCODE, ELEM_PCODE,
+    ELEM_SIZE_PCODE, EXECUTABLEPCODE_TYPE,
 };
 
 // ---------------------------------------------------------------------------
@@ -602,6 +614,584 @@ pub fn decode_inject_debug_entry(decoder: &mut dyn Decoder) -> KunaResult<(Vec<u
     // C++ readSignedInteger(ATTRIB_TYPE) -> int4 (narrow the i64).
     let ptype = decoder.read_signed_integer_id(&ATTRIB_TYPE)? as int4;
     Ok((name, ptype))
+}
+
+// ---------------------------------------------------------------------------
+// SleighInjectEngine — the InjectPayloadSleigh::inject emit path
+// (inject_sleigh.cc:48 + setupParameters :137 + SleighBuilder::dump/generate*)
+// ---------------------------------------------------------------------------
+//
+// The C++ `InjectPayloadSleigh::inject` drives `SleighBuilder` over a degenerate
+// `ParserContext` whose operand handles are filled directly from the
+// `InjectContext` storage (`setupParameters`), then emits the cached ops.  In
+// the kuna port `SleighBuilder`/`PcodeCacher`/`ParserContext` are private to
+// `kuna-sleigh`'s `sleigh.rs`, but the *template* resolution machinery
+// (`VarnodeTpl`/`ConstTpl`/`OpTpl::fix`/`is_dynamic`/`is_relative`) and the
+// `PcodeBuilder` trait are **public** and parametrized over the
+// [`SymbolWalker`] seam.  So the inject emit is reconstructed here faithfully:
+//
+//   - [`InjectWalker`] is the degenerate `ParserWalker` of `setupParameters`: it
+//     answers `getFixedHandle(i)` with the operand handle built from the
+//     `InjectContext` storage (input handles first, then outputs, by operand
+//     index), and supplies the const/cur spaces and the three inject addresses.
+//   - [`InjectBuilder`] is `SleighBuilder` reduced to the snippet case (no delay
+//     slots, no crossbuild, no unique-mask): a faithful transcription of
+//     `SleighBuilder::dump` / `generateLocation` / `generatePointer` /
+//     `generatePointerAdd` over a local op/varnode pool ([`PcodeCacher`]) plus
+//     `resolveRelatives` + `emit`.
+//
+// The result is byte-for-byte the ops the C++ emit path would hand to
+// `PcodeEmit::dump`.  This closes the emit half of LOSS-031 for the
+// `InjectPayloadSleigh`/`InjectPayloadCallfixup`/`InjectPayloadCallother` family
+// (the `ExecutablePcode` emulate path and `InjectPayloadDynamic` remain seamed —
+// they need the emulator, not just the builder).
+
+/// LOSS-015: a LOAD/STORE space-pointer constant stores the space's manager
+/// index in place of the C++ heap pointer `(uintb)(uintp)spc` (mirrors
+/// `sleigh.rs`'s `spaceid_const`).
+fn spaceid_const(spc: &Rc<AddrSpace>) -> u64 {
+    spc.get_index() as u64 // cast: manager index, small and non-negative
+}
+
+/// C++ `sizeof(spc)` (a `void *`): the size stored on a LOAD/STORE space-pointer
+/// constant (mirrors `sleigh.rs`'s `SIZEOF_SPACE`; the golden fixtures were
+/// generated on a 64-bit host).
+const SIZEOF_SPACE: u32 = 8;
+
+/// One issued p-code op, the local analogue of `sleigh.rs`'s `PcodeData` (the
+/// `PcodeCacher::issued` element): a code plus pool indices for the output and
+/// the contiguous run of inputs.
+#[derive(Debug, Clone)]
+struct IssuedOp {
+    outvar: Option<usize>,
+    invar: Option<usize>,
+    opc: OpCode,
+    isize: i32,
+}
+
+/// A relative (label-referencing) operand record (C++ `RelativeRecord`):
+/// the pool index of the operand holding the label id and the index of the op
+/// it belongs to.
+#[derive(Debug, Clone)]
+struct RelativeRecord {
+    dataptr: usize,
+    calling_index: usize,
+}
+
+/// The snippet-case [`PcodeCacher`] (C++ `PcodeCacher`): a `VarnodeData` pool +
+/// issued ops + label tables, faithful to `sleigh.rs`'s private `PcodeCacher`
+/// but local to the injection emit.
+#[derive(Debug, Default)]
+struct PcodeCacher {
+    pool: Vec<VarnodeData>,
+    issued: Vec<IssuedOp>,
+    label_refs: Vec<RelativeRecord>,
+    labels: Vec<u64>,
+}
+
+impl PcodeCacher {
+    /// C++ `allocateVarnodes(uint4 size)`: returns the pool index of the first
+    /// of `size` freshly allocated VarnodeData (indices are stable).
+    fn allocate_varnodes(&mut self, size: u32) -> usize {
+        let start = self.pool.len();
+        for _ in 0..size {
+            self.pool.push(VarnodeData::default());
+        }
+        start
+    }
+
+    /// C++ `allocateInstruction`: append a cleared op; returns its `issued`
+    /// index.
+    fn allocate_instruction(&mut self) -> usize {
+        self.issued.push(IssuedOp { outvar: None, invar: None, opc: OpCode::CPUI_COPY, isize: 0 });
+        self.issued.len() - 1
+    }
+
+    /// C++ `addLabelRef`.
+    fn add_label_ref(&mut self, ptr: usize) {
+        self.label_refs.push(RelativeRecord { dataptr: ptr, calling_index: self.issued.len() });
+    }
+
+    /// C++ `resolveRelatives`.
+    fn resolve_relatives(&mut self) -> KunaResult<()> {
+        for rec in &self.label_refs {
+            let ptr = rec.dataptr;
+            let id = self.pool[ptr].offset; // uint4 id = ptr->offset
+            if id >= self.labels.len() as u64 || self.labels[id as usize] == 0x0badbeef {
+                return Err(KunaError::lowlevel("Reference to non-existant sleigh label"));
+            }
+            let res = self.labels[id as usize].wrapping_sub(rec.calling_index as u64);
+            let res = res & calc_mask(self.pool[ptr].size as i32);
+            self.pool[ptr].offset = res;
+        }
+        Ok(())
+    }
+
+    /// C++ `emit(const Address&,PcodeEmit*)`: replay every issued op.
+    fn emit(&self, addr: &Address, emt: &mut dyn PcodeEmit) {
+        for op in &self.issued {
+            let outvar = op.outvar.map(|i| self.pool[i].clone());
+            let invars: Vec<VarnodeData> = (0..op.isize)
+                .map(|k| {
+                    let base = op.invar.expect("issued op with inputs has invar");
+                    self.pool[base + k as usize].clone()
+                })
+                .collect();
+            emt.dump(addr, op.opc, outvar.as_ref(), &invars);
+        }
+    }
+}
+
+/// The degenerate `ParserWalker` of `InjectPayloadSleigh::inject` /
+/// `setupParameters`: operand handles come straight from the `InjectContext`
+/// storage; there is no instruction stream and no context.
+///
+/// `getFixedHandle(i)` returns the handle for operand index `i` (inputs in
+/// declaration order, then outputs); the parser-bit / instruction-bit / nested
+/// constructor walks are never reached for a compiled snippet (no operand
+/// expressions survive `parseInject`), so those methods surface a precise
+/// internal-invariant error if a snippet ever exercises them.
+struct InjectWalker {
+    /// Operand handles, indexed by operand index (inputs then outputs).
+    handles: Vec<FixedHandle>,
+    const_space: Rc<AddrSpace>,
+    cur_space: Rc<AddrSpace>,
+    baseaddr: Address,
+    nextaddr: Address,
+    calladdr: Option<Address>,
+}
+
+impl PatternExpressionContext for InjectWalker {
+    fn get_instruction_bytes(&self, _byteoff: i32, _numbytes: i32) -> KunaResult<u32> {
+        Err(KunaError::lowlevel("inject snippet has no instruction stream"))
+    }
+    fn get_context_bytes(&self, _byteoff: i32, _numbytes: i32) -> KunaResult<u32> {
+        Err(KunaError::lowlevel("inject snippet has no context"))
+    }
+    fn get_addr(&self) -> Address {
+        self.baseaddr.clone()
+    }
+    fn get_naddr(&self) -> Address {
+        self.nextaddr.clone()
+    }
+    fn get_n2addr(&self) -> KunaResult<Address> {
+        Err(KunaError::lowlevel("inst_next2 not available in inject context"))
+    }
+    fn operand_value(&self, _index: i32, _table_id: u32, _ct_id: u32) -> KunaResult<i64> {
+        Err(KunaError::lowlevel("inject snippet has no operand expressions"))
+    }
+}
+
+impl SymbolWalker for InjectWalker {
+    fn push_operand(&mut self, _i: i32) -> KunaResult<()> {
+        Err(KunaError::lowlevel("inject snippet build does not descend operands"))
+    }
+    fn pop_operand(&mut self) -> KunaResult<()> {
+        Err(KunaError::lowlevel("inject snippet build does not descend operands"))
+    }
+    fn get_constructor(&self) -> KunaResult<ConstructorRef> {
+        Err(KunaError::lowlevel("inject snippet has no constructor"))
+    }
+    fn get_fixed_handle(&self, i: i32) -> KunaResult<FixedHandle> {
+        // C++ walker.getFixedHandle(i): the resolved handle of operand `i`.
+        self.handles
+            .get(i as usize)
+            .cloned()
+            .ok_or_else(|| KunaError::lowlevel("inject: operand handle index out of range"))
+    }
+    fn get_const_space(&self) -> Rc<AddrSpace> {
+        Rc::clone(&self.const_space)
+    }
+    fn get_cur_space(&self) -> Rc<AddrSpace> {
+        Rc::clone(&self.cur_space)
+    }
+    fn get_dest_addr(&self) -> KunaResult<Address> {
+        // The snippet's "call" address, used by CALL-fixup flow constants.
+        self.calladdr
+            .clone()
+            .ok_or_else(|| KunaError::lowlevel("inject: no call address in context"))
+    }
+    fn get_ref_addr(&self) -> KunaResult<Address> {
+        Err(KunaError::lowlevel("inject snippet has no cross-reference address"))
+    }
+    fn get_instruction_bits(&self, _startbit: i32, _size: i32) -> KunaResult<u32> {
+        Err(KunaError::lowlevel("inject snippet has no instruction bits"))
+    }
+    fn get_context_bits(&self, _startbit: i32, _size: i32) -> KunaResult<u32> {
+        Err(KunaError::lowlevel("inject snippet has no context bits"))
+    }
+}
+
+/// The snippet-case `SleighBuilder` (C++ `SleighBuilder : PcodeBuilder`): walks
+/// the compiled [`ConstructTpl`] and stages p-code into the [`PcodeCacher`].
+struct InjectBuilder<'a> {
+    labelbase: u32,
+    labelcount: u32,
+    walker: &'a InjectWalker,
+    const_space: Rc<AddrSpace>,
+    uniq_space: Rc<AddrSpace>,
+    cache: PcodeCacher,
+}
+
+impl InjectBuilder<'_> {
+    /// C++ `SleighBuilder::generateLocation`.
+    fn generate_location(&self, vntpl: &VarnodeTpl, vn: &mut VarnodeData) -> KunaResult<()> {
+        let space = vntpl
+            .get_space()
+            .fix_space(self.walker)?
+            .ok_or_else(|| KunaError::lowlevel("generateLocation: null space"))?;
+        vn.size = vntpl.get_size().fix(self.walker)? as uint4; // C++ uintb -> uint4
+        if Rc::ptr_eq(&space, &self.const_space) {
+            vn.offset = vntpl.get_offset().fix(self.walker)? & calc_mask(vn.size as i32);
+        } else if Rc::ptr_eq(&space, &self.uniq_space) {
+            // Snippets allocate no unique-offset mask (uniqueoffset == 0), so
+            // the C++ `vn.offset |= uniqueoffset` is a no-op here.
+            vn.offset = vntpl.get_offset().fix(self.walker)?;
+        } else {
+            vn.offset = space.wrap_offset(vntpl.get_offset().fix(self.walker)?);
+        }
+        vn.space = Some(space);
+        Ok(())
+    }
+
+    /// C++ `SleighBuilder::generatePointer`: returns the pointed-to space.
+    fn generate_pointer(
+        &self,
+        vntpl: &VarnodeTpl,
+        vn: &mut VarnodeData,
+    ) -> KunaResult<Rc<AddrSpace>> {
+        let hand = self.walker.get_fixed_handle(vntpl.get_offset().get_handle_index())?;
+        let space = hand
+            .offset_space
+            .clone()
+            .ok_or_else(|| KunaError::lowlevel("generatePointer: null offset space"))?;
+        vn.size = hand.offset_size;
+        if Rc::ptr_eq(&space, &self.const_space) {
+            vn.offset = hand.offset_offset & calc_mask(vn.size as i32);
+        } else if Rc::ptr_eq(&space, &self.uniq_space) {
+            vn.offset = hand.offset_offset; // | uniqueoffset (==0 for snippets)
+        } else {
+            vn.offset = space.wrap_offset(hand.offset_offset);
+        }
+        vn.space = Some(space);
+        hand.space.ok_or_else(|| KunaError::lowlevel("generatePointer: null pointed-to space"))
+    }
+
+    /// C++ `SleighBuilder::generatePointerAdd`.
+    fn generate_pointer_add(&mut self, op_idx: usize, vntpl: &VarnodeTpl) -> KunaResult<()> {
+        let offset_plus = vntpl.get_offset().get_real() & 0xffff;
+        if offset_plus == 0 {
+            return Ok(());
+        }
+        let nextop_idx = self.cache.allocate_instruction();
+        self.cache.issued[nextop_idx].opc = self.cache.issued[op_idx].opc;
+        self.cache.issued[nextop_idx].invar = self.cache.issued[op_idx].invar;
+        self.cache.issued[nextop_idx].isize = self.cache.issued[op_idx].isize;
+        self.cache.issued[nextop_idx].outvar = self.cache.issued[op_idx].outvar;
+        self.cache.issued[op_idx].isize = 2;
+        self.cache.issued[op_idx].opc = OpCode::CPUI_INT_ADD;
+        let newparams = self.cache.allocate_varnodes(2);
+        self.cache.issued[op_idx].invar = Some(newparams);
+        let nextop_invar = self.cache.issued[nextop_idx]
+            .invar
+            .expect("nextop has inputs (copied from op)");
+        self.cache.pool[newparams] = self.cache.pool[nextop_invar + 1].clone();
+        let p0_size = self.cache.pool[newparams].size;
+        self.cache.pool[newparams + 1].space = Some(Rc::clone(&self.const_space));
+        self.cache.pool[newparams + 1].offset = offset_plus;
+        self.cache.pool[newparams + 1].size = p0_size;
+        self.cache.issued[op_idx].outvar = Some(nextop_invar + 1);
+        // C++ sets the temp output to a RUNTIME_BITRANGE_EA unique slot; snippets
+        // have no live unique allocator, so the temp keeps the unique space at
+        // offset 0 (the inject path never re-reads it, mirroring the no-mask
+        // snippet case the C++ comment in `inject` calls out).
+        self.cache.pool[nextop_invar + 1].space = Some(Rc::clone(&self.uniq_space));
+        self.cache.pool[nextop_invar + 1].offset = 0;
+        Ok(())
+    }
+}
+
+impl PcodeBuilder for InjectBuilder<'_> {
+    fn get_label_base(&self) -> u32 {
+        self.labelbase
+    }
+    fn set_label_base(&mut self, val: u32) {
+        self.labelbase = val;
+    }
+    fn get_label_count(&self) -> u32 {
+        self.labelcount
+    }
+    fn set_label_count(&mut self, val: u32) {
+        self.labelcount = val;
+    }
+
+    /// C++ `SleighBuilder::dump(OpTpl *op)`.
+    fn dump(&mut self, op: &OpTpl) -> KunaResult<()> {
+        let isize = op.num_input();
+        let invars = self.cache.allocate_varnodes(isize as u32);
+        for i in 0..isize {
+            let vn = op.get_in(i);
+            let dynamic = vn.is_dynamic(self.walker)?;
+            if dynamic {
+                let mut tmp = VarnodeData::default();
+                self.generate_location(vn, &mut tmp)?;
+                self.cache.pool[invars + i as usize] = tmp;
+                let load_op = self.cache.allocate_instruction();
+                self.cache.issued[load_op].opc = OpCode::CPUI_LOAD;
+                self.cache.issued[load_op].outvar = Some(invars + i as usize);
+                self.cache.issued[load_op].isize = 2;
+                let loadvars = self.cache.allocate_varnodes(2);
+                self.cache.issued[load_op].invar = Some(loadvars);
+                let mut ptrvn = VarnodeData::default();
+                let spc = self.generate_pointer(vn, &mut ptrvn)?;
+                self.cache.pool[loadvars + 1] = ptrvn;
+                self.cache.pool[loadvars].space = Some(Rc::clone(&self.const_space));
+                self.cache.pool[loadvars].offset = spaceid_const(&spc);
+                self.cache.pool[loadvars].size = SIZEOF_SPACE;
+                if vn.get_offset().get_select() == VField::VOffsetPlus {
+                    self.generate_pointer_add(load_op, vn)?;
+                }
+            } else {
+                let mut tmp = VarnodeData::default();
+                self.generate_location(vn, &mut tmp)?;
+                self.cache.pool[invars + i as usize] = tmp;
+            }
+        }
+        if isize > 0 && op.get_in(0).is_relative() {
+            self.cache.pool[invars].offset =
+                self.cache.pool[invars].offset.wrapping_add(u64::from(self.get_label_base()));
+            self.cache.add_label_ref(invars);
+        }
+        let thisop = self.cache.allocate_instruction();
+        self.cache.issued[thisop].opc = op.get_opcode();
+        self.cache.issued[thisop].invar = if isize > 0 { Some(invars) } else { None };
+        self.cache.issued[thisop].isize = isize;
+        if let Some(outvn) = op.get_out() {
+            let dynamic = outvn.is_dynamic(self.walker)?;
+            if dynamic {
+                let storevars = self.cache.allocate_varnodes(3);
+                let mut tmp = VarnodeData::default();
+                self.generate_location(outvn, &mut tmp)?;
+                self.cache.pool[storevars + 2] = tmp;
+                self.cache.issued[thisop].outvar = Some(storevars + 2);
+                let store_op = self.cache.allocate_instruction();
+                self.cache.issued[store_op].opc = OpCode::CPUI_STORE;
+                self.cache.issued[store_op].isize = 3;
+                self.cache.issued[store_op].invar = Some(storevars);
+                let mut ptrvn = VarnodeData::default();
+                let spc = self.generate_pointer(outvn, &mut ptrvn)?;
+                self.cache.pool[storevars + 1] = ptrvn;
+                self.cache.pool[storevars].space = Some(Rc::clone(&self.const_space));
+                self.cache.pool[storevars].offset = spaceid_const(&spc);
+                self.cache.pool[storevars].size = SIZEOF_SPACE;
+                if outvn.get_offset().get_select() == VField::VOffsetPlus {
+                    self.generate_pointer_add(store_op, outvn)?;
+                }
+            } else {
+                let out = self.cache.allocate_varnodes(1);
+                let mut tmp = VarnodeData::default();
+                self.generate_location(outvn, &mut tmp)?;
+                self.cache.pool[out] = tmp;
+                self.cache.issued[thisop].outvar = Some(out);
+            }
+        }
+        Ok(())
+    }
+
+    /// C++ `SleighBuilder::appendBuild`: snippets contain no BUILD directives
+    /// (`parseInject` rejects nested subconstructors), so this is unreachable.
+    fn append_build(&mut self, _bld: &OpTpl, _secnum: i32) -> KunaResult<()> {
+        Err(KunaError::lowlevel("BUILD directive not allowed in inject snippet"))
+    }
+    /// C++ `SleighBuilder::delaySlot`: snippets contain no delay slots.
+    fn delay_slot(&mut self, _op: &OpTpl) -> KunaResult<()> {
+        Err(KunaError::lowlevel("delay slot directive not allowed in inject snippet"))
+    }
+    /// C++ `SleighBuilder::setLabel`.
+    fn set_label(&mut self, op: &OpTpl) -> KunaResult<()> {
+        // labels[getLabelBase()+id] = issued.size()  (C++ addLabel)
+        let id = op.get_in(0).get_offset().get_real() as u32; // C++ uintb -> uint4
+        let full = self.get_label_base().wrapping_add(id);
+        while self.cache.labels.len() as u64 <= u64::from(full) {
+            self.cache.labels.push(0x0badbeef);
+        }
+        self.cache.labels[full as usize] = self.cache.issued.len() as u64;
+        Ok(())
+    }
+    /// C++ `SleighBuilder::appendCrossBuild`: snippets contain no crossbuild.
+    fn append_cross_build(&mut self, _bld: &OpTpl, _secnum: i32) -> KunaResult<()> {
+        Err(KunaError::lowlevel("crossbuild directive not allowed in inject snippet"))
+    }
+}
+
+/// \brief Build the operand handles for an injection from its `InjectContext`
+/// storage (C++ `InjectPayloadSleigh::setupParameters`, inject_sleigh.cc:137,
+/// plus `checkParameterRestrictions` :109).
+///
+/// Inputs come first (by `getIndex`), then outputs; the handle's `(space,offset,
+/// size)` are taken from the matching `InjectContext` storage entry, exactly as
+/// the C++ fills `walker.getParentHandle()`.
+fn setup_handles(core: &InjectPayloadCore, context: &InjectContext) -> KunaResult<Vec<FixedHandle>> {
+    // checkParameterRestrictions: the storage counts must match the payload spec.
+    if core.size_input() as usize != context.inputlist.len() {
+        return Err(KunaError::lowlevel(
+            "Injection parameter list has different number of parameters than p-code operation",
+        ));
+    }
+    for i in 0..core.size_input() {
+        let sz = core.get_input(i).get_size();
+        if sz != 0 && sz != context.inputlist[i as usize].size {
+            return Err(KunaError::lowlevel(
+                "P-code input parameter size does not match injection specification",
+            ));
+        }
+    }
+    if core.size_output() as usize != context.output.len() {
+        return Err(KunaError::lowlevel(
+            "Injection output does not match output of p-code operation",
+        ));
+    }
+    for i in 0..core.size_output() {
+        let sz = core.get_output(i).get_size();
+        if sz != 0 && sz != context.output[i as usize].size {
+            return Err(KunaError::lowlevel(
+                "P-code output size does not match injection specification",
+            ));
+        }
+    }
+
+    // Operand handles are indexed by operand index (orderParameters assigns
+    // inputs 0..n then outputs n..n+m, in declaration order — see
+    // InjectPayloadCore::order_parameters); the storage lists are in the same
+    // order, so the handle at operand index == its storage entry.
+    let total = core.size_input() + core.size_output();
+    let mut handles = vec![FixedHandle::default(); total as usize];
+    for i in 0..core.size_input() {
+        let idx = core.get_input(i).get_index();
+        let data = &context.inputlist[i as usize];
+        let hand = &mut handles[idx as usize];
+        hand.space = data.space.clone();
+        hand.offset_offset = data.offset;
+        hand.size = data.size;
+        hand.offset_space = None;
+    }
+    for i in 0..core.size_output() {
+        let idx = core.get_output(i).get_index();
+        let data = &context.output[i as usize];
+        let hand = &mut handles[idx as usize];
+        hand.space = data.space.clone();
+        hand.offset_offset = data.offset;
+        hand.size = data.size;
+        hand.offset_space = None;
+    }
+    Ok(handles)
+}
+
+/// \brief The SLEIGH-backed [`InjectEngine`]: drives a compiled [`ConstructTpl`]
+/// through the snippet-case builder to emit a payload's p-code ops.
+///
+/// Construct it with the const/unique/code spaces (from the architecture) plus
+/// the compiled template for each payload; [`emit`](Self::emit) reproduces
+/// `InjectPayloadSleigh::inject`.
+pub struct SleighInjectEngine {
+    const_space: Rc<AddrSpace>,
+    uniq_space: Rc<AddrSpace>,
+    code_space: Rc<AddrSpace>,
+}
+
+impl SleighInjectEngine {
+    /// Construct from the const/unique/code spaces (C++
+    /// `con.glb->getConstantSpace()` / `getUniqueSpace()` /
+    /// `getDefaultCodeSpace()`).
+    ///
+    /// The constant space is passed explicitly because the [`InjectArchitecture`]
+    /// seam only carries the unique + default-code spaces; the const space is the
+    /// architecture's constant space (`AddrSpaceManager::getConstantSpace`).
+    pub fn new(
+        const_space: Rc<AddrSpace>,
+        uniq_space: Rc<AddrSpace>,
+        code_space: Rc<AddrSpace>,
+    ) -> SleighInjectEngine {
+        SleighInjectEngine { const_space, uniq_space, code_space }
+    }
+
+    /// Construct from an [`InjectArchitecture`] (unique + default-code spaces)
+    /// plus the constant space.
+    pub fn from_arch(arch: &dyn InjectArchitecture, const_space: Rc<AddrSpace>) -> SleighInjectEngine {
+        SleighInjectEngine {
+            const_space,
+            uniq_space: arch.get_unique_space(),
+            code_space: arch.get_default_code_space(),
+        }
+    }
+
+    /// Emit the ops of `payload` (already compiled to `tpl`) into `emit`,
+    /// resolving the payload's operands against `context`
+    /// (C++ `InjectPayloadSleigh::inject`).
+    ///
+    /// `tpl` is the [`ConstructTpl`] produced by [`parse_inject`] for this
+    /// payload.  The `context`'s input/output storage must be laid out (e.g. via
+    /// [`SnippetLayout::build`](crate::pcodeinject::SnippetLayout) for an
+    /// executable payload, or by the caller for a call/callother fixup).
+    pub fn emit_payload(
+        &self,
+        payload: &dyn InjectPayload,
+        tpl: &ConstructTpl,
+        context: &mut InjectContext,
+        emit: &mut dyn PcodeEmit,
+    ) -> KunaResult<()> {
+        let core = payload.core();
+        let handles = setup_handles(core, context)?;
+
+        // baseaddr is where the injected ops are anchored (C++ con.baseaddr).
+        let baseaddr = context
+            .baseaddr
+            .clone()
+            .unwrap_or_else(|| Address::new(Rc::clone(&self.code_space), 0));
+        let nextaddr = context.nextaddr.clone().unwrap_or_else(|| baseaddr.clone());
+
+        let walker = InjectWalker {
+            handles,
+            const_space: Rc::clone(&self.const_space),
+            cur_space: Rc::clone(&self.code_space),
+            baseaddr: baseaddr.clone(),
+            nextaddr,
+            calladdr: context.calladdr.clone(),
+        };
+
+        let mut builder = InjectBuilder {
+            labelbase: 0,
+            labelcount: 0,
+            walker: &walker,
+            const_space: Rc::clone(&self.const_space),
+            uniq_space: Rc::clone(&self.uniq_space),
+            cache: PcodeCacher::default(),
+        };
+        // builder.build(tpl,-1)  (the main section)
+        builder.build(Some(tpl), -1)?;
+        builder.cache.resolve_relatives()?;
+        builder.cache.emit(&baseaddr, emit);
+        Ok(())
+    }
+}
+
+impl InjectEngine for SleighInjectEngine {
+    fn emit(
+        &self,
+        _payload: &dyn InjectPayload,
+        _context: &mut InjectContext,
+        _emit: &mut dyn PcodeEmit,
+    ) -> KunaResult<()> {
+        // The trait method has no compiled-template argument; the SLEIGH engine
+        // needs the payload's `ConstructTpl` (a `parse_inject` result that is not
+        // stored on the engine-neutral InjectPayload).  Callers drive
+        // [`SleighInjectEngine::emit_payload`] directly with the template.  This
+        // trait impl exists so `SleighInjectEngine` is a drop-in `InjectEngine`
+        // for the seam; it errs to make the missing-template misuse observable.
+        Err(KunaError::lowlevel(
+            "SleighInjectEngine requires a compiled ConstructTpl; call emit_payload",
+        ))
+    }
 }
 
 #[cfg(test)]
