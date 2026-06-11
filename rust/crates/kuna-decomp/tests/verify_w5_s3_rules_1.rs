@@ -422,3 +422,103 @@ fn w5s3_negateidentity_skips_nonmatching_then_collapses_match() {
     assert!(is_const(&fd, s0));
     assert_eq!(off_of(&fd, s0), kuna_base::address::calc_mask(4));
 }
+
+// =============================================================================
+// ROUND-2 VERIFIER tests (item w5-s3-rules-1, F1 fix re-derivation)
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// R2-1: RuleRightShiftAnd with a *negative* sa.
+//
+// C++ ruleaction.cc:593 does `int4 sa = (int4)constVn->getOffset();` then raw
+// `maskVn->getOffset() >> sa`.  A const offset whose low 32 bits, read as int4,
+// is negative (here 0xFFFF_FFC0 -> -64) makes sa negative.  On x86-64 the raw
+// `>>` masks the *unsigned* count register to its low 6 bits: -64 == 0xFFFFFFC0,
+// & 0x3F == 0, so the shift is by 0.  The round-2 fix routes this through
+// `wshr(sa as u32)`: sa as u32 == 0xFFFFFFC0, wrapping_shr takes count % 64 == 0
+// -> identical to x86.  With root size 8, full == mask == u64::MAX, so the rule
+// must APPLY (and must NOT panic on the negative-as-u32 count).
+// -----------------------------------------------------------------------------
+#[test]
+fn w5s3r2_rightshiftand_negative_sa_masks_like_x86() {
+    let mut fd = build_fd();
+    let root = make_reg(&mut fd, 0x40, 8);
+    let (inv, and_op) = make_written(&mut fd, 0x60, 8, OpCode::CPUI_INT_AND);
+    let mask = make_const(&mut fd, u64::MAX, 8);
+    wire_input(&mut fd, and_op, root, 0);
+    wire_input(&mut fd, and_op, mask, 1);
+    let op = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_RIGHT);
+    // 0xFFFF_FFC0 as i32 == -64; the rule reads only the low 32 bits as int4.
+    let sa = make_const(&mut fd, 0xFFFF_FFC0, 8);
+    wire_input(&mut fd, op, inv, 0);
+    wire_input(&mut fd, op, sa, 1);
+    let mut r = RuleRightShiftAnd::new("analysis");
+    // sa=-64 -> count mod 64 == 0 -> full>>0 == mask>>0 == u64::MAX -> applies.
+    assert_eq!(r.apply_op(op, &mut fd), 1, "negative sa, x86-masked to 0, full==mask -> applies");
+    assert_eq!(in_of(&fd, op, 0), Some(root), "AND bypassed, slot0 -> root");
+}
+
+// -----------------------------------------------------------------------------
+// R2-2: RuleRightShiftAnd large shift where the masked count leaves full != mask.
+//
+// The round-2 fix must not *falsely* apply: when the x86-masked count is nonzero
+// and `full != mask`, the rule declines (return 0).  root size 4 -> full ==
+// calc_mask(4) == 0xFFFF_FFFF; the AND mask is a partial 0x0FFF_FFFF.  sa = 66 ->
+// 66 % 64 == 2: full>>2 == 0x3FFF_FFFF, mask>>2 == 0x03FF_FFFF, differ -> decline.
+// (A bug that masked the count to 0, or used pcode_right's return-0, would either
+// mis-apply or panic; this pins the masked-but-nonzero branch.)
+// -----------------------------------------------------------------------------
+#[test]
+fn w5s3r2_rightshiftand_large_shift_full_mismatch_declines() {
+    let mut fd = build_fd();
+    let root = make_reg(&mut fd, 0x40, 4);
+    let (inv, and_op) = make_written(&mut fd, 0x60, 4, OpCode::CPUI_INT_AND);
+    let mask = make_const(&mut fd, 0x0FFF_FFFF, 4);
+    wire_input(&mut fd, and_op, root, 0);
+    wire_input(&mut fd, and_op, mask, 1);
+    let op = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_RIGHT);
+    let sa = make_const(&mut fd, 66, 4);
+    wire_input(&mut fd, op, inv, 0);
+    wire_input(&mut fd, op, sa, 1);
+    let mut r = RuleRightShiftAnd::new("analysis");
+    // 66 % 64 == 2; full>>2 (0x3FFF_FFFF) != mask>>2 (0x03FF_FFFF) -> decline.
+    assert_eq!(r.apply_op(op, &mut fd), 0, "masked nonzero count, full!=mask -> decline");
+    // The AND must be left untouched (slot0 still the written AND output).
+    assert_eq!(in_of(&fd, op, 0), Some(inv), "op slot0 unchanged on decline");
+}
+
+// -----------------------------------------------------------------------------
+// R2-3: RuleShiftBitops INT_LEFT by sa==64 routes through pcode_left (NOT wshr).
+//
+// This pins that the two shift idioms in this batch are NOT transposed.
+// RuleRightShiftAnd uses raw `>>` (x86-masked, wshr).  RuleShiftBitops uses
+// `pcode_left(nzm,sa)`, whose C++ guard `if (sa >= 8*sizeof(uintb)) return 0;`
+// makes a shift by >= 64 yield 0 (NOT an x86 mask).  With INT_LEFT sa==64 and
+// bitop = INT_AND(keep, ...) where `keep` has a *nonzero* NZM, pcode_left(nzm,64)
+// == 0, so `(nzm & mask) == 0` breaks at i==0 (< numInput).  For the INT_AND
+// final-switch branch the rule rewires op slot0 to a fresh const 0 and applies.
+// (Had the port wrongly used wshr here, 64 % 64 == 0 -> nzm unchanged -> nonzero
+// -> no break -> i==numInput -> return 0: the opposite outcome.)
+// -----------------------------------------------------------------------------
+#[test]
+fn w5s3r2_shiftbitops_left_shift_64_uses_pcode_left_returns_zero() {
+    let mut fd = build_fd();
+    // bitop = AND(keep, other), both with nonzero NZMask (registers).
+    let (innervn, bitop) = make_written(&mut fd, 0x60, 8, OpCode::CPUI_INT_AND);
+    let keep = make_reg(&mut fd, 0x40, 8);
+    let other = make_reg(&mut fd, 0x48, 8);
+    wire_input(&mut fd, bitop, keep, 0);
+    wire_input(&mut fd, bitop, other, 1);
+    // op = innervn << 64  (INT_LEFT, constant shift of 64).
+    let op = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_LEFT);
+    let coef = make_const(&mut fd, 64, 8);
+    wire_input(&mut fd, op, innervn, 0);
+    wire_input(&mut fd, op, coef, 1);
+    let _out = give_output(&mut fd, op, 0x80, 8);
+    let mut r = RuleShiftBitops::new("analysis");
+    // pcode_left(nzm, 64) == 0 -> break at i==0 -> AND branch -> const-0 rewire.
+    assert_eq!(r.apply_op(op, &mut fd), 1, "pcode_left(>=64)=0 -> nzm clears -> applies");
+    let s0 = in_of(&fd, op, 0).unwrap();
+    assert!(is_const(&fd, s0), "INT_AND branch: slot0 becomes a fresh constant");
+    assert_eq!(off_of(&fd, s0), 0, "the rewired constant is 0 (result is zero)");
+}
