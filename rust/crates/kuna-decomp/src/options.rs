@@ -361,11 +361,15 @@ fn encode_comment_type(name: &str) -> KunaResult<uint4> {
 ///     target variable **unchanged**, so the caller's sentinel default survives
 ///     — which is exactly what every caller tests).
 ///
-/// On overflow the C++ stream sets failbit and clamps the target to
-/// `numeric_limits<T>::max()` (or `min()` for a negative result); the callers
-/// only test the sentinel, so an overflow that *did* consume digits returns the
-/// saturated value, which differs from the sentinel and so passes the caller's
-/// check exactly as upstream.
+/// On overflow the C++ `num_get` facet sets failbit and clamps the target to
+/// `numeric_limits<T>::max()` (or `min()` for a negative signed result).  The
+/// overflow is measured against the **target type's** width (`int4`/`uint4`),
+/// not the `u64` accumulator: a value in `(T::MAX, u64::MAX]` saturates to
+/// `T::MAX`, it does **not** wrap-truncate.  The callers only test a sentinel,
+/// so an overflow that *did* consume digits returns the saturated value (which
+/// differs from the sentinel and so passes the caller's check exactly as
+/// upstream — e.g. `maxinstruction "3000000000"` stores `INT_MAX`, stays `>=0`,
+/// and is accepted).
 fn parse_int_auto<T: IntParse>(s: &str) -> Option<T> {
     let bytes = s.as_bytes();
     let mut i = 0usize;
@@ -419,26 +423,48 @@ fn parse_int_auto<T: IntParse>(s: &str) -> Option<T> {
         // No conversion happened: C++11 leaves the target unchanged.
         return None;
     }
-    Some(T::from_u64(val, neg).saturate(overflow, neg))
+    // Overflow is whatever overflowed the u64 accumulator OR exceeded the
+    // *target* type's representable magnitude for this sign — `num_get` measures
+    // against `numeric_limits<T>::max()`, not against u64.  (Verified against a
+    // C++11 `istringstream >> int/unsigned` oracle: `"3000000000">>int =
+    // INT_MAX (fail)`, `"0x100000000">>uint = UINT_MAX (fail)`, while `"-1">>uint
+    // = UINT_MAX (no fail)` — the negate-modulo quirk for an in-range magnitude.)
+    let width_overflow = val > T::max_magnitude(neg);
+    Some(T::from_u64(val, neg).saturate(overflow || width_overflow, neg))
 }
 
 /// Helper trait for [`parse_int_auto`] (the two width/signedness targets the
 /// integer options use: `int4` and `uint4`).
 trait IntParse: Sized + Copy {
-    /// Build the value from an unsigned magnitude + sign.
+    /// Largest unsigned magnitude representable by the target for this sign,
+    /// matching the C++ `num_get` overflow boundary (`numeric_limits<T>::max()`
+    /// for the positive/unsigned case, `|numeric_limits<T>::min()|` for the
+    /// negative signed case).  A parsed magnitude strictly above this saturates.
+    fn max_magnitude(neg: bool) -> u64;
+    /// Build the value from an in-range unsigned magnitude + sign.
     fn from_u64(mag: u64, neg: bool) -> Self;
     /// Clamp on overflow, matching `numeric_limits<T>::max()/min()`.
     fn saturate(self, overflow: bool, neg: bool) -> Self;
 }
 
 impl IntParse for int4 {
+    fn max_magnitude(neg: bool) -> u64 {
+        // `int4 = i32`: positive magnitudes up to `i32::MAX` (2147483647),
+        // negative magnitudes up to `|i32::MIN|` (2147483648) — `"-2147483648"`
+        // parses exactly (no failbit), `"-2147483649"` saturates to INT_MIN.
+        if neg {
+            (int4::MIN as i64).unsigned_abs() // justified: |i32::MIN| = 2^31, fits u64
+        } else {
+            int4::MAX as u64 // justified: i32::MAX is non-negative
+        }
+    }
     fn from_u64(mag: u64, neg: bool) -> Self {
         // `int4 = i32`.  C++ `>> int` truncates the parsed value to int width
-        // (well-defined for in-range inputs the options accept); model with a
-        // wrapping narrow then apply the sign.
-        let m = mag as i64; // justified: caller magnitudes for the int options fit i64
+        // (well-defined for the in-range magnitudes that reach here — overflow
+        // is handled by `saturate`); model with a wrapping narrow then sign.
+        let m = mag as i64; // justified: in-range int magnitudes fit i64
         let v = if neg { m.wrapping_neg() } else { m };
-        v as int4 // justified: faithful to `>> int4` narrowing
+        v as int4 // justified: faithful to `>> int4` narrowing for in-range input
     }
     fn saturate(self, overflow: bool, neg: bool) -> Self {
         if overflow {
@@ -454,9 +480,18 @@ impl IntParse for int4 {
 }
 
 impl IntParse for uint4 {
+    fn max_magnitude(_neg: bool) -> u64 {
+        // `uint4 = u32`: the overflow boundary is `u32::MAX` for *both* signs —
+        // `"-1">>unsigned` is the in-range magnitude 1 negated mod 2^32 (=
+        // UINT_MAX, no failbit), whereas `"-0x100000000">>unsigned` overflows
+        // the magnitude (= UINT_MAX, failbit) before any negate.
+        uint4::MAX as u64 // justified: u32::MAX is non-negative
+    }
     fn from_u64(mag: u64, neg: bool) -> Self {
+        // In-range magnitude; a negative sign applies the C++ unsigned
+        // negate-modulo-2^32 quirk.
         let v = if neg { mag.wrapping_neg() } else { mag };
-        v as uint4 // justified: faithful to `>> uint4` narrowing
+        v as uint4 // justified: faithful to `>> uint4` narrowing for in-range input
     }
     fn saturate(self, overflow: bool, _neg: bool) -> Self {
         if overflow {
