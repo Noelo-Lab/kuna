@@ -49,6 +49,7 @@ use std::rc::Rc;
 
 use crate::error::{KunaError, KunaResult};
 use crate::space::{spacetype, AddrSpace, AddrSpaceManager};
+use crate::types::Wrap;
 use crate::xml::{self, Document, Element};
 
 // ---------------------------------------------------------------------------
@@ -480,6 +481,58 @@ pub(crate) fn cxx_parse_signed(bytes: &[u8]) -> i64 {
     }
 }
 
+/// `istringstream >> dec >> val` into a `uint4` (libstdc++ `num_get`,
+/// C++11): decimal digits ONLY — `dec` fixes the base, so there is no
+/// `0x`/leading-`0` base detection — after optional leading whitespace (the
+/// `operator>>` sentry; `skipws` is on by default) and an optional single
+/// `+`/`-` sign.  `num_get` accumulates in the unsigned destination width:
+/// on overflow of `uint4` it stores `UINT_MAX` (the most positive value,
+/// since the destination is unsigned, even for a negative field), a minus
+/// sign negates the magnitude modularly, and a failed extraction (no
+/// digits) stores 0 (C++11).
+fn cxx_num_get_u32_dec(bytes: &[u8]) -> u32 {
+    let mut i = 0usize;
+    // isspace() in the "C" locale
+    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r') {
+        i += 1;
+    }
+    let mut neg = false;
+    if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') {
+        neg = bytes[i] == b'-';
+        i += 1;
+    }
+    let mut val: u32 = 0;
+    let mut any = false;
+    let mut overflow = false;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if !c.is_ascii_digit() {
+            break;
+        }
+        any = true;
+        // _M_extract_int checks against numeric_limits<uint4>::max() before
+        // each accumulation step; digits keep being consumed after overflow.
+        let (m, o1) = val.overflowing_mul(10);
+        let (s, o2) = m.overflowing_add((c - b'0') as u32);
+        if o1 || o2 {
+            overflow = true;
+        }
+        val = s;
+        i += 1;
+    }
+    if !any {
+        return 0; // Failed extraction stores 0 (C++11 num_get)
+    }
+    if overflow {
+        return u32::MAX; // Unsigned destination: most-positive value stored
+    }
+    if neg {
+        val.wrapping_neg() // Modular negation of the magnitude
+    } else {
+        val
+    }
+}
+
 /// `strtoul(s, &endptr, 0)` returning the value and the consumed byte count
 /// (the `endptr` offset).  Used by `AddrSpace::read` and `get_offset_size`.
 pub(crate) fn cxx_strtoul(bytes: &[u8]) -> (u64, usize) {
@@ -864,7 +917,8 @@ impl Encoder for XmlEncode<'_> {
     fn write_string_indexed(&mut self, attrib_id: &AttributeId, index: u32, val: &[u8]) {
         self.out_stream.push(b' ');
         self.out_stream.extend_from_slice(attrib_id.get_name().as_bytes());
-        self.out_stream.extend_from_slice(format!("{}", index + 1).as_bytes());
+        // C++ `<< dec << index + 1` is uint4 arithmetic: wraps at UINT_MAX
+        self.out_stream.extend_from_slice(format!("{}", index.wadd(1)).as_bytes());
         self.out_stream.extend_from_slice(b"=\"");
         xml::xml_escape(self.out_stream, val);
         self.out_stream.push(b'"');
@@ -1117,23 +1171,21 @@ impl Decoder for XmlDecode<'_> {
             return Ok(ATTRIB_UNKNOWN.get_id());
         }
         // Strip off the base name, decode the remaining decimal integer
-        // (starting at 1).  `istringstream >> dec >> val` leaves 0 on failure.
+        // (starting at 1).  C++ `s >> dec >> val` into a uint4 is a
+        // decimal-only num_get: overflow stores UINT_MAX, a minus sign
+        // negates modularly, a failed extraction leaves the initialized 0.
         let suffix = &attrib_name.as_bytes()[attrib_id.get_name().len()..];
-        let (val64, _, neg, overflow) = cxx_strtoull_core(suffix);
-        let val: u32 = if neg || overflow || val64 > u32::MAX as u64 {
-            // Saturate out-of-range decimal like the stream extraction would;
-            // only val == 0 is treated as a parse failure, as in C++.
-            u32::MAX
-        } else {
-            val64 as u32
-        };
+        let val: u32 = cxx_num_get_u32_dec(suffix);
         if val == 0 {
             return Err(KunaError::lowlevel(format!(
                 "Bad indexed attribute: {}",
                 attrib_id.get_name()
             )));
         }
-        Ok(attrib_id.get_id() + (val - 1))
+        // C++ `attribId.getId() + (val-1)` in uint4 arithmetic: the add wraps
+        // mod 2^32 when val came back UINT_MAX (the subtract cannot wrap —
+        // val != 0 was just checked — but stays greppable wrapping intent).
+        Ok(attrib_id.get_id().wadd(val.wsub(1)))
     }
 
     fn rewind_attributes(&mut self) {
@@ -1528,6 +1580,9 @@ impl<'a> PackedDecode<'a> {
         let mut length = Self::read_length_code(type_byte); // Length of data in bytes
         if attrib_type == pf::TYPECODE_STRING {
             // Read length field to get final length of string
+            // cast: uint4 length -> int4 readInteger arg (length code <= 0x1f,
+            // in range); uint8 result -> uint4 truncation, as the C++
+            // assignment `length = readInteger(length)` (marshal.cc:653)
             length = self.read_integer(length as i32)? as u32;
         }
         Self::advance_position(&self.in_stream, &mut self.cur_pos, length) // Skip -length- data
@@ -1546,6 +1601,9 @@ impl<'a> PackedDecode<'a> {
         let mut length = Self::read_length_code(type_byte); // Length of data in bytes
         if attrib_type == pf::TYPECODE_STRING {
             // Read length field to get final length of string
+            // cast: uint4 length -> int4 readInteger arg (length code <= 0x1f,
+            // in range); uint8 result -> uint4 truncation, as the C++
+            // assignment `length = readInteger(length)` (marshal.cc:669)
             length = self.read_integer(length as i32)? as u32;
         }
         Self::advance_position(&self.in_stream, &mut self.cur_pos, length) // Skip -length- data
@@ -1963,7 +2021,12 @@ impl<'a> PackedEncode<'a> {
         if id > 0x1f {
             let mut header = header;
             header |= pf::HEADEREXTEND_MASK;
+            // cast: the shifted uint4 id is |='d into the uint1 header, keeping
+            // the low byte, as the C++ `header |= (id >> ...)` (marshal.hh:666)
             header |= (id >> pf::RAWDATA_BITSPERBYTE) as u8;
+            // cast: uint4 id -> uint1 low-byte truncation before the mask, as
+            // the C++ `uint1 extendByte = (id & RAWDATA_MASK) | ...`
+            // (marshal.hh:667)
             let extend_byte = ((id as u8) & pf::RAWDATA_MASK) | pf::RAWDATA_MARKER;
             self.out_stream.push(header);
             self.out_stream.push(extend_byte);
@@ -2081,7 +2144,8 @@ impl Encoder for PackedEncode<'_> {
 
     fn write_string_indexed(&mut self, attrib_id: &AttributeId, index: u32, val: &[u8]) {
         let length = val.len() as u64;
-        self.write_header(pf::ATTRIBUTE, attrib_id.get_id() + index);
+        // C++ `attribId.getId() + index` is uint4 arithmetic: wraps mod 2^32
+        self.write_header(pf::ATTRIBUTE, attrib_id.get_id().wadd(index));
         self.write_integer(pf::TYPECODE_STRING << pf::TYPECODE_SHIFT, length);
         self.out_stream.extend_from_slice(val);
     }
@@ -2120,6 +2184,8 @@ impl Encoder for PackedEncode<'_> {
                 }
             }
             _ => {
+                // cast: int4 getIndex() sign-extends to uint8, as the C++
+                // `uint8 spcId = spc->getIndex()` (marshal.cc:1218)
                 let spc_id = spc.get_index() as u64;
                 self.write_integer(pf::TYPECODE_ADDRESSSPACE << pf::TYPECODE_SHIFT, spc_id);
             }
@@ -2409,5 +2475,30 @@ mod tests {
         assert_eq!(cxx_parse_signed(b"123abc"), 123);
         assert_eq!(cxx_strtoul(b"0x1000:2"), (0x1000, 6));
         assert_eq!(cxx_strtoul(b"33+1"), (33, 2));
+    }
+
+    #[test]
+    fn test_marshal_cxx_num_get_u32_dec() {
+        // `istringstream >> dec >> uint4` semantics (getIndexedAttributeId
+        // suffix parse); decimal cases oracle-verified against g++/libstdc++.
+        assert_eq!(cxx_num_get_u32_dec(b"1"), 1);
+        assert_eq!(cxx_num_get_u32_dec(b"23"), 23);
+        assert_eq!(cxx_num_get_u32_dec(b"010"), 10); // dec, NOT octal
+        assert_eq!(cxx_num_get_u32_dec(b"08"), 8); // dec, NOT an octal error
+        assert_eq!(cxx_num_get_u32_dec(b"0x2"), 0); // dec, NOT hex: stops at 'x'
+        assert_eq!(cxx_num_get_u32_dec(b""), 0); // failed extraction stores 0
+        assert_eq!(cxx_num_get_u32_dec(b"abc"), 0);
+        assert_eq!(cxx_num_get_u32_dec(b"+7"), 7);
+        assert_eq!(cxx_num_get_u32_dec(b"  12"), 12); // sentry skips whitespace
+        assert_eq!(cxx_num_get_u32_dec(b"-"), 0); // sign with no digits fails
+        // Overflow of the uint4 destination stores UINT_MAX (C++11 num_get)
+        assert_eq!(cxx_num_get_u32_dec(b"4294967296"), u32::MAX);
+        assert_eq!(cxx_num_get_u32_dec(b"4294967295"), u32::MAX); // exact max, no overflow
+        // A minus sign negates the in-range magnitude modularly...
+        assert_eq!(cxx_num_get_u32_dec(b"-5"), 5u32.wrapping_neg());
+        assert_eq!(cxx_num_get_u32_dec(b"-4294967295"), 1);
+        // ...but an overflowing negative field still stores UINT_MAX
+        // (unsigned destination: num_get only stores __min for signed types)
+        assert_eq!(cxx_num_get_u32_dec(b"-4294967296"), u32::MAX);
     }
 }
