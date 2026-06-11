@@ -28,3 +28,35 @@ replicate them, and (b) they can be reported/ported upstream deliberately later.
   the ported behavior must NOT panic. What it should return is pinned by the TRAP rows
   (treat as error/EvaluationError path) — decide at W2 (opbehavior port) and record a
   DIV/LOSS entry if the Rust engine's observable behavior can differ.
+
+## UB-3: `convertCharRef` signed-int overflow on large XML character references
+
+- Found: 2026-06-10 (W1 verification of w1-base-xml, UBSan on the verifier's
+  differential harness).
+- Anchor: `decompiler/cpp/xml.cc:2337-2360` (`convertCharRef`, from xml.y:479-502) —
+  `val *= mult; val += cur` accumulates into `int4` with no overflow guard; a
+  reference like `&#4294967296;` or `&#x100000041;` overflows signed int
+  (UBSan: xml.cc:2356:9 / 2357:9). g++ on x86-64 wraps two's-complement in
+  practice, and only the low byte of the result is ever appended to output.
+- Workaround: none needed in C++ (wrap-then-truncate is the de facto oracle
+  behavior on the oracle platform).
+- Rust port requirement: transcribe as wrapping i32 arithmetic per ADR 0003
+  (done in `rust/crates/kuna-base/src/xml.rs::convert_char_ref`, oracle-pinned by
+  `verify_w1_base_xml` cases `&#99999999999999999999;`, `&#2147483648;`,
+  `&#xffffffff;`).
+
+## UB-4: `rangemap::erase` strands sub-ranges extended below the record's range by `zip()`
+
+- Found: 2026-06-10 (W1 port of rangemap.hh, w1-base-foundation).
+- Anchor: `decompiler/cpp/rangemap.hh` — `erase` only walks sub-ranges whose ending
+  boundary is `>= getFirst()`, but `zip()` can legitimately extend a record's
+  sub-range below its own range (observable upstream: `find()` returns a record for
+  points outside `[getFirst, getLast]`). Erasing such a record strands the extended
+  sub-range with a dangling record pointer; C++ then silently reads freed
+  `std::list` memory (UB, may alias a reused node).
+- Workaround: the Rust port reproduces the stranding faithfully but panics
+  ("rangemap: stale RecordIdx") on deref while the slot is vacant instead of
+  reading freed memory; after slot reuse it resolves to the new record, mirroring
+  allocator reuse. The W1 differential digest is pinned over a 58-op UB-free prefix.
+- Rust port requirement: none further; revisit if a datatest ever drives this path
+  (would surface as a Rust panic where C++ silently misbehaves).
