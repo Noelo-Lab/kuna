@@ -344,7 +344,6 @@ const _: u32 = ELEM_PCODE.get_id();
 // ===========================================================================
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaError;
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::translate::PcodeEmit;
@@ -438,11 +437,12 @@ struct FuncdataEmitter<'a> {
     const_space: Rc<AddrSpace>,
     /// Count of ops created, for assertions.
     created: usize,
-    /// Count of ops whose output-wiring reached the deferred W3 `op_set_output`
-    /// (`banks_mut` split-borrow) seam.  Inputs and the op itself ARE built; the
-    /// output `setDef` step is a separate W3-funcdata item, so an emitted op with
-    /// an output reaches exactly that boundary (faithful, not a failure).
-    out_seam_hits: usize,
+    /// Count of ops whose output was successfully linked via the now-real
+    /// `op_set_output` (the `banks_mut` split-borrow `setDef` path landed by
+    /// `w4x-flow-linkage`).  Inputs, the op, AND the output are all built — an
+    /// emitted op with an output increments this once the output `setDef`
+    /// succeeds.
+    outputs_linked: usize,
 }
 impl FuncdataEmitter<'_> {
     fn resolve(&mut self, vn: &VarnodeData) -> crate::seams::VarnodeId {
@@ -464,16 +464,11 @@ impl PcodeEmit for FuncdataEmitter<'_> {
         }
         if let Some(o) = outvar {
             let vn = self.resolve(o);
-            match self.fd.op_set_output(op, vn) {
-                Ok(()) => {}
-                Err(KunaError::Lowlevel { explain, .. }) if explain.contains("opSetOutput") => {
-                    // The W3 `op_set_output` setDef step is a separately-deferred
-                    // funcdata seam (needs `banks_mut`); reaching it proves the
-                    // emit drove an output and stopped at exactly that boundary.
-                    self.out_seam_hits += 1;
-                }
-                Err(e) => panic!("unexpected op_set_output error: {e}"),
-            }
+            // The `op_set_output` setDef step is now the real `banks_mut`
+            // split-borrow path (landed by `w4x-flow-linkage`); it links the
+            // output Varnode as the op's def.
+            self.fd.op_set_output(op, vn).expect("op_set_output links the output");
+            self.outputs_linked += 1;
         }
         self.created += 1;
     }
@@ -552,21 +547,42 @@ fn real_mcount_callfixup_emits_copy_into_funcdata() {
         ..Default::default()
     };
     let n_before = fd.obank().iter_all().count();
-    let out_seam_hits;
+    let outputs_linked;
     {
-        let mut emitter = FuncdataEmitter { fd: &mut fd, const_space, created: 0, out_seam_hits: 0 };
+        let mut emitter = FuncdataEmitter { fd: &mut fd, const_space, created: 0, outputs_linked: 0 };
         engine
             .emit_payload(&p, &tpl, &mut context, &mut emitter)
             .expect("emit mcount payload");
         assert!(emitter.created >= 1, "at least one op emitted");
-        out_seam_hits = emitter.out_seam_hits;
+        outputs_linked = emitter.outputs_linked;
     }
     // The Funcdata now holds the COPY op (the only op of `temp:1 = 0`).
     let n_after = fd.obank().iter_all().count();
     assert!(n_after > n_before, "ops were created in the funcdata");
-    // The COPY has an output, so output-wiring reached the deferred W3
-    // op_set_output seam exactly once (the op + its const input ARE built).
-    assert_eq!(out_seam_hits, 1, "the COPY's output reached the W3 setDef seam");
+    // The COPY has an output, so output-wiring went through the now-real
+    // `op_set_output` setDef path exactly once (the op, its const input, AND the
+    // output ARE built).
+    assert_eq!(outputs_linked, 1, "the COPY's output was linked via op_set_output");
+    // Stronger than the old seam check: the COPY op now actually has its output
+    // Varnode linked (the real setDef ran), so the op's output is the 1-byte
+    // unique temp and that Varnode is defined by the COPY.
+    let copy_out = fd
+        .obank()
+        .iter_all()
+        .find_map(|(_, op)| {
+            let o = fd.obank().get(op).unwrap();
+            if o.code() == OpCode::CPUI_COPY {
+                Some((op, o.get_out()))
+            } else {
+                None
+            }
+        })
+        .expect("the COPY op exists");
+    let (copy_op, out) = copy_out;
+    let out = out.expect("the COPY's output Varnode is linked");
+    let outvn = fd.vbank().get(out).expect("output varnode live");
+    assert_eq!(outvn.get_size(), 1, "output is the 1-byte unique temp");
+    assert_eq!(outvn.get_def(), Some(copy_op), "output is defined by the COPY");
 }
 
 #[test]

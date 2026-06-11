@@ -454,6 +454,31 @@ impl Funcdata {
     pub fn obank_mut(&mut self) -> &mut PcodeOpBank {
         &mut self.obank
     }
+
+    /// Split-borrow the Varnode and PcodeOp containers **simultaneously**
+    /// (the accessor `funcdata_op.cc`/`funcdata_varnode.cc` documented they need).
+    ///
+    /// In C++ the two banks are plain members of `Funcdata` and every method
+    /// aliases them freely; the read-repointing `xref` callback (`replace_reads`)
+    /// runs *inside* a `vbank` mutation yet reaches `obank`.  Rust forbids holding
+    /// two `&mut` through separate `&mut self` accessors, so the
+    /// `vbank.setInput`/`setDef`/`createDef` callers (`opSetOutput`,
+    /// `setInputVarnode`, `newVarnodeOut`/`newUniqueOut`) split-borrow here and
+    /// build [`replace_reads_thunk`](Funcdata::replace_reads_thunk) over the `obank`
+    /// half while mutating the `vbank` half:
+    ///
+    /// ```text
+    ///   let (vbank, obank) = self.banks_mut();
+    ///   let mut replace = Funcdata::replace_reads_thunk(obank);
+    ///   let vn = vbank.set_def(vn, def, &mut replace)?;
+    /// ```
+    ///
+    /// `pub(crate)` so only the funcdata_op/funcdata_varnode ports reach it.
+    pub(crate) fn banks_mut(&mut self) -> (&mut VarnodeBank, &mut PcodeOpBank) {
+        // Disjoint borrows of two distinct fields: the borrow checker accepts
+        // this single split, where two separate `&mut self` accessors would not.
+        (&mut self.vbank, &mut self.obank)
+    }
     /// Get the total number of Varnodes (C++ `numVarnodes`).
     pub fn num_varnodes(&self) -> int4 {
         self.vbank.num_varnodes()

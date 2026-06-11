@@ -994,16 +994,14 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let mut emit = FlowEmit::new(&mut self.data, self.env);
         match self.env.translate().one_instruction(&mut emit, curaddr) {
             Ok(s) => {
-                let deferred = emit.deferred;
+                let emit_err = emit.error;
                 step = s;
-                if let Some(note) = deferred {
-                    // The emitter hit a deferred op-building surface (newVarnodeOut
-                    // / newCodeRef).  The op shells were created and the visited /
-                    // bookkeeping below still runs; surface the precise note so the
-                    // missing W3-funcdata API is explicit rather than silent.
-                    return Err(KunaError::lowlevel(format!(
-                        "kuna rust port: FlowInfo::processInstruction emitter deferred — {note}"
-                    )));
+                if let Some(err) = emit_err {
+                    // A `new*` factory threw mid-`dump` (the C++ exception unwinds
+                    // out of `oneInstruction`).  The `PcodeEmit::dump` trait method
+                    // is infallible, so the error was captured; re-raise it here, at
+                    // the same point the C++ exception would propagate.
+                    return Err(err);
                 }
             }
             Err(err) => {
@@ -1536,6 +1534,14 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         self.seen_instruction(addr)
     }
 
+    /// The recorded instruction byte-length (`VisitStat::size`) for a visited
+    /// address (the `Translate::oneInstruction` fall-through step
+    /// `process_instruction` stored), or `None` if `addr` was not visited.
+    /// Verification / W4-driver support.
+    pub fn visited_size(&self, addr: &Address) -> Option<int4> {
+        self.visited.get(addr).map(|s| s.size)
+    }
+
     /// Find the fall-thru op for `op` (C++ `fallthruOp`).  Verification support.
     pub fn fallthru_op_for_test(&self, op: OpId) -> Option<OpId> {
         self.fallthru_op(op)
@@ -1608,12 +1614,15 @@ fn invalid_seqnum() -> SeqNum {
 /// `Translate::one_instruction`).  Each `dump` converts template `VarnodeData`
 /// into a real op + its varnodes in the dead list.
 ///
-/// SEAM(W4)/SEAM(W3-funcdata): the output-varnode path (`newVarnodeOut` →
-/// `opSetOutput` → the `(vbank,obank)` split-borrow accessor only the `funcdata`
-/// owner can add) and the code-reference input (`newCodeRef`, a not-yet-ported
-/// `funcdata_varnode` factory) are deferred.  When a `dump` needs either, it
-/// records the missing surface in [`FlowEmit::deferred`] and builds what it can
-/// (the op shell, opcode, and non-coderef inputs).  Recorded as a loss.
+/// This is now the **real** op-building emitter — output creation
+/// (`newVarnodeOut` → `opSetOutput` via the [`Funcdata::banks_mut`] split-borrow),
+/// code-reference inputs (`newCodeRef`), and ordinary inputs (`newVarnode`) all
+/// build real Varnodes through the ported `funcdata_op`/`funcdata_varnode`
+/// factories.  The `PcodeEmit::dump` trait method cannot return a `Result` (it
+/// mirrors the C++ `void dump(...)` that throws), so the first factory error is
+/// captured in [`FlowEmit::error`] and surfaced by
+/// [`process_instruction`](FlowInfo::process_instruction) after the decode call,
+/// exactly where the C++ exception would unwind out of `oneInstruction`.
 pub struct FlowEmit<'f, 'e, E: FlowEnvironment> {
     /// The Funcdata container to emit into (C++ `PcodeEmitFd::fd`).
     fd: &'f mut Funcdata,
@@ -1622,14 +1631,14 @@ pub struct FlowEmit<'f, 'e, E: FlowEnvironment> {
     /// Ops emitted by this instruction, in dump order (the C++ ops land on the
     /// dead list; tracked here so `process_instruction` can find the first).
     emitted: Vec<OpId>,
-    /// Records the first deferred-surface a `dump` hit (`newVarnodeOut` /
-    /// `newCodeRef`), if any.  // SEAM(W4)/SEAM(W3-funcdata)
-    deferred: Option<&'static str>,
+    /// The first factory error a `dump` hit (the C++ exception out of a `new*`
+    /// factory), captured because the `PcodeEmit::dump` signature is infallible.
+    error: Option<KunaError>,
 }
 
 impl<'f, 'e, E: FlowEnvironment> FlowEmit<'f, 'e, E> {
     fn new(fd: &'f mut Funcdata, env: &'e E) -> FlowEmit<'f, 'e, E> {
-        FlowEmit { fd, env, emitted: Vec::new(), deferred: None }
+        FlowEmit { fd, env, emitted: Vec::new(), error: None }
     }
 }
 
@@ -1641,21 +1650,30 @@ impl<E: FlowEnvironment> PcodeEmit for FlowEmit<'_, '_, E> {
         outvar: Option<&kuna_num::pcoderaw::VarnodeData>,
         vars: &[kuna_num::pcoderaw::VarnodeData],
     ) {
+        // Once a factory has errored, stop building (the C++ exception would have
+        // unwound; subsequent dumps for the same instruction never run).
+        if self.error.is_some() {
+            return;
+        }
         // Convert template data into a real PcodeOp (C++ PcodeEmitFd::dump).
         let isize = vars.len() as int4;
-        let op = self.fd.new_op(isize, addr.clone());
-        if outvar.is_some() {
-            // op = fd->newOp(isize,addr); fd->newVarnodeOut(size,oaddr,op);
-            //   -- SEAM(W4)/SEAM(W3-funcdata): newVarnodeOut needs opSetOutput →
-            //      the (vbank,obank) split-borrow accessor on Funcdata.  The op
-            //      shell is created; the output varnode is deferred.
-            if self.deferred.is_none() {
-                self.deferred = Some(
-                    "PcodeEmitFd::dump: newVarnodeOut needs Funcdata::opSetOutput \
-                     (a banks_mut() (&mut VarnodeBank,&mut PcodeOpBank) split accessor)",
-                );
+        let op = if let Some(out) = outvar {
+            // Address oaddr(outvar->space,outvar->offset);
+            // op = fd->newOp(isize,addr); fd->newVarnodeOut(outvar->size,oaddr,op);
+            let op = self.fd.new_op(isize, addr.clone());
+            let ospace =
+                out.space.as_ref().expect("FlowEmit::dump: output varnode has no space").clone();
+            let oaddr = Address::new(ospace, out.offset);
+            if let Err(e) = self.fd.new_varnode_out(out.size as int4, &oaddr, op) {
+                self.error = Some(e);
+                self.emitted.push(op);
+                return;
             }
-        }
+            op
+        } else {
+            // op = fd->newOp(isize,addr);
+            self.fd.new_op(isize, addr.clone())
+        };
         // fd->opSetOpcode(op,opc);
         let t_op = self.env.resolve_typeop(opc);
         self.fd.op_set_opcode(op, t_op);
@@ -1663,24 +1681,42 @@ impl<E: FlowEnvironment> PcodeEmit for FlowEmit<'_, '_, E> {
         let mut i = 0usize;
         let is_code_ref = self.fd.obank().get(op).expect("FlowEmit::dump: stale op").is_code_ref();
         if is_code_ref {
+            // Address addrcode(vars[0].space,vars[0].offset);
             // fd->opSetInput(op, fd->newCodeRef(addrcode), 0);
-            //   -- SEAM(W3-funcdata): newCodeRef (funcdata_varnode) not ported.
-            if self.deferred.is_none() {
-                self.deferred = Some(
-                    "PcodeEmitFd::dump: code-ref input needs Funcdata::newCodeRef \
-                     (funcdata_varnode factory)",
-                );
+            let cspace =
+                vars[0].space.as_ref().expect("FlowEmit::dump: code-ref varnode has no space").clone();
+            let addrcode = Address::new(cspace, vars[0].offset);
+            let cref = self.fd.new_code_ref(&addrcode);
+            // opSetInput is fallible only on the constant-share guard; an
+            // annotation code-ref is not a constant, so it never errors.
+            if let Err(e) = self.fd.op_set_input(op, cref, 0) {
+                self.error = Some(e);
+                self.emitted.push(op);
+                return;
             }
             i += 1;
         }
-        // for(;i<isize;++i){ vn=fd->newVarnode(size,space,offset); fd->opSetInput(op,vn,i); }
+        // for(;i<isize;++i){ vn=fd->newVarnode(vars[i].size,vars[i].space,vars[i].offset);
+        //                    fd->opSetInput(op,vn,i); }
+        //
+        // The C++ uses the (size, AddrSpace*, offset) `newVarnode` overload, which
+        // builds a free Varnode at that storage.  For a LOAD/STORE the slot-0
+        // operand is a spaceid constant in the \e constant space whose offset is
+        // the encoded AddrSpace (the Rust runtime stores the space INDEX rather
+        // than the heap pointer — LOSS-015); `dump` does not special-case it (the
+        // C++ does not either) — it is just a constant-space Varnode at that
+        // offset, built through the same factory.
         while i < vars.len() {
             let vd = &vars[i];
             let space = vd.space.as_ref().expect("FlowEmit::dump: varnode has no space").clone();
             let vn = self.fd.new_varnode_space_off(vd.size as int4, space, vd.offset);
             // opSetInput is fallible only on the constant-share guard (single
             // descendant); a freshly created varnode has none, so it never errors.
-            let _ = self.fd.op_set_input(op, vn, i as int4);
+            if let Err(e) = self.fd.op_set_input(op, vn, i as int4) {
+                self.error = Some(e);
+                self.emitted.push(op);
+                return;
+            }
             i += 1;
         }
         self.emitted.push(op);

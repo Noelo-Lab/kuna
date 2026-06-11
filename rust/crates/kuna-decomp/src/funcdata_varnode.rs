@@ -88,7 +88,7 @@ use kuna_base::types::{int4, uintb, uintm};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::seams::{OpId, VarnodeId};
-use crate::varnode::varnode_flags;
+use crate::varnode::{varnode_flags, DefOpInfo};
 
 /// Effect classes a [`crate::seams::FuncProto`] reports for a storage range
 /// (C++ `EffectRecord::effecttype`, `fspec.hh:392-397`).
@@ -276,6 +276,153 @@ impl Funcdata {
         let vn = self.vbank_mut().create(8, Address::new(cspc, fc_encoded), ct);
         self.assign_high(vn);
         vn
+    }
+
+    /// Build the `DefOpInfo` carrier (op id + its `SeqNum`) the `vbank.setDef`/
+    /// `createDef` paths take.  Mirrors the funcdata_op helper of the same name
+    /// (module-private there); replicated here so the codeRef-out factories below
+    /// (`newVarnodeOut`/`newUniqueOut`) can build their def carrier without a seam
+    /// edit (both are inherent `Funcdata` methods; the carrier is trivial).
+    fn def_op_info_v(&self, op: OpId) -> DefOpInfo {
+        let seqnum =
+            self.obank().get(op).expect("def_op_info_v: stale op").get_seq_num().clone();
+        DefOpInfo { id: op, seqnum }
+    }
+
+    /// Create a Varnode already defined as the output of a given PcodeOp
+    /// (C++ `Funcdata::newVarnodeOut`, `funcdata_varnode.cc:106`).
+    ///
+    /// More efficient than `newVarnode`+`opSetOutput`: it avoids inserting the free
+    /// form into the tree, and only queries `localmap` once.  The central
+    /// `vbank.createDef(s,m,ct,op)` drives the `xref` read-repointing callback, so
+    /// it split-borrows both banks ([`Funcdata::banks_mut`]) and runs
+    /// [`replace_reads_thunk`](Funcdata::replace_reads_thunk) over `obank`.
+    ///
+    /// SEAM(W4): the `localmap->queryProperties` symbol look-up + `setSymbolProperties`/
+    /// `setFlags(vflags & ~typelock)` tail is the W4 symbol scope; the W3 placeholder
+    /// reports no entry, so it is the [`Funcdata::set_varnode_properties`] no-op,
+    /// preserving the call cadence (and never touching the (space,offset,size) the
+    /// flow gate asserts).
+    pub fn new_varnode_out(&mut self, s: int4, m: &Address, op: OpId) -> KunaResult<VarnodeId> {
+        // Datatype *ct = glb->types->getBase(s,TYPE_UNKNOWN);
+        let ct = Self::type_base_unknown(s);
+        // Varnode *vn = vbank.createDef(s,m,ct,op);  -- split-borrow scoped so the
+        //   thunk (which holds &mut obank) drops before later &mut self calls.
+        let def = self.def_op_info_v(op);
+        let vn = {
+            let (vbank, obank) = self.banks_mut();
+            let mut replace = Funcdata::replace_reads_thunk(obank);
+            vbank.create_def(s, m.clone(), ct, def, &mut replace)?
+        };
+        // op->setOutput(vn);
+        self.obank_mut().get_mut(op).expect("new_varnode_out: stale op").set_output(Some(vn));
+        // assignHigh(vn);
+        self.assign_high(vn);
+        // if (s >= minLanedSize) checkForLanedRegister(s,m);
+        if s >= self.get_min_laned_size() {
+            self.check_for_laned_register(s, m);
+        }
+        // uint4 vflags=0; entry = localmap->queryProperties(...); ...  -- SEAM(W4)
+        self.set_varnode_properties(vn);
+        Ok(vn)
+    }
+
+    /// Allocate a unique-space Varnode created as the output of a given PcodeOp
+    /// (C++ `Funcdata::newUniqueOut`, `funcdata_varnode.cc:131`).
+    ///
+    /// The `vbank.createDefUnique(s,ct,op)` drives `xref`; same split-borrow as
+    /// [`new_varnode_out`](Funcdata::new_varnode_out).  No `localmap` match (the
+    /// unique space never carries symbols), matching the C++.
+    pub fn new_unique_out(&mut self, s: int4, op: OpId) -> KunaResult<VarnodeId> {
+        let ct = Self::type_base_unknown(s);
+        let def = self.def_op_info_v(op);
+        let vn = {
+            let (vbank, obank) = self.banks_mut();
+            let mut replace = Funcdata::replace_reads_thunk(obank);
+            vbank.create_def_unique(s, ct, def, &mut replace)?
+        };
+        // op->setOutput(vn);
+        self.obank_mut().get_mut(op).expect("new_unique_out: stale op").set_output(Some(vn));
+        self.assign_high(vn);
+        // if (s >= minLanedSize) checkForLanedRegister(s, vn->getAddr());
+        if s >= self.get_min_laned_size() {
+            let addr =
+                self.vbank().get(vn).expect("new_unique_out: stale vn").get_addr().clone();
+            self.check_for_laned_register(s, &addr);
+        }
+        Ok(vn)
+    }
+
+    /// Create an \e annotation Varnode holding a reference to a specific Address
+    /// (C++ `Funcdata::newCodeRef`, `funcdata_varnode.cc:224`).
+    ///
+    /// Used by the branch p-code ops to hold a destination address: a size-1
+    /// Varnode at `m` that holds no value in the data-flow.  The C++ then sets
+    /// `Varnode::annotation` on it.
+    ///
+    /// SEAM(W6): `glb->types->getTypeCode()` (the W6 `TypeFactory`'s code type) is
+    /// replaced with the unknown base (size 1), as the rest of this wave does.
+    ///
+    /// SEAM(W3-varnode): `vn->setFlags(Varnode::annotation)` cannot be expressed —
+    /// `Varnode::set_flags` is private to `varnode.rs` (this item has no edit
+    /// rights there), and no public `set_annotation` setter exists.  The (space,
+    /// offset, size) triple — the only thing the flow-linkage gate asserts and the
+    /// only thing the branch input needs for control-flow following — is faithful;
+    /// the `annotation` property bit is the single deferred detail.  Recorded as a
+    /// loss (LOSS: newCodeRef annotation flag — the `funcdata_varnode` review's
+    /// LOSS-036 carryover; unblocked only by `Varnode::set_flags` visibility).
+    pub fn new_code_ref(&mut self, m: &Address) -> VarnodeId {
+        // ct = glb->types->getTypeCode();  -- SEAM(W6): unknown base of size 1.
+        let ct = Self::type_base_unknown(1);
+        // vn = vbank.create(1,m,ct);
+        let vn = self.vbank_mut().create(1, m.clone(), ct);
+        // vn->setFlags(Varnode::annotation);  -- SEAM(W3-varnode): set_flags private.
+        self.assign_high(vn);
+        vn
+    }
+
+    // -----------------------------------------------------------------------
+    // Input-varnode formalization (the xref-driving tail of setInputVarnode)
+    // -----------------------------------------------------------------------
+
+    /// Formally define a Varnode as a function input (C++
+    /// `Funcdata::setInputVarnode`, `funcdata_varnode.cc:342`).
+    ///
+    /// The overlap pre-check ([`find_input_overlap`](Funcdata::find_input_overlap))
+    /// is the pure `vbank` read; this drives the mutating tail:
+    /// `vbank.setInput(vn)` (which runs the `xref` read-repointing callback, hence
+    /// the [`banks_mut`](Funcdata::banks_mut) split-borrow), `setVarnodeProperties`,
+    /// and the `funcp.hasEffect` unaffected/return-address marking.
+    ///
+    /// SEAM(W4): `funcp.hasEffect` (the prototype effect model) reports
+    /// `UNKNOWN_EFFECT` from the W3 `FuncProto` placeholder, so the
+    /// unaffected/return-address marks are never applied — faithful for the W3 IR
+    /// (no prototype yet), wired transparently when W4 lands.
+    pub fn set_input_varnode(&mut self, vn: VarnodeId) -> KunaResult<VarnodeId> {
+        // if (vn->isInput()) return vn;  // Already an input
+        if self.vbank().get(vn).expect("set_input_varnode: stale vn").is_input() {
+            return Ok(vn);
+        }
+        // First check if it overlaps any other varnode (the pure vbank read).
+        if let Some(invn) = self.find_input_overlap(vn)? {
+            // Identical pre-existing input: discard the candidate, return invn.
+            return Ok(invn);
+        }
+        // vn = vbank.setInput(vn);  -- split-borrow both banks for the xref callback.
+        let vn = {
+            let (vbank, obank) = self.banks_mut();
+            let mut replace = Funcdata::replace_reads_thunk(obank);
+            vbank.set_input(vn, &mut replace)?
+        };
+        // setVarnodeProperties(vn);
+        self.set_varnode_properties(vn);
+        // uint4 effecttype = funcp.hasEffect(vn->getAddr(),vn->getSize());
+        //   -- SEAM(W4): the W3 FuncProto reports no effect record (UNKNOWN_EFFECT),
+        //      so neither `setUnaffected` nor `setReturnAddress` fires.  The C++
+        //      branch ladder is transcribed for the W4 wave:
+        //   if (effecttype == unaffected) vn->setUnaffected();
+        //   if (effecttype == return_address) { vn->setUnaffected(); vn->setReturnAddress(); }
+        Ok(vn)
     }
 
     // -----------------------------------------------------------------------
