@@ -139,10 +139,12 @@ fn name_function_angr_vs_upstream() {
     let n_angr = arch.name_function(&addr);
     assert!(n_angr.starts_with("sub_"), "angr name was {n_angr}");
 
-    // upstream style: func_<raw-addr>.
+    // upstream style: func_<raw-addr>, where raw-addr is C++ Address::printRaw
+    // (AddrSpace::printRaw): zero-padded to the address width (4 bytes -> 8 hex
+    // digits), no space-name prefix, word-size division (wordsize 1 here).
     arch.name_style_angr = false;
     let n_up = arch.name_function(&addr);
-    assert!(n_up.starts_with("func_ram:0x401000"), "upstream name was {n_up}");
+    assert_eq!(n_up, "func_0x00401000", "upstream name was {n_up}");
 }
 
 #[test]

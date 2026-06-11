@@ -500,8 +500,17 @@ impl Architecture {
             // (kuna) angr-style: sub_<addr>
             return crate::database::kuna_function_name(addr);
         }
-        // ostringstream defname; defname << "func_"; addr.printRaw(defname);
-        format!("func_{}", print_raw(addr))
+        // C++: ostringstream defname; defname << "func_"; addr.printRaw(defname);
+        // kuna-base `Address::print_raw` is the faithful transcription of
+        // `Address::printRaw` -> `AddrSpace::printRaw` (zero-padded `0x<offset>`,
+        // word-size division, no space-name prefix).  A function address is a
+        // processor space, where `printRaw` cannot fail (the only erroring spaces
+        // are fspec/iop, which never hold a function), matching the C++ `void`
+        // nameFunction that has no throw site here.
+        let mut s = String::from("func_");
+        addr.print_raw(&mut s)
+            .expect("Architecture::nameFunction: Address::printRaw on a processor address (C++ cannot fail here)");
+        s
     }
 
     // -----------------------------------------------------------------------
@@ -543,16 +552,6 @@ impl Architecture {
 // ---------------------------------------------------------------------------
 // Free helpers (kept module-level to avoid borrowing `self` while moving fields)
 // ---------------------------------------------------------------------------
-
-/// C++ `Address::printRaw` rendered to the canonical `space:0xoffset` form
-/// (enough for the `func_<addr>` default name; the full `printRaw` lives in
-/// kuna-base, this is the architecture-side default-name shaping).
-fn print_raw(addr: &Address) -> String {
-    match addr.get_space() {
-        Some(spc) => format!("{}:0x{:x}", spc.get_name(), addr.get_offset()),
-        None => format!("0x{:x}", addr.get_offset()),
-    }
-}
 
 /// Build a fresh IR-boundary [`AddrSpaceManager`] carrying the const/unique/iop/
 /// fspec spaces the W3 IR factories reach, sized from the architecture's manager.
