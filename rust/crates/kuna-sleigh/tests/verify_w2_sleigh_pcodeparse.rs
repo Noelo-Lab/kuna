@@ -239,3 +239,113 @@ fn verify_w2pp_additive_left_associative() {
     let op1_in1 = ops[1].get_in(1);
     assert_eq!(op1_in1.get_offset().get_real(), 0x10, "op1 right operand = r1");
 }
+
+// ===========================================================================
+// ROUND 2 (verifier) — regression guard for the F1 repair (parse_number
+// partial-parse). Every expected value below was taken from a standalone
+// `istringstream >> uintb` + `unsetf(dec|hex|oct)` oracle program, the exact
+// C++ construct in pcodeparse.y's getNextToken trailer.
+// ===========================================================================
+
+// Multiple leading zeros then a non-octal digit: the stream consumes the run
+// of valid octal `0`s and stops at the bad digit, succeeding with value 0.
+//   oracle: "008" -> 0, "0008" -> 0, "09" -> 0
+#[test]
+fn verify_w2pp_r2_multi_leading_zero_then_bad_octal() {
+    for (src, want) in [("r1 = 008;", 0u64), ("r1 = 0008;", 0u64), ("r1 = 09;", 0u64)] {
+        let (ok, err, ops) = compile(&lang(), src);
+        assert!(ok, "C++ accepts {src:?} as a partial octal INTEGER; got {err:?}");
+        assert_eq!(err, "", "{src:?} must produce no error (stream does not fail)");
+        assert_eq!(ops.len(), 1, "{src:?} -> single COPY");
+        assert_eq!(
+            first_in_const(&ops, 0),
+            (ConstType::Real, want),
+            "{src:?} octal partial-parse value"
+        );
+    }
+}
+
+// Octal partial-parse that consumes more than one valid digit before the bad
+// one. These ARE reachable as single decstring tokens (isDec admits 8/9).
+//   oracle: "0178" -> 15, "0789012" -> 7
+#[test]
+fn verify_w2pp_r2_octal_multidigit_prefix() {
+    let cases = [
+        ("r1 = 0178;", 15u64),    // 0,1,7 valid octal, stop at 8 => 017 == 15
+        ("r1 = 0789012;", 7u64),  // 0,7 valid, stop at 8 => 07 == 7
+    ];
+    for (src, want) in cases {
+        let (ok, err, ops) = compile(&lang(), src);
+        assert!(ok, "C++ accepts {src:?}; got {err:?}");
+        assert_eq!(err, "", "{src:?} must not record an error");
+        assert_eq!(ops.len(), 1);
+        assert_eq!(
+            first_in_const(&ops, 0),
+            (ConstType::Real, want),
+            "{src:?} value vs istringstream oracle"
+        );
+    }
+}
+
+// LEXER guard for the hex trigger: the C++ moveState `case '0'` enters the
+// hexstring state ONLY on a lowercase `x` (`lookahead1 == 'x'`); a capital
+// `X` is NOT a hex trigger and is NOT a decimal digit, so `0X1A` lexes as the
+// decstring token `0` followed by the identifier `X1A`. With `X1A` unbound,
+// the statement is a syntax error — i.e. capital-`0X` is NOT a hex literal.
+// (This pins the lexer trigger so a future "fix" that accepts `0X` like the
+// raw istringstream would be caught as a DIVERGENCE from the C++ lexer.)
+#[test]
+fn verify_w2pp_r2_capital_x_is_not_hex_trigger() {
+    let (ok, err, _ops) = compile(&lang(), "r1 = 0X1A;");
+    assert!(
+        !ok,
+        "C++ lexer does not treat capital `0X` as hex; `0 X1A` is a syntax error"
+    );
+    assert_eq!(err, "Syntax error");
+
+    // Sanity: the lowercase form IS the hex literal and parses to 0x1A.
+    let (ok, err, ops) = compile(&lang(), "r1 = 0x1A;");
+    assert!(ok, "lowercase 0x1A is a hex literal; got {err:?}");
+    assert_eq!(first_in_const(&ops, 0), (ConstType::Real, 0x1A));
+}
+
+// Boundary: the empty-`0x` token fails (BADINTEGER => const 0 + recorded
+// error), and the u64-max octal/hex literals parse exactly at the boundary
+// while one-past-max overflows to BADINTEGER.
+//   oracle: "0x" -> BADINTEGER; "01777777777777777777777" -> 2^64-1;
+//           "0xffffffffffffffff" -> 2^64-1; "0x10000000000000000" -> BADINTEGER
+#[test]
+fn verify_w2pp_r2_empty_hex_and_overflow_boundary() {
+    // empty `0x`: lexer emits the `0x` hexstring token with zero hex digits;
+    // istringstream sets failbit => BADINTEGER. integervarnode BADINTEGER does
+    // NOT YYERROR, so the parse continues (ok) but const is 0 and the error is
+    // recorded.
+    let (_ok, err, ops) = compile(&lang(), "r1 = 0x;");
+    assert_eq!(
+        err, "Parsed integer is too big (overflow)",
+        "empty `0x` is BADINTEGER, mirrored to the overflow error path"
+    );
+    assert_eq!(first_in_const(&ops, 0), (ConstType::Real, 0));
+
+    // octal at exactly u64 max: 0o1777777777777777777777 == 0xFFFFFFFFFFFFFFFF.
+    let (ok, err, ops) = compile(&lang(), "r1 = 01777777777777777777777;");
+    assert!(ok, "octal u64-max literal must parse; got {err:?}");
+    assert_eq!(err, "");
+    assert_eq!(
+        first_in_const(&ops, 0),
+        (ConstType::Real, u64::MAX),
+        "octal max == 2^64-1"
+    );
+
+    // hex at exactly u64 max.
+    let (ok, _e, ops) = compile(&lang(), "r1 = 0xffffffffffffffff;");
+    assert!(ok);
+    assert_eq!(first_in_const(&ops, 0), (ConstType::Real, u64::MAX));
+
+    // one past u64 max in hex: checked_mul overflow => None => BADINTEGER.
+    let (_ok, err, _ops) = compile(&lang(), "r1 = 0x10000000000000000;");
+    assert_eq!(
+        err, "Parsed integer is too big (overflow)",
+        "hex 2^64 overflows the u64 accumulator => BADINTEGER"
+    );
+}
