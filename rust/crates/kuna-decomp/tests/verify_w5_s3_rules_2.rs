@@ -167,18 +167,20 @@ fn vn_size_of(fd: &Funcdata, vn: VarnodeId) -> int4 {
 }
 
 // =============================================================================
-// F1 (BLOCKER): RuleZextEliminate `val >> (8*smallsize)` panics for smallsize==8
+// F1 (was BLOCKER, now REPAIRED): RuleZextEliminate `val >> (8*smallsize)` with
+// an 8-byte ZEXT input (smallsize==8) has a shift count of 64.
 //
 // C++ ruleaction.cc:2535:  if ((val>>(8*smallsize))==0) ...
-// With an 8-byte ZEXT input, 8*smallsize == 64. The C++ shift by 64 is
-// platform-masked (x86: `val >> 0 == val`); the Rust plain `>>` debug-panics.
-// This test demonstrates the divergence: on a wide (8-byte) ZEXT input feeding
-// a comparison, the Rust port PANICS instead of evaluating the guard.
+// The C++ shift by 64 is x86-masked (count & 0x3f == 0, so `val >> 64 == val`);
+// the repaired port uses `wshr` (ADR-0003) to replicate that masking instead of
+// debug-panicking. For a non-zero constant the guard `(val>>64)==val` is
+// non-zero, so the rule DECLINES (returns 0) and leaves the op untouched —
+// exactly what the C++ oracle does. (Previously a passing `#[should_panic]`
+// evidencing the panic divergence; now asserts the masked-oracle result.)
 // =============================================================================
 
 #[test]
-#[should_panic(expected = "shift")]
-fn w5_s3_rules_2_zexteliminate_wide_input_panics_f1() {
+fn w5_s3_rules_2_zexteliminate_wide_input_masked_f1() {
     let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     // ZEXT of an 8-byte value to a 16-byte value, compared (== ) against a
@@ -191,10 +193,12 @@ fn w5_s3_rules_2_zexteliminate_wide_input_panics_f1() {
     fd.op_set_input(eq, c, 1).unwrap();
     fd.op_insert(eq, bl, None);
 
-    // C++ would compute (val >> 64) == val (x86 masking) and proceed; the Rust
-    // plain shift panics here. The #[should_panic] records the confirmed
-    // divergence (a debug-mode crash where upstream produces a value).
-    let _ = RuleZextEliminate.apply_op(eq, &mut fd);
+    // (val >> 64) is x86-masked to (val >> 0) == 0x1234 != 0, so the guard
+    // `(val>>(8*smallsize))==0` is false and the rule declines without mutating.
+    assert_eq!(RuleZextEliminate.apply_op(eq, &mut fd), 0);
+    assert_eq!(code_of(&fd, eq), OpCode::CPUI_INT_EQUAL);
+    assert_eq!(in_of(&fd, eq, 0), Some(zext_out)); // ZEXT input unchanged
+    assert_eq!(in_of(&fd, eq, 1), Some(c)); // constant unchanged
 }
 
 // Companion: the *narrow* (smallsize < 8) path the rule is meant for works and

@@ -37,7 +37,7 @@
 //!   loss.
 
 use kuna_base::address::{calc_mask, leastsigbit_set, signbit_negative, Address};
-use kuna_base::types::{int4, uintb};
+use kuna_base::types::{int4, uintb, Wrap};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
@@ -438,22 +438,29 @@ impl Rule for RuleAndCommute {
             let mut othermask = vn_nzmask(data, othervn_l);
             // Check if AND is only zeroing bits which are already zeroed by the
             // shift, in which case andmask takes care of it
+            // `sa` is the raw constant shift amount and can be >=64; the C++
+            // mask arithmetic relies on x86 shift-count masking, so use the
+            // wrapping shifts (ADR-0003) — identical to bare `>>`/`<<` for sa<64.
             if opc == OpCode::CPUI_INT_RIGHT {
-                if (fullmask >> sa) == othermask {
+                if fullmask.wshr(sa as u32) == othermask {
                     i += 1;
                     continue;
                 }
-                othermask <<= sa; // Calc mask as it will be after commute
+                othermask = othermask.wshl(sa as u32); // Calc mask as it will be after commute
             } else {
                 // NOTE: `(fullmask<<sa)&&fullmask` is the verbatim upstream
                 // expression (logical-and of two non-zero words, almost always
                 // true); preserved exactly so behavior matches.
-                let lhs = if ((fullmask << sa) != 0) && (fullmask != 0) { 1u64 } else { 0u64 };
+                let lhs = if (fullmask.wshl(sa as u32) != 0) && (fullmask != 0) {
+                    1u64
+                } else {
+                    0u64
+                };
                 if lhs == othermask {
                     i += 1;
                     continue;
                 }
-                othermask >>= sa; // Calc mask as it will be after commute
+                othermask = othermask.wshr(sa as u32); // Calc mask as it will be after commute
             }
             if othermask == 0 {
                 i += 1;
@@ -502,7 +509,8 @@ impl Rule for RuleAndCommute {
                     break;
                 }
                 let mut ormask2 = vn_nzmask(data, op_in(data, orop, 0)); // High part
-                ormask2 <<= vn_size(data, op_in(data, orop, 1)) * 8;
+                // shift count = lowpart size*8, up to 64; x86-masked in C++ (ADR-0003).
+                ormask2 = ormask2.wshl((vn_size(data, op_in(data, orop, 1)) * 8) as u32);
                 if (ormask2 & othermask) == 0 {
                     break;
                 }
@@ -609,7 +617,8 @@ impl Rule for RuleAndPiece {
             }
             let maskhigh = vn_nzmask(data, highvn_l);
             let masklow = vn_nzmask(data, lowvn_l);
-            if (maskhigh & (othermask >> (vn_size(data, lowvn_l) * 8))) == 0 {
+            // shift count = lowpart size*8, up to 64; x86-masked in C++ (ADR-0003).
+            if (maskhigh & othermask.wshr((vn_size(data, lowvn_l) * 8) as u32)) == 0 {
                 if (maskhigh == 0) && vn_constant(data, highvn_l) {
                     i += 1;
                     continue; // Handled by piece2zext
@@ -759,7 +768,8 @@ impl Rule for RuleAndCompare {
                     return 0;
                 }
                 baseconst = vn_offset(data, op_in(data, andop, 1));
-                andconst = baseconst << (vn_offset(data, op_in(data, subop, 1)) * 8);
+                // shift count = SUBPIECE offset*8, can reach 64; x86-masked in C++ (ADR-0003).
+                andconst = baseconst.wshl((vn_offset(data, op_in(data, subop, 1)) * 8) as u32);
             }
             OpCode::CPUI_INT_ZEXT => {
                 basevn = op_in(data, subop, 0);
@@ -889,7 +899,9 @@ impl Rule for RuleDoubleShift {
         if opc1 == OpCode::CPUI_INT_MULT {
             let val = vn_offset(data, op_in(data, op, 1));
             sa1 = leastsigbit_set(val);
-            if (val >> sa1) != 1u64 {
+            // sa1 == -1 when val == 0; C++ shifts by (-1 & 0x3f) == 63 via x86
+            // masking — `wshr((sa1 as u32))` reproduces it (ADR-0003).
+            if val.wshr(sa1 as u32) != 1u64 {
                 return 0; // Not multiplying by a power of 2
             }
             opc1 = OpCode::CPUI_INT_LEFT;
@@ -899,7 +911,8 @@ impl Rule for RuleDoubleShift {
         if opc2 == OpCode::CPUI_INT_MULT {
             let val = vn_offset(data, op_in(data, secop, 1));
             sa2 = leastsigbit_set(val);
-            if (val >> sa2) != 1u64 {
+            // sa2 == -1 when val == 0; see sa1 note (x86-masked, ADR-0003).
+            if val.wshr(sa2 as u32) != 1u64 {
                 return 0; // Not multiplying by a power of 2
             }
             opc2 = OpCode::CPUI_INT_LEFT;
@@ -932,14 +945,16 @@ impl Rule for RuleDoubleShift {
                 if data.lone_descend(secvn).is_none() {
                     return 0;
                 }
-                mask = (mask << sa2) & mask; // Most significant bits remain after initial INT_RIGHT
+                // sa2 is a raw constant shift amount, can be >=64; x86-masked in C++ (ADR-0003).
+                mask = mask.wshl(sa2 as u32) & mask; // Most significant bits remain after initial INT_RIGHT
                 diffsa = sa1 - sa2;
                 if diffsa != 0 {
                     // Don't collapse unless shift amounts are identical
                     return 0;
                 }
             } else {
-                mask = (mask >> sa2) & mask; // Least significant bits remain after initial INT_LEFT
+                // sa2 is a raw constant shift amount, can be >=64; x86-masked in C++ (ADR-0003).
+                mask = mask.wshr(sa2 as u32) & mask; // Least significant bits remain after initial INT_LEFT
                 diffsa = sa2 - sa1;
             }
             if diffsa == 0 {
@@ -1238,7 +1253,8 @@ impl Rule for RuleShiftCompare {
             }
             let val = vn_offset(data, savn);
             sa = leastsigbit_set(val);
-            if (val >> sa) != 1u64 {
+            // sa == -1 when val == 0; C++ shifts by (-1 & 0x3f) == 63 (x86, ADR-0003).
+            if val.wshr(sa as u32) != 1u64 {
                 return 0; // Not multiplying by a power of 2
             }
         } else if opc == OpCode::CPUI_INT_DIV {
@@ -1249,7 +1265,8 @@ impl Rule for RuleShiftCompare {
             }
             let val = vn_offset(data, savn);
             sa = leastsigbit_set(val);
-            if (val >> sa) != 1u64 {
+            // sa == -1 when val == 0; C++ shifts by (-1 & 0x3f) == 63 (x86, ADR-0003).
+            if val.wshr(sa as u32) != 1u64 {
                 return 0; // Not dividing by a power of 2
             }
             if data.lone_descend(shiftvn) != Some(op) {
@@ -1273,13 +1290,16 @@ impl Rule for RuleShiftCompare {
         let constval = vn_offset(data, constvn);
         let nzmask = vn_nzmask(data, mainvn);
         let newconst;
+        // `sa` is a raw constant shift amount and can be >=64 (LEFT/RIGHT case);
+        // every value-word shift below is x86-masked in C++, so use the wrapping
+        // shifts (ADR-0003) — identical to bare `>>`/`<<` for sa<64.
         if isleft {
-            newconst = constval >> sa;
-            if (newconst << sa) != constval {
+            newconst = constval.wshr(sa as u32);
+            if newconst.wshl(sa as u32) != constval {
                 return 0; // Information lost in constval
             }
-            let tmp = (nzmask << sa) & calc_mask(vn_size(data, shiftvn));
-            if (tmp >> sa) != nzmask {
+            let tmp = nzmask.wshl(sa as u32) & calc_mask(vn_size(data, shiftvn));
+            if tmp.wshr(sa as u32) != nzmask {
                 // Information is lost in main
                 // We replace the LEFT with and AND mask
                 // This must be the lone use of the shift
@@ -1287,7 +1307,7 @@ impl Rule for RuleShiftCompare {
                     return 0;
                 }
                 sa = 8 * vn_size(data, shiftvn) - sa;
-                let tmp = (1u64 << sa) - 1;
+                let tmp = (1u64).wshl(sa as u32).wrapping_sub(1);
                 let newmask = data.new_constant(vn_size(data, constvn), tmp);
                 let addr = op_addr(data, op);
                 let newop = data.new_op(2, addr);
@@ -1302,11 +1322,11 @@ impl Rule for RuleShiftCompare {
                 return 1;
             }
         } else {
-            if ((nzmask >> sa) << sa) != nzmask {
+            if nzmask.wshr(sa as u32).wshl(sa as u32) != nzmask {
                 return 0; // Information is lost
             }
-            newconst = (constval << sa) & calc_mask(vn_size(data, shiftvn));
-            if (newconst >> sa) != constval {
+            newconst = constval.wshl(sa as u32) & calc_mask(vn_size(data, shiftvn));
+            if newconst.wshr(sa as u32) != constval {
                 return 0; // Information is lost in constval
             }
         }
@@ -1673,7 +1693,11 @@ impl Rule for RuleZextEliminate {
         }
         let smallsize = vn_size(data, op_in(data, zext, 0));
         let val = vn_offset(data, vn2);
-        if (val >> (8 * smallsize)) == 0 {
+        // C++ `val>>(8*smallsize)` on a `uintb`: for an 8-byte ZEXT input the
+        // count is 64, and the C++ oracle relies on x86 shift-count masking
+        // (count & 0x3f) to yield `val>>0 == val`.  `wshr` (ADR-0003) replicates
+        // that masking; for smallsize<8 the count is <64 and `wshr` == `>>`.
+        if val.wshr((8 * smallsize) as u32) == 0 {
             // Is zero extension unnecessary
             let newvn = data.new_constant(smallsize, val);
             // newvn->copySymbolIfValid(vn2): copy data-type/symbol if valid.
@@ -1771,7 +1795,11 @@ impl Rule for RuleZextSless {
 
         let smallsize = vn_size(data, op_in(data, zext, 0));
         let val = vn_offset(data, vn2);
-        if (val >> (8 * smallsize - 1)) != 0 {
+        // C++ `val>>(8*smallsize-1)` on a `uintb`: for a valid comparison
+        // smallsize<8 so the count is <64, but the C++ has no precision guard and
+        // a wider ZEXT input would push the count past 63; `wshr` (ADR-0003)
+        // replicates the x86 shift-count masking and is `>>` for count<64.
+        if val.wshr((8 * smallsize - 1) as u32) != 0 {
             return 0; // Is zero extension unnecessary, sign bit must also be 0
         }
 
