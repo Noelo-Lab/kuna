@@ -480,7 +480,7 @@
    "depends_on": [
     "W1-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-sleigh",
    "loc_estimate": 1658,
@@ -503,7 +503,7 @@
    "depends_on": [
     "w2-sleigh-translate"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1658,
@@ -528,7 +528,7 @@
    "depends_on": [
     "W1-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-sleigh",
    "loc_estimate": 1569,
@@ -555,7 +555,7 @@
    "depends_on": [
     "w2-sleigh-context"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1569,
@@ -583,7 +583,7 @@
     "w2-sleigh-context",
     "W1-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-sleigh",
    "loc_estimate": 3344,
@@ -610,7 +610,7 @@
    "depends_on": [
     "w2-sleigh-pattern"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 3344,
@@ -636,7 +636,7 @@
     "w2-sleigh-pattern",
     "W1-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-sleigh",
    "loc_estimate": 3187,
@@ -659,7 +659,7 @@
    "depends_on": [
     "w2-sleigh-symbol"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 3187,
@@ -685,7 +685,7 @@
     "w2-sleigh-symbol",
     "W1-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-sleigh",
    "loc_estimate": 2066,
@@ -712,7 +712,7 @@
    "depends_on": [
     "w2-sleigh-semantics"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2066,
@@ -852,7 +852,7 @@
     "w2-sleigh-translate",
     "W1-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-sleigh",
    "loc_estimate": 702,
@@ -879,7 +879,7 @@
    "depends_on": [
     "w2-sleigh-loadimage"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 702,
@@ -910,7 +910,7 @@
     "w2-sleigh-loadimage",
     "W1-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-sleigh",
    "loc_estimate": 2534,
@@ -941,7 +941,7 @@
    "depends_on": [
     "w2-sleigh-emulate"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2534,
@@ -968,7 +968,7 @@
     "w2-sleigh-emulate",
     "W1-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-harness",
    "loc_estimate": 520,
@@ -989,7 +989,7 @@
    "depends_on": [
     "w2-harness-floatemu"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 520,
