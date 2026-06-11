@@ -60,3 +60,26 @@ replicate them, and (b) they can be reported/ported upstream deliberately later.
   allocator reuse. The W1 differential digest is pinned over a 58-op UB-free prefix.
 - Rust port requirement: none further; revisit if a datatest ever drives this path
   (would surface as a Rust panic where C++ silently misbehaves).
+
+## UB-5: default `MemoryBank::getPage`/`setPage` overrun the caller's buffer for non-word-aligned `skip`
+
+- Found: 2026-06-11 (W2 verification of w2-sleigh-emulate).
+- Anchor: `decompiler/cpp/memstate.cc:113-116` (getPage) and `:153-156` (setPage) — the
+  first-partial-word adjustment compares `startalign < addr` where `addr` is the page
+  start, not `addr + skip` (the requested start). For a `skip` that is not a multiple
+  of the wordsize — reachable via `getChunk`/`setChunk` at an unaligned offset on any
+  bank using the default page methods (`MemoryHashOverlay`) — the word loop copies
+  whole words from/to the word boundary *below* the requested start and runs past the
+  end of the caller's buffer by up to wordsize-1 bytes (UB). Related overread: the
+  full-word path of the default setPage (`memstate.cc:164`) reads `sizeof(uintb)` = 8
+  bytes through `*((const uintb *)val)` regardless of the wordsize, so for
+  wordsize < 8 it reads past the caller's buffer on the last word and stores
+  uninitialized bytes into the bank (observable through `MemoryHashOverlay`'s
+  unmasked word storage).
+- Workaround: none needed in the C++ tree (no in-tree caller does unaligned chunk I/O
+  on a default-page bank; `MemoryImage` and `MemoryPageOverlay` override the page
+  methods).
+- Rust port note: `rust/crates/kuna-sleigh/src/memstate.rs` transcribes the word-loop
+  arithmetic exactly; the overrun becomes a slice-bounds panic (ADR 0004 UB state,
+  pinned by `verify_w2emulate_unaligned_chunk_default_getpage_cpp_overrun_panics`) and
+  the full-word overread zero-fills the missing bytes (module docs, anomalies 1-2).
