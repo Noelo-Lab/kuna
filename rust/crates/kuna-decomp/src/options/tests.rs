@@ -295,13 +295,25 @@ fn test_parse_int_auto_bases() {
     assert_eq!(parse_int_auto::<int4>("0x"), Some(0));
     // trailing garbage stops extraction at the first non-digit.
     assert_eq!(parse_int_auto::<int4>("12ab"), Some(12));
-    // pure non-numeric => no conversion => None (C++11 leaves target unchanged).
-    assert_eq!(parse_int_auto::<int4>("abc"), None);
+    // Non-empty field with no leading digit: C++11 num_get sets failbit AND
+    // stores 0 (verified against g++/clang++ -std=c++11). The target is
+    // overwritten with 0, NOT left at the caller's sentinel.
+    assert_eq!(parse_int_auto::<int4>("abc"), Some(0));
+    assert_eq!(parse_int_auto::<int4>("unknown"), Some(0));
+    assert_eq!(parse_int_auto::<int4>("-"), Some(0));
+    assert_eq!(parse_int_auto::<int4>("+"), Some(0));
+    assert_eq!(parse_int_auto::<int4>("0xZ"), Some(0));
+    // Empty OR whitespace-only field: C++11 leaves the target unchanged
+    // (extraction fails before storing anything), so the sentinel survives.
     assert_eq!(parse_int_auto::<int4>(""), None);
-    assert_eq!(parse_int_auto::<int4>("unknown"), None);
+    assert_eq!(parse_int_auto::<int4>("   "), None);
+    assert_eq!(parse_int_auto::<int4>(" \t\n"), None);
+    // Leading whitespace then non-digit is a non-empty field => stores 0.
+    assert_eq!(parse_int_auto::<int4>("  abc"), Some(0));
     // unsigned path
     assert_eq!(parse_int_auto::<uint4>("0x100"), Some(0x100));
-    assert_eq!(parse_int_auto::<uint4>("notanint"), None);
+    assert_eq!(parse_int_auto::<uint4>("notanint"), Some(0));
+    assert_eq!(parse_int_auto::<uint4>(""), None);
 }
 
 // ---------------------------------------------------------------------------
@@ -324,9 +336,22 @@ fn test_extrapop() {
         "Global extrapop set"
     );
     assert!(g.log.iter().any(|s| s == "default_extrapop=8"));
-    // bad parameter (non-numeric, not "unknown") => sentinel -300 => ParseError.
+    // Non-numeric (not "unknown"): C++11 num_get stores 0 (not the -300
+    // sentinel), so expop=0 != -300 and the option is ACCEPTED with value 0
+    // (oracle: `int expop=-300; iss("garbage")>>expop => expop=0`).
     let mut g = RecordingContext::default();
-    let e = apply_named(&mut g, "extrapop", "garbage", "", "").unwrap_err();
+    assert_eq!(
+        apply_named(&mut g, "extrapop", "garbage", "", "").unwrap(),
+        "Global extrapop set"
+    );
+    assert!(g.log.iter().any(|s| s == "default_extrapop=0"));
+    // Empty (or whitespace-only) parameter: extraction leaves expop at the -300
+    // sentinel => ParseError (the only branch that still throws).
+    let mut g = RecordingContext::default();
+    let e = apply_named(&mut g, "extrapop", "", "", "").unwrap_err();
+    assert_eq!(e.explain(), "Bad extrapop adjustment parameter");
+    let mut g = RecordingContext::default();
+    let e = apply_named(&mut g, "extrapop", "   ", "", "").unwrap_err();
     assert_eq!(e.explain(), "Bad extrapop adjustment parameter");
     // per-function path.
     let mut g = RecordingContext::default();
@@ -560,11 +585,20 @@ fn test_maxlinewidth() {
         "Maximum line width set to 120"
     );
     assert!(g.log.iter().any(|s| s == "max_line=120"));
-    // empty/non-numeric => sentinel -1 => ParseError.
+    // Empty (or whitespace-only) => the -1 sentinel survives => ParseError.
     let e = apply_named(&mut g, "maxlinewidth", "", "", "").unwrap_err();
     assert_eq!(e.explain(), "Must specify integer linewidth");
-    let e = apply_named(&mut g, "maxlinewidth", "wide", "", "").unwrap_err();
+    let e = apply_named(&mut g, "maxlinewidth", "   ", "", "").unwrap_err();
     assert_eq!(e.explain(), "Must specify integer linewidth");
+    // Non-empty non-numeric ("wide"): C++11 num_get stores 0 (val=0 != -1), so
+    // the option is ACCEPTED with width 0 (oracle: `int val=-1; iss("wide")>>val
+    // => val=0`).
+    let mut g = RecordingContext::c_lang();
+    assert_eq!(
+        apply_named(&mut g, "maxlinewidth", "wide", "", "").unwrap(),
+        "Maximum line width set to wide"
+    );
+    assert!(g.log.iter().any(|s| s == "max_line=0"));
 }
 
 #[test]
@@ -578,10 +612,22 @@ fn test_indentincrement_and_commentindent() {
         apply_named(&mut g, "commentindent", "20", "", "").unwrap(),
         "Comment indent set to 20"
     );
-    let e = apply_named(&mut g, "indentincrement", "x", "", "").unwrap_err();
+    // Empty (or whitespace-only) => the -1 sentinel survives => ParseError.
+    let e = apply_named(&mut g, "indentincrement", "", "", "").unwrap_err();
     assert_eq!(e.explain(), "Must specify integer increment");
-    let e = apply_named(&mut g, "commentindent", "x", "", "").unwrap_err();
+    let e = apply_named(&mut g, "commentindent", "  ", "", "").unwrap_err();
     assert_eq!(e.explain(), "Must specify integer comment indent");
+    // Non-empty non-numeric ("x"): C++11 num_get stores 0 (val=0 != -1), so the
+    // option is ACCEPTED with value 0 (oracle: `iss("x")>>val => val=0`).
+    let mut g = RecordingContext::c_lang();
+    assert_eq!(
+        apply_named(&mut g, "indentincrement", "x", "", "").unwrap(),
+        "Characters per indent level set to x"
+    );
+    assert_eq!(
+        apply_named(&mut g, "commentindent", "x", "", "").unwrap(),
+        "Comment indent set to x"
+    );
 }
 
 // ---------------------------------------------------------------------------

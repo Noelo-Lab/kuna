@@ -357,9 +357,14 @@ fn encode_comment_type(name: &str) -> KunaResult<uint4> {
 /// decimal.  Returns:
 ///   - `Some(value)` if at least one digit was extracted (C++ stores the parsed
 ///     value);
-///   - `None` if no conversion happened (C++11: a failed extraction leaves the
-///     target variable **unchanged**, so the caller's sentinel default survives
-///     — which is exactly what every caller tests).
+///   - `Some(0)` if the field was **non-empty but had no leading digit** (e.g.
+///     `"abc"`, `"-"`, `"  abc"`, `"0xZ"`).  C++11 `num_get` sets failbit *and*
+///     stores `0` in this case, overwriting the caller's sentinel — so the
+///     caller **accepts** the value 0 rather than throwing;
+///   - `None` only if the field was empty or whitespace-only (`""`, `"   "`).
+///     C++11 leaves the target variable **unchanged** here, so the caller's
+///     sentinel default survives and it rejects — verified against a g++/clang++
+///     -std=c++11 `istringstream >> int/unsigned` oracle.
 ///
 /// On overflow the C++ `num_get` facet sets failbit and clamps the target to
 /// `numeric_limits<T>::max()` (or `min()` for a negative signed result).  The
@@ -379,6 +384,14 @@ fn parse_int_auto<T: IntParse>(s: &str) -> Option<T> {
     {
         i += 1;
     }
+    // C++11 `num_get` distinguishes a truly-empty field (input was empty or
+    // whitespace-only) from a non-empty field that simply has no leading digit.
+    // The former leaves the target *unchanged* (sentinel survives), the latter
+    // stores `0` and sets failbit.  This is decided at the point right after the
+    // leading-whitespace skip, before the sign/`0x` prefix is consumed.  Verified
+    // against a g++/clang++ -std=c++11 oracle: `iss("")>>val` and `iss("   ")>>val`
+    // leave `val=-1`, whereas `iss("abc")`/`iss("-")`/`iss("  abc")` store `val=0`.
+    let empty_field = i >= bytes.len();
     let mut neg = false;
     if i < bytes.len() && (bytes[i] == b'+' || bytes[i] == b'-') {
         neg = bytes[i] == b'-';
@@ -420,8 +433,16 @@ fn parse_int_auto<T: IntParse>(s: &str) -> Option<T> {
         i += 1;
     }
     if !any {
-        // No conversion happened: C++11 leaves the target unchanged.
-        return None;
+        // No digit was extracted.  C++11 `num_get`:
+        //   - empty/whitespace-only field -> target left unchanged (return None,
+        //     so the caller's sentinel survives and it throws/rejects);
+        //   - non-empty field with no leading digit (e.g. "abc", "-", "  abc",
+        //     "0xZ", ".5") -> `0` stored with failbit set (return Some(0), which
+        //     differs from the sentinel and so the caller *accepts* it).
+        if empty_field {
+            return None;
+        }
+        return Some(T::from_u64(0, false));
     }
     // Overflow is whatever overflowed the u64 accumulator OR exceeded the
     // *target* type's representable magnitude for this sign — `num_get` measures
