@@ -1011,7 +1011,7 @@
    "depends_on": [
     "W2-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 2504,
@@ -1034,7 +1034,7 @@
    "depends_on": [
     "w3-ir-varnode"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2504,
@@ -1058,7 +1058,7 @@
     "w3-ir-varnode",
     "W2-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1605,
@@ -1081,7 +1081,7 @@
    "depends_on": [
     "w3-ir-op"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1605,
@@ -1387,7 +1387,7 @@
     "w3-ir-op",
     "W2-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 2294,
@@ -1418,7 +1418,7 @@
    "depends_on": [
     "w3-ir-userop-inject"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2294,
