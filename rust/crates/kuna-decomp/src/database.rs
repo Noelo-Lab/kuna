@@ -1592,8 +1592,13 @@ impl Database {
         if self.scopes[scope].maptable[space_index].is_none() {
             self.scopes[scope].maptable[space_index] = Some(EntryMap::new());
         }
-        // lastaddress = addr + (sz-1); detect address-space overflow.
-        let last_offset = addr.get_offset().wrapping_add((sz - 1) as uintb);
+        // lastaddress = addr + (sz-1); detect address-space overflow.  C++
+        // `Address lastaddress = addr + (sz-1)` uses `Address::operator+`, which
+        // wraps the offset at the *space mask* (`base->wrapOffset`), not at a raw
+        // 64-bit boundary — `&Address + i64` reproduces that.  This matters for
+        // sub-64-bit spaces: a symbol straddling the top of a 4-byte space wraps
+        // below its start and is rejected (database.cc:1883-1889).
+        let last_offset = (addr + (sz - 1) as i64).get_offset();
         if last_offset < addr.get_offset() {
             return Err(KunaError::lowlevel(format!(
                 "Symbol {} extends beyond the end of the address space",
