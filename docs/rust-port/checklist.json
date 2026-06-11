@@ -1105,7 +1105,7 @@
     "w3-ir-op",
     "W2-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 4704,
@@ -1128,7 +1128,7 @@
    "depends_on": [
     "w3-ir-block"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 4704,
@@ -1153,7 +1153,7 @@
     "w3-ir-block",
     "W2-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 3090,
@@ -1178,7 +1178,7 @@
    "depends_on": [
     "w3-ir-funcdata"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 3090,
@@ -1202,7 +1202,7 @@
     "w3-ir-funcdata",
     "W2-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1541,
@@ -1223,7 +1223,7 @@
    "depends_on": [
     "w3-ir-funcdata-op"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1541,
@@ -1245,7 +1245,7 @@
     "w3-ir-funcdata",
     "W2-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 2285,
@@ -1266,7 +1266,7 @@
    "depends_on": [
     "w3-ir-funcdata-varnode"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2285,
@@ -1289,7 +1289,7 @@
     "w3-ir-funcdata",
     "W2-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1633,
@@ -1312,7 +1312,7 @@
    "depends_on": [
     "w3-ir-flow"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1633,
@@ -1336,7 +1336,7 @@
     "w3-ir-flow",
     "W2-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 3669,
@@ -1359,7 +1359,7 @@
    "depends_on": [
     "w3-ir-jumptable"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 3669,
@@ -1454,7 +1454,7 @@
     "w3-ir-jumptable",
     "W2-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 488,
@@ -1493,7 +1493,7 @@
    "depends_on": [
     "w3-kuna-flow-pack"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 488,
@@ -4910,12 +4910,12 @@
     "w3-kuna-flow-pack",
     "w3-kuna-flow-pack-verify"
    ],
-   "status": "todo",
+   "status": "landed",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp  # IR construction fixtures",
    "loc_estimate": 0,
    "cpp_blob_sha": {},
-   "notes": "Wave exit: every item in W3 done (ports gated, verifies ACCEPTed)."
+   "notes": "Wave exit: every item in W3 done (ports gated, verifies ACCEPTed). Gate 2026-06-12: workspace 873 tests 0 failed, clippy clean; all 10 W3 items verified."
   },
   {
    "id": "W4-gate",

@@ -1,5 +1,24 @@
 # kuna Progress Log
 
+## Session (2026-06-12) — rust-port W3: core IR complete (arenas, Funcdata, FlowInfo, jumptables)
+
+All ten W3 items ACCEPTed (one transient API failure mid-wave; chain relaunched, no
+work lost). The decompiler's heart now exists in Rust: VarnodeBank/PcodeOpBank
+slotmap arenas with the C++ comparators pinned by an exhaustive >100k-pair
+cross-check, the three intrusive op lists with splice-order fidelity, the full
+FlowBlock hierarchy + CHK dominators, Funcdata with its mutation API (SeqNum/
+create_index allocation order transcribed statement-for-statement), FlowInfo
+generating ops through the W2 Sleigh engine (validated against the lift-fixture
+corpus), jumptable recovery models, and the five kuna flow hooks (GH-8817/9191/
+8471/6930/6882) as logic ports awaiting their W4 Rule wrappers.
+
+Gate: workspace 873 tests, 0 failures, clippy clean. Losses LOSS-029..034 recorded
+(W4/W6/W7/W8 seam deferrals — typed, anchored, and verifier-confirmed; the seam
+inventory IS the W4/W7 work plan). Cumulative: 54/207 unit tests, 53/200 checklist
+items closed. Next: W4 framework wave (action engine, options, database,
+Architecture + front-ends, kuna stage registry with stages.toml codegen).
+
+
 ## Session (2026-06-11) — rust-port W2: SLEIGH runtime ported; Rust lifts byte-identical p-code
 
 All ten W2 items ACCEPTed (two relaunched on Opus after a session-limit failure):

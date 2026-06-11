@@ -67,3 +67,18 @@ _(none yet)_
 | w2-sleigh-core | fleet(opus) | independent(opus) | golden_lift 16/16 (1171 insns) | ACCEPT-WITH-LOSSES |  |
 | w2-sleigh-emulate | fleet | independent | memstate/emulate tests | ACCEPT-WITH-LOSSES |  |
 | w2-harness-floatemu | fleet | independent | 31/31 exact-name TESTs | ACCEPT-WITH-LOSSES |  |
+
+## W3 (2026-06-12)
+
+| item | porter | verifier | gate | verdict | commit |
+|---|---|---|---|---|---|
+| w3-ir-varnode | fleet(opus) | independent(opus) | comparator cross-check >100k pairs | ACCEPT-WITH-LOSSES |  |
+| w3-ir-op | fleet(opus) | independent(opus) | intrusive-list model tests | ACCEPT-WITH-LOSSES |  |
+| w3-ir-userop-inject | fleet(opus) | independent(opus) | spec payload decodes | ACCEPT-WITH-LOSSES |  |
+| w3-ir-block | fleet(opus) | independent(opus) | dominator matrices | ACCEPT-WITH-LOSSES |  |
+| w3-ir-funcdata | fleet(opus) | independent(opus) | splice/structureReset | ACCEPT-WITH-LOSSES |  |
+| w3-ir-funcdata-op | fleet(opus) | independent(opus) | SeqNum allocation order | ACCEPT-WITH-LOSSES |  |
+| w3-ir-funcdata-varnode | fleet(opus) | independent(opus) | bank-state outcomes | ACCEPT-WITH-LOSSES |  |
+| w3-ir-flow | fleet(opus) | independent(opus) | FlowInfo vs lift fixtures | ACCEPT-WITH-LOSSES |  |
+| w3-ir-jumptable | fleet(opus) | independent(opus) | PathMeld/guard graphs | ACCEPT-WITH-LOSSES |  |
+| w3-kuna-flow-pack | fleet(opus) | independent(opus) | five hook logic tests | ACCEPT |  |
