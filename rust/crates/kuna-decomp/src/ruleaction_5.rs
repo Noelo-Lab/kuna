@@ -72,8 +72,20 @@ use crate::seams::{OpId, TypeOp};
 /// this file ever *set*, transcribing the `opflags` from `typeop.cc` verbatim
 /// (those are the bits `set_opcode` ORs into the op's flag word, on which
 /// `isBoolOutput`/`isCommutative`/etc. depend).  The `name` is the upstream
-/// display symbol.  Any other op-code is a porting bug (the rules below set only
-/// these), so the fallback uses the debug symbol with no flags.
+/// display symbol.
+///
+/// The set of op-codes the rules in this file can set is: `CPUI_COPY` and
+/// `CPUI_INT_EQUAL`/`CPUI_INT_NOTEQUAL` (RuleEqual2Zero/RuleEqual2Constant), plus
+/// every op-code `get_booleanflip` can return for a boolean-output input op
+/// (RuleBoolNegate sets `flip_op`'s code to `get_booleanflip(flip_op->code())`).
+/// `get_booleanflip` (opcodes.cc:94-135) returns one of: `CPUI_COPY`,
+/// `CPUI_INT_EQUAL`, `CPUI_INT_NOTEQUAL`, `CPUI_INT_SLESS`, `CPUI_INT_SLESSEQUAL`,
+/// `CPUI_INT_LESS`, `CPUI_INT_LESSEQUAL`, `CPUI_FLOAT_EQUAL`,
+/// `CPUI_FLOAT_NOTEQUAL`, `CPUI_FLOAT_LESS`, `CPUI_FLOAT_LESSEQUAL`.  All of those
+/// are covered below with their `glb->inst[opc]` opflags so the flipped op keeps
+/// the right `binary`/`booloutput`/`commutative` bits.  Any other op-code is a
+/// porting bug (the rules below set only these), so the fallback uses the debug
+/// symbol with no flags.
 fn type_op_seam(opc: OpCode) -> TypeOp {
     // opflags transcribed verbatim from decompiler/cpp/typeop.cc.  SEAM(W6).
     let (flags, name): (uint4, &str) = match opc {
@@ -89,6 +101,28 @@ fn type_op_seam(opc: OpCode) -> TypeOp {
             pcodeop_flags::binary | pcodeop_flags::booloutput | pcodeop_flags::commutative,
             "!=",
         ),
+        // TypeOpIntSless: PcodeOp::binary | PcodeOp::booloutput
+        OpCode::CPUI_INT_SLESS => (pcodeop_flags::binary | pcodeop_flags::booloutput, "<"),
+        // TypeOpIntSlessEqual: PcodeOp::binary | PcodeOp::booloutput
+        OpCode::CPUI_INT_SLESSEQUAL => (pcodeop_flags::binary | pcodeop_flags::booloutput, "<="),
+        // TypeOpIntLess: PcodeOp::binary | PcodeOp::booloutput
+        OpCode::CPUI_INT_LESS => (pcodeop_flags::binary | pcodeop_flags::booloutput, "<"),
+        // TypeOpIntLessEqual: PcodeOp::binary | PcodeOp::booloutput
+        OpCode::CPUI_INT_LESSEQUAL => (pcodeop_flags::binary | pcodeop_flags::booloutput, "<="),
+        // TypeOpFloatEqual: PcodeOp::binary | PcodeOp::booloutput | PcodeOp::commutative
+        OpCode::CPUI_FLOAT_EQUAL => (
+            pcodeop_flags::binary | pcodeop_flags::booloutput | pcodeop_flags::commutative,
+            "==",
+        ),
+        // TypeOpFloatNotEqual: PcodeOp::binary | PcodeOp::booloutput | PcodeOp::commutative
+        OpCode::CPUI_FLOAT_NOTEQUAL => (
+            pcodeop_flags::binary | pcodeop_flags::booloutput | pcodeop_flags::commutative,
+            "!=",
+        ),
+        // TypeOpFloatLess: PcodeOp::binary | PcodeOp::booloutput
+        OpCode::CPUI_FLOAT_LESS => (pcodeop_flags::binary | pcodeop_flags::booloutput, "<"),
+        // TypeOpFloatLessEqual: PcodeOp::binary | PcodeOp::booloutput
+        OpCode::CPUI_FLOAT_LESSEQUAL => (pcodeop_flags::binary | pcodeop_flags::booloutput, "<="),
         // TypeOpBoolNegate: PcodeOp::unary | PcodeOp::booloutput
         OpCode::CPUI_BOOL_NEGATE => (pcodeop_flags::unary | pcodeop_flags::booloutput, "!"),
         // Fallback: should not be reached by these rules.  No flags invented.
