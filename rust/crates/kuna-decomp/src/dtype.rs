@@ -249,6 +249,7 @@ pub const BASE2SUB: [sub_metatype; 18] = [
 /// Default sub-metatype for a given meta-type (C++ `Datatype::base2sub[m]`).
 #[inline]
 pub fn base2sub(m: type_metatype) -> sub_metatype {
+    // cast: type_metatype discriminants are 0..17, all in-bounds for BASE2SUB[18].
     BASE2SUB[m as usize]
 }
 
@@ -919,6 +920,8 @@ impl Datatype {
         match &self.kind {
             DatatypeKind::Pointer { .. } | DatatypeKind::PointerRel { .. } => 1,
             DatatypeKind::Array { .. } => 1,
+            // cast: field count fits int4 (a struct/union with >2^31 fields is
+            // impossible — C++ also stores the count as int4).
             DatatypeKind::Struct { field, .. } => field.len() as int4,
             DatatypeKind::Union { field } => field.len() as int4,
             // TypePartialUnion::numDepend is computed from the resolved field
@@ -935,6 +938,8 @@ impl Datatype {
             DatatypeKind::PointerRel { ptrto, .. } => Some(Rc::clone(ptrto)),
             DatatypeKind::Array { arrayof, .. } => Some(Rc::clone(arrayof)),
             DatatypeKind::Struct { field, .. } => {
+                // cast: index is a valid component index (0..numDepend); negative
+                // would wrap to a huge usize, but `get` then returns None safely.
                 field.get(index as usize).map(|f| Rc::clone(&f.field_type))
             }
             DatatypeKind::Union { field } => {
@@ -1094,12 +1099,14 @@ impl Datatype {
         let _ = level;
         match self.kind {
             // Kinds whose C++ compare is exactly the base body.
-            DatatypeKind::Base
-            | DatatypeKind::Void
-            | DatatypeKind::Unknown
-            | DatatypeKind::Spacebase { .. } => Ok(self.compare_base(op)),
+            DatatypeKind::Base | DatatypeKind::Void | DatatypeKind::Unknown => {
+                Ok(self.compare_base(op))
+            }
             // Subclass overrides: TypePointer/TypeArray/TypeStruct/TypeUnion/
-            // TypeEnum/TypeCode/TypePartial*/TypePointerRel::compare.  // SEAM(W6)
+            // TypeEnum/TypeCode/TypePartial*/TypePointerRel/TypeSpacebase::compare.
+            // (TypeSpacebase::compare delegates to compareDependency, which
+            // tie-breaks on spaceid then localframe after the base step —
+            // type.cc:3498-3514.)  // SEAM(W6)
             _ => Err(KunaError::lowlevel(
                 "SEAM(W6): Datatype::compare subclass override not yet ported",
             )),
@@ -1125,11 +1132,12 @@ impl Datatype {
     /// `compare` and is implemented for real.  Subclass overrides need W6.
     pub fn compare_dependency(&self, op: &Datatype) -> KunaResult<int4> {
         match self.kind {
-            DatatypeKind::Base
-            | DatatypeKind::Void
-            | DatatypeKind::Unknown
-            | DatatypeKind::Spacebase { .. } => Ok(self.compare_dependency_base(op)),
-            // TypePointer/TypeArray/.../TypePointerRel::compareDependency.  // SEAM(W6)
+            DatatypeKind::Base | DatatypeKind::Void | DatatypeKind::Unknown => {
+                Ok(self.compare_dependency_base(op))
+            }
+            // TypePointer/TypeArray/.../TypePointerRel/TypeSpacebase::compareDependency.
+            // (TypeSpacebase tie-breaks on spaceid then localframe after the base
+            // step — type.cc:3504-3514.)  // SEAM(W6)
             _ => Err(KunaError::lowlevel(
                 "SEAM(W6): Datatype::compareDependency subclass override not yet ported",
             )),
@@ -1231,21 +1239,31 @@ impl Datatype {
 
     /// Tailor data-type propagation based on Varnode use (C++ `resolveInFlow`).
     ///
-    /// SEAM(W6): the base returns `this`; the union/pointer-to-union overrides
-    /// do field resolution against the PcodeOp/slot.  The `op`/`slot` arguments
-    /// are modelled opaquely (`OpId`/`int4`) so W6 can wire the real walk.
+    /// SEAM(W6): the base body (type.cc:577-581) returns `this` (the data-type
+    /// unchanged) for every non-union type; only the union/pointer-to-union
+    /// overrides do field resolution against the PcodeOp/slot.  The `op`/`slot`
+    /// arguments are modelled opaquely (`OpId`/`int4`) so W6 can wire the real
+    /// walk.
+    ///
+    /// LOSS (F2): this seams the base "return self" too — restoring it needs an
+    /// `Rc<Self>` handle (a signature change), and no W5 caller hits this path
+    /// (W8 seam surface).  A W8 rule calling `resolveInFlow` on a non-union type
+    /// must port the base "return self" here.
     pub fn resolve_in_flow(&self, _op: crate::seams::OpId, _slot: int4) -> KunaResult<Rc<Datatype>> {
         Err(KunaError::lowlevel(
-            "SEAM(W6): Datatype::resolveInFlow needs union resolution + Funcdata wiring",
+            "SEAM(W6): Datatype::resolveInFlow needs union resolution + Funcdata wiring \
+             (base 'return self' also deferred — see LOSS F2)",
         ))
     }
 
     /// Find a previously resolved sub-type (C++ `findResolve`).
     ///
-    /// SEAM(W6): the const version of `resolveInFlow`.
+    /// SEAM(W6): the const version of `resolveInFlow`.  Same LOSS (F2): the base
+    /// body returns `this`, deferred here pending the `Rc<Self>` handle.
     pub fn find_resolve(&self, _op: crate::seams::OpId, _slot: int4) -> KunaResult<Rc<Datatype>> {
         Err(KunaError::lowlevel(
-            "SEAM(W6): Datatype::findResolve needs union resolution",
+            "SEAM(W6): Datatype::findResolve needs union resolution \
+             (base 'return self' also deferred — see LOSS F2)",
         ))
     }
 
