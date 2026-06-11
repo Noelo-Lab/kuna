@@ -83,6 +83,7 @@ name = "kuna-sleigh"
 version = "0.1.0"
 dependencies = [
  "kuna-base",
+ "kuna-num",
 ]
 
 [[package]]

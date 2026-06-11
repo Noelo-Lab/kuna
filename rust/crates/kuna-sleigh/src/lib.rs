@@ -16,3 +16,20 @@
 //! this crate only reads the `.sla` artifacts it produces.
 //!
 //! Lints are inherited from the workspace (`[lints] workspace = true`).
+pub mod translate;
+pub mod context;
+pub mod globalcontext;
+pub mod slghpattern;
+pub mod slghpatexpress;
+pub mod slghsymbol;
+pub mod semantics;
+pub mod pcodecompile;
+pub mod pcodeparse;
+pub mod sleigh;
+pub mod sleighbase;
+pub mod slaformat;
+pub mod loadimage;
+pub mod loadimage_xml;
+pub mod memstate;
+pub mod emulate;
+pub mod emulateutil;
