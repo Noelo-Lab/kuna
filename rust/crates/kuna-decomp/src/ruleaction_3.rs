@@ -2654,4 +2654,213 @@ mod tests {
         let collapse = (specs[14].ctor)();
         assert!(collapse.get_op_list().len() > 2);
     }
+
+    // =====================================================================
+    // VERIFIER adversarial tests (item w5-s3-rules-3) — target the fully
+    // ported rules whose rewrites are most fragile (slot selection, sgn
+    // complement, the 1-i spacebase branch, the PIECE materialization).
+    // =====================================================================
+
+    /// RuleBoolZext, the INT_AND logic branch: `(zext(B1)*-1) & (zext(B2)*-1)`
+    /// must rewrite to `zext(B1 && B2) * -1`.  This is the most complex
+    /// multi-op rewrite in the batch; it exercises the `multop2` slot-selection
+    /// (`multop1 == in0.def ? in1 : in0`) and the coeff==calc_mask(size) reuse.
+    #[test]
+    fn w5_s3_rules_3_bool_zext_and_branch_rewrites_to_zext_booland() {
+        let mut fd = build_fd();
+        // B1 = BOOL_AND(a,b) ; B2 = BOOL_OR(c,d)  (both boolean-by-opcode)
+        let a = make_input(&mut fd, 0x100, 1);
+        let b = make_input(&mut fd, 0x101, 1);
+        let c = make_input(&mut fd, 0x102, 1);
+        let d = make_input(&mut fd, 0x103, 1);
+        let (_b1op, b1) = def_op(&mut fd, OpCode::CPUI_BOOL_AND, &[a, b], 1);
+        let (_b2op, b2) = def_op(&mut fd, OpCode::CPUI_BOOL_OR, &[c, d], 1);
+        // zext(B1), zext(B2) : 4 bytes
+        let (_z1op, z1) = def_op(&mut fd, OpCode::CPUI_INT_ZEXT, &[b1], 4);
+        let (_z2op, z2) = def_op(&mut fd, OpCode::CPUI_INT_ZEXT, &[b2], 4);
+        // m1 = zext(B1) * -1 ; m2 = zext(B2) * -1
+        let neg1a = fd.new_constant(4, calc_mask(4));
+        let neg1b = fd.new_constant(4, calc_mask(4));
+        let (_m1op, m1) = def_op(&mut fd, OpCode::CPUI_INT_MULT, &[z1, neg1a], 4);
+        let (_m2op, m2) = def_op(&mut fd, OpCode::CPUI_INT_MULT, &[z2, neg1b], 4);
+        // actionop = m1 & m2 (multop1 = m1's def is in slot0 of the AND here)
+        let (andop, _andout) = def_op(&mut fd, OpCode::CPUI_INT_AND, &[m1, m2], 4);
+
+        // apply on the ZEXT(B1) op (the rule's entry opcode is INT_ZEXT)
+        let z1op = vn_def(&fd, z1).unwrap();
+        assert_eq!(RuleBoolZext.apply_op(z1op, &mut fd), 1);
+
+        // The AND op is now INT_MULT(newzext, -1); newzext = ZEXT(BOOL_AND(B1,B2)).
+        assert_eq!(op_code(&fd, andop), OpCode::CPUI_INT_MULT);
+        let newzout = op_in(&fd, andop, 0).unwrap();
+        let coeff = op_in(&fd, andop, 1).unwrap();
+        assert!(vn_is_constant(&fd, coeff));
+        assert_eq!(vn_offset(&fd, coeff), calc_mask(4));
+        let newzext = vn_def(&fd, newzout).unwrap();
+        assert_eq!(op_code(&fd, newzext), OpCode::CPUI_INT_ZEXT);
+        let boolres = op_in(&fd, newzext, 0).unwrap();
+        let booland = vn_def(&fd, boolres).unwrap();
+        // INT_AND maps to BOOL_AND; operands are the *unextended* booleans B1,B2.
+        assert_eq!(op_code(&fd, booland), OpCode::CPUI_BOOL_AND);
+        assert_eq!(op_in(&fd, booland, 0), Some(b1));
+        assert_eq!(op_in(&fd, booland, 1), Some(b2));
+    }
+
+    /// RuleTestSign, the sgn == -1 path: `(V s>> 31) == -1` (INT_EQUAL, offset
+    /// == calc_mask) gives sgn=-1, not complemented (EQUAL), so the rewrite is
+    /// `V s< 0` (SLESS, in0=V, in1=0).  Distinct from the in-file NOTEQUAL/0
+    /// case which goes through the complement to the same SLESS — here we reach
+    /// SLESS via the raw -1 offset without complement.
+    #[test]
+    fn w5_s3_rules_3_test_sign_minus_one_equal_to_sless() {
+        let mut fd = build_fd();
+        let v = make_input(&mut fd, 0x100, 4);
+        let shamt = fd.new_constant(4, 31);
+        let (srop, srout) = def_op(&mut fd, OpCode::CPUI_INT_SRIGHT, &[v, shamt], 4);
+        // compare: srout == -1  (offset == calc_mask(4))
+        let minus1 = fd.new_constant(4, calc_mask(4));
+        let cmp = mk_op(&mut fd, 2, OpCode::CPUI_INT_EQUAL);
+        wire(&mut fd, cmp, srout, 0);
+        wire(&mut fd, cmp, minus1, 1);
+        assert_eq!(RuleTestSign.apply_op(srop, &mut fd), 1);
+        // sgn = -1 (offset==mask), EQUAL does NOT complement => SLESS: in0=V,in1=0.
+        assert_eq!(op_code(&fd, cmp), OpCode::CPUI_INT_SLESS);
+        assert_eq!(op_in(&fd, cmp, 0), Some(v));
+        let in1 = op_in(&fd, cmp, 1).unwrap();
+        assert!(vn_is_constant(&fd, in1) && vn_offset(&fd, in1) == 0);
+    }
+
+    /// RuleTestSign, sgn == 1 with a NON-complementing EQUAL: `(V s>> 31) == 0`
+    /// gives sgn=1, EQUAL keeps it, so SLESSEQUAL with `0 <= V` (in0=0, in1=V).
+    /// This is the SLESSEQUAL arm, untouched by the in-file tests.
+    #[test]
+    fn w5_s3_rules_3_test_sign_zero_equal_to_slessequal() {
+        let mut fd = build_fd();
+        let v = make_input(&mut fd, 0x100, 4);
+        let shamt = fd.new_constant(4, 31);
+        let (srop, srout) = def_op(&mut fd, OpCode::CPUI_INT_SRIGHT, &[v, shamt], 4);
+        let zero = fd.new_constant(4, 0);
+        let cmp = mk_op(&mut fd, 2, OpCode::CPUI_INT_EQUAL);
+        wire(&mut fd, cmp, srout, 0);
+        wire(&mut fd, cmp, zero, 1);
+        assert_eq!(RuleTestSign.apply_op(srop, &mut fd), 1);
+        // sgn=1, EQUAL keeps sgn => SLESSEQUAL with in0=0, in1=V (0 s<= V).
+        assert_eq!(op_code(&fd, cmp), OpCode::CPUI_INT_SLESSEQUAL);
+        let in0 = op_in(&fd, cmp, 0).unwrap();
+        assert!(vn_is_constant(&fd, in0) && vn_offset(&fd, in0) == 0);
+        assert_eq!(op_in(&fd, cmp, 1), Some(v));
+    }
+
+    /// RuleAddMultCollapse 3-term branch must NOT fire when the base is not an
+    /// input spacebase (the `isSpacebase()&&isInput()` guard).  `make_input`
+    /// produces an input that is NOT a spacebase, so the `(stackbase + c1) +
+    /// other) + c0` shape with a plain base falls through the `for i` loop and
+    /// the rule returns 0 (no rewrite).  This pins the conservative side of the
+    /// spacebase guard (the fire side needs the spacebase flag, which is not
+    /// settable through the public API at W5 — its fire path is covered by the
+    /// nested-constant in-file tests and re-derived in the verdict).
+    #[test]
+    fn w5_s3_rules_3_addmult_three_term_requires_input_spacebase() {
+        let mut fd = build_fd();
+        let base = make_input(&mut fd, 0x200, 4); // input, but NOT spacebase
+        let c1 = fd.new_constant(4, 0x10);
+        let (_baseop, baseout) = def_op(&mut fd, OpCode::CPUI_INT_ADD, &[base, c1], 4);
+        let other = make_input(&mut fd, 0x300, 4);
+        // inner ADD: (base+c1) in slot0, other in slot1.  Non-constant c1 path
+        // enters the `for i` loop; base is not a spacebase => no rewrite.
+        let (_innerop, innerout) = def_op(&mut fd, OpCode::CPUI_INT_ADD, &[baseout, other], 4);
+        let c0 = fd.new_constant(4, 0x07);
+        let op = mk_op(&mut fd, 2, OpCode::CPUI_INT_ADD);
+        wire(&mut fd, op, innerout, 0);
+        wire(&mut fd, op, c0, 1);
+        assert_eq!(RuleAddMultCollapse.apply_op(op, &mut fd), 0);
+        // unchanged: still an INT_ADD with the inner sum in slot0 and c0 in slot1.
+        assert_eq!(op_code(&fd, op), OpCode::CPUI_INT_ADD);
+        assert_eq!(op_in(&fd, op, 0), Some(innerout));
+    }
+
+    /// RuleShiftPiece, the zero-extend tail (`concatsize < out*8`): build the
+    /// PIECE narrower than the output, so the rule inserts a NEW PIECE op and
+    /// rewrites the original op to ZEXT(newpiece).  `(zext(V) << 16) | zext(W)`
+    /// with V,W 1-byte each but the OR output 4 bytes: concatsize = 16 + 8 = 24
+    /// (since sa must equal 8*size(W) = 8, we use sa=8) < 32 => ZEXT tail.
+    #[test]
+    fn w5_s3_rules_3_shiftpiece_zext_tail() {
+        let mut fd = build_fd();
+        let v = make_input(&mut fd, 0x100, 1);
+        let w = make_input(&mut fd, 0x102, 1);
+        let (_zvop, zv) = def_op(&mut fd, OpCode::CPUI_INT_ZEXT, &[v], 4);
+        let sa = fd.new_constant(4, 8); // sa == 8*size(W) == 8
+        let (_shop, shout) = def_op(&mut fd, OpCode::CPUI_INT_LEFT, &[zv, sa], 4);
+        let (_zwop, zw) = def_op(&mut fd, OpCode::CPUI_INT_ZEXT, &[w], 4);
+        let op = mk_op(&mut fd, 2, OpCode::CPUI_INT_OR);
+        wire(&mut fd, op, shout, 0);
+        wire(&mut fd, op, zw, 1);
+        let _out = new_unique_out(&mut fd.fd, 4, op);
+
+        assert_eq!(RuleShiftPiece.apply_op(op, &mut fd), 1);
+        // concatsize = 8 + 8 = 16 < 32 => op becomes ZEXT(newpiece), where
+        // newpiece = PIECE(V, W) of size 16/8 = 2 bytes.
+        assert_eq!(op_code(&fd, op), OpCode::CPUI_INT_ZEXT);
+        let pieceout = op_in(&fd, op, 0).unwrap();
+        assert_eq!(vn_size(&fd, pieceout), 2);
+        let pieceop = vn_def(&fd, pieceout).unwrap();
+        assert_eq!(op_code(&fd, pieceop), OpCode::CPUI_PIECE);
+        assert_eq!(op_in(&fd, pieceop, 0), Some(v));
+        assert_eq!(op_in(&fd, pieceop, 1), Some(w));
+    }
+
+    /// RuleShiftPiece, the exact-size PIECE case: `(zext(V) << 16) | zext(W)`
+    /// with sizes lined up (sa == 8*size(W), concatsize == 8*out) rewrites the
+    /// op in place to `PIECE(V, W)`.  Exercises the swap branch (shiftop chosen
+    /// by which input is the INT_LEFT) and the concatsize == out*8 equal path.
+    #[test]
+    fn w5_s3_rules_3_shiftpiece_exact_piece() {
+        let mut fd = build_fd();
+        // V (2 bytes), W (2 bytes); out is 4 bytes.
+        let v = make_input(&mut fd, 0x100, 2);
+        let w = make_input(&mut fd, 0x102, 2);
+        // zext(V) -> 4 bytes, then << 16
+        let (_zvop, zv) = def_op(&mut fd, OpCode::CPUI_INT_ZEXT, &[v], 4);
+        let sa = fd.new_constant(4, 16);
+        let (_shop, shout) = def_op(&mut fd, OpCode::CPUI_INT_LEFT, &[zv, sa], 4);
+        // zext(W) -> 4 bytes (the zextloop low piece)
+        let (_zwop, zw) = def_op(&mut fd, OpCode::CPUI_INT_ZEXT, &[w], 4);
+        // op = shout | zw  (shiftop in slot0, zextloop in slot1)
+        let op = mk_op(&mut fd, 2, OpCode::CPUI_INT_OR);
+        wire(&mut fd, op, shout, 0);
+        wire(&mut fd, op, zw, 1);
+        let out = new_unique_out(&mut fd.fd, 4, op);
+        let _ = out;
+
+        assert_eq!(RuleShiftPiece.apply_op(op, &mut fd), 1);
+        // concatsize == 16 + 8*2 == 32 == out*8 => in-place PIECE(V, W).
+        assert_eq!(op_code(&fd, op), OpCode::CPUI_PIECE);
+        assert_eq!(op_in(&fd, op, 0), Some(v));
+        assert_eq!(op_in(&fd, op, 1), Some(w));
+    }
+
+    /// RuleShiftPiece swap branch: when the INT_LEFT is in slot1 (not slot0),
+    /// the rule swaps `shiftop`/`zextloop` so the shift is still found.  Mirror
+    /// of the exact-PIECE test with the operands transposed; result identical.
+    #[test]
+    fn w5_s3_rules_3_shiftpiece_swap_when_left_in_slot1() {
+        let mut fd = build_fd();
+        let v = make_input(&mut fd, 0x100, 2);
+        let w = make_input(&mut fd, 0x102, 2);
+        let (_zvop, zv) = def_op(&mut fd, OpCode::CPUI_INT_ZEXT, &[v], 4);
+        let sa = fd.new_constant(4, 16);
+        let (_shop, shout) = def_op(&mut fd, OpCode::CPUI_INT_LEFT, &[zv, sa], 4);
+        let (_zwop, zw) = def_op(&mut fd, OpCode::CPUI_INT_ZEXT, &[w], 4);
+        // op = zw | shout  (zextloop in slot0, shiftop in slot1 -> triggers swap)
+        let op = mk_op(&mut fd, 2, OpCode::CPUI_INT_OR);
+        wire(&mut fd, op, zw, 0);
+        wire(&mut fd, op, shout, 1);
+        let _out = new_unique_out(&mut fd.fd, 4, op);
+
+        assert_eq!(RuleShiftPiece.apply_op(op, &mut fd), 1);
+        assert_eq!(op_code(&fd, op), OpCode::CPUI_PIECE);
+        assert_eq!(op_in(&fd, op, 0), Some(v));
+        assert_eq!(op_in(&fd, op, 1), Some(w));
+    }
 }
