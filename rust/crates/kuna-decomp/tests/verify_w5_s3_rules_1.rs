@@ -138,19 +138,19 @@ fn is_const(fd: &Funcdata, vn: VarnodeId) -> bool {
 }
 
 // -----------------------------------------------------------------------------
-// F1: RuleRightShiftAnd raw `>>` by an out-of-range shift amount.
+// F1 (FIXED): RuleRightShiftAnd shift by an out-of-range shift amount.
 //
 // C++ ruleaction.cc:593-596 does `maskVn->getOffset() >> sa` and
-// `calc_mask(rootVn->getSize()) >> sa` with raw C++ `>>` (NOT pcode_right).
-// For `sa >= 64` the C++ shift is UB; on the x86-64 build the count is masked
-// to 6 bits, so `>> 64` behaves like `>> 0`.  The Rust port reproduces the raw
-// `>>` (ruleaction_1.rs:1171,1178) as `u64 >> i32`, which PANICS in a debug
-// build for `sa >= 64`.  This test pins the divergence: the same input that the
-// C++ handles (returning a value) makes the Rust port panic.
+// `calc_mask(rootVn->getSize()) >> sa` with raw C++ `>>`.  `sa` is a
+// data-derived p-code shift count that can be >= 64 (or negative after the
+// `(int4)` truncation).  On the x86-64 reference build the count is masked to
+// 6 bits, so `>> 64` behaves like `>> 0` and the rule APPLIES.  The Rust port
+// now routes both sites through `wshr` (wrapping_shr, count taken mod 64),
+// replicating the x86 masking exactly; this test pins the applied outcome.
 // -----------------------------------------------------------------------------
 
 #[test]
-fn w5s3_rightshiftand_large_shift_panics_where_cpp_is_defined() {
+fn w5s3_rightshiftand_large_shift_masks_count_and_applies() {
     let mut fd = build_fd();
     // root size 8 so calc_mask(8) is a real full mask. and = root & mask.
     let root = make_reg(&mut fd, 0x40, 8);
@@ -165,16 +165,10 @@ fn w5s3_rightshiftand_large_shift_panics_where_cpp_is_defined() {
     wire_input(&mut fd, op, sa, 1);
     let mut r = RuleRightShiftAnd::new("analysis");
 
-    // The C++ would compute `mask>>64`/`full>>64` (UB; x86 -> `>>0` == full==mask)
-    // and APPLY the rule (return 1).  The Rust port instead panics on `u64 >> 64`.
-    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| r.apply_op(op, &mut fd)));
-    assert!(
-        res.is_err(),
-        "DIVERGENCE CONFIRMED: Rust panics on `u64 >> 64` where C++ shift is \
-         defined (masked) and the rule would apply. If this ever returns instead \
-         of panicking, the port was fixed (wrapping_shr / pcode_right) and the \
-         finding is resolved."
-    );
+    // x86-masked: sa==64 -> count mod 64 == 0, so mask>>0 == full>>0 == u64::MAX,
+    // full == mask passes, root is non-free -> rule applies and bypasses the AND.
+    assert_eq!(r.apply_op(op, &mut fd), 1, "rule applies (x86-masked shift, full==mask)");
+    assert_eq!(in_of(&fd, op, 0), Some(root), "AND bypassed, slot0 -> root");
 }
 
 // Boundary: sa == 63 must NOT panic (in range) and must behave correctly.

@@ -1168,14 +1168,18 @@ impl Rule for RuleRightShiftAnd {
         // int4 sa = (int4)constVn->getOffset();
         let sa = data.vbank().get(const_vn).expect("RuleRightShiftAnd: stale constVn").get_offset() as int4;
         // uintb mask = maskVn->getOffset() >> sa;
-        let mask = data.vbank().get(mask_vn).expect("RuleRightShiftAnd: stale maskVn").get_offset() >> sa;
+        // sa is a data-derived p-code shift count that can be >= 64 (or negative
+        // after the (int4) truncation); the C++ raw `>>` on the x86-64 reference
+        // build masks the count to 6 bits (`>> 64` behaves like `>> 0`), so use
+        // wshr (wrapping_shr, count taken mod 64) to replicate that exactly.
+        let mask = data.vbank().get(mask_vn).expect("RuleRightShiftAnd: stale maskVn").get_offset().wshr(sa as u32);
         // Varnode *rootVn = andOp->getIn(0);
         let root_vn = data.obank().get(and_op).expect("RuleRightShiftAnd: stale andOp").get_in(0).expect(
             "RuleRightShiftAnd: andOp has no in0",
         );
         // uintb full = calc_mask(rootVn->getSize()) >> sa;
         let root_size = data.vbank().get(root_vn).expect("RuleRightShiftAnd: stale rootVn").get_size();
-        let full = calc_mask(root_size) >> sa;
+        let full = calc_mask(root_size).wshr(sa as u32);
         // if (full != mask) return 0;
         if full != mask {
             return 0;
