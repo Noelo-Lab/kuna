@@ -811,25 +811,56 @@ impl<'a> PcodeLexer<'a> {
     }
 }
 
-/// C++ `istringstream >> uintb` with `unsetf(dec|hex|oct)`: the base is
-/// detected from the literal's prefix (`0x` hex, leading `0` octal, otherwise
-/// decimal). Overflow/garbage => `None` (C++ stream failbit => `BADINTEGER`).
+/// C++ `istringstream >> uintb` with `unsetf(dec|hex|oct)`.
+///
+/// The base is detected from the literal's prefix (`0x`/`0X` hex, leading `0`
+/// octal, otherwise decimal), then the stream reads the **longest valid prefix**
+/// of digits in that base and STOPS at the first digit invalid for the base
+/// *without* failing — extraction only sets `failbit` (=> `None` => `BADINTEGER`)
+/// when zero digits could be consumed or the parsed prefix overflows `uintb`.
+///
+/// This partial-parse matters for octal tokens that contain a non-octal digit:
+/// the `decstring` lexer state admits any `0-9`, so `08`/`0789` reach this
+/// function as single tokens. The C++ stream yields `08 -> 0`, `0789 -> 7`,
+/// `019 -> 1`, `0178 -> 15` (verified against a standalone `istringstream`
+/// program). `u64::from_str_radix(_, 8)` instead requires every digit valid and
+/// would reject the whole token (F1).
 fn parse_number(tok: &[u8]) -> Option<u64> {
     let s = std::str::from_utf8(tok).ok()?;
+    // Detect base exactly as the unset stream does. For octal the leading `0`
+    // is itself the first (value-0) digit, so `digits` keeps it; for hex the
+    // `0x`/`0X` prefix is consumed and the digits follow it.
     let (radix, digits) = if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
     {
-        (16, rest)
+        (16u64, rest)
     } else if s.len() > 1 && s.starts_with('0') {
-        (8, &s[1..])
+        (8u64, s)
     } else {
-        (10, s)
+        (10u64, s)
     };
-    if digits.is_empty() {
-        // bare "0" is decimal 0 (radix 10, digits "0"); a lone "0" hits the
-        // decimal branch above (len == 1) so this only guards an empty 0x.
+    // Consume the longest prefix of valid digits in `radix`, accumulating with
+    // overflow detection (the stream succeeds on a partial prefix but fails the
+    // whole token on overflow, clamping to max + setting failbit).
+    let mut value: u64 = 0;
+    let mut consumed = 0usize;
+    for &b in digits.as_bytes() {
+        let digit = match b {
+            b'0'..=b'9' => (b - b'0') as u64,
+            b'a'..=b'f' => (b - b'a') as u64 + 10,
+            b'A'..=b'F' => (b - b'A') as u64 + 10,
+            _ => break, // non-alphanumeric: never reaches here (lexer-filtered)
+        };
+        if digit >= radix {
+            break; // first digit invalid for the base: stream stops here
+        }
+        value = value.checked_mul(radix)?.checked_add(digit)?; // overflow => fail
+        consumed += 1;
+    }
+    if consumed == 0 {
+        // No valid digit consumed: e.g. an empty `0x` token => failbit => BADINTEGER.
         return None;
     }
-    u64::from_str_radix(digits, radix).ok()
+    Some(value)
 }
 
 // ---------------------------------------------------------------------------
