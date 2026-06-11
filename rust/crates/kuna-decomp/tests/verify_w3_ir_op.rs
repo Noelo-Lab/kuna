@@ -300,3 +300,150 @@ fn mark_incidental_copy_through_tail() {
     assert!(!bank.get(b).unwrap().is_incidental_copy());
     assert!(bank.get(c).unwrap().is_incidental_copy());
 }
+
+// ===========================================================================
+// ROUND 2 (re-review): the porter's repair commit fixed F1/F2. These tests
+// (1) re-pin the F1/F2 fixes from the public API, and (2) probe the rest of
+// getNZMaskLocal's plain shifts that round-1 dismissed as "provably bounded".
+// One of them — CPUI_SUBPIECE — uses a SIGNED `sz1 < sizeof(uintb)` comparison
+// where the C++ promotes int4 to size_t (UNSIGNED). For a negative sz1 (offset
+// >= 2^31) the Rust enters the shift branch and `resmask >>= 8*sz1` (a negative
+// count) panics in debug, while C++ takes the else arm (resmask = 0). This is
+// the same signedness/missing-guard class as F1/F2 but at structurally-bounded
+// reachability (a SUBPIECE truncation offset cannot legitimately reach 2^31).
+// ===========================================================================
+
+/// F2 (now FIXED): INT_SRIGHT, sign-bit KNOWN ZERO, sa >= 64 — the sign-zero
+/// arm uses `pcode_right` (already count-safe), so this never panicked, but it
+/// pins the sibling of the F2-fixed unknown-sign arm. nz with top bit clear,
+/// sa = 100: pcode_right(nz,100) == 0.
+#[test]
+fn nzmask_int_sright_signzero_large_shift_ok() {
+    let m = build_manager();
+    let mut vbank = VarnodeBank::new(&m, 0).unwrap();
+    let mut bank = PcodeOpBank::new();
+    // 8-byte CONSTANT input with a known small value -> nz == 0x7f (sign bit clear).
+    let inp = konst(&mut vbank, &m, 8, 0x7f);
+    let sh = konst(&mut vbank, &m, 8, 100);
+    let outp = freevn(&mut vbank, &m, 8, 0x2000);
+    let id = build_op(&mut bank, OpCode::CPUI_INT_SRIGHT, 0, Some(outp), &[inp, sh], &m);
+    let op = bank.get(id).unwrap();
+    // sign bit of fullmask(8) is clear in 0x7f -> sign-zero arm -> pcode_right(0x7f,100)=0.
+    assert_eq!(get_nz_mask_local(op, &vbank, false, &no_loop), 0u64);
+}
+
+/// F1 (now FIXED): INT_RIGHT, wide (>16B) input, EXACT boundary sa == 8*sizeof
+/// (==64): enters the `sa >= 8*sizeof(uintb)` arm with `sa-64 == 0`, so the
+/// shifted mask is unchanged. Pins the lower edge of the F1 fix (a wshr by 0).
+#[test]
+fn nzmask_int_right_wide_shift_exactly_64() {
+    let m = build_manager();
+    let mut vbank = VarnodeBank::new(&m, 0).unwrap();
+    let mut bank = PcodeOpBank::new();
+    let inp = freevn(&mut vbank, &m, 17, 0x1000); // sz1 == 17 > 8
+    let sh = konst(&mut vbank, &m, 17, 64); // sa == 64 == 8*sizeof(uintb)
+    let outp = freevn(&mut vbank, &m, 17, 0x2000);
+    let id = build_op(&mut bank, OpCode::CPUI_INT_RIGHT, 0, Some(outp), &[inp, sh], &m);
+    let op = bank.get(id).unwrap();
+    // sz1=17>8, sa=64: sa<8*17=136, sa>=64 -> resmask=calc_mask(17-8)=calc_mask(9)=full;
+    // resmask >>= (64-64)==0 -> full.
+    assert_eq!(get_nz_mask_local(op, &vbank, false, &no_loop), u64::MAX);
+}
+
+/// Round-1 claimed INT_RIGHT's `sa >= 8*sz1` at op.rs:1144 and `sa >= 8*usize`
+/// at 1146 are bounded. They are panic-safe, but op.rs:1146 is a SIGNED i32
+/// comparison where C++ op.cc:640 `sa >= 8*sizeof(uintb)` promotes sa to size_t
+/// (UNSIGNED). For a *normal positive* shift this agrees; this test pins the
+/// well-formed sa==0 case (no shift) on a wide input so a future fix to the
+/// negative-sa divergence cannot regress the common path. sz1=17, sa=0.
+#[test]
+fn nzmask_int_right_wide_zero_shift_ok() {
+    let m = build_manager();
+    let mut vbank = VarnodeBank::new(&m, 0).unwrap();
+    let mut bank = PcodeOpBank::new();
+    let inp = freevn(&mut vbank, &m, 17, 0x1000); // nz == full (free)
+    let sh = konst(&mut vbank, &m, 17, 0); // sa == 0
+    let outp = freevn(&mut vbank, &m, 17, 0x2000);
+    let id = build_op(&mut bank, OpCode::CPUI_INT_RIGHT, 0, Some(outp), &[inp, sh], &m);
+    let op = bank.get(id).unwrap();
+    // sz1=17>8, sa=0: pcode_right(full,0)=full; sa<8*17, sa<64 -> else arm:
+    // tmp = -1 << (64-0) == 0 (wshl masks 64->0; -1<<0 == -1? no: 64&63==0 -> <<0 == all ones)
+    // C++: tmp <<= (8*8 - 0)==64 -> x86 masks to 0 -> tmp stays all-ones; resmask |= full = full.
+    assert_eq!(get_nz_mask_local(op, &vbank, false, &no_loop), u64::MAX);
+}
+
+/// SUBPIECE well-formed boundary: offset exactly sizeof(uintb)==8 on a small
+/// (<=8B) input. C++ op.cc:701 `sz1 < sizeof(uintb)` is false (8 < 8 false) ->
+/// resmask = 0. Rust line 1212 `sz1 < usize_uintb` (8 < 8) also false -> 0.
+/// (Agrees because sz1 is non-negative; pins the positive-side boundary.)
+#[test]
+fn nzmask_subpiece_offset_at_sizeof_boundary() {
+    let m = build_manager();
+    let mut vbank = VarnodeBank::new(&m, 0).unwrap();
+    let mut bank = PcodeOpBank::new();
+    let inp = freevn(&mut vbank, &m, 8, 0x1000); // size 8 (<= sizeof uintb)
+    let off = konst(&mut vbank, &m, 4, 8); // truncation offset == 8 (== sizeof uintb)
+    let outp = freevn(&mut vbank, &m, 1, 0x2000);
+    let id = build_op(&mut bank, OpCode::CPUI_SUBPIECE, 0, Some(outp), &[inp, off], &m);
+    let op = bank.get(id).unwrap();
+    // sz1=8, in_size(0)=8<=8: sz1<8 false -> resmask=0; &= fullmask(1) -> 0.
+    assert_eq!(get_nz_mask_local(op, &vbank, false, &no_loop), 0u64);
+
+    // offset 7 (< 8): resmask = full >> 56 == 0xff, & fullmask(1)==0xff -> 0xff.
+    let off7 = konst(&mut vbank, &m, 4, 7);
+    let id7 = build_op(&mut bank, OpCode::CPUI_SUBPIECE, 0, Some(outp), &[inp, off7], &m);
+    assert_eq!(
+        get_nz_mask_local(bank.get(id7).unwrap(), &vbank, false, &no_loop),
+        0xffu64
+    );
+}
+
+/// NEW FINDING (round 2): SUBPIECE with a constant truncation offset whose
+/// `(int4)offset` is NEGATIVE (offset >= 2^31). C++ op.cc:701 `sz1 < sizeof
+/// (uintb)` promotes the negative sz1 to a huge size_t -> the comparison is
+/// FALSE -> `resmask = 0` (op.cc:704). The Rust port line 1212 compares two
+/// i32s (`sz1 < usize_uintb`), so a negative sz1 is `< 8` -> it ENTERS
+/// `resmask >>= 8*sz1` with a negative count -> DEBUG PANIC (and a wrong value
+/// in release). This test asserts the C++-faithful result (0); the Rust panics,
+/// so it FAILS, evidencing the divergence.
+///
+/// Reachability note: a SUBPIECE truncation offset cannot legitimately reach
+/// 2^31 bytes, so this is a fidelity/robustness divergence at near-nil
+/// reachability, NOT a blocker — see the verdict (severity: minor).
+#[test]
+#[should_panic] // documents the divergence: C++ returns 0, Rust panics in debug
+fn nzmask_subpiece_negative_offset_diverges() {
+    let m = build_manager();
+    let mut vbank = VarnodeBank::new(&m, 0).unwrap();
+    let mut bank = PcodeOpBank::new();
+    let inp = freevn(&mut vbank, &m, 8, 0x1000); // small input
+    // offset 0x80000000 -> (int4) == i32::MIN (negative). 8-byte const can hold it.
+    let off = konst(&mut vbank, &m, 8, 0x8000_0000);
+    let outp = freevn(&mut vbank, &m, 1, 0x2000);
+    let id = build_op(&mut bank, OpCode::CPUI_SUBPIECE, 0, Some(outp), &[inp, off], &m);
+    let op = bank.get(id).unwrap();
+    // C++-faithful expectation would be 0. The Rust panics first (this is why the
+    // test is #[should_panic]); if the port is ever fixed to match C++, replace
+    // with assert_eq!(.., 0) and drop should_panic.
+    let _ = get_nz_mask_local(op, &vbank, false, &no_loop);
+}
+
+/// INT_MULT total-shift boundary: round-1 said op.rs:1263 `resmask >>= 8*size
+/// - total` is bounded by `total < 8*size`. Pin the tightest case: size=8,
+/// two single-bit inputs (total collapses to 1) so `8*8 - 1 == 63` (the max
+/// legal count). Must not panic and must produce a defined mask.
+#[test]
+fn nzmask_int_mult_total_shift_max_count() {
+    let m = build_manager();
+    let mut vbank = VarnodeBank::new(&m, 0).unwrap();
+    let mut bank = PcodeOpBank::new();
+    // two constants each with a single bit set at position 0 -> nz == 1.
+    let a = konst(&mut vbank, &m, 8, 1);
+    let b = konst(&mut vbank, &m, 8, 1);
+    let outp = freevn(&mut vbank, &m, 8, 0x2000); // size 8 == sizeof uintb
+    let id = build_op(&mut bank, OpCode::CPUI_INT_MULT, 0, Some(outp), &[a, b], &m);
+    let op = bank.get(id).unwrap();
+    // val=1,resmask=1: msb=0,lsb=0 both; sa=0; sz1b=1,sz2b=1 -> total=2, then -=1 ->1.
+    // resmask=full; total(1) < 64 -> resmask >>= (64-1)==63 -> 1; << sa(0) & full -> 1.
+    assert_eq!(get_nz_mask_local(op, &vbank, false, &no_loop), 1u64);
+}
