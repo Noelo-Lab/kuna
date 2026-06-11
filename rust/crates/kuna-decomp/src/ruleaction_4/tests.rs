@@ -120,7 +120,12 @@ fn specs_in_definition_order() {
         })
         .collect();
     assert_eq!(names.len(), 19);
-    assert!(names.iter().all(|g| *g == "analysis"));
+    // RuleLoadVarnode/RuleStoreVarnode (the first two, in definition order)
+    // register under "stackvars" (coreaction.cc:5939-5940); the other 17 are
+    // "analysis".
+    assert_eq!(names[0], "stackvars");
+    assert_eq!(names[1], "stackvars");
+    assert!(names[2..].iter().all(|g| *g == "analysis"));
 }
 
 #[test]

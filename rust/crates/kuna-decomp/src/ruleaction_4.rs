@@ -13,9 +13,10 @@
 //! [`specs`] lists every rule in **C++ definition order** (the order the classes
 //! appear in `ruleaction.cc`), so the W8 `universalAction` builder can splice
 //! these into the right [`ActionPool`]s.  Each [`RuleSpec`]'s `group` is the
-//! stage group the rule belongs to; see `docs/stage-mapping.md`.  All 19 of these
-//! rules live in the `"analysis"` group (the C++ registers them with
-//! `actprop`/`actstackstall` pools via the `analysis` group string).
+//! stage group the rule belongs to; see `docs/stage-mapping.md`.  17 of these
+//! rules live in the `"analysis"` group; `RuleLoadVarnode`/`RuleStoreVarnode`
+//! are the exceptions — the C++ registers them in `actprop2` under the
+//! `"stackvars"` group (`coreaction.cc:5939-5940`).
 //!
 //! ## Cross-wave seams
 //!
@@ -45,7 +46,7 @@
 //!     at the missing call (returning the C++ early-out) with a `// SEAM` note.
 
 use kuna_base::address::{calc_mask, leastsigbit_set, sign_extend_sized, Address, SeqNum};
-use kuna_base::types::{int4, uintb};
+use kuna_base::types::{int4, uintb, Wrap};
 use kuna_num::opcodes::OpCode;
 use std::rc::Rc;
 
@@ -273,7 +274,10 @@ impl Rule for RuleLoadVarnode {
     }
 
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("analysis") {
+        // C++ `clone` gates on `grouplist.contains(getGroup())`; RuleLoadVarnode
+        // is registered with group "stackvars" (coreaction.cc:5939), not
+        // "analysis".
+        if !grouplist.contains("stackvars") {
             return None;
         }
         Some(Box::new(RuleLoadVarnode::new()))
@@ -330,7 +334,10 @@ impl Rule for RuleStoreVarnode {
     }
 
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("analysis") {
+        // C++ `clone` gates on `grouplist.contains(getGroup())`; RuleStoreVarnode
+        // is registered with group "stackvars" (coreaction.cc:5940), not
+        // "analysis".
+        if !grouplist.contains("stackvars") {
             return None;
         }
         Some(Box::new(RuleStoreVarnode::new()))
@@ -1197,11 +1204,16 @@ impl Rule for RuleShiftAnd {
         let mut nzm = nzmask_of(data, invn);
         let fullmask = calc_mask(size_of(data, invn));
         if opc == OpCode::CPUI_INT_RIGHT {
-            nzm >>= sa as u32;
-            mask >>= sa as u32;
+            // C++ `nzm >>= sa; mask >>= sa;` — `sa` is an int4 from a constant
+            // operand and may be >= 64 (legal p-code) or have a negative (int4)
+            // cast; on the x86 target the shift count is masked to `& 63`, so
+            // use wshr (ADR 0003: wrapping shift mandatory for data-derived
+            // counts). cast: matches C++ `(int4) >> ` count, x86 `& 63`.
+            nzm = nzm.wshr(sa as u32);
+            mask = mask.wshr(sa as u32);
         } else {
-            nzm <<= sa as u32;
-            mask <<= sa as u32;
+            nzm = nzm.wshl(sa as u32);
+            mask = mask.wshl(sa as u32);
             nzm &= fullmask;
             mask &= fullmask;
         }
@@ -1474,9 +1486,12 @@ impl Rule for RuleSubZext {
             if data.lone_descend(subvn) != Some(op) {
                 return 0;
             }
-            let mut val = calc_mask(size_of(data, midvn)); // Mask based on truncated size
+            let val = calc_mask(size_of(data, midvn)); // Mask based on truncated size
             let sa = offset_of(data, in_vn(data, shiftop, 1)); // shift shrinks the mask
-            val >>= sa as u32;
+            // C++ `val >>= sa;` — `sa` is a uintb from a constant operand and may
+            // be >= 64 (legal p-code); the x86 target masks the count to `& 63`,
+            // so use wshr (ADR 0003). cast: low 6 bits of `sa` are the x86 mask.
+            let val = val.wshr(sa as u32);
             // sa += subop->getIn(1)->getOffset() * 8;  // total shift = truncation + small shift
             let sa = sa + offset_of(data, in_vn(data, subop, 1)) * 8;
             let basesize = size_of(data, basevn);
@@ -2096,12 +2111,15 @@ impl Rule for RuleCondNegate {
 // =============================================================================
 
 /// The [`RuleSpec`]s for every rule in this file, in C++ definition order
-/// (`ruleaction.cc:4293`..`5526`).  W8 splices these into the `analysis`-group
-/// [`ActionPool`]s of `universalAction`.
+/// (`ruleaction.cc:4293`..`5526`).  W8 splices these into the matching-group
+/// [`ActionPool`]s of `universalAction` (most into `"analysis"`;
+/// `RuleLoadVarnode`/`RuleStoreVarnode` into `"stackvars"`).
 pub fn specs() -> Vec<RuleSpec> {
     vec![
-        RuleSpec { group: "analysis", ctor: || Box::new(RuleLoadVarnode::new()) },
-        RuleSpec { group: "analysis", ctor: || Box::new(RuleStoreVarnode::new()) },
+        // RuleLoadVarnode / RuleStoreVarnode register under "stackvars"
+        // (coreaction.cc:5939-5940, actprop2), not "analysis".
+        RuleSpec { group: "stackvars", ctor: || Box::new(RuleLoadVarnode::new()) },
+        RuleSpec { group: "stackvars", ctor: || Box::new(RuleStoreVarnode::new()) },
         RuleSpec { group: "analysis", ctor: || Box::new(RuleSubExtComm::new()) },
         RuleSpec { group: "analysis", ctor: || Box::new(RuleSubCommute::new()) },
         RuleSpec { group: "analysis", ctor: || Box::new(RuleConcatCommute::new()) },
