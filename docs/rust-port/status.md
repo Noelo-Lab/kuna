@@ -39,3 +39,16 @@ _(none yet)_
 | W9-gate | M2: datatests end-to-end `--engine rust` | todo | |
 | W10-gate | M3: PARITY OK 675/675 + 150/150 + catalog --check | todo | |
 | W11-gate | M4: real-ELF decompile + pipeline binding | todo | |
+
+## W1 (2026-06-11)
+
+| item | porter | verifier | gate | verdict | commit |
+|---|---|---|---|---|---|
+| w1-base-foundation | fleet | independent | cargo test -p kuna-base | ACCEPT | a063f9b |
+| w1-base-xml | fleet | independent | corpus+fuzz parity 6485 cases | ACCEPT-WITH-LOSSES | 95d2366 |
+| w1-num-float-multiprec | fleet | independent | golden_float 3607 rows | ACCEPT | a2fccc3 |
+| w1-base-util | fleet | independent | crc KAT + zlib interop | ACCEPT-WITH-LOSSES | f3c6a8a |
+| w1-base-marshal | fleet | independent | packed/xml round-trips | ACCEPT-WITH-LOSSES | 1549215 |
+| w1-base-space-address | fleet | independent | golden_addrsort | ACCEPT-WITH-LOSSES | 1549215 |
+| w1-num-pcode-semantics | fleet | independent | golden_opbehavior 20227 rows | ACCEPT-WITH-LOSSES | a922c92 |
+| w1-harness-unittests | fleet | independent | 23/23 exact-name TESTs | ACCEPT | f4df3da |

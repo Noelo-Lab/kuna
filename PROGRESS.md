@@ -1,5 +1,25 @@
 # kuna Progress Log
 
+## Session (2026-06-11) — rust-port W1: foundation crates ported and verified
+
+Seven porter agents (isolated worktrees, dependency-ordered fork-after-merge) +
+eight independent verifiers (hunt-list protocol, adversarial tests, repair loop):
+**all eight W1 checklist items ACCEPTed** — foundation (error/types/partmap/
+rangemap), xml (hand parser, 6,485-case differential parity vs the bison oracle),
+float+multiprecision (+ cfmt %g emulation), util (crc32/flate2/filemanage),
+marshal+space+address (combined branch; packed marshaling bit-exact), opcodes/
+pcoderaw/opbehavior (UB-1 fixed with compile-time assert; UB-2 → EvaluationError),
+and the first 23 ported unit tests (testmarshal 18 + testmultiprec 5, exact names).
+
+Gates: cargo build/test/clippy --workspace green — **246 Rust tests, 0 failed**;
+golden suites all pass (float.csv 3,607 rows, opbehavior.csv 20,227 rows,
+addrsort.csv); port_audit suite gate exit 0; C++ oracle untouched by merges.
+Losses ledger grew LOSS-010..016 (incl. the miniz-vs-zlib deflate byte divergence
+with refined restoration gate, Translate-dependent deferral LOSS-012, UB-2
+decision LOSS-014); upstream bugs UB-3 (xml convertCharRef overflow) and UB-4
+(rangemap::erase dangling sub-range) recorded. Unit-test progress: 23/207.
+Next: W2 (sleigh-wave start + type system) per docs/rust-port/checklist.json.
+
 ## Session (2026-06-10) — rust-port W0: verification machinery + workspace (branch `rust-port`)
 
 Started the full Rust port (plan: `docs/rust-port/plan.md`; user decisions: grind to

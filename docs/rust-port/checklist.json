@@ -48,7 +48,7 @@
    "depends_on": [
     "W0-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-base",
    "loc_estimate": 865,
@@ -75,7 +75,7 @@
    "depends_on": [
     "w1-base-foundation"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 865,
@@ -101,7 +101,7 @@
     "w1-base-foundation",
     "W0-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-base",
    "loc_estimate": 2913,
@@ -124,7 +124,7 @@
    "depends_on": [
     "w1-base-xml"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2913,
@@ -148,7 +148,7 @@
     "w1-base-xml",
     "W0-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-base",
    "loc_estimate": 2030,
@@ -171,7 +171,7 @@
    "depends_on": [
     "w1-base-marshal"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2030,
@@ -198,7 +198,7 @@
     "w1-base-marshal",
     "W0-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-base",
    "loc_estimate": 2953,
@@ -225,7 +225,7 @@
    "depends_on": [
     "w1-base-space-address"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2953,
@@ -253,7 +253,7 @@
     "w1-base-foundation",
     "W0-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-num",
    "loc_estimate": 1171,
@@ -280,7 +280,7 @@
    "depends_on": [
     "w1-num-float-multiprec"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1171,
@@ -311,7 +311,7 @@
     "w1-num-float-multiprec",
     "W0-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-num",
    "loc_estimate": 1980,
@@ -342,7 +342,7 @@
    "depends_on": [
     "w1-num-pcode-semantics"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1980,
@@ -374,7 +374,7 @@
     "w1-base-foundation",
     "W0-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-base",
    "loc_estimate": 847,
@@ -405,7 +405,7 @@
    "depends_on": [
     "w1-base-util"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 847,
@@ -434,7 +434,7 @@
     "w1-num-float-multiprec",
     "W0-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-harness",
    "loc_estimate": 646,
@@ -457,7 +457,7 @@
    "depends_on": [
     "w1-harness-unittests"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 646,
@@ -4838,12 +4838,12 @@
     "w1-harness-unittests",
     "w1-harness-unittests-verify"
    ],
-   "status": "todo",
+   "status": "landed",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-base -p kuna-num",
    "loc_estimate": 0,
    "cpp_blob_sha": {},
-   "notes": "Wave exit: every item in W1 done (ports gated, verifies ACCEPTed)."
+   "notes": "Wave exit: every item in W1 done (ports gated, verifies ACCEPTed). Gate evidence 2026-06-11: cargo build/test/clippy --workspace green, 246 tests 0 failed; port_audit --suite testmarshal,testmultiprec exit 0; golden float/opbehavior/addrsort suites pass."
   },
   {
    "id": "W2-gate",
