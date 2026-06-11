@@ -610,6 +610,233 @@ fn real_sleigh_skipnext2_reaches_emitter_seam() {
     assert_lift_reaches_emitter_seam("skipnext2.txt");
 }
 
+// ===========================================================================
+// Round-1 verifier adversarial tests (item w3-ir-flow)
+//
+// Re-derived against the C++ oracle (flow.cc), targeting the hunt-list spots
+// the review flagged as most fragile:
+//   - target()'s no-op skip CHAIN through several consecutive no-p-code
+//     instructions (the `iter = visited.find(first+size)` loop, flow.cc:123-133);
+//   - find_rel_target()'s "branch to next instruction" path: the `id-1` SeqNum
+//     back-up AND the `op->getAddr() < res` boundary guard (flow.cc:162-172) —
+//     a relative branch landing exactly at the current instruction's own address
+//     must FALL THROUGH to the LowlevelError, not pass back a fallthru;
+//   - fallthru_op()'s off-cut boundary `(*miter).first + size <= op->getAddr()`
+//     returning None (flow.cc:106-107);
+//   - dedup_unprocessed() ordering across DISTINCT address spaces (the Address
+//     total order is space-index then offset, flow.cc:872 std::sort + unique);
+//   - collect_edges() default-case fall-thru edge is emitted ONLY when the next
+//     op starts a block (`nextstart`), and is suppressed otherwise (flow.cc:971).
+// ===========================================================================
+
+/// `target`: an address whose instruction generated no p-code (invalid seqnum)
+/// must chain-skip over *multiple* consecutive no-op instructions to the next
+/// instruction that actually has an op (the C++ `while` loop re-finds
+/// `first + size`, flow.cc:123-133), not just a single hop.
+#[test]
+fn verify_target_chains_over_multiple_noop_instructions() {
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    // 0x1000 (size 4) no-op; 0x1004 (size 4) no-op; 0x1008 (size 4) -> op.
+    let op = make_op(&mut fd, OpCode::CPUI_COPY, 0x1008, 1);
+    let seq = fd.obank().get(op).unwrap().get_seq_num().clone();
+
+    let env = TableEnv;
+    let mut flow = FlowInfo::new(fd, &env);
+    flow.seed_visited(&Address::new(Rc::clone(&ram), 0x1000), invalid_seq(), 4);
+    flow.seed_visited(&Address::new(Rc::clone(&ram), 0x1004), invalid_seq(), 4);
+    flow.seed_visited(&Address::new(Rc::clone(&ram), 0x1008), seq, 4);
+
+    // From 0x1000, chain-skip 0x1000 -> 0x1004 -> 0x1008 -> op.
+    assert_eq!(flow.target(&Address::new(Rc::clone(&ram), 0x1000)).unwrap(), op);
+    // From the middle no-op too.
+    assert_eq!(flow.target(&Address::new(Rc::clone(&ram), 0x1004)).unwrap(), op);
+    // A no-op chain that never reaches a real op is an error (off the end).
+    let mut fd2 = build_fd();
+    let _ = make_op(&mut fd2, OpCode::CPUI_COPY, 0x9000, 1); // unrelated op
+    let env2 = TableEnv;
+    let mut flow2 = FlowInfo::new(fd2, &env2);
+    flow2.seed_visited(&Address::new(Rc::clone(&ram), 0x1000), invalid_seq(), 4);
+    // 0x1004 is NOT visited, so the chain falls off the map -> error.
+    assert!(flow2.target(&Address::new(ram, 0x1000)).is_err());
+}
+
+/// `find_rel_target` (via `branch_target`): a relative branch whose `id-1`
+/// SeqNum resolves to a real op, but whose recomputed fall-thru address `res`
+/// is NOT strictly greater than the branch's own address, must NOT be reported
+/// as a fall-thru — the C++ guard is `if (op->getAddr() < res) return 0;`
+/// (flow.cc:171), so when the guard is false the code falls through to the
+/// `Bad relative branch` LowlevelError.
+#[test]
+fn verify_find_rel_target_next_instruction_guard_requires_strict_advance() {
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    // One op at 0x1000 (op_a) and the CBRANCH (also at 0x1000).  The CBRANCH is
+    // the LAST op, so its time `t_cbr` is the max time.  Choosing rel = 1 gives
+    //   id = t_cbr + 1  (no op has that time -> NOT a properly-internal branch),
+    //   id - 1 = t_cbr  -> findOp hits the CBRANCH itself -> the "branch to next
+    //   instruction" back-up path (flow.cc:162-172) is exercised.
+    let op_a = make_op(&mut fd, OpCode::CPUI_COPY, 0x1000, 1);
+    let cbr = make_op(&mut fd, OpCode::CPUI_CBRANCH, 0x1000, 2);
+    set_const_in(&mut fd, cbr, 0, 1, 4); // rel = 1
+    set_const_in(&mut fd, cbr, 1, 0, 1); // condition
+    let seq_a = fd.obank().get(op_a).unwrap().get_seq_num().clone();
+
+    let env = TableEnv;
+    let mut flow = FlowInfo::new(fd, &env);
+    // visited: instruction at 0x1000 has SIZE 0 so that the recomputed fall-thru
+    // res = 0x1000 + 0 = 0x1000 == op->getAddr(); the strict `<` guard fails,
+    // so the C++ does NOT return the fall-thru and instead errors.
+    flow.seed_visited(&Address::new(Rc::clone(&ram), 0x1000), seq_a, 0);
+    // The next-instruction guard `op->getAddr() < res` fails -> Bad relative
+    // branch error (no fall-thru passed back).
+    assert!(flow.branch_target(cbr).is_err());
+
+    // Now make the size 4 so res = 0x1004 > 0x1000: the guard passes, the
+    // fall-thru address is returned, and branch_target resolves target(0x1004).
+    let mut fd3 = build_fd();
+    let ram3 = ram_space(&fd3);
+    let op_a3 = make_op(&mut fd3, OpCode::CPUI_COPY, 0x1000, 1);
+    let cbr3 = make_op(&mut fd3, OpCode::CPUI_CBRANCH, 0x1000, 2);
+    let next3 = make_op(&mut fd3, OpCode::CPUI_COPY, 0x1004, 1);
+    fd3.obank_mut().get_mut(next3).unwrap().set_flag(pcodeop_flags::startmark);
+    set_const_in(&mut fd3, cbr3, 0, 1, 4); // rel = 1 -> id-1 == t_cbr3
+    set_const_in(&mut fd3, cbr3, 1, 0, 1);
+    let seq_a3 = fd3.obank().get(op_a3).unwrap().get_seq_num().clone();
+    let seq_next3 = fd3.obank().get(next3).unwrap().get_seq_num().clone();
+    let env3 = TableEnv;
+    let mut flow3 = FlowInfo::new(fd3, &env3);
+    flow3.seed_visited(&Address::new(Rc::clone(&ram3), 0x1000), seq_a3, 4);
+    flow3.seed_visited(&Address::new(Rc::clone(&ram3), 0x1004), seq_next3, 4);
+    assert_eq!(flow3.branch_target(cbr3).unwrap(), next3);
+}
+
+/// `fallthru_op`: the off-cut boundary case `(*miter).first + size <=
+/// op->getAddr()` returns None (flow.cc:106-107).  When the op sits at or past
+/// the END of its containing visited range (a bogus off-cut), there is no
+/// fall-thru op.
+#[test]
+fn verify_fallthru_op_offcut_boundary_is_none() {
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    // Single op at 0x1010 (the LAST op in the dead list, so ++iter == endDead()).
+    let op = make_op(&mut fd, OpCode::CPUI_COPY, 0x1010, 1);
+    let seq = fd.obank().get(op).unwrap().get_seq_num().clone();
+
+    let env = TableEnv;
+    let mut flow = FlowInfo::new(fd, &env);
+    // The only visited range is 0x1000 size 4 -> covers [0x1000, 0x1004).
+    // op is at 0x1010, so `last-le` is 0x1000 and 0x1000+4 = 0x1004 <= 0x1010,
+    // the off-cut guard fires -> None.
+    flow.seed_visited(&Address::new(Rc::clone(&ram), 0x1000), seq, 4);
+    assert_eq!(flow.fallthru_op_for_test(op), None);
+
+    // Sanity: if the visited range actually CONTAINS the op's fall-thru target
+    // and that target has an op, fallthru_op resolves it (positive control).
+    let mut fd2 = build_fd();
+    let ram2 = ram_space(&fd2);
+    let here = make_op(&mut fd2, OpCode::CPUI_COPY, 0x1000, 1);
+    let tgt = make_op(&mut fd2, OpCode::CPUI_COPY, 0x1004, 1);
+    fd2.obank_mut().get_mut(tgt).unwrap().set_flag(pcodeop_flags::startmark);
+    let seq_h = fd2.obank().get(here).unwrap().get_seq_num().clone();
+    let seq_t = fd2.obank().get(tgt).unwrap().get_seq_num().clone();
+    let env2 = TableEnv;
+    let mut flow2 = FlowInfo::new(fd2, &env2);
+    flow2.seed_visited(&Address::new(Rc::clone(&ram2), 0x1000), seq_h, 4);
+    flow2.seed_visited(&Address::new(Rc::clone(&ram2), 0x1004), seq_t, 4);
+    // `here` is the start op; ++iter is `tgt`, which IS an instruction start, so
+    // fallthru_op falls to the boundary target = target(0x1000+4) = tgt.
+    assert_eq!(flow2.fallthru_op_for_test(here), Some(tgt));
+}
+
+/// `dedup_unprocessed`: the sort key is the C++ `Address` total order, which is
+/// (space-index, offset).  Addresses in a LOWER-index space sort before any in a
+/// higher-index space regardless of offset; duplicates collapse.  Re-derived
+/// from flow.cc:872 (`std::sort` + `unique`) and the Address comparator.
+#[test]
+fn verify_dedup_unprocessed_orders_across_spaces() {
+    let fd = build_fd();
+    let arch = fd.get_arch();
+    // `unique` (lower index) vs `ram` (higher index) — both real spaces.
+    let unique = Rc::clone(arch.manage().get_space_by_name("unique").unwrap());
+    let ram = Rc::clone(arch.manage().get_space_by_name("ram").unwrap());
+    assert!(
+        unique.get_index() < ram.get_index(),
+        "fixture precondition: unique space index < ram space index"
+    );
+    let env = TableEnv;
+    let mut flow = FlowInfo::new(fd, &env);
+    // Push out of order, with a cross-space duplicate and an in-space duplicate.
+    flow.push_unprocessed(Address::new(Rc::clone(&ram), 0x10)); // ram:0x10
+    flow.push_unprocessed(Address::new(Rc::clone(&unique), 0xFF)); // unique:0xFF (big offset, low space)
+    flow.push_unprocessed(Address::new(Rc::clone(&ram), 0x10)); // dup ram:0x10
+    flow.push_unprocessed(Address::new(Rc::clone(&unique), 0x01)); // unique:0x01
+    flow.push_unprocessed(Address::new(Rc::clone(&ram), 0x08)); // ram:0x08
+    flow.dedup_unprocessed_for_test();
+    // Expected order: all `unique` entries (by offset) first, then `ram` (by
+    // offset), each de-duplicated:  unique:0x01, unique:0xFF, ram:0x08, ram:0x10.
+    let offsets = flow.unprocessed_offsets();
+    assert_eq!(offsets, vec![0x01, 0xFF, 0x08, 0x10]);
+}
+
+/// `collect_edges` default case: a plain (non-control-flow) op emits a fall-thru
+/// edge ONLY when the *next* op is a block start (`nextstart`, flow.cc:971); when
+/// the next op is NOT a block start (same basic block) NO edge is emitted.
+#[test]
+fn verify_collect_edges_default_fallthru_gated_on_nextstart() {
+    // Case A: two plain ops in the SAME block (op1 is NOT a block start) ->
+    // collect_edges emits NO fall-thru edge for op0, and (op1 being the last op,
+    // nextstart=true) emits op1's fall-thru — but op1's fall-thru target is the
+    // boundary, which has no op, so fallthru_op returns None and (Rust) nothing
+    // is pushed.  Net: zero edges, so connectBasic creates zero block edges.
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    let op0 = make_op(&mut fd, OpCode::CPUI_COPY, 0x1000, 1);
+    set_const_in(&mut fd, op0, 0, 0, 4);
+    fd.obank_mut().get_mut(op0).unwrap().set_flag(pcodeop_flags::startmark);
+    fd.obank_mut().get_mut(op0).unwrap().set_flag(pcodeop_flags::startbasic);
+    let op1 = make_op(&mut fd, OpCode::CPUI_COPY, 0x1000, 1); // same instruction, NOT a start
+    set_const_in(&mut fd, op1, 0, 1, 4);
+    let seq0 = fd.obank().get(op0).unwrap().get_seq_num().clone();
+    let env = TableEnv;
+    let mut flow = FlowInfo::new(fd, &env);
+    flow.seed_visited(&Address::new(Rc::clone(&ram), 0x1000), seq0, 4);
+    flow.collect_edges_for_test().unwrap();
+    flow.split_basic_for_test().unwrap();
+    flow.connect_basic_for_test();
+    // One basic block (op0 + op1), and NO inter-block fall-thru edge (op0's
+    // successor op1 is not a block start, so the default case adds nothing).
+    assert_eq!(flow.data.bblocks_get_size(), 1);
+    let b0 = flow.data.bblocks_get_block(0);
+    assert_eq!(flow.data.bblocks_ref().block(b0).size_out(), 0);
+
+    // Case B: op0 followed by op1 that IS a block start (separate block).  Now
+    // op0's default case sees nextstart=true and emits a fall-thru edge to op1.
+    let mut fd2 = build_fd();
+    let ram2 = ram_space(&fd2);
+    let a0 = make_op(&mut fd2, OpCode::CPUI_COPY, 0x1000, 1);
+    set_const_in(&mut fd2, a0, 0, 0, 4);
+    fd2.obank_mut().get_mut(a0).unwrap().set_flag(pcodeop_flags::startmark);
+    fd2.obank_mut().get_mut(a0).unwrap().set_flag(pcodeop_flags::startbasic);
+    let a1 = make_op(&mut fd2, OpCode::CPUI_COPY, 0x1004, 1);
+    set_const_in(&mut fd2, a1, 0, 1, 4);
+    fd2.obank_mut().get_mut(a1).unwrap().set_flag(pcodeop_flags::startmark);
+    fd2.obank_mut().get_mut(a1).unwrap().set_flag(pcodeop_flags::startbasic);
+    let seq_a0 = fd2.obank().get(a0).unwrap().get_seq_num().clone();
+    let seq_a1 = fd2.obank().get(a1).unwrap().get_seq_num().clone();
+    let env2 = TableEnv;
+    let mut flow2 = FlowInfo::new(fd2, &env2);
+    flow2.seed_visited(&Address::new(Rc::clone(&ram2), 0x1000), seq_a0, 4);
+    flow2.seed_visited(&Address::new(Rc::clone(&ram2), 0x1004), seq_a1, 4);
+    flow2.collect_edges_for_test().unwrap();
+    flow2.split_basic_for_test().unwrap();
+    flow2.connect_basic_for_test();
+    assert_eq!(flow2.data.bblocks_get_size(), 2);
+    // op0's block has exactly one out-edge (the fall-thru to a1's block).
+    let entry = flow2.data.bblocks_get_block(0);
+    assert_eq!(flow2.data.bblocks_ref().block(entry).size_out(), 1);
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
