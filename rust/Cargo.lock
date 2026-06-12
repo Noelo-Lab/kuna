@@ -72,6 +72,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuna-lift-diff"
+version = "0.1.0"
+dependencies = [
+ "kuna-harness",
+]
+
+[[package]]
 name = "kuna-num"
 version = "0.1.0"
 dependencies = [

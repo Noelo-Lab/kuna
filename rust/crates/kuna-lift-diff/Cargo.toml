@@ -1,0 +1,28 @@
+# kuna-lift-diff: the self-test entry point for the W5 lift differential.
+#
+# This crate is a THIN binary shim — it exists only so the declared item gate
+# `cargo run -p kuna-lift-diff -- --self-test` resolves a package by that name.
+# All logic lives in `kuna-harness::corpus` (the B2 structural differential, the
+# corpus case table, the bootstrap + extractor).  The same `run_self_test()` is
+# shared with the `cargo test -p kuna-harness --test lift_diff` integration test,
+# so the bin and the test exercise identical code.
+[package]
+name = "kuna-lift-diff"
+description = "kuna Rust port: self-test driver for the B2 lift differential (delegates to kuna-harness)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "kuna-lift-diff"
+path = "src/main.rs"
+
+[dependencies]
+# Path dependency (kuna-harness is not in [workspace.dependencies]; this keeps the
+# workspace manifest untouched).
+kuna-harness = { path = "../kuna-harness" }
+
+[lints]
+workspace = true

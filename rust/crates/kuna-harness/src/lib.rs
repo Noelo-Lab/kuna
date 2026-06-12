@@ -10,3 +10,17 @@
 //! kuna-decomp, kuna-console) so any layer can be exercised in isolation.
 //!
 //! Lints are inherited from the workspace (`[lints] workspace = true`).
+//!
+//! ## Modules
+//!
+//! - [`liftdiff`]: the B2-grade STRUCTURAL differential — a parser for the C++
+//!   `print raw` B2 snapshot format, the structural model both engines populate,
+//!   and the comparator.
+//! - [`corpus`]: the corpus driver around `liftdiff` — the pinned case table, the
+//!   `XmlArchitecture` bootstrap, the Rust-side extractor (`FlowInfo` followFlow +
+//!   the basic-block builder to the same B2 boundary the C++ snapshot represents),
+//!   and the `run_self_test()` aggregate used by BOTH the `tests/lift_diff.rs`
+//!   integration test and the `kuna-lift-diff` self-test binary.
+
+pub mod corpus;
+pub mod liftdiff;
