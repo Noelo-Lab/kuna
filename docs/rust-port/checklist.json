@@ -1970,7 +1970,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 3218,
@@ -1993,7 +1993,7 @@
    "depends_on": [
     "w5-s3-heritage"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 3218,
@@ -2016,7 +2016,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 3135,
@@ -2039,7 +2039,7 @@
    "depends_on": [
     "w5-s3-rules-1"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 3135,
@@ -2062,7 +2062,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1481,
@@ -2085,7 +2085,7 @@
    "depends_on": [
     "w5-s3-rules-2"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1481,
@@ -2108,7 +2108,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1285,
@@ -2131,7 +2131,7 @@
    "depends_on": [
     "w5-s3-rules-3"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1285,
@@ -2154,7 +2154,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1276,
@@ -2177,7 +2177,7 @@
    "depends_on": [
     "w5-s3-rules-4"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1276,
@@ -2200,7 +2200,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1619,
@@ -2223,7 +2223,7 @@
    "depends_on": [
     "w5-s3-rules-5"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1619,
@@ -2246,7 +2246,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1292,
@@ -2269,7 +2269,7 @@
    "depends_on": [
     "w5-s3-rules-6"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1292,
@@ -2292,7 +2292,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1455,
@@ -2315,7 +2315,7 @@
    "depends_on": [
     "w5-s3-rules-7"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1455,
@@ -2338,7 +2338,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1098,
@@ -2361,7 +2361,7 @@
    "depends_on": [
     "w5-s3-rules-8"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1098,
@@ -2384,7 +2384,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 4606,
@@ -2407,7 +2407,7 @@
    "depends_on": [
     "w5-s3-subflow"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 4606,
@@ -2432,7 +2432,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1952,
@@ -2459,7 +2459,7 @@
    "depends_on": [
     "w5-s3-condexe-expression"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1952,
@@ -2484,7 +2484,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1023,
@@ -2507,7 +2507,7 @@
    "depends_on": [
     "w5-s3-transform"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1023,
@@ -2531,7 +2531,7 @@
     "w5-s3-heritage",
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 2740,
@@ -2554,7 +2554,7 @@
    "depends_on": [
     "w5-s3-coreaction-early"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2740,
@@ -2589,7 +2589,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1268,
@@ -2636,7 +2636,7 @@
    "depends_on": [
     "w5-kuna-rule-pack"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1268,
