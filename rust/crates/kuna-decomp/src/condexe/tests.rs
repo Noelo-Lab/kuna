@@ -676,10 +676,12 @@ fn orpredicate_single_form_surfaces_w6_seam() {
     assert!(msg.contains("glb->inst") || msg.contains("W6"), "Err names the W6 op-info seam: {msg}");
 }
 
-/// PIN the `opSetOutput` seam through `ConditionalExecution`: `new_unique_out`
-/// (the `newUniqueOut`→`opSetOutput` helper) surfaces the documented `Err`.
+/// `new_unique_out` (the `newUniqueOut`→`opSetOutput` helper): the
+/// w4x-flow-linkage wave filled `Funcdata::op_set_output`, so this now creates
+/// a real unique-space output linked to the op (formerly the pinned
+/// LOSS-035/036 seam Err).
 #[test]
-fn condexe_new_unique_out_surfaces_opsetoutput_seam() {
+fn condexe_new_unique_out_links_unique_output() {
     let mut fd = build_fd();
     let bl = new_bb(&mut fd);
     set_cover(&mut fd, bl, 0x1000);
@@ -687,9 +689,10 @@ fn condexe_new_unique_out_surfaces_opsetoutput_seam() {
     fd.structure_reset();
     let ce = ConditionalExecution::new(&fd);
     let op = new_op(&mut fd, 1, 0x1000, OpCode::CPUI_COPY);
-    // newUniqueOut(4, op) -> new_unique + op_set_output (the seam).
-    let res = ce.new_unique_out(4, op, &mut fd);
-    assert!(res.is_err(), "newUniqueOut routes through opSetOutput (LOSS-035/036)");
-    let msg = format!("{}", res.unwrap_err());
-    assert!(msg.contains("opSetOutput") || msg.contains("banks_mut"), "Err names opSetOutput seam: {msg}");
+    let outvn = ce.new_unique_out(4, op, &mut fd).expect("newUniqueOut real since w4x-flow-linkage");
+    let v = fd.vbank().get(outvn).expect("fresh output varnode");
+    assert_eq!(v.get_size(), 4);
+    assert_eq!(v.get_space().get_name(), "unique", "output lives in the unique space");
+    assert_eq!(fd.obank().get(op).expect("op").get_out(), Some(outvn), "op output linked");
+    assert_eq!(v.get_def(), Some(op), "output defined by the op");
 }

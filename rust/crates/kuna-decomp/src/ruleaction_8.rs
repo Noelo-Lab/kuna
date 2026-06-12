@@ -2169,9 +2169,11 @@ mod tests {
     // =====================================================================
 
     #[test]
-    fn orcompare_bails_at_new_unique_out_seam() {
-        // (V|W) feeding a single (==0): the descend-guard passes; the rewrite
-        // reaches newUniqueOut (W3 seam) and returns 0 WITHOUT corrupting the op.
+    fn orcompare_rewrites_or_equal_zero_to_bool_and() {
+        // (V|W) feeding a single (==0): since w4x-flow-linkage filled
+        // opSetOutput/newUniqueOut, the full C++ rewrite now runs
+        // (ruleaction.cc:10829): INT_EQUAL(V|W, 0) becomes
+        // BOOL_AND(INT_EQUAL(V,0), INT_EQUAL(W,0)).
         let mut fd = build_fd();
         let bl = mk_block(&mut fd);
         let v = {
@@ -2191,8 +2193,23 @@ mod tests {
         wire(&mut fd, orout, eq, 0);
         wire(&mut fd, zero, eq, 1);
         let _ = set_output(&mut fd, eq, 0x40, unk(1));
-        // Guard passes (one == 0 reader), but newUniqueOut is the W3 seam.
-        assert_eq!(RuleOrCompare.apply_op(orop, &mut fd), 0);
+        assert_eq!(RuleOrCompare.apply_op(orop, &mut fd), 1);
+        // The reader became BOOL_AND(eq_V_out, eq_W_out).
+        let eq_rec = fd.obank().get(eq).expect("eq survives");
+        assert_eq!(eq_rec.code(), OpCode::CPUI_BOOL_AND);
+        for (slot, base_in) in [(0i32, v), (1i32, w)] {
+            let in_vn = eq_rec.get_in(slot).expect("bool_and input");
+            let in_rec = fd.vbank().get(in_vn).expect("input varnode");
+            assert_eq!(in_rec.get_size(), 1, "unique bool output");
+            assert_eq!(in_rec.get_space().get_name(), "unique");
+            let def = in_rec.get_def().expect("defined by new INT_EQUAL");
+            let def_rec = fd.obank().get(def).expect("def op");
+            assert_eq!(def_rec.code(), OpCode::CPUI_INT_EQUAL);
+            assert_eq!(def_rec.get_in(0), Some(base_in), "compares V/W respectively");
+            let zin = def_rec.get_in(1).expect("zero constant");
+            let zrec = fd.vbank().get(zin).expect("const varnode");
+            assert!(zrec.is_constant() && zrec.get_offset() == 0 && zrec.get_size() == 4);
+        }
     }
 
     #[test]
