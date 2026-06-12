@@ -5798,4 +5798,162 @@ mod tests {
         assert_eq!(s[2].group, "doubleprecis"); // RuleDoubleIn
         assert_eq!(s[3].group, "doubleprecis"); // RuleDoubleOut
     }
+
+    // =====================================================================
+    // VERIFIER ADVERSARIAL TESTS (w6-s5-double, round 1)
+    // =====================================================================
+
+    /// Control / oracle for the divergence below: the C++ contract is that
+    /// `isWholeFeasible` (which mutates the member, setting `whole`/`defblock`/
+    /// `defpoint`) and `findCreateWhole` are called on the SAME object, so when
+    /// `findWholeSplitToPieces` discovers an existing `whole`, `findCreateWhole`
+    /// reuses it (early `if (whole != 0) return;`) and creates NO new op.
+    ///
+    /// This test threads one object through both calls (the AddForm/Equal1Form/
+    /// Equal3Form pattern) and confirms the existing whole is reused.
+    #[test]
+    fn verify_w6_s5_double_find_create_whole_reuses_existing_whole_when_threaded() {
+        let mut fd = build_fd();
+        // lo/hi are non-constant SUBPIECEs of an existing 8-byte `whole`.
+        let (whole, lo, hi) = build_split_off_whole(&mut fd);
+        // An existop located after the whole's def, in the same block.
+        let bl = op_get_parent(&fd, vn_get_def(&fd, whole).unwrap()).unwrap();
+        let existop = mk_op(&mut fd, 2, 0x900, OpCode::CPUI_INT_ADD);
+        fd.op_insert_end(existop, bl);
+
+        let mut s = SplitVarnode::empty();
+        s.lo = Some(lo);
+        s.hi = Some(hi);
+        s.wholesize = 8;
+
+        let pieces_before = fd.obank().iter_code(OpCode::CPUI_PIECE).count();
+        assert!(s.is_whole_feasible(&fd, existop), "feasible: whole exists");
+        assert_eq!(s.whole, Some(whole), "isWholeFeasible found the existing whole");
+        // Threaded: find_create_whole on the SAME object reuses `whole`.
+        s.find_create_whole(&mut fd);
+        assert_eq!(s.get_whole(), Some(whole), "reused the existing whole");
+        let pieces_after = fd.obank().iter_code(OpCode::CPUI_PIECE).count();
+        assert_eq!(
+            pieces_before, pieces_after,
+            "threaded path must NOT fabricate a new PIECE/concat op"
+        );
+    }
+
+    /// DIVERGENCE PROOF (F1): the `Equal2Form::replace` / `LessThreeWay::set_bool_op`
+    /// port passes a *throwaway clone* to `prepare_bool_op` (which runs
+    /// `is_whole_feasible` and mutates it), then calls `replace_bool_op` /
+    /// `create_bool_op` with a SECOND fresh clone — so the
+    /// `whole`/`defblock`/`defpoint` that `is_whole_feasible` discovered are
+    /// discarded.  For a non-constant second operand whose pieces are SUBPIECEs
+    /// of an existing whole, `find_create_whole` then sees `whole == None` and
+    /// FABRICATES a redundant concat op instead of reusing the existing whole
+    /// (the C++ reuses it).  This reproduces that exact call shape and shows the
+    /// extra op appears.
+    #[test]
+    fn verify_w6_s5_double_clonediscard_fabricates_redundant_whole() {
+        let mut fd = build_fd();
+        let (whole, lo, hi) = build_split_off_whole(&mut fd);
+        let bl = op_get_parent(&fd, vn_get_def(&fd, whole).unwrap()).unwrap();
+        // Register a start block so the (discarded-state) defblock==None branch of
+        // find_create_whole can complete its fabrication instead of erroring; the
+        // fact that this branch is even taken is itself the divergence.
+        let root = fd.bblocks_ref().root.expect("bblocks root");
+        fd.bblocks_mut().set_start_block(root, bl);
+        let existop = mk_op(&mut fd, 2, 0x900, OpCode::CPUI_INT_ADD);
+        fd.op_insert_end(existop, bl);
+
+        let base = SplitVarnode::empty();
+        let mut s = base.clone();
+        s.lo = Some(lo);
+        s.hi = Some(hi);
+        s.wholesize = 8;
+
+        let ops_before = fd.obank().num_alive();
+
+        // Equal2Form/LessThreeWay shape: prepare runs on a throwaway clone ...
+        let mut throwaway = s.clone();
+        assert!(throwaway.is_whole_feasible(&fd, existop));
+        assert_eq!(throwaway.whole, Some(whole), "discovery happened on the clone");
+        // ... and the original `s` never received the discovered fields.
+        assert_eq!(s.whole, None, "the prepare-step mutation was discarded");
+
+        // ... then the rewrite step clones `s` AGAIN and creates the whole.
+        let mut fresh = s.clone();
+        fresh.find_create_whole(&mut fd);
+        let ops_after = fd.obank().num_alive();
+
+        // The faithful C++ would have reused `whole` (no new op); the discarded
+        // state forces a fabricated concat.  These assertions capture the OBSERVED
+        // (buggy) behavior; the C++ oracle is `ops_after == ops_before` and
+        // `fresh.get_whole() == Some(whole)`.
+        assert_ne!(
+            fresh.get_whole(),
+            Some(whole),
+            "DIVERGENCE: clone-discard fabricates a new whole instead of reusing the existing one"
+        );
+        assert_eq!(
+            ops_after,
+            ops_before + 1,
+            "DIVERGENCE: a redundant concat op was created (C++ creates none)"
+        );
+        // The fabricated whole is defined by a brand-new PIECE op, placed at the
+        // (wrong) start block because defblock/defpoint were discarded.
+        let fab = fresh.get_whole().unwrap();
+        let fabdef = vn_get_def(&fd, fab).expect("fabricated whole has a def");
+        assert_eq!(op_code(&fd, fabdef), OpCode::CPUI_PIECE, "fabricated concat is a PIECE");
+    }
+
+    /// Hunt list (wrapping): `adjacentOffsets` constant form computes
+    /// `vn1.offset + size1 == vn2.offset` on `uintb`, which WRAPS in C++.  At the
+    /// u64 boundary the wrap must match: 0xFFFF_FFFF_FFFF_FFFF + 1 == 0.
+    #[test]
+    fn verify_w6_s5_double_adjacent_offsets_wraps_at_u64_boundary() {
+        let mut fd = build_fd();
+        let a = mk_const(&mut fd, 8, u64::MAX); // 0xFFFF...FF
+        let b = mk_const(&mut fd, 8, 0); // wraps to 0
+        // a + 1 wraps to 0 == b  -> must be true (C++ unsigned wrap).
+        assert!(
+            adjacent_offsets(&fd, a, b, 1),
+            "u64-boundary wrap: MAX + 1 == 0 must hold (matches C++ uintb wrap)"
+        );
+        // a + 2 == 1 != 0 -> false.
+        assert!(!adjacent_offsets(&fd, a, b, 2));
+    }
+
+    /// Hunt list (masking): `AddForm::checkForCarry` constant-less branch computes
+    /// `negconst = (~c) & calc_mask(lo1.size())`.  For a 4-byte lo1 and `c == 5`,
+    /// the result must be `(~5) & 0xFFFF_FFFF == 0xFFFF_FFFA` (NOT the full u64
+    /// `0xFFFF_FFFF_FFFF_FFFA`).
+    #[test]
+    fn verify_w6_s5_double_check_for_carry_negconst_masking() {
+        let mut fd = build_fd();
+        let bl = mk_block_with(&mut fd, &[]);
+        let r = ram(&fd);
+
+        // lo1 is a 4-byte non-constant var.
+        let lo1 = mk_vn(&mut fd, 0x80, 4);
+        // carryop = (CONST 5) INT_LESS lo1   -> the "constant on the left" CARRY form
+        let lessop = mk_op(&mut fd, 2, 0xA00, OpCode::CPUI_INT_LESS);
+        let lessout = fd.new_varnode_out(1, &Address::new(Rc::clone(&r), 0x90), lessop).unwrap();
+        let c5 = mk_const(&mut fd, 4, 5);
+        fd.op_set_input(lessop, c5, 0).unwrap();
+        fd.op_set_input(lessop, lo1, 1).unwrap();
+        fd.op_insert_end(lessop, bl);
+        // zext(lessout)
+        let zext = mk_op(&mut fd, 1, 0xA08, OpCode::CPUI_INT_ZEXT);
+        let _zout = fd.new_varnode_out(4, &Address::new(r, 0x94), zext).unwrap();
+        fd.op_set_input(zext, lessout, 0).unwrap();
+        fd.op_insert_end(zext, bl);
+
+        let mut form = AddForm::new();
+        form.lo1 = Some(lo1);
+        assert!(form.check_for_carry(&fd, zext), "constant-left CARRY form matches");
+        assert_eq!(
+            form.negconst,
+            (!5u64) & calc_mask(4),
+            "negconst masked to lo1's 4-byte width"
+        );
+        assert_eq!(form.negconst, 0xFFFF_FFFA, "explicit expected value");
+        assert!(form.negconst <= 0xFFFF_FFFF, "must NOT carry high u64 bits past the mask");
+    }
 }
