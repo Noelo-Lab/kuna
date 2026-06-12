@@ -2697,14 +2697,26 @@ impl Equal2Form {
             val = val.wshl((8 * vn_get_size(data, lo1)) as u32);
             val |= vn_get_offset(data, lo2);
             self.param2.init_partial_const(self.in_.get_size(), val);
-            return prepare_bool_op(data, &mut self.in_.clone(), &mut self.param2.clone(), boolandor);
+            // Thread the member pair (in,param2) through prepare so the whole/defblock/
+            // defpoint discovered by isWholeFeasible persists into the replaceBoolOp call
+            // in apply_rule (C++ prepareBoolOp(in,param2,...) mutates the members; double.cc:1926).
+            let (mut a, mut b) = (self.in_.clone(), self.param2.clone());
+            let res = prepare_bool_op(data, &mut a, &mut b, boolandor);
+            self.in_ = a;
+            self.param2 = b;
+            return res;
         }
         if vn_is_constant(data, hi2) || vn_is_constant(data, lo2) {
             // Some kind of mixed form
             return false;
         }
         self.param2.init_partial_pieces(data, self.in_.get_size(), self.lo2, self.hi2);
-        prepare_bool_op(data, &mut self.in_.clone(), &mut self.param2.clone(), boolandor)
+        // Same threading as the constant branch (C++ prepareBoolOp(in,param2,...); double.cc:1933).
+        let (mut a, mut b) = (self.in_.clone(), self.param2.clone());
+        let res = prepare_bool_op(data, &mut a, &mut b, boolandor);
+        self.in_ = a;
+        self.param2 = b;
+        res
     }
 
     fn apply_rule(&mut self, i: &SplitVarnode, op: OpId, workishi: bool, data: &mut Funcdata) -> bool {
@@ -2753,8 +2765,13 @@ impl Equal2Form {
             if self.param2.exceeds_const_precision() {
                 continue;
             }
+            // Reuse the pair prepared by replace() (whole/defblock/defpoint already
+            // discovered) — C++ replaceBoolOp(in,param2,...) passes the same members
+            // prepareBoolOp mutated (double.cc:1978).
             let (mut a, mut b) = (self.in_.clone(), self.param2.clone());
             replace_bool_op(data, boolandor, &mut a, &mut b, eq_code);
+            self.in_ = a;
+            self.param2 = b;
             return true;
         }
         false
@@ -3389,20 +3406,24 @@ impl LessThreeWay {
     }
 
     fn set_bool_op(&mut self, data: &Funcdata) -> bool {
-        // Make changes to the threeway branch so it becomes a single double branch
+        // Make changes to the threeway branch so it becomes a single double branch.
+        // Thread the member pair (in,in2) through prepare so the whole/defblock/defpoint
+        // discovered by isWholeFeasible persists into the createBoolOp call in apply_rule
+        // (C++ prepareBoolOp(in,in2,...) mutates the members; double.cc:2419-2425).
         let hilessbool = self.hilessbool.expect("sbo: hilessbool");
         if self.hislot == 0 {
             let (mut a, mut b) = (self.in_.clone(), self.in2.clone());
-            if prepare_bool_op(data, &mut a, &mut b, hilessbool) {
-                return true;
-            }
+            let res = prepare_bool_op(data, &mut a, &mut b, hilessbool);
+            self.in_ = a;
+            self.in2 = b;
+            res
         } else {
             let (mut a, mut b) = (self.in2.clone(), self.in_.clone());
-            if prepare_bool_op(data, &mut a, &mut b, hilessbool) {
-                return true;
-            }
+            let res = prepare_bool_op(data, &mut a, &mut b, hilessbool);
+            self.in2 = a;
+            self.in_ = b;
+            res
         }
-        false
     }
 
     fn map_from_low(&mut self, data: &Funcdata, op: OpId) -> bool {
@@ -3476,6 +3497,9 @@ impl LessThreeWay {
             if self.in2.exceeds_const_precision() {
                 return false;
             }
+            // Reuse the pair prepared by set_bool_op (whole/defblock/defpoint already
+            // discovered) — C++ createBoolOp(in,in2,...) passes the same members
+            // prepareBoolOp mutated (double.cc:2487-2490).
             let hilessbool = self.hilessbool.expect("ltw: hilessbool");
             if self.hislot == 0 {
                 let (mut a, mut b) = (self.in_.clone(), self.in2.clone());
@@ -5839,16 +5863,16 @@ mod tests {
         );
     }
 
-    /// DIVERGENCE PROOF (F1): the `Equal2Form::replace` / `LessThreeWay::set_bool_op`
-    /// port passes a *throwaway clone* to `prepare_bool_op` (which runs
-    /// `is_whole_feasible` and mutates it), then calls `replace_bool_op` /
-    /// `create_bool_op` with a SECOND fresh clone — so the
-    /// `whole`/`defblock`/`defpoint` that `is_whole_feasible` discovered are
-    /// discarded.  For a non-constant second operand whose pieces are SUBPIECEs
-    /// of an existing whole, `find_create_whole` then sees `whole == None` and
-    /// FABRICATES a redundant concat op instead of reusing the existing whole
-    /// (the C++ reuses it).  This reproduces that exact call shape and shows the
-    /// extra op appears.
+    /// PRIMITIVE GUARD (originally the F1 divergence proof — F1 is now FIXED at
+    /// the call sites; see `verify_w6_s5_double_equal2form_threads_prepared_whole`
+    /// and `..._lessthreeway_threads_prepared_whole` below).  This test reproduces
+    /// the *bad* call shape MANUALLY — passing a throwaway clone to the prepare
+    /// step (`is_whole_feasible`, which mutates `whole`/`defblock`/`defpoint`)
+    /// and then a SECOND fresh clone to the rewrite step (`find_create_whole`) —
+    /// and shows why it is wrong: the rewrite-step clone sees `whole == None` and
+    /// FABRICATES a redundant concat instead of reusing the existing whole.  It
+    /// remains as a regression guard documenting that `Equal2Form::replace` /
+    /// `LessThreeWay::set_bool_op` must NEVER discard the prepared object.
     #[test]
     fn verify_w6_s5_double_clonediscard_fabricates_redundant_whole() {
         let mut fd = build_fd();
@@ -5901,6 +5925,99 @@ mod tests {
         let fab = fresh.get_whole().unwrap();
         let fabdef = vn_get_def(&fd, fab).expect("fabricated whole has a def");
         assert_eq!(op_code(&fd, fabdef), OpCode::CPUI_PIECE, "fabricated concat is a PIECE");
+    }
+
+    /// F1 FIX (Equal2Form): `replace` now threads ONE clone pair (in,param2)
+    /// through `prepare_bool_op` (C++ `prepareBoolOp(in,param2,...)` mutates the
+    /// members; double.cc:1933) and persists it back to `self.in_`/`self.param2`,
+    /// so the `whole`/`defblock`/`defpoint` discovered by `is_whole_feasible`
+    /// survive into the `replace_bool_op` step in `apply_rule`
+    /// (double.cc:1978).  For a non-constant `param2` whose pieces are SUBPIECEs
+    /// of an existing whole, that whole must be REUSED (no fabricated concat).
+    #[test]
+    fn verify_w6_s5_double_equal2form_threads_prepared_whole() {
+        let mut fd = build_fd();
+        // lo2/hi2 are non-constant SUBPIECEs of an existing 8-byte `whole`.
+        let (whole, lo, hi) = build_split_off_whole(&mut fd);
+        let bl = op_get_parent(&fd, vn_get_def(&fd, whole).unwrap()).unwrap();
+        // The boolAndOr testop sits after the whole's def in the same block, so
+        // is_whole_feasible accepts the existing whole.
+        let boolandor = mk_op(&mut fd, 2, 0x900, OpCode::CPUI_BOOL_AND);
+        fd.op_insert_end(boolandor, bl);
+
+        let mut form = Equal2Form::new();
+        // in1 is an arbitrary constant pair (8 bytes) -> trivially whole-feasible.
+        form.in_.init_partial_const(8, 0x1234);
+        form.lo1 = Some(lo); // only its size is read in the constant branch
+        form.hi2 = Some(hi);
+        form.lo2 = Some(lo);
+        form.bool_and_or = Some(boolandor);
+
+        let pieces_before = fd.obank().iter_code(OpCode::CPUI_PIECE).count();
+        assert!(form.replace(&fd), "replace must prepare both operands");
+        // The prepare-step discovery is PERSISTED, not discarded.
+        assert_eq!(
+            form.param2.get_whole(),
+            Some(whole),
+            "isWholeFeasible's existing whole survived into self.param2"
+        );
+
+        // apply_rule's rewrite step reuses the persisted member -> no fabrication.
+        let (mut a, mut b) = (form.in_.clone(), form.param2.clone());
+        replace_bool_op(&mut fd, boolandor, &mut a, &mut b, OpCode::CPUI_INT_EQUAL);
+        assert_eq!(b.get_whole(), Some(whole), "rewrite reused the existing whole");
+        let pieces_after = fd.obank().iter_code(OpCode::CPUI_PIECE).count();
+        assert_eq!(
+            pieces_before, pieces_after,
+            "threaded path fabricates NO redundant PIECE/concat (C++ reuses the whole)"
+        );
+    }
+
+    /// F1 FIX (LessThreeWay): `set_bool_op` now threads ONE clone pair (in,in2)
+    /// through `prepare_bool_op` (C++ `prepareBoolOp(in,in2,...)` mutates the
+    /// members; double.cc:2419-2425) and persists it back, so the discovered
+    /// whole survives into the `create_bool_op` step in `apply_rule`
+    /// (double.cc:2487-2490).  A non-constant `in2` of an existing whole is reused.
+    #[test]
+    fn verify_w6_s5_double_lessthreeway_threads_prepared_whole() {
+        let mut fd = build_fd();
+        let (whole, lo, hi) = build_split_off_whole(&mut fd);
+        let bl = op_get_parent(&fd, vn_get_def(&fd, whole).unwrap()).unwrap();
+        let hilessbool = mk_op(&mut fd, 2, 0x900, OpCode::CPUI_CBRANCH);
+        fd.op_insert_end(hilessbool, bl);
+
+        // hilessbool is the CBRANCH whose bool input create_bool_op rewrites; give
+        // it a target (slot 0) and a free bool varnode (slot 1).
+        let target = mk_const(&mut fd, 8, 0x900);
+        fd.op_set_input(hilessbool, target, 0).unwrap();
+        let boolvn = mk_vn(&mut fd, 0x500, 1);
+        fd.op_set_input(hilessbool, boolvn, 1).unwrap();
+
+        let mut form = LessThreeWay::new();
+        // in (the marked input) is an arbitrary constant pair -> trivially feasible.
+        form.in_.init_partial_const(8, 0x1234);
+        // in2 is the non-constant existing-whole pair.
+        form.in2.init_partial_pieces(&fd, 8, Some(lo), Some(hi));
+        form.hilessbool = Some(hilessbool);
+        form.hislot = 0; // (in, in2) ordering
+
+        let pieces_before = fd.obank().iter_code(OpCode::CPUI_PIECE).count();
+        assert!(form.set_bool_op(&fd), "set_bool_op must prepare both operands");
+        assert_eq!(
+            form.in2.get_whole(),
+            Some(whole),
+            "isWholeFeasible's existing whole survived into self.in2"
+        );
+
+        // apply_rule's create step reuses the persisted member -> no fabrication.
+        let (mut a, mut b) = (form.in_.clone(), form.in2.clone());
+        create_bool_op(&mut fd, hilessbool, &mut a, &mut b, OpCode::CPUI_INT_LESS);
+        assert_eq!(b.get_whole(), Some(whole), "create reused the existing whole");
+        let pieces_after = fd.obank().iter_code(OpCode::CPUI_PIECE).count();
+        assert_eq!(
+            pieces_before, pieces_after,
+            "threaded path fabricates NO redundant PIECE/concat (C++ reuses the whole)"
+        );
     }
 
     /// Hunt list (wrapping): `adjacentOffsets` constant form computes
