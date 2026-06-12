@@ -375,12 +375,13 @@ fn w5s3r8_lzcount_non_power_of_two_size_blocks_without_mutation() {
 }
 
 #[test]
-fn w5s3r8_lzcount_power_of_two_reaches_w3_seam_and_noops_cleanly() {
+fn w5s3r8_lzcount_power_of_two_completes_int_equal_rewrite() {
     // size-4 input => max_return=32 (popcount 1) passes the guard; reader
-    // `lzout >> 5` matches `32>>5==1`, so the rule enters the transform and
-    // reaches newUniqueOut (W3 seam) -> returns 0.  The reader opcode is NOT yet
-    // rewritten at the point the seam aborts (opSetOpcode(baseOp,...) happens
-    // AFTER the seam'd newUniqueOut), so it stays INT_RIGHT.
+    // `lzout >> 5` matches `32>>5==1`.  Since w4x-flow-linkage filled
+    // newUniqueOut/opSetOutput, the FULL C++ transform now runs
+    // (ruleaction.cc lzcount body): a fresh INT_EQUAL(x, 0) is inserted before
+    // the shift, the shift loses its constant input and becomes INT_ZEXT (its
+    // output is size 4 != 1) reading the new unique bool.
     let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let x = mk_input(&mut fd, 0x10, 4);
@@ -393,28 +394,31 @@ fn w5s3r8_lzcount_power_of_two_reaches_w3_seam_and_noops_cleanly() {
     wire(&mut fd, five, shr, 1);
     let _ = set_output(&mut fd, shr, 0x80, unk(4));
 
-    assert_eq!(
-        RuleLzcountShiftBool.apply_op(lz, &mut fd),
-        0,
-        "power-of-2 size + matching shift reaches the W3 newUniqueOut seam -> 0"
-    );
-    assert_eq!(
-        code(&fd, shr),
-        OpCode::CPUI_INT_RIGHT,
-        "baseOp opcode rewrite happens after the seam; stays INT_RIGHT on abort"
-    );
+    assert_eq!(RuleLzcountShiftBool.apply_op(lz, &mut fd), 1, "transform completes since w4x");
+    assert_eq!(code(&fd, shr), OpCode::CPUI_INT_ZEXT, "size-4 output -> INT_ZEXT (not COPY)");
+    let shr_rec = fd.obank().get(shr).expect("shift survives as zext");
+    assert_eq!(shr_rec.num_input(), 1, "constant shift-amount input removed");
+    let bool_in = shr_rec.get_in(0).expect("zext input");
+    let bool_rec = fd.vbank().get(bool_in).expect("unique bool varnode");
+    assert_eq!(bool_rec.get_size(), 1);
+    let eq = bool_rec.get_def().expect("defined by the fresh INT_EQUAL");
+    let eq_rec = fd.obank().get(eq).expect("eq op");
+    assert_eq!(eq_rec.code(), OpCode::CPUI_INT_EQUAL);
+    assert_eq!(eq_rec.get_in(0), Some(x), "compares the original lzcount operand");
+    let z = fd.vbank().get(eq_rec.get_in(1).expect("zero")).expect("const");
+    assert!(z.is_constant() && z.get_offset() == 0 && z.get_size() == 4);
 }
 
 // ===========================================================================
-// F-D: RuleOrCompare W3 newUniqueOut seam — partial-state pin (LOSS family).
-//   On the seam Err the rule returns 0, but the fresh eq_V/eq_W ops have already
-//   been linked as descendants of V and W (op_set_input ran before the seam'd
-//   newUniqueOut).  This documents the partial-state divergence: in C++ this path
-//   completes; in the port it half-builds and aborts.  V/W gain a descendant.
+// F-D: RuleOrCompare — formerly a partial-state seam pin; since
+//   w4x-flow-linkage filled newUniqueOut, the C++ path COMPLETES
+//   (ruleaction.cc:10829): INT_EQUAL(V|W, 0) -> BOOL_AND(INT_EQUAL(V,0),
+//   INT_EQUAL(W,0)).  V/W each gain exactly one well-formed descendant (the
+//   fresh comparison), not an orphan.
 // ===========================================================================
 
 #[test]
-fn w5s3r8_orcompare_seam_leaves_partial_descend_links_on_v_and_w() {
+fn w5s3r8_orcompare_completes_and_links_v_w_descendants() {
     let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let v = mk_input(&mut fd, 0x10, 4);
@@ -429,23 +433,24 @@ fn w5s3r8_orcompare_seam_leaves_partial_descend_links_on_v_and_w() {
     wire(&mut fd, zero, eq, 1);
     let _ = set_output(&mut fd, eq, 0x40, unk(1));
 
-    // descend counts BEFORE: V and W each feed only `orop`.
-    let v_before = fd.vbank().get(v).unwrap().num_descend();
-    let w_before = fd.vbank().get(w).unwrap().num_descend();
-    assert_eq!(v_before, 1);
-    assert_eq!(w_before, 1);
+    assert_eq!(fd.vbank().get(v).unwrap().num_descend(), 1);
+    assert_eq!(fd.vbank().get(w).unwrap().num_descend(), 1);
 
-    let r = RuleOrCompare.apply_op(orop, &mut fd);
-    assert_eq!(r, 0, "RuleOrCompare bails at the W3 newUniqueOut seam");
-    // The OR op is intact (its opcode was NOT changed before the seam abort).
+    assert_eq!(RuleOrCompare.apply_op(orop, &mut fd), 1, "rewrite completes since w4x");
+    // The OR op itself is untouched; its READER became BOOL_AND.
     assert_eq!(code(&fd, orop), OpCode::CPUI_INT_OR);
+    assert_eq!(code(&fd, eq), OpCode::CPUI_BOOL_AND);
 
-    // PARTIAL STATE: V and W each gained the fresh eq_V / eq_W descendant before
-    // the seam aborted.  This is the documented W3-seam partial-state divergence
-    // (C++ completes this path; the port half-builds).  Pin it so a future
-    // un-seaming that forgets to either finish or roll back is caught.
-    let v_after = fd.vbank().get(v).unwrap().num_descend();
-    let w_after = fd.vbank().get(w).unwrap().num_descend();
-    assert_eq!(v_after, 2, "V gained the orphan eq_V descendant (partial state)");
-    assert_eq!(w_after, 2, "W gained the orphan eq_W descendant (partial state)");
+    // V and W each gained exactly one descendant — a fresh, fully-linked
+    // INT_EQUAL (with a unique bool output feeding the BOOL_AND), not an orphan.
+    for (base, slot) in [(v, 0i32), (w, 1i32)] {
+        assert_eq!(fd.vbank().get(base).unwrap().num_descend(), 2);
+        let and_in = fd.obank().get(eq).unwrap().get_in(slot).expect("bool_and input");
+        let and_in_rec = fd.vbank().get(and_in).expect("unique bool");
+        assert_eq!(and_in_rec.get_size(), 1);
+        let def = and_in_rec.get_def().expect("defined");
+        let def_rec = fd.obank().get(def).expect("fresh INT_EQUAL");
+        assert_eq!(def_rec.code(), OpCode::CPUI_INT_EQUAL);
+        assert_eq!(def_rec.get_in(0), Some(base));
+    }
 }
