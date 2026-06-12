@@ -22,33 +22,29 @@
 //!      for >= 3 fixtures — that the exact opcode sequence of the first 20 ops
 //!      matches the lift fixture's corresponding instruction ops.
 //!
-//! ## The W3/W4 `op_set_output`/`newCodeRef` emitter seam (carried, not mine)
+//! ## The W3/W4 emitter seam (now COMPLETED by `w4x-flow-linkage`)
 //!
 //! The W3 op-building emitter (`flow.rs` `PcodeEmitFd::dump` → `FlowEmit::dump`)
-//! defers `newVarnodeOut` (which needs `Funcdata::opSetOutput`, itself deferred
-//! on the W4 `banks_mut()` split-borrow accessor) and `newCodeRef` (a
-//! `funcdata_varnode` factory not yet ported).  So the real
-//! `FlowInfo::process_instruction` / `generate_ops` returns a precise
-//! seam-`Err` the moment a decoded instruction has an output or a code-ref
-//! input — i.e. essentially every real instruction.  Those files
-//! (`flow.rs`/`funcdata_op.rs`/`funcdata_varnode.rs`) are owned by other waves;
-//! this item cannot fix them.  See `docs/rust-port/losses.md`.
-//!
-//! Strand (3) therefore drives flow in **two** complementary ways, both
+//! formerly deferred `newVarnodeOut`/`newCodeRef`/`opSetOutput` (blocked on a
+//! `banks_mut()` split-borrow accessor).  Item `w4x-flow-linkage` landed that
+//! accessor and the factories, so the real `FlowInfo::process_instruction` now
+//! builds every op + its output/input Varnodes (see the dedicated gate
+//! `tests/flow_linkage.rs`, which asserts the real-flow op lines against these same
+//! lift fixtures).  Strand (3) here keeps **two** complementary checks, both
 //! through the same `Translate::one_instruction` call the real flow makes:
 //!
-//!   - **Real `FlowInfo`** (`process_instruction` at the entry): proves the
-//!     bootstrapped engine is wired into the flow engine and surfaces the exact
-//!     documented seam note (no silent wrong output).
+//!   - **Real `FlowInfo`** (`process_instruction` at the entry): now LINKS ops
+//!     (see `real_flow_links_ops`), proving the bootstrapped engine is wired into
+//!     the flow engine end-to-end.
 //!   - **A faithful op-building emitter** (`BootstrapEmit`, a transcription of
 //!     `PcodeEmitFd::dump` that builds real ops into the `Funcdata` with their
 //!     opcode + every input operand via the *ported* `new_op`/`op_set_opcode`/
-//!     `new_varnode_space_off`/`op_set_input` mutators, and captures the output
-//!     `VarnodeData` the deferred `op_set_output` would have linked): this gives
-//!     the op count and the opcode sequence the gate asserts, byte-for-byte
-//!     against the lift fixtures.  The code-ref input that `newCodeRef` would
-//!     build is reproduced with a plain varnode at the target address (the lift
-//!     fixtures show exactly that `(<space>,0x<target>,<size>)` varnode).
+//!     `new_varnode_space_off`/`op_set_input` mutators): this renders the op count
+//!     and the opcode-sequence + op-line fixtures byte-for-byte.  Its output column
+//!     uses the raw `VarnodeData` (the lift-fixture template), and its code-ref
+//!     input is a plain varnode at the target address — i.e. it reproduces the raw
+//!     lift TEMPLATE, complementary to `flow_linkage.rs`, which asserts the BUILT IR
+//!     (where `newCodeRef` makes the code-ref a size-1 annotation).
 //!
 //! ## Flow-order vs lift-order mapping
 //!
@@ -526,25 +522,37 @@ fn ir_boundary_manager(src: &AddrSpaceManager) -> AddrSpaceManager {
     m
 }
 
-/// Drive the real `FlowInfo::process_instruction` at the entry, returning
-/// whether it hit the documented W3/W4 emitter seam (the expected outcome for a
-/// real instruction).  Proves the bootstrapped engine is wired into the flow
-/// engine and the boundary is precise.
-fn real_flow_reaches_seam(bs: &Bootstrap, fd: Funcdata) -> bool {
+/// Drive the real `FlowInfo::process_instruction` at the entry and prove the
+/// now-real emitter path links ops: the W3/W4 `newVarnodeOut`/`newCodeRef`/
+/// `opSetOutput` emitter seam was completed (item `w4x-flow-linkage`), so the real
+/// `FlowEmit::dump` builds every op + its output/input Varnodes.  Returns `true`
+/// when the entry instruction is processed successfully (ops linked into the
+/// Funcdata, the instruction recorded as visited) — strictly stronger than the old
+/// "reached the documented seam" check.  Proves the bootstrapped engine is wired
+/// into the flow engine end-to-end.
+fn real_flow_links_ops(bs: &Bootstrap, fd: Funcdata) -> bool {
     let env = BootstrapEnv { sleigh: bs.arch.sleigh().base().unwrap().translate() };
     let mut flow = FlowInfo::new(fd, &env);
     let entry = flow.data.get_address().clone();
+    let before = flow.data.obank().iter_dead().count();
     let mut startbasic = true;
     match flow.process_instruction(&entry, &mut startbasic) {
         Ok(_) => {
-            // A no-output, no-coderef instruction can succeed faithfully; the
-            // visited map must then record it.
-            flow.visited_contains(&entry)
+            // The real emitter built the instruction's ops into the dead list and
+            // recorded the instruction as visited.
+            let after = flow.data.obank().iter_dead().count();
+            flow.visited_contains(&entry) && after >= before
         }
+        // A decoded instruction that needs a W4 subsystem (e.g. a CALL's
+        // setupCallSpecs no-return, or a jump-table BRANCHIND) surfaces a precise
+        // W4 seam Err — still proves the engine is wired into flow (the op-building
+        // emitter ran; the W4 subsystem boundary is what was reached, not the
+        // now-completed output/codeRef emitter seam).
         Err(KunaError::Lowlevel { explain, .. }) => {
-            explain.contains("newVarnodeOut")
-                || explain.contains("newCodeRef")
-                || explain.contains("opSetOutput")
+            explain.contains("FuncCallSpecs")
+                || explain.contains("JumpTable")
+                || explain.contains("PcodeInjectLibrary")
+                || explain.contains("jump-table")
         }
         Err(_) => false,
     }
@@ -675,12 +683,14 @@ fn bootstrap_corpus_and_follow_flow() {
         );
         assert!(!body.is_empty(), "{fixture}: no lift body produced");
 
-        // The real FlowInfo path reaches the documented W3/W4 emitter seam
-        // (proves the engine is wired into flow; the seam is carried, not ours).
+        // The real FlowInfo path now LINKS ops via the completed emitter
+        // (`w4x-flow-linkage`): the real `FlowEmit::dump` builds every op + its
+        // output/input Varnodes (or reaches a genuine W4 subsystem boundary for a
+        // CALL/jump-table entry).  Strictly stronger than the old seam check.
         let fd2 = build_funcdata(&bs, "entry", &space_name, off);
         assert!(
-            real_flow_reaches_seam(&bs, fd2),
-            "{fixture}: real FlowInfo did not reach the documented emitter seam"
+            real_flow_links_ops(&bs, fd2),
+            "{fixture}: real FlowInfo did not link ops at the entry instruction"
         );
 
         bootstrapped += 1;

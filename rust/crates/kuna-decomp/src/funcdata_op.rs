@@ -148,27 +148,15 @@ impl Funcdata {
     /// any op currently defining it, then `vbank.setDef`/`setVarnodeProperties`/
     /// `op->setOutput` in that exact order.
     ///
-    /// MISSING API (status=partial): the central `vn = vbank.setDef(vn,op)` step
-    /// needs the [`VarnodeBank`](crate::varnode::VarnodeBank) AND the
+    /// The central `vn = vbank.setDef(vn,op)` step needs the
+    /// [`VarnodeBank`](crate::varnode::VarnodeBank) AND the
     /// [`PcodeOpBank`](crate::op::PcodeOpBank) borrowed **simultaneously** — the
     /// bank's `xref` may unify the new def varnode with an existing equivalent and
     /// must then run [`replace_reads_thunk`](Funcdata::replace_reads_thunk) over
-    /// `obank` to repoint readers.  The two banks are *private* fields of the
-    /// `funcdata` module; the public accessors `vbank_mut()`/`obank_mut()` each
-    /// take `&mut self`, so they cannot be held at once, and this parallel item
-    /// has no seam-editing rights to add a split accessor.  The serial-chain
-    /// `funcdata` owner must expose a `banks_mut(&mut self) -> (&mut VarnodeBank,
-    /// &mut PcodeOpBank)` split-borrow accessor; this method then becomes:
-    ///
-    /// ```text
-    ///   let (vbank, obank) = self.banks_mut();
-    ///   let mut replace = Funcdata::replace_reads_thunk(obank);
-    ///   let vn = vbank.set_def(vn, def, &mut replace)?;
-    /// ```
-    ///
-    /// The pre-/post-amble (the early-out, both `opUnsetOutput`s,
-    /// `setVarnodeProperties`, `op->setOutput`) is fully ported below up to that
-    /// step.  Recorded as a loss.
+    /// `obank` to repoint readers.  That is exactly what
+    /// [`banks_mut`](Funcdata::banks_mut) supplies; `set_def` returns the kept
+    /// varnode id (`vn` after a possible xref-unification), which the C++ assigns
+    /// back to `vn` before `op->setOutput(vn)`.
     pub fn op_set_output(&mut self, op: OpId, vn: VarnodeId) -> KunaResult<()> {
         // if (vn == op->getOut()) return; // Already set to this vn
         if self.obank().get(op).expect("op_set_output: stale op").get_out() == Some(vn) {
@@ -182,14 +170,20 @@ impl Funcdata {
         if let Some(defop) = self.vbank().get(vn).expect("op_set_output: stale vn").get_def() {
             self.op_unset_output(defop);
         }
-        // vn = vbank.setDef(vn, op);  -- MISSING API: needs (&mut vbank, &mut obank)
-        //   simultaneously for replace_reads_thunk.  See the method doc.
-        let _def = self.def_op_info(op);
-        Err(KunaError::lowlevel(
-            "kuna rust port: Funcdata::opSetOutput needs a banks_mut() split-borrow accessor \
-             (&mut VarnodeBank, &mut PcodeOpBank) on Funcdata for vbank.setDef + replace_reads_thunk; \
-             prologue (opUnsetOutput x2) ported, setDef step deferred",
-        ))
+        // vn = vbank.setDef(vn, op);  -- split-borrow both banks so the xref
+        //   read-repointing callback can reach obank mid-vbank-mutation.  Scoped so
+        //   the thunk (holding &mut obank) drops before the later &mut self calls.
+        let def = self.def_op_info(op);
+        let vn = {
+            let (vbank, obank) = self.banks_mut();
+            let mut replace = Funcdata::replace_reads_thunk(obank);
+            vbank.set_def(vn, def, &mut replace)?
+        };
+        // setVarnodeProperties(vn);
+        self.set_varnode_properties(vn);
+        // op->setOutput(vn);
+        self.obank_mut().get_mut(op).expect("op_set_output: stale op").set_output(Some(vn));
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -502,19 +496,30 @@ impl Funcdata {
     /// Destroy a \e dead op replaced during flow generation, with all of its
     /// input/output Varnodes (C++ `Funcdata::opDestroyRaw`, `funcdata_op.cc:253`).
     ///
-    /// SEAM(W3-varnode): the C++ destroys every input/output Varnode object via
-    /// `destroyVarnode`; that factory is funcdata_varnode's.  The op half
-    /// (`obank.destroy(op)`, the retire-to-`deadandgone` discipline) is ported;
-    /// the varnode destruction is deferred.  Recorded as a loss.
-    pub fn op_destroy_raw(&mut self, _op: OpId) -> KunaResult<()> {
-        // for(i=0;i<numInput();++i) destroyVarnode(op->getIn(i));
+    /// Faithful transcription now that
+    /// [`destroy_varnode`](Funcdata::destroy_varnode) (funcdata_varnode) is ported:
+    /// destroy every input Varnode, then the output if present, then the op
+    /// (`obank.destroy(op)`; the op must be dead).  Statement order matches the
+    /// C++ exactly (inputs first, then output, then the op).
+    pub fn op_destroy_raw(&mut self, op: OpId) -> KunaResult<()> {
+        // for(int4 i=0;i<op->numInput();++i) destroyVarnode(op->getIn(i));
+        let n = self.obank().get(op).expect("op_destroy_raw: stale op").num_input();
+        for i in 0..n {
+            let vn = self
+                .obank()
+                .get(op)
+                .expect("op_destroy_raw: stale op")
+                .get_in(i)
+                .expect("op_destroy_raw: null input (C++ destroyVarnode UB)");
+            self.destroy_varnode(vn)?;
+        }
         // if (op->getOut() != 0) destroyVarnode(op->getOut());
-        //   -- SEAM(W3-varnode): destroyVarnode not yet ported.
-        // obank.destroy(op);  -- ported (op must be dead; panics otherwise).
-        Err(KunaError::lowlevel(
-            "kuna rust port: Funcdata::opDestroyRaw needs destroyVarnode (funcdata_varnode); \
-             call obank.destroy(op) directly once the varnode factory lands",
-        ))
+        if let Some(out) = self.obank().get(op).expect("op_destroy_raw: stale op").get_out() {
+            self.destroy_varnode(out)?;
+        }
+        // obank.destroy(op);  -- op must be dead; the bank panics otherwise.
+        self.obank_mut().destroy(op);
+        Ok(())
     }
 
     /// Insert the op into the dead list immediately after `prev`
