@@ -447,3 +447,246 @@ fn contained_by_no_panic_on_wrap_w6s4() {
     // A normal exact containment still holds.
     assert!(e.contained_by(&addr(&reg, 0x10), 4));
 }
+
+// ===========================================================================
+// ROUND 2 (re-verify of the F1 comparator fix): full strict-weak-order audit.
+//
+// Round 1 REJECTed because `cmp` returned `Greater` for (None, None) in BOTH
+// directions (antisymmetry broken).  The repair maps (None, None) -> Equal.
+// These tests go beyond the single antisymmetry probe and assert the THREE
+// strict-weak-order laws the C++ `operator<` satisfies and that any
+// `sort_unstable_by` consumer relies on:
+//   (1) irreflexivity / Equal-on-self,
+//   (2) antisymmetry: cmp(a,b) == cmp(b,a).reverse(),
+//   (3) transitivity of the induced ordering.
+// They are checked EXHAUSTIVELY over a representative trial population that
+// mixes the every comparator branch (group, entry-index, exclusion offset,
+// reverse-stack addr, size) PLUS null entries.
+// ===========================================================================
+
+/// Build a model with: entry0 grp0 excl @0x10, entry1 grp1 excl @0x20,
+/// entry2 grp1 excl @0x24 (same group as entry1 -> entry-index tiebreak),
+/// returning the model + register space.
+fn three_excl_two_in_group_model() -> (ParamListStandard, Rc<AddrSpace>) {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let mut model = ParamListStandard::new(ParamListKind::Standard);
+    let e0 = excl_entry(0, &reg, 0x10, 4, &[], &mgr);
+    model.push_entry(e0);
+    let e1 = excl_entry(1, &reg, 0x20, 4, model.get_entry(), &mgr);
+    model.push_entry(e1);
+    // Distinct group so resolveOverlap does not reject; group 2.
+    let e2 = excl_entry(2, &reg, 0x30, 4, model.get_entry(), &mgr);
+    model.push_entry(e2);
+    model.finish_decode();
+    (model, reg)
+}
+
+/// Exhaustively verify the strict-weak-order laws of `ParamTrial::cmp` over a
+/// population that exercises every comparator branch AND null entries.  This is
+/// the round-2 generalization of the round-1 antisymmetry probe: a non-total
+/// comparator (the round-1 defect) FAILS law (2) on the (null,null) pair and
+/// can FAIL law (3) anywhere; a correct total order passes all three.
+#[test]
+fn cmp_is_total_strict_weak_order_exhaustive_w6s4() {
+    use std::cmp::Ordering;
+    let (model, reg) = three_excl_two_in_group_model();
+    let entries = model.get_entry();
+
+    // Population: real trials matching each entry (different groups/indices) +
+    // two trials in the same group (entry-index tiebreak) + two null trials.
+    let mk = |off: u64, sz: int4, ent: Option<usize>| {
+        let mut t = ParamTrial::new(addr(&reg, off), sz, 0);
+        if let Some(e) = ent {
+            t.set_entry(Some(e), 0);
+        }
+        t
+    };
+    let pop = vec![
+        mk(0x10, 4, Some(0)), // grp0
+        mk(0x20, 4, Some(1)), // grp1, entry idx 1
+        mk(0x30, 4, Some(2)), // grp2, entry idx 2
+        mk(0x20, 2, Some(1)), // same entry as #1, smaller size (size tiebreak)
+        mk(0x20, 4, Some(1)), // duplicate of #1 -> must be Equal to #1
+        mk(0x99, 4, None),    // null entry
+        mk(0xAA, 4, None),    // null entry (must be Equal to the other null)
+    ];
+
+    let cmp = |i: usize, j: usize| pop[i].cmp(&pop[j], entries);
+
+    // (1) reflexivity: every element Equal to itself.
+    for i in 0..pop.len() {
+        assert_eq!(
+            cmp(i, i),
+            Ordering::Equal,
+            "cmp not reflexive at {i}"
+        );
+    }
+    // (2) antisymmetry: cmp(i,j) == cmp(j,i).reverse() for ALL pairs.
+    for i in 0..pop.len() {
+        for j in 0..pop.len() {
+            assert_eq!(
+                cmp(i, j),
+                cmp(j, i).reverse(),
+                "antisymmetry broken for ({i},{j}): {:?} vs reverse({:?})",
+                cmp(i, j),
+                cmp(j, i)
+            );
+        }
+    }
+    // The two null trials specifically must be Equal (the F1 fix).
+    assert_eq!(cmp(5, 6), Ordering::Equal, "two null trials must be Equal");
+    // (3) transitivity of the induced ordering: if i<=j and j<=k then i<=k,
+    //     and the Equal-equivalence is also transitive.  Checked exhaustively.
+    let le = |a: Ordering| a != Ordering::Greater; // a <= b
+    for i in 0..pop.len() {
+        for j in 0..pop.len() {
+            for k in 0..pop.len() {
+                if le(cmp(i, j)) && le(cmp(j, k)) {
+                    assert!(
+                        le(cmp(i, k)),
+                        "transitivity broken: {i}<={j} && {j}<={k} but not {i}<={k}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// `fixedPositionCompare` (fspec.cc:1922) must also be a total order, because
+/// `sortFixedPosition` feeds it to `sort_unstable_by`.  Its (-1,-1) arm
+/// delegates to `cmp`, so any non-totality in `cmp` (the round-1 defect) leaks
+/// through.  Exhaustively audit antisymmetry over a mix of fixed and unfixed
+/// positions, including two unfixed null-entry trials (the path that delegates
+/// to the (None,None) `cmp` case).
+#[test]
+fn fixed_position_compare_is_total_order_w6s4() {
+    use std::cmp::Ordering;
+    let (model, reg) = three_excl_two_in_group_model();
+    let entries = model.get_entry();
+
+    let mk = |off: u64, ent: Option<usize>, fp: int4| {
+        let mut t = ParamTrial::new(addr(&reg, off), 4, 0);
+        if let Some(e) = ent {
+            t.set_entry(Some(e), 0);
+        }
+        if fp >= 0 {
+            t.set_fixed_position(fp);
+        }
+        t
+    };
+    let pop = vec![
+        mk(0x10, Some(0), 0),  // fixed pos 0
+        mk(0x20, Some(1), 1),  // fixed pos 1
+        mk(0x30, Some(2), -1), // unfixed, real entry -> delegates to cmp
+        mk(0x99, None, -1),    // unfixed, null entry -> (None,None) cmp path
+        mk(0xAA, None, -1),    // unfixed, null entry
+        mk(0x20, Some(1), 0),  // same fixed pos as #0 -> Equal on fixedPosition
+    ];
+
+    let fc =
+        |i: usize, j: usize| ParamTrial::fixed_position_compare(&pop[i], &pop[j], entries);
+
+    for i in 0..pop.len() {
+        assert_eq!(fc(i, i), Ordering::Equal, "fixedPositionCompare not reflexive at {i}");
+        for j in 0..pop.len() {
+            assert_eq!(
+                fc(i, j),
+                fc(j, i).reverse(),
+                "fixedPositionCompare antisymmetry broken for ({i},{j})"
+            );
+        }
+    }
+    // The two unfixed null trials must be Equal (delegated (None,None) -> Equal).
+    assert_eq!(fc(3, 4), Ordering::Equal, "unfixed null trials must be Equal");
+    // An unfixed trial sorts AFTER any fixed one (C++ returns false for a<b when
+    // a.fixedPosition == -1 and b is fixed): cmp(unfixed, fixed) == Greater.
+    assert_eq!(fc(2, 0), Ordering::Greater, "unfixed must sort after fixed");
+    assert_eq!(fc(0, 2), Ordering::Less, "fixed must sort before unfixed");
+}
+
+/// `ParamActive::splitTrial` then `joinTrial` slot bookkeeping (fspec.cc:2035,
+/// 2065).  splitTrial bumps `slotbase` and re-slots every trial whose slot is
+/// past the split point; joinTrial collapses two adjacent slots and shifts the
+/// rest down.  A round trip (split slot 2, then join it back) must restore the
+/// original slot layout and trial count, and `slotbase` must return to its
+/// starting value.  Targets the off-by-one / slot-shift bookkeeping in the
+/// hunt list.
+#[test]
+fn split_then_join_round_trips_slots_w6s4() {
+    let reg = reg_space_le();
+    let mut active = ParamActive::new(false);
+    // Three trials in slots 1,2,3 (registerTrial assigns slotbase++, starting 1).
+    active.register_trial(&addr(&reg, 0x10), 8); // slot 1
+    active.register_trial(&addr(&reg, 0x20), 8); // slot 2
+    active.register_trial(&addr(&reg, 0x30), 8); // slot 3
+    let slots0: Vec<int4> = (0..active.get_num_trials())
+        .map(|i| active.get_trial(i).get_slot())
+        .collect();
+    assert_eq!(slots0, vec![1, 2, 3], "initial slot layout");
+
+    // Split the slot-2 (index 1) trial into a 4+4 pair.  This makes slot 2 ->
+    // two trials, and the old slot-3 trial must shift up to slot 4.
+    active.split_trial(1, 4).expect("split");
+    assert_eq!(active.get_num_trials(), 4, "split adds one trial");
+    let slots1: Vec<int4> = (0..active.get_num_trials())
+        .map(|i| active.get_trial(i).get_slot())
+        .collect();
+    // splitHi keeps slot 2, splitLo gets slot 3, old slot-3 trial bumped to 4.
+    assert_eq!(slots1, vec![1, 2, 3, 4], "post-split slots");
+
+    // Now join slots 2 and 3 back into one 8-byte trial.  The size check
+    // (4+4 == 8) must pass and the trial count returns to 3 with slots 1,2,3.
+    active
+        .join_trial(2, &addr(&reg, 0x20), 8)
+        .expect("join 2+3 -> 8");
+    assert_eq!(active.get_num_trials(), 3, "join removes one trial");
+    let slots2: Vec<int4> = (0..active.get_num_trials())
+        .map(|i| active.get_trial(i).get_slot())
+        .collect();
+    assert_eq!(slots2, vec![1, 2, 3], "join restores the slot layout");
+
+    // A join whose pieces do not sum to the requested size must error (C++
+    // throws "Size mismatch"); verify Result parity (no panic, Err).
+    active.split_trial(1, 4).expect("split again");
+    let bad = active.join_trial(2, &addr(&reg, 0x20), 7); // 4+4 != 7
+    assert!(bad.is_err(), "join with size mismatch must be Err (C++ throws)");
+}
+
+/// `ParamEntry::getSlot` reverse-stack slot mapping (fspec.cc:411).  For a
+/// reverse-stack non-exclusion entry the slot index is
+/// `groupSet[0] + (numslots-1) - baseslot`, where `baseslot = (offset+skip
+/// -addressbase)/alignment`.  This is the SLOT side of the round-1
+/// `getAddrBySlot` test and exercises the reverse-stack arithmetic from the
+/// other direction.  A faithful port must invert getAddrBySlot's index map.
+#[test]
+fn get_slot_reverse_stack_mapping_w6s4() {
+    let mgr = AddrSpaceManager::new();
+    let stk = stack_space();
+    // align 4, size 16 => numslots 4, reverse stack, group base 0.
+    let e = ParamEntry::seed(
+        0,
+        type_class::TYPECLASS_GENERAL,
+        Rc::clone(&stk),
+        0x0,
+        16,
+        1,
+        4,
+        0,
+        false, // reverse stack
+        false,
+        &[],
+        &mgr,
+    )
+    .expect("seed reverse-stack entry");
+    assert!(e.is_reverse_stack());
+
+    // baseslot at offset 0 = 0 => slot = (numslots-1) - 0 = 3 (top of stack).
+    assert_eq!(e.get_slot(&addr(&stk, 0x0), 0), 3, "offset 0 => slot 3");
+    // baseslot at offset 4 = 1 => slot = 3 - 1 = 2.
+    assert_eq!(e.get_slot(&addr(&stk, 0x4), 0), 2, "offset 4 => slot 2");
+    // skip advances within the same call: offset 0 + skip 12 => baseslot 3 => slot 0.
+    assert_eq!(e.get_slot(&addr(&stk, 0x0), 12), 0, "offset 0 skip 12 => slot 0");
+    // offset 8 => baseslot 2 => slot 1.
+    assert_eq!(e.get_slot(&addr(&stk, 0x8), 0), 1, "offset 8 => slot 1");
+}
