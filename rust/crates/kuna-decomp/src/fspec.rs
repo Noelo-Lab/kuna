@@ -1136,9 +1136,20 @@ impl ParamTrial {
     pub fn cmp(&self, b: &ParamTrial, entries: &[ParamEntry]) -> std::cmp::Ordering {
         use std::cmp::Ordering::*;
         // if (entry == null) return false;  if (b.entry == null) return true;
+        //
+        // C++ `operator<`: when self.entry is null, `self < b` is false (line 1898);
+        // when b.entry is null (self.entry non-null), `self < b` is true (line 1899).
+        // Under the strict weak ordering these mean: two null-entry trials are
+        // EQUIVALENT (both `a<b` and `b<a` are false) => Equal; a null-entry self
+        // never sorts before a non-null b => Greater; a non-null self always sorts
+        // before a null b => Less. A blanket `(None, _) => Greater` would make
+        // (None, None) compare Greater in BOTH directions, breaking antisymmetry
+        // and producing an unspecified `sort_unstable_by` order, so the null cases
+        // are split out explicitly to keep the comparator total.
         let (ea, eb) = match (self.entry, b.entry) {
-            (None, _) => return Greater, // self is not "<" b  (C++ returns false)
-            (_, None) => return Less,    // self "<" b          (C++ returns true)
+            (None, None) => return Equal, // both null: equivalent (C++ both `<` false)
+            (None, Some(_)) => return Greater, // self not "<" b  (C++ line 1898 false)
+            (Some(_), None) => return Less,    // self "<" b       (C++ line 1899 true)
             (Some(ea), Some(eb)) => (ea, eb),
         };
         let entry_a = &entries[ea];
