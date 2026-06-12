@@ -397,7 +397,14 @@ impl CircleRange {
         if self.left < self.right {
             val = (self.right - self.left) / (self.step as uintb);
         } else {
-            let mut v = (self.mask - (self.left - self.right) + (self.step as uintb))
+            // C++ (rangeutil.cc:264): `(mask - (left-right) + step) / step` over
+            // uintb. For a full range (left==right, 8-byte mask) `mask + step`
+            // WRAPS to 0 so v==0 hits the documented overflow branch below; bare
+            // `+`/`-` would panic in debug, so use the wrapping helpers (ADR 0003).
+            let mut v = self
+                .mask
+                .wsub(self.left.wsub(self.right))
+                .wadd(self.step as uintb)
                 / (self.step as uintb);
             if v == 0 {
                 // Overflow: all uintb values are in the range
@@ -1133,7 +1140,11 @@ impl CircleRange {
             OpCode::CPUI_INT_RIGHT => {
                 if self.step == 1 {
                     // val is the shift amount (passed in via `val`); cast to u32 for shift.
-                    let right_bound = (calc_mask(in_size) >> val) + 1; // maximal right bound
+                    // C++ (rangeutil.cc:949): `(calc_mask(inSize) >> val) + 1`.
+                    // `val` is a uintb shift count; x86 masks it mod 64 and the
+                    // `+1` may wrap (val==0, 8-byte mask -> u64::MAX+1==0), so use
+                    // wshr/wadd (matching the wshl already used for the LEFT shifts).
+                    let right_bound = calc_mask(in_size).wshr(val as u32).wadd(1); // maximal right bound
                     if ((self.left >= right_bound)
                         && (self.right >= right_bound)
                         && (self.left >= self.right))
@@ -1163,9 +1174,12 @@ impl CircleRange {
             OpCode::CPUI_INT_SRIGHT => {
                 if self.step == 1 {
                     let mut rightb = calc_mask(in_size);
-                    let mut leftb = rightb >> (val + 1);
+                    // C++ (rangeutil.cc:975): `rightb >> (val + 1)`. `val` is a
+                    // uintb; `val+1` may wrap and the x86 shift masks the count
+                    // mod 64, so use wadd for the count and wshr for the shift.
+                    let mut leftb = rightb.wshr(val.wadd(1) as u32);
                     rightb ^= leftb; // Smallest negative possible (rangeutil.cc:976)
-                    leftb += 1; // Biggest positive (+1) possible
+                    leftb = leftb.wadd(1); // Biggest positive (+1) possible (rangeutil.cc:977; wraps for full mask)
                     if ((self.left >= leftb)
                         && (self.left <= rightb)
                         && (self.right >= leftb)
@@ -1414,18 +1428,23 @@ impl CircleRange {
                     return false;
                 }
                 self.isempty = false;
-                let sa = (in2.left as int4) * 8;
+                // C++ (rangeutil.cc:1283): `(int4)in2.left * 8`. The i32
+                // multiply wraps on x86 (in2.left is a non-negative single
+                // constant); use wmul so a large offset cannot panic in debug.
+                let sa = (in2.left as int4).wmul(8);
                 self.mask = calc_mask(out_size);
                 self.step = if sa == 0 { in1.step } else { 1 };
                 let range =
                     if in1.left < in1.right { in1.right.wsub(in1.left) } else { in1.left.wsub(in1.right) };
 
-                if range == 0 || ((range >> sa) > self.mask) {
+                // sa is a non-negative int4; x86 masks the shift count mod 64
+                // (rangeutil.cc:1288), so use wshr (a SUBPIECE offset 8 gives sa=64).
+                if range == 0 || (range.wshr(sa as u32) > self.mask) {
                     self.left = 0;
                     self.right = 0; // We cover everything
                 } else {
-                    self.left = in1.left >> sa;
-                    self.right = ((in1.right.wsub(in1.step as uintb)) >> sa).wadd(self.step as uintb);
+                    self.left = in1.left.wshr(sa as u32); // x86 shift mod 64 (rangeutil.cc:1292/1308)
+                    self.right = (in1.right.wsub(in1.step as uintb)).wshr(sa as u32).wadd(self.step as uintb); // rangeutil.cc:1293 (x86 shift mod 64)
                     self.left &= self.mask;
                     self.right &= self.mask;
                     self.normalize();
@@ -1440,11 +1459,11 @@ impl CircleRange {
                 self.mask = calc_mask(out_size);
                 self.step = 1; // Lose any step
                 if in1.left < in1.right {
-                    self.left = in1.left >> sa;
-                    self.right = ((in1.right.wsub(in1.step as uintb)) >> sa).wadd(1);
+                    self.left = in1.left.wshr(sa as u32); // x86 shift mod 64 (rangeutil.cc:1292/1308)
+                    self.right = (in1.right.wsub(in1.step as uintb)).wshr(sa as u32).wadd(1); // rangeutil.cc:1309 (x86 shift mod 64)
                 } else {
                     self.left = 0;
-                    self.right = in1.mask >> sa;
+                    self.right = in1.mask.wshr(sa as u32); // rangeutil.cc:1313 (x86 shift mod 64)
                 }
                 if self.left == self.right {
                     // Don't truncate accidentally to everything
@@ -1468,9 +1487,9 @@ impl CircleRange {
                     val_left = sign_extend(val_left, bit_pos);
                 }
                 // left = (valLeft >> sa) & mask  (intb arithmetic shift)
-                self.left = ((val_left >> sa) as uintb) & self.mask;
+                self.left = ((val_left.wshr(sa as u32)) as uintb) & self.mask; // rangeutil.cc:1334 (arithmetic shr, x86 mod 64)
                 // right = (((valRight - in1.step) >> sa) + 1) & mask
-                self.right = ((((val_right.wsub(in1.step as intb)) >> sa).wadd(1)) as uintb) & self.mask;
+                self.right = (((val_right.wsub(in1.step as intb)).wshr(sa as u32).wadd(1)) as uintb) & self.mask; // rangeutil.cc:1335 (arithmetic shr, x86 mod 64)
                 if self.left == self.right {
                     self.right = (self.left.wadd(1)) & self.mask;
                 }

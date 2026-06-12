@@ -78,62 +78,70 @@ fn w6_s5_subpiece_byteoffset8_shift64_diverges() {
     }
 }
 
-/// `pull_back_binary(INT_RIGHT)` with a shift constant `val = 64`.
+/// `pull_back_binary(INT_RIGHT)` with a shift constant `val = 64` (REPAIRED, F1).
 ///
-/// C++ (rangeutil.cc:948-949, x86): `rightBound = (calc_mask(2) >> 64) + 1`
-/// `= 0xffff + 1 = 0x10000`; the routine then proceeds without panicking.  The
-/// Rust port (`rangeutil.rs:1136`) does `calc_mask(in_size) >> val` with a bare
-/// `>>`, which panics in debug at the very first use.
+/// C++ (rangeutil.cc:948-962, x86): `rightBound = (calc_mask(2) >> (64&63)) + 1`
+/// `= (0xffff >> 0) + 1 = 0x10000`; the coverage condition is false, neither
+/// bound exceeds `rightBound`, so `left = (1 << (64&63)) & mask = 1`,
+/// `right = (0xf << 0) & mask = 0xf` -> the range is UNCHANGED `[1, 0xf)` and the
+/// pull-back returns `true`.  The port now uses `wshr`/`wshl` (shift mod 64),
+/// so it no longer panics and reproduces this x86 oracle exactly.
 #[test]
-fn w6_s5_pullback_int_right_shift64_diverges() {
-    let res = catch_unwind(AssertUnwindSafe(|| {
-        // non-empty, step == 1 -> reaches the shift.
-        let mut range = CircleRange::new(0x01, 0x0f, 2, 1);
-        let ok = range.pull_back_binary(OpCode::CPUI_INT_RIGHT, 64, 0, 2, 2);
-        (ok, range)
-    }));
-
+fn w6_s5_pullback_int_right_shift64_matches_oracle() {
+    // non-empty, step == 1 -> reaches the shift.
+    let mut range = CircleRange::new(0x01, 0x0f, 2, 1);
+    let ok = range.pull_back_binary(OpCode::CPUI_INT_RIGHT, 64, 0, 2, 2);
+    assert!(ok, "INT_RIGHT pull-back returns true (x86 C++)");
+    // Shift count 64 masks to 0 on x86 -> range unchanged.
     assert!(
-        res.is_err(),
-        "EXPECTED the bare `>>` to panic on val=64 in a debug build; if this \
-         stopped panicking the port was fixed to use wshr -- update the oracle. \
-         (x86 C++ computes rightBound = 0x10000 and continues without UB)"
+        range.equals(&CircleRange::new(0x01, 0x0f, 2, 1)),
+        "INT_RIGHT shift-64 pull-back must be the unchanged [1,0xf) per x86 oracle; got {:?}",
+        range
     );
 }
 
-/// `pull_back_binary(INT_SRIGHT)` with `val = 64`: `leftb = rightb >> (val+1)`
-/// panics in debug (`rangeutil.rs:1166`), and even `val = u64::MAX` makes the
-/// `val + 1` itself an overflowing add.  C++ (x86) shifts mod 64 and continues.
+/// `pull_back_binary(INT_SRIGHT)` with `val = 64` (REPAIRED, F1).
+///
+/// C++ (rangeutil.cc:973-992, x86): `leftb = 0xffff >> ((64+1)&63) = 0xffff >> 1
+/// = 0x7fff`; `rightb = 0x7fff ^ 0xffff = 0x8000`; `leftb += 1 = 0x8000`.  The
+/// coverage condition is false and neither bound is strictly inside
+/// `(leftb, rightb)`, so `left = (1 << (64&63)) & mask = 1`,
+/// `right = (0xf << 0) & mask = 0xf` -> range UNCHANGED `[1, 0xf)`, returns
+/// `true`.  The port now uses `wadd` for the `val+1` count and `wshr`/`wshl`
+/// (shift mod 64) so it reproduces this oracle without panicking.
 #[test]
-fn w6_s5_pullback_int_sright_shift64_diverges() {
-    let res = catch_unwind(AssertUnwindSafe(|| {
-        let mut range = CircleRange::new(0x01, 0x0f, 2, 1);
-        let ok = range.pull_back_binary(OpCode::CPUI_INT_SRIGHT, 64, 0, 2, 2);
-        (ok, range)
-    }));
+fn w6_s5_pullback_int_sright_shift64_matches_oracle() {
+    let mut range = CircleRange::new(0x01, 0x0f, 2, 1);
+    let ok = range.pull_back_binary(OpCode::CPUI_INT_SRIGHT, 64, 0, 2, 2);
+    assert!(ok, "INT_SRIGHT pull-back returns true (x86 C++)");
     assert!(
-        res.is_err(),
-        "EXPECTED bare `>> (val+1)` to panic on val=64 in debug; C++ shifts mod 64"
+        range.equals(&CircleRange::new(0x01, 0x0f, 2, 1)),
+        "INT_SRIGHT shift-64 pull-back must be the unchanged [1,0xf) per x86 oracle; got {:?}",
+        range
     );
 }
 
 /// `push_forward_binary(INT_RIGHT)` with single shift `in2.left = 64`
-/// (`sa = in2.left as int4 = 64`).  `in1.left >> sa` (rangeutil.rs:1443) panics.
-/// C++ (x86, rangeutil.cc:1308) computes `in1.left >> (64 & 63) = in1.left`.
+/// (`sa = in2.left as int4 = 64`) (REPAIRED, F1).
+///
+/// C++ (x86, rangeutil.cc:1300-1316): `in1.left < in1.right`, so
+/// `left = in1.left >> (64&63) = 0x10 >> 0 = 0x10`,
+/// `right = ((in1.right - in1.step) >> 0) + 1 = (0x3f) + 1 = 0x40`; `left != right`.
+/// The out range is `[0x10, 0x40)` step 1 over `calc_mask(8)`.  The port now uses
+/// `wshr` (shift mod 64) and reproduces this oracle without panicking.
 #[test]
-fn w6_s5_pushforward_int_right_shift64_diverges() {
+fn w6_s5_pushforward_int_right_shift64_matches_oracle() {
     let in1 = CircleRange::new(0x10, 0x40, 8, 1); // left < right, non-empty
     let in2 = CircleRange::new(64, 65, 8, 1); // single value 64
     assert!(in2.is_single());
 
-    let res = catch_unwind(AssertUnwindSafe(|| {
-        let mut out = CircleRange::new_empty();
-        out.push_forward_binary(OpCode::CPUI_INT_RIGHT, &in1, &in2, 8, 8, 32);
-        out
-    }));
+    let mut out = CircleRange::new_empty();
+    let ok = out.push_forward_binary(OpCode::CPUI_INT_RIGHT, &in1, &in2, 8, 8, 32);
+    assert!(ok, "INT_RIGHT push-forward returns true (x86 C++)");
     assert!(
-        res.is_err(),
-        "EXPECTED `in1.left >> sa` to panic on sa=64 in debug; C++ shifts mod 64"
+        out.equals(&CircleRange::new(0x10, 0x40, 8, 1)),
+        "INT_RIGHT shift-64 push-forward must equal x86 oracle [0x10,0x40); got {:?}",
+        out
     );
 }
 
