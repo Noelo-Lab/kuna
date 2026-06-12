@@ -167,6 +167,114 @@ fn w6_s5_subpiece_byteoffset4_shift32_matches_oracle() {
 }
 
 // ---------------------------------------------------------------------------
+// ROUND 2 — F3 (new major): push_forward_binary(INT_SRIGHT) `valLeft = valRight
+// + 1` overflows for an 8-byte output domain.
+// ---------------------------------------------------------------------------
+
+/// `push_forward_binary(CPUI_INT_SRIGHT)` with an output size of 8 bytes
+/// (`out_size = 8` -> `mask = u64::MAX`).
+///
+/// C++ (rangeutil.cc:1329-1332): when the sign-extended input range wraps
+/// (`valLeft >= valRight`), it rebuilds the canonical full signed range as
+/// `valRight = (intb)(mask >> 1)` (== `i64::MAX` for the 8-byte mask) and then
+/// `valLeft = valRight + 1`.  That `+ 1` is a deliberate two's-complement wrap
+/// `i64::MAX + 1 -> i64::MIN` ("Min negative"); GCC on x86 wraps it.  The Rust
+/// port (`rangeutil.rs:1486`) writes it as a *bare* `val_right + 1` over `intb`
+/// (`i64`), which PANICS in a debug build ("attempt to add with overflow")
+/// exactly when `out_size == 8` — an extremely common output width (longs,
+/// pointers).  The fix is `val_right.wadd(1)`.
+///
+/// This test pins the divergence with the x86 C++ oracle in the (currently
+/// unreachable) `Ok` branch so it self-converts to a regression pin once fixed.
+#[test]
+fn w6_s5_pushforward_int_sright_out8_overflow() {
+    // in1 wraps (left > right) so the sign-extended range satisfies
+    // valLeft >= valRight, taking the canonical-rebuild branch.
+    let in1 = CircleRange::new(0x10, 0x05, 8, 1);
+    let in2 = CircleRange::new(1, 2, 8, 1); // single shift amount 1
+    assert!(in2.is_single(), "guard: in2 must be single");
+
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        let mut out = CircleRange::new_empty();
+        let ok = out.push_forward_binary(OpCode::CPUI_INT_SRIGHT, &in1, &in2, 8, 8, 32);
+        (ok, out)
+    }));
+
+    match res {
+        Err(_) => {
+            // F3 DEMONSTRATED: bare `val_right + 1` overflowed i64::MAX for the
+            // 8-byte mask.  C++ wraps to i64::MIN and continues; it never panics.
+        }
+        Ok((ok, out)) => {
+            // Once fixed with wadd, the canonical full signed range is built:
+            //   valRight = i64::MAX, valLeft = i64::MIN (after wrap + sign_extend).
+            //   sa = 1: left  = (i64::MIN >> 1) & mask = 0xC000_0000_0000_0000
+            //           right = (((i64::MAX - 1) >> 1) + 1) & mask
+            //                 = (0x3FFF_FFFF_FFFF_FFFF + 1) & mask
+            //                 = 0x4000_0000_0000_0000
+            // left != right so the final fix-up is skipped.
+            assert!(ok, "INT_SRIGHT push-forward returns true (x86 C++)");
+            assert_eq!(
+                out.get_min(),
+                0xC000_0000_0000_0000u64,
+                "INT_SRIGHT out8 left must match x86 oracle (i64::MIN >> 1)"
+            );
+            assert_eq!(
+                out.get_end(),
+                0x4000_0000_0000_0000u64,
+                "INT_SRIGHT out8 right must match x86 oracle"
+            );
+        }
+    }
+}
+
+/// Control: the SAME wrapping INT_SRIGHT with a 4-byte output (`out_size = 4`,
+/// `mask = 0xffff_ffff`) must NOT panic — `mask >> 1 = 0x7fff_ffff` is far below
+/// `i64::MAX`, so `valRight + 1` does not overflow.  This proves F3 is
+/// specifically the 8-byte-mask boundary, not general INT_SRIGHT breakage.
+#[test]
+fn w6_s5_pushforward_int_sright_out4_no_overflow() {
+    let in1 = CircleRange::new(0x10, 0x05, 4, 1);
+    let in2 = CircleRange::new(1, 2, 4, 1);
+    let mut out = CircleRange::new_empty();
+    // Must not panic for out_size = 4.
+    let ok = out.push_forward_binary(OpCode::CPUI_INT_SRIGHT, &in1, &in2, 4, 4, 32);
+    assert!(ok, "INT_SRIGHT out4 push-forward returns true");
+    // x86 oracle: valRight = 0x7fff_ffff, valLeft = 0x8000_0000 (still positive
+    // as i64), sign_extend(_,31) -> 0xFFFF_FFFF_8000_0000 (i32::MIN sign-extended).
+    //   sa = 1: left  = (0xFFFF_FFFF_8000_0000 >> 1) & 0xffff_ffff = 0xC000_0000
+    //           right = (((0x7fff_ffff - 1) >> 1) + 1) & 0xffff_ffff = 0x4000_0000
+    assert_eq!(out.get_min(), 0xC000_0000u64, "out4 left matches x86 oracle");
+    assert_eq!(out.get_end(), 0x4000_0000u64, "out4 right matches x86 oracle");
+}
+
+// ---------------------------------------------------------------------------
+// ROUND 2 — re-confirm the F1/F2 repairs hold (no shift/getSize panic anymore).
+// ---------------------------------------------------------------------------
+
+/// Re-confirm F2: a full 8-byte `getSize` now WRAPS (no panic) and returns the
+/// "lie by one" mask (`u64::MAX`) per the C++ overflow branch.
+#[test]
+fn w6_s5_round2_get_size_full_8byte_returns_mask() {
+    let mut full = CircleRange::new_empty();
+    full.set_full(8); // left==right==0, step 1, mask=u64::MAX
+    assert_eq!(
+        full.get_size(),
+        u64::MAX,
+        "repaired get_size must wrap to mask for a full 8-byte range"
+    );
+    // And the step>1 sub-branch: full 8-byte range, step 2 -> val=mask, then
+    // val = mask/2 + 1.
+    let mut full_s2 = CircleRange::new(0, 0, 8, 2);
+    assert_eq!(
+        full_s2.get_size(),
+        u64::MAX / 2 + 1,
+        "step>1 overflow sub-branch: mask/step + 1"
+    );
+    let _ = &mut full_s2;
+}
+
+// ---------------------------------------------------------------------------
 // F2 (clean): ValueSet::add_equation slot-ordered STABLE insert
 // ---------------------------------------------------------------------------
 
