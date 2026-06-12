@@ -1,5 +1,23 @@
 # kuna Progress Log
 
+## Session (2026-06-12) — rust-port W5: the rules mountain + SSA + B2 structural parity
+
+All 16 W5 items verified (15 wave + closure pair): the full dtype interface, 136
+ruleaction rule classes in 8 batches, heritage (SSA: dominance-frontier phi
+placement + rename), subflow, condexe + expression equality machinery, transform,
+7 option-gated kuna rules, coreaction-early, then the closure: deferred funcdata
+helpers (replaceLessequal incl. the kuna provenance anchor, distributeIntMultAdd,
+CSE machinery, opSetInput constant re-duplication guard) + rule un-deferrals, and
+the lift-diff B2 STRUCTURAL differential (Rust FlowInfo + early actions vs C++
+break-at-heritage snapshots: >=8 corpus cases structurally equal, exclusions
+justified per-test, an over-broad exclusion explicitly rejected to avoid false
+passes). Cross-wave effect: w4x-flow-linkage retroactively activated deferred rule
+bodies (RuleOrCompare/RuleLzcountShiftBool now complete their C++ rewrites; four
+seam pins flipped to full structural assertions). LOSS-077 closed; ledger at
+LOSS-080. Gate: 1,849 tests, 0 failures, clippy clean. Cumulative: 93/200 items.
+Next: W6 — fspec + type system + rangeutil + the remaining 150 unit tests = M1.
+
+
 ## Session (2026-06-12) — rust-port W4: framework wave (engine, Architecture, P0 registry)
 
 All eight W4 items verified: the Action/Rule engine (processOp dispatch transcribed

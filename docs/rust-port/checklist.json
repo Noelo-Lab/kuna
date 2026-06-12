@@ -4734,7 +4734,7 @@
    "depends_on": [
     "W4-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo run -p kuna-lift-diff -- --self-test",
    "loc_estimate": 600,
@@ -4987,12 +4987,12 @@
     "w5-kuna-rule-pack-verify",
     "w5-infra-lift-diff"
    ],
-   "status": "todo",
+   "status": "landed",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp && cargo run -p kuna-lift-diff -- --self-test",
    "loc_estimate": 0,
    "cpp_blob_sha": {},
-   "notes": "Wave exit: every item in W5 done (ports gated, verifies ACCEPTed)."
+   "notes": "Wave exit: every item in W5 done (ports gated, verifies ACCEPTed). Gate 2026-06-12: 1849 tests 0 failed; lift-diff B2 structural parity >=8 clean corpus cases; LOSS-077 closed."
   },
   {
    "id": "W6-gate",
