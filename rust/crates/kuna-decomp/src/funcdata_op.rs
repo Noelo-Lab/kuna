@@ -217,37 +217,49 @@ impl Funcdata {
     /// `op->setInput(vn,slot)` (the C++ comment: "op must be up to date AFTER
     /// calling descend_add").
     ///
-    /// SEAM(W3-varnode)+SEAM(W4): the C++ constant-sharing guard
+    /// The C++ constant-sharing guard (`opSetInput`, `funcdata_op.cc:108`)
     ///
     /// ```text
-    ///   if (vn->isConstant()) {
+    ///   if (vn->isConstant()) {            // Constants should have only one descendant
     ///     if (!vn->hasNoDescend())
-    ///       if (!vn->isSpacebase()) {
+    ///       if (!vn->isSpacebase()) {      // Unless they are a spacebase
     ///         Varnode *cvn = newConstant(vn->getSize(), vn->getOffset());
     ///         cvn->copySymbol(vn); vn = cvn;
     ///       }
     ///   }
     /// ```
     ///
-    /// re-duplicates a constant that already has a descendant (constants must
-    /// have a single descendant) using `newConstant` (the funcdata_varnode
-    /// factory) and `copySymbol` (W4 symbol info).  Neither is available to this
-    /// parallel item; until the factory lands, a shared non-spacebase constant is
-    /// linked directly (no duplication).  This is a faithful no-op *whenever the
-    /// constant has at most one descendant* (the common case); the divergence is
-    /// only the missing dedup of a re-shared constant.  Recorded as a loss.
+    /// re-duplicates a constant that already has a descendant (constants must have
+    /// a single descendant): a fresh [`new_constant`](Funcdata::new_constant)
+    /// stands in for the shared one so the new edge does not alias an existing
+    /// read.  Now that the funcdata_varnode factory has landed, the
+    /// re-duplication is ported faithfully.
+    ///
+    /// SEAM(W4): `cvn->copySymbol(vn)` propagates the original constant's
+    /// data-type and `SymbolEntry`/`typelock|namelock` markup onto the duplicate.
+    /// The type-/symbol-propagation machinery (mapentry, `HighVariable`,
+    /// `TypeFactory`) is W4/W6; until it lands the duplicate carries the unknown
+    /// base of its size (exactly what `newConstant` builds — and what the original
+    /// `vn` itself carries in the W3 IR, where no symbol is attached yet), so the
+    /// `copySymbol` is currently a structural no-op.  Recorded as a (latent) loss.
     pub fn op_set_input(&mut self, op: OpId, vn: VarnodeId, slot: int4) -> KunaResult<()> {
+        let mut vn = vn;
         // if (vn == op->getIn(slot)) return; // Already set to this vn
         if self.obank().get(op).expect("op_set_input: stale op").get_in(slot) == Some(vn) {
             return Ok(());
         }
-        // Constant re-duplication guard -- SEAM(W3-varnode)/SEAM(W4): see doc.
-        // The branch condition is faithfully evaluated; the duplication body is
-        // the deferred part.  When the constant has no descendant (hasNoDescend)
-        // or is a spacebase, the C++ also skips duplication — so this only
-        // diverges for a re-shared non-spacebase constant.
-        // (We deliberately do not panic here: the link still proceeds, exactly
-        // as the C++ does after the guard.)
+        // if (vn->isConstant()) { if (!vn->hasNoDescend()) if (!vn->isSpacebase()) {...} }
+        {
+            let v = self.vbank().get(vn).expect("op_set_input: stale vn");
+            if v.is_constant() && !v.has_no_descend() && !v.is_spacebase() {
+                // Varnode *cvn = newConstant(vn->getSize(), vn->getOffset());
+                let (size, off) = (v.get_size(), v.get_offset());
+                let cvn = self.new_constant(size, off);
+                // cvn->copySymbol(vn);  -- SEAM(W4): type/symbol propagation (see doc).
+                // vn = cvn;
+                vn = cvn;
+            }
+        }
 
         // if (op->getIn(slot) != 0) opUnsetInput(op,slot);
         if self.obank().get(op).expect("op_set_input: stale op").get_in(slot).is_some() {
@@ -366,6 +378,363 @@ impl Funcdata {
             "kuna rust port: Funcdata::cloneOp needs cloneVarnode (funcdata_varnode) \
              and glb->inst[opc] (W6); op-shell created, varnode clone deferred",
         ))
+    }
+
+    // -----------------------------------------------------------------------
+    // comparison canonicalization / multiply distribution / CSE
+    // -----------------------------------------------------------------------
+
+    /// Do in-place replacement of `c <= x` with `c-1 < x`, OR `x <= c` with
+    /// `x < c+1` (C++ `Funcdata::replaceLessequal`, `funcdata_op.cc:1029`).
+    ///
+    /// `op` is a comparison op (`INT_LESSEQUAL`/`INT_SLESSEQUAL`).  Returns `true`
+    /// if a valid replacement was performed (the constant operand becomes `±1`
+    /// adjusted and the op-code drops the `EQUAL`).
+    ///
+    /// SEAM(W6): `opSetOpcode` resolves the new `INT_LESS`/`INT_SLESS` through the
+    /// `glb->inst[opc]` table — routed through [`w6_type_op`](Funcdata::w6_type_op)
+    /// with the verbatim typeop.cc opflags.
+    ///
+    /// (kuna) provenance: the rewritten op records `setCanonicalLessequal()` — the
+    /// single primitive of the comparison-canonicalization sub-stage (UPSTREAM.md
+    /// *Divergence*: "`replaceLessequal` records provenance on the rewritten op").
+    /// `ActionPresentCompareForm` can invert it for presentation (GH-558).  The
+    /// restart-log side table (`kuna_restartlog`) records *restart* reasons, not
+    /// this op flag, so no `kuna_restartlog` event is emitted here.
+    pub fn replace_lessequal(&mut self, op: OpId) -> KunaResult<bool> {
+        // if ((vn=op->getIn(0))->isConstant()) { diff=-1; i=0; }
+        // else if ((vn=op->getIn(1))->isConstant()) { diff=1; i=1; }
+        // else return false;
+        let in0 = self.obank().get(op).expect("replace_lessequal: stale op").get_in(0)
+            .expect("replaceLessequal: comparison null in0 (C++ UB)");
+        let in1 = self.obank().get(op).expect("replace_lessequal").get_in(1)
+            .expect("replaceLessequal: comparison null in1 (C++ UB)");
+        let (vn, diff, i): (VarnodeId, i64, int4) =
+            if self.vbank().get(in0).expect("replace_lessequal: stale in0").is_constant() {
+                (in0, -1, 0)
+            } else if self.vbank().get(in1).expect("replace_lessequal: stale in1").is_constant() {
+                (in1, 1, 1)
+            } else {
+                return Ok(false);
+            };
+
+        // val = vn->getOffset();
+        let v = self.vbank().get(vn).expect("replace_lessequal: stale vn");
+        let val = v.get_offset();
+        let size = v.get_size();
+        let code = self.obank().get(op).expect("replace_lessequal").code();
+        let newcode = if code == OpCode::CPUI_INT_SLESSEQUAL {
+            // Check for signed overflow
+            // if ((diff==-1)&&(val==calc_int_min(size))) return false;
+            if diff == -1 && val == kuna_base::address::calc_int_min(size) {
+                return Ok(false);
+            }
+            // if ((diff==1)&&(val==calc_int_max(size))) return false;
+            if diff == 1 && val == kuna_base::address::calc_int_max(size) {
+                return Ok(false);
+            }
+            // opSetOpcode(op,CPUI_INT_SLESS);
+            OpCode::CPUI_INT_SLESS
+        } else {
+            // Check for unsigned overflow
+            // if ((diff==-1)&&(val==0)) return false;
+            if diff == -1 && val == 0 {
+                return Ok(false);
+            }
+            // if ((diff==1)&&(val==calc_uint_max(size))) return false;
+            if diff == 1 && val == kuna_base::address::calc_uint_max(size) {
+                return Ok(false);
+            }
+            // opSetOpcode(op,CPUI_INT_LESS);
+            OpCode::CPUI_INT_LESS
+        };
+        self.op_set_opcode(op, Self::w6_type_op(newcode));
+
+        // uintb res = (val+diff) & calc_mask(size);
+        let res = val.wrapping_add(diff as u64) & kuna_base::address::calc_mask(size);
+        // Varnode *newvn = newConstant(size,res);
+        let newvn = self.new_constant(size, res);
+        // newvn->copySymbol(vn);  -- SEAM(W4): type/symbol propagation (see op_set_input).
+        // opSetInput(op,newvn,i);
+        self.op_set_input(op, newvn, i)?;
+        // op->setCanonicalLessequal();  -- (kuna) provenance recorder.
+        self.obank_mut().get_mut(op).expect("replace_lessequal: stale op").set_canonical_lessequal();
+        Ok(true)
+    }
+
+    /// Distribute a multiplicative coefficient over an additive sub-term
+    /// (C++ `Funcdata::distributeIntMultAdd`, `funcdata_op.cc:1079`).
+    ///
+    /// `op` is an `INT_MULT` whose first input is defined by an `INT_ADD` and whose
+    /// second input is a constant.  Distributes the coefficient to the `INT_ADD`
+    /// inputs, turning `op` itself into the resulting `INT_ADD`.  Returns `true`.
+    ///
+    /// SEAM(W6): `opSetOpcode` for the new `INT_MULT`/`INT_ADD` ops is routed
+    /// through [`w6_type_op`](Funcdata::w6_type_op) (verbatim typeop.cc opflags).
+    pub fn distribute_int_mult_add(&mut self, op: OpId) -> KunaResult<bool> {
+        // PcodeOp *addop = op->getIn(0)->getDef();
+        let in0 = self.obank().get(op).expect("distribute_int_mult_add: stale op").get_in(0)
+            .expect("distributeIntMultAdd: MULT null in0 (C++ UB)");
+        let addop = self.vbank().get(in0).expect("distribute_int_mult_add: stale in0").get_def()
+            .expect("distributeIntMultAdd: in0 has no def (C++ UB)");
+        // Varnode *vn0 = addop->getIn(0); Varnode *vn1 = addop->getIn(1);
+        let vn0 = self.obank().get(addop).expect("distribute_int_mult_add: stale addop").get_in(0)
+            .expect("distributeIntMultAdd: ADD null in0 (C++ UB)");
+        let vn1 = self.obank().get(addop).expect("distribute_int_mult_add").get_in(1)
+            .expect("distributeIntMultAdd: ADD null in1 (C++ UB)");
+        // if ((vn0->isFree())&&(!vn0->isConstant())) return false;
+        {
+            let v0 = self.vbank().get(vn0).expect("distribute_int_mult_add: stale vn0");
+            if v0.is_free() && !v0.is_constant() {
+                return Ok(false);
+            }
+            let v1 = self.vbank().get(vn1).expect("distribute_int_mult_add: stale vn1");
+            if v1.is_free() && !v1.is_constant() {
+                return Ok(false);
+            }
+        }
+        // uintb coeff = op->getIn(1)->getOffset();
+        let op_in1 = self.obank().get(op).expect("distribute_int_mult_add").get_in(1)
+            .expect("distributeIntMultAdd: MULT null in1 (C++ UB)");
+        let coeff = self.vbank().get(op_in1).expect("distribute_int_mult_add: stale in1").get_offset();
+        // int4 sz = op->getOut()->getSize();
+        let out = self.obank().get(op).expect("distribute_int_mult_add").get_out()
+            .expect("distributeIntMultAdd: MULT has no output (C++ UB)");
+        let sz = self.vbank().get(out).expect("distribute_int_mult_add: stale out").get_size();
+        let mask = kuna_base::address::calc_mask(sz);
+        let pc = self.obank().get(op).expect("distribute_int_mult_add").get_addr().clone();
+
+        // Do distribution -- first input.
+        let newvn0 = if self.vbank().get(vn0).expect("distribute_int_mult_add: stale vn0").is_constant() {
+            // uintb val = coeff * vn0->getOffset(); val &= calc_mask(sz);
+            let v0off = self.vbank().get(vn0).expect("distribute_int_mult_add").get_offset();
+            let val = coeff.wrapping_mul(v0off) & mask;
+            self.new_constant(sz, val)
+        } else {
+            // PcodeOp *newop0 = newOp(2,op->getAddr()); opSetOpcode(newop0,CPUI_INT_MULT);
+            let newop0 = self.new_op(2, pc.clone());
+            self.op_set_opcode(newop0, Self::w6_type_op(OpCode::CPUI_INT_MULT));
+            // newvn0 = newUniqueOut(sz,newop0);
+            let r = self.new_unique_out(sz, newop0)?;
+            // opSetInput(newop0, vn0, 0);
+            self.op_set_input(newop0, vn0, 0)?;
+            // Varnode *newcvn = newConstant(sz,coeff); opSetInput(newop0, newcvn, 1);
+            let newcvn = self.new_constant(sz, coeff);
+            self.op_set_input(newop0, newcvn, 1)?;
+            // opInsertBefore(newop0, op);
+            self.op_insert_before(newop0, op);
+            r
+        };
+
+        // Second input.
+        let newvn1 = if self.vbank().get(vn1).expect("distribute_int_mult_add: stale vn1").is_constant() {
+            let v1off = self.vbank().get(vn1).expect("distribute_int_mult_add").get_offset();
+            let val = coeff.wrapping_mul(v1off) & mask;
+            self.new_constant(sz, val)
+        } else {
+            let newop1 = self.new_op(2, pc);
+            self.op_set_opcode(newop1, Self::w6_type_op(OpCode::CPUI_INT_MULT));
+            let r = self.new_unique_out(sz, newop1)?;
+            self.op_set_input(newop1, vn1, 0)?;
+            let newcvn = self.new_constant(sz, coeff);
+            self.op_set_input(newop1, newcvn, 1)?;
+            self.op_insert_before(newop1, op);
+            r
+        };
+
+        // opSetInput(op,newvn0,0); opSetInput(op,newvn1,1); opSetOpcode(op,CPUI_INT_ADD);
+        self.op_set_input(op, newvn0, 0)?;
+        self.op_set_input(op, newvn1, 1)?;
+        self.op_set_opcode(op, Self::w6_type_op(OpCode::CPUI_INT_ADD));
+        Ok(true)
+    }
+
+    /// Eliminate a depth-1 common-subexpression redundancy between two ops
+    /// (C++ `Funcdata::cseElimination`, `funcdata_op.cc:1397`).
+    ///
+    /// The two ops perform the identical operation on identical operands; return
+    /// the remaining (dominating) op.  If neither dominates, both are eliminated
+    /// and a new op is built at a commonly accessible point (`findCommonBlock`).
+    ///
+    /// SEAM(W6): `opSetOpcode(replace, op1->code())` for the freshly built op is
+    /// routed through [`w6_type_op`](Funcdata::w6_type_op).
+    pub fn cse_elimination(&mut self, op1: OpId, op2: OpId) -> KunaResult<OpId> {
+        let par1 = self.obank().get(op1).expect("cse_elimination: stale op1").get_parent()
+            .expect("cseElimination: op1 has no parent (C++ UB)");
+        let par2 = self.obank().get(op2).expect("cse_elimination: stale op2").get_parent()
+            .expect("cseElimination: op2 has no parent (C++ UB)");
+        let replace: OpId = if par1 == par2 {
+            // if (op1->getSeqNum().getOrder() < op2->getSeqNum().getOrder()) replace=op1; else op2;
+            let o1 = self.obank().get(op1).expect("cse_elimination").get_seq_num().get_order();
+            let o2 = self.obank().get(op2).expect("cse_elimination").get_seq_num().get_order();
+            if o1 < o2 { op1 } else { op2 }
+        } else {
+            // common = findCommonBlock(op1->getParent(), op2->getParent());
+            let common = self.bblocks_mut().find_common_block(par1, par2);
+            if common == Some(par1) {
+                op1
+            } else if common == Some(par2) {
+                op2
+            } else {
+                // Neither op is ancestor of the other -- build a fresh op at common's stop.
+                let common = common.expect("cseElimination: no common block (C++ UB)");
+                let stop = crate::block::block_get_stop(&self.bblocks_ref().arena, common);
+                // replace = newOp(op1->numInput(),common->getStop());
+                let numin = self.obank().get(op1).expect("cse_elimination").num_input();
+                let replace = self.new_op(numin, stop);
+                // opSetOpcode(replace,op1->code());
+                let code1 = self.obank().get(op1).expect("cse_elimination").code();
+                self.op_set_opcode(replace, Self::w6_type_op(code1));
+                // newVarnodeOut(op1->getOut()->getSize(),op1->getOut()->getAddr(),replace);
+                let out1 = self.obank().get(op1).expect("cse_elimination").get_out()
+                    .expect("cseElimination: op1 has no output (C++ UB)");
+                let (osz, oaddr) = {
+                    let v = self.vbank().get(out1).expect("cse_elimination: stale out1");
+                    (v.get_size(), v.get_addr().clone())
+                };
+                self.new_varnode_out(osz, &oaddr, replace)?;
+                // for each input: constants are re-duplicated, else passed through.
+                for ix in 0..numin {
+                    let inx = self.obank().get(op1).expect("cse_elimination").get_in(ix)
+                        .expect("cseElimination: op1 null input (C++ UB)");
+                    if self.vbank().get(inx).expect("cse_elimination: stale input").is_constant() {
+                        let (isz, ioff) = {
+                            let v = self.vbank().get(inx).expect("cse_elimination");
+                            (v.get_size(), v.get_offset())
+                        };
+                        let c = self.new_constant(isz, ioff);
+                        self.op_set_input(replace, c, ix)?;
+                    } else {
+                        self.op_set_input(replace, inx, ix)?;
+                    }
+                }
+                // opInsertEnd(replace,common);
+                self.op_insert_end(replace, common);
+                replace
+            }
+        };
+        // if (replace != op1) { totalReplace(op1->getOut(),replace->getOut()); opDestroy(op1); }
+        if replace != op1 {
+            let from = self.obank().get(op1).expect("cse_elimination").get_out()
+                .expect("cseElimination: op1 has no output (C++ UB)");
+            let to = self.obank().get(replace).expect("cse_elimination").get_out()
+                .expect("cseElimination: replace has no output (C++ UB)");
+            self.total_replace(from, to)?;
+            self.op_destroy(op1);
+        }
+        if replace != op2 {
+            let from = self.obank().get(op2).expect("cse_elimination").get_out()
+                .expect("cseElimination: op2 has no output (C++ UB)");
+            let to = self.obank().get(replace).expect("cse_elimination").get_out()
+                .expect("cseElimination: replace has no output (C++ UB)");
+            self.total_replace(from, to)?;
+            self.op_destroy(op2);
+        }
+        Ok(replace)
+    }
+
+    /// Perform CSE on a list of `(hash, op)` pairs (descendants of one Varnode)
+    /// (C++ `Funcdata::cseEliminateList`, `funcdata_op.cc:1459`).
+    ///
+    /// The list is `stable_sort`ed by hash (the verbatim `compareCseHash`
+    /// comparator); equal-hash neighbours that are a true `isCseMatch` and whose
+    /// outputs are both heritaged (or null) are eliminated, the surviving output
+    /// pushed onto `outlist`.
+    ///
+    /// SEAM(W7): the C++ `isHeritaged(outvn)` is `heritage.heritagePass(addr)>=0`
+    /// on the `Heritage` instance the C++ `Funcdata` owns.  This Rust `Funcdata`
+    /// does not own a `Heritage` yet (W7 heritage-deps), so the heritaged test is
+    /// passed in as the `is_heritaged` predicate — the W7 caller supplies
+    /// `|vn| heritage.heritage_pass(&addr_of(vn)) >= 0`.  Every other statement
+    /// (the sort, the dead/CSE-match gate, the elimination + output collection) is
+    /// fully ported.
+    pub fn cse_eliminate_list(
+        &mut self,
+        list: &mut [(kuna_base::types::uintm, OpId)],
+        outlist: &mut Vec<VarnodeId>,
+        mut is_heritaged: impl FnMut(&Funcdata, VarnodeId) -> bool,
+    ) -> KunaResult<()> {
+        // if (list.empty()) return;
+        if list.is_empty() {
+            return Ok(());
+        }
+        // stable_sort(list.begin(),list.end(),compareCseHash);  -- compare by .first.
+        list.sort_by(|a, b| a.0.cmp(&b.0));
+        // liter1 = begin; liter2 = begin+1; while(liter2 != end) {...}
+        let mut idx = 1;
+        while idx < list.len() {
+            let (h1, op1) = list[idx - 1];
+            let (h2, op2) = list[idx];
+            if h1 == h2 {
+                // if ((!op1->isDead())&&(!op2->isDead())&&op1->isCseMatch(op2)) {...}
+                let dead1 = self.obank().get(op1).expect("cse_eliminate_list: stale op1").is_dead();
+                let dead2 = self.obank().get(op2).expect("cse_eliminate_list: stale op2").is_dead();
+                if !dead1 && !dead2 && self.op_is_cse_match(op1, op2) {
+                    // Varnode *outvn1 = op1->getOut(); Varnode *outvn2 = op2->getOut();
+                    let outvn1 = self.obank().get(op1).expect("cse_eliminate_list").get_out();
+                    let outvn2 = self.obank().get(op2).expect("cse_eliminate_list").get_out();
+                    // if ((outvn1==0)||isHeritaged(outvn1))
+                    //   if ((outvn2==0)||isHeritaged(outvn2)) {...}
+                    let h1ok = match outvn1 {
+                        None => true,
+                        Some(v) => is_heritaged(self, v),
+                    };
+                    let h2ok = match outvn2 {
+                        None => true,
+                        Some(v) => is_heritaged(self, v),
+                    };
+                    if h1ok && h2ok {
+                        // resop = cseElimination(op1,op2); outlist.push_back(resop->getOut());
+                        let resop = self.cse_elimination(op1, op2)?;
+                        let resout = self.obank().get(resop).expect("cse_eliminate_list: stale resop")
+                            .get_out().expect("cseEliminateList: resop has no output (C++ UB)");
+                        outlist.push(resout);
+                    }
+                }
+            }
+            idx += 1;
+        }
+        Ok(())
+    }
+
+    /// `op1->isCseMatch(op2)` routed through the [`is_cse_match`](crate::op::is_cse_match)
+    /// free function (it needs the [`VarnodeBank`](crate::varnode::VarnodeBank) and
+    /// both ops; the obank is borrowed twice immutably here).
+    fn op_is_cse_match(&self, op1: OpId, op2: OpId) -> bool {
+        let o1 = self.obank().get(op1).expect("op_is_cse_match: stale op1");
+        let o2 = self.obank().get(op2).expect("op_is_cse_match: stale op2");
+        crate::op::is_cse_match(o1, o2, self.vbank())
+    }
+
+    /// SEAM(W6): resolve an [`OpCode`] to its [`TypeOp`] via the `glb->inst[opc]`
+    /// table, supplying the verbatim `typeop.cc` `opflags` for the handful of
+    /// op-codes the funcdata helpers above install (so the resulting op reports the
+    /// right `binary`/`booloutput`/`commutative` eval-type bits).  The W6 wave
+    /// replaces this with the real `Architecture::inst` table; until then the flag
+    /// word is transcribed inline (mirrors `ruleaction_5::type_op_seam`).
+    fn w6_type_op(opc: OpCode) -> TypeOp {
+        use pcodeop_flags as f;
+        // opflags transcribed verbatim from decompiler/cpp/typeop.cc.
+        let (flags, name): (uint4, &str) = match opc {
+            // TypeOpIntSless / TypeOpIntSlessEqual: binary | booloutput
+            OpCode::CPUI_INT_SLESS => (f::binary | f::booloutput, "<"),
+            // TypeOpIntLess / TypeOpIntLessEqual: binary | booloutput
+            OpCode::CPUI_INT_LESS => (f::binary | f::booloutput, "<"),
+            // TypeOpIntAdd: binary | commutative
+            OpCode::CPUI_INT_ADD => (f::binary | f::commutative, "+"),
+            // TypeOpIntMult: binary | commutative
+            OpCode::CPUI_INT_MULT => (f::binary | f::commutative, "*"),
+            // cseElimination rebuilds `op1->code()`; the common unary/binary ops it
+            // sees carry just the eval-type bit (no special semantics needed here).
+            OpCode::CPUI_COPY => (f::unary | f::nocollapse, "copy"),
+            OpCode::CPUI_SUBPIECE => (f::binary, "SUB"),
+            OpCode::CPUI_INT_SRIGHT => (f::binary, "s>>"),
+            // Any other op-code the helpers reach is a porting bug; fall back to a
+            // bare binary op so eval-type still classifies it (the worst case is a
+            // missing special-semantics flag, never an incorrect rewrite).
+            _ => (f::binary, "?"),
+        };
+        TypeOp::new(opc, flags, name.to_string())
     }
 
     // -----------------------------------------------------------------------

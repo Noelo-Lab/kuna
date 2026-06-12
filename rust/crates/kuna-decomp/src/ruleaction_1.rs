@@ -45,6 +45,7 @@ use kuna_base::types::{int4, uintb, Wrap};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
+use crate::expression::TermOrder;
 use crate::funcdata::Funcdata;
 use crate::seams::{OpId, TypeOp, VarnodeId};
 
@@ -220,14 +221,152 @@ impl Rule for RuleCollectTerms {
         }
 
         // TermOrder termorder(op); termorder.collect(); termorder.sortTerms();
-        //   ... iterate the sorted additive edges, combine like terms ...
-        // SEAM(expression): `TermOrder`/`AdditiveEdge` live in expression.cc
-        // (not yet ported) and the combine branch also calls
-        // `data.distributeIntMultAdd(...)` (funcdata seam) and creates a new
-        // INT_MULT op with `newUniqueOut` (W3 output-creation seam).  The root-of-
-        // ADD-tree early-out above is ported faithfully; the term-collection body
-        // defers here.  No change.
-        0
+        let mut termorder = TermOrder::new(op);
+        termorder.collect(data);
+        termorder.sort_terms(data);
+        // const vector<AdditiveEdge *> &order( termorder.getSort() );
+        let order: Vec<usize> = termorder.get_sort().clone();
+        let mut i: usize = 0;
+
+        // if (!order[0]->getVarnode()->isConstant()) { for(i=1;...) {...} }
+        let v0 = termorder.term(order[0]).get_varnode();
+        if !data.vbank().get(v0).expect("RuleCollectTerms: stale order[0] vn").is_constant() {
+            i = 1;
+            while i < order.len() {
+                // vn1 = order[i-1]->getVarnode(); vn2 = order[i]->getVarnode();
+                let mut vn1 = termorder.term(order[i - 1]).get_varnode();
+                let mut vn2 = termorder.term(order[i]).get_varnode();
+                // if (vn2->isConstant()) break;
+                if data.vbank().get(vn2).expect("RuleCollectTerms: stale vn2").is_constant() {
+                    break;
+                }
+                // vn1 = getMultCoeff(vn1,coef1); vn2 = getMultCoeff(vn2,coef2);
+                let mut coef1: uintb = 0;
+                let mut coef2: uintb = 0;
+                vn1 = RuleCollectTerms::get_mult_coeff(data, vn1, &mut coef1);
+                vn2 = RuleCollectTerms::get_mult_coeff(data, vn2, &mut coef2);
+                // if (vn1 == vn2) { ...combine... }
+                if vn1 == vn2 {
+                    // if (order[i-1]->getMultiplier() != 0) return distributeIntMultAdd(...) ?1:0;
+                    if let Some(m) = termorder.term(order[i - 1]).get_multiplier() {
+                        return if data
+                            .distribute_int_mult_add(m)
+                            .expect("RuleCollectTerms: distribute (i-1)")
+                        {
+                            1
+                        } else {
+                            0
+                        };
+                    }
+                    // if (order[i]->getMultiplier() != 0) return distributeIntMultAdd(...) ?1:0;
+                    if let Some(m) = termorder.term(order[i]).get_multiplier() {
+                        return if data
+                            .distribute_int_mult_add(m)
+                            .expect("RuleCollectTerms: distribute (i)")
+                        {
+                            1
+                        } else {
+                            0
+                        };
+                    }
+                    // coef1 = (coef1 + coef2) & calc_mask(vn1->getSize());  // new coefficient
+                    let vn1sz = data.vbank().get(vn1).expect("RuleCollectTerms: stale vn1").get_size();
+                    coef1 = coef1.wrapping_add(coef2) & calc_mask(vn1sz);
+                    // Varnode *newcoeff = data.newConstant(vn1->getSize(),coef1);
+                    let newcoeff = data.new_constant(vn1sz, coef1);
+                    // Varnode *zerocoeff = data.newConstant(vn1->getSize(),0);
+                    let zerocoeff = data.new_constant(vn1sz, 0);
+                    // data.opSetInput(order[i-1]->getOp(),zerocoeff,order[i-1]->getSlot());
+                    let (op_im1, slot_im1) = {
+                        let e = termorder.term(order[i - 1]);
+                        (e.get_op(), e.get_slot())
+                    };
+                    data.op_set_input(op_im1, zerocoeff, slot_im1)
+                        .expect("RuleCollectTerms: op_set_input zerocoeff");
+                    let (op_i, slot_i) = {
+                        let e = termorder.term(order[i]);
+                        (e.get_op(), e.get_slot())
+                    };
+                    if coef1 == 0 {
+                        // data.opSetInput(order[i]->getOp(),newcoeff,order[i]->getSlot());
+                        data.op_set_input(op_i, newcoeff, slot_i)
+                            .expect("RuleCollectTerms: op_set_input newcoeff");
+                    } else {
+                        // nextop = data.newOp(2,order[i]->getOp()->getAddr());
+                        let addr = data.obank().get(op_i).expect("RuleCollectTerms: stale op_i").get_addr().clone();
+                        let nextop = data.new_op(2, addr);
+                        // vn2 = data.newUniqueOut(vn1->getSize(),nextop);
+                        let new_out = data
+                            .new_unique_out(vn1sz, nextop)
+                            .expect("RuleCollectTerms: new_unique_out");
+                        // data.opSetOpcode(nextop,CPUI_INT_MULT);
+                        set_opcode_seam(data, nextop, OpCode::CPUI_INT_MULT);
+                        // data.opSetInput(nextop,vn1,0); data.opSetInput(nextop,newcoeff,1);
+                        data.op_set_input(nextop, vn1, 0).expect("RuleCollectTerms: mult in0");
+                        data.op_set_input(nextop, newcoeff, 1).expect("RuleCollectTerms: mult in1");
+                        // data.opInsertBefore(nextop,order[i]->getOp());
+                        data.op_insert_before(nextop, op_i);
+                        // data.opSetInput(order[i]->getOp(),vn2,order[i]->getSlot());
+                        data.op_set_input(op_i, new_out, slot_i)
+                            .expect("RuleCollectTerms: op_set_input new_out");
+                    }
+                    return 1;
+                }
+                i += 1;
+            }
+        }
+        // coef1 = 0; int4 nonzerocount = 0; int4 lastconst = 0;
+        let mut coef1: uintb = 0;
+        let mut nonzerocount: i32 = 0;
+        let mut lastconst: usize = 0;
+        // for(int4 j=order.size()-1;j>=i;--j) {...}
+        let mut j = order.len();
+        while j > i {
+            j -= 1;
+            // if (order[j]->getMultiplier() != 0) continue;
+            if termorder.term(order[j]).get_multiplier().is_some() {
+                continue;
+            }
+            // vn1 = order[j]->getVarnode(); uintb val = vn1->getOffset();
+            let vnj = termorder.term(order[j]).get_varnode();
+            let val = data.vbank().get(vnj).expect("RuleCollectTerms: stale vnj").get_offset();
+            if val != 0 {
+                nonzerocount += 1;
+                coef1 = coef1.wrapping_add(val); // Sum up all the constants
+                lastconst = j;
+            }
+        }
+        // if (nonzerocount <= 1) return 0;  // Must sum at least two things
+        if nonzerocount <= 1 {
+            return 0;
+        }
+        // vn1 = order[lastconst]->getVarnode(); coef1 &= calc_mask(vn1->getSize());
+        let vn1 = termorder.term(order[lastconst]).get_varnode();
+        let vn1sz = data.vbank().get(vn1).expect("RuleCollectTerms: stale lastconst vn").get_size();
+        coef1 &= calc_mask(vn1sz);
+        // Lump all the non-zero constants into one varnode
+        // for(int4 j=lastconst+1;j<order.size();++j)
+        //   if (order[j]->getMultiplier()==0)
+        //     data.opSetInput(order[j]->getOp(),data.newConstant(vn1->getSize(),0),order[j]->getSlot());
+        for &edge_idx in &order[(lastconst + 1)..] {
+            if termorder.term(edge_idx).get_multiplier().is_none() {
+                let zero = data.new_constant(vn1sz, 0);
+                let (op_j, slot_j) = {
+                    let e = termorder.term(edge_idx);
+                    (e.get_op(), e.get_slot())
+                };
+                data.op_set_input(op_j, zero, slot_j).expect("RuleCollectTerms: zero out constant");
+            }
+        }
+        // data.opSetInput(order[lastconst]->getOp(),data.newConstant(vn1->getSize(),coef1),order[lastconst]->getSlot());
+        let lumped = data.new_constant(vn1sz, coef1);
+        let (op_lc, slot_lc) = {
+            let e = termorder.term(order[lastconst]);
+            (e.get_op(), e.get_slot())
+        };
+        data.op_set_input(op_lc, lumped, slot_lc).expect("RuleCollectTerms: lumped constant");
+
+        1
     }
 }
 
@@ -275,11 +414,17 @@ impl Rule for RuleSelectCse {
         //   hash = otherop->getCseHash(); if (hash==0) continue;
         //   list.push_back(pair(hash,otherop)); }
         // if (list.size()<=1) return 0;
-        // SEAM(funcdata CSE): `PcodeOp::getCseHash` + `data.cseEliminateList` are
-        // the funcdata CSE machinery (not yet ported).  We can count candidate
-        // descendants sharing the opcode, but `getCseHash` (which may return 0 to
-        // skip an op) and the elimination step are unavailable, so the rule
-        // declines.  No change.
+        // data.cseEliminateList(list,vlist); if (vlist.empty()) return 0; return 1;
+        //
+        // SEAM(W7 heritage-deps): `getCseHash`/`cseEliminateList`/`cseElimination`
+        // are now ported (funcdata_op.rs).  The one remaining blocker is the
+        // `isHeritaged(outvn)` test *inside* `cseEliminateList`, which is
+        // `Funcdata::isHeritaged(vn) = heritage.heritagePass(vn->getAddr())>=0`
+        // (funcdata.hh:274) — this Rust `Funcdata` does not yet own a `Heritage`
+        // instance (W7).  `cse_eliminate_list` accepts the heritaged predicate as
+        // a parameter precisely so the W7 caller can wire it; until then this rule
+        // cannot supply it and declines (no change), matching the pre-heritage
+        // behavior where nothing is heritaged.
         let _ = (vn, opc);
         0
     }
@@ -1223,13 +1368,13 @@ impl Rule for RuleIntLessEqual {
         vec![OpCode::CPUI_INT_LESSEQUAL, OpCode::CPUI_INT_SLESSEQUAL]
     }
 
-    fn apply_op(&mut self, op: OpId, _data: &mut Funcdata) -> int4 {
+    fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         // if (data.replaceLessequal(op)) return 1; return 0;
-        // SEAM(funcdata compare-form): `Funcdata::replaceLessequal` (funcdata.cc /
-        // kuna_compareform) is not yet ported.  The whole body is that one call,
-        // so the rule defers entirely.  No change.
-        let _ = op;
-        0
+        if data.replace_lessequal(op).expect("RuleIntLessEqual: replace_lessequal") {
+            1
+        } else {
+            0
+        }
     }
 }
 

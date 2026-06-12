@@ -966,6 +966,14 @@ impl Varnode {
     pub fn set_unaffected(&mut self) {
         self.set_flags(varnode_flags::unaffected);
     }
+    /// Mark this Varnode as an \e annotation (C++ has no dedicated setter; the
+    /// `Funcdata::newCodeRef`/`newVarnodeIop`/`newVarnodeCallSpecs` factories do
+    /// `vn->setFlags(Varnode::annotation)` directly).  `set_flags` is private to
+    /// this module, so this `pub(crate)` sliver is the single primitive the
+    /// `funcdata_varnode` factories use to set the bit (LOSS-077 restoration).
+    pub(crate) fn set_annotation(&mut self) {
+        self.set_flags(varnode_flags::annotation);
+    }
     /// C++ `setInput` (the private bank helper): mark as input + coverdirty.
     fn set_input_flag(&mut self) {
         self.set_flags(varnode_flags::input | varnode_flags::coverdirty);

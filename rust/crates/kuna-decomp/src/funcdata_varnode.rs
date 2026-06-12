@@ -363,20 +363,17 @@ impl Funcdata {
     /// SEAM(W6): `glb->types->getTypeCode()` (the W6 `TypeFactory`'s code type) is
     /// replaced with the unknown base (size 1), as the rest of this wave does.
     ///
-    /// SEAM(W3-varnode): `vn->setFlags(Varnode::annotation)` cannot be expressed —
-    /// `Varnode::set_flags` is private to `varnode.rs` (this item has no edit
-    /// rights there), and no public `set_annotation` setter exists.  The (space,
-    /// offset, size) triple — the only thing the flow-linkage gate asserts and the
-    /// only thing the branch input needs for control-flow following — is faithful;
-    /// the `annotation` property bit is the single deferred detail.  Recorded as a
-    /// loss (LOSS: newCodeRef annotation flag — the `funcdata_varnode` review's
-    /// LOSS-036 carryover; unblocked only by `Varnode::set_flags` visibility).
+    /// `vn->setFlags(Varnode::annotation)` is now expressed: LOSS-077 added a
+    /// `pub(crate)` [`Varnode::set_annotation`] sliver routed through the module's
+    /// private `set_flags`, so the `annotation` property bit (the previously
+    /// carried LOSS-036/LOSS-037 loss) is set faithfully.
     pub fn new_code_ref(&mut self, m: &Address) -> VarnodeId {
         // ct = glb->types->getTypeCode();  -- SEAM(W6): unknown base of size 1.
         let ct = Self::type_base_unknown(1);
         // vn = vbank.create(1,m,ct);
         let vn = self.vbank_mut().create(1, m.clone(), ct);
-        // vn->setFlags(Varnode::annotation);  -- SEAM(W3-varnode): set_flags private.
+        // vn->setFlags(Varnode::annotation);
+        self.vbank_mut().get_mut(vn).expect("new_code_ref: stale vn").set_annotation();
         self.assign_high(vn);
         vn
     }

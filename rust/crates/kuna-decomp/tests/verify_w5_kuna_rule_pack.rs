@@ -297,23 +297,21 @@ fn w5_addcarrychain_commuted_int_carry_operands_fold() {
 }
 
 #[test]
-fn w5_addcarrychain_carryelim_const_baselo_panics_where_cpp_throws_lowlevelerror() {
-    // F1 (exception->panic divergence).  The const-folded carry form
-    // (`kunaIsCarryOf` INT_LESSEQUAL branch) is precisely the case where ONE
-    // low-add operand is a constant.  The rewrite ALWAYS re-wires `indexvn = a`
-    // into the new ZEXT and `baselo = b` into the new base PIECE while a/b are
-    // STILL read by the original low add — so the constant operand gains a SECOND
-    // descendant.  C++ `opSetInput`->`Varnode::addDescend` (varnode.cc) THROWS
-    // `LowlevelError("Free varnode has multiple descendants")` here (a constant
-    // is `isFree()`); the upstream ActionPool does NOT catch it at the rule, so
-    // the function decompile aborts/restarts via the top-level catch — a
-    // *recoverable* exception leaving the partial baseop/zextop graph behind.
+fn w5_addcarrychain_carryelim_const_baselo_dedups_and_completes() {
+    // The const-folded carry form (`kunaIsCarryOf` INT_LESSEQUAL branch) is the
+    // case where ONE low-add operand is a constant.  The rewrite re-wires
+    // `indexvn = a` into the new ZEXT and `baselo = b` into the new base while a/b
+    // are STILL read by the original low add — so the constant operand `a` would
+    // gain a SECOND descendant.  C++ `opSetInput` re-duplicates a constant that
+    // already has a descendant (funcdata_op.cc:108) BEFORE `addDescend`, so the
+    // rewrite COMPLETES (it never reaches the "multiple descendants" throw — that
+    // path is for free *non-constant* varnodes only).
     //
-    // The Rust port reproduces the same decision logic and reaches the same
-    // failure point, but `op_set_input(...).expect(...)` PANICS (process abort),
-    // not a recoverable error.  This pins that divergence (see review F1 /
-    // appended LOSS) — it is the LOSS-035/055 newUniqueOut-after-newOp partial
-    // -state + panic family, here triggered by the const-folded carry path.
+    // Now that the constant re-duplication guard in `op_set_input` is ported (the
+    // funcdata_varnode `newConstant` factory has landed), the port matches C++:
+    // the formerly-pinned F1 panic divergence (LOSS-035/055 family for the
+    // const-carry path) is RESOLVED — the rule fuses to INT_ADD with the constant
+    // re-duplicated into the new ZEXT.
     let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let cval: u64 = 0x30;
@@ -345,14 +343,18 @@ fn w5_addcarrychain_carryelim_const_baselo_panics_where_cpp_throws_lowlevelerror
     fd.op_insert(op, bl, None);
 
     let mut rule = RuleAddCarryChain::new(true);
-    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        rule.apply_op(op, &mut fd)
-    }));
-    assert!(
-        res.is_err(),
-        "const-folded carry form re-wires a constant into a 2nd op: C++ throws a \
-         recoverable LowlevelError, the port panics via .expect() (F1 divergence)"
-    );
+    assert_eq!(rule.apply_op(op, &mut fd), 1, "const-folded carry now fuses (dedup guard)");
+    // op fused to INT_ADD; its index operand is the ZEXT of the constant `a`.
+    assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_INT_ADD);
+    let zext_out = fd.obank().get(op).unwrap().get_in(1).unwrap();
+    let zextop = fd.vbank().get(zext_out).unwrap().get_def().unwrap();
+    assert_eq!(fd.obank().get(zextop).unwrap().code(), OpCode::CPUI_INT_ZEXT);
+    let zext_in = fd.obank().get(zextop).unwrap().get_in(0).unwrap();
+    let zin = fd.vbank().get(zext_in).unwrap();
+    assert!(zin.is_constant() && zin.get_offset() == cval, "ZEXT reads the (re-dup'd) constant a");
+    // The original constant still has exactly its one (loadd) descendant — the
+    // ZEXT read a fresh duplicate.
+    assert_eq!(fd.vbank().get(a_const).unwrap().num_descend(), 1, "original constant not over-shared");
 }
 
 #[test]
@@ -496,3 +498,4 @@ fn w5_booleanmask_byte_aligned_shift_declines() {
     );
     assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_INT_SRIGHT);
 }
+

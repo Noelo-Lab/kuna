@@ -507,3 +507,179 @@ fn op_target_finds_instruction_start_in_deadlist() {
     assert_eq!(fd.op_target(mid), start);
     assert_eq!(fd.op_target(start), start);
 }
+
+// --- comparison canonicalization / multiply distribution / CSE (helpers) ------
+
+/// Make an op with `inputs` slots, opcode, and an EXPLICIT flag word (the
+/// `glb->inst[opc]` opflags the W6 table would supply — set here so eval-type
+/// reading guards like `get_eval_type` see the right `binary`/`booloutput` bits).
+fn mk_op_flags(
+    fd: &mut Funcdata,
+    inputs: int4,
+    off: u64,
+    opc: OpCode,
+    flags: kuna_base::types::uint4,
+) -> OpId {
+    let ram = ram_space(fd);
+    let op = fd.new_op(inputs, Address::new(ram, off));
+    fd.obank_mut().change_opcode(op, TypeOp::new(opc, flags, format!("{opc:?}")));
+    op
+}
+
+/// Attach a fresh output Varnode (at `off`, size 4) to an op via op_set_output.
+fn give_out(fd: &mut Funcdata, op: OpId, off: u64) -> VarnodeId {
+    let ram = ram_space(fd);
+    let vn = fd.new_varnode(4, &Address::new(ram, off), Some(dt(4)));
+    fd.op_set_output(op, vn).unwrap();
+    op_out(fd, op)
+}
+
+fn op_out(fd: &Funcdata, op: OpId) -> VarnodeId {
+    fd.obank().get(op).unwrap().get_out().unwrap()
+}
+
+/// Make a non-free (function-input) Varnode at (ram off, size 4) so it may carry
+/// multiple descendants and is not `isFree()`.
+fn mk_input(fd: &mut Funcdata, off: u64) -> VarnodeId {
+    let vn = mk_vn(fd, off);
+    fd.vbank_mut()
+        .set_input(vn, &mut |_: &mut crate::varnode::VarnodeBank, _, _| Ok(()))
+        .unwrap()
+}
+
+#[test]
+fn replace_lessequal_rewrites_x_le_c() {
+    // `x <= 5` (unsigned, const in slot 1) => `x < 6`.
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_LESSEQUAL);
+    let x = mk_vn(&mut fd, 0x10);
+    let c = fd.new_constant(4, 5);
+    fd.op_set_input(op, x, 0).unwrap();
+    fd.op_set_input(op, c, 1).unwrap();
+    let _o = give_out(&mut fd, op, 0x40);
+    assert!(fd.replace_lessequal(op).unwrap(), "rewrites");
+    assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_INT_LESS);
+    let newc = fd.obank().get(op).unwrap().get_in(1).unwrap();
+    assert_eq!(fd.vbank().get(newc).unwrap().get_offset(), 6, "c+1");
+    assert!(fd.obank().get(op).unwrap().is_canonical_lessequal(), "provenance recorded");
+}
+
+#[test]
+fn replace_lessequal_declines_non_constant() {
+    // Neither operand constant => no replacement.
+    let mut fd = build_fd();
+    let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_LESSEQUAL);
+    let a = mk_vn(&mut fd, 0x10);
+    let b = mk_vn(&mut fd, 0x20);
+    fd.op_set_input(op, a, 0).unwrap();
+    fd.op_set_input(op, b, 1).unwrap();
+    assert!(!fd.replace_lessequal(op).unwrap());
+    assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_INT_LESSEQUAL);
+}
+
+#[test]
+fn distribute_int_mult_add_distributes_coeff() {
+    // op = (x + 7) * 3  with addop = INT_ADD(x, #7).  After distribution:
+    //   op becomes INT_ADD; in0 = (x*3) [new INT_MULT], in1 = #21 (=3*7).
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let x = mk_input(&mut fd, 0x10);
+    // addop = INT_ADD(x, #7) with a written output.
+    let addop = mk_op_flags(&mut fd, 2, 0x100, OpCode::CPUI_INT_ADD, pcodeop_flags::binary);
+    let c7 = fd.new_constant(4, 7);
+    fd.op_set_input(addop, x, 0).unwrap();
+    fd.op_set_input(addop, c7, 1).unwrap();
+    let addout = give_out(&mut fd, addop, 0x40);
+    fd.op_insert(addop, bl, None);
+    // op = INT_MULT(addout, #3).
+    let op = mk_op_flags(&mut fd, 2, 0x104, OpCode::CPUI_INT_MULT, pcodeop_flags::binary);
+    let c3 = fd.new_constant(4, 3);
+    fd.op_set_input(op, addout, 0).unwrap();
+    fd.op_set_input(op, c3, 1).unwrap();
+    let _out = give_out(&mut fd, op, 0x44);
+    fd.op_insert(op, bl, None);
+
+    assert!(fd.distribute_int_mult_add(op).unwrap(), "distributes");
+    // op is now INT_ADD.
+    assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_INT_ADD);
+    // in1 became constant 3*7 = 21.
+    let in1 = fd.obank().get(op).unwrap().get_in(1).unwrap();
+    assert!(fd.vbank().get(in1).unwrap().is_constant());
+    assert_eq!(fd.vbank().get(in1).unwrap().get_offset(), 21);
+    // in0 is the output of a new INT_MULT(x, #3).
+    let in0 = fd.obank().get(op).unwrap().get_in(0).unwrap();
+    let multop = fd.vbank().get(in0).unwrap().get_def().unwrap();
+    assert_eq!(fd.obank().get(multop).unwrap().code(), OpCode::CPUI_INT_MULT);
+    assert_eq!(fd.obank().get(multop).unwrap().get_in(0), Some(x));
+    let mc = fd.obank().get(multop).unwrap().get_in(1).unwrap();
+    assert_eq!(fd.vbank().get(mc).unwrap().get_offset(), 3, "coefficient");
+}
+
+#[test]
+fn cse_eliminate_list_collapses_same_block_match() {
+    // Two identical INT_ADD(x, #1) ops in the same block; cseEliminateList keeps
+    // the earlier one (lower seq order) and destroys the later, recording the
+    // survivor's output.  The heritaged predicate returns true for both outputs.
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let x = mk_input(&mut fd, 0x10);
+    let bin = pcodeop_flags::binary;
+    // op1 = INT_ADD(x, #1).
+    let op1 = mk_op_flags(&mut fd, 2, 0x100, OpCode::CPUI_INT_ADD, bin);
+    let c1a = fd.new_constant(4, 1);
+    fd.op_set_input(op1, x, 0).unwrap();
+    fd.op_set_input(op1, c1a, 1).unwrap();
+    let out1 = give_out(&mut fd, op1, 0x40);
+    fd.op_insert(op1, bl, None);
+    // op2 = INT_ADD(x, #1) (a separate but functionally identical op).
+    let op2 = mk_op_flags(&mut fd, 2, 0x104, OpCode::CPUI_INT_ADD, bin);
+    let c1b = fd.new_constant(4, 1);
+    fd.op_set_input(op2, x, 0).unwrap();
+    fd.op_set_input(op2, c1b, 1).unwrap();
+    let out2 = give_out(&mut fd, op2, 0x44);
+    fd.op_insert(op2, bl, None);
+
+    // Build the (hash, op) list the rule would (both hashes equal -> CSE match).
+    let h1 = crate::op::get_cse_hash(fd.obank().get(op1).unwrap(), fd.vbank());
+    let h2 = crate::op::get_cse_hash(fd.obank().get(op2).unwrap(), fd.vbank());
+    assert_eq!(h1, h2, "identical ops hash equal");
+    assert_ne!(h1, 0, "INT_ADD is cse-hashable");
+    let mut list = vec![(h1, op1), (h2, op2)];
+    let mut outlist: Vec<VarnodeId> = Vec::new();
+    fd.cse_eliminate_list(&mut list, &mut outlist, |_, _| true).unwrap();
+
+    // op1 (earlier seq) survives; op2 is destroyed; its readers (none) repointed.
+    assert_eq!(outlist, vec![out1], "survivor output recorded");
+    assert!(fd.obank().get(op2).unwrap().is_dead(), "duplicate op destroyed");
+    assert!(!fd.obank().get(op1).unwrap().is_dead(), "dominator survives");
+    // out2 was freed by op_destroy/op_unset_output (its def cleared).
+    assert!(fd.vbank().get(out2).unwrap().get_def().is_none());
+}
+
+#[test]
+fn cse_eliminate_list_respects_heritaged_predicate() {
+    // Same two matching ops, but the heritaged predicate is false -> no elimination.
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let x = mk_input(&mut fd, 0x10);
+    let bin = pcodeop_flags::binary;
+    let op1 = mk_op_flags(&mut fd, 2, 0x100, OpCode::CPUI_INT_ADD, bin);
+    let c1a = fd.new_constant(4, 1);
+    fd.op_set_input(op1, x, 0).unwrap();
+    fd.op_set_input(op1, c1a, 1).unwrap();
+    let _out1 = give_out(&mut fd, op1, 0x40);
+    fd.op_insert(op1, bl, None);
+    let op2 = mk_op_flags(&mut fd, 2, 0x104, OpCode::CPUI_INT_ADD, bin);
+    let c1b = fd.new_constant(4, 1);
+    fd.op_set_input(op2, x, 0).unwrap();
+    fd.op_set_input(op2, c1b, 1).unwrap();
+    let _out2 = give_out(&mut fd, op2, 0x44);
+    fd.op_insert(op2, bl, None);
+
+    let h = crate::op::get_cse_hash(fd.obank().get(op1).unwrap(), fd.vbank());
+    let mut list = vec![(h, op1), (h, op2)];
+    let mut outlist: Vec<VarnodeId> = Vec::new();
+    fd.cse_eliminate_list(&mut list, &mut outlist, |_, _| false).unwrap();
+    assert!(outlist.is_empty(), "no elimination when outputs are not heritaged");
+    assert!(!fd.obank().get(op2).unwrap().is_dead(), "duplicate survives");
+}
