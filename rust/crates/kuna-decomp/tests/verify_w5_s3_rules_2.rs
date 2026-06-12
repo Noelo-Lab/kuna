@@ -34,7 +34,7 @@ use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::op::pcodeop_flags;
 use kuna_decomp::ruleaction_2::{
-    RuleDoubleShift, RuleFloatRange, RuleZextEliminate,
+    RuleBooleanUndistribute, RuleDoubleShift, RuleFloatRange, RuleShiftCompare, RuleZextEliminate,
 };
 use kuna_decomp::seams::{Architecture, BlockId, OpId, TypeOp, VarnodeId};
 use kuna_decomp::varnode::DefOpInfo;
@@ -334,4 +334,135 @@ fn w5_s3_rules_2_doubleshift_opposite_partial_negative_diffsa() {
     // mask = (0xffffffff >> 8) & 0xffffffff = 0x00ffffff.
     let maskvn = in_of(&fd, anddef, 1).unwrap();
     assert_eq!(const_val(&fd, maskvn), 0x00ff_ffff);
+}
+
+// =============================================================================
+// ROUND 2 adversarial tests (re-verify the F1 repair is systemic, not just the
+// one RuleZextEliminate site).  Round 1 REJECTed on bare `>>`/`<<` value-word
+// shifts whose count can reach >= 64; the repair routed every such site through
+// `wshl`/`wshr` (ADR-0003).  These exercise the OTHER repaired sites
+// (RuleShiftCompare, RuleDoubleShift) plus the RuleBooleanUndistribute
+// `BooleanMatch::evaluate` seam (a strictly-conservative loss).
+// =============================================================================
+
+// RuleShiftCompare LEFT info-loss branch (ruleaction.cc:2139-2156): `(V << c) == d`
+// where the shift discards high bits of V's nz-mask.  The `(nzmask << sa)` and
+// `((uintb)1) << (8*size - sa)` shifts are the repaired sites.  Pick a 1-byte V
+// (nzmask 0xff) shifted left by 4 inside an INT_EQUAL against 0x30:
+//   newconst = 0x30 >> 4 = 3; (3 << 4)=0x30==constval OK.
+//   tmp = (0xff << 4) & 0xff = 0xf0; (0xf0 >> 4)=0x0f != 0xff  => info-loss branch.
+//   sa becomes 8*1 - 4 = 4; mask = (1<<4)-1 = 0x0f.
+//   Result: (V & 0x0f) == 3, with the AND inserted before the shift op.
+#[test]
+fn w5_s3_rules_2_r2_shiftcompare_left_info_loss_andmask() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let v = mk_reg(&mut fd, 0x100, 1); // nzmask 0xff
+    let sa = mk_const(&mut fd, 1, 4);
+    let (shl_out, shlop) = mk_written(&mut fd, bl, 0x10, 1, OpCode::CPUI_INT_LEFT, &[v, sa]);
+    let d = mk_const(&mut fd, 1, 0x30);
+    let eq = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_INT_EQUAL);
+    fd.op_set_input(eq, shl_out, 0).unwrap();
+    fd.op_set_input(eq, d, 1).unwrap();
+    fd.op_insert(eq, bl, None);
+
+    assert_eq!(RuleShiftCompare.apply_op(eq, &mut fd), 1);
+    // op stays INT_EQUAL; slot1 const becomes newconst = 3.
+    assert_eq!(code_of(&fd, eq), OpCode::CPUI_INT_EQUAL);
+    assert_eq!(const_val(&fd, in_of(&fd, eq, 1).unwrap()), 3);
+    // slot0 now reads a freshly inserted INT_AND(V, 0x0f) placed before the shift.
+    let andin = in_of(&fd, eq, 0).unwrap();
+    let anddef = fd.vbank().get(andin).unwrap().get_def().unwrap();
+    assert_eq!(code_of(&fd, anddef), OpCode::CPUI_INT_AND);
+    assert_eq!(in_of(&fd, anddef, 0), Some(v));
+    assert_eq!(const_val(&fd, in_of(&fd, anddef, 1).unwrap()), 0x0f);
+    let _ = shlop;
+}
+
+// RuleDoubleShift same-direction OVERSHIFT (ruleaction.cc:1882-1887): `(V << 24) << 16`
+// on a 4-byte value.  sa1+sa2 = 40 >= 8*4 = 32  =>  the whole thing zeroes:
+// op becomes COPY of constant 0, input 1 removed.  Stresses the `sa1 + sa2 < 8*size`
+// signed comparison (no overflow on realistic amounts) and the COPY#0 emit.
+#[test]
+fn w5_s3_rules_2_r2_doubleshift_same_dir_overshift_to_zero() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let v = mk_reg(&mut fd, 0x100, 4);
+    let s_inner = mk_const(&mut fd, 4, 24);
+    let (left_out, _l) = mk_written(&mut fd, bl, 0x10, 4, OpCode::CPUI_INT_LEFT, &[v, s_inner]);
+    let s_outer = mk_const(&mut fd, 4, 16);
+    let outer = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_INT_LEFT);
+    fd.op_set_input(outer, left_out, 0).unwrap();
+    fd.op_set_input(outer, s_outer, 1).unwrap();
+    fd.op_insert(outer, bl, None);
+
+    assert_eq!(RuleDoubleShift.apply_op(outer, &mut fd), 1);
+    assert_eq!(code_of(&fd, outer), OpCode::CPUI_COPY);
+    // input 1 was removed; the COPY now has exactly one input (the zero const).
+    assert_eq!(fd.obank().get(outer).unwrap().num_input(), 1_i32);
+    let z = in_of(&fd, outer, 0).unwrap();
+    assert_eq!(const_val(&fd, z), 0);
+    assert_eq!(vn_size_of(&fd, z), 4);
+}
+
+// RuleBooleanUndistribute seam (BooleanMatch::evaluate reduced to its `vn1==vn2`
+// head): `(A && B) != (A && C)` with the *same* varnode A shared verbatim must
+// still fire (seam returns `same` for identical varnodes).  centralEqual starts
+// false (INT_NOTEQUAL), no OR flips, so combineOpc = BOOL_AND and the inner op is
+// INT_NOTEQUAL(B,C).  Result:  A && (B != C).
+#[test]
+fn w5_s3_rules_2_r2_booleanundistribute_identical_shared_clause_fires() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let a = mk_reg(&mut fd, 0x100, 1);
+    let b = mk_reg(&mut fd, 0x108, 1);
+    let c = mk_reg(&mut fd, 0x110, 1);
+    let (and0, _op0) = mk_written(&mut fd, bl, 0x10, 1, OpCode::CPUI_BOOL_AND, &[a, b]);
+    let (and1, _op1) = mk_written(&mut fd, bl, 0x20, 1, OpCode::CPUI_BOOL_AND, &[a, c]);
+    let ne = mk_op(&mut fd, 2, 0x30, OpCode::CPUI_INT_NOTEQUAL);
+    fd.op_set_input(ne, and0, 0).unwrap();
+    fd.op_set_input(ne, and1, 1).unwrap();
+    fd.op_insert(ne, bl, None);
+
+    assert_eq!(RuleBooleanUndistribute.apply_op(ne, &mut fd), 1);
+    // Outer op becomes BOOL_AND; slot0 = finalA = A (not flipped); slot1 = inner.
+    assert_eq!(code_of(&fd, ne), OpCode::CPUI_BOOL_AND);
+    assert_eq!(in_of(&fd, ne, 0), Some(a));
+    let inner = in_of(&fd, ne, 1).unwrap();
+    let innerdef = fd.vbank().get(inner).unwrap().get_def().unwrap();
+    assert_eq!(code_of(&fd, innerdef), OpCode::CPUI_INT_NOTEQUAL);
+    // inner compares the two non-shared clauses B and C (order: finalB, finalC).
+    let i0 = in_of(&fd, innerdef, 0).unwrap();
+    let i1 = in_of(&fd, innerdef, 1).unwrap();
+    assert!((i0 == b && i1 == c) || (i0 == c && i1 == b));
+}
+
+// RuleBooleanUndistribute seam LOSS witness: a structurally-equal-but-distinct
+// shared clause (two separate COPY-of-A varnodes) is `uncorrelated` under the
+// seam (the recursive BooleanMatch is stubbed), so the rule DECLINES where the
+// full C++ `BooleanMatch::evaluate` would match and transform.  Strictly
+// conservative — never a wrong rewrite, only a missed one.
+#[test]
+fn w5_s3_rules_2_r2_booleanundistribute_seam_declines_structural_match() {
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let a = mk_reg(&mut fd, 0x100, 1);
+    let b = mk_reg(&mut fd, 0x108, 1);
+    let c = mk_reg(&mut fd, 0x110, 1);
+    // Two distinct COPY(A) varnodes: structurally the same boolean value, but
+    // different VarnodeIds, so the seam's `vn1==vn2` head misses them.
+    let (acopy0, _a0) = mk_written(&mut fd, bl, 0x08, 1, OpCode::CPUI_COPY, &[a]);
+    let (acopy1, _a1) = mk_written(&mut fd, bl, 0x0c, 1, OpCode::CPUI_COPY, &[a]);
+    let (and0, _op0) = mk_written(&mut fd, bl, 0x10, 1, OpCode::CPUI_BOOL_AND, &[acopy0, b]);
+    let (and1, _op1) = mk_written(&mut fd, bl, 0x20, 1, OpCode::CPUI_BOOL_AND, &[acopy1, c]);
+    let ne = mk_op(&mut fd, 2, 0x30, OpCode::CPUI_INT_NOTEQUAL);
+    fd.op_set_input(ne, and0, 0).unwrap();
+    fd.op_set_input(ne, and1, 1).unwrap();
+    fd.op_insert(ne, bl, None);
+
+    // Seam declines (returns 0); the op graph is left untouched.
+    assert_eq!(RuleBooleanUndistribute.apply_op(ne, &mut fd), 0);
+    assert_eq!(code_of(&fd, ne), OpCode::CPUI_INT_NOTEQUAL);
+    assert_eq!(in_of(&fd, ne, 0), Some(and0));
+    assert_eq!(in_of(&fd, ne, 1), Some(and1));
 }
