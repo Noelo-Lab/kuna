@@ -178,32 +178,30 @@ fn w5_dtype_string2metatype_boundary_and_fallthrough() {
 
 use kuna_decomp::dtype::TypeField;
 
-/// F1 FIX CONFIRMATION. After the round-1 work order, `Spacebase` must NOT use
-/// the base `compare` body (which would equate distinct-localframe spacebases).
-/// The faithful interface answer is the SEAM error (the override is W6), so both
-/// `compare` and `compare_dependency` on a Spacebase must return `Err`, never
-/// `Ok` — and certainly never `Ok(0)`.
+/// F1 FIX CONFIRMATION (now flipped by w6-s5-type-2). The F1 fix demanded that
+/// `Spacebase` must NOT use the *base* `compare` body (which would equate
+/// distinct-localframe spacebases as `Ok(0)`). w6-s5-type-2 ports the real
+/// `TypeSpacebase::compare`/`compareDependency` (type.cc:3498-3514), which
+/// tie-breaks on spaceid then localframe — so distinct localframes now compare
+/// non-equal, and identical ones compare equal.  The pin flips from "must Err"
+/// to "must distinguish localframes" (the property the F1 fix actually protects).
 #[test]
-fn w5r2_spacebase_compare_routes_to_seam_err() {
+fn w5r2_spacebase_compare_distinguishes_localframe() {
     let spc = const_space();
     let a = spacebase(Some(Rc::clone(&spc)), Address::new(Rc::clone(&spc), 0x1000));
     let b = spacebase(Some(Rc::clone(&spc)), Address::new(Rc::clone(&spc), 0x2000));
-    assert!(
-        a.compare(&b, 10).is_err(),
-        "Spacebase::compare must SEAM(W6)-Err (F1 fix), not route to the base body"
-    );
-    assert!(
-        a.compare_dependency(&b).is_err(),
-        "Spacebase::compareDependency must SEAM(W6)-Err (F1 fix)"
-    );
-    // And a self-spacebase still must not sneak through the base body as Ok(0).
-    assert!(a.compare(&a.clone(), 10).is_err());
+    // Distinct localframes must NOT equate (the F1 invariant); 0x1000 < 0x2000.
+    assert_eq!(a.compare(&b, 10).unwrap(), -1);
+    assert_eq!(b.compare(&a, 10).unwrap(), 1);
+    assert_eq!(a.compare_dependency(&b).unwrap(), -1);
+    // A self-spacebase compares equal (same spaceid, same localframe).
+    assert_eq!(a.compare(&a.clone(), 10).unwrap(), 0);
 }
 
 /// `find_compatible_resolve` partition (type.hh:294/488/522/608/637/714). Of the
-/// FIVE overriders, Pointer/Array are now implemented (w6-s5-type-1) and
-/// Struct/Union/PartialUnion remain type-2 SEAM-Err; every other kind returns the
-/// base default -1 (type.cc:600-604). PointerRel, Code, Spacebase, PartialStruct,
+/// FIVE overriders, Pointer/Array (w6-s5-type-1) and Struct/Union/PartialUnion
+/// (w6-s5-type-2) are now implemented; every other kind returns the base default
+/// -1 (type.cc:600-604). PointerRel, Code, Spacebase, PartialStruct,
 /// PartialEnum are NOT overriders -> base -1.
 #[test]
 fn w5r2_find_compatible_resolve_override_partition() {
@@ -224,13 +222,26 @@ fn w5r2_find_compatible_resolve_override_partition() {
     };
     assert_eq!(pe.find_compatible_resolve(&int_t).unwrap(), -1);
 
-    // Struct/Union/PartialUnion still SEAM-Err (type-2 overrides).
+    // Struct/Union/PartialUnion are now implemented (w6-s5-type-2).
+    // TypeStruct::findCompatibleResolve (type.cc:2300-2311): field[0].type == ct
+    // (a struct that needs resolution has exactly one field) -> 0.
     let mut s = Datatype::new_with_align(4, -1, type_metatype::TYPE_STRUCT);
-    s.kind = DatatypeKind::Struct { field: vec![], bitfield: vec![] };
-    assert!(s.find_compatible_resolve(&int_t).is_err());
+    s.kind = DatatypeKind::Struct {
+        field: vec![TypeField::new(0, 0, "a", Rc::clone(&int_t))],
+        bitfield: vec![],
+    };
+    assert_eq!(s.find_compatible_resolve(&int_t).unwrap(), 0);
+    // A struct whose only field is a different type -> -1.
+    let other_struct_field = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+    assert_eq!(s.find_compatible_resolve(&other_struct_field).unwrap(), -1);
+    // TypeUnion::findCompatibleResolve (type.cc:2629-2649): the field == ct at
+    // offset 0 -> its index.
     let mut u = Datatype::new_with_align(4, -1, type_metatype::TYPE_UNION);
-    u.kind = DatatypeKind::Union { field: vec![] };
-    assert!(u.find_compatible_resolve(&int_t).is_err());
+    u.kind = DatatypeKind::Union {
+        field: vec![TypeField::new(0, 0, "a", Rc::clone(&int_t))],
+    };
+    assert_eq!(u.find_compatible_resolve(&int_t).unwrap(), 0);
+    assert_eq!(u.find_compatible_resolve(&other_struct_field).unwrap(), -1);
 
     // TypePointer::findCompatibleResolve (type.cc:1347-1354): ct is a plain int
     // (not TYPE_PTR), so the override returns -1.
@@ -256,8 +267,8 @@ fn w5r2_find_compatible_resolve_override_partition() {
 
 /// `get_sub_type` partition: Union and Enum are NOT getSubType overriders
 /// (Union's is commented out in type.hh:619; Enum has none), so they take the
-/// base body -> (None, off). Array/Pointer ARE overriders, now implemented
-/// (w6-s5-type-1); Struct remains a type-2 SEAM-Err.
+/// base body -> (None, off). Array/Pointer ARE overriders, implemented in
+/// w6-s5-type-1; Struct is a type-2 overrider, now implemented (w6-s5-type-2).
 #[test]
 fn w5r2_get_sub_type_union_enum_are_base_not_seam() {
     let mut u = Datatype::new_with_align(8, -1, type_metatype::TYPE_UNION);
@@ -272,13 +283,21 @@ fn w5r2_get_sub_type_union_enum_are_base_not_seam() {
     assert!(sub.is_none());
     assert_eq!(newoff, 3);
 
-    // Struct DOES override and is type-2 -> still SEAM.
+    // Struct DOES override (type-2, now implemented): off 0 lands in field "a"
+    // (offset 0, an int4), passing back the field type with newoff 0.
+    let int_t = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
     let mut s = Datatype::new_with_align(8, -1, type_metatype::TYPE_STRUCT);
     s.kind = DatatypeKind::Struct {
-        field: vec![TypeField::new(0, 0, "a", Rc::new(Datatype::new(4, type_metatype::TYPE_INT)))],
+        field: vec![TypeField::new(0, 0, "a", Rc::clone(&int_t))],
         bitfield: vec![],
     };
-    assert!(s.get_sub_type(0).is_err());
+    let (sub, newoff) = s.get_sub_type(0).unwrap();
+    assert!(sub.is_some());
+    assert_eq!(newoff, 0);
+    // An offset past the single field's extent (off 4 >= field end) -> base body.
+    let (sub_oob, newoff_oob) = s.get_sub_type(4).unwrap();
+    assert!(sub_oob.is_none());
+    assert_eq!(newoff_oob, 4);
 }
 
 /// `PointerRel` inherits `TypePointer::numDepend()==1` and `getDepend(0)==ptrto`
