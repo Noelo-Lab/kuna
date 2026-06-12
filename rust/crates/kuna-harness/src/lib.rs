@@ -15,8 +15,12 @@
 //!
 //! - [`liftdiff`]: the B2-grade STRUCTURAL differential — a parser for the C++
 //!   `print raw` B2 snapshot format, the structural model both engines populate,
-//!   and the comparator (used by `tests/lift_diff.rs`, which bootstraps the Rust
-//!   `XmlArchitecture` frontend and runs `FlowInfo` followFlow + the basic-block
-//!   builder to the same boundary the C++ snapshot represents).
+//!   and the comparator.
+//! - [`corpus`]: the corpus driver around `liftdiff` — the pinned case table, the
+//!   `XmlArchitecture` bootstrap, the Rust-side extractor (`FlowInfo` followFlow +
+//!   the basic-block builder to the same B2 boundary the C++ snapshot represents),
+//!   and the `run_self_test()` aggregate used by BOTH the `tests/lift_diff.rs`
+//!   integration test and the `kuna-lift-diff` self-test binary.
 
+pub mod corpus;
 pub mod liftdiff;

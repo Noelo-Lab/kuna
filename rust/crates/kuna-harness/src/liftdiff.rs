@@ -15,7 +15,25 @@
 //!    `OpCode`), and the *output-presence* flag.
 //! 3. **the block partition**: block count, each block's `(start,stop)` cover
 //!    addresses, the ordered op-address list per block, and the inter-block
-//!    out-edges (by target-block START address).
+//!    out-edges (by target-block INDEX in print order).
+//!
+//! ## How blocks are keyed (cover-start is NOT a key)
+//!
+//! Both engines print blocks in `BlockGraph::list` order (`block.cc:1301`), which
+//! at B2 — right after `structureReset` assigns indices in list order — equals the
+//! block `index` order.  Blocks are therefore stored as an **ordered `Vec`** and
+//! matched across engines by their **position in print order** (== `index`); the
+//! cover `(start,stop)` is compared as *data*, never used as the key.  This is
+//! mandatory: a cover-start address is NOT unique — one machine instruction can
+//! decode (via a register-window `save`/`restore` inject, a conditional-execution
+//! lattice, or any decode-time p-code inject) into several basic blocks that all
+//! cover the same address.  The earlier (rejected) design keyed a
+//! `BTreeMap<u64,BlockRec>` by cover-start, which silently collapsed such blocks on
+//! BOTH engines and produced a spurious PASS over a degenerate projection
+//! (`gh6990-returnpair`: a 5-block SPARC CFG → 2 keyed blocks).  Inter-block edges
+//! are likewise keyed by target-block **index** (the `Block_N` short-header carries
+//! `N` directly; the fall-through edge is the next printed block, index `i+1`), so
+//! they too are sound for any control-flow shape.
 //!
 //! ## What the C++ B2 snapshot is, exactly
 //!
@@ -90,8 +108,6 @@
 //! injected CALLOTHER — `recover_jump_tables_stub`/`inject_pcode` return a seam
 //! `Err`) are reported EXCLUDED with the seam reason; they are not counted as
 //! failures (the boundary is unreachable until the W4 wave lands).
-
-use std::collections::BTreeMap;
 
 // ===========================================================================
 // Opcode class — the coarse, engine-agnostic op type both sides agree on
@@ -172,33 +188,38 @@ pub struct OpRec {
     pub has_output: bool,
 }
 
-/// One basic block: index, cover range, ordered ops, and out-edge target start
-/// addresses.
+/// One basic block: index, cover range, ordered ops, and out-edge target indices.
 #[derive(Debug, Clone)]
 pub struct BlockRec {
-    /// The block's `index` (RPO order assigned by `structureReset`).
+    /// The block's `index` (the list/print order assigned by `structureReset`).
+    /// This is the stable cross-engine key; it equals the block's position in
+    /// [`StructModel::blocks`].
     pub index: i64,
-    /// Cover start byte-offset (`Basic Block N 0xSTART-0xSTOP`).
+    /// Cover start byte-offset (`Basic Block N 0xSTART-0xSTOP`).  Compared as data,
+    /// NOT used as a key (cover-start is not unique across blocks).
     pub start: u64,
     /// Cover stop byte-offset.
     pub stop: u64,
     /// The block's ops, in print order.
     pub ops: Vec<OpRec>,
-    /// Out-edge target block START byte-offsets (order-insensitive; sorted).
-    pub out_starts: Vec<u64>,
+    /// Out-edge target block INDICES (order-insensitive; sorted, deduped).  Keyed
+    /// by index — robust to several blocks sharing one cover-start.
+    pub out_indices: Vec<i64>,
 }
 
 /// The full structural model of a function at B2.
 #[derive(Debug, Clone)]
 pub struct StructModel {
-    /// Blocks keyed by cover-start offset (the stable cross-engine key).
-    pub blocks: BTreeMap<u64, BlockRec>,
+    /// Blocks in print order (== `BlockGraph::list` order == block-`index` order at
+    /// B2).  `blocks[i].index == i`; matched across engines by POSITION, never by
+    /// cover-start address.
+    pub blocks: Vec<BlockRec>,
 }
 
 impl StructModel {
     /// Total op count across all blocks.
     pub fn total_ops(&self) -> usize {
-        self.blocks.values().map(|b| b.ops.len()).sum()
+        self.blocks.iter().map(|b| b.ops.len()).sum()
     }
 }
 
@@ -300,20 +321,25 @@ fn call_class(rhs: &str) -> Option<OpClass> {
     }
 }
 
-/// Parse a `Block_<index>:0x<start>` short-header token into the start offset.
-fn parse_short_header(tok: &str) -> Option<u64> {
-    // `Block_N:0xADDR` — take the part after the FIRST `:` (the address printRaw).
-    let after = tok.split_once(':')?.1;
-    parse_addr(after).ok()
+/// Parse a `Block_<index>:0x<start>` short-header token into the block INDEX.
+///
+/// `FlowBlock::printShortHeader` (`block.cc:643`) prints `Block_<dec index>:<addr>`;
+/// the part we key on is the INDEX (the address is auxiliary data we ignore here,
+/// since several blocks can share an address).
+fn parse_short_header(tok: &str) -> Option<i64> {
+    // `Block_N:0xADDR` — the index is the decimal between `Block_` and the FIRST `:`.
+    let body = tok.strip_prefix("Block_")?;
+    let idx_str = body.split_once(':').map(|(a, _)| a).unwrap_or(body);
+    idx_str.trim().parse::<i64>().ok()
 }
 
-/// Extract the out-edge target start offsets from a terminator op body:
+/// Extract the out-edge target block INDICES from a terminator op body:
 ///
-/// - `goto Block_N:0x..` -> `[start]`
-/// - `goto Block_T:0x.. if (..) else Block_F:0x..` -> `[trueStart, falseStart]`
+/// - `goto Block_N:0x..` -> `[N]`
+/// - `goto Block_T:0x.. if (..) else Block_F:0x..` -> `[T, F]`
 ///
 /// Returns `None` for non-`goto` bodies (fall-through / return / switch).
-fn goto_targets(body: &str) -> Option<Vec<u64>> {
+fn goto_targets(body: &str) -> Option<Vec<i64>> {
     let b = body.trim();
     let rest = b.strip_prefix("goto ")?;
     let mut out = Vec::new();
@@ -362,8 +388,8 @@ pub fn parse_cpp_b2(text: &str, excluded_tracked: &mut usize) -> Result<StructMo
         start: u64,
         stop: u64,
         ops: Vec<RawOp>,
-        explicit_targets: Option<Vec<u64>>,
-        implied_target: Option<u64>,
+        explicit_targets: Option<Vec<i64>>,
+        implied_target: Option<i64>,
     }
 
     let mut pending: Vec<PendingBlock> = Vec::new();
@@ -450,29 +476,36 @@ pub fn parse_cpp_b2(text: &str, excluded_tracked: &mut usize) -> Result<StructMo
     }
 
     // The block print order == the BlockGraph `list` order; the fall-through
-    // out-edge target is the NEXT block's start (when no explicit/implied goto).
+    // out-edge target is the NEXT block in print order (when there is no
+    // explicit/implied goto).  Blocks are kept in print order (a Vec); the parsed
+    // `index` is validated against the position so the C++ list/index ordering is a
+    // checked invariant, not an assumption.
     let n = pending.len();
-    let start_of: Vec<u64> = pending.iter().map(|b| b.start).collect();
-
-    let mut blocks: BTreeMap<u64, BlockRec> = BTreeMap::new();
     let entry_start = pending[0].start;
 
+    let mut blocks: Vec<BlockRec> = Vec::with_capacity(n);
+
     for (i, pb) in pending.into_iter().enumerate() {
-        // --- Pre-heritage ENTRY-HEAD exclusion (entry block only) -------------
+        // --- Pre-heritage ENTRY-HEAD exclusion (the ARCHITECTURAL ENTRY block) ---
         //
         // `ActionConstbase` (and `ActionPrototypeTypes::extendInput` for a locked
-        // small input) inserts a value-producing op at the ENTRY block head via
-        // `opInsertBegin(newOp(isize, bb->getStart()), bb)`.  Because the op is
-        // created AFTER the whole function is decoded (`generateOps` runs to
-        // completion before any action), its seqnum-time is strictly larger than
-        // every DECODE op at the entry address; `opInsertBegin` then moves it to the
-        // block head.  The signature at the entry block is therefore exact and LOCAL:
-        // a leading entry-address op with an output whose time exceeds the time of
-        // every OTHER op at the entry address.  (A real decode op at the block head
-        // is the SMALLEST-time op at the entry address — decode emits in increasing
-        // time — so it never matches.)  This is the only pre-heritage insertion this
-        // module excludes; it is sound for ANY control-flow shape (it reads only the
-        // entry block, never the interior, so loops/backward edges cannot fool it).
+        // small input) inserts a value-producing op at the entry block head via
+        // `opInsertBegin(newOp(isize, bb->getStart()), bb)` — where `bb` is
+        // `getBasicBlocks().getBlock(0)` (`coreaction.cc:697`), i.e. block INDEX 0,
+        // an identity, NOT merely "some block at the entry address".  We therefore
+        // apply the strip only to the block at index 0 / position 0 in print order
+        // (the entry).  Keying it by `start == entry_start` (the rejected design)
+        // over-reached: on a shared-start shape (gh6990: blocks 0,1,2 all cover
+        // 0x32148) it could fire on a non-entry block that merely shared the address.
+        //
+        // Because the inserted op is created AFTER the whole function is decoded
+        // (`generateOps` runs to completion before any action), its seqnum-time is
+        // strictly larger than every DECODE op at the entry address; `opInsertBegin`
+        // then moves it to the block head.  The signature at the entry block is thus
+        // exact and LOCAL: a leading entry-address op with an output whose time
+        // exceeds the time of every OTHER op at the entry address.  (A real decode op
+        // at the block head is the SMALLEST-time op at the entry address — decode
+        // emits in increasing time — so it never matches.)
         //
         // Pre-heritage ops inserted ELSEWHERE — `ActionExtraPopSetup`/`ActionFuncLink`
         // placeholders at a CALL site — are NOT excluded; a call-bearing test where
@@ -480,7 +513,8 @@ pub fn parse_cpp_b2(text: &str, excluded_tracked: &mut usize) -> Result<StructMo
         // (a documented, unported-action exclusion), never silently passed.
         let mut ops_raw = pb.ops;
         let mut excluded = 0usize;
-        if pb.start == entry_start {
+        let is_entry_block = i == 0;
+        if is_entry_block {
             while !ops_raw.is_empty() {
                 let head = &ops_raw[0];
                 // The inserted op carries an output; a head op without one is a
@@ -513,32 +547,53 @@ pub fn parse_cpp_b2(text: &str, excluded_tracked: &mut usize) -> Result<StructMo
             .map(|o| OpRec { addr: o.addr, class: o.class, has_output: o.has_output })
             .collect();
 
-        // Out-edge target start offsets: explicit goto > implied goto > fall-through
-        // to the next block.
-        let mut out_starts: Vec<u64> = if let Some(t) = pb.explicit_targets {
+        // Out-edge target block INDICES: explicit goto > implied goto > fall-through
+        // to the next printed block (index i+1).
+        let mut out_indices: Vec<i64> = if let Some(t) = pb.explicit_targets {
             t
         } else if let Some(t) = pb.implied_target {
             vec![t]
         } else {
             // Fall-through to the next block in print order (if any, and if this
-            // block's last op is not a RETURN/BRANCHIND terminator).
+            // block's last op is not a RETURN/BRANCHIND terminator).  The next
+            // printed block's index is i+1 at B2 (list order == index order).
             let terminates = ops
                 .last()
                 .map(|o| matches!(o.class, OpClass::Return | OpClass::Branchind))
                 .unwrap_or(false);
             if !terminates && i + 1 < n {
-                vec![start_of[i + 1]]
+                // `pending` was consumed by `into_iter`, but at B2 the next printed
+                // block's index is exactly i+1 (verified below by the
+                // index==position check).
+                vec![(i + 1) as i64]
             } else {
                 Vec::new()
             }
         };
-        out_starts.sort_unstable();
-        out_starts.dedup();
+        out_indices.sort_unstable();
+        out_indices.dedup();
 
-        blocks.insert(
-            pb.start,
-            BlockRec { index: pb.index, start: pb.start, stop: pb.stop, ops, out_starts },
-        );
+        blocks.push(BlockRec {
+            index: pb.index,
+            start: pb.start,
+            stop: pb.stop,
+            ops,
+            out_indices,
+        });
+    }
+
+    // At B2 the BlockGraph list order equals the block index order (structureReset
+    // numbers blocks in list order).  Validate it: position i must carry index i.
+    // If not, the snapshot is not a post-`structureReset` B2 capture and the
+    // index-keyed edge model would be unsound — fail loudly rather than mis-key.
+    for (i, b) in blocks.iter().enumerate() {
+        if b.index != i as i64 {
+            return Err(ParseError(format!(
+                "block at print position {i} has index {} (expected {i}); \
+                 not a post-structureReset B2 capture",
+                b.index
+            )));
+        }
     }
 
     Ok(StructModel { blocks })
@@ -560,34 +615,43 @@ pub enum DiffResult {
 }
 
 /// Compare a Rust-extracted [`StructModel`] (`rust`) against the C++ B2 model
-/// (`cpp`).  Reports the FIRST divergence in a deterministic scan order:
-///   1. block partition (block-start set + per-block cover stop + index),
-///   2. per-block op count,
+/// (`cpp`).  Blocks are matched by POSITION (== block index in print order), never
+/// by cover-start.  Reports the FIRST divergence in a deterministic scan order:
+///   1. block count,
+///   2. per-block (in index order): cover `(start,stop)` as data, then op count,
 ///   3. per-block, per-op: address, class, output-presence (in print order),
-///   4. per-block out-edge target-start set.
+///   4. per-block out-edge target-INDEX set.
 pub fn diff(rust: &StructModel, cpp: &StructModel) -> DiffResult {
-    // 1. Block-start partition.
-    let rust_starts: Vec<u64> = rust.blocks.keys().copied().collect();
-    let cpp_starts: Vec<u64> = cpp.blocks.keys().copied().collect();
-    if rust_starts != cpp_starts {
+    // 1. Block count (the partition cardinality — every block on both sides is
+    //    represented, so a collapse of duplicate-cover-start blocks cannot hide a
+    //    block here).
+    if rust.blocks.len() != cpp.blocks.len() {
         return DiffResult::Divergent(format!(
-            "block-start partition differs: rust={} cpp={}",
-            fmt_hex_list(&rust_starts),
-            fmt_hex_list(&cpp_starts),
+            "block count differs: rust={} cpp={} (rust covers {}, cpp covers {})",
+            rust.blocks.len(),
+            cpp.blocks.len(),
+            fmt_cover_list(&rust.blocks),
+            fmt_cover_list(&cpp.blocks),
         ));
     }
-    // 2-4. Per block, in start order.
-    for (&start, cb) in &cpp.blocks {
-        let rb = &rust.blocks[&start]; // key sets are equal (checked above)
+    // 2-4. Per block, in index/print order.
+    for (idx, (rb, cb)) in rust.blocks.iter().zip(cpp.blocks.iter()).enumerate() {
+        if rb.start != cb.start {
+            return DiffResult::Divergent(format!(
+                "block#{idx}: cover start differs rust=0x{:x} cpp=0x{:x}",
+                rb.start, cb.start
+            ));
+        }
         if rb.stop != cb.stop {
             return DiffResult::Divergent(format!(
-                "block 0x{start:x}: cover stop differs rust=0x{:x} cpp=0x{:x}",
-                rb.stop, cb.stop
+                "block#{idx} @0x{:x}: cover stop differs rust=0x{:x} cpp=0x{:x}",
+                rb.start, rb.stop, cb.stop
             ));
         }
         if rb.ops.len() != cb.ops.len() {
             return DiffResult::Divergent(format!(
-                "block 0x{start:x}: op count differs rust={} cpp={}",
+                "block#{idx} @0x{:x}: op count differs rust={} cpp={}",
+                rb.start,
                 rb.ops.len(),
                 cb.ops.len()
             ));
@@ -595,36 +659,44 @@ pub fn diff(rust: &StructModel, cpp: &StructModel) -> DiffResult {
         for (j, (ro, co)) in rb.ops.iter().zip(cb.ops.iter()).enumerate() {
             if ro.addr != co.addr {
                 return DiffResult::Divergent(format!(
-                    "block 0x{start:x} op#{j}: address differs rust=0x{:x} cpp=0x{:x}",
+                    "block#{idx} op#{j}: address differs rust=0x{:x} cpp=0x{:x}",
                     ro.addr, co.addr
                 ));
             }
             if ro.class != co.class {
                 return DiffResult::Divergent(format!(
-                    "block 0x{start:x} op#{j} @0x{:x}: class differs rust={:?} cpp={:?}",
+                    "block#{idx} op#{j} @0x{:x}: class differs rust={:?} cpp={:?}",
                     ro.addr, ro.class, co.class
                 ));
             }
             if ro.has_output != co.has_output {
                 return DiffResult::Divergent(format!(
-                    "block 0x{start:x} op#{j} @0x{:x}: output-presence differs rust={} cpp={}",
+                    "block#{idx} op#{j} @0x{:x}: output-presence differs rust={} cpp={}",
                     ro.addr, ro.has_output, co.has_output
                 ));
             }
         }
-        if rb.out_starts != cb.out_starts {
+        if rb.out_indices != cb.out_indices {
             return DiffResult::Divergent(format!(
-                "block 0x{start:x}: out-edge targets differ rust={} cpp={}",
-                fmt_hex_list(&rb.out_starts),
-                fmt_hex_list(&cb.out_starts),
+                "block#{idx} @0x{:x}: out-edge targets differ rust={} cpp={}",
+                rb.start,
+                fmt_idx_list(&rb.out_indices),
+                fmt_idx_list(&cb.out_indices),
             ));
         }
     }
     DiffResult::Pass
 }
 
-fn fmt_hex_list(v: &[u64]) -> String {
-    let parts: Vec<String> = v.iter().map(|x| format!("0x{x:x}")).collect();
+fn fmt_idx_list(v: &[i64]) -> String {
+    let parts: Vec<String> = v.iter().map(|x| x.to_string()).collect();
+    format!("[{}]", parts.join(","))
+}
+
+/// Render the cover ranges of an ordered block list for a divergence message.
+fn fmt_cover_list(blocks: &[BlockRec]) -> String {
+    let parts: Vec<String> =
+        blocks.iter().map(|b| format!("0x{:x}-0x{:x}", b.start, b.stop)).collect();
     format!("[{}]", parts.join(","))
 }
 
@@ -683,18 +755,24 @@ mod tests {
         assert_eq!(parse_addr("0xa000").unwrap(), 0xa000);
         // Space-qualified address (8051 `CODE:`).
         assert_eq!(parse_addr("CODE:0xa000").unwrap(), 0xa000);
-        assert_eq!(parse_short_header("Block_2:0x000b"), Some(0xb));
+        // The short header yields the INDEX (2), not the address.
+        assert_eq!(parse_short_header("Block_2:0x000b"), Some(2));
     }
 
     #[test]
     fn goto_targets_branch_and_cbranch() {
-        assert_eq!(goto_targets("goto Block_2:0x000b"), Some(vec![0xb]));
+        // `Block_N:0xADDR` yields the target block INDEX N (not the address).
+        assert_eq!(goto_targets("goto Block_2:0x000b"), Some(vec![2]));
         assert_eq!(
             goto_targets("goto Block_4:0x402d29cc if (u0x4d00:1(free) != 0) else Block_3:0x402d29c8"),
-            Some(vec![0x402d29cc, 0x402d29c8])
+            Some(vec![4, 3])
         );
         assert_eq!(goto_targets("return(#0x0)"), None);
         assert_eq!(goto_targets("r3(0x4:0) = r3(free)"), None);
+        // The short-header parser returns the index even when several blocks share
+        // an address (the key insight behind the F1 fix).
+        assert_eq!(parse_short_header("Block_3:0x32148"), Some(3));
+        assert_eq!(parse_short_header("Block_1:0x32148"), Some(1));
     }
 
     /// A minimal one-block snapshot (lzcount-shaped) parses to the right model.
@@ -709,14 +787,15 @@ mod tests {
         let m = parse_cpp_b2(snap, &mut ex).unwrap();
         assert_eq!(ex, 0, "no pre-heritage insertions in this snapshot");
         assert_eq!(m.blocks.len(), 1);
-        let b = &m.blocks[&0x10020];
+        let b = &m.blocks[0];
+        assert_eq!(b.index, 0);
         assert_eq!(b.start, 0x10020);
         assert_eq!(b.stop, 0x1002c);
         assert_eq!(b.ops.len(), 3);
         assert_eq!(b.ops[0].class, OpClass::Value);
         assert_eq!(b.ops[0].addr, 0x10020);
         assert_eq!(b.ops[2].class, OpClass::Return);
-        assert!(b.out_starts.is_empty(), "a RETURN block has no out-edge");
+        assert!(b.out_indices.is_empty(), "a RETURN block has no out-edge");
     }
 
     /// The entry-head `ActionConstbase` COPY (`DF = #0x0`, high seqnum) is excluded.
@@ -731,7 +810,7 @@ mod tests {
         let m = parse_cpp_b2(snap, &mut ex).unwrap();
         // The DF COPY (time 5 > the entry decode times 0..) is excluded.
         assert_eq!(ex, 1);
-        let b = &m.blocks[&0x400000];
+        let b = &m.blocks[0];
         assert_eq!(b.ops.len(), 2, "DF tracked-context COPY excluded");
         assert_eq!(b.ops[0].addr, 0x400000);
     }
@@ -750,12 +829,12 @@ mod tests {
         let mut ex = 0usize;
         let m = parse_cpp_b2(snap, &mut ex).unwrap();
         assert_eq!(m.blocks.len(), 3);
-        // Block 0: CBRANCH out-edges to 0x9 and 0xb.
-        assert_eq!(m.blocks[&0x0].out_starts, vec![0x9, 0xb]);
-        // Block 1: fall-through to block 2 (0xb).
-        assert_eq!(m.blocks[&0x9].out_starts, vec![0xb]);
+        // Block 0: CBRANCH out-edges to blocks 1 and 2 (sorted by index).
+        assert_eq!(m.blocks[0].out_indices, vec![1, 2]);
+        // Block 1: fall-through to the next printed block, index 2.
+        assert_eq!(m.blocks[1].out_indices, vec![2]);
         // Block 2: RETURN, no out-edge.
-        assert!(m.blocks[&0xb].out_starts.is_empty());
+        assert!(m.blocks[2].out_indices.is_empty());
     }
 
     #[test]
@@ -769,27 +848,22 @@ mod tests {
 
         // An identical Rust model -> PASS.
         let rust = StructModel {
-            blocks: [(
-                0u64,
-                BlockRec {
-                    index: 0,
-                    start: 0,
-                    stop: 4,
-                    ops: vec![
-                        OpRec { addr: 0, class: OpClass::Value, has_output: true },
-                        OpRec { addr: 4, class: OpClass::Return, has_output: false },
-                    ],
-                    out_starts: vec![],
-                },
-            )]
-            .into_iter()
-            .collect(),
+            blocks: vec![BlockRec {
+                index: 0,
+                start: 0,
+                stop: 4,
+                ops: vec![
+                    OpRec { addr: 0, class: OpClass::Value, has_output: true },
+                    OpRec { addr: 4, class: OpClass::Return, has_output: false },
+                ],
+                out_indices: vec![],
+            }],
         };
         assert!(matches!(diff(&rust, &cpp), DiffResult::Pass));
 
         // A wrong op class at op#0 -> first divergence reports it.
         let mut wrong = rust;
-        wrong.blocks.get_mut(&0).unwrap().ops[0].class = OpClass::Load;
+        wrong.blocks[0].ops[0].class = OpClass::Load;
         match diff(&wrong, &cpp) {
             DiffResult::Divergent(d) => assert!(d.contains("op#0") && d.contains("class differs")),
             DiffResult::Pass => panic!("expected a divergence"),

@@ -1,21 +1,23 @@
-//! Verifier adversarial tests for item `w5-infra-lift-diff`.
+//! Regression tests for item `w5-infra-lift-diff` (post-repair).
 //!
-//! Round 1 verification (focus: the B2 boundary-equivalence argument, parser
-//! correctness against the real snapshot grammar, per-test exclusion justifications).
+//! Round 1 verification REJECTED the item on F1: the structural model keyed basic
+//! blocks by cover-start offset in a `BTreeMap<u64,BlockRec>`, but cover-start is
+//! NOT unique — one machine instruction can decode (a SPARC register-window
+//! `save`/`restore` inject, a conditional-execution lattice, any decode-time p-code
+//! inject) into several basic blocks that all cover the same address.  That
+//! collapsed duplicate-cover-start blocks on BOTH engines and produced a spurious
+//! PASS over a degenerate projection (`gh6990-returnpair`: a 5-block CFG → 2 keyed
+//! blocks / 31 of 211 ops).
 //!
-//! These tests probe the spots the hunt list flagged as most fragile for this
-//! item.  The headline finding (F1) is reproduced as a *failing* assertion of the
-//! INTENDED behaviour: the structural model keys blocks by cover-start offset,
-//! which is NOT unique in real B2 snapshots (a single machine instruction can
-//! decode into several basic blocks that all cover the same address — SPARC
-//! register-window `save`, conditional-execution lattices, ...).  The committed
-//! corpus already contains such a case (`gh6990-returnpair`, 5 blocks → 2 keyed
-//! entries), where it produces a *spurious* PASS over a degenerate 2-block
-//! projection of a 5-block CFG.
+//! The repair re-keyed the model by block INDEX (print/list order) in an ordered
+//! `Vec<BlockRec>`, kept cover-`(start,stop)` as compared *data*, and re-keyed
+//! inter-block edges by target-block index (the `Block_N` short-header carries `N`
+//! directly).  The F2 entry-head exclusion was narrowed to the architectural entry
+//! block (index 0), not "any block sharing the entry address".
 //!
-//! The `#[ignore]`d tests document the defect with the oracle behaviour the model
-//! SHOULD have; the active tests pin the present (buggy) behaviour so the REJECT
-//! is reproducible and the fix is observable.
+//! These tests now PIN the FIXED behaviour: every basic block survives, the diff
+//! is no longer blind to shared-cover-start blocks, and `gh6990-returnpair` is a
+//! genuine 5-block PASS.
 
 use std::path::PathBuf;
 
@@ -25,48 +27,50 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// CONCRETE DIVERGENCE TRACE against the committed corpus oracle: the real
-/// `gh6990-returnpair.b2.txt` fixture is a FIVE-block CFG (217 lines, 211 op
-/// lines), but the structural model collapses it to TWO keyed blocks and ~31 ops
-/// because three blocks cover 0x32148 and two cover 0x32150.  This case is pinned
-/// as a `PASS` in the gate (`lift_diff.rs`), but the PASS is over a degenerate
-/// 2-block projection of a 5-block function — the differential never actually
-/// compared 3 of the 5 blocks.
+/// F1 FIXED, against the committed corpus oracle: `gh6990-returnpair.b2.txt` is a
+/// FIVE-block SPARC CFG (217 lines, 211 op lines).  The repaired model keeps every
+/// block — 5 block records, and the bulk of the op lines (the entry-head strip
+/// removes only the two `ActionConstbase` tracked-context COPYs at index 0).
+/// Before the repair this collapsed to 2 keyed blocks / 31 ops (the spurious PASS).
 #[test]
-fn gh6990_fixture_collapses_five_blocks_to_two_f1() {
+fn gh6990_fixture_keeps_all_five_blocks_f1() {
     let fix = repo_root().join("rust/crates/kuna-harness/tests/fixtures/gh6990-returnpair.b2.txt");
     let text = std::fs::read_to_string(&fix).expect("read gh6990 fixture");
 
     // The fixture really has 5 `Basic Block` headers.
     let header_count = text.lines().filter(|l| l.starts_with("Basic Block ")).count();
     assert_eq!(header_count, 5, "gh6990 fixture is a 5-block CFG");
+    // ...and the snapshot has 211 op lines (lines whose head is `<addr>:<time>:`).
+    let op_lines = text.lines().filter(|l| l.contains(":\t") && !l.contains("[ goto ")).count();
+    assert_eq!(op_lines, 211, "gh6990 fixture has 211 op lines");
 
     let mut ex = 0usize;
     let m = liftdiff::parse_cpp_b2(&text, &mut ex).unwrap();
-    // ...but the model keeps only 2 (the distinct cover-starts 0x32148, 0x32150),
-    // dropping 3 blocks and the bulk of the 211 op lines.
+    // The model now keeps all 5 blocks (was 2 before the repair).
+    assert_eq!(m.blocks.len(), 5, "F1 fixed: all 5 basic blocks survive");
+    // Blocks are in index order, position == index.
+    for (i, b) in m.blocks.iter().enumerate() {
+        assert_eq!(b.index, i as i64, "block at position {i} carries index {i}");
+    }
+    // Two ActionConstbase tracked-context COPYs (DECOMPILE_MODE, didrestore) at the
+    // entry head are excluded; everything else survives (was <50 before).
+    assert_eq!(ex, 2, "exactly the two entry-head tracked COPYs are excluded");
     assert_eq!(
-        m.blocks.len(),
-        2,
-        "F1 trace: 5-block gh6990 collapses to {} keyed blocks",
-        m.blocks.len()
-    );
-    assert!(
-        m.total_ops() < 50,
-        "F1 trace: only {} ops survive of 211 op lines (rest collapsed away)",
-        m.total_ops()
+        m.total_ops(),
+        211 - 2,
+        "F1 fixed: 209 ops survive of 211 op lines (only the 2 entry-head COPYs stripped)"
     );
 }
 
 // ---------------------------------------------------------------------------
-// F1: duplicate cover-start blocks collapse in the BTreeMap-keyed StructModel.
+// F1: duplicate cover-start blocks must ALL survive (index-keyed model).
 // ---------------------------------------------------------------------------
 
-/// A trimmed SPARC-shaped snapshot: three basic blocks that ALL cover the single
-/// entry instruction address 0x32148 (the register-window inject splits one
-/// machine instruction into several blocks), then a return block.  The real CFG
-/// has 4 blocks; the cover-start key set is {0x32148, 0x32150} — only 2 distinct
-/// keys.  A faithful structural model must keep all 4 blocks.
+/// A trimmed SPARC-shaped snapshot: three basic blocks (indices 0,1,2) that ALL
+/// cover the single entry instruction address 0x32148 (the register-window inject
+/// splits one machine instruction into several blocks), then a return block
+/// (index 3) at 0x32150.  The cover-start key set is only {0x32148, 0x32150} — 2
+/// distinct addresses — but a faithful structural model must keep all 4 blocks.
 const SPARC_DUP_START: &str = "0\n\
     Basic Block 0 0x00032148-0x00032148\n\
     0x00032148:d2:\tDECOMPILE_MODE(0x00032148:d2) = #0x1:1\n\
@@ -80,109 +84,95 @@ const SPARC_DUP_START: &str = "0\n\
     Basic Block 3 0x00032150-0x00032154\n\
     0x00032154:d0:\treturn(#0x0)\n";
 
-/// CURRENT (buggy) behaviour: the BTreeMap collapses the three 0x32148 blocks to
-/// one entry and the model reports only 2 blocks for a 4-block CFG.  This test
-/// PINS the defect so the REJECT is reproducible; when F1 is fixed this assertion
-/// flips and the test below (`dup_start_blocks_must_all_survive`) takes over.
+/// F1 FIXED: the index-keyed model keeps every basic block, so a 4-block CFG with
+/// only 2 distinct cover-starts yields 4 block records — none collapsed.
 #[test]
-fn dup_start_blocks_currently_collapse_f1() {
-    let mut ex = 0usize;
-    let m = liftdiff::parse_cpp_b2(SPARC_DUP_START, &mut ex).unwrap();
-    // The snapshot has 4 `Basic Block` headers but only 2 distinct cover-starts.
-    assert_eq!(
-        m.blocks.len(),
-        2,
-        "F1 reproduced: 4 real blocks collapsed to {} BTreeMap keys",
-        m.blocks.len()
-    );
-    // Worse: the SURVIVING 0x32148 entry is whichever block was parsed LAST
-    // (Block 2), so Block 0 (with the goto/CBRANCH terminator and the tracked
-    // COPY) and Block 1 are silently dropped.  The survivor's ops are Block 2's.
-    let surv = &m.blocks[&0x32148];
-    assert_eq!(
-        surv.ops.len(),
-        2,
-        "survivor at 0x32148 is Block 2 (2 ops), not Block 0/1 — earlier blocks lost"
-    );
-}
-
-/// INTENDED behaviour (the oracle): a faithful structural model keeps every basic
-/// block, so a 4-block CFG yields 4 block records.  Ignored until F1 is fixed; it
-/// is the acceptance criterion for the fix.
-#[test]
-#[ignore = "F1: StructModel keys blocks by non-unique cover-start; see review w5-infra-lift-diff"]
-fn dup_start_blocks_must_all_survive() {
+fn dup_start_blocks_all_survive_f1() {
     let mut ex = 0usize;
     let m = liftdiff::parse_cpp_b2(SPARC_DUP_START, &mut ex).unwrap();
     assert_eq!(m.blocks.len(), 4, "all 4 basic blocks must be represented");
+
+    // Each block keeps its OWN ops in index order (no overwrite by a same-address
+    // sibling).  Block 0: the entry head strips the DECOMPILE_MODE tracked COPY
+    // (time d2 > the decode time 0), leaving the add + the CBRANCH.
+    assert_eq!(ex, 1, "the single entry-head tracked COPY (time d2) is excluded");
+    assert_eq!(m.blocks[0].ops.len(), 2, "block 0: add + CBRANCH (COPY stripped)");
+    assert_eq!(m.blocks[0].ops[0].class, OpClass::Value);
+    assert_eq!(m.blocks[0].ops[1].class, OpClass::Cbranch);
+    // Block 0 CBRANCHes to blocks 2 (true) and 1 (false).
+    assert_eq!(m.blocks[0].out_indices, vec![1, 2]);
+
+    // Block 1 (also at 0x32148) is NOT overwritten by block 2: it keeps its single
+    // multiply op and falls through to block 2.
+    assert_eq!(m.blocks[1].ops.len(), 1, "block 1 keeps its own single op");
+    assert_eq!(m.blocks[1].out_indices, vec![2], "block 1 falls through to block 2");
+
+    // Block 2 (third block at 0x32148) keeps its 2 ops and gotos block 3.
+    assert_eq!(m.blocks[2].ops.len(), 2);
+    assert_eq!(m.blocks[2].out_indices, vec![3]);
+
+    // Block 3 (the return) at 0x32150.
+    assert_eq!(m.blocks[3].start, 0x32150);
+    assert_eq!(m.blocks[3].ops.last().unwrap().class, OpClass::Return);
+    assert!(m.blocks[3].out_indices.is_empty());
 }
 
-/// F1 corollary: because both engines collapse identically, `diff` returns PASS
-/// even though the two models disagree on the DROPPED blocks.  Here the C++ model
-/// and a Rust model that differ ONLY in a collapsed-away block compare EQUAL — the
-/// differential is blind to the difference.  This is the spurious-PASS mechanism
-/// behind `gh6990-returnpair`.
+/// F1 corollary FIXED: the diff is NO LONGER blind to a difference that lives in a
+/// duplicate-cover-start block.  A Rust model that differs from the C++ model ONLY
+/// in a block that shares an address with another block must now be reported
+/// DIVERGENT (before the repair both collapsed and it reported a spurious PASS).
 #[test]
-fn diff_is_blind_to_collapsed_blocks_f1() {
+fn diff_catches_difference_in_shared_start_block_f1() {
     let mut ex = 0usize;
     let cpp = liftdiff::parse_cpp_b2(SPARC_DUP_START, &mut ex).unwrap();
 
-    // A Rust model built from a DIFFERENT 4-block CFG that happens to share the
-    // same two surviving keys (0x32148 -> a 2-op block, 0x32150 -> the return).
-    // The genuinely-different blocks live at the collapsed-away 0x32148 slot.
-    let rust = StructModel {
-        blocks: [
-            (
-                0x32148u64,
-                BlockRec {
-                    index: 2,
-                    start: 0x32148,
-                    stop: 0x32150,
-                    ops: vec![
-                        OpRec { addr: 0x32148, class: OpClass::Value, has_output: true },
-                        OpRec { addr: 0x32150, class: OpClass::Branch, has_output: false },
-                    ],
-                    out_starts: vec![0x32150],
-                },
-            ),
-            (
-                0x32150u64,
-                BlockRec {
-                    index: 3,
-                    start: 0x32150,
-                    stop: 0x32154,
-                    ops: vec![OpRec { addr: 0x32154, class: OpClass::Return, has_output: false }],
-                    out_starts: vec![],
-                },
-            ),
-        ]
-        .into_iter()
-        .collect(),
-    };
-    // The two models differ on the real CFG (the Rust side never built Block 0/1),
-    // yet the differential reports PASS — the collapse hides the divergence.
-    assert!(
-        matches!(liftdiff::diff(&rust, &cpp), DiffResult::Pass),
-        "F1 corollary: diff is blind to collapsed-away blocks (spurious PASS)"
-    );
+    // A Rust model identical to the C++ EXCEPT block 1's single op count (it would
+    // be collapsed away under the old cover-start key, hiding the difference).
+    let mut rust = cpp.clone();
+    // Drop block 1's op — a genuine divergence in a shared-cover-start block.
+    rust.blocks[1].ops.clear();
+
+    match liftdiff::diff(&rust, &cpp) {
+        DiffResult::Divergent(d) => {
+            assert!(
+                d.contains("block#1") && d.contains("op count differs"),
+                "F1 fixed: diff catches the difference in the shared-start block#1: {d}"
+            );
+        }
+        DiffResult::Pass => panic!("F1 regression: diff blind to shared-cover-start block"),
+    }
+}
+
+/// F1: two models that agree on the surviving cover-starts but disagree on a third
+/// block at a shared address must NOT compare equal merely because the block COUNT
+/// matches — the per-position comparison catches the op/edge difference.
+#[test]
+fn diff_block_count_alone_is_not_sufficient_f1() {
+    let mut ex = 0usize;
+    let cpp = liftdiff::parse_cpp_b2(SPARC_DUP_START, &mut ex).unwrap();
+    let mut rust = cpp.clone();
+    // Same number of blocks, but block 2's out-edge points elsewhere.
+    rust.blocks[2].out_indices = vec![1];
+    match liftdiff::diff(&rust, &cpp) {
+        DiffResult::Divergent(d) => assert!(d.contains("block#2") && d.contains("out-edge")),
+        DiffResult::Pass => panic!("F1 regression: out-edge difference not caught"),
+    }
 }
 
 // ---------------------------------------------------------------------------
-// F2: the entry-head ActionConstbase exclusion runs on EVERY block whose
-//     cover-start == entry_start, not just the architectural entry block.
+// F2: the entry-head ActionConstbase exclusion must run on the ARCHITECTURAL
+//     entry block (index 0) only — NOT on every block sharing the entry address.
 // ---------------------------------------------------------------------------
 
-/// When several blocks share the entry cover-start (F1's shape), the entry-head
-/// strip in `parse_cpp_b2` fires on each of them (`pb.start == entry_start`).  A
-/// high-time output op sitting at the head of a NON-entry block that merely shares
-/// the entry address is wrongly stripped as a "tracked-context COPY".  Here Block 1
-/// shares 0x32148 and leads with a high-time (0x5a) output op that is a normal
-/// decode/inject value, not an ActionConstbase insertion — yet it is excluded.
+/// F2 FIXED: when several blocks share the entry cover-start, the entry-head strip
+/// fires ONLY on block index 0.  Here block 1 also starts at 0x32148 and leads with
+/// a high-time output op; under the old `start == entry_start` rule the strip could
+/// over-reach to it.  The narrowed rule (index 0 only) leaves block 1 untouched.
 #[test]
-fn entry_head_strip_overreaches_to_shared_start_blocks_f2() {
-    // Block 0 (entry): one real tracked COPY (time d2) + a decode op (time 0).
-    // Block 1: also starts at 0x32148, leads with a high-time output op (time 5a)
-    // that is NOT an ActionConstbase COPY (it is decode/inject content).
+fn entry_head_strip_is_entry_block_only_f2() {
+    // Block 0 (entry): one real tracked COPY (time d2) + a decode op (time 0) + a
+    // goto to block 1.  Block 1: also at 0x32148, leads with a high-time (5a) output
+    // op that is NOT an ActionConstbase COPY — it must survive.
     let snap = "0\n\
         Basic Block 0 0x00032148-0x00032148\n\
         0x00032148:d2:\tDECOMPILE_MODE(0x00032148:d2) = #0x1:1\n\
@@ -190,31 +180,37 @@ fn entry_head_strip_overreaches_to_shared_start_blocks_f2() {
         0x00032148:1:\tgoto Block_1:0x00032148\n\
         Basic Block 1 0x00032148-0x00032150\n\
         0x00032148:5a:\ti0(0x00032148:5a) = o0(free)\n\
+        0x00032148:5b:\ti1(0x00032148:5b) = o1(free)\n\
         0x00032150:74:\treturn(#0x0)\n";
     let mut ex = 0usize;
-    let _ = liftdiff::parse_cpp_b2(snap, &mut ex).unwrap();
-    // F2: the strip fires twice — once for the real Block-0 COPY (time d2) and
-    // ONCE MORE for Block 1's leading op (time 5a > the 0x32150 return's 0x74? no,
-    // 5a < 74, but 5a is the only op at 0x32148 in Block 1, so max_other==None and
-    // it is NOT stripped).  We pin the observed exclusion count to make any change
-    // in the over-reach visible to the next attempt.
-    assert!(
-        ex >= 1,
-        "at least the genuine Block-0 tracked COPY is excluded (got {ex})"
+    let m = liftdiff::parse_cpp_b2(snap, &mut ex).unwrap();
+    // Exactly the genuine block-0 tracked COPY is excluded (the strip never touched
+    // block 1, even though block 1 shares the entry address 0x32148).
+    assert_eq!(ex, 1, "only block-0's tracked COPY is excluded (entry-block-only)");
+    assert_eq!(m.blocks.len(), 2);
+    // Block 0: COPY stripped -> the add + the goto remain.
+    assert_eq!(m.blocks[0].ops.len(), 2);
+    // Block 1: BOTH of its leading high-time ops survive (no over-reach).
+    assert_eq!(
+        m.blocks[1].ops.len(),
+        3,
+        "block 1 (shares entry addr) keeps all its ops; the strip is entry-block-only"
     );
+    assert_eq!(m.blocks[1].ops[0].addr, 0x32148);
 }
 
 // ---------------------------------------------------------------------------
-// F3 (parser grammar): a single-out block whose out-edge is NOT the print-next
-//     block must carry an explicit `[ goto ]` implied-goto line; the fall-through
-//     heuristic must not invent an edge to the print-next block.  Verified here on
-//     a clean (unique-start) shape so it isolates the grammar, not F1.
+// Parser-grammar pins (unchanged by the repair, re-asserted on the index model).
 // ---------------------------------------------------------------------------
 
+/// A single-out block whose out-edge is NOT the print-next block carries an
+/// explicit `[ goto ]` implied-goto line; the parser reads the implied-goto TARGET
+/// INDEX, and the fall-through heuristic must not invent an edge to the print-next
+/// block.
 #[test]
 fn implied_goto_overrides_fallthrough_to_print_next() {
-    // Block 0 falls to Block 2 (0x20) via an implied goto, NOT to the print-next
-    // Block 1 (0x10).  The parser must read the implied-goto target, not 0x10.
+    // Block 0 gotos block 2 (index 2) via an implied goto, NOT the print-next block
+    // 1 (index 1).  The parser must read the implied-goto target index 2.
     let snap = "0\n\
         Basic Block 0 0x00000000-0x00000004\n\
         0x00000000:0:\tr0(0x00000000:0) = r1(free) + #0x1\n\
@@ -228,20 +224,18 @@ fn implied_goto_overrides_fallthrough_to_print_next() {
     let mut ex = 0usize;
     let m = liftdiff::parse_cpp_b2(snap, &mut ex).unwrap();
     assert_eq!(
-        m.blocks[&0x0].out_starts,
-        vec![0x20],
-        "implied-goto target (0x20) must win over fall-through to print-next (0x10)"
+        m.blocks[0].out_indices,
+        vec![2],
+        "implied-goto target index 2 must win over fall-through to print-next (index 1)"
     );
-    // And Block 1 (a fall-through reach is impossible from Block 0) still falls
-    // through to nothing via its own RETURN.
-    assert!(m.blocks[&0x10].out_starts.is_empty());
+    // Block 1 (a fall-through reach is impossible from block 0) still terminates via
+    // its own RETURN.
+    assert!(m.blocks[1].out_indices.is_empty());
 }
 
-/// F3 corollary: a block with NO out-edges whose last op is a plain value op (not
-/// a RETURN/BRANCHIND terminator) is fabricated a fall-through edge to the next
-/// printed block.  In a real snapshot the printer would emit an implied goto or
-/// the block would terminate; a value-tail dead block is degenerate, but the
-/// heuristic should be documented.  This pins the current behaviour.
+/// A block with NO terminator whose last op is a plain value op is fabricated a
+/// fall-through edge to the next printed block (index i+1).  This pins the
+/// documented fall-through heuristic.
 #[test]
 fn value_tail_block_fabricates_fallthrough_edge() {
     let snap = "0\n\
@@ -251,10 +245,48 @@ fn value_tail_block_fabricates_fallthrough_edge() {
         0x00000010:1:\treturn(#0x0)\n";
     let mut ex = 0usize;
     let m = liftdiff::parse_cpp_b2(snap, &mut ex).unwrap();
-    // Current heuristic: Block 0's value tail -> fall-through to Block 1 (0x10).
+    // Block 0's value tail -> fall-through to the next printed block (index 1).
     assert_eq!(
-        m.blocks[&0x0].out_starts,
-        vec![0x10],
-        "value-tail block currently fabricates a fall-through to print-next"
+        m.blocks[0].out_indices,
+        vec![1],
+        "value-tail block fabricates a fall-through to the print-next block (index 1)"
     );
+}
+
+/// A snapshot whose block list order does NOT match the index order (not a
+/// post-`structureReset` B2 capture) is rejected, rather than silently mis-keying
+/// the index-based edge model.
+#[test]
+fn non_structurereset_index_order_is_rejected() {
+    // Position 0 carries index 1 (and vice versa) — not B2 list order.
+    let snap = "0\n\
+        Basic Block 1 0x00000000-0x00000004\n\
+        0x00000000:0:\treturn(#0x0)\n\
+        Basic Block 0 0x00000010-0x00000014\n\
+        0x00000010:1:\treturn(#0x0)\n";
+    let mut ex = 0usize;
+    let err = liftdiff::parse_cpp_b2(snap, &mut ex).unwrap_err();
+    assert!(
+        err.0.contains("not a post-structureReset"),
+        "out-of-order index must be rejected, got: {}",
+        err.0
+    );
+}
+
+/// Sanity: a tiny hand-built model round-trips through `diff` as a PASS.
+#[test]
+fn identical_models_pass() {
+    let m = StructModel {
+        blocks: vec![BlockRec {
+            index: 0,
+            start: 0,
+            stop: 4,
+            ops: vec![
+                OpRec { addr: 0, class: OpClass::Value, has_output: true },
+                OpRec { addr: 4, class: OpClass::Return, has_output: false },
+            ],
+            out_indices: vec![],
+        }],
+    };
+    assert!(matches!(liftdiff::diff(&m.clone(), &m), DiffResult::Pass));
 }
