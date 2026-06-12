@@ -23,9 +23,9 @@
 //!   - **codeRef target semantics.** `newCodeRef(m)` builds a size-1 annotation
 //!     Varnode AT `m` (the branch destination); through the real `dump` it becomes
 //!     input slot 0 of a coderef op, at the exact `(space,offset,1)` of the
-//!     target.  The `Varnode::annotation` flag is the documented carried loss
-//!     (LOSS-036 / LOSS-037) — this test PINS that it is NOT set (so a restoration
-//!     that wires `set_flags(annotation)` will flip this assertion deliberately).
+//!     target.  The `Varnode::annotation` flag is now set faithfully (LOSS-077
+//!     added the `pub(crate)` `Varnode::set_annotation` sliver that `newCodeRef`
+//!     wires; the formerly-carried LOSS-036 / LOSS-037 is restored).
 //!   - **`opDestroyRaw` teardown order.** inputs destroyed first, then the output,
 //!     then the op retires — the dead-op is gone and its in/out Varnodes with it.
 
@@ -249,7 +249,7 @@ fn w4x_flow_linkage_new_unique_out_allocates_unique_and_links_def() {
 // ===========================================================================
 
 #[test]
-fn w4x_flow_linkage_new_code_ref_is_size1_annotation_at_target_no_annotation_flag() {
+fn w4x_flow_linkage_new_code_ref_is_size1_annotation_at_target() {
     let mut fd = build_fd();
     let target = Address::new(ram_space(&fd), 0x2040);
     let vn = fd.new_code_ref(&target);
@@ -259,10 +259,10 @@ fn w4x_flow_linkage_new_code_ref_is_size1_annotation_at_target_no_annotation_fla
     assert_eq!(v.get_size(), 1, "newCodeRef Varnode is size 1");
     assert!(Rc::ptr_eq(v.get_space(), &ram_space(&fd)));
     assert_eq!(v.get_offset(), 0x2040, "annotation sits AT the branch destination");
-    // DOCUMENTED LOSS (LOSS-036/LOSS-037): `Varnode::annotation` is NOT set because
-    // `set_flags` is private to varnode.rs.  An annotation Varnode is otherwise
-    // free (no def, no readers).  Pin the absence so a restoration that exposes
-    // set_flags deliberately flips this.
+    // LOSS-077 RESTORED: `Varnode::annotation` is now set (newCodeRef wires the
+    // `pub(crate)` set_annotation sliver, matching the C++ setFlags(annotation)).
+    assert!(v.is_annotation(), "the code-ref Varnode carries the annotation flag");
+    // An annotation Varnode is otherwise free (no def, no readers).
     assert!(v.is_free(), "the code-ref annotation is a free Varnode");
     assert!(!v.is_input(), "the code-ref annotation is not an input");
 }

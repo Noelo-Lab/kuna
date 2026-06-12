@@ -346,27 +346,34 @@ fn piece2sext_declines_wrong_shift_amount() {
 // -----------------------------------------------------------------------------
 
 #[test]
-fn ormask_full_mask_sets_copy_then_repoints_constant() {
+fn ormask_full_mask_completes_copy_of_duplicated_constant() {
     // RuleOrMask, on `W | fullmask`, does opSetOpcode(COPY); opSetInput(op,
     // constvn, 0); opRemoveInput(op, 1).  The middle step re-points the
-    // already-attached slot-1 constant onto slot 0; in C++ `opSetInput`
-    // duplicates a shared constant first, but that duplication is a deferred W3
-    // seam (see funcdata_op.rs "Constant re-duplication guard"), so `op_set_input`
-    // refuses a second descendant on the free constant and this rule's faithful
-    // `opSetInput` call surfaces that seam as a panic.  We assert the rule reaches
-    // exactly that point (opcode already flipped to COPY before the panic).
-    let result = std::panic::catch_unwind(|| {
-        let mut fd = build_fd();
-        let op = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_OR);
-        let w = make_reg(&mut fd, 0x40, 4);
-        let full = make_const(&mut fd, calc_mask(4), 4);
-        wire_input(&mut fd, op, w, 0);
-        wire_input(&mut fd, op, full, 1);
-        let _out = give_output(&mut fd, op, 0x80, 4);
-        let mut r = RuleOrMask::new("analysis");
-        r.apply_op(op, &mut fd)
-    });
-    assert!(result.is_err(), "OrMask transform hits the W3 constant-dup seam");
+    // already-attached slot-1 constant onto slot 0.  Since the constant
+    // re-duplication guard in `opSetInput` is now ported (funcdata_op.rs), the
+    // shared constant is re-duplicated into a fresh `newConstant` instead of being
+    // aliased: the transform completes end-to-end (formerly a W3 constant-dup
+    // seam panic).
+    let mut fd = build_fd();
+    let op = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_OR);
+    let w = make_reg(&mut fd, 0x40, 4);
+    let full = make_const(&mut fd, calc_mask(4), 4);
+    wire_input(&mut fd, op, w, 0);
+    wire_input(&mut fd, op, full, 1);
+    let _out = give_output(&mut fd, op, 0x80, 4);
+    let mut r = RuleOrMask::new("analysis");
+    assert_eq!(r.apply_op(op, &mut fd), 1, "transform completes since the constant-dup guard");
+    // op is now a single-input COPY of a constant equal to the full mask.
+    assert_eq!(code_of(&fd, op), OpCode::CPUI_COPY);
+    assert_eq!(numin(&fd, op), 1, "the slot-1 constant input was removed");
+    let cin = in_of(&fd, op, 0).expect("COPY input slot 0");
+    assert!(is_const(&fd, cin), "COPY reads a constant");
+    assert_eq!(off_of(&fd, cin), calc_mask(4), "the duplicated constant carries the full mask");
+    // The constant feeding the COPY is a FRESH duplicate, not the original `full`
+    // (the dup guard re-creates it because `full` already had a descendant).
+    assert_ne!(cin, full, "re-duplicated, not aliased to the shared constant");
+    // The original `full` constant lost its only descendant (opRemoveInput).
+    assert_eq!(fd.vbank().get(full).unwrap().num_descend(), 0, "original constant is now free");
 }
 
 #[test]
@@ -924,6 +931,49 @@ fn get_mult_coeff_unwraps_int_mult_by_constant() {
 }
 
 #[test]
+fn collectterms_lumps_two_nonzero_constants() {
+    // Build `(x + 3) + 5` as a two-level INT_ADD tree whose root output has no
+    // INT_ADD reader.  TermOrder collects {x, #3, #5}; x is non-constant so the
+    // adjacent-combine loop finds no like terms, then the constant-lumping path
+    // sums the two non-zero constants (3+5=8) into the last constant slot and
+    // zeroes the earlier one.
+    let mut fd = build_fd();
+    // sub = INT_ADD(x, #3) with a unique output `subout`.
+    let sub = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_ADD);
+    let x = make_reg(&mut fd, 0x40, 4);
+    let c3 = make_const(&mut fd, 3, 4);
+    wire_input(&mut fd, sub, x, 0);
+    wire_input(&mut fd, sub, c3, 1);
+    let subout = give_output(&mut fd, sub, 0x60, 4);
+    // op = INT_ADD(subout, #5), the root of the tree (output read by nothing).
+    let op = make_op(&mut fd, 0x1004, OpCode::CPUI_INT_ADD);
+    let c5 = make_const(&mut fd, 5, 4);
+    wire_input(&mut fd, op, subout, 0);
+    wire_input(&mut fd, op, c5, 1);
+    let _out = give_output(&mut fd, op, 0x80, 4);
+
+    let mut r = RuleCollectTerms::new("analysis");
+    assert_eq!(r.apply_op(op, &mut fd), 1, "two non-zero constants are lumped");
+
+    // The two constant slots now hold {0, 8} in some order across the two ADDs —
+    // the lumped 8 lands on the LAST constant in sorter order, the earlier one is
+    // zeroed.  Collect the four input constants and assert the multiset {0,8}.
+    let cvals: Vec<u64> = [(sub, 1i32), (op, 1i32)]
+        .iter()
+        .map(|&(o, s)| {
+            let v = in_of(&fd, o, s).expect("constant slot still set");
+            assert!(is_const(&fd, v), "constant slot stays a constant");
+            off_of(&fd, v)
+        })
+        .collect();
+    let mut sorted = cvals.clone();
+    sorted.sort_unstable();
+    assert_eq!(sorted, vec![0, 8], "the two constants are lumped to {{0, 8}}");
+    // x is untouched as the non-constant term.
+    assert_eq!(in_of(&fd, sub, 0), Some(x), "x stays in place");
+}
+
+#[test]
 fn get_mult_coeff_returns_one_for_plain_varnode() {
     let mut fd = build_fd();
     let v = make_reg(&mut fd, 0x40, 4); // not written
@@ -1001,11 +1051,42 @@ fn equality_defers_at_functional_equality_seam() {
 }
 
 #[test]
-fn intlessequal_defers_at_replacelessequal_seam() {
+fn intlessequal_rewrites_x_le_c_to_x_lt_c_plus_1() {
+    // `x <= c` (unsigned) => `x < c+1`.  The constant is in slot 1, so diff=+1:
+    // INT_LESSEQUAL becomes INT_LESS and the slot-1 constant becomes c+1.
     let mut fd = build_fd();
     let op = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_LESSEQUAL);
+    let x = make_reg(&mut fd, 0x40, 4);
+    let c = make_const(&mut fd, 5, 4);
+    wire_input(&mut fd, op, x, 0);
+    wire_input(&mut fd, op, c, 1);
+    let _out = give_output(&mut fd, op, 0x80, 1);
     let mut r = RuleIntLessEqual::new("analysis");
-    assert_eq!(r.apply_op(op, &mut fd), 0);
+    assert_eq!(r.apply_op(op, &mut fd), 1, "replaceLessequal rewrites x<=c");
+    assert_eq!(code_of(&fd, op), OpCode::CPUI_INT_LESS, "LESSEQUAL -> LESS");
+    assert_eq!(in_of(&fd, op, 0), Some(x), "x stays in slot 0");
+    let newc = in_of(&fd, op, 1).expect("slot 1 set");
+    assert!(is_const(&fd, newc) && off_of(&fd, newc) == 6, "constant became c+1");
+    // (kuna) provenance: the rewritten op carries the canonical-LESSEQUAL mark.
+    assert!(
+        fd.obank().get(op).unwrap().is_canonical_lessequal(),
+        "provenance recorded on the canonicalized comparison"
+    );
+}
+
+#[test]
+fn intlessequal_declines_unsigned_max_overflow() {
+    // `x <= UMAX` would overflow (c+1 wraps to 0); the rule declines, op unchanged.
+    let mut fd = build_fd();
+    let op = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_LESSEQUAL);
+    let x = make_reg(&mut fd, 0x40, 4);
+    let umax = make_const(&mut fd, calc_mask(4), 4); // calc_uint_max(4)
+    wire_input(&mut fd, op, x, 0);
+    wire_input(&mut fd, op, umax, 1);
+    let _out = give_output(&mut fd, op, 0x80, 1);
+    let mut r = RuleIntLessEqual::new("analysis");
+    assert_eq!(r.apply_op(op, &mut fd), 0, "overflow -> declines");
+    assert_eq!(code_of(&fd, op), OpCode::CPUI_INT_LESSEQUAL, "op unchanged");
 }
 
 #[test]

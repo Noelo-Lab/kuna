@@ -2,10 +2,10 @@
 //! (port of `decompiler/cpp/funcdata_op.cc`).  Written by the INDEPENDENT
 //! verifier, targeting the spots the hunt list flagged as most fragile:
 //!
-//!   - the `opSetInput` constant-reshare seam (the documented loss): the C++
-//!     re-duplicates a constant that already has a descendant; the Rust seam
-//!     does not, so `add_descend`'s "free varnode has multiple descendants"
-//!     guard fires.  This test PINS that divergence (error, not silent link).
+//!   - the `opSetInput` constant-reshare guard (formerly a documented loss, now
+//!     ported): the C++ re-duplicates a constant that already has a descendant.
+//!     This test asserts the dedup happens (a FRESH constant is linked, the
+//!     original keeps its single descendant) — no `add_descend` error.
 //!   - `opInsertBefore` when EVERY preceding op is an INDIRECT (the backward
 //!     walk reaches `beginOp()`).
 //!   - `opInsertAfter` when EVERY following op is a MULTIEQUAL (the forward
@@ -105,18 +105,17 @@ fn mk_block(fd: &mut Funcdata) -> BlockId {
 }
 
 // -----------------------------------------------------------------------------
-// 1. opSetInput constant-reshare seam (documented loss) — PIN the divergence.
+// 1. opSetInput constant-reshare guard (ported) — dedup, not error.
 // -----------------------------------------------------------------------------
 //
 // C++ funcdata_op.cc:104-125: when a constant Varnode already has a descendant
 // (and is not a spacebase), opSetInput re-duplicates it via newConstant so the
-// fresh copy can be linked (constants must have a single descendant).  The Rust
-// seam (funcdata_varnode factory not yet available) does NOT dedup; the same
-// constant is linked directly, so add_descend's "Free varnode has multiple
-// descendants" guard returns Err.  This test pins the divergence so a future
-// change that silently changes it is caught.
+// fresh copy can be linked (constants must have a single descendant).  This is
+// now ported (the funcdata_varnode `newConstant` factory has landed): the second
+// link gets a FRESH constant, the original keeps its single descendant, and no
+// add_descend guard fires.
 #[test]
-fn w3_ir_funcdata_op_const_reshare_errs_where_cpp_dedups() {
+fn w3_ir_funcdata_op_const_reshare_dedups_like_cpp() {
     let mut fd = build_fd();
     let op_a = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_COPY);
     let op_b = mk_op(&mut fd, 1, 0x110, OpCode::CPUI_COPY);
@@ -124,17 +123,16 @@ fn w3_ir_funcdata_op_const_reshare_errs_where_cpp_dedups() {
     // First link: the constant gains its single descendant — fine.
     fd.op_set_input(op_a, k, 0).expect("first const link must succeed");
     assert_eq!(fd.vbank().get(k).unwrap().num_descend(), 1);
-    // Second link of the SAME constant: C++ would re-duplicate; the Rust seam
-    // links directly and the addDescend guard fires.  PIN: this is an Err.
-    let res = fd.op_set_input(op_b, k, 0);
-    assert!(
-        res.is_err(),
-        "re-shared constant must surface the addDescend guard (seam: no dedup yet)"
-    );
-    // And the failed link left the original descendant intact (no corruption):
-    // op_b's slot is still unset and the constant still has exactly one reader.
-    assert_eq!(fd.obank().get(op_b).unwrap().get_in(0), None);
+    // Second link of the SAME constant: the dedup guard re-duplicates it, so the
+    // link SUCCEEDS and op_b reads a fresh copy (value 7), not `k` itself.
+    fd.op_set_input(op_b, k, 0).expect("re-shared constant dedups and links");
+    let dup = fd.obank().get(op_b).unwrap().get_in(0).expect("op_b slot 0 linked");
+    assert_ne!(dup, k, "op_b reads a FRESH duplicate, not the shared constant");
+    assert!(fd.vbank().get(dup).unwrap().is_constant());
+    assert_eq!(fd.vbank().get(dup).unwrap().get_offset(), 7, "duplicate carries the same value");
+    // The original constant still has exactly its one (op_a) descendant.
     assert_eq!(fd.vbank().get(k).unwrap().num_descend(), 1);
+    assert_eq!(fd.vbank().get(dup).unwrap().num_descend(), 1, "duplicate has its single reader");
 }
 
 // A NON-constant free varnode reshare also errors (this is the plain C++
