@@ -1483,7 +1483,9 @@ impl CircleRange {
                 let mut val_right = sign_extend(in1.right as intb, bit_pos);
                 if val_left >= val_right {
                     val_right = (self.mask >> 1) as intb; // Max positive
-                    val_left = val_right + 1; // Min negative
+                    // C++ rangeutil.cc:1331 relies on two's-complement wrap
+                    // (i64::MAX+1 -> i64::MIN) when mask==u64::MAX (out_size==8).
+                    val_left = val_right.wadd(1); // Min negative
                     val_left = sign_extend(val_left, bit_pos);
                 }
                 // left = (valLeft >> sa) & mask  (intb arithmetic shift)
