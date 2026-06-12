@@ -189,9 +189,9 @@ impl Action for ActionStartCleanUp {
         }
         Some(Box::new(ActionStartCleanUp { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++: data.startCleanUp(); return 0;
-        // SEAM(W4): Funcdata::startCleanUp not in the merged tree.
+        data.start_clean_up();
         0
     }
 }
