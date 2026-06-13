@@ -1495,6 +1495,679 @@ impl PrintC {
     }
 }
 
+// ===========================================================================
+// The IR-coupled statement-body driver (w10-structure-printbody).
+//
+// This is the W9-emit seam closure: the per-statement RPN expression emission
+// over the *structured* `sblocks` tree (C++ `PrintC::emitBlockGraph` ->
+// `emitBlock{Copy,Basic,Ls,If,...}` -> `emitStatement` -> `emitExpression` ->
+// `op->getOpcode()->push(...)` -> `recurse`).  It drives the (already ported and
+// unit-tested) RPN engine above (`push_op`/`push_atom`) over the real
+// `Funcdata` IR, resolving each Varnode leaf via `push_vn_explicit_ir` (the
+// faithful `pushVnExplicit`: annotation/constant/register/`dat_<addr>` naming).
+//
+// The leaf-naming falls back to the address-/register-based form when no
+// HighVariable Symbol is bound (Merge/naming is the next layer); the *structure*
+// of the body (the if/else hierarchy, the statement sequence, the operator
+// expressions, the comparison rendering) is fully driven here.
+// ===========================================================================
+
+use crate::architecture::Architecture;
+use crate::funcdata::Funcdata;
+use crate::seams::{BlockId, OpId, VarnodeId};
+use kuna_num::opcodes::OpCode;
+use kuna_base::space::RegisterLookup;
+
+impl PrintC {
+    /// Faithful transcription of C++ `PrintC::docFunction` (printc.cc:2790)
+    /// driven over a real [`Funcdata`] + [`Architecture`]: emit the signature
+    /// shell (real return type from the recovered proto), then the **structured
+    /// body** (`emitBlockGraph(&fd->getStructure())`) when `sblocks` is present.
+    ///
+    /// When `sblocks` is empty (structuring declined at a seam) this falls back
+    /// to the brace-matched shell so the output is still a complete function.
+    pub fn doc_function_full(&mut self, fd: &Funcdata, arch: &Architecture) -> String {
+        self.emit.set_output_stream();
+        let markup = MarkupRef::none();
+        let display = fd.get_display_name().to_string();
+        // Return type from the recovered proto output (C++ `getFuncProto().
+        // getOutputType()`), defaulting to "void".  The proto carries an output
+        // type only when a parameter store is attached (`ProtoStoreSymbol` needs
+        // the symbol scope, a W4 seam — see `FuncProto::has_store`); without it
+        // the return type is the unrecovered "void" default.
+        let ret_type = if fd.get_func_proto().has_store() {
+            fd.get_func_proto()
+                .get_output_type()
+                .map(|t| t.get_name().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "void".to_string())
+        } else {
+            "void".to_string()
+        };
+
+        let id1 = self.emit.begin_function();
+        self.emit.tag_line(); // emitCommentFuncHeader (comment seam)
+
+        // emitFunctionDeclaration shell.
+        let idp = self.emit.begin_func_proto();
+        let idret = self.emit.begin_return_type(&markup);
+        self.emit.tag_type(&ret_type, SyntaxHighlight::TypeColor, &markup);
+        self.emit.end_return_type(idret);
+        self.emit.spaces(1, 0);
+        let id1g = self.emit.open_group();
+        self.emit.tag_func_name(&display, SyntaxHighlight::FuncnameColor, &markup);
+        let id2 = self.emit.open_paren("(", 0);
+        // emitPrototypeInputs: params need the symbol table (naming layer); emit
+        // `void` (the unrecovered-params default, matching the boolless oracle).
+        self.emit.tag_type("void", SyntaxHighlight::TypeColor, &markup);
+        self.emit.close_paren(")", id2);
+        self.emit.close_group(id1g);
+        self.emit.end_func_proto(idp);
+
+        let id = self.emit.open_brace_indent("{", to_emit_brace(self.options.brace_func));
+        // emitLocalVarDecls(fd): the local declarations need the symbol scope
+        // (the naming layer); skipped (the body still references the variables by
+        // their address-based names).
+        if fd.sblocks_get_size() != 0 {
+            self.emit_function_body(fd, arch);
+        } else {
+            // Structuring declined: keep the brace-matched shell.
+            self.emit.tag_line();
+            self.emit.print(
+                "/* WARNING: structured blocks unavailable (structuring declined at a seam) */",
+                SyntaxHighlight::CommentColor,
+            );
+        }
+        self.emit.close_brace_indent("}", id);
+        self.emit.tag_line();
+        self.emit.end_function(id1);
+        self.emit.output().to_string()
+    }
+
+    /// Emit the structured function body into the open brace (C++
+    /// `emitLocalVarDecls(fd)` + `emitBlockGraph(&fd->getStructure())`,
+    /// printc.cc:2805-2809).  Local var decls need the Symbol table (the merge/
+    /// naming layer); the structured block graph walk is driven here.
+    pub fn emit_function_body(&mut self, fd: &Funcdata, arch: &Architecture) {
+        let sroot = match fd.sblocks_ref().root {
+            Some(r) => r,
+            None => return,
+        };
+        self.emit_block_graph(fd, arch, sroot);
+    }
+
+    /// C++ `PrintC::emitBlockGraph` (printc.cc:2895): emit each component block.
+    fn emit_block_graph(&mut self, fd: &Funcdata, arch: &Architecture, graph: BlockId) {
+        let list: Vec<BlockId> = fd.sblocks_ref().block(graph).get_list().to_vec();
+        for blk in list {
+            let id = self.emit.begin_block(0);
+            self.emit_block(fd, arch, blk);
+            self.emit.end_block(id);
+        }
+    }
+
+    /// Dispatch one structured block to its emitter (C++ the virtual
+    /// `FlowBlock::emit(PrintLanguage*)` -> `PrintC::emitBlock*`).
+    fn emit_block(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        use crate::block::BlockType;
+        match fd.sblocks_ref().block(blk).get_type() {
+            BlockType::Copy => self.emit_block_copy(fd, arch, blk),
+            BlockType::Basic => self.emit_block_basic(fd, arch, blk),
+            BlockType::Ls => self.emit_block_ls(fd, arch, blk),
+            BlockType::If => self.emit_block_if(fd, arch, blk),
+            BlockType::Graph => self.emit_block_graph(fd, arch, blk),
+            // Goto / Condition / loops / switch: their emitters are the next
+            // structuring layer (loops/switch need the loop/case machinery).
+            // Fall through to emitting the component blocks so nothing is lost.
+            _ => {
+                let list: Vec<BlockId> = fd.sblocks_ref().block(blk).get_list().to_vec();
+                for c in list {
+                    self.emit_block(fd, arch, c);
+                }
+            }
+        }
+    }
+
+    /// C++ `PrintC::emitBlockCopy` (printc.cc:2908): emit the underlying basic
+    /// block (the `BlockCopy.copy` points back into `bblocks`).
+    fn emit_block_copy(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        // emitAnyLabelStatement(bl): labels need the goto/label machinery; skip.
+        if let Some(under) = fd.sblocks_ref().block(blk).get_copy() {
+            // The copy's `copy` field is a *bblocks* BlockId.
+            self.emit_basic_block_ops(fd, arch, under, true);
+        }
+    }
+
+    /// C++ `PrintC::emitBlockBasic` for an sblocks Basic node (rare in the
+    /// structured tree, but handled for completeness): the node *is* a basic
+    /// block in the sblocks arena.
+    fn emit_block_basic(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        self.emit_basic_block_ops(fd, arch, blk, false);
+    }
+
+    /// C++ `PrintC::emitBlockLs` (printc.cc:2930): emit a list of blocks in
+    /// sequence.  The first block keeps its branch suppressed (`no_branch`); the
+    /// last block keeps the caller's branch state.  The per-edge `nextInFlow`
+    /// goto-insertion (the `nofallthru` arm) is the goto-labeling layer; the
+    /// structured list emitted here flows in declaration order.
+    fn emit_block_ls(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        let list: Vec<BlockId> = fd.sblocks_ref().block(blk).get_list().to_vec();
+        if self.context.is_set(modifiers::ONLY_BRANCH) {
+            if let Some(&last) = list.last() {
+                self.emit_block(fd, arch, last);
+            }
+            return;
+        }
+        if list.is_empty() {
+            return;
+        }
+        let n = list.len();
+        // First block: no_branch (unless flat).
+        let id1 = self.emit.begin_block(0);
+        self.context.push_mod();
+        if !self.is_flat() {
+            self.context.set_mod(modifiers::NO_BRANCH);
+        }
+        self.emit_block(fd, arch, list[0]);
+        self.emit.end_block(id1);
+        // Middle blocks: no_branch.
+        for &subbl in list.iter().take(n.saturating_sub(1)).skip(1) {
+            let id2 = self.emit.begin_block(0);
+            self.emit_block(fd, arch, subbl);
+            self.emit.end_block(id2);
+        }
+        self.context.pop_mod();
+        // Final block: caller's branch state.
+        let id3 = self.emit.begin_block(0);
+        self.emit_block(fd, arch, list[n - 1]);
+        self.emit.end_block(id3);
+    }
+
+    /// C++ `PrintC::emitBlockIf` (printc.cc:3027): the `if (cond) { ... }` form
+    /// (with optional `else`).  Block 0 is the condition, block 1 the true body,
+    /// block 2 (optional) the else body.
+    fn emit_block_if(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        let size = fd.sblocks_ref().block(blk).get_size();
+        let cond_block = fd.sblocks_ref().block(blk).get_block(0);
+        // if-block never prints final branch: clear no_branch/only_branch.
+        self.context.push_mod();
+        self.context.unset_mod(
+            modifiers::NO_BRANCH | modifiers::ONLY_BRANCH | modifiers::PENDING_BRACE,
+        );
+
+        // Emit the condition block's statements (no_branch) ...
+        self.context.push_mod();
+        self.context.set_mod(modifiers::NO_BRANCH);
+        self.emit_block(fd, arch, cond_block);
+        self.context.pop_mod();
+        self.emit.tag_line();
+
+        // ... then `if ` + the branch condition (only_branch).
+        self.emit.tag_op(keywords::KEYWORD_IF, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+        self.emit.spaces(1, 0);
+        self.context.push_mod();
+        self.context.set_mod(modifiers::ONLY_BRANCH);
+        self.emit_block(fd, arch, cond_block);
+        self.context.pop_mod();
+
+        // If the if has an unstructured-branch target, emit a goto/break/continue
+        // instead of a braced body (C++ printc.cc:3063).
+        let goto_target = fd.sblocks_ref().block(blk).get_if_goto_target();
+        if let Some(target) = goto_target {
+            self.emit.spaces(1, 0);
+            self.emit_goto_statement(fd, cond_block, target, fd.sblocks_ref().block(blk).get_if_goto_type());
+            self.context.pop_mod();
+            return;
+        }
+
+        // The true body in braces.
+        self.context.set_mod(modifiers::NO_BRANCH);
+        let id = self
+            .emit
+            .open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_ifelse));
+        let id1 = self.emit.begin_block(0);
+        self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
+        self.emit.end_block(id1);
+        self.emit.close_brace_indent(keywords::CLOSE_CURLY, id);
+
+        // Optional else.
+        if size == 3 {
+            self.emit.tag_line();
+            self.emit.print(keywords::KEYWORD_ELSE, SyntaxHighlight::KeywordColor);
+            let else_block = fd.sblocks_ref().block(blk).get_block(2);
+            let else_is_if = fd.sblocks_ref().block(else_block).get_type()
+                == crate::block::BlockType::If;
+            if else_is_if {
+                // `else if` merge: pending_brace.
+                self.context.set_mod(modifiers::PENDING_BRACE);
+                let id2 = self.emit.begin_block(0);
+                self.emit_block(fd, arch, else_block);
+                self.emit.end_block(id2);
+            } else {
+                let id2 = self
+                    .emit
+                    .open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_ifelse));
+                let id3 = self.emit.begin_block(0);
+                self.emit_block(fd, arch, else_block);
+                self.emit.end_block(id3);
+                self.emit.close_brace_indent(keywords::CLOSE_CURLY, id2);
+            }
+        }
+        self.context.pop_mod();
+    }
+
+    /// C++ `PrintC::emitGotoStatement` (printc.cc:2379): a `goto`/`break`/
+    /// `continue` statement for an unstructured branch.  The destination label is
+    /// the target block's reverse-post index (`LAB_<index>` — full address-based
+    /// label naming is the label/naming layer).
+    fn emit_goto_statement(
+        &mut self,
+        fd: &Funcdata,
+        _src: BlockId,
+        target: BlockId,
+        gototype: uint4,
+    ) {
+        use crate::block::block_flags;
+        let id = self.emit.begin_statement(&MarkupRef::none());
+        match gototype {
+            x if x == block_flags::f_break_goto => {
+                self.emit.print(keywords::KEYWORD_BREAK, SyntaxHighlight::KeywordColor);
+            }
+            x if x == block_flags::f_continue_goto => {
+                self.emit.print(keywords::KEYWORD_CONTINUE, SyntaxHighlight::KeywordColor);
+            }
+            _ => {
+                self.emit.print(keywords::KEYWORD_GOTO, SyntaxHighlight::KeywordColor);
+                self.emit.spaces(1, 0);
+                let idx = fd.sblocks_ref().block(target).get_index();
+                self.emit.print(&format!("LAB_{idx:08x}"), SyntaxHighlight::NoColor);
+            }
+        }
+        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.emit.end_statement(id);
+    }
+
+    /// The op-list walk shared by `emitBlockCopy`/`emitBlockBasic` (C++
+    /// `PrintC::emitBlockBasic`, printc.cc:2827).  `bblocks` selects which arena
+    /// holds the basic block (a `BlockCopy` points into `bblocks`).
+    fn emit_basic_block_ops(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        bb: BlockId,
+        bblocks: bool,
+    ) {
+        // only_branch: print only the block's branch instruction (CBRANCH).
+        if self.context.is_set(modifiers::ONLY_BRANCH) {
+            let last = if bblocks { fd.bb_op_tail(bb) } else { sblocks_basic_tail(fd, bb) };
+            if let Some(inst) = last {
+                if fd.obank().get(inst).map(|o| o.is_branch()).unwrap_or(false) {
+                    self.emit_expression_ir(fd, arch, inst);
+                }
+            }
+            return;
+        }
+        let mut separator = false;
+        let mut cur = if bblocks { fd.bb_op_head(bb) } else { sblocks_basic_head(fd, bb) };
+        while let Some(inst) = cur {
+            cur = fd.bb_op_next(inst);
+            let o = match fd.obank().get(inst) {
+                Some(o) => o,
+                None => continue,
+            };
+            if o.not_printed() {
+                continue;
+            }
+            if o.is_branch() {
+                if self.context.is_set(modifiers::NO_BRANCH) {
+                    continue;
+                }
+                if o.code() == OpCode::CPUI_BRANCH {
+                    continue;
+                }
+            }
+            // Skip ops whose output is an implied varnode (inlined elsewhere).
+            if let Some(out) = o.get_out() {
+                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false) {
+                    continue;
+                }
+            }
+            if separator {
+                // emitCommentGroup(inst); tagLine();
+                self.emit.tag_line();
+            } else if !self.context.is_set(modifiers::COMMA_SEPARATE) {
+                self.emit.tag_line();
+            }
+            self.emit_statement(fd, arch, inst);
+            separator = true;
+        }
+    }
+
+    /// C++ `PrintC::emitStatement` (printc.cc:2361).
+    fn emit_statement(&mut self, fd: &Funcdata, arch: &Architecture, inst: OpId) {
+        let id = self.emit.begin_statement(&MarkupRef::none());
+        self.emit_expression_ir(fd, arch, inst);
+        self.emit.end_statement(id);
+        if !self.context.is_set(modifiers::COMMA_SEPARATE) {
+            self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        }
+    }
+
+    /// C++ `PrintC::emitExpression` (printc.cc:2544): if the op has an output,
+    /// open an assignment to it, then push the op's expression and recurse.
+    fn emit_expression_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let outvn = fd.obank().get(op).and_then(|o| o.get_out());
+        if let Some(out) = outvn {
+            // pushOp(&assignment,op); pushSymbolDetail(outvn,op,false);
+            self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
+            self.push_vn_explicit_ir(fd, arch, out, op);
+        }
+        // op->getOpcode()->push(this,op,(PcodeOp *)0)
+        self.op_push_ir(fd, arch, op);
+    }
+
+    /// C++ `op->getOpcode()->push(this,op,readop)` — the per-opcode RPN push
+    /// (the `PrintC::op*` overrides, dispatched via [`op_emit_kind`] plus the
+    /// hand-written cases the structured boolless body reaches).
+    fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let opc = fd.obank().get(op).expect("op_push_ir: stale op").code();
+        match opc {
+            // CBRANCH: the structured-if condition (printc.cc:556 opCbranch).
+            // In the non-flat path opCbranch only emits the `( condition )`; the
+            // `if` keyword is printed by emit_block_if.  yesparen = !comma_separate.
+            OpCode::CPUI_CBRANCH => {
+                let yesparen = !self.context.is_set(modifiers::COMMA_SEPARATE);
+                let booleanflip = fd.obank().get(op).map(|o| o.is_boolean_flip()).unwrap_or(false);
+                let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
+                let id = if yesparen {
+                    self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0)
+                } else {
+                    self.emit.open_group()
+                };
+                if booleanflip {
+                    self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
+                }
+                if let Some(vn) = in1 {
+                    self.push_vn_ir(fd, arch, vn, op);
+                }
+                // recurse() drains the stack: direct resolution above already
+                // drained it (the RPN engine unwinds on the final push_atom), so
+                // the paren can close now.
+                if yesparen {
+                    self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id);
+                } else {
+                    self.emit.close_group(id);
+                }
+            }
+            // RETURN (printc.cc:774 opReturn, the plain-return case).
+            OpCode::CPUI_RETURN => {
+                self.emit.tag_op(keywords::KEYWORD_RETURN, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+                let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+                if nin > 1 {
+                    self.emit.spaces(1, 0);
+                    if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
+                        self.push_vn_ir(fd, arch, vn, op);
+                    }
+                }
+            }
+            // COPY (printc.cc:501 opCopy): just push the input.
+            OpCode::CPUI_COPY => {
+                if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+                    self.push_vn_ir(fd, arch, vn, op);
+                }
+            }
+            // MULTIEQUAL / INDIRECT: no-op (printc.hh:337-338 opMultiequal/
+            // opIndirect) — copy markers, never printed as an operator.  The
+            // phi's value is whatever its (single, post-merge) instance reads.
+            OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT => {
+                // Push in0 so the assignment has a RHS (degenerate phi rendering;
+                // faithful multi-instance phi rendering is the merge layer).
+                if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+                    self.push_vn_ir(fd, arch, vn, op);
+                }
+            }
+            _ => {
+                // Table-driven binary / unary / functional forms.
+                match op_emit_kind(opc) {
+                    OpEmitKind::Binary(tok) => self.op_binary_ir(fd, arch, tok, op),
+                    OpEmitKind::Unary(tok) => self.op_unary_ir(fd, arch, tok, op),
+                    OpEmitKind::Func | OpEmitKind::TypeCast | OpEmitKind::Custom => {
+                        // opFunc / opTypeCast / hand-written: the functional and
+                        // cast forms need the type-name + userop machinery (the
+                        // next layer).  Emit the op as a functional `OPC(args)`
+                        // so the statement is still a complete, parseable
+                        // expression rather than silently dropping it.
+                        self.op_func_ir(fd, arch, op);
+                    }
+                }
+            }
+        }
+    }
+
+    /// C++ `PrintLanguage::opBinary` over the IR (printlanguage.cc:553).  Pushes
+    /// the operator then resolves both operand Varnodes.  The negate-token flip
+    /// (the `negatetoken` mod) is honoured.
+    fn op_binary_ir(&mut self, fd: &Funcdata, arch: &Architecture, tok: &'static OpToken, op: OpId) {
+        let tok = if self.context.is_set(modifiers::NEGATETOKEN) {
+            self.context.unset_mod(modifiers::NEGATETOKEN);
+            token_negate(tok).unwrap_or(tok)
+        } else {
+            tok
+        };
+        self.push_op(tok, Some(op_key(op)));
+        // C++ pushes in1 then in0 onto the LIFO nodepend; resolving directly,
+        // push in0 then in1 so the operands print in0 <op> in1.
+        if let Some(v0) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+            self.push_vn_ir(fd, arch, v0, op);
+        }
+        if let Some(v1) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
+            self.push_vn_ir(fd, arch, v1, op);
+        }
+    }
+
+    /// C++ `PrintLanguage::opUnary` over the IR (printlanguage.cc:573).
+    fn op_unary_ir(&mut self, fd: &Funcdata, arch: &Architecture, tok: &'static OpToken, op: OpId) {
+        self.push_op(tok, Some(op_key(op)));
+        if let Some(v0) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+            self.push_vn_ir(fd, arch, v0, op);
+        }
+    }
+
+    /// C++ `PrintC::opFunc` (printc.cc:444) — a functional `name(arg0,arg1,...)`
+    /// form.  Pushes `function_call`, the (un-highlighted) operator name, an
+    /// `(numInput-1)`-deep comma chain, then the operands.  The function name is
+    /// the opcode's operator name (the full type/userop name resolution is the
+    /// next layer).
+    fn op_func_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let opc = fd.obank().get(op).expect("op_func_ir: stale op").code();
+        let name = opcode_print_name(opc);
+        self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+        // The name is pushed as an *operator* token (C++ `optoken`, no_color).
+        self.push_atom(&Atom::with_op(
+            name,
+            TagType::OpToken,
+            crate::printlanguage::SyntaxHighlight::no_color,
+            op_key(op),
+        ));
+        let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+        if nin > 0 {
+            // (numInput-1) comma operators glue the argument list.
+            for _ in 0..(nin - 1) {
+                self.push_op(&tokens::COMMA, Some(op_key(op)));
+            }
+            // C++ pushes args in reverse onto the LIFO queue; resolving directly
+            // (the comma chain nests right), push in forward order.
+            for i in 0..nin {
+                if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
+                    self.push_vn_ir(fd, arch, vn, op);
+                }
+            }
+        } else {
+            // Empty token for void (C++ blanktoken).
+            self.push_atom(&Atom::syntax(
+                "",
+                TagType::BlankToken,
+                crate::printlanguage::SyntaxHighlight::no_color,
+            ));
+        }
+    }
+
+    /// C++ `PrintLanguage::recurse` per-Varnode (printlanguage.cc:533): an
+    /// *implied* written Varnode expands its defining op's expression inline; an
+    /// *explicit* (or input/free) Varnode becomes a leaf atom.  Resolved
+    /// directly (depth-first) rather than via the lazy nodepend queue.
+    fn push_vn_ir(&mut self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) {
+        let (implied, def) = {
+            let v = match fd.vbank().get(vn) {
+                Some(v) => v,
+                None => return,
+            };
+            (v.is_implied(), v.get_def())
+        };
+        if implied {
+            if let Some(defop) = def {
+                // defOp->getOpcode()->push(this,defOp,op)
+                self.op_push_ir(fd, arch, defop);
+                return;
+            }
+        }
+        self.push_vn_explicit_ir(fd, arch, vn, op);
+    }
+
+    /// C++ `PrintLanguage::pushVnExplicit` (printlanguage.cc:218) + the
+    /// `PrintC` leaf-naming (`pushVnExplicit`/`pushUnnamedLocation`, printc.cc:
+    /// 1900-2017): annotation -> constant -> SymbolEntry -> register name ->
+    /// kuna `dat_<addr>` global -> `Space<hex>` fallback.
+    fn push_vn_explicit_ir(&mut self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) {
+        let v = match fd.vbank().get(vn) {
+            Some(v) => v,
+            None => return,
+        };
+        if v.is_constant() {
+            self.push_constant_ir(v.get_offset(), v.get_size(), op);
+            return;
+        }
+        // Symbol resolution (SymbolEntry / HighVariable Symbol) is the merge/
+        // naming layer; fall to the register / unnamed-location naming, which is
+        // the faithful `pushVnExplicit` tail (printc.cc:1957-1974).
+        let loc = v.get_addr().clone();
+        let size = v.get_size();
+        let spc = match loc.get_space() {
+            Some(s) => s,
+            None => return,
+        };
+        let regname = arch.translate().get_register_name(spc, loc.get_offset(), size);
+        let name = if !regname.is_empty() {
+            regname
+        } else if kuna_global_naming(spc) {
+            // (kuna) angr-style unnamed data annotation -> dat_<addr>.
+            kuna_global_data_name(spc, loc.get_offset())
+        } else {
+            // Space<hex> capitalized form (printc.cc:1964-1970).
+            let mut s = String::new();
+            let sn = spc.get_name();
+            let mut chars = sn.chars();
+            if let Some(c0) = chars.next() {
+                s.extend(c0.to_uppercase());
+                s.push_str(chars.as_str());
+            }
+            use std::fmt::Write;
+            let _ = write!(s, "{:0width$x}", loc.get_offset(), width = (2 * spc.get_addr_size()) as usize);
+            s
+        };
+        self.push_atom(&Atom::with_op_vn(
+            name,
+            TagType::VarToken,
+            crate::printlanguage::SyntaxHighlight::special_color,
+            op_key(op),
+            vn_key(vn),
+        ));
+    }
+
+    /// C++ `PrintC::push_integer` leaf for a constant (printc.cc:1360 region),
+    /// reduced to [`resolve_integer_format`] + [`format_integer_token`].  No
+    /// data-type display-format override (that is the type layer); the default
+    /// `val<=10 -> dec` rule reproduces the oracle's `10` rendering.
+    fn push_constant_ir(&mut self, val: uintb, sz: int4, op: OpId) {
+        let (print_negsign, val, display_fmt) =
+            resolve_integer_format(val, sz, false, display_format::NONE, false, false);
+        let tok = format_integer_token(print_negsign, val, display_fmt, sz, false, false, false, "");
+        self.push_atom(&Atom::with_op(
+            tok,
+            TagType::Syntax,
+            crate::printlanguage::SyntaxHighlight::const_color,
+            op_key(op),
+        ));
+    }
+}
+
+/// Head op of an sblocks-arena basic block (when the structured node itself is
+/// a Basic, not a Copy referencing bblocks).
+fn sblocks_basic_head(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
+    use crate::block::BlockKind;
+    match fd.sblocks_ref().block(bb).kind() {
+        BlockKind::Basic(b) => b.op_head,
+        _ => None,
+    }
+}
+
+/// Tail op of an sblocks-arena basic block.
+fn sblocks_basic_tail(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
+    use crate::block::BlockKind;
+    match fd.sblocks_ref().block(bb).kind() {
+        BlockKind::Basic(b) => b.op_tail,
+        _ => None,
+    }
+}
+
+/// Whether `spc` should use the kuna angr-style `dat_<addr>` global naming (a
+/// RAM/data space, not the stack).  (kuna) `kunaAngrNaming` gate, printc.cc:1961.
+fn kuna_global_naming(spc: &std::rc::Rc<kuna_base::space::AddrSpace>) -> bool {
+    use kuna_base::space::spacetype;
+    matches!(spc.get_type(), spacetype::IPTR_PROCESSOR)
+}
+
+/// (kuna) `kunaGlobalDataName(Address)` — `dat_<hex offset>`.
+fn kuna_global_data_name(_spc: &std::rc::Rc<kuna_base::space::AddrSpace>, off: u64) -> String {
+    format!("dat_{off:x}")
+}
+
+/// A stable per-op key for the `Atom.op` / `ReversePolish.op` slot (the C++
+/// `PcodeOp *`).  The driver only needs a non-null marker here; use the op's
+/// slotmap index bits.  (Round-trips through `usize`; only identity matters.)
+fn op_key(op: OpId) -> usize {
+    use slotmap::Key;
+    op.data().as_ffi() as usize
+}
+
+/// A stable per-varnode key for the `Atom` varnode slot (the C++ `Varnode *`).
+fn vn_key(vn: VarnodeId) -> usize {
+    use slotmap::Key;
+    vn.data().as_ffi() as usize
+}
+
+/// The functional print name for an opcode (C++ the `TypeOp::getOperatorName`
+/// uppercase form used by `opFunc`).  Faithful for the common functional ops;
+/// falls back to the raw opcode name otherwise.
+fn opcode_print_name(opc: OpCode) -> String {
+    use OpCode::*;
+    match opc {
+        CPUI_INT_ZEXT => "ZEXT".to_string(),
+        CPUI_INT_SEXT => "SEXT".to_string(),
+        CPUI_PIECE => "CONCAT".to_string(),
+        CPUI_SUBPIECE => "SUB".to_string(),
+        CPUI_INT_CARRY => "CARRY".to_string(),
+        CPUI_INT_SCARRY => "SCARRY".to_string(),
+        CPUI_INT_SBORROW => "SBORROW".to_string(),
+        CPUI_POPCOUNT => "POPCOUNT".to_string(),
+        CPUI_LZCOUNT => "LZCOUNT".to_string(),
+        CPUI_FLOAT_NAN => "NAN".to_string(),
+        CPUI_FLOAT_ABS => "ABS".to_string(),
+        CPUI_FLOAT_SQRT => "SQRT".to_string(),
+        other => format!("{other:?}").trim_start_matches("CPUI_").to_string(),
+    }
+}
+
 /// Convert a [`crate::printlanguage::SyntaxHighlight`] (the [`Atom`] field, the
 /// forward placeholder) to the [`prettyprint`](crate::prettyprint) enum the
 /// [`Emit`] driver consumes.  Both carry the same 11 discriminants in the same

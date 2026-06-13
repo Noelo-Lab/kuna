@@ -3080,26 +3080,34 @@ impl Action for ActionBlockStructure {
         Some(Box::new(ActionBlockStructure { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++:
+        // C++ (blockaction.cc:2170):
         //   BlockGraph &graph(data.getStructure());
         //   if (graph.getSize() != 0) return 0;           // already structured
         //   data.installSwitchDefaults();
         //   graph.buildCopy(data.getBasicBlocks());
         //   CollapseStructure collapse(graph); collapse.collapseAll();
         //   count += collapse.getChangeCount();
-        //
-        // The collapse engine itself is fully ported ([`CollapseStructure`]); but
-        // `BlockGraph::buildCopy(bblocks)` is a *cross-arena* copy (the Rust port
-        // keeps `sblocks` and `bblocks` in separate slotmap arenas, while
-        // `BlockGraph::build_copy` is intra-arena) — wiring it needs a funcdata-
-        // level copy that `block.rs`/`funcdata` have not yet supplied.  The driver
-        // structure is transcribed; the cross-arena seed is the seam.  See losses.
         if data.sblocks_get_size() != 0 {
             return 0; // Already structured
         }
         data.install_switch_defaults();
-        // graph.buildCopy(data.getBasicBlocks());  -- SEAM(W7): cross-arena copy.
-        // CollapseStructure collapse(graph); collapse.collapseAll();  -- (after seed)
+        // graph.buildCopy(data.getBasicBlocks());  -- cross-arena copy: mirror
+        // every bblocks BlockBasic into sblocks as a BlockCopy leaf (the copy's
+        // `copy` field points back at the bblocks block so the printer can walk
+        // its op list).
+        data.seed_sblocks_copy();
+        // CollapseStructure collapse(graph); collapse.collapseAll();
+        let sroot = data.sblocks_root();
+        let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot);
+        if let Err(e) = collapse.collapse_all() {
+            // A still-un-ported collapse sub-seam (switch/node-creation) aborts;
+            // surface it as "no change made" rather than taking down the run, the
+            // documented honest-partial-parity degradation.  See losses.
+            let _ = e;
+            return 0;
+        }
+        let cc = collapse.get_change_count();
+        self.base_mut().count += cc;
         0
     }
 }

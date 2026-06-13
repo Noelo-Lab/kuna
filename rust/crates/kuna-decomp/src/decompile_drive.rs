@@ -189,42 +189,44 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
 
 /// Render `fd` to C text (C++ `IfcPrintC::execute` -> `print->docFunction(fd)`).
 ///
-/// Drives [`PrintC::doc_function`] with the function's display name
-/// (`fd->getDisplayName()`) and a `void NAME(void)` signature.
+/// Drives [`PrintC::doc_function_full`] over the analyzed [`Funcdata`]: the
+/// signature shell (recovered return type) plus the **structured-block body**
+/// (the if/else hierarchy + per-statement RPN expressions) when `sblocks` is
+/// present.
 ///
-/// ## The W10 (`w10-printc-body`) finding
+/// ## The W10 (`w10-structure-printbody`) closure
 ///
-/// The PrintC RPN body *engine* (`push_op`/`push_atom`/`op_binary`/`op_unary`/
-/// `emit_op`/`emit_atom`/`parentheses`) is now ported and byte-faithfully
-/// unit-tested in [`PrintC`](crate::printc::PrintC).  Driving it over a real
-/// function body — and reading the real signature — is blocked **upstream of the
-/// printer**, not in it:
+/// `ActionBlockStructure` now seeds `sblocks` (the cross-arena `build_copy` +
+/// `CollapseStructure`), `ActionMarkExplicit`/`ActionMarkImplied` classify the
+/// Varnodes, and the IR-coupled body driver
+/// ([`PrintC::emit_function_body`](crate::printc::PrintC::emit_function_body))
+/// walks the structured tree emitting real statements (`if (cond) { … }`,
+/// assignments, `return`) through the ported RPN engine.  The remaining gap to
+/// full byte-parity is the **next analysis layer**, not the printer:
 ///
-///   * **The proto / return type / params** (C++ `fd->getFuncProto().
-///     getOutputType()` / `getParam(i)`): `Funcdata::funcp` is the seam
-///     [`FuncProto`](crate::seams::FuncProto) unit stub, not the real
-///     `fspec::FuncProto`, because the proto-recovery passes are seam stubs and
-///     `funcdata.rs` has not yet swapped the field type (a `funcdata`/W4/W6
-///     boundary, not this glue).
-///   * **The body**: the universalAction pipeline RUNS but its passes (heritage
-///     / simplification / merge / type recovery / block structuring) are seam
-///     stubs, so the IR reaching the printer is *raw lifted p-code* (e.g. 23 ops
-///     for `boolless` vs the ~7-op decompiled form, no HighVariables with
-///     symbols, no recovered types, **`sblocks` empty**).  Emitting that raw IR
-///     would print non-C garbage, not byte-parity (the parity gate
-///     `tests/printc_parity.rs` measures this honestly against the C++ oracle).
+///   * the recovered local **names** (`v1`) need Merge/HighVariable + the naming
+///     pass (a Varnode with no bound Symbol falls back to its register / global
+///     `dat_<addr>` name here — faithful `pushVnExplicit`);
+///   * the **comparison/branch direction** (`dat_52 <= 10` vs the un-joined
+///     `10 < dat_52`) needs `ActionNodeJoin`/`ConditionalJoin` + the
+///     present-compare canonicalization to collapse the two-compare boolean
+///     pattern into one `INT_LESSEQUAL`;
+///   * the return-type / local-decl text needs the proto store + symbol scope.
 ///
-/// Until those upstream passes land, the printer emits the default `void`-return,
-/// `void`-params, brace-matched shell — exactly what the e2e gate asserts; the
-/// byte-match count then rises with no further change to the (now-ported) RPN
-/// body engine.
+/// The structure of the body — the if/else hierarchy, the statement sequence,
+/// the operator expressions — is fully driven here and generalizes across the
+/// corpus (real `if` statements now emit for boolless / ccmp / condconst /
+/// condexesub / skipnext2 / promotecompare).
 pub fn print_c(arch: &mut Architecture, fd: &Funcdata) -> String {
-    let display = fd.get_display_name().to_string();
-    // The seam `Funcdata::funcp` (a unit stub) exposes no recovered output type
-    // or params (see doc above); emit the default void/void shell.  The
-    // signature wiring is `arch.print_mut().doc_function(name, model, ret,
-    // params)` — ready for the real `fspec::FuncProto` the moment `funcdata.rs`
-    // carries it and the proto-recovery passes populate it.
-    let params: Vec<(String, String)> = Vec::new();
-    arch.print_mut().doc_function(&display, None, "void", &params)
+    // Drive the IR-coupled body emitter (C++ `IfcPrintC::execute` ->
+    // `print->docFunction(fd)`): the real signature (recovered return type) plus
+    // the structured-block body (the if/else hierarchy + per-statement RPN
+    // expressions) when `sblocks` is present.  `doc_function_full` needs both the
+    // printer (`arch.print_mut()`) and the architecture (for register-name
+    // resolution); split the borrows by moving the printer out, driving it, and
+    // moving it back (the printer is owned by `arch`).
+    let mut printer = arch.take_print();
+    let out = printer.doc_function_full(fd, arch);
+    arch.put_print(printer);
+    out
 }

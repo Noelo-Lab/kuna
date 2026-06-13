@@ -479,6 +479,31 @@ impl FlowBlock {
     pub fn get_copy_map(&self) -> Option<BlockId> {
         self.copymap
     }
+    /// The block a `BlockCopy` mirrors (C++ `BlockCopy::copy`, the underlying
+    /// FlowBlock — a *bblocks* [`BlockId`] when produced by the cross-arena
+    /// `build_copy_from`).  `None` for non-Copy nodes.
+    pub fn get_copy(&self) -> Option<BlockId> {
+        match &self.kind {
+            BlockKind::Copy { copy } => *copy,
+            _ => None,
+        }
+    }
+    /// The unstructured-branch target of a `BlockIf` (C++ `BlockIf::getGotoTarget`),
+    /// or `None` (also for non-If nodes).  When set, the if has only the
+    /// condition component and emits a `goto` instead of a braced body.
+    pub fn get_if_goto_target(&self) -> Option<BlockId> {
+        match &self.kind {
+            BlockKind::If { gototarget, .. } => *gototarget,
+            _ => None,
+        }
+    }
+    /// The unstructured-branch type of a `BlockIf` (C++ `BlockIf::getGotoType`).
+    pub fn get_if_goto_type(&self) -> uint4 {
+        match &self.kind {
+            BlockKind::If { gototype, .. } => *gototype,
+            _ => 0,
+        }
+    }
     /// Set the number of times this block has been visited (C++ `setVisitCount`).
     pub fn set_visit_count(&mut self, i: int4) {
         self.visitcount = i;
@@ -1900,6 +1925,89 @@ impl BlockGraph {
         for it in dstlist {
             self.replace_using_map(it);
         }
+    }
+
+    /// Cross-arena variant of [`build_copy`](BlockGraph::build_copy) (C++
+    /// `BlockGraph::buildCopy`, `block.cc:1929`).
+    ///
+    /// In C++ `bblocks` and `sblocks` are two `BlockGraph` objects living in the
+    /// same address space, so a `BlockCopy` node created in `sblocks` simply
+    /// stores a `FlowBlock *` back into a `bblocks` node (`copymap`), and the
+    /// edge-`point` remap walks both graphs through raw pointers.  The Rust port
+    /// keeps each `BlockGraph` in its **own** slotmap arena (ADR 0001), so a
+    /// `bblocks` [`BlockId`] is not a key in the `sblocks` arena.  This method
+    /// therefore takes the source graph by reference and threads the src→dst
+    /// identity map explicitly:
+    ///
+    ///   * each source component (a `BlockBasic`) becomes a fresh `BlockCopy` in
+    ///     `self` (the dst, i.e. `sblocks`) whose `copy` field holds the **source**
+    ///     [`BlockId`] (the `bblocks` block — the printer resolves it against
+    ///     `bblocks` to walk the op list), with the source block's
+    ///     edge-topology / `index` / `numdesc` / `flags` / `immed_dom` copied in
+    ///     verbatim (still keyed by *source* ids);
+    ///   * `replace_using_map` then rewrites every edge `point` and `immed_dom`
+    ///     from the source id to the corresponding dst `BlockCopy` id using the
+    ///     map — exactly the second pass of C++ `buildCopy`.
+    ///
+    /// `graph_dst` is `self`'s root graph node; `src` is the source [`BlockGraph`]
+    /// (e.g. `bblocks`) and `graph_src` its root graph node.
+    pub fn build_copy_from(&mut self, graph_dst: BlockId, src: &BlockGraph, graph_src: BlockId) {
+        let startsize = self.arena[graph_dst].list.len();
+        let srclist: Vec<BlockId> = src.arena[graph_src].list.clone();
+        // src block id -> dst BlockCopy id (the C++ `bl->copymap`).
+        let mut copymap: std::collections::BTreeMap<BlockId, BlockId> =
+            std::collections::BTreeMap::new();
+        for it in &srclist {
+            let copyblock = self.new_block_copy_from(graph_dst, src, *it);
+            copymap.insert(*it, copyblock);
+        }
+        // Second pass: remap each new node's edge points + idom through the map
+        // (cross-arena `replace_using_map`).
+        let dstlist: Vec<BlockId> = self.arena[graph_dst].list[startsize..].to_vec();
+        for it in dstlist {
+            let n_in = self.arena[it].intothis.len();
+            for i in 0..n_in {
+                let p = self.arena[it].intothis[i].point.expect("build_copy_from in");
+                self.arena[it].intothis[i].point = copymap.get(&p).copied();
+            }
+            let n_out = self.arena[it].outofthis.len();
+            for i in 0..n_out {
+                let p = self.arena[it].outofthis[i].point.expect("build_copy_from out");
+                self.arena[it].outofthis[i].point = copymap.get(&p).copied();
+            }
+            if let Some(idom) = self.arena[it].immed_dom {
+                self.arena[it].immed_dom = copymap.get(&idom).copied();
+            }
+        }
+    }
+
+    /// Cross-arena variant of [`new_block_copy`](BlockGraph::new_block_copy) (C++
+    /// `BlockGraph::newBlockCopy`, `block.cc:1684`).  Reads the source block's
+    /// base fields out of `src` (a different arena) and builds a `BlockCopy` in
+    /// `self` whose `copy` field is the **source** [`BlockId`].  The copied edge
+    /// points still reference *source* ids until `build_copy_from`'s second pass
+    /// remaps them.
+    fn new_block_copy_from(&mut self, graph_id: BlockId, src: &BlockGraph, bl: BlockId) -> BlockId {
+        let intothis = src.arena[bl].intothis.clone();
+        let outofthis = src.arena[bl].outofthis.clone();
+        let immed_dom = src.arena[bl].immed_dom;
+        let index = src.arena[bl].index;
+        let numdesc = src.arena[bl].numdesc;
+        let blflags = src.arena[bl].flags;
+        let mut ret = FlowBlock::new_kind(BlockKind::Copy { copy: Some(bl) });
+        ret.intothis = intothis;
+        ret.outofthis = outofthis;
+        ret.immed_dom = immed_dom;
+        ret.index = index;
+        // visitcount stays 0 (FlowBlock ctor), per C++ comment
+        ret.numdesc = numdesc;
+        ret.flags |= blflags;
+        if ret.outofthis.len() > 2 {
+            ret.flags |= block_flags::f_switch_out;
+        }
+        let ret_id = self.arena.insert(ret);
+        self.add_block(graph_id, ret_id);
+        ret_id
     }
 
     /// Clear the visit count in all node FlowBlocks

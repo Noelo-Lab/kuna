@@ -651,6 +651,7 @@ impl Architecture {
         seam.defaultfp = self.defaultfp.clone();
         seam.evalfp_current = self.evalfp_current.clone();
         seam.trim_recurse_max = self.trim_recurse_max;
+        seam.max_implied_ref = self.max_implied_ref;
         seam.return_single = self.return_single;
         Rc::new(seam)
     }
@@ -706,6 +707,19 @@ impl Architecture {
     /// option setters).
     pub fn print_mut(&mut self) -> &mut PrintC {
         &mut self.print
+    }
+
+    /// Move the printer out of `self` (replacing it with a fresh default), so a
+    /// caller can drive `PrintC::doc_function_full(fd, &self)` — which needs an
+    /// immutable borrow of the rest of the architecture (register-name lookup)
+    /// while it mutates the printer.  Pair with [`put_print`](Architecture::put_print).
+    pub fn take_print(&mut self) -> PrintC {
+        std::mem::take(&mut self.print)
+    }
+
+    /// Move a printer back into `self` (the partner of [`take_print`]).
+    pub fn put_print(&mut self, print: PrintC) {
+        self.print = print;
     }
 
     /// Install the load image (C++ `glb->loader`; owned inside the engine in
