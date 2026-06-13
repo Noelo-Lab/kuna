@@ -1333,3 +1333,21 @@ through every `with_encoder` call.
   4. smaller: ContextDatabase setVariableDefault/Region (3), setPropertyRange volatile (2), getTrackedDefault/JumpTable-install/getCallFixup/addComment/printRaw/loader-gap (1 each).
   5. then a C-text-mismatch grind on whatever remains after 1-4.
 - restoration criteria: the W10 wave lands (1) the PrintC body driver, (2) grammar store-writes + symbol-table mutation, then loops run-datatests→fix-top-category until `KUNA_ENGINE=rust run_tests --all --baseline docs/baseline.json` = PARITY OK (M3 = 675/675 + stage tests 150/150).
+
+## LOSS-133: w10-setup-integration's "passing 3/675 -> 19/675" datatest metric is a vacuous parity signal — every one of the 19 passing assertions is a `min="0" max="0"` negative match satisfied by the empty-body PrintC stub, NOT by oracle-matching C output (w10-setup-integration REJECT, round 1)
+- date: 2026-06-13
+- kind: inflated/misleading metric (the underlying port is correct; the parity framing is not)
+- cpp-anchor: decompiler/datatests/offsetarray.xml `<stringmatch name="Offset array #2" min="0" max="0">firstfield</stringmatch>` (and the other 18 passing assertions, all min=0/max=0). The C++ oracle's `print C` for `access_array1` is `int4 access_array1(int8 a0){ mystruct v1; populate_mystruct(&v1); return v1.array[a0 + -1]; }`.
+- rust-anchor: the rust engine's `print C` for the same function (KUNA_DUMP) is `void access_array1(void){ /* WARNING: body emission is the W9-emit RPN/Emit seam */ }`. The empty stub contains none of the forbidden strings, so every `min=0/max=0` assertion passes vacuously; the corresponding `min=1` positive assertions (e.g. "Offset array #1") all FAIL. Verified: all 19 rust-passing assertions are negative matches; the baseline-3 were already vacuous.
+- surface: the metric over-states C-output parity. The setup-command store-writes themselves ARE correct (the declared gate `rust/crates/kuna-console/tests/setup_commands.rs` — 8 substantive store-write tests — all pass; struct sizes, symbol resolution, volatile flags, context defaults, comments verified against real store state).
+- why: the PrintC body is the W9-emit seam (pre-existing, not this item). Un-seaming the setup commands lets ~40 more files reach `decompile`/`print C`, where the stub body then vacuously satisfies their negative assertions — inflating the pass count without any real C-output parity.
+- restoration criteria: report the honest gate (the integration test + files-reaching-decompile / tests-applied counts), not "N/675 passing", until the PrintC body driver (LOSS-130 / w10-printc-body) lands. Real datatest parity is gated on the emit seam, not on this item.
+
+## LOSS-134: the `[space,offset,size]` address size specifier is parsed decimal-only in the kuna console seam, not in the C++ user-selected base (w10-setup-integration, round 1)
+- date: 2026-06-13
+- kind: partial transcription (latent; no datatest exercises it)
+- cpp-anchor: decompiler/cpp/grammar.cc:3122-3125 `parse_machaddr`: `if (tok == ',') { s.unsetf(ios::dec | ios::hex | ios::oct); s >> size; ... }` — the optional size in the bracket form is read in the user-selected base (a `0x`/`0X` prefix is hex, a leading `0` is octal).
+- rust-anchor: rust/crates/kuna-console/src/ifacedecomp.rs `parse_machaddr` bracket branch calls `s.read_int()` (rust/crates/kuna-console/src/interface.rs:264 `read_int`), which parses an optional sign + decimal digits ONLY (`is_ascii_digit`). A hex size like `[ram,0x1000,0x10]` stops at `x` and reads `0`, so `volatile`/`readonly` then errors "Must specify a size" where C++ would read 16.
+- surface: all three bracket-with-size forms in the datatests use decimal sizes (`[ram,0x1000,16]`, `[ram,0x210000,64]`, `[register,8,8]`), so the gap is unobservable in the suite. Pinned by the verifier test `w10_adv_bracket_hex_size_diverges_from_cpp`.
+- why: the seam reuses the decimal-only `read_int` (built for `IfcHistory`) rather than a user-base integer reader.
+- restoration criteria: route the bracket size through a user-base integer parse (`0x`->hex, leading `0`->octal, else decimal, into `int4`), then drop/flip the divergence-pinning assertion in `w10_adv_bracket_hex_size_diverges_from_cpp`.
