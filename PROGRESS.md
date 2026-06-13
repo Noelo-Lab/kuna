@@ -1,5 +1,28 @@
 # kuna Progress Log
 
+## Session (2026-06-13) — rust-port W9 + M2: the Rust decompiler RUNS end-to-end
+
+W9 console ports (interface, ifacedecomp 4.4k command set, grammar, kuna stage
+commands, codedata, datatest runner; rulecompile/unify deferred — zero oracle
+exposure) all verified, then the M2 integration: the engine-glue the modular port
+deferred — Architecture now owns + exposes TypeFactory/PrintC/LoadImage/Context/
+proto-models, impls ArchOptionContext (the `option` command mutates the real arch),
+runs the init/spec pipeline, and a decompile_drive (decompile_func -> universalAction
+perform -> print_c). The decomp_dbg/decomp_test_dbg bins are wired to it.
+
+**M2-RUN ACHIEVED: `KUNA_ENGINE=rust run_tests --datatests` executes end-to-end** —
+the Rust decomp_test_dbg runs the corpus, run_tests.py parses it cleanly. Engine glue
+proven: 5/5 architectures emit structurally-sane C; 3/675 assertions PASS baseline
+(7/83 files complete). The C++ oracle stays 675/675 PARITY OK (untouched).
+
+Honest gap to M3 (LOSS-130): the dominant blocker is the PrintC BODY emitter (the
+op-emitter methods exist but aren't driven by a block-graph statement walk — only the
+signature shell emits), then parse_C grammar store-writes (44 files' setup) +
+parse_machaddr/Scope symbol mutation (27 files), then the C-text grind. Gate: 3,119
+Rust tests, 0 failures. Cumulative: 143/202 items. Next: W10 parity grind — PrintC
+body + C-decl/symbol setup, then loop-until-PARITY-OK.
+
+
 ## Session (2026-06-13) — rust-port W8: print stack + the full pipeline (B0 byte-equal)
 
 All 7 W8 items + the allowlist closure verified. The Rust engine is now a COMPLETE

@@ -4754,12 +4754,12 @@
     "w9-con-codedata",
     "w9-con-grammar"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "~/.virtualenvs/kuna/bin/python -m kuna.run_tests --all --engine rust  # runs end-to-end (M2)",
    "loc_estimate": 500,
    "cpp_blob_sha": {},
-   "notes": "bin targets decomp (decomp_dbg-compatible console surface) and decomp_test (decomp_test_dbg-compatible); kuna/run_tests.py and kuna/decompile.py gain --engine {cpp,rust}. M2 milestone."
+   "notes": "bin targets decomp (decomp_dbg-compatible console surface) and decomp_test (decomp_test_dbg-compatible); kuna/run_tests.py and kuna/decompile.py gain --engine {cpp,rust}. M2 milestone. M2-RUN achieved 2026-06-13: datatests execute end-to-end under --engine rust, 3/675 baseline; engine glue + bins wired (w9x)."
   },
   {
    "id": "w10-infra-parity-grind",
@@ -5132,12 +5132,12 @@
     "w9-harness-runner-verify",
     "w9-infra-console-bins"
    ],
-   "status": "todo",
+   "status": "landed",
    "attempts": 0,
    "gate": "~/.virtualenvs/kuna/bin/python -m kuna.run_tests --all --engine rust  # M2: runs end-to-end",
    "loc_estimate": 0,
    "cpp_blob_sha": {},
-   "notes": "Wave exit: every item in W9 done (ports gated, verifies ACCEPTed)."
+   "notes": "Wave exit: every item in W9 done (ports gated, verifies ACCEPTed). Gate 2026-06-13: 3119 Rust tests 0 failed; M2 datatests run end-to-end --engine rust (3/675 baseline, C++ oracle untouched 675/675)."
   },
   {
    "id": "W10-gate",

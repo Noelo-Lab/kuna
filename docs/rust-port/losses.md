@@ -1321,3 +1321,15 @@ through every `with_encoder` call.
 - surface: observable only when `evalfp_current` has been explicitly pointed at a model DISTINCT from `defaultfp` (via `option evalcurrentmodel <name>`), which requires a multi-model cspec — itself a W6 seam. With the single seeded default model (`build_default_proto`), `eval_fp_current()` falls back to `defaultfp`, so the dropped spread is unobservable. `evalfp_called` has no field at all (a genuine future seam).
 - why: the eval-model registry beyond the single `defaultfp`/`evalfp_current` pair is part of the W6 cspec proto-model decode; the porter wired the `defaultfp` write (the only model the seeded bootstrap distinguishes) and noted the spread in the doc without implementing it.
 - restoration criteria: after the `defaultfp` write, also `set_extra_pop` on `evalfp_current` when it is `Some` and distinct, and on `evalfp_called` once that field lands with the W6 multi-model cspec. Re-pin against the C++ oracle on a cspec that registers a distinct eval model (the only input that distinguishes the spread).
+
+## LOSS-130: M2 = RUN achieved (3/675 baseline); parity blocked on PrintC body + C-decl/symbol setup
+- date: 2026-06-13
+- kind: deferral (the W10 grind target list)
+- surface: `KUNA_ENGINE=rust python -m kuna.run_tests --datatests` RUNS end-to-end (the Rust decomp_test_dbg executes the corpus, run_tests.py parses Success/FAIL/footer cleanly). Baseline: 7/83 files run to completion, 24 assertions applied, **3 PASS** (Boolean-thru-Less-than #2, Leading-zeros-count #2, NaN-operations #3). The C++ oracle stays 675/675 PARITY OK (untouched).
+- the gap to M3 (675/675), by failure taxonomy:
+  1. **PrintC body emitter (THE keystone)**: decompile_drive::print_c + PrintC::doc_function emit only the function-signature SHELL; the op*/push*/recurse/emitBlockGraph RPN bodies (the op-emitter methods exist in printc.rs but are not driven by a block-graph statement walk) are unwired. Until this lands NO datatest body-stringmatch can pass — it dominates the 21 C-text FAILs.
+  2. **parse_C grammar store-writes** (44 files): grammar.rs parses C declarations but errs at the TypeFactory/symbol store-write (W9-grammar LOSS); the datatests' `parse line` type/prototype setup never takes effect.
+  3. **parse_machaddr + Scope::addSymbol/addFunction** (27 files): the `map function`/`map addr`/`map hash` symbol-table mutation path is not wired onto the console + Database.
+  4. smaller: ContextDatabase setVariableDefault/Region (3), setPropertyRange volatile (2), getTrackedDefault/JumpTable-install/getCallFixup/addComment/printRaw/loader-gap (1 each).
+  5. then a C-text-mismatch grind on whatever remains after 1-4.
+- restoration criteria: the W10 wave lands (1) the PrintC body driver, (2) grammar store-writes + symbol-table mutation, then loops run-datatests→fix-top-category until `KUNA_ENGINE=rust run_tests --all --baseline docs/baseline.json` = PARITY OK (M3 = 675/675 + stage tests 150/150).
