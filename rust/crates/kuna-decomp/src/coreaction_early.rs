@@ -360,12 +360,14 @@ impl Action for ActionHeritage {
         }
         Some(Box::new(ActionHeritage { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++: data.opHeritage(); return 0;
-        // SEAM(W4): Funcdata::opHeritage runs Heritage::heritage, whose driver is
-        // itself `// SEAM(W4)` in heritage.rs (needs beginLoc(space) + W4 guards).
-        // Wiring deferred to the heritage-driver wave; calling it here would panic
-        // the unimplemented_seam, so the action no-ops until that lands.
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.hh:289 — ActionHeritage::apply: data.opHeritage(); return 0;
+        // `opHeritage` drives the owned Heritage engine (heritage.rs), mutating
+        // the live Funcdata into SSA form (reads linked to writes, MULTIEQUAL
+        // phi-nodes placed at dominance frontiers).  The action always reports 0
+        // changes (the C++ does too — heritage registers no change count, which
+        // is why `break action heritage` never fires; see kuna/goldens.py B3).
+        data.op_heritage();
         0
     }
 }

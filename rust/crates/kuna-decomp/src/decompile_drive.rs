@@ -96,10 +96,17 @@ pub fn build_and_follow_flow(
     flow.generate_ops()?;
     flow.generate_blocks()?;
     let mut data = flow.data;
-    // C++ startProcessing sets the processing_started flag (the W3/W4 seam in
-    // ActionStart); set it explicitly so isProcStarted() is true after the
-    // explicit flow follow (mirrors the C++ followFlow path having started
-    // processing before perform()).
+    // C++ `Funcdata::startProcessing` (funcdata.cc:150) runs after `followFlow`:
+    // it calls `structureReset()` — which builds the basic-block reverse-post
+    // ordering AND the forward dominator tree (`bblocks.calcForwardDominator`).
+    // `ActionHeritage::buildADT` *requires* that dominator tree, so the reset is
+    // part of the heritage-application prerequisite (the merged tree's
+    // `ActionStart` is a seam, so it is driven here, exactly as the C++
+    // `followFlow`→`startProcessing` order runs it before the action pipeline).
+    data.structure_reset();
+    // startProcessing then sets the processing_started flag (so isProcStarted()
+    // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
+    // applyDeadCodeDelay — is W4 seam or handled lazily in op_heritage).
     data.set_flag_raw(funcdata_flags::processing_started);
     Ok(data)
 }

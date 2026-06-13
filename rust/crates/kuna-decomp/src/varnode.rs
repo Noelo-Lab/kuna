@@ -1852,6 +1852,34 @@ impl VarnodeBank {
 
     // --- Public location range queries (the beginLoc/endLoc overloads) -----
 
+    /// Varnode ids in the given address space, in location order (C++
+    /// `beginLoc(AddrSpace*)`..`endLoc(AddrSpace*)`, `varnode.cc:1579`).
+    ///
+    /// The C++ bounds the range with `Address(space,0)` /
+    /// `Address(getNextSpaceInOrder(space),0)`.  Because the loc-tree orders by
+    /// address (space index first), every Varnode of a space is contiguous;
+    /// this collects from `Address(space,0)` and stops at the first Varnode in a
+    /// different space — equivalent without needing the `AddrSpacePtr`
+    /// next-space-or-Max endpoint.
+    pub fn loc_space_ids(&self, space: &Rc<AddrSpace>) -> Vec<VarnodeId> {
+        let begin = Address::new(Rc::clone(space), 0);
+        let lo = LocProbe::Lower(LocKey {
+            addr: begin,
+            size: 0,
+            flagclass: flag_class_of(varnode_flags::input),
+            seqnum: SeqNum::default(),
+            create_index: 0,
+        });
+        let mut out = Vec::new();
+        for id in self.iter_loc_probe(lo, LocProbe::End) {
+            if !Rc::ptr_eq(self.arena[id].get_space(), space) {
+                break;
+            }
+            out.push(id);
+        }
+        out
+    }
+
     /// Varnode ids of a given size and starting address in location order
     /// (C++ `beginLoc(int4,const Address&)`..`endLoc(int4,const Address&)`).
     pub fn iter_loc_size_addr(

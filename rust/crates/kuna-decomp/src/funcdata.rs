@@ -181,6 +181,13 @@ pub struct Funcdata {
     /// [`crate::seams::HighVariableId`], the back-link being the `Varnode::high`
     /// field already wired in `varnode.rs`.
     high_bank: crate::variable::HighVariableBank,
+    /// SSA-construction manager (C++ `Heritage heritage`, `funcdata.hh:90`).
+    ///
+    /// Owns the heritage pass state (`pass`, the disjoint cover, the augmented
+    /// dominator tree, the per-space info list) across the multiple
+    /// `ActionHeritage` invocations in the universalAction loop, exactly as the
+    /// C++ `Funcdata` member does.  Driven through [`op_heritage`](Funcdata::op_heritage).
+    heritage: crate::heritage::Heritage,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -244,6 +251,7 @@ impl Funcdata {
             bblocks,
             sblocks,
             high_bank: crate::variable::HighVariableBank::new(),
+            heritage: crate::heritage::Heritage::new(),
         })
     }
 
@@ -274,6 +282,31 @@ impl Funcdata {
     /// Get the function's prototype object (C++ `getFuncProto`).  // SEAM(W4)
     pub fn get_func_proto(&self) -> &FuncProto {
         &self.funcp
+    }
+
+    /// Perform an entire heritage pass linking Varnode reads to writes (C++
+    /// `Funcdata::opHeritage`, `funcdata.hh:471` — `heritage.heritage()`).
+    ///
+    /// Drives the owned [`Heritage`](crate::heritage::Heritage) engine against
+    /// the live IR, mutating it into SSA form (free reads linked to their
+    /// reaching writes/inputs, MULTIEQUAL phi-nodes placed at the dominance
+    /// frontier of each write).  The engine is temporarily moved out of `self`
+    /// so it can take `&mut self` (the C++ `heritage` member holds a `fd`
+    /// back-pointer; Rust expresses the same self-mutation with a move-out /
+    /// move-back).  `build_info_list` is idempotent and ensures the per-space
+    /// info list exists — the merged-tree substitute for the
+    /// `startProcessing` → `heritage.buildInfoList()` call (a W4 seam there).
+    pub fn op_heritage(&mut self) {
+        let mut heritage = std::mem::take(&mut self.heritage);
+        heritage.build_info_list(self);
+        heritage.heritage(self);
+        self.heritage = heritage;
+    }
+
+    /// Get the heritage pass when the given address was last heritaged, or -1
+    /// (C++ `Funcdata::isHeritaged` reads `heritage.heritagePass`).
+    pub fn heritage_pass(&self, addr: &Address) -> int4 {
+        self.heritage.heritage_pass(addr)
     }
     /// Get the local function scope (C++ `getScopeLocal`).  // SEAM(W4)
     pub fn get_scope_local(&self) -> Option<&Scope> {
@@ -852,9 +885,11 @@ impl Funcdata {
         self.vbank.clear();
         // clearCallSpecs();                                          -- SEAM(W4)
         self.clear_jump_tables();
-        // heritage.clear();  -- SEAM(W7).  covermerge.clear() tears down the
-        // HighVariable arena (the `new HighVariable`s are freed); the W7 high
-        // bank is cleared here to mirror that lifecycle.
+        // heritage.clear() (funcdata.cc:107): reset the SSA-construction state.
+        self.heritage.clear();
+        // covermerge.clear() tears down the HighVariable arena (the
+        // `new HighVariable`s are freed); the W7 high bank is cleared here to
+        // mirror that lifecycle.
         self.high_bank.clear();
     }
 
