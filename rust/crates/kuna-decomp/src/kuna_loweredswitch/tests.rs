@@ -405,3 +405,77 @@ fn empty_store_has_no_record() {
     assert!(store.records(&fd).is_empty());
 }
 
+
+// -----------------------------------------------------------------------------
+// ActionLowerSwitchInstall (the install half).
+//
+// The CFG surgery (Funcdata::kunaInstallLoweredSwitch) is a documented
+// SEAM(W7/W4) — getHeritagePass, a real JumpTable registry, kunaSetTrivialModel,
+// and removeUnreachableBlocks are all unported — so `install` always declines
+// (0).  These cover the ported structure: gate-off, no-record short-circuit, the
+// has-record path still declining at the surgery seam, and clone filtering.
+// -----------------------------------------------------------------------------
+
+/// A minimal recovered record for `fd` (the shape the Detect half produces).
+fn sample_record(fd: &Funcdata) -> KunaLoweredSwitchRecord {
+    let a = |off: u64| ram_addr(fd, off);
+    KunaLoweredSwitchRecord {
+        branch_addr: a(0x1001),
+        var_addr: a(0x4000),
+        var_size: 4,
+        case_vals: vec![0, 2, 3],
+        case_targets: vec![a(0x2000), a(0x2100), a(0x2000)],
+        default_target: a(0x3000),
+    }
+}
+
+#[test]
+fn install_gate_off_is_inert() {
+    let mut fd = build_fd();
+    let mut act = ActionLowerSwitchInstall::new(false, "base"); // gate off
+    let rec = sample_record(&fd);
+    act.store_mut().push(&fd, rec);
+    // Even with a record present, the gate-off install declines.
+    assert_eq!(act.install(&mut fd), 0);
+}
+
+#[test]
+fn install_no_record_short_circuits() {
+    let mut fd = build_fd();
+    let mut act = ActionLowerSwitchInstall::new(true, "base"); // gate on, empty store
+    assert!(!act.store().has_record(&fd));
+    assert_eq!(act.install(&mut fd), 0);
+}
+
+#[test]
+fn install_with_record_declines_at_surgery_seam() {
+    let mut fd = build_fd();
+    let mut act = ActionLowerSwitchInstall::new(true, "base");
+    let rec = sample_record(&fd);
+    act.store_mut().push(&fd, rec);
+    assert!(act.store().has_record(&fd), "the record is present");
+    // The store lookup succeeds; the install declines at the W7/W4 CFG-surgery
+    // seam (Funcdata::kunaInstallLoweredSwitch unported).
+    assert_eq!(act.install(&mut fd), 0);
+}
+
+#[test]
+fn install_apply_leaves_count_zero() {
+    let mut fd = build_fd();
+    let mut act = ActionLowerSwitchInstall::new(true, "base");
+    let rec = sample_record(&fd);
+    act.store_mut().push(&fd, rec);
+    let mut ctx = ActionContext::default();
+    let res = act.apply(&mut fd, &mut ctx);
+    assert_eq!(res, 0);
+    assert_eq!(act.base().count, 0, "no install => count untouched");
+}
+
+#[test]
+fn install_clone_filters_by_group() {
+    let act = ActionLowerSwitchInstall::new(true, "switchnorm");
+    let inc = crate::action::ActionGroupList::from_names(["switchnorm"]);
+    let exc = crate::action::ActionGroupList::from_names(["cleanup"]);
+    assert!(act.clone_filtered(&inc).is_some());
+    assert!(act.clone_filtered(&exc).is_none());
+}

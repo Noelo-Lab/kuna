@@ -346,3 +346,80 @@ fn form_byte_array_big_endian_multibyte() {
         &[0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48]
     );
 }
+
+// --- RuleStringCopy / RuleStringStore ----------------------------------------
+//
+// The drivers' deep bodies are seam-blocked (W4 symbol table + W6 type-facing),
+// so these cover the reachable surface: getOpList, group-filtered clone, the
+// constant-input guard, and the seam decline (a constant-input COPY/STORE still
+// returns 0 because the build/transform is deferred — byte-identical to the
+// rule being disabled).
+
+use crate::action::{ActionGroupList, Rule};
+
+#[test]
+fn string_copy_op_list_is_copy() {
+    assert_eq!(RuleStringCopy::new("analysis").get_op_list(), vec![OpCode::CPUI_COPY]);
+}
+
+#[test]
+fn string_store_op_list_is_store() {
+    assert_eq!(RuleStringStore::new("analysis").get_op_list(), vec![OpCode::CPUI_STORE]);
+}
+
+#[test]
+fn string_rules_clone_filters_by_group() {
+    let inc = ActionGroupList::from_names(["analysis"]);
+    let exc = ActionGroupList::from_names(["cleanup"]);
+    assert!(RuleStringCopy::new("analysis").clone_rule(&inc).is_some());
+    assert!(RuleStringCopy::new("analysis").clone_rule(&exc).is_none());
+    assert!(RuleStringStore::new("analysis").clone_rule(&inc).is_some());
+    assert!(RuleStringStore::new("analysis").clone_rule(&exc).is_none());
+}
+
+#[test]
+fn string_copy_non_constant_input_declines() {
+    // A COPY whose input-0 is NOT constant fails the first guard.
+    let mut fd = build_fd(false);
+    let bl = mk_block(&mut fd);
+    let op = mk_op_in_block(&mut fd, bl, 0x10, OpCode::CPUI_COPY);
+    // input-0 is a (written) non-constant — a fresh input varnode.
+    let nonconst = make_input(&mut fd, 0x100, 1);
+    fd.op_set_input(op, nonconst, 0).unwrap();
+    assert_eq!(RuleStringCopy::new("analysis").apply_op(op, &mut fd), 0);
+}
+
+#[test]
+fn string_copy_constant_input_declines_at_seam() {
+    // A constant-input COPY passes the ported guard but the W4/W6-seamed
+    // StringSequence build is deferred, so the rule still declines (0).
+    let mut fd = build_fd(false);
+    let bl = mk_block(&mut fd);
+    let op = mk_copy_const(&mut fd, bl, 0x10, 0x41);
+    assert_eq!(RuleStringCopy::new("analysis").apply_op(op, &mut fd), 0);
+}
+
+#[test]
+fn string_store_constant_value_declines_at_seam() {
+    // STORE(space, ptr, const): input-2 is the constant value.  The ported guard
+    // passes; the HeapSequence build is deferred, so the rule declines (0).
+    let mut fd = build_fd(false);
+    let bl = mk_block(&mut fd);
+    let st = mk_op_in_block(&mut fd, bl, 0x10, OpCode::CPUI_STORE);
+    // Slot 0: space id (constant), slot 1: pointer (input), slot 2: value (const).
+    let spc = fd.new_constant(8, 0);
+    let ptr = make_input(&mut fd, 0x200, 8);
+    let val = fd.new_constant(1, 0x41);
+    fd.obank_mut().get_mut(st).unwrap().set_num_inputs(3);
+    fd.op_set_input(st, spc, 0).unwrap();
+    fd.op_set_input(st, ptr, 1).unwrap();
+    fd.op_set_input(st, val, 2).unwrap();
+    assert_eq!(RuleStringStore::new("analysis").apply_op(st, &mut fd), 0);
+}
+
+/// A fresh input varnode at register-like offset `off` of `size` bytes.
+fn make_input(fd: &mut Funcdata, off: u64, size: int4) -> VarnodeId {
+    let r = ram(fd);
+    let vn = fd.new_varnode(size, &Address::new(r, off), None);
+    fd.set_input_varnode(vn).unwrap()
+}
