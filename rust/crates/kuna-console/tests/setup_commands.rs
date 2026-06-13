@@ -391,3 +391,89 @@ fn w10_adv_default_codespace_address_form() {
     let entry = &syms[0];
     let _ = (def, entry); // symbol existence + space wiring exercised above
 }
+
+// ===========================================================================
+// VERIFIER ADVERSARIAL TESTS (w10-setup-integration, round 2 — re-land).
+//
+// Round 2 added a single "honest-metric guard" test asserting (a) the function
+// REACHES `print C` and (b) the body is still the W9-emit stub.  The re-land's
+// whole ACCEPT case rests on that framing being FACTUALLY TRUE and the guard
+// being NON-vacuous.  These tests attack exactly that: the guard must not be a
+// false green, the stub must be the WHOLE body (no real C leaks that would let a
+// positive `min=1` datatest match), and the vacuous-negative claim must hold for
+// a concrete oracle token.
+// ===========================================================================
+
+/// ADVERSARIAL 4 — the honest-metric guard is NON-VACUOUS: the engine genuinely
+/// bootstraps and the decompile genuinely reaches `print C` on this machine
+/// (specs present).  If bootstrap had silently failed (`boot_program` -> None),
+/// the guard's `else { return }` would make it a false green; this test fails
+/// loudly in that case so the guard's "reaches print" half is trustworthy.
+#[test]
+fn w10_adv_r2_guard_is_not_a_skipped_false_green() {
+    let prog = boot_program()
+        .expect("engine must bootstrap (specs present) — the honest-metric guard \
+                 would otherwise be a vacuous skip / false green");
+    let (_status, out) = drive(prog, &["load function boolless", "decompile", "print C"]);
+    // The exact reach-condition the guard relies on, asserted independently.
+    assert!(
+        !out.contains("Execution error") && !out.contains("No function selected"),
+        "decompile must actually reach the print step: {out:?}"
+    );
+    // And the print actually produced a function shell (a `print C` ran), so the
+    // "reaches print" win is real, not an empty string the guard mis-reads.
+    assert!(
+        out.contains("boolless") || out.contains('{'),
+        "print C must emit a function shell, not nothing: {out:?}"
+    );
+}
+
+/// ADVERSARIAL 5 — the W9-emit stub is the WHOLE body: there is no real C
+/// statement the stub leaks that a `min=1` POSITIVE datatest could match.  The
+/// oracle for a typical datatest body contains tokens like `return`, `if`, `=`,
+/// or a `;`-terminated statement; the stub body must contain NONE of those
+/// between its braces (only the comment marker).  If this ever fails, the body
+/// driver has partially landed and the vacuous-parity framing must be revisited.
+#[test]
+fn w10_adv_r2_stub_body_leaks_no_real_c_statements() {
+    let Some(prog) = boot_program() else { return };
+    let (_status, out) = drive(prog, &["load function boolless", "decompile", "print C"]);
+    assert!(
+        out.contains("WARNING: body emission is the W9-emit RPN/Emit seam"),
+        "precondition: body is the stub: {out:?}"
+    );
+    // Isolate the body between the first '{' and the last '}'.
+    let body = out
+        .split_once('{')
+        .and_then(|(_, rest)| rest.rsplit_once('}').map(|(b, _)| b.to_string()))
+        .unwrap_or_default();
+    // No real C statement tokens leak — only the seam comment lives in the body.
+    // (A `return`/`if`/`;`/`=` in the body would mean a `min=1` datatest could
+    //  match, i.e. real parity, contradicting the vacuous-parity framing.)
+    for tok in ["return ", "return;", "if (", " = ", ";\n", "while", "goto"] {
+        assert!(
+            !body.contains(tok),
+            "stub body leaked a real C token {tok:?} (body driver partially landed?): body={body:?}"
+        );
+    }
+}
+
+/// ADVERSARIAL 6 — the vacuousness is CONCRETE: a real forbidden token from a
+/// `min=0/max=0` datatest assertion (e.g. offsetarray.xml forbids `firstfield`)
+/// is genuinely ABSENT from the stub body, so that negative assertion passes for
+/// FREE (not because the engine reasoned about it).  This pins the exact reason
+/// the +16 datatest "passes" are not parity: the stub contains no identifiers at
+/// all, so every forbidden-token negative match is satisfied trivially.
+#[test]
+fn w10_adv_r2_negative_match_passes_vacuously_not_by_parity() {
+    let Some(prog) = boot_program() else { return };
+    let (_status, out) = drive(prog, &["load function boolless", "decompile", "print C"]);
+    // Concrete forbidden tokens drawn from real min=0/max=0 datatest assertions.
+    for forbidden in ["firstfield", "array", "mystruct", "populate_mystruct"] {
+        assert!(
+            !out.contains(forbidden),
+            "the stub body must contain NO oracle identifier {forbidden:?} — a min=0 \
+             negative datatest passes vacuously, not by parity: {out:?}"
+        );
+    }
+}
