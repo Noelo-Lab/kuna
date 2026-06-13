@@ -257,13 +257,15 @@ fn comment_instr_records_a_comment() {
 // FAILS while a `min=0` negative match passes for free.
 // ===========================================================================
 
-/// HONEST-METRIC GUARD — the rust `print C` body is the W9-emit seam stub, so a
-/// newly-"passing" datatest is a vacuous `min=0/max=0` negative match, not C
-/// parity.  Pins LOSS-130/LOSS-133: when the PrintC body driver lands, the stub
-/// marker disappears and this guard must be revisited (it then becomes a real
-/// parity assertion).
+/// HONEST-METRIC GUARD (revised post-w10-printc-body) — the PrintC body driver
+/// (RPN/Emit) has LANDED, so the W9-emit stub marker is gone.  The remaining
+/// parity gap is no longer the printer but the SEAMED analysis passes feeding it
+/// raw lifted p-code (LOSS-131): the function reaches `print C` and emits C
+/// through the real driver, but it does not byte-match the C++ oracle yet.  The
+/// authoritative parity measure is the `KUNA_ENGINE=rust run_tests --datatests`
+/// X/675 number, not this guard.
 #[test]
-fn printc_body_is_the_w9emit_stub_so_datatest_passes_are_vacuous() {
+fn printc_body_driver_landed_function_reaches_print_c() {
     let Some(prog) = boot_program() else { return };
     // Load the corpus function, decompile it, and render `print C` exactly like
     // the datatest runner does (output lands in `optr`, captured by `drive`).
@@ -271,21 +273,23 @@ fn printc_body_is_the_w9emit_stub_so_datatest_passes_are_vacuous() {
         prog,
         &["load function boolless", "decompile", "print C"],
     );
-    // The decompile + print must SUCCEED (the function reaches the print step) —
-    // that is the real win of this item (a file reaching decompile).
+    // The decompile + print must SUCCEED (the function reaches the print step).
     assert!(
         !out.contains("Execution error") && !out.contains("No function selected"),
-        "the function must reach the print step (a file-reaching-decompile win): {out:?}"
+        "the function must reach the print step: {out:?}"
     );
-    // ...but the emitted body is the W9-emit seam stub, NOT oracle-matching C.
-    // This is exactly why a `min=0/max=0` negative assertion passes for free
-    // (the stub contains none of the forbidden tokens) while the matching
-    // `min=1` positive assertion has no body to match against and FAILS.
+    // The W9-emit stub marker is GONE (the real RPN body driver landed in
+    // w10-printc-body).  Byte-parity with the oracle still awaits un-seaming the
+    // analysis passes (heritage/simplify/merge/types/structuring) — tracked as
+    // the X/675 datatest number, not asserted here.
     assert!(
-        out.contains("WARNING: body emission is the W9-emit RPN/Emit seam"),
-        "the print-C body must still be the W9-emit stub (LOSS-130); if this marker \
-         is gone, the body driver landed and the honest-metric framing can be \
-         revisited. out={out:?}"
+        !out.contains("WARNING: body emission is the W9-emit RPN/Emit seam"),
+        "the W9-emit stub marker must be gone now that the body driver landed: {out:?}"
+    );
+    // The driver emits a function shell (signature + braces) at minimum.
+    assert!(
+        out.contains('{') && out.contains('}'),
+        "print C must emit a function with a body block: {out:?}"
     );
 }
 
@@ -428,34 +432,32 @@ fn w10_adv_r2_guard_is_not_a_skipped_false_green() {
     );
 }
 
-/// ADVERSARIAL 5 — the W9-emit stub is the WHOLE body: there is no real C
-/// statement the stub leaks that a `min=1` POSITIVE datatest could match.  The
-/// oracle for a typical datatest body contains tokens like `return`, `if`, `=`,
-/// or a `;`-terminated statement; the stub body must contain NONE of those
-/// between its braces (only the comment marker).  If this ever fails, the body
-/// driver has partially landed and the vacuous-parity framing must be revisited.
+/// ADVERSARIAL 5 (revised post-w10-printc-body) — the RPN body driver landed,
+/// so `print C` now drives the real Emit engine over whatever IR the (still
+/// partly-seamed) analysis passes produced.  The body is no longer a marker-only
+/// stub.  The honest parity gap is now LOSS-131 (seamed analysis passes feed raw
+/// lifted p-code), measured by the X/675 datatest number — not by token presence
+/// here.  This test pins only that the driver runs and emits a body block.
 #[test]
-fn w10_adv_r2_stub_body_leaks_no_real_c_statements() {
+fn w10_adv_r2_body_driver_emits_real_block() {
     let Some(prog) = boot_program() else { return };
     let (_status, out) = drive(prog, &["load function boolless", "decompile", "print C"]);
+    // Stub marker is gone; the function reaches print and emits a brace block.
     assert!(
-        out.contains("WARNING: body emission is the W9-emit RPN/Emit seam"),
-        "precondition: body is the stub: {out:?}"
+        !out.contains("WARNING: body emission is the W9-emit RPN/Emit seam"),
+        "body driver landed; stub marker must be gone: {out:?}"
     );
-    // Isolate the body between the first '{' and the last '}'.
     let body = out
         .split_once('{')
         .and_then(|(_, rest)| rest.rsplit_once('}').map(|(b, _)| b.to_string()))
         .unwrap_or_default();
-    // No real C statement tokens leak — only the seam comment lives in the body.
-    // (A `return`/`if`/`;`/`=` in the body would mean a `min=1` datatest could
-    //  match, i.e. real parity, contradicting the vacuous-parity framing.)
-    for tok in ["return ", "return;", "if (", " = ", ";\n", "while", "goto"] {
-        assert!(
-            !body.contains(tok),
-            "stub body leaked a real C token {tok:?} (body driver partially landed?): body={body:?}"
-        );
-    }
+    // The driver emitted a body region (it may contain real C tokens now, or be
+    // sparse where upstream passes are still seamed — either is honest; byte
+    // parity is the X/675 measure, not a token check here).
+    assert!(
+        out.contains('{') && out.contains('}'),
+        "print C must emit a function body block via the real driver: body={body:?}"
+    );
 }
 
 /// ADVERSARIAL 6 — the vacuousness is CONCRETE: a real forbidden token from a
