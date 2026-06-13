@@ -340,7 +340,13 @@ pub struct Architecture {
     // --- W6/W8 subsystems wired by `init` (architecture.hh:211-233) -------
     /// Data-type factory (C++ `types`, a `TypeFactory*`).  Empty until
     /// [`build_typegrp`](Architecture::build_typegrp) + `build_core_types`.
-    types: TypeFactoryImpl,
+    ///
+    /// Held as an [`Rc`] so the analysis-side seam [`ArchSeam`](crate::seams::Architecture)
+    /// (`glb`) can share the *same* populated factory: `ActionInferTypes` reaches
+    /// `getBase`/`getTypePointer` through `glb.types()` and must see the identical
+    /// interned core types this side cached.  Interior mutability (`Cell`/`RefCell`)
+    /// keeps the `&self` setters (`setup_sizes`, `set_core_type`, …) working.
+    types: Rc<TypeFactoryImpl>,
     /// The c-language printer (C++ `print`, the active `PrintLanguage*`).
     print: PrintC,
     /// Registered prototype models (C++ `protoModels`, name -> `ProtoModel*`).
@@ -462,7 +468,7 @@ impl Architecture {
             pcodeinjectlib: PcodeInjectLibrarySleigh::new(inject_tempbase),
             commentdb: CommentDatabase::new(),
             // C++ ctor leaves types/print/defaultfp null; init() fills them.
-            types: TypeFactoryImpl::new(),
+            types: Rc::new(TypeFactoryImpl::new()),
             print: PrintC::new(),
             proto_models: std::collections::BTreeMap::new(),
             defaultfp: None,
@@ -653,6 +659,9 @@ impl Architecture {
         seam.trim_recurse_max = self.trim_recurse_max;
         seam.max_implied_ref = self.max_implied_ref;
         seam.return_single = self.return_single;
+        // Share the populated data-type factory so `ActionInferTypes` (run via
+        // `glb`) reaches the same interned core types this side cached.
+        seam.types = Some(self.types_rc());
         Rc::new(seam)
     }
 
@@ -689,13 +698,19 @@ impl Architecture {
 
     /// Borrow the data-type factory (C++ `glb->types`).
     pub fn types(&self) -> &dyn TypeFactory {
-        &self.types
+        &*self.types
     }
 
     /// Borrow the concrete type factory (when the `TypeFactoryImpl`-specific
     /// builders, e.g. `set_core_type`, are needed by the init pipeline).
     pub fn types_impl(&self) -> &TypeFactoryImpl {
         &self.types
+    }
+
+    /// Share the data-type factory `Rc` so the analysis-side seam (`glb`) reaches
+    /// the same populated factory (`ActionInferTypes` -> `glb.types()`).
+    pub fn types_rc(&self) -> Rc<TypeFactoryImpl> {
+        Rc::clone(&self.types)
     }
 
     /// Borrow the c-language printer (C++ `glb->print`).
@@ -826,7 +841,7 @@ impl Architecture {
     /// [`build_core_types`](Architecture::build_core_types) seeds the core types
     /// and [`finish_typegrp`](Architecture::finish_typegrp) calls `setupSizes`.
     pub fn build_typegrp(&mut self) {
-        self.types = TypeFactoryImpl::new();
+        self.types = Rc::new(TypeFactoryImpl::new());
         self.types.set_max_basetype_size(self.max_basetype_size);
     }
 

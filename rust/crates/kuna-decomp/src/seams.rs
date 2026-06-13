@@ -175,6 +175,11 @@ pub struct Architecture {
     /// their original `x <= c` form (C++ `present_lessequal`, DIV-2 default-on).
     /// Read by [`ActionPresentCompareForm`](crate::kuna_compareform::ActionPresentCompareForm).
     pub present_lessequal: bool,
+    /// The data-type factory (C++ `glb->types`), shared from the real
+    /// [`crate::architecture::Architecture`] through `build_arch_handle`.
+    /// `ActionInferTypes` reaches `getBase`/`getTypePointer`/`down_chain` through
+    /// it.  `None` for hand-built fixtures (no type factory registry).
+    pub types: Option<Rc<crate::dtype::TypeFactoryImpl>>,
 }
 
 impl Architecture {
@@ -206,7 +211,19 @@ impl Architecture {
             return_single: false,
             // (kuna) DIV-2 default-on (GH-558): resetDefaults sets present_lessequal=true.
             present_lessequal: true,
+            types: None,
         }
+    }
+
+    /// Borrow the data-type factory (C++ `glb->types`), if shared.
+    pub fn types(&self) -> Option<&dyn crate::dtype::TypeFactory> {
+        self.types.as_deref().map(|t| t as &dyn crate::dtype::TypeFactory)
+    }
+
+    /// Borrow the concrete data-type factory (for the `TypeFactoryImpl`-only
+    /// builders, e.g. `down_chain`, the type-propagation engine needs).
+    pub fn types_impl(&self) -> Option<&crate::dtype::TypeFactoryImpl> {
+        self.types.as_deref()
     }
 
     /// The default prototype model (C++ `glb->defaultfp`), or `None`.
