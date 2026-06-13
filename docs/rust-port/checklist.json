@@ -5224,7 +5224,7 @@
    "kind": "port",
    "wave": "W10",
    "crate": "kuna-decomp",
-   "title": "heritage applied to live Funcdata + ActionDeadCode/simplify rule bodies actually transform (23->~7 ops on boolless)",
+   "title": "HERITAGE half DONE (B3 oracle-exact via single-manager LOSS-132); deadcode half remains",
    "modules": [],
    "depends_on": [
     "W9-gate"
@@ -5234,7 +5234,7 @@
    "gate": "KUNA_ENGINE=rust run_tests --datatests (count rises)",
    "loc_estimate": 0,
    "cpp_blob_sha": {},
-   "notes": "LOSS-131 analysis-body un-seam."
+   "notes": "heritage driver ported + single-manager unified; boolless B3 exact. Per-un-seam gate = stage-boundary goldens (B2/B3/B4/B5), NOT datatest count (lagging \u2014 only the full vertical slice moves it). Next: ActionDeadCode + simplify bodies, gated on the post-deadcode/simplify IR vs an intermediate goldens snapshot."
   },
   {
    "id": "w10-unseam-merge-types",

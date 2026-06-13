@@ -1,5 +1,39 @@
 # kuna Progress Log
 
+## Session (2026-06-13) — rust-port W10: keystone closed (single AddrSpaceManager); heritage oracle-exact
+
+The W10 analysis-body grind began and immediately found + closed THE keystone
+architectural blocker. The vertical-slice attempt (one agent, boolless full match)
+correctly FAILED — too interconnected for one task — so it was decomposed per-pass.
+The first, ActionHeritage, revealed that W5 had ported only the heritage SUBSTRATE
+(the driver was unimplemented_seam); that agent ported the full driver faithfully,
+proved correct SSA on a diamond CFG, and pinned the real root cause: LOSS-132, the
+DUAL AddrSpaceManager — lifted varnodes live in the engine's manager while
+Funcdata.glb carried a stripped ir-boundary manager, so every analysis pass reached
+0/N varnodes (the cause of the whole-pipeline no-op).
+
+A focused keystone agent UNIFIED the managers to the C++ single-manager model
+(Rc<AddrSpaceManager>; engine owns it, iop/fspec inserted into it, shared as glb).
+Result: **heritage now reaches the real varnodes — boolless B3 post-heritage IR is
+oracle-exact (37/37 varnodes, phi placement exact, ZERO rust-only identities);
+lzcount 14/14, stackspill 20/20.** The unblock also exposed+fixed real downstream
+bugs (a latent || short-circuit panic, heritage normalizeWriteSize). 3,153 Rust
+tests green; C++ oracle untouched (675/675 PARITY OK).
+
+VALIDATED METHODOLOGY: per-un-seam progress is measured by the W0 stage-boundary
+goldens (B2/B3/B4/B5 vs the C++ IR at each stage), NOT the datatest count — which is
+a LAGGING metric that only rises when a full vertical slice closes (it moved 21->18
+as functions reached deeper-real IR and hit the next seam). The remaining M3 path is
+the dependency-ordered un-seam chain, each gated on its stage boundary: heritage
+(B3) DONE; next ActionDeadCode+simplify, then merge+types, then ActionBlockStructure
+(B4 structured blocks), then printc (B5) -> datatests pass; then horizontally expand
+across the 83 files looping to PARITY OK (M3). Multi-session by nature.
+
+Cumulative: ~150/207 checklist items; the engine is complete + running + now
+operating on REAL SSA. Next: continue the un-seam chain (deadcode/simplify) or hand
+to the autonomous pipeline with this validated per-stage-goldens gating.
+
+
 ## Session (2026-06-13) — rust-port W9 + M2: the Rust decompiler RUNS end-to-end
 
 W9 console ports (interface, ifacedecomp 4.4k command set, grammar, kuna stage
