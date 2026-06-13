@@ -23,6 +23,20 @@
 //! reproduced as same-named `#[ignore]`d tests to satisfy the `port_audit`
 //! name-match oracle while keeping the item gate green.  Their faithful
 //! assertion sequences are preserved in the doc comments.
+//!
+//! W7 TRIAGE (item w7-m1-closure): these six stay deferred.  W7 delivered the
+//! HighVariable / Cover / Merge / RegionId subsystems; none of those is on the
+//! blocking path.  The five `cast_*` tests drive
+//! `glb->inst[opc]->getInputCast(...)` / `markExplicitLongSize(...)` through
+//! `CastStrategy` + the print machinery — a W8 (`print`/`typeop`-cast) port —
+//! over operands built by the C-type grammar (`parse_type`, unported).
+//! `type_ordering` only exercises `Datatype::compare`/`compareDependency`
+//! (which ARE ported, `dtype.rs`), but every operand is a `parse(...)` of a
+//! named base type / typedef / struct / enum / pointer whose exact
+//! submetatype + flags + typedef naming the comparator keys on; faithfully
+//! reproducing those requires the W8 `TypeFactory` base-type catalog, and
+//! hand-guessing the flags would risk wrong (output-determining) orderings.
+//! Each test carries an inline `// DEFER(W8)`.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -49,25 +63,33 @@ fn make_enum(size: i32, entries: &[(u64, &str)]) -> Rc<Datatype> {
 
 /// C++ `cast_basic`: 11 `castPrinted(CPUI_COPY, parse(t1), parse(t2))`
 /// assertions over int/uint/pointer/bool/float/typedef/char conversions.
+// DEFER(W8): CastStrategy::getInputCast + TypeOpCast (print machinery) over
+// parse_type operands; off the W7 (HighVariable/Cover/Merge) path.
 #[test]
-#[ignore = "blocked: C-type grammar (parse_type) + CastStrategy/TypeOpCast not ported"]
+#[ignore = "DEFER(W8): C-type grammar (parse_type) + CastStrategy/TypeOpCast not ported"]
 fn cast_basic() {}
 
 /// C++ `cast_pointer`: pointer-to-pointer cast printing, incl. void*,
 /// struct*, typedef pointers, char* vs int1*.
+// DEFER(W8): CastStrategy::getInputCast + TypeOpCast (print machinery) over
+// parse_type operands; off the W7 (HighVariable/Cover/Merge) path.
 #[test]
-#[ignore = "blocked: C-type grammar (parse_type) + CastStrategy/TypeOpCast not ported"]
+#[ignore = "DEFER(W8): C-type grammar (parse_type) + CastStrategy/TypeOpCast not ported"]
 fn cast_pointer() {}
 
 /// C++ `cast_enum`: enum-vs-integer cast printing (int8/uint8*/enum).
+// DEFER(W8): CastStrategy::getInputCast + TypeOpCast (print machinery) over
+// parse_type operands; off the W7 (HighVariable/Cover/Merge) path.
 #[test]
-#[ignore = "blocked: C-type grammar (parse_type) + CastStrategy/TypeOpCast not ported"]
+#[ignore = "DEFER(W8): C-type grammar (parse_type) + CastStrategy/TypeOpCast not ported"]
 fn cast_enum() {}
 
 /// C++ `cast_compare`: comparison-op input casts (INT_LESS / INT_SLESS /
 /// INT_EQUAL / INT_NOTEQUAL across signed/unsigned/pointer/float).
+// DEFER(W8): CastStrategy::getInputCast + TypeOpCast (print machinery) over
+// parse_type operands; off the W7 (HighVariable/Cover/Merge) path.
 #[test]
-#[ignore = "blocked: C-type grammar (parse_type) + CastStrategy/TypeOpCast not ported"]
+#[ignore = "DEFER(W8): C-type grammar (parse_type) + CastStrategy/TypeOpCast not ported"]
 fn cast_compare() {}
 
 /// C++ `type_ordering`: `Datatype::compare`/`compareDependency` total-order over
@@ -80,14 +102,19 @@ fn cast_compare() {}
 /// only because faithfully reproducing each `parse(...)` operand requires the
 /// TypeFactory base-type catalog (exact submetatype/flags/typedef naming the
 /// comparator keys on), which this porter does not own.
+// DEFER(W8): compare/compare_dependency ARE ported, but every operand is a
+// parse() of a named base type/typedef/struct/enum/pointer whose exact
+// submetatype+flags the comparator keys on -> needs the W8 TypeFactory catalog.
 #[test]
-#[ignore = "blocked: C-type grammar (parse_type) + TypeFactory base-type catalog not ported"]
+#[ignore = "DEFER(W8): C-type grammar (parse_type) + TypeFactory base-type catalog not ported"]
 fn type_ordering() {}
 
 /// C++ `cast_integertoken`: `markExplicitLongSize` over INT_LEFT / INT_SRIGHT /
 /// INT_RIGHT shift-constant operands.
+// DEFER(W8): CastStrategy::markExplicitLongSize (print machinery) over
+// parse_type shift operands; off the W7 path.
 #[test]
-#[ignore = "blocked: C-type grammar (parse_type) + CastStrategy::markExplicitLongSize not ported"]
+#[ignore = "DEFER(W8): C-type grammar (parse_type) + CastStrategy::markExplicitLongSize not ported"]
 fn cast_integertoken() {}
 
 // ===========================================================================
