@@ -473,3 +473,37 @@ fn op_emit_kind_dispatch() {
     assert!(matches!(op_emit_kind(CPUI_PTRADD), OpEmitKind::Custom));
     assert!(matches!(op_emit_kind(CPUI_PTRSUB), OpEmitKind::Custom));
 }
+
+// ---------------------------------------------------------------------------
+// PrintC::doc_function shell (w9x-arch-engine-glue): a real signature + matched
+// braces driven through the Emit primitives.  The body is the W9-emit seam.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn doc_function_emits_a_structurally_sane_shell() {
+    let mut p = PrintC::new();
+    let out = p.doc_function("main", None, "void", &[]);
+    // Signature: the name + a () param list.
+    assert!(out.contains("main"), "missing function name: {out}");
+    assert!(out.contains('(') && out.contains(')'), "missing param parens: {out}");
+    assert!(out.contains("void"), "missing void return/params: {out}");
+    // Matched braces.
+    assert_eq!(out.matches('{').count(), 1, "want one open brace: {out}");
+    assert_eq!(out.matches('}').count(), 1, "want one close brace: {out}");
+    // void return + void params (no recovered prototype).
+    assert!(out.contains("void main(void)"), "want `void main(void)`: {out}");
+}
+
+#[test]
+fn doc_function_renders_a_real_prototype() {
+    let mut p = PrintC::new();
+    let params =
+        vec![("int".to_string(), "a".to_string()), ("char".to_string(), "b".to_string())];
+    let out = p.doc_function("foo", Some("__stdcall"), "int", &params);
+    assert!(out.contains("int"), "{out}");
+    assert!(out.contains("foo"), "{out}");
+    assert!(out.contains('a') && out.contains('b'), "params missing: {out}");
+    // The convention/model name is printed (option_convention default-on).
+    assert!(out.contains("__stdcall"), "model name missing: {out}");
+    assert_eq!(out.matches('{').count(), out.matches('}').count());
+}

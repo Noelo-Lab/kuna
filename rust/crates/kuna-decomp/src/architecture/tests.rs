@@ -238,3 +238,93 @@ fn real_sla_creates_funcdata_at_entry() {
     let analysis_start = arch.translate().get_unique_start(UniqueLayout::ANALYSIS);
     assert!(analysis_start >= 0x1000_0000);
 }
+
+// ===========================================================================
+// w9x-arch-engine-glue: owned-subsystem accessors + ArchOptionContext.
+// ===========================================================================
+
+use crate::options::{ArchOptionContext, BraceCategory, BraceStyle, NamespaceStrategy};
+
+#[test]
+fn owned_subsystems_are_constructed_and_accessible() {
+    let mut arch = Architecture::new("t", bare_sleigh());
+    // The type factory + printer exist immediately (empty, as the C++ ctor
+    // leaves them null until init; the Rust port default-constructs them).
+    assert_eq!(arch.print().get_name(), "c-language");
+    // The proto registry starts empty (no cspec parsed).
+    assert!(arch.default_fp().is_none());
+    assert!(!arch.has_model("unknown"));
+    // build_default_proto seeds an `unknown` default model.
+    arch.build_default_proto();
+    assert!(arch.has_model("unknown"));
+    assert!(arch.default_fp().is_some());
+    assert_eq!(arch.get_model("unknown").unwrap().get_name(), "unknown");
+    // The full type-factory finish (`finish_typegrp` -> `get_default_size`)
+    // needs a decoded `.sla`'s default code space; the e2e gate exercises that
+    // real path.  Here (a bare Sleigh, no spaces) the factory is the empty
+    // container `build_typegrp` produces.
+    arch.build_typegrp();
+}
+
+#[test]
+fn build_instructions_populates_the_inst_table() {
+    use kuna_num::opcodes::OpCode;
+    use crate::op::pcodeop_flags;
+    let mut arch = Architecture::new("t", bare_sleigh());
+    arch.build_instructions();
+    // A BRANCH resolves to a TypeOp carrying the branch + coderef flags.
+    let to = arch.resolve_typeop(OpCode::CPUI_BRANCH);
+    assert_eq!(to.get_opcode(), OpCode::CPUI_BRANCH);
+    assert!(to.get_flags() & pcodeop_flags::branch != 0);
+    assert!(to.get_flags() & pcodeop_flags::coderef != 0);
+}
+
+#[test]
+fn arch_option_context_mutates_config_fields() {
+    let mut arch = Architecture::new("t", bare_sleigh());
+    // Plain config fields round-trip through the trait.
+    arch.set_readonly_propagate(true);
+    assert!(arch.readonlypropagate);
+    arch.set_infer_pointers(false);
+    assert!(!arch.infer_pointers);
+    arch.set_max_jumptable_size(64);
+    assert_eq!(arch.max_jumptable_size, 64);
+    arch.set_alias_block_level(1);
+    assert_eq!(ArchOptionContext::alias_block_level(&arch), 1);
+    arch.set_nan_ignore_all(true);
+    assert!(arch.nan_ignore_all());
+}
+
+#[test]
+fn arch_option_context_drives_the_printer() {
+    let mut arch = Architecture::new("t", bare_sleigh());
+    assert!(arch.print_is_c_language());
+    assert!(!arch.print().options.null);
+    arch.set_null_printing(true);
+    assert!(arch.print().options.null);
+    arch.set_convention_printing(false);
+    assert!(!arch.print().options.convention);
+    arch.set_brace_format(BraceCategory::Function, BraceStyle::SameLine);
+    assert_eq!(arch.print().options.brace_func, BraceStyle::SameLine);
+    arch.set_namespace_strategy(NamespaceStrategy::None);
+    arch.set_integer_format("hex");
+    // Switching the print language flips print_is_c_language.
+    arch.set_print_language("not-c");
+    assert!(!arch.print_is_c_language());
+}
+
+#[test]
+fn arch_option_context_proto_model_registry() {
+    let mut arch = Architecture::new("t", bare_sleigh());
+    arch.build_default_proto();
+    // set_default_extra_pop mutates the shared default model.
+    arch.set_default_extra_pop(8);
+    assert_eq!(arch.default_fp().unwrap().get_extra_pop(), 8);
+    // set_default_model resolves a registered model and errors on unknown.
+    assert!(arch.set_default_model("unknown").is_ok());
+    let err = arch.set_default_model("no-such-model").unwrap_err();
+    assert!(format!("{err}").contains("Unknown prototype model"));
+    // Unknown function (no symbol table function) errors faithfully.
+    let err = arch.set_function_extra_pop("nofunc", 4).unwrap_err();
+    assert!(format!("{err}").contains("Unknown function name"));
+}

@@ -73,12 +73,15 @@
 
 use kuna_base::address::{calc_mask, Address};
 use kuna_base::error::KunaResult;
-use kuna_base::types::{int4, uintb};
+use kuna_base::types::{int4, uint4, uintb};
 
 use crate::dtype::type_metatype;
-use crate::options::BraceStyle;
+use crate::options::{BraceStyle, NamespaceStrategy};
+use crate::prettyprint::{
+    BraceStyle as EmitBraceStyle, Emit, EmitNoMarkup, MarkupRef, SyntaxHighlight,
+};
 use crate::printlanguage::{
-    format_binary, most_natural_base, unicode_needs_escape, OpToken, TokenType,
+    format_binary, most_natural_base, unicode_needs_escape, OpToken, PrintContext, TokenType,
 };
 
 // ===========================================================================
@@ -908,6 +911,294 @@ pub fn op_emit_kind(opcode: kuna_num::opcodes::OpCode) -> OpEmitKind {
 //     `format_integer_token`/`format_float_token`/`print_unicode`;
 //   - the `op*` overrides reduce to `op_emit_kind` + `opBinary`/`opUnary`/…;
 //   - the option toggles (`PrintCOptions`) gate the seam branches.
+
+// ===========================================================================
+// PrintC — the stateful c-language printer object (the `glb->print` the
+// `Architecture` owns).  (w9x-arch-engine-glue)
+// ===========================================================================
+
+/// Convert an `options::BraceStyle` (the PrintC-option enum) to the
+/// `prettyprint::BraceStyle` the [`Emit`] driver consumes.  Both are the same
+/// 3-variant `same_line`/`next_line`/`skip_line` enum (printc.hh:252-255 vs
+/// emit.hh); the conversion is the identity mapping.
+fn to_emit_brace(style: BraceStyle) -> EmitBraceStyle {
+    match style {
+        BraceStyle::SameLine => EmitBraceStyle::SameLine,
+        BraceStyle::NextLine => EmitBraceStyle::NextLine,
+        BraceStyle::SkipLine => EmitBraceStyle::SkipLine,
+    }
+}
+
+/// \brief The c-language print object (C++ `class PrintC : public
+/// PrintLanguage`, printc.hh:138).
+///
+/// In C++ `PrintC` *is-a* `PrintLanguage`, owning the [`PrintContext`] member
+/// state (mod/scope stacks, comment/namespace defaults) and an `Emit *` driver,
+/// plus the c-language [`PrintCOptions`].  The [`Architecture`](crate::architecture::Architecture)
+/// holds it as `glb->print`.  This port carries:
+///
+///   * the **[`PrintCOptions`]** (the option toggles the `option NAME VALUE`
+///     command flips through `ArchOptionContext`),
+///   * the **[`PrintContext`]** (the shared print-modification / comment /
+///     namespace state),
+///   * the **language name** (`"c-language"`, the `getName()` the options
+///     `print_is_c_language` predicate reads),
+///   * the **flat** flag (`print C flat`, C++ `flat` mod bit), and
+///   * an owned **[`EmitNoMarkup`]** back-end (the plain-text `print C` sink).
+///
+/// ## What `doc_function` emits today
+///
+/// [`doc_function`](PrintC::doc_function) faithfully transcribes the **shell**
+/// of C++ `PrintC::docFunction` / `emitFunctionDeclaration` (printc.cc:2726,
+/// 2790) — `beginFunction` → header comment line → the prototype declaration
+/// (return type, function name, parenthesized parameters) → `openBraceIndent`
+/// → … → `closeBraceIndent` → `endFunction` → `flush` — driving the **real**
+/// [`Emit`] primitives.  The function **body** (`emitLocalVarDecls` +
+/// `emitBlockGraph`, the per-statement RPN expression emission) is the
+/// `// SEAM(W9-emit)` RPN/`Emit` driver documented in this module's header
+/// (`pushVn`/`recurse`/`emitOp` against the IR), absent from the merged tree;
+/// the body slot emits a single seam-marker comment line so the C output is a
+/// structurally-complete, compilable-looking function shell (a real signature +
+/// matched braces), not full byte-parity C.  The W9 closure fills the body in.
+pub struct PrintC {
+    /// The c-language options (C++ the `option_*` members).
+    pub options: PrintCOptions,
+    /// The shared print context (mod/scope stacks, comment/namespace state).
+    pub context: PrintContext,
+    /// The language name (C++ `PrintLanguage::name`, `"c-language"`).
+    name: String,
+    /// Whether `print C flat` is active (C++ the `flat` mod bit).
+    flat: bool,
+    /// The plain-text emit back-end (C++ the bound `Emit *`, an `EmitNoMarkup`
+    /// for the non-pretty `print C` path).
+    emit: EmitNoMarkup,
+}
+
+impl Default for PrintC {
+    fn default() -> Self {
+        PrintC::new()
+    }
+}
+
+impl PrintC {
+    /// Construct the c-language printer (C++ `PrintC::PrintC` +
+    /// `resetDefaultsPrintC`, printc.cc:118 / 1649).
+    pub fn new() -> PrintC {
+        PrintC {
+            options: PrintCOptions::new(),
+            context: PrintContext::new(),
+            name: CAPABILITY_NAME.to_string(),
+            flat: false,
+            emit: EmitNoMarkup::new(),
+        }
+    }
+
+    /// The printer name (C++ `PrintLanguage::getName`, `"c-language"`).
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    /// Set the active print language name (C++ `setPrintLanguage` swaps which
+    /// `PrintLanguage` is current; here the single owned printer records the
+    /// requested name so `print_is_c_language` reflects it).
+    pub fn set_name(&mut self, name: &str) {
+        self.name = name.to_string();
+    }
+
+    /// `print C flat` toggle (C++ `PrintLanguage::setFlat`).
+    pub fn set_flat(&mut self, val: bool) {
+        self.flat = val;
+    }
+
+    /// Whether `print C flat` is active.
+    pub fn is_flat(&self) -> bool {
+        self.flat
+    }
+
+    /// Reset the emit buffer (C++ `setOutputStream`).
+    pub fn set_output_stream(&mut self) {
+        self.emit.set_output_stream();
+    }
+
+    /// Initialize from the architecture (C++ `PrintLanguage::initializeFromArchitecture`).
+    /// The sizes/types coupling is the W6 type factory, already built by the
+    /// architecture; the printer needs no per-arch state beyond its options here.
+    pub fn initialize_from_architecture(&mut self) {}
+
+    /// Faithful transcription of the **shell** of C++ `PrintC::docFunction`
+    /// (printc.cc:2790) + `emitFunctionDeclaration` (printc.cc:2726), driving
+    /// the real [`Emit`] primitives.  The body (`emitBlockGraph`) is the
+    /// `// SEAM(W9-emit)` RPN driver; this emits a seam-marker line in its place.
+    ///
+    /// `display_name` is `fd->getDisplayName()`; `model_name` is the prototype
+    /// model name when `printModelInDecl()` (None when the model is hidden);
+    /// `ret_type` is the return-type token (`fd->getFuncProto()` output type
+    /// name, defaulting to `"void"`); `params` are the input parameters'
+    /// `(type, name)` tokens.  Returns the rendered C text.
+    pub fn doc_function(
+        &mut self,
+        display_name: &str,
+        model_name: Option<&str>,
+        ret_type: &str,
+        params: &[(String, String)],
+    ) -> String {
+        self.emit.set_output_stream();
+        let markup = MarkupRef::none();
+
+        // int4 id1 = emit->beginFunction(fd);
+        let id1 = self.emit.begin_function();
+        // emitCommentFuncHeader(fd) — the header comment line (seam: full
+        // CommentSorter is the comment item; emit the seam-marker header).
+        // emit->tagLine();
+        self.emit.tag_line();
+
+        // --- emitFunctionDeclaration -------------------------------------
+        let idp = self.emit.begin_func_proto();
+        // emitPrototypeOutput: the return type token.
+        let idret = self.emit.begin_return_type(&markup);
+        self.emit.tag_type(ret_type, SyntaxHighlight::TypeColor, &markup);
+        self.emit.end_return_type(idret);
+        self.emit.spaces(1, 0);
+        // option_convention: print the model name when shown.
+        if self.options.convention {
+            if let Some(m) = model_name {
+                self.emit.print(m, SyntaxHighlight::KeywordColor);
+                self.emit.spaces(1, 0);
+            }
+        }
+        let id1g = self.emit.open_group();
+        // emit->tagFuncName(fd->getDisplayName(), funcname_color, fd, 0);
+        self.emit.tag_func_name(display_name, SyntaxHighlight::FuncnameColor, &markup);
+        // function_call spacing (C++ function_call.spacing==0,bump==0).
+        let id2 = self.emit.open_paren("(", 0);
+        // emitPrototypeInputs: void or the comma-separated (type name) list.
+        if params.is_empty() {
+            self.emit.tag_type("void", SyntaxHighlight::TypeColor, &markup);
+        } else {
+            for (i, (ty, nm)) in params.iter().enumerate() {
+                if i != 0 {
+                    self.emit.print(",", SyntaxHighlight::NoColor);
+                    self.emit.spaces(1, 0);
+                }
+                self.emit.tag_type(ty, SyntaxHighlight::TypeColor, &markup);
+                if !nm.is_empty() {
+                    self.emit.spaces(1, 0);
+                    self.emit.tag_variable(nm, SyntaxHighlight::ParamColor, &markup);
+                }
+            }
+        }
+        self.emit.close_paren(")", id2);
+        self.emit.close_group(id1g);
+        self.emit.end_func_proto(idp);
+
+        // int4 id = emit->openBraceIndent(OPEN_CURLY, option_brace_func);
+        let id = self.emit.open_brace_indent("{", to_emit_brace(self.options.brace_func));
+        // emitLocalVarDecls(fd) + emitBlockGraph(...) — the W9-emit RPN body
+        // seam.  Emit a single marker line so the shell is a complete,
+        // brace-matched function body (not byte-parity C).
+        self.emit.tag_line();
+        self.emit.print(
+            "/* WARNING: body emission is the W9-emit RPN/Emit seam */",
+            SyntaxHighlight::CommentColor,
+        );
+        // emit->closeBraceIndent(CLOSE_CURLY, id);
+        self.emit.close_brace_indent("}", id);
+        self.emit.tag_line();
+        self.emit.end_function(id1);
+
+        // C++ emit->flush() then the bound ostream holds the text.
+        self.emit.output().to_string()
+    }
+
+    // --- the options.cc `// SEAM(W8)` print setters (now wired) -----------
+
+    /// C++ `PrintC::setNULLPrinting` (options.cc:444).
+    pub fn set_null_printing(&mut self, val: bool) {
+        self.options.set_null_printing(val);
+    }
+    /// C++ `PrintC::setInplaceOps` (options.cc:459).
+    pub fn set_inplace_ops(&mut self, val: bool) {
+        self.options.set_inplace_ops(val);
+    }
+    /// C++ `PrintC::setConvention` (options.cc:474).
+    pub fn set_convention_printing(&mut self, val: bool) {
+        self.options.set_convention(val);
+    }
+    /// C++ `PrintC::setNoCastPrinting` (options.cc:489).
+    pub fn set_no_cast_printing(&mut self, val: bool) {
+        self.options.set_no_cast_printing(val);
+    }
+    /// C++ `PrintC::setHideImpliedExts` (options.cc:504).
+    pub fn set_hide_implied_exts(&mut self, val: bool) {
+        self.options.set_hide_implied_exts(val);
+    }
+    /// C++ `glb->print->setMaxLineSize(val)` (options.cc:524).
+    pub fn set_max_line_size(&mut self, _val: int4) -> KunaResult<()> {
+        // SEAM(W8 prettyprint): EmitNoMarkup ignores line size; EmitPrettyPrint
+        // honours it.  Recorded so the option succeeds (the C++ validates the
+        // range inside Emit::setMaxLineSize; the no-markup path is unbounded).
+        Ok(())
+    }
+    /// C++ `glb->print->setIndentIncrement(val)` (options.cc:541).
+    pub fn set_indent_increment(&mut self, val: int4) {
+        self.emit.set_indent_increment(val);
+    }
+    /// C++ `glb->print->setLineCommentIndent(val)` (options.cc:559).
+    pub fn set_line_comment_indent(&mut self, val: int4) -> KunaResult<()> {
+        // C++ PrintLanguage::setLineCommentIndent validates against maxlinesize;
+        // the EmitNoMarkup max is unbounded, so any non-negative value is valid.
+        self.context.set_line_comment_indent(val, int4::MAX)
+    }
+    /// C++ `glb->print->getHeaderComment()` (options.cc:583).
+    pub fn header_comment_flags(&self) -> uint4 {
+        self.context.header_comment()
+    }
+    /// C++ `glb->print->setHeaderComment(flags)` (options.cc:589).
+    pub fn set_header_comment_flags(&mut self, flags: uint4) {
+        self.context.set_header_comment(flags);
+    }
+    /// C++ `glb->print->getInstructionComment()` (options.cc:604).
+    pub fn instruction_comment_flags(&self) -> uint4 {
+        self.context.instruction_comment()
+    }
+    /// C++ `glb->print->setInstructionComment(flags)` (options.cc:610).
+    pub fn set_instruction_comment_flags(&mut self, flags: uint4) {
+        self.context.set_instruction_comment(flags);
+    }
+    /// C++ `glb->print->setIntegerFormat(p1)` (options.cc:623).
+    pub fn set_integer_format(&mut self, fmt: &str) -> KunaResult<()> {
+        self.context.set_integer_format(fmt)
+    }
+    /// C++ `glb->print->setNamespaceStrategy(strategy)` (options.cc:1014).
+    ///
+    /// The option surface (`options::NamespaceStrategy`) and the print-context
+    /// surface (`printlanguage::NamespaceStrategy`) are the same 3-variant
+    /// `minimal`/`none`/`all` enum (printlanguage.hh); convert across the seam.
+    pub fn set_namespace_strategy(&mut self, strategy: NamespaceStrategy) {
+        use crate::printlanguage::NamespaceStrategy as PlStrat;
+        let pl = match strategy {
+            NamespaceStrategy::Minimal => PlStrat::MinimalNamespaces,
+            NamespaceStrategy::None => PlStrat::NoNamespaces,
+            NamespaceStrategy::All => PlStrat::AllNamespaces,
+        };
+        self.context.set_namespace_strategy(pl);
+    }
+    /// C++ `PrintC::setBraceFormat*` (options.cc:655-664).
+    pub fn set_brace_format(&mut self, category: crate::options::BraceCategory, style: BraceStyle) {
+        use crate::options::BraceCategory;
+        match category {
+            BraceCategory::Function => self.options.set_brace_format_function(style),
+            BraceCategory::IfElse => self.options.set_brace_format_ifelse(style),
+            BraceCategory::Loop => self.options.set_brace_format_loop(style),
+            BraceCategory::Switch => self.options.set_brace_format_switch(style),
+        }
+    }
+    /// C++ `PrintC::setCommentStyle` (options.cc:570).
+    pub fn set_comment_style(&mut self, _style: &str) {
+        // SEAM(comment): the slash-star vs slash-slash comment delimiters live
+        // with the comment item; recorded as a no-op so the option succeeds.
+    }
+}
 
 #[cfg(test)]
 mod tests;
