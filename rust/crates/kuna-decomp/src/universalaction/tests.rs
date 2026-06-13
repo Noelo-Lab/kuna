@@ -42,17 +42,15 @@ fn install_into_database_derives_decompile_root() {
 }
 
 #[test]
-fn unported_allowlist_entries_are_unique_and_nonempty() {
-    assert!(!UNPORTED_ALLOWLIST.is_empty());
-    let mut names: Vec<&str> = UNPORTED_ALLOWLIST.iter().map(|e| e.name).collect();
-    let n = names.len();
-    names.sort_unstable();
-    names.dedup();
-    assert_eq!(names.len(), n, "duplicate names in UNPORTED_ALLOWLIST");
-    for e in UNPORTED_ALLOWLIST {
-        assert!(!e.blocked_by.is_empty(), "{} missing a blocking item", e.name);
-        assert!(!e.group.is_empty());
-    }
+fn unported_allowlist_is_empty() {
+    // B0 empty-allowlist gate (w8x-universalaction-wire): every pass named by the
+    // C++ universalAction is now ported and wired into universal_sched at its
+    // exact registration position, so nothing remains allowlisted-missing.
+    assert!(
+        UNPORTED_ALLOWLIST.is_empty(),
+        "UNPORTED_ALLOWLIST must be empty after wiring (still missing: {:?})",
+        UNPORTED_ALLOWLIST.iter().map(|e| e.name).collect::<Vec<_>>()
+    );
 }
 
 #[test]
