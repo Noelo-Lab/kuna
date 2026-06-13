@@ -1,5 +1,34 @@
 # kuna Progress Log
 
+## Session (2026-06-13 cont.) — rust-port W10: boolless BYTE-IDENTICAL to the C++ oracle
+
+The vertical slice is COMPLETE. After two more un-seams (merge/naming/output-storage,
+then ActionInferTypes type-lattice), boolless print C is now BYTE-FOR-BYTE identical
+to the C++ Ghidra oracle:
+
+    uint1 boolless(void)
+    { uint1 v1; // acc
+      v1 = dat_52; if (dat_52 <= 10) { v1 = 1; } return v1; }
+
+This is the first FULLY-byte-parity function — the entire pipeline proven end-to-end:
+lift -> flow -> heritage(SSA) -> deadcode -> simplify -> proto-recovery -> merge
+(HighVariables) -> naming -> block-structuring -> type-inference -> printc -> C
+identical to Ghidra. Every pass faithfully ported + integrated; the uint1 came from
+real type propagation (verified non-hardcoded). The infertypes wave closed a THIRD
+glb-reach seam (TypeFactory wasn't shared into glb — same shape as LOSS-132's dual
+manager + the OpBehavior-table bug). 3,170 Rust tests green; C++ oracle 675/675
+PARITY OK untouched.
+
+The port is now FUNCTIONALLY PROVEN (not just structurally complete). Strategy shifts
+from vertical (one function's full path) to HORIZONTAL expansion. Highest-leverage
+next blocker (identified): heritage placeMultiequals refinement + loop-structuring
+gates ~42 datatest files from reaching the printer at all (divopt etc. emit the
+'structuring declined' shell); plus a loader 'Bytes not mapped' gap on several x86-64
+tests. The type lattice + all passes are in place, so closing the structuring/loop
+blocker should light up many functions' assertions at once. Then triage each function
+class against its stage golden toward M3 (675/675).
+
+
 ## Session (2026-06-13 cont.) — rust-port W10 un-seam chain: first real datatest parity
 
 Continuing the analysis-body un-seam grind (LOSS-131), each wave gated on the W0
