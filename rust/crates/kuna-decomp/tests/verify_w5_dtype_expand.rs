@@ -200,10 +200,11 @@ fn w5r2_spacebase_compare_routes_to_seam_err() {
     assert!(a.compare(&a.clone(), 10).is_err());
 }
 
-/// `find_compatible_resolve` partition (type.hh:294/488/522/608/637/714). The
-/// FIVE overriders (Pointer/Array/Struct/Union/PartialUnion) must SEAM-Err; every
-/// other kind returns the base default -1 (type.cc:600-604). PointerRel, Code,
-/// Spacebase, PartialStruct, PartialEnum are NOT overriders -> base -1.
+/// `find_compatible_resolve` partition (type.hh:294/488/522/608/637/714). Of the
+/// FIVE overriders, Pointer/Array are now implemented (w6-s5-type-1) and
+/// Struct/Union/PartialUnion remain type-2 SEAM-Err; every other kind returns the
+/// base default -1 (type.cc:600-604). PointerRel, Code, Spacebase, PartialStruct,
+/// PartialEnum are NOT overriders -> base -1.
 #[test]
 fn w5r2_find_compatible_resolve_override_partition() {
     let int_t = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
@@ -223,13 +224,16 @@ fn w5r2_find_compatible_resolve_override_partition() {
     };
     assert_eq!(pe.find_compatible_resolve(&int_t).unwrap(), -1);
 
-    // The five overriders SEAM-Err.
+    // Struct/Union/PartialUnion still SEAM-Err (type-2 overrides).
     let mut s = Datatype::new_with_align(4, -1, type_metatype::TYPE_STRUCT);
     s.kind = DatatypeKind::Struct { field: vec![], bitfield: vec![] };
     assert!(s.find_compatible_resolve(&int_t).is_err());
     let mut u = Datatype::new_with_align(4, -1, type_metatype::TYPE_UNION);
     u.kind = DatatypeKind::Union { field: vec![] };
     assert!(u.find_compatible_resolve(&int_t).is_err());
+
+    // TypePointer::findCompatibleResolve (type.cc:1347-1354): ct is a plain int
+    // (not TYPE_PTR), so the override returns -1.
     let mut p = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR);
     p.kind = DatatypeKind::Pointer {
         ptrto: Rc::clone(&int_t),
@@ -237,15 +241,23 @@ fn w5r2_find_compatible_resolve_override_partition() {
         truncate: None,
         wordsize: 1,
     };
-    assert!(p.find_compatible_resolve(&int_t).is_err());
+    assert_eq!(p.find_compatible_resolve(&int_t).unwrap(), -1);
+
+    // TypeArray::findCompatibleResolve (type.cc:1480-1490): arrayof IS int_t
+    // (same Rc allocation), and int has no needsResolution, so `arrayof == ct`
+    // -> 0.
     let mut a = Datatype::new_with_align(8, -1, type_metatype::TYPE_ARRAY);
     a.kind = DatatypeKind::Array { arrayof: Rc::clone(&int_t), arraysize: 2 };
-    assert!(a.find_compatible_resolve(&int_t).is_err());
+    assert_eq!(a.find_compatible_resolve(&int_t).unwrap(), 0);
+    // An array over a *different* element returns -1 (not the same pointer).
+    let other = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+    assert_eq!(a.find_compatible_resolve(&other).unwrap(), -1);
 }
 
 /// `get_sub_type` partition: Union and Enum are NOT getSubType overriders
 /// (Union's is commented out in type.hh:619; Enum has none), so they take the
-/// base body -> (None, off). Struct/Array/Pointer ARE overriders -> SEAM-Err.
+/// base body -> (None, off). Array/Pointer ARE overriders, now implemented
+/// (w6-s5-type-1); Struct remains a type-2 SEAM-Err.
 #[test]
 fn w5r2_get_sub_type_union_enum_are_base_not_seam() {
     let mut u = Datatype::new_with_align(8, -1, type_metatype::TYPE_UNION);
@@ -260,7 +272,7 @@ fn w5r2_get_sub_type_union_enum_are_base_not_seam() {
     assert!(sub.is_none());
     assert_eq!(newoff, 3);
 
-    // Struct DOES override -> SEAM.
+    // Struct DOES override and is type-2 -> still SEAM.
     let mut s = Datatype::new_with_align(8, -1, type_metatype::TYPE_STRUCT);
     s.kind = DatatypeKind::Struct {
         field: vec![TypeField::new(0, 0, "a", Rc::new(Datatype::new(4, type_metatype::TYPE_INT)))],
@@ -295,25 +307,26 @@ fn w5r2_pointer_rel_inherits_pointer_depend_and_ptrsub_seams() {
     assert!(pr.get_ptr_into().is_err());
 }
 
-/// F2 SEAM behavior (the accepted loss). The base C++ `resolveInFlow`/`findResolve`
-/// return `this` for plain (non-union) types; the port SEAMs them to Err for every
-/// kind. This pins the *documented* divergence so a regression that silently makes
-/// it Ok (without the union resolution) would be caught, and so the loss stays
-/// visible. Faithful interface-stage answer == Err for a plain int.
+/// LOSS-050 RESTORED (w6-s5-type-1). The base C++ `resolveInFlow`/`findResolve`
+/// return `this` for every type without a union override; the W6 port now honors
+/// that identity via the `self: &Rc<Datatype>` receiver. A plain int has no
+/// override, so both return the receiver unchanged (same `Rc` allocation). The
+/// union/pointer-to-union/array structured paths stay SEAM(W6) (they still need
+/// the `Funcdata` registry).
 #[test]
 fn w5r2_resolve_in_flow_base_is_seamed_loss_f2() {
-    let int_t = Datatype::new(4, type_metatype::TYPE_INT);
-    // C++ base returns `this` (the int) here; the port seams it. Pin the Err so the
-    // loss is explicit and a future "return self" implementation is a deliberate change.
+    let int_t = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
     // OpId is a slotmap key newtype; its default (null) key is a valid opaque handle
-    // for this seam (the body never reads it).
+    // (the identity path never reads it).
     let op = kuna_decomp::seams::OpId::default();
+    let resolved = int_t.resolve_in_flow(op, 0).expect("base resolveInFlow returns `this`");
     assert!(
-        int_t.resolve_in_flow(op, 0).is_err(),
-        "base resolveInFlow is SEAM(W6)'d (LOSS F2): C++ returns `this`"
+        Rc::ptr_eq(&resolved, &int_t),
+        "base resolveInFlow returns the receiver unchanged (C++ `return this`)"
     );
+    let found = int_t.find_resolve(op, -1).expect("base findResolve returns `this`");
     assert!(
-        int_t.find_resolve(op, -1).is_err(),
-        "base findResolve is SEAM(W6)'d (LOSS F2): C++ returns `this`"
+        Rc::ptr_eq(&found, &int_t),
+        "base findResolve returns the receiver unchanged (C++ `return this`)"
     );
 }

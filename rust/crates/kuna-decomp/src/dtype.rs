@@ -32,11 +32,24 @@
 //! Everything implementable from `type.hh` **alone** — simple queries over stored
 //! fields, the size/metatype/submeta accessors, the base `compare`/
 //! `compareDependency` (which only read `submeta`/`size`) — is implemented for
-//! real.  Heavy logic lives in `type.cc` and stays **W6**: the per-subclass
-//! `compare`/`getSubType`/`downChain`/resolution overrides, the `TypeFactory`
-//! construction caches and decode, union resolution.  Those surfaces exist here
-//! (so callers link) but return `Err(KunaError::lowlevel("SEAM(W6) …"))`; each is
-//! tagged `// SEAM(W6)` and listed in this item's `losses` output.  W6 fills the
+//! real.
+//!
+//! **W6 item `w6-s5-type-1` (this file) fills the base classes + scalar/pointer/
+//! array bodies** from `type.cc` lines ~1-1722: the `TypePointer`/`TypeArray`
+//! `compare`/`compareDependency`/`getSubType`/`findCompatibleResolve` overrides,
+//! `TypeArray::getHoleSize`/`nearestArrayedComponent{Forward,Backward}`,
+//! `TypePointer::isPtrsubMatching` (+ `testForArraySlack`), and the
+//! `resolveInFlow`/`findResolve` base "return self" (LOSS-050 restored — they now
+//! take a `self: &Rc<Datatype>` receiver and hand the receiver back for every type
+//! without a union override).
+//!
+//! What remains **W6 (type-2/type-3)**: the `TypeStruct`/`TypeUnion`/`TypeEnum`/
+//! `TypeCode`/`TypePartial*`/`TypePointerRel`/`TypeSpacebase` overrides, the
+//! `Funcdata`-backed union resolution (the union/pointer-to-union/array
+//! `resolveInFlow`/`findResolve` paths), the `TypeFactory` construction caches and
+//! decode, and `printRaw`/`hashSize`.  Those surfaces exist here (so callers link)
+//! but return `Err(KunaError::lowlevel("SEAM(W6) …"))`; each is tagged
+//! `// SEAM(W6)` and listed in the relevant item's `losses` output.  W6 fills the
 //! bodies in place — the *signatures* are frozen by this file.
 //!
 //! The `Datatype::new(size, metatype)` 2-arg convenience constructor is preserved
@@ -620,6 +633,11 @@ pub enum DatatypeKind {
 // Datatype — the base class surface (type.hh:167-308)
 // =============================================================================
 
+/// A borrowed view of a `TypePointer`'s payload (`ptrto`, optional `spaceid`,
+/// `wordsize`), used where the C++ casts a `Datatype &` to `TypePointer *` in
+/// the pointer comparison overrides.  See [`Datatype::as_plain_pointer`].
+type PlainPointerView<'a> = (&'a Rc<Datatype>, Option<&'a Rc<AddrSpace>>, uint4);
+
 /// The base datatype class for the decompiler (C++ `Datatype`, type.hh:167-308).
 ///
 /// Used for symbols, function prototypes, type propagation, etc.  This carries
@@ -1091,19 +1109,69 @@ impl Datatype {
     /// return 0;
     /// ```
     ///
-    /// The per-subclass overrides (`TypePointer`/`TypeArray`/`TypeStruct`/…
-    /// `compare`) recurse through component structure and need W6; for those
-    /// kinds this routes to a `// SEAM(W6)` `Err`.  `level` is the recursion
-    /// budget the overrides decrement.
+    /// The `TypePointer::compare` (type.cc:1074-1093) and `TypeArray::compare`
+    /// (type.cc:1363-1375) overrides are implemented for real (W6, this item).
+    /// The remaining structured overrides (`TypeStruct`/`TypeUnion`/`TypeEnum`/
+    /// `TypeCode`/`TypePartial*`/`TypePointerRel`/`TypeSpacebase::compare`) are
+    /// type-2/type-3 and route to a `// SEAM(W6)` `Err`.  `level` is the
+    /// recursion budget the overrides decrement.
     pub fn compare(&self, op: &Datatype, level: int4) -> KunaResult<int4> {
-        let _ = level;
-        match self.kind {
-            // Kinds whose C++ compare is exactly the base body.
+        match &self.kind {
+            // Kinds whose C++ compare is exactly the base body (this also covers
+            // TypeChar/TypeUnicode, which are TypeBase subclasses that do not
+            // override compare — their submeta is set at construction).
             DatatypeKind::Base | DatatypeKind::Void | DatatypeKind::Unknown => {
                 Ok(self.compare_base(op))
             }
-            // Subclass overrides: TypePointer/TypeArray/TypeStruct/TypeUnion/
-            // TypeEnum/TypeCode/TypePartial*/TypePointerRel/TypeSpacebase::compare.
+            // TypePointer::compare (type.cc:1074-1093).
+            DatatypeKind::Pointer { ptrto, spaceid, wordsize, .. } => {
+                let res = self.compare_base(op);
+                if res != 0 {
+                    return Ok(res);
+                }
+                // Both must be pointers (the matching submeta guarantees op is a
+                // TypePointer, not a TypePointerRel: their submetas are disjoint).
+                let (op_ptrto, op_spaceid, op_wordsize) = op
+                    .as_plain_pointer()
+                    .ok_or_else(|| Datatype::pointer_invariant_err("compare"))?;
+                if *wordsize != op_wordsize {
+                    // C++ unsigned `wordsize` (uint4) comparison.
+                    return Ok(if *wordsize < op_wordsize { -1 } else { 1 });
+                }
+                if let Some(r) = Datatype::compare_pointer_space(spaceid.as_ref(), op_spaceid) {
+                    return Ok(r);
+                }
+                let level = level - 1;
+                if level < 0 {
+                    if self.id == op.get_id() {
+                        return Ok(0);
+                    }
+                    return Ok(if self.id < op.get_id() { -1 } else { 1 });
+                }
+                ptrto.compare(op_ptrto, level) // Compare whats pointed to
+            }
+            // TypeArray::compare (type.cc:1363-1375).
+            DatatypeKind::Array { arrayof, .. } => {
+                let res = self.compare_base(op);
+                if res != 0 {
+                    return Ok(res);
+                }
+                let level = level - 1;
+                if level < 0 {
+                    if self.id == op.get_id() {
+                        return Ok(0);
+                    }
+                    return Ok(if self.id < op.get_id() { -1 } else { 1 });
+                }
+                // Both must be arrays.
+                let op_arrayof = op
+                    .get_array_base()
+                    .ok_or_else(|| Datatype::array_invariant_err("compare"))?;
+                arrayof.compare(&op_arrayof, level) // Compare array elements
+            }
+            // Subclass overrides handled by type-2/type-3:
+            // TypeStruct/TypeUnion/TypeEnum/TypeCode/TypePartial*/
+            // TypePointerRel/TypeSpacebase::compare.
             // (TypeSpacebase::compare delegates to compareDependency, which
             // tie-breaks on spaceid then localframe after the base step —
             // type.cc:3498-3514.)  // SEAM(W6)
@@ -1111,6 +1179,95 @@ impl Datatype {
                 "SEAM(W6): Datatype::compare subclass override not yet ported",
             )),
         }
+    }
+
+    /// Read this data-type's `Pointer`-payload fields as a plain pointer
+    /// (`ptrto`, `spaceid`, `wordsize`), or `None` if it is not a plain
+    /// [`DatatypeKind::Pointer`].  Used by the `TypePointer::compare`/
+    /// `compareDependency` overrides where the C++ casts `&op` to `TypePointer *`.
+    fn as_plain_pointer(&self) -> Option<PlainPointerView<'_>> {
+        match &self.kind {
+            DatatypeKind::Pointer { ptrto, spaceid, wordsize, .. } => {
+                Some((ptrto, spaceid.as_ref(), *wordsize))
+            }
+            _ => None,
+        }
+    }
+
+    /// Transcribe the C++ `spaceid` tie-break shared by `TypePointer::compare`
+    /// and `TypePointer::compareDependency` (type.cc:1082-1086, 1102-1106):
+    ///
+    /// ```text
+    /// if (spaceid != tp->spaceid) {
+    ///   if (spaceid == (AddrSpace *)0) return 1;   // ptrs with a space come earlier
+    ///   if (tp->spaceid == (AddrSpace *)0) return -1;
+    ///   return (spaceid->getIndex() < tp->spaceid->getIndex()) ? -1 : 1;
+    /// }
+    /// ```
+    ///
+    /// Returns `Some(ordering)` if the spaces differ (the C++ early return) or
+    /// `None` if they are the same (C++ falls through).  `AddrSpace` identity is
+    /// pointer identity in C++; address spaces are unique singletons, so two
+    /// spaces are "the same" iff they share an `Rc` allocation, and otherwise
+    /// they are ordered by `getIndex()` (which is itself unique per space).
+    fn compare_pointer_space(
+        a: Option<&Rc<AddrSpace>>,
+        b: Option<&Rc<AddrSpace>>,
+    ) -> Option<int4> {
+        match (a, b) {
+            (None, None) => None,
+            (None, Some(_)) => Some(1),  // self has no space -> comes later
+            (Some(_), None) => Some(-1), // other has no space -> self earlier
+            (Some(sa), Some(sb)) => {
+                if Rc::ptr_eq(sa, sb) {
+                    None // same space
+                } else {
+                    // getIndex() is unique per space, so it never ties here.
+                    Some(if sa.get_index() < sb.get_index() { -1 } else { 1 })
+                }
+            }
+        }
+    }
+
+    /// Order two `Rc<Datatype>` by their pointed-to object identity, transcribing
+    /// the C++ raw-pointer comparison used in `compareDependency` (`ptrto <
+    /// tp->ptrto`, "compare the pointers directly").
+    ///
+    /// In the C++ TypeFactory every interned data-type is a unique object, so
+    /// this compares already-distinct sub-types by their stored address; the
+    /// resulting tree order is internally consistent within a single factory
+    /// instance (it is rebuilt per run, exactly as in C++).  The Rust analogue
+    /// of the object address is [`Rc::as_ptr`].
+    fn compare_dependency_ptr(a: &Rc<Datatype>, b: &Rc<Datatype>) -> int4 {
+        if Rc::ptr_eq(a, b) {
+            return 0;
+        }
+        // cast: `as_ptr` addresses ordered like the C++ raw pointers.
+        let pa = Rc::as_ptr(a) as usize;
+        let pb = Rc::as_ptr(b) as usize;
+        if pa < pb {
+            -1
+        } else {
+            1
+        }
+    }
+
+    /// Internal-invariant error for a `TypePointer` override reached with a
+    /// non-pointer `op` (the matching-submeta precondition was violated).
+    fn pointer_invariant_err(method: &str) -> KunaError {
+        KunaError::lowlevel(format!(
+            "Datatype::{method}: pointer override reached with non-pointer op \
+             (submeta invariant violated)"
+        ))
+    }
+
+    /// Internal-invariant error for a `TypeArray` override reached with a
+    /// non-array `op`.
+    fn array_invariant_err(method: &str) -> KunaError {
+        KunaError::lowlevel(format!(
+            "Datatype::{method}: array override reached with non-array op \
+             (submeta invariant violated)"
+        ))
     }
 
     /// The base `Datatype::compare` body (type.cc:216-222), shared by the kinds
@@ -1128,14 +1285,58 @@ impl Datatype {
 
     /// Compare for storage in tree structure (C++ `Datatype::compareDependency`).
     ///
-    /// The **base** body (type.cc:231-237) is identical in shape to the base
-    /// `compare` and is implemented for real.  Subclass overrides need W6.
+    /// The **base** body (type.cc:231-237) is implemented for real.  The
+    /// `TypePointer::compareDependency` (type.cc:1095-1108) and
+    /// `TypeArray::compareDependency` (type.cc:1377-1384) overrides are
+    /// implemented here (W6, this item).  The remaining structured overrides
+    /// (`TypeStruct`/`TypeUnion`/…/`TypePointerRel`/`TypeSpacebase`) are
+    /// type-2/type-3.
     pub fn compare_dependency(&self, op: &Datatype) -> KunaResult<int4> {
-        match self.kind {
+        match &self.kind {
             DatatypeKind::Base | DatatypeKind::Void | DatatypeKind::Unknown => {
                 Ok(self.compare_dependency_base(op))
             }
-            // TypePointer/TypeArray/.../TypePointerRel/TypeSpacebase::compareDependency.
+            // TypePointer::compareDependency (type.cc:1095-1108).  Note: unlike
+            // compare(), this compares submeta then ptrto-identity/wordsize/
+            // spaceid, and finishes with (op.size - size) — it does NOT call the
+            // base body's size comparison up front.
+            DatatypeKind::Pointer { ptrto, spaceid, wordsize, .. } => {
+                if self.submeta != op.get_sub_meta() {
+                    return Ok(if self.submeta < op.get_sub_meta() { -1 } else { 1 });
+                }
+                // Both must be pointers.
+                let (op_ptrto, op_spaceid, op_wordsize) = op
+                    .as_plain_pointer()
+                    .ok_or_else(|| Datatype::pointer_invariant_err("compareDependency"))?;
+                let ptr_cmp = Datatype::compare_dependency_ptr(ptrto, op_ptrto);
+                if ptr_cmp != 0 {
+                    return Ok(ptr_cmp); // Compare absolute pointers
+                }
+                if *wordsize != op_wordsize {
+                    return Ok(if *wordsize < op_wordsize { -1 } else { 1 });
+                }
+                if let Some(r) = Datatype::compare_pointer_space(spaceid.as_ref(), op_spaceid) {
+                    return Ok(r);
+                }
+                // C++ `return (op.getSize()-size);` (wrapping i32 subtraction).
+                Ok(op.get_size().wrapping_sub(self.size))
+            }
+            // TypeArray::compareDependency (type.cc:1377-1384).
+            DatatypeKind::Array { arrayof, .. } => {
+                if self.submeta != op.get_sub_meta() {
+                    return Ok(if self.submeta < op.get_sub_meta() { -1 } else { 1 });
+                }
+                // Both must be arrays.
+                let op_arrayof = op
+                    .get_array_base()
+                    .ok_or_else(|| Datatype::array_invariant_err("compareDependency"))?;
+                let arr_cmp = Datatype::compare_dependency_ptr(arrayof, &op_arrayof);
+                if arr_cmp != 0 {
+                    return Ok(arr_cmp); // Compare absolute pointers
+                }
+                Ok(op.get_size().wrapping_sub(self.size))
+            }
+            // type-2/type-3 overrides.
             // (TypeSpacebase tie-breaks on spaceid then localframe after the base
             // step — type.cc:3504-3514.)  // SEAM(W6)
             _ => Err(KunaError::lowlevel(
@@ -1159,18 +1360,47 @@ impl Datatype {
 
     /// Recover component data-type one-level down (C++ `getSubType`).
     ///
-    /// SEAM(W6): the base returns null (`*newoff = off`); the structured
-    /// overrides (`TypePointer`/`TypeArray`/`TypeStruct`/`TypeSpacebase`/
-    /// `TypePartialStruct`/`TypeCode`) walk component structure.  Surfaced so
-    /// callers link; body is W6.
+    /// The base body (type.cc:175-180) returns null and `newoff = off`.  The
+    /// `TypePointer::getSubType` (type.cc:1061-1072, the \e truncate window) and
+    /// `TypeArray::getSubType` (type.cc:1386-1393) overrides are implemented here
+    /// (W6, this item).  The `TypeStruct`/`TypeSpacebase`/`TypePartialStruct`/
+    /// `TypeCode` overrides are type-2/type-3.
     pub fn get_sub_type(&self, off: int8) -> KunaResult<(Option<Rc<Datatype>>, int8)> {
-        match self.kind {
-            // Base body: no subtype, newoff = off.
+        match &self.kind {
+            // Base body: no subtype, newoff = off.  TypeEnum/TypeUnion do not
+            // override getSubType, so they share the base body.
             DatatypeKind::Base
             | DatatypeKind::Void
             | DatatypeKind::Unknown
             | DatatypeKind::Enum { .. }
             | DatatypeKind::Union { .. } => Ok((None, off)),
+            // TypePointer::getSubType (type.cc:1061-1072): if a truncated form
+            // exists and `off` lands in its window, return it; else fall to base.
+            DatatypeKind::Pointer { truncate, .. } => {
+                if let Some(trunc) = truncate {
+                    // C++: min = (flags & truncate_bigendian) ? size - trunc->getSize() : 0
+                    let min: int8 = if (self.flags & flags::truncate_bigendian) != 0 {
+                        (self.size - trunc.get_size()) as int8
+                    } else {
+                        0
+                    };
+                    if off >= min && off < min + trunc.get_size() as int8 {
+                        return Ok((Some(Rc::clone(trunc)), off - min));
+                    }
+                }
+                // Datatype::getSubType(off, newoff): no subtype, newoff = off.
+                Ok((None, off))
+            }
+            // TypeArray::getSubType (type.cc:1386-1393): go down one level to the
+            // element type, renormalizing the offset modulo the element align-size.
+            DatatypeKind::Array { arrayof, .. } => {
+                if off >= self.size as int8 {
+                    // Datatype::getSubType(off, newoff): no subtype, newoff = off.
+                    return Ok((None, off));
+                }
+                let newoff = off % arrayof.get_align_size() as int8;
+                Ok((Some(Rc::clone(arrayof)), newoff))
+            }
             _ => Err(KunaError::lowlevel(
                 "SEAM(W6): Datatype::getSubType override not yet ported",
             )),
@@ -1178,17 +1408,110 @@ impl Datatype {
     }
 
     /// Get the number of bytes at the given offset that are padding (C++
-    /// `getHoleSize`).  Base default is 0; `TypeArray`/`TypeStruct`/
-    /// `TypePartialStruct` override — W6.
+    /// `getHoleSize`).  Base default is 0.  The `TypeArray::getHoleSize`
+    /// (type.cc:1415-1420) override is implemented here (W6, this item); the
+    /// `TypeStruct`/`TypePartialStruct` overrides are type-2.
     pub fn get_hole_size(&self, off: int4) -> KunaResult<int4> {
-        let _ = off;
-        match self.kind {
-            DatatypeKind::Array { .. }
-            | DatatypeKind::Struct { .. }
-            | DatatypeKind::PartialStruct { .. } => Err(KunaError::lowlevel(
-                "SEAM(W6): Datatype::getHoleSize override not yet ported",
-            )),
+        match &self.kind {
+            // TypeArray::getHoleSize: renormalize into the element and recurse.
+            DatatypeKind::Array { arrayof, .. } => {
+                let new_off = off % arrayof.get_align_size();
+                arrayof.get_hole_size(new_off)
+            }
+            DatatypeKind::Struct { .. } | DatatypeKind::PartialStruct { .. } => {
+                Err(KunaError::lowlevel(
+                    "SEAM(W6): Datatype::getHoleSize override not yet ported",
+                ))
+            }
             _ => Ok(0),
+        }
+    }
+
+    /// If this data-type is (or contains) an array starting after the given
+    /// offset, return the distance in bytes to the start of the array, passing
+    /// back the offset difference and the element size (C++
+    /// `nearestArrayedComponentForward`).
+    ///
+    /// Base body (type.cc:190-194) returns `-1`.  The `TypeArray` override
+    /// (type.cc:1395-1402) is implemented here (W6, this item); the
+    /// `TypeStruct`/`TypeSpacebase` overrides are type-2/type-3.  On a `-1`
+    /// return the passed-back values are unspecified (mirrors the C++).
+    pub fn nearest_arrayed_component_forward(
+        &self,
+        off: int8,
+        max: int8,
+    ) -> KunaResult<(int8, int8, int8)> {
+        let _ = max;
+        match &self.kind {
+            // TypeArray::nearestArrayedComponentForward (type.cc:1395-1402).
+            DatatypeKind::Array { arrayof, .. } => {
+                if off > 0 {
+                    return Ok((-1, off, 0)); // Skip if we are in the middle of array
+                }
+                let new_off = off;
+                let el_size = arrayof.get_align_size() as int8;
+                Ok((-off, new_off, el_size))
+            }
+            DatatypeKind::Struct { .. } | DatatypeKind::Spacebase { .. } => {
+                Err(KunaError::lowlevel(
+                    "SEAM(W6): Datatype::nearestArrayedComponentForward override not yet ported",
+                ))
+            }
+            // Base default: return -1.
+            _ => Ok((-1, off, 0)),
+        }
+    }
+
+    /// If this data-type is (or contains) an array starting before the given
+    /// offset, return the distance in bytes to the end of the array, passing
+    /// back the offset difference and the element size (C++
+    /// `nearestArrayedComponentBackward`).
+    ///
+    /// Base body (type.cc:205-209) returns `-1`.  The `TypeArray` override
+    /// (type.cc:1404-1413) is implemented here (W6, this item); the
+    /// `TypeStruct`/`TypeSpacebase` overrides are type-2/type-3.
+    pub fn nearest_arrayed_component_backward(
+        &self,
+        off: int8,
+        max: int8,
+    ) -> KunaResult<(int8, int8, int8)> {
+        let _ = max;
+        match &self.kind {
+            // TypeArray::nearestArrayedComponentBackward (type.cc:1404-1413).
+            DatatypeKind::Array { arrayof, .. } => {
+                if off < 0 {
+                    return Ok((-1, off, 0)); // Skip if we are before array
+                }
+                let new_off = off;
+                let el_size = arrayof.get_align_size() as int8;
+                let size = self.size as int8;
+                let dist = if off <= size { size - off } else { off - size };
+                Ok((dist, new_off, el_size))
+            }
+            DatatypeKind::Struct { .. } | DatatypeKind::Spacebase { .. } => {
+                Err(KunaError::lowlevel(
+                    "SEAM(W6): Datatype::nearestArrayedComponentBackward override not yet ported",
+                ))
+            }
+            // Base default: return -1.
+            _ => Ok((-1, off, 0)),
+        }
+    }
+
+    /// If the given data-type is an array, or has an arrayed component, return
+    /// `true` (C++ `TypePointer::testForArraySlack`, type.cc:1131-1142).
+    ///
+    /// A static helper on the pointed-to data-type and the out-of-bounds offset.
+    fn test_for_array_slack(dt: &Datatype, off: int8) -> KunaResult<bool> {
+        if dt.get_metatype() == type_metatype::TYPE_ARRAY {
+            return Ok(true);
+        }
+        if off < 0 {
+            let (dist, _newoff, _el) = dt.nearest_arrayed_component_forward(off, 128)?;
+            Ok(dist >= 0)
+        } else {
+            let (dist, _newoff, _el) = dt.nearest_arrayed_component_backward(off, 128)?;
+            Ok(dist >= 0)
         }
     }
 
@@ -1196,17 +1519,87 @@ impl Datatype {
     /// `isPtrsubMatching`).
     ///
     /// The base body (type.cc:555-559) returns `false` — implemented.  The
-    /// `TypePointer`/`TypePointerRel` overrides do the offset/extra/multiplier
-    /// math — W6.
+    /// `TypePointer::isPtrsubMatching` (type.cc:1260-1312) override is
+    /// implemented here (W6, this item); the `TypePointerRel::isPtrsubMatching`
+    /// (type.cc:3138) override is type-3.
     pub fn is_ptrsub_matching(&self, off: int8, extra: int8, multiplier: int8) -> KunaResult<bool> {
-        let _ = (off, extra, multiplier);
-        match self.kind {
-            DatatypeKind::Pointer { .. } | DatatypeKind::PointerRel { .. } => {
-                // C++ TypePointer/TypePointerRel::isPtrsubMatching.  // SEAM(W6)
-                Err(KunaError::lowlevel(
-                    "SEAM(W6): TypePointer::isPtrsubMatching not yet ported",
-                ))
+        match &self.kind {
+            // TypePointer::isPtrsubMatching (type.cc:1260-1312).  `extra` and
+            // `multiplier` are mutated locally in the C++ (by-value params), so we
+            // shadow them with `let mut` to match.
+            DatatypeKind::Pointer { ptrto, wordsize, .. } => {
+                let mut extra = extra;
+                let mut multiplier = multiplier;
+                let meta = ptrto.get_metatype();
+                match meta {
+                    type_metatype::TYPE_SPACEBASE => {
+                        let new_off = AddrSpace::address_to_byte_int(off, *wordsize);
+                        let (sub, new_off2) = ptrto.get_sub_type(new_off)?;
+                        let sub_type = match sub {
+                            Some(s) if new_off2 == 0 => s,
+                            _ => return Ok(false),
+                        };
+                        extra = AddrSpace::address_to_byte_int(extra, *wordsize);
+                        // C++ nested-if; `&&` preserves short-circuit (the slack
+                        // test only runs when `extra` is out of bounds).
+                        if (extra < 0 || extra >= sub_type.get_size() as int8)
+                            && !Datatype::test_for_array_slack(&sub_type, extra)?
+                        {
+                            return Ok(false);
+                        }
+                    }
+                    type_metatype::TYPE_ARRAY => {
+                        if off != 0 {
+                            return Ok(false);
+                        }
+                        multiplier = AddrSpace::address_to_byte_int(multiplier, *wordsize);
+                        if multiplier >= ptrto.get_align_size() as int8 {
+                            return Ok(false);
+                        }
+                    }
+                    type_metatype::TYPE_STRUCT => {
+                        let typesize = ptrto.get_size() as int8;
+                        multiplier = AddrSpace::address_to_byte_int(multiplier, *wordsize);
+                        if multiplier >= ptrto.get_align_size() as int8 {
+                            return Ok(false);
+                        }
+                        let new_off = AddrSpace::address_to_byte_int(off, *wordsize);
+                        extra = AddrSpace::address_to_byte_int(extra, *wordsize);
+                        let (sub, new_off2) = ptrto.get_sub_type(new_off)?;
+                        match sub {
+                            Some(sub_type) => {
+                                if new_off2 != 0 {
+                                    return Ok(false);
+                                }
+                                // C++ nested-if; `&&` preserves short-circuit.
+                                if (extra < 0 || extra >= sub_type.get_size() as int8)
+                                    && !Datatype::test_for_array_slack(&sub_type, extra)?
+                                {
+                                    return Ok(false);
+                                }
+                            }
+                            None => {
+                                // C++: extra += newoff; (newoff is the passed-back value)
+                                extra += new_off2;
+                                if (extra < 0 || extra >= typesize) && typesize != 0 {
+                                    return Ok(false);
+                                }
+                            }
+                        }
+                    }
+                    type_metatype::TYPE_UNION => {
+                        // A PTRSUB reaching here cannot be used for a union field
+                        // resolution; always return false.
+                        return Ok(false);
+                    }
+                    _ => return Ok(false), // Not a pointer to a structured data-type
+                }
+                Ok(true)
             }
+            // TypePointerRel::isPtrsubMatching is type-3.  // SEAM(W6)
+            DatatypeKind::PointerRel { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): TypePointerRel::isPtrsubMatching not yet ported",
+            )),
             _ => Ok(false), // base default
         }
     }
@@ -1239,43 +1632,133 @@ impl Datatype {
 
     /// Tailor data-type propagation based on Varnode use (C++ `resolveInFlow`).
     ///
-    /// SEAM(W6): the base body (type.cc:577-581) returns `this` (the data-type
-    /// unchanged) for every non-union type; only the union/pointer-to-union
-    /// overrides do field resolution against the PcodeOp/slot.  The `op`/`slot`
-    /// arguments are modelled opaquely (`OpId`/`int4`) so W6 can wire the real
-    /// walk.
+    /// **LOSS-050 restored (W6, this item).** The base body (type.cc:577-581)
+    /// returns `this` (the data-type unchanged) for every type without an
+    /// override; with the `self: &Rc<Datatype>` receiver we can now hand the
+    /// receiver back (`Rc::clone(self)`).  The overrides are:
     ///
-    /// LOSS (F2): this seams the base "return self" too — restoring it needs an
-    /// `Rc<Self>` handle (a signature change), and no W5 caller hits this path
-    /// (W8 seam surface).  A W8 rule calling `resolveInFlow` on a non-union type
-    /// must port the base "return self" here.
-    pub fn resolve_in_flow(&self, _op: crate::seams::OpId, _slot: int4) -> KunaResult<Rc<Datatype>> {
-        Err(KunaError::lowlevel(
-            "SEAM(W6): Datatype::resolveInFlow needs union resolution + Funcdata wiring \
-             (base 'return self' also deferred — see LOSS F2)",
-        ))
+    ///   * `TypePointer::resolveInFlow` (type.cc:1314-1333): if the pointed-to
+    ///     type is a `TYPE_UNION`, score/resolve the union field against the
+    ///     `PcodeOp`/slot (needs `Funcdata` wiring — `// SEAM(W6)`); otherwise it
+    ///     returns `this`, which we honor here.
+    ///   * `TypeArray::resolveInFlow` (type.cc:1455-1468): always does `Funcdata`
+    ///     union-field scoring — `// SEAM(W6)`.
+    ///   * `TypeStruct`/`TypeUnion`/`TypePartialUnion::resolveInFlow`: type-2
+    ///     overrides — `// SEAM(W6)`.
+    ///
+    /// `op`/`slot` are opaque (`OpId`/`int4`); only the seamed union paths read
+    /// them, and those still need the `Funcdata` registry that W6+ provides.
+    pub fn resolve_in_flow(
+        self: &Rc<Datatype>,
+        _op: crate::seams::OpId,
+        _slot: int4,
+    ) -> KunaResult<Rc<Datatype>> {
+        match &self.kind {
+            // TypePointer::resolveInFlow — only pointers to unions resolve.
+            DatatypeKind::Pointer { ptrto, .. } => {
+                if ptrto.get_metatype() == type_metatype::TYPE_UNION {
+                    Err(KunaError::lowlevel(
+                        "SEAM(W6): TypePointer::resolveInFlow (pointer-to-union) needs \
+                         Funcdata union-field resolution",
+                    ))
+                } else {
+                    // C++ `return this;`
+                    Ok(Rc::clone(self))
+                }
+            }
+            // TypeArray::resolveInFlow always scores via Funcdata.
+            DatatypeKind::Array { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): TypeArray::resolveInFlow needs Funcdata union-field scoring",
+            )),
+            // type-2 structured overrides.
+            DatatypeKind::Struct { .. }
+            | DatatypeKind::Union { .. }
+            | DatatypeKind::PartialUnion { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): Datatype::resolveInFlow structured override not yet ported",
+            )),
+            // Base "return this": every type without an override.
+            _ => Ok(Rc::clone(self)),
+        }
     }
 
     /// Find a previously resolved sub-type (C++ `findResolve`).
     ///
-    /// SEAM(W6): the const version of `resolveInFlow`.  Same LOSS (F2): the base
-    /// body returns `this`, deferred here pending the `Rc<Self>` handle.
-    pub fn find_resolve(&self, _op: crate::seams::OpId, _slot: int4) -> KunaResult<Rc<Datatype>> {
-        Err(KunaError::lowlevel(
-            "SEAM(W6): Datatype::findResolve needs union resolution \
-             (base 'return self' also deferred — see LOSS F2)",
-        ))
+    /// **LOSS-050 restored (W6, this item).** The const counterpart of
+    /// [`resolve_in_flow`](Datatype::resolve_in_flow); the base body
+    /// (type.cc:590-593) returns `this`.  The `TypePointer::findResolve`
+    /// (type.cc:1335-1345) override only consults the `Funcdata` cache when the
+    /// pointed-to type is a union (`// SEAM(W6)`), otherwise it returns `this`;
+    /// `TypeArray::findResolve` (type.cc:1470-1478) and the type-2 structured
+    /// overrides need the `Funcdata` cache (`// SEAM(W6)`).
+    pub fn find_resolve(
+        self: &Rc<Datatype>,
+        _op: crate::seams::OpId,
+        _slot: int4,
+    ) -> KunaResult<Rc<Datatype>> {
+        match &self.kind {
+            DatatypeKind::Pointer { ptrto, .. } => {
+                if ptrto.get_metatype() == type_metatype::TYPE_UNION {
+                    Err(KunaError::lowlevel(
+                        "SEAM(W6): TypePointer::findResolve (pointer-to-union) needs \
+                         Funcdata union-field cache",
+                    ))
+                } else {
+                    // C++ `return this;`
+                    Ok(Rc::clone(self))
+                }
+            }
+            DatatypeKind::Array { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): TypeArray::findResolve needs Funcdata union-field cache",
+            )),
+            DatatypeKind::Struct { .. }
+            | DatatypeKind::Union { .. }
+            | DatatypeKind::PartialUnion { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): Datatype::findResolve structured override not yet ported",
+            )),
+            _ => Ok(Rc::clone(self)),
+        }
     }
 
     /// Find a resolution compatible with the given data-type (C++
     /// `findCompatibleResolve`).  Base default returns -1.
+    ///
+    /// The `TypePointer::findCompatibleResolve` (type.cc:1347-1354) and
+    /// `TypeArray::findCompatibleResolve` (type.cc:1480-1490) overrides are
+    /// implemented here (W6, this item); the `TypeUnion`/`TypePartialUnion`/
+    /// `TypeStruct` overrides are type-2.
     pub fn find_compatible_resolve(&self, ct: &Datatype) -> KunaResult<int4> {
-        let _ = ct;
-        match self.kind {
+        match &self.kind {
+            // TypePointer::findCompatibleResolve (type.cc:1347-1354): if `ct` is a
+            // pointer, recurse on the pointed-to types.
+            DatatypeKind::Pointer { ptrto, .. } => {
+                if ct.get_metatype() == type_metatype::TYPE_PTR {
+                    // ((TypePointer *)ct)->ptrto
+                    let ct_ptrto = ct
+                        .as_plain_pointer()
+                        .map(|(p, _, _)| p)
+                        .ok_or_else(|| Datatype::pointer_invariant_err("findCompatibleResolve"))?;
+                    return ptrto.find_compatible_resolve(ct_ptrto);
+                }
+                Ok(-1)
+            }
+            // TypeArray::findCompatibleResolve (type.cc:1480-1490).
+            DatatypeKind::Array { arrayof, .. } => {
+                // C++ nested-if; `&&` preserves short-circuit (the recursive
+                // resolve only runs when both resolution flags line up).
+                if ct.needs_resolution()
+                    && !arrayof.needs_resolution()
+                    && ct.find_compatible_resolve(arrayof)? >= 0
+                {
+                    return Ok(0);
+                }
+                // C++ `if (arrayof == ct)` — pointer identity against the element.
+                if std::ptr::eq(Rc::as_ptr(arrayof), ct as *const Datatype) {
+                    return Ok(0);
+                }
+                Ok(-1)
+            }
             DatatypeKind::Union { .. }
             | DatatypeKind::PartialUnion { .. }
-            | DatatypeKind::Pointer { .. }
-            | DatatypeKind::Array { .. }
             | DatatypeKind::Struct { .. } => Err(KunaError::lowlevel(
                 "SEAM(W6): Datatype::findCompatibleResolve override not yet ported",
             )),
@@ -1767,11 +2250,16 @@ mod tests {
         assert!(s.compare(&other, 10).is_err());
     }
 
-    /// `is_ptrsub_matching` base returns false for non-pointers, seams for ptrs.
+    /// `is_ptrsub_matching` base returns false for non-pointers (type.cc:555-559),
+    /// and `TypePointer::isPtrsubMatching` (type.cc:1260-1312) returns false for a
+    /// pointer to a non-structured (plain) type.  A pointer to a TYPE_STRUCT walks
+    /// `ptrto.get_sub_type`, which is a type-2 SEAM, so the error propagates.
     #[test]
     fn is_ptrsub_matching_routing() {
+        // base: non-pointer -> false.
         let int_t = Datatype::new(4, type_metatype::TYPE_INT);
         assert!(!int_t.is_ptrsub_matching(0, 0, 1).unwrap());
+        // pointer to plain int: TypePointer override hits the `else` -> false.
         let mut p = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR);
         p.kind = DatatypeKind::Pointer {
             ptrto: Rc::new(Datatype::new(4, type_metatype::TYPE_INT)),
@@ -1779,7 +2267,35 @@ mod tests {
             truncate: None,
             wordsize: 1,
         };
-        assert!(p.is_ptrsub_matching(0, 0, 1).is_err());
+        assert!(!p.is_ptrsub_matching(0, 0, 1).unwrap());
+        // pointer to an array of int: off==0, multiplier(1) < element align-size(4)
+        // -> matches (true).
+        let mut elem = Datatype::new_with_align(4, 4, type_metatype::TYPE_INT);
+        elem.align_size = 4;
+        let mut arr = Datatype::new_with_align(8, 4, type_metatype::TYPE_ARRAY);
+        arr.kind = DatatypeKind::Array { arrayof: Rc::new(elem), arraysize: 2 };
+        let mut p_arr = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR);
+        p_arr.kind = DatatypeKind::Pointer {
+            ptrto: Rc::new(arr),
+            spaceid: None,
+            truncate: None,
+            wordsize: 1,
+        };
+        assert!(p_arr.is_ptrsub_matching(0, 0, 1).unwrap());
+        // pointer to a struct: the override calls ptrto.get_sub_type (type-2 SEAM).
+        let mut st = Datatype::new_with_align(8, 4, type_metatype::TYPE_STRUCT);
+        st.kind = DatatypeKind::Struct {
+            field: vec![TypeField::new(0, 0, "a", Rc::new(Datatype::new(4, type_metatype::TYPE_INT)))],
+            bitfield: vec![],
+        };
+        let mut p_st = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR);
+        p_st.kind = DatatypeKind::Pointer {
+            ptrto: Rc::new(st),
+            spaceid: None,
+            truncate: None,
+            wordsize: 1,
+        };
+        assert!(p_st.is_ptrsub_matching(0, 4, 1).is_err());
     }
 
     /// `is_primitive_whole` follows the C++ recursion (type.cc:505-518).
@@ -1797,5 +2313,300 @@ mod tests {
         let mut s = Datatype::new_with_align(8, -1, type_metatype::TYPE_STRUCT);
         s.kind = DatatypeKind::Struct { field: vec![f0], bitfield: vec![] };
         assert!(!s.is_primitive_whole());
+    }
+
+    // -- Pointer / Array compare overrides (type.cc:1074-1108, 1363-1384) ----
+
+    /// Build a distinct address space with a chosen index (for the spaceid
+    /// tie-break in `TypePointer::compare`).
+    fn space_with_index(idx: int4) -> Rc<AddrSpace> {
+        use kuna_base::space::spacetype;
+        Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            idx,
+            0,
+            0,
+            0,
+        ))
+    }
+
+    fn make_pointer(
+        ptrto: Rc<Datatype>,
+        spaceid: Option<Rc<AddrSpace>>,
+        wordsize: uint4,
+    ) -> Datatype {
+        let mut p = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR);
+        p.kind = DatatypeKind::Pointer { ptrto, spaceid, truncate: None, wordsize };
+        p
+    }
+
+    fn make_array(arrayof: Rc<Datatype>, arraysize: int4, size: int4) -> Datatype {
+        let mut a = Datatype::new_with_align(size, -1, type_metatype::TYPE_ARRAY);
+        a.kind = DatatypeKind::Array { arrayof, arraysize };
+        a
+    }
+
+    /// `TypePointer::compare` (type.cc:1074-1093): after the base step, tie-break
+    /// on wordsize, then spaceid (no-space later, else by getIndex), then recurse
+    /// into ptrto with a decremented level.
+    #[test]
+    fn pointer_compare_tiebreaks() {
+        let int4_t = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        // wordsize tie-break: smaller wordsize earlier.
+        let p_ws1 = make_pointer(Rc::clone(&int4_t), None, 1);
+        let p_ws2 = make_pointer(Rc::clone(&int4_t), None, 2);
+        assert_eq!(p_ws1.compare(&p_ws2, 10).unwrap(), -1);
+        assert_eq!(p_ws2.compare(&p_ws1, 10).unwrap(), 1);
+
+        // spaceid tie-break: a pointer WITH a space comes earlier than one without.
+        let spc = space_with_index(3);
+        let p_nospace = make_pointer(Rc::clone(&int4_t), None, 1);
+        let p_space = make_pointer(Rc::clone(&int4_t), Some(Rc::clone(&spc)), 1);
+        assert_eq!(p_nospace.compare(&p_space, 10).unwrap(), 1); // no space -> later
+        assert_eq!(p_space.compare(&p_nospace, 10).unwrap(), -1);
+
+        // two spaces: ordered by index.
+        let spc5 = space_with_index(5);
+        let p_s3 = make_pointer(Rc::clone(&int4_t), Some(Rc::clone(&spc)), 1);
+        let p_s5 = make_pointer(Rc::clone(&int4_t), Some(Rc::clone(&spc5)), 1);
+        assert_eq!(p_s3.compare(&p_s5, 10).unwrap(), -1);
+        assert_eq!(p_s5.compare(&p_s3, 10).unwrap(), 1);
+
+        // ptrto recursion: ptr-to-int4 vs ptr-to-int8 -> recurse, op.size - size = 4.
+        let int8_t = Rc::new(Datatype::new(8, type_metatype::TYPE_INT));
+        let p_int4 = make_pointer(Rc::clone(&int4_t), None, 1);
+        let p_int8 = make_pointer(Rc::clone(&int8_t), None, 1);
+        assert_eq!(p_int4.compare(&p_int8, 10).unwrap(), 8 - 4);
+
+        // level == 0 short-circuits to id comparison instead of recursing.
+        let mut p_a = make_pointer(Rc::clone(&int4_t), None, 1);
+        let mut p_b = make_pointer(Rc::clone(&int8_t), None, 1);
+        p_a.id = 100;
+        p_b.id = 200;
+        assert_eq!(p_a.compare(&p_b, 0).unwrap(), -1); // level-1 < 0 -> id 100 < 200
+        assert_eq!(p_b.compare(&p_a, 0).unwrap(), 1);
+    }
+
+    /// `TypePointer::compareDependency` (type.cc:1095-1108): submeta, then
+    /// ptrto-identity, wordsize, spaceid, then op.size - size.
+    #[test]
+    fn pointer_compare_dependency_uses_ptr_identity() {
+        let int4_a = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        let int4_b = Rc::new(Datatype::new(4, type_metatype::TYPE_INT)); // distinct alloc
+        let p_a = make_pointer(Rc::clone(&int4_a), None, 1);
+        let p_a2 = make_pointer(Rc::clone(&int4_a), None, 1); // same ptrto alloc
+        let p_b = make_pointer(Rc::clone(&int4_b), None, 1); // different ptrto alloc
+        // Same ptrto identity + same wordsize/space/size -> 0.
+        assert_eq!(p_a.compare_dependency(&p_a2).unwrap(), 0);
+        // Different ptrto identity -> nonzero, and antisymmetric.
+        let ab = p_a.compare_dependency(&p_b).unwrap();
+        let ba = p_b.compare_dependency(&p_a).unwrap();
+        assert!(ab != 0);
+        assert_eq!(ab, -ba);
+    }
+
+    /// `TypeArray::compare` (type.cc:1363-1375) recurses into the element with a
+    /// decremented level, and `compareDependency` (1377-1384) uses element
+    /// pointer identity.
+    #[test]
+    fn array_compare_and_dependency() {
+        let int4_t = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        let int8_t = Rc::new(Datatype::new(8, type_metatype::TYPE_INT));
+        // array[2] of int4 (size 8) vs array[1] of int8 (size 8): same submeta,
+        // same size -> base step 0; recurse into element: op.size(8)-size(4)=4.
+        let a_i4 = make_array(Rc::clone(&int4_t), 2, 8);
+        let a_i8 = make_array(Rc::clone(&int8_t), 1, 8);
+        assert_eq!(a_i4.compare(&a_i8, 10).unwrap(), 4);
+        assert_eq!(a_i8.compare(&a_i4, 10).unwrap(), -4);
+
+        // compareDependency uses element identity; same element alloc -> 0.
+        let a_same = make_array(Rc::clone(&int4_t), 2, 8);
+        assert_eq!(a_i4.compare_dependency(&a_same).unwrap(), 0);
+
+        // level == 0 short-circuits to id comparison.
+        let mut a1 = make_array(Rc::clone(&int4_t), 2, 8);
+        let mut a2 = make_array(Rc::clone(&int8_t), 1, 8);
+        a1.id = 7;
+        a2.id = 9;
+        assert_eq!(a1.compare(&a2, 0).unwrap(), -1);
+    }
+
+    /// **Total-order fidelity** (the riskiest surface).  Over a corpus of the
+    /// in-scope kinds (plain scalars, pointers with varying ptrto/wordsize/space,
+    /// arrays), `compare`/`compareDependency` must be a total order:
+    /// reflexive (x∘x==0), antisymmetric (sign(x∘y) == -sign(y∘x)), and the sign
+    /// must be consistent (a strict weak ordering — equal classes are
+    /// transitive).  A wrong subclass grouping silently corrupts the TypeFactory
+    /// tree, so this generated matrix is the guard.
+    #[test]
+    fn compare_total_order_matrix() {
+        let i1 = Rc::new(Datatype::new(1, type_metatype::TYPE_INT));
+        let i4 = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        let u4 = Rc::new(Datatype::new(4, type_metatype::TYPE_UINT));
+        let f8 = Rc::new(Datatype::new(8, type_metatype::TYPE_FLOAT));
+        let b1 = Rc::new(Datatype::new(1, type_metatype::TYPE_BOOL));
+        let spc = space_with_index(2);
+
+        let corpus: Vec<Rc<Datatype>> = vec![
+            Rc::clone(&i1),
+            Rc::clone(&i4),
+            Rc::clone(&u4),
+            Rc::clone(&f8),
+            Rc::clone(&b1),
+            Rc::new(make_pointer(Rc::clone(&i4), None, 1)),
+            Rc::new(make_pointer(Rc::clone(&i4), None, 2)),
+            Rc::new(make_pointer(Rc::clone(&i4), Some(Rc::clone(&spc)), 1)),
+            Rc::new(make_pointer(Rc::clone(&f8), None, 1)),
+            Rc::new(make_array(Rc::clone(&i4), 2, 8)),
+            Rc::new(make_array(Rc::clone(&i1), 4, 4)),
+        ];
+
+        let sign = |x: int4| -> int4 { x.signum() };
+
+        // Reflexivity + antisymmetry for both comparators.
+        for a in &corpus {
+            assert_eq!(a.compare(a, 10).unwrap(), 0, "compare not reflexive");
+            assert_eq!(
+                a.compare_dependency(a).unwrap(),
+                0,
+                "compareDependency not reflexive"
+            );
+            for b in &corpus {
+                let ab = sign(a.compare(b, 10).unwrap());
+                let ba = sign(b.compare(a, 10).unwrap());
+                assert_eq!(ab, -ba, "compare not antisymmetric");
+                let dab = sign(a.compare_dependency(b).unwrap());
+                let dba = sign(b.compare_dependency(a).unwrap());
+                assert_eq!(dab, -dba, "compareDependency not antisymmetric");
+            }
+        }
+
+        // Transitivity of the strict order: if a<b and b<c then a<c, over all
+        // ordered triples (compare with level 10).
+        for a in &corpus {
+            for b in &corpus {
+                for c in &corpus {
+                    let ab = sign(a.compare(b, 10).unwrap());
+                    let bc = sign(b.compare(c, 10).unwrap());
+                    let ac = sign(a.compare(c, 10).unwrap());
+                    if ab < 0 && bc < 0 {
+                        assert!(ac < 0, "compare not transitive (a<b<c => a<c)");
+                    }
+                    if ab == 0 && bc == 0 {
+                        assert_eq!(ac, 0, "compare equality not transitive");
+                    }
+                }
+            }
+        }
+    }
+
+    /// `getSubType` for the in-scope pointer/array kinds (type.cc:1061-1072,
+    /// 1386-1393).
+    #[test]
+    fn get_sub_type_pointer_and_array() {
+        // Array: off < size -> element with renormalized offset modulo align-size.
+        let mut elem = Datatype::new_with_align(4, 4, type_metatype::TYPE_INT);
+        elem.align_size = 4;
+        let arr = make_array(Rc::new(elem), 3, 12);
+        let (sub, newoff) = arr.get_sub_type(7).unwrap();
+        assert_eq!(sub.unwrap().get_size(), 4); // element
+        assert_eq!(newoff, 7 % 4); // 3
+        // off >= size -> base (None, off).
+        let (sub, newoff) = arr.get_sub_type(12).unwrap();
+        assert!(sub.is_none());
+        assert_eq!(newoff, 12);
+
+        // Pointer without truncate -> base (None, off).
+        let int4_t = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        let p = make_pointer(Rc::clone(&int4_t), None, 1);
+        let (sub, newoff) = p.get_sub_type(3).unwrap();
+        assert!(sub.is_none());
+        assert_eq!(newoff, 3);
+
+        // Pointer WITH a truncate window (little-endian: min == 0).
+        let trunc = Rc::new(Datatype::new(4, type_metatype::TYPE_PTR));
+        let mut p_tr = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR);
+        p_tr.kind = DatatypeKind::Pointer {
+            ptrto: Rc::clone(&int4_t),
+            spaceid: None,
+            truncate: Some(Rc::clone(&trunc)),
+            wordsize: 1,
+        };
+        // off in [0,4) -> the truncated form, newoff = off - 0.
+        let (sub, newoff) = p_tr.get_sub_type(2).unwrap();
+        assert_eq!(sub.unwrap().get_size(), 4);
+        assert_eq!(newoff, 2);
+        // off >= 4 -> outside the window -> base (None, off).
+        let (sub, newoff) = p_tr.get_sub_type(5).unwrap();
+        assert!(sub.is_none());
+        assert_eq!(newoff, 5);
+    }
+
+    /// `nearestArrayedComponent{Forward,Backward}` for the TypeArray override and
+    /// the base default (type.cc:1395-1413, 190-209).
+    #[test]
+    fn nearest_arrayed_component() {
+        let mut elem = Datatype::new_with_align(4, 4, type_metatype::TYPE_INT);
+        elem.align_size = 4;
+        let arr = make_array(Rc::new(elem), 3, 12);
+        // forward: off<=0 -> distance -off, element size = align-size of element.
+        let (dist, newoff, el) = arr.nearest_arrayed_component_forward(0, 128).unwrap();
+        assert_eq!((dist, newoff, el), (0, 0, 4));
+        // forward: off>0 -> -1 (in middle of array).
+        let (dist, _, _) = arr.nearest_arrayed_component_forward(4, 128).unwrap();
+        assert_eq!(dist, -1);
+        // backward: off>=0 and off<=size -> size - off.
+        let (dist, newoff, el) = arr.nearest_arrayed_component_backward(4, 128).unwrap();
+        assert_eq!((dist, newoff, el), (12 - 4, 4, 4));
+        // backward: off<0 -> -1.
+        let (dist, _, _) = arr.nearest_arrayed_component_backward(-1, 128).unwrap();
+        assert_eq!(dist, -1);
+
+        // base default for a non-array: -1.
+        let int4_t = Datatype::new(4, type_metatype::TYPE_INT);
+        assert_eq!(int4_t.nearest_arrayed_component_forward(0, 128).unwrap().0, -1);
+        assert_eq!(int4_t.nearest_arrayed_component_backward(0, 128).unwrap().0, -1);
+    }
+
+    /// `TypeArray::getHoleSize` (type.cc:1415-1420) renormalizes into the element
+    /// and recurses; for a plain element (no holes) the result is 0.
+    #[test]
+    fn array_get_hole_size() {
+        let mut elem = Datatype::new_with_align(4, 4, type_metatype::TYPE_INT);
+        elem.align_size = 4;
+        let arr = make_array(Rc::new(elem), 3, 12);
+        assert_eq!(arr.get_hole_size(5).unwrap(), 0);
+    }
+
+    /// LOSS-050 restored: `resolveInFlow`/`findResolve` return the receiver
+    /// unchanged for every kind without a union override; the array and
+    /// pointer-to-union paths still SEAM.
+    #[test]
+    fn resolve_in_flow_returns_self_for_plain_kinds() {
+        let int_t = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        let op = crate::seams::OpId::default();
+        let r = int_t.resolve_in_flow(op, 0).unwrap();
+        assert!(Rc::ptr_eq(&r, &int_t));
+        let f = int_t.find_resolve(op, -1).unwrap();
+        assert!(Rc::ptr_eq(&f, &int_t));
+
+        // Pointer to a non-union -> return self.
+        let p: Rc<Datatype> = Rc::new(make_pointer(Rc::clone(&int_t), None, 1));
+        let rp = p.resolve_in_flow(op, 0).unwrap();
+        assert!(Rc::ptr_eq(&rp, &p));
+
+        // Array always SEAMs (needs Funcdata scoring).
+        let a: Rc<Datatype> = Rc::new(make_array(Rc::clone(&int_t), 2, 8));
+        assert!(a.resolve_in_flow(op, 0).is_err());
+
+        // Pointer to a UNION -> SEAM (needs Funcdata).
+        let mut u = Datatype::new_with_align(8, -1, type_metatype::TYPE_UNION);
+        u.kind = DatatypeKind::Union { field: vec![] };
+        let p_u: Rc<Datatype> = Rc::new(make_pointer(Rc::new(u), None, 1));
+        assert!(p_u.resolve_in_flow(op, 0).is_err());
     }
 }
