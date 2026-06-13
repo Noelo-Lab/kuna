@@ -119,3 +119,16 @@ _(none yet)_
 | w7-harness-kunaregion | 3 region unit tests (exact names) | ACCEPT |
 | w7-s37-coreaction-cleanup | S6/S7 cleanup+merge actions | ACCEPT-WL |
 | w7-m1-closure | M1 name-parity 207/207; bodies re-diagnosed to W8/W9 | ACCEPT-WL |
+
+## W8 (2026-06-13)
+
+| item | gate | verdict |
+|---|---|---|
+| w8-s9-printlanguage-cast | PrintLanguage base + CastStrategy | ACCEPT-WL |
+| w8-s9-printc | 3.9k-LOC C emitter, opXXX tokens | ACCEPT-WL |
+| w8-s9-prettyprint | line-break engine vs real Ghidra | ACCEPT-WL |
+| w8-sig-pack | signature/analyzesigs/paramid | ACCEPT-WL |
+| w8-s9-stringmanage-pack | string escape + namestyle + arraynotation | ACCEPT |
+| w8-s9-coreaction-render | S9 render actions | ACCEPT-WL |
+| w8-fw-universalaction | B0 byte-equal (244->252 passes) | ACCEPT-WL |
+| w8x-allowlist-closure | 10 scattered passes -> empty allowlist | ACCEPT-WL |

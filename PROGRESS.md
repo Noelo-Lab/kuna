@@ -1,5 +1,31 @@
 # kuna Progress Log
 
+## Session (2026-06-13) — rust-port W8: print stack + the full pipeline (B0 byte-equal)
+
+All 7 W8 items + the allowlist closure verified. The Rust engine is now a COMPLETE
+decompiler: SLEIGH lift -> flow -> SSA -> the 252-pass simplification/recovery/
+structuring pipeline -> C output. Delivered: printlanguage + CastStrategy, the
+3.9k-LOC printc C emitter, prettyprint's line-breaking engine (validated byte-for-
+byte against the real Ghidra emit engine), string/naming/arraynotation, the S9 render
+actions, the signature/paramid pack, and the KEYSTONE universalAction assembly.
+
+**B0 keystone: the materialized 'decompile' action tree is BYTE-EQUAL to the C++
+decomp_dbg `list action` dump.** The B0 gate caught 10 scattered passes that slipped
+wave batching (7 subflow SplitDatatype rules, 2 constseq string rules,
+RuleStackProbeLoop — which I'd omitted from the W7 file list — and
+ActionLowerSwitchInstall); the closure ported all 10, drove UNPORTED_ALLOWLIST to
+EMPTY, and re-pinned the 3 secondary verifier tests to the oracle (firstpass +
+all-groups dumps matched first try: 252 leaves + 7 headers). Pass STRUCTURE +
+registration order are now complete and order-exact; several pass BODIES still
+decline at W4/W6 seams (SplitDatatype mutation, string-copy deep bodies, lowered-
+switch CFG surgery) — the M2/M3 grind exercises them against real datatests.
+
+Gate: workspace 2,885 tests, 0 failures, 35 ignored; lib clippy clean (LOSS-120
+tracks test-file --all-targets debt); oracle untouched. Cumulative: 128/202 items.
+Next: W9 — console + ifacedecomp + grammar + the datatest runner -> M2 (the 83
+datatests running end-to-end under --engine rust).
+
+
 ## Session (2026-06-13) — rust-port W7: storage + structuring; M1 name-parity 207/207
 
 All 11 W7 items verified: variable/cover (HighVariable + Cover, wiring Varnode::high
