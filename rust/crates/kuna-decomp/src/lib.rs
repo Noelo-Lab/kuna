@@ -59,6 +59,7 @@ pub mod kuna_restartlog;
 pub mod heritage;
 pub mod cover;
 pub mod variable;
+pub mod merge;
 pub mod subflow;
 pub mod condexe;
 pub mod expression;
