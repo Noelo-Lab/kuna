@@ -22,6 +22,10 @@ thiserror = "2.0"
 flate2 = "1.1"
 smallvec = "1.15"
 slotmap = "1.0"
+# Dev-only (kuna-harness): the datatest <stringmatch> engine.  std::regex
+# (ECMAScript) has no Rust equivalent; the regex crate is the documented
+# substitution (LOSS-007).  Used by the harness crate only -- never the engine.
+regex = "1"
 # Intra-workspace
 kuna-base = { path = "crates/kuna-base" }
 kuna-num = { path = "crates/kuna-num" }

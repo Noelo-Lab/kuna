@@ -21,6 +21,15 @@
 //!   the basic-block builder to the same B2 boundary the C++ snapshot represents),
 //!   and the `run_self_test()` aggregate used by BOTH the `tests/lift_diff.rs`
 //!   integration test and the `kuna-lift-diff` self-test binary.
+//! - [`unittest`]: C++ `test.cc`/`test.hh` — the `UnitTest`/`UnitTestSuite`
+//!   framework and the byte-faithful `N/M tests passed.` summary the Python
+//!   harness parses off **stderr**, plus `add_exit_code`.
+//! - [`testfunction`]: C++ `testfunction.cc`/`testfunction.hh` — the XML
+//!   `<decompilertest>` runner (`FunctionTestProperty`, `FunctionTestCollection`,
+//!   `run_test_files`) with the `<stringmatch>` min/max + multi-line matching and
+//!   the `Success -- `/`FAIL -- `/`Total tests applied = N` stdout grammar.
 
 pub mod corpus;
 pub mod liftdiff;
+pub mod testfunction;
+pub mod unittest;
