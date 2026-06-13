@@ -426,3 +426,86 @@ fn failures_summary_caps_at_ten() {
     // indent).  Count the indented form.
     assert_eq!(out.matches("\n  Error parsing ").count(), 10, "out:\n{out}");
 }
+
+// ===========================================================================
+// w9-harness-runner verifier adversarial tests.
+// ===========================================================================
+
+/// `endTest` is `count >= minimumMatch && count <= maximumMatch` with `count`
+/// (uint4) compared against `int4` min/max — the C++ `-Wno-sign-compare`
+/// conversion makes the int4 unsigned. The Rust cast `as uint4` reproduces it.
+/// Probe the exact `[min,max]` inclusive boundary: count==min and count==max
+/// pass; count==min-1 and count==max+1 fail.
+#[test]
+fn w9_endtest_inclusive_boundary_count() {
+    // min=2, max=2: exactly two matches pass; one fails; three fails.
+    let mut at2 = FunctionTestProperty::from_parts("c", 2, 2, &[r"hit"]);
+    assert!(run_property(&mut at2, &["hit", "x", "hit"])); // 2 -> pass
+    let mut at1 = FunctionTestProperty::from_parts("c", 2, 2, &[r"hit"]);
+    assert!(!run_property(&mut at1, &["hit"])); // 1 -> below min
+    let mut at3 = FunctionTestProperty::from_parts("c", 2, 2, &[r"hit"]);
+    assert!(!run_property(&mut at3, &["hit", "hit", "hit"])); // 3 -> above max
+}
+
+/// A min=max=0 ("must be absent") assertion is the corpus's negative form. The
+/// `count <= maximumMatch` term with max=0 means a single match fails it. This
+/// is the signedness-sensitive comparison (`0u32 <= 0i32 as u32`) at the zero
+/// boundary.
+#[test]
+fn w9_endtest_zero_max_negative_assertion() {
+    let mut absent = FunctionTestProperty::from_parts("none", 0, 0, &[r"forbidden"]);
+    assert!(run_property(&mut absent, &["clean output", "more"])); // 0 -> pass
+    let mut present = FunctionTestProperty::from_parts("none", 0, 0, &[r"forbidden"]);
+    assert!(!run_property(&mut present, &["has forbidden token"])); // 1 -> fail
+}
+
+/// The multi-line abort-then-restart quirk under an OVERLAPPING pattern where
+/// the failing mid-line is ALSO the first line of a fresh match. Pattern
+/// ["^X", "^Y$"]. Stream: "X1" (patnum 0->1), "X2" (not "^Y$"; abort to 0, then
+/// re-test "X2" against "^X" -> matches -> patnum 1), "Y" (matches "^Y$" ->
+/// count). Net exactly ONE full match — the re-test salvages the second X.
+#[test]
+fn w9_multiline_abort_restart_salvages_overlapping_first_line() {
+    let mut p = FunctionTestProperty::from_parts("xy", 1, 1, &[r"^X", r"^Y$"]);
+    assert!(run_property(&mut p, &["X1", "X2", "Y"]));
+    // Contrast: without a salvageable first line in between, the partial aborts
+    // and NO match completes (min=1 -> fail).
+    let mut q = FunctionTestProperty::from_parts("xy", 1, 1, &[r"^X", r"^Y$"]);
+    assert!(!run_property(&mut q, &["X1", "Q", "Y"]));
+}
+
+/// The bulk-output line slicer must feed the final line WITHOUT a trailing
+/// newline (C++ `if (prevpos != result.size())` tail). Drive two synthetic
+/// runs: one whose matched token is only on the final, newline-terminated echo
+/// line, and one where the matcher must see a line that the `echo` newline does
+/// produce. Both must reach the property. (echo always appends `\n`, so this
+/// asserts the slicer counts the last real line and does not drop it.)
+#[test]
+fn w9_bulkout_final_line_is_fed_to_matcher() {
+    // Single echoed line -> bulkout "marker\n"; the slicer's while-loop consumes
+    // it as [0,6) and prevpos becomes 7 == len, so the tail branch does NOT
+    // double-feed. The property must still see "marker" exactly once.
+    let xml = synth_xml(&["marker"], &[("once", 1, 1, "marker")]);
+    let f = write_tmp("w9_final_line.xml", &xml);
+    let mut out = String::new();
+    let failed = run_test_files(std::slice::from_ref(&f), &mut out);
+    assert_eq!(failed, 0, "out:\n{out}");
+    assert!(out.contains("Success -- once"), "out:\n{out}");
+    // And a max=1 assertion proves the final line was fed exactly once, not
+    // twice (a double-feed would push count to 2 and fail max=1).
+    assert!(out.contains("Total passing tests = 1"), "out:\n{out}");
+}
+
+/// A whitespace-only `<stringmatch>` tail must not emit an empty trailing
+/// pattern (C++ pos-skip-ws + break before emplace). A pattern split on `\n`
+/// whose second segment is all spaces yields ONE regex, not two; the property
+/// then matches single-line, not as a (never-satisfiable) two-line pattern.
+#[test]
+fn w9_trailing_whitespace_segment_emits_no_empty_regex() {
+    let xml = "<stringmatch name=\"t\" min=\"1\" max=\"1\">target\n      \t  </stringmatch>";
+    let p = parse_stringmatch(xml);
+    assert_eq!(p.pattern.len(), 1, "trailing ws tail must not add a regex");
+    // It behaves as a single-line match (would never fire if it were two-line).
+    let mut q = parse_stringmatch(xml);
+    assert!(run_property(&mut q, &["a target here"]));
+}
