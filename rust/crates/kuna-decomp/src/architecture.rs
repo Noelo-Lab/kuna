@@ -330,6 +330,16 @@ pub struct Architecture {
     /// `vector<TypeOp *>` `TypeOp::registerInstructions` fills).  Indexed by
     /// op-code; `None` for the unused slots.  Empty until `build_instructions`.
     inst: Vec<Option<crate::typeop::TypeOpInfo>>,
+    /// The p-code OpBehavior emulation table (C++ `TypeOp::behave`, the
+    /// `OpBehavior *` `TypeOp::registerInstructions` attaches to each `TypeOp`).
+    ///
+    /// In the Rust port the metadata (`inst`, above) and the emulation behavior
+    /// are split tables — the C++ `TypeOp` carries both; here the behavior table
+    /// is built alongside `inst` by [`build_instructions`](Architecture::build_instructions)
+    /// from `kuna_num::opbehavior::register_instructions`.  Drives the
+    /// constant-folding `op->collapse()` (`RuleCollapseConstants`).  Indexed by
+    /// op-code; empty until `build_instructions`.
+    opbehaviors: Vec<Option<Rc<dyn kuna_num::opbehavior::OpBehavior>>>,
 
     /// The disassembly engine for this binary (C++ `translate`, a `Translate*`).
     ///
@@ -423,6 +433,7 @@ impl Architecture {
             defaultfp: None,
             evalfp_current: None,
             inst: Vec::new(),
+            opbehaviors: Vec::new(),
             translate,
         };
         // C++ ctor calls resetDefaultsInternal(); then sets min_funcsymbol_size=1
@@ -592,6 +603,12 @@ impl Architecture {
         let manage = self.translate.manager_rc();
         let mut seam = ArchSeam::new_shared(manage);
         seam.min_laned_register_size = self.get_minimum_laned_register_size();
+        // Share the engine's OpBehavior emulation table with `glb` (the C++
+        // `Architecture` owns the `TypeOp`s, so `glb->inst[opc]->getBehavior()`
+        // reaches them directly).  The `Rc<dyn OpBehavior>` entries are cheap
+        // clones; the IR-transform passes (RuleCollapseConstants) fold constants
+        // through `glb.op_behavior(opc)`.
+        seam.opbehaviors = self.opbehaviors.clone();
         Rc::new(seam)
     }
 
@@ -850,6 +867,17 @@ impl Architecture {
     /// this through [`resolve_typeop`](Architecture::resolve_typeop).
     pub fn build_instructions(&mut self) {
         self.inst = crate::typeop::register_instructions();
+        // Build the OpBehavior emulation table alongside the TypeOp metadata
+        // (C++ `TypeOp::registerInstructions` attaches an `OpBehavior` to each
+        // `TypeOp`; the Rust port keeps them as parallel tables).  The float
+        // behaviors need a `FloatFormatProvider`; supply one that owns a clone of
+        // the engine's float formats so the table is self-contained (the C++
+        // passes the long-lived `Translate *`).
+        let provider: Rc<dyn kuna_num::opbehavior::FloatFormatProvider> =
+            Rc::new(OwnedFloatFormats::from_translate(&self.translate));
+        let mut behaviors: Vec<Option<Rc<dyn kuna_num::opbehavior::OpBehavior>>> = Vec::new();
+        kuna_num::opbehavior::register_instructions(&mut behaviors, &provider);
+        self.opbehaviors = behaviors;
     }
 
     /// Resolve an op-code to its `TypeOp` property triple (C++ `glb->inst[opc]`).
@@ -1150,6 +1178,40 @@ impl ArchOptionContext for Architecture {
     fn allow_context_set(&mut self, val: bool) {
         // C++ `glb->translate->allowContextSet(val)`.
         self.translate.allow_context_set(val);
+    }
+}
+
+/// A self-contained [`FloatFormatProvider`](kuna_num::opbehavior::FloatFormatProvider)
+/// owning a clone of the engine's float formats.
+///
+/// The C++ `TypeOp::registerInstructions` passes the long-lived `Translate *`;
+/// the Rust float behaviors store an `Rc<dyn FloatFormatProvider>` (kuna-num
+/// opbehavior module docs).  The behavior table outlives any single borrow of
+/// `translate`, so this provider clones the formats by value and serves
+/// references to its own copies (the formats are immutable engine config).
+struct OwnedFloatFormats {
+    formats: Vec<kuna_num::float::FloatFormat>,
+}
+
+impl OwnedFloatFormats {
+    /// Clone the engine's float formats for the standard p-code encoding sizes
+    /// (the C++ candidates: 2/4/8/10/16-byte IEEE formats; the engine returns
+    /// only those it actually defines).
+    fn from_translate(translate: &Sleigh) -> Self {
+        use kuna_sleigh::translate::Translate;
+        let mut formats = Vec::new();
+        for size in [2, 4, 8, 10, 16] {
+            if let Some(fmt) = translate.get_float_format(size) {
+                formats.push(fmt.clone());
+            }
+        }
+        OwnedFloatFormats { formats }
+    }
+}
+
+impl kuna_num::opbehavior::FloatFormatProvider for OwnedFloatFormats {
+    fn get_float_format(&self, size: i32) -> Option<&kuna_num::float::FloatFormat> {
+        self.formats.iter().find(|f| f.get_size() == size)
     }
 }
 

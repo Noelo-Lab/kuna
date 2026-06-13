@@ -471,6 +471,41 @@ impl Funcdata {
         self.vbank_mut().destroy(vn)
     }
 
+    /// Free / destroy Varnodes that no longer have any descendant reads (C++
+    /// `Funcdata::clearDeadVarnodes`, `funcdata_varnode.cc:850`).
+    ///
+    /// Walks the location set; a no-descend input that is not locked is made
+    /// free (and its cover cleared), and any now-free no-descend Varnode is
+    /// removed from the bank.  Called at the tail of `ActionDeadCode::apply`
+    /// after the op graph has been pruned.
+    pub fn clear_dead_varnodes(&mut self) -> KunaResult<()> {
+        // iter = vbank.beginLoc(); while(iter!=endLoc()) { vn = *iter++; ... }
+        // Collect first (the loop destroys Varnodes, invalidating the BTree
+        // iterator); the C++ advances the iterator before any mutation.
+        let candidates: Vec<VarnodeId> = self.vbank().iter_loc().collect();
+        for vn in candidates {
+            let v = match self.vbank().get(vn) {
+                Some(v) => v,
+                None => continue, // already destroyed this pass
+            };
+            if !v.has_no_descend() {
+                continue;
+            }
+            // if (vn->isInput() && !vn->isLockedInput()) { makeFree; clearCover; }
+            if v.is_input() && !v.is_locked_input() {
+                self.vbank_mut().make_free(vn);
+                if let Some(vm) = self.vbank_mut().get_mut(vn) {
+                    vm.clear_cover();
+                }
+            }
+            // if (vn->isFree()) vbank.destroy(vn);
+            if self.vbank().get(vn).map(|v| v.is_free()).unwrap_or(false) {
+                self.vbank_mut().destroy(vn)?;
+            }
+        }
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // Input-overlap pre-check (the portable half of setInputVarnode)
     // -----------------------------------------------------------------------

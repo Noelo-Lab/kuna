@@ -107,7 +107,13 @@ impl Funcdata {
 
         // sblocks.clear() -> force structuring to start over.
         self.clear_sblocks();
-        // heritage.forceRestructure();  -- SEAM(W7)
+        // heritage.forceRestructure(): the CFG may have changed (e.g. a block
+        // removed by ActionConditionalExe), invalidating the heritage engine's
+        // cached augmented dominator tree.  Forcing a rebuild on the next
+        // `heritage()` pass prevents `rename_recurse` from walking a stale
+        // (removed) block handle.  (Previously a `// SEAM(W7)`; reached now that
+        // ActionDeadCode + condexe actually mutate the CFG.)
+        self.heritage_force_restructure();
     }
 
     /// Set the initial ownership range for a basic block (C++

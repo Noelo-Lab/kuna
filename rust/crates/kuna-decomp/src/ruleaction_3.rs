@@ -1344,7 +1344,7 @@ impl Rule for RuleCollapseConstants {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!op->isCollapsible()) return 0;
+        // if (!op->isCollapsible()) return 0;  -- Expression must be collapsible
         let collapsible = {
             let o = data.obank().get(op).expect("RuleCollapseConstants: stale op");
             crate::op::is_collapsible(o, data.vbank())
@@ -1352,14 +1352,85 @@ impl Rule for RuleCollapseConstants {
         if !collapsible {
             return 0;
         }
-        // SEAM(W6): newval = glb->getConstant(op->collapse(markedInput));
-        //   op->collapse() drives the OpBehavior emulation through every input
-        //   (executeSimple), getArch()->getConstant builds the result address,
-        //   collapseConstantSymbol attaches the symbol, opMarkNoCollapse latches
-        //   the failure.  These are the W6 TypeOp/OpBehavior + symbol surfaces.
-        //   The isCollapsible guard is ported; the collapse itself is deferred.
-        //   Recorded as a loss.
-        0
+        // newval = data.getArch()->getConstant(op->collapse(markedInput));
+        //   op->collapse() drives the OpBehavior emulation (executeSimple) on the
+        //   op's constant inputs; getArch()->getConstant wraps the result in a
+        //   constant-space Address.  On any evaluation error the C++ catches the
+        //   LowlevelError and `opMarkNoCollapse`s the op (latching the failure).
+        let (collapsed, marked_input) = match dc_collapse(op, data) {
+            Some(v) => v,
+            None => {
+                // opMarkNoCollapse(op): don't know how / don't want to collapse.
+                data.op_mark_no_collapse(op);
+                return 0;
+            }
+        };
+        let out_size =
+            data.vbank().get(data.obank().get(op).unwrap().get_out().unwrap()).unwrap().get_size();
+        // vn = data.newVarnode(out->getSize(), getArch()->getConstant(collapsed));
+        let newval = data.get_arch().get_constant(collapsed);
+        let vn = data.new_varnode(out_size, &newval, None);
+        // collapseConstantSymbol(vn) — SEAM(W4): symbol propagation needs
+        // `getSymbolEntry` (no symbols recovered yet); markedInput is always
+        // false in the merged tree, so the symbol copy is a faithful no-op.
+        let _ = marked_input;
+        // for(i=numInput()-1;i>0;--i) opRemoveInput(op,i);  -- unlink old constants
+        let n = data.obank().get(op).expect("RuleCollapseConstants: stale op").num_input();
+        let mut i = n - 1;
+        while i > 0 {
+            data.op_remove_input(op, i);
+            i -= 1;
+        }
+        // opSetInput(op, vn, 0);  opSetOpcode(op, CPUI_COPY);
+        data.op_set_input(op, vn, 0).expect("RuleCollapseConstants: opSetInput");
+        data.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+        1
+    }
+}
+
+/// C++ `PcodeOp::collapse(bool &markedInput)` (op.cc:473): assuming every input
+/// is constant, evaluate the op to its constant result via the engine's
+/// [`OpBehavior`](kuna_num::opbehavior::OpBehavior) table.  Returns
+/// `Some((value, markedInput))` on success, `None` if the op cannot be
+/// constant-folded (the C++ throws `LowlevelError` -> caught -> opMarkNoCollapse).
+///
+/// `markedInput` mirrors the C++ "one of the inputs carries symbol info"
+/// pass-back; with the W4 symbol seam (no `getSymbolEntry`) it is always false.
+fn dc_collapse(op: OpId, data: &Funcdata) -> Option<(u64, bool)> {
+    let (eval_type, opc, num_input, in0, in1, out_size) = {
+        let o = data.obank().get(op).expect("collapse: stale op");
+        let out = o.get_out().expect("collapse: collapsible op has no output");
+        let out_size = data.vbank().get(out).expect("collapse: stale out").get_size();
+        let n = o.num_input();
+        // get_in panics on an out-of-range slot, so guard slot 1 by num_input
+        // (the C++ `getIn(1)` is only reached in the `binary` arm).
+        let in1 = if n > 1 { o.get_in(1) } else { None };
+        (o.get_eval_type(), o.code(), n, o.get_in(0), in1, out_size)
+    };
+    let _ = num_input;
+    let behave = data.get_arch().op_behavior(opc)?;
+    let in0 = in0?;
+    let (in0_size, in0_off) = {
+        let v = data.vbank().get(in0).expect("collapse: stale in0");
+        (v.get_size(), v.get_offset())
+    };
+    // markedInput stays false (getSymbolEntry is a W4 seam; see doc above).
+    let marked_input = false;
+    if (eval_type & pcodeop_flags::unary) != 0 {
+        match behave.evaluate_unary(out_size, in0_size, in0_off) {
+            Ok(v) => Some((v, marked_input)),
+            Err(_) => None, // LowlevelError -> opMarkNoCollapse
+        }
+    } else if (eval_type & pcodeop_flags::binary) != 0 {
+        let in1 = in1?;
+        let in1_off = data.vbank().get(in1).expect("collapse: stale in1").get_offset();
+        match behave.evaluate_binary(out_size, in0_size, in0_off, in1_off) {
+            Ok(v) => Some((v, marked_input)),
+            Err(_) => None,
+        }
+    } else {
+        // default: throw LowlevelError("Invalid constant collapse")
+        None
     }
 }
 

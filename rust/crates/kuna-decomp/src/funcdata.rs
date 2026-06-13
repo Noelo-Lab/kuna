@@ -284,6 +284,38 @@ impl Funcdata {
         &self.funcp
     }
 
+    /// The active return-value recovery state, or `None` if output recovery is
+    /// not in progress (C++ `Funcdata::getActiveOutput`).
+    ///
+    /// SEAM(W6): `ActionPrototypeTypes`/`initActiveOutput` (the proto-recovery
+    /// pass that builds the `ParamActive`) is a seam stub in the merged tree, so
+    /// there is never an active output — `ActionDeadCode::gatherConsumedReturn`
+    /// reads it to decide whether the return is fully consumed; `None` means it
+    /// falls through to the NZ-mask scan, the un-recovered default.
+    pub fn get_active_output(&self) -> Option<()> {
+        None
+    }
+
+    /// Number of sub-function call specifications (C++ `Funcdata::numCalls`).
+    ///
+    /// SEAM(W6/W7): the `FuncCallSpecs` recovery (`FlowInfo` CALL-site analysis)
+    /// is a seam in the merged tree — no call specs are built — so this is 0.
+    /// `ActionDeadCode::markConsumedParameters` iterates `0..numCalls()`, a no-op.
+    pub fn num_calls(&self) -> int4 {
+        0
+    }
+
+    /// Find the jump table associated with a BRANCHIND op, or `None` (C++
+    /// `Funcdata::findJumpTable`).
+    ///
+    /// SEAM(W7): `ActionDeadCode` uses this only for the BRANCHIND switch-var
+    /// consume mask; with no jump-table recovery (`JumpTable` is a W7 seam) this
+    /// is always `None`, so the BRANCHIND input is treated as fully consumed (the
+    /// conservative default the C++ takes when `jt == 0`).
+    pub fn find_jump_table(&self, _op: OpId) -> Option<()> {
+        None
+    }
+
     /// Perform an entire heritage pass linking Varnode reads to writes (C++
     /// `Funcdata::opHeritage`, `funcdata.hh:471` — `heritage.heritage()`).
     ///
@@ -308,6 +340,56 @@ impl Funcdata {
     pub fn heritage_pass(&self, addr: &Address) -> int4 {
         self.heritage.heritage_pass(addr)
     }
+
+    /// Overall count of heritage passes (C++ `Funcdata::getHeritagePass`,
+    /// `funcdata.hh:239` — `heritage.getPass()`).
+    pub fn get_heritage_pass(&self) -> int4 {
+        self.heritage.get_pass()
+    }
+
+    /// Force the heritage engine to regenerate its block structures on the next
+    /// pass (C++ `Funcdata::structureReset` -> `heritage.forceRestructure()`).
+    ///
+    /// Called from `structure_reset` after the CFG changed, so the cached
+    /// augmented dominator tree (holding stale block handles) is not reused — see
+    /// [`Heritage::force_restructure`](crate::heritage::Heritage::force_restructure).
+    pub fn heritage_force_restructure(&mut self) {
+        self.heritage.force_restructure();
+    }
+
+    /// Is it safe to remove dead code in a space? (C++
+    /// `Funcdata::deadRemovalAllowed`, `funcdata.hh:262` —
+    /// `heritage.deadRemovalAllowed(spc)`).
+    pub fn dead_removal_allowed(&self, spc: &std::rc::Rc<kuna_base::space::AddrSpace>) -> bool {
+        self.heritage.dead_removal_allowed(spc)
+    }
+
+    /// Record that dead code has been seen in a space (C++
+    /// `Funcdata::seenDeadcode`, `funcdata.hh:250` — `heritage.seenDeadCode(spc)`).
+    pub fn seen_deadcode(&mut self, spc: &std::rc::Rc<kuna_base::space::AddrSpace>) {
+        self.heritage.seen_dead_code(spc);
+    }
+
+    /// Delete any dead PcodeOps (C++ `Funcdata::clearDeadOps`, `funcdata.hh:437`
+    /// — `obank.destroyDead()`).
+    pub fn clear_dead_ops(&mut self) {
+        self.obank_mut().destroy_dead();
+    }
+
+    /// Ensure the per-space heritage info list exists (C++
+    /// `Heritage::buildInfoList`, called by `startProcessing` before the action
+    /// pipeline runs).  Idempotent.
+    ///
+    /// `deadRemovalAllowed`/`seenDeadcode` index this list by space, so any
+    /// action that reads them (e.g. `ActionDeadCode`) needs it populated; the
+    /// C++ invariant is `startProcessing` builds it before any action runs, but
+    /// the merged tree's `ActionStart` is a seam, so the actions ensure it.
+    pub fn ensure_heritage_info_list(&mut self) {
+        let mut heritage = std::mem::take(&mut self.heritage);
+        heritage.build_info_list(self);
+        self.heritage = heritage;
+    }
+
     /// Get the local function scope (C++ `getScopeLocal`).  // SEAM(W4)
     pub fn get_scope_local(&self) -> Option<&Scope> {
         self.localmap.as_ref()

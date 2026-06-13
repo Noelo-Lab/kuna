@@ -141,6 +141,17 @@ pub struct Architecture {
     /// Minimum Varnode size to check as a laned register (C++
     /// `Architecture::getMinimumLanedRegisterSize`).  // SEAM(W4)
     pub min_laned_register_size: int4,
+    /// The p-code OpBehavior emulation table (C++ `glb->inst[opc]->getBehavior()`),
+    /// indexed by op-code.
+    ///
+    /// The C++ `Architecture` IS-A `AddrSpaceManager` and owns the `TypeOp`
+    /// table (with each op's `OpBehavior`); the W3 `glb` skeleton carries the
+    /// behavior slice the IR-transform passes reach — `RuleCollapseConstants`
+    /// drives `PcodeOp::collapse` through it for constant folding.  Empty for
+    /// hand-built fixtures (those never fold constants); the real lift+analyze
+    /// path populates it from the engine's table in
+    /// `Architecture::build_arch_handle`.
+    pub opbehaviors: Vec<Option<Rc<dyn kuna_num::opbehavior::OpBehavior>>>,
 }
 
 impl Architecture {
@@ -159,7 +170,19 @@ impl Architecture {
     pub fn new_shared(manage: Rc<AddrSpaceManager>) -> Architecture {
         // C++ default: getMinimumLanedRegisterSize() returns the configured
         // minimum; the upstream default when unset is 4.
-        Architecture { manage, min_laned_register_size: 4 }
+        Architecture { manage, min_laned_register_size: 4, opbehaviors: Vec::new() }
+    }
+
+    /// Resolve an op-code to its emulation [`OpBehavior`](kuna_num::opbehavior::OpBehavior),
+    /// or `None` (C++ `glb->inst[opc]->getBehavior()`).
+    ///
+    /// Drives `PcodeOp::collapse` (`RuleCollapseConstants`).  `None` for
+    /// hand-built fixtures (empty table) or op-codes with no registered behavior.
+    pub fn op_behavior(
+        &self,
+        opc: kuna_num::opcodes::OpCode,
+    ) -> Option<&Rc<dyn kuna_num::opbehavior::OpBehavior>> {
+        self.opbehaviors.get(opc as usize).and_then(|o| o.as_ref())
     }
 
     /// Borrow the address-space manager (C++ `glb` viewed as an
@@ -200,6 +223,27 @@ pub struct Scope;
 /// prototype.
 #[derive(Debug, Clone, Default)]
 pub struct FuncProto;
+
+impl FuncProto {
+    /// Is the output (return value) storage locked? (C++ `FuncProto::isOutputLocked`).
+    ///
+    /// SEAM(W6): the proto-recovery passes are seam stubs and never lock the
+    /// output, so this reports the un-recovered default (`false`).  `ActionDeadCode::
+    /// gatherConsumedReturn` reads it to decide whether the return value is fully
+    /// consumed; with no locked proto it falls through to the NZ-mask scan.
+    pub fn is_output_locked(&self) -> bool {
+        false
+    }
+
+    /// Number of bytes of the return value that are consumed, or 0 if unknown
+    /// (C++ `FuncProto::getReturnBytesConsumed`).
+    ///
+    /// SEAM(W6): no recovered proto, so 0 ("no restriction") — the faithful
+    /// un-recovered default.
+    pub fn get_return_bytes_consumed(&self) -> i32 {
+        0
+    }
+}
 
 /// Shared handle to the [`Architecture`] (C++ `Funcdata::glb`, a borrowed
 /// `Architecture *`).
