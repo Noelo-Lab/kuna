@@ -279,15 +279,13 @@ impl TypeFactory for VoidTypeFactory {
 /// catches ONLY `ParamUnassignedError`.  In the kuna port the output assign of
 /// a return value too big for the output register reaches the SEAM(W4)
 /// hidden-return path, which returns a *Lowlevel* error (NOT ParamUnassigned).
-/// The `match ... Err(_)` swallows it and produces a spurious void return.
 ///
-/// This test pins the divergence: it asserts the *current* (swallowing)
-/// behavior and documents that C++ would instead surface a non-ParamUnassigned
-/// LowlevelError here (which, for `ignoreOutputError=true`, upstream would
-/// never produce — the hidden-return pointer is materialized — so the broad
-/// catch masks a real seam error rather than the intended ParamUnassignedError).
+/// After the F1 repair the catch is `Err(KunaError::ParamUnassigned { .. })`
+/// only, so a non-ParamUnassigned `LowlevelError` PROPAGATES rather than being
+/// swallowed into a spurious void return — matching C++ control flow, where the
+/// `catch(ParamUnassignedError&)` lets any other exception escape.
 #[test]
-fn assign_parameter_storage_ignore_output_swallows_nonparamunassigned_w6s4f2() {
+fn assign_parameter_storage_ignore_output_propagates_nonparamunassigned_w6s4f2() {
     let mgr = AddrSpaceManager::new();
     let reg = reg_space_le();
     let model = two_reg_proto_model(&mgr, &reg);
@@ -302,36 +300,27 @@ fn assign_parameter_storage_ignore_output_swallows_nonparamunassigned_w6s4f2() {
         first_var_arg_slot: -1,
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
-    // ignore_output_error = true: C++ catches ParamUnassignedError only.  Here a
-    // Lowlevel (seam) error is swallowed, leaving a void output (res[0]).
+    // ignore_output_error = true: C++ catches ParamUnassignedError only.  A
+    // non-ParamUnassigned Lowlevel (seam) error must escape, NOT be swallowed.
     let r = model.assign_parameter_storage(&proto, &mut res, true, &tf, &mgr);
     assert!(
-        r.is_ok(),
-        "ignore-output path returned Err -- the over-broad catch was tightened? \
-         (got {:?})",
+        matches!(r, Err(KunaError::Lowlevel { .. })),
+        "the SEAM Lowlevel error must propagate past the ParamUnassigned-only \
+         catch (got {:?})",
         r
-    );
-    assert!(!res.is_empty(), "a void output piece must have been pushed");
-    assert_eq!(
-        res[0].type_.as_ref().map(|t| t.get_metatype()),
-        Some(type_metatype::TYPE_VOID),
-        "swallowed output assign should fall back to a void return"
     );
 }
 
 /// `FuncProto::updateAllTypes` (fspec.cc:4199) calls `assignParameterStorage`
 /// with `ignoreOutputError=false`, so the SEAM(W4) hidden-return Lowlevel error
 /// propagates INTO updateAllTypes' own `try`.  C++ catches ONLY
-/// `ParamUnassignedError`; a `LowlevelError` would escape `updateAllTypes`
-/// entirely.  The port catches with `Err(_)` and sets `error_inputparam`,
-/// returning `Ok`.
+/// `ParamUnassignedError`; a `LowlevelError` escapes `updateAllTypes` entirely.
 ///
-/// This is the load-bearing F1 case: the port converts a propagating
-/// LowlevelError into a swallowed "input error" flag, diverging from C++
-/// control flow.  The test documents the current behavior (Ok + error flag set)
-/// and flags it as a divergence in the verdict.
+/// After the F1 repair the catch is `Err(KunaError::ParamUnassigned { .. })`
+/// only, so the SEAM Lowlevel error PROPAGATES out of `update_all_types` rather
+/// than being swallowed into `error_inputparam` — matching C++ control flow.
 #[test]
-fn update_all_types_swallows_seam_lowlevel_as_input_error_w6s4f1() {
+fn update_all_types_propagates_seam_lowlevel_w6s4f1() {
     let mgr = AddrSpaceManager::new();
     let reg = reg_space_le();
     let model = Rc::new(two_reg_proto_model(&mgr, &reg));
@@ -349,17 +338,13 @@ fn update_all_types_swallows_seam_lowlevel_as_input_error_w6s4f1() {
         first_var_arg_slot: -1,
     };
     let r = fp.update_all_types(&proto, &tf, &mgr);
-    // Current port behavior: Ok, with the input-error flag set (the non-
-    // ParamUnassigned Lowlevel error was caught by the broad `Err(_)`).
+    // Repaired port behavior: the non-ParamUnassigned Lowlevel error escapes
+    // (only a real ParamUnassignedError would set error_inputparam + return Ok).
     assert!(
-        r.is_ok(),
-        "updateAllTypes propagated an error -- broad catch tightened? (got {:?})",
+        matches!(r, Err(KunaError::Lowlevel { .. })),
+        "updateAllTypes must propagate the non-ParamUnassigned Lowlevel error \
+         (got {:?})",
         r
-    );
-    assert!(
-        fp.has_input_errors(),
-        "the swallowed error must have set error_inputparam (documents the divergence: \
-         C++ would PROPAGATE a non-ParamUnassigned LowlevelError out of updateAllTypes)"
     );
 }
 

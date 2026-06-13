@@ -3229,7 +3229,7 @@ impl ParamListStandard {
 /// Build the standard "cannot assign parameter address" error for a data-type
 /// (C++ `ParamUnassignedError`).
 fn unassigned_err(dt: &Rc<Datatype>) -> KunaError {
-    KunaError::lowlevel(format!(
+    KunaError::param_unassigned(format!(
         "Cannot assign parameter address for {}",
         dt.get_name()
     ))
@@ -3787,7 +3787,7 @@ impl ProtoModel {
         if ignore_output_error {
             match self.output().assign_map(proto, typefactory, res, manager) {
                 Ok(()) => {}
-                Err(_) => {
+                Err(KunaError::ParamUnassigned { .. }) => {
                     // ParamUnassignedError: leave address undefined, void return
                     res.clear();
                     let p = ParameterPieces {
@@ -3797,6 +3797,7 @@ impl ProtoModel {
                     };
                     res.push(p);
                 }
+                Err(e) => return Err(e),
             }
         } else {
             self.output().assign_map(proto, typefactory, res, manager)?;
@@ -5219,10 +5220,11 @@ impl FuncProto {
                     j += 1;
                 }
             }
-            Err(_) => {
+            Err(KunaError::ParamUnassigned { .. }) => {
                 // ParamUnassignedError
                 self.flags |= func_proto_flags::ERROR_INPUTPARAM;
             }
+            Err(e) => return Err(e),
         }
         self.update_this_pointer();
         Ok(())
