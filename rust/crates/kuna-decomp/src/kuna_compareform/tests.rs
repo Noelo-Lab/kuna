@@ -297,6 +297,74 @@ fn signed_overflow_guard_declines() {
     assert!(fd.obank().get(op).unwrap().is_canonical_lessequal());
 }
 
+// --- option parse (OptionCompareForm::apply) ---------------------------------
+
+/// `original` => `present_lessequal = true` (restore the source LESSEQUAL form);
+/// the confirmation echoes the upstream `"Comparison presentation set to ... form"`.
+#[test]
+fn parse_original_sets_present_lessequal() {
+    let (form, msg) = parse_compare_form("original").unwrap();
+    assert_eq!(form, CompareForm::Original);
+    assert!(form.present_lessequal()); // glb->present_lessequal = true
+    assert_eq!(form.as_str(), "original");
+    assert_eq!(msg, "Comparison presentation set to original form");
+}
+
+/// `canonical` => `present_lessequal = false` (leave the canonical `<`/`s<` form).
+#[test]
+fn parse_canonical_clears_present_lessequal() {
+    let (form, msg) = parse_compare_form("canonical").unwrap();
+    assert_eq!(form, CompareForm::Canonical);
+    assert!(!form.present_lessequal()); // glb->present_lessequal = false
+    assert_eq!(form.as_str(), "canonical");
+    assert_eq!(msg, "Comparison presentation set to canonical form");
+}
+
+#[test]
+fn parse_unknown_is_error() {
+    // C++ `throw ParseError("Must specify compareform as 'canonical' or 'original'")`;
+    // the Rust port surfaces it as a parse error carrying the same text.
+    let err = parse_compare_form("neither").unwrap_err();
+    assert!(format!("{err}").contains("Must specify compareform as 'canonical' or 'original'"));
+    // empty string is also rejected (not "original"/"canonical").
+    assert!(parse_compare_form("").is_err());
+    // no case-folding: only the exact lowercase tokens match.
+    assert!(parse_compare_form("Original").is_err());
+    assert!(parse_compare_form("CANONICAL").is_err());
+}
+
+/// The parsed form's `present_lessequal` flag is exactly the gate
+/// [`ActionPresentCompareForm`] consumes: `original` runs the restore, `canonical`
+/// makes it a no-op.
+#[test]
+fn parsed_form_drives_gate() {
+    let mk = |fd: &mut Funcdata| -> OpId {
+        let v = mk_var(fd, 0x100, 4);
+        let c = fd.new_constant(4, 5);
+        let op = mk_op(fd, 0x108, 2, OpCode::CPUI_INT_LESSEQUAL);
+        wire(fd, v, op, 0);
+        wire(fd, c, op, 1);
+        let out = fd.new_unique(1, Some(unk(1)));
+        let _ = set_def(fd, out, op);
+        assert!(fd.replace_lessequal(op).unwrap()); // V <= 5  =>  V < 6 (marked)
+        op
+    };
+
+    // original: gate on => restore back to V <= 5.
+    let mut fd = build_fd();
+    let op = mk(&mut fd);
+    let (orig, _) = parse_compare_form("original").unwrap();
+    assert_eq!(run_action(&mut fd, orig.present_lessequal()), 1);
+    assert_eq!(op_code_of(&fd, op), OpCode::CPUI_INT_LESSEQUAL);
+
+    // canonical: gate off => leave the canonical V < 6 in place.
+    let mut fd = build_fd();
+    let op = mk(&mut fd);
+    let (canon, _) = parse_compare_form("canonical").unwrap();
+    assert_eq!(run_action(&mut fd, canon.present_lessequal()), 0);
+    assert_eq!(op_code_of(&fd, op), OpCode::CPUI_INT_LESS);
+}
+
 // --- clone filtering ---------------------------------------------------------
 
 #[test]

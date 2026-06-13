@@ -30,6 +30,14 @@
 //! `Architecture::present_lessequal`; [`action`] uses the shipped default
 //! (`original` => `present_lessequal = true`, kuna DIV-2 default-on, GH-558).
 //!
+//! The option-apply body that selects that gate value — `OptionCompareForm::apply`
+//! (`kuna_compareform.cc:85`) — is ported as [`parse_compare_form`] (mirroring the
+//! sibling `parse_return_pair_form` / `parse_memset_recover_form`): it parses
+//! `original`/`canonical` into [`CompareForm`] (the `glb->present_lessequal` write
+//! becomes the returned form, threaded by `w4-kuna-p0-pack` into
+//! [`Architecture::present_lessequal`]) and surfaces the C++ `throw ParseError(...)`
+//! as a [`KunaError::parse`].
+//!
 //! ## SEAM(W6) — opcode-flag resolution
 //!
 //! `opSetOpcode(...)` resolves `glb->inst[opc]` (the W6 typeop `inst` table); the
@@ -46,6 +54,7 @@
 //! its `newConstant` default type.  Noted in the structured losses.
 
 use kuna_base::address::{calc_int_max, calc_int_min, calc_mask, calc_uint_max};
+use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, intb, uintb};
 use kuna_num::opcodes::OpCode;
 
@@ -220,6 +229,69 @@ fn lessequal_type_op(opc: OpCode) -> TypeOp {
         _ => (f::binary, "?"),
     };
     TypeOp::new(opc, flags, name.to_string())
+}
+
+/// (kuna GH-558) How canonicalized comparisons are presented
+/// (the two values of `option compareform`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompareForm {
+    /// `original` (default): restore the source LESSEQUAL form for presentation
+    /// (`glb->present_lessequal = true`; [`ActionPresentCompareForm`] runs).
+    Original,
+    /// `canonical`: leave the canonicalized `<`/`s<` form in place
+    /// (`glb->present_lessequal = false`).
+    Canonical,
+}
+
+impl CompareForm {
+    /// The resolved `glb->present_lessequal` flag for this form
+    /// (C++ `glb->present_lessequal = (p1 == "original")`).
+    pub fn present_lessequal(self) -> bool {
+        matches!(self, CompareForm::Original)
+    }
+
+    /// The `option compareform <p1>` token for this form.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CompareForm::Original => "original",
+            CompareForm::Canonical => "canonical",
+        }
+    }
+}
+
+/// Parse the `option compareform original|canonical` argument and produce the
+/// resolved form plus the confirmation message (C++ `OptionCompareForm::apply`,
+/// `kuna_compareform.cc:85`).
+///
+/// ```text
+///   if (p1 == "original")       glb->present_lessequal = true;
+///   else if (p1 == "canonical") glb->present_lessequal = false;
+///   else throw ParseError("Must specify compareform as 'canonical' or 'original'");
+///   return "Comparison presentation set to " + p1 + " form";
+/// ```
+///
+/// The C++ `throw ParseError(...)` surfaces as a [`KunaError::parse`] (the
+/// established option-parse error idiom shared with the sibling
+/// [`parse_return_pair_form`](crate::kuna_returnpair::parse_return_pair_form) /
+/// [`parse_memset_recover_form`](crate::kuna_memsetsequence::parse_memset_recover_form)).
+/// The caller writes the resolved [`CompareForm::present_lessequal`] into
+/// [`Architecture::present_lessequal`].
+pub fn parse_compare_form(p1: &str) -> KunaResult<(CompareForm, String)> {
+    // if (p1 == "original")       glb->present_lessequal = true;
+    // else if (p1 == "canonical") glb->present_lessequal = false;
+    // else throw ParseError("Must specify compareform as 'canonical' or 'original'");
+    let form = if p1 == "original" {
+        CompareForm::Original
+    } else if p1 == "canonical" {
+        CompareForm::Canonical
+    } else {
+        return Err(KunaError::parse(
+            "Must specify compareform as 'canonical' or 'original'",
+        ));
+    };
+    // glb->present_lessequal = ...;  -- left to the caller (Architecture::present_lessequal).
+    // return "Comparison presentation set to " + p1 + " form";
+    Ok((form, format!("Comparison presentation set to {p1} form")))
 }
 
 /// Per-file registration row (C++ `ActionPresentCompareForm`, placed after the
