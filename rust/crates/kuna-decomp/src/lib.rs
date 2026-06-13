@@ -43,6 +43,7 @@ pub mod action;
 pub mod options;
 pub mod database;
 pub mod architecture;
+pub mod decompile_drive;
 pub mod capability;
 pub mod libdecomp;
 pub mod overrides;

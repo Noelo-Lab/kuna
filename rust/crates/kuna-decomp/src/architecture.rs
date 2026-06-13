@@ -46,7 +46,7 @@
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
+use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::AddrSpaceManager;
 use kuna_base::types::{int4, uint4};
 
@@ -55,10 +55,15 @@ use kuna_sleigh::translate::{Translate, UniqueLayout};
 
 use crate::action::ActionDatabase;
 use crate::database::Database;
+use crate::dtype::{type_metatype, TypeFactory, TypeFactoryImpl};
 use crate::flow::flow_flags;
+use crate::fspec::ProtoModel;
 use crate::funcdata::Funcdata;
 use crate::inject_sleigh::PcodeInjectLibrarySleigh;
-use crate::options::{split_datatype, OptionDatabase};
+use crate::options::{
+    split_datatype, ArchOptionContext, BraceCategory, NamespaceStrategy, OptionDatabase,
+};
+use crate::printc::PrintC;
 use crate::seams::{ArchHandle, Architecture as ArchSeam};
 use crate::userop::UserOpManage;
 
@@ -293,6 +298,27 @@ pub struct Architecture {
     /// Comments for this architecture (C++ `commentdb`).  // SEAM(comment.cc)
     pub commentdb: CommentDatabase,
 
+    // --- W6/W8 subsystems wired by `init` (architecture.hh:211-233) -------
+    /// Data-type factory (C++ `types`, a `TypeFactory*`).  Empty until
+    /// [`build_typegrp`](Architecture::build_typegrp) + `build_core_types`.
+    types: TypeFactoryImpl,
+    /// The c-language printer (C++ `print`, the active `PrintLanguage*`).
+    print: PrintC,
+    /// Registered prototype models (C++ `protoModels`, name -> `ProtoModel*`).
+    /// A `BTreeMap` (ADR 0002) for deterministic iteration matching the C++
+    /// `map<string,ProtoModel*>` ordered traversal in `parseCompilerConfig`.
+    proto_models: std::collections::BTreeMap<String, Rc<ProtoModel>>,
+    /// The default prototype model (C++ `defaultfp`).  `None` until a cspec is
+    /// parsed (or a default is seeded by [`build_default_proto`]).
+    defaultfp: Option<Rc<ProtoModel>>,
+    /// The current-evaluation prototype model (C++ `evalfp_current`); falls
+    /// back to `defaultfp` when unset.
+    evalfp_current: Option<Rc<ProtoModel>>,
+    /// The p-code OpBehavior / `TypeOp` property table (C++ `inst`, the
+    /// `vector<TypeOp *>` `TypeOp::registerInstructions` fills).  Indexed by
+    /// op-code; `None` for the unused slots.  Empty until `build_instructions`.
+    inst: Vec<Option<crate::typeop::TypeOpInfo>>,
+
     /// The disassembly engine for this binary (C++ `translate`, a `Translate*`).
     ///
     /// Owned here as a concrete [`Sleigh`] (the C++ `Architecture` is-a
@@ -378,6 +404,13 @@ impl Architecture {
             userops: UserOpManage::new(),
             pcodeinjectlib: PcodeInjectLibrarySleigh::new(inject_tempbase),
             commentdb: CommentDatabase::new(),
+            // C++ ctor leaves types/print/defaultfp null; init() fills them.
+            types: TypeFactoryImpl::new(),
+            print: PrintC::new(),
+            proto_models: std::collections::BTreeMap::new(),
+            defaultfp: None,
+            evalfp_current: None,
+            inst: Vec::new(),
             translate,
         };
         // C++ ctor calls resetDefaultsInternal(); then sets min_funcsymbol_size=1
@@ -547,6 +580,268 @@ impl Architecture {
         seam.min_laned_register_size = self.get_minimum_laned_register_size();
         Rc::new(seam)
     }
+
+    // -----------------------------------------------------------------------
+    // Owned-subsystem accessors (the `glb->types`/`glb->print`/… surface the
+    // ifacedecomp porter confirmed were absent — w9x-arch-engine-glue)
+    // -----------------------------------------------------------------------
+
+    /// Borrow the data-type factory (C++ `glb->types`).
+    pub fn types(&self) -> &dyn TypeFactory {
+        &self.types
+    }
+
+    /// Borrow the concrete type factory (when the `TypeFactoryImpl`-specific
+    /// builders, e.g. `set_core_type`, are needed by the init pipeline).
+    pub fn types_impl(&self) -> &TypeFactoryImpl {
+        &self.types
+    }
+
+    /// Borrow the c-language printer (C++ `glb->print`).
+    pub fn print(&self) -> &PrintC {
+        &self.print
+    }
+
+    /// Mutably borrow the c-language printer (drives `docFunction` + the print
+    /// option setters).
+    pub fn print_mut(&mut self) -> &mut PrintC {
+        &mut self.print
+    }
+
+    /// Install the load image (C++ `glb->loader`; owned inside the engine in
+    /// the Rust port).
+    ///
+    /// The C++ `Architecture::loader` is a `LoadImage*` the translator was given;
+    /// in the Rust port the `Sleigh` engine owns the loader (it borrows it behind
+    /// a `RefCell` for `load_fill`, driven by decode), so the architecture's
+    /// loader surface is the engine's bound image.  This forwards to
+    /// `Sleigh::set_loader`, matching the C++ `restoreFromSpec` handing the
+    /// loader to the translator.
+    pub fn set_loader(&mut self, loader: Box<dyn kuna_sleigh::loadimage::LoadImage>) {
+        self.translate.set_loader(loader);
+    }
+
+    /// Forward `glb->translate->allowContextSet(val)` — the context database is
+    /// owned inside the engine in the Rust port (C++ `glb->context` is a
+    /// `ContextDatabase*` the translator holds; `Sleigh` owns it here), so the
+    /// architecture's context surface forwards to the engine.
+    pub fn context_allow_set(&self, val: bool) {
+        self.translate.allow_context_set(val);
+    }
+
+    // -----------------------------------------------------------------------
+    // Prototype-model registry (C++ protoModels / defaultfp / evalfp_current)
+    // -----------------------------------------------------------------------
+
+    /// Look up a prototype model by name (C++ `Architecture::getModel`,
+    /// architecture.cc:235 — `protoModels.find(nm)`).  Returns `None` for an
+    /// unregistered name (the C++ throws `LowlevelError("Unknown prototype
+    /// model");` — the caller maps `None` to that).
+    pub fn get_model(&self, nm: &str) -> Option<&Rc<ProtoModel>> {
+        self.proto_models.get(nm)
+    }
+
+    /// Whether a prototype model with the given name is registered (C++
+    /// `Architecture::hasModel`).
+    pub fn has_model(&self, nm: &str) -> bool {
+        self.proto_models.contains_key(nm)
+    }
+
+    /// The default prototype model (C++ `glb->defaultfp`).  `None` until a
+    /// cspec is parsed / [`build_default_proto`](Architecture::build_default_proto).
+    pub fn default_fp(&self) -> Option<&Rc<ProtoModel>> {
+        self.defaultfp.as_ref()
+    }
+
+    /// The current-evaluation model (C++ `glb->evalfp_current`), falling back
+    /// to `defaultfp` when unset (C++ `evalfp_current==0 ? defaultfp : …`).
+    pub fn eval_fp_current(&self) -> Option<&Rc<ProtoModel>> {
+        self.evalfp_current.as_ref().or(self.defaultfp.as_ref())
+    }
+
+    /// Register a prototype model under its name (C++ `protoModels[name] =`).
+    pub fn register_model(&mut self, model: Rc<ProtoModel>) {
+        self.proto_models.insert(model.get_name().to_string(), model);
+    }
+
+    /// Set the default prototype model (C++ `Architecture::setDefaultModel`,
+    /// architecture.cc:222).
+    pub fn set_default_model_rc(&mut self, model: Rc<ProtoModel>) {
+        self.defaultfp = Some(model);
+    }
+
+    // -----------------------------------------------------------------------
+    // init / restoreFromSpec pipeline (architecture.cc:1395 / sleigh_arch.cc)
+    // -----------------------------------------------------------------------
+
+    /// Build the data-type factory + register the data organization
+    /// (C++ `SleighArchitecture::buildTypegrp`, sleigh_arch.cc:198 —
+    /// `types = new TypeFactory(this)`).  The factory is constructed empty;
+    /// [`build_core_types`](Architecture::build_core_types) seeds the core types
+    /// and [`finish_typegrp`](Architecture::finish_typegrp) calls `setupSizes`.
+    pub fn build_typegrp(&mut self) {
+        self.types = TypeFactoryImpl::new();
+        self.types.set_max_basetype_size(self.max_basetype_size);
+    }
+
+    /// Seed the core data-types (C++ `SleighArchitecture::buildCoreTypes`,
+    /// sleigh_arch.cc:204, the no-`<coretypes>` default branch — the verbatim
+    /// `setCoreType` sequence + `cacheCoreTypes`).
+    pub fn build_core_types(&mut self) -> KunaResult<()> {
+        use type_metatype::*;
+        let t = &self.types;
+        t.set_core_type("void", 1, TYPE_VOID, false)?;
+        t.set_core_type("bool", 1, TYPE_BOOL, false)?;
+        t.set_core_type("uint1", 1, TYPE_UINT, false)?;
+        t.set_core_type("uint2", 2, TYPE_UINT, false)?;
+        t.set_core_type("uint4", 4, TYPE_UINT, false)?;
+        t.set_core_type("uint8", 8, TYPE_UINT, false)?;
+        t.set_core_type("int1", 1, TYPE_INT, false)?;
+        t.set_core_type("int2", 2, TYPE_INT, false)?;
+        t.set_core_type("int4", 4, TYPE_INT, false)?;
+        t.set_core_type("int8", 8, TYPE_INT, false)?;
+        t.set_core_type("float4", 4, TYPE_FLOAT, false)?;
+        t.set_core_type("float8", 8, TYPE_FLOAT, false)?;
+        t.set_core_type("float10", 10, TYPE_FLOAT, false)?;
+        t.set_core_type("float16", 16, TYPE_FLOAT, false)?;
+        t.set_core_type("xunknown1", 1, TYPE_UNKNOWN, false)?;
+        t.set_core_type("xunknown2", 2, TYPE_UNKNOWN, false)?;
+        t.set_core_type("xunknown4", 4, TYPE_UNKNOWN, false)?;
+        t.set_core_type("xunknown8", 8, TYPE_UNKNOWN, false)?;
+        t.set_core_type("code", 1, TYPE_CODE, false)?;
+        t.set_core_type("char", 1, TYPE_INT, true)?;
+        t.set_core_type("wchar2", 2, TYPE_INT, true)?;
+        t.set_core_type("wchar4", 4, TYPE_INT, true)?;
+        t.cache_core_types()?;
+        Ok(())
+    }
+
+    /// Finish the type factory: set up the default sizes (C++
+    /// `types->setupSizes()`, the tail of `parseCompilerConfig` when no
+    /// `<data_organization>` was registered).  Reads the architecture's default
+    /// data-space / stack-pointer widths (the `glb->` accessors the C++
+    /// `setupSizes` queries).
+    pub fn finish_typegrp(&self) {
+        let manage = self.manage();
+        let default_size = manage.get_default_size();
+        let default_data_addr_size = manage
+            .get_default_data_space()
+            .map(|s| s.get_addr_size() as int4)
+            .unwrap_or(default_size);
+        let stack_pointer_size =
+            manage.get_stack_space().map(|s| s.get_addr_size() as int4);
+        self.types.set_default_alignment_map();
+        self.types.setup_sizes(stack_pointer_size, default_data_addr_size, default_size);
+    }
+
+    /// Seed a single default prototype model when the cspec proto decode is not
+    /// run (the W6 `decodeDefaultProto`/`decodeProto` cspec pipeline is its own
+    /// item).  Builds an empty `unknown`-style default model over the engine's
+    /// address spaces so `defaultfp`/`getModel("unknown")` resolve and the
+    /// `extrapop` option has a target.  Mirrors the C++ post-`parseCompilerConfig`
+    /// invariant that `defaultfp != 0`.
+    ///
+    /// SEAM(W6 cspec): the *real* default proto model comes from the cspec
+    /// `<default_proto><prototype …>` decode (`ProtoModel::decode` building the
+    /// param lists from `<input>`/`<output>` `<pentry>` records).  Until that
+    /// cspec pipeline is wired here, a name-only default model is registered so
+    /// the engine has a non-null `defaultfp` (recorded as a loss).
+    pub fn build_default_proto(&mut self) {
+        let mut model = ProtoModel::new(self.manage());
+        model.set_name("unknown");
+        let rc = Rc::new(model);
+        self.register_model(Rc::clone(&rc));
+        self.defaultfp = Some(rc);
+    }
+
+    /// Build the universal Action tree + the "decompile" root (C++
+    /// `Architecture::buildAction` -> `allacts.universalAction(this)` +
+    /// `resetDefaults()`, architecture.cc:590).  The stack space (if any) is
+    /// taken from the engine so the stack-aware passes are scheduled.
+    pub fn build_action(&mut self) {
+        let stackspace = self.manage().get_stack_space().cloned();
+        let stackspace_index = stackspace.as_ref().map(|s| s.get_index());
+        crate::universalaction::install_universal(
+            &mut self.allacts,
+            stackspace,
+            stackspace_index,
+            Vec::new(),
+        );
+    }
+
+    /// Register the p-code OpBehavior table (C++ `Architecture::buildInstructions`,
+    /// architecture.cc:614 — `TypeOp::registerInstructions(inst,types,translate)`).
+    ///
+    /// Populates `glb->inst` from the ported `typeop::register_instructions`
+    /// (the real `TypeOp::registerInstructions` table, indexed by op-code, with
+    /// each op's property-flag word + name).  The flow/print classifiers read
+    /// this through [`resolve_typeop`](Architecture::resolve_typeop).
+    pub fn build_instructions(&mut self) {
+        self.inst = crate::typeop::register_instructions();
+    }
+
+    /// Resolve an op-code to its `TypeOp` property triple (C++ `glb->inst[opc]`).
+    ///
+    /// Reads the populated `inst` table; falls back to the canonical
+    /// [`typeop::type_op_for`](crate::typeop::type_op_for) when the table is
+    /// empty (the architecture was constructed but `build_instructions` has not
+    /// run yet) so the flow engine always gets the right property flags.
+    pub fn resolve_typeop(&self, opc: kuna_num::opcodes::OpCode) -> crate::seams::TypeOp {
+        match self.inst.get(opc as usize).and_then(|o| o.as_ref()) {
+            Some(info) => info.to_seam(),
+            None => crate::typeop::type_op_for(opc),
+        }
+    }
+
+    /// Drive the post-engine init pipeline against an already-bootstrapped
+    /// engine (the `Sleigh` decoded a `.sla` and the loader/context were set —
+    /// the work the XML frontend `restoreFromSpec`/`buildTranslator` did).  This
+    /// is the tail of C++ `Architecture::init` (architecture.cc:1395) from
+    /// `buildTypegrp` onward, with the spec-file/translator build already done
+    /// by the caller:
+    ///
+    /// ```text
+    /// buildContext      (engine owns it — context_allow_set is the surface)
+    /// buildTypegrp      -> build_typegrp
+    /// buildDatabase     (done in `new`)
+    /// buildCoreTypes    -> build_core_types
+    /// parseCompilerConfig tail -> build_default_proto + finish_typegrp
+    /// buildAction       -> build_action
+    /// print->initializeFromArchitecture
+    /// buildInstructions -> build_instructions
+    /// ```
+    ///
+    /// The full XML spec decode (`parseProcessorConfig`/`parseCompilerConfig`
+    /// reading the pspec/cspec tags) is the W6 cspec item; this wires the
+    /// subsystem *construction* + ordering so a decoded engine becomes a
+    /// decompilation-ready `Architecture`.
+    pub fn init_post_engine(&mut self) -> KunaResult<()> {
+        self.build_typegrp();
+        // C++ `TypeFactory::TypeFactory` runs `setupSizes()` (the alignment map
+        // + the core sizes) in the constructor, *before* `buildCoreTypes` calls
+        // `setCoreType` (which queries the alignment map via `getAlignment`).
+        // Mirror that ordering here: finish the size/alignment setup first.
+        self.finish_typegrp();
+        self.build_core_types()?;
+        self.build_default_proto();
+        self.build_action();
+        self.print.initialize_from_architecture();
+        // C++ `symboltab->adjustCaches()` resizes the global scope's per-space
+        // maps when the spec decode created new spaces.  The Rust `Database`
+        // sizes its scope maps from `num_spaces()` at attach time and the
+        // post-engine init adds no spaces beyond those the engine already
+        // carried, so no resize is needed here (SEAM(W4): the cache-resize
+        // surface lands with the scope-space item if a later spacebase decode
+        // adds spaces).
+        self.build_instructions();
+        // C++ `min_funcsymbol_size = translate->getAlignment()` when <= 8
+        // (restoreFromSpec, architecture.cc:646).
+        let align = self.translate.get_alignment();
+        if align <= 8 {
+            self.min_funcsymbol_size = align;
+        }
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -598,6 +893,235 @@ fn ir_boundary_manager(src: &AddrSpaceManager) -> AddrSpaceManager {
     let next = m.num_spaces();
     let _ = m.insert_space(Rc::new(FspecSpace::new(next)));
     m
+}
+
+// ---------------------------------------------------------------------------
+// ArchOptionContext — wire the `option NAME VALUE` command (the most-used
+// datatest command) into the real Architecture / printer / type factory.
+// (w9x-arch-engine-glue, item #2)
+//
+// Each method is the `glb->…` body the matching `ArchOption::apply`
+// (options.cc) reaches; the `// SEAM(...)` markers in the options.rs trait doc
+// are now wired to the real subsystems this `Architecture` owns.
+// ---------------------------------------------------------------------------
+
+impl ArchOptionContext for Architecture {
+    // --- plain config fields ----------------------------------------------
+    fn set_readonly_propagate(&mut self, val: bool) {
+        self.readonlypropagate = val;
+    }
+    fn set_infer_pointers(&mut self, val: bool) {
+        self.infer_pointers = val;
+    }
+    fn set_analyze_for_loops(&mut self, val: bool) {
+        self.analyze_for_loops = val;
+    }
+    fn set_max_jumptable_size(&mut self, val: uint4) {
+        self.max_jumptable_size = val;
+    }
+    fn set_max_instructions(&mut self, val: int4) {
+        self.max_instructions = val as uint4;
+    }
+    fn alias_block_level(&self) -> int4 {
+        self.alias_block_level
+    }
+    fn set_alias_block_level(&mut self, val: int4) {
+        self.alias_block_level = val;
+    }
+
+    // --- flow option flags -------------------------------------------------
+    fn flow_options(&self) -> uint4 {
+        self.flowoptions
+    }
+    fn set_flow_options(&mut self, val: uint4) {
+        self.flowoptions = val;
+    }
+
+    // --- split-datatype config --------------------------------------------
+    fn split_datatype_config(&self) -> uint4 {
+        self.split_datatype_config
+    }
+    fn set_split_datatype_config(&mut self, val: uint4) {
+        self.split_datatype_config = val;
+    }
+
+    // --- nan-ignore config -------------------------------------------------
+    fn nan_ignore_all(&self) -> bool {
+        self.nan_ignore_all
+    }
+    fn set_nan_ignore_all(&mut self, val: bool) {
+        self.nan_ignore_all = val;
+    }
+    fn nan_ignore_compare(&self) -> bool {
+        self.nan_ignore_compare
+    }
+    fn set_nan_ignore_compare(&mut self, val: bool) {
+        self.nan_ignore_compare = val;
+    }
+
+    // --- prototype models (C++ defaultfp / evalfp_current) -----------------
+    fn set_default_extra_pop(&mut self, expop: int4) {
+        // C++ `glb->defaultfp->setExtraPop(expop)` (+ eval-model spreads).
+        // The registry holds the model behind `Rc`; mutate the shared model
+        // (and keep the registry entry pointing at the same data via the same
+        // `Rc`).  Both `defaultfp` and the registry entry are the one `Rc`.
+        if let Some(fp) = self.defaultfp.as_mut() {
+            Rc::make_mut(fp).set_extra_pop(expop);
+            // Re-publish the (now-distinct) Rc into the registry so getModel
+            // and defaultfp stay the same object (C++ shared-pointer identity).
+            let name = fp.get_name().to_string();
+            self.proto_models.insert(name, Rc::clone(fp));
+        }
+    }
+    fn set_function_extra_pop(&mut self, name: &str, _expop: int4) -> KunaResult<()> {
+        // C++ looks up `symboltab->getGlobalScope()->queryFunction(name)` then
+        // `fd->getFuncProto().setExtraPop(expop)`.  The per-function FuncProto
+        // mutation needs a resolved Funcdata; the symbol-table function query +
+        // FuncProto write is the W4 symboltab + W6 fspec surface.
+        // SEAM(W4 symboltab + W6 fspec): no function is resolvable here yet.
+        Err(KunaError::recov(format!("Unknown function name: {name}")))
+    }
+    fn set_default_model(&mut self, name: &str) -> KunaResult<()> {
+        // C++ `glb->setDefaultModel(getModel(p1))`.
+        match self.proto_models.get(name).cloned() {
+            Some(model) => {
+                self.defaultfp = Some(model);
+                Ok(())
+            }
+            None => Err(KunaError::lowlevel(format!("Unknown prototype model :{name}"))),
+        }
+    }
+    fn set_eval_current_model(&mut self, name: &str) -> KunaResult<()> {
+        // C++ `glb->evalfp_current = getModel(p1)`.
+        match self.proto_models.get(name).cloned() {
+            Some(model) => {
+                self.evalfp_current = Some(model);
+                Ok(())
+            }
+            None => Err(KunaError::parse(format!("Unknown prototype model: {name}"))),
+        }
+    }
+
+    // --- per-function properties (W4 symboltab + W6 fspec) -----------------
+    fn set_function_inline(&mut self, name: &str, _val: bool) -> KunaResult<()> {
+        // SEAM(W4 symboltab + W6 fspec): same as set_function_extra_pop.
+        Err(KunaError::recov(format!("Unknown function name: {name}")))
+    }
+    fn set_function_no_return(&mut self, name: &str, _val: bool) -> KunaResult<()> {
+        // SEAM(W4 symboltab + W6 fspec).
+        Err(KunaError::recov(format!("Unknown function name: {name}")))
+    }
+
+    // --- printer (wired to the owned PrintC) -------------------------------
+    fn print_is_c_language(&self) -> bool {
+        self.print.get_name() == "c-language"
+    }
+    fn set_null_printing(&mut self, val: bool) {
+        self.print.set_null_printing(val);
+    }
+    fn set_inplace_ops(&mut self, val: bool) {
+        self.print.set_inplace_ops(val);
+    }
+    fn set_convention_printing(&mut self, val: bool) {
+        self.print.set_convention_printing(val);
+    }
+    fn set_no_cast_printing(&mut self, val: bool) {
+        self.print.set_no_cast_printing(val);
+    }
+    fn set_hide_implied_exts(&mut self, val: bool) {
+        self.print.set_hide_implied_exts(val);
+    }
+    fn set_max_line_size(&mut self, val: int4) {
+        // C++ throws on a bad range; the Rust setter returns a Result.  The
+        // option apply already validated the parse; ignore the (always-Ok)
+        // no-markup result.
+        let _ = self.print.set_max_line_size(val);
+    }
+    fn set_indent_increment(&mut self, val: int4) {
+        self.print.set_indent_increment(val);
+    }
+    fn set_line_comment_indent(&mut self, val: int4) {
+        let _ = self.print.set_line_comment_indent(val);
+    }
+    fn set_comment_style(&mut self, style: &str) {
+        self.print.set_comment_style(style);
+    }
+    fn header_comment_flags(&self) -> uint4 {
+        self.print.header_comment_flags()
+    }
+    fn set_header_comment_flags(&mut self, flags: uint4) {
+        self.print.set_header_comment_flags(flags);
+    }
+    fn instruction_comment_flags(&self) -> uint4 {
+        self.print.instruction_comment_flags()
+    }
+    fn set_instruction_comment_flags(&mut self, flags: uint4) {
+        self.print.set_instruction_comment_flags(flags);
+    }
+    fn set_integer_format(&mut self, fmt: &str) {
+        let _ = self.print.set_integer_format(fmt);
+    }
+    fn set_namespace_strategy(&mut self, strategy: NamespaceStrategy) {
+        self.print.set_namespace_strategy(strategy);
+    }
+    fn set_brace_format(&mut self, category: BraceCategory, style: crate::options::BraceStyle) {
+        self.print.set_brace_format(category, style);
+    }
+    fn set_print_language(&mut self, language: &str) {
+        // C++ `glb->setPrintLanguage(p1)` swaps the active PrintLanguage; the
+        // single owned printer records the requested name (the only datatest
+        // language is "c-language").
+        self.print.set_name(language);
+    }
+
+    // --- action database ---------------------------------------------------
+    fn set_action_warning(&mut self, val: bool, name: &str) -> bool {
+        // C++ `glb->allacts.getCurrent()->setWarning(val,p1)`.
+        match self.allacts.get_current_mut() {
+            Some(act) => act.set_warning(val, name),
+            None => false,
+        }
+    }
+    fn clone_action_group(&mut self, from: &str, to: &str) {
+        // C++ `glb->allacts.cloneGroup(p1,p2); setCurrent(p2)`.
+        if self.allacts.clone_group(from, to.to_string()).is_ok() {
+            let _ = self.allacts.set_current(to);
+        }
+    }
+    fn set_current_action(&mut self, name: &str) {
+        let _ = self.allacts.set_current(name);
+    }
+    fn current_action_name(&self) -> String {
+        self.allacts.get_current_name().to_string()
+    }
+    fn toggle_action(&mut self, _group: &str, _sub: &str, _val: bool) {
+        // C++ `glb->allacts.toggleAction(grp,sub,val)`.
+        // SEAM(W5): `ActionDatabase::toggleAction` (action.cc:1036) is not yet
+        // ported onto the Rust `ActionDatabase`; the plain `option NAME VALUE`
+        // path (the most-used datatest command) does not reach it — only the
+        // `setaction GROUP SUB on/off` form does.  Recorded as a loss.
+    }
+    fn enable_rule(&mut self, path: &str) -> bool {
+        match self.allacts.get_current_mut() {
+            Some(act) => act.enable_rule(path),
+            None => false,
+        }
+    }
+    fn disable_rule(&mut self, path: &str) -> bool {
+        match self.allacts.get_current_mut() {
+            Some(act) => act.disable_rule(path),
+            None => false,
+        }
+    }
+    fn has_current_action(&self) -> bool {
+        self.allacts.get_current().is_some()
+    }
+
+    // --- translator (engine-owned context) ---------------------------------
+    fn allow_context_set(&mut self, val: bool) {
+        // C++ `glb->translate->allowContextSet(val)`.
+        self.translate.allow_context_set(val);
+    }
 }
 
 #[cfg(test)]
