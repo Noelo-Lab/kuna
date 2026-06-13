@@ -930,7 +930,7 @@ Entry schema (every field required):
 - surface: NONE on the regression suite (no upstream test exercises >8 same-address collisions, so budget 8 vs 16 is byte-identical there). The divergences-that-could-matter are both seam-internal: (a) registering the two new `ArchOption` subclasses into the option-name dispatch table + console (`kuna_console.cc:232` reads `dynamic_hash_maxdup_high` for status) is the options/console wave's surface, not this pack's; (b) the call site `buildDynamicSymbol` (funcdata_varnode.cc:1318) that feeds the resolved budget into `unique_hash` is out of this item's scope. The `DynamicHashMaxOption::default()` models the *option-class* neutral state (off=8); the runtime arch default is on=16 and is set in architecture.rs, matching kuna-C++.
 - restoration criteria: when the option database / console dispatch wave lands, the two `ArchOption` subclasses register by name and the console status query reads the flags; when `buildDynamicSymbol` is ported it threads `arch.dynamic_hash_maxdup_high ? 16 : 8` into `unique_hash`. No behavior change is expected — only the wiring closes.
 
-## LOSS-098: blockaction `negateCondition` ports only the edge-swap (topology); the data-flow op-flag flip + change-count are deferred
+## LOSS-100: blockaction `negateCondition` ports only the edge-swap (topology); the data-flow op-flag flip + change-count are deferred
 - date: 2026-06-13
 - kind: deferral
 - cpp-anchor: decompiler/cpp/block.cc:294 (`FlowBlock::negateCondition` base = `swapEdges(); return false`), block.hh:547 (`BlockCopy::negateCondition` = `copy->negateCondition(true)` → the underlying `BlockBasic` CBRANCH `boolean_flip`/`fallthru_true` op-flag flip), block.cc:2355 (`BlockBasic::negateCondition`). Called from the rules at blockaction.cc:1359/1363/1401/1462/1505/1540/1567.
@@ -939,7 +939,7 @@ Entry schema (every field required):
 - why: the op-flag flip needs the op bank / cross-arena `bblocks` CBRANCH that `block.rs` left as `// SEAM(W7)`; not available at this item's boundary.
 - restoration criteria: thread the `BlockCopy`→`BlockBasic` CBRANCH op-flag flip (and the `BlockCondition` opcode flip) through the op bank so `negate_condition` returns the true data-flow-change bool, then drop the always-`false` return.
 
-## LOSS-099: blockaction `isComplex` returns the `FlowBlock` base default (`true`), not the `BlockCopy`→`BlockBasic` statement count
+## LOSS-101: blockaction `isComplex` returns the `FlowBlock` base default (`true`), not the `BlockCopy`→`BlockBasic` statement count
 - date: 2026-06-13
 - kind: deferral
 - cpp-anchor: decompiler/cpp/block.hh:254 (`FlowBlock::isComplex` base = `true`), block.hh:549 (`BlockCopy::isComplex` = `copy->isComplex()`), block.cc:2403 (`BlockBasic::isComplex` counts statements against `glb->max_implied_ref`). Consumed at blockaction.cc:1342 (`ruleBlockOr`) and 1538 (`ruleBlockWhileDo`).
@@ -948,7 +948,7 @@ Entry schema (every field required):
 - why: the statement-count `BlockBasic::isComplex` needs the op intrusive list + `max_implied_ref`, left as `// SEAM(W7)` in `block.rs`.
 - restoration criteria: port `BlockBasic::isComplex` (op-list statement count vs `max_implied_ref`) and route `BlockCopy::isComplex` through it.
 
-## LOSS-100: blockaction `ruleBlockSwitch` ports the full match/exit/skip decision but cannot build the node — `newBlockSwitch` surfaces as an `Err`
+## LOSS-102: blockaction `ruleBlockSwitch` ports the full match/exit/skip decision but cannot build the node — `newBlockSwitch` surfaces as an `Err`
 - date: 2026-06-13
 - kind: deferral
 - cpp-anchor: decompiler/cpp/blockaction.cc:1649-1723 (`ruleBlockSwitch`) → block.cc:1907 (`BlockGraph::newBlockSwitch`, which needs `FlowBlock::getExitLeaf` and `BlockSwitch::grabCaseBasic` reading JumpTable labels, W4).
@@ -957,7 +957,7 @@ Entry schema (every field required):
 - why: `BlockGraph::newBlockSwitch`/`grabCaseBasic`/`getExitLeaf` need the JumpTable label machinery (W4) and the BlockGraph switch factory, both left unported in `block.rs`.
 - restoration criteria: port `BlockGraph::newBlockSwitch` + `BlockSwitch::{grabCaseBasic,getExitLeaf}` (W4 JumpTable) and replace `new_block_switch_seam` with the real factory call.
 
-## LOSS-101: blockaction `ConditionalJoin::execute` surfaces as an `Err`; only the match path is ported
+## LOSS-103: blockaction `ConditionalJoin::execute` surfaces as an `Err`; only the match path is ported
 - date: 2026-06-13
 - kind: deferral
 - cpp-anchor: decompiler/cpp/blockaction.cc:2094 (`ConditionalJoin::execute` → `nodeJoinCreateBlock`, `setupMultiequals` (`newOp`/`newUniqueOut`/`opSetOutput`), `moveCbranch`, `cutDownMultiequals` (`opSetOpcode`)).
@@ -966,7 +966,7 @@ Entry schema (every field required):
 - why: the execute mutation needs `Funcdata::opSetOutput` (newUniqueOut; LOSS shared with condexe) and `opSetOpcode` (W6 op-info table); not available at this item's boundary.
 - restoration criteria: land `opSetOutput`/`opSetOpcode` (and `nodeJoinCreateBlock` op-side) so `execute` can build and cut down the join MULTIEQUALs.
 
-## LOSS-102: the seven blockaction structuring `Action`s are shells — `apply` bodies are no-ops (or partial) pending block.rs/funcdata seams
+## LOSS-104: the seven blockaction structuring `Action`s are shells — `apply` bodies are no-ops (or partial) pending block.rs/funcdata seams
 - date: 2026-06-13
 - kind: deferral
 - cpp-anchor: decompiler/cpp/blockaction.cc:2110 (`ActionStructureTransform`→`finalTransform`), :2117 (`ActionNormalizeBranches`→`opFlipInPlaceExecute`/`flipInPlaceExecute`), :2140 (`ActionPreferComplement`→`preferComplement`), :2170 (`ActionBlockStructure`→`buildCopy`+`collapseAll`), :2187 (`ActionFinalStructure`→`orderBlocks`/`finalizePrinting`/`scopeBreak`/`markUnstructured`/`markLabelBumpUp`), :2265 (`ActionReturnSplit`→`getCopyMap`/`gatherReturnGotos`/`nodeSplit`).
@@ -974,3 +974,33 @@ Entry schema (every field required):
 - surface: scheduling any of these actions in a pipeline is a no-op for structuring/print output. The collapse *engine* (`CollapseStructure`) and the node-join *matcher* are reachable and tested directly; only the `Action` wiring that feeds them from `Funcdata` is deferred.
 - why: `BlockGraph::buildCopy` is an intra-arena copy while the Rust port keeps `sblocks`/`bblocks` in separate slotmap arenas (needs a funcdata-level cross-arena seed); `finalTransform`/`preferComplement`/`finalizePrinting`/`scopeBreak`/`markUnstructured`/`markLabelBumpUp`/`flipInPlaceExecute`/`getCopyMap`/`gatherReturnGotos`/`nodeSplit` are all left unported in `block.rs`/`funcdata` (W7/W8).
 - restoration criteria: supply the cross-arena `buildCopy` seed and run `CollapseStructure::collapse_all` from `ActionBlockStructure`; port the named BlockGraph/Funcdata methods for the remaining five actions.
+
+## LOSS-105: kuna_regionid Input A (`buildFromBlockGraph`) + the real-block arm of `endsWithBranchindOrCbranch` are seamed
+- date: 2026-06-13
+- item: w7-s7-kuna-regionid
+- kind: deferral (SEAM(W7))
+- cpp-anchor: decompiler/cpp/kuna_regionid.cc:115 (`buildFromBlockGraph` reads `BlockGraph::getBlock`/`sizeOut`/`getOut`/`getStartBlock`), :250 (`endsWithBranchindOrCbranch` -> `FlowBlock::lastOp()->code()` testing `CPUI_BRANCHIND`/`CPUI_CBRANCH`).
+- rust-anchor: rust/crates/kuna-decomp/src/kuna_regionid.rs:403 (`ends_with_branchind_or_cbranch`: the `get_block()` arm always returns `false`, `// SEAM(W7): no lastOp() accessor yet`). `buildFromBlockGraph` is not ported; the synthetic input API (`add_synthetic_block`/`add_synthetic_edge`) IS ported and drives the full identifier algorithm.
+- surface: the identifier cannot yet be run against a real decompiler `BlockGraph` (only synthetic graphs). On the synthetic path the C++ `endsWithBranchindOrCbranch` also returns `false` (no block), so the seam is behavior-identical to the only path this port exercises — exactly what `testkunaregion.cc` and the ported unit/verifier tests cover.
+- why: `BlockGraph`/`FlowBlock::getStart()`/`lastOp()` accessors are a later wave (the same surface `kuna_assert.rs` seams off); no real blocks exist in this crate yet.
+- restoration criteria: port the `BlockGraph` read-only adapter and a `FlowBlock::lastOp()->code()` accessor, then wire `buildFromBlockGraph` + the real-block arm of `ends_with_branchind_or_cbranch`.
+
+## LOSS-106: kuna_regionid console commands + `printTree` dumping not ported
+- date: 2026-06-13
+- item: w7-s7-kuna-regionid
+- kind: deferral (SEAM(W7))
+- cpp-anchor: decompiler/cpp/kuna_regionid.cc:1423/1433/1463 (`IfcKunaRegionTree`/`IfcKunaRegionBlocks`/`IfcKunaRegionWalk::execute`), :49/:1399 (`KunaGraphRegion::printTree` / `KunaRegionIdentifier::printTree`).
+- rust-anchor: rust/crates/kuna-decomp/src/kuna_regionid.rs (no `print_tree` / `Ifc*` equivalents; the data they render — `get_regions_by_block_addrs`, the `walk_blocks` visitor surface — is fully ported).
+- surface: the `region tree` / `region blocks` / `region walk` interactive console commands and the nested ostream dump are unavailable. No analysis output is lost: the structured results are reachable programmatically and tested.
+- why: the `IfaceDecompCommand` console machinery and ostream-based dumping are a later wave.
+- restoration criteria: once the console-command surface lands, add thin `Ifc*` wrappers + a `print_tree` formatter over the existing `walk_blocks`/`get_regions_by_block_addrs` API.
+
+## LOSS-107: `VariableGroup::pieceSet` duplicate-(offset,size) guard is dead — the `PieceKey` id-tiebreak makes the BTreeSet unable to reproduce `std::set<VariablePiece*,PieceCompareByOffset>` dedup, so `addPiece`'s "Duplicate VariablePiece" throw never fires
+- date: 2026-06-13
+- item: w7-s6-variable-cover
+- kind: exception->Result parity divergence on a precondition-violation path (LOSS-089 defensive-guard precedent)
+- cpp-anchor: decompiler/cpp/variable.cc:33-39 (`PieceCompareByOffset::operator()` compares only offset then size), :43-52 (`VariableGroup::addPiece`: `if (!pieceSet.insert(piece).second) throw LowlevelError("Duplicate VariablePiece")`), :78-89 (`combineGroups` relies on the throw — "There must be no matching VariablePieces with the same size and offset … or a LowlevelError exception is thrown").
+- rust-anchor: rust/crates/kuna-decomp/src/variable.rs:174-202 (`PieceKey::cmp` appends a unique `id` after (offset,size) so two distinct pieces with the same (offset,size) are NOT equal keys), :1476-1495 (`group_add_piece`: `BTreeSet::insert` therefore always returns `true`, so the `Err("Duplicate VariablePiece")` branch is unreachable).
+- surface: only on a precondition violation — two genuinely-overlapping pieces with identical (offset,size) being combined into one group via `groupWith`'s `(Some,Some)` `combineGroups` path (the `mergeGroups` path explicitly *handles* such duplicates, so it is unaffected). On that input the C++ aborts the action with a `LowlevelError` (action restart/recover); the Rust silently inserts a second set member, leaving the group with a duplicate that `updateIntersections`/`combineGroups` then iterate over. The normal merge flow maintains the no-duplicate invariant, so neither side hits it on well-formed input; the gate is green. Pinned by `tests/verify_w7_s6_variable_cover.rs::group_with_equal_offset_size_should_error_like_cpp_but_does_not` (asserts the live `Ok(())`, flagged to flip to `is_err()` when restored).
+- why: ADR 0002 transcribes the pointer-keyed `std::set` to a `BTreeSet<PieceKey>`; to keep distinct pieces with equal (offset,size) addressable by id (the `pieceSet.find(piece)` in `mergeGroups` keys on offset/size, but the set must still hold the right *count* of members), the port made `PieceKey` totally ordered by appending the id. That choice is what removes the (offset,size)-collision rejection. Classified MINOR/loss by the LOSS-089 precedent (a defensive guard whose divergence only manifests on input the C++ also rejects, never silent corruption of well-formed output).
+- restoration criteria: have `group_add_piece` reject (return `Err("Duplicate VariablePiece")`) when the group already contains a piece with the same (offset,size) — e.g. probe `find_by_offset_size(offset,size)` before insert — restoring the C++ `std::set` dedup semantics; then flip the witness test to expect `is_err()`.
