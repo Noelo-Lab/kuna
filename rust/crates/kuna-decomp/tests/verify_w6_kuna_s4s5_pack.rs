@@ -36,7 +36,7 @@ use kuna_base::types::{int4, uintb};
 use kuna_decomp::action::{Action, ActionContext};
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::funcdata::Funcdata;
-use kuna_decomp::kuna_compareform::ActionPresentCompareForm;
+use kuna_decomp::kuna_compareform::{parse_compare_form, ActionPresentCompareForm, CompareForm};
 use kuna_decomp::kuna_memsetsequence::{parse_memset_recover_form, MemsetRecoverForm};
 use kuna_decomp::kuna_returnpair::{keep_single_return, parse_return_pair_form, ReturnPairForm};
 use kuna_decomp::seams::{Architecture, TypeOp};
@@ -296,5 +296,129 @@ fn t3_returnpair_gate_boundary_and_exact_token_parse() {
     assert_eq!(parse_memset_recover_form("").unwrap().0, MemsetRecoverForm::On);
     for bad in ["ON", "Off", "yes", "true", "1", " on"] {
         assert!(parse_memset_recover_form(bad).is_err(), "memset near-miss {bad:?} must error");
+    }
+}
+
+// ===========================================================================
+// ROUND 2 — verifier re-derivation of the F1 repair (parse_compare_form) and
+// two compareform paths the round-1 suite did not pin.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// R2-T1 — compareform option-parse (the F1 fix) through the PUBLIC API.
+//
+// `OptionCompareForm::apply` (kuna_compareform.cc:85-95):
+//   if (p1 == "original")       glb->present_lessequal = true;
+//   else if (p1 == "canonical") glb->present_lessequal = false;
+//   else throw ParseError("Must specify compareform as 'canonical' or 'original'");
+//   return "Comparison presentation set to " + p1 + " form";
+//
+// `original` (kuna DIV-2 default) must map to present_lessequal=TRUE (the gate
+// `ActionPresentCompareForm` consumes), `canonical` to FALSE.  The parse is an
+// EXACT string match (no case fold, no trim); near-miss tokens are parse errors,
+// not silently coerced.  The confirmation string is byte-identical to the C++
+// `"Comparison presentation set to " + p1 + " form"`.
+// ===========================================================================
+#[test]
+fn r2_t1_compareform_parse_public_api() {
+    // original -> Original, present_lessequal = true, exact message
+    let (form, msg) = parse_compare_form("original").unwrap();
+    assert_eq!(form, CompareForm::Original);
+    assert!(form.present_lessequal(), "original => present_lessequal=true (gate ON)");
+    assert_eq!(msg, "Comparison presentation set to original form");
+    assert_eq!(form.as_str(), "original");
+
+    // canonical -> Canonical, present_lessequal = false
+    let (form, msg) = parse_compare_form("canonical").unwrap();
+    assert_eq!(form, CompareForm::Canonical);
+    assert!(!form.present_lessequal(), "canonical => present_lessequal=false (gate OFF)");
+    assert_eq!(msg, "Comparison presentation set to canonical form");
+    assert_eq!(form.as_str(), "canonical");
+
+    // EXACT match only — every near miss is an error carrying the C++ message.
+    for bad in ["Original", "CANONICAL", " original", "canonical ", "orig", "", "default", "1"] {
+        let e = parse_compare_form(bad).unwrap_err();
+        assert!(
+            e.to_string().contains("Must specify compareform as 'canonical' or 'original'"),
+            "near-miss {bad:?} must surface the C++ ParseError text, got {e}"
+        );
+    }
+}
+
+// ===========================================================================
+// R2-T2 — compareform: UNSIGNED, LEFT-constant round trip (`c-1 < V` from
+// `c <= V`), the i=0 / diff path round-1 T1 did not exercise.
+//
+// Forward replaceLessequal on `c <= V` (INT_LESSEQUAL, in0 constant): diff=-1,
+// i=0 -> `(c-1) < V`, marked.  Inverse restoreLessequal (in0 constant): diff=+1,
+// i=0 -> `c <= V`.  Pick c = 0x40 (mid-range, no boundary) so neither the
+// forward `val==0` guard nor the inverse `val==calc_uint_max` guard fires; the
+// constant must land back EXACTLY on 0x40 with the LESSEQUAL opcode restored and
+// the provenance mark cleared.
+// Oracle: funcdata_op.cc:1037-1058 (forward), kuna_compareform.cc:30-51 (inverse).
+// ===========================================================================
+#[test]
+fn r2_t2_unsigned_left_const_roundtrip() {
+    let width = 4i32;
+    let c: uintb = 0x40;
+    let mut fd = build_fd();
+    // `c <= V` : constant on the LEFT (slot 0).
+    let op = mk_cmp_with_const(&mut fd, width, OpCode::CPUI_INT_LESSEQUAL, c, true);
+
+    // canonicalize: `0x40 <= V` => `0x3f < V`  (INT_LESS, in0 = 0x3f, marked)
+    assert!(fd.replace_lessequal(op).unwrap(), "forward canon should fire");
+    assert_eq!(code_of(&fd, op), OpCode::CPUI_INT_LESS);
+    assert_eq!(const_in(&fd, op, 0), c - 1, "canon left constant = c-1");
+    assert!(fd.obank().get(op).unwrap().is_canonical_lessequal());
+
+    // restore: `0x3f < V` => `0x40 <= V`  (INT_LESSEQUAL, in0 = 0x40, unmarked)
+    assert_eq!(run_present(&mut fd), 1, "inverse restore should fire");
+    assert_eq!(code_of(&fd, op), OpCode::CPUI_INT_LESSEQUAL);
+    assert_eq!(const_in(&fd, op, 0), c, "restored left constant = c (exact round trip)");
+    assert!(!fd.obank().get(op).unwrap().is_canonical_lessequal(), "mark cleared on success");
+}
+
+// ===========================================================================
+// R2-T3 — compareform: idempotency + provenance gating.
+//
+// (a) A second `ActionPresentCompareForm::apply` after a successful restore must
+//     be a NO-OP: restoreLessequal clears the mark, and the now-LESSEQUAL op is
+//     neither INT_LESS nor INT_SLESS, so the loop skips it.  A double-restore
+//     would corrupt the constant (decrement it again).
+// (b) An INT_LESS that was NEVER marked (no canonicalization provenance) is left
+//     untouched — the mark is the sole trigger (`if (!op->isCanonicalLessequal())
+//     continue;`), so an organically-`<` comparison is never rewritten.
+// Oracle: kuna_compareform.cc:72-78 (the opcode + mark guards), :57 (clear).
+// ===========================================================================
+#[test]
+fn r2_t3_idempotent_and_mark_gated() {
+    // (a) round trip then re-run: second apply must not fire and must not move
+    //     the constant.
+    {
+        let width = 4i32;
+        let int_max = calc_int_max(width);
+        let start = int_max - 1;
+        let mut fd = build_fd();
+        let op = mk_cmp_with_const(&mut fd, width, OpCode::CPUI_INT_SLESSEQUAL, start, false);
+        assert!(fd.replace_lessequal(op).unwrap());
+        assert_eq!(run_present(&mut fd), 1, "first restore fires");
+        assert_eq!(const_in(&fd, op, 1), start);
+        // Re-run on the already-restored function: nothing left marked / matching.
+        let mut again = ActionPresentCompareForm::new(true, "analysis");
+        let mut ctx = ActionContext::new();
+        again.apply(&mut fd, &mut ctx);
+        assert_eq!(again.base().count, 0, "second restore must be a no-op (idempotent)");
+        assert_eq!(code_of(&fd, op), OpCode::CPUI_INT_SLESSEQUAL);
+        assert_eq!(const_in(&fd, op, 1), start, "constant must NOT be decremented twice");
+    }
+    // (b) an UNMARKED INT_LESS is never touched even with the gate ON.
+    {
+        let mut fd = build_fd();
+        let op = mk_cmp_with_const(&mut fd, 4, OpCode::CPUI_INT_LESS, 0x10, false);
+        // deliberately do NOT set_canonical_lessequal.
+        assert!(!fd.obank().get(op).unwrap().is_canonical_lessequal());
+        assert_eq!(run_present(&mut fd), 0, "unmarked op must be skipped");
+        assert_eq!(code_of(&fd, op), OpCode::CPUI_INT_LESS, "unmarked op unchanged");
+        assert_eq!(const_in(&fd, op, 1), 0x10);
     }
 }
