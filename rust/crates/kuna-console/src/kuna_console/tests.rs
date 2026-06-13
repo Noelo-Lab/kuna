@@ -289,3 +289,104 @@ fn region_commands_without_function_are_no_function_selected() {
 // at the integration level by `tests/stages/kuna-catalog.xml` (which loads a
 // real program and string-matches the `current` values); the function itself is
 // a direct field-read transcription of the C++ `kunaLiveValue` switch.
+
+// ===========================================================================
+// VERIFIER adversarial tests (w9-con-kuna-console, round 1).
+//
+// Targeting the spots the hunt list flagged as most fragile for this item:
+// the multi-token `stage map` join loop (which carries the datatest
+// KUNA-CONSOLE #5 contract `stage map force goto`), the `kassert` guard
+// precedence (image check BEFORE tokenizing), and the `stage catalog`
+// single-option live-value join vs the no-program path (exact bytes the
+// `kuna.catalog` parser + `tests/stages/kuna-catalog.xml` depend on).
+// ===========================================================================
+
+/// `stage map force goto` — the C++ token-join loop
+/// (`while(!s.eof()){ s>>word>>ws; if(empty)break; if(!token.empty())token+=' ';
+/// token+=word; }`) must rebuild the SPACE-JOINED surface key "force goto", not
+/// resolve on the first token alone. This is the exact datatest KUNA-CONSOLE #5
+/// surface (`surface "force goto" -> S7 (Region Hierarchy) sub-stage
+/// edge-virtualization`); a join bug would silently drop the second word and
+/// report "Unknown group/surface/sub-stage: force".
+#[test]
+fn w9_con_kuna_console_stage_map_joins_multiword_surface_key() {
+    let out = run_one("stage map force goto");
+    assert!(
+        out.contains(
+            "surface \"force goto\" -> S7 (Region Hierarchy) sub-stage edge-virtualization"
+        ),
+        "multi-word surface key join lost: {out:?}"
+    );
+    // It must NOT have resolved on the first token alone and errored on "force".
+    assert!(
+        !out.contains("Unknown group/surface/sub-stage: force"),
+        "join collapsed to first token only: {out:?}"
+    );
+}
+
+/// `stage map   force   goto  ` with irregular interior/trailing whitespace must
+/// collapse to the same single-space "force goto" key. The C++ `>> word >> ws`
+/// discards every run of whitespace; the Rust `read_token()` + `skip_ws()` pair
+/// must too (a stray double-space in the rebuilt token would miss the table).
+#[test]
+fn w9_con_kuna_console_stage_map_collapses_irregular_whitespace() {
+    let out = run_one("stage map   force   goto   ");
+    assert!(
+        out.contains("surface \"force goto\" -> S7"),
+        "irregular whitespace not collapsed to single-space key: {out:?}"
+    );
+}
+
+/// The `kassert` image guard is checked BEFORE any tokenizing in C++
+/// (`if (dcp->conf==0) throw ...` is the first statement). So a `kassert` with a
+/// trailing `hard`/`hint` and a *valid* stage/substage still reports
+/// "No load image present" with no program — the strength-pop and
+/// validate_assertion path must NOT run first. A reordering that validated
+/// before the image guard would surface a different (or no) error.
+#[test]
+fn w9_con_kuna_console_kassert_image_guard_precedes_validation() {
+    // Valid S3 substage + trailing `hint`: were validation to run first this
+    // would route/parse; the image guard must short-circuit it.
+    let out = run_one("kassert S3 comparison-canonicalization original hint");
+    assert!(
+        out.contains("Execution error: No load image present"),
+        "image guard did not precede validation: {out:?}"
+    );
+    // And a *bogus* stage code likewise must hit the image guard first (not a
+    // "Bad stage code" parse error), proving the ordering.
+    let out2 = run_one("kassert ZZ nosuch arg");
+    assert!(
+        out2.contains("Execution error: No load image present"),
+        "bogus-stage kassert bypassed the image guard: {out2:?}"
+    );
+    assert!(
+        !out2.contains("Bad stage code"),
+        "validation ran before the image guard: {out2:?}"
+    );
+}
+
+/// `stage catalog <option>` with a leading run of whitespace must still extract
+/// the option token (`s >> ws >> option`) and emit the single-row form that
+/// byte-matches the W4 emitter — not the full-array form. A failure to skip the
+/// leading whitespace would read an empty option and dump the whole catalog
+/// (the `kuna.catalog --json` single-option probe would then break).
+#[test]
+fn w9_con_kuna_console_stage_catalog_single_option_skips_leading_ws() {
+    let out = run_one("stage catalog    returnpair");
+    let expected = emit_catalog_json_one("returnpair", None).expect("returnpair is a settable");
+    assert_eq!(out, expected, "leading-ws single-option form drifted");
+    // Single-row form: starts with the object brace, not the array bracket.
+    assert!(out.starts_with("  {\"option\": \"returnpair\""), "not single-row: {out:?}");
+    assert!(!out.starts_with('['), "emitted the full array instead of one row: {out:?}");
+}
+
+/// A bare `stage catalog` (no option, no program) must equal the full W4 emitter
+/// array with the no-`current` closure — the load-bearing contract the
+/// `kuna.catalog` parser greps. Pinned here independently of the existing test
+/// to guard the empty-option branch selection (option.is_empty() -> full form).
+#[test]
+fn w9_con_kuna_console_stage_catalog_bare_is_full_array() {
+    let out = run_one("stage catalog");
+    assert_eq!(out, emit_catalog_json(|_| None));
+    assert!(out.starts_with("[\n"), "full form must open with the JSON array: {out:?}");
+}
