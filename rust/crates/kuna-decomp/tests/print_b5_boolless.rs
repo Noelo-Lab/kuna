@@ -319,3 +319,108 @@ fn boolless_print_c_emits_structured_body() {
         "the condition must be parenthesized, got:\n{rust}"
     );
 }
+
+// ===========================================================================
+// VERIFIER adversarial tests (item: w10-structure-printbody / Round 1).
+//
+// FOCUS (2)+(3): prove the body driver is a faithful IR-coupled transcription,
+// NOT a shortcut wired to make the boolless oracle string appear.  The printer
+// renders whatever the *analyzed IR* says; on this branch the two-compare
+// boolean pattern is NOT yet collapsed to INT_LESSEQUAL, so a FAITHFUL printer
+// must emit the raw `INT_LESS(#0xa, i0x52)` shape (`10 < dat_52`) and must NOT
+// emit the oracle's collapsed `dat_52 <= 10`.  A special-cased printer (one that
+// hardcoded the oracle) would emit `<= 10`; this test fails loudly if that ever
+// happens.
+// ===========================================================================
+
+/// The printer renders the *un-collapsed* IR faithfully: `10 < dat_52` (from
+/// `INT_LESS(#0xa, i0x52)`), and does NOT short-circuit to the oracle's
+/// `dat_52 <= 10`.  This is the anti-special-casing tripwire.
+#[test]
+fn w10_boolless_renders_uncollapsed_ir_not_oracle_string() {
+    let (mut xarch, fd) = match run_full("boolless", 0) {
+        Ok(v) => v,
+        Err(e) if e.contains("not built") || e.contains("no .sla") => {
+            eprintln!("SKIP: {e}");
+            return;
+        }
+        Err(e) => panic!("boolless run_full: {e}"),
+    };
+    let arch = xarch.sleigh_mut().base_mut().unwrap();
+    let rust = print_c(arch, &fd);
+    eprintln!("=== RUST print C (boolless) ===\n{rust}");
+
+    // FAITHFUL: the un-collapsed INT_LESS renders as `10 < dat_52`.
+    assert!(
+        rust.contains("10 < dat_52"),
+        "the printer must faithfully render the un-collapsed INT_LESS as `10 < dat_52`, got:\n{rust}"
+    );
+    // ANTI-SPECIAL-CASING: the collapsed oracle form must NOT appear (the
+    // RuleLessEqual/ConditionalJoin collapse is a later layer; if `<= 10`
+    // appears here the printer has been hardcoded to the oracle, not the IR).
+    assert!(
+        !rust.contains("dat_52 <= 10") && !rust.contains("<= 10"),
+        "printer must NOT emit the collapsed oracle string `dat_52 <= 10` while the IR is still un-collapsed; \
+         that would be special-casing, got:\n{rust}"
+    );
+}
+
+/// REGRESSION GUARD for the vacuous-pass finding: the boolless datatest's
+/// positive assertion is `if (dat_52 <= 10)` (min=1).  Document the present
+/// reality — the rust engine does NOT yet satisfy that POSITIVE assertion (it
+/// renders `10 < dat_52`).  If a future change makes the positive `<= 10`
+/// assertion pass, that is REAL parity progress and this guard should be
+/// updated/removed; if instead someone makes it pass by special-casing, the
+/// tripwire above fires first.  This pins the "no real positive datatest pass
+/// yet" state the verdict records.
+#[test]
+fn w10_boolless_positive_datatest_assertion_not_yet_real() {
+    let (mut xarch, fd) = match run_full("boolless", 0) {
+        Ok(v) => v,
+        Err(e) if e.contains("not built") || e.contains("no .sla") => {
+            eprintln!("SKIP: {e}");
+            return;
+        }
+        Err(e) => panic!("boolless run_full: {e}"),
+    };
+    let arch = xarch.sleigh_mut().base_mut().unwrap();
+    let rust = print_c(arch, &fd);
+    // The datatest's min=1 positive assertion `if (dat_52 <= 10)` is NOT yet
+    // met — only the min=0/max=0 negative assertion (`<< 7` absent) passes.
+    assert!(
+        !rust.contains("if (dat_52 <= 10)"),
+        "if this now holds, the boolless POSITIVE datatest assertion is real parity — \
+         update the verifier verdict (it currently records the pass as still un-met):\n{rust}"
+    );
+}
+
+/// The emitted body is a real, structurally-complete function (begin/return/
+/// brace-matched), with the assignment INSIDE the if-body — i.e. the structured
+/// hierarchy is real, not a flat dump.  Guards against the if-collapse silently
+/// degrading to a flat statement list.
+#[test]
+fn w10_boolless_if_body_contains_assignment() {
+    let (mut xarch, fd) = match run_full("boolless", 0) {
+        Ok(v) => v,
+        Err(e) if e.contains("not built") || e.contains("no .sla") => {
+            eprintln!("SKIP: {e}");
+            return;
+        }
+        Err(e) => panic!("boolless run_full: {e}"),
+    };
+    let arch = xarch.sleigh_mut().base_mut().unwrap();
+    let rust = print_c(arch, &fd);
+
+    // The if introduces a brace; the assignment (`= 1`) sits between that open
+    // brace and its matching close brace (real nesting, not a flat list).
+    let if_pos = rust.find("if (").expect("structured if present");
+    let open = rust[if_pos..].find('{').map(|o| if_pos + o).expect("if open brace");
+    let close = rust[open..].find('}').map(|c| open + c).expect("if close brace");
+    let body = &rust[open..close];
+    assert!(
+        body.contains("= 1"),
+        "the `= 1` assignment must be nested inside the if-body braces, got body:\n{body}\nfull:\n{rust}"
+    );
+    // And a return after the if (real function tail).
+    assert!(rust.contains("return"), "function must emit a return, got:\n{rust}");
+}

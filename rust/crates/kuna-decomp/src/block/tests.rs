@@ -465,3 +465,123 @@ fn block_edge_encode_decode_roundtrip() {
     assert_eq!(decoded.point, Some(c));
     assert_eq!(decoded.reverse_index, 3);
 }
+
+// ---------------------------------------------------------------------------
+// VERIFIER adversarial tests (item: w10-structure-printbody / Round 1)
+//
+// Target the cross-arena `build_copy_from` (C++ `BlockGraph::buildCopy`) — the
+// most fragile new construct in this item: a slotmap-arena-crossing copy whose
+// edge `point` and `immed_dom` remap goes through an explicit BTreeMap instead
+// of the C++ `bl->copymap` back-pointer.  The hunt-list flags this as
+// iteration-order + erase/remap fragile.
+// ---------------------------------------------------------------------------
+
+/// build_copy_from must mirror EVERY source block as a `BlockCopy` whose `copy`
+/// field is the *source* BlockId, in source-list order, and remap every edge
+/// `point` to the corresponding *dst* BlockId (never leave a source id in a dst
+/// edge).  A diamond exercises a join node with two in-edges.
+#[test]
+fn w10_build_copy_from_remaps_edges_cross_arena() {
+    // Source graph: diamond  s0 -> s1, s0 -> s2, s1 -> s3, s2 -> s3.
+    let (src, sroot, s) = build_graph(4);
+    let mut src = src;
+    src.add_edge(s[0], s[1]);
+    src.add_edge(s[0], s[2]);
+    src.add_edge(s[1], s[3]);
+    src.add_edge(s[2], s[3]);
+    // Give the source distinct indices + an immediate dominator chain so the
+    // remap of `index`/`immed_dom` is observable.
+    for (i, &bl) in s.iter().enumerate() {
+        src.block_mut(bl).set_index(i as int4);
+    }
+    src.arena[s[1]].immed_dom = Some(s[0]);
+    src.arena[s[2]].immed_dom = Some(s[0]);
+    src.arena[s[3]].immed_dom = Some(s[0]);
+    src.arena[s[0]].immed_dom = None;
+
+    // Destination: empty graph (the `sblocks` analogue).
+    let mut dst = BlockGraph::new();
+    let droot = dst.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+    dst.root = Some(droot);
+
+    dst.build_copy_from(droot, &src, sroot);
+
+    let dlist: Vec<BlockId> = dst.block(droot).get_list().to_vec();
+    assert_eq!(dlist.len(), 4, "one dst BlockCopy per source block");
+
+    // src id -> dst id, in list order (the copy field carries the source id).
+    let mut src_to_dst = std::collections::BTreeMap::new();
+    for (k, &d) in dlist.iter().enumerate() {
+        assert_eq!(
+            dst.block(d).get_type(),
+            BlockType::Copy,
+            "every seeded block is a BlockCopy"
+        );
+        let copied = dst.block(d).get_copy().expect("BlockCopy.copy set");
+        assert_eq!(copied, s[k], "dst order mirrors source list order, copy=src id");
+        assert_eq!(dst.block(d).get_index(), k as int4, "index copied verbatim");
+        src_to_dst.insert(s[k], d);
+    }
+
+    // Every dst edge point is a DST id (cross-arena remap complete); no leaked
+    // source ids.  Reconstruct topology and compare to the source.
+    for (k, &d) in dlist.iter().enumerate() {
+        let outs: Vec<BlockId> = (0..dst.block(d).size_out())
+            .map(|i| dst.block(d).get_out(i))
+            .collect();
+        for &o in &outs {
+            assert!(
+                dlist.contains(&o),
+                "dst out-edge must point into the dst arena (got a leaked id)"
+            );
+        }
+        // Same out-degree as the source.
+        assert_eq!(
+            outs.len(),
+            src.block(s[k]).size_out() as usize,
+            "out-degree preserved"
+        );
+        // immed_dom remapped to the dst copy of s[0] (or None for the root).
+        let idom = dst.block(d).get_immed_dom();
+        if k == 0 {
+            assert_eq!(idom, None, "root idom stays None");
+        } else {
+            assert_eq!(
+                idom,
+                Some(src_to_dst[&s[0]]),
+                "immed_dom remapped cross-arena to the dst copy of the source idom"
+            );
+        }
+    }
+
+    // The join node (s3) keeps both in-edges, both pointing into dst.
+    let djoin = src_to_dst[&s[3]];
+    assert_eq!(dst.block(djoin).size_in(), 2, "join keeps 2 in-edges");
+    let ins: Vec<BlockId> = (0..dst.block(djoin).size_in())
+        .map(|i| dst.block(djoin).get_in(i))
+        .collect();
+    assert!(
+        ins.contains(&src_to_dst[&s[1]]) && ins.contains(&src_to_dst[&s[2]]),
+        "join in-edges remapped to the dst copies of s1 and s2"
+    );
+
+    // The dst edge mirror invariant must hold after the cross-arena remap.
+    assert_edges_consistent(&dst, droot);
+}
+
+/// Boundary: build_copy_from on an empty source graph must produce an empty dst
+/// (no panic on the empty BTreeMap / empty second pass).
+#[test]
+fn w10_build_copy_from_empty_source() {
+    let src = BlockGraph::new();
+    let mut src = src;
+    let sroot = src.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+    src.root = Some(sroot);
+
+    let mut dst = BlockGraph::new();
+    let droot = dst.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+    dst.root = Some(droot);
+
+    dst.build_copy_from(droot, &src, sroot);
+    assert_eq!(dst.block(droot).get_list().len(), 0, "empty source -> empty dst");
+}
