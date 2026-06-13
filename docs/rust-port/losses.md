@@ -1098,3 +1098,57 @@ achieved at W7. M1 BODY-parity (all 207 executing) is re-targeted to a post-W9
 closure item (w9-m1-bodies): its gate un-ignores every stub and asserts zero
 #[ignore] in the eight unit-test suite files (the one float DBL_MAX case excepted via
 LOSS-025 or fixed in kuna-num).
+
+## LOSS-115 (2026-06-13, W8 w8-s9-prettyprint)
+`EmitMarkup` (the XML-markup low-level back-end) supports only the **packed**
+encoder path. C++ `EmitMarkup::setPackedOutput(bool)` (prettyprint.cc:351-360)
+swaps the bound `Encoder*` between a `PackedEncode` (default) and an `XmlEncode`
+(unpacked). The Rust port wires `PackedEncode` only; `set_packed_output(false)`
+records the flag (`self.packed`) but does not install an unpacked `XmlEncode`,
+because the port's `PackedEncode` is stateless (holds only `&mut Vec<u8>`) and a
+borrowing `XmlEncode` would need a persistent depth/tag-status encoder threaded
+through every `with_encoder` call.
+- surface: `print C xml` after an explicit `option ... ` selecting unpacked XML
+  markup output. The only markup path the datatests / corpus exercise is the
+  **packed** default, which the port reproduces byte-for-byte (PackedEncode is
+  stateless, so per-call fresh encoders append the identical stream a single
+  persistent encoder would — validated by the verifier's markup tests). The
+  unpacked XmlEncode rendering is never on a tested path.
+- cpp-anchor: decompiler/cpp/prettyprint.cc:351-360 (`EmitMarkup::setPackedOutput`),
+  342-349 (`setOutputStream` default `PackedEncode`).
+- rust-anchor: rust/crates/kuna-decomp/src/prettyprint.rs (`EmitMarkup::with_encoder`,
+  `set_packed_output`; the type-level doc on `EmitMarkup`).
+- restoration criteria: when an unpacked-XML markup datatest/corpus path is added
+  (or `XmlEncode` gains a buffer-owning constructor in kuna-base), thread the
+  `packed` flag through `with_encoder` to select `XmlEncode` vs `PackedEncode`,
+  pinned against the C++ `print C xml` unpacked oracle; that item's verifier
+  checks this entry off.
+
+## LOSS-115: `simpleSignature`'s per-call `<call>` element list is dropped — the `<signatures>` body emits the flags + `<sig>` features but omits the trailing `<call space=.. offset=..>` elements, because `Funcdata::numCalls`/`getCallSpecs` (the W4 FuncCallSpecs surface) is not threaded onto the W3 `Funcdata`
+- date: 2026-06-13
+- item: w8-sig-pack
+- kind: deferral (W4 call-spec surface seam; partial-port of `simpleSignature`)
+- cpp-anchor: decompiler/cpp/signature.cc:1119-1129 (`uint4 numcalls = fd->numCalls(); for(...) { FuncCallSpecs *fc = fd->getCallSpecs(i); const Address &addr(fc->getEntryAddress()); if (!addr.isInvalid()) { openElement(ELEM_CALL); writeSpace(ATTRIB_SPACE, addr.getSpace()); writeUnsignedInteger(ATTRIB_OFFSET, addr.getOffset()); closeElement(ELEM_CALL); } }` — the `<call>` elements are written AFTER the `<sig>` list and before `</signatures>`).
+- rust-anchor: rust/crates/kuna-decomp/src/signature.rs:1555-1558 (`// SEAM(W4)` — `let _ = (&ATTRIB_INDEX, &ELEM_CALL);` keeps the ids referenced; the per-call loop is absent).
+- surface: for a function with at least one non-invalid call entry address, the C++ `<signatures>` element contains one `<call>` child per such call; the Rust port emits none. The `<sig>` feature list (the actual signature payload) is byte-identical; only the call-site address annotations are missing. Functions with no calls (or only invalid-address calls) encode identically. The `save signatures`/`debugSignature` (`<signaturedesc>`) path does NOT use `<call>` and is unaffected.
+- why: `Funcdata::numCalls()`/`getCallSpecs(i)->getEntryAddress()` reach the `FuncCallSpecs` list (W4 `fspec` call-spec subsystem), which is not yet attached to the W3 arena `Funcdata` in the merged tree (same class of gap as the other W4 callspec seams). The ELEM_CALL/ATTRIB ids are ported and referenced so the future wiring is a body fill, not a re-derivation.
+- restoration criteria: when W4 threads the `FuncCallSpecs` list onto `Funcdata`, port the `numCalls`/`getCallSpecs` loop into `simple_signature` (after the `<sig>` loop, before `close_element(ELEM_SIGNATURES)`), pinned against signature.cc:1119-1129, and add a test asserting one `<call>` per non-invalid call entry.
+
+## LOSS-116: `IfcPrintSignatures` (`print signatures`) renders the SORTED bare-hash list, not the C++ `SigManager::print` order/format — the per-feature origin string (`Varnode::printRaw` / `FlowBlock::printHeader`) and the unsorted `sigs`-vector emission order are dropped (W8 print surface)
+- date: 2026-06-13
+- item: w8-sig-pack
+- kind: deferral (W8 print surface seam; human-readable `print signatures` console output only)
+- cpp-anchor: decompiler/cpp/signature.cc:719-725 (`SigManager::print` iterates `sigs` in INSERTION order — block sigs then varnode sigs, NOT sorted) and :62-68 (`Signature::print`: `s << '*'; printOrigin(s); s << " = 0x" << hex << setw(8) << setfill('0') << sig`), where `printOrigin` is overridden per feature kind: `VarnodeSignature::printOrigin` -> `vn->printRaw(s)` (signature.hh:188), `BlockSignature::printOrigin` -> `bl->printHeader(s)` (signature.hh:206), `CopySignature::printOrigin` -> `"Copies in " + bl->printHeader(s)` (signature.cc:661-666).
+- rust-anchor: rust/crates/kuna-decomp/src/analyzesigs.rs:117-124 (`print_signatures` builds the lines from `smanage.get_signature_vector()` — the SORTED hash list — and emits `* = 0x{h:08x}` with no origin string; the doc-comment records the `SEAM(W8)` for `printOrigin`).
+- surface: the `print signatures` console command output differs in (1) ORDER — C++ prints in `sigs`-vector order (block-index/op order, then create-index order), Rust prints hash-ascending; and (2) the per-line ORIGIN prefix — C++ prints `*<origin> = 0x........` where `<origin>` is the rendered Varnode/block header, Rust prints `* = 0x........` (bare `*`). The hash VALUES printed are the same set (just reordered). The XML `save`/`saveall`/`debug` encode paths (`<gensig>`/`<varsig>`/`<blocksig>`/`<copysig>`) are NOT affected by this — they go through `encode`, and the `<varsig>`/`<blocksig>` encodes are themselves separately seamed.
+- why: `Varnode::printRaw` and `FlowBlock::printHeader` are the W8 print/render plane (the same `// SEAM(W8)` the print module skeletons carry); without them a faithful `printOrigin` cannot be produced, so the port emits the hashes it does have. The sorted order was chosen so the SEAMed output is at least deterministic.
+- restoration criteria: when the W8 print surface lands (`Varnode::printRaw`, `FlowBlock::printHeader`), restore `SigManager::print`'s insertion-order walk and route each feature through a kind-dispatched `print_origin` (pinned against signature.cc:62-68 + the three `printOrigin` overrides), dropping the sorted-hash fallback.
+
+## LOSS-115: PrintJava emitter deferred (Java-language back-end unported)
+- date: 2026-06-13
+- kind: deferral
+- cpp-anchor: decompiler/cpp/printjava.cc (whole file: `PrintJava::printUnicode`, `pushTypeStart`/`pushTypeEnd`, `isArrayType`, `needZeroArray`, `adjustTypeOperators`, `opLoad`/`opStore`/`opCallind`/`opCpoolRefOp`, the `instanceof` OpToken, and `PrintJavaCapability` registration) + printjava.hh
+- rust-anchor: rust/crates/kuna-decomp/src/printjava.rs (placeholder `PrintJava::new()` returns `Err("printjava deferred — LOSS")`; no emitter body)
+- surface: the `java-language` print back-end. `PrintLanguageCapability::findCapability("java-language")` / `buildLanguage` would yield a working Java emitter in C++; in Rust it is unconstructable. The Java *cast* surface (`CastStrategyJava`) IS ported (rust/crates/kuna-decomp/src/cast.rs) — only the emitter is deferred.
+- why: `class PrintJava : public PrintC` (printjava.hh:57) is a thin specialization of `PrintC`, which is a separate W8 item (`w8-s9-printc`, still `todo`) — the base class does not yet exist in Rust, so a faithful derivation is impossible now. No oracle datatest selects `java-language` (verified: `grep -rli java-language decompiler/datatests/` is empty; the M1/M2/M3 corpus is all `c-language`), so the deferral is off every byte-for-byte parity path.
+- restoration criteria: once `w8-s9-printc` lands the Rust `PrintC` emitter, port the eight Java overrides above + the `instanceof` token + `PrintJavaCapability` registration against printjava.cc, and (if/when a `java-language` oracle is added) gate on byte-identical `print C` output for a Java function.
