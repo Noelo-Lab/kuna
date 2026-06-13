@@ -2086,8 +2086,9 @@ impl Rule for RuleCondNegate {
             return 0;
         }
         // if (data.opNormalizeFlip(op)) return 1;
-        //   -- SEAM(W3-block): opNormalizeFlip unported; reports false.
-        // (When ported this may early-return 1.)
+        if data.op_normalize_flip(op).expect("RuleCondNegate: opNormalizeFlip") {
+            return 1;
+        }
 
         // vn = op->getIn(1);
         let vn = in_vn(data, op, 1);
@@ -2099,8 +2100,9 @@ impl Rule for RuleCondNegate {
         data.op_set_input(op, outvn, 1).expect("RuleCondNegate: opSetInput");
         data.op_insert_before(newop, op);
         // data.opFlipCondition(op);  // Flip meaning of condition
-        //   -- SEAM(W3-block): opFlipCondition (cbranch boolean_flip toggle +
-        //   fallthru bookkeeping) unported.
+        //   NOTE: fallthru block is still same status (the flag toggle clears the
+        //   boolean_flip so the rule does not re-fire — the oscillation fix).
+        data.op_flip_condition(op);
         let _ = seqnum_of(data, op); // keep the op-read helper in scope (no-op)
         1
     }

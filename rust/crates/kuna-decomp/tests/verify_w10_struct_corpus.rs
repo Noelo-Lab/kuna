@@ -1,0 +1,341 @@
+//! INDEPENDENT VERIFIER harness (item: w10-structure-printbody, Round 2).
+//!
+//! Reproduces the Round-1 verifier's datatest-string-match measurement to
+//! confirm the Round-2 gate claim: the rust-engine datatest assertion count
+//! rose AND the new passes include REAL positive (min>=1) content assertions
+//! (not just vacuous min=0/max=0 "must-not-appear" matches).
+//!
+//! For every `decompiler/datatests/*.xml`, bootstrap the full XML frontend,
+//! `decompile_func` + `print_c` every `<symbol>`, then evaluate every
+//! `<stringmatch min max>` regex over the concatenated rendered C, exactly the
+//! way the C++ datatest harness scores `min<=hits<=max`.  Classify each PASS as
+//! positive (min>=1) or negative (min=0,max=0) and print the tally.
+//!
+//! This test never asserts a count (the corpus moves); it is a measurement
+//! probe driven with `--nocapture`.  It is committed with the verdict so the
+//! measurement is reproducible.
+
+use std::path::PathBuf;
+use std::rc::Rc;
+
+use kuna_base::address::Address;
+use kuna_base::error::{KunaError, KunaResult};
+use kuna_base::marshal::IdRegistry;
+use kuna_base::space::AddrSpaceManager;
+use kuna_base::xml::{DocumentStorage, Element};
+
+use kuna_decomp::decompile_drive::{decompile_func, print_c};
+use kuna_decomp::options::{register_option_elements, OptionDatabase};
+use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase};
+use kuna_decomp::xml_arch::{XmlArchitecture, XmlArchitectureCapability};
+
+use kuna_sleigh::loadimage::LoadImage;
+use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
+use kuna_sleigh::translate::register_translate_ids;
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
+}
+
+fn attr(el: &Element, name: &str) -> Option<String> {
+    el.get_attribute_value(name).ok().map(|b| String::from_utf8_lossy(b).into_owned())
+}
+
+fn find_named(el: &Rc<Element>, name: &str, out: &mut Vec<Rc<Element>>) {
+    if el.get_name() == name {
+        out.push(Rc::clone(el));
+    }
+    for c in el.get_children() {
+        find_named(c, name, out);
+    }
+}
+
+fn parse_u64(s: &str) -> u64 {
+    let s = s.trim();
+    if let Some(hex) = s.strip_prefix("0x") {
+        u64::from_str_radix(hex, 16).unwrap_or(0)
+    } else {
+        s.parse().unwrap_or(0)
+    }
+}
+
+struct SymbolFn {
+    name: String,
+    space: String,
+    offset: u64,
+}
+
+struct StringMatch {
+    name: String,
+    min: i64,
+    max: i64,
+    /// The (XML-unescaped) regex text.
+    pattern: String,
+}
+
+struct DataTest {
+    binaryimage: Rc<Element>,
+    arch_id: String,
+    symbols: Vec<SymbolFn>,
+    options: Vec<(String, String, String, String)>,
+    matches: Vec<StringMatch>,
+}
+
+fn xml_unescape(s: &str) -> String {
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+}
+
+fn parse_option_com(text: &str) -> Option<(String, String, String, String)> {
+    let mut it = text.split_whitespace();
+    if it.next()? != "option" {
+        return None;
+    }
+    let name = it.next()?.to_string();
+    let p1 = it.next().unwrap_or("").to_string();
+    let p2 = it.next().unwrap_or("").to_string();
+    let p3 = it.next().unwrap_or("").to_string();
+    Some((name, p1, p2, p3))
+}
+
+fn parse_datatest(path: &std::path::Path) -> Result<DataTest, String> {
+    let xml = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let mut store = DocumentStorage::new();
+    let root = store
+        .parse_document(&xml)
+        .map_err(|e| format!("parse {}: {e}", path.display()))?
+        .get_root()
+        .clone();
+
+    let mut bins = Vec::new();
+    find_named(&root, "binaryimage", &mut bins);
+    let binaryimage = bins.first().ok_or("no <binaryimage>")?.clone();
+
+    let mut langs = Vec::new();
+    find_named(&root, "language", &mut langs);
+    // The arch id lives on <decompilertest>/<language id=..> or on <binaryimage arch=..>.
+    let arch_id = langs
+        .first()
+        .and_then(|l| attr(l, "id"))
+        .or_else(|| attr(&binaryimage, "arch"))
+        .ok_or("no language/arch id")?;
+
+    let mut syms = Vec::new();
+    find_named(&root, "symbol", &mut syms);
+    let symbols = syms
+        .iter()
+        .filter_map(|s| {
+            Some(SymbolFn {
+                name: attr(s, "name")?,
+                space: attr(s, "space").unwrap_or_else(|| "ram".to_string()),
+                offset: parse_u64(&attr(s, "offset")?),
+            })
+        })
+        .collect();
+
+    let mut coms = Vec::new();
+    find_named(&root, "com", &mut coms);
+    let options = coms
+        .iter()
+        .filter_map(|c| parse_option_com(&String::from_utf8_lossy(c.get_content())))
+        .collect();
+
+    let mut sms = Vec::new();
+    find_named(&root, "stringmatch", &mut sms);
+    let matches = sms
+        .iter()
+        .map(|m| StringMatch {
+            name: attr(m, "name").unwrap_or_default(),
+            min: attr(m, "min").map(|s| parse_u64(&s) as i64).unwrap_or(1),
+            max: attr(m, "max").map(|s| parse_u64(&s) as i64).unwrap_or(1),
+            pattern: xml_unescape(&String::from_utf8_lossy(m.get_content())),
+        })
+        .collect();
+
+    Ok(DataTest { binaryimage, arch_id, symbols, options, matches })
+}
+
+struct DummyImg;
+impl LoadImage for DummyImg {
+    fn get_file_name(&self) -> &str {
+        "dummy"
+    }
+    fn load_fill(&mut self, _ptr: &mut [u8], _addr: &Address) -> KunaResult<()> {
+        Err(KunaError::data_unavail("dummy"))
+    }
+    fn get_arch_type(&self) -> Vec<u8> {
+        Vec::new()
+    }
+    fn adjust_vma(&mut self, _adjust: i64) {}
+}
+
+fn build_registry() -> IdRegistry {
+    let mut registry = IdRegistry::with_base_ids();
+    register_translate_ids(&mut registry);
+    register_sleigh_arch_ids(&mut registry);
+    register_loadimage_xml_ids(&mut registry);
+    register_option_elements(&mut registry);
+    registry
+}
+
+fn bootstrap(dt: &DataTest) -> Result<XmlArchitecture, String> {
+    let root = repo_root();
+    let registry = build_registry();
+
+    let capability = XmlArchitectureCapability::new();
+    let mut arch = capability.build_architecture("datatest", "");
+    arch.build_loader(Rc::clone(&dt.binaryimage)).map_err(|e| format!("build_loader: {e}"))?;
+
+    let mut db = LanguageDatabase::new();
+    db.scan_for_sleigh_directories(root.join("specs").to_str().unwrap());
+    db.get_descriptions(&registry).map_err(|e| format!("collect ldefs: {e}"))?;
+
+    arch.sleigh_mut().set_archid(&dt.arch_id);
+    arch.sleigh_mut()
+        .resolve_architecture(&db, &dt.arch_id)
+        .map_err(|e| format!("resolve_architecture: {e}"))?;
+    if arch.sleigh().language_index() < 0 {
+        return Err("language index unresolved".to_string());
+    }
+
+    let specs = arch.sleigh().build_spec_file(&db).map_err(|e| format!("build_spec_file: {e}"))?;
+    let resolved_sla = specs.slafile.ok_or("build_spec_file resolved no .sla")?;
+    let sla = std::fs::read(&resolved_sla).map_err(|e| format!("read sla: {e}"))?;
+    arch.sleigh_mut()
+        .build_translator(Box::new(DummyImg), &sla)
+        .map_err(|e| format!("build_translator: {e}"))?;
+
+    arch.sleigh_mut()
+        .base_mut()
+        .ok_or("no Architecture base after build_translator")?
+        .init_post_engine()
+        .map_err(|e| format!("init_post_engine: {e}"))?;
+
+    let manager_ptr: *const AddrSpaceManager = arch.sleigh().base().unwrap().manage();
+    arch.open_image(unsafe { &*manager_ptr }, &registry).map_err(|e| format!("open_image: {e}"))?;
+    let img = arch.take_loader().ok_or("loader vanished after open")?;
+    arch.sleigh_mut().base_mut().unwrap().set_loader(Box::new(img));
+    Ok(arch)
+}
+
+/// Bootstrap + decompile every symbol; return the concatenated rendered C (the
+/// C++ harness matches over the whole printed output of the test).
+fn render_corpus(dt: &DataTest) -> Result<String, String> {
+    let registry = build_registry();
+    let mut xarch = bootstrap(dt)?;
+
+    // Apply option commands (best-effort, like the e2e harness).
+    {
+        let options = OptionDatabase::new();
+        if let Some(base) = xarch.sleigh_mut().base_mut() {
+            for (name, p1, p2, p3) in &dt.options {
+                let id = registry.find_element(name, 0);
+                if id != 0 {
+                    let _ = options.set(base, id, p1, p2, p3);
+                }
+            }
+        }
+    }
+
+    let mut out = String::new();
+    for sym in &dt.symbols {
+        let base = xarch.sleigh_mut().base_mut().ok_or("no base")?;
+        let space = match base.manage().get_space_by_name(&sym.space) {
+            Some(s) => Rc::clone(s),
+            None => continue,
+        };
+        let entry = Address::new(space, sym.offset);
+        if let Ok(fd) = decompile_func(base, &sym.name, entry, 0) {
+            out.push_str(&print_c(base, &fd));
+            out.push('\n');
+        }
+    }
+    Ok(out)
+}
+
+/// Evaluate a regex over `text`, counting NON-OVERLAPPING matches (regex crate
+/// `find_iter` semantics — same family as the C++ harness's `std::regex_search`
+/// loop).
+fn count_matches(pattern: &str, text: &str) -> Result<usize, String> {
+    let re = regex::Regex::new(pattern).map_err(|e| format!("bad regex `{pattern}`: {e}"))?;
+    Ok(re.find_iter(text).count())
+}
+
+#[test]
+fn verify_w10_corpus_stringmatch_tally() {
+    let dir = repo_root().join("decompiler/datatests");
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .expect("read datatests dir")
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|x| x == "xml").unwrap_or(false))
+        .collect();
+    files.sort();
+
+    let mut total_assertions = 0usize;
+    let mut pass_positive = 0usize; // min>=1 satisfied
+    let mut pass_negative = 0usize; // min==0 && max==0 satisfied (absence)
+    let mut fail_positive = 0usize;
+    let mut fail_negative = 0usize;
+    let mut bootstrap_skips = 0usize;
+    let mut positive_pass_samples: Vec<String> = Vec::new();
+
+    for path in &files {
+        let dt = match parse_datatest(path) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        if dt.matches.is_empty() {
+            continue;
+        }
+        let rendered = match render_corpus(&dt) {
+            Ok(r) => r,
+            Err(_) => {
+                bootstrap_skips += 1;
+                continue;
+            }
+        };
+        let stem = path.file_stem().unwrap().to_string_lossy().into_owned();
+        for sm in &dt.matches {
+            total_assertions += 1;
+            let hits = count_matches(&sm.pattern, &rendered).unwrap_or(usize::MAX) as i64;
+            let pass = hits >= sm.min && (sm.max < 0 || hits <= sm.max);
+            let is_positive = sm.min >= 1;
+            match (pass, is_positive) {
+                (true, true) => {
+                    pass_positive += 1;
+                    if positive_pass_samples.len() < 30 {
+                        positive_pass_samples
+                            .push(format!("{stem}::{}  ~  `{}`", sm.name, sm.pattern));
+                    }
+                }
+                (true, false) => pass_negative += 1,
+                (false, true) => fail_positive += 1,
+                (false, false) => fail_negative += 1,
+            }
+        }
+    }
+
+    eprintln!("=== w10 corpus stringmatch tally (rust engine) ===");
+    eprintln!("datatest files: {}", files.len());
+    eprintln!("bootstrap/arch skips: {bootstrap_skips}");
+    eprintln!("total assertions evaluated: {total_assertions}");
+    eprintln!("PASS positive (min>=1, REAL content): {pass_positive}");
+    eprintln!("PASS negative (min=0 max=0, absence):  {pass_negative}");
+    eprintln!("FAIL positive: {fail_positive}");
+    eprintln!("FAIL negative: {fail_negative}");
+    eprintln!("--- sample of REAL positive passes ---");
+    for s in &positive_pass_samples {
+        eprintln!("  + {s}");
+    }
+
+    // The verdict-relevant claim: at least one REAL positive (min>=1) assertion
+    // passes by genuine parity (the Round-1 REJECT condition was 0 such passes).
+    assert!(
+        pass_positive >= 1,
+        "expected >= 1 real positive (min>=1) datatest assertion to pass; got {pass_positive}"
+    );
+}

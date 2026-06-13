@@ -165,8 +165,16 @@ pub struct Architecture {
     /// `Architecture::trim_recurse_max`).  Drives `ActionReturnRecovery`'s
     /// ancestor-realism walk.
     pub trim_recurse_max: int4,
+    /// Maximum number of references to an implied Varnode before it is forced
+    /// explicit (C++ `Architecture::max_implied_ref`, default 2).  Drives
+    /// `ActionMarkExplicit::baseExplicit`.
+    pub max_implied_ref: int4,
     /// (kuna) GH-6990: keep only the first return register (C++ `return_single`).
     pub return_single: bool,
+    /// (kuna) GH-558: present canonicalized `INT_LESS(x, c+1)` comparisons in
+    /// their original `x <= c` form (C++ `present_lessequal`, DIV-2 default-on).
+    /// Read by [`ActionPresentCompareForm`](crate::kuna_compareform::ActionPresentCompareForm).
+    pub present_lessequal: bool,
 }
 
 impl Architecture {
@@ -193,7 +201,11 @@ impl Architecture {
             evalfp_current: None,
             // C++ Architecture default: trim_recurse_max = 5 (resetDefaults).
             trim_recurse_max: 5,
+            // C++ Architecture default: max_implied_ref = 2 (resetDefaults).
+            max_implied_ref: 2,
             return_single: false,
+            // (kuna) DIV-2 default-on (GH-558): resetDefaults sets present_lessequal=true.
+            present_lessequal: true,
         }
     }
 

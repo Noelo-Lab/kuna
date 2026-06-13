@@ -736,10 +736,11 @@ impl Action for ActionRedundBranch {
                 i += 1;
                 continue;
             }
-            // SEAM(W3-block): Funcdata::removeBranch(bb,1) — remove the duplicate
-            // branch instruction/edge — is a funcdata_block surface not in the
-            // merged tree.  The all-exits-to-bl detection above is realized; only
-            // the edge removal is deferred (would `count += 1` here).
+            // data.removeBranch(bb,1); count += 1;  — all exits go to `bl`, so the
+            // branch decision is redundant: sever the duplicate edge (and drop the
+            // now-decisionless CBRANCH).  C++ does NOT reset the scan here (unlike
+            // the splice path), it just continues with `++i`.
+            self.base.count += data.remove_branch(bb, 1).map(|_| 1).unwrap_or(0);
             i += 1;
         }
         0 // Indicate full rule was applied

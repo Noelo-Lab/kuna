@@ -703,13 +703,26 @@ impl Funcdata {
         self.bblocks.block(root).get_block(i)
     }
     /// The root graph node of `sblocks`.
-    fn sblocks_root(&self) -> BlockId {
+    pub(crate) fn sblocks_root(&self) -> BlockId {
         self.sblocks.root.expect("Funcdata: sblocks root not constructed (internal invariant)")
     }
     /// Number of structured blocks (C++ `sblocks.getSize()`).
     pub fn sblocks_get_size(&self) -> int4 {
         let root = self.sblocks_root();
         self.sblocks.block(root).get_size()
+    }
+
+    /// Seed `sblocks` with a `BlockCopy` mirror of every `bblocks` basic block
+    /// (the first half of C++ `ActionBlockStructure::apply`, blockaction.cc:2170 —
+    /// `graph.buildCopy(data.getBasicBlocks())`).  Borrows `sblocks` mutably and
+    /// `bblocks` immutably at once (distinct fields) so the cross-arena
+    /// [`BlockGraph::build_copy_from`] can mirror the topology.  The
+    /// [`CollapseStructure`](crate::blockaction::CollapseStructure) engine then
+    /// runs over the seeded `sblocks` (driven by `ActionBlockStructure`).
+    pub(crate) fn seed_sblocks_copy(&mut self) {
+        let sroot = self.sblocks.root.expect("sblocks root");
+        let broot = self.bblocks.root.expect("bblocks root");
+        self.sblocks.build_copy_from(sroot, &self.bblocks, broot);
     }
 
     // -----------------------------------------------------------------------
@@ -843,6 +856,12 @@ impl Funcdata {
             BlockKind::Basic(b) => b.op_tail,
             _ => None,
         }
+    }
+    /// The op following `op` in its basic block's intrusive op list (C++
+    /// `++iter` over `bb->beginOp()`), `None` at the end of the block.  The
+    /// printer's `emitBlockBasic` walks the block ops with this.
+    pub fn bb_op_next(&self, op: OpId) -> Option<OpId> {
+        self.obank.get(op).and_then(|o| o.basic_neighbours().1)
     }
     /// Number of ops in basic block `bl` (C++ `op.size()`).
     pub fn bb_op_len(&self, bl: BlockId) -> usize {

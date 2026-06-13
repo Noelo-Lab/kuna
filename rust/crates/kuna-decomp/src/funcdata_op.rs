@@ -474,6 +474,70 @@ impl Funcdata {
         Ok(true)
     }
 
+    /// Flip the output condition of a CBRANCH (C++ `Funcdata::opFlipCondition`,
+    /// `funcdata.hh:498` — `op->flipFlag(PcodeOp::boolean_flip)`).
+    pub fn op_flip_condition(&mut self, op: OpId) {
+        self.obank_mut()
+            .get_mut(op)
+            .expect("op_flip_condition: stale op")
+            .flip_flag(pcodeop_flags::boolean_flip);
+    }
+
+    /// Remove the `boolean_flip` flag on a CBRANCH op, without changing behavior
+    /// (C++ `Funcdata::opNormalizeFlip`, `funcdata_op.cc:1337`).
+    ///
+    /// Flips the true/false meaning of the CBRANCH and negates the comparison op
+    /// feeding it (swapping `INT_LESS`↔`INT_LESSEQUAL` etc. via `get_booleanflip`,
+    /// reversing operands when required, and folding the resulting `<=` constant
+    /// through [`replace_lessequal`](Funcdata::replace_lessequal)).  Returns `true`
+    /// if the ops were rewritten.
+    pub fn op_normalize_flip(&mut self, cbranch: OpId) -> KunaResult<bool> {
+        // Varnode *boolVn = cbranch->getIn(1);
+        let bool_vn = match self.obank().get(cbranch).expect("op_normalize_flip: stale op").get_in(1) {
+            Some(v) => v,
+            None => return Ok(false),
+        };
+        // if (!boolVn->isWritten()) return false;
+        if !self.vbank().get(bool_vn).expect("op_normalize_flip: stale boolVn").is_written() {
+            return Ok(false);
+        }
+        // if (boolVn->loneDescend() != cbranch) return false;
+        if self.lone_descend(bool_vn) != Some(cbranch) {
+            return Ok(false);
+        }
+        // PcodeOp *condOp = boolVn->getDef();
+        let cond_op = self
+            .vbank()
+            .get(bool_vn)
+            .expect("op_normalize_flip: stale boolVn")
+            .get_def()
+            .expect("op_normalize_flip: written boolVn with no def (C++ UB)");
+        // OpCode opc = get_booleanflip(condOp->code(), flipyes);
+        let mut flipyes = false;
+        let cond_code = self.obank().get(cond_op).expect("op_normalize_flip: stale condOp").code();
+        let opc = kuna_num::opcodes::get_booleanflip(cond_code, &mut flipyes);
+        // if (opc == CPUI_MAX) return false;
+        if opc == OpCode::CPUI_MAX {
+            return Ok(false);
+        }
+        // opSetOpcode(condOp,opc);  -- glb->inst[opc] (the canonical op-info table).
+        self.op_set_opcode(cond_op, crate::typeop::type_op_for(opc));
+        // if (flipyes) opSwapInput(condOp,0,1);
+        if flipyes {
+            self.op_swap_input(cond_op, 0, 1);
+        }
+        // cbranch->flipFlag(PcodeOp::boolean_flip);
+        self.obank_mut()
+            .get_mut(cbranch)
+            .expect("op_normalize_flip: stale cbranch")
+            .flip_flag(pcodeop_flags::boolean_flip);
+        // if (opc == INT_LESSEQUAL || opc == INT_SLESSEQUAL) replaceLessequal(condOp);
+        if opc == OpCode::CPUI_INT_LESSEQUAL || opc == OpCode::CPUI_INT_SLESSEQUAL {
+            self.replace_lessequal(cond_op)?;
+        }
+        Ok(true)
+    }
+
     /// Distribute a multiplicative coefficient over an additive sub-term
     /// (C++ `Funcdata::distributeIntMultAdd`, `funcdata_op.cc:1079`).
     ///

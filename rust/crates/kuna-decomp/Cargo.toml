@@ -15,5 +15,9 @@ thiserror.workspace = true
 smallvec.workspace = true
 slotmap.workspace = true
 
+[dev-dependencies]
+# Verifier-only: the datatest <stringmatch> engine (item w10-structure-printbody).
+regex = { workspace = true }
+
 [lints]
 workspace = true

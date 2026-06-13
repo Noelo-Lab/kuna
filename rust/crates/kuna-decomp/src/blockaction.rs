@@ -1398,30 +1398,13 @@ impl<'a> TraceDAG<'a> {
 // negateCondition / isComplex seams (block.cc virtuals; SEAM(W7) in block.rs)
 // ===========================================================================
 
-/// Flip the condition computed by a FlowBlock (C++ `FlowBlock::negateCondition`
-/// and its subtype overrides, `block.cc:294/2355/3015/3071`; left as `// SEAM(W7)`
-/// in `block.rs`).
-///
-/// The **topology** half (`swapEdges`, which flips the true/false out-edge order
-/// the collapse rules key on) is fully ported.  The **data-flow** half — the
-/// `boolean_flip`/`fallthru_true` op-flag flip on the underlying `BlockBasic`'s
-/// CBRANCH (and the `BlockCondition` opcode flip) — is the part that needs the
-/// op bank / cross-arena `bblocks`; the engine threads it through
-/// [`ActionBlockStructure`].  Returns `true` if a *data-flow* change was made
-/// (the C++ return that drives `dataflow_changecount`).
-///
-/// In the standalone engine path this only swaps edges and returns `false` (the
-/// base `FlowBlock::negateCondition` behavior); the action path overrides the
-/// return via the threaded op-flag flip.  See losses.
-fn negate_condition(graph: &mut BlockGraph, bl: BlockId, toporbottom: bool) -> bool {
-    // FlowBlock::negateCondition(toporbottom): if (!toporbottom) return false; swapEdges();
-    // The collapse rules always call negateCondition(true), so toporbottom is true.
-    if toporbottom {
-        graph.swap_edges(bl);
-    }
-    // Data-flow half (BlockBasic/Copy/List/Condition op-flag + opcode flip) -- SEAM(W7)
-    false
-}
+// `FlowBlock::negateCondition` and its subtype overrides (C++
+// `block.cc:294/2355/3015/3071`) are realized as the method
+// [`CollapseStructure::negate_condition_rec`] above: the topology half
+// (`swapEdges`) runs in place on the structured graph, and the data-flow half
+// (the leaf `BlockBasic` CBRANCH `boolean_flip`/`fallthru_true` op flags +
+// the `BlockCondition` opcode) is recorded into `pending_flips` (op flags) and
+// realized against the obank by `ActionBlockStructure::apply` after the collapse.
 
 /// Determine whether a FlowBlock is too complex to be a condition clause (C++
 /// `FlowBlock::isComplex` base + `BlockBasic::isComplex`, `block.hh:254`/`block.cc:2403`;
@@ -1484,6 +1467,14 @@ pub struct CollapseStructure<'a> {
     graph_id: BlockId,
     /// Number of data-flow changes made during structuring (C++ `dataflow_changecount`)
     dataflow_changecount: int4,
+    /// bblocks `BlockBasic` ids whose underlying CBRANCH op needs its
+    /// `boolean_flip`/`fallthru_true` flipped (the data-flow half of
+    /// `BlockBasic::negateCondition`).  In C++ this flip happens in-place on the
+    /// live `BlockBasic` (the `BlockCopy::copy` pointer); in the dual-arena port
+    /// the op flags live in the `Funcdata` obank, so we record each flip here and
+    /// apply (XOR-reduced — even flips cancel) after `collapseAll` returns, when
+    /// `ActionBlockStructure::apply` holds `&mut Funcdata` again.
+    pending_flips: Vec<BlockId>,
 }
 
 impl<'a> CollapseStructure<'a> {
@@ -1500,12 +1491,80 @@ impl<'a> CollapseStructure<'a> {
             graph,
             graph_id,
             dataflow_changecount: 0,
+            pending_flips: Vec::new(),
         }
     }
 
     /// Get the number of data-flow changes (C++ `getChangeCount`).
     pub fn get_change_count(&self) -> int4 {
         self.dataflow_changecount
+    }
+
+    /// The XOR-reduced set of bblocks `BlockBasic` ids whose CBRANCH op must have
+    /// its `boolean_flip`/`fallthru_true` toggled (the deferred data-flow half of
+    /// `BlockBasic::negateCondition`).  Even numbers of flips on the same block
+    /// cancel out (a double-negation), so we reduce to parity here.
+    pub fn take_pending_flips(&mut self) -> Vec<BlockId> {
+        let mut parity: std::collections::BTreeMap<BlockId, bool> = std::collections::BTreeMap::new();
+        for &b in &self.pending_flips {
+            let e = parity.entry(b).or_insert(false);
+            *e = !*e;
+        }
+        parity.into_iter().filter(|&(_, v)| v).map(|(b, _)| b).collect()
+    }
+
+    /// The data-flow half of `FlowBlock::negateCondition` and its subtype
+    /// overrides (C++ `block.cc:294/2355` + the `BlockCopy`/`BlockList`/
+    /// `BlockCondition` virtuals in `block.hh:53` etc.).
+    ///
+    /// The **topology** half (`swapEdges` on every node visited) runs here exactly
+    /// as in C++.  The **data-flow** half — flipping the `boolean_flip`/
+    /// `fallthru_true` op flags on the leaf `BlockBasic`'s CBRANCH (reached via the
+    /// `BlockCopy::copy` pointer) and flipping a `BlockCondition`'s opcode — is
+    /// recorded into `pending_flips` (op flags) / applied to the structured node
+    /// (opcode) so it can be realized against the obank after the collapse.
+    /// Returns `true` if a data-flow change was made (the C++ return that drives
+    /// `dataflow_changecount`).
+    fn negate_condition_rec(&mut self, bl: BlockId, toporbottom: bool) -> bool {
+        let bt = self.graph.block(bl).get_type();
+        let res = match bt {
+            // BlockCopy::negateCondition: copy->negateCondition(true); then swap.
+            // `copy` is the bblocks BlockBasic — record its op-flag flip.
+            BlockType::Copy => {
+                if let Some(copy) = self.graph.block(bl).get_copy() {
+                    self.pending_flips.push(copy);
+                }
+                true
+            }
+            // BlockList::negateCondition: getBlock(size-1)->negateCondition(false)
+            // then swap this node's edges.
+            BlockType::Ls => {
+                let sz = self.graph.block(bl).get_size();
+                if sz > 0 {
+                    let last = self.graph.block(bl).get_block(sz - 1);
+                    self.negate_condition_rec(last, false)
+                } else {
+                    false
+                }
+            }
+            // BlockCondition::negateCondition: distribute the NOT to both sides,
+            // flip the AND/OR opcode, then swap this node's edges.
+            BlockType::Condition => {
+                let b0 = self.graph.block(bl).get_block(0);
+                let b1 = self.graph.block(bl).get_block(1);
+                let r0 = self.negate_condition_rec(b0, false);
+                let r1 = self.negate_condition_rec(b1, false);
+                self.graph.block_mut(bl).flip_condition_opcode();
+                r0 || r1
+            }
+            // base FlowBlock::negateCondition: edge swap only, no data-flow change.
+            _ => false,
+        };
+        // FlowBlock::negateCondition(toporbottom): if (!toporbottom) return; swapEdges();
+        if toporbottom {
+            self.graph.swap_edges(bl);
+        }
+        res
     }
 
     /// Number of components in the structuring graph (C++ `graph.getSize()`).
@@ -1938,13 +1997,13 @@ impl<'a> CollapseStructure<'a> {
 
             if i == 1 {
                 // orblock needs to be false out of bl
-                if negate_condition(self.graph, bl, true) {
+                if self.negate_condition_rec(bl, true) {
                     self.dataflow_changecount += 1;
                 }
             }
             if j == 0 {
                 // clauseblock needs to be true out of orblock
-                if negate_condition(self.graph, orblock, true) {
+                if self.negate_condition_rec(orblock, true) {
                     self.dataflow_changecount += 1;
                 }
             }
@@ -2001,7 +2060,7 @@ impl<'a> CollapseStructure<'a> {
 
             if i == 0 {
                 // Clause must be true
-                if negate_condition(self.graph, bl, true) {
+                if self.negate_condition_rec(bl, true) {
                     self.dataflow_changecount += 1;
                 }
             }
@@ -2084,7 +2143,7 @@ impl<'a> CollapseStructure<'a> {
                 if sizeout == 2 {
                     if !self.graph.block(bl).is_goto_out(1) {
                         // True branch must be goto
-                        if negate_condition(self.graph, bl, true) {
+                        if self.negate_condition_rec(bl, true) {
                             self.dataflow_changecount += 1;
                         }
                     }
@@ -2140,7 +2199,7 @@ impl<'a> CollapseStructure<'a> {
 
             if i == 0 {
                 // clause must be true out of bl
-                if negate_condition(self.graph, bl, true) {
+                if self.negate_condition_rec(bl, true) {
                     self.dataflow_changecount += 1;
                 }
             }
@@ -2193,7 +2252,7 @@ impl<'a> CollapseStructure<'a> {
             let overflow = is_complex(self.graph, bl); // Check if we need overflow syntax
             if (i == 0) != overflow {
                 // clause must be true out of bl unless we use overflow syntax
-                if negate_condition(self.graph, bl, true) {
+                if self.negate_condition_rec(bl, true) {
                     self.dataflow_changecount += 1;
                 }
             }
@@ -2228,7 +2287,7 @@ impl<'a> CollapseStructure<'a> {
             }
             if i == 0 {
                 // must loop on true condition
-                if negate_condition(self.graph, bl, true) {
+                if self.negate_condition_rec(bl, true) {
                     self.dataflow_changecount += 1;
                 }
             }
@@ -3080,26 +3139,45 @@ impl Action for ActionBlockStructure {
         Some(Box::new(ActionBlockStructure { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++:
+        // C++ (blockaction.cc:2170):
         //   BlockGraph &graph(data.getStructure());
         //   if (graph.getSize() != 0) return 0;           // already structured
         //   data.installSwitchDefaults();
         //   graph.buildCopy(data.getBasicBlocks());
         //   CollapseStructure collapse(graph); collapse.collapseAll();
         //   count += collapse.getChangeCount();
-        //
-        // The collapse engine itself is fully ported ([`CollapseStructure`]); but
-        // `BlockGraph::buildCopy(bblocks)` is a *cross-arena* copy (the Rust port
-        // keeps `sblocks` and `bblocks` in separate slotmap arenas, while
-        // `BlockGraph::build_copy` is intra-arena) — wiring it needs a funcdata-
-        // level copy that `block.rs`/`funcdata` have not yet supplied.  The driver
-        // structure is transcribed; the cross-arena seed is the seam.  See losses.
         if data.sblocks_get_size() != 0 {
             return 0; // Already structured
         }
         data.install_switch_defaults();
-        // graph.buildCopy(data.getBasicBlocks());  -- SEAM(W7): cross-arena copy.
-        // CollapseStructure collapse(graph); collapse.collapseAll();  -- (after seed)
+        // graph.buildCopy(data.getBasicBlocks());  -- cross-arena copy: mirror
+        // every bblocks BlockBasic into sblocks as a BlockCopy leaf (the copy's
+        // `copy` field points back at the bblocks block so the printer can walk
+        // its op list).
+        data.seed_sblocks_copy();
+        // CollapseStructure collapse(graph); collapse.collapseAll();
+        let sroot = data.sblocks_root();
+        let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot);
+        let collapse_res = collapse.collapse_all();
+        let cc = collapse.get_change_count();
+        // Realize the deferred data-flow half of BlockBasic::negateCondition: each
+        // recorded bblocks block has its trailing CBRANCH `boolean_flip`/
+        // `fallthru_true` toggled (XOR-reduced — even flips cancel).  This must run
+        // whether or not `collapse_all` Err'd, because the flips that were already
+        // recorded reflect topology changes the collapse committed before aborting.
+        let flips = collapse.take_pending_flips();
+        drop(collapse); // release the sblocks borrow before touching the obank
+        for bb in flips {
+            data.block_basic_negate_lastop(bb);
+        }
+        if let Err(e) = collapse_res {
+            // A still-un-ported collapse sub-seam (switch/node-creation) aborts;
+            // surface it as "no change made" rather than taking down the run, the
+            // documented honest-partial-parity degradation.  See losses.
+            let _ = e;
+            return 0;
+        }
+        self.base_mut().count += cc;
         0
     }
 }

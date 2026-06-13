@@ -608,10 +608,12 @@ fn orpredicate_noop_on_nonpredicate_inputs() {
 ///
 /// We reach the single-form (`checkSingle`) path: `result = tmp1 | val2` where
 /// tmp1 = MULTIEQUAL(COPY(#0), val1) and val2 plays the (val2==0)?val1:0 role.
-/// The discovery succeeds up to `opSetInput`/`opSetOpcode`; `opSetOpcode` then
-/// hits the W6 seam.  `apply_op_inner` returns the seam `Err`.
+/// The discovery succeeds through `opSetInput`/`opSetOpcode`; with the W6
+/// `resolve_typeop` seam now closed (it resolves through the canonical
+/// `typeop::type_op_for` op-info table), `apply_op_inner` runs the rewrite to
+/// completion and returns `Ok`.
 #[test]
-fn orpredicate_single_form_surfaces_w6_seam() {
+fn orpredicate_single_form_applies_w6_seam_closed() {
     let mut fd = build_fd();
     let condb = new_bb(&mut fd);
     let zero_bl = new_bb(&mut fd);
@@ -669,11 +671,10 @@ fn orpredicate_single_form_surfaces_w6_seam() {
     fd.structure_reset();
 
     let rule = RuleOrPredicate::new("condexe");
-    // apply_op_inner returns the W6 seam Err once discovery reaches opSetOpcode.
+    // apply_op_inner now runs to completion (the W6 resolve_typeop seam is closed).
     let res = rule.apply_op_inner(or, &mut fd);
-    assert!(res.is_err(), "discovery reaches opSetOpcode(CPUI_COPY) => W6 seam Err");
-    let msg = format!("{}", res.unwrap_err());
-    assert!(msg.contains("glb->inst") || msg.contains("W6"), "Err names the W6 op-info seam: {msg}");
+    assert!(res.is_ok(), "discovery reaches opSetOpcode and now completes: {res:?}");
+    assert_eq!(res.unwrap(), 1, "the OR-predicate rewrite reports a change");
 }
 
 /// `new_unique_out` (the `newUniqueOut`→`opSetOutput` helper): the
