@@ -59,6 +59,7 @@ pub mod kuna_restartlog;
 pub mod heritage;
 pub mod subflow;
 pub mod condexe;
+pub mod blockaction;
 pub mod expression;
 pub mod transform;
 pub mod coreaction_early;
