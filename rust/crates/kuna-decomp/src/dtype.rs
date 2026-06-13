@@ -481,26 +481,155 @@ impl TypeField {
     pub fn new(ident: int4, offset: int4, name: impl Into<String>, ct: Rc<Datatype>) -> TypeField {
         TypeField { ident, offset, name: name.into(), field_type: ct }
     }
+
+    /// Compare meta-data of two fields for [`Datatype::compare`] on a struct
+    /// (C++ `TypeField::compare`, type.cc:803-813): offset, then name, then
+    /// first-level metatype.
+    fn compare(&self, op2: &TypeField) -> int4 {
+        if self.offset != op2.offset {
+            return if self.offset < op2.offset { -1 } else { 1 };
+        }
+        if self.name != op2.name {
+            return if self.name < op2.name { -1 } else { 1 };
+        }
+        if self.field_type.get_metatype() != op2.field_type.get_metatype() {
+            return if self.field_type.get_metatype() < op2.field_type.get_metatype() {
+                -1
+            } else {
+                1
+            };
+        }
+        0
+    }
+
+    /// Compare structure of two fields for [`Datatype::compare_dependency`]
+    /// (C++ `TypeField::compareDependency`, type.cc:818-828): offset, then name,
+    /// then field-type pointer identity.
+    fn compare_dependency(&self, op2: &TypeField) -> int4 {
+        if self.offset != op2.offset {
+            return if self.offset < op2.offset { -1 } else { 1 };
+        }
+        if self.name != op2.name {
+            return if self.name < op2.name { -1 } else { 1 };
+        }
+        // C++ `if (type != op2.type) return (type < op2.type) ? -1 : 1;`
+        // (compare the pointers directly).
+        Datatype::compare_dependency_ptr(&self.field_type, &op2.field_type)
+    }
 }
 
 /// A field within a structure that is not aligned/sized on byte boundaries
 /// (C++ `TypeBitField`, type.hh:328-342).
 ///
-/// SEAM(W6): the `BitRange bits` member needs `BitRange` (an address.hh type W6
-/// surfaces for the type subsystem); the byte-range projection
-/// (`byteOffset`/`byteSize`) the comparator needs is carried directly.
+/// In C++ the `BitRange bits` member carries the full
+/// `byteOffset`/`byteSize`/`leastSigBit`/`numBits`/`isBigEndian` tuple.  W6
+/// (this item) carries them inline as the struct fields below so the comparator
+/// ([`TypeBitField::compare`]/[`TypeBitField::compare_dependency`], which run
+/// `BitRange::compare`) and the layout assignment
+/// ([`Datatype::assign_contiguous_bitfields`]) can be transcribed faithfully.
+/// `BitRange` as a standalone type is still W6 elsewhere; the type subsystem
+/// only needs this flattened projection.
 #[derive(Debug, Clone)]
 pub struct TypeBitField {
     /// Name of bitfield
     pub name: String,
     /// Underlying (integer) data-type
     pub field_type: Rc<Datatype>,
-    /// Byte offset of the bitfield's container (C++ `bits.byteOffset`).  // SEAM(W6)
+    /// Byte offset of the bitfield's container (C++ `bits.byteOffset`).
     pub byte_offset: int4,
-    /// Byte size of the bitfield's container (C++ `bits.byteSize`).  // SEAM(W6)
+    /// Byte size of the bitfield's container (C++ `bits.byteSize`).
     pub byte_size: int4,
+    /// Least significant bit of the range within its container (C++
+    /// `bits.leastSigBit`).
+    pub least_sig_bit: int4,
+    /// Number of bits in the range (C++ `bits.numBits`).
+    pub num_bits: int4,
+    /// Is the underlying encoding big endian (C++ `bits.isBigEndian`).
+    pub is_big_endian: bool,
     /// Identifier of this within containing structure
     pub ident: int4,
+}
+
+impl TypeBitField {
+    /// Construct from components (C++ `TypeBitField(int4 id,int4 numBits,bool
+    /// isBigEndian,const string &nm,Datatype *ct)`, type.cc:883-888).
+    ///
+    /// The C++ initializer is `bits(0,(numBits+7)/8,0,numBits,isBigEndian)` —
+    /// `byteOffset=0`, `byteSize=(numBits+7)/8`, `leastSigBit=0`.
+    pub fn new(
+        id: int4,
+        num_bits: int4,
+        is_big_endian: bool,
+        nm: impl Into<String>,
+        ct: Rc<Datatype>,
+    ) -> TypeBitField {
+        TypeBitField {
+            name: nm.into(),
+            field_type: ct,
+            byte_offset: 0,
+            byte_size: (num_bits + 7) / 8,
+            least_sig_bit: 0,
+            num_bits,
+            is_big_endian,
+            ident: id,
+        }
+    }
+
+    /// Transcribe `BitRange::compare` over the flattened bit-range fields
+    /// (address.cc:643-655): byteOffset, byteSize, leastSigBit, numBits in
+    /// order, each a signed `int4` tie-break.
+    fn bits_compare(&self, op2: &TypeBitField) -> int4 {
+        if self.byte_offset != op2.byte_offset {
+            return if self.byte_offset < op2.byte_offset { -1 } else { 1 };
+        }
+        if self.byte_size != op2.byte_size {
+            return if self.byte_size < op2.byte_size { -1 } else { 1 };
+        }
+        if self.least_sig_bit != op2.least_sig_bit {
+            return if self.least_sig_bit < op2.least_sig_bit { -1 } else { 1 };
+        }
+        if self.num_bits != op2.num_bits {
+            return if self.num_bits < op2.num_bits { -1 } else { 1 };
+        }
+        0
+    }
+
+    /// Compare meta-data of two bitfields for [`Datatype::compare`] on a struct
+    /// (C++ `TypeBitField::compare`, type.cc:893-903): `bits.compare`, then name,
+    /// then first-level metatype.
+    fn compare(&self, op2: &TypeBitField) -> int4 {
+        let res = self.bits_compare(op2);
+        if res != 0 {
+            return res;
+        }
+        if self.name != op2.name {
+            return if self.name < op2.name { -1 } else { 1 };
+        }
+        if self.field_type.get_metatype() != op2.field_type.get_metatype() {
+            return if self.field_type.get_metatype() < op2.field_type.get_metatype() {
+                -1
+            } else {
+                1
+            };
+        }
+        0
+    }
+
+    /// Compare structure of two bitfields for [`Datatype::compare_dependency`]
+    /// (C++ `TypeBitField::compareDependency`, type.cc:908-918): `bits.compare`,
+    /// then name, then field-type pointer identity.
+    fn compare_dependency(&self, op2: &TypeBitField) -> int4 {
+        let res = self.bits_compare(op2);
+        if res != 0 {
+            return res;
+        }
+        if self.name != op2.name {
+            return if self.name < op2.name { -1 } else { 1 };
+        }
+        // C++ `if (type != op2.type) return (type < op2.type) ? -1 : 1;`
+        // (compare the pointers directly).
+        Datatype::compare_dependency_ptr(&self.field_type, &op2.field_type)
+    }
 }
 
 // =============================================================================
@@ -1169,16 +1298,217 @@ impl Datatype {
                     .ok_or_else(|| Datatype::array_invariant_err("compare"))?;
                 arrayof.compare(&op_arrayof, level) // Compare array elements
             }
-            // Subclass overrides handled by type-2/type-3:
-            // TypeStruct/TypeUnion/TypeEnum/TypeCode/TypePartial*/
-            // TypePointerRel/TypeSpacebase::compare.
-            // (TypeSpacebase::compare delegates to compareDependency, which
-            // tie-breaks on spaceid then localframe after the base step —
-            // type.cc:3498-3514.)  // SEAM(W6)
-            _ => Err(KunaError::lowlevel(
-                "SEAM(W6): Datatype::compare subclass override not yet ported",
+            // TypeStruct::compare (type.cc:1978-2032).
+            DatatypeKind::Struct { field, bitfield } => {
+                self.compare_struct(op, level, field, bitfield)
+            }
+            // TypeUnion::compare (type.cc:2461-2498).
+            DatatypeKind::Union { field } => self.compare_union(op, level, field),
+            // TypeEnum::compare (type.cc:1588-1592): delegates to compareDependency.
+            DatatypeKind::Enum { .. } => self.compare_dependency(op),
+            // TypeCode::compare (type.cc:3292-3322).
+            DatatypeKind::Code { proto } => self.compare_code(op, level, proto.as_ref()),
+            // TypeSpacebase::compare (type.cc:3498-3502): delegates to compareDependency.
+            DatatypeKind::Spacebase { .. } => self.compare_dependency(op),
+            // TypePartialStruct::compare (type.cc:2829-2843).
+            DatatypeKind::PartialStruct { container, offset, .. } => {
+                self.compare_partial(op, level, container, *offset)
+            }
+            // TypePartialUnion::compare (type.cc:2902-2916).
+            DatatypeKind::PartialUnion { container, offset, .. } => {
+                self.compare_partial(op, level, container, *offset)
+            }
+            // TypePartialEnum::compare (type.cc:2715-2729).
+            DatatypeKind::PartialEnum { parent, offset, .. } => {
+                self.compare_partial(op, level, parent, *offset)
+            }
+            // TypePointerRel::compare is type-3.  // SEAM(W6)
+            DatatypeKind::PointerRel { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): TypePointerRel::compare not yet ported (type-3)",
             )),
         }
+    }
+
+    /// `TypeStruct::compare` body (type.cc:1978-2032).  `field`/`bitfield` are the
+    /// caller's borrowed payload; `op` is asserted (by matching submeta in the
+    /// base step) to be a `TypeStruct`.
+    fn compare_struct(
+        &self,
+        op: &Datatype,
+        mut level: int4,
+        field: &[TypeField],
+        bitfield: &[TypeBitField],
+    ) -> KunaResult<int4> {
+        let res = self.compare_base(op);
+        if res != 0 {
+            return Ok(res);
+        }
+        let (op_field, op_bitfield) = op
+            .as_struct_fields()
+            .ok_or_else(|| Datatype::struct_invariant_err("compare"))?;
+        if field.len() != op_field.len() {
+            // C++ `return (ts->field.size()-field.size());` — size_t difference
+            // truncated to int4 (wrapping).
+            return Ok((op_field.len() as int4).wrapping_sub(field.len() as int4));
+        }
+        // Test only the name and first level metatype first.
+        for (f1, f2) in field.iter().zip(op_field.iter()) {
+            let cmp = f1.compare(f2);
+            if cmp != 0 {
+                return Ok(cmp);
+            }
+        }
+        if bitfield.len() != op_bitfield.len() {
+            return Ok((op_bitfield.len() as int4).wrapping_sub(bitfield.len() as int4));
+        }
+        for (b1, b2) in bitfield.iter().zip(op_bitfield.iter()) {
+            let cmp = b1.compare(b2);
+            if cmp != 0 {
+                return Ok(cmp);
+            }
+        }
+        level -= 1;
+        if level < 0 {
+            if self.id == op.get_id() {
+                return Ok(0);
+            }
+            return Ok(if self.id < op.get_id() { -1 } else { 1 });
+        }
+        // If we are still equal, now go down deep into each field type.
+        for (f1, f2) in field.iter().zip(op_field.iter()) {
+            // Short circuit recursive loops (pointer identity).
+            if !Rc::ptr_eq(&f1.field_type, &f2.field_type) {
+                let c = f1.field_type.compare(&f2.field_type, level)?;
+                if c != 0 {
+                    return Ok(c);
+                }
+            }
+        }
+        for (b1, b2) in bitfield.iter().zip(op_bitfield.iter()) {
+            if !Rc::ptr_eq(&b1.field_type, &b2.field_type) {
+                let c = b1.field_type.compare(&b2.field_type, level)?;
+                if c != 0 {
+                    return Ok(c);
+                }
+            }
+        }
+        Ok(0)
+    }
+
+    /// `TypeUnion::compare` body (type.cc:2461-2498).
+    fn compare_union(
+        &self,
+        op: &Datatype,
+        mut level: int4,
+        field: &[TypeField],
+    ) -> KunaResult<int4> {
+        let res = self.compare_base(op);
+        if res != 0 {
+            return Ok(res);
+        }
+        let op_field = op
+            .as_union_fields()
+            .ok_or_else(|| Datatype::union_invariant_err("compare"))?;
+        if field.len() != op_field.len() {
+            return Ok((op_field.len() as int4).wrapping_sub(field.len() as int4));
+        }
+        // Test only the name and first level metatype first.
+        for (f1, f2) in field.iter().zip(op_field.iter()) {
+            if f1.name != f2.name {
+                return Ok(if f1.name < f2.name { -1 } else { 1 });
+            }
+            if f1.field_type.get_metatype() != f2.field_type.get_metatype() {
+                return Ok(if f1.field_type.get_metatype() < f2.field_type.get_metatype() {
+                    -1
+                } else {
+                    1
+                });
+            }
+        }
+        level -= 1;
+        if level < 0 {
+            if self.id == op.get_id() {
+                return Ok(0);
+            }
+            return Ok(if self.id < op.get_id() { -1 } else { 1 });
+        }
+        // If we are still equal, now go down deep into each field type.
+        for (f1, f2) in field.iter().zip(op_field.iter()) {
+            if !Rc::ptr_eq(&f1.field_type, &f2.field_type) {
+                let c = f1.field_type.compare(&f2.field_type, level)?;
+                if c != 0 {
+                    return Ok(c);
+                }
+            }
+        }
+        Ok(0)
+    }
+
+    /// `TypeCode::compare` body (type.cc:3292-3322).  The prototype walk needs the
+    /// W4/W6 `FuncProto` model (`numParams`/`getParam`/`getOutputType`), so the
+    /// `compareBasic == 2` ("carry on with parameters") path is a `// SEAM(W6)`;
+    /// the surface comparison ([`Self::compare_code_basic`]) is implemented.
+    fn compare_code(
+        &self,
+        op: &Datatype,
+        mut level: int4,
+        proto: Option<&Rc<crate::seams::FuncProto>>,
+    ) -> KunaResult<int4> {
+        let res = self.compare_base(op);
+        if res != 0 {
+            return Ok(res);
+        }
+        let op_proto = op
+            .as_code_proto()
+            .ok_or_else(|| Datatype::code_invariant_err("compare"))?;
+        let res = Datatype::compare_code_basic(proto, op_proto)?;
+        if res != 2 {
+            return Ok(res);
+        }
+        level -= 1;
+        if level < 0 {
+            if self.id == op.get_id() {
+                return Ok(0);
+            }
+            return Ok(if self.id < op.get_id() { -1 } else { 1 });
+        }
+        // The remaining per-parameter / output-type recursion (type.cc:3306-3321)
+        // needs the FuncProto parameter/output model.  // SEAM(W6)
+        Err(KunaError::lowlevel(
+            "SEAM(W6): TypeCode::compare prototype-parameter recursion needs FuncProto model",
+        ))
+    }
+
+    /// `TypePartialStruct/TypePartialUnion/TypePartialEnum::compare` body — these
+    /// three share an identical shape (type.cc:2829-2843, 2902-2916, 2715-2729):
+    /// base compare, then offset, then recurse into the container/parent.
+    /// `whole` is `container` (struct/union) or `parent` (enum).
+    fn compare_partial(
+        &self,
+        op: &Datatype,
+        mut level: int4,
+        whole: &Rc<Datatype>,
+        offset: int4,
+    ) -> KunaResult<int4> {
+        let res = self.compare_base(op);
+        if res != 0 {
+            return Ok(res);
+        }
+        // Both must be partial — read op's offset and whole.
+        let (op_whole, op_offset) = op
+            .as_partial_whole()
+            .ok_or_else(|| Datatype::partial_invariant_err("compare"))?;
+        if offset != op_offset {
+            return Ok(if offset < op_offset { -1 } else { 1 });
+        }
+        level -= 1;
+        if level < 0 {
+            if self.id == op.get_id() {
+                return Ok(0);
+            }
+            return Ok(if self.id < op.get_id() { -1 } else { 1 });
+        }
+        whole.compare(op_whole, level) // Compare the underlying whole
     }
 
     /// Read this data-type's `Pointer`-payload fields as a plain pointer
@@ -1191,6 +1521,161 @@ impl Datatype {
                 Some((ptrto, spaceid.as_ref(), *wordsize))
             }
             _ => None,
+        }
+    }
+
+    /// Borrow a `TypeStruct`'s `field`/`bitfield` payload, used where the C++
+    /// casts `&op` to `TypeStruct *`.  `None` if not a struct.
+    fn as_struct_fields(&self) -> Option<(&[TypeField], &[TypeBitField])> {
+        match &self.kind {
+            DatatypeKind::Struct { field, bitfield } => Some((field, bitfield)),
+            _ => None,
+        }
+    }
+
+    /// Borrow a `TypeUnion`'s `field` payload, used where the C++ casts `&op` to
+    /// `TypeUnion *`.  `None` if not a union.
+    fn as_union_fields(&self) -> Option<&[TypeField]> {
+        match &self.kind {
+            DatatypeKind::Union { field } => Some(field),
+            _ => None,
+        }
+    }
+
+    /// Borrow a `TypeCode`'s `proto` payload, used where the C++ casts `&op` to
+    /// `TypeCode *`.  `None` if not a code type.
+    fn as_code_proto(&self) -> Option<Option<&Rc<crate::seams::FuncProto>>> {
+        match &self.kind {
+            DatatypeKind::Code { proto } => Some(proto.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// Borrow the (whole, offset) pair of a partial data-type, used where the
+    /// C++ casts `&op` to `TypePartialStruct/Union/Enum *`.  The "whole" is
+    /// `container` for struct/union partials, `parent` for enum partials.  `None`
+    /// if not a partial kind.
+    fn as_partial_whole(&self) -> Option<(&Rc<Datatype>, int4)> {
+        match &self.kind {
+            DatatypeKind::PartialStruct { container, offset, .. } => Some((container, *offset)),
+            DatatypeKind::PartialUnion { container, offset, .. } => Some((container, *offset)),
+            DatatypeKind::PartialEnum { parent, offset, .. } => Some((parent, *offset)),
+            _ => None,
+        }
+    }
+
+    /// Borrow a `TypeEnum`'s `namemap`, used where the C++ casts `&op` to
+    /// `TypeEnum *`.  `None` if not an enum.
+    fn as_enum_namemap(&self) -> Option<&std::collections::BTreeMap<u64, String>> {
+        match &self.kind {
+            DatatypeKind::Enum { namemap } => Some(namemap),
+            _ => None,
+        }
+    }
+
+    /// Borrow a `TypeSpacebase`'s `(spaceid, localframe)`, used where the C++
+    /// casts `&op` to `TypeSpacebase *`.  `None` if not a spacebase.
+    fn as_spacebase(&self) -> Option<(Option<&Rc<AddrSpace>>, &Address)> {
+        match &self.kind {
+            DatatypeKind::Spacebase { spaceid, localframe } => {
+                Some((spaceid.as_ref(), localframe))
+            }
+            _ => None,
+        }
+    }
+
+    fn enum_invariant_err(method: &str) -> KunaError {
+        KunaError::lowlevel(format!(
+            "Datatype::{method}: enum override reached with non-enum op \
+             (submeta invariant violated)"
+        ))
+    }
+    fn spacebase_invariant_err(method: &str) -> KunaError {
+        KunaError::lowlevel(format!(
+            "Datatype::{method}: spacebase override reached with non-spacebase op \
+             (submeta invariant violated)"
+        ))
+    }
+
+    /// Transcribe the C++ `TypeSpacebase::compareDependency` spaceid tie-break
+    /// (type.cc:3510): `if (spaceid != tsb->spaceid) return (spaceid <
+    /// tsb->spaceid) ? -1:1;` — a *raw pointer* comparison of the AddrSpace
+    /// objects (NOT the by-index ordering used by `TypePointer`).  Returns
+    /// `Some(ordering)` when the spaces differ, `None` when they are the same
+    /// (C++ falls through).  The Rust analogue of the object address is
+    /// [`Rc::as_ptr`].  Both spaces are always present on a TypeSpacebase.
+    fn compare_spacebase_space(
+        a: Option<&Rc<AddrSpace>>,
+        b: Option<&Rc<AddrSpace>>,
+    ) -> Option<int4> {
+        match (a, b) {
+            (None, None) => None,
+            // Mirrors the raw-pointer `<` with a null on one side (null sorts
+            // before a real pointer in C++'s flat address space).
+            (None, Some(_)) => Some(-1),
+            (Some(_), None) => Some(1),
+            (Some(sa), Some(sb)) => {
+                if Rc::ptr_eq(sa, sb) {
+                    None
+                } else {
+                    let pa = Rc::as_ptr(sa) as usize;
+                    let pb = Rc::as_ptr(sb) as usize;
+                    Some(if pa < pb { -1 } else { 1 })
+                }
+            }
+        }
+    }
+
+    /// Internal-invariant error for a structured override reached with a
+    /// non-matching `op` kind (the matching-submeta precondition was violated).
+    fn struct_invariant_err(method: &str) -> KunaError {
+        KunaError::lowlevel(format!(
+            "Datatype::{method}: struct override reached with non-struct op \
+             (submeta invariant violated)"
+        ))
+    }
+    fn union_invariant_err(method: &str) -> KunaError {
+        KunaError::lowlevel(format!(
+            "Datatype::{method}: union override reached with non-union op \
+             (submeta invariant violated)"
+        ))
+    }
+    fn code_invariant_err(method: &str) -> KunaError {
+        KunaError::lowlevel(format!(
+            "Datatype::{method}: code override reached with non-code op \
+             (submeta invariant violated)"
+        ))
+    }
+    fn partial_invariant_err(method: &str) -> KunaError {
+        KunaError::lowlevel(format!(
+            "Datatype::{method}: partial override reached with non-partial op \
+             (submeta invariant violated)"
+        ))
+    }
+
+    /// `TypeCode::compareBasic` (type.cc:3252-3282): compare surface
+    /// characteristics of two code prototypes without recursing into params.
+    /// Returns -1/1 if they differ, 0 if equal with no params, 2 if equal on the
+    /// surface but parameters must be compared.
+    ///
+    /// The `hasModel`/`getModelName`/`numParams`/`getComparableFlags` accessors
+    /// are part of the W4/W6 `FuncProto` model.  The proto-presence cases (one or
+    /// both `proto == null`) are fully implemented; the both-present-with-model
+    /// case routes to a `// SEAM(W6)` `Err`.
+    fn compare_code_basic(
+        proto: Option<&Rc<crate::seams::FuncProto>>,
+        op_proto: Option<&Rc<crate::seams::FuncProto>>,
+    ) -> KunaResult<int4> {
+        match (proto, op_proto) {
+            (None, None) => Ok(0),
+            (None, Some(_)) => Ok(1),
+            (Some(_), None) => Ok(-1),
+            (Some(_), Some(_)) => {
+                // hasModel/getModelName/numParams/getComparableFlags — FuncProto.
+                Err(KunaError::lowlevel(
+                    "SEAM(W6): TypeCode::compareBasic needs FuncProto model accessors",
+                ))
+            }
         }
     }
 
@@ -1336,13 +1821,210 @@ impl Datatype {
                 }
                 Ok(op.get_size().wrapping_sub(self.size))
             }
-            // type-2/type-3 overrides.
-            // (TypeSpacebase tie-breaks on spaceid then localframe after the base
-            // step — type.cc:3504-3514.)  // SEAM(W6)
-            _ => Err(KunaError::lowlevel(
-                "SEAM(W6): Datatype::compareDependency subclass override not yet ported",
+            // TypeStruct::compareDependency (type.cc:2034-2063).
+            DatatypeKind::Struct { field, bitfield } => {
+                self.compare_dependency_struct(op, field, bitfield)
+            }
+            // TypeUnion::compareDependency (type.cc:2500-2523).
+            DatatypeKind::Union { field } => self.compare_dependency_union(op, field),
+            // TypeEnum::compareDependency (type.cc:1594-1617).
+            DatatypeKind::Enum { namemap } => self.compare_dependency_enum(op, namemap),
+            // TypeCode::compareDependency (type.cc:3324-3350).
+            DatatypeKind::Code { proto } => self.compare_dependency_code(op, proto.as_ref()),
+            // TypeSpacebase::compareDependency (type.cc:3504-3514).
+            DatatypeKind::Spacebase { spaceid, localframe } => {
+                self.compare_dependency_spacebase(op, spaceid.as_ref(), localframe)
+            }
+            // TypePartialStruct/Union/Enum::compareDependency — identical shape
+            // (type.cc:2845-2853, 2918-2926, 2731-2739).
+            DatatypeKind::PartialStruct { container, offset, .. } => {
+                self.compare_dependency_partial(op, container, *offset)
+            }
+            DatatypeKind::PartialUnion { container, offset, .. } => {
+                self.compare_dependency_partial(op, container, *offset)
+            }
+            DatatypeKind::PartialEnum { parent, offset, .. } => {
+                self.compare_dependency_partial(op, parent, *offset)
+            }
+            // TypePointerRel::compareDependency is type-3.  // SEAM(W6)
+            DatatypeKind::PointerRel { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): TypePointerRel::compareDependency not yet ported (type-3)",
             )),
         }
+    }
+
+    /// `TypeStruct::compareDependency` body (type.cc:2034-2063).
+    fn compare_dependency_struct(
+        &self,
+        op: &Datatype,
+        field: &[TypeField],
+        bitfield: &[TypeBitField],
+    ) -> KunaResult<int4> {
+        let res = self.compare_dependency_base(op);
+        if res != 0 {
+            return Ok(res);
+        }
+        let (op_field, op_bitfield) = op
+            .as_struct_fields()
+            .ok_or_else(|| Datatype::struct_invariant_err("compareDependency"))?;
+        if field.len() != op_field.len() {
+            return Ok((op_field.len() as int4).wrapping_sub(field.len() as int4));
+        }
+        for (f1, f2) in field.iter().zip(op_field.iter()) {
+            let cmp = f1.compare_dependency(f2);
+            if cmp != 0 {
+                return Ok(cmp);
+            }
+        }
+        if bitfield.len() != op_bitfield.len() {
+            return Ok((op_bitfield.len() as int4).wrapping_sub(bitfield.len() as int4));
+        }
+        for (b1, b2) in bitfield.iter().zip(op_bitfield.iter()) {
+            let cmp = b1.compare_dependency(b2);
+            if cmp != 0 {
+                return Ok(cmp);
+            }
+        }
+        Ok(0)
+    }
+
+    /// `TypeUnion::compareDependency` body (type.cc:2500-2523).
+    fn compare_dependency_union(&self, op: &Datatype, field: &[TypeField]) -> KunaResult<int4> {
+        let res = self.compare_dependency_base(op);
+        if res != 0 {
+            return Ok(res);
+        }
+        let op_field = op
+            .as_union_fields()
+            .ok_or_else(|| Datatype::union_invariant_err("compareDependency"))?;
+        if field.len() != op_field.len() {
+            return Ok((op_field.len() as int4).wrapping_sub(field.len() as int4));
+        }
+        for (f1, f2) in field.iter().zip(op_field.iter()) {
+            if f1.name != f2.name {
+                return Ok(if f1.name < f2.name { -1 } else { 1 });
+            }
+            // C++ `if (fld1 != fld2) return (fld1 < fld2) ? -1 : 1;`.
+            let cmp = Datatype::compare_dependency_ptr(&f1.field_type, &f2.field_type);
+            if cmp != 0 {
+                return Ok(cmp);
+            }
+        }
+        Ok(0)
+    }
+
+    /// `TypeEnum::compareDependency` body (type.cc:1594-1617): base step, then
+    /// namemap size, then entry-by-entry (value, then name) over the ordered map.
+    fn compare_dependency_enum(
+        &self,
+        op: &Datatype,
+        namemap: &std::collections::BTreeMap<u64, String>,
+    ) -> KunaResult<int4> {
+        // C++ `TypeBase::compareDependency(op)` — same as the base body.
+        let res = self.compare_dependency_base(op);
+        if res != 0 {
+            return Ok(res);
+        }
+        let op_namemap = op
+            .as_enum_namemap()
+            .ok_or_else(|| Datatype::enum_invariant_err("compareDependency"))?;
+        if namemap.len() != op_namemap.len() {
+            return Ok(if namemap.len() < op_namemap.len() { -1 } else { 1 });
+        }
+        // BTreeMap iteration is in key order, matching std::map.
+        for ((v1, n1), (v2, n2)) in namemap.iter().zip(op_namemap.iter()) {
+            if v1 != v2 {
+                return Ok(if v1 < v2 { -1 } else { 1 });
+            }
+            if n1 != n2 {
+                return Ok(if n1 < n2 { -1 } else { 1 });
+            }
+        }
+        Ok(0)
+    }
+
+    /// `TypeCode::compareDependency` body (type.cc:3324-3350).  The param/output
+    /// recursion needs the `FuncProto` model.
+    fn compare_dependency_code(
+        &self,
+        op: &Datatype,
+        proto: Option<&Rc<crate::seams::FuncProto>>,
+    ) -> KunaResult<int4> {
+        let res = self.compare_dependency_base(op);
+        if res != 0 {
+            return Ok(res);
+        }
+        let op_proto = op
+            .as_code_proto()
+            .ok_or_else(|| Datatype::code_invariant_err("compareDependency"))?;
+        let res = Datatype::compare_code_basic(proto, op_proto)?;
+        if res != 2 {
+            return Ok(res);
+        }
+        // Per-parameter pointer comparison + output-type — FuncProto.  // SEAM(W6)
+        Err(KunaError::lowlevel(
+            "SEAM(W6): TypeCode::compareDependency prototype recursion needs FuncProto model",
+        ))
+    }
+
+    /// `TypeSpacebase::compareDependency` body (type.cc:3504-3514): base step,
+    /// then spaceid identity, then localframe (skipped for the global space base).
+    fn compare_dependency_spacebase(
+        &self,
+        op: &Datatype,
+        spaceid: Option<&Rc<AddrSpace>>,
+        localframe: &Address,
+    ) -> KunaResult<int4> {
+        let res = self.compare_dependency_base(op);
+        if res != 0 {
+            return Ok(res);
+        }
+        let (op_spaceid, op_localframe) = op
+            .as_spacebase()
+            .ok_or_else(|| Datatype::spacebase_invariant_err("compareDependency"))?;
+        // C++ `if (spaceid != tsb->spaceid) return (spaceid < tsb->spaceid) ? -1:1;`
+        // — pointer comparison of the AddrSpace objects.
+        if let Some(r) = Datatype::compare_spacebase_space(spaceid, op_spaceid) {
+            return Ok(r);
+        }
+        // C++ `if (localframe.isInvalid()) return 0;` — Global space base.
+        if localframe.is_invalid() {
+            return Ok(0);
+        }
+        // C++ `if (localframe != tsb->localframe) return (localframe < tsb->localframe) ? -1:1;`.
+        if localframe != op_localframe {
+            return Ok(if localframe < op_localframe { -1 } else { 1 });
+        }
+        Ok(0)
+    }
+
+    /// `TypePartialStruct/Union/Enum::compareDependency` body — these three share
+    /// an identical shape (type.cc:2845-2853, 2918-2926, 2731-2739): submeta,
+    /// then whole-pointer identity, then offset, finishing with `op.size - size`.
+    fn compare_dependency_partial(
+        &self,
+        op: &Datatype,
+        whole: &Rc<Datatype>,
+        offset: int4,
+    ) -> KunaResult<int4> {
+        // C++ `if (submeta != op.getSubMeta()) return (submeta < op.getSubMeta()) ? -1 : 1;`
+        if self.submeta != op.get_sub_meta() {
+            return Ok(if self.submeta < op.get_sub_meta() { -1 } else { 1 });
+        }
+        let (op_whole, op_offset) = op
+            .as_partial_whole()
+            .ok_or_else(|| Datatype::partial_invariant_err("compareDependency"))?;
+        // C++ `if (container != tp->container) return (container < tp->container) ? -1 : 1;`
+        // (compare absolute pointers).
+        let cmp = Datatype::compare_dependency_ptr(whole, op_whole);
+        if cmp != 0 {
+            return Ok(cmp);
+        }
+        if offset != op_offset {
+            return Ok(if offset < op_offset { -1 } else { 1 });
+        }
+        // C++ `return (op.getSize()-size);` (wrapping i32 subtraction).
+        Ok(op.get_size().wrapping_sub(self.size))
     }
 
     /// The base `Datatype::compareDependency` body (type.cc:231-237).
@@ -1354,6 +2036,68 @@ impl Datatype {
             return op.size.wrapping_sub(self.size);
         }
         0
+    }
+
+    // -- Struct field index helpers (type.cc:1754-1876) ---------------------
+
+    /// `TypeStruct::getFieldIter` (type.cc:1754-1772): binary-search the field
+    /// containing `off`, returning the index or -1 if `off` is not inside a
+    /// field.  `field` is sorted by ascending `offset`.
+    fn get_field_iter(field: &[TypeField], off: int4) -> int4 {
+        let mut min: int4 = 0;
+        // C++ `int4 max = field.size()-1;` — for an empty list this is -1, and
+        // the loop body never runs (min=0 > max=-1).
+        let mut max: int4 = field.len() as int4 - 1;
+        while min <= max {
+            let mid = (min + max) / 2;
+            let curfield = &field[mid as usize];
+            if curfield.offset > off {
+                max = mid - 1;
+            } else {
+                // curfield.offset <= off
+                if curfield.offset + curfield.field_type.get_size() > off {
+                    return mid;
+                }
+                min = mid + 1;
+            }
+        }
+        -1
+    }
+
+    /// `TypeStruct::getLowerBoundField` (type.cc:1858-1876): the index of the
+    /// last field whose offset is <= `off` (the field may or may not contain
+    /// `off`), or -1 if no field starts at or before `off`.
+    fn get_lower_bound_field(field: &[TypeField], off: int4) -> int4 {
+        if field.is_empty() {
+            return -1;
+        }
+        let mut min: int4 = 0;
+        let mut max: int4 = field.len() as int4 - 1;
+        while min < max {
+            let mid = (min + max + 1) / 2;
+            if field[mid as usize].offset > off {
+                max = mid - 1;
+            } else {
+                // curfield.offset <= off
+                min = mid;
+            }
+        }
+        if min == max && field[min as usize].offset <= off {
+            return min;
+        }
+        -1
+    }
+
+    /// Calculate the aligned size given size and alignment (C++
+    /// `Datatype::calcAlignSize`, type.cc:540-547): round `sz` up to a multiple
+    /// of `align`.
+    pub fn calc_align_size(sz: int4, align: int4) -> int4 {
+        let mod_ = sz % align;
+        if mod_ != 0 {
+            sz + (align - mod_)
+        } else {
+            sz
+        }
     }
 
     // -- Structured-walk virtuals (type.hh:251-300) — W6 --------------------
@@ -1401,9 +2145,62 @@ impl Datatype {
                 let newoff = off % arrayof.get_align_size() as int8;
                 Ok((Some(Rc::clone(arrayof)), newoff))
             }
-            _ => Err(KunaError::lowlevel(
-                "SEAM(W6): Datatype::getSubType override not yet ported",
+            // TypeStruct::getSubType (type.cc:1894-1904): the field containing the
+            // offset, with `newoff` relative to that field's offset.
+            DatatypeKind::Struct { field, .. } => {
+                // C++ `i = getFieldIter(off);` — `off` is int8 but getFieldIter
+                // takes int4; the C++ implicitly narrows.  Mirror that narrowing.
+                let i = Datatype::get_field_iter(field, off as int4);
+                if i < 0 {
+                    // C++ `return Datatype::getSubType(off,newoff);` — base body.
+                    return Ok((None, off));
+                }
+                let curfield = &field[i as usize];
+                let newoff = off - curfield.offset as int8;
+                Ok((Some(Rc::clone(&curfield.field_type)), newoff))
+            }
+            // TypePartialStruct::getSubType (type.cc:2802-2816): descend into the
+            // container, going down further while the component spills past this
+            // partial's range.
+            DatatypeKind::PartialStruct { container, offset, .. } => {
+                let size_left: int8 = self.size as int8 - off;
+                let mut off = off + *offset as int8;
+                let mut ct = Rc::clone(container);
+                loop {
+                    let (next, newoff) = ct.get_sub_type(off)?;
+                    match next {
+                        None => return Ok((None, newoff)),
+                        Some(next_ct) => {
+                            off = newoff;
+                            ct = next_ct;
+                            // Component can extend beyond range of this partial, in
+                            // which case we go down another level.
+                            if (ct.get_size() as int8 - off) <= size_left {
+                                break;
+                            }
+                        }
+                    }
+                }
+                Ok((Some(ct), off))
+            }
+            // TypeCode::getSubType (type.cc:3284-3290): if a factory is bound,
+            // return `getBase(1, TYPE_CODE)` with newoff=0; else null.  The
+            // factory is part of the W6 TypeFactory construction.
+            DatatypeKind::Code { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): TypeCode::getSubType needs the bound TypeFactory (getBase)",
             )),
+            // TypeSpacebase::getSubType (type.cc:3411-3433): resolves through the
+            // symbol-table Scope — needs the W6 Architecture/Scope wiring.
+            DatatypeKind::Spacebase { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): TypeSpacebase::getSubType needs symbol-table Scope resolution",
+            )),
+            // TypePointerRel does not override getSubType — it inherits
+            // TypePointer::getSubType, but a relative pointer never carries a
+            // `truncate`, so the result is always the base `(None, off)`.
+            // TypePartialUnion/TypePartialEnum also use the base body.
+            DatatypeKind::PointerRel { .. }
+            | DatatypeKind::PartialUnion { .. }
+            | DatatypeKind::PartialEnum { .. } => Ok((None, off)),
         }
     }
 
@@ -1418,10 +2215,32 @@ impl Datatype {
                 let new_off = off % arrayof.get_align_size();
                 arrayof.get_hole_size(new_off)
             }
-            DatatypeKind::Struct { .. } | DatatypeKind::PartialStruct { .. } => {
-                Err(KunaError::lowlevel(
-                    "SEAM(W6): Datatype::getHoleSize override not yet ported",
-                ))
+            // TypeStruct::getHoleSize (type.cc:1906-1921).
+            DatatypeKind::Struct { field, .. } => {
+                let mut i = Datatype::get_lower_bound_field(field, off);
+                if i >= 0 {
+                    let curfield = &field[i as usize];
+                    let new_off = off - curfield.offset;
+                    if new_off < curfield.field_type.get_size() {
+                        return curfield.field_type.get_hole_size(new_off);
+                    }
+                }
+                i += 1; // advance to first field following off
+                if (i as usize) < field.len() {
+                    // Distance to following field.
+                    return Ok(field[i as usize].offset - off);
+                }
+                Ok(self.size - off) // Distance to end of structure
+            }
+            // TypePartialStruct::getHoleSize (type.cc:2818-2827).
+            DatatypeKind::PartialStruct { container, offset, .. } => {
+                let size_left = self.size - off;
+                let off = off + *offset;
+                let mut res = container.get_hole_size(off)?;
+                if res > size_left {
+                    res = size_left;
+                }
+                Ok(res)
             }
             _ => Ok(0),
         }
@@ -1441,10 +2260,10 @@ impl Datatype {
         off: int8,
         max: int8,
     ) -> KunaResult<(int8, int8, int8)> {
-        let _ = max;
         match &self.kind {
             // TypeArray::nearestArrayedComponentForward (type.cc:1395-1402).
             DatatypeKind::Array { arrayof, .. } => {
+                let _ = max;
                 if off > 0 {
                     return Ok((-1, off, 0)); // Skip if we are in the middle of array
                 }
@@ -1452,11 +2271,45 @@ impl Datatype {
                 let el_size = arrayof.get_align_size() as int8;
                 Ok((-off, new_off, el_size))
             }
-            DatatypeKind::Struct { .. } | DatatypeKind::Spacebase { .. } => {
-                Err(KunaError::lowlevel(
-                    "SEAM(W6): Datatype::nearestArrayedComponentForward override not yet ported",
-                ))
+            // TypeStruct::nearestArrayedComponentForward (type.cc:1947-1976).
+            DatatypeKind::Struct { field, .. } => {
+                // C++ `getLowerBoundField(off)` narrows off to int4.
+                let mut i = Datatype::get_lower_bound_field(field, off as int4);
+                let mut remain: int8;
+                if i < 0 {
+                    // No component starting before off; first component after.
+                    i += 1;
+                    remain = 0;
+                } else {
+                    remain = off - field[i as usize].offset as int8;
+                }
+                while (i as usize) < field.len() {
+                    let subfield = &field[i as usize];
+                    // The first struct field examined may have a negative diff.
+                    let diff = subfield.offset as int8 - off;
+                    if diff + remain > max {
+                        break;
+                    }
+                    let (distance, _suboff, sub_el) =
+                        subfield.field_type.nearest_arrayed_component_forward(remain, max)?;
+                    if distance >= 0 {
+                        let distance = diff + remain + distance;
+                        if distance > max {
+                            break;
+                        }
+                        // C++ sets `*newoff = -diff;` and passes back elSize.
+                        return Ok((distance, -diff, sub_el));
+                    }
+                    i += 1;
+                    remain = 0;
+                }
+                Ok((-1, off, 0))
             }
+            // TypeSpacebase::nearestArrayedComponentForward (type.cc:3435-3480):
+            // walks the symbol-table Scope — needs the W6 Architecture wiring.
+            DatatypeKind::Spacebase { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): TypeSpacebase::nearestArrayedComponentForward needs Scope resolution",
+            )),
             // Base default: return -1.
             _ => Ok((-1, off, 0)),
         }
@@ -1475,10 +2328,10 @@ impl Datatype {
         off: int8,
         max: int8,
     ) -> KunaResult<(int8, int8, int8)> {
-        let _ = max;
         match &self.kind {
             // TypeArray::nearestArrayedComponentBackward (type.cc:1404-1413).
             DatatypeKind::Array { arrayof, .. } => {
+                let _ = max;
                 if off < 0 {
                     return Ok((-1, off, 0)); // Skip if we are before array
                 }
@@ -1488,11 +2341,41 @@ impl Datatype {
                 let dist = if off <= size { size - off } else { off - size };
                 Ok((dist, new_off, el_size))
             }
-            DatatypeKind::Struct { .. } | DatatypeKind::Spacebase { .. } => {
-                Err(KunaError::lowlevel(
-                    "SEAM(W6): Datatype::nearestArrayedComponentBackward override not yet ported",
-                ))
+            // TypeStruct::nearestArrayedComponentBackward (type.cc:1923-1945).
+            DatatypeKind::Struct { field, .. } => {
+                let first_index = Datatype::get_lower_bound_field(field, off as int4);
+                let mut i = first_index;
+                while i >= 0 {
+                    let subfield = &field[i as usize];
+                    let diff = off - subfield.offset as int8;
+                    let subtype = &subfield.field_type;
+                    let remain: int8 = if i == first_index {
+                        diff
+                    } else {
+                        subtype.get_size() as int8
+                    };
+                    if diff - remain > max {
+                        break;
+                    }
+                    let (distance, _suboff, el_size) =
+                        subtype.nearest_arrayed_component_backward(remain, max)?;
+                    if distance >= 0 {
+                        let distance = (diff - remain) + distance;
+                        if distance > max {
+                            break;
+                        }
+                        // C++ sets `*newoff = diff;`.
+                        return Ok((distance, diff, el_size));
+                    }
+                    i -= 1;
+                }
+                Ok((-1, off, 0))
             }
+            // TypeSpacebase::nearestArrayedComponentBackward (type.cc:3482-3496):
+            // resolves through getSubType (Scope) — needs the W6 Scope wiring.
+            DatatypeKind::Spacebase { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): TypeSpacebase::nearestArrayedComponentBackward needs Scope resolution",
+            )),
             // Base default: return -1.
             _ => Ok((-1, off, 0)),
         }
@@ -1757,13 +2640,525 @@ impl Datatype {
                 }
                 Ok(-1)
             }
-            DatatypeKind::Union { .. }
-            | DatatypeKind::PartialUnion { .. }
-            | DatatypeKind::Struct { .. } => Err(KunaError::lowlevel(
-                "SEAM(W6): Datatype::findCompatibleResolve override not yet ported",
-            )),
+            // TypeStruct::findCompatibleResolve (type.cc:2300-2311): a struct that
+            // needs resolution has exactly one field (field[0]).
+            DatatypeKind::Struct { field, .. } => {
+                let field_type = &field[0].field_type;
+                // C++ nested-if; `&&` preserves short-circuit.
+                if ct.needs_resolution()
+                    && !field_type.needs_resolution()
+                    && ct.find_compatible_resolve(field_type)? >= 0
+                {
+                    return Ok(0);
+                }
+                // C++ `if (fieldType == ct) return 0;` — pointer identity.
+                if std::ptr::eq(Rc::as_ptr(field_type), ct as *const Datatype) {
+                    return Ok(0);
+                }
+                Ok(-1)
+            }
+            // TypeUnion::findCompatibleResolve (type.cc:2629-2649).
+            DatatypeKind::Union { field } => {
+                if !ct.needs_resolution() {
+                    for (i, f) in field.iter().enumerate() {
+                        // C++ `if (field[i].type == ct && field[i].offset == 0)`.
+                        if std::ptr::eq(Rc::as_ptr(&f.field_type), ct as *const Datatype)
+                            && f.offset == 0
+                        {
+                            return Ok(i as int4);
+                        }
+                    }
+                } else {
+                    for (i, f) in field.iter().enumerate() {
+                        if f.offset != 0 {
+                            continue;
+                        }
+                        let field_type = &f.field_type;
+                        if field_type.get_size() != ct.get_size() {
+                            continue;
+                        }
+                        if field_type.needs_resolution() {
+                            continue;
+                        }
+                        if ct.find_compatible_resolve(field_type)? >= 0 {
+                            return Ok(i as int4);
+                        }
+                    }
+                }
+                Ok(-1)
+            }
+            // TypePartialUnion::findCompatibleResolve (type.cc:2988-2992):
+            // delegate to the container union.
+            DatatypeKind::PartialUnion { container, .. } => {
+                container.find_compatible_resolve(ct)
+            }
             _ => Ok(-1), // base default (type.cc:600-604)
         }
+    }
+
+    // -- Struct/Union field access (type.cc:1878-1904, type.hh:626) ---------
+
+    /// Get the `i`-th field of a struct or union (C++ `TypeUnion::getField`
+    /// type.hh:626, and struct field access).  Returns `None` for non-composite
+    /// kinds or out-of-range indices.
+    pub fn get_field(&self, i: int4) -> Option<&TypeField> {
+        if i < 0 {
+            return None;
+        }
+        match &self.kind {
+            DatatypeKind::Struct { field, .. } => field.get(i as usize),
+            DatatypeKind::Union { field } => field.get(i as usize),
+            _ => None,
+        }
+    }
+
+    /// Find the field to use for a truncated read of a struct (C++
+    /// `TypeStruct::findTruncation`, type.cc:1878-1892).
+    ///
+    /// Returns the index of the field containing `[off, off+sz)` and passes back
+    /// `newoff` (the offset into that field), or `None` if the requested piece
+    /// is not inside a single field.  `op`/`slot` are accepted for signature
+    /// parity (the struct override ignores them — only the `TypeUnion` override
+    /// consults the `Funcdata` resolution cache, which is a W6 seam).
+    ///
+    /// The `TypeUnion::findTruncation` (type.cc:2613-2627) and
+    /// `TypePartialUnion::findTruncation` (type.cc:2880-2884) overrides need the
+    /// `Funcdata` union-resolution cache (`// SEAM(W6)`).
+    pub fn find_truncation(
+        &self,
+        off: int8,
+        sz: int4,
+        _op: crate::seams::OpId,
+        _slot: int4,
+    ) -> KunaResult<Option<(int4, int8)>> {
+        match &self.kind {
+            DatatypeKind::Struct { field, .. } => {
+                // C++ `i = getFieldIter(off);` — int8 narrows to int4.
+                let i = Datatype::get_field_iter(field, off as int4);
+                if i < 0 {
+                    return Ok(None);
+                }
+                let curfield = &field[i as usize];
+                let noff = off - curfield.offset as int8;
+                // Requested piece spans more than one field.
+                if noff + sz as int8 > curfield.field_type.get_size() as int8 {
+                    return Ok(None);
+                }
+                Ok(Some((i, noff)))
+            }
+            // TypeUnion::findTruncation only returns a cached resolution.
+            DatatypeKind::Union { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): TypeUnion::findTruncation needs the Funcdata union-resolution cache",
+            )),
+            // TypePartialUnion::findTruncation delegates to the container union.
+            DatatypeKind::PartialUnion { .. } => Err(KunaError::lowlevel(
+                "SEAM(W6): TypePartialUnion::findTruncation needs the Funcdata cache",
+            )),
+            _ => Ok(None),
+        }
+    }
+
+    /// Resolve a union field for a truncated read (C++
+    /// `TypeUnion::resolveTruncation`, type.cc:2569-2605; and the
+    /// `TypePartialUnion` delegate, type.cc:2994-2998).
+    ///
+    /// SEAM(W6): every path requires the `Funcdata` union-resolution cache and
+    /// `ScoreUnionFields` (the union scoring engine), which W6 wires up.
+    pub fn resolve_truncation(
+        &self,
+        _offset: int8,
+        _op: crate::seams::OpId,
+        _slot: int4,
+    ) -> KunaResult<Option<(int4, int8)>> {
+        match &self.kind {
+            DatatypeKind::Union { .. } | DatatypeKind::PartialUnion { .. } => {
+                Err(KunaError::lowlevel(
+                    "SEAM(W6): Datatype::resolveTruncation needs Funcdata union scoring",
+                ))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    // -- TypeEnum machinery (type.cc:1526-1721, type.hh:529-563) -------------
+
+    /// Establish the value -> name map (C++ `TypeEnum::setNameMap`, type.hh:542).
+    /// Only meaningful for an enum kind; a no-op for any other kind.
+    pub fn set_name_map(&mut self, nmap: std::collections::BTreeMap<u64, String>) {
+        if let DatatypeKind::Enum { namemap } = &mut self.kind {
+            *namemap = nmap;
+        }
+    }
+
+    /// Does this enum have a (single) name for the given value (C++
+    /// `TypeEnum::hasNamedValue`, type.cc:1526-1530)?  `false` for non-enums.
+    ///
+    /// The `TypePartialEnum::hasNamedValue` (type.cc:2700-2705) override shifts
+    /// `val` left by `8*offset` then delegates to the parent enum.
+    pub fn has_named_value(&self, val: u64) -> bool {
+        match &self.kind {
+            DatatypeKind::Enum { namemap } => namemap.contains_key(&val),
+            DatatypeKind::PartialEnum { parent, offset, .. } => {
+                // C++ `val <<= 8*offset;` (wrapping u64 shift).
+                let shifted = val.wrapping_shl(8u32.wrapping_mul(*offset as u32));
+                parent.has_named_value(shifted)
+            }
+            _ => false,
+        }
+    }
+
+    /// Recover the named representation of an enumeration value (C++
+    /// `TypeEnum::getMatches`, type.cc:1537-1586).
+    ///
+    /// Returns the matched-name tokens (logically ORed) plus the `complement`
+    /// flag (whether the original value or its complement was represented) and
+    /// the `shift_amount`.  An empty `match_name` means no representation was
+    /// possible.  The `TypePartialEnum::getMatches` (type.cc:2707-2713) override
+    /// shifts `val` left by `8*offset`, sets `shift_amount = offset*8`, and
+    /// delegates to the parent.
+    pub fn get_matches(&self, val: u64) -> KunaResult<EnumRepresentation> {
+        match &self.kind {
+            DatatypeKind::Enum { namemap } => Ok(Datatype::enum_get_matches(namemap, self.size, val, 0)),
+            DatatypeKind::PartialEnum { parent, offset, .. } => {
+                // C++ `val <<= 8*offset; rep.shiftAmount = offset * 8;`
+                let shifted = val.wrapping_shl(8u32.wrapping_mul(*offset as u32));
+                let shift_amount = *offset * 8;
+                // The parent must be an enum.
+                let namemap = parent
+                    .as_enum_namemap()
+                    .ok_or_else(|| Datatype::enum_invariant_err("getMatches"))?;
+                Ok(Datatype::enum_get_matches(namemap, parent.size, shifted, shift_amount))
+            }
+            _ => Err(Datatype::enum_invariant_err("getMatches")),
+        }
+    }
+
+    /// Shared body of `TypeEnum::getMatches` (type.cc:1537-1586).  `size` is the
+    /// enum's byte size, `shift_amount` seeds `rep.shiftAmount` (set non-zero by
+    /// the partial-enum override).
+    fn enum_get_matches(
+        namemap: &std::collections::BTreeMap<u64, String>,
+        size: int4,
+        mut val: u64,
+        shift_amount: int4,
+    ) -> EnumRepresentation {
+        let mut rep = EnumRepresentation { match_name: Vec::new(), complement: false, shift_amount };
+        for count in 0..2 {
+            let mut allmatch = true;
+            if val == 0 {
+                // Zero handled specially.
+                if let Some(nm) = namemap.get(&val) {
+                    rep.match_name.push(nm.clone());
+                } else {
+                    allmatch = false;
+                }
+            } else {
+                let mut bitsleft = val;
+                let mut target = val;
+                while target != 0 {
+                    // Find named value matching the largest number of most
+                    // significant bits in bitsleft.  C++ `namemap.upper_bound(target)`
+                    // -> first key strictly greater than target; the BTreeMap
+                    // range `(target, ∞)` next() is the same iterator.
+                    let next_greater = namemap
+                        .range((std::ops::Bound::Excluded(target), std::ops::Bound::Unbounded))
+                        .next();
+                    // C++ `if (iter == namemap.begin()) break;` — there is no
+                    // entry <= target.  upper_bound being begin() means even the
+                    // smallest key is > target, so the predecessor walk fails.
+                    let pred = match next_greater {
+                        Some((k, _)) => {
+                            // `--iter`: the largest key strictly less than this key.
+                            namemap
+                                .range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(*k)))
+                                .next_back()
+                        }
+                        None => {
+                            // upper_bound == end(): predecessor is the last entry,
+                            // the biggest named value <= target.
+                            namemap.iter().next_back()
+                        }
+                    };
+                    let (curval, curname) = match pred {
+                        Some((k, v)) => (*k, v),
+                        None => break, // All named values are greater than target
+                    };
+                    let diff = kuna_base::address::coveringmask(bitsleft ^ curval);
+                    if diff >= bitsleft {
+                        break; // Could not match most significant bit of bitsleft
+                    }
+                    if (curval & diff) == 0 {
+                        // Found a named value matching at least the MSB of bitsleft.
+                        rep.match_name.push(curname.clone()); // Accept the name
+                        bitsleft ^= curval; // Remove the bits from bitsleft
+                        target = bitsleft;
+                    } else {
+                        // Not all bits of curval match into bitsleft; restrict
+                        // search.  Zero out bits below this and search <= it.
+                        target = curval & !diff;
+                    }
+                }
+                allmatch = bitsleft == 0;
+            }
+            if allmatch {
+                // We have a complete representation.
+                rep.complement = count == 1;
+                return rep;
+            }
+            // Switch value we are trying to represent (to complement).
+            val ^= kuna_base::address::calc_mask(size);
+            rep.match_name.clear(); // Clear out old attempt
+        }
+        // No representation possible — match_name is empty.
+        rep
+    }
+
+    /// Establish unique enumeration values for a TypeEnum (C++
+    /// `TypeEnum::assignValues`, type.cc:1688-1721).  Fills any unassigned names
+    /// with the next free value (modulo the size mask) and checks for duplicates;
+    /// returns the populated value -> name map.
+    ///
+    /// `namelist` is the list of names, `vallist` the corresponding values, and
+    /// `assignlist` flags which entries the user explicitly assigned.  `size` is
+    /// the enum's byte size and `name` is used in the duplicate-error message.
+    pub fn assign_values(
+        size: int4,
+        type_name: &str,
+        namelist: &[String],
+        vallist: &[u64],
+        assignlist: &[bool],
+    ) -> KunaResult<std::collections::BTreeMap<u64, String>> {
+        let mut nmap: std::collections::BTreeMap<u64, String> = std::collections::BTreeMap::new();
+        let mask = kuna_base::address::calc_mask(size);
+        let mut maxval: u64 = 0;
+        for i in 0..namelist.len() {
+            if assignlist[i] {
+                // Did the user explicitly set value.
+                let mut val = vallist[i];
+                if val > maxval {
+                    maxval = val;
+                }
+                val &= mask;
+                if nmap.contains_key(&val) {
+                    return Err(KunaError::lowlevel(format!(
+                        "Enum \"{type_name}\": \"{}\" is a duplicate value",
+                        namelist[i]
+                    )));
+                }
+                nmap.insert(val, namelist[i].clone());
+            }
+        }
+        for i in 0..namelist.len() {
+            if !assignlist[i] {
+                let mut val;
+                loop {
+                    // C++ `maxval += 1;` (wrapping u64 increment).
+                    maxval = maxval.wrapping_add(1);
+                    val = maxval;
+                    val &= mask;
+                    if !nmap.contains_key(&val) {
+                        break;
+                    }
+                }
+                nmap.insert(val, namelist[i].clone());
+            }
+        }
+        Ok(nmap)
+    }
+
+    // -- TypeStruct / TypeUnion field layout (type.cc:1736-2409) ------------
+
+    /// Copy a list of fields into a struct, establishing size/alignment (C++
+    /// `TypeStruct::setFields`, type.cc:1736-1748).  Sets `needs_resolution`
+    /// when a single field fills the whole structure, and recomputes `alignSize`.
+    /// Replaces the [`DatatypeKind`] payload with [`DatatypeKind::Struct`].
+    pub fn set_struct_fields(
+        &mut self,
+        fd: Vec<TypeField>,
+        bit: Vec<TypeBitField>,
+        new_size: int4,
+        new_align: int4,
+    ) {
+        self.size = new_size;
+        self.alignment = new_align;
+        if fd.len() == 1 {
+            // A single field that fills the whole structure needs attention.
+            if fd[0].field_type.get_size() == self.size {
+                self.flags |= flags::needs_resolution;
+            }
+        }
+        self.align_size = Datatype::calc_align_size(self.size, self.alignment);
+        self.kind = DatatypeKind::Struct { field: fd, bitfield: bit };
+    }
+
+    /// Copy a list of fields into a union, establishing size/alignment (C++
+    /// `TypeUnion::setFields`, type.cc:2418-2425).  TypeField `offset` is assumed
+    /// to be 0.  Replaces the payload with [`DatatypeKind::Union`].
+    pub fn set_union_fields(&mut self, fd: Vec<TypeField>, new_size: int4, new_align: int4) {
+        self.size = new_size;
+        self.alignment = new_align;
+        self.align_size = Datatype::calc_align_size(self.size, self.alignment);
+        self.kind = DatatypeKind::Union { field: fd };
+    }
+
+    /// Assign offsets to a list of struct fields and bitfields (C++
+    /// `TypeStruct::assignFieldOffsets`, type.cc:2365-2409).
+    ///
+    /// Each field is placed at the next offset aligned to its alignment; the
+    /// passed-back `(newSize, newAlign, flags)` are the structure size (aligned),
+    /// alignment, and any extra flags (`has_bitfields`).  Mutates `list` (field
+    /// `offset`/`ident`) and `bitlist` (byte offset/size/bit position) in place.
+    pub fn assign_field_offsets(
+        list: &mut [TypeField],
+        bitlist: &mut [TypeBitField],
+    ) -> KunaResult<(int4, int4, uint4)> {
+        let mut next_bit_pos: int4 = -1;
+        let mut cur_bit_ind: int4 = -1;
+        if !bitlist.is_empty() {
+            cur_bit_ind = 0;
+            next_bit_pos = bitlist[0].ident;
+        }
+        let mut offset: int4 = 0;
+        let mut new_align: int4 = 1;
+        let mut flags: uint4 = 0;
+        // C++ indexes `list[pos]` and compares `pos` to `nextBitPos`, so the
+        // position counter is load-bearing — a plain index loop transcribes it
+        // directly (enumerate would also have to borrow `list[pos]` mutably).
+        #[allow(clippy::needless_range_loop)]
+        for pos in 0..list.len() {
+            if pos as int4 == next_bit_pos {
+                Datatype::assign_contiguous_bitfields(
+                    bitlist,
+                    &mut cur_bit_ind,
+                    &mut offset,
+                    &mut new_align,
+                );
+                // Next set of bitfields start at this offset.
+                if (cur_bit_ind as usize) < bitlist.len() {
+                    next_bit_pos = bitlist[cur_bit_ind as usize].ident;
+                }
+            }
+            let cur_field = &mut list[pos];
+            if cur_field.field_type.get_metatype() == type_metatype::TYPE_VOID {
+                return Err(KunaError::lowlevel("Illegal field data-type: void"));
+            }
+            if cur_field.offset != -1 {
+                continue;
+            }
+            let cursize = cur_field.field_type.get_align_size();
+            let mut align = cur_field.field_type.get_alignment();
+            if align > new_align {
+                new_align = align;
+            }
+            align -= 1;
+            if align > 0 && (offset & align) != 0 {
+                offset = offset - (offset & align) + (align + 1);
+            }
+            cur_field.offset = offset;
+            cur_field.ident = offset;
+            offset += cursize;
+            if cur_field.field_type.has_bitfields() {
+                flags |= flags::has_bitfields;
+            }
+        }
+        if list.len() as int4 == next_bit_pos {
+            // Bitfields after any other fields.
+            Datatype::assign_contiguous_bitfields(
+                bitlist,
+                &mut cur_bit_ind,
+                &mut offset,
+                &mut new_align,
+            );
+        }
+        if !bitlist.is_empty() && cur_bit_ind as usize != bitlist.len() {
+            return Err(KunaError::lowlevel("Malformed bitfield description"));
+        }
+        if !bitlist.is_empty() {
+            flags |= flags::has_bitfields;
+        }
+        let new_size = Datatype::calc_align_size(offset, new_align);
+        Ok((new_size, new_align, flags))
+    }
+
+    /// Assign positions to a contiguous subset of bitfields (C++
+    /// `TypeStruct::assignContiguousBitfields`, type.cc:2322-2355).  The subset
+    /// shares the bitfield `ident` (declaration position); this fills byte
+    /// offset/size and the starting bit, then advances `pos`/`offset`/`new_align`.
+    fn assign_contiguous_bitfields(
+        bitlist: &mut [TypeBitField],
+        pos: &mut int4,
+        offset: &mut int4,
+        new_align: &mut int4,
+    ) {
+        let mut total_size: int4 = 0;
+        let start_ind = *pos;
+        let next_bit_pos = bitlist[*pos as usize].ident;
+        // Calculate total number of bits in contiguous bitfields.
+        while (*pos as usize) < bitlist.len() && bitlist[*pos as usize].ident == next_bit_pos {
+            total_size += bitlist[*pos as usize].num_bits;
+            *pos += 1;
+        }
+        // Align the offset for bitfields.
+        let mut align = bitlist[start_ind as usize].field_type.get_alignment();
+        if align > *new_align {
+            *new_align = align;
+        }
+        align -= 1;
+        if align > 0 && (*offset & align) != 0 {
+            *offset = *offset - (*offset & align) + (align + 1);
+        }
+        total_size = (total_size + 7) / 8; // Number of bytes for this set
+        let mut lsb: int4 = 0;
+        for i in start_ind..*pos {
+            let bf = &mut bitlist[i as usize];
+            bf.byte_offset = *offset; // Set byte offset
+            bf.byte_size = total_size;
+            bf.least_sig_bit = lsb; // Establish bit position
+            lsb += bf.num_bits;
+            bf.ident = i; // Identifier is position within bitfield list
+        }
+        *offset += total_size;
+        if bitlist[start_ind as usize].is_big_endian && (*pos - start_ind) > 1 {
+            // Big-endian bitfields are assigned LSB to MSB but the data-type
+            // expects MSB-to-LSB order, so reverse after assignment is complete.
+            bitlist[start_ind as usize..*pos as usize].reverse();
+        }
+    }
+
+    /// Assign offsets to a list of union fields (C++
+    /// `TypeUnion::assignFieldOffsets`, type.cc:2651-2673).  Every field is at
+    /// offset 0; the union size is the max field size, alignment the max field
+    /// alignment.  `type_name` is used in the validation error messages.
+    pub fn assign_union_field_offsets(
+        list: &mut [TypeField],
+        type_name: &str,
+    ) -> KunaResult<(int4, int4)> {
+        let mut new_size: int4 = 0;
+        let mut new_align: int4 = 1;
+        for f in list.iter_mut() {
+            let ct = &f.field_type;
+            // Sanity checks on the field.
+            if ct.get_metatype() == type_metatype::TYPE_VOID {
+                return Err(KunaError::lowlevel(format!(
+                    "Bad field data-type for union: {type_name}"
+                )));
+            }
+            if f.name.is_empty() {
+                return Err(KunaError::lowlevel(format!(
+                    "Bad field name for union: {type_name}"
+                )));
+            }
+            f.offset = 0;
+            let end = ct.get_size();
+            if end > new_size {
+                new_size = end;
+            }
+            let cur_align = ct.get_alignment();
+            if cur_align > new_align {
+                new_align = cur_align;
+            }
+        }
+        Ok((new_size, new_align))
     }
 
     // -- Print / encode (type.hh:250,289) — W6 ------------------------------
@@ -1776,6 +3171,18 @@ impl Datatype {
             "SEAM(W6): Datatype::printRaw not yet ported",
         ))
     }
+}
+
+/// Class describing how a particular enumeration value is constructed using
+/// tokens (C++ `TypeEnum::Representation`, type.hh:532-538).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EnumRepresentation {
+    /// Name tokens that are ORed together (C++ `matchname`)
+    pub match_name: Vec<String>,
+    /// If `true`, bitwise complement value after ORing (C++ `complement`)
+    pub complement: bool,
+    /// Number of bits to left-shift final value (C++ `shiftAmount`)
+    pub shift_amount: int4,
 }
 
 // =============================================================================
@@ -2240,20 +3647,36 @@ mod tests {
         assert_eq!(dt.get_display_format(), 2);
     }
 
-    /// The structured-override compare is W6-seamed (errors), while simple kinds
-    /// succeed — confirms the seam routing.
+    /// The structured-override compare is implemented in type-2: two identical
+    /// empty structs compare equal; differing field counts order by the
+    /// `(op.field.size() - field.size())` finisher.
     #[test]
-    fn compare_struct_is_seamed() {
+    fn compare_struct_implemented() {
         let mut s = Datatype::new_with_align(8, -1, type_metatype::TYPE_STRUCT);
         s.kind = DatatypeKind::Struct { field: vec![], bitfield: vec![] };
         let other = s.clone();
-        assert!(s.compare(&other, 10).is_err());
+        assert_eq!(s.compare(&other, 10).unwrap(), 0);
+        // A struct with one field vs an empty struct: base compare ties (same
+        // submeta/size), then field.size() differs: ts(0) - this(1) = -1.
+        let mut s1 = Datatype::new_with_align(8, -1, type_metatype::TYPE_STRUCT);
+        s1.kind = DatatypeKind::Struct {
+            field: vec![TypeField::new(
+                0,
+                0,
+                "a",
+                Rc::new(Datatype::new(8, type_metatype::TYPE_INT)),
+            )],
+            bitfield: vec![],
+        };
+        // s1 (1 field) vs s (0 fields): returns op.field.size() - field.size() = -1.
+        assert_eq!(s1.compare(&s, 10).unwrap(), -1);
+        assert_eq!(s.compare(&s1, 10).unwrap(), 1);
     }
 
     /// `is_ptrsub_matching` base returns false for non-pointers (type.cc:555-559),
     /// and `TypePointer::isPtrsubMatching` (type.cc:1260-1312) returns false for a
-    /// pointer to a non-structured (plain) type.  A pointer to a TYPE_STRUCT walks
-    /// `ptrto.get_sub_type`, which is a type-2 SEAM, so the error propagates.
+    /// pointer to a non-structured (plain) type.  A pointer to a TYPE_STRUCT now
+    /// walks the real (type-2) `ptrto.get_sub_type` and resolves the field.
     #[test]
     fn is_ptrsub_matching_routing() {
         // base: non-pointer -> false.
@@ -2282,12 +3705,23 @@ mod tests {
             wordsize: 1,
         };
         assert!(p_arr.is_ptrsub_matching(0, 0, 1).unwrap());
-        // pointer to a struct: the override calls ptrto.get_sub_type (type-2 SEAM).
+        // pointer to a struct: the override now calls the real (type-2)
+        // ptrto.get_sub_type.  Field "a" is an int4 at offset 0 (size 4) in an
+        // 8-byte struct (align 4).  is_ptrsub_matching(off=0, extra=4, mult=1):
+        // multiplier(1) < align_size(4); getSubType(0) -> the int (size 4),
+        // newoff==0; extra(4) >= sub.size(4) and the int has no array slack, so
+        // the field check fails -> false.
         let mut st = Datatype::new_with_align(8, 4, type_metatype::TYPE_STRUCT);
+        let int4_field = {
+            let mut f = Datatype::new_with_align(4, 4, type_metatype::TYPE_INT);
+            f.align_size = 4;
+            f
+        };
         st.kind = DatatypeKind::Struct {
-            field: vec![TypeField::new(0, 0, "a", Rc::new(Datatype::new(4, type_metatype::TYPE_INT)))],
+            field: vec![TypeField::new(0, 0, "a", Rc::new(int4_field))],
             bitfield: vec![],
         };
+        st.align_size = 8;
         let mut p_st = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR);
         p_st.kind = DatatypeKind::Pointer {
             ptrto: Rc::new(st),
@@ -2295,7 +3729,9 @@ mod tests {
             truncate: None,
             wordsize: 1,
         };
-        assert!(p_st.is_ptrsub_matching(0, 4, 1).is_err());
+        assert!(!p_st.is_ptrsub_matching(0, 4, 1).unwrap());
+        // extra=0 lands inside field "a" (0 < 4), so the same struct matches.
+        assert!(p_st.is_ptrsub_matching(0, 0, 1).unwrap());
     }
 
     /// `is_primitive_whole` follows the C++ recursion (type.cc:505-518).
