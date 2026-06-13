@@ -3959,7 +3959,7 @@
    "depends_on": [
     "W7-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 2632,
@@ -3990,7 +3990,7 @@
    "depends_on": [
     "w8-s9-printlanguage-cast"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2632,
@@ -4018,7 +4018,7 @@
     "w8-s9-printlanguage-cast",
     "W7-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 3940,
@@ -4041,7 +4041,7 @@
    "depends_on": [
     "w8-s9-printc"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 3940,
@@ -4064,7 +4064,7 @@
    "depends_on": [
     "W7-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 2446,
@@ -4087,7 +4087,7 @@
    "depends_on": [
     "w8-s9-prettyprint"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2446,
@@ -4115,7 +4115,7 @@
     "w8-s9-printc",
     "W7-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 867,
@@ -4146,7 +4146,7 @@
    "depends_on": [
     "w8-s9-stringmanage-pack"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 867,
@@ -4174,7 +4174,7 @@
     "w8-s9-printc",
     "W7-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 793,
@@ -4197,7 +4197,7 @@
    "depends_on": [
     "w8-s9-coreaction-render"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 793,
@@ -4221,7 +4221,7 @@
     "w8-s9-coreaction-render",
     "W7-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 360,
@@ -4244,7 +4244,7 @@
    "depends_on": [
     "w8-fw-universalaction"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 360,
@@ -4271,7 +4271,7 @@
    "depends_on": [
     "W7-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 2181,
@@ -4302,7 +4302,7 @@
    "depends_on": [
     "w8-sig-pack"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2181,
@@ -5197,6 +5197,27 @@
    "loc_estimate": 0,
    "cpp_blob_sha": {},
    "notes": "M1 BODY-parity (all 207 unit tests executing). Re-targeted here from W6 by LOSS-094-UPDATE: the deferred bodies need the W8 print/cast machinery + the W9 C-declaration grammar + spec-loaded prototype-model registry."
+  },
+  {
+   "id": "w8x-allowlist-closure",
+   "kind": "port",
+   "wave": "W8",
+   "crate": "kuna-decomp",
+   "title": "Port the 10 universalAction allowlist passes -> empty allowlist (B0)",
+   "modules": [
+    "decompiler/cpp/subflow.cc",
+    "decompiler/cpp/constseq.cc",
+    "decompiler/cpp/kuna_stackprobeloop.cc"
+   ],
+   "depends_on": [
+    "w8-fw-universalaction"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp --test universalaction_listing (empty allowlist, full byte-equal)",
+   "loc_estimate": 1200,
+   "cpp_blob_sha": {},
+   "notes": "B0 caught these: 7 subflow SplitDatatype rules (SplitFlow/SubfloatConvert/DumptyHumpLate/SplitCopy/SplitLoad/SplitStore), 2 constseq string rules (StringCopy/StringStore), RuleStackProbeLoop (kuna_stackprobeloop.cc \u2014 omitted from W7 dynamic-pack file list), ActionLowerSwitchInstall."
   }
  ]
 }
