@@ -2671,7 +2671,7 @@
    "depends_on": [
     "W5-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 4051,
@@ -2694,7 +2694,7 @@
    "depends_on": [
     "w6-s4-fspec-1"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 4051,
@@ -2858,7 +2858,7 @@
    "depends_on": [
     "W5-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 2759,
@@ -2881,7 +2881,7 @@
    "depends_on": [
     "w6-s5-type-1"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2759,
@@ -2905,7 +2905,7 @@
     "w6-s5-type-1",
     "W5-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1842,
@@ -2928,7 +2928,7 @@
    "depends_on": [
     "w6-s5-type-2"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1842,
@@ -3092,7 +3092,7 @@
    "depends_on": [
     "W5-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 3015,
@@ -3115,7 +3115,7 @@
    "depends_on": [
     "w6-s5-rangeutil"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 3015,
@@ -3138,7 +3138,7 @@
    "depends_on": [
     "W5-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 4022,
@@ -3161,7 +3161,7 @@
    "depends_on": [
     "w6-s5-double"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 4022,
