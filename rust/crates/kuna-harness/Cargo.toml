@@ -17,3 +17,12 @@ regex.workspace = true
 
 [lints]
 workspace = true
+
+# The XML datatest harness binary (the upstream `decomp_test_dbg` name).  It
+# lives here — not in `kuna-console` — because it drives the datatest runner
+# (`kuna_harness::testfunction`), and `kuna-harness` depends on `kuna-console`
+# (the reverse would be a dependency cycle).  Built to `target/<profile>/
+# decomp_test_dbg`, the path `kuna/run_tests.py` resolves.
+[[bin]]
+name = "decomp_test_dbg"
+path = "src/bin/decomp_test_dbg.rs"

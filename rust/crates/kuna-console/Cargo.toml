@@ -1,6 +1,6 @@
 [package]
 name = "kuna-console"
-description = "kuna Rust port: console front-end (decomp_dbg / decomp_test_dbg)"
+description = "kuna Rust port: console front-end (decomp_dbg)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -20,6 +20,8 @@ workspace = true
 name = "decomp_dbg"
 path = "src/bin/decomp_dbg.rs"
 
-[[bin]]
-name = "decomp_test_dbg"
-path = "src/bin/decomp_test_dbg.rs"
+# `decomp_test_dbg` lives in the `kuna-harness` crate: the test runner drives the
+# datatest harness (`kuna_harness::testfunction`), and `kuna-harness` depends on
+# `kuna-console` (not the reverse), so the binary that needs both is produced
+# there.  It still builds to `target/<profile>/decomp_test_dbg` (the path the
+# Python `kuna/run_tests.py` resolves), unchanged.

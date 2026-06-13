@@ -470,7 +470,7 @@ impl IfaceCommandAction for IfcKunaStageCatalog {
                     "Unknown settable option: {option} (try `stage catalog`)"
                 )));
             }
-            let live = conf.and_then(|c| kuna_live_value(c, &option));
+            let live = conf.and_then(|c| kuna_live_value(c.arch(), &option));
             // lookup_settable just succeeded, so this is Some.
             emit_catalog_json_one(&option, live).unwrap_or_default()
         } else {
@@ -478,7 +478,7 @@ impl IfaceCommandAction for IfcKunaStageCatalog {
             // option (in registry order), matching the C++ per-row kunaLiveValue
             // join. The closure returns &'static str (the registry value table).
             match conf {
-                Some(c) => emit_catalog_json(|opt| kuna_live_value(c, opt)),
+                Some(c) => emit_catalog_json(|opt| kuna_live_value(c.arch(), opt)),
                 None => emit_catalog_json(|_| None),
             }
         };
@@ -709,7 +709,7 @@ impl IfcKunaPipeline {
         // C++: if (conf != 0 && allacts.getCurrentName() == variant) "  (current)"
         let current =
             dcp_ref(status).and_then(|dcp| dcp.conf.as_ref()).map(|conf| {
-                conf.allacts.get_current_name().to_string()
+                conf.arch().allacts.get_current_name().to_string()
             });
         let mut os = String::new();
         os.push_str("Named pipeline variants (group filters over the universal action; P0 pipeline-variant sub-stage):\n");

@@ -72,11 +72,13 @@
 //! `Architecture`), each `engine_unavailable` site is the single place to wire
 //! the real call; the surrounding faithful structure does not change.
 
+use crate::engine::{bootstrap_from_file, ConsoleProgram, UNBOUNDED_SIZE};
 use crate::interface::{
     CommandStream, IfaceCommandAction, IfaceData, IfaceError, IfaceResult, IfaceStatus,
 };
-use kuna_decomp::architecture::Architecture;
+use kuna_decomp::decompile_drive::{build_and_follow_flow, decompile_func, print_c};
 use kuna_decomp::funcdata::Funcdata;
+use kuna_decomp::options::OptionDatabase;
 
 /// The module name every decompiler command shares (C++
 /// `IfaceDecompCommand::getModule() { return "decompile"; }`).
@@ -101,7 +103,15 @@ pub struct IfaceDecompData {
     /// C++ `Funcdata *fd`: the function currently active in the console.
     pub fd: Option<Funcdata>,
     /// C++ `Architecture *conf`: the architecture/program active in the console.
-    pub conf: Option<Architecture>,
+    ///
+    /// In the Rust port the leaf [`ConsoleProgram`] owns the `XmlArchitecture`
+    /// engine stack (the C++ `XmlArchitecture : Architecture` leaf), reachable via
+    /// [`ConsoleProgram::arch_mut`].
+    pub conf: Option<ConsoleProgram>,
+    /// The SLEIGH spec search roots (C++ `SleighArchitecture::specpaths`, a
+    /// process global).  Set by the binary at startup from `-s`/`SLEIGHHOME`; read
+    /// by `load file` to resolve the architecture.
+    pub spec_roots: Vec<String>,
     /// C++ `CallGraph *cgraph`: present once `callgraph build`/`load` has run.
     /// (The real `CallGraph` is a separate W9 item; this marks allocation so the
     /// `"No callgraph present"` guard is faithful.)
@@ -177,6 +187,51 @@ fn engine_unavailable(entry: &str) -> IfaceError {
         "engine integration not yet ported: {entry} (Architecture print/types/loader/context \
          + parse_machaddr/parse_C grammars are a later W-item)"
     ))
+}
+
+/// A minimal stand-in for the console address grammar `parse_machaddr`
+/// (`pcodeparse.cc`, a later port item): resolve `<space>:0x<off>` (an explicit
+/// space) or a bare `0x<off>` / decimal offset (the default code space) to an
+/// [`kuna_base::address::Address`] over the program's engine spaces.
+///
+/// The full grammar (registers, stack-relative `r0x..`, ranges) is the later
+/// `pcodeparse` item; this covers the `load addr 0x..` form the Python tools
+/// (`kuna/decompile.py`) and the datatests drive.
+fn parse_console_address(
+    prog: &ConsoleProgram,
+    tok: &str,
+) -> Result<kuna_base::address::Address, String> {
+    use kuna_base::address::Address;
+    if tok.is_empty() {
+        return Err("Missing address".to_string());
+    }
+    let manage = prog.arch().manage();
+    let (space, offstr) = match tok.split_once(':') {
+        Some((sp, off)) => {
+            let space = manage
+                .get_space_by_name(sp)
+                .ok_or_else(|| format!("Unknown address space: {sp}"))?;
+            (std::rc::Rc::clone(space), off)
+        }
+        None => {
+            let space = manage
+                .get_default_code_space()
+                .ok_or("No default code space")?;
+            (std::rc::Rc::clone(space), tok)
+        }
+    };
+    let offset = parse_offset(offstr).ok_or_else(|| format!("Bad address: {tok}"))?;
+    Ok(Address::new(space, offset))
+}
+
+/// Parse a `0x<hex>` or bare-decimal offset (the `parse_machaddr` numeric tail).
+fn parse_offset(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u64::from_str_radix(hex, 16).ok()
+    } else {
+        s.parse::<u64>().ok()
+    }
 }
 
 // ===========================================================================
@@ -256,15 +311,15 @@ decomp_command!(
         if optname.is_empty() {
             return Err(IfaceError::parse("Missing option name"));
         }
-        let (mut _p1, mut _p2, mut _p3) = (String::new(), String::new(), String::new());
+        let (mut p1, mut p2, mut p3) = (String::new(), String::new(), String::new());
         if !s.eof() {
-            _p1 = s.read_token();
+            p1 = s.read_token();
             s.skip_ws();
             if !s.eof() {
-                _p2 = s.read_token();
+                p2 = s.read_token();
                 s.skip_ws();
                 if !s.eof() {
-                    _p3 = s.read_token();
+                    p3 = s.read_token();
                     s.skip_ws();
                     if !s.eof() {
                         return Err(IfaceError::parse("Too many option parameters"));
@@ -274,7 +329,23 @@ decomp_command!(
         }
         // C++: string res = dcp->conf->options->set(ElementId::find(optname,0),p1,p2,p3);
         //      *status->optr << res << endl;
-        Err(engine_unavailable("OptionDatabase::set (Architecture: ArchOptionContext)"))
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        let id = prog.registry().find_element(&optname, 0);
+        if id == 0 {
+            // C++ ElementId::find returns 0 for an unknown name; OptionDatabase::set
+            // then throws "Unknown option" (a ParseError-class LowlevelError).
+            return Err(IfaceError::execution("Unknown option"));
+        }
+        // C++ `dcp->conf->options->set(...)`.  The OptionDatabase is a stateless
+        // registry of the same option set (`OptionDatabase::new` registers them
+        // all); building it fresh avoids aliasing `conf`'s Architecture, which the
+        // `set` call borrows mutably (the e2e gate uses the same shape).
+        let options = OptionDatabase::new();
+        let res = options
+            .set(prog.arch_mut(), id, &p1, &p2, &p3)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        status.out(&format!("{res}\n"));
+        Ok(())
     }
 );
 
@@ -331,18 +402,82 @@ decomp_command!(
 // --- load function <name> / load addr <addr> [name] (ifacedecomp.cc:466,496)
 
 decomp_command!(
+    /// C++ `IfcLoadFile` (`consolemain.cc:46`): load an image file (`load file
+    /// [<target>] <filename>`).
+    ///
+    /// The C++ console drives a real binary through BFD; the kuna Rust engine's
+    /// only load-image backend is the XML `<binaryimage>` format (the BFD backend
+    /// is a later port item).  So `load file <path>` accepts the corpus
+    /// `<binaryimage>`/`<decompilertest>` XML the Python tools and datatests feed.
+    /// The optional leading `<target>` (a BFD target) is parsed and ignored (the
+    /// XML carries its own `arch` attribute).
+    IfcLoadFile,
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        // C++: s >> filename; if !eof { target=filename; s>>filename; }
+        let mut filename = s.read_token();
+        s.skip_ws();
+        if !s.eof() {
+            // Two parameters: the first was the target, the second is the file.
+            filename = s.read_token();
+        }
+        if filename.is_empty() {
+            return Err(IfaceError::parse("Missing filename"));
+        }
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_some() {
+                return Err(IfaceError::execution("Load image already present"));
+            }
+        }
+        // Read the spec roots off the shared data (set by the binary at startup).
+        let spec_roots = {
+            let dcp = dcp_mut(status)?;
+            dcp.spec_roots.clone()
+        };
+        // capa->buildArchitecture + conf->init(store) (the bootstrap chain).
+        match bootstrap_from_file(&filename, &spec_roots) {
+            Ok(prog) => {
+                // *status->optr << filename << " successfully loaded: " << desc;
+                let desc = prog.description().to_string();
+                let dcp = dcp_mut(status)?;
+                dcp.conf = Some(prog);
+                status.out(&format!("{filename} successfully loaded: {desc}\n"));
+                Ok(())
+            }
+            Err(e) => {
+                // C++ on init failure: print the error + "Could not create
+                // architecture", then leave conf null (NOT a thrown error).
+                status.out(&format!("{}\n", e.explain()));
+                status.out("Could not create architecture\n");
+                Ok(())
+            }
+        }
+    }
+);
+
+decomp_command!(
     /// C++ `IfcFuncload`: make a named function current (`load function
     /// <name>`), following its flow if it has code.
     IfcFuncload,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let _funcname = s.read_token();
+        let funcname = s.read_token();
         let dcp = dcp_mut(status)?;
         if dcp.conf.is_none() {
             return Err(IfaceError::execution("No image loaded"));
         }
         // C++: resolveScopeFromSymbolName + queryFunction; then if !hasNoCode,
-        //      dcp->followFlow(*status->optr,0).
-        Err(engine_unavailable("Scope::queryFunction + Funcdata::followFlow"))
+        //      dcp->followFlow(*status->optr,0).  The kuna seam resolves the entry
+        // from the binaryimage's own symbol records (the readLoaderSymbols seam).
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        let entry = match prog.lookup_symbol(&funcname) {
+            Some(addr) => addr,
+            None => return Err(IfaceError::execution(format!("Unknown function name: {funcname}"))),
+        };
+        // Build the Funcdata + follow flow (C++ Funcdata + followFlow).
+        let fd = build_and_follow_flow(prog.arch_mut(), &funcname, entry, UNBOUNDED_SIZE)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        dcp.fd = Some(fd);
+        Ok(())
     }
 );
 
@@ -350,13 +485,33 @@ decomp_command!(
     /// C++ `IfcAddrrangeLoad`: create a function at an address (`load addr
     /// <addr> [name]`).
     IfcAddrrangeLoad,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        s.skip_ws();
+        let addrtok = s.read_token();
+        s.skip_ws();
+        let name = s.read_token(); // optional
         let dcp = dcp_mut(status)?;
         if dcp.conf.is_none() {
             return Err(IfaceError::execution("No binary loaded"));
         }
-        // C++ parses the address via parse_machaddr then addFunction+followFlow.
-        Err(engine_unavailable("parse_machaddr + Scope::addFunction + followFlow"))
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        // C++ Address offset = parse_machaddr(s,size,*dcp->conf->types) — the
+        // console address grammar (pcodeparse.cc) is a later item; this resolves
+        // the common `0x<off>` / `<space>:0x<off>` form against the engine spaces.
+        let offset = parse_console_address(prog, &addrtok)
+            .map_err(IfaceError::parse)?;
+        // C++ nameFunction picks a default name if none was given.
+        let name = if name.is_empty() {
+            prog.arch().name_function(&offset)
+        } else {
+            name
+        };
+        // C++ addFunction(offset,name); followFlow(size).  The symbol-table
+        // addFunction is a later seam; build the Funcdata + follow flow directly.
+        let fd = build_and_follow_flow(prog.arch_mut(), &name, offset, UNBOUNDED_SIZE)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        dcp.fd = Some(fd);
+        Ok(())
     }
 );
 
@@ -370,8 +525,12 @@ decomp_command!(
         if dcp.conf.is_none() {
             return Err(IfaceError::execution("No load image present"));
         }
-        // C++ also guards on conf->loader == 0 with "No binary loaded".
-        Err(engine_unavailable("Architecture::readLoaderSymbols (Architecture::loader)"))
+        // C++ `dcp->conf->readLoaderSymbols("::")`.  The kuna XML engine reads the
+        // binaryimage's `<symbol>` records into the program's name→address table
+        // at `load file` (the readLoaderSymbols seam runs eagerly there), so the
+        // symbols are already available; this is a faithful no-op success (the
+        // symbol-table `Scope::addFunction` markup is a later W4 item).
+        Ok(())
     }
 );
 
@@ -561,23 +720,55 @@ decomp_command!(
     /// drive once it lands.
     IfcDecompile,
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        let (name, has_no_code, proc_started) = match &dcp.fd {
-            None => return Err(IfaceError::execution("No function selected")),
-            Some(fd) => (fd.get_name().to_string(), fd.has_no_code(), fd.is_proc_started()),
+        // Read the per-function values + take the program out so the engine work
+        // borrows neither `status` nor `dcp` while the console output is written.
+        let (name, has_no_code, proc_started, entry, size, mut prog) = {
+            let dcp = dcp_mut(status)?;
+            let (name, has_no_code, proc_started, entry, size) = match &dcp.fd {
+                None => return Err(IfaceError::execution("No function selected")),
+                Some(fd) => (
+                    fd.get_name().to_string(),
+                    fd.has_no_code(),
+                    fd.is_proc_started(),
+                    fd.get_address().clone(),
+                    fd.get_size(),
+                ),
+            };
+            match dcp.conf.take() {
+                None => return Err(IfaceError::execution("No load image present")),
+                Some(prog) => (name, has_no_code, proc_started, entry, size, prog),
+            }
         };
         if has_no_code {
+            // Restore the program before the early return.
+            dcp_mut(status)?.conf = Some(prog);
             status.out(&format!("No code for {name}\n"));
             return Ok(());
         }
         if proc_started {
             status.out("Clearing old decompilation\n");
-            // C++: dcp->conf->clearAnalysis(dcp->fd);  (engine integration)
+            // C++: dcp->conf->clearAnalysis(dcp->fd).  The kuna decompile drive
+            // rebuilds the Funcdata from scratch below, so the prior IR is
+            // discarded the same way (no per-Funcdata clearAnalysis surface yet).
         }
         status.out(&format!("Decompiling {name}\n"));
         // C++: allacts.getCurrent()->reset(*fd); res = perform(*fd); then the
-        // "Decompilation complete"/"Break at .." reporting.
-        Err(engine_unavailable("ActionDatabase::getCurrent()->reset/perform"))
+        // "Decompilation complete"/"Break at .." reporting.  The kuna decompile
+        // drive (decompile_drive::decompile_func) installs the `decompile` root,
+        // resets it, and runs the 252-pass perform loop to completion.
+        let result = decompile_func(prog.arch_mut(), &name, entry, size);
+        // Restore the program (and the fresh Funcdata on success) regardless.
+        let dcp = dcp_mut(status)?;
+        dcp.conf = Some(prog);
+        match result {
+            Ok(fd) => {
+                dcp.fd = Some(fd);
+                // C++ res>=0 path: "Decompilation complete".
+                status.out("Decompilation complete\n");
+                Ok(())
+            }
+            Err(e) => Err(IfaceError::execution(e.explain().to_string())),
+        }
     }
 );
 
@@ -636,11 +827,30 @@ decomp_command!(
     /// (231 `<com>print C</com>` uses).
     IfcPrintCStruct,
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
-            return Err(IfaceError::execution("No function selected"));
-        }
-        Err(engine_unavailable("PrintLanguage::docFunction (Architecture::print)"))
+        // C++: dcp->conf->print->setOutputStream(status->fileoptr);
+        //      dcp->conf->print->docFunction(dcp->fd);
+        // The kuna print drive (decompile_drive::print_c) renders the function
+        // through the owned PrintC.  Output goes to the bulk stream (fileoptr),
+        // which the Python tools capture via `openfile write`.  Render the C with
+        // `dcp` borrowed, then drop the borrow before writing to the status.
+        let c = {
+            let dcp = dcp_mut(status)?;
+            if dcp.fd.is_none() {
+                return Err(IfaceError::execution("No function selected"));
+            }
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No load image present"));
+            }
+            let fd = dcp.fd.take().expect("fd checked non-None above");
+            let text = {
+                let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+                print_c(prog.arch_mut(), &fd)
+            };
+            dcp.fd = Some(fd);
+            text
+        };
+        status.file_out(&c);
+        Ok(())
     }
 );
 
@@ -1727,6 +1937,19 @@ pub fn register_decomp_commands(status: &mut IfaceStatus) {
     status.register_com(Box::new(IfcListTestCommands), &["list", "test", "commands"]);
     status.register_com(Box::new(IfcExecuteTestCommand), &["execute", "test", "command"]);
     status.register_com(Box::new(IfcContinue), &["continue"]);
+}
+
+/// Register the console-only commands C++ `consolemain.cc` adds on top of
+/// [`register_decomp_commands`] (the extra `main()` registrations:
+/// `load file`/`addpath`/`save`/`restore`).
+///
+/// Only `load file` is wired in the kuna port (the engine-backed image load);
+/// `addpath`/`save`/`restore` reach the spec-path globals / `Architecture::encode`
+/// / `restoreXml` marshaling, which are later port items, so they are not
+/// registered here (an unregistered token surfaces "ERROR: Invalid command",
+/// matching a console where the command was never added).
+pub fn register_console_commands(status: &mut IfaceStatus) {
+    status.register_com(Box::new(IfcLoadFile), &["load", "file"]);
 }
 
 // ===========================================================================

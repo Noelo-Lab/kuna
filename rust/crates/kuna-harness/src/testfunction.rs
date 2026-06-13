@@ -50,11 +50,13 @@ use regex::Regex;
 use kuna_base::types::{int4, uint4};
 use kuna_base::xml::{DocumentStorage, Element};
 
+use kuna_console::engine::bootstrap_program;
 use kuna_console::ifacedecomp::{
     mainloop, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_console::interface::{FileOut, IfaceError, IfaceStatus};
+use kuna_console::kuna_console::register_kuna_commands;
 
 /// C++ `IfaceParseError` / `IfaceExecutionError` distinction at the file level:
 /// the two `catch` arms of `runTestFiles` produce different prefixes
@@ -276,10 +278,12 @@ pub struct FunctionTestCollection {
     /// C++ `numTestsSucceeded` (mutable): count of tests that passed.
     num_tests_succeeded: int4,
     /// Whether `<binaryimage>` produced a usable program (C++ `buildProgram`
-    /// sets `dcp->conf`).  The Rust merged tree cannot wire a console-driving
-    /// `Architecture` (the engine commands are stubs), so this records that the
-    /// `<binaryimage>` tag was seen and parsed without raising.
+    /// sets `dcp->conf`).
     saw_program: bool,
+    /// The SLEIGH spec search roots (C++ `SleighArchitecture::specpaths`).
+    /// `build_program` resolves the architecture against these; the binary
+    /// supplies them (from `-sleighpath`/`SLEIGHHOME`).
+    spec_roots: Vec<String>,
 }
 
 impl FunctionTestCollection {
@@ -287,9 +291,14 @@ impl FunctionTestCollection {
     /// (`ConsoleCommands`) and register the full command set; set
     /// `errorisdone` so the first failed script command aborts the run.
     pub fn new() -> FunctionTestCollection {
-        let mut console = ConsoleCommands::into_status(Vec::new());
-        register_decomp_commands(&mut console);
-        console.set_error_is_done(true);
+        Self::with_spec_roots(Vec::new())
+    }
+
+    /// Like [`new`](Self::new) but with the SLEIGH spec search roots the
+    /// datatest's `<binaryimage>` architecture is resolved against (C++
+    /// `SleighArchitecture::specpaths`).
+    pub fn with_spec_roots(spec_roots: Vec<String>) -> FunctionTestCollection {
+        let console = build_console();
         FunctionTestCollection {
             file_name: String::new(),
             test_list: Vec::new(),
@@ -298,6 +307,7 @@ impl FunctionTestCollection {
             num_tests_applied: 0,
             num_tests_succeeded: 0,
             saw_program: false,
+            spec_roots,
         }
     }
 
@@ -367,20 +377,39 @@ impl FunctionTestCollection {
     /// from the `<binaryimage>` tag.
     ///
     /// The C++ path is `ArchitectureCapability::getCapability("xml")` →
-    /// `buildArchitecture` → `conf->init(store)` → `readLoaderSymbols`.  In the
-    /// merged Rust tree the console's `IfaceDecompData::conf` is the engine
-    /// `Architecture`, which the console commands do not yet drive (the
-    /// integration layer is a later W-item).  We therefore validate the
-    /// `<binaryimage>` tag structurally (faithful to the parse half) and record
-    /// that the program was seen.  A structurally invalid tag raises the same
-    /// `IfaceExecutionError` shape the C++ init failure does, so the file-level
-    /// `Error executing <f>` path is reachable and byte-faithful.
+    /// `buildArchitecture` → `conf->init(store)` → `readLoaderSymbols`.  The kuna
+    /// Rust equivalent ([`bootstrap_from_root`]) builds the same engine assembly
+    /// (the `w9x-arch-engine-glue` `Architecture::init_post_engine` chain) and
+    /// installs it on the console's shared data (`dcp->conf`), so the script's
+    /// engine commands (`load function`/`decompile`/`print C`) drive a real
+    /// `Architecture`.  An init failure raises the C++ `IfaceExecutionError`
+    /// shape, so the file-level `Error executing <f>` path stays byte-faithful.
     fn build_program(&mut self, bi: &Rc<Element>) -> TestResult<()> {
         // C++ requires the "arch" attribute (the loader reads it); a missing one
         // is the init failure the `catch(LowlevelError &)` arm would surface.
-        bi.get_attribute_value("arch").map_err(|e| {
+        let arch_id = bi.get_attribute_value("arch").map_err(|e| {
             TestError::Execution(format!("Error during architecture initialization: {e}"))
         })?;
+        let arch_id = String::from_utf8_lossy(arch_id).into_owned();
+        // When no SLEIGH spec roots are configured (the framework-only path the
+        // `FunctionTestProperty`/grammar unit tests drive — `echo`-fed scripts
+        // that never touch the engine), skip the engine bootstrap: the program
+        // stays unbuilt (`dcp->conf` null) so an engine command errors with the
+        // same "No image loaded" the merged-tree stubs raised, but the framework
+        // (stringmatch matching, Success/FAIL grammar) is exercised fully.  A
+        // real run (the `decomp_test_dbg` binary supplies spec roots) bootstraps
+        // the engine.
+        if self.spec_roots.is_empty() {
+            self.saw_program = true;
+            return Ok(());
+        }
+        // capa->buildArchitecture + conf->init(store) + readLoaderSymbols.
+        let prog = bootstrap_program(Rc::clone(bi), &arch_id, &self.spec_roots).map_err(|e| {
+            TestError::Execution(format!("Error during architecture initialization: {e}"))
+        })?;
+        if let Some(dcp) = self.dcp_mut() {
+            dcp.conf = Some(prog);
+        }
         self.saw_program = true;
         Ok(())
     }
@@ -508,10 +537,16 @@ impl FunctionTestCollection {
         self.num_tests_succeeded = 0;
 
         // Re-seat the console's command feed for this file (the C++
-        // `commands`-by-reference equivalent), then rewind it.
-        let mut console = ConsoleCommands::into_status(self.commands.clone());
-        register_decomp_commands(&mut console);
-        console.set_error_is_done(true);
+        // `commands`-by-reference equivalent), then rewind it.  The loaded
+        // program (`dcp->conf`, set by `build_program` during `load_test`) is
+        // carried across the console rebuild so the script's engine commands drive
+        // it (the C++ console is the SAME object across loadTest/runTests; the
+        // Rust rebuild for the fresh command feed must preserve the program).
+        let carried_conf = self.take_conf();
+        let mut console = build_console_with(self.commands.clone());
+        if let (Some(prog), Some(dcp)) = (carried_conf, console_dcp_mut(&mut console)) {
+            dcp.conf = Some(prog);
+        }
         self.console = console;
 
         // C++: console->optr = &midBuffer (discarded); console->fileoptr = &bulkout.
@@ -571,10 +606,42 @@ impl FunctionTestCollection {
     }
 }
 
+impl FunctionTestCollection {
+    /// Take the loaded program out of the current console's shared data (so it can
+    /// be carried across a console rebuild).
+    fn take_conf(&mut self) -> Option<kuna_console::engine::ConsoleProgram> {
+        self.dcp_mut().and_then(|dcp| dcp.conf.take())
+    }
+}
+
 impl Default for FunctionTestCollection {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Build a fresh datatest console (empty feed): register the decompiler + kuna
+/// command modules and set `errorisdone` (C++ `ConsoleCommands` ctor +
+/// `setErrorIsDone(true)`).
+fn build_console() -> IfaceStatus {
+    build_console_with(Vec::new())
+}
+
+/// Build a datatest console seeded with `commands` as its feed (C++
+/// `ConsoleCommands(s, comms)` + `IfaceCapability::registerAllCommands`).
+fn build_console_with(commands: Vec<String>) -> IfaceStatus {
+    let mut console = ConsoleCommands::into_status(commands);
+    register_decomp_commands(&mut console);
+    register_kuna_commands(&mut console);
+    console.set_error_is_done(true);
+    console
+}
+
+/// Reach a console's shared [`IfaceDecompData`] (C++ `dcp`).
+fn console_dcp_mut(console: &mut IfaceStatus) -> Option<&mut IfaceDecompData> {
+    console
+        .get_data_mut(DECOMPILE_MODULE)
+        .and_then(|d| d.as_any_mut().downcast_mut::<IfaceDecompData>())
 }
 
 // ===========================================================================
@@ -592,10 +659,22 @@ impl Default for FunctionTestCollection {
 /// `Total tests applied = N` / `Total passing tests = N` footers, and the
 /// 10-line-capped `Failures:` block — is byte-faithful.
 pub fn run_test_files(test_files: &[String], out: &mut String) -> int4 {
+    run_test_files_with_specs(test_files, &[], out)
+}
+
+/// Like [`run_test_files`] but with the SLEIGH spec search roots the
+/// `<binaryimage>` architecture is resolved against (the `decomp_test_dbg`
+/// `-sleighpath <dir>` / `SLEIGHHOME` value).  The plain [`run_test_files`]
+/// forwards with no roots (the framework-only path the unit tests exercise).
+pub fn run_test_files_with_specs(
+    test_files: &[String],
+    spec_roots: &[String],
+    out: &mut String,
+) -> int4 {
     let mut total_tests_applied = 0i32;
     let mut total_tests_succeeded = 0i32;
     let mut failures: Vec<String> = Vec::new();
-    let mut collection = FunctionTestCollection::new();
+    let mut collection = FunctionTestCollection::with_spec_roots(spec_roots.to_vec());
 
     for file in test_files {
         collection.clear();
