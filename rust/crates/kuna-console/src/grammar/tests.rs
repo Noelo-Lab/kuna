@@ -156,6 +156,73 @@ fn parse_c_integer_bases() {
     assert_eq!(parse_c_integer(b"-1") as i64, -1);
 }
 
+// ---------------------------------------------------------------------------
+// VERIFIER adversarial tests (w9-con-grammar) — parse_c_integer prefix-parse
+// divergence from C++ `istringstream >> intb` (grammar.cc:1798-1803).
+//
+// The C++ `operator>>` performs a PREFIX parse: it consumes as many valid
+// digits in the auto-detected base as it can and STOPS at the first invalid
+// char, leaving the rest in the stream.  The Rust `from_str_radix` requires the
+// WHOLE digit string to be valid, else it errors and saturates to i64::MAX.
+//
+// The lexer's `number` state (grammar.cc:2094-2111 / move_state LexState::Number)
+// accepts ASCII letters and `_` as "part of the number", so tokens like `1z`,
+// `123abc`, `08`, `5_0` are single INTEGER tokens — these inputs ARE reachable.
+//
+// C++ oracle (verified with a standalone istringstream program):
+//   "1z"     -> 1      Rust -> i64::MAX
+//   "123abc" -> 123    Rust -> i64::MAX
+//   "08"     -> 0      Rust -> i64::MAX   (octal stops at non-octal digit 8)
+//   "5_0"    -> 5      Rust -> i64::MAX
+//   "007_0"  -> 7      Rust -> i64::MAX
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic] // FAILING-on-purpose: documents the divergence; C++ gives 1.
+fn w9_con_grammar_parse_int_letter_suffix_diverges() {
+    // C++ istringstream prefix-parses "1z" as 1; Rust saturates to i64::MAX.
+    assert_eq!(parse_c_integer(b"1z"), 1, "C++ prefix-parses 1z -> 1");
+}
+
+#[test]
+#[should_panic] // FAILING-on-purpose: C++ gives 123, Rust gives i64::MAX.
+fn w9_con_grammar_parse_int_trailing_alpha_diverges() {
+    assert_eq!(parse_c_integer(b"123abc"), 123, "C++ prefix-parses 123abc -> 123");
+}
+
+#[test]
+#[should_panic] // FAILING-on-purpose: octal "08" -> 0 in C++ (stops at 8); Rust -> i64::MAX.
+fn w9_con_grammar_parse_int_bad_octal_digit_diverges() {
+    assert_eq!(parse_c_integer(b"08"), 0, "C++ reads octal 0 then stops at 8 -> 0");
+}
+
+#[test]
+#[should_panic] // FAILING-on-purpose: underscore stops the parse in C++ ("5_0" -> 5); Rust -> i64::MAX.
+fn w9_con_grammar_parse_int_underscore_diverges() {
+    assert_eq!(parse_c_integer(b"5_0"), 5, "C++ prefix-parses 5_0 -> 5");
+}
+
+#[test]
+fn w9_con_grammar_array_size_letter_suffix_diverges() {
+    // End-to-end: `int4 a[1z]` is a valid `int4[1]` in C++ (array size 1), but
+    // the Rust port computes arraysize = (i64::MAX as int4) = -1, which fails
+    // ArrayModifier::isValid (`arraysize>0`) -> "Parsed type is invalid".
+    let f = factory();
+    let res = parse_type("int4 a[1z]", &f, org());
+    // C++ would Ok with an int4[1] array; Rust errs.  Pin the CURRENT (diverging)
+    // Rust behavior so the divergence is captured as a regression oracle.
+    assert!(
+        res.is_err(),
+        "Rust currently rejects int4 a[1z]; C++ accepts it as int4[1] (DIVERGENCE F1)"
+    );
+    let err = res.unwrap_err();
+    assert!(
+        err.explain().contains("Parsed type is invalid"),
+        "got: {}",
+        err.explain()
+    );
+}
+
 // ===========================================================================
 // parse_protopieces — the testfuncproto / testparamstore path
 // ===========================================================================
