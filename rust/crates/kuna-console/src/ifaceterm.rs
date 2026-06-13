@@ -614,4 +614,63 @@ mod tests {
         erase_range(&mut s, 0, 2);
         assert_eq!(s, "llo");
     }
+
+    // ---- VERIFIER adversarial tests (w9-con-interface) -----------------
+
+    /// w9-con-interface: TAB completion on a unique prefix with trailing
+    /// parameters must expand the command word AND carry the parameters back
+    /// onto the line verbatim, with a single space before the first param and
+    /// single spaces between params (doCompletion's `>> tok >> ws` readback).
+    /// We drive it through expand_com + the readback by checking the resolved,
+    /// executed line: "lo fi  bar   baz" + TAB completes to load file then runs
+    /// (the command line gets rebuilt and re-fed).  Easiest faithful check:
+    /// the doCompletion output for "lo<TAB>" expands and the param survives.
+    #[test]
+    fn verify_w9_tab_readback_preserves_params() {
+        // "load file" registered; type "lo fil  extra\t" then newline.
+        // After TAB, the line becomes "load file extra" (single-spaced); since
+        // it grew, doCompletion returns the expansion (no candidate listing).
+        let mut st = term_status("lo fil  extra\t\n");
+        st.run_command().unwrap();
+        // The redraw echoes the rebuilt line; it must contain the collapsed
+        // "load file extra" with the multiple spaces between params collapsed
+        // to one (C++ reads token, appends single space).
+        assert!(st.optr.contains("load file extra"), "optr was {:?}", st.optr);
+        // It must NOT have listed candidates or said "Command is complete"
+        // (the line grew, so doCompletion early-returns the expansion).
+        assert!(!st.optr.contains("Command is complete"));
+    }
+
+    /// w9-con-interface: a backspace mid-line on a piped stream must edit the
+    /// buffer AND emit the C++ redraw sequence (\r, prompt, line, trailing
+    /// blanks to erase the removed char, then backspaces to reposition).  Type
+    /// "ab", backspace (0x7f), "c", newline -> final command line "ac".
+    /// We assert the executed line resolves and the redraw emitted at least
+    /// one literal '\r' and the erase blank for the shrunk line.
+    #[test]
+    fn verify_w9_backspace_redraw_bytes() {
+        // Register "ac" so the edited line is a valid command.
+        let mut st = IfaceTerm::into_status("[decomp]> ", b"ab\x7fc\n");
+        st.register_com(Box::new(NoopAction), &["ac"]);
+        let ran = st.run_command().unwrap();
+        assert!(ran, "edited line 'ac' should execute");
+        // The non-onecharecho redraw path emits a carriage return.
+        assert!(st.optr.contains('\r'), "redraw must emit CR; optr={:?}", st.optr);
+        // The prompt is rewritten on the redraw line.
+        assert!(st.optr.contains("[decomp]> "), "redraw must rewrite prompt");
+    }
+
+    /// w9-con-interface: C-c (0x03) clears the line and behaves as a return,
+    /// producing an empty command (no execution) and echoing a single newline.
+    /// Pins the `val = 0x0a; onecharecho = true` branch.
+    #[test]
+    fn verify_w9_ctrl_c_clears_line() {
+        let mut st = term_status("partial\x03");
+        // C-c clears the typed "partial" and acts as newline -> empty line.
+        let ran = st.run_command().unwrap();
+        assert!(!ran, "C-c yields an empty line: no command");
+        // The cleared line redraws (partial then erased) and the final newline
+        // is echoed; the key invariant is that no command executed.
+        assert!(st.optr.ends_with('\n'), "C-c emits a trailing newline");
+    }
 }

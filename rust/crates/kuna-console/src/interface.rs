@@ -1362,4 +1362,122 @@ mod tests {
         assert_eq!(st.num_input_stream_size(), 0);
         assert!(!st.inerror);
     }
+
+    // ---- VERIFIER adversarial tests (w9-con-interface) -----------------
+
+    /// w9-con-interface: a single-letter prefix that expands the first token
+    /// but is still ambiguous on the rest must report "Incomplete command".
+    /// Exercises expandCom expanding "p" -> "print" via maxmatch, then the
+    /// subrange staying size 2 (match > 1, numWords != expand.len()).
+    #[test]
+    fn verify_w9_prefix_expands_then_ambiguous() {
+        let mut st = status_with_commands();
+        let e = st.resolve("p").unwrap_err();
+        assert!(e.is_parse(), "expected parse error, got {:?}", e.kind);
+        assert_eq!(e.explain, "Incomplete command");
+    }
+
+    /// w9-con-interface: the negative-return branch of expandCom (`res==false`
+    /// with eof => `first-last` negative) AND the maxmatch-collapse quirk.
+    /// Two single-word commands "aa"/"ab" share the 1-char stem "a".  Per the
+    /// C++ expandCom logic, reading the token "aa" then calling
+    /// maxmatch("aa","ab") clobbers the expanded token back to the common stem
+    /// "a" (res=false), so even the *complete* word "aa" cannot disambiguate:
+    /// the next loop hits eof with res=false and returns first-last < 0 =>
+    /// "Incomplete command".  This pins faithful C++ behavior (verified against
+    /// the C++ decomp_dbg `global re` collapse), NOT a desirable fix.
+    #[test]
+    fn verify_w9_negative_match_incomplete() {
+        let mut st = IfaceStatus::new("> ", dummy_source(), 10);
+        st.register_com(Box::new(TestAction { module: "base".into() }), &["aa"]);
+        st.register_com(Box::new(TestAction { module: "base".into() }), &["ab"]);
+        // "a" matches both; maxmatch("aa","ab") => ("a", false) => res=false.
+        let e = st.resolve("a").unwrap_err();
+        assert!(e.is_parse());
+        assert_eq!(e.explain, "Incomplete command");
+        // The COLLAPSE QUIRK is ASYMMETRIC.  "aa" sorts first: restrictCom on
+        // input "aa" bumps to upper key "ab", which still INCLUDES the sibling
+        // "ab" (upper_bound is exclusive of strictly-greater only), so the
+        // subrange stays size 2 and maxmatch collapses "aa" -> "a" => Incomplete.
+        let e2 = st.resolve("aa").unwrap_err();
+        assert!(e2.is_parse(), "C++ maxmatch collapses 'aa' to stem 'a'");
+        assert_eq!(e2.explain, "Incomplete command");
+        // "ab" sorts last: restrictCom's lower_bound on "ab" EXCLUDES the
+        // earlier "aa", leaving a unique subrange => resolves cleanly.  This
+        // asymmetry is faithful to the C++ lower_bound/upper_bound bump scheme.
+        assert_eq!(st.resolve("ab").unwrap(), vec!["ab"]);
+    }
+
+    /// w9-con-interface: the `match < 0` branch of runCommand prints
+    /// "ERROR: Incomplete command" but, per the C++ quirk, STILL executes the
+    /// (first) command (no `return false`).  We assert both: the message is
+    /// emitted AND the command ran (run_command returns true).  This pins the
+    /// no-return fall-through that a "fixed" port would break.
+    #[test]
+    fn verify_w9_negative_match_runs_first_command() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let ran = Rc::new(Cell::new(false));
+        struct Flag(Rc<Cell<bool>>);
+        impl IfaceCommandAction for Flag {
+            fn execute(&self, _s: &mut IfaceStatus, _is: &mut CommandStream) -> IfaceResult<()> {
+                self.0.set(true);
+                Ok(())
+            }
+            fn module(&self) -> String {
+                "base".into()
+            }
+        }
+        let src = VecSource::new(vec!["a".into()]);
+        let mut st = IfaceStatus::new("> ", Box::new(src), 10);
+        st.register_com(Box::new(Flag(ran.clone())), &["aa"]);
+        st.register_com(Box::new(Flag(ran.clone())), &["ab"]);
+        let executed = st.run_command().unwrap();
+        assert!(executed, "match<0 must still execute the first command");
+        assert!(ran.get(), "the first command's execute must have run");
+        assert_eq!(st.optr, "ERROR: Incomplete command\n");
+    }
+
+    /// w9-con-interface: circular history wrap at exactly `maxhistory`.  After
+    /// pushing 2*maxhistory lines, curhistory must have wrapped back and the
+    /// most-recent / oldest-retained lines must read out in the C++ order.
+    #[test]
+    fn verify_w9_history_wraps_at_maxhistory() {
+        let mut st = IfaceStatus::new("> ", dummy_source(), 3);
+        for s in ["a", "b", "c", "d", "e", "f"] {
+            st.save_history(s);
+        }
+        // Buffer now holds the 3 most recent: d,e,f with f the newest.
+        let mut line = String::new();
+        st.get_history(&mut line, 0);
+        assert_eq!(line, "f");
+        st.get_history(&mut line, 1);
+        assert_eq!(line, "e");
+        st.get_history(&mut line, 2);
+        assert_eq!(line, "d");
+        // i == maxhistory (too far back): unchanged.
+        let mut keep = "KEEP".to_string();
+        st.get_history(&mut keep, 3);
+        assert_eq!(keep, "KEEP");
+    }
+
+    /// w9-con-interface: restrictCom's upper-bound key bumps the last byte of
+    /// the final input token, and a NON-adjacent distinguishing word resolves
+    /// uniquely while an ambiguous stem does not.  "load file" vs "save": "lo"
+    /// uniquely selects "load file" (bump 'o'->'p' excludes "save"); the shared
+    /// "print" stem (print C / print raw) stays ambiguous.  This pins the
+    /// upper_bound boundary on the *common* (non-pathological) case, the one
+    /// that actually occurs in the decompiler command set.
+    #[test]
+    fn verify_w9_restrict_upper_bound_excludes_adjacent() {
+        let mut st = status_with_commands();
+        // "lo" -> load file (unique; no prefix-adjacent sibling).
+        assert_eq!(st.resolve("lo").unwrap(), vec!["load", "file"]);
+        // "print C" disambiguates against "print raw" on the 2nd token.
+        assert_eq!(st.resolve("print C").unwrap(), vec!["print", "C"]);
+        // bare "print" is the ambiguous stem.
+        let e = st.resolve("print").unwrap_err();
+        assert!(e.is_parse());
+        assert_eq!(e.explain, "Incomplete command");
+    }
 }
