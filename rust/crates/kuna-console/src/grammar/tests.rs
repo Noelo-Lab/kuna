@@ -558,16 +558,58 @@ fn reject_incomplete_declaration() {
 }
 
 #[test]
-fn struct_construction_is_a_seam() {
-    // `parse line struct { ... }` parses but the field-assigning factory
-    // orchestrator is the W6 seam: the build errs with the documented message.
+fn struct_construction_lands_in_factory() {
+    // `parse line struct { ... }` now constructs the type and interns it into the
+    // factory (the W10 store-write un-seam): the type is findable by name with its
+    // computed size (two int4 fields => 8 bytes) and completed (no longer
+    // incomplete).
     let f = factory();
-    let err = parse_protopieces("struct mystruct { int4 a; int4 b; };", &f, org()).unwrap_err();
-    assert!(
-        err.explain().contains("struct construction") && err.explain().contains("not yet ported"),
-        "got: {}",
-        err.explain()
-    );
+    super::parse_c("struct mystruct { int4 a; int4 b; };", &f, org(), |_| {
+        panic!("a bare struct is not an extern prototype")
+    })
+    .expect("struct construction should succeed");
+    let ct = f
+        .find_by_name("mystruct")
+        .unwrap()
+        .expect("mystruct should exist in the factory");
+    assert_eq!(ct.get_metatype(), meta::TYPE_STRUCT);
+    assert_eq!(ct.get_size(), 8);
+    assert!(!ct.is_incomplete(), "struct should be complete after field assignment");
+}
+
+#[test]
+fn enum_construction_lands_in_factory() {
+    // `parse line enum { ... }` interns a completed enum: the value->name map is
+    // installed so the type is no longer just a stub.  The enum size (and thus the
+    // value mask) comes from `setup_sizes` (C++ `enumsize = sizeOfInt`); without it
+    // the size-0 mask would collapse all values, exactly as the C++ would.
+    let f = factory();
+    f.setup_sizes(Some(4), 4, 4);
+    super::parse_c("enum mycolor { RED=1, GREEN=2, BLUE };", &f, org(), |_| {
+        panic!("a bare enum is not an extern prototype")
+    })
+    .expect("enum construction should succeed");
+    let ct = f
+        .find_by_name("mycolor")
+        .unwrap()
+        .expect("mycolor should exist in the factory");
+    assert!(ct.is_enum_type());
+}
+
+#[test]
+fn typedef_lands_in_factory() {
+    // `parse line typedef int4 myint;` creates a typedef interned under the new
+    // name.
+    let f = factory();
+    super::parse_c("typedef int4 myint;", &f, org(), |_| {
+        panic!("a typedef is not an extern prototype")
+    })
+    .expect("typedef should succeed");
+    let ct = f
+        .find_by_name("myint")
+        .unwrap()
+        .expect("myint typedef should exist in the factory");
+    assert_eq!(ct.get_size(), 4);
 }
 
 // ===========================================================================
@@ -577,7 +619,7 @@ fn struct_construction_is_a_seam() {
 #[test]
 fn cparse_declaration_then_eof() {
     let f = factory();
-    let mut parser = CParse::new(&f, 4096);
+    let mut parser = CParse::new(&f, org(), 4096);
     let ok = parser
         .parse_stream(b"extern int4 f(int4 a);".to_vec(), DocType::Declaration)
         .unwrap();

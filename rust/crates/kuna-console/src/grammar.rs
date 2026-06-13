@@ -59,7 +59,7 @@ use std::rc::Rc;
 
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, uint4, uintb};
-use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory};
+use kuna_decomp::dtype::{type_metatype, Datatype, TypeBitField, TypeFactory, TypeField};
 use kuna_decomp::fspec::PrototypePieces;
 
 // =============================================================================
@@ -1152,6 +1152,10 @@ enum PToken {
 /// through the by-value AST), so they are dropped.
 pub struct CParse<'a> {
     factory: &'a dyn TypeFactory,
+    /// The data-organization record (the `glb` state `build_type`/`get_prototype`
+    /// read).  In C++ this is part of the `Architecture *glb` the parser holds; the
+    /// kuna split carries it alongside the factory.  // SEAM(w6-fspec-2)
+    org: DataOrg,
     keywords: BTreeMap<String, uint4>,
     lexer: GrammarLexer,
     /// Location of the last token (C++ `lineno`/`colno`/`filenum`).
@@ -1171,7 +1175,7 @@ impl<'a> CParse<'a> {
     /// `findByName` identifier classification) and — only at the `build_type` /
     /// `get_prototype` calls the entry points make — the [`DataOrg`].  The parser
     /// proper needs only the factory, so `CParse` holds just that.
-    pub fn new(factory: &'a dyn TypeFactory, maxbuf: int4) -> CParse<'a> {
+    pub fn new(factory: &'a dyn TypeFactory, org: DataOrg, maxbuf: int4) -> CParse<'a> {
         let mut keywords: BTreeMap<String, uint4> = BTreeMap::new();
         keywords.insert("typedef".to_string(), flags::F_TYPEDEF);
         keywords.insert("extern".to_string(), flags::F_EXTERN);
@@ -1187,6 +1191,7 @@ impl<'a> CParse<'a> {
         keywords.insert("enum".to_string(), flags::F_ENUM);
         CParse {
             factory,
+            org,
             keywords,
             lexer: GrammarLexer::new(maxbuf),
             lineno: -1,
@@ -2023,16 +2028,43 @@ impl<'a> CParse<'a> {
     /// declarators (preserving the C++ "Invalid structure declarator" message).
     /// // SEAM(w6-fspec-2) — see LOSS-006 restoration.
     fn new_struct(&mut self, ident: &str, declist: Vec<TypeDeclarator>) -> KunaResult<Rc<Datatype>> {
+        // res = glb->types->getTypeStruct(ident): create the (incomplete) stub for
+        // recursion before any field references it.
+        let res = self.factory.get_type_struct(ident)?;
+        let is_big_endian = self.factory.is_big_endian();
+        let mut sublist: Vec<TypeField> = Vec::new();
+        let mut bitlist: Vec<TypeBitField> = Vec::new();
         for decl in &declist {
             if !decl.is_valid()? {
                 self.set_error("Invalid structure declarator");
+                self.factory.destroy_type(&res)?;
                 return Err(KunaError::parse(self.lasterror.clone()));
             }
+            let field_type = decl.build_type(self.factory, &self.org)?;
+            if decl.get_num_bits() != 0 {
+                // emplace_back(sublist.size(),numBits,isBigEndian,ident,type)
+                bitlist.push(TypeBitField::new(
+                    sublist.len() as int4,
+                    decl.get_num_bits(),
+                    is_big_endian,
+                    decl.get_identifier(),
+                    field_type,
+                ));
+            } else {
+                // emplace_back(0,-1,ident,type)
+                sublist.push(TypeField::new(0, -1, decl.get_identifier(), field_type));
+            }
         }
-        let _ = ident;
-        Err(KunaError::lowlevel(
-            "kuna rust port: struct construction (TypeFactory::assignRawFields) not yet ported",
-        ))
+        // glb->types->assignRawFields(res,sublist,bitlist); on LowlevelError, the
+        // C++ records setError + destroyType + returns null (a parse failure).
+        match self.factory.assign_raw_fields_struct(&res, sublist, bitlist) {
+            Ok(completed) => Ok(completed),
+            Err(err) => {
+                self.set_error(err.explain());
+                let _ = self.factory.destroy_type(&res);
+                Err(KunaError::parse(self.lasterror.clone()))
+            }
+        }
     }
 
     /// C++ `CParse::oldStruct` (`grammar.cc:1087-1094`).
@@ -2047,18 +2079,29 @@ impl<'a> CParse<'a> {
         }
     }
 
-    /// C++ `CParse::newUnion` (`grammar.cc:1096-1121`).  // SEAM(w6-fspec-2)
+    /// C++ `CParse::newUnion` (`grammar.cc:1096-1121`).
     fn new_union(&mut self, ident: &str, declist: Vec<TypeDeclarator>) -> KunaResult<Rc<Datatype>> {
-        for decl in &declist {
+        // res = glb->types->getTypeUnion(ident): the (incomplete) stub.
+        let res = self.factory.get_type_union(ident)?;
+        let mut sublist: Vec<TypeField> = Vec::new();
+        for (i, decl) in declist.iter().enumerate() {
             if !decl.is_valid()? {
                 self.set_error("Invalid union declarator");
+                self.factory.destroy_type(&res)?;
                 return Err(KunaError::parse(self.lasterror.clone()));
             }
+            let field_type = decl.build_type(self.factory, &self.org)?;
+            // emplace_back(i,0,ident,type)
+            sublist.push(TypeField::new(i as int4, 0, decl.get_identifier(), field_type));
         }
-        let _ = ident;
-        Err(KunaError::lowlevel(
-            "kuna rust port: union construction (TypeFactory::assignRawFields) not yet ported",
-        ))
+        match self.factory.assign_raw_fields_union(&res, sublist) {
+            Ok(completed) => Ok(completed),
+            Err(err) => {
+                self.set_error(err.explain());
+                let _ = self.factory.destroy_type(&res);
+                Err(KunaError::parse(self.lasterror.clone()))
+            }
+        }
     }
 
     /// C++ `CParse::oldUnion` (`grammar.cc:1123-1130`).
@@ -2096,13 +2139,22 @@ impl<'a> CParse<'a> {
         // duplicate-value errors with the same explain text as the C++.
         match Datatype::assign_values(res.get_size(), res.get_name(), &namelist, &vallist, &assignlist)
         {
-            Ok(_namemap) => Err(KunaError::lowlevel(
-                "kuna rust port: enum construction (TypeFactory::setEnumValues) not yet ported",
-            )),
+            Ok(namemap) => {
+                // glb->types->setEnumValues(namemap, res).
+                match self.factory.set_enum_values(&res, namemap) {
+                    Ok(completed) => Ok(completed),
+                    Err(err) => {
+                        self.set_error(err.explain());
+                        let _ = self.factory.destroy_type(&res);
+                        Err(KunaError::parse(self.lasterror.clone()))
+                    }
+                }
+            }
             Err(err) => {
                 // C++ catches LowlevelError, calls setError(err.explain), destroys
                 // the stub, returns null.
                 self.set_error(err.explain());
+                let _ = self.factory.destroy_type(&res);
                 Err(KunaError::parse(self.lasterror.clone()))
             }
         }
@@ -2165,7 +2217,7 @@ pub fn parse_type(
     factory: &dyn TypeFactory,
     org: DataOrg,
 ) -> KunaResult<(Rc<Datatype>, String)> {
-    let mut parser = CParse::new(factory, 4096);
+    let mut parser = CParse::new(factory, org, 4096);
     if !parser.parse_stream(input.as_bytes().to_vec(), DocType::ParameterDeclaration)? {
         return Err(KunaError::parse(parser.get_error().to_string()));
     }
@@ -2194,7 +2246,7 @@ pub fn parse_protopieces(
     factory: &dyn TypeFactory,
     org: DataOrg,
 ) -> KunaResult<PrototypePieces> {
-    let mut parser = CParse::new(factory, 4096);
+    let mut parser = CParse::new(factory, org, 4096);
     if !parser.parse_stream(input.as_bytes().to_vec(), DocType::Declaration)? {
         return Err(KunaError::parse(parser.get_error().to_string()));
     }
@@ -2214,6 +2266,79 @@ pub fn parse_protopieces(
         return Err(KunaError::parse("Did not parse a prototype"));
     }
     Ok(pieces)
+}
+
+/// C++ `parse_C(Architecture *glb,istream &s)` (`grammar.cc:2993-3037`): load type
+/// data straight into the data structures (a `parse line`/`parse file` body).
+///
+/// The C++ `Architecture *glb` is split into the [`TypeFactory`] (the construction
+/// store-writes go through it), the [`DataOrg`], and `set_prototype` — a callback
+/// standing in for `glb->setPrototype(pieces)` (which needs `symboltab`/`Funcdata`,
+/// surfaces the console owns, not the grammar).  The construction itself (struct/
+/// union/enum stub + `assignRawFields`/`setEnumValues`; typedef -> `setName`/
+/// `getTypedef`) is fully wired into the factory.
+///
+/// Errors mirror the C++: a parse failure becomes a `ParseError`; the
+/// "Did not parse a datatype"/"multiple declarations"/"invalid"/"Missing
+/// identifier for typedef"/"Not sure what to do with this type" `ParseError`s and
+/// the `LowlevelError` of the last clause are transcribed.
+pub fn parse_c(
+    input: &str,
+    factory: &dyn TypeFactory,
+    org: DataOrg,
+    set_prototype: impl FnOnce(PrototypePieces) -> KunaResult<()>,
+) -> KunaResult<()> {
+    let mut parser = CParse::new(factory, org, 4096);
+    if !parser.parse_stream(input.as_bytes().to_vec(), DocType::Declaration)? {
+        return Err(KunaError::parse(parser.get_error().to_string()));
+    }
+    let decls = parser
+        .take_result_declarations()
+        .filter(|d| !d.is_empty())
+        .ok_or_else(|| KunaError::parse("Did not parse a datatype"))?;
+    if decls.len() > 1 {
+        return Err(KunaError::parse("Parsed multiple declarations"));
+    }
+    let decl = &decls[0];
+    if !decl.is_valid()? {
+        return Err(KunaError::parse("Parsed type is invalid"));
+    }
+
+    if decl.has_property(flags::F_EXTERN) {
+        // extern: parse a prototype and hand it to glb->setPrototype(pieces).
+        let mut pieces = PrototypePieces::default();
+        if !decl.get_prototype(&mut pieces, factory, &org)? {
+            return Err(KunaError::parse("Did not parse prototype as expected"));
+        }
+        set_prototype(pieces)?;
+    } else if decl.has_property(flags::F_TYPEDEF) {
+        let ct = decl.build_type(factory, &org)?;
+        if decl.get_identifier().is_empty() {
+            return Err(KunaError::parse("Missing identifier for typedef"));
+        }
+        if ct.get_metatype() == type_metatype::TYPE_STRUCT {
+            // glb->types->setName(ct,decl->getIdentifier()).
+            factory.set_name(&ct, decl.get_identifier())?;
+        } else {
+            // glb->types->getTypedef(ct,decl->getIdentifier(),0,0).
+            factory.get_typedef(&ct, decl.get_identifier(), 0, 0)?;
+        }
+    } else {
+        // A bare struct/union/enum declaration is treated as a typedef: the stub
+        // was already interned during the construction action (newStruct/...), so
+        // the C++ does nothing further here.  Any other base meta-type is an error.
+        let base = decl
+            .get_base_type()
+            .ok_or_else(|| KunaError::lowlevel("Not sure what to do with this type"))?;
+        let meta = base.get_metatype();
+        let recognised = meta == type_metatype::TYPE_STRUCT
+            || meta == type_metatype::TYPE_UNION
+            || base.is_enum_type();
+        if !recognised {
+            return Err(KunaError::lowlevel("Not sure what to do with this type"));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1821,6 +1821,23 @@ impl Database {
         Ok(sid)
     }
 
+    /// C++ `ScopeInternal::setAttribute` (`database.cc:2228-2235`): OR the
+    /// lockable boolean attributes onto a symbol (the rest are masked out), then
+    /// recompute its `size_typelock`.  The console `map` commands lock the symbols
+    /// they create as name/type-locked.
+    pub fn set_attribute(&mut self, sym: SymbolId, attr: uint4) {
+        let mask = varnode_flags::typelock
+            | varnode_flags::namelock
+            | varnode_flags::readonly
+            | varnode_flags::incidental_copy
+            | varnode_flags::nolocalalias
+            | varnode_flags::volatil
+            | varnode_flags::indirectstorage
+            | varnode_flags::hiddenretparm;
+        self.symbols[sym].flags |= attr & mask;
+        self.symbols[sym].check_size_type_lock();
+    }
+
     /// C++ `Scope::addCodeLabel` (`database.cc:1669-1684`): create a LabSymbol.
     pub fn add_code_label(
         &mut self,

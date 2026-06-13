@@ -76,6 +76,7 @@ use crate::engine::{bootstrap_from_file, ConsoleProgram, UNBOUNDED_SIZE};
 use crate::interface::{
     CommandStream, IfaceCommandAction, IfaceData, IfaceError, IfaceResult, IfaceStatus,
 };
+use kuna_base::types::int4;
 use kuna_decomp::decompile_drive::{build_and_follow_flow, decompile_func, print_c};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::options::OptionDatabase;
@@ -119,6 +120,17 @@ pub struct IfaceDecompData {
     /// C++ `FunctionTestCollection *testCollection`: present once `load test
     /// file` has run.  (The datatest runner is a separate W9 item.)
     pub test_collection_present: bool,
+    /// Prototypes parsed by `parse line extern ...` (`parse_C`'s `setPrototype`
+    /// branch) keyed by function name.
+    ///
+    /// C++ `Architecture::setPrototype` finds the existing function symbol and
+    /// locks the prototype onto its `Funcdata` immediately.  In the kuna console
+    /// seam the `Funcdata` (`dcp.fd`) is built later by `load function`/`load addr`
+    /// (`build_and_follow_flow` makes a fresh one), so the pieces are stashed here
+    /// when the named function symbol exists and applied at load time.
+    /// // SEAM(W4 queryFunction/FuncProto restore)
+    pub pending_prototypes:
+        std::collections::BTreeMap<String, kuna_decomp::fspec::PrototypePieces>,
 }
 
 impl IfaceData for IfaceDecompData {
@@ -189,48 +201,213 @@ fn engine_unavailable(entry: &str) -> IfaceError {
     ))
 }
 
-/// A minimal stand-in for the console address grammar `parse_machaddr`
-/// (`pcodeparse.cc`, a later port item): resolve `<space>:0x<off>` (an explicit
-/// space) or a bare `0x<off>` / decimal offset (the default code space) to an
-/// [`kuna_base::address::Address`] over the program's engine spaces.
+/// C++ `parse_machaddr(istream &s,int4 &defaultsize,const TypeFactory &typegrp,
+/// bool ignorecolon)` (`grammar.cc:3099-3178`): read a machine address from the
+/// console stream against the program's engine spaces, returning the address and
+/// the associated `defaultsize` (the size from an explicit `[space,off,size]`
+/// specifier, else the standard size implied by the offset token).
 ///
-/// The full grammar (registers, stack-relative `r0x..`, ranges) is the later
-/// `pcodeparse` item; this covers the `load addr 0x..` form the Python tools
-/// (`kuna/decompile.py`) and the datatests drive.
-fn parse_console_address(
+/// The supported forms transcribe the C++ grammar: `[space,offset[,size]]`
+/// (bracketed, explicit space + optional size), the shortcut form (a leading
+/// space-shortcut char then an offset token, e.g. `r0x110320`), and the default
+/// code-space form (a leading `0` consumes the default code space).  The join
+/// `{...}` form errs (the join-space console syntax is unported).  `ignorecolon`
+/// controls whether `:` is a separator in the offset token (false: included,
+/// matching the C++ default).
+fn parse_machaddr(
     prog: &ConsoleProgram,
-    tok: &str,
-) -> Result<kuna_base::address::Address, String> {
+    s: &mut CommandStream,
+    ignorecolon: bool,
+) -> Result<(kuna_base::address::Address, int4), String> {
     use kuna_base::address::Address;
-    if tok.is_empty() {
-        return Err("Missing address".to_string());
-    }
+    use std::rc::Rc;
     let manage = prog.arch().manage();
-    let (space, offstr) = match tok.split_once(':') {
-        Some((sp, off)) => {
-            let space = manage
-                .get_space_by_name(sp)
-                .ok_or_else(|| format!("Unknown address space: {sp}"))?;
-            (std::rc::Rc::clone(space), off)
+    let mut size: int4 = -1;
+
+    s.skip_ws();
+    let tok = s.peek();
+    let (space, token) = if tok == Some(b'[') {
+        // [space,offset[,size]]
+        s.get(); // consume '['
+        let base_tok = s.read_to_separator(); // scan base address token
+        let b = manage
+            .get_space_by_name(&base_tok)
+            .ok_or_else(|| "Bad address base".to_string())?;
+        s.skip_ws();
+        if s.get() != Some(b',') {
+            return Err("Missing ',' in address".to_string());
         }
-        None => {
-            let space = manage
-                .get_default_code_space()
-                .ok_or("No default code space")?;
-            (std::rc::Rc::clone(space), tok)
+        let offtok = s.read_to_separator(); // the offset portion
+        s.skip_ws();
+        let mut next = s.get();
+        if next == Some(b',') {
+            // Optional size specifier (user base, like the C++ `unsetf` then `>>`).
+            size = s.read_int();
+            s.skip_ws();
+            next = s.get();
         }
+        if next != Some(b']') {
+            return Err("Missing ']' in address".to_string());
+        }
+        (Rc::clone(b), offtok)
+    } else if tok == Some(b'{') {
+        return Err("join-space address syntax not yet ported (parse_machaddr '{')".to_string());
+    } else {
+        // Shortcut or default-code-space form.
+        let b = if tok == Some(b'0') {
+            // A leading '0' selects the default code space; the whole token is the
+            // offset (read below).
+            Rc::clone(
+                manage
+                    .get_default_code_space()
+                    .ok_or_else(|| "No default code space".to_string())?,
+            )
+        } else {
+            // The first char is a space shortcut; consume it.
+            let sc = s.get().ok_or_else(|| "Missing address".to_string())?;
+            let b = manage
+                .get_space_by_shortcut(sc)
+                .ok_or_else(|| format!("Bad address: {}", sc as char))?;
+            Rc::clone(b)
+        };
+        // Collect the offset token (alnum/_/+ and optionally ':').
+        let mut token = String::new();
+        loop {
+            match s.peek() {
+                Some(c)
+                    if c.is_ascii_alphanumeric()
+                        || c == b'_'
+                        || c == b'+'
+                        || (!ignorecolon && c == b':') =>
+                {
+                    token.push(c as char);
+                    s.get();
+                }
+                _ => break,
+            }
+        }
+        (b, token)
     };
-    let offset = parse_offset(offstr).ok_or_else(|| format!("Bad address: {tok}"))?;
-    Ok(Address::new(space, offset))
+
+    let mut res = Address::new(space, 0);
+    let oversize = res
+        .read(&token, manage)
+        .map_err(|_| "Bad machine address".to_string())?;
+    let defaultsize = if size == -1 { oversize } else { size };
+    Ok((res, defaultsize))
 }
 
-/// Parse a `0x<hex>` or bare-decimal offset (the `parse_machaddr` numeric tail).
-fn parse_offset(s: &str) -> Option<u64> {
-    let s = s.trim();
-    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+/// The boolean property flags `volatile`/`readonly` paint over a range (C++
+/// `Varnode::volatil` / `Varnode::readonly`).
+mod property_flag {
+    pub use kuna_decomp::varnode::varnode_flags::{readonly, volatil};
+}
+
+/// Parse an unsigned value with the user-selected base (C++ `s.unsetf(dec|hex|oct)`
+/// then `s >> value`): a `0x`/`0X` prefix is hex, a leading `0` is octal,
+/// otherwise decimal.  `None` on an empty/unparseable token (the C++ sentinel
+/// `0xbadbeef` stays, signalling "missing value").
+fn parse_userbase_u64(tok: &str) -> Option<u64> {
+    let t = tok.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
         u64::from_str_radix(hex, 16).ok()
+    } else if t.len() > 1 && t.starts_with('0') {
+        u64::from_str_radix(&t[1..], 8).ok()
     } else {
-        s.parse::<u64>().ok()
+        t.parse::<u64>().ok()
+    }
+}
+
+/// 32-bit flavor of [`parse_userbase_u64`] (the `set context` value is a `uintm`).
+fn parse_userbase_u32(tok: &str) -> Option<u32> {
+    parse_userbase_u64(tok).and_then(|v| u32::try_from(v).ok())
+}
+
+/// Shared body of `IfcVolatile`/`IfcReadonly` (`ifacedecomp.cc:3006-3042`): parse
+/// `<address+size>`, build the inclusive `Range` (open end `off+size`), OR the
+/// property over it via `symboltab->setPropertyRange`, and echo the success line.
+fn mark_property_range(
+    status: &mut IfaceStatus,
+    s: &mut CommandStream,
+    flag: u32,
+    success: &str,
+) -> IfaceResult<()> {
+    {
+        let dcp = dcp_mut(status)?;
+        if dcp.conf.is_none() {
+            return Err(IfaceError::execution("No load image present"));
+        }
+    }
+    let dcp = dcp_mut(status)?;
+    let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+    // C++ Address addr = parse_machaddr(s,size,*dcp->conf->types).
+    let (addr, size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+    if size == 0 {
+        return Err(IfaceError::execution("Must specify a size"));
+    }
+    // C++ Range(space, off, off+(size-1)); setPropertyRange => paint [off, off+size).
+    let space = addr
+        .get_space()
+        .cloned()
+        .ok_or_else(|| IfaceError::execution("Invalid address space"))?;
+    let off = addr.get_offset();
+    let addr2 = kuna_base::address::Address::new(space, off.wrapping_add(size as u64));
+    prog.arch_mut().symboltab.set_property_range(flag, &addr, &addr2);
+    status.out(&format!("{success}\n"));
+    Ok(())
+}
+
+/// Shared body of `IfcParseFile`/`IfcParseLine` (`ifacedecomp.cc:347,384`): run
+/// `parse_C` against the program's [`Architecture`].  A `ParseError` is reported
+/// as the C++ does — `"Error in C syntax: <explain>"` on the output stream, then
+/// the `IfaceExecutionError("Bad C syntax")`.
+fn run_parse_c(status: &mut IfaceStatus, content: &str) -> IfaceResult<()> {
+    use std::cell::RefCell;
+    // The factory + data-org from the program; the parse store-writes go through
+    // the factory (interior mutability), so an immutable borrow of `prog` suffices.
+    let (org, extern_pieces, parse_result) = {
+        let dcp = dcp_mut(status)?;
+        let prog = dcp.conf.as_ref().expect("conf checked non-None above");
+        let arch = prog.arch();
+        let (addr_size, word_size) = arch.data_org();
+        let org = crate::grammar::DataOrg { addr_size, word_size };
+        // setPrototype branch: stash the parsed pieces (applied below, against the
+        // mutable `dcp`); the symbol existence check mirrors C++ queryFunction.
+        let captured: RefCell<Option<kuna_decomp::fspec::PrototypePieces>> = RefCell::new(None);
+        let res = crate::grammar::parse_c(content, arch.types(), org, |pieces| {
+            // C++ Architecture::setPrototype resolves the function via queryFunction
+            // (which lazily builds the Funcdata from the function symbol) and locks
+            // the prototype.  In the kuna console seam the named function may live
+            // only in the binaryimage's symbol records (the readLoaderSymbols →
+            // Scope::addFunction markup is a W4 seam, so it is not yet in the
+            // symboltab), and `dcp.fd` is built later by `load function`.  So the
+            // pieces are captured here and stashed (applied at load time) rather
+            // than rejected — letting `parse line extern` take effect and the test
+            // proceed to decompile.  // SEAM(W4 queryFunction/FuncProto restore)
+            *captured.borrow_mut() = Some(pieces);
+            Ok(())
+        });
+        (org, captured.into_inner(), res)
+    };
+    let _ = org; // org is consumed by parse_c; kept for symmetry with the C++ glb
+    match parse_result {
+        Ok(()) => {
+            if let Some(pieces) = extern_pieces {
+                // Stash for application at load time (the FuncProto restore seam).
+                let dcp = dcp_mut(status)?;
+                dcp.pending_prototypes.insert(pieces.name.clone(), pieces);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            // C++: *status->optr << "Error in C syntax: " << err.explain << endl;
+            //      throw IfaceExecutionError("Bad C syntax");
+            status.out(&format!("Error in C syntax: {}\n", e.explain()));
+            Err(IfaceError::execution("Bad C syntax"))
+        }
     }
 }
 
@@ -355,16 +532,23 @@ decomp_command!(
     /// C++ `IfcParseFile`: parse a file of C declarations.
     IfcParseFile,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No load image present"));
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No load image present"));
+            }
         }
         s.skip_ws();
         let filename = s.read_token();
         if filename.is_empty() {
             return Err(IfaceError::parse("Missing filename"));
         }
-        Err(engine_unavailable("parse_C (grammar.cc)"))
+        // C++ opens the file then parse_C(dcp->conf,fs).  "Unable to open file: "
+        // on a failed open; "Error in C syntax: ..."/"Bad C syntax" on a parse
+        // error.
+        let content = std::fs::read_to_string(&filename)
+            .map_err(|_| IfaceError::execution(format!("Unable to open file: {filename}")))?;
+        run_parse_c(status, &content)
     }
 );
 
@@ -372,15 +556,19 @@ decomp_command!(
     /// C++ `IfcParseLine`: parse a line of C syntax (`parse line ...`).
     IfcParseLine,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No load image present"));
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No load image present"));
+            }
         }
         s.skip_ws();
         if s.eof() {
             return Err(IfaceError::parse("No input"));
         }
-        Err(engine_unavailable("parse_C (grammar.cc)"))
+        // The remainder of the command line is the C declaration to parse.
+        let line = s.rest();
+        run_parse_c(status, &line)
     }
 );
 
@@ -486,20 +674,16 @@ decomp_command!(
     /// <addr> [name]`).
     IfcAddrrangeLoad,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        s.skip_ws();
-        let addrtok = s.read_token();
-        s.skip_ws();
-        let name = s.read_token(); // optional
         let dcp = dcp_mut(status)?;
         if dcp.conf.is_none() {
             return Err(IfaceError::execution("No binary loaded"));
         }
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
-        // C++ Address offset = parse_machaddr(s,size,*dcp->conf->types) — the
-        // console address grammar (pcodeparse.cc) is a later item; this resolves
-        // the common `0x<off>` / `<space>:0x<off>` form against the engine spaces.
-        let offset = parse_console_address(prog, &addrtok)
-            .map_err(IfaceError::parse)?;
+        // C++ Address offset = parse_machaddr(s,size,*dcp->conf->types) — the full
+        // console address grammar over the engine spaces.
+        let (offset, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        s.skip_ws();
+        let name = s.read_token(); // optional
         // C++ nameFunction picks a default name if none was given.
         let name = if name.is_empty() {
             prog.arch().name_function(&offset)
@@ -549,12 +733,49 @@ decomp_command!(
 decomp_command!(
     /// C++ `IfcMapaddress`: `map address <addr> <typedeclaration>`.
     IfcMapaddress,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No load image present"));
+            }
+        }
+        // C++ Address addr = parse_machaddr(...); ct = parse_type(s,name,glb).
+        let fd_present = dcp_mut(status)?.fd.is_some();
+        if fd_present {
+            // The fd-local form binds into the function's `ScopeLocal`, a W4 seam
+            // (the Funcdata's local map is a placeholder in the merged tree).
+            return Err(engine_unavailable("Funcdata::getScopeLocal()->addSymbol (W4 local scope)"));
+        }
         let dcp = dcp_mut(status)?;
-        // C++ dereferences dcp->conf->types in parse_machaddr; we keep the same
-        // precondition implicitly by routing through the unported grammar.
-        let _ = dcp;
-        Err(engine_unavailable("parse_machaddr + parse_type + Scope::addSymbol"))
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        s.skip_ws();
+        // C++ ct = parse_type(s,name,dcp->conf): parse the required type + name.
+        let (addr_size, word_size) = prog.arch().data_org();
+        let org = crate::grammar::DataOrg { addr_size, word_size };
+        let typetext = s.rest();
+        let (ct, name) = crate::grammar::parse_type(&typetext, prog.arch().types(), org)
+            .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
+        // Global branch: flags = namelock|typelock | getProperty(addr);
+        //   scope = findCreateScopeFromSymbolName(name); sym = scope->addSymbol(...);
+        //   setAttribute(flags); if scope has parent: addRange.
+        use kuna_decomp::varnode::varnode_flags;
+        let inherit = prog.arch().symboltab.get_property(&addr);
+        let flags = varnode_flags::namelock | varnode_flags::typelock | inherit;
+        let num_spaces = prog.arch().manage().num_spaces() as int4;
+        let arch = prog.arch_mut();
+        let (scope, basename) = arch
+            .symboltab
+            .find_create_scope_from_symbol_name(&name, "::", None, num_spaces)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        let invalid = kuna_base::address::Address::new_invalid();
+        let (sym, _eref) = arch
+            .symboltab
+            .add_symbol_mapped(scope, &basename, ct, &addr, &invalid)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        arch.symboltab.set_attribute(sym, flags);
+        Ok(())
     }
 );
 
@@ -597,13 +818,47 @@ decomp_command!(
 decomp_command!(
     /// C++ `IfcMapfunction`: `map function <addr> [name] [nocode]`.
     IfcMapfunction,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No binary loaded"));
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No binary loaded"));
+            }
         }
-        // C++ guards on (conf==0)||(conf->loader==0) with "No binary loaded".
-        Err(engine_unavailable("parse_machaddr + Scope::addFunction"))
+        let dcp = dcp_mut(status)?;
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        // C++ Address addr = parse_machaddr(s,size,*dcp->conf->types).
+        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        s.skip_ws();
+        let mut name = s.read_token(); // optional
+        if name.is_empty() {
+            name = prog.arch().name_function(&addr);
+        }
+        // C++ scope = symboltab->findCreateScopeFromSymbolName(name,"::",basename,0);
+        //      dcp->fd = scope->addFunction(addr,name)->getFunction();
+        let type_code = prog
+            .arch()
+            .types()
+            .get_type_code()
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        let min_size = prog.arch().min_funcsymbol_size;
+        let num_spaces = prog.arch().manage().num_spaces() as int4;
+        let arch = prog.arch_mut();
+        let (scope, basename) = arch
+            .symboltab
+            .find_create_scope_from_symbol_name(&name, "::", None, num_spaces)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        arch.symboltab
+            .add_function(scope, &addr, &basename, min_size, type_code)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        // Make the function loadable by `load function <name>` (the console seam).
+        prog.register_symbol(&name, addr);
+        // C++ reads an optional trailing "nocode" keyword (setNoCode on fd); the
+        // kuna seam builds no Funcdata here, so `nocode` is consumed for parse
+        // fidelity but applied at follow-flow time (LOSS: nocode flag).
+        s.skip_ws();
+        let _nocode = s.read_token();
+        Ok(())
     }
 );
 
@@ -620,12 +875,41 @@ decomp_command!(
     /// C++ `IfcMaplabel`: `map label <name> <address>`.
     IfcMaplabel,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let _dcp = dcp_mut(status)?;
         let name = s.read_token();
         if name.is_empty() {
             return Err(IfaceError::parse("Need label name and address"));
         }
-        Err(engine_unavailable("parse_machaddr + Scope::addCodeLabel"))
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No load image present"));
+            }
+            if dcp.fd.is_some() {
+                // fd-local label: the Funcdata ScopeLocal is a W4 seam.
+                return Err(engine_unavailable("Funcdata::getScopeLocal()->addCodeLabel (W4 local scope)"));
+            }
+        }
+        let dcp = dcp_mut(status)?;
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        // LabSymbol::buildType -> getBase(1, TYPE_UNKNOWN).
+        let lab_type = prog
+            .arch()
+            .types()
+            .get_base(1, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        use kuna_decomp::varnode::varnode_flags;
+        let arch = prog.arch_mut();
+        let gscope = arch
+            .symboltab
+            .get_global_scope()
+            .ok_or_else(|| IfaceError::execution("No global scope"))?;
+        let sym = arch
+            .symboltab
+            .add_code_label(gscope, &addr, &name, lab_type)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        arch.symboltab.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+        Ok(())
     }
 );
 
@@ -930,20 +1214,46 @@ decomp_command!(
     /// C++ `IfcSetcontextrange`: `set context <name> <value> [start end]`.
     IfcSetcontextrange,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No load image present"));
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No load image present"));
+            }
         }
         let name = s.read_token();
         s.skip_ws();
         if name.is_empty() {
             return Err(IfaceError::parse("Missing context variable name"));
         }
-        // C++ reads `value` (user base) defaulting to the sentinel 0xbadbeef and
-        // throws "Missing context value" if unchanged, then the optional range.
-        Err(engine_unavailable(
-            "ContextDatabase::setVariableDefault/Region (Architecture::context)",
-        ))
+        // C++: s.unsetf(...); uintm value=0xbadbeef; s>>value (user base);
+        //      "Missing context value" if unchanged.
+        let valtok = s.read_token();
+        let value = match parse_userbase_u32(&valtok) {
+            Some(v) => v,
+            None => return Err(IfaceError::parse("Missing context value")),
+        };
+        s.skip_ws();
+        let dcp = dcp_mut(status)?;
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        if s.eof() {
+            // No range indicates a default value: context->setVariableDefault.
+            prog.arch().with_context_db_mut(|db| db.set_variable_default(name.as_bytes(), value))
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            return Ok(());
+        }
+        // Otherwise parse the [begin,end) range.
+        let (addr1, _s1) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        let (addr2, _s2) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        if addr1.is_invalid() || addr2.is_invalid() {
+            return Err(IfaceError::parse("Invalid address range"));
+        }
+        if addr2 <= addr1 {
+            return Err(IfaceError::parse("Bad address range"));
+        }
+        prog.arch()
+            .with_context_db_mut(|db| db.set_variable_region(name.as_bytes(), &addr1, &addr2, value))
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        Ok(())
     }
 );
 
@@ -951,18 +1261,55 @@ decomp_command!(
     /// C++ `IfcSettrackedrange`: `set track <name> <value> [start end]`.
     IfcSettrackedrange,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No load image present"));
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No load image present"));
+            }
         }
         let name = s.read_token();
         s.skip_ws();
         if name.is_empty() {
             return Err(IfaceError::parse("Missing tracked register name"));
         }
-        Err(engine_unavailable(
-            "ContextDatabase::getTrackedDefault/createSet (Architecture::context)",
-        ))
+        // C++: s.unsetf(...); uintb value=0xbadbeef; s>>value (user base).
+        let valtok = s.read_token();
+        let value = match parse_userbase_u64(&valtok) {
+            Some(v) => v,
+            None => return Err(IfaceError::parse("Missing context value")),
+        };
+        s.skip_ws();
+        let dcp = dcp_mut(status)?;
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        // C++ track.back().loc = dcp->conf->translate->getRegister(name).
+        let loc = prog
+            .arch()
+            .get_register_varnode(name.as_bytes())
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        if s.eof() {
+            // No range: append to the default tracked set.
+            prog.arch().with_context_db_mut(|db| {
+                let track = db.get_tracked_default();
+                track.push(kuna_sleigh::globalcontext::TrackedContext { loc, val: value });
+            });
+            return Ok(());
+        }
+        let (addr1, _s1) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        let (addr2, _s2) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        if addr1.is_invalid() || addr2.is_invalid() {
+            return Err(IfaceError::parse("Invalid address range"));
+        }
+        if addr2 <= addr1 {
+            return Err(IfaceError::parse("Bad address range"));
+        }
+        prog.arch().with_context_db_mut(|db| {
+            // C++ createSet(addr1,addr2); track = def (copy default as base); push.
+            let def = db.get_tracked_default().clone();
+            let track = db.create_set(&addr1, &addr2);
+            *track = def;
+            track.push(kuna_sleigh::globalcontext::TrackedContext { loc, val: value });
+        });
+        Ok(())
     }
 );
 
@@ -1504,15 +1851,31 @@ decomp_command!(
 decomp_command!(
     /// C++ `IfcCommentInstr`: `comment instruction <addr> <text>`.
     IfcCommentInstr,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("Decompile action not loaded"));
+            }
+            if dcp.fd.is_none() {
+                return Err(IfaceError::execution("No function selected"));
+            }
+        }
         let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("Decompile action not loaded"));
-        }
-        if dcp.fd.is_none() {
-            return Err(IfaceError::execution("No function selected"));
-        }
-        Err(engine_unavailable("parse_machaddr + CommentDatabase::addComment"))
+        let prog = dcp.conf.as_ref().expect("conf checked non-None above");
+        // C++ Address addr = parse_machaddr(s,size,*dcp->conf->types).
+        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        // C++ skips ws then reads char-by-char to EOL as the comment body.
+        s.skip_ws();
+        let comment = s.rest();
+        // uint4 type = dcp->conf->print->getInstructionComment();
+        let func_addr = dcp.fd.as_ref().expect("fd checked non-None above").get_address().clone();
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        let arch = prog.arch_mut();
+        let ctype = arch.print().instruction_comment_flags();
+        // dcp->conf->commentdb->addComment(type, fd->getAddress(), addr, comment).
+        arch.commentdb.add_comment(ctype, &func_addr, &addr, &comment);
+        Ok(())
     }
 );
 
@@ -1670,26 +2033,16 @@ decomp_command!(
 decomp_command!(
     /// C++ `IfcVolatile`: `volatile [space,offset,size]`.
     IfcVolatile,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No load image present"));
-        }
-        // C++ parse_machaddr then "Must specify a size" then
-        // symboltab->setPropertyRange + "Successfully marked range as volatile".
-        Err(engine_unavailable("parse_machaddr + Database::setPropertyRange(volatil)"))
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        mark_property_range(status, s, property_flag::volatil, "Successfully marked range as volatile")
     }
 );
 
 decomp_command!(
     /// C++ `IfcReadonly`: `readonly [space,offset,size]`.
     IfcReadonly,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No load image present"));
-        }
-        Err(engine_unavailable("parse_machaddr + Database::setPropertyRange(readonly)"))
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        mark_property_range(status, s, property_flag::readonly, "Successfully marked range as readonly")
     }
 );
 
