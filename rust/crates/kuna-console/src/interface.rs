@@ -41,6 +41,17 @@
 //!   stack) is ported once.  `IfaceTerm` and `ConsoleCommands` are then just
 //!   two `LineSource` implementations (see `ifaceterm.rs`).
 //!
+//! - [`IfcQuit`], [`IfcHistory`], [`IfcOpenfile`], [`IfcOpenfileAppend`],
+//!   [`IfcClosefile`], [`IfcEcho`]: the six concrete commands of the "base"
+//!   module (C++ `IfaceBaseCommand` subclasses, `interface.cc:518-622`).  They
+//!   are part of `interface.cc` so they are ported here; the decompiler console
+//!   registers them (`ifacedecomp.cc` `registerCommands`), which is ported in
+//!   `w9-con-ifacedecomp`.  `IfcOpenfile`/`IfcClosefile` are the bulk-output
+//!   redirect the Python harness drives to capture `print C` (CLAUDE.md);
+//!   `IfcQuit` sets [`IfaceStatus::done`] to drop out of `mainloop`.  The C++
+//!   abstract base's `getModule()=="base"`/`createData()==null` is supplied by
+//!   the private [`BaseModule`] marker each command embeds.
+//!
 //! Where C++ stores a back-pointer to `IfaceStatus` in each command (set by
 //! `setData`) and mutates it from `execute`, the port passes `&mut
 //! IfaceStatus` to [`IfaceCommandAction::execute`] explicitly — the faithful
@@ -238,6 +249,53 @@ impl CommandStream {
         let c = self.buf[self.pos];
         self.pos += 1;
         Some(c)
+    }
+
+    /// `s >> num` for an `int4` (C++ `operator>>(int4&)`).
+    ///
+    /// Mirrors `std::istream::operator>>` for a signed decimal integer: skip
+    /// leading whitespace, read an optional `+`/`-` sign followed by one or
+    /// more decimal digits.  On a **failed** extraction (no digits) C++11 sets
+    /// the target to `0` and latches failbit; the only caller (`IfcHistory`)
+    /// guards `!eof()` before reading and re-checks `!eof()` after, so the
+    /// faithful failure signal here is `num = 0` plus the latched eof from the
+    /// surrounding `>> ws`.  As in the stream, eof is latched only when the
+    /// digit run reaches the physical end of the buffer.
+    pub fn read_int(&mut self) -> int4 {
+        // Skip leading whitespace.
+        while self.pos < self.buf.len() && Self::is_ws(self.buf[self.pos]) {
+            self.pos += 1;
+        }
+        if self.pos >= self.buf.len() {
+            self.eof = true;
+            return 0;
+        }
+        let start = self.pos;
+        // Optional leading sign.
+        if self.buf[self.pos] == b'+' || self.buf[self.pos] == b'-' {
+            self.pos += 1;
+        }
+        let digits_start = self.pos;
+        while self.pos < self.buf.len() && self.buf[self.pos].is_ascii_digit() {
+            self.pos += 1;
+        }
+        if self.pos == digits_start {
+            // No digits read: extraction fails (failbit), value left 0.  Rewind
+            // the sign we tentatively consumed so a later read sees it, matching
+            // the stream leaving the get-pointer at the offending character.
+            self.pos = start;
+            return 0;
+        }
+        // If the number ran to the end of the buffer, the extraction hit EOF.
+        if self.pos >= self.buf.len() {
+            self.eof = true;
+        }
+        // The slice is ASCII sign+digits; parse into int4 (C++ wraps/saturates
+        // the same input the same way for the small history counts in scope).
+        std::str::from_utf8(&self.buf[start..self.pos])
+            .ok()
+            .and_then(|s| s.parse::<int4>().ok())
+            .unwrap_or(0)
     }
 
     /// The remaining un-consumed bytes as a string (used by commands that read
@@ -444,6 +502,170 @@ fn maxmatch(op1: &str, op2: &str) -> (String, bool) {
 }
 
 // ---------------------------------------------------------------------------
+// IfaceBaseCommand and the "base" module commands (interface.hh:261-298,
+// interface.cc:518-622).
+// ---------------------------------------------------------------------------
+
+/// C++ `IfaceBaseCommand` (`interface.hh:261`): the root of the "base" module
+/// commands — those useful as part of any interface.
+///
+/// In C++ this is an abstract class supplying `getModule()=="base"`,
+/// `createData()==null`, and the `setData` that stashes the owning
+/// `IfaceStatus*`.  The port hands `&mut IfaceStatus` to each
+/// [`IfaceCommandAction::execute`] directly (see the trait docs), so there is
+/// no stored back-pointer; the shared "base" `module()` is provided by the
+/// [`BaseModule`] marker each concrete command embeds, keeping every
+/// `Ifc*::module()` byte-equal to C++ `getModule()` without repetition.
+///
+/// These six commands are registered by the decompiler console
+/// (`ifacedecomp.cc` `IfaceDecompCapability::registerCommands` lines 40-45),
+/// which is ported in `w9-con-ifacedecomp`; they are defined here because they
+/// are part of `interface.cc`, the module this item owns.
+struct BaseModule;
+
+impl BaseModule {
+    /// C++ `IfaceBaseCommand::getModule(void) const { return "base"; }`.
+    #[inline]
+    fn module() -> String {
+        "base".to_string()
+    }
+}
+
+/// C++ `IfcQuit` (`interface.cc:520`): terminate processing from the interface.
+pub struct IfcQuit;
+
+impl IfaceCommandAction for IfcQuit {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        // Generic quit call back
+        if !s.eof() {
+            return Err(IfaceError::parse("Too many parameters to quit"));
+        }
+        status.done = true; // Set flag to drop out of mainloop
+        Ok(())
+    }
+    fn module(&self) -> String {
+        BaseModule::module()
+    }
+}
+
+/// C++ `IfcHistory` (`interface.cc:531`): list the most recent successful
+/// command lines, oldest to newest.
+pub struct IfcHistory;
+
+impl IfaceCommandAction for IfcHistory {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        // List most recent command lines
+        let mut num: int4;
+        let mut historyline = String::new();
+
+        if !s.eof() {
+            num = s.read_int();
+            s.skip_ws();
+            if !s.eof() {
+                return Err(IfaceError::parse("Too many parameters to history"));
+            }
+        } else {
+            num = 10; // Default number of history lines
+        }
+
+        if num > status.history_size() {
+            num = status.history_size();
+        }
+
+        let mut i = num - 1;
+        while i >= 0 {
+            // List oldest to newest
+            status.get_history(&mut historyline, i);
+            status.out(&historyline);
+            status.out("\n");
+            i -= 1;
+        }
+        Ok(())
+    }
+    fn module(&self) -> String {
+        BaseModule::module()
+    }
+}
+
+/// C++ `IfcOpenfile` (`interface.cc:556`): redirect bulk output to a file
+/// (truncating).
+pub struct IfcOpenfile;
+
+impl IfaceCommandAction for IfcOpenfile {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        if status.is_file_open() {
+            return Err(IfaceError::execution("Output file already opened"));
+        }
+        let filename = s.read_token();
+        if filename.is_empty() {
+            return Err(IfaceError::parse("No filename specified"));
+        }
+        status.open_file_redirect(&filename, false);
+        Ok(())
+    }
+    fn module(&self) -> String {
+        BaseModule::module()
+    }
+}
+
+/// C++ `IfcOpenfileAppend` (`interface.cc:578`): redirect bulk output to a
+/// file for appending (`ios_base::app`).
+pub struct IfcOpenfileAppend;
+
+impl IfaceCommandAction for IfcOpenfileAppend {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        if status.is_file_open() {
+            return Err(IfaceError::execution("Output file already opened"));
+        }
+        let filename = s.read_token();
+        if filename.is_empty() {
+            return Err(IfaceError::parse("No filename specified"));
+        }
+        status.open_file_redirect(&filename, true); // Open for appending
+        Ok(())
+    }
+    fn module(&self) -> String {
+        BaseModule::module()
+    }
+}
+
+/// C++ `IfcClosefile` (`interface.cc:602`): close the current bulk-output file,
+/// redirecting subsequent bulk output back to the interface output stream.
+pub struct IfcClosefile;
+
+impl IfaceCommandAction for IfcClosefile {
+    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+        if !status.is_file_open() {
+            return Err(IfaceError::execution("No file open"));
+        }
+        // ((ofstream *)fileoptr)->close(); delete; fileoptr = optr;
+        status.close_file_redirect();
+        Ok(())
+    }
+    fn module(&self) -> String {
+        BaseModule::module()
+    }
+}
+
+/// C++ `IfcEcho` (`interface.cc:614`): echo the rest of the command line to the
+/// bulk-output stream, followed by a newline.
+pub struct IfcEcho;
+
+impl IfaceCommandAction for IfcEcho {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        // Echo command line to fileoptr
+        while let Some(c) = s.get() {
+            status.file_out_byte(c);
+        }
+        status.file_out("\n");
+        Ok(())
+    }
+    fn module(&self) -> String {
+        BaseModule::module()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // LineSource — the per-derivation input behavior (IfaceTerm vs ConsoleCommands).
 // ---------------------------------------------------------------------------
 
@@ -549,6 +771,10 @@ pub struct FileOut {
     pub contents: String,
     /// The filename it is bound to (for the binary to flush on close).
     pub filename: String,
+    /// C++ `ios_base::app`: `openfile append` opens for appending; `openfile`
+    /// truncates.  The binary honors this when it flushes `contents` to
+    /// `filename` on `closefile`.
+    pub append: bool,
 }
 
 impl IfaceStatus {
@@ -638,9 +864,42 @@ impl IfaceStatus {
         }
     }
 
+    /// Append one raw byte to bulk output (`fileoptr->put(c)`), honoring the
+    /// redirect.  ASCII handling mirrors [`out_byte`](IfaceStatus::out_byte):
+    /// the bytes `IfcEcho` puts are the command line's own ASCII text.
+    pub fn file_out_byte(&mut self, b: u8) {
+        let ch = if b < 0x80 { b as char } else { '\u{FFFD}' };
+        match &mut self.fileoptr {
+            Some(f) => f.contents.push(ch),
+            None => self.optr.push(ch),
+        }
+    }
+
     /// Whether bulk output is currently redirected (C++ `optr != fileoptr`).
     pub fn is_file_open(&self) -> bool {
         self.fileoptr.is_some()
+    }
+
+    /// Establish the bulk-output redirect (`openfile`/`openfile append`).
+    ///
+    /// Mirrors the state transition in C++ `IfcOpenfile`/`IfcOpenfileAppend`:
+    /// `fileoptr` becomes a fresh stream distinct from `optr`.  The actual
+    /// filesystem open is the binary's job (it flushes [`FileOut::contents`] to
+    /// [`FileOut::filename`] honoring [`FileOut::append`] on `closefile`),
+    /// exactly as the framework defers script-file reads to the binary in
+    /// [`push_script_lines`](IfaceStatus::push_script_lines).
+    pub fn open_file_redirect(&mut self, filename: &str, append: bool) {
+        self.fileoptr =
+            Some(FileOut { contents: String::new(), filename: filename.to_string(), append });
+    }
+
+    /// Tear down the bulk-output redirect (`closefile`), returning to `optr`.
+    ///
+    /// Mirrors C++ `IfcClosefile`: close the file stream and set
+    /// `fileoptr = optr`.  Returns the captured [`FileOut`] so the binary can
+    /// flush it to disk.
+    pub fn close_file_redirect(&mut self) -> Option<FileOut> {
+        self.fileoptr.take()
     }
 
     /// C++ `registerCom`: register a command under up to five tokens.
@@ -1479,5 +1738,175 @@ mod tests {
         let e = st.resolve("print").unwrap_err();
         assert!(e.is_parse());
         assert_eq!(e.explain, "Incomplete command");
+    }
+
+    // ---- IfaceBaseCommand "base" module commands -----------------------
+
+    fn bare_status() -> IfaceStatus {
+        IfaceStatus::new("> ", dummy_source(), 10)
+    }
+
+    /// All six base commands report module "base" (C++
+    /// `IfaceBaseCommand::getModule`).
+    #[test]
+    fn base_commands_module_is_base() {
+        assert_eq!(IfcQuit.module(), "base");
+        assert_eq!(IfcHistory.module(), "base");
+        assert_eq!(IfcOpenfile.module(), "base");
+        assert_eq!(IfcOpenfileAppend.module(), "base");
+        assert_eq!(IfcClosefile.module(), "base");
+        assert_eq!(IfcEcho.module(), "base");
+    }
+
+    /// `IfcQuit`: with no params sets `done`; with extra params raises a parse
+    /// error (C++ "Too many parameters to quit").
+    #[test]
+    fn ifc_quit_sets_done_and_rejects_params() {
+        let mut st = bare_status();
+        // Stream positioned at end (as expandCom would leave it after "quit").
+        let mut s = CommandStream::new("");
+        s.skip_ws(); // latch eof, as the loop does
+        assert!(IfcQuit.execute(&mut st, &mut s).is_ok());
+        assert!(st.done);
+
+        let mut st = bare_status();
+        let mut s = CommandStream::new(" extra");
+        let e = IfcQuit.execute(&mut st, &mut s).unwrap_err();
+        assert!(e.is_parse());
+        assert_eq!(e.explain, "Too many parameters to quit");
+        assert!(!st.done);
+    }
+
+    /// `IfcHistory`: default lists 10 (capped at history size), oldest-to-newest;
+    /// a numeric arg limits the count; a trailing extra token is a parse error.
+    #[test]
+    fn ifc_history_lists_oldest_to_newest() {
+        let mut st = bare_status();
+        for s in ["one", "two", "three"] {
+            st.save_history(s);
+        }
+        // No arg: defaults to 10, capped to 3, lists oldest->newest.
+        let mut s = CommandStream::new("");
+        s.skip_ws();
+        assert!(IfcHistory.execute(&mut st, &mut s).is_ok());
+        assert_eq!(st.optr, "one\ntwo\nthree\n");
+
+        // Numeric arg limits to the newest N (here 2: two,three).
+        let mut st = bare_status();
+        for s in ["one", "two", "three"] {
+            st.save_history(s);
+        }
+        let mut s = CommandStream::new("2");
+        assert!(IfcHistory.execute(&mut st, &mut s).is_ok());
+        assert_eq!(st.optr, "two\nthree\n");
+    }
+
+    #[test]
+    fn ifc_history_rejects_extra_param() {
+        let mut st = bare_status();
+        st.save_history("x");
+        let mut s = CommandStream::new("2 junk");
+        let e = IfcHistory.execute(&mut st, &mut s).unwrap_err();
+        assert!(e.is_parse());
+        assert_eq!(e.explain, "Too many parameters to history");
+    }
+
+    /// `IfcOpenfile`/`IfcClosefile`: open establishes a (non-append) redirect;
+    /// re-opening while open is an execution error; bulk output goes to the
+    /// redirect; close tears it down; closing with no file open is an error.
+    #[test]
+    fn ifc_openfile_close_redirect_cycle() {
+        let mut st = bare_status();
+        assert!(!st.is_file_open());
+
+        // closefile with nothing open => execution error.
+        let mut s = CommandStream::new("");
+        let e = IfcClosefile.execute(&mut st, &mut s).unwrap_err();
+        assert!(e.is_execution());
+        assert_eq!(e.explain, "No file open");
+
+        // openfile out.txt
+        let mut s = CommandStream::new("out.txt");
+        assert!(IfcOpenfile.execute(&mut st, &mut s).is_ok());
+        assert!(st.is_file_open());
+
+        // Bulk output now lands in the redirect, not optr.
+        st.file_out("captured");
+        assert!(st.optr.is_empty());
+
+        // Re-opening while already open => execution error.
+        let mut s = CommandStream::new("other.txt");
+        let e = IfcOpenfile.execute(&mut st, &mut s).unwrap_err();
+        assert!(e.is_execution());
+        assert_eq!(e.explain, "Output file already opened");
+
+        // closefile flushes the captured FileOut and returns to optr.
+        let mut s = CommandStream::new("");
+        assert!(IfcClosefile.execute(&mut st, &mut s).is_ok());
+        assert!(!st.is_file_open());
+        let fo = st.close_file_redirect();
+        assert!(fo.is_none()); // already closed by the command
+    }
+
+    /// `IfcOpenfile` with no filename token is a parse error.
+    #[test]
+    fn ifc_openfile_no_filename() {
+        let mut st = bare_status();
+        let mut s = CommandStream::new("");
+        let e = IfcOpenfile.execute(&mut st, &mut s).unwrap_err();
+        assert!(e.is_parse());
+        assert_eq!(e.explain, "No filename specified");
+    }
+
+    /// `IfcOpenfileAppend` sets the append flag (C++ `ios_base::app`).
+    #[test]
+    fn ifc_openfile_append_sets_flag() {
+        let mut st = bare_status();
+        let mut s = CommandStream::new("log.txt");
+        assert!(IfcOpenfileAppend.execute(&mut st, &mut s).is_ok());
+        let fo = st.close_file_redirect().expect("redirect open");
+        assert!(fo.append);
+        assert_eq!(fo.filename, "log.txt");
+    }
+
+    /// `IfcEcho` writes the rest of the command line plus a newline to the bulk
+    /// stream (to optr when no file is open), byte for byte including spaces.
+    #[test]
+    fn ifc_echo_writes_rest_plus_newline() {
+        let mut st = bare_status();
+        // expandCom would have consumed "echo"; the stream holds " hello world".
+        let mut s = CommandStream::new(" hello world");
+        assert!(IfcEcho.execute(&mut st, &mut s).is_ok());
+        // get() reads raw bytes with no ws skipping, so the leading space and
+        // the inter-word space are preserved verbatim.
+        assert_eq!(st.optr, " hello world\n");
+
+        // With a redirect open, the echo lands in the file, not optr.
+        let mut st = bare_status();
+        st.open_file_redirect("f.txt", false);
+        let mut s = CommandStream::new(" body");
+        assert!(IfcEcho.execute(&mut st, &mut s).is_ok());
+        assert!(st.optr.is_empty());
+        let fo = st.close_file_redirect().unwrap();
+        assert_eq!(fo.contents, " body\n");
+    }
+
+    /// `CommandStream::read_int` parses a signed decimal, latching eof only when
+    /// the digits run to the buffer end (matching `std::istream >> int`).
+    #[test]
+    fn cmdstream_read_int() {
+        let mut s = CommandStream::new("42");
+        assert_eq!(s.read_int(), 42);
+        assert!(s.eof()); // ran to end
+
+        let mut s = CommandStream::new("  -7 rest");
+        assert_eq!(s.read_int(), -7);
+        assert!(!s.eof()); // more remains
+        assert_eq!(s.read_token(), "rest");
+
+        // No digits: extraction fails, value 0, get-pointer un-advanced past sign.
+        let mut s = CommandStream::new("abc");
+        assert_eq!(s.read_int(), 0);
+        assert_eq!(s.read_token(), "abc");
     }
 }
