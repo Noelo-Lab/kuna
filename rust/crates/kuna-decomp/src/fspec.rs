@@ -1314,6 +1314,20 @@ impl ParamActive {
         &mut self.trial[i as usize]
     }
 
+    /// Get the trial associated with the input Varnode at the given CALL/CALLIND
+    /// input index (C++ inline `ParamActive::getTrialForInputVarnode`,
+    /// `fspec.hh:1749`).
+    ///
+    /// The C++ accounts for the call-address parameter (subtract 1) and, if the
+    /// index occurs \e after the index holding the stack-pointer placeholder,
+    /// subtracts an additional 1:
+    /// `slot -= ((stackplaceholder<0)||(slot<stackplaceholder)) ? 1 : 2;`
+    pub fn get_trial_for_input_varnode(&self, slot: int4) -> &ParamTrial {
+        let slot =
+            slot - if (self.stackplaceholder < 0) || (slot < self.stackplaceholder) { 1 } else { 2 };
+        &self.trial[slot as usize]
+    }
+
     /// Get the (index of the) first trial overlapping the given range (C++
     /// `whichTrial`).
     pub fn which_trial(&self, addr: &Address, sz: int4) -> int4 {
@@ -5662,6 +5676,884 @@ impl FuncProto {
     /// in `setScope`/`setInternal`/`paramShift`).
     pub fn set_store(&mut self, store: Box<dyn ProtoStore>) {
         self.store = Some(store);
+    }
+}
+
+// =============================================================================
+// FuncCallSpecs (fspec.hh:1645-1742, fspec.cc:4854-end) — item w6-s4-fspec-3
+// =============================================================================
+//
+// `FuncCallSpecs` is a prototype that evolves over analysis: it derives off
+// `FuncProto` (modeled here by **composition** over a [`FuncProto`] field —
+// Rust has no inheritance, exactly as `ProtoModelMerged` carries its base by
+// composition) and adds the call-site data-flow state used to recover a working
+// prototype for one CALL/CALLIND.
+//
+// ## Cross-wave seams
+//
+// The C++ method bodies that *mutate* the calling `Funcdata`'s IR
+// (`commitNewInputs`/`commitNewOutputs`, the success path of `deindirect`/
+// `forceSet`, `createPlaceholder`, the `buildParam` truncation builds) reach a
+// large surface of W4 `Funcdata` helpers that are **not yet on the W3
+// `Funcdata`** (`opStackLoad`, `getOverride`, `warningHeader`, `opSetAllInput`,
+// `newVarnodeOut`, `newIndirectCreation`, `opMarkCalculatedBool`, the W6 `glb->
+// inst[opc]` `TypeOp` resolution for `opSetOpcode`).  Those paths are marked
+// `// SEAM(w6-fspec-3 W4)` and return `Err(KunaError::lowlevel(...))`, matching
+// the established `fspec-2` convention (`updateInputTypes`, etc.).
+//
+// The **pure** state machine (the trial lifecycle, `checkInputJoin`/
+// `doInputJoin` over [`ParamActive`], `lateRestriction`'s compatibility gate,
+// and the **restart-recorder** paths of `deindirect`/`forceSet`) is ported
+// faithfully and exercised directly in tests — `resolveSpacebaseRelative` and
+// `getSpacebaseRelative` over a hand-built call site, and the restart paths via
+// a [`RestartLog`].
+
+/// "Magic" stack offset indicating the offset is unknown (C++
+/// `FuncCallSpecs::offset_unknown`, `fspec.hh:1677`).
+pub const OFFSET_UNKNOWN: uintb = 0xBADBEEF;
+
+use crate::funcdata::Funcdata;
+use crate::kuna_restartlog::{KunaRestartReason, RestartLog};
+use crate::seams::{OpId, VarnodeId};
+
+/// A class for analyzing parameters to a sub-function call (C++
+/// `FuncCallSpecs`, `fspec.hh:1645`).
+///
+/// Derives off [`FuncProto`] by composition (the `proto` field); the
+/// `FuncProto` API is reached through [`FuncCallSpecs::proto`] /
+/// [`FuncCallSpecs::proto_mut`] (and the thin forwarders this impl provides for
+/// the methods the call-site logic uses).
+#[derive(Debug)]
+pub struct FuncCallSpecs {
+    /// The `FuncProto` base (C++ inheritance `: public FuncProto`).
+    proto: FuncProto,
+    /// The CALL or CALLIND op in the calling function (C++ `op`,
+    /// a `PcodeOp *`).  Modeled as the W3 [`OpId`].
+    op: OpId,
+    /// Name of the called function if present (C++ `name`).
+    name: String,
+    /// First executing address of the called function (C++ `entryaddress`).
+    entryaddress: Address,
+    /// True if `fd` (the callee `Funcdata`) is known (C++ `fd != 0`).  The
+    /// callee `Funcdata` is a cross-function W4 reference; only its presence is
+    /// tracked here.
+    has_fd: bool,
+    /// Working extrapop for the CALL (C++ `effective_extrapop`).
+    effective_extrapop: int4,
+    /// Relative offset of the stack-pointer at the time of this call (C++
+    /// `stackoffset`).
+    stackoffset: uintb,
+    /// Slot containing the temporary stack-tracing placeholder, or -1 if unused
+    /// (C++ `stackPlaceholderSlot`).
+    stack_placeholder_slot: int4,
+    /// Number of input parameters to ignore before the prototype (C++
+    /// `paramshift`).
+    paramshift: int4,
+    /// Number of calls to this sub-function within the calling function (C++
+    /// `matchCallCount`).
+    match_call_count: int4,
+    /// Info for recovering input parameters (C++ `activeinput`).
+    activeinput: ParamActive,
+    /// Info for recovering output parameters (C++ `activeoutput`).
+    activeoutput: ParamActive,
+    /// Number of bytes consumed by the sub-function, per input parameter (C++
+    /// `inputConsume`).
+    input_consume: Vec<int4>,
+    /// Are we actively trying to recover input parameters (C++ `isinputactive`).
+    isinputactive: bool,
+    /// Are we actively trying to recover output parameters (C++
+    /// `isoutputactive`).
+    isoutputactive: bool,
+    /// Was the call originally a jump-table we couldn't recover (C++
+    /// `isbadjumptable`).
+    isbadjumptable: bool,
+    /// Do we have a locked output on the stack (C++ `isstackoutputlock`).
+    isstackoutputlock: bool,
+}
+
+impl FuncCallSpecs {
+    /// Construct based on a CALL or CALLIND op (C++
+    /// `FuncCallSpecs::FuncCallSpecs(PcodeOp *)`, `fspec.cc:4929`).
+    ///
+    /// The C++ peeks at `call_op->getIn(0)` for a direct CALL to grab the entry
+    /// address; if that input is already an \e fspec annotation (a cloned op for
+    /// inlining) it chases through to the underlying call-spec's entry address.
+    /// That chase needs the call-spec registry (W4 op-clone path) and is
+    /// supplied by the caller via `entry`: pass the callee entry address for a
+    /// direct CALL (or an invalid `Address` for a CALLIND).
+    pub fn new(call_op: OpId, entry: Address) -> FuncCallSpecs {
+        FuncCallSpecs {
+            proto: FuncProto::new(),
+            op: call_op,
+            name: String::new(),
+            entryaddress: entry,
+            has_fd: false,
+            effective_extrapop: EXTRAPOP_UNKNOWN, // ProtoModel::extrapop_unknown
+            stackoffset: OFFSET_UNKNOWN,
+            stack_placeholder_slot: -1,
+            paramshift: 0,
+            match_call_count: 0,
+            activeinput: ParamActive::new(true),
+            activeoutput: ParamActive::new(true),
+            input_consume: Vec::new(),
+            isinputactive: false,
+            isoutputactive: false,
+            isbadjumptable: false,
+            isstackoutputlock: false,
+        }
+    }
+
+    // -- FuncProto base access ----------------------------------------------
+
+    /// The `FuncProto` base (C++ upcast to `FuncProto`).
+    pub fn proto(&self) -> &FuncProto {
+        &self.proto
+    }
+    /// The `FuncProto` base, mutably.
+    pub fn proto_mut(&mut self) -> &mut FuncProto {
+        &mut self.proto
+    }
+
+    // -- simple call-site accessors (fspec.hh:1680-1706) --------------------
+
+    /// Set (override) the callee's entry address (C++ `setAddress`).
+    pub fn set_address(&mut self, addr: Address) {
+        self.entryaddress = addr;
+    }
+    /// Get the CALL or CALLIND corresponding to this (C++ `getOp`).
+    pub fn get_op(&self) -> OpId {
+        self.op
+    }
+    /// Is the callee `Funcdata` known (C++ `getFuncdata() != 0`).
+    pub fn has_funcdata(&self) -> bool {
+        self.has_fd
+    }
+    /// Record (the presence of) the callee `Funcdata` (C++ `setFuncdata`).
+    ///
+    /// The C++ pulls the entry address and display name off `fd`; the callee
+    /// `Funcdata` is a W4 cross-function reference, so the caller passes the
+    /// already-extracted `entry`/`name` (mirroring `fd->getAddress()` /
+    /// `fd->getDisplayName()`).  Errs if a callee was already set (C++
+    /// `throw LowlevelError("Setting call spec function multiple times")`).
+    pub fn set_funcdata(&mut self, entry: Address, name: &str) -> KunaResult<()> {
+        if self.has_fd {
+            return Err(KunaError::lowlevel("Setting call spec function multiple times"));
+        }
+        self.has_fd = true;
+        self.entryaddress = entry;
+        if !name.is_empty() {
+            self.name = name.to_string();
+        }
+        Ok(())
+    }
+    /// Get the function name associated with the callee (C++ `getName`).
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
+    /// Get the entry address of the callee (C++ `getEntryAddress`).
+    pub fn get_entry_address(&self) -> &Address {
+        &self.entryaddress
+    }
+    /// Set the specific extrapop for this call site (C++ `setEffectiveExtraPop`).
+    pub fn set_effective_extra_pop(&mut self, epop: int4) {
+        self.effective_extrapop = epop;
+    }
+    /// Get the specific extrapop for this call site (C++ `getEffectiveExtraPop`).
+    pub fn get_effective_extra_pop(&self) -> int4 {
+        self.effective_extrapop
+    }
+    /// Get the stack-pointer relative offset at this call site (C++
+    /// `getSpacebaseOffset`).
+    pub fn get_spacebase_offset(&self) -> uintb {
+        self.stackoffset
+    }
+    /// Set a parameter shift for this call site (C++ `setParamshift`).
+    pub fn set_paramshift(&mut self, val: int4) {
+        self.paramshift = val;
+    }
+    /// Get the parameter shift for this call site (C++ `getParamshift`).
+    pub fn get_paramshift(&self) -> int4 {
+        self.paramshift
+    }
+    /// Get the number of calls the caller makes to this sub-function (C++
+    /// `getMatchCallCount`).
+    pub fn get_match_call_count(&self) -> int4 {
+        self.match_call_count
+    }
+    /// Get the slot of the stack-pointer placeholder (C++
+    /// `getStackPlaceholderSlot`).
+    pub fn get_stack_placeholder_slot(&self) -> int4 {
+        self.stack_placeholder_slot
+    }
+
+    /// Set the slot of the stack-pointer placeholder (C++ inline
+    /// `setStackPlaceholderSlot`, `fspec.hh:1671`).
+    ///
+    /// Its only C++ callers — `createPlaceholder` and `commitNewInputs` — reach
+    /// W4 `Funcdata` factories (`opStackLoad`/`opSetAllInput`) that are not yet
+    /// on the W3 `Funcdata`, so both are seamed (`// SEAM(w6-fspec-3 W4)`); the
+    /// bookkeeping itself is transcribed and lands here.
+    #[allow(dead_code)] // exercised once createPlaceholder/commitNewInputs de-seam (W4)
+    fn set_stack_placeholder_slot(&mut self, slot: int4) {
+        self.stack_placeholder_slot = slot;
+        if self.isinputactive {
+            self.activeinput.set_placeholder_slot();
+        }
+    }
+    /// Release the stack-pointer placeholder (C++ inline
+    /// `clearStackPlaceholderSlot`, `fspec.hh:1673`).
+    fn clear_stack_placeholder_slot(&mut self) {
+        self.stack_placeholder_slot = -1;
+        if self.isinputactive {
+            self.activeinput.free_placeholder_slot();
+        }
+    }
+
+    // -- input/output recovery activation (fspec.hh:1695-1706) --------------
+
+    /// Turn on analysis recovering input parameters (C++ `initActiveInput`,
+    /// `fspec.cc:5336`).
+    pub fn init_active_input(&mut self) {
+        self.isinputactive = true;
+        let mut maxdelay = self.proto.get_max_input_delay();
+        if maxdelay > 0 {
+            maxdelay = 3;
+        }
+        self.activeinput.set_max_pass(maxdelay);
+    }
+    /// Turn off analysis recovering input parameters (C++ `clearActiveInput`).
+    pub fn clear_active_input(&mut self) {
+        self.isinputactive = false;
+    }
+    /// Turn on analysis recovering the return value (C++ `initActiveOutput`).
+    pub fn init_active_output(&mut self) {
+        self.isoutputactive = true;
+    }
+    /// Turn off analysis recovering the return value (C++ `clearActiveOutput`).
+    pub fn clear_active_output(&mut self) {
+        self.isoutputactive = false;
+    }
+    /// True if input parameter recovery analysis is active (C++ `isInputActive`).
+    pub fn is_input_active(&self) -> bool {
+        self.isinputactive
+    }
+    /// True if return value recovery analysis is active (C++ `isOutputActive`).
+    pub fn is_output_active(&self) -> bool {
+        self.isoutputactive
+    }
+    /// Toggle whether the call site looked like an indirect jump (C++
+    /// `setBadJumpTable`).
+    pub fn set_bad_jump_table(&mut self, val: bool) {
+        self.isbadjumptable = val;
+    }
+    /// True if this call site looked like an indirect jump (C++
+    /// `isBadJumpTable`).
+    pub fn is_bad_jump_table(&self) -> bool {
+        self.isbadjumptable
+    }
+    /// Toggle whether output is locked and on the stack (C++ `setStackOutputLock`).
+    pub fn set_stack_output_lock(&mut self, val: bool) {
+        self.isstackoutputlock = val;
+    }
+    /// True if the return value is locked and on the stack (C++ `isStackOutputLock`).
+    pub fn is_stack_output_lock(&self) -> bool {
+        self.isstackoutputlock
+    }
+    /// The analysis object for input parameter recovery (C++ `getActiveInput`).
+    pub fn get_active_input(&mut self) -> &mut ParamActive {
+        &mut self.activeinput
+    }
+    /// The analysis object for return value recovery (C++ `getActiveOutput`).
+    pub fn get_active_output(&mut self) -> &mut ParamActive {
+        &mut self.activeoutput
+    }
+
+    // -- input-bytes-consumed hints (fspec.cc:5877-5906) --------------------
+
+    /// Number of bytes within the given parameter consumed by the sub-function
+    /// (C++ `FuncCallSpecs::getInputBytesConsumed`, `fspec.cc:5877`).
+    pub fn get_input_bytes_consumed(&self, slot: int4) -> int4 {
+        // C++: if (slot >= inputConsume.size()) return 0;
+        if slot >= self.input_consume.len() as i32 {
+            return 0;
+        }
+        self.input_consume[slot as usize]
+    }
+
+    /// Set the estimated number of bytes within the given parameter consumed by
+    /// the sub-function (C++ `FuncCallSpecs::setInputBytesConsumed`,
+    /// `fspec.cc:5894`).  Only lets the value get smaller; returns `true` on a
+    /// change.  (The C++ marks the method `const` and mutates a `mutable`
+    /// field; here the method is `&mut self`.)
+    pub fn set_input_bytes_consumed(&mut self, slot: int4, val: int4) -> bool {
+        // C++: while (inputConsume.size() <= slot) inputConsume.push_back(0);
+        while (self.input_consume.len() as i32) <= slot {
+            self.input_consume.push(0);
+        }
+        let old_val = self.input_consume[slot as usize];
+        if old_val == 0 || val < old_val {
+            // Only let the value get smaller
+            self.input_consume[slot as usize] = val;
+            return true;
+        }
+        false
+    }
+
+    // -- input join (fspec.cc:5354-5400) ------------------------------------
+
+    /// Check if adjacent parameter trials can be combined into a single logical
+    /// parameter (C++ `FuncCallSpecs::checkInputJoin`, `fspec.cc:5354`).
+    ///
+    /// `vn1_size`/`vn2_size` are the sizes of the Varnodes corresponding to the
+    /// first and second trial (C++ `vn1->getSize()` / `vn2->getSize()`).
+    pub fn check_input_join(
+        &self,
+        slot1: int4,
+        ishislot: bool,
+        vn1_size: int4,
+        vn2_size: int4,
+    ) -> bool {
+        if self.is_input_active() {
+            return false;
+        }
+        if slot1 >= self.activeinput.get_num_trials() {
+            return false; // Not enough params
+        }
+        let hislot: &ParamTrial;
+        let loslot: &ParamTrial;
+        if ishislot {
+            // slot1 looks like the high slot
+            hislot = self.activeinput.get_trial_for_input_varnode(slot1);
+            loslot = self.activeinput.get_trial_for_input_varnode(slot1 + 1);
+            if hislot.get_size() != vn1_size {
+                return false;
+            }
+            if loslot.get_size() != vn2_size {
+                return false;
+            }
+        } else {
+            loslot = self.activeinput.get_trial_for_input_varnode(slot1);
+            hislot = self.activeinput.get_trial_for_input_varnode(slot1 + 1);
+            if loslot.get_size() != vn1_size {
+                return false;
+            }
+            if hislot.get_size() != vn2_size {
+                return false;
+            }
+        }
+        self.proto.check_input_join(
+            hislot.get_address(),
+            hislot.get_size(),
+            loslot.get_address(),
+            loslot.get_size(),
+        )
+    }
+
+    /// Join two adjacent parameter trials (C++ `FuncCallSpecs::doInputJoin`,
+    /// `fspec.cc:5381`).
+    ///
+    /// Assumes `check_input_join` returned `true`.  The C++ reaches
+    /// `glb->constructJoinAddress(glb->translate, ...)`; the kuna `ProtoModel`
+    /// does not hold the owning `Architecture`, so the caller supplies the same
+    /// two values — the [`AddrSpaceManager`] (`glb`) and the register lookup
+    /// (`glb->translate`) — explicitly.  Errs on a locked prototype (C++
+    /// `throw LowlevelError`).
+    pub fn do_input_join(
+        &mut self,
+        slot1: int4,
+        ishislot: bool,
+        manager: &AddrSpaceManager,
+        translate: &dyn kuna_base::space::RegisterLookup,
+    ) -> KunaResult<()> {
+        if self.proto.is_input_locked() {
+            return Err(KunaError::lowlevel(
+                "Trying to join parameters on locked function prototype",
+            ));
+        }
+
+        let trial1 = self.activeinput.get_trial_for_input_varnode(slot1).clone();
+        let trial2 = self.activeinput.get_trial_for_input_varnode(slot1 + 1).clone();
+
+        let addr1 = trial1.get_address().clone();
+        let addr2 = trial2.get_address().clone();
+        let joinaddr = if ishislot {
+            manager.construct_join_address(
+                translate,
+                &addr1,
+                trial1.get_size(),
+                &addr2,
+                trial2.get_size(),
+            )?
+        } else {
+            manager.construct_join_address(
+                translate,
+                &addr2,
+                trial2.get_size(),
+                &addr1,
+                trial1.get_size(),
+            )?
+        };
+
+        self.activeinput.join_trial(slot1, &joinaddr, trial1.get_size() + trial2.get_size())
+    }
+
+    // -- prototype restriction / de-indirection (fspec.cc:5413-5516) --------
+
+    /// Update this prototype to match a more specialized (locked) prototype
+    /// (C++ `FuncCallSpecs::lateRestriction`, `fspec.cc:5413`).
+    ///
+    /// On success `this` is converted to `restricted_proto` and the new input /
+    /// output Varnode lists are passed back.  When `restricted_proto` is
+    /// input/output locked the transfer of the existing Varnodes reaches the W3
+    /// CALL operands; that transfer (`transferLockedInput`/`Output`) is the
+    /// `// SEAM(w6-fspec-3 W4)` path below.  The unlocked compatibility gate
+    /// (`hasModel`/`isCompatible`/dotdotdot) is ported in full.
+    pub fn late_restriction(
+        &mut self,
+        data: &Funcdata,
+        restricted_proto: &FuncProto,
+        newinput: &mut Vec<Option<VarnodeId>>,
+        newoutput: &mut Vec<VarnodeId>,
+    ) -> KunaResult<bool> {
+        if !self.proto.has_model() {
+            self.proto.copy(restricted_proto);
+            return Ok(true);
+        }
+
+        if !self.proto.is_compatible(restricted_proto) {
+            return Ok(false);
+        }
+        if restricted_proto.is_dotdotdot() && !self.isinputactive {
+            return Ok(false);
+        }
+
+        if restricted_proto.is_input_locked() {
+            // Redo all the varnode inputs (if possible)
+            if !self.transfer_locked_input(data, newinput, restricted_proto)? {
+                return Ok(false);
+            }
+        }
+        if restricted_proto.is_output_locked() {
+            // Redo all the varnode outputs (if possible)
+            if !self.transfer_locked_output(newoutput, restricted_proto)? {
+                return Ok(false);
+            }
+        }
+        self.proto.copy(restricted_proto); // Convert ourselves to restrictedProto
+
+        Ok(true)
+    }
+
+    /// Convert this call site from an indirect to a direct function call (C++
+    /// `FuncCallSpecs::deindirect`, `fspec.cc:5448`).
+    ///
+    /// `newfd_entry`/`newfd_name`/`newproto` mirror the callee `Funcdata`'s
+    /// `getAddress()`/`getDisplayName()`/`getFuncProto()` (a cross-function W4
+    /// reference).  The state mutation on `data` (the CALL op becomes a direct
+    /// `CPUI_CALL` annotated with the call-spec handle, the override store
+    /// gets an indirect override) reaches W4 `Funcdata` surfaces and is the
+    /// `// SEAM(w6-fspec-3 W4)` path.  The **decision** — whether
+    /// `lateRestriction` succeeds, and the restart-recorder call when it does
+    /// not — is ported in full and observable through `restartlog`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn deindirect(
+        &mut self,
+        data: &mut Funcdata,
+        newfd_entry: Address,
+        newfd_name: &str,
+        newproto: &FuncProto,
+        newproto_no_return: bool,
+        newproto_inline: bool,
+        restartlog: &mut RestartLog,
+    ) -> KunaResult<()> {
+        self.entryaddress = newfd_entry;
+        self.name = newfd_name.to_string();
+        self.has_fd = true;
+
+        // data.newVarnodeCallSpecs(this); data.opSetInput(op,vn,0);
+        // data.opSetOpcode(op,CPUI_CALL); data.getOverride().insertIndirectOverride(...)
+        // — W4 IR mutation + override store; the call-spec handle would be
+        // registered into the FspecSpace registry here.
+        // SEAM(w6-fspec-3 W4): the IR rewrite is deferred; the restart decision
+        // below is the observable behavior this item carries.
+
+        // Try our best to merge existing prototype with the one just handed.
+        let mut newinput: Vec<Option<VarnodeId>> = Vec::new();
+        let mut newoutput: Vec<VarnodeId> = Vec::new();
+        if !newproto_no_return && !newproto_inline {
+            if self.proto.is_override() {
+                // If we are overridden at the call-site, don't use the
+                // discovered function prototype.
+                return Ok(());
+            }
+
+            if self.late_restriction(data, newproto, &mut newinput, &mut newoutput)? {
+                // commitNewInputs(data,newinput); commitNewOutputs(data,newoutput);
+                // SEAM(w6-fspec-3 W4): commit reaches opSetAllInput/newVarnodeOut.
+                return Ok(());
+            }
+        }
+        data.set_restart_pending(true);
+        // (kuna) restart observability
+        let site = self.op_addr(data);
+        restartlog.record_at(data, KunaRestartReason::ProtoDeindirect, &site);
+        Ok(())
+    }
+
+    /// Force a more restrictive prototype on this call site (C++
+    /// `FuncCallSpecs::forceSet`, `fspec.cc:5491`).
+    ///
+    /// The C++ records the recovered prototype into the override manager
+    /// (`insertProtoOverride`), tries `lateRestriction`, commits or schedules a
+    /// restart, then locks the input.  The override insertion and the
+    /// success-commit are W4 `Funcdata` surfaces (`// SEAM(w6-fspec-3 W4)`); the
+    /// restart-recorder branch and the input-lock bookkeeping are ported in full.
+    pub fn force_set(
+        &mut self,
+        data: &mut Funcdata,
+        fp: &FuncProto,
+        restartlog: &mut RestartLog,
+    ) -> KunaResult<()> {
+        let mut newinput: Vec<Option<VarnodeId>> = Vec::new();
+        let mut newoutput: Vec<VarnodeId> = Vec::new();
+
+        // data.getOverride().insertProtoOverride(op->getAddr(), copy(fp));
+        // SEAM(w6-fspec-3 W4): the override store is a W4 Funcdata surface.
+
+        if self.late_restriction(data, fp, &mut newinput, &mut newoutput)? {
+            // commitNewInputs/commitNewOutputs — SEAM(w6-fspec-3 W4)
+        } else {
+            // Too late to make restrictions to correct prototype: force a restart.
+            data.set_restart_pending(true);
+            // (kuna) restart observability
+            let site = self.op_addr(data);
+            restartlog.record_at(data, KunaRestartReason::ProtoForced, &site);
+        }
+        // Regardless of what happened, lock the prototype so it doesn't happen again.
+        self.proto.set_input_lock(true);
+        self.proto.set_input_errors(fp.has_input_errors());
+        self.proto.set_output_errors(fp.has_output_errors());
+        Ok(())
+    }
+
+    /// The address of this call site's CALL op (C++ `op->getAddr()`).
+    fn op_addr(&self, data: &Funcdata) -> Address {
+        data.obank()
+            .get(self.op)
+            .expect("FuncCallSpecs::op_addr: stale call op")
+            .get_addr()
+            .clone()
+    }
+
+    // -- FspecSpace registry wiring (fspec.cc:2155-2169) --------------------
+
+    /// Resolve the display name this call spec prints inside the \e fspec space
+    /// (C++ `FspecSpace::printRaw` name/`func_`/`sub_` branch, `fspec.cc:2160`).
+    ///
+    /// `angr_naming` is the result of the kuna `kunaAngrNaming(glb)` check (the
+    /// `Architecture::name_style_angr` flag); the `Architecture` is visible at
+    /// the call site that drives the annotation, so the policy is decided here
+    /// (kuna-base, which holds the `FspecSpace` arms, cannot see it).
+    pub fn fspec_printed_name(&self, angr_naming: bool) -> String {
+        if !self.name.is_empty() {
+            // s << fc->getName();
+            return self.name.clone();
+        }
+        if angr_naming {
+            // (kuna) angr-style: sub_<addr>
+            return crate::database::kuna_function_name(&self.entryaddress);
+        }
+        // s << "func_"; fc->getEntryAddress().printRaw(s);
+        let mut s = String::from("func_");
+        // printRaw on a real (processor) entry address cannot fail; on the
+        // (unreachable) error path leave the prefix only.
+        let _ = self.entryaddress.print_raw(&mut s);
+        s
+    }
+
+    /// Register this call spec's printed name + entry address under the given
+    /// \e fspec handle so `FspecSpace::printRaw`/`encodeAttributes` can recover
+    /// them (the faithful equivalent of the C++ `(FuncCallSpecs *)offset` cast;
+    /// `handle` is the offset of the \e fspec address, the same value
+    /// `Funcdata::newVarnodeCallSpecs` takes).
+    pub fn register_in_fspec_space(&self, handle: uintb, angr_naming: bool) {
+        kuna_base::space::fspec_register(
+            handle,
+            kuna_base::space::FspecCallInfo {
+                printed_name: self.fspec_printed_name(angr_naming),
+                entry: self.entryaddress.clone(),
+            },
+        );
+    }
+
+    // -- spacebase placeholder (fspec.cc:4854-4997) -------------------------
+
+    /// Insert a stack-pointer placeholder into the CALL input (C++
+    /// `FuncCallSpecs::createPlaceholder`, `fspec.cc:4854`).
+    ///
+    /// The C++ builds a LOAD-from-stack Varnode (`data.opStackLoad`), inserts it
+    /// as the last CALL input, records the slot via `setStackPlaceholderSlot`,
+    /// and marks it as a spacebase placeholder.  `opStackLoad` is a W4
+    /// `Funcdata` surface not yet on the W3 `Funcdata`, so the build is the
+    /// `// SEAM(w6-fspec-3 W4)` step; the slot/insert/mark bookkeeping (the part
+    /// that uses [`FuncCallSpecs::set_stack_placeholder_slot`]) is transcribed.
+    pub fn create_placeholder(
+        &mut self,
+        data: &mut Funcdata,
+        _spacebase: &Rc<AddrSpace>,
+    ) -> KunaResult<()> {
+        let slot = data
+            .obank()
+            .get(self.op)
+            .expect("createPlaceholder: stale call op")
+            .num_input();
+        // Varnode *loadval = data.opStackLoad(spacebase,0,1,op,0,false);
+        // SEAM(w6-fspec-3 W4): opStackLoad is a W4 Funcdata factory.
+        let _ = slot;
+        Err(KunaError::lowlevel(
+            "SEAM(w6-fspec-3 W4) FuncCallSpecs::createPlaceholder needs Funcdata::opStackLoad",
+        ))
+    }
+
+    /// Find the active stack-pointer Varnode at this call site by examining the
+    /// placeholder slot (C++ `FuncCallSpecs::getSpacebaseRelative`,
+    /// `fspec.cc:4987`).
+    ///
+    /// Returns the LOAD's pointer input (the spacebase reference) or `None`.
+    pub fn get_spacebase_relative(&self, data: &Funcdata) -> Option<VarnodeId> {
+        if self.stack_placeholder_slot < 0 {
+            return None;
+        }
+        let callop = data.obank().get(self.op)?;
+        let tmpvn_id = callop.get_in(self.stack_placeholder_slot)?;
+        let tmpvn = data.vbank().get(tmpvn_id)?;
+        if !tmpvn.is_spacebase_placeholder() {
+            return None;
+        }
+        if !tmpvn.is_written() {
+            return None;
+        }
+        let loadop_id = tmpvn.get_def()?;
+        let loadop = data.obank().get(loadop_id)?;
+        if loadop.code() != OpCode::CPUI_LOAD {
+            return None;
+        }
+        loadop.get_in(1) // The load input (ptr) is the reference we want
+    }
+
+    /// Calculate the relative stack offset of this call site from the
+    /// placeholder Varnode (C++ `FuncCallSpecs::resolveSpacebaseRelative`,
+    /// `fspec.cc:4875`).
+    ///
+    /// `phvn` is the Varnode in the placeholder slot.  The `data.warningHeader`
+    /// emission on a non-spacebase reference is a W4 `Funcdata` surface and is
+    /// noted but not emitted here (`// SEAM(w6-fspec-3 W4)`); the offset
+    /// arithmetic, the placeholder-abort short circuit, and the input-locked
+    /// branch are ported in full.
+    pub fn resolve_spacebase_relative(
+        &mut self,
+        data: &mut Funcdata,
+        phvn: VarnodeId,
+    ) -> KunaResult<()> {
+        let refvn_id = {
+            let phv = data.vbank().get(phvn).expect("resolveSpacebaseRelative: stale phvn");
+            let def = phv.get_def().expect("resolveSpacebaseRelative: phvn not written");
+            data.obank()
+                .get(def)
+                .expect("resolveSpacebaseRelative: stale def op")
+                .get_in(0)
+                .expect("resolveSpacebaseRelative: def has no input 0")
+        };
+        let refvn = data.vbank().get(refvn_id).expect("resolveSpacebaseRelative: stale refvn");
+        let spacebase = Rc::clone(refvn.get_space());
+        // if (spacebase->getType() != IPTR_SPACEBASE)
+        //   data.warningHeader("This function may have set the stack pointer");
+        // SEAM(w6-fspec-3 W4): warningHeader is a W4 Funcdata surface.
+        self.stackoffset = refvn.get_offset();
+
+        if self.stack_placeholder_slot >= 0 {
+            let in_at_slot = data
+                .obank()
+                .get(self.op)
+                .expect("resolveSpacebaseRelative: stale call op")
+                .get_in(self.stack_placeholder_slot);
+            if in_at_slot == Some(phvn) {
+                self.abort_spacebase_relative(data);
+                return Ok(());
+            }
+        }
+
+        if self.proto.is_input_locked() {
+            // The prototype is locked and had stack parameters; grab the
+            // relative offset from this rather than from a placeholder.
+            let slot = data
+                .obank()
+                .get(self.op)
+                .expect("resolveSpacebaseRelative: stale call op")
+                .get_slot(phvn)
+                - 1;
+            if slot >= self.proto.num_params() {
+                return Err(KunaError::lowlevel(
+                    "Stack placeholder does not line up with locked parameter",
+                ));
+            }
+            let param = self
+                .proto
+                .get_param(slot)
+                .expect("resolveSpacebaseRelative: locked param missing");
+            let addr = param.get_address().clone();
+            // C++: if (addr.getSpace() != spacebase) { if (spacebase->getType()
+            // == IPTR_SPACEBASE) throw ...; }  (collapsed to one guard).
+            if addr.get_space().map(Rc::as_ptr) != Some(Rc::as_ptr(&spacebase))
+                && spacebase.get_type() == spacetype::IPTR_SPACEBASE
+            {
+                return Err(KunaError::lowlevel(
+                    "Stack placeholder does not match locked space",
+                ));
+            }
+            // stackoffset -= addr.getOffset(); stackoffset = wrapOffset(stackoffset);
+            self.stackoffset = self.stackoffset.wsub(addr.get_offset());
+            self.stackoffset = spacebase.wrap_offset(self.stackoffset);
+            return Ok(());
+        }
+        Err(KunaError::lowlevel("Unresolved stack placeholder"))
+    }
+
+    /// Abort the attempt to recover the relative stack offset (C++
+    /// `FuncCallSpecs::abortSpacebaseRelative`, `fspec.cc:4915`).
+    ///
+    /// Removes any stack-pointer placeholder input, and the op producing it if
+    /// it is a dead internal write.
+    pub fn abort_spacebase_relative(&mut self, data: &mut Funcdata) {
+        if self.stack_placeholder_slot >= 0 {
+            let slot = self.stack_placeholder_slot;
+            let vn = data
+                .obank()
+                .get(self.op)
+                .expect("abortSpacebaseRelative: stale call op")
+                .get_in(slot);
+            data.op_remove_input(self.op, slot);
+            self.clear_stack_placeholder_slot();
+            // Remove the op producing the placeholder as well, if it is a dead
+            // internal write.
+            if let Some(vn_id) = vn {
+                let (no_descend, internal, written, def) = {
+                    let v = data.vbank().get(vn_id).expect("abortSpacebaseRelative: stale vn");
+                    (
+                        v.has_no_descend(),
+                        v.get_space().get_type() == spacetype::IPTR_INTERNAL,
+                        v.is_written(),
+                        v.get_def(),
+                    )
+                };
+                if no_descend && internal && written {
+                    if let Some(def_op) = def {
+                        data.op_destroy(def_op);
+                    }
+                }
+            }
+        }
+    }
+
+    // -- locked-parameter transfer helpers (fspec.cc:5043-5144) -------------
+
+    /// Get the index of the CALL input Varnode matching `param`, or the encoded
+    /// slot (C++ `FuncCallSpecs::transferLockedInputParam`, `fspec.cc:5043`).
+    ///
+    /// Returns `0` if the Varnode can't be built, `slot#` (>0) to reuse an
+    /// input, or `-1` to build from the stack.
+    fn transfer_locked_input_param(&self, param: &dyn ProtoParameter) -> int4 {
+        let numtrials = self.activeinput.get_num_trials();
+        let startaddr = param.get_address().clone();
+        let sz = param.get_size();
+        let lastaddr = &startaddr + ((sz - 1) as i64);
+        for i in 0..numtrials {
+            let curtrial = self.activeinput.get_trial(i);
+            if startaddr < *curtrial.get_address() {
+                continue;
+            }
+            let trialend = curtrial.get_address() + ((curtrial.get_size() - 1) as i64);
+            if trialend < lastaddr {
+                continue;
+            }
+            if curtrial.is_definitely_not_used() {
+                return 0; // Trial has already been stripped
+            }
+            return curtrial.get_slot();
+        }
+        if startaddr.get_space().map(|s| s.get_type()) == Some(spacetype::IPTR_SPACEBASE) {
+            return -1;
+        }
+        0
+    }
+
+    /// List and/or create a Varnode for each input parameter matching a source
+    /// prototype (C++ `FuncCallSpecs::transferLockedInput`, `fspec.cc:5105`).
+    ///
+    /// `None` entries in `newinput` indicate stack parameters.  The op-input
+    /// reuse path reads the CALL operands (the W3 op, via `data`); the stack
+    /// path needs a spacebase placeholder.  Returns `false` only if a stack
+    /// variable is needed and there is no placeholder.
+    fn transfer_locked_input(
+        &self,
+        data: &Funcdata,
+        newinput: &mut Vec<Option<VarnodeId>>,
+        source: &FuncProto,
+    ) -> KunaResult<bool> {
+        // Always keep the call destination address (op->getIn(0)).
+        let in0 = data
+            .obank()
+            .get(self.op)
+            .expect("transferLockedInput: stale call op")
+            .get_in(0);
+        newinput.push(in0);
+        let numparams = source.num_params();
+        let mut stackref: Option<VarnodeId> = None;
+        let mut stackref_resolved = false;
+        for i in 0..numparams {
+            let param = source.get_param(i).expect("transferLockedInput: source param missing");
+            let reuse = self.transfer_locked_input_param(param);
+            if reuse == 0 {
+                return Ok(false);
+            }
+            if reuse > 0 {
+                let vn = data
+                    .obank()
+                    .get(self.op)
+                    .expect("transferLockedInput: stale call op")
+                    .get_in(reuse);
+                newinput.push(vn);
+            } else {
+                if !stackref_resolved {
+                    stackref = self.get_spacebase_relative(data);
+                    stackref_resolved = true;
+                }
+                if stackref.is_none() {
+                    return Ok(false);
+                }
+                newinput.push(None);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Pass back the Varnode(s) matching the source prototype's return value
+    /// (C++ `FuncCallSpecs::transferLockedOutput`, `fspec.cc:5135`).
+    fn transfer_locked_output(
+        &self,
+        newoutput: &mut Vec<VarnodeId>,
+        source: &FuncProto,
+    ) -> KunaResult<bool> {
+        let param = source.get_output();
+        if param.get_type().map(|t| t.get_metatype()) == Some(type_metatype::TYPE_VOID) {
+            return Ok(true);
+        }
+        // transferLockedOutputParam(param, newoutput): reads the CALL/INDIRECT
+        // outputs (W3).  SEAM(w6-fspec-3 W4).
+        let _ = newoutput;
+        Err(KunaError::lowlevel(
+            "SEAM(w6-fspec-3 W4) FuncCallSpecs::transferLockedOutput needs the calling Funcdata CALL outputs",
+        ))
     }
 }
 
