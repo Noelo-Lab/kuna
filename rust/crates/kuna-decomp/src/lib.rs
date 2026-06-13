@@ -81,6 +81,7 @@ pub mod kuna_stackalias;
 pub mod kuna_arraystride;
 pub mod kuna_condexeplace;
 pub mod fspec;
+pub mod varmap;
 pub mod modelrules;
 pub mod typeop;
 pub mod unionresolve;
