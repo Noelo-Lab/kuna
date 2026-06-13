@@ -82,3 +82,24 @@ _(none yet)_
 | w3-ir-flow | fleet(opus) | independent(opus) | FlowInfo vs lift fixtures | ACCEPT-WITH-LOSSES |  |
 | w3-ir-jumptable | fleet(opus) | independent(opus) | PathMeld/guard graphs | ACCEPT-WITH-LOSSES |  |
 | w3-kuna-flow-pack | fleet(opus) | independent(opus) | five hook logic tests | ACCEPT |  |
+
+## W6 (2026-06-13)
+
+| item | porter | verifier | gate | verdict |
+|---|---|---|---|---|
+| w6-s4-fspec-1 | fleet(opus) | independent | ParamEntry/ParamList | ACCEPT |
+| w6-s4-fspec-2 | fleet(opus) | independent | ProtoModel/FuncProto, 51 tests | ACCEPT-WL |
+| w6-s4-fspec-3 | fleet(opus) | independent | FuncCallSpecs, 14 tests | ACCEPT-WL |
+| w6-s4-modelrules | fleet(opus) | independent | cspec modelrule decode | ACCEPT-WL |
+| w6-s5-type-1 | fleet(opus) | independent | Datatype total orders | ACCEPT |
+| w6-s5-type-2 | fleet(opus) | independent | struct/union/enum | ACCEPT-WL |
+| w6-s5-type-3 | fleet(opus) | independent | TypeFactory findAdd | ACCEPT-WL |
+| w6-s5-typeop | fleet(opus) | independent | per-opcode inst table | ACCEPT |
+| w6-s5-unionresolve | fleet(opus) | independent | ScoreUnionFields | ACCEPT-WL |
+| w6-s5-rangeutil | fleet(opus) | independent | CircleRange/ValueSet | ACCEPT-WL |
+| w6-s5-double | fleet(opus) | independent | double-precision rules | ACCEPT-WL |
+| w6-s5-bitfield | fleet(opus) | independent | bitfield place/recover | ACCEPT-WL |
+| w6-s5-constseq-prefersplit | fleet(opus) | independent | StringSequence base | ACCEPT-WL |
+| w6-s4-coreaction-protos | fleet(opus) | independent | S4 proto actions | ACCEPT-WL |
+| w6-kuna-s4s5-pack | fleet(opus) | independent | returnpair/memset/compareform | ACCEPT |
+| w6-harness-unittests | fleet(opus) | independent | testcirclerange 117 + names | ACCEPT-WL |

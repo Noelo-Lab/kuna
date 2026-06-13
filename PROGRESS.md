@@ -1,5 +1,27 @@
 # kuna Progress Log
 
+## Session (2026-06-13) — rust-port W6: type system + parameter recovery (M1 name-parity)
+
+All 16 W6 items verified (5 landed pre-limit, 11 relaunched on restored Opus credits
+after a weekly-limit interruption — zero work lost, failed roots just re-ran with
+deps already merged). Delivered: the full fspec chain (ParamEntry/ParamList ->
+ProtoModel/FuncProto -> FuncCallSpecs), the Datatype type system (base total orders
+-> struct/union/enum -> TypeFactory structural-identity tree), the canonical
+per-opcode typeop inst table (replacing every per-wave local seam resolver),
+modelrules, unionresolve, rangeutil (CircleRange + ValueSetSolver), double-precision,
+bitfield, constseq, the S4 prototype actions, the kuna returnpair/memset/compareform
+pack, and the unit-test harness. LOSS-050 restored (type-1).
+
+**M1 status (honest): name-parity 204/207** (the 3 testkunaregion tests land with the
+W7 kuna_regionid port). **Body-parity 174/207**: ~35 unit-test bodies are #[ignore]d
+stubs blocked on W7 (HighVariable/merge/Funcdata-high-types) + still-seamed FuncProto
+trials (LOSS-094). M1 is therefore a W6+W7 milestone; the W7 M1-gate must un-ignore
+all stubs + port testkunaregion + assert port_audit 207/207 with zero ignores.
+
+Gate: workspace 2,384 tests, 0 failures, 35 ignored; clippy clean; oracle untouched.
+Cumulative: 109/200 items. Losses through LOSS-094. Next: W7 (S6/S7 + M1 closure).
+
+
 ## Session (2026-06-12) — rust-port W5: the rules mountain + SSA + B2 structural parity
 
 All 16 W5 items verified (15 wave + closure pair): the full dtype interface, 136
