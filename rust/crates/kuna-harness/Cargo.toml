@@ -13,6 +13,7 @@ kuna-num.workspace = true
 kuna-sleigh.workspace = true
 kuna-decomp.workspace = true
 kuna-console.workspace = true
+regex.workspace = true
 
 [lints]
 workspace = true
