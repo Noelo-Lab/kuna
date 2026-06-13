@@ -303,6 +303,33 @@ impl CommandStream {
     pub fn rest(&self) -> String {
         String::from_utf8_lossy(&self.buf[self.pos..]).into_owned()
     }
+
+    /// `s.peek()` — look at the next character without consuming it.  Returns
+    /// `None` at end-of-stream (C++ `peek()` returns `EOF`).  Does **not** latch
+    /// eof (C++ `peek` only sets eofbit on an actual failed extraction; the
+    /// address grammar peeks first then extracts).
+    pub fn peek(&self) -> Option<u8> {
+        self.buf.get(self.pos).copied()
+    }
+
+    /// C++ `parse_toseparator(istream&,string&)` (`grammar.cc:3039`): scan to the
+    /// next C separator, collecting `[A-Za-z0-9_]` after skipping leading
+    /// whitespace.  Used by the `[space,offset,size]` address grammar.
+    pub fn read_to_separator(&mut self) -> String {
+        while self.pos < self.buf.len() && Self::is_ws(self.buf[self.pos]) {
+            self.pos += 1;
+        }
+        let start = self.pos;
+        while self.pos < self.buf.len() {
+            let c = self.buf[self.pos];
+            if c.is_ascii_alphanumeric() || c == b'_' {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        String::from_utf8_lossy(&self.buf[start..self.pos]).into_owned()
+    }
 }
 
 // ---------------------------------------------------------------------------

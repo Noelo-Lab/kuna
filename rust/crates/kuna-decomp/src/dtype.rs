@@ -966,6 +966,15 @@ impl Datatype {
     pub fn get_display_format(&self) -> uint4 {
         (self.flags & flags::force_format) >> 12
     }
+    /// Set the display format for constants with this data-type (C++
+    /// `Datatype::setDisplayFormat`, type.cc:201-204).  `format` is one of
+    /// 0=clear, 1=hex, 2=dec, 4=oct, 8=bin, 16=char; it is stored shifted into
+    /// the `force_format` bit-field, replacing any prior format.
+    #[inline]
+    pub fn set_display_format(&mut self, format: uint4) {
+        self.flags &= !flags::force_format; // Clear preexisting
+        self.flags |= format << 12;
+    }
     /// Get the type \b meta-type (C++ `getMetatype`).
     #[inline]
     pub fn get_metatype(&self) -> type_metatype {
@@ -3484,6 +3493,62 @@ pub trait TypeFactory {
     fn find_by_name(&self, n: &str) -> KunaResult<Option<Rc<Datatype>>>;
     /// Convert given data-type to concrete form (C++ `concretize`).
     fn concretize(&self, ct: Rc<Datatype>) -> KunaResult<Rc<Datatype>>;
+
+    // -- In-place construction mutators (type.cc:3919-4019, 4292, 4618-4655) --
+    // These re-key an already-interned type and return the completed `Rc` (see
+    // the impl on `TypeFactoryImpl` for the Rc re-keying model).  Default bodies
+    // are provided so the lightweight test/seam factories (which never run the
+    // C-declaration construction paths) need not implement them; the concrete
+    // `TypeFactoryImpl` overrides every one.
+
+    /// Whether the default data space is big-endian (the bitfield-layout bit C++
+    /// reads via `getDefaultDataSpace()->isBigEndian()`).
+    fn is_big_endian(&self) -> bool {
+        false
+    }
+    /// Rename an interned data-type (C++ `setName`).
+    fn set_name(&self, _ct: &Rc<Datatype>, _n: &str) -> KunaResult<Rc<Datatype>> {
+        Err(KunaError::lowlevel("TypeFactory::setName not supported by this factory"))
+    }
+    /// Assign fields to an incomplete struct (C++ `assignRawFields(TypeStruct*)`).
+    fn assign_raw_fields_struct(
+        &self,
+        _ct: &Rc<Datatype>,
+        _fd: Vec<TypeField>,
+        _bit: Vec<TypeBitField>,
+    ) -> KunaResult<Rc<Datatype>> {
+        Err(KunaError::lowlevel("TypeFactory::assignRawFields not supported by this factory"))
+    }
+    /// Assign fields to an incomplete union (C++ `assignRawFields(TypeUnion*)`).
+    fn assign_raw_fields_union(
+        &self,
+        _ct: &Rc<Datatype>,
+        _fd: Vec<TypeField>,
+    ) -> KunaResult<Rc<Datatype>> {
+        Err(KunaError::lowlevel("TypeFactory::assignRawFields not supported by this factory"))
+    }
+    /// Install enum value/name map on an interned enum (C++ `setEnumValues`).
+    fn set_enum_values(
+        &self,
+        _ct: &Rc<Datatype>,
+        _nmap: std::collections::BTreeMap<u64, String>,
+    ) -> KunaResult<Rc<Datatype>> {
+        Err(KunaError::lowlevel("TypeFactory::setEnumValues not supported by this factory"))
+    }
+    /// Create (or find) a typedef of a data-type (C++ `getTypedef`).
+    fn get_typedef(
+        &self,
+        _ct: &Rc<Datatype>,
+        _name: &str,
+        _id: uint8,
+        _format: uint4,
+    ) -> KunaResult<Rc<Datatype>> {
+        Err(KunaError::lowlevel("TypeFactory::getTypedef not supported by this factory"))
+    }
+    /// Remove a data-type from the container (C++ `destroyType`).
+    fn destroy_type(&self, _ct: &Rc<Datatype>) -> KunaResult<()> {
+        Err(KunaError::lowlevel("TypeFactory::destroyType not supported by this factory"))
+    }
 }
 
 // =============================================================================
@@ -3850,6 +3915,201 @@ impl TypeFactoryImpl {
         let newtype = Rc::new(ct);
         self.insert(Rc::clone(&newtype))?;
         Ok(newtype)
+    }
+
+    // -- In-place mutation of interned types (type.cc:3919-4019, 4292, 4618-4655) --
+    //
+    // The C++ container mutates an *already-interned* `Datatype*` in place via raw
+    // pointers (every reference shares the one allocation): `setName`, `setFields`,
+    // `setEnumValues`, `getTypedef`, `destroyType`.  The Rust port shares interned
+    // types as `Rc<Datatype>`, so an "in-place" mutation is modelled as: remove the
+    // old (immutable) `Rc` from the trees by its *old* key, build a mutated clone,
+    // and re-insert under its *new* key, returning the new `Rc`.  The console
+    // construction flow (`parse_C` / `map`) always threads the *returned* `Rc`
+    // forward (it never re-uses the pre-mutation stub), so the single-allocation
+    // behavior the C++ relies on is preserved for these store-write paths.
+
+    /// Whether the default data space is big-endian (the bit
+    /// `getDefaultDataSpace()->isBigEndian()` the struct builder reads for
+    /// bitfield layout).  Set by [`Self::set_truncate_big_endian`] at init.
+    fn is_big_endian_impl(&self) -> bool {
+        self.truncate_big_endian.get()
+    }
+
+    /// Remove an interned data-type from the trees by its current key (the
+    /// `tree.erase(ct)` + optional `nametree.erase(ct)` the in-place mutators run
+    /// before re-inserting).  `also_name` removes the name cross-reference too
+    /// (only [`Self::set_name`] / [`Self::destroy_type`] re-key the name).
+    fn erase_interned(&self, ct: &Rc<Datatype>, also_name: bool) {
+        let mut store = self.store.borrow_mut();
+        store.tree.remove(&TreeKey(Rc::clone(ct)));
+        if also_name && ct.id != 0 {
+            // C++ DatatypeNameCompare keys on (name,id); erase the matching entry.
+            store
+                .nametree
+                .retain(|dt| !(dt.name == ct.name && dt.id == ct.id && Rc::ptr_eq(dt, ct)));
+        }
+    }
+
+    /// C++ `TypeFactory::setName` (type.cc:3923-3937): rename an interned
+    /// data-type, re-keying both trees.  Returns the renamed (new) `Rc`.
+    fn set_name_impl(&self, ct: &Rc<Datatype>, n: &str) -> KunaResult<Rc<Datatype>> {
+        self.erase_interned(ct, ct.id != 0); // nametree.erase only if it had an id
+        let mut newct = (**ct).clone();
+        newct.name = n.to_string();
+        newct.display_name = n.to_string();
+        if newct.id == 0 {
+            newct.id = Datatype::hash_name(n);
+        }
+        let newrc = Rc::new(newct);
+        self.insert(Rc::clone(&newrc))?; // tree.insert + nametree.insert
+        Ok(newrc)
+    }
+
+    /// C++ `TypeFactory::assignRawFields(TypeStruct*,...)` (type.cc:4618-4626):
+    /// compute the struct field offsets/size/alignment then `setFields`.  Returns
+    /// the completed (new) struct `Rc`.
+    fn assign_raw_fields_struct_impl(
+        &self,
+        ct: &Rc<Datatype>,
+        mut fd: Vec<TypeField>,
+        mut bit: Vec<TypeBitField>,
+    ) -> KunaResult<Rc<Datatype>> {
+        // TypeStruct::assignFieldOffsets(fd,bit,newSize,newAlign,flags).
+        let (new_size, new_align, extra_flags) = Datatype::assign_field_offsets(&mut fd, &mut bit)?;
+        self.set_fields_struct(ct, fd, bit, new_size, new_align, extra_flags)
+    }
+
+    /// C++ `TypeFactory::assignRawFields(TypeUnion*,...)` (type.cc:4633-4640):
+    /// compute the union field offsets/size/alignment then `setFields`.  Returns
+    /// the completed (new) union `Rc`.
+    fn assign_raw_fields_union_impl(
+        &self,
+        ct: &Rc<Datatype>,
+        mut fd: Vec<TypeField>,
+    ) -> KunaResult<Rc<Datatype>> {
+        // TypeUnion::assignFieldOffsets(fd,newSize,newAlign,ct).
+        let (new_size, new_align) = Datatype::assign_union_field_offsets(&mut fd, ct.get_name())?;
+        self.set_fields_union(ct, fd, new_size, new_align, 0)
+    }
+
+    /// C++ `TypeFactory::setFields(...,TypeStruct*,...)` (type.cc:3960-3973):
+    /// re-key a completed struct into the trees.  // SEAM(W6 recalcPointerSubmeta):
+    /// the C++ also recomputes the submeta of pointers that already point at this
+    /// struct; the console construction flow has no such prior pointers, so that
+    /// refinement is a no-op here.
+    fn set_fields_struct(
+        &self,
+        ct: &Rc<Datatype>,
+        fd: Vec<TypeField>,
+        bit: Vec<TypeBitField>,
+        new_size: int4,
+        new_align: int4,
+        extra_flags: uint4,
+    ) -> KunaResult<Rc<Datatype>> {
+        if !ct.is_incomplete() {
+            return Err(KunaError::lowlevel("Can only set fields on an incomplete structure"));
+        }
+        self.erase_interned(ct, false);
+        let mut newct = (**ct).clone();
+        newct.set_struct_fields(fd, bit, new_size, new_align);
+        newct.flags &= !flags::type_incomplete;
+        newct.flags |= extra_flags
+            & (flags::opaque_string
+                | flags::variable_length
+                | flags::type_incomplete
+                | flags::has_bitfields);
+        let newrc = Rc::new(newct);
+        self.insert(Rc::clone(&newrc))?;
+        Ok(newrc)
+    }
+
+    /// C++ `TypeFactory::setFields(...,TypeUnion*,...)` (type.cc:3981-3992):
+    /// re-key a completed union into the trees.
+    fn set_fields_union(
+        &self,
+        ct: &Rc<Datatype>,
+        fd: Vec<TypeField>,
+        new_size: int4,
+        new_align: int4,
+        extra_flags: uint4,
+    ) -> KunaResult<Rc<Datatype>> {
+        if !ct.is_incomplete() {
+            return Err(KunaError::lowlevel("Can only set fields on an incomplete union"));
+        }
+        self.erase_interned(ct, false);
+        let mut newct = (**ct).clone();
+        newct.set_union_fields(fd, new_size, new_align);
+        newct.flags &= !flags::type_incomplete;
+        newct.flags |= extra_flags & (flags::variable_length | flags::type_incomplete);
+        let newrc = Rc::new(newct);
+        self.insert(Rc::clone(&newrc))?;
+        Ok(newrc)
+    }
+
+    /// C++ `TypeFactory::setEnumValues` (type.cc:4013-4019): install the
+    /// value->name map on an interned enum, re-keying the tree.  Returns the
+    /// completed (new) enum `Rc`.
+    fn set_enum_values_impl(
+        &self,
+        ct: &Rc<Datatype>,
+        nmap: std::collections::BTreeMap<u64, String>,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.erase_interned(ct, false);
+        let mut newct = (**ct).clone();
+        newct.set_name_map(nmap);
+        let newrc = Rc::new(newct);
+        self.insert(Rc::clone(&newrc))?;
+        Ok(newrc)
+    }
+
+    /// C++ `TypeFactory::getTypedef` (type.cc:4292-4314): create (or find) a
+    /// typedef of `ct` named `name`.  A pre-existing (name,id) must already be a
+    /// typedef of `ct` or this errs.
+    fn get_typedef_impl(
+        &self,
+        ct: &Rc<Datatype>,
+        name: &str,
+        id: uint8,
+        format: uint4,
+    ) -> KunaResult<Rc<Datatype>> {
+        let id = if id == 0 { Datatype::hash_name(name) } else { id };
+        if let Some(res) = self.find_by_id_local(name, id) {
+            // C++ `if (ct != res->getTypedef())` throws.
+            let same = matches!(res.get_typedef(), Some(t) if Rc::ptr_eq(t, ct));
+            if !same {
+                return Err(KunaError::lowlevel(format!(
+                    "Trying to create typedef of existing type: {name}"
+                )));
+            }
+            return Ok(res);
+        }
+        let mut res = (**ct).clone(); // Clone everything
+        res.name = name.to_string(); // But a new name
+        res.display_name = name.to_string();
+        res.id = id; // and new id
+        res.flags &= !flags::coretype; // Not a core type
+        res.typedef_imm = Some(Rc::clone(ct));
+        res.set_display_format(format);
+        let resrc = Rc::new(res);
+        self.insert(Rc::clone(&resrc))?;
+        // C++ also stashes incomplete typedefs for later completion
+        // (`incompleteTypedef`); the console parse_C flow only typedefs complete
+        // types, so that deferred list is unused here.  // SEAM(W6)
+        Ok(resrc)
+    }
+
+    /// C++ `TypeFactory::destroyType` (type.cc:4645-4655): remove a data-type
+    /// from the container (used on the construction-error path).  Core types
+    /// cannot be destroyed.
+    fn destroy_type_impl(&self, ct: &Rc<Datatype>) -> KunaResult<()> {
+        if ct.is_core_type() {
+            return Err(KunaError::lowlevel("Cannot destroy core type"));
+        }
+        // C++ removeWarning(ct) on hasWarning(); the warning channel is a W5 seam,
+        // so there is no warning list to prune here.
+        self.erase_interned(ct, true);
+        Ok(())
     }
 
     // -- Core-type setup (type.cc:3637-3707) ---------------------------------
@@ -4911,6 +5171,47 @@ impl TypeFactory for TypeFactoryImpl {
     }
     fn concretize(&self, ct: Rc<Datatype>) -> KunaResult<Rc<Datatype>> {
         self.concretize_impl(ct)
+    }
+
+    fn is_big_endian(&self) -> bool {
+        self.is_big_endian_impl()
+    }
+    fn set_name(&self, ct: &Rc<Datatype>, n: &str) -> KunaResult<Rc<Datatype>> {
+        self.set_name_impl(ct, n)
+    }
+    fn assign_raw_fields_struct(
+        &self,
+        ct: &Rc<Datatype>,
+        fd: Vec<TypeField>,
+        bit: Vec<TypeBitField>,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.assign_raw_fields_struct_impl(ct, fd, bit)
+    }
+    fn assign_raw_fields_union(
+        &self,
+        ct: &Rc<Datatype>,
+        fd: Vec<TypeField>,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.assign_raw_fields_union_impl(ct, fd)
+    }
+    fn set_enum_values(
+        &self,
+        ct: &Rc<Datatype>,
+        nmap: std::collections::BTreeMap<u64, String>,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.set_enum_values_impl(ct, nmap)
+    }
+    fn get_typedef(
+        &self,
+        ct: &Rc<Datatype>,
+        name: &str,
+        id: uint8,
+        format: uint4,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.get_typedef_impl(ct, name, id, format)
+    }
+    fn destroy_type(&self, ct: &Rc<Datatype>) -> KunaResult<()> {
+        self.destroy_type_impl(ct)
     }
 }
 

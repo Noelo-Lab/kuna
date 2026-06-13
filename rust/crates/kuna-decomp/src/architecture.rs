@@ -151,6 +151,18 @@ impl CommentDatabase {
         true
     }
 
+    /// Store a comment unconditionally (C++ `CommentDatabase::addComment`, the
+    /// console `comment instr` path which — unlike the warning sink — does not
+    /// de-duplicate).
+    pub fn add_comment(&mut self, tp: uint4, fad: &Address, ad: &Address, txt: &str) {
+        self.comments.push(ArchWarning {
+            tp,
+            func_addr: fad.clone(),
+            addr: ad.clone(),
+            text: txt.to_string(),
+        });
+    }
+
     /// All recorded warnings, in insertion order (for inspection/tests).
     pub fn comments(&self) -> &[ArchWarning] {
         &self.comments
@@ -627,6 +639,38 @@ impl Architecture {
     /// architecture's context surface forwards to the engine.
     pub fn context_allow_set(&self, val: bool) {
         self.translate.allow_context_set(val);
+    }
+
+    /// Run a closure with mutable access to the engine's `ContextDatabase` (C++
+    /// `glb->context`).  Drives the `set context` / `set track` console commands;
+    /// forwards to the owned [`Sleigh`] engine.
+    pub fn with_context_db_mut<R>(
+        &self,
+        f: impl FnOnce(&mut dyn kuna_sleigh::globalcontext::ContextDatabase) -> R,
+    ) -> R {
+        self.translate.with_context_db_mut(f)
+    }
+
+    /// Resolve a register by name to its storage (C++
+    /// `glb->translate->getRegister(name)`); used by `set track`.
+    pub fn get_register_varnode(
+        &self,
+        nm: &[u8],
+    ) -> KunaResult<kuna_num::pcoderaw::VarnodeData> {
+        self.translate.get_register_varnode(nm)
+    }
+
+    /// The data-organization the C-declaration grammar consults (C++
+    /// `glb->getDefaultDataSpace()->getAddrSize()` / `getWordSize()`), packaged as
+    /// `(addr_size, word_size)` for the `parse_C` / `parse_type` entry points the
+    /// console `parse line` drives.  A bootstrapped architecture always has a
+    /// default data space (C++ `getDefaultDataSpace` asserts the same).
+    pub fn data_org(&self) -> (int4, uint4) {
+        let spc = self
+            .manage()
+            .get_default_data_space()
+            .expect("Architecture::data_org: bootstrapped architecture has a default data space");
+        (spc.get_addr_size() as int4, spc.get_word_size())
     }
 
     // -----------------------------------------------------------------------

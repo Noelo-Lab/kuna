@@ -123,6 +123,17 @@ impl ConsoleProgram {
     pub fn lookup_symbol(&self, name: &str) -> Option<Address> {
         self.symbols.iter().find(|s| s.name == name).map(|s| s.addr.clone())
     }
+
+    /// Register a console-created function symbol (the `map function` seam): make
+    /// `name`->`addr` resolvable by `load function <name>`.  C++ `Scope::addFunction`
+    /// installs the symbol in the symbol table; the kuna console additionally needs
+    /// the name->address entry so the (binaryimage-symbol-backed) `load function`
+    /// path can find a function the user mapped by hand.  Replaces any prior entry
+    /// of the same name.
+    pub fn register_symbol(&mut self, name: &str, addr: Address) {
+        self.symbols.retain(|s| s.name != name);
+        self.symbols.push(ProgramSymbol { name: name.to_string(), addr });
+    }
 }
 
 /// Build the marshaling [`IdRegistry`] the console bootstrap needs (the same

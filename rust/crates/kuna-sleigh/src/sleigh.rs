@@ -1490,6 +1490,25 @@ impl Sleigh {
         self.cache.borrow_mut().allow_set(val);
     }
 
+    /// Run a closure with mutable access to the engine's [`ContextDatabase`] (C++
+    /// `glb->context`, the `ContextDatabase*` the translator holds).  The console
+    /// `set context`/`set track` commands paint context/tracked values through
+    /// this; the borrow is scoped to the closure so it never overlaps a decode.
+    pub fn with_context_db_mut<R>(&self, f: impl FnOnce(&mut dyn ContextDatabase) -> R) -> R {
+        let mut db = self.context_db.borrow_mut();
+        f(&mut **db)
+    }
+
+    /// Resolve a register by name to its [`VarnodeData`] storage (C++
+    /// `Translate::getRegister(name)`).  Used by `set track` to record the tracked
+    /// register's location.
+    pub fn get_register_varnode(
+        &self,
+        nm: &[u8],
+    ) -> KunaResult<kuna_num::pcoderaw::VarnodeData> {
+        self.base.get_register(nm)
+    }
+
     /// C++ `Sleigh::initialize(DocumentStorage&)`: load the `.sla` and prepare
     /// the engine.  The `.sla` bytes are supplied directly (the C++ resolves
     /// the file name from the `<sleigh>` tag; the Rust caller passes the raw
