@@ -4833,6 +4833,17 @@ impl FuncProto {
     pub fn has_store(&self) -> bool {
         self.store.is_some()
     }
+
+    /// Attach a stand-alone [`ProtoStoreInternal`] (the C++ store used when there
+    /// is no symbol scope — `ProtoStoreInternal`, fspec.cc:3311) seeded with the
+    /// given void type.  Idempotent: a no-op if a store is already present.  This
+    /// is the merged-tree path for output/input recovery without the W4
+    /// `ProtoStoreSymbol`/ScopeLocal.
+    pub fn attach_internal_store(&mut self, void_type: Rc<Datatype>) {
+        if self.store.is_none() {
+            self.store = Some(Box::new(ProtoStoreInternal::new(void_type)));
+        }
+    }
     /// Borrow the store (panics if none).
     fn store(&self) -> &dyn ProtoStore {
         self.store.as_deref().expect("FuncProto::store: null")

@@ -133,14 +133,16 @@ impl Funcdata {
     /// If HighVariables are enabled, make sure the given Varnode has one assigned
     /// (C++ `Funcdata::assignHigh`, `funcdata_varnode.cc:48`).
     ///
-    /// SEAM(W7): the `HighVariable` subsystem (`merge`/`HighVariable`) is W7; the
-    /// W3 IR never has `highlevel_on` set during construction, so this is a no-op
-    /// that the factories call unconditionally — the eventual W7 body slots in
-    /// without touching the callers.  The C++ early-outs unless `(flags &
-    /// highlevel_on)` is set, which `is_high_on()` reports.
-    fn assign_high(&mut self, _vn: VarnodeId) {
+    /// Before `setHighLevel` (`is_high_on()` false) this is a no-op, exactly as
+    /// C++ (the W3 IR construction path).  Once HighVariables are on — e.g. a
+    /// Varnode created by the Merge trim COPY after `ActionAssignHigh` — the new
+    /// Varnode gets its singleton HighVariable here via [`assign_high_var`],
+    /// matching the C++ `new HighVariable(vn)` in `assignHigh` so the merge's
+    /// `getHigh()` reads never hit a null high.
+    fn assign_high(&mut self, vn: VarnodeId) {
         if self.is_high_on() {
-            // vn->calcCover(); ... new HighVariable(vn);  -- SEAM(W7)
+            // vn->calcCover(); ... new HighVariable(vn); vn->setHigh(...)
+            self.assign_high_var(vn);
         }
     }
 

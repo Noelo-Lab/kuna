@@ -1531,15 +1531,16 @@ impl PrintC {
         let markup = MarkupRef::none();
         let display = fd.get_display_name().to_string();
         // Return type from the recovered proto output (C++ `getFuncProto().
-        // getOutputType()`), defaulting to "void".  The proto carries an output
-        // type only when a parameter store is attached (`ProtoStoreSymbol` needs
-        // the symbol scope, a W4 seam — see `FuncProto::has_store`); without it
-        // the return type is the unrecovered "void" default.
+        // getOutputType()`), defaulting to "void".  The output storage/type is
+        // recovered by `ActionOutputPrototype` (the stand-alone `ProtoStoreInternal`
+        // path).  The TYPE NAME is the W8 `ActionInferTypes` surface: until it
+        // lands the recovered output type is the size-correct but un-inferred
+        // base (metatype UNKNOWN), rendered as `undefined<N>` — the documented
+        // residual vs. the oracle's inferred `uint1`.
         let ret_type = if fd.get_func_proto().has_store() {
             fd.get_func_proto()
                 .get_output_type()
-                .map(|t| t.get_name().to_string())
-                .filter(|s| !s.is_empty())
+                .map(type_name_for_decl)
                 .unwrap_or_else(|| "void".to_string())
         } else {
             "void".to_string()
@@ -1565,9 +1566,13 @@ impl PrintC {
         self.emit.end_func_proto(idp);
 
         let id = self.emit.open_brace_indent("{", to_emit_brace(self.options.brace_func));
-        // emitLocalVarDecls(fd): the local declarations need the symbol scope
-        // (the naming layer); skipped (the body still references the variables by
-        // their address-based names).
+        // emitLocalVarDecls(fd) (printc.cc:2805 / emitGlobalVarDeclsRecursive +
+        // the scope walk): one `<type> <name>;` per named local HighVariable, in
+        // name order, followed by a blank separating line before the body.  The
+        // ScopeLocal symbol walk is the W4 surface; we emit from the named
+        // HighVariables directly (the `kuna_name` stand-in), which is the same set
+        // of locals the scope would declare.
+        let _emitted_decls = self.emit_local_var_decls(fd, arch);
         if fd.sblocks_get_size() != 0 {
             self.emit_function_body(fd, arch);
         } else {
@@ -1582,6 +1587,103 @@ impl PrintC {
         self.emit.tag_line();
         self.emit.end_function(id1);
         self.emit.output().to_string()
+    }
+
+    /// Emit one `<type> <name>;  // <storage>` declaration per named local
+    /// HighVariable, in name order, returning `true` if any were emitted (C++
+    /// `emitLocalVarDecls` + `emitVarDeclStatement`, printc.cc:2652).  The W4
+    /// ScopeLocal symbol walk is the missing surface; the named HighVariables
+    /// (`kuna_name`) are the same locals the scope would declare.  A trailing
+    /// blank `tag_line` separates the decl block from the body (the C++ blank line
+    /// `emitVarDecl`s produce before the statement list).
+    pub fn emit_local_var_decls(&mut self, fd: &Funcdata, arch: &Architecture) -> bool {
+        // Collect (name, type_name, storage_comment) for each named local high,
+        // de-duplicated by high and ordered by name.
+        let mut decls: Vec<(crate::seams::HighVariableId, String)> = Vec::new();
+        let mut seen: std::collections::BTreeSet<crate::seams::HighVariableId> =
+            std::collections::BTreeSet::new();
+        let vlist: Vec<crate::seams::VarnodeId> = fd.vbank().iter_loc().collect();
+        for vn in vlist {
+            let high = match fd.vbank().get(vn).and_then(|v| v.get_high()) {
+                Some(h) => h,
+                None => continue,
+            };
+            if seen.contains(&high) {
+                continue;
+            }
+            let name = match fd.high_bank().get(high).and_then(|h| h.kuna_name()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            seen.insert(high);
+            decls.push((high, name));
+        }
+        decls.sort_by(|a, b| a.1.cmp(&b.1));
+        if decls.is_empty() {
+            return false;
+        }
+        let markup = MarkupRef::none();
+        for (high, name) in &decls {
+            // Type: the high's recovered type name (W8-unknown -> `undefined<N>`).
+            let (type_name, comment) = self.local_decl_type_and_comment(fd, arch, *high);
+            self.emit.tag_line();
+            let id = self.emit.begin_var_decl(&markup);
+            self.emit.tag_type(&type_name, SyntaxHighlight::TypeColor, &markup);
+            self.emit.spaces(1, 0);
+            self.emit.tag_variable(name, SyntaxHighlight::VarColor, &markup);
+            self.emit.end_var_decl(id);
+            self.emit.print(";", SyntaxHighlight::NoColor);
+            if let Some((ctext, spc, off)) = comment {
+                self.emit.spaces(1, 0);
+                self.emit.tag_comment(&format!("// {ctext}"), SyntaxHighlight::CommentColor, &spc, off);
+            }
+        }
+        // Blank separating line before the body (C++ emits a tag_line after the
+        // last decl; the body's first statement then starts on its own line).
+        self.emit.tag_line();
+        true
+    }
+
+    /// The declaration type name + storage comment for a named local high.  The
+    /// comment is the angr `kunaStorageComment` (register name lowercased) for the
+    /// high's name representative.
+    fn local_decl_type_and_comment(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        high: crate::seams::HighVariableId,
+    ) -> (String, Option<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>) {
+        let h = match fd.high_bank().get(high) {
+            Some(h) => h,
+            None => return ("undefined1".to_string(), None),
+        };
+        // Type name + storage comment: from the high's storage representative —
+        // the addr-tied (mapped, in-scope) member, which is the C++ symbol's
+        // `getFirstWholeMap()` storage (e.g. the ACC register), NOT a trim-COPY
+        // unique.  Fall back to instance 0 if none is addr-tied.
+        let rep = (0..h.num_instances())
+            .map(|i| h.get_instance(i))
+            .find(|&vn| fd.vbank().get(vn).map(|v| v.is_addr_tied()).unwrap_or(false))
+            .or_else(|| (0..h.num_instances()).map(|i| h.get_instance(i)).next());
+        let (type_name, comment) = match rep.and_then(|vn| fd.vbank().get(vn)) {
+            Some(v) => {
+                let tn = type_name_for_decl(v.get_type());
+                let loc = v.get_addr().clone();
+                let size = v.get_size();
+                let comment = loc.get_space().and_then(|spc| {
+                    let regname = arch.translate().get_register_name(spc, loc.get_offset(), size);
+                    if regname.is_empty() {
+                        None
+                    } else {
+                        // kunaStorageComment: register name lowercased.
+                        Some((regname.to_ascii_lowercase(), spc.clone(), loc.get_offset()))
+                    }
+                });
+                (tn, comment)
+            }
+            None => ("undefined1".to_string(), None),
+        };
+        (type_name, comment)
     }
 
     /// Emit the structured function body into the open brace (C++
@@ -2047,9 +2149,26 @@ impl PrintC {
             self.push_constant_ir(v.get_offset(), v.get_size(), op);
             return;
         }
-        // Symbol resolution (SymbolEntry / HighVariable Symbol) is the merge/
-        // naming layer; fall to the register / unnamed-location naming, which is
-        // the faithful `pushVnExplicit` tail (printc.cc:1957-1974).
+        // HighVariable name resolution (C++ `pushSymbolDetail`: `high->getSymbol()`
+        // -> `pushSymbol` -> `sym->getDisplayName()`).  The merged tree binds the
+        // angr default name directly on the HighVariable (`ActionNameVars` ->
+        // `HighVariable::kuna_name`; the W4 `Symbol`/ScopeLocal stand-in), so a
+        // named high renders its bound `vN` name here — for *every* member, which
+        // is exactly how the C++ renders all instances of a merged local.
+        if let Some(high) = v.get_high() {
+            if let Some(name) = fd.high_bank().get(high).and_then(|h| h.kuna_name()) {
+                self.push_atom(&Atom::with_op_vn(
+                    name.to_string(),
+                    TagType::VarToken,
+                    crate::printlanguage::SyntaxHighlight::var_color,
+                    op_key(op),
+                    vn_key(vn),
+                ));
+                return;
+            }
+        }
+        // No bound name: fall to the register / unnamed-location naming, which is
+        // the faithful `pushUnnamedLocation` tail (printc.cc:1957-1974).
         let loc = v.get_addr().clone();
         let size = v.get_size();
         let spc = match loc.get_space() {
@@ -2117,6 +2236,24 @@ fn sblocks_basic_tail(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
     match fd.sblocks_ref().block(bb).kind() {
         BlockKind::Basic(b) => b.op_tail,
         _ => None,
+    }
+}
+
+/// The type name to render in a declaration (C++ `Datatype::getName`), with the
+/// Ghidra fallback for an unnamed type: a `TYPE_UNKNOWN` of size N (the W8
+/// un-inferred base, no real name) renders as `undefined<N>` (or `undefined` for
+/// size 1's anonymous form), and a `TYPE_VOID` renders as `void`.  The oracle's
+/// inferred names (e.g. `uint1`) need the W8 `ActionInferTypes`; this is the
+/// faithful unnamed-type rendering until then.
+fn type_name_for_decl(t: &std::rc::Rc<crate::dtype::Datatype>) -> String {
+    use crate::dtype::type_metatype;
+    let name = t.get_name();
+    if !name.is_empty() {
+        return name.to_string();
+    }
+    match t.get_metatype() {
+        type_metatype::TYPE_VOID => "void".to_string(),
+        _ => format!("undefined{}", t.get_size()),
     }
 }
 

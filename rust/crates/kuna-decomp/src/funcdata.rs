@@ -71,7 +71,7 @@
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
-use kuna_base::types::{int4, uint4, uintm, Wrap};
+use kuna_base::types::{int2, int4, uint4, uintm, Wrap};
 
 use crate::block::{block_flags, BasicData, BlockGraph, BlockKind, FlowBlock};
 use crate::fspec::{FuncProto, ParamActive};
@@ -1094,8 +1094,10 @@ pub type DefOp = DefOpInfo;
 // algorithms reach the graph through `Funcdata`, exactly where the C++ reads it.
 
 use crate::cover::{Cover, CoverContext, CoverPoint};
+use crate::dtype::Datatype;
 use crate::variable::{CompareNameView, HighContext, VarnodeView, VarnodeViewLoc};
 use kuna_num::opcodes::OpCode;
+use std::rc::Rc;
 
 impl Funcdata {
     /// Borrow the HighVariable arena (the W7 high-variable map).
@@ -1146,6 +1148,287 @@ impl Funcdata {
     fn op_cover_point(&self, op: OpId) -> CoverPoint {
         let (uindex, code) = self.op_uindex_code(op);
         CoverPoint::Op { id: op, uindex, code }
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers the `funcdata_merge` MergeContext bridge delegates to (the C++
+    // `Merge`/`Cover`/`Varnode` reads that cross the arena boundary).
+    // -----------------------------------------------------------------------
+
+    /// `bl->getIndex()` (the bridge's `op_parent_index`/`varnode_def_point`).
+    pub(crate) fn block_index_pub(&self, bl: BlockId) -> int4 {
+        self.bblocks.block(bl).get_index()
+    }
+
+    /// `(block_index, CoverPoint)` of `op` for the merge cover tests.
+    pub(crate) fn op_cover_point_pub(&self, op: OpId) -> CoverPoint {
+        self.op_cover_point(op)
+    }
+
+    /// `((BlockBasic*)bl)->getStop()` (the MULTIEQUAL trim insert point).
+    pub(crate) fn block_stop_addr(&self, bl: BlockId) -> Address {
+        crate::block::block_get_stop(&self.bblocks.arena, bl)
+    }
+
+    /// C++ `Varnode::copyShadow` (`varnode.cc:996`): `a` and `b` are the same
+    /// value through a COPY chain.
+    pub(crate) fn varnode_copy_shadow(&self, a: VarnodeId, b: VarnodeId) -> bool {
+        if a == b {
+            return true;
+        }
+        // One step up a COPY chain: `vn`'s COPY-input, or `None` at the source.
+        let copy_pred = |vn: VarnodeId| -> Option<VarnodeId> {
+            let v = self.vbank.get(vn)?;
+            if !v.is_written() {
+                return None;
+            }
+            let def = v.get_def()?;
+            if self.obank.get(def).map(|o| o.code())? != OpCode::CPUI_COPY {
+                return None;
+            }
+            self.obank.get(def).and_then(|o| o.get_in(0))
+        };
+        // Trace `a` to the source of its COPY chain; hit `b` -> shadow.
+        let mut vn = a;
+        while let Some(pred) = copy_pred(vn) {
+            vn = pred;
+            if vn == b {
+                return true;
+            }
+        }
+        // Trace `b` to the source; the two sources matching -> shadow.
+        let mut ob = b;
+        while let Some(pred) = copy_pred(ob) {
+            ob = pred;
+            if vn == ob {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// C++ `Varnode::characterizeOverlap` (`varnode.cc:155`): 0 = no overlap,
+    /// 1 = partial, 2 = identical storage range.
+    pub(crate) fn varnode_characterize_overlap(&self, a: VarnodeId, b: VarnodeId) -> int4 {
+        let (va, vb) = match (self.vbank.get(a), self.vbank.get(b)) {
+            (Some(va), Some(vb)) => (va, vb),
+            _ => return 0,
+        };
+        let (sa, sb) = (va.get_addr().get_space(), vb.get_addr().get_space());
+        if sa.map(|s| s.get_index()) != sb.map(|s| s.get_index()) {
+            return 0;
+        }
+        let (oa, ob) = (va.get_addr().get_offset(), vb.get_addr().get_offset());
+        let (za, zb) = (va.get_size() as u64, vb.get_size() as u64);
+        if oa == ob {
+            if za == zb {
+                2
+            } else {
+                1
+            }
+        } else if oa < ob {
+            let thisright = oa + (za - 1);
+            if thisright < ob {
+                0
+            } else {
+                1
+            }
+        } else {
+            let opright = ob + (zb - 1);
+            if opright < oa {
+                0
+            } else {
+                1
+            }
+        }
+    }
+
+    /// C++ `Merge::allocateCopyTrim` (`merge.cc:411`): build a COPY of `in_vn`
+    /// into a fresh unique, returning the new (unattached) COPY op.  The union
+    /// `needsResolution` arm is the conservative default (no union types in the
+    /// merged tree).
+    pub(crate) fn build_copy_trim_op(
+        &mut self,
+        in_vn: VarnodeId,
+        addr: Address,
+        _trim_op: OpId,
+    ) -> KunaResult<OpId> {
+        let copy_op = self.new_op(1, addr);
+        self.op_set_opcode(copy_op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+        let (ct, size) = {
+            let v = self.vbank.get(in_vn).expect("build_copy_trim_op: stale in_vn");
+            (Rc::clone(v.get_type()), v.get_size())
+        };
+        let out_vn = self.new_unique(size, Some(ct));
+        self.op_set_output(copy_op, out_vn)?;
+        self.op_set_input(copy_op, in_vn, 0)?;
+        Ok(copy_op)
+    }
+
+    /// C++ `Merge::trimOpOutput` (`merge.cc:656`): bump the op's output forward
+    /// through a new COPY so its Cover shrinks to a single point.
+    pub(crate) fn do_trim_op_output(&mut self, op: OpId) -> KunaResult<()> {
+        let code = self.obank.get(op).expect("do_trim_op_output: stale op").code();
+        let afterop = if code == OpCode::CPUI_INDIRECT {
+            // getOpFromConst(op->getIn(1)->getAddr())
+            let addr = self
+                .obank
+                .get(op)
+                .and_then(|o| o.get_in(1))
+                .and_then(|in1| self.vbank.get(in1))
+                .map(|v| v.get_addr().get_offset())
+                .unwrap_or(0);
+            OpId::from(slotmap::KeyData::from_ffi(addr))
+        } else {
+            op
+        };
+        let (vn, ct, size, op_addr) = {
+            let o = self.obank.get(op).expect("do_trim_op_output: stale op");
+            let vn = o.get_out().expect("do_trim_op_output: op has no output");
+            let op_addr = o.get_addr().clone();
+            let v = self.vbank.get(vn).expect("do_trim_op_output: stale out");
+            (vn, Rc::clone(v.get_type()), v.get_size(), op_addr)
+        };
+        let copyop = self.new_op(1, op_addr);
+        self.op_set_opcode(copyop, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+        let uniq = self.new_unique(size, Some(ct));
+        self.op_set_output(op, uniq)?; // op output is now the stubby uniq
+        self.op_set_output(copyop, vn)?; // original output bumped onto the copy
+        self.op_set_input(copyop, uniq, 0)?;
+        self.op_insert_after(copyop, afterop);
+        Ok(())
+    }
+
+    /// C++ `data.opMarkNonPrinting` (the merge copymarker suppression).  The
+    /// non-printing bit is consumed by the printer; wired through the addl-flag.
+    pub(crate) fn op_mark_non_printing_pub(&mut self, op: OpId) {
+        if let Some(o) = self.obank_mut().get_mut(op) {
+            o.set_flag(crate::op::pcodeop_flags::nonprinting);
+        }
+    }
+
+    /// `op->outputTypeLocal()` — the local-from-op output type (W6 type-op
+    /// table).  Conservative unknown of the op's output size; reached only by
+    /// `markInternalCopies` (not on the `mergeMarker` path).
+    pub(crate) fn op_output_type_local_pub(&self, op: OpId) -> Rc<Datatype> {
+        let sz = self
+            .obank
+            .get(op)
+            .and_then(|o| o.get_out())
+            .and_then(|out| self.vbank.get(out))
+            .map(|v| v.get_size())
+            .unwrap_or(1);
+        Rc::new(Datatype::new(sz, crate::dtype::type_metatype::TYPE_UNKNOWN))
+    }
+
+    /// `op->inputTypeLocal(slot)` — see [`op_output_type_local_pub`].
+    pub(crate) fn op_input_type_local_pub(&self, op: OpId, slot: int4) -> Rc<Datatype> {
+        let sz = self
+            .obank
+            .get(op)
+            .and_then(|o| o.get_in(slot))
+            .and_then(|inv| self.vbank.get(inv))
+            .map(|v| v.get_size())
+            .unwrap_or(1);
+        Rc::new(Datatype::new(sz, crate::dtype::type_metatype::TYPE_UNKNOWN))
+    }
+
+    /// C++ `Cover single; single.addDefPoint(vn); single.addRefPoint(op,vn)`
+    /// (`merge.cc:503-505`) — the cover of a single read.  Reached by
+    /// `eliminateIntersect` (not on the `mergeMarker` path, which is what the
+    /// boolless vertical slice drives); the full `addRefPoint` walk is the
+    /// [`Cover::rebuild`] machinery, surfaced when `processCopyTrims`/
+    /// `eliminateIntersect` are scheduled.
+    pub(crate) fn build_single_read_cover(&self, vn: VarnodeId, _op: OpId) -> Cover {
+        let mut single = Cover::new();
+        let ctx = FuncdataCoverCtx { fd: self };
+        let (def, is_input) = ctx.def_point(vn);
+        single.add_def_point(def, is_input);
+        single
+    }
+
+    /// C++ `Merge::checkCopyPair` cover range (`merge.cc:1120-1121`).  Reached by
+    /// `processCopyTrims` (not on the `mergeMarker` path) — see
+    /// [`build_single_read_cover`].
+    pub(crate) fn build_copy_pair_range(&self, dom_op: OpId, _sub_op: OpId) -> Cover {
+        let mut range = Cover::new();
+        let ctx = FuncdataCoverCtx { fd: self };
+        if let Some(dom_out) = self.obank.get(dom_op).and_then(|o| o.get_out()) {
+            let (def, is_input) = ctx.def_point(dom_out);
+            range.add_def_point(def, is_input);
+        }
+        range
+    }
+
+    /// The `getTiedVarnode`/`getInputVarnode` read on a HighVariable, across the
+    /// `high_bank` <-> `vbank`/`obank` field split (the bridge cannot destructure
+    /// private fields from another module).  `which` selects tied (`false`) vs
+    /// input (`true`).
+    pub(crate) fn high_tied_or_input_varnode(
+        &self,
+        high: crate::seams::HighVariableId,
+        input: bool,
+    ) -> Option<VarnodeId> {
+        let Funcdata { high_bank, vbank, obank, .. } = self;
+        let ctx = HighReadView::new(vbank, obank);
+        let h = high_bank.get(high)?;
+        if input {
+            h.get_input_varnode(&ctx).ok()
+        } else {
+            h.get_tied_varnode(&ctx).ok()
+        }
+    }
+
+    /// Drive the bank-level `HighVariable::merge` across the field split,
+    /// returning the deferred `vn->setHigh` writes for the caller to replay once
+    /// the read-view borrow is released (the merge never reads `vn->high`).
+    pub(crate) fn bank_merge_with_log(
+        &mut self,
+        high1: crate::seams::HighVariableId,
+        high2: crate::seams::HighVariableId,
+        isspeculative: bool,
+        cache: &mut crate::variable::HighIntersectTest,
+        set_high_log: &mut Vec<(VarnodeId, crate::seams::HighVariableId, int2)>,
+        mark_set: &std::cell::RefCell<std::collections::BTreeSet<crate::seams::HighVariableId>>,
+    ) -> KunaResult<()> {
+        let Funcdata { high_bank, vbank, obank, .. } = self;
+        let ctx = HighReadView::new(vbank, obank);
+        let mut set_high = |vn: VarnodeId, id: crate::seams::HighVariableId, mg: int2| {
+            set_high_log.push((vn, id, mg));
+        };
+        let mut set_mark = |id: crate::seams::HighVariableId| {
+            mark_set.borrow_mut().insert(id);
+        };
+        let mut clear_mark = |id: crate::seams::HighVariableId| {
+            mark_set.borrow_mut().remove(&id);
+        };
+        let is_mark = |id: crate::seams::HighVariableId| mark_set.borrow().contains(&id);
+        high_bank.merge(
+            high1,
+            high2,
+            isspeculative,
+            &ctx,
+            &mut set_high,
+            Some(cache),
+            &mut set_mark,
+            &mut clear_mark,
+            &is_mark,
+        )
+    }
+
+    /// C++ `Merge::snipReads` insert-point (`merge.cc:454-466`).  Reached by
+    /// `snipReads`/`eliminateIntersect` (not on the `mergeMarker` path).
+    pub(crate) fn do_snip_reads_insert_point(&self, vn: VarnodeId) -> (BlockId, Address, Option<OpId>) {
+        let v = self.vbank.get(vn).expect("snip_reads_insert_point: stale vn");
+        if v.is_input() {
+            let bl = self.bblocks_get_block(0);
+            (bl, self.block_stop_addr(bl), None)
+        } else {
+            let def = v.get_def().expect("snip_reads_insert_point: non-input has no def");
+            let bl = self.obank.get(def).and_then(|o| o.get_parent()).expect("snip: def no parent");
+            let pc = self.obank.get(def).map(|o| o.get_addr().clone()).unwrap_or_else(Address::new_invalid);
+            (bl, pc, Some(def))
+        }
     }
 
     /// Rebuild a Varnode's Cover, driving `Varnode::updateCover` across the arena
@@ -1260,7 +1543,7 @@ impl Funcdata {
     ///
     /// Returns a re-borrowing closure runner: the caller's `f` gets the mutable
     /// high bank plus a `HighContext` view of the other fields.
-    fn with_high_split<R>(
+    pub(crate) fn with_high_split<R>(
         &mut self,
         f: impl FnOnce(&mut crate::variable::HighVariableBank, &dyn HighContext) -> R,
     ) -> R {
@@ -1326,14 +1609,30 @@ impl Funcdata {
     pub fn high_update_cover(&mut self, id: crate::seams::HighVariableId) {
         self.with_high_split(|hb, ctx| hb.update_cover(id, ctx));
     }
+
+    /// The HighVariable's name representative Varnode (C++
+    /// `HighVariable::getNameRepresentative`), across the bank field-split.
+    /// `None` if the high is gone.
+    pub fn high_name_representative(&mut self, id: crate::seams::HighVariableId) -> Option<VarnodeId> {
+        self.high_bank.get(id)?;
+        Some(self.with_high_split(|hb, ctx| hb.get_mut(id).unwrap().get_name_representative(ctx)))
+    }
 }
 
 /// A field-split read view used by [`Funcdata::with_high_split`]: implements
 /// [`HighContext`] borrowing only `vbank`/`obank`, so the sibling `high_bank`
 /// field stays mutably borrowable.
-struct HighReadView<'a> {
+pub(crate) struct HighReadView<'a> {
     vbank: &'a VarnodeBank,
     obank: &'a PcodeOpBank,
+}
+
+impl<'a> HighReadView<'a> {
+    /// Build the read view from the two banks (the `funcdata_merge` bridge uses
+    /// this for the bank-merge field-split, mirroring [`Funcdata::with_high_split`]).
+    pub(crate) fn new(vbank: &'a VarnodeBank, obank: &'a PcodeOpBank) -> HighReadView<'a> {
+        HighReadView { vbank, obank }
+    }
 }
 
 impl<'a> HighContext for HighReadView<'a> {

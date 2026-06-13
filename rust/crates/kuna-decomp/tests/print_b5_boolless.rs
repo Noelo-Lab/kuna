@@ -441,6 +441,48 @@ fn w10_boolless_positive_datatest_assertion_now_real() {
     );
 }
 
+/// THE MERGE/NAMING/OUTPUT-TYPE WIN: boolless `print C` now byte-matches the C++
+/// B5 oracle, modulo the single documented residual `undefined1` vs `uint1` (the
+/// recovered output/local *type name* — the W8 `ActionInferTypes` surface; the
+/// output STORAGE, the merged `v1` local, the `v1 = dat_52` trim COPY, the decl,
+/// the `// acc` storage comment, and the return statement all recover exactly).
+///
+/// The assertion substitutes the W8 type name (`undefined1` -> `uint1`) and then
+/// requires an EXACT byte match.  When `ActionInferTypes` lands, the substitution
+/// becomes a no-op and boolless is the first fully-byte-parity function.
+#[test]
+fn w10_boolless_full_byte_parity_modulo_type_inference() {
+    let (mut xarch, fd) = match run_full("boolless", 0) {
+        Ok(v) => v,
+        Err(e) if e.contains("not built") || e.contains("no .sla") => {
+            eprintln!("SKIP: {e}");
+            return;
+        }
+        Err(e) => panic!("boolless run_full: {e}"),
+    };
+    let arch = xarch.sleigh_mut().base_mut().unwrap();
+    let rust = print_c(arch, &fd);
+
+    // The merge/naming/output-storage layer is real: a named `v1` local, the
+    // `v1 = dat_52;` trim COPY, the `undefined1 v1; // acc` decl, and `return v1`.
+    assert!(rust.contains("v1 = dat_52;"), "trim-COPY initial assignment missing:\n{rust}");
+    assert!(rust.contains("v1; // acc"), "decl + storage comment missing:\n{rust}");
+    assert!(rust.contains("    v1 = 1;"), "if-body assignment must use the merged name:\n{rust}");
+    assert!(rust.contains("return v1;"), "return must use the merged name:\n{rust}");
+    // i0x52 (the global) must STILL render as `dat_52` (NOT absorbed into v1).
+    assert!(rust.contains("dat_52"), "the global must stay dat_52 (no over-merge):\n{rust}");
+    assert!(!rust.contains("dat_52 = "), "dat_52 must not be assigned (it is read-only here):\n{rust}");
+
+    // Full byte-parity modulo the W8 type-name residual.
+    let normalized = rust.replace("undefined1", "uint1");
+    assert_eq!(
+        normalized, CPP_B5_ORACLE,
+        "boolless print C must byte-match the C++ B5 oracle after the documented \
+         W8 type-name substitution (undefined1 -> uint1).\n--- rust (raw) ---\n{rust}\n\
+         --- normalized ---\n{normalized}\n--- oracle ---\n{CPP_B5_ORACLE}"
+    );
+}
+
 /// The emitted body is a real, structurally-complete function (begin/return/
 /// brace-matched), with the assignment INSIDE the if-body — i.e. the structured
 /// hierarchy is real, not a flat dump.  Guards against the if-collapse silently
@@ -471,3 +513,7 @@ fn w10_boolless_if_body_contains_assignment() {
     // And a return after the if (real function tail).
     assert!(rust.contains("return"), "function must emit a return, got:\n{rust}");
 }
+
+
+
+

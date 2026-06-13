@@ -616,6 +616,19 @@ impl Varnode {
     pub fn clear_cover_dirty(&mut self) {
         self.clear_flags(varnode_flags::coverdirty);
     }
+    /// Set the cover-dirty flag (C++ `setFlags(Varnode::coverdirty)`, the
+    /// Merge data-flow-surgery notification that this Varnode's Cover is stale).
+    pub fn mark_cover_dirty(&mut self) {
+        self.set_flags(varnode_flags::coverdirty);
+    }
+    /// Mark this Varnode as `mapped | addrtied` (C++ `funcdata_varnode.cc:997`
+    /// `fl = Varnode::mapped | Varnode::addrtied`): the effect of the local
+    /// scope's `inScope` on a storage location that has a (recovered) Symbol /
+    /// is the function's return register.  Used by the merge pass to protect the
+    /// output register from absorbing un-tied inputs.
+    pub fn mark_mapped_addr_tied(&mut self) {
+        self.set_flags(varnode_flags::mapped | varnode_flags::addrtied);
+    }
     /// Install a freshly-rebuilt Cover (the `cover->rebuild(this)` write-back of
     /// the cross-arena [`Funcdata`]-driven `updateCover`).
     pub fn set_cover(&mut self, c: Cover) {
