@@ -67,6 +67,7 @@ dependencies = [
  "kuna-base",
  "kuna-num",
  "kuna-sleigh",
+ "regex",
  "slotmap",
  "smallvec",
  "thiserror",
