@@ -1840,6 +1840,194 @@ mod tests {
         assert!(e2.is_execution());
     }
 
+    // -- w9-con-codedata verifier adversarial tests ------------------------
+    //
+    // These target the hunt-list spots flagged most fragile for this item:
+    //   * the erase-while-iterating taint loop over `tofrom_crossref`
+    //     (`process_taint`) and the `pushTaintAddress` `key+size-1 < addr`
+    //     boundary;
+    //   * `findFunctionStart`'s `lower_bound` + reverse `--iter` walk;
+    //   * `dumpModelHits`' multi-line sequential grammar and the
+    //     `(int4)(off-endoff)` signed-narrowing cast;
+    //   * `findUnlinked`'s flag-mask classification.
+
+    /// `find_function_start` (codedata.cc:589) `lower_bound(AddrLink(addr))` then
+    /// reverse `--iter`: walks every key strictly < `single(addr)` backwards,
+    /// returning the `.a` of the nearest CALL crossref before `addr`, else an
+    /// invalid address.  Boundary: a CALL whose key offset equals `addr`
+    /// (`AddrLink(addr,...)` is NOT < `single(addr)` because b sorts after the
+    /// invalid b of `single`), and the no-call-before case.
+    #[test]
+    fn verify_w9_find_function_start_lower_bound_reverse_walk() {
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut cd = CodeDataAnalysis::default();
+        let a = |o: u64| Address::new(Rc::clone(&ram), o);
+
+        // tofrom keys: a==0x10 (CALL), a==0x40 (JUMP, not call), a==0x80 (CALL).
+        cd.tofrom_crossref.insert(AddrLink::pair(a(0x10), a(0x500)), code_unit_flags::CALL);
+        cd.tofrom_crossref.insert(AddrLink::pair(a(0x40), a(0x600)), code_unit_flags::JUMP);
+        cd.tofrom_crossref.insert(AddrLink::pair(a(0x80), a(0x700)), code_unit_flags::CALL);
+
+        // For addr=0x90: lower_bound(single(0x90)) is end()/past 0x80's entry,
+        // reverse walk hits 0x80's CALL first -> 0x80.
+        assert_eq!(cd.find_function_start(&a(0x90)).get_offset(), 0x80);
+        // For addr=0x50: nearest call strictly before is 0x10 (0x40 is JUMP).
+        assert_eq!(cd.find_function_start(&a(0x50)).get_offset(), 0x10);
+        // For addr=0x80 (== a CALL key): the real key pair(0x80,0x700) is >=
+        // single(0x80) (b=0x700 sorts after single's invalid b), so lower_bound
+        // lands ON the 0x80 entry and the reverse `--iter` walk skips it.  The
+        // call AT 0x80 is therefore NOT seen for addr==0x80; the next call before
+        // is 0x10.  This pins the lower_bound/`--iter` boundary exclusion (C++
+        // codedata.cc:594-599), matching the Rust `range(..single(addr))`.
+        assert_eq!(cd.find_function_start(&a(0x80)).get_offset(), 0x10);
+        // For addr=0x05: nothing strictly before -> invalid (C++ Address()).
+        assert!(cd.find_function_start(&a(0x05)).is_invalid());
+    }
+
+    /// `process_taint` (codedata.cc:162) propagates the `notcode` taint along
+    /// `tofrom_crossref` edges out of the tainted block, erasing each edge as it
+    /// goes (the erase-while-iterating loop, ported as collect-then-remove).
+    /// Drive `find_not_code_units` from a seeded `notcode` unit and confirm the
+    /// taint spreads to the cross-referenced successor and that the crossref
+    /// maps are drained.  Also exercises `pushTaintAddress`' `key+size-1 < addr`
+    /// containment check (the successor key must contain the edge's `.b`).
+    #[test]
+    fn verify_w9_process_taint_spreads_along_tofrom_and_erases() {
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut cd = CodeDataAnalysis::default();
+        let a = |o: u64| Address::new(Rc::clone(&ram), o);
+
+        // Two code units: 0x100 (seeded notcode) and 0x200 (good code, size 4).
+        cd.codeunit
+            .insert(a(0x100), CodeUnit { flags: code_unit_flags::NOTCODE, size: 4 });
+        cd.codeunit.insert(a(0x200), CodeUnit { flags: code_unit_flags::FALLTHRU, size: 4 });
+
+        // A from-to edge 0x100 -> 0x200 (and its tofrom mirror), so taint at the
+        // 0x100 block flows to 0x200 via the tofrom_crossref edge keyed [start..end)
+        // of the 0x100 block. The tofrom key's `.a` is the destination 0x100's
+        // range; we key it inside [0x100,0x104).
+        cd.fromto_crossref.insert(AddrLink::pair(a(0x100), a(0x200)), code_unit_flags::JUMP);
+        // tofrom mirror: key.a in [start,end) of the tainted block, key.b is the
+        // successor whose enclosing unit (0x200) gets tainted.
+        cd.tofrom_crossref.insert(AddrLink::pair(a(0x100), a(0x200)), code_unit_flags::JUMP);
+
+        cd.find_not_code_units();
+
+        // 0x100 stays notcode; 0x200's enclosing unit picked up the taint.
+        assert_ne!(cd.codeunit[&a(0x100)].flags & code_unit_flags::NOTCODE, 0);
+        assert_ne!(cd.codeunit[&a(0x200)].flags & code_unit_flags::NOTCODE, 0);
+        // Both crossref maps drained for the tainted block's edges.
+        assert!(cd.fromto_crossref.is_empty());
+        assert!(cd.tofrom_crossref.is_empty());
+        // Taint work-list fully consumed.
+        assert!(cd.taintlist.is_empty());
+    }
+
+    /// `push_taint_address` (codedata.cc:148) containment boundary: a `.b` that
+    /// falls *past* the last code unit's extent (`key+size-1 < addr`) must NOT be
+    /// tainted, while a `.b` exactly at the last byte must.  Drives the taint
+    /// directly to isolate the off-by-one.
+    #[test]
+    fn verify_w9_push_taint_address_containment_boundary() {
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let a = |o: u64| Address::new(Rc::clone(&ram), o);
+
+        // Unit at 0x100 spanning [0x100, 0x104) (size 4): last byte is 0x103.
+        let mut cd = CodeDataAnalysis::default();
+        cd.codeunit
+            .insert(a(0x100), CodeUnit { flags: code_unit_flags::FALLTHRU, size: 4 });
+
+        // addr == 0x103 (last byte): key(0x100)+4-1 = 0x103, NOT < 0x103 -> taint.
+        cd.push_taint_address(&a(0x103));
+        assert_eq!(cd.taintlist, vec![a(0x100)]);
+        cd.taintlist.clear();
+
+        // addr == 0x104 (one past): 0x103 < 0x104 -> no taint.
+        cd.push_taint_address(&a(0x104));
+        assert!(cd.taintlist.is_empty());
+
+        // A notcode unit is never re-tainted regardless of containment.
+        cd.codeunit.get_mut(&a(0x100)).unwrap().flags |= code_unit_flags::NOTCODE;
+        cd.push_taint_address(&a(0x100));
+        assert!(cd.taintlist.is_empty());
+    }
+
+    /// `dump_model_hits` (codedata.cc:603) multi-line sequential grammar and the
+    /// `(int4)(off-endoff)` cast.  Three disjoint ranges in one space produce two
+    /// inter-range gap numbers and a final lone range with no trailing number.
+    /// The cast is exercised by a gap whose magnitude is well within i32; the
+    /// point is the exact "0x<first> 0x<last> <dec-gap>\n" grammar that any
+    /// downstream parser greps.
+    #[test]
+    fn verify_w9_dump_model_hits_multiline_gap_grammar() {
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut cd = CodeDataAnalysis::default();
+
+        // insertRange(space, first, last): last is stored verbatim (one-past, as
+        // runModel passes address+size). Three disjoint ranges.
+        cd.modelhits.insert_range(Rc::clone(&ram), 0x1000, 0x1010);
+        cd.modelhits.insert_range(Rc::clone(&ram), 0x2000, 0x2010);
+        cd.modelhits.insert_range(Rc::clone(&ram), 0x3000, 0x3008);
+
+        let mut out = String::new();
+        cd.dump_model_hits(&mut out);
+        // Range 1: "0x1000 0x1010", gap to next.first 0x2000 - last 0x1010 = 0xFF0 = 4080.
+        // Range 2: "0x2000 0x2010", gap 0x3000 - 0x2010 = 0xFF0 = 4080.
+        // Range 3: "0x3000 0x3008" (no trailing gap).
+        assert_eq!(out, "0x1000 0x1010 4080\n0x2000 0x2010 4080\n0x3000 0x3008\n");
+
+        // Single range: no trailing number at all.
+        let mut cd2 = CodeDataAnalysis::default();
+        cd2.modelhits.insert_range(Rc::clone(&ram), 0x40, 0x80);
+        let mut out2 = String::new();
+        cd2.dump_model_hits(&mut out2);
+        assert_eq!(out2, "0x40 0x80\n");
+
+        // Empty: no output.
+        let cd3 = CodeDataAnalysis::default();
+        let mut out3 = String::new();
+        cd3.dump_model_hits(&mut out3);
+        assert_eq!(out3, "");
+    }
+
+    /// `find_unlinked` (codedata.cc:462) classification: a code unit with NONE of
+    /// {hit_by_fallthru,hit_by_jump,hit_by_call,notcode,errantstart} is an
+    /// unlinked start; one with any of those is not.  Exercises the exact flag
+    /// mask (a `notcode` unit is excluded even though it has no hit_by_* bits).
+    #[test]
+    fn verify_w9_find_unlinked_flag_mask_classification() {
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let t = synth(BTreeMap::new(), Rc::clone(&ram));
+        let code_space = Rc::clone(m.get_default_code_space().unwrap());
+        let a = |o: u64| Address::new(Rc::clone(&ram), o);
+
+        let mut cd = CodeDataAnalysis::default();
+        // 0x10: clean -> unlinked.
+        cd.codeunit.insert(a(0x10), CodeUnit { flags: 0, size: 4 });
+        // 0x20: hit_by_fallthru -> not unlinked.
+        cd.codeunit
+            .insert(a(0x20), CodeUnit { flags: code_unit_flags::HIT_BY_FALLTHRU, size: 4 });
+        // 0x30: notcode (no hit_by_*) -> still NOT unlinked (mask includes notcode).
+        cd.codeunit
+            .insert(a(0x30), CodeUnit { flags: code_unit_flags::NOTCODE, size: 4 });
+        // 0x40: errantstart -> not unlinked.
+        cd.codeunit
+            .insert(a(0x40), CodeUnit { flags: code_unit_flags::ERRANTSTART, size: 4 });
+
+        cd.find_unlinked(&t, &code_space).unwrap();
+
+        assert_eq!(cd.unlinkedstarts, vec![a(0x10)]);
+        // dumpUnlinked prints each as "0x<off>\n" in codeunit (BTree) order.
+        let mut out = String::new();
+        cd.dump_unlinked(&mut out);
+        assert_eq!(out, "0x10\n");
+    }
+
     /// Build a minimal `IfaceStatus` for the command tests (a detached source).
     fn make_status() -> IfaceStatus {
         struct NoSource;
