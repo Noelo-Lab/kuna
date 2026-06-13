@@ -4332,7 +4332,7 @@
    "depends_on": [
     "W8-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-console",
    "loc_estimate": 1500,
@@ -4361,7 +4361,7 @@
    "depends_on": [
     "w9-con-interface"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1500,
@@ -4388,7 +4388,7 @@
     "w9-con-interface",
     "W8-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-console",
    "loc_estimate": 4368,
@@ -4411,7 +4411,7 @@
    "depends_on": [
     "w9-con-ifacedecomp"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 4368,
@@ -4435,7 +4435,7 @@
     "w9-con-interface",
     "W8-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-console",
    "loc_estimate": 992,
@@ -4458,7 +4458,7 @@
    "depends_on": [
     "w9-con-codedata"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 992,
@@ -4482,7 +4482,7 @@
     "w9-con-ifacedecomp",
     "W8-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-console",
    "loc_estimate": 549,
@@ -4505,7 +4505,7 @@
    "depends_on": [
     "w9-con-kuna-console"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 549,
@@ -4528,7 +4528,7 @@
    "depends_on": [
     "W8-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-console",
    "loc_estimate": 3480,
@@ -4551,7 +4551,7 @@
    "depends_on": [
     "w9-con-grammar"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 3480,
@@ -4576,7 +4576,7 @@
    "depends_on": [
     "W8-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-console",
    "loc_estimate": 3576,
@@ -4603,7 +4603,7 @@
    "depends_on": [
     "w9-con-rulecompile-unify"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 3576,
@@ -4631,7 +4631,7 @@
     "w9-con-ifacedecomp",
     "W8-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-harness",
    "loc_estimate": 797,
@@ -4658,7 +4658,7 @@
    "depends_on": [
     "w9-harness-runner"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 797,
