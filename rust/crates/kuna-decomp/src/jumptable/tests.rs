@@ -423,8 +423,9 @@ fn duplicate_varnodes_detects_uniformity() {
 #[test]
 fn jumpvaluesrange_size_and_init_over_explicit_range() {
     // Range [0, 8) step 1, 4-byte mask -> size 8.
+    // (Now uses the real CircleRange constructor `new` — w6-s5-rangeutil.)
     let mut jv = JumpValuesRange::new();
-    jv.set_range(CircleRange::from_range(0, 8, 4, 1));
+    jv.set_range(CircleRange::new(0, 8, 4, 1));
     assert_eq!(jv.get_size(), 8);
     assert!(jv.initialize_for_reading());
     assert_eq!(jv.get_value(), 0); // first value is the range minimum
@@ -433,9 +434,11 @@ fn jumpvaluesrange_size_and_init_over_explicit_range() {
 
 #[test]
 fn jumpvaluesrange_empty_does_not_initialize() {
-    // Range [5,5) -> size 0 -> initializeForReading returns false.
+    // A genuinely empty range -> size 0 -> initializeForReading returns false.
+    // (In real CircleRange semantics `[n,n)` step 1 is the FULL range, not empty;
+    // emptiness is the explicit `new_empty()` state — w6-s5-rangeutil.)
     let mut jv = JumpValuesRange::new();
-    jv.set_range(CircleRange::from_range(5, 5, 4, 1));
+    jv.set_range(CircleRange::new_empty());
     assert_eq!(jv.get_size(), 0);
     assert!(!jv.initialize_for_reading());
 }
@@ -444,7 +447,7 @@ fn jumpvaluesrange_empty_does_not_initialize() {
 fn jumpvaluesrange_truncate_resets_extent() {
     // Range [0,16) step 1; truncate to 4 elements -> size 4.
     let mut jv = JumpValuesRange::new();
-    jv.set_range(CircleRange::from_range(0, 16, 4, 1));
+    jv.set_range(CircleRange::new(0, 16, 4, 1));
     assert_eq!(jv.get_size(), 16);
     jv.truncate(4);
     assert_eq!(jv.get_size(), 4);
@@ -453,7 +456,7 @@ fn jumpvaluesrange_truncate_resets_extent() {
 #[test]
 fn jumpvaluesrangedefault_size_is_base_plus_one() {
     let mut jv = JumpValuesRangeDefault::new();
-    jv.set_range(CircleRange::from_range(0, 8, 4, 1));
+    jv.set_range(CircleRange::new(0, 8, 4, 1));
     jv.set_extra_value(0xdead);
     // getSize == base range size + 1 (the extra default value).
     assert_eq!(jv.get_size(), 9);
@@ -462,7 +465,7 @@ fn jumpvaluesrangedefault_size_is_base_plus_one() {
 #[test]
 fn jumpvaluesrangedefault_empty_range_initializes_to_extra() {
     let mut jv = JumpValuesRangeDefault::new();
-    jv.set_range(CircleRange::from_range(3, 3, 4, 1)); // empty base range
+    jv.set_range(CircleRange::new_empty()); // genuinely empty base range
     jv.set_extra_value(0x42);
     // With an empty base range, initializeForReading yields the extra value and
     // marks lastvalue (so it is not reversible).

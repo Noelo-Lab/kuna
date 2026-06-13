@@ -73,7 +73,7 @@ fn truncate_small_product_matches_cpp_int32() {
     // step=4, nm=10 -> product 40 fits int32; right = (0 + 40) & mask.
     // size 6 cases at step 4 over [0,40).  getSize = (40-0)&mask / 4 = 10.
     let mut jv = JumpValuesRange::new();
-    jv.set_range(CircleRange::from_range(0, 1024, 4, 4)); // mask = 2^32-1, step 4
+    jv.set_range(CircleRange::new(0, 1024, 4, 4)); // mask = 2^32-1, step 4
     jv.truncate(10);
     assert_eq!(jv.get_size(), 10, "10 cases of step 4 after truncate");
 }
@@ -97,9 +97,11 @@ fn truncate_step_times_nm_overflows_int32_diverges_from_cpp() {
     let cpp_size = if step == 0 { 0 } else { (cpp_right.wrapping_sub(left) & mask) / step };
     assert_eq!(cpp_size, 0, "C++ int32 product wraps to 0 -> empty range");
 
-    // Rust port behaviour through the public API.
+    // Rust port behaviour through the public API.  (The initial range value is
+    // immaterial — `truncate` reads only get_min/get_step/get_mask and overwrites
+    // the bounds via set_range; `new` matches the real CircleRange constructor.)
     let mut jv = JumpValuesRange::new();
-    jv.set_range(CircleRange::from_range(left, left, 6, step as i32));
+    jv.set_range(CircleRange::new(left, left, 6, step as i32));
     jv.truncate(nm);
     let rust_size = jv.get_size();
 
@@ -226,7 +228,7 @@ fn default_range_iterates_base_then_extra_value_last() {
     // 0x99 comes LAST and is flagged not-reversible.  Reproduces the C++
     // next()/getValue()/isReversible() sequencing (jumptable.cc:354-362).
     let mut jv = JumpValuesRangeDefault::new();
-    jv.set_range(CircleRange::from_range(10, 13, 4, 1));
+    jv.set_range(CircleRange::new(10, 13, 4, 1));
     jv.set_extra_value(0x99);
 
     assert_eq!(jv.get_size(), 4, "3 base values + 1 extra");
@@ -234,12 +236,12 @@ fn default_range_iterates_base_then_extra_value_last() {
     assert_eq!(jv.get_value(), 10);
     assert!(jv.is_reversible(), "base values are reversible");
 
-    // The base iteration itself is a CircleRange seam (getNext -> Err); we cannot
-    // walk it here.  But the bookkeeping of the LAST step is observable: once
-    // lastvalue is set the iterator yields the extra value and reports
-    // not-reversible.  Drive that state via the empty-base path:
+    // The bookkeeping of the LAST step is observable: once lastvalue is set the
+    // iterator yields the extra value and reports not-reversible.  Drive that
+    // state via the empty-base path (a genuinely empty CircleRange — under the
+    // real port `[n,n)` step 1 is the FULL range, so emptiness is `new_empty()`):
     let mut last = JumpValuesRangeDefault::new();
-    last.set_range(CircleRange::from_range(5, 5, 4, 1)); // empty base
+    last.set_range(CircleRange::new_empty()); // empty base
     last.set_extra_value(0x99);
     assert!(last.initialize_for_reading());
     assert_eq!(last.get_value(), 0x99, "empty base -> straight to extra value");

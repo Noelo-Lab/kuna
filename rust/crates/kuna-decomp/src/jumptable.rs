@@ -98,141 +98,18 @@ pub const ELEM_STARTVAL: ElementId = ElementId::new("startval", 217);
 pub const NO_LABEL: uint8 = 0xBAD1ABE1BAD1ABE1;
 
 // ---------------------------------------------------------------------------
-// CircleRange seam (SEAM(W5): rangeutil's circular value-set domain)
+// CircleRange (now the real port — rangeutil.rs, item w6-s5-rangeutil)
 // ---------------------------------------------------------------------------
 
-/// A circular range of integer values (C++ `CircleRange`, `rangeutil.hh`).
-///
-/// SEAM(W5): `CircleRange` is slated for `kuna-num` (see its lib doc) but is not
-/// yet implemented.  [`GuardRecord`] needs it as a stored member, and the
-/// guard/normalization analysis (`calcRange`, `analyzeGuards`, `pullBack`,
-/// `intersect`) is built entirely on it.  This placeholder carries only the
-/// constructor surface the *ported* code touches (`getMin`/`getStep`/`getMask`/
-/// `getSize`/`setRange`); the value-set operators are `Err` shells until the
-/// real `CircleRange` lands.
-#[derive(Debug, Clone, Default)]
-pub struct CircleRange {
-    left: uintb,
-    right: uintb,
-    mask: uintb,
-    step: int4,
-    isempty: bool,
-}
-
-impl CircleRange {
-    /// Construct from an explicit value and size (C++ `CircleRange(uintb val,int4 size)`):
-    /// the single-value range `[val, val+1)`.
-    ///
-    /// SEAM(W5): the real constructor sets `mask = calc_mask(size)`, `left=val`,
-    /// `right=(val+1)&mask`, `step=1`.  We replicate the field assignment but the
-    /// downstream range *operations* are not yet available.
-    pub fn from_value(val: uintb, size: int4) -> CircleRange {
-        let mask = kuna_base::address::calc_mask(size);
-        CircleRange { left: val, right: val.wadd(1) & mask, mask, step: 1, isempty: false }
-    }
-
-    /// Construct a stepped range `[left, right)` of the given size and step
-    /// (C++ `CircleRange(uintb mn,uintb mx,int4 size,int4 stp)`).
-    pub fn from_range(left: uintb, right: uintb, size: int4, step: int4) -> CircleRange {
-        let mask = kuna_base::address::calc_mask(size);
-        CircleRange { left, right: right & mask, mask, step, isempty: false }
-    }
-
-    /// Construct the boolean range (C++ `CircleRange(bool val)`): `[1,2)` for
-    /// true, `[0,1)` for false (1-byte mask).
-    pub fn from_bool(val: bool) -> CircleRange {
-        let mask = 0xff;
-        if val {
-            CircleRange { left: 1, right: 2, mask, step: 1, isempty: false }
-        } else {
-            CircleRange { left: 0, right: 1, mask, step: 1, isempty: false }
-        }
-    }
-
-    /// Get the minimum value in the range (C++ `CircleRange::getMin`).
-    pub fn get_min(&self) -> uintb {
-        self.left
-    }
-
-    /// Get the step/stride of the range (C++ `CircleRange::getStep`).
-    pub fn get_step(&self) -> int4 {
-        self.step
-    }
-
-    /// Get the mask delimiting the range's domain (C++ `CircleRange::getMask`).
-    pub fn get_mask(&self) -> uintb {
-        self.mask
-    }
-
-    /// Return \b true if the range is empty (C++ `CircleRange::isEmpty`).
-    pub fn is_empty(&self) -> bool {
-        self.isempty
-    }
-
-    /// Reset the range explicitly (C++ `CircleRange::setRange`).
-    pub fn set_range(&mut self, left: uintb, right: uintb, size: int4, step: int4) {
-        self.mask = kuna_base::address::calc_mask(size);
-        self.left = left;
-        self.right = right & self.mask;
-        self.step = step;
-    }
-
-    /// Return the number of integers contained in the range
-    /// (C++ `CircleRange::getSize`).
-    ///
-    /// SEAM(W5): faithful body once the real `CircleRange` lands; the size
-    /// formula here matches the upstream `(right-left)&mask` over `step`, but
-    /// the full normalization (wrap, full-range case) is part of the deferred
-    /// implementation.
-    pub fn get_size(&self) -> uintb {
-        if self.isempty {
-            return 0;
-        }
-        if self.step == 0 {
-            return 0;
-        }
-        let diff = self.right.wsub(self.left) & self.mask;
-        diff / (self.step as uintb)
-    }
-
-    /// Return \b true if the given value is in the range (C++
-    /// `CircleRange::contains`).  // SEAM(W5)
-    pub fn contains(&self, _val: uintb) -> KunaResult<bool> {
-        Err(KunaError::lowlevel(
-            "CircleRange::contains: rangeutil value-set domain deferred to W5",
-        ))
-    }
-
-    /// Advance the iterator over range values (C++ `CircleRange::getNext`).
-    /// SEAM(W5)
-    pub fn get_next(&self, _val: &mut uintb) -> KunaResult<bool> {
-        Err(KunaError::lowlevel(
-            "CircleRange::getNext: rangeutil value-set domain deferred to W5",
-        ))
-    }
-
-    /// Intersect with another range (C++ `CircleRange::intersect`).  // SEAM(W5)
-    pub fn intersect(&mut self, _op2: &CircleRange) -> KunaResult<int4> {
-        Err(KunaError::lowlevel(
-            "CircleRange::intersect: rangeutil value-set domain deferred to W5",
-        ))
-    }
-
-    /// Pull the range back through an op to its input (C++ `CircleRange::pullBack`).
-    ///
-    /// SEAM(W5): returns the input Varnode the range applies to (or null) and the
-    /// markup Varnode.  Built on the deferred value-set domain.
-    pub fn pull_back(
-        &mut self,
-        _fd: &Funcdata,
-        _readop: OpId,
-        _usenzmask: bool,
-    ) -> KunaResult<Option<VarnodeId>> {
-        Err(KunaError::lowlevel(
-            "CircleRange::pullBack: rangeutil value-set domain deferred to W5",
-        ))
-    }
-}
+// `CircleRange` is the circular value-set domain that `GuardRecord`/the
+// jump-table normalization analysis are built on.  It used to be a local
+// placeholder here (only the constructor/accessor surface, value-set operators
+// were `Err` shells); w6-s5-rangeutil ports it completely, so it is now
+// re-exported from [`crate::rangeutil`].  The faithful API names differ
+// slightly from the old shims: `new_value`/`new`/`new_bool` (vs the old
+// `from_value`/`from_range`/`from_bool`) and `contains_val`/`get_next`/
+// `intersect` return plain values rather than the old `KunaResult` shells.
+pub use crate::rangeutil::CircleRange;
 
 // ---------------------------------------------------------------------------
 // PcodeOpNode (expression.hh:28 -- a data-flow edge)
@@ -1112,7 +989,7 @@ impl JumpValues for JumpValuesRange {
     }
 
     fn contains(&self, val: uintb) -> KunaResult<bool> {
-        self.range.contains(val)
+        Ok(self.range.contains_val(val))
     }
 
     fn initialize_for_reading(&mut self) -> bool {
@@ -1125,7 +1002,7 @@ impl JumpValues for JumpValuesRange {
 
     fn next(&mut self) -> KunaResult<bool> {
         let mut cv = self.curval;
-        let r = self.range.get_next(&mut cv)?;
+        let r = self.range.get_next(&mut cv);
         self.curval = cv;
         Ok(r)
     }
@@ -1227,7 +1104,7 @@ impl JumpValues for JumpValuesRangeDefault {
         if self.extravalue == val {
             return Ok(true);
         }
-        self.base.range.contains(val)
+        Ok(self.base.range.contains_val(val))
     }
 
     fn initialize_for_reading(&mut self) -> bool {
@@ -1246,7 +1123,7 @@ impl JumpValues for JumpValuesRangeDefault {
             return Ok(false);
         }
         let mut cv = self.base.curval;
-        if self.base.range.get_next(&mut cv)? {
+        if self.base.range.get_next(&mut cv) {
             self.base.curval = cv;
             return Ok(true);
         }
