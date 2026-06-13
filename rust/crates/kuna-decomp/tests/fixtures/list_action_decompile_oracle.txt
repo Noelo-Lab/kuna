@@ -1,0 +1,260 @@
+0000        !    universal
+0001                  start
+0002                  constbase
+0003        !         defaultparams
+0004        !         extrapopsetup
+0005        !         prototypetypes
+0006        !         funclink
+0007 repeat           fullloop
+0008 repeat                mainloop
+0009                            unreachable
+0010                            varnodeprops
+0011                            lowerswitchinstall
+0012                            heritage
+0013                            paramdouble
+0014                            segmentize
+0015        !                   internalstorage
+0016                            forcegoto
+0017                            directwrite
+0018                            activeparam
+0019                            returnrecovery
+0020                            restrictlocal
+0021                            deadcode
+0022                            dynamicmapping
+0023                            spacebase
+0024                            nonzeromask
+0025                            infertypes
+0026                            restructure_varnode
+0027 repeat                     stackstall
+0028 repeat                          oppool1
+0029                             earlyremoval
+0030                             termorder
+0031                             selectcse
+0032                             collect_terms
+0033                             pullsub_multi
+0034                             pullsub_indirect
+0035                             push_multi
+0036                             sborrow
+0037                             scarry
+0038                             intlessequal
+0039                             trivialarith
+0040                             trivialbool
+0041                             trivialshift
+0042                             signshift
+0043                             testsign
+0044                             identityel
+0045                             ormask
+0046                             andmask
+0047                             orconsume
+0048                             orcollapse
+0049                             andorlump
+0050                             shiftbitops
+0051                             rightshiftand
+0052                             notdistribute
+0053                             highorderand
+0054                             anddistribute
+0055                             andcommute
+0056                             andpiece
+0057                             andzext
+0058                             andcompare
+0059                             doublesub
+0060                             doubleshift
+0061                             doublearithshift
+0062                             concatshift
+0063                             leftright
+0064                             boolsignshift
+0065                             boolsignless
+0066                             sborrowge
+0067                             shiftcompare
+0068                             shift2mult
+0069                             shiftpiece
+0070                             addcarrychain
+0071                             multicollapse
+0072                             indirectcollapse
+0073                             2comp2mult
+0074                             sub2add
+0075                             carryelim
+0076                             bxor2notequal
+0077                             less2zero
+0078                             lessequal2zero
+0079                             sless2zero
+0080                             equal2zero
+0081                             equal2constant
+0082                             threewaycomp
+0083                             xorcollapse
+0084                             addmultcollapse
+0085                             arraystride
+0086                             collapseconstants
+0087                             transformcpool
+0088                             propagatecopy
+0089                             zexteliminate
+0090                             slesstoless
+0091                             zextsless
+0092                             bitundistribute
+0093                             booleanundistribute
+0094                             booleandedup
+0095                             boolzext
+0096                             booleannegate
+0097                             logic2bool
+0098                             subextcomm
+0099                             subcommute
+0100                             concatcommute
+0101                             concatzext
+0102                             zextcommute
+0103                             zextshiftzext
+0104                             shiftand
+0105                             concatzero
+0106                             concatleftshift
+0107                             subzext
+0108                             subcancel
+0109                             shiftsub
+0110                             humptydumpty
+0111                             dumptyhump
+0112                             humptyor
+0113                             negateidentity
+0114                             subnormal
+0115                             positivediv
+0116                             divtermadd
+0117                             divtermadd2
+0118                             divopt
+0119                             signform
+0120                             signform2
+0121                             signdiv2
+0122                             divchain
+0123                             signnearmult
+0124                             modopt
+0125                             signmod2nopt
+0126                             signmod2nopt2
+0127                             signmod2opt
+0128                             switchsingle
+0129                             condnegate
+0130                             boolnegate
+0131                             lessequal
+0132                             lessnotequal
+0133                             lessone
+0134                             rangemeld
+0135                             ovlesssimplify
+0136                             floatrange
+0137                             piece2zext
+0138                             piece2sext
+0139                             popcountboolxor
+0140                             xorswap
+0141                             lzcountshiftbool
+0142                             floatsign
+0143                             orcompare
+0144                             subvar_and
+0145                             subvar_subpiece
+0146                             splitflow
+0147                             ptrflow
+0148                             subvar_compzero
+0149                             subvar_shift
+0150                             subvar_zext
+0151                             subvar_sext
+0152                             negatenegate
+0153                             conditionalmove
+0154                             orpredicate
+0155                             funcptrencoding
+0156                             subfloat_convert
+0157                             floatcast
+0158                             ignorenan
+0159                             unsigned2float
+0160                             int2floatcollapse
+0161                             ptraddundo
+0162                             ptrsubundo
+0163                             segment
+0164                             piecepathology
+0165                             doubleload
+0166                             doublestore
+0167                             doublein
+0168                             doubleout
+0169                             stackprobeloop
+
+0170        !                        lanedivide
+0171                                 multicse
+0172                                 shadowvar
+0173                                 deindirect
+0174                                 stackptrflow
+
+0175                            redundbranch
+0176                            blockstructure
+0177                            constantptr
+0178 repeat                     oppool2
+0179                        pushptr
+0180                        structoffset0
+0181                        ptrarith
+0182                        loadvarnode
+0183                        storevarnode
+
+0184                            determinedbranch
+0185                            unreachable
+0186                            nodejoin
+0187                            conditionalexe
+0188                            condconst
+
+0189                       likelytrash
+0190                       directwrite
+0191                       deadcode
+0192 repeat                donothing
+0193                       switchnorm
+0194                       lowerswitchdetect
+0195                       stripstackguard
+0196                       returnsplit
+0197                       unjustparams
+0198                       starttypes
+0199                       activereturn
+
+0200                  mapped_local_sync
+0201                  startcleanup
+0202 repeat           cleanup
+0203              multnegone
+0204              addunsigned
+0205              2comp2sub
+0206              dumptyhumplate
+0207              subright
+0208              floatsigncleanup
+0209              expandload
+0210              ptrsubcharconstant
+0211              extensionpush
+0212              piecestructure
+0213              splitcopy
+0214              splitload
+0215              splitstore
+0216              stringcopy
+0217              stringstore
+0218              memsetcopy
+0219              bitfield_store
+0220              bitfield_out
+0221              bitfield_load
+0222              bitfield_in
+0223              pull_absorb
+0224              insert_absorb
+
+0225                  prefercomplement
+0226                  structuretransform
+0227        !         assignhigh
+0228        !         mergerequired
+0229        !         markexplicit
+0230        !         markimplied
+0231        !         mergemultientry
+0232        !         mergecopy
+0233        !         dominantcopy
+0234        !         dynamicsymbols
+0235        !         markindirectonly
+0236        !         mergeadjacent
+0237        !         mergetype
+0238        !         hideshadow
+0239        !         copymarker
+0240                  latedonothing
+0241                  blockstructure
+0242                  prefercomplement
+0243                  structuretransform
+0244                  presentcompareform
+0245        !         outputprototype
+0246        !         inputprototype
+0247        !         mapglobals
+0248        !         dynamicsymbols
+0249        !         namevars
+0250        !         setcasts
+0251                  finalstructure
+0252        !         prototypewarnings
+0253                  stop
