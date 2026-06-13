@@ -99,6 +99,7 @@ pub mod kuna_compareform;
 pub mod dynamic;
 pub mod kuna_dynamichashmax;
 pub mod kuna_stackguard;
+pub mod kuna_stackprobeloop;
 pub mod kuna_regiongraph;
 pub mod kuna_regionid;
 pub mod kuna_loweredswitch;

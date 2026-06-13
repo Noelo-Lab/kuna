@@ -868,6 +868,166 @@ impl Action for ActionLowerSwitchDetect {
 }
 
 //===========================================================================
+// Install (CFG surgery) on the restart pass, pre-SSA
+//===========================================================================
+
+/// (kuna) Install the recorded lowered switch as a `BRANCHIND` + `JumpTable`
+/// (C++ `ActionLowerSwitchInstall`).
+///
+/// Runs before `ActionHeritage` on the restart pass (pre-SSA, no `MULTIEQUAL`s
+/// yet, so the edge surgery needs no phi patching).  Reads the side table; for
+/// each recorded record that is not yet installed, it calls
+/// `Funcdata::kunaInstallLoweredSwitch` to manufacture the S2 artifact (replace
+/// the cascade head's `CBRANCH` with a `BRANCHIND(V)`, rewire its out-edges to
+/// the case targets + default, and build a fully-labelled `JumpTable`).  A
+/// non-zero return makes the mainloop re-iterate so `ActionHeritage` rebuilds
+/// SSA over the corrected CFG.
+///
+/// ## SEAM(W7/W4) — the CFG surgery is genuinely missing here
+///
+/// The body's central call, `Funcdata::kunaInstallLoweredSwitch`, is a
+/// `Funcdata` member (declared in `funcdata.hh`, defined in
+/// `kuna_loweredswitch.cc:463`) that this pack **cannot author** (the `funcdata*`
+/// modules are not owned), and it depends on surfaces that are not yet ported:
+///
+///   * `Funcdata::getHeritagePass()` — the install gate `getHeritagePass() != 0`
+///     selects the pre-SSA window; `Funcdata` does not own/expose a global
+///     heritage-pass counter yet (the `Heritage` object is seamed out of
+///     `Funcdata::clear`, `funcdata.rs:855`).
+///   * a **real** `JumpTable` registry: `Funcdata::jumpvec` carries opaque
+///     [`JumpTableId`](crate::funcdata::JumpTableId) handles, so a constructed
+///     [`JumpTable`](crate::jumptable::JumpTable) (which exists, with
+///     `set_indirect_op`/`add_block_to_switch`/`set_last_as_default`/
+///     `mark_complete`) cannot be attached and pushed as a live `jumpvec` entry.
+///   * `JumpTable::kunaSetTrivialModel` — the no-op non-override model setter is
+///     unported (it touches the private `jmodel`, in `jumptable.rs`, not owned).
+///   * `Funcdata::removeUnreachableBlocks` — the orphan-spine sweep is seam-noted
+///     (`coreaction_early.rs:493`, not ported).
+///
+/// So `apply` ports the Action *structure* faithfully — the gate, the
+/// pre-SSA-window guard, the store lookup, and the per-record loop — but the
+/// install call declines (returns 0 changes) until W7 wires the heritage handle
+/// and the jump-table registry onto `Funcdata` and lands
+/// `kunaInstallLoweredSwitch`.  Recorded as a loss.  This is the mirror of the
+/// Detect half's already-shipped SEAM (Detect records the hint; Install applies
+/// it once the surfaces exist).
+pub struct ActionLowerSwitchInstall {
+    /// Engine-owned bookkeeping (C++ inherited `Action` base fields).
+    base: ActionBase,
+    /// Resolved `glb->recover_lowered_switch` gate (SEAM(W4); resolved at
+    /// construction, the `ActionLowerSwitchDetect` convention).
+    enabled: bool,
+    /// The sticky side table (C++ file-static `loweredStore`).  In C++ this is
+    /// the *same* file-static the Detect half writes; the Rust port models it as
+    /// an owned struct here.  SEAM(W7/W9): sharing the single discovered-hint
+    /// store between the Detect and Install Actions (the C++ file-static) is the
+    /// assembler's job — until the CFG surgery lands the Install reads its own
+    /// (empty) store, which is consistent with the install declining anyway.
+    store: KunaLoweredSwitchStore,
+}
+
+impl ActionLowerSwitchInstall {
+    /// Construct in group `g` with the resolved gate (C++
+    /// `ActionLowerSwitchInstall::ActionLowerSwitchInstall(const string &g)`:
+    /// `Action(0,"lowerswitchinstall",g)`).
+    pub fn new(enabled: bool, g: impl Into<String>) -> ActionLowerSwitchInstall {
+        ActionLowerSwitchInstall {
+            base: ActionBase::new(0, "lowerswitchinstall", g),
+            enabled,
+            store: KunaLoweredSwitchStore::new(),
+        }
+    }
+
+    /// Box the action (parallels the `ActionXxx::boxed` constructors).
+    pub fn boxed(enabled: bool, g: impl Into<String>) -> Box<dyn Action> {
+        Box::new(ActionLowerSwitchInstall::new(enabled, g))
+    }
+
+    /// Borrow the recovered-switch side table.
+    pub fn store(&self) -> &KunaLoweredSwitchStore {
+        &self.store
+    }
+
+    /// Mutably borrow the side table (so a future assembler can seed it from the
+    /// shared Detect store; see the struct's SEAM note).
+    pub fn store_mut(&mut self) -> &mut KunaLoweredSwitchStore {
+        &mut self.store
+    }
+
+    /// The install body, exposed for testing without the Action state machine.
+    /// Returns the number of records installed (always 0 until the W7/W4 surgery
+    /// surfaces land — see the struct docs).
+    pub fn install(&mut self, data: &mut Funcdata) -> int4 {
+        // if (!data.getArch()->recover_lowered_switch) return 0;
+        // SEAM(W4): the seam Architecture on Funcdata has no flag; the gate is the
+        // resolved `enabled` field (the Detect convention).
+        if !self.enabled {
+            return 0;
+        }
+        // if (data.getHeritagePass() != 0) return 0;  // only in the pre-SSA window
+        // SEAM(W7): Funcdata::getHeritagePass() is not ported (no heritage handle
+        // / global pass counter exposed).  Without it the pre-SSA-window guard
+        // cannot be evaluated; the install declines regardless, so the structure
+        // is preserved and the guard's intent is documented.
+        //
+        // iter = loweredStore.find(keyForFunc(data));
+        // if (iter == loweredStore.end() || (*iter).second.empty()) return 0;
+        if !self.store.has_record(data) {
+            return 0;
+        }
+
+        // int4 changed = 0;
+        // const std::vector<KunaLoweredSwitchRecord> &recs( (*iter).second );
+        // for(int4 i=0;i<recs.size();++i) {
+        //   JumpTable *jt = data.kunaInstallLoweredSwitch(r.branchAddr,r.varAddr,r.varSize,
+        //                                                  r.caseVals,r.caseTargets,r.defaultTarget);
+        //   if (jt != 0) changed += 1;
+        // }
+        // return changed;
+        //
+        // SEAM(W7/W4): Funcdata::kunaInstallLoweredSwitch — the CFG surgery — is a
+        // Funcdata member this pack cannot author, depending on getHeritagePass, a
+        // real JumpTable registry, kunaSetTrivialModel, and removeUnreachableBlocks
+        // (see the struct docs).  Until those land the install declines.
+        let _records = self.store.records(data).len();
+        let _ = data;
+        0
+    }
+}
+
+impl Action for ActionLowerSwitchInstall {
+    fn base(&self) -> &ActionBase {
+        &self.base
+    }
+    fn base_mut(&mut self) -> &mut ActionBase {
+        &mut self.base
+    }
+
+    /// C++ `ActionLowerSwitchInstall::clone`:
+    /// `if (!grouplist.contains(getGroup())) return 0;`
+    fn clone_filtered(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Action>> {
+        if !grouplist.contains(self.get_group()) {
+            return None;
+        }
+        Some(Box::new(ActionLowerSwitchInstall {
+            base: self.base.clone(),
+            enabled: self.enabled,
+            store: self.store.clone(),
+        }))
+    }
+
+    /// C++ `ActionLowerSwitchInstall::apply` — install the recorded switch as a
+    /// `BRANCHIND` + `JumpTable`.  The change count flows into `count` (the C++
+    /// `return changed` makes the mainloop re-iterate); here the install declines
+    /// at the W7/W4 surgery seam, so `count` is untouched.
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        let changed = self.install(data);
+        self.base.count += changed;
+        0
+    }
+}
+
+//===========================================================================
 // Option gate
 //===========================================================================
 

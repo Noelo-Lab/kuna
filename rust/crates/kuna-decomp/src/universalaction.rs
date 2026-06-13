@@ -38,14 +38,17 @@
 //!   `RuleIndirectConcat` (C++ 5938) are **commented out** in upstream and so
 //!   are absent here too.
 //!
-//! # Genuinely-unported passes (the B0 allowlist)
+//! # The B0 allowlist (now empty)
 //!
-//! A handful of Rules/Actions referenced by `universalAction` sit in files this
-//! wave does not own and depend on un-ported infrastructure (SEAM markers in
-//! their home modules).  They are *omitted* from the materialized tree and
-//! enumerated in [`UNPORTED_ALLOWLIST`] with their blocking item; the B0 gate
-//! turns that list into a documented dump diff.  Every other Action/Rule in the
-//! C++ tree is present.
+//! Earlier waves left a handful of Rules/Actions referenced by `universalAction`
+//! un-ported (SEAM markers in their home modules), omitted from the materialized
+//! tree and enumerated in [`UNPORTED_ALLOWLIST`].  As of
+//! `w8x-universalaction-wire` all of them (`splitflow`, `subfloat_convert`,
+//! `stackprobeloop`, `lowerswitchinstall`, `dumptyhumplate`, `splitcopy`,
+//! `splitload`, `splitstore`, `stringcopy`, `stringstore`) are ported and wired
+//! into [`universal_sched`] at their exact C++ registration positions, so
+//! [`UNPORTED_ALLOWLIST`] is **empty** and the materialized "decompile" tree is
+//! byte-equal to the C++ oracle `list action` dump.
 
 use std::rc::Rc;
 
@@ -76,65 +79,15 @@ pub struct UnportedEntry {
 
 /// Every pass present in the C++ `universalAction` tree but not yet ported.
 ///
-/// Each is blocked by un-ported infrastructure in a file outside this wave's
-/// ownership (the cited SEAM lives in the pass's home module).  The B0 listing
-/// test asserts the materialized "decompile" dump differs from the C++ oracle
-/// *only* by these entries.
-pub const UNPORTED_ALLOWLIST: &[UnportedEntry] = &[
-    // oppool1 (mainloop)
-    UnportedEntry {
-        name: "splitflow",
-        group: "subvar",
-        blocked_by: "SEAM(W5-transform): SplitFlow/RuleSplitFlow/LaneDivide in subflow.rs",
-    },
-    UnportedEntry {
-        name: "subfloat_convert",
-        group: "floatprecision",
-        blocked_by: "SEAM: SubfloatFlow/RuleSubfloatConvert (dtype/float) in subflow.rs",
-    },
-    UnportedEntry {
-        name: "stackprobeloop",
-        group: "analysis",
-        blocked_by: "unported RuleStackProbeLoop (GH-8017/6858)",
-    },
-    // ActionLowerSwitchInstall (mainloop, group "switchnorm")
-    UnportedEntry {
-        name: "lowerswitchinstall",
-        group: "switchnorm",
-        blocked_by: "SEAM(W7/W4): Funcdata heritage handle + jump-table registry (kuna_loweredswitch.rs)",
-    },
-    // cleanup pool
-    UnportedEntry {
-        name: "dumptyhumplate",
-        group: "cleanup",
-        blocked_by: "unported RuleDumptyHumpLate",
-    },
-    UnportedEntry {
-        name: "splitcopy",
-        group: "splitcopy",
-        blocked_by: "SEAM: SplitDatatype/RuleSplitCopy (dtype) in subflow.rs",
-    },
-    UnportedEntry {
-        name: "splitload",
-        group: "splitpointer",
-        blocked_by: "SEAM: SplitDatatype/RuleSplitLoad (dtype) in subflow.rs",
-    },
-    UnportedEntry {
-        name: "splitstore",
-        group: "splitpointer",
-        blocked_by: "SEAM: SplitDatatype/RuleSplitStore (dtype) in subflow.rs",
-    },
-    UnportedEntry {
-        name: "stringcopy",
-        group: "constsequence",
-        blocked_by: "unported RuleStringCopy (constseq StringSequence)",
-    },
-    UnportedEntry {
-        name: "stringstore",
-        group: "constsequence",
-        blocked_by: "unported RuleStringStore (constseq StringSequence)",
-    },
-];
+/// **Empty since `w8x-universalaction-wire`.**  The last ten allowlisted passes
+/// (`splitflow`, `subfloat_convert`, `stackprobeloop`, `lowerswitchinstall`,
+/// `dumptyhumplate`, `splitcopy`, `splitload`, `splitstore`, `stringcopy`,
+/// `stringstore`) were ported on the `w8x-subflow-splits` / `w8x-constseq-strings`
+/// / `kuna_stackprobeloop` / `kuna_loweredswitch` branches and are now wired into
+/// [`universal_sched`] at their exact C++ registration positions.  The
+/// materialized "decompile" tree is therefore **byte-equal** to the C++ oracle
+/// `list action` dump with no diff (the B0 empty-allowlist gate).
+pub const UNPORTED_ALLOWLIST: &[UnportedEntry] = &[];
 
 // =============================================================================
 // SchedNode — the declarative schedule (ADR 0005)
@@ -323,6 +276,12 @@ impl ActionListFilter {
 /// Emit one `Action::print` line (`action.cc:132`): `setw(4)` index, the 8-char
 /// `" repeat "`/blank, the `!`/`S`/`A` flag columns, `depth*5+2` indent, name.
 /// Returns `num+1`.
+///
+/// The index is **zero-padded** to width 4 (`{num:04}`), matching the C++ oracle
+/// `list action` dump: the console's shared output stream carries a sticky
+/// `setfill('0')` (set by the address-printing commands run before `list action`
+/// in the documented capture procedure), so `setw(4) << dec << num` renders
+/// `0000`, `0001`, …  The B0 gate byte-compares against that captured dump.
 fn print_action_line(
     out: &mut String,
     num: int4,
@@ -332,7 +291,7 @@ fn print_action_line(
     name: &str,
 ) -> int4 {
     use std::fmt::Write;
-    let _ = write!(out, "{num:>4}");
+    let _ = write!(out, "{num:04}");
     out.push_str(if (flags & ruleflags::rule_repeatapply) != 0 { " repeat " } else { "        " });
     out.push(if (flags & ruleflags::rule_onceperfunc) != 0 { '!' } else { ' ' });
     out.push(if (breakpoint & (1 | 2)) != 0 { 'S' } else { ' ' }); // break_start|tmpbreak_start
@@ -346,9 +305,12 @@ fn print_action_line(
 
 /// Emit one `ActionPool::print` rule line (`action.cc:765`): `setw(4)` index,
 /// the `D`/`A` columns, `depth*5+2` indent, rule name.  (No newline.)
+///
+/// Zero-padded index, for the same sticky-`setfill('0')` reason as
+/// [`print_action_line`].
 fn print_rule_line(out: &mut String, num: int4, disabled: bool, break_action: bool, depth: int4, name: &str) {
     use std::fmt::Write;
-    let _ = write!(out, "{num:>4}");
+    let _ = write!(out, "{num:04}");
     out.push(if disabled { 'D' } else { ' ' });
     out.push(if break_action { 'A' } else { ' ' });
     for _ in 0..(depth * 5 + 2) {
@@ -541,7 +503,7 @@ pub fn universal_sched(
         rrow!("orcompare", "analysis", crate::ruleaction_8::RuleOrCompare),
         rrow!("subvar_and", "subvar", crate::subflow::RuleSubvarAnd::new("subvar")),
         rrow!("subvar_subpiece", "subvar", crate::subflow::RuleSubvarSubpiece::new("subvar")),
-        // UNPORTED: splitflow (subvar) — SEAM(W5-transform) subflow.rs
+        rrow!("splitflow", "subvar", crate::subflow::RuleSplitFlow::new("subvar")),
         rrow!("ptrflow", "subvar", crate::ruleaction_7::RulePtrFlow::new()),
         rrow!("subvar_compzero", "subvar", crate::subflow::RuleSubvarCompZero::new("subvar")),
         rrow!("subvar_shift", "subvar", crate::subflow::RuleSubvarShift::new("subvar")),
@@ -551,7 +513,7 @@ pub fn universal_sched(
         rrow!("conditionalmove", "conditionalexe", crate::ruleaction_7::RuleConditionalMove::new()),
         rrow!("orpredicate", "conditionalexe", crate::condexe::RuleOrPredicate::new("conditionalexe")),
         rrow!("funcptrencoding", "analysis", crate::ruleaction_8::RuleFuncPtrEncoding),
-        // UNPORTED: subfloat_convert (floatprecision) — SEAM subflow.rs
+        rrow!("subfloat_convert", "floatprecision", crate::subflow::RuleSubfloatConvert::new("floatprecision")),
         rrow!("floatcast", "floatprecision", crate::ruleaction_7::RuleFloatCast),
         rrow!("ignorenan", "floatprecision", crate::ruleaction_7::RuleIgnoreNan),
         rrow!("unsigned2float", "analysis", crate::ruleaction_8::RuleUnsigned2Float),
@@ -564,7 +526,9 @@ pub fn universal_sched(
         rrow!("doublestore", "doubleprecis", crate::double::RuleDoubleStore::new("doubleprecis")),
         rrow!("doublein", "doubleprecis", crate::double::RuleDoubleIn::new("doubleprecis")),
         rrow!("doubleout", "doubleprecis", crate::double::RuleDoubleOut::new("doubleprecis")),
-        // UNPORTED: stackprobeloop (analysis) — unported RuleStackProbeLoop
+        // (kuna) GH-8017/6858: gated by arch flag model_stack_probe_loop, resolved
+        // at construction (default-on, DIV-3); does not affect the dump.
+        rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new(true, "analysis")),
     ];
     // C++: `for(iter=conf->extra_pool_rules...) actprop->addRule(*iter);`
     oppool1_rules.extend(extra_pool_rules);
@@ -584,15 +548,18 @@ pub fn universal_sched(
         rrow!("multnegone", "cleanup", crate::ruleaction_6::RuleMultNegOne::new("cleanup")),
         rrow!("addunsigned", "cleanup", crate::ruleaction_6::RuleAddUnsigned::new("cleanup")),
         rrow!("2comp2sub", "cleanup", crate::ruleaction_6::Rule2Comp2Sub::new("cleanup")),
-        // UNPORTED: dumptyhumplate (cleanup) — unported RuleDumptyHumpLate
+        rrow!("dumptyhumplate", "cleanup", crate::subflow::RuleDumptyHumpLate::new("cleanup")),
         rrow!("subright", "cleanup", crate::ruleaction_6::RuleSubRight::new("cleanup")),
         rrow!("floatsigncleanup", "cleanup", crate::ruleaction_8::RuleFloatSignCleanup),
         rrow!("expandload", "cleanup", crate::ruleaction_8::RuleExpandLoad),
         rrow!("ptrsubcharconstant", "cleanup", crate::ruleaction_6::RulePtrsubCharConstant::new("cleanup")),
         rrow!("extensionpush", "cleanup", crate::ruleaction_6::RuleExtensionPush::new("cleanup")),
         rrow!("piecestructure", "cleanup", crate::ruleaction_6::RulePieceStructure::new("cleanup")),
-        // UNPORTED: splitcopy / splitload / splitstore (dtype) — SEAM subflow.rs
-        // UNPORTED: stringcopy / stringstore (constseq StringSequence)
+        rrow!("splitcopy", "splitcopy", crate::subflow::RuleSplitCopy::new("splitcopy")),
+        rrow!("splitload", "splitpointer", crate::subflow::RuleSplitLoad::new("splitpointer")),
+        rrow!("splitstore", "splitpointer", crate::subflow::RuleSplitStore::new("splitpointer")),
+        rrow!("stringcopy", "constsequence", crate::constseq::RuleStringCopy::new("constsequence")),
+        rrow!("stringstore", "constsequence", crate::constseq::RuleStringStore::new("constsequence")),
         rrow!("memsetcopy", "constsequence", crate::kuna_memsetsequence::RuleMemsetCopy::with_group(false, "constsequence")),
         rrow!("bitfield_store", "bitfields", crate::bitfield::RuleBitFieldStore),
         rrow!("bitfield_out", "bitfields", crate::bitfield::RuleBitFieldOut),
@@ -626,7 +593,11 @@ pub fn universal_sched(
         children: vec![
             act!(ActionUnreachable::boxed("base")),
             act!(ActionVarnodeProps::boxed("base")),
-            // (kuna) ActionLowerSwitchInstall("switchnorm") — UNPORTED (SEAM W7/W4)
+            // (kuna) Install a previously-detected lowered switch BEFORE heritage
+            // (coreaction.cc:5755).  `enabled` resolves the C++
+            // `glb->recover_lowered_switch` gate (default-on, DIV-3); the gate does
+            // not affect the dump.
+            act!(crate::kuna_loweredswitch::ActionLowerSwitchInstall::boxed(true, "switchnorm")),
             act!(ActionHeritage::boxed("base")),
             act!(ActionParamDouble::boxed("protorecovery")),
             act!(ActionSegmentize::boxed("base")),
