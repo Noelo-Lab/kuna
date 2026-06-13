@@ -92,3 +92,4 @@ pub mod kuna_memsetsequence;
 pub mod kuna_compareform;
 pub mod kuna_regiongraph;
 pub mod kuna_regionid;
+pub mod kuna_loweredswitch;
