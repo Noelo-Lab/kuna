@@ -90,3 +90,4 @@ pub mod coreaction_protos;
 pub mod kuna_returnpair;
 pub mod kuna_memsetsequence;
 pub mod kuna_compareform;
+pub mod kuna_regiongraph;
