@@ -581,16 +581,44 @@ impl Architecture {
 
     /// Build the [`ArchHandle`] (the [`ArchSeam`] the W3 IR holds as `glb`).
     ///
-    /// SEAM(W4): the IR boundary only reaches `manage()` (const/unique/iop/fspec
-    /// spaces + `getConstant`) and `getMinimumLanedRegisterSize`.  The handle
-    /// carries an IR-boundary `AddrSpaceManager` cloned from this architecture's
-    /// space layout; the lift-emitted varnodes carry their own engine spaces, so
-    /// the two managers coexist (documented in `verify_w3_ir_flow`).
+    /// LOSS-132 keystone: the handle **shares the engine's single
+    /// `AddrSpaceManager`** (the `Rc` the SLEIGH translator populated, with
+    /// fspec/iop/join inserted by [`Architecture::insert_ir_call_spaces`]).  The
+    /// lift-emitted varnodes carry `Rc<AddrSpace>` from exactly this manager, so
+    /// `glb.manage()` returns the same space identities and indices the analysis
+    /// passes (heritage and downstream) key their per-space state by.  There is
+    /// now one manager, faithful to the C++ `Architecture : AddrSpaceManager`.
     pub fn build_arch_handle(&self) -> ArchHandle {
-        let manage = ir_boundary_manager(self.manage());
-        let mut seam = ArchSeam::new(manage);
+        let manage = self.translate.manager_rc();
+        let mut seam = ArchSeam::new_shared(manage);
         seam.min_laned_register_size = self.get_minimum_laned_register_size();
         Rc::new(seam)
+    }
+
+    /// Insert the analysis-only fspec/iop/join spaces into the single engine
+    /// manager, mirroring C++ `Architecture::restoreFromSpec`
+    /// (architecture.cc:638-640): `FspecSpace`, then `IopSpace`, then
+    /// `JoinSpace`, each appended at `numSpaces()`.  Idempotent — re-running
+    /// init must not double-insert (the manager rejects a duplicate name).
+    fn insert_ir_call_spaces(&mut self) -> KunaResult<()> {
+        use kuna_base::space::{FspecSpace, IopSpace, JoinSpace};
+        let big_end = self
+            .manage()
+            .get_default_code_space()
+            .map(|s| s.is_big_endian())
+            .unwrap_or(false);
+        // Already inserted (re-init): the engine manager already carries them.
+        if self.manage().get_fspec_space().is_some() {
+            return Ok(());
+        }
+        let manager = self.translate.base_mut().manager_mut();
+        let next = manager.num_spaces();
+        manager.insert_space(Rc::new(FspecSpace::new(next)))?;
+        let next = manager.num_spaces();
+        manager.insert_space(Rc::new(IopSpace::new(next)))?;
+        let next = manager.num_spaces();
+        manager.insert_space(Rc::new(JoinSpace::new(next, big_end)))?;
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -860,6 +888,14 @@ impl Architecture {
     /// subsystem *construction* + ordering so a decoded engine becomes a
     /// decompilation-ready `Architecture`.
     pub fn init_post_engine(&mut self) -> KunaResult<()> {
+        // C++ `Architecture::restoreFromSpec` (architecture.cc:636-640), right
+        // after `copySpaces(newtrans)`: insert the analysis-only fspec/iop/join
+        // spaces into the **single** engine manager (LOSS-132).  The engine's
+        // `.sla` decode populated const/register/INTMEM/unique/ram; the C++
+        // appends fspec, iop, join in that order onto the *same* manager, each
+        // at `numSpaces()`.  In the Rust port the engine owns that one manager
+        // (shared as `glb`), so we insert through it here.
+        self.insert_ir_call_spaces()?;
         self.build_typegrp();
         // C++ `TypeFactory::TypeFactory` runs `setupSizes()` (the alignment map
         // + the core sizes) in the constructor, *before* `buildCoreTypes` calls
@@ -886,57 +922,6 @@ impl Architecture {
         }
         Ok(())
     }
-}
-
-// ---------------------------------------------------------------------------
-// Free helpers (kept module-level to avoid borrowing `self` while moving fields)
-// ---------------------------------------------------------------------------
-
-/// Build a fresh IR-boundary [`AddrSpaceManager`] carrying the const/unique/iop/
-/// fspec spaces the W3 IR factories reach, sized from the architecture's manager.
-///
-/// SEAM(W4): the W3 IR only consults the constant space (`newConstant`/
-/// `getConstant`), the unique space (`newUnique` + the `VarnodeBank` offset
-/// allocator), the iop space (`newVarnodeIop`), and the fspec space
-/// (`newVarnodeCallSpecs`).  These are reconstructed here with the same byte
-/// sizes/word sizes the architecture's spaces use, so the IR boundary is
-/// self-consistent without sharing the (non-`Clone`) engine manager.
-fn ir_boundary_manager(src: &AddrSpaceManager) -> AddrSpaceManager {
-    use kuna_base::space::{
-        addrspace_flags, spacetype, AddrSpace, ConstantSpace, IopSpace, FspecSpace, UniqueSpace,
-    };
-
-    let mut m = AddrSpaceManager::new();
-    // Constant space (index 0, always present).
-    m.insert_space(Rc::new(ConstantSpace::new())).expect("ir manager: constant");
-    // Unique space (UniqueSpace has a fixed offset size; index 1).
-    let big_end = src.get_default_code_space().map(|s| s.is_big_endian()).unwrap_or(false);
-    let uniq_index = m.num_spaces();
-    m.insert_space(Rc::new(UniqueSpace::new(uniq_index, 0, big_end)))
-        .expect("ir manager: unique");
-    // A default code space mirroring the engine's default code space byte/word
-    // sizes (the IR rarely needs it, but `newCodeRef`/`artificialHalt` may).
-    if let Some(code) = src.get_default_code_space() {
-        let ram = AddrSpace::new(
-            spacetype::IPTR_PROCESSOR,
-            code.get_name(),
-            code.is_big_endian(),
-            code.get_addr_size(),
-            code.get_word_size(),
-            m.num_spaces(),
-            addrspace_flags::hasphysical,
-            code.get_delay(),
-            1,
-        );
-        // Ignore a name clash with a reserved space (best-effort mirroring).
-        let _ = m.insert_space(Rc::new(ram));
-    }
-    // iop + fspec spaces (the IR call-machinery seam spaces).
-    let next = m.num_spaces();
-    let _ = m.insert_space(Rc::new(IopSpace::new(next)));
-    let next = m.num_spaces();
-    let _ = m.insert_space(Rc::new(FspecSpace::new(next)));
-    m
 }
 
 // ---------------------------------------------------------------------------

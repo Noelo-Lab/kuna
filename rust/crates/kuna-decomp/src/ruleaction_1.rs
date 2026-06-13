@@ -171,11 +171,18 @@ impl RuleCollectTerms {
         let to = data.obank().get(testop).expect("getMultCoeff: stale def op");
         // if ((testop->code() != CPUI_INT_MULT)||(!testop->getIn(1)->isConstant())) {
         //   coef = 1; return vn; }
+        // C++ short-circuits on `||`: `getIn(1)` is only evaluated once the code
+        // is confirmed INT_MULT (which always has two inputs).  Preserve that
+        // ordering so a single-input def op never reaches `getIn(1)`.
+        if to.code() != OpCode::CPUI_INT_MULT {
+            *coef = 1;
+            return vn;
+        }
         let in1 = to.get_in(1);
         let in1_const = in1
             .map(|i| data.vbank().get(i).expect("getMultCoeff: stale in1").is_constant())
             .unwrap_or(false);
-        if to.code() != OpCode::CPUI_INT_MULT || !in1_const {
+        if !in1_const {
             *coef = 1;
             return vn;
         }

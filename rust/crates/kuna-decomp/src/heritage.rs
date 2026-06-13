@@ -1500,24 +1500,159 @@ impl Heritage {
     }
 
     /// Normalize a too-small written Varnode (C++
-    /// `Heritage::normalizeWriteSize`, `heritage.cc:425`).
+    /// `Heritage::normalizeWriteSize`, `heritage.cc:417`).
     ///
-    /// SEAM: the full C++ builds PIECE/SUBPIECE expressions to fill the missing
-    /// bytes (`buildPiece`/`splitJoin`).  A heritaged range never mixes write
-    /// sizes for the simple register/stack functions on the critical path (every
-    /// write of a given location is the full size), so this path is unreached;
-    /// reaching it indicates a multi-size-write range that needs the W4
-    /// PIECE-concatenation transcription (heritage.cc:425-479).
+    /// Given a Varnode that is written but does not match the (larger) size of
+    /// the address range currently being linked, create the missing pieces in
+    /// the range and concatenate everything into a new Varnode of the correct
+    /// size, using SUBPIECE (to extract the existing bytes from a big read) and
+    /// PIECE (to recombine).  Faithful transcription of `heritage.cc:417-496`.
+    ///
+    /// The `op->isCall()` indirect-creation branch (`newIndirectCreation` +
+    /// `callOpIndirectEffect`) needs the W4 FuncCallSpecs call-machinery that is
+    /// still a seam; it is reached only for a CALL that writes a partial range,
+    /// so it is the one narrow sub-seam left (the simple register/stack
+    /// multi-size writes on the analysis critical path take the SUBPIECE/PIECE
+    /// path fully ported here).
     fn normalize_write_size(
         &self,
-        _fd: &mut crate::funcdata::Funcdata,
-        _vn: crate::seams::VarnodeId,
-        _addr: &Address,
-        _size: int4,
+        fd: &mut crate::funcdata::Funcdata,
+        vn: crate::seams::VarnodeId,
+        addr: &Address,
+        size: int4,
     ) -> crate::seams::VarnodeId {
-        unimplemented_seam(
-            "Heritage::normalize_write_size (multi-size write range needs PIECE concat)",
-        );
+        use kuna_num::opcodes::OpCode;
+
+        // op = vn->getDef(); overlap = vn->overlap(addr,size);
+        let (op, vsize, vaddr, vbig) = {
+            let v = fd.vbank().get(vn).expect("normalize_write_size: stale vn");
+            (
+                v.get_def().expect("normalize_write_size: written vn has no def"),
+                v.get_size(),
+                v.get_addr().clone(),
+                v.get_addr().is_big_endian(),
+            )
+        };
+        // overlap = vn->overlap(addr,size) (endianness-aware, mirroring
+        // `varnode.cc:Varnode::overlap`, as in normalize_read_size).
+        let overlap = if !vbig {
+            vaddr.overlap(0, addr, size)
+        } else {
+            let over = vaddr.overlap(vsize - 1, addr, size);
+            if over != -1 {
+                size - 1 - over
+            } else {
+                -1
+            }
+        };
+        let mostsigsize = size - (overlap + vsize);
+        let op_addr = fd.obank().get(op).expect("normalize_write_size: stale def op").get_addr().clone();
+        let op_is_call = fd.obank().get(op).expect("normalize_write_size: stale def op").is_call();
+        let addr_size = addr.get_space().expect("normalize_write_size: addr space").get_addr_size();
+
+        // --- Most-significant missing piece -------------------------------
+        let mut mostvn: Option<crate::seams::VarnodeId> = None;
+        if mostsigsize != 0 {
+            // pieceaddr = big-endian ? addr : addr + (overlap+vn->getSize())
+            let pieceaddr = if addr.is_big_endian() {
+                addr.clone()
+            } else {
+                addr + (overlap + vsize) as i64
+            };
+            if op_is_call {
+                // CALL partial-write indirect creation (W4 FuncCallSpecs seam).
+                unimplemented_seam(
+                    "Heritage::normalize_write_size CALL most-sig piece (needs newIndirectCreation)",
+                );
+            } else {
+                let newop = fd.new_op(2, op_addr.clone());
+                let mvn = fd
+                    .new_varnode_out(mostsigsize, &pieceaddr, newop)
+                    .expect("normalize_write_size: new_varnode_out mostvn");
+                let big = fd.new_varnode(size, addr, None); // The new read
+                fd.vbank_mut().get_mut(big).expect("normalize_write_size: big").set_active_heritage();
+                fd.op_set_opcode(newop, typeop_skeleton(OpCode::CPUI_SUBPIECE));
+                fd.op_set_input(newop, big, 0).expect("normalize_write_size: SUBPIECE in0");
+                let c = fd.new_constant(addr_size as int4, (overlap + vsize) as uintb);
+                fd.op_set_input(newop, c, 1).expect("normalize_write_size: SUBPIECE in1");
+                fd.op_insert_before(newop, op);
+                mostvn = Some(mvn);
+            }
+        }
+
+        // --- Least-significant missing piece ------------------------------
+        let mut leastvn: Option<crate::seams::VarnodeId> = None;
+        if overlap != 0 {
+            // pieceaddr = big-endian ? addr + (size-overlap) : addr
+            let pieceaddr = if addr.is_big_endian() {
+                addr + (size - overlap) as i64
+            } else {
+                addr.clone()
+            };
+            if op_is_call {
+                unimplemented_seam(
+                    "Heritage::normalize_write_size CALL least-sig piece (needs newIndirectCreation)",
+                );
+            } else {
+                let newop = fd.new_op(2, op_addr.clone());
+                let lvn = fd
+                    .new_varnode_out(overlap, &pieceaddr, newop)
+                    .expect("normalize_write_size: new_varnode_out leastvn");
+                let big = fd.new_varnode(size, addr, None); // The new read
+                fd.vbank_mut().get_mut(big).expect("normalize_write_size: big2").set_active_heritage();
+                fd.op_set_opcode(newop, typeop_skeleton(OpCode::CPUI_SUBPIECE));
+                fd.op_set_input(newop, big, 0).expect("normalize_write_size: SUBPIECE2 in0");
+                let c = fd.new_constant(addr_size as int4, 0);
+                fd.op_set_input(newop, c, 1).expect("normalize_write_size: SUBPIECE2 in1");
+                fd.op_insert_before(newop, op);
+                leastvn = Some(lvn);
+            }
+        }
+
+        // --- Recombine the existing write with the least piece ------------
+        let midvn: crate::seams::VarnodeId = if overlap != 0 {
+            let newop = fd.new_op(2, op_addr.clone());
+            // big-endian ? out at vn->getAddr() : out at addr, size overlap+vn->getSize()
+            let midaddr = if addr.is_big_endian() { vaddr.clone() } else { addr.clone() };
+            let mvn = fd
+                .new_varnode_out(overlap + vsize, &midaddr, newop)
+                .expect("normalize_write_size: new_varnode_out midvn");
+            fd.op_set_opcode(newop, typeop_skeleton(OpCode::CPUI_PIECE));
+            fd.op_set_input(newop, vn, 0).expect("normalize_write_size: PIECE in0 (most sig)");
+            fd.op_set_input(newop, leastvn.expect("normalize_write_size: leastvn"), 1)
+                .expect("normalize_write_size: PIECE in1 (least sig)");
+            fd.op_insert_after(newop, op);
+            mvn
+        } else {
+            vn
+        };
+
+        // --- Recombine the most piece on top ------------------------------
+        let bigout: crate::seams::VarnodeId = if mostsigsize != 0 {
+            let newop = fd.new_op(2, op_addr.clone());
+            let bvn = fd
+                .new_varnode_out(size, addr, newop)
+                .expect("normalize_write_size: new_varnode_out bigout");
+            fd.op_set_opcode(newop, typeop_skeleton(OpCode::CPUI_PIECE));
+            fd.op_set_input(newop, mostvn.expect("normalize_write_size: mostvn"), 0)
+                .expect("normalize_write_size: PIECE2 in0 (most sig)");
+            fd.op_set_input(newop, midvn, 1).expect("normalize_write_size: PIECE2 in1");
+            // opInsertAfter(newop, midvn->getDef())
+            let middef = fd
+                .vbank()
+                .get(midvn)
+                .expect("normalize_write_size: stale midvn")
+                .get_def()
+                .expect("normalize_write_size: midvn has no def");
+            fd.op_insert_after(newop, middef);
+            bvn
+        } else {
+            midvn
+        };
+
+        // vn->setWriteMask();
+        fd.vbank_mut().get_mut(vn).expect("normalize_write_size: vn write mask").set_write_mask();
+        bigout
     }
 
     /// Fill input holes in a heritaged range (C++ `Heritage::guardInput`,
@@ -2019,11 +2154,12 @@ impl Heritage {
 /// Build the minimal [`TypeOp`] skeleton heritage needs for the ops it creates
 /// (C++ `glb->inst[opc]` — the op-property triple `op_set_opcode` caches).
 ///
-/// Heritage only creates MULTIEQUAL (the phi, which must carry the `marker`
-/// flag so `is_marker()` / the renameRecurse MULTIEQUAL test see it) and
-/// SUBPIECE (the read-size normalizer).  The merged `Funcdata` reaches only the
-/// `seams::Architecture` (no `inst` table), so the property triple is built
-/// inline with the exact flags upstream's `TypeOpMulti`/`TypeOpSubpiece` carry.
+/// Heritage creates MULTIEQUAL (the phi, which must carry the `marker` flag so
+/// `is_marker()` / the renameRecurse MULTIEQUAL test see it), SUBPIECE (the
+/// read-size normalizer), and PIECE (the write-size normalizer's concat).  The
+/// merged `Funcdata` reaches only the `seams::Architecture` (no `inst` table),
+/// so the property triple is built inline with the exact flags upstream's
+/// `TypeOpMulti`/`TypeOpSubpiece`/`TypeOpPiece` carry.
 fn typeop_skeleton(opc: kuna_num::opcodes::OpCode) -> crate::seams::TypeOp {
     use crate::op::pcodeop_flags as f;
     use kuna_num::opcodes::OpCode;
@@ -2032,6 +2168,8 @@ fn typeop_skeleton(opc: kuna_num::opcodes::OpCode) -> crate::seams::TypeOp {
         OpCode::CPUI_MULTIEQUAL => (f::marker, "?"),
         // TypeOpSubpiece: binary.
         OpCode::CPUI_SUBPIECE => (f::binary, "SUB"),
+        // TypeOpPiece: binary (the write-size-normalizer concat, "CONCAT").
+        OpCode::CPUI_PIECE => (f::binary, "CONCAT"),
         _ => panic!("heritage typeop_skeleton: unexpected opcode {opc:?}"),
     };
     crate::seams::TypeOp::new(opc, flags, name)

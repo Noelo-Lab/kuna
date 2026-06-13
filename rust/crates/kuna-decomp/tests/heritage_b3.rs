@@ -236,15 +236,18 @@ fn render_vn(arch: &Architecture, fd: &Funcdata, vn: kuna_decomp::seams::Varnode
     VnIdentity(tok)
 }
 
-/// Render a def-op's SeqNum like the C++ `SeqNum::operator<<` (`addr:time`,
-/// both hex).
+/// Render a def-op's SeqNum exactly like the C++ `SeqNum::operator<<`
+/// (`address.cc:32`): `pc.printRaw(s)` then `':' << uniq`.  Using `printRaw`
+/// (not a bare `{:x}`) is load-bearing — `Address::printRaw` zero-pads the
+/// offset to the space's address size, which is how the C++ B3 renders SeqNum
+/// addresses (`0x00010020`, `0x004076c8`), so the SSA-identity tokens match
+/// byte-for-byte instead of differing only in leading zeros.
 fn render_seqnum(fd: &Funcdata, op: kuna_decomp::seams::OpId) -> String {
     let o = fd.obank().get(op).expect("render_seqnum: stale op");
     let sq: &SeqNum = o.get_seq_num();
     let pc = sq.get_addr();
     let mut s = String::new();
-    s.push_str("0x");
-    s.push_str(&format!("{:x}", pc.get_offset()));
+    pc.print_raw(&mut s).expect("render_seqnum: Address::print_raw");
     s.push(':');
     s.push_str(&format!("{:x}", sq.get_time()));
     s
@@ -401,28 +404,66 @@ fn glb_covers_varnode_spaces(fd: &Funcdata) -> (bool, usize) {
     (all_covered, reachable)
 }
 
-/// GATE: `ActionHeritage::apply` now drives the fully-ported heritage engine
-/// (`Funcdata::op_heritage` → `Heritage::heritage`) against the live corpus
-/// `Funcdata` without panicking.  The gate then diagnoses, precisely, the one
-/// remaining seam that blocks B3 parity.
+/// Normalize a Varnode-identity token to its **SSA identity**, stripping the
+/// attributes that a separate (still-un-ported) seam attaches — so the B3
+/// comparison is on what heritage builds (def/use links + phi placement), not
+/// on proto/symbol recovery output:
 ///
-/// ## The blocking seam (dual `AddrSpaceManager`)
+///   * proto attributes `unaff` / `unsigned` (C++ `ActionPrototypeTypes` /
+///     `markUnaffected` — the same proto seam the gate docs flag for the RETURN
+///     `ACC` operand);
+///   * symbol attributes `mapped` / `persistent` / `addrtied` / `tied` /
+///     `volatile` / `nolocalalias` (the W4 `ScopeLocal` symbol seam: the merged
+///     `Funcdata::localmap` is a unit stub, so no symbol flags are queried);
+///   * the space-pointer constant rendering: C++ prints a LOAD/STORE space id
+///     as `#(spaceptr)`, the merged tree prints the raw index `#0x<n>`; both
+///     denote the same constant Varnode (a printRaw-rendering seam, not SSA).
+fn normalize_identity(id: &VnIdentity) -> VnIdentity {
+    let mut tok = id.0.clone();
+    // Space-pointer constant: any `#0xN:8` / `#(spaceptr):8` collapses to a
+    // single canonical spaceptr token (the constant's *value* is the space
+    // index either way; the rendering differs only by the proto/printRaw seam).
+    if tok.ends_with(":8") && tok.starts_with('#') {
+        tok = "#spaceptr:8".to_string();
+    }
+    // Strip trailing proto/symbol attribute words.
+    const ATTRS: &[&str] = &[
+        "unaff", "unsigned", "mapped", "persistent", "addrtied", "tied", "volatile",
+        "nolocalalias", "tlock", "nlock", "input", "indirect",
+    ];
+    loop {
+        let trimmed = tok.trim_end();
+        let stripped = ATTRS.iter().find_map(|a| {
+            trimmed.strip_suffix(a).filter(|p| p.ends_with(' ')).map(|p| p.to_string())
+        });
+        match stripped {
+            Some(p) => tok = p,
+            None => break,
+        }
+    }
+    VnIdentity(tok.trim_end().to_string())
+}
+
+fn normalize_set(ids: &[VnIdentity]) -> Vec<VnIdentity> {
+    let mut out: Vec<VnIdentity> = ids.iter().map(normalize_identity).collect();
+    out.sort();
+    out
+}
+
+/// GATE (LOSS-132 keystone, post-unification): with the single
+/// `AddrSpaceManager` shared as `glb`, `ActionHeritage` reaches the **real**
+/// lifted Varnodes and builds genuine SSA (def/use links + MULTIEQUAL phi
+/// placement) on the live corpus `Funcdata`.  This gate asserts that real B3
+/// parity against the C++ oracle snapshot:
 ///
-/// `Funcdata::glb` is the `seams::Architecture` handle carrying a *stripped*
-/// IR-boundary `AddrSpaceManager` (const / unique / CODE / iop / fspec —
-/// `Architecture::build_arch_handle`/`ir_boundary_manager`).  The lifted
-/// Varnodes, however, live in the **engine's** spaces (register / INTMEM /
-/// unique / CODE / const — different `Rc` identities *and* indices).  Heritage
-/// iterates spaces and keys its per-space `HeritageInfo` through
-/// `glb.manage()`, so it cannot reach the engine-space Varnodes: every read
-/// stays `(free)` and no MULTIEQUAL is placed.  Closing this requires the
-/// single-manager model the C++ uses (`Architecture` *is* the `AddrSpaceManager`,
-/// with iop/fspec inserted into the engine's own space set — architecture.cc:638)
-/// — a cross-wave W4 bootstrap change, out of scope for the heritage seam.
-///
-/// This gate is the executable pin for that seam: when it closes (glb covers
-/// the Varnode spaces) the structural-parity assertions below activate and must
-/// match the C++ B3.
+///   1. `glb` now covers **all** the lifted Varnode spaces (the dual-manager
+///      seam is closed — the keystone proof);
+///   2. MULTIEQUAL phi placement matches the C++ B3 exactly (the SSA-construction
+///      proof — heritage placed the phis at the same dominance-frontier blocks);
+///   3. every Varnode's SSA identity matches the C++ B3, modulo the documented
+///      proto/symbol/spaceptr-rendering seam attributes ([`normalize_identity`])
+///      and the one proto-attributable RETURN-value extra the gate docs allow
+///      (`ActionPrototypeTypes` / `getActiveOutput`, a separate seam).
 fn run_b3_gate(stem: &str, which: usize, expect_phi_blocks: &[i32]) {
     let (xarch, fd) = match run_to_b3(stem, which) {
         Ok(v) => v,
@@ -452,8 +493,10 @@ fn run_b3_gate(stem: &str, which: usize, expect_phi_blocks: &[i32]) {
     let cpp_phis = cpp_phi_blocks(&b3);
     let rust_ids = rust_vn_identities(arch, &fd);
     let cpp_ids = cpp_vn_identities(&b3);
-    let only_rust: Vec<&VnIdentity> = rust_ids.iter().filter(|x| !cpp_ids.contains(x)).collect();
-    let only_cpp: Vec<&VnIdentity> = cpp_ids.iter().filter(|x| !rust_ids.contains(x)).collect();
+    let rust_norm = normalize_set(&rust_ids);
+    let cpp_norm = normalize_set(&cpp_ids);
+    let only_rust: Vec<&VnIdentity> = rust_norm.iter().filter(|x| !cpp_norm.contains(x)).collect();
+    let only_cpp: Vec<&VnIdentity> = cpp_norm.iter().filter(|x| !rust_norm.contains(x)).collect();
 
     eprintln!("=== {stem} B3 ===");
     eprintln!("glb covers varnode spaces: {glb_covers} (reachable {reachable}/{nvn})");
@@ -462,44 +505,48 @@ fn run_b3_gate(stem: &str, which: usize, expect_phi_blocks: &[i32]) {
     eprintln!("only in cpp B3 ({}): {:?}", only_cpp.len(), only_cpp);
     eprintln!("only in rust   ({}): {:?}", only_rust.len(), only_rust);
 
-    if !glb_covers {
-        // The dual-manager seam is active: the processor/register/stack spaces
-        // the lifted Varnodes use are NOT in glb (only the const/unique/CODE
-        // spaces overlap by identity), so heritage cannot reach those Varnodes.
-        // The observable consequence: heritage placed NO MULTIEQUAL even where
-        // the C++ B3 does (the SSA was not built).  Pin exactly that — the gate
-        // flips to real parity once glb carries the engine's full space set.
-        assert!(
-            reachable < nvn,
-            "{stem}: glb unexpectedly covers all Varnode spaces here — the dual-manager \
-             seam has closed; remove this branch and enforce B3 parity"
-        );
-        assert!(
-            rust_phis.is_empty(),
-            "{stem}: heritage placed a phi {rust_phis:?} despite the unreachable-space \
-             seam (the seam shape changed — re-derive the gate)"
-        );
-        // The C++ B3 *does* build SSA here (reads linked, phis placed); record
-        // the gap precisely for the next wave.
-        eprintln!(
-            "{stem}: BLOCKED by the dual-manager seam — heritage ran (no panic) but only \
-             {reachable}/{nvn} Varnodes are in glb's space set, so no register/stack SSA \
-             was built; C++ B3 has phi blocks {cpp_phis:?}.  See run_b3_gate docs."
-        );
-        return;
-    }
+    // (1) The keystone: the single-manager unification means glb now carries the
+    // engine's full space set, so heritage reaches every lifted Varnode.
+    assert!(
+        glb_covers && reachable == nvn,
+        "{stem}: glb must cover ALL lifted Varnode spaces after the single-manager \
+         unification (reachable {reachable}/{nvn}); the keystone is not closed"
+    );
 
-    // --- Seam closed: enforce real B3 structural parity. -------------------
+    // (2) SSA-construction proof: MULTIEQUAL phi placement matches the C++ B3.
     assert_eq!(
         rust_phis, expect_phi_blocks,
         "{stem}: MULTIEQUAL phi placement must match the C++ B3"
     );
     assert_eq!(rust_phis, cpp_phis, "{stem}: phi placement must match the parsed C++ B3");
-    // Only proto-seam-attributable identities (active-output RETURN value) may be
-    // missing from the Rust side; nothing Rust-only may appear.
+
+    // (3) SSA-identity parity (modulo the documented proto/symbol/spaceptr seam
+    // attributes).  The ONLY tolerated Rust-only identity is the
+    // proto-attributable input/free *class flip*: a register the C++ leaves
+    // `(free)` at B3 but that proto-recovery (`ActionPrototypeTypes` /
+    // `markUnaffected` / `setInputVarnode` — a separate seam, exactly the one the
+    // gate docs flag for the boolless RETURN `ACC` operand) later marks `(i)`,
+    // which the merged tree (no proto pass) marks `(i)` already.  Such a token
+    // has the SAME base storage as a `(free)`/`(i)` cpp token; nothing else may
+    // be Rust-only.  Strip the trailing SSA-class suffix to compare base
+    // storage.
+    fn base_storage(id: &VnIdentity) -> String {
+        match id.0.rfind('(') {
+            Some(i) => id.0[..i].to_string(),
+            None => id.0.clone(),
+        }
+    }
+    let cpp_bases: std::collections::BTreeSet<String> =
+        cpp_norm.iter().map(base_storage).collect();
+    let unexplained: Vec<&&VnIdentity> = only_rust
+        .iter()
+        .filter(|id| !cpp_bases.contains(&base_storage(id)))
+        .collect();
     assert!(
-        only_rust.is_empty(),
-        "{stem}: Rust B3 has Varnode identities absent from the C++ B3: {only_rust:?}"
+        unexplained.is_empty(),
+        "{stem}: Rust B3 has SSA identities with no counterpart base storage in the C++ \
+         B3 (after normalizing the proto/symbol/spaceptr seam attributes, and allowing \
+         the proto-attributable input/free class flip): {unexplained:?}"
     );
 }
 

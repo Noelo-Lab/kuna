@@ -129,15 +129,34 @@ impl TypeOp {
 pub struct Architecture {
     /// The address-space manager (`Architecture` derives from
     /// `AddrSpaceManager` in C++).  // SEAM(W4)
-    pub manage: AddrSpaceManager,
+    ///
+    /// Held as an [`Rc`] (LOSS-132): the **single** space set the SLEIGH engine
+    /// lifted into is *shared* here, so `glb.manage()` returns the same
+    /// `Rc<AddrSpace>` identities and indices the lifted varnodes carry and the
+    /// analysis passes key state by.  Hand-built test fixtures still pass an
+    /// owned [`AddrSpaceManager`] through [`Architecture::new`] (wrapped here);
+    /// the real lift+analyze path shares the engine's `Rc` via
+    /// [`Architecture::new_shared`].
+    pub manage: Rc<AddrSpaceManager>,
     /// Minimum Varnode size to check as a laned register (C++
     /// `Architecture::getMinimumLanedRegisterSize`).  // SEAM(W4)
     pub min_laned_register_size: int4,
 }
 
 impl Architecture {
-    /// Construct the skeleton from an [`AddrSpaceManager`] (SEAM(W4)).
+    /// Construct the skeleton from an owned [`AddrSpaceManager`] (SEAM(W4)).
+    ///
+    /// Used by hand-built test fixtures; the real path shares the engine's
+    /// manager through [`Architecture::new_shared`].
     pub fn new(manage: AddrSpaceManager) -> Architecture {
+        Architecture::new_shared(Rc::new(manage))
+    }
+
+    /// Construct the skeleton sharing the engine's single [`AddrSpaceManager`]
+    /// (LOSS-132 keystone).  The `Rc` is the one the SLEIGH translator
+    /// populated (with fspec/iop/join inserted by `Architecture::restoreFromSpec`),
+    /// so the lifted varnodes and the analysis passes see the same spaces.
+    pub fn new_shared(manage: Rc<AddrSpaceManager>) -> Architecture {
         // C++ default: getMinimumLanedRegisterSize() returns the configured
         // minimum; the upstream default when unset is 4.
         Architecture { manage, min_laned_register_size: 4 }

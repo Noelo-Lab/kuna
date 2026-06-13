@@ -122,7 +122,18 @@ pub const MAX_UNIQUE_SIZE: u32 = 256;
 /// C++ `SleighBase`: the common core of SLEIGH spec readers/writers.
 pub struct SleighBase {
     /// The address spaces (C++ inherited `AddrSpaceManager`).
-    pub(crate) manager: AddrSpaceManager,
+    ///
+    /// Held behind an [`Rc`] so the single space set the SLEIGH lift populates
+    /// can be **shared** with the [`Architecture`] / `Funcdata::glb`
+    /// (LOSS-132 unification): the C++ `Architecture` *is-a* `AddrSpaceManager`,
+    /// so there is exactly one manager and the lifted varnodes, the
+    /// architecture, and every analysis pass key state by the same
+    /// `Rc<AddrSpace>` identities and indices.  Mutated (via [`Rc::get_mut`])
+    /// only during initialization — `decodeSlaSpaces` here and the
+    /// `Architecture::restoreFromSpec` fspec/iop/join insert — while the engine
+    /// is still the sole `Rc` owner; thereafter every access is `&self`
+    /// (join-record creation goes through the manager's interior `RefCell`).
+    pub(crate) manager: Rc<AddrSpaceManager>,
     /// The concrete `Translate` base-class state (C++ inherited `Translate`).
     pub(crate) base: TranslateBase,
     /// Names of user-defined p-code ops (C++ `userop`).
@@ -162,7 +173,7 @@ impl SleighBase {
         crate::globalcontext::register_globalcontext_ids(&mut registry);
         sla::register_sla_ids(&mut registry);
         SleighBase {
-            manager: AddrSpaceManager::new(),
+            manager: Rc::new(AddrSpaceManager::new()),
             base: TranslateBase::new(),
             userop: Vec::new(),
             varnode_xref: std::collections::BTreeMap::new(),
@@ -427,14 +438,21 @@ impl SleighBase {
     /// C++ `SleighBase::decodeSlaSpaces`.  `big_end` is the processor
     /// endianness (already set on `self.base` before this call).
     fn decode_sla_spaces(&mut self, decoder: &mut dyn Decoder, big_end: bool) -> KunaResult<()> {
+        // The shared manager is mutated only during this initialization phase,
+        // while the engine is still the sole `Rc` owner (no `glb` has cloned it
+        // yet).  `Rc::get_mut` therefore always succeeds; a `None` would mean an
+        // `Architecture`/`Funcdata` was wired before the `.sla` decoded, which
+        // the build flow forbids.  Each mutation re-borrows because the
+        // surrounding decode helpers take `&self`.
         // The first space should always be the constant space.
-        self.manager.insert_space(Rc::new(ConstantSpace::new()))?;
+        manager_get_mut(&mut self.manager).insert_space(Rc::new(ConstantSpace::new()))?;
 
         let elem_id = decoder.open_element_id(&sla::ELEM_SPACES)?;
         let defname = decoder.read_string_id(&sla::ATTRIB_DEFAULTSPACE)?;
         while decoder.peek_element()? != 0 {
             let spc = self.decode_sla_space(decoder, big_end)?;
-            self.manager.insert_space(spc)?;
+            // Re-borrow per iteration: `decode_sla_space` takes `&self`.
+            manager_get_mut(&mut self.manager).insert_space(spc)?;
         }
         decoder.close_element(elem_id)?;
         let spc_index = match self.manager.get_space_by_name(&lossy(&defname)) {
@@ -446,7 +464,7 @@ impl SleighBase {
                 )))
             }
         };
-        self.manager.set_default_code_space(spc_index)?;
+        manager_get_mut(&mut self.manager).set_default_code_space(spc_index)?;
         Ok(())
     }
 
@@ -533,6 +551,15 @@ impl Default for SleighBase {
 /// Lossy UTF-8 view of a `.sla` byte-string name (identifiers are ASCII).
 fn lossy(b: &[u8]) -> String {
     String::from_utf8_lossy(b).into_owned()
+}
+
+/// Mutably borrow the shared manager during initialization (LOSS-132).  The
+/// space set is mutated only while the engine is the sole `Rc` owner (before
+/// any `glb` clones it), so `Rc::get_mut` always succeeds; a `None` is a build
+/// ordering bug (the manager was shared too early).
+fn manager_get_mut(manager: &mut Rc<AddrSpaceManager>) -> &mut AddrSpaceManager {
+    Rc::get_mut(manager)
+        .expect("engine address-space manager already shared (Rc not unique)")
 }
 
 /// C++ `ContextSymbol::getPatternValue()` -> `ContextField`'s start/end bits
@@ -785,6 +812,21 @@ impl SleighBase {
     /// Convenience: the manager owning the spaces (for the engine).
     pub fn manager(&self) -> &AddrSpaceManager {
         &self.manager
+    }
+
+    /// Share the single address-space manager (LOSS-132): hand out a cloned
+    /// [`Rc`] so the `Architecture` / `Funcdata::glb` references the **same**
+    /// space set the lift populated (same `Rc<AddrSpace>` identities, same
+    /// indices), exactly as the C++ `Architecture` *is* its `AddrSpaceManager`.
+    pub fn manager_rc(&self) -> Rc<AddrSpaceManager> {
+        Rc::clone(&self.manager)
+    }
+
+    /// Mutably borrow the single manager during initialization (the
+    /// `Architecture::restoreFromSpec` fspec/iop/join insert).  Requires the
+    /// engine still be the sole `Rc` owner — true before any `glb` is built.
+    pub fn manager_mut(&mut self) -> &mut AddrSpaceManager {
+        manager_get_mut(&mut self.manager)
     }
 
     /// The marshal id registry (name -> id), for callers decoding the engine's

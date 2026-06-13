@@ -1478,6 +1478,20 @@ impl Sleigh {
         &self.base
     }
 
+    /// Mutably borrow the SLEIGH spec core (the `Architecture` reaches its
+    /// `manager_mut` through this to insert the fspec/iop/join spaces during
+    /// `restoreFromSpec`, LOSS-132).
+    pub fn base_mut(&mut self) -> &mut SleighBase {
+        &mut self.base
+    }
+
+    /// Share the single address-space manager (LOSS-132): the `Rc` the lift
+    /// populated, handed to the `Architecture` / `Funcdata::glb` so every
+    /// subsystem keys state by the same space identities/indices.
+    pub fn manager_rc(&self) -> Rc<AddrSpaceManager> {
+        self.base.manager_rc()
+    }
+
     /// Replace the load image (C++ `Sleigh::reset` keeps the rest of the
     /// engine; the lift gate installs the corpus image after the `.sla` is
     /// decoded so the image can be opened against the engine's manager).
@@ -1530,7 +1544,7 @@ impl Sleigh {
             // `insert_space`/`set_default_code_space` in `decode_sla_spaces`,
             // strictly before any `read_space` the symbol-table decode issues,
             // so no manager read and mutation overlap in time.
-            let manager_ptr: *const AddrSpaceManager = &self.base.manager;
+            let manager_ptr: *const AddrSpaceManager = &*self.base.manager;
             let mut decoder = crate::slaformat::FormatDecode::new(unsafe { &*manager_ptr });
             decoder.ingest_stream(sla_bytes)?;
             let db_cell = &self.context_db;

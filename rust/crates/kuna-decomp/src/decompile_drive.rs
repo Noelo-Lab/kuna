@@ -147,8 +147,44 @@ pub fn decompile_func(
     size: int4,
 ) -> KunaResult<Funcdata> {
     let mut fd = build_and_follow_flow(arch, name, funcaddr, size)?;
-    let _res = run_pipeline(arch, &mut fd)?;
-    Ok(fd)
+    // With the single-manager unification (LOSS-132) the universalAction passes
+    // now reach the *real* lifted varnodes, so the pipeline genuinely executes
+    // heritage / simplification / merge / … on live IR.  Some pass BODIES are
+    // still un-ported seams (LOSS-131, the M3 grind): a hand-built fixture never
+    // reached them, but a real corpus function can hit, e.g.,
+    // `Heritage::normalizeWriteSize`'s PIECE-concat path.  Those seams abort via
+    // `unimplemented_seam` (a deliberate `#[cold] panic!`).  Convert such a
+    // seam-abort into a recoverable `Err` at this orchestration boundary so the
+    // end-to-end harnesses degrade to the documented "honest partial parity"
+    // (the pipeline ran; a body declined at a seam) instead of taking down the
+    // whole run — exactly the graceful-degradation the LOSS-130/131 measurement
+    // assumes.  `fd`/`arch` are discarded on the unwind, so no half-mutated
+    // state escapes (`AssertUnwindSafe` is sound here for that reason).
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_pipeline(arch, &mut fd)));
+    match res {
+        Ok(r) => {
+            r?;
+            Ok(fd)
+        }
+        Err(payload) => {
+            let msg = panic_message(&payload);
+            Err(kuna_base::error::KunaError::lowlevel(format!(
+                "decompile pipeline reached an un-ported seam (LOSS-131): {msg}"
+            )))
+        }
+    }
+}
+
+/// Best-effort extraction of a panic payload's message (the `panic!` string),
+/// for surfacing an un-ported-seam abort as a recoverable [`KunaError`].
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "panic with non-string payload".to_string()
+    }
 }
 
 /// Render `fd` to C text (C++ `IfcPrintC::execute` -> `print->docFunction(fd)`).

@@ -220,9 +220,15 @@ fn real_sla_bootstraps_subsystems_and_global_scope() {
 
 #[test]
 fn real_sla_creates_funcdata_at_entry() {
-    let Some(arch) = build_arch_from_sla("Ghidra/Processors/ARM/data/languages/ARM7_le.sla") else {
+    let Some(mut arch) = build_arch_from_sla("Ghidra/Processors/ARM/data/languages/ARM7_le.sla")
+    else {
         return;
     };
+    // C++ `restoreFromSpec` inserts the fspec/iop/join spaces into the single
+    // engine manager (LOSS-132); `init_post_engine` is that step in the Rust
+    // port.  The funcdata's `glb` then shares that one manager, so it carries
+    // const/unique/iop/fspec exactly as the lift+analyze path sees them.
+    arch.init_post_engine().expect("init_post_engine");
     // Pick the default code space for the function entry.
     let code = Rc::clone(arch.manage().get_default_code_space().expect("default code space"));
     let entry = Address::new(code, 0x8000);
