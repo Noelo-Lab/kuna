@@ -98,3 +98,4 @@ pub mod kuna_compareform;
 pub mod dynamic;
 pub mod kuna_dynamichashmax;
 pub mod kuna_stackguard;
+pub mod kuna_regiongraph;
