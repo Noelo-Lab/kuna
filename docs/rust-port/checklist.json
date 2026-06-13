@@ -5101,12 +5101,12 @@
     "w8-sig-pack",
     "w8-sig-pack-verify"
    ],
-   "status": "todo",
+   "status": "landed",
    "attempts": 0,
    "gate": "cd rust && cargo test --workspace  # M1: 207/207 ported unit tests",
    "loc_estimate": 0,
    "cpp_blob_sha": {},
-   "notes": "Wave exit: every item in W8 done (ports gated, verifies ACCEPTed)."
+   "notes": "Wave exit: every item in W8 done (ports gated, verifies ACCEPTed). Gate 2026-06-13: 2885 tests 0 failed; B0 universalAction byte-equal to C++ list-action with EMPTY allowlist (252 leaves+7 headers, firstpass+allgroups oracle-matched first try)."
   },
   {
    "id": "W9-gate",
@@ -5212,7 +5212,7 @@
    "depends_on": [
     "w8-fw-universalaction"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp --test universalaction_listing (empty allowlist, full byte-equal)",
    "loc_estimate": 1200,
