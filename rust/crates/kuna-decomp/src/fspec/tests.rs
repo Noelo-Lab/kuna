@@ -850,3 +850,559 @@ fn effect_record_from_param_entry() {
     let er3 = EffectRecord::from_param_entry(&e, effect_type::UNAFFECTED);
     assert_ne!(er, er3);
 }
+
+// =========================================================================
+// fspec-2: ProtoModel / ScoreProtoModel / ProtoModelMerged
+// =========================================================================
+
+fn vdata(spc: &Rc<AddrSpace>, off: u64, sz: u32) -> VarnodeData {
+    VarnodeData { space: Some(Rc::clone(spc)), offset: off, size: sz }
+}
+
+/// Build a standard ProtoModel with two int register entries (groups 0/1 at
+/// 0x10/0x20) for input and one int register at 0x10 for output.
+fn three_reg_proto_model(mgr: &AddrSpaceManager, reg: &Rc<AddrSpace>) -> ProtoModel {
+    let mut model = ProtoModel::new(mgr);
+    model.build_param_list("standard").unwrap();
+    model.set_name("__cdecl");
+    {
+        let input = model.input_mut();
+        input.push_entry(excl_entry(0, reg, 0x10, 4, &[], mgr));
+        let e1 = excl_entry(1, reg, 0x20, 4, input.get_entry(), mgr);
+        input.push_entry(e1);
+        input.finish_decode();
+    }
+    {
+        let output = model.output_mut();
+        output.push_entry(excl_entry(0, reg, 0x10, 4, &[], mgr));
+        output.finish_decode();
+    }
+    model
+}
+
+#[test]
+fn proto_model_build_param_list_strategies() {
+    let mgr = AddrSpaceManager::new();
+    let mut model = ProtoModel::new(&mgr);
+    model.build_param_list("standard").unwrap();
+    assert_eq!(model.input().get_type(), ParamListType::Standard);
+    assert_eq!(model.output().get_type(), ParamListType::StandardOut);
+    let mut model2 = ProtoModel::new(&mgr);
+    model2.build_param_list("register").unwrap();
+    assert_eq!(model2.input().get_type(), ParamListType::Register);
+    assert_eq!(model2.output().get_type(), ParamListType::RegisterOut);
+    let mut model3 = ProtoModel::new(&mgr);
+    assert!(model3.build_param_list("nonsense").is_err());
+}
+
+#[test]
+fn proto_model_thiscall_name_forces_has_this() {
+    let mgr = AddrSpaceManager::new();
+    let mut model = ProtoModel::new(&mgr);
+    assert!(!model.has_this_pointer());
+    model.set_name("__thiscall");
+    assert!(model.has_this_pointer());
+}
+
+#[test]
+fn proto_model_copy_named_is_compatible() {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let base = three_reg_proto_model(&mgr, &reg);
+    let copy = ProtoModel::copy_named("__stdcall", &base);
+    // The named copy is compatible with its parent (in both directions).
+    assert!(copy.is_compatible(&base));
+    assert!(base.is_compatible(&copy));
+    assert_eq!(copy.get_name(), "__stdcall");
+    // A model is compatible with itself.
+    assert!(base.is_compatible(&base));
+    // Two unrelated models are not compatible.
+    let other = three_reg_proto_model(&mgr, &reg);
+    assert!(!base.is_compatible(&other));
+}
+
+#[test]
+fn proto_model_unknown_flag() {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let base = three_reg_proto_model(&mgr, &reg);
+    assert!(!base.is_unknown());
+    let unk = ProtoModel::new_unknown("weird", &base);
+    assert!(unk.is_unknown());
+    assert_eq!(unk.get_name(), "weird");
+    assert!(unk.is_compatible(&base));
+}
+
+#[test]
+fn proto_model_lookup_effect_and_record() {
+    let reg = reg_space_le();
+    // Two effect records, sorted by address.
+    let e_low = EffectRecord::from_varnode(vdata(&reg, 0x10, 4), effect_type::UNAFFECTED);
+    let e_high = EffectRecord::from_varnode(vdata(&reg, 0x20, 4), effect_type::KILLEDBYCALL);
+    let mut efflist = vec![e_high, e_low];
+    efflist.sort_by(EffectRecord::compare_by_address);
+
+    // Exact hit on the low record.
+    assert_eq!(
+        ProtoModel::lookup_effect(&efflist, &addr(&reg, 0x10), 4),
+        effect_type::UNAFFECTED
+    );
+    // Exact hit on the high record.
+    assert_eq!(
+        ProtoModel::lookup_effect(&efflist, &addr(&reg, 0x20), 4),
+        effect_type::KILLEDBYCALL
+    );
+    // A range below the first record -> unknown.
+    assert_eq!(
+        ProtoModel::lookup_effect(&efflist, &addr(&reg, 0x00), 4),
+        effect_type::UNKNOWN_EFFECT
+    );
+
+    // lookupRecord: exact-match index, and overlap classification.
+    assert_eq!(
+        ProtoModel::lookup_record(&efflist, efflist.len() as i32, &addr(&reg, 0x10), 4),
+        0
+    );
+    assert_eq!(
+        ProtoModel::lookup_record(&efflist, efflist.len() as i32, &addr(&reg, 0x20), 4),
+        1
+    );
+    // No overlap below the first record -> -1.
+    assert_eq!(
+        ProtoModel::lookup_record(&efflist, efflist.len() as i32, &addr(&reg, 0x00), 4),
+        -1
+    );
+    // Partial overlap with the low record (offset 0x11 within 0x10..0x14) -> -2.
+    assert_eq!(
+        ProtoModel::lookup_record(&efflist, efflist.len() as i32, &addr(&reg, 0x12), 4),
+        -2
+    );
+}
+
+#[test]
+fn proto_model_has_effect_internal_space_is_unaffected() {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let model = three_reg_proto_model(&mgr, &reg);
+    // unique/internal space is always unaffected (early return).
+    let unique = Rc::new(AddrSpace::new(
+        spacetype::IPTR_INTERNAL,
+        "unique",
+        false,
+        4,
+        1,
+        9,
+        0,
+        0,
+        0,
+    ));
+    assert_eq!(
+        model.has_effect(&addr(&unique, 0x0), 4),
+        effect_type::UNAFFECTED
+    );
+}
+
+#[test]
+fn proto_model_assign_parameter_storage_orders_output_first() {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let model = three_reg_proto_model(&mgr, &reg);
+    let tf = PanicTypeFactory; // input/output assign with no model rules never reaches it
+    let proto = PrototypePieces {
+        name: "f".to_string(),
+        outtype: Some(int4_type()),
+        intypes: vec![int4_type(), int4_type()],
+        innames: vec!["a".into(), "b".into()],
+        first_var_arg_slot: -1,
+    };
+    let mut res: Vec<ParameterPieces> = Vec::new();
+    model
+        .assign_parameter_storage(&proto, &mut res, false, &tf, &mgr)
+        .unwrap();
+    // res[0] is the output (0x10), res[1..] are inputs (0x10, 0x20).
+    assert_eq!(res.len(), 3);
+    assert_eq!(res[0].addr.get_offset(), 0x10); // output
+    assert_eq!(res[1].addr.get_offset(), 0x10); // first input
+    assert_eq!(res[2].addr.get_offset(), 0x20); // second input
+}
+
+#[test]
+fn score_proto_model_perfect_fit_is_zero() {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let model = three_reg_proto_model(&mgr, &reg);
+    // Two trials matching the two input slots exactly -> score 0.
+    let mut score = ScoreProtoModel::new(true, 2);
+    score.add_parameter(&model, &addr(&reg, 0x10), 4);
+    score.add_parameter(&model, &addr(&reg, 0x20), 4);
+    score.do_score();
+    assert_eq!(score.get_num_mismatch(), 0);
+    assert_eq!(score.get_score(), 0);
+}
+
+#[test]
+fn score_proto_model_hole_and_mismatch_penalties() {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let model = three_reg_proto_model(&mgr, &reg);
+    // One trial in slot 1 (0x20) only: slot 0 is a hole -> penalty[0] == 16.
+    let mut score = ScoreProtoModel::new(true, 1);
+    score.add_parameter(&model, &addr(&reg, 0x20), 4);
+    score.do_score();
+    assert_eq!(score.get_num_mismatch(), 0);
+    assert_eq!(score.get_score(), 16);
+
+    // A trial in an address that is not a parameter -> mismatch (penalty 20).
+    let mut score2 = ScoreProtoModel::new(true, 1);
+    score2.add_parameter(&model, &addr(&reg, 0x100), 4);
+    score2.do_score();
+    assert_eq!(score2.get_num_mismatch(), 1);
+    assert_eq!(score2.get_score(), 20);
+}
+
+#[test]
+fn proto_model_intersect_registers_keeps_common() {
+    let reg = reg_space_le();
+    let mut a = vec![vdata(&reg, 0x10, 4), vdata(&reg, 0x20, 4), vdata(&reg, 0x30, 4)];
+    let mut b = vec![vdata(&reg, 0x20, 4), vdata(&reg, 0x30, 4), vdata(&reg, 0x40, 4)];
+    a.sort_unstable();
+    b.sort_unstable();
+    ProtoModel::intersect_registers(&mut a, &b);
+    // Intersection is {0x20, 0x30}.
+    assert_eq!(a.len(), 2);
+    assert_eq!(a[0].offset, 0x20);
+    assert_eq!(a[1].offset, 0x30);
+}
+
+#[test]
+fn proto_model_merged_fold_in_and_select() {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    // Two constituent models: m0 uses 0x10/0x20, m1 uses 0x20/0x30.
+    let mut m0 = ProtoModel::new(&mgr);
+    m0.build_param_list("standard").unwrap();
+    m0.set_name("m0");
+    {
+        let input = m0.input_mut();
+        input.push_entry(excl_entry(0, &reg, 0x10, 4, &[], &mgr));
+        let e1 = excl_entry(1, &reg, 0x20, 4, input.get_entry(), &mgr);
+        input.push_entry(e1);
+        input.finish_decode();
+        let output = m0.output_mut();
+        output.push_entry(excl_entry(0, &reg, 0x10, 4, &[], &mgr));
+        output.finish_decode();
+    }
+    let mut m1 = ProtoModel::new(&mgr);
+    m1.build_param_list("standard").unwrap();
+    m1.set_name("m1");
+    {
+        let input = m1.input_mut();
+        input.push_entry(excl_entry(0, &reg, 0x20, 4, &[], &mgr));
+        let e1 = excl_entry(1, &reg, 0x30, 4, input.get_entry(), &mgr);
+        input.push_entry(e1);
+        input.finish_decode();
+        let output = m1.output_mut();
+        output.push_entry(excl_entry(0, &reg, 0x10, 4, &[], &mgr));
+        output.finish_decode();
+    }
+    let m0 = Rc::new(m0);
+    let m1 = Rc::new(m1);
+
+    let mut merged = ProtoModel::new_merged(&mgr);
+    merged.merged_push(Rc::clone(&m0)).unwrap();
+    merged.merged_push(Rc::clone(&m1)).unwrap();
+    merged.merged_finalize();
+    assert!(merged.is_merged());
+    assert_eq!(merged.num_models(), 2);
+
+    // A single trial at 0x10 fits m0 (slot 0) but not m1 -> m0 scores better.
+    let mut active = ParamActive::new(false);
+    active.register_trial(&addr(&reg, 0x10), 4);
+    active.get_trial_mut(0).mark_active();
+    let selected = merged.select_model(&active).unwrap();
+    assert_eq!(selected.get_name(), "m0");
+}
+
+// =========================================================================
+// fspec-2: ParameterBasic / ProtoStoreInternal
+// =========================================================================
+
+#[test]
+fn parameter_basic_lock_semantics() {
+    let reg = reg_space_le();
+    let mut p = ParameterBasic::new("a", addr(&reg, 0x10), int4_type(), 0);
+    assert!(!p.is_type_locked());
+    p.set_type_lock(true);
+    assert!(p.is_type_locked());
+    // Locking a non-unknown type does NOT set the size lock.
+    assert!(!p.is_size_type_locked());
+    p.set_type_lock(false);
+    assert!(!p.is_type_locked());
+
+    // Locking a TYPE_UNKNOWN also sets the size lock.
+    let unk = Rc::new(Datatype::new_with_align(4, 4, type_metatype::TYPE_UNKNOWN));
+    let mut q = ParameterBasic::new("b", addr(&reg, 0x10), unk, 0);
+    q.set_type_lock(true);
+    assert!(q.is_type_locked());
+    assert!(q.is_size_type_locked());
+}
+
+#[test]
+fn parameter_basic_override_size_lock_type() {
+    let reg = reg_space_le();
+    let unk = Rc::new(Datatype::new_with_align(4, 4, type_metatype::TYPE_UNKNOWN));
+    let mut p = ParameterBasic::new("a", addr(&reg, 0x10), unk, 0);
+    p.set_type_lock(true); // sets size lock too (unknown type)
+                           // Override with a same-size int succeeds.
+    assert!(p.override_size_lock_type(int4_type()).is_ok());
+    assert_eq!(
+        p.get_type().unwrap().get_metatype(),
+        type_metatype::TYPE_INT
+    );
+    // Override with a different size fails.
+    let int8 = Rc::new(Datatype::new_with_align(8, 8, type_metatype::TYPE_INT));
+    assert!(p.override_size_lock_type(int8).is_err());
+
+    // Overriding a parameter that is not size-locked fails.
+    let mut q = ParameterBasic::new("b", addr(&reg, 0x10), int4_type(), 0);
+    let another = int4_type();
+    assert!(q.override_size_lock_type(another).is_err());
+}
+
+#[test]
+fn proto_store_internal_round_trip() {
+    let reg = reg_space_le();
+    let voidt = Rc::new(Datatype::new(0, type_metatype::TYPE_VOID));
+    let mut store = ProtoStoreInternal::new(Rc::clone(&voidt));
+    // A fresh store has a void output and no inputs.
+    assert_eq!(store.get_num_inputs(), 0);
+    assert_eq!(
+        store.get_output().get_type().unwrap().get_metatype(),
+        type_metatype::TYPE_VOID
+    );
+
+    // Set two inputs and an output.
+    let p0 = ParameterPieces { addr: addr(&reg, 0x10), type_: Some(int4_type()), flags: 0 };
+    let p1 = ParameterPieces { addr: addr(&reg, 0x20), type_: Some(int4_type()), flags: 0 };
+    store.set_input(0, "a", &p0);
+    store.set_input(1, "b", &p1);
+    let out = ParameterPieces { addr: addr(&reg, 0x10), type_: Some(int4_type()), flags: 0 };
+    store.set_output(&out);
+    assert_eq!(store.get_num_inputs(), 2);
+    assert_eq!(store.get_input(0).unwrap().get_name(), "a");
+    assert_eq!(store.get_input(1).unwrap().get_address().get_offset(), 0x20);
+    assert_eq!(
+        store.get_output().get_type().unwrap().get_metatype(),
+        type_metatype::TYPE_INT
+    );
+
+    // clearInput shifts following parameters down.
+    store.clear_input(0);
+    assert_eq!(store.get_num_inputs(), 1);
+    assert_eq!(store.get_input(0).unwrap().get_name(), "b");
+
+    // clone is independent.
+    let cloned = store.clone_box();
+    assert_eq!(cloned.get_num_inputs(), 1);
+
+    // clearOutput restores void.
+    store.clear_output();
+    assert_eq!(
+        store.get_output().get_type().unwrap().get_metatype(),
+        type_metatype::TYPE_VOID
+    );
+
+    // clearAllInputs empties.
+    store.clear_all_inputs();
+    assert_eq!(store.get_num_inputs(), 0);
+}
+
+// =========================================================================
+// fspec-2: FuncProto
+// =========================================================================
+
+#[test]
+fn func_proto_flag_matrix() {
+    let mut fp = FuncProto::new();
+    // Default: nothing set.
+    assert!(!fp.is_inline());
+    assert!(!fp.is_no_return());
+    assert!(!fp.is_dotdotdot());
+    assert!(!fp.is_constructor());
+    assert!(!fp.is_destructor());
+    assert!(!fp.is_override());
+
+    fp.set_inline(true);
+    assert!(fp.is_inline());
+    fp.set_inline(false);
+    assert!(!fp.is_inline());
+
+    fp.set_no_return(true);
+    assert!(fp.is_no_return());
+    fp.set_dotdotdot(true);
+    assert!(fp.is_dotdotdot());
+    fp.set_constructor(true);
+    assert!(fp.is_constructor());
+    fp.set_destructor(true);
+    assert!(fp.is_destructor());
+    fp.set_override(true);
+    assert!(fp.is_override());
+    fp.set_input_errors(true);
+    assert!(fp.has_input_errors());
+    fp.set_output_errors(true);
+    assert!(fp.has_output_errors());
+
+    // Comparable flags exclude inline/no_return/error/override.
+    let cmp = fp.get_comparable_flags();
+    assert_ne!(cmp & func_proto_flags::DOTDOTDOT, 0);
+    assert_ne!(cmp & func_proto_flags::IS_CONSTRUCTOR, 0);
+    assert_eq!(cmp & func_proto_flags::IS_INLINE, 0);
+    assert_eq!(cmp & func_proto_flags::IS_OVERRIDE, 0);
+}
+
+#[test]
+fn func_proto_set_model_inherits_properties() {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let mut model = three_reg_proto_model(&mgr, &reg);
+    model.set_has_this(true);
+    model.set_constructor(true);
+    model.set_extra_pop(8);
+    let model = Rc::new(model);
+
+    let mut fp = FuncProto::new();
+    fp.set_model(Some(Rc::clone(&model)));
+    assert!(fp.has_this_pointer());
+    assert!(fp.is_constructor());
+    assert_eq!(fp.get_extra_pop(), 8);
+    assert_eq!(fp.get_model_name(), "__cdecl");
+
+    // Clearing the model sets extrapop to unknown.
+    fp.set_model(None);
+    assert_eq!(fp.get_extra_pop(), EXTRAPOP_UNKNOWN);
+}
+
+#[test]
+fn func_proto_inject_id_toggles_inline() {
+    let mut fp = FuncProto::new();
+    fp.set_inject_id(7);
+    assert_eq!(fp.get_inject_id(), 7);
+    assert!(fp.is_inline());
+    // A negative id cancels.
+    fp.set_inject_id(-1);
+    assert_eq!(fp.get_inject_id(), -1);
+    assert!(!fp.is_inline());
+    fp.set_inject_id(3);
+    fp.cancel_inject_id();
+    assert_eq!(fp.get_inject_id(), -1);
+    assert!(!fp.is_inline());
+}
+
+#[test]
+fn func_proto_input_lock_void_and_params() {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let voidt = Rc::new(Datatype::new(0, type_metatype::TYPE_VOID));
+    let model = Rc::new(three_reg_proto_model(&mgr, &reg));
+
+    let mut fp = FuncProto::new();
+    fp.set_internal(Rc::clone(&model), Rc::clone(&voidt));
+    // No params: locking sets the void-input lock and the model lock.
+    assert!(!fp.is_input_locked());
+    fp.set_input_lock(true);
+    assert!(fp.is_input_locked());
+    assert!(fp.is_model_locked());
+    fp.set_input_lock(false);
+    assert!(!fp.is_input_locked());
+
+    // With a param: input lock type-locks the parameter.
+    let p0 = ParameterPieces { addr: addr(&reg, 0x10), type_: Some(int4_type()), flags: 0 };
+    fp.set_param(0, "a", &p0);
+    assert!(!fp.is_input_locked());
+    fp.set_input_lock(true);
+    assert!(fp.is_input_locked());
+    assert!(fp.get_param(0).unwrap().is_type_locked());
+}
+
+#[test]
+fn func_proto_resolve_extra_pop_x86() {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let stack = stack_space();
+    let voidt = Rc::new(Datatype::new(0, type_metatype::TYPE_VOID));
+    let model = Rc::new(three_reg_proto_model(&mgr, &reg));
+
+    let mut fp = FuncProto::new();
+    fp.set_internal(Rc::clone(&model), Rc::clone(&voidt));
+    // A single stack parameter at offset 0 of size 4 -> cur = (0+4+3)&~3 = 4,
+    // extrapop = max(4 (retaddr), 4) = 4.
+    let p0 = ParameterPieces { addr: addr(&stack, 0x0), type_: Some(int4_type()), flags: 0 };
+    fp.set_param(0, "a", &p0);
+    fp.set_input_lock(true); // resolveExtraPop only runs when input is locked
+    fp.resolve_extra_pop();
+    assert_eq!(fp.get_extra_pop(), 4);
+
+    // A stack parameter at offset 4 size 4 -> cur = (4+4+3)&~3 = 8 -> extrapop 8.
+    let mut fp2 = FuncProto::new();
+    fp2.set_internal(Rc::clone(&model), Rc::clone(&voidt));
+    let p1 = ParameterPieces { addr: addr(&stack, 0x4), type_: Some(int4_type()), flags: 0 };
+    fp2.set_param(0, "a", &p1);
+    fp2.set_input_lock(true);
+    fp2.resolve_extra_pop();
+    assert_eq!(fp2.get_extra_pop(), 8);
+}
+
+#[test]
+fn func_proto_copy_and_compatible() {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let voidt = Rc::new(Datatype::new(0, type_metatype::TYPE_VOID));
+    let model = Rc::new(three_reg_proto_model(&mgr, &reg));
+
+    let mut fp = FuncProto::new();
+    fp.set_internal(Rc::clone(&model), Rc::clone(&voidt));
+    fp.set_inline(true);
+    fp.set_no_return(true);
+    fp.set_inject_id(5);
+
+    let mut fp2 = FuncProto::new();
+    fp2.copy(&fp);
+    assert!(fp2.is_inline());
+    assert!(fp2.is_no_return());
+    assert_eq!(fp2.get_inject_id(), 5);
+    assert!(fp2.has_model());
+    // Same model + same flags -> compatible.
+    assert!(fp.is_compatible(&fp2));
+
+    // copyFlowEffects copies only inline/no_return/injectid.
+    let mut fp3 = FuncProto::new();
+    fp3.set_internal(Rc::clone(&model), Rc::clone(&voidt));
+    fp3.copy_flow_effects(&fp);
+    assert!(fp3.is_inline());
+    assert!(fp3.is_no_return());
+    assert_eq!(fp3.get_inject_id(), 5);
+}
+
+#[test]
+fn func_proto_return_bytes_consumed_takes_smallest() {
+    let mut fp = FuncProto::new();
+    assert!(!fp.set_return_bytes_consumed(0)); // 0 is a no-op
+    assert!(fp.set_return_bytes_consumed(8)); // first non-zero
+    assert_eq!(fp.get_return_bytes_consumed(), 8);
+    assert!(fp.set_return_bytes_consumed(4)); // smaller -> update
+    assert_eq!(fp.get_return_bytes_consumed(), 4);
+    assert!(!fp.set_return_bytes_consumed(6)); // larger -> no change
+    assert_eq!(fp.get_return_bytes_consumed(), 4);
+}
+
+#[test]
+fn func_proto_seam_methods_error() {
+    let mut fp = FuncProto::new();
+    assert!(fp.set_scope().is_err());
+    assert!(fp.update_input_types().is_err());
+    assert!(fp.update_output_types().is_err());
+    assert!(fp.decode().is_err());
+    let mgr = AddrSpaceManager::new();
+    let mut model = ProtoModel::new(&mgr);
+    assert!(model.decode().is_err());
+}

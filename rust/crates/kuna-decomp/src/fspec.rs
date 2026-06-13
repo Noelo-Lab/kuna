@@ -1,5 +1,24 @@
-//! Port of `decompiler/cpp/fspec.cc` lines ~1-2267 (W6, item `w6-s4-fspec-1`):
-//! the **parameter-recovery foundation** of the prototype-model subsystem.
+//! Port of `decompiler/cpp/fspec.cc` lines ~1-4928 (W6, items `w6-s4-fspec-1`
+//! and `w6-s4-fspec-2`): the **prototype-model subsystem**.
+//!
+//! `fspec-1` (lines ~1-2267) carries the **parameter-recovery foundation** —
+//! the storage-model machinery that decides where parameters and return values
+//! live and how data-flow trials map onto them.  `fspec-2` (lines ~2268-4928)
+//! adds the **prototype-model layer** built on top of it:
+//!
+//!   - [`ProtoModel`] — a complete parameter-passing convention (input/output
+//!     [`ParamListStandard`] wiring, `extrapop`, effect / likely-trash /
+//!     internal-storage lists, local/param stack ranges, the side-effect
+//!     lookups, and `assignParameterStorage`).
+//!   - [`ScoreProtoModel`] — "goodness of fit" scoring of parameter trials
+//!     against a [`ProtoModel`] (used by [`ProtoModelMerged::select_model`]).
+//!   - [`ProtoModelMerged`] — a union of constituent [`ProtoModel`]s, with the
+//!     effect/register intersection and `selectModel` resolution.
+//!   - the parameter descriptions [`ProtoParameter`] / [`ParameterBasic`] and
+//!     the storage interface [`ProtoStore`] / [`ProtoStoreInternal`].
+//!   - [`FuncProto`] — a concrete function prototype (flag matrix, `copy`,
+//!     `setModel`/`setInternal`, `updateAllTypes`, locked/unlocked semantics,
+//!     and the model-delegating query surface).
 //!
 //! This file carries the storage-model machinery that decides where parameters
 //! and return values live and how data-flow trials map onto them:
@@ -31,13 +50,25 @@
 //!   `<modelrule>`s), and the `<modelrule>`-affected output paths take the
 //!   legacy fallback (`useFillinFallback == true`).  The `ModelRule` type is a
 //!   local uninhabitable placeholder enum.
+//! - `// SEAM(w6-fspec-2)` — the back-pointer to the owning [`Architecture`]
+//!   (C++ `ProtoModel::glb`) is **not** held: the kuna `Architecture` (W4) has
+//!   no prototype-model registry / `types` / `defaultReturnAddr` / `getModel`
+//!   yet.  Instead [`ProtoModel`] threads the [`AddrSpaceManager`] (for the
+//!   stack space and float-extension construction) and the [`TypeFactory`]
+//!   through the methods that need them; the registry-dependent paths
+//!   (`decode`, `ProtoModelMerged::decode`, `setScope`) return a seam error.
+//!   [`PrototypePieces`] carries no `model` back-pointer for the same reason.
+//!   The reserved [`FSPEC_SPACE_NAME`] is the only `FspecSpace` survivor (the
+//!   full `FspecSpace`/`FuncCallSpecs` is `fspec-3`).
 //! - `// SEAM(W4)` — `decode`/`encode` paths reach fspec-owned marshaling
 //!   ElementIds/AttributeIds (`<pentry>`, `<group>`, ...) and the
 //!   `ProtoModel`/`Architecture` wiring that are not yet ported.  These methods
 //!   return `Err(KunaError::lowlevel("SEAM(W4) ..."))`; the pure-algorithm
 //!   surfaces above do not depend on them and are exercised directly in tests
-//!   via the `seed`/`push_entry` builder seams.  `ProtoModel` itself is
-//!   `fspec-2`/`fspec-3`.
+//!   via the `seed`/`push_entry` builder seams.  The `FuncProto` input/output
+//!   trial-update paths (`updateInputTypes`, `updateOutputTypes`, ...) and
+//!   `ProtoStoreSymbol` reach `Funcdata`/`Varnode`/`Scope`/`Symbol` (W3/W4) and
+//!   carry their own seam errors.
 //!
 //! Integer model per ADR 0003: `uintb->u64`, `intb->i64`, `int4->i32`,
 //! `uint4->u32`; arithmetic that the C++ relies on wrapping uses [`Wrap`].
@@ -3198,7 +3229,7 @@ impl ParamListStandard {
 /// Build the standard "cannot assign parameter address" error for a data-type
 /// (C++ `ParamUnassignedError`).
 fn unassigned_err(dt: &Rc<Datatype>) -> KunaError {
-    KunaError::lowlevel(format!(
+    KunaError::param_unassigned(format!(
         "Cannot assign parameter address for {}",
         dt.get_name()
     ))
@@ -3211,8 +3242,11 @@ fn unassigned_err(dt: &Rc<Datatype>) -> KunaError {
 /// Raw components of a function prototype obtained from parsing source code
 /// (C++ `PrototypePieces`, `fspec.hh:373-381`).
 ///
-/// The `model` back-pointer (C++ `ProtoModel *`) is `fspec-2`/`fspec-3`; it is
-/// omitted here.  // SEAM(w6-fspec-2)
+/// The `model` back-pointer (C++ `ProtoModel *`) is omitted: the kuna
+/// `Architecture` (W4) has no prototype-model registry, so a `PrototypePieces`
+/// cannot point at a registered model.  The methods that read it in the C++
+/// (`ProtoStoreInternal::decode`, `paramShift`) take the [`ProtoModel`] as an
+/// explicit argument instead.  // SEAM(w6-fspec-2)
 #[derive(Debug, Clone, Default)]
 pub struct PrototypePieces {
     /// Identifier (function name) associated with prototype (C++ `name`).
@@ -3235,10 +3269,2401 @@ pub struct PrototypePieces {
 /// Reserved name for the fspec space (C++ `FspecSpace::NAME`).
 ///
 /// The full `FspecSpace` (`AddrSpace` subclass that encodes a `FuncCallSpecs`
-/// pointer as an address) reaches `FuncCallSpecs` (a `fspec-2`/`fspec-3` type)
-/// and the marshaling encoder, so only its reserved name is carried here.
-/// // SEAM(W4)
+/// pointer as an address) reaches `FuncCallSpecs` (a `fspec-3` type) and the
+/// marshaling encoder, so only its reserved name is carried here.
+/// // SEAM(w6-fspec-2)
 pub const FSPEC_SPACE_NAME: &str = "fspec";
+
+// =============================================================================
+// ProtoModel (fspec.hh:748-1017, fspec.cc:2268-2705)
+// =============================================================================
+
+/// Reserved `extrapop` value meaning the function's `extrapop` is unknown (C++
+/// `ProtoModel::extrapop_unknown`, `fspec.hh:772`).
+pub const EXTRAPOP_UNKNOWN: int4 = 0x8000;
+
+/// A complete model for passing data-types between functions (C++ `ProtoModel`,
+/// `fspec.hh:748-1017`).
+///
+/// A model holds the resource lists for input parameters and return values
+/// (the [`ParamListStandard`] family, tagged by [`ParamListKind`]), the
+/// `extrapop`, the side-effect / likely-trash / internal-storage lists, the
+/// stack ranges for locals and parameters, and several boolean properties.
+///
+/// The C++ `Architecture *glb` back-pointer is **not** held (the kuna
+/// `Architecture` has no prototype-model registry yet); the methods that need
+/// the stack space or float-extension construction take an [`AddrSpaceManager`]
+/// and the type factory explicitly.  The merged-model variant
+/// ([`ProtoModelMerged`]) is folded in as the `merged` field, mirroring the C++
+/// subclass.  // SEAM(w6-fspec-2)
+#[derive(Debug, Clone)]
+pub struct ProtoModel {
+    /// Name of the model (C++ `name`).
+    name: String,
+    /// Extra bytes popped from stack (C++ `extrapop`).
+    extrapop: int4,
+    /// Resource model for input parameters (C++ `input`); `None` until
+    /// `build_param_list`.
+    input: Option<ParamListStandard>,
+    /// Resource model for output parameters (C++ `output`); `None` until
+    /// `build_param_list`.
+    output: Option<ParamListStandard>,
+    /// `true` if `self` is a copy of another model (C++ `compatModel != 0`),
+    /// recording the identity of the alias parent.  The C++ holds a
+    /// `const ProtoModel *`; the kuna port carries the alias parent's identity
+    /// token (see [`ProtoModelId`]) so [`ProtoModel::is_compatible`] can match.
+    compat_model: Option<ProtoModelId>,
+    /// Stable identity of `self`, used to match `compat_model` across copies
+    /// (the C++ uses raw `this`/`compatModel` pointer identity).
+    id: ProtoModelId,
+    /// List of side-effects, sorted by address (C++ `effectlist`).
+    effectlist: Vec<EffectRecord>,
+    /// Storage locations potentially carrying trash values, sorted (C++
+    /// `likelytrash`).
+    likelytrash: Vec<VarnodeData>,
+    /// Registers that hold internal compiler constants, sorted (C++
+    /// `internalstorage`).
+    internalstorage: Vec<VarnodeData>,
+    /// Id of injection to perform at beginning of function, -1 if unused (C++
+    /// `injectUponEntry`).
+    inject_upon_entry: int4,
+    /// Id of injection to perform after a call to this function, -1 if unused
+    /// (C++ `injectUponReturn`).
+    inject_upon_return: int4,
+    /// Memory range(s) of space-based locals (C++ `localrange`).
+    localrange: RangeList,
+    /// Memory range(s) of space-based parameters (C++ `paramrange`).
+    paramrange: RangeList,
+    /// `true` if stack parameters have low->high address ordering (C++
+    /// `stackgrowsnegative`).
+    stackgrowsnegative: bool,
+    /// `true` if this model has a `this` parameter (C++ `hasThis`).
+    has_this: bool,
+    /// `true` if this model is a constructor (C++ `isConstruct`).
+    is_construct: bool,
+    /// `true` if this model should be printed in declarations (C++ `isPrinted`).
+    is_printed: bool,
+    /// The merged-model state, present only for a [`ProtoModelMerged`] (C++
+    /// subclass `ProtoModelMerged`).
+    merged: Option<ProtoModelMerged>,
+    /// `true` if this is a placeholder for an unrecognized model name (C++
+    /// `UnknownProtoModel::isUnknown`).
+    is_unknown: bool,
+}
+
+/// Stable identity token for a [`ProtoModel`] (replaces the C++ raw `this` /
+/// `compatModel` pointer identity used by [`ProtoModel::is_compatible`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ProtoModelId(u64);
+
+impl ProtoModelId {
+    /// Allocate a fresh, process-unique identity token.
+    fn fresh() -> ProtoModelId {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        ProtoModelId(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+/// The merged-model state of a [`ProtoModel`] (C++ `ProtoModelMerged`,
+/// `fspec.hh:1077-1090`).
+///
+/// In the C++ this is a subclass of `ProtoModel`; here it is an optional
+/// payload (`ProtoModel::merged`).  It holds the constituent models being
+/// merged.  Each constituent is owned by reference-counted clone (the C++ holds
+/// borrowed `ProtoModel *` into the architecture's registry; with no registry
+/// the merged model owns clones of the folded-in constituents).
+#[derive(Debug, Clone)]
+pub struct ProtoModelMerged {
+    /// Constituent models being merged (C++ `modellist`).
+    modellist: Vec<Rc<ProtoModel>>,
+}
+
+impl ProtoModel {
+    /// Construct an empty model ready for `decode`/seeding (C++
+    /// `ProtoModel(Architecture *g)`).
+    ///
+    /// The C++ seeds `localrange`/`paramrange` from the stack space via
+    /// `defaultLocalRange`/`defaultParamRange`; with no `glb` the stack space is
+    /// supplied by the caller (the [`AddrSpaceManager`]).  If there is no stack
+    /// space the default ranges are left empty (the C++ would dereference a null
+    /// stack space; the model is built with a stack space in practice).
+    pub fn new(manager: &AddrSpaceManager) -> ProtoModel {
+        let mut res = ProtoModel {
+            name: String::new(),
+            extrapop: 0,
+            input: None,
+            output: None,
+            compat_model: None,
+            id: ProtoModelId::fresh(),
+            effectlist: Vec::new(),
+            likelytrash: Vec::new(),
+            internalstorage: Vec::new(),
+            inject_upon_entry: -1,
+            inject_upon_return: -1,
+            localrange: RangeList::new(),
+            paramrange: RangeList::new(),
+            stackgrowsnegative: true, // Normal stack parameter ordering
+            has_this: false,
+            is_construct: false,
+            is_printed: true,
+            merged: None,
+            is_unknown: false,
+        };
+        res.default_local_range(manager);
+        res.default_param_range(manager);
+        res
+    }
+
+    /// Copy `op2` under a new name (C++
+    /// `ProtoModel(const string &nm,const ProtoModel &op2)`).
+    ///
+    /// Everything is copied except the name; `is_printed` is reset to `true`
+    /// (not inherited), `compat_model` records `op2`'s identity, and the
+    /// `__thiscall` name forces `has_this`.
+    pub fn copy_named(nm: &str, op2: &ProtoModel) -> ProtoModel {
+        let mut res = op2.clone();
+        res.id = ProtoModelId::fresh();
+        res.name = nm.to_string();
+        res.is_printed = true; // Don't inherit. Always print unless setPrintInDecl called explicitly
+        // input/output/effectlist/likelytrash/internalstorage/ranges already
+        // copied by `clone`.
+        if res.name == "__thiscall" {
+            res.has_this = true;
+        }
+        res.compat_model = Some(op2.id);
+        res.merged = None; // the named copy is not itself a merged model
+        res.is_unknown = false;
+        res
+    }
+
+    /// Build an [`UnknownProtoModel`]-equivalent: a named copy of `placeholder`
+    /// that identifies itself as unknown (C++ `UnknownProtoModel`,
+    /// `fspec.hh:1025-1032`).
+    pub fn new_unknown(nm: &str, placeholder: &ProtoModel) -> ProtoModel {
+        let mut res = ProtoModel::copy_named(nm, placeholder);
+        res.is_unknown = true;
+        res
+    }
+
+    // -- Simple accessors (fspec.hh:777-1013) -------------------------------
+
+    /// Get the name of the prototype model (C++ `getName`).
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
+    /// Get the stack-pointer `extrapop` (C++ `getExtraPop`).
+    pub fn get_extra_pop(&self) -> int4 {
+        self.extrapop
+    }
+    /// Set the stack-pointer `extrapop` (C++ `setExtraPop`).
+    pub fn set_extra_pop(&mut self, ep: int4) {
+        self.extrapop = ep;
+    }
+    /// Get the inject `uponentry` id (C++ `getInjectUponEntry`).
+    pub fn get_inject_upon_entry(&self) -> int4 {
+        self.inject_upon_entry
+    }
+    /// Get the inject `uponreturn` id (C++ `getInjectUponReturn`).
+    pub fn get_inject_upon_return(&self) -> int4 {
+        self.inject_upon_return
+    }
+    /// Get the range of (possible) local stack variables (C++ `getLocalRange`).
+    pub fn get_local_range(&self) -> &RangeList {
+        &self.localrange
+    }
+    /// Get the range of (possible) stack parameters (C++ `getParamRange`).
+    pub fn get_param_range(&self) -> &RangeList {
+        &self.paramrange
+    }
+    /// Get the side-effect list (C++ `effectBegin`/`effectEnd`).
+    pub fn effect_list(&self) -> &[EffectRecord] {
+        &self.effectlist
+    }
+    /// Get the likely-trash list (C++ `trashBegin`/`trashEnd`).
+    pub fn trash_list(&self) -> &[VarnodeData] {
+        &self.likelytrash
+    }
+    /// Get the internal-storage list (C++ `internalBegin`/`internalEnd`).
+    pub fn internal_list(&self) -> &[VarnodeData] {
+        &self.internalstorage
+    }
+    /// Get the stack space associated with this model (C++ `getSpacebase`).
+    pub fn get_spacebase(&self) -> Option<&Rc<AddrSpace>> {
+        self.input.as_ref().and_then(|i| i.get_spacebase())
+    }
+    /// Return `true` if the stack grows toward smaller addresses (C++
+    /// `isStackGrowsNegative`).
+    pub fn is_stack_grows_negative(&self) -> bool {
+        self.stackgrowsnegative
+    }
+    /// Is this a model for (non-static) class methods (C++ `hasThisPointer`).
+    pub fn has_this_pointer(&self) -> bool {
+        self.has_this
+    }
+    /// Is this model for class constructors (C++ `isConstructor`).
+    pub fn is_constructor(&self) -> bool {
+        self.is_construct
+    }
+    /// Return `true` if name should be printed in declarations (C++
+    /// `printInDecl`).
+    pub fn print_in_decl(&self) -> bool {
+        self.is_printed
+    }
+    /// Set whether this name should be printed in declarations (C++
+    /// `setPrintInDecl`).
+    pub fn set_print_in_decl(&mut self, val: bool) {
+        self.is_printed = val;
+    }
+    /// Maximum heritage delay across all input parameters (C++
+    /// `getMaxInputDelay`).
+    pub fn get_max_input_delay(&self) -> int4 {
+        self.input.as_ref().map(|i| i.get_max_delay()).unwrap_or(0)
+    }
+    /// Maximum heritage delay across all return values (C++
+    /// `getMaxOutputDelay`).
+    pub fn get_max_output_delay(&self) -> int4 {
+        self.output.as_ref().map(|o| o.get_max_delay()).unwrap_or(0)
+    }
+    /// Does this model automatically consider potential output locations as
+    /// killed-by-call (C++ `isAutoKilledByCall`).
+    pub fn is_auto_killed_by_call(&self) -> bool {
+        self.output.as_ref().map(|o| o.is_auto_killed_by_call()).unwrap_or(false)
+    }
+    /// Is this a merged prototype model (C++ `isMerged`).
+    pub fn is_merged(&self) -> bool {
+        self.merged.is_some()
+    }
+    /// Is this a placeholder for an unrecognized model name (C++ `isUnknown`).
+    pub fn is_unknown(&self) -> bool {
+        self.is_unknown
+    }
+    /// Return the identity of the model `self` is an alias of, or `None` (C++
+    /// `getAliasParent`).
+    pub fn get_alias_parent(&self) -> Option<ProtoModelId> {
+        self.compat_model
+    }
+    /// Borrow the input resource model (panics if not yet built — C++ would
+    /// dereference a null `input`).
+    pub fn input(&self) -> &ParamListStandard {
+        self.input.as_ref().expect("ProtoModel::input: not built")
+    }
+    /// Borrow the output resource model (panics if not yet built — C++ would
+    /// dereference a null `output`).
+    pub fn output(&self) -> &ParamListStandard {
+        self.output.as_ref().expect("ProtoModel::output: not built")
+    }
+    /// Borrow the merged-model state, if this is a merged model.
+    pub fn merged(&self) -> Option<&ProtoModelMerged> {
+        self.merged.as_ref()
+    }
+
+    // -- Query delegators (fspec.hh:812-975) --------------------------------
+
+    /// Check if the two input storage locations can represent a single logical
+    /// parameter (C++ `checkInputJoin`).
+    pub fn check_input_join(
+        &self,
+        hiaddr: &Address,
+        hisize: int4,
+        loaddr: &Address,
+        losize: int4,
+    ) -> bool {
+        self.input().check_join(hiaddr, hisize, loaddr, losize)
+    }
+    /// Check if the two output storage locations can represent a single logical
+    /// return value (C++ `checkOutputJoin`).
+    pub fn check_output_join(
+        &self,
+        hiaddr: &Address,
+        hisize: int4,
+        loaddr: &Address,
+        losize: int4,
+    ) -> bool {
+        self.output().check_join(hiaddr, hisize, loaddr, losize)
+    }
+    /// Check if a single storage location can be split into two input
+    /// parameters (C++ `checkInputSplit`).
+    pub fn check_input_split(&self, loc: &Address, size: int4, splitpoint: int4) -> bool {
+        self.input().check_split(loc, size, splitpoint)
+    }
+    /// Characterize whether the given range overlaps input storage (C++
+    /// `characterizeAsInputParam`).
+    pub fn characterize_as_input_param(&self, loc: &Address, size: int4) -> Containment {
+        self.input().characterize_as_param(loc, size)
+    }
+    /// Characterize whether the given range overlaps output storage (C++
+    /// `characterizeAsOutput`).
+    pub fn characterize_as_output(&self, loc: &Address, size: int4) -> Containment {
+        self.output().characterize_as_param(loc, size)
+    }
+    /// Does the given storage location make sense as an input parameter (C++
+    /// `possibleInputParam`).
+    pub fn possible_input_param(&self, loc: &Address, size: int4) -> bool {
+        self.input().possible_param(loc, size)
+    }
+    /// Does the given storage location make sense as a return value (C++
+    /// `possibleOutputParam`).
+    pub fn possible_output_param(&self, loc: &Address, size: int4) -> bool {
+        self.output().possible_param(loc, size)
+    }
+    /// Pass back the slot/slot-size for the storage as an input parameter (C++
+    /// `possibleInputParamWithSlot`).
+    pub fn possible_input_param_with_slot(
+        &self,
+        loc: &Address,
+        size: int4,
+        slot: &mut int4,
+        slotsize: &mut int4,
+    ) -> bool {
+        self.input().possible_param_with_slot(loc, size, slot, slotsize)
+    }
+    /// Pass back the slot/slot-size for the storage as a return value (C++
+    /// `possibleOutputParamWithSlot`).
+    pub fn possible_output_param_with_slot(
+        &self,
+        loc: &Address,
+        size: int4,
+        slot: &mut int4,
+        slotsize: &mut int4,
+    ) -> bool {
+        self.output().possible_param_with_slot(loc, size, slot, slotsize)
+    }
+    /// Check if the storage looks like an unjustified input parameter (C++
+    /// `unjustifiedInputParam`).
+    pub fn unjustified_input_param(&self, loc: &Address, size: int4, res: &mut VarnodeData) -> bool {
+        self.input().unjustified_container(loc, size, res)
+    }
+    /// Get the type of extension and containing input parameter (C++
+    /// `assumedInputExtension`).
+    pub fn assumed_input_extension(&self, addr: &Address, size: int4, res: &mut VarnodeData) -> OpCode {
+        self.input().assumed_extension(addr, size, res)
+    }
+    /// Get the type of extension and containing return value location (C++
+    /// `assumedOutputExtension`).
+    pub fn assumed_output_extension(&self, addr: &Address, size: int4, res: &mut VarnodeData) -> OpCode {
+        self.output().assumed_extension(addr, size, res)
+    }
+    /// Pass back the biggest input parameter contained in the range (C++
+    /// `getBiggestContainedInputParam`).
+    pub fn get_biggest_contained_input_param(&self, loc: &Address, size: int4, res: &mut VarnodeData) -> bool {
+        self.input().get_biggest_contained_param(loc, size, res)
+    }
+    /// Pass back the biggest output parameter contained in the range (C++
+    /// `getBiggestContainedOutput`).
+    pub fn get_biggest_contained_output(&self, loc: &Address, size: int4, res: &mut VarnodeData) -> bool {
+        self.output().get_biggest_contained_param(loc, size, res)
+    }
+    /// Derive the most likely input prototype from a list of trials (C++
+    /// `deriveInputMap`).
+    pub fn derive_input_map(&self, active: &mut ParamActive, manager: &AddrSpaceManager) -> KunaResult<()> {
+        self.input().fillin_map(active, manager)
+    }
+    /// Derive the most likely output prototype from a list of trials (C++
+    /// `deriveOutputMap`).
+    pub fn derive_output_map(&self, active: &mut ParamActive, manager: &AddrSpaceManager) -> KunaResult<()> {
+        self.output().fillin_map(active, manager)
+    }
+
+    // -- Default stack ranges (fspec.cc:2268-2324) --------------------------
+
+    /// Set the default stack range used for local variables (C++
+    /// `defaultLocalRange`).
+    fn default_local_range(&mut self, manager: &AddrSpaceManager) {
+        let spc = match manager.get_stack_space() {
+            Some(s) => Rc::clone(s),
+            None => return,
+        };
+        let (first, last): (uintb, uintb);
+        if self.stackgrowsnegative {
+            // Normal stack convention: locals are negative offsets off the stack
+            last = spc.get_highest();
+            if spc.get_addr_size() >= 4 {
+                first = last - 999999;
+            } else if spc.get_addr_size() >= 2 {
+                first = last - 9999;
+            } else {
+                first = last - 99;
+            }
+            self.localrange.insert_range(spc, first, last);
+        } else {
+            // Flipped stack convention
+            first = 0;
+            if spc.get_addr_size() >= 4 {
+                last = 999999;
+            } else if spc.get_addr_size() >= 2 {
+                last = 9999;
+            } else {
+                last = 99;
+            }
+            self.localrange.insert_range(spc, first, last);
+        }
+    }
+
+    /// Set the default stack range used for input parameters (C++
+    /// `defaultParamRange`).
+    fn default_param_range(&mut self, manager: &AddrSpaceManager) {
+        let spc = match manager.get_stack_space() {
+            Some(s) => Rc::clone(s),
+            None => return,
+        };
+        let (first, last): (uintb, uintb);
+        if self.stackgrowsnegative {
+            // Normal stack convention: parameters are positive offsets off the stack
+            first = 0;
+            if spc.get_addr_size() >= 4 {
+                last = 511;
+            } else if spc.get_addr_size() >= 2 {
+                last = 255;
+            } else {
+                last = 15;
+            }
+            self.paramrange.insert_range(spc, first, last);
+        } else {
+            // Flipped stack convention
+            last = spc.get_highest();
+            if spc.get_addr_size() >= 4 {
+                first = last - 511;
+            } else if spc.get_addr_size() >= 2 {
+                first = last - 255;
+            } else {
+                first = last - 15;
+            }
+            self.paramrange.insert_range(spc, first, last); // Parameters are negative offsets
+        }
+    }
+
+    /// Establish the main resource lists for input and output parameters (C++
+    /// `buildParamList`).  `strategy` is currently `""`/`"standard"` or
+    /// `"register"`.
+    pub fn build_param_list(&mut self, strategy: &str) -> KunaResult<()> {
+        if strategy.is_empty() || strategy == "standard" {
+            self.input = Some(ParamListStandard::new(ParamListKind::Standard));
+            self.output = Some(ParamListStandard::new(ParamListKind::StandardOut));
+        } else if strategy == "register" {
+            self.input = Some(ParamListStandard::new(ParamListKind::Register));
+            self.output = Some(ParamListStandard::new(ParamListKind::RegisterOut));
+        } else {
+            return Err(KunaError::lowlevel(format!(
+                "Unknown strategy type: {strategy}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Test whether one [`ProtoModel`] can be substituted for another during
+    /// `FuncCallSpecs::deindirect` (C++ `isCompatible`).
+    ///
+    /// `op2` is compatible when it is the same model, or one is a named copy of
+    /// the other (matched by [`ProtoModelId`]).
+    pub fn is_compatible(&self, op2: &ProtoModel) -> bool {
+        if self.id == op2.id {
+            return true;
+        }
+        if self.compat_model == Some(op2.id) {
+            return true;
+        }
+        if op2.compat_model == Some(self.id) {
+            return true;
+        }
+        false
+    }
+
+    /// Calculate input and output storage locations given a function prototype
+    /// (C++ `assignParameterStorage`).
+    ///
+    /// The passed-back storage locations are ordered with the output storage
+    /// first, followed by the input storage locations.  If `ignore_output_error`
+    /// is set, a failure to assign the output is swallowed and the return value
+    /// is assumed `void`.
+    pub fn assign_parameter_storage(
+        &self,
+        proto: &PrototypePieces,
+        res: &mut Vec<ParameterPieces>,
+        ignore_output_error: bool,
+        typefactory: &dyn TypeFactory,
+        manager: &AddrSpaceManager,
+    ) -> KunaResult<()> {
+        if ignore_output_error {
+            match self.output().assign_map(proto, typefactory, res, manager) {
+                Ok(()) => {}
+                Err(KunaError::ParamUnassigned { .. }) => {
+                    // ParamUnassignedError: leave address undefined, void return
+                    res.clear();
+                    let p = ParameterPieces {
+                        flags: 0,
+                        type_: Some(typefactory.get_type_void()?),
+                        ..Default::default()
+                    };
+                    res.push(p);
+                }
+                Err(e) => return Err(e),
+            }
+        } else {
+            self.output().assign_map(proto, typefactory, res, manager)?;
+        }
+        self.input().assign_map(proto, typefactory, res, manager)?;
+
+        if self.has_this && res.len() > 1 {
+            let mut this_index = 1usize;
+            if (res[1].flags & parameter_pieces_flags::HIDDENRETPARM) != 0 && res.len() > 2 {
+                if self.input().is_this_before_ret_pointer() {
+                    // pointer has been bumped by auto-return-storage; swap markup
+                    // for slots 1 and 2.
+                    let (left, right) = res.split_at_mut(2);
+                    left[1].swap_markup(&mut right[0]);
+                } else {
+                    this_index = 2;
+                }
+            }
+            res[this_index].flags |= parameter_pieces_flags::ISTHIS;
+        }
+        Ok(())
+    }
+
+    /// Look up an effect from the given (address-sorted) [`EffectRecord`] list
+    /// (C++ static `lookupEffect`).  Returns [`effect_type::UNKNOWN_EFFECT`] if
+    /// there is no match.
+    pub fn lookup_effect(efflist: &[EffectRecord], addr: &Address, size: int4) -> uint4 {
+        // Unique is always local to function
+        if let Some(spc) = addr.get_space() {
+            if spc.get_type() == spacetype::IPTR_INTERNAL {
+                return effect_type::UNAFFECTED;
+            }
+        }
+        let cur = EffectRecord::new_unknown(addr, size);
+        // upper_bound: first element strictly greater than cur by address.
+        let idx = upper_bound_by(efflist, &cur, EffectRecord::compare_by_address);
+        if idx == 0 {
+            return effect_type::UNKNOWN_EFFECT; // Can't go back one
+        }
+        let hitrec = &efflist[idx - 1];
+        let hit = hitrec.get_address();
+        let sz = hitrec.get_size();
+        if sz == 0 && rc_opt_eq_space(&Some(Rc::clone(hit.get_space().unwrap())), addr.get_space()) {
+            // A size of zero indicates the whole space is unaffected
+            return effect_type::UNAFFECTED;
+        }
+        let where_ = addr.overlap(0, &hit, sz);
+        if where_ >= 0 && where_ + size <= sz {
+            return hitrec.get_type();
+        }
+        effect_type::UNKNOWN_EFFECT
+    }
+
+    /// Look up a particular [`EffectRecord`] from a list by its address and
+    /// size (C++ static `lookupRecord`).  Only the first `list_size` elements
+    /// are examined.  Returns the matching index, or -1 (no overlap) / -2
+    /// (partial overlap).
+    pub fn lookup_record(
+        efflist: &[EffectRecord],
+        list_size: int4,
+        addr: &Address,
+        size: int4,
+    ) -> int4 {
+        if list_size == 0 {
+            return -1;
+        }
+        let cur = EffectRecord::new_unknown(addr, size);
+        let window = &efflist[..list_size as usize];
+        let idx = upper_bound_by(window, &cur, EffectRecord::compare_by_address);
+        if idx == 0 {
+            // C++ dereferences *iter (== efflist.begin()) here.
+            let close_addr = efflist[0].get_address();
+            return if close_addr.overlap(0, addr, size) < 0 { -1 } else { -2 };
+        }
+        let closerec = &efflist[idx - 1];
+        let close_addr = closerec.get_address();
+        let sz = closerec.get_size();
+        if &close_addr == addr && size == sz {
+            return (idx - 1) as i32; // iter - begiter
+        }
+        if addr.overlap(0, &close_addr, sz) < 0 {
+            -1
+        } else {
+            -2
+        }
+    }
+
+    /// Determine the side-effect of this model on the given memory range (C++
+    /// `hasEffect`).
+    pub fn has_effect(&self, addr: &Address, size: int4) -> uint4 {
+        ProtoModel::lookup_effect(&self.effectlist, addr, size)
+    }
+
+    /// Restore this model from a `<prototype>` element (C++ `decode`).
+    ///
+    /// SEAM(w6-fspec-2): reaches the marshaling [`kuna_base::marshal::Decoder`],
+    /// the fspec ElementIds/AttributeIds, and `glb` (stack space,
+    /// `defaultReturnAddr`, `pcodeinjectlib`) — the `Architecture` registry is
+    /// not yet ported.  Tests build models via [`ProtoModel::build_param_list`]
+    /// + the `ParamListStandard` builder seams.
+    pub fn decode(&mut self) -> KunaResult<()> {
+        Err(KunaError::lowlevel(
+            "SEAM(w6-fspec-2) ProtoModel::decode: marshaling + Architecture registry not yet ported",
+        ))
+    }
+
+    // -- merged-model operations (fspec.cc:2785-2927) -----------------------
+
+    /// Construct an empty merged model (C++ `ProtoModelMerged(Architecture *g)`).
+    pub fn new_merged(manager: &AddrSpaceManager) -> ProtoModel {
+        let mut res = ProtoModel::new(manager);
+        res.merged = Some(ProtoModelMerged { modellist: Vec::new() });
+        res
+    }
+
+    /// Number of constituent models (C++ `ProtoModelMerged::numModels`).
+    pub fn num_models(&self) -> int4 {
+        self.merged.as_ref().map(|m| m.modellist.len() as i32).unwrap_or(0)
+    }
+
+    /// Get the i-th constituent model (C++ `ProtoModelMerged::getModel`).
+    pub fn get_model(&self, i: int4) -> &Rc<ProtoModel> {
+        &self.merged.as_ref().expect("not a merged model").modellist[i as usize]
+    }
+
+    /// Fold EffectRecords into this model, keeping the intersection (C++
+    /// `ProtoModelMerged::intersectEffects`).
+    fn intersect_effects(&mut self, efflist: &[EffectRecord]) {
+        let mut newlist: Vec<EffectRecord> = Vec::new();
+        let mut i = 0usize;
+        let mut j = 0usize;
+        while i < self.effectlist.len() && j < efflist.len() {
+            let eff1 = &self.effectlist[i];
+            let eff2 = &efflist[j];
+            use std::cmp::Ordering::*;
+            match EffectRecord::compare_by_address(eff1, eff2) {
+                Less => i += 1,
+                Greater => j += 1,
+                Equal => {
+                    if eff1 == eff2 {
+                        newlist.push(eff1.clone());
+                    }
+                    i += 1;
+                    j += 1;
+                }
+            }
+        }
+        self.effectlist = newlist;
+    }
+
+    /// Intersect two sorted register lists, replacing the first (C++ static
+    /// `ProtoModelMerged::intersectRegisters`).
+    fn intersect_registers(reg_list1: &mut Vec<VarnodeData>, reg_list2: &[VarnodeData]) {
+        let mut newlist: Vec<VarnodeData> = Vec::new();
+        let mut i = 0usize;
+        let mut j = 0usize;
+        while i < reg_list1.len() && j < reg_list2.len() {
+            use std::cmp::Ordering::*;
+            match reg_list1[i].cmp(&reg_list2[j]) {
+                Less => i += 1,
+                Greater => j += 1,
+                Equal => {
+                    newlist.push(reg_list1[i].clone());
+                    i += 1;
+                    j += 1;
+                }
+            }
+        }
+        *reg_list1 = newlist;
+    }
+
+    /// Fold in an additional prototype model (C++ `ProtoModelMerged::foldIn`).
+    ///
+    /// The constituent `model`'s input must be a standard or register list; on
+    /// the first fold-in the merged input/output/extrapop/effects are seeded,
+    /// subsequent fold-ins take the intersection.
+    pub fn fold_in_model(&mut self, model: &Rc<ProtoModel>) -> KunaResult<()> {
+        if !matches!(
+            model.input().get_type(),
+            ParamListType::Standard | ParamListType::Register
+        ) {
+            return Err(KunaError::lowlevel(
+                "Can only resolve between standard prototype models",
+            ));
+        }
+        if self.input.is_none() {
+            // First fold in
+            let mut merged_input = ParamListStandard::new(ParamListKind::Merged);
+            merged_input.fold_in(model.input())?;
+            self.input = Some(merged_input);
+            self.output = Some(model.output().clone());
+            self.extrapop = model.extrapop;
+            self.effectlist = model.effectlist.clone();
+            self.inject_upon_entry = model.inject_upon_entry;
+            self.inject_upon_return = model.inject_upon_return;
+            self.likelytrash = model.likelytrash.clone();
+            self.localrange = model.localrange.clone();
+            self.paramrange = model.paramrange.clone();
+        } else {
+            self.input.as_mut().unwrap().fold_in(model.input())?;
+            // We assume here that the output models are the same, but we don't check
+            if self.extrapop != model.extrapop {
+                self.extrapop = EXTRAPOP_UNKNOWN;
+            }
+            if self.inject_upon_entry != model.inject_upon_entry
+                || self.inject_upon_return != model.inject_upon_return
+            {
+                return Err(KunaError::lowlevel(
+                    "Cannot merge prototype models with different inject ids",
+                ));
+            }
+            self.intersect_effects(&model.effectlist);
+            ProtoModel::intersect_registers(&mut self.likelytrash, &model.likelytrash);
+            ProtoModel::intersect_registers(&mut self.internalstorage, &model.internalstorage);
+            // Take the union of the localrange and paramrange
+            for r in model.localrange.iter() {
+                self.localrange
+                    .insert_range(Rc::clone(r.get_space()), r.get_first(), r.get_last());
+            }
+            for r in model.paramrange.iter() {
+                self.paramrange
+                    .insert_range(Rc::clone(r.get_space()), r.get_first(), r.get_last());
+            }
+        }
+        Ok(())
+    }
+
+    /// Fold in a constituent and record it in the merged `modellist` (the C++
+    /// `ProtoModelMerged::decode` body: `foldIn(mymodel)` then
+    /// `modellist.push_back(mymodel)`).  Run `finalize` after the last fold-in.
+    pub fn merged_push(&mut self, model: Rc<ProtoModel>) -> KunaResult<()> {
+        self.fold_in_model(&model)?;
+        self.merged
+            .as_mut()
+            .expect("merged_push on non-merged model")
+            .modellist
+            .push(model);
+        Ok(())
+    }
+
+    /// Finalize the merged input list after all fold-ins (C++
+    /// `((ParamListMerged *)input)->finalize()`).
+    pub fn merged_finalize(&mut self) {
+        if let Some(input) = self.input.as_mut() {
+            input.finalize();
+        }
+    }
+
+    /// Select the best constituent model given a set of trials (C++
+    /// `ProtoModelMerged::selectModel`).  Uses [`ScoreProtoModel`] to score
+    /// each constituent.
+    pub fn select_model(&self, active: &ParamActive) -> KunaResult<Rc<ProtoModel>> {
+        let merged = self
+            .merged
+            .as_ref()
+            .ok_or_else(|| KunaError::lowlevel("selectModel on non-merged model"))?;
+        let mut bestscore = 500;
+        let mut bestindex: i32 = -1;
+        for (i, m) in merged.modellist.iter().enumerate() {
+            let numtrials = active.get_num_trials();
+            let mut scoremodel = ScoreProtoModel::new(true, numtrials);
+            for j in 0..numtrials {
+                let trial = active.get_trial(j);
+                if trial.is_active() {
+                    scoremodel.add_parameter(m, trial.get_address(), trial.get_size());
+                }
+            }
+            scoremodel.do_score();
+            let score = scoremodel.get_score();
+            if score < bestscore {
+                bestscore = score;
+                bestindex = i as i32;
+                if bestscore == 0 {
+                    break; // Can't get any lower
+                }
+            }
+        }
+        if bestindex >= 0 {
+            return Ok(Rc::clone(&merged.modellist[bestindex as usize]));
+        }
+        Err(KunaError::lowlevel("No model matches : missing default"))
+    }
+
+    // -- test/tooling builder seams -----------------------------------------
+
+    /// Set the model name (test/builder seam; the C++ sets `name` during
+    /// `decode`).
+    pub fn set_name(&mut self, name: &str) {
+        self.name = name.to_string();
+        if self.name == "__thiscall" {
+            self.has_this = true;
+        }
+    }
+    /// Set the `has_this` flag (test/builder seam; decoded from `hasthis`).
+    pub fn set_has_this(&mut self, val: bool) {
+        self.has_this = val;
+    }
+    /// Set the `is_construct` flag (test/builder seam; decoded from
+    /// `constructor`).
+    pub fn set_constructor(&mut self, val: bool) {
+        self.is_construct = val;
+    }
+    /// Mutable access to the input resource model for builder seams.
+    pub fn input_mut(&mut self) -> &mut ParamListStandard {
+        self.input.as_mut().expect("ProtoModel::input_mut: not built")
+    }
+    /// Mutable access to the output resource model for builder seams.
+    pub fn output_mut(&mut self) -> &mut ParamListStandard {
+        self.output.as_mut().expect("ProtoModel::output_mut: not built")
+    }
+    /// Append a side-effect record and re-sort (test/builder seam; the C++
+    /// `decode` sorts `effectlist` by `compareByAddress`).
+    pub fn push_effect(&mut self, eff: EffectRecord) {
+        self.effectlist.push(eff);
+        self.effectlist.sort_by(EffectRecord::compare_by_address);
+    }
+    /// Append a likely-trash register and re-sort (test/builder seam).
+    pub fn push_likely_trash(&mut self, vd: VarnodeData) {
+        self.likelytrash.push(vd);
+        self.likelytrash.sort_unstable();
+    }
+    /// Append an internal-storage register and re-sort (test/builder seam).
+    pub fn push_internal_storage(&mut self, vd: VarnodeData) {
+        self.internalstorage.push(vd);
+        self.internalstorage.sort_unstable();
+    }
+    /// Set the inject ids (test/builder seam).
+    pub fn set_inject_ids(&mut self, upon_entry: int4, upon_return: int4) {
+        self.inject_upon_entry = upon_entry;
+        self.inject_upon_return = upon_return;
+    }
+}
+
+/// `std::upper_bound` over a slice with a strict-weak-order comparator
+/// returning [`std::cmp::Ordering`]: the index of the first element that
+/// compares `Greater` than `value` (i.e. for which `cmp(value, elem) ==
+/// Less`).  Replicates the C++ `upper_bound(begin,end,cur,compareByAddress)`
+/// where `compareByAddress` is the `<` predicate.
+fn upper_bound_by<T, F>(slice: &[T], value: &T, mut cmp: F) -> usize
+where
+    F: FnMut(&T, &T) -> std::cmp::Ordering,
+{
+    let mut lo = 0usize;
+    let mut hi = slice.len();
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        // upper_bound: advance while !(value < slice[mid]), i.e. while
+        // cmp(value, slice[mid]) != Less.
+        if cmp(value, &slice[mid]) != std::cmp::Ordering::Less {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    lo
+}
+
+// =============================================================================
+// ScoreProtoModel (fspec.hh:1040-1064, fspec.cc:2710-2780)
+// =============================================================================
+
+/// A record mapping a trial to a parameter entry in the prototype model (C++
+/// `ScoreProtoModel::PEntry`, `fspec.hh:1042-1052`).
+#[derive(Debug, Clone)]
+struct PEntry {
+    /// Original index of trial (C++ `origIndex`).
+    #[allow(dead_code)] // recorded as in C++; not read after sort, but kept for fidelity
+    orig_index: int4,
+    /// Matching slot within the resource list (C++ `slot`).
+    slot: int4,
+    /// Number of slots occupied (C++ `size`).
+    size: int4,
+}
+
+/// Calculates "goodness of fit" of parameter trials against a [`ProtoModel`]
+/// (C++ `ScoreProtoModel`, `fspec.hh:1040-1064`).  A lower score is a better
+/// fit.
+#[derive(Debug, Clone)]
+pub struct ScoreProtoModel {
+    /// `true` if scoring against input parameters, `false` for outputs (C++
+    /// `isinputscore`).
+    isinputscore: bool,
+    /// Map of parameter entries corresponding to trials (C++ `entry`).
+    entry: Vec<PEntry>,
+    /// The final fitness score (C++ `finalscore`).
+    finalscore: int4,
+    /// Number of trials that don't fit the model at all (C++ `mismatch`).
+    mismatch: int4,
+}
+
+impl ScoreProtoModel {
+    /// Construct a scorer (C++
+    /// `ScoreProtoModel(bool isinput,const ProtoModel *mod,int4 numparam)`).
+    ///
+    /// The C++ holds the `ProtoModel *` for the duration; the kuna scorer takes
+    /// it per [`ScoreProtoModel::add_parameter`] call instead (avoids a borrow
+    /// of the model spanning the scorer's lifetime).
+    pub fn new(isinput: bool, numparam: int4) -> ScoreProtoModel {
+        ScoreProtoModel {
+            isinputscore: isinput,
+            entry: Vec::with_capacity(numparam.max(0) as usize),
+            finalscore: -1,
+            mismatch: 0,
+        }
+    }
+
+    /// Register a trial to be scored against `model` (C++ `addParameter`).
+    pub fn add_parameter(&mut self, model: &ProtoModel, addr: &Address, sz: int4) {
+        let orig = self.entry.len() as i32;
+        let mut slot = 0;
+        let mut slotsize = 0;
+        let isparam = if self.isinputscore {
+            model.possible_input_param_with_slot(addr, sz, &mut slot, &mut slotsize)
+        } else {
+            model.possible_output_param_with_slot(addr, sz, &mut slot, &mut slotsize)
+        };
+        if isparam {
+            self.entry.push(PEntry { orig_index: orig, slot, size: slotsize });
+        } else {
+            self.mismatch += 1;
+        }
+    }
+
+    /// Compute the fitness score (C++ `doScore`).
+    pub fn do_score(&mut self) {
+        // Sort our entries via slot (C++ `PEntry::operator<` compares slot only;
+        // std::sort is not stable -> sort_unstable_by_key).
+        self.entry.sort_unstable_by_key(|p| p.slot);
+
+        let mut nextfree = 0; // Next slot we expect to see
+        let mut basescore = 0;
+        let penalty = [16, 10, 7, 5];
+        let penaltyfinal = 3;
+        let mismatchpenalty = 20;
+
+        for p in self.entry.iter() {
+            if p.slot > nextfree {
+                // Some kind of hole in our slot coverage
+                while nextfree < p.slot {
+                    if nextfree < 4 {
+                        basescore += penalty[nextfree as usize];
+                    } else {
+                        basescore += penaltyfinal;
+                    }
+                    nextfree += 1;
+                }
+                nextfree += p.size;
+            } else if nextfree > p.slot {
+                // Some kind of slot duplication
+                basescore += mismatchpenalty;
+                if p.slot + p.size > nextfree {
+                    nextfree = p.slot + p.size;
+                }
+            } else {
+                nextfree = p.slot + p.size;
+            }
+        }
+        self.finalscore = basescore + mismatchpenalty * self.mismatch;
+    }
+
+    /// Get the fitness score (C++ `getScore`).
+    pub fn get_score(&self) -> int4 {
+        self.finalscore
+    }
+    /// Get the number of mismatched trials (C++ `getNumMismatch`).
+    pub fn get_num_mismatch(&self) -> int4 {
+        self.mismatch
+    }
+}
+
+// =============================================================================
+// ProtoParameter / ParameterBasic (fspec.hh:1100-1191, fspec.cc:2929-2984)
+// =============================================================================
+
+/// A function parameter viewed as a name, data-type, and storage address (C++
+/// abstract base `ProtoParameter`, `fspec.hh:1100-1156`).
+///
+/// The C++ base is abstract with `ParameterBasic`/`ParameterSymbol` subclasses.
+/// `ParameterSymbol` is backed by a `Scope`/`Symbol` (W3/W4) and is a seam; the
+/// kuna trait carries the shared query surface, and [`ParameterBasic`] is the
+/// stand-alone (no backing symbol) implementation.
+pub trait ProtoParameter {
+    /// Get the name of the parameter ("" for return value) (C++ `getName`).
+    fn get_name(&self) -> &str;
+    /// Get the data-type associated with this (C++ `getType`); `None` is the
+    /// C++ null.
+    fn get_type(&self) -> Option<&Rc<Datatype>>;
+    /// Get the storage address for this parameter (C++ `getAddress`).
+    fn get_address(&self) -> Address;
+    /// Get the number of bytes occupied (C++ `getSize`).
+    fn get_size(&self) -> int4;
+    /// Is the parameter data-type locked (C++ `isTypeLocked`).
+    fn is_type_locked(&self) -> bool;
+    /// Is the parameter name locked (C++ `isNameLocked`).
+    fn is_name_locked(&self) -> bool;
+    /// Is the size of the parameter locked (C++ `isSizeTypeLocked`).
+    fn is_size_type_locked(&self) -> bool;
+    /// Is this the "this" pointer for a class method (C++ `isThisPointer`).
+    fn is_this_pointer(&self) -> bool;
+    /// Is this really a pointer to the true parameter (C++ `isIndirectStorage`).
+    fn is_indirect_storage(&self) -> bool;
+    /// Is this a pointer to storage for a return value (C++ `isHiddenReturn`).
+    fn is_hidden_return(&self) -> bool;
+    /// Is the name undefined (C++ `isNameUndefined`).
+    fn is_name_undefined(&self) -> bool;
+    /// Toggle the lock on the data-type (C++ `setTypeLock`).
+    fn set_type_lock(&mut self, val: bool);
+    /// Toggle the lock on the name (C++ `setNameLock`).
+    fn set_name_lock(&mut self, val: bool);
+    /// Toggle whether this is the "this" pointer (C++ `setThisPointer`).
+    fn set_this_pointer(&mut self, val: bool);
+    /// Change (override) the data-type of a size-locked parameter (C++
+    /// `overrideSizeLockType`).
+    fn override_size_lock_type(&mut self, ct: Rc<Datatype>) -> KunaResult<()>;
+    /// Clear the data-type preserving any size-lock (C++ `resetSizeLockType`).
+    fn reset_size_lock_type(&mut self, factory: &dyn TypeFactory) -> KunaResult<()>;
+}
+
+/// Compare storage location and data-type for equality (C++
+/// `ProtoParameter::operator==`).  Two parameters are equal when they share a
+/// storage address and data-type (compared by `Rc` identity, mirroring the C++
+/// `Datatype *` pointer compare).
+pub fn proto_parameter_eq(a: &dyn ProtoParameter, b: &dyn ProtoParameter) -> bool {
+    if a.get_address() != b.get_address() {
+        return false;
+    }
+    match (a.get_type(), b.get_type()) {
+        (Some(x), Some(y)) => Rc::ptr_eq(x, y),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+/// A stand-alone parameter with no backing symbol (C++ `ParameterBasic`,
+/// `fspec.hh:1163-1191`).
+#[derive(Debug, Clone)]
+pub struct ParameterBasic {
+    /// Name, "" for undefined or return-value parameters (C++ `name`).
+    name: String,
+    /// Storage address (C++ `addr`).
+    addr: Address,
+    /// Data-type (C++ `type`); `None` only for the rare null-typed void seam.
+    type_: Option<Rc<Datatype>>,
+    /// Lock and other properties (C++ `flags`).
+    flags: uint4,
+}
+
+impl ParameterBasic {
+    /// Construct from components (C++
+    /// `ParameterBasic(const string&,const Address&,Datatype*,uint4)`).
+    pub fn new(name: &str, addr: Address, type_: Rc<Datatype>, flags: uint4) -> ParameterBasic {
+        ParameterBasic { name: name.to_string(), addr, type_: Some(type_), flags }
+    }
+
+    /// Construct a void parameter (C++ `ParameterBasic(Datatype *tp)`).  The
+    /// C++ leaves `addr` default-constructed (invalid).
+    pub fn new_void(type_: Rc<Datatype>) -> ParameterBasic {
+        ParameterBasic {
+            name: String::new(),
+            addr: Address::new_invalid(),
+            type_: Some(type_),
+            flags: 0,
+        }
+    }
+}
+
+impl ProtoParameter for ParameterBasic {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+    fn get_type(&self) -> Option<&Rc<Datatype>> {
+        self.type_.as_ref()
+    }
+    fn get_address(&self) -> Address {
+        self.addr.clone()
+    }
+    fn get_size(&self) -> int4 {
+        self.type_.as_ref().map(|t| t.get_size()).unwrap_or(0)
+    }
+    fn is_type_locked(&self) -> bool {
+        (self.flags & parameter_pieces_flags::TYPELOCK) != 0
+    }
+    fn is_name_locked(&self) -> bool {
+        (self.flags & parameter_pieces_flags::NAMELOCK) != 0
+    }
+    fn is_size_type_locked(&self) -> bool {
+        (self.flags & parameter_pieces_flags::SIZELOCK) != 0
+    }
+    fn is_this_pointer(&self) -> bool {
+        (self.flags & parameter_pieces_flags::ISTHIS) != 0
+    }
+    fn is_indirect_storage(&self) -> bool {
+        (self.flags & parameter_pieces_flags::INDIRECTSTORAGE) != 0
+    }
+    fn is_hidden_return(&self) -> bool {
+        (self.flags & parameter_pieces_flags::HIDDENRETPARM) != 0
+    }
+    fn is_name_undefined(&self) -> bool {
+        self.name.is_empty()
+    }
+
+    fn set_type_lock(&mut self, val: bool) {
+        if val {
+            self.flags |= parameter_pieces_flags::TYPELOCK;
+            // Check if we are locking TYPE_UNKNOWN
+            if self.type_.as_ref().map(|t| t.get_metatype()) == Some(type_metatype::TYPE_UNKNOWN) {
+                self.flags |= parameter_pieces_flags::SIZELOCK;
+            }
+        } else {
+            self.flags &= !(parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::SIZELOCK);
+        }
+    }
+    fn set_name_lock(&mut self, val: bool) {
+        if val {
+            self.flags |= parameter_pieces_flags::NAMELOCK;
+        } else {
+            self.flags &= !parameter_pieces_flags::NAMELOCK;
+        }
+    }
+    fn set_this_pointer(&mut self, val: bool) {
+        if val {
+            self.flags |= parameter_pieces_flags::ISTHIS;
+        } else {
+            self.flags &= !parameter_pieces_flags::ISTHIS;
+        }
+    }
+    fn override_size_lock_type(&mut self, ct: Rc<Datatype>) -> KunaResult<()> {
+        let cur_size = self.type_.as_ref().map(|t| t.get_size()).unwrap_or(0);
+        if cur_size == ct.get_size() {
+            if !self.is_size_type_locked() {
+                return Err(KunaError::lowlevel(
+                    "Overriding parameter that is not size locked",
+                ));
+            }
+            self.type_ = Some(ct);
+            return Ok(());
+        }
+        Err(KunaError::lowlevel(
+            "Overriding parameter with different type size",
+        ))
+    }
+    fn reset_size_lock_type(&mut self, factory: &dyn TypeFactory) -> KunaResult<()> {
+        if self.type_.as_ref().map(|t| t.get_metatype()) == Some(type_metatype::TYPE_UNKNOWN) {
+            return Ok(()); // Nothing to do
+        }
+        let size = self.type_.as_ref().map(|t| t.get_size()).unwrap_or(0);
+        self.type_ = Some(factory.get_base(size, type_metatype::TYPE_UNKNOWN)?);
+        Ok(())
+    }
+}
+
+// =============================================================================
+// ProtoStore / ProtoStoreInternal (fspec.hh:1198-1330, fspec.cc:3311-3576)
+// =============================================================================
+
+/// A collection of parameter descriptions making up a function prototype (C++
+/// abstract base `ProtoStore`, `fspec.hh:1198-1249`).
+///
+/// The symbol-backed variant `ProtoStoreSymbol` reaches `Scope`/`Symbol` (W3)
+/// and is a seam; [`ProtoStoreInternal`] is the stand-alone implementation.
+pub trait ProtoStore {
+    /// Establish name, data-type, storage of a specific input parameter (C++
+    /// `setInput`).
+    fn set_input(&mut self, i: int4, nm: &str, pieces: &ParameterPieces);
+    /// Clear the input parameter at the specified slot, shifting following
+    /// parameters down (C++ `clearInput`).
+    fn clear_input(&mut self, i: int4);
+    /// Clear all input parameters (C++ `clearAllInputs`).
+    fn clear_all_inputs(&mut self);
+    /// Get the number of input parameters (C++ `getNumInputs`).
+    fn get_num_inputs(&self) -> int4;
+    /// Get the i-th input parameter, or `None` (C++ `getInput`).
+    fn get_input(&self, i: int4) -> Option<&dyn ProtoParameter>;
+    /// Establish the data-type and storage of the return value (C++
+    /// `setOutput`).
+    fn set_output(&mut self, piece: &ParameterPieces);
+    /// Clear the return value to TYPE_VOID (C++ `clearOutput`).
+    fn clear_output(&mut self);
+    /// Get the return-value description (C++ `getOutput`).
+    fn get_output(&self) -> &dyn ProtoParameter;
+    /// Clone the entire collection (C++ `clone`).
+    fn clone_box(&self) -> Box<dyn ProtoStore>;
+    /// Mutable access to the i-th input parameter, or `None`.
+    fn get_input_mut(&mut self, i: int4) -> Option<&mut dyn ProtoParameter>;
+    /// Mutable access to the return-value description.
+    fn get_output_mut(&mut self) -> &mut dyn ProtoParameter;
+}
+
+/// A collection of parameter descriptions without backing symbols (C++
+/// `ProtoStoreInternal`, `fspec.hh:1312-1330`).
+#[derive(Debug, Clone)]
+pub struct ProtoStoreInternal {
+    /// Cached reference to the void data-type (C++ `voidtype`).
+    voidtype: Rc<Datatype>,
+    /// Descriptions of input parameters; `None` is a C++ null slot (C++
+    /// `inparam`).
+    inparam: Vec<Option<ParameterBasic>>,
+    /// Description of the return value; `None` is the C++ null (C++ `outparam`).
+    outparam: Option<ParameterBasic>,
+}
+
+impl ProtoStoreInternal {
+    /// Construct with the given void data-type, seeding a void output (C++
+    /// `ProtoStoreInternal(Datatype *vt)`).
+    pub fn new(vt: Rc<Datatype>) -> ProtoStoreInternal {
+        let mut res = ProtoStoreInternal { voidtype: Rc::clone(&vt), inparam: Vec::new(), outparam: None };
+        let pieces = ParameterPieces { addr: Address::new_invalid(), type_: Some(vt), flags: 0 };
+        res.set_output(&pieces);
+        res
+    }
+}
+
+impl ProtoStore for ProtoStoreInternal {
+    fn set_input(&mut self, i: int4, nm: &str, pieces: &ParameterPieces) {
+        let i = i as usize;
+        while self.inparam.len() <= i {
+            self.inparam.push(None);
+        }
+        self.inparam[i] = Some(ParameterBasic::new(
+            nm,
+            pieces.addr.clone(),
+            pieces.type_.clone().expect("setInput with null type"),
+            pieces.flags,
+        ));
+    }
+    fn clear_input(&mut self, i: int4) {
+        let sz = self.inparam.len();
+        let i = i as usize;
+        if i >= sz {
+            return;
+        }
+        self.inparam[i] = None;
+        // Renumber parameters with index > i
+        for j in (i + 1)..sz {
+            self.inparam[j - 1] = self.inparam[j].take();
+        }
+        while matches!(self.inparam.last(), Some(None)) {
+            self.inparam.pop();
+        }
+    }
+    fn clear_all_inputs(&mut self) {
+        self.inparam.clear();
+    }
+    fn get_num_inputs(&self) -> int4 {
+        self.inparam.len() as i32
+    }
+    fn get_input(&self, i: int4) -> Option<&dyn ProtoParameter> {
+        if i < 0 || (i as usize) >= self.inparam.len() {
+            return None;
+        }
+        self.inparam[i as usize].as_ref().map(|p| p as &dyn ProtoParameter)
+    }
+    fn get_input_mut(&mut self, i: int4) -> Option<&mut dyn ProtoParameter> {
+        if i < 0 || (i as usize) >= self.inparam.len() {
+            return None;
+        }
+        self.inparam[i as usize].as_mut().map(|p| p as &mut dyn ProtoParameter)
+    }
+    fn set_output(&mut self, piece: &ParameterPieces) {
+        self.outparam = Some(ParameterBasic::new(
+            "",
+            piece.addr.clone(),
+            piece.type_.clone().expect("setOutput with null type"),
+            piece.flags,
+        ));
+    }
+    fn clear_output(&mut self) {
+        self.outparam = Some(ParameterBasic::new_void(Rc::clone(&self.voidtype)));
+    }
+    fn get_output(&self) -> &dyn ProtoParameter {
+        self.outparam.as_ref().expect("ProtoStoreInternal::get_output: null")
+    }
+    fn get_output_mut(&mut self) -> &mut dyn ProtoParameter {
+        self.outparam.as_mut().expect("ProtoStoreInternal::get_output_mut: null")
+    }
+    fn clone_box(&self) -> Box<dyn ProtoStore> {
+        Box::new(self.clone())
+    }
+}
+
+// =============================================================================
+// FuncProto (fspec.hh:1343-1624, fspec.cc:3783-4628)
+// =============================================================================
+
+/// Boolean property flags for a [`FuncProto`] (C++ anonymous enum,
+/// `fspec.hh:1344-1359`).
+pub mod func_proto_flags {
+    use kuna_base::types::uint4;
+    /// Set if this prototype takes variable arguments (varargs).
+    pub const DOTDOTDOT: uint4 = 1;
+    /// Set if this prototype takes no inputs and is locked.
+    pub const VOIDINPUTLOCK: uint4 = 2;
+    /// Set if the PrototypeModel is locked for this prototype.
+    pub const MODELLOCK: uint4 = 4;
+    /// Should this be inlined by the decompiler.
+    pub const IS_INLINE: uint4 = 8;
+    /// Function does not return.
+    pub const NO_RETURN: uint4 = 16;
+    /// paramshift parameters have been added and removed.
+    pub const PARAMSHIFT_APPLIED: uint4 = 32;
+    /// Set if the input parameters are not properly represented.
+    pub const ERROR_INPUTPARAM: uint4 = 64;
+    /// Set if the return value(s) are not properly represented.
+    pub const ERROR_OUTPUTPARAM: uint4 = 128;
+    /// Parameter storage is custom (not derived from ProtoModel).
+    pub const CUSTOM_STORAGE: uint4 = 256;
+    /// Function is an (object-oriented) constructor.
+    pub const IS_CONSTRUCTOR: uint4 = 0x200;
+    /// Function is an (object-oriented) destructor.
+    pub const IS_DESTRUCTOR: uint4 = 0x400;
+    /// Function is a method with a 'this' pointer as an argument.
+    pub const HAS_THISPTR: uint4 = 0x800;
+    /// Set if this prototype is created to override a single call site.
+    pub const IS_OVERRIDE: uint4 = 0x1000;
+    /// Potential output storage should always be considered killed-by-call.
+    pub const AUTO_KILLEDBYCALL: uint4 = 0x2000;
+}
+
+/// A function prototype: the parameters and return value for a specific
+/// function (C++ `FuncProto`, `fspec.hh:1343-1624`).
+///
+/// The C++ holds a `ProtoModel *model` borrowed from the architecture's
+/// registry; with no registry the kuna `FuncProto` owns the model by
+/// reference-counted clone ([`Rc<ProtoModel>`]).  The storage interface is a
+/// boxed [`ProtoStore`] (an internal store here; the symbol-backed store is a
+/// `Scope` seam).  // SEAM(w6-fspec-2)
+pub struct FuncProto {
+    /// Model for this prototype (C++ `model`); `None` is the C++ null.
+    model: Option<Rc<ProtoModel>>,
+    /// Storage interface for parameters (C++ `store`); `None` is the C++ null.
+    store: Option<Box<dyn ProtoStore>>,
+    /// Extra bytes popped from stack (C++ `extrapop`).
+    extrapop: int4,
+    /// Boolean properties (C++ `flags`).
+    flags: uint4,
+    /// Side-effects associated with non-parameter storage (C++ `effectlist`).
+    effectlist: Vec<EffectRecord>,
+    /// Locations that may contain trash values (C++ `likelytrash`).
+    likelytrash: Vec<VarnodeData>,
+    /// (If non-negative) id of p-code snippet to replace this function (C++
+    /// `injectid`).
+    injectid: int4,
+    /// Number of bytes of return value consumed by callers (0 = all) (C++
+    /// `returnBytesConsumed`).
+    return_bytes_consumed: int4,
+}
+
+impl std::fmt::Debug for FuncProto {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `store` is a trait object with no Debug; omit it.
+        f.debug_struct("FuncProto")
+            .field("model", &self.model.as_ref().map(|m| m.get_name()))
+            .field("extrapop", &self.extrapop)
+            .field("flags", &self.flags)
+            .field("effectlist", &self.effectlist)
+            .field("likelytrash", &self.likelytrash)
+            .field("injectid", &self.injectid)
+            .field("return_bytes_consumed", &self.return_bytes_consumed)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Default for FuncProto {
+    fn default() -> Self {
+        FuncProto::new()
+    }
+}
+
+impl FuncProto {
+    /// Construct an empty prototype (C++ `FuncProto(void)`).
+    pub fn new() -> FuncProto {
+        FuncProto {
+            model: None,
+            store: None,
+            extrapop: 0,
+            flags: 0,
+            effectlist: Vec::new(),
+            likelytrash: Vec::new(),
+            injectid: -1,
+            return_bytes_consumed: 0,
+        }
+    }
+
+    /// Copy another function prototype into this (C++ `copy`).
+    pub fn copy(&mut self, op2: &FuncProto) {
+        self.model = op2.model.clone();
+        self.extrapop = op2.extrapop;
+        self.flags = op2.flags;
+        self.store = op2.store.as_ref().map(|s| s.clone_box());
+        self.effectlist = op2.effectlist.clone();
+        self.likelytrash = op2.likelytrash.clone();
+        self.injectid = op2.injectid;
+    }
+
+    /// Copy properties that affect data-flow (C++ `copyFlowEffects`).
+    pub fn copy_flow_effects(&mut self, op2: &FuncProto) {
+        self.flags &= !(func_proto_flags::IS_INLINE | func_proto_flags::NO_RETURN);
+        self.flags |= op2.flags & (func_proto_flags::IS_INLINE | func_proto_flags::NO_RETURN);
+        self.injectid = op2.injectid;
+    }
+
+    /// Does this prototype have a model (C++ `hasModel`).
+    pub fn has_model(&self) -> bool {
+        self.model.is_some()
+    }
+    /// Borrow the model (panics if none — C++ would dereference null).
+    pub fn model(&self) -> &Rc<ProtoModel> {
+        self.model.as_ref().expect("FuncProto::model: null")
+    }
+    /// Does this use the given model (C++ `hasMatchingModel`).
+    pub fn has_matching_model(&self, op2: &Rc<ProtoModel>) -> bool {
+        match &self.model {
+            Some(m) => Rc::ptr_eq(m, op2),
+            None => false,
+        }
+    }
+    /// Get the prototype model name (C++ `getModelName`).
+    pub fn get_model_name(&self) -> &str {
+        self.model().get_name()
+    }
+    /// Get the extrapop of the prototype model (C++ `getModelExtraPop`).
+    pub fn get_model_extra_pop(&self) -> int4 {
+        self.model().get_extra_pop()
+    }
+    /// Return true if the prototype model is unknown (C++ `isModelUnknown`).
+    pub fn is_model_unknown(&self) -> bool {
+        self.model().is_unknown()
+    }
+    /// Return true if the name should be printed in declarations (C++
+    /// `printModelInDecl`).
+    pub fn print_model_in_decl(&self) -> bool {
+        self.model().print_in_decl()
+    }
+
+    /// Establish a specific prototype model (C++ `setModel`).
+    pub fn set_model(&mut self, m: Option<Rc<ProtoModel>>) {
+        match m {
+            Some(m) => {
+                let expop = m.get_extra_pop();
+                // If a model previously existed don't overwrite extrapop with unknown
+                if self.model.is_none() || expop != EXTRAPOP_UNKNOWN {
+                    self.extrapop = expop;
+                }
+                if m.has_this_pointer() {
+                    self.flags |= func_proto_flags::HAS_THISPTR;
+                }
+                if m.is_constructor() {
+                    self.flags |= func_proto_flags::IS_CONSTRUCTOR;
+                }
+                if m.is_auto_killed_by_call() {
+                    self.flags |= func_proto_flags::AUTO_KILLEDBYCALL;
+                }
+                self.model = Some(m);
+            }
+            None => {
+                self.model = None;
+                self.extrapop = EXTRAPOP_UNKNOWN;
+            }
+        }
+    }
+
+    /// Set internal backing storage (C++ `setInternal`).
+    pub fn set_internal(&mut self, m: Rc<ProtoModel>, vt: Rc<Datatype>) {
+        self.store = Some(Box::new(ProtoStoreInternal::new(vt)));
+        if self.model.is_none() {
+            self.set_model(Some(m));
+        }
+    }
+
+    /// Set a backing symbol `Scope` for this (C++ `setScope`).
+    ///
+    /// SEAM(w6-fspec-2): `ProtoStoreSymbol` reaches `Scope`/`Symbol` (W3) and
+    /// `glb->defaultfp` (the Architecture registry).  Use [`FuncProto::set_internal`]
+    /// in the meantime.
+    pub fn set_scope(&mut self) -> KunaResult<()> {
+        Err(KunaError::lowlevel(
+            "SEAM(w6-fspec-2) FuncProto::setScope: ProtoStoreSymbol needs Scope + defaultfp",
+        ))
+    }
+
+    /// Get the i-th input parameter (C++ `getParam`).
+    pub fn get_param(&self, i: int4) -> Option<&dyn ProtoParameter> {
+        self.store().get_input(i)
+    }
+    /// Set parameter storage directly (C++ `setParam`).
+    pub fn set_param(&mut self, i: int4, name: &str, piece: &ParameterPieces) {
+        self.store_mut().set_input(i, name, piece);
+    }
+    /// Remove the i-th input parameter (C++ `removeParam`).
+    pub fn remove_param(&mut self, i: int4) {
+        self.store_mut().clear_input(i);
+    }
+    /// Get the number of input parameters (C++ `numParams`).
+    pub fn num_params(&self) -> int4 {
+        self.store().get_num_inputs()
+    }
+    /// Get the return value (C++ `getOutput`).
+    pub fn get_output(&self) -> &dyn ProtoParameter {
+        self.store().get_output()
+    }
+    /// Set return value storage directly (C++ `setOutput`).
+    pub fn set_output(&mut self, piece: &ParameterPieces) {
+        self.store_mut().set_output(piece);
+    }
+    /// Get the return value data-type (C++ `getOutputType`).
+    pub fn get_output_type(&self) -> Option<&Rc<Datatype>> {
+        // Borrow chain: get_output returns &dyn, get_type returns Option<&Rc>.
+        // The lifetime is tied to &self via store(); safe.
+        self.store().get_output().get_type()
+    }
+
+    /// Borrow the store (panics if none).
+    fn store(&self) -> &dyn ProtoStore {
+        self.store.as_deref().expect("FuncProto::store: null")
+    }
+    /// Borrow the store mutably (panics if none).
+    fn store_mut(&mut self) -> &mut dyn ProtoStore {
+        self.store.as_deref_mut().expect("FuncProto::store: null")
+    }
+
+    // -- lock predicates / setters (fspec.cc:3911-3953) ---------------------
+
+    /// Are input data-types locked (C++ `isInputLocked`).
+    pub fn is_input_locked(&self) -> bool {
+        if (self.flags & func_proto_flags::VOIDINPUTLOCK) != 0 {
+            return true;
+        }
+        if self.num_params() == 0 {
+            return false;
+        }
+        self.get_param(0).map(|p| p.is_type_locked()).unwrap_or(false)
+    }
+    /// Is the output data-type locked (C++ `isOutputLocked`).
+    pub fn is_output_locked(&self) -> bool {
+        self.store().get_output().is_type_locked()
+    }
+    /// Is the prototype model locked (C++ `isModelLocked`).
+    pub fn is_model_locked(&self) -> bool {
+        (self.flags & func_proto_flags::MODELLOCK) != 0
+    }
+    /// Is this a "custom" function prototype (C++ `hasCustomStorage`).
+    pub fn has_custom_storage(&self) -> bool {
+        (self.flags & func_proto_flags::CUSTOM_STORAGE) != 0
+    }
+    /// Toggle the data-type lock on input parameters (C++ `setInputLock`).
+    pub fn set_input_lock(&mut self, val: bool) {
+        if val {
+            self.flags |= func_proto_flags::MODELLOCK; // Locking input locks the model
+        }
+        let num = self.num_params();
+        if num == 0 {
+            self.flags = if val {
+                self.flags | func_proto_flags::VOIDINPUTLOCK
+            } else {
+                self.flags & !func_proto_flags::VOIDINPUTLOCK
+            };
+            return;
+        }
+        for i in 0..num {
+            if let Some(param) = self.store_mut().get_input_mut(i) {
+                param.set_type_lock(val);
+            }
+        }
+    }
+    /// Toggle the data-type lock on the return value (C++ `setOutputLock`).
+    pub fn set_output_lock(&mut self, val: bool) {
+        if val {
+            self.flags |= func_proto_flags::MODELLOCK; // Locking output locks the model
+        }
+        self.store_mut().get_output_mut().set_type_lock(val);
+    }
+    /// Toggle the lock on the prototype model (C++ `setModelLock`).
+    pub fn set_model_lock(&mut self, val: bool) {
+        self.flags = if val {
+            self.flags | func_proto_flags::MODELLOCK
+        } else {
+            self.flags & !func_proto_flags::MODELLOCK
+        };
+    }
+
+    // -- simple flag accessors (fspec.hh:1411-1545) -------------------------
+
+    /// Does this function get in-lined (C++ `isInline`).
+    pub fn is_inline(&self) -> bool {
+        (self.flags & func_proto_flags::IS_INLINE) != 0
+    }
+    /// Toggle the in-line setting (C++ `setInline`).
+    pub fn set_inline(&mut self, val: bool) {
+        self.flags = if val {
+            self.flags | func_proto_flags::IS_INLINE
+        } else {
+            self.flags & !func_proto_flags::IS_INLINE
+        };
+    }
+    /// Get the injection id (C++ `getInjectId`).
+    pub fn get_inject_id(&self) -> int4 {
+        self.injectid
+    }
+    /// Get the bytes consumed by callers (C++ `getReturnBytesConsumed`).
+    pub fn get_return_bytes_consumed(&self) -> int4 {
+        self.return_bytes_consumed
+    }
+    /// Does a function with this prototype never return (C++ `isNoReturn`).
+    pub fn is_no_return(&self) -> bool {
+        (self.flags & func_proto_flags::NO_RETURN) != 0
+    }
+    /// Toggle the no-return setting (C++ `setNoReturn`).
+    pub fn set_no_return(&mut self, val: bool) {
+        self.flags = if val {
+            self.flags | func_proto_flags::NO_RETURN
+        } else {
+            self.flags & !func_proto_flags::NO_RETURN
+        };
+    }
+    /// Is this a prototype for a class method, taking a this pointer (C++
+    /// `hasThisPointer`).
+    pub fn has_this_pointer(&self) -> bool {
+        (self.flags & func_proto_flags::HAS_THISPTR) != 0
+    }
+    /// Is this prototype for a class constructor (C++ `isConstructor`).
+    pub fn is_constructor(&self) -> bool {
+        (self.flags & func_proto_flags::IS_CONSTRUCTOR) != 0
+    }
+    /// Toggle whether this is a constructor (C++ `setConstructor`).
+    pub fn set_constructor(&mut self, val: bool) {
+        self.flags = if val {
+            self.flags | func_proto_flags::IS_CONSTRUCTOR
+        } else {
+            self.flags & !func_proto_flags::IS_CONSTRUCTOR
+        };
+    }
+    /// Is this prototype for a class destructor (C++ `isDestructor`).
+    pub fn is_destructor(&self) -> bool {
+        (self.flags & func_proto_flags::IS_DESTRUCTOR) != 0
+    }
+    /// Toggle whether this is a destructor (C++ `setDestructor`).
+    pub fn set_destructor(&mut self, val: bool) {
+        self.flags = if val {
+            self.flags | func_proto_flags::IS_DESTRUCTOR
+        } else {
+            self.flags & !func_proto_flags::IS_DESTRUCTOR
+        };
+    }
+    /// Has this been marked as having incorrect input parameters (C++
+    /// `hasInputErrors`).
+    pub fn has_input_errors(&self) -> bool {
+        (self.flags & func_proto_flags::ERROR_INPUTPARAM) != 0
+    }
+    /// Has this been marked as having an incorrect return value (C++
+    /// `hasOutputErrors`).
+    pub fn has_output_errors(&self) -> bool {
+        (self.flags & func_proto_flags::ERROR_OUTPUTPARAM) != 0
+    }
+    /// Toggle the input error setting (C++ `setInputErrors`).
+    pub fn set_input_errors(&mut self, val: bool) {
+        self.flags = if val {
+            self.flags | func_proto_flags::ERROR_INPUTPARAM
+        } else {
+            self.flags & !func_proto_flags::ERROR_INPUTPARAM
+        };
+    }
+    /// Toggle the output error setting (C++ `setOutputErrors`).
+    pub fn set_output_errors(&mut self, val: bool) {
+        self.flags = if val {
+            self.flags | func_proto_flags::ERROR_OUTPUTPARAM
+        } else {
+            self.flags & !func_proto_flags::ERROR_OUTPUTPARAM
+        };
+    }
+    /// Get the general extrapop setting (C++ `getExtraPop`).
+    pub fn get_extra_pop(&self) -> int4 {
+        self.extrapop
+    }
+    /// Set the general extrapop (C++ `setExtraPop`).
+    pub fn set_extra_pop(&mut self, ep: int4) {
+        self.extrapop = ep;
+    }
+    /// Get any upon-entry injection id (C++ `getInjectUponEntry`).
+    pub fn get_inject_upon_entry(&self) -> int4 {
+        self.model().get_inject_upon_entry()
+    }
+    /// Get any upon-return injection id (C++ `getInjectUponReturn`).
+    pub fn get_inject_upon_return(&self) -> int4 {
+        self.model().get_inject_upon_return()
+    }
+    /// Return true if this takes a variable number of arguments (C++
+    /// `isDotdotdot`).
+    pub fn is_dotdotdot(&self) -> bool {
+        (self.flags & func_proto_flags::DOTDOTDOT) != 0
+    }
+    /// Toggle whether this takes variable arguments (C++ `setDotdotdot`).
+    pub fn set_dotdotdot(&mut self, val: bool) {
+        self.flags = if val {
+            self.flags | func_proto_flags::DOTDOTDOT
+        } else {
+            self.flags & !func_proto_flags::DOTDOTDOT
+        };
+    }
+    /// Return true if this is a call site override (C++ `isOverride`).
+    pub fn is_override(&self) -> bool {
+        (self.flags & func_proto_flags::IS_OVERRIDE) != 0
+    }
+    /// Toggle whether this is a call site override (C++ `setOverride`).
+    pub fn set_override(&mut self, val: bool) {
+        self.flags = if val {
+            self.flags | func_proto_flags::IS_OVERRIDE
+        } else {
+            self.flags & !func_proto_flags::IS_OVERRIDE
+        };
+    }
+    /// Has a parameter shift been applied (C++ `isParamshiftApplied`).
+    pub fn is_paramshift_applied(&self) -> bool {
+        (self.flags & func_proto_flags::PARAMSHIFT_APPLIED) != 0
+    }
+    /// Toggle whether a parameter shift has been applied (C++
+    /// `setParamshiftApplied`).
+    pub fn set_paramshift_applied(&mut self, val: bool) {
+        self.flags = if val {
+            self.flags | func_proto_flags::PARAMSHIFT_APPLIED
+        } else {
+            self.flags & !func_proto_flags::PARAMSHIFT_APPLIED
+        };
+    }
+    /// Get the comparable properties of this prototype (C++
+    /// `getComparableFlags`).
+    pub fn get_comparable_flags(&self) -> uint4 {
+        self.flags
+            & (func_proto_flags::DOTDOTDOT
+                | func_proto_flags::IS_CONSTRUCTOR
+                | func_proto_flags::IS_DESTRUCTOR
+                | func_proto_flags::HAS_THISPTR)
+    }
+
+    /// Provide a hint as to how many bytes of the return value are important
+    /// (C++ `setReturnBytesConsumed`).  Returns true if the smallest hint
+    /// changed.
+    pub fn set_return_bytes_consumed(&mut self, val: int4) -> bool {
+        if val == 0 {
+            return false;
+        }
+        if self.return_bytes_consumed == 0 || val < self.return_bytes_consumed {
+            self.return_bytes_consumed = val;
+            return true;
+        }
+        false
+    }
+
+    /// Assuming this prototype is locked, calculate the extrapop (C++
+    /// `resolveExtraPop`).  Designed to work with 32-bit x86 binaries.
+    pub fn resolve_extra_pop(&mut self) {
+        if !self.is_input_locked() {
+            return;
+        }
+        let numparams = self.num_params();
+        if self.is_dotdotdot() {
+            if numparams != 0 {
+                // "standard" varargs with fixed initial parameters -> __cdecl
+                self.set_extra_pop(4);
+            }
+            return; // otherwise we can't resolve the extrapop
+        }
+        let mut expop = 4; // Extrapop is at least 4 for the return address
+        for i in 0..numparams {
+            let param = match self.get_param(i) {
+                Some(p) => p,
+                None => continue,
+            };
+            let addr = param.get_address();
+            if addr.get_space().map(|s| s.get_type()) != Some(spacetype::IPTR_SPACEBASE) {
+                continue;
+            }
+            // (int4)addr.getOffset() + param->getSize()
+            let mut cur = (addr.get_offset() as i32).wrapping_add(param.get_size());
+            cur = (cur + 3) & 0xffffffc; // Must be 4-byte aligned
+            if cur > expop {
+                expop = cur;
+            }
+        }
+        self.set_extra_pop(expop);
+    }
+
+    /// Clear input parameters that have not been locked (C++
+    /// `clearUnlockedInput`).
+    pub fn clear_unlocked_input(&mut self) {
+        if self.is_input_locked() {
+            return;
+        }
+        self.store_mut().clear_all_inputs();
+    }
+
+    /// Clear the return value if it has not been locked (C++
+    /// `clearUnlockedOutput`).
+    pub fn clear_unlocked_output(&mut self, factory: &dyn TypeFactory) -> KunaResult<()> {
+        let (type_locked, size_locked) = {
+            let outparam = self.get_output();
+            (outparam.is_type_locked(), outparam.is_size_type_locked())
+        };
+        if type_locked {
+            if size_locked && self.model.is_some() {
+                self.store_mut().get_output_mut().reset_size_lock_type(factory)?;
+            }
+        } else {
+            self.store_mut().clear_output();
+        }
+        self.return_bytes_consumed = 0;
+        Ok(())
+    }
+
+    /// Clear all input parameters regardless of lock (C++ `clearInput`).
+    pub fn clear_input(&mut self) {
+        self.store_mut().clear_all_inputs();
+        self.flags &= !func_proto_flags::VOIDINPUTLOCK; // If a void was locked in clear it
+    }
+
+    /// Associate a given injection with this prototype (C++ `setInjectId`).
+    pub fn set_inject_id(&mut self, id: int4) {
+        if id < 0 {
+            self.cancel_inject_id();
+        } else {
+            self.injectid = id;
+            self.flags |= func_proto_flags::IS_INLINE;
+        }
+    }
+    /// Turn-off any in-lining for this function (C++ `cancelInjectId`).
+    pub fn cancel_inject_id(&mut self) {
+        self.injectid = -1;
+        self.flags &= !func_proto_flags::IS_INLINE;
+    }
+
+    /// Make sure any "this" parameter is properly marked (C++
+    /// `updateThisPointer`).
+    pub fn update_this_pointer(&mut self) {
+        if !self.model().has_this_pointer() {
+            return;
+        }
+        let num_inputs = self.store().get_num_inputs();
+        if num_inputs == 0 {
+            return;
+        }
+        let mut idx = 0;
+        if self.store().get_input(0).map(|p| p.is_hidden_return()).unwrap_or(false) {
+            if num_inputs < 2 {
+                return;
+            }
+            idx = 1;
+        }
+        if let Some(param) = self.store_mut().get_input_mut(idx) {
+            param.set_this_pointer(true);
+        }
+    }
+
+    /// Copy out the raw pieces of this prototype (C++ `getPieces`).
+    pub fn get_pieces(&self, pieces: &mut PrototypePieces) {
+        if self.store.is_none() {
+            return;
+        }
+        pieces.outtype = self.store().get_output().get_type().cloned();
+        let num = self.store().get_num_inputs();
+        for i in 0..num {
+            if let Some(param) = self.store().get_input(i) {
+                if let Some(t) = param.get_type() {
+                    pieces.intypes.push(Rc::clone(t));
+                }
+                pieces.innames.push(param.get_name().to_string());
+            }
+        }
+        pieces.first_var_arg_slot = if self.is_dotdotdot() { num } else { -1 };
+    }
+
+    /// The full prototype is (re)set from a model, names, and data-types (C++
+    /// `setPieces`).  Both input and output are assumed locked.
+    pub fn set_pieces(
+        &mut self,
+        pieces: &PrototypePieces,
+        model: Option<Rc<ProtoModel>>,
+        typefactory: &dyn TypeFactory,
+        manager: &AddrSpaceManager,
+    ) -> KunaResult<()> {
+        if model.is_some() {
+            self.set_model(model);
+        }
+        self.update_all_types(pieces, typefactory, manager)?;
+        self.set_input_lock(true);
+        self.set_output_lock(true);
+        self.set_model_lock(true);
+        Ok(())
+    }
+
+    /// Update input/output parameters from raw pieces (C++ `updateAllTypes`).
+    ///
+    /// Resets `extrapop` via `setModel(model)`, clears the store, recomputes the
+    /// storage locations via `assignParameterStorage`, and re-marks the `this`
+    /// pointer.  A `ParamUnassignedError` sets the input-error flag.
+    pub fn update_all_types(
+        &mut self,
+        proto: &PrototypePieces,
+        typefactory: &dyn TypeFactory,
+        manager: &AddrSpaceManager,
+    ) -> KunaResult<()> {
+        self.set_model(self.model.clone()); // This resets extrapop
+        self.store_mut().clear_all_inputs();
+        self.store_mut().clear_output();
+        self.flags &= !func_proto_flags::VOIDINPUTLOCK;
+        self.set_dotdotdot(proto.first_var_arg_slot >= 0);
+
+        let mut pieces: Vec<ParameterPieces> = Vec::new();
+        let model = self.model().clone();
+        match model.assign_parameter_storage(proto, &mut pieces, false, typefactory, manager) {
+            Ok(()) => {
+                self.store_mut().set_output(&pieces[0]);
+                let mut j = 0usize;
+                for (i, piece) in pieces.iter().enumerate().skip(1) {
+                    if (piece.flags & parameter_pieces_flags::HIDDENRETPARM) != 0 {
+                        self.store_mut().set_input((i - 1) as i32, "rethidden", piece);
+                        continue; // increment i but not j
+                    }
+                    let nm = if j >= proto.innames.len() { "" } else { proto.innames[j].as_str() };
+                    let nm = nm.to_string();
+                    self.store_mut().set_input((i - 1) as i32, &nm, piece);
+                    j += 1;
+                }
+            }
+            Err(KunaError::ParamUnassigned { .. }) => {
+                // ParamUnassignedError
+                self.flags |= func_proto_flags::ERROR_INPUTPARAM;
+            }
+            Err(e) => return Err(e),
+        }
+        self.update_this_pointer();
+        Ok(())
+    }
+
+    // -- effect / query delegators (fspec.cc:4239-4622) ---------------------
+
+    /// Calculate the effect this has on a given storage location (C++
+    /// `hasEffect`).
+    pub fn has_effect(&self, addr: &Address, size: int4) -> uint4 {
+        if self.effectlist.is_empty() {
+            return self.model().has_effect(addr, size);
+        }
+        ProtoModel::lookup_effect(&self.effectlist, addr, size)
+    }
+
+    /// Get the effect list (C++ `effectBegin`/`effectEnd`): the override list if
+    /// non-empty, else the model's list.
+    pub fn effect_list(&self) -> &[EffectRecord] {
+        if self.effectlist.is_empty() {
+            self.model().effect_list()
+        } else {
+            &self.effectlist
+        }
+    }
+    /// Get the likely-trash list (C++ `trashBegin`/`trashEnd`).
+    pub fn trash_list(&self) -> &[VarnodeData] {
+        if self.likelytrash.is_empty() {
+            self.model().trash_list()
+        } else {
+            &self.likelytrash
+        }
+    }
+    /// Get the internal-storage list (C++ `internalBegin`/`internalEnd`).
+    pub fn internal_list(&self) -> &[VarnodeData] {
+        self.model().internal_list()
+    }
+
+    /// Decide whether a storage location could be, or hold, an input parameter
+    /// (C++ `characterizeAsInputParam`).
+    pub fn characterize_as_input_param(&self, addr: &Address, size: int4) -> Containment {
+        if !self.is_dotdotdot() {
+            // If varargs, go straight to the model
+            if (self.flags & func_proto_flags::VOIDINPUTLOCK) != 0 {
+                return Containment::NoContainment;
+            }
+            let num = self.num_params();
+            if num > 0 {
+                let mut locktest = false;
+                let mut res_contains = false;
+                let mut res_contained_by = false;
+                for i in 0..num {
+                    let param = match self.get_param(i) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    if !param.is_type_locked() {
+                        continue;
+                    }
+                    locktest = true;
+                    let iaddr = param.get_address();
+                    // Must be justified relative to space endianness, ignoring forceleft
+                    let off = iaddr.justified_contain(param.get_size(), addr, size, false);
+                    if off == 0 {
+                        return Containment::ContainsJustified;
+                    } else if off > 0 {
+                        res_contains = true;
+                    }
+                    if iaddr.contained_by(param.get_size(), addr, size) {
+                        res_contained_by = true;
+                    }
+                }
+                if locktest {
+                    if res_contains {
+                        return Containment::ContainsUnjustified;
+                    }
+                    if res_contained_by {
+                        return Containment::ContainedBy;
+                    }
+                    return Containment::NoContainment;
+                }
+            }
+        }
+        self.model().characterize_as_input_param(addr, size)
+    }
+
+    /// Decide whether a storage location could be, or hold, the return value
+    /// (C++ `characterizeAsOutput`).
+    pub fn characterize_as_output(&self, addr: &Address, size: int4) -> Containment {
+        if self.is_output_locked() {
+            let outparam = self.get_output();
+            if outparam.get_type().map(|t| t.get_metatype()) == Some(type_metatype::TYPE_VOID) {
+                return Containment::NoContainment;
+            }
+            let iaddr = outparam.get_address();
+            let off = iaddr.justified_contain(outparam.get_size(), addr, size, false);
+            if off == 0 {
+                return Containment::ContainsJustified;
+            } else if off > 0 {
+                return Containment::ContainsUnjustified;
+            }
+            if iaddr.contained_by(outparam.get_size(), addr, size) {
+                return Containment::ContainedBy;
+            }
+            return Containment::NoContainment;
+        }
+        self.model().characterize_as_output(addr, size)
+    }
+
+    /// Decide whether a storage location could be an input parameter (C++
+    /// `possibleInputParam`).
+    pub fn possible_input_param(&self, addr: &Address, size: int4) -> bool {
+        if !self.is_dotdotdot() {
+            if (self.flags & func_proto_flags::VOIDINPUTLOCK) != 0 {
+                return false;
+            }
+            let num = self.num_params();
+            if num > 0 {
+                let mut locktest = false;
+                for i in 0..num {
+                    let param = match self.get_param(i) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    if !param.is_type_locked() {
+                        continue;
+                    }
+                    locktest = true;
+                    let iaddr = param.get_address();
+                    if iaddr.justified_contain(param.get_size(), addr, size, false) == 0 {
+                        return true;
+                    }
+                }
+                if locktest {
+                    return false;
+                }
+            }
+        }
+        self.model().possible_input_param(addr, size)
+    }
+
+    /// Decide whether a storage location could be a return value (C++
+    /// `possibleOutputParam`).
+    pub fn possible_output_param(&self, addr: &Address, size: int4) -> bool {
+        if self.is_output_locked() {
+            let outparam = self.get_output();
+            if outparam.get_type().map(|t| t.get_metatype()) == Some(type_metatype::TYPE_VOID) {
+                return false;
+            }
+            let iaddr = outparam.get_address();
+            return iaddr.justified_contain(outparam.get_size(), addr, size, false) == 0;
+        }
+        self.model().possible_output_param(addr, size)
+    }
+
+    /// Check if the storage looks like an unjustified input parameter (C++
+    /// `unjustifiedInputParam`).
+    pub fn unjustified_input_param(&self, addr: &Address, size: int4, res: &mut VarnodeData) -> bool {
+        if !self.is_dotdotdot() {
+            if (self.flags & func_proto_flags::VOIDINPUTLOCK) != 0 {
+                return false;
+            }
+            let num = self.num_params();
+            if num > 0 {
+                let mut locktest = false;
+                for i in 0..num {
+                    let param = match self.get_param(i) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    if !param.is_type_locked() {
+                        continue;
+                    }
+                    locktest = true;
+                    let iaddr = param.get_address();
+                    let just = iaddr.justified_contain(param.get_size(), addr, size, false);
+                    if just == 0 {
+                        return false; // Contained but not improperly
+                    }
+                    if just > 0 {
+                        res.space = iaddr.get_space().cloned();
+                        res.offset = iaddr.get_offset();
+                        res.size = param.get_size() as u32;
+                        return true;
+                    }
+                }
+                if locktest {
+                    return false;
+                }
+            }
+        }
+        self.model().unjustified_input_param(addr, size, res)
+    }
+
+    /// Pass back the biggest input parameter contained in the range (C++
+    /// `getBiggestContainedInputParam`).
+    pub fn get_biggest_contained_input_param(&self, loc: &Address, size: int4, res: &mut VarnodeData) -> bool {
+        if !self.is_dotdotdot() {
+            if (self.flags & func_proto_flags::VOIDINPUTLOCK) != 0 {
+                return false;
+            }
+            let num = self.num_params();
+            if num > 0 {
+                let mut locktest = false;
+                res.size = 0;
+                for i in 0..num {
+                    let param = match self.get_param(i) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    if !param.is_type_locked() {
+                        continue;
+                    }
+                    locktest = true;
+                    let iaddr = param.get_address();
+                    if iaddr.contained_by(param.get_size(), loc, size)
+                        && param.get_size() as u32 > res.size
+                    {
+                        res.space = iaddr.get_space().cloned();
+                        res.offset = iaddr.get_offset();
+                        res.size = param.get_size() as u32;
+                    }
+                }
+                if locktest {
+                    return res.size == 0;
+                }
+            }
+        }
+        self.model().get_biggest_contained_input_param(loc, size, res)
+    }
+
+    /// Pass back the biggest output storage contained in the range (C++
+    /// `getBiggestContainedOutput`).
+    pub fn get_biggest_contained_output(&self, loc: &Address, size: int4, res: &mut VarnodeData) -> bool {
+        if self.is_output_locked() {
+            let outparam = self.get_output();
+            if outparam.get_type().map(|t| t.get_metatype()) == Some(type_metatype::TYPE_VOID) {
+                return false;
+            }
+            let iaddr = outparam.get_address();
+            if iaddr.contained_by(outparam.get_size(), loc, size) {
+                res.space = iaddr.get_space().cloned();
+                res.offset = iaddr.get_offset();
+                res.size = outparam.get_size() as u32;
+                return true;
+            }
+            return false;
+        }
+        self.model().get_biggest_contained_output(loc, size, res)
+    }
+
+    /// Get the storage location for the "this" pointer (C++
+    /// `getThisPointerStorage`).
+    pub fn get_this_pointer_storage(
+        &self,
+        dt: Rc<Datatype>,
+        typefactory: &dyn TypeFactory,
+        manager: &AddrSpaceManager,
+    ) -> KunaResult<Address> {
+        if !self.model().has_this_pointer() {
+            return Ok(Address::new_invalid());
+        }
+        let mut proto = PrototypePieces { first_var_arg_slot: -1, ..Default::default() };
+        proto.outtype = self.get_output_type().cloned();
+        proto.intypes.push(dt);
+        let mut res: Vec<ParameterPieces> = Vec::new();
+        self.model()
+            .assign_parameter_storage(&proto, &mut res, true, typefactory, manager)?;
+        for piece in res.iter().skip(1) {
+            if (piece.flags & parameter_pieces_flags::HIDDENRETPARM) != 0 {
+                continue;
+            }
+            return Ok(piece.addr.clone());
+        }
+        Ok(Address::new_invalid())
+    }
+
+    /// Decide if this can be safely restricted to match another prototype (C++
+    /// `isCompatible`).
+    pub fn is_compatible(&self, op2: &FuncProto) -> bool {
+        if !self.model().is_compatible(op2.model()) {
+            return false;
+        }
+        if op2.is_output_locked() && self.is_output_locked() {
+            let out1 = self.store().get_output();
+            let out2 = op2.store().get_output();
+            if !proto_parameter_eq(out1, out2) {
+                return false;
+            }
+        }
+        if self.extrapop != EXTRAPOP_UNKNOWN && self.extrapop != op2.extrapop {
+            return false;
+        }
+        if self.is_dotdotdot() != op2.is_dotdotdot() {
+            // Mismatch in varargs
+            if op2.is_dotdotdot() {
+                // If -this- is generic, trials are still set up to recover varargs
+                if self.is_input_locked() {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        if self.injectid != op2.injectid {
+            return false;
+        }
+        if (self.flags & (func_proto_flags::IS_INLINE | func_proto_flags::NO_RETURN))
+            != (op2.flags & (func_proto_flags::IS_INLINE | func_proto_flags::NO_RETURN))
+        {
+            return false;
+        }
+        if self.effectlist.len() != op2.effectlist.len() {
+            return false;
+        }
+        for i in 0..self.effectlist.len() {
+            if self.effectlist[i] != op2.effectlist[i] {
+                return false;
+            }
+        }
+        if self.likelytrash.len() != op2.likelytrash.len() {
+            return false;
+        }
+        for i in 0..self.likelytrash.len() {
+            if self.likelytrash[i] != op2.likelytrash[i] {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Is a potential output automatically considered killed-by-call (C++
+    /// `isAutoKilledByCall`).
+    pub fn is_auto_killed_by_call(&self) -> bool {
+        if (self.flags & func_proto_flags::AUTO_KILLEDBYCALL) != 0 {
+            return true; // The ProtoModel always does killedbycall
+        }
+        if self.is_output_locked() {
+            return true; // A locked output location is killedbycall by definition
+        }
+        false
+    }
+
+    /// Get the stack address space (C++ `getSpacebase`).
+    pub fn get_spacebase(&self) -> Option<&Rc<AddrSpace>> {
+        self.model().get_spacebase()
+    }
+    /// Get the range of potential local stack variables (C++ `getLocalRange`).
+    pub fn get_local_range(&self) -> &RangeList {
+        self.model().get_local_range()
+    }
+    /// Get the range of potential stack parameters (C++ `getParamRange`).
+    pub fn get_param_range(&self) -> &RangeList {
+        self.model().get_param_range()
+    }
+    /// Return true if the stack grows toward smaller addresses (C++
+    /// `isStackGrowsNegative`).
+    pub fn is_stack_grows_negative(&self) -> bool {
+        self.model().is_stack_grows_negative()
+    }
+    /// Maximum heritage delay across all input parameters (C++
+    /// `getMaxInputDelay`).
+    pub fn get_max_input_delay(&self) -> int4 {
+        self.model().get_max_input_delay()
+    }
+    /// Maximum heritage delay across all return values (C++
+    /// `getMaxOutputDelay`).
+    pub fn get_max_output_delay(&self) -> int4 {
+        self.model().get_max_output_delay()
+    }
+    /// Check if two input storage locations can represent a single logical
+    /// parameter (C++ `checkInputJoin`).
+    pub fn check_input_join(&self, hiaddr: &Address, hisz: int4, loaddr: &Address, losz: int4) -> bool {
+        self.model().check_input_join(hiaddr, hisz, loaddr, losz)
+    }
+    /// Check if a single storage location can be split into two input
+    /// parameters (C++ `checkInputSplit`).
+    pub fn check_input_split(&self, loc: &Address, size: int4, splitpoint: int4) -> bool {
+        self.model().check_input_split(loc, size, splitpoint)
+    }
+    /// Get any assumed input extension and container (C++
+    /// `assumedInputExtension`).
+    pub fn assumed_input_extension(&self, addr: &Address, size: int4, res: &mut VarnodeData) -> OpCode {
+        self.model().assumed_input_extension(addr, size, res)
+    }
+    /// Get any assumed output extension and container (C++
+    /// `assumedOutputExtension`).
+    pub fn assumed_output_extension(&self, addr: &Address, size: int4, res: &mut VarnodeData) -> OpCode {
+        self.model().assumed_output_extension(addr, size, res)
+    }
+
+    // -- Funcdata-dependent updates (fspec.cc:4057-4198) --------------------
+
+    /// Update input parameters based on Varnode trials (C++ `updateInputTypes`).
+    ///
+    /// SEAM(w6-fspec-2): reaches `Funcdata`/`Varnode` (W3) — the trial list is a
+    /// `vector<Varnode *>` and the body reads each Varnode's high data-type.
+    pub fn update_input_types(&mut self) -> KunaResult<()> {
+        Err(KunaError::lowlevel(
+            "SEAM(w6-fspec-2) FuncProto::updateInputTypes: needs Funcdata/Varnode trials",
+        ))
+    }
+    /// Update input parameters from trials without types (C++
+    /// `updateInputNoTypes`).  SEAM(w6-fspec-2): needs `Funcdata`/`Varnode`.
+    pub fn update_input_no_types(&mut self) -> KunaResult<()> {
+        Err(KunaError::lowlevel(
+            "SEAM(w6-fspec-2) FuncProto::updateInputNoTypes: needs Funcdata/Varnode trials",
+        ))
+    }
+    /// Update the return value based on Varnode trials (C++
+    /// `updateOutputTypes`).  SEAM(w6-fspec-2): needs `Funcdata`/`Varnode`.
+    pub fn update_output_types(&mut self) -> KunaResult<()> {
+        Err(KunaError::lowlevel(
+            "SEAM(w6-fspec-2) FuncProto::updateOutputTypes: needs Funcdata/Varnode trials",
+        ))
+    }
+    /// Update the return value from trials without types (C++
+    /// `updateOutputNoTypes`).  SEAM(w6-fspec-2): needs `Funcdata`/`Varnode`.
+    pub fn update_output_no_types(&mut self) -> KunaResult<()> {
+        Err(KunaError::lowlevel(
+            "SEAM(w6-fspec-2) FuncProto::updateOutputNoTypes: needs Funcdata/Varnode trials",
+        ))
+    }
+    /// Restore this from a `<prototype>` element (C++ `decode`).
+    /// SEAM(w6-fspec-2): needs the marshaling Decoder + Architecture registry.
+    pub fn decode(&mut self) -> KunaResult<()> {
+        Err(KunaError::lowlevel(
+            "SEAM(w6-fspec-2) FuncProto::decode: needs marshaling + Architecture registry",
+        ))
+    }
+
+    // -- test/tooling builder seams -----------------------------------------
+
+    /// Replace the parameter store (test/builder seam; the C++ swaps `store`
+    /// in `setScope`/`setInternal`/`paramShift`).
+    pub fn set_store(&mut self, store: Box<dyn ProtoStore>) {
+        self.store = Some(store);
+    }
+}
 
 #[cfg(test)]
 mod tests;
