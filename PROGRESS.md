@@ -1,5 +1,37 @@
 # kuna Progress Log
 
+## Session (2026-06-13 cont.) — rust-port W10 un-seam chain: first real datatest parity
+
+Continuing the analysis-body un-seam grind (LOSS-131), each wave gated on the W0
+stage-boundary goldens, faithful + general (verifier rejects special-casing), all
+tests green, C++ oracle untouched (675/675). Progress this session:
+- heritage: ported the DRIVER (W5 had only substrate); B3 oracle-exact. Closed the
+  KEYSTONE LOSS-132 (dual AddrSpaceManager -> single Rc<AddrSpaceManager>): heritage
+  now reaches the real lifted varnodes (boolless 37/37).
+- deadcode + simplify: boolless 25->9 ops; closed a 2nd dual-Architecture bug (the
+  OpBehavior table wasn't shared into glb); ActionDeadCode + constant folding real.
+- proto-recovery: real fspec::FuncProto on Funcdata + active-trial RETURN recovery;
+  boolless 9->7 ops, RETURN(#0x0,ACC) EXACTLY the C++ B4 -> boolless IR == oracle.
+- structuring + printc-body: ActionBlockStructure seeds sblocks + the printc
+  statement-body driver emits REAL structured C (if/body/return); generalizes across
+  6+ functions. First time the Rust engine emits structured C, not a shell.
+- node-join + present-compare: closed ConditionalJoin::execute; confirmed boolless's
+  'dat_52 <= 10' comes from real IR INT_LESSEQUAL (ActionPresentCompareForm, GH-558).
+
+**MILESTONE: the first REAL positive datatest assertion passes under --engine rust**
+('Boolean thru Less-than #1' = 'if (dat_52 <= 10)'), verified non-vacuous (from real
+IR, not a printer hack). boolless now prints `void boolless(void){ if (dat_52 <= 10)
+{ ACC = 1; } return ACC; }` vs oracle `uint1 boolless(void){ uint1 v1; v1 = dat_52;
+if (dat_52 <= 10) { v1 = 1; } return v1; }`. Remaining boolless gap: merge/naming
+(ACC->v1) + output-type (void->uint1). 3,166 Rust tests green.
+
+Each un-seam keeps exposing+fixing latent integration bugs the per-item gates missed
+(dual manager, unshared OpBehavior table, condexe loop bound) — only the live
+lift->analyze->print path reveals them. Methodology proven: measure vs stage golden,
+un-seam one layer faithfully, name the next blocker. Path to M3: merge/naming +
+types -> boolless full byte-parity -> horizontal expansion across 83 files.
+
+
 ## Session (2026-06-13) — rust-port W10: keystone closed (single AddrSpaceManager); heritage oracle-exact
 
 The W10 analysis-body grind began and immediately found + closed THE keystone
