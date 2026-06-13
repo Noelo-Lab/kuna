@@ -301,8 +301,9 @@ fn w5r2_get_sub_type_union_enum_are_base_not_seam() {
 }
 
 /// `PointerRel` inherits `TypePointer::numDepend()==1` and `getDepend(0)==ptrto`
-/// (it does NOT override them — type.hh:724-770). The port must report 1 / ptrto,
-/// and `is_ptrsub_matching` (an overrider for both Pointer and PointerRel) SEAMs.
+/// (it does NOT override them — type.hh:724-770). The port must report 1 / ptrto.
+/// `is_ptrsub_matching` is now implemented for PointerRel (w6-s5-type-3, flipping
+/// the obsoleted seam pin); `getPtrInto`'s relative offset math remains SEAM(W6).
 #[test]
 fn w5r2_pointer_rel_inherits_pointer_depend_and_ptrsub_seams() {
     let ptrto = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
@@ -320,8 +321,9 @@ fn w5r2_pointer_rel_inherits_pointer_depend_and_ptrsub_seams() {
     assert_eq!(pr.get_ptr_to().unwrap().get_size(), 4);
     assert_eq!(pr.get_byte_offset(), Some(4));
     assert_eq!(pr.get_rel_parent().unwrap().get_size(), 16);
-    // isPtrsubMatching overrides for PointerRel -> SEAM.
-    assert!(pr.is_ptrsub_matching(0, 0, 1).is_err());
+    // TypePointerRel::isPtrsubMatching (type.cc:3138-3147), stripped==None branch:
+    // iOff = 0 + offset(4) + extra(0) = 4; 4 >= 0 && 4 <= parent->getSize()(16).
+    assert!(pr.is_ptrsub_matching(0, 0, 1).unwrap());
     // getPtrInto overrides for PointerRel -> SEAM (relative offset math is W6).
     assert!(pr.get_ptr_into().is_err());
 }
