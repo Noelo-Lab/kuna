@@ -367,3 +367,160 @@ fn render_engine_error_prefixes() {
     render_engine_error(&KunaError::lowlevel("deep"), &mut dcp, &mut out);
     assert_eq!(out, "Low-level ERROR: deep\n");
 }
+
+// ===========================================================================
+// w9-con-ifacedecomp verifier adversarial tests (round 1).
+//
+// These target the load-bearing, *in-scope* (non-engine) surface the hunt list
+// flagged as most fragile for a registration/console-driver port: the exact
+// registerCom token sequence (prefix-expansion provenance), the unusual
+// empty-arg-is-EXECUTION-not-PARSE error class on `break action`/`break start`,
+// the execute() exception->prefix grammar across all three reachable IfaceError
+// kinds, and the deliberate omissions (`source`, the CPUI_RULECOMPILE-gated
+// `parse rule`/`experimental rules`).
+// ===========================================================================
+
+/// The full, ordered C++ `IfaceDecompCapability::registerCommands` token
+/// sequence (ifacedecomp.cc:37-147), MINUS the console-only `source`
+/// (registered in consolemain.cc, not ifacedecomp.cc) and the
+/// `#ifdef CPUI_RULECOMPILE` / `#ifdef OPACTION_DEBUG` / `#ifdef TYPEPROP_DEBUG`
+/// blocks (compiled out of every kuna build).  Transcribed by hand from the C++
+/// so a single-token drift in register_decomp_commands is caught positionally —
+/// the `num_commands()==105` count test cannot see a swap that keeps the count.
+const CPP_REGISTER_ORDER: &[&[&str]] = &[
+    &["//"], &["#"], &["%"], &["quit"], &["history"],
+    &["openfile", "write"], &["openfile", "append"], &["closefile"], &["echo"],
+    // (source omitted — console-only)
+    &["option"], &["parse", "file"], &["parse", "line"], &["adjust", "vma"],
+    &["load", "function"], &["load", "addr"], &["read", "symbols"],
+    &["clear", "architecture"], &["map", "address"], &["map", "hash"],
+    &["map", "param"], &["map", "return"], &["map", "function"],
+    &["map", "externalref"], &["map", "label"], &["map", "convert"],
+    &["map", "unionfacet"], &["disassemble"], &["decompile"], &["dump"],
+    &["binary"], &["force", "goto"], &["force", "varnode"], &["force", "datatype"],
+    &["override", "prototype"], &["override", "jumptable"], &["override", "flow"],
+    &["deadcode", "delay"], &["global", "add"], &["global", "remove"],
+    &["global", "spaces"], &["global", "registers"], &["graph", "dataflow"],
+    &["graph", "controlflow"], &["graph", "dom"], &["print", "language"],
+    &["print", "C"], &["print", "C", "flat"], &["print", "C", "globals"],
+    &["print", "C", "types"], &["print", "C", "xml"], &["print", "parammeasures"],
+    &["produce", "C"], &["produce", "prototypes"], &["print", "raw"],
+    &["print", "inputs"], &["print", "inputs", "all"], &["list", "action"],
+    &["list", "override"], &["list", "prototypes"], &["set", "context"],
+    &["set", "track"], &["break", "start"], &["break", "action"],
+    &["print", "spaces"], &["print", "high"], &["print", "tree", "varnode"],
+    &["print", "tree", "block"], &["print", "localrange"], &["print", "map"],
+    &["print", "varnode"], &["print", "cover", "high"], &["print", "cover", "varnode"],
+    &["print", "cover", "varnodehigh"], &["print", "extrapop"],
+    &["print", "actionstats"], &["reset", "actionstats"], &["count", "pcode"],
+    &["type", "varnode"], &["name", "varnode"], &["rename"], &["retype"],
+    &["remove"], &["isolate"], &["prototype", "lock"], &["prototype", "unlock"],
+    &["comment", "instruction"], &["duplicate", "hash"], &["callgraph", "build"],
+    &["callgraph", "build", "quick"], &["callgraph", "dump"], &["callgraph", "load"],
+    &["callgraph", "list"], &["fixup", "call"], &["fixup", "callother"],
+    &["fixup", "apply"], &["volatile"], &["readonly"], &["pointer", "setting"],
+    &["prefersplit"], &["structure", "blocks"], &["analyze", "range"],
+    &["load", "test", "file"], &["list", "test", "commands"],
+    &["execute", "test", "command"], &["continue"],
+];
+
+#[test]
+fn w9_con_ifacedecomp_v1_register_token_sequence_byte_identical() {
+    // 105 active tokens, matching the count test and my positional C++ diff.
+    assert_eq!(CPP_REGISTER_ORDER.len(), 105, "transcription count");
+    let mut status = console(&[]);
+    // Each C++ token sequence must resolve to itself (full token line resolves
+    // to the same words) — this exercises the actual registered prefix tree, so
+    // a missing/renamed/reordered token shows up as an Invalid/ambiguous resolve.
+    for words in CPP_REGISTER_ORDER {
+        let line = words.join(" ");
+        let resolved = status
+            .resolve(&line)
+            .unwrap_or_else(|e| panic!("token {words:?} did not resolve: {e}"));
+        assert_eq!(&resolved, words, "registered token drifted: {words:?}");
+    }
+    assert_eq!(status.num_commands(), CPP_REGISTER_ORDER.len());
+}
+
+#[test]
+fn w9_con_ifacedecomp_v2_break_empty_specify_is_execution_not_parse() {
+    // C++ IfcBreakaction/IfcBreakstart (ifacedecomp.cc:1182,1208): an EMPTY
+    // action/rule name throws IfaceExecutionError("No action/rule specified"),
+    // NOT a parse error — an unusual class choice that a "looks like a missing
+    // arg => parse error" port would get wrong.  So the console driver must
+    // prefix it with "Execution error: ", never "Command parsing error: ".
+    // (`break action`/`break start` read `specify` before touching conf, and
+    // conf==None would give "Decompile action not loaded" — but the empty-arg
+    // check precedes that, so a bare `break action` reports the specify error.)
+    for cmd in ["break action", "break start"] {
+        let out = run_all(&[cmd, "quit"]);
+        assert!(
+            out.contains("Execution error: No action/rule specified"),
+            "{cmd}: expected execution-class empty-arg error, out: {out:?}"
+        );
+        assert!(
+            !out.contains("Command parsing error"),
+            "{cmd}: empty arg must NOT be a parse error, out: {out:?}"
+        );
+    }
+}
+
+/// A synthetic command that raises a chosen IfaceError kind, to exercise the
+/// execute() exception->prefix grammar for all three reachable kinds without
+/// the unported engine (the only kinds a command body produces today).
+struct RaiseCmd(crate::interface::IfaceError);
+impl IfaceCommandAction for RaiseCmd {
+    fn execute(&self, _s: &mut IfaceStatus, _c: &mut CommandStream) -> IfaceResult<()> {
+        Err(self.0.clone())
+    }
+    fn module(&self) -> String {
+        DECOMPILE_MODULE.to_string()
+    }
+}
+
+#[test]
+fn w9_con_ifacedecomp_v3_execute_exception_prefix_grammar() {
+    use crate::interface::IfaceError;
+    // C++ execute() (ifacedecomp.cc:3616) catches, in inheritance order:
+    //   IfaceParseError     -> "Command parsing error: "
+    //   IfaceExecutionError -> "Execution error: "
+    //   IfaceError (base)   -> "ERROR: "
+    // Build a console whose single registered command raises each kind and
+    // assert the exact prefix the driver writes (the harness greps these).
+    for (err, prefix) in [
+        (IfaceError::parse("p-explain"), "Command parsing error: p-explain"),
+        (IfaceError::execution("x-explain"), "Execution error: x-explain"),
+        (IfaceError::base("b-explain"), "ERROR: b-explain"),
+    ] {
+        let mut status = ConsoleCommands::into_status(vec!["raise".to_string()]);
+        status.register_com(Box::new(RaiseCmd(err)), &["raise"]);
+        // Drive exactly one command through the real console driver.
+        super::execute(&mut status);
+        assert!(
+            status.optr.starts_with(prefix),
+            "expected prefix {prefix:?}, got {:?}",
+            status.optr
+        );
+        // Exactly one newline-terminated diagnostic line.
+        assert!(status.optr.ends_with('\n'), "missing newline: {:?}", status.optr);
+    }
+}
+
+#[test]
+fn w9_con_ifacedecomp_v4_deliberate_omissions_absent() {
+    // `source` is registered in consolemain.cc (console-only), NOT by
+    // register_decomp_commands; and `parse rule` / `experimental rules` are
+    // #ifdef CPUI_RULECOMPILE (compiled out of every kuna build).  None must
+    // resolve through the decompiler command set.
+    let mut status = console(&[]);
+    assert!(status.resolve("source foo.txt").is_err(), "source must not be registered");
+    assert!(status.resolve("parse rule").is_err(), "parse rule is CPUI_RULECOMPILE-gated");
+    assert!(
+        status.resolve("experimental rules").is_err(),
+        "experimental rules is CPUI_RULECOMPILE-gated"
+    );
+    // But `parse file` / `parse line` (the non-gated parse subcommands) DO
+    // resolve — guards that the omission did not over-prune the `parse` subtree.
+    assert_eq!(status.resolve("parse file x").unwrap(), vec!["parse", "file"]);
+    assert_eq!(status.resolve("parse line int x;").unwrap(), vec!["parse", "line"]);
+}
