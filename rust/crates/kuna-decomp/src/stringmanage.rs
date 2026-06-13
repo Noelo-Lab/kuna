@@ -635,8 +635,12 @@ impl StringManagerUnicode {
                 new_buffer_size = self.base.maximum_chars;
                 amount = new_buffer_size - cur_buffer_size;
                 if amount == 0 {
-                    // Could not find terminator
-                    break 'fill Ok(());
+                    // Could not find terminator — C++ `return stringData.byteData`
+                    // (stringmanage.cc:455-457) exits with the still-empty buffer
+                    // BEFORE checkCharacters/assignStringData run. Return the empty
+                    // cached buffer directly; do NOT fall through to the
+                    // check_characters/assign_string_data path below.
+                    return &self.base.string_map[addr].byte_data;
                 }
             }
             let fill_addr = addr + cur_buffer_size as i64;
