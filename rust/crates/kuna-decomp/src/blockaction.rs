@@ -2697,12 +2697,14 @@ pub struct MergePair {
 /// The **match path** ([`match_blocks`](ConditionalJoin::match_blocks),
 /// [`find_dups`](ConditionalJoin::find_dups), [`check_exit_block`]) is read-only
 /// topology + the [`functional_equality_level`](crate::expression::functional_equality_level)
-/// probe, fully ported.  The **execute path** (`nodeJoinCreateBlock` +
-/// MULTIEQUAL creation/cutdown + CBRANCH move) reproduces the C++ mutation
-/// sequence but threads the `Funcdata::opSetOutput` (LOSS shared with condexe)
-/// and `opSetOpcode` (W6 op-info) seams already documented in the rule wave — so
-/// [`execute`](ConditionalJoin::execute) returns a `KunaResult` and the seam is
-/// visible.  See losses.
+/// probe, fully ported.  The **execute path**
+/// ([`execute`](ConditionalJoin::execute) → `nodeJoinCreateBlock` +
+/// [`setup_multiequals`](ConditionalJoin::setup_multiequals) +
+/// [`move_cbranch`](ConditionalJoin::move_cbranch) +
+/// [`cut_down_multiequals`](ConditionalJoin::cut_down_multiequals)) reproduces the
+/// C++ mutation sequence verbatim (`newOp`/`newUniqueOut`/`opSetOutput` +
+/// `opSetOpcode` are all available at this merge base); it returns a `KunaResult`
+/// only to surface the unreachable bank errors of the underlying primitives.
 pub struct ConditionalJoin {
     block1: Option<BlockId>,
     block2: Option<BlockId>,
@@ -2715,9 +2717,9 @@ pub struct ConditionalJoin {
     cbranch1: Option<crate::seams::OpId>,
     cbranch2: Option<crate::seams::OpId>,
     /// The new joined condition block (C++ `BlockBasic *joinblock`).  Written by
-    /// the seamed `execute` (see [`ConditionalJoin::execute`]); carried for layout
-    /// fidelity until the op-creation seam lands.
-    #[allow(dead_code)]
+    /// [`execute`](ConditionalJoin::execute) (`nodeJoinCreateBlock`) and read by
+    /// [`setup_multiequals`](ConditionalJoin::setup_multiequals) /
+    /// [`move_cbranch`](ConditionalJoin::move_cbranch).
     joinblock: Option<BlockId>,
     /// Map from the MergePair of Varnodes to the merged Varnode (C++
     /// `map<MergePair,Varnode *> mergeneed`).  The C++ keys on a lexicographic
@@ -2928,20 +2930,141 @@ impl ConditionalJoin {
         }
     }
 
+    /// Create a new Varnode and its defining MULTIEQUAL operation for each
+    /// MergePair in the map (C++ `ConditionalJoin::setupMultiequals`,
+    /// `blockaction.cc:2023`).
+    fn setup_multiequals(&mut self, data: &mut Funcdata) {
+        let joinblock = self.joinblock.expect("setupMultiequals: joinblock");
+        let cbranch1 = self.cbranch1.expect("setupMultiequals: cbranch1");
+        // C++ uses cbranch1->getAddr() for every new MULTIEQUAL.
+        let addr = data.obank().get(cbranch1).expect("setupMultiequals: stale cbranch1").get_addr().clone();
+        // for(iter=mergeneed.begin();iter!=mergeneed.end();++iter)
+        for idx in 0..self.mergeneed.len() {
+            // if ((*iter).second != (Varnode *)0) continue;
+            if self.mergeneed[idx].1.is_some() {
+                continue;
+            }
+            let mp = self.mergeneed[idx].0;
+            let vn1 = mp.side1; // Varnode *vn1 = (*iter).first.side1;
+            let vn2 = mp.side2; // Varnode *vn2 = (*iter).first.side2;
+            // PcodeOp *multi = data.newOp(2,cbranch1->getAddr());
+            let multi = data.new_op(2, addr.clone());
+            // data.opSetOpcode(multi,CPUI_MULTIEQUAL);
+            data.op_set_opcode(multi, crate::typeop::type_op_for(OpCode::CPUI_MULTIEQUAL));
+            // Varnode *outvn = data.newUniqueOut(vn1->getSize(),multi);
+            let size = data.vbank().get(vn1).expect("setupMultiequals: stale vn1").get_size();
+            let outvn = data.new_unique_out(size, multi).expect("setupMultiequals: newUniqueOut");
+            // data.opSetInput(multi,vn1,0);
+            data.op_set_input(multi, vn1, 0).expect("setupMultiequals: opSetInput 0");
+            // data.opSetInput(multi,vn2,1);
+            data.op_set_input(multi, vn2, 1).expect("setupMultiequals: opSetInput 1");
+            // (*iter).second = outvn;
+            self.mergeneed[idx].1 = Some(outvn);
+            // data.opInsertEnd(multi,joinblock);
+            data.op_insert_end(multi, joinblock);
+        }
+    }
+
+    /// Remove the other CBRANCH, moving the surviving one into the join block
+    /// (C++ `ConditionalJoin::moveCbranch`, `blockaction.cc:2043`).
+    fn move_cbranch(&mut self, data: &mut Funcdata) {
+        let joinblock = self.joinblock.expect("moveCbranch: joinblock");
+        let cbranch1 = self.cbranch1.expect("moveCbranch: cbranch1");
+        let cbranch2 = self.cbranch2.expect("moveCbranch: cbranch2");
+        // Varnode *vn1 = cbranch1->getIn(1);
+        let vn1 = data.obank().get(cbranch1).expect("moveCbranch: cbranch1").get_in(1).expect("moveCbranch: cbranch1 in1");
+        // Varnode *vn2 = cbranch2->getIn(1);
+        let vn2 = data.obank().get(cbranch2).expect("moveCbranch: cbranch2").get_in(1).expect("moveCbranch: cbranch2 in1");
+        // data.opUninsert(cbranch1);
+        data.op_uninsert(cbranch1);
+        // data.opInsertEnd(cbranch1,joinblock);
+        data.op_insert_end(cbranch1, joinblock);
+        // Varnode *vn;  if (vn1 != vn2) vn = mergeneed[MergePair(vn1,vn2)]; else vn = vn1;
+        let vn = if vn1 != vn2 {
+            self.merge_need_lookup(MergePair { side1: vn1, side2: vn2 })
+                .expect("moveCbranch: mergeneed entry missing")
+        } else {
+            vn1
+        };
+        // data.opSetInput(cbranch1,vn,1);
+        data.op_set_input(cbranch1, vn, 1).expect("moveCbranch: opSetInput");
+        // data.opDestroy(cbranch2);
+        data.op_destroy(cbranch2);
+    }
+
+    /// Substitute the new joined Varnode in the given exit block
+    /// (C++ `ConditionalJoin::cutDownMultiequals`, `blockaction.cc:1981`).
+    fn cut_down_multiequals(&mut self, exit: BlockId, in1: int4, in2: int4, data: &mut Funcdata) {
+        // int4 lo,hi;  if (in1 > in2) { hi=in1; lo=in2; } else { hi=in2; lo=in1; }
+        let (lo, hi) = if in1 > in2 { (in2, in1) } else { (in1, in2) };
+        let mut iter = first_op_of(data, exit);
+        while let Some(op) = iter {
+            // ++iter;  // Advance iterator before inserts happen
+            let next = next_op_in_block(data, op);
+            let code = data.obank().get(op).expect("cutDownMultiequals: stale op").code();
+            if code == OpCode::CPUI_MULTIEQUAL {
+                let vn1 = data.obank().get(op).unwrap().get_in(in1).expect("cutDownMultiequals: in1");
+                let vn2 = data.obank().get(op).unwrap().get_in(in2).expect("cutDownMultiequals: in2");
+                if vn1 == vn2 {
+                    // data.opRemoveInput(op,hi);
+                    data.op_remove_input(op, hi);
+                } else {
+                    // Varnode *subvn = mergeneed[MergePair(vn1,vn2)];
+                    let subvn = self
+                        .merge_need_lookup(MergePair { side1: vn1, side2: vn2 })
+                        .expect("cutDownMultiequals: mergeneed entry missing");
+                    // data.opRemoveInput(op,hi);
+                    data.op_remove_input(op, hi);
+                    // data.opSetInput(op,subvn,lo);
+                    data.op_set_input(op, subvn, lo).expect("cutDownMultiequals: opSetInput");
+                }
+                // if (op->numInput() == 1) { uninsert; opcode COPY; insertBegin(op,exit); }
+                if data.obank().get(op).expect("cutDownMultiequals: stale op").num_input() == 1 {
+                    data.op_uninsert(op);
+                    data.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+                    data.op_insert_begin(op, exit);
+                }
+            } else if code != OpCode::CPUI_COPY {
+                break;
+            }
+            iter = next;
+        }
+    }
+
+    /// Look up the merged Varnode for a MergePair (C++ `mergeneed[MergePair(...)]`).
+    fn merge_need_lookup(&self, mp: MergePair) -> Option<VarnodeId> {
+        self.mergeneed.iter().find(|(k, _)| *k == mp).and_then(|(_, v)| *v)
+    }
+
     /// Execute the merge (C++ `ConditionalJoin::execute`, `blockaction.cc:2094`).
-    ///
-    /// SEAM: the mutation sequence (`nodeJoinCreateBlock`, `setupMultiequals` →
-    /// `newOp`/`newUniqueOut`/`opSetOutput`, `moveCbranch`, `cutDownMultiequals` →
-    /// `opSetOpcode`) needs the `opSetOutput` (LOSS, shared with condexe) and
-    /// `opSetOpcode` W6 op-info seams.  The block-creation half
-    /// (`nodeJoinCreateBlock`) is available; the op-creation/opcode half is not,
-    /// so this surfaces the seam.  See losses.
-    pub fn execute(&mut self, _data: &mut Funcdata) -> KunaResult<()> {
-        Err(KunaError::lowlevel(
-            "kuna rust port: ConditionalJoin::execute needs Funcdata::opSetOutput (newUniqueOut) \
-             and opSetOpcode (W6 op-info table) to build/rewrite the join MULTIEQUALs; not \
-             available at this item's boundary",
-        ))
+    pub fn execute(&mut self, data: &mut Funcdata) -> KunaResult<()> {
+        let block1 = self.block1.expect("execute: block1");
+        let block2 = self.block2.expect("execute: block2");
+        let exita = self.exita.expect("execute: exita");
+        let exitb = self.exitb.expect("execute: exitb");
+        let cbranch1 = self.cbranch1.expect("execute: cbranch1");
+        // joinblock = data.nodeJoinCreateBlock(block1,block2,exita,exitb,
+        //                 (a_in1 > a_in2),(b_in1 > b_in2),cbranch1->getAddr());
+        let addr = data.obank().get(cbranch1).expect("execute: stale cbranch1").get_addr().clone();
+        let joinblock = data.node_join_create_block(
+            block1,
+            block2,
+            exita,
+            exitb,
+            self.a_in1 > self.a_in2,
+            self.b_in1 > self.b_in2,
+            &addr,
+        );
+        self.joinblock = Some(joinblock);
+        // setupMultiequals();
+        self.setup_multiequals(data);
+        // moveCbranch();
+        self.move_cbranch(data);
+        // cutDownMultiequals(exita,a_in1,a_in2);
+        self.cut_down_multiequals(exita, self.a_in1, self.a_in2, data);
+        // cutDownMultiequals(exitb,b_in1,b_in2);
+        self.cut_down_multiequals(exitb, self.b_in1, self.b_in2, data);
+        Ok(())
     }
 
     /// Clear for a new test (C++ `ConditionalJoin::clear`, `blockaction.cc:2104`).
@@ -3293,21 +3416,11 @@ impl Action for ActionNodeJoin {
                 }
                 let bb2 = data.bblocks_ref().block(leastout).get_in(j);
                 if condjoin.match_blocks(bb, bb2, data) {
-                    // count += 1; condjoin.execute(); condjoin.clear();
-                    // SEAM: execute() surfaces opSetOutput/opSetOpcode (see
-                    // ConditionalJoin::execute).  The match is fully ported.
-                    match condjoin.execute(data) {
-                        Ok(()) => {
-                            self.base_mut().count += 1;
-                            condjoin.clear();
-                            break;
-                        }
-                        Err(_) => {
-                            // The execute seam is not available; do not mutate.
-                            condjoin.clear();
-                            break;
-                        }
-                    }
+                    // count += 1; condjoin.execute(); condjoin.clear(); break;
+                    self.base_mut().count += 1; // Indicate change has been made
+                    condjoin.execute(data).expect("ConditionalJoin::execute");
+                    condjoin.clear();
+                    break;
                 }
             }
         }
