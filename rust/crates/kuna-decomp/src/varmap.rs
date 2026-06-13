@@ -923,7 +923,7 @@ impl MapState {
         let addr_size = self.spaceid.get_addr_size();
         let mut sst: intb = AddrSpace::byte_to_address(st, word_size) as intb;
         sst = sign_extend(sst, (addr_size as int4) * 8 - 1);
-        sst = AddrSpace::byte_to_address_int(sst, word_size); // addressToByte on a signed value
+        sst = AddrSpace::address_to_byte_int(sst, word_size); // addressToByte on a signed value
         self.maplist.push(RangeHint::new(st, sz, sst, ct, fl, rt, hi));
     }
 
@@ -1047,7 +1047,7 @@ impl MapState {
         let addr_size = self.spaceid.get_addr_size();
         let mut sst: intb = AddrSpace::byte_to_address(high, word_size) as intb;
         sst = sign_extend(sst, (addr_size as int4) * 8 - 1);
-        sst = AddrSpace::byte_to_address_int(sst, word_size);
+        sst = AddrSpace::address_to_byte_int(sst, word_size);
         // Add extra range to bound any final open entry
         self.maplist.push(RangeHint::new(
             high,
