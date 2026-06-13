@@ -84,7 +84,8 @@ use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 use std::rc::Rc;
 
-use crate::dtype::Datatype;
+use crate::action::{ActionGroupList, Rule, RuleSpec};
+use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
 use crate::seams::{OpId, VarnodeId};
@@ -341,6 +342,165 @@ impl ArraySequence {
         let index = self.num_elements * self.char_type.get_align_size();
         (BUILTIN_MEMCPY as uintb, index)
     }
+}
+
+// =============================================================================
+// RuleStringCopy / RuleStringStore (constseq.cc:969-1029)
+// =============================================================================
+//
+// The two drivers' early guards reachable on the merged tree are ported here;
+// the `StringSequence`/`HeapSequence` construction + `transform()` that the
+// guards gate reach W4 (symbol table `queryContainer`, the `getScopeLocal`
+// `ScopeLocal`) and W4/W6 (the union-aware `getTypeDefFacing`/`getTypeReadFacing`
+// type-facing, `getInternalString`, `getTypePointer*`, `constructTypedPointer`)
+// — exactly the *Deferred halves* the module docs ledger.  Until those land the
+// `applyOp` bodies decline after the reachable guards, byte-identical to the
+// rule being disabled (the `kuna_memsetsequence::RuleMemsetCopy` convention).
+// The guards that *are* reachable (the constant-input test) run faithfully so
+// the seam is as narrow as the C++ permits.
+
+/// (constseq) Replace a sequence of COPY ops moving single characters with a
+/// CALLOTHER copying a whole string (C++ `class RuleStringCopy`).
+///
+/// Given a root COPY of a constant character, search for other COPYs in the same
+/// basic block that form a sequence interpretable as a single string, and
+/// replace the sequence with a single `memcpy`/`wcsncpy` user-op.
+pub struct RuleStringCopy {
+    /// Rule group (C++ `Rule::basegroup`).
+    group: String,
+}
+
+impl RuleStringCopy {
+    /// Construct in group `g` (C++ `RuleStringCopy(const string &g)`:
+    /// `Rule(g, 0, "stringcopy")`).
+    pub fn new(g: impl Into<String>) -> RuleStringCopy {
+        RuleStringCopy { group: g.into() }
+    }
+}
+
+impl Rule for RuleStringCopy {
+    /// C++ `RuleStringCopy::getOpList`: `oplist.push_back(CPUI_COPY);`
+    fn get_op_list(&self) -> Vec<OpCode> {
+        vec![OpCode::CPUI_COPY]
+    }
+
+    /// C++ `RuleStringCopy::clone`:
+    /// `if (!grouplist.contains(getGroup())) return 0;`
+    fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
+        if !grouplist.contains(&self.group) {
+            return None;
+        }
+        Some(Box::new(RuleStringCopy { group: self.group.clone() }))
+    }
+
+    /// C++ `RuleStringCopy::applyOp` (`constseq.cc:981`).
+    fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        // if (!op->getIn(0)->isConstant()) return 0;  // Constant
+        let in0 = match data.obank().get(op).and_then(|o| o.get_in(0)) {
+            Some(v) => v,
+            None => return 0,
+        };
+        if !data.vbank().get(in0).map(|v| v.is_constant()).unwrap_or(false) {
+            return 0;
+        }
+        // SEAM(W4/W6): the remaining guards and the StringSequence build/transform
+        // reach the W6 type-facing factory and the W4 symbol table (see the
+        // section note above).  Until they land the body declines, which is
+        // byte-identical to the rule being disabled.
+        //
+        //   Varnode *outvn = op->getOut();
+        //   Datatype *ct = outvn->getTypeDefFacing();
+        //   if (!ct->isCharPrint()) return 0;
+        //   if (ct->isOpaqueString()) return 0;
+        //   if (!outvn->isAddrTied()) return 0;
+        //   SymbolEntry *entry = data.getScopeLocal()->queryContainer(
+        //       outvn->getAddr(), outvn->getSize(), op->getAddr());
+        //   if (entry == 0) return 0;
+        //   StringSequence sequence(data,ct,entry,op,outvn->getAddr());
+        //   if (!sequence.isValid()) return 0;
+        //   if (!sequence.transform()) return 0;
+        //   return 1;
+        let _ = data;
+        0
+    }
+}
+
+/// (constseq) Replace a sequence of STORE ops moving single characters with a
+/// CALLOTHER copying a whole string (C++ `class RuleStringStore`).
+///
+/// Given a root STORE of a constant character, search for other STOREs in the
+/// same basic block off the same base pointer that form a sequence
+/// interpretable as a single string, and replace the STOREs with a single
+/// `strncpy`/`wcsncpy` user-op.
+pub struct RuleStringStore {
+    /// Rule group (C++ `Rule::basegroup`).
+    group: String,
+}
+
+impl RuleStringStore {
+    /// Construct in group `g` (C++ `RuleStringStore(const string &g)`:
+    /// `Rule(g, 0, "stringstore")`).
+    pub fn new(g: impl Into<String>) -> RuleStringStore {
+        RuleStringStore { group: g.into() }
+    }
+}
+
+impl Rule for RuleStringStore {
+    /// C++ `RuleStringStore::getOpList`: `oplist.push_back(CPUI_STORE);`
+    fn get_op_list(&self) -> Vec<OpCode> {
+        vec![OpCode::CPUI_STORE]
+    }
+
+    /// C++ `RuleStringStore::clone`:
+    /// `if (!grouplist.contains(getGroup())) return 0;`
+    fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
+        if !grouplist.contains(&self.group) {
+            return None;
+        }
+        Some(Box::new(RuleStringStore { group: self.group.clone() }))
+    }
+
+    /// C++ `RuleStringStore::applyOp` (`constseq.cc:1013`).
+    fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        // if (!op->getIn(2)->isConstant()) return 0;  // Constant
+        let in2 = match data.obank().get(op).and_then(|o| o.get_in(2)) {
+            Some(v) => v,
+            None => return 0,
+        };
+        if !data.vbank().get(in2).map(|v| v.is_constant()).unwrap_or(false) {
+            return 0;
+        }
+        // SEAM(W4/W6): the type-facing pointer guard and the HeapSequence
+        // build/transform reach the W6 type-facing factory (`getTypeReadFacing`,
+        // `getPtrTo`) and the heap-STORE machinery (see the section note above).
+        // Until they land the body declines, byte-identical to disabled.
+        //
+        //   Varnode *ptrvn = op->getIn(1);
+        //   Datatype *ct = ptrvn->getTypeReadFacing(op);
+        //   if (ct->getMetatype() != TYPE_PTR) return 0;
+        //   ct = ((TypePointer *)ct)->getPtrTo();
+        //   if (!ct->isCharPrint()) return 0;
+        //   if (ct->isOpaqueString()) return 0;
+        //   HeapSequence sequence(data,ct,op);
+        //   if (!sequence.isValid()) return 0;
+        //   if (!sequence.transform()) return 0;
+        //   return 1;
+        let _ = (data, type_metatype::TYPE_PTR);
+        0
+    }
+}
+
+/// Per-file registration rows in C++ definition order
+/// (`RuleStringCopy` then `RuleStringStore`).
+///
+/// Both ship in the `"constsequence"` group (the `universalAction` cleanup-pool
+/// slot, C++ `coreaction.cc:5987-5988`); the schedule re-registers them under
+/// that slot group.  The per-file placeholder is `"analysis"`.
+pub fn specs() -> Vec<RuleSpec> {
+    vec![
+        RuleSpec { group: "analysis", ctor: || Box::new(RuleStringCopy::new("analysis")) },
+        RuleSpec { group: "analysis", ctor: || Box::new(RuleStringStore::new("analysis")) },
+    ]
 }
 
 // =============================================================================
