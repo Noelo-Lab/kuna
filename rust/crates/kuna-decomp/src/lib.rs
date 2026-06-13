@@ -110,6 +110,7 @@ pub mod cast;
 pub mod signature;
 pub mod analyzesigs;
 pub mod paramid;
+pub mod stringmanage;
 pub mod kuna_naming;
 pub mod kuna_arraynotation;
 pub mod coreaction_render;
