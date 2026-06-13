@@ -57,6 +57,8 @@ pub mod kuna_stages;
 pub mod kuna_assert;
 pub mod kuna_restartlog;
 pub mod heritage;
+pub mod cover;
+pub mod variable;
 pub mod subflow;
 pub mod condexe;
 pub mod expression;
