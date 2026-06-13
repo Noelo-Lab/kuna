@@ -221,40 +221,93 @@ impl GrammarToken {
     }
 }
 
-/// Parse a C integer literal the way the C++ `istringstream` with
-/// `unsetf(dec|hex|oct)` does (`grammar.cc:231-239`): base auto-detected from
-/// the prefix (`0x`/`0X` -> hex, leading `0` -> octal, else decimal), optional
-/// leading `-`, read as a signed 64-bit value then re-tagged unsigned
+/// Parse a C integer literal exactly the way the C++ `istringstream` with
+/// `unsetf(dec|hex|oct)` does (`grammar.cc:1796-1804`): the `operator>>(intb&)`
+/// num_get facet performs a `strtoll`-style *leading-prefix* scan — optional
+/// sign, base auto-detected from the prefix (`0x`/`0X` -> hex, leading `0` ->
+/// octal, else decimal), reading the longest run of digits valid for that base
+/// and STOPPING at the first invalid character, then re-tagging unsigned
 /// (`value.integer = (uintb)val`).
 ///
-/// Bytes are exactly what the lexer's `number` state accreted; the lexer already
-/// rejected malformed numbers (a stray `x`, illegal characters).  A value that
-/// overflows `i64`/`u64` saturates the way `operator>>` leaves the stream's max
-/// — but the lexer corpus never produces such values, so this matches the C++
-/// for every reachable input.
+/// The lexer's `number` state (`grammar.cc:2094-2125`, mirrored at
+/// [`LexState::Number`]) accretes ASCII letters and `_` into a NUMBER token, so
+/// inputs like `1z`, `123abc`, `08`, `5_0`, `007_0` are single reachable tokens.
+/// The C++ `>>` parses the valid prefix and discards the rest: `1z`->1,
+/// `123abc`->123, `08`->0 (octal stops at the non-octal `8`), `5_0`->5,
+/// `007_0`->7.  This must NOT full-string-parse (LOSS-124): a trailing letter /
+/// underscore / out-of-base digit truncates the value, it does not invalidate
+/// the literal.
+///
+/// Overflow is the signed saturation the C++11 facet performs on `intb`:
+/// positive overflow leaves `val == INT64_MAX`, negative overflow leaves
+/// `val == INT64_MIN` (e.g. `0xffffffffffffffff` -> `i64::MAX`).
 fn parse_c_integer(bytes: &[u8]) -> uintb {
-    let s = String::from_utf8_lossy(bytes);
-    let s = s.trim();
-    let (neg, body) = if let Some(rest) = s.strip_prefix('-') {
-        (true, rest)
-    } else if let Some(rest) = s.strip_prefix('+') {
-        (false, rest)
+    // The lexer corpus is ASCII; treat the bytes directly (matches the C++
+    // `istringstream` over the raw `char` buffer, which never sees a leading
+    // space here — but `operator>>` would skip leading whitespace, so honor it).
+    let mut i = 0usize;
+    let n = bytes.len();
+    while i < n && (bytes[i] as char).is_whitespace() {
+        i += 1;
+    }
+
+    // Optional sign.
+    let neg = if i < n && bytes[i] == b'-' {
+        i += 1;
+        true
+    } else if i < n && bytes[i] == b'+' {
+        i += 1;
+        false
     } else {
-        (false, s)
+        false
     };
 
-    let (radix, digits) = if let Some(rest) = body.strip_prefix("0x").or_else(|| body.strip_prefix("0X")) {
-        (16u32, rest)
-    } else if body.len() > 1 && body.starts_with('0') {
-        (8u32, &body[1..])
+    // Base auto-detection from the prefix (strtoll/num_get rules).
+    let radix: u32 = if i < n && bytes[i] == b'0' {
+        if i + 1 < n && (bytes[i + 1] == b'x' || bytes[i + 1] == b'X') {
+            // `0x`/`0X`: hex.  The leading `0` is consumed as part of the
+            // prefix; if no hex digit follows, only the `0` was parsed (value 0).
+            i += 2;
+            16
+        } else {
+            // Leading `0` (not `0x`): octal.  Leave the `0` in the digit run so
+            // a bare `0` parses as 0 and `08`/`007_0` stop at the first invalid
+            // octal char.
+            8
+        }
     } else {
-        (10u32, body)
+        10
     };
 
-    // Parse as i64 (the C++ reads into `intb val`).  On overflow the C++ stream
-    // leaves `val` at its max; we saturate identically.
-    let magnitude = i64::from_str_radix(digits, radix).unwrap_or(i64::MAX);
-    let val: i64 = if neg { magnitude.wrapping_neg() } else { magnitude };
+    // Accumulate the longest valid-digit prefix with signed saturation, exactly
+    // as the C++11 num_get facet leaves `val`.
+    let mut val: i64 = 0;
+    while i < n {
+        // cast: ASCII byte to char for digit classification; bytes are the
+        // lexer's `number` corpus (ASCII only).
+        let digit = match (bytes[i] as char).to_digit(radix) {
+            Some(d) => d,
+            None => break,
+        };
+        // cast: `digit` is in `0..radix` (<= 16) and `radix` is one of 8/10/16,
+        // both fit i64 exactly.
+        let d = digit as i64;
+        let base = radix as i64;
+        if neg {
+            val = val
+                .checked_mul(base)
+                .and_then(|v| v.checked_sub(d))
+                .unwrap_or(i64::MIN);
+        } else {
+            val = val
+                .checked_mul(base)
+                .and_then(|v| v.checked_add(d))
+                .unwrap_or(i64::MAX);
+        }
+        i += 1;
+    }
+
+    // cast: re-tag the signed `intb` as unsigned, matching `(uintb)val`.
     val as uintb
 }
 
