@@ -171,6 +171,10 @@ pub struct Architecture {
     pub max_implied_ref: int4,
     /// (kuna) GH-6990: keep only the first return register (C++ `return_single`).
     pub return_single: bool,
+    /// (kuna) GH-558: present canonicalized `INT_LESS(x, c+1)` comparisons in
+    /// their original `x <= c` form (C++ `present_lessequal`, DIV-2 default-on).
+    /// Read by [`ActionPresentCompareForm`](crate::kuna_compareform::ActionPresentCompareForm).
+    pub present_lessequal: bool,
 }
 
 impl Architecture {
@@ -200,6 +204,8 @@ impl Architecture {
             // C++ Architecture default: max_implied_ref = 2 (resetDefaults).
             max_implied_ref: 2,
             return_single: false,
+            // (kuna) DIV-2 default-on (GH-558): resetDefaults sets present_lessequal=true.
+            present_lessequal: true,
         }
     }
 

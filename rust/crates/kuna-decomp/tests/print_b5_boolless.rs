@@ -252,6 +252,41 @@ fn run_full(stem: &str, which: usize) -> Result<(XmlArchitecture, Funcdata), Str
 
 use kuna_decomp::decompile_drive::print_c;
 
+#[test]
+#[ignore]
+fn zz_dump_boolless_cfg() {
+    let (mut xarch, fd) = match run_full("boolless", 0) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("SKIP: {e}");
+            return;
+        }
+    };
+    let arch = xarch.sleigh_mut().base_mut().unwrap();
+    let nbb = fd.bblocks_get_size();
+    eprintln!("=== basic blocks ({nbb}) ===");
+    for i in 0..nbb {
+        let bl = fd.bblocks_get_block(i);
+        let block = fd.bblocks_ref().block(bl);
+        let so = block.size_out();
+        let mut outs = String::new();
+        for j in 0..so {
+            let o = fd.bblocks_ref().block(bl).get_out(j);
+            outs.push_str(&format!(" out{j}={:?}", o));
+        }
+        eprintln!("BB {i} (id={bl:?}) sizeOut={so}{outs}");
+        for op in fd.bb_ops(bl) {
+            let o = fd.obank().get(op).unwrap();
+            let flip = o.is_boolean_flip();
+            let ft = o.is_fallthru_true();
+            eprintln!("    {} flip={flip} fallthru_true={ft}", render_op(arch, &fd, op));
+        }
+    }
+    eprintln!("=== sblocks size: {} ===", fd.sblocks_get_size());
+    let rust = print_c(arch, &fd);
+    eprintln!("=== RUST print C ===\n{rust}");
+}
+
 /// The committed C++ B5 oracle for boolless (tests/golden/snapshots/cpp/...).
 const CPP_B5_ORACLE: &str = "\nuint1 boolless(void)\n\n{\n  uint1 v1; // acc\n  \n  v1 = dat_52;\n  if (dat_52 <= 10) {\n    v1 = 1;\n  }\n  return v1;\n}\n";
 
@@ -321,23 +356,28 @@ fn boolless_print_c_emits_structured_body() {
 }
 
 // ===========================================================================
-// VERIFIER adversarial tests (item: w10-structure-printbody / Round 1).
+// REAL-PARITY tests (item: w10-structure-printbody / Round 2 — REPAIR).
 //
-// FOCUS (2)+(3): prove the body driver is a faithful IR-coupled transcription,
-// NOT a shortcut wired to make the boolless oracle string appear.  The printer
-// renders whatever the *analyzed IR* says; on this branch the two-compare
-// boolean pattern is NOT yet collapsed to INT_LESSEQUAL, so a FAITHFUL printer
-// must emit the raw `INT_LESS(#0xa, i0x52)` shape (`10 < dat_52`) and must NOT
-// emit the oracle's collapsed `dat_52 <= 10`.  A special-cased printer (one that
-// hardcoded the oracle) would emit `<= 10`; this test fails loudly if that ever
-// happens.
+// The Round-1 verifier left two tripwires that FIRE when boolless reaches real
+// positive-assertion parity (`if (dat_52 <= 10)`).  Round 2 closes the analysis
+// layer that produces that form — ActionRedundBranch::removeBranch (drops the
+// degenerate same-target CBRANCH), ActionBlockStructure's negate-condition op
+// flip + RuleCondNegate::opNormalizeFlip (INT_LESS(#0xa,i0x52) -> swapped
+// INT_LESSEQUAL), and ActionPresentCompareForm gated on present_lessequal
+// (`< 0xb` -> `<= 10`).  These rewrites happen in the ANALYZED IR; the printer
+// still renders only what it is handed.  The two tests below now assert the
+// achieved parity AND keep the anti-special-casing guard: the collapse must come
+// from the IR carrying a real `INT_LESSEQUAL`, never from a hardcoded printer.
 // ===========================================================================
 
-/// The printer renders the *un-collapsed* IR faithfully: `10 < dat_52` (from
-/// `INT_LESS(#0xa, i0x52)`), and does NOT short-circuit to the oracle's
-/// `dat_52 <= 10`.  This is the anti-special-casing tripwire.
+/// ANTI-SPECIAL-CASING (preserved): the `dat_52 <= 10` form is produced by a
+/// real IR rewrite — the analyzed IR carries an `INT_LESSEQUAL` whose operands
+/// are `(i0x52, #0xa)` — NOT by the printer hardcoding the oracle string.  A
+/// printer special-cased to the oracle would emit `<= 10` over a raw
+/// `INT_LESS(#0xa, i0x52)`; this test fails if the IR does not actually hold the
+/// collapsed comparison.
 #[test]
-fn w10_boolless_renders_uncollapsed_ir_not_oracle_string() {
+fn w10_boolless_lessequal_comes_from_real_ir_not_printer() {
     let (mut xarch, fd) = match run_full("boolless", 0) {
         Ok(v) => v,
         Err(e) if e.contains("not built") || e.contains("no .sla") => {
@@ -347,34 +387,43 @@ fn w10_boolless_renders_uncollapsed_ir_not_oracle_string() {
         Err(e) => panic!("boolless run_full: {e}"),
     };
     let arch = xarch.sleigh_mut().base_mut().unwrap();
+
+    // The analyzed IR must carry a real INT_LESSEQUAL over (i0x52, #0xa) — the
+    // collapse is in the IR, not the printer.  (The degenerate INT_NOTEQUAL
+    // CBRANCH was removed by ActionRedundBranch, so no INT_LESS(#0xa,..) survives.)
+    let mut saw_lesseq = false;
+    let mut saw_raw_less = false;
+    for op in fd.obank().iter_alive() {
+        match fd.obank().get(op).unwrap().code() {
+            kuna_num::opcodes::OpCode::CPUI_INT_LESSEQUAL => saw_lesseq = true,
+            kuna_num::opcodes::OpCode::CPUI_INT_LESS => saw_raw_less = true,
+            _ => {}
+        }
+    }
+    assert!(
+        saw_lesseq,
+        "the analyzed IR must hold a real INT_LESSEQUAL (the collapse is in the IR, not the printer)"
+    );
+    assert!(
+        !saw_raw_less,
+        "the degenerate INT_LESS path must be gone (ActionRedundBranch + opNormalizeFlip collapsed it)"
+    );
+
     let rust = print_c(arch, &fd);
     eprintln!("=== RUST print C (boolless) ===\n{rust}");
-
-    // FAITHFUL: the un-collapsed INT_LESS renders as `10 < dat_52`.
+    // The printer renders that IR as the oracle's `dat_52 <= 10`.
     assert!(
-        rust.contains("10 < dat_52"),
-        "the printer must faithfully render the un-collapsed INT_LESS as `10 < dat_52`, got:\n{rust}"
-    );
-    // ANTI-SPECIAL-CASING: the collapsed oracle form must NOT appear (the
-    // RuleLessEqual/ConditionalJoin collapse is a later layer; if `<= 10`
-    // appears here the printer has been hardcoded to the oracle, not the IR).
-    assert!(
-        !rust.contains("dat_52 <= 10") && !rust.contains("<= 10"),
-        "printer must NOT emit the collapsed oracle string `dat_52 <= 10` while the IR is still un-collapsed; \
-         that would be special-casing, got:\n{rust}"
+        rust.contains("dat_52 <= 10"),
+        "the collapsed IR must render as `dat_52 <= 10`, got:\n{rust}"
     );
 }
 
-/// REGRESSION GUARD for the vacuous-pass finding: the boolless datatest's
-/// positive assertion is `if (dat_52 <= 10)` (min=1).  Document the present
-/// reality — the rust engine does NOT yet satisfy that POSITIVE assertion (it
-/// renders `10 < dat_52`).  If a future change makes the positive `<= 10`
-/// assertion pass, that is REAL parity progress and this guard should be
-/// updated/removed; if instead someone makes it pass by special-casing, the
-/// tripwire above fires first.  This pins the "no real positive datatest pass
-/// yet" state the verdict records.
+/// THE REAL WIN: boolless's min=1/max=1 positive datatest assertion
+/// `if (dat_52 <= 10)` is now satisfied by genuine parity (the first real
+/// positive assertion from the un-seam chain).  This replaces the Round-1
+/// "not yet real" guard, which was designed to fire exactly here.
 #[test]
-fn w10_boolless_positive_datatest_assertion_not_yet_real() {
+fn w10_boolless_positive_datatest_assertion_now_real() {
     let (mut xarch, fd) = match run_full("boolless", 0) {
         Ok(v) => v,
         Err(e) if e.contains("not built") || e.contains("no .sla") => {
@@ -385,12 +434,10 @@ fn w10_boolless_positive_datatest_assertion_not_yet_real() {
     };
     let arch = xarch.sleigh_mut().base_mut().unwrap();
     let rust = print_c(arch, &fd);
-    // The datatest's min=1 positive assertion `if (dat_52 <= 10)` is NOT yet
-    // met — only the min=0/max=0 negative assertion (`<< 7` absent) passes.
+    // The datatest's min=1 positive assertion `if (dat_52 <= 10)` is now MET.
     assert!(
-        !rust.contains("if (dat_52 <= 10)"),
-        "if this now holds, the boolless POSITIVE datatest assertion is real parity — \
-         update the verifier verdict (it currently records the pass as still un-met):\n{rust}"
+        rust.contains("if (dat_52 <= 10)"),
+        "the boolless POSITIVE (min=1) datatest assertion `if (dat_52 <= 10)` must now hold, got:\n{rust}"
     );
 }
 

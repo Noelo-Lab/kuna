@@ -108,7 +108,12 @@ impl Action for ActionPresentCompareForm {
     /// transcribed.
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // if (!data.getArch()->present_lessequal) return 0;  // P0 assertion not set
-        if !self.enabled {
+        //
+        // `Funcdata::glb` is the real `Architecture` (`ArchHandle = Rc<Architecture>`),
+        // which carries the `present_lessequal` P0 flag (DIV-2 default-on, GH-558).
+        // The static `enabled` constructor arg is retained as an OR override for
+        // unit tests that drive the action without a fully-reset Architecture.
+        if !self.enabled && !data.get_arch().present_lessequal {
             return 0;
         }
         // for(iter=data.beginOpAlive();iter!=data.endOpAlive();++iter) {

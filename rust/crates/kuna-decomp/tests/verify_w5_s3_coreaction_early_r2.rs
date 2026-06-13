@@ -148,12 +148,13 @@ fn r2_redundbranch_multi_out_distinct_targets_not_removed() {
 }
 
 /// A block whose multi-out edges *all* lead to the same successor (a duplicate
-/// n-way branch) passes the realized detection (`j == sizeOut`), but the actual
-/// edge removal is the `removeBranch` seam.  The realized path must therefore
-/// reach the seam without panicking and without entering the single-out splice
-/// arm: count stays 0 and no block is spliced away.
+/// n-way branch) passes the realized detection (`j == sizeOut`); the
+/// `removeBranch` seam is now closed, so one duplicate edge is severed and the
+/// branch is reported as a change (`count == 1`).  The single-out splice arm is
+/// never entered (sizeOut==2), and no whole block is removed — only one of the
+/// two parallel edges is dropped (sizeOut(head) drops 2 -> 1).
 #[test]
-fn r2_redundbranch_all_exits_same_block_reaches_seam_cleanly() {
+fn r2_redundbranch_all_exits_same_block_removes_one_edge() {
     let mut fd = build_fd();
     let mut ctx = ActionContext::new();
     let root = fd.bblocks_ref().root.expect("bblocks root");
@@ -172,13 +173,18 @@ fn r2_redundbranch_all_exits_same_block_reaches_seam_cleanly() {
     let res = act.apply(&mut fd, &mut ctx);
     assert_eq!(res, 0);
     // sizeOut==2 so the single-out splice arm is never entered; the all-same
-    // detection reaches the seamed removeBranch -> no realized change.
+    // detection now reaches the realized removeBranch -> one edge severed.
     assert_eq!(
         act.base().count,
-        0,
-        "duplicate n-way edge removal is the removeBranch seam (count stays 0)"
+        1,
+        "duplicate n-way edge removal now realized (removeBranch seam closed)"
     );
-    assert_eq!(fd.bblocks_get_size(), size_before, "no block spliced/removed");
+    assert_eq!(
+        fd.bblocks_ref().block(head).size_out(),
+        1,
+        "one of the two parallel edges is severed"
+    );
+    assert_eq!(fd.bblocks_get_size(), size_before, "no whole block removed, only an edge");
 }
 
 /// Sanity: an empty graph (no blocks) makes `ActionRedundBranch::apply` a clean

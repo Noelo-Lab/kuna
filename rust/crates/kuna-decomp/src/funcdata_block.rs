@@ -41,6 +41,8 @@ use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::int4;
 
+use kuna_num::opcodes::OpCode;
+
 use crate::block::{block_flags, BlockKind};
 use crate::funcdata::Funcdata;
 use crate::seams::{BlockId, OpId};
@@ -114,6 +116,95 @@ impl Funcdata {
         // (removed) block handle.  (Previously a `// SEAM(W7)`; reached now that
         // ActionDeadCode + condexe actually mutate the CFG.)
         self.heritage_force_restructure();
+    }
+
+    /// Convert a degenerate MULTIEQUAL (after an incoming edge was severed) into
+    /// the appropriate simpler op (C++ `Funcdata::opZeroMulti`,
+    /// `funcdata_block.cc:195`).
+    ///
+    /// With no branches left the MULTIEQUAL becomes a COPY of a fresh input
+    /// varnode (the value is now an input to the function); with a single branch
+    /// it becomes a plain COPY of its sole input.
+    pub fn op_zero_multi(&mut self, op: OpId) -> KunaResult<()> {
+        let nin = self.obank().get(op).expect("opZeroMulti: stale op").num_input();
+        if nin == 0 {
+            // opInsertInput(op,newVarnode(op->getOut()->getSize(),op->getOut()->getAddr()),0);
+            let out = self
+                .obank()
+                .get(op)
+                .expect("opZeroMulti: stale op")
+                .get_out()
+                .expect("opZeroMulti: MULTIEQUAL with no output");
+            let sz = self.vbank().get(out).expect("opZeroMulti: stale out").get_size();
+            let m = self.vbank().get(out).expect("opZeroMulti: stale out").get_addr().clone();
+            let nv = self.new_varnode(sz, &m, None);
+            self.op_insert_input(op, nv, 0)?;
+            // setInputVarnode(op->getIn(0));
+            let in0 = self.obank().get(op).expect("opZeroMulti: stale op").get_in(0).expect("opZeroMulti: just-inserted in0");
+            self.set_input_varnode(in0)?;
+            // opSetOpcode(op,CPUI_COPY);
+            self.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+        } else if nin == 1 {
+            self.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+        }
+        Ok(())
+    }
+
+    /// Remove an outgoing branch of the given basic block, patching MULTIEQUAL
+    /// ops in the target block (C++ `Funcdata::branchRemoveInternal`,
+    /// `funcdata_block.cc:213`).
+    ///
+    /// \param bb is the given basic block
+    /// \param num is the index of the outgoing edge to remove
+    pub fn branch_remove_internal(&mut self, bb: BlockId, num: int4) -> KunaResult<()> {
+        // if (bb->sizeOut() == 2) opDestroy(bb->lastOp());  // no decision left
+        if self.bblocks_ref().block(bb).size_out() == 2 {
+            if let Some(lastop) = self.bb_op_tail(bb) {
+                self.op_destroy(lastop);
+            }
+        }
+        // bbout = (BlockBasic *) bb->getOut(num);
+        let bbout = self.bblocks_ref().block(bb).get_out(num);
+        // blocknum = bbout->getInIndex(bb);
+        let blocknum = self.bblocks_ref().block(bbout).get_in_index(bb);
+        // bblocks.removeEdge(bb,bbout);  // Sever (one) connection
+        self.bblocks_mut().remove_edge(bb, bbout);
+        // for(iter=bbout->beginOp();...) { if (op->code()!=MULTIEQUAL) break;
+        //   opRemoveInput(op,blocknum); opZeroMulti(op); }
+        for op in self.bb_ops(bbout) {
+            if self.obank().get(op).expect("branchRemoveInternal: stale op").code() != OpCode::CPUI_MULTIEQUAL {
+                break;
+            }
+            self.op_remove_input(op, blocknum);
+            self.op_zero_multi(op)?;
+        }
+        Ok(())
+    }
+
+    /// Remove the indicated branch and rebuild the structured-block state (C++
+    /// `Funcdata::removeBranch`, `funcdata_block.cc:`).
+    pub fn remove_branch(&mut self, bb: BlockId, num: int4) -> KunaResult<()> {
+        self.branch_remove_internal(bb, num)?;
+        self.structure_reset();
+        Ok(())
+    }
+
+    /// The data-flow half of `BlockBasic::negateCondition` (C++ `block.cc:2355`):
+    /// flip the trailing CBRANCH's `boolean_flip` and `fallthru_true` flags, then
+    /// swap the (bblocks) block's out-edge order.
+    ///
+    /// Called by [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure)
+    /// to realize the negation requests the structured collapse recorded against
+    /// the underlying `BlockBasic` (the dual-arena `BlockCopy::copy` target).
+    pub fn block_basic_negate_lastop(&mut self, bb: BlockId) {
+        // lastop->flipFlag(boolean_flip); lastop->flipFlag(fallthru_true);
+        if let Some(lastop) = self.bb_op_tail(bb) {
+            let o = self.obank_mut().get_mut(lastop).expect("negate_lastop: stale op");
+            o.flip_flag(crate::op::pcodeop_flags::boolean_flip);
+            o.flip_flag(crate::op::pcodeop_flags::fallthru_true);
+        }
+        // FlowBlock::negateCondition(true): swapEdges() — flip the out-edge order.
+        self.bblocks_mut().swap_edges(bb);
     }
 
     /// Set the initial ownership range for a basic block (C++

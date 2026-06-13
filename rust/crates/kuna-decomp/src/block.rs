@@ -522,6 +522,19 @@ impl FlowBlock {
         &mut self.kind
     }
 
+    /// Flip a `BlockCondition`'s AND/OR opcode (C++ `BlockCondition::negateCondition`
+    /// — `opc = (opc==CPUI_BOOL_AND) ? CPUI_BOOL_OR : CPUI_BOOL_AND`).  No-op on a
+    /// non-Condition node.
+    pub fn flip_condition_opcode(&mut self) {
+        if let BlockKind::Condition { opc } = &mut self.kind {
+            *opc = if *opc == OpCode::CPUI_BOOL_AND {
+                OpCode::CPUI_BOOL_OR
+            } else {
+                OpCode::CPUI_BOOL_AND
+            };
+        }
+    }
+
     /// Get the FlowBlock type of \b this (C++ `getType`, dispatched per
     /// derived class).
     pub fn get_type(&self) -> BlockType {

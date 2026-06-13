@@ -61,16 +61,21 @@ use crate::seams::{BlockId, OpId, TypeOp, VarnodeId};
 
 /// Resolve an [`OpCode`] to the [`TypeOp`] `opSetOpcode` needs.
 ///
-/// SEAM(W6): the C++ `opSetOpcode(op,opc)` is `obank.changeOpcode(op,glb->inst[opc])`
-/// — it looks the singleton `TypeOp` up in the architecture's op-info table.  That
-/// table (`typeop`, W6) is not present at this item's boundary, so we cannot supply
-/// the correct cached property-flag word.  Returns an `Err` so the mutation paths
-/// that set an opcode surface the seam rather than fabricate flags.  // see losses
-fn resolve_typeop(_opc: OpCode) -> KunaResult<TypeOp> {
-    Err(KunaError::lowlevel(
-        "kuna rust port: opSetOpcode needs glb->inst[opc] (W6 op-info table) to resolve the \
-         TypeOp property flags; not available at this item's boundary",
-    ))
+/// The C++ `opSetOpcode(op,opc)` is `obank.changeOpcode(op,glb->inst[opc])` — it
+/// looks the singleton `TypeOp` up in the architecture's op-info table.  That
+/// canonical `inst[]` table is now [`crate::typeop::type_op_for`] (the W6 op-info
+/// records, full cached property-flag word per opcode), so we resolve through it
+/// directly — exactly the C++ `glb->inst[opc]` lookup.  Only `CPUI_MAX` (which
+/// has no `inst[]` entry in C++ either, `inst[CPUI_MAX]` is the trailing null)
+/// has no record; the conditional-execution rewrite never sets that opcode, so a
+/// `CPUI_MAX` request is an internal invariant violation surfaced as an `Err`.
+fn resolve_typeop(opc: OpCode) -> KunaResult<TypeOp> {
+    if opc == OpCode::CPUI_MAX {
+        return Err(KunaError::lowlevel(
+            "condexe resolve_typeop: CPUI_MAX has no inst[] entry",
+        ));
+    }
+    Ok(crate::typeop::type_op_for(opc))
 }
 
 // =============================================================================
@@ -864,8 +869,9 @@ impl Action for ActionConditionalExe {
             while i < data.bblocks_get_size() {
                 let bb = data.bblocks_get_block(i);
                 if condexe.trial(bb, data) {
-                    // condexe.execute() — SEAM(opSetOutput): a seam Err degrades to
-                    // "no change this trial" (cannot propagate through `int4`).
+                    // condexe.execute() now succeeds (the W6 resolve_typeop seam is
+                    // closed); a residual Err still degrades to "no change this
+                    // trial" rather than aborting the bare-int4 apply.
                     if condexe.execute(data).is_ok() {
                         numhits += 1; // Adjust dataflow succeeded
                         changethisround = true;

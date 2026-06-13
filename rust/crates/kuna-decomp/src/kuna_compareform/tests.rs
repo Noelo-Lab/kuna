@@ -48,7 +48,12 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(Architecture::new(manage));
+    let mut arch = Architecture::new(manage);
+    // These unit fixtures drive the gate purely through the `ActionPresentCompareForm`
+    // `enabled` constructor arg (the original seam-style contract); clear the
+    // arch-flag default (DIV-2 default-on) so the flag does not also open the gate.
+    arch.present_lessequal = false;
+    let glb = Rc::new(arch);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
