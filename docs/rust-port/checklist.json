@@ -5218,6 +5218,91 @@
    "loc_estimate": 1200,
    "cpp_blob_sha": {},
    "notes": "B0 caught these: 7 subflow SplitDatatype rules (SplitFlow/SubfloatConvert/DumptyHumpLate/SplitCopy/SplitLoad/SplitStore), 2 constseq string rules (StringCopy/StringStore), RuleStackProbeLoop (kuna_stackprobeloop.cc \u2014 omitted from W7 dynamic-pack file list), ActionLowerSwitchInstall."
+  },
+  {
+   "id": "w10-unseam-heritage-deadcode",
+   "kind": "port",
+   "wave": "W10",
+   "crate": "kuna-decomp",
+   "title": "heritage applied to live Funcdata + ActionDeadCode/simplify rule bodies actually transform (23->~7 ops on boolless)",
+   "modules": [],
+   "depends_on": [
+    "W9-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "KUNA_ENGINE=rust run_tests --datatests (count rises)",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "LOSS-131 analysis-body un-seam."
+  },
+  {
+   "id": "w10-unseam-merge-types",
+   "kind": "port",
+   "wave": "W10",
+   "crate": "kuna-decomp",
+   "title": "merge forms real HighVariables + ActionInferTypes/proto-recovery populate Funcdata.funcp=fspec::FuncProto + varnode types",
+   "modules": [],
+   "depends_on": [
+    "W9-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "KUNA_ENGINE=rust run_tests --datatests (count rises)",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "LOSS-131 analysis-body un-seam."
+  },
+  {
+   "id": "w10-unseam-blockstructure",
+   "kind": "port",
+   "wave": "W10",
+   "crate": "kuna-decomp",
+   "title": "ActionBlockStructure buildCopy + collapseAll collapse CFG->structured sblocks",
+   "modules": [],
+   "depends_on": [
+    "W9-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "KUNA_ENGINE=rust run_tests --datatests (count rises)",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "LOSS-131 analysis-body un-seam."
+  },
+  {
+   "id": "w10-vertical-slice-boolless",
+   "kind": "port",
+   "wave": "W10",
+   "crate": "kuna-decomp",
+   "title": "drive boolless to byte-match the C++ oracle print C, closing every critical-path seam",
+   "modules": [],
+   "depends_on": [
+    "W9-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "KUNA_ENGINE=rust run_tests --datatests (count rises)",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "LOSS-131 analysis-body un-seam."
+  },
+  {
+   "id": "w10-parity-grind-loop",
+   "kind": "port",
+   "wave": "W10",
+   "crate": "kuna-decomp",
+   "title": "loop run-datatests->fix-top-seam until KUNA_ENGINE=rust run_tests PARITY OK (M3 675/675 + stages 150/150)",
+   "modules": [],
+   "depends_on": [
+    "W9-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "KUNA_ENGINE=rust run_tests --datatests (count rises)",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "LOSS-131 analysis-body un-seam."
   }
  ]
 }
