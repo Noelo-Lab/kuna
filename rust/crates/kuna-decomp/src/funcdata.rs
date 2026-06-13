@@ -173,6 +173,14 @@ pub struct Funcdata {
     bblocks: BlockGraph,
     /// Structured block hierarchy on top of basic blocks (C++ `sblocks`)
     sblocks: BlockGraph,
+    /// The HighVariable / VariableGroup / VariablePiece arena (W7, SEAM(W7)).
+    ///
+    /// The C++ `HighVariable`s are allocated by `new HighVariable` from
+    /// `Funcdata::assignHigh`/`Merge` and reverse-linked from each member
+    /// `vn->high`; per ADR 0001 they live in this [`HighVariableBank`] keyed by
+    /// [`crate::seams::HighVariableId`], the back-link being the `Varnode::high`
+    /// field already wired in `varnode.rs`.
+    high_bank: crate::variable::HighVariableBank,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -235,6 +243,7 @@ impl Funcdata {
             obank: PcodeOpBank::new(),
             bblocks,
             sblocks,
+            high_bank: crate::variable::HighVariableBank::new(),
         })
     }
 
@@ -843,7 +852,10 @@ impl Funcdata {
         self.vbank.clear();
         // clearCallSpecs();                                          -- SEAM(W4)
         self.clear_jump_tables();
-        // heritage.clear(); covermerge.clear();                      -- SEAM(W7)
+        // heritage.clear();  -- SEAM(W7).  covermerge.clear() tears down the
+        // HighVariable arena (the `new HighVariable`s are freed); the W7 high
+        // bank is cleared here to mirror that lifecycle.
+        self.high_bank.clear();
     }
 
     /// Set a delay/flag bit directly (test/seam helper; not a C++ method).
@@ -870,6 +882,320 @@ impl Funcdata {
 /// VarnodeBank `set_def`/`create_def` paths take (re-exported so the parallel
 /// wave needs no extra import path).
 pub type DefOp = DefOpInfo;
+
+// =============================================================================
+// W7 HighVariable / Cover lifecycle wiring (SEAM(W7))
+// =============================================================================
+//
+// The C++ `Varnode::cover` rebuild (`Cover::rebuild`) and the `HighVariable`
+// re-derivation walk the op/block/varnode graphs; with the ADR 0001 arenas those
+// reads cross from `Funcdata`'s `vbank` into its `obank`/`bblocks`.  The
+// `cover::CoverContext` / `variable::HighContext` adapters below let those ported
+// algorithms reach the graph through `Funcdata`, exactly where the C++ reads it.
+
+use crate::cover::{Cover, CoverContext, CoverPoint};
+use crate::variable::{CompareNameView, HighContext, VarnodeView, VarnodeViewLoc};
+use kuna_num::opcodes::OpCode;
+
+impl Funcdata {
+    /// Borrow the HighVariable arena (the W7 high-variable map).
+    pub fn high_bank(&self) -> &crate::variable::HighVariableBank {
+        &self.high_bank
+    }
+    /// Mutably borrow the HighVariable arena.
+    pub fn high_bank_mut(&mut self) -> &mut crate::variable::HighVariableBank {
+        &mut self.high_bank
+    }
+
+    /// Map a `BlockId` to the block's own `getIndex()`.
+    fn block_index(&self, bl: BlockId) -> int4 {
+        self.bblocks.block(bl).get_index()
+    }
+
+    /// `CoverBlock::getUIndex(op)` for a real op (`cover.cc:29-49`): the SeqNum
+    /// order, with the MULTIEQUAL/INDIRECT special-casing.  Returns the
+    /// `(uindex, code)` pair the [`CoverPoint::Op`] caches.
+    fn op_uindex_code(&self, op: OpId) -> (uintm, OpCode) {
+        let o = self.obank.get(op).expect("op_uindex_code: stale op");
+        let code = o.code();
+        if o.is_marker() {
+            if code == OpCode::CPUI_MULTIEQUAL {
+                // MULTIEQUALs are considered very beginning -> 0
+                return (0, code);
+            } else if code == OpCode::CPUI_INDIRECT {
+                // INDIRECTs are at the location of the op they are indirect for:
+                // getOpFromConst(getIn(1)->getAddr())->getSeqNum().getOrder()
+                if let Some(in1) = o.get_in(1) {
+                    if let Some(vn) = self.vbank.get(in1) {
+                        let addr = vn.get_addr();
+                        // getOpFromConst: the iop offset is the op's slotmap ffi key
+                        let target = OpId::from(slotmap::KeyData::from_ffi(addr.get_offset()));
+                        if let Some(t) = self.obank.get(target) {
+                            return (t.get_seq_num().get_order(), code);
+                        }
+                    }
+                }
+                // Fall through to the default order if the iop target is gone.
+            }
+        }
+        (o.get_seq_num().get_order(), code)
+    }
+
+    /// Build the [`CoverPoint`] for a real op (the `(block_index, point)` the
+    /// Cover stores for a def/ref).
+    fn op_cover_point(&self, op: OpId) -> CoverPoint {
+        let (uindex, code) = self.op_uindex_code(op);
+        CoverPoint::Op { id: op, uindex, code }
+    }
+
+    /// Rebuild a Varnode's Cover, driving `Varnode::updateCover` across the arena
+    /// boundary (the C++ `vn->updateCover()` / `Cover::rebuild`).  Called by the
+    /// Merge driver after data-flow changes.  This is the `// SEAM(W7)` cover
+    /// rebuild that `funcdata_block`/merge will invoke.
+    pub fn update_varnode_cover(&mut self, vn: VarnodeId) {
+        // C++ `Varnode::updateCover`: if coverdirty, and hasCover & cover!=0,
+        // rebuild; then clear coverdirty.  We clone the Cover out, rebuild it
+        // against a read-only graph view, and write it back (the borrow split).
+        let v = self.vbank.get(vn).expect("update_varnode_cover: stale vn");
+        if !v.is_cover_dirty_flag() {
+            return; // not dirty: nothing to do (C++ early-out)
+        }
+        let cover0 = if v.has_cover() { v.cover().cloned() } else { None };
+        if let Some(mut cover) = cover0 {
+            {
+                let ctx = FuncdataCoverCtx { fd: self };
+                cover.rebuild(&ctx, vn);
+            }
+            self.vbank_mut()
+                .get_mut(vn)
+                .expect("update_varnode_cover: stale vn")
+                .set_cover(cover);
+        }
+        self.vbank_mut()
+            .get_mut(vn)
+            .expect("update_varnode_cover: stale vn")
+            .clear_cover_dirty();
+    }
+}
+
+/// Read-only graph view for the [`Cover`] def/use walk (the cross-arena reads
+/// `Cover::rebuild` makes off the held `Varnode *`/`PcodeOp *`/`FlowBlock *`).
+struct FuncdataCoverCtx<'a> {
+    fd: &'a Funcdata,
+}
+
+impl<'a> FuncdataCoverCtx<'a> {
+    /// Resolve a block *index* to its `BlockId` (the inverse of `getIndex()`).
+    fn block_id_of_index(&self, index: int4) -> BlockId {
+        let n = self.fd.bblocks_get_size();
+        for i in 0..n {
+            let bid = self.fd.bblocks_get_block(i);
+            if self.fd.bblocks.block(bid).get_index() == index {
+                return bid;
+            }
+        }
+        panic!("FuncdataCoverCtx: no block with index {index}");
+    }
+}
+
+impl<'a> CoverContext for FuncdataCoverCtx<'a> {
+    fn size_in(&self, bl: int4) -> int4 {
+        let bid = self.block_id_of_index(bl);
+        self.fd.bblocks.block(bid).size_in()
+    }
+    fn get_in(&self, bl: int4, j: int4) -> int4 {
+        let bid = self.block_id_of_index(bl);
+        let pred = self.fd.bblocks.block(bid).get_in(j);
+        self.fd.bblocks.block(pred).get_index()
+    }
+    fn def_point(&self, vn: VarnodeId) -> (Option<(int4, CoverPoint)>, bool) {
+        let v = self.fd.vbank.get(vn).expect("def_point: stale vn");
+        match v.get_def() {
+            Some(op) => {
+                let parent = self.fd.obank.get(op).and_then(|o| o.get_parent());
+                let blk = parent.map(|p| self.fd.block_index(p)).unwrap_or(0);
+                (Some((blk, self.fd.op_cover_point(op))), false)
+            }
+            None => (None, v.is_input()),
+        }
+    }
+    fn descend(&self, vn: VarnodeId) -> Vec<OpId> {
+        self.fd.vbank.get(vn).map(|v| v.descend_iter().collect()).unwrap_or_default()
+    }
+    fn ref_point(&self, op: OpId, vn: VarnodeId) -> (int4, CoverPoint, bool, Vec<int4>) {
+        let o = self.fd.obank.get(op).expect("ref_point: stale op");
+        let parent = o.get_parent().expect("ref_point: op has no parent");
+        let bl = self.fd.block_index(parent);
+        let point = self.fd.op_cover_point(op);
+        let is_multiequal = o.code() == OpCode::CPUI_MULTIEQUAL;
+        let mut preds = Vec::new();
+        if is_multiequal {
+            // for j in 0..numInput: if getIn(j)==vn -> addRefRecurse(bl->getIn(j))
+            let n = o.num_input();
+            for j in 0..n {
+                if o.get_in(j) == Some(vn) {
+                    let pred = self.fd.bblocks.block(parent).get_in(j);
+                    preds.push(self.fd.bblocks.block(pred).get_index());
+                }
+            }
+        }
+        (bl, point, is_multiequal, preds)
+    }
+    fn out_implied(&self, op: OpId) -> Option<VarnodeId> {
+        let o = self.fd.obank.get(op)?;
+        let out = o.get_out()?;
+        let ov = self.fd.vbank.get(out)?;
+        if ov.is_implied() {
+            Some(out)
+        } else {
+            None
+        }
+    }
+}
+
+impl Funcdata {
+    /// Split the `high_bank` field off from the rest of `Funcdata` so a
+    /// `&mut HighVariableBank` and a read-only [`HighContext`] over the remaining
+    /// fields can coexist (the high arena is a distinct field from `vbank`/`obank`).
+    ///
+    /// Returns a re-borrowing closure runner: the caller's `f` gets the mutable
+    /// high bank plus a `HighContext` view of the other fields.
+    fn with_high_split<R>(
+        &mut self,
+        f: impl FnOnce(&mut crate::variable::HighVariableBank, &dyn HighContext) -> R,
+    ) -> R {
+        // Field-split borrow: `high_bank` mutable, the rest immutable through a
+        // dedicated read view that borrows only vbank/obank.
+        let Funcdata { high_bank, vbank, obank, .. } = self;
+        let ctx = HighReadView { vbank, obank };
+        f(high_bank, &ctx)
+    }
+
+    /// If HighVariables are enabled, ensure the given Varnode has one assigned
+    /// (C++ `Funcdata::assignHigh`, `funcdata_varnode.cc:48-61`).
+    ///
+    /// SEAM(W4): the `hasWarning`/`issueDatatypeWarning` datatype-warning step
+    /// (`glb->types`) is a W4 surface and is omitted.  The `calcCover` + `new
+    /// HighVariable(vn)` + `vn->setHigh(id,0)` lifecycle is wired here.
+    pub fn assign_high_var(&mut self, vn: VarnodeId) -> Option<crate::seams::HighVariableId> {
+        if !self.is_high_on() {
+            return None;
+        }
+        let v = self.vbank.get(vn).expect("assign_high_var: stale vn");
+        if v.has_cover() {
+            self.vbank_mut().get_mut(vn).unwrap().calc_cover();
+        }
+        // if (!vn->isAnnotation()) return new HighVariable(vn);
+        if self.vbank.get(vn).unwrap().is_annotation() {
+            return None;
+        }
+        let id = self.high_bank.new_high(vn);
+        // vn->setHigh(this, numMergeClasses-1) == setHigh(id, 0)
+        self.vbank_mut().get_mut(vn).unwrap().set_high(id, 0);
+        Some(id)
+    }
+
+    /// Turn on HighVariable objects for all Varnodes (C++
+    /// `Funcdata::setHighLevel`, `funcdata_varnode.cc:613-623`).
+    pub fn set_high_level(&mut self) {
+        if self.is_high_on() {
+            return;
+        }
+        self.flags |= funcdata_flags::highlevel_on;
+        self.high_level_index = self.vbank.get_create_index();
+        let all: Vec<VarnodeId> = self.vbank.iter_loc().collect();
+        for vn in all {
+            self.assign_high_var(vn);
+        }
+    }
+
+    /// Get the (re-derived) data-type of a Varnode's HighVariable (the C++
+    /// `vn->getHigh()->getType()` the type-read paths use — M1).  Returns `None`
+    /// if the Varnode has no HighVariable yet.
+    ///
+    /// `symbol_submeta` is the backing-symbol metatype for the `stripType`
+    /// partial-union case (SEAM(W4): `None` until the Varnode-Symbol link lands).
+    pub fn high_get_type(&mut self, vn: VarnodeId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+        let id = self.vbank.get(vn)?.get_high()?;
+        Some(self.with_high_split(|hb, ctx| hb.get_mut(id).unwrap().get_type(ctx, None)))
+    }
+
+    /// Drive a HighVariable's external cover update (the C++
+    /// `HighVariable::updateCover`, called by Merge).  Convenience over
+    /// [`with_high_split`] for the bank's `update_cover`.
+    pub fn high_update_cover(&mut self, id: crate::seams::HighVariableId) {
+        self.with_high_split(|hb, ctx| hb.update_cover(id, ctx));
+    }
+}
+
+/// A field-split read view used by [`Funcdata::with_high_split`]: implements
+/// [`HighContext`] borrowing only `vbank`/`obank`, so the sibling `high_bank`
+/// field stays mutably borrowable.
+struct HighReadView<'a> {
+    vbank: &'a VarnodeBank,
+    obank: &'a PcodeOpBank,
+}
+
+impl<'a> HighContext for HighReadView<'a> {
+    fn vn_view(&self, vn: VarnodeId) -> VarnodeView {
+        let v = self.vbank.get(vn).expect("vn_view: stale vn");
+        let space_internal = v
+            .get_addr()
+            .get_space()
+            .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_INTERNAL)
+            .unwrap_or(false);
+        let def_time = v
+            .get_def()
+            .and_then(|op| self.obank.get(op))
+            .map(|o| o.get_time())
+            .unwrap_or(0);
+        VarnodeView {
+            flags: v.get_flags(),
+            size: v.get_size(),
+            type_: std::rc::Rc::clone(v.get_type()),
+            type_lock: v.is_type_lock(),
+            merge_group: v.get_merge_group(),
+            written: v.is_written(),
+            def_time,
+            space_internal,
+            create_index: v.get_create_index(),
+        }
+    }
+    fn vn_cover(&self, vn: VarnodeId) -> Option<Cover> {
+        self.vbank.get(vn).and_then(|v| v.cover().cloned())
+    }
+    fn vn_has_cover(&self, vn: VarnodeId) -> bool {
+        self.vbank.get(vn).map(|v| v.has_cover()).unwrap_or(false)
+    }
+    fn vn_name_view(&self, vn: VarnodeId) -> CompareNameView {
+        let v = self.vbank.get(vn).expect("vn_name_view: stale vn");
+        let space_internal = v
+            .get_addr()
+            .get_space()
+            .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_INTERNAL)
+            .unwrap_or(false);
+        let def_time = v
+            .get_def()
+            .and_then(|op| self.obank.get(op))
+            .map(|o| o.get_time())
+            .unwrap_or(0);
+        CompareNameView {
+            name_lock: v.is_name_lock(),
+            unaffected: v.is_unaffected(),
+            persist: v.is_persist(),
+            input: v.is_input(),
+            addr_tied: v.is_addr_tied(),
+            proto_partial: v.is_proto_partial(),
+            space_internal,
+            written: v.is_written(),
+            def_time,
+        }
+    }
+    fn vn_loc_view(&self, vn: VarnodeId) -> VarnodeViewLoc {
+        let v = self.vbank.get(vn).expect("vn_loc_view: stale vn");
+        VarnodeViewLoc { addr: v.get_addr().clone() }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1081,5 +1407,71 @@ mod tests {
         assert_eq!(fd.num_varnodes(), 0);
         // bblocks reset to a fresh empty graph.
         assert_eq!(fd.bblocks_get_size(), 0);
+    }
+
+    // ---- W7 HighVariable / Cover wiring ----------------------------------
+
+    /// Create a coverable (insert-flagged) register varnode at the given offset,
+    /// with the given datatype, returning its id.  Mirrors the post-heritage
+    /// "real" varnode the merge phase sees.
+    fn make_insert_vn(fd: &mut Funcdata, off: u64, ct: Rc<Datatype>) -> VarnodeId {
+        let ram = ram_space(fd);
+        let id = fd.vbank.create(ct.get_size(), Address::new(ram, off), ct);
+        // Mark inserted (output of an op / input) so hasCover() is true.
+        fd.vbank.get_mut(id).unwrap().set_insert_for_test();
+        id
+    }
+
+    #[test]
+    fn set_high_level_assigns_a_high_to_each_varnode() {
+        let mut fd = build_fd();
+        let v1 = make_insert_vn(&mut fd, 0x40, unk_type());
+        let v2 = make_insert_vn(&mut fd, 0x48, unk_type());
+        assert!(!fd.is_high_on());
+        fd.set_high_level();
+        assert!(fd.is_high_on());
+        // Each non-annotation varnode got a HighVariable.
+        assert!(fd.vbank.get(v1).unwrap().get_high().is_some());
+        assert!(fd.vbank.get(v2).unwrap().get_high().is_some());
+        assert_eq!(fd.high_bank().num_highs(), 2);
+        // Distinct highs, in creation order (HighVariableId order).
+        assert_ne!(
+            fd.vbank.get(v1).unwrap().get_high(),
+            fd.vbank.get(v2).unwrap().get_high()
+        );
+    }
+
+    #[test]
+    fn high_get_type_reads_member_datatype() {
+        let mut fd = build_fd();
+        let int4_ty = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+        let v = make_insert_vn(&mut fd, 0x40, Rc::clone(&int4_ty));
+        fd.set_high_level();
+        // The high's type derives from its single member's type (INT).
+        let ty = fd.high_get_type(v).expect("high present");
+        assert_eq!(ty.get_metatype(), type_metatype::TYPE_INT);
+    }
+
+    #[test]
+    fn update_varnode_cover_rebuilds_input_def_point() {
+        // An input varnode with a single-block cover: its def-point is the input
+        // marker in block 0.  Drive the cross-arena cover rebuild.
+        let mut fd = build_fd();
+        let root = fd.bblocks_root();
+        let bl = fd.bblocks.new_block_basic(root);
+        // Give the block index 0 (new_block_basic assigns indices in order).
+        let _ = bl;
+        let ram = ram_space(&fd);
+        let v = fd.vbank.create(4, Address::new(ram, 0x40), unk_type());
+        // Make it an input + inserted so it has a cover and is non-free.
+        fd.vbank.get_mut(v).unwrap().set_insert_for_test();
+        fd.vbank.get_mut(v).unwrap().set_input_for_test();
+        fd.vbank.get_mut(v).unwrap().calc_cover();
+        assert!(fd.vbank.get(v).unwrap().is_cover_dirty_flag());
+        fd.update_varnode_cover(v);
+        // No longer dirty; the cover now marks the input point in block 0.
+        assert!(!fd.vbank.get(v).unwrap().is_cover_dirty_flag());
+        let cover = fd.vbank.get(v).unwrap().cover().expect("cover built");
+        assert!(!cover.get_cover_block(0).empty());
     }
 }
