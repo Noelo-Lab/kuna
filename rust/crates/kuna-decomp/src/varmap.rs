@@ -492,8 +492,8 @@ impl RangeHint {
             self.flags = 0;
             self.range_type = RangeType::Fixed;
             let diff: int4 = (b.sstart.wsub(self.sstart)) as int4;
-            if diff + b.size > self.size {
-                self.size = diff + b.size;
+            if diff.wadd(b.size) > self.size {
+                self.size = diff.wadd(b.size);
             }
             if self.size != 1 && self.size != 2 && self.size != 4 && self.size != 8 {
                 self.size = 1;
