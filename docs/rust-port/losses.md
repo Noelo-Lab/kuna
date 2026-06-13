@@ -1075,3 +1075,26 @@ Entry schema (every field required):
 - surface: scheduling any of these 13 actions is a no-op for HighVariable formation, explicit/implied marking, naming, and cast placement — i.e. the S6 merge pass and the S7/S9 marking+cast passes do nothing until wired. The class shells (exact `name()`/group/`flags`, `clone_filtered` group filter, schedule order) ARE realized and verified. Gate green (`cd rust && cargo test -p kuna-decomp`: the only failure is the pre-existing missing-`.sla`-artifact env failure in `corpus_bootstrap::ldefs_pspec_cspec_parse_matrix`, touching no path this item owns). Hunt list clean: no arithmetic in the realized surface (no signedness/width/wrap risk), no HashMap/HashSet/sort_unstable/partial_cmp, no bare `as`, no `todo!`/`unimplemented!`; clippy clean. All 14 transcriptions re-derived line-by-line against the C++ by the verifier (`merge_actions` order matches the relative order of cc:6002-6014/6027/6028, skipping the interleaved non-merge actions). Pinned by 4 adversarial tests in `rust/crates/kuna-decomp/tests/verify_w7_s37_coreaction_cleanup.rs`: ctor-verbatim name/group/flags (group fed as a non-schedule token to prove no hard-coded literal), exact `merge_actions` schedule + the lone `"casts"` outlier, seam totality under 5x repetition on a high-on `Funcdata`, and `clone_filtered` group-filter mirror + clone independence.
 - why: the merge-delegation bodies reach `Funcdata::getMerge()` / `MergeContext` (LOSS-112 — the `Merge` engine is ported but has no `Funcdata` impl); the marking/cast bodies reach the Varnode `beginLoc`/`beginDef`/`endDef(flags)` loc/def-set iterators, the `getArch()->max_implied_ref`/`max_term_duplication` tunables, the HighVariable type/cover surface, the `CastStrategy`/`print` (S9) rendering machinery, and the symbol/scope/callspec link surface — none present in the merged tree. Realizing the bodies blind would require fabricating those accessors, which is W7/W8's wave to own.
 - restoration criteria: when the W7/W8 `Funcdata` bridge lands (`impl MergeContext for Funcdata` + `getMerge()`/`covermerge` per LOSS-112, the loc/def-set iterators, `markIndirectOnly` per LOSS-064(b), the `getArch()` tunables, the HighVariable type/cover surface, and the S9 `CastStrategy`/`print` plane), replay each commented body against the real accessors. Each de-seamed body pinned against its C++ anchor above; the verifier of that item checks this entry off.
+
+## LOSS-094-UPDATE (2026-06-13, W7 M1-closure re-diagnosis)
+The W7 M1-closure agent verified the ~32 ignored unit-test bodies against their C++
+sources and found the W6/W7 blocker assumption WRONG. Corrected analysis (each stub
+now carries an inline DEFER(Wn) comment):
+- testfuncproto (21): need getModel("__model1") = a prototype-model registry on a
+  spec-loaded Architecture, populated by ProtoModel::decode (the <prototype> cspec
+  XML decode, a HARD fspec.rs seam) — blocked on **W8/W9** (full Architecture init
+  from spec files + marshaling Decoder over a real Architecture).
+- testparamstore (4): build a real per-processor Architecture from full SLEIGH specs
+  + parse_C / parse_protopieces (the C-declaration + prototype grammars) — blocked on
+  **W9** (w9-con-grammar).
+- testtypes (6): cast_basic/pointer/enum/compare/integertoken drive
+  CastStrategy::getInputCast / markExplicitLongSize via TypeOpCast + the print
+  machinery — blocked on **W8** (printc/cast).
+- testfloatemu (1, double_decimal_precision): kuna-num float.rs print_decimal DBL_MAX
+  roundtrip vs C++11 num_get overflow — a W1 cross-item float-print issue (LOSS-025),
+  not a wave defer.
+**Milestone correction:** M1 NAME-parity (port_audit 207/207 PORT COMPLETE) is
+achieved at W7. M1 BODY-parity (all 207 executing) is re-targeted to a post-W9
+closure item (w9-m1-bodies): its gate un-ignores every stub and asserts zero
+#[ignore] in the eight unit-test suite files (the one float DBL_MAX case excepted via
+LOSS-025 or fixed in kuna-num).

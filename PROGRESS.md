@@ -1,5 +1,28 @@
 # kuna Progress Log
 
+## Session (2026-06-13) — rust-port W7: storage + structuring; M1 name-parity 207/207
+
+All 11 W7 items verified: variable/cover (HighVariable + Cover, wiring Varnode::high
+into Funcdata), merge (HighVariable formation), varmap (stack-layout core; ScopeLocal
+deferred), dynamic + kuna_stackguard, blockaction (control-flow structuring — the
+goto-quality engine), the kuna region digraph -> RegionIdentifier re-host ->
+loweredswitch, coreaction-cleanup, testkunaregion (3 tests), and the M1-closure
+diagnostic.
+
+**M1 name-parity: port_audit 207/207 PORT COMPLETE.** The M1-closure agent re-verified
+the ~32 ignored unit-test bodies against their C++ sources and corrected the blocker
+analysis (LOSS-094-UPDATE): they are NOT W7-blocked but need the W8 print/cast
+machinery (testtypes casts) and the W9 C-declaration grammar + spec-loaded
+prototype-model registry (testfuncproto/testparamstore). Each stub now carries an
+inline DEFER(Wn). M1 BODY-parity re-targeted to a new w9-m1-bodies closure item
+(gate: zero #[ignore] in the 8 unit suites). Honest body count today: 175/207
+executing, 32 deferred-and-anchored, 1 float DBL_MAX edge (LOSS-025).
+
+Gate: workspace 2,629 tests, 0 failures, 35 ignored; clippy clean; oracle untouched.
+Cumulative: 120/201 items. Losses through LOSS-108. Next: W8 (print stack + the
+universalAction assembly that wires all ported rules/actions into the real pipeline).
+
+
 ## Session (2026-06-13) — rust-port W6: type system + parameter recovery (M1 name-parity)
 
 All 16 W6 items verified (5 landed pre-limit, 11 relaunched on restored Opus credits

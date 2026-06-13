@@ -103,3 +103,19 @@ _(none yet)_
 | w6-s4-coreaction-protos | fleet(opus) | independent | S4 proto actions | ACCEPT-WL |
 | w6-kuna-s4s5-pack | fleet(opus) | independent | returnpair/memset/compareform | ACCEPT |
 | w6-harness-unittests | fleet(opus) | independent | testcirclerange 117 + names | ACCEPT-WL |
+
+## W7 (2026-06-13)
+
+| item | gate | verdict |
+|---|---|---|
+| w7-s6-variable-cover | HighVariable+Cover, Varnode::high wiring | ACCEPT-WL |
+| w7-s6-merge | HighVariable formation passes | ACCEPT-WL |
+| w7-s6-varmap | stack-layout core (ScopeLocal deferred) | ACCEPT-WL |
+| w7-s6-dynamic-pack | DynamicHash + stackguard | ACCEPT-WL |
+| w7-s7-blockaction | CF structuring / goto engine | ACCEPT-WL |
+| w7-s7-kuna-regiongraph | angr digraph (deterministic order) | ACCEPT-WL |
+| w7-s7-kuna-regionid | RegionIdentifier re-host | ACCEPT-WL |
+| w7-s7-kuna-loweredswitch | GCC lowered-switch recovery | ACCEPT-WL |
+| w7-harness-kunaregion | 3 region unit tests (exact names) | ACCEPT |
+| w7-s37-coreaction-cleanup | S6/S7 cleanup+merge actions | ACCEPT-WL |
+| w7-m1-closure | M1 name-parity 207/207; bodies re-diagnosed to W8/W9 | ACCEPT-WL |

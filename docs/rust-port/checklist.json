@@ -3453,7 +3453,7 @@
    "depends_on": [
     "W6-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1889,
@@ -3476,7 +3476,7 @@
    "depends_on": [
     "w7-s6-varmap"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1889,
@@ -3501,7 +3501,7 @@
    "depends_on": [
     "W6-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 2322,
@@ -3528,7 +3528,7 @@
    "depends_on": [
     "w7-s6-variable-cover"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2322,
@@ -3554,7 +3554,7 @@
     "w7-s6-variable-cover",
     "W6-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1872,
@@ -3577,7 +3577,7 @@
    "depends_on": [
     "w7-s6-merge"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1872,
@@ -3608,7 +3608,7 @@
    "depends_on": [
     "W6-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1521,
@@ -3647,7 +3647,7 @@
    "depends_on": [
     "w7-s6-dynamic-pack"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1521,
@@ -3678,7 +3678,7 @@
    "depends_on": [
     "W6-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 2730,
@@ -3701,7 +3701,7 @@
    "depends_on": [
     "w7-s7-blockaction"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2730,
@@ -3724,7 +3724,7 @@
    "depends_on": [
     "W6-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1667,
@@ -3747,7 +3747,7 @@
    "depends_on": [
     "w7-s7-kuna-regionid"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1667,
@@ -3771,7 +3771,7 @@
     "w7-s7-kuna-regionid",
     "W6-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 1231,
@@ -3794,7 +3794,7 @@
    "depends_on": [
     "w7-s7-kuna-regiongraph"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 1231,
@@ -3818,7 +3818,7 @@
     "w7-s7-kuna-regiongraph",
     "W6-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 652,
@@ -3841,7 +3841,7 @@
    "depends_on": [
     "w7-s7-kuna-loweredswitch"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 652,
@@ -3866,7 +3866,7 @@
     "w7-s6-merge",
     "W6-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp",
    "loc_estimate": 2070,
@@ -3889,7 +3889,7 @@
    "depends_on": [
     "w7-s37-coreaction-cleanup"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 2070,
@@ -3912,7 +3912,7 @@
     "w7-s7-kuna-regiongraph",
     "W6-gate"
    ],
-   "status": "todo",
+   "status": "verified",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-harness",
    "loc_estimate": 191,
@@ -3933,7 +3933,7 @@
    "depends_on": [
     "w7-harness-kunaregion"
    ],
-   "status": "todo",
+   "status": "done",
    "attempts": 0,
    "gate": "verifier ACCEPT in docs/rust-port/reviews/",
    "loc_estimate": 191,
@@ -5071,12 +5071,12 @@
     "w7-harness-kunaregion",
     "w7-harness-kunaregion-verify"
    ],
-   "status": "todo",
+   "status": "landed",
    "attempts": 0,
    "gate": "cd rust && cargo test -p kuna-decomp  # testkunaregion green",
    "loc_estimate": 0,
    "cpp_blob_sha": {},
-   "notes": "Wave exit: every item in W7 done (ports gated, verifies ACCEPTed)."
+   "notes": "Wave exit: every item in W7 done (ports gated, verifies ACCEPTed). Gate 2026-06-13: 2629 tests 0 failed, 35 ignored; port_audit 207/207 PORT COMPLETE (name-parity = M1 names done); ~32 unit-test bodies re-targeted to W8/W9 (LOSS-094-UPDATE)."
   },
   {
    "id": "W8-gate",
@@ -5174,6 +5174,29 @@
    "loc_estimate": 0,
    "cpp_blob_sha": {},
    "notes": "Wave exit: every item in W11 done (ports gated, verifies ACCEPTed)."
+  },
+  {
+   "id": "w9-m1-bodies",
+   "kind": "infra",
+   "wave": "W9",
+   "crate": "kuna-decomp",
+   "title": "M1 body closure: un-ignore the 32 deferred unit-test bodies",
+   "modules": [
+    "decompiler/unittests/testfuncproto.cc",
+    "decompiler/unittests/testparamstore.cc",
+    "decompiler/unittests/testtypes.cc"
+   ],
+   "depends_on": [
+    "w9-con-grammar",
+    "w8-s9-printc",
+    "W9-gate"
+   ],
+   "status": "todo",
+   "attempts": 0,
+   "gate": "cd rust && cargo test -p kuna-decomp; zero #[ignore] in the 8 unit-test suites",
+   "loc_estimate": 0,
+   "cpp_blob_sha": {},
+   "notes": "M1 BODY-parity (all 207 unit tests executing). Re-targeted here from W6 by LOSS-094-UPDATE: the deferred bodies need the W8 print/cast machinery + the W9 C-declaration grammar + spec-loaded prototype-model registry."
   }
  ]
 }
