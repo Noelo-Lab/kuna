@@ -2,13 +2,18 @@
 //! (the S4 prototype-recovery `Action` classes from
 //! `decompiler/cpp/coreaction.{cc,hh}`).
 //!
-//! Written by the INDEPENDENT verifier.  This item is a **SEAM transcription**
-//! port: every `apply` body is gated on the `Funcdata`<->call-spec/proto bridge
-//! (`qlst`, `activeoutput`, the real `fspec::FuncProto`) which is absent from
-//! the merged `Funcdata`, so every body returns `0` (no change) with the C++
-//! logic carried as commented pseudocode.  The hunt list therefore concentrates
-//! not on arithmetic (there is none in the realized surface) but on the
-//! **invariants that a SEAM must preserve so it stays inert**:
+//! Written by the INDEPENDENT verifier.
+//!
+//! **W10 update (`rport/w10-proto-recovery`).**  Two of these bodies are no
+//! longer inert: `ActionPrototypeTypes` now selects the model + strips RETURN-in0
+//! + calls `Funcdata::init_active_output` (the real proto-recovery init), and
+//! `ActionReturnRecovery` runs the active-output trial machinery.  On the
+//! hand-built fixture here (a `seams::Architecture` with *no* registered proto
+//! model and *no* RETURN ops) `ActionPrototypeTypes` still has one real effect —
+//! it initializes the active-output container (the C++ `initActiveOutput`, which
+//! always runs when the output is unlocked) — so it bumps `count`.  The remaining
+//! call-spec-gated bodies (`qlst` absent) stay inert.  The hunt list therefore
+//! concentrates on:
 //!
 //!   - **Change-signal totality.** Every `apply` MUST leave `count == 0` and
 //!     return `0`.  A SEAM that spuriously bumps `count` would falsely signal a
@@ -98,32 +103,51 @@ fn all_actions(g: &str) -> Vec<Box<dyn Action>> {
     ]
 }
 
-/// HUNT: change-signal totality.  Every SEAM body must return 0 changes AND
-/// leave `count == 0` — including the `ExtraPopSetup(Some(idx))` non-null path
-/// that escapes the realized null-check into the deferred body.  A spurious
-/// `count += 1` here would falsely drive the repeat-apply fixpoint.
+/// HUNT: change-signal totality / `apply` return contract.  Every proto action
+/// must return `0` from `apply` (the C++ `return 0`; change signalling is via
+/// `count`).  The call-spec-gated bodies (`qlst` absent) AND the output-recovery
+/// bodies on this model-less, RETURN-less fixture must additionally leave
+/// `count == 0` — EXCEPT `ActionPrototypeTypes`, whose `init_active_output`
+/// (C++ `initActiveOutput`, always run when the output is unlocked) is a real
+/// effect that bumps `count`.  This pins the realized-vs-seam boundary so a
+/// future change that makes a different body active trips here.
 #[test]
-fn every_proto_action_apply_is_inert() {
-    let mut data = build_fd();
+fn proto_action_apply_change_signal_contract() {
     let mut ctx = ActionContext::new();
     for mut act in all_actions("protorecovery") {
+        // Fresh fixture per action so prototypetypes' init_active_output does not
+        // leak into the next action's view.
+        let mut data = build_fd();
         let name = act.get_name().to_string();
         let before = act.base().count;
         assert_eq!(before, 0, "{name}: fresh action must start with count 0");
         let res: int4 = act.apply(&mut data, &mut ctx);
-        assert_eq!(res, 0, "{name}: SEAM apply must return 0 changes");
-        assert_eq!(
-            act.base().count,
-            0,
-            "{name}: SEAM apply must not bump the change counter"
-        );
+        assert_eq!(res, 0, "{name}: apply must return 0 (change signalling is via count)");
+        if name == "prototypetypes" {
+            // The realized init_active_output bumps count exactly once (one
+            // effect: the active-output container was created).
+            assert_eq!(
+                act.base().count,
+                1,
+                "prototypetypes: init_active_output is a real effect (count == 1)"
+            );
+            assert!(
+                data.get_active_output().is_some(),
+                "prototypetypes: init_active_output must leave an active-output container"
+            );
+        } else {
+            assert_eq!(
+                act.base().count,
+                0,
+                "{name}: call-spec-gated body must not bump the change counter on this fixture"
+            );
+        }
     }
     // The warning channel IS realized; PrototypeWarnings must emit nothing with
-    // the placeholder proto (no errors to report) — assert the sink stayed empty
-    // so a future wiring that leaks a warning through the seam is caught.
+    // the model-less proto (no errors to report).
     assert!(
         ctx.warnings.messages.is_empty(),
-        "no proto-recovery SEAM may emit a warning while the proto bridge is unrealized"
+        "no proto-recovery body may emit a warning on the model-less fixture"
     );
 }
 

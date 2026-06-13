@@ -87,6 +87,8 @@
 //! Each seam is reported in this item's `losses` so the owning wave can finish
 //! the wiring by replaying the commented body against the real accessors.
 
+use kuna_num::opcodes::OpCode;
+
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::funcdata::Funcdata;
 
@@ -125,35 +127,57 @@ impl Action for ActionPrototypeTypes {
         }
         Some(Box::new(ActionPrototypeTypes { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:4843 — ActionPrototypeTypes::apply
-        //   evalfp = getArch()->evalfp_current ?: getArch()->defaultfp;
-        //   if (!funcp.isModelLocked() && !funcp.hasMatchingModel(evalfp))
-        //       funcp.setModel(evalfp);
-        //   if (funcp.hasThisPointer()) data.prepareThisPointer();
-        //   // strip indirect register from all RETURN ops -> getIn(0)=const 0
-        //   for op in beginOp(CPUI_RETURN)..endOp(CPUI_RETURN):
-        //       if (!op->getIn(0)->isConstant())
-        //           opSetInput(op, newConstant(getIn(0)->getSize(),0), 0);
-        //   if (funcp.isOutputLocked() && out->getType()->getMetatype()!=TYPE_VOID):
-        //       for op in RETURN ops (skip dead / haltType!=0):
-        //           opInsertInput(op, newVarnode(outparam), op->numInput());
-        //           vn->updateType(outparam->getType(), true, true);
-        //   else
-        //       data.initActiveOutput();      // begin gathering return values
-        //   spc = getArch()->getDefaultCodeSpace();
-        //   if (spc->isTruncated()): build INT_ZEXT from trunc stack ptr -> full
-        //   if (funcp.isInputLocked()):
-        //       for each locked param: setInputVarnode + setLockedInput +
-        //           extendInput(...) + ptrFlow if pointer-sized
-        //
-        // SEAM(W7/W8-funcdata): the whole body operates on `Funcdata::funcp`
-        // (the recovered FuncProto), `Funcdata::initActiveOutput`, and the
-        // RETURN-op rewrite surface.  `funcp` is the empty `seams::FuncProto`
-        // placeholder here (not the real `fspec::FuncProto`), and
-        // `initActiveOutput`/`activeoutput` are not on `Funcdata` in the merged
-        // tree, so no change can be applied (count stays 0).  `extendInput`
-        // (coreaction.cc:4824) is the same surface and is folded into this seam.
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:4843 — ActionPrototypeTypes::apply (the parts the
+        // merged tree reaches: model selection, RETURN-in0 strip, output recovery
+        // init).  The locked-input/output and truncated-space branches stay seamed
+        // (no locked proto / no truncated stack space on the recovery path).
+
+        // evalfp = getArch()->evalfp_current ?: getArch()->defaultfp;
+        // if (!funcp.isModelLocked() && !funcp.hasMatchingModel(evalfp))
+        //     funcp.setModel(evalfp);
+        let evalfp = data.get_arch().eval_fp_current().cloned();
+        if let Some(evalfp) = evalfp {
+            if !data.get_func_proto().is_model_locked()
+                && !data.get_func_proto().has_matching_model(&evalfp)
+            {
+                data.get_func_proto_mut().set_model(Some(evalfp));
+            }
+        }
+        // funcp.hasThisPointer() -> prepareThisPointer(): SEAM(W4) — the default
+        // models in the recovery path have no `this` pointer.
+
+        // Strip the indirect register from all RETURN ops (so the compiler's
+        // return-address mechanism does not appear in the high-level output):
+        //   for op in RETURN ops: if (!getIn(0)->isConstant())
+        //       opSetInput(op, newConstant(getIn(0)->getSize(), 0), 0);
+        let return_ops: Vec<crate::seams::OpId> = data.obank().iter_code(OpCode::CPUI_RETURN).collect();
+        for op in &return_ops {
+            let in0 = match data.obank().get(*op).and_then(|o| o.get_in(0)) {
+                Some(v) => v,
+                None => continue,
+            };
+            let is_const = data.vbank().get(in0).map(|v| v.is_constant()).unwrap_or(false);
+            if !is_const {
+                let sz = data.vbank().get(in0).map(|v| v.get_size()).unwrap_or(1);
+                let c = data.new_constant(sz, 0);
+                let _ = data.op_set_input(*op, c, 0);
+                self.base.count += 1;
+            }
+        }
+
+        // if (funcp.isOutputLocked() && ...) { force the output varnode }
+        // else data.initActiveOutput();  // begin gathering return values
+        if data.get_func_proto().has_model() && data.get_func_proto().is_output_locked() {
+            // SEAM(W6): the locked-output force-varnode branch (coreaction.cc:
+            // 4871) needs the type system; the recovery path is the unlocked case.
+        } else {
+            data.init_active_output();
+            self.base.count += 1;
+        }
+
+        // Truncated-space INT_ZEXT + locked-input force-varnode: SEAM(W4) — the
+        // 8051/recovery path has no truncated stack space and no locked inputs.
         0
     }
 }
@@ -606,6 +630,62 @@ impl ActionReturnRecovery {
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
         Box::new(ActionReturnRecovery { base: ActionBase::new(0, "returnrecovery", g) })
     }
+
+    /// Rewrite a CPUI_RETURN op to reflect the recovered output parameter (C++
+    /// `ActionReturnRecovery::buildReturnOutput`, coreaction.cc:1880).
+    ///
+    /// Appends the used output-trial Varnodes (in proper order) as a second (and
+    /// further) input to the RETURN, concatenating multiple pieces via PIECE/JOIN
+    /// when needed.  `in0` (the stripped return-indirect reference) is kept first.
+    fn build_return_output(
+        active: &crate::fspec::ParamActive,
+        retop: crate::seams::OpId,
+        data: &mut Funcdata,
+        return_single: bool,
+    ) {
+        use kuna_num::pcoderaw::VarnodeData;
+        let _ = VarnodeData::default;
+        // newparam = [ retop->getIn(0) ] + used trial varnodes (in order).
+        let mut newparam: Vec<crate::seams::VarnodeId> = Vec::new();
+        if let Some(in0) = data.obank().get(retop).and_then(|o| o.get_in(0)) {
+            newparam.push(in0);
+        }
+        let num_input = data.obank().get(retop).map(|o| o.num_input()).unwrap_or(0);
+        for i in 0..active.get_num_trials() {
+            let trial = active.get_trial(i);
+            if !trial.is_used() {
+                break;
+            }
+            if trial.get_slot() >= num_input {
+                break;
+            }
+            if let Some(vn) = data.obank().get(retop).and_then(|o| o.get_in(trial.get_slot())) {
+                newparam.push(vn);
+            }
+        }
+        // (kuna) GH-6990: keep only the first return register (return_single).
+        if crate::kuna_returnpair::keep_single_return(return_single, newparam.len()) {
+            newparam.truncate(2);
+        }
+        // Easy zero/one return varnode case (coreaction.cc:1894).  This is the
+        // register-output recovery path (a single recovered return register,
+        // e.g. 8051 ACC).
+        if newparam.len() <= 2 {
+            let _ = data.op_set_all_input(retop, &newparam);
+            return;
+        }
+        // Multi-piece concatenation (coreaction.cc:1896-1951): two-piece PIECE
+        // via a JOIN address, or the many-piece container concat.  Both require
+        // `getArch()->translate` for `constructJoinAddress` (the JOIN-space
+        // register-name lookup), which the merged `ArchHandle` seam does not
+        // carry (the engine `Translate` is not shared onto the IR handle).  The
+        // default models on the recovery path return a single register (no
+        // multi-piece output), so this branch is not reached on the live path;
+        // it is left as a SEAM(W4 translate-on-handle) and the RETURN keeps the
+        // first recovered piece rather than fabricating a malformed concat.
+        newparam.truncate(2);
+        let _ = data.op_set_all_input(retop, &newparam);
+    }
 }
 
 impl Action for ActionReturnRecovery {
@@ -621,39 +701,84 @@ impl Action for ActionReturnRecovery {
         }
         Some(Box::new(ActionReturnRecovery { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:1954 — ActionReturnRecovery::apply
-        //   active = data.getActiveOutput();
-        //   if (active != 0):
-        //       maxancestor = getArch()->trim_recurse_max;
-        //       AncestorRealistic ancestorReal;
-        //       for op in beginOp(CPUI_RETURN)..endOp (skip dead / haltType!=0):
-        //           for (i=0; i<active->getNumTrials(); ++i):
-        //               trial = active->getTrial(i);
-        //               if (trial.isChecked()) continue;
-        //               slot = trial.getSlot(); vn = op->getIn(slot);
-        //               if (ancestorReal.execute(op,slot,&trial,false) &&
-        //                   data.ancestorOpUse(maxancestor,vn,op,trial,0,0))
-        //                   trial.markActive();
-        //               count += 1;
-        //       active->finishPass();
-        //       if (numPasses > maxPass) markFullyChecked();
-        //       if (active->isFullyChecked()):
-        //           data.getFuncProto().deriveOutputMap(active);
-        //           for op in RETURN ops (skip dead / haltType!=0):
-        //               buildReturnOutput(active, op, data);   // cc:1880
-        //           data.clearActiveOutput();
-        //           count += 1;
-        //
-        // buildReturnOutput (coreaction.cc:1880): rebuild RETURN inputs from the
-        //   used trials in order; honor (kuna) GH-6990 `return_single` (resize
-        //   to 2); zero/one-piece direct set; two-piece PIECE concat via a JOIN
-        //   address; many-piece container concatenation.
-        //
-        // SEAM(W7/W8-funcdata): reads `Funcdata::getActiveOutput()` (the
-        // function-level `activeoutput`, absent) and `Funcdata::funcp` (the empty
-        // `seams::FuncProto` placeholder).  `AncestorRealistic`/`ancestorOpUse`
-        // are part of the same seamed surface.  Deferred (count stays 0).
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:1954 — ActionReturnRecovery::apply.  Gather the active
+        // output trials at each RETURN, run ancestor-realism, and (once fully
+        // checked) rewrite the RETURN ops to carry the recovered return value.
+        let mut active = match data.take_active_output() {
+            Some(a) => a,
+            None => return 0,
+        };
+        let maxancestor = data.get_arch().trim_recurse_max;
+        let return_ops: Vec<crate::seams::OpId> =
+            data.obank().iter_code(OpCode::CPUI_RETURN).collect();
+        for &op in &return_ops {
+            let o = match data.obank().get(op) {
+                Some(o) => o,
+                None => continue,
+            };
+            if o.is_dead() || o.get_halt_type() != 0 {
+                continue;
+            }
+            for i in 0..active.get_num_trials() {
+                if active.get_trial(i).is_checked() {
+                    continue;
+                }
+                let slot = active.get_trial(i).get_slot();
+                let vn = match data.obank().get(op).and_then(|o| o.get_in(slot)) {
+                    Some(v) => v,
+                    None => {
+                        self.base.count += 1;
+                        continue;
+                    }
+                };
+                // ancestorReal.execute(op,slot,&trial,false) &&
+                //   data.ancestorOpUse(maxancestor,vn,op,trial,0,0)
+                let mut ancestor = crate::funcdata_varnode::AncestorRealistic::new();
+                let (trial_size, trial_cond) =
+                    (active.get_trial(i).get_size(), active.get_trial(i).has_cond_exe_effect());
+                let (realistic, solid) =
+                    ancestor.execute(data, op, slot, trial_size, trial_cond, false);
+                ancestor.apply_trial(active.get_trial_mut(i), realistic, solid);
+                if realistic || solid {
+                    // The trial's data-flow ancestry is realistic; now test that
+                    // the Varnode is only used at this op (ancestorOpUse).
+                    let only = {
+                        let trial = active.get_trial_mut(i);
+                        data.ancestor_op_use(maxancestor, vn, op, trial, 0, 0)
+                    };
+                    if only {
+                        active.get_trial_mut(i).mark_active();
+                    }
+                }
+                self.base.count += 1;
+            }
+        }
+
+        active.finish_pass();
+        if active.get_num_passes() > active.get_max_pass() {
+            active.mark_fully_checked();
+        }
+
+        if active.is_fully_checked() {
+            let manager_rc = data.get_arch().manage.clone();
+            let _ = data.get_func_proto().derive_output_map(&mut active, &manager_rc);
+            let return_single = data.get_arch().return_single;
+            for &op in &return_ops {
+                let o = match data.obank().get(op) {
+                    Some(o) => o,
+                    None => continue,
+                };
+                if o.is_dead() || o.get_halt_type() != 0 {
+                    continue;
+                }
+                Self::build_return_output(&active, op, data, return_single);
+            }
+            data.clear_active_output();
+            self.base.count += 1;
+        } else {
+            data.restore_active_output(active);
+        }
         0
     }
 }

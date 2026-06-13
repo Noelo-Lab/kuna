@@ -48,7 +48,7 @@ use std::rc::Rc;
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::AddrSpaceManager;
-use kuna_base::types::{int4, uint4};
+use kuna_base::types::{int4, uint4, uintb};
 
 use kuna_sleigh::sleigh::Sleigh;
 use kuna_sleigh::translate::{Translate, UniqueLayout};
@@ -66,6 +66,33 @@ use crate::options::{
 use crate::printc::PrintC;
 use crate::seams::{ArchHandle, Architecture as ArchSeam};
 use crate::userop::UserOpManage;
+
+// ---------------------------------------------------------------------------
+// cspec XML helpers (the `<default_proto>` decode in build_default_proto reads
+// the resolved compiler-spec through the kuna-base XML `Element` tree, the same
+// parser the frontend uses for the binaryimage — see decode_default_proto).
+// ---------------------------------------------------------------------------
+
+/// First direct child element named `nm`, or `None`.
+fn find_child(el: &Rc<kuna_base::xml::Element>, nm: &str) -> Option<Rc<kuna_base::xml::Element>> {
+    el.get_children().iter().find(|c| c.get_name() == nm).map(Rc::clone)
+}
+
+/// String value of attribute `nm` on `el`, or `None` if absent.
+fn attr_str(el: &Rc<kuna_base::xml::Element>, nm: &str) -> Option<String> {
+    el.get_attribute_value(nm).ok().map(|b| String::from_utf8_lossy(b).into_owned())
+}
+
+/// Parse a decimal or `0x`-hex integer offset (C++ `<addr offset>` is a hex
+/// string for register-space addresses, decimal otherwise).
+fn parse_int(s: &str) -> Option<uintb> {
+    let s = s.trim();
+    if let Some(hex) = s.strip_prefix("0x") {
+        uintb::from_str_radix(hex, 16).ok()
+    } else {
+        s.parse::<uintb>().ok()
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Warning sink (the CommentDatabase slice the Funcdata warning path needs)
@@ -326,6 +353,14 @@ pub struct Architecture {
     /// The current-evaluation prototype model (C++ `evalfp_current`); falls
     /// back to `defaultfp` when unset.
     evalfp_current: Option<Rc<ProtoModel>>,
+    /// Raw compiler-spec (`.cspec`) XML content, set by the frontend before
+    /// [`init_post_engine`](Architecture::init_post_engine).  The C++
+    /// `parseCompilerConfig` decodes the `<default_proto>`/`<prototype>` tags
+    /// from this; here [`build_default_proto`](Architecture::build_default_proto)
+    /// reads it to recover the real input/output parameter lists.  `None` when
+    /// the frontend did not supply it (then a name-only `unknown` default is
+    /// seeded, as before).
+    cspec_xml: Option<Vec<u8>>,
     /// The p-code OpBehavior / `TypeOp` property table (C++ `inst`, the
     /// `vector<TypeOp *>` `TypeOp::registerInstructions` fills).  Indexed by
     /// op-code; `None` for the unused slots.  Empty until `build_instructions`.
@@ -432,6 +467,7 @@ impl Architecture {
             proto_models: std::collections::BTreeMap::new(),
             defaultfp: None,
             evalfp_current: None,
+            cspec_xml: None,
             inst: Vec::new(),
             opbehaviors: Vec::new(),
             translate,
@@ -609,6 +645,13 @@ impl Architecture {
         // clones; the IR-transform passes (RuleCollapseConstants) fold constants
         // through `glb.op_behavior(opc)`.
         seam.opbehaviors = self.opbehaviors.clone();
+        // Share the prototype-model registry handles (C++ `glb->defaultfp` /
+        // `evalfp_current`) so the proto-recovery actions can set the function's
+        // model and run output recovery against the real param lists.
+        seam.defaultfp = self.defaultfp.clone();
+        seam.evalfp_current = self.evalfp_current.clone();
+        seam.trim_recurse_max = self.trim_recurse_max;
+        seam.return_single = self.return_single;
         Rc::new(seam)
     }
 
@@ -832,15 +875,224 @@ impl Architecture {
     ///
     /// SEAM(W6 cspec): the *real* default proto model comes from the cspec
     /// `<default_proto><prototype …>` decode (`ProtoModel::decode` building the
-    /// param lists from `<input>`/`<output>` `<pentry>` records).  Until that
-    /// cspec pipeline is wired here, a name-only default model is registered so
-    /// the engine has a non-null `defaultfp` (recorded as a loss).
+    /// param lists from `<input>`/`<output>` `<pentry>` records).  When the
+    /// frontend supplied the cspec XML (via [`set_cspec_xml`](Architecture::set_cspec_xml))
+    /// the `<default_proto>` input/output parameter lists are decoded here (the
+    /// general, spec-driven path — see [`decode_default_proto`](Architecture::decode_default_proto)),
+    /// so the recovered model carries real return/parameter storage and the
+    /// proto-recovery actions can fire.  Otherwise a name-only default model is
+    /// registered so the engine still has a non-null `defaultfp`.
     pub fn build_default_proto(&mut self) {
+        if let Some(xml) = self.cspec_xml.take() {
+            match self.decode_default_proto(&xml) {
+                Ok(model) => {
+                    let name = model.get_name().to_string();
+                    let rc = Rc::new(model);
+                    self.register_model(Rc::clone(&rc));
+                    // Re-register under "unknown" too: the C++ leaves `getModel`
+                    // resolving the model name, but `defaultfp` is the object.
+                    let _ = name;
+                    self.defaultfp = Some(rc);
+                    return;
+                }
+                Err(_e) => {
+                    // Fall through to the name-only default on any decode failure
+                    // (faithful degradation; the recovery simply won't fire).
+                }
+            }
+        }
         let mut model = ProtoModel::new(self.manage());
         model.set_name("unknown");
+        // Build empty input/output param lists so `model.output()`/`input()` are
+        // present (an empty list characterizes every range as `no_containment`,
+        // so proto recovery declines gracefully rather than the model lacking
+        // lists and panicking).  The real `ProtoModel::decode` always allocates
+        // the lists via `buildParamList`; mirror that for the fallback default.
+        let _ = model.build_param_list("standard");
         let rc = Rc::new(model);
         self.register_model(Rc::clone(&rc));
         self.defaultfp = Some(rc);
+    }
+
+    /// Record the compiler-spec (`.cspec`) XML content for the
+    /// `<default_proto>` decode in [`build_default_proto`](Architecture::build_default_proto).
+    /// The frontend reads the resolved `.cspec` file (the `compilerfile` path
+    /// from `SleighArchitecture::build_spec_file`) and hands it here before
+    /// [`init_post_engine`](Architecture::init_post_engine).
+    pub fn set_cspec_xml(&mut self, xml: Vec<u8>) {
+        self.cspec_xml = Some(xml);
+    }
+
+    /// Decode the `<default_proto><prototype>` element from cspec XML into a
+    /// [`ProtoModel`] (the spec-driven subset of C++ `ProtoModel::decode`:
+    /// `name`/`extrapop`/`strategy` attributes + the `<input>`/`<output>`
+    /// `<pentry>` parameter lists).  General over any processor's cspec; the
+    /// register/`<addr>` storage of each `<pentry>` is resolved through the
+    /// engine `Translate`, exactly as `ParamEntry::decode` resolves `<addr>`.
+    fn decode_default_proto(&self, xml: &[u8]) -> KunaResult<ProtoModel> {
+        use kuna_base::xml::DocumentStorage;
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(xml)?.get_root().clone();
+        // Find <default_proto><prototype>.
+        let dp = find_child(&root, "default_proto")
+            .ok_or_else(|| KunaError::lowlevel("cspec has no <default_proto>"))?;
+        let proto = find_child(&dp, "prototype")
+            .ok_or_else(|| KunaError::lowlevel("<default_proto> has no <prototype>"))?;
+
+        let mut model = ProtoModel::new(self.manage());
+        let name = attr_str(&proto, "name").unwrap_or_else(|| "__stdcall".to_string());
+        model.set_name(&name);
+        // extrapop="unknown" -> EXTRAPOP_UNKNOWN; numeric otherwise.
+        if let Some(ep) = attr_str(&proto, "extrapop") {
+            if ep == "unknown" {
+                model.set_extra_pop(crate::fspec::EXTRAPOP_UNKNOWN);
+            } else if let Ok(v) = ep.parse::<int4>() {
+                model.set_extra_pop(v);
+            }
+        }
+        let strategy = attr_str(&proto, "strategy").unwrap_or_default();
+        model.build_param_list(&strategy)?;
+
+        // Decode <input> and <output> pentry lists.
+        for child in proto.get_children().iter() {
+            match child.get_name() {
+                "input" => self.decode_pentry_list(child, &mut model, true)?,
+                "output" => self.decode_pentry_list(child, &mut model, false)?,
+                _ => {}
+            }
+        }
+        Ok(model)
+    }
+
+    /// Decode the `<pentry>` children of an `<input>`/`<output>` element into the
+    /// model's input or output [`ParamListStandard`] (C++
+    /// `ParamListStandard::decode` over `<pentry>` records).  `is_input` selects
+    /// the list.  Mirrors `parsePentry` + `ParamEntry::decode` + the
+    /// `finish_decode` tail (resource boundary, `calcDelay`, `populateResolver`).
+    fn decode_pentry_list(
+        &self,
+        list_el: &Rc<kuna_base::xml::Element>,
+        model: &mut ProtoModel,
+        is_input: bool,
+    ) -> KunaResult<()> {
+        // C++ ParamListStandard::decode: normalstack = !reverse; the model's
+        // stackgrowsnegative drives it (the default cspec stack convention).
+        let normalstack = true;
+        // Collect entries, building each against the running prefix (resolveFirst/
+        // resolveJoin/resolveOverlap consult the entries decoded so far).
+        let mut group: int4 = 0;
+        let mut pentries: Vec<crate::fspec::ParamEntry> = Vec::new();
+        for child in list_el.get_children().iter() {
+            if child.get_name() != "pentry" {
+                continue;
+            }
+            let entry = self.decode_pentry(child, group, normalstack, &pentries)?;
+            // numgroup advances by the entry's group span (1 for exclusion).
+            let maxgroup = entry.get_all_groups().last().copied().unwrap_or(group) + 1;
+            if maxgroup > group {
+                group = maxgroup;
+            }
+            pentries.push(entry);
+        }
+        let plist = if is_input { model.input_mut() } else { model.output_mut() };
+        for e in pentries {
+            plist.push_entry(e);
+        }
+        plist.finish_decode();
+        Ok(())
+    }
+
+    /// Decode one `<pentry>` element into a [`ParamEntry`] (C++
+    /// `ParamEntry::decode`).  Reads `minsize`/`maxsize`/`align`/`storage`/
+    /// `metatype`/`extension` attributes and the `<register>`/`<addr>` storage.
+    fn decode_pentry(
+        &self,
+        pentry: &Rc<kuna_base::xml::Element>,
+        group: int4,
+        normalstack: bool,
+        prev: &[crate::fspec::ParamEntry],
+    ) -> KunaResult<crate::fspec::ParamEntry> {
+        use crate::dtype::{string2typeclass, type_class};
+        use crate::fspec::param_entry_flags;
+        let mut size: int4 = -1;
+        let mut minsize: int4 = -1;
+        let mut alignment: int4 = 0;
+        let mut type_ = type_class::TYPECLASS_GENERAL;
+        let mut flags: uint4 = 0;
+        if let Some(v) = attr_str(pentry, "minsize") {
+            minsize = v.parse().map_err(|_| KunaError::lowlevel("bad <pentry> minsize"))?;
+        }
+        if let Some(v) = attr_str(pentry, "maxsize") {
+            size = v.parse().map_err(|_| KunaError::lowlevel("bad <pentry> maxsize"))?;
+        }
+        // size="..." (old) and align="..." (new) both set alignment.
+        if let Some(v) = attr_str(pentry, "size") {
+            alignment = v.parse().map_err(|_| KunaError::lowlevel("bad <pentry> size"))?;
+        }
+        if let Some(v) = attr_str(pentry, "align") {
+            alignment = v.parse().map_err(|_| KunaError::lowlevel("bad <pentry> align"))?;
+        }
+        if let Some(v) = attr_str(pentry, "storage").or_else(|| attr_str(pentry, "metatype")) {
+            type_ = string2typeclass(&v)?;
+        }
+        if let Some(ext) = attr_str(pentry, "extension") {
+            flags &= !(param_entry_flags::SMALLSIZE_ZEXT
+                | param_entry_flags::SMALLSIZE_SEXT
+                | param_entry_flags::SMALLSIZE_INTTYPE);
+            match ext.as_str() {
+                "sign" => flags |= param_entry_flags::SMALLSIZE_SEXT,
+                "zero" => flags |= param_entry_flags::SMALLSIZE_ZEXT,
+                "inttype" => flags |= param_entry_flags::SMALLSIZE_INTTYPE,
+                "float" => flags |= param_entry_flags::SMALLSIZE_FLOATEXT,
+                "none" => {}
+                _ => return Err(KunaError::lowlevel("Bad <pentry> extension attribute")),
+            }
+        }
+        if size == -1 || minsize == -1 {
+            return Err(KunaError::lowlevel("ParamEntry not fully specified"));
+        }
+        // Storage address: <register name=".."/> or <addr space=".." offset=".."/>.
+        let (space, addressbase) = self.decode_pentry_storage(pentry)?;
+        crate::fspec::ParamEntry::seed(
+            group, type_, space, addressbase, size, minsize, alignment, flags, normalstack,
+            false, prev, self.manage(),
+        )
+    }
+
+    /// Resolve a `<pentry>`'s storage element to `(space, offset)` (C++
+    /// `Address::decode` over `<register>`/`<addr>`).
+    fn decode_pentry_storage(
+        &self,
+        pentry: &Rc<kuna_base::xml::Element>,
+    ) -> KunaResult<(Rc<kuna_base::space::AddrSpace>, uintb)> {
+        for child in pentry.get_children().iter() {
+            match child.get_name() {
+                "register" => {
+                    let nm = attr_str(child, "name")
+                        .ok_or_else(|| KunaError::lowlevel("<register> has no name"))?;
+                    let vd = self.translate.get_register_varnode(nm.as_bytes())?;
+                    let space = vd
+                        .space
+                        .ok_or_else(|| KunaError::lowlevel("register has no space"))?;
+                    return Ok((space, vd.offset));
+                }
+                "addr" => {
+                    let spname = attr_str(child, "space")
+                        .ok_or_else(|| KunaError::lowlevel("<addr> has no space"))?;
+                    let space = self
+                        .manage()
+                        .get_space_by_name(&spname)
+                        .ok_or_else(|| KunaError::lowlevel("<addr> unknown space"))?
+                        .clone();
+                    let off = attr_str(child, "offset")
+                        .and_then(|s| parse_int(&s))
+                        .unwrap_or(0);
+                    return Ok((space, off));
+                }
+                _ => {}
+            }
+        }
+        Err(KunaError::lowlevel("<pentry> has no <register>/<addr> storage"))
     }
 
     /// Build the universal Action tree + the "decompile" root (C++

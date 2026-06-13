@@ -4823,6 +4823,16 @@ impl FuncProto {
         self.store().get_output().get_type()
     }
 
+    /// Whether a backing parameter store has been attached (C++ `store != 0`).
+    ///
+    /// The merged-tree `Funcdata::new` cannot run the C++
+    /// `funcp.setScope(localmap,...)` (`ProtoStoreSymbol` needs the symbol scope,
+    /// a W4 seam), so the recovered proto carries a model but no store.  The
+    /// store-dependent queries below fall back to the unrecovered default (void,
+    /// unlocked) when this is false, rather than panic.
+    pub fn has_store(&self) -> bool {
+        self.store.is_some()
+    }
     /// Borrow the store (panics if none).
     fn store(&self) -> &dyn ProtoStore {
         self.store.as_deref().expect("FuncProto::store: null")
@@ -4846,6 +4856,11 @@ impl FuncProto {
     }
     /// Is the output data-type locked (C++ `isOutputLocked`).
     pub fn is_output_locked(&self) -> bool {
+        // No store (merged-tree setScope seam): the unrecovered output is void
+        // and never locked.
+        if !self.has_store() {
+            return false;
+        }
         self.store().get_output().is_type_locked()
     }
     /// Is the prototype model locked (C++ `isModelLocked`).
@@ -5323,6 +5338,17 @@ impl FuncProto {
             }
         }
         self.model().characterize_as_input_param(addr, size)
+    }
+
+    /// Given a list of output \e trials, derive the most likely return value for
+    /// this prototype (C++ `FuncProto::deriveOutputMap`, fspec.hh:1501 —
+    /// `model->deriveOutputMap(active)`).
+    pub fn derive_output_map(
+        &self,
+        active: &mut ParamActive,
+        manager: &AddrSpaceManager,
+    ) -> KunaResult<()> {
+        self.model().derive_output_map(active, manager)
     }
 
     /// Decide whether a storage location could be, or hold, the return value

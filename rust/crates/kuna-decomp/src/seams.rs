@@ -152,6 +152,21 @@ pub struct Architecture {
     /// path populates it from the engine's table in
     /// `Architecture::build_arch_handle`.
     pub opbehaviors: Vec<Option<Rc<dyn kuna_num::opbehavior::OpBehavior>>>,
+    /// The default prototype model (C++ `Architecture::defaultfp`), shared from
+    /// the real [`crate::architecture::Architecture`] registry through
+    /// `build_arch_handle`.  The proto-recovery actions read it to set the
+    /// function's model when the prototype is unrecovered.  `None` for hand-built
+    /// fixtures (no proto registry).
+    pub defaultfp: Option<Rc<crate::fspec::ProtoModel>>,
+    /// The current-evaluation prototype model (C++ `evalfp_current`); falls back
+    /// to `defaultfp` when unset.  Shared from the real architecture.
+    pub evalfp_current: Option<Rc<crate::fspec::ProtoModel>>,
+    /// Maximum recursion depth for `Funcdata::ancestorOpUse` (C++
+    /// `Architecture::trim_recurse_max`).  Drives `ActionReturnRecovery`'s
+    /// ancestor-realism walk.
+    pub trim_recurse_max: int4,
+    /// (kuna) GH-6990: keep only the first return register (C++ `return_single`).
+    pub return_single: bool,
 }
 
 impl Architecture {
@@ -170,7 +185,27 @@ impl Architecture {
     pub fn new_shared(manage: Rc<AddrSpaceManager>) -> Architecture {
         // C++ default: getMinimumLanedRegisterSize() returns the configured
         // minimum; the upstream default when unset is 4.
-        Architecture { manage, min_laned_register_size: 4, opbehaviors: Vec::new() }
+        Architecture {
+            manage,
+            min_laned_register_size: 4,
+            opbehaviors: Vec::new(),
+            defaultfp: None,
+            evalfp_current: None,
+            // C++ Architecture default: trim_recurse_max = 5 (resetDefaults).
+            trim_recurse_max: 5,
+            return_single: false,
+        }
+    }
+
+    /// The default prototype model (C++ `glb->defaultfp`), or `None`.
+    pub fn default_fp(&self) -> Option<&Rc<crate::fspec::ProtoModel>> {
+        self.defaultfp.as_ref()
+    }
+
+    /// The current-evaluation model (C++ `glb->evalfp_current`), falling back to
+    /// `defaultfp` when unset.
+    pub fn eval_fp_current(&self) -> Option<&Rc<crate::fspec::ProtoModel>> {
+        self.evalfp_current.as_ref().or(self.defaultfp.as_ref())
     }
 
     /// Resolve an op-code to its emulation [`OpBehavior`](kuna_num::opbehavior::OpBehavior),

@@ -74,8 +74,9 @@ use kuna_base::error::KunaResult;
 use kuna_base::types::{int4, uint4, uintm, Wrap};
 
 use crate::block::{block_flags, BasicData, BlockGraph, BlockKind, FlowBlock};
+use crate::fspec::{FuncProto, ParamActive};
 use crate::op::PcodeOpBank;
-use crate::seams::{ArchHandle, BlockId, FuncProto, OpId, Scope, VarnodeId};
+use crate::seams::{ArchHandle, BlockId, OpId, Scope, VarnodeId};
 use crate::varnode::{DefOpInfo, VarnodeBank};
 
 /// Boolean properties associated with a [`Funcdata`] (C++ anonymous `enum` in
@@ -153,8 +154,14 @@ pub struct Funcdata {
     display_name: String,
     /// Starting code address of binary data (C++ `baseaddr`)
     baseaddr: Address,
-    /// Prototype of this function (C++ `funcp`).  // SEAM(W4)
+    /// Prototype of this function (C++ `funcp`).  The real [`fspec::FuncProto`]
+    /// (W10 un-seam): proto-recovery actions read/mutate the recovered model,
+    /// lock state, and (via [`Self::get_active_output`]) the return-value trials.
     funcp: FuncProto,
+    /// Data for assessing which return values are produced by \b this function
+    /// (C++ `activeoutput`); `None` until [`Self::init_active_output`] turns on
+    /// the proto-recovery output gathering (`ActionPrototypeTypes`).
+    activeoutput: Option<ParamActive>,
     /// Local variables (symbols in the function scope) (C++ `localmap`).
     /// `None` when filled in by decode.  // SEAM(W4)
     localmap: Option<Scope>,
@@ -243,7 +250,8 @@ impl Funcdata {
             name: nm.to_string(),
             display_name: disp.to_string(),
             baseaddr: addr,
-            funcp: FuncProto,
+            funcp: FuncProto::new(),
+            activeoutput: None,
             localmap,
             jumpvec: Vec::new(),
             vbank,
@@ -279,21 +287,75 @@ impl Funcdata {
     pub fn get_arch(&self) -> &ArchHandle {
         &self.glb
     }
-    /// Get the function's prototype object (C++ `getFuncProto`).  // SEAM(W4)
+    /// Get the function's prototype object (C++ `getFuncProto`).
     pub fn get_func_proto(&self) -> &FuncProto {
         &self.funcp
+    }
+    /// Mutably borrow the function's prototype object (C++ non-const
+    /// `getFuncProto`).  Proto-recovery actions (`ActionPrototypeTypes`,
+    /// `ActionReturnRecovery`, ...) set the model and derive the output map.
+    pub fn get_func_proto_mut(&mut self) -> &mut FuncProto {
+        &mut self.funcp
     }
 
     /// The active return-value recovery state, or `None` if output recovery is
     /// not in progress (C++ `Funcdata::getActiveOutput`).
     ///
-    /// SEAM(W6): `ActionPrototypeTypes`/`initActiveOutput` (the proto-recovery
-    /// pass that builds the `ParamActive`) is a seam stub in the merged tree, so
-    /// there is never an active output — `ActionDeadCode::gatherConsumedReturn`
-    /// reads it to decide whether the return is fully consumed; `None` means it
-    /// falls through to the NZ-mask scan, the un-recovered default.
-    pub fn get_active_output(&self) -> Option<()> {
-        None
+    /// `ActionPrototypeTypes::apply` calls [`Self::init_active_output`] (the C++
+    /// `initActiveOutput`) before heritage when the output is not locked, so
+    /// `Heritage::guardReturns` and `ActionReturnRecovery` see a live
+    /// [`ParamActive`].  `ActionDeadCode::gatherConsumedReturn` also reads it to
+    /// decide whether the return is fully consumed.
+    pub fn get_active_output(&self) -> Option<&ParamActive> {
+        self.activeoutput.as_ref()
+    }
+
+    /// Mutably borrow the active return-value recovery state (C++ non-const
+    /// `getActiveOutput`).
+    pub fn get_active_output_mut(&mut self) -> Option<&mut ParamActive> {
+        self.activeoutput.as_mut()
+    }
+
+    /// Initialize \e return prototype recovery analysis (C++
+    /// `Funcdata::initActiveOutput`, `funcdata_varnode.cc:603`).
+    ///
+    /// Allocates a fresh [`ParamActive`] for the output trials and sets its
+    /// max-pass from the prototype model's maximum output heritage delay
+    /// (capped at 3, the C++ `if (maxdelay>0) maxdelay = 3`).
+    pub fn init_active_output(&mut self) {
+        let mut active = ParamActive::new(false);
+        // C++ `funcp.getMaxOutputDelay()` reads the model; the C++ FuncProto
+        // always has a model by this point (the ctor's setScope/setInternal).
+        // Guard the unrecovered (model-less) case so this never panics.
+        let mut maxdelay =
+            if self.funcp.has_model() { self.funcp.get_max_output_delay() } else { 0 };
+        if maxdelay > 0 {
+            maxdelay = 3;
+        }
+        active.set_max_pass(maxdelay);
+        self.activeoutput = Some(active);
+    }
+
+    /// Stop tracking \e return prototype recovery (C++
+    /// `Funcdata::clearActiveOutput`, `funcdata.hh:429`).
+    pub fn clear_active_output(&mut self) {
+        self.activeoutput = None;
+    }
+
+    /// Move the active-output [`ParamActive`] out of `self` (leaving `None`), so
+    /// `ActionReturnRecovery` can drive `ancestor_op_use` (which needs `&mut
+    /// self`) while owning the trial container.  Pair with
+    /// [`Self::restore_active_output`].  The C++ holds `activeoutput` as a member
+    /// pointer and mutates it and the IR concurrently; the Rust borrow checker
+    /// requires the temporary move-out.
+    pub fn take_active_output(&mut self) -> Option<ParamActive> {
+        self.activeoutput.take()
+    }
+
+    /// Restore an active-output container previously taken with
+    /// [`Self::take_active_output`].
+    pub fn restore_active_output(&mut self, active: ParamActive) {
+        self.activeoutput = Some(active);
     }
 
     /// Number of sub-function call specifications (C++ `Funcdata::numCalls`).
@@ -960,7 +1022,9 @@ impl Funcdata {
         self.min_laned_size = self.glb.get_minimum_laned_register_size();
 
         // localmap->clearUnlocked(); localmap->resetLocalWindow();  -- SEAM(W4)
-        // clearActiveOutput(); funcp.clearUnlockedOutput();         -- SEAM(W4)
+        // clearActiveOutput() (funcdata.cc): drop the output-trial state.
+        self.clear_active_output();
+        // funcp.clearUnlockedOutput();                               -- SEAM(W4)
         // unionMap.clear();                                          -- SEAM(W6)
         self.clear_blocks();
         self.obank.clear();

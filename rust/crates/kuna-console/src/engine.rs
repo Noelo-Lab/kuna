@@ -228,6 +228,20 @@ pub fn bootstrap_program(
     // image replaces it after init (mirrors corpus_bootstrap.rs / the e2e gate).
     arch.sleigh_mut().build_translator(Box::new(NullLoad), &sla)?;
 
+    // Hand the resolved compiler-spec (`.cspec`) XML to the architecture so
+    // `build_default_proto` can decode the real `<default_proto>` input/output
+    // parameter lists (the C++ `parseCompilerConfig` reads the cspec here).
+    // A read failure is non-fatal: the architecture falls back to the name-only
+    // default model (proto recovery simply won't fire).
+    if !specs.compilerfile.is_empty() {
+        if let Ok(cspec) = std::fs::read(&specs.compilerfile) {
+            arch.sleigh_mut()
+                .base_mut()
+                .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
+                .set_cspec_xml(cspec);
+        }
+    }
+
     // The tail of Architecture::init (buildTypegrp/buildCoreTypes/buildAction/…).
     arch.sleigh_mut()
         .base_mut()
