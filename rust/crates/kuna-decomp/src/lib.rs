@@ -91,6 +91,7 @@ pub mod bitfield;
 pub mod constseq;
 pub mod prefersplit;
 pub mod coreaction_protos;
+pub mod coreaction_cleanup;
 pub mod kuna_returnpair;
 pub mod kuna_memsetsequence;
 pub mod kuna_compareform;
