@@ -243,6 +243,86 @@ fn form_byte_array_truncates_after_gap() {
     assert!(seq.move_ops.iter().all(|n| n.offset < 4));
 }
 
+// --- w6-s5 verifier adversarial probes (item w6-s5-constseq-prefersplit) ------
+
+/// A WriteNode whose `offset` is strictly less than `root_off` makes the C++
+/// `int4 bytePos = moveOps[i].offset - rootOff` go negative; C++ `continue`s on
+/// `bytePos < 0`.  The Rust port must reproduce the wrapping-subtraction +
+/// `< 0` skip WITHOUT panicking (the offset is data-controlled).  Here one op
+/// sits *before* the root offset and must be silently skipped, leaving the four
+/// in-range chars to form a valid count.
+#[test]
+fn w6s5_form_byte_array_offset_before_root_is_skipped_not_panic() {
+    let mut fd = build_fd(false);
+    let bl = mk_block(&mut fd);
+    // root_off = 4. One op at offset 0 (bytePos = 0 - 4 = -4 -> skip), then four
+    // in-range chars at offsets 4,5,6,7 (bytePos 0,1,2,3).
+    let entries = [(0u64, 0x39u64), (4, 0x41), (5, 0x42), (6, 0x43), (7, 0x44)];
+    let ct = char1(&fd);
+    let mut seq = ArraySequence::new(ct);
+    for (i, &(off, cval)) in entries.iter().enumerate() {
+        let op = mk_copy_const(&mut fd, bl, 0x10 + i as u64 * 4, cval);
+        seq.move_ops.push(WriteNode::new(off, op, -1, order_of(&fd, op)));
+    }
+    // sz = 4 (region after root), root_off = 4.
+    let count = seq.form_byte_array(&fd, 4, 0, 4, false);
+    assert_eq!(count, 4, "the pre-root op is skipped, four chars remain");
+    assert_eq!(&seq.byte_array[..4], &[0x41, 0x42, 0x43, 0x44]);
+}
+
+/// FINDING F1 (minor, debug-only divergence).  `form_byte_array`'s in-range
+/// guard is C++ `bytePos + elSize > sz`.  When `bytePos` is a large positive
+/// `int4` (the wrapped result of `offset - rootOff` when `offset` is far above
+/// `rootOff`) the C++ evaluates `bytePos + elSize` in signed `int4`, *wraps* on
+/// overflow (UB but in practice wraps), and the `> sz` test still drops the op,
+/// then `continue`s — no crash, the remaining chars still form a valid count.
+/// The Rust `byte_pos + el_size` (constseq.rs:276) is a *checked* `i32` add that
+/// PANICS in debug builds at `byte_pos == i32::MAX`, diverging from the C++
+/// silent-drop.  This `#[should_panic]` pins the *current* (divergent) behavior;
+/// the fix is `byte_pos.wrapping_add(el_size)` (matching the C++ int4 wrap).
+/// Reachable only via the `pub(crate)` reuse surface / synthetic offsets, not
+/// the bounded `StringSequence` caller — hence minor, not a blocker.
+#[test]
+#[should_panic(expected = "add with overflow")]
+fn w6s5_form_byte_array_huge_bytepos_diverges_debug_panic() {
+    let mut fd = build_fd(false);
+    let bl = mk_block(&mut fd);
+    let huge_off = i32::MAX as u64; // 0x7fff_ffff
+    let entries = [(huge_off, 0x39u64), (0, 0x41), (1, 0x42), (2, 0x43), (3, 0x44)];
+    let ct = char1(&fd);
+    let mut seq = ArraySequence::new(ct);
+    for (i, &(off, cval)) in entries.iter().enumerate() {
+        let op = mk_copy_const(&mut fd, bl, 0x10 + i as u64 * 4, cval);
+        seq.move_ops.push(WriteNode::new(off, op, -1, order_of(&fd, op)));
+    }
+    // C++ would drop the huge-offset op and return count 4; Rust panics here.
+    let _ = seq.form_byte_array(&fd, 4, 0, 0, false);
+}
+
+/// Little-endian multi-byte unpacking: the C++ `val >>= 8` per element byte.
+/// A 2-byte char type with value 0x4142 little-endian must lay [0x42,0x41].
+#[test]
+fn w6s5_form_byte_array_little_endian_multibyte_shift() {
+    let mut fd = build_fd(false);
+    let bl = mk_block(&mut fd);
+    let ct: Rc<Datatype> = Rc::new(Datatype::new(2, type_metatype::TYPE_INT));
+    let vals = [0x4142u64, 0x4344, 0x4546, 0x4748];
+    let mut seq = ArraySequence::new(Rc::clone(&ct));
+    for (i, &v) in vals.iter().enumerate() {
+        let op = mk_op_in_block(&mut fd, bl, 0x10 + i as u64 * 4, OpCode::CPUI_COPY);
+        let c = fd.new_constant(2, v);
+        fd.op_set_input(op, c, 0).unwrap();
+        seq.move_ops.push(WriteNode::new((i * 2) as u64, op, -1, order_of(&fd, op)));
+    }
+    let count = seq.form_byte_array(&fd, 8, 0, 0, false);
+    assert_eq!(count, 4);
+    // little-endian: 0x4142 -> [0x42,0x41], 0x4344 -> [0x44,0x43], ...
+    assert_eq!(
+        &seq.byte_array[..8],
+        &[0x42, 0x41, 0x44, 0x43, 0x46, 0x45, 0x48, 0x47]
+    );
+}
+
 #[test]
 fn form_byte_array_big_endian_multibyte() {
     let mut fd = build_fd(true);
