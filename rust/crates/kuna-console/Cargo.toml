@@ -9,6 +9,9 @@ publish.workspace = true
 
 [dependencies]
 kuna-decomp.workspace = true
+kuna-base.workspace = true
+kuna-num.workspace = true
+kuna-sleigh.workspace = true
 
 [lints]
 workspace = true

@@ -15,3 +15,12 @@
 //! the identical command surface, unchanged.
 //!
 //! Lints are inherited from the workspace (`[lints] workspace = true`).
+
+pub mod interface;
+pub mod ifaceterm;
+pub mod ifacedecomp;
+pub mod codedata;
+pub mod kuna_console;
+pub mod grammar;
+pub mod rulecompile;
+pub mod unify;
