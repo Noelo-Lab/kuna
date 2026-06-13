@@ -40,8 +40,9 @@ use kuna_base::types::{int2, int4, uint2, uint4, uintb, uintm, Wrap};
 use slotmap::SlotMap;
 use smallvec::SmallVec;
 
+use crate::cover::{Cover, CoverContext};
 use crate::dtype::{type_metatype, Datatype};
-use crate::seams::{Cover, HighVariableId, OpId, VarnodeId};
+use crate::seams::{HighVariableId, OpId, VarnodeId};
 
 /// Boolean attributes of a [`Varnode`] (C++ `Varnode::varnode_flags`).
 ///
@@ -592,15 +593,61 @@ impl Varnode {
     pub fn get_high(&self) -> Option<HighVariableId> {
         self.high
     }
-    /// Borrow the Cover object, if one has been built (C++ `getCover`, minus
-    /// the lazy `updateCover` rebuild which is W7's).  SEAM(W7).
+    /// Borrow the Cover object, if one has been built (C++ `getCover`).  The
+    /// C++ `getCover` returns the raw `cover` pointer; the lazy `updateCover`
+    /// rebuild is driven separately by [`Funcdata`] (it needs the op/block graph
+    /// — see [`Varnode::cover_rebuild`]).
     pub fn cover(&self) -> Option<&Cover> {
         self.cover.as_ref()
     }
-    /// Delete the Cover object (C++ `clearCover`, used for dead varnodes).
-    /// SEAM(W7): the real `Cover` geometry is W7's; this just drops it.
+    /// Delete the Cover object (C++ `Varnode::clearCover`, `varnode.cc:244-251`).
+    /// Used for dead Varnodes before full deletion.
     pub fn clear_cover(&mut self) {
+        // if (cover != 0) { delete cover; cover = 0; }
         self.cover = None;
+    }
+    /// Is the cover-dirty flag set (C++ `(flags & Varnode::coverdirty) != 0`)?
+    /// Distinct from the HighVariable `isCoverDirty`; this is the Varnode bit.
+    pub fn is_cover_dirty_flag(&self) -> bool {
+        (self.flags & varnode_flags::coverdirty) != 0
+    }
+    /// Clear the cover-dirty flag (the tail of `updateCover`).  Goes through
+    /// `clear_flags` so any HighVariable notification stays consistent.
+    pub fn clear_cover_dirty(&mut self) {
+        self.clear_flags(varnode_flags::coverdirty);
+    }
+    /// Install a freshly-rebuilt Cover (the `cover->rebuild(this)` write-back of
+    /// the cross-arena [`Funcdata`]-driven `updateCover`).
+    pub fn set_cover(&mut self, c: Cover) {
+        self.cover = Some(c);
+    }
+    /// Initialize a new Cover and set the dirty bit so `updateCover` rebuilds it
+    /// (C++ `Varnode::calcCover`, `varnode.cc:254-263`).
+    pub fn calc_cover(&mut self) {
+        if self.has_cover() {
+            // if (cover != 0) delete cover; cover = new Cover;
+            self.cover = Some(Cover::new());
+            self.set_flags(varnode_flags::coverdirty);
+        }
+    }
+    /// Rebuild the variable cover based on where \b this is defined and read
+    /// (C++ `Varnode::updateCover`, `varnode.cc:233-241`).
+    ///
+    /// This is the cross-arena half of `getCover`: the C++ method calls
+    /// `cover->rebuild(this)`, which walks the def/use graph.  The graph access
+    /// is supplied by `ctx` (a [`CoverContext`], implemented by [`Funcdata`]).
+    /// `self_id` is \b this Varnode's id (the `this` the rebuild traces from).
+    /// This is \b only called by the Merge class which knows when to call it.
+    pub fn update_cover(&mut self, ctx: &dyn CoverContext, self_id: VarnodeId) {
+        if (self.flags & varnode_flags::coverdirty) != 0 {
+            // if (hasCover() && (cover != 0)) cover->rebuild(this);
+            if self.has_cover() {
+                if let Some(cover) = self.cover.as_mut() {
+                    cover.rebuild(ctx, self_id);
+                }
+            }
+            self.clear_flags(varnode_flags::coverdirty);
+        }
     }
     /// Set the HighVariable owning this Varnode (C++ `setHigh`).
     pub fn set_high(&mut self, tv: HighVariableId, mg: int2) {
@@ -944,22 +991,32 @@ impl Varnode {
 
     // --- Flag mutators routed through setFlags/clearFlags -----------------
     //
-    // The C++ setFlags/clearFlags also notify the HighVariable (flagsDirty /
-    // coverDirty); with no HighVariable yet (SEAM(W7)) the notification is a
-    // no-op, but we preserve the exact bit changes and the methods that go
-    // through them.
+    // The C++ setFlags/clearFlags also notify the owning HighVariable
+    // (`high->flagsDirty()`, and `high->coverDirty()` when the coverdirty bit
+    // moves).  In the ADR 0001 arena model the HighVariable lives in
+    // `Funcdata::high_bank`, a different arena the Varnode cannot reach from a
+    // `&mut self` method, so the cross-arena notification is reconciled at the
+    // Funcdata level: the `HighVariable` re-derives its inherited flags lazily
+    // from the live member-Varnode flags (`HighVariable::update_flags`, gated on
+    // its own `flagsdirty`), and the cover rebuild is driven by
+    // `Funcdata::update_varnode_cover` / `HighVariableBank::cover_dirty`.  See
+    // `docs/rust-port/losses.md` (W7 setFlags→high notification).  The exact bit
+    // changes and the routing through these helpers are preserved.
 
-    /// C++ `setFlags` (`varnode.cc:371`): set bits; would notify the high.
+    /// C++ `setFlags` (`varnode.cc:371`): set the bits.  The HighVariable
+    /// `flagsDirty`/`coverDirty` notification is reconciled at the Funcdata level
+    /// (see the block comment above) — SEAM(W7).
     fn set_flags(&mut self, fl: uint4) {
         self.flags |= fl;
         // if (high != null) { high->flagsDirty(); if (fl&coverdirty) high->coverDirty(); }
-        //   -- SEAM(W7): no HighVariable yet, notification is a no-op.
+        //   -- SEAM(W7): high lives in Funcdata::high_bank; reconciled there.
     }
 
-    /// C++ `clearFlags` (`varnode.cc:384`): clear bits; would notify the high.
+    /// C++ `clearFlags` (`varnode.cc:384`): clear the bits.  HighVariable
+    /// notification reconciled at the Funcdata level — SEAM(W7) (see set_flags).
     fn clear_flags(&mut self, fl: uint4) {
         self.flags &= !fl;
-        // SEAM(W7): HighVariable notification omitted (see set_flags).
+        // SEAM(W7): HighVariable notification reconciled in Funcdata.
     }
 
     /// C++ `setUnaffected`.
@@ -973,6 +1030,19 @@ impl Varnode {
     /// `funcdata_varnode` factories use to set the bit (LOSS-077 restoration).
     pub(crate) fn set_annotation(&mut self) {
         self.set_flags(varnode_flags::annotation);
+    }
+    /// Test helper: mark this Varnode as \e inserted (output of an op / input /
+    /// constant), so `hasCover()` is true.  The C++ sets this through the
+    /// xref/heritage paths (W3-op's `setInput`/`setDef`); the W7 cover tests need
+    /// the bit set directly without the full xref dance.
+    #[cfg(test)]
+    pub(crate) fn set_insert_for_test(&mut self) {
+        self.set_flags(varnode_flags::insert);
+    }
+    /// Test helper: mark this Varnode as an \e input (W7 cover tests).
+    #[cfg(test)]
+    pub(crate) fn set_input_for_test(&mut self) {
+        self.set_input_flag();
     }
     /// C++ `setInput` (the private bank helper): mark as input + coverdirty.
     fn set_input_flag(&mut self) {
