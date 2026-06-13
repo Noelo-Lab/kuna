@@ -236,6 +236,59 @@ fn comment_instr_records_a_comment() {
     );
 }
 
+// ===========================================================================
+// 4. HONEST METRIC GUARD (w10-setup-integration, REJECT round 1 -> re-land).
+//
+// The verifier REJECTed the round-1 *metric framing*, not the port code: the
+// commit reported "passing 3/675 -> 19/675" datatests under `KUNA_ENGINE=rust`,
+// but every one of those 19 passes is a `min="0" max="0"` NEGATIVE match that
+// the empty-body PrintC stub satisfies vacuously — the W9-emit RPN/Emit seam
+// (`printc.rs` emits `/* WARNING: body emission is the W9-emit RPN/Emit seam */`
+// as the whole function body, see LOSS-130).  None of the 19 demonstrate
+// oracle-matching C; the corresponding `min="1"` POSITIVE assertions all FAIL.
+//
+// The honest signal this item delivers is the SETUP store-writes (the tests
+// above) + the un-seam letting ~40 more datatest files *reach* the decompile
+// step (files-reaching-decompile 7 -> 47; tests-applied 24 -> 362; did-not-apply
+// 73 -> 33).  Real N/675 datatest parity is gated on the PrintC body driver
+// (LOSS-130), NOT on this item.  LOSS-133 records the framing; this test pins
+// the vacuousness in-tree so no future reader mistakes the count for parity:
+// the emitted `print C` body is the W9-emit stub, so a `min=1` positive match
+// FAILS while a `min=0` negative match passes for free.
+// ===========================================================================
+
+/// HONEST-METRIC GUARD — the rust `print C` body is the W9-emit seam stub, so a
+/// newly-"passing" datatest is a vacuous `min=0/max=0` negative match, not C
+/// parity.  Pins LOSS-130/LOSS-133: when the PrintC body driver lands, the stub
+/// marker disappears and this guard must be revisited (it then becomes a real
+/// parity assertion).
+#[test]
+fn printc_body_is_the_w9emit_stub_so_datatest_passes_are_vacuous() {
+    let Some(prog) = boot_program() else { return };
+    // Load the corpus function, decompile it, and render `print C` exactly like
+    // the datatest runner does (output lands in `optr`, captured by `drive`).
+    let (_status, out) = drive(
+        prog,
+        &["load function boolless", "decompile", "print C"],
+    );
+    // The decompile + print must SUCCEED (the function reaches the print step) —
+    // that is the real win of this item (a file reaching decompile).
+    assert!(
+        !out.contains("Execution error") && !out.contains("No function selected"),
+        "the function must reach the print step (a file-reaching-decompile win): {out:?}"
+    );
+    // ...but the emitted body is the W9-emit seam stub, NOT oracle-matching C.
+    // This is exactly why a `min=0/max=0` negative assertion passes for free
+    // (the stub contains none of the forbidden tokens) while the matching
+    // `min=1` positive assertion has no body to match against and FAILS.
+    assert!(
+        out.contains("WARNING: body emission is the W9-emit RPN/Emit seam"),
+        "the print-C body must still be the W9-emit stub (LOSS-130); if this marker \
+         is gone, the body driver landed and the honest-metric framing can be \
+         revisited. out={out:?}"
+    );
+}
+
 /// Probe the engine for a context-variable name registered by the loaded spec
 /// (so `set context` can be tested against whatever the architecture defines).
 fn first_context_variable(prog: &ConsoleProgram) -> Option<String> {
