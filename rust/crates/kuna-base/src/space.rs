@@ -41,11 +41,13 @@
 //!   which cannot be named from this crate (kuna-num depends on kuna-base).
 //!   `kuna-sleigh::translate` converts at the boundary.
 //!
-//! Still deferred (losses ledger): `FspecSpace`/`IopSpace` printRaw and
-//! `FspecSpace` encode payloads (need `FuncCallSpecs`/`PcodeOp`, W3).  Those
-//! arms return `Err(KunaError::Lowlevel)` with a "not yet ported"
-//! explanation; everywhere the C++ throws, the exact C++ error string is
-//! kept.
+//! The `FspecSpace` printRaw/encode arms are restored (W6 `fspec-3`): the
+//! call-spec layer registers the small slice of `FuncCallSpecs` state these arms
+//! read ([`FspecCallInfo`]) under the same integer handle the offset of the
+//! \e fspec address carries — the faithful equivalent of the C++ pointer cast.
+//! Still deferred (losses ledger): `IopSpace::printRaw` (needs `PcodeOp`, W3).
+//! That arm returns `Err(KunaError::Lowlevel)`; everywhere the C++ throws, the
+//! exact C++ error string is kept.
 
 use std::cell::{Cell, RefCell};
 use std::collections::btree_map::Entry;
@@ -1334,9 +1336,24 @@ impl AddrSpace {
                 }
                 Ok(())
             }
-            AddrSpaceKind::Fspec => Err(KunaError::lowlevel(
-                "kuna rust port: FspecSpace::encodeAttributes requires FuncCallSpecs (fspec wave)",
-            )),
+            // FspecSpace::encodeAttributes (unsized): if the callee entry is
+            // invalid, emit space="fspec"; otherwise the entry's space + offset.
+            AddrSpaceKind::Fspec => {
+                let info = fspec_lookup(offset).ok_or_else(|| {
+                    KunaError::lowlevel("FspecSpace::encodeAttributes: unregistered fspec handle")
+                })?;
+                if info.entry.is_invalid() {
+                    encoder.write_string(&ATTRIB_SPACE, b"fspec");
+                } else {
+                    let id = info
+                        .entry
+                        .get_space()
+                        .expect("FspecSpace::encodeAttributes: entry not invalid yet null space");
+                    encoder.write_space(&ATTRIB_SPACE, id);
+                    encoder.write_unsigned_integer(&ATTRIB_OFFSET, info.entry.get_offset());
+                }
+                Ok(())
+            }
             AddrSpaceKind::Iop => {
                 // IopSpace::encodeAttributes
                 encoder.write_string(&ATTRIB_SPACE, b"iop");
@@ -1364,9 +1381,25 @@ impl AddrSpace {
         match &self.kind {
             // JoinSpace ignores the size and defers to the unsized variant
             AddrSpaceKind::Join { .. } => self.encode_attributes(encoder, offset),
-            AddrSpaceKind::Fspec => Err(KunaError::lowlevel(
-                "kuna rust port: FspecSpace::encodeAttributes requires FuncCallSpecs (fspec wave)",
-            )),
+            // FspecSpace::encodeAttributes (sized): same as the unsized arm but
+            // also emits ATTRIB_SIZE on the valid-entry branch.
+            AddrSpaceKind::Fspec => {
+                let info = fspec_lookup(offset).ok_or_else(|| {
+                    KunaError::lowlevel("FspecSpace::encodeAttributes: unregistered fspec handle")
+                })?;
+                if info.entry.is_invalid() {
+                    encoder.write_string(&ATTRIB_SPACE, b"fspec");
+                } else {
+                    let id = info
+                        .entry
+                        .get_space()
+                        .expect("FspecSpace::encodeAttributes: entry not invalid yet null space");
+                    encoder.write_space(&ATTRIB_SPACE, id);
+                    encoder.write_unsigned_integer(&ATTRIB_OFFSET, info.entry.get_offset());
+                    encoder.write_signed_integer(&ATTRIB_SIZE, size as i64);
+                }
+                Ok(())
+            }
             AddrSpaceKind::Iop => {
                 // IopSpace::encodeAttributes
                 encoder.write_string(&ATTRIB_SPACE, b"iop");
@@ -1548,9 +1581,19 @@ impl AddrSpace {
                 s.push('}');
                 Ok(())
             }
-            AddrSpaceKind::Fspec => Err(KunaError::lowlevel(
-                "kuna rust port: FspecSpace::printRaw requires FuncCallSpecs (fspec wave)",
-            )),
+            // FspecSpace::printRaw: the offset is a registered call-spec
+            // handle; the call-spec layer has already resolved the display
+            // name (the C++ name/`func_`/`sub_` branch, decided where the
+            // `Architecture` is visible).
+            AddrSpaceKind::Fspec => match fspec_lookup(offset) {
+                Some(info) => {
+                    s.push_str(&info.printed_name);
+                    Ok(())
+                }
+                None => Err(KunaError::lowlevel(
+                    "FspecSpace::printRaw: unregistered fspec handle",
+                )),
+            },
             AddrSpaceKind::Iop => Err(KunaError::lowlevel(
                 "kuna rust port: IopSpace::printRaw requires PcodeOp (op wave)",
             )),
@@ -2198,6 +2241,61 @@ impl FspecSpace {
         }
         space
     }
+}
+
+// -----------------------------------------------------------------------------
+// FspecSpace call-spec registry (kuna rust port)
+//
+// In C++ the offset of an \e fspec address *is* the raw `FuncCallSpecs *`, so
+// `FspecSpace::printRaw`/`encodeAttributes` simply cast the offset back to a
+// `FuncCallSpecs *` and read its name / entry address.  kuna-base sits below
+// kuna-decomp (where `FuncCallSpecs` lives), so it cannot hold that pointer.
+// Instead the call-spec layer registers the small slice of state these two
+// arms read ([`FspecCallInfo`]) under an integer handle, and the handle is the
+// offset of the \e fspec address (`Funcdata::newVarnodeCallSpecs` takes the
+// same handle).  This is the faithful equivalent of the pointer cast: the arms
+// recover exactly the fields `FspecSpace::printRaw`/`encodeAttributes` read.
+// -----------------------------------------------------------------------------
+
+/// The slice of `FuncCallSpecs` state that `FspecSpace::printRaw` /
+/// `encodeAttributes` read (C++ `fc->getName()` and `fc->getEntryAddress()`).
+#[derive(Clone, Debug)]
+pub struct FspecCallInfo {
+    /// The display name to print (already resolved by the call-spec layer,
+    /// which owns the naming policy — C++ `printRaw`'s name/`func_`/`sub_`
+    /// branch is decided where the `Architecture` is visible).
+    pub printed_name: String,
+    /// The callee entry address (C++ `fc->getEntryAddress()`); invalid (no
+    /// space) selects the `writeString(ATTRIB_SPACE,"fspec")` branch.
+    pub entry: Address,
+}
+
+thread_local! {
+    /// Handle -> call-spec info side table.  Process(thread)-local because the
+    /// C++ offset is a process pointer; the call-spec layer owns the lifetime.
+    static FSPEC_REGISTRY: RefCell<BTreeMap<u64, FspecCallInfo>> =
+        const { RefCell::new(BTreeMap::new()) };
+}
+
+/// Register the call-spec state for an \e fspec handle (the offset of the
+/// \e fspec address).  Called by the call-spec layer when it materializes a
+/// `FuncCallSpecs` annotation Varnode.
+pub fn fspec_register(handle: u64, info: FspecCallInfo) {
+    FSPEC_REGISTRY.with(|r| {
+        r.borrow_mut().insert(handle, info);
+    });
+}
+
+/// Drop a registered \e fspec handle.
+pub fn fspec_unregister(handle: u64) {
+    FSPEC_REGISTRY.with(|r| {
+        r.borrow_mut().remove(&handle);
+    });
+}
+
+/// Look up the call-spec info for an \e fspec handle, if registered.
+pub fn fspec_lookup(handle: u64) -> Option<FspecCallInfo> {
+    FSPEC_REGISTRY.with(|r| r.borrow().get(&handle).cloned())
 }
 
 /// \brief Space for storing internal PcodeOp pointers as addresses (declared

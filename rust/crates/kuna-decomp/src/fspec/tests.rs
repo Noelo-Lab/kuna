@@ -1406,3 +1406,549 @@ fn func_proto_seam_methods_error() {
     let mut model = ProtoModel::new(&mgr);
     assert!(model.decode().is_err());
 }
+
+// =========================================================================
+// fspec-3: FuncCallSpecs
+// =========================================================================
+
+use crate::funcdata::Funcdata;
+use crate::kuna_restartlog::RestartLog;
+use crate::op::pcodeop_flags;
+use crate::seams::{Architecture, OpId, TypeOp, VarnodeId};
+use crate::varnode::DefOpInfo;
+
+/// A manager carrying const / unique / ram (code) / stack (spacebase) spaces,
+/// like the real architecture wiring the call-site logic walks.
+fn fcs_manager() -> AddrSpaceManager {
+    use kuna_base::space::{ConstantSpace, UniqueSpace};
+    let mut m = AddrSpaceManager::new();
+    m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+    m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+    m.insert_space(Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "ram",
+        false,
+        8,
+        1,
+        2,
+        kuna_base::space::addrspace_flags::hasphysical,
+        1,
+        1,
+    )))
+    .unwrap();
+    // A spacebase (stack) space at index 3.
+    m.insert_space(Rc::new(AddrSpace::new(
+        spacetype::IPTR_SPACEBASE,
+        "stack",
+        false,
+        8,
+        1,
+        3,
+        0,
+        1,
+        1,
+    )))
+    .unwrap();
+    m.set_default_code_space(2).unwrap();
+    m
+}
+
+fn fcs_fd() -> Funcdata {
+    let glb = Rc::new(Architecture::new(fcs_manager()));
+    let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+    let entry = Address::new(ram, 0x1000);
+    Funcdata::new("caller", "caller", glb, entry, 0x10000000, 0x40).unwrap()
+}
+
+fn fcs_ram(fd: &Funcdata) -> Rc<AddrSpace> {
+    Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap())
+}
+fn fcs_stack(fd: &Funcdata) -> Rc<AddrSpace> {
+    Rc::clone(fd.get_arch().manage().get_space_by_name("stack").unwrap())
+}
+fn fcs_const(fd: &Funcdata) -> Rc<AddrSpace> {
+    Rc::clone(fd.get_arch().manage().get_space(0).unwrap())
+}
+
+fn fcs_new_op(fd: &mut Funcdata, inputs: int4, off: u64, opc: OpCode) -> OpId {
+    let ram = fcs_ram(fd);
+    let op = fd.new_op(inputs, Address::new(ram, off));
+    let flags = if opc == OpCode::CPUI_CALL || opc == OpCode::CPUI_CALLIND {
+        pcodeop_flags::call
+    } else {
+        0
+    };
+    fd.obank_mut().change_opcode(op, TypeOp::new(opc, flags, format!("{opc:?}")));
+    op
+}
+
+/// A varnode in `space` at `off`/`size` defined by `op` (sets `written`).
+fn fcs_out(fd: &mut Funcdata, op: OpId, space: Rc<AddrSpace>, off: u64, size: int4) -> VarnodeId {
+    let seq = fd.obank().get(op).unwrap().get_seq_num().clone();
+    let def = DefOpInfo { id: op, seqnum: seq };
+    let vn = {
+        let mut noop = |_b: &mut crate::varnode::VarnodeBank,
+                        _o: VarnodeId,
+                        _n: VarnodeId|
+         -> KunaResult<()> { panic!("collision") };
+        fd.vbank_mut()
+            .create_def(size, Address::new(space, off), Rc::new(Datatype::new(size, type_metatype::TYPE_UNKNOWN)), def, &mut noop)
+            .unwrap()
+    };
+    fd.obank_mut().get_mut(op).unwrap().set_output(Some(vn));
+    vn
+}
+
+fn fcs_const_vn(fd: &mut Funcdata, val: u64, size: int4) -> VarnodeId {
+    let c = fcs_const(fd);
+    fd.vbank_mut().create(size, Address::new(c, val), Rc::new(Datatype::new(size, type_metatype::TYPE_UNKNOWN)))
+}
+
+/// A `FuncProto` with a standard model and an internal (void-output) store —
+/// the post-construction state a real `FuncCallSpecs` has before parameter
+/// recovery (model from the ProtoModel registry, internal store).
+fn proto_with_std_model(mgr: &AddrSpaceManager) -> FuncProto {
+    let mut model = ProtoModel::new(mgr);
+    model.build_param_list("standard").unwrap();
+    let voidt = Rc::new(Datatype::new(1, type_metatype::TYPE_VOID));
+    let mut fp = FuncProto::new();
+    fp.set_internal(Rc::new(model), voidt);
+    fp
+}
+
+/// A `FuncCallSpecs` on `call` with a standard model + internal store (FuncProto
+/// `copy` carries both the model and a `clone_box` of the store).
+fn fcs_with_std_model(mgr: &AddrSpaceManager, call: OpId) -> FuncCallSpecs {
+    let mut fc = FuncCallSpecs::new(call, Address::default());
+    let fp = proto_with_std_model(mgr);
+    fc.proto_mut().copy(&fp);
+    fc
+}
+
+#[test]
+fn func_call_specs_constructor_defaults() {
+    let mut fd = fcs_fd();
+    let ram = fcs_ram(&fd);
+    let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+    let entry = Address::new(ram, 0x2000);
+    let fc = FuncCallSpecs::new(call, entry.clone());
+
+    assert_eq!(fc.get_op(), call);
+    assert_eq!(*fc.get_entry_address(), entry);
+    assert_eq!(fc.get_effective_extra_pop(), EXTRAPOP_UNKNOWN);
+    assert_eq!(fc.get_spacebase_offset(), OFFSET_UNKNOWN);
+    assert_eq!(fc.get_stack_placeholder_slot(), -1);
+    assert_eq!(fc.get_paramshift(), 0);
+    assert!(!fc.is_input_active());
+    assert!(!fc.is_output_active());
+    assert!(!fc.is_bad_jump_table());
+    assert!(!fc.is_stack_output_lock());
+    assert!(!fc.has_funcdata());
+    assert!(fc.get_name().is_empty());
+}
+
+#[test]
+fn func_call_specs_state_toggles_and_set_funcdata() {
+    let mgr = fcs_manager();
+    let mut fd = fcs_fd();
+    let ram = fcs_ram(&fd);
+    let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+    let mut fc = fcs_with_std_model(&mgr, call);
+
+    fc.set_paramshift(2);
+    assert_eq!(fc.get_paramshift(), 2);
+    fc.set_effective_extra_pop(8);
+    assert_eq!(fc.get_effective_extra_pop(), 8);
+    fc.set_bad_jump_table(true);
+    assert!(fc.is_bad_jump_table());
+    fc.set_stack_output_lock(true);
+    assert!(fc.is_stack_output_lock());
+
+    fc.init_active_output();
+    assert!(fc.is_output_active());
+    fc.clear_active_output();
+    assert!(!fc.is_output_active());
+
+    // init_active_input: standard model max input delay 0 => maxpass 0.
+    fc.init_active_input();
+    assert!(fc.is_input_active());
+    assert_eq!(fc.get_active_input().get_max_pass(), 0);
+    fc.clear_active_input();
+    assert!(!fc.is_input_active());
+
+    // set_funcdata records presence + name; double set errs.
+    let entry = Address::new(ram, 0x2000);
+    assert!(fc.set_funcdata(entry.clone(), "callee").is_ok());
+    assert!(fc.has_funcdata());
+    assert_eq!(fc.get_name(), "callee");
+    assert_eq!(*fc.get_entry_address(), entry);
+    assert!(fc.set_funcdata(entry, "callee2").is_err());
+}
+
+#[test]
+fn func_call_specs_input_bytes_consumed_monotone() {
+    let mut fd = fcs_fd();
+    let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+    let mut fc = FuncCallSpecs::new(call, Address::default());
+
+    // Unset slot reads 0.
+    assert_eq!(fc.get_input_bytes_consumed(3), 0);
+    // First non-zero set takes (grows the vector with zeros).
+    assert!(fc.set_input_bytes_consumed(2, 4));
+    assert_eq!(fc.get_input_bytes_consumed(2), 4);
+    assert_eq!(fc.get_input_bytes_consumed(0), 0);
+    // Smaller -> update.
+    assert!(fc.set_input_bytes_consumed(2, 2));
+    assert_eq!(fc.get_input_bytes_consumed(2), 2);
+    // Larger -> no change.
+    assert!(!fc.set_input_bytes_consumed(2, 6));
+    assert_eq!(fc.get_input_bytes_consumed(2), 2);
+}
+
+/// `get_trial_for_input_varnode` index math: subtract 1 (call address) plus 1
+/// more when past the stack placeholder.
+#[test]
+fn param_active_trial_for_input_varnode_index_math() {
+    let stk = stack_space();
+    let mut pa = ParamActive::new(true);
+    // Three trials.
+    pa.register_trial(&addr(&stk, 0x0), 4); // slot 1
+    pa.register_trial(&addr(&stk, 0x4), 4); // slot 2
+    pa.register_trial(&addr(&stk, 0x8), 4); // slot 3
+
+    // No placeholder: input slot s maps to trial[s-1].
+    assert_eq!(pa.get_trial_for_input_varnode(1).get_address().get_offset(), 0x0);
+    assert_eq!(pa.get_trial_for_input_varnode(2).get_address().get_offset(), 0x4);
+
+    // After establishing a placeholder (slot 4), input slots past it subtract 2.
+    pa.set_placeholder_slot(); // stackplaceholder = slotbase (4)
+    // slot 2 < placeholder(4): subtract 1 -> trial[1] (offset 0x4)
+    assert_eq!(pa.get_trial_for_input_varnode(2).get_address().get_offset(), 0x4);
+    // slot 5 >= placeholder(4): subtract 2 -> trial[3]... but only 3 trials;
+    // use slot 4 -> trial[2] (offset 0x8).
+    assert_eq!(pa.get_trial_for_input_varnode(4).get_address().get_offset(), 0x8);
+}
+
+#[test]
+fn func_call_specs_check_input_join_gates() {
+    let mgr = fcs_manager();
+    let mut fd = fcs_fd();
+    let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+    let mut fc = fcs_with_std_model(&mgr, call);
+    let stk = stack_space();
+
+    // Two adjacent 4-byte stack trials.
+    fc.get_active_input().register_trial(&addr(&stk, 0x0), 4);
+    fc.get_active_input().register_trial(&addr(&stk, 0x4), 4);
+
+    // While input recovery is active, never join.
+    fc.init_active_input();
+    assert!(!fc.check_input_join(1, true, 4, 4));
+    fc.clear_active_input();
+
+    // slot1 past the trial count => false.
+    assert!(!fc.check_input_join(5, true, 4, 4));
+
+    // Size mismatch on the high/low slot => false (returns at the size check
+    // before delegating to FuncProto::checkInputJoin).
+    assert!(!fc.check_input_join(1, true, 8, 4)); // hislot size 4 != vn1 8
+    assert!(!fc.check_input_join(1, false, 4, 8)); // hislot size 4 != vn2 8
+}
+
+#[test]
+fn func_call_specs_do_input_join_locked_errs() {
+    let mgr = fcs_manager();
+    let mut fd = fcs_fd();
+    let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+    let mut fc = fcs_with_std_model(&mgr, call);
+    // Lock the input prototype (0 params => VOIDINPUTLOCK).
+    fc.proto_mut().set_input_lock(true);
+    // A trivial RegisterLookup: the default-impl trait object is reached via
+    // the manager's installed lookup; here joins on a locked proto err before
+    // any join-address construction, so a dummy lookup is fine.
+    struct NoLookup;
+    impl kuna_base::space::RegisterLookup for NoLookup {
+        fn get_register(
+            &self,
+            _nm: &str,
+        ) -> KunaResult<kuna_base::space::VarnodeStorage> {
+            Err(kuna_base::error::KunaError::lowlevel("no register"))
+        }
+        fn get_register_name(&self, _base: &Rc<AddrSpace>, _off: u64, _size: int4) -> String {
+            String::new()
+        }
+        fn get_exact_register_name(&self, _base: &Rc<AddrSpace>, _off: u64, _size: int4) -> String {
+            String::new()
+        }
+    }
+    let res = fc.do_input_join(1, true, &mgr, &NoLookup);
+    assert!(res.is_err());
+}
+
+#[test]
+fn func_call_specs_late_restriction_no_model_copies() {
+    let mut fd = fcs_fd();
+    let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+    let mut fc = FuncCallSpecs::new(call, Address::default());
+    // No model on `fc`: lateRestriction copies the restricted proto wholesale.
+    assert!(!fc.proto().has_model());
+
+    let mut restricted = FuncProto::new();
+    restricted.set_extra_pop(12);
+
+    let mut newinput: Vec<Option<VarnodeId>> = Vec::new();
+    let mut newoutput: Vec<VarnodeId> = Vec::new();
+    let ok = fc.late_restriction(&fd, &restricted, &mut newinput, &mut newoutput).unwrap();
+    assert!(ok);
+    assert_eq!(fc.proto().get_extra_pop(), 12);
+}
+
+#[test]
+fn func_call_specs_late_restriction_incompatible_models_false() {
+    let mgr = fcs_manager();
+    let mut fd = fcs_fd();
+    let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+    let mut fc = FuncCallSpecs::new(call, Address::default());
+
+    // Give `fc` a model so hasModel() is true.
+    let mut model_a = ProtoModel::new(&mgr);
+    model_a.build_param_list("standard").unwrap();
+    fc.proto_mut().set_model(Some(Rc::new(model_a)));
+
+    // A restricted proto with a *different-named* model => isCompatible false.
+    let mut model_b = ProtoModel::new(&mgr);
+    model_b.build_param_list("register").unwrap();
+    let mut restricted = FuncProto::new();
+    restricted.set_model(Some(Rc::new(model_b)));
+
+    let mut ni: Vec<Option<VarnodeId>> = Vec::new();
+    let mut no: Vec<VarnodeId> = Vec::new();
+    let ok = fc.late_restriction(&fd, &restricted, &mut ni, &mut no).unwrap();
+    assert!(!ok);
+}
+
+#[test]
+fn func_call_specs_deindirect_restart_when_incompatible() {
+    let mgr = fcs_manager();
+    let mut fd = fcs_fd();
+    let ram = fcs_ram(&fd);
+    let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+    let mut fc = FuncCallSpecs::new(call, Address::default());
+
+    // Model on fc, different model on newproto => lateRestriction fails =>
+    // restart is recorded and restart-pending is set.
+    let mut m_a = ProtoModel::new(&mgr);
+    m_a.build_param_list("standard").unwrap();
+    fc.proto_mut().set_model(Some(Rc::new(m_a)));
+
+    let mut m_b = ProtoModel::new(&mgr);
+    m_b.build_param_list("register").unwrap();
+    let mut newproto = FuncProto::new();
+    newproto.set_model(Some(Rc::new(m_b)));
+
+    let mut log = RestartLog::new();
+    let new_entry = Address::new(ram, 0x2000);
+    fc.deindirect(&mut fd, new_entry.clone(), "callee", &newproto, false, false, &mut log)
+        .unwrap();
+
+    assert!(fd.has_restart_pending());
+    assert!(!log.is_empty_for(&fd));
+    let dump = log.render(&fd);
+    assert!(dump.contains("prototype discovered late at indirect call"), "dump={dump}");
+    // The de-indirect updated the entry/name even though it restarted.
+    assert_eq!(*fc.get_entry_address(), new_entry);
+    assert_eq!(fc.get_name(), "callee");
+}
+
+#[test]
+fn func_call_specs_deindirect_override_short_circuits() {
+    let mgr = fcs_manager();
+    let mut fd = fcs_fd();
+    let ram = fcs_ram(&fd);
+    let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+    let mut fc = FuncCallSpecs::new(call, Address::default());
+
+    let mut m_a = ProtoModel::new(&mgr);
+    m_a.build_param_list("standard").unwrap();
+    fc.proto_mut().set_model(Some(Rc::new(m_a)));
+    // Mark the call-site as overridden: deindirect must bail before any restart.
+    fc.proto_mut().set_override(true);
+
+    let mut m_b = ProtoModel::new(&mgr);
+    m_b.build_param_list("register").unwrap();
+    let mut newproto = FuncProto::new();
+    newproto.set_model(Some(Rc::new(m_b)));
+
+    let mut log = RestartLog::new();
+    let new_entry = Address::new(ram, 0x2000);
+    fc.deindirect(&mut fd, new_entry, "callee", &newproto, false, false, &mut log)
+        .unwrap();
+
+    assert!(!fd.has_restart_pending());
+    assert!(log.is_empty_for(&fd));
+}
+
+#[test]
+fn func_call_specs_force_set_restart_and_locks() {
+    let mgr = fcs_manager();
+    let mut fd = fcs_fd();
+    let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+    let mut fc = fcs_with_std_model(&mgr, call);
+
+    // Incompatible restrictive prototype (different model name) => lateRestriction
+    // fails => restart.
+    let mut m_b = ProtoModel::new(&mgr);
+    m_b.build_param_list("register").unwrap();
+    let voidt = Rc::new(Datatype::new(1, type_metatype::TYPE_VOID));
+    let mut fp = FuncProto::new();
+    fp.set_internal(Rc::new(m_b), voidt);
+    fp.set_input_errors(true);
+    fp.set_output_errors(true);
+
+    let mut log = RestartLog::new();
+    fc.force_set(&mut fd, &fp, &mut log).unwrap();
+
+    assert!(fd.has_restart_pending());
+    let dump = log.render(&fd);
+    assert!(dump.contains("prototype forced late at call site"), "dump={dump}");
+    // Regardless of restart, the input is locked (0 params => VOIDINPUTLOCK) and
+    // the error flags are transferred from fp.
+    assert!(fc.proto().is_input_locked());
+    assert!(fc.proto().has_input_errors());
+    assert!(fc.proto().has_output_errors());
+}
+
+/// Build a CALLIND with a stack-pointer placeholder input:
+///   refvn   = (stack, 0x10)   [the spacebase reference]
+///   phvn    = LOAD(refvn, _)   marked spacebase placeholder
+///   CALLIND(target, phvn@slot1)
+/// Returns (fd, fc, phvn).  `fc` carries a standard model + internal store.
+fn build_call_with_placeholder(mgr: &AddrSpaceManager) -> (Funcdata, FuncCallSpecs, VarnodeId) {
+    let mut fd = fcs_fd();
+    let stk = fcs_stack(&fd);
+
+    // The CALLIND op, 2 inputs (the target + the placeholder).
+    let call = fcs_new_op(&mut fd, 2, 0x1010, OpCode::CPUI_CALLIND);
+    let target = fcs_const_vn(&mut fd, 0x2000, 8);
+    fd.op_set_input(call, target, 0).unwrap();
+
+    // The LOAD op producing the placeholder.  Its input 0 is the spacebase
+    // reference varnode (a stack-space varnode whose offset is the spacebase
+    // relative value).
+    let load = fcs_new_op(&mut fd, 1, 0x1008, OpCode::CPUI_LOAD);
+    // refvn: a free varnode in the stack space at offset 0x10.
+    let refvn = fd.vbank_mut().create(
+        8,
+        Address::new(Rc::clone(&stk), 0x10),
+        Rc::new(Datatype::new(8, type_metatype::TYPE_UNKNOWN)),
+    );
+    fd.op_set_input(load, refvn, 0).unwrap();
+    // phvn: the LOAD output (written), placed in unique space, marked placeholder.
+    let uniq = Rc::clone(fd.get_arch().manage().get_space(1).unwrap());
+    let phvn = fcs_out(&mut fd, load, uniq, 0x0, 8);
+    fd.vbank_mut().get_mut(phvn).unwrap().set_spacebase_placeholder();
+
+    // Wire phvn as the CALLIND placeholder input at slot 1.
+    fd.op_set_input(call, phvn, 1).unwrap();
+
+    let mut fc = fcs_with_std_model(mgr, call);
+    fc.set_paramshift(0);
+    (fd, fc, phvn)
+}
+
+#[test]
+fn func_call_specs_get_spacebase_relative_no_slot_is_none() {
+    let mgr = fcs_manager();
+    let (fd, fc, _phvn) = build_call_with_placeholder(&mgr);
+    // No placeholder slot recorded (stack_placeholder_slot == -1) => None even
+    // though the CALLIND has a placeholder input wired.
+    assert_eq!(fc.get_stack_placeholder_slot(), -1);
+    assert!(fc.get_spacebase_relative(&fd).is_none());
+}
+
+#[test]
+fn func_call_specs_resolve_and_abort_spacebase_relative() {
+    let mgr = fcs_manager();
+    let (mut fd, mut fc, phvn) = build_call_with_placeholder(&mgr);
+
+    // stack_placeholder_slot < 0 and the prototype is not input-locked: resolve
+    // reads the offset off the placeholder's def input, then throws "Unresolved
+    // stack placeholder" (the C++ end-of-function throw).
+    let r = fc.resolve_spacebase_relative(&mut fd, phvn);
+    assert!(r.is_err());
+    // The offset was read off refvn (stack, 0x10) before the error.
+    assert_eq!(fc.get_spacebase_offset(), 0x10);
+
+    // abort with no placeholder slot is a no-op (slot stays -1).
+    fc.abort_spacebase_relative(&mut fd);
+    assert_eq!(fc.get_stack_placeholder_slot(), -1);
+}
+
+#[test]
+fn func_call_specs_fspec_registry_roundtrip() {
+    let mut fd = fcs_fd();
+    let ram = fcs_ram(&fd);
+    let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+
+    // Named call spec: printed name is the name verbatim, regardless of angr.
+    let mut fc = FuncCallSpecs::new(call, Address::new(Rc::clone(&ram), 0x2000));
+    fc.set_funcdata(Address::new(Rc::clone(&ram), 0x2000), "my_func").unwrap();
+    assert_eq!(fc.fspec_printed_name(false), "my_func");
+    assert_eq!(fc.fspec_printed_name(true), "my_func");
+
+    // Unnamed: angr => sub_<addr>, non-angr => func_<addr>.
+    let fc2 = FuncCallSpecs::new(call, Address::new(Rc::clone(&ram), 0x3000));
+    assert!(fc2.fspec_printed_name(true).starts_with("sub_"));
+    assert!(fc2.fspec_printed_name(false).starts_with("func_"));
+
+    // Register and look up via the kuna-base FspecSpace registry.
+    let handle: u64 = 0xCAFE;
+    fc.register_in_fspec_space(handle, false);
+    let info = kuna_base::space::fspec_lookup(handle).unwrap();
+    assert_eq!(info.printed_name, "my_func");
+    assert_eq!(info.entry.get_offset(), 0x2000);
+
+    // The FspecSpace itself prints the registered name through printRaw.
+    let fspec = kuna_base::space::FspecSpace::new(7);
+    let mut s = String::new();
+    fspec.print_raw(&mut s, handle).unwrap();
+    assert_eq!(s, "my_func");
+
+    kuna_base::space::fspec_unregister(handle);
+    assert!(kuna_base::space::fspec_lookup(handle).is_none());
+    // After unregister, printRaw errs on the unknown handle.
+    let mut s2 = String::new();
+    assert!(fspec.print_raw(&mut s2, handle).is_err());
+}
+
+#[test]
+fn func_call_specs_transfer_locked_output_void_ok() {
+    // transfer_locked_output is private; exercise it through late_restriction
+    // with an output-locked, *void*-output restricted proto.  A void output
+    // returns Ok(true) (no Varnode transfer needed), so lateRestriction
+    // succeeds.  Compatibility is by ProtoModel identity, so both protos share
+    // the same model Rc.
+    let mgr = fcs_manager();
+    let mut fd = fcs_fd();
+    let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+    let mut fc = FuncCallSpecs::new(call, Address::default());
+
+    let mut model = ProtoModel::new(&mgr);
+    model.build_param_list("standard").unwrap();
+    let model = Rc::new(model);
+    let voidt = Rc::new(Datatype::new(1, type_metatype::TYPE_VOID));
+
+    // fc and restricted share the same model => isCompatible true.
+    fc.proto_mut().set_internal(Rc::clone(&model), Rc::clone(&voidt));
+
+    let mut restricted = FuncProto::new();
+    restricted.set_internal(Rc::clone(&model), Rc::clone(&voidt));
+    restricted.set_output_lock(true); // output is void by default => transfer Ok(true)
+
+    let mut ni: Vec<Option<VarnodeId>> = Vec::new();
+    let mut no: Vec<VarnodeId> = Vec::new();
+    // Not input-locked, output-locked-void => lateRestriction succeeds.
+    let ok = fc.late_restriction(&fd, &restricted, &mut ni, &mut no).unwrap();
+    assert!(ok);
+    assert!(no.is_empty());
+}
