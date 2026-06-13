@@ -87,6 +87,8 @@
 //! Each seam is reported in this item's `losses` so the owning wave can finish
 //! the wiring by replaying the commented body against the real accessors.
 
+use std::rc::Rc;
+
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
@@ -944,7 +946,7 @@ impl Action for ActionOutputPrototype {
         }
         Some(Box::new(ActionOutputPrototype { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:4999 — ActionOutputPrototype::apply
         //   outparam = data.getFuncProto().getOutput();
         //   if (!outparam->isTypeLocked() || outparam->isSizeTypeLocked()):
@@ -956,12 +958,58 @@ impl Action for ActionOutputPrototype {
         //       else                 funcp.updateOutputNoTypes(vnlist, getArch()->types);
         //   return 0;
         //
-        // SEAM(W7/W8-funcdata): reads `Funcdata::funcp` (the empty
-        // `seams::FuncProto` placeholder) for the locked-output query and the
-        // update.  `Funcdata::getFirstReturnOp` IS realized
-        // (funcdata_op.rs:1214), but the surrounding output-prototype update is
-        // gated entirely on the placeholder proto, so no change can be applied
-        // (count stays 0).
+        // The real `fspec::FuncProto` is now on `Funcdata` (proto-recovery wave).
+        // Where the W4 ScopeLocal would attach a `ProtoStoreSymbol`, the merged
+        // tree attaches a stand-alone `ProtoStoreInternal` (the C++ no-scope
+        // store) so the recovered output storage/type can be set.  We transcribe
+        // the `updateOutputTypes` body for the single (high-on) return trial: the
+        // output addr+type come from the first return value's HighVariable type.
+        //
+        // The HighVariable type itself is the W8 `ActionInferTypes` surface; until
+        // that lands the return value's high type is the un-recovered base
+        // (size-correct, metatype UNKNOWN), so the OUTPUT STORAGE recovers exactly
+        // (the addr + size the merge needs for addrtied), but the TYPE NAME renders
+        // the W8 default — the single documented residual to full boolless parity.
+        // The `TypeFactory` (`glb->types`, `getTypeVoid`) is the W6 surface and
+        // the seams `Architecture` does not expose it; the formal void type is the
+        // size-0 `TYPE_VOID` base (its name renders "void", `dtype.rs:277`), which
+        // is the same interned datatype `getTypeVoid` returns.
+        let void_type = Rc::new(crate::dtype::Datatype::new(0, crate::dtype::type_metatype::TYPE_VOID));
+        data.get_func_proto_mut().attach_internal_store(void_type);
+        // C++ guard: proceed only if the output is not type-locked, or is merely
+        // size-type-locked.  The freshly-attached internal store seeds an unlocked
+        // void output, so this is satisfied (the locked-output arm is the W4
+        // explicit-prototype path, absent here).
+        {
+            let outparam = data.get_func_proto().get_output();
+            if outparam.is_type_locked() && !outparam.is_size_type_locked() {
+                return 0;
+            }
+        }
+        let retop = match data.get_first_return_op() {
+            Some(op) => op,
+            None => return 0,
+        };
+        // vnlist = retop inputs [1..]; the first is the trial output.
+        let trial0 = {
+            let o = data.obank().get(retop).expect("outputprototype: stale return op");
+            if o.num_input() < 2 {
+                None
+            } else {
+                o.get_in(1)
+            }
+        };
+        let trial0 = match trial0 {
+            Some(vn) => vn,
+            None => return 0, // empty trial list: leave output void
+        };
+        let out_addr = data.vbank().get(trial0).expect("outputprototype: stale trial").get_addr().clone();
+        // pieces.type = triallist[0]->getHigh()->getType()  (high-on path).
+        let out_type = data
+            .high_get_type(trial0)
+            .unwrap_or_else(|| Rc::new(crate::dtype::Datatype::new(1, crate::dtype::type_metatype::TYPE_UNKNOWN)));
+        let pieces = crate::fspec::ParameterPieces { addr: out_addr, type_: Some(out_type), flags: 0 };
+        data.get_func_proto_mut().set_output(&pieces);
         0
     }
 }

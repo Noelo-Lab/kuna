@@ -327,6 +327,13 @@ pub struct HighVariable {
     symbol: Option<crate::database::SymbolId>,
     /// -1 = perfect symbol match, >= 0 = offset (C++ `symboloffset`).
     symbol_offset: int4,
+    /// (kuna) The name bound to this HighVariable by `ActionNameVars`, when the
+    /// W4 ScopeLocal/`Symbol` layer is absent.  In C++ the name lives on the
+    /// `Symbol` in the local scope (`Scope::buildDefaultName` -> `renameSymbol`);
+    /// the merged tree has no ScopeLocal, so `ActionNameVars` binds the angr
+    /// default name (`vN`) directly here and the printer reads it as the
+    /// `getSymbol()->getDisplayName()` stand-in.  `None` == unnamed.
+    kuna_name: Option<String>,
 }
 
 impl HighVariable {
@@ -351,7 +358,19 @@ impl HighVariable {
             piece: None,
             symbol: None,
             symbol_offset: -1,
+            kuna_name: None,
         }
+    }
+
+    /// (kuna) Get the name bound by `ActionNameVars` (the ScopeLocal/`Symbol`
+    /// name stand-in), or `None` if unnamed.
+    pub fn kuna_name(&self) -> Option<&str> {
+        self.kuna_name.as_deref()
+    }
+
+    /// (kuna) Bind the angr default name to this HighVariable.
+    pub fn set_kuna_name(&mut self, name: impl Into<String>) {
+        self.kuna_name = Some(name.into());
     }
 
     // --- Dirty-flag setters (variable.hh:165-169, inline) -----------------

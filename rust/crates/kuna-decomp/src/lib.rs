@@ -25,6 +25,7 @@ pub mod op;
 pub mod block;
 pub mod funcdata;
 pub mod funcdata_block;
+pub mod funcdata_merge;
 pub mod funcdata_op;
 pub mod funcdata_varnode;
 pub mod flow;

@@ -441,6 +441,48 @@ fn w10_boolless_positive_datatest_assertion_now_real() {
     );
 }
 
+/// THE MERGE/NAMING/OUTPUT-TYPE WIN: boolless `print C` now byte-matches the C++
+/// B5 oracle, modulo the single documented residual `undefined1` vs `uint1` (the
+/// recovered output/local *type name* — the W8 `ActionInferTypes` surface; the
+/// output STORAGE, the merged `v1` local, the `v1 = dat_52` trim COPY, the decl,
+/// the `// acc` storage comment, and the return statement all recover exactly).
+///
+/// The assertion substitutes the W8 type name (`undefined1` -> `uint1`) and then
+/// requires an EXACT byte match.  When `ActionInferTypes` lands, the substitution
+/// becomes a no-op and boolless is the first fully-byte-parity function.
+#[test]
+fn w10_boolless_full_byte_parity_modulo_type_inference() {
+    let (mut xarch, fd) = match run_full("boolless", 0) {
+        Ok(v) => v,
+        Err(e) if e.contains("not built") || e.contains("no .sla") => {
+            eprintln!("SKIP: {e}");
+            return;
+        }
+        Err(e) => panic!("boolless run_full: {e}"),
+    };
+    let arch = xarch.sleigh_mut().base_mut().unwrap();
+    let rust = print_c(arch, &fd);
+
+    // The merge/naming/output-storage layer is real: a named `v1` local, the
+    // `v1 = dat_52;` trim COPY, the `undefined1 v1; // acc` decl, and `return v1`.
+    assert!(rust.contains("v1 = dat_52;"), "trim-COPY initial assignment missing:\n{rust}");
+    assert!(rust.contains("v1; // acc"), "decl + storage comment missing:\n{rust}");
+    assert!(rust.contains("    v1 = 1;"), "if-body assignment must use the merged name:\n{rust}");
+    assert!(rust.contains("return v1;"), "return must use the merged name:\n{rust}");
+    // i0x52 (the global) must STILL render as `dat_52` (NOT absorbed into v1).
+    assert!(rust.contains("dat_52"), "the global must stay dat_52 (no over-merge):\n{rust}");
+    assert!(!rust.contains("dat_52 = "), "dat_52 must not be assigned (it is read-only here):\n{rust}");
+
+    // Full byte-parity modulo the W8 type-name residual.
+    let normalized = rust.replace("undefined1", "uint1");
+    assert_eq!(
+        normalized, CPP_B5_ORACLE,
+        "boolless print C must byte-match the C++ B5 oracle after the documented \
+         W8 type-name substitution (undefined1 -> uint1).\n--- rust (raw) ---\n{rust}\n\
+         --- normalized ---\n{normalized}\n--- oracle ---\n{CPP_B5_ORACLE}"
+    );
+}
+
 /// The emitted body is a real, structurally-complete function (begin/return/
 /// brace-matched), with the assignment INSIDE the if-body — i.e. the structured
 /// hierarchy is real, not a flat dump.  Guards against the if-collapse silently
@@ -470,4 +512,177 @@ fn w10_boolless_if_body_contains_assignment() {
     );
     // And a return after the if (real function tail).
     assert!(rust.contains("return"), "function must emit a return, got:\n{rust}");
+}
+
+
+
+
+
+// ===========================================================================
+// VERIFIER adversarial tests (item: w10-unseam-merge-types — Round 1).
+//
+// These target the spots the hunt list flagged as most fragile for the
+// merge/naming/output-type un-seam: (1) the trim COPY must be a REAL artifact of
+// the Merge engine over live IR (anti-special-casing for `v1 = dat_52`), (2) the
+// merged HighVariable must actually carry >1 instance (a real merge, not a
+// rename), and the `v1` name + `// acc` comment must derive from the addr-tied
+// storage member, NOT the trim-COPY unique, and (3) the angr `vN` naming must be
+// CONDITIONAL on the merge/addr-tied chain — a function whose pipeline produced
+// no nameable local must NOT get a `vN` name or an `undefined<N>` recovered
+// return type (proving the naming is engine logic, not a boolless hardcode).
+// ===========================================================================
+
+/// (1) ANTI-SPECIAL-CASING: the `v1 = dat_52` trim COPY is a genuine Merge-engine
+/// artifact — a `COPY(i0x52)` whose output is a FRESH internal/unique varnode
+/// (not the global, not ACC) that feeds the `ACC = MULTIEQUAL(...)`.  A printer
+/// hardcoded to emit `v1 = dat_52` would leave the IR without this op.  This is
+/// the structural witness that `ActionMergeRequired` ran `mergeAddrTied ->
+/// groupPartials -> mergeMarker` over the real IR and `trimOpInput`/
+/// `allocateCopyTrim` inserted the trim.
+#[test]
+fn w10_merge_trim_copy_is_real_ir_artifact() {
+    let (mut xarch, fd) = match run_full("boolless", 0) {
+        Ok(v) => v,
+        Err(e) if e.contains("not built") || e.contains("no .sla") => {
+            eprintln!("SKIP: {e}");
+            return;
+        }
+        Err(e) => panic!("boolless run_full: {e}"),
+    };
+    let arch = xarch.sleigh_mut().base_mut().unwrap();
+
+    // Find a COPY whose output feeds a MULTIEQUAL (the merge trim that breaks the
+    // global<->ACC cover intersection).  Its output must be a fresh unique
+    // (IPTR_INTERNAL space) — created by the merge, not present pre-merge.
+    let mut trim_copy_out: Option<kuna_decomp::seams::VarnodeId> = None;
+    let mut multiequal_inputs: Vec<kuna_decomp::seams::VarnodeId> = Vec::new();
+    for op in fd.obank().iter_alive() {
+        let o = fd.obank().get(op).unwrap();
+        match o.code() {
+            kuna_num::opcodes::OpCode::CPUI_MULTIEQUAL => {
+                for i in 0..o.num_input() {
+                    if let Some(v) = o.get_in(i) {
+                        multiequal_inputs.push(v);
+                    }
+                }
+            }
+            kuna_num::opcodes::OpCode::CPUI_COPY => {
+                // candidate trim if its single output is an internal unique
+                if let Some(out) = o.get_out() {
+                    let internal = fd
+                        .vbank()
+                        .get(out)
+                        .and_then(|v| v.get_addr().get_space())
+                        .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_INTERNAL)
+                        .unwrap_or(false);
+                    if internal {
+                        trim_copy_out = Some(out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let trim_out = trim_copy_out
+        .expect("merge must have inserted a COPY into a fresh unique (the trim COPY)");
+    assert!(
+        multiequal_inputs.contains(&trim_out),
+        "the trim COPY's unique output must feed the ACC MULTIEQUAL (the real merge join)"
+    );
+
+    // And the printer renders exactly that op as `v1 = dat_52;` — the unique is
+    // ACC's merged high (named v1), its COPY input is the global (dat_52).
+    let rust = print_c(arch, &fd);
+    assert!(rust.contains("v1 = dat_52;"), "trim COPY must render as `v1 = dat_52;`, got:\n{rust}");
+}
+
+/// (2) REAL MERGE + STORAGE-REPRESENTATIVE: ACC's HighVariable must carry MORE
+/// THAN ONE instance (a genuine merge of the trim-unique + the ACC members),
+/// and the bound `v1` name plus the `// acc` storage comment must come from the
+/// addr-tied ACC member, not the trim unique.  Guards against (a) the "merge"
+/// being a no-op rename of a single varnode and (b) the storage comment being
+/// read off the wrong (unique) representative.
+#[test]
+fn w10_merged_high_has_multiple_instances_and_acc_storage() {
+    let (mut xarch, fd) = match run_full("boolless", 0) {
+        Ok(v) => v,
+        Err(e) if e.contains("not built") || e.contains("no .sla") => {
+            eprintln!("SKIP: {e}");
+            return;
+        }
+        Err(e) => panic!("boolless run_full: {e}"),
+    };
+    let arch = xarch.sleigh_mut().base_mut().unwrap();
+
+    // Locate the high named "v1".
+    let mut v1_high: Option<kuna_decomp::seams::HighVariableId> = None;
+    for vn in fd.vbank().iter_loc() {
+        if let Some(h) = fd.vbank().get(vn).and_then(|v| v.get_high()) {
+            if fd.high_bank().get(h).and_then(|hh| hh.kuna_name()) == Some("v1") {
+                v1_high = Some(h);
+                break;
+            }
+        }
+    }
+    let h = v1_high.expect("a high named v1 must exist after ActionNameVars");
+    let n = fd.high_bank().get(h).unwrap().num_instances();
+    assert!(n > 1, "the merged v1 high must hold >1 instance (real merge), got {n}");
+
+    // At least one instance is the addr-tied ACC register (an INTERNAL unique is
+    // never addr-tied); the storage comment derives from it.
+    let mut has_addr_tied = false;
+    let mut has_unique = false;
+    for i in 0..n {
+        let vn = fd.high_bank().get(h).unwrap().get_instance(i);
+        let v = fd.vbank().get(vn).unwrap();
+        if v.is_addr_tied() {
+            has_addr_tied = true;
+        }
+        if v.get_addr().get_space().map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_INTERNAL).unwrap_or(false) {
+            has_unique = true;
+        }
+    }
+    assert!(has_addr_tied, "v1 high must contain the addr-tied ACC storage member");
+    assert!(has_unique, "v1 high must contain the merged trim-COPY unique member");
+
+    // The decl + storage comment render from the ACC register (lowercased) — not
+    // from the unique (which has no register name).
+    let rust = print_c(arch, &fd);
+    assert!(rust.contains("v1; // acc"), "storage comment must be the ACC reg name lowercased, got:\n{rust}");
+}
+
+/// (3) NAMING IS CONDITIONAL (anti-hardcode): a different function whose pipeline
+/// produces no nameable addr-tied local must NOT get a `vN` name nor an
+/// `undefined<N>` recovered return type — it stays the un-recovered `void` shell
+/// with raw register tokens.  If the engine special-cased boolless's strings, an
+/// unrelated function would leak `v1`/`undefined1`; it must not.
+#[test]
+fn w10_naming_conditional_other_function_gets_no_vn_name() {
+    // condconst is x86-16; in this slice its analysis does not recover a nameable
+    // addr-tied local, so naming/output-type must NOT fire (no `vN`, void return).
+    let (mut xarch, fd) = match run_full("condconst", 0) {
+        Ok(v) => v,
+        Err(e) if e.contains("not built") || e.contains("no .sla") => {
+            eprintln!("SKIP: {e}");
+            return;
+        }
+        Err(e) => panic!("condconst run_full: {e}"),
+    };
+    let arch = xarch.sleigh_mut().base_mut().unwrap();
+    let rust = print_c(arch, &fd);
+
+    // No HighVariable should carry a kuna name here (naming is gated on the
+    // addr-tied/merge chain that this function's slice does not reach).
+    let mut named = 0usize;
+    for vn in fd.vbank().iter_loc() {
+        if let Some(h) = fd.vbank().get(vn).and_then(|v| v.get_high()) {
+            if fd.high_bank().get(h).and_then(|hh| hh.kuna_name()).is_some() {
+                named += 1;
+            }
+        }
+    }
+    assert_eq!(named, 0, "no nameable local in this slice -> no `vN` names, got {named}; print:\n{rust}");
+    // And critically: no boolless-specific string leaked across functions.
+    assert!(!rust.contains("dat_52"), "boolless's `dat_52` must not appear in condconst:\n{rust}");
+    assert!(!rust.contains("// acc"), "boolless's `// acc` must not appear in condconst:\n{rust}");
 }

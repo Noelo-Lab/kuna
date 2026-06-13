@@ -155,6 +155,50 @@ impl Action for ActionAssignHigh {
 // ActionMergeRequired (coreaction.hh:363)
 // =============================================================================
 
+/// (kuna) Mark the recovered output-register storage `mapped | addrtied` — the
+/// W4 `ScopeLocal::coalesceSymbols`/`syncVarnodesWithSymbol` (`inScope`) effect
+/// that the merged tree's absent ScopeLocal does not perform.  Without it the
+/// return register is un-tied and `Merge::mergeTestRequired` lets an un-tied
+/// input merge into it (no trim COPY).  Only the recovered output storage is
+/// touched (when a proto store + output param are present), keeping the change
+/// narrow and faithful to `inScope`'s output-register arm.
+fn mark_output_storage_addr_tied(data: &mut Funcdata) {
+    // The return-value storage is the first return op's value input (`getIn(1)`):
+    // that storage location is in (implicit) local scope, so C++'s
+    // ScopeLocal/`inScope` would mark it `mapped | addrtied`.  Reading it from the
+    // RETURN op (rather than the proto store) makes the marking available *before*
+    // `ActionOutputPrototype` attaches the store (the C++ ScopeLocal addrtied is
+    // likewise established well before output recovery).
+    let retop = match data.get_first_return_op() {
+        Some(op) => op,
+        None => return,
+    };
+    let trial0 = {
+        let o = data.obank().get(retop).expect("mark_output: stale return op");
+        if o.num_input() < 2 {
+            None
+        } else {
+            o.get_in(1)
+        }
+    };
+    let (addr, size) = match trial0.and_then(|vn| data.vbank().get(vn)) {
+        Some(v) => (v.get_addr().clone(), v.get_size()),
+        None => return,
+    };
+    if addr.is_invalid() || size <= 0 || addr.get_space().is_none() {
+        return;
+    }
+    // Every Varnode of the output size at the output address is the return-value
+    // storage in (implicit) local scope -> addrtied.
+    let targets: Vec<crate::seams::VarnodeId> =
+        data.vbank().iter_loc_size_addr(size, &addr).collect();
+    for vn in targets {
+        if let Some(v) = data.vbank_mut().get_mut(vn) {
+            v.mark_mapped_addr_tied();
+        }
+    }
+}
+
 /// Make *required* Varnode merges as dictated by `CPUI_MULTIEQUAL`,
 /// `CPUI_INDIRECT`, and the `addrtied` property (C++ `ActionMergeRequired`,
 /// `coreaction.hh:363`).
@@ -184,18 +228,45 @@ impl Action for ActionMergeRequired {
         }
         Some(Box::new(ActionMergeRequired { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.hh:370 — ActionMergeRequired::apply
         //   data.getMerge().mergeAddrTied();
         //   data.getMerge().groupPartials();
         //   data.getMerge().mergeMarker();
         //   return 0;
         //
-        // SEAM(W7/W8-funcdata): the merge engine `Merge` is fully ported in
-        // `merge.rs`, but `Funcdata` has no `getMerge()` accessor / `covermerge`
-        // field and does not implement `MergeContext`, so the three forced-merge
-        // passes (mergeAddrTied -> groupPartials -> mergeMarker, in this order)
-        // cannot be driven here.  No change applied (count stays 0).
+        // The `Merge` engine (merge.rs) drives over the now-wired
+        // `MergeContext for Funcdata` bridge (funcdata_merge.rs).  `Funcdata`
+        // implements `MergeContext`, so we run the three forced-merge passes in
+        // C++ order over the live IR: mergeAddrTied -> groupPartials ->
+        // mergeMarker.  This forces the MULTIEQUAL/INDIRECT/addrtied Varnodes into
+        // single HighVariables (inserting the trim COPYs the printer renders).
+        // (kuna W4-ScopeLocal stand-in) Mark the recovered output-register
+        // storage `mapped | addrtied`.  In C++ the local map's `coalesceSymbols`/
+        // `syncVarnodesWithSymbol` (funcdata_varnode.cc:997 `inScope`) marks any
+        // in-scope storage — including the function return register — addrtied.
+        // The W4 ScopeLocal is absent in the merged tree, so without this the
+        // return register (e.g. 8051 ACC) stays un-tied and `mergeTestRequired`
+        // would let an un-tied input (a global like `dat_52`) wrongly merge into
+        // it (no trim COPY fires).  Marking the output storage addrtied restores
+        // the `high_is_addr_tied(out) && !high_is_addr_tied(in)` trim trigger.
+        mark_output_storage_addr_tied(data);
+
+        // StackAffectingOps is the W7 stack-alias cross-call test source; the
+        // merged-tree default populates it empty (no stack-affecting ops), exactly
+        // as `MergeContext::populate_affecting_ops` for the boolless slice.
+        let opset = crate::cover::PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _| false));
+        let cache = crate::variable::HighIntersectTest::new(opset);
+        let mut merge = crate::merge::Merge::new(cache);
+        if merge.merge_addr_tied(data).is_err() {
+            return 0;
+        }
+        if merge.group_partials(data).is_err() {
+            return 0;
+        }
+        if merge.merge_marker(data).is_err() {
+            return 0;
+        }
         0
     }
 }
@@ -871,6 +942,62 @@ impl Action for ActionCopyMarker {
 // ActionNameVars (coreaction.hh:471, coreaction.cc:3076)
 // =============================================================================
 
+/// (kuna) Assign the angr default `vN` name to each nameable LOCAL HighVariable
+/// — the ScopeLocal/`Symbol`-free stand-in for `ActionNameVars` +
+/// `Scope::buildDefaultName`'s `kunaAngrNaming` branch (database.cc:1764-1785).
+///
+/// C++ `linkSymbols` walks `beginLoc(spc)..endLoc(spc)` for each non-constant
+/// space, hits each high once at its name representative, and adds those with an
+/// undefined-name symbol to `namerec`; `buildDefaultName` then routes a local
+/// (non-param, non-global-persist) to `v<base++>`.  We reproduce that walk and
+/// the local classification directly on the HighVariable.
+fn name_local_highs_angr(data: &mut Funcdata) {
+    use crate::seams::HighVariableId;
+    // Iterate Varnodes in C++ location order; hit each high once at its name
+    // representative (the highest-priority member), matching `linkSymbols`'
+    // `getNameRepresentative()` dedup.
+    let vlist: Vec<crate::seams::VarnodeId> = data.vbank().iter_loc().collect();
+    let mut base: int4 = 1;
+    let mut seen: std::collections::BTreeSet<HighVariableId> = std::collections::BTreeSet::new();
+    for vn in vlist {
+        let high = match data.vbank().get(vn).and_then(|v| v.get_high()) {
+            Some(h) => h,
+            None => continue,
+        };
+        if seen.contains(&high) {
+            continue;
+        }
+        // Hit each high only at its name representative (C++ `linkSymbols`:
+        // `if (vn != high->getNameRepresentative()) continue;`).
+        let name_rep = data.high_name_representative(high);
+        if name_rep != Some(vn) {
+            continue;
+        }
+        seen.insert(high);
+        // Already named? (idempotent re-run / inherited name.)
+        if data.high_bank().get(high).map(|h| h.kuna_name().is_some()).unwrap_or(false) {
+            continue;
+        }
+        // Local classification (buildDefaultName's `vN` arm): the representative
+        // is in local scope (addr-tied, mapped), not an input, not persist/global.
+        let v = match data.vbank().get(name_rep.unwrap()) {
+            Some(v) => v,
+            None => continue,
+        };
+        if v.is_free() || v.is_input() || v.is_persist() {
+            continue;
+        }
+        if !v.is_addr_tied() {
+            continue; // not a mapped local in scope
+        }
+        let name = format!("v{base}");
+        base += 1;
+        if let Some(h) = data.high_bank_mut().get_mut(high) {
+            h.set_kuna_name(name);
+        }
+    }
+}
+
 /// Choose a *name* for all high-level variables (C++ `ActionNameVars`,
 /// `coreaction.cc:3076`).
 pub struct ActionNameVars {
@@ -899,7 +1026,7 @@ impl Action for ActionNameVars {
         }
         Some(Box::new(ActionNameVars { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:3076 — ActionNameVars::apply
         //   vector<Varnode *> namerec;
         //   linkSymbols(data, namerec);
@@ -917,15 +1044,18 @@ impl Action for ActionNameVars {
         //   data.getScopeLocal()->assignDefaultNames(base);
         //   return 0;
         //
-        // The four helpers (`linkSymbols`/`lookForBadJumpTables`/
-        // `lookForFuncParamNames`/`makeRec`, coreaction.cc:2877-3075) drive the
-        // symbol/scope link surface (`getScopeLocal`/`buildDefaultName`/
-        // `renameSymbol`), the callspec list (`numCalls`/`getCallSpecs`/
-        // `isBadJumpTable`), and the HighVariable->Symbol attachment.
-        //
-        // SEAM(W7/W8-funcdata): none of `getScopeLocal`/`numCalls`/`getCallSpecs`/
-        // the HighVariable->Symbol surface are present in the merged tree.  Body
-        // transcribed; no change applied (count stays 0).
+        // The W4 ScopeLocal/`Symbol` surface (`getScopeLocal`/`buildDefaultName`/
+        // `renameSymbol`, the HighVariable->Symbol attachment, the callspec list)
+        // is absent in the merged tree.  We transcribe the OBSERVABLE result for
+        // the angr default-naming scheme (`Scope::buildDefaultName`'s
+        // `kunaAngrNaming` branch, database.cc:1764-1785): each nameable LOCAL
+        // HighVariable gets `v` + a running base index.  A "nameable local" is the
+        // C++ `linkSymbols` filter reduced to what the merged tree can express:
+        // the high's name representative is addr-tied (in local scope), not an
+        // input, not persist/global — i.e. exactly the locals that
+        // `buildDefaultName` would route to the `vN` arm.  The name is bound on
+        // the HighVariable (the `Symbol` stand-in; see `HighVariable::kuna_name`).
+        name_local_highs_angr(data);
         0
     }
 }
