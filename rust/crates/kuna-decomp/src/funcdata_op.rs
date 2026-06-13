@@ -94,6 +94,18 @@ impl Funcdata {
         self.obank_mut().change_opcode(op, t_op);
     }
 
+    /// Mark a PcodeOp as not collapsible (C++ `Funcdata::opMarkNoCollapse`,
+    /// `funcdata.hh:493` — `op->setFlag(PcodeOp::nocollapse)`).
+    ///
+    /// Latches a failed constant-collapse so `RuleCollapseConstants` does not
+    /// retry the op (the `isCollapsible` guard reads `nocollapse`).
+    pub fn op_mark_no_collapse(&mut self, op: OpId) {
+        self.obank_mut()
+            .get_mut(op)
+            .expect("op_mark_no_collapse: stale op")
+            .set_flag(crate::op::pcodeop_flags::nocollapse);
+    }
+
     /// Mark up the given CPUI_RETURN op with a \e halt type
     /// (C++ `Funcdata::opMarkHalt`, `funcdata_op.cc:37`).
     ///

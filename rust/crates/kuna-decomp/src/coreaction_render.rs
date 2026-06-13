@@ -957,41 +957,669 @@ impl Action for ActionDeadCode {
         }
         Some(Box::new(ActionDeadCode { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:4146 — ActionDeadCode::apply (one of the largest passes)
-        //   // 1. Clear consume flags on every Varnode; drop addrforce on non-directwrite.
-        //   for (vn in beginLoc()..endLoc()):
-        //       vn->clearConsumeList(); vn->clearConsumeVacuous(); vn->setConsume(0);
-        //       if (vn->isAddrForce() && !vn->isDirectWrite()) vn->clearAddrForce();
-        //   // 2. Seed pre-live registers (spaces not yet heritaged are fully consumed).
-        //   for (spc in manage->getSpace(i), doesDeadcode, !deadRemovalAllowed):
-        //       for (vn in beginLoc(spc)..endLoc(spc)): pushConsumed(~0, vn, worklist);
-        //   returnConsume = gatherConsumedReturn(data);
-        //   // 3. Seed from each alive op (CALL/RETURN/BRANCHIND/normal special-cased).
-        //   for (op in beginOpAlive()..endOpAlive()):
-        //       op->clearIndirectSource();
-        //       ... CALL: postpone (push ~0 on CALLWithoutSpec inputs; holdOutput -> push out)
-        //       ... !assignment: RETURN (push ~0 on in0, returnConsume on rest),
-        //                        BRANCHIND (push jumptable switch-consume mask), else push ~0 on inputs; continue
-        //       ... assignment: push ~0 on autolive inputs; push ~0 on autolive out
-        //   // 4. markConsumedParameters for each call spec.
-        //   for (i < numCalls()): markConsumedParameters(getCallSpecs(i), worklist);
-        //   // 5. propagateConsumed(worklist) — backward "bit usage" fixpoint, with
-        //   //    lastChanceLoad / holdStackAliasStores (kuna GH-8500) re-seeding.
-        //   // 6. Sweep: dead ops removed, unconsumed writes -> const 0, INDIRECTs
-        //   //    truncated, addrtied / markers reconciled; count += 1 per removal.
-        //   return 0;
-        //
-        // SEAM(W8-funcdata): the Varnode consume bitfields
-        // (`clearConsumeList`/`setConsume`/`getConsume`), the alive-op iteration
-        // (`beginOpAlive`), the space dead-removal gating (`deadRemovalAllowed`/
-        // `doesDeadcode`), the jump-table switch-consume mask, the call-spec
-        // consumed-parameter marking, and the backward `propagateConsumed` fixpoint
-        // (coreaction.cc:3700-4145, incl. the kuna GH-8500 `holdStackAliasStores`)
-        // are not in the merged tree.  Body transcribed at top level; no change
-        // applied (count stays 0).
-        0
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:4146 — ActionDeadCode::apply.
+        deadcode_apply(data)
     }
+}
+
+// ---------------------------------------------------------------------------
+// ActionDeadCode algorithm (coreaction.cc:3714-4290), transcribed faithfully.
+//
+// The C++ methods (`pushConsumed`/`propagateConsumed`/`neverConsumed`/
+// `gatherConsumedReturn`/`lastChanceLoad`/`apply`) take a `Funcdata &` plus a
+// `vector<Varnode *>` worklist; in Rust they are free functions over
+// `&mut Funcdata` with a `Vec<VarnodeId>` worklist (the same shape, no
+// borrow-conflict).  The consume bitfield + worklist markers, the loc-set
+// iteration, the dead-removal gating and the bit-usage backward fixpoint are
+// all ported here on the real, now-heritaged IR.
+// ---------------------------------------------------------------------------
+
+use crate::seams::{OpId, VarnodeId};
+use kuna_base::address::{calc_mask, coveringmask, leastsigbit_set, minimalmask};
+use kuna_base::space::spacetype;
+use kuna_num::opcodes::OpCode;
+
+/// C++ `ActionDeadCode::pushConsumed` (coreaction.cc:3714).
+///
+/// `newval = (val | vn->getConsume()) & calc_mask(size)`; if it is unchanged
+/// and the Varnode is already consume-vacuous, nothing to do.  Otherwise mark
+/// the Varnode consume-vacuous, add it to the worklist (if written and not
+/// already listed), and store the new consume mask.
+fn dc_push_consumed(data: &mut Funcdata, val: u64, vn: VarnodeId, worklist: &mut Vec<VarnodeId>) {
+    let (newval, vacuous, listed, written) = {
+        let v = data.vbank().get(vn).expect("pushConsumed: stale vn");
+        let newval = (val | v.get_consume()) & calc_mask(v.get_size());
+        (newval, v.is_consume_vacuous(), v.is_consume_list(), v.is_written())
+    };
+    {
+        let v = data.vbank().get(vn).expect("pushConsumed: stale vn");
+        if newval == v.get_consume() && vacuous {
+            return;
+        }
+    }
+    let vm = data.vbank_mut().get_mut(vn).expect("pushConsumed: stale vn");
+    vm.set_consume_vacuous();
+    if !listed {
+        vm.set_consume_list();
+    }
+    vm.set_consume(newval);
+    // The worklist push must happen after the in-list mark is set (the C++ adds
+    // to the list only for written Varnodes; free/input Varnodes are seeds that
+    // never propagate backward).
+    if !listed && written {
+        worklist.push(vn);
+    }
+}
+
+/// C++ `ActionDeadCode::propagateConsumed` (coreaction.cc:3734): pop the top of
+/// the worklist and propagate its consumed mask backward to the inputs of its
+/// defining op.
+fn dc_propagate_consumed(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) {
+    let vn = worklist.pop().expect("propagateConsumed: empty worklist");
+    let (outc, opid, vn_size) = {
+        let v = data.vbank().get(vn).expect("propagateConsumed: stale vn");
+        (v.get_consume(), v.get_def().expect("propagateConsumed: vn is written"), v.get_size())
+    };
+    data.vbank_mut().get_mut(vn).expect("propagateConsumed: stale vn").clear_consume_list();
+
+    let opc = data.obank().get(opid).expect("propagateConsumed: stale op").code();
+    // input accessor helper.
+    let in_n = |data: &Funcdata, slot: i32| -> VarnodeId {
+        data.obank().get(opid).expect("propagateConsumed: stale op").get_in(slot).expect("null in")
+    };
+    let in_is_const = |data: &Funcdata, slot: i32| -> bool {
+        data.vbank().get(in_n(data, slot)).expect("stale in").is_constant()
+    };
+    let in_off = |data: &Funcdata, slot: i32| -> u64 {
+        data.vbank().get(in_n(data, slot)).expect("stale in").get_offset()
+    };
+    let in_size = |data: &Funcdata, slot: i32| -> i32 {
+        data.vbank().get(in_n(data, slot)).expect("stale in").get_size()
+    };
+    let in_nzmask = |data: &Funcdata, slot: i32| -> u64 {
+        data.vbank().get(in_n(data, slot)).expect("stale in").get_nz_mask()
+    };
+    let usize_bits = (std::mem::size_of::<u64>()) as i32; // sizeof(uintb)
+
+    match opc {
+        OpCode::CPUI_INT_MULT => {
+            let b = coveringmask(outc);
+            let a;
+            if in_is_const(data, 1) {
+                let least_set = leastsigbit_set(in_off(data, 1));
+                if least_set >= 0 {
+                    let mut aa = calc_mask(vn_size) >> least_set;
+                    aa &= b;
+                    a = aa;
+                } else {
+                    a = 0;
+                }
+            } else {
+                a = b;
+            }
+            let (i0, i1) = (in_n(data, 0), in_n(data, 1));
+            dc_push_consumed(data, a, i0, worklist);
+            dc_push_consumed(data, b, i1, worklist);
+        }
+        OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => {
+            let a = coveringmask(outc);
+            let (i0, i1) = (in_n(data, 0), in_n(data, 1));
+            dc_push_consumed(data, a, i0, worklist);
+            dc_push_consumed(data, a, i1, worklist);
+        }
+        OpCode::CPUI_SUBPIECE => {
+            let sz = in_off(data, 1) as i32;
+            let mut a = if sz >= usize_bits {
+                0
+            } else {
+                outc.wrapping_shl((sz * 8) as u32)
+            };
+            if a == 0 && outc != 0 && in_size(data, 0) > usize_bits {
+                let mut aa = !0u64;
+                aa ^= aa >> 1;
+                a = aa;
+            }
+            let b = if outc == 0 { 0 } else { !0u64 };
+            let (i0, i1) = (in_n(data, 0), in_n(data, 1));
+            dc_push_consumed(data, a, i0, worklist);
+            dc_push_consumed(data, b, i1, worklist);
+        }
+        OpCode::CPUI_PIECE => {
+            let sz = in_size(data, 1);
+            let (a, b);
+            if vn_size > usize_bits {
+                if sz >= usize_bits {
+                    a = !0u64;
+                    b = outc;
+                } else {
+                    a = (outc >> (sz * 8)) ^ ((!0u64) << (8 * (usize_bits - sz)));
+                    b = outc ^ (a << (sz * 8));
+                }
+            } else {
+                a = outc >> (sz * 8);
+                b = outc ^ (a << (sz * 8));
+            }
+            let (i0, i1) = (in_n(data, 0), in_n(data, 1));
+            dc_push_consumed(data, a, i0, worklist);
+            dc_push_consumed(data, b, i1, worklist);
+        }
+        OpCode::CPUI_INDIRECT => {
+            let i0 = in_n(data, 0);
+            dc_push_consumed(data, outc, i0, worklist);
+            // The IOP-space inner block (getOpFromConst -> setIndirectSource /
+            // characterizeOverlap) needs `IopSpace::getOpFromConst`
+            // (op.cc), an un-ported W-later seam.  Faithful note: the outer
+            // backward push above is the data-flow effect; the indirect-source
+            // marking only influences later opDestroyRecursive pruning and is
+            // skipped here (the conservative default — leave the source unmarked).
+            let i1 = in_n(data, 1);
+            let i1_is_iop = data
+                .vbank()
+                .get(i1)
+                .and_then(|v| v.get_addr().get_space())
+                .map(|s| s.get_type() == spacetype::IPTR_IOP)
+                .unwrap_or(false);
+            if i1_is_iop {
+                // SEAM(op-from-const): getOpFromConst not ported; indirect-source
+                // marking skipped (does not affect boolless / the consume fixpoint).
+            }
+        }
+        OpCode::CPUI_COPY | OpCode::CPUI_INT_NEGATE => {
+            let i0 = in_n(data, 0);
+            dc_push_consumed(data, outc, i0, worklist);
+        }
+        OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_OR => {
+            let (i0, i1) = (in_n(data, 0), in_n(data, 1));
+            dc_push_consumed(data, outc, i0, worklist);
+            dc_push_consumed(data, outc, i1, worklist);
+        }
+        OpCode::CPUI_INT_AND => {
+            if in_is_const(data, 1) {
+                let val = in_off(data, 1);
+                let (i0, i1) = (in_n(data, 0), in_n(data, 1));
+                dc_push_consumed(data, outc & val, i0, worklist);
+                dc_push_consumed(data, outc, i1, worklist);
+            } else {
+                let (i0, i1) = (in_n(data, 0), in_n(data, 1));
+                dc_push_consumed(data, outc, i0, worklist);
+                dc_push_consumed(data, outc, i1, worklist);
+            }
+        }
+        OpCode::CPUI_MULTIEQUAL => {
+            let n = data.obank().get(opid).expect("stale op").num_input();
+            for i in 0..n {
+                let ii = in_n(data, i);
+                dc_push_consumed(data, outc, ii, worklist);
+            }
+        }
+        OpCode::CPUI_INT_ZEXT => {
+            let i0 = in_n(data, 0);
+            dc_push_consumed(data, outc, i0, worklist);
+        }
+        OpCode::CPUI_INT_SEXT => {
+            let b = calc_mask(in_size(data, 0));
+            let mut a = outc & b;
+            if outc > b {
+                a |= b ^ (b >> 1);
+            }
+            let i0 = in_n(data, 0);
+            dc_push_consumed(data, a, i0, worklist);
+        }
+        OpCode::CPUI_INT_LEFT => {
+            if in_is_const(data, 1) {
+                let mut sz = vn_size;
+                let sa = in_off(data, 1) as i32;
+                let a;
+                if sz > usize_bits {
+                    let mut aa;
+                    if sa >= 8 * usize_bits {
+                        aa = !0u64;
+                    } else if sa == 0 {
+                        aa = outc;
+                    } else {
+                        aa = (outc >> sa) ^ ((!0u64) << (8 * usize_bits - sa));
+                    }
+                    sz = 8 * sz - sa;
+                    if sz < 8 * usize_bits {
+                        let mut mask = !0u64;
+                        mask <<= sz;
+                        aa &= !mask;
+                    }
+                    a = aa;
+                } else {
+                    a = outc >> sa;
+                }
+                let b = if outc == 0 { 0 } else { !0u64 };
+                let (i0, i1) = (in_n(data, 0), in_n(data, 1));
+                dc_push_consumed(data, a, i0, worklist);
+                dc_push_consumed(data, b, i1, worklist);
+            } else {
+                let a = if outc == 0 { 0 } else { !0u64 };
+                let (i0, i1) = (in_n(data, 0), in_n(data, 1));
+                dc_push_consumed(data, a, i0, worklist);
+                dc_push_consumed(data, a, i1, worklist);
+            }
+        }
+        OpCode::CPUI_INT_RIGHT => {
+            if in_is_const(data, 1) {
+                let sa = in_off(data, 1) as i32;
+                let a = if sa >= 8 * usize_bits { 0 } else { outc << sa };
+                let b = if outc == 0 { 0 } else { !0u64 };
+                let (i0, i1) = (in_n(data, 0), in_n(data, 1));
+                dc_push_consumed(data, a, i0, worklist);
+                dc_push_consumed(data, b, i1, worklist);
+            } else {
+                let a = if outc == 0 { 0 } else { !0u64 };
+                let (i0, i1) = (in_n(data, 0), in_n(data, 1));
+                dc_push_consumed(data, a, i0, worklist);
+                dc_push_consumed(data, a, i1, worklist);
+            }
+        }
+        OpCode::CPUI_INT_LESS
+        | OpCode::CPUI_INT_LESSEQUAL
+        | OpCode::CPUI_INT_EQUAL
+        | OpCode::CPUI_INT_NOTEQUAL => {
+            let a = if outc == 0 { 0 } else { in_nzmask(data, 0) | in_nzmask(data, 1) };
+            let (i0, i1) = (in_n(data, 0), in_n(data, 1));
+            dc_push_consumed(data, a, i0, worklist);
+            dc_push_consumed(data, a, i1, worklist);
+        }
+        OpCode::CPUI_INSERT => {
+            let mut a = 1u64;
+            a <<= in_off(data, 3) as i32;
+            a -= 1;
+            let i1 = in_n(data, 1);
+            dc_push_consumed(data, a, i1, worklist);
+            a <<= in_off(data, 2) as i32;
+            let i0 = in_n(data, 0);
+            dc_push_consumed(data, outc & !a, i0, worklist);
+            let b = if outc == 0 { 0 } else { !0u64 };
+            let (i2, i3) = (in_n(data, 2), in_n(data, 3));
+            dc_push_consumed(data, b, i2, worklist);
+            dc_push_consumed(data, b, i3, worklist);
+        }
+        OpCode::CPUI_ZPULL | OpCode::CPUI_SPULL => {
+            let mut a = 1u64;
+            a <<= in_off(data, 2) as i32;
+            a -= 1;
+            a &= outc;
+            a <<= in_off(data, 1) as i32;
+            let i0 = in_n(data, 0);
+            dc_push_consumed(data, a, i0, worklist);
+            let b = if outc == 0 { 0 } else { !0u64 };
+            let (i1, i2) = (in_n(data, 1), in_n(data, 2));
+            dc_push_consumed(data, b, i1, worklist);
+            dc_push_consumed(data, b, i2, worklist);
+        }
+        OpCode::CPUI_POPCOUNT | OpCode::CPUI_LZCOUNT => {
+            let mut a = 16 * in_size(data, 0) as u64 - 1;
+            a &= outc;
+            let b = if a == 0 { 0 } else { !0u64 };
+            let i0 = in_n(data, 0);
+            dc_push_consumed(data, b, i0, worklist);
+        }
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+            // Call output doesn't indicate consumption of inputs.
+        }
+        OpCode::CPUI_FLOAT_INT2FLOAT => {
+            let a = if outc != 0 { coveringmask(in_nzmask(data, 0)) } else { 0 };
+            let i0 = in_n(data, 0);
+            dc_push_consumed(data, a, i0, worklist);
+        }
+        _ => {
+            let a = if outc == 0 { 0 } else { !0u64 };
+            let n = data.obank().get(opid).expect("stale op").num_input();
+            for i in 0..n {
+                let ii = in_n(data, i);
+                dc_push_consumed(data, a, ii, worklist);
+            }
+        }
+    }
+}
+
+/// C++ `ActionDeadCode::neverConsumed` (coreaction.cc:3971): a Varnode none of
+/// whose bits are consumed is eliminated — every reader's input is replaced
+/// with a zero constant, and its defining op is destroyed (calls keep the op
+/// but lose their output).  Returns true if the Varnode was eliminated.
+fn dc_never_consumed(data: &mut Funcdata, vn: VarnodeId) -> bool {
+    if data.vbank().get(vn).expect("neverConsumed: stale vn").get_size() > std::mem::size_of::<u64>() as i32 {
+        return false; // Not enough precision to really tell
+    }
+    let size = data.vbank().get(vn).expect("neverConsumed: stale vn").get_size();
+    // Replace vn with 0 wherever it is read.
+    let readers: Vec<OpId> =
+        data.vbank().get(vn).expect("neverConsumed: stale vn").descend_iter().collect();
+    for op in readers {
+        let slot = data.obank().get(op).map(|o| o.get_slot(vn)).unwrap_or(-1);
+        if slot < 0 {
+            continue;
+        }
+        let zero = data.new_constant(size, 0);
+        data.op_set_input(op, zero, slot).expect("neverConsumed: opSetInput");
+    }
+    let op = data.vbank().get(vn).expect("neverConsumed: stale vn").get_def().expect("def");
+    if data.obank().get(op).expect("neverConsumed: stale op").is_call() {
+        data.op_unset_output(op);
+    } else {
+        data.op_destroy(op);
+    }
+    true
+}
+
+/// C++ `ActionDeadCode::gatherConsumedReturn` (coreaction.cc:4033): the bit
+/// mask of what the function's RETURN values consume.
+fn dc_gather_consumed_return(data: &Funcdata) -> u64 {
+    if data.get_func_proto().is_output_locked() || data.get_active_output().is_some() {
+        return !0u64;
+    }
+    let mut consume_val = 0u64;
+    for op in data.obank().iter_code(OpCode::CPUI_RETURN) {
+        let o = data.obank().get(op).expect("gatherConsumedReturn: stale op");
+        if o.is_dead() {
+            continue;
+        }
+        if o.num_input() > 1 {
+            let vn = o.get_in(1).expect("RETURN in1");
+            let nz = data.vbank().get(vn).expect("RETURN in1 vn").get_nz_mask();
+            consume_val |= minimalmask(nz);
+        }
+    }
+    let val = data.get_func_proto().get_return_bytes_consumed();
+    if val != 0 {
+        consume_val &= calc_mask(val);
+    }
+    consume_val
+}
+
+/// C++ `Varnode::isEventualConstant` (varnode.cc:873): does the Varnode (might)
+/// collapse to a constant — copied/extended from a constant, the result of
+/// arithmetic on constants, or loaded from a constant pointer.
+///
+/// Ported as a free function (the C++ method recurses through `op->getIn`, which
+/// in the merged tree needs the op-bank — a `Funcdata`-level walk).
+fn dc_is_eventual_constant(data: &Funcdata, vn: VarnodeId, max_binary: i32, max_load: i32) -> bool {
+    let mut cur = vn;
+    let mut max_load = max_load;
+    loop {
+        let v = data.vbank().get(cur).expect("isEventualConstant: stale vn");
+        if v.is_constant() {
+            return true;
+        }
+        if !v.is_written() {
+            return false;
+        }
+        let op = v.get_def().expect("isEventualConstant: written vn has no def");
+        let o = data.obank().get(op).expect("isEventualConstant: stale op");
+        match o.code() {
+            OpCode::CPUI_LOAD => {
+                if max_load == 0 {
+                    return false;
+                }
+                max_load -= 1;
+                cur = o.get_in(1).expect("LOAD in1");
+            }
+            OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_INT_SUB
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_AND => {
+                if max_binary == 0 {
+                    return false;
+                }
+                let i0 = o.get_in(0).expect("binary in0");
+                let i1 = o.get_in(1).expect("binary in1");
+                if !dc_is_eventual_constant(data, i0, max_binary - 1, max_load) {
+                    return false;
+                }
+                return dc_is_eventual_constant(data, i1, max_binary - 1, max_load);
+            }
+            OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT | OpCode::CPUI_COPY => {
+                cur = o.get_in(0).expect("unary in0");
+            }
+            OpCode::CPUI_INT_LEFT
+            | OpCode::CPUI_INT_RIGHT
+            | OpCode::CPUI_INT_SRIGHT
+            | OpCode::CPUI_INT_MULT => {
+                let i1 = o.get_in(1).expect("shift in1");
+                if !data.vbank().get(i1).expect("stale in1").is_constant() {
+                    return false;
+                }
+                cur = o.get_in(0).expect("shift in0");
+            }
+            _ => return false,
+        }
+    }
+}
+
+/// C++ `ActionDeadCode::lastChanceLoad` (coreaction.cc:4064): on heritage pass
+/// 1 (only), hold un-consumed LOADs from eventual-constant addresses alive (a
+/// volatile-address safety net).
+fn dc_last_chance_load(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) -> bool {
+    if data.get_heritage_pass() > 1 {
+        return false;
+    }
+    if data.is_jumptable_recovery_on() {
+        return false;
+    }
+    let loads: Vec<OpId> = data.obank().iter_code(OpCode::CPUI_LOAD).collect();
+    let mut res = false;
+    for op in loads {
+        let o = data.obank().get(op).expect("lastChanceLoad: stale op");
+        if o.is_dead() {
+            continue;
+        }
+        let vn = match o.get_out() {
+            Some(v) => v,
+            None => continue,
+        };
+        if data.vbank().get(vn).expect("lastChanceLoad: stale out").is_consume_vacuous() {
+            continue;
+        }
+        let ptr = o.get_in(1).expect("LOAD ptr");
+        let eventual = dc_is_eventual_constant(data, ptr, 3, 1);
+        if eventual {
+            dc_push_consumed(data, !0u64, vn, worklist);
+            data.vbank_mut().get_mut(vn).expect("lastChanceLoad: stale out").set_auto_live_hold();
+            res = true;
+        }
+    }
+    res
+}
+
+/// C++ `ActionDeadCode::apply` (coreaction.cc:4146).
+fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
+    let mut worklist: Vec<VarnodeId> = Vec::new();
+
+    // The C++ `startProcessing` builds the per-space heritage info list before
+    // any action runs; `deadRemovalAllowed`/`seenDeadcode` index it by space.
+    // The merged tree's `ActionStart` is a seam, so ensure it here (idempotent —
+    // a real run already built it in `op_heritage`).
+    data.ensure_heritage_info_list();
+
+    // 1. Clear consume flags on every Varnode; drop addrforce on non-directwrite.
+    let all_locs: Vec<VarnodeId> = data.vbank().iter_loc().collect();
+    for vn in all_locs {
+        let vm = data.vbank_mut().get_mut(vn).expect("deadcode: stale vn");
+        vm.clear_consume_list();
+        vm.clear_consume_vacuous();
+        vm.set_consume(0);
+        let (af, dw) = {
+            let v = data.vbank().get(vn).expect("deadcode: stale vn");
+            (v.is_addr_force(), v.is_direct_write())
+        };
+        if af && !dw {
+            data.vbank_mut().get_mut(vn).expect("deadcode: stale vn").clear_addr_force();
+        }
+    }
+
+    // 2. Set pre-live registers (spaces that do deadcode but are NOT heritaged
+    //    yet are treated as fully consumed).
+    //
+    // Collect the space handles up front: the C++ iterates `manage->getSpace(i)`
+    // by index, but iterating through `data.get_arch().manage()` borrows `data`
+    // immutably for the whole loop, conflicting with the `&mut data` pushes; the
+    // Rc handles are cheap clones that decouple the borrow.
+    let spaces: Vec<Rc<AddrSpace>> = {
+        let manage = data.get_arch().manage();
+        (0..manage.num_spaces()).filter_map(|i| manage.get_space(i).map(Rc::clone)).collect()
+    };
+    for spc in &spaces {
+        let spc = Rc::clone(spc);
+        if !spc.does_deadcode() {
+            continue;
+        }
+        if data.dead_removal_allowed(&spc) {
+            continue; // Mark consumed only if we have NOT heritaged
+        }
+        let ids = data.vbank().loc_space_ids(&spc);
+        for vn in ids {
+            dc_push_consumed(data, !0u64, vn, &mut worklist);
+        }
+    }
+
+    // 3. Seed from each alive op.
+    let return_consume = dc_gather_consumed_return(data);
+    let alive: Vec<OpId> = data.obank().iter_alive().collect();
+    for op in alive {
+        data.obank_mut().get_mut(op).expect("deadcode: stale op").clear_indirect_source();
+        let (is_call, is_assignment, opc, n) = {
+            let o = data.obank().get(op).expect("deadcode: stale op");
+            (o.is_call(), o.is_assignment(), o.code(), o.num_input())
+        };
+        if is_call {
+            if data.obank().get(op).expect("stale op").is_call_without_spec() {
+                for i in 0..n {
+                    if let Some(ii) = data.obank().get(op).expect("stale op").get_in(i) {
+                        dc_push_consumed(data, !0u64, ii, &mut worklist);
+                    }
+                }
+            }
+            if !is_assignment {
+                continue;
+            }
+            if data.obank().get(op).expect("stale op").hold_output() {
+                if let Some(out) = data.obank().get(op).expect("stale op").get_out() {
+                    dc_push_consumed(data, !0u64, out, &mut worklist);
+                }
+            }
+        } else if !is_assignment {
+            if opc == OpCode::CPUI_RETURN {
+                if let Some(i0) = data.obank().get(op).expect("stale op").get_in(0) {
+                    dc_push_consumed(data, !0u64, i0, &mut worklist);
+                }
+                for i in 1..n {
+                    if let Some(ii) = data.obank().get(op).expect("stale op").get_in(i) {
+                        dc_push_consumed(data, return_consume, ii, &mut worklist);
+                    }
+                }
+            } else if opc == OpCode::CPUI_BRANCHIND {
+                // findJumpTable is a W7 seam (always None here) -> mask = ~0.
+                let mask = match data.find_jump_table(op) {
+                    Some(_) => !0u64, // jt->getSwitchVarConsume() (W7 seam; unreachable)
+                    None => !0u64,
+                };
+                if let Some(i0) = data.obank().get(op).expect("stale op").get_in(0) {
+                    dc_push_consumed(data, mask, i0, &mut worklist);
+                }
+            } else {
+                for i in 0..n {
+                    if let Some(ii) = data.obank().get(op).expect("stale op").get_in(i) {
+                        dc_push_consumed(data, !0u64, ii, &mut worklist);
+                    }
+                }
+            }
+            // Postpone setting consumption on RETURN input (the output handling
+            // below is skipped for non-assignment ops).
+            continue;
+        } else {
+            for i in 0..n {
+                let ii = match data.obank().get(op).expect("stale op").get_in(i) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                if data.vbank().get(ii).expect("stale in").is_auto_live() {
+                    dc_push_consumed(data, !0u64, ii, &mut worklist);
+                }
+            }
+        }
+        if let Some(out) = data.obank().get(op).expect("stale op").get_out() {
+            if data.vbank().get(out).expect("stale out").is_auto_live() {
+                dc_push_consumed(data, !0u64, out, &mut worklist);
+            }
+        }
+    }
+
+    // 4. Mark consumption of call parameters (numCalls() == 0 in the merged
+    //    tree; the loop is a faithful no-op until FuncCallSpecs is ported).
+    // for i in 0..data.num_calls() { markConsumedParameters(...) }  -- W6/W7 seam.
+
+    // 5. Propagate the consume flags (the backward bit-usage fixpoint).
+    while !worklist.is_empty() {
+        dc_propagate_consumed(data, &mut worklist);
+    }
+    if dc_last_chance_load(data, &mut worklist) {
+        while !worklist.is_empty() {
+            dc_propagate_consumed(data, &mut worklist);
+        }
+    }
+    // holdStackAliasStores (kuna GH-8500) is gated default-off
+    // (arch.stack_alias_deadstore) — a no-op when the option is off, which is the
+    // default; the stack-alias re-seed is a later cleanup-wave concern.
+
+    // 6. Sweep: remove dead ops, replace never-consumed values, reconcile.
+    let mut total_change = 0i32;
+    for spc in &spaces {
+        let spc = Rc::clone(spc);
+        if !spc.does_deadcode() {
+            continue;
+        }
+        if !data.dead_removal_allowed(&spc) {
+            continue; // Don't eliminate if we haven't heritaged
+        }
+        let ids = data.vbank().loc_space_ids(&spc);
+        let mut changecount = 0i32;
+        for vn in ids {
+            // The varnode may already be gone (a prior neverConsumed/opDestroy
+            // in this loop removed it); skip stale ids.
+            let written = match data.vbank().get(vn) {
+                Some(v) => v.is_written(),
+                None => continue,
+            };
+            if !written {
+                continue;
+            }
+            let vacflag = data.vbank().get(vn).expect("sweep: stale vn").is_consume_vacuous();
+            {
+                let vm = data.vbank_mut().get_mut(vn).expect("sweep: stale vn");
+                vm.clear_consume_list();
+                vm.clear_consume_vacuous();
+            }
+            if !vacflag {
+                // Not even vacuously consumed -> remove the defining op.
+                let op = data.vbank().get(vn).expect("sweep: stale vn").get_def().expect("def");
+                changecount += 1;
+                if data.obank().get(op).expect("sweep: stale op").is_call() {
+                    data.op_unset_output(op);
+                } else {
+                    data.op_destroy(op);
+                }
+            } else if data.vbank().get(vn).expect("sweep: stale vn").get_consume() == 0
+                && dc_never_consumed(data, vn)
+            {
+                changecount += 1;
+            }
+        }
+        if changecount != 0 {
+            data.seen_deadcode(&spc);
+        }
+        total_change += changecount;
+    }
+
+    data.clear_dead_varnodes().expect("clearDeadVarnodes");
+    data.clear_dead_ops();
+    let _ = total_change; // C++ ActionDeadCode::apply returns 0 regardless.
+    0
 }
 
 // =============================================================================

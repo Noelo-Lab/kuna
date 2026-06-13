@@ -853,8 +853,15 @@ impl Action for ActionConditionalExe {
         loop {
             let mut changethisround = false;
             // const BlockGraph &bblocks(data.getBasicBlocks());  for(i=0;i<bblocks.getSize();++i)
-            let size = data.bblocks_get_size();
-            for i in 0..size {
+            //
+            // `getSize()` is re-evaluated every iteration in the C++ loop
+            // condition: `condexe.execute()` can REMOVE a block (the conditional-
+            // execution elimination), shrinking the graph, so the bound must be
+            // re-read each step.  (Hoisting it into a `0..size` range over-indexes
+            // `getBlock(i)` once the graph shrinks — a panic the deeper, deadcode-
+            // pruned IR now reaches.)
+            let mut i: int4 = 0;
+            while i < data.bblocks_get_size() {
                 let bb = data.bblocks_get_block(i);
                 if condexe.trial(bb, data) {
                     // condexe.execute() — SEAM(opSetOutput): a seam Err degrades to
@@ -864,6 +871,7 @@ impl Action for ActionConditionalExe {
                         changethisround = true;
                     }
                 }
+                i += 1; // ++i
             }
             if !changethisround {
                 break;

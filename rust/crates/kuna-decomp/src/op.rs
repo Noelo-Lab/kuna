@@ -1446,6 +1446,16 @@ impl PcodeOpBank {
     /// Remove `op` from its dedicated op-code list, if any
     /// (C++ `PcodeOpBank::removeFromCodeList`, `op.cc:935`).
     fn remove_from_code_list(&mut self, op: OpId) {
+        // An op with no opcode was never `add_to_code_list`'d (that runs only
+        // after `set_opcode`), so it cannot be in any code list — guard the
+        // `code()` read, which panics on a null opcode.  In C++ every reachable
+        // op carries an opcode (`newOp` sets it immediately), so `op->code()` is
+        // always safe; in the merged tree a pass can `new_op`/`create_at` an op
+        // (opcode `None`, dead) and abandon it before assigning the opcode, and
+        // the deadcode `destroyDead` sweep then reaches it here.
+        if self.arena[op].opcode.is_none() {
+            return;
+        }
         match self.arena[op].code() {
             OpCode::CPUI_STORE => self.storelist.erase(&mut self.arena, ListKind::Code, op),
             OpCode::CPUI_LOAD => self.loadlist.erase(&mut self.arena, ListKind::Code, op),
