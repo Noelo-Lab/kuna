@@ -441,15 +441,15 @@ fn w10_boolless_positive_datatest_assertion_now_real() {
     );
 }
 
-/// THE MERGE/NAMING/OUTPUT-TYPE WIN: boolless `print C` now byte-matches the C++
-/// B5 oracle, modulo the single documented residual `undefined1` vs `uint1` (the
-/// recovered output/local *type name* — the W8 `ActionInferTypes` surface; the
-/// output STORAGE, the merged `v1` local, the `v1 = dat_52` trim COPY, the decl,
-/// the `// acc` storage comment, and the return statement all recover exactly).
+/// THE TYPE-INFERENCE WIN: boolless `print C` now FULLY byte-matches the C++ B5
+/// oracle with NO substitution.  `ActionInferTypes` (the W8 type-propagation
+/// lattice) infers the ACC accumulator's `uint1` type and writes it onto the
+/// Varnode + its HighVariable, so both the recovered return type and the `v1`
+/// decl render `uint1` (the oracle's name), not the un-inferred `undefined1`.
 ///
-/// The assertion substitutes the W8 type name (`undefined1` -> `uint1`) and then
-/// requires an EXACT byte match.  When `ActionInferTypes` lands, the substitution
-/// becomes a no-op and boolless is the first fully-byte-parity function.
+/// boolless is the FIRST function to reach full byte-parity with the C++ oracle
+/// through the un-seam chain.  The former `undefined1` -> `uint1` normalization is
+/// gone; this asserts exact equality to the oracle.
 #[test]
 fn w10_boolless_full_byte_parity_modulo_type_inference() {
     let (mut xarch, fd) = match run_full("boolless", 0) {
@@ -464,7 +464,7 @@ fn w10_boolless_full_byte_parity_modulo_type_inference() {
     let rust = print_c(arch, &fd);
 
     // The merge/naming/output-storage layer is real: a named `v1` local, the
-    // `v1 = dat_52;` trim COPY, the `undefined1 v1; // acc` decl, and `return v1`.
+    // `v1 = dat_52;` trim COPY, the `uint1 v1; // acc` decl, and `return v1`.
     assert!(rust.contains("v1 = dat_52;"), "trim-COPY initial assignment missing:\n{rust}");
     assert!(rust.contains("v1; // acc"), "decl + storage comment missing:\n{rust}");
     assert!(rust.contains("    v1 = 1;"), "if-body assignment must use the merged name:\n{rust}");
@@ -473,13 +473,22 @@ fn w10_boolless_full_byte_parity_modulo_type_inference() {
     assert!(rust.contains("dat_52"), "the global must stay dat_52 (no over-merge):\n{rust}");
     assert!(!rust.contains("dat_52 = "), "dat_52 must not be assigned (it is read-only here):\n{rust}");
 
-    // Full byte-parity modulo the W8 type-name residual.
-    let normalized = rust.replace("undefined1", "uint1");
+    // The W8 type lattice inferred `uint1` (the oracle name) — NOT `undefined1`.
+    assert!(
+        rust.contains("uint1 v1;"),
+        "ActionInferTypes must infer the ACC accumulator to `uint1`:\n{rust}"
+    );
+    assert!(
+        !rust.contains("undefined1"),
+        "no un-inferred `undefined1` may survive type recovery:\n{rust}"
+    );
+
+    // FULL byte-parity with the C++ B5 oracle — NO substitution.  boolless is the
+    // first fully-byte-parity function from the un-seam chain.
     assert_eq!(
-        normalized, CPP_B5_ORACLE,
-        "boolless print C must byte-match the C++ B5 oracle after the documented \
-         W8 type-name substitution (undefined1 -> uint1).\n--- rust (raw) ---\n{rust}\n\
-         --- normalized ---\n{normalized}\n--- oracle ---\n{CPP_B5_ORACLE}"
+        rust, CPP_B5_ORACLE,
+        "boolless print C must EXACTLY byte-match the C++ B5 oracle (no type-name \
+         substitution).\n--- rust ---\n{rust}\n--- oracle ---\n{CPP_B5_ORACLE}"
     );
 }
 

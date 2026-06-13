@@ -1997,38 +1997,29 @@ impl Action for ActionInferTypes {
     fn reset(&mut self, _data: &mut Funcdata) {
         self.localcount = 0;
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:5630 — ActionInferTypes::apply
         //   if (!data.hasTypeRecoveryStarted()) return 0;
-        //   typegrp = getArch()->types;
+        if !data.has_type_recovery_started() {
+            return 0;
+        }
         //   if (localcount >= 7):                       // empirical settle ceiling
-        //       if (localcount == 7):
-        //           data.warningHeader("Type propagation algorithm not settling");
-        //           data.setTypeRecoveryExceeded();
-        //           localcount += 1;
-        //       return 0;
-        //   data.getScopeLocal()->applyTypeRecommendations();
-        //   buildLocaltypes(data);                      // initial types from local info
-        //   for (vn in beginLoc()..endLoc()):
-        //       if (vn->isAnnotation()) continue;
-        //       if (!vn->isWritten() && vn->hasNoDescend()) continue;
-        //       propagateOneType(typegrp, vn);          // DFS along COPY/LOAD/STORE/ADD/MULTIEQUAL/INDIRECT
-        //   propagateAcrossReturns(data);
-        //   spcvn = data.findSpacebaseInput(scopeLocal->getSpaceId());
-        //   if (spcvn) propagateSpacebaseRef(data, spcvn);
-        //   if (writeBack(data)) localcount += 1;       // NOTE: not a data-flow change -> no count bump
-        //   return 0;
-        //
-        // The 7-pass ceiling and the `hasTypeRecoveryStarted` gate are this
-        // action's own state, but the propagation engine they gate cannot run.
-        //
-        // SEAM(W8-funcdata): the `TypeFactory` (`getArch()->types`), the
-        // propagation primitives (`buildLocaltypes`/`propagateOneType`/
-        // `propagateTypeEdge`/`propagateAcrossReturns`/`propagateSpacebaseRef`/
-        // `writeBack`, coreaction.cc:5200-5629), `applyTypeRecommendations`,
-        // `findSpacebaseInput`, and `setTypeRecoveryExceeded` are not in the merged
-        // tree.  Body transcribed; no change applied (the C++ never bumps `count`
-        // here — type changes are deliberately not counted as data-flow changes).
+        if self.localcount >= 7 {
+            if self.localcount == 7 {
+                // data.warningHeader("Type propagation algorithm not settling");
+                data.set_type_recovery_exceeded();
+                self.localcount += 1;
+            }
+            return 0;
+        }
+        // Run the bounded bidirectional type lattice (the engine ported in
+        // `coreaction_infertypes`): buildLocaltypes -> propagateOneType (DFS) ->
+        // propagateAcrossReturns -> writeBack.  `writeBack` returning a change
+        // bumps `localcount` (it is deliberately NOT counted as a data-flow change,
+        // so `count` is left untouched).
+        if crate::coreaction_infertypes::run_infer_types(data) {
+            self.localcount += 1;
+        }
         0
     }
 }

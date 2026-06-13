@@ -469,6 +469,10 @@ pub struct Varnode {
     high: Option<HighVariableId>,
     /// Datatype associated with this varnode (SEAM(W6): minimal skeleton)
     type_: Rc<Datatype>,
+    /// Temporary Datatype used during type propagation (C++ `union temp { Datatype
+    /// *dataType; ... } temp` — the `dataType` field).  Set/read only by
+    /// `ActionInferTypes`; `None` outside a propagation pass.
+    temp_type: Option<Rc<Datatype>>,
     /// Cached key into the loc tree (replaces the C++ `lociter`)
     lociter: Option<LocKey>,
     /// Cached key into the def tree (replaces the C++ `defiter`)
@@ -501,6 +505,7 @@ impl Varnode {
             def_seqnum: None,
             high: None,
             type_: dt,
+            temp_type: None,
             lociter: None,
             defiter: None,
             descend: SmallVec::new(),
@@ -564,6 +569,15 @@ impl Varnode {
     /// Get the Datatype (C++ `getType`).
     pub fn get_type(&self) -> &Rc<Datatype> {
         &self.type_
+    }
+    /// Set the temporary Datatype used during type propagation (C++ `setTempType`).
+    pub fn set_temp_type(&mut self, t: Rc<Datatype>) {
+        self.temp_type = Some(t);
+    }
+    /// Get the temporary Datatype used during type propagation (C++ `getTempType`).
+    /// `None` if no propagation pass has seeded a temp type yet.
+    pub fn get_temp_type(&self) -> Option<&Rc<Datatype>> {
+        self.temp_type.as_ref()
     }
     /// Get the creation index (C++ `getCreateIndex`).
     pub fn get_create_index(&self) -> uint4 {
