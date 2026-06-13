@@ -149,20 +149,39 @@ pub fn decompile_func(
 /// Drives [`PrintC::doc_function`] with the function's display name
 /// (`fd->getDisplayName()`) and a `void NAME(void)` signature.
 ///
-/// SEAM(W4/W6 proto recovery): in C++ the signature reads
-/// `fd->getFuncProto().getOutputType()` / `getParam(i)` — the recovered return
-/// type + parameters.  In the merged tree the `Funcdata` holds the *seam*
-/// [`FuncProto`](crate::seams::FuncProto) (a unit stub), not the real
-/// `fspec::FuncProto`: wiring the recovered prototype onto the `Funcdata`
-/// (`Funcdata::funcp` of type `fspec::FuncProto`, populated by the
-/// proto-recovery passes) is the W4/W6 boundary, not this glue item.  Until
-/// then the printer emits the default `void`-return, `void`-params shell — a
-/// structurally-complete, brace-matched C function (a real signature, the W9
-/// body slot, matched braces), which is what the e2e gate asserts.
+/// ## The W10 (`w10-printc-body`) finding
+///
+/// The PrintC RPN body *engine* (`push_op`/`push_atom`/`op_binary`/`op_unary`/
+/// `emit_op`/`emit_atom`/`parentheses`) is now ported and byte-faithfully
+/// unit-tested in [`PrintC`](crate::printc::PrintC).  Driving it over a real
+/// function body — and reading the real signature — is blocked **upstream of the
+/// printer**, not in it:
+///
+///   * **The proto / return type / params** (C++ `fd->getFuncProto().
+///     getOutputType()` / `getParam(i)`): `Funcdata::funcp` is the seam
+///     [`FuncProto`](crate::seams::FuncProto) unit stub, not the real
+///     `fspec::FuncProto`, because the proto-recovery passes are seam stubs and
+///     `funcdata.rs` has not yet swapped the field type (a `funcdata`/W4/W6
+///     boundary, not this glue).
+///   * **The body**: the universalAction pipeline RUNS but its passes (heritage
+///     / simplification / merge / type recovery / block structuring) are seam
+///     stubs, so the IR reaching the printer is *raw lifted p-code* (e.g. 23 ops
+///     for `boolless` vs the ~7-op decompiled form, no HighVariables with
+///     symbols, no recovered types, **`sblocks` empty**).  Emitting that raw IR
+///     would print non-C garbage, not byte-parity (the parity gate
+///     `tests/printc_parity.rs` measures this honestly against the C++ oracle).
+///
+/// Until those upstream passes land, the printer emits the default `void`-return,
+/// `void`-params, brace-matched shell — exactly what the e2e gate asserts; the
+/// byte-match count then rises with no further change to the (now-ported) RPN
+/// body engine.
 pub fn print_c(arch: &mut Architecture, fd: &Funcdata) -> String {
     let display = fd.get_display_name().to_string();
-    // No recovered prototype is wired onto the seam Funcdata (see doc above):
-    // emit the default void/void shell.
+    // The seam `Funcdata::funcp` (a unit stub) exposes no recovered output type
+    // or params (see doc above); emit the default void/void shell.  The
+    // signature wiring is `arch.print_mut().doc_function(name, model, ret,
+    // params)` — ready for the real `fspec::FuncProto` the moment `funcdata.rs`
+    // carries it and the proto-recovery passes populate it.
     let params: Vec<(String, String)> = Vec::new();
     arch.print_mut().doc_function(&display, None, "void", &params)
 }

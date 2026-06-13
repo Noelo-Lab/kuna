@@ -507,3 +507,133 @@ fn doc_function_renders_a_real_prototype() {
     assert!(out.contains("__stdcall"), "model name missing: {out}");
     assert_eq!(out.matches('{').count(), out.matches('}').count());
 }
+
+// ---------------------------------------------------------------------------
+// The PrintLanguage RPN driver (push_op / push_atom / op_binary / op_unary /
+// emit_op / emit_atom / parentheses), realized in printc.rs.  These drive the
+// real `EmitNoMarkup` back-end and assert byte-faithful token emission against
+// the C++ `emitOp`/`emitAtom`/`parentheses` logic (printlanguage.cc:129-580),
+// independent of the seamed IR.
+// ---------------------------------------------------------------------------
+
+use crate::printlanguage::{Atom as PlAtom, SyntaxHighlight as PlHl, TagType as PlTag};
+
+/// A variable-name leaf atom.
+fn var_atom(name: &str) -> PlAtom {
+    PlAtom::syntax(name, PlTag::VarToken, PlHl::var_color)
+}
+/// A constant-syntax leaf atom (a literal already rendered to its string).
+fn const_atom(name: &str) -> PlAtom {
+    PlAtom::syntax(name, PlTag::Syntax, PlHl::const_color)
+}
+
+/// Drive `f` on a fresh PrintC and return the emitted text.
+fn emit_expr<F: FnOnce(&mut PrintC)>(f: F) -> String {
+    let mut p = PrintC::new();
+    p.set_output_stream();
+    f(&mut p);
+    p.emit_mut().output().to_string()
+}
+
+#[test]
+fn rpn_single_binary() {
+    // a + b  -> "a + b" (binary spacing == 1 around the operator).
+    let out = emit_expr(|p| {
+        p.op_binary(&tokens::BINARY_PLUS, None, &var_atom("a"), &var_atom("b"));
+    });
+    assert_eq!(out, "a + b", "binary plus: {out:?}");
+    // The stack must be fully drained.
+}
+
+#[test]
+fn rpn_assignment_form() {
+    // x = a  -> "x = a".
+    let out = emit_expr(|p| {
+        p.op_binary(&tokens::ASSIGNMENT, None, &var_atom("x"), &var_atom("a"));
+    });
+    assert_eq!(out, "x = a", "assignment: {out:?}");
+}
+
+#[test]
+fn rpn_unary_prefix_no_space() {
+    // -a  -> "-a" (unary minus spacing == 0).
+    let out = emit_expr(|p| {
+        p.op_unary(&tokens::UNARY_MINUS, None, &var_atom("a"));
+    });
+    assert_eq!(out, "-a", "unary minus: {out:?}");
+    // ~a -> "~a".
+    let out = emit_expr(|p| {
+        p.op_unary(&tokens::BITWISE_NOT, None, &var_atom("a"));
+    });
+    assert_eq!(out, "~a", "bitwise not: {out:?}");
+}
+
+#[test]
+fn rpn_precedence_forces_parens() {
+    // a * (b + c): push MULTIPLY(a, <subexpr b+c>).  The lower-precedence '+'
+    // as the right operand of '*' must be parenthesized.
+    let out = emit_expr(|p| {
+        // Build manually: push '*', push 'a', then a nested '+' subexpression.
+        p.push_op(&tokens::MULTIPLY, None);
+        p.push_atom(&var_atom("a"));
+        // Now the right operand is a '+' expression; push it as a nested op.
+        p.push_op(&tokens::BINARY_PLUS, None);
+        p.push_atom(&var_atom("b"));
+        p.push_atom(&var_atom("c"));
+    });
+    assert_eq!(out, "a * (b + c)", "precedence parens: {out:?}");
+}
+
+#[test]
+fn rpn_no_parens_when_higher_precedence_nested() {
+    // a + b * c: the higher-precedence '*' on the right needs no parens.
+    let out = emit_expr(|p| {
+        p.push_op(&tokens::BINARY_PLUS, None);
+        p.push_atom(&var_atom("a"));
+        p.push_op(&tokens::MULTIPLY, None);
+        p.push_atom(&var_atom("b"));
+        p.push_atom(&var_atom("c"));
+    });
+    assert_eq!(out, "a + b * c", "no parens for higher prec: {out:?}");
+}
+
+#[test]
+fn rpn_associative_no_parens() {
+    // a + b + c: '+' is associative; nesting the same token on the right
+    // (top==op2 && associative) prints without parens.
+    let out = emit_expr(|p| {
+        p.push_op(&tokens::BINARY_PLUS, None);
+        p.push_atom(&var_atom("a"));
+        p.push_op(&tokens::BINARY_PLUS, None);
+        p.push_atom(&var_atom("b"));
+        p.push_atom(&var_atom("c"));
+    });
+    assert_eq!(out, "a + b + c", "associative: {out:?}");
+}
+
+#[test]
+fn rpn_negate_token_flips_comparison() {
+    // negatetoken modifier flips '<' to '>='.
+    let out = emit_expr(|p| {
+        p.context.set_mod(crate::printlanguage::modifiers::NEGATETOKEN);
+        p.op_binary(&tokens::LESS_THAN, None, &var_atom("a"), &var_atom("b"));
+    });
+    assert_eq!(out, "a >= b", "negate flip: {out:?}");
+}
+
+#[test]
+fn rpn_comparison_constant_operand() {
+    // dat <= 10  (the boolless target shape) using a const-syntax operand.
+    let out = emit_expr(|p| {
+        p.op_binary(&tokens::LESS_EQUAL, None, &var_atom("dat_52"), &const_atom("10"));
+    });
+    assert_eq!(out, "dat_52 <= 10", "comparison: {out:?}");
+}
+
+#[test]
+fn rpn_stack_drains_to_empty() {
+    let mut p = PrintC::new();
+    p.set_output_stream();
+    p.op_binary(&tokens::BINARY_PLUS, None, &var_atom("a"), &var_atom("b"));
+    assert!(p.is_stack_empty(), "RPN stack not drained after a complete expression");
+}

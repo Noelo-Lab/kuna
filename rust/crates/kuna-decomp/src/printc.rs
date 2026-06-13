@@ -4,31 +4,30 @@
 //!
 //! ## What this module ports faithfully *now*
 //!
-//! `PrintC` is a 3.9k-line subclass of `PrintLanguage` whose every `op*`/
-//! `emit*`/`push*` override drives two subsystems that do **not** yet exist in
-//! the merged tree:
+//! `PrintC` is a 3.9k-line subclass of `PrintLanguage`.  As of the
+//! `w10-printc-body` item the **`PrintLanguage` RPN driver** (`pushOp`/
+//! `pushAtom`/`pushVn`/`recurse`/`emitOp`/`emitAtom`/`opBinary`/`opUnary`/
+//! `parentheses`, printlanguage.cc:129-580) is **ported here** (the
+//! `impl PrintC` RPN-driver block) and drives the real `Emit` low-level driver
+//! ([`crate::prettyprint`]'s `EmitNoMarkup`).  It is byte-faithfully
+//! unit-tested against the C++ `emitOp`/`emitAtom`/`parentheses` logic (the
+//! `rpn_*` tests).
 //!
-//!   * the **`Emit` low-level driver** (`prettyprint.{cc,hh}`, the
-//!     `emit->print`/`openGroup`/`openParen`/`tagOp`/`spaces`/… surface).  In
-//!     the checklist this is the *separate* item `w8-s9-prettyprint`
-//!     (currently the `prettyprint.rs` stub); it is **not** a dependency of
-//!     `w8-s9-printc`.
-//!   * the **`PrintLanguage` RPN driver** (`pushOp`/`pushAtom`/`pushVn`/
-//!     `pushVnExplicit`/`recurse`/`emitOp`/`emitAtom`/`opBinary`/`opUnary`),
-//!     which `printlanguage.rs` itself **deferred to the W9 m1-bodies closure**
-//!     because every one of those methods calls into the (stub) `Emit` driver
-//!     (see printlanguage.rs module docs, "Seam: the `Emit`/`EmitMarkup`
-//!     driver and the IR/PrintC virtuals").
-//!
-//! Because the RPN/`Emit` driver is absent, the token-*emitting* bodies of
-//! `PrintC` cannot be transcribed against real infrastructure — they would only
-//! call `todo!()` stubs.  Per the established kuna-rust-port precedent for
-//! exactly this situation (printlanguage.rs deferring its own driver; the fully
-//! deferred [`crate::printjava::PrintJava`]; LOSS-030/033/034 deferring IR
-//! methods whose only consumers are later waves), those bodies are **seam-noted
-//! `// SEAM(W9-emit)`** and recorded as a LOSS rather than stubbed against the
-//! missing driver.  They are wired in the W9 closure together with the rest of
-//! the print stack once `prettyprint`'s `Emit` trait lands.
+//! What still cannot be driven over a real function body is the IR-coupled leaf
+//! of the driver — `recurse`'s implied-op `defOp->getOpcode()->push(...)`
+//! dispatch and `pushVnExplicit`'s Symbol/HighVariable/Datatype/constant
+//! resolution — together with the structured-/flat-block walk (`emitBlock*`,
+//! printc.cc:2827-3514) and the real-prototype signature.  These are blocked
+//! **upstream of the printer**: the merged tree's decompilation passes
+//! (heritage / simplification / merge / type + proto recovery / block
+//! structuring) are seam stubs, so the IR reaching the printer is *raw lifted
+//! p-code* (no HighVariables-with-symbols, no recovered types, **empty
+//! `sblocks`**, a `void NAME(void)` proto stub).  Printing it would emit non-C
+//! garbage, not byte-parity.  Those edges are `// SEAM(decompile-passes)`
+//! (LOSS-130 / W10) and fall to the upstream pass items; the RPN engine they
+//! feed is in place.  The parity gate `tests/printc_parity.rs` measures this
+//! honestly: it decompiles + prints >= 8 corpus functions and byte-compares
+//! each against the C++ oracle, reporting the (upstream-bounded) match count.
 //!
 //! What **is** ported faithfully here, and is what this module's tests exercise:
 //!
@@ -81,7 +80,8 @@ use crate::prettyprint::{
     BraceStyle as EmitBraceStyle, Emit, EmitNoMarkup, MarkupRef, SyntaxHighlight,
 };
 use crate::printlanguage::{
-    format_binary, most_natural_base, unicode_needs_escape, OpToken, PrintContext, TokenType,
+    format_binary, modifiers, most_natural_base, parentheses, unicode_needs_escape, Atom, OpToken,
+    PrintContext, ReversePolish, TagType, TokenType,
 };
 
 // ===========================================================================
@@ -885,31 +885,36 @@ pub fn op_emit_kind(opcode: kuna_num::opcodes::OpCode) -> OpEmitKind {
 }
 
 // ===========================================================================
-// SEAM(W9-emit): the RPN/Emit-driven body of PrintC
+// The RPN/Emit-driven body of PrintC (w10-printc-body)
 // ===========================================================================
 //
-// Everything beyond the data above — the full `op*`/`emit*`/`push*` method
-// bodies (printc.cc:144-1559, 1666-3514, plus `emitBlock*`/`docFunction`/
-// `pushPartialSymbol`/`pushConstant` dispatch and the statement/declaration
-// driver) — drives the `PrintLanguage` RPN stack (`pushOp`/`pushAtom`/`pushVn`/
-// `recurse`/`emitOp`/`opBinary`/`opUnary`) and the `Emit` low-level driver
-// (`emit->print`/`openGroup`/`openParen`/`tagOp`/`spaces`/…).  Neither exists in
-// the merged tree: the `Emit` driver is the separate item `w8-s9-prettyprint`
-// (the `prettyprint.rs` stub, NOT a dependency of `w8-s9-printc`), and the RPN
-// driver was explicitly deferred by printlanguage.rs to the W9 m1-bodies
-// closure.  Per the kuna precedent (printlanguage.rs's own driver deferral,
-// the fully deferred PrintJava, LOSS-030/033/034), these bodies are seam-noted
-// here and ledgered as a LOSS rather than stubbed against a missing driver;
-// they are transcribed in the W9 closure once `Emit` lands.
+// The `PrintLanguage` RPN driver (`pushOp`/`pushAtom`/`pushVn`/`recurse`/
+// `emitOp`/`emitAtom`/`opBinary`/`opUnary`/`parentheses`, printlanguage.cc:
+// 129-580) is now **ported** as the `impl PrintC` block below, driving the real
+// `Emit` back-end (`prettyprint.rs`'s `EmitNoMarkup`).  It is byte-faithfully
+// unit-tested against the C++ `emitOp`/`emitAtom`/`parentheses` logic (see the
+// `rpn_*` tests) — `a + b`, `x = a`, `-a`, `a * (b + c)`, `a + b * c`,
+// associativity, the negate-token flip, all match the upstream emitter.
 //
-// The data this module *does* provide (the token table, negate links, keyword
-// constants, options, the constant/float/char formatters, and the opcode
-// dispatch) is exactly the part of `PrintC` that those W9 bodies consume and
-// that the print-fidelity tests can validate independently of the driver:
+// What is NOT yet driven over a real function body is the per-op IR leaf
+// expansion (`recurse`'s `defOp->getOpcode()->push(...)` implied-op dispatch
+// and `pushVnExplicit`'s Symbol/HighVariable/Datatype/constant resolution) plus
+// the structured-/flat-block walk (`emitBlock*`).  Those are blocked NOT in the
+// printer but UPSTREAM: the merged tree's decompilation passes (heritage /
+// simplification / merge / type + proto recovery / block structuring) are seam
+// stubs, so the IR reaching the printer is raw lifted p-code with no
+// HighVariables-with-symbols, no recovered types, and **empty `sblocks`**.
+// Printing it would emit non-C garbage, not byte-parity.  Those edges are
+// `// SEAM(decompile-passes)` (LOSS-130 / W10) and fall to the upstream pass
+// items; the RPN engine they feed is in place here.
+//
+// The remaining data this module provides (the token table, negate links,
+// keyword constants, options, the constant/float/char formatters, and the
+// opcode dispatch) is exactly what those bodies consume:
 //   - `parentheses` (printlanguage.rs) reads the `tokens::*` precedence data;
 //   - `push_integer`/`push_float`/`pushCharConstant` reduce to
 //     `format_integer_token`/`format_float_token`/`print_unicode`;
-//   - the `op*` overrides reduce to `op_emit_kind` + `opBinary`/`opUnary`/…;
+//   - the `op*` overrides reduce to `op_emit_kind` + `op_binary`/`op_unary`/…;
 //   - the option toggles (`PrintCOptions`) gate the seam branches.
 
 // ===========================================================================
@@ -972,6 +977,14 @@ pub struct PrintC {
     /// The plain-text emit back-end (C++ the bound `Emit *`, an `EmitNoMarkup`
     /// for the non-pretty `print C` path).
     emit: EmitNoMarkup,
+    /// The reverse-polish-notation operator stack (C++ `PrintLanguage::revpol`).
+    /// Owned here because `printlanguage.rs` deferred its RPN driver to this
+    /// closure (the driver and the `PrintC` op-emitters are one unit).
+    revpol: Vec<ReversePolish>,
+    /// The pending data-flow node stack (C++ `PrintLanguage::nodepend`).
+    nodepend: Vec<crate::printlanguage::NodePending>,
+    /// How much of `nodepend` is claimed (C++ `PrintLanguage::pending`).
+    pending: usize,
 }
 
 impl Default for PrintC {
@@ -990,6 +1003,9 @@ impl PrintC {
             name: CAPABILITY_NAME.to_string(),
             flat: false,
             emit: EmitNoMarkup::new(),
+            revpol: Vec::new(),
+            nodepend: Vec::new(),
+            pending: 0,
         }
     }
 
@@ -1093,12 +1109,21 @@ impl PrintC {
 
         // int4 id = emit->openBraceIndent(OPEN_CURLY, option_brace_func);
         let id = self.emit.open_brace_indent("{", to_emit_brace(self.options.brace_func));
-        // emitLocalVarDecls(fd) + emitBlockGraph(...) — the W9-emit RPN body
-        // seam.  Emit a single marker line so the shell is a complete,
-        // brace-matched function body (not byte-parity C).
+        // emitLocalVarDecls(fd) + emitBlockGraph(...).  The RPN body *engine*
+        // (push_op/push_atom/op_binary/op_unary/emit_op/emit_atom/parentheses)
+        // is now ported and unit-tested in this module (byte-faithful to the
+        // C++ emitOp/emitAtom/parentheses).  Driving it over a real function
+        // body is blocked NOT in the printer but UPSTREAM: the merged tree's
+        // decompilation passes (heritage / simplification / merge / type +
+        // proto recovery / block structuring) are seam stubs, so the IR
+        // reaching the printer is raw lifted p-code (no HighVariables with
+        // symbols, no recovered types, no structured blocks) — printing it
+        // would emit non-C garbage, not byte-parity (see LOSS-130 / W10).
+        // Until those passes land, the body slot is a single marker line so the
+        // shell is a complete, brace-matched function.
         self.emit.tag_line();
         self.emit.print(
-            "/* WARNING: body emission is the W9-emit RPN/Emit seam */",
+            "/* WARNING: body emission blocked on upstream decompilation passes (raw p-code IR) */",
             SyntaxHighlight::CommentColor,
         );
         // emit->closeBraceIndent(CLOSE_CURLY, id);
@@ -1197,6 +1222,297 @@ impl PrintC {
     pub fn set_comment_style(&mut self, _style: &str) {
         // SEAM(comment): the slash-star vs slash-slash comment delimiters live
         // with the comment item; recorded as a no-op so the option succeeds.
+    }
+
+    // =====================================================================
+    // The PrintLanguage RPN driver (printlanguage.cc:129-580), realized here
+    // because printlanguage.rs deferred its token-emitting driver to this
+    // closure (the driver + the PrintC op-emitters are one unit; see the
+    // module header).  These methods drive the real [`Emit`] back-end.
+    //
+    // The IR-coupled leaves of the driver (the implied-varnode `recurse` step
+    // `defOp->getOpcode()->push(...)`, and `pushVnExplicit`'s symbol/constant
+    // resolution) need the seamed Symbol/HighVariable/Datatype/TypeOp
+    // subsystems and the proto-/type-/heritage-recovery passes, which the
+    // merged tree leaves unported (LOSS-130: the decompilation passes are
+    // seam stubs, so the IR reaching the printer is raw lifted p-code).  The
+    // RPN *engine* below is therefore transcribed and unit-tested against
+    // synthetic atoms/tokens (byte-faithful to `emitOp`/`emitAtom`/
+    // `parentheses`); the IR-leaf push is the `// SEAM(decompile-passes)`
+    // edge handed to the caller via [`push_atom`].
+    // =====================================================================
+
+    /// Borrow the emit back-end (so a body driver can interleave `tag_line`
+    /// etc. between RPN expressions).
+    pub fn emit_mut(&mut self) -> &mut EmitNoMarkup {
+        &mut self.emit
+    }
+
+    /// Whether the RPN stack is fully drained (C++ `isStackEmpty`).
+    pub fn is_stack_empty(&self) -> bool {
+        self.revpol.is_empty() && self.nodepend.is_empty()
+    }
+
+    /// C++ `PrintLanguage::clear` (printlanguage.cc:685) — drop any partial RPN
+    /// state, leaving the modstack/scope to the [`PrintContext`].
+    pub fn clear_rpn(&mut self) {
+        self.revpol.clear();
+        self.nodepend.clear();
+        self.pending = 0;
+    }
+
+    /// C++ `PrintLanguage::pushOp` (printlanguage.cc:129).  Push an operator
+    /// token onto the RPN stack, emitting any front part of the enclosing
+    /// operator and opening the right group/paren.
+    pub fn push_op(&mut self, tok: &'static OpToken, op: Option<usize>) {
+        if self.pending < self.nodepend.len() {
+            self.recurse(); // Pending varnode pushes before op
+        }
+        let paren;
+        let id;
+        if self.revpol.is_empty() {
+            paren = false;
+            id = self.emit.open_group();
+        } else {
+            let back = self.revpol.last().unwrap().clone();
+            self.emit_op(&back);
+            // Reflect any id2 mutation emit_op performed back onto the stack.
+            *self.revpol.last_mut().unwrap() = back;
+            paren = self.parentheses_top(tok);
+            if paren {
+                id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+            } else {
+                id = self.emit.open_group();
+            }
+        }
+        self.revpol.push(ReversePolish { tok, visited: 0, paren, op, id, id2: 0 });
+    }
+
+    /// C++ `PrintLanguage::pushAtom` (printlanguage.cc:162).  Push a leaf token,
+    /// draining as much of the RPN stack as is now complete.
+    pub fn push_atom(&mut self, atom: &Atom) {
+        if self.pending < self.nodepend.len() {
+            self.recurse();
+        }
+        if self.revpol.is_empty() {
+            self.emit_atom(atom);
+        } else {
+            let back = self.revpol.last().unwrap().clone();
+            self.emit_op(&back);
+            *self.revpol.last_mut().unwrap() = back;
+            self.emit_atom(atom);
+            loop {
+                {
+                    let top = self.revpol.last_mut().unwrap();
+                    top.visited += 1;
+                    if top.visited != top.tok.stage {
+                        break;
+                    }
+                }
+                let entry = self.revpol.last().unwrap().clone();
+                self.emit_op(&entry);
+                if entry.paren {
+                    self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, entry.id);
+                } else {
+                    self.emit.close_group(entry.id);
+                }
+                self.revpol.pop();
+                if self.revpol.is_empty() {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// C++ `PrintLanguage::pushVn` (printlanguage.cc:197).  Queue an implied
+    /// Varnode whose producing expression will be recursed.  Inputs of one op
+    /// are pushed in reverse order (C++ comment).
+    pub fn push_vn(&mut self, vn: usize, op: usize, m: uint4) {
+        self.nodepend.push(crate::printlanguage::NodePending::new(vn, op, m));
+    }
+
+    /// C++ `PrintLanguage::recurse` (printlanguage.cc:521).  Resolve every
+    /// pending Varnode the current op claimed: in C++ an implied one expands its
+    /// defining op (`defOp->getOpcode()->push`) and an explicit one becomes a
+    /// leaf atom (`pushVnExplicit`).
+    ///
+    /// SEAM(decompile-passes): the implied-op `push` dispatch and the explicit
+    /// `pushVnExplicit` symbol/constant resolution need the seamed
+    /// Symbol/HighVariable/Datatype/TypeOp graph (absent in the merged tree).
+    /// The `op_binary`/`op_unary` scaffold above therefore pushes already-
+    /// resolved leaf [`Atom`]s directly (never via `push_vn`), so on the tested
+    /// path `nodepend` is empty and this drains nothing.  When the upstream
+    /// passes land and the body driver stages implied varnodes, this restores
+    /// the C++ claim/pop loop; the pop-without-dispatch here just guarantees
+    /// termination until then.
+    pub fn recurse(&mut self) {
+        let modsave = self.context.mods();
+        let last_pending = self.pending;
+        self.pending = self.nodepend.len();
+        // C++: while (lastPending < pending) { pop nodepend.back(); ... }
+        while self.nodepend.len() > last_pending {
+            if let Some(pend) = self.nodepend.pop() {
+                self.context.set_mods(pend.vnmod);
+                // SEAM(decompile-passes): no implied/explicit leaf expansion.
+            }
+            self.pending = self.nodepend.len();
+        }
+        self.context.set_mods(modsave);
+    }
+
+    /// C++ `PrintLanguage::opBinary` (printlanguage.cc:553) — the data-flow-free
+    /// scaffold: push the operator, then its two operand atoms (supplied by the
+    /// caller as the IR-leaf seam).  The negate-token flip is applied.
+    pub fn op_binary(&mut self, tok: &'static OpToken, op: Option<usize>, lhs: &Atom, rhs: &Atom) {
+        let tok = if self.context.is_set(modifiers::NEGATETOKEN) {
+            self.context.unset_mod(modifiers::NEGATETOKEN);
+            token_negate(tok).unwrap_or(tok)
+        } else {
+            tok
+        };
+        self.push_op(tok, op);
+        // C++ pushes in[1] then in[0]; pushAtom drains in stack order, so the
+        // operands print in0 <op> in1.
+        self.push_atom(lhs);
+        self.push_atom(rhs);
+    }
+
+    /// C++ `PrintLanguage::opUnary` (printlanguage.cc:573) — the scaffold form.
+    pub fn op_unary(&mut self, tok: &'static OpToken, op: Option<usize>, operand: &Atom) {
+        self.push_op(tok, op);
+        self.push_atom(operand);
+    }
+
+    /// C++ `PrintLanguage::emitOp` (printlanguage.cc:332) — resolve final
+    /// spacing / parens for one RPN entry at its current stage.  Mutates the
+    /// entry's `id2` for surround tokens (mirrored back by the callers).
+    fn emit_op(&mut self, entry_in: &ReversePolish) {
+        let mut entry = entry_in.clone();
+        match entry.tok.token_type {
+            TokenType::Binary => {
+                if entry.visited != 1 {
+                    return;
+                }
+                self.emit.spaces(entry.tok.spacing, entry.tok.bump);
+                self.emit.tag_op(entry.tok.print1, SyntaxHighlight::NoColor, &MarkupRef::none());
+                self.emit.spaces(entry.tok.spacing, entry.tok.bump);
+            }
+            TokenType::UnaryPrefix => {
+                if entry.visited != 0 {
+                    return;
+                }
+                self.emit.tag_op(entry.tok.print1, SyntaxHighlight::NoColor, &MarkupRef::none());
+                self.emit.spaces(entry.tok.spacing, entry.tok.bump);
+            }
+            TokenType::Postsurround => {
+                if entry.visited == 0 {
+                    return;
+                }
+                if entry.visited == 1 {
+                    self.emit.spaces(entry.tok.spacing, entry.tok.bump);
+                    entry.id2 = self.emit.open_paren(entry.tok.print1, 0);
+                    self.emit.spaces(0, entry.tok.bump);
+                } else {
+                    self.emit.close_paren(entry.tok.print2, entry.id2);
+                }
+            }
+            TokenType::Presurround => {
+                if entry.visited == 2 {
+                    return;
+                }
+                if entry.visited == 0 {
+                    entry.id2 = self.emit.open_paren(entry.tok.print1, 0);
+                } else {
+                    self.emit.close_paren(entry.tok.print2, entry.id2);
+                    self.emit.spaces(entry.tok.spacing, entry.tok.bump);
+                }
+            }
+            TokenType::Space => {
+                if entry.visited != 1 {
+                    return;
+                }
+                self.emit.spaces(entry.tok.spacing, entry.tok.bump);
+            }
+            TokenType::HiddenFunction => {
+                // Never directly prints anything.
+            }
+        }
+        // Persist any id2 update for the corresponding stack entry: find the
+        // top entry whose token/id matches and copy id2 (the only mutated
+        // field).  push_op/push_atom re-read the top after calling emit_op.
+        if let Some(top) = self.revpol.last_mut() {
+            if std::ptr::eq(top.tok, entry.tok) && top.id == entry.id {
+                top.id2 = entry.id2;
+            }
+        }
+    }
+
+    /// C++ `PrintLanguage::emitAtom` (printlanguage.cc:379) — send a leaf token
+    /// to the low-level emitter according to its tag type.
+    fn emit_atom(&mut self, atom: &Atom) {
+        let markup = MarkupRef::none();
+        match atom.tag {
+            TagType::Syntax => self.emit.print(&atom.name, to_emit_hl(atom.highlight)),
+            TagType::VarToken => {
+                self.emit.tag_variable(&atom.name, to_emit_hl(atom.highlight), &markup)
+            }
+            TagType::FuncToken => {
+                self.emit.tag_func_name(&atom.name, to_emit_hl(atom.highlight), &markup)
+            }
+            TagType::OpToken => self.emit.tag_op(&atom.name, to_emit_hl(atom.highlight), &markup),
+            TagType::TypeToken => {
+                self.emit.tag_type(&atom.name, to_emit_hl(atom.highlight), &markup)
+            }
+            TagType::FieldToken => {
+                self.emit.tag_field(&atom.name, to_emit_hl(atom.highlight), atom.offset, &markup)
+            }
+            TagType::BitFieldToken => {
+                self.emit.tag_bit_field(&atom.name, to_emit_hl(atom.highlight), atom.offset, &markup)
+            }
+            TagType::CaseToken => {
+                let value = match atom.data {
+                    crate::printlanguage::AtomData::IntValue(v) => v,
+                    _ => 0,
+                };
+                self.emit.tag_case_label(&atom.name, to_emit_hl(atom.highlight), &markup, value)
+            }
+            TagType::BlankToken => {} // Print nothing.
+        }
+    }
+
+    /// C++ `PrintLanguage::parentheses` against the current RPN top
+    /// (printlanguage.cc:270 reads `revpol.back()`).  Delegates to the pure
+    /// [`crate::printlanguage::parentheses`] with the previous token for the
+    /// `HiddenFunction` arm.
+    fn parentheses_top(&self, op2: &OpToken) -> bool {
+        let top = self.revpol.last().expect("parentheses on empty revpol");
+        let prev = if self.revpol.len() > 1 {
+            Some(self.revpol[self.revpol.len() - 2].tok)
+        } else {
+            None
+        };
+        parentheses(top, op2, prev)
+    }
+}
+
+/// Convert a [`crate::printlanguage::SyntaxHighlight`] (the [`Atom`] field, the
+/// forward placeholder) to the [`prettyprint`](crate::prettyprint) enum the
+/// [`Emit`] driver consumes.  Both carry the same 11 discriminants in the same
+/// order (printlanguage.hh / prettyprint.hh "must match ClangToken").
+fn to_emit_hl(hl: crate::printlanguage::SyntaxHighlight) -> SyntaxHighlight {
+    use crate::printlanguage::SyntaxHighlight as Pl;
+    match hl {
+        Pl::keyword_color => SyntaxHighlight::KeywordColor,
+        Pl::comment_color => SyntaxHighlight::CommentColor,
+        Pl::type_color => SyntaxHighlight::TypeColor,
+        Pl::funcname_color => SyntaxHighlight::FuncnameColor,
+        Pl::var_color => SyntaxHighlight::VarColor,
+        Pl::const_color => SyntaxHighlight::ConstColor,
+        Pl::param_color => SyntaxHighlight::ParamColor,
+        Pl::global_color => SyntaxHighlight::GlobalColor,
+        Pl::no_color => SyntaxHighlight::NoColor,
+        Pl::error_color => SyntaxHighlight::ErrorColor,
+        Pl::special_color => SyntaxHighlight::SpecialColor,
     }
 }
 
