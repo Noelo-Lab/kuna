@@ -1377,29 +1377,57 @@ impl Heritage {
     /// Guard RETURN ops for a global/output range (C++ `Heritage::guardReturns`,
     /// `heritage.cc:1653`).
     ///
-    /// The active-output branch (potential return values) needs
-    /// `Funcdata::getActiveOutput()` + the real `FuncProto::characterizeAsOutput`
-    /// — both supplied by `ActionPrototypeTypes::initActiveOutput`, which is a
-    /// W4/W6 proto-recovery seam in the merged pipeline.  When the prototype is
-    /// unrecovered `getActiveOutput()` is `None`, so this branch is skipped
-    /// (exactly as C++ with a null `active`).  The persist branch needs
-    /// `(fl&persist)`, which is 0 for an unrecovered register range.
+    /// The active-output branch (potential return values) reads
+    /// `Funcdata::getActiveOutput()` (set by `ActionPrototypeTypes::initActiveOutput`)
+    /// together with `FuncProto::characterizeAsOutput`.  When the heritaged range
+    /// overlaps the recovered output storage, it registers an output trial and
+    /// appends a fresh Varnode at that range to every RETURN op — this is what
+    /// attaches the recovered return register (e.g. 8051 `ACC`, reached via the
+    /// MULTIEQUAL phi the renaming algorithm then builds) to the RETURN, so
+    /// `ActionReturnRecovery` can finalize it.  The persist branch needs
+    /// `(fl&persist)`, 0 for an unrecovered register range.
     fn guard_returns(
         &mut self,
-        _fd: &mut crate::funcdata::Funcdata,
+        fd: &mut crate::funcdata::Funcdata,
         fl: uint4,
         addr: &Address,
         size: int4,
         _write: &mut [crate::seams::VarnodeId],
     ) {
+        use kuna_num::opcodes::OpCode;
         // ParamActive *active = fd->getActiveOutput();
-        // SEAM(W4/W6): `Funcdata` does not own `activeoutput` in the merged tree
-        // (it is initialized by `ActionPrototypeTypes::initActiveOutput`, a
-        // proto-recovery seam).  `active` is therefore null, so the
-        // active-output trial / potential-return-value branch (heritage.cc:1659-
-        // 1675) is skipped — exactly as C++ with `active == NULL`.  This is the
-        // one observable boolless B3 divergence: the C++ B3 adds `ACC` to the
-        // RETURN here; the unrecovered-proto pipeline does not.
+        if fd.get_active_output().is_some() && fd.get_func_proto().has_model() {
+            let output_character = fd.get_func_proto().characterize_as_output(addr, size);
+            if output_character == crate::fspec::Containment::ContainedBy {
+                self.guard_returns_overlapping(fd, addr, size);
+            } else if output_character != crate::fspec::Containment::NoContainment {
+                // active->registerTrial(addr,size);
+                if let Some(active) = fd.get_active_output_mut() {
+                    active.register_trial(addr, size);
+                }
+                // for op in RETURN ops (skip dead / haltType!=0):
+                //   invn = newVarnode(size, addr); invn->setActiveHeritage();
+                //   opInsertInput(op, invn, op->numInput());
+                let return_ops: Vec<crate::seams::OpId> =
+                    fd.obank().iter_code(OpCode::CPUI_RETURN).collect();
+                for op in return_ops {
+                    let o = match fd.obank().get(op) {
+                        Some(o) => o,
+                        None => continue,
+                    };
+                    if o.is_dead() || o.get_halt_type() != 0 {
+                        continue;
+                    }
+                    let n = o.num_input();
+                    let invn = fd.new_varnode(size, addr, None);
+                    fd.vbank_mut()
+                        .get_mut(invn)
+                        .expect("guardReturns: new invn")
+                        .set_active_heritage();
+                    let _ = fd.op_insert_input(op, invn, n);
+                }
+            }
+        }
         // if ((fl&Varnode::persist)==0) return;
         if (fl & varnode_flags::persist) == 0 {
             return;
@@ -1408,6 +1436,65 @@ impl Heritage {
         // recovered persistent (global) range; `fl==0` here (W4 scope seam) so
         // unreachable on the critical path.
         let _ = (addr, size);
+    }
+
+    /// Guard RETURN ops when the heritaged range *contains* the output storage,
+    /// truncating to the recovered output (C++ `Heritage::guardReturnsOverlapping`,
+    /// `heritage.cc:1610`).  Registers the truncated output trial and inserts a
+    /// SUBPIECE before each RETURN, appending the truncated value as a new input.
+    fn guard_returns_overlapping(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        addr: &Address,
+        size: int4,
+    ) {
+        use kuna_num::opcodes::OpCode;
+        use kuna_num::pcoderaw::VarnodeData;
+        let mut vdata = VarnodeData::default();
+        if !fd.get_func_proto().get_biggest_contained_output(addr, size, &mut vdata) {
+            return;
+        }
+        let vspace = match vdata.space.clone() {
+            Some(s) => s,
+            None => return,
+        };
+        let trunc_addr = Address::new(Rc::clone(&vspace), vdata.offset);
+        if let Some(active) = fd.get_active_output_mut() {
+            active.register_trial(&trunc_addr, vdata.size as int4);
+        }
+        // offset = least-significant bytes to truncate (endian-adjusted).
+        let mut offset = (vdata.offset.wrapping_sub(addr.get_offset())) as i64 as int4;
+        if vspace.is_big_endian() {
+            offset = (size - vdata.size as int4) - offset;
+        }
+        let return_ops: Vec<crate::seams::OpId> =
+            fd.obank().iter_code(OpCode::CPUI_RETURN).collect();
+        for op in return_ops {
+            let o = match fd.obank().get(op) {
+                Some(o) => o,
+                None => continue,
+            };
+            if o.is_dead() || o.get_halt_type() != 0 {
+                continue;
+            }
+            let op_addr = o.get_addr().clone();
+            let n = o.num_input();
+            let invn = fd.new_varnode(size, addr, None);
+            let sub_op = fd.new_op(2, op_addr);
+            fd.op_set_opcode(sub_op, typeop_skeleton(OpCode::CPUI_SUBPIECE));
+            let _ = fd.op_set_input(sub_op, invn, 0);
+            let coff = fd.new_constant(4, offset as i64 as u64);
+            let _ = fd.op_set_input(sub_op, coff, 1);
+            fd.op_insert_before(sub_op, op);
+            let ret_val = fd
+                .new_varnode_out(vdata.size as int4, &trunc_addr, sub_op)
+                .expect("guardReturnsOverlapping: new ret_val");
+            fd.vbank_mut()
+                .get_mut(invn)
+                .expect("guardReturnsOverlapping: invn")
+                .set_active_heritage();
+            let _ = fd.op_insert_input(op, ret_val, n);
+        }
     }
 
     /// Guard STORE ops (C++ `Heritage::guardStores`, `heritage.cc:1539`).

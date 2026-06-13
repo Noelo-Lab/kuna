@@ -82,8 +82,10 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::space::AddrSpace;
+use kuna_base::space::{spacetype, AddrSpace};
 use kuna_base::types::{int4, uintb, uintm};
+
+use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
@@ -746,6 +748,841 @@ impl Funcdata {
         self.vbank_mut().add_descend(vn, op)?;
         self.obank_mut().get_mut(op).expect("op_set_input: stale op").set_input(Some(vn), slot);
         Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Parameter-trial ancestor analysis (funcdata_varnode.cc:1802-2040) — the
+    // S4 return-value recovery substrate (ActionReturnRecovery / ActionActiveParam).
+    // -----------------------------------------------------------------------
+
+    /// Test if a Varnode use at a CALL/CALLIND is a legitimate double-use of a
+    /// parameter (C++ `Funcdata::checkCallDoubleUse`, funcdata_varnode.cc:1802).
+    ///
+    /// SEAM(W4): reaches `getCallSpecs` / `FuncCallSpecs::getActiveInput`, the
+    /// call-spec subsystem that is not on `Funcdata` in the merged tree
+    /// (`num_calls()==0` — no CALL ops in the IR), so this is never reachable on
+    /// the recovery path; it conservatively reports `false` (not a double-use).
+    fn check_call_double_use(
+        &self,
+        _opmatch: OpId,
+        _op: OpId,
+        _vn: VarnodeId,
+        _fl: kuna_base::types::uint4,
+        _trial: &crate::fspec::ParamTrial,
+    ) -> bool {
+        false
+    }
+
+    /// Test if the given Varnode seems to only be used by `opmatch` as a
+    /// parameter-passing location (C++ `Funcdata::onlyOpUse`,
+    /// funcdata_varnode.cc:1851).
+    ///
+    /// Walks every descendant of `invn` forward, classifying each use; a
+    /// branch/load/store/non-matching-call/persistent-output use means the
+    /// Varnode is *not* exclusively a parameter (returns `false`).  Uses the
+    /// Varnode mark bit to bound cycles (set on entry, cleared on exit).
+    fn only_op_use(
+        &mut self,
+        invn: VarnodeId,
+        opmatch: OpId,
+        trial: &crate::fspec::ParamTrial,
+        main_flags: kuna_base::types::uint4,
+    ) -> bool {
+        use crate::expression::{traverse_flags, TraverseNode};
+        use crate::seams::OpId as OId;
+        let mut res = true;
+        // varlist holds (vn, flags); invn marked to prevent infinite loops.
+        let mut varlist: Vec<(VarnodeId, kuna_base::types::uint4)> = Vec::with_capacity(64);
+        self.vbank_mut().get_mut(invn).expect("onlyOpUse: stale invn").set_mark();
+        varlist.push((invn, main_flags));
+        let active_output = self.get_active_output().is_some();
+        let mut i = 0;
+        while i < varlist.len() {
+            let (vn, base_flags) = varlist[i];
+            // Snapshot the descend list (we mutate marks while iterating).
+            let descend: Vec<OId> = match self.vbank().get(vn) {
+                Some(v) => v.descend_iter().collect(),
+                None => Vec::new(),
+            };
+            for op in descend {
+                let o = match self.obank().get(op) {
+                    Some(o) => o,
+                    None => continue,
+                };
+                let code = o.code();
+                if op == opmatch {
+                    // if (op->getIn(trial.getSlot())==vn) continue;
+                    if o.get_in(trial.get_slot()) == Some(vn) {
+                        continue;
+                    }
+                }
+                let mut cur_flags = base_flags;
+                match code {
+                    OpCode::CPUI_BRANCH
+                    | OpCode::CPUI_CBRANCH
+                    | OpCode::CPUI_BRANCHIND
+                    | OpCode::CPUI_LOAD
+                    | OpCode::CPUI_STORE => {
+                        res = false;
+                    }
+                    OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                        if self.check_call_double_use(opmatch, op, vn, cur_flags, trial) {
+                            continue;
+                        }
+                        res = false;
+                    }
+                    OpCode::CPUI_INDIRECT => {
+                        cur_flags |= traverse_flags::indirectalt;
+                    }
+                    OpCode::CPUI_COPY => {
+                        let out = o.get_out();
+                        let out_internal = out
+                            .and_then(|ov| self.vbank().get(ov))
+                            .map(|ov| ov.get_space().get_type() == spacetype::IPTR_INTERNAL)
+                            .unwrap_or(false);
+                        let in0 = o.get_in(0);
+                        let in0_incid = in0
+                            .and_then(|iv| self.vbank().get(iv))
+                            .map(|iv| iv.is_incidental_copy())
+                            .unwrap_or(false);
+                        if !out_internal && !o.is_incidental_copy() && !in0_incid {
+                            cur_flags |= traverse_flags::actionalt;
+                        }
+                    }
+                    OpCode::CPUI_RETURN => {
+                        if self.obank().get(opmatch).map(|m| m.code()) == Some(OpCode::CPUI_RETURN) {
+                            // Different RETURN at the same slot is not a use.
+                            if o.get_in(trial.get_slot()) == Some(vn) {
+                                continue;
+                            }
+                        } else if active_output
+                            && o.get_in(0) != Some(vn)
+                            && !TraverseNode::is_alternate_path_valid(
+                                vn,
+                                cur_flags,
+                                self.vbank(),
+                                self.obank(),
+                            )
+                        {
+                            // Middle of analyzing returns: unless we hold the
+                            // actual return value (in0), validate the alt path.
+                            continue;
+                        }
+                        res = false;
+                    }
+                    OpCode::CPUI_MULTIEQUAL
+                    | OpCode::CPUI_INT_SEXT
+                    | OpCode::CPUI_INT_ZEXT
+                    | OpCode::CPUI_CAST => {}
+                    OpCode::CPUI_PIECE => {
+                        if o.get_in(0) == Some(vn) {
+                            if (cur_flags & traverse_flags::lsb_truncated) != 0 {
+                                continue;
+                            }
+                            cur_flags |= traverse_flags::concat_high;
+                        }
+                    }
+                    OpCode::CPUI_SUBPIECE => {
+                        let in1_off = o
+                            .get_in(1)
+                            .and_then(|v| self.vbank().get(v))
+                            .map(|v| v.get_offset())
+                            .unwrap_or(0);
+                        if in1_off != 0 && (cur_flags & traverse_flags::concat_high) == 0 {
+                            cur_flags |= traverse_flags::lsb_truncated;
+                        }
+                    }
+                    _ => {
+                        cur_flags |= traverse_flags::actionalt;
+                    }
+                }
+                if !res {
+                    break;
+                }
+                let subvn = self.obank().get(op).and_then(|o| o.get_out());
+                if let Some(subvn) = subvn {
+                    if self.vbank().get(subvn).map(|v| v.is_persist()).unwrap_or(false) {
+                        res = false;
+                        break;
+                    }
+                    if !self.vbank().get(subvn).map(|v| v.is_mark()).unwrap_or(true) {
+                        varlist.push((subvn, cur_flags));
+                        self.vbank_mut().get_mut(subvn).expect("onlyOpUse: subvn").set_mark();
+                    }
+                }
+            }
+            if !res {
+                break;
+            }
+            i += 1;
+        }
+        for (vn, _) in &varlist {
+            if let Some(v) = self.vbank_mut().get_mut(*vn) {
+                v.clear_mark();
+            }
+        }
+        res
+    }
+
+    /// Test whether a Varnode's data-flow ancestry makes it a realistic
+    /// parameter-passing location for the matching op (C++
+    /// `Funcdata::ancestorOpUse`, funcdata_varnode.cc:1963).
+    ///
+    /// Recurses up through INDIRECT/MULTIEQUAL/COPY/PIECE/SUBPIECE definitions
+    /// (bounded by `maxlevel`), and at the top ancestor defers to
+    /// [`only_op_use`](Self::only_op_use).
+    pub(crate) fn ancestor_op_use(
+        &mut self,
+        maxlevel: int4,
+        invn: VarnodeId,
+        op: OpId,
+        trial: &mut crate::fspec::ParamTrial,
+        offset: int4,
+        main_flags: kuna_base::types::uint4,
+    ) -> bool {
+        use crate::expression::traverse_flags;
+        if maxlevel == 0 {
+            return false;
+        }
+        let written = self.vbank().get(invn).map(|v| v.is_written()).unwrap_or(false);
+        if !written {
+            let is_input = self.vbank().get(invn).map(|v| v.is_input()).unwrap_or(false);
+            if !is_input {
+                return false;
+            }
+            let is_typelock =
+                self.vbank().get(invn).map(|v| v.is_type_lock()).unwrap_or(false);
+            if !is_typelock {
+                return false;
+            }
+            // typelocked input is as good as written.
+            return self.only_op_use(invn, op, trial, main_flags);
+        }
+        let def = self.vbank().get(invn).and_then(|v| v.get_def());
+        let def = match def {
+            Some(d) => d,
+            None => return self.only_op_use(invn, op, trial, main_flags),
+        };
+        let code = self.obank().get(def).map(|o| o.code()).unwrap_or(OpCode::CPUI_COPY);
+        match code {
+            OpCode::CPUI_INDIRECT => {
+                if self.obank().get(def).map(|o| o.is_indirect_creation()).unwrap_or(false) {
+                    return false;
+                }
+                let in0 = self.obank().get(def).and_then(|o| o.get_in(0));
+                if let Some(in0) = in0 {
+                    return self.ancestor_op_use(
+                        maxlevel - 1,
+                        in0,
+                        op,
+                        trial,
+                        offset,
+                        main_flags | traverse_flags::indirect,
+                    );
+                }
+                false
+            }
+            OpCode::CPUI_MULTIEQUAL => {
+                // Trim loops via the op mark bit.
+                if self.obank().get(def).map(|o| o.is_mark()).unwrap_or(false) {
+                    return false;
+                }
+                self.obank_mut().get_mut(def).expect("ancestorOpUse: def").set_mark();
+                let ninput = self.obank().get(def).map(|o| o.num_input()).unwrap_or(0);
+                for k in 0..ninput {
+                    let ink = self.obank().get(def).and_then(|o| o.get_in(k));
+                    if let Some(ink) = ink {
+                        if self.ancestor_op_use(maxlevel - 1, ink, op, trial, offset, main_flags) {
+                            self.obank_mut().get_mut(def).expect("ancestorOpUse: def").clear_mark();
+                            return true;
+                        }
+                    }
+                }
+                self.obank_mut().get_mut(def).expect("ancestorOpUse: def").clear_mark();
+                false
+            }
+            OpCode::CPUI_COPY => {
+                let space_internal = self
+                    .vbank()
+                    .get(invn)
+                    .map(|v| v.get_space().get_type() == spacetype::IPTR_INTERNAL)
+                    .unwrap_or(false);
+                let incidental = self.obank().get(def).map(|o| o.is_incidental_copy()).unwrap_or(false);
+                let in0 = self.obank().get(def).and_then(|o| o.get_in(0));
+                let in0_incid = in0
+                    .and_then(|v| self.vbank().get(v))
+                    .map(|v| v.is_incidental_copy())
+                    .unwrap_or(false);
+                if space_internal || incidental || in0_incid {
+                    if let Some(in0) = in0 {
+                        return self.ancestor_op_use(maxlevel - 1, in0, op, trial, offset, main_flags);
+                    }
+                }
+                self.only_op_use(invn, op, trial, main_flags)
+            }
+            OpCode::CPUI_PIECE => {
+                let in1 = self.obank().get(def).and_then(|o| o.get_in(1));
+                let in1_size = in1.and_then(|v| self.vbank().get(v)).map(|v| v.get_size()).unwrap_or(0);
+                if offset == 0 {
+                    if let Some(in1) = in1 {
+                        return self.ancestor_op_use(maxlevel - 1, in1, op, trial, 0, main_flags);
+                    }
+                    return false;
+                }
+                if offset == in1_size {
+                    let in0 = self.obank().get(def).and_then(|o| o.get_in(0));
+                    if let Some(in0) = in0 {
+                        return self.ancestor_op_use(maxlevel - 1, in0, op, trial, 0, main_flags);
+                    }
+                }
+                false
+            }
+            OpCode::CPUI_SUBPIECE => {
+                let in0 = self.obank().get(def).and_then(|o| o.get_in(0));
+                let new_off = self
+                    .obank()
+                    .get(def)
+                    .and_then(|o| o.get_in(1))
+                    .and_then(|v| self.vbank().get(v))
+                    .map(|v| v.get_offset())
+                    .unwrap_or(0) as int4;
+                if new_off == 0 {
+                    if let Some(in0) = in0 {
+                        let in0_written = self.vbank().get(in0).map(|v| v.is_written()).unwrap_or(false);
+                        if in0_written {
+                            let remcode = self
+                                .vbank()
+                                .get(in0)
+                                .and_then(|v| v.get_def())
+                                .and_then(|d| self.obank().get(d))
+                                .map(|o| o.code());
+                            if remcode == Some(OpCode::CPUI_INT_REM)
+                                || remcode == Some(OpCode::CPUI_INT_SREM)
+                            {
+                                trial.set_rem_formed();
+                            }
+                        }
+                    }
+                }
+                let space_internal = self
+                    .vbank()
+                    .get(invn)
+                    .map(|v| v.get_space().get_type() == spacetype::IPTR_INTERNAL)
+                    .unwrap_or(false);
+                let incidental = self.obank().get(def).map(|o| o.is_incidental_copy()).unwrap_or(false);
+                let in0_incid = in0
+                    .and_then(|v| self.vbank().get(v))
+                    .map(|v| v.is_incidental_copy())
+                    .unwrap_or(false);
+                let overlap_match = in0
+                    .map(|in0v| {
+                        let (inv, in0vn) = (self.vbank().get(invn), self.vbank().get(in0v));
+                        match (inv, in0vn) {
+                            (Some(a), Some(b)) => a.overlap(b) == new_off,
+                            _ => false,
+                        }
+                    })
+                    .unwrap_or(false);
+                if space_internal || incidental || in0_incid || overlap_match {
+                    if let Some(in0) = in0 {
+                        return self.ancestor_op_use(
+                            maxlevel - 1,
+                            in0,
+                            op,
+                            trial,
+                            offset + new_off,
+                            main_flags,
+                        );
+                    }
+                }
+                self.only_op_use(invn, op, trial, main_flags)
+            }
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => false,
+            _ => self.only_op_use(invn, op, trial, main_flags),
+        }
+    }
+}
+
+// ===========================================================================
+// AncestorRealistic (funcdata.hh:672-741, funcdata_varnode.cc:2043-2283)
+// ===========================================================================
+
+/// Per-node state in the depth-first ancestor traversal (C++
+/// `AncestorRealistic::State`).
+#[derive(Clone, Copy)]
+struct AncestorState {
+    /// Operation along the path to the Varnode (C++ `op`).
+    op: OpId,
+    /// `vn = op->getIn(slot)` (C++ `slot`).
+    slot: int4,
+    /// Boolean properties of the node (C++ `flags`).
+    flags: kuna_base::types::uint4,
+    /// Offset of the (eventual) trial value within a larger register (C++ `offset`).
+    offset: int4,
+}
+
+mod ancestor_state_flags {
+    use kuna_base::types::uint4;
+    /// Solid movement into the Varnode on at least one MULTIEQUAL path (slot 0).
+    pub const SEEN_SOLID0: uint4 = 1;
+    /// Solid movement into anything other than slot 0.
+    pub const SEEN_SOLID1: uint4 = 2;
+    /// The Varnode is killed by a call on at least one MULTIEQUAL path.
+    pub const SEEN_KILL: uint4 = 4;
+}
+
+impl AncestorState {
+    fn new(op: OpId, slot: int4) -> AncestorState {
+        AncestorState { op, slot, flags: 0, offset: 0 }
+    }
+    /// Pull back through a SUBPIECE, accumulating the offset (C++
+    /// `State(PcodeOp *o,const State &oldState)`).  `sub_off` is the SUBPIECE's
+    /// in(1) constant offset.
+    fn from_subpiece(op: OpId, old: &AncestorState, sub_off: int4) -> AncestorState {
+        AncestorState { op, slot: 0, flags: 0, offset: old.offset + sub_off }
+    }
+    fn get_solid_slot(&self) -> int4 {
+        if (self.flags & ancestor_state_flags::SEEN_SOLID0) != 0 {
+            0
+        } else {
+            1
+        }
+    }
+    fn mark_solid(&mut self, s: int4) {
+        self.flags |= if s == 0 {
+            ancestor_state_flags::SEEN_SOLID0
+        } else {
+            ancestor_state_flags::SEEN_SOLID1
+        };
+    }
+    fn mark_kill(&mut self) {
+        self.flags |= ancestor_state_flags::SEEN_KILL;
+    }
+    fn seen_solid(&self) -> bool {
+        (self.flags & (ancestor_state_flags::SEEN_SOLID0 | ancestor_state_flags::SEEN_SOLID1)) != 0
+    }
+    fn seen_kill(&self) -> bool {
+        (self.flags & ancestor_state_flags::SEEN_KILL) != 0
+    }
+}
+
+/// Traversal-command enum (C++ `AncestorRealistic` anonymous enum).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AncestorCmd {
+    EnterNode,
+    PopSuccess,
+    PopSolid,
+    PopFail,
+    PopFailKill,
+}
+
+/// Depth-first ancestor-realism analyzer for a parameter trial (C++
+/// `AncestorRealistic`, funcdata.hh:672).  Decides whether a Varnode read at a
+/// RETURN/CALL has realistic data-flow ancestry for a parameter-passing
+/// location.  Operates on `&mut Funcdata` (it sets/clears the Varnode mark bit
+/// to trim cycles, exactly as the C++ `mark`).
+pub(crate) struct AncestorRealistic {
+    state_stack: Vec<AncestorState>,
+    marked_vn: Vec<VarnodeId>,
+    multi_depth: int4,
+    allow_failing_path: bool,
+    /// The current trial's size (C++ `trial->getSize()`), read by the PIECE
+    /// truncation logic in `enterNode`.
+    trial_size: int4,
+    /// Accumulated trial mutations (the C++ mutates `trial` in place during the
+    /// walk; collected here and applied by the caller after `execute`).
+    set_ind_create_formed: bool,
+    set_cond_exe_effect: bool,
+}
+
+impl AncestorRealistic {
+    pub(crate) fn new() -> AncestorRealistic {
+        AncestorRealistic {
+            state_stack: Vec::new(),
+            marked_vn: Vec::new(),
+            multi_depth: 0,
+            allow_failing_path: false,
+            trial_size: 0,
+            set_ind_create_formed: false,
+            set_cond_exe_effect: false,
+        }
+    }
+
+    fn mark(&mut self, fd: &mut Funcdata, vn: VarnodeId) {
+        self.marked_vn.push(vn);
+        if let Some(v) = fd.vbank_mut().get_mut(vn) {
+            v.set_mark();
+        }
+    }
+
+    /// C++ `AncestorRealistic::checkConditionalExe` — true if two input flows,
+    /// one of which is a normal solid flow.
+    fn check_conditional_exe(&self, fd: &Funcdata, state: &AncestorState) -> bool {
+        let bl = match fd.obank().get(state.op).and_then(|o| o.get_parent()) {
+            Some(b) => b,
+            None => return false,
+        };
+        let blref = fd.bblocks_ref().block(bl);
+        if blref.size_in() != 2 {
+            return false;
+        }
+        let solid = blref.get_in(state.get_solid_slot());
+        let solidref = fd.bblocks_ref().block(solid);
+        if solidref.size_out() != 1 {
+            return false;
+        }
+        true
+    }
+
+    /// C++ `AncestorRealistic::enterNode` — traverse into a new Varnode.
+    fn enter_node(&mut self, fd: &mut Funcdata) -> AncestorCmd {
+        let state = *self.state_stack.last().expect("enterNode: empty stack");
+        let state_vn = match fd.obank().get(state.op).and_then(|o| o.get_in(state.slot)) {
+            Some(v) => v,
+            None => return AncestorCmd::PopSuccess,
+        };
+        if fd.vbank().get(state_vn).map(|v| v.is_mark()).unwrap_or(false) {
+            return AncestorCmd::PopSuccess;
+        }
+        let written = fd.vbank().get(state_vn).map(|v| v.is_written()).unwrap_or(false);
+        if !written {
+            let v = fd.vbank().get(state_vn);
+            if v.map(|v| v.is_input()).unwrap_or(false) {
+                if fd.vbank().get(state_vn).map(|v| v.is_unaffected()).unwrap_or(false) {
+                    return AncestorCmd::PopFail;
+                }
+                if fd.vbank().get(state_vn).map(|v| v.is_persist()).unwrap_or(false) {
+                    return AncestorCmd::PopSuccess;
+                }
+                if !fd.vbank().get(state_vn).map(|v| v.is_direct_write()).unwrap_or(false) {
+                    return AncestorCmd::PopFail;
+                }
+            }
+            return AncestorCmd::PopSuccess;
+        }
+        self.mark(fd, state_vn);
+        let op = fd.vbank().get(state_vn).and_then(|v| v.get_def()).expect("enterNode: def");
+        let code = fd.obank().get(op).map(|o| o.code()).unwrap_or(OpCode::CPUI_COPY);
+        match code {
+            OpCode::CPUI_INDIRECT => {
+                if fd.obank().get(op).map(|o| o.is_indirect_creation()).unwrap_or(false) {
+                    self.set_ind_create_formed = true;
+                    let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
+                    let in0_indzero = in0
+                        .and_then(|v| fd.vbank().get(v))
+                        .map(|v| v.is_indirect_zero())
+                        .unwrap_or(false);
+                    if in0_indzero {
+                        return AncestorCmd::PopFailKill;
+                    }
+                    return AncestorCmd::PopSuccess;
+                }
+                if !fd.obank().get(op).map(|o| o.is_indirect_store()).unwrap_or(false) {
+                    let out_retaddr = fd
+                        .obank()
+                        .get(op)
+                        .and_then(|o| o.get_out())
+                        .and_then(|v| fd.vbank().get(v))
+                        .map(|v| v.is_return_address())
+                        .unwrap_or(false);
+                    if out_retaddr {
+                        return AncestorCmd::PopFail;
+                    }
+                    // trial->isKilledByCall(): the caller passes the trial; the
+                    // recovery-path register trials are not killedbycall once a
+                    // model output entry matches.  Reflected via the trial flag
+                    // the caller seeds; conservatively treat as not-killed here
+                    // (SEAM: the killedbycall path needs the trial reference).
+                }
+                self.state_stack.push(AncestorState::new(op, 0));
+                AncestorCmd::EnterNode
+            }
+            OpCode::CPUI_SUBPIECE => {
+                let out_internal = fd
+                    .obank()
+                    .get(op)
+                    .and_then(|o| o.get_out())
+                    .and_then(|v| fd.vbank().get(v))
+                    .map(|v| v.get_space().get_type() == spacetype::IPTR_INTERNAL)
+                    .unwrap_or(false);
+                let incid = fd.obank().get(op).map(|o| o.is_incidental_copy()).unwrap_or(false);
+                let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
+                let in0_incid =
+                    in0.and_then(|v| fd.vbank().get(v)).map(|v| v.is_incidental_copy()).unwrap_or(false);
+                let in1_off = fd
+                    .obank()
+                    .get(op)
+                    .and_then(|o| o.get_in(1))
+                    .and_then(|v| fd.vbank().get(v))
+                    .map(|v| v.get_offset())
+                    .unwrap_or(0) as int4;
+                let overlap_match = {
+                    let out = fd.obank().get(op).and_then(|o| o.get_out());
+                    match (out.and_then(|v| fd.vbank().get(v)), in0.and_then(|v| fd.vbank().get(v))) {
+                        (Some(a), Some(b)) => a.overlap(b) == in1_off,
+                        _ => false,
+                    }
+                };
+                if out_internal || incid || in0_incid || overlap_match {
+                    let st = AncestorState::from_subpiece(op, &state, in1_off);
+                    self.state_stack.push(st);
+                    return AncestorCmd::EnterNode;
+                }
+                // Minimal traversal to rule out unaffected/invalid inputs.
+                let mut curop = op;
+                while let Some(vn) = fd.obank().get(curop).and_then(|o| o.get_in(0)) {
+                    let v_marked = fd.vbank().get(vn).map(|v| v.is_mark()).unwrap_or(false);
+                    let v_input = fd.vbank().get(vn).map(|v| v.is_input()).unwrap_or(false);
+                    if !v_marked && v_input {
+                        let unaff = fd.vbank().get(vn).map(|v| v.is_unaffected()).unwrap_or(false);
+                        let dw = fd.vbank().get(vn).map(|v| v.is_direct_write()).unwrap_or(false);
+                        if unaff || !dw {
+                            return AncestorCmd::PopFail;
+                        }
+                    }
+                    match fd.vbank().get(vn).and_then(|v| v.get_def()) {
+                        Some(d) => {
+                            let c = fd.obank().get(d).map(|o| o.code());
+                            if c == Some(OpCode::CPUI_COPY) || c == Some(OpCode::CPUI_SUBPIECE) {
+                                curop = d;
+                            } else {
+                                break;
+                            }
+                        }
+                        None => break,
+                    }
+                }
+                AncestorCmd::PopSolid
+            }
+            OpCode::CPUI_COPY => {
+                let out_internal = fd
+                    .obank()
+                    .get(op)
+                    .and_then(|o| o.get_out())
+                    .and_then(|v| fd.vbank().get(v))
+                    .map(|v| v.get_space().get_type() == spacetype::IPTR_INTERNAL)
+                    .unwrap_or(false);
+                let incid = fd.obank().get(op).map(|o| o.is_incidental_copy()).unwrap_or(false);
+                let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
+                let in0_incid =
+                    in0.and_then(|v| fd.vbank().get(v)).map(|v| v.is_incidental_copy()).unwrap_or(false);
+                let same_addr = {
+                    let out = fd.obank().get(op).and_then(|o| o.get_out());
+                    match (out.and_then(|v| fd.vbank().get(v)), in0.and_then(|v| fd.vbank().get(v))) {
+                        (Some(a), Some(b)) => a.get_addr() == b.get_addr(),
+                        _ => false,
+                    }
+                };
+                if out_internal || incid || in0_incid || same_addr {
+                    self.state_stack.push(AncestorState::new(op, 0));
+                    return AncestorCmd::EnterNode;
+                }
+                // Minimal traversal for other COPYs.
+                let mut curvn = match in0 {
+                    Some(v) => v,
+                    None => return AncestorCmd::PopSolid,
+                };
+                loop {
+                    let v_marked = fd.vbank().get(curvn).map(|v| v.is_mark()).unwrap_or(false);
+                    let v_input = fd.vbank().get(curvn).map(|v| v.is_input()).unwrap_or(false);
+                    if !v_marked && v_input && !fd.vbank().get(curvn).map(|v| v.is_direct_write()).unwrap_or(false) {
+                        return AncestorCmd::PopFail;
+                    }
+                    let curdef = fd.vbank().get(curvn).and_then(|v| v.get_def());
+                    if let Some(d) = curdef {
+                        if fd.obank().get(d).map(|o| o.is_store_unmapped()).unwrap_or(false) {
+                            return AncestorCmd::PopFail;
+                        }
+                    }
+                    let op2 = match curdef {
+                        Some(d) => d,
+                        None => break,
+                    };
+                    let opc = fd.obank().get(op2).map(|o| o.code());
+                    if opc == Some(OpCode::CPUI_COPY) || opc == Some(OpCode::CPUI_SUBPIECE) {
+                        curvn = fd.obank().get(op2).and_then(|o| o.get_in(0)).unwrap_or(curvn);
+                    } else if opc == Some(OpCode::CPUI_PIECE) {
+                        curvn = fd.obank().get(op2).and_then(|o| o.get_in(1)).unwrap_or(curvn);
+                    } else {
+                        break;
+                    }
+                }
+                AncestorCmd::PopSolid
+            }
+            OpCode::CPUI_MULTIEQUAL => {
+                self.multi_depth += 1;
+                self.state_stack.push(AncestorState::new(op, 0));
+                AncestorCmd::EnterNode
+            }
+            OpCode::CPUI_PIECE => {
+                let state_vn_size = fd.vbank().get(state_vn).map(|v| v.get_size()).unwrap_or(0);
+                let trial_size = self.trial_size;
+                if state_vn_size > trial_size {
+                    let in1_size = fd
+                        .obank()
+                        .get(op)
+                        .and_then(|o| o.get_in(1))
+                        .and_then(|v| fd.vbank().get(v))
+                        .map(|v| v.get_size())
+                        .unwrap_or(0);
+                    let in0_size = fd
+                        .obank()
+                        .get(op)
+                        .and_then(|o| o.get_in(0))
+                        .and_then(|v| fd.vbank().get(v))
+                        .map(|v| v.get_size())
+                        .unwrap_or(0);
+                    if state.offset == 0 && in1_size <= trial_size {
+                        self.state_stack.push(AncestorState::new(op, 1));
+                        return AncestorCmd::EnterNode;
+                    } else if state.offset == in1_size && in0_size <= trial_size {
+                        self.state_stack.push(AncestorState::new(op, 0));
+                        return AncestorCmd::EnterNode;
+                    }
+                    let spbase = fd
+                        .vbank()
+                        .get(state_vn)
+                        .map(|v| v.get_space().get_type() == spacetype::IPTR_SPACEBASE)
+                        .unwrap_or(false);
+                    if !spbase {
+                        return AncestorCmd::PopFail;
+                    }
+                }
+                AncestorCmd::PopSolid
+            }
+            _ => AncestorCmd::PopSolid,
+        }
+    }
+
+    /// C++ `AncestorRealistic::uponPop` — backtrack into a previously visited
+    /// node.
+    fn upon_pop(&mut self, fd: &Funcdata, mut pop_command: AncestorCmd) -> AncestorCmd {
+        let top = self.state_stack.len() - 1;
+        let is_multi = fd.obank().get(self.state_stack[top].op).map(|o| o.code())
+            == Some(OpCode::CPUI_MULTIEQUAL);
+        if is_multi {
+            let prev = top - 1;
+            if pop_command == AncestorCmd::PopFail {
+                self.multi_depth -= 1;
+                self.state_stack.pop();
+                return pop_command;
+            } else if pop_command == AncestorCmd::PopSolid
+                && self.multi_depth == 1
+                && fd.obank().get(self.state_stack[top].op).map(|o| o.num_input()).unwrap_or(0) == 2
+            {
+                let slot = self.state_stack[top].slot;
+                self.state_stack[prev].mark_solid(slot);
+            } else if pop_command == AncestorCmd::PopFailKill {
+                self.state_stack[prev].mark_kill();
+            }
+            self.state_stack[top].slot += 1;
+            let ninput = fd.obank().get(self.state_stack[top].op).map(|o| o.num_input()).unwrap_or(0);
+            if self.state_stack[top].slot == ninput {
+                if self.state_stack[prev].seen_solid() {
+                    pop_command = AncestorCmd::PopSuccess;
+                    if self.state_stack[prev].seen_kill() {
+                        if self.allow_failing_path {
+                            let st = self.state_stack[top];
+                            if !self.check_conditional_exe(fd, &st) {
+                                pop_command = AncestorCmd::PopFail;
+                            } else {
+                                self.set_cond_exe_effect = true;
+                            }
+                        } else {
+                            pop_command = AncestorCmd::PopFail;
+                        }
+                    }
+                } else if self.state_stack[prev].seen_kill() {
+                    pop_command = AncestorCmd::PopFailKill;
+                } else {
+                    pop_command = AncestorCmd::PopSuccess;
+                }
+                self.multi_depth -= 1;
+                self.state_stack.pop();
+                return pop_command;
+            }
+            AncestorCmd::EnterNode
+        } else {
+            self.state_stack.pop();
+            pop_command
+        }
+    }
+
+    /// Perform a full ancestor check on a given parameter trial (C++
+    /// `AncestorRealistic::execute`, funcdata_varnode.cc:2240).
+    ///
+    /// `trial_size`/`trial_has_cond_exe` carry the two trial properties the walk
+    /// reads; the walk may set the trial's `ind_create_formed`/`cond_exe_effect`/
+    /// `ancestor_realistic`/`ancestor_solid` flags — those are applied to the
+    /// caller's `trial` after `execute` returns (see [`Self::apply_trial`]).
+    pub(crate) fn execute(
+        &mut self,
+        fd: &mut Funcdata,
+        op: OpId,
+        slot: int4,
+        trial_size: int4,
+        trial_has_cond_exe: bool,
+        allow_fail: bool,
+    ) -> (bool, bool) {
+        self.allow_failing_path = allow_fail;
+        self.trial_size = trial_size;
+        self.marked_vn.clear();
+        self.state_stack.clear();
+        self.multi_depth = 0;
+        self.set_ind_create_formed = false;
+        self.set_cond_exe_effect = false;
+        // If the parameter itself is an input, we don't consider this realistic
+        // (unless we are re-testing a conditional-execution trial).
+        let in_slot = fd.obank().get(op).and_then(|o| o.get_in(slot));
+        let is_input = in_slot.and_then(|v| fd.vbank().get(v)).map(|v| v.is_input()).unwrap_or(false);
+        if is_input && !trial_has_cond_exe {
+            return (false, false);
+        }
+        let mut command = AncestorCmd::EnterNode;
+        self.state_stack.push(AncestorState::new(op, slot));
+        while !self.state_stack.is_empty() {
+            command = match command {
+                AncestorCmd::EnterNode => self.enter_node(fd),
+                other => self.upon_pop(fd, other),
+            };
+        }
+        // Clear marks left along the way.
+        let marked: Vec<VarnodeId> = std::mem::take(&mut self.marked_vn);
+        for vn in marked {
+            if let Some(v) = fd.vbank_mut().get_mut(vn) {
+                v.clear_mark();
+            }
+        }
+        // (realistic, solid)
+        match command {
+            AncestorCmd::PopSuccess => (true, false),
+            AncestorCmd::PopSolid => (true, true),
+            _ => (false, false),
+        }
+    }
+
+    /// Apply the trial mutations accumulated during [`Self::execute`] to the
+    /// caller's `ParamTrial` (the C++ mutates `trial` in place; the kuna port
+    /// collects the flags and applies them here so the walk can borrow `&mut
+    /// Funcdata` cleanly).  `realistic`/`solid` are the `execute` result.
+    pub(crate) fn apply_trial(
+        &self,
+        trial: &mut crate::fspec::ParamTrial,
+        realistic: bool,
+        solid: bool,
+    ) {
+        if self.set_ind_create_formed {
+            trial.set_ind_create_formed();
+        }
+        if self.set_cond_exe_effect {
+            trial.set_cond_exe_effect();
+        }
+        if realistic {
+            trial.set_ancestor_realistic();
+        }
+        if solid {
+            trial.set_ancestor_solid();
+        }
     }
 }
 
