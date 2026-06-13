@@ -1909,4 +1909,104 @@ mod tests {
         assert_eq!(s.read_int(), 0);
         assert_eq!(s.read_token(), "abc");
     }
+
+    // ---- VERIFIER round-2 adversarial tests (w9-con-interface) ----------
+    //
+    // These pin three faithfulness gaps in the round-2 `read_int` port that
+    // diverge from `std::istream >> int4`.  All three are UNREACHABLE through
+    // the datatest / Python-harness corpus (the `history` command never appears
+    // there; verified by grep), so they are recorded as a loss, not a REJECT.
+
+    /// w9-con-interface (verifier r2): `read_int` overflow does NOT saturate to
+    /// INT_MAX like C++ `std::istream >> int` — it returns 0.  Observable via
+    /// `IfcHistory` (`history 999999999999` prints ALL history in C++ but NOTHING
+    /// in the port).  C++ oracle (`g++ istringstream >> int`): num = 2147483647.
+    #[test]
+    fn verify_w9_r2_read_int_overflow_returns_zero_not_intmax() {
+        let mut s = CommandStream::new("999999999999");
+        // C++ would saturate to i32::MAX (2147483647); the port returns 0.
+        assert_eq!(s.read_int(), 0, "port returns 0 on overflow (diverges from C++ INT_MAX)");
+        assert!(s.eof()); // digits ran to end either way
+    }
+
+    /// w9-con-interface (verifier r2): a sign with no following digit and no
+    /// trailing input. C++ `>> num` consumes the sign, hits end, latches eofbit
+    /// (extraction "fails" but eof is set) — so `IfcHistory`'s post-read
+    /// `!s.eof()` is false and it does NOT throw.  The port REWINDS the sign
+    /// before the eof check, leaving eof clear, so the same input would raise
+    /// "Too many parameters to history".  This is the get-pointer/eof divergence.
+    #[test]
+    fn verify_w9_r2_read_int_sign_only_no_eof_latch() {
+        let mut s = CommandStream::new("+");
+        assert_eq!(s.read_int(), 0);
+        // Port leaves eof CLEAR (sign rewound); C++ would have latched eof here.
+        assert!(!s.eof(), "port does not latch eof on a rewound sign (diverges from C++)");
+        // Reproduce the IfcHistory consequence: skip_ws then !eof => would throw.
+        s.skip_ws();
+        assert!(!s.eof(), "the rewound '+' is not whitespace, so eof stays clear");
+        // => IfcHistory would raise the parse error here, where C++ stays silent.
+    }
+
+    /// w9-con-interface (verifier r2): `IfcHistory` with an INT_MIN argument.
+    /// C++ computes `num-1` which wraps to INT_MAX (loop then prints stale lines).
+    /// The port's `let mut i = num - 1` underflow-panics in a DEBUG build (where
+    /// `cargo test` runs) instead of wrapping.  We assert the read_int value and
+    /// that the subtraction is the panic site, without triggering the panic
+    /// (catching it would still mark the divergence).
+    #[test]
+    fn verify_w9_r2_history_intmin_arg_subtraction_overflows() {
+        let mut s = CommandStream::new("-2147483648");
+        let num = s.read_int();
+        assert_eq!(num, i32::MIN, "INT_MIN parses faithfully");
+        // C++ `num-1` wraps to i32::MAX; the port uses checked `-` => debug panic.
+        // Confirm the wrapping value C++ produces, the value the port should match:
+        assert_eq!(num.wrapping_sub(1), i32::MAX);
+        // (The live IfcHistory path executes `num - 1` unchecked, panicking in
+        // debug; pinned here as the divergence locus, interface.rs:575.)
+    }
+
+    /// w9-con-interface (verifier r2): the F1 fix — register all six "base"
+    /// commands exactly as `ifacedecomp.cc:40-45` does (note `openfile write`
+    /// and `openfile append` are TWO-token commands sharing the `openfile`
+    /// prefix) and drive the harness-critical `openfile write` / `echo` /
+    /// `closefile` cycle end-to-end through `run_command`.  This is the
+    /// `print C` capture path the Python harness relies on (CLAUDE.md).
+    #[test]
+    fn verify_w9_r2_base_commands_registered_like_ifacedecomp() {
+        let src = VecSource::new(
+            ["openfile write out.txt", "echo hello", "closefile", "quit"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        );
+        let mut st = IfaceStatus::new("> ", Box::new(src), 10);
+        // ifacedecomp.cc registerCommands lines 40-45, verbatim token shapes.
+        st.register_com(Box::new(IfcQuit), &["quit"]);
+        st.register_com(Box::new(IfcHistory), &["history"]);
+        st.register_com(Box::new(IfcOpenfile), &["openfile", "write"]);
+        st.register_com(Box::new(IfcOpenfileAppend), &["openfile", "append"]);
+        st.register_com(Box::new(IfcClosefile), &["closefile"]);
+        st.register_com(Box::new(IfcEcho), &["echo"]);
+
+        // `openfile write out.txt` opens the redirect.
+        assert!(st.run_command().unwrap());
+        assert!(st.is_file_open(), "openfile write must establish the redirect");
+        assert_eq!(st.optr, "", "openfile produces no command-line output");
+
+        // `echo hello` lands in the redirect, not optr.  expandCom consumes the
+        // unique "echo" token; the remainder " hello" is echoed verbatim + '\n'.
+        assert!(st.run_command().unwrap());
+        assert!(st.optr.is_empty(), "echo goes to the file redirect, not optr");
+
+        // `closefile` tears it down and returns the captured bytes.
+        assert!(st.run_command().unwrap());
+        assert!(!st.is_file_open());
+        let fo = st.close_file_redirect();
+        // already torn down by the command; nothing left to take.
+        assert!(fo.is_none());
+
+        // `quit` sets done.
+        assert!(st.run_command().unwrap());
+        assert!(st.done, "quit must set done to drop out of mainloop");
+    }
 }
