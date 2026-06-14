@@ -171,6 +171,11 @@ pub struct Architecture {
     pub max_implied_ref: int4,
     /// (kuna) GH-6990: keep only the first return register (C++ `return_single`).
     pub return_single: bool,
+    /// (kuna) angr-style default naming: an unknown callee / global prints as
+    /// `sub_<addr>` / `dat_<addr>` rather than `func_<addr>` (C++
+    /// `Architecture::name_style_angr`, default-on).  Read by the call-spec
+    /// printed-name resolution ([`FuncCallSpecs::fspec_printed_name`]).
+    pub name_style_angr: bool,
     /// (kuna) GH-558: present canonicalized `INT_LESS(x, c+1)` comparisons in
     /// their original `x <= c` form (C++ `present_lessequal`, DIV-2 default-on).
     /// Read by [`ActionPresentCompareForm`](crate::kuna_compareform::ActionPresentCompareForm).
@@ -209,6 +214,8 @@ impl Architecture {
             // C++ Architecture default: max_implied_ref = 2 (resetDefaults).
             max_implied_ref: 2,
             return_single: false,
+            // (kuna) angr-style default naming is default-on (Architecture::reset).
+            name_style_angr: true,
             // (kuna) DIV-2 default-on (GH-558): resetDefaults sets present_lessequal=true.
             present_lessequal: true,
             types: None,

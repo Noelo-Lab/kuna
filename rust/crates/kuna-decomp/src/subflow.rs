@@ -488,14 +488,13 @@ impl SubvariableFlow {
     /// Determine if the given subgraph variable can act as a parameter to the
     /// given CALL op (C++ `SubvariableFlow::tryCallPull`).
     ///
-    /// SEAM(W4): `fd->getCallSpecs(op)` and `FuncCallSpecs::isInputActive/
-    /// isInputLocked/isDotdotdot` are the W4 call-site machinery.  The guard
-    /// structure is transcribed; until W4 lands this returns the seam-gated
-    /// `Err`, since the early `slot==0` / consume guards alone cannot decide it.
+    /// Records a parameter patch (truncate the argument to its logical size) when
+    /// the call's prototype permits it: not input-active (mid-recovery), and not a
+    /// non-varargs locked prototype.
     fn try_call_pull(
         &mut self,
         data: &Funcdata,
-        _op: OpId,
+        op: OpId,
         rvn: RvId,
         slot: int4,
     ) -> KunaResult<bool> {
@@ -510,13 +509,28 @@ impl SubvariableFlow {
             }
         }
         // FuncCallSpecs *fc = fd->getCallSpecs(op);
-        // if (fc == 0) return false;
-        // if (fc->isInputActive()) return false;
-        // if (fc->isInputLocked() && !fc->isDotdotdot()) return false;
-        Err(KunaError::lowlevel(
-            "kuna rust port: SubvariableFlow::tryCallPull needs FuncCallSpecs \
-             (fd->getCallSpecs / isInputActive / isInputLocked / isDotdotdot) — SEAM(W4)",
-        ))
+        let idx = match data.get_call_specs_index(op) {
+            Some(i) => i,
+            None => return Ok(false), // fc == 0
+        };
+        let fc = data.get_call_specs(idx);
+        // Don't trim while in the middle of figuring out params.
+        if fc.is_input_active() {
+            return Ok(false);
+        }
+        // Don't trim a non-varargs locked prototype.
+        if fc.is_input_locked() && !fc.is_dotdotdot() {
+            return Ok(false);
+        }
+        self.patchlist.push(PatchRecord {
+            typ: PatchType::ParameterPatch,
+            patch_op: op,
+            in1: rvn,
+            in2: None,
+            slot,
+        });
+        self.pullcount += 1; // A true terminal modification
+        Ok(true)
     }
 
     /// Determine if the given subgraph variable can act as return value for the
@@ -1953,8 +1967,28 @@ impl SubvariableFlow {
             return Ok(sf); // fd = 0; return;
         }
         sf.valid = true;
-        sf.create_link_root(data, mask, root)?;
+        // C++ builds the root link in the constructor; if a seam aborts it, the
+        // C++ destructor still clears the marks `setReplacement` set.  Mirror that:
+        // on an error, clear every mark recorded in `varmap` before propagating, so
+        // a subsequent SubvariableFlow run does not see a stale mark (which would
+        // trip the `marked vn must be in varmap` invariant).
+        if let Err(e) = sf.create_link_root(data, mask, root) {
+            sf.clear_marks(data);
+            return Err(e);
+        }
         Ok(sf)
+    }
+
+    /// Clear the `mark` bit on every Varnode this subflow recorded in `varmap`
+    /// (the C++ `~SubvariableFlow` mark cleanup; also used on the early-abort
+    /// path so a failed construction does not leak marks).
+    fn clear_marks(&self, data: &mut Funcdata) {
+        let marked: Vec<VarnodeId> = self.varmap.keys().copied().collect();
+        for vn in marked {
+            if let Some(v) = data.vbank_mut().get_mut(vn) {
+                v.clear_mark();
+            }
+        }
     }
 
     /// Trace logical value through data-flow, constructing transform
@@ -1962,24 +1996,32 @@ impl SubvariableFlow {
     pub fn do_trace(&mut self, data: &mut Funcdata) -> KunaResult<bool> {
         self.pullcount = 0;
         let mut retval = false;
+        let mut traced: KunaResult<()> = Ok(());
         if self.valid {
             retval = true;
             while !self.worklist.is_empty() {
-                if !self.process_next_work(data)? {
-                    retval = false;
-                    break;
+                match self.process_next_work(data) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        retval = false;
+                        break;
+                    }
+                    Err(e) => {
+                        // A seam aborted the trace; clear marks (below) before
+                        // surfacing it, so the next run does not see stale marks.
+                        retval = false;
+                        traced = Err(e);
+                        break;
+                    }
                 }
             }
         }
 
-        // Clear marks
-        let marked: Vec<VarnodeId> = self.varmap.keys().copied().collect();
-        for vn in marked {
-            if let Some(v) = data.vbank_mut().get_mut(vn) {
-                v.clear_mark();
-            }
-        }
+        // Clear marks (the C++ destructor's mark cleanup) — runs on every exit
+        // path, including the seam-abort above.
+        self.clear_marks(data);
 
+        traced?;
         if !retval {
             return Ok(false);
         }

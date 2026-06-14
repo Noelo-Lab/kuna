@@ -369,6 +369,77 @@ impl Funcdata {
         self.obank_mut().create_seq(inputs, sq)
     }
 
+    /// Build a `CPUI_INDIRECT` op modeling the indirect effect of `indeffect` (a
+    /// CALL/STORE) on a memory range (C++ `Funcdata::newIndirectOp`,
+    /// `funcdata_op.cc:...`).
+    ///
+    /// Inserts `out[addr,sz] = INDIRECT(in[addr,sz], iop(indeffect))` immediately
+    /// before `indeffect`.  Used by `Heritage::guardCalls` to prepopulate
+    /// data-flow across the call's clobber of registers.
+    pub fn new_indirect_op(
+        &mut self,
+        indeffect: OpId,
+        addr: &kuna_base::address::Address,
+        sz: int4,
+        extra_flags: uint4,
+    ) -> OpId {
+        let indaddr = self.obank().get(indeffect).expect("newIndirectOp: stale op").get_addr().clone();
+        let newin = self.new_varnode(sz, addr, None);
+        let newop = self.new_op(2, indaddr);
+        self.obank_mut().get_mut(newop).expect("newIndirectOp").set_flag(extra_flags);
+        let _ = self.new_varnode_out(sz, addr, newop);
+        self.op_set_opcode_code(newop, OpCode::CPUI_INDIRECT);
+        let _ = self.op_set_input(newop, newin, 0);
+        let iop = self.new_varnode_iop(indeffect);
+        let _ = self.op_set_input(newop, iop, 1);
+        self.op_insert_before(newop, indeffect);
+        newop
+    }
+
+    /// Build a `CPUI_INDIRECT` *creation* op modeling a register killed (and
+    /// possibly produced) by `indeffect` (C++ `Funcdata::newIndirectCreation`,
+    /// `funcdata_op.cc:...`).
+    ///
+    /// Inserts `out[addr,sz] = INDIRECT(0, iop(indeffect))` with the
+    /// `indirect_creation` marker, before `indeffect`.  Used by
+    /// `Heritage::guardCalls` for a killed-by-call output range (the call's return
+    /// register), and by `FuncCallSpecs::collectOutputTrialVarnodes` to find the
+    /// recovered return value.
+    pub fn new_indirect_creation(
+        &mut self,
+        indeffect: OpId,
+        addr: &kuna_base::address::Address,
+        sz: int4,
+        possibleout: bool,
+    ) -> OpId {
+        use crate::op::pcodeop_flags;
+        use crate::varnode::varnode_flags;
+        let indaddr = self.obank().get(indeffect).expect("newIndirectCreation: stale op").get_addr().clone();
+        let newin = self.new_constant(sz, 0);
+        let newop = self.new_op(2, indaddr);
+        self.obank_mut()
+            .get_mut(newop)
+            .expect("newIndirectCreation")
+            .set_flag(pcodeop_flags::indirect_creation);
+        let newout = self.new_varnode_out(sz, addr, newop).expect("newIndirectCreation out");
+        if !possibleout {
+            self.vbank_mut()
+                .get_mut(newin)
+                .expect("newIndirectCreation in")
+                .set_flags_pub(varnode_flags::indirect_creation);
+        }
+        self.vbank_mut()
+            .get_mut(newout)
+            .expect("newIndirectCreation out")
+            .set_flags_pub(varnode_flags::indirect_creation);
+        self.op_set_opcode_code(newop, OpCode::CPUI_INDIRECT);
+        let _ = self.op_set_input(newop, newin, 0);
+        let iop = self.new_varnode_iop(indeffect);
+        let _ = self.op_set_input(newop, iop, 1);
+        self.op_insert_before(newop, indeffect);
+        newop
+    }
+
     /// Make a clone of the given op, copying control-flow properties; the
     /// data-type is \e not cloned (C++ `Funcdata::cloneOp`, `funcdata_op.cc:616`).
     ///

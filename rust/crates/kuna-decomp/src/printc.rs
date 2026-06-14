@@ -2192,6 +2192,11 @@ impl PrintC {
                     self.push_vn_ir(fd, arch, vn, op);
                 }
             }
+            // CALL / CALLIND (printc.cc:613 opCall / 657 opCallind): the functional
+            // `callee(arg1, arg2, ...)` form over the recovered call inputs.
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                self.op_call_ir(fd, arch, op);
+            }
             // MULTIEQUAL / INDIRECT: no-op (printc.hh:337-338 opMultiequal/
             // opIndirect) — copy markers, never printed as an operator.  The
             // phi's value is whatever its (single, post-merge) instance reads.
@@ -2286,6 +2291,116 @@ impl PrintC {
                 crate::printlanguage::SyntaxHighlight::no_color,
             ));
         }
+    }
+
+    /// C++ `PrintC::opCall` (printc.cc:613) / `PrintC::opCallind` (printc.cc:657):
+    /// the functional `callee(arg1, arg2, ...)` form over the recovered call
+    /// inputs.
+    ///
+    /// For a direct CALL the callee name is recovered from the \e fspec annotation
+    /// in0 (the registered call-spec name, else `func_<addr>`/`sub_<addr>`); the
+    /// arguments are `in[1..]`.  For a CALLIND the callee is `(*funcptr)` where the
+    /// funcptr is `in[0]` and the arguments are `in[1..]`.  The hidden-`this` slot
+    /// (`getHiddenThisSlot`) is the C++ method-invocation seam (always -1 here —
+    /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
+    fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let opc = fd.obank().get(op).expect("op_call_ir: stale op").code();
+        let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+        self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+
+        if opc == OpCode::CPUI_CALLIND {
+            // CALLIND: `(*funcptr)(args)`.  The dereference operator wraps in0; args
+            // are in[1..].  count = numInput-1 (no hidden-this here).
+            self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+            let count = nin - 1;
+            if count >= 1 {
+                // (count-1) comma operators glue the argument list.
+                for _ in 0..(count - 1).max(0) {
+                    self.push_op(&tokens::COMMA, Some(op_key(op)));
+                }
+                // The dereferenced callee (in0) is the function expression; the
+                // args are in[1..].  Push the callee first, then the args in order.
+                if let Some(callee) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+                    self.push_vn_ir(fd, arch, callee, op);
+                }
+                for i in 1..nin {
+                    if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
+                        self.push_vn_ir(fd, arch, vn, op);
+                    }
+                }
+            } else {
+                // Void indirect call: the callee expression then an empty arg token.
+                if let Some(callee) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+                    self.push_vn_ir(fd, arch, callee, op);
+                }
+                self.push_atom(&Atom::syntax(
+                    "",
+                    TagType::BlankToken,
+                    crate::printlanguage::SyntaxHighlight::no_color,
+                ));
+            }
+            return;
+        }
+
+        // Direct CALL: the callee name from the fspec annotation.
+        let name = self.call_callee_name(fd, op);
+        self.push_atom(&Atom::with_op(
+            name,
+            TagType::FuncToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+            op_key(op),
+        ));
+        // count = numInput - 1 (no hidden-this: skip = -1).  The argument Varnodes
+        // are in[1..].
+        let count = nin - 1;
+        if count > 0 {
+            for _ in 0..(count - 1) {
+                self.push_op(&tokens::COMMA, Some(op_key(op)));
+            }
+            for i in 1..nin {
+                if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
+                    self.push_vn_ir(fd, arch, vn, op);
+                }
+            }
+        } else {
+            // Void function: empty token (C++ blanktoken).
+            self.push_atom(&Atom::syntax(
+                "",
+                TagType::BlankToken,
+                crate::printlanguage::SyntaxHighlight::no_color,
+            ));
+        }
+    }
+
+    /// Recover the printed callee name for a direct CALL (C++ `PrintC::opCall`'s
+    /// fspec-name branch): the registered call-spec name, else
+    /// `genericFunctionName(entryaddress)` (`func_<addr>` / `sub_<addr>`).
+    ///
+    /// The name lives in the \e fspec annotation in0; the `FuncCallSpecs` carries
+    /// it (looked up by op).  Falls back to the in0 varnode's printed address if no
+    /// call spec is registered (an internal-only op — should not occur on the live
+    /// CALL path).
+    fn call_callee_name(&self, fd: &Funcdata, op: OpId) -> String {
+        if let Some(idx) = fd.get_call_specs_index(op) {
+            let fc = fd.get_call_specs(idx);
+            let nm = fc.get_name();
+            if !nm.is_empty() {
+                return nm.to_string();
+            }
+            // genericFunctionName(entryaddress): angr-style `sub_<addr>` or
+            // `func_<addr>` (the architecture's name style).
+            return fc.fspec_printed_name(fd.get_arch().name_style_angr);
+        }
+        // No call spec (should not happen for a live CALL): print the in0 address.
+        crate::printc::generic_function_name(
+            fd.obank()
+                .get(op)
+                .and_then(|o| o.get_in(0))
+                .and_then(|vn| fd.vbank().get(vn))
+                .map(|v| v.get_addr())
+                .unwrap_or(&kuna_base::address::Address::default()),
+        )
+        .unwrap_or_default()
     }
 
     /// C++ `PrintLanguage::recurse` per-Varnode (printlanguage.cc:533): an

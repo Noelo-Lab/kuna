@@ -671,6 +671,7 @@ impl Architecture {
         seam.trim_recurse_max = self.trim_recurse_max;
         seam.max_implied_ref = self.max_implied_ref;
         seam.return_single = self.return_single;
+        seam.name_style_angr = self.name_style_angr;
         // Share the populated data-type factory so `ActionInferTypes` (run via
         // `glb`) reaches the same interned core types this side cached.
         seam.types = Some(self.types_rc());

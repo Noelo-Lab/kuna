@@ -208,6 +208,35 @@ pub trait FlowEnvironment {
     fn is_sparc_struct_ret_trap(&self, _fd: &Funcdata, _op: OpId) -> bool {
         false
     }
+
+    /// Resolve a direct-call entry address to its callee symbol (C++
+    /// `FlowInfo::queryCall` → `Scope::queryFunction(entryaddr)`,
+    /// `flow.cc:674`): return the callee's display name (so the call renders
+    /// `name(args)` not the address) when the symbol table knows a function at
+    /// that address.  `None` for an unknown callee (the generic `func_<addr>` /
+    /// `sub_<addr>` name applies at print time).
+    ///
+    /// The W4 `Scope::queryFunction` returns a `Funcdata *` carrying the callee's
+    /// own `FuncProto`; the proto is filled in at `ActionDefaultParams` time
+    /// (`queryCall`'s `copyFlowEffects` postpone), so only the name is needed
+    /// here.  The default returns no name (no symbol table in the W3 shell).
+    fn query_call(&self, _entry: &Address) -> Option<String> {
+        None
+    }
+}
+
+/// Allocate a process-unique \e fspec handle (the offset of the \e fspec
+/// annotation address).  In C++ the offset is the raw `FuncCallSpecs *`, a unique
+/// process pointer; here a monotonic counter plays the same role, registered in
+/// the fspec-space side table ([`FuncCallSpecs::register_in_fspec_space`]).  The
+/// handle is never used as a `qlst` index (call specs are looked up by op), so a
+/// simple ever-increasing id is sufficient and stable across `sortCallSpecs`.
+fn next_fspec_handle() -> kuna_base::types::uintb {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    // Start above 0 so the handle is never confused with a null offset; the high
+    // bit is left clear so the value is a valid (small) address offset.
+    static NEXT: AtomicU64 = AtomicU64::new(0x10000);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 /// \brief A class for generating the control-flow structure for a single
@@ -1431,28 +1460,81 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// Set up the FuncCallSpecs for a new CALL site (C++ `setupCallSpecs`,
     /// `flow.cc:698`).  Returns `true` if the sub-function never returns.
     ///
-    /// SEAM(W4): `FuncCallSpecs`, `newVarnodeCallSpecs` (needs the encoded call
-    /// spec), `Override::applyPrototype`, `queryCall`, `checkForFlowModification`
-    /// are all W4.  The call-site counter is bumped so the cadence is preserved.
-    fn setup_call_specs(&mut self, _op: OpId) -> KunaResult<bool> {
-        // res = new FuncCallSpecs(op); qlst.push_back(res);
-        // data.opSetInput(op, data.newVarnodeCallSpecs(res), 0);
-        // data.getOverride().applyPrototype(...); queryCall(*res);
-        // return checkForFlowModification(*res);
+    /// Builds a [`FuncCallSpecs`](crate::fspec::FuncCallSpecs) bound to the CALL op
+    /// and its resolved entry address, pushes it onto the function's `qlst`,
+    /// replaces the call op's in0 with an \e fspec annotation Varnode (so the
+    /// printer recovers the callee name and the body machinery treats the rest of
+    /// the inputs as parameters), and resolves the callee symbol via
+    /// [`queryCall`](Self::query_call).
+    ///
+    /// SEAM(W4): `Override::applyPrototype` and the no-return /
+    /// `checkForFlowModification` flow-modification family are W4; the proto query
+    /// returns only the callee name (the full proto copy lands at
+    /// `ActionDefaultParams` time, exactly as the C++ `queryCall` postpone notes).
+    fn setup_call_specs(&mut self, op: OpId) -> KunaResult<bool> {
+        // C++ FuncCallSpecs(op) reads the entry address off op->getIn(0) for a
+        // direct CALL.
+        let entry = self
+            .data
+            .obank()
+            .get(op)
+            .and_then(|o| o.get_in(0))
+            .and_then(|vn| self.data.vbank().get(vn))
+            .map(|v| v.get_addr().clone())
+            .unwrap_or_default();
+        self.build_call_specs(op, entry, false)?;
         self.qlst_count += 1;
-        // The noreturn-halt insertion (checkForFlowModification) is the part whose
-        // return value backs the iterator up; without FuncCallSpecs we cannot know
-        // no-return status, so we report `false` (the common returning case).
-        // SEAM(W4): a no-return callee would return true here and plant a halt.
+        // SEAM(W4): checkForFlowModification (no-return halt planting) — the
+        // common returning case reports `false`.
         Ok(false)
     }
 
     /// Set up the FuncCallSpecs for a new CALLIND site (C++ `setupCallindSpecs`,
     /// `flow.cc:722`).  Returns `true` if the sub-function never returns.
-    /// SEAM(W4): see [`setup_call_specs`](Self::setup_call_specs).
-    fn setup_callind_specs(&mut self, _op: OpId) -> KunaResult<bool> {
+    ///
+    /// An indirect call leaves the entry address invalid (no direct callee); the
+    /// fspec annotation is NOT installed (the C++ only swaps in the fspec input
+    /// when an override turns the indirect call into a direct one).  The call op's
+    /// in0 stays the indirect target Varnode, which the printer renders as the
+    /// `(*funcptr)(...)` callee.
+    fn setup_callind_specs(&mut self, op: OpId) -> KunaResult<bool> {
+        self.build_call_specs(op, Address::default(), true)?;
         self.qlst_count += 1;
         Ok(false)
+    }
+
+    /// Shared body of [`setup_call_specs`]/[`setup_callind_specs`]: create the
+    /// `FuncCallSpecs`, push it onto `qlst`, and (for a direct CALL) install the
+    /// \e fspec annotation in0 + register the printed name.
+    fn build_call_specs(&mut self, op: OpId, entry: Address, indirect: bool) -> KunaResult<()> {
+        use crate::fspec::FuncCallSpecs;
+        let mut fc = FuncCallSpecs::new(op, entry.clone());
+        // queryCall: resolve the direct callee symbol's name (W4 proto copy
+        // postponed to ActionDefaultParams).
+        if !indirect && !entry.is_invalid() {
+            if let Some(name) = self.env.query_call(&entry) {
+                let _ = fc.set_funcdata(entry.clone(), &name);
+            }
+        }
+        // qlst.push_back(res); the index is the call spec's identity (looked up by
+        // op at use sites — see Funcdata::get_call_specs_index).
+        let _idx = self.data.push_call_specs(fc);
+
+        if !indirect {
+            // data.opSetInput(op, data.newVarnodeCallSpecs(res), 0): replace the
+            // call-target Varnode with the fspec annotation.  The handle is a
+            // process-unique counter; the printed name + entry are registered in
+            // the fspec-space side table (the C++ pointer-cast equivalent).
+            let handle = next_fspec_handle();
+            let angr = self.data.get_arch().name_style_angr;
+            // Register the call spec's printed name under the handle.
+            self.data
+                .get_call_specs(self.data.num_calls() - 1)
+                .register_in_fspec_space(handle, angr);
+            let fspecvn = self.data.new_varnode_call_specs(handle);
+            self.data.op_set_input(op, fspecvn, 0)?;
+        }
+        Ok(())
     }
 
     /// In-line the sub-function at the given call site (C++ `inlineSubFunction`,

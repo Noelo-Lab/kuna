@@ -382,6 +382,10 @@ fn restart_group_reruns_on_restart_pending() {
     }));
 
     let mut ctx = ActionContext::new();
+    // This test exercises the restart RE-RUN path, which is gated on re-flow
+    // availability; enable it (the decompile drive sets this when the flow
+    // environment is threaded in).
+    ctx.can_reflow = true;
     assert_eq!(rg.apply(&mut fd, &mut ctx), 0);
     assert_eq!(
         *log.borrow(),
@@ -410,6 +414,10 @@ fn restart_group_honors_maxrestarts() {
     }));
 
     let mut ctx = ActionContext::new();
+    // This test exercises the restart RE-RUN path, which is gated on re-flow
+    // availability; enable it (the decompile drive sets this when the flow
+    // environment is threaded in).
+    ctx.can_reflow = true;
     assert_eq!(rg.apply(&mut fd, &mut ctx), 0);
     assert_eq!(log.borrow().len(), 3);
     assert!(ctx

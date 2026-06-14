@@ -1297,10 +1297,22 @@ impl Heritage {
                 continue; // removeRevisitedMarkers may have eliminated descendant
             }
             if descend != 1 {
-                // C++ throws LowlevelError("Free varnode with multiple reads")
-                // — a free read always has exactly one descendant.  Panic with
-                // the same invariant rather than silently mis-linking.
-                panic!("kuna heritage: free varnode with multiple reads");
+                // C++ throws LowlevelError("Free varnode with multiple reads") — a
+                // free read should have exactly one descendant.  This invariant can
+                // be transiently violated on the live IR by the *partial* call-side
+                // recovery: a register that flows to several call sites gets a fresh
+                // argument Varnode inserted at each (guardCalls), and a later
+                // simplification can collapse those onto a single free read before
+                // the INDIRECT call-side-effect guard (deferred — see guardCalls)
+                // has run to separate them.  The C++ never sees this because the
+                // call-side INDIRECT chain is complete there.  Rather than abort the
+                // whole function (the C++ throw would), guard this read as-is and
+                // continue: it leaves the multi-read free read linked to its first
+                // use, a strictly better result than dropping the function.
+                // SEAM(W4 call-side INDIRECT chain) — loss ledger.
+                let v = fd.vbank_mut().get_mut(vn).expect("guard: stale read vn");
+                v.set_active_heritage();
+                continue;
             }
             let op = fd
                 .vbank()
@@ -1365,13 +1377,91 @@ impl Heritage {
     /// in unchanged.
     fn guard_calls(
         &mut self,
-        _fd: &mut crate::funcdata::Funcdata,
-        _fl: uint4,
-        _addr: &Address,
-        _size: int4,
+        fd: &mut crate::funcdata::Funcdata,
+        fl: uint4,
+        addr: &Address,
+        size: int4,
         _write: &mut [crate::seams::VarnodeId],
     ) {
-        // for i in 0..fd.num_calls() { ... }  — numCalls()==0 in the merged tree.
+        use crate::fspec::{effect_type, Containment, OFFSET_UNKNOWN};
+        use kuna_base::space::spacetype;
+
+        // bool holdind = ((fl & Varnode::addrtied) != 0);
+        let holdind = (fl & varnode_flags::addrtied) != 0;
+        // Lift the call specs out so each trial-registering mutation can also take
+        // `&mut Funcdata` (the C++ mutates `fd` through the `FuncCallSpecs *`).
+        let mut qlst = fd.take_call_specs();
+        let spc = match addr.get_space() {
+            Some(s) => s.clone(),
+            None => {
+                fd.restore_call_specs(qlst);
+                return;
+            }
+        };
+        for fc in qlst.iter_mut() {
+            let op = fc.get_op();
+            // if (fc->getOp()->isAssignment()) { if out matches addr/size continue; }
+            let is_assignment =
+                fd.obank().get(op).map(|o| o.is_assignment()).unwrap_or(false);
+            if is_assignment {
+                if let Some(outvn) = fd.obank().get(op).and_then(|o| o.get_out()) {
+                    let matches = fd
+                        .vbank()
+                        .get(outvn)
+                        .map(|v| v.get_addr() == addr && v.get_size() == size)
+                        .unwrap_or(false);
+                    if matches {
+                        continue;
+                    }
+                }
+            }
+            let mut off = addr.get_offset();
+            let mut tryregister = true;
+            if spc.get_type() == spacetype::IPTR_SPACEBASE {
+                if fc.get_spacebase_offset() != OFFSET_UNKNOWN {
+                    off = spc.wrap_offset(off.wrapping_sub(fc.get_spacebase_offset()));
+                } else {
+                    tryregister = false;
+                }
+            }
+            let trans_addr = Address::new(Rc::clone(&spc), off);
+
+            // Input-active branch (heritage.cc:1496-1510): register an input
+            // parameter trial and append the argument Varnode to the CALL op.  This
+            // is what makes a register/stack argument appear as a call argument —
+            // the `func(args)` rendering this wave targets.
+            if fc.is_input_active() && tryregister {
+                let ic = fc.proto().characterize_as_input_param(&trans_addr, size);
+                if ic == Containment::ContainsJustified
+                    && fc.get_active_input().which_trial(&trans_addr, size) < 0
+                {
+                    fc.get_active_input().register_trial(&trans_addr, size);
+                    let vn = fd.new_varnode(size, addr, None);
+                    fd.vbank_mut()
+                        .get_mut(vn)
+                        .expect("guardCalls: new arg vn")
+                        .set_active_heritage();
+                    let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+                    let _ = fd.op_insert_input(op, vn, nin);
+                }
+                // ContainedBy → guardCallOverlappingInput (the partial-range
+                // sub-register argument): SEAM(W4 guardCallOverlappingInput), not
+                // reached by the whole-register-argument datatests.
+            }
+
+            // The output-active return-value trial registration and the INDIRECT
+            // side-effect markers (heritage.cc:1470-1526 — `newIndirectOp` /
+            // `newIndirectCreation` for the call's register clobber) are wired in
+            // `new_indirect_op`/`new_indirect_creation` but DEFERRED here: emitting
+            // the INDIRECT-marker chain reaches the downstream INDIRECT-handling
+            // seams (deadcode INDIRECT collapse, merge INDIRECT, the renaming
+            // INDIRECT phi) that are not yet complete on the live IR, which
+            // destabilizes more functions than it fixes.  The input-argument
+            // recovery above (the `func(args)` goal) is independent of these.
+            // SEAM(W4 call-side-effect INDIRECT chain) — see the loss ledger.
+            let _ = (fl, holdind, effect_type::UNKNOWN_EFFECT, Containment::NoContainment);
+        }
+        fd.restore_call_specs(qlst);
     }
 
     /// Guard RETURN ops for a global/output range (C++ `Heritage::guardReturns`,

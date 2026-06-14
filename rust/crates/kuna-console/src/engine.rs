@@ -124,6 +124,38 @@ impl ConsoleProgram {
         self.symbols.iter().find(|s| s.name == name).map(|s| s.addr.clone())
     }
 
+    /// Read the binaryimage's loader symbols into the symbol table as
+    /// FunctionSymbols (C++ `Architecture::readLoaderSymbols`, `architecture.cc:347`,
+    /// called by `testfunction.cc:160` / `consolemain.cc:104` after load).
+    ///
+    /// Each loader symbol (name → entry address, already in `self.symbols`) becomes
+    /// a `FunctionSymbol` in its (namespace-resolved) scope, so a CALL to that
+    /// entry address resolves to the callee's name at flow-analysis time
+    /// (`FlowInfo::queryCall`).  Idempotent: a symbol whose function is already in
+    /// the table is skipped (the C++ `addFunction` no-ops on an existing match via
+    /// `queryFunction`).
+    pub fn read_loader_symbols(&mut self) -> KunaResult<()> {
+        let type_code = self.arch().types().get_type_code()?;
+        let min_size = self.arch().min_funcsymbol_size;
+        let num_spaces = self.arch().manage().num_spaces();
+        // Clone the (name, addr) pairs so the borrow of `self.arch_mut()` below
+        // does not overlap `self.symbols`.
+        let records: Vec<(String, Address)> =
+            self.symbols.iter().map(|s| (s.name.clone(), s.addr.clone())).collect();
+        let arch = self.arch_mut();
+        for (name, addr) in records {
+            let (scope, basename) = arch
+                .symboltab
+                .find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
+            // C++ queryFunction: skip if a function already maps this address.
+            if arch.symboltab.find_function(scope, &addr).is_some() {
+                continue;
+            }
+            arch.symboltab.add_function(scope, &addr, &basename, min_size, type_code.clone())?;
+        }
+        Ok(())
+    }
+
     /// Register a console-created function symbol (the `map function` seam): make
     /// `name`->`addr` resolvable by `load function <name>`.  C++ `Scope::addFunction`
     /// installs the symbol in the symbol table; the kuna console additionally needs
@@ -293,7 +325,12 @@ pub fn bootstrap_program(
 
     let description = arch.sleigh().base().unwrap().get_description().to_string();
 
-    Ok(ConsoleProgram { arch, registry, symbols, description })
+    let mut prog = ConsoleProgram { arch, registry, symbols, description };
+    // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
+    // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
+    // to its callee name at flow-analysis time.
+    prog.read_loader_symbols()?;
+    Ok(prog)
 }
 
 /// Bootstrap from a parsed XML document root (a `<binaryimage>` or a

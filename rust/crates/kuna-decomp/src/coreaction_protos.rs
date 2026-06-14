@@ -89,6 +89,8 @@
 
 use std::rc::Rc;
 
+use kuna_base::types::int4;
+
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
@@ -219,27 +221,36 @@ impl Action for ActionDefaultParams {
         }
         Some(Box::new(ActionDefaultParams { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:2369 — ActionDefaultParams::apply
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:2369 — ActionDefaultParams::apply: give every
+        // sub-function call a prototype model (the callee's if known, else the
+        // evaluation/default model).
         //   evalfp = getArch()->evalfp_called ?: getArch()->defaultfp;
-        //   for (i=0; i<data.numCalls(); ++i):
-        //       fc = data.getCallSpecs(i);
-        //       if (!fc->hasModel()):
-        //           otherfunc = fc->getFuncdata();
-        //           if (otherfunc != 0):
-        //               fc->copy(otherfunc->getFuncProto());
-        //               if (!fc->isModelLocked() && !fc->hasMatchingModel(evalfp))
-        //                   fc->setModel(evalfp);
-        //           else
-        //               fc->setInternal(evalfp, getArch()->types->getTypeVoid());
-        //       fc->insertPcode(data);   // inject any uponreturn p-code
-        //   return 0;
-        //
-        // SEAM(W7/W8-funcdata): iterates `Funcdata::getCallSpecs(i)`
-        // (the `qlst` vector) — absent from `Funcdata` in the merged tree.  The
-        // `FuncCallSpecs::copy/setModel/setInternal/insertPcode` surface exists
-        // in fspec.rs, but there is no per-function call-spec list to walk, so
-        // this is a no-op until the bridge lands (count stays 0).
+        let evalfp = match data.get_arch().eval_fp_called().cloned() {
+            Some(m) => m,
+            // No default model registered (hand-built fixture): nothing to set.
+            None => return 0,
+        };
+        let void_ty = match data.get_arch().types().map(|t| t.get_type_void()) {
+            Some(Ok(t)) => t,
+            _ => return 0,
+        };
+        let size = data.num_calls();
+        for i in 0..size {
+            if !data.get_call_specs(i).proto().has_model() {
+                // The callee `Funcdata` is a cross-function W4 reference; the
+                // recovered callee proto-copy (`fc->copy(otherfunc->getFuncProto())`)
+                // is the W4 path.  For an unknown callee (the common datatest case:
+                // a symbol with no Funcdata), set the default-model internal proto.
+                // SEAM(W4 callee-Funcdata copy): a known callee with a recovered
+                // proto would `copy` it; here the default model applies, which is
+                // what the register-parameter datatests resolve to.
+                data.get_call_specs_mut(i).proto_mut().set_internal(evalfp.clone(), void_ty.clone());
+            }
+            // fc->insertPcode(data): inject any uponreturn p-code.  SEAM(W4
+            // pcodeinjectlib): the default models on the datatest path declare no
+            // uponreturn injection, so this is a no-op here.
+        }
         0
     }
 }
@@ -346,6 +357,103 @@ impl ActionFuncLink {
             base: ActionBase::new(ruleflags::rule_onceperfunc, "funclink", g),
         })
     }
+
+    /// Set up the parameter analysis for a single sub-function call (C++
+    /// `ActionFuncLink::funcLinkInput`, `coreaction.cc:1490`).
+    ///
+    /// For an unlocked or varargs prototype, turn on active-input recovery.  For a
+    /// locked prototype, register a trial per declared parameter and insert a stub
+    /// input Varnode (register params).  The stack-relative (`opStackLoad`),
+    /// JOIN-reassembly, and spacebase-placeholder branches are W4 (`opStackLoad` /
+    /// `findJoin` are not on the W3 Funcdata) — recorded as a loss; they are not
+    /// reached by the register-parameter call-rendering datatests.
+    fn func_link_input(idx: int4, data: &mut Funcdata) {
+        let inputlocked = data.get_call_specs(idx).proto().is_input_locked();
+        let varargs = data.get_call_specs(idx).is_dotdotdot();
+        let has_spacebase = data.get_call_specs(idx).proto().get_spacebase().is_some();
+
+        if !inputlocked || varargs {
+            data.get_call_specs_mut(idx).init_active_input();
+        }
+        // Locked-prototype branch (coreaction.cc:1500-1554): register a trial and
+        // insert a stub input Varnode per declared parameter.  The stack-relative
+        // (`opStackLoad`) and JOIN-reassembly arms are W4 seams (skipped below);
+        // the plain register-parameter insertion is transcribed.
+        if inputlocked {
+            let op = data.get_call_specs(idx).get_op();
+            let numparam = data.get_call_specs(idx).proto().num_params();
+            for i in 0..numparam {
+                let (paddr, psize) = {
+                    let fc = data.get_call_specs(idx);
+                    let p = fc.proto().get_param(i).expect("funcLinkInput: param index");
+                    (p.get_address().clone(), p.get_size())
+                };
+                data.get_call_specs_mut(idx).get_active_input().register_trial(&paddr, psize);
+                data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_active();
+                if varargs {
+                    data.get_call_specs_mut(idx)
+                        .get_active_input()
+                        .get_trial_mut(i)
+                        .set_fixed_position(i);
+                }
+                let spc = match paddr.get_space() {
+                    Some(s) => s.clone(),
+                    None => continue,
+                };
+                if spc.get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE
+                    || spc.get_type() == kuna_base::space::spacetype::IPTR_JOIN
+                {
+                    // SEAM(W4 opStackLoad/findJoin): a stack-relative or joined
+                    // locked parameter needs `opStackLoad`/`findJoin`, which are W4.
+                    // The register-parameter datatests do not reach this; a
+                    // stack-passed locked param is left unmodeled here.
+                    continue;
+                }
+                // Plain register parameter: insert a fresh input Varnode at the end.
+                let pvn = data.new_varnode(psize, &paddr, None);
+                let nin = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+                let _ = data.op_insert_input(op, pvn, nin);
+            }
+        }
+        // SEAM(W4 createPlaceholder): the spacebase stack placeholder
+        // (`fc->createPlaceholder`) needs `opStackLoad`; not reached by the
+        // register-parameter datatests.
+        let _ = has_spacebase;
+    }
+
+    /// Set up the return-value recovery for a single sub-function call (C++
+    /// `ActionFuncLink::funcLinkOutput`, `coreaction.cc:1565`).
+    ///
+    /// Drop any override output Varnode; for a locked non-void output build the
+    /// output (+ extension op); for an unlocked output, turn on active-output
+    /// recovery.  The locked-output build (stack output lock / extension op) is
+    /// the type-system path — the common datatest path is the unlocked branch.
+    fn func_link_output(idx: int4, data: &mut Funcdata) {
+        let callop = data.get_call_specs(idx).get_op();
+        // CALL ops are expected to have no output; an override may have produced
+        // one — remove it (the IPTR_INTERNAL error case is the override-unique seam).
+        if data.obank().get(callop).and_then(|o| o.get_out()).is_some() {
+            data.op_unset_output(callop);
+        }
+        if data.get_call_specs(idx).proto().is_output_locked() {
+            // SEAM(W6 locked-output build): the locked-output Varnode + extension op
+            // (assumedOutputExtension / opMarkCalculatedBool / stack output lock)
+            // is the type-recovery path; the default-model datatests take the
+            // unlocked branch.  Leave the output recovery to ActionActiveReturn.
+        } else {
+            // C++ `fc->initActiveOutput()` begins gathering the call's return
+            // value.  In the live IR that gathering only works once the call's
+            // killed-by-call output range is guarded by an `INDIRECT` creation
+            // marker (`Heritage::guardCalls`) — that INDIRECT chain reaches the
+            // downstream INDIRECT-handling seams and is DEFERRED (see guardCalls).
+            // Without it, marking a call output-active leaves the return register
+            // as an un-guarded free read, which trips the heritage single-read
+            // invariant.  So call-return recovery is held off until that chain
+            // lands; the input-argument recovery (the `func(args)` goal) is
+            // independent and stays on.  SEAM(W4 call-return recovery) — loss ledger.
+            // data.get_call_specs_mut(idx).init_active_output();
+        }
+    }
 }
 
 impl Action for ActionFuncLink {
@@ -361,26 +469,14 @@ impl Action for ActionFuncLink {
         }
         Some(Box::new(ActionFuncLink { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:1619 — ActionFuncLink::apply
-        //   size = data.numCalls();
-        //   for (i=0; i<size; ++i):
-        //       funcLinkInput(data.getCallSpecs(i), data);
-        //       funcLinkOutput(data.getCallSpecs(i), data);
-        //   return 0;
-        //
-        // funcLinkInput (coreaction.cc:1490): for a locked prototype, register
-        //   parameter trials and insert stub Varnodes (stack-relative loads,
-        //   JOIN/PIECE reassembly, or plain input Varnodes); for varargs or
-        //   unlocked, initActiveInput(); create the stack placeholder if needed.
-        // funcLinkOutput (coreaction.cc:1565): drop any override output Varnode
-        //   (error on unique-space output), and for a locked output build the
-        //   output Varnode (+ extension op) or delay it for a stack output; for
-        //   an unlocked output, initActiveOutput().
-        //
-        // SEAM(W7/W8-funcdata): both helpers iterate `Funcdata::getCallSpecs(i)`
-        // (absent) and mutate per-call `ParamActive`/output state through the
-        // call-spec list.  Deferred (count stays 0).
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:1619 — ActionFuncLink::apply: per sub-function, set up
+        // input + output recovery.
+        let size = data.num_calls();
+        for i in 0..size {
+            ActionFuncLink::func_link_input(i, data);
+            ActionFuncLink::func_link_output(i, data);
+        }
         0
     }
 }
@@ -422,16 +518,14 @@ impl Action for ActionFuncLinkOutOnly {
         }
         Some(Box::new(ActionFuncLinkOutOnly { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:1632 — ActionFuncLinkOutOnly::apply
-        //   size = data.numCalls();
-        //   for (i=0; i<size; ++i)
-        //       ActionFuncLink::funcLinkOutput(data.getCallSpecs(i), data);
-        //   return 0;
-        //
-        // SEAM(W7/W8-funcdata): iterates `Funcdata::getCallSpecs(i)` (absent);
-        // `funcLinkOutput` is the same surface seamed under `ActionFuncLink`.
-        // Deferred (count stays 0).
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:1632 — ActionFuncLinkOutOnly::apply: only the output
+        // recovery per sub-function (the `protorecovery` group is disabled, so
+        // inputs are not gathered).
+        let size = data.num_calls();
+        for i in 0..size {
+            ActionFuncLink::func_link_output(i, data);
+        }
         0
     }
 }
@@ -528,33 +622,69 @@ impl Action for ActionActiveParam {
         }
         Some(Box::new(ActionActiveParam { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:1769 — ActionActiveParam::apply
-        //   AliasChecker aliascheck; aliascheck.gather(&data, getStackSpace(), true);
-        //   for (i=0; i<data.numCalls(); ++i):
-        //       fc = data.getCallSpecs(i);
-        //       try {
-        //         if (fc->isInputActive()):
-        //             activeinput = fc->getActiveInput();
-        //             trimmable = numPasses>0 || op->code()!=CPUI_CALLIND;
-        //             if (!activeinput->isFullyChecked())
-        //                 fc->checkInputTrialUse(data, aliascheck);
-        //             activeinput->finishPass();
-        //             if (numPasses > maxPass) markFullyChecked();
-        //             else count += 1;          // still work to do
-        //             if (trimmable && isFullyChecked()):
-        //                 if (needsFinalCheck()) fc->finalInputCheck();
-        //                 fc->resolveModel(activeinput);
-        //                 fc->deriveInputMap(activeinput);
-        //                 fc->buildInputFromTrials(data);
-        //                 fc->clearActiveInput();
-        //                 count += 1;
-        //       } catch (LowlevelError &err) { rethrow with call name/seqnum }
-        //
-        // SEAM(W7/W8-funcdata): iterates `Funcdata::getCallSpecs(i)` (absent)
-        // and drives `FuncCallSpecs`-level trial/model resolution per call.
-        // The `AliasChecker` gather over the stack space is part of the same
-        // seamed surface.  Deferred (count stays 0).
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:1769 — ActionActiveParam::apply: per sub-function, run
+        // input-parameter recovery over its active trials.
+        use crate::funcdata_callsite::{
+            build_input_from_trials, check_input_trial_use, final_input_check,
+        };
+        // aliascheck.gather(&data, getStackSpace(), true): deferred local-alias
+        // checker for the spacebase-parameter branch.
+        let mut aliascheck = data.build_alias_checker_deferred();
+        let manager_rc = data.get_arch().manage.clone();
+
+        // Lift the call specs out of `qlst` so each `&mut FuncCallSpecs` recovery
+        // can also take `&mut Funcdata` (the C++ holds a `FuncCallSpecs *` and
+        // mutates `data` through it).
+        let mut qlst = data.take_call_specs();
+        for fc in qlst.iter_mut() {
+            if !fc.is_input_active() {
+                continue;
+            }
+            let op = fc.get_op();
+            // A CALL op destroyed by block/deadcode removal (or whose slot was
+            // reused by a non-CALL op) leaves a dangling call spec until
+            // `deleteCallSpecs` prunes it; guard against touching it.
+            let op_ok = data
+                .obank()
+                .get(op)
+                .map(|o| {
+                    !o.is_dead()
+                        && matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
+                })
+                .unwrap_or(false);
+            if !op_ok {
+                continue;
+            }
+            // trimmable = numPasses>0 || op->code() != CPUI_CALLIND.
+            let is_callind =
+                data.obank().get(op).map(|o| o.code() == OpCode::CPUI_CALLIND).unwrap_or(false);
+            let trimmable = fc.get_active_input().get_num_passes() > 0 || !is_callind;
+
+            if !fc.get_active_input().is_fully_checked() {
+                if let Some(ac) = aliascheck.as_mut() {
+                    check_input_trial_use(fc, data, ac);
+                }
+            }
+            fc.get_active_input().finish_pass();
+            if fc.get_active_input().get_num_passes() > fc.get_active_input().get_max_pass() {
+                fc.get_active_input().mark_fully_checked();
+            } else {
+                self.base.count += 1; // still have work to do
+            }
+            if trimmable && fc.get_active_input().is_fully_checked() {
+                if fc.get_active_input().needs_final_check() {
+                    final_input_check(fc, data);
+                }
+                // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
+                // the model and fill in the trial → parameter map.
+                let _ = fc.resolve_and_derive_input_map(&manager_rc);
+                build_input_from_trials(fc, data);
+                fc.clear_active_input();
+                self.base.count += 1;
+            }
+        }
+        data.restore_call_specs(qlst);
         0
     }
 }
@@ -592,22 +722,36 @@ impl Action for ActionActiveReturn {
         }
         Some(Box::new(ActionActiveReturn { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:1817 — ActionActiveReturn::apply
-        //   for (i=0; i<data.numCalls(); ++i):
-        //       fc = data.getCallSpecs(i);
-        //       if (fc->isOutputActive()):
-        //           activeoutput = fc->getActiveOutput();
-        //           vector<Varnode *> trialvn;
-        //           fc->checkOutputTrialUse(data, trialvn);
-        //           fc->deriveOutputMap(activeoutput);
-        //           fc->buildOutputFromTrials(data, trialvn);
-        //           fc->clearActiveOutput();
-        //           count += 1;
-        //   return 0;
-        //
-        // SEAM(W7/W8-funcdata): iterates `Funcdata::getCallSpecs(i)` (absent).
-        // Deferred (count stays 0).
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:1817 — ActionActiveReturn::apply: per sub-function with
+        // an active output, recover the return value Varnode.
+        use crate::funcdata_callsite::{build_output_from_trials, check_output_trial_use};
+        let manager_rc = data.get_arch().manage.clone();
+        let mut qlst = data.take_call_specs();
+        for fc in qlst.iter_mut() {
+            if !fc.is_output_active() {
+                continue;
+            }
+            // Skip a call spec whose op was destroyed or whose slot was reused by a
+            // non-CALL op (deleteCallSpecs prune analogue — see ActionActiveParam).
+            let op_ok = data
+                .obank()
+                .get(fc.get_op())
+                .map(|o| {
+                    !o.is_dead()
+                        && matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
+                })
+                .unwrap_or(false);
+            if !op_ok {
+                continue;
+            }
+            let trialvn = check_output_trial_use(fc, data);
+            let _ = fc.derive_output_map_self(&manager_rc);
+            build_output_from_trials(fc, data, &trialvn);
+            fc.clear_active_output();
+            self.base.count += 1;
+        }
+        data.restore_call_specs(qlst);
         0
     }
 }

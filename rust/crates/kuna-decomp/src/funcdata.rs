@@ -74,7 +74,7 @@ use kuna_base::error::KunaResult;
 use kuna_base::types::{int2, int4, uint4, uint8, uintm, Wrap};
 
 use crate::block::{block_flags, BasicData, BlockGraph, BlockKind, FlowBlock};
-use crate::fspec::{FuncProto, ParamActive};
+use crate::fspec::{FuncCallSpecs, FuncProto, ParamActive};
 use crate::op::PcodeOpBank;
 use crate::seams::{ArchHandle, BlockId, OpId, VarnodeId};
 use crate::varnode::{DefOpInfo, VarnodeBank};
@@ -201,6 +201,17 @@ pub struct Funcdata {
     /// `ActionHeritage` invocations in the universalAction loop, exactly as the
     /// C++ `Funcdata` member does.  Driven through [`op_heritage`](Funcdata::op_heritage).
     heritage: crate::heritage::Heritage,
+    /// List of calls this function makes (C++ `vector<FuncCallSpecs *> qlst`,
+    /// `funcdata.hh:89`).  Populated by `FlowInfo::setupCallSpecs`/
+    /// `setupCallindSpecs` during flow analysis (the call op's in0 is an
+    /// \e fspec annotation whose offset is the index into this vector), walked by
+    /// the call-site recovery actions (`ActionFuncLink`/`ActionActiveParam`/
+    /// `ActionActiveReturn`/`ActionDefaultParams`) and the printer's `opCall`.
+    ///
+    /// In C++ the `qlst` holds raw `FuncCallSpecs *` and the fspec address offset
+    /// *is* that pointer; here the entries live inline and the offset is the
+    /// vector index (the faithful equivalent — see `newVarnodeCallSpecs`).
+    qlst: Vec<FuncCallSpecs>,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -292,6 +303,7 @@ impl Funcdata {
             sblocks,
             high_bank: crate::variable::HighVariableBank::new(),
             heritage: crate::heritage::Heritage::new(),
+            qlst: Vec::new(),
         })
     }
 
@@ -390,13 +402,96 @@ impl Funcdata {
         self.activeoutput = Some(active);
     }
 
-    /// Number of sub-function call specifications (C++ `Funcdata::numCalls`).
-    ///
-    /// SEAM(W6/W7): the `FuncCallSpecs` recovery (`FlowInfo` CALL-site analysis)
-    /// is a seam in the merged tree — no call specs are built — so this is 0.
-    /// `ActionDeadCode::markConsumedParameters` iterates `0..numCalls()`, a no-op.
+    /// Number of sub-function call specifications (C++ `Funcdata::numCalls`,
+    /// `funcdata.hh:281`).  The `qlst` is populated by `FlowInfo::setupCallSpecs`
+    /// during flow analysis.
     pub fn num_calls(&self) -> int4 {
-        0
+        self.qlst.len() as int4
+    }
+
+    /// Get the i-th call specification (C++ `Funcdata::getCallSpecs(int4)`,
+    /// `funcdata.hh:282`).
+    pub fn get_call_specs(&self, i: int4) -> &FuncCallSpecs {
+        &self.qlst[i as usize]
+    }
+
+    /// Get the i-th call specification mutably (the recovery actions need to
+    /// mutate the `ParamActive` trials in place).
+    pub fn get_call_specs_mut(&mut self, i: int4) -> &mut FuncCallSpecs {
+        &mut self.qlst[i as usize]
+    }
+
+    /// Get the call specification associated with a CALL op (C++
+    /// `Funcdata::getCallSpecs(const PcodeOp *)`, `funcdata.cc:481`).
+    ///
+    /// In C++ this first checks whether `op->getIn(0)` is an \e fspec annotation
+    /// (recovering the `FuncCallSpecs *` from the offset directly); since the
+    /// offset is the `qlst` index here, both arms reduce to the same vector entry,
+    /// so the index lookup is the faithful equivalent.  Returns the matching
+    /// `qlst` index, or `None`.
+    pub fn get_call_specs_index(&self, op: OpId) -> Option<int4> {
+        self.qlst.iter().position(|fc| fc.get_op() == op).map(|i| i as int4)
+    }
+
+    /// Append a newly-built call specification to the `qlst` (C++
+    /// `qlst.push_back(res)` in `FlowInfo::setupCallSpecs`).  Returns its index
+    /// (the \e fspec handle).
+    pub fn push_call_specs(&mut self, fc: FuncCallSpecs) -> int4 {
+        self.qlst.push(fc);
+        (self.qlst.len() - 1) as int4
+    }
+
+    /// Remove all call specifications (C++ `Funcdata::clearCallSpecs`,
+    /// `funcdata.cc:462`).
+    pub fn clear_call_specs(&mut self) {
+        self.qlst.clear();
+    }
+
+    /// Move the `qlst` out of `self` (leaving it empty), so the recovery actions
+    /// can iterate the call specs while still borrowing `&mut Funcdata` for the
+    /// per-call IR rewrites.  Mirror of [`Self::take_active_output`] — the C++
+    /// holds a `FuncCallSpecs *` and mutates `data` through it; the borrow checker
+    /// forces the take/restore dance here.
+    pub fn take_call_specs(&mut self) -> Vec<FuncCallSpecs> {
+        std::mem::take(&mut self.qlst)
+    }
+
+    /// Restore the `qlst` taken by [`Self::take_call_specs`].
+    pub fn restore_call_specs(&mut self, qlst: Vec<FuncCallSpecs>) {
+        self.qlst = qlst;
+    }
+
+    /// Put the calls in dominance order so earlier calls get evaluated first
+    /// (C++ `Funcdata::sortCallSpecs`, `funcdata.cc:514`; comparator
+    /// `compareCallspecs`, `funcdata.cc:501`: by parent-block index, then by the
+    /// call op's `SeqNum` order).  Order affects parameter analysis.
+    ///
+    /// Because the \e fspec handle is the call op's own identity (not the vector
+    /// position), reordering `qlst` does not invalidate the annotation Varnodes
+    /// (see [`Self::get_call_specs_index`]).
+    pub fn sort_call_specs(&mut self) {
+        // Pre-compute (block index, seqnum order) for each call op so the sort key
+        // does not re-borrow the op bank inside the comparator.
+        let mut keyed: Vec<(int4, u32, FuncCallSpecs)> = self
+            .qlst
+            .drain(..)
+            .map(|fc| {
+                let op = fc.get_op();
+                let o = self.obank.get(op);
+                let ind = o
+                    .and_then(|o| o.get_parent())
+                    .map(|b| self.bblocks.block(b).get_index())
+                    .unwrap_or(0);
+                let order = self
+                    .obank
+                    .get(op)
+                    .map(|o| o.get_seq_num().get_order())
+                    .unwrap_or(0);
+                (ind, order, fc)
+            })
+            .collect();
+        keyed.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+        self.qlst = keyed.into_iter().map(|(_, _, fc)| fc).collect();
     }
 
     /// Find the jump table associated with a BRANCHIND op, or `None` (C++
@@ -1133,7 +1228,9 @@ impl Funcdata {
         self.clear_blocks();
         self.obank.clear();
         self.vbank.clear();
-        // clearCallSpecs();                                          -- SEAM(W4)
+        // clearCallSpecs() (funcdata.cc:104): drop the call-spec list so a restart
+        // (which re-follows flow and rebuilds qlst) does not keep stale ops.
+        self.clear_call_specs();
         self.clear_jump_tables();
         // heritage.clear() (funcdata.cc:107): reset the SSA-construction state.
         self.heritage.clear();

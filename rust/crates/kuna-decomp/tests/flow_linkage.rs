@@ -509,8 +509,31 @@ fn first_n_op_lines(body: &[String], n: usize) -> Vec<String> {
     body.iter()
         .filter(|l| l.starts_with("  "))
         .take(n)
-        .map(|l| normalize_coderef_size(l.trim_end()))
+        .map(|l| normalize_fspec_offset(&normalize_coderef_size(l.trim_end())))
         .collect()
+}
+
+/// Normalize the offset of any `(fspec,0x<off>,<size>)` triple to `#`.
+///
+/// After `FlowInfo::setupCallSpecs`, a direct CALL's slot-0 input is an \e fspec
+/// annotation Varnode whose offset is the call-spec handle — a process-unique
+/// value (a raw `FuncCallSpecs *` in the C++ oracle, a monotonic counter here),
+/// so it is non-reproducible across runs/engines.  Scrub it to `#` exactly as
+/// LOSS-009 scrubs heap-pointer constants, so the fixture compare stays
+/// deterministic while still pinning that the in0 is an fspec annotation.
+fn normalize_fspec_offset(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(pos) = rest.find("(fspec,0x") {
+        out.push_str(&rest[..pos]);
+        out.push_str("(fspec,#,");
+        // Skip past `(fspec,0x<hex>,`
+        let after = &rest[pos + "(fspec,0x".len()..];
+        let comma = after.find(',').unwrap_or(after.len());
+        rest = &after[comma + 1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The opcode names whose slot-0 input is a \e code reference (C++ `isCodeRef()`
@@ -549,8 +572,12 @@ fn normalize_coderef_size(line: &str) -> String {
     }
     let out = rest[0];
     let in0 = rest[1];
-    // Rewrite in0's `(space,0x<off>,<size>)` -> size 1.
-    let in0_norm = rewrite_triple_size_to_one(in0);
+    // For a CALL, `FlowInfo::setupCallSpecs` replaces the slot-0 code-ref Varnode
+    // (the raw `(ram,<target>,...)` the lifter emits) with an \e fspec annotation
+    // Varnode (`(fspec,<handle>,1)`).  Both forms denote "the callee"; collapse the
+    // slot-0 input to a single `(callee)` token so the real-flow output (post
+    // call-spec) and the raw-lift fixture compare equal on this column.
+    let in0_norm = if opname == "CALL" { "(callee)".to_string() } else { rewrite_triple_size_to_one(in0) };
     let mut s = format!("  {opname} {out} {in0_norm}");
     for tok in &rest[2..] {
         s.push(' ');
@@ -671,13 +698,17 @@ fn real_flow_links_ops_matching_lift_fixtures() {
             "{fixture}: real-flow op lines (out/in varnode triples) diverge from the lift fixture"
         );
 
-        // (3) Guard the normalization: every code-ref op the real flow built has
+        // (3) Guard the normalization: every BRANCH/CBRANCH the real flow built has
         // its slot-0 input as the size-1 annotation `newCodeRef` produces (so the
         // size normalization above reflects real `newCodeRef` behavior, not a bug).
+        // CALL is excluded: `FlowInfo::setupCallSpecs` rewrites its slot-0 input
+        // from the `newCodeRef` annotation to an \e fspec annotation Varnode
+        // (`newVarnodeCallSpecs`, size `sizeof(FuncCallSpecs*)` = 8), so its in0 is
+        // no longer the size-1 code ref.
         for raw in raw_op_lines(&got_body, n_cmp) {
             let mut parts = raw.split_whitespace();
             let opname = parts.next().unwrap_or("");
-            if CODEREF_OPS.contains(&opname) {
+            if CODEREF_OPS.contains(&opname) && opname != "CALL" {
                 let rest: Vec<&str> = parts.collect();
                 let in0 = rest.get(1).copied().unwrap_or("");
                 let size = triple_size(in0);
