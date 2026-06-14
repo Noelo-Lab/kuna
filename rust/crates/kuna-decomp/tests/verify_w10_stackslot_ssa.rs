@@ -201,3 +201,146 @@ fn at3_multiequal_with_a_genuinely_different_input_declines() {
         "the MULTIEQUAL must survive when an input genuinely differs"
     );
 }
+
+// ===========================================================================
+// VERIFIER ADVERSARIAL TESTS (rport/w10-stackslot-ssa, round 1).
+// Target the FOCUS-3 over-fold risk and the hunt-list fragile spots.
+// ===========================================================================
+
+// VT1 — ALIASED RELOAD WITH AN INTERVENING WRITE MUST NOT FOLD.
+// The spill/reload of a stack slot on two paths where an intervening write on
+// one path changed the slot: the two reloaded values are DISTINCT SSA varnodes
+// (here two distinct register inputs `edi` @0x40 and `esi` @0x48), so the two
+// per-branch COPYs are *functionally non-equal*.  `functionalEquality`
+// (level0 returns 1, the inner input pair returns 1, never 0) must report
+// false and `RuleMultiCollapse` must DECLINE — folding here would be a
+// miscompile (it would alias two genuinely-different reloads).
+#[test]
+fn vt1_w10_stackslot_ssa_aliased_reload_distinct_ssa_does_not_fold() {
+    let mut fd = build_fd();
+    let b_then = mk_block(&mut fd);
+    let b_else = mk_block(&mut fd);
+    let join = mk_block(&mut fd);
+    // Two DISTINCT reloaded values (an intervening write produced a fresh SSA
+    // version on the else path): edi @0x40 vs esi @0x48.
+    let edi = mk_reg(&mut fd, 4, 0x40);
+    let esi = mk_reg(&mut fd, 4, 0x48);
+    let (_c1, o1) = mk_copy(&mut fd, b_then, 0x100, edi, 4);
+    let (_c2, o2) = mk_copy(&mut fd, b_else, 0x200, esi, 4);
+    fd.bb_set_order(b_then);
+    fd.bb_set_order(b_else);
+    let phi = mk_op(&mut fd, 2, 0x300, OpCode::CPUI_MULTIEQUAL);
+    fd.op_set_input(phi, o1, 0).unwrap();
+    fd.op_set_input(phi, o2, 1).unwrap();
+    fd.op_insert(phi, join, None);
+    let _out = mk_out(&mut fd, 4, phi);
+    fd.bb_set_order(join);
+
+    let res = RuleMultiCollapse.apply_op(phi, &mut fd);
+    assert_eq!(
+        res, 0,
+        "MULTIEQUAL of COPY(edi) and COPY(esi) — two genuinely-different reloaded \
+         SSA values — must NOT collapse (intervening-write alias)"
+    );
+    assert!(
+        !fd.obank().get(phi).map(|o| o.is_dead()).unwrap_or(true),
+        "the MULTIEQUAL must survive: the two reloads are not the same value"
+    );
+    // And no mark leaked onto the surviving output (failure path clears marks).
+    let outvn = fd.obank().get(phi).unwrap().get_out().unwrap();
+    assert!(
+        !fd.vbank().get(outvn).unwrap().is_mark(),
+        "the failure path must clear the mark it set on op->getOut()"
+    );
+}
+
+// VT2 — FUNCTIONAL-EQUALITY FOLD WITH A NON-CONSTANT BASE, repeated, proving
+// the cseFindInBlock/earliestUse path is actually traversed (not short-circuited
+// by the constant-input skip in the substitute search).  Two distinct COPY(edi)
+// must collapse to one (C++ success, func_eq) and the MULTIEQUAL must be gone.
+// This is the AT2 shape but additionally asserts the phi op is destroyed/rewritten
+// (the observable spill/reload fold), guarding the off-by-one in the
+// `earliest->getOrder() < res->getOrder()` boundary of cseFindInBlock.
+#[test]
+fn vt2_w10_stackslot_ssa_funceq_fold_consumes_the_phi() {
+    let mut fd = build_fd();
+    let b_then = mk_block(&mut fd);
+    let b_else = mk_block(&mut fd);
+    let join = mk_block(&mut fd);
+    let edi = mk_reg(&mut fd, 4, 0x40);
+    let (_c1, o1) = mk_copy(&mut fd, b_then, 0x100, edi, 4);
+    let (_c2, o2) = mk_copy(&mut fd, b_else, 0x200, edi, 4);
+    fd.bb_set_order(b_then);
+    fd.bb_set_order(b_else);
+    let phi = mk_op(&mut fd, 2, 0x300, OpCode::CPUI_MULTIEQUAL);
+    fd.op_set_input(phi, o1, 0).unwrap();
+    fd.op_set_input(phi, o2, 1).unwrap();
+    fd.op_insert(phi, join, None);
+    let outvn = mk_out(&mut fd, 4, phi);
+    fd.bb_set_order(join);
+
+    let res = RuleMultiCollapse.apply_op(phi, &mut fd);
+    assert_eq!(res, 1, "two functionally-equal COPY(edi) reloads must fold");
+    // The phi's output must not still be the result of a live MULTIEQUAL: in the
+    // func_eq branch C++ rewrites op (== a skiplist member's def) into a COPY of
+    // newop, so the phi op is no longer a MULTIEQUAL (or is destroyed).
+    let still_multiequal = fd
+        .vbank()
+        .get(outvn)
+        .and_then(|v| v.get_def())
+        .and_then(|d| fd.obank().get(d))
+        .map(|o| !o.is_dead() && o.code() == OpCode::CPUI_MULTIEQUAL)
+        .unwrap_or(false);
+    assert!(
+        !still_multiequal,
+        "after the functional-equality fold the join must no longer hold a live \
+         2-input MULTIEQUAL of the two reloads"
+    );
+}
+
+// VT3 — NESTED MULTIEQUAL BRANCH (matchlist-extension + skiplist-mark path).
+// phi1 = MULTIEQUAL(edi, phi2) where phi2 = MULTIEQUAL(edi, edi).  The inner
+// MULTIEQUAL is not absolutely-equal to defcopyr on first look, so C++ takes the
+// `else if (copyr is MULTIEQUAL)` arm: it pushes phi2 to skiplist, marks it, and
+// appends phi2's inputs (edi, edi) to matchlist.  Those then match defcopyr
+// (edi) by absolute equality, success holds, and BOTH phi1 and phi2 collapse.
+// Exercises the marklist bookkeeping the hunt list flags (erase/visit order)
+// and the loop-construct mark skip.
+#[test]
+fn vt3_w10_stackslot_ssa_nested_multiequal_branch_collapses() {
+    let mut fd = build_fd();
+    let join = mk_block(&mut fd);
+    let edi = mk_reg(&mut fd, 4, 0x40);
+    // inner phi2 = MULTIEQUAL(edi, edi)
+    let phi2 = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_MULTIEQUAL);
+    fd.op_set_input(phi2, edi, 0).unwrap();
+    fd.op_set_input(phi2, edi, 1).unwrap();
+    fd.op_insert(phi2, join, None);
+    let o2 = mk_out(&mut fd, 4, phi2);
+    // outer phi1 = MULTIEQUAL(edi, phi2)
+    let phi1 = mk_op(&mut fd, 2, 0x200, OpCode::CPUI_MULTIEQUAL);
+    fd.op_set_input(phi1, edi, 0).unwrap();
+    fd.op_set_input(phi1, o2, 1).unwrap();
+    fd.op_insert(phi1, join, None);
+    let _o1 = mk_out(&mut fd, 4, phi1);
+    fd.bb_set_order(join);
+
+    let res = RuleMultiCollapse.apply_op(phi1, &mut fd);
+    assert_eq!(
+        res, 1,
+        "MULTIEQUAL(edi, MULTIEQUAL(edi,edi)) must collapse (all branches trace to edi)"
+    );
+    assert!(
+        fd.obank().get(phi1).map(|o| o.is_dead()).unwrap_or(true),
+        "the outer MULTIEQUAL must be destroyed (absolute equality to edi)"
+    );
+    assert!(
+        fd.obank().get(phi2).map(|o| o.is_dead()).unwrap_or(true),
+        "the inner MULTIEQUAL (pushed onto skiplist) must also be collapsed"
+    );
+    // No leaked marks on edi.
+    assert!(
+        !fd.vbank().get(edi).unwrap().is_mark(),
+        "the base varnode edi must not be left marked"
+    );
+}
