@@ -577,3 +577,108 @@ fn verify_w10_r2_forloop1_is_bounded_loop_not_bare_keyword() {
         "forloop1's loop body must carry the induction step (`+ 1`):\n{rendered}"
     );
 }
+
+// ===========================================================================
+// PSPEC-CONTEXT LOAD-PATH REGRESSION (item: w10-pspec-context)
+//
+// The processor-spec `<context_data><context_set>` defaults (x86-64's
+// addrsize=2/opsize=1/longMode=1) must be applied to the engine's ContextDatabase
+// *before* SLEIGH disassembles, on the real datatest console load path
+// (bootstrap_program -> Architecture::init_post_engine -> parse_processor_config,
+// the slice of C++ Architecture::parseProcessorConfig that dispatches
+// ELEM_CONTEXT_DATA to context->decodeFromSpec).  Without it x86:LE:64 decodes as
+// 16-bit real mode (SP+0xfffe, BX+SI, BP, DS/SS segment CALLOTHER) and the
+// loop-NAMED datatests form no back-edges and never structure.
+//
+// These tests pin that property on the exact loop-named files this item is
+// about (loopcomment, elseif) — files a 16-bit real-mode lift could not pass:
+// the 64-bit registers must be present, the 16-bit real-mode garbage signature
+// absent, and the structurer must produce real keywords.  They are NOT a
+// substring of a mis-lift; the same render path the C++ harness scores.
+// ===========================================================================
+
+/// `loopcomment` (x86:LE:64) carries three real loops (for/while/do-while in the
+/// source).  With the pspec `<context_data>` paints applied the lift is 64-bit
+/// (RSP/RBP/RDI/RSI, 8-byte frame offsets like `0xfffffffffffffff8`) and the
+/// loops collapse to real C loop keywords.  A 16-bit real-mode lift (the bug
+/// this item fixes) shows `SP + 0xfffe`/`BX + SI`/`CALLOTHER(0,DS,…)` and forms
+/// no back-edges.  This pins the pspec-context load path on a named loop file.
+#[test]
+fn verify_w10_pspec_context_loopcomment_lifts_64bit_and_structures() {
+    let path = repo_root().join("decompiler/datatests/loopcomment.xml");
+    let dt = parse_datatest(&path).expect("parse loopcomment.xml");
+    let rendered = render_corpus(&dt).expect("loopcomment must decompile");
+
+    assert!(
+        rendered.contains("loopcomment"),
+        "loopcomment must render its function:\n{rendered}"
+    );
+
+    // 64-bit registers present (RSP/RBP/RDI/…); the 16-bit real-mode garbage
+    // signature absent.  `\bSP \+ 0xfffe\b`-class offsets and `BX + SI` and the
+    // `CALLOTHER(0,DS|SS` segment ops are the unambiguous 16-bit-real-mode marks.
+    let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0);
+    assert!(
+        sixtyfour >= 1,
+        "loopcomment must lift with 64-bit registers (RSP/RBP/…); got none \
+         (the pspec <context_data> paints were not applied):\n{rendered}"
+    );
+    let realmode =
+        count_matches(r"\bBX \+ SI\b|CALLOTHER\(0,DS|CALLOTHER\(0,SS|\b0xfffe\b", &rendered)
+            .unwrap_or(0);
+    assert_eq!(
+        realmode, 0,
+        "loopcomment must NOT lift as 16-bit real mode (BX+SI / segment CALLOTHER \
+         / 0xfffe — the bug this item fixes); found {realmode}:\n{rendered}"
+    );
+
+    // The loops collapse to real C loop keywords (proves the back-edges formed,
+    // which they cannot under a real-mode lift that never reaches the targets).
+    let loop_kw = count_matches(r"\bwhile *\(|\bfor *\(|\bdo \{", &rendered).unwrap_or(0);
+    assert!(
+        loop_kw >= 1,
+        "loopcomment's loops must structure to real C loop keywords once the \
+         64-bit lift forms the back-edges:\n{rendered}"
+    );
+}
+
+/// `forloop_varused` (x86:LE:64, function `forloop_loopvarused`) is a second
+/// loop-NAMED file: a `for` loop whose induction variable is used after the
+/// loop.  With the pspec context paints the lift is 64-bit (RSP frame) and the
+/// loop collapses to a real C loop keyword; a 16-bit real-mode lift forms no
+/// back-edge and never structures.  (The `elseif` file's function is introduced
+/// by `map fun` *script* commands, not a `<symbol>` tag, so it is exercised by
+/// the live datatest runner — see the gate report — rather than this
+/// `<symbol>`-iterating render path; `forloop_varused` carries a `<symbol>` and
+/// so renders here.)
+#[test]
+fn verify_w10_pspec_context_forloop_varused_lifts_64bit_and_structures() {
+    let path = repo_root().join("decompiler/datatests/forloop_varused.xml");
+    let dt = parse_datatest(&path).expect("parse forloop_varused.xml");
+    let rendered = render_corpus(&dt).expect("forloop_varused must decompile");
+
+    assert!(
+        rendered.contains("forloop_loopvarused"),
+        "forloop_varused must render its function:\n{rendered}"
+    );
+
+    let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0);
+    assert!(
+        sixtyfour >= 1,
+        "forloop_varused must lift with 64-bit registers (RSP/…); got none \
+         (the pspec <context_data> paints were not applied):\n{rendered}"
+    );
+    let realmode =
+        count_matches(r"\bBX \+ SI\b|CALLOTHER\(0,DS|CALLOTHER\(0,SS|\b0xfffe\b", &rendered)
+            .unwrap_or(0);
+    assert_eq!(
+        realmode, 0,
+        "forloop_varused must NOT lift as 16-bit real mode; found {realmode}:\n{rendered}"
+    );
+    // The loop collapses to a real C loop keyword once the 64-bit back-edge forms.
+    let loop_kw = count_matches(r"\bwhile *\(|\bfor *\(|\bdo \{", &rendered).unwrap_or(0);
+    assert!(
+        loop_kw >= 1,
+        "forloop_varused's loop must structure to a real C loop keyword:\n{rendered}"
+    );
+}
