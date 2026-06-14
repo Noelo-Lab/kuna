@@ -26,9 +26,13 @@
 //!  * `addr_tied_ranges` (`Funcdata::overlapLoc`) and the union-resolution arms of
 //!    the trim COPYs are the conservative default (no addr-tied overlap groups, no
 //!    `needsResolution` types in the merged tree) — exact on boolless.
-//!  * `build_dominant_copy` / `populate_affecting_ops` / the partial-copy-shadow
-//!    characterization stay the conservative path (W7 `findCommonBlock`/
-//!    `StackAffectingOps`); none are reached on the MULTIEQUAL/COPY merge path.
+//!  * `build_dominant_copy` is now the full `Merge::buildDominantCopy` body
+//!    (findCommonBlock / cover-intersection / totalReplace / opDestroy /
+//!    high->merge) on `Funcdata::build_dominant_copy_impl`; it drives the
+//!    `ActionDominantCopy` hoist over the persistent `covermerge`'s `copyTrims`.
+//!  * `populate_affecting_ops` (the `StackAffectingOps` cross-call test source)
+//!    and the partial-copy-shadow characterization stay the conservative path
+//!    (W7 `StackAffectingOps`); empty on the merged-tree slices here.
 
 use std::rc::Rc;
 
@@ -118,6 +122,57 @@ impl HighContext for Funcdata {
 // =============================================================================
 
 impl Funcdata {
+    /// Construct the function's persistent [`Merge`](crate::merge::Merge) engine
+    /// (C++ `Merge covermerge` built by `Funcdata(...)` with `stackAffectingOps(fd)`
+    /// + `testCache(stackAffectingOps)`).
+    ///
+    /// The `StackAffectingOps` set is the W7 stack-alias cross-call test source;
+    /// the merged-tree default populates it empty (no stack-affecting ops in the
+    /// boolless/condconst slices), exactly as `MergeContext::populate_affecting_ops`.
+    fn make_covermerge() -> crate::merge::Merge {
+        let opset = crate::cover::PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _| false));
+        let cache = crate::variable::HighIntersectTest::new(opset);
+        crate::merge::Merge::new(cache)
+    }
+
+    /// Ensure the persistent merge engine exists (C++ `covermerge` is a value
+    /// member, always present; the Rust field is lazily built so the bare
+    /// `Funcdata::new` need not construct it).
+    pub fn ensure_covermerge(&mut self) {
+        if self.covermerge.is_none() {
+            self.covermerge = Some(Self::make_covermerge());
+        }
+    }
+
+    /// Run a closure with the persistent merge engine and `self` as the
+    /// [`MergeContext`] (C++ `data.getMerge().<method>()`).
+    ///
+    /// The engine is moved out of `self` for the duration so it can take `&mut
+    /// self` as the context (the C++ `Merge` holds a `data` back-pointer; Rust
+    /// expresses the same self-mutation with a move-out / move-back), then moved
+    /// back so its `copyTrims` accumulator persists across actions.  This is the
+    /// faithful equivalent of the single `Funcdata::covermerge` member the C++
+    /// merge actions all share.
+    pub fn with_covermerge<R>(
+        &mut self,
+        f: impl FnOnce(&mut crate::merge::Merge, &mut Funcdata) -> R,
+    ) -> R {
+        self.ensure_covermerge();
+        let mut merge = self.covermerge.take().expect("with_covermerge: just ensured");
+        let r = f(&mut merge, self);
+        self.covermerge = Some(merge);
+        r
+    }
+
+    /// Clear the persistent merge engine's cached state (C++ `Merge::clear`,
+    /// called by `Funcdata::clear`).  Drops the test cache, the `copyTrims`
+    /// accumulator, and the proto-partial roots.
+    pub fn clear_covermerge(&mut self) {
+        if let Some(m) = self.covermerge.as_mut() {
+            m.clear();
+        }
+    }
+
     /// Refresh the (member-varnode) covers a HighVariable's cover read depends
     /// on, then re-derive the high's cover across the bank field-split.  The
     /// member-varnode rebuild (`Varnode::updateCover`) is the C++ side effect of
@@ -620,10 +675,12 @@ impl MergeContext for Funcdata {
                 .unwrap_or(0)
         });
     }
-    fn build_dominant_copy(&mut self, _high: HighVariableId, _copy: &[OpId], _pos: int4, _size: int4) -> KunaResult<()> {
-        // findCommonBlock/totalReplace surgery (W7); not reached on the
-        // MULTIEQUAL/COPY merge path of the vertical slice.
-        Err(kuna_base::error::KunaError::lowlevel("build_dominant_copy: W7 seam (not on merge path)"))
+    fn build_dominant_copy(&mut self, high: HighVariableId, copy: &[OpId], pos: int4, size: int4) -> KunaResult<()> {
+        // C++ `Merge::buildDominantCopy` body (findCommonBlock / totalReplace /
+        // opDestroy / high->merge surgery).  Lives on `Funcdata` since the whole
+        // body is live-graph IR mutation + cover math off the varnode/op/block
+        // arenas.
+        self.build_dominant_copy_impl(high, copy, pos, size)
     }
 
     // --- mergeAddrTied / mergeMultiEntry seams ----------------------------

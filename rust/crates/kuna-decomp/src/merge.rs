@@ -1026,6 +1026,21 @@ impl Merge {
         self.test_cache.affecting_ops_mut().clear();
     }
 
+    /// Number of accumulated trim COPYs (C++ `copyTrims.size()`).  The persistent
+    /// `Funcdata::covermerge` accumulates these across the merge actions so
+    /// `processCopyTrims`/`ActionDominantCopy` can act on them — this accessor pins
+    /// that the accumulator survives the move-out/move-back of `with_covermerge`.
+    pub fn copy_trims_len(&self) -> usize {
+        self.copy_trims.len()
+    }
+
+    /// Test-only: push a trim COPY onto the accumulator (pins the persistent
+    /// `covermerge` accumulator survival in `funcdata.rs`).
+    #[doc(hidden)]
+    pub fn push_copy_trim_for_test(&mut self, op: OpId) {
+        self.copy_trims.push(op);
+    }
+
     /// Register an unmapped CONCAT-tree root with the merge process (C++
     /// `Merge::registerProtoPartialRoot`, `merge.cc:1549-1553`).
     pub fn register_proto_partial_root(&mut self, ctx: &dyn MergeContext, vn: VarnodeId) {
