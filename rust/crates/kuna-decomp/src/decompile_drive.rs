@@ -176,7 +176,34 @@ pub fn decompile_func_with_symbols(
     size: int4,
     mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
 ) -> KunaResult<Funcdata> {
+    decompile_func_full(arch, name, funcaddr, size, mapped_symbols, None)
+}
+
+/// The full decompile drive: like [`decompile_func_with_symbols`] but also
+/// applies a parsed-and-locked input/output prototype (`parse line extern
+/// <decl>`) to the fresh `Funcdata` before the pipeline runs (C++
+/// `Architecture::setPrototype` on the queried `Funcdata`).
+///
+/// The console captures the [`PrototypePieces`](crate::fspec::PrototypePieces)
+/// at `parse line` and stashes them by name; the decompile rebuilds the IR, so
+/// the lock must be re-applied to the fresh `funcp` here — the seed that lets
+/// `ActionPrototypeTypes` force the typed input/output Varnodes and the type
+/// plane (`ActionInferTypes`) flow from them.
+pub fn decompile_func_full(
+    arch: &mut Architecture,
+    name: &str,
+    funcaddr: Address,
+    size: int4,
+    mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
+    pending_proto: Option<&crate::fspec::PrototypePieces>,
+) -> KunaResult<Funcdata> {
     let mut fd = build_and_follow_flow(arch, name, funcaddr, size)?;
+    // Apply any parsed-and-locked prototype to the fresh funcp (the input-param
+    // recovery SEED): after this the inputs/output are type-locked, so
+    // ActionPrototypeTypes forces the typed Varnodes.
+    if let Some(pieces) = pending_proto {
+        fd.apply_locked_prototype(pieces)?;
+    }
     // Re-seed the console-mapped symbols (lost when the IR is rebuilt).
     fd.seed_mapped_symbols(mapped_symbols);
     // With the single-manager unification (LOSS-132) the universalAction passes

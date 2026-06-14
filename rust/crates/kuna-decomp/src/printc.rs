@@ -1558,9 +1558,12 @@ impl PrintC {
         let id1g = self.emit.open_group();
         self.emit.tag_func_name(&display, SyntaxHighlight::FuncnameColor, &markup);
         let id2 = self.emit.open_paren("(", 0);
-        // emitPrototypeInputs: params need the symbol table (naming layer); emit
-        // `void` (the unrecovered-params default, matching the boolless oracle).
-        self.emit.tag_type("void", SyntaxHighlight::TypeColor, &markup);
+        // emitPrototypeInputs (printc.cc:2298): the recovered proto's parameter
+        // list, or `void` when there are none.  Each `ProtoParameter` renders its
+        // declared type + name (`twostruct *ptr`, `int8 a`) via the C-declarator
+        // builder; the backing-`Symbol` path (`emitVarDecl`) is the W4 scope
+        // surface, so the param's own stored name + type are used directly.
+        self.emit_prototype_inputs(fd, &markup);
         self.emit.close_paren(")", id2);
         self.emit.close_group(id1g);
         self.emit.end_func_proto(idp);
@@ -1587,6 +1590,76 @@ impl PrintC {
         self.emit.tag_line();
         self.emit.end_function(id1);
         self.emit.output().to_string()
+    }
+
+    /// Emit the function prototype's input parameter list (C++
+    /// `PrintC::emitPrototypeInputs`, printc.cc:2298): `void` if there are no
+    /// parameters, else the comma-separated `<type> <name>` declarations,
+    /// followed by `, ...` for a vararg prototype.
+    ///
+    /// The C++ emits each parameter through its backing `Symbol` (`emitVarDecl`)
+    /// when present, else the type with no name.  The merged-tree `ProtoParameter`
+    /// has no backing `Symbol` (W4 scope), but it *does* carry the declared name +
+    /// type (set by `update_all_types` from the parsed `PrototypePieces`), so the
+    /// name + the C-declarator are rendered directly here — observationally the
+    /// same text the C++ `emitVarDecl` produces for a named, typed parameter.
+    fn emit_prototype_inputs(&mut self, fd: &Funcdata, markup: &MarkupRef) {
+        let proto = fd.get_func_proto();
+        if !proto.has_store() {
+            self.emit.tag_type("void", SyntaxHighlight::TypeColor, markup);
+            return;
+        }
+        let sz = proto.num_params();
+        if sz == 0 {
+            self.emit.tag_type("void", SyntaxHighlight::TypeColor, markup);
+        } else {
+            let mut print_comma = false;
+            for i in 0..sz {
+                let param = match proto.get_param(i) {
+                    Some(p) => p,
+                    None => continue,
+                };
+                // hide_thisparam + isThisPointer: the `this`-pointer hiding is the
+                // C++ option/class-method surface (no `this` on the recovery path).
+                // C++ `emit->print(COMMA)` with `COMMA = ","` — no trailing space.
+                if print_comma {
+                    self.emit.print(",", SyntaxHighlight::NoColor);
+                }
+                print_comma = true;
+                let name = param.get_name();
+                match param.get_type() {
+                    Some(ty) => {
+                        let (front, back) = declarator_parts(ty);
+                        // C++ `pushTypeStart(type, noident)`: the separating token is
+                        // `type_expr_nospace` only when there is no identifier AND no
+                        // declarator modifier (`noident && typestack.size()==1`); else
+                        // `type_expr_space`.  A `*` front glues to the name (no space).
+                        let has_modifier = front.ends_with('*') || !back.is_empty();
+                        self.emit.tag_type(&front, SyntaxHighlight::TypeColor, markup);
+                        let want_space =
+                            !front.ends_with('*') && (!name.is_empty() || has_modifier);
+                        if want_space {
+                            self.emit.spaces(1, 0);
+                        }
+                        if !name.is_empty() {
+                            self.emit.tag_variable(name, SyntaxHighlight::VarColor, markup);
+                        }
+                        if !back.is_empty() {
+                            self.emit.print(&back, SyntaxHighlight::NoColor);
+                        }
+                    }
+                    None => {
+                        self.emit.tag_type("void", SyntaxHighlight::TypeColor, markup);
+                    }
+                }
+            }
+        }
+        if proto.is_dotdotdot() {
+            if sz != 0 {
+                self.emit.print(",", SyntaxHighlight::NoColor);
+            }
+            self.emit.print("...", SyntaxHighlight::NoColor);
+        }
     }
 
     /// Emit one `<type> <name>;  // <storage>` declaration per named local
@@ -2570,6 +2643,86 @@ fn sblocks_basic_tail(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
 /// size 1's anonymous form), and a `TYPE_VOID` renders as `void`.  The oracle's
 /// inferred names (e.g. `uint1`) need the W8 `ActionInferTypes`; this is the
 /// faithful unnamed-type rendering until then.
+/// Build the C-declarator front/back text bracketing an identifier for `ct`,
+/// transcribing the declarator algorithm of `PrintC::pushTypeStart` /
+/// `pushTypeEnd` (printc.cc:265/314) plus `buildTypeStack` (printc.cc:143).
+///
+/// Returns `(front, back)` such that `<front><name><back>` is the full C
+/// declaration of an object named `name` of type `ct` — e.g.
+///   * `int8`              → `("int8", "")`             → `int8 a`
+///   * `twostruct *`       → `("twostruct *", "")`      → `twostruct *ptr`
+///   * `int4 (*)[1]`       → `("int4 (*", ")[1]")`      → `int4 (*a)[1]`
+///   * `char *`            → `("char *", "")`           → `char *pchar`
+///
+/// The stack is built base-up exactly as `buildTypeStack`; pointer modifiers go
+/// on the front (`*`), array/function modifiers on the tail (`[N]`/`(...)`), and
+/// a `*` front nested inside an array/function tail is parenthesised — the
+/// precedence the RPN `ptr_expr`/`array_expr` tokens encode.
+fn declarator_parts(ct: &std::rc::Rc<crate::dtype::Datatype>) -> (String, String) {
+    use crate::dtype::type_metatype;
+    // buildTypeStack: walk to the base (named) type, recording the modifier chain.
+    let mut stack: Vec<std::rc::Rc<crate::dtype::Datatype>> = Vec::new();
+    let mut cur = std::rc::Rc::clone(ct);
+    loop {
+        stack.push(std::rc::Rc::clone(&cur));
+        if !cur.get_name().is_empty() {
+            break; // base type
+        }
+        let next = match cur.get_metatype() {
+            type_metatype::TYPE_PTR => cur.get_ptr_to(),
+            type_metatype::TYPE_ARRAY => cur.get_array_base(),
+            _ => None, // other anonymous type: stop
+        };
+        match next {
+            Some(n) => cur = n,
+            None => break,
+        }
+    }
+    // The base type's display name (anonymous → `undefined<N>` / `void`).
+    let base = stack.last().expect("declarator: non-empty stack");
+    let base_name = if base.get_name().is_empty() {
+        match base.get_metatype() {
+            type_metatype::TYPE_VOID => "void".to_string(),
+            _ => format!("undefined{}", base.get_size()),
+        }
+    } else {
+        base.get_display_name().to_string()
+    };
+
+    // Walk the modifiers from base toward the outermost (stack[len-2]..stack[0]),
+    // accumulating front (`*`) and back (`[N]`) declarator pieces.  An array/
+    // function tail wraps any pending pointer front in parentheses.
+    let mut front = String::new();
+    let mut back = String::new();
+    let mut pending_ptr = false; // a `*` not yet absorbed by a tail
+    for ct_mod in stack.iter().rev().skip(1) {
+        match ct_mod.get_metatype() {
+            type_metatype::TYPE_PTR => {
+                front.push('*');
+                pending_ptr = true;
+            }
+            type_metatype::TYPE_ARRAY => {
+                let n = ct_mod.num_elements().unwrap_or_else(|| {
+                    let base = ct_mod.get_array_base().map(|b| b.get_size()).unwrap_or(1).max(1);
+                    ct_mod.get_size() / base
+                });
+                if pending_ptr {
+                    front.insert(0, '(');
+                    back = format!("){}", back);
+                    pending_ptr = false;
+                }
+                back = format!("{}[{}]", back, n);
+            }
+            _ => {}
+        }
+    }
+    // `<base> <front>` with a single separating space before any `*` modifiers
+    // (the `type_expr_space` token); a bare base type has no trailing space here
+    // (the caller adds the space before the identifier).
+    let front_full = if front.is_empty() { base_name } else { format!("{base_name} {front}") };
+    (front_full, back)
+}
+
 fn type_name_for_decl(t: &std::rc::Rc<crate::dtype::Datatype>) -> String {
     use crate::dtype::type_metatype;
     let name = t.get_name();

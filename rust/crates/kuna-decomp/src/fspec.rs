@@ -4836,6 +4836,22 @@ impl FuncProto {
     pub fn set_output(&mut self, piece: &ParameterPieces) {
         self.store_mut().set_output(piece);
     }
+    /// Clear all input parameters from the store (C++ `store->clearAllInputs()`),
+    /// used by `updateInputTypes`/`updateInputNoTypes` before re-registering the
+    /// recovered parameters.  A no-op if no store is attached.
+    pub fn store_clear_all_inputs(&mut self) {
+        if self.store.is_some() {
+            self.store_mut().clear_all_inputs();
+        }
+    }
+    /// Set the `i`-th input parameter storage directly (C++ `store->setInput`),
+    /// used by `updateInputTypes`/`updateInputNoTypes`.  A no-op if no store is
+    /// attached.
+    pub fn store_set_input(&mut self, i: int4, nm: &str, pieces: &ParameterPieces) {
+        if self.store.is_some() {
+            self.store_mut().set_input(i, nm, pieces);
+        }
+    }
     /// Get the return value data-type (C++ `getOutputType`).
     pub fn get_output_type(&self) -> Option<&Rc<Datatype>> {
         // Borrow chain: get_output returns &dyn, get_type returns Option<&Rc>.
@@ -4879,6 +4895,12 @@ impl FuncProto {
     pub fn is_input_locked(&self) -> bool {
         if (self.flags & func_proto_flags::VOIDINPUTLOCK) != 0 {
             return true;
+        }
+        // No store (merged-tree setScope seam): the unrecovered input is unlocked
+        // (no parameters), so the param-lock query reads false rather than panic
+        // dereferencing a null store — same convention as `is_output_locked`.
+        if !self.has_store() {
+            return false;
         }
         if self.num_params() == 0 {
             return false;
@@ -5145,7 +5167,10 @@ impl FuncProto {
         if self.is_input_locked() {
             return;
         }
-        self.store_mut().clear_all_inputs();
+        // No store (merged-tree setScope seam): no inputs to clear.
+        if self.store.is_some() {
+            self.store_mut().clear_all_inputs();
+        }
     }
 
     /// Clear the return value if it has not been locked (C++
@@ -5244,6 +5269,38 @@ impl FuncProto {
         self.set_output_lock(true);
         self.set_model_lock(true);
         Ok(())
+    }
+
+    /// Seed an empty (fresh-`Funcdata`) prototype from a parsed C declaration and
+    /// lock it (the merged-tree analogue of C++ `Architecture::setPrototype`
+    /// followed by the `FuncProto::setScope`/restore that a `queryFunction`
+    /// performs on a freshly built `Funcdata`).
+    ///
+    /// The console `parse line extern <decl>` captures a [`PrototypePieces`]; in
+    /// C++ that pieces set is applied to the function symbol's `FuncProto`
+    /// (already model+store seeded by `setScope`).  Here the fresh `Funcdata`
+    /// carries an empty `FuncProto` (no model, no store), so this first seeds the
+    /// `defaultfp` model and a stand-alone [`ProtoStoreInternal`] (the
+    /// no-symbol-scope store, matching [`attach_internal_store`]) and then runs
+    /// the faithful [`set_pieces`] body (which calls `update_all_types` +
+    /// input/output/model lock).  After this the input/output is type-locked, so
+    /// `ActionPrototypeTypes` forces the input/output Varnodes and
+    /// `ActionInputPrototype` leaves the locked input untouched.
+    ///
+    /// [`attach_internal_store`]: FuncProto::attach_internal_store
+    /// [`set_pieces`]: FuncProto::set_pieces
+    pub fn seed_locked_from_pieces(
+        &mut self,
+        pieces: &PrototypePieces,
+        defaultfp: Rc<ProtoModel>,
+        void_type: Rc<Datatype>,
+        typefactory: &dyn TypeFactory,
+        manager: &AddrSpaceManager,
+    ) -> KunaResult<()> {
+        // Seed the model + store the way setScope would, before update_all_types
+        // (which needs both: it does setModel(model) and store->clearAllInputs()).
+        self.attach_internal_store(void_type);
+        self.set_pieces(pieces, Some(defaultfp), typefactory, manager)
     }
 
     /// Update input/output parameters from raw pieces (C++ `updateAllTypes`).

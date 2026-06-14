@@ -170,20 +170,150 @@ impl Action for ActionPrototypeTypes {
             }
         }
 
-        // if (funcp.isOutputLocked() && ...) { force the output varnode }
+        // if (funcp.isOutputLocked()) { force the output varnode onto every RETURN }
         // else data.initActiveOutput();  // begin gathering return values
-        if data.get_func_proto().has_model() && data.get_func_proto().is_output_locked() {
-            // SEAM(W6): the locked-output force-varnode branch (coreaction.cc:
-            // 4871) needs the type system; the recovery path is the unlocked case.
+        if data.get_func_proto().is_output_locked() {
+            // ProtoParameter *outparam = funcp.getOutput();
+            // if (outparam->getType()->getMetatype() != TYPE_VOID): for each
+            //   non-halt RETURN op append a forced output Varnode + updateType.
+            let (out_size, out_addr, out_type) = {
+                let outparam = data.get_func_proto().get_output();
+                (
+                    outparam.get_size(),
+                    outparam.get_address(),
+                    outparam.get_type().cloned(),
+                )
+            };
+            let is_void = out_type
+                .as_ref()
+                .map(|t| t.get_metatype() == crate::dtype::type_metatype::TYPE_VOID)
+                .unwrap_or(true);
+            if !is_void {
+                let out_type = out_type.expect("non-void output has a type");
+                for op in &return_ops {
+                    let halt = data
+                        .obank()
+                        .get(*op)
+                        .map(|o| o.is_dead() || o.get_halt_type() != 0)
+                        .unwrap_or(true);
+                    if halt {
+                        continue;
+                    }
+                    let numin = data.obank().get(*op).map(|o| o.num_input()).unwrap_or(0);
+                    let vn = data.new_varnode(out_size, &out_addr, None);
+                    let _ = data.op_insert_input(*op, vn, numin);
+                    data.vbank_mut()
+                        .get_mut(vn)
+                        .expect("prototypetypes: stale forced output")
+                        .update_type_locked(Rc::clone(&out_type), true, true);
+                    self.base.count += 1;
+                }
+            }
         } else {
             data.init_active_output();
             self.base.count += 1;
         }
 
-        // Truncated-space INT_ZEXT + locked-input force-varnode: SEAM(W4) — the
-        // 8051/recovery path has no truncated stack space and no locked inputs.
+        // Truncated-space INT_ZEXT setup: SEAM(W4) — the recovery path has no
+        // truncated stack space (only the 8051-family default code space is).
+
+        // Force locked inputs to exist as Varnodes.  Needed so a big locked input
+        // exists even when only part is used (SUBPIECE can then be built off it).
+        if data.get_func_proto().is_input_locked() {
+            // ptr_size: the recovery path's default code space is never truncated,
+            // so the C++ pointer-trim (spc->isTruncated()) does not fire.
+            let topbl = if data.bblocks_get_size() > 0 {
+                Some(data.bblocks_get_block(0))
+            } else {
+                None
+            };
+            let numparams = data.get_func_proto().num_params();
+            for i in 0..numparams {
+                let (psize, paddr, ptype) = {
+                    let param = match data.get_func_proto().get_param(i) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    (param.get_size(), param.get_address(), param.get_type().cloned())
+                };
+                // Varnode *vn = data.newVarnode(size,addr); vn = setInputVarnode(vn);
+                let vn = data.new_varnode(psize, &paddr, None);
+                let vn = match data.set_input_varnode(vn) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                {
+                    let v = data
+                        .vbank_mut()
+                        .get_mut(vn)
+                        .expect("prototypetypes: stale locked input");
+                    v.set_locked_input();
+                    // C++ binds the locked input Varnode's type via the W4 ScopeLocal
+                    // parameter Symbol (read back by `ActionInferTypes::buildLocaltypes`'s
+                    // type-locked SymbolEntry `getExactPiece` seed — a documented W4/W8
+                    // seam, LOSS-138).  That symbol-scope binding is not on the merged
+                    // tree, so the param's declared type is set + locked on the forced
+                    // input Varnode directly here: the same end state (a type-locked
+                    // input Varnode carrying the parameter type), which `getLocalType`'s
+                    // `isTypeLock()` arm then reads and `ActionInferTypes` propagates
+                    // FROM (the type-plane seed for type-heavy functions).
+                    if let Some(ptype) = ptype.as_ref() {
+                        if ptype.get_metatype() != crate::dtype::type_metatype::TYPE_UNKNOWN {
+                            v.update_type_locked(Rc::clone(ptype), true, true);
+                        }
+                    }
+                }
+                // extendInput(data, vn, param, topbl): build any assumed extension.
+                if let (Some(topbl), Some(ptype)) = (topbl, ptype) {
+                    extend_input(data, vn, &paddr, psize, &ptype, topbl);
+                }
+                self.base.count += 1;
+            }
+        }
         0
     }
+}
+
+/// Build an extension P-code op for a forced/locked input Varnode, if the
+/// prototype model assumes one (C++ `ActionPrototypeTypes::extendInput`,
+/// coreaction.cc:4824).
+///
+/// `assumedInputExtension` reports `COPY` (no extension), `PIECE` (extend per
+/// the parameter type's metatype: INT → INT_SEXT, else INT_ZEXT), or a concrete
+/// `INT_SEXT`/`INT_ZEXT`.  When an extension is wanted, a new op is inserted at
+/// the top block writing the full-size container from `invn`.
+fn extend_input(
+    data: &mut Funcdata,
+    invn: crate::seams::VarnodeId,
+    in_addr: &kuna_base::address::Address,
+    in_size: int4,
+    param_type: &Rc<crate::dtype::Datatype>,
+    topbl: crate::seams::BlockId,
+) {
+    use kuna_num::pcoderaw::VarnodeData;
+    let mut vdata = VarnodeData::default();
+    let mut res = data
+        .get_func_proto()
+        .assumed_input_extension(in_addr, in_size, &mut vdata);
+    if res == OpCode::CPUI_COPY {
+        return; // no extension
+    }
+    if res == OpCode::CPUI_PIECE {
+        // Extend based on the parameter's metatype.
+        res = if param_type.get_metatype() == crate::dtype::type_metatype::TYPE_INT {
+            OpCode::CPUI_INT_SEXT
+        } else {
+            OpCode::CPUI_INT_ZEXT
+        };
+    }
+    let ext_addr = vdata.get_addr();
+    let ext_size = vdata.size as int4;
+    let start = data.bblocks_block_start(topbl);
+    let op = data.new_op(1, start);
+    let _ = data.new_varnode_out(ext_size, &ext_addr, op);
+    data.op_set_opcode_code(op, res);
+    let _ = data.op_set_input(op, invn, 0);
+    data.op_insert_begin(op, topbl);
 }
 
 // =============================================================================
@@ -1028,32 +1158,176 @@ impl Action for ActionInputPrototype {
         }
         Some(Box::new(ActionInputPrototype { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:4941 — ActionInputPrototype::apply
-        //   ParamActive active(false);
-        //   data.getScopeLocal()->clearCategory(Symbol::fake_input);
-        //   data.getFuncProto().clearUnlockedInput();
-        //   if (!funcp.isInputLocked()):
-        //       for vn in beginDef(Varnode::input)..endDef:
-        //           if (funcp.possibleInputParam(vn->getAddr(),vn->getSize())):
-        //               slot = active.getNumTrials();
-        //               active.registerTrial(vn->getAddr(), vn->getSize());
-        //               if (!vn->hasNoDescend()) active.getTrial(slot).markActive();
-        //               triallist.push_back(vn);
-        //       funcp.resolveModel(&active);
-        //       funcp.deriveInputMap(&active);
-        //       // create unreferenced input varnodes (or markNoUse on intersect)
-        //       if (data.isHighOn()) funcp.updateInputTypes(data,triallist,&active);
-        //       else                 funcp.updateInputNoTypes(data,triallist,&active);
-        //   data.clearDeadVarnodes();
-        //   return 0;
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:4941 — ActionInputPrototype::apply: the function's OWN
+        // input-parameter recovery + typing (the type-plane SEED for an unlocked
+        // prototype).
         //
-        // SEAM(W7/W8-funcdata): reads/mutates `Funcdata::funcp` (the empty
-        // `seams::FuncProto` placeholder, not the real `fspec::FuncProto`) and
-        // the local `Scope`.  The input-Varnode def-set walk and
-        // `clearDeadVarnodes` are part of the same seamed surface.  Deferred
-        // (count stays 0).
+        //   data.getScopeLocal()->clearCategory(Symbol::fake_input): the W4 scope
+        //   fake-input category is not on the merged-tree ScopeLocal (no
+        //   `fake_input` symbols are created without the W4 markup), so this is a
+        //   faithful no-op here.  // SEAM(W4 ScopeLocal::clearCategory)
+        data.get_func_proto_mut().clear_unlocked_input();
+
+        // The unlocked recovery reads the prototype model (`resolveModel` /
+        // `deriveInputMap` / `possibleInputParam`).  In the real pipeline
+        // `ActionPrototypeTypes` has already seeded the eval model + the
+        // `ActionOutputPrototype` internal store; with neither (a model-less
+        // fixture) there is no model to derive a map from, so the recovery cannot
+        // run — leave the (empty) proto untouched, only running clearDeadVarnodes.
+        let recoverable =
+            data.get_func_proto().has_model() && data.get_func_proto().has_store();
+        if recoverable && !data.get_func_proto().is_input_locked() {
+            // Gather trials over the function's input Varnodes (registers/stack
+            // the heritage collected).  `triallist[i]` is the i-th registered
+            // trial's Varnode (1-based slot in ParamTrial).
+            let mut active = crate::fspec::ParamActive::new(false);
+            let mut triallist: Vec<crate::seams::VarnodeId> = Vec::new();
+            let input_vns: Vec<crate::seams::VarnodeId> =
+                data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();
+            for vn in input_vns {
+                let (addr, size, no_descend) = {
+                    let v = match data.vbank().get(vn) {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    (v.get_addr().clone(), v.get_size(), v.has_no_descend())
+                };
+                if data.get_func_proto().possible_input_param(&addr, size) {
+                    let slot = active.get_num_trials();
+                    active.register_trial(&addr, size);
+                    if !no_descend {
+                        active.get_trial_mut(slot).mark_active(); // has descendants
+                    }
+                    triallist.push(vn);
+                }
+            }
+            let manager = data.get_arch().manage.clone();
+            let _ = data.get_func_proto_mut().resolve_model(&active);
+            let _ = data.get_func_proto().derive_input_map(&mut active, &manager);
+
+            // Create any unreferenced-but-used input Varnodes (or markNoUse if
+            // something already occupies the slot).
+            let numtrials = active.get_num_trials();
+            for i in 0..numtrials {
+                let (is_unref, is_used, tsize, taddr) = {
+                    let t = active.get_trial(i);
+                    (t.is_unref(), t.is_used(), t.get_size(), t.get_address().clone())
+                };
+                if is_unref && is_used {
+                    let intersects = data.has_input_intersection(tsize, &taddr).unwrap_or(false);
+                    if intersects {
+                        active.get_trial_mut(i).mark_no_use();
+                    } else {
+                        let vn = data.new_varnode(tsize, &taddr, None);
+                        let vn = match data.set_input_varnode(vn) {
+                            Ok(v) => v,
+                            Err(_) => continue,
+                        };
+                        let slot = triallist.len() as int4;
+                        triallist.push(vn);
+                        active.get_trial_mut(i).set_slot(slot + 1);
+                    }
+                }
+            }
+
+            // updateInputTypes / updateInputNoTypes (fspec.cc:4057/4102), inlined
+            // here so the trial Varnodes (`&mut Funcdata`) can be read.  The
+            // recovery path is high-on (HighVariables assigned), so the typed form
+            // runs; the no-types form pins each input to `getBase(size,UNKNOWN)`.
+            if data.is_high_on() {
+                update_input_types(data, &triallist, &mut active);
+            } else {
+                update_input_no_types(data, &triallist, &mut active);
+            }
+        }
+        let _ = data.clear_dead_varnodes();
         0
+    }
+}
+
+/// Update the locked-free input parameters from the recovered trials, pulling
+/// each chosen parameter's data-type from its trial Varnode's HighVariable (C++
+/// `FuncProto::updateInputTypes`, fspec.cc:4057), inlined at the action so the
+/// `&mut Funcdata` HighVariable reads are available.
+fn update_input_types(
+    data: &mut Funcdata,
+    triallist: &[crate::seams::VarnodeId],
+    active: &mut crate::fspec::ParamActive,
+) {
+    if data.get_func_proto().is_input_locked() {
+        return; // Input is locked, do no updating
+    }
+    data.get_func_proto_mut().store_clear_all_inputs();
+    let mut count = 0i32;
+    let numtrials = active.get_num_trials();
+    for i in 0..numtrials {
+        if !active.get_trial(i).is_used() {
+            continue;
+        }
+        let slot = active.get_trial(i).get_slot();
+        let vn = triallist[(slot - 1) as usize];
+        if data.vbank().get(vn).map(|v| v.is_mark()).unwrap_or(true) {
+            continue;
+        }
+        // pieces.addr = trial.getAddress(); pieces.type = vn->getHigh()->getType()
+        // (the isPersist/findDisjointCover global-input branch is the W4 persist
+        // surface — function-input registers/stack are never persistent here, so
+        // it is a narrow SEAM(W4 findDisjointCover) that does not fire).
+        let is_persist = data.vbank().get(vn).map(|v| v.is_persist()).unwrap_or(false);
+        let addr = active.get_trial(i).get_address().clone();
+        let ty = data
+            .high_get_type(vn)
+            .unwrap_or_else(|| Rc::new(crate::dtype::Datatype::new(1, crate::dtype::type_metatype::TYPE_UNKNOWN)));
+        let _ = is_persist;
+        let pieces = crate::fspec::ParameterPieces { addr, type_: Some(ty), flags: 0 };
+        data.get_func_proto_mut().store_set_input(count, "", &pieces);
+        count += 1;
+        data.vbank_mut().get_mut(vn).expect("update_input_types: stale trial").set_mark();
+    }
+    for &vn in triallist {
+        if let Some(v) = data.vbank_mut().get_mut(vn) {
+            v.clear_mark();
+        }
+    }
+    data.get_func_proto_mut().update_this_pointer();
+}
+
+/// Update the locked-free input parameters from the recovered trials, using only
+/// the trial Varnode's size (each parameter typed `getBase(size,UNKNOWN)`) (C++
+/// `FuncProto::updateInputNoTypes`, fspec.cc:4102).
+fn update_input_no_types(
+    data: &mut Funcdata,
+    triallist: &[crate::seams::VarnodeId],
+    active: &mut crate::fspec::ParamActive,
+) {
+    if data.get_func_proto().is_input_locked() {
+        return;
+    }
+    data.get_func_proto_mut().store_clear_all_inputs();
+    let mut count = 0i32;
+    let numtrials = active.get_num_trials();
+    for i in 0..numtrials {
+        if !active.get_trial(i).is_used() {
+            continue;
+        }
+        let slot = active.get_trial(i).get_slot();
+        let vn = triallist[(slot - 1) as usize];
+        if data.vbank().get(vn).map(|v| v.is_mark()).unwrap_or(true) {
+            continue;
+        }
+        let addr = active.get_trial(i).get_address().clone();
+        let sz = data.vbank().get(vn).map(|v| v.get_size()).unwrap_or(1);
+        let ty = Rc::new(crate::dtype::Datatype::new(sz, crate::dtype::type_metatype::TYPE_UNKNOWN));
+        let pieces = crate::fspec::ParameterPieces { addr, type_: Some(ty), flags: 0 };
+        data.get_func_proto_mut().store_set_input(count, "", &pieces);
+        count += 1;
+        data.vbank_mut().get_mut(vn).expect("update_input_no_types: stale trial").set_mark();
+    }
+    for &vn in triallist {
+        if let Some(v) = data.vbank_mut().get_mut(vn) {
+            v.clear_mark();
+        }
     }
 }
 
