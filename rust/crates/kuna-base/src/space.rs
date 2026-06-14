@@ -2810,6 +2810,51 @@ impl AddrSpaceManager {
         self.baselist[i as usize].as_ref()
     }
 
+    /// Get the address space associated with the indicated \e spacebase register
+    /// (C++ `Architecture::getSpaceBySpacebase`, `architecture.cc:265`).
+    ///
+    /// If the location of the \e stack \e pointer is passed in, this returns a
+    /// pointer to the \b stack space.  `None` if no corresponding space is found
+    /// (the C++ throws `LowlevelError`; the only caller — `RuleLoadVarnode::
+    /// correctSpacebase` — wraps the call in a context that has already verified
+    /// the Varnode is `isSpacebase`, so a miss returns `None` to mean "not the
+    /// right space").
+    pub fn get_space_by_spacebase(&self, loc: &Address, size: i32) -> Option<Rc<AddrSpace>> {
+        let sz = self.num_spaces();
+        for i in 0..sz {
+            let id = match self.get_space(i) {
+                Some(s) => s,
+                None => continue,
+            };
+            let numspace = id.num_spacebase();
+            for j in 0..numspace {
+                let point = match id.get_spacebase(j) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                if point.size as i32 != size {
+                    continue;
+                }
+                let point_space = match &point.space {
+                    Some(s) => s,
+                    None => continue,
+                };
+                let loc_space = match loc.get_space() {
+                    Some(s) => s,
+                    None => continue,
+                };
+                if point_space.get_index() != loc_space.get_index() {
+                    continue;
+                }
+                if point.offset != loc.get_offset() {
+                    continue;
+                }
+                return Some(Rc::clone(id));
+            }
+        }
+        None
+    }
+
     /// Get the next \e contiguous address space.
     ///
     /// Get the next space in the absolute order of addresses.  This ordering

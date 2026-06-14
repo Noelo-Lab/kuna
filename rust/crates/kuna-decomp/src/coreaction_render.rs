@@ -807,7 +807,7 @@ impl Action for ActionRestructureVarnode {
     fn reset(&mut self, _data: &mut Funcdata) {
         self.numpass = 0;
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:2332 — ActionRestructureVarnode::apply
         //   l1 = data.getScopeLocal();
         //   aliasyes = (numpass != 0);            // aliases unreliable on first pass
@@ -816,21 +816,21 @@ impl Action for ActionRestructureVarnode {
         //   if (data.isJumptableRecoveryOn()) protectSwitchPaths(data);
         //   numpass += 1;
         //   return 0;
-        //
-        // `protectSwitchPaths`/`protectSwitchPathIndirects` (coreaction.cc:2260-2330)
-        // walk each BRANCHIND's data-flow back to a constant and mark the earliest
-        // INDIRECT `setNoIndirectCollapse` so the switch value is not lost.
-        //
-        // The `numpass`-driven `aliasyes` flag and the post-increment are realized
-        // (this action's own state), but the scope restructure they configure
-        // cannot run.
-        //
-        // SEAM(W8-funcdata): `getScopeLocal()->restructureVarnode`,
-        // `syncVarnodesWithSymbols`, `isJumptableRecoveryOn`, and the
-        // BRANCHIND/INDIRECT collapse-protection are not in the merged tree.  Body
-        // transcribed; no change applied and `numpass` is left for the owning wave
-        // (count stays 0).
-        0
+        let mut count = 0;
+        // aliases are unreliable on the first pass.
+        let aliasyes = self.numpass != 0;
+        // l1->restructureVarnode(aliasyes): re-derive the stack-frame layout from
+        // the live (stack, off) Varnodes that RuleLoad/StoreVarnode produced.
+        data.restructure_varnode(aliasyes);
+        // syncVarnodesWithSymbols(l1, /*updateDatatypes*/false, aliasyes): paint
+        // mapped/addrtied flags onto the promoted Varnodes from the symbol map.
+        if data.sync_varnodes_with_symbols(false, aliasyes) {
+            count += 1;
+        }
+        // SEAM(W8-funcdata): `protectSwitchPaths` (BRANCHIND/INDIRECT collapse
+        // protection) needs `isJumptableRecoveryOn`; not modeled here.
+        self.numpass += 1;
+        count
     }
 }
 
@@ -867,18 +867,21 @@ impl Action for ActionMappedLocalSync {
         }
         Some(Box::new(ActionMappedLocalSync { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:2355 — ActionMappedLocalSync::apply
         //   l1 = data.getScopeLocal();
         //   if (data.syncVarnodesWithSymbols(l1, true, true)) count += 1;
         //   if (l1->hasOverlapProbems())
         //       data.warningHeader("Could not reconcile some variable overlaps");
         //   return 0;
-        //
-        // SEAM(W8-funcdata): `getScopeLocal`, `syncVarnodesWithSymbols`,
-        // `ScopeLocal::hasOverlapProbems`, and `Funcdata::warningHeader` are not in
-        // the merged tree.  Body transcribed; no change applied (count stays 0).
-        0
+        let mut count = 0;
+        // Final sync: update datatypes (true) and run the unmapped-alias check.
+        if data.sync_varnodes_with_symbols(true, true) {
+            count += 1;
+        }
+        // SEAM(W8-funcdata): `Funcdata::warningHeader` on `hasOverlapProbems` is
+        // not modeled (a diagnostic header, not output-determining).
+        count
     }
 }
 

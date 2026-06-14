@@ -226,6 +226,13 @@ impl Architecture {
         self.types.as_deref()
     }
 
+    /// Clone the shared data-type factory `Rc` (so a caller can hold a type
+    /// factory handle across a `&mut Funcdata`/`&mut ScopeLocal` borrow that
+    /// would otherwise alias the `&self` arch read).
+    pub fn types_rc(&self) -> Option<Rc<crate::dtype::TypeFactoryImpl>> {
+        self.types.clone()
+    }
+
     /// The default prototype model (C++ `glb->defaultfp`), or `None`.
     pub fn default_fp(&self) -> Option<&Rc<crate::fspec::ProtoModel>> {
         self.defaultfp.as_ref()

@@ -146,7 +146,23 @@ pub fn decompile_func(
     funcaddr: Address,
     size: int4,
 ) -> KunaResult<Funcdata> {
+    decompile_func_with_symbols(arch, name, funcaddr, size, &[])
+}
+
+/// Like [`decompile_func`], but seeds the freshly-built `Funcdata`'s local scope
+/// with console-mapped Symbol specs (`map addr`).  The kuna console rebuilds the
+/// IR on `decompile` (C++ reuses the same `fd`); this carries the `map addr`
+/// symbols across that rebuild so stack-variable promotion can name them.
+pub fn decompile_func_with_symbols(
+    arch: &mut Architecture,
+    name: &str,
+    funcaddr: Address,
+    size: int4,
+    mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
+) -> KunaResult<Funcdata> {
     let mut fd = build_and_follow_flow(arch, name, funcaddr, size)?;
+    // Re-seed the console-mapped symbols (lost when the IR is rebuilt).
+    fd.seed_mapped_symbols(mapped_symbols);
     // With the single-manager unification (LOSS-132) the universalAction passes
     // now reach the *real* lifted varnodes, so the pipeline genuinely executes
     // heritage / simplification / merge / … on live IR.  Some pass BODIES are

@@ -1626,11 +1626,33 @@ impl PrintC {
         for (high, name) in &decls {
             // Type: the high's recovered type name (W8-unknown -> `undefined<N>`).
             let (type_name, comment) = self.local_decl_type_and_comment(fd, arch, *high);
+            // Array member: if the mapped Symbol is an array, declare the base
+            // type and an `[count]` adornment after the name (C++ `emitVarDecl`'s
+            // array branch).
+            let array_count = fd.high_bank().get(*high).and_then(|h| {
+                let st = h.kuna_symbol_type()?;
+                if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
+                    let base = st.get_array_base()?;
+                    let elsize = base.get_size().max(1);
+                    let count = st.get_size() / elsize;
+                    Some((type_name_for_decl(&base), count))
+                } else {
+                    None
+                }
+            });
             self.emit.tag_line();
             let id = self.emit.begin_var_decl(&markup);
-            self.emit.tag_type(&type_name, SyntaxHighlight::TypeColor, &markup);
+            let decl_type = array_count.as_ref().map(|(t, _)| t.clone()).unwrap_or(type_name);
+            self.emit.tag_type(&decl_type, SyntaxHighlight::TypeColor, &markup);
             self.emit.spaces(1, 0);
             self.emit.tag_variable(name, SyntaxHighlight::VarColor, &markup);
+            if let Some((_, count)) = &array_count {
+                // ` [count]` (C++ `emitArrayDecl`: a space then the bracketed count).
+                self.emit.spaces(1, 0);
+                self.emit.print("[", SyntaxHighlight::NoColor);
+                self.emit.print(&format!("{count}"), SyntaxHighlight::ConstColor);
+                self.emit.print("]", SyntaxHighlight::NoColor);
+            }
             self.emit.end_var_decl(id);
             self.emit.print(";", SyntaxHighlight::NoColor);
             if let Some((ctext, spc, off)) = comment {
@@ -1672,12 +1694,31 @@ impl PrintC {
                 let size = v.get_size();
                 let comment = loc.get_space().and_then(|spc| {
                     let regname = arch.translate().get_register_name(spc, loc.get_offset(), size);
-                    if regname.is_empty() {
-                        None
-                    } else {
+                    if !regname.is_empty() {
                         // kunaStorageComment: register name lowercased.
-                        Some((regname.to_ascii_lowercase(), spc.clone(), loc.get_offset()))
+                        return Some((regname.to_ascii_lowercase(), spc.clone(), loc.get_offset()));
                     }
+                    // Stack local: `// stack - 0xNN` / `// stack + 0xNN`
+                    // (C++ `kunaStorageComment` for a spacebase local).
+                    if spc.get_index() == fd.get_arch().manage().get_stack_space().map(|s| s.get_index()).unwrap_or(-99) {
+                        // For an array/struct member the declaration is anchored at
+                        // the Symbol base, so subtract the in-symbol byte offset.
+                        let sym_off = h.kuna_symbol_offset();
+                        let base_off = if sym_off > 0 {
+                            loc.get_offset().wrapping_sub(sym_off as u64)
+                        } else {
+                            loc.get_offset()
+                        };
+                        // Signed offset within the stack space.
+                        let signed = kuna_base::address::sign_extend(base_off as i64, (spc.get_addr_size() as i32) * 8 - 1);
+                        let text = if signed < 0 {
+                            format!("stack - {:#x}", (-signed) as u64)
+                        } else {
+                            format!("stack + {:#x}", signed as u64)
+                        };
+                        return Some((text, spc.clone(), loc.get_offset()));
+                    }
+                    None
                 });
                 (tn, comment)
             }
@@ -2289,9 +2330,45 @@ impl PrintC {
         // named high renders its bound `vN` name here — for *every* member, which
         // is exactly how the C++ renders all instances of a merged local.
         if let Some(high) = v.get_high() {
-            if let Some(name) = fd.high_bank().get(high).and_then(|h| h.kuna_name()) {
+            let named = fd.high_bank().get(high).and_then(|h| h.kuna_name()).map(|n| {
+                let hb = fd.high_bank().get(high).unwrap();
+                (n.to_string(), hb.kuna_symbol_offset(), hb.kuna_symbol_type().cloned())
+            });
+            if let Some((name, sym_off, sym_type)) = named {
+                // Array/struct member access: if the mapped Symbol is an array and
+                // the access is at a non-base offset (or the symbol is strictly
+                // larger than the access), render `name[index]` (C++
+                // `PrintC::pushSymbolDetail`'s array branch).
+                if let Some(st) = &sym_type {
+                    if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
+                        if let Some(elem) = st.get_array_base() {
+                            let elsize = elem.get_size().max(1);
+                            // The access maps to element `index` when it lies
+                            // within the array and the offset divides the element.
+                            if sym_off >= 0 && (sym_off % elsize) == 0 && st.get_size() > elsize {
+                                let index = sym_off / elsize;
+                                // `name[index]` via the subscript op-token.
+                                self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                                self.push_atom(&Atom::with_op_vn(
+                                    name,
+                                    TagType::VarToken,
+                                    crate::printlanguage::SyntaxHighlight::var_color,
+                                    op_key(op),
+                                    vn_key(vn),
+                                ));
+                                self.push_atom(&Atom::with_op(
+                                    format!("{index}"),
+                                    TagType::Syntax,
+                                    crate::printlanguage::SyntaxHighlight::const_color,
+                                    op_key(op),
+                                ));
+                                return;
+                            }
+                        }
+                    }
+                }
                 self.push_atom(&Atom::with_op_vn(
-                    name.to_string(),
+                    name,
                     TagType::VarToken,
                     crate::printlanguage::SyntaxHighlight::var_color,
                     op_key(op),

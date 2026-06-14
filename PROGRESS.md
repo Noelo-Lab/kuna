@@ -1,5 +1,31 @@
 # kuna Progress Log
 
+## Session (2026-06-14) — rust-port W10 un-seam: stack-var promotion chain (named locals)
+
+Closed the whole stack-variable promotion chain (1)->(5), all unblocked by the
+SpacebaseSpace keystone: `ActionSpacebase`->`Funcdata::spacebase` marks the RSP input
+spacebase + types it as a pointer; `RuleLoad/StoreVarnode::checkSpacebase`
+(correctSpacebase/vnSpacebase + `getSpaceBySpacebase`/`getSpaceFromConst`) folds
+`LOAD/STORE(RSP+off)` into a `(stack,off)` COPY; `ScopeLocal::restructureVarnode`
+gathers over the LIVE IR (gatherVarnodes/gatherOpen with the AliasChecker
+gatherAdditiveBase/gatherOffset seam realized + gatherSymbols) and restructures into
+Symbols; `syncVarnodesWithSymbols`/`syncVarnodesWithSymbol` paint mapped|addrtied + the
+recovered type; and the naming pass + printer render the mapped Symbol name (incl.
+array-member `name[idx]` access and `int4 i [4]; // stack - 0x18` array declarations).
+Also closed the console IR-rebuild gap (`decompile` rebuilds the Funcdata, dropping the
+`map addr` symbols; now carried across via `mapped_symbol_specs`/`seed_mapped_symbols`).
+
+Result: stack locals that were raw `STORE/LOAD(RSP+off)` / `Stackffffffff...` unnamed
+locations now promote to NAMED locals across functions — `loopvar`/`count`
+(forloop_loaditer), `pchar` (pointercmp), `int4 i [4]; // stack - 0x18` with `i[1]`
+array access (noforloop_alias) — byte-matching the C++ B5 oracle declarations. Datatest
+positive (min>=1) full-assertion passes hold at 24/425 (no regression); the remaining
+gap to flipping those whole multi-statement assertions is the downstream for-loop
+structuring / CALL-arg rendering / raw-stack-ptr alias annotation seams.
+
+**State: 3,186 Rust tests green; clippy -D warnings clean; C++ oracle 675/675 PARITY OK,
+untouched. Stack-var promotion chain functionally complete (named locals render).**
+
 ## Session (2026-06-14) — rust-port W10 un-seam chain cont.: stack-frame keystone, 24/425
 
 Continued the horizontal parity grind (each wave: measure vs stage golden, un-seam ONE

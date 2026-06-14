@@ -77,7 +77,7 @@ use crate::interface::{
     CommandStream, IfaceCommandAction, IfaceData, IfaceError, IfaceResult, IfaceStatus,
 };
 use kuna_base::types::int4;
-use kuna_decomp::decompile_drive::{build_and_follow_flow, decompile_func, print_c};
+use kuna_decomp::decompile_drive::{build_and_follow_flow, print_c};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::options::OptionDatabase;
 
@@ -1037,9 +1037,9 @@ decomp_command!(
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         // Read the per-function values + take the program out so the engine work
         // borrows neither `status` nor `dcp` while the console output is written.
-        let (name, has_no_code, proc_started, entry, size, mut prog) = {
+        let (name, has_no_code, proc_started, entry, size, mapped_symbols, mut prog) = {
             let dcp = dcp_mut(status)?;
-            let (name, has_no_code, proc_started, entry, size) = match &dcp.fd {
+            let (name, has_no_code, proc_started, entry, size, mapped_symbols) = match &dcp.fd {
                 None => return Err(IfaceError::execution("No function selected")),
                 Some(fd) => (
                     fd.get_name().to_string(),
@@ -1047,11 +1047,14 @@ decomp_command!(
                     fd.is_proc_started(),
                     fd.get_address().clone(),
                     fd.get_size(),
+                    // The console-mapped `map addr` symbols (carried across the
+                    // IR rebuild below, which discards the current Funcdata).
+                    fd.mapped_symbol_specs(),
                 ),
             };
             match dcp.conf.take() {
                 None => return Err(IfaceError::execution("No load image present")),
-                Some(prog) => (name, has_no_code, proc_started, entry, size, prog),
+                Some(prog) => (name, has_no_code, proc_started, entry, size, mapped_symbols, prog),
             }
         };
         if has_no_code {
@@ -1071,7 +1074,13 @@ decomp_command!(
         // "Decompilation complete"/"Break at .." reporting.  The kuna decompile
         // drive (decompile_drive::decompile_func) installs the `decompile` root,
         // resets it, and runs the 252-pass perform loop to completion.
-        let result = decompile_func(prog.arch_mut(), &name, entry, size);
+        let result = kuna_decomp::decompile_drive::decompile_func_with_symbols(
+            prog.arch_mut(),
+            &name,
+            entry,
+            size,
+            &mapped_symbols,
+        );
         // Restore the program (and the fresh Funcdata on success) regardless.
         let dcp = dcp_mut(status)?;
         dcp.conf = Some(prog);
