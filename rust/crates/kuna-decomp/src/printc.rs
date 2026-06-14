@@ -1862,15 +1862,69 @@ impl PrintC {
             BlockType::WhileDo => self.emit_block_while_do(fd, arch, blk),
             BlockType::DoWhile => self.emit_block_do_while(fd, arch, blk),
             BlockType::InfLoop => self.emit_block_inf_loop(fd, arch, blk),
-            // Condition / multigoto / switch: their emitters are the next
-            // structuring layer (switch needs the JumpTable/case machinery,
-            // Condition the &&/|| gluing).  Fall through to the component blocks.
+            BlockType::Condition => self.emit_block_condition(fd, arch, blk),
+            // multigoto / switch: their emitters are the next structuring layer
+            // (switch needs the JumpTable/case machinery).  Fall through to the
+            // component blocks.
             _ => {
                 let list: Vec<BlockId> = fd.sblocks_ref().block(blk).get_list().to_vec();
                 for c in list {
                     self.emit_block(fd, arch, c);
                 }
             }
+        }
+    }
+
+    /// C++ `PrintC::emitBlockCondition` (printc.cc:2985): emit a `BlockCondition`
+    /// (the two short-circuited `&&`/`||` clauses).
+    ///
+    /// The condition node has no statement body of its own; it is only emitted as
+    /// the boolean expression of an enclosing `if`/loop.  In the `no_branch`
+    /// state (the "statements before the branch" pass of `emitBlockIf`) only the
+    /// first clause's leading statements print.  In the `only_branch`/
+    /// `comma_separate` state (the branch-condition pass) the two clauses print
+    /// glued by ` && ` / ` || `, each wrapped in parens — matching the C++
+    /// `(a && b)` form.
+    fn emit_block_condition(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        let b0 = fd.sblocks_ref().block(blk).get_block(0);
+        // no_branch: emit only the first clause's leading statements.
+        if self.context.is_set(modifiers::NO_BRANCH) {
+            let id = self.emit.begin_block(0);
+            self.emit_block(fd, arch, b0);
+            self.emit.end_block(id);
+            return;
+        }
+        if self.context.is_set(modifiers::ONLY_BRANCH) || self.context.is_set(modifiers::COMMA_SEPARATE)
+        {
+            let b1 = fd.sblocks_ref().block(blk).get_block(1);
+            let opc = fd
+                .sblocks_ref()
+                .block(blk)
+                .get_condition_opcode()
+                .unwrap_or(OpCode::CPUI_BOOL_AND);
+
+            let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+            self.emit_block(fd, arch, b0);
+            self.context.push_mod();
+            self.context.unset_mod(modifiers::ONLY_BRANCH);
+            // comma_separate is placed only on the second block.
+            self.context.set_mod(modifiers::COMMA_SEPARATE);
+
+            // Emit the && / || token as if it were on the RPN stack (C++ builds a
+            // ReversePolish with op==0, visited==1, and calls emitOp).
+            let tok: &'static crate::printlanguage::OpToken = if opc == OpCode::CPUI_BOOL_AND {
+                &tokens::BOOLEAN_AND
+            } else {
+                &tokens::BOOLEAN_OR
+            };
+            let pol = ReversePolish { tok, visited: 1, paren: false, op: None, id: 0, id2: 0 };
+            self.emit_op(&pol);
+
+            let id2 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+            self.emit_block(fd, arch, b1);
+            self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id2);
+            self.context.pop_mod();
+            self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id);
         }
     }
 
