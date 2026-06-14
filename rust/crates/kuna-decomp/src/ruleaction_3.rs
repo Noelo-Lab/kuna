@@ -230,6 +230,21 @@ fn vn_is_heritage_known(data: &Funcdata, vn: VarnodeId) -> bool {
     data.vbank().get(vn).expect("vn_is_heritage_known: stale vn").is_heritage_known()
 }
 
+/// `vn->isMark()`.
+fn vn_is_mark(data: &Funcdata, vn: VarnodeId) -> bool {
+    data.vbank().get(vn).expect("vn_is_mark: stale vn").is_mark()
+}
+
+/// `vn->setMark()`.
+fn vn_set_mark(data: &mut Funcdata, vn: VarnodeId) {
+    data.vbank_mut().get_mut(vn).expect("vn_set_mark: stale vn").set_mark();
+}
+
+/// `vn->clearMark()`.
+fn vn_clear_mark(data: &mut Funcdata, vn: VarnodeId) {
+    data.vbank_mut().get_mut(vn).expect("vn_clear_mark: stale vn").clear_mark();
+}
+
 // =============================================================================
 // RuleBooleanDedup (ruleaction.cc:2819)
 // =============================================================================
@@ -736,20 +751,172 @@ impl Rule for RuleMultiCollapse {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        // Verbatim port of C++ `RuleMultiCollapse::applyOp` (ruleaction.cc:3253).
+        // Collapses a MULTIEQUAL whose inputs are all absolutely or functionally
+        // equal (the latter via cseFindInBlock).  This is the keystone for
+        // spill/reload folding: two per-branch `COPY(reg)` inputs of a phi are
+        // functionally equal and get CSE'd into one copy, emptying the COPY
+        // blocks so the CFG can structure into `&&`/`||`.
+
         // for(i=0;i<numInput;++i) if (!getIn(i)->isHeritageKnown()) return 0;
-        let n = op_num_input(data, op);
-        for i in 0..n {
+        let numinput = op_num_input(data, op);
+        for i in 0..numinput {
             let vi = op_in(data, op, i).expect("RuleMultiCollapse: null input");
             if !vn_is_heritage_known(data, vi) {
-                return 0;
+                return 0; // Everything must be heritaged before collapse
             }
         }
-        // SEAM(expression): the collapse body relies on functionalEquality /
-        // Funcdata::cseFindInBlock / BlockBasic::earliestUse (expression.cc /
-        // blockaction.cc), none of which are ported.  Even the absolute-equality
-        // path threads through `matchlist`/`skiplist` mark bookkeeping that the
-        // functional-equality machinery shares.  The heritage-known guard above
-        // is ported; the collapse is deferred.  Recorded as a loss.
+
+        let mut func_eq = false; // Start assuming absolute equality of branches
+        let mut nofunc = false; // Functional equalities are initially allowed
+        let mut defcopyr: Option<VarnodeId> = None;
+        let mut j = 0usize;
+
+        // for(i...) matchlist.push_back(op->getIn(i));
+        let mut matchlist: Vec<VarnodeId> = Vec::with_capacity(numinput as usize);
+        for i in 0..numinput {
+            matchlist.push(op_in(data, op, i).expect("RuleMultiCollapse: null input"));
+        }
+        // Find base branch to match (first input not written by a MULTIEQUAL).
+        for &copyr in matchlist.iter() {
+            let is_multi = vn_is_written(data, copyr)
+                && op_code(data, vn_def(data, copyr).expect("written vn has def"))
+                    == OpCode::CPUI_MULTIEQUAL;
+            if !is_multi {
+                defcopyr = Some(copyr);
+                break;
+            }
+        }
+
+        let mut success = true;
+        // op->getOut()->setMark(); skiplist.push_back(op->getOut());
+        let outvn = op_out(data, op).expect("RuleMultiCollapse: MULTIEQUAL has no output");
+        vn_set_mark(data, outvn);
+        let mut skiplist: Vec<VarnodeId> = vec![outvn];
+
+        while j < matchlist.len() {
+            let copyr = matchlist[j];
+            j += 1;
+            if vn_is_mark(data, copyr) {
+                continue; // A varnode we have seen before (loop construct) — skip
+            }
+            match defcopyr {
+                None => {
+                    // This is now the defining branch; all others must match.
+                    defcopyr = Some(copyr);
+                    if vn_is_written(data, copyr) {
+                        if op_code(data, vn_def(data, copyr).expect("written vn has def"))
+                            == OpCode::CPUI_MULTIEQUAL
+                        {
+                            nofunc = true; // MULTIEQUAL cannot match by functional equal
+                        }
+                    } else {
+                        nofunc = true; // Unwritten cannot match by functional equal
+                    }
+                }
+                Some(def) if def == copyr => {
+                    continue; // A matching branch
+                }
+                Some(def)
+                    if !nofunc
+                        && crate::expression::functional_equality(
+                            def,
+                            copyr,
+                            data.vbank(),
+                            data.obank(),
+                        ) =>
+                {
+                    func_eq = true; // Now matching by functional equality
+                    continue;
+                }
+                _ => {
+                    if vn_is_written(data, copyr)
+                        && op_code(data, vn_def(data, copyr).expect("written vn has def"))
+                            == OpCode::CPUI_MULTIEQUAL
+                    {
+                        // If the non-matching branch is a MULTIEQUAL, give it one
+                        // last chance: add its inputs to the list of things to match.
+                        let newop = vn_def(data, copyr).expect("written vn has def");
+                        skiplist.push(copyr);
+                        vn_set_mark(data, copyr);
+                        let newin = op_num_input(data, newop);
+                        for i in 0..newin {
+                            matchlist.push(op_in(data, newop, i).expect("MULTIEQUAL null input"));
+                        }
+                    } else {
+                        success = false; // A non-matching branch
+                        break;
+                    }
+                }
+            }
+        }
+
+        if success {
+            let defcopyr = defcopyr.expect("RuleMultiCollapse: success implies a defining branch");
+            // C++ iterates `skiplist` (fixed at this point — the collapse body never
+            // pushes to it).  Snapshot it so the `&mut data` calls inside don't
+            // alias the Vec.
+            for copyr in skiplist.clone() {
+                vn_clear_mark(data, copyr);
+                let cur_op = vn_def(data, copyr).expect("skiplist varnode must be written");
+                if func_eq {
+                    // We have only functional equality.
+                    let parent =
+                        data.obank().get(cur_op).expect("stale op").get_parent().expect("op parent");
+                    let earliest = data.block_earliest_use(parent, copyr);
+                    let newop = vn_def(data, defcopyr).expect("defcopyr must be written");
+                    // Has newop already been copied in this block?
+                    let mut substitute: Option<OpId> = None;
+                    let newin = op_num_input(data, newop);
+                    for i in 0..newin {
+                        let invn = op_in(data, newop, i).expect("newop null input");
+                        if !vn_is_constant(data, invn) {
+                            substitute = data.cse_find_in_block(newop, invn, parent, earliest);
+                            break;
+                        }
+                    }
+                    if let Some(substitute) = substitute {
+                        // Already copied: use the copy's output as substitute.
+                        let subout = op_out(data, substitute).expect("substitute has no output");
+                        data.total_replace(copyr, subout).expect("RuleMultiCollapse: totalReplace");
+                        data.op_destroy(cur_op);
+                    } else {
+                        // Otherwise, rewrite cur_op into a copy of newop.
+                        let needsreinsert = op_code(data, cur_op) == OpCode::CPUI_MULTIEQUAL;
+                        let mut parms: Vec<VarnodeId> = Vec::with_capacity(newin as usize);
+                        for i in 0..newin {
+                            parms.push(op_in(data, newop, i).expect("newop null input"));
+                        }
+                        data.op_set_all_input(cur_op, &parms)
+                            .expect("RuleMultiCollapse: opSetAllInput");
+                        set_opcode(data, cur_op, op_code(data, newop));
+                        if needsreinsert {
+                            // If the op is no longer a MULTIEQUAL, re-insert it after
+                            // any other MULTIEQUAL at the block head.
+                            let bl = data
+                                .obank()
+                                .get(cur_op)
+                                .expect("stale op")
+                                .get_parent()
+                                .expect("op parent");
+                            data.op_uninsert(cur_op);
+                            data.op_insert_begin(cur_op, bl);
+                        }
+                    }
+                } else {
+                    // We have absolute equality: replace all refs to copyr with
+                    // defcopyr and destroy the MULTIEQUAL.
+                    data.total_replace(copyr, defcopyr).expect("RuleMultiCollapse: totalReplace");
+                    data.op_destroy(cur_op);
+                }
+            }
+            return 1;
+        }
+
+        // Failure: clear out any marks we put down.
+        for &v in skiplist.iter() {
+            vn_clear_mark(data, v);
+        }
         0
     }
 }

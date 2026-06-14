@@ -374,12 +374,24 @@ fn w10_implied_multiwrite_return_stays_explicit_not_overinlined() {
         "OVER-INLINE: a multi-write return value was inlined to `return ZEXT(a0);` \
          — the cover/multi-def-conflicting storage must stay explicit, got:\n{rust}"
     );
-    // It is genuinely written more than once (the property that forbids inlining):
-    // the assignment expression `= ZEXT(a0)` appears at least twice.
-    assert!(
-        rust.matches("ZEXT(a0)").count() >= 2,
-        "condconst_copy must keep BOTH writes of the multi-def return (the merge \
-         must not have collapsed the two definitions), got:\n{rust}"
+    // The value is assigned exactly once and returned by name — it stays an
+    // explicit local, never inlined into `return ZEXT(a0)`.
+    //
+    // NOTE (rport/w10-stackslot-ssa): the two original MULTIEQUAL inputs of `v1`
+    // here are BOTH `ZEXT(a0)` — they are *functionally equal*, not genuinely
+    // distinct writes.  C++ `RuleMultiCollapse` (ruleaction.cc:3253) collapses a
+    // MULTIEQUAL of functionally-equal inputs into a single copy via the
+    // `functionalEquality`/`cseFindInBlock` path; before this wave that rule body
+    // was a SEAM stub returning 0, so the Rust engine LEFT both `ZEXT(a0)` writes
+    // in place — a deviation from C++.  With the rule un-seamed the engine now
+    // (correctly, C++-faithfully) folds them to one `v1 = ZEXT(a0)`.  The test's
+    // real intent — the return stays an explicit named local rather than being
+    // over-inlined to `return ZEXT(a0)` — is unchanged and still asserted above.
+    assert_eq!(
+        rust.matches("v1 = ZEXT(a0)").count(),
+        1,
+        "condconst_copy's functionally-equal multi-def `v1` must fold to one \
+         `v1 = ZEXT(a0)` (C++ RuleMultiCollapse), and stay explicit, got:\n{rust}"
     );
 }
 
