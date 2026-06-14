@@ -743,9 +743,29 @@ decomp_command!(
         // C++ Address addr = parse_machaddr(...); ct = parse_type(s,name,glb).
         let fd_present = dcp_mut(status)?.fd.is_some();
         if fd_present {
-            // The fd-local form binds into the function's `ScopeLocal`, a W4 seam
-            // (the Funcdata's local map is a placeholder in the merged tree).
-            return Err(engine_unavailable("Funcdata::getScopeLocal()->addSymbol (W4 local scope)"));
+            // C++ fd-local form (ifacedecomp.cc:561-563):
+            //   sym = dcp->fd->getScopeLocal()->addSymbol(name,ct,addr,Address())->getSymbol();
+            //   sym->getScope()->setAttribute(sym, Varnode::namelock|Varnode::typelock);
+            use kuna_decomp::varnode::varnode_flags;
+            let dcp = dcp_mut(status)?;
+            let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+            let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+            s.skip_ws();
+            let (addr_size, word_size) = prog.arch().data_org();
+            let org = crate::grammar::DataOrg { addr_size, word_size };
+            let typetext = s.rest();
+            let (ct, name) = crate::grammar::parse_type(&typetext, prog.arch().types(), org)
+                .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
+            let invalid = kuna_base::address::Address::new_invalid();
+            let fd = dcp.fd.as_mut().expect("fd checked Some above");
+            let scope_local = fd.get_scope_local_mut().ok_or_else(|| {
+                IfaceError::execution("Function has no local scope (no stack space)")
+            })?;
+            let sym = scope_local
+                .add_symbol(&name, ct, &addr, &invalid)
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            scope_local.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+            return Ok(());
         }
         let dcp = dcp_mut(status)?;
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
@@ -884,11 +904,9 @@ decomp_command!(
             if dcp.conf.is_none() {
                 return Err(IfaceError::execution("No load image present"));
             }
-            if dcp.fd.is_some() {
-                // fd-local label: the Funcdata ScopeLocal is a W4 seam.
-                return Err(engine_unavailable("Funcdata::getScopeLocal()->addCodeLabel (W4 local scope)"));
-            }
         }
+        use kuna_decomp::varnode::varnode_flags;
+        let fd_present = dcp_mut(status)?.fd.is_some();
         let dcp = dcp_mut(status)?;
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
         let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
@@ -898,7 +916,20 @@ decomp_command!(
             .types()
             .get_base(1, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-        use kuna_decomp::varnode::varnode_flags;
+        if fd_present {
+            // C++ fd-local form: scope = dcp->fd->getScopeLocal();
+            //   sym = scope->addCodeLabel(addr,name);
+            //   scope->setAttribute(sym, namelock|typelock).
+            let fd = dcp.fd.as_mut().expect("fd checked Some above");
+            let scope_local = fd.get_scope_local_mut().ok_or_else(|| {
+                IfaceError::execution("Function has no local scope (no stack space)")
+            })?;
+            let sym = scope_local
+                .add_code_label(&addr, &name, lab_type)
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            scope_local.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+            return Ok(());
+        }
         let arch = prog.arch_mut();
         let gscope = arch
             .symboltab

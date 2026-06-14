@@ -51,7 +51,7 @@ use std::rc::Rc;
 use kuna_base::address::{sign_extend, Address};
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::AddrSpace;
-use kuna_base::types::{int4, int8, intb, uint4, uintb, Wrap};
+use kuna_base::types::{int4, int8, intb, uint4, uint8, uintb, Wrap};
 
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 
@@ -791,6 +791,330 @@ pub trait AliasGatherSeam {
     /// C++ `AliasChecker::gatherOffset(vn)` — the constant portion of the sum
     /// the given Varnode is the result of.
     fn gather_offset(&mut self, vn: crate::seams::VarnodeId) -> uintb;
+}
+
+// ===========================================================================
+// ScopeLocal (varmap.hh:212-269, varmap.cc:341-1620)
+// ===========================================================================
+
+/// The stack-frame symbol scope of a function (C++ `ScopeLocal`, a
+/// `ScopeInternal` subclass, `varmap.hh:212`).
+///
+/// In C++ the `ScopeLocal` is a child of the architecture's global symbol
+/// table (`glb->symboltab->attachScope(localmap, scope)`).  The merged Rust
+/// tree carries the global `Database` on the *console* `Architecture`, not on
+/// the `glb` [`ArchHandle`](crate::seams::ArchHandle) the `Funcdata` holds, so
+/// — faithful to the `ScopeInternal` self-containment (its `nametree` /
+/// `maptable` / `category` / `rangetree` are all private members) — the
+/// `ScopeLocal` owns its **own** single-scope [`Database`] here.  The only
+/// cross-scope C++ dependency is `makeNameUnique` (consulted on the local
+/// scope's own `nametree`, which IS self-contained) and `setRange`/`removeRange`
+/// (which the C++ `Database` stores into this scope's own `rangetree`); both are
+/// reproduced exactly against the owned `Database`.
+///
+/// The order-determining layout core (`RangeHint`/`MapState`/`AliasChecker`)
+/// lives above this struct and is unit-tested independently; this struct ports
+/// the `ScopeLocal`-specific layer that drives it: `resetLocalWindow`,
+/// `restructure`, `createEntry`, `adjustFit`, `markNotMapped`,
+/// `buildVariableName`, plus the `addSymbol`/`addCodeLabel` entry points the
+/// console `map` commands reach.  The IR-mutating `restructureVarnode` gather
+/// and `syncVarnodesWithSymbols` remain a documented seam (LOSS-109): the
+/// `MapState` gather is supplied by the driver against the live IR.
+pub struct ScopeLocal {
+    /// The owned local symbol database (one functional scope).
+    db: crate::database::Database,
+    /// The id of the local scope within [`Self::db`].
+    scope: crate::database::ScopeId,
+    /// The address space (stack) holding this scope's variables (C++ `space`).
+    space: Rc<AddrSpace>,
+    /// Minimum offset of a stack parameter (C++ `minParamOffset`).
+    min_param_offset: uintb,
+    /// Maximum offset of a stack parameter (C++ `maxParamOffset`).
+    max_param_offset: uintb,
+    /// True if the layout range is locked / not auto-recovered (C++ `rangeLocked`).
+    range_locked: bool,
+    /// True if the stack grows toward negative offsets (C++ `stackGrowsNegative`).
+    stack_grows_negative: bool,
+    /// True if `restructure` could not reconcile overlaps (C++ `overlapProblems`).
+    overlap_problems: bool,
+}
+
+impl ScopeLocal {
+    /// C++ `ScopeLocal::ScopeLocal(id,spc,fd,glb)` (`varmap.cc:341`).
+    ///
+    /// `num_spaces` sizes the per-space `maptable` (the C++ `ScopeInternal`
+    /// constructor's `maptable.resize(numSpaces, null)`); it must cover the stack
+    /// space's index so `addSymbol` on a stack address can allocate its slot.
+    pub fn new(id: uint8, spc: Rc<AddrSpace>, fname: &str, num_spaces: int4) -> KunaResult<ScopeLocal> {
+        let mut db = crate::database::Database::new(true);
+        // The local scope is the *global* scope of this private database (empty
+        // parent), but it IS functional (C++ ScopeLocal has a non-null `fd`).
+        let scope = db.find_create_scope(id, "", None, num_spaces)?;
+        db.scope_mut(scope).is_functional = true;
+        db.scope_mut(scope).name = fname.to_string();
+        db.scope_mut(scope).display_name = fname.to_string();
+        Ok(ScopeLocal {
+            db,
+            scope,
+            space: spc,
+            min_param_offset: !0u64, // ~((uintb)0)
+            max_param_offset: 0,
+            range_locked: false,
+            stack_grows_negative: true,
+            overlap_problems: false,
+        })
+    }
+
+    /// The address space holding this scope's variables (C++ `getSpaceId`).
+    pub fn get_space_id(&self) -> &Rc<AddrSpace> {
+        &self.space
+    }
+
+    /// Borrow the owned symbol database (read-only).
+    pub fn database(&self) -> &crate::database::Database {
+        &self.db
+    }
+
+    /// The local scope id within the owned database.
+    pub fn scope_id(&self) -> crate::database::ScopeId {
+        self.scope
+    }
+
+    /// Did the last `restructure` leave unreconciled overlaps (C++
+    /// `overlapProblems`)?
+    pub fn has_overlap_problems(&self) -> bool {
+        self.overlap_problems
+    }
+
+    /// C++ `ScopeLocal::resetLocalWindow` (`varmap.cc:432`): reset the discovery
+    /// window for new local variables.  `local_range`/`param_range` are the
+    /// function prototype's stack ranges; `grows_negative` is
+    /// `proto.isStackGrowsNegative()`.  When the layout is range-locked the range
+    /// is left intact (the C++ early return).
+    pub fn reset_local_window(
+        &mut self,
+        local_range: &kuna_base::address::RangeList,
+        param_range: &kuna_base::address::RangeList,
+        grows_negative: bool,
+    ) {
+        self.stack_grows_negative = grows_negative;
+        self.min_param_offset = !0u64;
+        self.max_param_offset = 0;
+
+        if self.range_locked {
+            return;
+        }
+
+        let mut newrange = kuna_base::address::RangeList::new();
+        for rng in local_range.iter() {
+            newrange.insert_range(rng.get_space().clone(), rng.get_first(), rng.get_last());
+        }
+        for rng in param_range.iter() {
+            newrange.insert_range(rng.get_space().clone(), rng.get_first(), rng.get_last());
+        }
+        // C++ glb->symboltab->setRange(this,newrange) stores into this scope's
+        // own rangetree (Database::setRange -> scope->rangetree = newrange).
+        self.db.set_range(self.scope, newrange);
+    }
+
+    /// C++ `ScopeLocal::addSymbol(name,ct,addr,usepoint)` — the function-local
+    /// form reached by `IfcMapaddress` (`getScopeLocal()->addSymbol(...)`).
+    ///
+    /// In C++ this is `ScopeInternal::addSymbol`, which auto-names an empty name
+    /// (`buildVariableName`) and maps the storage.  The console always passes an
+    /// explicit name, so the auto-name branch is not exercised here; an empty
+    /// name maps without a name (the symbol gets a name later via `restructure`).
+    pub fn add_symbol(
+        &mut self,
+        name: &str,
+        ct: Rc<Datatype>,
+        addr: &Address,
+        usepoint: &Address,
+    ) -> KunaResult<crate::database::SymbolId> {
+        let (sym, _eref) = self.db.add_symbol_mapped(self.scope, name, ct, addr, usepoint)?;
+        Ok(sym)
+    }
+
+    /// C++ `Scope::addCodeLabel` reached via `getScopeLocal()->addCodeLabel`
+    /// (`IfcMaplabel` fd-local form).
+    pub fn add_code_label(
+        &mut self,
+        addr: &Address,
+        name: &str,
+        lab_type: Rc<Datatype>,
+    ) -> KunaResult<crate::database::SymbolId> {
+        self.db.add_code_label(self.scope, addr, name, lab_type)
+    }
+
+    /// C++ `ScopeInternal::setAttribute` reached via the `map` commands
+    /// (`sym->getScope()->setAttribute(sym, namelock|typelock)`).
+    pub fn set_attribute(&mut self, sym: crate::database::SymbolId, attr: uint4) {
+        self.db.set_attribute(sym, attr);
+    }
+
+    /// C++ `ScopeLocal::adjustFit` (`varmap.cc:587`): shrink `a` so it fits the
+    /// mapped region and doesn't overlap an existing Symbol.  `false` if no valid
+    /// adjustment is possible.
+    fn adjust_fit(&self, a: &mut RangeHint) -> bool {
+        if a.size == 0 {
+            return false; // Nothing to fit
+        }
+        if a.is_type_lock() {
+            return false; // Already entered
+        }
+        let addr = Address::new(self.space.clone(), a.start);
+        let mut maxsize = self.db.scope(self.scope).get_range_tree().longest_fit(&addr, a.size as u64);
+        if maxsize == 0 {
+            return false;
+        }
+        if maxsize < a.size as u64 {
+            // Suggested range doesn't fit.
+            if maxsize < a.type_.get_size() as u64 {
+                return false; // Can't shrink that match
+            }
+            a.size = maxsize as int4;
+        }
+        // We want ANY symbol that might be within this range.
+        let entry = match self.db.find_overlap(self.scope, &addr, a.size) {
+            None => return true,
+            Some(e) => e,
+        };
+        let entry_addr = self.db.entry(self.scope, entry).get_addr().clone();
+        let same_space = entry_addr
+            .get_space()
+            .zip(addr.get_space())
+            .map(|(a, b)| a.get_index() == b.get_index())
+            .unwrap_or(false);
+        if entry_addr.get_offset() <= addr.get_offset() && same_space {
+            // entry.getAddr() <= addr : generally shouldn't be possible.
+            return false;
+        }
+        maxsize = entry_addr.get_offset().wrapping_sub(a.start);
+        if maxsize < a.type_.get_size() as u64 {
+            return false; // Can't shrink for this type
+        }
+        a.size = maxsize as int4;
+        true
+    }
+
+    /// C++ `ScopeLocal::createEntry` (`varmap.cc:617`): construct a concrete
+    /// data-type (and an array if the range holds more than one element) for the
+    /// `RangeHint` and enter it as a Symbol.
+    fn create_entry(&mut self, a: &RangeHint, types: &dyn TypeFactory) -> KunaResult<()> {
+        let addr = Address::new(self.space.clone(), a.start);
+        let usepoint = Address::new_invalid();
+        let mut ct = types.concretize(Rc::clone(&a.type_))?;
+        let align = ct.get_align_size();
+        // C++ `a.size / ct->getAlignSize()` (int4 division); guard a 0 align.
+        let num = if align != 0 { a.size / align } else { a.size };
+        if num > 1 {
+            ct = types.get_type_array(num, ct)?;
+        }
+        self.add_symbol("", ct, &addr, &usepoint)?;
+        Ok(())
+    }
+
+    /// C++ `ScopeLocal::restructure` (`varmap.cc:1294`): merge the collected
+    /// `RangeHint`s into a disjoint cover of Symbols.  Returns true if there were
+    /// overlaps that could not be reconciled.
+    pub fn restructure(&mut self, state: &mut MapState, types: &dyn TypeFactory) -> KunaResult<bool> {
+        let mut overlap_problems = false;
+        if !state.initialize()? {
+            return Ok(overlap_problems); // No references to stack at all
+        }
+
+        let mut cur: RangeHint = state.next().clone();
+        while state.get_next() {
+            let next: RangeHint = state.next().clone();
+            if next.sstart < cur.sstart.wrapping_add(cur.size as int8) {
+                // Do the ranges intersect — union them.
+                if cur.merge(&next, &self.space, types)? {
+                    overlap_problems = true;
+                }
+            } else if !cur.attempt_join(&next) {
+                if cur.range_type == RangeType::Open {
+                    // C++ `cur.size = next->sstart - cur.sstart;` (intb diff
+                    // truncated to int4); the gap is small and positive here.
+                    cur.size = next.sstart.wrapping_sub(cur.sstart) as int4;
+                }
+                if self.adjust_fit(&mut cur) {
+                    self.create_entry(&cur, types)?;
+                }
+                cur = next;
+            }
+        }
+        // The last range is artificial so we don't build an entry for it.
+        self.overlap_problems = overlap_problems;
+        Ok(overlap_problems)
+    }
+
+    /// C++ `ScopeLocal::buildVariableName` (`varmap.cc:548`): the stack-frame
+    /// naming convention (`<TypeBase><Space>[XY]_<hexoffset>`) for an addr-tied,
+    /// non-persistent Varnode in this scope's space whose offset lies in the
+    /// function's local range; otherwise defer to the generic name builder
+    /// (`ScopeInternal::buildVariableName`, the caller supplies the fallback).
+    ///
+    /// Returns `Some(name)` when the stack convention applies, `None` when the
+    /// caller should fall through to the generic builder.
+    pub fn build_variable_name_stack(
+        &self,
+        addr: &Address,
+        ct: Option<&Datatype>,
+        flags: uint4,
+        type_name_base: &dyn Fn(&Datatype) -> String,
+        in_local_range: bool,
+    ) -> Option<String> {
+        use crate::varnode::varnode_flags;
+        let in_space = addr
+            .get_space()
+            .map(|s| s.get_index() == self.space.get_index())
+            .unwrap_or(false);
+        if (flags & (varnode_flags::addrtied | varnode_flags::persist)) == varnode_flags::addrtied
+            && in_space
+            && in_local_range
+        {
+            let mut start: int8 =
+                AddrSpace::byte_to_address(addr.get_offset(), self.space.get_word_size()) as int8;
+            start = sign_extend(start, addr.get_addr_size() * 8 - 1);
+            if self.stack_grows_negative {
+                start = start.wrapping_neg();
+            }
+            let mut s = String::new();
+            if let Some(c) = ct {
+                s.push_str(&type_name_base(c));
+            }
+            let mut spacename = capitalize_first_local(self.space.get_name());
+            if start <= 0 {
+                spacename.push('X'); // local stack allocated by caller
+                start = start.wrapping_neg();
+            } else if self.min_param_offset < self.max_param_offset {
+                let unusual = if self.stack_grows_negative {
+                    addr.get_offset() < self.min_param_offset
+                } else {
+                    addr.get_offset() > self.max_param_offset
+                };
+                if unusual {
+                    spacename.push('Y'); // unusual region of stack
+                }
+            }
+            s.push_str(&spacename);
+            s.push('_');
+            s.push_str(&format!("{:x}", start as uintb));
+            return Some(self.db.public_make_name_unique(self.scope, &s));
+        }
+        None
+    }
+}
+
+/// Uppercase the first character of `name` (C++ `spacename[0] = toupper(...)`),
+/// matching the `database.rs` `capitalize_first` helper used by the generic
+/// name builder.
+fn capitalize_first_local(name: &str) -> String {
+    let mut cs = name.chars();
+    match cs.next() {
+        None => String::new(),
+        Some(c) => c.to_ascii_uppercase().to_string() + cs.as_str(),
+    }
 }
 
 // ===========================================================================
