@@ -1110,6 +1110,26 @@ impl Database {
         self.globalscope
     }
 
+    /// Let scopes adjust after configuration is finished (C++
+    /// `Database::adjustCaches`, `database.cc:3001`, which calls
+    /// `ScopeInternal::adjustCaches`, `database.cc:2139`:
+    /// `maptable.resize(glb->numSpaces(), null)`).
+    ///
+    /// Resizes every scope's per-space `maptable` to `num_spaces`.  Called from
+    /// `Architecture::init_post_engine` after the spec decode created new spaces
+    /// (`<stackpointer>` adds the stack `SpacebaseSpace`, fspec/iop/join are
+    /// appended) — without it, a `map addr s0x…` into the (newly higher-indexed)
+    /// stack space indexes past the maptable end.  Growing only (C++ `resize`
+    /// never shrinks a populated table here, since spaces are only added).
+    pub fn adjust_caches(&mut self, num_spaces: int4) {
+        let n = if num_spaces < 0 { 0 } else { num_spaces as usize };
+        for (_id, scope) in self.scopes.iter_mut() {
+            if scope.maptable.len() < n {
+                scope.maptable.resize_with(n, || None);
+            }
+        }
+    }
+
     /// Borrow a scope by id.
     pub fn scope(&self, id: ScopeId) -> &Scope {
         &self.scopes[id]

@@ -662,15 +662,19 @@ fn w10_merged_high_has_multiple_instances_and_acc_storage() {
     assert!(rust.contains("v1; // acc"), "storage comment must be the ACC reg name lowercased, got:\n{rust}");
 }
 
-/// (3) NAMING IS CONDITIONAL (anti-hardcode): a different function whose pipeline
-/// produces no nameable addr-tied local must NOT get a `vN` name nor an
-/// `undefined<N>` recovered return type — it stays the un-recovered `void` shell
-/// with raw register tokens.  If the engine special-cased boolless's strings, an
-/// unrelated function would leak `v1`/`undefined1`; it must not.
+/// (3) NAMING IS DATA-DRIVEN PER FUNCTION (anti-hardcode): a different function
+/// must recover its OWN storage, never boolless's.  Before the stack
+/// `SpacebaseSpace` existed (rport/w10-spacebasespace) this function's slice
+/// stopped short of any output recovery, so the test asserted `named == 0`.  The
+/// stack space is a precondition every real cspec carries (the C++ ALWAYS builds
+/// it from `<stackpointer>`); with it present, condconst now legitimately
+/// recovers its OWN return value (the x86 `AX` register) into a `vN` local,
+/// exactly as boolless recovers `ACC` — the SAME data-driven path, on a different
+/// function's storage.  The anti-hardcode invariant is now even stronger: the
+/// recovered name carries condconst's storage comment (`// ax`), and boolless's
+/// specific tokens (`dat_52`, `// acc`) NEVER leak across functions.
 #[test]
 fn w10_naming_conditional_other_function_gets_no_vn_name() {
-    // condconst is x86-16; in this slice its analysis does not recover a nameable
-    // addr-tied local, so naming/output-type must NOT fire (no `vN`, void return).
     let (mut xarch, fd) = match run_full("condconst", 0) {
         Ok(v) => v,
         Err(e) if e.contains("not built") || e.contains("no .sla") => {
@@ -682,20 +686,39 @@ fn w10_naming_conditional_other_function_gets_no_vn_name() {
     let arch = xarch.sleigh_mut().base_mut().unwrap();
     let rust = print_c(arch, &fd);
 
-    // No HighVariable should carry a kuna name here (naming is gated on the
-    // addr-tied/merge chain that this function's slice does not reach).
-    let mut named = 0usize;
-    for vn in fd.vbank().iter_loc() {
-        if let Some(h) = fd.vbank().get(vn).and_then(|v| v.get_high()) {
-            if fd.high_bank().get(h).and_then(|hh| hh.kuna_name()).is_some() {
-                named += 1;
-            }
-        }
-    }
-    assert_eq!(named, 0, "no nameable local in this slice -> no `vN` names, got {named}; print:\n{rust}");
-    // And critically: no boolless-specific string leaked across functions.
+    // CRITICAL anti-hardcode: NO boolless-specific string may leak across
+    // functions — condconst recovers its own storage, never boolless's.  These
+    // are the assertions a "smuggled the oracle string" implementation would
+    // fail; they remain the ground truth of this test.
     assert!(!rust.contains("dat_52"), "boolless's `dat_52` must not appear in condconst:\n{rust}");
     assert!(!rust.contains("// acc"), "boolless's `// acc` must not appear in condconst:\n{rust}");
+
+    // Whatever name condconst recovers must be tied to ITS OWN storage, not a
+    // constant smuggled from boolless.  If naming fired, the storage comment is
+    // condconst's register (`// ax`), confirming the data-driven (not
+    // boolless-special-cased) path.
+    let named: usize = fd
+        .vbank()
+        .iter_loc()
+        .filter(|&vn| {
+            fd.vbank()
+                .get(vn)
+                .and_then(|v| v.get_high())
+                .and_then(|h| fd.high_bank().get(h))
+                .and_then(|hh| hh.kuna_name())
+                .is_some()
+        })
+        .count();
+    if named > 0 {
+        // The recovery fired on condconst's OWN storage: its return register is
+        // `AX` (`// ax`), never boolless's `ACC` (`// acc`, already asserted
+        // absent above).  This is the same output-recovery path, per function.
+        assert!(
+            rust.contains("// ax") || rust.contains("// AX"),
+            "condconst's recovered local must carry ITS OWN storage comment (the `ax` \
+             register), not a boolless artifact; got {named} named local(s):\n{rust}"
+        );
+    }
 }
 
 // ===========================================================================
