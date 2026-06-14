@@ -766,3 +766,116 @@ fn verify_w10_pspec_context_forloop_varused_lifts_64bit_and_structures() {
         "forloop_varused's loop must structure to a real C loop keyword:\n{rendered}"
     );
 }
+
+// ===========================================================================
+// w10-symbol-naming INDEPENDENT VERIFIER adversarial tests (Round 1)
+//
+// Hunt-list targets for this item: (1) the `vN` base counter increments in the
+// `beginLoc..endLoc` location-order walk — a HashSet/non-deterministic `seen`
+// would scramble the numbering or the binding; (2) the recovered parameters
+// must bind to the angr default `aN` names and appear in the body, never the raw
+// argument registers and never the `$$undef` placeholder; (3) parameters must
+// NOT be re-declared as body locals.  These pin the un-seam against the C++
+// oracle (`decomp_dbg` with `namestyle angr`, the kuna default) on the
+// integer/pointer corpus, the same scheme as `kunaArgName`/`buildDefaultName`.
+// ===========================================================================
+
+/// DETERMINISM: rendering the same function twice must be byte-identical.  The
+/// `seen` dedup is a `BTreeSet` and the walk is `iter_loc` (a BTreeMap), so the
+/// `vN` numbering and the symbol binding are order-stable; a `HashSet`/`HashMap`
+/// regression in the naming walk would surface here as a flaky diff.
+#[test]
+fn verify_w10_symbol_naming_render_is_deterministic() {
+    let path = repo_root().join("decompiler/datatests/nestedoffset.xml");
+    let dt = parse_datatest(&path).expect("parse nestedoffset.xml");
+    let a = render_corpus(&dt).expect("readstruct must decompile (run 1)");
+    let b = render_corpus(&dt).expect("readstruct must decompile (run 2)");
+    assert_eq!(
+        a, b,
+        "the symbol-naming walk must be deterministic across runs (no HashSet/HashMap \
+         in the naming path):\nrun1:\n{a}\nrun2:\n{b}"
+    );
+    // And the render must be the REAL body (not the W9-emit stub warning) — the
+    // whole point of binding names is moot if the body is a stub.
+    assert!(
+        !a.contains("WARNING: body emission"),
+        "the body must be real C (not the W9-emit stub) for naming to be observable:\n{a}"
+    );
+}
+
+/// `vN` NUMBERING: the unnamed locals get sequential `v1`, `v2`, … in location
+/// order (the `base++` counter starts at 1).  readstruct's body has two distinct
+/// unnamed result locals — they must render as `v1` and `v2` (not `v0`, not a
+/// gap, not duplicated), proving the counter and the per-high dedup both work.
+#[test]
+fn verify_w10_symbol_naming_local_vn_counter_is_sequential_from_v1() {
+    let path = repo_root().join("decompiler/datatests/nestedoffset.xml");
+    let dt = parse_datatest(&path).expect("parse nestedoffset.xml");
+    let rendered = render_corpus(&dt).expect("readstruct must decompile");
+    // The angr local default is `v<base>` with base starting at 1 (C++
+    // `buildDefaultName`: `s << 'v' << dec << base++`, and apply() seeds base=1).
+    // There must be NO `v0` (off-by-one would start the counter at 0).
+    assert_eq!(
+        count_matches(r"\bv0\b", &rendered).unwrap_or(0),
+        0,
+        "the angr local counter starts at v1, never v0 (C++ apply() seeds base=1):\n{rendered}"
+    );
+    // At least `v1` must be present (the function has unnamed result locals).
+    assert!(
+        count_matches(r"\bv1\b", &rendered).unwrap_or(0) >= 1,
+        "the first unnamed local must be named v1:\n{rendered}"
+    );
+}
+
+/// PARAM BINDING on a SECOND corpus (divopt.xml, a different x86-64 pointer
+/// function): the recovered first-arg pointer must bind to its parameter name
+/// and be used in the body; the raw argument registers and the `$$undef`
+/// placeholder must both be absent.  This guards against the binding being a
+/// nestedoffset-specific accident.
+#[test]
+fn verify_w10_symbol_naming_divopt_binds_param_no_raw_reg_no_undef() {
+    let path = repo_root().join("decompiler/datatests/divopt.xml");
+    let dt = parse_datatest(&path).expect("parse divopt.xml");
+    let rendered = render_corpus(&dt).expect("divopt must decompile");
+    // No `$$undef` placeholder may leak (an unnamed param Symbol left undefined
+    // would render `$$undefXXXX`; the un-seam materializes a real `aN`/declared
+    // name instead).
+    assert_eq!(
+        count_matches(r"\$\$undef", &rendered).unwrap_or(0),
+        0,
+        "no `$$undef` placeholder may leak into the body:\n{rendered}"
+    );
+    // The first-arg pointer (RDI) must be GONE from the body — it is bound to its
+    // recovered parameter.  A residual `RDI` token means the high was not bound.
+    assert_eq!(
+        count_matches(r"\bRDI\b", &rendered).unwrap_or(0),
+        0,
+        "divopt's body must bind the RDI first-arg pointer to its parameter, not \
+         render the raw register:\n{rendered}"
+    );
+}
+
+/// NO PARAM RE-DECLARATION: a recovered parameter renders in the signature, never
+/// in the body decl block (C++ `emitLocalVarDecls` -> `emitScopeVarDecls(scope,
+/// no_category)` skips `function_parameter` symbols).  The body must not contain a
+/// local declaration line `<type> a0;` for the first parameter.
+#[test]
+fn verify_w10_symbol_naming_param_not_redeclared_as_local() {
+    let path = repo_root().join("decompiler/datatests/nestedoffset.xml");
+    let dt = parse_datatest(&path).expect("parse nestedoffset.xml");
+    let rendered = render_corpus(&dt).expect("readstruct must decompile");
+    // A body-local declaration is an indented `<type ...> <name>;` line.  The
+    // parameter `a0` must appear in the signature parentheses but NOT as such a
+    // standalone declaration statement in the body.
+    assert_eq!(
+        count_matches(r"(?m)^\s+[A-Za-z_][\w ]*\ba0\s*;\s*$", &rendered).unwrap_or(0),
+        0,
+        "a recovered parameter (a0) must render in the signature, not be re-declared \
+         as a body local:\n{rendered}"
+    );
+    // Sanity: the parameter name is actually present somewhere (the binding fired).
+    assert!(
+        rendered.contains("a0"),
+        "the recovered first parameter (a0) must be bound and rendered:\n{rendered}"
+    );
+}
