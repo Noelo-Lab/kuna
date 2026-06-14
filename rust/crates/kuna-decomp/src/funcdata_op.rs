@@ -950,6 +950,97 @@ impl Funcdata {
         Ok(replace)
     }
 
+    /// Find an existing op in block `bl` that is functionally equal to `op`,
+    /// reading the given Varnode `vn`, occurring no later than `earliest`
+    /// (C++ `Funcdata::cseFindInBlock`, `funcdata_op.cc:1421`).
+    ///
+    /// Used by [`RuleMultiCollapse`](crate::ruleaction_3::RuleMultiCollapse)'s
+    /// functional-equality branch to reuse a copy already built in the common
+    /// block instead of duplicating it.
+    pub fn cse_find_in_block(
+        &self,
+        op: OpId,
+        vn: VarnodeId,
+        bl: crate::seams::BlockId,
+        earliest: Option<OpId>,
+    ) -> Option<OpId> {
+        let outvn1 = self.obank().get(op).expect("cse_find_in_block: stale op").get_out();
+        // for (iter over vn->descendants) { res = *iter; ... }
+        let descend: Vec<OpId> =
+            self.vbank().get(vn).expect("cse_find_in_block: stale vn").descend_iter().collect();
+        let early_order = earliest.map(|e| {
+            self.obank().get(e).expect("cse_find_in_block: stale earliest").get_seq_num().get_order()
+        });
+        for res in descend {
+            if res == op {
+                continue; // Must not be -op-
+            }
+            let res_parent =
+                self.obank().get(res).expect("cse_find_in_block: stale res").get_parent();
+            if res_parent != Some(bl) {
+                continue; // Must be in -bl-
+            }
+            if let Some(early_order) = early_order {
+                // if (earliest->getSeqNum().getOrder() < res->getSeqNum().getOrder()) continue;
+                let res_order =
+                    self.obank().get(res).expect("cse_find_in_block").get_seq_num().get_order();
+                if early_order < res_order {
+                    continue; // Must occur earlier than -earliest-
+                }
+            }
+            let outvn2 = self.obank().get(res).expect("cse_find_in_block").get_out();
+            let outvn2 = match outvn2 {
+                Some(v) => v,
+                None => continue,
+            };
+            let outvn1 = match outvn1 {
+                Some(v) => v,
+                None => continue,
+            };
+            let mut buf1: [VarnodeId; 2] = [outvn1, outvn1];
+            let mut buf2: [VarnodeId; 2] = [outvn2, outvn2];
+            if crate::expression::functional_equality_level(
+                outvn1,
+                outvn2,
+                &mut buf1,
+                &mut buf2,
+                self.vbank(),
+                self.obank(),
+            ) == 0
+            {
+                return Some(res);
+            }
+        }
+        None
+    }
+
+    /// The earliest op (by within-block order) in block `bl` that reads `vn`
+    /// (C++ `BlockBasic::earliestUse`, `block.cc:2826`).  Returns `None` if no
+    /// descendant of `vn` lies in `bl`.
+    pub fn block_earliest_use(&self, bl: crate::seams::BlockId, vn: VarnodeId) -> Option<OpId> {
+        let descend: Vec<OpId> =
+            self.vbank().get(vn).expect("block_earliest_use: stale vn").descend_iter().collect();
+        let mut res: Option<OpId> = None;
+        for op in descend {
+            if self.obank().get(op).expect("block_earliest_use: stale op").get_parent() != Some(bl) {
+                continue;
+            }
+            match res {
+                None => res = Some(op),
+                Some(cur) => {
+                    let op_order =
+                        self.obank().get(op).expect("block_earliest_use").get_seq_num().get_order();
+                    let cur_order =
+                        self.obank().get(cur).expect("block_earliest_use").get_seq_num().get_order();
+                    if op_order < cur_order {
+                        res = Some(op);
+                    }
+                }
+            }
+        }
+        res
+    }
+
     /// Perform CSE on a list of `(hash, op)` pairs (descendants of one Varnode)
     /// (C++ `Funcdata::cseEliminateList`, `funcdata_op.cc:1459`).
     ///
