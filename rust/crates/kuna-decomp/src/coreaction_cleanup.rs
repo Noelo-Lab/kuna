@@ -162,6 +162,20 @@ impl Action for ActionAssignHigh {
 /// input merge into it (no trim COPY).  Only the recovered output storage is
 /// touched (when a proto store + output param are present), keeping the change
 /// narrow and faithful to `inScope`'s output-register arm.
+///
+/// (kuna) ScopeLocal::inScope refinement: C++ `inScope` keys on the local
+/// scope's range tree (`rangetree.inRange`) — a register holding a *single
+/// transient value* (e.g. the x86-64 `EAX` return of a one-COPY expression) is
+/// NOT a mapped local and stays un-tied, whereas a register genuinely reused as
+/// a multi-definition local (e.g. the 8051 `ACC` assigned across branches and
+/// joined by a MULTIEQUAL) IS in scope.  The merged tree has no range tree, so
+/// the in-scope condition is approximated structurally (see the inline body):
+/// the storage is left un-tied only for the genuine declared-output, single-def,
+/// pure-transient COPY shape; any reused or stack/addr-tied-sourced storage —
+/// and any void function's leftover register — stays tied.  An un-tied transient
+/// is then marked IMPLIED by `baseExplicit` and the printer inlines it
+/// (`return <expr>;`), matching the C++ oracle.  This is an IR-shape +
+/// recovered-output condition, not a function/address special case.
 fn mark_output_storage_addr_tied(data: &mut Funcdata) {
     // The return-value storage is the first return op's value input (`getIn(1)`):
     // that storage location is in (implicit) local scope, so C++'s
@@ -189,9 +203,63 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
         return;
     }
     // Every Varnode of the output size at the output address is the return-value
-    // storage in (implicit) local scope -> addrtied.
+    // storage.  Approximate `inScope`: a register holding a *single transient
+    // value* that is the function's genuine, declared return value is NOT a
+    // mapped local — C++ `inScope`'s range tree excludes it, so it stays un-tied
+    // and the printer inlines `return <expr>;`.  Leave the storage un-tied iff:
+    //   * the function has a locked (declared) non-void output — i.e. this
+    //     storage really is the recovered return value, not a leftover register
+    //     in a void function (e.g. `global_cross`'s dead RAX); and
+    //   * exactly one written Varnode lives at the storage address; and
+    //   * it is defined by a lone CPUI_COPY whose source is itself a pure
+    //     transient (not addr-tied, not a stack/spacebase local — a value with
+    //     no address-stable home, which `baseExplicit` marks IMPLIED).
+    // A storage that is reused as a local (multiple writes — boolless ACC), that
+    // copies an addr-tied/stack local (condconst's stack `v1`), or that belongs
+    // to a void function (no declared output) is tied, exactly as `inScope`
+    // would.  This is an IR-shape + recovered-output test, not a name/address
+    // special case.
+    let output_locked = data.get_func_proto().is_output_locked();
     let targets: Vec<crate::seams::VarnodeId> =
         data.vbank().iter_loc_size_addr(size, &addr).collect();
+    let written: Vec<crate::seams::VarnodeId> = targets
+        .iter()
+        .copied()
+        .filter(|&vn| {
+            data.vbank().get(vn).map(|v| v.is_written() || v.is_input()).unwrap_or(false)
+        })
+        .collect();
+    if output_locked && written.len() == 1 {
+        let stack_idx = data.get_arch().manage().get_stack_space().map(|s| s.get_index());
+        let vn = written[0];
+        let is_pure_transient = {
+            let v = data.vbank().get(vn);
+            let def = v.and_then(|v| v.get_def());
+            match def {
+                Some(def) => {
+                    let dop = data.obank().get(def);
+                    let is_copy = dop.map(|o| o.code() == OpCode::CPUI_COPY).unwrap_or(false);
+                    let src = dop.and_then(|o| o.get_in(0));
+                    match (is_copy, src.and_then(|s| data.vbank().get(s))) {
+                        (true, Some(sv)) => {
+                            let src_stack = stack_idx
+                                .zip(sv.get_addr().get_space().map(|s| s.get_index()))
+                                .map(|(a, b)| a == b)
+                                .unwrap_or(false);
+                            // Pure transient: source has no address-stable home.
+                            !sv.is_addr_tied() && !sv.is_spacebase() && !src_stack
+                        }
+                        _ => false,
+                    }
+                }
+                None => false, // input-only (e.g. a passthrough reg) -> keep tied
+            }
+        };
+        if is_pure_transient {
+            // Not in scope: leave un-tied so the value can be IMPLIED and inlined.
+            return;
+        }
+    }
     for vn in targets {
         if let Some(v) = data.vbank_mut().get_mut(vn) {
             v.mark_mapped_addr_tied();
@@ -655,15 +723,20 @@ impl Action for ActionMergeCopy {
         }
         Some(Box::new(ActionMergeCopy { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.hh:393 — ActionMergeCopy::apply
         //   data.getMerge().mergeOpcode(CPUI_COPY); return 0;
         //
-        // The opcode argument is fixed to `OpCode::CPUI_COPY`; referenced here so
-        // the constant is transcribed verbatim.
-        let _opc = OpCode::CPUI_COPY;
-        // SEAM(W7/W8-funcdata): `Merge::merge_opcode` is ported but needs the
-        // `getMerge()`/`MergeContext` bridge.  No change applied (count stays 0).
+        // Force the input/output merges of every CPUI_COPY (e.g. the addrtied
+        // return-register trim COPY `retreg = COPY(value)` merges `retreg` into
+        // the value's HighVariable).  Drives `Merge::merge_opcode` over the
+        // `MergeContext for Funcdata` bridge (same construction as the other
+        // merge actions).  Once merged, `markInternalCopies` (ActionCopyMarker)
+        // marks the now-intra-high COPY nonprinting so it does not materialise.
+        let opset = crate::cover::PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _| false));
+        let cache = crate::variable::HighIntersectTest::new(opset);
+        let mut merge = crate::merge::Merge::new(cache);
+        let _ = merge.merge_opcode(data, OpCode::CPUI_COPY);
         0
     }
 }
@@ -928,12 +1001,21 @@ impl Action for ActionCopyMarker {
         }
         Some(Box::new(ActionCopyMarker { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.hh:1034 — ActionCopyMarker::apply
         //   data.getMerge().markInternalCopies(); return 0;
         //
-        // SEAM(W7/W8-funcdata): `Merge::mark_internal_copies` is ported but needs
-        // the `getMerge()`/`MergeContext` bridge.  No change (count stays 0).
+        // Drive `Merge::markInternalCopies` over the `MergeContext for Funcdata`
+        // bridge (same construction as ActionMergeRequired).  This marks the
+        // intra-HighVariable COPY/SUBPIECE/PIECE ops `nonprinting` (e.g. the trim
+        // COPY `retreg = <value>` between two instances of one HighVariable) so
+        // they do not emit a separate `v = ...;` statement — the printer then
+        // recurses straight through to the value.  `processHighRedundantCopy`
+        // (the multi-COPY-into-one-high case) also fires here.
+        let opset = crate::cover::PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _| false));
+        let cache = crate::variable::HighIntersectTest::new(opset);
+        let mut merge = crate::merge::Merge::new(cache);
+        merge.mark_internal_copies(data);
         0
     }
 }
