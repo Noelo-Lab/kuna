@@ -1338,4 +1338,174 @@ mod propagate_type_tests {
         assert_eq!(out.get_metatype(), type_metatype::TYPE_STRUCT);
         assert!(Rc::ptr_eq(&out, &st));
     }
+
+    // ---- W10 verifier (w10-type-propagation) adversarial tests ------------
+    // Hunt-list targets: the enum size-mismatch arm of propagateFromPointer
+    // (newly-wired getTypePartialEnum), the PARTIALSTRUCT arm of
+    // propagateToPointer (getComponentForPtr), and the multi-level downChain
+    // parent retention that propagateAddIn2Out relies on.
+
+    /// An enum factory with a non-zero enum size (setup_sizes seeds enumsize).
+    fn enum_factory() -> TypeFactoryImpl {
+        let f = TypeFactoryImpl::new();
+        f.set_default_alignment_map();
+        f.set_max_basetype_size(8);
+        // stack_pointer_size, default_data_addr_size, default_size(=enumsize)
+        f.setup_sizes(Some(8), 8, 4);
+        f
+    }
+
+    /// C++ typeop.cc:225-227 — a pointer to an enum, dereferenced at a *smaller*
+    /// size, propagates a partial enumeration (not null, not the whole enum).
+    /// This is the wrap-prone enum arm: getTypePartialEnum(ptrto, 0, sz).
+    #[test]
+    fn w10_from_pointer_enum_size_mismatch_yields_partial_enum() {
+        let f = enum_factory();
+        let en = f.get_type_enum("E").expect("enum");
+        assert!(en.is_enum_type(), "fixture must be a real enum");
+        let full = en.get_size();
+        assert!(full >= 2, "enum must be wider than the truncated deref");
+        let ptr = f.get_type_pointer(8, Rc::clone(&en), 1).unwrap();
+        // Dereference at a strictly smaller size than the enum.
+        let out = propagate_from_pointer(&f, ptr, 1).expect("partial enum, not null");
+        assert_eq!(
+            out.get_metatype(),
+            type_metatype::TYPE_PARTIALENUM,
+            "C++ returns getTypePartialEnum, metatype TYPE_PARTIALENUM"
+        );
+        assert_eq!(out.get_size(), 1, "partial covers the dereferenced size");
+    }
+
+    /// C++ typeop.cc:225 guard — a *plain* (non-enum) pointer dereferenced at a
+    /// mismatched size must still decline (no enum, no relptr exact-piece).
+    #[test]
+    fn w10_from_pointer_plain_size_mismatch_still_declines() {
+        let f = enum_factory();
+        let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+        let ptr = f.get_type_pointer(8, int4t, 1).unwrap();
+        assert!(
+            propagate_from_pointer(&f, ptr, 1).is_none(),
+            "non-enum size mismatch declines (only enums propagate here)"
+        );
+    }
+
+    /// C++ typeop.cc:195-197 — propagateToPointer of a TYPE_PARTIALSTRUCT routes
+    /// through getComponentForPtr: an element-aligned partial of an array yields
+    /// a pointer to the *element*, not to the partial.
+    #[test]
+    fn w10_to_pointer_partialstruct_uses_component_for_ptr() {
+        let f = factory();
+        let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+        // array of 3 int4 (align_size of element = 4); a partial at offset 0 of
+        // a whole element should resolve to the int4 element type.
+        let arr = f.get_type_array(3, Rc::clone(&int4t)).unwrap();
+        let partial = f.get_type_partial_struct(Rc::clone(&arr), 0, 4).unwrap();
+        assert_eq!(partial.get_metatype(), type_metatype::TYPE_PARTIALSTRUCT);
+        // getComponentForPtr should pick the element type (offset 0 % 4 == 0).
+        let comp = partial.get_component_for_ptr().expect("component");
+        assert!(
+            Rc::ptr_eq(&comp, &int4t),
+            "element-aligned partial of an array maps to the element type"
+        );
+        let out = propagate_to_pointer(&f, partial, 8, 1).expect("pointer");
+        assert_eq!(out.get_metatype(), type_metatype::TYPE_PTR);
+        let pointee = out.get_ptr_to().unwrap();
+        assert!(
+            Rc::ptr_eq(&pointee, &int4t),
+            "the produced pointer points at the array element, not the partial"
+        );
+    }
+
+    /// C++ TypePointer::downChain (type.cc:1247-1250) only writes `par`/`parOff`
+    /// when the pointed-to type is a STRUCT/ARRAY. propagateAddIn2Out's do-while
+    /// loop overwrites parent every iteration, so the *last* downChain call's
+    /// parent wins.  Pin the single-level case the override depends on: a pointer
+    /// into the middle of a struct hands back (parent=struct-ptr, parentOff=off).
+    #[test]
+    fn w10_downchain_struct_sets_parent_and_offset() {
+        let f = factory();
+        let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+        let st = f.get_type_struct("two").unwrap();
+        let fields = vec![
+            crate::dtype::TypeField::new(0, 0, "a", Rc::clone(&int4t)),
+            crate::dtype::TypeField::new(1, 4, "b", Rc::clone(&int4t)),
+        ];
+        let st = f.assign_raw_fields_struct(&st, fields, Vec::new()).unwrap();
+        let ptr = f.get_type_pointer(8, Rc::clone(&st), 1).unwrap();
+        // downChain into offset 4 (the second field): parent must be the struct
+        // pointer, parentOff the entry offset (4), result a pointer to field `b`.
+        let (next, off, parent, par_off) = f.down_chain(&ptr, 4, true).expect("downchain");
+        let parent = parent.expect("struct sets parent");
+        assert_eq!(parent.get_metatype(), type_metatype::TYPE_PTR);
+        assert!(
+            Rc::ptr_eq(&parent.get_ptr_to().unwrap(), &st),
+            "parent is the pointer to the containing struct"
+        );
+        assert_eq!(par_off, 4, "parentOff is the byte offset of entry");
+        assert_eq!(off, 0, "landed exactly on field b");
+        let next = next.expect("sub-pointer");
+        assert!(Rc::ptr_eq(&next.get_ptr_to().unwrap(), &int4t));
+    }
+
+    /// downChain on a *scalar* pointee must NOT set a parent (C++ only the
+    /// STRUCT/ARRAY arm writes `par`).  This pins the precondition under which
+    /// the loop's unconditional `parent = par` overwrite is safe: a terminal
+    /// scalar descent reports parent=None, matching C++ leaving the ref untouched
+    /// from a prior struct hit only when the scalar is the *same* iteration.
+    #[test]
+    fn w10_downchain_scalar_pointee_reports_no_parent() {
+        let f = factory();
+        let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+        let ptr = f.get_type_pointer(8, int4t, 1).unwrap();
+        let (_next, _off, parent, par_off) = f.down_chain(&ptr, 0, true).expect("downchain");
+        assert!(parent.is_none(), "scalar pointee never sets a parent");
+        assert_eq!(par_off, 0);
+    }
+
+    /// FINDING F1 (multi-iteration parent loss): C++ `propagateAddIn2Out`'s
+    /// do-while passes `par`/`parOff` by reference, and `TypePointer::downChain`
+    /// writes them ONLY on the STRUCT/ARRAY arm (type.cc:1247-1250); a later
+    /// scalar iteration leaves the prior struct parent intact.  The Rust loop
+    /// overwrites `parent = par` every iteration with the downChain return value,
+    /// which is `None` on the scalar iteration — so the struct container is LOST.
+    ///
+    /// This test simulates the exact loop body of `propagate_add_in2_out` for a
+    /// pointer into the *middle of a scalar field of a struct* (`&s.a + 2`,
+    /// `a` an int4 at offset 0) and shows the Rust loop ends with `parent=None`
+    /// where the C++ would retain the struct pointer (-> a TYPE_PTRREL wrap).
+    #[test]
+    fn w10_downchain_loop_loses_struct_parent_on_scalar_tail() {
+        let f = factory();
+        let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+        let st = f.get_type_struct("s").unwrap();
+        let fields =
+            vec![crate::dtype::TypeField::new(0, 0, "a", Rc::clone(&int4t))];
+        let st = f.assign_raw_fields_struct(&st, fields, Vec::new()).unwrap();
+        let ptr = f.get_type_pointer(8, Rc::clone(&st), 1).unwrap();
+
+        // Exact replica of the propagate_add_in2_out do-while (allow_wrap=true,
+        // type_offset=2 == 2 bytes into the int4 field).
+        let mut type_offset: int8 = 2;
+        let mut pointer: Option<Rc<Datatype>> = Some(Rc::clone(&ptr));
+        let mut parent: Option<Rc<Datatype>> = None;
+        let mut iters = 0;
+        while let Some(cur) = pointer.clone() {
+            let (next, new_off, par, _par_off) = f.down_chain(&cur, type_offset, true).unwrap();
+            type_offset = new_off;
+            parent = par; // <-- the unconditional overwrite under test
+            pointer = next;
+            iters += 1;
+            if pointer.is_none() || type_offset == 0 {
+                break;
+            }
+        }
+        assert!(iters >= 2, "must take the multi-iteration path (struct then scalar)");
+        // Rust: parent ends up None because the scalar tail iteration returned None.
+        // C++: parent would still be the struct pointer here (ref untouched on the
+        // scalar arm), feeding getTypePointerRel and preserving the container.
+        assert!(
+            parent.is_none(),
+            "documents the divergence: Rust loses the struct container that C++ keeps"
+        );
+    }
 }
