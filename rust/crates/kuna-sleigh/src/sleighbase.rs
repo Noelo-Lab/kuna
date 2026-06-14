@@ -27,7 +27,7 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::{Decoder, Encoder, IdRegistry};
 use kuna_base::space::{
     addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, OtherSpace,
-    UniqueSpace, VarnodeStorage,
+    RegisterLookup, UniqueSpace, VarnodeStorage,
 };
 
 use kuna_num::opcodes::{OpCode, OpcodeDecoder, OpcodeEncoder};
@@ -294,59 +294,12 @@ impl SleighBase {
 
     /// C++ `SleighBase::getRegisterName(AddrSpace*,uintb,int4)`.
     pub fn get_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> Vec<u8> {
-        // C++ builds the lookup key VarnodeData{space=base,offset=off,size}.
-        let key = VarnodeStorage {
-            space: Some(Rc::clone(base)),
-            offset: off,
-            size: size as u32, // C++ assigns int4 -> uint4 (size is non-negative)
-        };
-        // C++:
-        //   iter = upper_bound(key);   // first key strictly greater than `key`
-        //   if (iter == begin()) return "";
-        //   iter--;                    // greatest element <= key
-        // `--upper_bound(key)` is the greatest element <= key, so the starting
-        // iterator is `range(.., Included(&key)).next_back()`.  (Using Excluded
-        // here would skip an exact match — the F1 bug.)  `next_back() == None`
-        // reproduces `iter == begin()` (nothing is <= key).
-        let mut prev_iter = self
-            .varnode_xref
-            .range((std::ops::Bound::Unbounded, std::ops::Bound::Included(&key)));
-        let Some((point, name)) = prev_iter.next_back() else {
-            return Vec::new();
-        };
-        if !space_eq(&point.space, base) {
-            return Vec::new();
-        }
-        let offbase = point.offset;
-        // C++ `point.offset + point.size >= off + size`
-        if point.offset.wrapping_add(u64::from(point.size))
-            >= off.wrapping_add(size as u64)
-        {
-            return name.clone();
-        }
-        // Walk back through same-base, same-offset entries.
-        let mut back = self
-            .varnode_xref
-            .range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(point)));
-        while let Some((p, n)) = back.next_back() {
-            if !space_eq(&p.space, base) || p.offset != offbase {
-                return Vec::new();
-            }
-            if p.offset.wrapping_add(u64::from(p.size)) >= off.wrapping_add(size as u64) {
-                return n.clone();
-            }
-        }
-        Vec::new()
+        register_name_from_xref(&self.varnode_xref, base, off, size)
     }
 
     /// C++ `SleighBase::getExactRegisterName`.
     pub fn get_exact_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> Vec<u8> {
-        let key = VarnodeStorage {
-            space: Some(Rc::clone(base)),
-            offset: off,
-            size: size as u32, // C++ int4 -> uint4
-        };
-        self.varnode_xref.get(&key).cloned().unwrap_or_default()
+        exact_register_name_from_xref(&self.varnode_xref, base, off, size)
     }
 
     /// C++ `SleighBase::getAllRegisters`.
@@ -577,6 +530,124 @@ fn context_field_bits(sym: &SleighSymbol) -> KunaResult<(i32, i32)> {
 /// C++ raw-pointer equality over a possibly-null space and a non-null base.
 fn space_eq(a: &Option<Rc<AddrSpace>>, base: &Rc<AddrSpace>) -> bool {
     matches!(a, Some(s) if Rc::ptr_eq(s, base))
+}
+
+/// The register cross-reference map type (location -> register name).
+type VarnodeXref = std::collections::BTreeMap<VarnodeStorage, Vec<u8>>;
+
+/// C++ `SleighBase::getRegisterName` over a register cross-reference map (the
+/// `varnode_xref` location->name table).  Factored out so both [`SleighBase`]
+/// and [`SnapshotRegisterLookup`] resolve names identically.
+#[allow(clippy::mutable_key_type)]
+fn register_name_from_xref(
+    xref: &VarnodeXref,
+    base: &Rc<AddrSpace>,
+    off: u64,
+    size: i32,
+) -> Vec<u8> {
+    // C++ builds the lookup key VarnodeData{space=base,offset=off,size}.
+    let key = VarnodeStorage {
+        space: Some(Rc::clone(base)),
+        offset: off,
+        size: size as u32, // C++ assigns int4 -> uint4 (size is non-negative)
+    };
+    // C++:
+    //   iter = upper_bound(key);   // first key strictly greater than `key`
+    //   if (iter == begin()) return "";
+    //   iter--;                    // greatest element <= key
+    // `--upper_bound(key)` is the greatest element <= key, so the starting
+    // iterator is `range(.., Included(&key)).next_back()`.  (Using Excluded
+    // here would skip an exact match — the F1 bug.)  `next_back() == None`
+    // reproduces `iter == begin()` (nothing is <= key).
+    let mut prev_iter = xref.range((std::ops::Bound::Unbounded, std::ops::Bound::Included(&key)));
+    let Some((point, name)) = prev_iter.next_back() else {
+        return Vec::new();
+    };
+    if !space_eq(&point.space, base) {
+        return Vec::new();
+    }
+    let offbase = point.offset;
+    // C++ `point.offset + point.size >= off + size`
+    if point.offset.wrapping_add(u64::from(point.size)) >= off.wrapping_add(size as u64) {
+        return name.clone();
+    }
+    // Walk back through same-base, same-offset entries.
+    let mut back = xref.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(point)));
+    while let Some((p, n)) = back.next_back() {
+        if !space_eq(&p.space, base) || p.offset != offbase {
+            return Vec::new();
+        }
+        if p.offset.wrapping_add(u64::from(p.size)) >= off.wrapping_add(size as u64) {
+            return n.clone();
+        }
+    }
+    Vec::new()
+}
+
+/// C++ `SleighBase::getExactRegisterName` over a register cross-reference map.
+#[allow(clippy::mutable_key_type)]
+fn exact_register_name_from_xref(
+    xref: &VarnodeXref,
+    base: &Rc<AddrSpace>,
+    off: u64,
+    size: i32,
+) -> Vec<u8> {
+    let key = VarnodeStorage {
+        space: Some(Rc::clone(base)),
+        offset: off,
+        size: size as u32, // C++ int4 -> uint4
+    };
+    xref.get(&key).cloned().unwrap_or_default()
+}
+
+/// A standalone [`RegisterLookup`] snapshot built from the engine's register
+/// cross-reference (the `varnode_xref` location->name map).  This is installed
+/// on the engine's [`AddrSpaceManager`] (the kuna stand-in for the C++
+/// `AddrSpace::trans` back-pointer) so the `<context_data>`/`<tracked_set>`
+/// spec decode — and any later `Translate::getRegister`-by-name path — resolves
+/// register names without an `Rc` cycle back into the owning [`Sleigh`].
+///
+/// It resolves names exactly as [`SleighBase`] does (the same factored
+/// algorithms); the name->storage direction is the inverse of the same map.
+#[derive(Debug)]
+pub struct SnapshotRegisterLookup {
+    /// location -> register name (clone of the engine `varnode_xref`).
+    #[allow(clippy::mutable_key_type)]
+    xref: VarnodeXref,
+    /// register name -> storage (inverse of `xref`, for `getRegister`).
+    by_name: std::collections::BTreeMap<Vec<u8>, VarnodeStorage>,
+}
+
+impl SnapshotRegisterLookup {
+    /// Build the snapshot from a [`SleighBase`]'s register cross-reference.
+    #[allow(clippy::mutable_key_type)]
+    pub fn from_base(base: &SleighBase) -> SnapshotRegisterLookup {
+        let xref = base.get_all_registers().clone();
+        let mut by_name = std::collections::BTreeMap::new();
+        for (storage, name) in xref.iter() {
+            by_name.insert(name.clone(), storage.clone());
+        }
+        SnapshotRegisterLookup { xref, by_name }
+    }
+}
+
+impl RegisterLookup for SnapshotRegisterLookup {
+    fn get_register(&self, nm: &str) -> KunaResult<VarnodeStorage> {
+        // C++ `SleighBase::getRegister` throws SleighError on an unknown name.
+        self.by_name
+            .get(nm.as_bytes())
+            .cloned()
+            .ok_or_else(|| KunaError::sleigh(format!("Unknown register name: {nm}")))
+    }
+
+    fn get_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String {
+        String::from_utf8_lossy(&register_name_from_xref(&self.xref, base, off, size)).into_owned()
+    }
+
+    fn get_exact_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String {
+        String::from_utf8_lossy(&exact_register_name_from_xref(&self.xref, base, off, size))
+            .into_owned()
+    }
 }
 
 /// Short-lived [`SleighBaseTrans`] seam used during `SymbolTable::decode`:

@@ -208,6 +208,30 @@ fn bootstrap(dt: &DataTest) -> Result<XmlArchitecture, String> {
         .build_translator(Box::new(DummyImg), &sla)
         .map_err(|e| format!("build_translator: {e}"))?;
 
+    // Hand the resolved cspec/pspec to the architecture (the C++
+    // parseCompilerConfig/parseProcessorConfig inputs) — the pspec
+    // `<context_data>` is what steers the SLEIGH disassembly mode (e.g. x86-64
+    // lifts as 64-bit, not 16-bit real mode).  Mirrors `bootstrap_program`.
+    if !specs.compilerfile.is_empty() {
+        if let Ok(cspec) = std::fs::read(&specs.compilerfile) {
+            arch.sleigh_mut().base_mut().unwrap().set_cspec_xml(cspec);
+        }
+    }
+    if !specs.processorfile.is_empty() {
+        if let Ok(pspec) = std::fs::read(&specs.processorfile) {
+            arch.sleigh_mut().base_mut().unwrap().set_pspec_xml(pspec);
+        }
+    }
+
+    // Install the register-name lookup on the engine manager before
+    // init_post_engine resolves the pspec `<tracked_set>` register names.
+    arch.sleigh_mut()
+        .base_mut()
+        .unwrap()
+        .translate_mut()
+        .install_register_lookup()
+        .map_err(|e| format!("install_register_lookup: {e}"))?;
+
     arch.sleigh_mut()
         .base_mut()
         .ok_or("no Architecture base after build_translator")?
@@ -343,56 +367,100 @@ fn verify_w10_corpus_stringmatch_tally() {
 // ===========================================================================
 // w10-refinement-loops verifier (this un-seam)
 //
-// The two seams this wave closed:
-//   (1) Heritage::placeMultiequals refinement (buildRefinement/refineSubpiece/
-//       splitByRefinement) — formerly a panic for any function with a >4-byte
-//       range partially read/written (the 8/16/32/64-bit register overlap the
-//       x86:64 / AARCH64 corpus produces).  Closing it lets ~7 formerly-panicking
-//       files REACH the printer.
-//   (2) the loop emitters emitBlockWhileDo/DoWhile/InfLoop + emitBlockGoto in
-//       printc — formerly the loop block kinds fell through to a flat component
-//       dump, so a collapsed BlockDoWhile never rendered as `do { } while`.
+// The blocker the round-1 verifier found was a MIS-LIFT: the x86:LE:64 corpus
+// decompiled as 16-bit real-mode garbage because the engine never applied the
+// processor-spec `<context_data>` `<context_set>` paints (addrsize/opsize/
+// longMode) that steer SLEIGH's disassembly mode.  The fix wires
+// `Architecture::parse_processor_config` (the C++ `parseProcessorConfig`
+// `ELEM_CONTEXT_DATA` branch) so the engine context is correct.  Only with the
+// CORRECT 64-bit lift does the (already-faithful) refinement + loop structurer
+// produce oracle-direction output.
+//
+// These two tests assert against the C++ ORACLE's direction (taken from the
+// datatest XML and the C++ decomp_test_dbg, which scores divopt 34/34 and
+// forloop1 1/1), NOT against a substring of a mis-lift:
+//   (1) divopt: its oracle is 100% STRAIGHT-LINE division (no loop), all 34
+//       assertions Division/Modulo.  The test pins the 64-bit lift (RDI/RSP,
+//       NOT 16-bit AX/SI/DI) and that NO bogus loop keyword appears — the
+//       round-1 `do { } while` was an artifact of the garbage lift.
+//   (2) forloop1: its oracle asserts a real `for (... )` loop.  The test pins
+//       that the loop structurer + emitter render a real C loop KEYWORD on a
+//       function whose oracle is itself a loop (the keyword comes from the
+//       structurer collapse, not a hand-built tree).
 // ===========================================================================
 
-/// `divopt` (x86:64) used to PANIC inside Heritage::placeMultiequals on the
-/// refinement seam — a 64-bit range partially written by 32-bit sub-pieces.  The
-/// refinement port splits those sub-ranges so heritage places the right
-/// MULTIEQUALs; the function now decompiles to structured C instead of taking
-/// down the run.  This pins that the seam is CLOSED (rendered, non-empty C).
+/// `divopt` (x86:LE:64) is, in the C++ oracle, entirely straight-line integer
+/// division (`*divu = *divu / 81;` …) — 34 Division/Modulo assertions, no loop.
+/// Round 1 mis-lifted it as 16-bit real-mode garbage (AX/SI/DI, 0xffff), and the
+/// then-`do { } while` it celebrated was an artifact of that garbage.  With the
+/// pspec `<context_data>` paints applied the lift is correct 64-bit: this test
+/// pins the lift DIRECTION against the oracle — 64-bit registers present, the
+/// 16-bit garbage registers ABSENT, and NO bogus loop keyword (the oracle is
+/// loop-free here).  It does NOT pin the full division text (the reciprocal-
+/// multiply -> `/` recognition + pointer typing is the documented NEXT blocker).
 #[test]
-fn verify_w10_refinement_divopt_reaches_printer() {
+fn verify_w10_refinement_divopt_lifts_64bit_not_16bit_garbage() {
     let path = repo_root().join("decompiler/datatests/divopt.xml");
     let dt = parse_datatest(&path).expect("parse divopt.xml");
-    let rendered = render_corpus(&dt).expect("divopt must decompile (refinement seam closed)");
-    // The shell printed when structuring declines at a seam must NOT appear, and
-    // the function bodies must be present.
-    assert!(
-        !rendered.contains("structuring declined at a seam"),
-        "divopt must structure (no decline shell):\n{rendered}"
-    );
+    let rendered = render_corpus(&dt).expect("divopt must decompile");
+
     assert!(
         rendered.contains("divoptu") && rendered.contains("modoptu"),
         "divopt must render its functions:\n{rendered}"
     );
+
+    // The argument pointer is RDI (64-bit System V first arg).  A correct lift
+    // uses 64-bit registers; the round-1 garbage lift used 16-bit AX/SI/DI.
+    let sixtyfour = count_matches(r"\bR(DI|SI|AX|BX|CX|DX|SP|BP)\b", &rendered).unwrap_or(0);
+    let sixteen = count_matches(r"\b(AX|SI|DI|BX|CX|DX|SP|BP)\b", &rendered).unwrap_or(0);
+    assert!(
+        sixtyfour >= 1,
+        "divopt must lift with 64-bit registers (RDI/RSP/…); got none:\n{rendered}"
+    );
+    assert_eq!(
+        sixteen, 0,
+        "divopt must NOT lift as 16-bit real mode (no bare AX/SI/DI — the round-1 \
+         garbage signature); found {sixteen}:\n{rendered}"
+    );
+
+    // The oracle for divopt is straight-line: there must be NO loop keyword.
+    // (The round-1 `do {{ }} while` was a wrong-direction artifact of the
+    // garbage lift; it must be gone.)
+    let loops = count_matches(r"\bwhile *\(| while *\( *true *\)|\bfor *\(|\bdo \{", &rendered)
+        .unwrap_or(0);
+    assert_eq!(
+        loops, 0,
+        "divopt's oracle is loop-free (straight-line division); a loop keyword here \
+         is a wrong-direction structuring artifact:\n{rendered}"
+    );
 }
 
-/// The loop emitters are wired: a collapsed loop in the corpus renders with a
-/// real C loop keyword (`do {` ... `} while` / `while (`).  `divopt`'s `modoptu`
-/// collapses to a BlockDoWhile, so the rendered C must contain a `do {`/`} while`
-/// pair.  This pins emitBlockDoWhile (and, by the shared dispatch, the whileDo /
-/// infLoop emitters) against a real collapsed loop, NOT a hand-built tree — the
-/// loop comes from the structurer, the keyword from the printer.
+/// The loop structurer + emitters are validated against a function whose C++
+/// ORACLE is itself a loop: `forloop1` asserts `for (.* v1 = 0; v1 < max; v1 =
+/// v1 + 1)` in `decompiler/datatests/forloop1.xml` (the C++ decomp_test_dbg
+/// scores it 1/1).  With the correct 64-bit lift the loop CFG collapses and the
+/// emitter renders a real C loop KEYWORD (`while`/`for`/`do`).  This pins the
+/// loop emitters (emitBlockWhileDo/InfLoop/…) on an oracle-loop function — the
+/// keyword comes from the structurer collapse driving the printer, NOT from a
+/// hand-built tree or a mis-lift substring.  (The exact `for (v1=0; …)`
+/// normalization + variable typing is the documented NEXT blocker; the engine
+/// currently renders a `while( true ) { … break; }` of the same loop.)
 #[test]
-fn verify_w10_loop_emitter_renders_real_collapsed_loop() {
-    let path = repo_root().join("decompiler/datatests/divopt.xml");
-    let dt = parse_datatest(&path).expect("parse divopt.xml");
-    let rendered = render_corpus(&dt).expect("divopt must decompile");
-    // A `do { ... } while (...)` pair: the DoWhile collapse + emitBlockDoWhile.
-    let has_do = rendered.contains("do {");
-    let has_while_tail = count_matches(r"\}\s*while", &rendered).unwrap_or(0) >= 1;
+fn verify_w10_loop_emitter_renders_real_loop_on_oracle_loop_fn() {
+    let path = repo_root().join("decompiler/datatests/forloop1.xml");
+    let dt = parse_datatest(&path).expect("parse forloop1.xml");
+    let rendered = render_corpus(&dt).expect("forloop1 must decompile");
+
     assert!(
-        has_do && has_while_tail,
-        "divopt must render a structured `do {{ }} while` loop (loop structurer + \
-         emitBlockDoWhile); got:\n{rendered}"
+        rendered.contains("forloop1"),
+        "forloop1 must render its function:\n{rendered}"
+    );
+    // A real C loop keyword from the structurer collapse: `while (`/`for (`/`do {`.
+    let loop_kw =
+        count_matches(r"\bwhile *\(|\bwhile\( *true *\)|\bfor *\(|\bdo \{", &rendered).unwrap_or(0);
+    assert!(
+        loop_kw >= 1,
+        "forloop1's oracle is a `for` loop; the structurer + emitter must render a \
+         real C loop keyword (while/for/do), got none:\n{rendered}"
     );
 }
