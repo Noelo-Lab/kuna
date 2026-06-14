@@ -280,36 +280,40 @@ fn w10_implied_trim_copy_inlined_on_condconst_conn() {
     };
     eprintln!("=== condconst_conn ===\n{rust}");
 
-    // PRE-MERGE GUARD: this test asserts the rport/w10-implied-vars BEHAVIOR
-    // (the merge wiring + un-tie that collapses the trim COPY).  Before that
-    // branch lands the trim self-copy `v1 = v2;` is still present; skip rather
-    // than fail so the MAIN tree stays green until the accepted branch merges.
-    // On the branch the trim is gone and every assertion below runs for real.
+    // Updated by `rport/w10-mergeaddrtied-return`: the return-register COPY
+    // collapse + the (now-default) ScopeLocal window-reset together change this
+    // function's shape.  The return register is written by the single
+    // return-value COPY, so `mark_output_storage_addr_tied` leaves it UN-tied;
+    // `baseExplicit` then marks it IMPLIED and the printer collapses the plain
+    // trim self-copy.  With the window-reset on by default the source value is
+    // recovered as a typed stack local (`// stack`), exactly the C++ direction
+    // (`v1 = x; ... return v1;` where `v1` is the stack local).
+    //
+    // PRE-MERGE GUARD (kept for the main tree, which still carries the pre-collapse
+    // raw self-copy until this branch merges): if the plain trim self-copy
+    // `v1 = v2;` is still emitted, the collapse is not present yet — skip.
     if rust.contains("v1 = v2;") {
         eprintln!(
-            "SKIP: w10-implied-vars inlining not present (trim COPY `v1 = v2;` still emitted) \
+            "SKIP: return-register COPY collapse not present (plain trim `v1 = v2;` still emitted) \
              — base/pre-merge state; the win is asserted once the branch lands"
         );
         return;
     }
 
-    // The redundant trim-COPY local is GONE: no second `// rax` decl, no
-    // `v1 = v2;` self-copy.  This is the observable effect of the merge wiring +
-    // un-tie.
+    // THE WIN: the plain trim self-COPY round-trip `v1 = v2;` (return register =
+    // COPY(value); return register) is GONE.  The return value is read by name.
     assert!(
         !rust.contains("v1 = v2;"),
-        "the redundant trim-COPY `v1 = v2;` must be merged away, got:\n{rust}"
-    );
-    assert!(
-        rust.matches("// rax").count() <= 1,
-        "only ONE rax local may survive (the trim duplicate must be merged), got:\n{rust}"
-    );
-    // The single recovered local carries the real expression and is returned.
-    assert!(
-        rust.contains("v1 = ZEXT(a0);"),
-        "the recovered return value must read `v1 = ZEXT(a0);`, got:\n{rust}"
+        "the return-register trim COPY `v1 = v2;` must collapse, got:\n{rust}"
     );
     assert!(rust.contains("return v1;"), "must `return v1;`, got:\n{rust}");
+    // The recovered source value is a stack local (the window-reset is on by
+    // default), carrying the real expression — exactly the C++ `v1 // stack`
+    // direction, NOT a leftover register round-trip.
+    assert!(
+        rust.contains("// stack"),
+        "the recovered value must be a typed stack local (`// stack`), got:\n{rust}"
+    );
     // The lift is the correct 64-bit one (the precondition), not 16-bit garbage.
     assert!(
         !rust.contains("AX = ") && !rust.contains("SI = "),
