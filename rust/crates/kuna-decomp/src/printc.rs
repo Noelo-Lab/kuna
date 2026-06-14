@@ -1718,9 +1718,13 @@ impl PrintC {
             BlockType::Ls => self.emit_block_ls(fd, arch, blk),
             BlockType::If => self.emit_block_if(fd, arch, blk),
             BlockType::Graph => self.emit_block_graph(fd, arch, blk),
-            // Goto / Condition / loops / switch: their emitters are the next
-            // structuring layer (loops/switch need the loop/case machinery).
-            // Fall through to emitting the component blocks so nothing is lost.
+            BlockType::Goto => self.emit_block_goto(fd, arch, blk),
+            BlockType::WhileDo => self.emit_block_while_do(fd, arch, blk),
+            BlockType::DoWhile => self.emit_block_do_while(fd, arch, blk),
+            BlockType::InfLoop => self.emit_block_inf_loop(fd, arch, blk),
+            // Condition / multigoto / switch: their emitters are the next
+            // structuring layer (switch needs the JumpTable/case machinery,
+            // Condition the &&/|| gluing).  Fall through to the component blocks.
             _ => {
                 let list: Vec<BlockId> = fd.sblocks_ref().block(blk).get_list().to_vec();
                 for c in list {
@@ -1855,6 +1859,135 @@ impl PrintC {
                 self.emit.close_brace_indent(keywords::CLOSE_CURLY, id2);
             }
         }
+        self.context.pop_mod();
+    }
+
+    /// C++ `PrintC::emitBlockGoto` (printc.cc:2915): emit the block's body
+    /// (no_branch) then the trailing `goto`/`break`/`continue` statement.
+    ///
+    /// SEAM(W7): `BlockGoto::gotoPrints` consults `getParent()->nextFlowAfter` to
+    /// suppress a `goto` to the very next printed block; `nextFlowAfter` is not
+    /// yet ported, so the goto is always emitted when a target is present (an
+    /// over-emit, never an under-emit — a redundant `goto LAB_x;` to the
+    /// fallthrough where C++ would drop it).  Recorded as a loss.
+    fn emit_block_goto(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        self.context.push_mod();
+        self.context.set_mod(modifiers::NO_BRANCH);
+        let inner = fd.sblocks_ref().block(blk).get_block(0);
+        self.emit_block(fd, arch, inner);
+        self.context.pop_mod();
+        // gotoPrints(): emit the trailing goto unless it targets the next block.
+        if let Some(target) = fd.sblocks_ref().block(blk).get_goto_target() {
+            self.emit.tag_line();
+            let gototype = fd.sblocks_ref().block(blk).get_goto_type();
+            self.emit_goto_statement(fd, inner, target, gototype);
+        }
+    }
+
+    /// C++ `PrintC::emitBlockWhileDo` (printc.cc:3150): the top-tested loop.
+    /// Block 0 is the condition, block 1 the body.  When the loop has an
+    /// `iterateOp` the C++ emits a `for` loop (`emitForLoop`); that for-loop
+    /// detection (`findLoopVariable`/`findInitializer`) is the structuring wave's
+    /// surface, so when an iterate op is recorded we fall through to the plain
+    /// `while` form (a faithful degradation — the body is identical, only the
+    /// init/iterate hoisting differs).  Recorded as a loss.
+    fn emit_block_while_do(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        // whiledo block NEVER prints the final branch.
+        self.context.push_mod();
+        self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
+        let cond_block = fd.sblocks_ref().block(blk).get_block(0);
+        let indent;
+        if fd.sblocks_ref().block(blk).has_overflow_syntax() {
+            // while( true ) { conditionbody...; if (branch) break; }
+            self.emit.tag_line();
+            self.emit.tag_op(keywords::KEYWORD_WHILE, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+            let id1 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+            self.emit.spaces(1, 0);
+            self.emit.print(keywords::KEYWORD_TRUE, SyntaxHighlight::ConstColor);
+            self.emit.spaces(1, 0);
+            self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id1);
+            indent = self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+            self.context.push_mod();
+            self.context.set_mod(modifiers::NO_BRANCH);
+            self.emit_block(fd, arch, cond_block);
+            self.context.pop_mod();
+            self.emit.tag_line();
+            self.emit.tag_op(keywords::KEYWORD_IF, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+            self.emit.spaces(1, 0);
+            self.context.push_mod();
+            self.context.set_mod(modifiers::ONLY_BRANCH);
+            self.emit_block(fd, arch, cond_block);
+            self.context.pop_mod();
+            self.emit.spaces(1, 0);
+            self.emit_goto_statement(fd, cond_block, cond_block, crate::block::block_flags::f_break_goto);
+        } else {
+            // while(condition) {
+            self.emit.tag_line();
+            self.emit.tag_op(keywords::KEYWORD_WHILE, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+            self.emit.spaces(1, 0);
+            let id1 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+            self.context.push_mod();
+            self.context.set_mod(modifiers::COMMA_SEPARATE);
+            self.emit_block(fd, arch, cond_block);
+            self.context.pop_mod();
+            self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id1);
+            indent = self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+        }
+        self.context.set_mod(modifiers::NO_BRANCH); // don't print goto at bottom of clause
+        let id2 = self.emit.begin_block(0);
+        self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
+        self.emit.end_block(id2);
+        self.emit.close_brace_indent(keywords::CLOSE_CURLY, indent);
+        self.context.pop_mod();
+    }
+
+    /// C++ `PrintC::emitBlockDoWhile` (printc.cc:3217): the bottom-tested loop.
+    /// `do { block0-body } while (block0-branch);`.
+    fn emit_block_do_while(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        // dowhile block NEVER prints the final branch.
+        self.context.push_mod();
+        self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
+        self.emit.tag_line();
+        self.emit.print(keywords::KEYWORD_DO, SyntaxHighlight::KeywordColor);
+        let id = self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+        let body = fd.sblocks_ref().block(blk).get_block(0);
+        self.context.push_mod();
+        let id2 = self.emit.begin_block(0);
+        self.context.set_mod(modifiers::NO_BRANCH);
+        self.emit_block(fd, arch, body);
+        self.emit.end_block(id2);
+        self.context.pop_mod();
+        self.emit.close_brace_indent(keywords::CLOSE_CURLY, id);
+        self.emit.spaces(1, 0);
+        self.emit.tag_op(keywords::KEYWORD_WHILE, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+        self.emit.spaces(1, 0);
+        self.context.set_mod(modifiers::ONLY_BRANCH);
+        self.emit_block(fd, arch, body);
+        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.context.pop_mod();
+    }
+
+    /// C++ `PrintC::emitBlockInfLoop` (printc.cc:3246): the infinite loop.
+    /// `do { block0-body } while( true );`.
+    fn emit_block_inf_loop(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        self.context.push_mod();
+        self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
+        self.emit.tag_line();
+        self.emit.print(keywords::KEYWORD_DO, SyntaxHighlight::KeywordColor);
+        let id = self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+        let body = fd.sblocks_ref().block(blk).get_block(0);
+        let id1 = self.emit.begin_block(0);
+        self.emit_block(fd, arch, body);
+        self.emit.end_block(id1);
+        self.emit.close_brace_indent(keywords::CLOSE_CURLY, id);
+        self.emit.spaces(1, 0);
+        self.emit.tag_op(keywords::KEYWORD_WHILE, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+        let id2 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+        self.emit.spaces(1, 0);
+        self.emit.print(keywords::KEYWORD_TRUE, SyntaxHighlight::ConstColor);
+        self.emit.spaces(1, 0);
+        self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id2);
+        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
         self.context.pop_mod();
     }
 

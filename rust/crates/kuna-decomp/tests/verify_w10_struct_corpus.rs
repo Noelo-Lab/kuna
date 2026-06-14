@@ -339,3 +339,60 @@ fn verify_w10_corpus_stringmatch_tally() {
         "expected >= 1 real positive (min>=1) datatest assertion to pass; got {pass_positive}"
     );
 }
+
+// ===========================================================================
+// w10-refinement-loops verifier (this un-seam)
+//
+// The two seams this wave closed:
+//   (1) Heritage::placeMultiequals refinement (buildRefinement/refineSubpiece/
+//       splitByRefinement) — formerly a panic for any function with a >4-byte
+//       range partially read/written (the 8/16/32/64-bit register overlap the
+//       x86:64 / AARCH64 corpus produces).  Closing it lets ~7 formerly-panicking
+//       files REACH the printer.
+//   (2) the loop emitters emitBlockWhileDo/DoWhile/InfLoop + emitBlockGoto in
+//       printc — formerly the loop block kinds fell through to a flat component
+//       dump, so a collapsed BlockDoWhile never rendered as `do { } while`.
+// ===========================================================================
+
+/// `divopt` (x86:64) used to PANIC inside Heritage::placeMultiequals on the
+/// refinement seam — a 64-bit range partially written by 32-bit sub-pieces.  The
+/// refinement port splits those sub-ranges so heritage places the right
+/// MULTIEQUALs; the function now decompiles to structured C instead of taking
+/// down the run.  This pins that the seam is CLOSED (rendered, non-empty C).
+#[test]
+fn verify_w10_refinement_divopt_reaches_printer() {
+    let path = repo_root().join("decompiler/datatests/divopt.xml");
+    let dt = parse_datatest(&path).expect("parse divopt.xml");
+    let rendered = render_corpus(&dt).expect("divopt must decompile (refinement seam closed)");
+    // The shell printed when structuring declines at a seam must NOT appear, and
+    // the function bodies must be present.
+    assert!(
+        !rendered.contains("structuring declined at a seam"),
+        "divopt must structure (no decline shell):\n{rendered}"
+    );
+    assert!(
+        rendered.contains("divoptu") && rendered.contains("modoptu"),
+        "divopt must render its functions:\n{rendered}"
+    );
+}
+
+/// The loop emitters are wired: a collapsed loop in the corpus renders with a
+/// real C loop keyword (`do {` ... `} while` / `while (`).  `divopt`'s `modoptu`
+/// collapses to a BlockDoWhile, so the rendered C must contain a `do {`/`} while`
+/// pair.  This pins emitBlockDoWhile (and, by the shared dispatch, the whileDo /
+/// infLoop emitters) against a real collapsed loop, NOT a hand-built tree — the
+/// loop comes from the structurer, the keyword from the printer.
+#[test]
+fn verify_w10_loop_emitter_renders_real_collapsed_loop() {
+    let path = repo_root().join("decompiler/datatests/divopt.xml");
+    let dt = parse_datatest(&path).expect("parse divopt.xml");
+    let rendered = render_corpus(&dt).expect("divopt must decompile");
+    // A `do { ... } while (...)` pair: the DoWhile collapse + emitBlockDoWhile.
+    let has_do = rendered.contains("do {");
+    let has_while_tail = count_matches(r"\}\s*while", &rendered).unwrap_or(0) >= 1;
+    assert!(
+        has_do && has_while_tail,
+        "divopt must render a structured `do {{ }} while` loop (loop structurer + \
+         emitBlockDoWhile); got:\n{rendered}"
+    );
+}

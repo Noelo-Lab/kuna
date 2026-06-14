@@ -504,6 +504,30 @@ impl FlowBlock {
             _ => 0,
         }
     }
+    /// The iterate op of a `BlockWhileDo` (C++ `BlockWhileDo::getIterateOp`), or
+    /// `None`.  When set, the while-do is emitted as a `for` loop.
+    pub fn get_iterate_op(&self) -> Option<crate::seams::OpId> {
+        match &self.kind {
+            BlockKind::WhileDo { iterate_op, .. } => *iterate_op,
+            _ => None,
+        }
+    }
+    /// The unstructured-branch target of a `BlockGoto` (C++
+    /// `BlockGoto::getGotoTarget`), or `None` (also for non-Goto nodes).
+    pub fn get_goto_target(&self) -> Option<BlockId> {
+        match &self.kind {
+            BlockKind::Goto { gototarget, .. } => *gototarget,
+            _ => None,
+        }
+    }
+    /// The unstructured-branch type of a `BlockGoto` (C++
+    /// `BlockGoto::getGotoType`).
+    pub fn get_goto_type(&self) -> uint4 {
+        match &self.kind {
+            BlockKind::Goto { gototype, .. } => *gototype,
+            _ => 0,
+        }
+    }
     /// Set the number of times this block has been visited (C++ `setVisitCount`).
     pub fn set_visit_count(&mut self, i: int4) {
         self.visitcount = i;

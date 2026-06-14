@@ -1749,7 +1749,7 @@ impl Heritage {
     fn guard_input(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
-        _addr: &Address,
+        addr: &Address,
         size: int4,
         input: &[crate::seams::VarnodeId],
     ) {
@@ -1761,13 +1761,43 @@ impl Heritage {
         {
             return; // single input fills everything; links in automatically
         }
-        // SEAM: the gap-filling + concatPieces path (heritage.cc:1965-2010) needs
-        // concatPieces (a PIECE-tree builder).  The simple register/stack
-        // functions on the critical path either have no input in a heritaged
-        // range or have exactly one full-size input, so this is unreached.
-        unimplemented_seam(
-            "Heritage::guard_input (multi-input range needs concatPieces)",
-        );
+        // Make sure the input range is filled (no holes), then concatenate the
+        // pieces into a single full-size input (heritage.cc:1962-2010).
+        let spc = addr.get_space().expect("guard_input: range space").clone();
+        let mut i = 0usize;
+        let mut cur = addr.get_offset();
+        let end = cur.wrapping_add(size as u64);
+        let mut newinput: Vec<crate::seams::VarnodeId> = Vec::new();
+        while cur < end {
+            let vn = if i < input.len() {
+                let candidate = input[i];
+                let voff = fd.vbank().get(candidate).expect("guard_input: input vn").get_addr().get_offset();
+                if voff > cur {
+                    let sz = (voff - cur) as int4;
+                    let hole = fd.new_varnode(sz, &Address::new(Rc::clone(&spc), cur), None);
+                    fd.set_input_varnode(hole).expect("guard_input: setInputVarnode hole")
+                } else {
+                    i += 1;
+                    candidate
+                }
+            } else {
+                let sz = (end - cur) as int4;
+                let tail = fd.new_varnode(sz, &Address::new(Rc::clone(&spc), cur), None);
+                fd.set_input_varnode(tail).expect("guard_input: setInputVarnode tail")
+            };
+            let vnsize = fd.vbank().get(vn).expect("guard_input: vn size").get_size();
+            newinput.push(vn);
+            cur = cur.wrapping_add(vnsize as u64);
+        }
+        if newinput.len() == 1 {
+            return; // will get linked in automatically
+        }
+        for &vn in &newinput {
+            fd.vbank_mut().get_mut(vn).expect("guard_input: write mask").set_write_mask();
+        }
+        let newout = fd.new_varnode(size, addr, None);
+        let unified = self.concat_pieces(fd, &newinput, None, newout);
+        fd.vbank_mut().get_mut(unified).expect("guard_input: unified").set_active_heritage();
     }
 
     /// Process join-space Varnodes before heritage (C++
@@ -1997,14 +2027,406 @@ impl Heritage {
         self.disjoint.clear();
     }
 
+    /// Concatenate a list of Varnodes together at the given location (C++
+    /// `Heritage::concatPieces`, `heritage.cc:508`).
+    ///
+    /// There must be at least 2 Varnodes in `vnlist`, ordered most- to
+    /// least-significant.  The Varnodes become inputs to a chain of PIECE ops
+    /// whose final output is `finalvn`.  Returns the final unified Varnode.  When
+    /// `insertop` is `None` the chain is inserted at the beginning of the entry
+    /// block; otherwise before `insertop`.
+    //
+    // `needless_range_loop`: the index `i` selects the last piece (`i == n-1` ->
+    // wire `finalvn` as the output) and `vnlist[i]` is the current piece — both
+    // the position test and the element read are needed, so the C++ indexed walk
+    // is the faithful form.
+    #[allow(clippy::needless_range_loop)]
+    fn concat_pieces(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        vnlist: &[crate::seams::VarnodeId],
+        insertop: Option<crate::seams::OpId>,
+        finalvn: crate::seams::VarnodeId,
+    ) -> crate::seams::VarnodeId {
+        use kuna_num::opcodes::OpCode;
+        let mut preexist = vnlist[0];
+        let isbigendian =
+            fd.vbank().get(preexist).expect("concat_pieces: vn0").get_addr().is_big_endian();
+        // Resolve the insertion block + the op we insert *before* (None => block begin),
+        // and the address each new op carries.
+        let (bl, before, opaddress) = match insertop {
+            None => {
+                let root = fd.bblocks_ref().root.expect("concat_pieces: bblocks root");
+                let start = fd
+                    .bblocks_ref()
+                    .get_start_block(root)
+                    .expect("concat_pieces: start block");
+                let head = fd.bb_op_head(start);
+                (start, head, fd.get_address().clone())
+            }
+            Some(op) => {
+                let parent =
+                    fd.obank().get(op).expect("concat_pieces: insertop").get_parent().expect(
+                        "concat_pieces: insertop has no parent",
+                    );
+                (parent, Some(op), fd.obank().get(op).expect("concat_pieces").get_addr().clone())
+            }
+        };
+        let piece_typeop = typeop_skeleton(OpCode::CPUI_PIECE);
+        let n = vnlist.len();
+        for i in 1..n {
+            let vn = vnlist[i];
+            let newop = fd.new_op(2, opaddress.clone());
+            fd.op_set_opcode(newop, piece_typeop.clone());
+            let newvn = if i == n - 1 {
+                fd.op_set_output(newop, finalvn).expect("concat_pieces: op_set_output");
+                finalvn
+            } else {
+                let presize = fd.vbank().get(preexist).expect("concat_pieces: presize").get_size();
+                let vnsize = fd.vbank().get(vn).expect("concat_pieces: vnsize").get_size();
+                fd.new_unique_out(presize + vnsize, newop).expect("concat_pieces: new_unique_out")
+            };
+            if isbigendian {
+                fd.op_set_input(newop, preexist, 0).expect("concat_pieces: set in0"); // most sig
+                fd.op_set_input(newop, vn, 1).expect("concat_pieces: set in1"); // least sig
+            } else {
+                fd.op_set_input(newop, vn, 0).expect("concat_pieces: set in0");
+                fd.op_set_input(newop, preexist, 1).expect("concat_pieces: set in1");
+            }
+            fd.op_insert(newop, bl, before);
+            preexist = newvn;
+        }
+        preexist
+    }
+
+    /// Build a set of Varnode-piece SUBPIECE expressions (C++
+    /// `Heritage::splitPieces`, `heritage.cc:564`).
+    ///
+    /// Given a list of small Varnodes and the whole range `(addr,size)` they are
+    /// pieces of, construct a defining SUBPIECE op for each piece, all sharing the
+    /// single input `startvn`.  When `insertop` is `None` the ops are inserted at
+    /// the beginning of the entry block; otherwise *after* `insertop` (the write).
+    fn split_pieces(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        vnlist: &[crate::seams::VarnodeId],
+        insertop: Option<crate::seams::OpId>,
+        addr: &Address,
+        size: int4,
+        startvn: crate::seams::VarnodeId,
+    ) {
+        use kuna_num::opcodes::OpCode;
+        let isbigendian = addr.is_big_endian();
+        let baseoff = if isbigendian {
+            addr.get_offset().wrapping_add(size as u64)
+        } else {
+            addr.get_offset()
+        };
+        // Resolve the block + insertion point + op address.  For a non-null
+        // insertop we insert AFTER the write (C++ `++insertiter`), realized via
+        // op_insert before the op following `insertop` (or end-of-block).
+        let (bl, opaddress, after_anchor): (BlockId, Address, Option<crate::seams::OpId>) =
+            match insertop {
+                None => {
+                    let root = fd.bblocks_ref().root.expect("split_pieces: bblocks root");
+                    let start = fd
+                        .bblocks_ref()
+                        .get_start_block(root)
+                        .expect("split_pieces: start block");
+                    (start, fd.get_address().clone(), None)
+                }
+                Some(op) => {
+                    let parent = fd
+                        .obank()
+                        .get(op)
+                        .expect("split_pieces: insertop")
+                        .get_parent()
+                        .expect("split_pieces: insertop has no parent");
+                    (parent, fd.obank().get(op).expect("split_pieces").get_addr().clone(), Some(op))
+                }
+            };
+        let sub_typeop = typeop_skeleton(OpCode::CPUI_SUBPIECE);
+        for &vn in vnlist {
+            let (vnoff, vnsize) = {
+                let v = fd.vbank().get(vn).expect("split_pieces: piece vn");
+                (v.get_addr().get_offset(), v.get_size())
+            };
+            let newop = fd.new_op(2, opaddress.clone());
+            fd.op_set_opcode(newop, sub_typeop.clone());
+            let diff: uintb = if isbigendian {
+                baseoff.wrapping_sub(vnoff.wrapping_add(vnsize as u64))
+            } else {
+                vnoff.wrapping_sub(baseoff)
+            };
+            fd.op_set_input(newop, startvn, 0).expect("split_pieces: set in0");
+            let cvn = fd.new_constant(4, diff);
+            fd.op_set_input(newop, cvn, 1).expect("split_pieces: set in1");
+            fd.op_set_output(newop, vn).expect("split_pieces: set output");
+            // C++ `opInsert(newop,bl,insertiter)` where insertiter points just
+            // after the write (or block begin).  When `after_anchor` is set we
+            // insert directly after it (op_insert_after); each successive piece
+            // also goes after the write, preserving the C++ order where the
+            // iterator is recomputed from the same write each loop.
+            match after_anchor {
+                Some(anchor) => fd.op_insert_after(newop, anchor),
+                None => {
+                    let head = fd.bb_op_head(bl);
+                    fd.op_insert(newop, bl, head);
+                }
+            }
+        }
+    }
+
+    /// Build a refinement array given an address range and a Varnode list (C++
+    /// `Heritage::buildRefinement`, `heritage.cc:1705`).  Each Varnode marks a 1
+    /// at its starting byte and at the byte immediately past its end.
+    fn build_refinement(
+        &self,
+        fd: &crate::funcdata::Funcdata,
+        refine: &mut [int4],
+        addr: &Address,
+        vnlist: &[crate::seams::VarnodeId],
+    ) {
+        for &vn in vnlist {
+            let v = fd.vbank().get(vn).expect("build_refinement: vn");
+            let curaddr = v.get_addr();
+            let sz = v.get_size();
+            let diff = (curaddr.get_offset().wrapping_sub(addr.get_offset())) as usize;
+            refine[diff] = 1;
+            refine[diff + sz as usize] = 1;
+        }
+    }
+
+    /// Split up a Varnode by the given refinement (C++
+    /// `Heritage::splitByRefinement`, `heritage.cc:1734`).  Returns the new
+    /// disjoint cover pieces (newly created free Varnodes).
+    fn split_by_refinement(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        vn: crate::seams::VarnodeId,
+        addr: &Address,
+        refine: &[int4],
+        split: &mut Vec<crate::seams::VarnodeId>,
+    ) {
+        let (mut curaddr, mut sz, spc) = {
+            let v = fd.vbank().get(vn).expect("split_by_refinement: vn");
+            (v.get_addr().clone(), v.get_size(), v.get_addr().get_space().expect("split_by_refinement: space").clone())
+        };
+        let mut diff = spc.wrap_offset(curaddr.get_offset().wrapping_sub(addr.get_offset())) as usize;
+        let mut cutsz = refine[diff];
+        if sz <= cutsz {
+            return; // already refined
+        }
+        let pv = fd.new_varnode(cutsz, &curaddr, None);
+        split.push(pv);
+        sz -= cutsz;
+        while sz > 0 {
+            curaddr = &curaddr + i64::from(cutsz);
+            diff =
+                spc.wrap_offset(curaddr.get_offset().wrapping_sub(addr.get_offset())) as usize;
+            cutsz = refine[diff];
+            if cutsz > sz {
+                cutsz = sz; // final piece
+            }
+            let pv = fd.new_varnode(cutsz, &curaddr, None);
+            split.push(pv);
+            sz -= cutsz;
+        }
+    }
+
+    /// Split up a \b free read Varnode based on the refinement (C++
+    /// `Heritage::refineRead`, `heritage.cc:1773`).
+    fn refine_read(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        vn: crate::seams::VarnodeId,
+        addr: &Address,
+        refine: &[int4],
+        newvn: &mut Vec<crate::seams::VarnodeId>,
+    ) {
+        newvn.clear();
+        self.split_by_refinement(fd, vn, addr, refine, newvn);
+        if newvn.is_empty() {
+            return;
+        }
+        let vnsize = fd.vbank().get(vn).expect("refine_read: vn").get_size();
+        let replacevn = fd.new_unique(vnsize, None);
+        // Read is free so has exactly one descend.
+        let op = fd.lone_descend(vn).expect("refine_read: free read has lone descend");
+        let slot = fd.obank().get(op).expect("refine_read: op").get_slot(vn);
+        let pieces = newvn.clone();
+        self.concat_pieces(fd, &pieces, Some(op), replacevn);
+        fd.op_set_input(op, replacevn, slot).expect("refine_read: op_set_input");
+        if fd.vbank().get(vn).expect("refine_read: vn").has_no_descend() {
+            fd.delete_varnode(vn).expect("refine_read: delete free read");
+        } else {
+            panic!("kuna heritage: refining non-free varnode");
+        }
+    }
+
+    /// Split up a written output Varnode based on the refinement (C++
+    /// `Heritage::refineWrite`, `heritage.cc:1807`).
+    fn refine_write(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        vn: crate::seams::VarnodeId,
+        addr: &Address,
+        refine: &[int4],
+        newvn: &mut Vec<crate::seams::VarnodeId>,
+    ) {
+        newvn.clear();
+        self.split_by_refinement(fd, vn, addr, refine, newvn);
+        if newvn.is_empty() {
+            return;
+        }
+        let (vnsize, vnaddr) = {
+            let v = fd.vbank().get(vn).expect("refine_write: vn");
+            (v.get_size(), v.get_addr().clone())
+        };
+        let replacevn = fd.new_unique(vnsize, None);
+        let def = fd.vbank().get(vn).expect("refine_write: vn").get_def().expect(
+            "refine_write: write has a def",
+        );
+        fd.op_set_output(def, replacevn).expect("refine_write: op_set_output");
+        let pieces = newvn.clone();
+        self.split_pieces(fd, &pieces, Some(def), &vnaddr, vnsize, replacevn);
+        fd.total_replace(vn, replacevn).expect("refine_write: total_replace");
+        fd.delete_varnode(vn).expect("refine_write: delete vn");
+    }
+
+    /// Split up a known input Varnode based on the refinement (C++
+    /// `Heritage::refineInput`, `heritage.cc:1837`).
+    fn refine_input(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        vn: crate::seams::VarnodeId,
+        addr: &Address,
+        refine: &[int4],
+        newvn: &mut Vec<crate::seams::VarnodeId>,
+    ) {
+        newvn.clear();
+        self.split_by_refinement(fd, vn, addr, refine, newvn);
+        if newvn.is_empty() {
+            return;
+        }
+        let (vnsize, vnaddr) = {
+            let v = fd.vbank().get(vn).expect("refine_input: vn");
+            (v.get_size(), v.get_addr().clone())
+        };
+        let pieces = newvn.clone();
+        self.split_pieces(fd, &pieces, None, &vnaddr, vnsize, vn);
+        fd.vbank_mut().get_mut(vn).expect("refine_input: vn").set_write_mask();
+    }
+
+    /// If we see 1-3 or 3-1 pieces in the partition, replace with a 4 (C++
+    /// `Heritage::remove13Refinement`, `heritage.cc:1858`).
+    fn remove13_refinement(&self, refine: &mut [int4]) {
+        if refine.is_empty() {
+            return;
+        }
+        let mut pos = 0usize;
+        let mut lastsize = refine[pos];
+        pos += lastsize as usize;
+        while pos < refine.len() {
+            let cursize = refine[pos];
+            if cursize == 0 {
+                break;
+            }
+            if (lastsize == 1 && cursize == 3) || (lastsize == 3 && cursize == 1) {
+                refine[pos - lastsize as usize] = 4;
+                lastsize = 4;
+                pos += cursize as usize;
+            } else {
+                lastsize = cursize;
+                pos += lastsize as usize;
+            }
+        }
+    }
+
+    /// Find the common refinement of all reads and writes in the address range
+    /// and split them to match (C++ `Heritage::refinement`, `heritage.cc:1891`).
+    ///
+    /// `idx` indexes the range in `self.disjoint`.  Returns `Some(resiter_idx)`
+    /// (the index of the first refined sub-range) on a non-trivial refinement, or
+    /// `None` when there is nothing to refine.  The disjoint cover is altered both
+    /// locally (`self.disjoint`) and globally (`self.globaldisjoint`).
+    fn refinement(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        idx: usize,
+        readvars: &[crate::seams::VarnodeId],
+        writevars: &[crate::seams::VarnodeId],
+        inputvars: &[crate::seams::VarnodeId],
+    ) -> Option<usize> {
+        let size = self.disjoint.get(idx).size;
+        if size > 1024 {
+            return None;
+        }
+        let addr = self.disjoint.get(idx).addr.clone();
+        // Add a "fencepost" for the size position.
+        let mut refine: Vec<int4> = vec![0; (size + 1) as usize];
+        self.build_refinement(fd, &mut refine, &addr, readvars);
+        self.build_refinement(fd, &mut refine, &addr, writevars);
+        self.build_refinement(fd, &mut refine, &addr, inputvars);
+        refine.pop(); // remove the fencepost
+        // Convert boundary points to partition sizes.
+        let mut lastpos: usize = 0;
+        for curpos in 1..(size as usize) {
+            if refine[curpos] != 0 {
+                refine[lastpos] = (curpos - lastpos) as int4;
+                lastpos = curpos;
+            }
+        }
+        if lastpos == 0 {
+            return None; // No non-trivial refinements
+        }
+        refine[lastpos] = size - lastpos as int4;
+        self.remove13_refinement(&mut refine);
+        let mut newvn: Vec<crate::seams::VarnodeId> = Vec::new();
+        for &vn in readvars {
+            self.refine_read(fd, vn, &addr, &refine, &mut newvn);
+        }
+        for &vn in writevars {
+            self.refine_write(fd, vn, &addr, &refine, &mut newvn);
+        }
+        for &vn in inputvars {
+            self.refine_input(fd, vn, &addr, &refine, &mut newvn);
+        }
+
+        // Alter the disjoint cover (both locally and globally) to reflect the
+        // refinement.  The C++ erases the old range and inserts the partition.
+        let flags = self.disjoint.get(idx).flags;
+        let mut pos = self.disjoint.erase(idx); // erase returns the following index
+        let curpass = self.globaldisjoint.find_pass(&addr);
+        self.globaldisjoint.erase(&addr);
+        let mut cut: usize = 0;
+        let mut sz = refine[cut];
+        let mut curaddr = addr.clone();
+        // First partition: this is the resiter the caller re-collects from.
+        let resiter = pos;
+        self.disjoint.insert(pos, curaddr.clone(), sz, flags);
+        self.globaldisjoint.add(curaddr.clone(), sz, curpass);
+        pos += 1;
+        cut += sz as usize;
+        curaddr = &curaddr + i64::from(sz);
+        while cut < size as usize {
+            sz = refine[cut];
+            self.disjoint.insert(pos, curaddr.clone(), sz, flags);
+            self.globaldisjoint.add(curaddr.clone(), sz, curpass);
+            pos += 1;
+            cut += sz as usize;
+            curaddr = &curaddr + i64::from(sz);
+        }
+        Some(resiter)
+    }
+
     /// Perform phi-node placement for the current address ranges (C++
     /// `Heritage::placeMultiequals`, `heritage.cc:2603`).
     ///
     /// Assumes `disjoint` is filled with all free Varnodes to be heritaged.  The
     /// driver loops the disjoint ranges, collecting reads/writes/inputs,
-    /// optionally refining (SEAM — the refinement path needs `buildRefinement`/
-    /// `refineSubpiece`, unreached on the simple critical path), guarding,
-    /// calling [`calc_multiequals`](Heritage::calc_multiequals), and
+    /// refining mismatched sub-ranges ([`refinement`](Heritage::refinement)),
+    /// guarding, calling [`calc_multiequals`](Heritage::calc_multiequals), and
     /// constructing the MULTIEQUAL ops at each merge block.
     pub fn place_multiequals(&mut self, fd: &mut crate::funcdata::Funcdata) {
         use kuna_num::opcodes::OpCode;
@@ -2013,33 +2435,55 @@ impl Heritage {
         let mut inputvars: Vec<crate::seams::VarnodeId> = Vec::new();
         let mut removevars: Vec<crate::seams::VarnodeId> = Vec::new();
 
-        let n = self.disjoint.len();
-        for idx in 0..n {
+        // C++ iterates `for(iter=disjoint.begin();iter!=disjoint.end();++iter)`.
+        // refinement() may erase the current range and insert N partition ranges
+        // in its place (so the container mutates mid-walk); a `while idx < len()`
+        // walk with the refinement resetting `idx` to the first partition mirrors
+        // the C++ iterator (which is reseated to `refiter`).
+        let mut idx = 0usize;
+        while idx < self.disjoint.len() {
             let mut memrange = self.disjoint.get(idx).clone();
             let maxw =
                 self.collect(fd, &mut memrange, &mut readvars, &mut writevars, &mut inputvars, &mut removevars);
-            // refinement (heritage.cc:2611-2617): only when size>4 && max<size.
+            // refinement (heritage.cc:2611-2619): only when size>4 && max<size.
             if memrange.size > 4 && maxw < memrange.size {
-                // SEAM: refinement (heritage.cc:1891) splits the range by the
-                // sub-piece boundaries; unreached for the size<=4 register/stack
-                // ranges on the critical path.
-                unimplemented_seam(
-                    "Heritage::placeMultiequals refinement (needs buildRefinement/refineSubpiece)",
-                );
+                if let Some(refiter) =
+                    self.refinement(fd, idx, &readvars, &writevars, &inputvars)
+                {
+                    idx = refiter;
+                    memrange = self.disjoint.get(idx).clone();
+                    self.collect(
+                        fd,
+                        &mut memrange,
+                        &mut readvars,
+                        &mut writevars,
+                        &mut inputvars,
+                        &mut removevars,
+                    );
+                }
             }
             // write the (possibly clearProperty-mutated) memrange back.
             *self.disjoint.get_mut(idx) = memrange.clone();
             let size = memrange.size;
+            // The C++ `continue` reseats the `for` iterator (`++iter`); in the
+            // index-walk that is `idx += 1; continue`, so the empty-read arms
+            // set a flag that skips the rest of the body and advances.
+            let mut skip = false;
             if readvars.is_empty() {
                 if writevars.is_empty() && inputvars.is_empty() {
-                    continue;
+                    skip = true;
+                } else {
+                    let is_internal = memrange.addr.get_space().map(|s| {
+                        s.get_type() == spacetype::IPTR_INTERNAL
+                    }).unwrap_or(false);
+                    if is_internal || memrange.old_addresses() {
+                        skip = true;
+                    }
                 }
-                let is_internal = memrange.addr.get_space().map(|s| {
-                    s.get_type() == spacetype::IPTR_INTERNAL
-                }).unwrap_or(false);
-                if is_internal || memrange.old_addresses() {
-                    continue;
-                }
+            }
+            if skip {
+                idx += 1;
+                continue;
             }
             if !removevars.is_empty() {
                 // SEAM: removeRevisitedMarkers (heritage.cc:245) deletes stale
@@ -2084,6 +2528,7 @@ impl Heritage {
                 }
                 fd.op_insert_begin(multiop, bl);
             }
+            idx += 1;
         }
         self.merge.clear();
     }
