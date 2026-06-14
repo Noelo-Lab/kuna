@@ -209,3 +209,113 @@ fn apply_type_recommendations_locks_input_varnode_type() {
         type_metatype::TYPE_INT
     );
 }
+
+// === VERIFIER ADVERSARIAL TESTS (item w10-stacklocal-typing) ===============
+//
+// These pin the conservative arms of the restructure tail the porter's
+// positive tests do NOT exercise: the early-return guards and the
+// size/metatype discrimination that prevent the chain from fabricating a type
+// or a placeholder when the preconditions are not met.
+
+/// `ScopeLocal::annotateRawStackPtr` (varmap.cc:389): the FIRST line is
+/// `if (!fd->hasTypeRecoveryStarted()) return;`.  Before type recovery starts,
+/// a non-additive read of the SP must be left UNTOUCHED (no PTRSUB spliced).
+/// The porter's positive test always calls `start_type_recovery()` first, so
+/// this OFF path is unverified — a port that dropped the guard would silently
+/// rewrite IR too early.
+#[test]
+fn w10_stacklocal_typing_annotate_raw_stack_ptr_noop_before_type_recovery() {
+    use kuna_num::opcodes::OpCode;
+
+    let mut fd = build_fd();
+    let sp_in = make_sp_in(&mut fd);
+    fd.spacebase();
+    // NOTE: deliberately do NOT call start_type_recovery().
+    assert!(!fd.has_type_recovery_started());
+
+    let root = fd.bblocks_root_pub();
+    let bl = fd.bblocks_mut().new_block_basic(root);
+    let store = fd.new_op(3, reg_addr(&fd, 0x1000));
+    fd.op_set_opcode_code(store, OpCode::CPUI_STORE);
+    let spaceconst = fd.new_constant(8, 0);
+    let value = fd.new_varnode(4, &reg_addr(&fd, 0x100), None);
+    fd.op_set_input(store, spaceconst, 0).unwrap();
+    fd.op_set_input(store, sp_in, 1).unwrap();
+    fd.op_set_input(store, value, 2).unwrap();
+    fd.bb_insert_op(store, bl, None);
+
+    let stackspc = Rc::clone(fd.get_arch().manage().get_stack_space().unwrap());
+    fd.annotate_raw_stack_ptr(&stackspc);
+
+    // The STORE still reads the raw SP at slot 1 — no placeholder before recovery.
+    assert_eq!(
+        fd.obank().get(store).unwrap().get_in(1),
+        Some(sp_in),
+        "annotateRawStackPtr must early-return when type recovery has not started"
+    );
+}
+
+/// `applyTypeRecommendations` -> `fd->findVarnodeInput(dt->getSize(), addr)`
+/// (varmap.cc:1580): the lookup is keyed on the recommendation's *size* as well
+/// as its address.  A recommendation whose size does not match the input
+/// Varnode at that address must NOT lock it (the `findVarnodeInput` returns 0).
+/// The porter's test only covers the size-MATCH case; a port that ignored the
+/// size in the lookup would type-lock the wrong-sized Varnode.
+#[test]
+fn w10_stacklocal_typing_apply_type_recommendations_size_mismatch_no_lock() {
+    use crate::dtype::type_metatype;
+
+    let mut fd = build_fd();
+    // An 8-byte input Varnode at a register slot.
+    let in_addr = reg_addr(&fd, 0x80);
+    let in_vn = fd.new_varnode(8, &in_addr, None);
+    let in_vn = fd.set_input_varnode(in_vn).unwrap();
+    assert!(!fd.vbank().get(in_vn).unwrap().is_type_lock());
+
+    // A *4-byte* INT recommendation at the same address — size mismatch vs the
+    // 8-byte input, so findVarnodeInput(4, addr) finds nothing.
+    use crate::dtype::TypeFactory as _;
+    let factory = crate::dtype::TypeFactoryImpl::new();
+    factory.set_default_alignment_map();
+    factory.set_max_basetype_size(8);
+    let dt4 = factory.get_base(4, type_metatype::TYPE_INT).unwrap();
+    fd.get_scope_local_mut().unwrap().add_type_recommendation(in_addr, dt4);
+
+    fd.apply_type_recommendations();
+
+    assert!(
+        !fd.vbank().get(in_vn).unwrap().is_type_lock(),
+        "a size-mismatched recommendation must not lock the input Varnode \
+         (findVarnodeInput keys on dt->getSize())"
+    );
+}
+
+/// `applyTypeRecommendations` -> `vn->updateType(dt, true, false)` ->
+/// `updateType` (varnode.cc:496): an UNKNOWN data-type is ALWAYS unlocked, so a
+/// recommendation of an unknown type cannot fabricate a type-lock.  This pins
+/// the UNKNOWN-unlock rule on the recommendation path (the porter's test uses a
+/// concrete INT and never exercises it).
+#[test]
+fn w10_stacklocal_typing_apply_type_recommendations_unknown_stays_unlocked() {
+    use crate::dtype::type_metatype;
+
+    let mut fd = build_fd();
+    let in_addr = reg_addr(&fd, 0x80);
+    let in_vn = fd.new_varnode(4, &in_addr, None);
+    let in_vn = fd.set_input_varnode(in_vn).unwrap();
+
+    use crate::dtype::TypeFactory as _;
+    let factory = crate::dtype::TypeFactoryImpl::new();
+    factory.set_default_alignment_map();
+    factory.set_max_basetype_size(8);
+    let unk = factory.get_base(4, type_metatype::TYPE_UNKNOWN).unwrap();
+    fd.get_scope_local_mut().unwrap().add_type_recommendation(in_addr, unk);
+
+    fd.apply_type_recommendations();
+
+    assert!(
+        !fd.vbank().get(in_vn).unwrap().is_type_lock(),
+        "an UNKNOWN-typed recommendation must never type-lock (updateType forces \
+         lock=false for TYPE_UNKNOWN)"
+    );
+}
