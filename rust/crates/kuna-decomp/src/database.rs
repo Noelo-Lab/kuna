@@ -1478,6 +1478,45 @@ impl Database {
         Ok(())
     }
 
+    /// C++ `ScopeInternal::setCategory` (`database.cc:2854`): move `sym` into the
+    /// `cat`/`ind` slot of `scope`'s category table (removing it from any prior
+    /// category slot first).  For `cat > 0` the index is forced to append; for
+    /// `cat == 0` (function parameters) the caller's `ind` is honored so a recovered
+    /// parameter lands at its 0-based slot.
+    pub fn set_category(&mut self, scope: ScopeId, sym: SymbolId, cat: int4, ind: int4) {
+        let old_cat = self.symbols[sym].category;
+        if old_cat >= 0 {
+            let oc = old_cat as usize;
+            let old_idx = self.symbols[sym].catindex as usize;
+            if let Some(list) = self.scopes[scope].category.get_mut(oc) {
+                if old_idx < list.len() {
+                    list[old_idx] = None;
+                }
+                while matches!(list.last(), Some(None)) {
+                    list.pop();
+                }
+            }
+        }
+        self.symbols[sym].category = cat;
+        self.symbols[sym].catindex = ind as u16;
+        if cat < 0 {
+            return;
+        }
+        let cat = cat as usize;
+        while self.scopes[scope].category.len() <= cat {
+            self.scopes[scope].category.push(Vec::new());
+        }
+        if (cat as int4) > 0 {
+            self.symbols[sym].catindex = self.scopes[scope].category[cat].len() as u16;
+        }
+        let catindex = self.symbols[sym].catindex as usize;
+        let list = &mut self.scopes[scope].category[cat];
+        while list.len() <= catindex {
+            list.push(None);
+        }
+        list[catindex] = Some(sym);
+    }
+
     /// C++ `ScopeInternal::buildUndefinedName` (`database.cc:2550-2581`): the next
     /// `$$undefXXXXXXXX` name not yet used in `scope`.
     fn build_undefined_name(&self, scope: ScopeId) -> KunaResult<String> {

@@ -942,17 +942,33 @@ impl Action for ActionCopyMarker {
 // ActionNameVars (coreaction.hh:471, coreaction.cc:3076)
 // =============================================================================
 
-/// (kuna) Assign the angr default `vN` name to each nameable LOCAL HighVariable
-/// — the ScopeLocal/`Symbol`-free stand-in for `ActionNameVars` +
+/// Link each nameable HighVariable to its Symbol and assign default names — the
+/// faithful `ActionNameVars::linkSymbols` walk (coreaction.cc:3044-3072) +
 /// `Scope::buildDefaultName`'s `kunaAngrNaming` branch (database.cc:1764-1785).
 ///
-/// C++ `linkSymbols` walks `beginLoc(spc)..endLoc(spc)` for each non-constant
-/// space, hits each high once at its name representative, and adds those with an
-/// undefined-name symbol to `namerec`; `buildDefaultName` then routes a local
-/// (non-param, non-global-persist) to `v<base++>`.  We reproduce that walk and
-/// the local classification directly on the HighVariable.
+/// C++ walks `beginLoc(spc)..endLoc(spc)` for each non-constant space, hits each
+/// high once at its name representative, skips highs that cannot carry a name
+/// (`!high->hasName()`), and calls `data.linkSymbol(vn)` which queries the local
+/// map (`queryProperties`/`queryContainer`) for a covering SymbolEntry.  When a
+/// Symbol is found the high carries that Symbol (and renders its display name);
+/// otherwise `linkSymbol` creates a local symbol that `buildDefaultName` later
+/// routes to `aN` (parameter) / `dat_<addr>` (persistent global) / `v<base++>`
+/// (everything else).
+///
+/// The recovered/locked parameter Symbols (`ptr`/`a`/`b`) and the promoted /
+/// console-mapped stack-local Symbols (`i`) live in the local scope by this
+/// point ([`Funcdata::link_proto_params`] for the parameters; `restructure` /
+/// `map addr` for the locals), so the `name_for_varnode` query binds them to the
+/// body Varnodes — the body then renders the recovered names, not the raw
+/// registers / stack addresses.  Highs with no covering Symbol that would route
+/// to `vN` (in-scope, address-tied, non-persistent locals) get the angr default.
 fn name_local_highs_angr(data: &mut Funcdata) {
     use crate::seams::HighVariableId;
+    // Materialize the recovered/locked parameters as Symbols in the local scope
+    // (C++ `ProtoStoreSymbol::setInput` did this at recovery time; the kuna
+    // `ProtoStoreInternal` does not, so it is done here before the walk).
+    data.link_proto_params();
+
     // Iterate Varnodes in C++ location order; hit each high once at its name
     // representative (the highest-priority member), matching `linkSymbols`'
     // `getNameRepresentative()` dedup.
@@ -967,6 +983,10 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         if seen.contains(&high) {
             continue;
         }
+        // C++ `if (curvn->isFree()) continue;`
+        if data.vbank().get(vn).map(|v| v.is_free()).unwrap_or(true) {
+            continue;
+        }
         // Hit each high only at its name representative (C++ `linkSymbols`:
         // `if (vn != high->getNameRepresentative()) continue;`).
         let name_rep = data.high_name_representative(high);
@@ -974,16 +994,19 @@ fn name_local_highs_angr(data: &mut Funcdata) {
             continue;
         }
         seen.insert(high);
+        // C++ `if (!high->hasName()) continue;` — the gate that admits parameters,
+        // mapped/promoted locals, and ordinary named locals while excluding
+        // implied/non-coverable and the unaffected-stackpointer high.
+        if !data.high_has_name(high) {
+            continue;
+        }
         // Already named? (idempotent re-run / inherited name.)
         if data.high_bank().get(high).map(|h| h.kuna_name().is_some()).unwrap_or(false) {
             continue;
         }
-        // Local classification (buildDefaultName's `vN` arm): the representative
-        // is in local scope (addr-tied, mapped), not an input, not persist/global.
-        let (v_free, v_input, v_persist, v_addrtied, v_addr, v_size) =
+        let (v_input, v_persist, v_addrtied, v_addr, v_size) =
             match data.vbank().get(name_rep.unwrap()) {
                 Some(v) => (
-                    v.is_free(),
                     v.is_input(),
                     v.is_persist(),
                     v.is_addr_tied(),
@@ -992,35 +1015,36 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 ),
                 None => continue,
             };
-        if v_free || v_input || v_persist {
-            continue;
-        }
-        if !v_addrtied {
-            continue; // not a mapped local in scope
-        }
-        // C++ `linkSymbol`: if a mapped Symbol covers this Varnode, the high takes
-        // the Symbol's display name (and an in-symbol byte offset for an
-        // array/struct member access).  Otherwise fall to the angr `vN` default.
+        // C++ `Funcdata::linkSymbol`: query the local map for a SymbolEntry
+        // covering the representative's storage.  A hit binds the high to that
+        // Symbol's display name (+ the in-symbol byte offset for an array/struct
+        // member access) — this is what gives the body its `ptr`/`a`/`b`/`i`.
         let resolved = data
             .get_scope_local()
             .and_then(|lm| lm.name_for_varnode(&v_addr, v_size));
-        match resolved {
-            Some((sym_name, sym_off, sym_type)) => {
-                if let Some(h) = data.high_bank_mut().get_mut(high) {
-                    h.set_kuna_name(sym_name);
-                    h.set_symbol_offset(sym_off);
-                    if let Some(t) = sym_type {
-                        h.set_symbol_type(t);
-                    }
+        if let Some((sym_name, sym_off, sym_type)) = resolved {
+            if let Some(h) = data.high_bank_mut().get_mut(high) {
+                h.set_kuna_name(sym_name);
+                h.set_symbol_offset(sym_off);
+                if let Some(t) = sym_type {
+                    h.set_symbol_type(t);
                 }
             }
-            None => {
-                let name = format!("v{base}");
-                base += 1;
-                if let Some(h) = data.high_bank_mut().get_mut(high) {
-                    h.set_kuna_name(name);
-                }
-            }
+            continue;
+        }
+        // No covering Symbol.  `buildDefaultName`'s angr `vN` arm only fires for an
+        // in-scope local: address-tied (a `linkSymbol`-created local symbol), not
+        // an input (params already resolved above / route to `aN`), not a
+        // persistent global (routes to `dat_<addr>`, rendered by the unnamed-
+        // location tail).  Everything else falls through to the register / `dat_` /
+        // `SpaceNN` token (`pushUnnamedLocation`).
+        if v_input || v_persist || !v_addrtied {
+            continue;
+        }
+        let name = format!("v{base}");
+        base += 1;
+        if let Some(h) = data.high_bank_mut().get_mut(high) {
+            h.set_kuna_name(name);
         }
     }
 }
