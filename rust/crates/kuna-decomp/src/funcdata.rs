@@ -342,6 +342,52 @@ impl Funcdata {
         &mut self.funcp
     }
 
+    /// Apply a parsed-and-locked input/output prototype (from the console
+    /// `parse line extern <decl>`) to this function's `funcp` (C++
+    /// `Architecture::setPrototype` on a queried `Funcdata`).
+    ///
+    /// Reaches the type factory / address manager / default model through the
+    /// `glb` [`ArchHandle`] and runs [`FuncProto::seed_locked_from_pieces`].  A
+    /// no-op (returns `Ok`) if the architecture has no default model (no model
+    /// to lock to); the function then falls back to the unlocked recovery path.
+    ///
+    /// If storage assignment for the declared parameters reaches an un-ported
+    /// seam (e.g. `assignParameterStorage`'s hidden-return-pointer path for a
+    /// struct-returning function — a W4 surface), the partially-mutated `funcp`
+    /// is reset to the clean empty prototype and the prototype is left
+    /// **unapplied** (returning `Ok`).  The function then decompiles exactly as
+    /// it did before this seed wired in (the prior unrecovered behavior), so a
+    /// not-yet-supported declaration degrades gracefully rather than aborting the
+    /// whole decompile.
+    pub fn apply_locked_prototype(
+        &mut self,
+        pieces: &crate::fspec::PrototypePieces,
+    ) -> KunaResult<()> {
+        let defaultfp = match self.glb.default_fp() {
+            Some(m) => Rc::clone(m),
+            None => return Ok(()),
+        };
+        let void_type =
+            Rc::new(crate::dtype::Datatype::new(0, crate::dtype::type_metatype::TYPE_VOID));
+        // The type factory + manager live on the architecture, shared into `glb`.
+        // Clone the `Rc<ArchSeam>` (cheap refcount bump) so the factory/manager
+        // borrows come from the clone, leaving `self.funcp` freely mutable.
+        let glb = self.glb.clone();
+        let types = glb.types().ok_or_else(|| {
+            kuna_base::error::KunaError::lowlevel("apply_locked_prototype: no type factory on glb")
+        })?;
+        let manager = glb.manage();
+        if let Err(e) =
+            self.funcp.seed_locked_from_pieces(pieces, defaultfp, void_type, types, manager)
+        {
+            // Storage assignment reached an un-ported seam (W4); discard the
+            // half-applied prototype and decompile as the unrecovered function.
+            self.funcp = FuncProto::new();
+            let _ = e;
+        }
+        Ok(())
+    }
+
     /// The active return-value recovery state, or `None` if output recovery is
     /// not in progress (C++ `Funcdata::getActiveOutput`).
     ///
@@ -881,6 +927,11 @@ impl Funcdata {
     pub fn bblocks_get_block(&self, i: int4) -> BlockId {
         let root = self.bblocks_root();
         self.bblocks.block(root).get_block(i)
+    }
+    /// The starting code address of a basic block (C++ `FlowBlock::getStart`).
+    /// Used to place a forced-input extension op at the function entry block.
+    pub fn bblocks_block_start(&self, bl: BlockId) -> Address {
+        crate::block::block_get_start(&self.bblocks.arena, bl)
     }
     /// The root graph node of `sblocks`.
     pub(crate) fn sblocks_root(&self) -> BlockId {

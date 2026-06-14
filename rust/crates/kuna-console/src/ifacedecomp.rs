@@ -1037,7 +1037,7 @@ decomp_command!(
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         // Read the per-function values + take the program out so the engine work
         // borrows neither `status` nor `dcp` while the console output is written.
-        let (name, has_no_code, proc_started, entry, size, mapped_symbols, mut prog) = {
+        let (name, has_no_code, proc_started, entry, size, mapped_symbols, pending_proto, mut prog) = {
             let dcp = dcp_mut(status)?;
             let (name, has_no_code, proc_started, entry, size, mapped_symbols) = match &dcp.fd {
                 None => return Err(IfaceError::execution("No function selected")),
@@ -1052,9 +1052,15 @@ decomp_command!(
                     fd.mapped_symbol_specs(),
                 ),
             };
+            // The `parse line extern <decl>` prototype stashed for this function
+            // (C++ Architecture::setPrototype applies it to the queried Funcdata;
+            // here the IR is rebuilt on `decompile`, so it is re-applied below).
+            let pending_proto = dcp.pending_prototypes.get(&name).cloned();
             match dcp.conf.take() {
                 None => return Err(IfaceError::execution("No load image present")),
-                Some(prog) => (name, has_no_code, proc_started, entry, size, mapped_symbols, prog),
+                Some(prog) => {
+                    (name, has_no_code, proc_started, entry, size, mapped_symbols, pending_proto, prog)
+                }
             }
         };
         if has_no_code {
@@ -1074,12 +1080,13 @@ decomp_command!(
         // "Decompilation complete"/"Break at .." reporting.  The kuna decompile
         // drive (decompile_drive::decompile_func) installs the `decompile` root,
         // resets it, and runs the 252-pass perform loop to completion.
-        let result = kuna_decomp::decompile_drive::decompile_func_with_symbols(
+        let result = kuna_decomp::decompile_drive::decompile_func_full(
             prog.arch_mut(),
             &name,
             entry,
             size,
             &mapped_symbols,
+            pending_proto.as_ref(),
         );
         // Restore the program (and the fresh Funcdata on success) regardless.
         let dcp = dcp_mut(status)?;
