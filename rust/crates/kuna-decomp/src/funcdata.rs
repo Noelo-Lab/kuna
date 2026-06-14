@@ -71,12 +71,12 @@
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
-use kuna_base::types::{int2, int4, uint4, uintm, Wrap};
+use kuna_base::types::{int2, int4, uint4, uint8, uintm, Wrap};
 
 use crate::block::{block_flags, BasicData, BlockGraph, BlockKind, FlowBlock};
 use crate::fspec::{FuncProto, ParamActive};
 use crate::op::PcodeOpBank;
-use crate::seams::{ArchHandle, BlockId, OpId, Scope, VarnodeId};
+use crate::seams::{ArchHandle, BlockId, OpId, VarnodeId};
 use crate::varnode::{DefOpInfo, VarnodeBank};
 
 /// Boolean properties associated with a [`Funcdata`] (C++ anonymous `enum` in
@@ -162,9 +162,15 @@ pub struct Funcdata {
     /// (C++ `activeoutput`); `None` until [`Self::init_active_output`] turns on
     /// the proto-recovery output gathering (`ActionPrototypeTypes`).
     activeoutput: Option<ParamActive>,
-    /// Local variables (symbols in the function scope) (C++ `localmap`).
-    /// `None` when filled in by decode.  // SEAM(W4)
-    localmap: Option<Scope>,
+    /// Local variables (symbols in the function scope) (C++ `localmap`, a
+    /// `ScopeLocal *`).  `None` when filled in by decode.
+    ///
+    /// In C++ the `ScopeLocal` is a child of `glb->symboltab`; the merged Rust
+    /// tree carries the global `Database` on the console `Architecture` (not on
+    /// `glb`), so the `ScopeLocal` owns its own self-contained `Database` — see
+    /// [`crate::varmap::ScopeLocal`].  The IR-mutating restructure/sync over the
+    /// live varnode graph remains a documented seam (LOSS-109).
+    localmap: Option<crate::varmap::ScopeLocal>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// SEAM(W4): the real `JumpTable` (`jumptable.{hh,cc}`) is W4; the slots are
@@ -236,8 +242,34 @@ impl Funcdata {
         let sroot = sblocks.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
         sblocks.root = Some(sroot);
 
-        // if (nm.size()==0) localmap = 0; else { ScopeLocal ... }  -- SEAM(W4)
-        let localmap = if nm.is_empty() { None } else { Some(Scope) };
+        // C++ funcdata.cc:54-71: stackid = glb->getStackSpace(); if nm is empty,
+        // localmap = 0 (filled in by decode); else build a ScopeLocal on the
+        // stack space and attach it.  The C++ then calls
+        // `funcp.setScope(localmap,baseaddr-1)` (which sets the default proto
+        // model) and `localmap->resetLocalWindow()`; here the proto model is set
+        // by the proto-recovery wave (LOSS-136), so the local window is reset
+        // lazily via [`Funcdata::reset_local_window`] once a model exists.  The
+        // scope itself (the `addSymbol` target the console `map` commands reach)
+        // is built eagerly, closing the `getScopeLocal()->addSymbol` seam.
+        let localmap = if nm.is_empty() {
+            None
+        } else {
+            // C++ id: sym ? sym->getId() : (0x57AB12CD << 32 | addr.offset&0xffffffff).
+            // No FunctionSymbol is threaded here (the console builds the fd from
+            // a name), so use the address-derived id, exactly as C++ does when
+            // `sym == 0`.
+            let id: uint8 = (0x57AB_12CDu64 << 32) | (addr.get_offset() & 0xffff_ffff);
+            match glb.manage().get_stack_space() {
+                Some(stackid) => {
+                    let num_spaces = glb.manage().num_spaces();
+                    Some(crate::varmap::ScopeLocal::new(id, stackid.clone(), nm, num_spaces)?)
+                }
+                // No stack space in the manager (some hand-built fixtures): the
+                // C++ getStackSpace returns the spacebase space; if absent there
+                // is no local frame to map (localmap stays absent).
+                None => None,
+            }
+        };
 
         Ok(Funcdata {
             flags: 0,
@@ -452,9 +484,31 @@ impl Funcdata {
         self.heritage = heritage;
     }
 
-    /// Get the local function scope (C++ `getScopeLocal`).  // SEAM(W4)
-    pub fn get_scope_local(&self) -> Option<&Scope> {
+    /// Get the local function scope (C++ `getScopeLocal`).
+    pub fn get_scope_local(&self) -> Option<&crate::varmap::ScopeLocal> {
         self.localmap.as_ref()
+    }
+    /// Mutably borrow the local function scope (C++ non-const `getScopeLocal`).
+    /// The console `map` commands and `ActionRestructureVarnode` reach the
+    /// `ScopeLocal` through this to add/restructure symbols.
+    pub fn get_scope_local_mut(&mut self) -> Option<&mut crate::varmap::ScopeLocal> {
+        self.localmap.as_mut()
+    }
+    /// C++ `localmap->resetLocalWindow()` — reset the local-variable discovery
+    /// window from the function prototype's stack ranges.  Faithful to the C++
+    /// `Funcdata` constructor / `clear()` call cadence, but deferred until a
+    /// proto model exists (the merged tree sets the model in the proto-recovery
+    /// wave); a no-op when there is no local scope or no proto model yet.
+    pub fn reset_local_window(&mut self) {
+        if self.localmap.is_none() || !self.funcp.has_model() {
+            return;
+        }
+        let local = self.funcp.get_local_range().clone();
+        let param = self.funcp.get_param_range().clone();
+        let grows_neg = self.funcp.is_stack_grows_negative();
+        if let Some(sl) = self.localmap.as_mut() {
+            sl.reset_local_window(&local, &param, grows_neg);
+        }
     }
     /// Get the minimum laned-register size threshold (C++ `minLanedSize`).
     pub fn get_min_laned_size(&self) -> int4 {

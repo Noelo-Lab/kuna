@@ -600,3 +600,127 @@ fn recommendation_records_carry_their_fields() {
     let tr = TypeRecommend::new(addr, base(4, type_metatype::TYPE_INT));
     assert_eq!(tr.data_type.get_size(), 4);
 }
+
+// --- ScopeLocal -----------------------------------------------------------
+
+/// A `ScopeLocal` over the synthetic stack space, sized for that space's index.
+fn scope_local() -> ScopeLocal {
+    let spc = stack_space(); // index 4
+    ScopeLocal::new(0x1234, spc, "myfunc", 8).expect("build ScopeLocal")
+}
+
+#[test]
+fn scope_local_add_symbol_maps_a_named_local() {
+    // The `map address s0x... int4 i` console path: addSymbol(name,ct,addr,inv).
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let addr = Address::new(Rc::clone(&spc), 0xffff_ffff_ffff_ffe4);
+    let inv = Address::new_invalid();
+    let sym = sl
+        .add_symbol("i", base(4, type_metatype::TYPE_INT), &addr, &inv)
+        .expect("addSymbol");
+    // The symbol is mapped at the stack offset under the named local scope.
+    let scope = sl.scope_id();
+    let found = sl.database().find_overlap(scope, &addr, 4);
+    assert!(found.is_some(), "the mapped local must be findable by its stack address");
+    assert_eq!(sl.database().symbol(sym).get_name(), "i");
+}
+
+#[test]
+fn scope_local_reset_local_window_loads_proto_ranges() {
+    // resetLocalWindow copies the proto's local+param ranges into the scope's
+    // own rangetree (the layout window restructure consults via adjustFit).
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let mut localr = RangeList::new();
+    // A negative-offset local window (stack grows negative): [-0x100, -1].
+    localr.insert_range(Rc::clone(&spc), 0xffff_ffff_ffff_ff00, 0xffff_ffff_ffff_ffff);
+    let paramr = RangeList::new();
+    sl.reset_local_window(&localr, &paramr, true);
+    let inwin = Address::new(Rc::clone(&spc), 0xffff_ffff_ffff_ffe4);
+    assert!(
+        sl.database().scope(sl.scope_id()).get_range_tree().in_range(&inwin, 1),
+        "the local window must cover the negative stack offset",
+    );
+}
+
+#[test]
+fn scope_local_restructure_builds_a_disjoint_cover() {
+    // restructure() merges the MapState's hints into mapped Symbols, the engine
+    // path ActionRestructureVarnode drives.  Two non-overlapping int4 hints in
+    // the local window become two mapped locals.
+    let f = factory();
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+
+    // Local window [0, 0x40) so both hints (at 0x10, 0x20) fit (word-size 1, so
+    // the offsets are also the signed sstart).
+    let mut localr = RangeList::new();
+    localr.insert_range(Rc::clone(&spc), 0, 0x3f);
+    let paramr = RangeList::new();
+    sl.reset_local_window(&localr, &paramr, false);
+
+    let mut state = MapState::new(
+        Rc::clone(&spc),
+        &localr,
+        &paramr,
+        base(1, type_metatype::TYPE_UNKNOWN),
+    );
+    state.add_fixed_type_pub(0x10, base(4, type_metatype::TYPE_INT), 0, &f);
+    state.add_fixed_type_pub(0x20, base(4, type_metatype::TYPE_INT), 0, &f);
+
+    let overlaps = sl.restructure(&mut state, &f).expect("restructure");
+    assert!(!overlaps, "two disjoint hints reconcile without overlap problems");
+
+    // Each hint produced a mapped local symbol at its stack offset.
+    let scope = sl.scope_id();
+    let a0 = Address::new(Rc::clone(&spc), 0x10);
+    let a1 = Address::new(Rc::clone(&spc), 0x20);
+    assert!(sl.database().find_overlap(scope, &a0, 4).is_some(), "local at 0x10 created");
+    assert!(sl.database().find_overlap(scope, &a1, 4).is_some(), "local at 0x20 created");
+}
+
+#[test]
+fn scope_local_build_variable_name_stack_convention() {
+    // buildVariableName: an addr-tied non-persistent stack local in the local
+    // range gets the `<TypeBase>Stack[XY]_<hexoff>` name.  Under negative stack
+    // growth a negative raw offset is a *local* (start negates to positive, no
+    // marker); a positive raw offset is the caller-allocated 'X' region.
+    use crate::varnode::varnode_flags;
+    let sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let int4t = base(4, type_metatype::TYPE_INT);
+
+    // Negative offset -4: sign-extends to -4, negated to +4 -> plain "Stack_4".
+    let local = Address::new(Rc::clone(&spc), 0xffff_ffff_ffff_fffc);
+    let name = sl.build_variable_name_stack(
+        &local,
+        Some(&int4t),
+        varnode_flags::addrtied,
+        &|_dt| String::new(),
+        true,
+    );
+    assert_eq!(name.as_deref(), Some("Stack_4"));
+
+    // Positive offset +4 (caller-allocated): start negates to -4 (<=0) -> 'X',
+    // then re-negated to +4 -> "StackX_4".
+    let caller = Address::new(Rc::clone(&spc), 0x4);
+    let xname = sl.build_variable_name_stack(
+        &caller,
+        Some(&int4t),
+        varnode_flags::addrtied,
+        &|_dt| String::new(),
+        true,
+    );
+    assert_eq!(xname.as_deref(), Some("StackX_4"));
+
+    // A persistent (global) varnode is NOT named by the stack convention.
+    let none = sl.build_variable_name_stack(
+        &local,
+        Some(&int4t),
+        varnode_flags::addrtied | varnode_flags::persist,
+        &|_dt| String::new(),
+        true,
+    );
+    assert!(none.is_none(), "persistent varnodes fall through to the generic builder");
+}

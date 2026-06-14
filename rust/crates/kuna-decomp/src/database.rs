@@ -1563,6 +1563,17 @@ impl Database {
         }
         Ok(res_string)
     }
+
+    /// Public wrapper around `make_name_unique` (C++ `Scope::makeNameUnique` is
+    /// `protected`, but `ScopeLocal::buildVariableName` — a subclass method —
+    /// calls it; the Rust `ScopeLocal` owns a separate [`Database`], so it needs
+    /// the entry point exposed).
+    pub fn public_make_name_unique(&self, scope: ScopeId, nm: &str) -> String {
+        // C++ makeNameUnique throws only when it cannot uniquify; the stack
+        // naming convention always can (the offset is part of the base), so the
+        // fall-back to the raw name is never reached on well-formed input.
+        self.make_name_unique(scope, nm).unwrap_or_else(|_| nm.to_string())
+    }
 }
 
 // ===========================================================================
