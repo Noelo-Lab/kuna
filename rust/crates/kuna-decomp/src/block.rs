@@ -559,6 +559,16 @@ impl FlowBlock {
         }
     }
 
+    /// Get a `BlockCondition`'s gluing opcode (C++ `BlockCondition::getOpcode`,
+    /// `block.hh`).  `None` on a non-Condition node.
+    pub fn get_condition_opcode(&self) -> Option<OpCode> {
+        if let BlockKind::Condition { opc } = &self.kind {
+            Some(*opc)
+        } else {
+            None
+        }
+    }
+
     /// Get the FlowBlock type of \b this (C++ `getType`, dispatched per
     /// derived class).
     pub fn get_type(&self) -> BlockType {

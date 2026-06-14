@@ -425,13 +425,12 @@ impl Funcdata {
             o.ok_or_else(|| KunaError::lowlevel("Cannot splice basic blocks"))?
         };
 
-        // Remove any jump op at the end of -bl-.
+        // Remove any jump op at the end of -bl- (C++ funcdata_block.cc:941:
+        // `if (jumpop->isBranch()) opDestroy(jumpop);`).  `op_destroy` is now
+        // available (used by condexe.execute), so the W3-op seam is closed.
         if let Some(jumpop) = self.bb_op_tail(bl) {
             if self.obank().get(jumpop).expect("spliceBlockBasic").is_branch() {
-                // opDestroy(jumpop);  -- SEAM(W3-op): destroy needs funcdata_op.
-                return Err(KunaError::lowlevel(
-                    "spliceBlockBasic: trailing branch destruction needs funcdata_op (SEAM W3-op)",
-                ));
+                self.op_destroy(jumpop);
             }
         }
 
@@ -543,6 +542,10 @@ mod tests {
     fn term_op(fd: &mut Funcdata, bl: BlockId, opc: OpCode, flags: u32, pc: Address) -> OpId {
         let op = fd.obank_mut().create_at(1, pc);
         fd.obank_mut().change_opcode(op, TypeOp::new(opc, flags, format!("{opc:?}")));
+        // A block op is alive in the real pipeline (create_at starts it dead, the
+        // flow lift `mark_alive`s on integration); mark it so `op_destroy`'s
+        // `mark_dead` can move it off the alive list.
+        fd.obank_mut().mark_alive(op);
         fd.bb_insert_op(op, bl, None);
         op
     }
@@ -687,17 +690,29 @@ mod tests {
     }
 
     #[test]
-    fn splice_block_basic_seams_branch_destruction() {
-        // bl (with trailing BRANCH) -> outbl ; splice must Err (needs opDestroy).
+    fn splice_block_basic_destroys_trailing_branch() {
+        // bl (with trailing BRANCH) -> outbl : splice now DESTROYS the trailing
+        // branch op (C++ funcdata_block.cc:941 `if (jumpop->isBranch())
+        // opDestroy(jumpop)`) — the W3-op seam is closed.
         let mut fd = build_fd();
         let root = fd.bblocks_root_pub();
         let rs = ramspace(&fd);
         let bl = fd.bblocks_mut().new_block_basic(root);
         let outbl = fd.bblocks_mut().new_block_basic(root);
+        let succ = fd.bblocks_mut().new_block_basic(root);
         fd.bblocks_mut().add_edge(bl, outbl);
-        term_op(&mut fd, bl, OpCode::CPUI_BRANCH, pcodeop_flags::branch, addr(&rs, 0x1000));
-        let err = fd.splice_block_basic(bl).unwrap_err();
-        assert!(err.to_string().contains("funcdata_op"));
+        fd.bblocks_mut().add_edge(outbl, succ);
+        fd.set_basic_block_range(bl, &addr(&rs, 0x1000), &addr(&rs, 0x1004));
+        fd.set_basic_block_range(outbl, &addr(&rs, 0x1008), &addr(&rs, 0x100c));
+        let br = term_op(&mut fd, bl, OpCode::CPUI_BRANCH, pcodeop_flags::branch, addr(&rs, 0x1000));
+        let op_out = term_op(&mut fd, outbl, OpCode::CPUI_COPY, 0, addr(&rs, 0x1008));
+
+        fd.splice_block_basic(bl).unwrap();
+        // The trailing BRANCH was destroyed; bl now holds only outbl's COPY.
+        assert!(fd.obank().get(br).expect("br slot kept").is_dead());
+        assert_eq!(fd.bb_ops(bl), vec![op_out]);
+        // bl inherited outbl's out edge to succ.
+        assert_eq!(fd.bblocks_ref().block(bl).get_out(0), succ);
     }
 
     #[test]
