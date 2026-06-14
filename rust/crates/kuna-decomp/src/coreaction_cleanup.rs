@@ -203,22 +203,33 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
         return;
     }
     // Every Varnode of the output size at the output address is the return-value
-    // storage.  Approximate `inScope`: a register holding a *single transient
-    // value* that is the function's genuine, declared return value is NOT a
-    // mapped local — C++ `inScope`'s range tree excludes it, so it stays un-tied
-    // and the printer inlines `return <expr>;`.  Leave the storage un-tied iff:
-    //   * the function has a locked (declared) non-void output — i.e. this
-    //     storage really is the recovered return value, not a leftover register
-    //     in a void function (e.g. `global_cross`'s dead RAX); and
-    //   * exactly one written Varnode lives at the storage address; and
-    //   * it is defined by a lone CPUI_COPY whose source is itself a pure
-    //     transient (not addr-tied, not a stack/spacebase local — a value with
-    //     no address-stable home, which `baseExplicit` marks IMPLIED).
-    // A storage that is reused as a local (multiple writes — boolless ACC), that
-    // copies an addr-tied/stack local (condconst's stack `v1`), or that belongs
-    // to a void function (no declared output) is tied, exactly as `inScope`
-    // would.  This is an IR-shape + recovered-output test, not a name/address
-    // special case.
+    // storage.  Whether C++ ties this register comes down to one structural fact
+    // (`database.cc:1155`): the register is `addrtied` iff it maps to a recovered
+    // Symbol whose SymbolEntry `uselimit.empty()` — i.e. it was restructured into
+    // a *whole-function* local.  `syncVarnodesWithSymbols` (funcdata_varnode.cc:
+    // 997) only paints that flag onto Varnodes that are `inScope` of the local
+    // range tree — which never contains a register written by the single
+    // return-value COPY (that COPY is the eax/acc round-trip the printer inlines).
+    //
+    // The merged tree has no register-local recovery yet, so we replicate the
+    // structural distinction directly off the IR shape:
+    //   * a return register written by EXACTLY ONE p-code op that is a CPUI_COPY
+    //     (the return-value copy `reg = COPY(value)`) is NOT a whole-function
+    //     local — C++ leaves it un-tied, `baseExplicit` then marks it IMPLIED and
+    //     the printer emits `return <value>;` (collapsing the eax/acc round-trip).
+    //     The COPY source is irrelevant: a register copying a stack local
+    //     (condconst_conn `v1 = COPY(stack)`) collapses the same way a register
+    //     copying a pure transient does — neither puts the register address into
+    //     the local range tree.
+    //   * a register reused as a genuine local (MULTIPLE writes / a merged
+    //     MULTIEQUAL — boolless `ACC = #1` / `ACC = MULTIEQUAL(...)`) spans the
+    //     whole function, so C++ ties it and it stays explicit (`v1 = ...;
+    //     return v1;`).
+    //   * the `output_locked` gate excludes a leftover register in a void
+    //     function (e.g. `global_cross`'s dead RAX): no declared output means this
+    //     storage is not the recovered return value, so it stays tied.
+    // This is an IR-shape + recovered-output test, not a name/address special
+    // case.
     let output_locked = data.get_func_proto().is_output_locked();
     let targets: Vec<crate::seams::VarnodeId> =
         data.vbank().iter_loc_size_addr(size, &addr).collect();
@@ -230,33 +241,24 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
         })
         .collect();
     if output_locked && written.len() == 1 {
-        let stack_idx = data.get_arch().manage().get_stack_space().map(|s| s.get_index());
         let vn = written[0];
-        let is_pure_transient = {
-            let v = data.vbank().get(vn);
-            let def = v.and_then(|v| v.get_def());
+        // Un-tie iff the single write is a CPUI_COPY (the return-value copy).
+        // A merged-register local (boolless ACC) is written by a MULTIEQUAL or
+        // has >1 write, so it never reaches here.
+        let single_copy_return = {
+            let def = data.vbank().get(vn).and_then(|v| v.get_def());
             match def {
-                Some(def) => {
-                    let dop = data.obank().get(def);
-                    let is_copy = dop.map(|o| o.code() == OpCode::CPUI_COPY).unwrap_or(false);
-                    let src = dop.and_then(|o| o.get_in(0));
-                    match (is_copy, src.and_then(|s| data.vbank().get(s))) {
-                        (true, Some(sv)) => {
-                            let src_stack = stack_idx
-                                .zip(sv.get_addr().get_space().map(|s| s.get_index()))
-                                .map(|(a, b)| a == b)
-                                .unwrap_or(false);
-                            // Pure transient: source has no address-stable home.
-                            !sv.is_addr_tied() && !sv.is_spacebase() && !src_stack
-                        }
-                        _ => false,
-                    }
-                }
+                Some(def) => data
+                    .obank()
+                    .get(def)
+                    .map(|o| o.code() == OpCode::CPUI_COPY)
+                    .unwrap_or(false),
                 None => false, // input-only (e.g. a passthrough reg) -> keep tied
             }
         };
-        if is_pure_transient {
-            // Not in scope: leave un-tied so the value can be IMPLIED and inlined.
+        if single_copy_return {
+            // Not a whole-function local: leave un-tied so the value can be
+            // IMPLIED and the printer collapses the return-register round-trip.
             return;
         }
     }

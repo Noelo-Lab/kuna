@@ -165,28 +165,24 @@ impl Action for ActionPrototypeTypes {
         // funcdata_spacebase.rs / varmap.cc:1259), so the first-pass open-array hint
         // formed before `RuleStoreVarnode` folds the STORE into a sized stack COPY no
         // longer survives to compete with the scalar `Fixed int4` hint the converted
-        // Varnode supplies on the next pass.  With the env gate on, a scalar stack
-        // local now types as `int4` (NOT a spurious `xunknown1 [N]` array — verified
-        // on condconst_conn) and is named `vN` (`resolve_default_name`,
-        // coreaction.cc:3087).
+        // Varnode supplies on the next pass.  A scalar stack local now types as
+        // `int4` (NOT a spurious `xunknown1 [N]` array — verified on condconst_conn)
+        // and is named `vN` (`resolve_default_name`, coreaction.cc:3087).
         //
-        // The window-reset is STILL env-gated, on a SEPARATE downstream seam: the
-        // addr-tied return-register COPY collapse.  After typing, condconst_conn is
-        // `v2(stack) = x; ...; v1(eax) = COPY(v2); return v1;`; the C++ oracle emits
-        // the single `v1 = x; ... return v1;` because the eax return-register COPY is
-        // eliminated.  In kuna the eax high is addr-tied + type-locked and the stack
-        // high is addr-tied at a DIFFERENT address, so `Merge::mergeTestRequired`
-        // (merge.cc:124, faithfully ported) correctly refuses to merge them via
-        // `mergeOpcode(CPUI_COPY)`; the C++ removes that COPY through the
-        // return-value / `mergeAddrTied` `groupWith` path, a W7 merge surface not yet
-        // at this boundary.  Until it lands, enabling the reset by default would
-        // REGRESS condconst.xml "Conditional Constant #10" (`v1 = x;`) — the typing
-        // is correct, but the scalar stack round-trip stays visible as `v1 = v2`.
-        // Recorded as a loss; flip to an unconditional call once that merge seam
-        // closes.
-        if std::env::var_os("KUNA_RESET_LOCAL_WINDOW").is_some() {
-            data.reset_local_window();
-        }
+        // The downstream seam that USED to hold this env-gated — the addr-tied
+        // return-register COPY collapse — is now CLOSED too.  After typing,
+        // condconst_conn is `v2(stack) = x; ...; v1(eax) = COPY(v2); return v1;`;
+        // the C++ oracle emits the single `v1 = x; ... return v1;` because the eax
+        // return-register COPY is IMPLIED, not merged: the eax register is written
+        // by a single return-value COPY, so it is never a whole-function local and
+        // C++ (`database.cc:1155` / `syncVarnodesWithSymbols`) leaves it un-tied.
+        // `mark_output_storage_addr_tied` (coreaction_cleanup.rs) replicates that
+        // structural rule — a single-COPY return register stays un-tied,
+        // `baseExplicit` marks it IMPLIED, and the printer collapses the round-trip
+        // to `return v2`.  With the collapse in place the window-reset is a strict
+        // win, so it now runs UNCONDITIONALLY (matching C++ `funcp.setScope`'s
+        // `resetLocalWindow` at funcdata.cc:70).
+        data.reset_local_window();
         // funcp.hasThisPointer() -> prepareThisPointer(): SEAM(W4) — the default
         // models in the recovery path have no `this` pointer.
 
