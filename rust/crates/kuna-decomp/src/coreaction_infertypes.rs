@@ -1549,4 +1549,144 @@ mod propagate_type_tests {
             "interior-of-scalar-field-of-struct yields a struct-relative pointer, not a bare pointer"
         );
     }
+
+    // ====================================================================
+    // Round-2 verifier adversarial tests (w10-type-propagation, F1 fix).
+    // These probe the *opposite* failure mode of the F1 fix: the
+    // `if par.is_some()` guard must not OVER-retain — a later STRUCT/ARRAY
+    // container must replace an earlier one (C++ writes the ref every time
+    // it hits the STRUCT/ARRAY arm, so the LAST container wins), and a chain
+    // with NO container at all must leave parent None (no spurious PTRREL).
+    // ====================================================================
+
+    /// F1-fix boundary: STRUCT whose field is an inline ARRAY of int4.  In C++
+    /// `downChain`, the struct arm sets `par=struct,parOff=off`, `getSubType`
+    /// returns the ARRAY field, and because `!isArray` it goes through
+    /// `getTypePointerStripArray` — which STRIPS the array to a pointer-to-int4
+    /// element (type.cc:1256, 4323-4332).  So the array never surfaces as a
+    /// standalone `par`; iter2 is a scalar int4 tail returning `par=None`.  The
+    /// retained container is therefore the STRUCT (parOff = the byte offset),
+    /// and the F1 fix must keep it across the scalar tail — NOT clear it.  This
+    /// pins that the strip-array path does not accidentally bury the struct
+    /// container, and that the fix retains it.
+    #[test]
+    fn w10_r2_downchain_struct_with_array_field_retains_struct_across_strip() {
+        let f = factory();
+        let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+        let arr = f.get_type_array(3, Rc::clone(&int4t)).unwrap(); // int4[3], size 12
+        let st = f.get_type_struct("sa").unwrap();
+        let fields = vec![crate::dtype::TypeField::new(0, 0, "arr", Rc::clone(&arr))];
+        let st = f.assign_raw_fields_struct(&st, fields, Vec::new()).unwrap();
+        let ptr = f.get_type_pointer(8, Rc::clone(&st), 1).unwrap();
+
+        // Replay the FIXED loop body for byte offset 4 (== &s.arr[1]).
+        let mut type_offset: int8 = 4;
+        let mut pointer: Option<Rc<Datatype>> = Some(Rc::clone(&ptr));
+        let mut parent: Option<Rc<Datatype>> = None;
+        let mut parent_off: int8 = 0;
+        let mut saw_struct_parent = false;
+        let mut saw_scalar_tail_none = false;
+        let mut iters = 0;
+        while let Some(cur) = pointer.clone() {
+            let (next, new_off, par, par_off) = f.down_chain(&cur, type_offset, true).unwrap();
+            type_offset = new_off;
+            match &par {
+                Some(p) if Rc::ptr_eq(&p.get_ptr_to().unwrap(), &st) => saw_struct_parent = true,
+                None if iters >= 1 => saw_scalar_tail_none = true,
+                _ => {}
+            }
+            // The element reached after the struct must be the STRIPPED int4
+            // element, never a pointer-to-array (proves getTypePointerStripArray ran).
+            if iters == 0 {
+                assert_eq!(
+                    next.as_ref().unwrap().get_ptr_to().unwrap().get_metatype(),
+                    type_metatype::TYPE_INT,
+                    "struct's array field is stripped to a pointer-to-element on descent"
+                );
+            }
+            if par.is_some() {
+                parent = par;
+                parent_off = par_off;
+            }
+            pointer = next;
+            iters += 1;
+            if pointer.is_none() || type_offset == 0 {
+                break;
+            }
+        }
+        assert!(iters >= 2, "struct descent then scalar-element tail");
+        assert!(saw_struct_parent, "iter1 produced the struct container");
+        assert!(saw_scalar_tail_none, "scalar tail iteration returned par=None");
+        let parent = parent.expect("struct container retained across the scalar tail");
+        // The retained container is the STRUCT (the array was stripped, so it
+        // never became a `par`); the fix kept it across the par=None tail.
+        assert!(
+            Rc::ptr_eq(&parent.get_ptr_to().unwrap(), &st),
+            "retained parent is the struct, kept across the scalar tail (F1 fix)"
+        );
+        assert_eq!(parent_off, 4, "parentOff is the byte offset into the struct");
+    }
+
+    /// F1-fix negative: a pointer into a pure SCALAR (no struct/array anywhere
+    /// in the descent) must leave `parent == None` after the loop, so the
+    /// post-loop `if let Some(par)` block is SKIPPED and no spurious TYPE_PTRREL
+    /// is produced.  This guards against the fix accidentally seeding a parent.
+    #[test]
+    fn w10_r2_downchain_pure_scalar_leaves_no_parent() {
+        let f = factory();
+        // 8-byte scalar pointed at; offset 4 wraps within the scalar (allow_wrap).
+        let int8t = f.get_base(8, type_metatype::TYPE_INT).unwrap();
+        let ptr = f.get_type_pointer(8, int8t, 1).unwrap();
+
+        let mut type_offset: int8 = 4;
+        let mut pointer: Option<Rc<Datatype>> = Some(Rc::clone(&ptr));
+        let mut parent: Option<Rc<Datatype>> = None;
+        let mut iters = 0;
+        while let Some(cur) = pointer.clone() {
+            let (next, new_off, par, par_off) = f.down_chain(&cur, type_offset, true).unwrap();
+            type_offset = new_off;
+            if par.is_some() {
+                parent = par;
+                let _ = par_off;
+            }
+            pointer = next;
+            iters += 1;
+            if pointer.is_none() || type_offset == 0 || iters > 8 {
+                break;
+            }
+        }
+        assert!(
+            parent.is_none(),
+            "no struct/array anywhere -> parent stays None -> post-loop rel-wrap is skipped"
+        );
+    }
+
+    /// `get_component_for_ptr` (the PARTIALSTRUCT arm of propagate_to_pointer):
+    /// the array-element fast path is gated on `offset % eltype.alignSize == 0`.
+    /// At a MISALIGNED offset (2, into the middle of an int4 element) the C++
+    /// returns `stripped`, NOT the element type.  This pins the gate so a
+    /// shortcut that always returns the element type would fail.
+    #[test]
+    fn w10_r2_component_for_ptr_misaligned_offset_returns_stripped_not_element() {
+        let f = factory();
+        let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+        let arr = f.get_type_array(3, Rc::clone(&int4t)).unwrap();
+        // partial struct over the array, offset 2 (misaligned within int4 element).
+        let partial_mis = f.get_type_partial_struct(Rc::clone(&arr), 2, 4).unwrap();
+        let comp_mis = partial_mis
+            .get_component_for_ptr()
+            .expect("partial-struct yields a component");
+        assert_ne!(
+            comp_mis.get_metatype(),
+            type_metatype::TYPE_INT,
+            "misaligned offset must NOT take the element fast-path; returns stripped"
+        );
+        // Aligned offset 0 DOES take the element fast-path -> the int4 element.
+        let partial_aln = f.get_type_partial_struct(Rc::clone(&arr), 0, 4).unwrap();
+        let comp_aln = partial_aln.get_component_for_ptr().expect("component");
+        assert!(
+            Rc::ptr_eq(&comp_aln, &int4t),
+            "aligned element-boundary offset returns the array element type"
+        );
+    }
 }
