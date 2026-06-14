@@ -1182,6 +1182,29 @@ impl Datatype {
         }
     }
 
+    /// For a `TypePartialStruct`, return the component data-type that a pointer
+    /// to this partial points to (C++ `TypePartialStruct::getComponentForPtr`,
+    /// type.cc:2784).  If the container is an array and the offset lands on an
+    /// element boundary, the element type; otherwise the stripped form.  `None`
+    /// for non-partial-struct kinds.
+    pub fn get_component_for_ptr(&self) -> Option<Rc<Datatype>> {
+        match &self.kind {
+            DatatypeKind::PartialStruct { container, stripped, offset } => {
+                if container.get_metatype() == type_metatype::TYPE_ARRAY {
+                    if let Some(eltype) = container.get_array_base() {
+                        if eltype.get_metatype() != type_metatype::TYPE_UNKNOWN
+                            && (*offset % eltype.get_align_size()) == 0
+                        {
+                            return Some(eltype);
+                        }
+                    }
+                }
+                Some(Rc::clone(stripped))
+            }
+            _ => None,
+        }
+    }
+
     // -- Pointer accessors (TypePointer, type.hh:471-473) -------------------
 
     /// Get the pointed-to Datatype (C++ `TypePointer::getPtrTo`).  Returns
@@ -3469,6 +3492,13 @@ pub trait TypeFactory {
         off: int4,
         sz: int4,
     ) -> KunaResult<Rc<Datatype>>;
+    /// Create a partial enumeration (C++ `getTypePartialEnum`).
+    fn get_type_partial_enum(
+        &self,
+        contain: Rc<Datatype>,
+        off: int4,
+        sz: int4,
+    ) -> KunaResult<Rc<Datatype>>;
     /// Create an (empty) enumeration (C++ `getTypeEnum`).
     fn get_type_enum(&self, n: &str) -> KunaResult<Rc<Datatype>>;
     /// Create a "spacebase" type (C++ `getTypeSpacebase`).
@@ -5146,6 +5176,14 @@ impl TypeFactory for TypeFactoryImpl {
         sz: int4,
     ) -> KunaResult<Rc<Datatype>> {
         self.get_type_partial_union_impl(contain, off, sz)
+    }
+    fn get_type_partial_enum(
+        &self,
+        contain: Rc<Datatype>,
+        off: int4,
+        sz: int4,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.get_type_partial_enum_impl(contain, off, sz)
     }
     fn get_type_enum(&self, n: &str) -> KunaResult<Rc<Datatype>> {
         self.get_type_enum_impl(n)

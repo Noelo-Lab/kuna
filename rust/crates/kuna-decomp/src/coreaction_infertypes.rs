@@ -25,21 +25,29 @@
 //!
 //! ## Faithfulness / seams
 //!
-//! The full metatype lattice (COPY, MULTIEQUAL, INDIRECT, every comparison,
-//! ZEXT/SEXT, the non-pointer arithmetic, and the spacebase pointer construction)
-//! is transcribed.  The composite/pointer *resize* sub-cases of PIECE/SUBPIECE
-//! (`resizePointer`/`findTruncation`) and the structure `downChain` of the ADD
-//! pointer walk are deep TypeFactory surfaces; where the supporting machinery is
-//! not yet exposed those arms conservatively decline to propagate (return `None`),
-//! which is faithful — the C++ also returns null along those edges when the
-//! transform doesn't apply.
+//! The metatype lattice control flow (COPY, MULTIEQUAL, INDIRECT, every
+//! comparison, INT_ADD, and the spacebase pointer construction) plus the 11
+//! previously-declining `TypeOp::propagateType` overrides are transcribed:
+//! LOAD/STORE (`propagateToPointer`/`propagateFromPointer` — the pointer's `*T`
+//! <-> the loaded/stored `T`), PTRADD/PTRSUB (`propagateAddIn2Out` — array/struct
+//! member pointer arithmetic via the looping `downChain`), INT_XOR/INT_AND
+//! (enum + float sign-manipulation), INT_OR (enum only), PIECE/SUBPIECE
+//! (the `resizePointer`/`getSubType`/`findTruncation` composite/truncation arms),
+//! SEGMENT (`resizePointer`) and NEW (cpool result).  The remaining seams are the
+//! W8 union mid-flow resolution (`needsResolution`/`resolveInFlow`), the
+//! type-locked SymbolEntry `getExactPiece` seed, and the
+//! `propagateSpacebaseRef`/`applyTypeRecommendations` aliasing passes; those arms
+//! conservatively decline (return `None`/no-op), which is faithful — the C++ also
+//! returns null along those edges when the supporting surface doesn't apply.
 
 use std::rc::Rc;
 
-use kuna_base::types::int4;
+use kuna_base::address::calc_mask;
+use kuna_base::space::AddrSpace;
+use kuna_base::types::{int4, int8, uintb};
 use kuna_num::opcodes::OpCode;
 
-use crate::dtype::{type_metatype, Datatype};
+use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
 use crate::seams::{OpId, VarnodeId};
 use crate::typeop::type_op_info;
@@ -293,6 +301,119 @@ fn spacebase_pointer(data: &Funcdata, alt_size: int4) -> Option<Rc<Datatype>> {
     tlst.get_type_pointer(alt_size, base, spc.get_word_size()).ok()
 }
 
+/// C++ `getSpaceFromConst(op->getIn(0))`: the LOAD/STORE/SEGMENT space operand is
+/// a constant whose offset is the address-space manager index (LOSS-015 model).
+fn space_from_const(data: &Funcdata, op: OpId, slot: int4) -> Option<Rc<AddrSpace>> {
+    let cvn = data.obank().get(op)?.get_in(slot)?;
+    let idx = data.vbank().get(cvn)?.get_offset();
+    let manage = data.get_arch().manage();
+    if idx >= manage.num_spaces() as u64 {
+        return None;
+    }
+    manage.get_space(idx as i32).cloned()
+}
+
+/// C++ `TypeOp::propagateToPointer` (typeop.cc:187): propagate a dereferenced
+/// data-type up to its pointer data-type through a LOAD/STORE (depth at most 1).
+fn propagate_to_pointer(
+    tlst: &dyn TypeFactory,
+    dt: Rc<Datatype>,
+    sz: int4,
+    wordsz: int4,
+) -> Option<Rc<Datatype>> {
+    let meta = dt.get_metatype();
+    let dt = if meta == type_metatype::TYPE_PTR {
+        // Make sure that at least we return a pointer to something the size of -pt-
+        tlst.get_base(dt.get_size(), type_metatype::TYPE_UNKNOWN).ok()?
+    } else if meta == type_metatype::TYPE_PARTIALSTRUCT {
+        dt.get_component_for_ptr()?
+    } else {
+        dt
+    };
+    tlst.get_type_pointer(sz, dt, wordsz as u32).ok()
+}
+
+/// C++ `TypeOp::propagateFromPointer` (typeop.cc:207): propagate a pointer
+/// data-type down to its element data-type through a LOAD/STORE.
+fn propagate_from_pointer(
+    tlst: &dyn TypeFactory,
+    dt: Rc<Datatype>,
+    sz: int4,
+) -> Option<Rc<Datatype>> {
+    if dt.get_metatype() != type_metatype::TYPE_PTR {
+        return None;
+    }
+    let ptrto = dt.get_ptr_to()?;
+    if ptrto.is_variable_length() {
+        return None;
+    }
+    if ptrto.get_size() == sz {
+        return Some(ptrto);
+    }
+    // Size mismatch: only propagate (partial) enumerations.
+    if dt.is_pointer_rel() {
+        let parent = dt.get_rel_parent()?;
+        let byte_off = dt.get_byte_offset()?;
+        let res = tlst.get_exact_piece(parent, byte_off, sz).ok()?;
+        if let Some(res) = res {
+            if res.is_enum_type() {
+                return Some(res);
+            }
+        }
+    } else if ptrto.is_enum_type() && !ptrto.has_stripped() {
+        return tlst.get_type_partial_enum(ptrto, 0, sz).ok();
+    }
+    None
+}
+
+/// C++ `TypeOp::floatSignManipulation` (typeop.cc:154): return CPUI_FLOAT_NEG if
+/// the op flips the sign bit, CPUI_FLOAT_ABS if it zeroes it out, else CPUI_MAX.
+fn float_sign_manipulation(data: &Funcdata, op: OpId) -> OpCode {
+    let o = match data.obank().get(op) {
+        Some(o) => o,
+        None => return OpCode::CPUI_MAX,
+    };
+    let opc = o.code();
+    let cvn = match o.get_in(1) {
+        Some(v) => v,
+        None => return OpCode::CPUI_MAX,
+    };
+    let (is_const, off, size) = match data.vbank().get(cvn) {
+        Some(v) => (v.is_constant(), v.get_offset(), v.get_size()),
+        None => return OpCode::CPUI_MAX,
+    };
+    if !is_const {
+        return OpCode::CPUI_MAX;
+    }
+    if opc == OpCode::CPUI_INT_AND {
+        let val = calc_mask(size) >> 1;
+        if val == off {
+            return OpCode::CPUI_FLOAT_ABS;
+        }
+    } else if opc == OpCode::CPUI_INT_XOR {
+        let mask = calc_mask(size);
+        let val = mask ^ (mask >> 1);
+        if val == off {
+            return OpCode::CPUI_FLOAT_NEG;
+        }
+    }
+    OpCode::CPUI_MAX
+}
+
+/// The `nearPointerSize`/`farPointerSize` the PIECE/SUBPIECE constructors compute
+/// (`farPointerSize = getSizeOfAltPointer(); if (farPointerSize != 0) nearPointerSize
+/// = getSizeOfPointer()`).
+fn piece_pointer_sizes(data: &Funcdata) -> (int4, int4) {
+    let arch = Rc::clone(data.get_arch());
+    let tlst = match arch.types() {
+        Some(t) => t,
+        None => return (0, 0),
+    };
+    let far = tlst.get_size_of_alt_pointer();
+    let near = if far != 0 { tlst.get_size_of_pointer() } else { 0 };
+    (near, far)
+}
+
 /// C++ per-op-code `TypeOp::propagateType` dispatch (typeop.cc).  Returns the
 /// outgoing data-type, or `None` (no propagation).
 fn propagate_type(
@@ -349,8 +470,287 @@ fn propagate_type(
         }
         // TypeOpIntAdd: pointer add / constant-folded int (typeop.cc:1183).
         OpCode::CPUI_INT_ADD => propagate_int_add(data, alttype, op, outvn, inslot, outslot),
+        // TypeOpLoad / TypeOpStore: propagate the pointed-to type through the
+        // pointer's `*T` <-> the loaded/stored `T` (typeop.cc:488, 559).
+        OpCode::CPUI_LOAD => {
+            propagate_load_store(data, alttype, op, invn_is_spacebase, outvn, inslot, outslot, true)
+        }
+        OpCode::CPUI_STORE => {
+            propagate_load_store(data, alttype, op, invn_is_spacebase, outvn, inslot, outslot, false)
+        }
+        // TypeOpIntXor / TypeOpIntAnd: propagate enums + float sign-manipulation
+        // (typeop.cc:1424, 1457).
+        OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_AND => {
+            if !alttype.is_enum_type() {
+                if alttype.get_metatype() != type_metatype::TYPE_FLOAT {
+                    return None;
+                }
+                if float_sign_manipulation(data, op) == OpCode::CPUI_MAX {
+                    return None;
+                }
+            }
+            if invn_is_spacebase {
+                spacebase_pointer(data, alttype.get_size())
+            } else {
+                Some(alttype)
+            }
+        }
+        // TypeOpIntOr: only propagate enums (typeop.cc:1490).
+        OpCode::CPUI_INT_OR => {
+            if !alttype.is_enum_type() {
+                return None;
+            }
+            if invn_is_spacebase {
+                spacebase_pointer(data, alttype.get_size())
+            } else {
+                Some(alttype)
+            }
+        }
+        // TypeOpPiece / TypeOpSubpiece: composite/truncation arms (typeop.cc:2076,
+        // 2163).
+        OpCode::CPUI_PIECE => {
+            propagate_piece(data, alttype, op, invn, outvn, inslot, outslot)
+        }
+        OpCode::CPUI_SUBPIECE => {
+            propagate_subpiece(data, alttype, op, invn, outvn, inslot, outslot)
+        }
+        // TypeOpPtradd / TypeOpPtrsub: array/struct member pointer arithmetic
+        // (typeop.cc:2270, 2368).
+        OpCode::CPUI_PTRADD => {
+            if inslot == 2 || outslot == 2 {
+                return None; // Don't propagate along this edge
+            }
+            if inslot != -1 && outslot != -1 {
+                return None; // Must propagate input <-> output
+            }
+            if alttype.get_metatype() != type_metatype::TYPE_PTR {
+                return None;
+            }
+            if inslot == -1 {
+                None // Don't propagate pointer types this direction
+            } else {
+                propagate_add_in2_out(data, alttype, op, inslot)
+            }
+        }
+        OpCode::CPUI_PTRSUB => {
+            if inslot != -1 && outslot != -1 {
+                return None; // Must propagate input <-> output
+            }
+            if alttype.get_metatype() != type_metatype::TYPE_PTR {
+                return None;
+            }
+            if inslot == -1 {
+                None // Don't propagate pointer types this direction
+            } else {
+                propagate_add_in2_out(data, alttype, op, inslot)
+            }
+        }
+        // TypeOpSegment: propagate slot2 <-> output, resized (typeop.cc:2433).
+        OpCode::CPUI_SEGMENTOP => {
+            if inslot == 0 || inslot == 1 || outslot == 0 || outslot == 1 {
+                return None;
+            }
+            if invn_is_spacebase {
+                return None;
+            }
+            if alttype.get_metatype() != type_metatype::TYPE_PTR {
+                return None;
+            }
+            let out_size = data.vbank().get(outvn).map(|v| v.get_size())?;
+            let arch = Rc::clone(data.get_arch());
+            arch.types()?.resize_pointer(alttype, out_size).ok()
+        }
+        // TypeOpNew: propagate the cpool result as result of the new operator
+        // (typeop.cc:2503).
+        OpCode::CPUI_NEW => {
+            if inslot != 0 || outslot != -1 {
+                return None;
+            }
+            let vn0 = data.obank().get(op)?.get_in(0)?;
+            let v0 = data.vbank().get(vn0)?;
+            if !v0.is_written() {
+                return None;
+            }
+            let def = v0.get_def()?;
+            let def_code = data.obank().get(def)?.code();
+            if def_code != OpCode::CPUI_CPOOLREF {
+                return None;
+            }
+            Some(alttype)
+        }
         _ => None, // default TypeOp::propagateType: don't propagate
     }
+}
+
+/// C++ `TypeOpLoad::propagateType` / `TypeOpStore::propagateType` (typeop.cc:488,
+/// 559).  `is_load` selects the LOAD-specific slot conventions.
+#[allow(clippy::too_many_arguments)]
+fn propagate_load_store(
+    data: &Funcdata,
+    alttype: Rc<Datatype>,
+    op: OpId,
+    invn_is_spacebase: bool,
+    outvn: VarnodeId,
+    inslot: int4,
+    outslot: int4,
+    is_load: bool,
+) -> Option<Rc<Datatype>> {
+    if inslot == 0 || outslot == 0 {
+        return None; // Don't propagate along this edge
+    }
+    if invn_is_spacebase {
+        return None;
+    }
+    let out_size = data.vbank().get(outvn).map(|v| v.get_size())?;
+    let arch = Rc::clone(data.get_arch());
+    let tlst = arch.types()?;
+    // LOAD: propagating output to input (value -> ptr) is inslot == -1.
+    // STORE: propagating value (slot 2) to ptr is inslot == 2.
+    let to_pointer = if is_load { inslot == -1 } else { inslot == 2 };
+    if to_pointer {
+        let spc = space_from_const(data, op, 0)?;
+        propagate_to_pointer(tlst, alttype, out_size, spc.get_word_size() as int4)
+    } else {
+        propagate_from_pointer(tlst, alttype, out_size)
+    }
+}
+
+/// C++ `TypeOpPiece::propagateType` (typeop.cc:2076).
+fn propagate_piece(
+    data: &Funcdata,
+    alttype: Rc<Datatype>,
+    op: OpId,
+    invn: VarnodeId,
+    outvn: VarnodeId,
+    inslot: int4,
+    outslot: int4,
+) -> Option<Rc<Datatype>> {
+    let (near_ptr, far_ptr) = piece_pointer_sizes(data);
+    let in_size = data.vbank().get(invn).map(|v| v.get_size())?;
+    let out_size = data.vbank().get(outvn).map(|v| v.get_size())?;
+    if near_ptr != 0 && alttype.get_metatype() == type_metatype::TYPE_PTR {
+        let arch = Rc::clone(data.get_arch());
+        if inslot == 1 && outslot == -1 {
+            if in_size == near_ptr && out_size == far_ptr {
+                return arch.types()?.resize_pointer(alttype, far_ptr).ok();
+            }
+        } else if inslot == -1
+            && outslot == 1
+            && in_size == far_ptr
+            && out_size == near_ptr
+        {
+            return arch.types()?.resize_pointer(alttype, near_ptr).ok();
+        }
+        return None;
+    }
+    if inslot != -1 {
+        return None;
+    }
+    let mut byte_off = compute_byte_offset_for_composite_piece(data, op, outslot)? as int8;
+    let mut cur = Some(alttype);
+    while let Some(ct) = cur.clone() {
+        if byte_off == 0 && ct.get_size() == out_size {
+            break;
+        }
+        let (sub, newoff) = ct.get_sub_type(byte_off).ok()?;
+        byte_off = newoff;
+        cur = sub;
+    }
+    cur
+}
+
+/// C++ `TypeOpPiece::computeByteOffsetForComposite` (typeop.cc:2106).
+fn compute_byte_offset_for_composite_piece(
+    data: &Funcdata,
+    op: OpId,
+    slot: int4,
+) -> Option<int4> {
+    let o = data.obank().get(op)?;
+    let in0 = o.get_in(0)?;
+    let in1 = o.get_in(1)?;
+    let big_endian = data.vbank().get(in0).map(|v| v.get_space().is_big_endian()).unwrap_or(false);
+    let in0_size = data.vbank().get(in0).map(|v| v.get_size())?;
+    let in1_size = data.vbank().get(in1).map(|v| v.get_size())?;
+    let byte_off = if big_endian {
+        if slot == 0 {
+            0
+        } else {
+            in0_size
+        }
+    } else if slot == 0 {
+        in1_size
+    } else {
+        0
+    };
+    Some(byte_off)
+}
+
+/// C++ `TypeOpSubpiece::propagateType` (typeop.cc:2163).
+fn propagate_subpiece(
+    data: &Funcdata,
+    alttype: Rc<Datatype>,
+    op: OpId,
+    invn: VarnodeId,
+    outvn: VarnodeId,
+    inslot: int4,
+    outslot: int4,
+) -> Option<Rc<Datatype>> {
+    let (near_ptr, far_ptr) = piece_pointer_sizes(data);
+    let in_size = data.vbank().get(invn).map(|v| v.get_size())?;
+    let out_size = data.vbank().get(outvn).map(|v| v.get_size())?;
+    if near_ptr != 0
+        && alttype.get_metatype() == type_metatype::TYPE_PTR
+        && inslot == -1
+        && outslot == 0
+    {
+        // Try to propagate UP, producing a far pointer input from a near pointer
+        // output of the SUBPIECE.  The DOWN case is handled by getSubType below.
+        let in1_off = data
+            .obank()
+            .get(op)
+            .and_then(|o| o.get_in(1))
+            .and_then(|v| data.vbank().get(v))
+            .map(|v| v.get_offset())
+            .unwrap_or(0);
+        if in1_off != 0 {
+            return None;
+        }
+        if in_size == near_ptr && out_size == far_ptr {
+            let arch = Rc::clone(data.get_arch());
+            return arch.types()?.resize_pointer(alttype, far_ptr).ok();
+        }
+        return None;
+    }
+    if inslot != 0 || outslot != -1 {
+        return None; // Propagation must be from in0 to out
+    }
+    let mut byte_off = compute_byte_offset_for_composite_subpiece(data, op)? as int8;
+    // UNION/PARTIALUNION resolveTruncation is the W8 union mid-flow surface; the
+    // common (non-union) path falls through to the getSubType walk below.
+    let mut cur = Some(alttype);
+    while let Some(ct) = cur.clone() {
+        if byte_off == 0 && ct.get_size() == out_size {
+            break;
+        }
+        let (sub, newoff) = ct.get_sub_type(byte_off).ok()?;
+        byte_off = newoff;
+        cur = sub;
+    }
+    cur
+}
+
+/// C++ `TypeOpSubpiece::computeByteOffsetForComposite` (typeop.cc:2197).
+fn compute_byte_offset_for_composite_subpiece(data: &Funcdata, op: OpId) -> Option<int4> {
+    let o = data.obank().get(op)?;
+    let out = o.get_out()?;
+    let in0 = o.get_in(0)?;
+    let in1 = o.get_in(1)?;
+    let out_size = data.vbank().get(out).map(|v| v.get_size())?;
+    let lsb = data.vbank().get(in1).map(|v| v.get_offset() as int4).unwrap_or(0);
+    let in0_size = data.vbank().get(in0).map(|v| v.get_size())?;
+    let big_endian = data.vbank().get(in0).map(|v| v.get_space().is_big_endian()).unwrap_or(false);
+    let byte_off = if big_endian { in0_size - out_size - lsb } else { lsb };
+    Some(byte_off)
 }
 
 /// C++ `TypeOpEqual::propagateAcrossCompare` (typeop.cc:965).
@@ -368,16 +768,24 @@ fn propagate_across_compare(
     if invn_is_spacebase {
         return spacebase_pointer(data, alttype.get_size());
     }
-    // isPointerRel struct mid-pointer: don't propagate across (give the other side
-    // a chance to type from the structure pointer).  The non-relptr path is the
-    // identity propagation.
-    if alttype.is_pointer_rel() {
-        let outvn_const = data.vbank().get(outvn).map(|v| v.is_constant()).unwrap_or(false);
-        if !outvn_const {
-            // C++ checks parent metatype == STRUCT && byteOffset >= 0.  The
-            // byte-offset accessor on a relptr is a W8 surface; conservatively
-            // keep the relptr identity (the common case for non-struct relptrs).
-            return Some(alttype);
+    // isPointerRel struct mid-pointer: if we know the pointer is in the middle of
+    // a structure, don't propagate the relptr across the comparison (the two sides
+    // are likely different types, and the other side can type from the structure
+    // pointer); hand back a bare pointer instead.  The non-relptr / non-struct path
+    // is the identity propagation.
+    let outvn_const = data.vbank().get(outvn).map(|v| v.is_constant()).unwrap_or(false);
+    if alttype.is_pointer_rel() && !outvn_const {
+        let parent_is_struct = alttype
+            .get_rel_parent()
+            .map(|p| p.get_metatype() == type_metatype::TYPE_STRUCT)
+            .unwrap_or(false);
+        let byte_off = alttype.get_byte_offset().unwrap_or(-1);
+        if parent_is_struct && byte_off >= 0 {
+            let arch = Rc::clone(data.get_arch());
+            let tlst = arch.types()?;
+            let base = tlst.get_base(1, type_metatype::TYPE_UNKNOWN).ok()?;
+            let ws = alttype.get_word_size().unwrap_or(1);
+            return tlst.get_type_pointer(alttype.get_size(), base, ws).ok();
         }
     }
     Some(alttype)
@@ -387,7 +795,7 @@ fn propagate_across_compare(
 /// The non-pointer int/uint constant-fold arm is transcribed; the pointer
 /// `downChain` walk routes through the existing `Datatype::down_chain` machinery.
 fn propagate_int_add(
-    data: &mut Funcdata,
+    data: &Funcdata,
     alttype: Rc<Datatype>,
     op: OpId,
     outvn: VarnodeId,
@@ -422,46 +830,179 @@ fn propagate_int_add(
     }
 }
 
-/// C++ `TypeOpIntAdd::propagateAddIn2Out` (typeop.cc:1217), the pointer-add
-/// transform, via the existing `Datatype::down_chain`.  The
-/// `propagateAddPointer` command/`getExtraTypeOffset` heuristics are a deep W8
-/// surface; the common single-constant-add path is handled by `down_chain` and
-/// the non-applying edges decline (return `None`), matching the C++ null result.
+/// C++ `TypeOpIntAdd::propagateAddPointer` (typeop.cc:1270): classify the
+/// data-type edge as a pointer propagating through an "add a constant" op.
+/// Returns `(command, off)`:
+///   - 0: "add a constant" adding zero (PTRSUB or PTRADD)
+///   - 1: "add a constant", `off` passed back
+///   - 2: pointer does not propagate through
+///   - 3: input data-type propagates through untransformed
+fn propagate_add_pointer(data: &Funcdata, op: OpId, slot: int4, sz: int4) -> (int4, uintb) {
+    let o = match data.obank().get(op) {
+        Some(o) => o,
+        None => return (2, 0),
+    };
+    let code = o.code();
+    if code == OpCode::CPUI_PTRADD {
+        if slot != 0 {
+            return (2, 0);
+        }
+        let (const_off, const_size, is_const) = o
+            .get_in(1)
+            .and_then(|v| data.vbank().get(v))
+            .map(|v| (v.get_offset(), v.get_size(), v.is_constant()))
+            .unwrap_or((0, 0, false));
+        let mult = o.get_in(2).and_then(|v| data.vbank().get(v)).map(|v| v.get_offset()).unwrap_or(0);
+        if is_const {
+            let off = (const_off.wrapping_mul(mult)) & calc_mask(const_size);
+            return if off == 0 { (0, 0) } else { (1, off) };
+        }
+        if sz != 0 && (mult % sz as uintb) != 0 {
+            return (2, 0);
+        }
+        return (3, 0);
+    }
+    if code == OpCode::CPUI_PTRSUB {
+        if slot != 0 {
+            return (2, 0);
+        }
+        let off = o.get_in(1).and_then(|v| data.vbank().get(v)).map(|v| v.get_offset()).unwrap_or(0);
+        return if off == 0 { (0, 0) } else { (1, off) };
+    }
+    if code == OpCode::CPUI_INT_ADD {
+        let othervn = match o.get_in(1 - slot) {
+            Some(v) => v,
+            None => return (2, 0),
+        };
+        let (is_const, off, ov_written, ov_temp_is_ptr) = {
+            let v = match data.vbank().get(othervn) {
+                Some(v) => v,
+                None => return (2, 0),
+            };
+            let temp_is_ptr = v
+                .get_temp_type()
+                .map(|t| t.get_metatype() == type_metatype::TYPE_PTR)
+                .unwrap_or(false);
+            (v.is_constant(), v.get_offset(), v.is_written(), temp_is_ptr)
+        };
+        if !is_const {
+            // Check if othervn is an offset (othervn = MULT(x, const)).
+            if ov_written {
+                let multop = data.vbank().get(othervn).and_then(|v| v.get_def());
+                if let Some(multop) = multop {
+                    let mcode = data.obank().get(multop).map(|o| o.code());
+                    if mcode == Some(OpCode::CPUI_INT_MULT) {
+                        let (mult, mult_size, mult_const) = data
+                            .obank()
+                            .get(multop)
+                            .and_then(|o| o.get_in(1))
+                            .and_then(|v| data.vbank().get(v))
+                            .map(|v| (v.get_offset(), v.get_size(), v.is_constant()))
+                            .unwrap_or((0, 0, false));
+                        if mult_const {
+                            if mult == calc_mask(mult_size) {
+                                // Multiplying by -1: assume a pointer difference.
+                                return (2, 0);
+                            }
+                            if sz != 0 && (mult % sz as uintb) != 0 {
+                                return (2, 0);
+                            }
+                        }
+                        return (3, 0);
+                    }
+                }
+            }
+            if sz == 1 {
+                return (3, 0);
+            }
+            return (2, 0);
+        }
+        if ov_temp_is_ptr {
+            // othervn marked as ptr.
+            return (2, 0);
+        }
+        return if off == 0 { (0, 0) } else { (1, off) };
+    }
+    (2, 0)
+}
+
+/// C++ `TypeOpIntAdd::propagateAddIn2Out` (typeop.cc:1217): propagate a pointer
+/// data-type through an ADD/PTRADD/PTRSUB from an input to its output via the
+/// `propagateAddPointer` command analysis + the looping `downChain` walk
+/// (preserving any containing TYPE_STRUCT/TYPE_ARRAY as a relative pointer).
 fn propagate_add_in2_out(
-    data: &mut Funcdata,
+    data: &Funcdata,
     alttype: Rc<Datatype>,
     op: OpId,
     inslot: int4,
 ) -> Option<Rc<Datatype>> {
-    // Only the constant-offset ADD (slot 1 constant) is the recoverable common
-    // case; otherwise decline (the full `propagateAddPointer` command analysis is
-    // not yet ported — faithful no-propagation along those edges).
-    let in1 = data.obank().get(op)?.get_in(1)?;
-    let (off, in1_const) = data
-        .vbank()
-        .get(in1)
-        .map(|v| (v.get_offset(), v.is_constant()))
-        .unwrap_or((0, false));
-    if !in1_const || inslot != 0 {
-        return None;
-    }
     let arch = Rc::clone(data.get_arch());
     let tlst = arch.types_impl()?;
-    let ws = alttype.get_word_size().unwrap_or(1);
-    let type_offset =
-        kuna_base::space::AddrSpace::address_to_byte_int(off as i64, ws);
-    if type_offset == 0 {
-        return Some(alttype);
+    let ptr_to = alttype.get_ptr_to()?;
+    let align = ptr_to.get_align_size();
+    let (command, offset) = propagate_add_pointer(data, op, inslot, align);
+    if command == 2 {
+        return None; // Doesn't look like a good pointer add
     }
-    let (pointer, _off, parent, _poff) =
-        tlst.down_chain(&alttype, type_offset, true).ok()?;
-    // If we landed on a proper sub-pointer keep it; if down_chain bottomed out but
-    // there is a containing parent, the C++ wraps it as a partial — that wrap is a
-    // W8 surface, so decline rather than guess.
-    if parent.is_some() {
-        return None;
+    let mut pointer: Option<Rc<Datatype>> = Some(Rc::clone(&alttype));
+    let mut parent: Option<Rc<Datatype>> = None;
+    let mut parent_off: int8 = 0;
+    if command != 3 {
+        let word_size = alttype.get_word_size().unwrap_or(1);
+        let mut type_offset = AddrSpace::address_to_byte_int(offset as i64, word_size);
+        let op_code = data.obank().get(op)?.code();
+        let allow_wrap = op_code != OpCode::CPUI_PTRSUB;
+        // C++ do { pointer = pointer->downChain(typeOffset,...); if (0) break; }
+        //      while(typeOffset != 0);
+        while let Some(cur) = pointer.clone() {
+            let (next, new_off, par, par_off) =
+                tlst.down_chain(&cur, type_offset, allow_wrap).ok()?;
+            type_offset = new_off;
+            // downChain overwrites parent/parentOff each call (only the last is used).
+            parent = par;
+            parent_off = par_off;
+            pointer = next;
+            // C++: break out of the do-while once pointer is null or typeOffset == 0.
+            if pointer.is_none() || type_offset == 0 {
+                break;
+            }
+        }
     }
-    pointer
+    if let Some(par) = parent {
+        // Innermost containing object is a TYPE_STRUCT/TYPE_ARRAY: preserve it.
+        let pt = match &pointer {
+            None => tlst.get_base(1, type_metatype::TYPE_UNKNOWN).ok()?,
+            Some(p) => p.get_ptr_to()?,
+        };
+        let parent_off_i4: int4 = parent_off as int4;
+        pointer = tlst.get_type_pointer_rel(par, pt, parent_off_i4).ok();
+    }
+    let pointer = match pointer {
+        None => {
+            if command == 0 {
+                return Some(alttype);
+            }
+            return None;
+        }
+        Some(p) => p,
+    };
+    // If the input is a spacebase pointer-to-spacebase, demote to plain pointer.
+    let in_is_spacebase = data
+        .obank()
+        .get(op)
+        .and_then(|o| o.get_in(inslot))
+        .and_then(|v| data.vbank().get(v))
+        .map(|v| v.is_spacebase())
+        .unwrap_or(false);
+    if in_is_spacebase {
+        let pt_meta = pointer.get_ptr_to().map(|p| p.get_metatype());
+        if pt_meta == Some(type_metatype::TYPE_SPACEBASE) {
+            let base = tlst.get_base(1, type_metatype::TYPE_UNKNOWN).ok()?;
+            let ws = pointer.get_word_size().unwrap_or(1);
+            return tlst.get_type_pointer(pointer.get_size(), base, ws).ok();
+        }
+    }
+    Some(pointer)
 }
 
 /// C++ `ActionInferTypes::propagateOneType` (coreaction.cc:5428): DFS push a
@@ -705,4 +1246,96 @@ pub fn run_infer_types(data: &mut Funcdata) -> bool {
     // pointer-alias propagation is skipped (faithful: no spacebase ADD aliases to
     // propagate in the merged-tree slice).
     write_back(data)
+}
+
+#[cfg(test)]
+mod propagate_type_tests {
+    //! Focused tests of the LOAD/STORE pointer-propagation helpers (C++
+    //! `TypeOp::propagateToPointer`/`propagateFromPointer`) — the core of the
+    //! W10 propagateType overrides.  These exercise the type transforms directly
+    //! against a populated `TypeFactoryImpl` (no full `Funcdata` required), so a
+    //! regression in the pointer `*T <-> T` flow is caught even while the corpus
+    //! seeds (typed parameters / stack locals) remain unported (LOSS-131/132).
+    use super::*;
+    use crate::dtype::TypeFactoryImpl;
+
+    fn factory() -> TypeFactoryImpl {
+        let f = TypeFactoryImpl::new();
+        f.set_default_alignment_map();
+        f.set_max_basetype_size(8);
+        f
+    }
+
+    #[test]
+    fn from_pointer_dereferences_to_pointee_when_sizes_match() {
+        // int4 * --LOAD(4)--> int4   (propagateFromPointer: ptrto->getSize()==sz)
+        let f = factory();
+        let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+        let ptr = f.get_type_pointer(8, Rc::clone(&int4t), 1).unwrap();
+        let out = propagate_from_pointer(&f, ptr, 4).expect("should dereference");
+        assert_eq!(out.get_metatype(), type_metatype::TYPE_INT);
+        assert_eq!(out.get_size(), 4);
+        assert!(Rc::ptr_eq(&out, &int4t), "returns the exact pointee type");
+    }
+
+    #[test]
+    fn from_pointer_declines_on_size_mismatch_for_non_enum() {
+        // int4 * --LOAD(2)--> (size mismatch, not an enum) -> no propagation.
+        let f = factory();
+        let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+        let ptr = f.get_type_pointer(8, int4t, 1).unwrap();
+        assert!(propagate_from_pointer(&f, ptr, 2).is_none());
+    }
+
+    #[test]
+    fn from_pointer_declines_for_non_pointer_input() {
+        let f = factory();
+        let int8t = f.get_base(8, type_metatype::TYPE_INT).unwrap();
+        assert!(propagate_from_pointer(&f, int8t, 8).is_none());
+    }
+
+    #[test]
+    fn to_pointer_wraps_pointee_in_a_pointer_of_the_pointer_size() {
+        // int4 --STORE(value->ptr)--> int4 * (propagateToPointer of a plain value).
+        let f = factory();
+        let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+        let out = propagate_to_pointer(&f, Rc::clone(&int4t), 8, 1).expect("should wrap");
+        assert_eq!(out.get_metatype(), type_metatype::TYPE_PTR);
+        assert_eq!(out.get_size(), 8);
+        let pointee = out.get_ptr_to().unwrap();
+        assert!(Rc::ptr_eq(&pointee, &int4t), "points at the original value type");
+    }
+
+    #[test]
+    fn to_pointer_of_a_pointer_demotes_pointee_to_unknown_of_same_size() {
+        // A pointer value never produces a ptr->ptr deeper than depth 1: the
+        // pointee is reduced to an UNKNOWN of the pointer's size.
+        let f = factory();
+        let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+        let inner = f.get_type_pointer(8, int4t, 1).unwrap();
+        let out = propagate_to_pointer(&f, inner, 8, 1).expect("should wrap");
+        assert_eq!(out.get_metatype(), type_metatype::TYPE_PTR);
+        let pointee = out.get_ptr_to().unwrap();
+        assert_eq!(pointee.get_metatype(), type_metatype::TYPE_UNKNOWN);
+        assert_eq!(pointee.get_size(), 8);
+    }
+
+    #[test]
+    fn from_pointer_to_struct_dereferences_whole_struct_when_size_matches() {
+        // A pointer to an 8-byte struct, dereferenced at full size, yields the
+        // struct — the ptr->*struct flow the array/struct overrides build on.
+        let f = factory();
+        let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
+        let st = f.get_type_struct("twofield").unwrap();
+        let fields = vec![
+            crate::dtype::TypeField::new(0, 0, "a", Rc::clone(&int4t)),
+            crate::dtype::TypeField::new(1, 4, "b", Rc::clone(&int4t)),
+        ];
+        let st = f.assign_raw_fields_struct(&st, fields, Vec::new()).unwrap();
+        let sz = st.get_size();
+        let ptr = f.get_type_pointer(8, Rc::clone(&st), 1).unwrap();
+        let out = propagate_from_pointer(&f, ptr, sz).expect("deref whole struct");
+        assert_eq!(out.get_metatype(), type_metatype::TYPE_STRUCT);
+        assert!(Rc::ptr_eq(&out, &st));
+    }
 }

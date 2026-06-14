@@ -874,6 +874,7 @@ macro_rules! impl_type_factory {
             fn get_type_partial_struct(&self, contain: Rc<Datatype>, off: int4, sz: int4) -> KunaResult<Rc<Datatype>> { panic!("type factory reached") }
             fn get_type_union(&self, n: &str) -> KunaResult<Rc<Datatype>> { panic!("type factory reached") }
             fn get_type_partial_union(&self, contain: Rc<Datatype>, off: int4, sz: int4) -> KunaResult<Rc<Datatype>> { panic!("type factory reached") }
+            fn get_type_partial_enum(&self, contain: Rc<Datatype>, off: int4, sz: int4) -> KunaResult<Rc<Datatype>> { panic!("type factory reached") }
             fn get_type_enum(&self, n: &str) -> KunaResult<Rc<Datatype>> { panic!("type factory reached") }
             fn get_type_spacebase(&self, id: Rc<AddrSpace>, addr: &Address) -> KunaResult<Rc<Datatype>> { panic!("type factory reached") }
             fn resize_integer(&self, ct: Rc<Datatype>, new_size: int4) -> KunaResult<Rc<Datatype>> { panic!("type factory reached") }

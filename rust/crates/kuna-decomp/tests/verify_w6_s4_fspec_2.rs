@@ -245,6 +245,14 @@ impl TypeFactory for VoidTypeFactory {
     ) -> KunaResult<Rc<Datatype>> {
         unreached!()
     }
+    fn get_type_partial_enum(
+        &self,
+        _contain: Rc<Datatype>,
+        _off: int4,
+        _sz: int4,
+    ) -> KunaResult<Rc<Datatype>> {
+        unreached!()
+    }
     fn get_type_enum(&self, _n: &str) -> KunaResult<Rc<Datatype>> {
         unreached!()
     }

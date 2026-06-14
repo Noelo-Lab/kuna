@@ -220,6 +220,7 @@ impl TypeFactory for PanicFactory {
     fn get_type_partial_struct(&self, contain: Rc<Datatype>, off: int4, sz: int4) -> kuna_base::error::KunaResult<Rc<Datatype>> { panic!() }
     fn get_type_union(&self, n: &str) -> kuna_base::error::KunaResult<Rc<Datatype>> { panic!() }
     fn get_type_partial_union(&self, contain: Rc<Datatype>, off: int4, sz: int4) -> kuna_base::error::KunaResult<Rc<Datatype>> { panic!() }
+    fn get_type_partial_enum(&self, contain: Rc<Datatype>, off: int4, sz: int4) -> kuna_base::error::KunaResult<Rc<Datatype>> { panic!() }
     fn get_type_enum(&self, n: &str) -> kuna_base::error::KunaResult<Rc<Datatype>> { panic!() }
     fn get_type_spacebase(&self, id: Rc<AddrSpace>, addr: &kuna_base::address::Address) -> kuna_base::error::KunaResult<Rc<Datatype>> { panic!() }
     fn resize_integer(&self, ct: Rc<Datatype>, new_size: int4) -> kuna_base::error::KunaResult<Rc<Datatype>> { panic!() }
