@@ -234,6 +234,17 @@ impl Funcdata {
     pub fn restructure_varnode(&mut self, _aliasyes: bool) {
         use crate::varmap::MapState;
 
+        // C++ `restructureVarnode` head (varmap.cc:1259): clear out the unlocked
+        // auto-recovered stack Symbols so this pass re-derives the layout from the
+        // current Varnodes.  Without it a spurious open-array Symbol formed on an
+        // early pass (before `RuleStoreVarnode` folded the STORE into a sized stack
+        // COPY) survives and `gatherSymbols` re-injects it as a competing fixed
+        // array `RangeHint`, overriding the scalar hint the converted Varnode then
+        // supplies (regressing condconst.xml "Conditional Constant #10").
+        if let Some(lm) = self.get_scope_local_mut() {
+            let _ = lm.clear_unlocked_category_negative();
+        }
+
         let (space, local_range, param_range, default_unknown, bounds) = {
             let lm = match self.get_scope_local() {
                 Some(lm) => lm,

@@ -159,26 +159,31 @@ impl Action for ActionPrototypeTypes {
         // `ActionRestructureVarnode`.  Without it the scope range tree is empty and
         // every gathered stack RangeHint is dropped, so no stack local is recovered.
         //
-        // SEAM(W4 reset_local_window): this is correct C++ behavior and is the
-        // enabler the whole stack-typing chain needs, but on the current degraded
-        // pipeline it surfaces a faithful consequence of an UPSTREAM IR-construction
-        // ordering divergence: on the FIRST restructure pass the merged tree has not
-        // yet formed the sized (e.g. 4-byte) written stack Varnode that C++ already
-        // carries, so `MapState::gatherVarnodes` produces no competing `Fixed int4`
-        // hint and the faithful `gatherOpen` open-unknown range (C++ varmap.cc:1211,
-        // ported) wins the merge — creating a spurious `xunknown1 [N]` array where
-        // C++ recovers a scalar (regressing `condconst.xml` "Conditional Constant
-        // #10").  Activating it is gated on that upstream sized-stack-Varnode seam
-        // (the `RuleLoad/StoreVarnode` spacebase conversion feeding gatherVarnodes
-        // a sized hint on pass 1) and, for the struct/array family, on the
-        // `extern → setPrototype` registry seam (LOSS-006/090) + callee-prototype
-        // resolution (LOSS-153) that types the call argument.  The window-reset,
-        // restructure type-assigning tail (`annotateRawStackPtr` /
-        // `applyTypeRecommendations`), `propagateSpacebaseRef`, and the
-        // `TypeOpCall::getInputLocal` callee-param arm are all wired and faithful;
-        // they fire (and the typed stack member access renders) the moment those
-        // upstream seams land.  Deferred here to keep the existing datatest suite
-        // green (LOSS recorded in the structured output).
+        // The sized-stack-Varnode typing seam this used to be gated on is now
+        // CLOSED: `ScopeLocal::restructureVarnode` clears the unlocked auto-recovered
+        // stack Symbols at the head of every pass (`clearUnlockedCategory(-1)`,
+        // funcdata_spacebase.rs / varmap.cc:1259), so the first-pass open-array hint
+        // formed before `RuleStoreVarnode` folds the STORE into a sized stack COPY no
+        // longer survives to compete with the scalar `Fixed int4` hint the converted
+        // Varnode supplies on the next pass.  With the env gate on, a scalar stack
+        // local now types as `int4` (NOT a spurious `xunknown1 [N]` array — verified
+        // on condconst_conn) and is named `vN` (`resolve_default_name`,
+        // coreaction.cc:3087).
+        //
+        // The window-reset is STILL env-gated, on a SEPARATE downstream seam: the
+        // addr-tied return-register COPY collapse.  After typing, condconst_conn is
+        // `v2(stack) = x; ...; v1(eax) = COPY(v2); return v1;`; the C++ oracle emits
+        // the single `v1 = x; ... return v1;` because the eax return-register COPY is
+        // eliminated.  In kuna the eax high is addr-tied + type-locked and the stack
+        // high is addr-tied at a DIFFERENT address, so `Merge::mergeTestRequired`
+        // (merge.cc:124, faithfully ported) correctly refuses to merge them via
+        // `mergeOpcode(CPUI_COPY)`; the C++ removes that COPY through the
+        // return-value / `mergeAddrTied` `groupWith` path, a W7 merge surface not yet
+        // at this boundary.  Until it lands, enabling the reset by default would
+        // REGRESS condconst.xml "Conditional Constant #10" (`v1 = x;`) — the typing
+        // is correct, but the scalar stack round-trip stays visible as `v1 = v2`.
+        // Recorded as a loss; flip to an unconditional call once that merge seam
+        // closes.
         if std::env::var_os("KUNA_RESET_LOCAL_WINDOW").is_some() {
             data.reset_local_window();
         }

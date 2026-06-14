@@ -3040,6 +3040,43 @@ impl Database {
         self.symbols.remove(sym);
     }
 
+    /// C++ `ScopeInternal::clearUnlockedCategory` (`database.cc:2099`) for the
+    /// `cat < 0` case (the only one `ScopeLocal::restructureVarnode` reaches with
+    /// `-1`).  Every symbol with `category < 0` (an uncategorized local — the
+    /// auto-recovered stack variables) is removed unless it is type-locked, in
+    /// which case its unlocked name is reset to an undefined default but the symbol
+    /// is kept.
+    ///
+    /// This is the per-pass reset that lets `restructureVarnode` re-derive the
+    /// stack-frame layout from scratch each time it runs: without it, a spurious
+    /// open-array Symbol created on an early pass (before `RuleStoreVarnode` has
+    /// folded the STORE into a sized stack COPY) persists and `gatherSymbols`
+    /// re-injects it as a competing fixed-array `RangeHint`, overriding the scalar
+    /// hint the converted Varnode then supplies.
+    pub fn clear_unlocked_category_negative(&mut self, scope: ScopeId) -> KunaResult<()> {
+        // C++ iterates `nametree` advancing the iterator before acting on the
+        // symbol (the act mutates the tree).  Collect first, then act — the arena
+        // equivalent of "advance before remove".
+        let candidates: Vec<SymbolId> = self.scopes[scope]
+            .nametree
+            .values()
+            .copied()
+            .filter(|&sid| self.symbols[sid].get_category() < 0)
+            .collect();
+        for sid in candidates {
+            if self.symbols[sid].is_type_locked() {
+                // Only hold if TYPE locked; clear an unlocked, defined name.
+                if !self.symbols[sid].is_name_locked() && !self.symbols[sid].is_name_undefined() {
+                    let newname = self.build_undefined_name(scope)?;
+                    self.rename_symbol(sid, &newname)?;
+                }
+            } else {
+                self.remove_symbol(sid);
+            }
+        }
+        Ok(())
+    }
+
     /// C++ `ScopeInternal::assignDefaultNames` (`database.cc:2880-2895`): rename
     /// every symbol with an undefined name to a generated default.
     pub fn assign_default_names(
@@ -3463,6 +3500,46 @@ mod tests {
         let nm = db.build_default_name(g, loc, &mut base, None, &arch).unwrap();
         assert_eq!(nm, "v7");
         assert_eq!(base, 8);
+    }
+
+    #[test]
+    fn clear_unlocked_category_negative_drops_unlocked_locals_keeps_locked_and_categorized() {
+        // C++ `ScopeInternal::clearUnlockedCategory(-1)` (database.cc:2099, cat<0):
+        // the per-pass reset at the head of `ScopeLocal::restructureVarnode` that
+        // lets the stack-frame layout be re-derived from scratch each pass.
+        let m = build_manager();
+        let ram = space(&m, 2);
+        let (mut db, g) = db_with_global(m.num_spaces());
+
+        // An unlocked auto-recovered local (category < 0, no type/name lock): the
+        // spurious open-array kind that must be dropped each pass.
+        let a_addr = Address::new(Rc::clone(&ram), 0x100);
+        let (local, _) = db
+            .add_symbol_mapped(g, "", dt(4), &a_addr, &Address::new_invalid())
+            .unwrap();
+        // A type+name-locked local (e.g. a `map addr` symbol): must survive.
+        let b_addr = Address::new(Rc::clone(&ram), 0x200);
+        let (locked, _) = db
+            .add_symbol_mapped(g, "kept", dt(4), &b_addr, &Address::new_invalid())
+            .unwrap();
+        db.set_attribute(locked, varnode_flags::typelock | varnode_flags::namelock);
+        // A categorized parameter (category >= 0): the cat<0 walk must skip it.
+        let c_addr = Address::new(Rc::clone(&ram), 0x300);
+        let (param, _) = db
+            .add_symbol_mapped(g, "p0", dt(4), &c_addr, &Address::new_invalid())
+            .unwrap();
+        db.set_category(g, param, symbol_category::FUNCTION_PARAMETER, 0);
+
+        assert!(db.symbols.contains_key(local));
+        db.clear_unlocked_category_negative(g).unwrap();
+
+        // The unlocked local is gone; the locked local and the parameter survive.
+        assert!(!db.symbols.contains_key(local), "unlocked local must be removed");
+        assert!(db.symbols.contains_key(locked), "type/name-locked symbol kept");
+        assert!(db.symbols.contains_key(param), "categorized parameter kept");
+        // The mapping of the removed local is gone too (no stale EntryMap range).
+        assert!(db.find_overlap(g, &a_addr, 4).is_none());
+        assert!(db.find_overlap(g, &b_addr, 4).is_some());
     }
 
     #[test]

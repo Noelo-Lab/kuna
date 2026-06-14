@@ -1101,9 +1101,14 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         // covering the representative's storage.  A hit binds the high to that
         // Symbol's display name (+ the in-symbol byte offset for an array/struct
         // member access) — this is what gives the body its `ptr`/`a`/`b`/`i`.
+        //
+        // `resolve_default_name` additionally performs the C++ `ActionNameVars`
+        // namerec rename (coreaction.cc:3087-3094): an undefined-named Symbol whose
+        // high covers the whole Symbol is renamed to the angr default (`v<base++>`),
+        // so a promoted scalar stack local renders `v1` rather than `$$undefNNN`.
         let resolved = data
-            .get_scope_local()
-            .and_then(|lm| lm.name_for_varnode(&v_addr, v_size));
+            .get_scope_local_mut()
+            .and_then(|lm| lm.resolve_default_name(&v_addr, v_size, &mut base));
         if let Some((sym_name, sym_off, sym_type)) = resolved {
             if let Some(h) = data.high_bank_mut().get_mut(high) {
                 h.set_kuna_name(sym_name);

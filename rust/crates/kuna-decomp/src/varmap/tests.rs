@@ -681,6 +681,48 @@ fn scope_local_restructure_builds_a_disjoint_cover() {
 }
 
 #[test]
+fn scope_local_clear_unlocked_category_resets_layout_each_pass() {
+    // C++ `restructureVarnode` head `clearUnlockedCategory(-1)` (varmap.cc:1259):
+    // an auto-recovered local from a prior restructure pass is dropped so the next
+    // pass re-derives the layout from the current Varnodes (the fix that stops a
+    // stale open-array Symbol from overriding the converted scalar stack hint).
+    let f = factory();
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+
+    let mut localr = RangeList::new();
+    localr.insert_range(Rc::clone(&spc), 0, 0x3f);
+    let paramr = RangeList::new();
+    sl.reset_local_window(&localr, &paramr, false);
+
+    // Pass 1: an OPEN hint at 0x10 (what gatherOpen produces before the STORE is
+    // folded) creates a (spuriously sized) auto-recovered local symbol.
+    let mut state = MapState::new(
+        Rc::clone(&spc),
+        &localr,
+        &paramr,
+        base(1, type_metatype::TYPE_UNKNOWN),
+    );
+    state.add_range_pub(0x10, None, 0, crate::varmap::RangeType::Open, 3);
+    // A guard endpoint so `restructure` closes the open range into an entry.
+    state.add_fixed_type_pub(0x30, base(4, type_metatype::TYPE_INT), 0, &f);
+    sl.restructure(&mut state, &f).expect("restructure pass 1");
+    let scope = sl.scope_id();
+    let a0 = Address::new(Rc::clone(&spc), 0x10);
+    assert!(
+        sl.database().find_overlap(scope, &a0, 1).is_some(),
+        "pass 1 created an auto-recovered local at 0x10",
+    );
+
+    // The per-pass reset drops that unlocked local.
+    sl.clear_unlocked_category_negative().expect("clearUnlockedCategory(-1)");
+    assert!(
+        sl.database().find_overlap(scope, &a0, 1).is_none(),
+        "clearUnlockedCategory(-1) removed the unlocked auto-recovered local",
+    );
+}
+
+#[test]
 fn scope_local_build_variable_name_stack_convention() {
     // buildVariableName: an addr-tied non-persistent stack local in the local
     // range gets the `<TypeBase>Stack[XY]_<hexoff>` name.  Under negative stack

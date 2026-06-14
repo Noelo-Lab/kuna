@@ -1134,6 +1134,14 @@ impl ScopeLocal {
         self.db.scope(self.scope).in_scope(addr, size, &Address::new_invalid())
     }
 
+    /// C++ `localmap->clearUnlockedCategory(-1)` (the head of
+    /// `ScopeLocal::restructureVarnode`, `varmap.cc:1259`): drop the unlocked
+    /// auto-recovered stack Symbols so each restructure pass re-derives the layout
+    /// from the current Varnodes.
+    pub fn clear_unlocked_category_negative(&mut self) -> KunaResult<()> {
+        self.db.clear_unlocked_category_negative(self.scope)
+    }
+
     /// A clone of this scope's range tree (C++ `getRangeTree()`), the analysis
     /// range `MapState` clears the param range out of (`restructureVarnode`).
     pub fn range_tree_clone(&self) -> kuna_base::address::RangeList {
@@ -1176,6 +1184,41 @@ impl ScopeLocal {
         let symbol = self.db.symbol(sym);
         // symbol_offset = (access_addr - entry_addr) + entry_offset.
         let sym_off = (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
+        Some((symbol.get_display_name().to_string(), sym_off, symbol.dtype.clone()))
+    }
+
+    /// C++ `ActionNameVars`'s namerec rename (coreaction.cc:3087-3094): if the
+    /// Symbol covering `(addr, size)` has an undefined name and the access covers
+    /// the whole Symbol (the high `getSymbolOffset() < 0` gate), rename it to the
+    /// angr default (`v<base++>`, via `Scope::buildDefaultName`'s `kunaAngrNaming`
+    /// stack/local arm) and return the new name.  Returns `None` when there is no
+    /// covering Symbol; returns the existing (already-defined) name unchanged
+    /// otherwise.  `base` is the running `int4 base` of `ActionNameVars`.
+    pub fn resolve_default_name(
+        &mut self,
+        addr: &Address,
+        size: int4,
+        base: &mut int4,
+    ) -> Option<(String, int4, Option<Rc<Datatype>>)> {
+        let eref = self.db.find_overlap(self.scope, addr, size)?;
+        let (sym, entry_addr_off, entry_off, entry_size) = {
+            let entry = self.db.entry(self.scope, eref);
+            (entry.symbol, entry.get_addr().get_offset(), entry.get_offset(), entry.get_size())
+        };
+        let sym_off = (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
+        // C++ adds the Varnode to `namerec` only when `sym->isNameUndefined() &&
+        // high->getSymbolOffset() < 0` — i.e. an undefined name on a high that
+        // represents the WHOLE symbol (not a member access).  Here the whole-symbol
+        // access is `sym_off == 0 && size == entry_size` (the entire mapped entry).
+        let undefined = self.db.symbol(sym).is_name_undefined();
+        if undefined && sym_off == 0 && size == entry_size {
+            // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm).
+            let newname = format!("v{}", *base);
+            *base += 1;
+            // makeNameUnique then renameSymbol.
+            let _ = self.db.rename_symbol(sym, &newname);
+        }
+        let symbol = self.db.symbol(sym);
         Some((symbol.get_display_name().to_string(), sym_off, symbol.dtype.clone()))
     }
 
