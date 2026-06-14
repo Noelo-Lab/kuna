@@ -951,6 +951,45 @@ impl ScopeLocal {
         Ok(sym)
     }
 
+    /// Materialize a recovered/locked function parameter as a Symbol in this
+    /// scope, mirroring `ProtoStoreSymbol::setInput`'s `scope->addSymbol(nm,type,
+    /// addr,usepoint)` + `scope->setCategory(sym, function_parameter, i)`
+    /// (`fspec.cc:3174`).  The kuna `FuncProto` stores its parameters in a
+    /// `ProtoStoreInternal` (no backing symbol scope, the `setScope` seam), so the
+    /// param Symbols that `Funcdata::linkSymbol`/`Scope::queryProperties` would
+    /// otherwise find do not exist; this method creates them so the body Varnodes
+    /// bind to the parameter names (`ptr`/`a`/`b`) instead of the raw registers.
+    ///
+    /// Idempotent: if a Symbol already overlaps the parameter's storage (a console
+    /// `map addr`, a promoted local, or a prior call) it is left untouched and
+    /// `None` is returned.  Returns the new `SymbolId` otherwise.
+    pub fn add_param_symbol(
+        &mut self,
+        i: int4,
+        name: &str,
+        ct: Rc<Datatype>,
+        addr: &Address,
+    ) -> KunaResult<Option<crate::database::SymbolId>> {
+        if addr.is_invalid() || ct.get_size() < 1 {
+            return Ok(None);
+        }
+        // C++ `linkSymbol`/`queryProperties` would find any existing overlapping
+        // entry; only create when none exists (the `entry == 0` arm of
+        // `setInput`/`linkSymbol`).
+        if self.db.find_overlap(self.scope, addr, ct.get_size()).is_some() {
+            return Ok(None);
+        }
+        let usepoint = Address::new_invalid();
+        let (sym, _eref) = self.db.add_symbol_mapped(self.scope, name, ct, addr, &usepoint)?;
+        self.db.set_category(
+            self.scope,
+            sym,
+            crate::database::symbol_category::FUNCTION_PARAMETER,
+            i,
+        );
+        Ok(Some(sym))
+    }
+
     /// C++ `Scope::addCodeLabel` reached via `getScopeLocal()->addCodeLabel`
     /// (`IfcMaplabel` fd-local form).
     pub fn add_code_label(
@@ -1113,6 +1152,17 @@ impl ScopeLocal {
         // symbol_offset = (access_addr - entry_addr) + entry_offset.
         let sym_off = (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
         Some((symbol.get_display_name().to_string(), sym_off, symbol.dtype.clone()))
+    }
+
+    /// The category of the Symbol covering a storage location (C++
+    /// `Symbol::getCategory` via `findOverlap`), or `None` when none overlaps.
+    /// `function_parameter` (0) marks a high the body decl block must skip — C++
+    /// `emitLocalVarDecls` emits only `no_category` symbols, so parameters render
+    /// in the signature, not the body (`printc.cc:2336`).
+    pub fn category_for_varnode(&self, addr: &Address, size: int4) -> Option<int4> {
+        let eref = self.db.find_overlap(self.scope, addr, size)?;
+        let entry = self.db.entry(self.scope, eref);
+        Some(self.db.symbol(entry.symbol).get_category())
     }
 
     /// Information about the Symbol overlapping a storage location, for

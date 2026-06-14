@@ -1850,6 +1850,16 @@ impl Funcdata {
         self.high_bank.get(id)?;
         Some(self.with_high_split(|hb, ctx| hb.get_mut(id).unwrap().get_name_representative(ctx)))
     }
+
+    /// Whether a HighVariable can carry a name (C++ `HighVariable::hasName`),
+    /// across the bank field-split.  `false` if the high is gone or its
+    /// coverability check errors (the C++ `LowlevelError` -> conservative `false`).
+    pub fn high_has_name(&mut self, id: crate::seams::HighVariableId) -> bool {
+        if self.high_bank.get(id).is_none() {
+            return false;
+        }
+        self.with_high_split(|hb, ctx| hb.get_mut(id).unwrap().has_name(ctx).unwrap_or(false))
+    }
 }
 
 /// A field-split read view used by [`Funcdata::with_high_split`]: implements

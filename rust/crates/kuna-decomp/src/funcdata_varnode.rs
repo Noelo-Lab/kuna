@@ -130,6 +130,66 @@ impl Funcdata {
         Rc::new(Datatype::new(s, type_metatype::TYPE_UNKNOWN))
     }
 
+    /// Materialize the function's recovered/locked input parameters as Symbols in
+    /// the local scope, the symbol-creation `ProtoStoreSymbol::setInput` performs
+    /// (`fspec.cc:3174`) that the kuna `ProtoStoreInternal` skips.
+    ///
+    /// In C++ the `FuncProto`'s scope IS the `ScopeLocal` (`funcdata.cc:69`
+    /// `funcp.setScope(localmap,...)`), so each `setInput` adds a parameter Symbol
+    /// at the parameter's storage address with category `function_parameter`.
+    /// `ActionNameVars::linkSymbols` then binds the body Varnodes to those Symbols
+    /// (`Funcdata::linkSymbol` -> `Scope::queryProperties`).  The kuna port stores
+    /// parameters in a symbol-less `ProtoStoreInternal`, so those Symbols never
+    /// exist and the body renders the raw registers; this method creates them from
+    /// the proto store (`get_param(i)`'s name/type/address), so the existing
+    /// `name_for_varnode`/`linkSymbol` resolution binds `ptr`/`a`/`b` uniformly
+    /// with mapped and promoted locals.  Idempotent (see
+    /// [`crate::varmap::ScopeLocal::add_param_symbol`]).
+    pub fn link_proto_params(&mut self) {
+        if self.get_scope_local().is_none() {
+            return;
+        }
+        let num = self.get_func_proto().num_params();
+        // Gather (slot, name, type, addr) first; `get_param` borrows the proto and
+        // `add_param_symbol` borrows the scope (both on &mut self).
+        let mut specs: Vec<(int4, String, Rc<Datatype>, Address)> = Vec::new();
+        for i in 0..num {
+            let param = match self.get_func_proto().get_param(i) {
+                Some(p) => p,
+                None => continue,
+            };
+            let ty = match param.get_type() {
+                Some(t) => Rc::clone(t),
+                None => continue,
+            };
+            let addr = param.get_address();
+            if addr.is_invalid() {
+                continue;
+            }
+            // C++ `ProtoStoreSymbol::setInput` passes the parameter's name; an
+            // unnamed (recovered, unlocked) parameter is an `addSymbol("",...)` with
+            // an undefined name that `ActionNameVars`/`buildDefaultName` then routes
+            // to the `aN` (`function_parameter`) default.  The kuna proto store and
+            // the scope symbol are separate objects, so the default is materialized
+            // here (`kuna_arg_name(i)` == `buildDefaultName`'s `function_parameter`
+            // arm) instead of being deferred to `assignDefaultNames`, avoiding the
+            // `$$undef` placeholder that `addSymbol("",...)` would otherwise leak
+            // into the body.  A locked, named proto (`parse line extern`) carries
+            // the explicit `ptr`/`a`/`b`.
+            let name = if param.get_name().is_empty() {
+                crate::database::kuna_arg_name(i)
+            } else {
+                param.get_name().to_string()
+            };
+            specs.push((i, name, ty, addr));
+        }
+        for (i, name, ty, addr) in specs {
+            if let Some(lm) = self.get_scope_local_mut() {
+                let _ = lm.add_param_symbol(i, &name, ty, &addr);
+            }
+        }
+    }
+
     /// If HighVariables are enabled, make sure the given Varnode has one assigned
     /// (C++ `Funcdata::assignHigh`, `funcdata_varnode.cc:48`).
     ///

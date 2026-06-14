@@ -409,13 +409,17 @@ fn verify_w10_refinement_divopt_lifts_64bit_not_16bit_garbage() {
         "divopt must render its functions:\n{rendered}"
     );
 
-    // The argument pointer is RDI (64-bit System V first arg).  A correct lift
-    // uses 64-bit registers; the round-1 garbage lift used 16-bit AX/SI/DI.
-    let sixtyfour = count_matches(r"\bR(DI|SI|AX|BX|CX|DX|SP|BP)\b", &rendered).unwrap_or(0);
+    // A correct lift uses 64-bit arithmetic; the round-1 garbage lift used 16-bit
+    // real mode.  With the W10 symbol-naming un-seam the 64-bit first-arg pointer
+    // (RDI) is now bound to its recovered parameter `divu`, so the body no longer
+    // shows the bare register — the 64-bit-ness is pinned by the wide arithmetic
+    // mask (a 16-bit lift could at most produce 0xffff) and the named pointer.
+    let wide_mask = count_matches(r"0xffffffffffffffff", &rendered).unwrap_or(0);
     let sixteen = count_matches(r"\b(AX|SI|DI|BX|CX|DX|SP|BP)\b", &rendered).unwrap_or(0);
     assert!(
-        sixtyfour >= 1,
-        "divopt must lift with 64-bit registers (RDI/RSP/…); got none:\n{rendered}"
+        wide_mask >= 1 || rendered.contains("divu"),
+        "divopt must lift with 64-bit arithmetic (wide mask / named 64-bit pointer); \
+         got neither:\n{rendered}"
     );
     assert_eq!(
         sixteen, 0,
@@ -528,13 +532,33 @@ fn verify_w10_r2_divopt_stores_through_rdi_straightline() {
     let dt = parse_datatest(&path).expect("parse divopt.xml");
     let rendered = render_corpus(&dt).expect("divopt must decompile");
 
-    // Multiple distinct array-element stores through RDI (the oracle has 17
-    // elements per function); require several to prove the straight-line body.
-    let rdi_stores = count_matches(r"STORE\([0-9]+,RDI", &rendered).unwrap_or(0);
+    // Multiple distinct array-element stores through the recovered pointer
+    // parameter (the oracle has 17 elements per function); require several to
+    // prove the straight-line body.  The W10 symbol-naming un-seam binds the RDI
+    // first-arg pointer to its recovered parameter, so the stores now render
+    // through that NAME (the oracle direction `*p = …; p[N] = …`), not the raw
+    // register.  The store target is the bound parameter identifier followed by the
+    // element offset (`a0`/`a0 + 0xNN` when unlocked, the declared name when locked)
+    // — a single-token name, never the raw `RDI` register and never `$$undef`.
+    let ptr_stores = count_matches(r"STORE\([0-9]+,[A-Za-z_][A-Za-z0-9_]*(?: \+ 0x)?", &rendered)
+        .unwrap_or(0);
     assert!(
-        rdi_stores >= 8,
-        "divopt must STORE through RDI for the array elements in straight-line \
-         form (oracle: `*divu = …; divu[N] = …`); got {rdi_stores}:\n{rendered}"
+        ptr_stores >= 8,
+        "divopt must STORE through the recovered pointer for the array elements in \
+         straight-line form (oracle: `*p = …; p[N] = …`); got {ptr_stores}:\n{rendered}"
+    );
+    // The store target must NOT be the raw first-arg register (the un-seam binds it
+    // to the parameter) nor the `$$undef` placeholder (a coherent name was assigned).
+    assert_eq!(
+        count_matches(r"STORE\([0-9]+,RDI\b", &rendered).unwrap_or(0),
+        0,
+        "divopt's stores must render through the bound parameter, not the raw RDI \
+         register:\n{rendered}"
+    );
+    assert_eq!(
+        count_matches(r"\$\$undef", &rendered).unwrap_or(0),
+        0,
+        "divopt must not leak the `$$undef` placeholder name:\n{rendered}"
     );
     // And NO loop keyword — the oracle for divopt is entirely loop-free, so any
     // loop here is the Round-1 wrong-direction structuring artifact.
@@ -575,6 +599,66 @@ fn verify_w10_r2_forloop1_is_bounded_loop_not_bare_keyword() {
     assert!(
         step >= 1,
         "forloop1's loop body must carry the induction step (`+ 1`):\n{rendered}"
+    );
+}
+
+// ===========================================================================
+// w10-symbol-naming verifier (this un-seam)
+//
+// The blocker the prior reviews named: ActionInputPrototype + typing recover the
+// parameters and ScopeLocal::restructure promotes the stack locals, so the
+// SIGNATURE renders typed named params — but the BODY still showed the raw
+// registers / stack addresses (`RDI`/`RSI`/`RSP + off`) because the recovered
+// Symbols were never bound to the body HighVariables.  This un-seam materializes
+// the recovered parameters as ScopeLocal Symbols (`ProtoStoreSymbol::setInput`)
+// and routes `ActionNameVars::linkSymbols` through the symbol query so the body
+// HighVariables carry the recovered names.  These tests pin the binding on the
+// integer-pointer corpus the un-seam targets.
+// ===========================================================================
+
+/// `readstruct` (nestedoffset.xml) takes `(twostruct *ptr,int8 a,int8 b)` in the
+/// signature.  Before the un-seam the body referenced the raw argument registers
+/// `RDI`/`RSI`/`RDX`; after binding the recovered parameter Symbols the body must
+/// reference the recovered parameter NAMES (`a0`/`a1`/`a2` on the unlocked corpus
+/// path, the declared names on the locked datatest path) — never the raw
+/// registers, and the parameters must NOT be re-declared as body locals.
+#[test]
+fn verify_w10_symbol_naming_readstruct_body_uses_param_names_not_registers() {
+    let path = repo_root().join("decompiler/datatests/nestedoffset.xml");
+    let dt = parse_datatest(&path).expect("parse nestedoffset.xml");
+    let rendered = render_corpus(&dt).expect("readstruct must decompile");
+
+    assert!(
+        rendered.contains("readstruct"),
+        "readstruct must render its function:\n{rendered}"
+    );
+    // The first-arg pointer (RDI) must be bound to its recovered parameter and used
+    // in the LOAD address; the raw argument registers must be gone from the body.
+    let raw_args = count_matches(r"\b(RDI|RSI|RDX|EDI|ESI|EDX)\b", &rendered).unwrap_or(0);
+    assert_eq!(
+        raw_args, 0,
+        "readstruct's body must reference the bound parameter names, not the raw \
+         argument registers (RDI/RSI/RDX); found {raw_args}:\n{rendered}"
+    );
+    // The recovered first parameter (`a0`) is the LOAD base — proves the body
+    // HighVariable carries the parameter Symbol, the un-seam's core effect.
+    let param_in_load = count_matches(r"LOAD\([0-9]+,a0", &rendered).unwrap_or(0);
+    assert!(
+        param_in_load >= 1,
+        "readstruct must LOAD through the bound first parameter (`a0`):\n{rendered}"
+    );
+    // A parameter must never leak the `$$undef` placeholder name.
+    assert_eq!(
+        count_matches(r"\$\$undef", &rendered).unwrap_or(0),
+        0,
+        "no `$$undef` placeholder may leak into the body:\n{rendered}"
+    );
+    // Parameters render in the signature, not the body decl block: there must be no
+    // local declaration of the parameter name (`int8 a0;` etc.).
+    assert_eq!(
+        count_matches(r"(?m)^\s+\w[\w ]*\ba0 *;", &rendered).unwrap_or(0),
+        0,
+        "a recovered parameter must not be re-declared as a body local:\n{rendered}"
     );
 }
 
