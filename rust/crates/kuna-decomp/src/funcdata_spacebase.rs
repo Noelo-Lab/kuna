@@ -767,7 +767,7 @@ fn proto_boundaries(proto: &crate::fspec::FuncProto) -> Option<crate::varmap::Pr
 /// The live-IR realization of the [`AliasGatherSeam`](crate::varmap::AliasGatherSeam):
 /// `findSpacebaseInput` / `gatherAdditiveBase` / `gatherOffset` over the function's
 /// def/use graph (C++ `AliasChecker`'s Varnode walks, `varmap.cc:736-858`).
-struct FuncdataAliasSeam<'a> {
+pub(crate) struct FuncdataAliasSeam<'a> {
     fd: &'a Funcdata,
 }
 
@@ -793,6 +793,50 @@ impl crate::varmap::AliasGatherSeam for FuncdataAliasSeam<'_> {
 }
 
 impl Funcdata {
+    /// Build the live-IR [`AliasGatherSeam`](crate::varmap::AliasGatherSeam) over
+    /// this function's def/use graph, so an [`AliasChecker`](crate::varmap::AliasChecker)
+    /// can lazily gather stack-pointer aliases (`findSpacebaseInput`/
+    /// `gatherAdditiveBase`/`gatherOffset`).  Used by the call-site input recovery
+    /// (`checkInputTrialUse`'s spacebase branch).
+    pub(crate) fn alias_gather_seam(&self) -> FuncdataAliasSeam<'_> {
+        FuncdataAliasSeam { fd: self }
+    }
+
+    /// Build the deferred local-alias checker the call-site input recovery uses
+    /// (C++ `ActionActiveParam`'s `aliascheck.gather(&data, getStackSpace(), true)`).
+    ///
+    /// The boundaries are derived from this function's prototype; the gather is
+    /// deferred (the Varnode walk runs lazily on the first `hasLocalAlias`).
+    /// Returns `None` if there is no stack space (no possible local alias).
+    pub(crate) fn build_alias_checker_deferred(&self) -> Option<crate::varmap::AliasChecker> {
+        let stackspc = self.get_arch().manage().get_stack_space().map(Rc::clone)?;
+        let bounds = proto_boundaries(self.get_func_proto());
+        let mut checker = crate::varmap::AliasChecker::new();
+        let mut seam = self.alias_gather_seam();
+        checker.gather(stackspc, bounds.as_ref(), true, &mut seam);
+        Some(checker)
+    }
+
+    /// Mark a stack range as not mapped to a local symbol (C++
+    /// `ScopeLocal::markNotMapped`, reached via `getScopeLocal()` from
+    /// `buildInputFromTrials` for a stack-passed parameter).
+    ///
+    /// SEAM(W4 ScopeLocal::markNotMapped): the `RangeHint`/`markNotMapped` range
+    /// surface on `ScopeLocal` is not yet ported (LOSS recorded in the structured
+    /// output).  The register-parameter recovery path the call-rendering datatests
+    /// exercise never reaches this (only stack-passed params do); a stack-passed
+    /// parameter simply is not marked unmapped here, which at worst leaves a stack
+    /// slot eligible for a redundant local — it does not corrupt the call list.
+    pub(crate) fn scope_local_mark_not_mapped(
+        &mut self,
+        _spc: &Rc<kuna_base::space::AddrSpace>,
+        _first: uintb,
+        _sz: int4,
+        _param: bool,
+    ) {
+        // no-op until ScopeLocal::markNotMapped lands (W4)
+    }
+
     /// C++ `AliasChecker::gatherAdditiveBase` (`varmap.cc:736`): collect the roots
     /// of every additive expression tree rooted at `startvn` (a spacebase input).
     ///

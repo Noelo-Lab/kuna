@@ -552,6 +552,18 @@ pub trait Action {
 pub struct ActionContext {
     /// Where `issueWarning` / `warningHeader` text lands.
     pub warnings: WarningSink,
+    /// Whether the restart loop ([`ActionRestartGroup`]) can re-follow flow after
+    /// a `data.clear()` (C++ `ActionStart::startProcessing` → `followFlow`).
+    ///
+    /// The Rust flow follower needs the [`FlowEnvironment`](crate::flow::FlowEnvironment)
+    /// (the SLEIGH translator + typeop table), which lives on the `Architecture`,
+    /// not on the IR-boundary `glb` handle the action loop carries.  Until that is
+    /// threaded into the action loop (`ActionStart` re-flow port), a restart cannot
+    /// rebuild the IR — so when this is `false` the restart group completes with
+    /// the *current* (already-analyzed) IR instead of clearing it to an empty
+    /// function.  See `LOSS` in the call-site recovery review (restart re-flow is
+    /// the next blocker).
+    pub can_reflow: bool,
 }
 
 impl ActionContext {
@@ -821,6 +833,19 @@ impl Action for ActionRestartGroup {
             }
             if data.is_jumptable_recovery_on() {
                 // Don't restart within jumptable recovery
+                return 0;
+            }
+            if !ctx.can_reflow {
+                // SEAM(ActionStart re-flow): the C++ restart re-follows flow
+                // (`startProcessing` → `followFlow`) to rebuild the IR; the Rust
+                // flow follower needs the `Architecture`'s SLEIGH translator, which
+                // is not threaded into the action loop yet.  Clearing the IR here
+                // without re-flowing would leave an empty function, so the restart
+                // is dropped and the current (already-analyzed) IR is kept — a
+                // strictly better result than the empty body.  The restart-pending
+                // flag is cleared so downstream passes do not re-trip on it.
+                data.set_restart_pending(false);
+                self.curstart = -1;
                 return 0;
             }
             self.curstart += 1;

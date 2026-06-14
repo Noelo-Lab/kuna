@@ -233,14 +233,17 @@ fn w5s3_backward_int_add_single_bit_input_flag_guard() {
     assert!(!sf.do_trace(&mut fd).unwrap());
 }
 
-// ---- F-check: duplicate-input CALL surfaces the W4 repeat-slot seam ---------
+// ---- F-check: a CALL descendant routes through tryCallPull (seam now closed) -
 //
-// subflow.cc:616-623: a CALL descendant routes through tryCallPull, which is
-// W4-seamed (FuncCallSpecs).  Even before the repeat-slot logic, a CALL
-// descendant (slot != 0) must surface the seam as an Err from do_trace, NOT a
-// silent success.  This guards against the seam being accidentally swallowed.
+// subflow.cc:616-623: a CALL descendant (slot != 0) routes through tryCallPull.
+// With the call-site machinery now ported (w10-callsite-args), tryCallPull is no
+// longer a W4 seam: `fd->getCallSpecs(op)` is queried, and a CALL op with **no
+// registered FuncCallSpecs** (this hand-built fixture installs none) takes the
+// `fc == 0` arm and returns `false` (no truncation) — so `do_trace` completes
+// `Ok(false)` instead of surfacing an Err.  This pins the closed seam: the trace
+// no longer aborts mid-flight on a CALL descendant.
 #[test]
-fn w5s3_forward_call_descendant_surfaces_w4_seam() {
+fn w5s3_forward_call_descendant_no_callspec_returns_false() {
     let mut fd = build_fd();
     let root = mk_input(&mut fd, 0x40, 4);
     fd.vbank_mut().get_mut(root).unwrap().set_consume(0xff);
@@ -251,10 +254,12 @@ fn w5s3_forward_call_descendant_surfaces_w4_seam() {
     wire_in(&mut fd, callop, root, 1);
 
     let mut sf = SubvariableFlow::new(&mut fd, root, 0xff, true, false, false).unwrap();
-    // tryCallPull is SEAM(W4) -> Err propagates out of do_trace.
+    // tryCallPull queries getCallSpecs(op); no call spec is registered for this
+    // fixture op -> `fc == 0` -> returns false -> do_trace completes Ok(false).
     let r = sf.do_trace(&mut fd);
-    assert!(
-        r.is_err(),
-        "a CALL(slot=1) descendant must surface the W4 tryCallPull seam as Err, got {r:?}"
+    assert_eq!(
+        r.ok(),
+        Some(false),
+        "a CALL(slot=1) descendant with no call spec returns Ok(false) (no truncation)"
     );
 }

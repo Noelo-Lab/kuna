@@ -71,6 +71,19 @@ impl FlowEnvironment for ArchFlowEnv<'_> {
     fn resolve_typeop(&self, opc: OpCode) -> TypeOp {
         self.arch.resolve_typeop(opc)
     }
+    fn query_call(&self, entry: &Address) -> Option<String> {
+        // C++ FlowInfo::queryCall -> getScopeLocal()->getParent()->queryFunction(entry):
+        // resolve the callee's display name from the global symbol table (populated
+        // by readLoaderSymbols at load).
+        let scope = self.arch.symboltab.get_global_scope()?;
+        let sid = self.arch.symboltab.find_function(scope, entry)?;
+        let name = self.arch.symboltab.symbol(sid).get_display_name();
+        if name.is_empty() {
+            None
+        } else {
+            Some(name.to_string())
+        }
+    }
 }
 
 /// Build a [`Funcdata`] for the function `name` at `entry` and follow its flow,
@@ -104,6 +117,9 @@ pub fn build_and_follow_flow(
     // `ActionStart` is a seam, so it is driven here, exactly as the C++
     // `followFlow`→`startProcessing` order runs it before the action pipeline).
     data.structure_reset();
+    // C++ startProcessing also calls sortCallSpecs() (dominance order for the
+    // call-spec list); now that qlst exists, sort it.
+    data.sort_call_specs();
     // startProcessing then sets the processing_started flag (so isProcStarted()
     // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
     // applyDeadCodeDelay — is W4 seam or handled lazily in op_heritage).

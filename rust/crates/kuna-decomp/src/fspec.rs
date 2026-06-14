@@ -4713,6 +4713,26 @@ impl FuncProto {
         self.injectid = op2.injectid;
     }
 
+    /// If the model is a merged model, decide which one of the merged models
+    /// best fits the given trials and set it as the model (C++
+    /// `FuncProto::resolveModel`, `fspec.cc:3772`).
+    ///
+    /// Once a model is chosen it is no longer merged, so re-running is a no-op.
+    /// The trials are not re-marked here (that happens in
+    /// `ParamList::fillinMap` / `derive_input_map`).
+    pub fn resolve_model(&mut self, active: &ParamActive) -> KunaResult<()> {
+        let model = match &self.model {
+            Some(m) => Rc::clone(m),
+            None => return Ok(()),
+        };
+        if !model.is_merged() {
+            return Ok(()); // Already been resolved
+        }
+        let newmodel = model.select_model(active)?;
+        self.set_model(Some(newmodel));
+        Ok(())
+    }
+
     /// Does this prototype have a model (C++ `hasModel`).
     pub fn has_model(&self) -> bool {
         self.model.is_some()
@@ -5362,6 +5382,23 @@ impl FuncProto {
         self.model().derive_output_map(active, manager)
     }
 
+    /// Derive the most likely input prototype from a list of trials (C++
+    /// `FuncProto::deriveInputMap`, fspec.hh:1494 — `model->deriveInputMap(active)`).
+    pub fn derive_input_map(
+        &self,
+        active: &mut ParamActive,
+        manager: &AddrSpaceManager,
+    ) -> KunaResult<()> {
+        self.model().derive_input_map(active, manager)
+    }
+
+    /// The input model's [`ParamEntry`] list (C++ `model->getInput()` entries),
+    /// cloned so a `ParamActive` trial sort can run while the proto is no longer
+    /// borrowed.  Used by `buildInputFromTrials`'s `sortFixedPosition`.
+    pub fn input_param_entries(&self) -> Vec<ParamEntry> {
+        self.model().input().get_entry().to_vec()
+    }
+
     /// Decide whether a storage location could be, or hold, the return value
     /// (C++ `characterizeAsOutput`).
     pub fn characterize_as_output(&self, addr: &Address, size: int4) -> Containment {
@@ -5996,6 +6033,56 @@ impl FuncCallSpecs {
     pub fn is_stack_output_lock(&self) -> bool {
         self.isstackoutputlock
     }
+    /// Resolve a merged prototype model against the recovered input trials (C++
+    /// `FuncProto::resolveModel` via the `FuncCallSpecs` base, called by
+    /// `ActionActiveParam`).  Delegates to the `FuncProto` base.
+    pub fn resolve_model(&mut self, active: &ParamActive) -> KunaResult<()> {
+        self.proto.resolve_model(active)
+    }
+
+    /// Run the C++ `ActionActiveParam` model/input-map resolution against \b this
+    /// call spec's own active input (`fc->resolveModel(activeinput)` then
+    /// `fc->deriveInputMap(activeinput)`).
+    ///
+    /// The two operate on the same `activeinput` member, which the borrow checker
+    /// will not let `resolve_model(&self.activeinput)`/`derive_input_map(&mut
+    /// self.activeinput)` borrow simultaneously — so the disjoint
+    /// `proto`/`activeinput` field split is done here, in one place.
+    pub fn resolve_and_derive_input_map(&mut self, manager: &AddrSpaceManager) -> KunaResult<()> {
+        // resolveModel reads activeinput, writes proto.model.
+        self.proto.resolve_model(&self.activeinput)?;
+        // deriveInputMap reads proto.model, writes activeinput trials.
+        self.proto.derive_input_map(&mut self.activeinput, manager)
+    }
+
+    /// Derive the most likely input prototype from the trials (C++
+    /// `FuncCallSpecs::deriveInputMap` -> `FuncProto::deriveInputMap`).
+    pub fn derive_input_map(
+        &self,
+        active: &mut ParamActive,
+        manager: &AddrSpaceManager,
+    ) -> KunaResult<()> {
+        self.proto.derive_input_map(active, manager)
+    }
+
+    /// Derive the most likely output prototype from the trials (C++
+    /// `FuncCallSpecs::deriveOutputMap` -> `FuncProto::deriveOutputMap`).
+    pub fn derive_output_map(
+        &self,
+        active: &mut ParamActive,
+        manager: &AddrSpaceManager,
+    ) -> KunaResult<()> {
+        self.proto.derive_output_map(active, manager)
+    }
+
+    /// Derive the output map against \b this call spec's own active output (C++
+    /// `fc->deriveOutputMap(activeoutput)` in `ActionActiveReturn`).  The
+    /// proto/activeoutput field split is done here (the borrow checker rejects
+    /// `derive_output_map(&mut self.activeoutput)` with `&self.proto`).
+    pub fn derive_output_map_self(&mut self, manager: &AddrSpaceManager) -> KunaResult<()> {
+        self.proto.derive_output_map(&mut self.activeoutput, manager)
+    }
+
     /// The analysis object for input parameter recovery (C++ `getActiveInput`).
     pub fn get_active_input(&mut self) -> &mut ParamActive {
         &mut self.activeinput
@@ -6003,6 +6090,44 @@ impl FuncCallSpecs {
     /// The analysis object for return value recovery (C++ `getActiveOutput`).
     pub fn get_active_output(&mut self) -> &mut ParamActive {
         &mut self.activeoutput
+    }
+
+    /// The relative offset of the stack pointer at this call site (C++
+    /// `stackoffset`; the `buildInputFromTrials` spacebase-parameter translation
+    /// reads it directly).
+    pub fn get_stackoffset(&self) -> uintb {
+        self.stackoffset
+    }
+
+    /// Is this prototype using varargs (C++ `isDotdotdot` via the `FuncProto`
+    /// base).
+    pub fn is_dotdotdot(&self) -> bool {
+        self.proto.is_dotdotdot()
+    }
+
+    /// Is this prototype's input list locked (C++ `isInputLocked` via the
+    /// `FuncProto` base).
+    pub fn is_input_locked(&self) -> bool {
+        self.proto.is_input_locked()
+    }
+
+    /// The model's declared extrapop (C++ `getModelExtraPop` via the `FuncProto`
+    /// base; the `checkInputTrialUse` callee-pop test reads it).
+    pub fn get_model_extra_pop(&self) -> int4 {
+        self.proto.get_model_extra_pop()
+    }
+
+    /// The working extrapop for this prototype (C++ `getExtraPop` via the
+    /// `FuncProto` base).
+    pub fn get_extra_pop(&self) -> int4 {
+        self.proto.get_extra_pop()
+    }
+
+    /// Is a potential output automatically killed-by-call (C++
+    /// `isAutoKilledByCall` via the `FuncProto` base; the `guardCalls` output-trial
+    /// effect-type test reads it).
+    pub fn is_auto_killed_by_call(&self) -> bool {
+        self.proto.is_auto_killed_by_call()
     }
 
     // -- input-bytes-consumed hints (fspec.cc:5877-5906) --------------------
