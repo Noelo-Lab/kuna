@@ -17,6 +17,130 @@ fn rpn(tok: &'static OpToken, visited: int4) -> ReversePolish {
     ReversePolish { tok, visited, paren: false, op: None, id: 0, id2: 0 }
 }
 
+// ===========================================================================
+// VERIFIER (w10-input-prototype) adversarial tests for `declarator_parts`
+// (the C-declarator builder transcribing buildTypeStack / pushTypeStart /
+// pushTypeEnd). These probe the fragile pure logic: base/anonymous naming,
+// pointer-front vs array-tail placement, and the ptr-inside-array
+// parenthesisation the RPN ptr_expr/array_expr tokens encode.
+// ===========================================================================
+mod w10_input_prototype_declarator {
+    use crate::dtype::{type_metatype, Datatype, DatatypeKind};
+    use crate::printc::declarator_parts;
+    use std::rc::Rc;
+
+    fn named(size: i32, m: type_metatype, nm: &str) -> Rc<Datatype> {
+        // C++ TypeBase sets displayName = name; mirror that (declarator_parts
+        // reads get_display_name() for the base but get_name() for the
+        // base-detection loop — both must be the identifier).
+        let mut t = Datatype::new_with_align(size, -1, m);
+        t.name = nm.to_string();
+        t.display_name = nm.to_string();
+        Rc::new(t)
+    }
+
+    fn ptr_to(ptrto: Rc<Datatype>) -> Rc<Datatype> {
+        let mut p = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTR);
+        p.kind = DatatypeKind::Pointer { ptrto, spaceid: None, truncate: None, wordsize: 1 };
+        Rc::new(p)
+    }
+
+    fn array_of(arrayof: Rc<Datatype>, n: i32) -> Rc<Datatype> {
+        let elt = arrayof.get_size().max(1);
+        let mut a = Datatype::new_with_align(elt * n, -1, type_metatype::TYPE_ARRAY);
+        a.kind = DatatypeKind::Array { arrayof, arraysize: n };
+        Rc::new(a)
+    }
+
+    /// A bare named base type renders `("<name>", "")` with no trailing space
+    /// (the caller adds the space before the identifier).  This is the
+    /// `noident && typestack.size()==1` -> type_expr_nospace path.
+    #[test]
+    fn base_type_no_modifier() {
+        let t = named(8, type_metatype::TYPE_INT, "int8");
+        assert_eq!(declarator_parts(&t), ("int8".to_string(), String::new()));
+    }
+
+    /// A pointer puts a `*` on the front glued to the base name with a single
+    /// space: `("twostruct *", "")` -> `twostruct *ptr`.  The `want_space`
+    /// caller suppresses a second space after `*`.
+    #[test]
+    fn pointer_front_star() {
+        let base = named(8, type_metatype::TYPE_STRUCT, "twostruct");
+        let p = ptr_to(base);
+        assert_eq!(declarator_parts(&p), ("twostruct *".to_string(), String::new()));
+    }
+
+    /// An array goes on the tail: `int4[4]` -> `("int4", "[4]")` -> `int4 a[4]`.
+    /// No parenthesisation since there is no pending pointer.
+    #[test]
+    fn array_tail_no_paren() {
+        let base = named(4, type_metatype::TYPE_INT, "int4");
+        let a = array_of(base, 4);
+        assert_eq!(declarator_parts(&a), ("int4".to_string(), "[4]".to_string()));
+    }
+
+    /// DIVERGENCE (verdict F1 / LOSS): the pointer/array parenthesisation in
+    /// `declarator_parts` is INVERTED relative to the C++ `pushTypeStart` RPN
+    /// (`ptr_expr` vs `array_expr` precedence).
+    ///
+    /// C++ renders a *pointer-to-array* `int4 (*)[1]` as `int4 (*a)[1]`
+    /// (the `*` parenthesised inside the `[]`), and an *array-of-pointer*
+    /// `int4 *[1]` as `int4 *a[1]` (no parens).  The Rust `pending_ptr` walk
+    /// (base->outer) only wraps when an ARRAY modifier sees a *preceding*
+    /// pointer, which is the array-of-pointer ordering — so the two C nestings
+    /// come out SWAPPED:
+    ///   * pointer-to-array `int4 (*)[1]` -> WRONG `("int4 *", "[1]")`
+    ///     (renders `int4 *a[1]`, an array-of-pointer)
+    ///   * array-of-pointer `int4 *[1]`   -> WRONG `("int4 (*", ")[1]")`
+    ///     (renders `int4 (*a)[1]`, a pointer-to-array)
+    /// The doc-comment example on `declarator_parts` (`int4 (*)[1]` ->
+    /// `("int4 (*", ")[1]")`) describes the CORRECT C++ output, which the code
+    /// does NOT produce.  Latent: `ptrtoarray.xml` declares such params
+    /// (`int4 (*a)[1]`) but never emits them as a decompiled function HEADER,
+    /// so no passing assertion depends on it today.  This test pins the actual
+    /// (buggy) output so a future fix flips it deliberately.
+    #[test]
+    fn pointer_to_array_paren_inverted_divergence() {
+        let base = named(4, type_metatype::TYPE_INT, "int4");
+        // pointer-to-array int4 (*)[1] — C++ would give ("int4 (*", ")[1]").
+        let pta = ptr_to(array_of(base.clone(), 1));
+        assert_eq!(
+            declarator_parts(&pta),
+            ("int4 *".to_string(), "[1]".to_string()),
+            "BUG: pointer-to-array renders as array-of-pointer (paren inverted)"
+        );
+        // array-of-pointer int4 *[1] — C++ would give ("int4 *", "[1]").
+        let aop = array_of(ptr_to(base), 1);
+        assert_eq!(
+            declarator_parts(&aop),
+            ("int4 (*".to_string(), ")[1]".to_string()),
+            "BUG: array-of-pointer renders as pointer-to-array (paren inverted)"
+        );
+    }
+
+    /// An anonymous base type with no name falls back to genericTypeName:
+    /// TYPE_VOID -> "void", else "undefined<size>".  A pointer to an anonymous
+    /// 4-byte type renders `undefined4 *`.
+    #[test]
+    fn anonymous_base_generic_name() {
+        let anon = Rc::new(Datatype::new_with_align(4, -1, type_metatype::TYPE_UNKNOWN));
+        let p = ptr_to(anon);
+        assert_eq!(declarator_parts(&p), ("undefined4 *".to_string(), String::new()));
+        let v = Rc::new(Datatype::new_with_align(0, 1, type_metatype::TYPE_VOID));
+        assert_eq!(declarator_parts(&v), ("void".to_string(), String::new()));
+    }
+
+    /// Pointer-to-pointer keeps both stars on the front, no parens:
+    /// `char **` -> `("char **", "")`.
+    #[test]
+    fn pointer_to_pointer() {
+        let base = named(1, type_metatype::TYPE_INT, "char");
+        let pp = ptr_to(ptr_to(base));
+        assert_eq!(declarator_parts(&pp), ("char **".to_string(), String::new()));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Operator token table (printc.cc:24-78)
 // ---------------------------------------------------------------------------

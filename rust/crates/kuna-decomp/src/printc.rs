@@ -2658,7 +2658,7 @@ fn sblocks_basic_tail(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
 /// on the front (`*`), array/function modifiers on the tail (`[N]`/`(...)`), and
 /// a `*` front nested inside an array/function tail is parenthesised — the
 /// precedence the RPN `ptr_expr`/`array_expr` tokens encode.
-fn declarator_parts(ct: &std::rc::Rc<crate::dtype::Datatype>) -> (String, String) {
+pub(crate) fn declarator_parts(ct: &std::rc::Rc<crate::dtype::Datatype>) -> (String, String) {
     use crate::dtype::type_metatype;
     // buildTypeStack: walk to the base (named) type, recording the modifier chain.
     let mut stack: Vec<std::rc::Rc<crate::dtype::Datatype>> = Vec::new();
