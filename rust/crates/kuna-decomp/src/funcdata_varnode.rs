@@ -223,6 +223,132 @@ impl Funcdata {
     // path; no `xref` read-repointing, so fully portable here)
     // -----------------------------------------------------------------------
 
+    /// Calculate the non-zero mask (`nzm`) property on every live Varnode (C++
+    /// `Funcdata::calcNZMask`, `funcdata_varnode.cc:874`).
+    ///
+    /// A DFS over the def-use graph seeds each leaf Varnode's `nzm`
+    /// (constant -> its value; type-locked bool -> 1; otherwise the full
+    /// size-mask, with the low byte cleared for a spacebase) and computes each op
+    /// output's `nzm` from [`get_nz_mask_local`](crate::op::get_nz_mask_local) in
+    /// post-order.  A second fixed-point pass re-propagates through `MULTIEQUAL`
+    /// loop edges (which the DFS clipped) until the masks settle.
+    pub fn calc_nz_mask(&mut self) {
+        use kuna_base::address::calc_mask;
+        // PcodeOpNode stack: (op, next-slot).
+        let alive: Vec<OpId> = self.obank().iter_alive().collect();
+        let mut opstack: Vec<(OpId, int4)> = Vec::new();
+        for root in &alive {
+            let root = *root;
+            if self.obank().get(root).map(|o| o.is_mark()).unwrap_or(true) {
+                continue;
+            }
+            opstack.push((root, 0));
+            self.obank_mut().get_mut(root).expect("calc_nz_mask: stale root").set_mark();
+
+            while let Some(&(op, slot)) = opstack.last() {
+                let num_input = self.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+                if slot >= num_input {
+                    // No edge left: compute the output mask in post-order.
+                    if let Some(outvn) = self.obank().get(op).and_then(|o| o.get_out()) {
+                        let parent = self.obank().get(op).and_then(|o| o.get_parent());
+                        let nz = {
+                            let bblocks = self.bblocks_ref();
+                            let is_loop_in = |s: int4| -> bool {
+                                parent
+                                    .map(|bid| bblocks.arena[bid].is_loop_in(s))
+                                    .unwrap_or(false)
+                            };
+                            let o = self.obank().get(op).expect("calc_nz_mask: stale op");
+                            crate::op::get_nz_mask_local(o, self.vbank(), true, &is_loop_in)
+                        };
+                        self.vbank_mut().get_mut(outvn).expect("calc_nz_mask: stale out").set_nz_mask(nz);
+                    }
+                    opstack.pop();
+                    continue;
+                }
+                // Advance to next input.
+                if let Some(top) = opstack.last_mut() {
+                    top.1 += 1;
+                }
+                let oldslot = slot;
+                // MULTIEQUAL: clip looping edges.
+                if self.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_MULTIEQUAL) {
+                    let parent = self.obank().get(op).and_then(|o| o.get_parent());
+                    let is_loop = parent
+                        .map(|bid| self.bblocks_ref().arena[bid].is_loop_in(oldslot))
+                        .unwrap_or(false);
+                    if is_loop {
+                        continue;
+                    }
+                }
+                let vn = match self.obank().get(op).and_then(|o| o.get_in(oldslot)) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let (is_written, is_const, off, is_type_lock, is_sb, sz, meta_bool, def) = {
+                    let v = self.vbank().get(vn).expect("calc_nz_mask: stale in");
+                    (
+                        v.is_written(),
+                        v.is_constant(),
+                        v.get_offset(),
+                        v.is_type_lock(),
+                        v.is_spacebase(),
+                        v.get_size(),
+                        v.get_type().get_metatype() == type_metatype::TYPE_BOOL,
+                        v.get_def(),
+                    )
+                };
+                if !is_written {
+                    let nz = if is_const {
+                        off
+                    } else if is_type_lock && meta_bool {
+                        1
+                    } else {
+                        let mut m = calc_mask(sz);
+                        if is_sb {
+                            m &= !0xffu64; // Treat spacebase input as aligned.
+                        }
+                        m
+                    };
+                    self.vbank_mut().get_mut(vn).expect("calc_nz_mask: stale in").set_nz_mask(nz);
+                } else if let Some(def) = def {
+                    if !self.obank().get(def).map(|o| o.is_mark()).unwrap_or(true) {
+                        opstack.push((def, 0));
+                        self.obank_mut().get_mut(def).expect("calc_nz_mask: stale def").set_mark();
+                    }
+                }
+            }
+        }
+
+        // Clear marks; collect MULTIEQUALs for the loop-edge fixpoint.
+        let mut worklist: Vec<OpId> = Vec::new();
+        for &op in &alive {
+            self.obank_mut().get_mut(op).expect("calc_nz_mask: stale alive").clear_mark();
+            if self.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_MULTIEQUAL) {
+                worklist.push(op);
+            }
+        }
+        // Propagate changes along all edges until settled.
+        while let Some(op) = worklist.pop() {
+            let outvn = match self.obank().get(op).and_then(|o| o.get_out()) {
+                Some(v) => v,
+                None => continue,
+            };
+            let nzmask = {
+                let o = self.obank().get(op).expect("calc_nz_mask: stale op");
+                let no_loop = |_s: int4| -> bool { false };
+                crate::op::get_nz_mask_local(o, self.vbank(), false, &no_loop)
+            };
+            let cur = self.vbank().get(outvn).map(|v| v.get_nz_mask()).unwrap_or(0);
+            if nzmask != cur {
+                self.vbank_mut().get_mut(outvn).expect("calc_nz_mask: stale out").set_nz_mask(nzmask);
+                let descend: Vec<OpId> =
+                    self.vbank().get(outvn).map(|v| v.descend_iter().collect()).unwrap_or_default();
+                worklist.extend(descend);
+            }
+        }
+    }
+
     /// Allocate a Varnode representing the indicated constant value
     /// (C++ `Funcdata::newConstant`, `funcdata_varnode.cc:68`).
     ///

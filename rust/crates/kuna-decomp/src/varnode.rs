@@ -570,6 +570,22 @@ impl Varnode {
     pub fn get_type(&self) -> &Rc<Datatype> {
         &self.type_
     }
+    /// C++ `Varnode::getTypeReadFacing(op)` (varnode.cc:658).  Generally just the
+    /// Varnode's own data-type; for a \e union it would be the resolved field for
+    /// the reading op.  Union mid-flow resolution (`needsResolution`/`findResolve`)
+    /// is a deferred W8 surface, so when the type does not need resolution this is
+    /// exactly `getType()` — faithful for the pointer/array/struct corpus (no
+    /// unions). // SEAM(W8 union findResolve)
+    pub fn get_type_read_facing(&self, _op: OpId) -> &Rc<Datatype> {
+        // if (!type->needsResolution()) return type; return type->findResolve(op, op->getSlot(this));
+        &self.type_
+    }
+    /// C++ `Varnode::getTypeDefFacing()` (varnode.cc:645).  The def-facing analogue
+    /// of [`get_type_read_facing`]; identical when the type does not need union
+    /// resolution. // SEAM(W8 union findResolve)
+    pub fn get_type_def_facing(&self) -> &Rc<Datatype> {
+        &self.type_
+    }
     /// Set the temporary Datatype used during type propagation (C++ `setTempType`).
     pub fn set_temp_type(&mut self, t: Rc<Datatype>) {
         self.temp_type = Some(t);
@@ -602,6 +618,10 @@ impl Varnode {
     /// Get the mask of bits known to be zero (C++ `getNZMask`).
     pub fn get_nz_mask(&self) -> uintb {
         self.nzm
+    }
+    /// Set the non-zero mask (C++ writes `vn->nzm` directly during `calcNZMask`).
+    pub fn set_nz_mask(&mut self, nzm: uintb) {
+        self.nzm = nzm;
     }
     /// The high-level variable id, if any (C++ `getHigh`, sans the throw).
     pub fn get_high(&self) -> Option<HighVariableId> {

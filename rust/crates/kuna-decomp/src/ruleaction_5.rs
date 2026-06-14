@@ -51,13 +51,14 @@
 use std::rc::Rc;
 
 use kuna_base::address::{calc_mask, uintb_negate, Address};
-use kuna_base::types::{int4, uint4};
+use kuna_base::space::AddrSpace;
+use kuna_base::types::{int4, int8, uint4};
 use kuna_num::opcodes::{get_booleanflip, OpCode};
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{OpId, TypeOp};
+use crate::seams::{OpId, TypeOp, VarnodeId};
 
 // =============================================================================
 // SEAM(W6): opcode -> TypeOp resolution (glb->inst[opc])
@@ -1014,21 +1015,186 @@ impl Rule for RulePtrArith {
         Some(Box::new(RulePtrArith { group: self.group }))
     }
 
-    fn apply_op(&mut self, _op: OpId, _data: &mut Funcdata) -> int4 {
-        // SEAM(W6)+SEAM(W3-varnode): AddTreeState + getTypeReadFacing + newOpBefore.
-        // The full C++ body:
-        //   if (!data.hasTypeRecoveryStarted()) return 0;
-        //   for(slot=0;...) ct = op->getIn(slot)->getTypeReadFacing(op);
-        //                   if (ct->getMetatype() == TYPE_PTR) break;
-        //   if (slot == op->numInput()) return 0;
-        //   if (evaluatePointerExpression(op, slot) != 2) return 0;
-        //   if (!verifyPreferredPointer(op, slot)) return 0;
-        //   AddTreeState state(data,op,slot);
-        //   if (state.apply()) return 1;
-        //   if (state.initAlternateForm()) { if (state.apply()) return 1; }
-        //   return 0;
+    fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        // if (!data.hasTypeRecoveryStarted()) return 0;
+        if !data.has_type_recovery_started() {
+            return 0;
+        }
+        // for(slot=0;slot<op->numInput();++slot) { ct = getTypeReadFacing(op); if PTR break; }
+        let num_input = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+        let mut slot = num_input;
+        for s in 0..num_input {
+            let invn = match data.obank().get(op).and_then(|o| o.get_in(s)) {
+                Some(v) => v,
+                None => continue,
+            };
+            let meta = data
+                .vbank()
+                .get(invn)
+                .map(|v| v.get_type_read_facing(op).get_metatype())
+                .unwrap_or(crate::dtype::type_metatype::TYPE_UNKNOWN);
+            if meta == crate::dtype::type_metatype::TYPE_PTR {
+                slot = s;
+                break;
+            }
+        }
+        if slot == num_input {
+            return 0;
+        }
+        // if (evaluatePointerExpression(op, slot) != 2) return 0;
+        if evaluate_pointer_expression(data, op, slot) != 2 {
+            return 0;
+        }
+        // if (!verifyPreferredPointer(op, slot)) return 0;
+        if !verify_preferred_pointer(data, op, slot) {
+            return 0;
+        }
+        // AddTreeState state(data,op,slot);
+        let mut state = match crate::addtreestate::AddTreeState::new(data, op, slot) {
+            Some(s) => s,
+            None => return 0,
+        };
+        if state.apply() {
+            return 1;
+        }
+        if state.init_alternate_form() && state.apply() {
+            return 1;
+        }
         0
     }
+}
+
+/// C++ `RulePtrArith::evaluatePointerExpression(op, slot)` (ruleaction.cc:6596).
+/// Return command code: 0 = take no action, 1 = push needed, 2 = ready to convert.
+pub(crate) fn evaluate_pointer_expression(data: &Funcdata, op: OpId, slot: int4) -> int4 {
+    let mut res = 1; // Assume we are going to push
+    let mut count = 0; // Count descendants
+    let ptr_base = match data.obank().get(op).and_then(|o| o.get_in(slot)) {
+        Some(v) => v,
+        None => return 0,
+    };
+    {
+        let v = match data.vbank().get(ptr_base) {
+            Some(v) => v,
+            None => return 0,
+        };
+        if v.is_free() && !v.is_constant() {
+            return 0;
+        }
+    }
+    // if (op->getIn(1-slot)->getTypeReadFacing(op)->getMetatype() == TYPE_PTR) res = 2;
+    let other = data.obank().get(op).and_then(|o| o.get_in(1 - slot));
+    if let Some(other) = other {
+        if data.vbank().get(other).map(|v| v.get_type_read_facing(op).get_metatype())
+            == Some(crate::dtype::type_metatype::TYPE_PTR)
+        {
+            res = 2;
+        }
+    }
+    let out_vn = match data.obank().get(op).and_then(|o| o.get_out()) {
+        Some(v) => v,
+        None => return 0,
+    };
+    let descend: Vec<OpId> = data
+        .vbank()
+        .get(out_vn)
+        .map(|v| v.descend_iter().collect())
+        .unwrap_or_default();
+    for dec_op in descend {
+        count += 1;
+        let opc = data.obank().get(dec_op).map(|o| o.code()).unwrap_or(OpCode::CPUI_MAX);
+        if opc == OpCode::CPUI_INT_ADD {
+            let dec_slot = data.obank().get(dec_op).map(|o| o.get_slot(out_vn)).unwrap_or(0);
+            let other_vn = data.obank().get(dec_op).and_then(|o| o.get_in(1 - dec_slot));
+            let other_vn = match other_vn {
+                Some(v) => v,
+                None => return 0,
+            };
+            let (is_free, is_const) = data
+                .vbank()
+                .get(other_vn)
+                .map(|v| (v.is_free(), v.is_constant()))
+                .unwrap_or((true, false));
+            if is_free && !is_const {
+                return 0; // data-flow not fully linked
+            }
+            if data.vbank().get(other_vn).map(|v| v.get_type_read_facing(dec_op).get_metatype())
+                == Some(crate::dtype::type_metatype::TYPE_PTR)
+            {
+                res = 2; // Do not push in the presence of other pointers
+            }
+        } else if (opc == OpCode::CPUI_LOAD || opc == OpCode::CPUI_STORE)
+            && data.obank().get(dec_op).and_then(|o| o.get_in(1)) == Some(out_vn)
+        {
+            let (ptr_sb, ptr_input, ptr_const) = data
+                .vbank()
+                .get(ptr_base)
+                .map(|v| (v.is_spacebase(), v.is_input(), v.is_constant()))
+                .unwrap_or((false, false, false));
+            let other_const = data
+                .obank()
+                .get(op)
+                .and_then(|o| o.get_in(1 - slot))
+                .and_then(|v| data.vbank().get(v))
+                .map(|v| v.is_constant())
+                .unwrap_or(false);
+            if ptr_sb && (ptr_input || ptr_const) && other_const {
+                return 0;
+            }
+            res = 2;
+        } else {
+            res = 2; // Any other op besides ADD, do not push
+        }
+    }
+    if count == 0 {
+        return 0;
+    }
+    if count > 1 {
+        // For the RESULT to be a spacebase pointer it must have only 1 descendant.
+        if data.vbank().get(out_vn).map(|v| v.is_spacebase()).unwrap_or(false) {
+            return 0;
+        }
+    }
+    res
+}
+
+/// C++ `RulePtrArith::verifyPreferredPointer(op, slot)` (ruleaction.cc:6568).
+fn verify_preferred_pointer(data: &Funcdata, op: OpId, slot: int4) -> bool {
+    let vn = match data.obank().get(op).and_then(|o| o.get_in(slot)) {
+        Some(v) => v,
+        None => return true,
+    };
+    if !data.vbank().get(vn).map(|v| v.is_written()).unwrap_or(false) {
+        return true;
+    }
+    let pre_op = match data.vbank().get(vn).and_then(|v| v.get_def()) {
+        Some(o) => o,
+        None => return true,
+    };
+    if data.obank().get(pre_op).map(|o| o.code()) != Some(OpCode::CPUI_INT_ADD) {
+        return true;
+    }
+    let mut preslot = 0;
+    let meta0 = data
+        .obank()
+        .get(pre_op)
+        .and_then(|o| o.get_in(0))
+        .and_then(|v| data.vbank().get(v))
+        .map(|v| v.get_type_read_facing(pre_op).get_metatype());
+    if meta0 != Some(crate::dtype::type_metatype::TYPE_PTR) {
+        preslot = 1;
+        let meta1 = data
+            .obank()
+            .get(pre_op)
+            .and_then(|o| o.get_in(1))
+            .and_then(|v| data.vbank().get(v))
+            .map(|v| v.get_type_read_facing(pre_op).get_metatype());
+        if meta1 != Some(crate::dtype::type_metatype::TYPE_PTR) {
+            return true;
+        }
+    }
+    // Does the earlier varnode look like the base pointer?
+    1 != evaluate_pointer_expression(data, pre_op, preslot)
 }
 
 // =============================================================================
@@ -1068,9 +1234,139 @@ impl Rule for RuleStructOffset0 {
         Some(Box::new(RuleStructOffset0 { group: self.group }))
     }
 
-    fn apply_op(&mut self, _op: OpId, _data: &mut Funcdata) -> int4 {
-        // SEAM(W6)+SEAM(W3-varnode): getTypeReadFacing + TypePointer(Rel) + newOpBefore.
-        0
+    // The nested `if size==movesize { if numElements!=1 {...} }` mirrors the C++
+    // array arm verbatim (ruleaction.cc:6769-6773); kept un-collapsed for parity.
+    #[allow(clippy::collapsible_if)]
+    fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        use crate::dtype::type_metatype;
+        // if (!data.hasTypeRecoveryStarted()) return 0;
+        if !data.has_type_recovery_started() {
+            return 0;
+        }
+        let code = data.obank().get(op).map(|o| o.code()).unwrap_or(OpCode::CPUI_MAX);
+        // movesize = (LOAD) out->getSize() / (STORE) getIn(2)->getSize();
+        let movesize = match code {
+            OpCode::CPUI_LOAD => data
+                .obank()
+                .get(op)
+                .and_then(|o| o.get_out())
+                .and_then(|v| data.vbank().get(v))
+                .map(|v| v.get_size()),
+            OpCode::CPUI_STORE => data
+                .obank()
+                .get(op)
+                .and_then(|o| o.get_in(2))
+                .and_then(|v| data.vbank().get(v))
+                .map(|v| v.get_size()),
+            _ => return 0,
+        };
+        let movesize = match movesize {
+            Some(m) => m,
+            None => return 0,
+        };
+        let ptr_vn = match data.obank().get(op).and_then(|o| o.get_in(1)) {
+            Some(v) => v,
+            None => return 0,
+        };
+        let ct = data.vbank().get(ptr_vn).map(|v| v.get_type_read_facing(op).clone());
+        let ct = match ct {
+            Some(c) => c,
+            None => return 0,
+        };
+        if ct.get_metatype() != type_metatype::TYPE_PTR {
+            return 0;
+        }
+        let ptr_size = data.vbank().get(ptr_vn).map(|v| v.get_size()).unwrap_or(0);
+        let mut base_type = match ct.get_ptr_to() {
+            Some(b) => b,
+            None => return 0,
+        };
+        // Relative-pointer arm: ct->isFormalPointerRel() && evaluateThruParent(0)
+        if ct.is_formal_pointer_rel() && ct.evaluate_thru_parent(0) == Some(true) {
+            base_type = match ct.get_rel_parent() {
+                Some(b) => b,
+                None => return 0,
+            };
+            if base_type.get_metatype() != type_metatype::TYPE_STRUCT {
+                return 0;
+            }
+            let offset = ct.get_byte_offset().unwrap_or(0) as int8;
+            if offset >= base_type.get_size() as int8 {
+                return 0;
+            }
+            if (base_type.get_size() as int4) < movesize {
+                return 0; // Moving something bigger than the entire structure
+            }
+            let (sub_type, newoff) = match base_type.get_sub_type(offset) {
+                Ok((Some(st), no)) => (st, no),
+                _ => return 0,
+            };
+            if sub_type.get_size() < movesize {
+                return 0; // Subtype too small for the LOAD/STORE
+            }
+            let word_size = ct.get_word_size().unwrap_or(1);
+            let newoff_addr = AddrSpace::byte_to_address(newoff as u64, word_size);
+            // offset = -newoff & calc_mask(ptrVn->getSize());
+            let sub_offset = newoff_addr.wrapping_neg() & calc_mask(ptr_size);
+            let off_const = data.new_constant(ptr_size, sub_offset);
+            let newop = data.new_op_before(op, OpCode::CPUI_PTRSUB, ptr_vn, off_const, None);
+            // needsResolution union arm: SEAM(W8) inheritUnionField — no-op for plain.
+            data.op_set_stop_type_propagation(newop);
+            let newop_out = data
+                .obank()
+                .get(newop)
+                .and_then(|o| o.get_out())
+                .expect("RuleStructOffset0: ptrsub out");
+            if newoff_addr != 0 {
+                let add_c = data.new_constant(ptr_size, newoff_addr);
+                let addop = data.new_op_before(op, OpCode::CPUI_INT_ADD, newop_out, add_c, None);
+                let addop_out = data
+                    .obank()
+                    .get(addop)
+                    .and_then(|o| o.get_out())
+                    .expect("RuleStructOffset0: add out");
+                let _ = data.op_set_input(op, addop_out, 1);
+            } else {
+                let _ = data.op_set_input(op, newop_out, 1);
+            }
+            return 1;
+        }
+        // Plain-pointer arm: offset = 0.
+        let meta = base_type.get_metatype();
+        if meta == type_metatype::TYPE_STRUCT {
+            if (base_type.get_size() as int4) < movesize {
+                return 0;
+            }
+            let sub_type = match base_type.get_sub_type(0) {
+                Ok((Some(st), _)) => st,
+                _ => return 0,
+            };
+            if sub_type.get_size() < movesize {
+                return 0; // Subtype too small to handle LOAD/STORE
+            }
+        } else if meta == type_metatype::TYPE_ARRAY {
+            if (base_type.get_size() as int4) < movesize {
+                return 0;
+            }
+            if (base_type.get_size() as int4) == movesize {
+                if base_type.num_elements() != Some(1) {
+                    return 0;
+                }
+            }
+        } else {
+            return 0;
+        }
+        let zero = data.new_constant(ptr_size, 0);
+        let newop = data.new_op_before(op, OpCode::CPUI_PTRSUB, ptr_vn, zero, None);
+        // SEAM(W8) inheritUnionField — no-op for plain pointers.
+        data.op_set_stop_type_propagation(newop);
+        let newop_out = data
+            .obank()
+            .get(newop)
+            .and_then(|o| o.get_out())
+            .expect("RuleStructOffset0: ptrsub out");
+        let _ = data.op_set_input(op, newop_out, 1);
+        1
     }
 }
 
@@ -1112,11 +1408,189 @@ impl Rule for RulePushPtr {
         Some(Box::new(RulePushPtr { group: self.group }))
     }
 
-    fn apply_op(&mut self, _op: OpId, _data: &mut Funcdata) -> int4 {
-        // SEAM(W6)+SEAM(W3-varnode): getTypeReadFacing + evaluatePointerExpression
-        // + newOp/newUniqueOut/buildVarnodeOut/duplicateNeed.
-        0
+    // The pointer-push loops re-read the front of a descend list the body rewires
+    // each pass (C++ `for(;;){ iter=beginDescend(); if(iter==endDescend())break; }`),
+    // and have a second early break — a plain `while let` cannot express that.
+    #[allow(clippy::while_let_loop)]
+    fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        use crate::dtype::type_metatype;
+        // if (!data.hasTypeRecoveryStarted()) return 0;
+        if !data.has_type_recovery_started() {
+            return 0;
+        }
+        let num_input = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+        // for(slot=0;...) vni = op->getIn(slot); if (vni->getTypeReadFacing(op)->PTR) break;
+        let mut slot = num_input;
+        let mut vni = None;
+        for s in 0..num_input {
+            let v = match data.obank().get(op).and_then(|o| o.get_in(s)) {
+                Some(v) => v,
+                None => continue,
+            };
+            if data.vbank().get(v).map(|x| x.get_type_read_facing(op).get_metatype())
+                == Some(type_metatype::TYPE_PTR)
+            {
+                slot = s;
+                vni = Some(v);
+                break;
+            }
+        }
+        if slot == num_input {
+            return 0;
+        }
+        let vni = vni.expect("RulePushPtr: pointer slot found");
+        // if (evaluatePointerExpression(op, slot) != 1) return 0;
+        if evaluate_pointer_expression(data, op, slot) != 1 {
+            return 0;
+        }
+        let vn = match data.obank().get(op).and_then(|o| o.get_out()) {
+            Some(v) => v,
+            None => return 0,
+        };
+        let vnadd2 = match data.obank().get(op).and_then(|o| o.get_in(1 - slot)) {
+            Some(v) => v,
+            None => return 0,
+        };
+        let mut duplicate_list: Vec<OpId> = Vec::new();
+        if data.lone_descend(vn).is_none() {
+            collect_duplicate_needs(data, &mut duplicate_list, vnadd2);
+        }
+
+        // Push the pointer down through each descendant INT_ADD.
+        loop {
+            let decop = match data.vbank().get(vn).and_then(|v| v.descend_iter().next()) {
+                Some(o) => o,
+                None => break,
+            };
+            let j = data.obank().get(decop).map(|o| o.get_slot(vn)).unwrap_or(0);
+            let vnadd1 = match data.obank().get(decop).and_then(|o| o.get_in(1 - j)) {
+                Some(v) => v,
+                None => break,
+            };
+            // newop = newOp(2, decop->getAddr()); INT_ADD; newout = newUniqueOut(size).
+            let dec_addr = data.obank().get(decop).map(|o| o.get_addr().clone())
+                .expect("RulePushPtr: decop addr");
+            let newop = data.new_op(2, dec_addr);
+            data.op_set_opcode_code(newop, OpCode::CPUI_INT_ADD);
+            let vnadd1_size = data.vbank().get(vnadd1).map(|v| v.get_size()).unwrap_or(1);
+            let newout = data.new_unique_out(vnadd1_size, newop).expect("RulePushPtr: unique out");
+
+            let _ = data.op_set_input(decop, vni, 0);
+            let _ = data.op_set_input(decop, newout, 1);
+            let _ = data.op_set_input(newop, vnadd1, 0);
+            let _ = data.op_set_input(newop, vnadd2, 1);
+            data.op_insert_before(newop, decop);
+        }
+        if !data.vbank().get(vn).map(|v| v.is_auto_live()).unwrap_or(false) {
+            data.op_destroy(op);
+        }
+        for dop in duplicate_list {
+            duplicate_need(data, dop);
+        }
+        1
     }
+}
+
+/// C++ `RulePushPtr::buildVarnodeOut(vn, op, data)` (ruleaction.cc:6793).
+fn build_varnode_out(data: &mut Funcdata, vn: VarnodeId, op: OpId) -> VarnodeId {
+    use kuna_base::space::spacetype;
+    let (addr_tied, is_internal, size, addr) = {
+        let v = data.vbank().get(vn).expect("build_varnode_out: stale vn");
+        (
+            v.is_addr_tied(),
+            v.get_space().get_type() == spacetype::IPTR_INTERNAL,
+            v.get_size(),
+            v.get_addr().clone(),
+        )
+    };
+    if addr_tied || is_internal {
+        data.new_unique_out(size, op).expect("build_varnode_out: unique out")
+    } else {
+        data.new_varnode_out(size, &addr, op).expect("build_varnode_out: varnode out")
+    }
+}
+
+/// C++ `RulePushPtr::collectDuplicateNeeds(reslist, vn)` (ruleaction.cc:6808).
+fn collect_duplicate_needs(data: &Funcdata, reslist: &mut Vec<OpId>, mut vn: VarnodeId) {
+    loop {
+        let v = match data.vbank().get(vn) {
+            Some(v) => v,
+            None => return,
+        };
+        if !v.is_written() {
+            return;
+        }
+        if v.is_auto_live() {
+            return;
+        }
+        if data.lone_descend(vn).is_none() {
+            return; // Already has multiple descendants
+        }
+        let op = match v.get_def() {
+            Some(o) => o,
+            None => return,
+        };
+        let opc = data.obank().get(op).map(|o| o.code()).unwrap_or(OpCode::CPUI_MAX);
+        if opc == OpCode::CPUI_INT_ZEXT || opc == OpCode::CPUI_INT_SEXT || opc == OpCode::CPUI_INT_2COMP {
+            reslist.push(op);
+        } else if opc == OpCode::CPUI_INT_MULT {
+            if data.obank().get(op).and_then(|o| o.get_in(1)).and_then(|v| data.vbank().get(v))
+                .map(|v| v.is_constant()).unwrap_or(false)
+            {
+                reslist.push(op);
+            }
+        } else {
+            return;
+        }
+        vn = match data.obank().get(op).and_then(|o| o.get_in(0)) {
+            Some(v) => v,
+            None => return,
+        };
+    }
+}
+
+/// C++ `RulePushPtr::duplicateNeed(op, data)` (ruleaction.cc:6837).
+// Re-reads the front of `out_vn`'s descend list the loop body rewires each pass
+// (C++ `do { decOp=*iter; ...; iter=beginDescend(); } while(iter!=endDescend())`).
+#[allow(clippy::while_let_loop)]
+fn duplicate_need(data: &mut Funcdata, op: OpId) {
+    let out_vn = match data.obank().get(op).and_then(|o| o.get_out()) {
+        Some(v) => v,
+        None => return,
+    };
+    let in_vn = match data.obank().get(op).and_then(|o| o.get_in(0)) {
+        Some(v) => v,
+        None => return,
+    };
+    let num = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+    let opc = data.obank().get(op).map(|o| o.code()).unwrap_or(OpCode::CPUI_MAX);
+    let op_addr = data.obank().get(op).map(|o| o.get_addr().clone()).expect("duplicate_need: addr");
+    let in1 = if num > 1 { data.obank().get(op).and_then(|o| o.get_in(1)) } else { None };
+    let out_type = data.vbank().get(out_vn).map(|v| v.get_type().clone());
+    loop {
+        let dec_op = match data.vbank().get(out_vn).and_then(|v| v.descend_iter().next()) {
+            Some(o) => o,
+            None => break,
+        };
+        let slot = data.obank().get(dec_op).map(|o| o.get_slot(out_vn)).unwrap_or(0);
+        let new_op = data.new_op(num, op_addr.clone());
+        let new_out = build_varnode_out(data, out_vn, new_op);
+        if let Some(ot) = &out_type {
+            if let Some(v) = data.vbank_mut().get_mut(new_out) {
+                v.update_type(ot.clone());
+            }
+        }
+        data.op_set_opcode_code(new_op, opc);
+        let _ = data.op_set_input(new_op, in_vn, 0);
+        if num > 1 {
+            if let Some(in1) = in1 {
+                let _ = data.op_set_input(new_op, in1, 1);
+            }
+        }
+        let _ = data.op_set_input(dec_op, new_out, slot);
+        data.op_insert_before(new_op, dec_op);
+    }
+    data.op_destroy(op);
 }
 
 // =============================================================================

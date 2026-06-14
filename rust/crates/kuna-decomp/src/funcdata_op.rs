@@ -102,6 +102,17 @@ impl Funcdata {
         self.op_set_opcode(op, Self::w6_type_op(opc));
     }
 
+    /// Mark a PcodeOp as halting type propagation through it (C++
+    /// `PcodeOp::setStopTypePropagation`, set on a `PTRSUB`/`PTRADD` created by
+    /// `RulePtrArith`/`RuleStructOffset0` so the inferred sub data-type is not
+    /// re-propagated past the access).
+    pub fn op_set_stop_type_propagation(&mut self, op: OpId) {
+        self.obank_mut()
+            .get_mut(op)
+            .expect("op_set_stop_type_propagation: stale op")
+            .set_stop_type_propagation();
+    }
+
     /// Mark a PcodeOp as not collapsible (C++ `Funcdata::opMarkNoCollapse`,
     /// `funcdata.hh:493` — `op->setFlag(PcodeOp::nocollapse)`).
     ///
@@ -438,6 +449,157 @@ impl Funcdata {
         let _ = self.op_set_input(newop, iop, 1);
         self.op_insert_before(newop, indeffect);
         newop
+    }
+
+    /// Create a new PcodeOp with 2 or 3 operands and a unique-space output, inserted
+    /// before `follow` (C++ `Funcdata::newOpBefore`, `funcdata_op.cc:656`).
+    ///
+    /// `in3 == None` builds a 2-input op; otherwise a 3-input op.  The output is a
+    /// fresh \e unique Varnode sized to `in1`.
+    pub fn new_op_before(
+        &mut self,
+        follow: OpId,
+        opc: OpCode,
+        in1: VarnodeId,
+        in2: VarnodeId,
+        in3: Option<VarnodeId>,
+    ) -> OpId {
+        // sz = (in3 == 0) ? 2 : 3;  newop = newOp(sz,follow->getAddr());
+        let sz = if in3.is_none() { 2 } else { 3 };
+        let addr = self.obank().get(follow).expect("new_op_before: stale follow").get_addr().clone();
+        let newop = self.new_op(sz, addr);
+        // opSetOpcode(newop,opc);
+        self.op_set_opcode_code(newop, opc);
+        // newUniqueOut(in1->getSize(),newop);
+        let in1_size = self.vbank().get(in1).expect("new_op_before: stale in1").get_size();
+        let _ = self.new_unique_out(in1_size, newop);
+        // opSetInput(newop,in1,0); opSetInput(newop,in2,1);
+        let _ = self.op_set_input(newop, in1, 0);
+        let _ = self.op_set_input(newop, in2, 1);
+        // if (sz==3) opSetInput(newop,in3,2);
+        if let Some(in3) = in3 {
+            let _ = self.op_set_input(newop, in3, 2);
+        }
+        // opInsertBefore(newop,follow);
+        self.op_insert_before(newop, follow);
+        newop
+    }
+
+    /// Convert a PTRADD back to an INT_ADD, folding the element-size multiplier
+    /// (C++ `Funcdata::opUndoPtradd`, `funcdata_op.cc:579`).
+    ///
+    /// `finalize` controls whether the recreated index Varnode picks up the
+    /// (read-facing) data-type of the offset/multiplier — used by the late
+    /// finalization pass.
+    pub fn op_undo_ptradd(&mut self, op: OpId, finalize: bool) {
+        // Varnode *multVn = op->getIn(2); int4 multSize = multVn->getOffset();
+        let mult_vn = self.obank().get(op).expect("op_undo_ptradd: stale op").get_in(2)
+            .expect("op_undo_ptradd: PTRADD missing slot 2");
+        let mult_off = self.vbank().get(mult_vn).expect("op_undo_ptradd: stale multVn").get_offset();
+        // cast: the PTRADD element-size constant fits int4 (a data-type byte size).
+        let mult_size = mult_off as int4;
+        // opRemoveInput(op,2); opSetOpcode(op,CPUI_INT_ADD);
+        self.op_remove_input(op, 2);
+        self.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
+        // if (multSize == 1) return;  // No multiplier, done
+        if mult_size == 1 {
+            return;
+        }
+        let off_vn = self.obank().get(op).expect("op_undo_ptradd: stale op").get_in(1)
+            .expect("op_undo_ptradd: missing slot 1");
+        let (off_is_const, off_off, off_size) = {
+            let v = self.vbank().get(off_vn).expect("op_undo_ptradd: stale offVn");
+            (v.is_constant(), v.get_offset(), v.get_size())
+        };
+        if off_is_const {
+            // newVal = multSize * offVn->getOffset(); newVal &= calc_mask(offVn->getSize());
+            let new_val = (mult_off.wrapping_mul(off_off)) & kuna_base::address::calc_mask(off_size);
+            let new_off_vn = self.new_constant(off_size, new_val);
+            if finalize {
+                let rf = self.vbank().get(off_vn).expect("op_undo_ptradd: stale offVn")
+                    .get_type_read_facing(op).clone();
+                self.vbank_mut().get_mut(new_off_vn).expect("op_undo_ptradd: stale newOff").update_type(rf);
+            }
+            let _ = self.op_set_input(op, new_off_vn, 1);
+            return;
+        }
+        // PcodeOp *multOp = newOp(2,op->getAddr()); opSetOpcode(multOp,CPUI_INT_MULT);
+        let op_addr = self.obank().get(op).expect("op_undo_ptradd: stale op").get_addr().clone();
+        let mult_op = self.new_op(2, op_addr);
+        self.op_set_opcode_code(mult_op, OpCode::CPUI_INT_MULT);
+        // Varnode *addVn = newUniqueOut(offVn->getSize(),multOp);
+        let add_vn = self.new_unique_out(off_size, mult_op).expect("op_undo_ptradd: unique out");
+        if finalize {
+            let mt = self.vbank().get(mult_vn).expect("op_undo_ptradd: stale multVn").get_type().clone();
+            let av = self.vbank_mut().get_mut(add_vn).expect("op_undo_ptradd: stale addVn");
+            av.update_type(mt);
+            av.set_implied();
+        }
+        // opSetInput(multOp,offVn,0); opSetInput(multOp,multVn,1);
+        let _ = self.op_set_input(mult_op, off_vn, 0);
+        let _ = self.op_set_input(mult_op, mult_vn, 1);
+        // opSetInput(op,addVn,1); opInsertBefore(multOp,op);
+        let _ = self.op_set_input(op, add_vn, 1);
+        self.op_insert_before(mult_op, op);
+    }
+
+    /// Collapse `z = (x * #c) * #d` to `z = x * #(c*d)` (C++
+    /// `Funcdata::collapseIntMultMult`, `funcdata_op.cc:1138`).  Returns whether a
+    /// collapse occurred.
+    pub fn collapse_int_mult_mult(&mut self, vn: VarnodeId) -> bool {
+        // if (!vn->isWritten()) return false;  op = vn->getDef();
+        let op = match self.vbank().get(vn).and_then(|v| v.get_def()) {
+            Some(o) => o,
+            None => return false,
+        };
+        if self.obank().get(op).map(|o| o.code()) != Some(OpCode::CPUI_INT_MULT) {
+            return false;
+        }
+        let const_first = self.obank().get(op).and_then(|o| o.get_in(1));
+        let (cf_is_const, cf_off) = match const_first.and_then(|v| self.vbank().get(v)) {
+            Some(v) => (v.is_constant(), v.get_offset()),
+            None => return false,
+        };
+        if !cf_is_const {
+            return false;
+        }
+        let in0 = self.obank().get(op).and_then(|o| o.get_in(0));
+        let in0_written = in0.and_then(|v| self.vbank().get(v)).map(|v| v.is_written()).unwrap_or(false);
+        if !in0_written {
+            return false;
+        }
+        let other_mult = in0.and_then(|v| self.vbank().get(v)).and_then(|v| v.get_def());
+        let other_mult = match other_mult {
+            Some(o) => o,
+            None => return false,
+        };
+        if self.obank().get(other_mult).map(|o| o.code()) != Some(OpCode::CPUI_INT_MULT) {
+            return false;
+        }
+        let const_second = self.obank().get(other_mult).and_then(|o| o.get_in(1));
+        let (cs_is_const, cs_off) = match const_second.and_then(|v| self.vbank().get(v)) {
+            Some(v) => (v.is_constant(), v.get_offset()),
+            None => return false,
+        };
+        if !cs_is_const {
+            return false;
+        }
+        let invn = match self.obank().get(other_mult).and_then(|o| o.get_in(0)) {
+            Some(v) => v,
+            None => return false,
+        };
+        let (invn_free, sz) = match self.vbank().get(invn) {
+            Some(v) => (v.is_free(), v.get_size()),
+            None => return false,
+        };
+        if invn_free {
+            return false;
+        }
+        let val = (cf_off.wrapping_mul(cs_off)) & kuna_base::address::calc_mask(sz);
+        let newvn = self.new_constant(sz, val);
+        let _ = self.op_set_input(op, newvn, 1);
+        let _ = self.op_set_input(op, invn, 0);
+        true
     }
 
     /// Make a clone of the given op, copying control-flow properties; the

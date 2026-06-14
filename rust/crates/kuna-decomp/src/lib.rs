@@ -98,6 +98,7 @@ pub mod prefersplit;
 pub mod coreaction_protos;
 pub mod coreaction_cleanup;
 pub mod coreaction_infertypes;
+pub mod addtreestate;
 pub mod kuna_returnpair;
 pub mod kuna_memsetsequence;
 pub mod kuna_compareform;

@@ -1277,6 +1277,43 @@ impl Datatype {
         }
     }
 
+    /// Get this relative pointer's offset in \e address units (C++
+    /// `TypePointerRel::getAddressOffset` = `byteToAddressInt(offset, wordsize)`).
+    /// `None` for non-relative-pointers.
+    pub fn get_address_offset(&self) -> Option<int4> {
+        match &self.kind {
+            DatatypeKind::PointerRel { offset, wordsize, .. } => {
+                // cast: getAddressOffset returns int4; byteToAddressInt(int4,..) fits int4.
+                Some(AddrSpace::byte_to_address_int(*offset as i64, *wordsize) as int4)
+            }
+            _ => None,
+        }
+    }
+
+    /// C++ `TypePointerRel::evaluateThruParent(addrOff)` (type.cc:3039): would a
+    /// `PTRSUB(this, addrOff)` be representable as an access through the parent
+    /// container (vs. the basic ptrto form)?  `None` for non-relative-pointers.
+    pub fn evaluate_thru_parent(&self, addr_off: u64) -> Option<bool> {
+        match &self.kind {
+            DatatypeKind::PointerRel { ptrto, wordsize, parent, offset, .. } => {
+                // byteOff = addressToByte(addrOff, wordsize);
+                let byte_off = AddrSpace::address_to_byte(addr_off, *wordsize);
+                // if (ptrto STRUCT && byteOff < ptrto.size) return false;
+                if ptrto.get_metatype() == type_metatype::TYPE_STRUCT
+                    && byte_off < ptrto.get_size() as u64
+                {
+                    return Some(false);
+                }
+                // byteOff = (byteOff + offset) & calc_mask(size);
+                let byte_off = byte_off
+                    .wrapping_add(*offset as u64)
+                    & kuna_base::address::calc_mask(self.get_size());
+                Some(byte_off < parent.get_size() as u64)
+            }
+            _ => None,
+        }
+    }
+
     // -- Partial accessors (type.hh:651,673,701) ----------------------------
 
     /// Get the byte offset into the containing data-type for any partial kind
@@ -4753,7 +4790,13 @@ impl TypeFactoryImpl {
     ) -> Datatype {
         // Start from the plain-pointer skeleton (inheritForPointer + calcSubmeta).
         let mut tp = self.build_pointer(sz, Rc::clone(&ptr_to), ws);
-        tp.metatype = type_metatype::TYPE_PTRREL;
+        // C++ TypePointerRel keeps `metatype == TYPE_PTR` internally — the
+        // TypePointer base ctor sets it and the relative ctor never overrides it
+        // ("Don't use TYPE_PTRREL internally", type.cc:3010).  The TYPE_PTRREL
+        // metatype is ONLY a marshalling override (encodeBasic(TYPE_PTRREL,...),
+        // type.cc:3109).  Using it as the live metatype mis-classifies a relative
+        // pointer as a non-pointer in every `getMetatype()==TYPE_PTR` test
+        // (RulePtrArith pointer-slot search, propagateType, etc.).
         tp.flags |= flags::is_ptrrel;
         // TypePointerRel uses SUB_PTRREL for the dependency ordering of a formal
         // relative pointer (markEphemeral lowers it to SUB_PTRREL_UNK).

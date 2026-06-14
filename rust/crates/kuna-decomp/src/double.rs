@@ -58,17 +58,19 @@ use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
-use crate::seams::{BlockId, OpId, TypeOp, VarnodeId};
+use crate::seams::{BlockId, OpId, VarnodeId};
 
 /// `sizeof(uintb)` from the C++ — constants cannot exceed 8-byte precision.
 const SIZEOF_UINTB: int4 = 8;
 
 /// Resolve an [`OpCode`] to the [`TypeOp`] that [`Funcdata::op_set_opcode`]
-/// expects (C++ `glb->inst[opc]`).  The opcode value is load-bearing for the
-/// rules and the action engine's per-op dispatch; the cached property-flag word
-/// is the W6 `TypeFactory` fill, supplied here as `0`.  // SEAM(W6)
+/// expects (C++ `glb->inst[opc]`).  Resolves through the architecture's `inst`
+/// table so the op carries its real `opflags` (eval-type, commutative, …) — a
+/// flag-less `TypeOp::new(opc,0,..)` leaves the op with `getEvalType()==0`, which
+/// blocks `RuleCollapseConstants` from folding a constant SUBPIECE/PIECE the
+/// `SubvariableFlow` split produces.
 fn set_opcode_seam(data: &mut Funcdata, op: OpId, opc: OpCode) {
-    data.op_set_opcode(op, TypeOp::new(opc, 0, format!("{opc:?}")));
+    data.op_set_opcode(op, crate::typeop::type_op_for(opc));
 }
 
 // =============================================================================
@@ -5419,7 +5421,7 @@ mod tests {
 
     use crate::dtype::{type_metatype, Datatype};
     use crate::op::pcodeop_flags;
-    use crate::seams::Architecture;
+    use crate::seams::{Architecture, TypeOp};
 
     fn build_manager() -> AddrSpaceManager {
         let mut m = AddrSpaceManager::new();
