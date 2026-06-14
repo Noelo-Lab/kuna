@@ -703,6 +703,148 @@ impl Architecture {
         Ok(())
     }
 
+    /// Create a `SpacebaseSpace` (a \e virtual stack space) backed by a base
+    /// register, mirroring C++ `Architecture::addSpacebase` (architecture.cc:564).
+    ///
+    /// A new [`SpacebaseSpace`](kuna_base::space::SpacebaseSpace) is constructed
+    /// at `numSpaces()`, optionally marked reverse-justified, inserted into the
+    /// **single** engine manager (so it gets its `'s'` shortcut and, when named
+    /// `"stack"`, becomes the manager's formal stack space), and its base
+    /// register location attached via `addSpacebasePointer`.
+    ///
+    /// \param basespace is the address space underlying the stack (e.g. `ram`)
+    /// \param nm is the name of the new space (`"stack"` for the formal one)
+    /// \param ptrdata is the register location acting as a pointer into the space
+    /// \param trunc_size is the (possibly truncated) register size that fits the space
+    /// \param isreversejustified is \b true if small variables are justified opposite of endianness
+    /// \param stack_growth is \b true if a stack in this space grows in the negative direction
+    /// \param is_formal is the indicator for the \e formal stack space
+    #[allow(clippy::too_many_arguments)] // C++ Architecture::addSpacebase signature
+    fn add_spacebase(
+        &mut self,
+        basespace: &Rc<kuna_base::space::AddrSpace>,
+        nm: &str,
+        ptrdata: &kuna_base::space::VarnodeStorage,
+        trunc_size: int4,
+        isreversejustified: bool,
+        stack_growth: bool,
+        is_formal: bool,
+    ) -> KunaResult<()> {
+        use kuna_base::space::SpacebaseSpace;
+        // C++: `int4 ind = numSpaces();` then `new SpacebaseSpace(this, translate,
+        // nm, ind, truncSize, basespace, ptrdata.space->getDelay()+1, isFormal)`.
+        let big_end = basespace.is_big_endian(); // C++ `t->isBigEndian()`
+        // C++ `ptrdata.space->getDelay()+1`: the heritage delay is one past the
+        // delay of the space the base register lives in (dereferencing a null
+        // ptrdata.space is C++ UB -> panic).
+        let dl = ptrdata
+            .space
+            .as_ref()
+            .expect("addSpacebase: base register has a null space (C++ UB)")
+            .get_delay()
+            + 1;
+        let manager = self.translate.base_mut().manager_mut();
+        let ind = manager.num_spaces();
+        let spc = Rc::new(SpacebaseSpace::new(
+            nm,
+            ind,
+            trunc_size as u32, // cast: int4 truncSize -> uint4 space size
+            basespace,
+            dl,
+            is_formal,
+            big_end,
+        ));
+        if isreversejustified {
+            manager.set_reverse_justified(&spc);
+        }
+        manager.insert_space(Rc::clone(&spc))?;
+        // C++ `addSpacebasePointer(spc, ptrdata, truncSize, stackGrowth)`: attach
+        // the base register to the freshly-inserted spacebase space.
+        manager.add_spacebase_pointer(&spc, ptrdata, trunc_size, stack_growth)?;
+        Ok(())
+    }
+
+    /// Create the stack space and stack-pointer register from a cspec
+    /// `<stackpointer>` element, mirroring C++ `Architecture::decodeStackPointer`
+    /// (architecture.cc:983).  This is the cspec branch C++ `parseCompilerConfig`
+    /// dispatches to `ELEM_STACKPOINTER`.
+    ///
+    /// Without this the engine manager has no `IPTR_SPACEBASE` space: `parse_machaddr`
+    /// fails on `s0x…` stack addresses ("Bad address: s"), `get_stack_space()` is
+    /// `None`, and `Funcdata.localmap` stays `None` — so stack-variable promotion
+    /// can never fire.  General over any processor's cspec: the `register`/`space`
+    /// attributes are read from the XML and resolved through the engine, with NO
+    /// processor-name special-casing.
+    ///
+    /// The cspec XML is the one [`set_cspec_xml`](Architecture::set_cspec_xml)
+    /// recorded; this borrows it (it must stay available for the later
+    /// `<default_proto>` decode in [`build_default_proto`](Architecture::build_default_proto)).
+    fn decode_stack_pointer(&mut self) -> KunaResult<()> {
+        use kuna_base::xml::DocumentStorage;
+        let Some(xml) = self.cspec_xml.clone() else {
+            return Ok(()); // no cspec recorded: nothing to decode (degrade gracefully)
+        };
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(&xml)?.get_root().clone();
+        // The resolved .cspec root IS <compiler_spec> (C++ getTag("compiler_spec")).
+        let Some(sp) = find_child(&root, "stackpointer") else {
+            // No <stackpointer> in this cspec: leave the manager without a stack
+            // space (C++ never reaches decodeStackPointer for such a spec).
+            return Ok(());
+        };
+
+        // C++ attribute loop over <stackpointer>: register, space, growth,
+        // reversejustify.  Defaults: stackGrowth=true (negative), reversejustify
+        // false.
+        let register_name = attr_str(&sp, "register").unwrap_or_default();
+        // C++ `stackGrowth = decoder.readString() == "negative"`.
+        let stack_growth =
+            attr_str(&sp, "growth").map(|g| g == "negative").unwrap_or(true);
+        let isreversejustify =
+            attr_str(&sp, "reversejustify").map(|s| s == "true").unwrap_or(false);
+        let space_name = attr_str(&sp, "space");
+
+        // C++: `if (basespace == 0) throw "missing space attribute"`.
+        let space_name = space_name.ok_or_else(|| {
+            KunaError::lowlevel("stackpointer element missing \"space\" attribute")
+        })?;
+        let basespace = self
+            .manage()
+            .get_space_by_name(&space_name)
+            .cloned()
+            .ok_or_else(|| {
+                KunaError::lowlevel(format!("stackpointer space \"{space_name}\" not found"))
+            })?;
+
+        // C++ `translate->getRegister(registerName)` -> the base-register location.
+        let point_num = self.get_register_varnode(register_name.as_bytes())?;
+        let point = kuna_sleigh::translate::storage_from_varnode_data(&point_num);
+
+        // C++ truncation: if creating a stackpointer to a truncated space, truncate
+        // the stackpointer to the space's address size.
+        let mut trunc_size = point.size as int4;
+        if basespace.is_truncated() && point.size > basespace.get_addr_size() {
+            trunc_size = basespace.get_addr_size() as int4;
+        }
+
+        // Already created (re-init): the manager already carries the stack space.
+        if self.manage().get_stack_space().is_some() {
+            return Ok(());
+        }
+
+        // C++ `addSpacebase(basespace, "stack", point, truncSize, isreversejustify,
+        // stackGrowth, true)` — create the "official" stackpointer.
+        self.add_spacebase(
+            &basespace,
+            "stack",
+            &point,
+            trunc_size,
+            isreversejustify,
+            stack_growth,
+            true,
+        )
+    }
+
     // -----------------------------------------------------------------------
     // Owned-subsystem accessors (the `glb->types`/`glb->print`/… surface the
     // ifacedecomp porter confirmed were absent — w9x-arch-engine-glue)
@@ -1291,6 +1433,16 @@ impl Architecture {
         // disassembly correctly (e.g. x86-64 lifts as 64-bit, not 16-bit) —
         // the context must be in place before any instruction is decoded.
         self.parse_processor_config()?;
+        // C++ `Architecture::restoreFromSpec` runs `parseCompilerConfig`
+        // (architecture.cc:647) after `parseProcessorConfig`; the cspec
+        // `<stackpointer>` element (parseCompilerConfig -> ELEM_STACKPOINTER ->
+        // `decodeStackPointer`, architecture.cc:1260) creates the formal stack
+        // `SpacebaseSpace`.  It must run before `finish_typegrp` (which reads
+        // `get_stack_space()` for the stack-pointer size) and before
+        // `build_default_proto` (the rest of the cspec decode).  Without it the
+        // engine has no IPTR_SPACEBASE space, `s0x…` stack addresses fail to
+        // parse, and `Funcdata.localmap` stays `None`.
+        self.decode_stack_pointer()?;
         self.build_typegrp();
         // C++ `TypeFactory::TypeFactory` runs `setupSizes()` (the alignment map
         // + the core sizes) in the constructor, *before* `buildCoreTypes` calls
@@ -1301,13 +1453,15 @@ impl Architecture {
         self.build_default_proto();
         self.build_action();
         self.print.initialize_from_architecture();
-        // C++ `symboltab->adjustCaches()` resizes the global scope's per-space
-        // maps when the spec decode created new spaces.  The Rust `Database`
-        // sizes its scope maps from `num_spaces()` at attach time and the
-        // post-engine init adds no spaces beyond those the engine already
-        // carried, so no resize is needed here (SEAM(W4): the cache-resize
-        // surface lands with the scope-space item if a later spacebase decode
-        // adds spaces).
+        // C++ `symboltab->adjustCaches()` (architecture.cc, end of restoreFromSpec)
+        // resizes every scope's per-space `maptable` to `numSpaces()` after the
+        // spec decode created new spaces.  The global scope was attached with the
+        // engine's space count *before* `insert_ir_call_spaces` (fspec/iop/join)
+        // and `decode_stack_pointer` (the stack `SpacebaseSpace`) appended their
+        // spaces — so the maptable must now grow, or a `map addr s0x…` into the
+        // higher-indexed stack space indexes past its end.
+        let num_spaces = self.manage().num_spaces();
+        self.symboltab.adjust_caches(num_spaces);
         self.build_instructions();
         // C++ `min_funcsymbol_size = translate->getAlignment()` when <= 8
         // (restoreFromSpec, architecture.cc:646).

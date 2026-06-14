@@ -19,6 +19,7 @@
 //! visibly skipped, never a false green) and returns early.
 
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use kuna_console::engine::{bootstrap_from_file, ConsoleProgram};
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
@@ -478,4 +479,121 @@ fn w10_adv_r2_negative_match_passes_vacuously_not_by_parity() {
              negative datatest passes vacuously, not by parity: {out:?}"
         );
     }
+}
+
+// ===========================================================================
+// SpacebaseSpace + <stackpointer> decode (rport/w10-spacebasespace, LOSS-012)
+// ===========================================================================
+
+/// The cspec `<stackpointer>` element creates the formal stack `SpacebaseSpace`
+/// during `init_post_engine` (C++ `parseCompilerConfig` -> `decodeStackPointer`
+/// -> `addSpacebase`).  Before this wave the manager had NO `IPTR_SPACEBASE`
+/// space: `get_stack_space()` was `None`, the `'s'` shortcut did not resolve, and
+/// `s0x…` stack addresses failed to parse ("Bad address: s").  The 8051 cspec is
+/// `<stackpointer register="SP" space="INTMEM" growth="positive"/>` — a NON-ram
+/// base space and `growth="positive"` (the non-default path), so this exercises
+/// the generic decode with no processor-name special-casing.
+#[test]
+fn stackpointer_decode_creates_the_stack_spacebase_space() {
+    use kuna_base::space::spacetype;
+    let Some(prog) = boot_program() else { return };
+    let manage = prog.arch().manage();
+
+    // (1) The formal stack space exists and is the manager's `stackspace`.
+    let stack = manage
+        .get_stack_space()
+        .expect("the <stackpointer> decode must create the formal stack SpacebaseSpace");
+    assert_eq!(stack.get_type(), spacetype::IPTR_SPACEBASE);
+    assert_eq!(stack.get_name(), "stack");
+    assert!(stack.is_formal_stack_space(), "named 'stack' => formal stack space");
+
+    // (2) The spacebase space claims a shortcut that resolves back to it (so
+    //     `parse_machaddr` accepts a spacebase address).  The C++ default
+    //     spacebase shortcut is `'s'`, but `assignShortcut` resolves collisions
+    //     by incrementing — and the 8051 has an `SFR` space that takes `'s'`
+    //     first, so the stack faithfully bumps to `'t'` (exactly as C++).  On
+    //     x86-64 (the datatest corpus) no space pre-claims `'s'`, so the stack
+    //     gets `'s'` and `map addr s0x…` resolves.  Assert the round-trip on the
+    //     actual assigned shortcut, not a hardcoded `'s'`.
+    let sc = stack.get_shortcut();
+    let by_shortcut = manage
+        .get_space_by_shortcut(sc as u8)
+        .expect("the spacebase space's shortcut must resolve");
+    assert!(
+        Rc::ptr_eq(stack, by_shortcut),
+        "get_space_by_shortcut('{sc}') must resolve to the stack space"
+    );
+
+    // (3) Its base register is attached: numSpacebase()==1, and (8051 SP is a
+    //     1-byte INTMEM register) the base loc is non-empty.
+    assert_eq!(stack.num_spacebase(), 1, "the SP base register must be attached");
+    let base = stack.get_spacebase(0).expect("base register location");
+    assert!(base.space.is_some(), "base register has a real space");
+    assert_eq!(base.size, 1, "8051 SP is a 1-byte register");
+
+    // (4) growth="positive" => stack grows in the POSITIVE direction (the
+    //     non-default; the C++ default is negative).  No arch special-casing:
+    //     this comes straight from the `<stackpointer growth>` attribute.
+    assert!(
+        !stack.stack_grows_negative(),
+        "8051 cspec growth=\"positive\" must set a positive-growing stack"
+    );
+
+    // (5) The containing space is the cspec's `space="INTMEM"` (generic resolve,
+    //     not ram and not hardcoded).
+    let contain = stack.get_contain().expect("spacebase space has a containing space");
+    assert_eq!(contain.get_name(), "INTMEM", "container is the cspec <stackpointer space>");
+}
+
+/// On x86-64 (`<stackpointer register="RSP" space="ram"/>`) the stack space gets
+/// the `'s'` shortcut (no space pre-claims it), so `s0x…` stack addresses now
+/// PARSE — the precise thing that previously failed with "Bad address: s" and
+/// kept `Funcdata.localmap` `None` for every datatest with stack locals.  Drives
+/// `map addr s0x… …` on a real x86-64 corpus and asserts no parse error.
+#[test]
+fn x86_64_stack_address_now_parses_via_spacebase_space() {
+    use kuna_base::space::spacetype;
+    let root = repo_root();
+    let xml = root.join("decompiler/datatests/copytrim.xml");
+    let specs = root.join("specs");
+    let prog = match bootstrap_from_file(
+        xml.to_str().unwrap(),
+        &[specs.to_str().unwrap().to_string()],
+    ) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("skipping (bootstrap failed, build .sla): {}", e.explain());
+            return;
+        }
+    };
+
+    // The x86-64 stack space exists, is named "stack", and claims `'s'`.
+    {
+        let manage = prog.arch().manage();
+        let stack = manage.get_stack_space().expect("x86-64 stack SpacebaseSpace");
+        assert_eq!(stack.get_type(), spacetype::IPTR_SPACEBASE);
+        assert_eq!(
+            stack.get_shortcut(),
+            's',
+            "x86-64 stack space claims 's' (nothing pre-claims it)"
+        );
+        // RSP is an 8-byte register; container is ram.
+        assert_eq!(stack.get_addr_size(), 8, "RSP-backed stack is 8-byte addressed");
+        assert!(stack.stack_grows_negative(), "x86-64 stack grows negative (default)");
+        assert_eq!(
+            stack.get_contain().map(|c| c.get_name().to_string()).as_deref(),
+            Some("ram"),
+        );
+    }
+
+    // The console `map addr s0x… int4 i` command now parses the `s0x…` stack
+    // address (previously: "Command parsing error: Bad address: s").
+    let (_status, out) = drive(
+        prog,
+        &["map addr s0xffffffffffffffe4 int4 i"],
+    );
+    assert!(
+        !out.contains("Bad address"),
+        "s0x… stack address must parse now that the spacebase space exists: {out:?}"
+    );
 }
