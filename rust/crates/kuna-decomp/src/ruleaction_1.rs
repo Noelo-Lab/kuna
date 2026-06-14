@@ -47,7 +47,7 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::expression::TermOrder;
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::seams::{OpId, VarnodeId};
 
 /// `sizeof(uintb)` from the C++ — the rules cap at 8-byte precision
 /// (`if (size > sizeof(uintb)) return 0`).
@@ -64,8 +64,14 @@ const SIZEOF_UINTB: int4 = 8;
 /// what the rules and the action engine's per-op dispatch read; the flags are a
 /// W6 fill.
 fn set_opcode_seam(data: &mut Funcdata, op: OpId, opc: OpCode) {
-    // obank.changeOpcode(op, glb->inst[opc]);  -- flags from glb->inst is W6.
-    data.op_set_opcode(op, TypeOp::new(opc, 0, format!("{opc:?}")));
+    // obank.changeOpcode(op, glb->inst[opc]).  The canonical `type_op_info` table
+    // carries the real `opflags` (eval-type, commutative, booloutput, …) — exactly
+    // what `glb->inst[opc]` would; resolving through it rather than a flag-less
+    // `TypeOp::new(opc,0,..)` is load-bearing: an op created without its eval-type
+    // bit (e.g. a SUBPIECE) reports `getEvalType()==0`, so `PcodeOp::collapse` /
+    // `RuleCollapseConstants` cannot fold it (it latches `nocollapse`), leaving
+    // redundant `value & SUB(mask,0)` masks unfolded in the rendered C.
+    data.op_set_opcode(op, crate::typeop::type_op_for(opc));
 }
 
 // =============================================================================

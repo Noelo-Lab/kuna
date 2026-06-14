@@ -416,6 +416,23 @@ fn piece_pointer_sizes(data: &Funcdata) -> (int4, int4) {
     (near, far)
 }
 
+/// Public wrapper around [`propagate_type`] (the per-op-code
+/// `TypeOp::propagateType` dispatch) for in-crate callers that need to propagate a
+/// type along a single edge — notably `AddTreeState::assignPropagatedType`
+/// (`op->getOpcode()->propagateType(inType, op, vn, out, 0, -1)`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn propagate_type_pub(
+    data: &mut Funcdata,
+    alttype: Rc<Datatype>,
+    op: OpId,
+    invn: VarnodeId,
+    outvn: VarnodeId,
+    inslot: int4,
+    outslot: int4,
+) -> Option<Rc<Datatype>> {
+    propagate_type(data, alttype, op, invn, outvn, inslot, outslot)
+}
+
 /// C++ per-op-code `TypeOp::propagateType` dispatch (typeop.cc).  Returns the
 /// outgoing data-type, or `None` (no propagation).
 fn propagate_type(
@@ -1534,7 +1551,10 @@ mod propagate_type_tests {
         assert_eq!(parent_off, 2, "parentOff is the byte offset into the struct");
 
         // The container, fed to getTypePointerRel, yields a struct-relative pointer
-        // (TYPE_PTRREL) preserving the container — exactly the C++ wrap on this edge.
+        // preserving the container — exactly the C++ wrap on this edge.  C++
+        // `TypePointerRel` keeps `metatype == TYPE_PTR` internally (type.cc:3010,
+        // "Don't use TYPE_PTRREL internally"); the relative identity is the
+        // `is_pointer_rel()`/parent surface, not the metatype.
         let pt = match &pointer {
             None => f.get_base(1, type_metatype::TYPE_UNKNOWN).unwrap(),
             Some(p) => p.get_ptr_to().unwrap(),
@@ -1545,8 +1565,12 @@ mod propagate_type_tests {
             .expect("relative pointer");
         assert_eq!(
             rel.get_metatype(),
-            type_metatype::TYPE_PTRREL,
-            "interior-of-scalar-field-of-struct yields a struct-relative pointer, not a bare pointer"
+            type_metatype::TYPE_PTR,
+            "a relative pointer reports TYPE_PTR internally (TYPE_PTRREL is the marshalling override)"
+        );
+        assert!(
+            rel.is_pointer_rel(),
+            "interior-of-scalar-field-of-struct yields a struct-relative pointer (is_pointer_rel)"
         );
     }
 

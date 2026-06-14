@@ -48,7 +48,7 @@ use std::cmp::Ordering;
 use std::rc::Rc;
 
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::seams::{OpId, VarnodeId};
 
 /// Marshaling element `<prefersplit>` (C++ `ELEM_PREFERSPLIT = ElementId("prefersplit",225)`).
 pub const ELEM_PREFERSPLIT: ElementId = ElementId::new("prefersplit", 225);
@@ -205,11 +205,11 @@ fn space_from_const(data: &Funcdata, vn: VarnodeId) -> Rc<AddrSpace> {
 }
 
 /// Resolve an [`OpCode`] to the [`TypeOp`] that [`Funcdata::op_set_opcode`]
-/// expects.  The opcode value is load-bearing for the action engine's per-op
-/// dispatch; the cached property-flag word is the W6 `TypeFactory` fill,
-/// supplied here as `0` (matches the `double.rs` seam).  // SEAM(W6)
+/// expects.  Resolves through the canonical `type_op_info` table so the op
+/// carries its real `opflags` (eval-type bit included) — a flag-less
+/// `TypeOp::new(opc,0,..)` leaves `getEvalType()==0`, blocking constant folding.
 fn set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
-    data.op_set_opcode(op, TypeOp::new(opc, 0, format!("{opc:?}")));
+    data.op_set_opcode(op, crate::typeop::type_op_for(opc));
 }
 
 // =============================================================================

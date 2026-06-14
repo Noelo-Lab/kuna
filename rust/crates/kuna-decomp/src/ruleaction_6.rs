@@ -110,13 +110,6 @@ fn seam_new_extended_constant(
     ))
 }
 
-/// `Funcdata::opUndoPtradd(op, false)` (convert PTRADD->INT_ADD / fold). // SEAM(W6)
-#[inline]
-fn seam_op_undo_ptradd(_data: &mut Funcdata, _op: OpId) -> KunaResult<()> {
-    Err(KunaError::lowlevel(
-        "ruleaction_6: opUndoPtradd needs glb->inst (W6) + the multiply-undo factory",
-    ))
-}
 
 /// `Funcdata::opMarkSpecialPrint(op)` (field-extraction print marker). // SEAM(W6)
 #[inline]
@@ -238,24 +231,38 @@ impl Rule for RulePtraddUndo {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        use crate::dtype::type_metatype;
         if !data.has_type_recovery_started() {
             return 0;
         }
         // int4 size = (int4)op->getIn(2)->getOffset();  // PTRADD element size
-        let _size = offset(data, in_vn(data, op, 2)) as int4;
+        let size = offset(data, in_vn(data, op, 2)) as int4;
         let basevn = in_vn(data, op, 0);
-        // Datatype *dt = basevn->getTypeReadFacing(op);  // SEAM(W6)
-        // if (dt->getMetatype()==TYPE_PTR) { ... still-a-pointer / right-size /
-        //   index-isn't-zero guards (AddrSpace::addressToByteInt vs getWordSize,
-        //   getIn(1) is const 0) ... }
-        // data.opUndoPtradd(op,false);  return 1;
-        if seam_type_read_facing(data, basevn, op).is_err() {
-            // SEAM(W6): read-facing type unavailable -> the still-a-pointer guards
-            // and the opUndoPtradd commit (also SEAM) cannot run.
-            let _ = seam_op_undo_ptradd(data, op);
-            return 0;
+        // Datatype *dt = basevn->getTypeReadFacing(op);
+        let dt = data.vbank().get(basevn).map(|v| v.get_type_read_facing(op).clone());
+        if let Some(dt) = dt {
+            if dt.get_metatype() == type_metatype::TYPE_PTR {
+                // Still a pointer; check the element size and zero index.
+                let word_size = dt.get_word_size().unwrap_or(1);
+                let ptrto_align = dt.get_ptr_to().map(|p| p.get_align_size()).unwrap_or(-1);
+                // cast: getAlignSize()/addressToByteInt return int4-range type sizes.
+                if ptrto_align
+                    == kuna_base::space::AddrSpace::address_to_byte_int(size as i64, word_size) as int4
+                {
+                    let ind_vn = in_vn(data, op, 1);
+                    let (ind_const, ind_off) = data
+                        .vbank()
+                        .get(ind_vn)
+                        .map(|v| (v.is_constant(), v.get_offset()))
+                        .unwrap_or((false, 1));
+                    if !ind_const || ind_off != 0 {
+                        return 0; // Correct size and non-zero index: leave the PTRADD.
+                    }
+                }
+            }
         }
-        0
+        data.op_undo_ptradd(op, false);
+        1
     }
 }
 

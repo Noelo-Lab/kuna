@@ -53,33 +53,24 @@ use std::rc::Rc;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
-use crate::op::pcodeop_flags;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::seams::{OpId, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 // =============================================================================
 // Shared local shims (W3/W6 seams — see module docs)
 // =============================================================================
 
-/// Property flags an [`OpCode`] carries in its `TypeOp` (the slice of
-/// `glb->inst[opc]->getFlags()` the W3 ops cache via `setOpcode`).  Only the
-/// branch/return bits affect the rules in this file; everything else is 0.
-/// SEAM(W6): replaced by the real `TypeOp::getFlags` table when W6 lands.
-fn opcode_seam_flags(opc: OpCode) -> kuna_base::types::uint4 {
-    match opc {
-        OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND => {
-            pcodeop_flags::branch
-        }
-        OpCode::CPUI_RETURN => pcodeop_flags::returns,
-        _ => 0,
-    }
-}
-
 /// `data.opSetOpcode(op, opc)` — resolves the [`OpCode`] to a [`TypeOp`] and
 /// hands it to the bank (C++ `obank.changeOpcode(op, glb->inst[opc])`).
-/// SEAM(W6): the `glb->inst[]` lookup is faked with [`opcode_seam_flags`].
+///
+/// Resolves through the canonical `type_op_info` table so the op carries its real
+/// `opflags` (the eval-type bit in particular).  An op set with a flag-less
+/// `TypeOp` reports `getEvalType()==0`, so `PcodeOp::collapse` /
+/// `RuleCollapseConstants` cannot fold it: a SUBPIECE this rule (`RuleSubCommute`)
+/// pushes earlier then stays as an unfolded `SUB(const,0)`, surfacing as a
+/// redundant `value & SUB(0xffffffff,0)` mask in the rendered C.
 fn set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
-    data.op_set_opcode(op, TypeOp::new(opc, opcode_seam_flags(opc), format!("{opc:?}")));
+    data.op_set_opcode(op, crate::typeop::type_op_for(opc));
 }
 
 /// The unknown-base [`Datatype`] of size `s` (C++ `glb->types->getBase(s,

@@ -399,9 +399,9 @@ impl Action for ActionNonzeroMask {
         }
         Some(Box::new(ActionNonzeroMask { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++: data.calcNZMask(); return 0;
-        // SEAM(W3-op/W4): Funcdata::calcNZMask not in the merged tree.
+        data.calc_nz_mask();
         0
     }
 }

@@ -71,8 +71,9 @@
 //! W9 seam.
 
 use kuna_base::address::{calc_mask, Address};
+use kuna_base::space::AddrSpace;
 use kuna_base::error::KunaResult;
-use kuna_base::types::{int4, uint4, uintb};
+use kuna_base::types::{int4, int8, uint4, uintb};
 
 use crate::dtype::type_metatype;
 use crate::options::{BraceStyle, NamespaceStrategy};
@@ -2290,6 +2291,12 @@ impl PrintC {
                     self.push_vn_ir(fd, arch, vn, op);
                 }
             }
+            // LOAD (printc.cc:507 opLoad) / STORE (printc.cc:520 opStore).
+            OpCode::CPUI_LOAD => self.op_load_ir(fd, arch, op),
+            OpCode::CPUI_STORE => self.op_store_ir(fd, arch, op),
+            // PTRADD (printc.cc:900 opPtradd) / PTRSUB (printc.cc:953 opPtrsub).
+            OpCode::CPUI_PTRADD => self.op_ptradd_ir(fd, arch, op),
+            OpCode::CPUI_PTRSUB => self.op_ptrsub_ir(fd, arch, op),
             // CALL / CALLIND (printc.cc:613 opCall / 657 opCallind): the functional
             // `callee(arg1, arg2, ...)` form over the recovered call inputs.
             OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
@@ -2523,6 +2530,125 @@ impl PrintC {
         self.push_vn_explicit_ir(fd, arch, vn, op);
     }
 
+    /// `pushVn(vn, op, m)` — set the value-rendering mods (`print_load_value` /
+    /// `print_store_value`) for the recursive descent into `vn`'s defining op, then
+    /// restore.  In the direct-recursion RPN engine the mods live on `self.context`
+    /// (the C++ stashes them on the deferred `nodepend` entry).
+    fn push_vn_ir_m(&mut self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId, m: uint4) {
+        let save = self.context.mods();
+        self.context.set_mods(m);
+        self.push_vn_ir(fd, arch, vn, op);
+        self.context.set_mods(save);
+    }
+
+    /// C++ `PrintC::checkArrayDeref(vn)` (printc.cc:354): is `vn` an implied value
+    /// produced by a PTRSUB/PTRADD (optionally through a SEGMENTOP)?  Such a value
+    /// renders with array/member notation rather than an explicit `*` dereference.
+    fn check_array_deref(&self, fd: &Funcdata, vn: VarnodeId) -> bool {
+        let v = match fd.vbank().get(vn) {
+            Some(v) => v,
+            None => return false,
+        };
+        if !v.is_implied() || !v.is_written() {
+            return false;
+        }
+        let mut op = match v.get_def() {
+            Some(o) => o,
+            None => return false,
+        };
+        if fd.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_SEGMENTOP) {
+            let vn2 = match fd.obank().get(op).and_then(|o| o.get_in(2)) {
+                Some(v) => v,
+                None => return false,
+            };
+            let v2 = match fd.vbank().get(vn2) {
+                Some(v) => v,
+                None => return false,
+            };
+            if !v2.is_implied() || !v2.is_written() {
+                return false;
+            }
+            op = match v2.get_def() {
+                Some(o) => o,
+                None => return false,
+            };
+        }
+        let code = fd.obank().get(op).map(|o| o.code());
+        code == Some(OpCode::CPUI_PTRSUB) || code == Some(OpCode::CPUI_PTRADD)
+    }
+
+    /// C++ `PrintC::opLoad` (printc.cc:507).  A LOAD renders either as an array/
+    /// member value (when the pointer is a PTRSUB/PTRADD, absorbing the deref) or
+    /// as an explicit `*ptr`.
+    fn op_load_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let ptr = match fd.obank().get(op).and_then(|o| o.get_in(1)) {
+            Some(v) => v,
+            None => return,
+        };
+        let usearray = self.check_array_deref(fd, ptr);
+        let mut m = self.context.mods();
+        if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
+            m |= modifiers::PRINT_LOAD_VALUE;
+        } else {
+            self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+        }
+        self.push_vn_ir_m(fd, arch, ptr, op, m);
+    }
+
+    /// C++ `PrintC::opStore` (printc.cc:520).  `*ptr = value` (or member/array
+    /// notation absorbing the deref).
+    fn op_store_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let mods = self.context.mods();
+        self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
+        let ptr = match fd.obank().get(op).and_then(|o| o.get_in(1)) {
+            Some(v) => v,
+            None => return,
+        };
+        let val = fd.obank().get(op).and_then(|o| o.get_in(2));
+        let usearray = self.check_array_deref(fd, ptr);
+        let mut m = mods;
+        if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
+            m |= modifiers::PRINT_STORE_VALUE;
+        } else {
+            self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+        }
+        // C++ pushes value (slot 2) then pointer (slot 1); the RPN drains so
+        // `ptr = value`.
+        if let Some(val) = val {
+            self.push_vn_ir_m(fd, arch, val, op, mods);
+        }
+        self.push_vn_ir_m(fd, arch, ptr, op, m);
+    }
+
+    /// C++ `PrintC::opPtradd` (printc.cc:900).  `ptr[index]` (value), `&ptr[index]`
+    /// (array-notation address), or `ptr + index` (plain pointer arithmetic).
+    fn op_ptradd_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let printval = self
+            .context
+            .is_set(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
+        let m = self.context.mods() & !(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
+        if printval {
+            self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+        } else if self.options.array_notation() {
+            // (kuna) S9 pointer-notation sub-stage: EMIT &base[index].
+            self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+            self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+        } else {
+            self.push_op(&tokens::BINARY_PLUS, Some(op_key(op)));
+        }
+        // C++ pushes in1 (index) then in0 (base) onto the LIFO nodepend; the direct
+        // RPN engine drains in push order, so push in0 (base) then in1 (index) to
+        // render `base[index]`.
+        let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
+        let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
+        if let Some(in0) = in0 {
+            self.push_vn_ir_m(fd, arch, in0, op, m);
+        }
+        if let Some(in1) = in1 {
+            self.push_vn_ir_m(fd, arch, in1, op, m);
+        }
+    }
+
     /// C++ `PrintLanguage::pushVnExplicit` (printlanguage.cc:218) + the
     /// `PrintC` leaf-naming (`pushVnExplicit`/`pushUnnamedLocation`, printc.cc:
     /// 1900-2017): annotation -> constant -> SymbolEntry -> register name ->
@@ -2624,6 +2750,209 @@ impl PrintC {
             op_key(op),
             vn_key(vn),
         ));
+    }
+
+    /// C++ `PrintC::opPtrsub` (printc.cc:953).  `&ptr->field` / `ptr->field`
+    /// (struct member) or `*ptr` / `ptr[0]` (array element), absorbing or emitting
+    /// the dereference per the load/store value mods and the `&base[index]` flex.
+    ///
+    /// The SPACEBASE arm (a PTRSUB off a stack/global spacebase, requiring the
+    /// Symbol/ScopeLocal surface) and the union arm are not on the pointer/array/
+    /// struct corpus; they fall through to a functional render.
+    /// SEAM(W4 spacebase symbol) / SEAM(W8 union).
+    fn op_ptrsub_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let in0 = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
+            Some(v) => v,
+            None => return,
+        };
+        let in1const = fd
+            .obank()
+            .get(op)
+            .and_then(|o| o.get_in(1))
+            .and_then(|v| fd.vbank().get(v))
+            .map(|v| v.get_offset())
+            .unwrap_or(0);
+        // ptype = in0->getHighTypeReadFacing(op)  (== get_type for the non-union corpus).
+        let ptype = match fd.vbank().get(in0).map(|v| v.get_type().clone()) {
+            Some(t) => t,
+            None => return,
+        };
+        if ptype.get_metatype() != crate::dtype::type_metatype::TYPE_PTR {
+            // C++ throws; fall to the functional render so output stays parseable.
+            self.op_func_ir(fd, arch, op);
+            return;
+        }
+        // Relative-pointer parent resolution.
+        let is_rel = ptype.is_formal_pointer_rel()
+            && ptype.evaluate_thru_parent(in1const) == Some(true);
+        let ct = if is_rel {
+            ptype.get_rel_parent()
+        } else {
+            ptype.get_ptr_to()
+        };
+        let ct = match ct {
+            Some(c) => c,
+            None => return,
+        };
+        let ptr_size = fd.vbank().get(in0).map(|v| v.get_size()).unwrap_or(8);
+        let m = self.context.mods()
+            & !(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
+        let mut valueon = (self.context.mods()
+            & (modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE))
+            != 0;
+        let flex = self.is_value_flexible_ir(fd, in0);
+        let word_size = ptype.get_word_size().unwrap_or(1);
+        let metameta = ct.get_metatype();
+
+        if metameta == crate::dtype::type_metatype::TYPE_STRUCT
+            || metameta == crate::dtype::type_metatype::TYPE_UNION
+        {
+            // suboff = (int4)in1const  (+ relative offset).
+            let mut suboff = in1const as int4 as int8;
+            if is_rel {
+                let addr_off = ptype.get_address_offset().unwrap_or(0) as int8;
+                suboff = (((suboff + addr_off) as u64) & calc_mask(ptr_size)) as int8;
+                if suboff == 0 {
+                    // Special case: do not print a field; absorb into in0.
+                    // SEAM: pushTypePointerRel cast omitted (no markup divergence).
+                    let mm = if flex { m | modifiers::PRINT_LOAD_VALUE } else { m };
+                    self.push_vn_ir_m(fd, arch, in0, op, mm);
+                    return;
+                }
+            }
+            // Union mid-flow field resolution is the W8 surface; only TYPE_STRUCT
+            // is on the corpus.
+            if metameta == crate::dtype::type_metatype::TYPE_UNION {
+                self.op_func_ir(fd, arch, op);
+                return;
+            }
+            let suboff_bytes = AddrSpace::address_to_byte_int(suboff, word_size);
+            // fld = ct->findTruncation(suboff,0,op,0,newoff)
+            let fld = ct.find_truncation(suboff_bytes, 0, op, 0).ok().flatten();
+            let (fieldname, fieldtype, fieldid) = match fld {
+                Some((idx, _newoff)) => {
+                    let f = ct.get_field(idx);
+                    match f {
+                        Some(f) => (f.name.clone(), Some(f.field_type.clone()), f.ident),
+                        None => return,
+                    }
+                }
+                None => {
+                    if ct.get_size() as int8 <= suboff_bytes || suboff_bytes < 0 {
+                        self.op_func_ir(fd, arch, op);
+                        return;
+                    }
+                    // Default field name `field_0x<hex>`.
+                    (format!("field_0x{suboff_bytes:x}"), None, suboff_bytes as int4)
+                }
+            };
+            let mut arrayvalue = false;
+            // The '&' is dropped if the field is an array.
+            if let Some(ft) = &fieldtype {
+                if ft.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
+                    arrayvalue = valueon; // If printing value, use [0]
+                    valueon = true; // Don't print &
+                }
+            }
+            let field_atom = Atom::field(
+                fieldname,
+                TagType::FieldToken,
+                crate::printlanguage::SyntaxHighlight::no_color,
+                // The Atom's ct marker is markup-only (the no-markup emitter
+                // ignores it); the field name/offset carry the rendering.
+                0,
+                fieldid,
+                op_key(op),
+            );
+            if !valueon {
+                // Printing an ampersand.
+                self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+                if flex {
+                    self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+                    self.push_vn_ir_m(fd, arch, in0, op, m | modifiers::PRINT_LOAD_VALUE);
+                } else {
+                    self.push_op(&tokens::POINTER_MEMBER, Some(op_key(op)));
+                    self.push_vn_ir_m(fd, arch, in0, op, m);
+                }
+                self.push_atom(&field_atom);
+            } else {
+                if arrayvalue {
+                    self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                }
+                if flex {
+                    self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+                    self.push_vn_ir_m(fd, arch, in0, op, m | modifiers::PRINT_LOAD_VALUE);
+                } else {
+                    self.push_op(&tokens::POINTER_MEMBER, Some(op_key(op)));
+                    self.push_vn_ir_m(fd, arch, in0, op, m);
+                }
+                self.push_atom(&field_atom);
+                if arrayvalue {
+                    self.push_constant_ir(0, 4, op);
+                }
+            }
+        } else if metameta == crate::dtype::type_metatype::TYPE_ARRAY {
+            // PTRSUB(*,0) drilling a pointer-to-array down to its element type.
+            if !valueon {
+                if flex {
+                    // EMIT ( ) — absorb the dereference into in0.
+                    self.push_vn_ir_m(fd, arch, in0, op, m | modifiers::PRINT_LOAD_VALUE);
+                } else {
+                    self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+                    self.push_vn_ir_m(fd, arch, in0, op, m);
+                }
+            } else if flex {
+                // EMIT ( )[0]
+                self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                self.push_vn_ir_m(fd, arch, in0, op, m | modifiers::PRINT_LOAD_VALUE);
+                self.push_constant_ir(0, 4, op);
+            } else {
+                // EMIT (* )[0]
+                self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+                self.push_vn_ir_m(fd, arch, in0, op, m);
+                self.push_constant_ir(0, 4, op);
+            }
+        } else {
+            // SPACEBASE (W4 symbol surface) and other: functional fallback.
+            self.op_func_ir(fd, arch, op);
+        }
+    }
+
+    /// C++ `isValueFlexible(vn)` (printc.cc:919): the value `vn` is an implied
+    /// PTRSUB/PTRADD result (possibly through a COPY) and so can absorb a
+    /// dereference.
+    fn is_value_flexible_ir(&self, fd: &Funcdata, vn: VarnodeId) -> bool {
+        let v = match fd.vbank().get(vn) {
+            Some(v) => v,
+            None => return false,
+        };
+        if !(v.is_implied() && v.is_written()) {
+            return false;
+        }
+        let def = match v.get_def() {
+            Some(d) => d,
+            None => return false,
+        };
+        let mut opc = fd.obank().get(def).map(|o| o.code()).unwrap_or(OpCode::CPUI_MAX);
+        if opc == OpCode::CPUI_COPY {
+            let invn = match fd.obank().get(def).and_then(|o| o.get_in(0)) {
+                Some(v) => v,
+                None => return false,
+            };
+            let iv = match fd.vbank().get(invn) {
+                Some(v) => v,
+                None => return false,
+            };
+            if !iv.is_implied() || !iv.is_written() {
+                return false;
+            }
+            opc = iv
+                .get_def()
+                .and_then(|d| fd.obank().get(d).map(|o| o.code()))
+                .unwrap_or(OpCode::CPUI_MAX);
+        }
+        opc == OpCode::CPUI_PTRSUB || opc == OpCode::CPUI_PTRADD
     }
 
     /// C++ `PrintC::push_integer` leaf for a constant (printc.cc:1360 region),
