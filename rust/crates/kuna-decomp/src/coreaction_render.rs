@@ -985,6 +985,7 @@ impl Action for ActionDeadCode {
 use crate::seams::{OpId, VarnodeId};
 use kuna_base::address::{calc_mask, coveringmask, leastsigbit_set, minimalmask};
 use kuna_base::space::spacetype;
+use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 /// C++ `ActionDeadCode::pushConsumed` (coreaction.cc:3714).
@@ -1339,6 +1340,80 @@ fn dc_gather_consumed_return(data: &Funcdata) -> u64 {
     consume_val
 }
 
+/// C++ `ActionDeadCode::markConsumedParameters` (coreaction.cc:4002).
+///
+/// For the call site `data.getCallSpecs(call_index)`, mark how each recovered
+/// argument Varnode is consumed by the callee so that the data-flow defining the
+/// argument is not removed as dead.
+///
+/// * `in0` (the fspec annotation) is always fully consumed.
+/// * If the prototype is locked, or input recovery is still active, every
+///   parameter is treated as fully consumed (the recovery hasn't finished
+///   trimming, so nothing may be dropped yet).
+/// * Otherwise each parameter consumes its non-zero-mask bits (or all bits if
+///   auto-live), narrowed to `getInputBytesConsumed(i)` when the callee's body
+///   analysis reported a smaller consumed footprint.
+///
+/// Ported as a free function over `&mut Funcdata`: the FuncCallSpecs reads
+/// (`getOp`/`isInputLocked`/`isInputActive`/`getInputBytesConsumed`) are gathered
+/// up front (a `&self` borrow of `qlst`), then released before the `&mut`
+/// `dc_push_consumed` calls — the same borrow-splitting convention the rest of
+/// this module uses.
+fn dc_mark_consumed_parameters(data: &mut Funcdata, call_index: int4, worklist: &mut Vec<VarnodeId>) {
+    // PcodeOp *callOp = fc->getOp();  plus the prototype flags.
+    let (call_op, fully_consumed, slot_consumed) = {
+        let fc = data.get_call_specs(call_index);
+        let call_op = fc.get_op();
+        let fully_consumed = fc.is_input_locked() || fc.is_input_active();
+        // Gather getInputBytesConsumed(i) for each parameter slot while `fc`'s
+        // borrow is live (only needed on the non-fully-consumed path).
+        let n = data.obank().get(call_op).map(|o| o.num_input()).unwrap_or(0);
+        let mut slot_consumed: Vec<int4> = Vec::new();
+        if !fully_consumed {
+            for i in 1..n {
+                slot_consumed.push(fc.get_input_bytes_consumed(i));
+            }
+        }
+        (call_op, fully_consumed, slot_consumed)
+    };
+
+    // In all cases the first operand (the fspec annotation) is fully consumed.
+    if let Some(in0) = data.obank().get(call_op).and_then(|o| o.get_in(0)) {
+        dc_push_consumed(data, !0u64, in0, worklist);
+    }
+    let n = data.obank().get(call_op).map(|o| o.num_input()).unwrap_or(0);
+    if fully_consumed {
+        // Locked or in active recovery: treat all parameters as fully consumed.
+        for i in 1..n {
+            if let Some(vn) = data.obank().get(call_op).and_then(|o| o.get_in(i)) {
+                dc_push_consumed(data, !0u64, vn, worklist);
+            }
+        }
+        return;
+    }
+    for i in 1..n {
+        let vn = match data.obank().get(call_op).and_then(|o| o.get_in(i)) {
+            Some(v) => v,
+            None => continue,
+        };
+        let mut consume_val = {
+            let v = data.vbank().get(vn).expect("markConsumedParameters: stale param vn");
+            if v.is_auto_live() {
+                !0u64
+            } else {
+                minimalmask(v.get_nz_mask())
+            }
+        };
+        // cast: `i` is an int4 >= 1 (loop starts at 1), so `i - 1` is a
+        // non-negative index into the slot_consumed vec gathered above (same `n`).
+        let bytes_consumed = slot_consumed[(i - 1) as usize];
+        if bytes_consumed != 0 {
+            consume_val &= calc_mask(bytes_consumed);
+        }
+        dc_push_consumed(data, consume_val, vn, worklist);
+    }
+}
+
 /// C++ `Varnode::isEventualConstant` (varnode.cc:873): does the Varnode (might)
 /// collapse to a constant — copied/extended from a constant, the result of
 /// arithmetic on constants, or loaded from a constant pointer.
@@ -1557,9 +1632,16 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
         }
     }
 
-    // 4. Mark consumption of call parameters (numCalls() == 0 in the merged
-    //    tree; the loop is a faithful no-op until FuncCallSpecs is ported).
-    // for i in 0..data.num_calls() { markConsumedParameters(...) }  -- W6/W7 seam.
+    // 4. Mark consumption of call parameters (coreaction.cc:4233-4235).  With the
+    //    `qlst` of FuncCallSpecs now wired (w10-callsite-args), the recovered call
+    //    arguments are marked consumed here, so the data-flow chain that DEFINES
+    //    each argument (e.g. the COPY that loads `&i` into RDI) is not removed as
+    //    dead.  Without this the call's argument Varnode loses its def, becomes
+    //    free, and is re-created as a raw function-input register on the next
+    //    heritage pass — so the call renders `f(RDI)` instead of `f(value)`.
+    for i in 0..data.num_calls() {
+        dc_mark_consumed_parameters(data, i, &mut worklist);
+    }
 
     // 5. Propagate the consume flags (the backward bit-usage fixpoint).
     while !worklist.is_empty() {

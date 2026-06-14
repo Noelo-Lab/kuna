@@ -1297,22 +1297,23 @@ impl Heritage {
                 continue; // removeRevisitedMarkers may have eliminated descendant
             }
             if descend != 1 {
-                // C++ throws LowlevelError("Free varnode with multiple reads") — a
-                // free read should have exactly one descendant.  This invariant can
-                // be transiently violated on the live IR by the *partial* call-side
-                // recovery: a register that flows to several call sites gets a fresh
-                // argument Varnode inserted at each (guardCalls), and a later
-                // simplification can collapse those onto a single free read before
-                // the INDIRECT call-side-effect guard (deferred — see guardCalls)
-                // has run to separate them.  The C++ never sees this because the
-                // call-side INDIRECT chain is complete there.  Rather than abort the
-                // whole function (the C++ throw would), guard this read as-is and
-                // continue: it leaves the multi-read free read linked to its first
-                // use, a strictly better result than dropping the function.
-                // SEAM(W4 call-side INDIRECT chain) — loss ledger.
-                let v = fd.vbank_mut().get_mut(vn).expect("guard: stale read vn");
-                v.set_active_heritage();
-                continue;
+                // C++ `Heritage::guard` throws LowlevelError("Free varnode with
+                // multiple reads") here — a free read must have exactly one
+                // descendant.  The w10-callsite-args wave had DOWNGRADED this throw
+                // to a guard-and-continue (LOSS-150), because the *partial* call-arg
+                // recovery left register reads that flowed to several call sites
+                // collapsed onto a single free read before the deferred INDIRECT
+                // call-side-effect chain could separate them, and the throw fired
+                // 24x on the corpus.  With `ActionDeadCode::markConsumedParameters`
+                // now keeping each recovered call-argument's def-chain alive
+                // (w10-callarg-values), that premature collapse no longer happens:
+                // the invariant violation FIRES 0x across the whole datatest corpus
+                // (verified by the `KUNA_PROBE_MULTIREAD` probe).  So the faithful
+                // C++ throw is RESTORED (LOSS-150 closed).  It propagates as a
+                // panic the `decompile_func` orchestration boundary catches and
+                // degrades to a recoverable per-function Err — the same graceful
+                // route the C++ throw takes (aborting that function's decompile).
+                panic!("kuna heritage: Free varnode with multiple reads");
             }
             let op = fd
                 .vbank()

@@ -10,18 +10,31 @@
 //! `print_c` chain the corpus harness uses) over a real datatest binaryimage and
 //! inspects the rendered call line against the C++ oracle's direction.
 //!
+//! UPDATED for rport/w10-callarg-values: the call argument now renders as the
+//! resolved data-flow VALUE live at the call (the SSA Varnode reaching the call's
+//! input slot), not the raw incoming parameter register.  `ActionDeadCode`'s
+//! `markConsumedParameters` (coreaction.cc:4002) keeps the def-chain of each
+//! recovered argument alive, so the renamed reaching def (e.g. the `lea`/`mov rdi`
+//! COPY that loads `&i`) survives to the printer instead of being eliminated and
+//! re-created as a raw function-input register on the next heritage pass.  These
+//! tests therefore assert the arg is the resolved value (NOT the bare register),
+//! while keeping the load-bearing structural proofs (per-call count, opCall/
+//! opCallind coexistence, no raw `CALL(...)` dump).
+//!
 //! T1 (noforloop_alias) checks the 1-recovered-arg call and the 2-recovered-arg
-//! call (System-V order RDI then RSI): the ARG COUNTS differ per call (1 vs 2), so
-//! the recovery is per-call ProtoModel-driven over the live IR, NOT a fixed "print
-//! all inputs" or a hardcoded count.
+//! call: the ARG COUNTS differ per call (1 vs 2), so the recovery is per-call
+//! ProtoModel-driven over the live IR, NOT a fixed "print all inputs" or a
+//! hardcoded count.  The 1-arg call resolves to `&i` (a stack-address expression),
+//! NOT the raw register RDI.
 //!
 //! T2 (deindirect) checks that an indirect call renders the CALLIND deref-void
-//! form `(*...)()` WHILE a direct call renders `<callee>(RDI)` in the same body, so
-//! opCallind and opCall coexist and the void (0-arg) path is reached.
+//! form `(*...)()` WHILE a direct call renders `<callee>(<value>)` in the same
+//! body, so opCallind and opCall coexist and the void (0-arg) path is reached.
 //!
 //! T3 (dupptr) checks that the call to initstruct recovers exactly its 1 System-V
-//! arg (RDI) and that the raw `CALL(...)` op-form is ABSENT: the IR-coupled opCall
-//! rendered the recovered argument, not a raw op dump.
+//! arg (now the resolved stack-address VALUE, not the raw register RDI) and that
+//! the raw `CALL(...)` op-form is ABSENT: the IR-coupled opCall rendered the
+//! recovered, value-resolved argument, not a raw op dump.
 //!
 //! NAME-RESOLUTION NOTE: these tests drive the `XmlArchitecture` decompile path
 //! (`bootstrap`/`decompile_func`/`print_c`), which does NOT install the loader
@@ -318,17 +331,61 @@ fn w10_callsite_noforloop_alias_recovers_per_call_args() {
     assert!(might.is_some(), "expected the might_change @40067b call line; calls={calls:?}");
     assert!(printf.is_some(), "expected the printf @400440 call line; calls={calls:?}");
 
-    // Extract the argument list inside a single call's paren group.
+    // Extract the argument list inside a single call's paren group.  The args are
+    // now resolved data-flow VALUES that can themselves contain nested parens and
+    // commas (e.g. `ZEXT(EAX & SUB(0xffffffff,0))`), so the call's matching close
+    // paren and the top-level argument commas must be found at paren depth 0.
     let args_of = |line: &str, marker: &str| -> Vec<String> {
         let after = &line[line.find(marker).unwrap() + marker.len()..];
-        let inner = after.trim_start_matches('(');
-        let close = inner.find(')').unwrap_or(inner.len());
-        let inner = &inner[..close];
-        if inner.trim().is_empty() {
-            Vec::new()
-        } else {
-            inner.split(',').map(|s| s.trim().to_string()).collect()
+        // after starts at '(' of the call's argument list.
+        let mut depth = 0i32;
+        let mut inner = String::new();
+        for ch in after.chars() {
+            match ch {
+                '(' => {
+                    depth += 1;
+                    if depth > 1 {
+                        inner.push(ch);
+                    }
+                }
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break; // matched the call's close paren
+                    }
+                    inner.push(ch);
+                }
+                _ => inner.push(ch),
+            }
         }
+        if inner.trim().is_empty() {
+            return Vec::new();
+        }
+        // Split on top-level commas only (depth 0 within `inner`).
+        let mut args = Vec::new();
+        let mut depth = 0i32;
+        let mut cur = String::new();
+        for ch in inner.chars() {
+            match ch {
+                '(' => {
+                    depth += 1;
+                    cur.push(ch);
+                }
+                ')' => {
+                    depth -= 1;
+                    cur.push(ch);
+                }
+                ',' if depth == 0 => {
+                    args.push(cur.trim().to_string());
+                    cur.clear();
+                }
+                _ => cur.push(ch),
+            }
+        }
+        if !cur.trim().is_empty() {
+            args.push(cur.trim().to_string());
+        }
+        args
     };
     // ARG COUNT differs per call: might_change takes 1 recovered arg, printf 2.
     // If recovery were a fake "print all inputs"/hardcoded count, these would not
@@ -338,11 +395,23 @@ fn w10_callsite_noforloop_alias_recovers_per_call_args() {
     assert_eq!(mc.len(), 1, "might_change should recover exactly 1 arg, got {mc:?} in `{}`", might.unwrap());
     assert_eq!(pc.len(), 2, "printf should recover exactly 2 args, got {pc:?} in `{}`", printf.unwrap());
 
-    // System-V order: arg0 is RDI, arg1 is RSI — the ProtoModel parameter order,
-    // not raw input insertion order.
-    assert_eq!(mc[0], "RDI", "the 1-arg call must pass the System-V first param RDI; got `{}`", mc[0]);
-    assert_eq!(pc[0], "RDI", "printf arg0 must be the System-V first param RDI; got `{}`", pc[0]);
-    assert_eq!(pc[1], "RSI", "printf arg1 must be the System-V second param RSI; got `{}`", pc[1]);
+    // VALUE RESOLUTION (w10-callarg-values): the recovered argument now renders as
+    // the data-flow VALUE live at the call (the SSA Varnode reaching the call's
+    // input slot after heritage + markConsumedParameters keeps its def alive), NOT
+    // the raw incoming parameter register.  `might_change`'s arg is `&i` — the
+    // stack-address expression `RSP + <neg const>` the `lea`/`mov rdi` produced —
+    // not the bare register `RDI`.  printf's first arg is the format-string
+    // constant address (`0x40085d`), not `RDI`.  (Naming the stack expression `i`
+    // and rendering the string literal are the downstream type/stackvar/string
+    // plane, LOSS-131.)
+    assert_ne!(mc[0], "RDI", "the call arg must resolve to the data-flow value, not the raw register RDI; got `{}`", mc[0]);
+    assert!(
+        mc[0].contains("RSP") || mc[0].contains('+'),
+        "the 1-arg call must pass the resolved stack-address value (`&i`), got `{}`",
+        mc[0]
+    );
+    assert_ne!(pc[0], "RDI", "printf arg0 must resolve to the format-string value, not the raw register RDI; got `{}`", pc[0]);
+    assert_ne!(pc[1], "RSI", "printf arg1 must resolve to the data-flow value, not the raw register RSI; got `{}`", pc[1]);
 }
 
 // ---------------------------------------------------------------------------
@@ -381,7 +450,14 @@ fn w10_callsite_deindirect_callind_and_direct_coexist() {
     let inner = &puts[puts.find("100580(").unwrap() + "100580(".len()..];
     let inner = inner.trim_start_matches('(');
     let inner = &inner[..inner.find(')').unwrap_or(inner.len())];
-    assert_eq!(inner.trim(), "RDI", "puts should recover exactly its System-V first arg RDI; got `{inner}`");
+    // VALUE RESOLUTION (w10-callarg-values): the recovered arg renders as the
+    // data-flow value reaching the call slot (here the constant string-address
+    // operand the call passes), NOT the raw incoming register RDI.  Exactly one
+    // comma-free argument is recovered (the System-V first slot).
+    let inner = inner.trim();
+    assert!(!inner.is_empty(), "puts should recover exactly its 1 System-V arg; got empty");
+    assert!(!inner.contains(','), "puts should recover exactly 1 arg; got `{inner}`");
+    assert_ne!(inner, "RDI", "puts arg must resolve to the data-flow value, not the raw register RDI; got `{inner}`");
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +483,10 @@ fn w10_callsite_dupptr_direct_call_arg_no_raw_op_form() {
         rendered.iter().find(|(n, _)| n == "loadstore_fieldarray").expect("decompiled body");
     eprintln!("--- loadstore_fieldarray rendered ---\n{body}");
 
-    // The direct call to initstruct @100684 recovers exactly 1 System-V arg (RDI).
+    // The direct call to initstruct @100684 recovers exactly 1 System-V arg, now
+    // rendered as the data-flow VALUE reaching the call slot (the resolved stack
+    // address `RSP + <neg const>` = `&myval`), NOT the raw register RDI
+    // (w10-callarg-values).
     let calls = call_lines(body);
     let isc = calls.iter().find(|l| l.contains("100684(")).cloned();
     assert!(isc.is_some(), "expected the initstruct @100684 call; calls={calls:?}");
@@ -415,7 +494,13 @@ fn w10_callsite_dupptr_direct_call_arg_no_raw_op_form() {
     let inner = &isc[isc.find("100684(").unwrap() + "100684(".len()..];
     let inner = inner.trim_start_matches('(');
     let inner = &inner[..inner.find(')').unwrap_or(inner.len())];
-    assert_eq!(inner.trim(), "RDI", "initstruct should recover its 1 System-V arg RDI; got `{inner}`");
+    let inner = inner.trim();
+    assert!(!inner.is_empty() && !inner.contains(','), "initstruct should recover exactly 1 arg; got `{inner}`");
+    assert_ne!(inner, "RDI", "initstruct arg must resolve to the data-flow value, not the raw register RDI; got `{inner}`");
+    assert!(
+        inner.contains("RSP") || inner.contains('+'),
+        "initstruct arg must be the resolved stack-address value (`&myval`); got `{inner}`"
+    );
 
     // The pre-wave raw rendering MUST NOT appear: the call is the functional
     // `<callee>(arg)` form, never the raw `CALL(<target>)` op dump.
