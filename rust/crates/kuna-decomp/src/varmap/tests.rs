@@ -681,6 +681,112 @@ fn scope_local_restructure_builds_a_disjoint_cover() {
 }
 
 #[test]
+fn scope_local_clear_unlocked_category_resets_layout_each_pass() {
+    // C++ `restructureVarnode` head `clearUnlockedCategory(-1)` (varmap.cc:1259):
+    // an auto-recovered local from a prior restructure pass is dropped so the next
+    // pass re-derives the layout from the current Varnodes (the fix that stops a
+    // stale open-array Symbol from overriding the converted scalar stack hint).
+    let f = factory();
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+
+    let mut localr = RangeList::new();
+    localr.insert_range(Rc::clone(&spc), 0, 0x3f);
+    let paramr = RangeList::new();
+    sl.reset_local_window(&localr, &paramr, false);
+
+    // Pass 1: an OPEN hint at 0x10 (what gatherOpen produces before the STORE is
+    // folded) creates a (spuriously sized) auto-recovered local symbol.
+    let mut state = MapState::new(
+        Rc::clone(&spc),
+        &localr,
+        &paramr,
+        base(1, type_metatype::TYPE_UNKNOWN),
+    );
+    state.add_range_pub(0x10, None, 0, crate::varmap::RangeType::Open, 3);
+    // A guard endpoint so `restructure` closes the open range into an entry.
+    state.add_fixed_type_pub(0x30, base(4, type_metatype::TYPE_INT), 0, &f);
+    sl.restructure(&mut state, &f).expect("restructure pass 1");
+    let scope = sl.scope_id();
+    let a0 = Address::new(Rc::clone(&spc), 0x10);
+    assert!(
+        sl.database().find_overlap(scope, &a0, 1).is_some(),
+        "pass 1 created an auto-recovered local at 0x10",
+    );
+
+    // The per-pass reset drops that unlocked local.
+    sl.clear_unlocked_category_negative().expect("clearUnlockedCategory(-1)");
+    assert!(
+        sl.database().find_overlap(scope, &a0, 1).is_none(),
+        "clearUnlockedCategory(-1) removed the unlocked auto-recovered local",
+    );
+}
+
+// VERIFIER adversarial (w10-sized-stackvn): the `resolve_default_name`
+// whole-symbol gate (C++ `ActionNameVars` namerec, the `high->getSymbolOffset()
+// < 0` condition, coreaction.cc:3063+3087).  The angr `vN` rename fires ONLY for
+// an undefined-named symbol whose access covers the WHOLE symbol; a member
+// access (sub-offset or partial size) must NOT be renamed, and an
+// already-defined name must be returned verbatim.  This is the gate a "rename
+// everything to vN" shortcut would fail.
+#[test]
+fn verify_w10_sized_stackvn_resolve_default_name_whole_symbol_gate() {
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let inv = Address::new_invalid();
+    let scope = sl.scope_id();
+
+    // (1) An undefined-named 4-byte stack symbol at 0x40 covering the WHOLE entry:
+    //     resolve_default_name at (0x40, 4) must rename it to `v1` (base 1).
+    let whole_addr = Address::new(Rc::clone(&spc), 0x40);
+    let s_whole = sl
+        .add_symbol("$$undef00000000", base(4, type_metatype::TYPE_INT), &whole_addr, &inv)
+        .expect("add undefined whole symbol");
+    assert!(sl.database().symbol(s_whole).is_name_undefined());
+    let mut b: int4 = 1;
+    let r = sl.resolve_default_name(&whole_addr, 4, &mut b);
+    assert!(r.is_some(), "a covering symbol must resolve");
+    let (name, off, _ty) = r.unwrap();
+    assert_eq!(name, "v1", "whole-symbol undefined access renames to v1");
+    assert_eq!(off, 0, "whole-symbol access has symbol-offset 0");
+    assert_eq!(b, 2, "base advanced exactly once");
+    assert_eq!(sl.database().symbol(s_whole).get_name(), "v1", "rename was applied in-tree");
+
+    // (2) An undefined-named 8-byte symbol at 0x80; a 4-byte access at 0x84 is a
+    //     PARTIAL/member access (sym_off != 0 and size != entry_size).  The gate
+    //     must NOT rename it — the name stays undefined, base does not advance.
+    let big_addr = Address::new(Rc::clone(&spc), 0x80);
+    let s_big = sl
+        .add_symbol("$$undef00000001", base(8, type_metatype::TYPE_INT), &big_addr, &inv)
+        .expect("add undefined big symbol");
+    let member_addr = Address::new(Rc::clone(&spc), 0x84);
+    let mut b2: int4 = 5;
+    let r2 = sl.resolve_default_name(&member_addr, 4, &mut b2);
+    assert!(r2.is_some(), "the member access still finds its covering symbol");
+    let (name2, off2, _) = r2.unwrap();
+    assert_eq!(off2, 4, "member access carries the in-symbol byte offset");
+    assert_eq!(
+        name2, "$$undef00000001",
+        "a partial/member access must NOT be renamed to vN (getSymbolOffset() >= 0)"
+    );
+    assert_eq!(b2, 5, "base must NOT advance for a non-whole-symbol access");
+    assert!(
+        sl.database().symbol(s_big).is_name_undefined(),
+        "the big symbol's undefined name is preserved (no spurious rename)"
+    );
+
+    // (3) An access with no covering symbol resolves to None (no panic, no rename).
+    let bare = Address::new(Rc::clone(&spc), 0x200);
+    let mut b3: int4 = 9;
+    assert!(
+        sl.resolve_default_name(&bare, 4, &mut b3).is_none(),
+        "no covering symbol -> None"
+    );
+    assert_eq!(b3, 9, "base untouched when nothing resolves");
+    let _ = scope;
+}
+
+#[test]
 fn scope_local_build_variable_name_stack_convention() {
     // buildVariableName: an addr-tied non-persistent stack local in the local
     // range gets the `<TypeBase>Stack[XY]_<hexoff>` name.  Under negative stack
