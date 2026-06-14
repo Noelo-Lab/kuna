@@ -930,9 +930,10 @@ fn concatcommute_or_lower() {
 
 // RuleLoadVarnode: a LOAD whose space operand (0x18) is not a valid spacebase
 // constant and whose pointer is a plain non-spacebase Varnode is not a spacebase
-// load -> `check_spacebase` returns None -> the rule is a no-op (0).  (The full
-// spacebase recovery is exercised end-to-end by the datatest corpus, where
-// `Funcdata::spacebase` has marked a real stack-pointer input.)
+// load -> `check_spacebase` returns None -> the rule is a no-op (0).  This pins
+// only the negative case; positive spacebase-recovery behavior (the marking, the
+// gather, the symbol paint, the stack-pointer-flow solve) is pinned directly by
+// the unit tests in `coreaction_stackptr` / `funcdata_spacebase`'s test modules.
 #[test]
 fn loadvarnode_seam_noop() {
     let mut fd = build_fd();

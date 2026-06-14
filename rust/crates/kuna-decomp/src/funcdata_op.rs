@@ -94,6 +94,14 @@ impl Funcdata {
         self.obank_mut().change_opcode(op, t_op);
     }
 
+    /// `data.opSetOpcode(op, opc)` taking a bare [`OpCode`] and resolving it
+    /// through the W6 `inst[]` seam (`w6_type_op`).  Convenience for in-crate
+    /// callers that do not carry a resolved [`TypeOp`] (e.g. the stack-pointer
+    /// flow LOAD->COPY / spurious-add rewrites in `coreaction_stackptr`).
+    pub(crate) fn op_set_opcode_code(&mut self, op: OpId, opc: OpCode) {
+        self.op_set_opcode(op, Self::w6_type_op(opc));
+    }
+
     /// Mark a PcodeOp as not collapsible (C++ `Funcdata::opMarkNoCollapse`,
     /// `funcdata.hh:493` — `op->setFlag(PcodeOp::nocollapse)`).
     ///

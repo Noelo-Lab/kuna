@@ -166,7 +166,7 @@ impl Action for ActionStackPtrFlow {
     fn reset(&mut self, _data: &mut Funcdata) {
         self.analysis_finished = false;
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:496 — ActionStackPtrFlow::apply
         //   if (analysis_finished) return 0;
         //   if (stackspace == 0) { analysis_finished = true; return 0; }  // no stack
@@ -174,24 +174,28 @@ impl Action for ActionStackPtrFlow {
         //   if (numchange > 0) count += 1;
         //   if (numchange == 0) { analyzeExtraPop(data,stackspace,0); analysis_finished = true; }
         //   return 0;
-        //
-        // The `analysis_finished` short-circuit and the "no stack" early-out are
-        // realized below (they bind only to this action's own fields).  The core
-        // `checkClog`/`analyzeExtraPop` (coreaction.cc:303-495) — stack-relative
-        // LOAD/STORE repair via spacebase tracking — read `Funcdata`'s op/varnode
-        // graph and `getArch()` and are not realizable here.
         if self.analysis_finished {
             return 0;
         }
-        if self.stackspace.is_none() {
-            self.analysis_finished = true; // No stack to do analysis on
-            return 0;
+        let stackspace = match &self.stackspace {
+            Some(ss) => Rc::clone(ss),
+            None => {
+                self.analysis_finished = true; // No stack to do analysis on
+                return 0;
+            }
+        };
+        // checkClog: stack-pointer clog repair (LOAD->COPY).  spcbase index 0.
+        let numchange = crate::coreaction_stackptr::check_clog(data, &stackspace, 0);
+        let mut count = 0;
+        if numchange > 0 {
+            count += 1;
         }
-        // SEAM(W8-funcdata): checkClog / analyzeExtraPop need the op/varnode graph
-        // and the spacebase-tracking surface.  Body transcribed; no change applied
-        // and `analysis_finished` is left unset so a later wave can re-run (count
-        // stays 0).
-        0
+        if numchange == 0 {
+            // analyzeExtraPop: full linear solve + INT_ADD rewrite of the solution.
+            crate::coreaction_stackptr::analyze_extra_pop(data, &stackspace, 0);
+            self.analysis_finished = true;
+        }
+        count
     }
 }
 

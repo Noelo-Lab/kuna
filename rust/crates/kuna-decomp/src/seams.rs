@@ -244,6 +244,15 @@ impl Architecture {
         self.evalfp_current.as_ref().or(self.defaultfp.as_ref())
     }
 
+    /// The called-function evaluation model (C++ `glb->evalfp_called`), falling
+    /// back to `defaultfp` when unset (`ActionStackPtrFlow::analyzeExtraPop` reads
+    /// `evalfp_called ?: defaultfp`).  The merged arch-handle carries no distinct
+    /// `evalfp_called` field; absent that it is the same as `defaultfp`, which is
+    /// the C++ fallback the `?:` would take anyway.
+    pub fn eval_fp_called(&self) -> Option<&Rc<crate::fspec::ProtoModel>> {
+        self.defaultfp.as_ref()
+    }
+
     /// Resolve an op-code to its emulation [`OpBehavior`](kuna_num::opbehavior::OpBehavior),
     /// or `None` (C++ `glb->inst[opc]->getBehavior()`).
     ///

@@ -247,10 +247,13 @@ fn stackptrflow_no_stack_latches_finished() {
     assert!(!sp.analysis_finished, "reset clears analysis_finished");
 }
 
-/// `ActionStackPtrFlow` with a stack space does not latch finished in the seam
-/// (the body that would set it is unrealized); count stays 0.
+/// `ActionStackPtrFlow` with a (here, spacebase-less) stack space runs the
+/// realized body: `check_clog` finds no clog (the space has no base register, so
+/// `getSpacebase` fails and the clog scan is empty) -> `numchange == 0` -> the
+/// C++ `analyzeExtraPop` branch runs and latches `analysis_finished`.  No change
+/// is applied (no spacebase refs to solve), so `count` stays 0.
 #[test]
-fn stackptrflow_with_stack_is_seamed() {
+fn stackptrflow_with_stack_runs_and_latches() {
     let mut fd = build_fd();
     let ram = ram_space(&fd);
     let mut ctx = ActionContext::new();
@@ -261,8 +264,8 @@ fn stackptrflow_with_stack_is_seamed() {
     };
     assert_eq!(sp.apply(&mut fd, &mut ctx), 0);
     assert!(
-        !sp.analysis_finished,
-        "with a stack, the seam leaves analysis_finished unset for a later wave"
+        sp.analysis_finished,
+        "no clog -> analyzeExtraPop runs and latches analysis_finished (C++ coreaction.cc:507)"
     );
     assert_eq!(sp.base().count, 0);
 }

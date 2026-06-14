@@ -31,6 +31,9 @@ use crate::op::pcodeop_flags;
 use crate::seams::{OpId, TypeOp, VarnodeId};
 use crate::varnode::varnode_flags;
 
+#[cfg(test)]
+mod spacebase_tests;
+
 impl Funcdata {
     /// Mark Varnode objects that hold stack-pointer values and set up special
     /// data-types (C++ `Funcdata::spacebase`, `funcdata.cc:228`).
@@ -348,9 +351,77 @@ impl Funcdata {
                     let fl = if is_const { crate::varmap::COPY_CONSTANT } else { 0 };
                     state.add_fixed_type_pub(offset, vtype, fl, types);
                 }
-                // PIECE / SUBPIECE get the same default treatment as the general
-                // case here (the precise sub-storage split is a refinement on the
-                // alias-marking tail, not the layout cover); fall through.
+                Some(OpCode::CPUI_PIECE) => {
+                    // C++ varmap.cc:1165 — treat PIECE as two COPYs.  Each
+                    // constituent input contributes a fixed-type hint at its own
+                    // sub-address, unless the input simply copies to the same
+                    // storage.  Then, if `vn` itself is read-actively, add the
+                    // whole-output hint too.
+                    let vn_addr = v.get_addr().clone();
+                    let slot: int4 = if vn_addr.is_big_endian() { 0 } else { 1 };
+                    let in_first = self.obank().get(op).and_then(|o| o.get_in(slot));
+                    let (first_addr, first_sz, first_ty) = match in_first
+                        .and_then(|iv| self.vbank().get(iv))
+                    {
+                        Some(fv) => (fv.get_addr().clone(), fv.get_size(), Rc::clone(fv.get_type())),
+                        None => {
+                            // Degenerate: fall back to the output hint (C++ would
+                            // dereference a null here; the IR never produces it).
+                            state.add_fixed_type_pub(offset, vtype, 0, types);
+                            continue;
+                        }
+                    };
+                    if !addr_eq(&first_addr, &vn_addr) {
+                        state.add_fixed_type_pub(vn_addr.get_offset(), first_ty, 0, types);
+                    }
+                    let second_addr = &vn_addr + first_sz as i64;
+                    let in_second = self.obank().get(op).and_then(|o| o.get_in(1 - slot));
+                    if let Some(sv) = in_second.and_then(|iv| self.vbank().get(iv)) {
+                        let sv_addr = sv.get_addr().clone();
+                        let sv_ty = Rc::clone(sv.get_type());
+                        if !addr_eq(&sv_addr, &second_addr) {
+                            state.add_fixed_type_pub(second_addr.get_offset(), sv_ty, 0, types);
+                        }
+                    }
+                    if self.is_read_active(vn) {
+                        state.add_fixed_type_pub(offset, vtype, 0, types);
+                    }
+                }
+                Some(OpCode::CPUI_SUBPIECE) => {
+                    // C++ varmap.cc:1188 — a SUBPIECE that just truncates into the
+                    // same storage is not an active write.  Compute the truncated
+                    // input address: addr = in0.getAddr() + trunc, where trunc is
+                    // computed big/little-endian from the input/output sizes and the
+                    // truncation amount in[1].
+                    let (in0_addr, in0_sz) = match self
+                        .obank()
+                        .get(op)
+                        .and_then(|o| o.get_in(0))
+                        .and_then(|iv| self.vbank().get(iv))
+                    {
+                        Some(iv) => (iv.get_addr().clone(), iv.get_size()),
+                        None => {
+                            state.add_fixed_type_pub(offset, vtype, 0, types);
+                            continue;
+                        }
+                    };
+                    let vn_sz = v.get_size();
+                    let trunc_off = self
+                        .obank()
+                        .get(op)
+                        .and_then(|o| o.get_in(1))
+                        .and_then(|iv| self.vbank().get(iv).map(|x| x.get_offset()))
+                        .unwrap_or(0);
+                    let trunc: int4 = if in0_addr.is_big_endian() {
+                        in0_sz - vn_sz - trunc_off as int4
+                    } else {
+                        trunc_off as int4
+                    };
+                    let trunc_addr = &in0_addr + trunc as i64;
+                    if !addr_eq(&trunc_addr, &v.get_addr().clone()) || self.is_read_active(vn) {
+                        state.add_fixed_type_pub(offset, vtype, 0, types);
+                    }
+                }
                 _ => {
                     state.add_fixed_type_pub(offset, vtype, 0, types);
                 }
@@ -381,7 +452,34 @@ impl Funcdata {
                 }
             } else {
                 match o.code() {
-                    OpCode::CPUI_PIECE => return true,
+                    OpCode::CPUI_PIECE => {
+                        // C++ varmap.cc:1099 — a PIECE that merely copies `vn` back
+                        // into the SAME storage (the slot whose sub-address equals
+                        // `vn`'s) is NOT an active read.  Compute the slot's address:
+                        //   addr = out.getAddr(); slot = bigEndian ? 0 : 1;
+                        //   if (in[slot] != vn) addr = addr + in[slot].getSize();
+                        //   active iff vn.getAddr() != addr
+                        let out_addr = match o
+                            .get_out()
+                            .and_then(|ov| self.vbank().get(ov).map(|x| x.get_addr().clone()))
+                        {
+                            Some(a) => a,
+                            None => return true,
+                        };
+                        let slot: int4 = if out_addr.is_big_endian() { 0 } else { 1 };
+                        let slot_vn = o.get_in(slot);
+                        let addr = if slot_vn != Some(vn) {
+                            let in_sz = slot_vn
+                                .and_then(|iv| self.vbank().get(iv).map(|x| x.get_size()))
+                                .unwrap_or(0);
+                            &out_addr + in_sz as i64
+                        } else {
+                            out_addr
+                        };
+                        if !addr_eq(&vn_addr, &addr) {
+                            return true;
+                        }
+                    }
                     OpCode::CPUI_SUBPIECE => {} // type info comes from output; ignore
                     _ => return true,
                 }
@@ -562,25 +660,35 @@ impl Funcdata {
         fl: uint4,
         ct: Option<&Rc<crate::dtype::Datatype>>,
     ) -> bool {
-        // C++ `syncVarnodesWithSymbol` mask: `mapped`; `addrtied`/`addrforce` can
-        // be CLEARED but not SET (the C++ relies on the storage-class machinery
-        // having already tied address-tied storage); `nolocalalias` SET-only.
-        //
-        // (kuna divergence) The merged tree has no pass that pre-ties stack
-        // storage (the C++ ties it via the heritage/storage-class bookkeeping the
-        // W3 IR skeleton omits — only the return register is pre-tied, by
-        // `mark_output_storage_addr_tied`).  So when the resolved Symbol is itself
-        // address-tied (a genuine, in-scope stack local), we SET `addrtied` here
-        // to reach the same end-state the C++ has by sync time.  This is the same
-        // `mapped | addrtied` outcome the C++ `entry==null && inScope` branch
-        // would produce for an unmapped-but-in-scope stack varnode.
+        // (kuna pre-tie) The merged tree has no pass that pre-ties stack storage:
+        // the C++ ties address-tied stack storage earlier, via the heritage /
+        // storage-class bookkeeping and the `setSymbolEntry` attach (only the
+        // return register is pre-tied here, by `mark_output_storage_addr_tied`).
+        // The C++ `syncVarnodesWithSymbol` mask therefore relies on the bit being
+        // ALREADY set, and the mask itself is "CLEAR-but-never-SET addrtied".  To
+        // stay byte-faithful to that invariant we replicate the missing pre-tie as
+        // a SEPARATE step here — when the resolved Symbol is itself address-tied,
+        // we set `addrtied` on the group's Varnodes (the same end-state
+        // `setSymbolEntry` reaches in C++) — and then run the verbatim C++ mask,
+        // which (because the bit is now part of `fl`) correctly excludes addrtied
+        // and never SETs it.  The invariant the verifier flagged is restored: the
+        // mask logic can only CLEAR addrtied, exactly as `funcdata_varnode.cc:1077`.
+        if (fl & varnode_flags::addrtied) != 0 {
+            for &vn in group {
+                if let Some(v) = self.vbank_mut().get_mut(vn) {
+                    if !v.is_free() {
+                        v.set_flags_pub(varnode_flags::addrtied);
+                    }
+                }
+            }
+        }
+
+        // C++ `syncVarnodesWithSymbol` mask (funcdata_varnode.cc:1077): start with
+        // `mapped`; `addrtied`/`addrforce` may be CLEARED but never SET (the bit is
+        // pre-tied above); `nolocalalias` may be SET but not cleared.
         let mut mask = varnode_flags::mapped;
         if (fl & varnode_flags::addrtied) == 0 {
             mask |= varnode_flags::addrtied | varnode_flags::addrforce;
-        } else {
-            // Symbol is address-tied: allow setting the addrtied bit on the
-            // promoted Varnode (kuna pre-tie, see above).
-            mask |= varnode_flags::addrtied;
         }
         if (fl & varnode_flags::nolocalalias) != 0 {
             mask |= varnode_flags::nolocalalias | varnode_flags::addrforce;
