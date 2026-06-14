@@ -42,7 +42,7 @@
 
 use std::rc::Rc;
 
-use kuna_base::address::calc_mask;
+use kuna_base::address::{calc_mask, Address};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::{int4, int8, uintb};
 use kuna_num::opcodes::OpCode;
@@ -76,18 +76,93 @@ fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
 fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Datatype> {
     let arch = Rc::clone(data.get_arch());
     let o = data.obank().get(op).expect("input_type_local: stale op");
+    let opcode = o.code();
     let in_size = o
         .get_in(slot)
         .and_then(|v| data.vbank().get(v))
         .map(|v| v.get_size())
         .unwrap_or(1);
-    let info = type_op_info(o.code());
+
+    // C++ `TypeOpCall::getInputLocal` (typeop.cc:689) / `TypeOpCallind` (typeop.cc:763):
+    // for a slot>0 whose in(0) is an fspec (CALL) / code-pointer (CALLIND) reference
+    // with a recovered prototype, the suggested input type is the *callee's* locked
+    // parameter type.  This is what flows a typed call argument (e.g. a `mystruct *`)
+    // back onto the argument Varnode so the stack-frame member access is recovered.
+    if (opcode == OpCode::CPUI_CALL || opcode == OpCode::CPUI_CALLIND) && slot > 0 {
+        if let Some(ct) = call_input_type_local(data, op, slot, opcode) {
+            return ct;
+        }
+    }
+
+    let info = type_op_info(opcode);
     match arch.types() {
         Some(tlst) => info
             .get_input_local(tlst, slot, in_size)
             .unwrap_or_else(|_| Rc::new(Datatype::new(in_size, type_metatype::TYPE_UNKNOWN))),
         None => Rc::new(Datatype::new(in_size, type_metatype::TYPE_UNKNOWN)),
     }
+}
+
+/// The callee-parameter arm of `TypeOpCall::getInputLocal` / `TypeOpCallind::getInputLocal`
+/// (typeop.cc:689-721 / 763-810): resolve the `FuncCallSpecs` for the CALL op and,
+/// if parameter `slot-1` is type-locked (or a known `this` pointer to a struct),
+/// return that parameter's data-type when it fits the argument Varnode.  `None`
+/// falls back to the generic `getInputLocal`.
+fn call_input_type_local(
+    data: &Funcdata,
+    op: OpId,
+    slot: int4,
+    opcode: OpCode,
+) -> Option<Rc<Datatype>> {
+    // C++: vn = op->getIn(0); for a CALL the prototype lives only when in(0) is an
+    // fspec reference (CALLIND always consults the recovered spec).
+    if opcode == OpCode::CPUI_CALL {
+        let in0 = data.obank().get(op)?.get_in(0)?;
+        let is_fspec = data
+            .vbank()
+            .get(in0)
+            .and_then(|v| v.get_addr().get_space())
+            .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_FSPEC)
+            .unwrap_or(false);
+        if !is_fspec {
+            return None;
+        }
+    }
+    // Resolve the FuncCallSpecs for this op (the C++ `getFspecFromConst` pointer
+    // cast; this port keys the `qlst` by the spec's CALL op).
+    let n = data.num_calls();
+    let mut fc = None;
+    for i in 0..n {
+        if data.get_call_specs(i).get_op() == op {
+            fc = Some(data.get_call_specs(i));
+            break;
+        }
+    }
+    let fc = fc?;
+    // param = fc->getParam(slot - 1)
+    let proto = fc.proto();
+    let param = proto.get_param(slot - 1)?;
+    let arg_size =
+        data.obank().get(op).and_then(|o| o.get_in(slot)).and_then(|v| data.vbank().get(v)).map(|v| v.get_size())?;
+    if param.is_type_locked() {
+        let ct = param.get_type()?;
+        // (ct->metatype != VOID) && (ct->size <= op->getIn(slot)->size)
+        if ct.get_metatype() != type_metatype::TYPE_VOID && ct.get_size() <= arg_size {
+            return Some(Rc::clone(ct));
+        }
+    } else if param.is_this_pointer() {
+        // Known "this" pointer is effectively typelocked: a struct pointer flows.
+        let ct = param.get_type()?;
+        if ct.get_metatype() == type_metatype::TYPE_PTR
+            && ct
+                .get_ptr_to()
+                .map(|p| p.get_metatype() == type_metatype::TYPE_STRUCT)
+                .unwrap_or(false)
+        {
+            return Some(Rc::clone(ct));
+        }
+    }
+    None
 }
 
 /// C++ `Varnode::getLocalType(bool &blockup)` (varnode.cc:919).  Determine an
@@ -1147,6 +1222,204 @@ fn propagate_one_type(data: &mut Funcdata, root: VarnodeId) {
     }
 }
 
+/// C++ `ActionInferTypes::propagateRef` (coreaction.cc:5464): given a likely
+/// pointer Varnode `vn` and a known alias `addr` of what it points at, try to
+/// propagate `vn`'s pointee data-type onto the Varnodes that live at `addr`.
+///
+/// This is the pass that turns a typed stack-pointer (e.g. `mystruct *` from a
+/// call argument) into a typed stack *local* (`mystruct v1`): the pointee type
+/// is laid over every Varnode in the stack-frame slice the pointer addresses.
+fn propagate_ref(data: &mut Funcdata, vn: VarnodeId, addr: &Address) {
+    // ct = vn->getTempType(); must be a pointer to a concrete (non-spacebase,
+    // non-unknown) type.
+    let ct = match data.vbank().get(vn).and_then(|v| v.get_temp_type().cloned()) {
+        Some(t) => t,
+        None => return,
+    };
+    if ct.get_metatype() != type_metatype::TYPE_PTR {
+        return;
+    }
+    let ct = match ct.get_ptr_to() {
+        Some(p) => p,
+        None => return,
+    };
+    let ctmeta = ct.get_metatype();
+    if ctmeta == type_metatype::TYPE_SPACEBASE || ctmeta == type_metatype::TYPE_UNKNOWN {
+        return; // Don't bother propagating this
+    }
+    let arch = Rc::clone(data.get_arch());
+    let typegrp = match arch.types() {
+        Some(t) => t,
+        None => return,
+    };
+
+    let off = addr.get_offset();
+    let ct_size = ct.get_size();
+    // endaddr = addr + ct->getSize();  if it wrapped, run to end of the space.
+    // cast: `Address + i64` advances the offset; a data-type byte size (int4) fits i64.
+    let endaddr = addr + ct_size as i64;
+
+    // Snapshot the membership window so the &mut propagate_one_type below does not
+    // alias the iteration borrow (the C++ holds a live VarnodeLocSet iterator; the
+    // set is not mutated structurally inside the loop — only Varnode temptypes
+    // change — so the snapshot is equivalent).
+    let curvns: Vec<VarnodeId> = data.vbank().iter_loc_addr_range(addr, &endaddr).collect();
+
+    let mut lastoff: uintb = 0;
+    let mut lastsize: int4 = ct_size;
+    let mut lastct: Option<Rc<Datatype>> = Some(Rc::clone(&ct));
+    for curvn in curvns {
+        let (is_annot, written, no_descend, typelock, mapped, curoff_abs, cursize) =
+            match data.vbank().get(curvn) {
+                Some(v) => (
+                    v.is_annotation(),
+                    v.is_written(),
+                    v.has_no_descend(),
+                    v.is_type_lock(),
+                    v.is_mapped(),
+                    v.get_offset(),
+                    v.get_size(),
+                ),
+                None => continue,
+            };
+        if is_annot {
+            continue;
+        }
+        if !written && no_descend {
+            continue;
+        }
+        if typelock {
+            continue;
+        }
+        // C++ `curvn->getSymbolEntry() != 0` (skip already-bound Varnodes).  This
+        // port carries no per-Varnode `mapentry`; the `mapped` flag (set when
+        // `syncVarnodesWithSymbol` bound the Varnode to a stack Symbol) is the
+        // available proxy (LOSS recorded — see structured output).
+        if mapped {
+            continue;
+        }
+        let curoff = curoff_abs.wrapping_sub(off);
+        if curoff.wrapping_add(cursize as uintb) > ct_size as uintb {
+            continue;
+        }
+        if cursize != lastsize || curoff != lastoff {
+            lastoff = curoff;
+            lastsize = cursize;
+            // getExactPiece(ct, curoff, cursize).
+            // cast: `curoff` (uintb) is the byte offset within `ct`, bounded by the
+            // guard above (`curoff + cursize <= ct->getSize()`), so it fits int4.
+            lastct = typegrp.get_exact_piece(Rc::clone(&ct), curoff as int4, cursize).ok().flatten();
+        }
+        let lct = match &lastct {
+            Some(c) => Rc::clone(c),
+            None => continue,
+        };
+        // if (0 > lastct->typeOrder(*curvn->getTempType())) — the new type is more
+        // specific; adopt it and re-propagate.
+        let cur_temp = match data.vbank().get(curvn).and_then(|v| v.get_temp_type().cloned()) {
+            Some(t) => t,
+            None => continue,
+        };
+        if 0 > lct.type_order(&cur_temp).unwrap_or(0) {
+            if let Some(v) = data.vbank_mut().get_mut(curvn) {
+                v.set_temp_type(Rc::clone(&lct));
+            }
+            propagate_one_type(data, curvn);
+        }
+    }
+}
+
+/// C++ `ActionInferTypes::propagateSpacebaseRef` (coreaction.cc:5521): look for
+/// ADD/PTRSUB/PTRADD/COPY off the spacebase (stack-pointer) input whose output
+/// has a known pointer type, and propagate that type into the stack frame at the
+/// corresponding offset (via [`propagate_ref`]).
+fn propagate_spacebase_ref(data: &mut Funcdata, spcvn: VarnodeId) {
+    // spctype = spcvn->getType() (the absolute type, NOT temptype); must be
+    // pointer-to-spacebase.
+    let spctype = match data.vbank().get(spcvn).map(|v| Rc::clone(v.get_type())) {
+        Some(t) => t,
+        None => return,
+    };
+    if spctype.get_metatype() != type_metatype::TYPE_PTR {
+        return;
+    }
+    let sbtype = match spctype.get_ptr_to() {
+        Some(p) => p,
+        None => return,
+    };
+    if sbtype.get_metatype() != type_metatype::TYPE_SPACEBASE {
+        return;
+    }
+    let arch = Rc::clone(data.get_arch());
+    let manager = arch.manage();
+
+    // Snapshot the descendant ops (the C++ holds a live beginDescend iterator;
+    // propagate_ref does not add/remove descendants of spcvn).
+    let descend: Vec<OpId> = match data.vbank().get(spcvn) {
+        Some(v) => v.descend_iter().collect(),
+        None => return,
+    };
+    for op in descend {
+        let (code, op_addr) = match data.obank().get(op) {
+            Some(o) => (o.code(), o.get_addr().clone()),
+            None => continue,
+        };
+        match code {
+            OpCode::CPUI_COPY => {
+                // vn = op->getIn(0); addr = sbtype->getAddress(0, vn->getSize(), op->getAddr())
+                let in0 = data.obank().get(op).and_then(|o| o.get_in(0));
+                let sz = in0.and_then(|v| data.vbank().get(v).map(|x| x.get_size())).unwrap_or(0);
+                if let (Some(addr), Some(outvn)) = (
+                    sbtype.spacebase_get_address(0, sz, &op_addr, manager),
+                    data.obank().get(op).and_then(|o| o.get_out()),
+                ) {
+                    propagate_ref(data, outvn, &addr);
+                }
+            }
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB => {
+                // vn = op->getIn(1); if constant: addr = sbtype->getAddress(vn->offset, vn->size, op->getAddr())
+                let in1 = data.obank().get(op).and_then(|o| o.get_in(1));
+                let (is_const, voff, vsz) = match in1.and_then(|v| data.vbank().get(v)) {
+                    Some(v) => (v.is_constant(), v.get_offset(), v.get_size()),
+                    None => continue,
+                };
+                if is_const {
+                    if let (Some(addr), Some(outvn)) = (
+                        sbtype.spacebase_get_address(voff, vsz, &op_addr, manager),
+                        data.obank().get(op).and_then(|o| o.get_out()),
+                    ) {
+                        propagate_ref(data, outvn, &addr);
+                    }
+                }
+            }
+            OpCode::CPUI_PTRADD => {
+                // vn = op->getIn(1); if constant: off = vn->offset * op->getIn(2)->offset
+                let in1 = data.obank().get(op).and_then(|o| o.get_in(1));
+                let (is_const, voff, vsz) = match in1.and_then(|v| data.vbank().get(v)) {
+                    Some(v) => (v.is_constant(), v.get_offset(), v.get_size()),
+                    None => continue,
+                };
+                if is_const {
+                    let in2off = data
+                        .obank()
+                        .get(op)
+                        .and_then(|o| o.get_in(2))
+                        .and_then(|v| data.vbank().get(v).map(|x| x.get_offset()))
+                        .unwrap_or(0);
+                    let off = voff.wrapping_mul(in2off);
+                    if let (Some(addr), Some(outvn)) = (
+                        sbtype.spacebase_get_address(off, vsz, &op_addr, manager),
+                        data.obank().get(op).and_then(|o| o.get_out()),
+                    ) {
+                        propagate_ref(data, outvn, &addr);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// C++ `ActionInferTypes::canonicalReturnOp` (coreaction.cc:5567).
 fn canonical_return_op(data: &Funcdata) -> Option<OpId> {
     let mut res: Option<OpId> = None;
@@ -1254,8 +1527,10 @@ fn propagate_across_returns(data: &mut Funcdata) {
 /// `writeBack` reported a data-type change (used by the wrapper to bump
 /// `localcount`).
 pub fn run_infer_types(data: &mut Funcdata) -> bool {
-    // data.getScopeLocal()->applyTypeRecommendations() — W4 scope surface; the
-    // local scope carries no type recommendations in the merged tree (no-op).
+    // data.getScopeLocal()->applyTypeRecommendations(): lock any pending stack
+    // input-Varnode type recommendations (the `this`-pointer collection is the
+    // merged tree's only source; a no-op on a recommendation-free function).
+    data.apply_type_recommendations();
     build_localtypes(data);
     let order: Vec<VarnodeId> = data.vbank().iter_loc().collect();
     for vn in order {
@@ -1274,10 +1549,19 @@ pub fn run_infer_types(data: &mut Funcdata) -> bool {
         propagate_one_type(data, vn);
     }
     propagate_across_returns(data);
-    // propagateSpacebaseRef: needs findSpacebaseInput(scopeLocal->getSpaceId());
-    // the spacebase-input/scope-space surface is a W4/W8 path absent here, so this
-    // pointer-alias propagation is skipped (faithful: no spacebase ADD aliases to
-    // propagate in the merged-tree slice).
+    // C++ coreaction.cc:5663-5666 —
+    //   spcid = data.getScopeLocal()->getSpaceId();
+    //   spcvn = data.findSpacebaseInput(spcid);
+    //   if (spcvn != 0) propagateSpacebaseRef(data, spcvn);
+    // Flow the recovered pointer type (e.g. a `mystruct *` call argument) from the
+    // spacebase-relative ADD/PTRSUB/PTRADD outputs into the stack-frame slice they
+    // address, so a stack struct/array carries its member type.
+    let spcid = data.get_scope_local().map(|sl| std::rc::Rc::clone(sl.get_space_id()));
+    if let Some(spcid) = spcid {
+        if let Some(spcvn) = data.find_spacebase_input(&spcid) {
+            propagate_spacebase_ref(data, spcvn);
+        }
+    }
     write_back(data)
 }
 

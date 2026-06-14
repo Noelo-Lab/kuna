@@ -853,6 +853,9 @@ pub struct ScopeLocal {
     stack_grows_negative: bool,
     /// True if `restructure` could not reconcile overlaps (C++ `overlapProblems`).
     overlap_problems: bool,
+    /// Storage-address -> data-type recommendations for input Varnodes (C++
+    /// `list<TypeRecommend> typeRecommend`, `varmap.hh:218`).
+    type_recommend: Vec<TypeRecommend>,
 }
 
 impl ScopeLocal {
@@ -878,7 +881,29 @@ impl ScopeLocal {
             range_locked: false,
             stack_grows_negative: true,
             overlap_problems: false,
+            type_recommend: Vec::new(),
         })
+    }
+
+    /// C++ `ScopeLocal::addTypeRecommendation` (`varmap.cc:1590`): associate a
+    /// data-type with a storage address.  If an input Varnode appears at this
+    /// address with no other type info, the data-type is applied later by
+    /// `applyTypeRecommendations`.
+    pub fn add_type_recommendation(&mut self, addr: Address, dt: Rc<Datatype>) {
+        self.type_recommend.push(TypeRecommend::new(addr, dt));
+    }
+
+    /// C++ `ScopeLocal::hasTypeRecommendations` (`varmap.hh:259`): are there any
+    /// pending type recommendations?
+    pub fn has_type_recommendations(&self) -> bool {
+        !self.type_recommend.is_empty()
+    }
+
+    /// The pending `(address, type)` recommendations (C++ `typeRecommend` list),
+    /// consumed by [`Funcdata::apply_type_recommendations`] (which owns
+    /// `findVarnodeInput`).
+    pub fn type_recommendations(&self) -> &[TypeRecommend] {
+        &self.type_recommend
     }
 
     /// The address space holding this scope's variables (C++ `getSpaceId`).
