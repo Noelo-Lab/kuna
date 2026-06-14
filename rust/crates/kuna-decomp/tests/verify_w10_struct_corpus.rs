@@ -464,3 +464,116 @@ fn verify_w10_loop_emitter_renders_real_loop_on_oracle_loop_fn() {
          real C loop keyword (while/for/do), got none:\n{rendered}"
     );
 }
+
+// ===========================================================================
+// VERIFIER ADVERSARIAL TESTS (w10-refinement-loops, ROUND 2)
+//
+// The Round-1 blocker (BLOCKER-1) was that divopt mis-lifted as 16-bit garbage,
+// so the "applied count rise" was vacuous (the celebrated `do-while` was a
+// wrong-direction artifact).  These tests pin the FIX itself in a way a 16-bit
+// garbage lift cannot pass — stronger than the porter's substring checks:
+//   - the 64-bit reciprocal-multiply division CONSTANTS must be present (a
+//     16-bit real-mode lift cannot materialize a 64-bit `* 0x948b…` multiply);
+//   - the straight-line body must STORE through the RDI pointer for the array
+//     elements (the oracle's `*divu`/`divu[N]` direction), not loop;
+//   - the loop function's collapse must produce a bounded body (a `break`, the
+//     loop counter referenced), not a bare keyword.
+// They are committed with the verdict so the un-faked rise stays pinned.
+// ===========================================================================
+
+/// ADVERSARIAL: divopt's 64-bit reciprocal-multiply division CONSTANTS must
+/// appear in the lift.  Compiler-emitted unsigned `/ const` lowers to a wide
+/// `value * magic >> shift`; the magic constants (e.g. `0x948b0fcd6e9e0653`
+/// for `/81`) are 64-bit and *cannot* be produced by a 16-bit real-mode lift
+/// (the Round-1 garbage signature).  This is a much harder gate than "an RDI
+/// appears": it proves the wide multiply was actually decoded.
+#[test]
+fn verify_w10_r2_divopt_reciprocal_multiply_is_64bit() {
+    let path = repo_root().join("decompiler/datatests/divopt.xml");
+    let dt = parse_datatest(&path).expect("parse divopt.xml");
+    let rendered = render_corpus(&dt).expect("divopt must decompile");
+
+    // The reciprocal magic for the first divisor (/81) in divoptu, and the
+    // 64-bit sign/shift mask the lowering uses.  Both are 64-bit literals.
+    let magic = count_matches(r"0x948b0fcd6e9e0653", &rendered).unwrap_or(0);
+    assert!(
+        magic >= 1,
+        "divopt must lift the 64-bit reciprocal-multiply magic constant \
+         (impossible under a 16-bit real-mode lift):\n{rendered}"
+    );
+    // A 64-bit-wide shift/negate mask (0xffffffffffffffff) — a 16-bit lift
+    // would at most produce 0xffff.  Its presence proves 64-bit arithmetic.
+    let wide_mask = count_matches(r"0xffffffffffffffff", &rendered).unwrap_or(0);
+    let narrow_mask = count_matches(r"\b0xffff\b", &rendered).unwrap_or(0);
+    assert!(
+        wide_mask >= 1,
+        "divopt must use 64-bit-wide arithmetic masks:\n{rendered}"
+    );
+    assert_eq!(
+        narrow_mask, 0,
+        "divopt must NOT contain the 16-bit real-mode 0xffff signature \
+         (found {narrow_mask}):\n{rendered}"
+    );
+}
+
+/// ADVERSARIAL: divopt's body must STORE through the RDI pointer for the array
+/// elements in STRAIGHT-LINE form (the oracle direction: `*divu = …; divu[N] =
+/// …;`).  The lift renders these as `STORE(…,RDI + 0xNN, …)` one per element
+/// with NO loop — a 16-bit garbage lift produced neither a coherent pointer
+/// nor straight-line stores.  Pins both the pointer recovery direction and the
+/// absence of a spurious loop on a known loop-free oracle function.
+#[test]
+fn verify_w10_r2_divopt_stores_through_rdi_straightline() {
+    let path = repo_root().join("decompiler/datatests/divopt.xml");
+    let dt = parse_datatest(&path).expect("parse divopt.xml");
+    let rendered = render_corpus(&dt).expect("divopt must decompile");
+
+    // Multiple distinct array-element stores through RDI (the oracle has 17
+    // elements per function); require several to prove the straight-line body.
+    let rdi_stores = count_matches(r"STORE\([0-9]+,RDI", &rendered).unwrap_or(0);
+    assert!(
+        rdi_stores >= 8,
+        "divopt must STORE through RDI for the array elements in straight-line \
+         form (oracle: `*divu = …; divu[N] = …`); got {rdi_stores}:\n{rendered}"
+    );
+    // And NO loop keyword — the oracle for divopt is entirely loop-free, so any
+    // loop here is the Round-1 wrong-direction structuring artifact.
+    let loops =
+        count_matches(r"\bwhile *\(|\bfor *\(|\bdo \{", &rendered).unwrap_or(0);
+    assert_eq!(
+        loops, 0,
+        "divopt is loop-free in the oracle; a loop keyword is a wrong-direction \
+         artifact:\n{rendered}"
+    );
+}
+
+/// ADVERSARIAL: forloop1's structurer collapse must be a REAL bounded loop, not
+/// a bare keyword.  The oracle is `for(v1=0; v1<max; v1=v1+1)`; the engine
+/// renders `while( true ) { … break; }`.  Require BOTH the loop keyword AND a
+/// `break` inside it (the structurer recognized the exit edge) AND the
+/// induction step (`+ 1`) — a substring like `while` in a comment could not
+/// satisfy all three.  This pins the loop EMITTER on a genuine collapse.
+#[test]
+fn verify_w10_r2_forloop1_is_bounded_loop_not_bare_keyword() {
+    let path = repo_root().join("decompiler/datatests/forloop1.xml");
+    let dt = parse_datatest(&path).expect("parse forloop1.xml");
+    let rendered = render_corpus(&dt).expect("forloop1 must decompile");
+
+    let loop_kw =
+        count_matches(r"\bwhile *\(|\bfor *\(|\bdo \{", &rendered).unwrap_or(0);
+    assert!(loop_kw >= 1, "forloop1 must render a loop keyword:\n{rendered}");
+    // The structurer found the loop's exit edge -> a `break;` inside the body.
+    let breaks = count_matches(r"\bbreak;", &rendered).unwrap_or(0);
+    assert!(
+        breaks >= 1,
+        "forloop1's loop collapse must emit a `break;` for the recovered exit \
+         edge (proves a real CFG collapse, not a bare keyword):\n{rendered}"
+    );
+    // The induction step (the counter increment) survives in the body — proves
+    // the loop body, not an empty/garbage loop, was structured.
+    let step = count_matches(r"\+ 1", &rendered).unwrap_or(0);
+    assert!(
+        step >= 1,
+        "forloop1's loop body must carry the induction step (`+ 1`):\n{rendered}"
+    );
+}
