@@ -879,3 +879,106 @@ fn verify_w10_symbol_naming_param_not_redeclared_as_local() {
         "the recovered first parameter (a0) must be bound and rendered:\n{rendered}"
     );
 }
+
+// ===========================================================================
+// VERIFIER ADVERSARIAL TESTS (item: w10-pointer-flow)
+//
+// These pin the most fragile spot the hunt list flagged for this item: the
+// PrintC LOAD/STORE/PTRADD/PTRSUB operand ORDER under the direct-recursion RPN
+// engine.  The engine renders in PUSH order (first push = leftmost operand;
+// see `op_binary_ir` / `emit_expression_ir`), which is the INVERSE of the C++
+// LIFO `nodepend` push order.  A faithful `op_store_ir` must therefore push the
+// POINTER first (LHS) then the VALUE (RHS) so a STORE renders `ptr = value` —
+// the C++ `opStore` (printc.cc:520) pushes in2(value) then in1(pointer), and
+// the LIFO reversal makes the pointer the LHS.
+// ===========================================================================
+
+/// F1 (REJECT trigger): a STORE absorbed into an array/member access must render
+/// with the array/member access on the LEFT of `=` (the C++ oracle for divopt is
+/// straight-line `p[N] = <reciprocal-multiply expr>`, scored 34/34 by
+/// decomp_test_dbg).  The branch's `op_store_ir` pushes value-then-pointer in the
+/// SAME order as the C++ source, but the direct-recursion engine renders in push
+/// order, so the assignment comes out INVERTED (`<expr> = p[N]`).
+#[test]
+fn w10_ptr_flow_store_renders_pointer_on_lhs_of_assignment() {
+    let path = repo_root().join("decompiler/datatests/divopt.xml");
+    let dt = parse_datatest(&path).expect("parse divopt.xml");
+    let rendered = render_corpus(&dt).expect("divopt must decompile");
+
+    // The function recovers a pointer parameter; its STOREs must put the array
+    // element (`a0[N]`) on the LHS.  Count well-formed `a0[..] = ` assignments vs
+    // the inverted `= a0[..];` form.
+    let lhs_form = count_matches(r"(?m)^\s*a0\[[0-9a-fx]+\]\s*=", &rendered).unwrap_or(0);
+    let inverted_form = count_matches(r"=\s*a0\[[0-9a-fx]+\]\s*;", &rendered).unwrap_or(0);
+
+    assert_eq!(
+        inverted_form, 0,
+        "STORE assignments must NOT render with the pointer/array access on the \
+         RIGHT of `=` (`<value> = a0[N];`); that is the inverted-operand bug in \
+         op_store_ir. Found {inverted_form} inverted store(s):\n{rendered}"
+    );
+    assert!(
+        lhs_form >= 1,
+        "at least one STORE must render the array element on the LHS \
+         (`a0[N] = <value>;`), matching the C++ oracle's straight-line stores:\n{rendered}"
+    );
+}
+
+/// The member/array access on the LOAD side is REAL: a LOAD whose pointer is a
+/// genuine PTRADD/PTRSUB (from real pointer-type propagation) renders as
+/// `a0[index]` / `*(a0 + ..)`, NOT as a functional `LOAD(spaceid, ptr)`.  This
+/// guards against a "fix" to the store bug that breaks the load rendering, and
+/// confirms the access is produced by the real transform (PTRADD/PTRSUB created
+/// by RulePtrArith), not fabricated by a print-time special case.
+#[test]
+fn w10_ptr_flow_load_renders_array_member_access_not_functional_load() {
+    let path = repo_root().join("decompiler/datatests/divopt.xml");
+    let dt = parse_datatest(&path).expect("parse divopt.xml");
+    let rendered = render_corpus(&dt).expect("divopt must decompile");
+
+    // Real array access through the recovered pointer parameter.
+    let array_access = count_matches(r"a0\[[0-9a-fx]+\]", &rendered).unwrap_or(0);
+    assert!(
+        array_access >= 1,
+        "a LOAD through the recovered pointer must render as a real array access \
+         `a0[N]` (genuine PTRADD/PTRSUB from RulePtrArith), not a functional \
+         `LOAD(..)`:\n{rendered}"
+    );
+    // The functional LOAD form must be gone for the absorbed (array-deref) reads.
+    let functional_load_on_param = count_matches(r"LOAD\([0-9]+,a0\[", &rendered).unwrap_or(0);
+    assert_eq!(
+        functional_load_on_param, 0,
+        "an array-deref LOAD must be absorbed into `[]` notation, not left as a \
+         functional `LOAD(spaceid, a0[..])`:\n{rendered}"
+    );
+}
+
+/// Independent corroboration on a SECOND corpus function (readstruct in
+/// nestedoffset.xml): a LOAD through a non-PTRADD/PTRSUB pointer (plain INT_ADD
+/// address) renders as an explicit `*(...)` dereference with the pointer base
+/// (`a0`) inside — never as a functional `LOAD(..)` and never with the operands
+/// transposed.  This pins the opLoad single-operand path (which the store bug
+/// does NOT affect) so a store-only fix is shown to leave loads correct.
+#[test]
+fn w10_ptr_flow_load_explicit_deref_keeps_base_inside_star() {
+    let path = repo_root().join("decompiler/datatests/nestedoffset.xml");
+    let dt = parse_datatest(&path).expect("parse nestedoffset.xml");
+    let rendered = render_corpus(&dt).expect("readstruct must decompile");
+
+    // The body must dereference through the bound pointer parameter `a0`.
+    let star_deref_with_base = count_matches(r"\*\([^)]*\ba0\b", &rendered).unwrap_or(0);
+    let plain_array = count_matches(r"\ba0\[", &rendered).unwrap_or(0);
+    assert!(
+        star_deref_with_base >= 1 || plain_array >= 1,
+        "a LOAD through the recovered pointer must render the pointer base `a0` \
+         inside a `*(...)` deref or an `a0[..]` access (real pointer flow), not as \
+         a functional LOAD:\n{rendered}"
+    );
+    // No functional LOAD over the bound parameter should remain.
+    assert_eq!(
+        count_matches(r"LOAD\([0-9]+,\s*a0\b", &rendered).unwrap_or(0),
+        0,
+        "the LOAD through `a0` must be absorbed into deref/array notation, not a \
+         functional `LOAD(spaceid, a0)`:\n{rendered}"
+    );
+}
