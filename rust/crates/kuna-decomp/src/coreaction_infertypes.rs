@@ -310,6 +310,8 @@ fn space_from_const(data: &Funcdata, op: OpId, slot: int4) -> Option<Rc<AddrSpac
     if idx >= manage.num_spaces() as u64 {
         return None;
     }
+    // cast: `idx` is a space index < num_spaces() (guarded above); `as i32` matches
+    // C++ `getSpace(int4)` taking the constant Varnode offset as a small index.
     manage.get_space(idx as i32).cloned()
 }
 
@@ -857,6 +859,8 @@ fn propagate_add_pointer(data: &Funcdata, op: OpId, slot: int4, sz: int4) -> (in
             let off = (const_off.wrapping_mul(mult)) & calc_mask(const_size);
             return if off == 0 { (0, 0) } else { (1, off) };
         }
+        // cast: C++ `(mult % sz)` promotes int4 `sz` to the uintb of `mult`; `sz as uintb`
+        // is that same int4->uintb promotion (sz is the non-negative align size).
         if sz != 0 && (mult % sz as uintb) != 0 {
             return (2, 0);
         }
@@ -904,6 +908,7 @@ fn propagate_add_pointer(data: &Funcdata, op: OpId, slot: int4, sz: int4) -> (in
                                 // Multiplying by -1: assume a pointer difference.
                                 return (2, 0);
                             }
+                            // cast: int4->uintb promotion of `sz` in C++ `(mult % sz)`.
                             if sz != 0 && (mult % sz as uintb) != 0 {
                                 return (2, 0);
                             }
@@ -949,6 +954,8 @@ fn propagate_add_in2_out(
     let mut parent_off: int8 = 0;
     if command != 3 {
         let word_size = alttype.get_word_size().unwrap_or(1);
+        // cast: `offset` is uintb (u64); C++ `addressToByteInt(uintb,...)` takes the
+        // value reinterpreted as int8 — `offset as i64` is that same bit-reinterpret.
         let mut type_offset = AddrSpace::address_to_byte_int(offset as i64, word_size);
         let op_code = data.obank().get(op)?.code();
         let allow_wrap = op_code != OpCode::CPUI_PTRSUB;
@@ -958,9 +965,16 @@ fn propagate_add_in2_out(
             let (next, new_off, par, par_off) =
                 tlst.down_chain(&cur, type_offset, allow_wrap).ok()?;
             type_offset = new_off;
-            // downChain overwrites parent/parentOff each call (only the last is used).
-            parent = par;
-            parent_off = par_off;
+            // C++ downChain writes its `par`/`parOff` reference params ONLY on the
+            // STRUCT/ARRAY arm (type.cc:1247-1250) and never resets them otherwise,
+            // so across iterations the LAST struct/array container seen is retained.
+            // Mirror that: only overwrite when the descent actually produced a
+            // container (par.is_some()); a scalar/enum tail must NOT clear an
+            // outer struct/array container set by an earlier iteration.
+            if par.is_some() {
+                parent = par;
+                parent_off = par_off;
+            }
             pointer = next;
             // C++: break out of the do-while once pointer is null or typeOffset == 0.
             if pointer.is_none() || type_offset == 0 {
@@ -974,6 +988,8 @@ fn propagate_add_in2_out(
             None => tlst.get_base(1, type_metatype::TYPE_UNKNOWN).ok()?,
             Some(p) => p.get_ptr_to()?,
         };
+        // cast: C++ `getTypePointerRel(parent, pt, parentOff)` takes an int4 offset;
+        // `parentOff` is int8 there — this narrows int8->int4 exactly as the C++ call.
         let parent_off_i4: int4 = parent_off as int4;
         pointer = tlst.get_type_pointer_rel(par, pt, parent_off_i4).ok();
     }
@@ -1462,19 +1478,20 @@ mod propagate_type_tests {
         assert_eq!(par_off, 0);
     }
 
-    /// FINDING F1 (multi-iteration parent loss): C++ `propagateAddIn2Out`'s
+    /// FINDING F1 fix (multi-iteration parent retention): C++ `propagateAddIn2Out`'s
     /// do-while passes `par`/`parOff` by reference, and `TypePointer::downChain`
     /// writes them ONLY on the STRUCT/ARRAY arm (type.cc:1247-1250); a later
-    /// scalar iteration leaves the prior struct parent intact.  The Rust loop
-    /// overwrites `parent = par` every iteration with the downChain return value,
-    /// which is `None` on the scalar iteration — so the struct container is LOST.
+    /// scalar iteration leaves the prior struct parent intact (the ref is never
+    /// reset).  The fixed Rust loop mirrors this by overwriting `parent`/`parent_off`
+    /// only when `par.is_some()`, so a scalar tail iteration (which returns None)
+    /// must NOT clear a struct container set by an earlier iteration.
     ///
-    /// This test simulates the exact loop body of `propagate_add_in2_out` for a
+    /// This test replays the exact loop body of `propagate_add_in2_out` for a
     /// pointer into the *middle of a scalar field of a struct* (`&s.a + 2`,
-    /// `a` an int4 at offset 0) and shows the Rust loop ends with `parent=None`
-    /// where the C++ would retain the struct pointer (-> a TYPE_PTRREL wrap).
+    /// `a` an int4 at offset 0) and shows the loop now ends with the struct
+    /// pointer retained, feeding `getTypePointerRel` to produce a TYPE_PTRREL.
     #[test]
-    fn w10_downchain_loop_loses_struct_parent_on_scalar_tail() {
+    fn w10_downchain_loop_retains_struct_parent_on_scalar_tail() {
         let f = factory();
         let int4t = f.get_base(4, type_metatype::TYPE_INT).unwrap();
         let st = f.get_type_struct("s").unwrap();
@@ -1483,16 +1500,22 @@ mod propagate_type_tests {
         let st = f.assign_raw_fields_struct(&st, fields, Vec::new()).unwrap();
         let ptr = f.get_type_pointer(8, Rc::clone(&st), 1).unwrap();
 
-        // Exact replica of the propagate_add_in2_out do-while (allow_wrap=true,
+        // Exact replica of the FIXED propagate_add_in2_out do-while (allow_wrap=true,
         // type_offset=2 == 2 bytes into the int4 field).
         let mut type_offset: int8 = 2;
         let mut pointer: Option<Rc<Datatype>> = Some(Rc::clone(&ptr));
         let mut parent: Option<Rc<Datatype>> = None;
+        let mut parent_off: int8 = 0;
         let mut iters = 0;
         while let Some(cur) = pointer.clone() {
-            let (next, new_off, par, _par_off) = f.down_chain(&cur, type_offset, true).unwrap();
+            let (next, new_off, par, par_off) = f.down_chain(&cur, type_offset, true).unwrap();
             type_offset = new_off;
-            parent = par; // <-- the unconditional overwrite under test
+            // The fix under test: only overwrite when a container is present, so a
+            // scalar tail does not clobber the struct seen on the first iteration.
+            if par.is_some() {
+                parent = par;
+                parent_off = par_off;
+            }
             pointer = next;
             iters += 1;
             if pointer.is_none() || type_offset == 0 {
@@ -1500,12 +1523,30 @@ mod propagate_type_tests {
             }
         }
         assert!(iters >= 2, "must take the multi-iteration path (struct then scalar)");
-        // Rust: parent ends up None because the scalar tail iteration returned None.
-        // C++: parent would still be the struct pointer here (ref untouched on the
-        // scalar arm), feeding getTypePointerRel and preserving the container.
+        // After the fix: parent is the struct pointer from iter1, retained across
+        // the scalar tail iteration (which returned par=None) — matching C++.
+        let parent = parent.expect("struct container retained across scalar tail");
+        assert_eq!(parent.get_metatype(), type_metatype::TYPE_PTR);
         assert!(
-            parent.is_none(),
-            "documents the divergence: Rust loses the struct container that C++ keeps"
+            Rc::ptr_eq(&parent.get_ptr_to().unwrap(), &st),
+            "retained parent is the pointer to the containing struct"
+        );
+        assert_eq!(parent_off, 2, "parentOff is the byte offset into the struct");
+
+        // The container, fed to getTypePointerRel, yields a struct-relative pointer
+        // (TYPE_PTRREL) preserving the container — exactly the C++ wrap on this edge.
+        let pt = match &pointer {
+            None => f.get_base(1, type_metatype::TYPE_UNKNOWN).unwrap(),
+            Some(p) => p.get_ptr_to().unwrap(),
+        };
+        // cast: int8->int4 narrow matching C++ getTypePointerRel(int4 off).
+        let rel = f
+            .get_type_pointer_rel(parent, pt, parent_off as int4)
+            .expect("relative pointer");
+        assert_eq!(
+            rel.get_metatype(),
+            type_metatype::TYPE_PTRREL,
+            "interior-of-scalar-field-of-struct yields a struct-relative pointer, not a bare pointer"
         );
     }
 }
