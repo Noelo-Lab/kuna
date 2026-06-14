@@ -535,22 +535,29 @@ fn verify_w10_r2_divopt_stores_through_rdi_straightline() {
     // Multiple distinct array-element stores through the recovered pointer
     // parameter (the oracle has 17 elements per function); require several to
     // prove the straight-line body.  The W10 symbol-naming un-seam binds the RDI
-    // first-arg pointer to its recovered parameter, so the stores now render
-    // through that NAME (the oracle direction `*p = …; p[N] = …`), not the raw
-    // register.  The store target is the bound parameter identifier followed by the
-    // element offset (`a0`/`a0 + 0xNN` when unlocked, the declared name when locked)
-    // — a single-token name, never the raw `RDI` register and never `$$undef`.
-    let ptr_stores = count_matches(r"STORE\([0-9]+,[A-Za-z_][A-Za-z0-9_]*(?: \+ 0x)?", &rendered)
-        .unwrap_or(0);
+    // first-arg pointer to its recovered parameter, and the pointer-flow un-seam
+    // routes the STORE through the typed pointer into the oracle's array notation
+    // (`divu[N] = divu[N] / k;`).  So the stores now render `a0[N] = <expr>;`
+    // (pointer/array element on the LHS of `=`), the C++ oracle direction — NOT a
+    // functional `STORE(spaceid, ptr, value)` and NOT through the raw register.
+    let ptr_stores = count_matches(r"(?m)^\s*a0\[[0-9a-fx]+\]\s*=", &rendered).unwrap_or(0);
     assert!(
         ptr_stores >= 8,
         "divopt must STORE through the recovered pointer for the array elements in \
-         straight-line form (oracle: `*p = …; p[N] = …`); got {ptr_stores}:\n{rendered}"
+         straight-line array-notation form (oracle: `divu[N] = …;`); got \
+         {ptr_stores}:\n{rendered}"
     );
-    // The store target must NOT be the raw first-arg register (the un-seam binds it
-    // to the parameter) nor the `$$undef` placeholder (a coherent name was assigned).
+    // No functional STORE form may survive (the un-seam absorbs it into `[]`), and
+    // the store target must NOT be the raw first-arg register (the un-seam binds it
+    // to the parameter).
     assert_eq!(
-        count_matches(r"STORE\([0-9]+,RDI\b", &rendered).unwrap_or(0),
+        count_matches(r"STORE\([0-9]+,", &rendered).unwrap_or(0),
+        0,
+        "divopt's array-element stores must be absorbed into `a0[N] = …` notation, \
+         not left as a functional `STORE(spaceid, ptr, value)`:\n{rendered}"
+    );
+    assert_eq!(
+        count_matches(r"\bRDI\b", &rendered).unwrap_or(0),
         0,
         "divopt's stores must render through the bound parameter, not the raw RDI \
          register:\n{rendered}"
@@ -640,12 +647,28 @@ fn verify_w10_symbol_naming_readstruct_body_uses_param_names_not_registers() {
         "readstruct's body must reference the bound parameter names, not the raw \
          argument registers (RDI/RSI/RDX); found {raw_args}:\n{rendered}"
     );
-    // The recovered first parameter (`a0`) is the LOAD base — proves the body
-    // HighVariable carries the parameter Symbol, the un-seam's core effect.
-    let param_in_load = count_matches(r"LOAD\([0-9]+,a0", &rendered).unwrap_or(0);
+    // The recovered first parameter (`a0`) is the access base — proves the body
+    // HighVariable carries the parameter Symbol, the un-seam's core effect.  With
+    // the pointer-flow un-seam the LOAD through `a0` is no longer a functional
+    // `LOAD(..,a0)`: it is absorbed into the C-faithful member/array/deref form
+    // (`a0[..]` / `*(a0 + ..)` / `a0->field`), exactly as the C++ opLoad renders a
+    // PTRADD/PTRSUB or plain pointer address.  Require the parameter base to drive
+    // an access of one of those forms (the un-seam's effect is the binding of `a0`
+    // as the access base, not the obsolete functional-LOAD spelling).
+    let param_access = count_matches(r"\ba0(\[|->|\b\s*\+|\))", &rendered).unwrap_or(0);
+    let param_in_star = count_matches(r"\*\([^)]*\ba0\b", &rendered).unwrap_or(0);
     assert!(
-        param_in_load >= 1,
-        "readstruct must LOAD through the bound first parameter (`a0`):\n{rendered}"
+        param_access >= 1 || param_in_star >= 1,
+        "readstruct must access through the bound first parameter (`a0`) in \
+         member/array/deref form (`a0[..]`/`*(a0 + ..)`/`a0->..`):\n{rendered}"
+    );
+    // The functional `LOAD(..,a0)` spelling must be GONE — the un-seam routes the
+    // load through the typed pointer into structured access.
+    assert_eq!(
+        count_matches(r"LOAD\([0-9]+,\s*a0\b", &rendered).unwrap_or(0),
+        0,
+        "the LOAD through `a0` must be absorbed into deref/array/member notation, \
+         not a functional `LOAD(spaceid, a0)`:\n{rendered}"
     );
     // A parameter must never leak the `$$undef` placeholder name.
     assert_eq!(
@@ -907,15 +930,23 @@ fn w10_ptr_flow_store_renders_pointer_on_lhs_of_assignment() {
 
     // The function recovers a pointer parameter; its STOREs must put the array
     // element (`a0[N]`) on the LHS.  Count well-formed `a0[..] = ` assignments vs
-    // the inverted `= a0[..];` form.
+    // the inverted store form.  NOTE: a legitimate LOAD-into-temp renders
+    // `<ident> = a0[N];` (a read of the element into a single-identifier lvalue),
+    // so the bare `= a0[N];` shape is NOT itself the bug.  The op_store_ir
+    // inversion put a *non-lvalue expression* on the LHS — its tell is a
+    // multi-token expression containing a closing `)` (every reciprocal-multiply
+    // expr opens `SUB(`/`ZEXT(`) before the ` = a0[N];`.  A single-identifier read
+    // LHS has no `)`, so this distinguishes the bug from a legitimate read.
     let lhs_form = count_matches(r"(?m)^\s*a0\[[0-9a-fx]+\]\s*=", &rendered).unwrap_or(0);
-    let inverted_form = count_matches(r"=\s*a0\[[0-9a-fx]+\]\s*;", &rendered).unwrap_or(0);
+    let inverted_form =
+        count_matches(r"(?m)^[^=\n]*\)[^=\n]*=\s*a0\[[0-9a-fx]+\]\s*;", &rendered).unwrap_or(0);
 
     assert_eq!(
         inverted_form, 0,
-        "STORE assignments must NOT render with the pointer/array access on the \
-         RIGHT of `=` (`<value> = a0[N];`); that is the inverted-operand bug in \
-         op_store_ir. Found {inverted_form} inverted store(s):\n{rendered}"
+        "STORE assignments must NOT render with a non-lvalue expression on the \
+         LHS and the pointer/array access on the RIGHT of `=` \
+         (`<expr> = a0[N];`); that is the inverted-operand bug in op_store_ir. \
+         Found {inverted_form} inverted store(s):\n{rendered}"
     );
     assert!(
         lhs_form >= 1,

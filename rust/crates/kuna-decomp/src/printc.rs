@@ -2612,12 +2612,16 @@ impl PrintC {
         } else {
             self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
         }
-        // C++ pushes value (slot 2) then pointer (slot 1); the RPN drains so
-        // `ptr = value`.
+        // C++ pushes value (slot 2) then pointer (slot 1) onto the LIFO
+        // nodepend, so the LIFO reversal makes the pointer the LHS:
+        // `ptr = value`.  The direct-recursion engine here renders in push
+        // order (first push = leftmost operand, the inverse of the C++ LIFO),
+        // so to keep the pointer on the LHS of `=` we push the pointer first,
+        // then the value — exactly as op_binary_ir inverts in0/in1.
+        self.push_vn_ir_m(fd, arch, ptr, op, m);
         if let Some(val) = val {
             self.push_vn_ir_m(fd, arch, val, op, mods);
         }
-        self.push_vn_ir_m(fd, arch, ptr, op, m);
     }
 
     /// C++ `PrintC::opPtradd` (printc.cc:900).  `ptr[index]` (value), `&ptr[index]`

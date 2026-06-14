@@ -26,7 +26,7 @@ use std::rc::Rc;
 
 use kuna_base::address::{calc_mask, sign_extend, uintb_negate};
 use kuna_base::space::AddrSpace;
-use kuna_base::types::{int4, int8, uintb};
+use kuna_base::types::{int4, int8, uint4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype};
@@ -63,8 +63,9 @@ pub struct AddTreeState<'a> {
     multsum: uintb,
     /// Sum of non-multiple constants (C++ `nonmultsum`).
     nonmultsum: uintb,
-    /// Biggest non-multiple coefficient seen (C++ `biggestNonMultCoeff`).
-    biggest_non_mult_coeff: uintb,
+    /// Biggest non-multiple coefficient seen (C++ `biggestNonMultCoeff`,
+    /// `uint4` — every store narrows to the low 32 bits).
+    biggest_non_mult_coeff: uint4,
     /// Non-constant multiple terms (C++ `multiple`).
     multiple: Vec<VarnodeId>,
     /// Their coefficients (C++ `coeff`).
@@ -225,7 +226,8 @@ impl<'a> AddTreeState<'a> {
     }
 
     /// C++ `AddTreeState::hasMatchingSubType(off, arrayHint, &newoff)`.
-    fn has_matching_sub_type(&self, off: int8, array_hint: uintb) -> (bool, int8) {
+    /// C++ `arrayHint` is `uint4` (ruleaction.hh:69).
+    fn has_matching_sub_type(&self, off: int8, array_hint: uint4) -> (bool, int8) {
         if array_hint == 0 {
             return match self.base_type.get_sub_type(off) {
                 Ok((Some(_), newoff)) => (true, newoff),
@@ -304,7 +306,14 @@ impl<'a> AddTreeState<'a> {
                     let def = self.vn_def(vnterm).expect("check_mult_term: vnterm def");
                     return self.span_add_tree(def, val);
                 }
-                let vncoeff = if sval < 0 { (-sval) as uintb } else { sval as uintb };
+                // C++: vncoeff = (sval<0) ? (uint4)-sval : (uint4)sval; the
+                // (uint4) cast keeps the low 32 bits (ruleaction.cc:6169).
+                // cast: int8 -> uint4 (truncate), faithful to the C++ (uint4) cast.
+                let vncoeff = if sval < 0 {
+                    sval.wrapping_neg() as uint4
+                } else {
+                    sval as uint4
+                };
                 if vncoeff > self.biggest_non_mult_coeff {
                     self.biggest_non_mult_coeff = vncoeff;
                 }
@@ -318,8 +327,12 @@ impl<'a> AddTreeState<'a> {
                 return false;
             }
         }
-        if tree_coeff > self.biggest_non_mult_coeff {
-            self.biggest_non_mult_coeff = tree_coeff;
+        // C++ compares uint8 treeCoeff against (zero-extended) uint4
+        // biggestNonMultCoeff, then narrows uint8 -> uint4 on store
+        // (ruleaction.cc:6182-6183 / 6234-6235).
+        if tree_coeff > self.biggest_non_mult_coeff as uintb {
+            // cast: uint8 -> uint4 (truncate), faithful to the C++ narrowing store.
+            self.biggest_non_mult_coeff = tree_coeff as uint4;
         }
         true
     }
@@ -369,8 +382,12 @@ impl<'a> AddTreeState<'a> {
             self.valid = false;
             return false;
         }
-        if tree_coeff > self.biggest_non_mult_coeff {
-            self.biggest_non_mult_coeff = tree_coeff;
+        // C++ compares uint8 treeCoeff against (zero-extended) uint4
+        // biggestNonMultCoeff, then narrows uint8 -> uint4 on store
+        // (ruleaction.cc:6182-6183 / 6234-6235).
+        if tree_coeff > self.biggest_non_mult_coeff as uintb {
+            // cast: uint8 -> uint4 (truncate), faithful to the C++ narrowing store.
+            self.biggest_non_mult_coeff = tree_coeff as uint4;
         }
         true
     }
