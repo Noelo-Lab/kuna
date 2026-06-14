@@ -226,6 +226,13 @@ impl Architecture {
         self.types.as_deref()
     }
 
+    /// Clone the shared data-type factory `Rc` (so a caller can hold a type
+    /// factory handle across a `&mut Funcdata`/`&mut ScopeLocal` borrow that
+    /// would otherwise alias the `&self` arch read).
+    pub fn types_rc(&self) -> Option<Rc<crate::dtype::TypeFactoryImpl>> {
+        self.types.clone()
+    }
+
     /// The default prototype model (C++ `glb->defaultfp`), or `None`.
     pub fn default_fp(&self) -> Option<&Rc<crate::fspec::ProtoModel>> {
         self.defaultfp.as_ref()
@@ -235,6 +242,15 @@ impl Architecture {
     /// `defaultfp` when unset.
     pub fn eval_fp_current(&self) -> Option<&Rc<crate::fspec::ProtoModel>> {
         self.evalfp_current.as_ref().or(self.defaultfp.as_ref())
+    }
+
+    /// The called-function evaluation model (C++ `glb->evalfp_called`), falling
+    /// back to `defaultfp` when unset (`ActionStackPtrFlow::analyzeExtraPop` reads
+    /// `evalfp_called ?: defaultfp`).  The merged arch-handle carries no distinct
+    /// `evalfp_called` field; absent that it is the same as `defaultfp`, which is
+    /// the C++ fallback the `?:` would take anyway.
+    pub fn eval_fp_called(&self) -> Option<&Rc<crate::fspec::ProtoModel>> {
+        self.defaultfp.as_ref()
     }
 
     /// Resolve an op-code to its emulation [`OpBehavior`](kuna_num::opbehavior::OpBehavior),

@@ -643,6 +643,22 @@ impl Varnode {
     pub fn mark_mapped_addr_tied(&mut self) {
         self.set_flags(varnode_flags::mapped | varnode_flags::addrtied);
     }
+    /// Mark this Varnode as holding a spacebase (stack-pointer) value (C++
+    /// `Varnode::setFlags(Varnode::spacebase)`, set by `Funcdata::spacebase`).
+    pub fn set_spacebase(&mut self) {
+        self.set_flags(varnode_flags::spacebase);
+    }
+    /// Set the given property bits (C++ `Varnode::setFlags`).  Public surface for
+    /// `Funcdata::syncVarnodesWithSymbol`, which paints `mapped`/`addrtied`/
+    /// `nolocalalias`/`addrforce` from the resolved Symbol.
+    pub fn set_flags_pub(&mut self, fl: uint4) {
+        self.set_flags(fl);
+    }
+    /// Clear the given property bits (C++ `Varnode::clearFlags`).  Companion to
+    /// [`Self::set_flags_pub`] for `syncVarnodesWithSymbol`.
+    pub fn clear_flags_pub(&mut self, fl: uint4) {
+        self.clear_flags(fl);
+    }
     /// Install a freshly-rebuilt Cover (the `cover->rebuild(this)` write-back of
     /// the cross-arena [`Funcdata`]-driven `updateCover`).
     pub fn set_cover(&mut self, c: Cover) {

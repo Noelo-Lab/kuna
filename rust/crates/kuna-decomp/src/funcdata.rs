@@ -494,6 +494,37 @@ impl Funcdata {
     pub fn get_scope_local_mut(&mut self) -> Option<&mut crate::varmap::ScopeLocal> {
         self.localmap.as_mut()
     }
+    /// The console-mapped Symbol specs in this function's local scope (the
+    /// `map addr` symbols).  Empty when there is no local scope.  Used to carry
+    /// the symbols across the kuna console's IR rebuild on `decompile`.
+    pub fn mapped_symbol_specs(
+        &self,
+    ) -> Vec<(String, std::rc::Rc<crate::dtype::Datatype>, Address, uint4)> {
+        self.localmap.as_ref().map(|lm| lm.mapped_symbol_specs()).unwrap_or_default()
+    }
+
+    /// Re-create the given console-mapped Symbols in this function's local scope
+    /// and re-apply the `namelock|typelock` attributes (`IfcMapaddress`'s fd-local
+    /// form).  The kuna console rebuilds the `Funcdata` on `decompile` (C++ reuses
+    /// the same `fd`), so the `map addr` symbols are carried across here.
+    pub fn seed_mapped_symbols(
+        &mut self,
+        specs: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, uint4)],
+    ) {
+        use crate::varnode::varnode_flags;
+        let invalid = Address::new_invalid();
+        if let Some(lm) = self.localmap.as_mut() {
+            for (name, ct, addr, flags) in specs {
+                if let Ok(sym) = lm.add_symbol(name, std::rc::Rc::clone(ct), addr, &invalid) {
+                    // Re-apply the locks the console set (namelock|typelock and any
+                    // inherited global property bits carried in `flags`).
+                    let lock = flags & (varnode_flags::namelock | varnode_flags::typelock);
+                    lm.set_attribute(sym, lock);
+                }
+            }
+        }
+    }
+
     /// C++ `localmap->resetLocalWindow()` — reset the local-variable discovery
     /// window from the function prototype's stack ranges.  Faithful to the C++
     /// `Funcdata` constructor / `clear()` call cadence, but deferred until a

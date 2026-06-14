@@ -324,10 +324,9 @@ impl Action for ActionSpacebase {
         }
         Some(Box::new(ActionSpacebase { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++: data.spacebase(); return 0;
-        // SEAM(W4): Funcdata::spacebase (stack-pointer / spacebase Varnode
-        // labelling) is not in the merged tree.
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:1648 — ActionSpacebase::apply: data.spacebase();
+        data.spacebase();
         0
     }
 }

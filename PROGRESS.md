@@ -1,5 +1,69 @@
 # kuna Progress Log
 
+## Session (2026-06-14) — rust-port W10 stack-var promotion: repair round (verifier REJECT)
+
+Addressed the w10-stackvar-promotion REJECT (review F0-F7). Corrected the overstated
+"whole chain complete" claim and made the chain faithful + tested:
+
+- **F1 (chain link 3 was a stub):** ported `ActionStackPtrFlow` in full — new
+  `coreaction_stackptr.rs` realizes `checkClog`/`repair`/`adjustLoad`/`isStackRelative`
+  (the LOAD->COPY clog fold) and the `StackSolver` + `analyzeExtraPop` linear solve
+  (INT_ADD rewrite of the solved stack-pointer producers). The action's `apply` now
+  runs `check_clog` then `analyzeExtraPop` per `coreaction.cc:496-512` (was a no-op
+  seam). The only gated pieces are the call-spec `setEffectiveExtraPop` write and the
+  IOP->FuncCallSpecs lookup, which bind to the W6/W7 proto-recovery surface the merged
+  tree does not build (`numCalls()==0`) — exactly the C++ `fc==0` guess branch; the
+  in-scope INT_ADD/clog rewrites run regardless. (LOSS: extra-pop propagation into call
+  specs.)
+- **F2 (no positive tests + false comment):** added 8 positive unit tests — the clog
+  LOAD->COPY fold, `is_stack_relative` recognize/reject, `StackSolver` add-chain solve
+  and indirect-guess solve, and the `Funcdata::spacebase` mark (input SP -> spacebase;
+  free varnode skipped). Removed the false "exercised end-to-end by the datatest corpus"
+  comment on `loadvarnode_seam_noop`.
+- **F3/F4 (PIECE/SUBPIECE faithfulness):** `MapState::isReadActive` now filters the
+  same-storage PIECE slot (was `PIECE => true`); `gatherVarnodes` gained the explicit
+  PIECE (two-COPY per-slot hints) and SUBPIECE (same-storage-truncation filter) cases.
+- **F7 (SET-addrtied invariant):** restored the verbatim C++ `syncVarnodesWithSymbol`
+  mask (addrtied/addrforce CLEAR-but-never-SET); the kuna pre-tie of address-tied stack
+  storage is now a SEPARATE documented step (mirroring `setSymbolEntry`) before the mask.
+
+Result: the stack location still promotes to a named, typed local (`int4 i [4]; //
+stack - 0x18` with `i[1]` access in noforloop_alias; `loopvar`/`pchar` in the others) —
+genuine spacebase promotion, no special-casing. Datatest positive (min>=1) full-
+assertion passes hold at 24/425 (6 positive); flipping the whole multi-statement
+assertions needs the out-of-scope proto-recovery + for-loop-structuring items (the
+lingering `RSP = RSP + ...`, missing params, and `SUB(0xffffffff,0)`/`BOOL_NEGATE`
+noise are those seams, not stack promotion).
+
+**State: 3,197 Rust tests green (+8 new positive chain tests); clippy -D warnings clean;
+C++ oracle 207/207 + 675/675 PARITY OK, untouched.**
+
+## Session (2026-06-14) — rust-port W10 un-seam: stack-var promotion chain (named locals)
+
+Closed the whole stack-variable promotion chain (1)->(5), all unblocked by the
+SpacebaseSpace keystone: `ActionSpacebase`->`Funcdata::spacebase` marks the RSP input
+spacebase + types it as a pointer; `RuleLoad/StoreVarnode::checkSpacebase`
+(correctSpacebase/vnSpacebase + `getSpaceBySpacebase`/`getSpaceFromConst`) folds
+`LOAD/STORE(RSP+off)` into a `(stack,off)` COPY; `ScopeLocal::restructureVarnode`
+gathers over the LIVE IR (gatherVarnodes/gatherOpen with the AliasChecker
+gatherAdditiveBase/gatherOffset seam realized + gatherSymbols) and restructures into
+Symbols; `syncVarnodesWithSymbols`/`syncVarnodesWithSymbol` paint mapped|addrtied + the
+recovered type; and the naming pass + printer render the mapped Symbol name (incl.
+array-member `name[idx]` access and `int4 i [4]; // stack - 0x18` array declarations).
+Also closed the console IR-rebuild gap (`decompile` rebuilds the Funcdata, dropping the
+`map addr` symbols; now carried across via `mapped_symbol_specs`/`seed_mapped_symbols`).
+
+Result: stack locals that were raw `STORE/LOAD(RSP+off)` / `Stackffffffff...` unnamed
+locations now promote to NAMED locals across functions — `loopvar`/`count`
+(forloop_loaditer), `pchar` (pointercmp), `int4 i [4]; // stack - 0x18` with `i[1]`
+array access (noforloop_alias) — byte-matching the C++ B5 oracle declarations. Datatest
+positive (min>=1) full-assertion passes hold at 24/425 (no regression); the remaining
+gap to flipping those whole multi-statement assertions is the downstream for-loop
+structuring / CALL-arg rendering / raw-stack-ptr alias annotation seams.
+
+**State: 3,186 Rust tests green; clippy -D warnings clean; C++ oracle 675/675 PARITY OK,
+untouched. Stack-var promotion chain functionally complete (named locals render).**
+
 ## Session (2026-06-14) — rust-port W10 un-seam chain cont.: stack-frame keystone, 24/425
 
 Continued the horizontal parity grind (each wave: measure vs stage golden, un-seam ONE

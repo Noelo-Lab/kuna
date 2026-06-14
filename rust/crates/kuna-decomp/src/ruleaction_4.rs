@@ -248,18 +248,118 @@ impl RuleLoadVarnode {
         RuleLoadVarnode
     }
 
+    /// C++ `RuleLoadVarnode::correctSpacebase` (`ruleaction.cc:4195`).
+    ///
+    /// Return the associated space if `vn` is an \e active spacebase that loads
+    /// from the correct space `spc`.  The Varnode is either a spacebase-register
+    /// input (the global is then `getSpaceBySpacebase`), or a \e constant pseudo
+    /// spacebase (then `spc` itself).
+    fn correct_spacebase(
+        data: &Funcdata,
+        vn: VarnodeId,
+        spc: &Rc<kuna_base::space::AddrSpace>,
+    ) -> Option<Rc<kuna_base::space::AddrSpace>> {
+        let v = data.vbank().get(vn)?;
+        if !v.is_spacebase() {
+            return None;
+        }
+        if v.is_constant() {
+            // We have a global pseudo spacebase: associate with load/stored space.
+            return Some(Rc::clone(spc));
+        }
+        if !v.is_input() {
+            return None;
+        }
+        let assoc = data
+            .get_arch()
+            .manage()
+            .get_space_by_spacebase(v.get_addr(), v.get_size())?;
+        // Loading off the right space?
+        match assoc.get_contain() {
+            Some(c) if c.get_index() == spc.get_index() => Some(assoc),
+            _ => None,
+        }
+    }
+
+    /// C++ `RuleLoadVarnode::vnSpacebase` (`ruleaction.cc:4216`).
+    ///
+    /// Check if `vn` is `spacebase + constant`; if so return the associated space
+    /// and pass back the constant in the returned tuple's second slot.
+    fn vn_spacebase(
+        data: &Funcdata,
+        vn: VarnodeId,
+        spc: &Rc<kuna_base::space::AddrSpace>,
+    ) -> Option<(Rc<kuna_base::space::AddrSpace>, uintb)> {
+        if let Some(retspace) = RuleLoadVarnode::correct_spacebase(data, vn, spc) {
+            return Some((retspace, 0));
+        }
+        let v = data.vbank().get(vn)?;
+        if !v.is_written() {
+            return None;
+        }
+        let op = v.get_def()?;
+        if code(data, op) != OpCode::CPUI_INT_ADD {
+            return None;
+        }
+        let vn1 = in_vn(data, op, 0);
+        let vn2 = in_vn(data, op, 1);
+        if let Some(retspace) = RuleLoadVarnode::correct_spacebase(data, vn1, spc) {
+            if is_constant(data, vn2) {
+                return Some((retspace, offset_of(data, vn2)));
+            }
+            return None;
+        }
+        if let Some(retspace) = RuleLoadVarnode::correct_spacebase(data, vn2, spc) {
+            if is_constant(data, vn1) {
+                return Some((retspace, offset_of(data, vn1)));
+            }
+        }
+        None
+    }
+
     /// C++ `RuleLoadVarnode::checkSpacebase` (`ruleaction.cc:4258`).
     ///
     /// Returns `Some((space, offoff))` if the LOAD/STORE `op` reads off a
-    /// spacebase+constant, else `None`.  SEAM(W4): `getSpaceFromConst` /
-    /// `getSpaceBySpacebase` are unported, so the spacebase path can never
-    /// succeed; only the literal-constant-offset case is reachable and even that
-    /// needs `getSpaceFromConst` for the loaded space, so this returns `None`.
-    pub fn check_spacebase(_data: &Funcdata, _op: OpId) -> Option<(Rc<kuna_base::space::AddrSpace>, uintb)> {
+    /// spacebase+constant (or a literal constant offset), else `None`.
+    pub fn check_spacebase(data: &Funcdata, op: OpId) -> Option<(Rc<kuna_base::space::AddrSpace>, uintb)> {
         // offvn = op->getIn(1); loadspace = op->getIn(0)->getSpaceFromConst();
-        //   -- SEAM(W4): getSpaceFromConst / getSpaceBySpacebase unported.
-        None
+        let offvn = in_vn(data, op, 1);
+        let space_const = in_vn(data, op, 0);
+        let loadspace = space_from_const(data, space_const)?;
+        // Treat segmentop as part of load/store.
+        let mut offvn = offvn;
+        if is_written(data, offvn) && code(data, def_of(data, offvn)) == OpCode::CPUI_SEGMENTOP {
+            let segdef = def_of(data, offvn);
+            offvn = in_vn(data, segdef, 2);
+            // If the segmentop inner is constant we are NOT looking for a
+            // spacebase; defer to RuleSegmentOp / a fixed address (return None).
+            if is_constant(data, offvn) {
+                return None;
+            }
+        } else if is_constant(data, offvn) {
+            // Check for a literal constant offset into `loadspace`.
+            return Some((loadspace, offset_of(data, offvn)));
+        }
+        RuleLoadVarnode::vn_spacebase(data, offvn, &loadspace)
     }
+}
+
+/// C++ `Varnode::getSpaceFromConst` (`varnode.hh:427`): decode the AddrSpace a
+/// constant-space Varnode encodes.  The C++ stores the raw `AddrSpace *` pointer
+/// in the offset; the Rust port (LOSS-015) stores the space's manager *index*,
+/// resolved back here through the function's space manager.
+fn space_from_const(data: &Funcdata, vn: VarnodeId) -> Option<Rc<kuna_base::space::AddrSpace>> {
+    let idx = offset_of(data, vn);
+    let manage = data.get_arch().manage();
+    // The C++ `getSpaceFromConst` reinterprets the offset as a raw `AddrSpace *`;
+    // here the offset is the manager index (LOSS-015).  A non-index value (e.g. a
+    // hand-built fixture's plain constant) is out of range — reject it rather than
+    // panic on the `baselist` bounds (the C++ would deref a bad pointer; the only
+    // real caller decodes a genuine spaceid constant, always in range).
+    if idx >= manage.num_spaces() as u64 {
+        return None;
+    }
+    manage.get_space(idx as i32).map(Rc::clone)
 }
 
 impl Default for RuleLoadVarnode {

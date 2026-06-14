@@ -334,6 +334,10 @@ pub struct HighVariable {
     /// default name (`vN`) directly here and the printer reads it as the
     /// `getSymbol()->getDisplayName()` stand-in.  `None` == unnamed.
     kuna_name: Option<String>,
+    /// (kuna) The data-type of the mapped Symbol this high renders through (the
+    /// `getSymbol()->getType()` stand-in, used by the printer to render an array
+    /// or struct member access `name[idx]`).  `None` for an unnamed/scalar high.
+    kuna_symbol_type: Option<Rc<Datatype>>,
 }
 
 impl HighVariable {
@@ -359,6 +363,7 @@ impl HighVariable {
             symbol: None,
             symbol_offset: -1,
             kuna_name: None,
+            kuna_symbol_type: None,
         }
     }
 
@@ -371,6 +376,28 @@ impl HighVariable {
     /// (kuna) Bind the angr default name to this HighVariable.
     pub fn set_kuna_name(&mut self, name: impl Into<String>) {
         self.kuna_name = Some(name.into());
+    }
+
+    /// (kuna) Set the in-symbol byte offset for an array/struct member access
+    /// (the printer renders `name[idx]` when this is > 0 and the symbol type is
+    /// an array).  The C++ `HighVariable::symboloffset` (`variable.cc`).
+    pub fn set_symbol_offset(&mut self, off: int4) {
+        self.symbol_offset = off;
+    }
+
+    /// (kuna) The in-symbol byte offset bound by `name_for_varnode` (or -1).
+    pub fn kuna_symbol_offset(&self) -> int4 {
+        self.symbol_offset
+    }
+
+    /// (kuna) Bind the mapped Symbol's data-type (for array/struct rendering).
+    pub fn set_symbol_type(&mut self, ct: Rc<Datatype>) {
+        self.kuna_symbol_type = Some(ct);
+    }
+
+    /// (kuna) The mapped Symbol's data-type, or `None`.
+    pub fn kuna_symbol_type(&self) -> Option<&Rc<Datatype>> {
+        self.kuna_symbol_type.as_ref()
     }
 
     // --- Dirty-flag setters (variable.hh:165-169, inline) -----------------

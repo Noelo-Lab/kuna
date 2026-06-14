@@ -1978,6 +1978,65 @@ impl Database {
             .entry
     }
 
+    /// The `(start_offset, symbol_type, type_locked)` hints for every Symbol
+    /// mapped into a scope's address space, in EntryMap list order (C++
+    /// `MapState::gatherSymbols`, `varmap.cc:1046`: iterate `rangemap->begin_list`,
+    /// emit `(getAddr().getOffset(), sym->getType(), sym->isTypeLocked())`).
+    pub fn scope_space_symbol_hints(
+        &self,
+        scope: ScopeId,
+        space_index: usize,
+    ) -> Vec<(uintb, Rc<Datatype>, bool)> {
+        let mut out = Vec::new();
+        let rangemap = match self.scopes[scope].maptable.get(space_index).and_then(|m| m.as_ref()) {
+            Some(rm) => rm,
+            None => return out,
+        };
+        for (_, rec) in rangemap.records() {
+            let entry = &rec.entry;
+            let sym = entry.symbol;
+            let symbol = &self.symbols[sym];
+            let ct = match &symbol.dtype {
+                Some(c) => Rc::clone(c),
+                None => continue,
+            };
+            let type_locked = (symbol.flags & varnode_flags::typelock) != 0;
+            out.push((entry.get_addr().get_offset(), ct, type_locked));
+        }
+        out
+    }
+
+    /// The `(name, type, addr, all_flags)` specs for every Symbol mapped into a
+    /// scope's space (the console-mapped `map addr` symbols), so they can be
+    /// re-created in a freshly-built `Funcdata` (see `ScopeLocal::mapped_symbol_specs`).
+    pub fn scope_space_symbol_specs(
+        &self,
+        scope: ScopeId,
+        space_index: usize,
+    ) -> Vec<(String, Rc<Datatype>, Address, uint4)> {
+        let mut out = Vec::new();
+        let rangemap = match self.scopes[scope].maptable.get(space_index).and_then(|m| m.as_ref()) {
+            Some(rm) => rm,
+            None => return out,
+        };
+        for (_, rec) in rangemap.records() {
+            let entry = &rec.entry;
+            // Only the whole-symbol starting entry (offset 0); pieces are rebuilt
+            // by re-mapping the whole symbol.
+            if entry.get_offset() != 0 {
+                continue;
+            }
+            let sym = entry.symbol;
+            let symbol = &self.symbols[sym];
+            let ct = match &symbol.dtype {
+                Some(c) => Rc::clone(c),
+                None => continue,
+            };
+            out.push((symbol.name.clone(), ct, entry.get_addr().clone(), symbol.flags));
+        }
+        out
+    }
+
     /// C++ `ScopeInternal::findAddr` (`database.cc:2252-2276`): find a Symbol at
     /// exactly `addr`, valid at `usepoint`.
     pub fn find_addr(&self, scope: ScopeId, addr: &Address, usepoint: &Address) -> Option<EntryRef> {

@@ -793,6 +793,22 @@ pub trait AliasGatherSeam {
     fn gather_offset(&mut self, vn: crate::seams::VarnodeId) -> uintb;
 }
 
+/// The Symbol overlap facts `Funcdata::syncVarnodesWithSymbols` needs for one
+/// storage location (the resolved Symbol's `getAllFlags`, `getSize`, and the
+/// `getSizedType` for the access).  See [`ScopeLocal::sync_overlap`].
+#[derive(Debug, Clone)]
+pub struct SyncOverlap {
+    /// C++ `entry->getAllFlags()` — `extraflags | symbol->getFlags()`.
+    pub all_flags: uint4,
+    /// C++ `entry->getSize()` — the size of this storage piece.
+    pub entry_size: int4,
+    /// C++ `entry->getSizedType(addr, size)` — the type to assign the access, or
+    /// `None` when not updating types / no exact piece.
+    pub sized_type: Option<Rc<Datatype>>,
+    /// The owning Symbol id (so the naming pass can read its name).
+    pub symbol_id: crate::database::SymbolId,
+}
+
 // ===========================================================================
 // ScopeLocal (varmap.hh:212-269, varmap.cc:341-1620)
 // ===========================================================================
@@ -1046,6 +1062,90 @@ impl ScopeLocal {
         // The last range is artificial so we don't build an entry for it.
         self.overlap_problems = overlap_problems;
         Ok(overlap_problems)
+    }
+
+    /// C++ `Scope::inScope(addr,size,usepoint)` reached via `lm->inScope(...)`:
+    /// are all bytes of the range owned by this scope's range tree?
+    pub fn in_scope(&self, addr: &Address, size: int4) -> bool {
+        self.db.scope(self.scope).in_scope(addr, size, &Address::new_invalid())
+    }
+
+    /// A clone of this scope's range tree (C++ `getRangeTree()`), the analysis
+    /// range `MapState` clears the param range out of (`restructureVarnode`).
+    pub fn range_tree_clone(&self) -> kuna_base::address::RangeList {
+        self.db.scope(self.scope).get_range_tree().clone()
+    }
+
+    /// The console-mapped Symbol specs in this scope, so they can be re-seeded
+    /// into a freshly-built `Funcdata` (the kuna console rebuilds the IR on
+    /// `decompile`, where C++ reuses the same `fd`; this carries the `map addr`
+    /// symbols across that rebuild).  Returns `(name, type, addr, all_flags)`
+    /// per non-dynamic, address-tied SymbolEntry.
+    pub fn mapped_symbol_specs(&self) -> Vec<(String, Rc<Datatype>, Address, uint4)> {
+        let idx = self.space.get_index() as usize;
+        self.db.scope_space_symbol_specs(self.scope, idx)
+    }
+
+    /// The `(start, type, type_locked)` hints for every Symbol mapped into this
+    /// scope's space, in EntryMap list order (C++ `MapState::gatherSymbols`).
+    pub fn gather_symbol_hints(&self) -> Vec<(uintb, Rc<Datatype>, bool)> {
+        let idx = self.space.get_index() as usize;
+        self.db.scope_space_symbol_hints(self.scope, idx)
+    }
+
+    /// Resolve the mapped Symbol covering a Varnode for the naming pass (C++
+    /// `Funcdata::linkSymbol` -> `HighVariable::getSymbol()` -> the Symbol's
+    /// display name).  Returns `(display_name, symbol_offset, symbol_type)` where
+    /// `symbol_offset` is the byte offset of the access within the Symbol (0 for a
+    /// whole-symbol / scalar access; > 0 for an array/struct member).  `None` when
+    /// no Symbol overlaps.
+    pub fn name_for_varnode(
+        &self,
+        addr: &Address,
+        size: int4,
+    ) -> Option<(String, int4, Option<Rc<Datatype>>)> {
+        let eref = self.db.find_overlap(self.scope, addr, size)?;
+        let entry = self.db.entry(self.scope, eref);
+        let entry_addr_off = entry.get_addr().get_offset();
+        let entry_off = entry.get_offset();
+        let sym = entry.symbol;
+        let symbol = self.db.symbol(sym);
+        // symbol_offset = (access_addr - entry_addr) + entry_offset.
+        let sym_off = (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
+        Some((symbol.get_display_name().to_string(), sym_off, symbol.dtype.clone()))
+    }
+
+    /// Information about the Symbol overlapping a storage location, for
+    /// `Funcdata::syncVarnodesWithSymbols` (C++ `lm->findOverlap` + `getAllFlags`/
+    /// `getSize`/`getSizedType`/`getSymbol`).
+    ///
+    /// Returns `None` when no Symbol overlaps `(addr, size)`.  The sized type is
+    /// computed via `SymbolEntry::getSizedType` (C++ `database.cc:152`) using the
+    /// owning Symbol's data-type and the type factory; it is `None` when the
+    /// entry does not contain the access (the C++ "overlapping but not containing"
+    /// branch handles that by the size comparison the caller does).
+    pub fn sync_overlap(
+        &self,
+        addr: &Address,
+        size: int4,
+        types: &dyn TypeFactory,
+    ) -> Option<SyncOverlap> {
+        let eref = self.db.find_overlap(self.scope, addr, size)?;
+        let entry = self.db.entry(self.scope, eref);
+        let sym = entry.symbol;
+        let entry_size = entry.get_size();
+        let entry_off = entry.get_offset();
+        let entry_addr_off = entry.get_addr().get_offset();
+        let extraflags = entry.extraflags;
+        let symbol = self.db.symbol(sym);
+        let all_flags = extraflags | symbol.get_flags();
+        // C++ SymbolEntry::getSizedType (non-dynamic): off = (inaddr - addr) + offset.
+        let sized = symbol.dtype.as_ref().and_then(|cur| {
+            let off = (addr.get_offset().wrapping_sub(entry_addr_off) as int4)
+                .wrapping_add(entry_off);
+            types.get_exact_piece(Rc::clone(cur), off, size).ok().flatten()
+        });
+        Some(SyncOverlap { all_flags, entry_size, sized_type: sized, symbol_id: sym })
     }
 
     /// C++ `ScopeLocal::buildVariableName` (`varmap.cc:548`): the stack-frame

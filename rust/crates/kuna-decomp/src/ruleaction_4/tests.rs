@@ -928,7 +928,12 @@ fn concatcommute_or_lower() {
 // Seam-affected rules: assert the documented early-out
 // ---------------------------------------------------------------------------
 
-// RuleLoadVarnode: check_spacebase is a W4 seam returning None -> rule is a no-op.
+// RuleLoadVarnode: a LOAD whose space operand (0x18) is not a valid spacebase
+// constant and whose pointer is a plain non-spacebase Varnode is not a spacebase
+// load -> `check_spacebase` returns None -> the rule is a no-op (0).  This pins
+// only the negative case; positive spacebase-recovery behavior (the marking, the
+// gather, the symbol paint, the stack-pointer-flow solve) is pinned directly by
+// the unit tests in `coreaction_stackptr` / `funcdata_spacebase`'s test modules.
 #[test]
 fn loadvarnode_seam_noop() {
     let mut fd = build_fd();

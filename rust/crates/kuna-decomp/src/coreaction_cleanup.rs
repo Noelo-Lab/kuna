@@ -980,20 +980,47 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         }
         // Local classification (buildDefaultName's `vN` arm): the representative
         // is in local scope (addr-tied, mapped), not an input, not persist/global.
-        let v = match data.vbank().get(name_rep.unwrap()) {
-            Some(v) => v,
-            None => continue,
-        };
-        if v.is_free() || v.is_input() || v.is_persist() {
+        let (v_free, v_input, v_persist, v_addrtied, v_addr, v_size) =
+            match data.vbank().get(name_rep.unwrap()) {
+                Some(v) => (
+                    v.is_free(),
+                    v.is_input(),
+                    v.is_persist(),
+                    v.is_addr_tied(),
+                    v.get_addr().clone(),
+                    v.get_size(),
+                ),
+                None => continue,
+            };
+        if v_free || v_input || v_persist {
             continue;
         }
-        if !v.is_addr_tied() {
+        if !v_addrtied {
             continue; // not a mapped local in scope
         }
-        let name = format!("v{base}");
-        base += 1;
-        if let Some(h) = data.high_bank_mut().get_mut(high) {
-            h.set_kuna_name(name);
+        // C++ `linkSymbol`: if a mapped Symbol covers this Varnode, the high takes
+        // the Symbol's display name (and an in-symbol byte offset for an
+        // array/struct member access).  Otherwise fall to the angr `vN` default.
+        let resolved = data
+            .get_scope_local()
+            .and_then(|lm| lm.name_for_varnode(&v_addr, v_size));
+        match resolved {
+            Some((sym_name, sym_off, sym_type)) => {
+                if let Some(h) = data.high_bank_mut().get_mut(high) {
+                    h.set_kuna_name(sym_name);
+                    h.set_symbol_offset(sym_off);
+                    if let Some(t) = sym_type {
+                        h.set_symbol_type(t);
+                    }
+                }
+            }
+            None => {
+                let name = format!("v{base}");
+                base += 1;
+                if let Some(h) = data.high_bank_mut().get_mut(high) {
+                    h.set_kuna_name(name);
+                }
+            }
         }
     }
 }
