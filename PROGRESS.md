@@ -1,5 +1,40 @@
 # kuna Progress Log
 
+## Session (2026-06-14) — rust-port W10 un-seam chain cont.: stack-frame keystone, 24/425
+
+Continued the horizontal parity grind (each wave: measure vs stage golden, un-seam ONE
+layer faithfully, independent verify rejecting special-casing, all tests green, C++
+oracle untouched at 675/675). Un-seams this stretch: refinement+loops (heritage
+placeMultiequals refinement + loop emitters; +7 files reach printer), pspec-context
+(x86:64 was decoding as 16-bit real mode — a correctness bug; now 64-bit, generic
+cspec context_data parse), ScopeLocal (LOSS-109 partial restoration; getScopeLocal
+8->0 errors), and the SpacebaseSpace KEYSTONE (LOSS-012: the stack space was never
+created; cspec <stackpointer> decode + Architecture::add_spacebase into the single
+manager + Database::adjust_caches). Result: datatest assertions applied 357->425,
+passing 20->24, with +3 genuine min=1 positive matches (Global cross, Pointer to
+array, Return Value Input Register).
+
+**State: the port is COMPLETE + FUNCTIONALLY PROVEN (boolless byte-identical to
+Ghidra). 3,186 Rust tests green; C++ oracle 675/675 PARITY OK, untouched. Integrated
+datatest parity: 24/425 applied (most of 83 files now decompile).**
+
+HONEST REMAINING-SCOPE ASSESSMENT: reaching M3 (675/675) is a substantial multi-
+session tail. The un-seam chain keeps revealing that each "lever" is a CHAIN of
+seams: e.g. stack-var promotion = SpacebaseSpace (done) -> ActionSpacebase ->
+heritage spacebase-pointer recovery (spacebaseConstant) -> ActionStackPtrFlow ->
+ScopeLocal::restructureVarnode gather -> syncVarnodesWithSymbols. Several such chains
+remain (stack-var promotion, switch/JumpTable recovery, union types, per-datatest
+body convergence). The methodology is proven and the blockers are all enumerated
+(LOSS-131/135/137 family + the named seams_remaining in each W10 review) — which is
+the well-characterized state suited to either continued orchestrated waves or the
+autonomous pipeline (built, dry-run-proven; tools/pipeline PIPELINE_MODE=port).
+
+NEXT (highest-leverage): finish the stack-var promotion chain (ActionSpacebase ->
+spacebaseConstant -> ActionStackPtrFlow -> restructureVarnode) — unblocks named
+locals across many functions; then JumpTable recovery (switches); then per-function
+convergence. ~150 checklist port-items closed of 202 + the W10 analysis-unseam set.
+
+
 ## Session (2026-06-13 cont.) — rust-port W10: boolless BYTE-IDENTICAL to the C++ oracle
 
 The vertical slice is COMPLETE. After two more un-seams (merge/naming/output-storage,
