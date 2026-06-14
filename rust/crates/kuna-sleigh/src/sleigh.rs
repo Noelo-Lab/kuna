@@ -1504,6 +1504,24 @@ impl Sleigh {
         self.cache.borrow_mut().allow_set(val);
     }
 
+    /// Install a [`RegisterLookup`] on the engine's address-space manager (the
+    /// kuna stand-in for the C++ `AddrSpace::trans` back-pointer that
+    /// `getDefaultCodeSpace()->getTrans()` reaches).  The lookup is a standalone
+    /// snapshot of the engine's register cross-reference, so there is no `Rc`
+    /// cycle back into `self`.
+    ///
+    /// This must run after the `.sla` decode populated the register table and
+    /// while the engine is still the sole `Rc` owner of the manager (before the
+    /// `glb`/`open_image` share it) — i.e. in the bootstrap, right before the
+    /// spec decode that resolves register names (`<context_data>` tracked sets,
+    /// `<pentry>` `<addr name=…>`, etc.).
+    pub fn install_register_lookup(&mut self) -> KunaResult<()> {
+        let lookup: Rc<dyn RegisterLookup> =
+            Rc::new(crate::sleighbase::SnapshotRegisterLookup::from_base(&self.base));
+        self.base.manager_mut().set_register_lookup(lookup);
+        Ok(())
+    }
+
     /// Run a closure with mutable access to the engine's [`ContextDatabase`] (C++
     /// `glb->context`, the `ContextDatabase*` the translator holds).  The console
     /// `set context`/`set track` commands paint context/tracked values through

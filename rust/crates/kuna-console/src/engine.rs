@@ -242,6 +242,31 @@ pub fn bootstrap_program(
         }
     }
 
+    // Hand the resolved processor-spec (`.pspec`) XML to the architecture so
+    // `parse_processor_config` (run inside `init_post_engine`) can apply the
+    // `<context_data>` `<context_set>` paints (the C++ `parseProcessorConfig`
+    // reads the pspec here).  This is what selects the SLEIGH disassembly mode:
+    // without it x86-64 lifts as 16-bit real mode.  A read failure is non-fatal
+    // (the engine keeps the zero-default context).
+    if !specs.processorfile.is_empty() {
+        if let Ok(pspec) = std::fs::read(&specs.processorfile) {
+            arch.sleigh_mut()
+                .base_mut()
+                .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
+                .set_pspec_xml(pspec);
+        }
+    }
+
+    // Install the register-name lookup on the engine's manager (the C++
+    // `AddrSpace::trans` back-pointer) while the engine is still the sole owner
+    // of the manager — before `init_post_engine`'s `parse_processor_config`
+    // resolves the pspec `<tracked_set>` register names (e.g. `DF`).
+    arch.sleigh_mut()
+        .base_mut()
+        .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
+        .translate_mut()
+        .install_register_lookup()?;
+
     // The tail of Architecture::init (buildTypegrp/buildCoreTypes/buildAction/…).
     arch.sleigh_mut()
         .base_mut()

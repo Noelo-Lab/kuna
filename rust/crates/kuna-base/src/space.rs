@@ -310,7 +310,7 @@ pub trait RegisterLookup {
 /// [`RegisterLookup`] has been installed on the manager.  (In C++ the
 /// back-pointer always exists; in kuna it is absent until the sleigh wave's
 /// engine — or a test stub — installs one.)
-pub(crate) fn no_register_lookup_err() -> KunaError {
+pub fn no_register_lookup_err() -> KunaError {
     KunaError::lowlevel(
         "kuna rust port: no Translate/register lookup installed in the AddrSpaceManager",
     )

@@ -30,7 +30,7 @@ use std::cmp::Ordering;
 use std::rc::Rc;
 
 use kuna_base::address::{Address, AddrSpacePtr, SeqNum};
-use kuna_base::error::{KunaError, KunaResult};
+use kuna_base::error::KunaResult;
 use kuna_base::marshal::{AttributeId, Decoder, ElementId, ATTRIB_NAME, ATTRIB_SPACE, ELEM_VOID};
 use kuna_base::space::{AddrSpace, AddrSpaceManager};
 use kuna_base::types::Wrap;
@@ -190,12 +190,26 @@ impl VarnodeData {
                 self.space = Some(spc);
                 break;
             } else if attrib_id == ATTRIB_NAME.get_id() {
-                // C++: trans->getRegister(decoder.readString()) through the
-                // default code space's Translate.  Translate arrives with
-                // the sleigh wave (same deferral as Address::decode).
-                return Err(KunaError::lowlevel(
-                    "kuna rust port: register-name varnode decode requires Translate (sleigh wave)",
-                ));
+                // C++: trans = decoder.getAddrSpaceManager()
+                //              ->getDefaultCodeSpace()->getTrans();
+                //      point = trans->getRegister(decoder.readString()); *this=point;
+                // In the kuna port the `Translate` back-pointer is the manager's
+                // installed `RegisterLookup` (the same stand-in
+                // `Range::decode_from_attributes` uses for its `name=` register
+                // path).  Resolving a register by name needs that lookup to be
+                // installed on the manager (the engine installs itself during
+                // bootstrap); without one this errs exactly as before.
+                let lookup = decoder
+                    .get_addr_space_manager()
+                    .register_lookup()
+                    .cloned()
+                    .ok_or_else(kuna_base::space::no_register_lookup_err)?;
+                let point =
+                    lookup.get_register(&String::from_utf8_lossy(&decoder.read_string()?))?;
+                self.space = point.space;
+                self.offset = point.offset;
+                self.size = point.size;
+                break;
             }
         }
         Ok(())
@@ -455,6 +469,7 @@ impl PcodeOpRaw {
 mod tests {
     use super::*;
     use kuna_base::address::ELEM_ADDR;
+    use kuna_base::error::KunaError;
     use kuna_base::marshal::{Encoder, IdRegistry, PackedDecode, PackedEncode, XmlDecode};
     use kuna_base::space::{addrspace_flags, spacetype, ConstantSpace};
 

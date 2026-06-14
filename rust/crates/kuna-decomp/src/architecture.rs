@@ -367,6 +367,17 @@ pub struct Architecture {
     /// the frontend did not supply it (then a name-only `unknown` default is
     /// seeded, as before).
     cspec_xml: Option<Vec<u8>>,
+    /// Raw processor-spec (`.pspec`) XML content, set by the frontend before
+    /// [`init_post_engine`](Architecture::init_post_engine).  The C++
+    /// `parseProcessorConfig` (architecture.cc:1176) decodes the
+    /// `<processor_spec>` children from this; here
+    /// [`parse_processor_config`](Architecture::parse_processor_config) reads it
+    /// to apply the `<context_data>` `<context_set>` paints that steer
+    /// disassembly mode (e.g. x86-64's `addrsize`/`opsize`/`longMode`).  Without
+    /// this the engine's context database is all-zero and x86 lifts as 16-bit
+    /// real mode.  `None` when the frontend did not supply it (then the engine
+    /// keeps the `.sla`-default zero context).
+    pspec_xml: Option<Vec<u8>>,
     /// The p-code OpBehavior / `TypeOp` property table (C++ `inst`, the
     /// `vector<TypeOp *>` `TypeOp::registerInstructions` fills).  Indexed by
     /// op-code; `None` for the unused slots.  Empty until `build_instructions`.
@@ -474,6 +485,7 @@ impl Architecture {
             defaultfp: None,
             evalfp_current: None,
             cspec_xml: None,
+            pspec_xml: None,
             inst: Vec::new(),
             opbehaviors: Vec::new(),
             translate,
@@ -952,6 +964,74 @@ impl Architecture {
         self.cspec_xml = Some(xml);
     }
 
+    /// Record the processor-spec (`.pspec`) XML content for the
+    /// `<context_data>` decode in
+    /// [`parse_processor_config`](Architecture::parse_processor_config).  The
+    /// frontend reads the resolved `.pspec` file (the `processorfile` path from
+    /// `SleighArchitecture::build_spec_file`) and hands it here before
+    /// [`init_post_engine`](Architecture::init_post_engine).
+    pub fn set_pspec_xml(&mut self, xml: Vec<u8>) {
+        self.pspec_xml = Some(xml);
+    }
+
+    /// Apply the processor-spec `<context_data>` paints to the engine's context
+    /// database (the relevant slice of C++ `Architecture::parseProcessorConfig`,
+    /// architecture.cc:1176, dispatching the `ELEM_CONTEXT_DATA` branch to
+    /// `context->decodeFromSpec(decoder)`).
+    ///
+    /// Without this the engine's context database is the all-zero `.sla`
+    /// default, which for x86 selects 16-bit real mode (`addrsize`/`opsize`
+    /// unset) regardless of the `x86:LE:64` archid — the pspec's
+    /// `<context_set><set name="addrsize" val="2"/>…` is what tells SLEIGH to
+    /// disassemble as 64-bit.
+    ///
+    /// SEAM(W6 pspec): the remaining `<processor_spec>` children (volatile,
+    /// register_data, incidentalcopy, jumpassist, segmentop, …) decode with
+    /// their own waves; this wires the `<context_data>` branch — the one that
+    /// steers the disassembly mode and therefore gates every multi-byte lift.
+    /// Faithful to `parseProcessorConfig`'s dispatch; the other branches are
+    /// no-ops here (the C++ `peekElement` loop simply skips them in our
+    /// `find_child` walk).
+    pub fn parse_processor_config(&mut self) -> KunaResult<()> {
+        use kuna_base::marshal::{IdRegistry, XmlDecode};
+        use kuna_base::xml::DocumentStorage;
+        use kuna_sleigh::globalcontext::register_globalcontext_ids;
+
+        let Some(xml) = self.pspec_xml.take() else {
+            return Ok(());
+        };
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(&xml)?.get_root().clone();
+        // The C++ getTag("processor_spec") returns the <processor_spec> element;
+        // the resolved .pspec file's root IS <processor_spec>.
+        let pspec = if root.get_name() == "processor_spec" {
+            root
+        } else {
+            match find_child(&root, "processor_spec") {
+                Some(el) => el,
+                None => return Ok(()), // no processor_spec: nothing to apply
+            }
+        };
+        // C++ parseProcessorConfig peeks each child; only ELEM_CONTEXT_DATA is
+        // wired here.  A pspec with no <context_data> (e.g. a 32-bit-default
+        // processor) leaves the zero context, which is correct for it.
+        let Some(context_data) = find_child(&pspec, "context_data") else {
+            return Ok(());
+        };
+
+        // Decode <context_data> against the engine's single address-space
+        // manager (so `space="ram"` resolves to the real ram space).  The Rc
+        // keeps the manager alive for the decoder while the context database
+        // (a sibling RefCell on the engine) is borrowed mutably — no aliasing.
+        let manager = self.translate.base().manager_rc();
+        let mut registry = IdRegistry::with_base_ids();
+        register_globalcontext_ids(&mut registry);
+        let mut decoder = XmlDecode::new_with_root(&manager, &registry, &context_data, 0);
+        self.translate
+            .with_context_db_mut(|db| db.decode_from_spec(&mut decoder))?;
+        Ok(())
+    }
+
     /// Decode the `<default_proto><prototype>` element from cspec XML into a
     /// [`ProtoModel`] (the spec-driven subset of C++ `ProtoModel::decode`:
     /// `name`/`extrapop`/`strategy` attributes + the `<input>`/`<output>`
@@ -1205,6 +1285,12 @@ impl Architecture {
         // at `numSpaces()`.  In the Rust port the engine owns that one manager
         // (shared as `glb`), so we insert through it here.
         self.insert_ir_call_spaces()?;
+        // C++ `Architecture::restoreFromSpec` calls `parseProcessorConfig`
+        // (architecture.cc:645) before the type/action build.  Apply the pspec
+        // `<context_data>` paints now so the engine's context database steers
+        // disassembly correctly (e.g. x86-64 lifts as 64-bit, not 16-bit) —
+        // the context must be in place before any instruction is decoded.
+        self.parse_processor_config()?;
         self.build_typegrp();
         // C++ `TypeFactory::TypeFactory` runs `setupSizes()` (the alignment map
         // + the core sizes) in the constructor, *before* `buildCoreTypes` calls
