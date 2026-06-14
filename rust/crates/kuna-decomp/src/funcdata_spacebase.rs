@@ -276,6 +276,123 @@ impl Funcdata {
         if let (Some(t), Some(lm)) = (types_rc, self.get_scope_local_mut()) {
             let _ = lm.restructure(&mut state, t.as_ref());
         }
+
+        // C++ `restructureVarnode` tail (varmap.cc:1272-1285).  The unlocked-category
+        // cleanup / fake-input-symbol synthesis / `markUnaliased` are W4 ScopeLocal
+        // surfaces still seamed (`clearUnlockedCategory`/`fakeInputSymbols`/
+        // `markUnaliased` need the `Symbol::category` + alias-block bookkeeping —
+        // LOSS recorded).  The one tail step the typed-stack-access rendering needs
+        // is the raw-stack-pointer placeholder:
+        //
+        //   state.sortAlias();
+        //   if (!state.getAlias().empty() && state.getAlias()[0] == 0)
+        //       annotateRawStackPtr();
+        //
+        // A zero-offset use of the stack pointer (e.g. `&v1` passed to a call) gets
+        // a `PTRSUB(sp,#0)` placeholder so the data-type system renders `&local`.
+        state.sort_alias();
+        let alias = state.get_alias();
+        if alias.first() == Some(&0) {
+            self.annotate_raw_stack_ptr(&space);
+        }
+    }
+
+    /// C++ `ScopeLocal::applyTypeRecommendations` (`varmap.cc:1574`): for each
+    /// pending `(addr, type)` recommendation, if an input Varnode exists at that
+    /// address, lock the recommended data-type onto it.
+    ///
+    /// Driven by `ActionInferTypes::apply` (coreaction.cc:5654), at the head of
+    /// each type-propagation pass.  The merged tree's only recommendation source is
+    /// the `this`-pointer collection (`collectNameRecs`/`prepareThisPointer`); on a
+    /// recommendation-free function this is a no-op.
+    pub fn apply_type_recommendations(&mut self) {
+        let recs: Vec<(int4, Address, Rc<crate::dtype::Datatype>)> = match self.get_scope_local() {
+            Some(lm) => lm
+                .type_recommendations()
+                .iter()
+                .map(|tr| (tr.data_type.get_size(), tr.addr.clone(), Rc::clone(&tr.data_type)))
+                .collect(),
+            None => return,
+        };
+        for (sz, addr, dt) in recs {
+            // vn = fd->findVarnodeInput(dt->getSize(), addr);
+            if let Some(vn) = self.find_varnode_input(sz, &addr) {
+                // vn->updateType(dt, true, false);
+                let high = self.vbank().get(vn).and_then(|v| v.get_high());
+                let changed = self
+                    .vbank_mut()
+                    .get_mut(vn)
+                    .map(|v| v.update_type_locked(Rc::clone(&dt), true, false))
+                    .unwrap_or(false);
+                if changed {
+                    if let Some(h) = high {
+                        if let Some(hh) = self.high_bank_mut().get_mut(h) {
+                            hh.type_dirty();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// C++ `ScopeLocal::annotateRawStackPtr` (`varmap.cc:386`): for every read of
+    /// the input stack pointer by a *non-additive* p-code op, splice in a
+    /// `PTRSUB(sp, #0)` placeholder so the data-type system treats the raw stack
+    /// pointer as a zero-offset reference into the stack frame (and renders `&local`
+    /// rather than the bare stack register).
+    ///
+    /// Reached from [`Funcdata::restructure_varnode`] when a zero-offset use of the
+    /// stack pointer exists (the first alias offset is 0).
+    pub fn annotate_raw_stack_ptr(&mut self, space: &Rc<kuna_base::space::AddrSpace>) {
+        // if (!fd->hasTypeRecoveryStarted()) return;
+        if !self.has_type_recovery_started() {
+            return;
+        }
+        // spVn = fd->findSpacebaseInput(space); if 0 return;
+        let sp_vn = match self.find_spacebase_input(space) {
+            Some(v) => v,
+            None => return,
+        };
+        let sp_size = self.vbank().get(sp_vn).map(|v| v.get_size()).unwrap_or(0);
+
+        // Collect the non-additive, non-special-non-call reader ops.
+        let descend: Vec<OpId> = match self.vbank().get(sp_vn) {
+            Some(v) => v.descend_iter().collect(),
+            None => return,
+        };
+        let mut ref_ops: Vec<OpId> = Vec::new();
+        for op in descend {
+            let o = match self.obank().get(op) {
+                Some(o) => o,
+                None => continue,
+            };
+            // if (op->getEvalType() == special && !op->isCall()) continue;
+            if o.get_eval_type() == crate::op::pcodeop_flags::special && !o.is_call() {
+                continue;
+            }
+            // if (opc == INT_ADD || PTRSUB || PTRADD) continue;
+            match o.code() {
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_PTRADD => continue,
+                _ => {}
+            }
+            ref_ops.push(op);
+        }
+
+        // For each, splice PTRSUB(spVn, #0) before it and rewire the slot.
+        for op in ref_ops {
+            // slot = op->getSlot(spVn);
+            let slot = match self.obank().get(op).map(|o| o.get_slot(sp_vn)) {
+                Some(s) if s >= 0 => s,
+                _ => continue,
+            };
+            // ptrsub = fd->newOpBefore(op, PTRSUB, spVn, fd->newConstant(spVn->getSize(),0));
+            let zero = self.new_constant(sp_size, 0);
+            let ptrsub = self.new_op_before(op, OpCode::CPUI_PTRSUB, sp_vn, zero, None);
+            // opSetInput(op, ptrsub->getOut(), slot);
+            if let Some(out) = self.obank().get(ptrsub).and_then(|o| o.get_out()) {
+                let _ = self.op_set_input(op, out, slot);
+            }
+        }
     }
 
     /// C++ `MapState::gatherVarnodes` (`varmap.cc:1122`): add a data-type hint for

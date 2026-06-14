@@ -1290,6 +1290,31 @@ impl Datatype {
         }
     }
 
+    /// C++ `TypeSpacebase::getAddress` (type.cc:3522): resolve a constant offset
+    /// into a concrete `Address` in this spacebase's address space.  `None` when
+    /// `self` is not a `TypeSpacebase`.
+    ///
+    /// Faithful to the C++: a *global* spacebase (`localframe.isInvalid()`) forces
+    /// `sz = -1` to suppress full-encoding recovery; the local-frame (stack) case
+    /// keeps the size and resolves through the manager (`resolveConstant`).
+    pub fn spacebase_get_address(
+        &self,
+        off: uint8,
+        mut sz: int4,
+        point: &Address,
+        manager: &kuna_base::space::AddrSpaceManager,
+    ) -> Option<Address> {
+        let (spaceid, localframe) = self.as_spacebase()?;
+        let spaceid = spaceid?;
+        if localframe.is_invalid() {
+            sz = -1; // Suppress full-encoding recovery for a global spacebase
+        }
+        let mut full_encoding: uint8 = 0;
+        manager
+            .resolve_constant(spaceid, off, sz, point, &mut full_encoding)
+            .ok()
+    }
+
     /// C++ `TypePointerRel::evaluateThruParent(addrOff)` (type.cc:3039): would a
     /// `PTRSUB(this, addrOff)` be representable as an access through the parent
     /// container (vs. the basic ptrto form)?  `None` for non-relative-pointers.

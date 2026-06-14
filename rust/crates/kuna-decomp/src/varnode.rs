@@ -1740,6 +1740,43 @@ impl VarnodeBank {
         self.loc_tree.values().copied()
     }
 
+    /// Iterate the location set over the half-open address window
+    /// `[start, end)` within `start`'s space (C++
+    /// `[beginLoc(start), endLoc(end))`, used by
+    /// `ActionInferTypes::propagateRef`, coreaction.cc:5480).
+    ///
+    /// The C++ pair brackets exactly the Varnodes whose storage address lies in
+    /// `[start, end)` of the same space (the comparator orders by address first);
+    /// this yields that membership set in loc order by filtering the ordered
+    /// `loc_tree`.  When `end` wraps below `start` the window runs to the end of
+    /// the space (the C++ `endaddr.getOffset() < off` arm picks `endLoc(space)`).
+    pub fn iter_loc_addr_range(
+        &self,
+        start: &Address,
+        end: &Address,
+    ) -> impl Iterator<Item = VarnodeId> + '_ {
+        let space_index = start.get_space().map(|s| s.get_index());
+        let start_off = start.get_offset();
+        let end_off = end.get_offset();
+        let wrapped = end_off < start_off;
+        self.loc_tree.values().copied().filter(move |&id| {
+            let v = match self.get(id) {
+                Some(v) => v,
+                None => return false,
+            };
+            let a = v.get_addr();
+            if a.get_space().map(|s| s.get_index()) != space_index {
+                return false;
+            }
+            let off = a.get_offset();
+            if off < start_off {
+                return false;
+            }
+            // Half-open upper bound; a wrapped window runs to the space end.
+            wrapped || off < end_off
+        })
+    }
+
     /// Iterate all varnode ids in definition order (C++ `beginDef()`..`endDef()`).
     pub fn iter_def(&self) -> impl Iterator<Item = VarnodeId> + '_ {
         self.def_tree.values().copied()
@@ -2538,6 +2575,32 @@ mod tests {
         // size+address overload spans all three classes
         let all: Vec<VarnodeId> = bank.iter_loc_size_addr(4, &addr).collect();
         assert_eq!(all, vec![input, written, free]);
+    }
+
+    /// `iter_loc_addr_range` brackets exactly the half-open `[start, end)` window
+    /// within one space (the C++ `[beginLoc(addr), endLoc(endaddr))` membership the
+    /// `ActionInferTypes::propagateRef` alias-propagation walks).
+    #[test]
+    fn iter_loc_addr_range_brackets_half_open_window() {
+        let m = build_manager();
+        let mut bank = VarnodeBank::new(&m, 0).unwrap();
+        let sp = space(&m, 2);
+        let v100 = bank.create(4, Address::new(Rc::clone(&sp), 0x100), dt(4));
+        let v104 = bank.create(4, Address::new(Rc::clone(&sp), 0x104), dt(4));
+        let _v110 = bank.create(4, Address::new(Rc::clone(&sp), 0x110), dt(4));
+        // A varnode below the window and one in another space — both excluded.
+        let _v0f0 = bank.create(4, Address::new(Rc::clone(&sp), 0xf0), dt(4));
+        let _other = bank.create(4, Address::new(space(&m, 1), 0x100), dt(4));
+
+        let start = Address::new(Rc::clone(&sp), 0x100);
+        let end = Address::new(Rc::clone(&sp), 0x110); // exclusive
+        let got: Vec<VarnodeId> = bank.iter_loc_addr_range(&start, &end).collect();
+        assert_eq!(got, vec![v100, v104], "[0x100,0x110) excludes the 0x110 element");
+
+        // A window that wraps below `start` runs to the end of the space.
+        let wrap_end = Address::new(Rc::clone(&sp), 0x10);
+        let wrapped: Vec<VarnodeId> = bank.iter_loc_addr_range(&start, &wrap_end).collect();
+        assert_eq!(wrapped.len(), 3, "wrapped window covers 0x100, 0x104, 0x110");
     }
 
     /// Definition-order iteration: inputs first, then written (by seqnum).
