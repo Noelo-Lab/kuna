@@ -7,10 +7,17 @@ IDA later is just a new adapter here.
 """
 from .base import ReferenceDecompiler, ReferenceResult
 from .angr_adapter import AngrReference
+from .kuna_adapter import KunaReference, KunaCppReference, KunaRustReference
 
 #: Registry of available reference decompilers by name.
+#:
+#: ``kuna-cpp`` / ``kuna-rust`` make a kuna engine itself a reference, so the same
+#: compare machinery produces a kuna-rust-vs-kuna-cpp differential on a real ELF
+#: (the W11 Rust-engine pipeline binding) -- not just angr-vs-kuna.
 REGISTRY = {
     "angr": AngrReference,
+    "kuna-cpp": KunaCppReference,
+    "kuna-rust": KunaRustReference,
 }
 
 
@@ -25,4 +32,5 @@ def get_reference(name="angr", **kw):
 
 
 __all__ = ["ReferenceDecompiler", "ReferenceResult", "AngrReference",
+           "KunaReference", "KunaCppReference", "KunaRustReference",
            "REGISTRY", "get_reference"]

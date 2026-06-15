@@ -71,6 +71,7 @@ def decompile(
     options=None,
     kasserts=None,
     decomp_dbg=None,
+    engine=None,
     sleighpath=None,
     timeout=120,
 ):
@@ -99,6 +100,12 @@ def decompile(
     kasserts : iterable of kuna ``kassert`` argument strings, set after the function
         loads (function-scoped; e.g. ``"S7 edge-virtualization 0x401000 0x401020"``).
     decomp_dbg : path to the decomp_dbg binary (defaults to the built one).
+    engine : ``"cpp"`` or ``"rust"`` -- which port's ``decomp_dbg`` to run. When
+        given (and ``decomp_dbg`` is not), the binary is resolved through
+        :func:`kuna.paths.binary` for that engine instead of the ambient
+        ``KUNA_ENGINE``; this is concurrency-safe (no env mutation) and is how the
+        pipeline runs both engines on the same function in one process (the W11
+        Rust-engine binding -- see ``kuna.pipeline.reference.KunaReference``).
     sleighpath : SLEIGH specs root (defaults to ``<repo>/specs``).
     timeout : seconds before the subprocess is killed.
 
@@ -108,10 +115,20 @@ def decompile(
     if not os.path.exists(binary):
         raise LoadError("binary not found: " + binary)
 
-    bin_path = paths.decomp_dbg() if decomp_dbg is None else os.path.abspath(str(decomp_dbg))
+    if decomp_dbg is not None:
+        bin_path = os.path.abspath(str(decomp_dbg))
+    elif engine is not None:
+        # Resolve the chosen engine's decomp_dbg directly (no KUNA_ENGINE mutation),
+        # honoring the same per-binary override (KUNA_DECOMP_DBG) as the default path.
+        bin_path = str(paths.binary("decomp_dbg", "KUNA_DECOMP_DBG", engine=engine))
+    else:
+        bin_path = str(paths.decomp_dbg())
     if not os.path.exists(bin_path):
+        hint = " (engine=%s)" % engine if engine else ""
         raise DecompileError(
-            "decomp_dbg not built at %s -- run `make binaries`" % bin_path
+            "decomp_dbg not built at %s%s -- run `make binaries`"
+            " (or `cargo build --release -p kuna-console` for the rust engine)"
+            % (bin_path, hint)
         )
 
     specs = str(paths.specs_dir()) if sleighpath is None else os.path.abspath(str(sleighpath))
@@ -302,6 +319,7 @@ def main(argv=None):
             options=[(n, v) for n, v in args.options],
             kasserts=args.kasserts,
             decomp_dbg=args.decomp_dbg,
+            engine=args.engine,
             sleighpath=args.sleighpath,
             timeout=args.timeout,
         )
