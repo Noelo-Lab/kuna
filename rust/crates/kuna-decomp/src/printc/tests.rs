@@ -587,6 +587,10 @@ fn op_emit_kind_dispatch() {
     assert!(matches!(op_emit_kind(CPUI_CAST), OpEmitKind::TypeCast));
     assert!(matches!(op_emit_kind(CPUI_FLOAT_FLOAT2FLOAT), OpEmitKind::TypeCast));
     assert!(matches!(op_emit_kind(CPUI_FLOAT_TRUNC), OpEmitKind::TypeCast));
+    // FLOAT_INT2FLOAT has a hand-written override (PrintC::opFloatInt2Float,
+    // printc.cc:850 — the `(floatN)input` cast with INT_ZEXT absorption), so it
+    // is Custom and dispatched by the `op_float_int2float_ir` arm of op_push_ir.
+    assert!(matches!(op_emit_kind(CPUI_FLOAT_INT2FLOAT), OpEmitKind::Custom));
     // Hand-written / no-op overrides are Custom.
     assert!(matches!(op_emit_kind(CPUI_LOAD), OpEmitKind::Custom));
     assert!(matches!(op_emit_kind(CPUI_STORE), OpEmitKind::Custom));
@@ -851,4 +855,191 @@ fn w10_negate_flip_no_complement_keeps_token_does_not_panic() {
     p.context.set_mod(NEGATETOKEN);
     p.op_binary(&tokens::BINARY_PLUS, None, &var_atom("a"), &var_atom("b"));
     assert!(!p.context.is_set(NEGATETOKEN), "negatetoken modifier not cleared");
+}
+
+// ===========================================================================
+// VERIFIER tests for `rport/w10-float-family` (in-crate: these reach the
+// PRIVATE ported logic `absorb_zext` / `op_float_int2float_ir` / the cast-type
+// text, none of which is reachable from an integration test).
+//
+// Oracle: TypeOpFloatInt2Float::absorbZext (typeop.cc:1874) and
+// PrintC::opFloatInt2Float (printc.cc:850).
+//
+//   const Varnode *vn0 = op->getIn(0);
+//   if (vn0->isWritten() && vn0->isImplied()) {
+//     const PcodeOp *zextOp = vn0->getDef();
+//     if (zextOp->code() == CPUI_INT_ZEXT) return zextOp;
+//   }
+//   return 0;
+//
+// The hunt-list fragile spots for this item: (1) the AND of BOTH flags
+// (isWritten && isImplied) — dropping either gates the wrong way; (2) the
+// opcode equality (must be INT_ZEXT, not INT_SEXT or any other extension);
+// (3) the def-null robustness (C++ derefs getDef() unguarded after isWritten,
+// the Rust uses `?`); (4) the `(floatN)` cast text for a scalar float base.
+// ===========================================================================
+mod w10_float_family {
+    use super::*;
+    use crate::dtype::{type_metatype, Datatype};
+    use crate::funcdata::Funcdata;
+    use crate::printc::{absorb_zext, declarator_parts};
+    use crate::seams::{Architecture, TypeOp};
+    use kuna_base::address::Address;
+    use kuna_base::space::{
+        addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
+    };
+    use kuna_num::opcodes::OpCode;
+    use std::rc::Rc;
+
+    fn build_manager() -> AddrSpaceManager {
+        let mut m = AddrSpaceManager::new();
+        m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+        m.insert_space(Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            2,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        )))
+        .unwrap();
+        m
+    }
+
+    fn build_fd() -> Funcdata {
+        let manage = build_manager();
+        let glb = Rc::new(Architecture::new(manage));
+        let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        let addr = Address::new(ram, 0x1000);
+        Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()
+    }
+
+    fn ram(fd: &Funcdata) -> Rc<AddrSpace> {
+        Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap())
+    }
+
+    fn unk(size: int4) -> Rc<Datatype> {
+        Rc::new(Datatype::new(size, type_metatype::TYPE_UNKNOWN))
+    }
+
+    fn mk_op(fd: &mut Funcdata, inputs: int4, off: u64, opc: OpCode) -> super::super::OpId {
+        let ram = ram(fd);
+        let op = fd.new_op(inputs, Address::new(ram, off));
+        fd.obank_mut().change_opcode(op, TypeOp::new(opc, 0, format!("{opc:?}")));
+        op
+    }
+
+    /// Build a FLOAT_INT2FLOAT op whose in0 is the (written) output of a
+    /// definer op with opcode `def_opc`; the produced varnode's implied flag is
+    /// `implied`.  Returns the (i2f op, definer op).
+    fn build_i2f_over(
+        fd: &mut Funcdata,
+        def_opc: OpCode,
+        implied: bool,
+    ) -> (super::super::OpId, super::super::OpId) {
+        let r = ram(fd);
+        // The definer op (e.g. INT_ZEXT) producing a written varnode.
+        let defop = mk_op(fd, 1, 0x10, def_opc);
+        let src = fd.new_varnode(4, &Address::new(Rc::clone(&r), 0x200), Some(unk(4)));
+        fd.op_set_input(defop, src, 0).unwrap();
+        let widened = fd.new_varnode(8, &Address::new(Rc::clone(&r), 0x300), Some(unk(8)));
+        fd.op_set_output(defop, widened).unwrap();
+        // op_set_output marks `widened` written; re-fetch its id (set_def may
+        // remap) from the definer's output.
+        let widened = fd.obank().get(defop).unwrap().get_out().unwrap();
+        if implied {
+            fd.vbank_mut().get_mut(widened).unwrap().set_implied();
+        }
+        // The FLOAT_INT2FLOAT reading `widened` in slot 0.
+        let i2f = mk_op(fd, 1, 0x20, OpCode::CPUI_FLOAT_INT2FLOAT);
+        fd.op_set_input(i2f, widened, 0).unwrap();
+        let out = fd.new_varnode(8, &Address::new(r, 0x400), Some(unk(8)));
+        fd.op_set_output(i2f, out).unwrap();
+        (i2f, defop)
+    }
+
+    /// in0 is an implied, written INT_ZEXT output -> absorb (return the ZEXT).
+    #[test]
+    fn absorb_zext_positive_implied_written_intzext() {
+        let mut fd = build_fd();
+        let (i2f, zext) = build_i2f_over(&mut fd, OpCode::CPUI_INT_ZEXT, true);
+        assert_eq!(
+            absorb_zext(&fd, i2f),
+            Some(zext),
+            "implied+written INT_ZEXT must be absorbed"
+        );
+    }
+
+    /// NOT implied (but written INT_ZEXT) -> NO absorption.  C++ requires BOTH
+    /// isWritten() AND isImplied(); dropping the implied check is a finding.
+    #[test]
+    fn absorb_zext_negative_not_implied() {
+        let mut fd = build_fd();
+        let (i2f, _zext) = build_i2f_over(&mut fd, OpCode::CPUI_INT_ZEXT, false);
+        assert_eq!(
+            absorb_zext(&fd, i2f),
+            None,
+            "a written-but-not-implied INT_ZEXT must NOT be absorbed"
+        );
+    }
+
+    /// Implied + written but the definer is INT_SEXT (sign-extend), not
+    /// INT_ZEXT -> NO absorption.  The opcode equality must be exact: a
+    /// sign-extension is a different conversion the cast cannot silently absorb.
+    #[test]
+    fn absorb_zext_negative_wrong_opcode_intsext() {
+        let mut fd = build_fd();
+        let (i2f, _def) = build_i2f_over(&mut fd, OpCode::CPUI_INT_SEXT, true);
+        assert_eq!(
+            absorb_zext(&fd, i2f),
+            None,
+            "an INT_SEXT (not INT_ZEXT) must NOT be absorbed"
+        );
+    }
+
+    /// in0 is a free (un-written) input varnode -> NO absorption (isWritten()
+    /// is false, so getDef() is never reached).  This is also the def-null
+    /// robustness boundary: C++ would not deref getDef() here either.
+    #[test]
+    fn absorb_zext_negative_free_input() {
+        let mut fd = build_fd();
+        let r = ram(&fd);
+        let i2f = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_FLOAT_INT2FLOAT);
+        let free_in = fd.new_varnode(8, &Address::new(Rc::clone(&r), 0x500), Some(unk(8)));
+        // A free varnode marked implied (implied alone must not trigger absorb).
+        fd.vbank_mut().get_mut(free_in).unwrap().set_implied();
+        fd.op_set_input(i2f, free_in, 0).unwrap();
+        let out = fd.new_varnode(8, &Address::new(r, 0x600), Some(unk(8)));
+        fd.op_set_output(i2f, out).unwrap();
+        assert_eq!(
+            absorb_zext(&fd, i2f),
+            None,
+            "a free (un-written) input must NOT be absorbed even if implied"
+        );
+    }
+
+    /// The cast-type text for a scalar `floatN` base is exactly its display
+    /// name, no modifiers — `push_cast_type` builds `(front,back)` =
+    /// `("float8","")` -> the `(float8)` half of the cast.  A trailing `*`/`[]`
+    /// here would corrupt the rendered cast.
+    #[test]
+    fn cast_type_text_scalar_float_is_display_name() {
+        let mut t = Datatype::new_with_align(8, -1, type_metatype::TYPE_FLOAT);
+        t.name = "float8".to_string();
+        t.display_name = "float8".to_string();
+        let t = Rc::new(t);
+        let (front, back) = declarator_parts(&t);
+        assert_eq!(front, "float8");
+        assert_eq!(back, "");
+        // float4 likewise (the conversion-source-width family).
+        let mut t4 = Datatype::new_with_align(4, -1, type_metatype::TYPE_FLOAT);
+        t4.name = "float4".to_string();
+        t4.display_name = "float4".to_string();
+        let (f4, b4) = declarator_parts(&Rc::new(t4));
+        assert_eq!((f4.as_str(), b4.as_str()), ("float4", ""));
+    }
 }
