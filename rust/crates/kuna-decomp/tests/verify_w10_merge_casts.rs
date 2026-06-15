@@ -28,7 +28,7 @@ use std::rc::Rc;
 
 use kuna_base::types::int4;
 use kuna_decomp::coreaction_casts::{is_op_identical, test_struct_offset0};
-use kuna_decomp::cast::CastStrategyC;
+use kuna_decomp::cast::{CastStrategy, CastStrategyC};
 use kuna_decomp::dtype::{
     type_metatype, Datatype, DatatypeKind, TypeFactory, TypeFactoryImpl, TypeField,
 };
@@ -408,5 +408,104 @@ fn w10_byte_identical_boolless_unperturbed_by_casts() {
     assert!(
         !rendered.contains("CAST(") && !rendered.contains("(float"),
         "no spurious cast token may appear in the typeless boolless body:\n{rendered}"
+    );
+}
+
+// ===========================================================================
+// VERIFIER round-1 adversarial fences — the getInputCast per-op dispatch
+// (coreaction_casts.rs::get_input_cast). Two confirmed faithfulness bugs in the
+// named getInputCast surface are pinned here via the reachable `castStandard`
+// proxy: the per-op getInputCast bodies differ ONLY in (a) the reqtype source
+// and (b) the final `castStandard(reqtype, curtype, care_uint_int, care_ptr_uint)`
+// argument tuple. These tests fix the C++-faithful tuple for the two op families
+// the Rust dispatch transcribes incorrectly, and prove the wrong tuple changes
+// the cast DECISION for a signed-vs-unsigned operand pair (so the bug is a real
+// dropped/wrong cast, not a no-op rename).
+//
+//   * INT_SLESS / INT_SLESSEQUAL (typeop.cc:1025-1033, :1051-1059): the C++ body
+//     is reqtype = inputTypeLocal(slot) [a SIGNED int], then
+//     castStandard(reqtype, curtype, TRUE, TRUE). The Rust dispatch
+//     (coreaction_casts.rs:302-305) routes SLESS/SLESSEQUAL to
+//     `get_input_cast_equal` — the EQUAL/NOTEQUAL body — which uses
+//     reqtype = max-read-facing(in0,in1) and castStandard(.., FALSE, FALSE).
+//   * INT_ZEXT / INT_SEXT (typeop.cc:1133-1141, :1159-1167): the C++ fallthrough
+//     tail is castStandard(reqtype, curtype, TRUE, FALSE). The Rust
+//     `get_input_cast_extension` (coreaction_casts.rs:534) uses
+//     castStandard(reqtype, curtype, FALSE, TRUE) — both args inverted.
+
+fn uint(size: int4) -> Rc<Datatype> {
+    base(size, type_metatype::TYPE_UINT)
+}
+fn sint(size: int4) -> Rc<Datatype> {
+    base(size, type_metatype::TYPE_INT)
+}
+
+/// SLESS faithfulness: for reqtype = `int4` (the signed `inputTypeLocal` of an
+/// INT_SLESS) and curtype = `uint4`, the C++ tail `castStandard(int4, uint4,
+/// true, true)` REQUIRES a cast (signed/unsigned mismatch with care_uint_int).
+/// The EQUAL-body tuple the Rust dispatch substitutes — `(false, false)` — drops
+/// it. This two-sided assert proves the misroute is an observable, wrong cast
+/// decision (a missing `(int)` on a signed comparison of an unsigned operand),
+/// not a benign relabel. [w10-merge-casts F1]
+#[test]
+fn w10_sless_getinputcast_uses_signed_local_and_true_true_tuple() {
+    let s = strat();
+    let req = sint(4); // INT_SLESS inputTypeLocal(slot) = getBase(size, TYPE_INT)
+    let cur = uint(4); // operand merged to uint4
+    // C++-faithful SLESS tail: a cast IS needed.
+    assert!(
+        s.cast_standard(&req, &cur, true, true).is_some(),
+        "SLESS faithful body castStandard(int4,uint4,true,true) must REQUIRE a cast \
+         (signed-vs-unsigned, care_uint_int) — typeop.cc:1032"
+    );
+    // The EQUAL-body tuple the Rust dispatch substitutes drops the cast — this is
+    // the divergence: where C++ renders (int)a < (int)b the misroute renders a < b.
+    assert!(
+        s.cast_standard(&req, &cur, false, false).is_none(),
+        "EQUAL-body tuple castStandard(int4,uint4,false,false) drops the cast — \
+         demonstrates the SLESS misroute changes the cast decision"
+    );
+}
+
+/// ZEXT/SEXT faithfulness: the C++ fallthrough tail is `castStandard(reqtype,
+/// curtype, true, false)`; the Rust uses `(false, true)` (both inverted). For
+/// reqtype = `int4` and curtype = `uint4` the faithful `(true,false)` requires a
+/// cast where the inverted `(false,true)` drops it. [w10-merge-casts F2]
+#[test]
+fn w10_extension_getinputcast_tuple_is_true_false_not_false_true() {
+    let s = strat();
+    let req = sint(4);
+    let cur = uint(4);
+    assert!(
+        s.cast_standard(&req, &cur, true, false).is_some(),
+        "ZEXT/SEXT faithful tail castStandard(int4,uint4,true,false) must REQUIRE a cast \
+         — typeop.cc:1140"
+    );
+    assert!(
+        s.cast_standard(&req, &cur, false, true).is_none(),
+        "the inverted tuple castStandard(int4,uint4,false,true) drops the cast — \
+         demonstrates the ZEXT/SEXT arg inversion changes the cast decision"
+    );
+}
+
+/// LESS/LESSEQUAL (the body the Rust DOES route correctly, `(true,false)`) must
+/// remain distinct from the SLESS `(true,true)` body: for reqtype=`uint4`,
+/// curtype=`ptr` the care_ptr_uint flag is the discriminator. This pins that the
+/// fix for SLESS must NOT collapse SLESS into the LESS arm (they differ in the
+/// 2nd flag). [w10-merge-casts F1 boundary]
+#[test]
+fn w10_less_vs_sless_caretuple_discriminator_is_care_ptr_uint() {
+    let s = strat();
+    let req = uint(8);
+    let cur = ptr(sint(4)); // a pointer curtype, uint reqtype
+    // care_ptr_uint=false (LESS) -> uint-from-ptr needs NO cast;
+    // care_ptr_uint=true (SLESS) -> it DOES. So SLESS != LESS.
+    let less = s.cast_standard(&req, &cur, true, false);
+    let sless = s.cast_standard(&req, &cur, true, true);
+    assert!(
+        less.is_none() && sless.is_some(),
+        "LESS (care_ptr_uint=false) and SLESS (care_ptr_uint=true) must differ on a \
+         uint<-ptr pair — a SLESS fix must use its own (true,true) tail, not the LESS arm \
+         (cast.cc:772 !care_ptr_uint && curbase==PTR)"
     );
 }
