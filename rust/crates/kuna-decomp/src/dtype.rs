@@ -5021,7 +5021,10 @@ impl TypeFactoryImpl {
     /// type.cc:4414-4422).
     fn get_type_union_impl(&self, n: &str) -> KunaResult<Rc<Datatype>> {
         let mut tmp = Datatype::new_with_align(0, -1, type_metatype::TYPE_UNION);
-        tmp.flags |= flags::type_incomplete;
+        // C++ `TypeUnion()` ctor (type.hh:625): flags |= (type_incomplete |
+        // needs_resolution).  Every union "needs resolution" — its accessed field
+        // is recovered from the data flow by `ScoreUnionFields`/`resolveInFlow`.
+        tmp.flags |= flags::type_incomplete | flags::needs_resolution;
         tmp.kind = DatatypeKind::Union { field: Vec::new() };
         tmp.name = n.to_string();
         tmp.display_name = n.to_string();

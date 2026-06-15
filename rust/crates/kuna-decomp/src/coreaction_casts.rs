@@ -1073,12 +1073,14 @@ impl Funcdata {
                 for i in 0..numin {
                     count += self.cast_resolve_union(op, i, &strat);
                 }
-                // Last chance to resolve the output data-type based on flow.
+                // Last chance to resolve the output data-type based on flow
+                // (C++ `outHigh->getType()->resolveInFlow(op,-1)` — populates the
+                // union cache for the output write edge).
                 if let Some(vn) = self.obank().get(op).and_then(|o| o.get_out()) {
                     let out_high = self.high_get_type(vn);
                     if let Some(oh) = out_high {
                         if oh.needs_resolution() {
-                            let _ = oh.resolve_in_flow(op, -1);
+                            let _ = self.resolve_in_flow(&oh, op, -1);
                         }
                     }
                 }
@@ -1181,10 +1183,13 @@ impl Funcdata {
             return 0;
         }
         // resUnion = data.getUnionField(dt, op, slot); if miss -> resolveInFlow.
+        // The miss arm drives `ScoreUnionFields` via [`Funcdata::resolve_in_flow`]
+        // (the side effect is `setUnionField`, populating the cache), then re-reads
+        // `getUnionField` exactly as C++ `dt->resolveInFlow(op,slot)` does.
         let field_and_dt = match self.get_union_field(&dt, op, slot) {
             Some(r) => Some((r.get_field_num(), Rc::clone(r.get_datatype()))),
             None => {
-                let _ = dt.resolve_in_flow(op, slot); // last chance (scorer seam)
+                let _ = self.resolve_in_flow(&dt, op, slot); // populates the cache
                 self.get_union_field(&dt, op, slot)
                     .map(|r| (r.get_field_num(), Rc::clone(r.get_datatype())))
             }
