@@ -1725,3 +1725,316 @@ pub fn is_op_identical(ct1: &Rc<Datatype>, ct2: &Rc<Datatype>) -> bool {
     }
     Rc::ptr_eq(&a, &b)
 }
+
+// ===========================================================================
+// VERIFIER round-2 adversarial fences for item `w10-merge-casts` (B1/B2 fix).
+//
+// Round 1 REJECTED this item because the live `get_input_cast` DISPATCH routed
+// INT_SLESS/INT_SLESSEQUAL to the EQUAL/NOTEQUAL body (B1) and inverted the
+// INT_ZEXT/INT_SEXT fallthrough tuple (B2).  The r1 fences proved the *tuples*
+// diverge via the `cast_standard` proxy, but could not reach `get_input_cast`
+// (it is `pub(crate)` — invisible to the `tests/` integration crate).  These
+// in-module tests drive the ACTUAL fixed dispatch over a real `Funcdata` op and
+// assert it equals the C++-faithful result computed independently — so a future
+// edit that re-misroutes SLESS (or re-inverts the extension tuple) fails here
+// even though the corpus still masks it behind `checkIntPromotion*`.
+//
+// They are SELF-CALIBRATING (the expected value is the faithful tuple applied
+// to the same operands, not a hardcoded Some/None), and each op is built with
+// 4-byte operands so `checkIntPromotionForCompare`/`ForExtension` returns false
+// (NO_PROMOTION, cast.cc:178-181) and the `castStandard` tail — the part B1/B2
+// corrupted — is actually reached.
+// ===========================================================================
+#[cfg(test)]
+mod verify_w10_merge_casts_r2 {
+    use super::*;
+    use crate::cast::CastStrategy;
+    use crate::dtype::{type_metatype, Datatype, TypeFactoryImpl};
+    use crate::funcdata::Funcdata;
+    use crate::seams::{Architecture, TypeOp};
+    use kuna_base::address::Address;
+    use kuna_base::space::{
+        addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, FspecSpace,
+        IopSpace, UniqueSpace,
+    };
+
+    /// A `Funcdata` whose `Architecture` carries a real `TypeFactory` (size-of-int
+    /// = 4, so `promote_size == 4` and a 4-byte operand has NO_PROMOTION) plus a
+    /// `CastStrategyC` built on the same factory.
+    fn build() -> (Funcdata, CastStrategyC, Rc<AddrSpace>) {
+        let mut m = AddrSpaceManager::new();
+        m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+        m.insert_space(Rc::new(IopSpace::new(2))).unwrap();
+        m.insert_space(Rc::new(FspecSpace::new(3))).unwrap();
+        m.insert_space(Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            4,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        )))
+        .unwrap();
+
+        let tf = TypeFactoryImpl::new();
+        tf.setup_sizes(Some(4), 8, 8); // size-of-int = 4 => promote_size = 4
+        tf.set_default_alignment_map();
+        tf.set_max_basetype_size(8);
+        let tf = Rc::new(tf);
+
+        let mut arch = Architecture::new(m);
+        arch.types = Some(Rc::clone(&tf));
+        let glb = Rc::new(arch);
+        let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        let addr = Address::new(Rc::clone(&ram), 0x1000);
+        let fd = Funcdata::new("f", "f", glb, addr, 0x1000_0000, 0x40).unwrap();
+        assert!(
+            fd.get_arch().types().is_some(),
+            "test fixture: Funcdata arch must carry the TypeFactory"
+        );
+        let strat = CastStrategyC::new(tf as Rc<dyn TypeFactory>);
+        (fd, strat, ram)
+    }
+
+    fn ity(size: int4, m: type_metatype) -> Rc<Datatype> {
+        Rc::new(Datatype::new(size, m))
+    }
+
+    /// Build a binary op `opc` with two 4-byte input varnodes typed `t0`/`t1`.
+    fn binop(
+        fd: &mut Funcdata,
+        ram: &Rc<AddrSpace>,
+        off: u64,
+        opc: OpCode,
+        t0: Rc<Datatype>,
+        t1: Rc<Datatype>,
+    ) -> OpId {
+        let pc = Address::new(Rc::clone(ram), 0x2000 + off);
+        let op = fd.new_op(2, pc);
+        fd.op_set_opcode(op, TypeOp::new(opc, 0, "OP"));
+        let a = fd.new_unique(4, Some(t0));
+        let b = fd.new_unique(4, Some(t1));
+        fd.op_set_input(op, a, 0).unwrap();
+        fd.op_set_input(op, b, 1).unwrap();
+        op
+    }
+
+    /// Build a unary op `opc` with one 4-byte input varnode typed `t0` and an
+    /// 8-byte output (a widening extension).
+    fn unop(
+        fd: &mut Funcdata,
+        ram: &Rc<AddrSpace>,
+        off: u64,
+        opc: OpCode,
+        t0: Rc<Datatype>,
+    ) -> OpId {
+        let pc = Address::new(Rc::clone(ram), 0x2000 + off);
+        let op = fd.new_op(1, pc);
+        fd.op_set_opcode(op, TypeOp::new(opc, 0, "OP"));
+        let a = fd.new_unique(4, Some(t0));
+        fd.op_set_input(op, a, 0).unwrap();
+        let outaddr = Address::new(Rc::clone(ram), 0x3000 + off);
+        let out = fd.new_varnode(8, &outaddr, None);
+        fd.op_set_output(op, out).unwrap();
+        op
+    }
+
+    /// Structural equality on the (metatype, size) the cast decision turns on.
+    /// `cast_standard` returns freshly-built `Rc<Datatype>` per call, so
+    /// `Rc::ptr_eq` would spuriously fail; this compares the load-bearing fields.
+    fn opt_ptr_eq(a: &Option<Rc<Datatype>>, b: &Option<Rc<Datatype>>) -> bool {
+        match (a, b) {
+            (None, None) => true,
+            (Some(x), Some(y)) => {
+                Rc::ptr_eq(x, y)
+                    || (x.get_metatype() == y.get_metatype() && x.get_size() == y.get_size())
+            }
+            _ => false,
+        }
+    }
+
+    // -- AT1 (B1) -- INT_SLESS over a uint4-typed operand MUST route to the
+    //    inputTypeLocal body with the (true,true) tail, NOT the EQUAL body.
+    //    Faithful (typeop.cc:1025-1033): reqtype = inputTypeLocal(slot) (a SIGNED
+    //    int4), castStandard(reqtype, curtype, true, true).  The r1 bug produced
+    //    the EQUAL tuple castStandard(uint4, uint4, false, false) == None.
+    #[test]
+    fn at1_sless_dispatch_uses_signed_local_and_true_true() {
+        let (mut fd, strat, ram) = build();
+        let uint4 = ity(4, type_metatype::TYPE_UINT);
+        let op = binop(
+            &mut fd,
+            &ram,
+            0x10,
+            OpCode::CPUI_INT_SLESS,
+            Rc::clone(&uint4),
+            Rc::clone(&uint4),
+        );
+
+        // Independently computed FAITHFUL result for slot 0:
+        // reqtype = inputTypeLocal(SLESS,0) = getBase(4, TYPE_INT) (signed),
+        // curtype = uint4, gate = false (NO_PROMOTION), tail = (true,true).
+        let reqtype = input_type_local(&fd, op, 0);
+        assert_eq!(
+            reqtype.get_metatype(),
+            type_metatype::TYPE_INT,
+            "inputTypeLocal(SLESS) must be a SIGNED int (typeop.cc:1011 TYPE_INT)"
+        );
+        let faithful = strat.cast_standard(&reqtype, &uint4, true, true);
+        // The EQUAL-body misroute the r1 dispatch took:
+        let misroute = strat.cast_standard(&uint4, &uint4, false, false);
+        assert!(
+            faithful.is_some() && misroute.is_none(),
+            "precondition: the faithful SLESS tuple and the EQUAL misroute must \
+             DIFFER on (signed int4 < uint4), else this fence is vacuous"
+        );
+
+        let got = get_input_cast(&mut fd, &strat, op, 0);
+        assert!(
+            opt_ptr_eq(&got, &faithful),
+            "INT_SLESS getInputCast must equal the inputTypeLocal+(true,true) body \
+             (cast required), got {:?}",
+            got.as_ref().map(|t| t.get_metatype())
+        );
+        assert!(
+            got.is_some(),
+            "B1 regression: INT_SLESS over a uint4 operand dropped the (int) cast"
+        );
+    }
+
+    // -- AT2 (B1 discriminator) -- INT_LESS over the SAME operands must use the
+    //    (true,false) tail (LESS = unsigned, care_ptr_uint=false), and SLESS must
+    //    NOT collapse into it: the two are distinguished by `care_ptr_uint`.
+    //    Here we pin that SLESS and LESS BOTH route through the inputTypeLocal
+    //    body (so the metatype of reqtype differs: SLESS=>INT, LESS=>UINT) — a
+    //    misroute of SLESS to the EQUAL body would make reqtype uint4 for SLESS.
+    #[test]
+    fn at2_sless_vs_less_reqtype_signedness_differs() {
+        let (mut fd, _strat, ram) = build();
+        let uint4 = ity(4, type_metatype::TYPE_UINT);
+        let sless = binop(
+            &mut fd,
+            &ram,
+            0x20,
+            OpCode::CPUI_INT_SLESS,
+            Rc::clone(&uint4),
+            Rc::clone(&uint4),
+        );
+        let less = binop(
+            &mut fd,
+            &ram,
+            0x28,
+            OpCode::CPUI_INT_LESS,
+            Rc::clone(&uint4),
+            Rc::clone(&uint4),
+        );
+        // SLESS local type is signed (TYPE_INT); LESS local type is unsigned
+        // (TYPE_UINT).  If SLESS were misrouted to the EQUAL body its reqtype
+        // would be max-read-facing(uint4,uint4)=uint4 — UNSIGNED — collapsing the
+        // signedness distinction the C++ preserves.
+        assert_eq!(input_type_local(&fd, sless, 0).get_metatype(), type_metatype::TYPE_INT);
+        assert_eq!(input_type_local(&fd, less, 0).get_metatype(), type_metatype::TYPE_UINT);
+    }
+
+    // -- AT3 (B2) -- INT_ZEXT fallthrough must use the (true,false) tail, NOT the
+    //    inverted (false,true) the r1 code borrowed from the default body, and the
+    //    spurious is_annotation() early-return must be gone.
+    //    Faithful (typeop.cc:1133-1141): reqtype = inputTypeLocal(ZEXT,0) =
+    //    getBase(4, TYPE_UINT); curtype = int4 (signed input); castStandard with
+    //    (care_uint_int=true, care_ptr_uint=false).
+    #[test]
+    fn at3_zext_dispatch_uses_true_false_not_inverted() {
+        let (mut fd, strat, ram) = build();
+        let int4s = ity(4, type_metatype::TYPE_INT); // signed input -> differs from ZEXT local uint
+        let op = unop(&mut fd, &ram, 0x30, OpCode::CPUI_INT_ZEXT, Rc::clone(&int4s));
+
+        let reqtype = input_type_local(&fd, op, 0);
+        assert_eq!(
+            reqtype.get_metatype(),
+            type_metatype::TYPE_UINT,
+            "inputTypeLocal(ZEXT) must be UNSIGNED (typeop.cc:1119 TYPE_UINT)"
+        );
+        let curtype = fd.vn_high_type_read_facing(fd.obank().get(op).unwrap().get_in(0).unwrap(), op);
+        let faithful = strat.cast_standard(&reqtype, &curtype, true, false);
+        let inverted = strat.cast_standard(&reqtype, &curtype, false, true);
+        assert!(
+            !opt_ptr_eq(&faithful, &inverted),
+            "precondition: the faithful ZEXT tuple (true,false) and the inverted \
+             (false,true) must DIFFER on (uint4 <- int4), else this fence is vacuous"
+        );
+
+        let got = get_input_cast(&mut fd, &strat, op, 0);
+        assert!(
+            opt_ptr_eq(&got, &faithful),
+            "B2 regression: INT_ZEXT getInputCast must use castStandard(reqtype,\
+             curtype,true,false), got {:?} vs faithful {:?}",
+            got.as_ref().map(|t| t.get_metatype()),
+            faithful.as_ref().map(|t| t.get_metatype())
+        );
+        assert!(
+            !opt_ptr_eq(&got, &inverted),
+            "B2 regression: INT_ZEXT getInputCast matched the INVERTED (false,true) \
+             tuple — the r1 bug"
+        );
+    }
+
+    // -- AT4 (B2/SEXT) -- the SEXT arm shares the extension body; its reqtype is
+    //    SIGNED (typeop.cc:1145 TYPE_INT) and the tail is the same (true,false).
+    #[test]
+    fn at4_sext_dispatch_uses_signed_local_true_false() {
+        let (mut fd, strat, ram) = build();
+        let uint4 = ity(4, type_metatype::TYPE_UINT); // unsigned input -> differs from SEXT local int
+        let op = unop(&mut fd, &ram, 0x38, OpCode::CPUI_INT_SEXT, Rc::clone(&uint4));
+
+        let reqtype = input_type_local(&fd, op, 0);
+        assert_eq!(
+            reqtype.get_metatype(),
+            type_metatype::TYPE_INT,
+            "inputTypeLocal(SEXT) must be SIGNED (typeop.cc:1145 TYPE_INT)"
+        );
+        let curtype = fd.vn_high_type_read_facing(fd.obank().get(op).unwrap().get_in(0).unwrap(), op);
+        let faithful = strat.cast_standard(&reqtype, &curtype, true, false);
+        let got = get_input_cast(&mut fd, &strat, op, 0);
+        assert!(
+            opt_ptr_eq(&got, &faithful),
+            "INT_SEXT getInputCast must equal castStandard(int4,uint4,true,false)"
+        );
+    }
+
+    // -- AT5 (EQUAL unchanged) -- the fix must NOT perturb EQUAL/NOTEQUAL: they
+    //    keep the max-read-facing reqtype + (false,false) tail (typeop.cc:934-944).
+    #[test]
+    fn at5_equal_still_uses_maxreadfacing_false_false() {
+        let (mut fd, strat, ram) = build();
+        let int4s = ity(4, type_metatype::TYPE_INT);
+        let uint4 = ity(4, type_metatype::TYPE_UINT);
+        let op = binop(
+            &mut fd,
+            &ram,
+            0x40,
+            OpCode::CPUI_INT_EQUAL,
+            Rc::clone(&int4s),
+            Rc::clone(&uint4),
+        );
+        // Faithful EQUAL: reqtype = max-read-facing(in0,in1); for slot 0 the
+        // curtype is in0's read-facing type; tail = (false,false).
+        let in0 = fd.obank().get(op).unwrap().get_in(0).unwrap();
+        let in1 = fd.obank().get(op).unwrap().get_in(1).unwrap();
+        let mut reqtype = fd.vn_high_type_read_facing(in0, op);
+        let othertype = fd.vn_high_type_read_facing(in1, op);
+        if othertype.type_order(&reqtype).unwrap_or(0) < 0 {
+            reqtype = othertype;
+        }
+        let slottype = fd.vn_high_type_read_facing(in0, op);
+        let faithful = strat.cast_standard(&reqtype, &slottype, false, false);
+        let got = get_input_cast(&mut fd, &strat, op, 0);
+        assert!(
+            opt_ptr_eq(&got, &faithful),
+            "INT_EQUAL getInputCast must stay the max-read-facing + (false,false) body"
+        );
+    }
+}
