@@ -337,6 +337,15 @@ mod harness {
         arch.sleigh_mut()
             .build_translator(Box::new(DummyImg), &sla)
             .map_err(|e| format!("build_translator: {e}"))?;
+        // Install the register-name lookup (matches the real console engine): the
+        // angr `dat_`/`vN` naming split reads `manage->getRegisterName(...)` to tell
+        // a register local from a global data read.
+        arch.sleigh_mut()
+            .base_mut()
+            .ok_or("no Architecture base after build_translator")?
+            .translate_mut()
+            .install_register_lookup()
+            .map_err(|e| format!("install_register_lookup: {e}"))?;
         if !specs.compilerfile.is_empty() {
             if let Ok(cspec) = std::fs::read(&specs.compilerfile) {
                 arch.sleigh_mut()

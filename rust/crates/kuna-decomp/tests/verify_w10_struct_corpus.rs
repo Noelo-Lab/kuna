@@ -743,11 +743,16 @@ fn verify_w10_pspec_context_loopcomment_lifts_64bit_and_structures() {
     // 64-bit registers present (RSP/RBP/RDI/…); the 16-bit real-mode garbage
     // signature absent.  `\bSP \+ 0xfffe\b`-class offsets and `BX + SI` and the
     // `CALLOTHER(0,DS|SS` segment ops are the unambiguous 16-bit-real-mode marks.
-    let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0);
+    // w10-highvar-naming coalesces the frame/return registers into named `vN`
+    // locals, so the proxy accepts either the raw 64-bit token or the lowercased
+    // `// rsp`/`// rax` storage comment the named local's decl carries.
+    let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0)
+        + count_matches(r"// r(sp|bp|di|si|ax|bx|cx|dx)\b", &rendered).unwrap_or(0);
     assert!(
         sixtyfour >= 1,
-        "loopcomment must lift with 64-bit registers (RSP/RBP/…); got none \
-         (the pspec <context_data> paints were not applied):\n{rendered}"
+        "loopcomment must lift with 64-bit registers (RSP/RBP/… as a token or a \
+         `// rsp` storage comment); got none (the pspec <context_data> paints were \
+         not applied):\n{rendered}"
     );
     let realmode =
         count_matches(r"\bBX \+ SI\b|CALLOTHER\(0,DS|CALLOTHER\(0,SS|\b0xfffe\b", &rendered)
@@ -788,11 +793,18 @@ fn verify_w10_pspec_context_forloop_varused_lifts_64bit_and_structures() {
         "forloop_varused must render its function:\n{rendered}"
     );
 
-    let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0);
+    // 64-bit lifting signal: a 64-bit register either as a raw token (when it is
+    // not a coalesced local) OR as the storage comment on a now-named local
+    // (`// rsp` / `// rbp`).  Since w10-highvar-naming coalesces the frame
+    // registers into named `vN` locals (the faithful angr default), the proxy must
+    // also accept the lowercased storage comment the decl carries (e.g. `// rsp`).
+    let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0)
+        + count_matches(r"// r(sp|bp|di|si|ax|bx|cx|dx)\b", &rendered).unwrap_or(0);
     assert!(
         sixtyfour >= 1,
-        "forloop_varused must lift with 64-bit registers (RSP/…); got none \
-         (the pspec <context_data> paints were not applied):\n{rendered}"
+        "forloop_varused must lift with 64-bit registers (RSP/… as a token or a \
+         `// rsp` storage comment); got none (the pspec <context_data> paints were \
+         not applied):\n{rendered}"
     );
     let realmode =
         count_matches(r"\bBX \+ SI\b|CALLOTHER\(0,DS|CALLOTHER\(0,SS|\b0xfffe\b", &rendered)

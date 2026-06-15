@@ -1750,12 +1750,22 @@ impl PrintC {
                 .map(|lm| {
                     let h = fd.high_bank().get(high);
                     let n = h.map(|h| h.num_instances()).unwrap_or(0);
+                    // A high is a parameter (declared in the signature, not the body)
+                    // only when a `function_parameter` Symbol *contains* a member's
+                    // whole storage — the C++ `emitScopeVarDecls(no_category)` walks
+                    // Symbols by their own category, not by storage overlap.  Using a
+                    // containing query (not bare overlap) is load-bearing: a wider
+                    // local merged onto a register that also holds a narrower
+                    // parameter (a `float8` cast result on `XMM0`, which also carries
+                    // the `float4` arg) overlaps the parameter entry but is its own
+                    // `no_category` local (the C++ `handleSymbolConflict` conflict
+                    // spawns a fresh Symbol), so it must still be declared.
                     (0..n).any(|i| {
                         let m = h.unwrap().get_instance(i);
                         fd.vbank()
                             .get(m)
                             .map(|v| (v.get_addr().clone(), v.get_size()))
-                            .and_then(|(addr, size)| lm.category_for_varnode(&addr, size))
+                            .and_then(|(addr, size)| lm.containing_category_for_varnode(&addr, size))
                             == Some(crate::database::symbol_category::FUNCTION_PARAMETER)
                     })
                 })
