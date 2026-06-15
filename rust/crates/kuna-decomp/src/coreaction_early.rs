@@ -544,20 +544,43 @@ impl Action for ActionDoNothing {
         //     }
         //   }
         //
-        // The `clearDelayedDonothing()` sweep is a **realized** side effect we
-        // faithfully reproduce (FlowBlock::clear_delayed_donothing exists); it
-        // runs on every block on every call, independent of removal.
+        // The `clearDelayedDonothing()` sweep runs on every block on every call,
+        // independent of removal.  Then we walk for do-nothing blocks: the first
+        // removable one is removed and we return (C++ removes one per call and
+        // re-runs under `rule_repeatapply`).
         let size = data.bblocks_get_size();
         for i in 0..size {
             let bb = data.bblocks_get_block(i);
             data.bblocks_mut().block_mut(bb).clear_delayed_donothing();
         }
-        // SEAM(W3-block): BlockBasic::isDoNothing / unblockedMulti /
-        // hasNoImmediateCopy predicates and Funcdata::removeDoNothingBlock /
-        // Funcdata::warning are funcdata_block surfaces not in the merged tree.
-        // Without the do-nothing predicate the removal/delay/infinite-loop arms
-        // cannot fire, so no block is removed (count stays 0) — the
-        // clearDelayedDonothing sweep above is the realized portion.
+        let size = data.bblocks_get_size();
+        for i in 0..size {
+            let bb = data.bblocks_get_block(i);
+            if !data.bb_is_do_nothing(bb) {
+                continue;
+            }
+            // Infinite-loop do-nothing block: warn once, mark, leave in place.
+            if data.bblocks_ref().block(bb).size_out() == 1
+                && data.bblocks_ref().block(bb).get_out(0) == bb
+            {
+                if !data.bblocks_ref().block(bb).is_donothing_loop() {
+                    data.bblocks_mut().block_mut(bb).set_donothing_loop();
+                    // data.warning("Do nothing block with infinite loop", ...) -- W4
+                    // warning facility; the mark is the realized side effect.
+                }
+            } else if data.bb_unblocked_multi(bb, 0) {
+                if data.is_normalization_on() || data.bb_has_no_immediate_copy(bb, 0) {
+                    if data.remove_do_nothing_block(bb).is_ok() {
+                        self.base.count += 1;
+                        return 0;
+                    }
+                } else {
+                    // Immediate COPYs but otherwise removable -> defer to
+                    // ActionLateDoNothing (after the COPYs are trimmed).
+                    data.bblocks_mut().block_mut(bb).set_delayed_donothing();
+                }
+            }
+        }
         0
     }
 }
@@ -631,22 +654,36 @@ impl Action for ActionLateDoNothing {
         //     else if (unblockedMulti(0)) removeList.push_back(bb);
         //   for each in removeList: removeDoNothingBlock(bb); count += 1;
         //
-        // The `isDelayedDonothing()` gate and `removingCreatesRedundancy` are
-        // **realized** (block flag reader + pure graph read).  We faithfully run
-        // the collection gates that we can evaluate; the do-nothing predicate and
-        // the removal primitive are seamed.
+        // Collect the removable delayed-do-nothing blocks, then remove them.
         let size = data.bblocks_get_size();
+        let mut remove_list: Vec<crate::seams::BlockId> = Vec::new();
         for i in 0..size {
             let bb = data.bblocks_get_block(i);
             if !data.bblocks_ref().block(bb).is_delayed_donothing() {
                 continue;
             }
-            // SEAM(W3-block): BlockBasic::isDoNothing / unblockedMulti and
-            // Funcdata::removeDoNothingBlock / Funcdata::warning unavailable.
-            // removingCreatesRedundancy is realized and would gate removal here,
-            // but with no isDoNothing predicate and no removal primitive no block
-            // is collected; count stays 0.
-            let _ = ActionLateDoNothing::removing_creates_redundancy(data, bb);
+            if !data.bb_is_do_nothing(bb) {
+                continue;
+            }
+            if ActionLateDoNothing::removing_creates_redundancy(data, bb) {
+                continue;
+            }
+            if data.bblocks_ref().block(bb).size_out() == 1
+                && data.bblocks_ref().block(bb).get_out(0) == bb
+            {
+                // Infinite loop: warn once, mark, leave in place.
+                if !data.bblocks_ref().block(bb).is_donothing_loop() {
+                    data.bblocks_mut().block_mut(bb).set_donothing_loop();
+                    // data.warning("Do nothing block with infinite loop", ...) -- W4
+                }
+            } else if data.bb_unblocked_multi(bb, 0) {
+                remove_list.push(bb);
+            }
+        }
+        for bb in remove_list {
+            if data.remove_do_nothing_block(bb).is_ok() {
+                self.base.count += 1;
+            }
         }
         0
     }

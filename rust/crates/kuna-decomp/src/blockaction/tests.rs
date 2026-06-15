@@ -766,3 +766,41 @@ fn cj_cutdown_keeps_multiequal_when_extra_pred_remains() {
         "a 2-input MULTIEQUAL must STAY a MULTIEQUAL (no COPY rewrite at numInput!=1)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// is_complex resolution (BlockBasic::isComplex via the BlockCopy `copy` pointer)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn is_complex_resolves_through_block_copy() {
+    // Build a structuring graph holding a single BlockCopy leaf whose `copy`
+    // points at a (synthetic) bblocks BlockBasic id.  is_complex must descend the
+    // front leaf, read the copy pointer, and consult the precomputed set.
+    let mut g = BlockGraph::new();
+    let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+    g.root = Some(root);
+    // A "bblocks" basic block to be the copy target.
+    let basic = g.new_block_basic(root);
+    // The structuring BlockCopy leaf mirroring it.
+    let copyleaf = g.new_block_copy(root, basic);
+
+    // With an empty complex set, nothing is complex.
+    let cs = CollapseStructure::new(&mut g, root);
+    assert!(!cs.is_complex(copyleaf), "empty set -> not complex");
+    drop(cs);
+
+    // Marking the underlying bblocks id complex flips the answer.
+    let mut complex = std::collections::BTreeSet::new();
+    complex.insert(basic);
+    let cs = CollapseStructure::new(&mut g, root).with_complex_blocks(complex);
+    assert!(cs.is_complex(copyleaf), "marked basic -> complex through the copy pointer");
+}
+
+#[test]
+fn is_complex_falls_back_to_true_for_non_copy_leaf() {
+    // A plain graph node (no BlockCopy descendant) cannot resolve to a basic
+    // block, so the C++ base FlowBlock::isComplex default (`true`) applies.
+    let (mut g, root, b) = build_graph(1);
+    let cs = CollapseStructure::new(&mut g, root);
+    assert!(cs.is_complex(b[0]), "non-copy leaf -> conservative true");
+}

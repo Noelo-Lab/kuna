@@ -45,7 +45,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::block::{block_flags, BlockKind};
 use crate::funcdata::Funcdata;
-use crate::seams::{BlockId, OpId};
+use crate::seams::{BlockId, OpId, VarnodeId};
 
 impl Funcdata {
     // -----------------------------------------------------------------------
@@ -150,6 +150,241 @@ impl Funcdata {
         Ok(())
     }
 
+    // -----------------------------------------------------------------------
+    // BlockBasic do-nothing predicates (C++ block.cc:2626..2667)
+    //
+    // These mirror `BlockBasic::hasOnlyMarkers` / `isDoNothing` /
+    // `unblockedMulti` / `hasNoImmediateCopy`.  In C++ they are methods on
+    // `BlockBasic`, which owns the `list<PcodeOp*> op`.  In the Rust port the op
+    // list is an intrusive third list driven through `Funcdata` (ADR 0001), so
+    // these live on `Funcdata` as `bb_*` queries -- exactly as
+    // `branch_remove_internal`/`splice_block_basic` do.  They are pure reads.
+    // -----------------------------------------------------------------------
+
+    /// Does block `bb` contain only MULTIEQUAL/INDIRECT marker ops and branches
+    /// (C++ `BlockBasic::hasOnlyMarkers`, `block.cc:2626`)?
+    pub fn bb_has_only_markers(&self, bb: BlockId) -> bool {
+        // for(iter=op.begin();...) { if (isMarker()) continue;
+        //   if (isBranch()) continue; return false; } return true;
+        for op in self.bb_ops(bb) {
+            let o = self.obank().get(op).expect("bb_has_only_markers: stale op");
+            if o.is_marker() {
+                continue;
+            }
+            if o.is_branch() {
+                continue;
+            }
+            return false;
+        }
+        true
+    }
+
+    /// Should block `bb` be removed because it does nothing useful
+    /// (C++ `BlockBasic::isDoNothing`, `block.cc:2644`)?
+    pub fn bb_is_do_nothing(&self, bb: BlockId) -> bool {
+        let g = self.bblocks_ref();
+        // if (sizeOut() != 1) return false;   // no return / cbranch
+        if g.block(bb).size_out() != 1 {
+            return false;
+        }
+        // if (sizeIn() == 0) return false;    // starting block placeholder
+        if g.block(bb).size_in() == 0 {
+            return false;
+        }
+        // Switch-target guard: a single-out switch target that merges other edges
+        // may still be propagating a unique value -- don't remove it.
+        let size_in = g.block(bb).size_in();
+        for i in 0..size_in {
+            let switchbl = g.block(bb).get_in(i);
+            if !g.block(switchbl).is_switch_out() {
+                continue;
+            }
+            if g.block(switchbl).size_out() > 1 {
+                let out0 = g.block(bb).get_out(0);
+                if g.block(out0).size_in() > 1 {
+                    // Multiple edges coming together -- switch edge may still be
+                    // propagating a unique value.  Don't remove it.
+                    return false;
+                }
+            }
+        }
+        // Don't remove single-out indirect jumps (BRANCHIND last op).
+        if let Some(lastop) = self.bb_op_tail(bb) {
+            if self.obank().get(lastop).expect("bb_is_do_nothing: stale op").code()
+                == OpCode::CPUI_BRANCHIND
+            {
+                return false;
+            }
+        }
+        self.bb_has_only_markers(bb)
+    }
+
+    /// Can block `bb` be removed (collapsing into out edge `outslot`) without
+    /// introducing inconsistent redundant MULTIEQUAL entries (C++
+    /// `BlockBasic::unblockedMulti`, `block.cc:2561`)?
+    pub fn bb_unblocked_multi(&self, bb: BlockId, outslot: int4) -> bool {
+        let g = self.bblocks_ref();
+        let blout = g.block(bb).get_out(outslot);
+        // Build list of blocks which would have redundant branches into blout.
+        let mut redundlist: Vec<BlockId> = Vec::new();
+        let size_in = g.block(bb).size_in();
+        for i in 0..size_in {
+            let bl = g.block(bb).get_in(i);
+            let bl_size_out = g.block(bl).size_out();
+            for j in 0..bl_size_out {
+                if g.block(bl).get_out(j) == blout {
+                    redundlist.push(bl);
+                }
+            }
+        }
+        if redundlist.is_empty() {
+            return true;
+        }
+        let in_index_to_this = g.block(blout).get_in_index(bb);
+        for multiop in self.bb_ops(blout) {
+            let mop = self.obank().get(multiop).expect("bb_unblocked_multi: stale op");
+            if mop.code() != OpCode::CPUI_MULTIEQUAL {
+                continue;
+            }
+            for &bl in &redundlist {
+                // vnredund = multiop->getIn(blout->getInIndex(bl));
+                let redund_slot = g.block(blout).get_in_index(bl);
+                let vnredund = mop.get_in(redund_slot);
+                // vnremove = multiop->getIn(inIndexToThis);
+                let mut vnremove = mop.get_in(in_index_to_this);
+                // If vnremove is written by a MULTIEQUAL in -bb-, dereference it.
+                if let Some(vr) = vnremove {
+                    let vnobj = self.vbank().get(vr).expect("bb_unblocked_multi: stale vn");
+                    if vnobj.is_written() {
+                        let othermulti =
+                            vnobj.get_def().expect("bb_unblocked_multi: written vn has def");
+                        let omop =
+                            self.obank().get(othermulti).expect("bb_unblocked_multi: stale def");
+                        if omop.code() == OpCode::CPUI_MULTIEQUAL
+                            && omop.get_parent() == Some(bb)
+                        {
+                            vnremove = omop.get_in(g.block(bb).get_in_index(bl));
+                        }
+                    }
+                }
+                if vnremove != vnredund {
+                    return false; // Redundant branches must be identical
+                }
+            }
+        }
+        true
+    }
+
+    /// Was there an immediate COPY propagation out of `bb` into a MULTIEQUAL in
+    /// the immediate out block (C++ `BlockBasic::hasNoImmediateCopy`,
+    /// `block.cc:2605`)?  Returns \b true if there was \e no immediate copy.
+    pub fn bb_has_no_immediate_copy(&self, bb: BlockId, outslot: int4) -> bool {
+        let g = self.bblocks_ref();
+        // if (!hasImmedCopyEdge(outslot)) return true;
+        if !g.block(bb).has_immed_copy_edge(outslot) {
+            return true;
+        }
+        let blout = g.block(bb).get_out(outslot);
+        let in_index_to_this = g.block(blout).get_in_index(bb);
+        for op in self.bb_ops(blout) {
+            let mop = self.obank().get(op).expect("bb_has_no_immediate_copy: stale op");
+            if mop.code() != OpCode::CPUI_MULTIEQUAL {
+                continue;
+            }
+            if self.op_has_copy_immed(op, in_index_to_this) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Is basic block `bb` too complex to be folded into a condition (C++
+    /// `BlockBasic::isComplex`, `block.cc:2403`)?  Counts the "statements" in the
+    /// block (a calculation whose output is used outside the block, addr-tied, or
+    /// dead, plus calls and branches); the block is complex once the count
+    /// exceeds 2.
+    ///
+    /// Used by [`CollapseStructure::rule_block_or`](crate::blockaction) to decide
+    /// whether the OR-clause block can be absorbed.  Precomputed per BlockBasic in
+    /// `ActionBlockStructure::apply` and threaded into `CollapseStructure` (the
+    /// structuring graph is the BlockCopy mirror, which does not own the op list).
+    pub fn bb_is_complex(&self, bb: BlockId) -> bool {
+        let mut statement: int4 = 0;
+        // if (sizeOut() >= 2) statement = 1;  // the branch counts as a statement
+        if self.bblocks_ref().block(bb).size_out() >= 2 {
+            statement = 1;
+        }
+        let maxref = self.get_arch().max_implied_ref;
+        for inst in self.bb_ops(bb) {
+            let instobj = self.obank().get(inst).expect("bb_is_complex: stale op");
+            if instobj.is_marker() {
+                continue;
+            }
+            let vn = instobj.get_out();
+            if instobj.is_call() {
+                statement += 1;
+            } else if vn.is_none() {
+                if instobj.is_flow_break() {
+                    continue;
+                }
+                statement += 1;
+            } else {
+                // A calculation with output: conservative Varnode::calc_explicit.
+                let outvn = vn.expect("bb_is_complex: out present");
+                let vnobj = self.vbank().get(outvn).expect("bb_is_complex: stale out vn");
+                let mut yesstatement = false;
+                if vnobj.has_no_descend() {
+                    yesstatement = true;
+                } else if vnobj.is_addr_tied() {
+                    // Being conservative.
+                    yesstatement = true;
+                } else {
+                    let mut totalref: int4 = 0;
+                    for d_op in vnobj.descend_iter() {
+                        let dobj = self.obank().get(d_op).expect("bb_is_complex: stale descend");
+                        if dobj.is_marker() || dobj.get_parent() != Some(bb) {
+                            // Variable used outside of block.
+                            yesstatement = true;
+                            break;
+                        }
+                        totalref += 1;
+                        if totalref > maxref {
+                            yesstatement = true;
+                            break;
+                        }
+                    }
+                }
+                if yesstatement {
+                    statement += 1;
+                }
+            }
+            if statement > 2 {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Did a COPY propagation from the immediate input block at `slot` of `op`
+    /// happen (C++ `PcodeOp::hasCopyImmed`, `op.cc:139`)?  Needs `op`'s parent
+    /// block (to resolve the in-edge), so it lives on `Funcdata`.
+    fn op_has_copy_immed(&self, op: OpId, slot: int4) -> bool {
+        let o = self.obank().get(op).expect("op_has_copy_immed: stale op");
+        if (o.get_addlflags() & crate::op::pcodeop_addlflags::immed_copy) == 0 {
+            return false;
+        }
+        let parent = match o.get_parent() {
+            Some(p) => p,
+            None => return false,
+        };
+        let g = self.bblocks_ref();
+        // inbl = parent->getIn(slot); outedge = parent->getInRevIndex(slot);
+        let inbl = g.block(parent).get_in(slot);
+        let outedge = g.block(parent).get_in_rev_index(slot);
+        // return inbl->hasImmedCopyEdge(outedge);
+        g.block(inbl).has_immed_copy_edge(outedge)
+    }
+
     /// Remove an outgoing branch of the given basic block, patching MULTIEQUAL
     /// ops in the target block (C++ `Funcdata::branchRemoveInternal`,
     /// `funcdata_block.cc:213`).
@@ -186,6 +421,334 @@ impl Funcdata {
     pub fn remove_branch(&mut self, bb: BlockId, num: int4) -> KunaResult<()> {
         self.branch_remove_internal(bb, num)?;
         self.structure_reset();
+        Ok(())
+    }
+
+    /// Build a replacement Varnode for `origvn` (C++ `Funcdata::createReplaceVarnode`,
+    /// `funcdata_block.cc:86`).  Used by [`Funcdata::push_multiequals`] when a
+    /// MULTIEQUAL output is read beyond the block being removed.
+    fn create_replace_varnode(&mut self, origvn: VarnodeId, make_unique: bool) -> VarnodeId {
+        let (sz, ty) = {
+            let v = self.vbank().get(origvn).expect("createReplaceVarnode: stale origvn");
+            (v.get_size(), v.get_type().clone())
+        };
+        let replacevn = if make_unique {
+            self.new_unique(sz, Some(ty))
+        } else {
+            let m = self.vbank().get(origvn).expect("createReplaceVarnode: stale origvn").get_addr().clone();
+            self.new_varnode(sz, &m, Some(ty))
+        };
+        // if (isHighOn()) { origvn->replaceInHigh(replacevn); replacevn->setExplicit(); }
+        if self.is_high_on() {
+            self.vn_replace_in_high(origvn, replacevn);
+            self.vbank_mut().get_mut(replacevn).expect("createReplaceVarnode").set_explicit();
+        }
+        replacevn
+    }
+
+    /// Swap `origvn` with the freshly created `replacevn` between their high
+    /// variables (C++ `Varnode::replaceInHigh`, `varnode.cc:353`), across the
+    /// `high_bank`/`vbank` field split.  The cross-arena `vn->setHigh` writes are
+    /// deferred to a log and applied after the borrow (same idiom as the merge).
+    fn vn_replace_in_high(&mut self, origvn: VarnodeId, replacevn: VarnodeId) {
+        let orig_high = match self.vbank().get(origvn).and_then(|v| v.get_high()) {
+            Some(h) => h,
+            None => return, // origvn has no high (annotation etc.); nothing to swap
+        };
+        let replace_high = match self.vbank().get(replacevn).and_then(|v| v.get_high()) {
+            Some(h) => h,
+            None => return,
+        };
+        let orig_mergegroup =
+            self.vbank().get(origvn).expect("vn_replace_in_high: stale origvn").get_merge_group();
+        // vn->getSymbolEntry() is a W4 surface (no Varnode-Symbol link in the
+        // merged tree), so the symbol-dirty trigger is conservatively false.
+        let vn_has_symbol_entry = false;
+        let mut set_high_log: Vec<(VarnodeId, crate::seams::HighVariableId, kuna_base::types::int2)> =
+            Vec::new();
+        self.with_high_split(|hb, ctx| {
+            hb.replace_in_high(
+                origvn,
+                orig_high,
+                orig_mergegroup,
+                replacevn,
+                replace_high,
+                vn_has_symbol_entry,
+                ctx,
+                &mut |vn, id, mg| set_high_log.push((vn, id, mg)),
+            );
+        });
+        for (vn, id, mg) in set_high_log {
+            if let Some(v) = self.vbank_mut().get_mut(vn) {
+                v.set_high(id, mg);
+            }
+        }
+    }
+
+    /// Force any Varnode defined by a MULTIEQUAL in the (about-to-be-removed)
+    /// block `bb` to be defined in the output block instead (C++
+    /// `Funcdata::pushMultiequals`, `funcdata_block.cc:105`).
+    pub fn push_multiequals(&mut self, bb: BlockId) -> KunaResult<()> {
+        if self.bblocks_ref().block(bb).size_out() == 0 {
+            return Ok(());
+        }
+        if self.bblocks_ref().block(bb).size_out() > 1 {
+            // warningHeader("push_multiequal on block with multiple outputs"); --
+            // a do-nothing block has exactly one out (isDoNothing guard), so this
+            // never fires on the removeDoNothingBlock path.  The warning facility
+            // is a W4 surface; the C++ continues past it (non-fatal).
+        }
+        // outblock = bb->getOut(0); outblock_ind = bb->getOutRevIndex(0);
+        let outblock = self.bblocks_ref().block(bb).get_out(0);
+        let outblock_ind = self.bblocks_ref().block(bb).get_out_rev_index(0);
+
+        for origop in self.bb_ops(bb) {
+            if self.obank().get(origop).expect("pushMultiequals: stale op").code()
+                != OpCode::CPUI_MULTIEQUAL
+            {
+                continue;
+            }
+            let origvn = self
+                .obank()
+                .get(origop)
+                .expect("pushMultiequals")
+                .get_out()
+                .expect("pushMultiequals: MULTIEQUAL with no output");
+            if self.vbank().get(origvn).expect("pushMultiequals: stale origvn").has_no_descend() {
+                continue;
+            }
+            // Scan descendants: does anything read origvn NOT through the dead edge?
+            let mut needreplace = false;
+            let mut neednewunique = false;
+            for op in self.vbank().get(origvn).expect("pushMultiequals").descend_iter() {
+                let opobj = self.obank().get(op).expect("pushMultiequals: stale descend op");
+                if opobj.code() == OpCode::CPUI_MULTIEQUAL && opobj.get_parent() == Some(outblock) {
+                    let mut dead_edge = true; // ref to origvn NOT thru the dead edge?
+                    let ni = opobj.num_input();
+                    for i in 0..ni {
+                        if i == outblock_ind {
+                            continue; // The dead edge
+                        }
+                        if opobj.get_in(i) == Some(origvn) {
+                            dead_edge = false;
+                            break;
+                        }
+                    }
+                    if dead_edge {
+                        // If origvn is addrtied and feeds a same-address MULTIEQUAL
+                        // in outblock, the new MULTIEQUAL must write a fresh unique.
+                        let out_of_op = opobj.get_out();
+                        let origvn_addr_tied =
+                            self.vbank().get(origvn).expect("pushMultiequals").is_addr_tied();
+                        if origvn_addr_tied {
+                            if let Some(oo) = out_of_op {
+                                let same_addr = self.vbank().get(oo).expect("pushMultiequals").get_addr()
+                                    == self.vbank().get(origvn).expect("pushMultiequals").get_addr();
+                                if same_addr {
+                                    neednewunique = true;
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                }
+                needreplace = true;
+                break;
+            }
+            if !needreplace {
+                continue;
+            }
+            // Construct artificial MULTIEQUAL in outblock.
+            let replacevn = self.create_replace_varnode(origvn, neednewunique);
+            let mut branches: Vec<VarnodeId> = Vec::new();
+            let outblock_size_in = self.bblocks_ref().block(outblock).size_in();
+            for i in 0..outblock_size_in {
+                if self.bblocks_ref().block(outblock).get_in(i) == bb {
+                    branches.push(origvn);
+                } else {
+                    branches.push(replacevn);
+                }
+            }
+            let start = self.bb_get_start(outblock);
+            let replaceop = self.new_op(branches.len() as int4, start);
+            self.op_set_opcode(replaceop, crate::typeop::type_op_for(OpCode::CPUI_MULTIEQUAL));
+            self.op_set_output(replaceop, replacevn)?;
+            self.op_set_all_input(replaceop, &branches)?;
+            self.op_insert_begin(replaceop, outblock);
+
+            // Replace obsolete origvn with replacevn in all descendant reads,
+            // except the dead-edge slot of the outblock MULTIEQUAL itself.
+            let descenders: Vec<OpId> =
+                self.vbank().get(origvn).expect("pushMultiequals").descend_iter().collect();
+            for op in descenders {
+                let (ni, parent, opc) = {
+                    let o = self.obank().get(op).expect("pushMultiequals: stale descend");
+                    (o.num_input(), o.get_parent(), o.code())
+                };
+                for i in 0..ni {
+                    if self.obank().get(op).expect("pushMultiequals").get_in(i) != Some(origvn) {
+                        continue;
+                    }
+                    if i == outblock_ind
+                        && parent == Some(outblock)
+                        && opc == OpCode::CPUI_MULTIEQUAL
+                    {
+                        continue;
+                    }
+                    self.op_set_input(op, replacevn, i)?;
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Does the given Varnode have any descendant op in a block \e not marked
+    /// dead (C++ `Funcdata::descendantsOutside`, `funcdata_block.cc:251`)?
+    fn descendants_outside(&self, vn: VarnodeId) -> bool {
+        for op in self.vbank().get(vn).expect("descendantsOutside: stale vn").descend_iter() {
+            let parent = self.obank().get(op).expect("descendantsOutside: stale op").get_parent();
+            match parent {
+                Some(p) => {
+                    if !self.bblocks_ref().block(p).is_dead() {
+                        return true;
+                    }
+                }
+                None => return true, // No parent => not in a dead block
+            }
+        }
+        false
+    }
+
+    /// Remove an active basic block from the function, patching up data-flow
+    /// (C++ `Funcdata::blockRemoveInternal`, `funcdata_block.cc:272`).
+    ///
+    /// `unreachable` selects the warning/`descend2Undef` arm used by
+    /// `removeUnreachableBlocks`; `removeDoNothingBlock` passes `false`.
+    pub fn block_remove_internal(&mut self, bb: BlockId, unreachable: bool) -> KunaResult<()> {
+        // BRANCHIND last op -> remove its jump table (W4: JumpTable registry not
+        // ported; a do-nothing block never ends in BRANCHIND so this is unreached
+        // from removeDoNothingBlock).
+        if let Some(op) = self.bb_op_tail(bb) {
+            if self.obank().get(op).expect("blockRemoveInternal: stale op").code()
+                == OpCode::CPUI_BRANCHIND
+            {
+                // JumpTable *jt = findJumpTable(op); if (jt) removeJumpTable(jt); -- SEAM(W4)
+            }
+        }
+        if !unreachable {
+            self.push_multiequals(bb)?; // Make sure data flow is preserved
+
+            let size_out = self.bblocks_ref().block(bb).size_out();
+            for i in 0..size_out {
+                let bbout = self.bblocks_ref().block(bb).get_out(i);
+                if self.bblocks_ref().block(bbout).is_dead() {
+                    continue;
+                }
+                let blocknum = self.bblocks_ref().block(bbout).get_in_index(bb);
+                for op in self.bb_ops(bbout) {
+                    if self.obank().get(op).expect("blockRemoveInternal").code()
+                        != OpCode::CPUI_MULTIEQUAL
+                    {
+                        continue;
+                    }
+                    let deadvn = self
+                        .obank()
+                        .get(op)
+                        .expect("blockRemoveInternal")
+                        .get_in(blocknum)
+                        .expect("blockRemoveInternal: MULTIEQUAL slot");
+                    self.op_remove_input(op, blocknum); // Remove the deleted block's branch
+                    // deadop = deadvn->getDef();
+                    let deadop = self.vbank().get(deadvn).expect("blockRemoveInternal").get_def();
+                    let written =
+                        self.vbank().get(deadvn).expect("blockRemoveInternal").is_written();
+                    let dead_is_multi_in_bb = match deadop {
+                        Some(dop) => {
+                            let d = self.obank().get(dop).expect("blockRemoveInternal");
+                            d.code() == OpCode::CPUI_MULTIEQUAL && d.get_parent() == Some(bb)
+                        }
+                        None => false,
+                    };
+                    let bb_size_in = self.bblocks_ref().block(bb).size_in();
+                    if written && dead_is_multi_in_bb {
+                        // Append new branches from deadop's inputs.
+                        let dop = deadop.expect("blockRemoveInternal: deadop present");
+                        for j in 0..bb_size_in {
+                            let v = self
+                                .obank()
+                                .get(dop)
+                                .expect("blockRemoveInternal")
+                                .get_in(j)
+                                .expect("blockRemoveInternal: deadop slot");
+                            let ni = self.obank().get(op).expect("blockRemoveInternal").num_input();
+                            self.op_insert_input(op, v, ni)?;
+                        }
+                    } else {
+                        // Otherwise make copies of deadvn.
+                        for _j in 0..bb_size_in {
+                            let ni = self.obank().get(op).expect("blockRemoveInternal").num_input();
+                            self.op_insert_input(op, deadvn, ni)?;
+                        }
+                    }
+                    self.op_zero_multi(op)?;
+                }
+            }
+        }
+        self.bblocks_mut().remove_from_flow(bb);
+
+        // Finally remove all the ops in -bb-.
+        for op in self.bb_ops(bb) {
+            if self.obank().get(op).expect("blockRemoveInternal").is_assignment() {
+                let deadvn = self
+                    .obank()
+                    .get(op)
+                    .expect("blockRemoveInternal")
+                    .get_out()
+                    .expect("blockRemoveInternal: assignment with no out");
+                if unreachable {
+                    // descend2Undef + the one-time warning -- SEAM(W3-op): the
+                    // descend-to-undefined rewrite is a funcdata_op surface not on
+                    // the removeDoNothingBlock path (unreachable==false).  Reached
+                    // only by removeUnreachableBlocks, which is itself unported.
+                    return Err(KunaError::lowlevel(
+                        "blockRemoveInternal(unreachable=true): descend2Undef SEAM",
+                    ));
+                }
+                if self.descendants_outside(deadvn) {
+                    return Err(KunaError::lowlevel("Deleting op with descendants"));
+                }
+            }
+            if self.obank().get(op).expect("blockRemoveInternal").is_call() {
+                // deleteCallSpecs(op) -- a do-nothing block (markers + branch only)
+                // never contains a CALL, so this is unreachable on the
+                // removeDoNothingBlock path.  The call-spec registry prune is a W4
+                // surface; guard rather than silently drop.
+                return Err(KunaError::lowlevel(
+                    "blockRemoveInternal: CALL in removable block (deleteCallSpecs SEAM)",
+                ));
+            }
+            self.op_destroy(op); // No longer has descendants
+        }
+        let graph = self.bblocks_root_pub();
+        self.bblocks_mut().remove_block(graph, bb); // Remove the block altogether
+        Ok(())
+    }
+
+    /// Remove a basic block that performs no operations from control-flow (C++
+    /// `Funcdata::removeDoNothingBlock`, `funcdata_block.cc:345`).
+    ///
+    /// The block must contain only marker ops (MULTIEQUAL/INDIRECT) and possibly
+    /// a single unconditional branch.  Forces a structuring reset.
+    pub fn remove_do_nothing_block(&mut self, bb: BlockId) -> KunaResult<()> {
+        if self.bblocks_ref().block(bb).size_out() > 1 {
+            return Err(KunaError::lowlevel(
+                "Cannot delete a reachable block unless it has 1 out or less",
+            ));
+        }
+        self.bblocks_mut().block_mut(bb).set_dead();
+        self.block_remove_internal(bb, false)?;
+        self.structure_reset(); // Delete any structure we had before
         Ok(())
     }
 
@@ -361,6 +924,19 @@ impl Funcdata {
     }
 
     // --- Block-cover helpers (BlockBasic::setInitialRange/copyRange/mergeRange)
+
+    /// First address covered by basic block `bb` (C++ `BlockBasic::getStart`,
+    /// `block.cc:2323`): the first address of the first cover range, or an invalid
+    /// address when the cover is empty.
+    fn bb_get_start(&self, bb: BlockId) -> Address {
+        match self.bblocks_ref().block(bb).kind() {
+            BlockKind::Basic(b) => match b.cover.iter().next() {
+                Some(range) => range.get_first_addr(),
+                None => Address::new_invalid(),
+            },
+            _ => Address::new_invalid(),
+        }
+    }
 
     /// Mutable access to a basic block's address cover (`BasicData::cover`).
     fn basic_cover_mut(&mut self, bb: BlockId) -> &mut kuna_base::address::RangeList {
@@ -757,5 +1333,102 @@ mod tests {
         } else {
             panic!("bl not basic");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // do-nothing predicates + removeDoNothingBlock + isComplex
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn has_only_markers_and_is_do_nothing() {
+        // A block with only a MULTIEQUAL marker + a BRANCH, one in, one out, is a
+        // do-nothing block; adding a real COPY makes it not.
+        let mut fd = build_fd();
+        let rs = ramspace(&fd);
+        let root = fd.bblocks_root_pub();
+        let pred = fd.bblocks_mut().new_block_basic(root);
+        let bb = fd.bblocks_mut().new_block_basic(root);
+        let succ = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(pred, bb);
+        fd.bblocks_mut().add_edge(bb, succ);
+
+        // MULTIEQUAL marker (flags=marker) + BRANCH (flags=branch).
+        let _mq = term_op(&mut fd, bb, OpCode::CPUI_MULTIEQUAL, pcodeop_flags::marker, addr(&rs, 0x2000));
+        let _br = term_op(&mut fd, bb, OpCode::CPUI_BRANCH, pcodeop_flags::branch, addr(&rs, 0x2004));
+        assert!(fd.bb_has_only_markers(bb));
+        assert!(fd.bb_is_do_nothing(bb));
+        assert!(!fd.bb_is_complex(bb)); // marker + single branch -> statement <= 1
+
+        // Insert a real calculation op -> no longer marker-only / do-nothing.
+        let _copy = term_op(&mut fd, bb, OpCode::CPUI_COPY, 0, addr(&rs, 0x2008));
+        assert!(!fd.bb_has_only_markers(bb));
+        assert!(!fd.bb_is_do_nothing(bb));
+    }
+
+    #[test]
+    fn is_do_nothing_rejects_zero_in_and_multi_out() {
+        let mut fd = build_fd();
+        let rs = ramspace(&fd);
+        let root = fd.bblocks_root_pub();
+        // Starting block (no in-edges) is never do-nothing (global placeholder).
+        let start = fd.bblocks_mut().new_block_basic(root);
+        let s_out = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(start, s_out);
+        let _br = term_op(&mut fd, start, OpCode::CPUI_BRANCH, pcodeop_flags::branch, addr(&rs, 0x3000));
+        assert!(!fd.bb_is_do_nothing(start)); // sizeIn() == 0
+
+        // A two-out block (CBRANCH) is never do-nothing (sizeOut != 1).
+        let pred = fd.bblocks_mut().new_block_basic(root);
+        let twoout = fd.bblocks_mut().new_block_basic(root);
+        let o1 = fd.bblocks_mut().new_block_basic(root);
+        let o2 = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(pred, twoout);
+        fd.bblocks_mut().add_edge(twoout, o1);
+        fd.bblocks_mut().add_edge(twoout, o2);
+        assert!(!fd.bb_is_do_nothing(twoout)); // sizeOut() == 2
+    }
+
+    #[test]
+    fn remove_do_nothing_block_splices_empty_marker_block() {
+        // pred -> bb(empty: MULTIEQUAL marker + BRANCH) -> succ.  removeDoNothing
+        // deletes bb, reconnecting pred directly to succ, and forces a structure
+        // reset (sblocks cleared).
+        let mut fd = build_fd();
+        let rs = ramspace(&fd);
+        let root = fd.bblocks_root_pub();
+        let pred = fd.bblocks_mut().new_block_basic(root);
+        let bb = fd.bblocks_mut().new_block_basic(root);
+        let succ = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(pred, bb);
+        fd.bblocks_mut().add_edge(bb, succ);
+        // A bare BRANCH (no MULTIEQUAL: no data flow to patch) keeps this test
+        // focused on the control-flow splice.
+        let _br = term_op(&mut fd, bb, OpCode::CPUI_BRANCH, pcodeop_flags::branch, addr(&rs, 0x4000));
+        assert!(fd.bb_is_do_nothing(bb));
+        assert!(fd.bb_unblocked_multi(bb, 0));
+
+        let n_before = fd.bblocks_get_size();
+        fd.remove_do_nothing_block(bb).unwrap();
+        // bb is gone; pred now flows straight to succ.
+        assert_eq!(fd.bblocks_get_size(), n_before - 1);
+        assert_eq!(fd.bblocks_ref().block(pred).get_out(0), succ);
+        assert_eq!(fd.bblocks_ref().block(succ).get_in(0), pred);
+        // sblocks was cleared by structure_reset.
+        assert_eq!(fd.sblocks_get_size(), 0);
+    }
+
+    #[test]
+    fn remove_do_nothing_block_rejects_multi_out() {
+        let mut fd = build_fd();
+        let root = fd.bblocks_root_pub();
+        let pred = fd.bblocks_mut().new_block_basic(root);
+        let bb = fd.bblocks_mut().new_block_basic(root);
+        let o1 = fd.bblocks_mut().new_block_basic(root);
+        let o2 = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(pred, bb);
+        fd.bblocks_mut().add_edge(bb, o1);
+        fd.bblocks_mut().add_edge(bb, o2);
+        let err = fd.remove_do_nothing_block(bb).unwrap_err();
+        assert!(err.to_string().contains("Cannot delete a reachable block"));
     }
 }
