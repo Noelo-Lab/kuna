@@ -2482,6 +2482,25 @@ impl PrintC {
     /// C++ `PrintC::emitExpression` (printc.cc:2544): if the op has an output,
     /// open an assignment to it, then push the op's expression and recurse.
     fn emit_expression_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        // C++ special-printing dispatch (printc.cc:2547-2566): a STORE/INSERT
+        // marked by the bitfield transforms renders as `ptr->field = value`
+        // (the constructor and SUBPIECE special-print arms are other surfaces).
+        if fd.obank().get(op).map(|o| o.does_special_printing()).unwrap_or(false) {
+            match fd.obank().get(op).map(|o| o.code()) {
+                Some(OpCode::CPUI_STORE) => {
+                    self.emit_bitfield_store(fd, arch, op);
+                    return;
+                }
+                Some(OpCode::CPUI_INSERT) => {
+                    self.emit_bitfield_expression(fd, arch, op);
+                    return;
+                }
+                // CPUI_SUBPIECE: don't modify printing here (printc.cc:2561).
+                // The constructor arm and any other special-print op are other
+                // surfaces; fall through to the normal render.
+                _ => {}
+            }
+        }
         let outvn = fd.obank().get(op).and_then(|o| o.get_out());
         if let Some(out) = outvn {
             // pushOp(&assignment,op); pushSymbolDetail(outvn,op,false);
@@ -2569,6 +2588,11 @@ impl PrintC {
             // LOAD (printc.cc:507 opLoad) / STORE (printc.cc:520 opStore).
             OpCode::CPUI_LOAD => self.op_load_ir(fd, arch, op),
             OpCode::CPUI_STORE => self.op_store_ir(fd, arch, op),
+            // ZPULL (printc.cc:1294 opZpullOp) / SPULL (printc.cc:1320 opSpullOp):
+            // a bitfield read.  Both render `ptr->field` / `symbol.field` via the
+            // shared `op_pull_ir`, falling back to `ZPULL(...)`/`SPULL(...)` when
+            // the structure/bitfield can't be recovered.
+            OpCode::CPUI_ZPULL | OpCode::CPUI_SPULL => self.op_pull_ir(fd, arch, op),
             // PTRADD (printc.cc:900 opPtradd) / PTRSUB (printc.cc:953 opPtrsub).
             OpCode::CPUI_PTRADD => self.op_ptradd_ir(fd, arch, op),
             OpCode::CPUI_PTRSUB => self.op_ptrsub_ir(fd, arch, op),
@@ -3122,6 +3146,170 @@ impl PrintC {
         self.push_vn_ir_m(fd, arch, ptr, op, m);
         if let Some(val) = val {
             self.push_vn_ir_m(fd, arch, val, op, mods);
+        }
+    }
+
+    /// C++ `PrintC::checkBitFieldMember` (printc.cc:378-389): decide whether a
+    /// bitfield access through a LOAD/STORE should use member syntax (`.`) or
+    /// pointer syntax (`->`).
+    ///
+    /// If the bitfield is not at byte offset 0 a PTRSUB must be present accessing
+    /// the bitfield storage range; that PTRSUB is skipped and member syntax is
+    /// used only when *another* PTRSUB/PTRADD remains underneath
+    /// ([`check_array_deref`](Self::check_array_deref)).
+    fn check_bit_field_member(&self, fd: &Funcdata, vn: VarnodeId, field: &crate::dtype::TypeBitField) -> bool {
+        let mut vn = vn;
+        if field.byte_offset != 0 {
+            // Bitfield not at offset 0, a PTRSUB should be present.
+            let v = match fd.vbank().get(vn) {
+                Some(v) => v,
+                None => return false,
+            };
+            if !v.is_written() {
+                return false;
+            }
+            let op = match v.get_def() {
+                Some(o) => o,
+                None => return false,
+            };
+            if fd.obank().get(op).map(|o| o.code()) != Some(OpCode::CPUI_PTRSUB) {
+                return false;
+            }
+            vn = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
+                Some(v) => v, // Skip this PTRSUB
+                None => return false,
+            };
+        }
+        self.check_array_deref(fd, vn)
+    }
+
+    /// Push the bitfield-name Atom (C++ `Atom(field->name,bitfieldtoken,no_color,
+    /// theStruct,field->ident,op)`, e.g. printc.cc:1311).  The struct marker is
+    /// markup-only; the field name + `ident` (carried in the Atom `offset`) drive
+    /// the no-markup render.
+    fn push_bitfield_atom(&mut self, field: &crate::dtype::TypeBitField, op: OpId) {
+        self.push_atom(&Atom::field(
+            field.name.clone(),
+            TagType::BitFieldToken,
+            crate::printlanguage::SyntaxHighlight::no_color,
+            0,
+            field.ident,
+            op_key(op),
+        ));
+    }
+
+    /// C++ `PrintC::opZpullOp` (printc.cc:1294) / `PrintC::opSpullOp`
+    /// (printc.cc:1320): render a bitfield read.  Both bodies are identical (the
+    /// signed/unsigned distinction lives in the recovery's type, not the render),
+    /// so they share this method.
+    ///
+    /// When the read goes through a LOAD, the structure pointer is pushed with
+    /// member (`.`) or pointer (`->`) syntax and the bitfield name follows.  When
+    /// the read is of a bound (partial) symbol, the symbol detail is pushed with
+    /// member syntax.  On an unrecognized form, fall back to the functional
+    /// `ZPULL(...)`/`SPULL(...)` render.
+    fn op_pull_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let expr = crate::bitfield::expression::PullExpression::new(fd, op);
+        let bitfield = match (expr.is_valid(), &expr.expr.bitfield) {
+            (true, Some(b)) => b.clone(),
+            _ => {
+                // If no other way to print it, print as functional operator.
+                self.op_func_ir(fd, arch, op);
+                return;
+            }
+        };
+        if let Some(load_op) = expr.load_op {
+            let load_ptr = fd.obank().get(load_op).and_then(|o| o.get_in(1));
+            let mut m = self.context.mods();
+            let use_member = load_ptr
+                .map(|p| self.check_bit_field_member(fd, p, &bitfield))
+                .unwrap_or(false);
+            if use_member {
+                m |= modifiers::PRINT_LOAD_VALUE;
+                self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+            } else {
+                self.push_op(&tokens::POINTER_MEMBER, Some(op_key(op)));
+            }
+            if let Some(sp) = expr.struct_ptr {
+                self.push_vn_ir_m(fd, arch, sp, load_op, m);
+            }
+            self.push_bitfield_atom(&bitfield, op);
+        } else {
+            // Bound-symbol read: `symbol.field`.
+            self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+            if let Some(in0) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+                self.push_vn_ir(fd, arch, in0, op);
+            }
+            self.push_bitfield_atom(&bitfield, op);
+        }
+    }
+
+    /// C++ `PrintC::emitBitFieldStore` (printc.cc:2595-2620): render a bitfield
+    /// write through a STORE as `ptr->field = value` (or `ptr.field = value`).
+    ///
+    /// On an unrecognized form, fall back to the normal STORE render.
+    fn emit_bitfield_store(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let expr = crate::bitfield::expression::InsertStoreExpression::new(fd, op);
+        let bitfield = match (expr.is_valid(), &expr.expr.bitfield, expr.insert_op, expr.struct_ptr) {
+            (true, Some(b), Some(_), Some(_)) => b.clone(),
+            _ => {
+                // op->getOpcode()->push(this,op,(PcodeOp *)0): the normal STORE.
+                self.op_store_ir(fd, arch, op);
+                return;
+            }
+        };
+        let insert_op = expr.insert_op.unwrap();
+        let struct_ptr = expr.struct_ptr.unwrap();
+        // We assume the STORE is a statement.
+        self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
+        let store_ptr = fd.obank().get(op).and_then(|o| o.get_in(1));
+        let mut m = self.context.mods();
+        let use_member = store_ptr
+            .map(|p| self.check_bit_field_member(fd, p, &bitfield))
+            .unwrap_or(false);
+        if use_member {
+            m |= modifiers::PRINT_STORE_VALUE;
+            self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(insert_op)));
+        } else {
+            self.push_op(&tokens::POINTER_MEMBER, Some(op_key(insert_op)));
+        }
+        // C++ pushes the LHS (structPtr.field) then the RHS (insert value); the
+        // direct RPN engine renders in push order, so push the pointer + bitfield
+        // first (LHS of `=`), then the value.
+        self.push_vn_ir_m(fd, arch, struct_ptr, op, m);
+        self.push_bitfield_atom(&bitfield, op);
+        // pushVn(expr.insertOp->getIn(1),op,mods): the value being written.
+        if let Some(val) = fd.obank().get(insert_op).and_then(|o| o.get_in(1)) {
+            self.push_vn_ir_m(fd, arch, val, op, self.context.mods());
+        }
+    }
+
+    /// C++ `PrintC::emitBitFieldExpression` (printc.cc:2622-2637): render a
+    /// bitfield write into an explicit (mapped) Varnode as `symbol.field = value`.
+    ///
+    /// On an unrecognized form, fall back to the functional `INSERT(...)` render.
+    fn emit_bitfield_expression(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let expr = crate::bitfield::expression::InsertExpression::new(fd, op);
+        let bitfield = match (expr.expr.is_valid(), &expr.expr.bitfield) {
+            (true, Some(b)) => b.clone(),
+            _ => {
+                // If no other way to print it, print as functional operator.
+                self.op_func_ir(fd, arch, op);
+                return;
+            }
+        };
+        self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
+        self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+        // pushPartialSymbol(symbol,offsetToBitStruct,theStruct->getSize(),out,..):
+        // the (partial) symbol carrying the structure.  In the merged tree the
+        // symbol name is bound on the output's HighVariable, so push the output
+        // Varnode's explicit name (the same surface push_vn_explicit_ir reads).
+        if let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()) {
+            self.push_vn_explicit_ir(fd, arch, out, op);
+        }
+        self.push_bitfield_atom(&bitfield, op);
+        if let Some(val) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
+            self.push_vn_ir_m(fd, arch, val, op, self.context.mods());
         }
     }
 

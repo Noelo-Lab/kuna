@@ -67,6 +67,8 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::{int4, int8, uint4, uint8};
 
+use crate::bitfield::BitRange;
+
 // =============================================================================
 // type_metatype (type.hh:80-100) — verbatim, discriminants load-bearing
 // =============================================================================
@@ -485,6 +487,14 @@ impl TypeField {
         TypeField { ident, offset, name: name.into(), field_type: ct }
     }
 
+    /// Compare field end-point to a given offset (C++ `TypeField::compareMaxByte`,
+    /// type.hh:322-324): `off < field.offset + field.type->getSize()`.  Used as
+    /// the `upper_bound` comparator `comp(value, element)` in `collectBitFields`
+    /// / `hasBitFieldsInRange` to skip past fields ending at or before `off`.
+    fn compare_max_byte(off: int4, field: &TypeField) -> bool {
+        off < field.offset + field.field_type.get_size()
+    }
+
     /// Compare meta-data of two fields for [`Datatype::compare`] on a struct
     /// (C++ `TypeField::compare`, type.cc:803-813): offset, then name, then
     /// first-level metatype.
@@ -618,6 +628,31 @@ impl TypeBitField {
         0
     }
 
+    /// Reconstruct the bitfield's [`BitRange`] from the flattened projection
+    /// (C++ `TypeBitField::bits`).  The `bits` member is the load-bearing range
+    /// the bitfield transforms read; the W6 type subsystem flattened it into the
+    /// five scalar fields above, so rebuild the value type on demand for the
+    /// range-arithmetic callers (`collect_bit_fields` / `has_bit_fields_in_range`).
+    pub fn bits(&self) -> BitRange {
+        BitRange::new(
+            self.byte_offset,
+            self.byte_size,
+            self.least_sig_bit,
+            self.num_bits,
+            self.is_big_endian,
+        )
+    }
+
+    /// Compare byte-container end-point to a given offset (C++
+    /// `TypeBitField::compareMaxByte`, type.hh:339-341):
+    /// `off < bitfield.bits.byteOffset + bitfield.bits.byteSize`.  This is the
+    /// `upper_bound` comparator `comp(value, element)` used in `collectBitFields`
+    /// / `hasBitFieldsInRange` — `true` for the first element whose container end
+    /// is strictly past `off`.
+    fn compare_max_byte(off: int4, bitfield: &TypeBitField) -> bool {
+        off < bitfield.byte_offset + bitfield.byte_size
+    }
+
     /// Compare structure of two bitfields for [`Datatype::compare_dependency`]
     /// (C++ `TypeBitField::compareDependency`, type.cc:908-918): `bits.compare`,
     /// then name, then field-type pointer identity.
@@ -632,6 +667,64 @@ impl TypeBitField {
         // C++ `if (type != op2.type) return (type < op2.type) ? -1 : 1;`
         // (compare the pointers directly).
         Datatype::compare_dependency_ptr(&self.field_type, &op2.field_type)
+    }
+}
+
+// =============================================================================
+// BitFieldTriple (type.hh:344-357) — collectBitFields output record
+// =============================================================================
+
+/// A bitfield description, along with its offset within a root container, in one
+/// record (C++ `BitFieldTriple`, type.hh:347-357).
+///
+/// In C++ the record carries a live `const TypeStruct *immedContainer` and a
+/// `const TypeBitField *bitfield` pointer.  The only datum any caller reads off
+/// the triple is `bitfield->bits` (the range, in `BitFieldTransform::
+/// establishFields`, `type.cc` line 1815) plus `offset`; the immediate-container
+/// pointer is never dereferenced after construction.  So the port carries an
+/// owned [`TypeBitField`] clone (cheap — `Rc<Datatype>` body) and the byte
+/// `offset`, which is exactly the projection the bitfield transforms consume.
+#[derive(Debug, Clone)]
+pub struct BitFieldTriple {
+    /// Description of the bitfield (C++ `bitfield`).
+    pub bitfield: TypeBitField,
+    /// Byte offset of the immediate container within parent (C++ `offset`).
+    pub offset: int4,
+}
+
+impl BitFieldTriple {
+    /// Construct from components (C++ `BitFieldTriple(const TypeStruct*,const
+    /// TypeBitField*,int4)`, type.hh:352-353).  The `immedContainer` argument is
+    /// dropped — see the type doc.
+    pub fn new(bits: TypeBitField, off: int4) -> BitFieldTriple {
+        BitFieldTriple { bitfield: bits, offset: off }
+    }
+
+    /// Comparator putting bitfields in byte order, least to most significant
+    /// (C++ `BitFieldTriple::compare`, type.cc:932-949).  Returns `true` if
+    /// `op1` sorts strictly before `op2`, the strict-weak ordering `std::sort`
+    /// expects.  Mixed endianness is keyed off `op1`'s bitfield exactly as in
+    /// C++.
+    pub fn compare(op1: &BitFieldTriple, op2: &BitFieldTriple) -> bool {
+        let is_big_endian = op1.bitfield.is_big_endian;
+        let byte_off1 = op1.offset + op1.bitfield.byte_offset;
+        let byte_off2 = op2.offset + op2.bitfield.byte_offset;
+        if byte_off1 != byte_off2 {
+            if is_big_endian {
+                // Return least significant container; bigger byte offset is less
+                // significant.
+                return byte_off1 > byte_off2;
+            }
+            // Smaller byte offset is less significant.
+            return byte_off1 < byte_off2;
+        }
+        let lsb1 = op1.bitfield.least_sig_bit;
+        let lsb2 = op2.bitfield.least_sig_bit;
+        if lsb1 != lsb2 {
+            return lsb1 < lsb2;
+        }
+        // fields start at the same bit
+        false
     }
 }
 
@@ -2309,6 +2402,171 @@ impl Datatype {
             return min;
         }
         -1
+    }
+
+    /// Faithful `std::upper_bound(first, last, value, comp)` over a slice with
+    /// the comparator `comp(value, element)` (C++ `<algorithm>` semantics).
+    /// Returns the index of the first element for which `comp(value, element)`
+    /// is `true`, or `slice.len()` if none — exactly what the
+    /// `collectBitFields`/`hasBitFieldsInRange` `upper_bound` calls consume.
+    /// The slice must be partitioned with respect to `comp` (the bitfield/field
+    /// vectors are sorted, so it is).
+    fn upper_bound_idx<T>(slice: &[T], value: int4, comp: impl Fn(int4, &T) -> bool) -> usize {
+        let mut first: usize = 0;
+        let mut count = slice.len();
+        while count > 0 {
+            let step = count / 2;
+            let it = first + step;
+            if !comp(value, &slice[it]) {
+                first = it + 1;
+                count -= step + 1;
+            } else {
+                count = step;
+            }
+        }
+        first
+    }
+
+    /// Collect bitfield records that overlap a given byte range (C++
+    /// `TypeStruct::collectBitFields`, type.cc:1804-1826).
+    ///
+    /// `base_offset` is the byte offset of `self` within the root structure;
+    /// `res` accumulates [`BitFieldTriple`]s; `offset`/`sz` is the byte range to
+    /// find overlaps in.  Iterates `self`'s own `bitfield` list (from the first
+    /// whose container end is past `offset`) collecting every record that
+    /// overlaps the range, then recurses into nested struct fields.  No-op when
+    /// `self` is not a `TYPE_STRUCT`.
+    pub fn collect_bit_fields(
+        &self,
+        base_offset: int4,
+        res: &mut Vec<BitFieldTriple>,
+        offset: int4,
+        sz: int4,
+    ) {
+        let (field, bitfield) = match self.as_struct_fields() {
+            Some(pair) => pair,
+            None => return,
+        };
+        // upper_bound(bitfield.begin(),bitfield.end(),offset,TypeBitField::compareMaxByte)
+        let start = Datatype::upper_bound_idx(bitfield, offset, TypeBitField::compare_max_byte);
+        if start != bitfield.len() {
+            // BitRange range(offset,sz,(*iter).bits.isBigEndian)
+            let range = BitRange::byte_range(offset, sz, bitfield[start].is_big_endian);
+            for cur_bit_field in &bitfield[start..] {
+                // curBitField.bits.overlapTest(range)
+                let code = cur_bit_field.bits().overlap_test(&range);
+                if code == 1 {
+                    break;
+                }
+                if code == -1 {
+                    continue;
+                }
+                res.push(BitFieldTriple::new(cur_bit_field.clone(), base_offset));
+            }
+        }
+        // upper_bound(field.begin(),field.end(),offset,TypeField::compareMaxByte)
+        let fstart = Datatype::upper_bound_idx(field, offset, TypeField::compare_max_byte);
+        for cur_field in &field[fstart..] {
+            if cur_field.offset >= offset + sz {
+                break;
+            }
+            if cur_field.field_type.get_metatype() != type_metatype::TYPE_STRUCT {
+                continue;
+            }
+            if !cur_field.field_type.has_bitfields() {
+                continue;
+            }
+            // Recurse into nested structure
+            cur_field.field_type.collect_bit_fields(
+                base_offset + cur_field.offset,
+                res,
+                offset - cur_field.offset,
+                sz,
+            );
+        }
+    }
+
+    /// Return `true` if any bitfield overlaps a given byte range (C++
+    /// `TypeStruct::hasBitFieldsInRange`, type.cc:1828-1852).  Same walk as
+    /// [`collect_bit_fields`](Self::collect_bit_fields) but short-circuits on the
+    /// first overlap.  No-op (returns `false`) when `self` is not a struct.
+    pub fn has_bit_fields_in_range(&self, offset: int4, sz: int4) -> bool {
+        let (field, bitfield) = match self.as_struct_fields() {
+            Some(pair) => pair,
+            None => return false,
+        };
+        let start = Datatype::upper_bound_idx(bitfield, offset, TypeBitField::compare_max_byte);
+        if start != bitfield.len() {
+            let range = BitRange::byte_range(offset, sz, bitfield[start].is_big_endian);
+            for cur_bit_field in &bitfield[start..] {
+                let code = cur_bit_field.bits().overlap_test(&range);
+                if code == 1 {
+                    break;
+                }
+                if code == -1 {
+                    continue;
+                }
+                return true;
+            }
+        }
+        let fstart = Datatype::upper_bound_idx(field, offset, TypeField::compare_max_byte);
+        for cur_field in &field[fstart..] {
+            if cur_field.offset >= offset + sz {
+                break;
+            }
+            if cur_field.field_type.get_metatype() != type_metatype::TYPE_STRUCT {
+                continue;
+            }
+            if !cur_field.field_type.has_bitfields() {
+                continue;
+            }
+            // Recurse into nested structure
+            if cur_field
+                .field_type
+                .has_bit_fields_in_range(offset - cur_field.offset, sz)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Return the bitfield matching the given bit range (C++
+    /// `TypeStruct::findMatchingBitField`, type.cc:1777-1797).
+    ///
+    /// Binary-searches the (offset-sorted) `bitfield` vector using
+    /// [`BitRange::overlap_test`] as the comparator: `0` is an exact match (the
+    /// bitfield is returned), `-1`/`1` narrow the search window, and any partial
+    /// overlap (`2`) breaks the search with no match.  Returns an owned clone of
+    /// the matched record (the expression-recovery family consumes it by value,
+    /// the W6 type subsystem having flattened the `const TypeBitField *` pointer
+    /// into the carried scalar fields).  `None` when `self` is not a struct or no
+    /// exact match exists.
+    pub fn find_matching_bit_field(&self, range: &BitRange) -> Option<TypeBitField> {
+        let (_field, bitfield) = self.as_struct_fields()?;
+        // C++ `int4 min = 0; int4 max = bitfield.size()-1;` — note `max` is the
+        // signed last index, so an empty vector gives `max = -1` and the loop is
+        // skipped immediately.
+        let mut min: int4 = 0;
+        let mut max: int4 = bitfield.len() as int4 - 1;
+        while min <= max {
+            let mid = (min + max) / 2;
+            let cur = &bitfield[mid as usize];
+            // C++ `range.overlapTest(curfield.bits)` — the receiver is the query
+            // `range`, the argument is the candidate's `bits`.
+            let code = range.overlap_test(&cur.bits());
+            if code == 0 {
+                return Some(cur.clone());
+            }
+            if code == -1 {
+                max = mid - 1;
+            } else if code == 1 {
+                min = mid + 1;
+            } else {
+                break; // Partial overlap
+            }
+        }
+        None
     }
 
     /// Calculate the aligned size given size and alignment (C++
@@ -6391,5 +6649,109 @@ mod tests {
         let sized = Datatype::hash_size(id, 7);
         assert_ne!(sized, id);
         assert_eq!(Datatype::hash_size(sized, 7), id);
+    }
+
+    // =========================================================================
+    // collectBitFields / hasBitFieldsInRange / BitFieldTriple (type.cc:1804-1852,
+    // 932-949) — the bitfield query layer the bitfield transforms read.
+    // =========================================================================
+
+    /// Build a one-byte container's three bitfields, modeling `myfoo`'s first
+    /// byte (`bitfields.xml`): `uint4 field3:3` (lsb0,3b), `int4 sfield4:4`
+    /// (lsb3,4b), `bool fieldb:1` (lsb7,1b).  All little-endian, byteOffset 0,
+    /// byteSize 1.
+    fn myfoo_byte0_bitfields() -> Vec<TypeBitField> {
+        let mk = |id, lsb, nb, name: &str, meta| {
+            let mut bf =
+                TypeBitField::new(id, nb, false, name, Rc::new(Datatype::new(4, meta)));
+            // TypeBitField::new puts the field at lsb 0; place it at the real
+            // container position for the layout the struct holds.
+            bf.least_sig_bit = lsb;
+            bf.byte_offset = 0;
+            bf.byte_size = 1;
+            bf
+        };
+        vec![
+            mk(0, 0, 3, "field3", type_metatype::TYPE_UINT),
+            mk(1, 3, 4, "sfield4", type_metatype::TYPE_INT),
+            mk(2, 7, 1, "fieldb", type_metatype::TYPE_BOOL),
+        ]
+    }
+
+    fn struct_with_bitfields(field: Vec<TypeField>, bitfield: Vec<TypeBitField>, size: int4) -> Datatype {
+        let mut s = Datatype::new_with_align(size, 4, type_metatype::TYPE_STRUCT);
+        if !bitfield.is_empty() {
+            s.flags |= flags::has_bitfields;
+        }
+        s.kind = DatatypeKind::Struct { field, bitfield };
+        s
+    }
+
+    #[test]
+    fn collect_bit_fields_single_byte_container() {
+        let s = struct_with_bitfields(vec![], myfoo_byte0_bitfields(), 1);
+        let mut res = Vec::new();
+        s.collect_bit_fields(0, &mut res, 0, 1);
+        // All three bitfields overlap byte [0,1).
+        assert_eq!(res.len(), 3);
+        let names: Vec<&str> = res.iter().map(|t| t.bitfield.name.as_str()).collect();
+        assert_eq!(names, vec!["field3", "sfield4", "fieldb"]);
+        // offset (container offset within parent) is 0 for all.
+        assert!(res.iter().all(|t| t.offset == 0));
+    }
+
+    #[test]
+    fn collect_bit_fields_range_outside_container_is_empty() {
+        let s = struct_with_bitfields(vec![], myfoo_byte0_bitfields(), 4);
+        // Query a byte range past the bitfield container (offset 2, size 1):
+        // compareMaxByte upper_bound lands at end() -> no bitfields.
+        let mut res = Vec::new();
+        s.collect_bit_fields(0, &mut res, 2, 1);
+        assert!(res.is_empty());
+    }
+
+    #[test]
+    fn has_bit_fields_in_range_matches_collect() {
+        let s = struct_with_bitfields(vec![], myfoo_byte0_bitfields(), 4);
+        assert!(s.has_bit_fields_in_range(0, 1));
+        assert!(!s.has_bit_fields_in_range(2, 2));
+        // A non-struct never has bitfields in range.
+        let i = Datatype::new(4, type_metatype::TYPE_INT);
+        assert!(!i.has_bit_fields_in_range(0, 4));
+    }
+
+    #[test]
+    fn collect_bit_fields_nested_struct_recurses() {
+        // Outer struct: field "inner" at offset 4 is a struct holding byte0
+        // bitfields; the outer also needs has_bitfields on the inner field type.
+        let inner = Rc::new(struct_with_bitfields(vec![], myfoo_byte0_bitfields(), 1));
+        let inner_field = TypeField::new(0, 4, "inner", inner);
+        let outer = struct_with_bitfields(vec![inner_field], vec![], 8);
+        // Query the whole outer range — the recursion shifts offset by the field
+        // offset (4) and reports the container offset as base_offset + 4.
+        let mut res = Vec::new();
+        outer.collect_bit_fields(0, &mut res, 0, 8);
+        assert_eq!(res.len(), 3);
+        assert!(res.iter().all(|t| t.offset == 4));
+    }
+
+    #[test]
+    fn bitfield_triple_compare_orders_least_to_most_significant() {
+        // Little-endian: smaller byte offset is less significant; within a byte,
+        // smaller leastSigBit is less significant.
+        let bf = myfoo_byte0_bitfields();
+        let t_field3 = BitFieldTriple::new(bf[0].clone(), 0); // lsb0
+        let t_sfield4 = BitFieldTriple::new(bf[1].clone(), 0); // lsb3
+        // field3 (lsb0) sorts before sfield4 (lsb3).
+        assert!(BitFieldTriple::compare(&t_field3, &t_sfield4));
+        assert!(!BitFieldTriple::compare(&t_sfield4, &t_field3));
+        // Equal start bit -> neither strictly less.
+        assert!(!BitFieldTriple::compare(&t_field3, &t_field3));
+        // Different container byte offsets: smaller offset is less significant (LE).
+        let mut hi = bf[0].clone();
+        hi.byte_offset = 2;
+        let t_hi = BitFieldTriple::new(hi, 0);
+        assert!(BitFieldTriple::compare(&t_field3, &t_hi));
+        assert!(!BitFieldTriple::compare(&t_hi, &t_field3));
     }
 }

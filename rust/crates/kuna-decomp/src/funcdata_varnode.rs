@@ -775,6 +775,36 @@ impl Funcdata {
         self.vbank_mut().destroy(vn)
     }
 
+    /// Destroy the given Varnode and recursively any op (and its inputs) that
+    /// produced it, provided nothing still reads it (C++
+    /// `Funcdata::destroyVarnodeRecursive`, `funcdata_varnode.cc:545`).
+    ///
+    /// Faithful transcription: bail if the Varnode is auto-live or still has
+    /// descendants; if it is not written, just free it; otherwise recurse into
+    /// its defining op via `op_destroy_recursive`.
+    pub fn destroy_varnode_recursive(&mut self, vn: VarnodeId) -> KunaResult<()> {
+        let (auto_live, no_descend, written, def) = match self.vbank().get(vn) {
+            Some(v) => (
+                v.is_auto_live(),
+                v.has_no_descend(),
+                v.is_written(),
+                v.get_def(),
+            ),
+            None => return Ok(()),
+        };
+        if auto_live || !no_descend {
+            return Ok(());
+        }
+        if !written {
+            return self.vbank_mut().destroy(vn);
+        }
+        if let Some(defop) = def {
+            let mut scratch: Vec<OpId> = Vec::new();
+            self.op_destroy_recursive(defop, &mut scratch);
+        }
+        Ok(())
+    }
+
     /// Free / destroy Varnodes that no longer have any descendant reads (C++
     /// `Funcdata::clearDeadVarnodes`, `funcdata_varnode.cc:850`).
     ///
