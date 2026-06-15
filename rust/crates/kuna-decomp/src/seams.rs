@@ -142,6 +142,15 @@ pub struct Architecture {
     /// Minimum Varnode size to check as a laned register (C++
     /// `Architecture::getMinimumLanedRegisterSize`).  // SEAM(W4)
     pub min_laned_register_size: int4,
+    /// Vector registers that have preferred lane sizes (C++
+    /// `Architecture::lanerecords`), built from the pspec `<register_data>`
+    /// `vector_lane_sizes` attributes by `Architecture::decodeRegisterData`.
+    /// Each [`LanedRegister`](crate::transform::LanedRegister) is keyed by its
+    /// whole size (the records are sorted ascending by whole size, one per size),
+    /// so [`Architecture::get_laned_register`] can binary-search on size exactly
+    /// as the C++ `Architecture::getLanedRegister` does.  Empty for hand-built
+    /// fixtures and non-vector architectures.
+    pub lanerecords: Vec<crate::transform::LanedRegister>,
     /// The p-code OpBehavior emulation table (C++ `glb->inst[opc]->getBehavior()`),
     /// indexed by op-code.
     ///
@@ -227,6 +236,7 @@ impl Architecture {
         Architecture {
             manage,
             min_laned_register_size: 4,
+            lanerecords: Vec::new(),
             opbehaviors: Vec::new(),
             defaultfp: None,
             evalfp_current: None,
@@ -339,6 +349,36 @@ impl Architecture {
     /// `Architecture::getMinimumLanedRegisterSize`).  // SEAM(W4)
     pub fn get_minimum_laned_register_size(&self) -> int4 {
         self.min_laned_register_size
+    }
+
+    /// Look up the laned-register record for a storage location (C++
+    /// `Architecture::getLanedRegister`, `architecture.cc:291`).
+    ///
+    /// As in the C++, the record is associated only with the *size* of the
+    /// storage, not its address; `loc` is accepted to match the signature but is
+    /// unused.  The records are sorted ascending by whole size, so this is a
+    /// faithful transcription of the C++ binary search; returns `None` for the
+    /// C++ `(const LanedRegister *)0` when no record matches the size.
+    pub fn get_laned_register(
+        &self,
+        _loc: &Address,
+        size: int4,
+    ) -> Option<&crate::transform::LanedRegister> {
+        // int4 min = 0; int4 max = lanerecords.size() - 1;
+        let mut min: int4 = 0;
+        let mut max: int4 = self.lanerecords.len() as int4 - 1;
+        while min <= max {
+            let mid = (min + max) / 2;
+            let sz = self.lanerecords[mid as usize].get_whole_size();
+            if sz < size {
+                min = mid + 1;
+            } else if size < sz {
+                max = mid - 1;
+            } else {
+                return Some(&self.lanerecords[mid as usize]);
+            }
+        }
+        None
     }
 
     /// Create a constant Varnode storage address in the constant space

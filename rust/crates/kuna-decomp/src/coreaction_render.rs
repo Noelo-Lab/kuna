@@ -111,6 +111,8 @@ use kuna_base::space::AddrSpace;
 
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::funcdata::Funcdata;
+use crate::subflow::LaneDivide;
+use crate::transform::{LaneDescription, LanedRegister};
 
 // =============================================================================
 // ActionStackPtrFlow (coreaction.hh:89, coreaction.cc:496)
@@ -231,33 +233,152 @@ impl Action for ActionLaneDivide {
         }
         Some(Box::new(ActionLaneDivide { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:600 — ActionLaneDivide::apply
-        //   data.setLanedRegGenerated();
-        //   for (mode = 0; mode < 3; ++mode):
-        //       allStorageProcessed = true;
-        //       for ((vdata,lanedReg) in data.beginLaneAccess()..endLaneAccess()):
-        //           viter = beginLoc(sz,addr); venditer = endLoc(sz,addr);
-        //           allVarnodesProcessed = true;
-        //           while (viter != venditer):
-        //               vn = *viter;
-        //               if (vn->hasNoDescend()) { ++viter; continue; }
-        //               if (processVarnode(data, vn, *lanedReg, mode)):
-        //                   viter = beginLoc(sz,addr); venditer = endLoc(sz,addr); // recalc bounds
-        //                   allVarnodesProcessed = true;
-        //               else: { ++viter; allVarnodesProcessed = false; }
-        //           if (!allVarnodesProcessed) allStorageProcessed = false;
-        //       if (allStorageProcessed) break;
-        //   data.clearLanedAccessMap();
-        //   return 0;
-        //
-        // SEAM(W8-funcdata): the lane-access map (`beginLaneAccess`/
-        // `clearLanedAccessMap`), `LanedRegister`, and `LaneDescription`-driven
-        // `processVarnode` (coreaction.cc:556-598, which splits LOAD/STORE/PIECE/
-        // SUBPIECE/COPY/MULTIEQUAL/INDIRECT lanes via `LaneDivide`) are not in the
-        // merged tree.  Body transcribed; no change applied (count stays 0).
-        0
+        let mut count = 0;
+        // data.setLanedRegGenerated();
+        data.set_laned_reg_generated();
+        // The C++ iterates the lanedMap directly; the map is not mutated during
+        // the apply (only the Varnode bank is), so we snapshot the access list
+        // once up front and replay it (each mode re-reads the same storage set).
+        let lane_access = data.lane_access_snapshot();
+        // for (int4 mode = 0; mode < 3; ++mode)
+        for mode in 0..3 {
+            let mut all_storage_processed = true;
+            // for (iter = beginLaneAccess(); iter != endLaneAccess(); ++iter)
+            for (addr, sz, laned_reg) in lane_access.iter() {
+                let mut all_varnodes_processed = true;
+                // viter = beginLoc(sz,addr); venditer = endLoc(sz,addr);
+                let mut viter: Vec<VarnodeId> =
+                    data.vbank().iter_loc_size_addr(*sz, addr).collect();
+                let mut idx = 0;
+                while idx < viter.len() {
+                    let vn = viter[idx];
+                    // if (vn->hasNoDescend()) { ++viter; continue; }
+                    if data.vbank().get(vn).expect("ActionLaneDivide: stale vn").has_no_descend() {
+                        idx += 1;
+                        continue;
+                    }
+                    if lane_divide_process_varnode(data, vn, laned_reg, mode) {
+                        count += 1;
+                        // viter = beginLoc(sz,addr); venditer = endLoc(sz,addr); // recalc bounds
+                        viter = data.vbank().iter_loc_size_addr(*sz, addr).collect();
+                        idx = 0;
+                        all_varnodes_processed = true;
+                    } else {
+                        idx += 1;
+                        all_varnodes_processed = false;
+                    }
+                }
+                if !all_varnodes_processed {
+                    all_storage_processed = false;
+                }
+            }
+            if all_storage_processed {
+                break;
+            }
+        }
+        // data.clearLanedAccessMap();
+        data.clear_laned_access_map();
+        count
     }
+}
+
+/// Determine if a putative lane size is plausible for a Varnode by examining the
+/// local ops that read or write it, registering the candidate sizes (C++
+/// `ActionLaneDivide::collectLaneSizes`, coreaction.cc:524).
+fn lane_divide_collect_lane_sizes(
+    data: &Funcdata,
+    vn: VarnodeId,
+    allowed_lanes: &LanedRegister,
+    check_lanes: &mut LanedRegister,
+) {
+    // The C++ walks `beginDescend()` (step 0), then the defining op (step 1).
+    let descend: Vec<OpId> = data.descend_snapshot(vn);
+    // step 0: descendants
+    for &op in descend.iter() {
+        // if (op->code() != CPUI_SUBPIECE) continue;  // big register split into pieces
+        if data.obank().get(op).expect("collect_lane_sizes: stale op").code()
+            != OpCode::CPUI_SUBPIECE
+        {
+            continue;
+        }
+        let out = data.obank().get(op).expect("collect_lane_sizes: stale op").get_out().expect("out");
+        let cur_size = data.vbank().get(out).expect("collect_lane_sizes: stale out").get_size();
+        if allowed_lanes.allowed_lane(cur_size) {
+            check_lanes.add_lane_size(cur_size); // Register this possible size
+        }
+    }
+    // step 1: the defining op
+    let v = data.vbank().get(vn).expect("collect_lane_sizes: stale vn");
+    if !v.is_written() {
+        return; // if (!vn->isWritten()) continue;  (=> step = 2 = done)
+    }
+    let op = v.get_def().expect("collect_lane_sizes: written vn has def");
+    // if (op->code() != CPUI_PIECE) continue;  // big register formed from smaller pieces
+    if data.obank().get(op).expect("collect_lane_sizes: stale def op").code() != OpCode::CPUI_PIECE {
+        return;
+    }
+    let in0 = data.obank().get(op).expect("collect_lane_sizes: stale def op").get_in(0).expect("in0");
+    let in1 = data.obank().get(op).expect("collect_lane_sizes: stale def op").get_in(1).expect("in1");
+    let mut cur_size = data.vbank().get(in0).expect("collect_lane_sizes: stale in0").get_size();
+    let tmp_size = data.vbank().get(in1).expect("collect_lane_sizes: stale in1").get_size();
+    if tmp_size < cur_size {
+        cur_size = tmp_size;
+    }
+    if allowed_lanes.allowed_lane(cur_size) {
+        check_lanes.add_lane_size(cur_size); // Register this possible size
+    }
+}
+
+/// Search for a likely lane size and try to divide a single Varnode into those
+/// lanes (C++ `ActionLaneDivide::processVarnode`, coreaction.cc:573).
+///
+/// `mode` selects the lane-size search strategy (0: putative sizes from local
+/// ops; 1: same, allowing SUBPIECE downcasts; 2: default pointer-derived size).
+/// Returns `true` if the Varnode (and its data-flow) was successfully split.
+fn lane_divide_process_varnode(
+    data: &mut Funcdata,
+    vn: VarnodeId,
+    laned_register: &LanedRegister,
+    mode: int4,
+) -> bool {
+    let mut check_lanes = LanedRegister::new(); // Lanes we are going to try, no lanes initially
+    let allow_downcast = mode > 0;
+    if mode < 2 {
+        lane_divide_collect_lane_sizes(data, vn, laned_register, &mut check_lanes);
+    } else {
+        // int4 defaultSize = data.getArch()->types->getSizeOfPointer();
+        let mut default_size = data
+            .get_arch()
+            .types()
+            .expect("ActionLaneDivide: type factory available for default lane size")
+            .get_size_of_pointer();
+        if default_size != 4 {
+            default_size = 8;
+        }
+        check_lanes.add_lane_size(default_size);
+    }
+    let whole_size = laned_register.get_whole_size();
+    // for (iter = checkLanes.begin(); iter != checkLanes.end(); ++iter)
+    let sizes: Vec<int4> = check_lanes.iter_sizes().collect();
+    for cur_size in sizes {
+        // LaneDescription description(lanedRegister.getWholeSize(), curSize);
+        let description = LaneDescription::uniform(whole_size, cur_size);
+        let mut lane_divide = LaneDivide::new(data, vn, description, allow_downcast);
+        if lane_divide.do_trace(data) {
+            // The C++ unconditionally applies once the trace succeeds; the merged
+            // TransformManager::apply reaches `glb->inst[opc]` (the W6 seam) for
+            // the COPY/PIECE/SUBPIECE/MULTIEQUAL lane ops.  A seam error degrades
+            // to "no split" (return false) exactly as a failed trace would, so a
+            // partially-built transform is never half-applied.
+            if lane_divide.apply(data).is_err() {
+                return false;
+            }
+            return true; // Indicate a change was made
+        }
+    }
+    false
 }
 
 // =============================================================================

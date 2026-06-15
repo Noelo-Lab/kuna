@@ -2458,6 +2458,32 @@ fn lane_above(rvn: TVarRef) -> TVarRef {
     }
 }
 
+/// Advance a lane handle by `i` lanes (the C++ `rvn + i` pointer arithmetic over
+/// a split `TransformVar` array, used pervasively by `LaneDivide` for the N-lane
+/// case where `SplitFlow` only ever needs the 2-lane `rvn`/`rvn+1`).
+fn lane_at(rvn: TVarRef, i: int4) -> TVarRef {
+    match rvn {
+        TVarRef::Piece { key, idx } => TVarRef::Piece { key, idx: idx + i as usize },
+        // The C++ only ever does `rvn + i` on a piece-array element (a split
+        // lane); a `New(_)` here would be a porting bug.
+        TVarRef::New(_) => panic!("lane_at on a non-piece TransformVar"),
+    }
+}
+
+/// Resolve the address space a constant space-id Varnode encodes (C++
+/// `Varnode::getSpaceFromConst`).  The constant's offset is the space index into
+/// the function's space manager; used by `LaneDivide::buildStore`/`buildLoad` to
+/// recover the STORE/LOAD target space.
+fn space_from_const(data: &Funcdata, vn: VarnodeId) -> Rc<kuna_base::space::AddrSpace> {
+    let idx = data.vbank().get(vn).expect("space_from_const: stale vn").get_offset() as int4;
+    Rc::clone(
+        data.get_arch()
+            .manage()
+            .get_space(idx)
+            .expect("space_from_const: getSpaceFromConst out of range"),
+    )
+}
+
 /// Class for splitting larger registers holding smaller logical values
 /// (C++ `SplitFlow : public TransformManager`).
 pub struct SplitFlow {
@@ -4013,6 +4039,780 @@ impl SubfloatFlow {
             return Ok(false); // Must see at least 1 terminator
         }
         Ok(true)
+    }
+
+    /// Apply the constructed transform (C++ base `TransformManager::apply`).
+    /// SEAM(W6): the merged apply reaches `glb->inst[opc]`.
+    pub fn apply(&mut self, data: &mut Funcdata) -> KunaResult<()> {
+        self.tm.apply(data)
+    }
+}
+
+// =============================================================================
+// LaneDivide (subflow.hh:428, subflow.cc:3533-4143)
+// =============================================================================
+
+/// A `LaneDivide` work-list entry (C++ `LaneDivide::WorkNode`, subflow.hh:430):
+/// the lane placeholders of one Varnode together with its lane-count / skip.
+struct LaneWorkNode {
+    /// Lane placeholders for the underlying Varnode (C++ `lanes`).
+    lanes: TVarRef,
+    /// Number of lanes in the particular Varnode (C++ `numLanes`).
+    num_lanes: int4,
+    /// Number of lanes to skip in the global description (C++ `skipLanes`).
+    skip_lanes: int4,
+}
+
+/// Split a large vector register into a set of explicit logical lanes (C++
+/// `LaneDivide : public TransformManager`, subflow.hh:428).
+///
+/// Starting from a root Varnode and a [`LaneDescription`], the engine pushes the
+/// lane scheme as far through the data-flow as possible ([`do_trace`]); the base
+/// [`TransformManager::apply`] then materializes each lane as an explicit
+/// Varnode.  This is what removes the `SUB(XMM,0)`/`CONCAT(XMM_Qb,..)` lane
+/// noise from x86 XMM/ZMM vector accesses so the float values flow cleanly.
+///
+/// The C++ `TransformVar *` pointer arithmetic over a split lane array is the
+/// [`TVarRef::Piece`] handle plus [`lane_at`] / [`lane_above`]; the per-lane
+/// subset placeholders come from [`TransformManager::get_split_subset`] /
+/// [`TransformManager::new_split_subset`].
+///
+/// [`do_trace`]: LaneDivide::do_trace
+pub struct LaneDivide {
+    /// The transform-manager state (C++ base class).
+    tm: TransformManager,
+    /// Global description of lanes that need to be split (C++ `description`).
+    description: LaneDescription,
+    /// List of Varnodes still left to trace (C++ `workList`).
+    work_list: Vec<LaneWorkNode>,
+    /// `true` if we allow lanes to be cast (via SUBPIECE) to a smaller integer
+    /// size (C++ `allowSubpieceTerminator`).
+    allow_subpiece_terminator: bool,
+}
+
+impl LaneDivide {
+    /// Constructor (C++ `LaneDivide::LaneDivide`, subflow.cc:4117).
+    ///
+    /// `f is the function being transformed`, `root` is the root Varnode to start
+    /// tracing lanes from, `desc` describes the root's lanes, and `allowDowncast`
+    /// is `true` if SUBPIECE may be treated as terminating.
+    pub fn new(
+        data: &mut Funcdata,
+        root: VarnodeId,
+        desc: LaneDescription,
+        allow_downcast: bool,
+    ) -> LaneDivide {
+        let num = desc.get_num_lanes();
+        let mut ld = LaneDivide {
+            tm: TransformManager::new(),
+            description: desc,
+            work_list: Vec::new(),
+            allow_subpiece_terminator: allow_downcast,
+        };
+        // setReplacement(root, desc.getNumLanes(), 0);
+        ld.set_replacement(data, root, num, 0);
+        ld
+    }
+
+    /// Find or build the placeholder objects for a Varnode that needs to be split
+    /// into lanes (C++ `LaneDivide::setReplacement`, subflow.cc:3533).
+    ///
+    /// The Varnode is split based on the given subset of the lane description.
+    /// Constants can be split.  Returns `None` for the C++ `(TransformVar *)0`.
+    fn set_replacement(
+        &mut self,
+        data: &mut Funcdata,
+        vn: VarnodeId,
+        num_lanes: int4,
+        skip_lanes: int4,
+    ) -> Option<TVarRef> {
+        let v = data.vbank().get(vn).expect("set_replacement: stale vn");
+        if v.is_mark() {
+            // Already seen before
+            return Some(self.tm.get_split_subset(data, vn, &self.description, num_lanes, skip_lanes));
+        }
+
+        if v.is_constant() {
+            return Some(self.tm.new_split_subset(data, vn, &self.description, num_lanes, skip_lanes));
+        }
+
+        // Allow free varnodes to be split (the C++ keeps the isFree() abort
+        // commented out, so we likewise do not abort here).
+
+        if v.is_type_lock() {
+            let meta = v.get_type().get_metatype();
+            if meta > type_metatype::TYPE_ARRAY {
+                return None; // Don't split a primitive type
+            }
+            if meta == type_metatype::TYPE_STRUCT || meta == type_metatype::TYPE_UNION {
+                return None;
+            }
+        }
+
+        let is_free = v.is_free();
+        data.vbank_mut().get_mut(vn).expect("set_replacement: stale vn").set_mark();
+        let res = self.tm.new_split_subset(data, vn, &self.description, num_lanes, skip_lanes);
+        if !is_free {
+            self.work_list.push(LaneWorkNode { lanes: res, num_lanes, skip_lanes });
+        }
+        Some(res)
+    }
+
+    /// Build unary op placeholders with the same opcode across a set of lanes
+    /// (C++ `LaneDivide::buildUnaryOp`, subflow.cc:3574).
+    fn build_unary_op(
+        &mut self,
+        opc: OpCode,
+        op: OpId,
+        in_vars: TVarRef,
+        out_vars: TVarRef,
+        num_lanes: int4,
+    ) {
+        for i in 0..num_lanes {
+            let rop = self.tm.new_op_replace(1, opc, op);
+            self.tm.op_set_output(rop, lane_at(out_vars, i));
+            self.tm.op_set_input(rop, lane_at(in_vars, i), 0);
+        }
+    }
+
+    /// Build binary op placeholders with the same opcode across a set of lanes
+    /// (C++ `LaneDivide::buildBinaryOp`, subflow.cc:3593).
+    fn build_binary_op(
+        &mut self,
+        opc: OpCode,
+        op: OpId,
+        in0_vars: TVarRef,
+        in1_vars: TVarRef,
+        out_vars: TVarRef,
+        num_lanes: int4,
+    ) {
+        for i in 0..num_lanes {
+            let rop = self.tm.new_op_replace(2, opc, op);
+            self.tm.op_set_output(rop, lane_at(out_vars, i));
+            self.tm.op_set_input(rop, lane_at(in0_vars, i), 0);
+            self.tm.op_set_input(rop, lane_at(in1_vars, i), 1);
+        }
+    }
+
+    /// Convert a CPUI_PIECE into copies between placeholders, given the output
+    /// lanes (C++ `LaneDivide::buildPiece`, subflow.cc:3614).
+    fn build_piece(
+        &mut self,
+        data: &mut Funcdata,
+        op: OpId,
+        out_vars: TVarRef,
+        num_lanes: int4,
+        skip_lanes: int4,
+    ) -> bool {
+        let high_vn = data.obank().get(op).expect("build_piece: stale op").get_in(0).expect("in0");
+        let low_vn = data.obank().get(op).expect("build_piece: stale op").get_in(1).expect("in1");
+        let low_size = data.vbank().get(low_vn).expect("build_piece: stale lowVn").get_size();
+        let high_size = data.vbank().get(high_vn).expect("build_piece: stale highVn").get_size();
+
+        let (high_lanes, high_skip) =
+            match self.description.restriction(num_lanes, skip_lanes, low_size, high_size) {
+                Some(v) => v,
+                None => return false,
+            };
+        let (low_lanes, low_skip) =
+            match self.description.restriction(num_lanes, skip_lanes, 0, low_size) {
+                Some(v) => v,
+                None => return false,
+            };
+        if high_lanes == 1 {
+            let high_rvn = self.tm.get_preexisting_varnode(data, high_vn);
+            let rop = self.tm.new_op_replace(1, OpCode::CPUI_COPY, op);
+            self.tm.op_set_input(rop, high_rvn, 0);
+            self.tm.op_set_output(rop, lane_at(out_vars, num_lanes - 1));
+        } else {
+            // Multi-lane high
+            let high_rvn = match self.set_replacement(data, high_vn, high_lanes, high_skip) {
+                Some(r) => r,
+                None => return false,
+            };
+            let out_high_start = num_lanes - high_lanes;
+            for i in 0..high_lanes {
+                let rop = self.tm.new_op_replace(1, OpCode::CPUI_COPY, op);
+                self.tm.op_set_input(rop, lane_at(high_rvn, i), 0);
+                self.tm.op_set_output(rop, lane_at(out_vars, out_high_start + i));
+            }
+        }
+        if low_lanes == 1 {
+            let low_rvn = self.tm.get_preexisting_varnode(data, low_vn);
+            let rop = self.tm.new_op_replace(1, OpCode::CPUI_COPY, op);
+            self.tm.op_set_input(rop, low_rvn, 0);
+            self.tm.op_set_output(rop, out_vars);
+        } else {
+            // Multi-lane low
+            let low_rvn = match self.set_replacement(data, low_vn, low_lanes, low_skip) {
+                Some(r) => r,
+                None => return false,
+            };
+            for i in 0..low_lanes {
+                let rop = self.tm.new_op_replace(1, OpCode::CPUI_COPY, op);
+                self.tm.op_set_input(rop, lane_at(low_rvn, i), 0);
+                self.tm.op_set_output(rop, lane_at(out_vars, i));
+            }
+        }
+        true
+    }
+
+    /// Split a CPUI_MULTIEQUAL into per-lane MULTIEQUALs (C++
+    /// `LaneDivide::buildMultiequal`, subflow.cc:3669).
+    fn build_multiequal(
+        &mut self,
+        data: &mut Funcdata,
+        op: OpId,
+        out_vars: TVarRef,
+        num_lanes: int4,
+        skip_lanes: int4,
+    ) -> bool {
+        let mut in_var_sets: Vec<TVarRef> = Vec::new();
+        let num_input = data.obank().get(op).expect("build_multiequal: stale op").num_input();
+        for i in 0..num_input {
+            let ini = data.obank().get(op).expect("build_multiequal: stale op").get_in(i).expect("in");
+            let in_vn = match self.set_replacement(data, ini, num_lanes, skip_lanes) {
+                Some(v) => v,
+                None => return false,
+            };
+            in_var_sets.push(in_vn);
+        }
+        for i in 0..num_lanes {
+            let rop = self.tm.new_op_replace(num_input, OpCode::CPUI_MULTIEQUAL, op);
+            self.tm.op_set_output(rop, lane_at(out_vars, i));
+            for j in 0..num_input {
+                self.tm.op_set_input(rop, lane_at(in_var_sets[j as usize], i), j);
+            }
+        }
+        true
+    }
+
+    /// Split a CPUI_INDIRECT into per-lane INDIRECTs sharing the affecting iop
+    /// (C++ `LaneDivide::buildIndirect`, subflow.cc:3696).
+    fn build_indirect(
+        &mut self,
+        data: &mut Funcdata,
+        op: OpId,
+        out_vars: TVarRef,
+        num_lanes: int4,
+        skip_lanes: int4,
+    ) -> bool {
+        let in0 = data.obank().get(op).expect("build_indirect: stale op").get_in(0).expect("in0");
+        let in_vn = match self.set_replacement(data, in0, num_lanes, skip_lanes) {
+            Some(v) => v,
+            None => return false,
+        };
+        for i in 0..num_lanes {
+            let rop = self.tm.new_op_replace(2, OpCode::CPUI_INDIRECT, op);
+            self.tm.op_set_output(rop, lane_at(out_vars, i));
+            self.tm.op_set_input(rop, lane_at(in_vn, i), 0);
+            let in1 = data.obank().get(op).expect("build_indirect: stale op").get_in(1).expect("in1");
+            let iop = self.tm.new_iop(data, in1);
+            self.tm.op_set_input(rop, iop, 1);
+            self.tm.inherit_indirect(rop, data, op);
+        }
+        true
+    }
+
+    /// Split a CPUI_STORE into a sequence of per-lane STOREs (C++
+    /// `LaneDivide::buildStore`, subflow.cc:3719).
+    fn build_store(
+        &mut self,
+        data: &mut Funcdata,
+        op: OpId,
+        num_lanes: int4,
+        skip_lanes: int4,
+    ) -> bool {
+        let in2 = data.obank().get(op).expect("build_store: stale op").get_in(2).expect("in2");
+        let in_vars = match self.set_replacement(data, in2, num_lanes, skip_lanes) {
+            Some(v) => v,
+            None => return false,
+        };
+        let in0 = data.obank().get(op).expect("build_store: stale op").get_in(0).expect("in0");
+        let space_const = data.vbank().get(in0).expect("build_store: stale in0").get_offset();
+        let space_const_size = data.vbank().get(in0).expect("build_store: stale in0").get_size();
+        let spc = space_from_const(data, in0); // Address space being stored to
+        let orig_ptr = data.obank().get(op).expect("build_store: stale op").get_in(1).expect("in1");
+        let orig_ptr_v = data.vbank().get(orig_ptr).expect("build_store: stale origPtr");
+        if orig_ptr_v.is_free() && !orig_ptr_v.is_constant() {
+            return false;
+        }
+        let base_ptr = self.tm.get_preexisting_varnode(data, orig_ptr);
+        let ptr_size = data.vbank().get(orig_ptr).expect("build_store: stale origPtr").get_size();
+        // Order lanes by pointer offset.  little = least to most, big = most to least.
+        let mut byte_pos: int8 = 0;
+        let is_big = spc.is_big_endian();
+        for c in 0..num_lanes {
+            let i = if is_big { num_lanes - 1 - c } else { c };
+            let rop_store = self.tm.new_op_replace(3, OpCode::CPUI_STORE, op);
+            // Construct the pointer
+            let ptr_vn = if byte_pos == 0 {
+                base_ptr
+            } else {
+                let ptr_vn = self.tm.new_unique(ptr_size);
+                let add_op = self.tm.new_op(2, OpCode::CPUI_INT_ADD, rop_store);
+                self.tm.op_set_output(add_op, ptr_vn);
+                self.tm.op_set_input(add_op, base_ptr, 0);
+                let cst = self.tm.new_constant(ptr_size, 0, byte_pos as uintb);
+                self.tm.op_set_input(add_op, cst, 1);
+                ptr_vn
+            };
+            let spc_cst = self.tm.new_constant(space_const_size, 0, space_const);
+            self.tm.op_set_input(rop_store, spc_cst, 0);
+            self.tm.op_set_input(rop_store, ptr_vn, 1);
+            self.tm.op_set_input(rop_store, lane_at(in_vars, i), 2);
+            byte_pos += self.description.get_size(skip_lanes + i) as int8;
+        }
+        true
+    }
+
+    /// Split a CPUI_LOAD into a sequence of per-lane LOADs (C++
+    /// `LaneDivide::buildLoad`, subflow.cc:3768).
+    fn build_load(
+        &mut self,
+        data: &mut Funcdata,
+        op: OpId,
+        out_vars: TVarRef,
+        num_lanes: int4,
+        skip_lanes: int4,
+    ) -> bool {
+        let in0 = data.obank().get(op).expect("build_load: stale op").get_in(0).expect("in0");
+        let space_const = data.vbank().get(in0).expect("build_load: stale in0").get_offset();
+        let space_const_size = data.vbank().get(in0).expect("build_load: stale in0").get_size();
+        let spc = space_from_const(data, in0); // Address space being loaded from
+        let orig_ptr = data.obank().get(op).expect("build_load: stale op").get_in(1).expect("in1");
+        let orig_ptr_v = data.vbank().get(orig_ptr).expect("build_load: stale origPtr");
+        if orig_ptr_v.is_free() && !orig_ptr_v.is_constant() {
+            return false;
+        }
+        let base_ptr = self.tm.get_preexisting_varnode(data, orig_ptr);
+        let ptr_size = data.vbank().get(orig_ptr).expect("build_load: stale origPtr").get_size();
+        let mut byte_pos: int8 = 0;
+        let is_big = spc.is_big_endian();
+        for c in 0..num_lanes {
+            let rop_load = self.tm.new_op_replace(2, OpCode::CPUI_LOAD, op);
+            let i = if is_big { num_lanes - 1 - c } else { c };
+            // Construct the pointer
+            let ptr_vn = if byte_pos == 0 {
+                base_ptr
+            } else {
+                let ptr_vn = self.tm.new_unique(ptr_size);
+                let add_op = self.tm.new_op(2, OpCode::CPUI_INT_ADD, rop_load);
+                self.tm.op_set_output(add_op, ptr_vn);
+                self.tm.op_set_input(add_op, base_ptr, 0);
+                let cst = self.tm.new_constant(ptr_size, 0, byte_pos as uintb);
+                self.tm.op_set_input(add_op, cst, 1);
+                ptr_vn
+            };
+            let spc_cst = self.tm.new_constant(space_const_size, 0, space_const);
+            self.tm.op_set_input(rop_load, spc_cst, 0);
+            self.tm.op_set_input(rop_load, ptr_vn, 1);
+            self.tm.op_set_output(rop_load, lane_at(out_vars, i));
+            byte_pos += self.description.get_size(skip_lanes + i) as int8;
+        }
+        true
+    }
+
+    /// Model a CPUI_INT_RIGHT that respects the lanes as COPYs (C++
+    /// `LaneDivide::buildRightShift`, subflow.cc:3815).
+    fn build_right_shift(
+        &mut self,
+        data: &mut Funcdata,
+        op: OpId,
+        out_vars: TVarRef,
+        num_lanes: int4,
+        skip_lanes: int4,
+    ) -> bool {
+        let in1 = data.obank().get(op).expect("build_right_shift: stale op").get_in(1).expect("in1");
+        if !data.vbank().get(in1).expect("build_right_shift: stale in1").is_constant() {
+            return false;
+        }
+        let mut shift_size = data.vbank().get(in1).expect("build_right_shift: stale in1").get_offset() as int4;
+        if (shift_size & 7) != 0 {
+            return false; // Not a multiple of 8
+        }
+        shift_size /= 8;
+        let start_pos = shift_size + self.description.get_position(skip_lanes);
+        let start_lane = self.description.get_boundary(start_pos);
+        if start_lane < 0 {
+            return false; // Shift does not end on a lane boundary
+        }
+        let mut src_lane = start_lane;
+        let mut dest_lane = skip_lanes;
+        while src_lane - skip_lanes < num_lanes {
+            if self.description.get_size(src_lane) != self.description.get_size(dest_lane) {
+                return false;
+            }
+            src_lane += 1;
+            dest_lane += 1;
+        }
+        let in0 = data.obank().get(op).expect("build_right_shift: stale op").get_in(0).expect("in0");
+        let in_vars = match self.set_replacement(data, in0, num_lanes, skip_lanes) {
+            Some(v) => v,
+            None => return false,
+        };
+        self.build_unary_op(
+            OpCode::CPUI_COPY,
+            op,
+            lane_at(in_vars, start_lane - skip_lanes),
+            out_vars,
+            num_lanes - (start_lane - skip_lanes),
+        );
+        for zero_lane in (num_lanes - (start_lane - skip_lanes))..num_lanes {
+            let rop = self.tm.new_op_replace(1, OpCode::CPUI_COPY, op);
+            self.tm.op_set_output(rop, lane_at(out_vars, zero_lane));
+            let cst = self.tm.new_constant(self.description.get_size(zero_lane), 0, 0);
+            self.tm.op_set_input(rop, cst, 0);
+        }
+        true
+    }
+
+    /// Model a CPUI_INT_LEFT that respects the lanes as COPYs (C++
+    /// `LaneDivide::buildLeftShift`, subflow.cc:3852).
+    fn build_left_shift(
+        &mut self,
+        data: &mut Funcdata,
+        op: OpId,
+        out_vars: TVarRef,
+        num_lanes: int4,
+        skip_lanes: int4,
+    ) -> bool {
+        let in1 = data.obank().get(op).expect("build_left_shift: stale op").get_in(1).expect("in1");
+        if !data.vbank().get(in1).expect("build_left_shift: stale in1").is_constant() {
+            return false;
+        }
+        let mut shift_size = data.vbank().get(in1).expect("build_left_shift: stale in1").get_offset() as int4;
+        if (shift_size & 7) != 0 {
+            return false; // Not a multiple of 8
+        }
+        shift_size /= 8;
+        let start_pos = shift_size + self.description.get_position(skip_lanes);
+        let start_lane = self.description.get_boundary(start_pos);
+        if start_lane < 0 {
+            return false; // Shift does not end on a lane boundary
+        }
+        let mut dest_lane = start_lane;
+        let mut src_lane = skip_lanes;
+        while dest_lane - skip_lanes < num_lanes {
+            if self.description.get_size(src_lane) != self.description.get_size(dest_lane) {
+                return false;
+            }
+            src_lane += 1;
+            dest_lane += 1;
+        }
+        let in0 = data.obank().get(op).expect("build_left_shift: stale op").get_in(0).expect("in0");
+        let in_vars = match self.set_replacement(data, in0, num_lanes, skip_lanes) {
+            Some(v) => v,
+            None => return false,
+        };
+        for zero_lane in 0..(start_lane - skip_lanes) {
+            let rop = self.tm.new_op_replace(1, OpCode::CPUI_COPY, op);
+            self.tm.op_set_output(rop, lane_at(out_vars, zero_lane));
+            let cst = self.tm.new_constant(self.description.get_size(zero_lane), 0, 0);
+            self.tm.op_set_input(rop, cst, 0);
+        }
+        self.build_unary_op(
+            OpCode::CPUI_COPY,
+            op,
+            in_vars,
+            lane_at(out_vars, start_lane - skip_lanes),
+            num_lanes - (start_lane - skip_lanes),
+        );
+        true
+    }
+
+    /// Split a CPUI_INT_ZEXT into COPYs of lanes plus COPYs of zero (C++
+    /// `LaneDivide::buildZext`, subflow.cc:3890).
+    fn build_zext(
+        &mut self,
+        data: &mut Funcdata,
+        op: OpId,
+        out_vars: TVarRef,
+        num_lanes: int4,
+        skip_lanes: int4,
+    ) -> bool {
+        let invn = data.obank().get(op).expect("build_zext: stale op").get_in(0).expect("in0");
+        let in_size = data.vbank().get(invn).expect("build_zext: stale invn").get_size();
+        let (in_lanes, in_skip) =
+            match self.description.restriction(num_lanes, skip_lanes, 0, in_size) {
+                Some(v) => v,
+                None => return false,
+            };
+        // inSkip should always come back as equal to skipLanes
+        if in_lanes == 1 {
+            let rop = self.tm.new_op_replace(1, OpCode::CPUI_COPY, op);
+            let in_var = self.tm.get_preexisting_varnode(data, invn);
+            self.tm.op_set_input(rop, in_var, 0);
+            self.tm.op_set_output(rop, out_vars);
+        } else {
+            let in_rvn = match self.set_replacement(data, invn, in_lanes, in_skip) {
+                Some(v) => v,
+                None => return false,
+            };
+            for i in 0..in_lanes {
+                let rop = self.tm.new_op_replace(1, OpCode::CPUI_COPY, op);
+                self.tm.op_set_input(rop, lane_at(in_rvn, i), 0);
+                self.tm.op_set_output(rop, lane_at(out_vars, i));
+            }
+        }
+        for i in 0..(num_lanes - in_lanes) {
+            // Write 0 constants to remaining lanes
+            let rop = self.tm.new_op_replace(1, OpCode::CPUI_COPY, op);
+            let cst = self.tm.new_constant(self.description.get_size(skip_lanes + in_lanes + i), 0, 0);
+            self.tm.op_set_input(rop, cst, 0);
+            self.tm.op_set_output(rop, lane_at(out_vars, in_lanes + i));
+        }
+        true
+    }
+
+    /// Push the logical lanes forward through any reading op (C++
+    /// `LaneDivide::traceForward`, subflow.cc:3931).
+    fn trace_forward(
+        &mut self,
+        data: &mut Funcdata,
+        rvn: TVarRef,
+        num_lanes: int4,
+        skip_lanes: int4,
+    ) -> bool {
+        let origvn = self.tm.var(rvn).get_original().expect("trace_forward: rvn original");
+        let descend: Vec<OpId> = data.descend_snapshot(origvn);
+        for &op in descend.iter() {
+            let outvn = data.obank().get(op).expect("trace_forward: stale op").get_out();
+            if let Some(ov) = outvn {
+                if data.vbank().get(ov).expect("trace_forward: stale outvn").is_mark() {
+                    continue;
+                }
+            }
+            let code = data.obank().get(op).expect("trace_forward: stale op").code();
+            match code {
+                OpCode::CPUI_SUBPIECE => {
+                    let ov = outvn.expect("trace_forward: SUBPIECE out");
+                    let in1 = data.obank().get(op).expect("trace_forward: stale op").get_in(1).expect("in1");
+                    let byte_pos = data.vbank().get(in1).expect("trace_forward: stale in1").get_offset() as int4;
+                    let out_size = data.vbank().get(ov).expect("trace_forward: stale out").get_size();
+                    match self.description.restriction(num_lanes, skip_lanes, byte_pos, out_size) {
+                        Some((out_lanes, out_skip)) => {
+                            if out_lanes == 1 {
+                                let rop = self.tm.new_preexisting_op(1, OpCode::CPUI_COPY, op);
+                                self.tm.op_set_input(rop, lane_at(rvn, out_skip - skip_lanes), 0);
+                            } else {
+                                match self.set_replacement(data, ov, out_lanes, out_skip) {
+                                    Some(_) => {}
+                                    None => return false,
+                                }
+                                // Don't create the placeholder ops, let traceBackward make them
+                            }
+                        }
+                        None => {
+                            if self.allow_subpiece_terminator {
+                                let lane_index = self.description.get_boundary(byte_pos);
+                                if lane_index < 0 || lane_index >= self.description.get_num_lanes() {
+                                    return false; // Does piece start on lane boundary?
+                                }
+                                if self.description.get_size(lane_index) <= out_size {
+                                    return false; // Is the piece smaller than a lane?
+                                }
+                                // Treat SUBPIECE as terminating
+                                let rop = self.tm.new_preexisting_op(2, OpCode::CPUI_SUBPIECE, op);
+                                self.tm.op_set_input(rop, lane_at(rvn, lane_index - skip_lanes), 0);
+                                let cst = self.tm.new_constant(4, 0, 0);
+                                self.tm.op_set_input(rop, cst, 1);
+                            } else {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                OpCode::CPUI_PIECE => {
+                    let ov = outvn.expect("trace_forward: PIECE out");
+                    let in0 = data.obank().get(op).expect("trace_forward: stale op").get_in(0).expect("in0");
+                    let byte_pos = if in0 == origvn {
+                        let in1 = data.obank().get(op).expect("trace_forward: stale op").get_in(1).expect("in1");
+                        data.vbank().get(in1).expect("trace_forward: stale in1").get_size()
+                    } else {
+                        0
+                    };
+                    let out_size = data.vbank().get(ov).expect("trace_forward: stale out").get_size();
+                    match self.description.extension(num_lanes, skip_lanes, byte_pos, out_size) {
+                        Some((out_lanes, out_skip)) => {
+                            match self.set_replacement(data, ov, out_lanes, out_skip) {
+                                Some(_) => {}
+                                None => return false,
+                            }
+                            // Don't create the placeholder ops, let traceBackward make them
+                        }
+                        None => return false,
+                    }
+                }
+                OpCode::CPUI_COPY
+                | OpCode::CPUI_INT_NEGATE
+                | OpCode::CPUI_INT_AND
+                | OpCode::CPUI_INT_OR
+                | OpCode::CPUI_INT_XOR
+                | OpCode::CPUI_MULTIEQUAL
+                | OpCode::CPUI_INDIRECT => {
+                    let ov = outvn.expect("trace_forward: out");
+                    match self.set_replacement(data, ov, num_lanes, skip_lanes) {
+                        Some(_) => {}
+                        None => return false,
+                    }
+                    // Don't create the placeholder ops, let traceBackward make them
+                }
+                OpCode::CPUI_INT_RIGHT => {
+                    let in1 = data.obank().get(op).expect("trace_forward: stale op").get_in(1).expect("in1");
+                    if !data.vbank().get(in1).expect("trace_forward: stale in1").is_constant() {
+                        return false; // Trace must come through op->getIn(0)
+                    }
+                    let ov = outvn.expect("trace_forward: INT_RIGHT out");
+                    match self.set_replacement(data, ov, num_lanes, skip_lanes) {
+                        Some(_) => {}
+                        None => return false,
+                    }
+                    // Don't create the placeholder ops, let traceBackward make them
+                }
+                OpCode::CPUI_STORE => {
+                    let in2 = data.obank().get(op).expect("trace_forward: stale op").get_in(2).expect("in2");
+                    if in2 != origvn {
+                        return false; // Can only propagate through value being stored
+                    }
+                    if !self.build_store(data, op, num_lanes, skip_lanes) {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    /// Pull the logical lanes back through the defining op (C++
+    /// `LaneDivide::traceBackward`, subflow.cc:4027).
+    fn trace_backward(
+        &mut self,
+        data: &mut Funcdata,
+        rvn: TVarRef,
+        num_lanes: int4,
+        skip_lanes: int4,
+    ) -> bool {
+        let origvn = self.tm.var(rvn).get_original().expect("trace_backward: rvn original");
+        let op = match data.vbank().get(origvn).expect("trace_backward: stale origvn").get_def() {
+            Some(o) => o,
+            None => return true, // If vn is input
+        };
+        let code = data.obank().get(op).expect("trace_backward: stale op").code();
+        match code {
+            OpCode::CPUI_INT_NEGATE | OpCode::CPUI_COPY => {
+                let in0 = data.obank().get(op).expect("trace_backward: stale op").get_in(0).expect("in0");
+                let in_vars = match self.set_replacement(data, in0, num_lanes, skip_lanes) {
+                    Some(v) => v,
+                    None => return false,
+                };
+                self.build_unary_op(code, op, in_vars, rvn, num_lanes);
+            }
+            OpCode::CPUI_INT_AND | OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR => {
+                let in0 = data.obank().get(op).expect("trace_backward: stale op").get_in(0).expect("in0");
+                let in0_vars = match self.set_replacement(data, in0, num_lanes, skip_lanes) {
+                    Some(v) => v,
+                    None => return false,
+                };
+                let in1 = data.obank().get(op).expect("trace_backward: stale op").get_in(1).expect("in1");
+                let in1_vars = match self.set_replacement(data, in1, num_lanes, skip_lanes) {
+                    Some(v) => v,
+                    None => return false,
+                };
+                self.build_binary_op(code, op, in0_vars, in1_vars, rvn, num_lanes);
+            }
+            OpCode::CPUI_MULTIEQUAL => {
+                if !self.build_multiequal(data, op, rvn, num_lanes, skip_lanes) {
+                    return false;
+                }
+            }
+            OpCode::CPUI_INDIRECT => {
+                if !self.build_indirect(data, op, rvn, num_lanes, skip_lanes) {
+                    return false;
+                }
+            }
+            OpCode::CPUI_SUBPIECE => {
+                let in_vn = data.obank().get(op).expect("trace_backward: stale op").get_in(0).expect("in0");
+                let in1 = data.obank().get(op).expect("trace_backward: stale op").get_in(1).expect("in1");
+                let byte_pos = data.vbank().get(in1).expect("trace_backward: stale in1").get_offset() as int4;
+                let in_size = data.vbank().get(in_vn).expect("trace_backward: stale inVn").get_size();
+                let (in_lanes, in_skip) =
+                    match self.description.extension(num_lanes, skip_lanes, byte_pos, in_size) {
+                        Some(v) => v,
+                        None => return false,
+                    };
+                let in_vars = match self.set_replacement(data, in_vn, in_lanes, in_skip) {
+                    Some(v) => v,
+                    None => return false,
+                };
+                self.build_unary_op(
+                    OpCode::CPUI_COPY,
+                    op,
+                    lane_at(in_vars, skip_lanes - in_skip),
+                    rvn,
+                    num_lanes,
+                );
+            }
+            OpCode::CPUI_PIECE => {
+                if !self.build_piece(data, op, rvn, num_lanes, skip_lanes) {
+                    return false;
+                }
+            }
+            OpCode::CPUI_LOAD => {
+                if !self.build_load(data, op, rvn, num_lanes, skip_lanes) {
+                    return false;
+                }
+            }
+            OpCode::CPUI_INT_RIGHT => {
+                if !self.build_right_shift(data, op, rvn, num_lanes, skip_lanes) {
+                    return false;
+                }
+            }
+            OpCode::CPUI_INT_LEFT => {
+                if !self.build_left_shift(data, op, rvn, num_lanes, skip_lanes) {
+                    return false;
+                }
+            }
+            OpCode::CPUI_INT_ZEXT => {
+                if !self.build_zext(data, op, rvn, num_lanes, skip_lanes) {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Process the next Varnode on the work list (C++
+    /// `LaneDivide::processNextWork`, subflow.cc:4100).
+    fn process_next_work(&mut self, data: &mut Funcdata) -> bool {
+        let node = self.work_list.pop().expect("process_next_work: empty worklist");
+        let rvn = node.lanes;
+        let num_lanes = node.num_lanes;
+        let skip_lanes = node.skip_lanes;
+
+        if !self.trace_backward(data, rvn, num_lanes, skip_lanes) {
+            return false;
+        }
+        self.trace_forward(data, rvn, num_lanes, skip_lanes)
+    }
+
+    /// Trace lanes as far as possible from the root Varnode (C++
+    /// `LaneDivide::doTrace`, subflow.cc:4127).
+    pub fn do_trace(&mut self, data: &mut Funcdata) -> bool {
+        if self.work_list.is_empty() {
+            return false; // Nothing to do
+        }
+        let mut retval = true;
+        while !self.work_list.is_empty() {
+            if !self.process_next_work(data) {
+                retval = false;
+                break;
+            }
+        }
+        self.tm.clear_varnode_marks(data);
+        retval
     }
 
     /// Apply the constructed transform (C++ base `TransformManager::apply`).

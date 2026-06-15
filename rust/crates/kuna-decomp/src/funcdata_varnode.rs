@@ -206,16 +206,28 @@ impl Funcdata {
         }
     }
 
-    /// Check if the given storage range is a potential laned register
-    /// (C++ `Funcdata::checkForLanedRegister`, `funcdata_varnode.cc:300`).
+    /// Check if the given storage range is a potential laned register; if so,
+    /// record the storage with the matching laned-register record (C++
+    /// `Funcdata::checkForLanedRegister`, `funcdata_varnode.cc:300`).
     ///
-    /// SEAM(W4): `glb->getLanedRegister` and the `lanedMap` cache are part of the
-    /// W4 `Architecture`/lane subsystem; the W3 `Architecture` skeleton carries
-    /// no laned-register table and no `lanedMap` field, so this is a no-op.  The
-    /// `s >= minLanedSize` guard at the call sites is transcribed faithfully so
-    /// the call cadence matches the C++ exactly.
-    fn check_for_laned_register(&mut self, _sz: int4, _addr: &Address) {
-        // const LanedRegister *lr = glb->getLanedRegister(addr,sz);  -- SEAM(W4)
+    /// Faithful transcription: `glb->getLanedRegister(addr,sz)` looks up the
+    /// architecture's lane table by size; on a hit, the `(space,offset,size)`
+    /// storage is recorded in the laned-access map keyed by the C++ `VarnodeData`
+    /// ordering.  The architecture's records are immutable, so the cloned
+    /// [`LanedRegister`](crate::transform::LanedRegister) stands in for the C++
+    /// `const LanedRegister *`.  The `s >= minLanedSize` guard at the call sites
+    /// gates this exactly as in the C++.
+    fn check_for_laned_register(&mut self, sz: int4, addr: &Address) {
+        // const LanedRegister *lanedRegister = glb->getLanedRegister(addr,sz);
+        // if (lanedRegister == 0) return;
+        let laned_register = match self.get_arch().get_laned_register(addr, sz) {
+            Some(lr) => lr.clone(),
+            None => return,
+        };
+        // VarnodeData storage{space=addr.getSpace(), offset=addr.getOffset(), size=sz};
+        // lanedMap[storage] = lanedRegister;
+        let key = crate::funcdata::LanedKey::new(addr, sz);
+        self.laned_map_insert(key, addr.clone(), sz, laned_register);
     }
 
     // -----------------------------------------------------------------------
