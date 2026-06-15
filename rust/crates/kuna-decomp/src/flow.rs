@@ -1328,8 +1328,31 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     self.block_edge2.push(targ);
                 }
                 OpCode::CPUI_BRANCHIND => {
-                    // jt = data.findJumpTable(op); if (jt==0) break;  -- SEAM(W4):
-                    //   no JumpTable in W3 -> assume no out-branches (partial flow).
+                    // jt = data.findJumpTable(op); if (jt==0) break;
+                    //   no JumpTable -> assume no out-branches (partial flow).
+                    if let Some(jt_idx) = self.data.find_jump_table_index(op) {
+                        let num = self.data.get_jump_table(jt_idx as int4).num_entries();
+                        // Edge per recovered case target, deduped by the C++
+                        // `setMark`/`clearMark` discipline over the target ops.
+                        let edge_start = self.block_edge1.len();
+                        for i in 0..num {
+                            let addr =
+                                self.data.get_jump_table(jt_idx as int4).get_address_by_index(i);
+                            let targ = self.target(&addr)?;
+                            if self.data.obank().get(targ).expect("collect_edges: targ").is_mark() {
+                                continue; // Already a link between these blocks
+                            }
+                            self.data.obank_mut().get_mut(targ).unwrap().set_mark();
+                            self.block_edge1.push(op);
+                            self.block_edge2.push(targ);
+                        }
+                        // Clean up our marks (C++ walks back over the edges just
+                        // pushed for this op).
+                        for k in edge_start..self.block_edge2.len() {
+                            let targ = self.block_edge2[k];
+                            self.data.obank_mut().get_mut(targ).unwrap().clear_mark();
+                        }
+                    }
                 }
                 OpCode::CPUI_RETURN => {}
                 OpCode::CPUI_CBRANCH => {

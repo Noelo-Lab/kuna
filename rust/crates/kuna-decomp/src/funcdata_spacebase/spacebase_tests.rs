@@ -109,31 +109,31 @@ fn annotate_raw_stack_ptr_splices_ptrsub_zero_before_nonadditive_use() {
     fd.spacebase(); // marks + types the SP input
     assert!(fd.start_type_recovery());
 
-    // A non-additive reader of the SP input (a STORE through it), inside a basic
-    // block (annotateRawStackPtr splices a PTRSUB *before* the reader op, so the
-    // reader must be placed in a block).  CPUI_STORE's slot 1 is the pointer;
-    // reading the SP there is a "raw stack pointer" use.
+    // A non-additive, non-special reader of the SP input, inside a basic block
+    // (annotateRawStackPtr splices a PTRSUB *before* the reader op, so the reader
+    // must be placed in a block).  C++ `annotateRawStackPtr` SKIPS `special`
+    // non-call ops (STORE/LOAD/CALL...), so the reader must be an ordinary
+    // (non-special) op: `INT_NEGATE` is a unary read of the SP — a genuine "raw
+    // stack pointer" use that is neither additive (INT_ADD/PTRSUB/PTRADD) nor
+    // special.
     let root = fd.bblocks_root_pub();
     let bl = fd.bblocks_mut().new_block_basic(root);
-    let store = fd.new_op(3, reg_addr(&fd, 0x1000));
-    fd.op_set_opcode_code(store, OpCode::CPUI_STORE);
-    // slot 0 = space id (a const), slot 1 = pointer (the SP), slot 2 = value.
-    let spaceconst = fd.new_constant(8, 0);
-    let value = fd.new_varnode(4, &reg_addr(&fd, 0x100), None);
-    fd.op_set_input(store, spaceconst, 0).unwrap();
-    fd.op_set_input(store, sp_in, 1).unwrap();
-    fd.op_set_input(store, value, 2).unwrap();
+    let store = fd.new_op(1, reg_addr(&fd, 0x1000));
+    fd.op_set_opcode_code(store, OpCode::CPUI_INT_NEGATE);
+    let out = fd.new_varnode(8, &reg_addr(&fd, 0x200), None);
+    fd.op_set_output(store, out).unwrap();
+    fd.op_set_input(store, sp_in, 0).unwrap();
     fd.bb_insert_op(store, bl, None);
 
     let stackspc = Rc::clone(fd.get_arch().manage().get_stack_space().unwrap());
 
-    // Pre: the STORE reads the SP input directly at slot 1.
-    assert_eq!(fd.obank().get(store).unwrap().get_in(1), Some(sp_in));
+    // Pre: the reader reads the SP input directly at slot 0.
+    assert_eq!(fd.obank().get(store).unwrap().get_in(0), Some(sp_in));
 
     fd.annotate_raw_stack_ptr(&stackspc);
 
-    // Post: slot 1 now reads a fresh Varnode defined by PTRSUB(sp, #0).
-    let new_in1 = fd.obank().get(store).unwrap().get_in(1).unwrap();
+    // Post: slot 0 now reads a fresh Varnode defined by PTRSUB(sp, #0).
+    let new_in1 = fd.obank().get(store).unwrap().get_in(0).unwrap();
     assert_ne!(new_in1, sp_in, "the raw SP read must be replaced by the PTRSUB out");
     let def = fd.vbank().get(new_in1).unwrap().get_def().expect("PTRSUB out must be written");
     assert_eq!(fd.obank().get(def).unwrap().code(), OpCode::CPUI_PTRSUB);

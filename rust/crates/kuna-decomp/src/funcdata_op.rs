@@ -1159,12 +1159,18 @@ impl Funcdata {
         crate::op::is_cse_match(o1, o2, self.vbank())
     }
 
-    /// SEAM(W6): resolve an [`OpCode`] to its [`TypeOp`] via the `glb->inst[opc]`
-    /// table, supplying the verbatim `typeop.cc` `opflags` for the handful of
-    /// op-codes the funcdata helpers above install (so the resulting op reports the
-    /// right `binary`/`booloutput`/`commutative` eval-type bits).  The W6 wave
-    /// replaces this with the real `Architecture::inst` table; until then the flag
-    /// word is transcribed inline (mirrors `ruleaction_5::type_op_seam`).
+    /// Resolve an [`OpCode`] to its [`TypeOp`] via the `glb->inst[opc]` table
+    /// (C++ `Funcdata::opSetOpcode` does `obank.changeOpcode(op, glb->inst[opc])`).
+    ///
+    /// The handful of op-codes the funcdata helpers above install keep their
+    /// original short display names (`<`, `+`, `*`, `copy`, `SUB`, `s>>`) for
+    /// provenance; **every other** op-code resolves through the canonical
+    /// `typeop::type_op_for` table (the verbatim `typeop.cc` `opflags`), so a
+    /// cloned op — e.g. a `truncatedFlow` `INT_EQUAL`/`BOOL_OR` in the jump-table
+    /// partial — reports its real `binary`/`booloutput`/`commutative` eval-type
+    /// bits.  Without this, `INT_EQUAL`'s output was not flagged `booloutput`, so
+    /// `RuleRangeMeld` (and any bool-output structural test) skipped the cloned
+    /// guard and the switch index range never narrowed.
     fn w6_type_op(opc: OpCode) -> TypeOp {
         use pcodeop_flags as f;
         // opflags transcribed verbatim from decompiler/cpp/typeop.cc.
@@ -1182,10 +1188,10 @@ impl Funcdata {
             OpCode::CPUI_COPY => (f::unary | f::nocollapse, "copy"),
             OpCode::CPUI_SUBPIECE => (f::binary, "SUB"),
             OpCode::CPUI_INT_SRIGHT => (f::binary, "s>>"),
-            // Any other op-code the helpers reach is a porting bug; fall back to a
-            // bare binary op so eval-type still classifies it (the worst case is a
-            // missing special-semantics flag, never an incorrect rewrite).
-            _ => (f::binary, "?"),
+            // The full `glb->inst[opc]` table (verbatim typeop.cc opflags) for
+            // every other op-code, so cloned/synthesised ops carry their true
+            // eval-type bits (load-bearing for `booloutput` consumers).
+            _ => return crate::typeop::type_op_for(opc),
         };
         TypeOp::new(opc, flags, name.to_string())
     }

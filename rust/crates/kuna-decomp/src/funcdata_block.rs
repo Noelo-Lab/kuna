@@ -70,6 +70,109 @@ impl Funcdata {
         *self.sblocks_mut() = sb;
     }
 
+    /// Recurse the structured-block graph and finalize each `BlockSwitch` for
+    /// printing (C++ `BlockGraph::finalizePrinting` → `BlockSwitch::finalizePrinting`,
+    /// `block.cc:3607`): assign each case its label from the recovered
+    /// [`JumpTable`](crate::jumptable::JumpTable), propagate labels down fall-thru
+    /// chains, and stable-sort the cases by `(label, depth)`.
+    ///
+    /// Called from `ActionFinalStructure::apply`.  Walks every sblocks node; only
+    /// `t_switch` nodes carry case state.  The JumpTable is reached via the
+    /// switch's stored `jumpvec` slot.
+    pub fn finalize_switch_printing(&mut self) {
+        // Collect the sblocks switch node ids (immutable walk first).
+        let switch_ids: Vec<BlockId> = self
+            .sblocks_ref()
+            .arena
+            .iter()
+            .filter(|(_, b)| b.switch_jt_index().is_some())
+            .map(|(id, _)| id)
+            .collect();
+        for sw in switch_ids {
+            self.finalize_one_switch(sw);
+        }
+    }
+
+    /// `BlockSwitch::finalizePrinting` for a single switch node (block.cc:3607).
+    fn finalize_one_switch(&mut self, sw: BlockId) {
+        let jt_index = match self.sblocks_ref().block(sw).switch_jt_index() {
+            Some(j) => j,
+            None => return,
+        };
+        // Snapshot the case list (block ids + basicblocks + chains) for the label
+        // computation, which needs &Funcdata for the JumpTable queries.
+        let mut cases = match self.sblocks_ref().block(sw).switch_caseblocks_mut_snapshot() {
+            Some(c) => c,
+            None => return,
+        };
+        let ncase = cases.len();
+        // Construct the depth parameter, to sort fall-thru cases.
+        for i in 0..ncase {
+            let mut j = cases[i].chain;
+            while j != -1 {
+                if cases[j as usize].depth != 0 {
+                    break; // Break any possible loops (already visited)
+                }
+                cases[j as usize].depth = -1; // Mark non-roots of chains
+                j = cases[j as usize].chain;
+            }
+        }
+        for i in 0..ncase {
+            let basicbl = cases[i].basicblock;
+            let nind = match basicbl {
+                Some(bb) => self
+                    .get_jump_table(jt_index as int4)
+                    .num_indices_by_block(self, bb)
+                    .unwrap_or(0),
+                None => 0,
+            };
+            if nind > 0 {
+                if cases[i].depth == 0 {
+                    // Only set label on chain roots.
+                    let bb = basicbl.unwrap();
+                    let ind = self
+                        .get_jump_table(jt_index as int4)
+                        .get_index_by_block(self, bb, 0)
+                        .unwrap_or(0);
+                    let label = self.get_jump_table(jt_index as int4).get_label_by_index(ind);
+                    cases[i].label = label;
+                    let mut j = cases[i].chain;
+                    let mut depthcount = 1;
+                    while j != -1 {
+                        if cases[j as usize].depth > 0 {
+                            break; // depth already set; break possible loops
+                        }
+                        cases[j as usize].depth = depthcount;
+                        depthcount += 1;
+                        cases[j as usize].label = label;
+                        j = cases[j as usize].chain;
+                    }
+                }
+            } else {
+                cases[i].label = 0; // Should never happen
+            }
+        }
+        // stable_sort by CaseOrder::compare (label, then depth).
+        cases.sort_by(crate::block::CaseOrder::compare);
+        if let Some(slot) = self.sblocks_mut().block_mut(sw).switch_caseblocks_mut() {
+            *slot = cases;
+        }
+    }
+
+    /// Clear the structured-block graph (C++ `data.getStructure().clear()`,
+    /// `BlockGraph::clear`, `block.cc:1239`): empties the sblocks component list
+    /// and resets its flags, so the next `ActionBlockStructure::apply` sees
+    /// `sblocks.getSize()==0` and re-runs the collapse from `bblocks` (used by
+    /// `ActionSwitchNorm` after `foldInGuards` rewrites the switch's default
+    /// edge).  The `bblocks` graph is left intact.
+    pub fn sblocks_clear(&mut self) {
+        use crate::block::{BlockGraph, FlowBlock};
+        let mut sb = BlockGraph::new();
+        let sroot = sb.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+        sb.root = Some(sroot);
+        *self.sblocks_mut() = sb;
+    }
+
     /// Clear any jump-table information, preserving overrides
     /// (C++ `Funcdata::clearJumpTables`, `funcdata_block.cc:42`).
     ///
@@ -1137,6 +1240,18 @@ impl Funcdata {
             uniq_start,
             0,
         )?;
+        // C++ `Funcdata` ctor calls `funcp.setScope(localmap, baseaddr-1)`, which
+        // attaches the architecture's default prototype model when none is set
+        // (fspec.cc:2785).  The merged tree defers model assignment to
+        // `ActionPrototypeTypes`, but the reduced "jumptable" pipeline reads
+        // `funcp.getModel()` (e.g. `getMaxOutputDelay`) before that action runs, so
+        // the default model must be attached at construction time exactly as the C++
+        // ctor does.
+        if !partial.get_func_proto().has_model() {
+            if let Some(defaultfp) = partial.get_arch().default_fp().cloned() {
+                partial.get_func_proto_mut().set_model(Some(defaultfp));
+            }
+        }
         partial.truncated_flow_clone(self)?;
         Ok(partial)
     }

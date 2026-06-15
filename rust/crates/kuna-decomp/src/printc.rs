@@ -1863,9 +1863,9 @@ impl PrintC {
             BlockType::DoWhile => self.emit_block_do_while(fd, arch, blk),
             BlockType::InfLoop => self.emit_block_inf_loop(fd, arch, blk),
             BlockType::Condition => self.emit_block_condition(fd, arch, blk),
-            // multigoto / switch: their emitters are the next structuring layer
-            // (switch needs the JumpTable/case machinery).  Fall through to the
-            // component blocks.
+            BlockType::Switch => self.emit_block_switch(fd, arch, blk),
+            // multigoto: its emitter is the next structuring layer.  Fall through
+            // to the component blocks.
             _ => {
                 let list: Vec<BlockId> = fd.sblocks_ref().block(blk).get_list().to_vec();
                 for c in list {
@@ -2054,6 +2054,144 @@ impl PrintC {
             }
         }
         self.context.pop_mod();
+    }
+
+    /// C++ `PrintC::emitBlockSwitch` (printc.cc:3470): emit a `BlockSwitch` — the
+    /// statements before the switch, the `switch(v)` header, then the braced body
+    /// of `case N:` / `default:` arms.
+    fn emit_block_switch(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        // getSwitchBlock() == getBlock(0) (the switch component).
+        let switch_block = fd.sblocks_ref().block(blk).get_block(0);
+
+        self.context.push_mod();
+        self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
+        // Statements before the branch (no_branch).
+        self.context.push_mod();
+        self.context.set_mod(modifiers::NO_BRANCH);
+        self.emit_block(fd, arch, switch_block);
+        self.context.pop_mod();
+        self.emit.tag_line();
+        // The `switch(v)` header (only_branch|comma_separate).
+        self.context.push_mod();
+        self.context.set_mod(modifiers::ONLY_BRANCH | modifiers::COMMA_SEPARATE);
+        self.emit_block(fd, arch, switch_block);
+        self.context.pop_mod();
+        let brace_id =
+            self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_switch));
+
+        let ncase = fd.sblocks_ref().block(blk).switch_caseblocks().len();
+        for i in 0..ncase {
+            self.emit_switch_case(fd, arch, blk, i);
+            let id = self.emit.start_indent();
+            let gototype = fd.sblocks_ref().block(blk).switch_caseblocks()[i].gototype;
+            if gototype != 0 {
+                self.emit.tag_line();
+                let caseblk = fd.sblocks_ref().block(blk).switch_caseblocks()[i].block;
+                self.emit_goto_statement(fd, switch_block, caseblk, gototype);
+            } else {
+                let caseblk = fd.sblocks_ref().block(blk).switch_caseblocks()[i].block;
+                let id2 = self.emit.begin_block(0);
+                self.emit_block(fd, arch, caseblk);
+                // Blocks that formally exit the switch need an explicit `break;`
+                // (unless it is the last case, whose fall-through is the close).
+                let isexit = fd.sblocks_ref().block(blk).switch_caseblocks()[i].isexit;
+                if isexit && i != ncase - 1 {
+                    self.emit.tag_line();
+                    self.emit_goto_statement(fd, caseblk, caseblk, crate::block::block_flags::f_break_goto);
+                }
+                self.emit.end_block(id2);
+            }
+            self.emit.stop_indent(id);
+        }
+        self.emit.tag_line();
+        self.emit.close_brace_indent(keywords::CLOSE_CURLY, brace_id);
+        self.context.pop_mod();
+    }
+
+    /// C++ `PrintC::emitSwitchCase` (printc.cc:3278): emit the `case N:` /
+    /// `default:` label(s) for one case arm.
+    fn emit_switch_case(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId, casenum: usize) {
+        let case = fd.sblocks_ref().block(blk).switch_caseblocks()[casenum].clone();
+        // op = getCaseBlock(casenum)->firstOp() — used only for markup tagging.
+        let firstop = self.case_first_op(fd, case.block);
+
+        if case.isdefault {
+            // default: (the label value is informational; default emits no value).
+            self.emit.tag_line();
+            self.emit.tag_case_label(
+                keywords::KEYWORD_DEFAULT,
+                SyntaxHighlight::KeywordColor,
+                &MarkupRef::none(),
+                case.label,
+            );
+            self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);
+        } else {
+            // case <label>: — one line per index targeting this case.
+            let jt_index = fd.sblocks_ref().block(blk).switch_jt_index();
+            let nlabels = match (jt_index, case.basicblock) {
+                (Some(j), Some(bb)) => {
+                    fd.get_jump_table(j as int4).num_indices_by_block(fd, bb).unwrap_or(1).max(1)
+                }
+                _ => 1,
+            };
+            for i in 0..nlabels {
+                let val = match (jt_index, case.basicblock) {
+                    (Some(j), Some(bb)) => {
+                        let ind = fd
+                            .get_jump_table(j as int4)
+                            .get_index_by_block(fd, bb, i)
+                            .unwrap_or(0);
+                        fd.get_jump_table(j as int4).get_label_by_index(ind)
+                    }
+                    _ => case.label,
+                };
+                self.emit.tag_line();
+                self.emit.print(keywords::KEYWORD_CASE, SyntaxHighlight::KeywordColor);
+                self.emit.spaces(1, 0);
+                // pushConstant(val, ct, casetoken, 0, op, displayFormat); recurse();
+                let sz = self.switch_var_size(fd, blk);
+                if let Some(op) = firstop {
+                    self.push_constant_ir(val, sz, op);
+                } else if let Some(op) = self.any_op(fd, case.block) {
+                    self.push_constant_ir(val, sz, op);
+                }
+                self.recurse();
+                self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);
+            }
+        }
+        let _ = arch;
+    }
+
+    /// First op of a case block (C++ `FlowBlock::firstOp` → front-leaf basic
+    /// block's first op), used only for case-label markup tagging.
+    fn case_first_op(&self, fd: &Funcdata, caseblk: BlockId) -> Option<OpId> {
+        let front = fd.sblocks_ref().get_front_leaf(caseblk)?;
+        let bb = fd.sblocks_ref().sub_block(front, 0)?;
+        fd.bb_op_head(bb)
+    }
+
+    /// Any op tag in a case block (fallback for markup when the block is empty).
+    fn any_op(&self, fd: &Funcdata, caseblk: BlockId) -> Option<OpId> {
+        self.case_first_op(fd, caseblk)
+    }
+
+    /// The byte-size of the switch variable (C++ `getSwitchType()` size), used to
+    /// format the case-label constant.  Resolved from the BRANCHIND's `in0`.
+    fn switch_var_size(&self, fd: &Funcdata, blk: BlockId) -> int4 {
+        let jt_index = match fd.sblocks_ref().block(blk).switch_jt_index() {
+            Some(j) => j,
+            None => return 4,
+        };
+        let indop = match fd.get_jump_table(jt_index as int4).get_indirect_op() {
+            Some(op) => op,
+            None => return 4,
+        };
+        fd.obank()
+            .get(indop)
+            .and_then(|o| o.get_in(0))
+            .and_then(|vn| fd.vbank().get(vn))
+            .map(|v| v.get_size())
+            .unwrap_or(4)
     }
 
     /// C++ `PrintC::emitBlockGoto` (printc.cc:2915): emit the block's body
@@ -2327,6 +2465,17 @@ impl PrintC {
                 } else {
                     self.emit.close_group(id);
                 }
+            }
+            // BRANCHIND (printc.cc:602 opBranchind): the switch header `switch(v)`.
+            // The structured switch body (`{ case N: ... }`) is emitted by
+            // `emit_block_switch`; here only the `switch(in0)` expression prints.
+            OpCode::CPUI_BRANCHIND => {
+                self.emit.tag_op(keywords::KEYWORD_SWITCH, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+                let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+                if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+                    self.push_vn_ir(fd, arch, vn, op);
+                }
+                self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id);
             }
             // RETURN (printc.cc:774 opReturn, the plain-return case).
             OpCode::CPUI_RETURN => {

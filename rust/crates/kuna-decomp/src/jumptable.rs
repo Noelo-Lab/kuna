@@ -1460,7 +1460,7 @@ impl JumpModel for JumpModelTrivial {
 ///
 /// The op-coupled wrapper lives in `jumptable.rs` (not `rangeutil.rs`) because it
 /// reads the function IR (`Funcdata`), which is above the value-set layer.
-fn circlerange_pull_back(
+pub(crate) fn circlerange_pull_back(
     fd: &Funcdata,
     rng: &mut CircleRange,
     op: OpId,
@@ -2234,14 +2234,13 @@ impl JumpBasicModel {
     /// Build the case labels via reverse emulation (C++
     /// `JumpBasic::buildLabels`, `jumptable.cc:1660`).
     ///
-    /// SEAM(W6): `backup2Switch` (reverse emulation via `TypeOp::recoverInput*`)
-    /// is the structuring/label stage; here the label is `NO_LABEL` when the
-    /// switch value cannot be reversed (the normalized == unnormalized common
-    /// case still produces the raw normalized value as the label, which the
-    /// structuring stage refines).  Recorded as a loss.
+    /// For each value in the original index range, [`backup2_switch`](Self::backup2_switch)
+    /// reverse-emulates the normalization chain (`normalvn` → `switchvn`) to
+    /// recover the original switch-statement label.  A non-reversible value (the
+    /// default/exit path) labels `NO_LABEL`.
     fn build_labels_basic(
         &self,
-        _fd: &mut Funcdata,
+        fd: &mut Funcdata,
         addresstable: &mut [Address],
         label: &mut Vec<uintb>,
         orig: &JumpBasicModel,
@@ -2250,14 +2249,19 @@ impl JumpBasicModel {
         let mut notdone = origrange.initialize_for_reading();
         while notdone {
             let val = origrange.get_value();
-            // backup2Switch reverse-emulation is W6/structuring; when normalvn ==
-            // switchvn (no normalization) the switch value is the raw value.
-            let switchval = if origrange.is_reversible() && self.normalvn == self.switchvn {
-                val
+            let switchval = if origrange.is_reversible() {
+                // Reverse-emulate the normalization to get the original switch
+                // value.  A failed reversal labels NO_LABEL (the default/exit
+                // path or an un-invertible op; C++ warns + NO_LABEL).
+                match self.backup2_switch(fd, val) {
+                    Ok(v) => v,
+                    Err(_) => NO_LABEL,
+                }
             } else {
-                NO_LABEL
+                NO_LABEL // If can't reverse, hopefully default/exit
             };
             label.push(switchval);
+            // The address table may have been truncated by the sanity check.
             if label.len() >= addresstable.len() {
                 break;
             }
@@ -2267,6 +2271,87 @@ impl JumpBasicModel {
             label.push(NO_LABEL);
         }
         Ok(())
+    }
+
+    /// Reverse-emulate the switch normalization to recover the original switch
+    /// value from a normalized index value (C++ `JumpBasic::backup2Switch`,
+    /// `jumptable.cc:1639`).
+    ///
+    /// Walks from `normalvn` back to `switchvn`, inverting each normalization op
+    /// via the architecture's [`OpBehavior`](kuna_num::opbehavior::OpBehavior)
+    /// `recover_input_unary`/`recover_input_binary`.  The normalization is
+    /// add/sub/zext/sext/... over a constant, so `recoverInput*` is exact.
+    fn backup2_switch(&self, fd: &Funcdata, output_in: uintb) -> KunaResult<uintb> {
+        let invn = self
+            .switchvn
+            .ok_or_else(|| KunaError::lowlevel("backup2Switch: no switchvn"))?;
+        let mut curvn = self
+            .normalvn
+            .ok_or_else(|| KunaError::lowlevel("backup2Switch: no normalvn"))?;
+        let mut output = output_in;
+        while curvn != invn {
+            let op = fd
+                .vbank()
+                .get(curvn)
+                .and_then(|v| v.get_def())
+                .ok_or_else(|| KunaError::lowlevel("backup2Switch: normalvn not written"))?;
+            let opc = fd.obank().get(op).unwrap().code();
+            let numin = fd.obank().get(op).unwrap().num_input();
+            // Find first non-constant input slot.
+            let mut slot = 0;
+            while slot < numin {
+                let invn_s = fd.obank().get(op).unwrap().get_in(slot).unwrap();
+                if !fd.vbank().get(invn_s).unwrap().is_constant() {
+                    break;
+                }
+                slot += 1;
+            }
+            let behave = fd
+                .get_arch()
+                .op_behavior(opc)
+                .ok_or_else(|| KunaError::lowlevel("backup2Switch: no op behavior"))?;
+            let eval = fd.obank().get(op).unwrap().get_eval_type();
+            use crate::op::pcodeop_flags as pf;
+            if eval & pf::binary != 0 {
+                let otherslot = 1 - slot;
+                let othervn = fd.obank().get(op).unwrap().get_in(otherslot).unwrap();
+                let otheraddr = fd.vbank().get(othervn).unwrap().get_addr().clone();
+                let othersize = fd.vbank().get(othervn).unwrap().get_size();
+                let otherval = if otheraddr.is_constant() {
+                    otheraddr.get_offset()
+                } else {
+                    // C++ reads a MemoryImage(addr.getSpace(),4,1024,loader); the
+                    // other operand is a read-only/global constant load.
+                    fd.get_arch().get_load_image_value(&otheraddr, othersize)?
+                };
+                let sizeout = fd
+                    .obank()
+                    .get(op)
+                    .unwrap()
+                    .get_out()
+                    .map(|o| fd.vbank().get(o).unwrap().get_size())
+                    .unwrap_or(0);
+                let slotvn = fd.obank().get(op).unwrap().get_in(slot).unwrap();
+                let sizein = fd.vbank().get(slotvn).unwrap().get_size();
+                output = behave.recover_input_binary(slot, sizeout, output, sizein, otherval)?;
+                curvn = slotvn;
+            } else if eval & pf::unary != 0 {
+                let sizeout = fd
+                    .obank()
+                    .get(op)
+                    .unwrap()
+                    .get_out()
+                    .map(|o| fd.vbank().get(o).unwrap().get_size())
+                    .unwrap_or(0);
+                let slotvn = fd.obank().get(op).unwrap().get_in(slot).unwrap();
+                let sizein = fd.vbank().get(slotvn).unwrap().get_size();
+                output = behave.recover_input_unary(sizeout, output, sizein)?;
+                curvn = slotvn;
+            } else {
+                return Err(KunaError::lowlevel("Bad switch normalization op"));
+            }
+        }
+        Ok(output)
     }
 }
 
