@@ -1514,6 +1514,7 @@ impl PrintC {
 // ===========================================================================
 
 use crate::architecture::Architecture;
+use crate::cast::{CastContext, CastStrategy, CastStrategyC, OpRef, VnRef};
 use crate::funcdata::Funcdata;
 use crate::seams::{BlockId, OpId, VarnodeId};
 use kuna_num::opcodes::OpCode;
@@ -2478,15 +2479,28 @@ impl PrintC {
             self.push_vn_explicit_ir(fd, arch, out, op);
         }
         // op->getOpcode()->push(this,op,(PcodeOp *)0)
-        self.op_push_ir(fd, arch, op);
+        self.op_push_ir(fd, arch, op, None);
     }
 
     /// C++ `op->getOpcode()->push(this,op,readop)` — the per-opcode RPN push
     /// (the `PrintC::op*` overrides, dispatched via [`op_emit_kind`] plus the
     /// hand-written cases the structured boolless body reaches).
-    fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+    ///
+    /// `read_op` is the C++ `readOp` argument threaded by `getOpcode()->push`:
+    /// the op that *reads* `op`'s output when `op` is being pushed as an implied
+    /// value (`pushVnImplied`/`pushImpliedField` pass the reader; printc.cc:2186),
+    /// else `None` at the top of an expression (printc.cc:2579 passes `(PcodeOp *)0`).
+    /// Only `opIntSext`/`opIntZext` consume it (the extension-cast-implied test,
+    /// printc.cc:806-830); every other override ignores it.
+    fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
         let opc = fd.obank().get(op).expect("op_push_ir: stale op").code();
         match opc {
+            // INT_SEXT (printc.cc:819 opIntSext) / INT_ZEXT (printc.cc:806 opIntZext):
+            // the cast-strategy decides whether the extension renders as an explicit
+            // `(intN)`/`(uintN)` cast, is hidden (implied by integer promotion), or
+            // falls back to the functional `SEXT(x)`/`ZEXT(x)` form.
+            OpCode::CPUI_INT_SEXT => self.op_int_sext_ir(fd, arch, op, read_op),
+            OpCode::CPUI_INT_ZEXT => self.op_int_zext_ir(fd, arch, op, read_op),
             // CBRANCH: the structured-if condition (printc.cc:556 opCbranch).
             // In the non-flat path opCbranch only emits the `( condition )`; the
             // `if` keyword is printed by emit_block_if.  yesparen = !comma_separate.
@@ -2731,6 +2745,128 @@ impl PrintC {
         }
     }
 
+    /// C++ `PrintC::opHiddenFunc` (printc.cc:494): the syntax represents `op`
+    /// with a hidden (un-printed) one-input function — the input expression is
+    /// printed without adornment, the [`tokens::HIDDEN`] token only guarding
+    /// evaluation order.  Used by `opIntSext`/`opIntZext` to suppress an
+    /// extension that is implied by integer promotion.
+    fn op_hidden_func_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        // pushOp(&hidden,op); pushVn(op->getIn(0),op,mods).
+        self.push_op(&tokens::HIDDEN, Some(op_key(op)));
+        if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+            self.push_vn_ir(fd, arch, vn, op);
+        }
+    }
+
+    /// C++ `PrintC::opIntZext` (printc.cc:806): a zero-extension renders as an
+    /// explicit `(uintN)`/`(intN)` cast when the cast strategy says the ZEXT is a
+    /// cast (`isZextCast`), is hidden (`opHiddenFunc`) when the extension is
+    /// implied by integer promotion in the surrounding expression
+    /// (`option_hide_exts && isExtensionCastImplied`), and otherwise falls back to
+    /// the functional `ZEXT(x)` form (`opFunc`).
+    ///
+    /// ```text
+    ///   if (castStrategy->isZextCast(out->getHighTypeDefFacing(),
+    ///                                in0->getHighTypeReadFacing(op))) {
+    ///     if (option_hide_exts && castStrategy->isExtensionCastImplied(op,readOp))
+    ///       opHiddenFunc(op);
+    ///     else
+    ///       opTypeCast(op);
+    ///   } else
+    ///     opFunc(op);
+    /// ```
+    fn op_int_zext_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        read_op: Option<OpId>,
+    ) {
+        let strat = match cast_strategy_for(arch) {
+            Some(s) => s,
+            // No type factory bound: degrade to the functional form, exactly as
+            // the pre-cast-routing dispatch did.
+            None => return self.op_func_ir(fd, arch, op),
+        };
+        let (outtype, intype) = match self.sext_zext_facing_types(fd, op) {
+            Some(t) => t,
+            None => return self.op_func_ir(fd, arch, op),
+        };
+        if strat.is_zext_cast(&outtype, &intype) {
+            if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
+                self.op_hidden_func_ir(fd, arch, op);
+            } else {
+                self.op_type_cast_ir(fd, arch, op);
+            }
+        } else {
+            self.op_func_ir(fd, arch, op);
+        }
+    }
+
+    /// C++ `PrintC::opIntSext` (printc.cc:819): the sign-extension analogue of
+    /// [`op_int_zext_ir`] — renders as an explicit `(intN)`/`(uintN)` cast
+    /// (`isSextCast`), is hidden when implied, or falls back to `SEXT(x)`.
+    fn op_int_sext_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        read_op: Option<OpId>,
+    ) {
+        let strat = match cast_strategy_for(arch) {
+            Some(s) => s,
+            None => return self.op_func_ir(fd, arch, op),
+        };
+        let (outtype, intype) = match self.sext_zext_facing_types(fd, op) {
+            Some(t) => t,
+            None => return self.op_func_ir(fd, arch, op),
+        };
+        if strat.is_sext_cast(&outtype, &intype) {
+            if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
+                self.op_hidden_func_ir(fd, arch, op);
+            } else {
+                self.op_type_cast_ir(fd, arch, op);
+            }
+        } else {
+            self.op_func_ir(fd, arch, op);
+        }
+    }
+
+    /// The `(out->getHighTypeDefFacing(), in0->getHighTypeReadFacing(op))` type
+    /// pair the C++ `opIntSext`/`opIntZext` feed to `isSextCast`/`isZextCast`
+    /// (printc.cc:809/822).  Resolved through the bare-Varnode facing accessors
+    /// (the W10 printc convention: by print-time the merged HighVariable type is
+    /// already pinned onto the Varnode, so `getTypeDefFacing`/`getTypeReadFacing`
+    /// equal the high-facing types the C++ reads). // SEAM(W8 union findResolve)
+    fn sext_zext_facing_types(
+        &self,
+        fd: &Funcdata,
+        op: OpId,
+    ) -> Option<(std::rc::Rc<crate::dtype::Datatype>, std::rc::Rc<crate::dtype::Datatype>)> {
+        let outvn = fd.obank().get(op)?.get_out()?;
+        let invn = fd.obank().get(op)?.get_in(0)?;
+        let outtype = fd.vbank().get(outvn)?.get_type_def_facing().clone();
+        let intype = fd.vbank().get(invn)?.get_type_read_facing(op).clone();
+        Some((outtype, intype))
+    }
+
+    /// C++ `castStrategy->isExtensionCastImplied(op, readOp)` (cast.cc:249) bridged
+    /// through an immutable [`PrintCastContext`] over `&Funcdata`.  The predicate
+    /// reads only IR shape + read-facing types (no mutation), so it runs on the
+    /// `&Funcdata` print path.
+    fn is_extension_cast_implied(
+        &self,
+        fd: &Funcdata,
+        strat: &CastStrategyC,
+        op: OpId,
+        read_op: Option<OpId>,
+    ) -> bool {
+        let ctx = PrintCastContext::new(fd);
+        let op_ref = ctx.op_ref(op);
+        let read_ref = read_op.map(|r| ctx.op_ref(r));
+        strat.is_extension_cast_implied(&ctx, op_ref, read_ref)
+    }
+
     /// C++ `PrintC::pushType` (printc.cc:1540) for a base type, reduced to the
     /// cast use: emit the type name as a single type-token operand (the
     /// `(type)` half of a [`tokens::TYPECAST`]).  The full `pushTypeStart` /
@@ -2875,8 +3011,10 @@ impl PrintC {
         };
         if implied {
             if let Some(defop) = def {
-                // defOp->getOpcode()->push(this,defOp,op)
-                self.op_push_ir(fd, arch, defop);
+                // defOp->getOpcode()->push(this,defOp,op): `op` is the reading op
+                // (the C++ `readOp`), threaded so opIntSext/opIntZext can test
+                // isExtensionCastImplied against the surrounding expression.
+                self.op_push_ir(fd, arch, defop, Some(op));
                 return;
             }
         }
@@ -3556,6 +3694,197 @@ fn absorb_zext(fd: &Funcdata, op: OpId) -> Option<OpId> {
         }
     }
     None
+}
+
+/// C++ `castStrategy = data.getArch()->print->getCastStrategy()` (the
+/// `CastStrategyC` the C printer holds).  Rebuilt here from the bound type
+/// factory each time it is needed (the strategy is stateless apart from the
+/// factory + `promoteSize = tlst->getSizeOfInt()`, so the rebuild is exact).
+fn cast_strategy_for(arch: &Architecture) -> Option<CastStrategyC> {
+    let tlst = arch.types_rc() as std::rc::Rc<dyn crate::dtype::TypeFactory>;
+    Some(CastStrategyC::new(tlst))
+}
+
+/// An immutable [`CastContext`] over `&Funcdata` for the print-time
+/// `isExtensionCastImplied` query (C++ the `Varnode *`/`PcodeOp *` the const
+/// `CastStrategyC::isExtensionCastImplied` dereferences).
+///
+/// `isExtensionCastImplied` makes only read-only IR queries, so unlike the
+/// cast-insertion-phase [`crate::coreaction_casts::FuncdataCastContext`] (which
+/// needs `&mut Funcdata` for the lazy HighVariable recompute and the constant
+/// print-flag mutators) this bridge borrows `&Funcdata` and never mutates.  It
+/// interns `VarnodeId`/`OpId` behind the opaque [`VnRef`]/[`OpRef`] handles via a
+/// `RefCell<Vec<_>>` (index == handle), exactly as `FuncdataCastContext` does, so
+/// the handles reproduce C++ pointer identity without a HashMap (clippy-banned).
+///
+/// Read-facing types resolve through the bare-Varnode accessor (the W10 print
+/// convention; by print-time the merged HighVariable type is pinned onto the
+/// Varnode). // SEAM(W8 union findResolve)
+struct PrintCastContext<'a> {
+    fd: &'a Funcdata,
+    vn_intern: std::cell::RefCell<Vec<VarnodeId>>,
+    op_intern: std::cell::RefCell<Vec<OpId>>,
+}
+
+impl<'a> PrintCastContext<'a> {
+    fn new(fd: &'a Funcdata) -> PrintCastContext<'a> {
+        PrintCastContext {
+            fd,
+            vn_intern: std::cell::RefCell::new(Vec::new()),
+            op_intern: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+
+    fn vn_ref(&self, vn: VarnodeId) -> VnRef {
+        let mut tab = self.vn_intern.borrow_mut();
+        if let Some(i) = tab.iter().position(|&k| k == vn) {
+            return VnRef(i);
+        }
+        tab.push(vn);
+        VnRef(tab.len() - 1)
+    }
+
+    fn op_ref(&self, op: OpId) -> OpRef {
+        let mut tab = self.op_intern.borrow_mut();
+        if let Some(i) = tab.iter().position(|&k| k == op) {
+            return OpRef(i);
+        }
+        tab.push(op);
+        OpRef(tab.len() - 1)
+    }
+
+    fn vn_key(&self, vn: VnRef) -> VarnodeId {
+        self.vn_intern.borrow()[vn.0]
+    }
+
+    fn op_key(&self, op: OpRef) -> OpId {
+        self.op_intern.borrow()[op.0]
+    }
+}
+
+impl CastContext for PrintCastContext<'_> {
+    fn op_code(&self, op: OpRef) -> OpCode {
+        let op = self.op_key(op);
+        self.fd.obank().get(op).expect("print cast ctx: stale op").code()
+    }
+
+    fn op_num_input(&self, op: OpRef) -> int4 {
+        let op = self.op_key(op);
+        self.fd.obank().get(op).expect("print cast ctx: stale op").num_input()
+    }
+
+    fn op_in(&self, op: OpRef, slot: int4) -> VnRef {
+        let opk = self.op_key(op);
+        let vn = self
+            .fd
+            .obank()
+            .get(opk)
+            .expect("print cast ctx: stale op")
+            .get_in(slot)
+            .expect("print cast ctx: missing input slot");
+        self.vn_ref(vn)
+    }
+
+    fn op_out(&self, op: OpRef) -> Option<VnRef> {
+        let opk = self.op_key(op);
+        let out = self.fd.obank().get(opk).expect("print cast ctx: stale op").get_out();
+        out.map(|vn| self.vn_ref(vn))
+    }
+
+    fn op_slot(&self, op: OpRef, vn: VnRef) -> int4 {
+        let opk = self.op_key(op);
+        let vnk = self.vn_key(vn);
+        self.fd.obank().get(opk).expect("print cast ctx: stale op").get_slot(vnk)
+    }
+
+    fn vn_is_constant(&self, vn: VnRef) -> bool {
+        let vn = self.vn_key(vn);
+        self.fd.vbank().get(vn).expect("print cast ctx: stale vn").is_constant()
+    }
+
+    fn vn_is_explicit(&self, vn: VnRef) -> bool {
+        let vn = self.vn_key(vn);
+        self.fd.vbank().get(vn).expect("print cast ctx: stale vn").is_explicit()
+    }
+
+    fn vn_is_written(&self, vn: VnRef) -> bool {
+        let vn = self.vn_key(vn);
+        self.fd.vbank().get(vn).expect("print cast ctx: stale vn").is_written()
+    }
+
+    fn vn_size(&self, vn: VnRef) -> int4 {
+        let vn = self.vn_key(vn);
+        self.fd.vbank().get(vn).expect("print cast ctx: stale vn").get_size()
+    }
+
+    fn vn_offset(&self, vn: VnRef) -> uintb {
+        let vn = self.vn_key(vn);
+        self.fd.vbank().get(vn).expect("print cast ctx: stale vn").get_offset()
+    }
+
+    fn vn_def(&self, vn: VnRef) -> Option<OpRef> {
+        let vn = self.vn_key(vn);
+        let def = self.fd.vbank().get(vn).expect("print cast ctx: stale vn").get_def();
+        def.map(|op| self.op_ref(op))
+    }
+
+    fn vn_lone_descend(&self, vn: VnRef) -> Option<OpRef> {
+        let vnk = self.vn_key(vn);
+        self.fd.lone_descend(vnk).map(|op| self.op_ref(op))
+    }
+
+    fn vn_high_type(&self, vn: VnRef) -> std::rc::Rc<crate::dtype::Datatype> {
+        let vnk = self.vn_key(vn);
+        // Bare-Varnode type (the W10 print convention; high type pinned by
+        // print-time). // SEAM(W8 union findResolve)
+        self.fd.vbank().get(vnk).expect("print cast ctx: stale vn").get_type().clone()
+    }
+
+    fn vn_high_type_read_facing(&self, vn: VnRef, op: OpRef) -> std::rc::Rc<crate::dtype::Datatype> {
+        let vnk = self.vn_key(vn);
+        let opk = self.op_key(op);
+        // vn->getHighTypeReadFacing(op): bare read-facing type by print-time.
+        // // SEAM(W8 union findResolve)
+        self.fd
+            .vbank()
+            .get(vnk)
+            .expect("print cast ctx: stale vn")
+            .get_type_read_facing(opk)
+            .clone()
+    }
+
+    fn op_inherits_sign(&self, op: OpRef) -> bool {
+        crate::typeop::type_op_info(self.op_code(op)).inherits_sign()
+    }
+
+    fn op_inherits_sign_first_param_only(&self, op: OpRef) -> bool {
+        crate::typeop::type_op_info(self.op_code(op)).inherits_sign_first_param_only()
+    }
+
+    fn op_is_shift_op(&self, op: OpRef) -> bool {
+        crate::typeop::type_op_info(self.op_code(op)).is_shift_op()
+    }
+
+    fn op_is_bool_output(&self, op: OpRef) -> bool {
+        let opk = self.op_key(op);
+        self.fd.obank().get(opk).expect("print cast ctx: stale op").is_bool_output()
+    }
+
+    fn op_is_call(&self, op: OpRef) -> bool {
+        let opk = self.op_key(op);
+        self.fd.obank().get(opk).expect("print cast ctx: stale op").is_call()
+    }
+
+    fn vn_set_unsigned_print(&mut self, _vn: VnRef) {
+        // Only reached by `mark_explicit_unsigned`/`mark_explicit_long_size`, which
+        // the print-time `isExtensionCastImplied` query never calls.  The immutable
+        // print path holds no `&mut Funcdata`, so this is unreachable here.
+        unreachable!("PrintCastContext is read-only: vn_set_unsigned_print not used by isExtensionCastImplied");
+    }
+
+    fn vn_set_long_print(&mut self, _vn: VnRef) {
+        unreachable!("PrintCastContext is read-only: vn_set_long_print not used by isExtensionCastImplied");
+    }
 }
 
 /// The functional print name for an opcode (C++ the `TypeOp::getOperatorName`
