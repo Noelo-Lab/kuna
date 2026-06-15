@@ -20,37 +20,52 @@
 //! computation can be ported and unit-tested without the not-yet-ported pieces
 //! of the IR mutation engine.
 //!
+//! # What is landed here
+//!
+//! * The endian-aware value type [`BitRange`] (W6) and the per-Varnode state
+//!   carrier [`BitFieldNodeState`] (W6).
+//! * The type-query layer the transforms read: `TypeStruct::collectBitFields`,
+//!   `hasBitFieldsInRange`, `BitFieldTriple`, and the `compareMaxByte`
+//!   comparators — ported in `dtype.rs` (W10, this wave) and consumed below.
+//! * The base [`BitFieldTransform`] (W10, this wave): the constructor
+//!   (`bitfield.cc:96-116`, including the `TypePartialStruct` unwrap) and
+//!   [`BitFieldTransform::establish_fields`] (`bitfield.cc:57-91`), the worklist
+//!   builder both transform passes call first.
+//!
 //! # Cross-wave seam (recorded as a loss)
 //!
-//! The two transform classes — `BitFieldInsertTransform` and
+//! The two transform subclasses — `BitFieldInsertTransform` and
 //! `BitFieldPullTransform` — and the six `Rule` `applyOp` bodies that drive them
-//! reach deep into IR-mutation surfaces and type-subsystem methods that are not
-//! yet ported:
+//! still reach into IR-mutation surfaces that are not yet ported:
 //!
-//! * `TypeStruct::collectBitFields` / `TypePartialStruct::getParent` /
-//!   `Datatype::getPtrInto` on a `TypePointerRel` — the structure-walk that
-//!   discovers which fields a Varnode overlaps (`dtype.rs` ports `getPtrInto`
-//!   only for the non-relative case; `collectBitFields` is unported).  // SEAM(W6)
-//! * The `INSERT` / `ZPULL` / `SPULL` `OpBehavior`s and the new-op creation /
-//!   back-and-forward graph traversal the transforms emit (`Funcdata` has the
-//!   op/varnode factory, but the bitfield emission sequence, `foldLoad`,
-//!   `foldPtrsub`, `opDestroyRecursive` scheduling, and the `INT_EQUAL`-group
-//!   compare folding are unported).  // SEAM(W6)
+//! * `Datatype::getPtrInto` on a `TypePointerRel` (the relative-pointer case the
+//!   rules use to resolve the bitfield struct from the pointer operand) — only
+//!   the non-relative `getPtrInto` is ported.  // SEAM(W10)
+//! * The `INSERT` / `ZPULL` / `SPULL` `OpBehavior`s/`TypeOp`s and the new-op
+//!   creation / back-and-forward graph traversal the transforms emit
+//!   (`Funcdata` exposes the op/varnode factory and `op_destroy_recursive`, but
+//!   the bitfield emission sequence — `doTrace`/`apply`, `foldLoad`,
+//!   `foldPtrsub`, the `INT_EQUAL`-group compare folding — is unported), and the
+//!   printc `pushBitfield`/`checkBitFieldMember` rendering of the resulting
+//!   field accesses.  // SEAM(W10)
 //!
 //! Each rule below transcribes the guards it *can* evaluate with the ported type
 //! surface (`hasBitfields`, `getTypeReadFacing`/`getTypeDefFacing`, the
 //! `isWritten`/`code()` and `notPrinted` checks) and then returns `0` ("rule did
 //! not apply" — the conservative value the C++ also returns on every early-out)
-//! at the precise point where it would hand off to a transform.  The rules expose
-//! themselves through [`specs`] in C++ definition order, per the `action.rs`
-//! convention, so the W8 `universalAction` builder can place them unchanged once
-//! the transforms land.
+//! at the precise point where it would hand off to the subclass transform.  The
+//! rules expose themselves through [`specs`] in C++ definition order, per the
+//! `action.rs` convention, so the W8 `universalAction` builder can place them
+//! unchanged once the subclass transforms land.
+
+use std::rc::Rc;
 
 use kuna_base::address::{leastsigbit_set, mostsigbit_set};
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
+use crate::dtype::{type_metatype, BitFieldTriple, Datatype};
 use crate::funcdata::Funcdata;
 use crate::seams::VarnodeId;
 
@@ -519,6 +534,160 @@ impl BitFieldNodeState {
         match self.field {
             FieldRef::Field { is_int } => self.is_sign_extended == is_int,
             FieldRef::Hole => false,
+        }
+    }
+}
+
+// =============================================================================
+// BitFieldTransform (base) (bitfield.hh:44-60, bitfield.cc:53-116)
+// =============================================================================
+
+/// Base class for transforming bitfield expressions (C++ `BitFieldTransform`,
+/// bitfield.hh:47-60).
+///
+/// For both insertion and extraction, this establishes the bitfields that need
+/// to be traced.  The W6 port already carries the value type ([`BitRange`]) and
+/// the per-Varnode state carrier ([`BitFieldNodeState`]); this struct ports the
+/// base constructor and [`establish_fields`](Self::establish_fields) — the
+/// worklist builder that the two transform passes share.  The live `Funcdata
+/// *func` becomes a deferred reference: the constructor only reads
+/// `func->getArch()->getDefaultDataSpace()->isBigEndian()` to set `isBigEndian`,
+/// so the port takes that `bool` directly (the caller — a `Rule::applyOp` body
+/// holding the `Funcdata` — passes it in), keeping the worklist arithmetic pure
+/// and unit-testable.
+///
+/// The `BitFieldInsertTransform`/`BitFieldPullTransform` subclasses and the
+/// IR-mutation `apply()` bodies remain a recorded seam (see the module docs); a
+/// faithful `establish_fields` is the prerequisite both subclasses call first.
+pub struct BitFieldTransform {
+    /// Structure owning the bitfields (C++ `parentStruct`).  `None` when the
+    /// root data-type is neither a struct nor a partial-struct wrapping one — the
+    /// C++ leaves `parentStruct` null in that case and `establishFields` is never
+    /// reached.
+    pub parent_struct: Option<Rc<Datatype>>,
+    /// Byte offset into parent structure (C++ `initialOffset`).
+    pub initial_offset: int4,
+    /// Size of Varnode containing bitfields (C++ `containerSize`).
+    pub container_size: int4,
+    /// Endianness associated with bitfields (C++ `isBigEndian`).
+    pub is_big_endian: bool,
+    /// Fields that are being followed (C++ `workList`).
+    pub work_list: Vec<BitFieldNodeState>,
+}
+
+impl BitFieldTransform {
+    /// Constructor setting up basic info about a bitfield data-type (C++
+    /// `BitFieldTransform::BitFieldTransform`, bitfield.cc:96-116).
+    ///
+    /// `dt` is the bitfield data-type and `off` is any initial byte offset into
+    /// it for the root Varnode.  `big_endian` is
+    /// `func->getArch()->getDefaultDataSpace()->isBigEndian()` (read off the
+    /// architecture by the caller).  When `dt` is a `TYPE_PARTIALSTRUCT`, the
+    /// parent struct is unwrapped and the partial's offset folds into
+    /// `initialOffset`.
+    pub fn new(dt: &Rc<Datatype>, off: int4, big_endian: bool) -> BitFieldTransform {
+        let mut parent_struct: Option<Rc<Datatype>> = None;
+        let mut initial_offset: int4 = -1;
+        let meta = dt.get_metatype();
+        if meta == type_metatype::TYPE_STRUCT {
+            parent_struct = Some(Rc::clone(dt));
+            initial_offset = off;
+        } else if meta == type_metatype::TYPE_PARTIALSTRUCT {
+            // TypePartialStruct *part = (TypePartialStruct *)dt; dt = part->getParent();
+            // (`getParent` returns the `container`, which is `get_partial_base` for a
+            // partial-struct; `getOffset` is `get_partial_offset`.)
+            if let (Some(parent), Some(part_off)) =
+                (dt.get_partial_base(), dt.get_partial_offset())
+            {
+                if parent.get_metatype() == type_metatype::TYPE_STRUCT {
+                    initial_offset = off + part_off;
+                    parent_struct = Some(parent);
+                }
+            }
+        }
+        BitFieldTransform {
+            parent_struct,
+            initial_offset,
+            container_size: -1,
+            is_big_endian: big_endian,
+            work_list: Vec::new(),
+        }
+    }
+
+    /// Build the worklist for each bitfield overlapped by a given Varnode (C++
+    /// `BitFieldTransform::establishFields`, bitfield.cc:57-91).
+    ///
+    /// A [`BitFieldNodeState`] is constructed for each bitfield the Varnode
+    /// overlaps; holes between bitfields also get a record when `follow_holes`.
+    /// `vn` is the opaque Varnode handle and `vn_size` is `vn->getSize()` (the
+    /// C++ reads only the size off the Varnode here).  `parent_struct` must be a
+    /// `TYPE_STRUCT` (guaranteed by the constructor's gating) for the
+    /// `collectBitFields` call to produce records; otherwise the worklist is
+    /// empty.
+    pub fn establish_fields(&mut self, vn: VarnodeId, vn_size: int4, follow_holes: bool) {
+        let vn_bit_size = vn_size * 8;
+        let bitrange = BitRange::new(
+            self.initial_offset,
+            vn_size,
+            0,
+            vn_bit_size,
+            self.is_big_endian,
+        );
+        let mut overlap: Vec<BitFieldTriple> = Vec::new();
+        if let Some(parent) = &self.parent_struct {
+            parent.collect_bit_fields(0, &mut overlap, self.initial_offset, vn_size);
+        }
+        overlap.sort_by(|a, b| {
+            // BitFieldTriple::compare is a strict-weak "less than"; map to Ordering.
+            if BitFieldTriple::compare(a, b) {
+                std::cmp::Ordering::Less
+            } else if BitFieldTriple::compare(b, a) {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        });
+        let mut pos: int4 = 0;
+        for triple in &overlap {
+            // Iterate from least significant to most.
+            let field_bits = triple.bitfield.bits();
+            let mut field_pos = bitrange.translate_lsb(&field_bits);
+            let mut field_end = field_pos + field_bits.num_bits;
+            if field_pos > vn_bit_size {
+                field_pos = vn_bit_size;
+            }
+            if field_end > vn_bit_size {
+                field_end = vn_bit_size;
+            }
+            if field_pos > pos {
+                // We have a hole.
+                if follow_holes {
+                    self.work_list
+                        .push(BitFieldNodeState::hole(&bitrange, vn, pos, field_pos - pos));
+                }
+                pos = field_pos;
+            }
+            let code = bitrange.overlap_test(&field_bits);
+            if code == 0 || code == 3 {
+                // Field is properly contained in vn.
+                let is_int =
+                    triple.bitfield.field_type.get_metatype() == type_metatype::TYPE_INT;
+                self.work_list.push(BitFieldNodeState::follow_field(
+                    &bitrange,
+                    vn,
+                    &field_bits,
+                    is_int,
+                ));
+            } else if follow_holes {
+                self.work_list
+                    .push(BitFieldNodeState::hole(&bitrange, vn, pos, field_end - pos));
+            }
+            pos = field_end;
+        }
+        if pos < vn_bit_size && follow_holes {
+            // Final hole.
+            self.work_list
+                .push(BitFieldNodeState::hole(&bitrange, vn, pos, vn_bit_size - pos));
         }
     }
 }
