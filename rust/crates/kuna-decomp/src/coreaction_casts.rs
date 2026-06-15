@@ -296,15 +296,23 @@ pub(crate) fn get_input_cast(
         OpCode::CPUI_LOAD => get_input_cast_load(data, strat, op, slot),
         // TypeOpStore::getInputCast (typeop.cc:521-563).
         OpCode::CPUI_STORE => get_input_cast_store(data, strat, op, slot),
-        // The six comparison ops share the "promote both inputs to a common type"
-        // body (typeop.cc:934-1124).  EQUAL/NOTEQUAL/SLESS/SLESSEQUAL use
-        // checkIntPromotionForCompare; LESS/LESSEQUAL force-promote.
-        OpCode::CPUI_INT_EQUAL
-        | OpCode::CPUI_INT_NOTEQUAL
-        | OpCode::CPUI_INT_SLESS
-        | OpCode::CPUI_INT_SLESSEQUAL => get_input_cast_equal(data, strat, op, slot),
+        // EQUAL/NOTEQUAL share the "coerce both inputs to the common (most-ordered)
+        // input read-facing type" body (typeop.cc:934-944, :998-1008): reqtype =
+        // max-read-facing(in0,in1), castStandard(reqtype,curtype,false,false).
+        OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => {
+            get_input_cast_equal(data, strat, op, slot)
+        }
+        // SLESS/SLESSEQUAL and LESS/LESSEQUAL share the *inputTypeLocal* body
+        // (typeop.cc:1025-1033, :1051-1059, :1077-1085, :1101-1108): reqtype =
+        // op->inputTypeLocal(slot), gated by checkIntPromotionForCompare, then
+        // castStandard(reqtype,curtype,true,care_ptr_uint).  They differ ONLY in
+        // the final care_ptr_uint flag: SLESS/SLESSEQUAL pass TRUE (signed compare,
+        // typeop.cc:1032/:1058), LESS/LESSEQUAL pass FALSE (typeop.cc:1084/:1108).
+        OpCode::CPUI_INT_SLESS | OpCode::CPUI_INT_SLESSEQUAL => {
+            get_input_cast_less(data, strat, op, slot, true)
+        }
         OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_LESSEQUAL => {
-            get_input_cast_less(data, strat, op, slot)
+            get_input_cast_less(data, strat, op, slot, false)
         }
         // TypeOpIntZext::getInputCast / TypeOpIntSext::getInputCast
         // (typeop.cc:1133-1170): a cast is needed only when promotion forces it.
@@ -454,11 +462,12 @@ fn get_input_cast_store(
     strat.cast_standard(&pointed_to, &value_type, false, true)
 }
 
-/// The comparison-op getInputCast body (typeop.cc:934-1124).  `promotion_gated`
-/// selects the EQUAL/NOTEQUAL/SLESS family (consult checkIntPromotionForCompare)
-/// vs the LESS/LESSEQUAL family (always force the common type).
-/// TypeOpEqual/NotEqual/IntSless/IntSlessEqual::getInputCast (typeop.cc:934-1075):
-/// both inputs are coerced to the common (most-ordered) input type.
+/// TypeOpEqual/TypeOpNotEqual::getInputCast (typeop.cc:934-944, :998-1008): both
+/// inputs are coerced to the common (most-ordered) input read-facing type, gated
+/// by checkIntPromotionForCompare, with `castStandard(reqtype,curtype,false,false)`.
+/// NOTE: SLESS/SLESSEQUAL do NOT share this body — they use inputTypeLocal +
+/// (true,true) (see get_input_cast_less), distinct from both reqtype source AND
+/// the final cast tuple.
 fn get_input_cast_equal(
     data: &mut Funcdata,
     strat: &CastStrategyC,
@@ -486,13 +495,19 @@ fn get_input_cast_equal(
     strat.cast_standard(&reqtype, &slottype, false, false)
 }
 
-/// TypeOpIntLess/IntLessEqual::getInputCast (typeop.cc:1077-1124): the required
-/// type is the *local* input type; coerce with `care_uint_int = true`.
+/// The signed/unsigned ordered-compare getInputCast body, shared by
+/// TypeOpIntSless/IntSlessEqual (typeop.cc:1025-1033, :1051-1059) and
+/// TypeOpIntLess/IntLessEqual (typeop.cc:1077-1085, :1101-1108): the required
+/// type is the *local* input type (a SIGNED int4 for SLESS, an UNSIGNED uint4 for
+/// LESS); coerce with `care_uint_int = true`.  `care_ptr_uint` is the only flag
+/// that differs: SLESS/SLESSEQUAL pass `true` (signed compare), LESS/LESSEQUAL
+/// pass `false`.
 fn get_input_cast_less(
     data: &mut Funcdata,
     strat: &CastStrategyC,
     op: OpId,
     slot: int4,
+    care_ptr_uint: bool,
 ) -> Option<Rc<Datatype>> {
     let reqtype = input_type_local(data, op, slot);
     let needs_promote = {
@@ -505,7 +520,7 @@ fn get_input_cast_less(
     }
     let slotvn = data.obank().get(op)?.get_in(slot)?;
     let curtype = data.vn_high_type_read_facing(slotvn, op);
-    strat.cast_standard(&reqtype, &curtype, true, false)
+    strat.cast_standard(&reqtype, &curtype, true, care_ptr_uint)
 }
 
 /// TypeOpIntZext::getInputCast / TypeOpIntSext::getInputCast (typeop.cc:1133-1170).
@@ -524,14 +539,13 @@ fn get_input_cast_extension(
     if needs {
         return Some(input_type_local(data, op, slot));
     }
-    // else fall through to the default getInputCast.
-    let invn = data.obank().get(op)?.get_in(slot)?;
-    if data.vbank().get(invn)?.is_annotation() {
-        return None;
-    }
+    // ZEXT/SEXT do NOT fall through to the default tuple: the C++ tail is its own
+    // `castStandard(reqtype,curtype,true,false)` (typeop.cc:1139-1140 ZEXT,
+    // :1165-1166 SEXT) -- care_uint_int=TRUE, care_ptr_uint=FALSE.
     let reqtype = input_type_local(data, op, slot);
+    let invn = data.obank().get(op)?.get_in(slot)?;
     let curtype = data.vn_high_type_read_facing(invn, op);
-    strat.cast_standard(&reqtype, &curtype, false, true)
+    strat.cast_standard(&reqtype, &curtype, true, false)
 }
 
 /// TypeOpPtradd::getInputCast (typeop.cc:2252-2268): slot 0 compares the
