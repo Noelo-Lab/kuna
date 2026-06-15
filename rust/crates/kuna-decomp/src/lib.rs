@@ -26,6 +26,7 @@ pub mod block;
 pub mod funcdata;
 pub mod funcdata_block;
 pub mod funcdata_callsite;
+pub mod funcdata_facing;
 pub mod funcdata_merge;
 pub mod funcdata_op;
 pub mod funcdata_printraw;
