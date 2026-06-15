@@ -1646,6 +1646,14 @@ impl RuleDivOpt {
             return None; // There MUST be an INT_MULT
         }
         let mut in_vn_cur = in_vn(data, cur_op, 0);
+        // C++ GUARD A (ruleaction.cc:8113): `if (!inVn->isWritten()) return 0;`
+        // applies to getIn(0) BEFORE the isConstantExtended branch.  It rejects
+        // both a free getIn(0) (so the unguarded `inVn->getDef()` at :8122 is
+        // never reached) and a bare-constant getIn(0) (a constant is never
+        // isWritten, so C++ declines rather than treating the constant as `y`).
+        if !is_written(data, in_vn_cur) {
+            return None;
+        }
         let y: [u64; 2];
         if let Some(v) = seam_is_constant_extended(data, in_vn_cur) {
             y = v;
