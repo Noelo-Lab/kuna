@@ -2971,7 +2971,12 @@ impl PrintC {
             None => return,
         };
         if v.is_constant() {
-            self.push_constant_ir(v.get_offset(), v.get_size(), op);
+            let (off, sz) = (v.get_offset(), v.get_size());
+            // C++ `push_integer` reads the constant's `vn->getHigh()->getSymbol()
+            // ->getDisplayFormat()` (printc.cc:1370-1376); the `force varnode`
+            // equate Symbol parks that format on the high (build_dynamic_symbol).
+            let display_fmt = fd.vn_high_display_format(vn);
+            self.push_constant_ir_fmt(off, sz, op, display_fmt);
             return;
         }
         // HighVariable name resolution (C++ `pushSymbolDetail`: `high->getSymbol()`
@@ -3324,10 +3329,20 @@ impl PrintC {
     /// dec` datatests (e.g. `divopt.xml`) rendered every divisor in hex.  When
     /// neither force is active the prior `mostNaturalBase` default is preserved.
     fn push_constant_ir(&mut self, val: uintb, sz: int4, op: OpId) {
+        self.push_constant_ir_fmt(val, sz, op, display_format::NONE);
+    }
+
+    /// As [`push_constant_ir`](Self::push_constant_ir) but with the caller-resolved
+    /// `displayFormat` override (C++ `push_integer`'s `displayFormat` argument,
+    /// printc.cc:1360/1394).  A non-`NONE` `display_fmt_in` is the
+    /// `vn->getHigh()->getSymbol()->getDisplayFormat()` value (the `force varnode`
+    /// equate Symbol); it wins over the `val<=10`/`mostNaturalBase` default exactly
+    /// as in [`resolve_integer_format`].
+    fn push_constant_ir_fmt(&mut self, val: uintb, sz: int4, op: OpId, display_fmt_in: u32) {
         let force_dec = self.context.is_set(modifiers::FORCE_DEC);
         let force_hex = self.context.is_set(modifiers::FORCE_HEX);
         let (print_negsign, val, display_fmt) =
-            resolve_integer_format(val, sz, false, display_format::NONE, force_hex, force_dec);
+            resolve_integer_format(val, sz, false, display_fmt_in, force_hex, force_dec);
         let tok = format_integer_token(print_negsign, val, display_fmt, sz, false, false, false, "");
         self.push_atom(&Atom::with_op(
             tok,

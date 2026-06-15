@@ -390,6 +390,61 @@ fn parse_varnode(
     Ok((loc, size, pc, uq))
 }
 
+/// C++ `IfaceDecompData::readVarnode` (`ifacedecomp.cc:1469-1517`): parse a
+/// varnode specifier (via [`parse_varnode`]) and resolve it to a live Varnode in
+/// the current function `fd`.
+///
+/// For a constant Varnode (its storage offset is the value) the p-code sequence
+/// number must be present and identify the reading op; the constant input of
+/// that op whose address matches `loc` is returned.  The input (`pc` invalid and
+/// `uq == ~0`) and defined (`pc` and `uq` both present) arms use the
+/// `findVarnodeInput`/`findVarnodeWritten` bank queries.  The mixed loc-scan arm
+/// (exactly one of `pc`/`uq` given) needs the `beginLoc`/`endLoc` storage walk,
+/// a bank-iterator surface not yet on this console seam — it errs as documented.
+/// `Ok(None)` means "the requested varnode does not exist" (the C++ throw).
+fn read_varnode(
+    fd: &Funcdata,
+    loc: &kuna_base::address::Address,
+    defsize: int4,
+    pc: &kuna_base::address::Address,
+    uq: uintm,
+) -> Result<Option<kuna_decomp::seams::VarnodeId>, String> {
+    use kuna_base::address::SeqNum;
+    use kuna_base::space::spacetype;
+    let no_uq = uq == !0u32;
+    let space = loc.get_space().ok_or_else(|| "Varnode has no space".to_string())?;
+    if space.get_type() == spacetype::IPTR_CONSTANT {
+        // For a constant the p-code op reading it must be fully specified.
+        if pc.is_invalid() || no_uq {
+            return Err("Missing p-code sequence number".to_string());
+        }
+        // SeqNum seq(pc,uq); op = fd->findOp(seq);
+        let seq = SeqNum::new(pc.clone(), uq);
+        if let Some(op) = fd.obank().find_op(&seq) {
+            // for(i..numInput) if (op->getIn(i)->getAddr()==loc) return getIn(i);
+            let n = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+            for i in 0..n {
+                if let Some(tmpvn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
+                    if fd.vbank().get(tmpvn).map(|v| v.get_addr() == loc).unwrap_or(false) {
+                        return Ok(Some(tmpvn));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    } else if pc.is_invalid() && no_uq {
+        // vn = fd->findVarnodeInput(defsize,loc);
+        Ok(fd.find_varnode_input(defsize, loc))
+    } else if !pc.is_invalid() && !no_uq {
+        // vn = fd->findVarnodeWritten(defsize,loc,pc,uq);
+        Ok(fd.find_varnode_written(defsize, loc, pc, Some(uq)))
+    } else {
+        // The residual `beginLoc(defsize,loc)`..`endLoc` storage walk
+        // (exactly one of pc/uq given) — not on this seam's bank surface.
+        Err("kuna rust port: readVarnode loc-scan arm needs the beginLoc/endLoc bank iterator".to_string())
+    }
+}
+
 /// C++ `s >> hex >> hash` (`IfcMaphash`/`IfcMapunionfacet`): extract one
 /// hexadecimal `uint8` dynamic hash from the stream.  An optional `0x`/`0X`
 /// prefix is honored (stream `hex` accepts either form); the digit run is the
@@ -2067,12 +2122,89 @@ decomp_command!(
 // --- force varnode / datatype / goto (ifacedecomp.cc:1769-1831) ------------
 
 decomp_command!(
-    /// C++ `IfcForceFormat`: `force varnode <varnode> <format>`.
+    /// C++ `IfcForceFormat`: `force varnode <varnode> <format>` (ifacedecomp.cc:
+    /// 1769-1788).  Mark a constant Varnode in the current function so it prints in
+    /// one of hex/dec/oct/bin/char: read the varnode, build a dynamic (equate)
+    /// Symbol over it, then force the integer display format and type-lock it.
     IfcForceFormat,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let _dcp = dcp_mut(status)?;
-        // C++ readVarnode then validates constant/integer ("Can only force ..").
-        Err(engine_unavailable("IfaceDecompData::readVarnode + Scope::setDisplayFormat"))
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        use kuna_decomp::dtype::type_metatype;
+        use kuna_decomp::varnode::varnode_flags;
+        // C++ readVarnode begins with "if (fd==0) throw No function selected".
+        if dcp_mut(status)?.fd.is_none() {
+            return Err(IfaceError::execution("No function selected"));
+        }
+        let dcp = dcp_mut(status)?;
+        let prog = dcp
+            .conf
+            .as_ref()
+            .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        // C++: Varnode *vn = dcp->readVarnode(s) — parse + resolve the varnode.
+        let (loc, defsize, pc, uq) = parse_varnode(prog, s).map_err(IfaceError::parse)?;
+        // The DynamicHash collision budget (glb->dynamic_hash_maxdup_high) and the
+        // EquateSymbol's getBase(1,TYPE_UNKNOWN) type are the two merged-tree seams
+        // build_dynamic_symbol takes as parameters; resolve both from the arch.
+        let maxduplicates: u32 = if prog.arch().dynamic_hash_maxdup_high { 16 } else { 8 };
+        let base1 = prog
+            .arch()
+            .types()
+            .get_base(1, type_metatype::TYPE_UNKNOWN)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        let fd = dcp.fd.as_ref().expect("fd checked Some above");
+        let vn = read_varnode(fd, &loc, defsize, &pc, uq)
+            .map_err(IfaceError::execution)?
+            .ok_or_else(|| IfaceError::execution("Requested varnode does not exist"))?;
+        // C++: if (!vn->isConstant()) throw "Can only force format on a constant".
+        let v = fd
+            .vbank()
+            .get(vn)
+            .ok_or_else(|| IfaceError::execution("Requested varnode does not exist"))?;
+        if !v.is_constant() {
+            return Err(IfaceError::execution("Can only force format on a constant"));
+        }
+        // C++: mt = vn->getType()->getMetatype();
+        //      if (mt!=TYPE_INT && mt!=TYPE_UINT && mt!=TYPE_UNKNOWN) throw "...".
+        let mt = v.get_type().get_metatype();
+        if mt != type_metatype::TYPE_INT
+            && mt != type_metatype::TYPE_UINT
+            && mt != type_metatype::TYPE_UNKNOWN
+        {
+            return Err(IfaceError::execution(
+                "Can only force format on integer type constant",
+            ));
+        }
+        // C++: dcp->fd->buildDynamicSymbol(vn).
+        let fd = dcp.fd.as_mut().expect("fd checked Some above");
+        fd.build_dynamic_symbol(vn, maxduplicates, base1)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        // C++: sym = vn->getHigh()->getSymbol(); if (sym==0) throw "Unable to create symbol".
+        let sym = fd
+            .vn_high_equate_symbol(vn)
+            .ok_or_else(|| IfaceError::execution("Unable to create symbol"))?;
+        // C++: format = Datatype::encodeIntegerFormat(formatString).
+        s.skip_ws();
+        let format_string = s.read_token();
+        let format: kuna_base::types::uint4 = match format_string.as_str() {
+            "hex" => 1,
+            "dec" => 2,
+            "oct" => 3,
+            "bin" => 4,
+            "char" => 5,
+            _ => {
+                return Err(IfaceError::execution(format!(
+                    "Unrecognized integer format: {format_string}"
+                )))
+            }
+        };
+        // C++: sym->getScope()->setDisplayFormat(sym,format);
+        //      sym->getScope()->setAttribute(sym,Varnode::typelock);
+        let scope_local = fd
+            .get_scope_local_mut()
+            .ok_or_else(|| IfaceError::execution("Function has no local scope"))?;
+        scope_local.set_display_format(sym, format);
+        scope_local.set_attribute(sym, varnode_flags::typelock);
+        status.out("Successfully forced format display\n");
+        Ok(())
     }
 );
 
