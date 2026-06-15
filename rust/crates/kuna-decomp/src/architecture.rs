@@ -1180,6 +1180,18 @@ impl Architecture {
             .unwrap_or(default_size);
         let stack_pointer_size =
             manage.get_stack_space().map(|s| s.get_addr_size() as int4);
+        // C++ `TypeFactory` reads `getArch()->getDefaultDataSpace()->isBigEndian()`
+        // for bitfield layout (TypeBitField ctor, type.cc:873; struct parse,
+        // grammar.cc:2626) and pointer truncation (TypePointer::calcTruncate,
+        // type.cc:1202).  Seed that endianness bit here, where the default data
+        // space is first known, so big-endian structs lay their bitfields out in
+        // memory order (without it every struct is laid out little-endian and the
+        // bitfield-expression recovery's BE range can't match the LE-laid fields).
+        let big_endian = manage
+            .get_default_data_space()
+            .map(|s| s.is_big_endian())
+            .unwrap_or(false);
+        self.types.set_truncate_big_endian(big_endian);
         self.types.set_default_alignment_map();
         self.types.setup_sizes(stack_pointer_size, default_data_addr_size, default_size);
     }

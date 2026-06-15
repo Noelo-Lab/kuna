@@ -1046,6 +1046,7 @@ pub fn specs() -> Vec<RuleSpec> {
     ]
 }
 
+pub mod expression;
 pub mod insert;
 pub mod pull;
 

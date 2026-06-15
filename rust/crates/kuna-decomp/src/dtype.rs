@@ -2531,6 +2531,44 @@ impl Datatype {
         false
     }
 
+    /// Return the bitfield matching the given bit range (C++
+    /// `TypeStruct::findMatchingBitField`, type.cc:1777-1797).
+    ///
+    /// Binary-searches the (offset-sorted) `bitfield` vector using
+    /// [`BitRange::overlap_test`] as the comparator: `0` is an exact match (the
+    /// bitfield is returned), `-1`/`1` narrow the search window, and any partial
+    /// overlap (`2`) breaks the search with no match.  Returns an owned clone of
+    /// the matched record (the expression-recovery family consumes it by value,
+    /// the W6 type subsystem having flattened the `const TypeBitField *` pointer
+    /// into the carried scalar fields).  `None` when `self` is not a struct or no
+    /// exact match exists.
+    pub fn find_matching_bit_field(&self, range: &BitRange) -> Option<TypeBitField> {
+        let (_field, bitfield) = self.as_struct_fields()?;
+        // C++ `int4 min = 0; int4 max = bitfield.size()-1;` — note `max` is the
+        // signed last index, so an empty vector gives `max = -1` and the loop is
+        // skipped immediately.
+        let mut min: int4 = 0;
+        let mut max: int4 = bitfield.len() as int4 - 1;
+        while min <= max {
+            let mid = (min + max) / 2;
+            let cur = &bitfield[mid as usize];
+            // C++ `range.overlapTest(curfield.bits)` — the receiver is the query
+            // `range`, the argument is the candidate's `bits`.
+            let code = range.overlap_test(&cur.bits());
+            if code == 0 {
+                return Some(cur.clone());
+            }
+            if code == -1 {
+                max = mid - 1;
+            } else if code == 1 {
+                min = mid + 1;
+            } else {
+                break; // Partial overlap
+            }
+        }
+        None
+    }
+
     /// Calculate the aligned size given size and alignment (C++
     /// `Datatype::calcAlignSize`, type.cc:540-547): round `sz` up to a multiple
     /// of `align`.
