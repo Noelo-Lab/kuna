@@ -57,6 +57,18 @@
 //! rules expose themselves through [`specs`] in C++ definition order, per the
 //! `action.rs` convention, so the W8 `universalAction` builder can place them
 //! unchanged once the subclass transforms land.
+//!
+//! # Update (W10 bitfield-absorb): the two absorb rules are now ported
+//!
+//! The four materialization rules (`RuleBitFieldStore`/`Out`/`Load`/`In`) drive
+//! the landed [`insert`]/[`pull`] transforms.  The two *post*-materialization
+//! simplification rules — `RulePullAbsorb` (`bitfield.cc:1767-2208`) and
+//! `RuleInsertAbsorb` (`bitfield.cc:2214-2400`) — are ported faithfully in the
+//! [`absorb`] submodule: their `applyOp` bodies (below) now delegate to
+//! [`absorb::pull_absorb_apply`] / [`absorb::insert_absorb_apply`] instead of
+//! returning `0`.  These consolidate a byte container shared by several bitfields
+//! into one `INSERT`/`PULL` per field so each renders as a separate
+//! `ptr->field = ...` statement (e.g. `ip->field5 = ip->field5 + 1;`).
 
 use std::rc::Rc;
 
@@ -996,13 +1008,10 @@ impl Rule for RulePullAbsorb {
     }
 
     fn apply_op(&mut self, op: crate::seams::OpId, data: &mut Funcdata) -> int4 {
-        // C++ applyOp (bitfield.cc:2168-2212): walks the descendants of the
+        // C++ applyOp (bitfield.cc:2168-2208): walks the descendants of the
         // ZPULL/SPULL output and dispatches into the absorb* helpers, all of
-        // which emit/destroy ops.
-        //
-        // SEAM(W6): the absorb* graph rewrites are unported.
-        let _ = (op, data);
-        0
+        // which emit/destroy ops.  Ported in `absorb::pull_absorb_apply`.
+        absorb::pull_absorb_apply(op, data)
     }
 }
 
@@ -1022,11 +1031,9 @@ impl Rule for RuleInsertAbsorb {
 
     fn apply_op(&mut self, op: crate::seams::OpId, data: &mut Funcdata) -> int4 {
         // C++ applyOp (bitfield.cc:2363-2400): switches on the def opcode of the
-        // INSERT value input and dispatches into the absorb* helpers.
-        //
-        // SEAM(W6): the absorb* graph rewrites are unported.
-        let _ = (op, data);
-        0
+        // INSERT value input and dispatches into the absorb* helpers.  Ported in
+        // `absorb::insert_absorb_apply`.
+        absorb::insert_absorb_apply(op, data)
     }
 }
 
@@ -1046,6 +1053,7 @@ pub fn specs() -> Vec<RuleSpec> {
     ]
 }
 
+pub mod absorb;
 pub mod expression;
 pub mod insert;
 pub mod pull;
