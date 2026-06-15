@@ -1148,11 +1148,16 @@ impl Datatype {
     pub fn get_ptr_into(&self) -> KunaResult<Option<(Rc<Datatype>, int4)>> {
         match &self.kind {
             DatatypeKind::Pointer { ptrto, .. } => Ok(Some((Rc::clone(ptrto), 0))),
-            DatatypeKind::PointerRel { .. } => {
-                // C++ TypePointerRel::getPtrInto — relative offset math.  // SEAM(W6)
-                Err(KunaError::lowlevel(
-                    "SEAM(W6): TypePointerRel::getPtrInto not yet ported",
-                ))
+            DatatypeKind::PointerRel { ptrto, parent, offset, .. } => {
+                // C++ TypePointerRel::getPtrInto (type.cc:3060-3070): a relative
+                // pointer into a STRUCT/UNION points directly at the composite
+                // (off = 0); otherwise it points `offset` into the parent.
+                let meta = ptrto.get_metatype();
+                if meta == type_metatype::TYPE_STRUCT || meta == type_metatype::TYPE_UNION {
+                    Ok(Some((Rc::clone(ptrto), 0)))
+                } else {
+                    Ok(Some((Rc::clone(parent), *offset)))
+                }
             }
             _ => Ok(None),
         }
@@ -3531,6 +3536,45 @@ pub trait TypeFactory {
         spc: Rc<AddrSpace>,
         nm: &str,
     ) -> KunaResult<Rc<Datatype>>;
+
+    /// Given a containing data-type and a byte offset into it, recover the
+    /// data-type that a relative pointer at that offset points directly at (C++
+    /// `TypePointerRel::getPtrToFromParent`, type.cc:3157-3171).  Walks
+    /// `getSubType` down the container until the offset is consumed; falls back
+    /// to `getBase(1,TYPE_UNKNOWN)` when the offset is non-positive or escapes
+    /// the container.  A default body, written in terms of `get_sub_type` (on
+    /// `Datatype`) and `get_base` (on the factory), so every factory shares it.
+    fn get_ptr_to_from_parent(
+        &self,
+        base: Rc<Datatype>,
+        off: int4,
+    ) -> KunaResult<Rc<Datatype>> {
+        if off > 0 {
+            let mut curoff: int8 = off as int8;
+            let mut base = base;
+            // do { base = base->getSubType(curoff,&curoff); }
+            //   while (curoff != 0 && base != 0);
+            loop {
+                let (next, newoff) = base.get_sub_type(curoff)?;
+                curoff = newoff;
+                match next {
+                    None => {
+                        // base became null: getBase(1, TYPE_UNKNOWN).
+                        return self.get_base(1, type_metatype::TYPE_UNKNOWN);
+                    }
+                    Some(next_ct) => {
+                        base = next_ct;
+                        if curoff == 0 {
+                            break;
+                        }
+                    }
+                }
+            }
+            Ok(base)
+        } else {
+            self.get_base(1, type_metatype::TYPE_UNKNOWN)
+        }
+    }
 
     // -- Composite construction (type.hh:903-912) ---------------------------
 
@@ -6209,6 +6253,46 @@ mod tests {
         let part = f.get_exact_piece(Rc::clone(&s), 2, 4).unwrap().unwrap();
         assert_eq!(part.get_metatype(), TYPE_PARTIALSTRUCT);
         assert_eq!(part.get_size(), 4);
+    }
+
+    /// `getPtrToFromParent` (type.cc:3157-3171) walks `getSubType` down a container
+    /// to the data-type that a relative pointer at the given byte offset points
+    /// directly at; a non-positive or escaping offset falls back to the size-1
+    /// `getBase(1,TYPE_UNKNOWN)`.  This is the `pointer setting <n> <s> offset <o>`
+    /// relptr ptrto resolution.
+    #[test]
+    fn factory_get_ptr_to_from_parent() {
+        use type_metatype::*;
+        let f = factory();
+        let unk1 = f.get_base(1, TYPE_UNKNOWN).unwrap();
+        let i4 = f.get_base(4, TYPE_INT).unwrap();
+        let f4 = f.get_base(4, TYPE_FLOAT).unwrap();
+        // struct mystruct { int a@0; float b@4; int c@8; int d@12; } size 16.
+        let mut s = Datatype::new_with_align(16, 4, TYPE_STRUCT);
+        s.kind = DatatypeKind::Struct {
+            field: vec![
+                TypeField::new(0, 0, "a", Rc::clone(&i4)),
+                TypeField::new(1, 4, "b", Rc::clone(&f4)),
+                TypeField::new(2, 8, "c", Rc::clone(&i4)),
+                TypeField::new(3, 12, "d", Rc::clone(&i4)),
+            ],
+            bitfield: vec![],
+        };
+        let s = f.find_add(s).unwrap();
+
+        // offset 8 lands exactly on field `c` (the int) — `pointer setting ...
+        // offset 8` in pointerrel.xml.
+        let at8 = f.get_ptr_to_from_parent(Rc::clone(&s), 8).unwrap();
+        assert!(Rc::ptr_eq(&at8, &i4), "offset 8 resolves to field c (int)");
+        // offset 4 lands on field `b` (the float).
+        let at4 = f.get_ptr_to_from_parent(Rc::clone(&s), 4).unwrap();
+        assert!(Rc::ptr_eq(&at4, &f4), "offset 4 resolves to field b (float)");
+        // offset 0 is the non-positive fallback -> getBase(1,TYPE_UNKNOWN).
+        let at0 = f.get_ptr_to_from_parent(Rc::clone(&s), 0).unwrap();
+        assert!(Rc::ptr_eq(&at0, &unk1), "offset 0 falls back to unknown1");
+        // offset 100 escapes the container -> getSubType yields None -> unknown1.
+        let oob = f.get_ptr_to_from_parent(Rc::clone(&s), 100).unwrap();
+        assert!(Rc::ptr_eq(&oob, &unk1), "escaping offset falls back to unknown1");
     }
 
     /// `downChain` on a pointer-to-struct descends to the field pointer and passes

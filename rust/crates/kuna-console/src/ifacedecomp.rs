@@ -2096,14 +2096,107 @@ decomp_command!(
 // --- pointer setting / prefersplit (ifacedecomp.cc) ------------------------
 
 decomp_command!(
-    /// C++ `IfcPointerSetting`: `pointer setting <name> <basetype> ...`.
+    /// C++ `IfcPointerSetting`: `pointer setting <name> <basetype> offset <val>`
+    /// (relative pointer) or `pointer setting <name> <basetype> space <spc>`
+    /// (space-attributed pointer).  Ported from `ifacedecomp.cc:3051-3099`.
     IfcPointerSetting,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No load image present"));
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No load image present"));
+            }
         }
-        Err(engine_unavailable("TypeFactory pointer-setting (offset/space)"))
+        // C++ parse: name, base-type, then the setting keyword, each guarded on
+        // eof for the "Missing ..." parse errors.
+        s.skip_ws();
+        if s.eof() {
+            return Err(IfaceError::parse("Missing name"));
+        }
+        let type_name = s.read_token();
+        s.skip_ws();
+        if s.eof() {
+            return Err(IfaceError::parse("Missing base-type"));
+        }
+        let base_type = s.read_token();
+        s.skip_ws();
+        if s.eof() {
+            return Err(IfaceError::parse("Missing setting"));
+        }
+        let setting = s.read_token();
+        use kuna_decomp::dtype::type_metatype;
+        let dcp = dcp_mut(status)?;
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        if setting == "offset" {
+            // s.unsetf(dec|hex|oct); s >> off; if (off <= 0) throw "Missing offset".
+            s.skip_ws();
+            let off_tok = s.read_token();
+            let off_val = parse_userbase_u64(&off_tok);
+            let off = match off_val {
+                Some(v) if v >= 1 && v <= int4::MAX as u64 => v as int4,
+                _ => return Err(IfaceError::parse("Missing offset")),
+            };
+            // bt = types->findByName(baseType); must be a TYPE_STRUCT.
+            let bt = prog
+                .arch()
+                .types()
+                .find_by_name(&base_type)
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            let bt = match bt {
+                Some(t) if t.get_metatype() == type_metatype::TYPE_STRUCT => t,
+                _ => return Err(IfaceError::parse("Base-type must be a structure")),
+            };
+            // ptrto = TypePointerRel::getPtrToFromParent(bt, off, *types).
+            let ptrto = prog
+                .arch()
+                .types()
+                .get_ptr_to_from_parent(std::rc::Rc::clone(&bt), off)
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            // spc = conf->getDefaultDataSpace(); then getTypePointerRel(6-arg).
+            let spc = prog
+                .arch()
+                .manage()
+                .get_default_data_space()
+                .cloned()
+                .ok_or_else(|| IfaceError::execution("No default data space"))?;
+            let addr_size = spc.get_addr_size() as int4;
+            let word_size = spc.get_word_size() as int4;
+            prog.arch()
+                .types()
+                .get_type_pointer_rel_full(addr_size, bt, ptrto, word_size, off, &type_name)
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        } else if setting == "space" {
+            // s >> spaceName; if empty throw "Missing name of address space".
+            s.skip_ws();
+            let space_name = s.read_token();
+            if space_name.is_empty() {
+                return Err(IfaceError::parse("Missing name of address space"));
+            }
+            // ptrTo = types->findByName(baseType); throw if unknown.
+            let ptr_to = prog
+                .arch()
+                .types()
+                .find_by_name(&base_type)
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?
+                .ok_or_else(|| {
+                    IfaceError::parse(format!("Unknown base data-type: {base_type}"))
+                })?;
+            // spc = conf->getSpaceByName(spaceName); throw if unknown.
+            let spc = prog
+                .arch()
+                .manage()
+                .get_space_by_name(&space_name)
+                .cloned()
+                .ok_or_else(|| IfaceError::parse(format!("Unknown space: {space_name}")))?;
+            prog.arch()
+                .types()
+                .get_type_pointer_with_space(ptr_to, spc, &type_name)
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        } else {
+            return Err(IfaceError::parse(format!("Unknown pointer setting: {setting}")));
+        }
+        status.out(&format!("Successfully created pointer: {type_name}\n"));
+        Ok(())
     }
 );
 

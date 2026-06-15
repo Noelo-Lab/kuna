@@ -2818,6 +2818,22 @@ impl PrintC {
     /// Symbol/ScopeLocal surface) and the union arm are not on the pointer/array/
     /// struct corpus; they fall through to a functional render.
     /// SEAM(W4 spacebase symbol) / SEAM(W8 union).
+    /// C++ `PrintC::pushTypePointerRel` (printc.hh:372-377): a PTRSUB acting
+    /// relative to a `TypePointerRel` parent prints the `ADJ(...)` macro — a
+    /// `function_call` op wrapping the `ADJ` token (rendered `funcname_color`).
+    fn push_type_pointer_rel_ir(&mut self, op: OpId) {
+        self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+        // The token is pushed as an *operator* token (C++ `optoken`), but with
+        // funcname_color (matching the C++ Atom(typePointerRelToken,optoken,
+        // funcname_color,op)).
+        self.push_atom(&Atom::with_op(
+            keywords::TYPE_POINTER_REL_TOKEN.to_string(),
+            TagType::OpToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color,
+            op_key(op),
+        ));
+    }
+
     fn op_ptrsub_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let in0 = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
             Some(v) => v,
@@ -2871,8 +2887,8 @@ impl PrintC {
                 let addr_off = ptype.get_address_offset().unwrap_or(0) as int8;
                 suboff = (((suboff + addr_off) as u64) & calc_mask(ptr_size)) as int8;
                 if suboff == 0 {
-                    // Special case: do not print a field; absorb into in0.
-                    // SEAM: pushTypePointerRel cast omitted (no markup divergence).
+                    // Special case where we do not print a field (printc.cc:988).
+                    self.push_type_pointer_rel_ir(op);
                     let mm = if flex { m | modifiers::PRINT_LOAD_VALUE } else { m };
                     self.push_vn_ir_m(fd, arch, in0, op, mm);
                     return;
@@ -2926,10 +2942,18 @@ impl PrintC {
                 // Printing an ampersand.
                 self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
                 if flex {
+                    // EMIT  &( ).name
                     self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+                    if is_rel {
+                        self.push_type_pointer_rel_ir(op);
+                    }
                     self.push_vn_ir_m(fd, arch, in0, op, m | modifiers::PRINT_LOAD_VALUE);
                 } else {
+                    // EMIT  &( )->name
                     self.push_op(&tokens::POINTER_MEMBER, Some(op_key(op)));
+                    if is_rel {
+                        self.push_type_pointer_rel_ir(op);
+                    }
                     self.push_vn_ir_m(fd, arch, in0, op, m);
                 }
                 self.push_atom(&field_atom);
@@ -2938,10 +2962,18 @@ impl PrintC {
                     self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
                 }
                 if flex {
+                    // EMIT  ( ).name
                     self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+                    if is_rel {
+                        self.push_type_pointer_rel_ir(op);
+                    }
                     self.push_vn_ir_m(fd, arch, in0, op, m | modifiers::PRINT_LOAD_VALUE);
                 } else {
+                    // EMIT  ( )->name
                     self.push_op(&tokens::POINTER_MEMBER, Some(op_key(op)));
+                    if is_rel {
+                        self.push_type_pointer_rel_ir(op);
+                    }
                     self.push_vn_ir_m(fd, arch, in0, op, m);
                 }
                 self.push_atom(&field_atom);
@@ -2954,20 +2986,33 @@ impl PrintC {
             if !valueon {
                 if flex {
                     // EMIT ( ) — absorb the dereference into in0.
+                    if is_rel {
+                        self.push_type_pointer_rel_ir(op);
+                    }
                     self.push_vn_ir_m(fd, arch, in0, op, m | modifiers::PRINT_LOAD_VALUE);
                 } else {
+                    // EMIT *( )
                     self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+                    if is_rel {
+                        self.push_type_pointer_rel_ir(op);
+                    }
                     self.push_vn_ir_m(fd, arch, in0, op, m);
                 }
             } else if flex {
                 // EMIT ( )[0]
                 self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                if is_rel {
+                    self.push_type_pointer_rel_ir(op);
+                }
                 self.push_vn_ir_m(fd, arch, in0, op, m | modifiers::PRINT_LOAD_VALUE);
                 self.push_constant_ir(0, 4, op);
             } else {
                 // EMIT (* )[0]
                 self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
                 self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+                if is_rel {
+                    self.push_type_pointer_rel_ir(op);
+                }
                 self.push_vn_ir_m(fd, arch, in0, op, m);
                 self.push_constant_ir(0, 4, op);
             }
