@@ -360,7 +360,17 @@ fn push_constant(data: &mut Funcdata, points: &mut Vec<ConstPoint>, op: OpId) {
     if crate::typeop::type_op_info(opc).is_floating_point_op() {
         return;
     }
-    let out_vn = data.obank().get(op).expect("pushConstant: stale op").get_out().unwrap();
+    // C++ `Varnode *outvn = op->getOut();` then immediately reads
+    // `outvn->getSize()`.  An op with no output (a void CPUI_CALL, a STORE, a
+    // branch) can never have a constant pushed *to* its result, so there is
+    // nothing to do — return.  (In C++ `op->getOut()` is null here and the next
+    // `outvn->getSize()` reads past a null pointer; the practical effect is the
+    // size compares `> sizeof(uintb)` and the function returns.  The defined
+    // transcription reaches that same "no constant pushed" outcome directly.)
+    let out_vn = match data.obank().get(op).expect("pushConstant: stale op").get_out() {
+        Some(v) => v,
+        None => return,
+    };
     // if (outvn->getSize() > sizeof(uintb)) return;
     if data.vbank().get(out_vn).expect("pushConstant: stale out").get_size() as usize > std::mem::size_of::<uintb>() {
         return;

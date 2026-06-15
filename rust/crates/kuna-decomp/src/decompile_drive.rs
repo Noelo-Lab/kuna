@@ -84,6 +84,15 @@ impl FlowEnvironment for ArchFlowEnv<'_> {
             Some(name.to_string())
         }
     }
+    fn query_call_no_return(&self, entry: &Address) -> bool {
+        // C++ `queryCall` copies the callee proto's `isNoReturn()` flow effect;
+        // the flag is set by `option noreturn <name>` (OptionNoReturn) on the
+        // resolved FunctionSymbol.
+        match self.arch.symboltab.get_global_scope() {
+            Some(scope) => self.arch.symboltab.function_is_no_return(scope, entry),
+            None => false,
+        }
+    }
 }
 
 /// Build a [`Funcdata`] for the function `name` at `entry` and follow its flow,

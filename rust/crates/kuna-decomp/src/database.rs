@@ -3084,6 +3084,64 @@ impl Database {
         Ok(())
     }
 
+    /// C++ `ScopeInternal::retypeSymbol(Symbol *sym,Datatype *ct)`
+    /// (`database.cc`): change the data-type of `sym`.  If the new type has the
+    /// same size as the old (or the symbol has no storage mappings) the type is
+    /// swapped in place and the size/type lock recomputed; otherwise, for a
+    /// single address-tied mapping, the mapping is rebuilt at the new size.
+    pub fn retype_symbol(&mut self, sym: SymbolId, ct: Rc<Datatype>) -> KunaResult<()> {
+        // if (ct->hasStripped()) ct = ct->getStripped();
+        let ct = if ct.has_stripped() { ct.get_stripped().unwrap_or(ct) } else { ct };
+        let old_size = self.symbols[sym].dtype.as_ref().map(|t| t.get_size()).unwrap_or(0);
+        let mapentry_len = self.symbols[sym].mapentry.len();
+        // if ((sym->type->getSize() == ct->getSize()) || (sym->mapentry.empty()))
+        if old_size == ct.get_size() || mapentry_len == 0 {
+            self.symbols[sym].dtype = Some(ct);
+            self.symbols[sym].check_size_type_lock();
+            return Ok(());
+        }
+        // else if (sym->mapentry.size()==1)
+        if mapentry_len == 1 {
+            let eref = self.symbols[sym].mapentry[0];
+            let scope = self.symbols[sym].scope;
+            // C++ `SymbolEntry::isAddrTied()` reads `symbol->getFlags() &
+            // Varnode::addrtied`.
+            let addr_tied = (self.symbols[sym].get_flags() & varnode_flags::addrtied) != 0;
+            let addr = self.entry(scope, eref).get_addr().clone();
+            if addr_tied {
+                // Remove the single map entry (C++ erases the rangemap iterator,
+                // pops mapentry, zeroes wholeCount), swap the type, then re-add the
+                // map point at the new size.
+                self.erase_mapentry(scope, sym, eref);
+                self.symbols[sym].mapentry.clear();
+                self.symbols[sym].whole_count = 0;
+                self.symbols[sym].dtype = Some(ct);
+                self.symbols[sym].check_size_type_lock();
+                self.add_map_point(scope, sym, &addr, &Address::new_invalid())?;
+                return Ok(());
+            }
+        }
+        Err(KunaError::recov(format!(
+            "Unable to retype symbol: {}",
+            self.symbols[sym].name
+        )))
+    }
+
+    /// Erase one SymbolEntry mapping of `sym` from its scope rangemap / dynamic
+    /// list (the per-entry half of [`remove_symbol_mappings`]).
+    fn erase_mapentry(&mut self, scope: ScopeId, _sym: SymbolId, eref: EntryRef) {
+        match eref {
+            EntryRef::Dynamic(slot) => {
+                self.scopes[scope].dynamicentry[slot] = None;
+            }
+            EntryRef::Mapped { space_index, idx } => {
+                if let Some(map) = self.scopes[scope].maptable[space_index].as_mut() {
+                    map.erase(idx);
+                }
+            }
+        }
+    }
+
     /// C++ `ScopeInternal::removeSymbolMappings` (`database.cc:2145-2164`): drop
     /// all SymbolEntry mappings of `sym`.
     fn remove_symbol_mappings(&mut self, sym: SymbolId) {

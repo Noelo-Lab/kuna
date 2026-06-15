@@ -1072,6 +1072,50 @@ impl ScopeLocal {
         self.db.get_full_name(self.scope)
     }
 
+    /// C++ `Scope::queryByName(basename,res)` against this local scope (the
+    /// `rename`/`retype`/`remove`/`isolate` commands resolve a symbol by name).
+    pub fn query_by_name(&self, nm: &str) -> Vec<crate::database::SymbolId> {
+        self.db.query_by_name(self.scope, nm)
+    }
+
+    /// C++ `Symbol::getCategory()` for `sym` in this scope.
+    pub fn symbol_category(&self, sym: crate::database::SymbolId) -> int4 {
+        self.db.symbol(sym).get_category()
+    }
+
+    /// C++ `Scope::renameSymbol(sym,newname)` against this local scope.
+    pub fn rename_symbol(
+        &mut self,
+        sym: crate::database::SymbolId,
+        newname: &str,
+    ) -> KunaResult<()> {
+        self.db.rename_symbol(sym, newname)
+    }
+
+    /// C++ `Scope::retypeSymbol(sym,ct)` against this local scope.
+    pub fn retype_symbol(
+        &mut self,
+        sym: crate::database::SymbolId,
+        ct: Rc<Datatype>,
+    ) -> KunaResult<()> {
+        self.db.retype_symbol(sym, ct)
+    }
+
+    /// C++ `Scope::addEquateSymbol(nm,format,value,addr,hash)` against this local
+    /// scope (`IfcMapconvert`).  `base1` is the `getBase(1,TYPE_UNKNOWN)` type the
+    /// EquateSymbol carries (resolved by the caller from the architecture).
+    pub fn add_equate_symbol(
+        &mut self,
+        nm: &str,
+        format: uint4,
+        value: uintb,
+        addr: &Address,
+        hash: uint8,
+        base1: Rc<Datatype>,
+    ) -> KunaResult<crate::database::SymbolId> {
+        self.db.add_equate_symbol(self.scope, nm, format, value, addr, hash, base1)
+    }
+
     /// C++ `ScopeLocal::adjustFit` (`varmap.cc:587`): shrink `a` so it fits the
     /// mapped region and doesn't overlap an existing Symbol.  `false` if no valid
     /// adjustment is possible.
