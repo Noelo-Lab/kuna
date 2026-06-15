@@ -128,9 +128,42 @@ pub mod funcdata_flags {
 /// ([`bblocks`](Funcdata::bblocks_ref)/[`sblocks`](Funcdata::sblocks_ref)),
 /// data-flow ([`vbank`](Funcdata::vbank)/[`obank`](Funcdata::obank)), and the
 /// flag/phase state machine.  Most W4+ subsystems (`heritage`, `covermerge`,
-/// `activeoutput`, `localoverride`, `lanedMap`, `qlst`) are seam-noted and
-/// omitted until their waves; the `unionMap` (`union_map`) union-field
-/// resolution cache is ported (W8, [`crate::funcdata_union`]).
+/// `activeoutput`, `localoverride`, `qlst`) are seam-noted and omitted until
+/// their waves; the `unionMap` (`union_map`) union-field resolution cache is
+/// ported (W8, [`crate::funcdata_union`]) and the `lanedMap` ([`laned_map`])
+/// laned-register access map is ported (W10, [`ActionLaneDivide`]).
+///
+/// [`laned_map`]: Funcdata
+/// [`ActionLaneDivide`]: crate::coreaction_render::ActionLaneDivide
+///
+/// Sort key for [`Funcdata::laned_map`], the faithful transcription of the C++
+/// `VarnodeData::operator<` (`pcoderaw.hh:67`): space index ascending, offset
+/// ascending, then BIG sizes first.  The size component is wrapped in
+/// [`std::cmp::Reverse`] so the derived [`Ord`] yields the descending-size
+/// ordering of the C++ `return (size > op2.size)`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct LanedKey {
+    /// `space->getIndex()` (C++ first comparison key).
+    space_index: int4,
+    /// `offset` (C++ second comparison key).
+    offset: u64,
+    /// `size`, reversed so larger sizes sort first (C++ `size > op2.size`).
+    size_rev: std::cmp::Reverse<u32>,
+}
+
+impl LanedKey {
+    /// Build the key from a storage `(addr, size)`, mirroring how the C++ fills a
+    /// `VarnodeData{space, offset, size}` before inserting into `lanedMap`.
+    pub(crate) fn new(addr: &Address, size: int4) -> LanedKey {
+        let space_index = addr.get_space().map(|s| s.get_index() as int4).unwrap_or(0);
+        LanedKey {
+            space_index,
+            offset: addr.get_offset(),
+            size_rev: std::cmp::Reverse(size as u32),
+        }
+    }
+}
+
 pub struct Funcdata {
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -145,6 +178,24 @@ pub struct Funcdata {
     cast_phase_index: uint4,
     /// Minimum Varnode size to check as LanedRegister (C++ `minLanedSize`)
     min_laned_size: int4,
+    /// Current storage locations which may be laned registers (C++
+    /// `Funcdata::lanedMap`, a `map<VarnodeData,const LanedRegister *>`).
+    ///
+    /// Keyed by `(space-index, offset, Reverse(size))` — the faithful transcription
+    /// of `VarnodeData::operator<` (space index ascending, offset ascending, BIG
+    /// sizes first).  The value is the matching [`LanedRegister`](crate::transform::LanedRegister),
+    /// cloned from the architecture's immutable `lanerecords` (the C++ stores the
+    /// `const LanedRegister *`).  Populated by [`check_for_laned_register`] when a
+    /// laned-register-sized Varnode is created and read/cleared by
+    /// `ActionLaneDivide`.
+    ///
+    /// [`check_for_laned_register`]: crate::funcdata::Funcdata::check_for_laned_register
+    ///
+    /// The value carries the storage `Address` and byte `size` (the C++
+    /// `VarnodeData` the key was built from) alongside the matching record, so
+    /// `ActionLaneDivide` can recover the `(addr, sz)` pair to iterate the
+    /// Varnodes at that location (the C++ reads them off the `VarnodeData` key).
+    laned_map: std::collections::BTreeMap<LanedKey, (Address, int4, crate::transform::LanedRegister)>,
     /// Number of bytes of binary data in function body (C++ `size`)
     size: int4,
     /// Global configuration data (C++ `glb`).  // SEAM(W4)
@@ -334,6 +385,7 @@ impl Funcdata {
             high_level_index: 0,
             cast_phase_index: 0,
             min_laned_size,
+            laned_map: std::collections::BTreeMap::new(),
             size: sz,
             glb,
             name: nm.to_string(),
@@ -858,6 +910,37 @@ impl Funcdata {
     /// Mark that laned registers have been collected (C++ `setLanedRegGenerated`).
     pub fn set_laned_reg_generated(&mut self) {
         self.min_laned_size = 1000000;
+    }
+
+    /// Record a laned-register storage location (C++
+    /// `Funcdata::checkForLanedRegister`'s `lanedMap[storage] = lanedRegister`).
+    /// The key carries the C++ `VarnodeData` ordering; the value keeps the
+    /// `(addr, size)` so the access map can be replayed.
+    pub(crate) fn laned_map_insert(
+        &mut self,
+        key: LanedKey,
+        addr: Address,
+        sz: int4,
+        lr: crate::transform::LanedRegister,
+    ) {
+        self.laned_map.insert(key, (addr, sz, lr));
+    }
+
+    /// Snapshot the laned-register access map in C++ `lanedMap` iteration order
+    /// (`beginLaneAccess()..endLaneAccess()`), as `(addr, size, record)` tuples.
+    ///
+    /// `ActionLaneDivide::apply` iterates this; the map itself is not mutated
+    /// during the apply (only the Varnode bank is), so a snapshot reproduces the
+    /// C++ `std::map` iteration exactly while sidestepping the borrow conflict
+    /// with the mutable `processVarnode` calls inside the loop.
+    pub fn lane_access_snapshot(&self) -> Vec<(Address, int4, crate::transform::LanedRegister)> {
+        self.laned_map.values().cloned().collect()
+    }
+
+    /// Clear records from the laned-access list (C++
+    /// `Funcdata::clearLanedAccessMap`, `funcdata.hh:408`).
+    pub fn clear_laned_access_map(&mut self) {
+        self.laned_map.clear();
     }
 
     // -----------------------------------------------------------------------

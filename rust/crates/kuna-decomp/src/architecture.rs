@@ -378,6 +378,17 @@ pub struct Architecture {
     /// real mode.  `None` when the frontend did not supply it (then the engine
     /// keeps the `.sla`-default zero context).
     pspec_xml: Option<Vec<u8>>,
+    /// Vector registers that have preferred lane sizes (C++
+    /// `Architecture::lanerecords`), built by [`decode_register_data`] from the
+    /// pspec `<register_data>` `vector_lane_sizes` attributes during
+    /// [`parse_processor_config`].  Sorted ascending by whole size (one record
+    /// per size), so the binary-search lookups (`get_laned_register` /
+    /// `get_minimum_laned_register_size`) match the C++.  Empty until the pspec
+    /// is parsed (and for non-vector architectures).
+    ///
+    /// [`decode_register_data`]: Architecture::decode_register_data
+    /// [`parse_processor_config`]: Architecture::parse_processor_config
+    lanerecords: Vec<crate::transform::LanedRegister>,
     /// The p-code OpBehavior / `TypeOp` property table (C++ `inst`, the
     /// `vector<TypeOp *>` `TypeOp::registerInstructions` fills).  Indexed by
     /// op-code; `None` for the unused slots.  Empty until `build_instructions`.
@@ -486,6 +497,7 @@ impl Architecture {
             evalfp_current: None,
             cspec_xml: None,
             pspec_xml: None,
+            lanerecords: Vec::new(),
             inst: Vec::new(),
             opbehaviors: Vec::new(),
             translate,
@@ -581,13 +593,47 @@ impl Architecture {
     /// laned registers (C++ `Architecture::getMinimumLanedRegisterSize`,
     /// `architecture.cc:313`).
     ///
-    /// SEAM(W4 register-data decode): the `lanerecords` table is populated by
-    /// `decodeRegisterData` from the cspec `<register_data>` tags, which need the
-    /// W6 type factory + the spec decode flow.  Until then there are no laned
-    /// records, so this returns -1 exactly as the C++ does with an empty table.
+    /// The `lanerecords` table is populated by [`decode_register_data`] from the
+    /// pspec `<register_data>` `vector_lane_sizes` attributes (run during
+    /// [`parse_processor_config`]).  When the table is empty (non-vector
+    /// architecture, or pspec not yet parsed) this returns -1 exactly as the C++
+    /// does with an empty table; the records are sorted ascending by whole size,
+    /// so `lanerecords[0]` is the smallest.
+    ///
+    /// [`decode_register_data`]: Architecture::decode_register_data
+    /// [`parse_processor_config`]: Architecture::parse_processor_config
     pub fn get_minimum_laned_register_size(&self) -> int4 {
-        // lanerecords is empty (the register-data decode is a later seam).
-        -1
+        if self.lanerecords.is_empty() {
+            return -1;
+        }
+        self.lanerecords[0].get_whole_size()
+    }
+
+    /// Look up the laned-register record for a storage location (C++
+    /// `Architecture::getLanedRegister`, `architecture.cc:291`).
+    ///
+    /// As in the C++, the record is associated only with the *size* of the
+    /// storage, not its address; `loc` is unused.  Faithful binary search over
+    /// the size-sorted `lanerecords`.  `None` is the C++ `(const LanedRegister *)0`.
+    pub fn get_laned_register(
+        &self,
+        _loc: &Address,
+        size: int4,
+    ) -> Option<&crate::transform::LanedRegister> {
+        let mut min: int4 = 0;
+        let mut max: int4 = self.lanerecords.len() as int4 - 1;
+        while min <= max {
+            let mid = (min + max) / 2;
+            let sz = self.lanerecords[mid as usize].get_whole_size();
+            if sz < size {
+                min = mid + 1;
+            } else if size < sz {
+                max = mid - 1;
+            } else {
+                return Some(&self.lanerecords[mid as usize]);
+            }
+        }
+        None
     }
 
     /// Get a string describing this architecture (C++ `getDescription`).
@@ -673,6 +719,11 @@ impl Architecture {
         let manage = self.translate.manager_rc();
         let mut seam = ArchSeam::new_shared(manage);
         seam.min_laned_register_size = self.get_minimum_laned_register_size();
+        // Carry the laned-register table so the per-function Funcdata reaches
+        // `glb->getLanedRegister` (C++ `Architecture::lanerecords`); cheap clones
+        // of the small (size,mask) records.  ActionLaneDivide reads these to
+        // split XMM/ZMM vector lanes.
+        seam.lanerecords = self.lanerecords.clone();
         // Share the engine's OpBehavior emulation table with `glb` (the C++
         // `Architecture` owns the `TypeOp`s, so `glb->inst[opc]->getBehavior()`
         // reaches them directly).  The `Rc<dyn OpBehavior>` entries are cheap
@@ -1212,11 +1263,13 @@ impl Architecture {
     /// disassemble as 64-bit.
     ///
     /// SEAM(W6 pspec): the remaining `<processor_spec>` children (volatile,
-    /// register_data, incidentalcopy, jumpassist, segmentop, …) decode with
-    /// their own waves; this wires the `<context_data>` branch — the one that
-    /// steers the disassembly mode and therefore gates every multi-byte lift.
-    /// Faithful to `parseProcessorConfig`'s dispatch; the other branches are
-    /// no-ops here (the C++ `peekElement` loop simply skips them in our
+    /// incidentalcopy, jumpassist, segmentop, …) decode with their own waves;
+    /// this wires the `<context_data>` branch — the one that steers the
+    /// disassembly mode and therefore gates every multi-byte lift — and the
+    /// `<register_data>` branch (the `vector_lane_sizes` half), which seeds the
+    /// `lanerecords` table that `ActionLaneDivide` reads to split XMM/ZMM vector
+    /// lanes.  Faithful to `parseProcessorConfig`'s dispatch; the other branches
+    /// are no-ops here (the C++ `peekElement` loop simply skips them in our
     /// `find_child` walk).
     pub fn parse_processor_config(&mut self) -> KunaResult<()> {
         use kuna_base::marshal::{IdRegistry, XmlDecode};
@@ -1238,9 +1291,19 @@ impl Architecture {
                 None => return Ok(()), // no processor_spec: nothing to apply
             }
         };
-        // C++ parseProcessorConfig peeks each child; only ELEM_CONTEXT_DATA is
-        // wired here.  A pspec with no <context_data> (e.g. a 32-bit-default
-        // processor) leaves the zero context, which is correct for it.
+
+        // C++ parseProcessorConfig dispatch — ELEM_REGISTER_DATA branch
+        // (architecture.cc:1202 -> decodeRegisterData).  Seed the lanerecords
+        // table before the action build reads getMinimumLanedRegisterSize.  A
+        // pspec with no <register_data> (or only non-laned registers) leaves the
+        // table empty, which is correct.
+        if let Some(register_data) = find_child(&pspec, "register_data") {
+            self.decode_register_data(&register_data)?;
+        }
+
+        // C++ parseProcessorConfig ELEM_CONTEXT_DATA branch.  A pspec with no
+        // <context_data> (e.g. a 32-bit-default processor) leaves the zero
+        // context, which is correct for it.
         let Some(context_data) = find_child(&pspec, "context_data") else {
             return Ok(());
         };
@@ -1255,6 +1318,73 @@ impl Architecture {
         let mut decoder = XmlDecode::new_with_root(&manager, &registry, &context_data, 0);
         self.translate
             .with_context_db_mut(|db| db.decode_from_spec(&mut decoder))?;
+        Ok(())
+    }
+
+    /// Read `<register>` elements collecting the `vector_lane_sizes` lane
+    /// schemes, building the `lanerecords` table (C++
+    /// `Architecture::decodeRegisterData`, `architecture.cc:933`).
+    ///
+    /// Faithful to the C++ flow: for each `<register>` carrying
+    /// `vector_lane_sizes`, the register storage *size* is resolved by name
+    /// through the translator (the C++ `storage.decodeFromAttributes` -> the
+    /// register lookup), `LanedRegister::parseSizes` builds the per-register lane
+    /// mask, and the masks are accumulated by whole size in `maskList`.  One
+    /// `LanedRegister(size, mask)` record is emitted per nonzero size, in
+    /// ascending size order (the `maskList` is index-ordered by size), so the
+    /// downstream binary searches are valid.
+    ///
+    /// The C++ also handles the `volatile` attribute (painting a volatile
+    /// property range); that property subsystem is a separate seam and is not
+    /// wired here — only the lane-size half is decoded.
+    fn decode_register_data(
+        &mut self,
+        register_data: &Rc<kuna_base::xml::Element>,
+    ) -> KunaResult<()> {
+        use crate::transform::LanedRegister;
+
+        // vector<uint4> maskList;  (indexed by register whole size in bytes)
+        let mut mask_list: Vec<uint4> = Vec::new();
+        for reg in register_data.get_children().iter() {
+            if reg.get_name() != "register" {
+                continue;
+            }
+            // string laneSizes; ... if (attribId == ATTRIB_VECTOR_LANE_SIZES) ...
+            let Some(lane_sizes) = attr_str(reg, "vector_lane_sizes") else {
+                continue; // no lane sizes (and volatile is a separate seam)
+            };
+            if lane_sizes.is_empty() {
+                continue;
+            }
+            // storage.decodeFromAttributes(decoder): resolve the register's size
+            // by name (the C++ VarnodeData decode reads name= -> getRegister).
+            let Some(name) = attr_str(reg, "name") else {
+                continue;
+            };
+            let storage = self.translate.get_register_varnode(name.as_bytes())?;
+            let storage_size = storage.size as int4;
+            // LanedRegister lanedRegister; lanedRegister.parseSizes(storage.size,laneSizes);
+            let mut laned_register = LanedRegister::new();
+            laned_register.parse_sizes(storage_size, &lane_sizes)?;
+            // int4 sizeIndex = lanedRegister.getWholeSize();
+            let size_index = laned_register.get_whole_size();
+            // while (maskList.size() <= sizeIndex) maskList.push_back(0);
+            while (mask_list.len() as int4) <= size_index {
+                mask_list.push(0);
+            }
+            // maskList[sizeIndex] |= lanedRegister.getSizeBitMask();
+            mask_list[size_index as usize] |= laned_register.get_size_bit_mask();
+        }
+        // lanerecords.clear();
+        // for(i=0;i<maskList.size();++i) { if (maskList[i]==0) continue;
+        //   lanerecords.push_back(LanedRegister(i,maskList[i])); }
+        self.lanerecords.clear();
+        for (i, &mask) in mask_list.iter().enumerate() {
+            if mask == 0 {
+                continue;
+            }
+            self.lanerecords.push(LanedRegister::with_mask(i as int4, mask));
+        }
         Ok(())
     }
 
