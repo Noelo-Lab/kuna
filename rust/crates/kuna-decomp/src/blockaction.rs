@@ -1406,19 +1406,6 @@ impl<'a> TraceDAG<'a> {
 // the `BlockCondition` opcode) is recorded into `pending_flips` (op flags) and
 // realized against the obank by `ActionBlockStructure::apply` after the collapse.
 
-/// Determine whether a FlowBlock is too complex to be a condition clause (C++
-/// `FlowBlock::isComplex` base + `BlockBasic::isComplex`, `block.hh:254`/`block.cc:2403`;
-/// left as `// SEAM(W7)` in `block.rs`).
-///
-/// The C++ base default returns `true`; `BlockBasic::isComplex` counts statements
-/// against `glb->max_implied_ref` (data-flow).  The port returns the base default
-/// (`true`), seam-noting the statement count.  This affects only whether a
-/// whileDo uses *overflow syntax* and whether `ruleBlockOr` fires (both fall back
-/// to the conservative branch).  See losses.
-fn is_complex(_graph: &BlockGraph, _bl: BlockId) -> bool {
-    // BlockBasic::isComplex statement counting needs the op list + max_implied_ref -- SEAM(W7)
-    true
-}
 
 /// Surface the unported `BlockGraph::newBlockSwitch` (C++ `block.cc:1907`).
 ///
@@ -1475,6 +1462,11 @@ pub struct CollapseStructure<'a> {
     /// apply (XOR-reduced — even flips cancel) after `collapseAll` returns, when
     /// `ActionBlockStructure::apply` holds `&mut Funcdata` again.
     pending_flips: Vec<BlockId>,
+    /// bblocks `BlockBasic` ids that are \e complex (C++ `BlockBasic::isComplex`
+    /// returned true).  Precomputed by `ActionBlockStructure::apply` over the
+    /// live op lists (which the structuring graph — a BlockCopy mirror — does not
+    /// own) and consulted by [`is_complex`] through the BlockCopy `copy` pointer.
+    complex_blocks: std::collections::BTreeSet<BlockId>,
 }
 
 impl<'a> CollapseStructure<'a> {
@@ -1492,7 +1484,22 @@ impl<'a> CollapseStructure<'a> {
             graph_id,
             dataflow_changecount: 0,
             pending_flips: Vec::new(),
+            complex_blocks: std::collections::BTreeSet::new(),
         }
+    }
+
+    /// Install the precomputed set of \e complex bblocks `BlockBasic` ids (C++
+    /// `BlockBasic::isComplex`), keyed by the bblocks id that each structuring
+    /// BlockCopy's `copy` pointer references.  Builder method so existing callers
+    /// (and the unit tests, whose hand-built graphs have no live op lists) keep
+    /// the empty default — an empty set means "nothing is complex", matching the
+    /// hand-built leaf blocks' trivial statement counts.
+    pub fn with_complex_blocks(
+        mut self,
+        complex_blocks: std::collections::BTreeSet<BlockId>,
+    ) -> Self {
+        self.complex_blocks = complex_blocks;
+        self
     }
 
     /// Get the number of data-flow changes (C++ `getChangeCount`).
@@ -1936,6 +1943,27 @@ impl<'a> CollapseStructure<'a> {
         Ok(true)
     }
 
+    /// Is structuring block `bl` too complex to be a condition clause (C++
+    /// `FlowBlock::isComplex` virtual dispatch: `BlockList`/`BlockCopy` delegate
+    /// down to the front `BlockBasic`, whose statement count is the real test;
+    /// the base returns `true`).
+    ///
+    /// Resolves `bl` to its front-leaf BlockCopy and reads the precomputed
+    /// per-BlockBasic complexity (`complex_blocks`, keyed by the `copy` pointer).
+    /// A block that does not resolve to a BlockCopy/BlockBasic (e.g. an empty
+    /// graph node) falls back to the conservative `true`.
+    pub(crate) fn is_complex(&self, bl: BlockId) -> bool {
+        // C++ virtual chain: getFrontLeaf descends getBlock(0) to the t_copy leaf.
+        let leaf = match self.graph.get_front_leaf(bl) {
+            Some(l) => l,
+            None => return true, // base FlowBlock::isComplex
+        };
+        match self.graph.block(leaf).get_copy() {
+            Some(basic) => self.complex_blocks.contains(&basic),
+            None => true,
+        }
+    }
+
     /// Attempt to apply a BlockCondition structure (C++ `CollapseStructure::ruleBlockOr`,
     /// `blockaction.cc:1321`).
     fn rule_block_or(&mut self, bl: BlockId) -> KunaResult<bool> {
@@ -1971,7 +1999,7 @@ impl<'a> CollapseStructure<'a> {
             if self.graph.block(bl).is_back_edge_out(i) {
                 continue; // Don't use loop branch to get to orblock
             }
-            if is_complex(self.graph, orblock) {
+            if self.is_complex(orblock) {
                 continue;
             }
             let clauseblock = self.graph.block(bl).get_out(1 - i);
@@ -2249,7 +2277,7 @@ impl<'a> CollapseStructure<'a> {
                 continue; // Clause must loop back to bl
             }
 
-            let overflow = is_complex(self.graph, bl); // Check if we need overflow syntax
+            let overflow = self.is_complex(bl); // Check if we need overflow syntax
             if (i == 0) != overflow {
                 // clause must be true out of bl unless we use overflow syntax
                 if self.negate_condition_rec(bl, true) {
@@ -2619,11 +2647,16 @@ impl<'a> CollapseStructure<'a> {
         let mut change = true;
         while change {
             change = false;
-            for i in 0..self.size() {
+            // C++ re-evaluates graph.getSize() on each iteration: ruleBlockOr
+            // shrinks the component list (the two condition blocks fold into one
+            // BlockCondition), so the bound must be re-read every step.
+            let mut i = 0;
+            while i < self.size() {
                 let bl = self.block_at(i);
                 if self.rule_block_or(bl)? {
                     change = true;
                 }
+                i += 1;
             }
         }
         Ok(())
@@ -3278,9 +3311,23 @@ impl Action for ActionBlockStructure {
         // `copy` field points back at the bblocks block so the printer can walk
         // its op list).
         data.seed_sblocks_copy();
+        // Precompute BlockBasic::isComplex over the live op lists (the structuring
+        // graph is a BlockCopy mirror without op ownership), keyed by the bblocks
+        // id each BlockCopy's `copy` pointer references.  ruleBlockOr/whileDo read
+        // it through `CollapseStructure::is_complex`.
+        let mut complex_blocks: std::collections::BTreeSet<BlockId> =
+            std::collections::BTreeSet::new();
+        let nbb = data.bblocks_get_size();
+        for i in 0..nbb {
+            let bb = data.bblocks_get_block(i);
+            if data.bb_is_complex(bb) {
+                complex_blocks.insert(bb);
+            }
+        }
         // CollapseStructure collapse(graph); collapse.collapseAll();
         let sroot = data.sblocks_root();
-        let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot);
+        let mut collapse =
+            CollapseStructure::new(data.sblocks_mut(), sroot).with_complex_blocks(complex_blocks);
         let collapse_res = collapse.collapse_all();
         let cc = collapse.get_change_count();
         // Realize the deferred data-flow half of BlockBasic::negateCondition: each

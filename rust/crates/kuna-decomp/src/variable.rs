@@ -1378,6 +1378,56 @@ impl HighVariableBank {
         }
     }
 
+    /// Swap `origvn` with `replacevn` between their respective HighVariables
+    /// (C++ `Varnode::replaceInHigh`, `varnode.cc:353`).
+    ///
+    /// `replacevn` must be a singleton in its own HighVariable (the C++
+    /// invariant); after the swap, `replacevn` takes `origvn`'s place in
+    /// `origvn`'s old high, and `origvn` becomes the sole member of `replacevn`'s
+    /// old high.  The cross-arena `vn->setHigh(...)` writes are performed via the
+    /// `set_high` closure (the bank does not own the VarnodeBank).
+    #[allow(clippy::too_many_arguments)] // the C++ Varnode::replaceInHigh data + cross-arena set_high closure
+    pub fn replace_in_high(
+        &mut self,
+        origvn: VarnodeId,
+        orig_high: HighVariableId,
+        orig_mergegroup: int2,
+        replacevn: VarnodeId,
+        replace_high: HighVariableId,
+        vn_has_symbol_entry: bool,
+        ctx: &dyn HighContext,
+        set_high: &mut dyn FnMut(VarnodeId, HighVariableId, int2),
+    ) {
+        // high->remove(this);  // remove origvn from origHigh
+        if let Some(h) = self.highs.get_mut(&orig_high) {
+            h.remove(origvn, vn_has_symbol_entry, ctx);
+        }
+        // replaceHigh->inst[0] = this;  // replaceHigh now holds origvn (singleton)
+        if let Some(rh) = self.highs.get_mut(&replace_high) {
+            // replacevn was the sole member; overwrite it with origvn.
+            rh.inst.clear();
+            rh.inst.push(origvn);
+            rh.highflags |= high_flags::flagsdirty
+                | high_flags::namerepdirty
+                | high_flags::coverdirty
+                | high_flags::typedirty;
+        }
+        // high->insert(replacevn,mergegroup);  // origHigh now holds replacevn
+        if let Some(h) = self.highs.get_mut(&orig_high) {
+            h.insert(replacevn, ctx);
+            h.highflags |= high_flags::flagsdirty
+                | high_flags::namerepdirty
+                | high_flags::coverdirty
+                | high_flags::typedirty;
+        }
+        // replacevn->high = 0  was set in C++ before the inst swap; here the
+        // cross-arena writes finalize both varnodes' high back-links:
+        //   high = replaceHigh; mergegroup = 0;        (origvn)
+        //   (replacevn keeps origvn's old mergegroup, now points to origHigh)
+        set_high(origvn, replace_high, 0);
+        set_high(replacevn, orig_high, orig_mergegroup);
+    }
+
     /// Insert a Varnode into a HighVariable and wire the back-link (C++
     /// `HighVariable::insert` + the `newvn->setHigh(this,mergeGroup)`).
     pub fn insert_member(
