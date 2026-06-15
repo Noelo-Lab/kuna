@@ -32,6 +32,7 @@ pub mod funcdata_spacebase;
 pub mod funcdata_varnode;
 pub mod flow;
 pub mod jumptable;
+pub mod kuna_emulatefunction;
 pub mod userop;
 pub mod pcodeinject;
 pub mod inject_sleigh;

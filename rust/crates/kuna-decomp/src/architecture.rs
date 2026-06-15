@@ -675,6 +675,12 @@ impl Architecture {
         // Share the populated data-type factory so `ActionInferTypes` (run via
         // `glb`) reaches the same interned core types this side cached.
         seam.types = Some(self.types_rc());
+        // Jump-table recovery constants (C++ `glb->max_jumptable_size` /
+        // `funcptr_align`) and the load image (C++ `glb->loader`) so the
+        // jump-table emulator reaches the read-only switch table.
+        seam.max_jumptable_size = self.max_jumptable_size;
+        seam.funcptr_align = self.funcptr_align;
+        seam.loader = Some(self.translate.loader_rc());
         Rc::new(seam)
     }
 
@@ -903,6 +909,15 @@ impl Architecture {
     /// loader to the translator.
     pub fn set_loader(&mut self, loader: Box<dyn kuna_sleigh::loadimage::LoadImage>) {
         self.translate.set_loader(loader);
+    }
+
+    /// Read a `sz`-byte value out of the load image at `addr` (C++
+    /// `EmulatePcodeOp::getLoadImageValue` via `glb->loader->loadFill`).  The
+    /// loader is owned by the engine in the Rust port, so this forwards to the
+    /// `Sleigh` engine's [`read_loadimage_value`](kuna_sleigh::sleigh::Sleigh::read_loadimage_value).
+    /// Drives jump-table LOAD emulation.
+    pub fn read_loadimage_value(&self, addr: &Address, sz: int4) -> KunaResult<uintb> {
+        self.translate.read_loadimage_value(addr, sz)
     }
 
     /// Forward `glb->translate->allowContextSet(val)` — the context database is
@@ -1395,6 +1410,17 @@ impl Architecture {
             Some(info) => info.to_seam(),
             None => crate::typeop::type_op_for(opc),
         }
+    }
+
+    /// Resolve an op-code to its emulation [`OpBehavior`](kuna_num::opbehavior::OpBehavior)
+    /// (C++ `op->getOpcode()->getBehavior()` — the behavior `glb->inst[opc]`
+    /// carries).  Used by `EmulateFunction::set_current_op` for jump-table
+    /// emulation.  Returns `None` for an opcode with no behavior installed.
+    pub fn op_behavior(
+        &self,
+        opc: kuna_num::opcodes::OpCode,
+    ) -> Option<Rc<dyn kuna_num::opbehavior::OpBehavior>> {
+        self.opbehaviors.get(opc as usize).and_then(|o| o.clone())
     }
 
     /// Drive the post-engine init pipeline against an already-bootstrapped
