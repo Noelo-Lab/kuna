@@ -246,18 +246,31 @@ fn vn() -> VarnodeId {
     VarnodeId::default()
 }
 
+/// Build a `TypeBitField` whose `bits()` matches `field_bits` and whose
+/// underlying type has the given metatype.  The transforms only read
+/// `field->type->getMetatype()` and `field->bits.numBits`/range off the field.
+fn bf(field_bits: &BitRange, meta: type_metatype) -> TypeBitField {
+    use crate::dtype::TypeBitField as TBF;
+    let mut f = TBF::new(0, field_bits.num_bits, field_bits.is_big_endian, "f",
+        Rc::new(Datatype::new(field_bits.byte_size.max(1), meta)));
+    f.byte_offset = field_bits.byte_offset;
+    f.byte_size = field_bits.byte_size;
+    f.least_sig_bit = field_bits.least_sig_bit;
+    f
+}
+
 #[test]
 fn node_state_follow_field() {
     // bitfield.cc:21-28.  used container (off0,sz8); field bits (off2,sz2,lsb0,nb16).
     // bitsField = BitRange(field.bits, 0, 8) => lsb 16, nb 16 (LE oracle).
     let used = BitRange::byte_range(0, 8, false);
     let field_bits = BitRange::new(2, 2, 0, 16, false);
-    let st = BitFieldNodeState::follow_field(&used, vn(), &field_bits, /*is_int*/ true);
+    let st = BitFieldNodeState::follow_field(&used, vn(), &bf(&field_bits, type_metatype::TYPE_INT));
     assert_eq!((st.bits_field.least_sig_bit, st.bits_field.num_bits), (16, 16));
     assert_eq!(st.orig_least_sig_bit, 16);
     // isMostSignificant of bitsField (8*8=64 == 16+16=32?) -> false, so no sign ext.
     assert!(!st.is_sign_extended);
-    assert_eq!(st.field, FieldRef::Field { is_int: true });
+    assert_eq!(st.field().unwrap().field_type.get_metatype(), type_metatype::TYPE_INT);
     // does_sign_extension_match: is_sign_extended(false) == is_int(true) -> false.
     assert!(!st.does_sign_extension_match());
 }
@@ -269,7 +282,7 @@ fn node_state_follow_field_top_aligned_signext() {
     // field bits that translate to bitsField lsb 48 nb 16 in an 8-byte container:
     // a field at byteOffset 6, byteSize 2 (LE) -> translateLSB = 8*(6-0)=48.
     let field_bits = BitRange::new(6, 2, 0, 16, false);
-    let st = BitFieldNodeState::follow_field(&used, vn(), &field_bits, /*is_int*/ true);
+    let st = BitFieldNodeState::follow_field(&used, vn(), &bf(&field_bits, type_metatype::TYPE_INT));
     assert_eq!((st.bits_field.least_sig_bit, st.bits_field.num_bits), (48, 16));
     assert!(st.bits_field.is_most_significant()); // 8*8 == 48+16
     assert!(st.is_sign_extended);
@@ -280,10 +293,10 @@ fn node_state_follow_field_top_aligned_signext() {
 fn node_state_follow_field_unsigned_no_signext() {
     let used = BitRange::byte_range(0, 8, false);
     let field_bits = BitRange::new(6, 2, 0, 16, false);
-    let st = BitFieldNodeState::follow_field(&used, vn(), &field_bits, /*is_int*/ false);
+    let st = BitFieldNodeState::follow_field(&used, vn(), &bf(&field_bits, type_metatype::TYPE_UINT));
     // is_int false -> never sign extended even if most significant.
     assert!(!st.is_sign_extended);
-    assert_eq!(st.field, FieldRef::Field { is_int: false });
+    assert_eq!(st.field().unwrap().field_type.get_metatype(), type_metatype::TYPE_UINT);
     // does_sign_extension_match: false == false -> true.
     assert!(st.does_sign_extension_match());
 }
@@ -304,7 +317,7 @@ fn node_state_hole() {
     );
     assert_eq!(st.orig_least_sig_bit, 12);
     assert!(!st.is_sign_extended);
-    assert_eq!(st.field, FieldRef::Hole);
+    assert!(st.field.is_hole());
     // does_sign_extension_match defensively false on a hole.
     assert!(!st.does_sign_extension_match());
 }
@@ -314,11 +327,15 @@ fn node_state_with_new_field() {
     // bitfield.cc:44-51.  field/origLeastSigBit copied; bitsField/node/signExt replaced.
     let used = BitRange::byte_range(0, 8, false);
     let field_bits = BitRange::new(2, 2, 0, 16, false);
-    let base = BitFieldNodeState::follow_field(&used, vn(), &field_bits, true);
+    let base = BitFieldNodeState::follow_field(&used, vn(), &bf(&field_bits, type_metatype::TYPE_INT));
     let new_field = BitRange::new(0, 8, 0, 8, false);
     let st = BitFieldNodeState::with_new_field(&base, &new_field, vn(), /*sgn_ext*/ true);
     assert_eq!(st.bits_field, new_field);
-    assert_eq!(st.field, base.field);
+    // field is copied from base (both follow the same TypeBitField).
+    assert_eq!(
+        st.field().unwrap().field_type.get_metatype(),
+        base.field().unwrap().field_type.get_metatype()
+    );
     assert_eq!(st.orig_least_sig_bit, base.orig_least_sig_bit);
     assert!(st.is_sign_extended);
     assert_eq!(st.bits_used, base.bits_used);
@@ -395,7 +412,7 @@ fn establish_fields_one_byte_no_holes() {
     t.establish_fields(vn(), /*vn_size*/ 1, /*follow_holes*/ false);
     // Three field records, each a FieldRef::Field, none a hole.
     assert_eq!(t.work_list.len(), 3);
-    assert!(t.work_list.iter().all(|s| matches!(s.field, FieldRef::Field { .. })));
+    assert!(t.work_list.iter().all(|s| matches!(s.field, FieldRef::Field(_))));
     // field3 occupies bits [0,3); least significant first.
     assert_eq!(t.work_list[0].bits_field.least_sig_bit, 0);
     assert_eq!(t.work_list[0].bits_field.num_bits, 3);
@@ -407,7 +424,7 @@ fn establish_fields_one_byte_no_holes() {
     assert_eq!(t.work_list[2].bits_field.num_bits, 1);
     // sfield4 is int4 -> FieldRef::Field { is_int: true }; its bits are not at the
     // top of the 1-byte container ([3,7) != most significant), so not sign ext.
-    assert_eq!(t.work_list[1].field, FieldRef::Field { is_int: true });
+    assert_eq!(t.work_list[1].field().unwrap().field_type.get_metatype(), type_metatype::TYPE_INT);
     assert!(!t.work_list[1].is_sign_extended);
 }
 
@@ -427,7 +444,7 @@ fn establish_fields_partial_coverage_emits_final_hole() {
     t.establish_fields(vn(), 1, /*follow_holes*/ true);
     // field3 record + the final hole [3,8).
     assert_eq!(t.work_list.len(), 2);
-    assert!(matches!(t.work_list[0].field, FieldRef::Field { .. }));
+    assert!(matches!(t.work_list[0].field, FieldRef::Field(_)));
     assert!(matches!(t.work_list[1].field, FieldRef::Hole));
     assert_eq!(t.work_list[1].bits_field.least_sig_bit, 3);
     assert_eq!(t.work_list[1].bits_field.num_bits, 5);
@@ -436,7 +453,7 @@ fn establish_fields_partial_coverage_emits_final_hole() {
     let mut t2 = BitFieldTransform::new(&dt, 0, true);
     t2.establish_fields(vn(), 1, false);
     assert_eq!(t2.work_list.len(), 1);
-    assert!(matches!(t2.work_list[0].field, FieldRef::Field { .. }));
+    assert!(matches!(t2.work_list[0].field, FieldRef::Field(_)));
 }
 
 #[test]

@@ -69,6 +69,17 @@ use crate::dtype::{type_metatype, BitFieldTriple, Datatype};
 use crate::funcdata::Funcdata;
 use crate::seams::VarnodeId;
 
+/// `func->getArch()->getDefaultDataSpace()->isBigEndian()` — the endianness the
+/// `BitFieldTransform` base records.  All bitfield rule bodies read it the same
+/// way.
+fn bitfield_big_endian(data: &Funcdata) -> bool {
+    data.get_arch()
+        .manage()
+        .get_default_data_space()
+        .map(|s| s.is_big_endian())
+        .unwrap_or(false)
+}
+
 // =============================================================================
 // BitRange (address.hh:256-285, address.cc:630-868)
 // =============================================================================
@@ -405,21 +416,26 @@ impl BitRange {
 /// A reference to the bit-field being followed by a [`BitFieldNodeState`].
 ///
 /// In C++ this is `const TypeBitField *field` — null for a "hole" record.  The
-/// pure bit-range arithmetic the transforms run needs only the field's
-/// `bits`-derived range (already captured in [`BitFieldNodeState::bits_field`])
-/// plus the field's signedness; this enum carries the latter without holding a
-/// live type pointer.  `Field { is_int }` records whether the field's underlying
-/// data-type has metatype `TYPE_INT` (the only datum
-/// [`BitFieldNodeState::does_sign_extension_match`] reads off `field->type`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// transforms read three data off the live field pointer: its underlying
+/// data-type (`field->type`, used as the `InsertRecord`/`PullRecord` `dt` and to
+/// test `getMetatype() == TYPE_INT`) and its formal bit width
+/// (`field->bits.numBits`).  The [`FieldRef::Field`] variant carries an owned
+/// [`TypeBitField`] clone (cheap — its body is an `Rc<Datatype>`), exactly the
+/// projection the transforms consume, so the C++ `const TypeBitField *` pointer
+/// is replaced without holding an aliased reference.
+#[derive(Debug, Clone)]
 pub enum FieldRef {
     /// A hole record (C++ `field == (const TypeBitField *)0`).
     Hole,
-    /// A real bit-field; `is_int` is `field->type->getMetatype() == TYPE_INT`.
-    Field {
-        /// `true` iff the field's underlying type has metatype `TYPE_INT`.
-        is_int: bool,
-    },
+    /// A real bit-field — the owned `TypeBitField` the C++ `field` pointed at.
+    Field(crate::dtype::TypeBitField),
+}
+
+impl FieldRef {
+    /// `true` for a hole record (C++ `field == (const TypeBitField *)0`).
+    pub fn is_hole(&self) -> bool {
+        matches!(self, FieldRef::Hole)
+    }
 }
 
 /// Description of the bit-fields covered by a Varnode (C++ `BitFieldNodeState`,
@@ -428,7 +444,7 @@ pub enum FieldRef {
 /// The live `Varnode *node` becomes a [`VarnodeId`] handle and `const
 /// TypeBitField *field` becomes a [`FieldRef`]; everything else is the same
 /// geometry the transforms manipulate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct BitFieldNodeState {
     /// Bits being used from this Varnode (C++ `bitsUsed`).
     pub bits_used: BitRange,
@@ -457,17 +473,19 @@ impl BitFieldNodeState {
     pub fn follow_field(
         used: &BitRange,
         vn: VarnodeId,
-        field_bits: &BitRange,
-        field_is_int: bool,
+        fld: &crate::dtype::TypeBitField,
     ) -> BitFieldNodeState {
-        let bits_field = BitRange::in_container(field_bits, used.byte_offset, used.byte_size);
+        let field_bits = fld.bits();
+        let field_is_int =
+            fld.field_type.get_metatype() == type_metatype::TYPE_INT;
+        let bits_field = BitRange::in_container(&field_bits, used.byte_offset, used.byte_size);
         let orig_least_sig_bit = bits_field.least_sig_bit;
         let is_sign_extended = field_is_int && bits_field.is_most_significant();
         BitFieldNodeState {
             bits_used: *used,
             bits_field,
             node: vn,
-            field: FieldRef::Field { is_int: field_is_int },
+            field: FieldRef::Field(fld.clone()),
             orig_least_sig_bit,
             is_sign_extended,
         }
@@ -512,9 +530,18 @@ impl BitFieldNodeState {
             bits_used: copy.bits_used,
             bits_field: *new_field,
             node: vn,
-            field: copy.field,
+            field: copy.field.clone(),
             orig_least_sig_bit: copy.orig_least_sig_bit,
             is_sign_extended: sgn_ext,
+        }
+    }
+
+    /// The underlying bit-field, or `None` for a hole record (C++ `field`, null
+    /// for a hole).
+    pub fn field(&self) -> Option<&crate::dtype::TypeBitField> {
+        match &self.field {
+            FieldRef::Field(f) => Some(f),
+            FieldRef::Hole => None,
         }
     }
 
@@ -531,8 +558,11 @@ impl BitFieldNodeState {
     /// hole record has no field; the C++ never calls this on a hole, so it
     /// returns `false` defensively.
     pub fn does_sign_extension_match(&self) -> bool {
-        match self.field {
-            FieldRef::Field { is_int } => self.is_sign_extended == is_int,
+        match &self.field {
+            FieldRef::Field(f) => {
+                self.is_sign_extended
+                    == (f.field_type.get_metatype() == type_metatype::TYPE_INT)
+            }
             FieldRef::Hole => false,
         }
     }
@@ -670,13 +700,10 @@ impl BitFieldTransform {
             let code = bitrange.overlap_test(&field_bits);
             if code == 0 || code == 3 {
                 // Field is properly contained in vn.
-                let is_int =
-                    triple.bitfield.field_type.get_metatype() == type_metatype::TYPE_INT;
                 self.work_list.push(BitFieldNodeState::follow_field(
                     &bitrange,
                     vn,
-                    &field_bits,
-                    is_int,
+                    &triple.bitfield,
                 ));
             } else if follow_holes {
                 self.work_list
@@ -701,7 +728,7 @@ impl BitFieldTransform {
 /// sorted" per the header comment; transcribed in source order (which is the
 /// numeric order of the `OpCode` enum here).  [`RuleBitFieldOut::get_op_list`]
 /// folds this list into its op whitelist.
-const ALLOWED_FINAL_WRITES: &[OpCode] = &[
+pub(crate) const ALLOWED_FINAL_WRITES: &[OpCode] = &[
     OpCode::CPUI_COPY,
     OpCode::CPUI_INT_EQUAL,
     OpCode::CPUI_INT_NOTEQUAL,
@@ -762,13 +789,38 @@ impl Rule for RuleBitFieldStore {
         //   Varnode *vn = op->getIn(2);
         //   if (vn->isWritten() && vn->getDef()->code() == CPUI_INSERT) return 0;
         //   BitFieldInsertTransform transform(&data,op,dt,off);  ...
-        //
-        // SEAM(W6): getTypeReadFacing/getPtrInto-on-relative-pointer and the
-        // BitFieldInsertTransform machinery are unported.  Every reachable guard
-        // is preserved; the transform hand-off cannot run, so the rule
-        // conservatively does not apply.  Recorded as a loss.
-        let _ = (op, data);
-        0
+        let in1 = match data.obank().get(op).and_then(|o| o.get_in(1)) {
+            Some(v) => v,
+            None => return 0,
+        };
+        let ptr = data.vn_type_read_facing(in1, op);
+        let (dt, off) = match ptr.get_ptr_into() {
+            Ok(Some((dt, off))) => (dt, off),
+            _ => return 0,
+        };
+        if !dt.has_bitfields() {
+            return 0;
+        }
+        let vn = match data.obank().get(op).and_then(|o| o.get_in(2)) {
+            Some(v) => v,
+            None => return 0,
+        };
+        if data.vbank().get(vn).map(|v| v.is_written()).unwrap_or(false) {
+            let def = data.vbank().get(vn).unwrap().get_def().unwrap();
+            if data.obank().get(def).map(|o| o.code()) == Some(OpCode::CPUI_INSERT) {
+                return 0;
+            }
+        }
+        let big_endian = bitfield_big_endian(data);
+        let mut transform = match insert::BitFieldInsertTransform::new(data, op, &dt, off, big_endian) {
+            Some(t) => t,
+            None => return 0,
+        };
+        if !transform.do_trace(data) {
+            return 0;
+        }
+        transform.apply(data);
+        1
     }
 }
 
@@ -794,10 +846,24 @@ impl Rule for RuleBitFieldOut {
         //   Datatype *dt = op->getOut()->getTypeDefFacing();
         //   if (!dt->hasBitfields()) return 0;
         //   BitFieldInsertTransform transform(&data,op,dt,0);  ...
-        //
-        // SEAM(W6): getTypeDefFacing + BitFieldInsertTransform are unported.
-        let _ = (op, data);
-        0
+        let outvn = match data.obank().get(op).and_then(|o| o.get_out()) {
+            Some(v) => v,
+            None => return 0,
+        };
+        let dt = data.vn_type_def_facing(outvn);
+        if !dt.has_bitfields() {
+            return 0;
+        }
+        let big_endian = bitfield_big_endian(data);
+        let mut transform = match insert::BitFieldInsertTransform::new(data, op, &dt, 0, big_endian) {
+            Some(t) => t,
+            None => return 0,
+        };
+        if !transform.do_trace(data) {
+            return 0;
+        }
+        transform.apply(data);
+        1
     }
 }
 
@@ -823,10 +889,35 @@ impl Rule for RuleBitFieldLoad {
         //   if (!dt->hasBitfields()) return 0;
         //   if (op->notPrinted()) return 0;     // LOAD visited before
         //   BitFieldPullTransform transform(&data,op->getOut(),dt,off);  ...
-        //
-        // SEAM(W6): getTypeReadFacing/getPtrInto + BitFieldPullTransform unported.
-        let _ = (op, data);
-        0
+        let in1 = match data.obank().get(op).and_then(|o| o.get_in(1)) {
+            Some(v) => v,
+            None => return 0,
+        };
+        let ptr = data.vn_type_read_facing(in1, op);
+        let (dt, off) = match ptr.get_ptr_into() {
+            Ok(Some((dt, off))) => (dt, off),
+            _ => return 0,
+        };
+        if !dt.has_bitfields() {
+            return 0;
+        }
+        if data.obank().get(op).map(|o| o.not_printed()).unwrap_or(true) {
+            return 0; // LOAD visited before
+        }
+        let out = match data.obank().get(op).and_then(|o| o.get_out()) {
+            Some(v) => v,
+            None => return 0,
+        };
+        let big_endian = bitfield_big_endian(data);
+        let mut transform = match pull::BitFieldPullTransform::new(data, out, &dt, off, big_endian) {
+            Some(t) => t,
+            None => return 0,
+        };
+        if !transform.do_trace(data) {
+            return 0;
+        }
+        transform.apply(data);
+        1
     }
 }
 
@@ -869,10 +960,24 @@ impl Rule for RuleBitFieldIn {
         //   Datatype *dt = invn->getTypeReadFacing(op);
         //   if (!dt->hasBitfields()) return 0;
         //   BitFieldPullTransform transform(&data,invn,dt,0);  ...
-        //
-        // SEAM(W6): getTypeReadFacing + BitFieldPullTransform unported.
-        let _ = (op, data);
-        0
+        let invn = match data.obank().get(op).and_then(|o| o.get_in(0)) {
+            Some(v) => v,
+            None => return 0,
+        };
+        let dt = data.vn_type_read_facing(invn, op);
+        if !dt.has_bitfields() {
+            return 0;
+        }
+        let big_endian = bitfield_big_endian(data);
+        let mut transform = match pull::BitFieldPullTransform::new(data, invn, &dt, 0, big_endian) {
+            Some(t) => t,
+            None => return 0,
+        };
+        if !transform.do_trace(data) {
+            return 0;
+        }
+        transform.apply(data);
+        1
     }
 }
 
@@ -940,6 +1045,9 @@ pub fn specs() -> Vec<RuleSpec> {
         RuleSpec { group: "", ctor: || Box::new(RuleInsertAbsorb) },
     ]
 }
+
+pub mod insert;
+pub mod pull;
 
 #[cfg(test)]
 mod tests;

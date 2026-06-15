@@ -1806,6 +1806,16 @@ impl Funcdata {
         }
     }
 
+    /// C++ `Funcdata::opMarkSpecialPrint` (`funcdata_op.cc`): set the
+    /// `special_print` additional flag.  The bitfield transforms mark the
+    /// INSERT (and its terminating STORE) so the printer renders them with the
+    /// dedicated `pushBitfield` path rather than the raw operator.
+    pub(crate) fn op_mark_special_print(&mut self, op: OpId) {
+        if let Some(o) = self.obank_mut().get_mut(op) {
+            o.set_additional_flag(crate::op::pcodeop_addlflags::special_print);
+        }
+    }
+
     /// `op->outputTypeLocal()` — the local-from-op output type (W6 type-op
     /// table).  Conservative unknown of the op's output size; reached only by
     /// `markInternalCopies` (not on the `mergeMarker` path).

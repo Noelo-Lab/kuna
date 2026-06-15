@@ -201,7 +201,7 @@ fn w10bf_establish_fields_bigendian_three_fields_no_holes() {
     t.establish_fields(vn(), /*vn_size*/ 1, /*follow_holes*/ false);
     assert_eq!(t.work_list.len(), 3, "all three fields fully contained, no holes");
     assert!(
-        t.work_list.iter().all(|s| matches!(s.field, FieldRef::Field { .. })),
+        t.work_list.iter().all(|s| matches!(s.field, FieldRef::Field(_))),
         "no hole records with follow_holes=false"
     );
 
@@ -210,7 +210,10 @@ fn w10bf_establish_fields_bigendian_three_fields_no_holes() {
     let sfield = t
         .work_list
         .iter()
-        .find(|s| matches!(s.field, FieldRef::Field { is_int: true }))
+        .find(|s| {
+            s.field()
+                .is_some_and(|f| f.field_type.get_metatype() == type_metatype::TYPE_INT)
+        })
         .expect("sfield4 is the one TYPE_INT field");
     assert!(
         !sfield.is_sign_extended,
@@ -248,7 +251,7 @@ fn w10bf_establish_fields_leading_and_trailing_holes_gated() {
     assert!(matches!(t.work_list[0].field, FieldRef::Hole));
     assert_eq!(t.work_list[0].bits_field.least_sig_bit, 0);
     assert_eq!(t.work_list[0].bits_field.num_bits, 3);
-    assert!(matches!(t.work_list[1].field, FieldRef::Field { .. }));
+    assert!(matches!(t.work_list[1].field, FieldRef::Field(_)));
     assert!(matches!(t.work_list[2].field, FieldRef::Hole));
     assert_eq!(t.work_list[2].bits_field.least_sig_bit, 5);
     assert_eq!(t.work_list[2].bits_field.num_bits, 3);
@@ -257,7 +260,7 @@ fn w10bf_establish_fields_leading_and_trailing_holes_gated() {
     let mut t2 = BitFieldTransform::new(&dt, 0, false);
     t2.establish_fields(vn(), 1, false);
     assert_eq!(t2.work_list.len(), 1);
-    assert!(matches!(t2.work_list[0].field, FieldRef::Field { .. }));
+    assert!(matches!(t2.work_list[0].field, FieldRef::Field(_)));
 }
 
 // ===========================================================================
