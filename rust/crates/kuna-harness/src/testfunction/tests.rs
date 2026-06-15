@@ -509,3 +509,31 @@ fn w9_trailing_whitespace_segment_emits_no_empty_regex() {
     let mut q = parse_stringmatch(xml);
     assert!(run_property(&mut q, &["a target here"]));
 }
+
+/// LOSS-007 regression: C++ `std::regex` (ECMAScript) treats `\<`/`\>` as
+/// IdentityEscapes (literal `<`/`>`); the Rust `regex` crate reads them as
+/// ASCII word-boundary assertions, so `ptr-\>a` would compile but silently
+/// never match `ptr->a` (every `->` datatest assertion is written `-\>`).
+/// `compile_pattern` must lower `\<`/`\>` so the Rust harness matches exactly
+/// what the C++ harness matches — and must NOT disturb other escapes.
+#[test]
+fn loss007_escaped_angle_brackets_match_literally() {
+    // The two divergent identity-escapes lower to literals (corpus `<` arrives
+    // XML-decoded, so we exercise the pure translation directly).
+    assert_eq!(ecmascript_identity_escapes(r"v1 = ptr-\>a;"), "v1 = ptr->a;");
+    assert_eq!(ecmascript_identity_escapes(r"a \< b"), "a < b");
+    assert_eq!(ecmascript_identity_escapes(r"ptr-\>a-\>b"), "ptr->a->b");
+    // Every OTHER escape is preserved verbatim (identical in both dialects).
+    assert_eq!(ecmascript_identity_escapes(r"x \+ 5\.5 \(z\)"), r"x \+ 5\.5 \(z\)");
+    // An escaped backslash is consumed as a pair, so `\\>` keeps its `\\` plus a
+    // literal `>` (it is NOT a `\>` identity-escape).
+    assert_eq!(ecmascript_identity_escapes(r"a\\>b"), r"a\\>b");
+    // End-to-end: the compiled corpus pattern now matches the rendered `->`.
+    let mut p = FunctionTestProperty::from_parts(
+        "u",
+        1,
+        1,
+        &[&ecmascript_identity_escapes(r"v1 = ptr-\>a;")],
+    );
+    assert!(run_property(&mut p, &["  v1 = ptr->a;"]), "escaped \\> must match a literal >");
+}

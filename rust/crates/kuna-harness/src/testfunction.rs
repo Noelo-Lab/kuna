@@ -240,12 +240,48 @@ fn memchr_nl(bytes: &[u8], from: usize) -> Option<usize> {
     bytes[from..].iter().position(|&b| b == b'\n').map(|i| from + i)
 }
 
+/// Translate the one ECMAScript-vs-`regex`-crate dialect divergence that matters
+/// for the corpus: the identity escapes `\<` and `\>`.  C++ `std::regex`
+/// (ECMAScript) has no word-boundary `\<`/`\>` syntax, so per the ECMAScript
+/// `IdentityEscape` production `\<` and `\>` match the *literal* `<`/`>`.  The
+/// Rust `regex` crate instead reads `\<`/`\>` as ASCII start-/end-of-word
+/// boundary assertions (added in regex 1.x), so a pattern like `ptr-\>a`
+/// compiles but can never match `ptr->a` — a silent mis-decision suppressing
+/// every `->`/`<`-bearing datatest assertion.  Faithfully restoring the C++
+/// semantics, we lower `\<`→`<` and `\>`→`>` (every other escape — `\+ \. \( \[
+/// \* \\` … — is identical in both dialects and is preserved verbatim, including
+/// an escaped backslash `\\` so `\\>` is left intact).
+fn ecmascript_identity_escapes(p: &str) -> String {
+    let mut out = String::with_capacity(p.len());
+    let mut chars = p.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.peek() {
+                Some('<') | Some('>') => {
+                    out.push(chars.next().unwrap()); // drop the backslash, keep < / >
+                }
+                Some('\\') => {
+                    out.push('\\'); // escaped backslash: consume the pair verbatim
+                    out.push(chars.next().unwrap());
+                }
+                _ => out.push('\\'), // any other escape: leave the backslash, char emitted next loop
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Compile one line of a `<stringmatch>` pattern (LOSS-007: `regex` crate in
-/// place of `std::regex`).  A pattern the `regex` crate rejects (a dialect gap)
-/// is surfaced as a `Parse` test error naming the offending pattern, so a future
+/// place of `std::regex`).  The pattern is first lowered through
+/// [`ecmascript_identity_escapes`] to recover C++ `std::regex` `\<`/`\>`
+/// semantics.  A pattern the `regex` crate rejects (a remaining dialect gap) is
+/// surfaced as a `Parse` test error naming the offending pattern, so a future
 /// unsupported pattern is loud rather than silently mis-decided.
 fn compile_pattern(p: &str) -> TestResult<Regex> {
-    Regex::new(p).map_err(|e| {
+    let translated = ecmascript_identity_escapes(p);
+    Regex::new(&translated).map_err(|e| {
         TestError::Parse(format!("stringmatch pattern {p:?} not supported by the regex crate: {e}"))
     })
 }
