@@ -5943,4 +5943,105 @@ mod tests {
         let mut rule = RuleSubfloatConvert::new("g");
         assert_eq!(rule.apply_op(f2f, &mut fd), 0);
     }
+
+    // ---- tryReturnPull (subflow.cc:238-284) — verifier adversarial tests ----
+    // item: rport/w10-return-narrow (round 1).  These target the three fragile
+    // decision branches of the now-closed seam: the slot==0 return-address bail,
+    // the non-aggressive consume-outside-mask bail, and the terminal trim patch
+    // (which sets returnsTraversed and emits exactly one parameter_patch).
+
+    /// Build an engine + a single RETURN op consuming `root` (4-byte reg) at the
+    /// given input slot.  Returns (sf, returnop, root_rvid).  The engine is
+    /// seeded on the low-byte logical value (mask 0xff).
+    fn return_setup(slot: int4, consume: uintb) -> (Funcdata, OpId, VarnodeId) {
+        let mut fd = build_fd();
+        let root = mk_input(&mut fd, 0x40, 4);
+        fd.vbank_mut().get_mut(root).unwrap().set_consume(consume);
+        // RETURN(retaddr, root) — slot 0 is the return-address container, slot 1
+        // the first return value.  We wire `root` at the requested slot.
+        let retop = mk_op(&mut fd, 0x200, slot + 1, OpCode::CPUI_RETURN);
+        let retaddr = fd.new_constant(8, 0);
+        wire_in(&mut fd, retop, retaddr, 0);
+        if slot != 0 {
+            wire_in(&mut fd, retop, root, slot);
+        }
+        (fd, retop, root)
+    }
+
+    #[test]
+    fn try_return_pull_slot0_is_return_address_bail() {
+        // subflow.cc:241 — slot==0 is the actual return-address container; never
+        // trimmed.  Must return Ok(false) WITHOUT touching patchlist/pullcount or
+        // flipping returns_traversed.
+        let (mut fd, retop, root) = return_setup(0, 0xff);
+        let mut sf = SubvariableFlow::new(&mut fd, root, 0xff, true, false, false).unwrap();
+        let rvn = *sf.varmap.get(&root).expect("root must be linked");
+        let before = sf.pullcount;
+        let ok = sf.try_return_pull(&mut fd, retop, rvn, 0).unwrap();
+        assert!(!ok, "slot 0 must bail (return-address container)");
+        assert_eq!(sf.pullcount, before, "slot-0 bail must not bump pullcount");
+        assert!(sf.patchlist.is_empty(), "slot-0 bail must not patch");
+        assert!(!sf.returns_traversed, "slot-0 bail must not mark returns traversed");
+    }
+
+    #[test]
+    fn try_return_pull_nonaggressive_consume_outside_mask_bails() {
+        // subflow.cc:243-246 — non-aggressive: if the varnode consumes any bit
+        // outside the logical mask, do not truncate.  Must bail BEFORE the
+        // returns-traversed propagation.  Seed with consume==mask (so the
+        // non-aggressive constructor links the root), then widen consume to
+        // 0xffff to trip the gate exactly at try_return_pull.
+        let (mut fd, retop, root) = return_setup(1, 0xff);
+        let mut sf = SubvariableFlow::new(&mut fd, root, 0xff, false, false, false).unwrap();
+        let rvn = *sf.varmap.get(&root).expect("root must be linked");
+        fd.vbank_mut().get_mut(root).unwrap().set_consume(0xffff);
+        let ok = sf.try_return_pull(&mut fd, retop, rvn, 1).unwrap();
+        assert!(!ok, "consume outside mask (non-aggressive) must bail");
+        assert!(sf.patchlist.is_empty(), "consume-bail must not patch");
+        assert!(!sf.returns_traversed, "consume-bail must not mark returns traversed");
+        // Sanity: the SAME setup with aggressive=true does NOT bail on consume
+        // (the consume gate is skipped) and reaches the terminal trim.
+        let (mut fd2, retop2, root2) = return_setup(1, 0xffff);
+        let mut sf2 = SubvariableFlow::new(&mut fd2, root2, 0xff, true, false, false).unwrap();
+        let rvn2 = *sf2.varmap.get(&root2).expect("root must be linked");
+        let ok2 = sf2.try_return_pull(&mut fd2, retop2, rvn2, 1).unwrap();
+        assert!(ok2, "aggressive engine skips the consume gate and trims");
+    }
+
+    #[test]
+    fn try_return_pull_terminal_trim_emits_one_patch_and_sets_traversed() {
+        // subflow.cc:248-283 — the happy path: returns_traversed starts false, the
+        // single RETURN is traversed, the terminal parameter_patch on `op` is
+        // pushed, pullcount bumps by exactly one, and returns_traversed flips true.
+        // A SECOND call must NOT re-run the propagation loop (idempotent flag) but
+        // still emits its own terminal patch (C++ pushes the terminal each call).
+        let (mut fd, retop, root) = return_setup(1, 0xff);
+        let mut sf = SubvariableFlow::new(&mut fd, root, 0xff, true, false, false).unwrap();
+        let rvn = *sf.varmap.get(&root).expect("root must be linked");
+        assert!(!sf.returns_traversed);
+        let before = sf.pullcount;
+        let ok = sf.try_return_pull(&mut fd, retop, rvn, 1).unwrap();
+        assert!(ok, "valid trim must succeed");
+        assert!(sf.returns_traversed, "first trim sets returns_traversed");
+        assert_eq!(sf.pullcount, before + 1, "exactly one terminal patch bump");
+        // The terminal patch is a parameter_patch on the RETURN op at slot 1.
+        let term = sf.patchlist.last().expect("a terminal patch exists");
+        assert_eq!(term.typ, PatchType::ParameterPatch);
+        assert_eq!(term.patch_op, retop);
+        assert_eq!(term.slot, 1);
+        assert_eq!(term.in1, rvn);
+        // Second call: returns_traversed already true, so NO new propagation, but
+        // the terminal patch still fires (mirrors C++ emitting the terminal each
+        // time tryReturnPull is reached for a RETURN).
+        let mid = sf.pullcount;
+        let patches_mid = sf.patchlist.len();
+        let ok2 = sf.try_return_pull(&mut fd, retop, rvn, 1).unwrap();
+        assert!(ok2);
+        assert_eq!(sf.pullcount, mid + 1, "second call adds exactly one terminal");
+        assert_eq!(
+            sf.patchlist.len(),
+            patches_mid + 1,
+            "second call must not re-traverse RETURNs, only add its terminal"
+        );
+    }
 }
