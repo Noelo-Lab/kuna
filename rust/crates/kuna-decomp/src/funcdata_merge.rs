@@ -685,10 +685,155 @@ impl MergeContext for Funcdata {
 
     // --- mergeAddrTied / mergeMultiEntry seams ----------------------------
     fn addr_tied_ranges(&self) -> Vec<AddrTiedRange> {
-        // Funcdata::overlapLoc (the maximally-overlapping addr-tied range
-        // collection) is a W7 surface; on the merged-tree default there are no
-        // addr-tied overlap groups (registers are not addrtied), so this is empty.
-        Vec::new()
+        // Faithful `Merge::mergeAddrTied` range collection (merge.cc:609-648) over
+        // the loc-ordered Varnode set, driving `VarnodeBank::overlapLoc`
+        // (varnode.cc:1810-1838): walk PROCESSOR/SPACEBASE Varnodes, gather each
+        // *maximally-overlapping* window of non-free Varnodes, and within it emit:
+        //   * `must_merge_ranges` — one per (addr,size) group (the C++
+        //     `[bounds[i],bounds[i+1])` pairs that `mergeRangeMust` force-merges
+        //     into a single HighVariable), and
+        //   * `group_with` — for a window spanning more than one storage address,
+        //     the `(vn2->getHigh(), off, vn1->getHigh())` group-with triples
+        //     (`merge.cc:636-643`, `off = vn2.offset - vn1.offset`).
+        // `addrtied` is the OR of every member's flags (C++ `overlapLoc` returns the
+        // unioned flag set).  Now that `set_varnode_properties` paints global RAM
+        // stores `addrtied`, the addr-tied global reads + the MULTIEQUAL/RETURN-COPY
+        // outputs at one address pre-merge here, BEFORE `mergeMarker` processes the
+        // phi — so the phi's input is already in the output's high and is NOT
+        // trimmed to a `unique` (the C++ order; without this the persist `isInput()`
+        // gate of `mergeTestRequired` snips a spurious `glob = glob` COPY).
+        use crate::varnode::varnode_flags;
+        use kuna_base::types::uintb;
+
+        let order: Vec<VarnodeId> = self.vbank().iter_loc().collect();
+        let mut ranges: Vec<AddrTiedRange> = Vec::new();
+        let mut i = 0usize;
+        while i < order.len() {
+            let vn = order[i];
+            let v = match self.vbank().get(vn) {
+                Some(v) => v,
+                None => {
+                    i += 1;
+                    continue;
+                }
+            };
+            let spc = match v.get_addr().get_space() {
+                Some(s) => s,
+                None => {
+                    i += 1;
+                    continue;
+                }
+            };
+            let stype = spc.get_type();
+            if stype != spacetype::IPTR_PROCESSOR && stype != spacetype::IPTR_SPACEBASE {
+                // C++ `startiter = data.endLoc(spc)` — skip the whole space.  The loc
+                // order groups a space contiguously, so advance past every Varnode of
+                // this space.
+                let sp_index = spc.get_index();
+                i += 1;
+                while i < order.len() {
+                    let same = self
+                        .vbank()
+                        .get(order[i])
+                        .and_then(|v2| v2.get_addr().get_space())
+                        .map(|s| s.get_index() == sp_index)
+                        .unwrap_or(false);
+                    if !same {
+                        break;
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+
+            // Collect the maximally-overlapping window (C++ `overlapLoc`): start at
+            // `vn`, extend `maxOff` as later Varnodes (same space) overlap, OR the
+            // flags.  Group members by (offset,size) into `must_merge_ranges`.
+            let start_off = v.get_offset();
+            let mut max_off = start_off.wrapping_add((v.get_size() as uintb).wrapping_sub(1));
+            let sp_index = spc.get_index();
+            let mut flags = v.get_flags();
+            let mut all_varnodes: Vec<VarnodeId> = Vec::new();
+            // (offset, size) -> member list, in first-seen order (the loc order).
+            let mut groups: Vec<((uintb, int4), Vec<VarnodeId>)> = Vec::new();
+
+            let mut j = i;
+            while j < order.len() {
+                let v2 = match self.vbank().get(order[j]) {
+                    Some(v2) => v2,
+                    None => {
+                        j += 1;
+                        continue;
+                    }
+                };
+                let a2 = v2.get_addr();
+                let s2 = match a2.get_space() {
+                    Some(s) => s,
+                    None => break,
+                };
+                if s2.get_index() != sp_index || v2.get_offset() > max_off {
+                    break; // left the overlap window / the space
+                }
+                if v2.is_free() {
+                    j += 1;
+                    continue; // C++ skips free Varnodes (they are not merged)
+                }
+                let end_off = v2.get_offset().wrapping_add((v2.get_size() as uintb).wrapping_sub(1));
+                if end_off > max_off {
+                    max_off = end_off;
+                }
+                flags |= v2.get_flags();
+                all_varnodes.push(order[j]);
+                let key = (v2.get_offset(), v2.get_size());
+                match groups.iter_mut().find(|(k, _)| *k == key) {
+                    Some((_, lst)) => lst.push(order[j]),
+                    None => groups.push((key, vec![order[j]])),
+                }
+                j += 1;
+            }
+
+            // Advance the outer cursor past this whole window (C++ `startiter =
+            // bounds[max]`).
+            i = j.max(i + 1);
+
+            let addrtied = (flags & varnode_flags::addrtied) != 0;
+            if !addrtied || groups.is_empty() {
+                continue;
+            }
+
+            let must_merge_ranges: Vec<Vec<VarnodeId>> =
+                groups.iter().map(|(_, lst)| lst.clone()).collect();
+
+            // group_with: when the window spans more than one storage address, group
+            // each later address's high with the first's, at `off = addr2 - addr1`
+            // (C++ `merge.cc:636-643`, `if (max > 2)`).  Each group is already a
+            // single high after `mergeRangeMust`, so its representative Varnode's
+            // high is the group's high.
+            let mut group_with: Vec<(HighVariableId, int4, HighVariableId)> = Vec::new();
+            if groups.len() > 1 {
+                let (off1, _) = groups[0].0;
+                let high1 = self.vbank().get(groups[0].1[0]).and_then(|v| v.get_high());
+                if let Some(high1) = high1 {
+                    for (k, lst) in groups.iter().skip(1) {
+                        if let Some(high2) = self.vbank().get(lst[0]).and_then(|v| v.get_high()) {
+                            // off = (int4)(vn2->getOffset() - vn1->getOffset())
+                            // cast: uintb difference -> int4 storage offset, the C++
+                            // `(int4)` narrowing; an in-window offset delta is small.
+                            let off = (k.0.wrapping_sub(off1)) as int4;
+                            group_with.push((high2, off, high1));
+                        }
+                    }
+                }
+            }
+
+            ranges.push(AddrTiedRange {
+                addrtied,
+                all_varnodes,
+                must_merge_ranges,
+                group_with,
+            });
+        }
+        ranges
     }
     fn multi_entry_symbols(&self) -> Vec<u64> {
         Vec::new()

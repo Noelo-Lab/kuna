@@ -2578,7 +2578,8 @@ impl Database {
                 if entry.is_dynamic() {
                     continue;
                 }
-                let sym_flags = self.symbols[entry.symbol].flags;
+                let sym = &self.symbols[entry.symbol];
+                let sym_flags = sym.flags;
                 entries.push(GlobalEntry {
                     // cast: usize -> int4; `space_index` is a `maptable` slot index
                     // (one per AddrSpace, < numSpaces ~ tens), always in i32 range.
@@ -2590,6 +2591,12 @@ impl Database {
                     all_flags: entry.extraflags | sym_flags,
                     addrtied: (sym_flags & varnode_flags::addrtied) != 0,
                     uselimit: entry.uselimit.clone(),
+                    // Naming: the owning Symbol's display name + its in-symbol offset
+                    // + type, the slice `Funcdata::linkSymbol`'s global-scope reach
+                    // returns for `high->getSymbol()->getDisplayName()`.
+                    symbol_name: sym.get_display_name().to_string(),
+                    symbol_offset: entry.get_offset(),
+                    symbol_type: sym.dtype.clone(),
                 });
             }
         }

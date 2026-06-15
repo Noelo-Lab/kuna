@@ -1181,6 +1181,34 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         let is_global_data =
             spc.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR && !is_register;
         if v_persist || is_global_data {
+            // C++ `Funcdata::linkSymbol` (`funcdata_varnode.cc:1190`) queries
+            // `localmap->queryProperties`, whose `Scope::stackContainer` walks the
+            // parent chain UP TO THE GLOBAL SCOPE.  A global RAM store mapped by
+            // `map addr glob1` is owned by the global scope, so the query returns the
+            // global Symbol and the high carries `glob1` / `globalfree` — exactly the
+            // body LHS the oracle renders (`glob1 = 0`, `globalfree = 100`).  Without
+            // this query a surviving global store falls to `pushUnnamedLocation` and
+            // renders `dat_<addr>`.
+            //
+            // The merged kuna `localmap` is a detached `Database`; its global reach is
+            // the `GlobalQuery` snapshot on `glb` (built after every `map addr`).
+            // Address-tied global entries are valid at every usepoint, so an invalid
+            // usepoint is faithful here (C++ `SymbolEntry::inUse` short-circuits on
+            // address-tied).  A hit binds the high's name + symbol offset + type
+            // identically to the local `resolve_default_name` branch above.
+            let usepoint = kuna_base::address::Address::new_invalid();
+            if let Some((sym_name, sym_off, sym_type)) =
+                data.get_arch().name_for_global_varnode(&v_addr, v_size, &usepoint)
+            {
+                if let Some(h) = data.high_bank_mut().get_mut(high) {
+                    h.set_kuna_name(sym_name);
+                    h.set_symbol_offset(sym_off);
+                    if let Some(t) = sym_type {
+                        h.set_symbol_type(t);
+                    }
+                }
+                continue;
+            }
             continue; // dat_<addr> via the unnamed-location tail (global, not a local)
         }
         // Recovered *parameters* take the angr `aN` branch and are caught above by

@@ -1739,6 +1739,25 @@ impl PrintC {
                 None => continue,
             };
             seen.insert(high);
+            // C++ `emitLocalVarDecls` -> `emitScopeVarDecls(fd->getScopeLocal(),
+            // no_category)` walks the LOCAL scope only (printc.cc:2652).  A
+            // global-mapped Symbol (`glob1`, `globalfree`) lives in the GLOBAL
+            // scope, so it is never declared in a function body — it is named in the
+            // body's statements but carries no local declaration.  The discriminator
+            // is `Varnode::isPersist` (a global RAM store is persist; a local stack /
+            // register high is not): skip a high any of whose members is persist.
+            let is_global = fd
+                .high_bank()
+                .get(high)
+                .map(|h| {
+                    (0..h.num_instances()).any(|i| {
+                        fd.vbank().get(h.get_instance(i)).map(|v| v.is_persist()).unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false);
+            if is_global {
+                continue;
+            }
             // C++ `emitLocalVarDecls` -> `emitScopeVarDecls(scope, no_category)`:
             // only `no_category` Symbols are declared in the body.  A high bound to
             // a `function_parameter` Symbol renders in the signature, never as a body

@@ -132,6 +132,16 @@ pub struct GlobalEntry {
     /// Code-address ranges where this storage is valid (C++ `uselimit`); empty
     /// for the address-tied `map addr` globals.
     pub uselimit: kuna_base::address::RangeList,
+    /// The owning Symbol's display name (C++ `SymbolEntry::getSymbol()->getDisplayName()`),
+    /// for the naming pass — `Funcdata::linkSymbol`'s reach into the global scope
+    /// returns the Symbol whose display name a global-mapped HighVariable carries.
+    pub symbol_name: String,
+    /// Byte offset of this storage piece within the owning Symbol (C++
+    /// `SymbolEntry::getOffset`), for the `getSymbolOffset` member-access render.
+    pub symbol_offset: int4,
+    /// The owning Symbol's data-type (C++ `SymbolEntry::getSymbol()->getType()`),
+    /// for the HighVariable's symbol type after a global name binds.
+    pub symbol_type: Option<std::rc::Rc<crate::dtype::Datatype>>,
 }
 
 /// A read-only snapshot of the global [`Scope`](crate::database::Scope)
@@ -208,6 +218,80 @@ impl GlobalQuery {
             }
         }
         best.map(|e| e.all_flags)
+    }
+
+    /// C++ `Scope::findContainer` (`database.cc:2278-2310`) restricted to the
+    /// global scope, returning the *smallest containing entry* itself (not just its
+    /// flags) so the naming pass can read its Symbol.  Identical containment /
+    /// `inUse` / smallest-size logic as [`find_container_flags`](Self::find_container_flags),
+    /// factored out so both queries share one walk.
+    fn find_container_entry(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<&GlobalEntry> {
+        let space = addr.get_space()?;
+        let space_index = space.get_index();
+        let start = addr.get_offset();
+        // end = addr + size - 1 (uintb wrap), as in find_container.
+        // cast: int4 -> u64, the C++ `uintb` widening of the non-negative byte
+        // count; a storage size is never negative so sign-extension is irrelevant.
+        let end = start.wrapping_add(size as u64).wrapping_sub(1);
+        let mut best: Option<&GlobalEntry> = None;
+        let mut oldsize: int4 = -1;
+        for e in &self.entries {
+            if e.space_index != space_index {
+                continue;
+            }
+            if e.first > start || e.last < end {
+                continue;
+            }
+            if e.size < oldsize || oldsize == -1 {
+                let in_use = if e.addrtied {
+                    true
+                } else if usepoint.is_invalid() {
+                    false
+                } else {
+                    e.uselimit.in_range(usepoint, 1)
+                };
+                if in_use {
+                    best = Some(e);
+                    if e.size == size {
+                        break;
+                    }
+                    oldsize = e.size;
+                }
+            }
+        }
+        best
+    }
+
+    /// Resolve the global Symbol covering a Varnode for the naming pass — the C++
+    /// `Funcdata::linkSymbol`'s reach into the global scope (`funcdata_varnode.cc:1190`
+    /// `localmap->queryProperties` walks up to the global scope, returns the covering
+    /// `SymbolEntry`, and `high->getSymbol()` then carries that Symbol's display name).
+    ///
+    /// Returns `(display_name, symbol_offset, symbol_type)` where `symbol_offset` is
+    /// the byte offset of the access within the Symbol (C++ `(addr - entry_addr) +
+    /// entry_offset`; 0 for a whole-symbol/scalar global, > 0 for an array/struct
+    /// member).  `None` when no global Symbol covers `[addr, addr+size)`.
+    pub fn name_for_varnode(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<(String, int4, Option<std::rc::Rc<crate::dtype::Datatype>>)> {
+        if addr.is_constant() {
+            return None;
+        }
+        let e = self.find_container_entry(addr, size, usepoint)?;
+        // sym_off = (access_addr - entry_addr) + entry_offset (C++
+        // ScopeLocal::name_for_varnode / SymbolEntry geometry).  `e.first` is the
+        // entry's starting offset (== entry addr offset).
+        let sym_off = (addr.get_offset().wrapping_sub(e.first) as int4)
+            .wrapping_add(e.symbol_offset);
+        Some((e.symbol_name.clone(), sym_off, e.symbol_type.clone()))
     }
 
     /// C++ `Scope::queryProperties` (`database.cc:1268-1286`) for the parentless
@@ -498,6 +582,22 @@ impl Architecture {
             Some(gq) => gq.query_properties(addr, size, usepoint),
             None => 0,
         }
+    }
+
+    /// Resolve the global Symbol covering a storage range for the naming pass (C++
+    /// `Funcdata::linkSymbol`'s reach into the global scope; see
+    /// [`GlobalQuery::name_for_varnode`]).  Returns `(display_name, symbol_offset,
+    /// symbol_type)`, or `None` when no global symbol table is shared (hand-built
+    /// fixtures) or no global Symbol covers the range.
+    pub fn name_for_global_varnode(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<(String, int4, Option<std::rc::Rc<crate::dtype::Datatype>>)> {
+        self.global_query
+            .as_ref()
+            .and_then(|gq| gq.name_for_varnode(addr, size, usepoint))
     }
 
     /// Get the minimum laned-register size (C++
