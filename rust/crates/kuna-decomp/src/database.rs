@@ -2580,6 +2580,8 @@ impl Database {
                 }
                 let sym_flags = self.symbols[entry.symbol].flags;
                 entries.push(GlobalEntry {
+                    // cast: usize -> int4; `space_index` is a `maptable` slot index
+                    // (one per AddrSpace, < numSpaces ~ tens), always in i32 range.
                     space_index: space_index as int4,
                     first: entry.get_first(),
                     last: entry.get_last(),

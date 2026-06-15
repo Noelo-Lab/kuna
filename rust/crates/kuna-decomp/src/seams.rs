@@ -171,6 +171,9 @@ impl GlobalQuery {
         let space_index = space.get_index();
         let start = addr.get_offset();
         // end = addr + size - 1 (uintb wrap), as in find_container.
+        // cast: int4 -> u64, reproducing the C++ `uintb` widening of the
+        // (non-negative) byte count `size`; sign-extension is irrelevant since a
+        // storage size is never negative.
         let end = start.wrapping_add(size as u64).wrapping_sub(1);
         let mut best: Option<&GlobalEntry> = None;
         let mut oldsize: int4 = -1;

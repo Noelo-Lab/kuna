@@ -115,11 +115,14 @@ fn new_unique_out(data: &mut Funcdata, s: int4, op: OpId) -> VarnodeId {
 /// The C++ `Funcdata::newVarnodeOut` (`funcdata_varnode.cc:106`) tail then runs
 /// `setVarnodeProperties(vn)` (the `localmap->queryProperties` symbol/flag seed).
 /// `RuleStoreVarnode` builds the output at the *global* storage address of a
-/// `STORE ram,#const,val`, so that seed is what paints `persist`/`addrtied` on
-/// the global write — without it the store is dead-code-eliminated and the
-/// `glob = ...` assignment never renders.  Now wired faithfully (no longer a
-/// W4 no-op): the global symbol table reaches `set_varnode_properties` through
-/// the `glb` snapshot ([`crate::seams::GlobalQuery`]).
+/// `STORE ram,#const,val`, so in C++ that seed paints `persist`/`addrtied` on the
+/// global write.  Here [`Funcdata::set_varnode_properties`](crate::funcdata::Funcdata::set_varnode_properties)
+/// is the faithful call site, but its persist/addrtied marking is currently
+/// DEFERRED (see its doc): the global-store survival is instead delivered by the
+/// heritage path (`Heritage::guard` + `guard_returns` RETURN-COPY), which is
+/// sufficient for every global-store datatest and does not regress the
+/// HighVariable-naming-dependent cases.  The call is retained so the marking
+/// re-lands here unchanged when the naming seam arrives.
 fn new_varnode_out(data: &mut Funcdata, s: int4, m: Address, op: OpId) -> VarnodeId {
     let seqnum = data.obank().get(op).expect("new_varnode_out: stale op").get_seq_num().clone();
     let def = DefOpInfo { id: op, seqnum };
@@ -129,8 +132,8 @@ fn new_varnode_out(data: &mut Funcdata, s: int4, m: Address, op: OpId) -> Varnod
         .create_def(s, m, ct, def, &mut |_, _, _| Ok(()))
         .expect("new_varnode_out: createDef");
     data.obank_mut().get_mut(op).expect("new_varnode_out: stale op").set_output(Some(vn));
-    // setVarnodeProperties(vn): seed the global persist/addrtied/mapped flags so
-    // a global STORE-derived write survives ActionDeadCode.
+    // setVarnodeProperties(vn): the C++ tail seed (persist/addrtied marking
+    // currently deferred in the callee — see its doc).
     data.set_varnode_properties(vn);
     vn
 }
