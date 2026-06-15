@@ -209,9 +209,8 @@ pub struct SubvariableFlow {
     flowsize: int4,
     /// Number of bits in logical variable.
     bitsize: int4,
-    /// Have we tried to flow logical value across CPUI_RETURNs.  Set inside the
-    /// W4-seamed `try_return_pull`.  // SEAM(W4)
-    #[allow(dead_code)]
+    /// Have we tried to flow logical value across CPUI_RETURNs.  Set inside
+    /// `try_return_pull` (C++ `returnsTraversed`).
     returns_traversed: bool,
     /// Do we "know" initial seed point must be a sub variable.
     aggressive: bool,
@@ -534,10 +533,14 @@ impl SubvariableFlow {
     }
 
     /// Determine if the given subgraph variable can act as return value for the
-    /// given RETURN op (C++ `SubvariableFlow::tryReturnPull`).
+    /// given RETURN op (C++ `SubvariableFlow::tryReturnPull`, subflow.cc:238).
     ///
-    /// SEAM(W4): `fd->getFuncProto().isOutputLocked()` is the W4 prototype state.
-    /// The cross-RETURN propagation loop and the terminal patch are transcribed.
+    /// The W4 prototype state (`FuncProto::isOutputLocked`) is now carried on the
+    /// merged-tree `Funcdata`, so this is the faithful transcription: bail on the
+    /// return-address container slot or a locked output, bail (non-aggressive) if
+    /// anything outside the logical mask is consumed, then — once — propagate the
+    /// logical size to every other RETURN so the function keeps a single return
+    /// type, and record the terminal parameter patch.
     fn try_return_pull(
         &mut self,
         data: &mut Funcdata,
@@ -548,14 +551,73 @@ impl SubvariableFlow {
         if slot == 0 {
             return Ok(false); // Don't deal with actual return address container
         }
-        // if (fd->getFuncProto().isOutputLocked()) return false;   -- SEAM(W4)
-        // We cannot evaluate isOutputLocked() without the W4 FuncProto; the
-        // structure below (the cross-RETURN propagation + terminal patch) is
-        // transcribed but gated.
-        let _ = (data, op, rvn);
-        Err(KunaError::lowlevel(
-            "kuna rust port: SubvariableFlow::tryReturnPull needs FuncProto::isOutputLocked — SEAM(W4)",
-        ))
+        if data.get_func_proto().is_output_locked() {
+            return Ok(false);
+        }
+        if !self.aggressive {
+            // If there's something outside the mask being consumed, don't truncate.
+            let vn = self.rv(rvn).vn.expect("try_return_pull: rvn vn");
+            let rmask = self.rv(rvn).mask;
+            if (data.vbank().get(vn).expect("try_return_pull: stale rvn vn").get_consume() & !rmask)
+                != 0
+            {
+                return Ok(false);
+            }
+        }
+
+        if !self.returns_traversed {
+            // If we plan to truncate the size of a return variable, we need to
+            // propagate the logical size to any other return variables so that
+            // there can still be a single return value type for the function.
+            let rmask = self.rv(rvn).mask;
+            let return_ops: Vec<OpId> = data.obank().iter_code(OpCode::CPUI_RETURN).collect();
+            for retop in return_ops {
+                let (halt, retvn) = {
+                    let o = match data.obank().get(retop) {
+                        Some(o) => o,
+                        None => continue,
+                    };
+                    (o.get_halt_type(), o.get_in(slot))
+                };
+                if halt != 0 {
+                    continue; // Artificial halt
+                }
+                let retvn = match retvn {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let (rep, inworklist) = self.set_replacement(data, retvn, rmask);
+                let rep = match rep {
+                    Some(r) => r,
+                    None => return Ok(false),
+                };
+                if inworklist {
+                    self.worklist.push(rep);
+                } else if data.vbank().get(retvn).expect("try_return_pull: stale retvn").is_constant()
+                    && retop != op
+                {
+                    // Trace won't revisit this RETURN, so generate the patch now.
+                    self.patchlist.push(PatchRecord {
+                        typ: PatchType::ParameterPatch,
+                        patch_op: retop,
+                        in1: rep,
+                        in2: None,
+                        slot,
+                    });
+                    self.pullcount += 1;
+                }
+            }
+            self.returns_traversed = true;
+        }
+        self.patchlist.push(PatchRecord {
+            typ: PatchType::ParameterPatch,
+            patch_op: op,
+            in1: rvn,
+            in2: None,
+            slot,
+        });
+        self.pullcount += 1; // A true terminal modification
+        Ok(true)
     }
 
     /// Determine if the given subgraph variable can act as a \e created value for

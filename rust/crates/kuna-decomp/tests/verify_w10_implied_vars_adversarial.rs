@@ -358,9 +358,20 @@ fn w10_implied_multiwrite_return_stays_explicit_not_overinlined() {
     eprintln!("=== condconst_copy ===\n{rust}");
 
     // The return value is a NAMED, EXPLICIT local that is assigned (not inlined).
+    //
+    // NOTE (rport/w10-return-narrow): the return register here is the 8-byte RAX
+    // that the lift fills via `RAX = ZEXT(EAX)` and the SAME logical value `a0`.
+    // C++ `SubvariableFlow`/`RuleSubvarZext` (subflow.cc) traces the logical 4-byte
+    // value across the RETURN (`tryReturnPull`) and TRIMS the return to its used
+    // (int4) width, collapsing the ZEXT — so the assignment is `v1 = a0`, NOT
+    // `v1 = ZEXT(a0)`.  Before this wave `tryReturnPull` was a SEAM stub that
+    // aborted the trace, so the engine LEFT the ZEXT in place (a deviation from
+    // C++); with the seam closed the ZEXT correctly collapses.  The test's real
+    // intent — the multi-write return stays an explicit NAMED local rather than
+    // being over-inlined to `return <expr>;` — is unchanged and still asserted.
     assert!(
-        rust.contains("v1 = ZEXT(a0)"),
-        "the multi-write return must stay an explicit named local `v1 = ZEXT(a0)`, got:\n{rust}"
+        rust.contains("v1 = a0"),
+        "the multi-write return must stay an explicit named local `v1 = a0`, got:\n{rust}"
     );
     assert!(
         rust.contains("return v1;"),
@@ -368,30 +379,21 @@ fn w10_implied_multiwrite_return_stays_explicit_not_overinlined() {
     );
     // CRITICAL anti-over-inline: it must NOT have collapsed the storage away into
     // the return expression.  C++ keeps a multi-def/cover-conflicting value
-    // explicit; an over-un-tie would produce `return ZEXT(a0);`.
+    // explicit; an over-un-tie would produce `return a0;` (or `return ZEXT(a0);`).
     assert!(
-        !rust.contains("return ZEXT(a0)"),
-        "OVER-INLINE: a multi-write return value was inlined to `return ZEXT(a0);` \
-         — the cover/multi-def-conflicting storage must stay explicit, got:\n{rust}"
+        !rust.contains("return a0") && !rust.contains("return ZEXT(a0)"),
+        "OVER-INLINE: a multi-write return value was inlined into the return \
+         expression — the cover/multi-def-conflicting storage must stay explicit, \
+         got:\n{rust}"
     );
     // The value is assigned exactly once and returned by name — it stays an
-    // explicit local, never inlined into `return ZEXT(a0)`.
-    //
-    // NOTE (rport/w10-stackslot-ssa): the two original MULTIEQUAL inputs of `v1`
-    // here are BOTH `ZEXT(a0)` — they are *functionally equal*, not genuinely
-    // distinct writes.  C++ `RuleMultiCollapse` (ruleaction.cc:3253) collapses a
-    // MULTIEQUAL of functionally-equal inputs into a single copy via the
-    // `functionalEquality`/`cseFindInBlock` path; before this wave that rule body
-    // was a SEAM stub returning 0, so the Rust engine LEFT both `ZEXT(a0)` writes
-    // in place — a deviation from C++.  With the rule un-seamed the engine now
-    // (correctly, C++-faithfully) folds them to one `v1 = ZEXT(a0)`.  The test's
-    // real intent — the return stays an explicit named local rather than being
-    // over-inlined to `return ZEXT(a0)` — is unchanged and still asserted above.
+    // explicit local, never inlined into the return expression.
     assert_eq!(
-        rust.matches("v1 = ZEXT(a0)").count(),
+        rust.matches("v1 = a0").count(),
         1,
         "condconst_copy's functionally-equal multi-def `v1` must fold to one \
-         `v1 = ZEXT(a0)` (C++ RuleMultiCollapse), and stay explicit, got:\n{rust}"
+         `v1 = a0` (C++ RuleMultiCollapse + SubvarZext return-trim), and stay \
+         explicit, got:\n{rust}"
     );
 }
 
