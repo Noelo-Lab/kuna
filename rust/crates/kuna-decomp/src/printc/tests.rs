@@ -1043,3 +1043,270 @@ mod w10_float_family {
         assert_eq!((f4.as_str(), b4.as_str()), ("float4", ""));
     }
 }
+
+// ===========================================================================
+// VERIFIER adversarial tests for `rport/w10-printc-cast-render` (round 1).
+//
+// Oracle: PrintC::opTypeCast (printc.cc:468):
+//
+//   Datatype *dt = op->getOut()->getHighTypeDefFacing();
+//   if (dt->isPointerToArray()) { ... addressof ... }      // SEAM (not these)
+//   if (!option_nocasts) { pushOp(&typecast,op); pushType(dt); }
+//   pushVn(op->getIn(0),op,mods);
+//
+// shared by opCast / opFloatFloat2Float / opFloatTrunc (printc.hh:332-341).
+//
+// These tests reach the PRIVATE `op_type_cast_ir` end-to-end (build a real op
+// with a typed output varnode, drive the routine, capture the emitted text) so
+// they pin the THREE things the diff must get right and nothing else:
+//   (1) FAITHFULNESS — the target type spelling comes from the OUTPUT varnode's
+//       def-facing type (`op->getOut()->getHighTypeDefFacing()`), NOT a
+//       hardcoded / opcode-keyed string: the SAME op renders a different cast
+//       text when only its output type changes;
+//   (2) PARENTHESIZATION / OPERAND RECURSION — the cast is a `presurround`
+//       op-token (prec 2): a lower-precedence operand subexpression (`a + b`)
+//       MUST be parenthesized `(T)(a + b)`, an atom MUST NOT (`(T)k`);
+//   (3) the `!option_nocasts` gate — with nocasts the `(T)` is suppressed and
+//       only the operand flows through.
+// The fragile spot here is the type-name plumbing (a hardcode would pass a
+// single fixture but fail test (1)'s two-type contrast) and the operand
+// precedence (the cast is presurround, not a prefix unary).
+// ===========================================================================
+mod w10_printc_cast_render {
+    use super::*;
+    use crate::dtype::{type_metatype, Datatype};
+    use crate::funcdata::Funcdata;
+    use crate::seams::{Architecture as SeamArch, TypeOp};
+    use kuna_base::address::Address;
+    use kuna_base::error::{KunaError, KunaResult};
+    use kuna_base::space::{
+        addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
+    };
+    use kuna_num::opcodes::OpCode;
+    use kuna_sleigh::globalcontext::ContextInternal;
+    use kuna_sleigh::loadimage::LoadImage;
+    use kuna_sleigh::sleigh::Sleigh;
+    use std::rc::Rc;
+
+    /// A minimal LoadImage so a bare `architecture::Architecture` can be built
+    /// (the render `arch` arg is never dereferenced for a constant operand).
+    struct DummyImg;
+    impl LoadImage for DummyImg {
+        fn get_file_name(&self) -> &str {
+            "dummy"
+        }
+        fn load_fill(&mut self, _ptr: &mut [u8], _addr: &Address) -> KunaResult<()> {
+            Err(KunaError::data_unavail("dummy"))
+        }
+        fn get_arch_type(&self) -> Vec<u8> {
+            Vec::new()
+        }
+        fn adjust_vma(&mut self, _adjust: i64) {}
+    }
+
+    fn bare_arch() -> crate::architecture::Architecture {
+        crate::architecture::Architecture::new(
+            "t",
+            Sleigh::new(Box::new(DummyImg), Box::new(ContextInternal::new())),
+        )
+    }
+
+    fn build_manager() -> AddrSpaceManager {
+        let mut m = AddrSpaceManager::new();
+        m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+        m.insert_space(Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            2,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        )))
+        .unwrap();
+        m
+    }
+
+    fn build_fd() -> Funcdata {
+        let manage = build_manager();
+        let glb = Rc::new(SeamArch::new(manage));
+        let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        let addr = Address::new(ram, 0x1000);
+        Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()
+    }
+
+    fn ram(fd: &Funcdata) -> Rc<AddrSpace> {
+        Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap())
+    }
+
+    /// A named base type whose `display_name` is `nm` (what `(nm)` must spell).
+    fn named(nm: &str, size: int4, meta: type_metatype) -> Rc<Datatype> {
+        let mut t = Datatype::new_with_align(size, -1, meta);
+        t.name = nm.to_string();
+        t.display_name = nm.to_string();
+        Rc::new(t)
+    }
+
+    fn mk_op(fd: &mut Funcdata, inputs: int4, off: u64, opc: OpCode) -> super::super::OpId {
+        let r = ram(fd);
+        let op = fd.new_op(inputs, Address::new(r, off));
+        fd.obank_mut().change_opcode(op, TypeOp::new(opc, 0, format!("{opc:?}")));
+        op
+    }
+
+    /// Build a 1-input cast op (`opc`) whose in0 is a constant `k` (renders as a
+    /// literal, deterministic) and whose OUTPUT carries the data-type `out_ty`.
+    fn build_cast_over_const(
+        fd: &mut Funcdata,
+        opc: OpCode,
+        k: u64,
+        out_ty: Rc<Datatype>,
+    ) -> super::super::OpId {
+        let r = ram(fd);
+        let op = mk_op(fd, 1, 0x20, opc);
+        let cst = fd.new_constant(8, k);
+        fd.op_set_input(op, cst, 0).unwrap();
+        let out = fd.new_varnode(out_ty.get_size(), &Address::new(r, 0x400), Some(out_ty));
+        fd.op_set_output(op, out).unwrap();
+        op
+    }
+
+    /// Drive the PRIVATE `op_type_cast_ir` on a fresh PrintC and return the text.
+    /// The render `arch` is a throwaway bare `architecture::Architecture`: the
+    /// constant-operand cast path never dereferences it (it only flows to
+    /// `push_vn_explicit_ir`, whose constant arm ignores `arch`).
+    fn render_cast(fd: &Funcdata, op: super::super::OpId, nocasts: bool) -> String {
+        let arch = bare_arch();
+        let mut p = PrintC::new();
+        p.set_no_cast_printing(nocasts);
+        p.set_output_stream();
+        p.op_type_cast_ir(fd, &arch, op);
+        p.emit_mut().output().to_string()
+    }
+
+    /// FAITHFULNESS (1a): a `CPUI_CAST` whose output is `int8` renders
+    /// `(int8)<operand>` — the `(` `)` typecast token (printc.cc:36) wrapping the
+    /// type name from the OUTPUT varnode and the in0 operand.
+    #[test]
+    fn cast_renders_output_type_int8() {
+        let mut fd = build_fd();
+        let op = build_cast_over_const(
+            &mut fd,
+            OpCode::CPUI_CAST,
+            0x2a,
+            named("int8", 8, type_metatype::TYPE_INT),
+        );
+        assert_eq!(render_cast(&fd, op, false), "(int8)0x2a", "CAST -> (int8)operand");
+    }
+
+    /// FAITHFULNESS (1b) — the ANTI-HARDCODE contrast: the SAME opcode and the
+    /// SAME constant operand, but the OUTPUT varnode is `float4` instead of
+    /// `int8`, must render `(float4)...`.  If the cast text were keyed on the
+    /// opcode (or hardcoded), this would still say `(int8)` — it must not.  This
+    /// is the test the `op->getOut()->getHighTypeDefFacing()` plumbing exists to
+    /// pass and a special-case would fail.
+    #[test]
+    fn cast_text_follows_output_type_not_opcode() {
+        let mut fd = build_fd();
+        let op = build_cast_over_const(
+            &mut fd,
+            OpCode::CPUI_CAST,
+            0x2a,
+            named("float4", 4, type_metatype::TYPE_FLOAT),
+        );
+        let out = render_cast(&fd, op, false);
+        assert_eq!(out, "(float4)0x2a", "cast text must come from the OUTPUT type");
+        assert!(!out.contains("int8"), "cast text must NOT be a hardcoded/opcode-keyed name");
+        // A second, exotic type-name proves it is the varnode display-name verbatim.
+        let mut fd2 = build_fd();
+        let op2 = build_cast_over_const(
+            &mut fd2,
+            OpCode::CPUI_CAST,
+            0x7,
+            named("MyWeirdType", 8, type_metatype::TYPE_UNKNOWN),
+        );
+        assert_eq!(render_cast(&fd2, op2, false), "(MyWeirdType)7");
+    }
+
+    /// FAITHFULNESS (2): all THREE opcodes that route through opTypeCast
+    /// (CPUI_CAST / CPUI_FLOAT_FLOAT2FLOAT / CPUI_FLOAT_TRUNC, printc.hh:332-341)
+    /// render the SAME cast-notation form `(T)operand` — none of them emits the
+    /// functional `OPC(args)`.  (op_emit_kind routes them all to TypeCast; this
+    /// confirms the rendered text, not just the table cell.)
+    #[test]
+    fn all_three_typecast_opcodes_render_cast_notation() {
+        for opc in [
+            OpCode::CPUI_CAST,
+            OpCode::CPUI_FLOAT_FLOAT2FLOAT,
+            OpCode::CPUI_FLOAT_TRUNC,
+        ] {
+            let mut fd = build_fd();
+            let op = build_cast_over_const(
+                &mut fd,
+                opc,
+                0x9,
+                named("float8", 8, type_metatype::TYPE_FLOAT),
+            );
+            let out = render_cast(&fd, op, false);
+            assert_eq!(out, "(float8)9", "{opc:?} must render (float8)operand");
+            // The opcode name must NOT appear as a functional call `OPC(...)`.
+            assert!(
+                !out.contains("CAST") && !out.contains("FLOAT"),
+                "{opc:?} must NOT render the functional OPC(args) form: {out}"
+            );
+        }
+    }
+
+    /// PARENTHESIZATION (3): the cast over a LOWER-precedence operand
+    /// subexpression must parenthesize the operand.  `typecast` is a presurround
+    /// op-token at precedence 2 (printc.cc:36); an `INT_ADD` (`+`, prec ~19,
+    /// lower) operand pushed under it forces `(T)(a + b)`.  Here the operand is a
+    /// nested implied INT_ADD whose two inputs are constants, so the operand
+    /// renders `0x1 + 0x2`; the cast must wrap it in parentheses.
+    #[test]
+    fn cast_parenthesizes_lower_precedence_operand() {
+        let mut fd = build_fd();
+        let r = ram(&fd);
+        // out = CAST( add ), add = INT_ADD(1, 2), `add`'s output is implied so
+        // pushVn recurses into the INT_ADD (the binary `0x1 + 0x2`).
+        let add = mk_op(&mut fd, 2, 0x10, OpCode::CPUI_INT_ADD);
+        let c1 = fd.new_constant(8, 1);
+        let c2 = fd.new_constant(8, 2);
+        fd.op_set_input(add, c1, 0).unwrap();
+        fd.op_set_input(add, c2, 1).unwrap();
+        let mid = fd.new_varnode(8, &Address::new(Rc::clone(&r), 0x300), Some(named("int8", 8, type_metatype::TYPE_INT)));
+        fd.op_set_output(add, mid).unwrap();
+        let mid = fd.obank().get(add).unwrap().get_out().unwrap();
+        fd.vbank_mut().get_mut(mid).unwrap().set_implied();
+        let cast = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_CAST);
+        fd.op_set_input(cast, mid, 0).unwrap();
+        let out = fd.new_varnode(8, &Address::new(r, 0x400), Some(named("float8", 8, type_metatype::TYPE_FLOAT)));
+        fd.op_set_output(cast, out).unwrap();
+        let rendered = render_cast(&fd, cast, false);
+        assert_eq!(
+            rendered, "(float8)(1 + 2)",
+            "a lower-precedence operand must be parenthesized under the cast"
+        );
+    }
+
+    /// `option_nocasts` GATE: with nocasts set, the `(T)` half is suppressed and
+    /// ONLY the operand prints — the underlying value flows through (printc.cc:479
+    /// `if (!option_nocasts)`).  This pins the gate so a port that always emitted
+    /// the cast (or always dropped it) is caught.
+    #[test]
+    fn nocasts_suppresses_the_cast_keeps_operand() {
+        let mut fd = build_fd();
+        let op = build_cast_over_const(
+            &mut fd,
+            OpCode::CPUI_CAST,
+            0x2a,
+            named("int8", 8, type_metatype::TYPE_INT),
+        );
+        assert_eq!(render_cast(&fd, op, true), "0x2a", "nocasts: only the operand prints");
+        // And with casts ON the SAME op DOES wear the cast (control).
+        assert_eq!(render_cast(&fd, op, false), "(int8)0x2a");
+    }
+}
