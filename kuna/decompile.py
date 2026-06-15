@@ -7,6 +7,14 @@ command language the upstream datatests use (``load file`` / ``load function`` /
 (``fileoptr``) to a temp file while interactive prompts stay on stdout -- so the
 captured C is free of prompt/echo noise.
 
+Real binaries: both engines load real ELFs from ``load file`` -- the C++ engine
+via GNU BFD (``LoadImageBfd``), the Rust engine (``--engine rust``) via the
+``object``-crate ``ObjectLoadImage`` (W11), which detects the ELF, picks the
+SLEIGH language from the ELF machine (e.g. x86-64 -> ``x86:LE:64:default:gcc``),
+maps the loadable segments, and lifts the named/addressed function. The XML
+``<binaryimage>`` datatest format still loads through ``load file`` on both
+engines (the file's leading bytes select ELF vs XML).
+
 CLI:
     python -m kuna.decompile <binary> <function-name-or-0xADDR> [--addr]
                              [--target BFD_TARGET] [--raw] [--regions]
@@ -74,7 +82,11 @@ def decompile(
     target : a function name, or an address like ``0x401000`` when ``by_address``.
     by_address : treat ``target`` as an address (uses ``load addr``). Auto-enabled
         if ``target`` looks like ``0x...``.
-    bfd_target : optional explicit BFD target for ``load file`` (e.g. ``elf64-x86-64``).
+    bfd_target : optional explicit ``load file`` target token. For the C++ engine
+        this is a BFD target (e.g. ``elf64-x86-64``); for the Rust engine it is an
+        explicit SLEIGH language id that overrides the ELF-derived one (e.g.
+        ``x86:LE:64:default:gcc``) -- useful for an ELF machine the loader does
+        not yet auto-map.
     raw : also emit the raw p-code listing (``print raw``) after the C.
     regions : also run the S7 region-identification commands (``region blocks`` /
         ``region tree``, the angr RegionIdentifier port -- see docs/regions.md)

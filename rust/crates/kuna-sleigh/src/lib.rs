@@ -30,6 +30,7 @@ pub mod sleighbase;
 pub mod slaformat;
 pub mod loadimage;
 pub mod loadimage_xml;
+pub mod loadimage_object;
 pub mod memstate;
 pub mod emulate;
 pub mod emulateutil;

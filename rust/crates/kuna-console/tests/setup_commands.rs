@@ -39,7 +39,7 @@ fn boot_program() -> Option<ConsoleProgram> {
     let root = repo_root();
     let xml = root.join("decompiler/datatests/boolless.xml");
     let specs = root.join("specs");
-    match bootstrap_from_file(xml.to_str().unwrap(), &[specs.to_str().unwrap().to_string()]) {
+    match bootstrap_from_file(xml.to_str().unwrap(), "", &[specs.to_str().unwrap().to_string()]) {
         Ok(p) => Some(p),
         Err(e) => {
             eprintln!(
@@ -558,6 +558,7 @@ fn x86_64_stack_address_now_parses_via_spacebase_space() {
     let specs = root.join("specs");
     let prog = match bootstrap_from_file(
         xml.to_str().unwrap(),
+        "",
         &[specs.to_str().unwrap().to_string()],
     ) {
         Ok(p) => p,

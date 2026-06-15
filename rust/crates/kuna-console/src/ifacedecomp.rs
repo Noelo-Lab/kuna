@@ -766,9 +766,11 @@ decomp_command!(
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
         // C++: s >> filename; if !eof { target=filename; s>>filename; }
         let mut filename = s.read_token();
+        let mut target = String::new();
         s.skip_ws();
         if !s.eof() {
             // Two parameters: the first was the target, the second is the file.
+            target = std::mem::take(&mut filename);
             filename = s.read_token();
         }
         if filename.is_empty() {
@@ -786,7 +788,7 @@ decomp_command!(
             dcp.spec_roots.clone()
         };
         // capa->buildArchitecture + conf->init(store) (the bootstrap chain).
-        match bootstrap_from_file(&filename, &spec_roots) {
+        match bootstrap_from_file(&filename, &target, &spec_roots) {
             Ok(prog) => {
                 // *status->optr << filename << " successfully loaded: " << desc;
                 let desc = prog.description().to_string();

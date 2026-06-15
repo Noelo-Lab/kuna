@@ -153,6 +153,14 @@ impl XmlArchitecture {
         &mut self.sleigh
     }
 
+    /// Consume the wrapper, returning the composed `SleighArchitecture` base
+    /// (the C++ slicing of the leaf back to its `SleighArchitecture` subobject
+    /// — used once the XML-specific `loader`/`adjustvma` machinery is spent and
+    /// only the built `Architecture` god object is still needed).
+    pub fn into_sleigh(self) -> SleighArchitecture {
+        self.sleigh
+    }
+
     /// The VMA adjustment (C++ `adjustvma`).
     pub fn adjustvma(&self) -> i64 {
         self.adjustvma

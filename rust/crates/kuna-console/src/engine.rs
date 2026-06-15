@@ -44,10 +44,11 @@ use kuna_base::xml::{DocumentStorage, Element};
 
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::options::register_option_elements;
-use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase};
-use kuna_decomp::xml_arch::{XmlArchitecture, XmlArchitectureCapability};
+use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase, SleighArchitecture};
+use kuna_decomp::xml_arch::XmlArchitectureCapability;
 
 use kuna_sleigh::loadimage::{LoadImage, LoadImageFunc};
+use kuna_sleigh::loadimage_object::ObjectLoadImage;
 use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
 use kuna_sleigh::translate::register_translate_ids;
@@ -70,9 +71,11 @@ struct ProgramSymbol {
 /// keep them on the program so the console can resolve an option name to its
 /// element id and dispatch it against the real architecture.
 pub struct ConsoleProgram {
-    /// The XML-frontend engine assembly (owns `SleighArchitecture` → the
-    /// `Architecture` god object).
-    arch: XmlArchitecture,
+    /// The engine assembly (owns the `Architecture` god object).  Both the XML
+    /// `<binaryimage>` frontend and the real-ELF frontend slice their leaf
+    /// architecture back to this `SleighArchitecture` once the loader is opened
+    /// and handed to the engine, so the console program is loader-agnostic.
+    arch: SleighArchitecture,
     /// The marshaling id registry (C++ `ElementId` global table) for option-name
     /// resolution.
     registry: IdRegistry,
@@ -88,7 +91,6 @@ impl ConsoleProgram {
     /// Borrow the `Architecture` god object (C++ `dcp->conf`, viewed as the base).
     pub fn arch(&self) -> &Architecture {
         self.arch
-            .sleigh()
             .base()
             .expect("ConsoleProgram: Architecture base present after bootstrap")
     }
@@ -96,7 +98,6 @@ impl ConsoleProgram {
     /// Mutably borrow the `Architecture` god object.
     pub fn arch_mut(&mut self) -> &mut Architecture {
         self.arch
-            .sleigh_mut()
             .base_mut()
             .expect("ConsoleProgram: Architecture base present after bootstrap")
     }
@@ -214,6 +215,77 @@ fn attr(el: &Element, name: &str) -> Option<String> {
     el.get_attribute_value(name).ok().map(|b| String::from_utf8_lossy(b).into_owned())
 }
 
+/// Run the spec-file resolution, translator build, and `Architecture::init`
+/// tail on an already-language-resolved [`SleighArchitecture`] — the chain both
+/// the XML and ELF frontends share (C++ `buildSpecFile` → `buildTranslator` →
+/// `buildTypegrp`/`buildCoreTypes`/`buildAction`/…).
+///
+/// The caller must have set `archid` + resolved the language index first; this
+/// reads the `.sla`/`.cspec`/`.pspec`, builds the translator (with a [`NullLoad`]
+/// placeholder image the caller replaces after open), installs the register
+/// lookup, and runs `init_post_engine`.  It deliberately does **not** open or
+/// attach the loader — that is the frontend's `postSpecFile` job (the XML path
+/// opens the `<binaryimage>`; the ELF path attaches the default code space).
+fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase) -> KunaResult<()> {
+    // buildSpecFile -> the resolved .sla; buildTranslator (decode the .sla).
+    let specs = sleigh.build_spec_file(db)?;
+    let resolved_sla = specs
+        .slafile
+        .ok_or_else(|| KunaError::lowlevel("build_spec_file resolved no .sla"))?;
+    let sla = std::fs::read(&resolved_sla)
+        .map_err(|e| KunaError::lowlevel(format!("read sla {resolved_sla}: {e}")))?;
+
+    // The loader is handed to the translator as a dummy first; the real opened
+    // image replaces it after init (mirrors corpus_bootstrap.rs / the e2e gate).
+    sleigh.build_translator(Box::new(NullLoad), &sla)?;
+
+    // Hand the resolved compiler-spec (`.cspec`) XML to the architecture so
+    // `build_default_proto` can decode the real `<default_proto>` input/output
+    // parameter lists (the C++ `parseCompilerConfig` reads the cspec here).
+    // A read failure is non-fatal: the architecture falls back to the name-only
+    // default model (proto recovery simply won't fire).
+    if !specs.compilerfile.is_empty() {
+        if let Ok(cspec) = std::fs::read(&specs.compilerfile) {
+            sleigh
+                .base_mut()
+                .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
+                .set_cspec_xml(cspec);
+        }
+    }
+
+    // Hand the resolved processor-spec (`.pspec`) XML to the architecture so
+    // `parse_processor_config` (run inside `init_post_engine`) can apply the
+    // `<context_data>` `<context_set>` paints (the C++ `parseProcessorConfig`
+    // reads the pspec here).  This is what selects the SLEIGH disassembly mode:
+    // without it x86-64 lifts as 16-bit real mode.  A read failure is non-fatal
+    // (the engine keeps the zero-default context).
+    if !specs.processorfile.is_empty() {
+        if let Ok(pspec) = std::fs::read(&specs.processorfile) {
+            sleigh
+                .base_mut()
+                .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
+                .set_pspec_xml(pspec);
+        }
+    }
+
+    // Install the register-name lookup on the engine's manager (the C++
+    // `AddrSpace::trans` back-pointer) while the engine is still the sole owner
+    // of the manager — before `init_post_engine`'s `parse_processor_config`
+    // resolves the pspec `<tracked_set>` register names (e.g. `DF`).
+    sleigh
+        .base_mut()
+        .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
+        .translate_mut()
+        .install_register_lookup()?;
+
+    // The tail of Architecture::init (buildTypegrp/buildCoreTypes/buildAction/…).
+    sleigh
+        .base_mut()
+        .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
+        .init_post_engine()?;
+    Ok(())
+}
+
 /// Bootstrap a [`ConsoleProgram`] from a `<binaryimage>` element + arch id,
 /// against the SLEIGH specs at `spec_roots` (C++ `IfcLoadFile`'s
 /// `buildArchitecture` + `conf->init(store)`).
@@ -248,62 +320,9 @@ pub fn bootstrap_program(
         )));
     }
 
-    // buildSpecFile -> the resolved .sla; buildTranslator (decode the .sla).
-    let specs = arch.sleigh().build_spec_file(&db)?;
-    let resolved_sla = specs
-        .slafile
-        .ok_or_else(|| KunaError::lowlevel("build_spec_file resolved no .sla"))?;
-    let sla = std::fs::read(&resolved_sla)
-        .map_err(|e| KunaError::lowlevel(format!("read sla {resolved_sla}: {e}")))?;
-
-    // The loader is handed to the translator as a dummy first; the real opened
-    // image replaces it after init (mirrors corpus_bootstrap.rs / the e2e gate).
-    arch.sleigh_mut().build_translator(Box::new(NullLoad), &sla)?;
-
-    // Hand the resolved compiler-spec (`.cspec`) XML to the architecture so
-    // `build_default_proto` can decode the real `<default_proto>` input/output
-    // parameter lists (the C++ `parseCompilerConfig` reads the cspec here).
-    // A read failure is non-fatal: the architecture falls back to the name-only
-    // default model (proto recovery simply won't fire).
-    if !specs.compilerfile.is_empty() {
-        if let Ok(cspec) = std::fs::read(&specs.compilerfile) {
-            arch.sleigh_mut()
-                .base_mut()
-                .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
-                .set_cspec_xml(cspec);
-        }
-    }
-
-    // Hand the resolved processor-spec (`.pspec`) XML to the architecture so
-    // `parse_processor_config` (run inside `init_post_engine`) can apply the
-    // `<context_data>` `<context_set>` paints (the C++ `parseProcessorConfig`
-    // reads the pspec here).  This is what selects the SLEIGH disassembly mode:
-    // without it x86-64 lifts as 16-bit real mode.  A read failure is non-fatal
-    // (the engine keeps the zero-default context).
-    if !specs.processorfile.is_empty() {
-        if let Ok(pspec) = std::fs::read(&specs.processorfile) {
-            arch.sleigh_mut()
-                .base_mut()
-                .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
-                .set_pspec_xml(pspec);
-        }
-    }
-
-    // Install the register-name lookup on the engine's manager (the C++
-    // `AddrSpace::trans` back-pointer) while the engine is still the sole owner
-    // of the manager — before `init_post_engine`'s `parse_processor_config`
-    // resolves the pspec `<tracked_set>` register names (e.g. `DF`).
-    arch.sleigh_mut()
-        .base_mut()
-        .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
-        .translate_mut()
-        .install_register_lookup()?;
-
-    // The tail of Architecture::init (buildTypegrp/buildCoreTypes/buildAction/…).
-    arch.sleigh_mut()
-        .base_mut()
-        .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
-        .init_post_engine()?;
+    // buildSpecFile -> buildTranslator -> the Architecture::init tail (shared
+    // by both the XML and ELF frontends).
+    build_engine_and_init(arch.sleigh_mut(), &db)?;
 
     // postSpecFile: open the corpus image against the engine spaces.
     let manager_ptr: *const AddrSpaceManager = arch.sleigh().base().unwrap().manage();
@@ -325,10 +344,83 @@ pub fn bootstrap_program(
 
     let description = arch.sleigh().base().unwrap().get_description().to_string();
 
-    let mut prog = ConsoleProgram { arch, registry, symbols, description };
+    // Slice the XML leaf back to its `SleighArchitecture` (the XML-specific
+    // loader/adjustvma machinery is spent; the engine owns the opened image).
+    let mut prog = ConsoleProgram { arch: arch.into_sleigh(), registry, symbols, description };
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
     // to its callee name at flow-analysis time.
+    prog.read_loader_symbols()?;
+    Ok(prog)
+}
+
+/// Bootstrap a [`ConsoleProgram`] from a **real ELF** binary on disk (the kuna
+/// analog of the C++ console's BFD path: `LoadImageBfd` + `RawBinaryArchitecture`/
+/// the resolved arch).
+///
+/// Mirrors `bootstrap_program` but with the ELF [`ObjectLoadImage`] in place of
+/// the XML loader: open the ELF (parse machine/segments/symbols), take the
+/// SLEIGH language id straight off the loader's `getArchType()` (the
+/// `resolveArchitecture` loader branch — C++ `loader->getArchType()`), build the
+/// engine, attach the default code space to the loader (the C++
+/// `RawBinaryArchitecture::postSpecFile` / `LoadImageBfd::attachToSpace` tail),
+/// read the ELF function symbols, then hand the loader to the engine.
+///
+/// `target` is an optional explicit language id (the `load file <target> <path>`
+/// first token, C++ BFD target): when non-empty it overrides the ELF-derived id
+/// (so an unmapped machine can still be driven), exactly as the C++
+/// `getTarget()` path takes precedence over the loader's arch type.
+pub fn bootstrap_from_elf(
+    path: &str,
+    target: &str,
+    spec_roots: &[String],
+) -> KunaResult<ConsoleProgram> {
+    let registry = build_registry();
+
+    // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
+    let mut loader = ObjectLoadImage::open(path)?;
+
+    // resolveArchitecture: the arch id is the loader's getArchType() (the ELF
+    // machine → SLEIGH language id), unless an explicit target overrides it.
+    let arch_type = String::from_utf8_lossy(&loader.get_arch_type()).into_owned();
+    let mut sleigh = SleighArchitecture::new(path, target);
+    let db = scan_language_database(spec_roots, &registry)?;
+    // SleighArchitecture::resolveArchitecture: if target is set it wins (archid
+    // stays empty here so the base resolve uses target||arch_type).
+    sleigh.resolve_architecture(&db, &arch_type)?;
+    if sleigh.language_index() < 0 {
+        return Err(KunaError::lowlevel(format!(
+            "No sleigh specification for architecture {arch_type}"
+        )));
+    }
+
+    // buildSpecFile -> buildTranslator -> the Architecture::init tail (shared).
+    build_engine_and_init(&mut sleigh, &db)?;
+
+    // postSpecFile: attach the engine's default code space to the loader so its
+    // loadFill/getNextSymbol build Addresses in the right space (C++
+    // `RawBinaryArchitecture::postSpecFile`'s `attachToSpace(getDefaultCodeSpace())`).
+    let code_space = Rc::clone(
+        sleigh
+            .base()
+            .unwrap()
+            .manage()
+            .get_default_code_space()
+            .ok_or_else(|| KunaError::lowlevel("no default code space after init"))?,
+    );
+    loader.attach_to_space(code_space);
+
+    // readLoaderSymbols (the ELF FUNC symbols) BEFORE handing the loader off.
+    let symbols = read_loader_symbols_generic(&loader);
+
+    // Hand the loader to the engine (the C++ `loader` back-pointer the decode
+    // reads on load_fill).
+    sleigh.base_mut().unwrap().set_loader(Box::new(loader));
+
+    let description = sleigh.base().unwrap().get_description().to_string();
+
+    let mut prog = ConsoleProgram { arch: sleigh, registry, symbols, description };
+    // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     prog.read_loader_symbols()?;
     Ok(prog)
 }
@@ -344,22 +436,49 @@ pub fn bootstrap_from_root(root: &Rc<Element>, spec_roots: &[String]) -> KunaRes
     bootstrap_program(binaryimage, &arch_id, spec_roots)
 }
 
-/// Bootstrap from an XML file path (the `decomp_dbg` `load file <path>` body).
-pub fn bootstrap_from_file(path: &str, spec_roots: &[String]) -> KunaResult<ConsoleProgram> {
-    let xml = std::fs::read(path)
+/// The ELF magic (`\x7fELF`), used to route `load file` to the real-binary path.
+const ELF_MAGIC: [u8; 4] = [0x7f, b'E', b'L', b'F'];
+
+/// Bootstrap from a file path (the `decomp_dbg` `load file [<target>] <path>`
+/// body).  Detects the format by its leading bytes: a `\x7fELF` magic routes to
+/// the real-ELF [`ObjectLoadImage`] path; anything else is parsed as the XML
+/// `<binaryimage>`/`<decompilertest>` corpus format.
+///
+/// This mirrors the C++ `ArchitectureCapability::findCapability` dispatch: the
+/// `xml` capability's `isFileMatch` claims a `<bi…` document, otherwise the BFD
+/// path handles the real binary.  `target` is the optional `load file` target
+/// token (the C++ BFD target / an explicit SLEIGH language id); it is honored on
+/// the ELF path and ignored on the XML path (the XML carries its own `arch`).
+pub fn bootstrap_from_file(
+    path: &str,
+    target: &str,
+    spec_roots: &[String],
+) -> KunaResult<ConsoleProgram> {
+    let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to recognize imagefile {path}: {e}")))?;
+    if bytes.len() >= 4 && bytes[..4] == ELF_MAGIC {
+        // Real ELF binary: drive the object-crate loader.
+        return bootstrap_from_elf(path, target, spec_roots);
+    }
     let mut store = DocumentStorage::new();
-    let root = store.parse_document(&xml)?.get_root().clone();
+    let root = store.parse_document(&bytes)?.get_root().clone();
     bootstrap_from_root(&root, spec_roots)
 }
 
 /// Iterate the opened [`LoadImageXml`]'s symbol records (name → address) into a
 /// [`ProgramSymbol`] list (the `readLoaderSymbols` seam).
 fn read_loader_symbols(loader: Option<&LoadImageXml>) -> Vec<ProgramSymbol> {
+    match loader {
+        Some(l) => read_loader_symbols_generic(l),
+        None => Vec::new(),
+    }
+}
+
+/// `readLoaderSymbols` over any opened [`LoadImage`] (the ELF path reuses this
+/// against the [`ObjectLoadImage`]; the symbol must already be attached to a
+/// space so `getNextSymbol` can build the `Address`).
+fn read_loader_symbols_generic(loader: &dyn LoadImage) -> Vec<ProgramSymbol> {
     let mut out = Vec::new();
-    let Some(loader) = loader else {
-        return out;
-    };
     loader.open_symbols();
     loop {
         let mut record = LoadImageFunc::default();
