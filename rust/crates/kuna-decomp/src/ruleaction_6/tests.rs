@@ -421,9 +421,9 @@ fn mult_neg_one_requires_const_minus_one() {
 }
 
 #[test]
-fn mult_neg_one_minus_one_reaches_seam_no_change() {
-    // INT_MULT(x, 0xffffffff) passes both guards; opSetOpcode is the W6 seam, so
-    // the rule returns 0 and leaves the op an INT_MULT with both inputs.
+fn mult_neg_one_minus_one_fires_to_2comp() {
+    // INT_MULT(x, 0xffffffff) passes both guards; the opSetOpcode/opRemoveInput
+    // commit is now wired, so the rule fires: `x * -1 => -x` (INT_2COMP(x)).
     let mut fd = build_fd();
     let mut rule = RuleMultNegOne::new("g");
     let m = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_MULT);
@@ -432,9 +432,10 @@ fn mult_neg_one_minus_one_reaches_seam_no_change() {
     set_in(&mut fd, m, x, 0);
     let cm1 = mk_const(&mut fd, 4, 0xffffffff);
     set_in(&mut fd, m, cm1, 1);
-    assert_eq!(rule.apply_op(m, &mut fd), 0, "blocked on opSetOpcode seam");
-    assert_eq!(fd.obank().get(m).unwrap().code(), OpCode::CPUI_INT_MULT);
-    assert_eq!(fd.obank().get(m).unwrap().num_input(), 2, "no input removed");
+    assert_eq!(rule.apply_op(m, &mut fd), 1, "x * -1 => -x fires");
+    assert_eq!(fd.obank().get(m).unwrap().code(), OpCode::CPUI_INT_2COMP);
+    assert_eq!(fd.obank().get(m).unwrap().num_input(), 1, "constant input removed");
+    assert_eq!(fd.obank().get(m).unwrap().get_in(0), Some(x), "operand preserved");
 }
 
 #[test]
@@ -453,9 +454,10 @@ fn positive_div_bails_when_input_may_be_negative() {
 }
 
 #[test]
-fn positive_div_positive_inputs_reach_seam_no_change() {
+fn positive_div_positive_inputs_converts_to_unsigned() {
     // Both inputs are small constants (NZ mask sign bit clear), so both guards
-    // pass; opSetOpcode is the seam -> 0, op stays INT_SDIV.
+    // pass; the opSetOpcode commit is now wired, so the provably-positive signed
+    // division becomes unsigned: INT_SDIV => INT_DIV.
     let mut fd = build_fd();
     let mut rule = RulePositiveDiv::new("g");
     let sdiv = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_SDIV);
@@ -464,8 +466,8 @@ fn positive_div_positive_inputs_reach_seam_no_change() {
     set_in(&mut fd, sdiv, a, 0);
     set_in(&mut fd, sdiv, b, 1);
     let _o = give_output(&mut fd, sdiv, 0x20, 4);
-    assert_eq!(rule.apply_op(sdiv, &mut fd), 0, "blocked on opSetOpcode seam");
-    assert_eq!(fd.obank().get(sdiv).unwrap().code(), OpCode::CPUI_INT_SDIV);
+    assert_eq!(rule.apply_op(sdiv, &mut fd), 1, "provably positive -> unsigned div");
+    assert_eq!(fd.obank().get(sdiv).unwrap().code(), OpCode::CPUI_INT_DIV);
 }
 
 #[test]
@@ -497,10 +499,10 @@ fn two_comp_two_sub_lone_descendant_not_add() {
 }
 
 #[test]
-fn two_comp_two_sub_blocked_on_seam_leaves_graph_intact() {
-    // INT_2COMP feeding a lone INT_ADD: the C++ fires, but our opcode-change seam
-    // gates BEFORE any input rewiring, so the rule returns 0 and the INT_ADD's
-    // inputs are unchanged (no half-applied transform).
+fn two_comp_two_sub_fires_v_plus_neg_w_to_v_minus_w() {
+    // INT_2COMP feeding a lone INT_ADD: `v + -w => v - w`.  The opSetOpcode /
+    // opSetInput / opDestroy commit is now wired, so the rule fires: the INT_ADD
+    // becomes INT_SUB reading (v, w) and the 2COMP is destroyed.
     let mut fd = build_fd();
     let mut rule = Rule2Comp2Sub::new("g");
     let comp = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_INT_2COMP);
@@ -515,11 +517,15 @@ fn two_comp_two_sub_blocked_on_seam_leaves_graph_intact() {
     set_in(&mut fd, add, compout, 1);
     let _ao = give_output(&mut fd, add, 0x28, 4);
 
-    assert_eq!(rule.apply_op(comp, &mut fd), 0, "blocked on opSetOpcode seam");
-    // INT_ADD still an ADD and still reads (v, compout); 2COMP still alive.
-    assert_eq!(fd.obank().get(add).unwrap().code(), OpCode::CPUI_INT_ADD);
+    assert_eq!(rule.apply_op(comp, &mut fd), 1, "v + -w => v - w fires");
+    // INT_ADD became INT_SUB reading (v, w); 2COMP destroyed (inputs unset).
+    assert_eq!(fd.obank().get(add).unwrap().code(), OpCode::CPUI_INT_SUB);
     assert_eq!(fd.obank().get(add).unwrap().get_in(0), Some(v));
-    assert_eq!(fd.obank().get(add).unwrap().get_in(1), Some(compout));
+    assert_eq!(fd.obank().get(add).unwrap().get_in(1), Some(w), "subtrahend is w");
+    // opDestroy unsets the 2COMP's input/output (the parent-less synthetic op is
+    // not block-removed, but its def/use links are severed).
+    assert_eq!(fd.obank().get(comp).unwrap().get_in(0), None, "2COMP input unset");
+    assert_eq!(fd.obank().get(comp).unwrap().get_out(), None, "2COMP output unset");
 }
 
 #[test]

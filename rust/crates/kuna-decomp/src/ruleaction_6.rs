@@ -50,9 +50,11 @@
 //! returns `0` — "made no change" — preserving the engine contract.  These are
 //! enumerated in the item's `losses` output.
 
-use kuna_base::address::{calc_mask, count_leading_zeros, popcount, sign_extend};
+use kuna_base::address::{
+    calc_mask, count_leading_zeros, popcount, sign_extend, sign_extend_sized, signbit_negative,
+};
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::types::{int4, int8, uintb, Wrap};
+use kuna_base::types::{int4, int8, uint4, uintb, Wrap};
 use kuna_num::multiprecision::{
     add128, leftshift128, set_u128, subtract128, udiv128, uless128, ulessequal128,
 };
@@ -60,7 +62,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, VarnodeId};
+use crate::seams::{OpId, TypeOp, VarnodeId};
 
 // =============================================================================
 // Cross-wave seam helpers (precise missing-API surface, one place to grep)
@@ -70,44 +72,139 @@ use crate::seams::{OpId, VarnodeId};
 // exact C++ commit point and, on `Err`, record the seam and return 0.  None of
 // these invents type/op behavior (per the SEAM rule); they mark the boundary.
 
-/// `Funcdata::opSetOpcode(op, opc)` needs `glb->inst[opc]` (the W6 `TypeOp`
-/// table) and an opcode->property-flags table; neither exists here.  // SEAM(W6)
+/// `data.opSetOpcode(op, opc)` with the W6 inst-table resolution folded in
+/// (the real funcdata mutator is now available end-to-end; this resolves the
+/// bare [`OpCode`] to its [`TypeOp`] via [`typeop_for`] exactly as the sibling
+/// `ruleaction_7`/`ruleaction_3` commit rules do).
 #[inline]
-fn seam_op_set_opcode(_data: &mut Funcdata, _op: OpId, _opc: OpCode) -> KunaResult<()> {
-    Err(KunaError::lowlevel(
-        "ruleaction_6: opSetOpcode(op,OpCode) needs glb->inst[opc] (W6 TypeOp table)",
-    ))
+fn seam_op_set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) -> KunaResult<()> {
+    data.op_set_opcode(op, typeop_for(opc));
+    Ok(())
 }
 
-/// `Funcdata::newUniqueOut(size, op)` builds a fresh unique Varnode and sets it
-/// as `op`'s output; `opSetOutput` returns `Err` at this merge base.
-/// // SEAM(W3-funcdata)
+/// `Funcdata::newUniqueOut(size, op)` — build a fresh unique Varnode and set it
+/// as `op`'s output.  Routes to the real funcdata factory (available now that
+/// the engine runs the pipeline end-to-end).
 #[inline]
-fn seam_new_unique_out(_data: &mut Funcdata, _size: int4, _op: OpId) -> KunaResult<VarnodeId> {
-    Err(KunaError::lowlevel(
-        "ruleaction_6: newUniqueOut needs Funcdata::opSetOutput (W3 banks_mut split-borrow)",
-    ))
+fn seam_new_unique_out(data: &mut Funcdata, size: int4, op: OpId) -> KunaResult<VarnodeId> {
+    data.new_unique_out(size, op)
 }
 
-/// `Varnode::isConstantExtended(uint8 *val)` (W3-varnode helper — up to 128-bit
-/// constant decode) is not ported on the merge base's Varnode.  // SEAM(W3-varnode)
-#[inline]
-fn seam_is_constant_extended(_data: &Funcdata, _vn: VarnodeId) -> Option<[u64; 2]> {
-    None // not available; treat as "not a constant" (the C++ false path)
+/// `Varnode::isConstantExtended(uint8 *val)` — if `vn` is a constant, or is
+/// extended (INT_ZEXT, INT_SEXT, PIECE) from a constant, pass back the (up to
+/// 128-bit) value.  Faithful transcription of `Varnode::isConstantExtended`
+/// (varnode.cc:818).  Returns `Some([lo,hi])` or `None`.
+fn seam_is_constant_extended(data: &Funcdata, vn: VarnodeId) -> Option<[u64; 2]> {
+    if is_const(data, vn) {
+        return Some([offset(data, vn), 0]);
+    }
+    if !is_written(data, vn) || size(data, vn) <= 8 {
+        return None;
+    }
+    if size(data, vn) > 16 {
+        return None; // Currently only up to 128-bit values
+    }
+    let def = def_of(data, vn).expect("isConstantExtended: written vn has no def");
+    let opc = code(data, def);
+    if opc == OpCode::CPUI_INT_ZEXT {
+        let vn0 = in_vn(data, def, 0);
+        if is_const(data, vn0) {
+            return Some([offset(data, vn0), 0]);
+        }
+    } else if opc == OpCode::CPUI_INT_SEXT {
+        let vn0 = in_vn(data, def, 0);
+        if is_const(data, vn0) {
+            let mut v0 = offset(data, vn0);
+            if size(data, vn0) < 8 {
+                v0 = sign_extend_sized(v0, size(data, vn0), size(data, vn));
+            }
+            let v1 = if signbit_negative(v0, 8) { 0xffffffffffffffffu64 } else { 0 };
+            return Some([v0, v1]);
+        }
+    } else if opc == OpCode::CPUI_PIECE {
+        let vnlo = in_vn(data, def, 1);
+        if is_const(data, vnlo) {
+            let mut v0 = offset(data, vnlo);
+            let vnhi = in_vn(data, def, 0);
+            if is_const(data, vnhi) {
+                let mut v1 = offset(data, vnhi);
+                if size(data, vnlo) == 8 {
+                    return Some([v0, v1]);
+                }
+                v0 |= v1.wshl((8 * size(data, vnlo)) as u32);
+                v1 = v1.wshr((8 * (8 - size(data, vnlo))) as u32);
+                return Some([v0, v1]);
+            }
+        }
+    }
+    None
 }
 
 /// `Funcdata::newExtendedConstant(size, val, op)` — make a (possibly >64-bit)
-/// constant Varnode.  // SEAM(W3-varnode)
-#[inline]
+/// constant Varnode using INT_ZEXT or PIECE if necessary.  Faithful
+/// transcription of `Funcdata::newExtendedConstant` (funcdata_varnode.cc:464).
 fn seam_new_extended_constant(
-    _data: &mut Funcdata,
-    _size: int4,
-    _val: &[u64; 2],
-    _op: OpId,
+    data: &mut Funcdata,
+    s: int4,
+    val: &[u64; 2],
+    op: OpId,
 ) -> KunaResult<VarnodeId> {
-    Err(KunaError::lowlevel(
-        "ruleaction_6: newExtendedConstant needs the W3-varnode 128-bit constant factory",
-    ))
+    if s <= 8 {
+        return Ok(data.new_constant(s, val[0]));
+    }
+    let new_const_vn;
+    let opaddr = op_addr(data, op);
+    if val[1] == 0 {
+        let ext_op = data.new_op(1, opaddr);
+        seam_op_set_opcode(data, ext_op, OpCode::CPUI_INT_ZEXT)?;
+        new_const_vn = seam_new_unique_out(data, s, ext_op)?;
+        let c = data.new_constant(8, val[0]);
+        data.op_set_input(ext_op, c, 0)?;
+        data.op_insert_before(ext_op, op);
+    } else {
+        let piece_op = data.new_op(2, opaddr);
+        seam_op_set_opcode(data, piece_op, OpCode::CPUI_PIECE)?;
+        new_const_vn = seam_new_unique_out(data, s, piece_op)?;
+        let chi = data.new_constant(8, val[1]); // Most significant piece
+        let clo = data.new_constant(8, val[0]); // Least significant piece
+        data.op_set_input(piece_op, chi, 0)?;
+        data.op_set_input(piece_op, clo, 1)?;
+        data.op_insert_before(piece_op, op);
+    }
+    Ok(new_const_vn)
+}
+
+/// `data.opSetOpcode(op, opc)` op-flags resolution (`glb->inst[opc]`) folded in:
+/// builds the [`TypeOp`] with the exact `opflags` transcribed from `typeop.cc`
+/// for every op-code these div/mod rules produce, so the op's cached property
+/// bits match what the C++ would install.  The `addlflags`/`OpBehavior` are not
+/// modelled here (a rule that wrote INT_DIV does not gain its arithmetic-op
+/// addlflag); that wider table is the W6 seam.  // SEAM(W6)
+fn typeop_for(opc: OpCode) -> TypeOp {
+    use crate::op::pcodeop_flags as f;
+    // opflags transcribed verbatim from typeop.cc constructors.
+    let (flags, name): (uint4, &str) = match opc {
+        // TypeOpIntZext / TypeOpIntSext: unary
+        OpCode::CPUI_INT_ZEXT => (f::unary, "ZEXT"),
+        OpCode::CPUI_INT_SEXT => (f::unary, "SEXT"),
+        // TypeOpIntAdd: binary | commutative
+        OpCode::CPUI_INT_ADD => (f::binary | f::commutative, "+"),
+        // TypeOpIntMult: binary | commutative
+        OpCode::CPUI_INT_MULT => (f::binary | f::commutative, "*"),
+        // TypeOpIntRight / TypeOpIntSright / TypeOpIntDiv / TypeOpIntSdiv /
+        // TypeOpPiece / TypeOpSubpiece: binary
+        OpCode::CPUI_INT_RIGHT => (f::binary, ">>"),
+        OpCode::CPUI_INT_SRIGHT => (f::binary, "s>>"),
+        OpCode::CPUI_INT_DIV => (f::binary, "/"),
+        OpCode::CPUI_INT_SDIV => (f::binary, "/"),
+        OpCode::CPUI_PIECE => (f::binary, "PIECE"),
+        OpCode::CPUI_SUBPIECE => (f::binary, "SUB"),
+        // Any other op-code these rules reach is a porting bug; fall back to a
+        // bare binary skeleton (worst case: a missing special-semantics flag,
+        // never an incorrect rewrite).  // SEAM(W6)
+        _ => (f::binary, "op"),
+    };
+    TypeOp::new(opc, flags, name.to_string())
 }
 
 
@@ -959,19 +1056,24 @@ impl Rule for RuleSubNormal {
                 } else {
                     OpCode::CPUI_INT_ZEXT
                 };
-                // data.opSetOpcode(newop,CPUI_SUBPIECE);  -- SEAM(W6)
-                // data.newUniqueOut(truncSize,newop);     -- SEAM(W3)
-                // opSetInput(newop,a,0); opSetInput(newop,newConstant(4,c),1);
-                // opInsertBefore(newop,op); opSetInput(op,newop->getOut(),0);
-                // opRemoveInput(op,1); opSetOpcode(op,opc); return 1;
                 if seam_op_set_opcode(data, newop, OpCode::CPUI_SUBPIECE).is_err() {
-                    return 0; // SEAM(W6)
+                    return 0;
                 }
-                if seam_new_unique_out(data, trunc_size, newop).is_err() {
-                    return 0; // SEAM(W3)
+                let newout = match seam_new_unique_out(data, trunc_size, newop) {
+                    Ok(v) => v,
+                    Err(_) => return 0,
+                };
+                data.op_set_input(newop, a, 0).expect("subnormal: opSetInput");
+                let cst = data.new_constant(4, c as uintb);
+                data.op_set_input(newop, cst, 1).expect("subnormal: opSetInput");
+                data.op_insert_before(newop, op);
+
+                data.op_set_input(op, newout, 0).expect("subnormal: opSetInput");
+                data.op_remove_input(op, 1);
+                if seam_op_set_opcode(data, op, opc).is_err() {
+                    return 0;
                 }
-                let _ = (opc, c);
-                return 0; // unreachable past the seams; kept for structure
+                return 1;
             } else {
                 k = insize - c - outsize; // Or we can shrink the cut
             }
@@ -993,19 +1095,26 @@ impl Rule for RuleSubNormal {
             }
         }
 
-        // PcodeOp *newop = newOp(2,op->getAddr()); opSetOpcode(newop,CPUI_SUBPIECE);
-        //   newUniqueOut(outsize,newop); ...; opInsertBefore(newop,op);
-        //   opSetInput(op,newop->getOut(),0); opSetInput(op,newConstant(4,n),1);
-        //   opSetOpcode(op,opc); return 1;
         let newop = data.new_op(2, op_addr(data, op));
         if seam_op_set_opcode(data, newop, OpCode::CPUI_SUBPIECE).is_err() {
-            return 0; // SEAM(W6)
+            return 0;
         }
-        if seam_new_unique_out(data, outsize, newop).is_err() {
-            return 0; // SEAM(W3)
+        let newout = match seam_new_unique_out(data, outsize, newop) {
+            Ok(v) => v,
+            Err(_) => return 0,
+        };
+        data.op_set_input(newop, a, 0).expect("subnormal: opSetInput");
+        let cst = data.new_constant(4, c as uintb);
+        data.op_set_input(newop, cst, 1).expect("subnormal: opSetInput");
+        data.op_insert_before(newop, op);
+
+        data.op_set_input(op, newout, 0).expect("subnormal: opSetInput");
+        let nc = data.new_constant(4, n as uintb);
+        data.op_set_input(op, nc, 1).expect("subnormal: opSetInput");
+        if seam_op_set_opcode(data, op, opc).is_err() {
+            return 0;
         }
-        let _ = n;
-        0
+        1
     }
 }
 
@@ -1186,6 +1295,8 @@ impl Rule for RuleDivTermAdd {
 
         // Look for an INT_ADD descendant of op->getOut() that re-adds x.
         let opout = out_vn(data, op);
+        let _ = subop;
+        let mut shiftopc = shiftopc;
         for addop in data.descend_snapshot(opout) {
             if code(data, addop) != OpCode::CPUI_INT_ADD {
                 continue;
@@ -1193,17 +1304,50 @@ impl Rule for RuleDivTermAdd {
             if in_vn(data, addop, 0) != x && in_vn(data, addop, 1) != x {
                 continue;
             }
-            // Construct new const, multiply, shift; rewrite addop to SUBPIECE.
-            //   newConstVn = newExtendedConstant(extvn->getSize(), multConst, op);  -- SEAM(W3)
-            //   newmultop = newOp(2,...); opSetOpcode(...INT_MULT); newUniqueOut(...);
-            //   newshiftop = newOp(2,...); shiftopc = (shiftopc==MAX)? INT_RIGHT : shiftopc;
-            //   opSetOpcode(addop,CPUI_SUBPIECE); opSetInput(addop,newshiftvn,0);
-            //   opSetInput(addop,newConstant(4,0),1); return 1;
-            let _ = (shiftopc, subop);
-            if seam_new_extended_constant(data, size(data, extvn), &mult_const, op).is_err() {
-                return 0; // SEAM(W3): cannot build the 128-bit constant
+
+            // Construct the new constant
+            let new_const_vn =
+                match seam_new_extended_constant(data, size(data, extvn), &mult_const, op) {
+                    Ok(v) => v,
+                    Err(_) => return 0,
+                };
+
+            // Construct the new multiply
+            let newmultop = data.new_op(2, op_addr(data, op));
+            if seam_op_set_opcode(data, newmultop, OpCode::CPUI_INT_MULT).is_err() {
+                return 0;
             }
-            return 0; // (also blocked on newUniqueOut / opSetOpcode)
+            let newmultvn = match seam_new_unique_out(data, size(data, extvn), newmultop) {
+                Ok(v) => v,
+                Err(_) => return 0,
+            };
+            data.op_set_input(newmultop, extvn, 0).expect("RuleDivTermAdd: opSetInput");
+            data.op_set_input(newmultop, new_const_vn, 1).expect("RuleDivTermAdd: opSetInput");
+            data.op_insert_before(newmultop, op);
+
+            let newshiftop = data.new_op(2, op_addr(data, op));
+            if shiftopc == OpCode::CPUI_MAX {
+                shiftopc = OpCode::CPUI_INT_RIGHT;
+            }
+            if seam_op_set_opcode(data, newshiftop, shiftopc).is_err() {
+                return 0;
+            }
+            let newshiftvn = match seam_new_unique_out(data, size(data, extvn), newshiftop) {
+                Ok(v) => v,
+                Err(_) => return 0,
+            };
+            data.op_set_input(newshiftop, newmultvn, 0).expect("RuleDivTermAdd: opSetInput");
+            let nc = data.new_constant(4, n as uintb);
+            data.op_set_input(newshiftop, nc, 1).expect("RuleDivTermAdd: opSetInput");
+            data.op_insert_before(newshiftop, op);
+
+            if seam_op_set_opcode(data, addop, OpCode::CPUI_SUBPIECE).is_err() {
+                return 0;
+            }
+            data.op_set_input(addop, newshiftvn, 0).expect("RuleDivTermAdd: opSetInput");
+            let c0 = data.new_constant(4, 0);
+            data.op_set_input(addop, c0, 1).expect("RuleDivTermAdd: opSetInput");
+            return 1;
         }
         0
     }
@@ -1322,18 +1466,52 @@ impl Rule for RuleDivTermAdd2 {
                 continue;
             }
             // pow = 2^n; multConst += 2^n; then build INT_MULT / INT_RIGHT(n+1)
-            // and rewrite addop to SUBPIECE(...,0).  -- SEAM(W3/W6) for the commit.
+            // and rewrite addop to SUBPIECE(...,0).
             let mut pow: [u64; 2] = [0, 0];
             set_u128(&mut pow, 1);
             let mut shifted = [0u64; 2];
-            leftshift128(&pow, &mut shifted, n);
+            leftshift128(&pow, &mut shifted, n); // Calculate 2^n
             let mut sum = [0u64; 2];
-            add128(&mult_const, &shifted, &mut sum);
+            add128(&mult_const, &shifted, &mut sum); // multConst = multConst + 2^n
             mult_const = sum;
-            if seam_new_extended_constant(data, size(data, zextvn), &mult_const, op).is_err() {
-                return 0; // SEAM(W3)
+
+            let newmultop = data.new_op(2, op_addr(data, op));
+            if seam_op_set_opcode(data, newmultop, OpCode::CPUI_INT_MULT).is_err() {
+                return 0;
             }
-            return 0; // (also blocked on newUniqueOut / opSetOpcode)
+            let newmultvn = match seam_new_unique_out(data, size(data, zextvn), newmultop) {
+                Ok(v) => v,
+                Err(_) => return 0,
+            };
+            data.op_set_input(newmultop, zextvn, 0).expect("RuleDivTermAdd2: opSetInput");
+            let new_const_vn =
+                match seam_new_extended_constant(data, size(data, zextvn), &mult_const, op) {
+                    Ok(v) => v,
+                    Err(_) => return 0,
+                };
+            data.op_set_input(newmultop, new_const_vn, 1).expect("RuleDivTermAdd2: opSetInput");
+            data.op_insert_before(newmultop, op);
+
+            let newshiftop = data.new_op(2, op_addr(data, op));
+            if seam_op_set_opcode(data, newshiftop, OpCode::CPUI_INT_RIGHT).is_err() {
+                return 0;
+            }
+            let newshiftvn = match seam_new_unique_out(data, size(data, zextvn), newshiftop) {
+                Ok(v) => v,
+                Err(_) => return 0,
+            };
+            data.op_set_input(newshiftop, newmultvn, 0).expect("RuleDivTermAdd2: opSetInput");
+            let nc = data.new_constant(4, (n + 1) as uintb);
+            data.op_set_input(newshiftop, nc, 1).expect("RuleDivTermAdd2: opSetInput");
+            data.op_insert_before(newshiftop, op);
+
+            if seam_op_set_opcode(data, addop, OpCode::CPUI_SUBPIECE).is_err() {
+                return 0;
+            }
+            data.op_set_input(addop, newshiftvn, 0).expect("RuleDivTermAdd2: opSetInput");
+            let c0 = data.new_constant(4, 0);
+            data.op_set_input(addop, c0, 1).expect("RuleDivTermAdd2: opSetInput");
+            return 1;
         }
         0
     }
@@ -1629,7 +1807,7 @@ impl Rule for RuleDivOpt {
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         // Varnode *inVn = findForm(op,n,y,xsize,extOpc); if (inVn==0) return 0;
-        let (in_vn0, n, y, mut xsize, ext_opc) = match Self::find_form(data, op) {
+        let (mut in_vn0, n, y, mut xsize, ext_opc) = match Self::find_form(data, op) {
             Some(t) => t,
             None => return 0,
         };
@@ -1644,14 +1822,94 @@ impl Rule for RuleDivOpt {
             return 0;
         }
         // int4 outSize = op->getOut()->getSize();
-        let _out_size = size(data, out_vn(data, op));
-        // The commit (extension/truncation insertion, INT_DIV / INT_SDIV+correction
-        // construction) creates new ops with fresh outputs (newUniqueOut) and
-        // changes opcodes (opSetOpcode) and calls moveSignBitExtraction.  All but
-        // moveSignBitExtraction are W3/W6 seams; without newUniqueOut/opSetOpcode
-        // we cannot build the division.  // SEAM(W3-funcdata)/SEAM(W6)
-        let _ = (in_vn0, divisor);
-        0
+        let mut out_size = size(data, out_vn(data, op));
+
+        // `op` may be reassigned to a freshly-built INT_ADD in the truncation
+        // branch (the original op becomes the SUBPIECE); track it locally.
+        let mut op = op;
+
+        if size(data, in_vn0) < out_size {
+            // Do we need an extension to get to final size
+            let in_ext = data.new_op(1, op_addr(data, op));
+            if seam_op_set_opcode(data, in_ext, ext_opc).is_err() {
+                return 0;
+            }
+            let ext_out = match seam_new_unique_out(data, out_size, in_ext) {
+                Ok(v) => v,
+                Err(_) => return 0,
+            };
+            data.op_set_input(in_ext, in_vn0, 0).expect("RuleDivOpt: opSetInput");
+            in_vn0 = ext_out;
+            data.op_insert_before(in_ext, op);
+        } else if size(data, in_vn0) > out_size {
+            // Do we need a truncation to get to final size.  Create a new op to
+            // hold the INT_DIV or INT_SDIV:INT_ADD; the original op becomes a
+            // truncation SUBPIECE.
+            let newop = data.new_op(2, op_addr(data, op));
+            // This gets changed immediately, but need it for opInsert
+            if seam_op_set_opcode(data, newop, OpCode::CPUI_INT_ADD).is_err() {
+                return 0;
+            }
+            let res_vn = match seam_new_unique_out(data, size(data, in_vn0), newop) {
+                Ok(v) => v,
+                Err(_) => return 0,
+            };
+            data.op_insert_before(newop, op);
+            if seam_op_set_opcode(data, op, OpCode::CPUI_SUBPIECE).is_err() {
+                return 0;
+            }
+            data.op_set_input(op, res_vn, 0).expect("RuleDivOpt: opSetInput");
+            let c0 = data.new_constant(4, 0);
+            data.op_set_input(op, c0, 1).expect("RuleDivOpt: opSetInput");
+            op = newop; // Main transform now changes newop
+            out_size = size(data, in_vn0);
+        }
+
+        if ext_opc == OpCode::CPUI_INT_ZEXT {
+            // Unsigned division
+            data.op_set_input(op, in_vn0, 0).expect("RuleDivOpt: opSetInput");
+            let dvn = data.new_constant(out_size, divisor);
+            data.op_set_input(op, dvn, 1).expect("RuleDivOpt: opSetInput");
+            if seam_op_set_opcode(data, op, OpCode::CPUI_INT_DIV).is_err() {
+                return 0;
+            }
+        } else {
+            // Sign division
+            let opout = out_vn(data, op);
+            Self::move_sign_bit_extraction(data, opout, in_vn0);
+            let divop = data.new_op(2, op_addr(data, op));
+            if seam_op_set_opcode(data, divop, OpCode::CPUI_INT_SDIV).is_err() {
+                return 0;
+            }
+            let newout = match seam_new_unique_out(data, out_size, divop) {
+                Ok(v) => v,
+                Err(_) => return 0,
+            };
+            data.op_set_input(divop, in_vn0, 0).expect("RuleDivOpt: opSetInput");
+            let dvn = data.new_constant(out_size, divisor);
+            data.op_set_input(divop, dvn, 1).expect("RuleDivOpt: opSetInput");
+            data.op_insert_before(divop, op);
+            // Build the sign value correction
+            let sgnop = data.new_op(2, op_addr(data, op));
+            if seam_op_set_opcode(data, sgnop, OpCode::CPUI_INT_SRIGHT).is_err() {
+                return 0;
+            }
+            let sgnvn = match seam_new_unique_out(data, out_size, sgnop) {
+                Ok(v) => v,
+                Err(_) => return 0,
+            };
+            data.op_set_input(sgnop, in_vn0, 0).expect("RuleDivOpt: opSetInput");
+            let shc = data.new_constant(out_size, (out_size * 8 - 1) as uintb);
+            data.op_set_input(sgnop, shc, 1).expect("RuleDivOpt: opSetInput");
+            data.op_insert_before(sgnop, op);
+            // Add the correction into the division op
+            data.op_set_input(op, newout, 0).expect("RuleDivOpt: opSetInput");
+            data.op_set_input(op, sgnvn, 1).expect("RuleDivOpt: opSetInput");
+            if seam_op_set_opcode(data, op, OpCode::CPUI_INT_ADD).is_err() {
+                return 0;
+            }
+        }
+        1
     }
 }
 

@@ -3119,9 +3119,18 @@ impl PrintC {
     /// reduced to [`resolve_integer_format`] + [`format_integer_token`].  No
     /// data-type display-format override (that is the type layer); the default
     /// `val<=10 -> dec` rule reproduces the oracle's `10` rendering.
+    ///
+    /// (kuna) The persistent integer-format force mods (`option integerformat
+    /// dec`/`hex`, printlanguage.cc:705) are honored here so a bare IR constant
+    /// follows the same forced-format rule the C++ `push_integer` reads from the
+    /// modifier stack (printc.cc:1397-1404).  Without this the `integerformat
+    /// dec` datatests (e.g. `divopt.xml`) rendered every divisor in hex.  When
+    /// neither force is active the prior `mostNaturalBase` default is preserved.
     fn push_constant_ir(&mut self, val: uintb, sz: int4, op: OpId) {
+        let force_dec = self.context.is_set(modifiers::FORCE_DEC);
+        let force_hex = self.context.is_set(modifiers::FORCE_HEX);
         let (print_negsign, val, display_fmt) =
-            resolve_integer_format(val, sz, false, display_format::NONE, false, false);
+            resolve_integer_format(val, sz, false, display_format::NONE, force_hex, force_dec);
         let tok = format_integer_token(print_negsign, val, display_fmt, sz, false, false, false, "");
         self.push_atom(&Atom::with_op(
             tok,
