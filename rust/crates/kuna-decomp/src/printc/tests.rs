@@ -587,6 +587,10 @@ fn op_emit_kind_dispatch() {
     assert!(matches!(op_emit_kind(CPUI_CAST), OpEmitKind::TypeCast));
     assert!(matches!(op_emit_kind(CPUI_FLOAT_FLOAT2FLOAT), OpEmitKind::TypeCast));
     assert!(matches!(op_emit_kind(CPUI_FLOAT_TRUNC), OpEmitKind::TypeCast));
+    // FLOAT_INT2FLOAT has a hand-written override (PrintC::opFloatInt2Float,
+    // printc.cc:850 — the `(floatN)input` cast with INT_ZEXT absorption), so it
+    // is Custom and dispatched by the `op_float_int2float_ir` arm of op_push_ir.
+    assert!(matches!(op_emit_kind(CPUI_FLOAT_INT2FLOAT), OpEmitKind::Custom));
     // Hand-written / no-op overrides are Custom.
     assert!(matches!(op_emit_kind(CPUI_LOAD), OpEmitKind::Custom));
     assert!(matches!(op_emit_kind(CPUI_STORE), OpEmitKind::Custom));

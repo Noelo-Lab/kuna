@@ -2356,6 +2356,11 @@ impl PrintC {
             OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
                 self.op_call_ir(fd, arch, op);
             }
+            // FLOAT_INT2FLOAT (printc.cc:850 opFloatInt2Float): the int->float
+            // conversion renders as a `(floatN)input` cast (NOT a functional
+            // `FLOAT_INT2FLOAT(input)`), absorbing an implied INT_ZEXT on its
+            // input so the widened source prints once.
+            OpCode::CPUI_FLOAT_INT2FLOAT => self.op_float_int2float_ir(fd, arch, op),
             // MULTIEQUAL / INDIRECT: no-op (printc.hh:337-338 opMultiequal/
             // opIndirect) — copy markers, never printed as an operator.  The
             // phi's value is whatever its (single, post-merge) instance reads.
@@ -2450,6 +2455,58 @@ impl PrintC {
                 crate::printlanguage::SyntaxHighlight::no_color,
             ));
         }
+    }
+
+    /// C++ `PrintC::opFloatInt2Float` (printc.cc:850): the integer→float
+    /// conversion prints as a `(floatN)input` type-cast.  The input is the
+    /// op's in0, unless that input is an implied `INT_ZEXT` (the C++
+    /// `TypeOpFloatInt2Float::absorbZext`), in which case the ZEXT is absorbed
+    /// and its source is the input — the zero-extension to the conversion's
+    /// source width is implicit in the cast.  The cast's type is the output
+    /// varnode's def-facing high type (`getOut()->getHighTypeDefFacing()`).
+    /// With `option_nocasts` set the cast is suppressed and only the input
+    /// prints.
+    fn op_float_int2float_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        // const PcodeOp *zextOp = TypeOpFloatInt2Float::absorbZext(op);
+        // const Varnode *vn0 = zextOp ? zextOp->getIn(0) : op->getIn(0);
+        let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
+        let vn0 = absorb_zext(fd, op)
+            .and_then(|zext| fd.obank().get(zext).and_then(|o| o.get_in(0)))
+            .or(in0);
+        if !self.options.nocasts {
+            // pushOp(&typecast,op); pushType(out->getHighTypeDefFacing()).
+            self.push_op(&tokens::TYPECAST, Some(op_key(op)));
+            let outvn = fd.obank().get(op).and_then(|o| o.get_out());
+            if let Some(out) = outvn {
+                if let Some(v) = fd.vbank().get(out) {
+                    self.push_cast_type(v.get_type_def_facing());
+                }
+            }
+        }
+        // pushVn(vn0,op,mods).
+        if let Some(vn) = vn0 {
+            self.push_vn_ir(fd, arch, vn, op);
+        }
+    }
+
+    /// C++ `PrintC::pushType` (printc.cc:1540) for a base type, reduced to the
+    /// cast use: emit the type name as a single type-token operand (the
+    /// `(type)` half of a [`tokens::TYPECAST`]).  The full `pushTypeStart` /
+    /// `buildTypeStack` declarator algorithm (pointer/array casts) is the next
+    /// layer; this renders the base-type front of [`declarator_parts`], which
+    /// is the only form the int→float cast produces (a scalar `floatN`).
+    fn push_cast_type(&mut self, ct: &std::rc::Rc<crate::dtype::Datatype>) {
+        let (front, back) = declarator_parts(ct);
+        let mut name = front;
+        name.push_str(&back);
+        // The C++ pushes a type Atom carrying the Datatype pointer; the kuna
+        // emit path renders a TypeToken by its `name` alone (printc.rs:1464),
+        // so a syntax-only TypeToken reproduces the cast's `(floatN)` text.
+        self.push_atom(&Atom::syntax(
+            name,
+            TagType::TypeToken,
+            crate::printlanguage::SyntaxHighlight::type_color,
+        ));
     }
 
     /// C++ `PrintC::opCall` (printc.cc:613) / `PrintC::opCallind` (printc.cc:657):
@@ -3171,6 +3228,23 @@ fn op_key(op: OpId) -> usize {
 fn vn_key(vn: VarnodeId) -> usize {
     use slotmap::Key;
     vn.data().as_ffi() as usize
+}
+
+/// C++ `TypeOpFloatInt2Float::absorbZext` (typeop.cc:1874): if the
+/// `FLOAT_INT2FLOAT` op's in0 is an implied, written Varnode whose defining op
+/// is an `INT_ZEXT`, return that ZEXT op (its source is the real conversion
+/// input — the cast's `(floatN)` absorbs the zero-extension).  Otherwise
+/// `None`.
+fn absorb_zext(fd: &Funcdata, op: OpId) -> Option<OpId> {
+    let vn0 = fd.obank().get(op).and_then(|o| o.get_in(0))?;
+    let v = fd.vbank().get(vn0)?;
+    if v.is_written() && v.is_implied() {
+        let zext = v.get_def()?;
+        if fd.obank().get(zext).map(|o| o.code()) == Some(OpCode::CPUI_INT_ZEXT) {
+            return Some(zext);
+        }
+    }
+    None
 }
 
 /// The functional print name for an opcode (C++ the `TypeOp::getOperatorName`
