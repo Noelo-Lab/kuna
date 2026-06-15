@@ -743,11 +743,16 @@ fn verify_w10_pspec_context_loopcomment_lifts_64bit_and_structures() {
     // 64-bit registers present (RSP/RBP/RDI/…); the 16-bit real-mode garbage
     // signature absent.  `\bSP \+ 0xfffe\b`-class offsets and `BX + SI` and the
     // `CALLOTHER(0,DS|SS` segment ops are the unambiguous 16-bit-real-mode marks.
-    let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0);
+    // w10-highvar-naming coalesces the frame/return registers into named `vN`
+    // locals, so the proxy accepts either the raw 64-bit token or the lowercased
+    // `// rsp`/`// rax` storage comment the named local's decl carries.
+    let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0)
+        + count_matches(r"// r(sp|bp|di|si|ax|bx|cx|dx)\b", &rendered).unwrap_or(0);
     assert!(
         sixtyfour >= 1,
-        "loopcomment must lift with 64-bit registers (RSP/RBP/…); got none \
-         (the pspec <context_data> paints were not applied):\n{rendered}"
+        "loopcomment must lift with 64-bit registers (RSP/RBP/… as a token or a \
+         `// rsp` storage comment); got none (the pspec <context_data> paints were \
+         not applied):\n{rendered}"
     );
     let realmode =
         count_matches(r"\bBX \+ SI\b|CALLOTHER\(0,DS|CALLOTHER\(0,SS|\b0xfffe\b", &rendered)
@@ -788,11 +793,18 @@ fn verify_w10_pspec_context_forloop_varused_lifts_64bit_and_structures() {
         "forloop_varused must render its function:\n{rendered}"
     );
 
-    let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0);
+    // 64-bit lifting signal: a 64-bit register either as a raw token (when it is
+    // not a coalesced local) OR as the storage comment on a now-named local
+    // (`// rsp` / `// rbp`).  Since w10-highvar-naming coalesces the frame
+    // registers into named `vN` locals (the faithful angr default), the proxy must
+    // also accept the lowercased storage comment the decl carries (e.g. `// rsp`).
+    let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0)
+        + count_matches(r"// r(sp|bp|di|si|ax|bx|cx|dx)\b", &rendered).unwrap_or(0);
     assert!(
         sixtyfour >= 1,
-        "forloop_varused must lift with 64-bit registers (RSP/…); got none \
-         (the pspec <context_data> paints were not applied):\n{rendered}"
+        "forloop_varused must lift with 64-bit registers (RSP/… as a token or a \
+         `// rsp` storage comment); got none (the pspec <context_data> paints were \
+         not applied):\n{rendered}"
     );
     let realmode =
         count_matches(r"\bBX \+ SI\b|CALLOTHER\(0,DS|CALLOTHER\(0,SS|\b0xfffe\b", &rendered)
@@ -1045,4 +1057,152 @@ fn w10_ptr_flow_load_explicit_deref_keeps_base_inside_star() {
         "the LOAD through `a0` must be absorbed into deref/array notation, not a \
          functional `LOAD(spaceid, a0)`:\n{rendered}"
     );
+}
+
+// ===========================================================================
+// VERIFIER ADVERSARIAL TESTS (item: w10-highvar-naming)
+//
+// The hunt-list flagged three fragile spots in this item: (A) the `is_global_data`
+// persist-PROXY that replaced the C++ `persist` flag — a register (IPTR_PROCESSOR
+// space WITH a register name) must still take the `vN` arm, never the `dat_` arm
+// (a `getRegisterName(...)`-empty misclassification would deny every register a
+// name and route it to a `dat_<addr>` global token); (B) the `vN` numbering ORDER
+// + per-high dedup (shared `base` counter across the resolve_default_name and the
+// explicit-vN paths must produce a gapless v1.. sequence with no duplicate index);
+// (C) determinism (the BTree loc-order walk must be reproducible). These pin the
+// observable result on a real corpus function (loopcomment, x86:LE:64) whose body
+// the probe confirmed renders register-backed `vN` locals (`v2 // rax`, `v3 // rsp`).
+// ===========================================================================
+
+/// (A) PERSIST-PROXY: a register local (the angr `vN` arm's `getRegisterName`
+/// non-empty case) must NOT be misrouted to a `dat_<addr>` global token.  The C++
+/// `buildDefaultName` dat_ arm fires only for a *non-register* persistent address
+/// (database.cc:1780); the Rust proxy (`IPTR_PROCESSOR && !is_register`) must
+/// exclude registers.  loopcomment's body holds RAX/RSP-backed coalesced locals —
+/// they must surface as `vN` (with a `// rax`/`// rsp` storage comment), and NO
+/// register-backed storage may render as `dat_<hexaddr>`.
+#[test]
+fn verify_w10_hvnaming_register_local_gets_vn_not_dat() {
+    let path = repo_root().join("decompiler/datatests/loopcomment.xml");
+    let dt = parse_datatest(&path).expect("parse loopcomment.xml");
+    let rendered = render_corpus(&dt).expect("loopcomment must decompile");
+    // A register-backed coalesced local renders `<type> vN; // r<reg>`.  At least
+    // one such named register local must exist (the persist-proxy did not deny it).
+    let reg_named_local =
+        count_matches(r"(?m)\bv[0-9]+;\s*// r(ax|sp|bp|di|si|bx|cx|dx)\b", &rendered).unwrap_or(0);
+    assert!(
+        reg_named_local >= 1,
+        "a register-backed coalesced local must take the angr `vN` arm and carry a \
+         `// r..` storage comment (the persist-proxy must EXCLUDE registers from the \
+         `dat_` route):\n{rendered}"
+    );
+    // No register storage comment may sit on a `dat_<addr>` token — registers are
+    // never global data.  (`dat_` lines never carry a `// r..` register comment.)
+    assert_eq!(
+        count_matches(r"(?m)\bdat_[0-9a-fx]+\b[^\n]*// r(ax|sp|bp|di|si|bx|cx|dx)\b", &rendered)
+            .unwrap_or(0),
+        0,
+        "a register must never be rendered as a `dat_<addr>` global (the angr \
+         `getRegisterName` guard routes registers to `vN`):\n{rendered}"
+    );
+}
+
+/// (B) NUMBERING + DEDUP: the `vN` indices form a gapless 1.. sequence with no
+/// duplicated index across the whole body (a non-total iteration order or a
+/// counter shared incorrectly between the resolve_default_name and explicit-vN
+/// paths would skip or repeat a number).  Each `vN` declared in the body decl
+/// block must be unique, contiguous from v1, with no v0.
+#[test]
+fn verify_w10_hvnaming_vn_indices_are_gapless_and_unique_from_v1() {
+    // A SINGLE-function corpus (readstruct in nestedoffset.xml) so the per-function
+    // `base` counter (which restarts at 1 for every function/scope) yields one
+    // contiguous run — a multi-function render legitimately repeats v1.. per body.
+    let path = repo_root().join("decompiler/datatests/nestedoffset.xml");
+    let dt = parse_datatest(&path).expect("parse nestedoffset.xml");
+    let rendered = render_corpus(&dt).expect("readstruct must decompile");
+    // Collect the DECLARED vN indices (a decl is `<type> vN;` at the head of a
+    // line, optionally followed by a `// ..` storage comment).  The decl block is
+    // the contiguous head of the single function body.
+    let mut decl_idx: Vec<u32> = Vec::new();
+    for line in rendered.lines() {
+        let l = line.trim_start();
+        if let Some(idx) = regex_lite_capture_vn_decl(l) {
+            decl_idx.push(idx);
+        }
+    }
+    assert!(
+        !decl_idx.is_empty(),
+        "readstruct must declare at least one `vN` local:\n{rendered}"
+    );
+    // No v0.
+    assert!(!decl_idx.contains(&0), "the angr counter starts at v1, never v0:\n{rendered}");
+    let mut sorted = decl_idx.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(
+        sorted.len(),
+        decl_idx.len(),
+        "every declared `vN` index in a single function must be unique (no duplicate \
+         from a mis-shared base counter); declared = {decl_idx:?}\n{rendered}"
+    );
+    // Gapless from 1: the sorted unique set is exactly 1..=max.
+    let max = *sorted.iter().max().unwrap();
+    let expected: Vec<u32> = (1..=max).collect();
+    assert_eq!(
+        sorted, expected,
+        "the declared `vN` indices must be a gapless 1..={max} run (the base \
+         counter advances once per named local in loc order); got {sorted:?}\n{rendered}"
+    );
+}
+
+/// (C) DETERMINISM: naming is a pure function of the loc-order BTree walk, so two
+/// independent renders of the same function must be byte-identical (a HashMap in
+/// the naming path or a non-total comparator would make the `vN` assignment
+/// nondeterministic across runs).
+#[test]
+fn verify_w10_hvnaming_two_renders_are_byte_identical() {
+    let path = repo_root().join("decompiler/datatests/loopcomment.xml");
+    let dt = parse_datatest(&path).expect("parse loopcomment.xml");
+    let a = render_corpus(&dt).expect("loopcomment must decompile (run 1)");
+    let b = render_corpus(&dt).expect("loopcomment must decompile (run 2)");
+    assert_eq!(
+        a, b,
+        "naming/rendering must be deterministic across runs (the `vN` assignment \
+         must come from a total-order loc walk, not a HashMap):\nA:\n{a}\nB:\n{b}"
+    );
+}
+
+/// Tiny helper: extract the index N from a DECLARATION line `<type...> vN;`
+/// (optionally trailed by a `// comment`).  Returns None when the line is not a
+/// vN declaration — in particular it rejects statements (`return v1;`, `v1 = ..;`,
+/// control-flow), which are NOT declarations.  A declaration is exactly two
+/// whitespace tokens `<type> vN` (after stripping `;`/comment), the type token is
+/// an identifier (possibly with `*`/`[..]`), the name is `vN`, and there is no `=`.
+/// Avoids pulling a regex dep into this leaf test.
+fn regex_lite_capture_vn_decl(line: &str) -> Option<u32> {
+    // strip a trailing line comment
+    let head = line.split("//").next().unwrap_or(line).trim();
+    // a declaration statement ends in `;` and contains no assignment / call / keyword
+    let head = head.strip_suffix(';')?;
+    if head.contains('=') || head.contains('(') {
+        return None;
+    }
+    // tokens: must be exactly `<type...> vN` (>= 2 whitespace-separated tokens, the
+    // LAST is the name).  `return v1` would be `return` + `v1` — reject by checking
+    // the first token is a plausible C type, not a statement keyword.
+    let toks: Vec<&str> = head.split_whitespace().collect();
+    if toks.len() < 2 {
+        return None;
+    }
+    if matches!(toks[0], "return" | "if" | "while" | "for" | "do" | "else" | "goto" | "switch") {
+        return None;
+    }
+    // last token (strip a trailing `[..]` array suffix and leading `*`) must be `vN`
+    let name = toks.last().unwrap().trim_start_matches('*');
+    let name = name.split('[').next().unwrap_or(name);
+    let n = name.strip_prefix('v')?;
+    if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    n.parse::<u32>().ok()
 }

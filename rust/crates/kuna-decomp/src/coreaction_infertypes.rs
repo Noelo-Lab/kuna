@@ -495,8 +495,11 @@ fn piece_pointer_sizes(data: &Funcdata) -> (int4, int4) {
 /// `TypeOp::propagateType` dispatch) for in-crate callers that need to propagate a
 /// type along a single edge — notably `AddTreeState::assignPropagatedType`
 /// (`op->getOpcode()->propagateType(inType, op, vn, out, 0, -1)`).
+// (kuna) verifier test seam: widened `pub(crate)` -> `pub` so the
+// `verify_w10_charptr_signedness` adversarial integration test can drive the
+// `INT_SLESS`/`INT_SLESSEQUAL` signedness gate directly.  No behaviour change.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn propagate_type_pub(
+pub fn propagate_type_pub(
     data: &mut Funcdata,
     alttype: Rc<Datatype>,
     op: OpId,
@@ -552,15 +555,32 @@ fn propagate_type(
                 Some(alttype)
             }
         }
-        // Comparisons: propagateAcrossCompare (typeop.cc:965).  Must be across the
-        // two inputs (in/out both >= 0... in C++ both != -1).
+        // TypeOpEqual / TypeOpNotEqual / TypeOpIntLess / TypeOpIntLessEqual all
+        // dispatch to `propagateAcrossCompare` (typeop.cc:947, 1011, 1087, 1111).
+        // This is the generic comparison arm: identity propagation between the two
+        // inputs, with the spacebase / mid-struct-relptr special-cases.
         OpCode::CPUI_INT_EQUAL
         | OpCode::CPUI_INT_NOTEQUAL
         | OpCode::CPUI_INT_LESS
-        | OpCode::CPUI_INT_LESSEQUAL
-        | OpCode::CPUI_INT_SLESS
-        | OpCode::CPUI_INT_SLESSEQUAL => {
+        | OpCode::CPUI_INT_LESSEQUAL => {
             propagate_across_compare(data, alttype, invn_is_spacebase, outvn, inslot, outslot)
+        }
+        // TypeOpIntSless / TypeOpIntSlessEqual override `propagateType` with a
+        // STRICTER arm (typeop.cc:1035-1041, 1061-1067): the propagation is across
+        // the two inputs (in/out both != -1), and it ONLY propagates a *signed*
+        // (TYPE_INT) data-type — "Only propagate signed things".  A `char`
+        // (TYPE_INT, size 1) read by a signed compare therefore flows to the other
+        // operand, while a `uint1`/pointer does not.  There is NO spacebase /
+        // mid-struct-relptr handling on this arm (the C++ override does not call
+        // propagateAcrossCompare).
+        OpCode::CPUI_INT_SLESS | OpCode::CPUI_INT_SLESSEQUAL => {
+            if inslot == -1 || outslot == -1 {
+                return None; // Must propagate input <-> input
+            }
+            if alttype.get_metatype() != type_metatype::TYPE_INT {
+                return None; // Only propagate signed things
+            }
+            Some(alttype)
         }
         // TypeOpIntAdd: pointer add / constant-folded int (typeop.cc:1183).
         OpCode::CPUI_INT_ADD => propagate_int_add(data, alttype, op, outvn, inslot, outslot),

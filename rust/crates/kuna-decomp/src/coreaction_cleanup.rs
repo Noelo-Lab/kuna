@@ -379,11 +379,19 @@ fn base_explicit(data: &Funcdata, vn: crate::seams::VarnodeId, mut maxref: int4)
             return -1;
         }
     }
-    // high->numInstances()>1 -> must not be merged at all -> explicit.  Merge is
-    // a seam (Funcdata carries no HighVariable bridge here): when the Varnode
-    // carries no HighVariable yet, this check is a no-op (numInstances == 1 by
-    // construction), which is the pre-merge default the printer falls back to.
-    // The HighVariable-instance read is the documented next layer.
+    // high->numInstances()>1 -> must not be merged at all -> explicit (C++
+    // coreaction.cc:3119).  A Varnode whose HighVariable coalesced *several* SSA
+    // versions (e.g. the `if`-arm def of `XMM0_Qa` joined with its post-`if`
+    // MULTIEQUAL) is rendered as a single named local, so its representative must
+    // be explicit and nameable — exactly the keystone that lets `ActionNameVars`
+    // give it a `vN` with a `float8 vN;` decl.  Previously seamed (the comment
+    // claimed `numInstances == 1` by construction); the S6 merge now produces
+    // genuine multi-instance highs, so the check is live.
+    if let Some(high) = v.get_high() {
+        if data.high_bank().get(high).map(|h| h.num_instances() > 1).unwrap_or(false) {
+            return -1;
+        }
+    }
     if v.is_addr_tied() {
         // addrtied: needs to be explicit (pointers may reference it), with two
         // exceptions (lone ZEXT into a wider addrtied, lone PIECE non-root).
@@ -1102,15 +1110,9 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         if data.high_bank().get(high).map(|h| h.kuna_name().is_some()).unwrap_or(false) {
             continue;
         }
-        let (v_input, v_persist, v_addrtied, v_addr, v_size) =
+        let (v_persist, v_addr, v_size) =
             match data.vbank().get(name_rep.unwrap()) {
-                Some(v) => (
-                    v.is_input(),
-                    v.is_persist(),
-                    v.is_addr_tied(),
-                    v.get_addr().clone(),
-                    v.get_size(),
-                ),
+                Some(v) => (v.is_persist(), v.get_addr().clone(), v.get_size()),
                 None => continue,
             };
         // C++ `Funcdata::linkSymbol`: query the local map for a SymbolEntry
@@ -1135,15 +1137,59 @@ fn name_local_highs_angr(data: &mut Funcdata) {
             }
             continue;
         }
-        // No covering Symbol.  `buildDefaultName`'s angr `vN` arm only fires for an
-        // in-scope local: address-tied (a `linkSymbol`-created local symbol), not
-        // an input (params already resolved above / route to `aN`), not a
-        // persistent global (routes to `dat_<addr>`, rendered by the unnamed-
-        // location tail).  Everything else falls through to the register / `dat_` /
-        // `SpaceNN` token (`pushUnnamedLocation`).
-        if v_input || v_persist || !v_addrtied {
-            continue;
+        // No covering Symbol.  In C++ `linkSymbols` (coreaction.cc:3061) this is the
+        // point where `data.linkSymbol(vn)` *creates* a fresh local Symbol for the
+        // high (`funcdata_varnode.cc:1194-1201`: any **non-persist** Varnode —
+        // register, unique, stack, or non-param input — gets `localmap->addSymbol`
+        // with an empty/undefined name) and the high is pushed onto `namerec`.
+        // `ActionNameVars` (coreaction.cc:3092) then renames that undefined Symbol
+        // via `Scope::buildDefaultName(sym,base,vn)`, whose angr arm
+        // (database.cc:1764-1786) returns:
+        //   * `aN`        for a function parameter   (resolved above, never here),
+        //   * `dat_<addr>` for a **persistent** Varnode that is **not a register**
+        //                  (`getRegisterName(...).empty()`), and
+        //   * `v<base++>`  for EVERYTHING else — registers (incl. XMM lanes), uniques,
+        //                  non-param inputs, unaffected/extraout storage.
+        // The prior kuna gate (`v_input || v_persist || !v_addrtied`) admitted only
+        // address-tied stack/return storage, so a transient register like `XMM0_Qa`
+        // or a `Unique` temp fell straight through to `pushUnnamedLocation` and
+        // rendered raw.  The faithful gate is the single `dat_` exclusion below.
+        //
+        // `dat_<addr>` is rendered by the unnamed-location tail (`pushUnnamedLocation`,
+        // `kunaGlobalDataName`), so we simply *skip* naming a persistent non-register;
+        // it must NOT acquire a `vN`.  A persistent **register** would still be `vN`,
+        // matching the angr arm's `getRegisterName` guard.
+        let spc = v_addr.get_space().expect("named high rep has no space");
+        let is_register = data
+            .get_arch()
+            .manage()
+            .register_lookup()
+            .map(|rl| !rl.get_register_name(spc, v_addr.get_offset(), v_size).is_empty())
+            .unwrap_or(false);
+        // `buildDefaultName`'s `dat_<addr>` arm (database.cc:1778-1782) fires for a
+        // **persistent** Varnode that is **not a register**.  In C++ that persist
+        // flag is painted by `localmap->queryProperties` from the *global* scope's
+        // range flags; the W4 global-scope queryProperties surface is a seam in this
+        // port, so an input read of read-only global RAM reaches here with
+        // `persist == false`.  The faithful proxy for "this is a global, route to
+        // `dat_`" is the same predicate `PrintC::pushUnnamedLocation` uses to emit
+        // the `dat_<addr>` token (`printc.rs::kuna_global_naming`): a **global data
+        // space** (`IPTR_PROCESSOR`) address with **no register name**.  Registers
+        // live in the same processor space but carry a register name, so they are
+        // excluded and still get `vN`; uniques (`IPTR_INTERNAL`) and stack
+        // (`IPTR_SPACEBASE`) locals are not global data and get `vN`.
+        let is_global_data =
+            spc.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR && !is_register;
+        if v_persist || is_global_data {
+            continue; // dat_<addr> via the unnamed-location tail (global, not a local)
         }
+        // Recovered *parameters* take the angr `aN` branch and are caught above by
+        // `resolve_default_name` (the proto-param Symbols are materialized by
+        // `link_proto_params`).  Any non-parameter storage reaching here — a
+        // register def (`XMM0_Qa`), a `unique` temp, a stack local, or a
+        // non-parameter input (unaffected/illegal/leftover) — is named `vN` exactly
+        // like any other local, with no `isInput()` special-casing (the angr
+        // `buildDefaultName` arm has none).
         let name = format!("v{base}");
         base += 1;
         if let Some(h) = data.high_bank_mut().get_mut(high) {

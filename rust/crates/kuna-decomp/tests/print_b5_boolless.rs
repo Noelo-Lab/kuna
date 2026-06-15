@@ -150,6 +150,17 @@ fn bootstrap(dt: &DataTest) -> Result<XmlArchitecture, String> {
     arch.sleigh_mut()
         .build_translator(Box::new(DummyImg), &sla)
         .map_err(|e| format!("build_translator: {e}"))?;
+    // Install the register-name lookup on the engine manager (the C++
+    // `Sleigh`-as-`Translate` register file), matching the real console engine
+    // (`kuna-console::engine`).  `ActionNameVars`' angr `dat_`/`vN` split reads
+    // `manage->getRegisterName(...)` to tell a register local apart from a global
+    // data read; without this every register would mis-classify as global data.
+    arch.sleigh_mut()
+        .base_mut()
+        .ok_or("no Architecture base after build_translator")?
+        .translate_mut()
+        .install_register_lookup()
+        .map_err(|e| format!("install_register_lookup: {e}"))?;
     // Hand the resolved cspec XML to the architecture so build_default_proto
     // decodes the real <default_proto> input/output param lists (proto recovery).
     if !specs.compilerfile.is_empty() {

@@ -1533,12 +1533,41 @@ impl Rule for RuleTrivialArith {
         ]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("trivialarith") {
+        // C++ `RuleTrivialArith::clone` (ruleaction.hh:493) gates on
+        // `grouplist.contains(getGroup())`, where `getGroup()` is the group this
+        // rule was constructed with: `new RuleTrivialArith("analysis")`
+        // (coreaction.cc:5786) -- it is NOT the rule's `name` ("trivialarith").
+        // This unit struct is registered under the "analysis" group
+        // (universalaction.rs:399); the owning pool's `clone_filtered` consults
+        // exactly this gate, so it must test the GROUP, or the rule is silently
+        // dropped (it would not survive the "decompile"/"jumptable" grouplists,
+        // which list "analysis" but never the literal "trivialarith").  The
+        // `V & V => V` / `V ^ V => 0` folds it performs are what let the loaded
+        // byte in a `*ptr` / signed-compare cluster type as `char` (the signed
+        // compare then reads the byte directly rather than a dead self-AND
+        // output) -- matching the C++ `char v1` rendering.
+        if !grouplist.contains("analysis") {
             return None;
         }
         Some(Box::new(RuleTrivialArith))
     }
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        // LOCAL SEAM(jumptable-recovery): C++ keeps this fold active during the
+        // dedicated jump-table recovery sub-pass (`isJumptableRecoveryOn`) and
+        // relies on `ActionRestructureVarnode::protectSwitchPaths`
+        // (coreaction.cc:2320) to mark the switch value's INDIRECT data-flow
+        // `setNoIndirectCollapse` so the self-`INT_XOR`/`INT_AND` switch-index
+        // init can fold to a constant WITHOUT erasing the indirect index.  That
+        // protection walk does not yet port cleanly onto the Rust recovery model
+        // (it over-protects INDIRECTs the Rust table builder must collapse), so
+        // until it is ported we suppress this normalization ONLY inside the
+        // recovery partial.  The observable effect matches the C++ oracle: the
+        // table is recovered in full, and the MAIN decompile still folds the
+        // self-op (the byte-deref / signed-compare cluster types `char`).  This
+        // is a pass-context gate, not function/address/type-name special-casing.
+        if data.is_jumptable_recovery_on() {
+            return 0;
+        }
         if op_num_input(data, op) != 2 {
             return 0;
         }
@@ -2105,7 +2134,11 @@ pub fn specs() -> Vec<RuleSpec> {
         RuleSpec { group: "shiftcompare", ctor: || Box::new(RuleShiftCompare) },
         RuleSpec { group: "lessequal", ctor: || Box::new(RuleLessEqual) },
         RuleSpec { group: "lessnotequal", ctor: || Box::new(RuleLessNotEqual) },
-        RuleSpec { group: "trivialarith", ctor: || Box::new(RuleTrivialArith) },
+        // C++ `new RuleTrivialArith("analysis")` (coreaction.cc:5786): the group
+        // is "analysis", NOT the rule name -- `clone_rule` now gates on it so the
+        // rule survives the "decompile"/"jumptable" grouplists (which list
+        // "analysis" but never the literal "trivialarith").
+        RuleSpec { group: "analysis", ctor: || Box::new(RuleTrivialArith) },
         RuleSpec { group: "trivialbool", ctor: || Box::new(RuleTrivialBool) },
         RuleSpec { group: "zexteliminate", ctor: || Box::new(RuleZextEliminate) },
         RuleSpec { group: "slesstoless", ctor: || Box::new(RuleSlessToLess) },

@@ -1324,6 +1324,24 @@ impl ScopeLocal {
         Some(self.db.symbol(entry.symbol).get_category())
     }
 
+    /// The category of the Symbol that **contains** a storage location (C++
+    /// `Scope::queryProperties`/`findContainer` semantics, `database.cc:2128`), or
+    /// `None` when no Symbol entry covers the *whole* `[addr, addr+size)` range.
+    ///
+    /// This is the discriminator the body decl block needs that bare `findOverlap`
+    /// is too loose for: a `float8` local merged onto a register that *also* holds
+    /// a narrower `float4` parameter (e.g. `XMM0` holding both the `float4 a` arg
+    /// and a `float8` cast result) overlaps the parameter entry but is **not
+    /// contained** by it (sizes differ), so it is its own `no_category` local and
+    /// must still be declared — exactly the C++ `handleSymbolConflict` outcome
+    /// (`funcdata_varnode.cc:1018`: a size/high conflict spawns a fresh dynamic
+    /// Symbol rather than reusing the parameter).
+    pub fn containing_category_for_varnode(&self, addr: &Address, size: int4) -> Option<int4> {
+        let eref = self.db.find_container(self.scope, addr, size, &Address::default())?;
+        let entry = self.db.entry(self.scope, eref);
+        Some(self.db.symbol(entry.symbol).get_category())
+    }
+
     /// Information about the Symbol overlapping a storage location, for
     /// `Funcdata::syncVarnodesWithSymbols` (C++ `lm->findOverlap` + `getAllFlags`/
     /// `getSize`/`getSizedType`/`getSymbol`).

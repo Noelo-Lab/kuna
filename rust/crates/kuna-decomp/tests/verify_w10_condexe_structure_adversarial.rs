@@ -460,10 +460,14 @@ fn at4_condition_render_is_engine_driven_per_function() {
     // Each function carries ITS OWN tokens; no cross-leak between functions.
     assert!(!nan.contains("ptr[1] == 0x3c"), "nan must not leak ccmp's clause:\n{nan}");
     assert!(!ccmp.contains("NAN("), "ccmp must not leak nan's `NAN(` token:\n{ccmp}");
-    // nan renders its own `NAN(..) || NAN(..)` (a DATA-FLOW BOOL_OR expression in
-    // this engine, not a control-flow BlockCondition — see AT1).  Either way it
-    // is engine-derived per function, never a printer string keyed on a name.
-    assert!(nan.contains("||") && nan.contains("NAN("), "nan must render its own `NAN() || NAN()`:\n{nan}");
+    // nan renders its own `NAN(a0)` token (engine-derived per function, never a
+    // printer string keyed on a name).  Earlier this rendered as the un-folded
+    // `NAN(..) || NAN(..)` self-BOOL_OR; now that RuleTrivialArith is correctly
+    // active (its C++ group "analysis" is in the decompile grouplist), the
+    // `V || V => V` fold collapses it to the single `NAN(a0)` the C++ oracle
+    // emits (`read_nan(NAN(a0));`, nan.xml "NaN operations #1").  The anti-leak
+    // discrimination is unchanged; the witness token is `NAN(`.
+    assert!(nan.contains("NAN("), "nan must render its own `NAN(` token:\n{nan}");
 
     // Anti-special-casing on the new code path: neither function's render is
     // produced by a function-name/address branch in the emitter — the diff

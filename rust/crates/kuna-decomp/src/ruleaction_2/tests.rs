@@ -933,7 +933,10 @@ fn specs_are_in_cpp_definition_order() {
             "shiftcompare",
             "lessequal",
             "lessnotequal",
-            "trivialarith",
+            // RuleTrivialArith's C++ constructor group is "analysis"
+            // (coreaction.cc:5786), not the rule name -- corrected so the rule
+            // survives the real "decompile"/"jumptable" grouplists.
+            "analysis",
             "trivialbool",
             "zexteliminate",
             "slesstoless",
@@ -954,6 +957,39 @@ fn clone_rule_filters_by_group() {
         assert!(rule.clone_rule(&yes).is_some(), "{} should clone in its group", spec.group);
         assert!(rule.clone_rule(&no).is_none(), "{} should not clone out of group", spec.group);
     }
+}
+
+#[test]
+fn trivialarith_survives_the_real_grouplists_via_its_analysis_group() {
+    // Regression pin for the `clone_rule` group-gating fix.  C++
+    // `RuleTrivialArith::clone` gates on `getGroup()` == "analysis"
+    // (coreaction.cc:5786 / ruleaction.hh:493).  The previous Rust port gated on
+    // the literal rule NAME "trivialarith", which is NEVER in any root
+    // grouplist, so the rule was silently dropped from the active pipeline (the
+    // self-`INT_AND`/`INT_XOR` folds never ran -- the loaded byte in a `*ptr`
+    // signed-compare cluster could not type `char`, and `Promotion on compare
+    // #2` regressed).  The fix gates on the group, so the rule must:
+    //   (a) survive the "decompile" grouplist (lists "analysis"),
+    //   (b) survive the "jumptable" grouplist (lists "analysis"),
+    //   (c) NOT be clonable by the bare rule name (the old, wrong gate).
+    let rule = RuleTrivialArith;
+    let decompile = ActionGroupList::from_names([
+        "base", "analysis", "canonicalcompare", "typerecovery", "deadcode",
+    ]);
+    let jumptable = ActionGroupList::from_names(["base", "analysis", "deadcode"]);
+    let by_name = ActionGroupList::from_names(["trivialarith"]);
+    assert!(
+        rule.clone_rule(&decompile).is_some(),
+        "trivialarith must survive the decompile grouplist (it lists \"analysis\")"
+    );
+    assert!(
+        rule.clone_rule(&jumptable).is_some(),
+        "trivialarith must survive the jumptable grouplist (it lists \"analysis\")"
+    );
+    assert!(
+        rule.clone_rule(&by_name).is_none(),
+        "the bare rule NAME is not a group -- it must NOT clone the rule (the old bug)"
+    );
 }
 
 #[test]
