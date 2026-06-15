@@ -656,7 +656,12 @@ impl SeqNum {
     pub fn print_raw(&self, s: &mut String) -> KunaResult<()> {
         self.pc.print_raw(s)?;
         s.push(':');
-        s.push_str(&format!("{}", self.uniq));
+        // C++ `operator<<(ostream&,const SeqNum&)`: `sq.pc.printRaw(s); s << ':'
+        // << sq.uniq;`.  `Address::printRaw` (`AddrSpace::printRaw`) leaves the
+        // stream's base in `hex` (it does `s << hex` and never restores `dec`),
+        // so the trailing `uniq` is emitted in hexadecimal.  The matching
+        // SSA-listing token is therefore `<addr>:<uniq-in-hex>`.
+        s.push_str(&format!("{:x}", self.uniq));
         Ok(())
     }
 }

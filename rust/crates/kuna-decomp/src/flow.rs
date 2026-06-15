@@ -223,6 +223,20 @@ pub trait FlowEnvironment {
     fn query_call(&self, _entry: &Address) -> Option<String> {
         None
     }
+
+    /// Does the function at the direct-call `entry` address have its prototype
+    /// marked \e noreturn? (C++ `FlowInfo::queryCall` →
+    /// `fspecs.copyFlowEffects(otherfunc->getFuncProto())` →
+    /// `FuncCallSpecs::isNoReturn()`).
+    ///
+    /// `option noreturn <name>` (`OptionNoReturn`) sets this flag on the named
+    /// FunctionSymbol's prototype; `checkForFlowModification` plants an
+    /// `artificialHalt(noreturn)` after the call op when it is true, so flow does
+    /// not run off the end of the function into unmapped bytes.  The W3 shell has
+    /// no symbol table and reports `false`.
+    fn query_call_no_return(&self, _entry: &Address) -> bool {
+        false
+    }
 }
 
 /// Allocate a process-unique \e fspec handle (the offset of the \e fspec
@@ -1489,11 +1503,43 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             .and_then(|vn| self.data.vbank().get(vn))
             .map(|v| v.get_addr().clone())
             .unwrap_or_default();
-        self.build_call_specs(op, entry, false)?;
+        self.build_call_specs(op, entry.clone(), false)?;
         self.qlst_count += 1;
-        // SEAM(W4): checkForFlowModification (no-return halt planting) — the
-        // common returning case reports `false`.
+        // C++ `checkForFlowModification(*res)`: the no-return half plants an
+        // `artificialHalt(noreturn)` after the call op so flow does not run off
+        // the end of the function (into unmapped bytes).  The inline half
+        // (`fspecs.isInline()`) remains a W4 seam.  `queryCall` copies the
+        // callee's `isNoReturn()` flow effect; here the noreturn fact is queried
+        // straight from the symbol table by the (resolved direct) entry address.
+        if !entry.is_invalid() && self.env.query_call_no_return(&entry) {
+            self.check_for_flow_modification_noreturn(op)?;
+            return Ok(true);
+        }
         Ok(false)
+    }
+
+    /// The no-return arm of C++ `FlowInfo::checkForFlowModification`
+    /// (`flow.cc:654`): plant an artificial halt (`PcodeOp::noreturn`) in the dead
+    /// list immediately after the call op, so the per-instruction processor backs
+    /// up one op and picks up the halt instead of following flow off the end.
+    fn check_for_flow_modification_noreturn(&mut self, op: OpId) -> KunaResult<()> {
+        let addr = self
+            .data
+            .obank()
+            .get(op)
+            .expect("checkForFlowModification: stale call op")
+            .get_addr()
+            .clone();
+        let haltop = self.artificial_halt(&addr, pcodeop_flags::noreturn)?;
+        // data.opDeadInsertAfter(haltop, op).
+        self.data.op_dead_insert_after(haltop, op);
+        // C++ also calls `data.warning("Subroutine does not return", op->getAddr())`
+        // (a Comment::warning), which renders the cosmetic `/* WARNING: Subroutine
+        // does not return */` line.  The warning-comment rendering through the
+        // CommentDatabase is a separate (printc) seam; the flow-halting effect —
+        // the load-bearing behavior that keeps decoding from running into unmapped
+        // bytes — is reproduced here.
+        Ok(())
     }
 
     /// Set up the FuncCallSpecs for a new CALLIND site (C++ `setupCallindSpecs`,

@@ -173,6 +173,33 @@ impl IfaceDecompData {
         self.fd = None;
     }
 
+    /// C++ `IfaceDecompData::readSymbol(name,res)` (`ifacedecomp.cc`): resolve a
+    /// symbol by name, starting in the current function's local scope (or the
+    /// global scope when no function is selected).  Returns the matching symbol
+    /// ids in that scope.
+    ///
+    /// The C++ `resolveScopeFromSymbolName` namespace walk handles `a::b` paths;
+    /// the console corpus uses bare names, so the local (function) scope is
+    /// queried directly with the name.  A namespaced name (containing `::`)
+    /// reaches the unported namespace resolver and errs.
+    pub fn read_symbol(
+        &self,
+        name: &str,
+    ) -> Result<Vec<kuna_decomp::database::SymbolId>, IfaceError> {
+        if name.contains("::") {
+            return Err(IfaceError::parse(format!("Bad namespace for symbol: {name}")));
+        }
+        match &self.fd {
+            Some(fd) => match fd.get_scope_local() {
+                Some(lm) => Ok(lm.query_by_name(name)),
+                None => Ok(Vec::new()),
+            },
+            None => Err(IfaceError::execution(
+                "global symbol scope lookup not yet wired (no function selected)",
+            )),
+        }
+    }
+
     /// C++ `IfaceDecompData::clearArchitecture()`.
     pub fn clear_architecture(&mut self) {
         self.conf = None;
@@ -933,14 +960,50 @@ decomp_command!(
 );
 
 decomp_command!(
-    /// C++ `IfcMapParam`: `map param #i <addr> <typedeclaration>`.
+    /// C++ `IfcMapParam`: `map param <i> <addr> <typedeclaration>`
+    /// (ifacedecomp.cc:613).  Lock the storage and data-type of the `i`-th input
+    /// parameter on the current function's prototype.
     IfcMapParam,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        if dcp_mut(status)?.fd.is_none() {
             return Err(IfaceError::execution("No function loaded"));
         }
-        Err(engine_unavailable("parse_machaddr + parse_type + FuncProto::setParam"))
+        use kuna_decomp::fspec::{parameter_pieces_flags, ParameterPieces};
+        // C++ `s >> dec >> i`: the parameter position.
+        let i = s.read_int();
+        let dcp = dcp_mut(status)?;
+        let prog = dcp
+            .conf
+            .as_mut()
+            .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        // C++: piece.addr = parse_machaddr(s,size,*dcp->conf->types).
+        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        s.skip_ws();
+        // C++: piece.type = parse_type(s,name,dcp->conf).
+        let (addr_size, word_size) = prog.arch().data_org();
+        let org = crate::grammar::DataOrg { addr_size, word_size };
+        let typetext = s.rest();
+        let (ct, name) = crate::grammar::parse_type(&typetext, prog.arch().types(), org)
+            .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
+        // C++: piece.flags = ParameterPieces::typelock | ParameterPieces::namelock.
+        let piece = ParameterPieces {
+            addr,
+            type_: Some(ct),
+            flags: parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::NAMELOCK,
+        };
+        // The C++ `FuncProto::store` is always present (set by `setScope` at
+        // Funcdata construction); the merged-tree load path leaves it null, so
+        // attach the stand-alone internal store before writing (as IfcMapReturn).
+        let void_type = prog
+            .arch()
+            .types()
+            .get_type_void()
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        // C++: dcp->fd->getFuncProto().setParam(i, name, piece).
+        let fd = dcp.fd.as_mut().expect("fd checked Some above");
+        fd.get_func_proto_mut().attach_internal_store(void_type);
+        fd.get_func_proto_mut().set_param(i, &name, &piece);
+        Ok(())
     }
 );
 
@@ -1115,20 +1178,51 @@ decomp_command!(
 );
 
 decomp_command!(
-    /// C++ `IfcMapconvert`: `map convert <format> <value> <addr> <hash>`.
+    /// C++ `IfcMapconvert`: `map convert <format> <value> <addr> <hash>`
+    /// (ifacedecomp.cc:735).  Add an EquateSymbol forcing the display format of
+    /// the constant `value` (parsed as hex) at the dynamic location.
     IfcMapconvert,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
+        use kuna_decomp::database::symbol_dispflags;
+        if dcp_mut(status)?.fd.is_none() {
             return Err(IfaceError::execution("No function loaded"));
         }
+        // C++ `s >> name`: the format token.
         let name = s.read_token();
-        // C++ matches hex|dec|bin|oct|char, else throws "Bad convert format".
-        match name.as_str() {
-            "hex" | "dec" | "bin" | "oct" | "char" => {}
+        let format = match name.as_str() {
+            "hex" => symbol_dispflags::FORCE_HEX,
+            "dec" => symbol_dispflags::FORCE_DEC,
+            "bin" => symbol_dispflags::FORCE_BIN,
+            "oct" => symbol_dispflags::FORCE_OCT,
+            "char" => symbol_dispflags::FORCE_CHAR,
             _ => return Err(IfaceError::parse("Bad convert format")),
-        }
-        Err(engine_unavailable("parse_machaddr + Scope::addEquateSymbol"))
+        };
+        // C++ `s >> ws >> hex >> value`: the constant value, always hexadecimal.
+        let value = parse_hex_u64(s).map_err(IfaceError::parse)?;
+        let dcp = dcp_mut(status)?;
+        let prog = dcp
+            .conf
+            .as_mut()
+            .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        // C++ `parse_machaddr(s,size,*dcp->conf->types)`: the pc address of the hash.
+        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        // C++ `s >> hex >> hash`: the dynamic-hash value.
+        let hash = parse_hex_u64(s).map_err(IfaceError::parse)?;
+        // C++ EquateSymbol type is getBase(1,TYPE_UNKNOWN).
+        let base1 = prog
+            .arch()
+            .types()
+            .get_base(1, kuna_decomp::dtype::type_metatype::TYPE_UNKNOWN)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        // C++: dcp->fd->getScopeLocal()->addEquateSymbol("",format,value,addr,hash).
+        let fd = dcp.fd.as_mut().expect("fd checked Some above");
+        let scope_local = fd.get_scope_local_mut().ok_or_else(|| {
+            IfaceError::execution("Function has no local scope (no stack space)")
+        })?;
+        scope_local
+            .add_equate_symbol("", format, value, &addr, hash, base1)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        Ok(())
     }
 );
 
@@ -1427,11 +1521,27 @@ decomp_command!(
     /// C++ `IfcPrintRaw`: `print raw` — dump the function's raw p-code.
     IfcPrintRaw,
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
-            return Err(IfaceError::execution("No function selected"));
-        }
-        Err(engine_unavailable("Funcdata::printRaw"))
+        // C++: dcp->fd->printRaw(*status->fileoptr).  Render the SSA listing
+        // against the real Architecture (register-name resolution + default
+        // size) and write it to the bulk stream, mirroring `print C`.
+        let raw = {
+            let dcp = dcp_mut(status)?;
+            if dcp.fd.is_none() {
+                return Err(IfaceError::execution("No function selected"));
+            }
+            let fd = dcp.fd.take().expect("fd checked non-None above");
+            let res = {
+                let prog = dcp
+                    .conf
+                    .as_ref()
+                    .ok_or_else(|| IfaceError::execution("No load image present"))?;
+                kuna_decomp::funcdata_printraw::print_raw(prog.arch(), &fd)
+            };
+            dcp.fd = Some(fd);
+            res.map_err(IfaceError::execution)?
+        };
+        status.file_out(&raw);
+        Ok(())
     }
 );
 
@@ -1687,10 +1797,11 @@ decomp_command!(
 // --- rename / remove / retype / isolate (ifacedecomp.cc:1332-1443) ---------
 
 decomp_command!(
-    /// C++ `IfcRename`: `rename <oldname> <newname>`.
+    /// C++ `IfcRename`: `rename <oldname> <newname>` (ifacedecomp.cc:1332).
     IfcRename,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let _dcp = dcp_mut(status)?;
+        use kuna_decomp::database::symbol_category;
+        use kuna_decomp::varnode::varnode_flags;
         s.skip_ws();
         let oldname = s.read_token();
         s.skip_ws();
@@ -1702,7 +1813,34 @@ decomp_command!(
         if newname.is_empty() {
             return Err(IfaceError::parse("Missing new name"));
         }
-        Err(engine_unavailable("IfaceDecompData::readSymbol + Scope::renameSymbol"))
+        let dcp = dcp_mut(status)?;
+        // C++: dcp->readSymbol(oldname,symList).
+        let sym_list = dcp.read_symbol(&oldname)?;
+        if sym_list.is_empty() {
+            return Err(IfaceError::execution(format!("No symbol named: {oldname}")));
+        }
+        if sym_list.len() > 1 {
+            return Err(IfaceError::execution(format!("More than one symbol named: {oldname}")));
+        }
+        let sym = sym_list[0];
+        let fd = dcp.fd.as_mut().expect("read_symbol succeeded => fd present");
+        let lm = fd
+            .get_scope_local_mut()
+            .ok_or_else(|| IfaceError::execution("Function has no local scope"))?;
+        // C++: if (sym->getCategory() == function_parameter)
+        //        dcp->fd->getFuncProto().setInputLock(true);
+        if lm.symbol_category(sym) == symbol_category::FUNCTION_PARAMETER {
+            fd.get_func_proto_mut().set_input_lock(true);
+            let lm = fd.get_scope_local_mut().expect("local scope present");
+            lm.rename_symbol(sym, &newname)
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+        } else {
+            lm.rename_symbol(sym, &newname)
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+        }
+        Ok(())
     }
 );
 
@@ -1721,17 +1859,68 @@ decomp_command!(
 );
 
 decomp_command!(
-    /// C++ `IfcRetype`: `retype <symbolname> <typedeclaration>`.
+    /// C++ `IfcRetype`: `retype <symbolname> <typedeclaration>`
+    /// (ifacedecomp.cc:1390).  Change the data-type (and optionally the name) of
+    /// a symbol resolved by name in the current function's scope.
     IfcRetype,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let _dcp = dcp_mut(status)?;
+        use kuna_decomp::database::symbol_category;
+        use kuna_decomp::varnode::varnode_flags;
         s.skip_ws();
         let name = s.read_token();
         if name.is_empty() {
             return Err(IfaceError::parse("Must specify name of symbol"));
         }
-        // C++ then parse_type(s,newname,conf) before resolving the symbol.
-        Err(engine_unavailable("parse_type + Scope::retypeSymbol"))
+        // C++: ct = parse_type(s,newname,dcp->conf).
+        let (ct, newname) = {
+            let dcp = dcp_mut(status)?;
+            let prog = dcp
+                .conf
+                .as_ref()
+                .ok_or_else(|| IfaceError::execution("No load image present"))?;
+            s.skip_ws();
+            let (addr_size, word_size) = prog.arch().data_org();
+            let org = crate::grammar::DataOrg { addr_size, word_size };
+            let typetext = s.rest();
+            crate::grammar::parse_type(&typetext, prog.arch().types(), org)
+                .map_err(|e| IfaceError::parse(e.explain().to_string()))?
+        };
+        let dcp = dcp_mut(status)?;
+        // C++: dcp->readSymbol(name,symList).
+        let sym_list = dcp.read_symbol(&name)?;
+        if sym_list.is_empty() {
+            return Err(IfaceError::execution(format!("No symbol named: {name}")));
+        }
+        if sym_list.len() > 1 {
+            return Err(IfaceError::execution(format!("More than one symbol named : {name}")));
+        }
+        let sym = sym_list[0];
+        let fd = dcp.fd.as_mut().expect("read_symbol succeeded => fd present");
+        // C++: if (sym->getCategory()==function_parameter)
+        //        dcp->fd->getFuncProto().setInputLock(true);
+        let is_param = fd
+            .get_scope_local()
+            .map(|lm| lm.symbol_category(sym) == symbol_category::FUNCTION_PARAMETER)
+            .unwrap_or(false);
+        if is_param {
+            fd.get_func_proto_mut().set_input_lock(true);
+        }
+        let lm = fd
+            .get_scope_local_mut()
+            .ok_or_else(|| IfaceError::execution("Function has no local scope"))?;
+        // C++: sym->getScope()->retypeSymbol(sym,ct);
+        //      sym->getScope()->setAttribute(sym,Varnode::typelock);
+        lm.retype_symbol(sym, ct).map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        lm.set_attribute(sym, varnode_flags::typelock);
+        // C++: if ((newname.size()!=0)&&(newname != name)) {
+        //        sym->getScope()->renameSymbol(sym,newname);
+        //        sym->getScope()->setAttribute(sym,Varnode::namelock); }
+        if !newname.is_empty() && newname != name {
+            lm.rename_symbol(sym, &newname)
+                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            lm.set_attribute(sym, varnode_flags::namelock);
+        }
+        Ok(())
     }
 );
 
@@ -1888,14 +2077,44 @@ decomp_command!(
 );
 
 decomp_command!(
-    /// C++ `IfcForceDatatypeFormat`: `force datatype <datatype> <format>`.
+    /// C++ `IfcForceDatatypeFormat`: `force datatype <datatype> <format>`
+    /// (ifacedecomp.cc:1794).  Force the integer display format of a named type.
     IfcForceDatatypeFormat,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let _dcp = dcp_mut(status)?;
         s.skip_ws();
-        let _type_name = s.read_token();
-        // C++ looks the type up in conf->types ("Unknown data-type: <name>").
-        Err(engine_unavailable("TypeFactory::findByName + setDisplayFormat"))
+        let type_name = s.read_token();
+        s.skip_ws();
+        let format_string = s.read_token();
+        // C++ `Datatype::encodeIntegerFormat`: hex|dec|oct|bin|char -> 1..5.
+        let format: kuna_base::types::uint4 = match format_string.as_str() {
+            "hex" => 1,
+            "dec" => 2,
+            "oct" => 3,
+            "bin" => 4,
+            "char" => 5,
+            _ => {
+                return Err(IfaceError::execution(format!(
+                    "Unrecognized integer format: {format_string}"
+                )))
+            }
+        };
+        let dcp = dcp_mut(status)?;
+        let prog = dcp
+            .conf
+            .as_mut()
+            .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        let types = prog.arch().types();
+        // C++ `dt = dcp->conf->types->findByName(typeName)`.
+        let dt = types
+            .find_by_name(&type_name)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?
+            .ok_or_else(|| IfaceError::execution(format!("Unknown data-type: {type_name}")))?;
+        // C++ `dcp->conf->types->setDisplayFormat(dt, format)`.
+        types
+            .set_display_format(&dt, format)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        status.out("Successfully forced data-type display\n");
+        Ok(())
     }
 );
 

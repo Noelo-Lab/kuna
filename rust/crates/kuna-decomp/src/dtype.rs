@@ -3646,6 +3646,12 @@ pub trait TypeFactory {
     fn set_name(&self, _ct: &Rc<Datatype>, _n: &str) -> KunaResult<Rc<Datatype>> {
         Err(KunaError::lowlevel("TypeFactory::setName not supported by this factory"))
     }
+    /// Force the integer display format of an interned data-type (C++
+    /// `TypeFactory::setDisplayFormat` → `Datatype::setDisplayFormat`,
+    /// type.cc:201).  Returns the re-interned type carrying the new format.
+    fn set_display_format(&self, _ct: &Rc<Datatype>, _format: uint4) -> KunaResult<Rc<Datatype>> {
+        Err(KunaError::lowlevel("TypeFactory::setDisplayFormat not supported by this factory"))
+    }
     /// Assign fields to an incomplete struct (C++ `assignRawFields(TypeStruct*)`).
     fn assign_raw_fields_struct(
         &self,
@@ -4099,6 +4105,25 @@ impl TypeFactoryImpl {
         }
         let newrc = Rc::new(newct);
         self.insert(Rc::clone(&newrc))?; // tree.insert + nametree.insert
+        Ok(newrc)
+    }
+
+    /// C++ `TypeFactory::setDisplayFormat(ct,format)` (type.cc) → `ct->setDisplayFormat`.
+    /// The interned `Datatype` is immutable (shared `Rc`), so this mirrors
+    /// [`set_name_impl`]: erase the interned instance, clone-with-the-new-format,
+    /// and re-intern.  Subsequent `findByName`/`map addr` look-ups resolve the
+    /// updated type, exactly as the C++ in-place mutation makes the next lookup
+    /// see the new `dispflags`.
+    fn set_display_format_impl(
+        &self,
+        ct: &Rc<Datatype>,
+        format: uint4,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.erase_interned(ct, ct.id != 0);
+        let mut newct = (**ct).clone();
+        newct.set_display_format(format);
+        let newrc = Rc::new(newct);
+        self.insert(Rc::clone(&newrc))?;
         Ok(newrc)
     }
 
@@ -5328,6 +5353,9 @@ impl TypeFactory for TypeFactoryImpl {
     }
     fn set_name(&self, ct: &Rc<Datatype>, n: &str) -> KunaResult<Rc<Datatype>> {
         self.set_name_impl(ct, n)
+    }
+    fn set_display_format(&self, ct: &Rc<Datatype>, format: uint4) -> KunaResult<Rc<Datatype>> {
+        self.set_display_format_impl(ct, format)
     }
     fn assign_raw_fields_struct(
         &self,

@@ -28,6 +28,7 @@ pub mod funcdata_block;
 pub mod funcdata_callsite;
 pub mod funcdata_merge;
 pub mod funcdata_op;
+pub mod funcdata_printraw;
 pub mod funcdata_spacebase;
 pub mod funcdata_varnode;
 pub mod flow;
