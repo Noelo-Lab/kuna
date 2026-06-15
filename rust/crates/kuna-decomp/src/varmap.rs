@@ -1026,6 +1026,34 @@ impl ScopeLocal {
         self.db.add_code_label(self.scope, addr, name, lab_type)
     }
 
+    /// C++ `Scope::addDynamicSymbol` reached via
+    /// `getScopeLocal()->addDynamicSymbol` (`IfcMaphash` fd-local form,
+    /// `ifacedecomp.cc:603`).  A Symbol attached to a dynamic hash + code address.
+    pub fn add_dynamic_symbol(
+        &mut self,
+        name: &str,
+        ct: Rc<Datatype>,
+        caddr: &Address,
+        hash: uint8,
+    ) -> KunaResult<crate::database::SymbolId> {
+        self.db.add_dynamic_symbol(self.scope, name, ct, caddr, hash)
+    }
+
+    /// C++ `Scope::addUnionFacetSymbol` reached via
+    /// `getScopeLocal()->addUnionFacetSymbol` (`IfcMapunionfacet` fd-local form,
+    /// `ifacedecomp.cc:797`).  Forces a field interpretation of a union-typed
+    /// Varnode at a specific PcodeOp identified by dynamic hash.
+    pub fn add_union_facet_symbol(
+        &mut self,
+        name: &str,
+        dt: Rc<Datatype>,
+        field_num: int4,
+        addr: &Address,
+        hash: uint8,
+    ) -> KunaResult<crate::database::SymbolId> {
+        self.db.add_union_facet_symbol(self.scope, name, dt, field_num, addr, hash)
+    }
+
     /// C++ `ScopeInternal::setAttribute` reached via the `map` commands
     /// (`sym->getScope()->setAttribute(sym, namelock|typelock)`).
     pub fn set_attribute(&mut self, sym: crate::database::SymbolId, attr: uint4) {

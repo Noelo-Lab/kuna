@@ -102,6 +102,16 @@ fn opflags_for(opc: OpCode) -> u32 {
         | OpCode::CPUI_SUBPIECE => binary,
         // TypeOpIntZext / IntSext: unary
         OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => unary,
+        // TypeOpIntXor / IntAnd / IntOr: binary | commutative (typeop.cc:1410/1443/1476)
+        OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_AND | OpCode::CPUI_INT_OR => {
+            binary | commutative
+        }
+        // TypeOpIntNegate / Int2Comp: unary (typeop.cc:1396/1382)
+        OpCode::CPUI_INT_NEGATE | OpCode::CPUI_INT_2COMP => unary,
+        // TypeOpIntLeft / IntRight: binary (typeop.cc:1504/1529)
+        OpCode::CPUI_INT_LEFT | OpCode::CPUI_INT_RIGHT => binary,
+        // TypeOpIntLess: binary | booloutput (typeop.cc:1069)
+        OpCode::CPUI_INT_LESS => binary | booloutput,
         other => panic!(
             "ruleaction_3::opflags_for: no W6 opflags entry for {other:?} \
              (a rule produced an opcode not covered by this seam shim)"
