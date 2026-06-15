@@ -1,5 +1,40 @@
 # kuna Progress Log
 
+## Session (2026-06-15b) — rust-port W10 second fleet wave → 182/668 datatest parity
+
+Continued the parallel-fleet method (Workflow tool, all Opus 4.8, isolated worktrees,
+porter→independent-verifier→repair, single-integrator additive-union merge). After the
+first integration (59/549, rust-port cd44e73), ran two more fleets + a switch-chain:
+
+- **Switch-chain** (`rport/w10-jts-chain`, ACCEPT_W_LOSSES): JumpBasic index-range model
+  (emulation-driven over the W10 EmulateFunction foundation) + cloneOp/truncatedFlow +
+  stageJumpTable + install → ActionSwitchNorm + BlockSwitch + emitBlockSwitch. The 6
+  switch files now decode+render; **switchind's switch/case matches the C++ B5 oracle
+  exactly** (real recovered case labels). +14 passing in-branch.
+- **Depth fleet** (4 waves): **div/mod +99** (RuleDivOpt reciprocal-multiply recon +
+  RuleSelectCse + a RuleDoubleShift group-filter bug — all 68 div/mod assertions pass);
+  **console-family** (8/10 LOSS-119 exec-failures closed, +71 applied/+7 passing);
+  **concat-piece** (RulePieceStructure ported faithfully, +0 — W4/W8 seams);
+  **typed-access +0 with the key M3 diagnosis**: the ~150-assertion typed-access cluster
+  (union/bitfield/float-cast) is ALL blocked on `ActionSetCasts::apply` being a no-op
+  stub (coreaction_cleanup.rs) — the W8 cast-insertion keystone. Every typed access
+  renders as raw p-code because no CAST/PTRSUB ops are inserted. Correctly returned ZERO
+  code + a precise keystone diagnosis (LOSS-166) instead of faking passes.
+- Two deep clusters' porters failed honestly (string char-array folding; typed-access
+  first pass) — diagnosed as depth, not transient, and quarantined for dedicated waves.
+
+**Integrated jump (rust-port b2c49b4):** exec-failure files **16 → 2** (only
+displayformat + indproto), assertions APPLIED **549 → 668** (+119), assertions PASSING
+**59 → 182** (+123 — nearly 4× the session-start 48). 3,375 Rust tests green; clippy -D
+clean; boolless/readstruct/condconst_conn still byte-identical; **C++ oracle 207/207 +
+675/675 PARITY OK, byte-untouched.**
+
+**Next M3 levers:** (1) `ActionSetCasts` W8 cast-insertion keystone — the single biggest
+unlock (~150 typed-access assertions: union 33, bitfields 31+31, float/cast ~48);
+(2) input-parameter recovery (register-input → named `a0`; unblocks ModuloAlt + Return
+Value Input Register + float bodies); (3) the last 2 exec-failures (displayformat
+buildDynamicSymbol, indproto getTypeCode-with-prototype); (4) string char-array folding.
+
 ## Session (2026-06-15) — rust-port W10 parallel un-seam fleets → 59/549 datatest parity
 
 Pivoted from serial single-lever un-seams to **orchestrated parallel fleets** (Workflow
