@@ -2573,12 +2573,15 @@ impl PrintC {
                 match op_emit_kind(opc) {
                     OpEmitKind::Binary(tok) => self.op_binary_ir(fd, arch, tok, op),
                     OpEmitKind::Unary(tok) => self.op_unary_ir(fd, arch, tok, op),
-                    OpEmitKind::Func | OpEmitKind::TypeCast | OpEmitKind::Custom => {
-                        // opFunc / opTypeCast / hand-written: the functional and
-                        // cast forms need the type-name + userop machinery (the
-                        // next layer).  Emit the op as a functional `OPC(args)`
-                        // so the statement is still a complete, parseable
-                        // expression rather than silently dropping it.
+                    // opTypeCast (printc.cc:468): the C cast-notation `(type)operand`
+                    // form.  CPUI_CAST / CPUI_FLOAT_FLOAT2FLOAT / CPUI_FLOAT_TRUNC
+                    // all reduce to opTypeCast (printc.hh:332-341) — they render as
+                    // a parenthesized type cast, not a functional `OPC(args)`.
+                    OpEmitKind::TypeCast => self.op_type_cast_ir(fd, arch, op),
+                    OpEmitKind::Func | OpEmitKind::Custom => {
+                        // opFunc / hand-written: the functional `OPC(args)` form.
+                        // (The userop name resolution for true user p-code ops is
+                        // a separate layer.)
                         self.op_func_ir(fd, arch, op);
                     }
                 }
@@ -2682,6 +2685,48 @@ impl PrintC {
         }
         // pushVn(vn0,op,mods).
         if let Some(vn) = vn0 {
+            self.push_vn_ir(fd, arch, vn, op);
+        }
+    }
+
+    /// C++ `PrintC::opTypeCast` (printc.cc:468): the C cast-notation `(type)operand`
+    /// form shared by `opCast` / `opFloatFloat2Float` / `opFloatTrunc`
+    /// (printc.hh:332-341, all `{ opTypeCast(op); }`).  The cast's target type is
+    /// the op's **output** varnode's def-facing high type
+    /// (`op->getOut()->getHighTypeDefFacing()`) — never a hardcoded or opcode-keyed
+    /// type — and the operand is in0:
+    ///
+    /// ```text
+    ///   Datatype *dt = op->getOut()->getHighTypeDefFacing();
+    ///   if (dt->isPointerToArray()) { ... addressof ... }   // SEAM below
+    ///   if (!option_nocasts) { pushOp(&typecast,op); pushType(dt); }
+    ///   pushVn(op->getIn(0),op,mods);
+    /// ```
+    ///
+    /// With `option_nocasts` the cast is suppressed and only the operand prints
+    /// (the underlying value flows through, parenthesized by precedence).
+    ///
+    /// The `isPointerToArray()` / `checkAddressOfCast` arm — which renders a
+    /// pointer-to-array cast as an address-of `&sym` instead of `(T(*)[n])` — is a
+    /// documented seam: it needs the input's read-facing high type and the
+    /// `TypePointer`/`TypeArray` element-type walk (a separate layer), and never
+    /// fires for the scalar `CPUI_CAST` / float-conversion casts this routes
+    /// (whose output is a scalar `floatN`/`intN`, not a pointer-to-array).  When
+    /// the upstream cast-strategy/array layer lands it slots in here unchanged.
+    /// // SEAM(printc opTypeCast pointer-to-array address-of arm)
+    fn op_type_cast_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if !self.options.nocasts {
+            // pushOp(&typecast,op); pushType(op->getOut()->getHighTypeDefFacing()).
+            self.push_op(&tokens::TYPECAST, Some(op_key(op)));
+            let outvn = fd.obank().get(op).and_then(|o| o.get_out());
+            if let Some(out) = outvn {
+                if let Some(v) = fd.vbank().get(out) {
+                    self.push_cast_type(v.get_type_def_facing());
+                }
+            }
+        }
+        // pushVn(op->getIn(0),op,mods).
+        if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
             self.push_vn_ir(fd, arch, vn, op);
         }
     }

@@ -491,10 +491,34 @@ fn w10_callsite_dupptr_direct_call_arg_no_raw_op_form() {
     let isc = calls.iter().find(|l| l.contains("100684(")).cloned();
     assert!(isc.is_some(), "expected the initstruct @100684 call; calls={calls:?}");
     let isc = isc.unwrap();
-    let inner = &isc[isc.find("100684(").unwrap() + "100684(".len()..];
-    let inner = inner.trim_start_matches('(');
-    let inner = &inner[..inner.find(')').unwrap_or(inner.len())];
-    let inner = inner.trim();
+    // Extract the call's argument list by *balanced*-paren matching from the
+    // opening `100684(` to its matching close.  A naive "first `)`" would stop
+    // inside a now-faithful C cast notation — the arg renders as
+    // `(int8)RSP + <const>` since w10-printc-cast-render, so the leading `(int8)`
+    // cast carries its own parentheses (printc `opTypeCast`).  Comma-splitting
+    // the balanced body counts top-level args only (a cast's `,`-free body never
+    // perturbs the count here).
+    let arglist = {
+        let start = isc.find("100684(").unwrap() + "100684(".len();
+        let rest = &isc[start..];
+        let mut depth = 1i32;
+        let mut end = rest.len();
+        for (i, c) in rest.char_indices() {
+            match c {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        &rest[..end]
+    };
+    let inner = arglist.trim();
     assert!(!inner.is_empty() && !inner.contains(','), "initstruct should recover exactly 1 arg; got `{inner}`");
     assert_ne!(inner, "RDI", "initstruct arg must resolve to the data-flow value, not the raw register RDI; got `{inner}`");
     assert!(
