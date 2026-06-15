@@ -1,5 +1,20 @@
 # kuna Progress Log
 
+## Session (2026-06-15d) — rust-port W10 → 242/672, only 1 exec-failure left
+
+Continued the verified-wave grind. Bitfield subsystem (2 waves: BitFieldPull/Insert +
+6 rules + TypeStruct::findMatchingBitField + ZPULL/SPULL/INSERT + expression + printc
+pushBitfield, then RuleInsertAbsorb/PullAbsorb) -> Bitfields 18/62 (LE `increment`
+byte-identical). **Symbol/global-naming consolidation (+20):** names mapped globals
+(dat_->globalfree/glob1), folds in the held global-persist branch, flips Conditional
+Constant #6-9 + Conditional Multi #1-4 + Display Format (displayformat.xml now FULLY
+byte-identical 4/4, drops out of exec-failures) + Global cross. **rust-port b5277eb =
+672 applied / 242 passing / 1 exec-failure (only indproto).** 3,512 Rust tests green;
+clippy -D clean; boolless/readstruct/condconst_conn byte-identical; B0 list-action
+unchanged; **C++ oracle 207/207 + 675/675 PARITY OK, byte-untouched.** IN FLIGHT: float
+cluster (~48; fillinReadOnly readonly-constant fold + float-lane getNameRepresentative —
+precisely mapped, casts already byte-exact), SBORROW signed-compare normalization.
+
 ## Session (2026-06-15c) — rust-port W10 type-plane chain + M4 reached → 204/668
 
 Drove the type-plane keystone CHAIN to completion via orchestrated waves (all Opus,
