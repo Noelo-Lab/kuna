@@ -133,6 +133,12 @@ fn assert_no_exec_failure(file_name: &str, out: &str) {
 /// `#12`(`...: collatz1`) proves `injectPcode`'s in-line arm wove each *distinct
 /// resolved-callee-name* header into the caller — not a hardcoded literal (three
 /// different functions, three different names).
+///
+/// w10-transformmanager: closing `TransformManager::apply` lets `SubvariableFlow`
+/// materialize, which cleans the SUB/ZEXT extension wrappers in the inlined bodies
+/// and newly passes the three *body* assertions #1 (`return a + 100`), #6 (`val =
+/// val / 2`), and #7 (`val = val * 3 + 1`).  So this file went 3/12 → 6/12; the
+/// three header assertions are still part of that total and are asserted here.
 #[test]
 fn w10_inline_body_header_warnings_are_real_oracle_parity() {
     let Some(out) = run_one("inline.xml") else { return };
@@ -146,11 +152,19 @@ fn w10_inline_body_header_warnings_are_real_oracle_parity() {
              regex-matched the rendered body) in:\n{out}"
         );
     }
-    // Exactly the three header assertions pass (3/12) — the baseline was 0/12.
+    // The three SUB/ZEXT-cleanup body assertions now also pass (w10).
+    for n in ["Inlining #1", "Inlining #6", "Inlining #7"] {
+        assert!(
+            out.contains(&format!("Success -- {n}")),
+            "expected `Success -- {n}` (SubvariableFlow cleaned the inlined body) \
+             in:\n{out}"
+        );
+    }
+    // 6/12 now pass (baseline was 0/12, pre-w10 was 3/12 header-only).
     assert!(
-        out.contains("Total passing tests = 3"),
-        "inline.xml must newly pass exactly its 3 header assertions (baseline \
-         0/12):\n{out}"
+        out.contains("Total passing tests = 6"),
+        "inline.xml must pass its 3 header + 3 body assertions (6/12); baseline \
+         0/12, pre-w10 3/12:\n{out}"
     );
 }
 

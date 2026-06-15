@@ -41,19 +41,17 @@
 //! never remove or reorder elements during graph construction, so an index is as
 //! stable as the C++ pointer it replaces.
 //!
-//! # Seams (W6 / W3-varnode)
+//! # Materialization (W10)
 //!
 //! [`TransformManager::apply`] materializes through the `Funcdata` factory
-//! surface.  A handful of those factories are not yet filled by the W3/W4/W6
-//! waves — `newVarnodeOut`/`newUniqueOut` (the `xref` split-borrow,
-//! `funcdata_varnode`'s seam), `setInputVarnode` (same xref path),
-//! `transferVarnodeProperties` (`funcdata_varnode`), `markIndirectCreation`
-//! (`funcdata`), and `opSetOpcode(OpCode)` (needs `glb->inst[opc]`, the W6
-//! `TypeOp` table).  Where the materialization path reaches one of these it is
-//! marked `// SEAM(...)` and the call returns a structured [`KunaError`]; the
-//! placeholder-graph construction and the visit-order logic — the parts that
-//! determine downstream allocation order — are ported in full and are what the
-//! tests exercise.
+//! surface, all of which is now present: `newVarnodeOut`/`newUniqueOut` (the
+//! `xref` split-borrow), `setInputVarnode`, `transferVarnodeProperties`,
+//! `markIndirectCreation`, and `opSetOpcode(OpCode)` (resolved through the W6
+//! `TypeOp` table via [`Funcdata::op_set_opcode_code`]).  The `constant_iop`
+//! placeholder round-trips through [`crate::funcdata_varnode::op_iop_decode`].
+//! The placeholder-graph construction and the visit-order logic — the parts that
+//! determine downstream allocation order — drive the live mutators in exactly the
+//! C++ order, so the materialized IR's create-indices match the oracle.
 
 use std::collections::BTreeMap;
 
@@ -1102,15 +1100,13 @@ impl TransformManager {
     ///   placeInputs();
     /// ```
     ///
-    /// SEAM(W6 / W3-varnode): the materialization sub-phases reach
-    /// `opSetOpcode(OpCode)` (W6 `glb->inst[opc]`), `newVarnodeOut`/`newUniqueOut`
-    /// / `setInputVarnode` (the `funcdata_varnode` xref split-borrow),
-    /// `transferVarnodeProperties` (`funcdata_varnode`), and
-    /// `markIndirectCreation` (`funcdata`).  Those funcdata factories are not yet
-    /// filled; the call sites are transcribed in place and the missing ones return
-    /// a structured error (recorded as a loss).  The placeholder graph, the visit
-    /// order, and every materialization that *can* run on the present funcdata
-    /// surface are ported.
+    /// W10: the materialization sub-phases are now live.  They resolve opcodes via
+    /// [`Funcdata::op_set_opcode_code`] (`glb->inst[opc]` through the W6 `TypeOp`
+    /// table), output Varnodes via `newVarnodeOut`/`newUniqueOut` (the
+    /// `funcdata_varnode` xref split-borrow), inputs via `setInputVarnode`,
+    /// `piece` properties via `transferVarnodeProperties`, the `constant_iop`
+    /// placeholder via [`crate::funcdata_varnode::op_iop_decode`], and indirect
+    /// creation via `markIndirectCreation`.
     pub fn apply(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         let mut input_list: Vec<TVarRef> = Vec::new();
         self.create_ops(fd)?;
@@ -1123,22 +1119,16 @@ impl TransformManager {
 
     /// Handle some special PcodeOp marking (C++
     /// `TransformManager::specialHandling`, transform.cc:654).
-    fn special_handling(&self, _fd: &mut Funcdata, rop: TOpRef) -> KunaResult<()> {
+    fn special_handling(&self, fd: &mut Funcdata, rop: TOpRef) -> KunaResult<()> {
         let special = self.new_ops[rop.0].special;
+        let replacement =
+            self.new_ops[rop.0].replacement.expect("special_handling: op not materialized");
         if (special & top_special::indirect_creation) != 0 {
             // fd->markIndirectCreation(rop.replacement, false);
-            // SEAM(W4): Funcdata::markIndirectCreation not yet ported.
-            return Err(KunaError::lowlevel(
-                "kuna rust port: TransformManager::specialHandling needs \
-                 Funcdata::markIndirectCreation (funcdata, not yet ported)",
-            ));
+            fd.mark_indirect_creation(replacement, false)?;
         } else if (special & top_special::indirect_creation_possible_out) != 0 {
             // fd->markIndirectCreation(rop.replacement, true);
-            // SEAM(W4): Funcdata::markIndirectCreation not yet ported.
-            return Err(KunaError::lowlevel(
-                "kuna rust port: TransformManager::specialHandling needs \
-                 Funcdata::markIndirectCreation (funcdata, not yet ported)",
-            ));
+            fd.mark_indirect_creation(replacement, true)?;
         }
         Ok(())
     }
@@ -1171,20 +1161,42 @@ impl TransformManager {
     /// `TransformOp::createReplacement`, transform.cc:225).
     fn create_op_replacement(&mut self, fd: &mut Funcdata, rop: TOpRef) -> KunaResult<()> {
         let special = self.new_ops[rop.0].special;
+        let opc = self.new_ops[rop.0].opc;
         if (special & top_special::op_preexisting) != 0 {
             // replacement = op;
             let op = self.new_ops[rop.0].op.expect("create_op_replacement: preexisting op is null");
             self.new_ops[rop.0].replacement = Some(op);
             // fd->opSetOpcode(op, opc);
-            // while(input.size()<op->numInput()) fd->opRemoveInput(op,op->numInput()-1);
-            // for(i=0;i<op->numInput();++i) fd->opUnsetInput(op,i);
-            // while(op->numInput()<input.size()) fd->opInsertInput(op,(Varnode*)0,op->numInput()-1);
-            // SEAM(W6): fd->opSetOpcode(op, opc) needs glb->inst[opc] (TypeOp table); the
-            // input-arity reshape that follows likewise cannot run before the opcode is set.
-            Err(KunaError::lowlevel(
-                "kuna rust port: TransformOp::createReplacement (op_preexisting) needs \
-                 Funcdata::opSetOpcode(OpCode) → glb->inst[opc] (W6 TypeOp table)",
-            ))
+            fd.op_set_opcode_code(op, opc);
+            let input_size = self.new_ops[rop.0].input.len() as int4;
+            // while(input.size() < op->numInput()) fd->opRemoveInput(op, op->numInput()-1);
+            loop {
+                let num_input = fd.obank().get(op).expect("create_op_replacement: stale op").num_input();
+                if input_size >= num_input {
+                    break;
+                }
+                fd.op_remove_input(op, num_input - 1);
+            }
+            // for(int4 i=0;i<op->numInput();++i) fd->opUnsetInput(op,i);  // Clear any remaining inputs
+            let num_input = fd.obank().get(op).expect("create_op_replacement: stale op").num_input();
+            for i in 0..num_input {
+                fd.op_unset_input(op, i);
+            }
+            // while(op->numInput() < input.size()) fd->opInsertInput(op, (Varnode *)0, op->numInput()-1);
+            // The inserted slot is null; opSetInput(op,null,slot) is the C++ no-op
+            // form (the slot is filled in placeInputs), so insert the null slot
+            // directly on the bank rather than through opSetInput's non-null surface.
+            loop {
+                let num_input = fd.obank().get(op).expect("create_op_replacement: stale op").num_input();
+                if num_input >= input_size {
+                    break;
+                }
+                fd.obank_mut()
+                    .get_mut(op)
+                    .expect("create_op_replacement: stale op")
+                    .insert_input(num_input - 1);
+            }
+            Ok(())
         } else {
             // replacement = fd->newOp(input.size(), op->getAddr());
             let op = self.new_ops[rop.0].op.expect("create_op_replacement: op is null");
@@ -1193,17 +1205,30 @@ impl TransformManager {
                 fd.obank().get(op).expect("create_op_replacement: stale op").get_addr().clone();
             let replacement = fd.new_op(n, addr);
             self.new_ops[rop.0].replacement = Some(replacement);
-            // fd->opSetOpcode(replacement,opc);
+            // fd->opSetOpcode(replacement, opc);
+            fd.op_set_opcode_code(replacement, opc);
             // if (output != 0) output->createReplacement(fd);
-            // if (follow == 0) { if (opc==MULTIEQUAL) opInsertBegin(replacement,op->getParent());
-            //                    else opInsertBefore(replacement,op); }
-            // SEAM(W6): needs glb->inst[opc] (TypeOp table); the op was created (bumping the
-            // create-index, preserving allocation order) but cannot be given its opcode or
-            // inserted into control flow until W6.
-            Err(KunaError::lowlevel(
-                "kuna rust port: TransformOp::createReplacement needs \
-                 Funcdata::opSetOpcode(OpCode) → glb->inst[opc] (W6 TypeOp table)",
-            ))
+            let output = self.new_ops[rop.0].output;
+            if let Some(rout) = output {
+                self.create_var_replacement(fd, rout)?;
+            }
+            // if (follow == 0) { ...insert immediately... }
+            let follow = self.new_ops[rop.0].follow;
+            if follow.is_none() {
+                // Can be inserted immediately
+                if opc == OpCode::CPUI_MULTIEQUAL {
+                    let parent = fd
+                        .obank()
+                        .get(op)
+                        .expect("create_op_replacement: stale op")
+                        .get_parent()
+                        .expect("create_op_replacement: op has no parent");
+                    fd.op_insert_begin(replacement, parent);
+                } else {
+                    fd.op_insert_before(replacement, op);
+                }
+            }
+            Ok(())
         }
     }
 
@@ -1309,19 +1334,22 @@ impl TransformManager {
             tvar_type::normal_temp | tvar_type::piece_temp => {
                 let byte_size = self.var(rvn).byte_size;
                 let def = self.var(rvn).def;
-                if def.is_none() {
-                    // replacement = fd->newUnique(byteSize);
-                    let new_vn = fd.new_unique(byte_size, None);
-                    self.var_mut(rvn).replacement = Some(new_vn);
-                    Ok(())
-                } else {
-                    // replacement = fd->newUniqueOut(byteSize,def->replacement);
-                    // SEAM(W3-varnode): Funcdata::newUniqueOut (xref split-borrow) not yet ported.
-                    Err(KunaError::lowlevel(
-                        "kuna rust port: TransformVar::createReplacement (temp with def) needs \
-                         Funcdata::newUniqueOut (funcdata_varnode xref split-borrow, not yet ported)",
-                    ))
+                match def {
+                    None => {
+                        // replacement = fd->newUnique(byteSize);
+                        let new_vn = fd.new_unique(byte_size, None);
+                        self.var_mut(rvn).replacement = Some(new_vn);
+                    }
+                    Some(def_rop) => {
+                        // replacement = fd->newUniqueOut(byteSize, def->replacement);
+                        let def_repl = self.new_ops[def_rop.0]
+                            .replacement
+                            .expect("create_var_replacement: temp def not materialized");
+                        let new_vn = fd.new_unique_out(byte_size, def_repl)?;
+                        self.var_mut(rvn).replacement = Some(new_vn);
+                    }
                 }
+                Ok(())
             }
             tvar_type::piece => {
                 // int4 bytePos = (int4)val;
@@ -1343,35 +1371,32 @@ impl TransformManager {
                 let mut addr: Address = v.get_addr() + (byte_pos as i64);
                 addr.renormalize(byte_size, fd.get_arch().manage())?;
                 let def = self.var(rvn).def;
-                if def.is_none() {
-                    // replacement = fd->newVarnode(byteSize,addr);
-                    let new_vn = fd.new_varnode(byte_size, &addr, None);
-                    self.var_mut(rvn).replacement = Some(new_vn);
-                } else {
-                    // replacement = fd->newVarnodeOut(byteSize,addr,def->replacement);
-                    // SEAM(W3-varnode): Funcdata::newVarnodeOut (xref split-borrow) not yet ported.
-                    return Err(KunaError::lowlevel(
-                        "kuna rust port: TransformVar::createReplacement (piece with def) needs \
-                         Funcdata::newVarnodeOut (funcdata_varnode xref split-borrow, not yet ported)",
-                    ));
-                }
-                // fd->transferVarnodeProperties(vn,replacement,bytePos);
-                // SEAM(W3-varnode): Funcdata::transferVarnodeProperties not yet ported.
-                Err(KunaError::lowlevel(
-                    "kuna rust port: TransformVar::createReplacement (piece) needs \
-                     Funcdata::transferVarnodeProperties (funcdata_varnode, not yet ported)",
-                ))
+                let replacement = match def {
+                    None => {
+                        // replacement = fd->newVarnode(byteSize, addr);
+                        fd.new_varnode(byte_size, &addr, None)
+                    }
+                    Some(def_rop) => {
+                        // replacement = fd->newVarnodeOut(byteSize, addr, def->replacement);
+                        let def_repl = self.new_ops[def_rop.0]
+                            .replacement
+                            .expect("create_var_replacement: piece def not materialized");
+                        fd.new_varnode_out(byte_size, &addr, def_repl)?
+                    }
+                };
+                self.var_mut(rvn).replacement = Some(replacement);
+                // fd->transferVarnodeProperties(vn, replacement, bytePos);
+                fd.transfer_varnode_properties(vn, replacement, byte_pos);
+                Ok(())
             }
             tvar_type::constant_iop => {
                 // PcodeOp *indeffect = PcodeOp::getOpFromConst(Address(iopSpace,val));
                 // replacement = fd->newVarnodeIop(indeffect);
-                // SEAM(W3-varnode): getOpFromConst (iop-offset → OpId) decode is not exposed
-                // publicly; the iop offset stored in `val` cannot be round-tripped to an OpId
-                // through the present funcdata surface.
-                Err(KunaError::lowlevel(
-                    "kuna rust port: TransformVar::createReplacement (constant_iop) needs \
-                     PcodeOp::getOpFromConst decode (op_iop_decode, not yet exposed)",
-                ))
+                let val = self.var(rvn).val;
+                let indeffect = crate::funcdata_varnode::op_iop_decode(val);
+                let new_vn = fd.new_varnode_iop(indeffect);
+                self.var_mut(rvn).replacement = Some(new_vn);
+                Ok(())
             }
             _ => Err(KunaError::lowlevel("Bad TransformVar type")),
         }
@@ -1394,11 +1419,6 @@ impl TransformManager {
 
     /// Remove old input Varnodes, mark new input Varnodes (C++
     /// `TransformManager::transformInputVarnodes`, transform.cc:729).
-    ///
-    /// The loop body always short-circuits at the `setInputVarnode` seam on the
-    /// first input; `never_loop` is allowed because the loop is faithful to the
-    /// C++ `for` and will run to completion once the seam is filled.
-    #[allow(clippy::never_loop)]
     fn transform_input_varnodes(
         &mut self,
         fd: &mut Funcdata,
@@ -1412,11 +1432,10 @@ impl TransformManager {
                 fd.delete_varnode(vn)?;
             }
             // rvn->replacement = fd->setInputVarnode(rvn->replacement);
-            // SEAM(W3-varnode): Funcdata::setInputVarnode (xref split-borrow) not yet ported.
-            return Err(KunaError::lowlevel(
-                "kuna rust port: TransformManager::transformInputVarnodes needs \
-                 Funcdata::setInputVarnode (funcdata_varnode xref split-borrow, not yet ported)",
-            ));
+            let repl =
+                self.var(rvn).replacement.expect("transform_input_varnodes: input not materialized");
+            let new_repl = fd.set_input_varnode(repl)?;
+            self.var_mut(rvn).replacement = Some(new_repl);
         }
         Ok(())
     }

@@ -1840,9 +1840,7 @@ impl SubvariableFlow {
     /// Decide if we use the same memory range of the original Varnode for the
     /// logical replacement (C++ `SubvariableFlow::useSameAddress`).
     ///
-    /// Used only by `getReplaceVarnode` inside the seam-gated
-    /// [`SubvariableFlow::do_replacement`].  // SEAM(W3-funcdata)
-    #[allow(dead_code)]
+    /// Used by `getReplaceVarnode` inside [`SubvariableFlow::do_replacement`].
     fn use_same_address(&self, data: &Funcdata, rvn: RvId) -> bool {
         let vn = self.rv(rvn).vn.expect("use_same_address: rvn vn");
         let v = data.vbank().get(vn).expect("vn");
@@ -1876,9 +1874,7 @@ impl SubvariableFlow {
     /// Calculate address of replacement Varnode for given subgraph variable node
     /// (C++ `SubvariableFlow::getReplacementAddress`).
     ///
-    /// Used only by `getReplaceVarnode` inside the seam-gated
-    /// [`SubvariableFlow::do_replacement`].  // SEAM(W3-funcdata)
-    #[allow(dead_code)]
+    /// Used by `getReplaceVarnode` inside [`SubvariableFlow::do_replacement`].
     fn get_replacement_address(&self, data: &Funcdata, rvn: RvId) -> KunaResult<Address> {
         let vn = self.rv(rvn).vn.expect("get_replacement_address: rvn vn");
         let v = data.vbank().get(vn).expect("vn");
@@ -1893,6 +1889,80 @@ impl SubvariableFlow {
         };
         addr.renormalize(self.flowsize, data.get_arch().manage())?;
         Ok(addr)
+    }
+
+    /// Replace the input Varnode for the given subgraph variable, to avoid the
+    /// overlap errors that arise when the original input is reused as the smaller
+    /// logical input (C++ `SubvariableFlow::replaceInput`, subflow.cc:1258).
+    fn replace_input(&mut self, data: &mut Funcdata, rvn: RvId) -> KunaResult<()> {
+        let vn = self.rv(rvn).vn.expect("replace_input: rvn vn");
+        let size = data.vbank().get(vn).expect("replace_input: stale vn").get_size();
+        // Varnode *newvn = fd->newUnique(rvn->vn->getSize());
+        let newvn = data.new_unique(size, None);
+        // newvn = fd->setInputVarnode(newvn);
+        let newvn = data.set_input_varnode(newvn)?;
+        // fd->totalReplace(rvn->vn, newvn);
+        data.total_replace(vn, newvn)?;
+        // fd->deleteVarnode(rvn->vn);
+        data.delete_varnode(vn)?;
+        // rvn->vn = newvn;
+        self.rv_mut(rvn).vn = Some(newvn);
+        Ok(())
+    }
+
+    /// Build (or fetch) the logical Varnode that replaces the original containing
+    /// Varnode for the given subgraph variable node (C++
+    /// `SubvariableFlow::getReplaceVarnode`, subflow.cc:1316).  This is the main
+    /// routine for turning a logical variable into an actual Varnode object.
+    fn get_replace_varnode(&mut self, data: &mut Funcdata, rvn: RvId) -> KunaResult<VarnodeId> {
+        // if (rvn->replacement != 0) return rvn->replacement;
+        if let Some(repl) = self.rv(rvn).replacement {
+            return Ok(repl);
+        }
+        // if (rvn->vn == 0) { ... }
+        if self.rv(rvn).vn.is_none() {
+            if self.rv(rvn).def.is_none() {
+                // A constant that did not come from an original Varnode
+                let val = self.rv(rvn).val;
+                return Ok(data.new_constant(self.flowsize, val));
+            }
+            // rvn->replacement = fd->newUnique(flowsize);
+            let repl = data.new_unique(self.flowsize, None);
+            self.rv_mut(rvn).replacement = Some(repl);
+            return Ok(repl);
+        }
+        let vn = self.rv(rvn).vn.expect("get_replace_varnode: rvn vn");
+        if data.vbank().get(vn).expect("get_replace_varnode: stale vn").is_constant() {
+            let val = self.rv(rvn).val;
+            let new_vn = data.new_constant(self.flowsize, val);
+            // newVn->copySymbolIfValid(rvn->vn);
+            // SEAM(W4): EquateSymbol propagation — getSymbolEntry is null in the W4
+            // symbol-scope skeleton (no equate symbols are constructed on this path),
+            // so copySymbolIfValid is a no-op here; faithful (recorded as a loss).
+            return Ok(new_vn);
+        }
+
+        let isinput = data.vbank().get(vn).expect("get_replace_varnode: stale vn").is_input();
+        if self.use_same_address(data, rvn) {
+            let addr = self.get_replacement_address(data, rvn)?;
+            if isinput {
+                self.replace_input(data, rvn)?; // Replace input to avoid overlap errors
+            }
+            // rvn->replacement = fd->newVarnode(flowsize, addr);
+            let repl = data.new_varnode(self.flowsize, &addr, None);
+            self.rv_mut(rvn).replacement = Some(repl);
+        } else {
+            // rvn->replacement = fd->newUnique(flowsize);
+            let repl = data.new_unique(self.flowsize, None);
+            self.rv_mut(rvn).replacement = Some(repl);
+        }
+        if isinput {
+            // rvn->replacement = fd->setInputVarnode(rvn->replacement);
+            let repl = self.rv(rvn).replacement.expect("get_replace_varnode: replacement set above");
+            let new_repl = data.set_input_varnode(repl)?;
+            self.rv_mut(rvn).replacement = Some(new_repl);
+        }
+        Ok(self.rv(rvn).replacement.expect("get_replace_varnode: replacement set"))
     }
 
     // -------------------------------------------------------------------------
@@ -2040,12 +2110,179 @@ impl SubvariableFlow {
     /// patch *order* (call-return push patches first, then define outputs, then
     /// inputs, then the terminal patches in list order) is transcribed; the
     /// concrete mutations return the foundation's seam error until those land.
-    pub fn do_replacement(&mut self, _data: &mut Funcdata) -> KunaResult<()> {
-        Err(KunaError::lowlevel(
-            "kuna rust port: SubvariableFlow::doReplacement needs Funcdata::opSetOutput \
-             ((vbank,obank) split-borrow, W3-funcdata) and opcode->TypeOp resolution \
-             (glb->inst[opc], W6); discovery (doTrace) is fully ported — SEAM(W3-funcdata)/SEAM(W6)",
-        ))
+    pub fn do_replacement(&mut self, data: &mut Funcdata) -> KunaResult<()> {
+        // Do up front processing of the call return patches, which will be at the
+        // front of the list.  Walk while type == push_patch; the index where we
+        // stop is the resume point for the pull-patch loop below.
+        let mut piter = 0usize;
+        while piter < self.patchlist.len() {
+            if self.patchlist[piter].typ != PatchType::PushPatch {
+                break;
+            }
+            let push_op = self.patchlist[piter].patch_op;
+            let in1 = self.patchlist[piter].in1;
+            let new_vn = self.get_replace_varnode(data, in1)?;
+            let old_vn =
+                data.obank().get(push_op).expect("do_replacement: stale push op").get_out().expect(
+                    "do_replacement: push op has no output",
+                );
+            // fd->opSetOutput(pushOp, newVn);
+            data.op_set_output(push_op, new_vn)?;
+
+            // Create placeholder defining op for old Varnode, until dead code cleans it up
+            let push_addr =
+                data.obank().get(push_op).expect("do_replacement: stale push op").get_addr().clone();
+            let new_zext = data.new_op(1, push_addr);
+            data.op_set_opcode_code(new_zext, OpCode::CPUI_INT_ZEXT);
+            data.op_set_input(new_zext, new_vn, 0)?;
+            data.op_set_output(new_zext, old_vn)?;
+            data.op_insert_after(new_zext, push_op);
+            piter += 1;
+        }
+
+        // Define all the outputs first
+        for idx in 0..self.oplist.len() {
+            let op = self.oplist[idx].op.expect("do_replacement: ReplaceOp has no op");
+            let numparams = self.oplist[idx].numparams;
+            let opc = self.oplist[idx].opc;
+            let addr = data.obank().get(op).expect("do_replacement: stale op").get_addr().clone();
+            let newop = data.new_op(numparams, addr);
+            self.oplist[idx].replacement = Some(newop);
+            data.op_set_opcode_code(newop, opc);
+            let rout = self.oplist[idx].output.expect("do_replacement: ReplaceOp has no output");
+            let outvn = self.get_replace_varnode(data, rout)?;
+            data.op_set_output(newop, outvn)?;
+            data.op_insert_after(newop, op);
+        }
+
+        // Set all the inputs
+        for idx in 0..self.oplist.len() {
+            let newop = self.oplist[idx].replacement.expect("do_replacement: op not materialized");
+            let inlen = self.oplist[idx].input.len();
+            for i in 0..inlen {
+                let rin = self.oplist[idx].input[i].expect("do_replacement: input slot is null");
+                let invn = self.get_replace_varnode(data, rin)?;
+                data.op_set_input(newop, invn, i as int4)?;
+            }
+        }
+
+        // These are operations that carry flow from the small variable into an
+        // existing variable of the correct size.  Resume from `piter` (past the
+        // push patches handled above).
+        while piter < self.patchlist.len() {
+            let pullop = self.patchlist[piter].patch_op;
+            let typ = self.patchlist[piter].typ;
+            match typ {
+                PatchType::CopyPatch => {
+                    // while(pullop->numInput() > 1) fd->opRemoveInput(pullop, pullop->numInput()-1);
+                    loop {
+                        let n = data.obank().get(pullop).expect("do_replacement: stale pullop").num_input();
+                        if n <= 1 {
+                            break;
+                        }
+                        data.op_remove_input(pullop, n - 1);
+                    }
+                    let in1 = self.patchlist[piter].in1;
+                    let v = self.get_replace_varnode(data, in1)?;
+                    data.op_set_input(pullop, v, 0)?;
+                    data.op_set_opcode_code(pullop, OpCode::CPUI_COPY);
+                }
+                PatchType::ComparePatch => {
+                    let in1 = self.patchlist[piter].in1;
+                    let in2 = self.patchlist[piter].in2.expect("compare_patch: in2 is null");
+                    let v1 = self.get_replace_varnode(data, in1)?;
+                    let v2 = self.get_replace_varnode(data, in2)?;
+                    data.op_set_input(pullop, v1, 0)?;
+                    data.op_set_input(pullop, v2, 1)?;
+                }
+                PatchType::ParameterPatch => {
+                    let in1 = self.patchlist[piter].in1;
+                    let slot = self.patchlist[piter].slot;
+                    let v = self.get_replace_varnode(data, in1)?;
+                    data.op_set_input(pullop, v, slot)?;
+                }
+                PatchType::ExtensionPatch => {
+                    // operations that flow the small variable into a bigger variable
+                    // where all the remaining bits are zero
+                    let sa = self.patchlist[piter].slot;
+                    let in1 = self.patchlist[piter].in1;
+                    let in_vn = self.get_replace_varnode(data, in1)?;
+                    let out_size = data
+                        .vbank()
+                        .get(
+                            data.obank()
+                                .get(pullop)
+                                .expect("do_replacement: stale pullop")
+                                .get_out()
+                                .expect("extension_patch: pullop has no output"),
+                        )
+                        .expect("do_replacement: stale out vn")
+                        .get_size();
+                    if sa == 0 {
+                        // C++: vector<Varnode*> invec; invec.push_back(inVn);
+                        let invec: Vec<VarnodeId> = vec![in_vn];
+                        let in_size =
+                            data.vbank().get(in_vn).expect("do_replacement: stale in vn").get_size();
+                        let opc = if in_size == out_size {
+                            OpCode::CPUI_COPY
+                        } else {
+                            OpCode::CPUI_INT_ZEXT
+                        };
+                        data.op_set_opcode_code(pullop, opc);
+                        data.op_set_all_input(pullop, &invec)?;
+                    } else {
+                        let mut invec: Vec<VarnodeId> = Vec::new();
+                        let in_size =
+                            data.vbank().get(in_vn).expect("do_replacement: stale in vn").get_size();
+                        if in_size != out_size {
+                            let pull_addr = data
+                                .obank()
+                                .get(pullop)
+                                .expect("do_replacement: stale pullop")
+                                .get_addr()
+                                .clone();
+                            let zextop = data.new_op(1, pull_addr);
+                            data.op_set_opcode_code(zextop, OpCode::CPUI_INT_ZEXT);
+                            let zextout = data.new_unique_out(out_size, zextop)?;
+                            data.op_set_input(zextop, in_vn, 0)?;
+                            data.op_insert_before(zextop, pullop);
+                            invec.push(zextout);
+                        } else {
+                            invec.push(in_vn);
+                        }
+                        let c = data.new_constant(4, sa as uintb);
+                        invec.push(c);
+                        data.op_set_all_input(pullop, &invec)?;
+                        data.op_set_opcode_code(pullop, OpCode::CPUI_INT_LEFT);
+                    }
+                }
+                PatchType::PushPatch => {
+                    // Shouldn't see these here, handled earlier
+                }
+                PatchType::Int2FloatPatch => {
+                    let pull_addr = data
+                        .obank()
+                        .get(pullop)
+                        .expect("do_replacement: stale pullop")
+                        .get_addr()
+                        .clone();
+                    let zext_op = data.new_op(1, pull_addr);
+                    data.op_set_opcode_code(zext_op, OpCode::CPUI_INT_ZEXT);
+                    let in1 = self.patchlist[piter].in1;
+                    let invn = self.get_replace_varnode(data, in1)?;
+                    data.op_set_input(zext_op, invn, 0)?;
+                    let invn_size =
+                        data.vbank().get(invn).expect("do_replacement: stale invn").get_size();
+                    // int4 sizeout = TypeOpFloatInt2Float::preferredZextSize(invn->getSize());
+                    let sizeout = preferred_zext_size(invn_size);
+                    let outvn = data.new_unique_out(sizeout, zext_op)?;
+                    data.op_insert_before(zext_op, pullop);
+                    data.op_set_input(pullop, outvn, 0)?;
+                }
+            }
+            piter += 1;
+        }
+        Ok(())
     }
 
     /// `vn->isZeroExtended(flowsize)` (C++ `Varnode::isZeroExtended`).
@@ -2406,14 +2643,23 @@ impl Rule for RuleSubvarSext {
     }
 }
 
+/// Preferred zero-extension size for a FLOAT_INT2FLOAT input of the given size
+/// (C++ `TypeOpFloatInt2Float::preferredZextSize`).
+///
+/// Used by the `Int2FloatPatch` arm of [`SubvariableFlow::do_replacement`].
+/// SEAM(W6): the `TypeOpFloatInt2Float` precision table is not yet present; the
+/// conservative default returns the input size.  That arm is only produced by the
+/// W6-seamed `try_int2float_pull` (which aborts the trace before reaching here),
+/// so the default never affects a completing path (recorded as a loss).
+fn preferred_zext_size(in_size: int4) -> int4 {
+    in_size
+}
+
 /// Run the SubvariableFlow trace+replacement for a trigger rule (C++ idiom:
 /// `SubvariableFlow subflow(...); if (!subflow.doTrace()) return 0;
 /// subflow.doReplacement(); return 1;`).
 ///
 /// Returns `1` if the transform was constructed AND applied, `0` otherwise.
-/// While `doReplacement` is seam-gated (W3-funcdata/W6), a successful
-/// `doTrace` whose replacement defers reports `0` (no change made), which is the
-/// conservative, datatest-safe behavior until the mutation seam lands.
 fn run_subflow(
     data: &mut Funcdata,
     root: VarnodeId,
@@ -2433,7 +2679,9 @@ fn run_subflow(
     // subflow.doReplacement(); return 1;
     match subflow.do_replacement(data) {
         Ok(()) => 1,
-        Err(_) => 0, // SEAM(W3-funcdata)/SEAM(W6): replacement deferred -> no change
+        // C++ doReplacement() returns void; a structured error (e.g. a residual
+        // symbol/iop seam) is treated as "no change" rather than aborting the pass.
+        Err(_) => 0,
     }
 }
 
@@ -2794,8 +3042,7 @@ impl SplitFlow {
     }
 
     /// Apply the constructed transform (C++ `TransformManager::apply` via the
-    /// base class).  SEAM(W6): the merged `TransformManager::apply` reaches
-    /// `createReplacement` → `glb->inst[opc]` and returns its W6 seam error.
+    /// base class).  Materializes the placeholder graph into real IR (W10).
     pub fn apply(&mut self, data: &mut Funcdata) -> KunaResult<()> {
         self.tm.apply(data)
     }
@@ -2890,8 +3137,8 @@ impl Rule for RuleSplitFlow {
         }
         match split_flow.apply(data) {
             Ok(()) => 1,
-            // SEAM(W6): TransformManager::apply → createReplacement needs
-            // glb->inst[opc]; discovery (doTrace) ran fully -> no change applied.
+            // C++ apply() returns void; a structured error here (e.g. an iop/symbol
+            // seam) is treated as "no change made" rather than aborting the pass.
             Err(_) => 0,
         }
     }
@@ -4016,7 +4263,7 @@ impl SubfloatFlow {
     }
 
     /// Apply the constructed transform (C++ base `TransformManager::apply`).
-    /// SEAM(W6): the merged apply reaches `glb->inst[opc]`.
+    /// Materializes the placeholder graph into real IR (W10).
     pub fn apply(&mut self, data: &mut Funcdata) -> KunaResult<()> {
         self.tm.apply(data)
     }
@@ -4079,7 +4326,7 @@ impl Rule for RuleSubfloatConvert {
             }
             match subflow.apply(data) {
                 Ok(()) => {}
-                // SEAM(W6): TransformManager::apply → glb->inst[opc].
+                // C++ apply() returns void; a structured error -> "no change".
                 Err(_) => return 0,
             }
         } else {

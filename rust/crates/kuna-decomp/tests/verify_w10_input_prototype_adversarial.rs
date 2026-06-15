@@ -11,13 +11,14 @@
 //!      oracle's signature — the params are REAL (flowed through the proto
 //!      model's `assign_parameter_storage`), not hardcoded.
 //!
-//!   2. DIVERGENCE (verdict F2 / LOSS): newly applying the locked prototype on
+//!   2. FIXED (w10-transformmanager): applying the locked prototype on
 //!      `condconst2.xml` forces typed input/output Varnodes whose SUBPIECE
-//!      truncation (`SUB(r0,0)`) is NOT yet cleaned up by the un-ported
-//!      downstream type/cast actions, so the body leaks `SUB`.  The C++ oracle
-//!      emits NO `SUB` (it passes the datatest's `SUB`-absent assertion #8); the
-//!      Rust branch regresses that one assertion.  This test pins the leak so a
-//!      future downstream-action port removes it deliberately.
+//!      truncation (`SUB(r0,0)`) USED to leak into the body because
+//!      `TransformManager::apply` was seamed.  With apply() closed,
+//!      `SubvariableFlow` materializes and collapses that extension wrapper, so
+//!      the body now emits NO `SUB` — matching the oracle and passing the
+//!      datatest's `SUB`-absent assertion #8.  The test is now a regression guard
+//!      that the leak stays gone.
 //!
 //! Both are skipped (not failed) when a binary or `.sla` is unavailable, so the
 //! suite stays green in a worktree without a built C++/spec tree (honoring the
@@ -112,13 +113,16 @@ fn namespace_recovers_named_typed_param_matching_oracle() {
     }
 }
 
-/// DIVERGENCE (F2 / LOSS): applying the locked prototype on `condconst2.xml`
-/// makes the typed signature appear (good, matches the oracle), but the forced
-/// typed output Varnode leaks an un-cleaned `SUB(r0,0)` into the body — which
-/// the oracle does not.  This is the cause of the lost `Immediate Conditional
-/// #8` (`SUB`-absent) assertion.  Pin both halves.
+/// FIXED (w10-transformmanager): applying the locked prototype on
+/// `condconst2.xml` makes the typed signature appear AND no longer leaks a
+/// `SUB(r0,0)` into the body.  Closing `TransformManager::apply` lets
+/// `SubvariableFlow` materialize: the SUB/ZEXT extension-wrapper that the forced
+/// typed Varnode previously left behind is now collapsed, so the body matches the
+/// oracle and the datatest's `SUB`-absent assertion #8 passes.  This was
+/// previously pinned as a divergence (the SUB leak); it is now a regression guard
+/// that the leak stays gone.
 #[test]
-fn condconst2_typed_sig_but_leaks_sub_unlike_oracle() {
+fn condconst2_typed_sig_no_sub_leak_matches_oracle() {
     let rust = match dump_print_c(&rust_test_bin(), "condconst2") {
         Some(t) => t,
         None => {
@@ -126,27 +130,24 @@ fn condconst2_typed_sig_but_leaks_sub_unlike_oracle() {
             return;
         }
     };
-    // The typed signature IS now produced (the recovery seed works).
+    // The typed signature IS produced (the recovery seed works).
     assert!(
         rust.contains("char zeroprop(int4 *ptrint,int4 val)"),
         "locked prototype not applied to zeroprop signature; got:\n{rust}"
     );
-    // DIVERGENCE: the body leaks a SUBPIECE the oracle eliminates.  This is the
-    // regression of datatest assertion #8 (`SUB` must be absent).
+    // FIXED: the body no longer leaks the SUBPIECE — SubvariableFlow now
+    // materializes and collapses the extension wrapper (datatest assertion #8).
     assert!(
-        rust.contains("SUB("),
-        "expected the (currently un-cleaned) SUB leak in the body; got:\n{rust}"
+        !rust.contains("SUB("),
+        "regression: the SUB leak is back in the body (assertion #8); got:\n{rust}"
     );
 
-    // Confirm the oracle does NOT leak SUB (so this is a real divergence, not a
-    // shared limitation) when the oracle is available.
+    // The oracle also emits no SUB and the same typed signature; confirm parity.
     if let Some(cpp) = dump_print_c(&cpp_oracle_bin(), "condconst2") {
         assert!(
             !cpp.contains("SUB("),
-            "oracle unexpectedly also leaks SUB; the divergence premise is wrong:\n{cpp}"
+            "oracle unexpectedly leaks SUB; the parity premise is wrong:\n{cpp}"
         );
-        // And the oracle's signature is the same typed form — so the SIGNATURE
-        // recovery is faithful; only the body cleanup diverges.
         assert!(cpp.contains("char zeroprop(int4 *ptrint,int4 val)"));
     }
 }

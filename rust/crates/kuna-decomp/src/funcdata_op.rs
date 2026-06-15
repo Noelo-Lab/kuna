@@ -148,6 +148,54 @@ impl Funcdata {
         Ok(())
     }
 
+    /// Mark a `CPUI_INDIRECT` op so its output is \e indirectly \e created
+    /// (C++ `Funcdata::markIndirectCreation`, `funcdata_op.cc:736`).
+    ///
+    /// An indirectly-created Varnode effectively has no data-flow before the
+    /// INDIRECT op that defines it.  `possible_output` is `true` when the INDIRECT
+    /// should be marked as a possible call output (its in0 is then NOT flagged).
+    /// Used by [`TransformManager::special_handling`](crate::transform).
+    pub fn mark_indirect_creation(&mut self, indop: OpId, possible_output: bool) -> KunaResult<()> {
+        use crate::varnode::varnode_flags;
+        // Varnode *outvn = indop->getOut();
+        let outvn = self
+            .obank()
+            .get(indop)
+            .expect("mark_indirect_creation: stale indop")
+            .get_out()
+            .expect("mark_indirect_creation: INDIRECT has no output");
+        // Varnode *in0 = indop->getIn(0);
+        let in0 = self
+            .obank()
+            .get(indop)
+            .expect("mark_indirect_creation: stale indop")
+            .get_in(0)
+            .expect("mark_indirect_creation: INDIRECT missing in0");
+
+        // indop->flags |= PcodeOp::indirect_creation;
+        self.obank_mut()
+            .get_mut(indop)
+            .expect("mark_indirect_creation: stale indop")
+            .set_flag(pcodeop_flags::indirect_creation);
+        // if (!in0->isConstant()) throw LowlevelError("Indirect creation not properly formed");
+        if !self.vbank().get(in0).expect("mark_indirect_creation: stale in0").is_constant() {
+            return Err(KunaError::lowlevel("Indirect creation not properly formed"));
+        }
+        // if (!possibleOutput) in0->flags |= Varnode::indirect_creation;
+        if !possible_output {
+            self.vbank_mut()
+                .get_mut(in0)
+                .expect("mark_indirect_creation: stale in0")
+                .set_flags_pub(varnode_flags::indirect_creation);
+        }
+        // outvn->flags |= Varnode::indirect_creation;
+        self.vbank_mut()
+            .get_mut(outvn)
+            .expect("mark_indirect_creation: stale outvn")
+            .set_flags_pub(varnode_flags::indirect_creation);
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // output linkage
     // -----------------------------------------------------------------------

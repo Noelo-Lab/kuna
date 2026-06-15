@@ -83,7 +83,7 @@ use std::rc::Rc;
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::{spacetype, AddrSpace};
-use kuna_base::types::{int4, uint4, uintb, uintm};
+use kuna_base::types::{int4, uint4, uintb, uintm, Wrap};
 
 use kuna_num::opcodes::OpCode;
 
@@ -566,6 +566,52 @@ impl Funcdata {
         self.vbank_mut().get_mut(vn).expect("new_code_ref: stale vn").set_annotation();
         self.assign_high(vn);
         vn
+    }
+
+    /// Copy properties from an existing Varnode to a new (overlapping) Varnode
+    /// (C++ `Funcdata::transferVarnodeProperties`, `funcdata_varnode.cc:632`).
+    ///
+    /// The new Varnode is assumed to overlap the storage of the existing Varnode.
+    /// Boolean flags (`directwrite`/`addrforce`) and the \e consume bit-mask
+    /// (shifted by `lsbOffset` bytes of significance) are copied.  Used by
+    /// [`TransformVar::create_replacement`](crate::transform) when it materializes a
+    /// `piece` placeholder.
+    pub fn transfer_varnode_properties(
+        &mut self,
+        vn: VarnodeId,
+        new_vn: VarnodeId,
+        lsb_offset: int4,
+    ) {
+        use kuna_base::address::calc_mask;
+        // uintb newConsume = ~((uintb)0); -- bits shifted in above precision stay set
+        let mut new_consume: uintb = !0u64;
+        // if (lsbOffset < sizeof(uintb)) { ... }  (sizeof(uintb) == 8)
+        if (lsb_offset as usize) < std::mem::size_of::<uintb>() {
+            let vn_consume = self.vbank().get(vn).expect("transfer_varnode_properties: stale vn").get_consume();
+            let new_size = self.vbank().get(new_vn).expect("transfer_varnode_properties: stale newVn").get_size();
+            let mut fill_bits: uintb = 0;
+            if lsb_offset != 0 {
+                // fillBits = newConsume << 8*(sizeof(uintb) - lsbOffset);
+                fill_bits = new_consume.wshl(8u32 * (std::mem::size_of::<uintb>() as u32 - lsb_offset as u32));
+            }
+            // newConsume = ((vn->getConsume() >> 8*lsbOffset) | fillBits) & calc_mask(newVn->getSize());
+            new_consume = (vn_consume.wshr(8u32 * lsb_offset as u32) | fill_bits) & calc_mask(new_size);
+        }
+
+        // uint4 vnFlags = vn->getFlags() & (Varnode::directwrite|Varnode::addrforce);
+        let vn_flags = self.vbank().get(vn).expect("transfer_varnode_properties: stale vn").get_flags()
+            & (varnode_flags::directwrite | varnode_flags::addrforce);
+
+        // newVn->setFlags(vnFlags);  // Preserve addrforce setting
+        self.vbank_mut()
+            .get_mut(new_vn)
+            .expect("transfer_varnode_properties: stale newVn")
+            .set_flags_pub(vn_flags);
+        // newVn->setConsume(newConsume);
+        self.vbank_mut()
+            .get_mut(new_vn)
+            .expect("transfer_varnode_properties: stale newVn")
+            .set_consume(new_consume);
     }
 
     // -----------------------------------------------------------------------
@@ -1840,6 +1886,19 @@ impl AncestorRealistic {
 fn op_iop_encode(op: OpId) -> uintb {
     use slotmap::Key;
     op.data().as_ffi()
+}
+
+/// Decode an iop-space constant offset back into the [`OpId`] it was encoded from
+/// (C++ `PcodeOp::getOpFromConst(addr)` — `(PcodeOp *)(uintp)addr.getOffset()`).
+///
+/// Inverse of [`op_iop_encode`]: the C++ stores the raw `PcodeOp *` in the iop
+/// constant and re-casts it back; the Rust IR has no stable pointer, so the
+/// slotmap key bit pattern round-trips through `KeyData::from_ffi`.  This is the
+/// only way the iop constant is consumed: to re-identify the *same* op.  Used by
+/// [`TransformVar::create_replacement`](crate::transform) for the `constant_iop`
+/// placeholder.
+pub(crate) fn op_iop_decode(val: uintb) -> OpId {
+    OpId::from(slotmap::KeyData::from_ffi(val))
 }
 
 #[cfg(test)]

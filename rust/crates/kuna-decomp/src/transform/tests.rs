@@ -514,51 +514,84 @@ fn apply_constant_replacement_value_round_trips() {
 }
 
 // =============================================================================
-// apply(): the W6 / W3-varnode seams surface as structured errors
+// apply(): the W10 materialization sub-phases run to completion
 // =============================================================================
 
 #[test]
-fn apply_with_op_hits_opsetopcode_seam() {
-    // A transform containing a placeholder op reaches createOps →
-    // createReplacement → opSetOpcode(OpCode), the W6 TypeOp seam.
+fn apply_preexisting_op_sets_opcode_and_reshapes_inputs() {
+    // A placeholder op for an EXISTING op (op_preexisting) reaches createOps →
+    // createReplacement → opSetOpcode(OpCode) + the input-arity reshape, all live.
+    // op_preexisting does NOT insert into control flow, so no basic block needed.
     let mut fd = build_fd();
     let ram = ram_space(&fd);
-    let real_op = fd.new_op(0, Address::new(ram, 0x1000));
+    // A real op with 2 (real) inputs that we will narrow to a 1-input COPY.
+    let real_op = fd.new_op(2, Address::new(ram, 0x1000));
+    let i0 = mk_const(&mut fd, 7, 4);
+    let i1 = mk_const(&mut fd, 9, 4);
+    fd.op_set_input(real_op, i0, 0).unwrap();
+    fd.op_set_input(real_op, i1, 1).unwrap();
     let mut tm = TransformManager::new();
-    let _rop = tm.new_op_replace(0, OpCode::CPUI_COPY, real_op);
-    let err = tm.apply(&mut fd).expect_err("op materialization must hit the W6 seam");
-    let msg = format!("{err}");
-    assert!(msg.contains("opSetOpcode"), "seam error mentions opSetOpcode: {msg}");
+    let rop = tm.new_preexisting_op(1, OpCode::CPUI_COPY, real_op);
+    // Wire the single logical input (a preexisting constant) so placeInputs has a
+    // replacement to place into slot 0.
+    let in_const = mk_const(&mut fd, 7, 4);
+    let rin = tm.get_preexisting_varnode(&fd, in_const);
+    tm.op_set_input(rop, rin, 0);
+    tm.apply(&mut fd).expect("op_preexisting materialization runs to completion");
+
+    // The placeholder's replacement IS the original op, now a COPY with 1 input.
+    assert_eq!(tm.op(rop).get_replacement(), Some(real_op));
+    let o = fd.obank().get(real_op).unwrap();
+    assert_eq!(o.code(), OpCode::CPUI_COPY, "opSetOpcode applied");
+    assert_eq!(o.num_input(), 1, "input arity reshaped from 2 to 1");
 }
 
 #[test]
-fn apply_with_piece_hits_transfer_properties_seam() {
-    // A non-constant piece reaches createVarnodes → createReplacement (piece) →
-    // transferVarnodeProperties, the funcdata_varnode seam.
+fn apply_piece_materializes_varnode_and_transfers_consume() {
+    // A non-constant piece (def==None) reaches createVarnodes → createReplacement
+    // (piece) → newVarnode + transferVarnodeProperties, all live.
     let mut fd = build_fd();
     let vn = mk_vn(&mut fd, 0x100, 8);
+    // Give the source a non-trivial consume mask so the transfer is observable.
+    fd.vbank_mut().get_mut(vn).unwrap().set_consume(0xffff_ffff_ffff_ffff);
+    let ci = fd.vbank().get(vn).unwrap().get_create_index() as int4;
     let mut tm = TransformManager::new();
-    let desc = LaneDescription::uniform(8, 2); // real (non-constant) pieces
+    let desc = LaneDescription::uniform(8, 2); // four real (non-constant) 2-byte lanes
     tm.new_split(&fd, vn, &desc);
-    let err = tm.apply(&mut fd).expect_err("piece materialization must hit a seam");
-    let msg = format!("{err}");
-    assert!(
-        msg.contains("transferVarnodeProperties") || msg.contains("newVarnodeOut"),
-        "seam error mentions a piece-materialization seam: {msg}"
-    );
+    tm.apply(&mut fd).expect("piece materialization runs to completion");
+
+    // Lane 0 is the least-significant 2 bytes: a real ram Varnode at offset 0x100.
+    let lane0 = TVarRef::Piece { key: ci, idx: 0 };
+    let v0 = tm.var(lane0).get_replacement().expect("lane0 materialized");
+    let rv = fd.vbank().get(v0).unwrap();
+    assert!(!rv.is_constant());
+    assert_eq!(rv.get_size(), 2, "lane is the 2-byte lane size");
+    assert_eq!(rv.get_offset(), 0x100, "little-endian lane 0 at the base offset");
+    // transferVarnodeProperties copies the (masked) consume bits.
+    assert_eq!(rv.get_consume(), 0xffff, "consume transferred & masked to the 2-byte lane");
 }
 
 #[test]
-fn apply_constant_iop_hits_getopfromconst_seam() {
+fn apply_constant_iop_round_trips_through_get_op_from_const() {
     let mut fd = build_fd();
-    // An iop-space varnode → newIop placeholder → constant_iop materialization.
-    let iop = Rc::clone(fd.get_arch().manage().get_iop_space().unwrap());
-    let iop_vn = fd.vbank_mut().create(8, Address::new(iop, 0x1234), dt(8));
+    // Build a real op, encode it into an iop-space varnode (the C++ newVarnodeIop
+    // path), then a newIop placeholder over that varnode.
+    let ram = ram_space(&fd);
+    let real_op = fd.new_op(0, Address::new(ram, 0x2000));
+    let iop_vn = fd.new_varnode_iop(real_op);
     let mut tm = TransformManager::new();
-    let _r = tm.new_iop(&fd, iop_vn);
-    let err = tm.apply(&mut fd).expect_err("constant_iop must hit the getOpFromConst seam");
-    let msg = format!("{err}");
-    assert!(msg.contains("getOpFromConst"), "seam error mentions getOpFromConst: {msg}");
+    let r = tm.new_iop(&fd, iop_vn);
+    tm.apply(&mut fd).expect("constant_iop materialization runs to completion");
+
+    // The materialized replacement is an iop varnode that decodes back to real_op.
+    let mat = tm.var(r).get_replacement().expect("iop materialized");
+    let mv = fd.vbank().get(mat).unwrap();
+    assert!(mv.get_space().get_type() == spacetype::IPTR_IOP);
+    assert_eq!(
+        crate::funcdata_varnode::op_iop_decode(mv.get_offset()),
+        real_op,
+        "iop offset round-trips to the original op"
+    );
 }
 
 // --- inherit_indirect ---------------------------------------------------------
