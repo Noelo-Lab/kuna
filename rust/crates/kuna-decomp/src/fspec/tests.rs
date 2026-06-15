@@ -791,6 +791,77 @@ fn assign_map_standard_input_walk() {
     assert!(res[0].type_.is_some());
 }
 
+/// A `register` space (addr_size 8) usable as the default data space, plus the
+/// constant/unique spaces a `TypeFactoryImpl`-backed pointer build needs.
+fn manager_with_default_data_space() -> (AddrSpaceManager, Rc<AddrSpace>) {
+    use kuna_base::space::{ConstantSpace, UniqueSpace};
+    let mut m = AddrSpaceManager::new();
+    m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+    m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+    let reg = Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "register",
+        false, // little endian
+        8,     // addr_size — the hidden-return pointer size
+        1,     // word_size
+        2,     // index
+        0,
+        0,
+        0,
+    ));
+    m.insert_space(Rc::clone(&reg)).unwrap();
+    m.set_default_code_space(2).unwrap();
+    m.set_default_data_space(2).unwrap();
+    (m, reg)
+}
+
+/// A `ParamListStandardOut` whose lone 8-byte register entry cannot hold a
+/// 24-byte return value (but CAN hold the 8-byte hidden pointer), so `assignMap`
+/// falls through to the hidden-return path.
+fn single_small_out_model(reg: &Rc<AddrSpace>, mgr: &AddrSpaceManager) -> ParamListStandard {
+    let mut model = ParamListStandard::new(ParamListKind::StandardOut);
+    let e0 = excl_entry(0, reg, 0x10, 8, &[], mgr);
+    model.push_entry(e0);
+    model.finish_decode();
+    model
+}
+
+#[test]
+fn assign_map_standard_out_hidden_return_emits_indirect_output_plus_pointer_param() {
+    // w10-struct-return un-seam: a too-big (8-byte) return value that does not
+    // fit the model's 4-byte output register is returned through a hidden
+    // pointer parameter (C++ `ParamListStandardOut::assignMap` fspec.cc:1584+).
+    use crate::dtype::TypeFactoryImpl;
+    let (mgr, reg) = manager_with_default_data_space();
+    let model = single_small_out_model(&reg, &mgr);
+    let tf = TypeFactoryImpl::new();
+    tf.setup_sizes(Some(4), 8, 8); // initialize the size/alignment map
+    // A 24-byte struct: too big for the 8-byte output register, so it must be
+    // returned through a hidden pointer (which DOES fit the register).
+    let outtype = Rc::new(Datatype::new_with_align(24, 8, type_metatype::TYPE_STRUCT));
+    let proto = PrototypePieces {
+        name: "f".to_string(),
+        outtype: Some(outtype),
+        intypes: Vec::new(),
+        innames: Vec::new(),
+        first_var_arg_slot: -1,
+    };
+    let mut res: Vec<ParameterPieces> = Vec::new();
+    model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
+    // Two pieces: the indirect-storage output, then the hidden pointer param.
+    assert_eq!(res.len(), 2);
+    assert_ne!(res[0].flags & parameter_pieces_flags::INDIRECTSTORAGE, 0);
+    // The output's recovered type is the pointer to the struct (size = addr_size).
+    assert_eq!(res[0].type_.as_ref().unwrap().get_metatype(), type_metatype::TYPE_PTR);
+    assert_eq!(res[0].type_.as_ref().unwrap().get_size(), 8);
+    // The hidden return parameter carries the pointer type and an invalid
+    // address (filled in by the input-list assignMap), and — with no model
+    // rules — is the plain (non-special) hidden return (flags 0).
+    assert_eq!(res[1].type_.as_ref().unwrap().get_metatype(), type_metatype::TYPE_PTR);
+    assert!(res[1].addr.is_invalid());
+    assert_eq!(res[1].flags, 0);
+}
+
 #[test]
 fn assign_address_fallback_exhausts_groups() {
     let mgr = AddrSpaceManager::new();

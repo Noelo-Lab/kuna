@@ -1032,6 +1032,18 @@ impl ScopeLocal {
         self.db.set_attribute(sym, attr);
     }
 
+    /// C++ `Symbol::setIsolated(val)` reached through this scope's symbol table
+    /// (`IfcTypeVarnode`: `sym->setIsolated(true)`).
+    pub fn set_symbol_isolated(&mut self, sym: crate::database::SymbolId, val: bool) {
+        self.db.symbol_mut(sym).set_isolated(val);
+    }
+
+    /// C++ `Scope::getFullName()` for this local scope (`IfcTypeVarnode`'s
+    /// success message names `scope->getFullName()`).
+    pub fn full_name(&self) -> String {
+        self.db.get_full_name(self.scope)
+    }
+
     /// C++ `ScopeLocal::adjustFit` (`varmap.cc:587`): shrink `a` so it fits the
     /// mapped region and doesn't overlap an existing Symbol.  `false` if no valid
     /// adjustment is possible.
