@@ -2575,7 +2575,11 @@ impl ParamListStandard {
                     manager,
                 )? == AssignActionResponse::fail
                 {
-                    return Err(KunaError::lowlevel(
+                    // C++ fspec.cc:1601 `throw ParamUnassignedError(...)`: a
+                    // dedicated LowlevelError subclass caught by
+                    // ProtoModel::assignParameterStorage(ignoreOutputError=true)
+                    // (fspec.cc:2441) to degrade the output to void.
+                    return Err(KunaError::param_unassigned(
                         "Cannot assign return value as a pointer",
                     ));
                 }
