@@ -1742,37 +1742,12 @@ impl Action for ActionConditionalConst {
         }
         Some(Box::new(ActionConditionalConst { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:4748 — ActionConditionalConst::apply
-        //   useMultiequal = true;
-        //   stackSpace = getArch()->getStackSpace();
-        //   if (stackSpace && data.numHeritagePasses(stackSpace) <= 0)
-        //       useMultiequal = false;            // stack not heritaged -> no MULTIEQUAL propagation
-        //   for (i = 0; i < blockGraph.getSize(); ++i):
-        //       bl = blockGraph.getBlock(i);
-        //       cBranch = bl->lastOp();
-        //       if (!cBranch || cBranch->code() != CPUI_CBRANCH) continue;
-        //       boolVn = cBranch->getIn(1);
-        //       blockDom[0] = bl->getOut(0)->restrictedByConditional(bl);
-        //       blockDom[1] = bl->getOut(1)->restrictedByConditional(bl);
-        //       flipEdge = cBranch->isBooleanFlip();
-        //       if (boolVn->loneDescend() == 0):  // boolean read more than once
-        //           points.emplace_back(boolVn, flipEdge?1:0, bl->getFalseOut(), bl->getOutRevIndex(0), blockDom[0]);
-        //           points.emplace_back(boolVn, flipEdge?0:1, bl->getTrueOut(),  bl->getOutRevIndex(1), blockDom[1]);
-        //       findConstCompare(points, boolVn, bl, blockDom, flipEdge);
-        //       propagateConstant(points, useMultiequal, data);
-        //   return 0;
-        //
-        // `findConstCompare`/`pushConstant`/`propagateConstant`/`handlePhiNodes`/
-        // `placeCopy`/`collectReachable`/`flowTogether` (coreaction.cc:4400-4747)
-        // collect each point where a Varnode is provably constant down a
-        // conditional branch and splice in a COPY of the constant, bumping `count`.
-        //
-        // SEAM(W8-funcdata): the block graph + CBRANCH edge geometry
-        // (`restrictedByConditional`/`getOutRevIndex`/`isBooleanFlip`), the
-        // heritage-pass count (`numHeritagePasses`), and the constant-placement
-        // COPY splice are not in the merged tree.  Body transcribed; no change
-        // applied (count stays 0).
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:4748 — ActionConditionalConst::apply.  The full
+        // algorithm (apply/findConstCompare/propagateConstant/handlePhiNodes/
+        // placeCopy/collectReachable/flowTogether/pushConstant) lives in
+        // [`crate::condconst`]; it returns the `count` delta this action records.
+        self.base.count += crate::condconst::condconst_apply(data);
         0
     }
 }

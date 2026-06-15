@@ -589,6 +589,20 @@ impl Funcdata {
         self.heritage.heritage_pass(addr)
     }
 
+    /// Number of heritage passes that have been performed for the given space
+    /// (C++ `Funcdata::numHeritagePasses`, `funcdata.hh:245` —
+    /// `heritage.numHeritagePasses(spc)`).
+    ///
+    /// The C++ throws `LowlevelError` if the space has never been heritaged; the
+    /// owned [`Heritage`](crate::heritage::Heritage) engine surfaces the same as
+    /// an `Err`, which the caller forwards as the C++ would.
+    pub fn num_heritage_passes(
+        &self,
+        spc: &std::rc::Rc<kuna_base::space::AddrSpace>,
+    ) -> kuna_base::error::KunaResult<int4> {
+        self.heritage.num_heritage_passes(spc)
+    }
+
     /// Overall count of heritage passes (C++ `Funcdata::getHeritagePass`,
     /// `funcdata.hh:239` — `heritage.getPass()`).
     pub fn get_heritage_pass(&self) -> int4 {
