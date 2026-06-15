@@ -353,6 +353,21 @@ fn parse_varnode(
     Ok((loc, size, pc, uq))
 }
 
+/// C++ `s >> hex >> hash` (`IfcMaphash`/`IfcMapunionfacet`): extract one
+/// hexadecimal `uint8` dynamic hash from the stream.  An optional `0x`/`0X`
+/// prefix is honored (stream `hex` accepts either form); the digit run is the
+/// next whitespace-delimited token.  Errs on an empty/unparseable token, matching
+/// the C++ failed-extraction signal (the surrounding `execute` then aborts).
+fn parse_hex_u64(s: &mut CommandStream) -> Result<u64, String> {
+    let tok = s.read_token();
+    let t = tok.trim();
+    if t.is_empty() {
+        return Err("Missing hash value".to_string());
+    }
+    let digits = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")).unwrap_or(t);
+    u64::from_str_radix(digits, 16).map_err(|_| "Bad hash value".to_string())
+}
+
 /// The boolean property flags `volatile`/`readonly` paint over a range (C++
 /// `Varnode::volatil` / `Varnode::readonly`).
 mod property_flag {
@@ -858,12 +873,44 @@ decomp_command!(
 decomp_command!(
     /// C++ `IfcMaphash`: `map hash <addr> <hash> <typedeclaration>`.
     IfcMaphash,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
-            return Err(IfaceError::execution("No function loaded"));
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        // C++ ifacedecomp.cc:588-605:
+        //   if (dcp->fd == 0) throw "No function loaded";
+        //   Address addr = parse_machaddr(s,size,*dcp->conf->types);
+        //   s >> hex >> hash;  s >> ws;
+        //   ct = parse_type(s,name,dcp->conf);
+        //   sym = dcp->fd->getScopeLocal()->addDynamicSymbol(name,ct,addr,hash);
+        //   sym->getScope()->setAttribute(sym, namelock|typelock);
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.fd.is_none() {
+                return Err(IfaceError::execution("No function loaded"));
+            }
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No load image present"));
+            }
         }
-        Err(engine_unavailable("parse_machaddr + parse_type + Scope::addDynamicSymbol"))
+        use kuna_decomp::varnode::varnode_flags;
+        let dcp = dcp_mut(status)?;
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        // C++ `s >> hex >> hash`: a hexadecimal dynamic-hash value.
+        let hash = parse_hex_u64(s).map_err(IfaceError::parse)?;
+        s.skip_ws();
+        let (addr_size, word_size) = prog.arch().data_org();
+        let org = crate::grammar::DataOrg { addr_size, word_size };
+        let typetext = s.rest();
+        let (ct, name) = crate::grammar::parse_type(&typetext, prog.arch().types(), org)
+            .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
+        let fd = dcp.fd.as_mut().expect("fd checked Some above");
+        let scope_local = fd.get_scope_local_mut().ok_or_else(|| {
+            IfaceError::execution("Function has no local scope (no stack space)")
+        })?;
+        let sym = scope_local
+            .add_dynamic_symbol(&name, ct, &addr, hash)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        scope_local.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+        Ok(())
     }
 );
 
@@ -1056,16 +1103,58 @@ decomp_command!(
     /// C++ `IfcMapunionfacet`: `map unionfacet <union> <field> <addr> <hash>`.
     IfcMapunionfacet,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
-            return Err(IfaceError::execution("No function loaded"));
+        // C++ ifacedecomp.cc:774-799:
+        //   if (dcp->fd == 0) throw "No function loaded";
+        //   s >> ws >> unionName;
+        //   ct = dcp->conf->types->findByName(unionName);
+        //   if (ct==0 || ct->getMetatype()!=TYPE_UNION) throw "Bad union data-type";
+        //   s >> ws >> dec >> fieldNum;
+        //   if (fieldNum < -1 || fieldNum >= ct->numDepend()) throw "Bad field index";
+        //   Address addr = parse_machaddr(s,size,*dcp->conf->types);
+        //   s >> hex >> hash;
+        //   s2 << "unionfacet" << dec << (fieldNum+1) << '_' << hex << addr.getOffset();
+        //   sym = dcp->fd->getScopeLocal()->addUnionFacetSymbol(s2.str(),ct,fieldNum,addr,hash);
+        //   dcp->fd->getScopeLocal()->setAttribute(sym, typelock|namelock);
+        use kuna_decomp::dtype::type_metatype;
+        use kuna_decomp::varnode::varnode_flags;
+        {
+            let dcp = dcp_mut(status)?;
+            if dcp.fd.is_none() {
+                return Err(IfaceError::execution("No function loaded"));
+            }
+            if dcp.conf.is_none() {
+                return Err(IfaceError::execution("No load image present"));
+            }
         }
+        let dcp = dcp_mut(status)?;
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
         s.skip_ws();
-        let _union_name = s.read_token();
-        // C++ then looks the union up in conf->types (unported) and validates it
-        // is a TYPE_UNION ("Bad union data-type: <name>") before parsing the
-        // field index / address / hash.
-        Err(engine_unavailable("TypeFactory::findByName + Scope::addUnionFacetSymbol"))
+        let union_name = s.read_token();
+        let ct = prog
+            .arch()
+            .types()
+            .find_by_name(&union_name)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?
+            .filter(|t| t.get_metatype() == type_metatype::TYPE_UNION)
+            .ok_or_else(|| IfaceError::parse(format!("Bad union data-type: {union_name}")))?;
+        s.skip_ws();
+        let field_num = s.read_int();
+        if field_num < -1 || field_num >= ct.num_depend() {
+            return Err(IfaceError::parse("Bad field index"));
+        }
+        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        let hash = parse_hex_u64(s).map_err(IfaceError::parse)?;
+        // C++ builds the symbol name "unionfacet<n>_<hexoff>".
+        let sym_name = format!("unionfacet{}_{:x}", field_num + 1, addr.get_offset());
+        let fd = dcp.fd.as_mut().expect("fd checked Some above");
+        let scope_local = fd.get_scope_local_mut().ok_or_else(|| {
+            IfaceError::execution("Function has no local scope (no stack space)")
+        })?;
+        let sym = scope_local
+            .add_union_facet_symbol(&sym_name, ct, field_num, &addr, hash)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        scope_local.set_attribute(sym, varnode_flags::typelock | varnode_flags::namelock);
+        Ok(())
     }
 );
 
