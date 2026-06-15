@@ -2511,13 +2511,14 @@ impl ParamListStandard {
         Ok(())
     }
 
-    /// `ParamListStandardOut::assignMap`.
+    /// `ParamListStandardOut::assignMap` (fspec.cc:1571-1614).
     ///
-    /// SEAM(W4): the too-big return-value path reaches
-    /// `typefactory.getArch()->getDefaultDataSpace()` and constructs a pointer
-    /// type — the `Architecture` wiring is W4.  The common (assignable) path and
-    /// the void path are ported faithfully; the hidden-return fallback returns a
-    /// seam error.
+    /// The common (assignable) path and the void path are ported faithfully.
+    /// The hidden-return path (too-big return value: the output is returned via
+    /// a hidden pointer parameter) is now wired through the `AddrSpaceManager`'s
+    /// default data space (C++ `typefactory.getArch()->getDefaultDataSpace()`)
+    /// and the type factory's `getTypePointer` — closing the w10-struct-return
+    /// seam so struct-returning prototypes apply instead of graceful-degrading.
     fn assign_map_standard_out(
         &self,
         proto: &PrototypePieces,
@@ -2537,16 +2538,68 @@ impl ParamListStandard {
         let mut response =
             self.assign_address(&outtype, proto, -1, typefactory, &mut status, &mut back, manager)?;
         if response == AssignActionResponse::fail {
+            // Invoke default hidden return input assignment action.
             response = AssignActionResponse::hiddenret_ptrparam;
         }
         if response == AssignActionResponse::hiddenret_ptrparam
             || response == AssignActionResponse::hiddenret_specialreg
             || response == AssignActionResponse::hiddenret_specialreg_void
         {
+            // Could not assign an address (too big): the return value is passed
+            // back through a hidden pointer parameter (C++ fspec.cc:1589-1612).
+            let spc = match self.spacebase.clone() {
+                Some(s) => s,
+                None => Rc::clone(manager.get_default_data_space().ok_or_else(|| {
+                    KunaError::lowlevel(
+                        "ParamListStandardOut::assignMap: no default data space for hidden return",
+                    )
+                })?),
+            };
+            let pointersize = spc.get_addr_size() as int4;
+            let wordsize = spc.get_word_size();
+            let pointertp =
+                typefactory.get_type_pointer(pointersize, outtype.clone(), wordsize)?;
+            if response == AssignActionResponse::hiddenret_specialreg_void {
+                back.type_ = Some(typefactory.get_type_void()?);
+            } else {
+                back.type_ = Some(pointertp.clone());
+                // C++ assignAddress(pointertp,...,res.back()): writes the
+                // resolved storage address (and re-sets type/flags) onto `back`.
+                if self.assign_address(
+                    &pointertp,
+                    proto,
+                    -1,
+                    typefactory,
+                    &mut status,
+                    &mut back,
+                    manager,
+                )? == AssignActionResponse::fail
+                {
+                    // C++ fspec.cc:1601 `throw ParamUnassignedError(...)`: a
+                    // dedicated LowlevelError subclass caught by
+                    // ProtoModel::assignParameterStorage(ignoreOutputError=true)
+                    // (fspec.cc:2441) to degrade the output to void.
+                    return Err(KunaError::param_unassigned(
+                        "Cannot assign return value as a pointer",
+                    ));
+                }
+            }
+            back.flags = parameter_pieces_flags::INDIRECTSTORAGE;
             res.push(back);
-            return Err(KunaError::lowlevel(
-                "SEAM(W4) ParamListStandardOut::assignMap hidden-return path needs Architecture wiring",
-            ));
+
+            // Add extra storage location in the input params that holds a pointer
+            // to where the return value should be stored.  Leave its address
+            // invalid, to be filled in by the input list assignMap.  Encode
+            // whether or not the hidden return should be drawn from
+            // TYPECLASS_HIDDENRET.
+            let is_special = response == AssignActionResponse::hiddenret_specialreg
+                || response == AssignActionResponse::hiddenret_specialreg_void;
+            res.push(ParameterPieces {
+                type_: Some(pointertp),
+                flags: if is_special { parameter_pieces_flags::HIDDENRETPARM } else { 0 },
+                ..Default::default()
+            });
+            return Ok(());
         }
         res.push(back);
         Ok(())

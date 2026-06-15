@@ -76,7 +76,7 @@ use crate::engine::{bootstrap_from_file, ConsoleProgram, UNBOUNDED_SIZE};
 use crate::interface::{
     CommandStream, IfaceCommandAction, IfaceData, IfaceError, IfaceResult, IfaceStatus,
 };
-use kuna_base::types::int4;
+use kuna_base::types::{int4, uintm};
 use kuna_decomp::decompile_drive::{build_and_follow_flow, print_c};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::options::OptionDatabase;
@@ -295,6 +295,62 @@ fn parse_machaddr(
         .map_err(|_| "Bad machine address".to_string())?;
     let defaultsize = if size == -1 { oversize } else { size };
     Ok((res, defaultsize))
+}
+
+/// C++ `parse_varnode(istream &s,int4 &size,Address &pc,uintm &uq,
+/// const TypeFactory &typegrp)` (`grammar.cc:3055-3084`): scan a specific
+/// varnode specifier — a storage address, then `(` [`i` | defining-pc] [`:`uniq]
+/// `)`.  Returns `(loc, size, pc, uq)`; `pc` is invalid when `i` (an input) or
+/// absent, and `uq` is `~0` when no `:uniq` is given.
+fn parse_varnode(
+    prog: &ConsoleProgram,
+    s: &mut CommandStream,
+) -> Result<(kuna_base::address::Address, int4, kuna_base::address::Address, uintm), String> {
+    use kuna_base::address::Address;
+    let (loc, size) = parse_machaddr(prog, s, false)?;
+    s.skip_ws();
+    if s.get() != Some(b'(') {
+        return Err("Missing '('".to_string());
+    }
+    s.skip_ws();
+    let mut pc = Address::new_invalid(); // pc starts out as invalid
+    match s.peek() {
+        Some(b'i') => {
+            s.get(); // consume the 'i' (an input varnode)
+        }
+        Some(b':') => {} // no pc: fall through to the uniq scan
+        Some(_) => {
+            // C++ `pc = parse_machaddr(s,discard,typegrp,true)` (ignorecolon).
+            let (a, _discard) = parse_machaddr(prog, s, true)?;
+            pc = a;
+        }
+        None => {}
+    }
+    s.skip_ws();
+    let uq: uintm = if s.peek() == Some(b':') {
+        s.get(); // consume ':'
+        s.skip_ws();
+        // C++ `s >> hex >> uq`: extract the leading run of hex digits, stopping
+        // at the first non-hex char (e.g. the closing `)`), so no whitespace is
+        // required before `)`.
+        let mut hex = String::new();
+        while let Some(c) = s.peek() {
+            if c.is_ascii_hexdigit() {
+                hex.push(c as char);
+                s.get();
+            } else {
+                break;
+            }
+        }
+        uintm::from_str_radix(&hex, 16).map_err(|_| "Bad uniq sequence number".to_string())?
+    } else {
+        !0 // ~((uintm)0)
+    };
+    s.skip_ws();
+    if s.get() != Some(b')') {
+        return Err("Missing ')'".to_string());
+    }
+    Ok((loc, size, pc, uq))
 }
 
 /// The boolean property flags `volatile`/`readonly` paint over a range (C++
@@ -824,14 +880,48 @@ decomp_command!(
 );
 
 decomp_command!(
-    /// C++ `IfcMapReturn`: `map return <addr> <typedeclaration>`.
+    /// C++ `IfcMapReturn`: `map return <addr> <typedeclaration>`
+    /// (ifacedecomp.cc:635-648).  Set a locked return-value storage on the
+    /// current function's prototype.
     IfcMapReturn,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        if dcp_mut(status)?.fd.is_none() {
             return Err(IfaceError::execution("No function loaded"));
         }
-        Err(engine_unavailable("parse_machaddr + parse_type + FuncProto::setOutput"))
+        use kuna_decomp::fspec::{parameter_pieces_flags, ParameterPieces};
+        let dcp = dcp_mut(status)?;
+        let prog = dcp
+            .conf
+            .as_mut()
+            .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        // C++: piece.addr = parse_machaddr(s,size,*dcp->conf->types).
+        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        s.skip_ws();
+        // C++: piece.type = parse_type(s,name,dcp->conf).
+        let (addr_size, word_size) = prog.arch().data_org();
+        let org = crate::grammar::DataOrg { addr_size, word_size };
+        let typetext = s.rest();
+        let (ct, _name) = crate::grammar::parse_type(&typetext, prog.arch().types(), org)
+            .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
+        let piece = ParameterPieces {
+            addr,
+            type_: Some(ct),
+            flags: parameter_pieces_flags::TYPELOCK,
+        };
+        // The C++ `FuncProto::store` is always present (set by `setScope` at
+        // Funcdata construction); the merged-tree load path leaves it null, so
+        // attach the stand-alone internal store before writing the output (C++
+        // `store->setOutput(piece)`).  Idempotent.
+        let void_type = prog
+            .arch()
+            .types()
+            .get_type_void()
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        // C++: dcp->fd->getFuncProto().setOutput(piece).
+        let fd = dcp.fd.as_mut().expect("fd checked Some above");
+        fd.get_func_proto_mut().attach_internal_store(void_type);
+        fd.get_func_proto_mut().set_output(&piece);
+        Ok(())
     }
 );
 
@@ -1595,11 +1685,63 @@ decomp_command!(
 );
 
 decomp_command!(
-    /// C++ `IfcTypeVarnode`: `type varnode <varnode> <typedeclaration>`.
+    /// C++ `IfcTypeVarnode`: `type varnode <varnode> <typedeclaration>`
+    /// (ifacedecomp.cc:1734-1762).  Type-lock a specific varnode's storage to a
+    /// data-type by adding an isolated, type-locked Symbol to the function's
+    /// local scope.
     IfcTypeVarnode,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let _dcp = dcp_mut(status)?;
-        Err(engine_unavailable("parse_type + IfaceDecompData::readVarnode"))
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        if dcp_mut(status)?.fd.is_none() {
+            return Err(IfaceError::execution("No function selected"));
+        }
+        use kuna_decomp::varnode::varnode_flags;
+        let dcp = dcp_mut(status)?;
+        let prog = dcp
+            .conf
+            .as_mut()
+            .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        // C++: Address loc(parse_varnode(s,size,pc,uq,*dcp->conf->types)).
+        let (loc, size, pc, _uq) = parse_varnode(prog, s).map_err(IfaceError::parse)?;
+        s.skip_ws();
+        // C++: ct = parse_type(s,name,dcp->conf).
+        let (addr_size, word_size) = prog.arch().data_org();
+        let org = crate::grammar::DataOrg { addr_size, word_size };
+        let typetext = s.rest();
+        let (ct, name) = crate::grammar::parse_type(&typetext, prog.arch().types(), org)
+            .map_err(|e| IfaceError::parse(e.explain().to_string()))?;
+
+        // C++: dcp->conf->clearAnalysis(dcp->fd) — clear analysis so the varnode
+        // assignment takes effect on the next decompile (Funcdata::clear).
+        let fd = dcp.fd.as_mut().expect("fd checked Some above");
+        fd.clear();
+
+        // C++: scope = dcp->fd->getScopeLocal()->discoverScope(loc,size,pc);
+        //      if (scope == 0) scope = dcp->fd->getScopeLocal();
+        // The W4 scope hierarchy is not exposed across this seam, so a varnode
+        // with no natural sub-scope binds straight to the function-local scope
+        // (the C++ fallback arm, which is taken for register storage like %EAX).
+        let _ = (size, &pc);
+        let scope_local = fd.get_scope_local_mut().ok_or_else(|| {
+            IfaceError::execution("Function has no local scope (no stack space)")
+        })?;
+        // C++: sym = scope->addSymbol(name,ct,loc,pc)->getSymbol().
+        let sym = scope_local
+            .add_symbol(&name, ct, &loc, &pc)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        // scope->setAttribute(sym,Varnode::typelock); sym->setIsolated(true);
+        scope_local.set_attribute(sym, varnode_flags::typelock);
+        scope_local.set_symbol_isolated(sym, true);
+        // if (name.size() > 0) scope->setAttribute(sym,Varnode::namelock);
+        if !name.is_empty() {
+            scope_local.set_attribute(sym, varnode_flags::namelock);
+        }
+        let scope_name = scope_local.full_name();
+        let sym_name = name; // the console echoes sym->getName()
+        // C++ writes to status->fileoptr (the bulk output stream).
+        status.file_out(&format!(
+            "Successfully added {sym_name} to scope {scope_name}\n"
+        ));
+        Ok(())
     }
 );
 
