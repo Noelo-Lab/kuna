@@ -212,6 +212,18 @@ pub struct Funcdata {
     /// *is* that pointer; here the entries live inline and the offset is the
     /// vector index (the faithful equivalent — see `newVarnodeCallSpecs`).
     qlst: Vec<FuncCallSpecs>,
+    /// HighVariable merging engine (C++ `Merge covermerge`, `funcdata.hh:91`).
+    ///
+    /// The C++ `Funcdata` owns a single `Merge` whose `copyTrims` accumulator
+    /// (the trim COPYs `mergeAddrTied`/`mergeMarker` insert) **persists** across
+    /// the merge actions so the later `ActionDominantCopy` (`processCopyTrims`)
+    /// can replace them with a single dominant COPY.  The Rust engine takes
+    /// `&mut dyn MergeContext` (= `&mut Funcdata`), so the field is move-out /
+    /// move-back through [`Self::with_covermerge`] (the same self-mutation idiom
+    /// as `op_heritage`); `None` until first use, built lazily by
+    /// [`Self::ensure_covermerge`].  `pub(crate)` so the `funcdata_merge` bridge
+    /// module can take/replace it.
+    pub(crate) covermerge: Option<crate::merge::Merge>,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -304,6 +316,7 @@ impl Funcdata {
             high_bank: crate::variable::HighVariableBank::new(),
             heritage: crate::heritage::Heritage::new(),
             qlst: Vec::new(),
+            covermerge: None,
         })
     }
 
@@ -1664,6 +1677,195 @@ impl Funcdata {
         }
     }
 
+    /// Replace a set of COPYs from the same Varnode with a single dominant COPY
+    /// (C++ `Merge::buildDominantCopy`, `merge.cc:1151-1238`).
+    ///
+    /// This is the IR-surgery body of `buildDominantCopy`: the cover math
+    /// (`bCover`/`aCover`/`intersect`) decides which COPY outputs can be redirected
+    /// to one dominating Varnode without introducing a Cover intersection, then the
+    /// non-intersecting ones are `totalReplace`d and destroyed.  Faithful to the
+    /// C++; the `needsResolution` union arm is the conservative default (no union
+    /// types in the merged tree).
+    pub(crate) fn build_dominant_copy_impl(
+        &mut self,
+        high: crate::seams::HighVariableId,
+        copy: &[OpId],
+        pos: int4,
+        size: int4,
+    ) -> KunaResult<()> {
+        // blockSet = { copy[pos+i]->getParent() }; domBl = findCommonBlock(blockSet)
+        let mut block_set: Vec<BlockId> = Vec::with_capacity(size as usize);
+        for i in 0..size {
+            let op = copy[(pos + i) as usize];
+            let parent = self.obank.get(op).and_then(|o| o.get_parent());
+            block_set.push(parent.expect("build_dominant_copy: copy op has no parent"));
+        }
+        let dom_bl = self.bblocks.find_common_block_set(&block_set);
+
+        let mut dom_copy = copy[pos as usize];
+        let root_vn = self.obank.get(dom_copy).and_then(|o| o.get_in(0)).expect("build_dominant_copy: domCopy in0");
+        let mut dom_vn = self.obank.get(dom_copy).and_then(|o| o.get_out()).expect("build_dominant_copy: domCopy out");
+        let dom_copy_parent = self.obank.get(dom_copy).and_then(|o| o.get_parent());
+        let dom_copy_is_new = dom_copy_parent != Some(dom_bl);
+        if dom_copy_is_new {
+            // domCopy = data.newOp(1, domBl->getStop()); SetOpcode(COPY)
+            // (the needsResolution union-facing arm is the conservative default —
+            //  no `needsResolution` types in the merged tree.)
+            let stop_addr = self.block_stop_addr(dom_bl);
+            let new_copy = self.new_op(1, stop_addr);
+            self.op_set_opcode(new_copy, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+            let (ct, size_root) = {
+                let v = self.vbank.get(root_vn).expect("build_dominant_copy: stale rootVn");
+                (Rc::clone(v.get_type()), v.get_size())
+            };
+            let new_vn = self.new_unique(size_root, Some(ct));
+            self.op_set_output(new_copy, new_vn)?;
+            self.op_set_input(new_copy, root_vn, 0)?;
+            self.op_insert_end(new_copy, dom_bl);
+            dom_copy = new_copy;
+            dom_vn = new_vn;
+        }
+
+        // bCover: cover formed by removing all COPYs from rootVn (skip COPY
+        // instances whose in0 copyShadows rootVn).
+        let mut b_cover = Cover::new();
+        {
+            let n = self.high_bank.get(high).map(|h| h.num_instances()).unwrap_or(0);
+            for i in 0..n {
+                let vn = self.high_bank.get(high).expect("build_dominant_copy: stale high").get_instance(i);
+                let mut skip = false;
+                if self.vbank.get(vn).map(|v| v.is_written()).unwrap_or(false) {
+                    if let Some(op) = self.vbank.get(vn).and_then(|v| v.get_def()) {
+                        if self.obank.get(op).map(|o| o.code()) == Some(OpCode::CPUI_COPY) {
+                            let in0 = self.obank.get(op).and_then(|o| o.get_in(0));
+                            if let Some(in0) = in0 {
+                                if self.varnode_copy_shadow(in0, root_vn) {
+                                    skip = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if skip {
+                    continue;
+                }
+                // bCover.merge(*vn->getCover()): the rebuilt member cover.
+                let vc = self.full_varnode_cover(vn);
+                b_cover.merge(&vc);
+            }
+        }
+
+        // For each non-dominant COPY, build the hypothetical aCover (def at domVn,
+        // refs at outVn's reads); if it intersects bCover by >1 the redirect would
+        // create a Cover intersection, so leave that COPY in place (mark it).
+        let mut marked: Vec<bool> = vec![false; size as usize];
+        let mut count = size;
+        for i in 0..size {
+            let op = copy[(pos + i) as usize];
+            if op == dom_copy {
+                continue; // No intersections from domVn already proven
+            }
+            let out_vn = self.obank.get(op).and_then(|o| o.get_out()).expect("build_dominant_copy: copy out");
+            let mut a_cover = Cover::new();
+            {
+                let ctx = FuncdataCoverCtx { fd: self };
+                let (def, is_input) = ctx.def_point(dom_vn);
+                a_cover.add_def_point(def, is_input);
+                let descend: Vec<OpId> =
+                    self.vbank.get(out_vn).map(|v| v.descend_iter().collect()).unwrap_or_default();
+                for refop in descend {
+                    a_cover.add_ref_point_for(&ctx, refop, out_vn);
+                }
+            }
+            if b_cover.intersect(&a_cover) > 1 {
+                count -= 1;
+                marked[i as usize] = true;
+            }
+        }
+
+        if count <= 1 {
+            // Don't bother if we only replace one COPY with another.
+            for m in marked.iter_mut() {
+                *m = true;
+            }
+            count = 0;
+            if dom_copy_is_new {
+                self.op_destroy(dom_copy);
+            }
+        }
+
+        // Replace all non-intersecting COPYs with a read of the dominating Varnode.
+        for i in 0..size {
+            let op = copy[(pos + i) as usize];
+            if marked[i as usize] {
+                // op->clearMark() (the marked-set was local; nothing to clear)
+                continue;
+            }
+            let out_vn = self.obank.get(op).and_then(|o| o.get_out()).expect("build_dominant_copy: copy out");
+            if out_vn != dom_vn {
+                // outVn->getHigh()->remove(outVn)
+                if let Some(out_high) = self.vbank.get(out_vn).and_then(|v| v.get_high()) {
+                    self.high_remove_member(out_high, out_vn);
+                }
+                self.total_replace(out_vn, dom_vn)?;
+                self.op_destroy(op);
+            }
+        }
+
+        if count > 0 && dom_copy_is_new {
+            // high->merge(domVn->getHigh(), 0, true)
+            if let Some(dom_high) = self.vbank.get(dom_vn).and_then(|v| v.get_high()) {
+                if dom_high != high {
+                    self.merge_two_highs(high, dom_high, true)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `vn->getCover()` as a freshly rebuilt [`Cover`] (the C++ `bCover.merge`
+    /// reads each member's rebuilt cover).  Builds the full def/use cover off the
+    /// live graph rather than relying on the cached (possibly dirty) one.
+    fn full_varnode_cover(&self, vn: VarnodeId) -> Cover {
+        let mut cover = Cover::new();
+        let ctx = FuncdataCoverCtx { fd: self };
+        cover.rebuild(&ctx, vn);
+        cover
+    }
+
+    /// `outVn->getHigh()->remove(outVn)` across the bank field split (the high
+    /// loses one member; its cover is marked dirty).
+    fn high_remove_member(&mut self, high: crate::seams::HighVariableId, vn: VarnodeId) {
+        let has_symbol_entry = false; // no symbol entries in the merged tree
+        let Funcdata { high_bank, vbank, obank, .. } = self;
+        let ctx = HighReadView::new(vbank, obank);
+        high_bank.remove_member(high, vn, has_symbol_entry, &ctx);
+    }
+
+    /// `high1->merge(high2, &testCache, isspeculative)` for the dominant-copy
+    /// path, replaying the deferred `vn->setHigh` writes (see [`bank_merge_with_log`]).
+    /// The intersection cache is local here (the new dominating high has no cached
+    /// edges yet), matching the C++ pass of `data.getMerge()`'s `testCache`.
+    fn merge_two_highs(
+        &mut self,
+        high1: crate::seams::HighVariableId,
+        high2: crate::seams::HighVariableId,
+        isspeculative: bool,
+    ) -> KunaResult<()> {
+        let opset = crate::cover::PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _| false));
+        let mut cache = crate::variable::HighIntersectTest::new(opset);
+        let mut set_high_log: Vec<(VarnodeId, crate::seams::HighVariableId, int2)> = Vec::new();
+        let mark_set: std::cell::RefCell<std::collections::BTreeSet<crate::seams::HighVariableId>> =
+            std::cell::RefCell::new(std::collections::BTreeSet::new());
+        let res = self.bank_merge_with_log(high1, high2, isspeculative, &mut cache, &mut set_high_log, &mark_set);
+        for (vn, id, mg) in set_high_log {
+            if let Some(v) = self.vbank_mut().get_mut(vn) {
+                v.set_high(id, mg);
+            }
+        }
+        res
+    }
+
     /// Rebuild a Varnode's Cover, driving `Varnode::updateCover` across the arena
     /// boundary (the C++ `vn->updateCover()` / `Cover::rebuild`).  Called by the
     /// Merge driver after data-flow changes.  This is the `// SEAM(W7)` cover
@@ -2215,5 +2417,31 @@ mod tests {
         assert!(!fd.vbank.get(v).unwrap().is_cover_dirty_flag());
         let cover = fd.vbank.get(v).unwrap().cover().expect("cover built");
         assert!(!cover.get_cover_block(0).empty());
+    }
+
+    #[test]
+    fn covermerge_persists_across_with_covermerge_calls() {
+        // The persistent `covermerge` (C++ `Funcdata::covermerge`) must survive the
+        // move-out / move-back of `with_covermerge`, so the `copyTrims` accumulated
+        // by an earlier merge action (`ActionMergeRequired`) reach the later
+        // `ActionDominantCopy` (`processCopyTrims`).  Pin that the engine instance
+        // and its accumulator persist (this is the architectural fix that lets the
+        // dominant-copy hoist see the trim COPYs at all).
+        let mut fd = build_fd();
+        assert!(fd.covermerge.is_none());
+        // First use builds it lazily and reads an empty accumulator.
+        let first = fd.with_covermerge(|merge, _data| merge.copy_trims_len());
+        assert_eq!(first, 0);
+        assert!(fd.covermerge.is_some(), "covermerge built lazily on first use");
+        // Push a (fake) trim into the persistent engine, then re-enter: the push
+        // must still be visible (the engine was moved back, not re-created).
+        let fake = OpId::from(slotmap::KeyData::from_ffi(7));
+        fd.covermerge.as_mut().unwrap().push_copy_trim_for_test(fake);
+        let second = fd.with_covermerge(|merge, _data| merge.copy_trims_len());
+        assert_eq!(second, 1, "copyTrims accumulator survives with_covermerge");
+        // clear_covermerge empties it (C++ Merge::clear in Funcdata::clear).
+        fd.clear_covermerge();
+        let third = fd.with_covermerge(|merge, _data| merge.copy_trims_len());
+        assert_eq!(third, 0);
     }
 }

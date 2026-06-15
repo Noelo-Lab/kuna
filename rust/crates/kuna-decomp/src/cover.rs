@@ -439,6 +439,20 @@ impl Cover {
         }
     }
 
+    /// Add a single read of `vn` by op `ref_op` to \b this Cover (C++
+    /// `Cover::addRefPoint(const PcodeOp *ref,const Varnode *vn)`, `cover.cc:489`).
+    ///
+    /// Resolves the `(block, ref_point, is_multiequal, pred_blocks)` of the read
+    /// via the [`CoverContext`] then folds it in.  Used by
+    /// `Merge::buildDominantCopy`, where the cover of a hypothetical dominant
+    /// Varnode is built from `addDefPoint(domVn)` followed by `addRefPoint(*iter,
+    /// outVn)` for each read `*iter` of a *different* Varnode (`outVn`), so it is
+    /// distinct from the [`Cover::rebuild`] single-varnode walk.
+    pub fn add_ref_point_for(&mut self, ctx: &dyn CoverContext, ref_op: OpId, vn: crate::seams::VarnodeId) {
+        let (bl, ref_point, is_multiequal, pred_blocks) = ctx.ref_point(ref_op, vn);
+        self.add_ref_point(ctx, bl, ref_point, is_multiequal, &pred_blocks);
+    }
+
     /// Add to \b this Cover recursively, starting at the bottom of the given
     /// block and filling backward until existing cover is hit (C++
     /// `Cover::addRefRecurse`, `cover.cc:524-558`).

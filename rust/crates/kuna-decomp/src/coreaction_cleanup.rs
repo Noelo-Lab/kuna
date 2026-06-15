@@ -322,21 +322,21 @@ impl Action for ActionMergeRequired {
         // the `high_is_addr_tied(out) && !high_is_addr_tied(in)` trim trigger.
         mark_output_storage_addr_tied(data);
 
-        // StackAffectingOps is the W7 stack-alias cross-call test source; the
-        // merged-tree default populates it empty (no stack-affecting ops), exactly
-        // as `MergeContext::populate_affecting_ops` for the boolless slice.
-        let opset = crate::cover::PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _| false));
-        let cache = crate::variable::HighIntersectTest::new(opset);
-        let mut merge = crate::merge::Merge::new(cache);
-        if merge.merge_addr_tied(data).is_err() {
-            return 0;
-        }
-        if merge.group_partials(data).is_err() {
-            return 0;
-        }
-        if merge.merge_marker(data).is_err() {
-            return 0;
-        }
+        // Drive over `data.getMerge()` — the single persistent `Merge` on
+        // `Funcdata` (C++ `covermerge`) so the trim COPYs `mergeAddrTied`/
+        // `mergeMarker` insert accumulate in its `copyTrims`, surviving to the
+        // later `ActionDominantCopy` (`processCopyTrims`).  StackAffectingOps is
+        // the W7 stack-alias cross-call test source; the merged-tree default is
+        // empty (no stack-affecting ops on the boolless/condconst slices).
+        data.with_covermerge(|merge, data| {
+            if merge.merge_addr_tied(data).is_err() {
+                return;
+            }
+            if merge.group_partials(data).is_err() {
+                return;
+            }
+            let _ = merge.merge_marker(data);
+        });
         0
     }
 }
@@ -683,12 +683,17 @@ impl Action for ActionMergeMultiEntry {
         }
         Some(Box::new(ActionMergeMultiEntry { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.hh:404 — ActionMergeMultiEntry::apply
         //   data.getMerge().mergeMultiEntry(); return 0;
         //
-        // SEAM(W7/W8-funcdata): `Merge::merge_multi_entry` is ported but needs the
-        // `getMerge()`/`MergeContext` bridge.  No change applied (count stays 0).
+        // Drive over `data.getMerge()` (the persistent `covermerge`).  On the
+        // merged-tree default `multi_entry_symbols` is empty (no W4 multi-entry
+        // ScopeLocal symbols), so this is a true no-op, but it is now wired to the
+        // real engine so it activates the moment that layer lands.
+        data.with_covermerge(|merge, data| {
+            let _ = merge.merge_multi_entry(data);
+        });
         0
     }
 }
@@ -735,10 +740,9 @@ impl Action for ActionMergeCopy {
         // `MergeContext for Funcdata` bridge (same construction as the other
         // merge actions).  Once merged, `markInternalCopies` (ActionCopyMarker)
         // marks the now-intra-high COPY nonprinting so it does not materialise.
-        let opset = crate::cover::PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _| false));
-        let cache = crate::variable::HighIntersectTest::new(opset);
-        let mut merge = crate::merge::Merge::new(cache);
-        let _ = merge.merge_opcode(data, OpCode::CPUI_COPY);
+        data.with_covermerge(|merge, data| {
+            let _ = merge.merge_opcode(data, OpCode::CPUI_COPY);
+        });
         0
     }
 }
@@ -775,12 +779,18 @@ impl Action for ActionDominantCopy {
         }
         Some(Box::new(ActionDominantCopy { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.hh:1023 — ActionDominantCopy::apply
         //   data.getMerge().processCopyTrims(); return 0;
         //
-        // SEAM(W7/W8-funcdata): `Merge::process_copy_trims` is ported but needs
-        // the `getMerge()`/`MergeContext` bridge.  No change (count stays 0).
+        // Drive over `data.getMerge()` (the persistent `covermerge`): the trim
+        // COPYs `ActionMergeRequired` accumulated in `copyTrims` are grouped by
+        // source Varnode and replaced with a single dominating COPY hoisted to the
+        // common dominator (`buildDominantCopy`), emptying the per-block trim
+        // COPYs so `ActionBlockStructure` can splice them away.
+        data.with_covermerge(|merge, data| {
+            let _ = merge.process_copy_trims(data);
+        });
         0
     }
 }
@@ -861,12 +871,15 @@ impl Action for ActionMergeAdjacent {
         }
         Some(Box::new(ActionMergeAdjacent { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.hh:382 — ActionMergeAdjacent::apply
         //   data.getMerge().mergeAdjacent(); return 0;
         //
-        // SEAM(W7/W8-funcdata): `Merge::merge_adjacent` is ported but needs the
-        // `getMerge()`/`MergeContext` bridge.  No change (count stays 0).
+        // Drive over `data.getMerge()` (the persistent `covermerge`): try to merge
+        // each op's same-storage input into its output Varnode.
+        data.with_covermerge(|merge, data| {
+            let _ = merge.merge_adjacent(data);
+        });
         0
     }
 }
@@ -903,15 +916,17 @@ impl Action for ActionMergeType {
         }
         Some(Box::new(ActionMergeType { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.hh:415 — ActionMergeType::apply
         //   data.getMerge().mergeByDatatype(data.beginLoc(), data.endLoc());
         //   return 0;
         //
-        // SEAM(W7/W8-funcdata): `Merge::merge_by_datatype` is ported (it takes a
-        // location-ordered Varnode slice), but needs the `getMerge()`/
-        // `MergeContext` bridge plus the `beginLoc`/`endLoc` loc-set iterator on
-        // `Funcdata`.  No change applied (count stays 0).
+        // Drive `Merge::merge_by_datatype` over the loc-ordered Varnode slice
+        // (`beginLoc()..endLoc()`) via the persistent `covermerge`.
+        let range: Vec<crate::seams::VarnodeId> = data.vbank().iter_loc().collect();
+        data.with_covermerge(|merge, data| {
+            let _ = merge.merge_by_datatype(data, &range);
+        });
         0
     }
 }
@@ -1014,10 +1029,9 @@ impl Action for ActionCopyMarker {
         // they do not emit a separate `v = ...;` statement — the printer then
         // recurses straight through to the value.  `processHighRedundantCopy`
         // (the multi-COPY-into-one-high case) also fires here.
-        let opset = crate::cover::PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _| false));
-        let cache = crate::variable::HighIntersectTest::new(opset);
-        let mut merge = crate::merge::Merge::new(cache);
-        merge.mark_internal_copies(data);
+        data.with_covermerge(|merge, data| {
+            merge.mark_internal_copies(data);
+        });
         0
     }
 }
