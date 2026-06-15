@@ -83,7 +83,7 @@ use std::rc::Rc;
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::{spacetype, AddrSpace};
-use kuna_base::types::{int4, uintb, uintm};
+use kuna_base::types::{int4, uint4, uintb, uintm};
 
 use kuna_num::opcodes::OpCode;
 
@@ -623,6 +623,62 @@ impl Funcdata {
     /// descendants); that condition is the C++ `LowlevelError`.
     pub fn delete_varnode(&mut self, vn: VarnodeId) -> KunaResult<()> {
         self.vbank_mut().destroy(vn)
+    }
+
+    /// Create a new Varnode which is a \e clone of the given Varnode
+    /// (C++ `Funcdata::cloneVarnode`, `funcdata_varnode.cc:254`).
+    ///
+    /// The new Varnode reuses the original's size/address/type, and copies only
+    /// the small set of \e clonable property flags (annotation, externref,
+    /// readonly, persist, addrtied, addrforce, indirect_creation, incidental_copy,
+    /// volatil, mapped).  Used by [`Funcdata::clone_op`] when building the partial
+    /// jump-table-recovery clone.
+    pub fn clone_varnode(&mut self, vn: VarnodeId) -> VarnodeId {
+        let (size, addr, ct, flags) = {
+            let v = self.vbank().get(vn).expect("clone_varnode: stale vn");
+            (v.get_size(), v.get_addr().clone(), Rc::clone(v.get_type()), v.get_flags())
+        };
+        self.clone_varnode_fields(size, addr, ct, flags)
+    }
+
+    /// Clone a Varnode from a \e different function's bank into \b this one (the
+    /// cross-function variant of [`clone_varnode`] used by `truncatedFlow`).
+    pub fn clone_varnode_from(&mut self, src: &Funcdata, vn: VarnodeId) -> VarnodeId {
+        let (size, addr, ct, flags) = {
+            let v = src.vbank().get(vn).expect("clone_varnode_from: stale src vn");
+            (v.get_size(), v.get_addr().clone(), Rc::clone(v.get_type()), v.get_flags())
+        };
+        self.clone_varnode_fields(size, addr, ct, flags)
+    }
+
+    /// Shared body of [`clone_varnode`]/[`clone_varnode_from`]: create the new
+    /// Varnode and copy the small clonable flag set (C++ `cloneVarnode`).
+    fn clone_varnode_fields(
+        &mut self,
+        size: int4,
+        addr: Address,
+        ct: Rc<Datatype>,
+        flags: uint4,
+    ) -> VarnodeId {
+        use varnode_flags as vf;
+        let newvn = self.vbank_mut().create(size, addr, ct);
+        // These are the flags we allow to be cloned (funcdata_varnode.cc:259-265)
+        let vflags = flags
+            & (vf::annotation
+                | vf::externref
+                | vf::readonly
+                | vf::persist
+                | vf::addrtied
+                | vf::addrforce
+                | vf::indirect_creation
+                | vf::incidental_copy
+                | vf::volatil
+                | vf::mapped);
+        self.vbank_mut()
+            .get_mut(newvn)
+            .expect("clone_varnode: fresh vn")
+            .set_flags_pub(vflags);
+        newvn
     }
 
     /// Remove the given Varnode, replacing references with null and freeing it

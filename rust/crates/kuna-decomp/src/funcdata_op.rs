@@ -605,11 +605,9 @@ impl Funcdata {
     /// Make a clone of the given op, copying control-flow properties; the
     /// data-type is \e not cloned (C++ `Funcdata::cloneOp`, `funcdata_op.cc:616`).
     ///
-    /// SEAM(W3-varnode): the output/input Varnode clones go through
-    /// `cloneVarnode`, the funcdata_varnode factory (still a stub at this merge
-    /// base).  The op-shell clone (new op, opcode, the `startmark|startbasic`
-    /// flag copy) is ported; the varnode-clone-and-link half returns the seam
-    /// error.  Recorded as a loss; the funcdata_varnode wave fills it in.
+    /// Now closed (rport/w10-jts-chain): `cloneVarnode` is the funcdata_varnode
+    /// factory and the opcode is resolved through the W6 `inst[]` seam via
+    /// [`op_set_opcode_code`](Funcdata::op_set_opcode_code).
     pub fn clone_op(
         &mut self,
         op: OpId,
@@ -618,19 +616,66 @@ impl Funcdata {
         // PcodeOp *newop = newOp(op->numInput(),seq);
         let numinput = self.obank().get(op).expect("clone_op: stale op").num_input();
         let newop = self.new_op_seq(numinput, seq);
-        // opSetOpcode(newop,op->code());  -- needs glb->inst[code] (W6).
+        // opSetOpcode(newop,op->code());
+        let opc = self.obank().get(op).expect("clone_op").code();
+        self.op_set_opcode_code(newop, opc);
         // uint4 fl = op->flags & (startmark | startbasic); newop->setFlag(fl);
         let fl = self.obank().get(op).expect("clone_op").get_flags()
             & (pcodeop_flags::startmark | pcodeop_flags::startbasic);
         self.obank_mut().get_mut(newop).expect("clone_op").set_flag(fl);
         // if (op->getOut() != 0) opSetOutput(newop,cloneVarnode(op->getOut()));
+        let outvn = self.obank().get(op).expect("clone_op").get_out();
+        if let Some(outvn) = outvn {
+            let newout = self.clone_varnode(outvn);
+            self.op_set_output(newop, newout)?;
+        }
         // for(i=0;i<numInput;++i) opSetInput(newop,cloneVarnode(op->getIn(i)),i);
-        //   -- SEAM(W3-varnode): cloneVarnode + opSetOpcode(W6).
-        let _ = newop;
-        Err(KunaError::lowlevel(
-            "kuna rust port: Funcdata::cloneOp needs cloneVarnode (funcdata_varnode) \
-             and glb->inst[opc] (W6); op-shell created, varnode clone deferred",
-        ))
+        for i in 0..numinput {
+            let invn = self
+                .obank()
+                .get(op)
+                .expect("clone_op")
+                .get_in(i)
+                .expect("clone_op: missing input");
+            let newin = self.clone_varnode(invn);
+            self.op_set_input(newop, newin, i)?;
+        }
+        Ok(newop)
+    }
+
+    /// Clone an op from a \e different function into \b this one (C++
+    /// `Funcdata::cloneOp` where `op` belongs to the source `fd`, called by
+    /// `truncatedFlow`): the op-shell/opcode/flags + varnodes are read from `src`
+    /// and built into `self`.
+    pub fn clone_op_from(
+        &mut self,
+        src: &Funcdata,
+        op: OpId,
+        seq: kuna_base::address::SeqNum,
+    ) -> KunaResult<OpId> {
+        let numinput = src.obank().get(op).expect("clone_op_from: stale src op").num_input();
+        let newop = self.new_op_seq(numinput, seq);
+        let opc = src.obank().get(op).expect("clone_op_from").code();
+        self.op_set_opcode_code(newop, opc);
+        let fl = src.obank().get(op).expect("clone_op_from").get_flags()
+            & (pcodeop_flags::startmark | pcodeop_flags::startbasic);
+        self.obank_mut().get_mut(newop).expect("clone_op_from").set_flag(fl);
+        let outvn = src.obank().get(op).expect("clone_op_from").get_out();
+        if let Some(outvn) = outvn {
+            let newout = self.clone_varnode_from(src, outvn);
+            self.op_set_output(newop, newout)?;
+        }
+        for i in 0..numinput {
+            let invn = src
+                .obank()
+                .get(op)
+                .expect("clone_op_from")
+                .get_in(i)
+                .expect("clone_op_from: missing input");
+            let newin = self.clone_varnode_from(src, invn);
+            self.op_set_input(newop, newin, i)?;
+        }
+        Ok(newop)
     }
 
     // -----------------------------------------------------------------------

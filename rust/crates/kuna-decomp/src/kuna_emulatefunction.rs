@@ -86,6 +86,13 @@ impl<'a> EmulateFunction<'a> {
         self.loadpoints.take()
     }
 
+    /// The number of LOAD records collected so far (C++ `loadpoints->size()`,
+    /// read after each `emulatePath` to populate `loadcounts`).  `None` when not
+    /// collecting.
+    pub fn loadpoints_len(&self) -> Option<usize> {
+        self.loadpoints.as_ref().map(|v| v.len())
+    }
+
     /// Set the executing op directly by id (the C++ `setCurrentOp` reads the
     /// op's `OpBehavior` into `currentBehave`).
     fn set_current_op(&mut self, op: OpId) {

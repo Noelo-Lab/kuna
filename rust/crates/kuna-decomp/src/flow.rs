@@ -84,6 +84,7 @@ use kuna_sleigh::translate::{PcodeEmit, Translate};
 use std::collections::BTreeMap;
 
 use crate::funcdata::Funcdata;
+use crate::jumptable::RecoveryMode;
 use crate::op::pcodeop_flags;
 use crate::seams::{BlockId, OpId, TypeOp};
 
@@ -146,6 +147,18 @@ pub struct VisitStat {
     /// Number of bytes in the instruction (C++ `size`).
     pub size: int4,
 }
+
+/// The flow's instruction-boundary map (C++ `FlowInfo::visited`).  A type alias
+/// so the jump-table recovery's partial-clone seeding signatures stay readable.
+/// (`Address` is logically immutable as a key — its interior is a memoized space
+/// lookup, never mutated through a `&` key — so the `clippy::mutable_key_type`
+/// lints on the public signatures using it are `#[allow]`ed.)
+pub type VisitedMap = BTreeMap<Address, VisitStat>;
+
+/// The reduced "jumptable" action-pipeline runner the recovery chain calls per
+/// partial clone (it builds the partial's blocks + runs the action set).  Type
+/// alias to keep the recovery signatures from tripping `clippy::type_complexity`.
+pub type JtPipelineFn<'a> = dyn FnMut(&mut Funcdata, &VisitedMap) -> KunaResult<()> + 'a;
 
 /// The W4/W6 subsystem slice [`FlowInfo`] reaches through its owning
 /// `Architecture` (C++ `glb`) and per-function `Override`.
@@ -335,6 +348,22 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     // option setters (C++ inline)
     // -----------------------------------------------------------------------
 
+    /// Construct a FlowInfo over a partial-clone Funcdata, seeding the cloned
+    /// flow's `visited` map (C++ `FlowInfo::FlowInfo(...,const FlowInfo *op2)`,
+    /// `flow.cc:54`): the partial reuses the source flow's `visited` so its
+    /// `generateBlocks` (fillinBranchStubs / fallthru-edge resolution) sees the
+    /// same instruction boundaries.
+    #[allow(clippy::mutable_key_type)]
+    pub fn new_seeded(
+        data: Funcdata,
+        env: &'a E,
+        visited: VisitedMap,
+    ) -> FlowInfo<'a, E> {
+        let mut flow = FlowInfo::new(data, env);
+        flow.visited = visited;
+        flow
+    }
+
     /// Establish the flow bounds (C++ `setRange`, `flow.hh:144`).
     pub fn set_range(&mut self, b: Address, e: Address) {
         self.baddr = b;
@@ -471,6 +500,13 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             cur = &cur + stat.size as i64;
         }
         Err(KunaError::lowlevel(Self::target_error_message(addr)))
+    }
+
+    /// Snapshot the `visited` map for a post-FlowInfo `target` lookup
+    /// (`switchOverJumpTables` runs after the FlowInfo's `data` is moved out).
+    #[allow(clippy::mutable_key_type)]
+    pub fn target_index_snapshot(&self) -> VisitedMap {
+        self.visited.clone()
     }
 
     fn target_error_message(addr: &Address) -> String {
@@ -1391,11 +1427,13 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// Generate raw control-flow from the function's base address (C++
     /// `generateOps`, `flow.cc:789`).
     ///
-    /// SEAM(W4): the jump-table recovery loop (`recoverJumpTables`,
-    /// `checkContainedCall`, `checkMultistageJumptables`) and `injectPcode` need
-    /// W4 subsystems; those calls are the W4 skeletons.  The primary
-    /// fall-thru-recovery loop (`while(!addrlist.empty()) fallthru();`) is faithful
-    /// and runs fully.
+    /// The fall-thru-recovery loop runs fully; the jump-table recovery loop
+    /// (`recoverJumpTables` + `newAddress` re-fill) is driven via
+    /// [`generate_ops_with_jumptables`](Self::generate_ops_with_jumptables) when a
+    /// jump-table pipeline runner is available (the `build_and_follow_flow`
+    /// caller, which owns `&mut Architecture` for the "jumptable" action set).
+    /// `injectPcode`/`checkContainedCall`/`checkMultistageJumptables` remain
+    /// `// SEAM(W4)`.
     pub fn generate_ops(&mut self) -> KunaResult<()> {
         self.clear_properties();
         self.addrlist.push(self.data.get_address().clone());
@@ -1406,15 +1444,52 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         if self.has_inject() {
             self.inject_pcode()?;
         }
-        // do { while(!tablelist.empty()) { recoverJumpTables ... } ... } while(...)
-        //   -- SEAM(W4): jump-table recovery + checkContainedCall +
-        //      checkMultistageJumptables are W4.  With no JumpTable subsystem the
-        //      C++ loop body cannot recover anything; the W4 wave wires it.  Any
-        //      BRANCHIND in `tablelist` is left pending for W4 (faithful: the
-        //      partial-flow path treats it as having no table out-branches in
-        //      collectEdges).
-        if !self.tablelist.is_empty() {
-            self.recover_jump_tables_stub()?;
+        // The jump-table recovery loop is driven from
+        // `generate_ops_with_jumptables` (needs the action-pipeline runner).  Any
+        // BRANCHIND left in `tablelist` is handled there; without a runner the
+        // BRANCHIND has no out-branches (faithful partial flow), matching the C++
+        // `findJumpTable==0` path in `collectEdges`.
+        Ok(())
+    }
+
+    /// Drive the jump-table recovery loop after the fall-thru phase (C++
+    /// `generateOps`'s `do { while(!tablelist.empty()) recoverJumpTables ... }`
+    /// loop, `flow.cc:799-823`).
+    ///
+    /// `run_pipeline` runs the "jumptable" action set on a partial Funcdata (the
+    /// caller binds it to the real [`Architecture`]'s action root).  For each
+    /// recovered table, `newAddress` re-fills as much flow as possible.
+    ///
+    /// SEAM(W4): `checkContainedCall` / `checkMultistageJumptables` (the PIC /
+    /// multistage outer loop) need the override table + FuncCallSpecs; the single
+    /// recovery pass over the current `tablelist` is the load-bearing part for the
+    /// corpus and runs fully.
+    pub fn generate_ops_with_jumptables(
+        &mut self,
+        run_pipeline: &mut JtPipelineFn<'_>,
+    ) -> KunaResult<()> {
+        self.generate_ops()?;
+        while !self.tablelist.is_empty() {
+            let new_tables = self.recover_jump_tables(run_pipeline)?;
+            self.tablelist.clear();
+            for jt_idx in new_tables {
+                let indop = match self.data.get_jump_table(jt_idx as int4).get_indirect_op() {
+                    Some(op) => op,
+                    None => continue,
+                };
+                let num = self.data.get_jump_table(jt_idx as int4).num_entries();
+                for i in 0..num {
+                    let addr = self.data.get_jump_table(jt_idx as int4).get_address_by_index(i);
+                    self.new_address(indop, &addr)?;
+                }
+                while !self.addrlist.is_empty() {
+                    self.fallthru()?;
+                }
+            }
+            // SEAM(W4): checkContainedCall + checkMultistageJumptables (outer
+            // do/while) — the multistage/inline restart that could re-populate
+            // tablelist is the W4 override table; the single pass suffices for the
+            // corpus switches.
         }
         Ok(())
     }
@@ -1580,18 +1655,85 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         ))
     }
 
-    /// Recover jump-tables for the current `tablelist` (C++ `recoverJumpTables` +
-    /// the `generateOps` recovery loop, `flow.cc:799-823`/`1429`).
+    /// Recover jump-tables for the current `tablelist` (C++
+    /// `FlowInfo::recoverJumpTables`, `flow.cc:1429`).
     ///
-    /// SEAM(W4): `JumpTable`, `data.recoverJumpTable`, `truncateIndirectJump`,
-    /// `checkContainedCall`, `checkMultistageJumptables` are all W4.  The pending
-    /// BRANCHIND ops stay in `tablelist` for the W4 wave.
-    fn recover_jump_tables_stub(&mut self) -> KunaResult<()> {
-        Err(KunaError::lowlevel(
-            "kuna rust port: FlowInfo jump-table recovery needs the W4 JumpTable subsystem \
-             (recoverJumpTable/truncateIndirectJump/checkMultistageJumptables); BRANCHIND ops \
-             left pending in tablelist",
-        ))
+    /// Returns the indices (into `data.jumpvec`) of the recovered tables.  A
+    /// BRANCHIND that cannot be recovered is truncated to a call/return via
+    /// [`truncate_indirect_jump`](Self::truncate_indirect_jump) (unless this flow
+    /// is being inlined).  `run_pipeline` runs the "jumptable" action set on the
+    /// partial Funcdata.
+    ///
+    /// SEAM(W4): the `notreached` re-queue (a BRANCHIND not yet reachable through
+    /// partial flow) needs the multistage outer loop; here every BRANCHIND in the
+    /// list is attempted once (the corpus switches are reachable in one pass).
+    #[allow(clippy::mutable_key_type)]
+    fn recover_jump_tables(
+        &mut self,
+        run_pipeline: &mut JtPipelineFn<'_>,
+    ) -> KunaResult<Vec<usize>> {
+        let mut new_tables: Vec<usize> = Vec::new();
+        let table_ops: Vec<OpId> = self.tablelist.clone();
+        let record = self.does_jump_record();
+        let for_inline = self.is_flow_for_inline();
+        // Snapshot the original flow's `visited` for the partial clone.
+        let visited_snapshot = self.visited.clone();
+        for op in table_ops {
+            let mode = self.data.recover_jump_table_flow(
+                op,
+                record,
+                &visited_snapshot,
+                run_pipeline,
+            );
+            match mode {
+                Ok(Some(jt_idx)) => {
+                    // jt->isPartial(): if incomplete and there is more flow, the
+                    // C++ re-queues into `notreached`.  Single-pass: mark complete.
+                    if self.data.get_jump_table(jt_idx as int4).is_partial() {
+                        self.data.get_jump_table_mut(jt_idx as int4).mark_complete();
+                    }
+                    new_tables.push(jt_idx);
+                }
+                Ok(None) => {
+                    // Could not recover the jumptable.
+                    if !for_inline {
+                        self.truncate_indirect_jump(op, RecoveryMode::FailNormal)?;
+                    }
+                }
+                Err(mode) => {
+                    // A specific failure mode (thunk / return / callother).
+                    if !for_inline {
+                        self.truncate_indirect_jump(op, mode)?;
+                    }
+                }
+            }
+        }
+        Ok(new_tables)
+    }
+
+    /// Convert a BRANCHIND that could not be recovered into a call or return
+    /// (C++ `FlowInfo::truncateIndirectJump`, `flow.cc:745`).
+    fn truncate_indirect_jump(&mut self, op: OpId, mode: RecoveryMode) -> KunaResult<()> {
+        if mode == RecoveryMode::FailReturn {
+            self.data.op_set_opcode_code(op, OpCode::CPUI_RETURN);
+            // data.warning("Treating indirect jump as return", ...) -- SEAM(W4)
+            return Ok(());
+        }
+        self.data.op_set_opcode_code(op, OpCode::CPUI_CALLIND);
+        self.setup_callind_specs(op)?;
+        // The no-return / thunk fc bookkeeping (fc->setBadJumpTable / setNoReturn /
+        // setInternal) is the W4 FuncCallSpecs surface -- SEAM(W4); the op-code
+        // change to CALLIND is the load-bearing CFG effect.
+        // Create an artificial return after the call.
+        let return_type = if mode == RecoveryMode::FailCallother {
+            pcodeop_flags::noreturn
+        } else {
+            0
+        };
+        let addr = self.data.obank().get(op).unwrap().get_addr().clone();
+        let truncop = self.artificial_halt(&addr, return_type)?;
+        self.data.op_dead_insert_after(truncop, op);
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -1803,4 +1945,57 @@ impl<E: FlowEnvironment> PcodeEmit for FlowEmit<'_, '_, E> {
         }
         self.emitted.push(op);
     }
+}
+
+/// Free-function `FlowInfo::target` over an explicit `(Funcdata, visited)` pair
+/// (C++ `FlowInfo::target`, `flow.cc:117`): map a flow address to the op
+/// starting its instruction's basic block, following no-p-code fall-thru.  Used
+/// by `switchOverJumpTables` after the FlowInfo's `data` has been moved out.
+#[allow(clippy::mutable_key_type)]
+pub fn target_in(
+    fd: &Funcdata,
+    visited: &VisitedMap,
+    addr: &Address,
+) -> KunaResult<OpId> {
+    let mut cur = addr.clone();
+    while let Some(stat) = visited.get(&cur) {
+        if !stat.seqnum.get_addr().is_invalid() {
+            if let Some(retop) = fd.obank().find_op(&stat.seqnum) {
+                return Ok(retop);
+            }
+            break;
+        }
+        cur = &cur + stat.size as i64;
+    }
+    Err(KunaError::lowlevel(format!(
+        "Could not find op at target address: {addr:?}"
+    )))
+}
+
+/// Build the basic blocks of a jump-table-recovery partial clone (the
+/// `partialflow.generateBlocks()` half of C++ `Funcdata::truncatedFlow`).
+///
+/// The partial's ops were cloned by `Funcdata::truncated_flow_clone`; this builds
+/// a [`FlowInfo`] over it seeded with the source flow's `visited` and runs
+/// `generate_blocks` (fillinBranchStubs / collectEdges / splitBasic /
+/// connectBasic).  `env` is the same [`FlowEnvironment`] the source flow used
+/// (only the `translate`/`resolve_typeop` surface is touched, never to lift —
+/// `generate_blocks` reads no env method).
+#[allow(clippy::mutable_key_type)]
+pub fn build_partial_blocks<E: FlowEnvironment>(
+    partial: &mut Funcdata,
+    env: &E,
+    visited: &VisitedMap,
+) -> KunaResult<()> {
+    // Move the partial's data into a FlowInfo, build blocks, move it back.
+    let placeholder = Funcdata::new_placeholder_like(partial)?;
+    let data = std::mem::replace(partial, placeholder);
+    let mut flow = FlowInfo::new_seeded(data, env, visited.clone());
+    // partialflow.clearFlags(~possible_unreachable) — only possible_unreachable
+    // survives; the partial flow has no error flags to clear here.
+    let res = flow.generate_blocks();
+    *partial = flow.data;
+    res?;
+    partial.set_flag_raw(crate::funcdata::funcdata_flags::blocks_generated);
+    Ok(())
 }

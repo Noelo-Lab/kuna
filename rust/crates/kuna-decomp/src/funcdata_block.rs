@@ -841,15 +841,408 @@ impl Funcdata {
     /// Make sure default switch cases are properly labeled
     /// (C++ `Funcdata::installSwitchDefaults`, `funcdata_block.cc:706`).
     ///
-    /// SEAM(W4): the per-table indirect op + default block come from the W4
-    /// `JumpTable` (`jt->getIndirectOp()`, `jt->getDefaultBlock()`).  With the
-    /// table contents seamed out there is nothing to label at W3; the iteration
-    /// shape is carried so W4 fills only the body.
+    /// Mark each switch block's default out-edge (C++
+    /// `Funcdata::installSwitchDefaults`, `funcdata_block.cc:706`).
     pub fn install_switch_defaults(&mut self) {
-        for _i in 0..self.num_jump_tables() {
-            // indop = jt->getIndirectOp(); ind = indop->getParent();
-            // if (jt->getDefaultBlock() != -1) ind->setDefaultSwitch(...);  -- SEAM(W4)
+        for i in 0..self.num_jump_tables() {
+            let jt = self.get_jump_table(i);
+            let default_block = jt.get_default_block();
+            let indop = match jt.get_indirect_op() {
+                Some(op) => op,
+                None => continue,
+            };
+            if default_block == -1 {
+                continue;
+            }
+            // ind = indop->getParent(); ind->setDefaultSwitch(default_block)
+            if let Some(ind) = self.obank().get(indop).and_then(|o| o.get_parent()) {
+                self.bblocks_mut().set_default_switch(ind, default_block);
+            }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // jump-table recovery chain (funcdata_block.cc:444-704)
+    // -----------------------------------------------------------------------
+
+    /// Search for a pre-existing jump-table whose op-address matches `op`, and
+    /// link it to `op` (C++ `Funcdata::linkJumpTable`, `funcdata_block.cc:444`).
+    /// Returns its index in `jumpvec`.
+    pub fn link_jump_table(&mut self, op: OpId) -> Option<usize> {
+        let addr = self.obank().get(op)?.get_addr().clone();
+        let idx = self.jumpvec_ref().iter().position(|jt| *jt.get_op_address() == addr)?;
+        // jt->setIndirectOp(op): the op's address is `addr` (same op-address).
+        self.jumpvec_mut()[idx].set_indirect_op_addr(op, addr);
+        Some(idx)
+    }
+
+    /// Install a fresh (empty) jump-table for a BRANCHIND at `addr` (C++
+    /// `Funcdata::installJumpTable`, `funcdata_block.cc:480`).  Must be called
+    /// before flow is traced.
+    pub fn install_jump_table(&mut self, addr: Address) -> KunaResult<usize> {
+        if self.is_proc_started() {
+            return Err(KunaError::lowlevel(
+                "Cannot install jumptable if flow is already traced",
+            ));
+        }
+        if self.jumpvec_ref().iter().any(|jt| *jt.get_op_address() == addr) {
+            return Err(KunaError::lowlevel("Trying to install over existing jumptable"));
+        }
+        let newjt = crate::jumptable::JumpTable::new(addr);
+        self.jumpvec_mut().push(newjt);
+        Ok(self.num_jump_tables() as usize - 1)
+    }
+
+    /// For each jump-table, map every recovered address to its target basic-block
+    /// out-edge (C++ `Funcdata::switchOverJumpTables`, `funcdata_block.cc:697`).
+    ///
+    /// `target` resolves an [`Address`] to the op starting its block (the
+    /// `FlowInfo::target` surface).
+    pub fn switch_over_jump_tables<F>(&mut self, target: F) -> KunaResult<()>
+    where
+        F: Fn(&Funcdata, &Address) -> KunaResult<OpId>,
+    {
+        let n = self.num_jump_tables();
+        for i in 0..n {
+            let mut jt = std::mem::replace(
+                &mut self.jumpvec_mut()[i as usize],
+                crate::jumptable::JumpTable::new(Address::default()),
+            );
+            let res = jt.switch_over(self, |addr| target(self, addr));
+            self.jumpvec_mut()[i as usize] = jt;
+            res?;
+        }
+        Ok(())
+    }
+
+    /// Generate a clone with truncated control-flow given a partial function
+    /// (C++ `Funcdata::truncatedFlow`, `funcdata_op.cc:792`): the op + jump-table
+    /// clone half.
+    ///
+    /// Clones the source function's raw dead p-code into \b this (empty) function
+    /// and copies its jump-tables (relinked to the partial's matching ops).  The
+    /// block-building half (`partialflow.generateBlocks()`) is driven separately
+    /// by the recovery pipeline (which owns the [`crate::flow::FlowInfo`] +
+    /// architecture env).
+    ///
+    /// SEAM(W4): the FuncCallSpecs cloning (`oldspec->clone(newop)` + the fspec
+    /// annotation swap) is the W4 call-spec surface; the op + jump-table clone is
+    /// the load-bearing part for switch recovery and is ported.
+    pub fn truncated_flow_clone(&mut self, src: &Funcdata) -> KunaResult<()> {
+        if !self.obank().empty() {
+            return Err(KunaError::lowlevel(
+                "Trying to do truncated flow on pre-existing pcode",
+            ));
+        }
+        // Clone the raw pcode (in dead-list order, preserving SeqNums).
+        let src_ops: Vec<OpId> = src.obank().iter_dead().collect();
+        for op in src_ops {
+            let seq = src.obank().get(op).unwrap().get_seq_num().clone();
+            self.clone_op_from(src, op, seq)?;
+        }
+        self.obank_mut().set_uniq_id(src.obank().get_uniq_id());
+
+        // SEAM(W4): clone FuncCallSpecs (qlst) — the W4 call-spec surface.
+
+        // Clone the jumptables: relink each to the partial's matching op.
+        let src_n = src.num_jump_tables();
+        for i in 0..src_n {
+            let srcjt = src.get_jump_table(i);
+            let indop = match srcjt.get_indirect_op() {
+                Some(op) => op,
+                None => continue, // unlinked override not reached by flow yet
+            };
+            let seq = src.obank().get(indop).unwrap().get_seq_num().clone();
+            let newop = self
+                .obank()
+                .find_op(&seq)
+                .ok_or_else(|| KunaError::lowlevel("Could not trace jumptable across partial clone"))?;
+            let mut jtclone = crate::jumptable::JumpTable::new_clone(srcjt);
+            let opaddr = self.obank().get(newop).unwrap().get_addr().clone();
+            jtclone.set_indirect_op_addr(newop, opaddr);
+            self.jumpvec_mut().push(jtclone);
+        }
+        Ok(())
+    }
+
+    /// Immutable view of the jump-table vector (companion to `jumpvec_mut`).
+    fn jumpvec_ref(&self) -> &[crate::jumptable::JumpTable] {
+        self.jumpvec_slice()
+    }
+
+    /// Test whether the given Varnode holds the function's return address (C++
+    /// `Funcdata::testForReturnAddress`, `funcdata_varnode.cc:1463`).
+    ///
+    /// SEAM(W4): the comparison target is `glb->defaultReturnAddr`, which the W3
+    /// seam [`Architecture`](crate::seams::Architecture) does not carry; the C++
+    /// returns `false` whenever `defaultReturnAddr.space == 0` (no standard
+    /// storage), so the W3 behavior is the same `false` — the BRANCHIND is treated
+    /// as a genuine switch (the common case), not a tail-`ret`.  Recorded as a
+    /// loss for the rare "indirect jump to the return address" pattern.
+    pub fn test_for_return_address(&self, _vn: VarnodeId) -> bool {
+        false
+    }
+
+    /// Recover a jump-table for a BRANCHIND using the existing flow, running the
+    /// "jumptable" action set on a partial clone via `run_pipeline` (C++
+    /// `Funcdata::recoverJumpTable` + `stageJumpTable`, `funcdata_block.cc:680`/
+    /// `512`).
+    ///
+    /// Returns:
+    ///   - `Ok(Some(idx))`: the table was recovered; `idx` is its `jumpvec` slot.
+    ///   - `Ok(None)`: could not recover (caller truncates to a call).
+    ///   - `Err(mode)`: a specific failure mode (thunk/return/callother) — caller
+    ///     truncates accordingly.
+    #[allow(clippy::mutable_key_type)]
+    pub fn recover_jump_table_flow(
+        &mut self,
+        op: OpId,
+        record_loads: bool,
+        visited: &crate::flow::VisitedMap,
+        run_pipeline: &mut crate::flow::JtPipelineFn<'_>,
+    ) -> Result<Option<usize>, crate::jumptable::RecoveryMode> {
+        use crate::jumptable::RecoveryMode;
+        // linkJumpTable: search for a pre-existing table.
+        if let Some(idx) = self.link_jump_table(op) {
+            let jt = self.get_jump_table(idx as int4);
+            if !jt.is_override() && !jt.is_partial() && jt.num_entries() != 0 {
+                return Ok(Some(idx)); // Previously calculated, complete, non-override
+            }
+            // Recover empty/override table.
+            let mode = self.stage_jump_table(idx, op, record_loads, visited, run_pipeline);
+            if mode != RecoveryMode::Success {
+                return Err(mode);
+            }
+            let addr = self.obank().get(op).unwrap().get_addr().clone();
+            self.jumpvec_mut()[idx].set_indirect_op_addr(op, addr);
+            return Ok(Some(idx));
+        }
+
+        if (self.flags() & crate::funcdata::funcdata_flags::jumptablerecovery_dont) != 0 {
+            return Ok(None); // Explicitly told not to recover
+        }
+        // earlyJumpTableFail.
+        let early = self.early_jump_table_fail(op);
+        if early != RecoveryMode::Success {
+            return Err(early);
+        }
+        // Trial recovery into a fresh table appended to jumpvec.
+        let addr = self.obank().get(op).unwrap().get_addr().clone();
+        let trial = crate::jumptable::JumpTable::new(addr);
+        self.jumpvec_mut().push(trial);
+        let idx = self.num_jump_tables() as usize - 1;
+        let mode = self.stage_jump_table(idx, op, record_loads, visited, run_pipeline);
+        if mode != RecoveryMode::Success {
+            // Discard the trial table on failure.
+            self.jumpvec_mut().remove(idx);
+            return Err(mode);
+        }
+        let addr = self.obank().get(op).unwrap().get_addr().clone();
+        self.jumpvec_mut()[idx].set_indirect_op_addr(op, addr);
+        Ok(Some(idx))
+    }
+
+    /// Run the reduced "jumptable" pipeline on a partial clone and recover the
+    /// table's addresses (C++ `Funcdata::stageJumpTable`, `funcdata_block.cc:512`).
+    #[allow(clippy::mutable_key_type)]
+    fn stage_jump_table(
+        &mut self,
+        jt_idx: usize,
+        op: OpId,
+        record_loads: bool,
+        visited: &crate::flow::VisitedMap,
+        run_pipeline: &mut crate::flow::JtPipelineFn<'_>,
+    ) -> crate::jumptable::RecoveryMode {
+        use crate::jumptable::RecoveryMode;
+        self.jumpvec_mut()[jt_idx].increment_recovery_count();
+
+        // Build the partial function (clone ops + jump-tables).
+        let mut partial = match self.build_jumptable_partial() {
+            Ok(p) => p,
+            Err(_) => return RecoveryMode::FailNormal,
+        };
+        // Mark the partial as a jump-table-recovery clone, then build its blocks
+        // and run the reduced "jumptable" universalAction over it (C++
+        // partial.truncatedFlow + allacts.setCurrent("jumptable") + perform).
+        partial.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
+        if run_pipeline(&mut partial, visited).is_err() {
+            // C++ catches LowlevelError, warns, and returns fail_normal.
+            return RecoveryMode::FailNormal;
+        }
+
+        // findOp(op->getSeqNum()) on the partial.
+        let seq = self.obank().get(op).unwrap().get_seq_num().clone();
+        let addr = self.obank().get(op).unwrap().get_addr().clone();
+        let partop = match partial.obank().find_op(&seq) {
+            Some(p) => p,
+            None => return RecoveryMode::FailNormal, // Bad partial clone
+        };
+        let partop_ok = partial.obank().get(partop).map(|o| {
+            o.code() == OpCode::CPUI_BRANCHIND && *o.get_addr() == addr
+        }).unwrap_or(false);
+        if !partop_ok {
+            return RecoveryMode::FailNormal;
+        }
+        if partial.obank().get(partop).unwrap().is_dead() {
+            // Indirect op eliminated as dead code (unreachable).
+            return RecoveryMode::Success;
+        }
+        // testForReturnAddress on the partial's BRANCHIND input.
+        let in0 = partial.obank().get(partop).unwrap().get_in(0).unwrap();
+        if partial.test_for_return_address(in0) {
+            return RecoveryMode::FailReturn;
+        }
+
+        // Recover addresses into the table (clone the table out, recover, store).
+        let mut jt = std::mem::replace(
+            &mut self.jumpvec_mut()[jt_idx],
+            crate::jumptable::JumpTable::new(Address::default()),
+        );
+        jt.set_load_collect(record_loads);
+        let addr2 = partial.obank().get(partop).unwrap().get_addr().clone();
+        jt.set_indirect_op_addr(partop, addr2);
+        let res = if jt.is_partial() {
+            jt.recover_multistage(&mut partial)
+        } else {
+            jt.recover_addresses(&mut partial)
+        };
+        // Relink the table to the original op before storing it back.
+        jt.set_indirect_op_addr(op, addr);
+        self.jumpvec_mut()[jt_idx] = jt;
+        match res {
+            Ok(()) => RecoveryMode::Success,
+            Err(e) => {
+                // recoverAddresses throws JumptableThunkError as "Likely thunk".
+                if e.explain().contains("Likely thunk") {
+                    RecoveryMode::FailThunk
+                } else {
+                    RecoveryMode::FailNormal
+                }
+            }
+        }
+    }
+
+    /// Build the partial Funcdata for jump-table recovery: a fresh function
+    /// sharing \b this function's arch + entry, with the raw p-code + jump-tables
+    /// cloned (C++ `Funcdata partial(...)` + `partial.truncatedFlow`'s op-clone
+    /// half).  The block-building + action pipeline run inside `run_pipeline`.
+    fn build_jumptable_partial(&self) -> KunaResult<Funcdata> {
+        let glb = self.get_arch().clone();
+        let uniq_start = self.vbank().get_uniqbase();
+        let mut partial = Funcdata::new(
+            "@@jumprecovery",
+            "@@jumprecovery",
+            glb,
+            self.get_address().clone(),
+            uniq_start,
+            0,
+        )?;
+        partial.truncated_flow_clone(self)?;
+        Ok(partial)
+    }
+
+    /// Backtrack from a BRANCHIND looking for an un-injected CALLOTHER in the
+    /// destination calculation (C++ `Funcdata::earlyJumpTableFail`,
+    /// `funcdata_block.cc:568`).
+    ///
+    /// SEAM(W4): the CALLOTHER user-op-type classification
+    /// (`glb->userops.getOp(id)->getType()`) is the W4 user-op table; without it
+    /// a CALLOTHER that writes the address is conservatively treated as a genuine
+    /// switch input (returns `Success`, so recovery proceeds), matching the C++
+    /// "assume special will not interfere" continuation.  The non-CALLOTHER
+    /// backtracking (unary/binary realigning ops, CALL/STORE/branch cutoffs) is
+    /// ported faithfully.
+    pub fn early_jump_table_fail(&self, op: OpId) -> crate::jumptable::RecoveryMode {
+        use crate::jumptable::RecoveryMode;
+        let mut vn = self.obank().get(op).unwrap().get_in(0).unwrap();
+        // Walk backward over the dead-op list from `op`.
+        let order: Vec<OpId> = self.obank().iter_dead().collect();
+        let start_pos = match order.iter().position(|&o| o == op) {
+            Some(p) => p,
+            None => return RecoveryMode::Success,
+        };
+        let mut count_max = 8;
+        let mut idx = start_pos;
+        while idx > 0 {
+            if self.vbank().get(vn).unwrap().get_size() == 1 {
+                return RecoveryMode::Success;
+            }
+            count_max -= 1;
+            if count_max < 0 {
+                return RecoveryMode::Success;
+            }
+            idx -= 1;
+            let cur = order[idx];
+            let outvn = self.obank().get(cur).unwrap().get_out();
+            let outhit = match outvn {
+                Some(ov) => self.varnodes_intersect(vn, ov),
+                None => false,
+            };
+            let opc = self.obank().get(cur).unwrap().code();
+            let eval = self.obank().get(cur).unwrap().get_eval_type();
+            use crate::op::pcodeop_flags as pf;
+            if eval & pf::special != 0 {
+                if self.obank().get(cur).unwrap().is_call() {
+                    if opc == OpCode::CPUI_CALLOTHER {
+                        // SEAM(W4): userop-type classification (injected/jumpassist/
+                        // segment short-circuit Success; an uninjected CALLOTHER
+                        // writing the address would be fail_callother).  Without the
+                        // W4 user-op table, assume it does not interfere; continue.
+                    } else {
+                        return RecoveryMode::Success; // CALL/CALLIND
+                    }
+                } else if self.obank().get(cur).unwrap().is_branch() {
+                    return RecoveryMode::Success;
+                } else {
+                    if opc == OpCode::CPUI_STORE {
+                        return RecoveryMode::Success;
+                    }
+                    if outhit {
+                        return RecoveryMode::Success;
+                    }
+                }
+            } else if eval & pf::unary != 0 {
+                if outhit {
+                    let invn = self.obank().get(cur).unwrap().get_in(0).unwrap();
+                    if self.vbank().get(invn).unwrap().get_size()
+                        != self.vbank().get(vn).unwrap().get_size()
+                    {
+                        return RecoveryMode::Success;
+                    }
+                    vn = invn;
+                }
+            } else if eval & pf::binary != 0 {
+                if outhit {
+                    if opc != OpCode::CPUI_INT_ADD
+                        && opc != OpCode::CPUI_INT_SUB
+                        && opc != OpCode::CPUI_INT_XOR
+                    {
+                        return RecoveryMode::Success;
+                    }
+                    let in1 = self.obank().get(cur).unwrap().get_in(1).unwrap();
+                    if !self.vbank().get(in1).unwrap().is_constant() {
+                        return RecoveryMode::Success;
+                    }
+                    let invn = self.obank().get(cur).unwrap().get_in(0).unwrap();
+                    if self.vbank().get(invn).unwrap().get_size()
+                        != self.vbank().get(vn).unwrap().get_size()
+                    {
+                        return RecoveryMode::Success;
+                    }
+                    vn = invn;
+                }
+            } else if outhit {
+                return RecoveryMode::Success;
+            }
+        }
+        RecoveryMode::Success
+    }
+
+    /// Do the two Varnodes' storage ranges intersect (C++ `Varnode::intersects`)?
+    fn varnodes_intersect(&self, a: VarnodeId, b: VarnodeId) -> bool {
+        let va = self.vbank().get(a).unwrap();
+        let vb = self.vbank().get(b).unwrap();
+        va.intersects(vb)
     }
 
     /// Create a new basic block holding a merged CBRANCH

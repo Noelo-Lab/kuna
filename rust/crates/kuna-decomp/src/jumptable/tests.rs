@@ -449,7 +449,7 @@ fn jumpvaluesrange_truncate_resets_extent() {
     let mut jv = JumpValuesRange::new();
     jv.set_range(CircleRange::new(0, 16, 4, 1));
     assert_eq!(jv.get_size(), 16);
-    jv.truncate(4);
+    JumpValues::truncate(&mut jv, 4);
     assert_eq!(jv.get_size(), 4);
 }
 

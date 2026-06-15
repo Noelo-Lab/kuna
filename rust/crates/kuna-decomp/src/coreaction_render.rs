@@ -1596,9 +1596,9 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
                     }
                 }
             } else if opc == OpCode::CPUI_BRANCHIND {
-                // findJumpTable is a W7 seam (always None here) -> mask = ~0.
+                // jt = findJumpTable(op); mask = (jt!=0) ? jt->getSwitchVarConsume() : ~0
                 let mask = match data.find_jump_table(op) {
-                    Some(_) => !0u64, // jt->getSwitchVarConsume() (W7 seam; unreachable)
+                    Some(jt) => jt.get_switch_var_consume(),
                     None => !0u64,
                 };
                 if let Some(i0) = data.obank().get(op).expect("stale op").get_in(0) {

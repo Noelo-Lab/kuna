@@ -1505,6 +1505,13 @@ impl VarnodeBank {
         self.create_index = 0; // Reset varnode creation index
     }
 
+    /// The base for unique addresses (C++ `uniqbase`).  Used when building a
+    /// partial-clone Funcdata for jump-table recovery, which reuses the source's
+    /// analysis unique-start.
+    pub fn get_uniqbase(&self) -> uintm {
+        self.uniqbase
+    }
+
     /// Number of Varnodes (C++ `numVarnodes`).
     pub fn num_varnodes(&self) -> int4 {
         self.loc_tree.len() as int4
