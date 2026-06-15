@@ -1288,9 +1288,28 @@ impl Action for ActionSetCasts {
         //
         // SEAM(W7/W8-render): `getArch()->print->getCastStrategy()`, the
         // HighVariable `getType`/`getHighTypeReadFacing`/`resolveInFlow` surface,
-        // and `startCastPhase`/`opUndoPtradd`/`insertPtrsubZero` are the S9
-        // rendering plane (W8) and are not present in the merged tree.  Body
-        // transcribed; no change applied (count stays 0).
+        // and `opUndoPtradd`/`insertPtrsubZero` are the S9 rendering plane (W8)
+        // and are not present in the merged tree.  Body transcribed; no change
+        // applied (count stays 0).
+        //
+        // PREREQUISITE LANDED (item w10-actionsetcasts): the `Funcdata` union-field
+        // resolution cache (`getUnionField`/`getUnionResolution`/
+        // `getAddressBasedUnionField`/`setUnionField`/`setAddressBasedUnionField`/
+        // `updateUnionField`/`forceFacingType`/`inheritUnionField`/
+        // `inheritUnionFieldPtr`, C++ funcdata.cc:915-1115) is now ported in
+        // `crate::funcdata_union` and `start_cast_phase` exists.  What still blocks
+        // wiring this `apply` body and the per-op `getInputCast`/`getOutputToken`
+        // surface to produce CAST/PTRSUB ops:
+        //   * the S6 HighVariable `Merge` engine (`ActionMergeType`/`MergeRequired`/
+        //     `MergeAdjacent` are seamed; `merge.rs` itself carries SEAM(W7-varnode)
+        //     `copyShadow` / SEAM(W7-funcdata) block surgery), so `getHigh()` has
+        //     no merged read-/def-facing graph for the cast loop to query;
+        //   * `dtype::resolve_in_flow`/`find_resolve` for pointer-to-union bottom
+        //     out at `ScoreUnionFields::run` (SEAM(W4) callspec facts + SEAM(W6)
+        //     varnode facing through Funcdata) — the union cache resolves the
+        //     *lookup* half (getUnionField), the *scoring* half is still seamed.
+        // These live in waves that own `merge.rs`/`unionresolve.rs`'s driver and
+        // the varnode-facing-through-Funcdata bridge; not this wave.
         0
     }
 }

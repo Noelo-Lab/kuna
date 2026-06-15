@@ -30,6 +30,7 @@ pub mod funcdata_merge;
 pub mod funcdata_op;
 pub mod funcdata_printraw;
 pub mod funcdata_spacebase;
+pub mod funcdata_union;
 pub mod funcdata_varnode;
 pub mod flow;
 pub mod jumptable;

@@ -127,9 +127,10 @@ pub mod funcdata_flags {
 /// Holds the primary data structures for decompiling a function: control-flow
 /// ([`bblocks`](Funcdata::bblocks_ref)/[`sblocks`](Funcdata::sblocks_ref)),
 /// data-flow ([`vbank`](Funcdata::vbank)/[`obank`](Funcdata::obank)), and the
-/// flag/phase state machine.  The W4+ subsystems (`heritage`, `covermerge`,
-/// `activeoutput`, `localoverride`, `lanedMap`, `unionMap`, `qlst`) are
-/// seam-noted and omitted until their waves.
+/// flag/phase state machine.  Most W4+ subsystems (`heritage`, `covermerge`,
+/// `activeoutput`, `localoverride`, `lanedMap`, `qlst`) are seam-noted and
+/// omitted until their waves; the `unionMap` (`union_map`) union-field
+/// resolution cache is ported (W8, [`crate::funcdata_union`]).
 pub struct Funcdata {
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -229,6 +230,21 @@ pub struct Funcdata {
     /// and `FlowInfo` reads `hasFlowOverride()`/`getFlowOverride(addr)` from it at
     /// flow time (`flow.cc:43,434`).
     localoverride: crate::overrides::Override,
+    /// A map from data-flow edges to the resolved field of a `TypeUnion` being
+    /// accessed (C++ `map<ResolveEdge,ResolvedUnion> unionMap`, `funcdata.hh:101`).
+    ///
+    /// The W8 cast-insertion / union-resolution subsystem
+    /// ([`crate::coreaction_cleanup::ActionSetCasts`]) and the per-op
+    /// `getInputCast`/`resolveInFlow` surface read and write this through
+    /// `getUnionField`/`setUnionField`/`forceFacingType`/`inheritUnionField`
+    /// ([`crate::funcdata_union`]).  Keyed by [`crate::unionresolve::ResolveEdge`]
+    /// (its [`Ord`] is the verbatim C++ `operator<`), so a `BTreeMap` reproduces
+    /// the C++ `std::map` iteration / `emplace` semantics exactly (HashMap is
+    /// clippy-banned and would not preserve the ordered `find`).
+    pub(crate) union_map: std::collections::BTreeMap<
+        crate::unionresolve::ResolveEdge,
+        crate::unionresolve::ResolvedUnion,
+    >,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -323,6 +339,7 @@ impl Funcdata {
             qlst: Vec::new(),
             covermerge: None,
             localoverride: crate::overrides::Override::new(),
+            union_map: std::collections::BTreeMap::new(),
         })
     }
 
@@ -1350,7 +1367,8 @@ impl Funcdata {
         // clearActiveOutput() (funcdata.cc): drop the output-trial state.
         self.clear_active_output();
         // funcp.clearUnlockedOutput();                               -- SEAM(W4)
-        // unionMap.clear();                                          -- SEAM(W6)
+        // unionMap.clear() (funcdata.cc:90): drop the union-field resolution cache.
+        self.union_map.clear();
         self.clear_blocks();
         self.obank.clear();
         self.vbank.clear();
