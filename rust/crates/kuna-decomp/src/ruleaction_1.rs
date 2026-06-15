@@ -421,25 +421,49 @@ impl Rule for RuleSelectCse {
         );
         let opc = data.obank().get(op).expect("RuleSelectCse: stale op").code();
 
-        // vector< pair<uintm,PcodeOp *> > list;
+        // (kuna) `getCseHash`/`cseEliminateList`/`cseElimination` are ported
+        // (op.rs / funcdata_op.rs), and the `isHeritaged(outvn)` test —
+        // `Funcdata::isHeritaged(vn) = heritage.heritagePass(vn->getAddr()) >= 0`
+        // (funcdata.hh:274) — is now satisfiable via the owned Heritage engine
+        // (`Funcdata::heritage_pass`).  This is the keystone for the signed
+        // division/modulo correction `(x s/ N) + (x s>> 63) - (x s>> 63)`: the
+        // two identical `x s>> 63` ops must CSE-merge before `RuleCollectTerms`
+        // can cancel them.
+
         // for(iter over vn->descendants) { otherop=*iter;
         //   if (otherop->code() != opc) continue;
         //   hash = otherop->getCseHash(); if (hash==0) continue;
         //   list.push_back(pair(hash,otherop)); }
+        let descend: Vec<OpId> =
+            data.vbank().get(vn).expect("RuleSelectCse: stale vn").descend_iter().collect();
+        let mut list: Vec<(kuna_base::types::uintm, OpId)> = Vec::new();
+        for otherop in descend {
+            let ob = data.obank().get(otherop).expect("RuleSelectCse: stale descend op");
+            if ob.code() != opc {
+                continue;
+            }
+            let hash = crate::op::get_cse_hash(ob, data.vbank());
+            if hash == 0 {
+                continue;
+            }
+            list.push((hash, otherop));
+        }
         // if (list.size()<=1) return 0;
+        if list.len() <= 1 {
+            return 0;
+        }
         // data.cseEliminateList(list,vlist); if (vlist.empty()) return 0; return 1;
-        //
-        // SEAM(W7 heritage-deps): `getCseHash`/`cseEliminateList`/`cseElimination`
-        // are now ported (funcdata_op.rs).  The one remaining blocker is the
-        // `isHeritaged(outvn)` test *inside* `cseEliminateList`, which is
-        // `Funcdata::isHeritaged(vn) = heritage.heritagePass(vn->getAddr())>=0`
-        // (funcdata.hh:274) — this Rust `Funcdata` does not yet own a `Heritage`
-        // instance (W7).  `cse_eliminate_list` accepts the heritaged predicate as
-        // a parameter precisely so the W7 caller can wire it; until then this rule
-        // cannot supply it and declines (no change), matching the pre-heritage
-        // behavior where nothing is heritaged.
-        let _ = (vn, opc);
-        0
+        let mut vlist: Vec<VarnodeId> = Vec::new();
+        data.cse_eliminate_list(&mut list, &mut vlist, |fd, v| {
+            // C++ `Funcdata::isHeritaged(vn) = heritage.heritagePass(vn->getAddr()) >= 0`.
+            let addr = fd.vbank().get(v).expect("RuleSelectCse: stale isHeritaged vn").get_addr().clone();
+            fd.heritage_pass(&addr) >= 0
+        })
+        .expect("RuleSelectCse: cseEliminateList");
+        if vlist.is_empty() {
+            return 0;
+        }
+        1
     }
 }
 

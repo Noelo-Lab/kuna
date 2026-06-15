@@ -36,7 +36,7 @@ use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::ruleaction_6::{RuleDivOpt, RulePtrsubUndo, RuleSubNormal};
 use kuna_decomp::action::Rule;
-use kuna_decomp::seams::{Architecture, OpId, TypeOp, VarnodeId};
+use kuna_decomp::seams::{Architecture, BlockId, OpId, TypeOp, VarnodeId};
 use kuna_decomp::varnode::{DefOpInfo, VarnodeBank};
 
 // -----------------------------------------------------------------------------
@@ -72,6 +72,11 @@ fn build_fd() -> Funcdata {
 
 fn ram(fd: &Funcdata) -> Rc<AddrSpace> {
     Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap())
+}
+
+fn mk_block(fd: &mut Funcdata) -> BlockId {
+    let root = fd.bblocks_ref().root.expect("bblocks root");
+    fd.bblocks_mut().new_block_basic(root)
 }
 
 fn unk(size: int4) -> Rc<Datatype> {
@@ -364,34 +369,50 @@ fn w5s3r6_sub_normal_boundary_equal_collapses_not_extension() {
 /// So this exercises the shrink-k arithmetic and lands on the seam (no change),
 /// which is the documented loss; the op must be left an unchanged SUBPIECE.
 #[test]
-fn w5s3r6_sub_normal_shrink_k_then_seam_no_change() {
+fn w5s3r6_sub_normal_shrink_k_then_commits() {
     let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
     let mut rule = RuleSubNormal::new("g");
 
-    let adef = mk_op(&mut fd, 0, 0x80, OpCode::CPUI_COPY);
+    // Block-resident op creator: build on the dead list (no premature
+    // mark_alive), then `op_insert` (which marks alive + adds to `bl`).  The
+    // shrink-k commit inserts a fresh SUBPIECE before `sub`, so the chain must
+    // live in a real block.
+    let mk_blop = |fd: &mut Funcdata, inputs: int4, off: u64, opc: OpCode| -> OpId {
+        let r = ram(fd);
+        let op = fd.new_op(inputs, Address::new(r, off));
+        fd.obank_mut().change_opcode(op, TypeOp::new(opc, 0, format!("{opc:?}")));
+        fd.op_insert(op, bl, None);
+        op
+    };
+
+    let adef = mk_blop(&mut fd, 0, 0x80, OpCode::CPUI_COPY);
     let a = give_output(&mut fd, adef, 0x10, 8);
-    let shift = mk_op(&mut fd, 2, 0x84, OpCode::CPUI_INT_RIGHT);
+    let shift = mk_blop(&mut fd, 2, 0x84, OpCode::CPUI_INT_RIGHT);
     set_in(&mut fd, shift, a, 0);
     let n = mk_const(&mut fd, 4, 16); // n = 16 -> k = 2
     set_in(&mut fd, shift, n, 1);
     let shiftout = give_output(&mut fd, shift, 0x20, 8);
 
-    let sub = mk_op(&mut fd, 2, 0x88, OpCode::CPUI_SUBPIECE);
+    let sub = mk_blop(&mut fd, 2, 0x88, OpCode::CPUI_SUBPIECE);
     set_in(&mut fd, sub, shiftout, 0);
     let c = mk_const(&mut fd, 4, 3);
     set_in(&mut fd, sub, c, 1);
-    let subout = give_output(&mut fd, sub, 0x30, 4);
+    let _subout = give_output(&mut fd, sub, 0x30, 4);
 
-    assert_eq!(
-        rule.apply_op(sub, &mut fd),
-        0,
-        "shrink-k path lands on the new-op/newUniqueOut seam -> no change"
-    );
-    // The op is structurally untouched: still SUBPIECE reading the shift output
-    // with the original constant 3.
-    assert_eq!(fd.obank().get(sub).unwrap().code(), OpCode::CPUI_SUBPIECE);
-    assert_eq!(fd.obank().get(sub).unwrap().get_in(0), Some(shiftout));
-    let still_c = fd.obank().get(sub).unwrap().get_in(1).unwrap();
-    assert_eq!(fd.vbank().get(still_c).unwrap().get_offset(), 3);
-    assert_eq!(fd.obank().get(sub).unwrap().get_out(), Some(subout));
+    // The new-op/newUniqueOut commit is now wired: shrink-k folds to `c += k`
+    // (= 4), `n -= k*8` (= 8 != 0, < out*8) and the rule fires, building a fresh
+    // `SUBPIECE(a, 4)` and turning `sub` into `INT_RIGHT(<that>, 8)`.
+    assert_eq!(rule.apply_op(sub, &mut fd), 1, "shrink-k path commits");
+    // `sub` is now the INT_RIGHT by n = 8.
+    assert_eq!(fd.obank().get(sub).unwrap().code(), OpCode::CPUI_INT_RIGHT);
+    let shift_c = fd.obank().get(sub).unwrap().get_in(1).unwrap();
+    assert_eq!(fd.vbank().get(shift_c).unwrap().get_offset(), 8, "n = 8");
+    // Its input 0 is the new SUBPIECE reading `a` directly with c = 4.
+    let newsub = fd.obank().get(sub).unwrap().get_in(0).unwrap();
+    let newsub_def = fd.vbank().get(newsub).unwrap().get_def().unwrap();
+    assert_eq!(fd.obank().get(newsub_def).unwrap().code(), OpCode::CPUI_SUBPIECE);
+    assert_eq!(fd.obank().get(newsub_def).unwrap().get_in(0), Some(a), "new SUB reads a");
+    let new_c = fd.obank().get(newsub_def).unwrap().get_in(1).unwrap();
+    assert_eq!(fd.vbank().get(new_c).unwrap().get_offset(), 4, "c becomes c+k = 3+1 = 4");
 }

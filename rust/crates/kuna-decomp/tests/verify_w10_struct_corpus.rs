@@ -409,17 +409,19 @@ fn verify_w10_refinement_divopt_lifts_64bit_not_16bit_garbage() {
         "divopt must render its functions:\n{rendered}"
     );
 
-    // A correct lift uses 64-bit arithmetic; the round-1 garbage lift used 16-bit
-    // real mode.  With the W10 symbol-naming un-seam the 64-bit first-arg pointer
-    // (RDI) is now bound to its recovered parameter `divu`, so the body no longer
-    // shows the bare register — the 64-bit-ness is pinned by the wide arithmetic
-    // mask (a 16-bit lift could at most produce 0xffff) and the named pointer.
-    let wide_mask = count_matches(r"0xffffffffffffffff", &rendered).unwrap_or(0);
+    // A correct 64-bit lift now RECONSTRUCTS the reciprocal-multiply into clean
+    // `/ N` division (the w10-divmod un-seam), so the proof of 64-bit-ness is the
+    // reconstructed decimal divisors themselves — a 16-bit real-mode garbage lift
+    // could never produce them.  The wide `* -1`/magic correction is consumed by
+    // the reconstruction (so the 0xffffffffffffffff mask is gone, not present).
+    let div_const = count_matches(r"/ 81\b", &rendered).unwrap_or(0)
+        + count_matches(r"/ 89\b", &rendered).unwrap_or(0)
+        + count_matches(r"/ 91\b", &rendered).unwrap_or(0);
     let sixteen = count_matches(r"\b(AX|SI|DI|BX|CX|DX|SP|BP)\b", &rendered).unwrap_or(0);
     assert!(
-        wide_mask >= 1 || rendered.contains("divu"),
-        "divopt must lift with 64-bit arithmetic (wide mask / named 64-bit pointer); \
-         got neither:\n{rendered}"
+        div_const >= 3,
+        "divopt must lift with 64-bit arithmetic and reconstruct clean `/ N` \
+         division (e.g. `/ 81`); got none:\n{rendered}"
     );
     assert_eq!(
         sixteen, 0,
@@ -485,34 +487,51 @@ fn verify_w10_loop_emitter_renders_real_loop_on_oracle_loop_fn() {
 // They are committed with the verdict so the un-faked rise stays pinned.
 // ===========================================================================
 
-/// ADVERSARIAL: divopt's 64-bit reciprocal-multiply division CONSTANTS must
-/// appear in the lift.  Compiler-emitted unsigned `/ const` lowers to a wide
+/// ADVERSARIAL: divopt's 64-bit reciprocal-multiply must be DECODED AND
+/// RECONSTRUCTED into clean `/ const` division (the RuleDivOpt family — the
+/// w10-divmod un-seam).  Compiler-emitted unsigned `/ const` lowers to a wide
 /// `value * magic >> shift`; the magic constants (e.g. `0x948b0fcd6e9e0653`
-/// for `/81`) are 64-bit and *cannot* be produced by a 16-bit real-mode lift
-/// (the Round-1 garbage signature).  This is a much harder gate than "an RDI
-/// appears": it proves the wide multiply was actually decoded.
+/// for `/81`) are 64-bit and *cannot* be produced by a 16-bit real-mode lift.
+/// Now that the reconstruction rules fire, the magic and the `* -1` wide-mask
+/// correction are CONSUMED — the body must show `… / 81` (decimal divisor), and
+/// the raw magic must NOT survive.  This is the strongest gate: it proves the
+/// wide multiply was decoded AND collapsed back to division.
 #[test]
 fn verify_w10_r2_divopt_reciprocal_multiply_is_64bit() {
     let path = repo_root().join("decompiler/datatests/divopt.xml");
     let dt = parse_datatest(&path).expect("parse divopt.xml");
     let rendered = render_corpus(&dt).expect("divopt must decompile");
 
-    // The reciprocal magic for the first divisor (/81) in divoptu, and the
-    // 64-bit sign/shift mask the lowering uses.  Both are 64-bit literals.
+    // The reconstruction CONSUMES the reciprocal magic: it must NOT survive in
+    // the body (its presence would mean RuleDivOpt declined — the pre-un-seam
+    // garbage signature).
     let magic = count_matches(r"0x948b0fcd6e9e0653", &rendered).unwrap_or(0);
-    assert!(
-        magic >= 1,
-        "divopt must lift the 64-bit reciprocal-multiply magic constant \
-         (impossible under a 16-bit real-mode lift):\n{rendered}"
+    assert_eq!(
+        magic, 0,
+        "divopt's reciprocal magic must be reconstructed away into `/ 81`, not \
+         left as a raw `* 0x948b…` multiply:\n{rendered}"
     );
-    // A 64-bit-wide shift/negate mask (0xffffffffffffffff) — a 16-bit lift
-    // would at most produce 0xffff.  Its presence proves 64-bit arithmetic.
+    // The wide `* -1` sign/shift correction is likewise consumed by the
+    // reconstruction, so the 64-bit-wide negate mask must be gone too.
     let wide_mask = count_matches(r"0xffffffffffffffff", &rendered).unwrap_or(0);
-    let narrow_mask = count_matches(r"\b0xffff\b", &rendered).unwrap_or(0);
-    assert!(
-        wide_mask >= 1,
-        "divopt must use 64-bit-wide arithmetic masks:\n{rendered}"
+    assert_eq!(
+        wide_mask, 0,
+        "divopt's `* -1` correction must collapse into the reconstructed \
+         division (no surviving 0xffffffffffffffff mask):\n{rendered}"
     );
+    // The reconstruction target: at least the first few divisors render as clean
+    // decimal `/ N` (a 16-bit garbage lift could never produce these, and a
+    // declined RuleDivOpt would show the magic instead).
+    let div_const = count_matches(r"/ 81\b", &rendered).unwrap_or(0)
+        + count_matches(r"/ 89\b", &rendered).unwrap_or(0)
+        + count_matches(r"/ 91\b", &rendered).unwrap_or(0);
+    assert!(
+        div_const >= 3,
+        "divopt must reconstruct the unsigned/signed divisions to clean decimal \
+         `/ N` divisors (e.g. `/ 81`, `/ 89`, `/ 91`):\n{rendered}"
+    );
+    // And NO 16-bit real-mode signature.
+    let narrow_mask = count_matches(r"\b0xffff\b", &rendered).unwrap_or(0);
     assert_eq!(
         narrow_mask, 0,
         "divopt must NOT contain the 16-bit real-mode 0xffff signature \
