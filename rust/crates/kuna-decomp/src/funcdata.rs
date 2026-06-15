@@ -1316,17 +1316,71 @@ impl Funcdata {
         (o.get_addr().clone(), o.get_time())
     }
 
-    /// Look-up boolean properties and data-type information for a Varnode
-    /// (C++ `Funcdata::setVarnodeProperties`).
+    /// The point at which a Varnode first comes into scope (C++
+    /// `Varnode::getUsePoint`, `varnode.cc:715`): the def-op's address if written,
+    /// else `fd.getAddress() + -1`.  Used as the `usepoint` of a
+    /// `queryProperties` look-up.
     ///
-    /// SEAM(W4): the real body queries `localmap->queryProperties` for the
-    /// symbol entry and, if `isHighOn()`, calls `vn->calcCover()` (W7).  The W3
-    /// IR has no symbol scope and no HighVariable, so this is a no-op that the
-    /// op/varnode factories can call unconditionally; W4 fills the body and the
-    /// callers stay unchanged.
-    pub fn set_varnode_properties(&mut self, _vn: VarnodeId) {
-        // localmap->queryProperties(...) ; if (isHighOn()) vn->calcCover();
-        //   -- SEAM(W4)/SEAM(W7): no scope, no HighVariable yet.
+    /// Currently consumed only by the deferred persist-marking branch of
+    /// [`Funcdata::set_varnode_properties`]; kept (`allow(dead_code)`) so that
+    /// branch re-lands unchanged when the HighVariable-naming seam arrives.
+    #[allow(dead_code)]
+    fn vn_use_point(&self, vn: VarnodeId) -> Address {
+        let v = self.vbank().get(vn).expect("vn_use_point: stale vn");
+        if v.is_written() {
+            if let Some(op) = v.get_def() {
+                return self.obank().get(op).expect("vn_use_point: stale def").get_addr().clone();
+            }
+        }
+        // fd.getAddress()+-1
+        &self.get_address().clone() + -1
+    }
+
+    /// Look-up boolean properties and data-type information for a Varnode
+    /// (C++ `Funcdata::setVarnodeProperties`, `funcdata_varnode.cc:25`).
+    ///
+    /// The faithful C++ body is:
+    ///
+    /// ```text
+    ///   if (!vn->isMapped()) {
+    ///     uint4 vflags=0;
+    ///     SymbolEntry *entry = localmap->queryProperties(vn->getAddr(),vn->getSize(),
+    ///                                                     vn->getUsePoint(*this),vflags);
+    ///     if (entry != 0) vn->setSymbolProperties(entry);
+    ///     else            vn->setFlags(vflags & ~Varnode::typelock);
+    ///   }
+    ///   if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }
+    /// ```
+    ///
+    /// where `localmap->queryProperties` reaches the global scope, so a
+    /// global-mapped Varnode would pick up `mapped | addrtied | persist` at every
+    /// Varnode-creation site (`newVarnode`/`newVarnodeOut`/`setInput`).
+    ///
+    /// DEFERRED (the persist/addrtied marking is a no-op here, as in the W3 base):
+    /// the global-store *survival* this item targets is delivered instead by the
+    /// heritage path — `Heritage::guard` queries `query_global_properties` for the
+    /// same `mapped | addrtied | persist` directly and `guard_returns` inserts the
+    /// `addrforce` RETURN-COPY that keeps the store's def-chain alive through
+    /// `ActionDeadCode`.  That path is sufficient for every global-store datatest
+    /// (displayformat, condconst, varcross), so this early marking is redundant
+    /// for the target.
+    ///
+    /// Marking persist/addrtied *here* (at IR construction, on every global READ as
+    /// well) was measured to regress `varcross.xml::global_cross` ("Global cross
+    /// #2", a positive-content assertion): the early `addrtied` flag perturbs the
+    /// HighVariable merge so the recovered global-flow register (`v1`) renders as a
+    /// raw register instead of its name — the downstream HighVariable-naming /
+    /// global-store render seams (`merge.rs`/`variable.rs`/`printc.rs`, owned by the
+    /// naming/render waves) are not yet landed.  Activating it gains **zero** passing
+    /// assertions over the heritage path while regressing `global_cross`, so it is
+    /// held until the naming seam lands (matrix in
+    /// `docs/rust-port/reviews/w10-global-persist.md`).  When that seam lands the
+    /// body above folds back in unchanged.
+    pub fn set_varnode_properties(&mut self, vn: VarnodeId) {
+        // localmap->queryProperties(...) persist/addrtied marking + (isHighOn)
+        // calcCover — both deferred; see the doc comment above.  Kept as a live
+        // call site so the marking re-lands without touching the factories.
+        let _ = vn;
     }
 
     // -----------------------------------------------------------------------

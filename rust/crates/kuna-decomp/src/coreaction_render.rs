@@ -792,48 +792,159 @@ impl Action for ActionDirectWrite {
             propagate_indirect: self.propagate_indirect,
         }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:1366 — ActionDirectWrite::apply
-        //   // Seed: collect legal inputs and other auto direct writes
-        //   for (vn in beginLoc()..endLoc()):
-        //       vn->clearDirectWrite();
-        //       if (vn->isInput()):
-        //           if (vn->isPersist()||vn->isSpacebase()) { setDirectWrite; worklist+=vn; }
-        //           else if (proto.possibleInputParam(addr,size)) { setDirectWrite; worklist+=vn; }
-        //       else if (vn->isWritten()):
-        //           op = vn->getDef();
-        //           if (!op->isMarker()):
-        //               if (vn->isPersist()) { setDirectWrite; worklist+=vn; }      // global write
-        //               else if (op->code()==CPUI_COPY):                            // stack-store COPYs from INDIRECT
-        //                   if (vn->isStackStore() && source traces to a marker) { setDirectWrite; worklist+=vn; }
-        //               else if (op->code() != CPUI_PIECE && != CPUI_SUBPIECE) { setDirectWrite; worklist+=vn; }
-        //           else if (!propagateIndirect && op->code()==CPUI_INDIRECT):
-        //               if (in0.addr != out.addr) setDirectWrite;                   // active COPY
-        //               else if (out->isPersist()) setDirectWrite;                  // global at call
-        //               // not added to worklist (INDIRECT does not propagate here)
-        //       else if (vn->isConstant() && !vn->isIndirectZero()) { setDirectWrite; worklist+=vn; }
-        //   // Taint: let legalness flow forward through assignment ops
-        //   while (!worklist.empty()):
-        //       vn = worklist.pop_back();
-        //       for (op in vn->beginDescend()..endDescend()):
-        //           if (!op->isAssignment()) continue;
-        //           dvn = op->getOut();
-        //           if (!dvn->isDirectWrite()):
-        //               dvn->setDirectWrite();
-        //               if (propagateIndirect || op->code()!=CPUI_INDIRECT || op->isIndirectStore())
-        //                   worklist += dvn;
-        //   return 0;
-        //
-        // `propagateIndirect` (this action's own field) tunes two branches above;
-        // the seed/taint loops it tunes cannot run.
-        //
-        // SEAM(W8-funcdata): the loc-set iteration (`beginLoc`), the Varnode
-        // `directwrite`/`persist`/`stackstore`/`indirectzero` flags, the
-        // descend-walk taint, and `proto.possibleInputParam` are not in the merged
-        // tree.  Body transcribed; no change applied (count stays 0 — directwrite
-        // marking is not a data-flow change either).
-        0
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:1366 — ActionDirectWrite::apply, transcribed faithfully.
+        directwrite_apply(data, self.propagate_indirect)
     }
+}
+
+/// Mark Varnodes built out of legal parameters with the `directwrite` attribute
+/// (C++ `ActionDirectWrite::apply`, `coreaction.cc:1366`).
+///
+/// The seed loop marks the auto-direct-writes (persist/spacebase inputs, legal
+/// parameter inputs, persistent/non-COPY writes, real constants); the taint loop
+/// flows the attribute forward through assignment ops.  `ActionDeadCode`'s clear
+/// phase reads `isDirectWrite()` to decide whether to keep an `addrforce` mark:
+/// `if (isAddrForce() && !isDirectWrite()) clearAddrForce()`.  The persist
+/// RETURN-COPY (`guardReturns`) reads the persist global write, so the taint
+/// flows directwrite onto it; without this seed/taint the COPY's `addrforce` is
+/// cleared and the global store is dead-code-eliminated.
+fn directwrite_apply(data: &mut Funcdata, propagate_indirect: bool) -> ApplyResult {
+    let mut worklist: Vec<VarnodeId> = Vec::new();
+
+    // Collect legal inputs and other auto direct writes.
+    let all_locs: Vec<VarnodeId> = data.vbank().iter_loc().collect();
+    for vn in all_locs {
+        data.vbank_mut().get_mut(vn).expect("directwrite: stale vn").clear_direct_write();
+        let (is_input, is_persist, is_spacebase, is_written, is_constant, is_indirect_zero, addr, sz) = {
+            let v = data.vbank().get(vn).expect("directwrite: stale vn");
+            (
+                v.is_input(),
+                v.is_persist(),
+                v.is_spacebase(),
+                v.is_written(),
+                v.is_constant(),
+                v.is_indirect_zero(),
+                v.get_addr().clone(),
+                v.get_size(),
+            )
+        };
+        if is_input {
+            if is_persist || is_spacebase {
+                data.vbank_mut().get_mut(vn).expect("dw").set_direct_write();
+                worklist.push(vn);
+            } else if data.get_func_proto().has_store()
+                && data.get_func_proto().possible_input_param(&addr, sz)
+            {
+                // C++ `getFuncProto().possibleInputParam(...)`: the C++ FuncProto
+                // always has a proto store; the merged kuna `ProtoStoreInternal`
+                // may be absent for an un-recovered function (`has_store()` false),
+                // in which case no input is yet a possible parameter (the
+                // un-recovered default), so the seed is skipped (a register input
+                // that is not yet a param is not auto-direct-write).
+                data.vbank_mut().get_mut(vn).expect("dw").set_direct_write();
+                worklist.push(vn);
+            }
+        } else if is_written {
+            let opid = data.vbank().get(vn).expect("dw").get_def().expect("written vn has def");
+            let (is_marker, opc) = {
+                let o = data.obank().get(opid).expect("dw: stale def");
+                (o.is_marker(), o.code())
+            };
+            if !is_marker {
+                if is_persist {
+                    // Anything that writes to a global (in a real way) is a direct write.
+                    data.vbank_mut().get_mut(vn).expect("dw").set_direct_write();
+                    worklist.push(vn);
+                } else if opc == OpCode::CPUI_COPY {
+                    // Most COPYs are not direct writes; a stack-store COPY whose
+                    // source traces (through COPYs) to a marker (INDIRECT) is.
+                    let is_stack_store = data.vbank().get(vn).expect("dw").is_stack_store();
+                    if is_stack_store {
+                        let mut invn = data
+                            .obank()
+                            .get(opid)
+                            .expect("dw")
+                            .get_in(0)
+                            .expect("COPY in0");
+                        // Through possible multiple COPYs.
+                        if data.vbank().get(invn).expect("dw").is_written() {
+                            let curop =
+                                data.vbank().get(invn).expect("dw").get_def().expect("def");
+                            if data.obank().get(curop).expect("dw").code() == OpCode::CPUI_COPY {
+                                invn = data
+                                    .obank()
+                                    .get(curop)
+                                    .expect("dw")
+                                    .get_in(0)
+                                    .expect("COPY in0");
+                            }
+                        }
+                        let src_from_marker = {
+                            let iv = data.vbank().get(invn).expect("dw");
+                            iv.is_written()
+                                && iv.get_def().map(|d| {
+                                    data.obank().get(d).expect("dw").is_marker()
+                                }).unwrap_or(false)
+                        };
+                        if src_from_marker {
+                            data.vbank_mut().get_mut(vn).expect("dw").set_direct_write();
+                            worklist.push(vn);
+                        }
+                    }
+                } else if opc != OpCode::CPUI_PIECE && opc != OpCode::CPUI_SUBPIECE {
+                    // Any non-COPY-form write is a direct write.
+                    data.vbank_mut().get_mut(vn).expect("dw").set_direct_write();
+                    worklist.push(vn);
+                }
+            } else if !propagate_indirect && opc == OpCode::CPUI_INDIRECT {
+                // Active COPY (storage changes) or global value at a call.
+                let (in0_addr, out_addr, out_persist) = {
+                    let o = data.obank().get(opid).expect("dw");
+                    let i0 = o.get_in(0).expect("INDIRECT in0");
+                    let ov = o.get_out().expect("INDIRECT out");
+                    (
+                        data.vbank().get(i0).expect("dw").get_addr().clone(),
+                        data.vbank().get(ov).expect("dw").get_addr().clone(),
+                        data.vbank().get(ov).expect("dw").is_persist(),
+                    )
+                };
+                if in0_addr != out_addr || out_persist {
+                    data.vbank_mut().get_mut(vn).expect("dw").set_direct_write();
+                }
+                // Not added to worklist (INDIRECT does not propagate here).
+            }
+        } else if is_constant && !is_indirect_zero {
+            data.vbank_mut().get_mut(vn).expect("dw").set_direct_write();
+            worklist.push(vn);
+        }
+    }
+
+    // Let legalness taint forward through assignment ops.
+    while let Some(vn) = worklist.pop() {
+        let descend: Vec<OpId> = data.vbank().get(vn).expect("dw").descend_iter().collect();
+        for op in descend {
+            let (is_assignment, dvn, opc, is_indirect_store) = {
+                let o = data.obank().get(op).expect("dw: stale descend op");
+                (o.is_assignment(), o.get_out(), o.code(), o.is_indirect_store())
+            };
+            if !is_assignment {
+                continue;
+            }
+            let dvn = match dvn {
+                Some(d) => d,
+                None => continue,
+            };
+            let already = data.vbank().get(dvn).expect("dw").is_direct_write();
+            if !already {
+                data.vbank_mut().get_mut(dvn).expect("dw").set_direct_write();
+                if propagate_indirect || opc != OpCode::CPUI_INDIRECT || is_indirect_store {
+                    worklist.push(dvn);
+                }
+            }
+        }
+    }
+    0
 }
 
 // =============================================================================

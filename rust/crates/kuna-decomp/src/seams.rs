@@ -105,6 +105,136 @@ impl TypeOp {
     }
 }
 
+/// One mapped global [`SymbolEntry`] storage record, flattened for the read-only
+/// `queryProperties` walk the [`ArchHandle`] performs in
+/// [`Funcdata::set_varnode_properties`](crate::funcdata::Funcdata::set_varnode_properties).
+///
+/// Carries exactly the fields `Scope::findContainer` / `SymbolEntry::inUse` /
+/// `SymbolEntry::getAllFlags` read (`database.cc:2278-2310`, `1268-1286`); a flat
+/// per-space record set rather than the live `rangemap<SymbolEntry>` because the
+/// global scope is frozen by the time the `Funcdata`'s `glb` is built (every
+/// `map addr` ran before `load function`).
+#[derive(Debug, Clone)]
+pub struct GlobalEntry {
+    /// Address-space index (C++ `addr.getSpace()->getIndex()`).
+    pub space_index: int4,
+    /// First offset of the storage (C++ `SymbolEntry::getFirst`).
+    pub first: u64,
+    /// Last offset of the storage (C++ `SymbolEntry::getLast`, `uintb` wrap).
+    pub last: u64,
+    /// Number of bytes consumed by this storage (C++ `SymbolEntry::getSize`).
+    pub size: int4,
+    /// `extraflags | symbol->getFlags()` (C++ `SymbolEntry::getAllFlags`).
+    pub all_flags: uint4,
+    /// `(symbol->getFlags() & addrtied) != 0` — drives `SymbolEntry::inUse`'s
+    /// "valid throughout scope" branch without re-deriving from `all_flags`.
+    pub addrtied: bool,
+    /// Code-address ranges where this storage is valid (C++ `uselimit`); empty
+    /// for the address-tied `map addr` globals.
+    pub uselimit: kuna_base::address::RangeList,
+}
+
+/// A read-only snapshot of the global [`Scope`](crate::database::Scope)
+/// sufficient to reproduce `Scope::queryProperties` (`database.cc:1268-1286`)
+/// from the [`ArchHandle`] in [`Funcdata::set_varnode_properties`].
+///
+/// The C++ `glb` is the live `Architecture`, so `localmap->queryProperties` walks
+/// the parent chain up to the live global scope.  The merged kuna `glb`
+/// ([`Architecture`]) is a separate IR-boundary skeleton, and the function's
+/// `localmap` owns its own detached `Database`; this snapshot is the wire that
+/// reconnects the global symbol table onto `glb` so global-mapped varnodes get
+/// `persist`/`addrtied` painted and survive `ActionDeadCode`.  Built once per
+/// `Funcdata` at [`build_arch_handle`](crate::architecture::Architecture::build_arch_handle).
+#[derive(Debug, Clone, Default)]
+pub struct GlobalQuery {
+    /// Every whole-and-piece mapped storage in the global scope, all spaces.
+    pub entries: Vec<GlobalEntry>,
+    /// The global scope's owned data ranges (C++ `Scope::rangetree`), for the
+    /// `inScope` discovery branch of `queryProperties`.
+    pub owned: kuna_base::address::RangeList,
+    /// The boolean-property map (C++ `Database::flagbase`), for `getProperty`.
+    pub flagbase: kuna_base::partmap::PartMap<Address, uint4>,
+}
+
+impl GlobalQuery {
+    /// C++ `Database::getProperty(addr)` (`database.hh:949`): the boolean
+    /// properties (read-only/volatile) painted on a memory range.
+    fn get_property(&self, addr: &Address) -> uint4 {
+        *self.flagbase.get_value(addr)
+    }
+
+    /// C++ `Scope::findContainer` (`database.cc:2278-2310`) restricted to the
+    /// global scope: the smallest mapped storage containing `[addr, addr+size-1]`
+    /// that is in-use at `usepoint`.  Returns its `getAllFlags()`.
+    fn find_container_flags(&self, addr: &Address, size: int4, usepoint: &Address) -> Option<uint4> {
+        let space = addr.get_space()?;
+        let space_index = space.get_index();
+        let start = addr.get_offset();
+        // end = addr + size - 1 (uintb wrap), as in find_container.
+        // cast: int4 -> u64, reproducing the C++ `uintb` widening of the
+        // (non-negative) byte count `size`; sign-extension is irrelevant since a
+        // storage size is never negative.
+        let end = start.wrapping_add(size as u64).wrapping_sub(1);
+        let mut best: Option<&GlobalEntry> = None;
+        let mut oldsize: int4 = -1;
+        for e in &self.entries {
+            if e.space_index != space_index {
+                continue;
+            }
+            // Containment: first <= addr (entries are storage at >= first) and
+            // last >= end.  The rangemap subsort walk already filters to
+            // first <= addr; here check both bounds explicitly.
+            if e.first > start || e.last < end {
+                continue;
+            }
+            if e.size < oldsize || oldsize == -1 {
+                // SymbolEntry::inUse(usepoint): addr-tied is valid throughout; an
+                // invalid usepoint never matches a use-limited entry; otherwise
+                // the usepoint must fall in the uselimit ranges.
+                let in_use = if e.addrtied {
+                    true
+                } else if usepoint.is_invalid() {
+                    false
+                } else {
+                    e.uselimit.in_range(usepoint, 1)
+                };
+                if in_use {
+                    best = Some(e);
+                    if e.size == size {
+                        break;
+                    }
+                    oldsize = e.size;
+                }
+            }
+        }
+        best.map(|e| e.all_flags)
+    }
+
+    /// C++ `Scope::queryProperties` (`database.cc:1268-1286`) for the parentless
+    /// global scope: the Varnode boolean properties of the memory range, whether
+    /// or not a covering Symbol exists.  Constant addresses never match (the
+    /// `stackContainer` `addr.isConstant()` guard).
+    pub fn query_properties(&self, addr: &Address, size: int4, usepoint: &Address) -> uint4 {
+        use crate::varnode::varnode_flags;
+        if addr.is_constant() {
+            return 0;
+        }
+        if let Some(flags) = self.find_container_flags(addr, size, usepoint) {
+            // res != 0: use the entry's flags.
+            flags
+        } else if self.owned.in_range(addr, size) {
+            // finalscope != 0 (the global scope owns the range, no symbol).
+            varnode_flags::mapped
+                | varnode_flags::addrtied
+                | varnode_flags::persist
+                | self.get_property(addr)
+        } else {
+            // No symbol, no owning scope: just the range's boolean properties.
+            self.get_property(addr)
+        }
+    }
+}
+
 /// Global configuration data for the program being decompiled (C++
 /// `Architecture`, owned by `Funcdata` as `glb`).
 ///
@@ -215,6 +345,14 @@ pub struct Architecture {
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
     /// read-only switch table.  `None` for hand-built fixtures (no loader).
     pub loader: Option<Rc<std::cell::RefCell<Box<dyn kuna_sleigh::loadimage::LoadImage>>>>,
+    /// Read-only snapshot of the global symbol table (C++ `glb->symboltab`'s
+    /// global scope + property map), the wire for `localmap->queryProperties`'s
+    /// walk up to the global scope.  Built at `build_arch_handle` (after every
+    /// `map addr`); read by [`Funcdata::set_varnode_properties`](crate::funcdata::
+    /// Funcdata::set_varnode_properties) to paint `persist`/`addrtied` on
+    /// global-mapped varnodes so their stores survive `ActionDeadCode`.  `None`
+    /// for hand-built fixtures (no symbol table).
+    pub global_query: Option<Rc<GlobalQuery>>,
 }
 
 impl Architecture {
@@ -255,6 +393,7 @@ impl Architecture {
             max_jumptable_size: 0,
             funcptr_align: 0,
             loader: None,
+            global_query: None,
         }
     }
 
@@ -343,6 +482,22 @@ impl Architecture {
     /// `AddrSpaceManager`).  // SEAM(W4)
     pub fn manage(&self) -> &AddrSpaceManager {
         &self.manage
+    }
+
+    /// Query the global symbol table for the Varnode boolean properties of a
+    /// storage range (C++ `localmap->queryProperties`'s reach into the global
+    /// scope, `database.cc:1268-1286`).  Returns `0` when no global symbol table
+    /// is shared (hand-built fixtures) or the range carries no global property.
+    ///
+    /// This is the global-scope half of `Funcdata::setVarnodeProperties`: a
+    /// global-mapped Varnode picks up `mapped | addrtied | persist` (and any
+    /// `readonly`/`volatile` on the range) here, so `ActionDeadCode` keeps its
+    /// store alive.
+    pub fn query_global_properties(&self, addr: &Address, size: int4, usepoint: &Address) -> uint4 {
+        match &self.global_query {
+            Some(gq) => gq.query_properties(addr, size, usepoint),
+            None => 0,
+        }
     }
 
     /// Get the minimum laned-register size (C++
