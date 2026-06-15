@@ -62,6 +62,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::dtype::{type_metatype, Datatype};
+use crate::expression::AddExpression;
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
 use crate::seams::{OpId, TypeOp, VarnodeId};
@@ -209,6 +210,12 @@ fn vn_size(data: &Funcdata, vn: VarnodeId) -> int4 {
 /// `vn->getDef()`.
 fn vn_def(data: &Funcdata, vn: VarnodeId) -> Option<OpId> {
     data.vbank().get(vn).expect("vn_def: stale vn").get_def()
+}
+
+/// `vn->constantMatch(val)` (C++ `Varnode::constantMatch`, `varnode.cc`):
+/// `isConstant() && getOffset()==val`.
+fn constant_match(data: &Funcdata, vn: VarnodeId, val: uintb) -> bool {
+    data.vbank().get(vn).expect("constant_match: stale vn").constant_match(val)
 }
 
 /// `vn->isBooleanValue(useAnnotation)` (C++ `Varnode::isBooleanValue`,
@@ -954,6 +961,10 @@ impl Rule for RuleSborrow {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        // Varnode *svn = op->getOut(); avn = op->getIn(0); bvn = op->getIn(1);
+        // (svn/avn are dereferenced only in the descend loop below, so read them
+        // after the trivial-case early-out — the C++ never touches getOut() on
+        // the trivial path either.)
         let bvn = op_in(data, op, 1).expect("RuleSborrow: null in1");
         // Check for trivial case: sborrow(V,0) => false
         if vn_is_constant(data, bvn) && vn_offset(data, bvn) == 0 {
@@ -963,10 +974,71 @@ impl Rule for RuleSborrow {
             data.op_remove_input(op, 1);
             return 1;
         }
-        // SEAM(expression): the comparison-rewrite branch needs AddExpression
-        // (gatherTwoTermsSubtract/gatherTwoTermsRoot/isEquivalent), defined in
-        // expression.cc (a separate, unported W5 file).  The trivial case above
-        // is ported; the descend-walk rewrite is deferred.  Recorded as a loss.
+        let svn = op_out(data, op).expect("RuleSborrow: null out");
+        let avn = op_in(data, op, 0).expect("RuleSborrow: null in0");
+        // for(iter=svn->beginDescend();iter!=svn->endDescend();++iter)
+        let descend: Vec<OpId> = data
+            .vbank()
+            .get(svn)
+            .map(|v| v.descend_iter().collect())
+            .unwrap_or_default();
+        for compop in descend {
+            let compc = op_code(data, compop);
+            if compc != OpCode::CPUI_INT_EQUAL && compc != OpCode::CPUI_INT_NOTEQUAL {
+                continue;
+            }
+            // cvn = (compop->getIn(0)==svn) ? compop->getIn(1) : compop->getIn(0);
+            let comp_in0 = op_in(data, compop, 0).expect("RuleSborrow: null compop in0");
+            let cvn = if comp_in0 == svn {
+                op_in(data, compop, 1).expect("RuleSborrow: null compop in1")
+            } else {
+                comp_in0
+            };
+            if !vn_is_written(data, cvn) {
+                continue;
+            }
+            let signop = vn_def(data, cvn).expect("RuleSborrow: written cvn has no def");
+            if op_code(data, signop) != OpCode::CPUI_INT_SLESS {
+                continue;
+            }
+            // if (!signop->getIn(0)->constantMatch(0)) { if (!signop->getIn(1)->constantMatch(0)) continue; zside=1; } else zside=0;
+            let sign_in0 = op_in(data, signop, 0).expect("RuleSborrow: null signop in0");
+            let sign_in1 = op_in(data, signop, 1).expect("RuleSborrow: null signop in1");
+            let zside: int4 = if !constant_match(data, sign_in0, 0) {
+                if !constant_match(data, sign_in1, 0) {
+                    continue;
+                }
+                1
+            } else {
+                0
+            };
+            // Varnode *xvn = signop->getIn(1-zside);
+            let xvn = op_in(data, signop, 1 - zside).expect("RuleSborrow: null signop xvn");
+            if !vn_is_written(data, xvn) {
+                continue;
+            }
+            // AddExpression expr1; expr1.gatherTwoTermsSubtract(avn, bvn);
+            let mut expr1 = AddExpression::new();
+            expr1.gather_two_terms_subtract(avn, bvn, data.vbank(), data.obank());
+            // AddExpression expr2; expr2.gatherTwoTermsRoot(xvn);
+            let mut expr2 = AddExpression::new();
+            expr2.gather_two_terms_root(xvn, data.vbank(), data.obank());
+            // if (!expr1.isEquivalent(expr2)) continue;
+            if !expr1.is_equivalent(&expr2, data.vbank(), data.obank()) {
+                continue;
+            }
+            if compc == OpCode::CPUI_INT_NOTEQUAL {
+                // Replace all this with simple less than
+                set_opcode(data, compop, OpCode::CPUI_INT_SLESS);
+                data.op_set_input(compop, avn, 1 - zside).expect("RuleSborrow: opSetInput");
+                data.op_set_input(compop, bvn, zside).expect("RuleSborrow: opSetInput");
+            } else {
+                set_opcode(data, compop, OpCode::CPUI_INT_SLESSEQUAL);
+                data.op_set_input(compop, avn, zside).expect("RuleSborrow: opSetInput");
+                data.op_set_input(compop, bvn, 1 - zside).expect("RuleSborrow: opSetInput");
+            }
+            return 1;
+        }
         0
     }
 }
@@ -994,8 +1066,11 @@ impl Rule for RuleScarry {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        let avn = op_in(data, op, 0).expect("RuleScarry: null in0");
-        let bvn = op_in(data, op, 1).expect("RuleScarry: null in1");
+        // Varnode *svn = op->getOut(); avn = op->getIn(0); bvn = op->getIn(1);
+        // (svn is dereferenced only in the descend loop below, so read it after
+        // the trivial-case early-out — the C++ never touches getOut() there.)
+        let mut avn = op_in(data, op, 0).expect("RuleScarry: null in0");
+        let mut bvn = op_in(data, op, 1).expect("RuleScarry: null in1");
 
         // Check for trivial case: scarry(V,0) => false (either operand zero)
         if (vn_is_constant(data, bvn) && vn_offset(data, bvn) == 0)
@@ -1007,12 +1082,84 @@ impl Rule for RuleScarry {
             data.op_remove_input(op, 1);
             return 1;
         }
-        // One side must be constant.  (The swap-to-canonical and the
-        // integer-minimum guard are part of the AddExpression rewrite below.)
-        // SEAM(expression): the rewrite needs AddExpression
-        // (gatherTwoTermsAdd/gatherTwoTermsRoot/isEquivalent) from expression.cc
-        // (unported W5 file).  The trivial case above is ported; the rest is
-        // deferred.  Recorded as a loss.
+        let svn = op_out(data, op).expect("RuleScarry: null out");
+        // One side must be constant.
+        if !vn_is_constant(data, bvn) {
+            if !vn_is_constant(data, avn) {
+                return 0;
+            }
+            // avn = bvn; bvn = op->getIn(0);  (swap so bvn is the constant)
+            avn = bvn;
+            bvn = op_in(data, op, 0).expect("RuleScarry: null in0");
+            // val = calc_mask(bvn->getSize()); val ^= (val >> 1);  -- integer minimum
+            let mask = calc_mask(vn_size(data, bvn));
+            let val = mask ^ (mask >> 1);
+            if val == vn_offset(data, bvn) {
+                return 0; // Rule does not work if bvn is the integer minimum
+            }
+        }
+        // for(iter=svn->beginDescend();iter!=svn->endDescend();++iter)
+        let descend: Vec<OpId> = data
+            .vbank()
+            .get(svn)
+            .map(|v| v.descend_iter().collect())
+            .unwrap_or_default();
+        for compop in descend {
+            let compc = op_code(data, compop);
+            if compc != OpCode::CPUI_INT_EQUAL && compc != OpCode::CPUI_INT_NOTEQUAL {
+                continue;
+            }
+            let comp_in0 = op_in(data, compop, 0).expect("RuleScarry: null compop in0");
+            let cvn = if comp_in0 == svn {
+                op_in(data, compop, 1).expect("RuleScarry: null compop in1")
+            } else {
+                comp_in0
+            };
+            if !vn_is_written(data, cvn) {
+                continue;
+            }
+            let signop = vn_def(data, cvn).expect("RuleScarry: written cvn has no def");
+            if op_code(data, signop) != OpCode::CPUI_INT_SLESS {
+                continue;
+            }
+            let sign_in0 = op_in(data, signop, 0).expect("RuleScarry: null signop in0");
+            let sign_in1 = op_in(data, signop, 1).expect("RuleScarry: null signop in1");
+            let zside: int4 = if !constant_match(data, sign_in0, 0) {
+                if !constant_match(data, sign_in1, 0) {
+                    continue;
+                }
+                1
+            } else {
+                0
+            };
+            let xvn = op_in(data, signop, 1 - zside).expect("RuleScarry: null signop xvn");
+            if !vn_is_written(data, xvn) {
+                continue;
+            }
+            // AddExpression expr1; expr1.gatherTwoTermsAdd(avn, bvn);
+            let mut expr1 = AddExpression::new();
+            expr1.gather_two_terms_add(avn, bvn, data.vbank(), data.obank());
+            let mut expr2 = AddExpression::new();
+            expr2.gather_two_terms_root(xvn, data.vbank(), data.obank());
+            if !expr1.is_equivalent(&expr2, data.vbank(), data.obank()) {
+                continue;
+            }
+            // newval = -bvn->getOffset() & calc_mask(bvn->getSize());
+            let bsize = vn_size(data, bvn);
+            let newval = (0u64.wrapping_sub(vn_offset(data, bvn))) & calc_mask(bsize);
+            let new_const = data.new_constant(bsize, newval);
+
+            if compc == OpCode::CPUI_INT_NOTEQUAL {
+                set_opcode(data, compop, OpCode::CPUI_INT_SLESS);
+                data.op_set_input(compop, avn, 1 - zside).expect("RuleScarry: opSetInput");
+                data.op_set_input(compop, new_const, zside).expect("RuleScarry: opSetInput");
+            } else {
+                set_opcode(data, compop, OpCode::CPUI_INT_SLESSEQUAL);
+                data.op_set_input(compop, avn, zside).expect("RuleScarry: opSetInput");
+                data.op_set_input(compop, new_const, 1 - zside).expect("RuleScarry: opSetInput");
+            }
+            return 1;
+        }
         0
     }
 }
@@ -2759,12 +2906,11 @@ mod tests {
         assert_eq!(op_num_input(&fd, op), 1);
         let in0 = op_in(&fd, op, 0).unwrap();
         assert!(vn_is_constant(&fd, in0) && vn_offset(&fd, in0) == 0);
-        // non-trivial (no AddExpression yet) -> 0 (seamed)
+        // non-trivial sborrow(a,b) with no comparison consuming the output ->
+        // the descend-walk finds no INT_EQUAL/INT_NOTEQUAL descendant -> 0.
         let a = make_input(&mut fd, 0x200, 4);
         let b = make_input(&mut fd, 0x204, 4);
-        let op2 = mk_op(&mut fd, 2, OpCode::CPUI_INT_SBORROW);
-        wire(&mut fd, op2, a, 0);
-        wire(&mut fd, op2, b, 1);
+        let (op2, _sout) = def_op(&mut fd, OpCode::CPUI_INT_SBORROW, &[a, b], 1);
         assert_eq!(RuleSborrow.apply_op(op2, &mut fd), 0);
     }
 
@@ -2786,6 +2932,35 @@ mod tests {
         wire(&mut fd, op2, z2, 0);
         wire(&mut fd, op2, w, 1);
         assert_eq!(RuleScarry.apply_op(op2, &mut fd), 1);
+    }
+
+    #[test]
+    fn sborrow_notequal_folds_to_sless() {
+        // `sborrow(a,b) != ((a + b*-1) s< 0)  =>  a s< b`  (RuleSborrow, the
+        // NOTEQUAL/zside==0 branch).  Builds the canonical lifted form and
+        // checks the consuming INT_NOTEQUAL is rewritten in place to INT_SLESS(a,b).
+        let mut fd = build_fd();
+        let a = make_input(&mut fd, 0x200, 4);
+        let b = make_input(&mut fd, 0x204, 4);
+        // a - b  ==  a + b*(-1)
+        let neg1 = fd.new_constant(4, 0xffffffff);
+        let (_multop, negb) = def_op(&mut fd, OpCode::CPUI_INT_MULT, &[b, neg1], 4);
+        let (_addop, sub) = def_op(&mut fd, OpCode::CPUI_INT_ADD, &[a, negb], 4);
+        // (a - b) s< 0
+        let zero = fd.new_constant(4, 0);
+        let (_slessop, slessout) = def_op(&mut fd, OpCode::CPUI_INT_SLESS, &[sub, zero], 1);
+        // sborrow(a,b)
+        let (sbop, sbout) = def_op(&mut fd, OpCode::CPUI_INT_SBORROW, &[a, b], 1);
+        // sborrow(a,b) != ((a-b) s< 0)
+        let cmp = mk_op(&mut fd, 2, OpCode::CPUI_INT_NOTEQUAL);
+        wire(&mut fd, cmp, sbout, 0);
+        wire(&mut fd, cmp, slessout, 1);
+
+        assert_eq!(RuleSborrow.apply_op(sbop, &mut fd), 1);
+        // The NOTEQUAL was rewritten in place to a simple INT_SLESS(a,b).
+        assert_eq!(op_code(&fd, cmp), OpCode::CPUI_INT_SLESS);
+        assert_eq!(op_in(&fd, cmp, 0).unwrap(), a);
+        assert_eq!(op_in(&fd, cmp, 1).unwrap(), b);
     }
 
     // --- RuleTestSign -----------------------------------------------------
