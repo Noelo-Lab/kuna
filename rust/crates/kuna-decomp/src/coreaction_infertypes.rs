@@ -495,8 +495,11 @@ fn piece_pointer_sizes(data: &Funcdata) -> (int4, int4) {
 /// `TypeOp::propagateType` dispatch) for in-crate callers that need to propagate a
 /// type along a single edge — notably `AddTreeState::assignPropagatedType`
 /// (`op->getOpcode()->propagateType(inType, op, vn, out, 0, -1)`).
+// (kuna) verifier test seam: widened `pub(crate)` -> `pub` so the
+// `verify_w10_charptr_signedness` adversarial integration test can drive the
+// `INT_SLESS`/`INT_SLESSEQUAL` signedness gate directly.  No behaviour change.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn propagate_type_pub(
+pub fn propagate_type_pub(
     data: &mut Funcdata,
     alttype: Rc<Datatype>,
     op: OpId,
