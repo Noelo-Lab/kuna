@@ -1316,17 +1316,76 @@ impl Funcdata {
         (o.get_addr().clone(), o.get_time())
     }
 
+    /// The point at which a Varnode first comes into scope (C++
+    /// `Varnode::getUsePoint`, `varnode.cc:715`): the def-op's address if written,
+    /// else `fd.getAddress() + -1`.  Used as the `usepoint` of a
+    /// `queryProperties` look-up.
+    fn vn_use_point(&self, vn: VarnodeId) -> Address {
+        let v = self.vbank().get(vn).expect("vn_use_point: stale vn");
+        if v.is_written() {
+            if let Some(op) = v.get_def() {
+                return self.obank().get(op).expect("vn_use_point: stale def").get_addr().clone();
+            }
+        }
+        // fd.getAddress()+-1
+        &self.get_address().clone() + -1
+    }
+
     /// Look-up boolean properties and data-type information for a Varnode
-    /// (C++ `Funcdata::setVarnodeProperties`).
+    /// (C++ `Funcdata::setVarnodeProperties`, `funcdata_varnode.cc:25`).
     ///
-    /// SEAM(W4): the real body queries `localmap->queryProperties` for the
-    /// symbol entry and, if `isHighOn()`, calls `vn->calcCover()` (W7).  The W3
-    /// IR has no symbol scope and no HighVariable, so this is a no-op that the
-    /// op/varnode factories can call unconditionally; W4 fills the body and the
-    /// callers stay unchanged.
-    pub fn set_varnode_properties(&mut self, _vn: VarnodeId) {
-        // localmap->queryProperties(...) ; if (isHighOn()) vn->calcCover();
-        //   -- SEAM(W4)/SEAM(W7): no scope, no HighVariable yet.
+    /// Faithful transcription of the C++ body:
+    ///
+    /// ```text
+    ///   if (!vn->isMapped()) {
+    ///     uint4 vflags=0;
+    ///     SymbolEntry *entry = localmap->queryProperties(vn->getAddr(),vn->getSize(),
+    ///                                                     vn->getUsePoint(*this),vflags);
+    ///     if (entry != 0) vn->setSymbolProperties(entry);
+    ///     else            vn->setFlags(vflags & ~Varnode::typelock);
+    ///   }
+    ///   if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }
+    /// ```
+    ///
+    /// In C++ `localmap->queryProperties` walks the parent-scope chain up to the
+    /// global scope.  The merged kuna `localmap` ([`crate::varmap::ScopeLocal`])
+    /// owns a detached `Database`, so its *global* reach is supplied by the
+    /// snapshot wired onto `glb` ([`crate::seams::GlobalQuery`], built at
+    /// `build_arch_handle` after every `map addr`): `query_global_properties`
+    /// returns the same `vflags` the global-scope branch of `queryProperties`
+    /// would, so a global-mapped Varnode picks up `mapped | addrtied | persist`
+    /// here and its store survives `ActionDeadCode`.
+    ///
+    /// The C++ symbol-match branch additionally calls `entry->updateType(this)`
+    /// (changing the Varnode data-type to the locked Symbol's type); that type
+    /// surface is the render-fleet's (`coreaction_infertypes`/`printc`).  Both
+    /// branches set the same `flags & ~typelock`, so the persist/addrtied marking
+    /// — this item's target — is faithful either way; the type update is a
+    /// documented render-fleet seam (LOSS: global-symbol type lock).
+    pub fn set_varnode_properties(&mut self, vn: VarnodeId) {
+        use crate::varnode::varnode_flags;
+        let is_mapped = self.vbank().get(vn).map(|v| v.is_mapped()).unwrap_or(true);
+        if !is_mapped {
+            let (addr, size) = {
+                let v = self.vbank().get(vn).expect("set_varnode_properties: stale vn");
+                (v.get_addr().clone(), v.get_size())
+            };
+            let usepoint = self.vn_use_point(vn);
+            // localmap->queryProperties(...) reaching the global scope through glb.
+            let vflags = self.glb.query_global_properties(&addr, size, &usepoint);
+            // entry != 0 ? setSymbolProperties (== setFlags(getAllFlags() & ~typelock))
+            //            : setFlags(vflags & ~Varnode::typelock).  Both mask typelock.
+            if vflags != 0 {
+                if let Some(v) = self.vbank_mut().get_mut(vn) {
+                    v.set_flags_pub(vflags & !varnode_flags::typelock);
+                }
+            }
+        }
+        // if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }
+        //   -- SEAM(W7): the HighVariable/Cover geometry is assigned by the merge
+        //   actions (`assignHigh`); during the IR-construction calls here
+        //   `isHighOn()` is false, so this remains the existing no-op.  Kept
+        //   faithful to the C++ structure; the merge wave owns the cover.
     }
 
     // -----------------------------------------------------------------------

@@ -1344,13 +1344,26 @@ impl Heritage {
 
         if add_indirects {
             // fd->getScopeLocal()->queryProperties(addr,size,Address(),fl);
-            // SEAM(W4): the merged `Funcdata::localmap` is the unit-stub `Scope`,
-            // not a real `ScopeLocal` with a symbol map, so `queryProperties`
-            // cannot run; `fl` is 0 (no recovered local symbol => not
-            // mapped/addrtied/persist).  The guards below read `fl` only to gate
-            // store/load index-alias guarding and the persist RETURN-COPY — both
-            // inert for a register range with no recovered scope.
-            let fl: uint4 = 0;
+            //
+            // The C++ `localmap->queryProperties` walks the parent-scope chain up
+            // to the global scope.  The merged kuna `localmap`
+            // ([`crate::varmap::ScopeLocal`]) owns a detached `Database`, so its
+            // *global* reach is supplied by the snapshot wired onto `glb`
+            // ([`crate::seams::GlobalQuery`], built after every `map addr`):
+            // `query_global_properties` returns the same `mapped | addrtied |
+            // persist` a global-mapped range would.  This is what lets the persist
+            // RETURN-COPY branch of `guard_returns` fire, so a global store's
+            // value is read at function exit (an `addrforce` COPY) and its def
+            // chain survives `ActionDeadCode`.
+            //
+            // (The recovered-*local* persist surface — a stack range inside the
+            // global discovery range — would add to `fl` through the local scope's
+            // own `queryProperties`; that local symbol-map query is the naming
+            // wave's `ScopeLocal` and is left as a documented seam.  Local stack
+            // ranges are not persistent, so `fl`'s persist bit comes only from the
+            // global query here, which is faithful for the global-store cases.)
+            let usepoint = Address::new_invalid();
+            let fl: uint4 = fd.get_arch().query_global_properties(addr, size, &usepoint);
             self.guard_calls(fd, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
             // if (fd->getArch()->highPtrPossible(addr,size)) { guardStores; guardLoads; }
@@ -1523,10 +1536,54 @@ impl Heritage {
         if (fl & varnode_flags::persist) == 0 {
             return;
         }
-        // persist RETURN-COPY branch (heritage.cc:1677-1690): only reached for a
-        // recovered persistent (global) range; `fl==0` here (W4 scope seam) so
-        // unreachable on the critical path.
-        let _ = (addr, size);
+        // Persist RETURN-COPY branch (heritage.cc:1677-1692): the global value
+        // must persist past the end of the function, so before each RETURN insert
+        //   copyop = newOp(1, ret_addr);
+        //   vn = newVarnodeOut(size, addr, copyop); vn->setAddrForce(); vn->setActiveHeritage();
+        //   opSetOpcode(copyop, COPY); markReturnCopy(copyop);
+        //   invn = newVarnode(size, addr); invn->setActiveHeritage();
+        //   opSetInput(copyop, invn, 0); opInsertBefore(copyop, op);
+        // The `addrforce` output makes the COPY `isAutoLive()`, so `ActionDeadCode`
+        // keeps the whole def chain of the global store alive (the store survives
+        // and renders as `glob = ...`).
+        let return_ops: Vec<crate::seams::OpId> =
+            fd.obank().iter_code(OpCode::CPUI_RETURN).collect();
+        for op in return_ops {
+            let (dead, ret_addr) = match fd.obank().get(op) {
+                Some(o) => (o.is_dead(), o.get_addr().clone()),
+                None => continue,
+            };
+            if dead {
+                continue;
+            }
+            // copyop = fd->newOp(1, op->getAddr());
+            let copyop = fd.new_op(1, ret_addr);
+            // vn = fd->newVarnodeOut(size, addr, copyop);
+            let vn = match fd.new_varnode_out(size, addr, copyop) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            // vn->setAddrForce(); vn->setActiveHeritage();
+            if let Some(v) = fd.vbank_mut().get_mut(vn) {
+                v.set_addr_force();
+                v.set_active_heritage();
+            }
+            // fd->opSetOpcode(copyop, CPUI_COPY);
+            fd.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
+            // fd->markReturnCopy(copyop);  (op->flags |= return_copy)
+            if let Some(o) = fd.obank_mut().get_mut(copyop) {
+                o.set_flag(crate::op::pcodeop_flags::return_copy);
+            }
+            // invn = fd->newVarnode(size, addr); invn->setActiveHeritage();
+            let invn = fd.new_varnode(size, addr, None);
+            if let Some(v) = fd.vbank_mut().get_mut(invn) {
+                v.set_active_heritage();
+            }
+            // fd->opSetInput(copyop, invn, 0);
+            let _ = fd.op_set_input(copyop, invn, 0);
+            // fd->opInsertBefore(copyop, op);
+            fd.op_insert_before(copyop, op);
+        }
     }
 
     /// Guard RETURN ops when the heritaged range *contains* the output storage,

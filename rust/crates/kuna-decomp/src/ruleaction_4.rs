@@ -110,7 +110,16 @@ fn new_unique_out(data: &mut Funcdata, s: int4, op: OpId) -> VarnodeId {
 /// the genuine `opSetOutput` would run the `replace_reads` op-rewiring; the
 /// `banks_mut()` split-borrow that needs is the funcdata serial chain's, so the
 /// callback here is a no-op (correct whenever no equivalent pre-exists, the case
-/// the calling rules construct).  The `localmap` property seeding is a W4 no-op.
+/// the calling rules construct).
+///
+/// The C++ `Funcdata::newVarnodeOut` (`funcdata_varnode.cc:106`) tail then runs
+/// `setVarnodeProperties(vn)` (the `localmap->queryProperties` symbol/flag seed).
+/// `RuleStoreVarnode` builds the output at the *global* storage address of a
+/// `STORE ram,#const,val`, so that seed is what paints `persist`/`addrtied` on
+/// the global write — without it the store is dead-code-eliminated and the
+/// `glob = ...` assignment never renders.  Now wired faithfully (no longer a
+/// W4 no-op): the global symbol table reaches `set_varnode_properties` through
+/// the `glb` snapshot ([`crate::seams::GlobalQuery`]).
 fn new_varnode_out(data: &mut Funcdata, s: int4, m: Address, op: OpId) -> VarnodeId {
     let seqnum = data.obank().get(op).expect("new_varnode_out: stale op").get_seq_num().clone();
     let def = DefOpInfo { id: op, seqnum };
@@ -120,6 +129,9 @@ fn new_varnode_out(data: &mut Funcdata, s: int4, m: Address, op: OpId) -> Varnod
         .create_def(s, m, ct, def, &mut |_, _, _| Ok(()))
         .expect("new_varnode_out: createDef");
     data.obank_mut().get_mut(op).expect("new_varnode_out: stale op").set_output(Some(vn));
+    // setVarnodeProperties(vn): seed the global persist/addrtied/mapped flags so
+    // a global STORE-derived write survives ActionDeadCode.
+    data.set_varnode_properties(vn);
     vn
 }
 

@@ -751,6 +751,13 @@ impl Architecture {
         seam.max_jumptable_size = self.max_jumptable_size;
         seam.funcptr_align = self.funcptr_align;
         seam.loader = Some(self.translate.loader_rc());
+        // Snapshot the global symbol table onto `glb` so the per-function
+        // `setVarnodeProperties` can run `localmap->queryProperties`'s walk into
+        // the global scope (C++ `glb` reaches the live `symboltab`; the merged
+        // kuna `glb` is a skeleton, so the global scope is wired here, after every
+        // `map addr`).  Global-mapped varnodes then pick up `persist`/`addrtied`
+        // and their stores survive `ActionDeadCode`.
+        seam.global_query = Some(Rc::new(self.symboltab.build_global_query()));
         Rc::new(seam)
     }
 

@@ -2543,6 +2543,61 @@ impl Database {
         (flags & varnode_flags::readonly) != 0
     }
 
+    /// Flatten the global scope's mapped storage + owned ranges + the property map
+    /// into a read-only [`GlobalQuery`](crate::seams::GlobalQuery) the per-function
+    /// `glb` [`ArchHandle`](crate::seams::ArchHandle) carries.
+    ///
+    /// This is the wire for `localmap->queryProperties`'s walk up to the global
+    /// scope: the C++ `glb` reaches the live `Database`, but the merged kuna `glb`
+    /// is a separate skeleton, so the global symbol/property data is snapshot onto
+    /// it at [`Architecture::build_arch_handle`](crate::architecture::Architecture::
+    /// build_arch_handle).  Faithful because the global scope is frozen by the time
+    /// a function is loaded (every `map addr` ran first).  Each `GlobalEntry`
+    /// carries exactly what `findContainer`/`inUse`/`getAllFlags` read; the owned
+    /// `RangeList` is the global `Scope::rangetree`; the flagbase is the C++
+    /// `Database::flagbase`.
+    pub fn build_global_query(&self) -> crate::seams::GlobalQuery {
+        use crate::seams::{GlobalEntry, GlobalQuery};
+        let gid = match self.globalscope {
+            Some(g) => g,
+            None => return GlobalQuery::default(),
+        };
+        let scope = &self.scopes[gid];
+        let mut entries: Vec<GlobalEntry> = Vec::new();
+        // Walk every per-space rangemap of the global scope, flattening each
+        // SymbolEntry (C++ iterates `maptable[i]->begin_list..end_list`).
+        for (space_index, slot) in scope.maptable.iter().enumerate() {
+            let rangemap = match slot.as_ref() {
+                Some(rm) => rm,
+                None => continue,
+            };
+            for (_, rec) in rangemap.records() {
+                let entry = &rec.entry;
+                // Dynamic (hash-only) entries have no address: queryProperties for
+                // a Varnode address never matches them (the `addr.isInvalid` skip).
+                if entry.is_dynamic() {
+                    continue;
+                }
+                let sym_flags = self.symbols[entry.symbol].flags;
+                entries.push(GlobalEntry {
+                    space_index: space_index as int4,
+                    first: entry.get_first(),
+                    last: entry.get_last(),
+                    size: entry.get_size(),
+                    // getAllFlags() = extraflags | symbol->getFlags().
+                    all_flags: entry.extraflags | sym_flags,
+                    addrtied: (sym_flags & varnode_flags::addrtied) != 0,
+                    uselimit: entry.uselimit.clone(),
+                });
+            }
+        }
+        crate::seams::GlobalQuery {
+            entries,
+            owned: scope.rangetree.clone(),
+            flagbase: self.flagbase.clone(),
+        }
+    }
+
     /// C++ `Scope::discoverScope` (`database.cc:1358-1370`): the sub/containing
     /// Scope that owns `[addr, addr+sz-1]` at `usepoint`.
     pub fn discover_scope(
