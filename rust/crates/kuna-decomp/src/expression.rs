@@ -39,7 +39,7 @@
 //! reading through the banks; it hoists to `Varnode::termOrder` when varnode.rs
 //! ports it.  // SEAM(W3-varnode) — see losses.
 
-use kuna_base::address::signbit_negative;
+use kuna_base::address::{calc_mask, signbit_negative};
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::{get_booleanflip, OpCode};
 
@@ -1103,6 +1103,185 @@ fn vn_lone_descend(vn: VarnodeId, vbank: &VarnodeBank) -> int4 {
         1
     } else {
         0
+    }
+}
+
+// =============================================================================
+// AddExpression (expression.hh:152-173, expression.cc:296-394)
+// =============================================================================
+
+/// A single term in an [`AddExpression`] (C++ `AddExpression::Term`,
+/// `expression.hh:154-161`): a Varnode with a multiplicative coefficient.
+#[derive(Clone, Copy)]
+struct AddTerm {
+    /// The Varnode representing the term (C++ `Varnode *vn`).
+    vn: VarnodeId,
+    /// Multiplicative coefficient (C++ `uintb coeff`).
+    coeff: uintb,
+}
+
+impl AddTerm {
+    /// Compare two terms for functional equivalence (C++
+    /// `AddExpression::Term::isEquivalent`, `expression.cc:300-305`).
+    fn is_equivalent(&self, op2: &AddTerm, vbank: &VarnodeBank, obank: &PcodeOpBank) -> bool {
+        // if (coeff != op2.coeff) return false;
+        if self.coeff != op2.coeff {
+            return false;
+        }
+        // return functionalEquality(vn,op2.vn);
+        functional_equality(self.vn, op2.vn, vbank, obank)
+    }
+}
+
+/// Class for lightweight matching of two additive expressions (C++
+/// `AddExpression`, `expression.hh:152`).  Collects up to two non-constant
+/// terms along with the constant sum, then [`is_equivalent`](AddExpression::is_equivalent)
+/// tests two collected expressions for value equivalence.  Used by
+/// [`crate::ruleaction_3::RuleSborrow`] / [`crate::ruleaction_3::RuleScarry`].
+pub struct AddExpression {
+    /// Collected constants in the expression (C++ `uintb constval`).
+    constval: uintb,
+    /// Number of terms (C++ `int4 numTerms`).
+    num_terms: int4,
+    /// Terms making up the expression (C++ `Term terms[2]`).
+    terms: [AddTerm; 2],
+}
+
+impl AddExpression {
+    /// Construct an empty expression (C++ `AddExpression(void)`,
+    /// `expression.hh:168`).
+    pub fn new() -> AddExpression {
+        // constval = 0; numTerms = 0;
+        AddExpression {
+            constval: 0,
+            num_terms: 0,
+            terms: [AddTerm { vn: VarnodeId::default(), coeff: 0 }; 2],
+        }
+    }
+
+    /// Add a term to the expression (C++ `AddExpression::add`,
+    /// `expression.hh:165`).  `if (numTerms < 2) terms[numTerms++] = Term(vn,coeff);`
+    fn add(&mut self, vn: VarnodeId, coeff: uintb) {
+        if self.num_terms < 2 {
+            self.terms[self.num_terms as usize] = AddTerm { vn, coeff };
+            self.num_terms += 1;
+        }
+    }
+
+    /// Recursively collect terms, up to the given depth (C++
+    /// `AddExpression::gather`, `expression.cc:334-364`).  INT_ADD either
+    /// contributes to the constant sum or is recursively walked; term
+    /// coefficients are collected from INT_MULT with a constant.
+    fn gather(&mut self, vn: VarnodeId, mut coeff: uintb, mut depth: int4, vbank: &VarnodeBank, obank: &PcodeOpBank) {
+        let v = vbank.get(vn).expect("AddExpression::gather: stale vn");
+        // if (vn->isConstant()) { constval += coeff*getOffset(); constval &= calc_mask(size); return; }
+        if v.is_constant() {
+            self.constval = self.constval.wrapping_add(coeff.wrapping_mul(v.get_offset()));
+            self.constval &= calc_mask(v.get_size());
+            return;
+        }
+        // if (vn->isWritten()) { ... }
+        if v.is_written() {
+            let op = v.get_def().expect("AddExpression::gather: written vn has no def");
+            let o = obank.get(op).expect("AddExpression::gather: stale op");
+            let opc = o.code();
+            if opc == OpCode::CPUI_INT_ADD {
+                let in0 = o.get_in(0).expect("AddExpression::gather: null INT_ADD in0");
+                let in1 = o.get_in(1).expect("AddExpression::gather: null INT_ADD in1");
+                // if (!op->getIn(1)->isConstant()) depth -= 1;
+                if !vbank.get(in1).expect("AddExpression::gather: stale vn").is_constant() {
+                    depth -= 1;
+                }
+                if depth >= 0 {
+                    self.gather(in0, coeff, depth, vbank, obank);
+                    self.gather(in1, coeff, depth, vbank, obank);
+                    return;
+                }
+            } else if opc == OpCode::CPUI_INT_MULT {
+                let in0 = o.get_in(0).expect("AddExpression::gather: null INT_MULT in0");
+                let in1 = o.get_in(1).expect("AddExpression::gather: null INT_MULT in1");
+                let in1v = vbank.get(in1).expect("AddExpression::gather: stale vn");
+                // if (op->getIn(1)->isConstant()) { coeff *= getOffset(); coeff &= calc_mask(size); gather(in0,coeff,depth); return; }
+                if in1v.is_constant() {
+                    coeff = coeff.wrapping_mul(in1v.get_offset());
+                    coeff &= calc_mask(v.get_size());
+                    self.gather(in0, coeff, depth, vbank, obank);
+                    return;
+                }
+            }
+        }
+        // add(vn,coeff);
+        self.add(vn, coeff);
+    }
+
+    /// Gather up to two non-constant additive terms, given two root Varnodes
+    /// being subtracted (C++ `AddExpression::gatherTwoTermsSubtract`,
+    /// `expression.cc:369-375`).
+    pub fn gather_two_terms_subtract(&mut self, a: VarnodeId, b: VarnodeId, vbank: &VarnodeBank, obank: &PcodeOpBank) {
+        // int4 depth = (a->isConstant() || b->isConstant()) ? 1 : 0;
+        let a_const = vbank.get(a).expect("gatherTwoTermsSubtract: stale a").is_constant();
+        let b_const = vbank.get(b).expect("gatherTwoTermsSubtract: stale b").is_constant();
+        let depth: int4 = if a_const || b_const { 1 } else { 0 };
+        // gather(a,(uintb)1,depth);
+        self.gather(a, 1, depth, vbank, obank);
+        // gather(b,calc_mask(b->getSize()),depth);
+        let b_size = vbank.get(b).expect("gatherTwoTermsSubtract: stale b").get_size();
+        self.gather(b, calc_mask(b_size), depth, vbank, obank);
+    }
+
+    /// Gather up to two non-constant additive terms, given two root Varnodes
+    /// being added (C++ `AddExpression::gatherTwoTermsAdd`,
+    /// `expression.cc:380-386`).
+    pub fn gather_two_terms_add(&mut self, a: VarnodeId, b: VarnodeId, vbank: &VarnodeBank, obank: &PcodeOpBank) {
+        let a_const = vbank.get(a).expect("gatherTwoTermsAdd: stale a").is_constant();
+        let b_const = vbank.get(b).expect("gatherTwoTermsAdd: stale b").is_constant();
+        let depth: int4 = if a_const || b_const { 1 } else { 0 };
+        // gather(a,(uintb)1,depth); gather(b,(uintb)1,depth);
+        self.gather(a, 1, depth, vbank, obank);
+        self.gather(b, 1, depth, vbank, obank);
+    }
+
+    /// Gather up to two non-constant additive terms at the given root (C++
+    /// `AddExpression::gatherTwoTermsRoot`, `expression.cc:390-394`).
+    pub fn gather_two_terms_root(&mut self, root: VarnodeId, vbank: &VarnodeBank, obank: &PcodeOpBank) {
+        // gather(root,(uintb)1,1);
+        self.gather(root, 1, 1, vbank, obank);
+    }
+
+    /// Determine if two expressions are equivalent (C++
+    /// `AddExpression::isEquivalent`, `expression.cc:310-327`).
+    pub fn is_equivalent(&self, op2: &AddExpression, vbank: &VarnodeBank, obank: &PcodeOpBank) -> bool {
+        // if (constval != op2.constval) return false;
+        if self.constval != op2.constval {
+            return false;
+        }
+        // if (numTerms != op2.numTerms) return false;
+        if self.num_terms != op2.num_terms {
+            return false;
+        }
+        if self.num_terms == 1 {
+            if self.terms[0].is_equivalent(&op2.terms[0], vbank, obank) {
+                return true;
+            }
+        } else if self.num_terms == 2 {
+            if self.terms[0].is_equivalent(&op2.terms[0], vbank, obank)
+                && self.terms[1].is_equivalent(&op2.terms[1], vbank, obank)
+            {
+                return true;
+            }
+            if self.terms[0].is_equivalent(&op2.terms[1], vbank, obank)
+                && self.terms[1].is_equivalent(&op2.terms[0], vbank, obank)
+            {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+impl Default for AddExpression {
+    fn default() -> Self {
+        AddExpression::new()
     }
 }
 

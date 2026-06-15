@@ -160,11 +160,19 @@ fn w10_inline_body_header_warnings_are_real_oracle_parity() {
              in:\n{out}"
         );
     }
-    // 6/12 now pass (baseline was 0/12, pre-w10 was 3/12 header-only).
+    // w10-sborrow-compare: RuleSborrow now folds the lifted `SBORROW(...)`
+    // signed-compare in the inlined `compare` body, so `#2` (`if (x < 10)`)
+    // newly passes — bumping 6/12 → 7/12.
     assert!(
-        out.contains("Total passing tests = 6"),
-        "inline.xml must pass its 3 header + 3 body assertions (6/12); baseline \
-         0/12, pre-w10 3/12:\n{out}"
+        out.contains("Success -- Inlining #2"),
+        "expected `Success -- Inlining #2` (`if (x < 10)` — RuleSborrow folded \
+         the SBORROW signed compare) in:\n{out}"
+    );
+    // 7/12 now pass (baseline 0/12, pre-w10 3/12 header-only, w10 6/12 +SBORROW).
+    assert!(
+        out.contains("Total passing tests = 7"),
+        "inline.xml must pass its 3 header + 3 body + 1 SBORROW assertion (7/12); \
+         baseline 0/12, pre-w10 3/12:\n{out}"
     );
 }
 
