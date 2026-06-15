@@ -102,6 +102,7 @@ pub mod constseq;
 pub mod prefersplit;
 pub mod coreaction_protos;
 pub mod coreaction_cleanup;
+pub mod coreaction_casts;
 pub mod coreaction_infertypes;
 pub mod addtreestate;
 pub mod kuna_returnpair;

@@ -56,7 +56,7 @@ use crate::typeop::type_op_info;
 /// W6 typeop inst table (`getOutputLocal`/`getInputLocal`).  Falls back to a
 /// size-correct `TYPE_UNKNOWN` if the factory query fails (the C++ getBase never
 /// fails for a valid size).
-fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
+pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
     let arch = Rc::clone(data.get_arch());
     let o = data.obank().get(op).expect("output_type_local: stale op");
     let out_size = o
@@ -73,7 +73,7 @@ fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
     }
 }
 
-fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Datatype> {
+pub(crate) fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Datatype> {
     let arch = Rc::clone(data.get_arch());
     let o = data.obank().get(op).expect("input_type_local: stale op");
     let opcode = o.code();

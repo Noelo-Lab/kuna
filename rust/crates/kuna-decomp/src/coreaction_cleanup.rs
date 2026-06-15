@@ -1250,66 +1250,15 @@ impl Action for ActionSetCasts {
         }
         Some(Box::new(ActionSetCasts { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:2812 — ActionSetCasts::apply
-        //   data.startCastPhase();
-        //   castStrategy = data.getArch()->print->getCastStrategy();
-        //   // dominance-ordered basic blocks, block-ordered ops
-        //   for (j = 0; j < basicblocks.getSize(); ++j):
-        //       bb = basicblocks.getBlock(j);
-        //       for (op in bb->beginOp()..bb->endOp()):
-        //           if (op->notPrinted()) continue;
-        //           opc = op->code();
-        //           if (opc == CPUI_CAST) continue;
-        //           if (opc == CPUI_PTRADD):           // no-longer-fitting PTRADD
-        //               ... opUndoPtradd(op, true);
-        //           else if (opc == CPUI_PTRSUB):      // no-longer-fitting PTRSUB
-        //               if (!isPtrsubMatching(...)):
-        //                   if (off == 0): opRemoveInput(op,1); opSetOpcode(op,COPY);
-        //                   else: opSetOpcode(op, CPUI_INT_ADD);
-        //           for (i = 0; i < op->numInput(); ++i):
-        //               count += resolveUnion(op, i, data, castStrategy);
-        //           vn = op->getOut();
-        //           if (vn): outHighType = vn->getHigh()->getType();
-        //               if (outHighType->needsResolution())
-        //                   outHighType->resolveInFlow(op, -1);
-        //           for (i = 0; i < op->numInput(); ++i):
-        //               count += castInput(op, i, data, castStrategy);
-        //           if (opc == CPUI_LOAD): checkPointerIssues(op, op->getOut(), data);
-        //           else if (opc == CPUI_STORE): checkPointerIssues(op, op->getIn(2), data);
-        //           if (vn): count += castOutput(op, data, castStrategy);
-        //   return 0;        // full completion
-        //
-        // The helpers (`castInput`/`castOutput`/`resolveUnion`/`checkPointerIssues`/
-        // `insertPtrsubZero`/`testStructOffset0`/`tryResolution*`/`isOpIdentical`,
-        // coreaction.cc:2400-2811) drive the `CastStrategy` + `print` rendering
-        // machinery, the HighVariable read-/write-facing type surface, union
-        // field resolution, and CAST/PTRSUB insertion.
-        //
-        // SEAM(W7/W8-render): `getArch()->print->getCastStrategy()`, the
-        // HighVariable `getType`/`getHighTypeReadFacing`/`resolveInFlow` surface,
-        // and `opUndoPtradd`/`insertPtrsubZero` are the S9 rendering plane (W8)
-        // and are not present in the merged tree.  Body transcribed; no change
-        // applied (count stays 0).
-        //
-        // PREREQUISITE LANDED (item w10-actionsetcasts): the `Funcdata` union-field
-        // resolution cache (`getUnionField`/`getUnionResolution`/
-        // `getAddressBasedUnionField`/`setUnionField`/`setAddressBasedUnionField`/
-        // `updateUnionField`/`forceFacingType`/`inheritUnionField`/
-        // `inheritUnionFieldPtr`, C++ funcdata.cc:915-1115) is now ported in
-        // `crate::funcdata_union` and `start_cast_phase` exists.  What still blocks
-        // wiring this `apply` body and the per-op `getInputCast`/`getOutputToken`
-        // surface to produce CAST/PTRSUB ops:
-        //   * the S6 HighVariable `Merge` engine (`ActionMergeType`/`MergeRequired`/
-        //     `MergeAdjacent` are seamed; `merge.rs` itself carries SEAM(W7-varnode)
-        //     `copyShadow` / SEAM(W7-funcdata) block surgery), so `getHigh()` has
-        //     no merged read-/def-facing graph for the cast loop to query;
-        //   * `dtype::resolve_in_flow`/`find_resolve` for pointer-to-union bottom
-        //     out at `ScoreUnionFields::run` (SEAM(W4) callspec facts + SEAM(W6)
-        //     varnode facing through Funcdata) — the union cache resolves the
-        //     *lookup* half (getUnionField), the *scoring* half is still seamed.
-        // These live in waves that own `merge.rs`/`unionresolve.rs`'s driver and
-        // the varnode-facing-through-Funcdata bridge; not this wave.
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:2812 — ActionSetCasts::apply.  The full driver +
+        // helpers (castInput/castOutput/resolveUnion/checkPointerIssues/
+        // insertPtrsubZero/testStructOffset0/tryResolution*/isOpIdentical), the
+        // per-op getInputCast/getOutputToken surface and the FuncdataCastContext
+        // bridge live in `crate::coreaction_casts` (`Funcdata::action_set_casts`).
+        // The C++ `return 0` (full completion) is reproduced regardless of how
+        // many casts were inserted; `count` accumulates inside the driver.
+        let _count = data.action_set_casts();
         0
     }
 }
