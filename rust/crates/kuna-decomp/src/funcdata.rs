@@ -2124,6 +2124,126 @@ impl Funcdata {
         }
         self.with_high_split(|hb, ctx| hb.get_mut(id).unwrap().has_name(ctx).unwrap_or(false))
     }
+
+    /// Build a \e dynamic Symbol associated with the given (constant) Varnode (C++
+    /// `Funcdata::buildDynamicSymbol`, `funcdata_varnode.cc:1304-1326`).
+    ///
+    /// If a Symbol is already attached, no change is made.  Otherwise a special
+    /// \e dynamic Symbol is created, associated with the Varnode via a hash of its
+    /// local data-flow (rather than its storage address), and attached to the
+    /// Varnode's HighVariable.
+    ///
+    /// Faithful to the C++ except for two merged-tree seams threaded in as
+    /// parameters (the same convention [`crate::dynamic::DynamicHash::unique_hash`]
+    /// uses): `maxduplicates` is the `glb->dynamic_hash_maxdup_high` collision
+    /// budget and `base1_unknown` is the EquateSymbol's `getBase(1,TYPE_UNKNOWN)`
+    /// type — both resolved from the `Architecture` at the call site.  Only the
+    /// constant arm is reached by the `force varnode` console command; the
+    /// non-constant `addDynamicSymbol` arm errs as a documented seam (the merged
+    /// tree has no Varnode→SymbolEntry retype link).
+    ///
+    /// On success the EquateSymbol id is parked on `high->kuna_equate_symbol`,
+    /// which is the merged-tree stand-in for the C++ `vn->setSymbolEntry(...)`
+    /// effect `high->getSymbol() == sym` (read by `PrintC::push_integer`).
+    pub fn build_dynamic_symbol(
+        &mut self,
+        vn: VarnodeId,
+        maxduplicates: uint4,
+        base1_unknown: std::rc::Rc<crate::dtype::Datatype>,
+    ) -> KunaResult<()> {
+        use kuna_base::error::KunaError;
+        // if (vn->isTypeLock()||vn->isNameLock()) throw RecovError(...)
+        let v = self
+            .vbank
+            .get(vn)
+            .ok_or_else(|| KunaError::lowlevel("build_dynamic_symbol: stale varnode"))?;
+        if v.is_type_lock() || v.is_name_lock() {
+            return Err(KunaError::lowlevel(
+                "Trying to build dynamic symbol on locked varnode",
+            ));
+        }
+        // if (!isHighOn()) throw RecovError(...)
+        if !self.is_high_on() {
+            return Err(KunaError::lowlevel(
+                "Cannot create dynamic symbols until decompile has completed",
+            ));
+        }
+        let is_constant = v.is_constant();
+        let value = v.get_offset();
+        // HighVariable *high = vn->getHigh();
+        let high = self
+            .vbank
+            .get(vn)
+            .and_then(|v| v.get_high())
+            .ok_or_else(|| KunaError::lowlevel("build_dynamic_symbol: varnode has no high"))?;
+        // if (high->getSymbol() != 0) return;  // Symbol already exists
+        if self
+            .high_bank
+            .get(high)
+            .and_then(|h| h.kuna_equate_symbol())
+            .is_some()
+        {
+            return Ok(());
+        }
+        // DynamicHash dhash; dhash.uniqueHash(vn,this);
+        let (hash, addr) =
+            crate::dynamic::dynamic_unique_hash(vn, maxduplicates, self)?;
+        // if (dhash.getHash() == 0) throw RecovError("Unable to find unique hash ...")
+        if hash == 0 {
+            return Err(KunaError::lowlevel("Unable to find unique hash for varnode"));
+        }
+        // The non-constant arm (addDynamicSymbol over high->getType()) needs the
+        // merged-tree Varnode→SymbolEntry retype link, which is a W4 seam; the
+        // `force varnode` command only ever reaches the constant arm.
+        if !is_constant {
+            return Err(KunaError::lowlevel(
+                "kuna rust port: build_dynamic_symbol non-constant arm needs the W4 Varnode-SymbolEntry link",
+            ));
+        }
+        // sym = localmap->addEquateSymbol("",Symbol::force_hex,vn->getOffset(),
+        //                                 dhash.getAddress(),dhash.getHash());
+        let localmap = self
+            .localmap
+            .as_mut()
+            .ok_or_else(|| KunaError::lowlevel("build_dynamic_symbol: no local scope"))?;
+        let sym = localmap.add_equate_symbol(
+            "",
+            crate::database::symbol_dispflags::FORCE_HEX,
+            value,
+            &addr,
+            hash,
+            base1_unknown,
+        )?;
+        // vn->setSymbolEntry(sym->getFirstWholeMap());  -> high->getSymbol() == sym
+        if let Some(h) = self.high_bank.get_mut(high) {
+            h.set_kuna_equate_symbol(sym);
+        }
+        Ok(())
+    }
+
+    /// The equate-Symbol bound to `vn`'s HighVariable by
+    /// [`build_dynamic_symbol`](Self::build_dynamic_symbol) (the merged-tree
+    /// `vn->getHigh()->getSymbol()` stand-in for the constant-format path).
+    /// `None` if the Varnode has no high or no bound equate symbol.
+    pub fn vn_high_equate_symbol(&self, vn: VarnodeId) -> Option<crate::database::SymbolId> {
+        let high = self.vbank.get(vn)?.get_high()?;
+        self.high_bank.get(high)?.kuna_equate_symbol()
+    }
+
+    /// The forced integer display format of the equate-Symbol bound to `vn`'s
+    /// HighVariable (`vn->getHigh()->getSymbol()->getDisplayFormat()`, the value
+    /// `PrintC::push_integer` reads at printc.cc:1376).  `0` (no override) when
+    /// there is no bound equate Symbol — including the no-local-scope case.
+    pub fn vn_high_display_format(&self, vn: VarnodeId) -> uint4 {
+        let sym = match self.vn_high_equate_symbol(vn) {
+            Some(s) => s,
+            None => return 0,
+        };
+        match self.localmap.as_ref() {
+            Some(lm) => lm.database().symbol(sym).get_display_format(),
+            None => 0,
+        }
+    }
 }
 
 /// A field-split read view used by [`Funcdata::with_high_split`]: implements
@@ -2445,6 +2565,39 @@ mod tests {
             fd.vbank.get(v1).unwrap().get_high(),
             fd.vbank.get(v2).unwrap().get_high()
         );
+    }
+
+    #[test]
+    fn build_dynamic_symbol_guards_and_equate_format_accessors() {
+        // The DynamicHash/equate-Symbol creation path needs a local scope + a
+        // live decompiled IR (exercised end-to-end by the `force varnode` console
+        // command); here we cover the C++ guard arms (`!isHighOn()` /
+        // `isTypeLock()`) and the merged-tree `vn->getHigh()->getSymbol()`
+        // display-format stand-in accessors (vn_high_equate_symbol /
+        // vn_high_display_format), which return the no-equate sentinel until
+        // build_dynamic_symbol binds one.
+        let mut fd = build_fd();
+        let c = fd.new_constant(4, 0xaa);
+        let unk = unk_type();
+
+        // !isHighOn() -> "Cannot create dynamic symbols until decompile has completed".
+        assert!(!fd.is_high_on());
+        let err = fd
+            .build_dynamic_symbol(c, 8, Rc::clone(&unk))
+            .expect_err("must reject before high-level");
+        assert!(err.explain().contains("decompile has completed"));
+
+        fd.set_high_level();
+        // No equate symbol bound yet: the stand-in accessors report "none"/0.
+        assert!(fd.vn_high_equate_symbol(c).is_none());
+        assert_eq!(fd.vn_high_display_format(c), 0);
+
+        // isTypeLock() -> "Trying to build dynamic symbol on locked varnode".
+        fd.vbank.get_mut(c).unwrap().set_flags_pub(crate::varnode::varnode_flags::typelock);
+        let err = fd
+            .build_dynamic_symbol(c, 8, unk)
+            .expect_err("must reject a type-locked varnode");
+        assert!(err.explain().contains("locked varnode"));
     }
 
     #[test]

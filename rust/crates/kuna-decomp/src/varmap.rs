@@ -1066,6 +1066,13 @@ impl ScopeLocal {
         self.db.symbol_mut(sym).set_isolated(val);
     }
 
+    /// C++ `ScopeInternal::setDisplayFormat(sym, attr)` (`database.cc:2246-2250`),
+    /// reached via `sym->getScope()->setDisplayFormat(sym, format)` by
+    /// `IfcForceFormat`: force the integer display format on a constant Symbol.
+    pub fn set_display_format(&mut self, sym: crate::database::SymbolId, format: uint4) {
+        self.db.symbol_mut(sym).set_display_format(format);
+    }
+
     /// C++ `Scope::getFullName()` for this local scope (`IfcTypeVarnode`'s
     /// success message names `scope->getFullName()`).
     pub fn full_name(&self) -> String {

@@ -338,6 +338,14 @@ pub struct HighVariable {
     /// `getSymbol()->getType()` stand-in, used by the printer to render an array
     /// or struct member access `name[idx]`).  `None` for an unnamed/scalar high.
     kuna_symbol_type: Option<Rc<Datatype>>,
+    /// (kuna) The local-scope EquateSymbol bound to this high by
+    /// `Funcdata::build_dynamic_symbol` (C++ `vn->setSymbolEntry(sym->...)` whose
+    /// effect is `high->getSymbol() == sym`).  The W4 `Symbol`/`SymbolEntry`
+    /// varnode-link is not in the merged tree, so the `force varnode` console
+    /// command parks the equate-Symbol id here and the printer reads its
+    /// `getDisplayFormat()` — the `vn->getHigh()->getSymbol()->getDisplayFormat()`
+    /// path of `PrintC::push_integer` (printc.cc:1370-1376).  `None` == no equate.
+    kuna_equate_symbol: Option<crate::database::SymbolId>,
 }
 
 impl HighVariable {
@@ -364,6 +372,7 @@ impl HighVariable {
             symbol_offset: -1,
             kuna_name: None,
             kuna_symbol_type: None,
+            kuna_equate_symbol: None,
         }
     }
 
@@ -398,6 +407,19 @@ impl HighVariable {
     /// (kuna) The mapped Symbol's data-type, or `None`.
     pub fn kuna_symbol_type(&self) -> Option<&Rc<Datatype>> {
         self.kuna_symbol_type.as_ref()
+    }
+
+    /// (kuna) Bind the local-scope EquateSymbol to this high (the merged-tree
+    /// stand-in for `vn->setSymbolEntry` whose effect C++ exposes as
+    /// `high->getSymbol()`).  Set by `Funcdata::build_dynamic_symbol`.
+    pub fn set_kuna_equate_symbol(&mut self, sym: crate::database::SymbolId) {
+        self.kuna_equate_symbol = Some(sym);
+    }
+
+    /// (kuna) The equate-Symbol id bound to this high, or `None` (the
+    /// `high->getSymbol()` stand-in for the constant-format console path).
+    pub fn kuna_equate_symbol(&self) -> Option<crate::database::SymbolId> {
+        self.kuna_equate_symbol
     }
 
     // --- Dirty-flag setters (variable.hh:165-169, inline) -----------------
