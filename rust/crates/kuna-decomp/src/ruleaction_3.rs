@@ -3286,4 +3286,114 @@ mod tests {
         assert_eq!(op_in(&fd, op, 0), Some(v));
         assert_eq!(op_in(&fd, op, 1), Some(w));
     }
+
+    // =====================================================================
+    // VERIFIER adversarial tests (item w10-sborrow-compare) — cover the
+    // branches the porter's single test did NOT: the EQUAL/SLESSEQUAL arm,
+    // the zside==0 vs zside==1 operand swaps, RuleScarry's newConstant(-#W)
+    // fold, and the AddExpression equivalence gate (false-fold guard).
+    // =====================================================================
+
+    /// RuleSborrow EQUAL arm, zside==1: `sborrow(a,b) == ((a + b*-1) s< 0) => b s<= a`.
+    /// SLESS(sub, zero): getIn(0)=sub non-const => check getIn(1)=zero matches 0
+    /// => zside=1, xvn=getIn(0)=sub.  EQUAL arm => INT_SLESSEQUAL; slot zside(1)=avn,
+    /// slot 1-zside(0)=bvn.
+    #[test]
+    fn w10_sborrow_equal_zside1_folds_to_slessequal() {
+        let mut fd = build_fd();
+        let a = make_input(&mut fd, 0x200, 4);
+        let b = make_input(&mut fd, 0x204, 4);
+        let neg1 = fd.new_constant(4, 0xffffffff);
+        let (_multop, negb) = def_op(&mut fd, OpCode::CPUI_INT_MULT, &[b, neg1], 4);
+        let (_addop, sub) = def_op(&mut fd, OpCode::CPUI_INT_ADD, &[a, negb], 4);
+        let zero = fd.new_constant(4, 0);
+        let (_slessop, slessout) = def_op(&mut fd, OpCode::CPUI_INT_SLESS, &[sub, zero], 1);
+        let (sbop, sbout) = def_op(&mut fd, OpCode::CPUI_INT_SBORROW, &[a, b], 1);
+        let cmp = mk_op(&mut fd, 2, OpCode::CPUI_INT_EQUAL);
+        wire(&mut fd, cmp, sbout, 0);
+        wire(&mut fd, cmp, slessout, 1);
+
+        assert_eq!(RuleSborrow.apply_op(sbop, &mut fd), 1);
+        assert_eq!(op_code(&fd, cmp), OpCode::CPUI_INT_SLESSEQUAL);
+        // zside==1: slot 1 = avn (a), slot 0 = bvn (b)
+        assert_eq!(op_in(&fd, cmp, 1).unwrap(), a);
+        assert_eq!(op_in(&fd, cmp, 0).unwrap(), b);
+    }
+
+    /// RuleSborrow NOTEQUAL arm, zside==0: SLESS(zero, sub) puts the zero in
+    /// slot 0 => zside=0, xvn=getIn(1)=sub.  NOTEQUAL arm => INT_SLESS; slot
+    /// 1-zside(1)=avn, slot zside(0)=bvn  => a s< b.
+    #[test]
+    fn w10_sborrow_notequal_zside0_folds_to_sless() {
+        let mut fd = build_fd();
+        let a = make_input(&mut fd, 0x200, 4);
+        let b = make_input(&mut fd, 0x204, 4);
+        let neg1 = fd.new_constant(4, 0xffffffff);
+        let (_multop, negb) = def_op(&mut fd, OpCode::CPUI_INT_MULT, &[b, neg1], 4);
+        let (_addop, sub) = def_op(&mut fd, OpCode::CPUI_INT_ADD, &[a, negb], 4);
+        let zero = fd.new_constant(4, 0);
+        let (_slessop, slessout) = def_op(&mut fd, OpCode::CPUI_INT_SLESS, &[zero, sub], 1);
+        let (sbop, sbout) = def_op(&mut fd, OpCode::CPUI_INT_SBORROW, &[a, b], 1);
+        let cmp = mk_op(&mut fd, 2, OpCode::CPUI_INT_NOTEQUAL);
+        wire(&mut fd, cmp, sbout, 0);
+        wire(&mut fd, cmp, slessout, 1);
+
+        assert_eq!(RuleSborrow.apply_op(sbop, &mut fd), 1);
+        assert_eq!(op_code(&fd, cmp), OpCode::CPUI_INT_SLESS);
+        // zside==0: slot 1 = avn (a), slot 0 = bvn (b)
+        assert_eq!(op_in(&fd, cmp, 1).unwrap(), a);
+        assert_eq!(op_in(&fd, cmp, 0).unwrap(), b);
+    }
+
+    /// RuleSborrow false-fold guard: when the SLESS expression is NOT equivalent
+    /// to `a - b` (reads an unrelated `c`), the AddExpression gate rejects and
+    /// the rule returns 0 leaving the comparison opcode untouched.
+    #[test]
+    fn w10_sborrow_nonequivalent_expr_rejected() {
+        let mut fd = build_fd();
+        let a = make_input(&mut fd, 0x200, 4);
+        let b = make_input(&mut fd, 0x204, 4);
+        let c = make_input(&mut fd, 0x208, 4);
+        let neg1 = fd.new_constant(4, 0xffffffff);
+        let (_multop, negc) = def_op(&mut fd, OpCode::CPUI_INT_MULT, &[c, neg1], 4);
+        let (_addop, sub) = def_op(&mut fd, OpCode::CPUI_INT_ADD, &[a, negc], 4);
+        let zero = fd.new_constant(4, 0);
+        let (_slessop, slessout) = def_op(&mut fd, OpCode::CPUI_INT_SLESS, &[sub, zero], 1);
+        let (sbop, sbout) = def_op(&mut fd, OpCode::CPUI_INT_SBORROW, &[a, b], 1);
+        let cmp = mk_op(&mut fd, 2, OpCode::CPUI_INT_NOTEQUAL);
+        wire(&mut fd, cmp, sbout, 0);
+        wire(&mut fd, cmp, slessout, 1);
+
+        assert_eq!(RuleSborrow.apply_op(sbop, &mut fd), 0);
+        assert_eq!(op_code(&fd, cmp), OpCode::CPUI_INT_NOTEQUAL);
+    }
+
+    /// RuleScarry constant fold: `scarry(a,#W) != ((a + #W) s< 0) => a s< -#W`.
+    /// SLESS(sum, zero): getIn(0)=sum non-const, getIn(1)=zero matches 0 =>
+    /// zside==1, xvn=getIn(0)=sum.  #W = 5 (4 bytes) => newConst = -5 & mask =
+    /// 0xfffffffb.  NOTEQUAL arm => INT_SLESS, slot 1-zside(0)=avn, slot
+    /// zside(1)=newConst  => a s< -#W.  This pins the C++ `newConstant(-#W)`
+    /// materialization and the (wrapping) negation mask.
+    #[test]
+    fn w10_scarry_constant_notequal_folds_to_sless_negconst() {
+        let mut fd = build_fd();
+        let a = make_input(&mut fd, 0x200, 4);
+        let w = fd.new_constant(4, 5);
+        let (_addop, sum) = def_op(&mut fd, OpCode::CPUI_INT_ADD, &[a, w], 4);
+        let zero = fd.new_constant(4, 0);
+        let (_slessop, slessout) = def_op(&mut fd, OpCode::CPUI_INT_SLESS, &[sum, zero], 1);
+        let (scop, scout) = def_op(&mut fd, OpCode::CPUI_INT_SCARRY, &[a, w], 1);
+        let cmp = mk_op(&mut fd, 2, OpCode::CPUI_INT_NOTEQUAL);
+        wire(&mut fd, cmp, scout, 0);
+        wire(&mut fd, cmp, slessout, 1);
+
+        assert_eq!(RuleScarry.apply_op(scop, &mut fd), 1);
+        assert_eq!(op_code(&fd, cmp), OpCode::CPUI_INT_SLESS);
+        // zside==1: slot 1-zside(0) = avn (a), slot zside(1) = newConst
+        assert_eq!(op_in(&fd, cmp, 0).unwrap(), a);
+        let nc = op_in(&fd, cmp, 1).unwrap();
+        assert!(vn_is_constant(&fd, nc));
+        // newval = -5 & mask(4) = 0xfffffffb
+        assert_eq!(vn_offset(&fd, nc), 0xfffffffb);
+    }
 }
