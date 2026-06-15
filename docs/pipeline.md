@@ -167,6 +167,37 @@ Implement `ReferenceDecompiler` (see `reference/base.py`) for the new tool, regi
 source. `compare`/`sweep`/`worker` need no changes — they operate on `ReferenceResult`.
 Pass `--reference <name>` through `compare`.
 
+## Cross-engine comparison: the Rust engine in the pipeline (W11/M4)
+
+The kuna **Rust** port (`KUNA_ENGINE=rust`, the W11 `object`-crate ELF `LoadImage`) runs
+through the *same* comparison machinery via two extra knobs, so a comparison row for a
+real function can be `kuna-rust vs kuna-cpp` (a pure cross-port differential) or
+`kuna-rust vs angr` — no special-casing in `compare`/`sweep`/`rank`:
+
+- `--reference kuna-cpp` / `--reference kuna-rust` — a **kuna engine as a reference**
+  (`reference/kuna_adapter.py`, registered as `kuna-cpp`/`kuna-rust`). Runs in the kuna
+  venv (no second interpreter, unlike angr); pins the engine tag + resolved `decomp_dbg`
+  path as its "version".
+- `--kuna-engine {cpp,rust}` — which kuna port is the **decompiler-under-test** (default:
+  `KUNA_ENGINE`, else `cpp`). Threaded into `kuna.decompile.decompile(engine=...)`, which
+  resolves that engine's binary without mutating `KUNA_ENGINE` (concurrency-safe).
+
+```bash
+# kuna-rust vs kuna-cpp on a real ELF (build it first; cpp via the engine-specific override)
+printf 'int g; int f(int a){g=a;return a*2+1;} int main(){return f(7);}' > /tmp/p.c
+gcc -O0 /tmp/p.c -o /tmp/p.elf
+KUNA_DECOMP_DBG_CPP=/path/to/cpp/decomp_dbg \
+  python -m kuna.pipeline.compare /tmp/p.elf f --reference kuna-cpp --kuna-engine rust
+# kuna-rust vs angr (three-way reachable when the angr venv is present)
+python -m kuna.pipeline.compare /tmp/p.elf f --reference angr --kuna-engine rust
+```
+
+Because a single bare `KUNA_DECOMP_DBG`/`KUNA_DECOMP_TEST` can only name **one** binary,
+the cross-engine path reads **engine-specific** overrides — `KUNA_DECOMP_DBG_CPP` /
+`KUNA_DECOMP_DBG_RUST` (and `…_TEST_…`) — so each engine can point at its own out-of-tree
+build (e.g. the C++ engine in the main tree, the Rust engine built in the worktree). The
+bare override still works for the single-engine `KUNA_ENGINE=…` workflow.
+
 ## Known caveats
 
 - **Version skew**: angr 9.2.213 ≠ the checkout's 9.2.222; pinned per feature for
