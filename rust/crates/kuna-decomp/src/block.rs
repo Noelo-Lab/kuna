@@ -1271,6 +1271,45 @@ impl BlockGraph {
         depth
     }
 
+    /// Is a boolean condition restricted to a single edge into \b this block
+    /// (C++ `FlowBlock::restrictedByConditional`, `block.cc:405`).
+    ///
+    /// Returns \b true if every path into `this_id` either has a unique direct
+    /// edge from `cond` or never passes through `cond` at all — i.e. a constant
+    /// known down one out-edge of `cond` provably holds throughout `this_id`.
+    pub fn restricted_by_conditional(&self, this_id: BlockId, cond: BlockId) -> bool {
+        // if (sizeIn() == 1) return true;
+        if self.arena[this_id].size_in() == 1 {
+            return true;
+        }
+        // if (getImmedDom() != cond) return false;
+        if self.arena[this_id].get_immed_dom() != Some(cond) {
+            return false;
+        }
+        let mut seen_cond = false;
+        let n = self.arena[this_id].size_in();
+        for i in 0..n {
+            let in_block = self.arena[this_id].get_in(i);
+            if in_block == cond {
+                if seen_cond {
+                    return false; // Coming in from cond block on multiple direct edges
+                }
+                seen_cond = true;
+                continue;
+            }
+            // while(inBlock != this) { if (inBlock == cond) return false; inBlock = inBlock->getImmedDom(); }
+            let mut walk = Some(in_block);
+            while walk != Some(this_id) {
+                match walk {
+                    Some(b) if b == cond => return false, // Must have come through sibling
+                    Some(b) => walk = self.arena[b].get_immed_dom(),
+                    None => break,
+                }
+            }
+        }
+        true
+    }
+
     /// Does \b this block dominate the given block (C++ `FlowBlock::dominates`,
     /// `block.cc:386`).  Assumes reverse-post-order indices.
     pub fn dominates(&self, this_id: BlockId, sub_block: Option<BlockId>) -> bool {

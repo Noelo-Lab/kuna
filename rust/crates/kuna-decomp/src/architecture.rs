@@ -672,6 +672,9 @@ impl Architecture {
         seam.max_implied_ref = self.max_implied_ref;
         seam.return_single = self.return_single;
         seam.name_style_angr = self.name_style_angr;
+        // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
+        // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.
+        seam.condexe_block_placement = self.condexe_block_placement;
         // Share the populated data-type factory so `ActionInferTypes` (run via
         // `glb`) reaches the same interned core types this side cached.
         seam.types = Some(self.types_rc());

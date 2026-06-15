@@ -181,6 +181,12 @@ pub struct Architecture {
     /// their original `x <= c` form (C++ `present_lessequal`, DIV-2 default-on).
     /// Read by [`ActionPresentCompareForm`](crate::kuna_compareform::ActionPresentCompareForm).
     pub present_lessequal: bool,
+    /// (kuna) GH-9203: when set, `ActionConditionalConst::handlePhiNodes` declines
+    /// to materialize a propagated constant as a COPY inside a loop predecessor
+    /// block (which would render as a spurious `= 0` in the do/while body).  C++
+    /// `Architecture::condexe_block_placement`, DIV-3 default-on.  Read by
+    /// [`crate::condconst`].
+    pub condexe_block_placement: bool,
     /// The data-type factory (C++ `glb->types`), shared from the real
     /// [`crate::architecture::Architecture`] through `build_arch_handle`.
     /// `ActionInferTypes` reaches `getBase`/`getTypePointer`/`down_chain` through
@@ -233,6 +239,8 @@ impl Architecture {
             name_style_angr: true,
             // (kuna) DIV-2 default-on (GH-558): resetDefaults sets present_lessequal=true.
             present_lessequal: true,
+            // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.
+            condexe_block_placement: true,
             types: None,
             max_jumptable_size: 0,
             funcptr_align: 0,

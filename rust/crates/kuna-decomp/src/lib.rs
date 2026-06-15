@@ -67,6 +67,7 @@ pub mod variable;
 pub mod merge;
 pub mod subflow;
 pub mod condexe;
+pub mod condconst;
 pub mod blockaction;
 pub mod expression;
 pub mod transform;
