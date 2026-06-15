@@ -13,6 +13,7 @@
 use std::rc::Rc;
 
 use kuna_base::address::Address;
+use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::AddrSpaceManager;
 use kuna_base::types::{int4, uint4};
 use kuna_num::opcodes::OpCode;
@@ -185,6 +186,20 @@ pub struct Architecture {
     /// `ActionInferTypes` reaches `getBase`/`getTypePointer`/`down_chain` through
     /// it.  `None` for hand-built fixtures (no type factory registry).
     pub types: Option<Rc<crate::dtype::TypeFactoryImpl>>,
+    /// Maximum number of entries in a single JumpTable (C++
+    /// `Architecture::max_jumptable_size`), shared from the real architecture.
+    /// Read by `JumpTable::recoverModel`.  `0` for hand-built fixtures.
+    pub max_jumptable_size: uint4,
+    /// How many low bits of a recovered function pointer are forced to zero (C++
+    /// `Architecture::funcptr_align`), shared from the real architecture.  Read
+    /// by `JumpBasic::buildAddresses` to align recovered targets.  `0` (no
+    /// alignment) for hand-built fixtures.
+    pub funcptr_align: int4,
+    /// The program load image (C++ `Architecture::loader`), shared from the
+    /// engine through `build_arch_handle`.  Read by jump-table emulation
+    /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
+    /// read-only switch table.  `None` for hand-built fixtures (no loader).
+    pub loader: Option<Rc<std::cell::RefCell<Box<dyn kuna_sleigh::loadimage::LoadImage>>>>,
 }
 
 impl Architecture {
@@ -219,7 +234,41 @@ impl Architecture {
             // (kuna) DIV-2 default-on (GH-558): resetDefaults sets present_lessequal=true.
             present_lessequal: true,
             types: None,
+            max_jumptable_size: 0,
+            funcptr_align: 0,
+            loader: None,
         }
+    }
+
+    /// Read a `sz`-byte value out of the program load image at `addr` (C++
+    /// `EmulatePcodeOp::getLoadImageValue`, `emulateutil.cc:30`): `loadFill` a
+    /// `uintb` worth of bytes, byte-swap to host order if the space endianness
+    /// differs from the host, then mask/shift to `sz`.  Drives jump-table LOAD
+    /// emulation.  Returns an error if no loader is shared (hand-built fixtures).
+    pub fn get_load_image_value(&self, addr: &Address, sz: int4) -> KunaResult<u64> {
+        use kuna_base::address::{byte_swap, calc_mask};
+        use kuna_base::types::HOST_ENDIAN;
+        let loader = self
+            .loader
+            .as_ref()
+            .ok_or_else(|| KunaError::lowlevel("getLoadImageValue: no load image shared"))?;
+        let mut buf = [0u8; 8]; // sizeof(uintb)
+        loader.borrow_mut().load_fill(&mut buf, addr)?;
+        let big = addr.is_big_endian();
+        let mut res = if HOST_ENDIAN == 1 {
+            u64::from_be_bytes(buf)
+        } else {
+            u64::from_le_bytes(buf)
+        };
+        if (HOST_ENDIAN == 1) != big {
+            res = byte_swap(res, 8);
+        }
+        if big && (sz as usize) < 8 {
+            res >>= (8 - sz as u32) * 8;
+        } else {
+            res &= calc_mask(sz);
+        }
+        Ok(res)
     }
 
     /// Borrow the data-type factory (C++ `glb->types`), if shared.

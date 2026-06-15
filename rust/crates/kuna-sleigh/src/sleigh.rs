@@ -1455,7 +1455,13 @@ pub struct Sleigh {
     /// The SLEIGH spec core (spaces, symbol table, templates, register map).
     base: SleighBase,
     /// The mapped bytes of the program (C++ `LoadImage *loader`).
-    loader: RefCell<Box<dyn LoadImage>>,
+    ///
+    /// Wrapped in an [`Rc`] so the IR-boundary `glb` skeleton (the
+    /// `crate::seams::Architecture` the Funcdata holds) can share read access for
+    /// jump-table LOAD emulation (`EmulateFunction::executeLoad`); the C++
+    /// `Architecture::loader` is a long-lived `LoadImage *` reached identically
+    /// from both the engine and the emulator.
+    loader: Rc<RefCell<Box<dyn LoadImage>>>,
     /// Database of context values steering disassembly (C++ `context_db`).
     context_db: RefCell<Box<dyn ContextDatabase>>,
     /// Cache of recently used context values (C++ `cache`).
@@ -1467,10 +1473,18 @@ impl Sleigh {
     pub fn new(loader: Box<dyn LoadImage>, context_db: Box<dyn ContextDatabase>) -> Sleigh {
         Sleigh {
             base: SleighBase::new(),
-            loader: RefCell::new(loader),
+            loader: Rc::new(RefCell::new(loader)),
             context_db: RefCell::new(context_db),
             cache: RefCell::new(ContextCache::new()),
         }
+    }
+
+    /// Share the program load image (C++ `Architecture::loader`) so the
+    /// IR-boundary `glb` skeleton can read read-only memory (jump-table
+    /// emulation).  The returned `Rc` aliases the engine's loader; `set_loader`
+    /// replaces the inner `Box` in place, so a shared handle stays current.
+    pub fn loader_rc(&self) -> Rc<RefCell<Box<dyn LoadImage>>> {
+        Rc::clone(&self.loader)
     }
 
     /// Borrow the SLEIGH spec core.
@@ -1497,6 +1511,35 @@ impl Sleigh {
     /// decoded so the image can be opened against the engine's manager).
     pub fn set_loader(&mut self, loader: Box<dyn LoadImage>) {
         *self.loader.borrow_mut() = loader;
+    }
+
+    /// Read `sz` (<=8) bytes of a Varnode's worth of value from the load image
+    /// (C++ `EmulatePcodeOp::getLoadImageValue` / `EmulateSnippet::getLoadImageValue`,
+    /// `emulateutil.cc:30`/`150`): `loadFill` a full `uintb` worth of bytes at
+    /// the address, then byte-swap to host order if the space endianness differs
+    /// from the host, and mask/shift down to `sz`.  Used by jump-table emulation
+    /// (`EmulateFunction::executeLoad`) to read read-only switch tables.
+    pub fn read_loadimage_value(&self, addr: &Address, sz: i32) -> KunaResult<u64> {
+        use kuna_base::address::byte_swap;
+        use kuna_base::types::HOST_ENDIAN;
+        let mut buf = [0u8; 8]; // sizeof(uintb)
+        self.loader.borrow_mut().load_fill(&mut buf, addr)?;
+        let big = addr.is_big_endian();
+        // C++ reads the raw uintb in host byte order off the filled buffer.
+        let mut res = if HOST_ENDIAN == 1 {
+            u64::from_be_bytes(buf)
+        } else {
+            u64::from_le_bytes(buf)
+        };
+        if (HOST_ENDIAN == 1) != big {
+            res = byte_swap(res, 8); // byte_swap(res,sizeof(uintb))
+        }
+        if big && (sz as usize) < 8 {
+            res >>= (8 - sz as u32) * 8;
+        } else {
+            res &= kuna_base::address::calc_mask(sz);
+        }
+        Ok(res)
     }
 
     /// C++ `Sleigh::allowContextSet`.
