@@ -1349,6 +1349,159 @@ pub fn iop_space_print_raw(
 }
 
 // ---------------------------------------------------------------------------
+// PieceNode — a node in a tree of CPUI_PIECE operations (op.hh:269, op.cc:822)
+// ---------------------------------------------------------------------------
+
+/// \brief A node in a tree structure of CPUI_PIECE operations.
+///
+/// Port of the C++ `class PieceNode` (`op.hh:269-284`).  When a group of
+/// Varnodes are concatenated into a larger structure, this object gathers the
+/// PcodeOps (and Varnodes) in the data-flow and views them as a unit.  The
+/// `pieceOp` holds the [`OpId`] (C++ stores the `PcodeOp *`); the input Varnode
+/// is `pieceOp->getIn(slot)`.
+#[derive(Debug, Clone, Copy)]
+pub struct PieceNode {
+    /// CPUI_PIECE operation combining this particular Varnode piece.
+    piece_op: OpId,
+    /// The particular slot of this Varnode within CPUI_PIECE.
+    slot: int4,
+    /// Byte offset into structure/array.
+    type_offset: int4,
+    /// `true` if this is a leaf of the tree structure.
+    leaf: bool,
+}
+
+impl PieceNode {
+    /// Constructor (C++ `PieceNode(PcodeOp *op,int4 sl,int4 off,bool l)`).
+    pub fn new(op: OpId, sl: int4, off: int4, l: bool) -> PieceNode {
+        PieceNode { piece_op: op, slot: sl, type_offset: off, leaf: l }
+    }
+    /// Return `true` if this node is a leaf of the tree structure (C++ `isLeaf`).
+    pub fn is_leaf(&self) -> bool {
+        self.leaf
+    }
+    /// Get the byte offset of this node into the data-type (C++ `getTypeOffset`).
+    pub fn get_type_offset(&self) -> int4 {
+        self.type_offset
+    }
+    /// Get the input slot associated with this node (C++ `getSlot`).
+    pub fn get_slot(&self) -> int4 {
+        self.slot
+    }
+    /// Get the PcodeOp reading this piece (C++ `getOp`).
+    pub fn get_op(&self) -> OpId {
+        self.piece_op
+    }
+    /// Get the Varnode representing this piece (C++ `getVarnode`).
+    pub fn get_varnode(&self, obank: &PcodeOpBank) -> VarnodeId {
+        obank
+            .get(self.piece_op)
+            .expect("PieceNode: stale op")
+            .get_in(self.slot)
+            .expect("PieceNode: null PIECE input")
+    }
+}
+
+/// `vn->loneDescend()` at the bank level (C++ `Varnode::loneDescend`).
+fn bank_lone_descend(obank: &PcodeOpBank, vbank: &VarnodeBank, vn: VarnodeId) -> Option<OpId> {
+    let v = vbank.get(vn)?;
+    if v.num_descend() != 1 {
+        return None;
+    }
+    let op = v.descend_iter().next()?;
+    // C++ loneDescend skips ops whose output is the same as the read (it does
+    // not — loneDescend just returns the single descendant); kept faithful.
+    let _ = obank;
+    Some(op)
+}
+
+/// Determine if a Varnode is a leaf within the CONCAT tree rooted at `root_vn`
+/// (C++ `PieceNode::isLeaf`, `op.cc:831`).
+///
+/// `rootVn->getSymbolEntry() != vn->getSymbolEntry()` (the mapped-symbol arm) is
+/// a W4 seam: the merged Varnode carries no `mapentry` link, so a *mapped*
+/// Varnode is treated as a leaf (the conservative C++ result when the two symbol
+/// entries differ).  An unmapped Varnode never hits this arm. // SEAM(W4)
+pub fn piece_is_leaf(
+    obank: &PcodeOpBank,
+    vbank: &VarnodeBank,
+    root_vn: VarnodeId,
+    vn: VarnodeId,
+    rel_offset: int4,
+) -> bool {
+    let v = vbank.get(vn).expect("piece_is_leaf: stale vn");
+    // if (vn->isMapped() && rootVn->getSymbolEntry() != vn->getSymbolEntry()) return true;
+    if v.is_mapped() {
+        // SEAM(W4): without mapentry we cannot compare symbol entries; a mapped
+        // leaf that is not the root is a separate symbol -> leaf.
+        return true;
+    }
+    // if (!vn->isWritten()) return true;
+    if !v.is_written() {
+        return true;
+    }
+    let def = match v.get_def() {
+        Some(d) => d,
+        None => return true,
+    };
+    // if (def->code() != CPUI_PIECE) return true;
+    if obank.get(def).expect("piece_is_leaf: stale def").code() != OpCode::CPUI_PIECE {
+        return true;
+    }
+    // PcodeOp *op = vn->loneDescend(); if (op == 0) return true;
+    if bank_lone_descend(obank, vbank, vn).is_none() {
+        return true;
+    }
+    // if (vn->isAddrTied()) { Address addr = rootVn->getAddr() + relOffset; if (vn->getAddr() != addr) return true; }
+    if v.is_addr_tied() {
+        let root_addr = vbank.get(root_vn).expect("piece_is_leaf: stale root").get_addr().clone();
+        let addr = &root_addr + rel_offset as i64;
+        if v.get_addr() != &addr {
+            return true;
+        }
+    }
+    false
+}
+
+/// Build the CONCAT tree rooted at `root_vn` (C++ `PieceNode::gatherPieces`,
+/// `op.cc:895`).  Recursively walks backward through CPUI_PIECE ops, stopping at
+/// leaves, recording each node's leaf-ness and offset within the root data-type.
+pub fn gather_pieces(
+    stack: &mut Vec<PieceNode>,
+    obank: &PcodeOpBank,
+    vbank: &VarnodeBank,
+    root_vn: VarnodeId,
+    op: OpId,
+    base_offset: int4,
+    root_offset: int4,
+) {
+    let root_big_endian = vbank
+        .get(root_vn)
+        .expect("gather_pieces: stale root")
+        .get_addr()
+        .get_space()
+        .map(|s| s.is_big_endian())
+        .unwrap_or(false);
+    for i in 0..2 {
+        let opref = obank.get(op).expect("gather_pieces: stale op");
+        let vn = opref.get_in(i).expect("gather_pieces: null PIECE input");
+        // int4 offset = (rootVn->getSpace()->isBigEndian() == (i==1)) ? baseOffset + op->getIn(1-i)->getSize() : baseOffset;
+        let offset = if root_big_endian == (i == 1) {
+            let other = opref.get_in(1 - i).expect("gather_pieces: null PIECE input");
+            base_offset + vbank.get(other).expect("gather_pieces: stale other").get_size()
+        } else {
+            base_offset
+        };
+        let res = piece_is_leaf(obank, vbank, root_vn, vn, offset - root_offset);
+        stack.push(PieceNode::new(op, i, offset, res));
+        if !res {
+            let def = vbank.get(vn).expect("gather_pieces: stale vn").get_def().expect("gather_pieces: non-leaf vn has no def");
+            gather_pieces(stack, obank, vbank, root_vn, def, offset, root_offset);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // PcodeOpBank — container of all PcodeOps for a function
 // ---------------------------------------------------------------------------
 
@@ -2071,5 +2224,65 @@ mod tests {
         assert_eq!(op.get_repeat_slot(v, 0, &[], self_id), 0);
         // second occurrence: prefix contains one earlier hit of self -> count 2
         assert_eq!(op.get_repeat_slot(v, 0, &[self_id], self_id), 2);
+    }
+
+    // --- PieceNode / gather_pieces ----------------------------------------
+
+    /// A single-level CONCAT tree `PIECE(hi@4, lo@0)` over two free (leaf)
+    /// Varnodes is gathered into two leaf nodes.  In a little-endian space, slot 0
+    /// (the most-significant input) gets type-offset == in1->getSize(), slot 1
+    /// (least-significant) gets type-offset 0 (C++ `PieceNode::gatherPieces` byte
+    /// math, `op.cc:900`).
+    #[test]
+    fn gather_pieces_single_level_two_leaves() {
+        let m = build_manager();
+        let mut vbank = VarnodeBank::new(&m, 0).unwrap();
+        let mut obank = PcodeOpBank::new();
+
+        // out @ ram:0 (8 bytes), built from hi @ ram:4 (4b) and lo @ ram:0 (4b).
+        let lo = vbank.create(4, ram(&m, 0x0), dt(4));
+        let hi = vbank.create(4, ram(&m, 0x4), dt(4));
+        let out = vbank.create(8, ram(&m, 0x0), dt(8));
+
+        let pieceop = obank.create_at(2, ram(&m, 0x100));
+        {
+            let o = obank.get_mut(pieceop).unwrap();
+            o.set_opcode(typeop(OpCode::CPUI_PIECE));
+            o.set_input(Some(hi), 0); // most-significant
+            o.set_input(Some(lo), 1); // least-significant
+            o.set_output(Some(out));
+        }
+        // Link the output's def + the inputs' descend so the bank reads are
+        // consistent (gather_pieces only reads code()/get_in/get_size here).
+        vbank.add_descend(hi, pieceop).unwrap();
+        vbank.add_descend(lo, pieceop).unwrap();
+
+        let mut stack: Vec<PieceNode> = Vec::new();
+        gather_pieces(&mut stack, &obank, &vbank, out, pieceop, 0, 0);
+
+        // Both inputs are free (no def) -> leaves; the recursion stops at them.
+        assert_eq!(stack.len(), 2);
+        // slot 0 (hi) -> offset = in1(lo)->getSize() = 4; slot 1 (lo) -> offset 0.
+        assert_eq!(stack[0].get_slot(), 0);
+        assert_eq!(stack[0].get_type_offset(), 4);
+        assert!(stack[0].is_leaf());
+        assert_eq!(stack[0].get_varnode(&obank), hi);
+        assert_eq!(stack[1].get_slot(), 1);
+        assert_eq!(stack[1].get_type_offset(), 0);
+        assert!(stack[1].is_leaf());
+        assert_eq!(stack[1].get_varnode(&obank), lo);
+    }
+
+    /// `piece_is_leaf` returns true for a free (unwritten) Varnode: a free read
+    /// is always a leaf of the CONCAT tree (C++ `PieceNode::isLeaf` `!isWritten()`
+    /// arm, `op.cc:837`).
+    #[test]
+    fn piece_is_leaf_free_is_leaf() {
+        let m = build_manager();
+        let mut vbank = VarnodeBank::new(&m, 0).unwrap();
+        let obank = PcodeOpBank::new();
+        let root = vbank.create(8, ram(&m, 0x0), dt(8));
+        let free = vbank.create(4, ram(&m, 0x0), dt(4));
+        assert!(piece_is_leaf(&obank, &vbank, root, free, 0));
     }
 }

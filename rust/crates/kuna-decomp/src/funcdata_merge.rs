@@ -699,7 +699,21 @@ impl MergeContext for Funcdata {
     fn symbol_set_merge_problems(&mut self, _symbol: u64) {}
     fn symbol_merge_warning(&mut self, _symbol: u64, _m: int4, _s: int4, _c: int4) {}
     fn populate_affecting_ops(&self, _op_set: &mut PcodeOpSet) {}
-    fn gather_pieces(&self, _vn: VarnodeId, _base_offset: int4) -> Vec<(VarnodeId, int4)> {
-        Vec::new()
+    fn gather_pieces(&self, vn: VarnodeId, base_offset: int4) -> Vec<(VarnodeId, int4)> {
+        // PieceNode::gatherPieces(pieces, vn, vn->getDef(), baseOffset, baseOffset)
+        let def = match self.vbank().get(vn).and_then(|v| v.get_def()) {
+            Some(d) => d,
+            None => return Vec::new(),
+        };
+        let mut stack: Vec<crate::op::PieceNode> = Vec::new();
+        crate::op::gather_pieces(&mut stack, self.obank(), self.vbank(), vn, def, base_offset, base_offset);
+        // The C++ groupPartialRoot iterates *all* nodes' Varnodes (internal and
+        // leaf): each must be proto-partial (throw-out test) and gets grouped with
+        // the root at `typeOffset - baseOffset`.  Expose each node's
+        // `(varnode, typeOffset)` in that exact order.
+        stack
+            .iter()
+            .map(|n| (n.get_varnode(self.obank()), n.get_type_offset()))
+            .collect()
     }
 }

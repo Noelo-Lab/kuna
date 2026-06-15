@@ -586,6 +586,23 @@ impl Varnode {
     pub fn get_type_def_facing(&self) -> &Rc<Datatype> {
         &self.type_
     }
+    /// If this has a data-type built out of separate pieces, return it (C++
+    /// `Varnode::getStructuredType`, `varnode.cc:1156`).
+    ///
+    /// C++ first prefers a mapped `SymbolEntry`'s symbol type
+    /// (`mapentry->getSymbol()->getType()`); the merged W3/W4 Varnode carries no
+    /// `mapentry` link, so the partial-symbol arm is a documented seam — this
+    /// returns the Varnode's own `type` when it `isPieceStructured()`, which is
+    /// the full-Varnode case (a whole struct value flowing through a CONCAT tree).
+    /// // SEAM(W4): `mapentry->getSymbol()->getType()` partial path.
+    pub fn get_structured_type(&self) -> Option<Rc<Datatype>> {
+        // Datatype *ct; if (mapentry != 0) ct = mapentry->getSymbol()->getType(); else ct = type;
+        let ct = &self.type_;
+        if ct.is_piece_structured() {
+            return Some(Rc::clone(ct));
+        }
+        None
+    }
     /// Set the temporary Datatype used during type propagation (C++ `setTempType`).
     pub fn set_temp_type(&mut self, t: Rc<Datatype>) {
         self.temp_type = Some(t);
