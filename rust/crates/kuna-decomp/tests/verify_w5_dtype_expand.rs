@@ -302,8 +302,9 @@ fn w5r2_get_sub_type_union_enum_are_base_not_seam() {
 
 /// `PointerRel` inherits `TypePointer::numDepend()==1` and `getDepend(0)==ptrto`
 /// (it does NOT override them — type.hh:724-770). The port must report 1 / ptrto.
-/// `is_ptrsub_matching` is now implemented for PointerRel (w6-s5-type-3, flipping
-/// the obsoleted seam pin); `getPtrInto`'s relative offset math remains SEAM(W6).
+/// `is_ptrsub_matching` is implemented for PointerRel (w6-s5-type-3), and
+/// `getPtrInto`'s relative offset math is now ported (rport/w10-rel-pointer):
+/// a relptr into a non-STRUCT/UNION points `offset` into the parent.
 #[test]
 fn w5r2_pointer_rel_inherits_pointer_depend_and_ptrsub_seams() {
     let ptrto = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
@@ -324,8 +325,25 @@ fn w5r2_pointer_rel_inherits_pointer_depend_and_ptrsub_seams() {
     // TypePointerRel::isPtrsubMatching (type.cc:3138-3147), stripped==None branch:
     // iOff = 0 + offset(4) + extra(0) = 4; 4 >= 0 && 4 <= parent->getSize()(16).
     assert!(pr.is_ptrsub_matching(0, 0, 1).unwrap());
-    // getPtrInto overrides for PointerRel -> SEAM (relative offset math is W6).
-    assert!(pr.get_ptr_into().is_err());
+    // TypePointerRel::getPtrInto (type.cc:3060-3070): ptrto is TYPE_INT (not a
+    // STRUCT/UNION), so the relptr points `offset` (4) into the parent (size 16).
+    let (into, off) = pr.get_ptr_into().unwrap().unwrap();
+    assert_eq!(off, 4, "non-composite ptrto: off = offset");
+    assert_eq!(into.get_size(), 16, "non-composite ptrto: returns the parent");
+    assert!(Rc::ptr_eq(&into, &parent));
+    // A relptr whose ptrto IS a STRUCT points directly at the composite (off = 0).
+    let struct_to = Rc::new(Datatype::new(16, type_metatype::TYPE_STRUCT));
+    let mut pr_struct = Datatype::new_with_align(8, -1, type_metatype::TYPE_PTRREL);
+    pr_struct.kind = DatatypeKind::PointerRel {
+        ptrto: Rc::clone(&struct_to),
+        wordsize: 1,
+        stripped: None,
+        parent: Rc::clone(&parent),
+        offset: 4,
+    };
+    let (into_s, off_s) = pr_struct.get_ptr_into().unwrap().unwrap();
+    assert_eq!(off_s, 0, "STRUCT ptrto: off = 0");
+    assert!(Rc::ptr_eq(&into_s, &struct_to), "STRUCT ptrto: returns ptrto");
 }
 
 /// LOSS-050 RESTORED (w6-s5-type-1). The base C++ `resolveInFlow`/`findResolve`

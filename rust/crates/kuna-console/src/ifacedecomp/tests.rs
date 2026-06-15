@@ -134,6 +134,23 @@ fn volatile_without_image_is_no_load_image_present() {
     assert!(out.contains("Execution error: No load image present"), "out: {out:?}");
 }
 
+#[test]
+fn pointer_setting_without_image_is_no_load_image_present() {
+    // The conf check precedes any token read (C++ ifacedecomp.cc:3054), so a
+    // no-image console produces the "No load image present" guard, NOT the old
+    // engine-unavailable seam.  This pins that the command is wired (no longer a
+    // SEAM stub) while exercising the no-image guard order.
+    let out = run_all(&[
+        "pointer setting myptroff mystruct offset 8",
+        "quit",
+    ]);
+    assert!(out.contains("Execution error: No load image present"), "out: {out:?}");
+    assert!(
+        !out.contains("engine integration not yet ported"),
+        "pointer setting must no longer be an engine-unavailable seam: {out:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Argument-parse errors: exact C++ IfaceParseError text under the "Command
 // parsing error: " prefix.
