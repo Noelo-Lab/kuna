@@ -1,5 +1,37 @@
 # kuna Progress Log
 
+## Session (2026-06-15c) — rust-port W10 type-plane chain + M4 reached → 204/668
+
+Drove the type-plane keystone CHAIN to completion via orchestrated waves (all Opus,
+worktrees, porter→independent-verifier→repair, single-integrator additive merges). Each
+keystone was +0 in isolation but unblocked the next; the verifier protocol gated
+*diagnoses* as well as fixes (three "failed" waves on one regression each produced a
+sharper proven root-cause instead of a fabricated flip).
+
+- **ActionSetCasts cast plane** (active) → **TransformManager::apply materialization
+  keystone (+6:** broad SUB(x,0)/ZEXT collapse via live SubvariableFlow/Split/Subfloat —
+  compare/conditional/inlining/status; inline.xml 3→6) → **LaneDivide** (XMM lane noise
+  retired) → **printc cast-notation render** ((float8)a byte-exact, +1) →
+  **cast-strategy** (+6: Concat/Intermediate-ptr/Long-double extension-cast routing) →
+  **HighVariable naming** (register/local vN coalescing; Dead-Volatile/Signed-byte/
+  No-for-loop) → **harness LOSS-007 regex faithfulness** (\< \> identity-escapes).
+- **Promotion #2 saga (3 waves, all honest):** merge_indirect FAILED + re-diagnosed
+  (float blocker = global-persist, not lane-coalescing); char* FAILED + re-diagnosed
+  (cause = action-pipeline seam, not types); seam-abort wave found the real fix (a
+  RuleTrivialArith name-vs-group clone-gate) — restored Promotion #2, naming branch clean
+  (+4 / 0 regression). Integrated at rust-port 8e0cc4a.
+- **M4 REACHED:** W11 object-crate ELF loader (`kuna.decompile --engine rust <real.elf>`
+  decompiles a REAL ELF; `main` byte-identical to cpp) + W11 pipeline binding
+  (`KUNA_ENGINE=rust` flows through the compare/sweep/rank harness — real kuna-rust-vs-cpp
+  comparison row).
+
+**State (rust-port 8e0cc4a): 204/668 passing, 2 exec-failures** (displayformat decodes
+now via global-persist held branch; indproto only true ERROR). M1 ✓ M2 ✓ **M4 ✓** M3 in
+progress. 3,453 Rust tests green; clippy -D clean; boolless/readstruct/condconst_conn
+byte-identical; **C++ oracle 207/207 + 675/675 PARITY OK, byte-untouched.** IN FLIGHT:
+bitfield full subsystem (~62), symbol/global-naming consolidation (displayformat +
+condconst-globals + float, folds in global-persist).
+
 ## Session (2026-06-15b) — rust-port W10 second fleet wave → 182/668 datatest parity
 
 Continued the parallel-fleet method (Workflow tool, all Opus 4.8, isolated worktrees,
