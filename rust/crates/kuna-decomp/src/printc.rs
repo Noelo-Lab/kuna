@@ -1739,6 +1739,25 @@ impl PrintC {
                 None => continue,
             };
             seen.insert(high);
+            // C++ `emitLocalVarDecls` -> `emitScopeVarDecls(fd->getScopeLocal(),
+            // no_category)` walks the LOCAL scope only (printc.cc:2652).  A
+            // global-mapped Symbol (`glob1`, `globalfree`) lives in the GLOBAL
+            // scope, so it is never declared in a function body — it is named in the
+            // body's statements but carries no local declaration.  The discriminator
+            // is `Varnode::isPersist` (a global RAM store is persist; a local stack /
+            // register high is not): skip a high any of whose members is persist.
+            let is_global = fd
+                .high_bank()
+                .get(high)
+                .map(|h| {
+                    (0..h.num_instances()).any(|i| {
+                        fd.vbank().get(h.get_instance(i)).map(|v| v.is_persist()).unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false);
+            if is_global {
+                continue;
+            }
             // C++ `emitLocalVarDecls` -> `emitScopeVarDecls(scope, no_category)`:
             // only `no_category` Symbols are declared in the body.  A high bound to
             // a `function_parameter` Symbol renders in the signature, never as a body
@@ -3353,10 +3372,19 @@ impl PrintC {
         };
         if v.is_constant() {
             let (off, sz) = (v.get_offset(), v.get_size());
-            // C++ `push_integer` reads the constant's `vn->getHigh()->getSymbol()
-            // ->getDisplayFormat()` (printc.cc:1370-1376); the `force varnode`
-            // equate Symbol parks that format on the high (build_dynamic_symbol).
-            let display_fmt = fd.vn_high_display_format(vn);
+            // C++ `PrintLanguage::pushVnExplicit` (printlanguage.cc:227) passes
+            // `ct->getDisplayFormat()` where `ct = vn->getHighTypeReadFacing(op)` —
+            // the read-facing type's forced format reaches `push_integer` as its
+            // `displayFormat` argument.  Inside `push_integer` (printc.cc:1376) the
+            // varnode high's equate-Symbol format then OVERRIDES it when present.
+            // So: equate-Symbol format wins; otherwise the read-facing type format
+            // (e.g. `force datatype octint4 oct` -> `globaloct = 05555`).
+            let sym_fmt = fd.vn_high_display_format(vn);
+            let display_fmt = if sym_fmt != display_format::NONE {
+                sym_fmt
+            } else {
+                v.get_type_read_facing(op).get_display_format()
+            };
             self.push_constant_ir_fmt(off, sz, op, display_fmt);
             return;
         }

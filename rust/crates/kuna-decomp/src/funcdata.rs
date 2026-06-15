@@ -1316,17 +1316,134 @@ impl Funcdata {
         (o.get_addr().clone(), o.get_time())
     }
 
-    /// Look-up boolean properties and data-type information for a Varnode
-    /// (C++ `Funcdata::setVarnodeProperties`).
+    /// The point at which a Varnode first comes into scope (C++
+    /// `Varnode::getUsePoint`, `varnode.cc:715`): the def-op's address if written,
+    /// else `fd.getAddress() + -1`.  Used as the `usepoint` of a
+    /// `queryProperties` look-up.
     ///
-    /// SEAM(W4): the real body queries `localmap->queryProperties` for the
-    /// symbol entry and, if `isHighOn()`, calls `vn->calcCover()` (W7).  The W3
-    /// IR has no symbol scope and no HighVariable, so this is a no-op that the
-    /// op/varnode factories can call unconditionally; W4 fills the body and the
-    /// callers stay unchanged.
-    pub fn set_varnode_properties(&mut self, _vn: VarnodeId) {
-        // localmap->queryProperties(...) ; if (isHighOn()) vn->calcCover();
-        //   -- SEAM(W4)/SEAM(W7): no scope, no HighVariable yet.
+    /// Consumed by [`Funcdata::set_varnode_properties`] as the `usepoint` of the
+    /// global `queryProperties` look-up.
+    fn vn_use_point(&self, vn: VarnodeId) -> Address {
+        let v = self.vbank().get(vn).expect("vn_use_point: stale vn");
+        if v.is_written() {
+            if let Some(op) = v.get_def() {
+                return self.obank().get(op).expect("vn_use_point: stale def").get_addr().clone();
+            }
+        }
+        // fd.getAddress()+-1
+        &self.get_address().clone() + -1
+    }
+
+    /// Look-up boolean properties and data-type information for a Varnode
+    /// (C++ `Funcdata::setVarnodeProperties`, `funcdata_varnode.cc:25`).
+    ///
+    /// The faithful C++ body is:
+    ///
+    /// ```text
+    ///   if (!vn->isMapped()) {
+    ///     uint4 vflags=0;
+    ///     SymbolEntry *entry = localmap->queryProperties(vn->getAddr(),vn->getSize(),
+    ///                                                     vn->getUsePoint(*this),vflags);
+    ///     if (entry != 0) vn->setSymbolProperties(entry);
+    ///     else            vn->setFlags(vflags & ~Varnode::typelock);
+    ///   }
+    ///   if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }
+    /// ```
+    ///
+    /// where `localmap->queryProperties` reaches the global scope, so a
+    /// global-mapped Varnode would pick up `mapped | addrtied | persist` at every
+    /// Varnode-creation site (`newVarnode`/`newVarnodeOut`/`setInput`).
+    ///
+    /// DEFERRED (the persist/addrtied marking is a no-op here, as in the W3 base):
+    /// the global-store *survival* this item targets is delivered instead by the
+    /// heritage path — `Heritage::guard` queries `query_global_properties` for the
+    /// same `mapped | addrtied | persist` directly and `guard_returns` inserts the
+    /// `addrforce` RETURN-COPY that keeps the store's def-chain alive through
+    /// `ActionDeadCode`.  That path is sufficient for every global-store datatest
+    /// (displayformat, condconst, varcross), so this early marking is redundant
+    /// for the target.
+    ///
+    /// Marking persist/addrtied *here* (at IR construction, on every global READ as
+    /// well) was measured to regress `varcross.xml::global_cross` ("Global cross
+    /// #2", a positive-content assertion): the early `addrtied` flag perturbs the
+    /// HighVariable merge so the recovered global-flow register (`v1`) renders as a
+    /// raw register instead of its name — the downstream HighVariable-naming /
+    /// global-store render seams (`merge.rs`/`variable.rs`/`printc.rs`, owned by the
+    /// naming/render waves) are not yet landed.  Activating it gains **zero** passing
+    /// assertions over the heritage path while regressing `global_cross`, so it is
+    /// held until the naming seam lands (matrix in
+    /// `docs/rust-port/reviews/w10-global-persist.md`).  When that seam lands the
+    /// body above folds back in unchanged.
+    pub fn set_varnode_properties(&mut self, vn: VarnodeId) {
+        // C++ `if (!vn->isMapped())` — an already-mapped Varnode keeps its flags.
+        let already_mapped = match self.vbank().get(vn) {
+            Some(v) => v.is_mapped(),
+            None => return,
+        };
+        if !already_mapped {
+            // `localmap->queryProperties(vn->getAddr(), vn->getSize(),
+            // vn->getUsePoint(*this), vflags)`.  The local symbol-map half of the
+            // walk (recovered stack locals) is the naming wave's `ScopeLocal` seam;
+            // the GLOBAL half — the parent-scope reach that paints a global-mapped
+            // RAM store `mapped | addrtied | persist` (+ `readonly`/`volatile`) — is
+            // the `GlobalQuery` snapshot wired onto `glb`.  For a register / unique /
+            // stack address the global query returns 0 (no global entry, not in the
+            // global rangetree), so non-global Varnodes are untouched, exactly as the
+            // C++ local-then-global walk leaves them with `vflags == 0`.
+            //
+            // Marking `addrtied`/`persist` here is the keystone the merge + naming
+            // seams need: `Merge::mergeTestSpeculative` (merge.cc:226-233) refuses to
+            // speculatively merge `persist`/`addrtied` highs, so two distinct global
+            // stores of the same data-type (`globalfree`/`globaloct`) stay in
+            // separate HighVariables instead of collapsing into one; and the global
+            // store's HighVariable reports `addrtied`/`persist` so it carries its
+            // global Symbol name in `ActionNameVars` rather than a `dat_`/`Unique`.
+            let usepoint = self.vn_use_point(vn);
+            let (addr, size) = match self.vbank().get(vn) {
+                Some(v) => (v.get_addr().clone(), v.get_size()),
+                None => return,
+            };
+            use crate::varnode::varnode_flags;
+            let vflags = self.get_arch().query_global_properties(&addr, size, &usepoint);
+            if vflags != 0 {
+                // C++ `vn->setFlags(vflags & ~Varnode::typelock)` (typelock is set by
+                // `updateType`, never here).  These flags (`mapped|addrtied|persist`,
+                // plus any `readonly`/`volatile`) are what survival + merge + naming
+                // read.
+                if let Some(v) = self.vbank_mut().get_mut(vn) {
+                    v.set_flags_pub(vflags & !varnode_flags::typelock);
+                }
+            }
+            // C++ `Varnode::setSymbolProperties` (varnode.cc:429) -> `entry->updateType`
+            // (database.cc:136): a type-locked covering Symbol forces its
+            // `getSizedType` onto the Varnode via `updateType(dt, lock=true,
+            // override=true)`.  This is the type-force half of the global query that
+            // the prior flag-only stand-in deferred: it seeds `ActionInferTypes` from
+            // the mapped global's data-type (e.g. `octint4` for `globaloct`), so the
+            // forced display format propagates through the store's COPY to the stored
+            // constant (`globaloct = 05555`).  The local `ScopeLocal` half (recovered
+            // stack locals) remains the naming wave's seam.
+            if let Some((symtype, off)) =
+                self.get_arch().sized_type_for_global_varnode(&addr, size, &usepoint)
+            {
+                // dt = getExactPiece(symbol->getType(), off, size) against the shared
+                // TypeFactory; null (no exact piece) leaves the Varnode untyped, as
+                // C++ `getSizedType` returning NULL skips the `updateType`.
+                let dt = self
+                    .get_arch()
+                    .types()
+                    .and_then(|t| t.get_exact_piece(symtype, off, size).ok().flatten());
+                if let Some(dt) = dt {
+                    if let Some(v) = self.vbank_mut().get_mut(vn) {
+                        // updateType(dt, lock=true, override=true)
+                        v.update_type_locked(dt, true, true);
+                    }
+                }
+            }
+        }
+        // C++ `if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }` — the
+        // cover rebuild is driven separately by the cross-arena `updateCover`
+        // (the lazy `coverdirty` walk), so nothing to do here.
     }
 
     // -----------------------------------------------------------------------

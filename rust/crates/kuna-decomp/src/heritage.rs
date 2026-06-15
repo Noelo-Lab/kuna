@@ -1287,7 +1287,7 @@ impl Heritage {
         size: int4,
         add_indirects: bool,
         read: &mut [crate::seams::VarnodeId],
-        write: &mut [crate::seams::VarnodeId],
+        write: &mut Vec<crate::seams::VarnodeId>,
     ) {
         for slot in 0..read.len() {
             let vn = read[slot];
@@ -1344,13 +1344,26 @@ impl Heritage {
 
         if add_indirects {
             // fd->getScopeLocal()->queryProperties(addr,size,Address(),fl);
-            // SEAM(W4): the merged `Funcdata::localmap` is the unit-stub `Scope`,
-            // not a real `ScopeLocal` with a symbol map, so `queryProperties`
-            // cannot run; `fl` is 0 (no recovered local symbol => not
-            // mapped/addrtied/persist).  The guards below read `fl` only to gate
-            // store/load index-alias guarding and the persist RETURN-COPY — both
-            // inert for a register range with no recovered scope.
-            let fl: uint4 = 0;
+            //
+            // The C++ `localmap->queryProperties` walks the parent-scope chain up
+            // to the global scope.  The merged kuna `localmap`
+            // ([`crate::varmap::ScopeLocal`]) owns a detached `Database`, so its
+            // *global* reach is supplied by the snapshot wired onto `glb`
+            // ([`crate::seams::GlobalQuery`], built after every `map addr`):
+            // `query_global_properties` returns the same `mapped | addrtied |
+            // persist` a global-mapped range would.  This is what lets the persist
+            // RETURN-COPY branch of `guard_returns` fire, so a global store's
+            // value is read at function exit (an `addrforce` COPY) and its def
+            // chain survives `ActionDeadCode`.
+            //
+            // (The recovered-*local* persist surface — a stack range inside the
+            // global discovery range — would add to `fl` through the local scope's
+            // own `queryProperties`; that local symbol-map query is the naming
+            // wave's `ScopeLocal` and is left as a documented seam.  Local stack
+            // ranges are not persistent, so `fl`'s persist bit comes only from the
+            // global query here, which is faithful for the global-store cases.)
+            let usepoint = Address::new_invalid();
+            let fl: uint4 = fd.get_arch().query_global_properties(addr, size, &usepoint);
             self.guard_calls(fd, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
             // if (fd->getArch()->highPtrPossible(addr,size)) { guardStores; guardLoads; }
@@ -1382,7 +1395,7 @@ impl Heritage {
         fl: uint4,
         addr: &Address,
         size: int4,
-        _write: &mut [crate::seams::VarnodeId],
+        write: &mut Vec<crate::seams::VarnodeId>,
     ) {
         use crate::fspec::{effect_type, Containment, OFFSET_UNKNOWN};
         use kuna_base::space::spacetype;
@@ -1450,17 +1463,68 @@ impl Heritage {
                 // reached by the whole-register-argument datatests.
             }
 
-            // The output-active return-value trial registration and the INDIRECT
-            // side-effect markers (heritage.cc:1470-1526 — `newIndirectOp` /
-            // `newIndirectCreation` for the call's register clobber) are wired in
-            // `new_indirect_op`/`new_indirect_creation` but DEFERRED here: emitting
-            // the INDIRECT-marker chain reaches the downstream INDIRECT-handling
-            // seams (deadcode INDIRECT collapse, merge INDIRECT, the renaming
-            // INDIRECT phi) that are not yet complete on the live IR, which
-            // destabilizes more functions than it fixes.  The input-argument
-            // recovery above (the `func(args)` goal) is independent of these.
-            // SEAM(W4 call-side-effect INDIRECT chain) — see the loss ledger.
-            let _ = (fl, holdind, effect_type::UNKNOWN_EFFECT, Containment::NoContainment);
+            // effecttype = fc->hasEffect(transAddr, size).  `FuncCallSpecs : public
+            // FuncProto`, so `hasEffect` is the inherited `FuncProto::hasEffect`
+            // (fspec.cc:4239) reached through `proto()`.
+            let effecttype = fc.proto().has_effect(&trans_addr, size);
+
+            // The output-active return-value trial registration and the
+            // `killedbycall` INDIRECT-*creation* marker (the call's register clobber,
+            // heritage.cc:1481-1526) remain DEFERRED: that branch reaches the
+            // register-clobber INDIRECT-collapse seams (deadcode INDIRECT-creation
+            // collapse, the recovered return-value phi) that are not complete on the
+            // live IR, and destabilizes more functions than it fixes.  SEAM(W4
+            // killedbycall INDIRECT-creation chain) — see the loss ledger.
+            //
+            // The `unknown_effect`/`return_address` INDIRECT-*op* (heritage.cc:1514-
+            // 1521) is emitted for the PERSIST (global) range — the alias guard a
+            // call casts over an address-tied global range it might read/write
+            // through a pointer (`varcross.xml::global_cross`'s `read_glob()` over
+            // `glob1`).  Without it the global's Cover does not extend across the
+            // call, so the register value feeding the global store (`v1`) merges INTO
+            // the global (`mergeOpcode(COPY)` on `glob1 = v1` finds no Cover
+            // intersection) and the store collapses to `glob1 = <const>`.  The
+            // INDIRECT `out[addr] = INDIRECT(in[addr], iop(call))` re-reads the range
+            // across the call so its Cover spans the call site and the merge is
+            // correctly Cover-blocked, exactly as in C++ — and `setAddrForce` keeps
+            // it alive through `ActionDeadCode`.
+            //
+            // NARROWING (vs the broad C++ `unknown_effect` emission for every
+            // address-tied range): the gate is `(fl & persist)`, restricting the
+            // INDIRECT to GLOBAL ranges.  The non-persist address-tied case (a stack
+            // local an alias might cross) needs the same INDIRECT, but its downstream
+            // INDIRECT-collapse / cover seams are not yet complete on the live IR and
+            // a broad emission regressed `Else-if`/`Revisit SSA`/`No for-loop alias`.
+            // SEAM(W4 non-persist call-alias INDIRECT) — see the loss ledger.
+            let persist_range = (fl & varnode_flags::persist) != 0;
+            if persist_range
+                && (effecttype == effect_type::UNKNOWN_EFFECT
+                    || effecttype == effect_type::RETURN_ADDRESS)
+            {
+                // indop = fd->newIndirectOp(fc->getOp(), addr, size, 0);
+                let indop = fd.new_indirect_op(op, addr, size, 0);
+                // indop->getIn(0)->setActiveHeritage();
+                if let Some(in0) = fd.obank().get(indop).and_then(|o| o.get_in(0)) {
+                    if let Some(v) = fd.vbank_mut().get_mut(in0) {
+                        v.set_active_heritage();
+                    }
+                }
+                // indop->getOut()->setActiveHeritage(); write.push_back(indop->getOut());
+                if let Some(out) = fd.obank().get(indop).and_then(|o| o.get_out()) {
+                    if let Some(v) = fd.vbank_mut().get_mut(out) {
+                        v.set_active_heritage();
+                        // if (holdind) indop->getOut()->setAddrForce();
+                        if holdind {
+                            v.set_addr_force();
+                        }
+                        // if (effecttype == return_address) setReturnAddress();
+                        if effecttype == effect_type::RETURN_ADDRESS {
+                            v.set_return_address();
+                        }
+                    }
+                    write.push(out);
+                }
+            }
         }
         fd.restore_call_specs(qlst);
     }
@@ -1523,10 +1587,54 @@ impl Heritage {
         if (fl & varnode_flags::persist) == 0 {
             return;
         }
-        // persist RETURN-COPY branch (heritage.cc:1677-1690): only reached for a
-        // recovered persistent (global) range; `fl==0` here (W4 scope seam) so
-        // unreachable on the critical path.
-        let _ = (addr, size);
+        // Persist RETURN-COPY branch (heritage.cc:1677-1692): the global value
+        // must persist past the end of the function, so before each RETURN insert
+        //   copyop = newOp(1, ret_addr);
+        //   vn = newVarnodeOut(size, addr, copyop); vn->setAddrForce(); vn->setActiveHeritage();
+        //   opSetOpcode(copyop, COPY); markReturnCopy(copyop);
+        //   invn = newVarnode(size, addr); invn->setActiveHeritage();
+        //   opSetInput(copyop, invn, 0); opInsertBefore(copyop, op);
+        // The `addrforce` output makes the COPY `isAutoLive()`, so `ActionDeadCode`
+        // keeps the whole def chain of the global store alive (the store survives
+        // and renders as `glob = ...`).
+        let return_ops: Vec<crate::seams::OpId> =
+            fd.obank().iter_code(OpCode::CPUI_RETURN).collect();
+        for op in return_ops {
+            let (dead, ret_addr) = match fd.obank().get(op) {
+                Some(o) => (o.is_dead(), o.get_addr().clone()),
+                None => continue,
+            };
+            if dead {
+                continue;
+            }
+            // copyop = fd->newOp(1, op->getAddr());
+            let copyop = fd.new_op(1, ret_addr);
+            // vn = fd->newVarnodeOut(size, addr, copyop);
+            let vn = match fd.new_varnode_out(size, addr, copyop) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            // vn->setAddrForce(); vn->setActiveHeritage();
+            if let Some(v) = fd.vbank_mut().get_mut(vn) {
+                v.set_addr_force();
+                v.set_active_heritage();
+            }
+            // fd->opSetOpcode(copyop, CPUI_COPY);
+            fd.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
+            // fd->markReturnCopy(copyop);  (op->flags |= return_copy)
+            if let Some(o) = fd.obank_mut().get_mut(copyop) {
+                o.set_flag(crate::op::pcodeop_flags::return_copy);
+            }
+            // invn = fd->newVarnode(size, addr); invn->setActiveHeritage();
+            let invn = fd.new_varnode(size, addr, None);
+            if let Some(v) = fd.vbank_mut().get_mut(invn) {
+                v.set_active_heritage();
+            }
+            // fd->opSetInput(copyop, invn, 0);
+            let _ = fd.op_set_input(copyop, invn, 0);
+            // fd->opInsertBefore(copyop, op);
+            fd.op_insert_before(copyop, op);
+        }
     }
 
     /// Guard RETURN ops when the heritaged range *contains* the output storage,
@@ -2801,17 +2909,19 @@ fn typeop_skeleton(opc: kuna_num::opcodes::OpCode) -> crate::seams::TypeOp {
 /// `PcodeOp::getOpFromConst(def->getIn(1)->getAddr())` for the INDIRECT
 /// "same time" carve-out (C++ `renameRecurse`, heritage.cc:2507).
 ///
-/// SEAM(W4): resolving the IOP-space constant in[1] back to its PcodeOp needs
-/// the IOP→op map (`PcodeOp::getOpFromConst`), which the merged tree does not
-/// expose on `Funcdata`.  This is only invoked when the renamed value's
-/// top-of-stack is INDIRECT-defined — a calls/stores construct the no-call,
-/// no-store critical path never produces — so it is unreached there.  When an
-/// INDIRECT def is genuinely present, reaching this is the W4 IOP-map seam.
+/// The INDIRECT's second input is an IOP-space Varnode whose address offset
+/// encodes the PcodeOp the indirect effect comes from (C++ `newVarnodeIop`,
+/// re-cast by `getOpFromConst`).  The kuna IR encodes the slotmap key into that
+/// offset ([`op_iop_encode`]/[`op_iop_decode`], `funcdata_varnode.rs`), so the
+/// decode round-trips the `OpId`.  `None` when `def` has no in[1] (defensive;
+/// every INDIRECT carries its iop input).
 fn op_from_const_seam(
-    _fd: &crate::funcdata::Funcdata,
-    _indirect_def: crate::seams::OpId,
+    fd: &crate::funcdata::Funcdata,
+    indirect_def: crate::seams::OpId,
 ) -> Option<crate::seams::OpId> {
-    unimplemented_seam("Heritage::rename_recurse INDIRECT same-time (needs getOpFromConst)");
+    let iop_vn = fd.obank().get(indirect_def)?.get_in(1)?;
+    let off = fd.vbank().get(iop_vn)?.get_addr().get_offset();
+    Some(crate::funcdata_varnode::op_iop_decode(off))
 }
 
 impl Default for Heritage {
