@@ -1548,7 +1548,13 @@ impl PrintC {
         };
 
         let id1 = self.emit.begin_function();
-        self.emit.tag_line(); // emitCommentFuncHeader (comment seam)
+        // emitCommentFuncHeader(fd): the header warning comments (C++
+        // printc.cc:2801) — the `Comment::warningheader` lines the analysis
+        // buffered into `glb->commentdb` (e.g. "Inlined function: X").  The full
+        // CommentSorter is a separate item; the header subset that `print C`
+        // renders before the prototype is emitted here from the comment database.
+        self.emit_comment_func_header(fd, arch);
+        self.emit.tag_line(); // emitCommentFuncHeader trailing tagLine
 
         // emitFunctionDeclaration shell.
         let idp = self.emit.begin_func_proto();
@@ -1591,6 +1597,48 @@ impl PrintC {
         self.emit.tag_line();
         self.emit.end_function(id1);
         self.emit.output().to_string()
+    }
+
+    /// Emit the function's header warning comments (C++
+    /// `PrintC::emitCommentFuncHeader`, printc.cc:3434): the
+    /// `Comment::warningheader` lines the analysis buffered into the comment
+    /// database, indexed at the function entry address, rendered as
+    /// `/* <text> */` lines before the prototype.
+    ///
+    /// The full `CommentSorter` (`header_basic`/`header_unplaced` sub-orderings,
+    /// the `option_unplaced` / `option_nocasts` synthetic headers) is the comment
+    /// item; this carries the `warningheader` subset `head_comment_type` shows by
+    /// default, in insertion order (the order the analysis produced them, which is
+    /// the order `CommentSorter` keeps for same-address header comments).
+    fn emit_comment_func_header(&mut self, fd: &Funcdata, arch: &Architecture) {
+        use crate::architecture::comment_type;
+        let func_addr = fd.get_address();
+        // Collect the matching header comments first (the commentdb borrow is
+        // released before the `&mut self.emit` writes).
+        let headers: Vec<String> = arch
+            .commentdb
+            .comments()
+            .iter()
+            .filter(|c| {
+                c.tp == comment_type::warningheader && &c.func_addr == func_addr
+            })
+            .map(|c| c.text.clone())
+            .collect();
+        let space = match func_addr.get_space() {
+            Some(s) => std::rc::Rc::clone(s),
+            None => return,
+        };
+        let off = func_addr.get_offset();
+        for text in headers {
+            // emitLineComment(0, comm): a fresh line then the `/* text */` token.
+            self.emit.tag_line();
+            self.emit.tag_comment(
+                &format!("/* {text} */"),
+                SyntaxHighlight::CommentColor,
+                &space,
+                off,
+            );
+        }
     }
 
     /// Emit the function prototype's input parameter list (C++

@@ -111,6 +111,45 @@ impl FlowEnvironment for ArchFlowEnv {
             None => false,
         }
     }
+    fn query_call_inline(&self, entry: &Address) -> bool {
+        // C++ `queryCall` copies the callee proto's `isInline()` flow effect; the
+        // flag is set by `option inline <name>` (OptionInline) on the resolved
+        // FunctionSymbol.
+        let arch = self.arch();
+        match arch.symboltab.get_global_scope() {
+            Some(scope) => arch.symboltab.function_is_inline(scope, entry),
+            None => false,
+        }
+    }
+    fn query_call_inject_id(&self, entry: &Address) -> int4 {
+        // The callee's parked inject id (IfcFixupApply); -1 for none.
+        let arch = self.arch();
+        match arch.symboltab.get_global_scope() {
+            Some(scope) => arch.symboltab.function_inject_id(scope, entry),
+            None => -1,
+        }
+    }
+    fn build_inline_funcdata(&self, entry: &Address) -> KunaResult<Option<Funcdata>> {
+        // C++ `Funcdata::inlineFlow` builds a fresh FlowInfo over the queried
+        // callee Funcdata (after clearAnalysis).  Resolve the callee symbol's
+        // name (the C++ `queryFunction(entry)` -> Funcdata), then build a fresh
+        // Funcdata at that entry through the engine's `new_funcdata` factory.  No
+        // callee symbol -> no inline (the C++ `fd == 0` short-circuit).
+        let arch = self.arch();
+        let scope = match arch.symboltab.get_global_scope() {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+        let sid = match arch.symboltab.find_function(scope, entry) {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+        let name = arch.symboltab.symbol(sid).get_display_name().to_string();
+        // size 0: unbounded natural extent — inlineFlow sets its own flow range
+        // (the full entry-space) before generating ops.
+        let fd = arch.new_funcdata(&name, entry.clone(), 0)?;
+        Ok(Some(fd))
+    }
 }
 
 /// Build a [`Funcdata`] for the function `name` at `entry` and follow its flow,
@@ -185,6 +224,15 @@ pub fn build_and_follow_flow_with_override(
     // `FlowInfo::target`).  Drive it before the FlowInfo is consumed.
     let target_snapshot = flow.target_index_snapshot();
     let mut data = flow.data;
+    // Flush the analysis comments buffered during flow follow (C++
+    // `Funcdata::warning`/`warningHeader` write straight to `glb->commentdb`; the
+    // merged Rust tree buffers them on the `Funcdata` because the console owns the
+    // comment database, so re-deposit them now that `&mut Architecture` is in
+    // hand — the same re-seed model as `mapped_symbols`/`pending_prototypes`).
+    let func_addr = data.get_address().clone();
+    for (tp, ad, txt) in data.drain_pending_comments() {
+        arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
+    }
     data.switch_over_jump_tables(|fd, addr| {
         crate::flow::target_in(fd, &target_snapshot, addr)
     })?;
