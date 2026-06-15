@@ -245,6 +245,19 @@ pub struct Funcdata {
         crate::unionresolve::ResolveEdge,
         crate::unionresolve::ResolvedUnion,
     >,
+    /// Warning/header comments produced during flow analysis (C++
+    /// `Funcdata::warning`/`warningHeader` push directly into
+    /// `glb->commentdb`; `funcdata.cc:119,135`).
+    ///
+    /// The merged Rust tree owns the `CommentDatabase` on the console
+    /// `Architecture`, not on the W3 `glb` ([`crate::seams::ArchHandle`]), so a
+    /// `Funcdata` produced during flow follow buffers its analysis comments here
+    /// and the decompile drive ([`crate::decompile_drive`]) flushes them into
+    /// `arch.commentdb` once it has the `&mut Architecture` back (the same
+    /// re-seed precedent as `mapped_symbols`/`pending_prototypes`).  Each entry is
+    /// `(comment_type, placement_address, text)`; the function address is
+    /// `baseaddr`.
+    pending_comments: Vec<(kuna_base::types::uint4, Address, String)>,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -340,6 +353,7 @@ impl Funcdata {
             covermerge: None,
             localoverride: crate::overrides::Override::new(),
             union_map: std::collections::BTreeMap::new(),
+            pending_comments: Vec::new(),
         })
     }
 
@@ -365,6 +379,73 @@ impl Funcdata {
     pub fn get_override_mut(&mut self) -> &mut crate::overrides::Override {
         &mut self.localoverride
     }
+
+    /// Buffer an analysis warning comment indexed at a placement address (C++
+    /// `Funcdata::warning`, `funcdata.cc:119`): the emitter places it before the
+    /// source expression mapping most closely to `ad`.
+    ///
+    /// The C++ prefixes the text with "WARNING (jumptable): " when
+    /// `jumptablerecovery_on` is set, else "WARNING: ", and pushes the
+    /// `Comment::warning` into `glb->commentdb` via `addCommentNoDuplicate`.  The
+    /// merged Rust tree owns the comment database on the console `Architecture`
+    /// (not `glb`), so the comment is buffered on the `Funcdata`
+    /// ([`Self::drain_pending_comments`]) and flushed by the decompile drive.
+    pub fn warning(&mut self, txt: &str, ad: &Address) {
+        let msg = self.warning_prefix() + txt;
+        self.pending_comments.push((
+            crate::architecture::comment_type::warning,
+            ad.clone(),
+            msg,
+        ));
+    }
+
+    /// Buffer an analysis warning comment for the function header (C++
+    /// `Funcdata::warningHeader`, `funcdata.cc:135`): emitted in the block comment
+    /// printed right before the prototype, indexed at the function entry address.
+    pub fn warning_header(&mut self, txt: &str) {
+        let msg = self.warning_prefix() + txt;
+        let entry = self.baseaddr.clone();
+        self.pending_comments.push((
+            crate::architecture::comment_type::warningheader,
+            entry,
+            msg,
+        ));
+    }
+
+    /// The "WARNING: " / "WARNING (jumptable): " prefix the C++ `warning`/
+    /// `warningHeader` prepend depending on `jumptablerecovery_on`
+    /// (`funcdata.cc:123-126`).
+    fn warning_prefix(&self) -> String {
+        if (self.flags & funcdata_flags::jumptablerecovery_on) != 0 {
+            "WARNING (jumptable): ".to_string()
+        } else {
+            "WARNING: ".to_string()
+        }
+    }
+
+    /// Drain the buffered analysis comments produced during flow follow (the
+    /// `(comment_type, placement_address, text)` triples; the function address is
+    /// [`Self::get_address`]).  Called by the decompile drive to flush them into
+    /// the console `Architecture`'s `commentdb`.
+    pub fn drain_pending_comments(
+        &mut self,
+    ) -> Vec<(kuna_base::types::uint4, Address, String)> {
+        std::mem::take(&mut self.pending_comments)
+    }
+
+    /// Buffer an already-prefixed comment triple (the cross-function carry path:
+    /// `FlowInfo::inlineFlow` drains a nested callee flow's buffered comments and
+    /// re-buffers them on the top-level function, since both reach the same
+    /// `glb->commentdb` in C++).  The text already carries its "WARNING: " prefix.
+    pub fn push_raw_comment(
+        &mut self,
+        tp: kuna_base::types::uint4,
+        ad: Address,
+        txt: String,
+    ) {
+        self.pending_comments.push((tp, ad, txt));
+    }
+
     /// Get the entry point address (C++ `getAddress`).
     pub fn get_address(&self) -> &Address {
         &self.baseaddr
@@ -565,6 +646,15 @@ impl Funcdata {
     /// Restore the `qlst` taken by [`Self::take_call_specs`].
     pub fn restore_call_specs(&mut self, qlst: Vec<FuncCallSpecs>) {
         self.qlst = qlst;
+    }
+
+    /// Remove the `qlst` entry at `index` (C++ `FlowInfo::deleteCallSpec`,
+    /// `flow.cc:1308`): the call spec whose CALL op has just been in-lined /
+    /// injected away is dropped.  Because the \e fspec handle is the call op's own
+    /// identity (not the vector position; see [`Self::get_call_specs_index`]),
+    /// erasing the entry does not invalidate the remaining annotation Varnodes.
+    pub fn delete_call_spec(&mut self, index: int4) {
+        self.qlst.remove(index as usize);
     }
 
     /// Put the calls in dominance order so earlier calls get evaluated first

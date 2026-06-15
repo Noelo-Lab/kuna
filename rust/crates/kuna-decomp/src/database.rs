@@ -2287,6 +2287,20 @@ impl Database {
         }
     }
 
+    /// The \e injection id parked on the FunctionSymbol at `addr` (in `scope`)
+    /// (C++ `queryFunction(addr)->getFuncProto().getInjectId()`), or `-1` if no
+    /// function symbol starts at `addr` (or it has no inject id).  Read at flow
+    /// time by `FlowInfo::queryCall` to route inline vs payload injection.
+    pub fn function_inject_id(&self, scope: ScopeId, addr: &Address) -> int4 {
+        match self.find_function(scope, addr) {
+            Some(sid) => match self.symbols[sid].kind {
+                SymbolKind::Function { inject_id, .. } => inject_id,
+                _ => -1,
+            },
+            None => -1,
+        }
+    }
+
     /// Is the FunctionSymbol at `addr` (in `scope`) marked \e noreturn (C++
     /// `queryFunction(addr)->getFuncProto().isNoReturn()`)?  `false` if no function
     /// symbol starts at `addr`.

@@ -250,6 +250,41 @@ pub trait FlowEnvironment {
     fn query_call_no_return(&self, _entry: &Address) -> bool {
         false
     }
+
+    /// Is the function at the direct-call `entry` address marked \e inline? (C++
+    /// `FlowInfo::queryCall` → `fspecs.copyFlowEffects(otherfunc->getFuncProto())`
+    /// → `FuncProto::isInline()`).
+    ///
+    /// `option inline <name>` (`OptionInline`) sets this flag on the named
+    /// FunctionSymbol's prototype; `checkForFlowModification` pushes the CALL op
+    /// onto `injectlist` when it is true, so `injectPcode` clones the callee's
+    /// body into this flow at the call site.  The W3 shell reports `false`.
+    fn query_call_inline(&self, _entry: &Address) -> bool {
+        false
+    }
+
+    /// The \e injection id registered for the function at the direct-call `entry`
+    /// address, or `-1` for none (C++ `FuncProto::getInjectId()` after
+    /// `copyFlowEffects`).
+    ///
+    /// `IfcFixupApply` parks an inject id on the symbol; a non-negative id routes
+    /// `injectPcode` through `injectSubFunction` (payload injection) rather than
+    /// `inlineSubFunction` (whole-body clone).  The W3 shell reports `-1`.
+    fn query_call_inject_id(&self, _entry: &Address) -> int4 {
+        -1
+    }
+
+    /// Build a fresh [`Funcdata`] for the inline-callee at `entry`, ready for a
+    /// nested flow follow (C++ `Funcdata::inlineFlow` constructs
+    /// `FlowInfo inlineflow(*inlinefd,...)` over the queried callee `Funcdata`
+    /// after `clearAnalysis(inlinefd)`).
+    ///
+    /// Returns `Ok(None)` when there is no callee symbol at `entry` (the C++
+    /// `fc->getFuncdata() == 0` short-circuit in `inlineSubFunction`).  The W3
+    /// shell has no symbol table / architecture and reports `None`.
+    fn build_inline_funcdata(&self, _entry: &Address) -> KunaResult<Option<Funcdata>> {
+        Ok(None)
+    }
 }
 
 /// Allocate a process-unique \e fspec handle (the offset of the \e fspec
@@ -321,6 +356,23 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// the call-site cadence so the injection/`paramshift` bookkeeping order is
     /// preserved.
     qlst_count: usize,
+    /// Entry address of the first function in the in-lining chain (C++
+    /// `Funcdata *inline_head`, `flow.hh:102`).
+    ///
+    /// The C++ stores the head `Funcdata *`; here only its entry address is needed
+    /// (the head is reached solely to emit `warning`/`warningHeader`, which the
+    /// merged tree buffers on the per-function `Funcdata`).  `None` until the top
+    /// level of inlining sets it.
+    inline_head: Option<Address>,
+    /// Active set of entry addresses for functions currently being in-lined (C++
+    /// `set<Address> *inline_recursion`, pointing at `inline_base`; `flow.hh:103`).
+    ///
+    /// The C++ uses a pointer into `inline_base` (or a parent flow's set, copied
+    /// by `forwardRecursion`); the merged tree owns the set inline.  An address in
+    /// the set means that function is on the current in-lining stack — a CALL to it
+    /// cannot be inlined again (the cycle break that prints "Could not inline
+    /// here").
+    inline_recursion: std::collections::BTreeSet<Address>,
 }
 
 impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
@@ -359,7 +411,19 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             flowoverride_present,
             flags: 0,
             qlst_count: 0,
+            inline_head: None,
+            inline_recursion: std::collections::BTreeSet::new(),
         }
+    }
+
+    /// Pull in-lining recursion information from a parent flow (C++
+    /// `FlowInfo::forwardRecursion`, `flow.cc:1045`): when preparing p-code for an
+    /// in-lined function, the nested generation needs to know which functions are
+    /// already on the in-lining stack so it does not re-inline a cycle.
+    fn forward_recursion(&mut self, op2: &FlowInfo<'a, E>) {
+        // inline_recursion = op2.inline_recursion; inline_head = op2.inline_head;
+        self.inline_recursion = op2.inline_recursion.clone();
+        self.inline_head = op2.inline_head.clone();
     }
 
     // -----------------------------------------------------------------------
@@ -1603,41 +1667,60 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             .unwrap_or_default();
         self.build_call_specs(op, entry.clone(), false)?;
         self.qlst_count += 1;
-        // C++ `checkForFlowModification(*res)`: the no-return half plants an
-        // `artificialHalt(noreturn)` after the call op so flow does not run off
-        // the end of the function (into unmapped bytes).  The inline half
-        // (`fspecs.isInline()`) remains a W4 seam.  `queryCall` copies the
-        // callee's `isNoReturn()` flow effect; here the noreturn fact is queried
-        // straight from the symbol table by the (resolved direct) entry address.
-        if !entry.is_invalid() && self.env.query_call_no_return(&entry) {
-            self.check_for_flow_modification_noreturn(op)?;
+        // C++ `return checkForFlowModification(*res)` (flow.cc:712).
+        self.check_for_flow_modification(op, &entry)
+    }
+
+    /// Examine and apply the call site's prototype/control-flow modifications
+    /// (C++ `FlowInfo::checkForFlowModification`, `flow.cc:654`).
+    ///
+    /// If the call spec is marked \e inline, the CALL op is queued on `injectlist`
+    /// (so `injectPcode` clones the callee body at the site).  If it is \e
+    /// noreturn, an artificial halt (`PcodeOp::noreturn`) is planted in the dead
+    /// list immediately after the call op — the per-instruction processor backs up
+    /// one op and picks up the halt instead of following flow off the end — and (if
+    /// not inline) a `"Subroutine does not return"` warning is buffered.  Returns
+    /// `true` when the call never returns (the caller backs up one op).
+    ///
+    /// `op` is the CALL/CALLIND op and `entry` its resolved direct entry address
+    /// (invalid for an indirect call); the inline/noreturn flow effects were
+    /// already copied onto the fspec by [`build_call_specs`].
+    fn check_for_flow_modification(&mut self, op: OpId, entry: &Address) -> KunaResult<bool> {
+        // The flow effects live on the just-built fspec; recover its flags.
+        let (is_inline, is_no_return) = match self.data.get_call_specs_index(op) {
+            Some(idx) => {
+                let fc = self.data.get_call_specs(idx);
+                (fc.proto().is_inline(), fc.proto().is_no_return())
+            }
+            None => (false, false),
+        };
+        // if (fspecs.isInline()) injectlist.push_back(fspecs.getOp());
+        if is_inline {
+            self.injectlist.push(op);
+        }
+        // if (fspecs.isNoReturn()) { ... return true; }.  The noreturn flag is
+        // also reported straight from the symbol table for envs that carry it
+        // only there (the W4-era `query_call_no_return` seam).
+        let no_return = is_no_return || (!entry.is_invalid() && self.env.query_call_no_return(entry));
+        if no_return {
+            let addr = self
+                .data
+                .obank()
+                .get(op)
+                .expect("checkForFlowModification: stale call op")
+                .get_addr()
+                .clone();
+            // PcodeOp *haltop = artificialHalt(op->getAddr(),PcodeOp::noreturn);
+            let haltop = self.artificial_halt(&addr, pcodeop_flags::noreturn)?;
+            // data.opDeadInsertAfter(haltop,op);
+            self.data.op_dead_insert_after(haltop, op);
+            // if (!fspecs.isInline()) data.warning("Subroutine does not return",op->getAddr());
+            if !is_inline {
+                self.data.warning("Subroutine does not return", &addr);
+            }
             return Ok(true);
         }
         Ok(false)
-    }
-
-    /// The no-return arm of C++ `FlowInfo::checkForFlowModification`
-    /// (`flow.cc:654`): plant an artificial halt (`PcodeOp::noreturn`) in the dead
-    /// list immediately after the call op, so the per-instruction processor backs
-    /// up one op and picks up the halt instead of following flow off the end.
-    fn check_for_flow_modification_noreturn(&mut self, op: OpId) -> KunaResult<()> {
-        let addr = self
-            .data
-            .obank()
-            .get(op)
-            .expect("checkForFlowModification: stale call op")
-            .get_addr()
-            .clone();
-        let haltop = self.artificial_halt(&addr, pcodeop_flags::noreturn)?;
-        // data.opDeadInsertAfter(haltop, op).
-        self.data.op_dead_insert_after(haltop, op);
-        // C++ also calls `data.warning("Subroutine does not return", op->getAddr())`
-        // (a Comment::warning), which renders the cosmetic `/* WARNING: Subroutine
-        // does not return */` line.  The warning-comment rendering through the
-        // CommentDatabase is a separate (printc) seam; the flow-halting effect —
-        // the load-bearing behavior that keeps decoding from running into unmapped
-        // bytes — is reproduced here.
-        Ok(())
     }
 
     /// Set up the FuncCallSpecs for a new CALLIND site (C++ `setupCallindSpecs`,
@@ -1651,7 +1734,11 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     fn setup_callind_specs(&mut self, op: OpId) -> KunaResult<bool> {
         self.build_call_specs(op, Address::default(), true)?;
         self.qlst_count += 1;
-        Ok(false)
+        // C++ `return checkForFlowModification(*res)` (flow.cc:740).  An indirect
+        // call has an invalid entry, so the inline/noreturn flow effects are only
+        // present if an override turned it direct (W4); here the fspec carries no
+        // inline flag for the indirect case, so this is a no-op return.
+        self.check_for_flow_modification(op, &Address::default())
     }
 
     /// Shared body of [`setup_call_specs`]/[`setup_callind_specs`]: create the
@@ -1665,6 +1752,19 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         if !indirect && !entry.is_invalid() {
             if let Some(name) = self.env.query_call(&entry) {
                 let _ = fc.set_funcdata(entry.clone(), &name);
+            }
+            // C++ queryCall: fspecs.copyFlowEffects(otherfunc->getFuncProto()) —
+            // copies the IS_INLINE / NO_RETURN flow effects from the callee proto.
+            // Carry the inline flag and inject id so `checkForFlowModification`
+            // (`fspecs.isInline()`) pushes the op to `injectlist` and `injectPcode`
+            // can route to inject- vs inline-subfunction.  `option inline <name>`
+            // (no inject id) sets is_inline only; `IfcFixupApply` sets the inject
+            // id (which also implies inline, fspec.cc `setInjectId`).
+            let inject_id = self.env.query_call_inject_id(&entry);
+            if inject_id >= 0 {
+                fc.proto_mut().set_inject_id(inject_id);
+            } else if self.env.query_call_inline(&entry) {
+                fc.proto_mut().set_inline(true);
             }
         }
         // qlst.push_back(res); the index is the call spec's identity (looked up by
@@ -1691,44 +1791,403 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// In-line the sub-function at the given call site (C++ `inlineSubFunction`,
     /// `flow.cc:1244`).  Returns `true` if the in-lining is successful.
     ///
-    /// SEAM(W4): `FuncCallSpecs`, `data.inlineFlow`, and the `inline_recursion`
-    /// cycle tracking are W4 (no W3 caller yet — `injectPcode` reaches it).  The
-    /// one W3-observable side-effect — changing a CALL to a JUMP may make some
-    /// original code unreachable, so the flow marks `possible_unreachable`
-    /// (consumed by `generateBlocks`'s `removeUnreachableBlocks`) — is wired here;
-    /// the actual clone/inline is deferred.
-    #[allow(dead_code)]
-    fn inline_sub_function(&mut self) -> KunaResult<bool> {
-        // int4 res = data.inlineFlow(fd, *this, fc->getOp()); ...
-        //   -- SEAM(W4): FuncCallSpecs + inlineFlow.
-        // Changing CALL to JUMP may make some original code unreachable:
+    /// `op` is the CALL op carrying the inline-marked fspec; `entry` is the
+    /// callee's resolved entry address (the fspec's `getEntryAddress()`).  P-code
+    /// is generated for the sub-function ([`inline_flow`](Self::inline_flow)) and
+    /// then woven into \b this flow at the call site.  The `inline_recursion`
+    /// cycle tracking prevents a function from being inlined into itself.
+    fn inline_sub_function(&mut self, op: OpId, entry: &Address) -> KunaResult<bool> {
+        // Funcdata *fd = fc->getFuncdata(); if (fd == 0) return false;
+        // The callee Funcdata is built fresh from the entry address (queryCall
+        // associated the symbol; here we build it on demand).
+        let mut inlinefd = match self.env.build_inline_funcdata(entry)? {
+            Some(fd) => fd,
+            None => return Ok(false),
+        };
+
+        // if (inline_head == 0) { inline_head = &data; inline_recursion = &inline_base; }
+        if self.inline_head.is_none() {
+            self.inline_head = Some(self.data.get_address().clone());
+        }
+        // inline_recursion->insert(data.getAddress()); // Insert current function
+        self.inline_recursion.insert(self.data.get_address().clone());
+        // if (inline_recursion->find(fd->getAddress()) != end()) { warn; return false; }
+        if self.inline_recursion.contains(inlinefd.get_address()) {
+            // This function has already been included with current inlining.
+            let opaddr =
+                self.data.obank().get(op).expect("inlineSubFunction: stale call op").get_addr().clone();
+            self.data.warning("Could not inline here", &opaddr);
+            return Ok(false);
+        }
+
+        // int4 res = data.inlineFlow(fd, *this, fc->getOp());
+        let res = self.inline_flow(&mut inlinefd, op)?;
+        if res < 0 {
+            return Ok(false);
+        } else if res == 0 {
+            // easy model: remove inlined function from list so it can be inlined
+            // again, even if it also inlines.
+            self.inline_recursion.remove(inlinefd.get_address());
+        } else {
+            // hard model: add inlined function to recursion list (even if it
+            // contains no inlined calls) to prevent parent from inlining it twice.
+            self.inline_recursion.insert(inlinefd.get_address().clone());
+        }
+
+        // Changing CALL to JUMP may make some original code unreachable.
         self.set_possible_unreachable();
-        Err(KunaError::lowlevel(
-            "kuna rust port: FlowInfo::inlineSubFunction needs the W4 FuncCallSpecs + \
-             Funcdata::inlineFlow (inline-clone family); possible_unreachable marked, \
-             inline deferred",
-        ))
+        Ok(true)
     }
 
-    /// Perform substitution on any op that requires injection (C++ `injectPcode`,
-    /// `flow.cc:1329`).
+    /// In-line the p-code from another function into \b this function (C++
+    /// `Funcdata::inlineFlow`, `funcdata_op.cc:853`).
     ///
-    /// SEAM(W4): the injection library (`glb->pcodeinjectlib`), `FuncCallSpecs`,
-    /// `doInjection`, `injectUserOp`, `inlineSubFunction`, `injectSubFunction` are
-    /// all W4.  The injectlist is cleared (faithful: each entry is nullified after
-    /// processing) and the W4 wave wires the actual payload substitution.
-    fn inject_pcode(&mut self) -> KunaResult<()> {
-        if self.injectlist.is_empty() {
-            return Ok(());
+    /// Raw PcodeOps for the in-line function are generated into `inlinefd`
+    /// (a nested [`FlowInfo`] over the same [`FlowEnvironment`], with
+    /// `flow_forinline` set and the recursion state forwarded) and then cloned
+    /// into \b this function via [`inline_ez_clone`](Self::inline_ez_clone) (a
+    /// straight-line leaf, the \e easy model) or
+    /// [`inline_clone`](Self::inline_clone) (the \e hard model, preserving
+    /// addresses and replacing RETURN with a BRANCH).
+    ///
+    /// Returns 0 for the easy model, 1 for the hard model, -1 if inlining was not
+    /// successful (`callop` is the site of the injection).
+    fn inline_flow(&mut self, inlinefd: &mut Funcdata, callop: OpId) -> KunaResult<int4> {
+        // inlinefd->getArch()->clearAnalysis(inlinefd): the callee Funcdata is
+        // built fresh (no prior analysis to clear).
+        // FlowInfo inlineflow(*inlinefd, ...); inlinefd->obank.setUniqId(obank.getUniqId());
+        inlinefd.obank_mut().set_uniq_id(self.data.obank().get_uniq_id());
+
+        // Build a nested FlowInfo over the callee Funcdata using a placeholder
+        // swap (the same move-out / move-back idiom as `build_partial_blocks`).
+        let placeholder = Funcdata::new_placeholder_like(inlinefd)?;
+        let inline_data = std::mem::replace(inlinefd, placeholder);
+        let mut inlineflow = FlowInfo::new(inline_data, self.env);
+
+        // Address baddr(baseaddr.getSpace(),0); Address eaddr(baseaddr.getSpace(),~0);
+        let space = self
+            .data
+            .get_address()
+            .get_space()
+            .expect("inlineFlow: caller entry has no space")
+            .clone();
+        let baddr = Address::new(space.clone(), 0);
+        let eaddr = Address::new(space, !0u64);
+        inlineflow.set_range(baddr, eaddr);
+        inlineflow.set_flags(
+            flow_flags::error_outofbounds
+                | flow_flags::error_unimplemented
+                | flow_flags::error_reinterpreted
+                | flow_flags::flow_forinline,
+        );
+        // inlineflow.forwardRecursion(flow);
+        inlineflow.forward_recursion(self);
+        // inlineflow.generateOps();
+        inlineflow.generate_ops()?;
+        // Carry any warnings the nested flow buffered back to the top-level
+        // function's comment store (the C++ `inline_head`/`data` reach the same
+        // `glb->commentdb`).  This includes nested "Could not inline here".
+        let nested_comments = inlineflow.data.drain_pending_comments();
+        for (tp, ad, txt) in nested_comments {
+            self.data.push_raw_comment(tp, ad, txt);
         }
-        // for each op in injectlist: injectUserOp / injectSubFunction / inlineSubFunction
-        //   -- SEAM(W4): requires pcodeinjectlib + FuncCallSpecs.
+
+        let res: int4;
+        if inlineflow.check_ez_model() {
+            res = 0;
+            // With an EZ clone there are no jumptables to clone.
+            // list<PcodeOp *>::const_iterator oiter = obank.endDead(); --oiter;
+            let marker = self.dead_tail(); // last op before the clone (there is at least one)
+            // flow.inlineEZClone(inlineflow, callop->getAddr());
+            let calladdr = self
+                .data
+                .obank()
+                .get(callop)
+                .expect("inlineFlow: stale callop")
+                .get_addr()
+                .clone();
+            self.inline_ez_clone(&inlineflow, &calladdr)?;
+            // ++oiter; if (oiter != endDead()) { ... moveSequenceDead(firstop,lastop,callop) ... }
+            let firstop = match marker {
+                Some(m) => self.dead_next(m),
+                None => self.dead_head(),
+            };
+            if let Some(firstop) = firstop {
+                let lastop = self.dead_tail().expect("inlineFlow EZ: dead list non-empty");
+                self.data.obank_mut().move_sequence_dead(firstop, lastop, callop);
+                // if (callop->isBlockStart()) { firstop->setFlag(startbasic); updateTarget }
+                let callop_block_start = self
+                    .data
+                    .obank()
+                    .get(callop)
+                    .expect("inlineFlow: stale callop")
+                    .is_block_start();
+                if callop_block_start {
+                    self.data
+                        .obank_mut()
+                        .get_mut(firstop)
+                        .expect("inlineFlow: stale firstop")
+                        .set_flag(pcodeop_flags::startbasic);
+                    self.update_target(callop, firstop);
+                } else {
+                    self.data
+                        .obank_mut()
+                        .get_mut(firstop)
+                        .expect("inlineFlow: stale firstop")
+                        .clear_flag(pcodeop_flags::startbasic);
+                }
+            }
+            // opDestroyRaw(callop);
+            self.data.op_destroy_raw(callop)?;
+        } else {
+            // Hard model.
+            let mut retaddr = Address::default();
+            if !self.test_hard_inline_restrictions(&inlineflow, callop, &mut retaddr)? {
+                // Restore the callee data before bailing.
+                *inlinefd = inlineflow.data;
+                return Ok(-1);
+            }
+            res = 1;
+            // Clone any jumptables from the inline piece.
+            //   -- SEAM(W4): inlinefd->jumpvec is the recovered-table list; an
+            //      inline callee with a jumptable (none in the corpus) would clone
+            //      them here.  No jumptable in the inline corpus, so this is empty.
+            // flow.inlineClone(inlineflow, retaddr);
+            self.inline_clone(&inlineflow, &retaddr)?;
+
+            // Convert CALL op to a jump: while(callop->numInput()>1) opRemoveInput(last)
+            loop {
+                let n = self.data.obank().get(callop).expect("inlineFlow: stale callop").num_input();
+                if n <= 1 {
+                    break;
+                }
+                self.data.op_remove_input(callop, n - 1);
+            }
+            // opSetOpcode(callop,CPUI_BRANCH);
+            self.data.op_set_opcode_code(callop, OpCode::CPUI_BRANCH);
+            // Varnode *inlineaddr = newCodeRef(inlinefd->getAddress());
+            let inline_entry = inlineflow.data.get_address().clone();
+            let inlineaddr = self.data.new_code_ref(&inline_entry);
+            self.data.op_set_input(callop, inlineaddr, 0)?;
+        }
+
+        // obank.setUniqId(inlinefd->obank.getUniqId());
+        let inline_uniq = inlineflow.data.obank().get_uniq_id();
+        self.data.obank_mut().set_uniq_id(inline_uniq);
+        // Move the (now spent) callee data back out.
+        *inlinefd = inlineflow.data;
+        Ok(res)
+    }
+
+    /// A function is in the EZ model if it is a straight-line leaf function (C++
+    /// `FlowInfo::checkEZModel`, `flow.cc:1159`): \b true if this flow contains no
+    /// CALL or BRANCH ops.
+    fn check_ez_model(&self) -> bool {
+        for op in self.data.obank().iter_dead() {
+            if self.data.obank().get(op).expect("checkEZModel: stale op").is_call_or_branch() {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// For in-lining using the \e hard model, make sure some restrictions are met
+    /// (C++ `FlowInfo::testHardInlineRestrictions`, `flow.cc:1135`):
+    ///
+    ///   - Can only in-line the function once.
+    ///   - There must be a p-code op to return to.
+    ///   - There must be a distinct return address (so RETURN -> BRANCH).
+    ///
+    /// `inlineflow` is the (already-generated) callee flow; `op` is the CALL at
+    /// the in-line site; `retaddr` is passed back with the distinct return address
+    /// (unless the in-lined function doesn't return).  Returns `true` when all the
+    /// hard-model restrictions are met.
+    fn test_hard_inline_restrictions(
+        &mut self,
+        inlineflow: &FlowInfo<'a, E>,
+        op: OpId,
+        retaddr: &mut Address,
+    ) -> KunaResult<bool> {
+        // if (!inlinefd->getFuncProto().isNoReturn()) { ... }
+        if !inlineflow.data.get_func_proto().is_no_return() {
+            // list<PcodeOp *>::iterator iter = op->getInsertIter(); ++iter;
+            // if (iter == obank.endDead()) { warn "No fallthrough ..."; return false; }
+            let nextop = match self.dead_next(op) {
+                Some(n) => n,
+                None => {
+                    let opaddr =
+                        self.data.obank().get(op).expect("testHardInline: stale op").get_addr().clone();
+                    self.data.warning("No fallthrough prevents inlining here", &opaddr);
+                    return Ok(false);
+                }
+            };
+            // retaddr = nextop->getAddr();
+            *retaddr = self.data.obank().get(nextop).expect("testHardInline: stale nextop").get_addr().clone();
+            // if (op->getAddr() == retaddr) { warn "Return address prevents ..."; return false; }
+            let opaddr = self.data.obank().get(op).expect("testHardInline: stale op").get_addr().clone();
+            if &opaddr == retaddr {
+                self.data.warning("Return address prevents inlining here", &opaddr);
+                return Ok(false);
+            }
+            // If the inlining "jumps back" this starts a new basic block.
+            self.op_mark_start_basic(nextop);
+        }
+        Ok(true)
+    }
+
+    /// If the given injected op is a CALL, CALLIND, or BRANCHIND, add references to
+    /// it in other flow tables (C++ `FlowInfo::xrefInlinedBranch`, `flow.cc:1055`).
+    fn xref_inlined_branch(&mut self, op: OpId) -> KunaResult<()> {
+        match self.data.obank().get(op).expect("xrefInlinedBranch: stale op").code() {
+            OpCode::CPUI_CALL => {
+                self.setup_call_specs(op)?;
+            }
+            OpCode::CPUI_CALLIND => {
+                self.setup_callind_specs(op)?;
+            }
+            OpCode::CPUI_BRANCHIND => {
+                // JumpTable *jt = data.linkJumpTable(op);
+                // if (jt == 0 || jt->numEntries() == 0) tablelist.push_back(op);
+                let recovered = match self.data.link_jump_table(op) {
+                    Some(jt_idx) => self.data.get_jump_table(jt_idx as int4).num_entries() != 0,
+                    None => false,
+                };
+                if !recovered {
+                    self.tablelist.push(op);
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Clone the given in-line flow into \b this flow using the \e hard model (C++
+    /// `FlowInfo::inlineClone`, `flow.cc:1076`).
+    ///
+    /// Individual PcodeOps from the in-lined Funcdata are cloned into \b this flow,
+    /// preserving their original address.  Any RETURN op is replaced with a jump to
+    /// the first address following the call site (`retaddr`).
+    fn inline_clone(&mut self, inlineflow: &FlowInfo<'a, E>, retaddr: &Address) -> KunaResult<()> {
+        let src = &inlineflow.data;
+        let src_ops: Vec<OpId> = src.obank().iter_dead().collect();
+        for op in src_ops {
+            let opc = src.obank().get(op).expect("inlineClone: stale src op").code();
+            let seq = src.obank().get(op).expect("inlineClone: stale src op").get_seq_num().clone();
+            // if ((op->code()==CPUI_RETURN) && (!retaddr.isInvalid())) { ... BRANCH }
+            let cloneop = if opc == OpCode::CPUI_RETURN && !retaddr.is_invalid() {
+                let cloneop = self.data.new_op_seq(1, seq);
+                self.data.op_set_opcode_code(cloneop, OpCode::CPUI_BRANCH);
+                let vn = self.data.new_code_ref(retaddr);
+                self.data.op_set_input(cloneop, vn, 0)?;
+                cloneop
+            } else {
+                // cloneop = data.cloneOp(op, op->getSeqNum());
+                self.data.clone_op_from(src, op, seq)?
+            };
+            // if (cloneop->isCallOrBranch()) xrefInlinedBranch(cloneop);
+            if self.data.obank().get(cloneop).expect("inlineClone: stale clone").is_call_or_branch() {
+                self.xref_inlined_branch(cloneop)?;
+            }
+        }
+        // Copy in the cross-referencing.
+        self.unprocessed.extend(inlineflow.unprocessed.iter().cloned());
+        self.addrlist.extend(inlineflow.addrlist.iter().cloned());
+        for (addr, stat) in inlineflow.visited.iter() {
+            // std::map::insert does NOT overwrite an existing key — match it.
+            self.visited.entry(addr.clone()).or_insert_with(|| stat.clone());
+        }
+        // We don't copy inline_recursion or inline_head here.
+        Ok(())
+    }
+
+    /// Clone the given in-line flow into \b this flow using the EZ model (C++
+    /// `FlowInfo::inlineEZClone`, `flow.cc:1110`).
+    ///
+    /// Individual PcodeOps from the in-lined Funcdata are cloned into \b this flow
+    /// but reassigned a new fixed address (`calladdr`), and the RETURN op is
+    /// eliminated.
+    fn inline_ez_clone(&mut self, inlineflow: &FlowInfo<'a, E>, calladdr: &Address) -> KunaResult<()> {
+        let src = &inlineflow.data;
+        let src_ops: Vec<OpId> = src.obank().iter_dead().collect();
+        for op in src_ops {
+            // if (op->code() == CPUI_RETURN) break;
+            if src.obank().get(op).expect("inlineEZClone: stale src op").code() == OpCode::CPUI_RETURN {
+                break;
+            }
+            // SeqNum myseq(calladdr, op->getSeqNum().getTime());
+            let time = src.obank().get(op).expect("inlineEZClone: stale src op").get_seq_num().get_time();
+            let myseq = SeqNum::new(calladdr.clone(), time);
+            // data.cloneOp(op, myseq);
+            self.data.clone_op_from(src, op, myseq)?;
+        }
+        // We don't touch unprocessed, addrlist, or visited (straight-line, one addr).
+        Ok(())
+    }
+
+    /// Perform substitution on any op that requires injection (C++
+    /// `FlowInfo::injectPcode`, `flow.cc:1329`).
+    ///
+    /// Types of substitution: sub-function in-lining (the whole-body clone),
+    /// sub-function injection (a registered payload), and user-defined op
+    /// injection (CALLOTHER).  Recursion is truncated so a sub-function is not
+    /// in-lined more than once.
+    ///
+    /// SEAM(W4): the payload-injection arms (`injectUserOp` / `injectSubFunction`,
+    /// which need the `PcodeInjectLibrary` payload + `doInjection`) are deferred to
+    /// the injection wave; the in-lining arm (`inlineSubFunction`) — the load-
+    /// bearing path for `inline.xml` — is fully wired.
+    fn inject_pcode(&mut self) -> KunaResult<()> {
+        // for (i=0; i<injectlist.size(); ++i) — index walk: inlineSubFunction
+        // (via inline_clone -> xref_inlined_branch -> setup_call_specs) can push
+        // MORE ops onto injectlist (nested inlines), so re-read the length.
+        let mut i = 0usize;
+        while i < self.injectlist.len() {
+            let op = self.injectlist[i];
+            i += 1;
+            // if (op == 0) continue; injectlist[i] = 0; — Nullify so we don't
+            // inject more than once.  A destroyed op id is filtered by liveness.
+            let code = match self.data.obank().get(op) {
+                Some(o) => o.code(),
+                None => continue, // op was destroyed by a prior inline (nullified)
+            };
+            if code == OpCode::CPUI_CALLOTHER {
+                // injectUserOp(op): a CALLOTHER user-op marked \e injected.
+                //   -- SEAM(W4): `injectUserOp` needs the `PcodeInjectLibrary`
+                //      payload + `doInjection` (the p-code-template weaving), not
+                //      yet ported.  Leave the CALLOTHER op in place (faithful
+                //      partial: the un-injected user-op still renders as a call),
+                //      matching the pre-inline-wave behavior.  Recorded as a loss.
+                continue;
+            }
+            // CPUI_CALL or CPUI_CALLIND.
+            let idx = match self.data.get_call_specs_index(op) {
+                Some(idx) => idx,
+                None => continue,
+            };
+            let fc = self.data.get_call_specs(idx);
+            if !fc.proto().is_inline() {
+                continue;
+            }
+            let inject_id = fc.proto().get_inject_id();
+            let entry = fc.get_entry_address().clone();
+            let name = fc.get_name().to_string();
+            if inject_id >= 0 {
+                // injectSubFunction(fc): a registered call-fixup payload.
+                //   -- SEAM(W4): `injectSubFunction` needs the `PcodeInjectLibrary`
+                //      payload + `doInjection` (the p-code-template weaving), not
+                //      yet ported.  Leave the CALL in place (faithful partial: the
+                //      un-injected fixup call still renders), matching the
+                //      pre-inline-wave behavior.  Recorded as a loss.
+                continue;
+            } else if self.inline_sub_function(op, &entry)? {
+                // data.warningHeader("Inlined function: " + fc->getName());
+                self.data.warning_header(&format!("Inlined function: {name}"));
+                // deleteCallSpec(fc): remove the now-inlined call from qlst.
+                self.data.delete_call_spec(idx);
+            }
+        }
         self.injectlist.clear();
-        Err(KunaError::lowlevel(
-            "kuna rust port: FlowInfo::injectPcode needs the W4 PcodeInjectLibrary + \
-             FuncCallSpecs (doInjection/injectUserOp/inlineSubFunction); injectlist drained, \
-             payload substitution deferred",
-        ))
+        Ok(())
     }
 
     /// Recover jump-tables for the current `tablelist` (C++
