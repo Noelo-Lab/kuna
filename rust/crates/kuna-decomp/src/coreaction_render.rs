@@ -1596,9 +1596,9 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
                     }
                 }
             } else if opc == OpCode::CPUI_BRANCHIND {
-                // findJumpTable is a W7 seam (always None here) -> mask = ~0.
+                // jt = findJumpTable(op); mask = (jt!=0) ? jt->getSwitchVarConsume() : ~0
                 let mask = match data.find_jump_table(op) {
-                    Some(_) => !0u64, // jt->getSwitchVarConsume() (W7 seam; unreachable)
+                    Some(jt) => jt.get_switch_var_consume(),
                     None => !0u64,
                 };
                 if let Some(i0) = data.obank().get(op).expect("stale op").get_in(0) {
@@ -1782,7 +1782,7 @@ impl Action for ActionSwitchNorm {
         }
         Some(Box::new(ActionSwitchNorm { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:4782 — ActionSwitchNorm::apply
         //   for (i = 0; i < data.numJumpTables(); ++i):
         //       jt = data.getJumpTable(i);
@@ -1795,11 +1795,35 @@ impl Action for ActionSwitchNorm {
         //           data.getStructure().clear();        // force re-structure
         //           count += 1;
         //   return 0;
-        //
-        // SEAM(W8-funcdata): the jump-table table (`numJumpTables`/`getJumpTable`),
-        // `JumpTable::matchModel`/`recoverLabels`/`foldInNormalization`/
-        // `foldInGuards`, and `Funcdata::getStructure().clear()` are not in the
-        // merged tree.  Body transcribed; no change applied (count stays 0).
+        let n = data.num_jump_tables();
+        for i in 0..n {
+            // Take the table out of the function so it can be mutated against
+            // `&mut Funcdata` (the recover/fold helpers read/write the IR).
+            let placeholder = crate::jumptable::JumpTable::new(
+                data.get_address().clone(),
+            );
+            let mut jt = std::mem::replace(data.get_jump_table_mut(i), placeholder);
+            if !jt.is_labelled() {
+                // matchModel / recoverLabels / foldInNormalization.  Any low-level
+                // error here (an un-recovered model on a stale table) is a no-op
+                // for that table — keep the run alive (C++ would have thrown only
+                // on a programming error; the recovered corpus tables succeed).
+                if jt.match_model(data).is_ok() {
+                    let _ = jt.recover_labels(data);
+                    let _ = jt.fold_in_normalization(data);
+                    self.base_mut().count += 1;
+                }
+            }
+            let folded = jt.fold_in_guards(data).unwrap_or(false);
+            // Store the (mutated) table back.
+            *data.get_jump_table_mut(i) = jt;
+            if folded {
+                // data.getStructure().clear(): force a re-structure so the folded
+                // guard's new default edge is picked up.
+                data.sblocks_clear();
+                self.base_mut().count += 1;
+            }
+        }
         0
     }
 }

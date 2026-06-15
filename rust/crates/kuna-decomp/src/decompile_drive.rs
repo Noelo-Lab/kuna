@@ -39,7 +39,7 @@
 //! W10 grind), which the e2e gate (`tests/decompile_e2e.rs`) asserts.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
+use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::int4;
 
 use kuna_num::opcodes::OpCode;
@@ -60,24 +60,41 @@ use kuna_sleigh::translate::Translate;
 /// `FlowInfo` trait already defaults); the architecture-owned `inst` table
 /// drives `resolve_typeop` so the built ops carry the correct
 /// branch/call/coderef/marker property flags.
-struct ArchFlowEnv<'a> {
-    arch: &'a Architecture,
+struct ArchFlowEnv {
+    /// Raw pointer to the architecture (read-only use: `translate` / `resolve_
+    /// typeop` / `query_call`).  A raw pointer (rather than `&Architecture`) lets
+    /// the jump-table recovery hold `&mut Architecture` for the action sub-
+    /// pipeline (`allacts`) concurrently: the env's reads (`translate`/`inst`/
+    /// `symboltab`) never alias the `allacts` mutation, so the access is sound.
+    arch: *const Architecture,
 }
 
-impl FlowEnvironment for ArchFlowEnv<'_> {
+impl ArchFlowEnv {
+    #[inline]
+    fn arch(&self) -> &Architecture {
+        // SAFETY: the pointer is created from a live `&mut Architecture` in
+        // `build_and_follow_flow` and used only for non-aliasing read methods
+        // (`translate`/`resolve_typeop`/`query_call`) for the duration of the
+        // flow-follow; the architecture outlives the env.
+        unsafe { &*self.arch }
+    }
+}
+
+impl FlowEnvironment for ArchFlowEnv {
     fn translate(&self) -> &dyn Translate {
-        self.arch.translate()
+        self.arch().translate()
     }
     fn resolve_typeop(&self, opc: OpCode) -> TypeOp {
-        self.arch.resolve_typeop(opc)
+        self.arch().resolve_typeop(opc)
     }
     fn query_call(&self, entry: &Address) -> Option<String> {
+        let arch = self.arch();
         // C++ FlowInfo::queryCall -> getScopeLocal()->getParent()->queryFunction(entry):
         // resolve the callee's display name from the global symbol table (populated
         // by readLoaderSymbols at load).
-        let scope = self.arch.symboltab.get_global_scope()?;
-        let sid = self.arch.symboltab.find_function(scope, entry)?;
-        let name = self.arch.symboltab.symbol(sid).get_display_name();
+        let scope = arch.symboltab.get_global_scope()?;
+        let sid = arch.symboltab.find_function(scope, entry)?;
+        let name = arch.symboltab.symbol(sid).get_display_name();
         if name.is_empty() {
             None
         } else {
@@ -88,8 +105,9 @@ impl FlowEnvironment for ArchFlowEnv<'_> {
         // C++ `queryCall` copies the callee proto's `isNoReturn()` flow effect;
         // the flag is set by `option noreturn <name>` (OptionNoReturn) on the
         // resolved FunctionSymbol.
-        match self.arch.symboltab.get_global_scope() {
-            Some(scope) => self.arch.symboltab.function_is_no_return(scope, entry),
+        let arch = self.arch();
+        match arch.symboltab.get_global_scope() {
+            Some(scope) => arch.symboltab.function_is_no_return(scope, entry),
             None => false,
         }
     }
@@ -105,8 +123,9 @@ impl FlowEnvironment for ArchFlowEnv<'_> {
 /// [`ArchFlowEnv`]; on success the `processing_started` flag is set so the
 /// printer's `isProcStarted` gate (and the pipeline's resume bookkeeping) see a
 /// started function.
+#[allow(clippy::mutable_key_type)]
 pub fn build_and_follow_flow(
-    arch: &Architecture,
+    arch: &mut Architecture,
     name: &str,
     entry: Address,
     size: int4,
@@ -125,8 +144,13 @@ pub fn build_and_follow_flow(
 /// are re-inserted into the fresh Funcdata's `localoverride` (the C++ override is
 /// kept on the reused Funcdata, but the kuna console rebuilds the IR — see the
 /// `pending_prototypes`/`mapped_symbols` re-seed precedent).
+///
+/// Takes `&mut Architecture` because the jump-table recovery pipeline (below)
+/// holds a `*mut Architecture` to drive the `allacts` sub-pipeline concurrently
+/// with the env's read-only `*const Architecture` (see [`ArchFlowEnv`]).
+#[allow(clippy::mutable_key_type)]
 pub fn build_and_follow_flow_with_override(
-    arch: &Architecture,
+    arch: &mut Architecture,
     name: &str,
     entry: Address,
     size: int4,
@@ -137,12 +161,33 @@ pub fn build_and_follow_flow_with_override(
         fd.get_override_mut().insert_flow_override(addr.clone(), *ty);
     }
     let fd = fd;
-    let env = ArchFlowEnv { arch };
+    let env = ArchFlowEnv { arch: arch as *const Architecture };
     let mut flow = FlowInfo::new(fd, &env);
-    // C++ followFlow: generateOps() then generateBlocks().
-    flow.generate_ops()?;
+    // C++ followFlow: generateOps() then generateBlocks().  The jump-table
+    // recovery loop runs inside generateOps (via the action sub-pipeline).
+    {
+        let arch_ptr: *mut Architecture = arch;
+        let mut run_jt_pipeline = |partial: &mut Funcdata,
+                                   visited: &crate::flow::VisitedMap|
+         -> KunaResult<()> {
+            // SAFETY: `arch_ptr` aliases the live `&mut Architecture`; the env's
+            // reads (`translate`/`inst`/`symboltab`) are disjoint from the
+            // `allacts` mutation here, and the `flow` borrow of `env`/`arch` does
+            // not overlap this closure's run (it is only active between calls).
+            let arch_mut: &mut Architecture = unsafe { &mut *arch_ptr };
+            run_jumptable_pipeline(arch_mut, partial, visited)
+        };
+        flow.generate_ops_with_jumptables(&mut run_jt_pipeline)?;
+    }
     flow.generate_blocks()?;
+    // C++ followFlow: switchOverJumpTables(flow) — map each recovered table's
+    // addresses to the basic-block out-edges (the `target` surface is
+    // `FlowInfo::target`).  Drive it before the FlowInfo is consumed.
+    let target_snapshot = flow.target_index_snapshot();
     let mut data = flow.data;
+    data.switch_over_jump_tables(|fd, addr| {
+        crate::flow::target_in(fd, &target_snapshot, addr)
+    })?;
     // C++ `Funcdata::startProcessing` (funcdata.cc:150) runs after `followFlow`:
     // it calls `structureReset()` — which builds the basic-block reverse-post
     // ordering AND the forward dominator tree (`bblocks.calcForwardDominator`).
@@ -159,6 +204,61 @@ pub fn build_and_follow_flow_with_override(
     // applyDeadCodeDelay — is W4 seam or handled lazily in op_heritage).
     data.set_flag_raw(funcdata_flags::processing_started);
     Ok(data)
+}
+
+/// Run the reduced "jumptable" universalAction on a partial-clone Funcdata (the
+/// `partial.truncatedFlow` block-build + `allacts.setCurrent("jumptable")` +
+/// reset + perform of C++ `Funcdata::stageJumpTable`, funcdata_block.cc:512).
+///
+/// The partial already has its ops + jump-tables cloned; this builds its basic
+/// blocks (seeded with the source flow's `visited`), runs `structureReset` +
+/// `sortCallSpecs` (the `startProcessing` prerequisites), then drives the
+/// "jumptable" action set to simplify it so the BRANCHIND's switch calculation
+/// becomes a straight-line index expression the recovery can emulate.
+#[allow(clippy::mutable_key_type)]
+fn run_jumptable_pipeline(
+    arch: &mut Architecture,
+    partial: &mut Funcdata,
+    visited: &crate::flow::VisitedMap,
+) -> KunaResult<()> {
+    // Build the partial's basic blocks (partialflow.generateBlocks).
+    let env = ArchFlowEnv { arch: arch as *const Architecture };
+    crate::flow::build_partial_blocks(partial, &env, visited)?;
+    // startProcessing prerequisites for heritage (forward dominators + RPO).
+    partial.structure_reset();
+    partial.sort_call_specs();
+    partial.set_flag_raw(funcdata_flags::processing_started);
+    // Run the reduced "jumptable" universalAction root over the partial.
+    let saved = arch.allacts.get_current_name().to_string();
+    arch.allacts.set_current("jumptable")?;
+    let mut ctx = ActionContext::new();
+    let result = {
+        let root = arch
+            .allacts
+            .get_current_mut()
+            .ok_or_else(|| KunaError::lowlevel("no current jumptable action"))?;
+        root.reset(partial);
+        // catch_unwind so an un-ported pass seam in the sub-pipeline degrades to a
+        // recoverable error (the recovery falls back to truncating the BRANCHIND),
+        // never an abort — same policy as the main `decompile_func_full` drive.
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            root.perform(partial, &mut ctx)
+        }))
+    };
+    // Restore the previous action set regardless of outcome.
+    let _ = arch.allacts.set_current(&saved);
+    match result {
+        Ok(r) => {
+            if r < 0 {
+                return Err(KunaError::lowlevel("jumptable pipeline hit a breakpoint"));
+            }
+            Ok(())
+        }
+        Err(payload) => Err(KunaError::lowlevel(format!(
+            "jumptable pipeline reached an un-ported seam: {}",
+            panic_message(&payload)
+        ))),
+    }
 }
 
 /// Run the `decompile` universalAction root to completion against `fd` (C++

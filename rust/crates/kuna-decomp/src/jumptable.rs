@@ -56,17 +56,21 @@
 //! wrapping); containers follow ADR 0002 (`BTreeSet` for the override address
 //! set, transcribing the `set<Address>` order).
 
+use std::rc::Rc;
+
 use kuna_base::address::{coveringmask, count_leading_zeros, mostsigbit_set, Address};
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::{
     AttributeId, Decoder, ElementId, Encoder, ATTRIB_FORMAT, ATTRIB_SIZE,
 };
+use kuna_base::space::AddrSpace;
 use kuna_base::types::{int4, uint4, uint8, uintb, Wrap};
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
 use crate::block::block_get_start;
 use crate::funcdata::Funcdata;
+use crate::kuna_emulatefunction::EmulateFunction;
 use crate::seams::{BlockId, OpId, VarnodeId};
 
 // ---------------------------------------------------------------------------
@@ -933,6 +937,54 @@ pub trait JumpValues {
     fn is_reversible(&self) -> bool;
     /// Clone \b this iterator (C++ `clone`).
     fn clone_box(&self) -> Box<dyn JumpValues>;
+    /// Mutable access to the range/start setters common to both iterator
+    /// variants (the `setRange`/`setStartVn`/`setStartOp`/`truncate` surface the
+    /// model writes during recovery).
+    fn as_setters_mut(&mut self) -> &mut dyn JumpValuesSetters;
+}
+
+/// The mutable setter surface common to [`JumpValuesRange`] and
+/// [`JumpValuesRangeDefault`] (both write the same base range/start fields during
+/// model recovery: C++ `jrange->setRange(...)`, `setStartVn`, `setStartOp`).
+pub trait JumpValuesSetters {
+    /// Set the value range (C++ `setRange`).
+    fn set_range(&mut self, rng: CircleRange);
+    /// Set the normalized switch Varnode (C++ `setStartVn`).
+    fn set_start_vn(&mut self, vn: VarnodeId);
+    /// Set the starting PcodeOp (C++ `setStartOp`).
+    fn set_start_op(&mut self, op: OpId);
+    /// Truncate the iterated value count (C++ `truncate`).
+    fn truncate(&mut self, nm: int4);
+}
+
+impl JumpValuesSetters for JumpValuesRange {
+    fn set_range(&mut self, rng: CircleRange) {
+        JumpValuesRange::set_range(self, rng)
+    }
+    fn set_start_vn(&mut self, vn: VarnodeId) {
+        JumpValuesRange::set_start_vn(self, vn)
+    }
+    fn set_start_op(&mut self, op: OpId) {
+        JumpValuesRange::set_start_op(self, op)
+    }
+    fn truncate(&mut self, nm: int4) {
+        <Self as JumpValues>::truncate(self, nm)
+    }
+}
+
+impl JumpValuesSetters for JumpValuesRangeDefault {
+    fn set_range(&mut self, rng: CircleRange) {
+        JumpValuesRangeDefault::set_range(self, rng)
+    }
+    fn set_start_vn(&mut self, vn: VarnodeId) {
+        JumpValuesRangeDefault::set_start_vn(self, vn)
+    }
+    fn set_start_op(&mut self, op: OpId) {
+        JumpValuesRangeDefault::set_start_op(self, op)
+    }
+    fn truncate(&mut self, nm: int4) {
+        <Self as JumpValues>::truncate(self, nm)
+    }
 }
 
 /// Single entry switch variable that can take a range of values
@@ -1031,6 +1083,10 @@ impl JumpValues for JumpValuesRange {
             curval: 0,
         })
     }
+
+    fn as_setters_mut(&mut self) -> &mut dyn JumpValuesSetters {
+        self
+    }
 }
 
 /// A jump-table starting range with two possible execution paths
@@ -1093,7 +1149,7 @@ impl JumpValuesRangeDefault {
 
 impl JumpValues for JumpValuesRangeDefault {
     fn truncate(&mut self, nm: int4) {
-        self.base.truncate(nm);
+        <JumpValuesRange as JumpValues>::truncate(&mut self.base, nm);
     }
 
     fn get_size(&self) -> uintb {
@@ -1170,6 +1226,10 @@ impl JumpValues for JumpValuesRangeDefault {
             lastvalue: false,
         })
     }
+
+    fn as_setters_mut(&mut self) -> &mut dyn JumpValuesSetters {
+        self
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1243,6 +1303,9 @@ pub trait JumpModel {
     ) -> KunaResult<bool>;
     /// Clone \b this model (C++ `clone`).
     fn clone_box(&self) -> Box<dyn JumpModel>;
+    /// Downcast support: `buildLabels` receives the \e orig model as a
+    /// `&dyn JumpModel` and (in C++) `static_cast`s it to `const JumpBasic *`.
+    fn as_any(&self) -> &dyn std::any::Any;
     /// Clear any non-permanent aspects of the model (C++ `clear`).
     fn clear(&mut self) {}
     /// Encode \b this model to a stream (C++ `encode`).
@@ -1376,20 +1439,107 @@ impl JumpModel for JumpModelTrivial {
     fn clone_box(&self) -> Box<dyn JumpModel> {
         Box::new(JumpModelTrivial { size: self.size })
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 // ---------------------------------------------------------------------------
 // JumpBasic static helpers (jumptable.hh:374, jumptable.cc:425-547)
 // ---------------------------------------------------------------------------
 
+/// Pull a [`CircleRange`] back through a given PcodeOp (C++
+/// `CircleRange::pullBack(PcodeOp*,Varnode**,bool)`, `rangeutil.cc:1022`).
+///
+/// The op's single unknown input is found (the other input, if any, must be a
+/// constant); the range is pulled back through the op's primitive (via
+/// [`CircleRange::pull_back_unary`]/[`CircleRange::pull_back_binary`]).  Returns
+/// the input Varnode whose value range is now described by `rng`, or `None` if
+/// the pull-back is not possible.  `usenzmask` intersects the input's NZMASK.
+///
+/// The op-coupled wrapper lives in `jumptable.rs` (not `rangeutil.rs`) because it
+/// reads the function IR (`Funcdata`), which is above the value-set layer.
+pub(crate) fn circlerange_pull_back(
+    fd: &Funcdata,
+    rng: &mut CircleRange,
+    op: OpId,
+    usenzmask: bool,
+) -> Option<VarnodeId> {
+    let opc = fd.obank().get(op).unwrap().code();
+    let outsize = fd.obank().get(op).unwrap().get_out().map(|o| fd.vbank().get(o).unwrap().get_size()).unwrap_or(0);
+    let numinput = fd.obank().get(op).unwrap().num_input();
+    let res: VarnodeId;
+    if numinput == 1 {
+        res = fd.obank().get(op).unwrap().get_in(0).unwrap();
+        if fd.vbank().get(res).unwrap().is_constant() {
+            return None;
+        }
+        let insize = fd.vbank().get(res).unwrap().get_size();
+        if !rng.pull_back_unary(opc, insize, outsize) {
+            return None;
+        }
+    } else if numinput == 2 {
+        // Find the non-constant varnode input, and slot. Make sure the second
+        // input is constant.
+        let mut slot = 0;
+        let mut res_vn = fd.obank().get(op).unwrap().get_in(slot).unwrap();
+        let mut constvn = fd.obank().get(op).unwrap().get_in(1 - slot).unwrap();
+        if fd.vbank().get(res_vn).unwrap().is_constant() {
+            slot = 1;
+            constvn = res_vn;
+            res_vn = fd.obank().get(op).unwrap().get_in(slot).unwrap();
+            if fd.vbank().get(res_vn).unwrap().is_constant() {
+                return None;
+            }
+        } else if !fd.vbank().get(constvn).unwrap().is_constant() {
+            return None;
+        }
+        res = res_vn;
+        let val = fd.vbank().get(constvn).unwrap().get_offset();
+        let insize = fd.vbank().get(res).unwrap().get_size();
+        if !rng.pull_back_binary(opc, val, slot, insize, outsize) {
+            if usenzmask && opc == OpCode::CPUI_SUBPIECE && val == 0 {
+                // If everything we are truncating is known to be zero, we may
+                // still have a range.
+                let mut msbset = mostsigbit_set(fd.vbank().get(res).unwrap().get_nz_mask());
+                msbset = (msbset + 8) / 8;
+                if outsize < msbset {
+                    return None;
+                } else {
+                    // Keep the range but make the mask bigger.
+                    rng.set_mask(kuna_base::address::calc_mask(insize));
+                }
+            } else {
+                return None;
+            }
+        }
+        // constMarkup: a symbol entry on the const is W6/symbol markup; the
+        // recovery only needs the returned Varnode, so the markup is dropped.
+    } else {
+        return None;
+    }
+
+    if usenzmask {
+        let mut nzrange = CircleRange::new_empty();
+        let nz = fd.vbank().get(res).unwrap().get_nz_mask();
+        let sz = fd.vbank().get(res).unwrap().get_size();
+        if !nzrange.set_nz_mask(nz, sz) {
+            return Some(res);
+        }
+        rng.intersect(&nzrange);
+        // If the intersect produces 2 pieces, the original range is preserved
+        // and the pull-back still counts as successful.
+    }
+    Some(res)
+}
+
 /// Static helpers of the basic switch model (C++ `JumpBasic`, `jumptable.hh:374`).
 ///
 /// The pure (graph-reading) static helpers of `JumpBasic` are ported and
 /// tested here.  The full `JumpBasic` instance methods (`analyzeGuards`,
-/// `findNormalized`, `recoverModel`, `buildAddresses`, ...) depend on
-/// `CircleRange` (W5), `EmulateFunction` (W4), the loader (W4), `TypeOp` reverse
-/// eval (W6) and structuring helpers; those are tracked as losses and the
-/// instance model is a `// SEAM` shell.
+/// `findNormalized`, `recoverModel`, `buildAddresses`, ...) are ported as the
+/// instance struct [`JumpBasicModel`] below.
 pub struct JumpBasic;
 
 impl JumpBasic {
@@ -1577,6 +1727,948 @@ impl JumpBasic {
 }
 
 // ---------------------------------------------------------------------------
+// JumpBasicModel (the instance JumpBasic, jumptable.cc:1062-1786)
+// ---------------------------------------------------------------------------
+
+/// The basic jump-table model (C++ `JumpBasic`, the instance methods).
+///
+/// Recovers a straight-line index-range model for the switch: the normalized
+/// switch variable (smallest reaching value range), the guard constraints, and
+/// the emulation-driven address table.  Holds the recovered model state
+/// (`jrange`/`pathMeld`/`selectguards`/`normalvn`/`switchvn`).
+///
+/// The structuring-only pieces (`foldInGuards`/`foldInOneGuard`/
+/// `checkUnrolledGuard`, which need `BlockBasic::findMultiequal`/
+/// `liftVerifyUnroll`/`noInterveningStatement`/`Funcdata::pushBranch`) and the
+/// reverse-emulation label recovery (`backup2Switch`, TypeOp reverse eval) are
+/// `// SEAM(structuring/W6)` — recorded as losses; they are reached only at
+/// label/guard-fold time, after the BRANCHIND addresses are recovered.
+pub struct JumpBasicModel {
+    /// Range of values for the (normalized) switch variable (C++ `jrange`).
+    /// Boxed as a trait object so [`JumpValuesRangeDefault`] (model 2) fits.
+    jrange: Option<Box<dyn JumpValues>>,
+    /// Set of PcodeOps and Varnodes producing the final target addresses.
+    path_meld: PathMeld,
+    /// Any guards associated with the model (C++ `selectguards`).
+    selectguards: Vec<GuardRecord>,
+    /// Position of the normalized switch Varnode within `pathMeld`.
+    varnode_index: int4,
+    /// Normalized switch Varnode (C++ `normalvn`).
+    normalvn: Option<VarnodeId>,
+    /// Unnormalized switch Varnode (C++ `switchvn`).
+    switchvn: Option<VarnodeId>,
+    /// `true` if \b this is model 2 (the [`JumpBasic2`] default-path extension).
+    is_model2: bool,
+    /// (model 2) The extra Varnode holding the default value (C++ `extravn`).
+    extravn: Option<VarnodeId>,
+    /// (model 2) The set of paths that produce non-default addresses.
+    orig_path_meld: PathMeld,
+    /// `true` if the owning JumpTable is marked partial (drives `usenzmask`).
+    is_partial: bool,
+}
+
+impl JumpBasicModel {
+    /// Construct an empty basic model (C++ `JumpBasic(JumpTable*)`).
+    pub fn new() -> JumpBasicModel {
+        JumpBasicModel {
+            jrange: None,
+            path_meld: PathMeld::new(),
+            selectguards: Vec::new(),
+            varnode_index: 0,
+            normalvn: None,
+            switchvn: None,
+            is_model2: false,
+            extravn: None,
+            orig_path_meld: PathMeld::new(),
+            is_partial: false,
+        }
+    }
+
+    /// Get the possible paths to the switch (C++ `getPathMeld`).
+    pub fn get_path_meld(&self) -> &PathMeld {
+        &self.path_meld
+    }
+
+    /// The normalized value iterator (C++ `getValueRange`).
+    fn jrange(&self) -> &dyn JumpValues {
+        &**self.jrange.as_ref().expect("JumpBasic: jrange not set")
+    }
+
+    /// Calculate the range of values in `vn` that direct control-flow to the
+    /// switch (C++ `JumpBasic::calcRange`, `jumptable.cc:1136`).
+    fn calc_range(&self, fd: &Funcdata, vn: VarnodeId, rng: &mut CircleRange) {
+        // Get an initial range, based on the size/type of -vn-.
+        let mut stride = 1;
+        let v = fd.vbank().get(vn).unwrap();
+        if v.is_constant() {
+            *rng = CircleRange::new_value(v.get_offset(), v.get_size());
+        } else if v.is_written()
+            && fd.obank().get(v.get_def().unwrap()).unwrap().is_bool_output()
+        {
+            *rng = CircleRange::new(0, 2, 1, 1); // Only 0 or 1 possible
+        } else {
+            let max_value = JumpBasic::get_max_value(fd, vn);
+            stride = JumpBasic::get_stride(fd, vn);
+            *rng = CircleRange::new(0, max_value, v.get_size(), stride);
+        }
+
+        // Intersect any guard ranges which apply to -vn-.
+        let mut bits_preserved = 0;
+        let base_vn = GuardRecord::quasi_copy(fd, vn, &mut bits_preserved);
+        for guard in self.selectguards.iter() {
+            let matchval = guard.value_match(fd, vn, base_vn, bits_preserved);
+            // if (matchval == 2) TODO: check aliases (upstream comment)
+            if matchval == 0 {
+                continue;
+            }
+            if rng.intersect(guard.get_range()) != 0 {
+                continue;
+            }
+        }
+
+        // It may be assumed the switch value is positive; if the size is too big,
+        // try only positive values.
+        if rng.get_size() > 0x10000 {
+            let sz = fd.vbank().get(vn).unwrap().get_size();
+            let mut positive = CircleRange::new(0, (rng.get_mask() >> 1).wadd(1), sz, stride);
+            positive.intersect(rng);
+            if !positive.is_empty() {
+                *rng = positive;
+            }
+        }
+    }
+
+    /// Find the putative switch variable with the smallest reaching range (C++
+    /// `JumpBasic::findSmallestNormal`, `jumptable.cc:1181`).
+    fn find_smallest_normal(&mut self, fd: &Funcdata, matchsize: uint4) {
+        let mut rng = CircleRange::new_empty();
+        self.varnode_index = 0;
+        let vn0 = self.path_meld.get_varnode(0);
+        self.calc_range(fd, vn0, &mut rng);
+        let mut maxsize = rng.get_size();
+        let op0 = self.path_meld.get_op(0);
+        {
+            let jr = self.jrange_range_mut();
+            jr.set_range(rng.clone());
+            jr.set_start_vn(vn0);
+            if let Some(op0) = op0 {
+                jr.set_start_op(op0);
+            }
+        }
+        let mut i: uint4 = 1;
+        while (i as int4) < self.path_meld.num_common_varnode() {
+            if maxsize == matchsize as uintb {
+                return;
+            }
+            let vni = self.path_meld.get_varnode(i as int4);
+            self.calc_range(fd, vni, &mut rng);
+            let sz = rng.get_size();
+            if sz < maxsize {
+                // Don't accept a 1-byte switch var unless there is an explicit
+                // guard or table lookup between the byte and the indirect jump.
+                let vsize = fd.vbank().get(vni).unwrap().get_size();
+                if sz != 256 || vsize != 1 || self.path_meld.is_load_in_path(fd, i as int4) {
+                    self.varnode_index = i as int4;
+                    maxsize = sz;
+                    let earliest = self.path_meld.get_earliest_op(i as int4);
+                    let jr = self.jrange_range_mut();
+                    jr.set_range(rng.clone());
+                    jr.set_start_vn(vni);
+                    if let Some(op) = earliest {
+                        jr.set_start_op(op);
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// Mutable access to the base [`JumpValuesRange`] of `jrange` (both model 1
+    /// `JumpValuesRange` and model 2 `JumpValuesRangeDefault` set the same base
+    /// fields via `set_range`/`set_start_vn`/`set_start_op`).
+    fn jrange_range_mut(&mut self) -> &mut dyn JumpValuesSetters {
+        self.jrange
+            .as_mut()
+            .expect("JumpBasic: jrange not set")
+            .as_setters_mut()
+    }
+
+    /// Analyze the guards (CBRANCHs) restricting the switch variable (C++
+    /// `JumpBasic::analyzeGuards`, `jumptable.cc:1062`).
+    fn analyze_guards(
+        &mut self,
+        fd: &mut Funcdata,
+        rootbl: BlockId,
+        pathout_in: int4,
+        indirect: OpId,
+    ) {
+        let maxbranch = 2; // Maximum number of CBRANCHs to consider
+        let maxpullback = 2;
+        let usenzmask = !self.is_partial;
+        self.selectguards.clear();
+
+        let mut bl = rootbl;
+        let mut pathout = pathout_in;
+        for i in 0..maxbranch {
+            let prevbl;
+            let indpath;
+            if pathout >= 0 && fd.bblocks_ref().block(bl).size_out() == 2 {
+                prevbl = bl;
+                // C++ `bl = prevbl->getOut(pathout)` is immediately reset to
+                // `prevbl` by the `bl = prevbl` below; the intermediate value is
+                // never read (dead in upstream too) — kept for provenance.
+                indpath = pathout;
+                pathout = -1;
+            } else {
+                pathout = -1; // Make sure not to use pathout next time around
+                loop {
+                    if fd.bblocks_ref().block(bl).size_in() != 1 {
+                        if fd.bblocks_ref().block(bl).size_in() > 1 {
+                            self.check_unrolled_guard(fd, bl, maxpullback, usenzmask);
+                        }
+                        return;
+                    }
+                    let pb = fd.bblocks_ref().block(bl).get_in(0);
+                    if fd.bblocks_ref().block(pb).size_out() != 1 {
+                        // Possible to deviate from switch path in this block
+                        break;
+                    }
+                    bl = pb; // back up to next block
+                }
+                prevbl = fd.bblocks_ref().block(bl).get_in(0);
+                indpath = fd.bblocks_ref().block(bl).get_in_rev_index(0);
+            }
+            let cbranch = match fd.bb_op_tail(prevbl) {
+                None => break,
+                Some(c) => c,
+            };
+            if fd.obank().get(cbranch).unwrap().code() != OpCode::CPUI_CBRANCH {
+                break;
+            }
+            if i != 0 {
+                // Check that this CBRANCH isn't protecting some other switch.
+                let otherbl = fd.bblocks_ref().block(prevbl).get_out(1 - indpath);
+                if let Some(otherop) = fd.bb_op_tail(otherbl) {
+                    if fd.obank().get(otherop).unwrap().code() == OpCode::CPUI_BRANCHIND
+                        && otherop != indirect
+                    {
+                        break;
+                    }
+                }
+            }
+            let mut toswitchval = indpath == 1;
+            if fd.obank().get(cbranch).unwrap().is_boolean_flip() {
+                toswitchval = !toswitchval;
+            }
+            bl = prevbl;
+            let mut vn = fd.obank().get(cbranch).unwrap().get_in(1).unwrap();
+            let mut rng = CircleRange::new_bool(toswitchval);
+
+            let indpathstore = if fd.bblocks_ref().block(prevbl).get_flip_path() {
+                1 - indpath
+            } else {
+                indpath
+            };
+            self.selectguards.push(GuardRecord::new(
+                fd, cbranch, cbranch, indpathstore, rng.clone(), vn, false,
+            ));
+            for _j in 0..maxpullback {
+                if !fd.vbank().get(vn).unwrap().is_written() {
+                    break;
+                }
+                let read_op = fd.vbank().get(vn).unwrap().get_def().unwrap();
+                match circlerange_pull_back(fd, &mut rng, read_op, usenzmask) {
+                    None => break,
+                    Some(newvn) => vn = newvn,
+                }
+                if rng.is_empty() {
+                    break;
+                }
+                self.selectguards.push(GuardRecord::new(
+                    fd, cbranch, read_op, indpathstore, rng.clone(), vn, false,
+                ));
+            }
+        }
+    }
+
+    /// Recover the normalized switch variable (C++ `JumpBasic::findNormalized`,
+    /// `jumptable.cc:1222`).
+    fn find_normalized(
+        &mut self,
+        fd: &mut Funcdata,
+        rootbl: BlockId,
+        pathout: int4,
+        matchsize: uint4,
+        maxtablesize: uint4,
+        indirect: OpId,
+    ) -> KunaResult<()> {
+        self.analyze_guards(fd, rootbl, pathout, indirect);
+        self.find_smallest_normal(fd, matchsize);
+        let sz = self.jrange().get_size();
+        if sz > maxtablesize as uintb && self.path_meld.num_common_varnode() == 1 {
+            // Check for jump through readonly variable.
+            let vn = self.path_meld.get_varnode(0);
+            if fd.vbank().get(vn).unwrap().is_read_only() {
+                let spc = Rc::clone(fd.vbank().get(vn).unwrap().get_space());
+                let off = fd.vbank().get(vn).unwrap().get_offset();
+                let vsize = fd.vbank().get(vn).unwrap().get_size();
+                let addr = Address::new(spc, off);
+                let val = fd.get_arch().get_load_image_value(&addr, vsize)?;
+                self.varnode_index = 0;
+                let op0 = self.path_meld.get_op(0);
+                let jr = self.jrange_range_mut();
+                jr.set_range(CircleRange::new_value(val, vsize));
+                jr.set_start_vn(vn);
+                if let Some(op0) = op0 {
+                    jr.set_start_op(op0);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Mark/unmark the model PcodeOps (C++ `JumpBasic::markModel`,
+    /// `jumptable.cc:1272`).
+    fn mark_model(&self, fd: &mut Funcdata, val: bool) {
+        self.path_meld.mark_paths(fd, val, self.varnode_index);
+        for guard in self.selectguards.iter() {
+            if guard.get_branch().is_none() {
+                continue;
+            }
+            if let Some(read_op) = guard.get_read_op() {
+                if val {
+                    fd.obank_mut().get_mut(read_op).unwrap().set_mark();
+                } else {
+                    fd.obank_mut().get_mut(read_op).unwrap().clear_mark();
+                }
+            }
+        }
+    }
+
+    /// Mark the guard CBRANCHs that are truly part of the model (C++
+    /// `JumpBasic::markFoldableGuards`, `jumptable.cc:1257`).
+    fn mark_foldable_guards(&mut self, fd: &Funcdata) {
+        let vn = self.path_meld.get_varnode(self.varnode_index);
+        let mut bits_preserved = 0;
+        let base_vn = GuardRecord::quasi_copy(fd, vn, &mut bits_preserved);
+        for guard in self.selectguards.iter_mut() {
+            if guard.value_match(fd, vn, base_vn, bits_preserved) == 0 || guard.is_unrolled() {
+                guard.clear(); // Indicate this guard was not used / not folded
+            }
+        }
+    }
+
+    /// Check if the given Varnode flows only into \b this model (C++
+    /// `JumpBasic::flowsOnlyToModel`, `jumptable.cc:1292`).
+    fn flows_only_to_model(&self, fd: &Funcdata, vn: VarnodeId, trail_op: Option<OpId>) -> bool {
+        for op in fd.descend_snapshot(vn) {
+            if Some(op) == trail_op {
+                continue;
+            }
+            if !fd.obank().get(op).unwrap().is_mark() {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// SEAM(structuring): unrolled-guard detection needs `BlockBasic::
+    /// findMultiequal`/`liftVerifyUnroll` (structuring helpers not yet ported).
+    /// A guard duplicated across multiple incoming blocks is left undetected; the
+    /// switch still recovers via the straight-line path (the unrolled guard only
+    /// adds an extra range constraint).  Recorded as a loss.
+    fn check_unrolled_guard(
+        &mut self,
+        _fd: &Funcdata,
+        _bl: BlockId,
+        _maxpullback: int4,
+        _usenzmask: bool,
+    ) {
+        // SEAM(structuring): checkCommonCbranch + findMultiequal + liftVerifyUnroll
+    }
+
+    /// Recover details of the model from the BRANCHIND (C++
+    /// `JumpBasic::recoverModel`, `jumptable.cc:1565`).
+    fn recover_model_basic(
+        &mut self,
+        fd: &mut Funcdata,
+        indop: OpId,
+        matchsize: uint4,
+        maxtablesize: uint4,
+    ) -> KunaResult<bool> {
+        self.jrange = Some(Box::new(JumpValuesRange::new()));
+        JumpBasic::find_determining_varnodes(fd, &mut self.path_meld, indop, 0);
+        let parent = fd.obank().get(indop).unwrap().get_parent().unwrap();
+        self.find_normalized(fd, parent, -1, matchsize, maxtablesize, indop)?;
+        if self.jrange().get_size() > maxtablesize as uintb {
+            // (kuna) GH-9191 kunaTryModuloBoundTable is gated default-off; the
+            // straight model declined. SEAM(kuna): modulo-bound table.
+            return Ok(false);
+        }
+        self.mark_foldable_guards(fd);
+        Ok(true)
+    }
+
+    /// Build the explicit address table by emulating the switch calculation for
+    /// each value in `jrange` (C++ `JumpBasic::buildAddresses`,
+    /// `jumptable.cc:1588`).
+    fn build_addresses_basic(
+        &self,
+        fd: &Funcdata,
+        indop: OpId,
+        addresstable: &mut Vec<Address>,
+        mut loadpoints: Option<&mut Vec<LoadTable>>,
+        mut loadcounts: Option<&mut Vec<int4>>,
+    ) -> KunaResult<()> {
+        addresstable.clear();
+        let mut emul = EmulateFunction::new(fd);
+        emul.set_load_collect(loadpoints.is_some());
+
+        let mut mask: uintb = !0u64;
+        let bit = fd.get_arch().funcptr_align;
+        if bit != 0 {
+            mask = (mask >> bit) << bit;
+        }
+        let spc = Rc::clone(fd.obank().get(indop).unwrap().get_addr().get_space().unwrap());
+
+        let mut jr = self.jrange().clone_box();
+        let mut notdone = jr.initialize_for_reading();
+        while notdone {
+            let val = jr.get_value();
+            let startop = jr
+                .get_start_op()
+                .ok_or_else(|| KunaError::lowlevel("buildAddresses: no start op"))?;
+            let startvn = jr
+                .get_start_varnode()
+                .ok_or_else(|| KunaError::lowlevel("buildAddresses: no start vn"))?;
+            let mut addr = emul.emulate_path(val, &self.path_meld, startop, startvn)?;
+            addr = AddrSpace::address_to_byte(addr, spc.get_word_size());
+            addr &= mask;
+            addresstable.push(Address::new(Rc::clone(&spc), addr));
+            if let Some(lc) = loadcounts.as_mut() {
+                let count = emul
+                    .loadpoints_len()
+                    .ok_or_else(|| KunaError::lowlevel("buildAddresses: loadcounts without loadpoints"))?;
+                lc.push(count as int4);
+            }
+            notdone = jr.next()?;
+        }
+        // Hand back any collected LOAD records.
+        if let Some(lp) = loadpoints.as_mut() {
+            if let Some(collected) = emul.take_loadpoints() {
+                lp.extend(collected);
+            }
+        }
+        Ok(())
+    }
+
+    /// Recover the unnormalized switch variable (C++
+    /// `JumpBasic::findUnnormalized`, `jumptable.cc:1616`).
+    fn find_unnormalized_basic(
+        &mut self,
+        fd: &mut Funcdata,
+        maxaddsub: uint4,
+        _maxleftright: uint4,
+        maxext: uint4,
+    ) {
+        let mut i = self.varnode_index;
+        self.normalvn = Some(self.path_meld.get_varnode(i));
+        i += 1;
+        self.switchvn = self.normalvn;
+        self.mark_model(fd, true);
+
+        let mut countaddsub = 0;
+        let mut countext = 0;
+        let mut normop: Option<OpId> = None;
+        while i < self.path_meld.num_common_varnode() {
+            let switchvn = self.switchvn.unwrap();
+            if !self.flows_only_to_model(fd, switchvn, normop) {
+                break;
+            }
+            let testvn = self.path_meld.get_varnode(i);
+            if !fd.vbank().get(switchvn).unwrap().is_written() {
+                break;
+            }
+            let nop = fd.vbank().get(switchvn).unwrap().get_def().unwrap();
+            normop = Some(nop);
+            let ninput = fd.obank().get(nop).unwrap().num_input();
+            let mut j = 0;
+            while j < ninput {
+                if fd.obank().get(nop).unwrap().get_in(j) == Some(testvn) {
+                    break;
+                }
+                j += 1;
+            }
+            if j == ninput {
+                break;
+            }
+            match fd.obank().get(nop).unwrap().code() {
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => {
+                    countaddsub += 1;
+                    if countaddsub > maxaddsub {
+                        break;
+                    }
+                    let otherin = fd.obank().get(nop).unwrap().get_in(1 - j).unwrap();
+                    if !fd.vbank().get(otherin).unwrap().is_constant() {
+                        break;
+                    }
+                    self.switchvn = Some(testvn);
+                }
+                OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => {
+                    countext += 1;
+                    if countext > maxext {
+                        break;
+                    }
+                    self.switchvn = Some(testvn);
+                }
+                _ => {}
+            }
+            if self.switchvn != Some(testvn) {
+                break;
+            }
+            i += 1;
+        }
+        self.mark_model(fd, false);
+    }
+
+    /// Build the case labels via reverse emulation (C++
+    /// `JumpBasic::buildLabels`, `jumptable.cc:1660`).
+    ///
+    /// For each value in the original index range, [`backup2_switch`](Self::backup2_switch)
+    /// reverse-emulates the normalization chain (`normalvn` → `switchvn`) to
+    /// recover the original switch-statement label.  A non-reversible value (the
+    /// default/exit path) labels `NO_LABEL`.
+    fn build_labels_basic(
+        &self,
+        fd: &mut Funcdata,
+        addresstable: &mut [Address],
+        label: &mut Vec<uintb>,
+        orig: &JumpBasicModel,
+    ) -> KunaResult<()> {
+        let mut origrange = orig.jrange().clone_box();
+        let mut notdone = origrange.initialize_for_reading();
+        while notdone {
+            let val = origrange.get_value();
+            let switchval = if origrange.is_reversible() {
+                // Reverse-emulate the normalization to get the original switch
+                // value.  A failed reversal labels NO_LABEL (the default/exit
+                // path or an un-invertible op; C++ warns + NO_LABEL).
+                match self.backup2_switch(fd, val) {
+                    Ok(v) => v,
+                    Err(_) => NO_LABEL,
+                }
+            } else {
+                NO_LABEL // If can't reverse, hopefully default/exit
+            };
+            label.push(switchval);
+            // The address table may have been truncated by the sanity check.
+            if label.len() >= addresstable.len() {
+                break;
+            }
+            notdone = origrange.next()?;
+        }
+        while label.len() < addresstable.len() {
+            label.push(NO_LABEL);
+        }
+        Ok(())
+    }
+
+    /// Reverse-emulate the switch normalization to recover the original switch
+    /// value from a normalized index value (C++ `JumpBasic::backup2Switch`,
+    /// `jumptable.cc:1639`).
+    ///
+    /// Walks from `normalvn` back to `switchvn`, inverting each normalization op
+    /// via the architecture's [`OpBehavior`](kuna_num::opbehavior::OpBehavior)
+    /// `recover_input_unary`/`recover_input_binary`.  The normalization is
+    /// add/sub/zext/sext/... over a constant, so `recoverInput*` is exact.
+    fn backup2_switch(&self, fd: &Funcdata, output_in: uintb) -> KunaResult<uintb> {
+        let invn = self
+            .switchvn
+            .ok_or_else(|| KunaError::lowlevel("backup2Switch: no switchvn"))?;
+        let mut curvn = self
+            .normalvn
+            .ok_or_else(|| KunaError::lowlevel("backup2Switch: no normalvn"))?;
+        let mut output = output_in;
+        while curvn != invn {
+            let op = fd
+                .vbank()
+                .get(curvn)
+                .and_then(|v| v.get_def())
+                .ok_or_else(|| KunaError::lowlevel("backup2Switch: normalvn not written"))?;
+            let opc = fd.obank().get(op).unwrap().code();
+            let numin = fd.obank().get(op).unwrap().num_input();
+            // Find first non-constant input slot.
+            let mut slot = 0;
+            while slot < numin {
+                let invn_s = fd.obank().get(op).unwrap().get_in(slot).unwrap();
+                if !fd.vbank().get(invn_s).unwrap().is_constant() {
+                    break;
+                }
+                slot += 1;
+            }
+            let behave = fd
+                .get_arch()
+                .op_behavior(opc)
+                .ok_or_else(|| KunaError::lowlevel("backup2Switch: no op behavior"))?;
+            let eval = fd.obank().get(op).unwrap().get_eval_type();
+            use crate::op::pcodeop_flags as pf;
+            if eval & pf::binary != 0 {
+                let otherslot = 1 - slot;
+                let othervn = fd.obank().get(op).unwrap().get_in(otherslot).unwrap();
+                let otheraddr = fd.vbank().get(othervn).unwrap().get_addr().clone();
+                let othersize = fd.vbank().get(othervn).unwrap().get_size();
+                let otherval = if otheraddr.is_constant() {
+                    otheraddr.get_offset()
+                } else {
+                    // C++ reads a MemoryImage(addr.getSpace(),4,1024,loader); the
+                    // other operand is a read-only/global constant load.
+                    fd.get_arch().get_load_image_value(&otheraddr, othersize)?
+                };
+                let sizeout = fd
+                    .obank()
+                    .get(op)
+                    .unwrap()
+                    .get_out()
+                    .map(|o| fd.vbank().get(o).unwrap().get_size())
+                    .unwrap_or(0);
+                let slotvn = fd.obank().get(op).unwrap().get_in(slot).unwrap();
+                let sizein = fd.vbank().get(slotvn).unwrap().get_size();
+                output = behave.recover_input_binary(slot, sizeout, output, sizein, otherval)?;
+                curvn = slotvn;
+            } else if eval & pf::unary != 0 {
+                let sizeout = fd
+                    .obank()
+                    .get(op)
+                    .unwrap()
+                    .get_out()
+                    .map(|o| fd.vbank().get(o).unwrap().get_size())
+                    .unwrap_or(0);
+                let slotvn = fd.obank().get(op).unwrap().get_in(slot).unwrap();
+                let sizein = fd.vbank().get(slotvn).unwrap().get_size();
+                output = behave.recover_input_unary(sizeout, output, sizein)?;
+                curvn = slotvn;
+            } else {
+                return Err(KunaError::lowlevel("Bad switch normalization op"));
+            }
+        }
+        Ok(output)
+    }
+}
+
+impl Default for JumpBasicModel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl JumpModel for JumpBasicModel {
+    fn is_override(&self) -> bool {
+        false
+    }
+
+    fn get_table_size(&self) -> int4 {
+        self.jrange().get_size() as int4
+    }
+
+    fn recover_model(
+        &mut self,
+        fd: &mut Funcdata,
+        indop: OpId,
+        matchsize: uint4,
+        maxtablesize: uint4,
+    ) -> KunaResult<bool> {
+        if self.is_model2 {
+            self.recover_model2(fd, indop, matchsize, maxtablesize)
+        } else {
+            self.recover_model_basic(fd, indop, matchsize, maxtablesize)
+        }
+    }
+
+    fn build_addresses(
+        &self,
+        fd: &Funcdata,
+        indop: OpId,
+        addresstable: &mut Vec<Address>,
+        loadpoints: Option<&mut Vec<LoadTable>>,
+        loadcounts: Option<&mut Vec<int4>>,
+    ) -> KunaResult<()> {
+        self.build_addresses_basic(fd, indop, addresstable, loadpoints, loadcounts)
+    }
+
+    fn find_unnormalized(
+        &mut self,
+        fd: &mut Funcdata,
+        maxaddsub: uint4,
+        maxleftright: uint4,
+        maxext: uint4,
+    ) -> KunaResult<()> {
+        if self.is_model2 {
+            self.find_unnormalized2(fd, maxaddsub, maxleftright, maxext)
+        } else {
+            self.find_unnormalized_basic(fd, maxaddsub, maxleftright, maxext);
+            Ok(())
+        }
+    }
+
+    fn build_labels(
+        &self,
+        fd: &mut Funcdata,
+        addresstable: &mut [Address],
+        label: &mut Vec<uintb>,
+        orig: &dyn JumpModel,
+    ) -> KunaResult<()> {
+        // orig is always a JumpBasicModel (the C++ casts to const JumpBasic*).
+        let orig = orig
+            .as_any()
+            .downcast_ref::<JumpBasicModel>()
+            .ok_or_else(|| KunaError::lowlevel("buildLabels: orig is not a JumpBasic model"))?;
+        self.build_labels_basic(fd, addresstable, label, orig)
+    }
+
+    fn fold_in_normalization(
+        &mut self,
+        fd: &mut Funcdata,
+        indop: OpId,
+    ) -> KunaResult<Option<VarnodeId>> {
+        // Set the BRANCHIND input to the unnormalized switch variable, so the
+        // intervening address calculation becomes dead.
+        let switchvn = self
+            .switchvn
+            .ok_or_else(|| KunaError::lowlevel("foldInNormalization: switchvn not recovered"))?;
+        fd.op_set_input(indop, switchvn, 0)?;
+        Ok(Some(switchvn))
+    }
+
+    fn fold_in_guards(&mut self, _fd: &mut Funcdata, _jump: &mut JumpTable) -> KunaResult<bool> {
+        // SEAM(structuring): foldInOneGuard needs noInterveningStatement +
+        // pushBranch + addBlockToSwitch wiring (the switch-structuring stage).
+        // Returning false leaves the guards in place; the switch destinations are
+        // still installed (the guards render as ordinary branches until folded).
+        Ok(false)
+    }
+
+    fn sanity_check(
+        &mut self,
+        fd: &mut Funcdata,
+        _indop: OpId,
+        addresstable: &mut Vec<Address>,
+        loadpoints: &mut Vec<LoadTable>,
+        loadcounts: Option<&Vec<int4>>,
+    ) -> KunaResult<bool> {
+        // C++ JumpBasic::sanityCheck (jumptable.cc:1726).
+        if addresstable.is_empty() {
+            return Ok(true);
+        }
+        let addr0 = addresstable[0].clone();
+        let mut i = 0usize;
+        if addr0.get_offset() != 0 {
+            i = 1;
+            while i < addresstable.len() {
+                if addresstable[i].get_offset() == 0 {
+                    break;
+                }
+                let oi = addresstable[i].get_offset();
+                let diff = if addr0.get_offset() < oi {
+                    oi.wsub(addr0.get_offset())
+                } else {
+                    addr0.get_offset().wsub(oi)
+                };
+                if diff > 0xffff {
+                    // Far address: require the load image to have data there.
+                    let dataavail = fd.get_arch().get_load_image_value(&addresstable[i], 4).is_ok();
+                    if !dataavail {
+                        break;
+                    }
+                }
+                i += 1;
+            }
+        }
+        if i == 0 {
+            return Ok(false);
+        }
+        if i != addresstable.len() {
+            addresstable.truncate(i);
+            self.jrange_range_mut().truncate(i as int4);
+            if let Some(lc) = loadcounts {
+                if i >= 1 && (i - 1) < lc.len() {
+                    loadpoints.truncate(lc[i - 1] as usize);
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    fn clone_box(&self) -> Box<dyn JumpModel> {
+        // C++ JumpBasic::clone only clones the JumpValues iterator.
+        let mut res = JumpBasicModel::new();
+        res.is_model2 = self.is_model2;
+        if let Some(jr) = &self.jrange {
+            res.jrange = Some(jr.clone_box());
+        }
+        Box::new(res)
+    }
+
+    fn clear(&mut self) {
+        self.jrange = None;
+        self.path_meld.clear();
+        self.selectguards.clear();
+        self.normalvn = None;
+        self.switchvn = None;
+        self.extravn = None;
+        self.orig_path_meld.clear();
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl JumpBasicModel {
+    /// Construct an empty model-2 (C++ `JumpBasic2(JumpTable*)`).
+    pub fn new_model2() -> JumpBasicModel {
+        let mut m = JumpBasicModel::new();
+        m.is_model2 = true;
+        m
+    }
+
+    /// Pass in the prior PathMeld calculation (C++ `JumpBasic2::initializeStart`,
+    /// `jumptable.cc:1805`).
+    pub fn initialize_start(&mut self, pmeld: &PathMeld) {
+        if pmeld.empty() {
+            self.extravn = None;
+            return;
+        }
+        self.extravn = Some(pmeld.get_varnode(pmeld.num_common_varnode() - 1));
+        self.orig_path_meld.set_from(pmeld);
+    }
+
+    /// Recover the model-2 (default-path) switch (C++ `JumpBasic2::recoverModel`,
+    /// `jumptable.cc:1817`).
+    fn recover_model2(
+        &mut self,
+        fd: &mut Funcdata,
+        _indop: OpId,
+        matchsize: uint4,
+        maxtablesize: uint4,
+    ) -> KunaResult<bool> {
+        let joinvn = match self.extravn {
+            None => return Ok(false),
+            Some(v) => v,
+        };
+        if !fd.vbank().get(joinvn).unwrap().is_written() {
+            return Ok(false);
+        }
+        let multiop = fd.vbank().get(joinvn).unwrap().get_def().unwrap();
+        if fd.obank().get(multiop).unwrap().code() != OpCode::CPUI_MULTIEQUAL {
+            return Ok(false);
+        }
+        if fd.obank().get(multiop).unwrap().num_input() != 2 {
+            return Ok(false);
+        }
+        // Search for a constant along one of the paths.
+        let mut extravalue = 0;
+        let mut path = 2;
+        for p in 0..2 {
+            let vn = fd.obank().get(multiop).unwrap().get_in(p).unwrap();
+            if !fd.vbank().get(vn).unwrap().is_written() {
+                continue;
+            }
+            let copyop = fd.vbank().get(vn).unwrap().get_def().unwrap();
+            if fd.obank().get(copyop).unwrap().code() != OpCode::CPUI_COPY {
+                continue;
+            }
+            let othervn = fd.obank().get(copyop).unwrap().get_in(0).unwrap();
+            if fd.vbank().get(othervn).unwrap().is_constant() {
+                extravalue = fd.vbank().get(othervn).unwrap().get_offset();
+                path = p;
+                break;
+            }
+        }
+        if path == 2 {
+            return Ok(false);
+        }
+        let mparent = fd.obank().get(multiop).unwrap().get_parent().unwrap();
+        let rootbl = fd.bblocks_ref().block(mparent).get_in(1 - path);
+        let pathout = fd.bblocks_ref().block(mparent).get_in_rev_index(1 - path);
+
+        let mut jdef = JumpValuesRangeDefault::new();
+        jdef.set_extra_value(extravalue);
+        jdef.set_default_vn(joinvn);
+        let defop = self
+            .orig_path_meld
+            .get_op(self.orig_path_meld.num_ops() - 1)
+            .ok_or_else(|| KunaError::lowlevel("JumpBasic2: orig path empty"))?;
+        jdef.set_default_op(defop);
+        self.jrange = Some(Box::new(jdef));
+
+        JumpBasic::find_determining_varnodes(fd, &mut self.path_meld, multiop, 1 - path);
+        self.find_normalized(fd, rootbl, pathout, matchsize, maxtablesize, _indop)?;
+        if self.jrange().get_size() > maxtablesize as uintb {
+            return Ok(false);
+        }
+        // Insert the final sequence after the MULTIEQUAL.
+        let orig = self.orig_path_meld.clone();
+        self.path_meld.append(&orig);
+        self.varnode_index += self.orig_path_meld.num_common_varnode();
+        Ok(true)
+    }
+
+    /// Model-2 unnormalized switch recovery (C++ `JumpBasic2::findUnnormalized`,
+    /// `jumptable.cc:1887`).
+    fn find_unnormalized2(
+        &mut self,
+        fd: &mut Funcdata,
+        maxaddsub: uint4,
+        maxleftright: uint4,
+        maxext: uint4,
+    ) -> KunaResult<()> {
+        self.normalvn = Some(self.path_meld.get_varnode(self.varnode_index));
+        if self.check_normal_dominance(fd) {
+            self.find_unnormalized_basic(fd, maxaddsub, maxleftright, maxext);
+            return Ok(());
+        }
+        // Go backward from the unnormalized variable to the normalized variable.
+        let extravn = self.extravn.unwrap();
+        self.switchvn = Some(extravn);
+        let multiop = fd.vbank().get(extravn).unwrap().get_def().unwrap();
+        let in0 = fd.obank().get(multiop).unwrap().get_in(0);
+        let in1 = fd.obank().get(multiop).unwrap().get_in(1);
+        if in0 == self.normalvn || in1 == self.normalvn {
+            self.normalvn = self.switchvn;
+            Ok(())
+        } else {
+            Err(KunaError::lowlevel("Backward normalization not implemented"))
+        }
+    }
+
+    /// Check if the block defining the normalized var dominates the switch (C++
+    /// `JumpBasic2::checkNormalDominance`, `jumptable.cc:1872`).
+    fn check_normal_dominance(&self, fd: &Funcdata) -> bool {
+        let normalvn = self.normalvn.unwrap();
+        if fd.vbank().get(normalvn).unwrap().is_input() {
+            return true;
+        }
+        let defblock = fd
+            .obank()
+            .get(fd.vbank().get(normalvn).unwrap().get_def().unwrap())
+            .unwrap()
+            .get_parent();
+        let defblock = match defblock {
+            None => return false,
+            Some(b) => b,
+        };
+        let mut switchblock = self.path_meld.get_op(0).and_then(|o| fd.obank().get(o).unwrap().get_parent());
+        while let Some(sb) = switchblock {
+            if sb == defblock {
+                return true;
+            }
+            switchblock = fd.bblocks_ref().block(sb).get_immed_dom();
+        }
+        false
+    }
+}
+
+// ---------------------------------------------------------------------------
 // JumpTable (jumptable.hh:542, jumptable.cc:2379-3016)
 // ---------------------------------------------------------------------------
 
@@ -1706,6 +2798,34 @@ impl JumpTable {
         }
     }
 
+    /// Clone from another table (C++ `JumpTable::JumpTable(const JumpTable*)`,
+    /// `jumptable.cc:2541`): copy the recovered addresses/loadpoints and the
+    /// permanent fields, clone the model's value iterator, but reset the per-
+    /// instance state (`indirect`/`origmodel`/`block2addr`/`default_block`).
+    pub fn new_clone(op2: &JumpTable) -> JumpTable {
+        JumpTable {
+            maxaddsub: op2.maxaddsub,
+            maxleftright: op2.maxleftright,
+            maxext: op2.maxext,
+            jmodel: op2.jmodel.as_ref().map(|m| m.clone_box()),
+            origmodel: None,
+            addresstable: op2.addresstable.clone(),
+            block2addr: Vec::new(),
+            label: Vec::new(),
+            loadpoints: op2.loadpoints.clone(),
+            opaddress: op2.opaddress.clone(),
+            indirect: None,
+            switch_var_consume: !0u64,
+            default_block: -1,
+            last_block: op2.last_block,
+            recover_count: op2.recover_count,
+            display_format: op2.display_format,
+            partial_table: op2.partial_table,
+            collectloads: op2.collectloads,
+            default_is_folded: false,
+        }
+    }
+
     /// Return \b true if a model has been recovered (C++ `isRecovered`).
     pub fn is_recovered(&self) -> bool {
         !self.addresstable.is_empty()
@@ -1767,6 +2887,15 @@ impl JumpTable {
     /// Set the BRANCHIND PcodeOp (C++ `setIndirectOp`).
     pub fn set_indirect_op(&mut self, fd: &Funcdata, ind: OpId) {
         self.opaddress = fd.obank().get(ind).unwrap().get_addr().clone();
+        self.indirect = Some(ind);
+    }
+
+    /// Set the BRANCHIND PcodeOp with its address supplied directly (C++
+    /// `setIndirectOp`, for callers already holding the op's address while
+    /// `&mut self` aliases the function — the recovery chain's `linkJumpTable`/
+    /// `truncatedFlow`).
+    pub fn set_indirect_op_addr(&mut self, ind: OpId, addr: Address) {
+        self.opaddress = addr;
         self.indirect = Some(ind);
     }
 
@@ -2135,32 +3264,96 @@ impl JumpTable {
     /// Try to recover each model in turn until one matches the BRANCHIND
     /// (C++ `JumpTable::recoverModel`, `jumptable.cc:2408`).
     ///
-    /// SEAM(W4/W5): the real recovery walks `JumpAssisted`/`JumpBasic`/
-    /// `JumpBasic2`, each needing emulation, the loader, `CircleRange`, and the
-    /// arch `max_jumptable_size`.  Those models are seam shells; this driver is
-    /// the faithful control structure but cannot complete without them, so it
-    /// reports the precise seam `Err`.
-    fn recover_model(&mut self, _fd: &mut Funcdata) -> KunaResult<()> {
-        Err(KunaError::lowlevel(
-            "JumpTable::recoverModel: JumpBasic/JumpBasic2/JumpAssisted models need \
-             CircleRange (W5), EmulateFunction (W4), the loader (W4) and arch \
-             max_jumptable_size (W4)",
-        ))
+    /// Walks `JumpBasic` then `JumpBasic2` (the `JumpAssisted`/CALLOTHER model is
+    /// the `jumpassist` userop family — `// SEAM(W4)`, recorded as a loss).  Each
+    /// model's `recoverModel` emulation-drives the index range over the landed
+    /// [`EmulateFunction`].
+    fn recover_model(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
+        let max_table_size = fd.get_arch().max_jumptable_size;
+        let indirect = self.indirect.unwrap();
+        if let Some(model) = self.jmodel.as_mut() {
+            if model.is_override() {
+                // Preexisting override model: re-run its recoverModel.
+                let mut m = self.jmodel.take().unwrap();
+                let r = m.recover_model(fd, indirect, 0, max_table_size);
+                self.jmodel = Some(m);
+                r?;
+                return Ok(());
+            }
+            // Otherwise this is an old attempt we should remove.
+            self.jmodel = None;
+        }
+        // SEAM(W4): the CALLOTHER `JumpAssisted` (jumpassist userop) model — not
+        // yet ported (needs pcodeinjectlib/ExecutablePcode).  Recorded as a loss;
+        // the basic models cover the corpus switches.
+
+        // Try the basic model.
+        let mut jbasic = JumpBasicModel::new();
+        jbasic.is_partial = self.partial_table;
+        let basic_ok = jbasic.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?;
+        // Stash the basic model's path-meld for model 2's piggyback.
+        let basic_path = jbasic.get_path_meld().clone();
+        if basic_ok {
+            self.jmodel = Some(Box::new(jbasic));
+            return Ok(());
+        }
+        // Try model 2 (default-path).
+        let mut jbasic2 = JumpBasicModel::new_model2();
+        jbasic2.is_partial = self.partial_table;
+        jbasic2.initialize_start(&basic_path);
+        let m2_ok = jbasic2.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?;
+        if m2_ok {
+            self.jmodel = Some(Box::new(jbasic2));
+            return Ok(());
+        }
+        // No model matched.
+        self.jmodel = None;
+        Ok(())
     }
 
     /// Recover the raw jump-table addresses (C++ `JumpTable::recoverAddresses`,
     /// `jumptable.cc:2773`).
-    ///
-    /// SEAM(W4/W5): the control structure (recoverModel -> buildAddresses ->
-    /// sanityCheck -> collapseTable) is faithful, but `recover_model` and
-    /// `build_addresses` need absent subsystems.  Propagates the seam `Err`.
     pub fn recover_addresses(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         self.recover_model(fd)?;
-        // The remainder mirrors jumptable.cc:2776-2799 but is unreachable until
-        // recover_model/build_addresses land (W4/W5). Kept faithful for review.
-        Err(KunaError::lowlevel(
-            "JumpTable::recoverAddresses: model recovery requires W4/W5 subsystems",
-        ))
+        if self.jmodel.is_none() {
+            return Err(KunaError::lowlevel(format!(
+                "Could not recover jumptable at {:?}. Too many branches",
+                self.opaddress
+            )));
+        }
+        if self.jmodel.as_ref().unwrap().get_table_size() == 0 {
+            return Err(KunaError::lowlevel(format!(
+                "Jumptable with 0 entries at {:?}",
+                self.opaddress
+            )));
+        }
+        let indirect = self.indirect.unwrap();
+        if self.collectloads {
+            let mut loadcounts: Vec<int4> = Vec::new();
+            let mut addresstable = std::mem::take(&mut self.addresstable);
+            let mut loadpoints = std::mem::take(&mut self.loadpoints);
+            let model = self.jmodel.as_ref().unwrap();
+            let r = model.build_addresses(
+                fd,
+                indirect,
+                &mut addresstable,
+                Some(&mut loadpoints),
+                Some(&mut loadcounts),
+            );
+            self.addresstable = addresstable;
+            self.loadpoints = loadpoints;
+            r?;
+            self.sanity_check(fd, Some(&loadcounts))?;
+            LoadTable::collapse_table(&mut self.loadpoints);
+        } else {
+            let mut addresstable = std::mem::take(&mut self.addresstable);
+            let model = self.jmodel.as_ref().unwrap();
+            let r = model.build_addresses(fd, indirect, &mut addresstable, None, None);
+            self.addresstable = addresstable;
+            r?;
+            self.sanity_check(fd, None)?;
+        }
+        Ok(())
     }
 
     /// Recover jump-table addresses keeping track of a possible previous stage
@@ -2210,8 +3403,10 @@ impl JumpTable {
     /// Try to match the JumpTable model to the existing function
     /// (C++ `JumpTable::matchModel`, `jumptable.cc:2833`).
     ///
-    /// SEAM(W4/W5): the multistage-restart accounting needs the `Override` table
-    /// and restart machinery (W4); the model recovery needs W4/W5.
+    /// SEAM(W4): the multistage-restart accounting on a table-size mismatch
+    /// (`Override::insertMultistageJump` + `setRestartPending`) is the W4 override
+    /// table; here a mismatch is recorded as a loss and the table keeps its (flow-
+    /// recovered) addresses.  The model recovery itself is real.
     pub fn match_model(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         if !self.is_recovered() {
             return Err(KunaError::lowlevel(
@@ -2228,9 +3423,16 @@ impl JumpTable {
                 // fd->warning("Switch is manually overridden", opaddress) SEAM(W4)
             }
         }
-        self.recover_model(fd) // Create a current instance of the model
-        // The table-size mismatch / restart logic (jumptable.cc:2849-2858) is
-        // unreachable until recover_model lands; tracked as a loss.
+        self.recover_model(fd)?; // Create a current instance of the model
+        if let Some(model) = self.jmodel.as_ref() {
+            if model.get_table_size() != self.addresstable.len() as int4 {
+                // SEAM(W4): the multistage-restart path
+                // (Override::insertMultistageJump / setRestartPending) is the W4
+                // override table; a (1 -> >1) mismatch would request a restart.
+                // Recorded as a loss: the flow-recovered address table is kept.
+            }
+        }
+        Ok(())
     }
 
     /// Recover the case labels for \b this jump-table
@@ -2243,25 +3445,46 @@ impl JumpTable {
     pub fn recover_labels(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         if let Some(mut model) = self.jmodel.take() {
             let orig_size = self.origmodel.as_ref().map(|m| m.get_table_size()).unwrap_or(0);
+            model.find_unnormalized(fd, self.maxaddsub, self.maxleftright, self.maxext)?;
             let res = if self.origmodel.is_none() || orig_size == 0 {
-                model.find_unnormalized(fd, self.maxaddsub, self.maxleftright, self.maxext)?;
-                let orig_ref: &dyn JumpModel = &*model;
-                model.build_labels(fd, &mut self.addresstable, &mut self.label, orig_ref)
+                // orig is the model itself (C++ buildLabels(...,jmodel)).
+                let mut addresstable = std::mem::take(&mut self.addresstable);
+                let mut label = std::mem::take(&mut self.label);
+                let r = model.build_labels(fd, &mut addresstable, &mut label, &*model);
+                self.addresstable = addresstable;
+                self.label = label;
+                r
             } else {
-                model.find_unnormalized(fd, self.maxaddsub, self.maxleftright, self.maxext)?;
                 let orig = self.origmodel.take().unwrap();
-                let r = model.build_labels(fd, &mut self.addresstable, &mut self.label, &*orig);
+                let mut addresstable = std::mem::take(&mut self.addresstable);
+                let mut label = std::mem::take(&mut self.label);
+                let r = model.build_labels(fd, &mut addresstable, &mut label, &*orig);
+                self.addresstable = addresstable;
+                self.label = label;
                 self.origmodel = Some(orig);
                 r
             };
             self.jmodel = Some(model);
             res?;
         } else {
-            // Trivial fallback (jumptable.cc:2878). Needs recover_model/
-            // build_addresses (W4). Seam.
-            return Err(KunaError::lowlevel(
-                "JumpTable::recoverLabels: trivial fallback needs buildAddresses (W4)",
-            ));
+            // Trivial fallback (jumptable.cc:2878): the model could not be
+            // recovered, but the addresses came from flow.
+            let mut tm = JumpModelTrivial::new();
+            let indirect = self.indirect.unwrap();
+            let max = fd.get_arch().max_jumptable_size;
+            tm.recover_model(fd, indirect, self.addresstable.len() as uint4, max)?;
+            let mut addresstable = std::mem::take(&mut self.addresstable);
+            tm.build_addresses(fd, indirect, &mut addresstable, None, None)?;
+            self.addresstable = addresstable;
+            self.trivial_switch_over(fd)?;
+            let mut addresstable = std::mem::take(&mut self.addresstable);
+            let mut label = std::mem::take(&mut self.label);
+            // origmodel is None in the trivial path.
+            let r = tm.build_labels(fd, &mut addresstable, &mut label, &tm);
+            self.addresstable = addresstable;
+            self.label = label;
+            self.jmodel = Some(Box::new(tm));
+            r?;
         }
         self.clear_saved_model();
         Ok(())

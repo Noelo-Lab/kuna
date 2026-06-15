@@ -1467,6 +1467,13 @@ pub struct CollapseStructure<'a> {
     /// live op lists (which the structuring graph — a BlockCopy mirror — does not
     /// own) and consulted by [`is_complex`] through the BlockCopy `copy` pointer.
     complex_blocks: std::collections::BTreeSet<BlockId>,
+    /// Map from a **bblocks** `BlockBasic` id (the underlying switch block, i.e.
+    /// the `BlockCopy::copy` of the switch's exit-leaf) to the `Funcdata::jumpvec`
+    /// slot of its [`JumpTable`](crate::jumptable::JumpTable).  Precomputed by
+    /// `ActionBlockStructure::apply` (which holds `&mut Funcdata`) so
+    /// `new_block_switch` can attach the table to the `BlockSwitch` without a
+    /// Funcdata back-pointer (C++ `BlockSwitch(ind)` does `ind->getJumptable()`).
+    switch_blocks: std::collections::BTreeMap<BlockId, usize>,
 }
 
 impl<'a> CollapseStructure<'a> {
@@ -1485,6 +1492,7 @@ impl<'a> CollapseStructure<'a> {
             dataflow_changecount: 0,
             pending_flips: Vec::new(),
             complex_blocks: std::collections::BTreeSet::new(),
+            switch_blocks: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1499,6 +1507,18 @@ impl<'a> CollapseStructure<'a> {
         complex_blocks: std::collections::BTreeSet<BlockId>,
     ) -> Self {
         self.complex_blocks = complex_blocks;
+        self
+    }
+
+    /// Seed the bblocks-switch-block → `jumpvec` index map (C++
+    /// `BlockSwitch(ind)`'s `ind->getJumptable()` resolution, precomputed because
+    /// the structuring graph has no Funcdata back-pointer).  Builder method;
+    /// hand-built unit-test graphs keep the empty default.
+    pub fn with_switch_blocks(
+        mut self,
+        switch_blocks: std::collections::BTreeMap<BlockId, usize>,
+    ) -> Self {
+        self.switch_blocks = switch_blocks;
         self
     }
 
@@ -2496,14 +2516,30 @@ impl<'a> CollapseStructure<'a> {
             }
             cases.push(curbl);
         }
-        // graph.newBlockSwitch(cases, hasExit) -- SEAM(W7/W4): `BlockGraph::
-        // newBlockSwitch` needs `getExitLeaf` and `grabCaseBasic` (the latter
-        // reads the JumpTable labels, W4); `block.rs` left both as W7 (see its
-        // `markCopyBlock` note) and the BlockGraph switch factory is not yet
-        // public.  The match/exit/skip *decision* above is fully ported; only
-        // the node construction surfaces the seam.  See losses.
-        let _ = cases;
-        new_block_switch_seam(exitblock.is_some())?;
+        // graph.newBlockSwitch(cases, hasExit): resolve the jump-table slot for
+        // this switch root (C++ `BlockSwitch(ind)` does `ind->getJumptable()`).
+        // The switch root `bl` is a BlockCopy whose `copy` points to the bblocks
+        // BlockBasic carrying the BRANCHIND; `switch_blocks` was precomputed (in
+        // ActionBlockStructure, which holds &mut Funcdata) keyed by that bblocks
+        // id.  Drill to the exit-leaf copy first (the root may be a wrapping
+        // graph after earlier collapses).
+        let jt_index = self
+            .graph
+            .get_exit_leaf(bl)
+            .and_then(|leaf| self.graph.block(leaf).get_copy())
+            .and_then(|bb| self.switch_blocks.get(&bb).copied());
+        let jt_index = match jt_index {
+            Some(j) => j,
+            None => {
+                // No recovered table for this switch (e.g. an override-only or
+                // unrecovered BRANCHIND): leave it unstructured rather than
+                // fabricating a table.  Matches C++ when getJumptable()==0 would
+                // make BlockSwitch construction meaningless; honest partial.
+                new_block_switch_seam(exitblock.is_some())?;
+                return Ok(true);
+            }
+        };
+        self.graph.new_block_switch(self.graph_id, &cases, exitblock.is_some(), jt_index)?;
         Ok(true)
     }
 
@@ -3317,17 +3353,32 @@ impl Action for ActionBlockStructure {
         // it through `CollapseStructure::is_complex`.
         let mut complex_blocks: std::collections::BTreeSet<BlockId> =
             std::collections::BTreeSet::new();
+        // Precompute the bblocks switch-block → jumpvec slot map (C++
+        // `BlockSwitch(ind)` does `ind->getJumptable()`; the structuring graph has
+        // no Funcdata pointer, so resolve it here).  A bblocks `BlockBasic` is a
+        // switch block when it `is_switch_out` and its last op (a BRANCHIND) has a
+        // recovered JumpTable in `jumpvec`.
+        let mut switch_blocks: std::collections::BTreeMap<BlockId, usize> =
+            std::collections::BTreeMap::new();
         let nbb = data.bblocks_get_size();
         for i in 0..nbb {
             let bb = data.bblocks_get_block(i);
             if data.bb_is_complex(bb) {
                 complex_blocks.insert(bb);
             }
+            if data.bblocks_ref().block(bb).is_switch_out() {
+                if let Some(indop) = data.bb_op_tail(bb) {
+                    if let Some(jt_idx) = data.find_jump_table_index(indop) {
+                        switch_blocks.insert(bb, jt_idx);
+                    }
+                }
+            }
         }
         // CollapseStructure collapse(graph); collapse.collapseAll();
         let sroot = data.sblocks_root();
-        let mut collapse =
-            CollapseStructure::new(data.sblocks_mut(), sroot).with_complex_blocks(complex_blocks);
+        let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
+            .with_complex_blocks(complex_blocks)
+            .with_switch_blocks(switch_blocks);
         let collapse_res = collapse.collapse_all();
         let cc = collapse.get_change_count();
         // Realize the deferred data-flow half of BlockBasic::negateCondition: each
@@ -3379,7 +3430,7 @@ impl Action for ActionFinalStructure {
         }
         Some(Box::new(ActionFinalStructure { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++:
         //   graph.orderBlocks();
         //   graph.finalizePrinting(data);
@@ -3387,11 +3438,12 @@ impl Action for ActionFinalStructure {
         //   graph.markUnstructured();    // gotos
         //   graph.markLabelBumpUp(false);// label fixup
         //
-        // SEAM(W7/W8): all five `BlockGraph` methods are left unported in
-        // `block.rs` (`orderBlocks`/`finalizePrinting`/`scopeBreak`/
-        // `markUnstructured`/`markLabelBumpUp` — the print-prep + goto/break
-        // labeling pass).  Recorded as losses; the action shell is in place so the
-        // schedule can run it as a no-op until block.rs supplies them.
+        // `finalizePrinting` is ported for the switch case: assign + sort the case
+        // labels from the recovered JumpTable so the printer can emit `case N:`.
+        // SEAM(W7/W8): `orderBlocks`/`scopeBreak`/`markUnstructured`/
+        // `markLabelBumpUp` (the goto/break/label-bump print-prep) remain unported
+        // in `block.rs`.  Recorded as losses.
+        data.finalize_switch_printing();
         0
     }
 }

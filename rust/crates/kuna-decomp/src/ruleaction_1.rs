@@ -2388,15 +2388,111 @@ impl Rule for RuleRangeMeld {
             return 0;
         }
 
-        // CircleRange range1(true); ... A1 = range1.pullBack(sub1,...); ...
-        //   range1.intersect/circleUnion(range2); translate2Op(...); ...
-        // SEAM(rangeutil): `CircleRange::pullBack`/`circleUnion`/`translate2Op`/
-        // `intersect` are rangeutil value-set operators still deferred (the
-        // `CircleRange` in jumptable.rs is a stub), and the equality fixup uses
-        // `functionalEquality` (expression seam).  The BOOL_AND/BOOL_OR
-        // bool-output structural guards above are ported; the value-set body
-        // defers here.  No change.
-        0
+        // CircleRange range1(true); A1 = range1.pullBack(sub1,&markup,false);
+        let mut range1 = crate::rangeutil::CircleRange::new_bool(true);
+        let mut a1 = match crate::jumptable::circlerange_pull_back(data, &mut range1, sub1, false) {
+            Some(v) => v,
+            None => return 0,
+        };
+        // CircleRange range2(true); A2 = range2.pullBack(sub2,&markup,false);
+        let mut range2 = crate::rangeutil::CircleRange::new_bool(true);
+        let mut a2 = match crate::jumptable::circlerange_pull_back(data, &mut range2, sub2, false) {
+            Some(v) => v,
+            None => return 0,
+        };
+        // if (sub1->code()==CPUI_BOOL_NEGATE): extra pull back through the '!'.
+        if data.obank().get(sub1).unwrap().code() == OpCode::CPUI_BOOL_NEGATE {
+            if !data.vbank().get(a1).unwrap().is_written() {
+                return 0;
+            }
+            let def = data.vbank().get(a1).unwrap().get_def().unwrap();
+            a1 = match crate::jumptable::circlerange_pull_back(data, &mut range1, def, false) {
+                Some(v) => v,
+                None => return 0,
+            };
+        }
+        if data.obank().get(sub2).unwrap().code() == OpCode::CPUI_BOOL_NEGATE {
+            if !data.vbank().get(a2).unwrap().is_written() {
+                return 0;
+            }
+            let def = data.vbank().get(a2).unwrap().get_def().unwrap();
+            a2 = match crate::jumptable::circlerange_pull_back(data, &mut range2, def, false) {
+                Some(v) => v,
+                None => return 0,
+            };
+        }
+        // if (!functionalEquality(A1,A2)): try to align the two by an extra
+        // pull-back on the side with the smaller varnode.
+        if !crate::expression::functional_equality(a1, a2, data.vbank(), data.obank()) {
+            let sz1 = data.vbank().get(a1).unwrap().get_size();
+            let sz2 = data.vbank().get(a2).unwrap().get_size();
+            if sz2 == sz1 {
+                return 0;
+            }
+            if sz1 < sz2 && data.vbank().get(a2).unwrap().is_written() {
+                let def = data.vbank().get(a2).unwrap().get_def().unwrap();
+                a2 = match crate::jumptable::circlerange_pull_back(data, &mut range2, def, false) {
+                    Some(v) => v,
+                    None => return 0,
+                };
+            } else if data.vbank().get(a1).unwrap().is_written() {
+                let def = data.vbank().get(a1).unwrap().get_def().unwrap();
+                a1 = match crate::jumptable::circlerange_pull_back(data, &mut range1, def, false) {
+                    Some(v) => v,
+                    None => return 0,
+                };
+            }
+            if a1 != a2 {
+                return 0;
+            }
+        }
+        // if (!A1->isHeritageKnown()) return 0;
+        if !data.vbank().get(a1).unwrap().is_heritage_known() {
+            return 0;
+        }
+
+        let opc_in = data.obank().get(op).unwrap().code();
+        // restype is reused by translate2Op below (C++ reassigns it in-place).
+        let mut restype = if opc_in == OpCode::CPUI_BOOL_AND {
+            range1.intersect(&range2)
+        } else {
+            range1.circle_union(&range2)
+        };
+
+        if restype == 0 {
+            let mut opc = OpCode::CPUI_COPY;
+            let mut resc: uintb = 0;
+            let mut resslot: int4 = 0;
+            restype = range1.translate2_op(&mut opc, &mut resc, &mut resslot);
+            if restype == 0 {
+                let a1_size = data.vbank().get(a1).unwrap().get_size();
+                let new_const = data.new_constant(a1_size, resc);
+                // (markup propagation is a W6 symbol nicety; dropped, matching the
+                // jumptable pull-back's recorded markup loss.)
+                set_opcode_seam(data, op, opc);
+                let _ = data.op_set_input(op, a1, 1 - resslot);
+                let _ = data.op_set_input(op, new_const, resslot);
+                return 1;
+            }
+        }
+
+        if restype == 2 {
+            return 0; // Cannot represent
+        }
+        if restype == 1 {
+            // Pieces cover everything, condition is always true.
+            set_opcode_seam(data, op, OpCode::CPUI_COPY);
+            data.op_remove_input(op, 1);
+            let one = data.new_constant(1, 1);
+            let _ = data.op_set_input(op, one, 0);
+        } else if restype == 3 {
+            // Nothing left in intersection, condition is always false.
+            set_opcode_seam(data, op, OpCode::CPUI_COPY);
+            data.op_remove_input(op, 1);
+            let zero = data.new_constant(1, 0);
+            let _ = data.op_set_input(op, zero, 0);
+        }
+        1
     }
 }
 

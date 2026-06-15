@@ -356,9 +356,13 @@ pub enum BlockKind {
     DoWhile,
     /// `t_infloop` — infinite loop (components only).
     InfLoop,
-    /// `t_switch` — structured switch.  SEAM(W4/W7): `jump` (the JumpTable) is
-    /// referenced opaquely until JumpTable ports; the case structure is carried.
-    Switch { caseblocks: Vec<CaseOrder> },
+    /// `t_switch` — structured switch.  `jt_index` is the `Funcdata::jumpvec`
+    /// slot of the [`JumpTable`](crate::jumptable::JumpTable) the switch was
+    /// recovered from (C++ `BlockSwitch::jump` is the pointer; the rust port
+    /// keeps the owning function's slot index so the printer can reach the
+    /// table's labels via `Funcdata::get_jump_table`).  The case structure is
+    /// carried in `caseblocks`.
+    Switch { caseblocks: Vec<CaseOrder>, jt_index: usize },
 }
 
 /// The BlockBasic-specific data (C++ `BlockBasic` non-edge members).
@@ -848,6 +852,42 @@ impl FlowBlock {
         self.list[i as usize]
     }
 
+    /// Borrow the switch case descriptions (C++ `BlockSwitch::caseblocks`); empty
+    /// for non-switch blocks.
+    pub fn switch_caseblocks(&self) -> &[CaseOrder] {
+        match &self.kind {
+            BlockKind::Switch { caseblocks, .. } => caseblocks,
+            _ => &[],
+        }
+    }
+
+    /// Mutable view of the switch case descriptions (C++ `BlockSwitch::caseblocks`).
+    pub fn switch_caseblocks_mut(&mut self) -> Option<&mut Vec<CaseOrder>> {
+        match &mut self.kind {
+            BlockKind::Switch { caseblocks, .. } => Some(caseblocks),
+            _ => None,
+        }
+    }
+
+    /// The `Funcdata::jumpvec` slot of this switch's [`JumpTable`](crate::jumptable::JumpTable)
+    /// (C++ `BlockSwitch::jump`); `None` for non-switch blocks.
+    pub fn switch_jt_index(&self) -> Option<usize> {
+        match &self.kind {
+            BlockKind::Switch { jt_index, .. } => Some(*jt_index),
+            _ => None,
+        }
+    }
+
+    /// Clone the switch case descriptions for mutation outside the arena borrow
+    /// (the label-finalize pass needs `&Funcdata` for JumpTable queries while it
+    /// updates the cases).
+    pub fn switch_caseblocks_mut_snapshot(&self) -> Option<Vec<CaseOrder>> {
+        match &self.kind {
+            BlockKind::Switch { caseblocks, .. } => Some(caseblocks.clone()),
+            _ => None,
+        }
+    }
+
     /// Return \b true if finalTransform() has been run (C++ `hasFinalTransform`).
     pub fn has_final_transform(&self) -> bool {
         (self.flags & block_flags::f_final_transform) != 0
@@ -1236,6 +1276,40 @@ impl BlockGraph {
             }
         }
         Some(bl)
+    }
+
+    /// Get the last leaf FlowBlock reachable as an exit (C++
+    /// `FlowBlock::getExitLeaf`, virtual per subtype, `block.cc`/`block.hh`):
+    ///   * `t_basic` / `t_copy`: returns itself.
+    ///   * `t_goto` / `t_multigoto`: `getBlock(0)->getExitLeaf()`.
+    ///   * `t_ls` (BlockList): `getBlock(size-1)->getExitLeaf()`.
+    ///   * `t_if`: only an `ifgoto` (size 1) has an exit leaf — `getBlock(0)->...`.
+    ///   * everything else (base default): no exit leaf (`None`).
+    pub fn get_exit_leaf(&self, this_id: BlockId) -> Option<BlockId> {
+        match self.arena[this_id].get_type() {
+            BlockType::Basic | BlockType::Copy => Some(this_id),
+            BlockType::Goto | BlockType::MultiGoto => {
+                let b0 = self.sub_block(this_id, 0)?;
+                self.get_exit_leaf(b0)
+            }
+            BlockType::Ls => {
+                let n = self.arena[this_id].get_size();
+                if n == 0 {
+                    return None;
+                }
+                let last = self.sub_block(this_id, n - 1)?;
+                self.get_exit_leaf(last)
+            }
+            BlockType::If => {
+                if self.arena[this_id].get_size() == 1 {
+                    let b0 = self.sub_block(this_id, 0)?;
+                    self.get_exit_leaf(b0)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
     }
 
     /// Get the i-th component block (C++ `subBlock`, dispatched per type).
@@ -1995,6 +2069,151 @@ impl BlockGraph {
         self.identify_internal(graph_id, ret, &[body]);
         self.add_block(graph_id, ret);
         ret
+    }
+
+    /// Build a new BlockSwitch collapsing the switch root + its case components
+    /// (C++ `BlockGraph::newBlockSwitch`, `block.cc:1907`).
+    ///
+    /// `cs[0]` is the switch component (the multi-out block); `cs[1..]` are the
+    /// case components.  `jt_index` is the `Funcdata::jumpvec` slot of the
+    /// recovered [`JumpTable`](crate::jumptable::JumpTable) (C++ resolves this via
+    /// `rootbl->getExitLeaf()`'s BRANCHIND → `findJumpTable`; the Rust port passes
+    /// the precomputed slot since the structuring graph has no Funcdata pointer).
+    pub fn new_block_switch(
+        &mut self,
+        graph_id: BlockId,
+        cs: &[BlockId],
+        has_exit: bool,
+        jt_index: usize,
+    ) -> KunaResult<BlockId> {
+        let rootbl = cs[0];
+        // const FlowBlock *leafbl = rootbl->getExitLeaf();
+        let leafbl = self
+            .get_exit_leaf(rootbl)
+            .ok_or_else(|| KunaError::lowlevel("Could not get switch leaf"))?;
+        if self.arena[leafbl].get_type() != BlockType::Copy {
+            return Err(KunaError::lowlevel("Could not get switch leaf"));
+        }
+        let ret = self.arena.insert(FlowBlock::new_kind(BlockKind::Switch {
+            caseblocks: Vec::new(),
+            jt_index,
+        }));
+        // uret->grabCaseBasic(leafbl->subBlock(0), cs);  -- the switch underlying
+        // basic block is `leafbl->subBlock(0)` (the bblocks BlockBasic the copy
+        // mirrors).  The case-topology (in/out indices) is computed against the
+        // switch ROOT `rootbl` (its sblocks out-edges mirror the bblocks block's,
+        // edge labels and all), so we pass `rootbl` as the topology anchor.
+        let caseblocks = self.grab_case_basic(ret, rootbl, cs);
+        if let BlockKind::Switch { caseblocks: cb, .. } = &mut self.arena[ret].kind {
+            *cb = caseblocks;
+        }
+        // identifyInternal(uret.get(), cs);
+        self.identify_internal(graph_id, ret, cs);
+        // addBlock(ret);
+        self.add_block(graph_id, ret);
+        if has_exit {
+            self.force_output_num(ret, 1); // exactly 1 out edge if there is an exit
+        }
+        self.arena[ret].clear_flag(block_flags::f_switch_out); // not a switch "out"
+        Ok(ret)
+    }
+
+    /// Build the annotated [`CaseOrder`] descriptions for a switch (C++
+    /// `BlockSwitch::grabCaseBasic`, `block.cc:3575`).
+    ///
+    /// `switch_root` is the switch component (`cs[0]`); its sblocks out-edges
+    /// mirror the underlying bblocks switch block's (including the
+    /// `f_defaultswitch_edge` label, copied by `build_copy_from`), so the
+    /// in/out-index bookkeeping is computed here in sblocks-land.  `basicblock` is
+    /// recorded as the case front-leaf's `copy` (the bblocks BlockBasic), which
+    /// the printer's `finalize` step feeds to `JumpTable::numIndicesByBlock`.
+    fn grab_case_basic(
+        &mut self,
+        switch_id: BlockId,
+        switch_root: BlockId,
+        cs: &[BlockId],
+    ) -> Vec<CaseOrder> {
+        let mut caseblocks: Vec<CaseOrder> = Vec::new();
+        // casemap from outindex to caseblocks position (sizeOut of the switch).
+        let sizeout = self.arena[switch_root].size_out();
+        let mut casemap: Vec<int4> = vec![-1; sizeout as usize];
+        for &casebl in cs.iter().skip(1) {
+            let curcase = self.make_case(switch_root, casebl, 0);
+            let outindex = curcase.outindex;
+            caseblocks.push(curcase);
+            if (outindex as usize) < casemap.len() {
+                casemap[outindex as usize] = caseblocks.len() as int4 - 1;
+            }
+        }
+        // Fillin fall-thru chaining: a t_goto case targeting another case chains.
+        for i in 0..caseblocks.len() {
+            let casebl = caseblocks[i].block;
+            if self.arena[casebl].get_type() == BlockType::Goto {
+                if let Some(targetbl) = self.arena[casebl].get_goto_target() {
+                    if let Some(front) = self.get_front_leaf(targetbl) {
+                        if let Some(basicbl) = self.sub_block(front, 0) {
+                            // inindex of the switch into the target's front leaf.
+                            let inindex = self.arena[front].get_in_index(switch_root);
+                            if inindex != -1 {
+                                let oidx = self.arena[front].get_in_rev_index(inindex);
+                                if (oidx as usize) < casemap.len() {
+                                    caseblocks[i].chain = casemap[oidx as usize];
+                                }
+                            }
+                            let _ = basicbl;
+                        }
+                    }
+                }
+            }
+        }
+        // cs[0] t_multigoto: marked switch edges become f_goto_goto cases.
+        if self.arena[switch_root].get_type() == BlockType::MultiGoto {
+            let gotos: Vec<BlockId> = match &self.arena[switch_root].kind {
+                BlockKind::MultiGoto { gotoedges, .. } => gotoedges.clone(),
+                _ => Vec::new(),
+            };
+            for g in gotos {
+                let c = self.make_case(switch_root, g, block_flags::f_goto_goto);
+                caseblocks.push(c);
+            }
+        }
+        let _ = switch_id;
+        caseblocks
+    }
+
+    /// Build a single [`CaseOrder`] for `bl` (C++ `BlockSwitch::addCase`,
+    /// `block.cc:3546`).  `gt` is the unstructured branch type (0 if structured).
+    fn make_case(&self, switch_root: BlockId, bl: BlockId, gt: uint4) -> CaseOrder {
+        // const FlowBlock *basicbl = bl->getFrontLeaf()->subBlock(0);
+        let front = self.get_front_leaf(bl);
+        let basicblock = front.and_then(|f| self.sub_block(f, 0));
+        // int4 inindex = basicbl->getInIndex(switchbl);  (sblocks: front leaf vs
+        // switch root); outindex = basicbl->getInRevIndex(inindex).
+        let (outindex, isdefault) = match front {
+            Some(f) => {
+                let inindex = self.arena[f].get_in_index(switch_root);
+                if inindex == -1 {
+                    (0, false)
+                } else {
+                    let oi = self.arena[f].get_in_rev_index(inindex);
+                    let isdef = self.arena[switch_root].is_default_branch(oi);
+                    (oi, isdef)
+                }
+            }
+            None => (0, false),
+        };
+        let isexit = if gt != 0 { false } else { self.arena[bl].size_out() == 1 };
+        CaseOrder {
+            block: bl,
+            basicblock,
+            label: 0,
+            depth: 0,
+            chain: -1,
+            outindex,
+            gototype: gt,
+            isexit,
+            isdefault,
+        }
     }
 
     /// Build a copy of a BlockGraph as BlockCopy nodes (C++ `BlockGraph::buildCopy`,

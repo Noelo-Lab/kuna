@@ -206,6 +206,12 @@ impl CircleRange {
         self.mask
     }
 
+    /// Set the mask directly (C++ writes `mask` in `CircleRange::pullBack`'s
+    /// SUBPIECE-zero special case — `mask = calc_mask(res->getSize())`).
+    pub fn set_mask(&mut self, m: uintb) {
+        self.mask = m;
+    }
+
     /// Get the step for the range (C++ `getStep`).
     pub fn get_step(&self) -> int4 {
         self.step

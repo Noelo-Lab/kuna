@@ -173,11 +173,10 @@ pub struct Funcdata {
     localmap: Option<crate::varmap::ScopeLocal>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
-    /// SEAM(W4): the real `JumpTable` (`jumptable.{hh,cc}`) is W4; the slots are
-    /// carried as opaque [`JumpTableId`] handles so `numJumpTables`/`getJumpTable`
-    /// and the dead-table sweep in `structureReset` keep their identity, but the
-    /// table *contents* live in the W4 wave.
-    jumpvec: Vec<JumpTableId>,
+    /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
+    /// chain (`recoverJumpTable`/`stageJumpTable`/`switchOverJumpTables`) populates
+    /// it with the recovered address tables.
+    jumpvec: Vec<crate::jumptable::JumpTable>,
     /// Container of Varnode objects for \b this function (C++ `vbank`)
     vbank: VarnodeBank,
     /// Container of PcodeOp objects for \b this function (C++ `obank`)
@@ -360,6 +359,20 @@ impl Funcdata {
     /// Get the program/architecture owning \b this function (C++ `getArch`).
     pub fn get_arch(&self) -> &ArchHandle {
         &self.glb
+    }
+
+    /// Build a fresh empty Funcdata sharing this function's arch / entry /
+    /// unique-base (a placeholder for the move-out-build-blocks-move-in dance in
+    /// `build_partial_blocks`).
+    pub fn new_placeholder_like(src: &Funcdata) -> KunaResult<Funcdata> {
+        Funcdata::new(
+            "@@placeholder",
+            "@@placeholder",
+            src.glb.clone(),
+            src.baseaddr.clone(),
+            src.vbank.get_uniqbase(),
+            0,
+        )
     }
     /// Get the function's prototype object (C++ `getFuncProto`).
     pub fn get_func_proto(&self) -> &FuncProto {
@@ -571,14 +584,19 @@ impl Funcdata {
     }
 
     /// Find the jump table associated with a BRANCHIND op, or `None` (C++
-    /// `Funcdata::findJumpTable`).
-    ///
-    /// SEAM(W7): `ActionDeadCode` uses this only for the BRANCHIND switch-var
-    /// consume mask; with no jump-table recovery (`JumpTable` is a W7 seam) this
-    /// is always `None`, so the BRANCHIND input is treated as fully consumed (the
-    /// conservative default the C++ takes when `jt == 0`).
-    pub fn find_jump_table(&self, _op: OpId) -> Option<()> {
-        None
+    /// `Funcdata::findJumpTable`, `funcdata_block.cc:462`): look up the table whose
+    /// `getOpAddress()` matches the op's address.
+    pub fn find_jump_table(&self, op: OpId) -> Option<&crate::jumptable::JumpTable> {
+        let addr = self.obank().get(op)?.get_addr();
+        self.jumpvec.iter().find(|jt| jt.get_op_address() == addr)
+    }
+
+    /// Index of the jump table associated with a BRANCHIND op (companion to
+    /// [`find_jump_table`](Self::find_jump_table) for the `collectEdges` consult,
+    /// which needs the index to read the out-edge address table).
+    pub fn find_jump_table_index(&self, op: OpId) -> Option<usize> {
+        let addr = self.obank().get(op)?.get_addr().clone();
+        self.jumpvec.iter().position(|jt| *jt.get_op_address() == addr)
     }
 
     /// Perform an entire heritage pass linking Varnode reads to writes (C++
@@ -742,6 +760,11 @@ impl Funcdata {
     /// Are high-level variables assigned to Varnodes (C++ `isHighOn`).
     pub fn is_high_on(&self) -> bool {
         (self.flags & funcdata_flags::highlevel_on) != 0
+    }
+    /// The raw function-state flag word (C++ `flags`).  Read by the jump-table
+    /// recovery chain for the `jumptablerecovery_dont` short-circuit.
+    pub fn flags(&self) -> uint4 {
+        self.flags
     }
     /// Has processing of the function started (C++ `isProcStarted`).
     pub fn is_proc_started(&self) -> bool {
@@ -1008,14 +1031,22 @@ impl Funcdata {
     pub fn num_jump_tables(&self) -> int4 {
         self.jumpvec.len() as int4
     }
-    /// Get the i-th jump-table handle (C++ `getJumpTable`).  // SEAM(W4)
-    pub fn get_jump_table(&self, i: int4) -> JumpTableId {
-        self.jumpvec[i as usize]
+    /// Get the i-th jump-table (C++ `getJumpTable`).
+    pub fn get_jump_table(&self, i: int4) -> &crate::jumptable::JumpTable {
+        &self.jumpvec[i as usize]
     }
-    /// Mutable access to the jump-table handle vector (for the W4 jump-table
-    /// wave and the `clear_jump_tables`/`structure_reset` sweeps).  // SEAM(W4)
-    pub(crate) fn jumpvec_mut(&mut self) -> &mut Vec<JumpTableId> {
+    /// Mutable access to the i-th jump-table.
+    pub fn get_jump_table_mut(&mut self, i: int4) -> &mut crate::jumptable::JumpTable {
+        &mut self.jumpvec[i as usize]
+    }
+    /// Mutable access to the jump-table vector (for the recovery chain and the
+    /// `clear_jump_tables`/`structure_reset` sweeps).
+    pub(crate) fn jumpvec_mut(&mut self) -> &mut Vec<crate::jumptable::JumpTable> {
         &mut self.jumpvec
+    }
+    /// Immutable slice of the jump-table vector (recovery-chain read accessor).
+    pub(crate) fn jumpvec_slice(&self) -> &[crate::jumptable::JumpTable] {
+        &self.jumpvec
     }
 
     // -----------------------------------------------------------------------
