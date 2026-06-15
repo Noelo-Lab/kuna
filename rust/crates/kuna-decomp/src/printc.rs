@@ -3184,10 +3184,19 @@ impl PrintC {
         };
         if v.is_constant() {
             let (off, sz) = (v.get_offset(), v.get_size());
-            // C++ `push_integer` reads the constant's `vn->getHigh()->getSymbol()
-            // ->getDisplayFormat()` (printc.cc:1370-1376); the `force varnode`
-            // equate Symbol parks that format on the high (build_dynamic_symbol).
-            let display_fmt = fd.vn_high_display_format(vn);
+            // C++ `PrintLanguage::pushVnExplicit` (printlanguage.cc:227) passes
+            // `ct->getDisplayFormat()` where `ct = vn->getHighTypeReadFacing(op)` —
+            // the read-facing type's forced format reaches `push_integer` as its
+            // `displayFormat` argument.  Inside `push_integer` (printc.cc:1376) the
+            // varnode high's equate-Symbol format then OVERRIDES it when present.
+            // So: equate-Symbol format wins; otherwise the read-facing type format
+            // (e.g. `force datatype octint4 oct` -> `globaloct = 05555`).
+            let sym_fmt = fd.vn_high_display_format(vn);
+            let display_fmt = if sym_fmt != display_format::NONE {
+                sym_fmt
+            } else {
+                v.get_type_read_facing(op).get_display_format()
+            };
             self.push_constant_ir_fmt(off, sz, op, display_fmt);
             return;
         }

@@ -294,6 +294,38 @@ impl GlobalQuery {
         Some((e.symbol_name.clone(), sym_off, e.symbol_type.clone()))
     }
 
+    /// The type-locked covering Symbol's sized geometry for a Varnode — the input
+    /// to C++ `SymbolEntry::updateType`/`getSizedType` (`database.cc:136,151`).
+    ///
+    /// `setVarnodeProperties` (funcdata_varnode.cc:31) calls `setSymbolProperties`
+    /// (varnode.cc:429) -> `entry->updateType(this)`, which type-locks the Varnode
+    /// to `getSizedType(addr,size) = getExactPiece(symbol->getType(), off, size)`
+    /// ONLY when `(symbol->getFlags() & typelock) != 0`.  This returns
+    /// `(symbol_type, off)` for the covering entry when it is type-locked, so the
+    /// caller can run `getExactPiece` against the shared `TypeFactory` and apply
+    /// `Varnode::updateType(dt, lock=true, override=true)`.  `None` when no global
+    /// Symbol covers `[addr, addr+size)` or its Symbol is not type-locked.
+    pub fn sized_type_geometry(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<(std::rc::Rc<crate::dtype::Datatype>, int4)> {
+        use crate::varnode::varnode_flags;
+        if addr.is_constant() {
+            return None;
+        }
+        let e = self.find_container_entry(addr, size, usepoint)?;
+        // SymbolEntry::updateType: only a type-locked Symbol forces a type.
+        if (e.all_flags & varnode_flags::typelock) == 0 {
+            return None;
+        }
+        let ct = e.symbol_type.clone()?;
+        // getSizedType: off = (inaddr - addr) + offset (non-dynamic entry).
+        let off = (addr.get_offset().wrapping_sub(e.first) as int4).wrapping_add(e.symbol_offset);
+        Some((ct, off))
+    }
+
     /// C++ `Scope::queryProperties` (`database.cc:1268-1286`) for the parentless
     /// global scope: the Varnode boolean properties of the memory range, whether
     /// or not a covering Symbol exists.  Constant addresses never match (the
@@ -598,6 +630,27 @@ impl Architecture {
         self.global_query
             .as_ref()
             .and_then(|gq| gq.name_for_varnode(addr, size, usepoint))
+    }
+
+    /// The type-locked covering global Symbol's `(symbol_type, in_symbol_offset)`
+    /// for a Varnode storage range — the geometry C++ `SymbolEntry::getSizedType`
+    /// (`database.cc:151`) feeds `getExactPiece`.  Drives the type-force half of
+    /// `Funcdata::setVarnodeProperties` -> `Varnode::setSymbolProperties` ->
+    /// `entry->updateType` (varnode.cc:429, database.cc:136): a global-mapped store
+    /// to a type-locked Symbol (`map addr r0x301018 octint4 globaloct`) picks up
+    /// that Symbol's data-type, so `ActionInferTypes` seeds the store + its COPY
+    /// input from it and the forced display format (`oct`) reaches the constant.
+    /// `None` when no global symbol table is shared or the covering Symbol is not
+    /// type-locked.
+    pub fn sized_type_for_global_varnode(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<(std::rc::Rc<crate::dtype::Datatype>, int4)> {
+        self.global_query
+            .as_ref()
+            .and_then(|gq| gq.sized_type_geometry(addr, size, usepoint))
     }
 
     /// Get the minimum laned-register size (C++

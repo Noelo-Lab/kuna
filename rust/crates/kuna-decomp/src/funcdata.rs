@@ -1407,11 +1407,37 @@ impl Funcdata {
             let vflags = self.get_arch().query_global_properties(&addr, size, &usepoint);
             if vflags != 0 {
                 // C++ `vn->setFlags(vflags & ~Varnode::typelock)` (typelock is set by
-                // `updateType`, never here).  The entry-force-type branch
-                // (`setSymbolProperties`) is the local `ScopeLocal` seam; for a global
-                // the flags above are what survival + merge + naming read.
+                // `updateType`, never here).  These flags (`mapped|addrtied|persist`,
+                // plus any `readonly`/`volatile`) are what survival + merge + naming
+                // read.
                 if let Some(v) = self.vbank_mut().get_mut(vn) {
                     v.set_flags_pub(vflags & !varnode_flags::typelock);
+                }
+            }
+            // C++ `Varnode::setSymbolProperties` (varnode.cc:429) -> `entry->updateType`
+            // (database.cc:136): a type-locked covering Symbol forces its
+            // `getSizedType` onto the Varnode via `updateType(dt, lock=true,
+            // override=true)`.  This is the type-force half of the global query that
+            // the prior flag-only stand-in deferred: it seeds `ActionInferTypes` from
+            // the mapped global's data-type (e.g. `octint4` for `globaloct`), so the
+            // forced display format propagates through the store's COPY to the stored
+            // constant (`globaloct = 05555`).  The local `ScopeLocal` half (recovered
+            // stack locals) remains the naming wave's seam.
+            if let Some((symtype, off)) =
+                self.get_arch().sized_type_for_global_varnode(&addr, size, &usepoint)
+            {
+                // dt = getExactPiece(symbol->getType(), off, size) against the shared
+                // TypeFactory; null (no exact piece) leaves the Varnode untyped, as
+                // C++ `getSizedType` returning NULL skips the `updateType`.
+                let dt = self
+                    .get_arch()
+                    .types()
+                    .and_then(|t| t.get_exact_piece(symtype, off, size).ok().flatten());
+                if let Some(dt) = dt {
+                    if let Some(v) = self.vbank_mut().get_mut(vn) {
+                        // updateType(dt, lock=true, override=true)
+                        v.update_type_locked(dt, true, true);
+                    }
                 }
             }
         }
