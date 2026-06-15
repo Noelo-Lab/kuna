@@ -751,6 +751,10 @@ impl Architecture {
         seam.max_jumptable_size = self.max_jumptable_size;
         seam.funcptr_align = self.funcptr_align;
         seam.loader = Some(self.translate.loader_rc());
+        // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
+        // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate
+        // `Funcdata::fillinReadOnly` (the readonly-RAM-global constant fold).
+        seam.readonlypropagate = self.readonlypropagate;
         // Snapshot the global symbol table onto `glb` so the per-function
         // `setVarnodeProperties` can run `localmap->queryProperties`'s walk into
         // the global scope (C++ `glb` reaches the live `symboltab`; the merged

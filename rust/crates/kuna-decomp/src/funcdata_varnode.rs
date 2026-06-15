@@ -1082,6 +1082,341 @@ impl Funcdata {
         Ok(())
     }
 
+    /// Treat the given Varnode as read-only, look up its value in the LoadImage
+    /// and replace read references with the value as a constant Varnode (C++
+    /// `Funcdata::fillinReadOnly`, `funcdata_varnode.cc:653`).
+    ///
+    /// Returns `true` if any change was made.  Driven by `ActionVarnodeProps` when
+    /// `glb->readonlypropagate` is set (the `option readonly` switch).  The float
+    /// cluster's `v1 = 1.1234567812345` initializers come from folding the
+    /// IEEE-754 bytes that live in read-only RAM into a constant here.
+    pub fn fillin_read_only(&mut self, vn: VarnodeId) -> KunaResult<bool> {
+        // if (vn->isWritten()) { ... return false; }  -- Can't replace output
+        let (is_written, defop) = {
+            let v = self.vbank().get(vn).expect("fillin_read_only: stale vn");
+            (v.is_written(), v.get_def())
+        };
+        if is_written {
+            let defop = defop.expect("fillin_read_only: written vn has no def");
+            // if (defop->isMarker()) defop->setAdditionalFlag(warning);
+            let is_marker = self.obank().get(defop).expect("fillin_read_only: stale def").is_marker();
+            if is_marker {
+                self.obank_mut()
+                    .get_mut(defop)
+                    .expect("fillin_read_only: stale def")
+                    .set_additional_flag(crate::op::pcodeop_addlflags::warning);
+            } else {
+                // else if (!defop->isWarning()) { ... warning(...) ... }
+                let already_warned =
+                    self.obank().get(defop).expect("fillin_read_only: stale def").is_warning();
+                if !already_warned {
+                    self.obank_mut()
+                        .get_mut(defop)
+                        .expect("fillin_read_only: stale def")
+                        .set_additional_flag(crate::op::pcodeop_addlflags::warning);
+                    // if ((!vn->isAddrForce())||(!vn->hasNoDescend())) { warning(...) }
+                    let (addr_force, no_descend) = {
+                        let v = self.vbank().get(vn).expect("fillin_read_only: stale vn");
+                        (v.is_addr_force(), v.has_no_descend())
+                    };
+                    if !addr_force || !no_descend {
+                        let (spcname, vaddr) = {
+                            let v = self.vbank().get(vn).expect("fillin_read_only: stale vn");
+                            (v.get_space().get_name().to_string(), v.get_addr().clone())
+                        };
+                        // s << "Read-only address (" << space << ',' << addr << ") is written"
+                        let mut s = format!("Read-only address ({},", spcname);
+                        let _ = vaddr.print_raw(&mut s);
+                        s.push_str(") is written");
+                        let defaddr = self.obank().get(defop).expect("fillin_read_only").get_addr().clone();
+                        self.warning(&s, &defaddr);
+                    }
+                }
+            }
+            return Ok(false); // No change was made
+        }
+
+        // if (vn->getSize() > sizeof(uintb)) return false;  -- exceeds precision
+        let vnsize = self.vbank().get(vn).expect("fillin_read_only: stale vn").get_size();
+        if (vnsize as usize) > std::mem::size_of::<uintb>() {
+            return Ok(false);
+        }
+
+        // try { glb->loader->loadFill(bytes,vn->getSize(),vn->getAddr()); }
+        // catch(DataUnavailError) { vn->clearFlags(readonly); return true; }
+        let (vaddr, big_endian) = {
+            let v = self.vbank().get(vn).expect("fillin_read_only: stale vn");
+            (v.get_addr().clone(), v.get_space().is_big_endian())
+        };
+        let glb = self.get_arch().clone();
+        let mut bytes = [0u8; 32];
+        if glb.loader_fill(&mut bytes[..vnsize as usize], &vaddr).is_err() {
+            // Could not get value from LoadImage: treat as writeable.
+            self.vbank_mut()
+                .get_mut(vn)
+                .expect("fillin_read_only: stale vn")
+                .clear_flags_pub(varnode_flags::readonly);
+            return Ok(true);
+        }
+
+        // Assemble the constant, honoring the space endianness (C++ shifts the
+        // accumulator left a byte per step, most-significant byte first).
+        let mut res: uintb = 0;
+        if big_endian {
+            // for(i=0;i<size;++i) { res<<=8; res|=bytes[i]; }
+            for b in &bytes[..vnsize as usize] {
+                res = res.wshl(8) | (*b as uintb);
+            }
+        } else {
+            // for(i=size-1;i>=0;--i) { res<<=8; res|=bytes[i]; }
+            for b in bytes[..vnsize as usize].iter().rev() {
+                res = res.wshl(8) | (*b as uintb);
+            }
+        }
+
+        // Replace all references to vn.
+        // Datatype *locktype = vn->isTypeLock() ? vn->getType() : 0;
+        let locktype: Option<Rc<Datatype>> = {
+            let v = self.vbank().get(vn).expect("fillin_read_only: stale vn");
+            if v.is_type_lock() {
+                Some(Rc::clone(v.get_type()))
+            } else {
+                None
+            }
+        };
+
+        let mut changemade = false;
+        // iter = vn->beginDescend(); while(iter != endDescend()) { op = *iter++; ... }
+        let readers = self.descend_snapshot(vn);
+        for op in readers {
+            // i = op->getSlot(vn);  (a stale -1 means this read was already retired
+            // by a prior INDIRECT->COPY rewrite; the C++ descend entry is 1:1, so
+            // re-resolve per entry and skip if vn is no longer read here.)
+            let i = self.obank().get(op).map(|o| o.get_slot(vn)).unwrap_or(-1);
+            if i < 0 {
+                continue;
+            }
+            // if (op->isMarker()) { ... }
+            let is_marker = self.obank().get(op).expect("fillin_read_only: stale op").is_marker();
+            if is_marker {
+                // if ((op->code()!=CPUI_INDIRECT)||(i!=0)) continue;
+                let code = self.obank().get(op).expect("fillin_read_only: stale op").code();
+                if code != OpCode::CPUI_INDIRECT || i != 0 {
+                    continue;
+                }
+                // Varnode *outvn = op->getOut();
+                let outvn = match self.obank().get(op).expect("fillin_read_only: stale op").get_out() {
+                    Some(o) => o,
+                    None => continue,
+                };
+                // if (outvn->getAddr() == vn->getAddr()) continue; // Ignore indirect to itself
+                let same_addr = {
+                    let ov = self.vbank().get(outvn).expect("fillin_read_only: stale outvn");
+                    ov.get_addr() == &vaddr
+                };
+                if same_addr {
+                    continue;
+                }
+                // Change the indirect to a COPY: opRemoveInput(op,1); opSetOpcode(op,COPY);
+                self.op_remove_input(op, 1);
+                self.op_set_opcode_code(op, OpCode::CPUI_COPY);
+            }
+            // Varnode *cvn = newConstant(vn->getSize(),res);
+            let cvn = self.new_constant(vnsize, res);
+            // if (locktype) cvn->updateType(locktype,true,true);
+            if let Some(lt) = &locktype {
+                self.vbank_mut()
+                    .get_mut(cvn)
+                    .expect("fillin_read_only: stale cvn")
+                    .update_type_locked(Rc::clone(lt), true, true);
+            }
+            // opSetInput(op,cvn,i);
+            self.op_set_input(op, cvn, i)?;
+            changemade = true;
+        }
+        Ok(changemade)
+    }
+
+    /// Replace every read reference of the given Varnode with a constant value
+    /// (C++ `Funcdata::totalReplaceConstant`, `funcdata_varnode.cc:1517`).
+    ///
+    /// A new constant Varnode is created for each read site.  For any marker op
+    /// (MULTIEQUAL/INDIRECT) a single COPY op is inserted and the marker input is
+    /// set to the COPY output (constants may not go directly into a marker).
+    /// Driven by `ActionVarnodeProps` for a Varnode whose consumed bits and
+    /// non-zero mask are disjoint (it can only carry the value 0).
+    pub fn total_replace_constant(&mut self, vn: VarnodeId, val: uintb) -> KunaResult<()> {
+        let vnsize = self.vbank().get(vn).expect("total_replace_constant: stale vn").get_size();
+        // PcodeOp *copyop = 0;  (the single shared COPY for marker reads)
+        let mut copyop: Option<OpId> = None;
+        // iter = vn->beginDescend(); while(iter != endDescend()) { op = *iter++; ... }
+        let readers = self.descend_snapshot(vn);
+        for op in readers {
+            let i = self.obank().get(op).map(|o| o.get_slot(vn)).unwrap_or(-1);
+            if i < 0 {
+                continue;
+            }
+            let is_marker = self.obank().get(op).expect("total_replace_constant: stale op").is_marker();
+            let newrep: VarnodeId = if is_marker {
+                // Do not put constant directly in marker.
+                if let Some(existing) = copyop {
+                    // newrep = copyop->getOut();
+                    self.obank()
+                        .get(existing)
+                        .expect("total_replace_constant: stale copyop")
+                        .get_out()
+                        .expect("total_replace_constant: copyop has no out")
+                } else {
+                    let (is_written, def) = {
+                        let v = self.vbank().get(vn).expect("total_replace_constant: stale vn");
+                        (v.is_written(), v.get_def())
+                    };
+                    let cop = if is_written {
+                        // copyop = newOp(1, vn->getDef()->getAddr());
+                        let defop = def.expect("total_replace_constant: written vn has no def");
+                        let defaddr =
+                            self.obank().get(defop).expect("total_replace_constant: stale def").get_addr().clone();
+                        let cop = self.new_op(1, defaddr);
+                        self.op_set_opcode_code(cop, OpCode::CPUI_COPY);
+                        let newrep = self.new_unique_out(vnsize, cop)?;
+                        let con = self.new_constant(vnsize, val);
+                        self.op_set_input(cop, con, 0)?;
+                        self.op_insert_after(cop, defop);
+                        let _ = newrep;
+                        cop
+                    } else {
+                        // BlockBasic *bb = getBasicBlocks().getBlock(0);
+                        let bb = self.bblocks_get_block(0);
+                        let bbstart = self.bblocks_block_start(bb);
+                        let cop = self.new_op(1, bbstart);
+                        self.op_set_opcode_code(cop, OpCode::CPUI_COPY);
+                        let _newrep = self.new_unique_out(vnsize, cop)?;
+                        let con = self.new_constant(vnsize, val);
+                        self.op_set_input(cop, con, 0)?;
+                        self.op_insert_begin(cop, bb);
+                        cop
+                    };
+                    copyop = Some(cop);
+                    self.obank()
+                        .get(cop)
+                        .expect("total_replace_constant: stale copyop")
+                        .get_out()
+                        .expect("total_replace_constant: copyop has no out")
+                }
+            } else {
+                // newrep = newConstant(vn->getSize(), val);
+                self.new_constant(vnsize, val)
+            };
+            // opSetInput(op,newrep,i);
+            self.op_set_input(op, newrep, i)?;
+        }
+        Ok(())
+    }
+
+    /// Model the given Varnode's volatile read/write as a special user op (C++
+    /// `Funcdata::replaceVolatile`, `funcdata_varnode.cc:733`).
+    ///
+    /// The Varnode (assumed not fully linked) is replaced by a temporary within
+    /// the data-flow, and its address becomes a CALLOTHER (volatile-read /
+    /// volatile-write builtin) parameter, so the read/write side effect survives.
+    /// Returns `true` if a change was made.  Driven by `ActionVarnodeProps` for a
+    /// volatile Varnode.  The builtin user-op *index* is a fixed constant
+    /// (`UserPcodeOp::BUILTIN_VOLATILE_{READ,WRITE}`); the C++ `registerBuiltin`
+    /// side-effect (installing the op for the print pass) is the userop-print
+    /// wave's, so the index is used directly here.
+    pub fn replace_volatile(&mut self, vn: VarnodeId) -> KunaResult<bool> {
+        use crate::userop::{BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE};
+        let (is_written, vaddr, vnsize, is_type_lock) = {
+            let v = self.vbank().get(vn).expect("replace_volatile: stale vn");
+            (v.is_written(), v.get_addr().clone(), v.get_size(), v.is_type_lock())
+        };
+        let newop: OpId;
+        if is_written {
+            // A written value -> volatile write.
+            // if (!vn->hasNoDescend()) throw "Volatile memory was propagated";
+            let no_descend =
+                self.vbank().get(vn).expect("replace_volatile: stale vn").has_no_descend();
+            if !no_descend {
+                return Err(KunaError::lowlevel("Volatile memory was propagated"));
+            }
+            let defop = self
+                .vbank()
+                .get(vn)
+                .expect("replace_volatile: stale vn")
+                .get_def()
+                .expect("replace_volatile: written vn has no def");
+            let defaddr =
+                self.obank().get(defop).expect("replace_volatile: stale def").get_addr().clone();
+            newop = self.new_op(3, defaddr);
+            self.op_set_opcode_code(newop, OpCode::CPUI_CALLOTHER);
+            // opSetInput(newop, newConstant(4, vw_op->getIndex()), 0);
+            let idx_con = self.new_constant(4, BUILTIN_VOLATILE_WRITE as uintb);
+            self.op_set_input(newop, idx_con, 0)?;
+            // annoteVn = newCodeRef(vn->getAddr()); annoteVn->setFlags(volatil);
+            let annote = self.new_code_ref(&vaddr);
+            self.vbank_mut()
+                .get_mut(annote)
+                .expect("replace_volatile: stale annote")
+                .set_flags_pub(varnode_flags::volatil);
+            self.op_set_input(newop, annote, 1)?;
+            // tmp = newUnique(vn->getSize()); opSetOutput(defop, tmp);
+            let tmp = self.new_unique(vnsize, None);
+            self.op_set_output(defop, tmp)?;
+            // opSetInput(newop, tmp, 2); opInsertAfter(newop, defop);
+            self.op_set_input(newop, tmp, 2)?;
+            self.op_insert_after(newop, defop);
+        } else {
+            // A read value -> volatile read.
+            // if (vn->hasNoDescend()) return false; // Dead
+            let no_descend =
+                self.vbank().get(vn).expect("replace_volatile: stale vn").has_no_descend();
+            if no_descend {
+                return Ok(false);
+            }
+            // readop = vn->loneDescend(); if (0) throw "used more than once";
+            let readop = self
+                .lone_descend(vn)
+                .ok_or_else(|| KunaError::lowlevel("Volatile memory value used more than once"))?;
+            let readaddr =
+                self.obank().get(readop).expect("replace_volatile: stale readop").get_addr().clone();
+            newop = self.new_op(2, readaddr);
+            self.op_set_opcode_code(newop, OpCode::CPUI_CALLOTHER);
+            // tmp = newUniqueOut(vn->getSize(), newop);
+            let tmp = self.new_unique_out(vnsize, newop)?;
+            // opSetInput(newop, newConstant(4, vr_op->getIndex()), 0);
+            let idx_con = self.new_constant(4, BUILTIN_VOLATILE_READ as uintb);
+            self.op_set_input(newop, idx_con, 0)?;
+            // annoteVn = newCodeRef(vn->getAddr()); annoteVn->setFlags(volatil);
+            let annote = self.new_code_ref(&vaddr);
+            self.vbank_mut()
+                .get_mut(annote)
+                .expect("replace_volatile: stale annote")
+                .set_flags_pub(varnode_flags::volatil);
+            self.op_set_input(newop, annote, 1)?;
+            // opSetInput(readop, tmp, readop->getSlot(vn));
+            let slot =
+                self.obank().get(readop).expect("replace_volatile: stale readop").get_slot(vn);
+            self.op_set_input(readop, tmp, slot)?;
+            // opInsertBefore(newop, readop);
+            self.op_insert_before(newop, readop);
+            // if (vr_op->getDisplay() != 0) newop->setHoldOutput();
+            if self.get_arch().volatile_read_holds_output() {
+                self.obank_mut()
+                    .get_mut(newop)
+                    .expect("replace_volatile: stale newop")
+                    .set_hold_output();
+            }
+        }
+        // if (vn->isTypeLock()) newop->setAdditionalFlag(special_prop);
+        if is_type_lock {
+            self.obank_mut()
+                .get_mut(newop)
+                .expect("replace_volatile: stale newop")
+                .set_additional_flag(crate::op::pcodeop_addlflags::special_prop);
+        }
+        Ok(true)
+    }
+
     // -----------------------------------------------------------------------
     // Parameter-trial ancestor analysis (funcdata_varnode.cc:1802-2040) — the
     // S4 return-value recovery substrate (ActionReturnRecovery / ActionActiveParam).

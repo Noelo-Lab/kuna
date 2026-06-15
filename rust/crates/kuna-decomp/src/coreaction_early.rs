@@ -436,22 +436,151 @@ impl Action for ActionVarnodeProps {
         }
         Some(Box::new(ActionVarnodeProps { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:1298 — walk beginLoc()..endLoc():
-        //   - vn->isAutoLiveHold() && pass>0  : clearAutoLiveHold (count+=1)
-        //       (skipping LOAD-through-const/readonly pointers)
-        //   - vn->hasActionProperty():
-        //       readonly && cachereadonly -> fillinReadOnly  (count+=1)
-        //       else volatile             -> replaceVolatile (count+=1)
-        //   - (NZMask & consume)==0 && size<=8 && !const && !COPY-of-0 && !noDescend
-        //                                  -> totalReplaceConstant(vn,0) (count+=1)
-        //
-        // SEAM(W3-vn/W4): beginLoc/endLoc loc-set iteration, getHeritagePass, and
-        // the replace primitives fillinReadOnly / replaceVolatile /
-        // totalReplaceConstant are not in the merged tree (totalReplaceConstant is
-        // only present as a unit-test fixture in funcdata_varnode, not a pub fn).
-        // The body needs all four to act, so the action no-ops (count stays 0)
-        // until that surface lands.
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:1298.
+        //   Architecture *glb = data.getArch();
+        //   bool cachereadonly = glb->readonlypropagate;
+        //   int4 pass = data.getHeritagePass();
+        let cachereadonly = data.get_arch().readonly_propagate();
+        let pass = data.get_heritage_pass();
+
+        // iter = data.beginLoc(); while(iter != data.endLoc()) { vn = *iter++; ... }
+        // The C++ advances the iterator before vn may be deleted/rewritten; the
+        // faithful Rust mirror snapshots the loc-set order once (a vn only ever
+        // loses descendants here, never gains them, so a snapshot is sound).
+        let locs: Vec<crate::seams::VarnodeId> = data.vbank().iter_loc().collect();
+        for vn in locs {
+            // The varnode may have been freed by an earlier replace (the C++
+            // `*iter++` already moved past it; a freed-mid-loop vn is simply
+            // skipped — its descend list is now empty).
+            let info = match data.vbank().get(vn) {
+                Some(v) => (
+                    v.is_annotation(),
+                    v.get_size(),
+                    v.is_auto_live_hold(),
+                    v.is_written(),
+                    v.has_action_property(),
+                    v.is_read_only(),
+                    v.is_volatile(),
+                    v.get_nz_mask(),
+                    v.get_consume(),
+                    v.is_constant(),
+                    v.has_no_descend(),
+                    v.get_def(),
+                ),
+                None => continue,
+            };
+            let (
+                is_annotation,
+                vn_size,
+                is_auto_live_hold,
+                is_written,
+                has_action_property,
+                is_read_only,
+                is_volatile,
+                nz_mask,
+                consume,
+                is_constant,
+                has_no_descend,
+                def,
+            ) = info;
+
+            // if (vn->isAnnotation()) continue;
+            if is_annotation {
+                continue;
+            }
+
+            if is_auto_live_hold {
+                // if (pass > 0) { ... clearAutoLiveHold(); count+=1; }
+                if pass > 0 {
+                    // The C++ skips clearing when the value is a LOAD through a
+                    // constant/readonly pointer (possibly behind one COPY), so the
+                    // hold survives until the LOAD has been resolved.
+                    let mut skip = false;
+                    if is_written {
+                        let loadop = def.expect("varnodeprops: written vn has no def");
+                        if data.obank().get(loadop).map(|o| o.code()) == Some(OpCode::CPUI_LOAD) {
+                            // Varnode *ptr = loadOp->getIn(1);
+                            let mut ptr = data.obank().get(loadop).and_then(|o| o.get_in(1));
+                            if let Some(p) = ptr {
+                                let (pc, pro, pw, pdef) = {
+                                    let v = data.vbank().get(p).expect("varnodeprops: stale ptr");
+                                    (v.is_constant(), v.is_read_only(), v.is_written(), v.get_def())
+                                };
+                                if pc || pro {
+                                    skip = true;
+                                } else if pw {
+                                    // if (ptr->isWritten()) { copyOp = ptr->getDef(); ... }
+                                    let copyop = pdef.expect("varnodeprops: written ptr has no def");
+                                    if data.obank().get(copyop).map(|o| o.code())
+                                        == Some(OpCode::CPUI_COPY)
+                                    {
+                                        ptr = data.obank().get(copyop).and_then(|o| o.get_in(0));
+                                        if let Some(p2) = ptr {
+                                            let (c2, r2) = {
+                                                let v = data
+                                                    .vbank()
+                                                    .get(p2)
+                                                    .expect("varnodeprops: stale ptr2");
+                                                (v.is_constant(), v.is_read_only())
+                                            };
+                                            if c2 || r2 {
+                                                skip = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !skip {
+                        data.vbank_mut()
+                            .get_mut(vn)
+                            .expect("varnodeprops: stale vn")
+                            .clear_auto_live_hold();
+                        self.base.count += 1;
+                    }
+                }
+            } else if has_action_property {
+                if cachereadonly && is_read_only {
+                    // if (data.fillinReadOnly(vn)) count += 1;
+                    if data.fillin_read_only(vn).unwrap_or(false) {
+                        self.base.count += 1;
+                    }
+                } else if is_volatile {
+                    // if (data.replaceVolatile(vn)) count += 1;
+                    if data.replace_volatile(vn).unwrap_or(false) {
+                        self.base.count += 1;
+                    }
+                }
+            } else if (nz_mask & consume) == 0 && (vn_size as usize) <= std::mem::size_of::<uintb>() {
+                // FIXME: uintb should be arbitrary precision
+                if is_constant {
+                    continue; // Don't replace a constant
+                }
+                // Don't replace a COPY of a non-zero constant (let constant
+                // propagation do COPY-0 -> 0, avoiding infinite recursion).
+                if is_written {
+                    let defop = def.expect("varnodeprops: written vn has no def");
+                    if data.obank().get(defop).map(|o| o.code()) == Some(OpCode::CPUI_COPY) {
+                        let in0 = data.obank().get(defop).and_then(|o| o.get_in(0));
+                        if let Some(i0) = in0 {
+                            let (i0_const, i0_off) = {
+                                let v = data.vbank().get(i0).expect("varnodeprops: stale copy in");
+                                (v.is_constant(), v.get_offset())
+                            };
+                            if i0_const && i0_off == 0 {
+                                continue;
+                            }
+                        }
+                    }
+                }
+                if !has_no_descend {
+                    let _ = data.total_replace_constant(vn, 0);
+                    self.base.count += 1;
+                }
+            }
+        }
         0
     }
 }

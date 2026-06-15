@@ -461,6 +461,19 @@ pub struct Architecture {
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
     /// read-only switch table.  `None` for hand-built fixtures (no loader).
     pub loader: Option<Rc<std::cell::RefCell<Box<dyn kuna_sleigh::loadimage::LoadImage>>>>,
+    /// Treat read-only values as constants (C++ `Architecture::readonlypropagate`,
+    /// flipped by `option readonly`), carried into the per-function `glb` so
+    /// `ActionVarnodeProps::apply` reaches `glb->readonlypropagate` to gate
+    /// [`Funcdata::fillin_read_only`](crate::funcdata::Funcdata::fillin_read_only).
+    /// `false` by default (C++ `Architecture::resetDefaults`).
+    pub readonlypropagate: bool,
+    /// Whether the volatile read/write userops display \e functionally (C++
+    /// `VolatileReadOp`/`VolatileWriteOp` ctor `functional` flag — the `<volatile
+    /// format="functional">` spec attribute).  Drives the `setHoldOutput` branch
+    /// in [`Funcdata::replace_volatile`](crate::funcdata::Funcdata::replace_volatile):
+    /// `getDisplay() != 0` is equivalent to `!functional` for the volatile-read op.
+    /// `false` (non-functional) by default, matching the unconfigured `glb`.
+    pub volatile_display_functional: bool,
     /// Read-only snapshot of the global symbol table (C++ `glb->symboltab`'s
     /// global scope + property map), the wire for `localmap->queryProperties`'s
     /// walk up to the global scope.  Built at `build_arch_handle` (after every
@@ -509,6 +522,12 @@ impl Architecture {
             max_jumptable_size: 0,
             funcptr_align: 0,
             loader: None,
+            // C++ Architecture default: readonlypropagate = false (resetDefaults);
+            // `option readonly` flips it before the per-function build_arch_handle.
+            readonlypropagate: false,
+            // Default volatile ops are non-functional (`getDisplay() != 0`), so the
+            // volatile-read op's output is held; matches the unconfigured glb.
+            volatile_display_functional: false,
             global_query: None,
         }
     }
@@ -545,6 +564,33 @@ impl Architecture {
     }
 
     /// Borrow the data-type factory (C++ `glb->types`), if shared.
+    /// Whether read-only values are treated as constants (C++
+    /// `glb->readonlypropagate`).  Gates `ActionVarnodeProps`'s call into
+    /// `Funcdata::fillinReadOnly`.
+    pub fn readonly_propagate(&self) -> bool {
+        self.readonlypropagate
+    }
+
+    /// Whether the volatile-read op's output must be held (C++
+    /// `vr_op->getDisplay() != 0`).  For the default (non-functional) volatile
+    /// read this is `true`, so `replaceVolatile` calls `setHoldOutput`.
+    pub fn volatile_read_holds_output(&self) -> bool {
+        !self.volatile_display_functional
+    }
+
+    /// Read `sz` bytes out of the program load image at `addr` into `buf`,
+    /// mirroring C++ `glb->loader->loadFill(bytes, sz, addr)`.  Returns an error
+    /// (the C++ `DataUnavailError` analogue) when no loader is shared or the
+    /// region is unavailable.  Used by [`Funcdata::fillin_read_only`](crate::
+    /// funcdata::Funcdata::fillin_read_only) to fetch a read-only Varnode's value.
+    pub fn loader_fill(&self, buf: &mut [u8], addr: &Address) -> KunaResult<()> {
+        let loader = self
+            .loader
+            .as_ref()
+            .ok_or_else(|| KunaError::lowlevel("loadFill: no load image shared"))?;
+        loader.borrow_mut().load_fill(buf, addr)
+    }
+
     pub fn types(&self) -> Option<&dyn crate::dtype::TypeFactory> {
         self.types.as_deref().map(|t| t as &dyn crate::dtype::TypeFactory)
     }
