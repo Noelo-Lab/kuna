@@ -150,3 +150,49 @@ fn condconst2_typed_sig_but_leaks_sub_unlike_oracle() {
         assert!(cpp.contains("char zeroprop(int4 *ptrint,int4 val)"));
     }
 }
+
+/// POSITIVE (keystone `w10-input-params`): on `modulo2.xml` the function has an
+/// UNLOCKED prototype, so the register input must be recovered FROM THE PARAM
+/// MODEL (no `parse line` decl).  The x86-64 `__fastcall` first integer slot is
+/// RCX, declared in the cspec inside a `<group>` (XMM0/RCX share the exclusion
+/// group).  Before this item the cspec `<group>` wrapper was skipped, so the
+/// input ParamList held only the stack overflow entry: `possibleInputParam(RCX)`
+/// was false, no trial registered, and every `modN` rendered `(void)` with a raw
+/// `RCX`/`ECX` register read.  After the `<group>` decode fix
+/// (`ParamListStandard::decode`/`parseGroup`, fspec.cc:1453/1264) the RCX entry
+/// is present, the trial registers, and the recovery binds parameter `a0`.
+///
+/// This pins the recovery half (no raw register read of the first arg; the body
+/// references `a0`).  The residual `int4`/`SUB(a0,0)`/`ZEXT` cleanup is the
+/// downstream type/cast plane (`ActionSetCasts` / type inference), exactly as
+/// the `condconst2` divergence above documents — out of this item's scope.
+#[test]
+fn modulo2_recovers_register_input_as_param_a0() {
+    let rust = match dump_print_c(&rust_test_bin(), "modulo2") {
+        Some(t) => t,
+        None => {
+            eprintln!("SKIP: rust decomp_test_dbg / .sla unavailable");
+            return;
+        }
+    };
+    // Each of the four modN functions must recover a parameter (NOT `(void)`):
+    // the register input is no longer dropped.
+    for f in ["mod2", "mod3", "mod4", "mod6"] {
+        assert!(
+            !rust.contains(&format!("{f}(void)")),
+            "{f} still renders the unrecovered (void) signature (register input \
+             not recovered as a parameter); got:\n{rust}"
+        );
+    }
+    // The recovered first parameter is named `a0` and is USED in the body — the
+    // body must not fall back to a raw RCX/ECX register read of the input.
+    assert!(
+        rust.contains("a0"),
+        "recovered parameter `a0` does not appear; got:\n{rust}"
+    );
+    assert!(
+        !rust.contains("RCX") && !rust.contains("ECX"),
+        "body still reads the raw input register instead of the recovered param \
+         `a0`; got:\n{rust}"
+    );
+}
