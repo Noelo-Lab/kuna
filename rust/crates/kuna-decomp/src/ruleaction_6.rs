@@ -297,6 +297,47 @@ fn nz_mask(data: &Funcdata, vn: VarnodeId) -> uintb {
 fn op_addr(data: &Funcdata, op: OpId) -> kuna_base::address::Address {
     data.obank().get(op).expect("ruleaction_6: stale op").get_addr().clone()
 }
+/// `vn->loneDescend()`.
+#[inline]
+fn lone_descend(data: &Funcdata, vn: VarnodeId) -> Option<OpId> {
+    data.lone_descend(vn)
+}
+/// `vn->isAddrTied()`.
+#[inline]
+fn is_addr_tied(data: &Funcdata, vn: VarnodeId) -> bool {
+    data.vbank().get(vn).expect("ruleaction_6: stale vn").is_addr_tied()
+}
+/// `vn->isProtoPartial()`.
+#[inline]
+fn is_proto_partial(data: &Funcdata, vn: VarnodeId) -> bool {
+    data.vbank().get(vn).expect("ruleaction_6: stale vn").is_proto_partial()
+}
+/// `vn->getAddr()` (cloned).
+#[inline]
+fn vn_addr(data: &Funcdata, vn: VarnodeId) -> kuna_base::address::Address {
+    data.vbank().get(vn).expect("ruleaction_6: stale vn").get_addr().clone()
+}
+/// `vn->getStructuredType()`.
+#[inline]
+fn vn_structured_type(data: &Funcdata, vn: VarnodeId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+    data.vbank().get(vn).expect("ruleaction_6: stale vn").get_structured_type()
+}
+/// `vn->getType()` (cloned `Rc`).
+#[inline]
+fn vn_type(data: &Funcdata, vn: VarnodeId) -> std::rc::Rc<crate::dtype::Datatype> {
+    std::rc::Rc::clone(data.vbank().get(vn).expect("ruleaction_6: stale vn").get_type())
+}
+/// `vn->getSpace()->isBigEndian()`.
+#[inline]
+fn vn_is_big_endian(data: &Funcdata, vn: VarnodeId) -> bool {
+    data.vbank()
+        .get(vn)
+        .expect("ruleaction_6: stale vn")
+        .get_addr()
+        .get_space()
+        .map(|s| s.is_big_endian())
+        .unwrap_or(false)
+}
 
 // =============================================================================
 // RulePtraddUndo (ruleaction.cc:6931 / ruleaction.hh:1105) — "ptraddundo"
@@ -950,6 +991,138 @@ impl RulePieceStructure {
         }
         Ok(false)
     }
+
+    /// Find the base structure or array data-type that `outvn` is part of and the
+    /// Varnode's starting offset within it (C++ `RulePieceStructure::determineDatatype`).
+    ///
+    /// Returns `(Some(ct), baseOffset)` or `(None, _)`.  The C++ partial-symbol arm
+    /// (`vn->getSymbolEntry()->getOffset()` / `getAddr().overlap(...)`) needs the W4
+    /// `mapentry` link which the merged Varnode lacks; when `ct->getSize() ==
+    /// vn->getSize()` (a whole struct value flowing through the tree — the common
+    /// case) `baseOffset` is 0 and no symbol entry is consulted. // SEAM(W4 partial)
+    fn determine_datatype(
+        data: &Funcdata,
+        vn: VarnodeId,
+    ) -> KunaResult<(Option<std::rc::Rc<crate::dtype::Datatype>>, int4)> {
+        let ct = match vn_structured_type(data, vn) {
+            Some(c) => c,
+            None => return Ok((None, 0)),
+        };
+        if ct.get_size() != size(data, vn) {
+            // vn is a partial.  The W4 mapentry/overlap geometry is not available
+            // on the merged Varnode, so the partial-symbol split is a seam: decline
+            // (return null) rather than guess a wrong base offset. // SEAM(W4 partial)
+            return Ok((None, 0));
+        }
+        Ok((Some(ct), 0))
+    }
+
+    /// Convert an INT_ZEXT operation to a PIECE with a zero constant as the first
+    /// parameter (C++ `RulePieceStructure::convertZextToPiece`).
+    fn convert_zext_to_piece(
+        data: &mut Funcdata,
+        zext: OpId,
+        ct: Option<std::rc::Rc<crate::dtype::Datatype>>,
+        mut offset: int4,
+    ) -> KunaResult<bool> {
+        let outvn = out_vn(data, zext);
+        let invn = in_vn(data, zext, 0);
+        if is_const(data, invn) {
+            return Ok(false);
+        }
+        let sz = size(data, outvn) - size(data, invn);
+        // if (sz > sizeof(uintb)) return false;
+        if sz as usize > std::mem::size_of::<uintb>() {
+            return Ok(false);
+        }
+        // offset += outvn->getSpace()->isBigEndian() ? 0 : invn->getSize();
+        offset += if vn_is_big_endian(data, outvn) { 0 } else { size(data, invn) };
+        let mut new_off: int8 = offset as int8;
+        // Walk down to the concrete sub-type matching size `sz`.
+        let mut cur = ct;
+        while let Some(c) = &cur {
+            if c.get_size() <= sz {
+                break;
+            }
+            let (sub, off2) = c.get_sub_type(new_off)?;
+            new_off = off2;
+            cur = sub;
+        }
+        let zerovn = data.new_constant(sz, 0);
+        if let Some(c) = &cur {
+            if c.get_size() == sz {
+                data.vbank_mut().get_mut(zerovn).expect("convertZextToPiece: stale zerovn").update_type(std::rc::Rc::clone(c));
+            }
+        }
+        data.op_set_opcode_code(zext, OpCode::CPUI_PIECE);
+        data.op_insert_input(zext, zerovn, 0)?;
+        // invn's union resolution transfer (inheritUnionField) — no unions in the
+        // structured-piece corpus; the W8 union surface is a documented seam.
+        // SEAM(W8 union): inheritUnionField(invn->getType(), zext, 1, zext, 0).
+        Ok(true)
+    }
+
+    /// Search for leaves in the CONCAT tree that are INT_ZEXT and convert them to
+    /// PIECE (C++ `RulePieceStructure::findReplaceZext`).
+    fn find_replace_zext(
+        data: &mut Funcdata,
+        stack: &[crate::op::PieceNode],
+        structured_type: &std::rc::Rc<crate::dtype::Datatype>,
+    ) -> KunaResult<bool> {
+        let mut change = false;
+        for node in stack {
+            if !node.is_leaf() {
+                continue;
+            }
+            let vn = node.get_varnode(data.obank());
+            if !is_written(data, vn) {
+                continue;
+            }
+            let op = def_of(data, vn).expect("findReplaceZext: written vn no def");
+            if code(data, op) != OpCode::CPUI_INT_ZEXT {
+                continue;
+            }
+            if !Self::spanning_range(structured_type, node.get_type_offset(), size(data, vn))? {
+                continue;
+            }
+            if Self::convert_zext_to_piece(data, op, Some(std::rc::Rc::clone(structured_type)), node.get_type_offset())? {
+                change = true;
+            }
+        }
+        Ok(change)
+    }
+
+    /// Return `true` if the given `root` and `leaf` should be part of different
+    /// symbols (C++ `RulePieceStructure::separateSymbol`).
+    ///
+    /// `root->getSymbolEntry() != leaf->getSymbolEntry()` (the first test) is a W4
+    /// seam: the merged Varnode has no `mapentry`, so two Varnodes are taken to
+    /// share a symbol entry (both null) and the test falls through to the structural
+    /// arms.  This matches the concat corpus, where the root and its in-place pieces
+    /// are not separately mapped. // SEAM(W4 symbol-entry)
+    fn separate_symbol(data: &Funcdata, root: VarnodeId, leaf: VarnodeId) -> bool {
+        // if (root->getSymbolEntry() != leaf->getSymbolEntry()) return true;  // SEAM(W4)
+        if is_addr_tied(data, root) {
+            return false;
+        }
+        if !is_written(data, leaf) {
+            return true;
+        }
+        if is_proto_partial(data, leaf) {
+            return true; // Already in another tree
+        }
+        let op = def_of(data, leaf).expect("separateSymbol: written leaf no def");
+        if data.obank().get(op).expect("separateSymbol: stale op").is_marker() {
+            return true; // Leaf is not defined locally
+        }
+        if code(data, op) != OpCode::CPUI_PIECE {
+            return false;
+        }
+        if vn_type(data, leaf).is_piece_structured() {
+            return true; // Would be a separate root
+        }
+        false
+    }
 }
 
 impl Rule for RulePieceStructure {
@@ -965,17 +1138,154 @@ impl Rule for RulePieceStructure {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (op->isPartialRoot()) return 0;
+        // if (op->isPartialRoot()) return 0;  // Check if CONCAT tree already visited
         if data.obank().get(op).expect("piecestructure: stale op").is_partial_root() {
             return 0;
         }
-        // Datatype *ct = determineDatatype(outvn, baseOffset);  -- SEAM(W6):
-        //   getStructuredType + symbol entry + getSubType.  The whole transform
-        //   (convertZextToPiece, gatherPieces CONCAT-tree walk, COPY insertion with
-        //   getExactPiece, registerProtoPartialRoot) is W6/W4/sibling-W5.  Without
-        //   determineDatatype we cannot proceed.  // SEAM(W6)
-        let _outvn = out_vn(data, op);
-        0
+        let outvn = out_vn(data, op);
+        // Datatype *ct = determineDatatype(outvn, baseOffset);
+        let (ct, base_offset) = match Self::determine_datatype(data, outvn) {
+            Ok((Some(c), b)) => (c, b),
+            Ok((None, _)) => return 0,
+            Err(_) => return 0,
+        };
+
+        if code(data, op) == OpCode::CPUI_INT_ZEXT {
+            // convertZextToPiece(op, outvn->getType(), 0, data)
+            let outty = vn_type(data, outvn);
+            match Self::convert_zext_to_piece(data, op, Some(outty), 0) {
+                Ok(true) => return 1,
+                _ => return 0,
+            }
+        }
+
+        // Check if outvn is really the root of the tree.
+        if let Some(zext) = lone_descend(data, outvn) {
+            let zc = code(data, zext);
+            if zc == OpCode::CPUI_PIECE {
+                return 0; // More PIECEs below us, not a root
+            }
+            if zc == OpCode::CPUI_INT_ZEXT {
+                // Extension of a structured data-type; convert extension to PIECE first
+                let zout = out_vn(data, zext);
+                let zoutty = vn_type(data, zout);
+                match Self::convert_zext_to_piece(data, zext, Some(zoutty), 0) {
+                    Ok(true) => return 1,
+                    _ => return 0,
+                }
+            }
+        }
+
+        // Build the CONCAT tree, replacing INT_ZEXT leaves with PIECE as needed.
+        let mut stack: Vec<crate::op::PieceNode> = Vec::new();
+        loop {
+            stack.clear();
+            crate::op::gather_pieces(
+                &mut stack,
+                data.obank(),
+                data.vbank(),
+                outvn,
+                op,
+                base_offset,
+                base_offset,
+            );
+            match Self::find_replace_zext(data, &stack, &ct) {
+                Ok(true) => continue, // found some; regenerate the tree
+                Ok(false) => break,
+                Err(_) => break,
+            }
+        }
+
+        // op->setPartialRoot();
+        data.obank_mut().get_mut(op).expect("piecestructure: stale op").set_partial_root();
+        let mut any_addr_tied = is_addr_tied(data, outvn);
+        // Address baseAddr = outvn->getAddr() - baseOffset;
+        let base_addr = &vn_addr(data, outvn) - base_offset as i64;
+
+        for node in stack.clone() {
+            let vn = node.get_varnode(data.obank());
+            // Address addr = baseAddr + node.getTypeOffset();  addr.renormalize(vn->getSize());
+            let mut addr = &base_addr + node.get_type_offset() as i64;
+            let vnsize = size(data, vn);
+            if addr.renormalize(vnsize, data.get_arch().manage()).is_err() {
+                continue;
+            }
+            // C++ `if (vn->getAddr() == addr) { if (!isLeaf || !separateSymbol) {...} }`
+            // — the two guards are independent and the inner block `continue`s, so
+            // the falls-through-to-leaf-handling structure is preserved by `&&`.
+            if vn_addr(data, vn) == addr
+                && (!node.is_leaf() || !Self::separate_symbol(data, outvn, vn))
+            {
+                // Varnode already has correct address and same symbol as root.
+                if !is_addr_tied(data, vn) && !is_proto_partial(data, vn) {
+                    data.vbank_mut().get_mut(vn).expect("piecestructure: stale vn").set_proto_partial();
+                }
+                any_addr_tied = any_addr_tied || is_addr_tied(data, vn);
+                continue;
+            }
+            if node.is_leaf() {
+                // Insert a COPY into a Varnode at the correct storage.
+                let node_op = node.get_op();
+                let copy_op = data.new_op(1, op_addr(data, node_op));
+                let new_vn = match data.new_varnode_out(vnsize, &addr, copy_op) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                any_addr_tied = any_addr_tied || is_addr_tied(data, new_vn);
+                // Datatype *newType = types->getExactPiece(ct, node.getTypeOffset(), vn->getSize());
+                let new_type = match data
+                    .get_arch()
+                    .types()
+                    .and_then(|t| t.get_exact_piece(std::rc::Rc::clone(&ct), node.get_type_offset(), vnsize).ok().flatten())
+                {
+                    Some(t) => t,
+                    None => vn_type(data, vn),
+                };
+                data.vbank_mut().get_mut(new_vn).expect("piecestructure: stale newVn").update_type(std::rc::Rc::clone(&new_type));
+                data.op_set_opcode_code(copy_op, OpCode::CPUI_COPY);
+                if data.op_set_input(copy_op, vn, 0).is_err() {
+                    continue;
+                }
+                if data.op_set_input(node_op, new_vn, node.get_slot()).is_err() {
+                    continue;
+                }
+                data.op_insert_before(copy_op, node_op);
+                // Union resolution transfer is a W8 seam (no unions in the corpus).
+                // SEAM(W8 union): inheritUnionField / resolveInFlow on newType.
+                if !is_addr_tied(data, new_vn) {
+                    data.vbank_mut().get_mut(new_vn).expect("piecestructure: stale newVn").set_proto_partial();
+                }
+            } else {
+                // vn is NOT addrtied and has a lone descendant; replace storage.
+                let def_op = match def_of(data, vn) {
+                    Some(d) => d,
+                    None => continue,
+                };
+                let lone_op = match lone_descend(data, vn) {
+                    Some(l) => l,
+                    None => continue,
+                };
+                let slot = slot_of(data, lone_op, vn);
+                let vnty = vn_type(data, vn);
+                let new_vn = data.new_varnode(vnsize, &addr, Some(vnty));
+                if data.op_set_output(def_op, new_vn).is_err() {
+                    continue;
+                }
+                if data.op_set_input(lone_op, new_vn, slot).is_err() {
+                    continue;
+                }
+                if data.delete_varnode(vn).is_err() {
+                    continue;
+                }
+                if !is_addr_tied(data, new_vn) {
+                    data.vbank_mut().get_mut(new_vn).expect("piecestructure: stale newVn").set_proto_partial();
+                }
+            }
+        }
+        if !any_addr_tied {
+            data.with_covermerge(|merge, data| merge.register_proto_partial_root(data, outvn));
+        }
+        1
     }
 }
 

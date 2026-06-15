@@ -1137,6 +1137,9 @@ impl Funcdata {
             OpCode::CPUI_COPY => (f::unary | f::nocollapse, "copy"),
             OpCode::CPUI_SUBPIECE => (f::binary, "SUB"),
             OpCode::CPUI_INT_SRIGHT => (f::binary, "s>>"),
+            // TypeOpPiece (typeop.cc:2039): binary; rendered "CONCAT".  Used by
+            // RulePieceStructure::convertZextToPiece (INT_ZEXT -> PIECE).
+            OpCode::CPUI_PIECE => (f::binary, "CONCAT"),
             // Any other op-code the helpers reach is a porting bug; fall back to a
             // bare binary op so eval-type still classifies it (the worst case is a
             // missing special-semantics flag, never an incorrect rewrite).
