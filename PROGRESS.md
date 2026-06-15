@@ -29,6 +29,17 @@ displayformat + indproto), assertions APPLIED **549 → 668** (+119), assertions
 clean; boolless/readstruct/condconst_conn still byte-identical; **C++ oracle 207/207 +
 675/675 PARITY OK, byte-untouched.**
 
+**Follow-on waves (rust-port e7028b2, 668/187/2):** input-param recovery (register→`a0`,
+landed structurally) + ActionSetCasts union-cache (prerequisites, +0) integrated at
+37c2450; inline body clone (**+5**, 182→187) + displayformat infra integrated at e7028b2.
+The casts+param waves jointly DIAGNOSED the M3 endgame keystone: the ~150-assertion
+typed-access cluster + a0-typing + the SUB/CONCAT corpus noise are all gated by the **S6
+HighVariable Merge engine** being seamed (ActionMergeType/Required/Adjacent + merge.rs
+copyShadow/block-surgery + the HighVariable type-facing graph). Keystone wave
+`w10-merge-casts` (2-stage: Merge engine → ActionSetCasts) IN FLIGHT. Sequencing: hold
+the type-dependent clusters (union/bitfield/float/string/indproto) until the keystone
+lands — they share its files and would collide; fan them out as a fleet immediately after.
+
 **Next M3 levers:** (1) `ActionSetCasts` W8 cast-insertion keystone — the single biggest
 unlock (~150 typed-access assertions: union 33, bitfields 31+31, float/cast ~48);
 (2) input-parameter recovery (register-input → named `a0`; unblocks ModuloAlt + Return
