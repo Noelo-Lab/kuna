@@ -1,148 +1,176 @@
 # w10-typed-access
-verdict: REJECT
+verdict: ACCEPT_WITH_LOSSES
 verifier: Claude Opus 4.8 (1M context) — independent verifier
 date: 2026-06-15
-round: 1
+round: 2
 
-gate: `git diff rust-port..rport/w10-typed-access -- rust/` -> **EMPTY** (no
-      rust/ files changed); `git rev-list --count rust-port..rport/w10-typed-access`
-      -> **0** unique commits; branch reflog -> `branch: Created from rust-port`
-      (no further entries). `cargo test --workspace` -> all green (0 failed),
-      but the green is **rust-port's**, not this item's — the branch contributes
-      no source. C++ oracle untouched.
+gate: `git diff rust-port...rport/w10-typed-access -- rust/` -> **2 files**
+      (`funcdata.rs` +222, `coreaction_infertypes.rs` +20); HEAD `00789a4`,
+      one source commit on top of the round-1 verdict commit (`b721023`).
+      `cargo test --workspace` -> all green (0 failed). `cargo clippy -p
+      kuna-decomp --lib -- -D warnings` -> clean. C++ oracle / specs / baseline
+      byte-untouched (`git diff --name-only` lists only `rust/` + `docs/`).
 
-## Why REJECT: the branch is empty — there is no port to verify
+## Summary
 
-`rport/w10-typed-access` (HEAD `cd44e73`) is the **merge-base** of `rust-port`;
-`rust-port` (`229c1c6`) is strictly *ahead* of it by one PROGRESS-only commit.
+Round 1 was REJECT (empty branch). Round 2 ports a real, faithful slice of the
+union-resolution machinery: the `Funcdata` **`unionMap` cache** accessors
+(`funcdata.cc:915-1028`) and wires `propagateTypeEdge`'s `resolveInFlow`
+cache-hit arm (`coreaction.cc:5336-5341`). The transcription is faithful and
+free of special-casing. It is **dormant**: the scorer driver that fills the
+cache on a miss (`ScoreUnionFields`, LOSS-087) is not wired, so the new live
+path returns `None` on every miss and the cache is never populated during
+corpus decompilation — the change is **byte-neutral** (proven base==branch on
+the full 675-assertion corpus tally). Zero new passes, zero regressions.
+This is the LOSS-156..168 dormant-foundation pattern; ACCEPT_WITH_LOSSES,
+ledgered as **LOSS-169**.
 
-Hard evidence (all reproducible from the MAIN tree):
+## What the branch actually adds (and what it does not)
 
-- `git rev-list --count rust-port..rport/w10-typed-access` = **0**
-  (zero commits unique to the branch).
-- `git diff rust-port..rport/w10-typed-access -- rust/` = **empty**
-  (no `rust/` file added, modified, or deleted).
-- `git diff rust-port..rport/w10-typed-access` = only `PROGRESS.md`, and that
-  is `rust-port` being *ahead* (it deletes 31 lines the branch never had),
-  not the branch contributing anything.
-- `git reflog show rport/w10-typed-access` = a single entry
-  `cd44e73 ... branch: Created from rust-port`. The branch was created and
-  **never received a commit**.
-- The worktree `/tmp/w10-typed-access` is `nothing to commit, working tree
-  clean` — no uncommitted or untracked port either.
-- No `tests/verify_w10_typed_access.rs` existed on the branch (the porter never
-  produced one; this verdict adds one — see below).
+ADDS (faithful):
+- `union_map: BTreeMap<ResolveEdge, ResolvedUnion>` field on `Funcdata`
+  (= C++ `map<ResolveEdge,ResolvedUnion> unionMap`), cleared by `clear()`
+  (`funcdata.cc:103`).
+- `get_union_field` / `get_union_resolution` / `get_address_based_union_field`
+  / `set_union_field` / `set_address_based_union_field` — verbatim against
+  `funcdata.cc:915-1028`, including the `getUnionField` size-match guard
+  (`unresType->getSize() == dt->getSize()`), the `setUnionField` MULTIEQUAL
+  dup-slot copy (`getIn(i) == vn` over the other slots), and the lock arms.
+- `find_union_resolve` (= the const `findResolve` family: needsResolution gate
+  -> `getUnionField` hit -> field datatype, else the receiver unchanged).
+- `resolve_union_in_flow` (= `TypeUnion::resolveInFlow`'s cache-consulting
+  prefix: `getUnionField`, then `getAddressBasedUnionField` with the on-hit
+  copy onto the (op,slot) edge).
+- the `propagateTypeEdge` arm: `if alttype.needs_resolution() { if let
+  Some(r) = resolve_union_in_flow(..) { if !is_marker { alttype = r; } } }`.
 
-The in-scope typed-access machinery the item names — union field lookup /
-`TypeField` / bitfield (`type.cc`), SUBPIECE/PIECE/INT_AND `propagateType` and
-`resolveInFlow` (`typeop.cc`), `ScoreUnionFields`/`resolveInFlow`
-(`unionresolve.cc`), and the `.name`/`->name`/bitfield/`(floatN)`/union-facet
-rendering (`printc.cc`) — **already exists and was already verified** in the
-W6/W8 items it was lifted from:
-`w6-s5-type-2`, `w6-s5-typeop`, `w6-s5-unionresolve`, `w6-s5-bitfield`,
-`w8-s9-printc` (all `verified` in `docs/rust-port/checklist.json`). Those
-sources are present at the base commit
-(`rust/crates/kuna-decomp/src/{unionresolve.rs,dtype.rs,coreaction_infertypes.rs,printc.rs}`).
-This branch adds **nothing on top of them**.
+DOES NOT add (the seam, declared as LOSS-169):
+- the `ScoreUnionFields` live driver — `resolve_union_in_flow` returns `None`
+  on a cache miss instead of running the scorer + caching its result. In C++
+  the same miss runs `ScoreUnionFields(*fd,this,op,slot)`, caches
+  `scoreFields.getResult()`, and returns the *scored* field datatype. The Rust
+  declines (leaves the raw union in flow). This is the documented behavioral
+  gap; it is conservative (never a wrong resolution) and currently invisible
+  (no live caller writes the cache, no corpus assertion depends on it).
 
-There is therefore no closed seam, no transcription to assess for faithfulness,
-no special-casing to find, and — critically — **no new datatest pass that this
-item may claim.** Any "+N parity" credited to the W10 fleet (the rust-port
-PROGRESS commit `229c1c6` says the fleet reached 59/549) must come from the
-*other* w10 branches that actually have commits (e.g. `w10-jts-chain`); it
-cannot be attributed to `w10-typed-access`, which is inert.
+## Mandatory hunt list
 
-A submission that delivers zero lines cannot be ACCEPTed (nothing faithful was
-produced) and cannot be ACCEPT-WITH-LOSSES (a loss is an accepted divergence in
-*real* code; there is no code). It is REJECTed and returned to `todo` with the
-work order: actually port the typed-access seam (or, if the capability is in
-fact fully subsumed by the verified W6/W8 items, close the item as a no-op with
-that justification recorded — but that decision belongs to the porter/human,
-not to a silently-empty branch presented for review).
+- **Signedness / widths.** Clean. `slot`/`encoding` stay `int4`; `op_time` is
+  `uintm`(=u32); `type_id` is `uint8`(=u64) — matching the C++ members. The one
+  added cast (`addr.get_offset() as uintm`, in the prior-wave `ResolveEdge::
+  new_addr`) carries a `// (uintm) cast:` justification and faithfully mirrors
+  the C++ `uintb -> uintm` member store (verified by the new
+  `w10r2_address_offset_uintm_truncation_is_mod_2_32` test).
+- **Wrapping.** No arithmetic added on the live path beyond the documented u32
+  truncation; no wrap risk.
+- **Comparator totality.** `ResolveEdge::Ord` (prior wave, but load-bearing for
+  this cache) is a strict total order on `(type_id, encoding, op_time)` —
+  re-pinned by the new `w10r2_resolve_edge_ordering_precedence_and_totality`
+  (irreflexive, antisymmetric, transitive, encoding-dominates-opTime) and
+  `w10r2_resolve_edge_pointer_does_not_collide_with_raw_union` (the `0x1000`
+  pointer bit keeps a ptr-to-union edge distinct from the raw-union edge that
+  shares its `type_id`).
+- **Iteration-order provenance.** The cache is a `BTreeMap` keyed by the
+  faithful `ResolveEdge` order = the C++ `std::map` order. The MULTIEQUAL
+  dup-slot loop is `for i in 0..num_input` over op input slots = the C++
+  `for(int4 i=0;i<op->numInput();++i)` index order. No `HashMap`/`HashSet`
+  anywhere in the diff (grep clean).
+- **Off-by-one / do-while.** `setUnionField`'s MULTIEQUAL loop skips `i == slot`
+  and tests `getIn(i) == vn` — matches C++ exactly; verified by
+  `w10_set_union_field_multiequal_copies_to_dup_slots` (copies to the same-vn
+  slot 2, not the different-vn slot 1).
+- **Erase-while-iterating.** N/A (no erase during traversal).
+- **Exception -> Result partial-state.** `set_union_field`'s `None => return
+  true` op-missing path is a defensive guard with no C++ analogue (C++ `op` is
+  always valid); returning the non-locked success default is correct and cannot
+  leave partial state (it precedes any map mutation). `resolve_union_in_flow`'s
+  address-based copy mutates the cache via `set_union_field` then returns the
+  hit — the only mutation, and it occurs only on a real address-cache hit
+  (currently unreachable, since nothing writes the address cache live).
 
-## The mandatory hunt list
+## Faithfulness nuances examined (not findings)
 
-Not applicable — there is no diff. Every entry is vacuously clean because the
-branch introduces no signed/unsigned comparison, no integer-width mapping, no
-wrapping arithmetic, no comparator, no iteration-order-bearing loop, no
-do-while/reverse-iterator, no erase-while-iterating, and no exception→Result
-seam. (The pre-existing in-scope code these would apply to was reviewed under
-the W6/W8 verdicts.)
+1. **address-based copy return value.** C++ builds a *fresh* `ResolvedUnion
+   (this, res->getFieldNum(), types)` and returns *its* datatype while caching
+   the *existing* `*res`; the Rust returns the existing `res.get_datatype()`
+   and caches the existing record. Both `ResolvedUnion`s carry the same
+   `fieldNum`/resolved-datatype (the fresh one is built from the same `this` +
+   `fieldNum`), so the returned datatype is equivalent. This path is dead code
+   on the live corpus (no `setAddressBasedUnionField` caller), so the
+   equivalence is moot for parity and only matters for faithfulness — and it is
+   faithful.
+2. **marker side-effect ordering.** C++ runs `resolveInFlow` (with its caching
+   side-effect) unconditionally and only gates the `alttype = resType`
+   assignment on `!isMarker()`. The Rust calls `resolve_union_in_flow`
+   unconditionally and gates only the assignment. Faithful.
+3. **`ResolvedUnion::update` pointer compare.** C++ `resolve == op.resolve` is
+   `Datatype*` identity; Rust uses `Rc::ptr_eq`. Faithful; pinned by the new
+   `w10r2_resolved_union_update_lock_arms` (lock+diff-field refuses; lock+same-
+   field datatype update applies; same-field same-Rc is a no-op).
 
-- Signedness: n/a (no diff)
-- Integer widths: n/a (no diff)
-- Wrapping: n/a (no diff)
-- Comparator totality: n/a (no diff)
-- Iteration-order provenance: n/a (no diff)
-- Off-by-one / do-while / reverse iterators: n/a (no diff)
-- Erase-while-iterating: n/a (no diff)
-- Exception → Result partial-state parity: n/a (no diff)
+## No special-casing
 
-## No-special-casing audit
-
-`git diff rust-port..rport/w10-typed-access -- rust/` is empty, so there is
-nothing to grep for function-name / address / constant / magic-number /
-divisor / type-name hardcoding. Vacuously clean.
+`git diff rust-port...rport/w10-typed-access -- rust/crates/kuna-decomp/src/`
+production lines: the only `0x` literal is `0x2000` inside a doc comment
+(referencing the C++ address-edge encoding). The `0x2000`/`0x300`/`0x80`/`0x84`
+numeric literals are all inside the `#[cfg(test)]` module (fixture addresses) —
+allowed. Zero function-name / datatest-address / union-name / case-value /
+magic-divisor dispatch in production logic; resolution dispatches purely on
+`get_metatype()` / sizes / field indices. The `0x1000`/`0x2000` `ResolveEdge`
+encoding constants are verbatim from `unionresolve.cc:108-122`, derived
+generally (the pointer bit is added for *any* `TYPE_PTR`, not a specific type).
 
 ## Mechanical pass
 
-- `git diff … -- rust/` for `todo!`/`unimplemented!`/`HashMap`/`HashSet`/
-  uncommented `as`: **nothing to scan** (empty diff).
-- C++ oracle: `git diff … -- decompiler/ specs/` empty -> **C++ untouched**,
-  207/207 + 675/675 PARITY OK preserved by construction.
-- `cargo test --workspace` (run in MAIN tree, == rust-port + this verdict's new
-  test): **all green, 0 failed** across every binary (including the 8 new tests
-  below). This confirms NO REGRESSION — but it is rust-port's pass set, not a
-  gain from this item.
-- `cargo clippy -p kuna-decomp --test verify_w10_typed_access`: **clean**.
-  NOTE (pre-existing, NOT a finding against this item): `cargo clippy -p
-  kuna-decomp --lib --tests` surfaces one clippy `error` at
-  `rust/crates/kuna-decomp/src/heritage.rs:3122` (a `... || true` tautology in
-  a W5 heritage **unit test**) — it is present on `rust-port` itself, is in
-  heritage (out of this item's scope), and is test code. Flagged here for the
-  W5 owner; it does not bear on this empty branch.
+- diff grep `todo!|unimplemented!|panic!|HashMap|HashSet|sort_unstable` ->
+  **none**.
+- diff grep bare `as` casts in production -> **none** added by this branch
+  (the only `as` matches are the `use ... as dtflags` rename and prose in
+  comments; the one real cast lives in the prior-wave `new_addr`).
+- `cargo clippy -p kuna-decomp --lib -- -D warnings` -> clean.
 
-## Adversarial tests (added with this verdict)
+## Real-passes / regression verification (the teeth)
 
-Since the branch delivers nothing, these tests pin the **C++ oracle semantics
-of the in-scope public typed-access scorers as a standing parity fence** the
-eventual real port must not break. All assert constants verbatim from
-`decompiler/cpp/unionresolve.cc:931-977` (`ScoreUnionFields::scoreTruncation`)
-and `scoreLockedType`. File:
-`rust/crates/kuna-decomp/tests/verify_w10_typed_access.rs` (8 tests, all pass):
+- **Corpus tally identical base==branch.** `verify_w10_struct_corpus`
+  (`verify_w10_corpus_stringmatch_tally`, all 83 datatests, 675 assertions)
+  run on **base `rust-port`** (specs symlinked into the base worktree) and on
+  **branch `rport/w10-typed-access`** both report: PASS positive **5**, PASS
+  negative **32**, FAIL positive **628**, FAIL negative **10**. The W10 change
+  adds **zero** new passes and breaks **zero** — exactly the inert-plumbing
+  prediction. The merged-tree "59 passing" baseline is preserved (this fleet
+  item neither raises nor lowers it).
+- **Named byte-parity fences green.** `print_b5_boolless` (5/5),
+  `printc_parity` (11 pass / 1 ignored — drives the committed C++
+  `decomp_test_dbg` for its byte-compare, confirming the oracle is intact),
+  `verify_w10_dominant_copy` (readstruct, 3/3), `verify_w10_const_prop_phi`
+  (condconst_conn, 6/6), `corpus_bootstrap` (1/1).
+- **`cargo test --workspace`** -> all green, 0 failed.
+- **C++ oracle** 207/207 + 675/675 PARITY OK, byte-untouched (branch diff is
+  `rust/`+`docs/` only).
 
-- `w10_typed_access_union_field_size_match_scores_plus10`
-  (union size+offset match → +10, returns None: cpp:935-948)
-- `w10_typed_access_union_no_match_scores_minus10` (cpp:938)
-- `w10_typed_access_union_match_self_base_bonus_plus5`
-  (`result.getBase()==unionDt` → +5; a *different* base gets no bonus —
-  mutation-style cross-check, cpp:944-945)
-- `w10_typed_access_scalar_exact_match_scores_plus10` (cpp:951-953)
-- `w10_typed_access_scalar_wider_int_covers_scores_plus1`
-  (`size >= vn_size + curOff` → +1, cpp:954-958)
-- `w10_typed_access_scalar_unreachable_scores_minus10`
-  (no sub-type reaches the truncation → ct==0 → -10, cpp:970-973)
-- `w10_typed_access_locked_type_pointer_identity_seeds_plus5`
-  (`lockType==ct` Rc-identity seed is exactly +5 over a structurally-equal
-  distinct type)
-- `w10_typed_access_locked_type_metatype_mismatch_is_lower`
-  (totality + metatype-mismatch ordering)
+## Adversarial tests (committed on the branch, `f914d80`)
 
-These pass against the pre-existing (W6-verified) machinery, which is the
-concrete trace this REJECT carries: the typed-access scorers are already
-correct and already in-tree — this branch added nothing to them.
+`rust/crates/kuna-decomp/tests/verify_w10_typed_access.rs` — the round-1 fence
+(8 tests pinning `score_truncation`/`score_locked_type` C++ constants) is kept,
+plus 5 round-2 tests targeting THIS branch's cache plumbing:
+- `w10r2_resolve_edge_pointer_does_not_collide_with_raw_union` — the `0x1000`
+  pointer bit (non-vacuous: both edges share the union's `type_id`).
+- `w10r2_resolve_edge_ordering_precedence_and_totality` — operator< precedence
+  + strict total order.
+- `w10r2_resolve_edge_address_form_truncates_offset_and_ignores_slot` — the
+  `0x2000` encoding, slot-ignore, and `uintm` offset truncation (two offsets
+  congruent mod 2^32 collapse to one key).
+- `w10r2_resolved_union_update_lock_arms` — all four `ResolvedUnion::update`
+  branches (the cache's `setUnionField` return value depends on them).
+- `w10r2_address_offset_uintm_truncation_is_mod_2_32` — the cast contract.
+All 13 green; clippy `-D warnings` clean on the test target.
 
-## findings
+## Verdict
 
-- F1 (blocker): the deliverable is empty. `rport/w10-typed-access` has 0
-  commits beyond its merge-base with `rust-port` and an empty `rust/` diff; the
-  reflog shows it was created and never committed to. No seam closed, no test
-  added, no datatest pass attributable.
-       cpp: n/a (no transcription was performed)
-       rust: n/a (no rust/ file changed; diff is empty)
-
-## losses
-
-LOSS-166 (MAIN-tree losses.md) — records the empty-branch fact for traceability
-of the W10 fleet accounting. This is NOT an accepted divergence (the verdict is
-REJECT); it documents that this item contributed 0 to the 59/549 number.
+ACCEPT_WITH_LOSSES. The cache plumbing is a faithful, additive, special-casing-
+free transcription of `funcdata.cc:915-1028` + the `coreaction.cc:5336-5341`
+arm. It is currently dormant (the `ScoreUnionFields` miss-path is the seam),
+so it produces no new datatest passes — but it also regresses nothing
+(base==branch corpus tally; all named byte-parity fences and the whole
+workspace green; C++ oracle untouched). The dormancy + the declined miss-path
+are ledgered as **LOSS-169**.
