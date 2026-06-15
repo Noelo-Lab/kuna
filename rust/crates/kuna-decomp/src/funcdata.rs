@@ -224,6 +224,12 @@ pub struct Funcdata {
     /// [`Self::ensure_covermerge`].  `pub(crate)` so the `funcdata_merge` bridge
     /// module can take/replace it.
     pub(crate) covermerge: Option<crate::merge::Merge>,
+    /// Overrides of data-flow, prototypes, etc. that are local to \b this function
+    /// (C++ `Override localoverride`, `funcdata.hh:99`).  The console
+    /// `override flow|prototype|...` commands write here (C++ `dcp->fd->getOverride()`),
+    /// and `FlowInfo` reads `hasFlowOverride()`/`getFlowOverride(addr)` from it at
+    /// flow time (`flow.cc:43,434`).
+    localoverride: crate::overrides::Override,
 }
 
 /// Opaque handle for a jump-table (C++ `JumpTable *` slot in `jumpvec`).
@@ -317,6 +323,7 @@ impl Funcdata {
             heritage: crate::heritage::Heritage::new(),
             qlst: Vec::new(),
             covermerge: None,
+            localoverride: crate::overrides::Override::new(),
         })
     }
 
@@ -331,6 +338,16 @@ impl Funcdata {
     /// Get the name to display in output (C++ `getDisplayName`).
     pub fn get_display_name(&self) -> &str {
         &self.display_name
+    }
+    /// Get the [`Override`](crate::overrides::Override) object for \b this function
+    /// (C++ `getOverride`, `funcdata.hh:214`).
+    pub fn get_override(&self) -> &crate::overrides::Override {
+        &self.localoverride
+    }
+    /// Mutably get the [`Override`](crate::overrides::Override) for \b this function
+    /// (C++ `getOverride` non-const).  The console override commands write here.
+    pub fn get_override_mut(&mut self) -> &mut crate::overrides::Override {
+        &mut self.localoverride
     }
     /// Get the entry point address (C++ `getAddress`).
     pub fn get_address(&self) -> &Address {
