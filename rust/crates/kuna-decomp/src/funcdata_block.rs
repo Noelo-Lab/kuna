@@ -1431,4 +1431,143 @@ mod tests {
         let err = fd.remove_do_nothing_block(bb).unwrap_err();
         assert!(err.to_string().contains("Cannot delete a reachable block"));
     }
+
+    // =======================================================================
+    // VERIFIER adversarial tests (rport/w10-emptyblock-orform).
+    //
+    // Target the hunt-list spots most fragile for this item: the
+    // `BlockBasic::isComplex` statement-count BOUNDARY (`statement > 2`, the
+    // off-by-one that gates ruleBlockOr/whileDo), the `unblockedMulti`
+    // redundant-branch dereference, and the anti-mis-fold guard (a *complex*
+    // orblock must NOT be absorbed, i.e. `is_complex` genuinely rejects).
+    // =======================================================================
+
+    /// Append a COPY op at `pc` into `bb` whose output is a fresh, no-descend
+    /// `ram` Varnode at `out_off`.  In `BlockBasic::isComplex` such a calculation
+    /// (output with `hasNoDescend()`) counts as one statement.
+    fn copy_with_dead_out(
+        fd: &mut Funcdata,
+        bb: BlockId,
+        pc: Address,
+        out_off: u64,
+    ) -> OpId {
+        let rs = ramspace(fd);
+        let op = fd.new_op(1, pc);
+        fd.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+        let outvn = fd.new_varnode(4, &addr(&rs, out_off), None);
+        fd.op_set_output(op, outvn).unwrap();
+        fd.obank_mut().mark_alive(op);
+        fd.bb_insert_op(op, bb, None);
+        op
+    }
+
+    /// VF1 — `bb_is_complex` boundary: with `max_implied_ref == 2` the block is
+    /// complex strictly once the statement count EXCEEDS 2.  A single-out block
+    /// (statement starts at 0) with two dead-output COPYs counts 2 -> NOT
+    /// complex; a third pushes it to 3 (> 2) -> complex.  This pins the C++
+    /// `if (statement > 2) return true;` off-by-one (block.cc:2456).
+    #[test]
+    fn vf1_bb_is_complex_statement_count_boundary() {
+        let mut fd = build_fd();
+        let rs = ramspace(&fd);
+        let root = fd.bblocks_root_pub();
+        let pred = fd.bblocks_mut().new_block_basic(root);
+        let bb = fd.bblocks_mut().new_block_basic(root);
+        let succ = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(pred, bb);
+        fd.bblocks_mut().add_edge(bb, succ); // single out -> statement base 0
+
+        // Two calculations (statement == 2): NOT complex (2 is not > 2).
+        let _c1 = copy_with_dead_out(&mut fd, bb, addr(&rs, 0x5000), 0x90);
+        let _c2 = copy_with_dead_out(&mut fd, bb, addr(&rs, 0x5004), 0x98);
+        assert!(!fd.bb_is_complex(bb), "two statements must NOT be complex (2 !> 2)");
+
+        // A third calculation (statement == 3): complex (3 > 2).
+        let _c3 = copy_with_dead_out(&mut fd, bb, addr(&rs, 0x5008), 0xa0);
+        assert!(fd.bb_is_complex(bb), "three statements MUST be complex (3 > 2)");
+    }
+
+    /// VF2 — `bb_is_complex` two-out branch counts as the first statement.  A
+    /// CBRANCH block (`sizeOut() >= 2`) starts at statement == 1, so only TWO
+    /// dead-output calculations are needed to cross the > 2 threshold (1 + 2 ==
+    /// 3).  This pins the C++ `if (sizeOut()>=2) statement = 1;` seed
+    /// (block.cc:2414) AND that a marker op (MULTIEQUAL) is skipped, not counted.
+    #[test]
+    fn vf2_bb_is_complex_branch_seed_and_marker_skip() {
+        let mut fd = build_fd();
+        let rs = ramspace(&fd);
+        let root = fd.bblocks_root_pub();
+        let pred = fd.bblocks_mut().new_block_basic(root);
+        let bb = fd.bblocks_mut().new_block_basic(root);
+        let o1 = fd.bblocks_mut().new_block_basic(root);
+        let o2 = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(pred, bb);
+        fd.bblocks_mut().add_edge(bb, o1);
+        fd.bblocks_mut().add_edge(bb, o2); // two out -> statement seeded to 1
+
+        // A MULTIEQUAL marker must be SKIPPED (not counted) — add one to prove it.
+        let _mq = term_op(&mut fd, bb, OpCode::CPUI_MULTIEQUAL, pcodeop_flags::marker, addr(&rs, 0x6000));
+        // One calculation: statement == 1 (seed) + 1 == 2 -> NOT complex.
+        let _c1 = copy_with_dead_out(&mut fd, bb, addr(&rs, 0x6004), 0xb0);
+        assert!(!fd.bb_is_complex(bb), "branch-seed 1 + 1 calc == 2, marker skipped, NOT complex");
+
+        // Second calculation: 1 + 2 == 3 -> complex.  (If the marker had been
+        // miscounted, the block would already be complex above.)
+        let _c2 = copy_with_dead_out(&mut fd, bb, addr(&rs, 0x6008), 0xb8);
+        assert!(fd.bb_is_complex(bb), "branch-seed 1 + 2 calcs == 3 -> complex");
+    }
+
+    /// VF3 — `bb_unblocked_multi` rejects a redundant branch carrying a DIFFERENT
+    /// value through a MULTIEQUAL in the out block.  Two predecessors of `bb`
+    /// also branch directly to `bb`'s out block `blout`, which has a MULTIEQUAL.
+    /// When the redundant slot's value differs from `bb`'s slot value, removing
+    /// `bb` would hide an inconsistent implied copy -> `unblockedMulti` is false.
+    /// Pins the C++ `if (vnremove != vnredund) return false;` (block.cc:2595).
+    #[test]
+    fn vf3_bb_unblocked_multi_rejects_inconsistent_redundant_branch() {
+        let mut fd = build_fd();
+        let rs = ramspace(&fd);
+        let root = fd.bblocks_root_pub();
+        // CFG: pred -> bb -> blout ; pred ALSO -> blout (the redundant branch).
+        let pred = fd.bblocks_mut().new_block_basic(root);
+        let bb = fd.bblocks_mut().new_block_basic(root);
+        let blout = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(pred, bb);
+        fd.bblocks_mut().add_edge(bb, blout);
+        fd.bblocks_mut().add_edge(pred, blout); // redundant edge pred->blout
+
+        // blout's in-edges: [bb, pred] (insertion order).  Build a 2-input
+        // MULTIEQUAL there whose slot for `bb` and slot for `pred` differ.
+        let in_bb = fd.bblocks_ref().block(blout).get_in_index(bb);
+        let in_pred = fd.bblocks_ref().block(blout).get_in_index(pred);
+        // The MULTIEQUAL slot values must be WRITTEN (a free varnode may hold only
+        // one descendant — the addDescend invariant), so define each by a COPY in
+        // `pred`; that lets one value feed two slots in the "identical" half.
+        let c_bb = copy_with_dead_out(&mut fd, pred, addr(&rs, 0x6f00), 0xc0);
+        let v_bb = fd.obank().get(c_bb).unwrap().get_out().unwrap();
+        let c_pred = copy_with_dead_out(&mut fd, pred, addr(&rs, 0x6f04), 0xc8);
+        let v_pred = fd.obank().get(c_pred).unwrap().get_out().unwrap(); // DIFFERENT value
+        let mq = fd.new_op(2, addr(&rs, 0x7000));
+        fd.op_set_opcode(mq, crate::typeop::type_op_for(OpCode::CPUI_MULTIEQUAL));
+        let mq_out = fd.new_varnode(4, &addr(&rs, 0xd0), None);
+        fd.op_set_output(mq, mq_out).unwrap();
+        fd.op_set_input(mq, v_bb, in_bb).unwrap();
+        fd.op_set_input(mq, v_pred, in_pred).unwrap();
+        fd.obank_mut().mark_alive(mq);
+        fd.bb_insert_op(mq, blout, None);
+
+        // The redundant branch (pred->blout) carries v_pred; bb's slot carries
+        // v_bb.  They differ -> removing bb is NOT unblocked.
+        assert!(
+            !fd.bb_unblocked_multi(bb, 0),
+            "inconsistent redundant MULTIEQUAL value must block removal"
+        );
+
+        // Make the two slots IDENTICAL: now the redundant branch is harmless.
+        fd.op_set_input(mq, v_bb, in_pred).unwrap();
+        assert!(
+            fd.bb_unblocked_multi(bb, 0),
+            "identical redundant MULTIEQUAL value -> unblocked"
+        );
+    }
 }
