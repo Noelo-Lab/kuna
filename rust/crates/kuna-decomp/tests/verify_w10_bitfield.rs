@@ -259,3 +259,163 @@ fn w10bf_establish_fields_leading_and_trailing_holes_gated() {
     assert_eq!(t2.work_list.len(), 1);
     assert!(matches!(t2.work_list[0].field, FieldRef::Field { .. }));
 }
+
+// ===========================================================================
+// SECOND-PASS VERIFIER (independent of the file header above) — w10-bitfield-activate
+//
+// Round-1 verifier adversarial tests targeting paths the porter's tests and the
+// first verifier batch under-exercise:
+//  V1: the establishFields Varnode-boundary CLAMP (bitfield.cc:70-73,
+//      `fieldPos/fieldEnd > vnBitSize`) — a bitfield container WIDER than the
+//      root Varnode, so a higher-significance field's translated end is clipped.
+//  V2: collect_bit_fields overlapTest result-code dispatch — the `code == 1`
+//      BREAK (range entirely below the field, LE) vs `code == -1` CONTINUE
+//      (field entirely below the range) on a multi-byte container (type.cc:1811-1813).
+//  V3: upper_bound_idx degenerate inputs THROUGH the public surface — empty
+//      bitfield list and a query past every container — must collect nothing and
+//      must not panic (no signed/usize underflow in the binary-search count math).
+//  V4: BitFieldTriple::compare same-byte leastSigBit tie-break is consistent
+//      under both endians (type.cc:944-948) and the sort is order-independent.
+// ===========================================================================
+
+// V1 — boundary clamp: a 16-bit (2-byte) struct container holds a field whose
+// bits straddle the top of a 1-byte root Varnode. establishFields must clip
+// fieldEnd to vnBitSize (8) and still classify via overlapTest. The field at
+// lsb 4..12 partially overlaps [0,8): overlapTest != 0/3 -> hole branch, gated.
+#[test]
+fn vrfy2_establish_fields_clamps_field_past_varnode_boundary() {
+    // 2-byte container, one field at byte 0, lsb 4, 8 bits wide -> bits [4,12).
+    let dt = Rc::new(struct_with(
+        vec![],
+        vec![bf(0, 0, 2, 4, 8, false, type_metatype::TYPE_UINT)],
+        2,
+    ));
+    // Root Varnode is only 1 byte (8 bits). initialOffset 0.
+    let mut t = BitFieldTransform::new(&dt, 0, false);
+    t.establish_fields(vn(), /*vn_size*/ 1, /*follow_holes*/ true);
+
+    // bitrange container is (0,1) 8 bits; the field's translated lsb is 4,
+    // fieldEnd = 4+8 = 12 -> clamped to 8. fieldPos(4) > pos(0) -> leading hole
+    // [0,4). overlapTest(field[4,12] vs vn[0,8)) is a partial overlap (code 4,
+    // not 0/3) -> the else/hole branch fires: hole(pos=4, fieldEnd(8)-pos(4)=4).
+    // Then pos = fieldEnd = 8; no trailing hole (pos == vnBitSize).
+    assert_eq!(t.work_list.len(), 2, "leading hole + clamped partial-overlap hole");
+    assert!(matches!(t.work_list[0].field, FieldRef::Hole));
+    assert_eq!(t.work_list[0].bits_field.least_sig_bit, 0);
+    assert_eq!(t.work_list[0].bits_field.num_bits, 4, "leading hole [0,4)");
+    assert!(matches!(t.work_list[1].field, FieldRef::Hole));
+    assert_eq!(t.work_list[1].bits_field.least_sig_bit, 4);
+    assert_eq!(
+        t.work_list[1].bits_field.num_bits, 4,
+        "partial field clamped at varnode top -> hole [4,8)"
+    );
+
+    // With follow_holes=false the partial field is NOT a field record (code
+    // 4 != 0/3) and holes are suppressed -> empty worklist.
+    let mut t2 = BitFieldTransform::new(&dt, 0, false);
+    t2.establish_fields(vn(), 1, false);
+    assert!(
+        t2.work_list.is_empty(),
+        "partial-overlap field is neither a field record nor (with holes off) a hole"
+    );
+}
+
+// V2 — collect_bit_fields overlapTest dispatch on a 3-byte container. Query the
+// MIDDLE byte [1,2): byte-0 field is entirely below the range (code -1 ->
+// continue, skipped), byte-1 field overlaps (collected), byte-2 field is
+// entirely above (code 1 -> break, loop stops). Verifies break != continue and
+// that the break actually terminates (an off-by-one swapping them would either
+// collect byte-2 or miss the break).
+#[test]
+fn vrfy2_collect_overlap_codes_continue_then_break() {
+    let b0 = bf(0, 0, 1, 0, 8, false, type_metatype::TYPE_UINT); // byte 0
+    let b1 = bf(1, 1, 1, 0, 8, false, type_metatype::TYPE_UINT); // byte 1
+    let b2 = bf(2, 2, 1, 0, 8, false, type_metatype::TYPE_UINT); // byte 2
+    let s = struct_with(vec![], vec![b0, b1, b2], 3);
+
+    // upper_bound(compareMaxByte, offset=1): b0 ends at 1 (1<1 false) -> skipped
+    // by upper_bound; iteration starts at b1. b1 overlaps [1,2) -> collected.
+    // b2 (byte 2) is entirely ABOVE [1,2): overlapTest code 1 -> break.
+    let mut res = Vec::new();
+    s.collect_bit_fields(0, &mut res, 1, 1);
+    assert_eq!(res.len(), 1, "only the middle-byte field overlaps [1,2)");
+    assert_eq!(res[0].bitfield.byte_offset, 1);
+
+    // Confirm has_bit_fields_in_range agrees, and that querying the FIRST byte
+    // exercises the upper_bound landing at index 0 (b0 ends at 1 > 0).
+    assert!(s.has_bit_fields_in_range(1, 1));
+    assert!(s.has_bit_fields_in_range(0, 1));
+    let mut res0 = Vec::new();
+    s.collect_bit_fields(0, &mut res0, 0, 1);
+    assert_eq!(res0.len(), 1);
+    assert_eq!(res0[0].bitfield.byte_offset, 0, "byte-0 query collects only b0 (b1 breaks)");
+}
+
+// V3 — degenerate inputs must not panic and must collect nothing. Empty bitfield
+// list; and a query whose offset is past every container (upper_bound returns
+// end()). The binary-search count arithmetic (count -= step + 1) is the prime
+// panic suspect for an empty/at-end slice.
+#[test]
+fn vrfy2_collect_empty_and_past_end_are_safe_noops() {
+    // Empty struct: no fields, no bitfields.
+    let empty = struct_with(vec![], vec![], 4);
+    let mut res = Vec::new();
+    empty.collect_bit_fields(0, &mut res, 0, 4);
+    assert!(res.is_empty(), "empty struct collects nothing");
+    assert!(!empty.has_bit_fields_in_range(0, 4));
+
+    // One byte-0 field; query offset 5 (well past the single 1-byte container).
+    let s = struct_with(
+        vec![],
+        vec![bf(0, 0, 1, 0, 8, false, type_metatype::TYPE_UINT)],
+        1,
+    );
+    let mut res2 = Vec::new();
+    s.collect_bit_fields(0, &mut res2, 5, 1);
+    assert!(res2.is_empty(), "query past every container -> upper_bound at end, nothing");
+    assert!(!s.has_bit_fields_in_range(5, 1));
+
+    // establish_fields with an empty struct + follow_holes -> exactly one
+    // whole-Varnode hole (the trailing-hole branch), no field records, no panic.
+    let dt = Rc::new(empty);
+    let mut t = BitFieldTransform::new(&dt, 0, false);
+    t.establish_fields(vn(), 4, true);
+    assert_eq!(t.work_list.len(), 1);
+    assert!(matches!(t.work_list[0].field, FieldRef::Hole));
+    assert_eq!(t.work_list[0].bits_field.num_bits, 32, "whole 4-byte Varnode hole");
+}
+
+// V4 — BitFieldTriple::compare same-byte leastSigBit tie-break, both endians,
+// and sort-order independence. Within one container byte the LSB order is the
+// SAME for BE and LE (the endianness branch only governs the byte term). A
+// sort must place lsb0 before lsb4 regardless of input order.
+#[test]
+fn vrfy2_triple_compare_same_byte_lsb_tiebreak_both_endians() {
+    for big in [false, true] {
+        let lo = BitFieldTriple::new(bf(0, 0, 1, 0, 3, big, type_metatype::TYPE_UINT), 0); // lsb0
+        let hi = BitFieldTriple::new(bf(1, 0, 1, 4, 3, big, type_metatype::TYPE_UINT), 0); // lsb4
+        // Same container byte -> byte term ties -> lsb decides, lsb0 < lsb4 in
+        // BOTH endians (type.cc:944-947 has no endian branch for the lsb term).
+        assert!(
+            BitFieldTriple::compare(&lo, &hi),
+            "lsb0 sorts before lsb4 within a byte (big={big})"
+        );
+        assert!(
+            !BitFieldTriple::compare(&hi, &lo),
+            "asymmetric within-byte tie-break (big={big})"
+        );
+        // Sort two records given in the WRONG order -> lsb0 ends up first.
+        let mut v = vec![hi.clone(), lo.clone()];
+        v.sort_by(|a, b| {
+            if BitFieldTriple::compare(a, b) {
+                std::cmp::Ordering::Less
+            } else if BitFieldTriple::compare(b, a) {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        });
+        assert_eq!(v[0].bitfield.least_sig_bit, 0, "sort puts lsb0 first (big={big})");
+        assert_eq!(v[1].bitfield.least_sig_bit, 4);
+    }
+}
