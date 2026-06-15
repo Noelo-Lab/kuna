@@ -1110,32 +1110,104 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         if data.high_bank().get(high).map(|h| h.kuna_name().is_some()).unwrap_or(false) {
             continue;
         }
-        let (v_persist, v_addr, v_size) =
+        let (v_persist, v_addr, v_size, v_input, v_addrtied, v_constant) =
             match data.vbank().get(name_rep.unwrap()) {
-                Some(v) => (v.is_persist(), v.get_addr().clone(), v.get_size()),
+                Some(v) => (
+                    v.is_persist(),
+                    v.get_addr().clone(),
+                    v.get_size(),
+                    v.is_input(),
+                    v.is_addr_tied(),
+                    v.is_constant(),
+                ),
                 None => continue,
             };
-        // C++ `Funcdata::linkSymbol`: query the local map for a SymbolEntry
-        // covering the representative's storage.  A hit binds the high to that
-        // Symbol's display name (+ the in-symbol byte offset for an array/struct
-        // member access) — this is what gives the body its `ptr`/`a`/`b`/`i`.
-        //
-        // `resolve_default_name` additionally performs the C++ `ActionNameVars`
-        // namerec rename (coreaction.cc:3087-3094): an undefined-named Symbol whose
-        // high covers the whole Symbol is renamed to the angr default (`v<base++>`),
-        // so a promoted scalar stack local renders `v1` rather than `$$undefNNN`.
-        let resolved = data
-            .get_scope_local_mut()
-            .and_then(|lm| lm.resolve_default_name(&v_addr, v_size, &mut base));
-        if let Some((sym_name, sym_off, sym_type)) = resolved {
-            if let Some(h) = data.high_bank_mut().get_mut(high) {
-                h.set_kuna_name(sym_name);
-                h.set_symbol_offset(sym_off);
-                if let Some(t) = sym_type {
-                    h.set_symbol_type(t);
+        // C++ `Funcdata::linkSymbol` (`funcdata_varnode.cc:1177`): query the local
+        // map for the SMALLEST CONTAINING SymbolEntry of the representative's BASE
+        // BYTE (`queryProperties(vn->getAddr(), 1, usepoint)` — size 1, the
+        // `findContainer` lookup, NOT the loose `findOverlap`).  A hit routes
+        // through `handleSymbolConflict` (`funcdata_varnode.cc:1018`); the result
+        // binds the high to that Symbol's display name (+ the in-symbol byte offset
+        // for an array/struct member access) — what gives the body its
+        // `ptr`/`a`/`b`/`i`.
+        let container = data
+            .get_scope_local()
+            .and_then(|lm| lm.query_container_for_link(&v_addr));
+        if let Some(info) = container {
+            // C++ `handleSymbolConflict(entry, vn)` (`funcdata_varnode.cc:1018`):
+            //   if (vn->isInput() || vn->isAddrTied() || vn->isPersist() ||
+            //       vn->isConstant() || entry->isDynamic())  -> reuse the entry.
+            // (`entry->isDynamic()` is `entry->getAddr().isInvalid()`; a mapped
+            // local entry is never dynamic here, so the predicate reduces to the
+            // four Varnode flags.)
+            let reuse_directly = v_input || v_addrtied || v_persist || v_constant;
+            // The `handleSymbolConflict` scan only matters when the representative's
+            // storage genuinely DIFFERS in width from the containing entry — the
+            // `float8` lane (8 bytes at XMM0_Qa) reaching into the `float4 a`
+            // parameter entry (4 bytes at XMM0's base).  When the rep occupies the
+            // entry's EXACT (addr,size) it is itself a `beginLoc(entry->getSize(),
+            // entry->getAddr())` member, so in faithful C++ it would already be
+            // merged into the parameter high and no conflict would be found (the
+            // scan skips same-high members); only the size-mismatch case produces a
+            // distinct narrower entry the rep cannot coalesce with.  Gating on the
+            // size mismatch reproduces that C++ outcome exactly (`funcdata_varnode.cc
+            // :1031` `otherVn->getSize() != entry->getSize()`) without depending on
+            // whether the rust merge happened to unify equal-width siblings.
+            let size_mismatch = v_size != info.entry_size;
+            let conflict = if reuse_directly || !size_mismatch {
+                false
+            } else {
+                // Scan `beginLoc(entry->getSize(), entry->getAddr())..endLoc(...)`
+                // for an `otherVn` of EXACTLY the entry's size/addr that lives in a
+                // DIFFERENT HighVariable — a genuine storage conflict (e.g. the
+                // `float4 a` parameter Varnode sharing XMM0's base with this
+                // `float8` lane high).  Such a conflict spawns a fresh dynamic
+                // Symbol (`buildDynamicSymbol`) so the lane is named `vN`, never the
+                // parameter's `a`.
+                let mut found = false;
+                for other in
+                    data.vbank().iter_loc_size_addr(info.entry_size, &info.entry_addr)
+                {
+                    let other_high =
+                        data.vbank().get(other).and_then(|v| v.get_high());
+                    if let Some(oh) = other_high {
+                        if oh != high {
+                            found = true;
+                            break;
+                        }
+                    }
                 }
+                found
+            };
+            if !conflict {
+                // Reuse the containing entry's Symbol (the parameter / mapped
+                // local).  `resolve_default_name`'s namerec rename
+                // (coreaction.cc:3087-3094) still applies for an undefined-named
+                // whole-symbol cover: rerun it so a promoted scalar stack local
+                // renders `v1` rather than `$$undefNNN`.  It re-queries the same
+                // entry via `findOverlap`; for a non-conflicting hit the two queries
+                // agree.
+                let resolved = data
+                    .get_scope_local_mut()
+                    .and_then(|lm| lm.resolve_default_name(&v_addr, v_size, &mut base));
+                let (sym_name, sym_off, sym_type) = match resolved {
+                    Some(t) => t,
+                    None => (info.display_name, info.sym_off, info.sym_type),
+                };
+                if let Some(h) = data.high_bank_mut().get_mut(high) {
+                    h.set_kuna_name(sym_name);
+                    h.set_symbol_offset(sym_off);
+                    if let Some(t) = sym_type {
+                        h.set_symbol_type(t);
+                    }
+                }
+                continue;
             }
-            continue;
+            // Conflict: C++ `buildDynamicSymbol(vn)` creates a fresh dynamic Symbol
+            // with an undefined name, which `ActionNameVars` then routes to the
+            // angr `vN` arm.  Fall through to the `vN` tail below (the high acquires
+            // no parameter name).  `info` is intentionally dropped.
+            let _ = info.category;
         }
         // No covering Symbol.  In C++ `linkSymbols` (coreaction.cc:3061) this is the
         // point where `data.linkSymbol(vn)` *creates* a fresh local Symbol for the

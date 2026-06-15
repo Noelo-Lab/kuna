@@ -809,6 +809,30 @@ pub struct SyncOverlap {
     pub symbol_id: crate::database::SymbolId,
 }
 
+/// The smallest-containing SymbolEntry metadata `Funcdata::linkSymbol`'s
+/// `queryProperties(addr, 1, usepoint)` returns, plus the bits
+/// `handleSymbolConflict` (`funcdata_varnode.cc:1018`) reads off the entry
+/// (`entry->getAddr()` / `entry->getSize()`) to run its conflicting-HighVariable
+/// scan.  Produced by [`ScopeLocal::query_container_for_link`].
+#[derive(Debug, Clone)]
+pub struct LinkEntryInfo {
+    /// `entry->getSymbol()->getDisplayName()` (the name the high renders if the
+    /// entry is reused — e.g. the recovered parameter `a`).
+    pub display_name: String,
+    /// `(access_addr - entry_addr) + entry_offset` — the byte offset of the
+    /// access within the Symbol (0 for a whole-symbol/scalar access).
+    pub sym_off: int4,
+    /// `entry->getSymbol()->getType()`.
+    pub sym_type: Option<Rc<Datatype>>,
+    /// `entry->getAddr()` — the base of the containing entry (the conflict scan
+    /// iterates `beginLoc(entry->getSize(), entry->getAddr())`).
+    pub entry_addr: Address,
+    /// `entry->getSize()` — the byte width of the containing entry.
+    pub entry_size: int4,
+    /// `entry->getSymbol()->getCategory()` (a parameter is category 0).
+    pub category: int4,
+}
+
 // ===========================================================================
 // ScopeLocal (varmap.hh:212-269, varmap.cc:341-1620)
 // ===========================================================================
@@ -1311,6 +1335,41 @@ impl ScopeLocal {
         }
         let symbol = self.db.symbol(sym);
         Some((symbol.get_display_name().to_string(), sym_off, symbol.dtype.clone()))
+    }
+
+    /// Query the *smallest containing* Symbol entry for the naming/linkSymbol pass
+    /// — the C++ `localmap->queryProperties(vn->getAddr(), 1, usepoint, fl)` lookup
+    /// of [`Funcdata::linkSymbol`](funcdata_varnode.cc:1190).  Unlike
+    /// [`name_for_varnode`] / [`resolve_default_name`] (which use the loose
+    /// `findOverlap`), C++ `linkSymbol` queries `queryProperties` with **size 1**
+    /// (just the base byte), and `queryProperties` returns the *smallest containing*
+    /// SymbolEntry via `findContainer` (`database.cc:1268-1285`).  The caller then
+    /// runs `handleSymbolConflict` against this entry's `(addr,size)` to decide
+    /// whether to reuse the Symbol or spawn a fresh dynamic Symbol (the `vN` lane).
+    ///
+    /// Returns `None` when no Symbol *contains* the base byte (then `linkSymbol`'s
+    /// `else` arm creates a fresh local Symbol — the angr `vN` path the caller's
+    /// `resolve_default_name`/`vN` tail already implements).
+    pub fn query_container_for_link(&self, addr: &Address) -> Option<LinkEntryInfo> {
+        // C++ queryProperties(addr, 1, usepoint=Address()) -> findContainer.
+        let eref = self.db.find_container(self.scope, addr, 1, &Address::default())?;
+        let entry = self.db.entry(self.scope, eref);
+        let sym = entry.symbol;
+        let entry_addr = entry.get_addr().clone();
+        let entry_size = entry.get_size();
+        let entry_addr_off = entry_addr.get_offset();
+        let entry_off = entry.get_offset();
+        let symbol = self.db.symbol(sym);
+        let sym_off =
+            (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
+        Some(LinkEntryInfo {
+            display_name: symbol.get_display_name().to_string(),
+            sym_off,
+            sym_type: symbol.dtype.clone(),
+            entry_addr,
+            entry_size,
+            category: symbol.get_category(),
+        })
     }
 
     /// The category of the Symbol covering a storage location (C++

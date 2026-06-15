@@ -1734,6 +1734,14 @@ impl Architecture {
         // disassembly correctly (e.g. x86-64 lifts as 64-bit, not 16-bit) —
         // the context must be in place before any instruction is decoded.
         self.parse_processor_config()?;
+        // C++ `Architecture::restoreFromSpec` (architecture.cc:645) calls
+        // `newtrans->setDefaultFloatFormats()` immediately after
+        // `parseProcessorConfig` and before `parseCompilerConfig`: if the spec
+        // registered no explicit `<float_format>` it installs the IEEE-754 4- and
+        // 8-byte defaults so `getFloatFormat(4)`/`getFloatFormat(8)` resolve.
+        // Without this the `PrintC::push_float` path (a `float8` constant literal)
+        // has no FloatFormat and renders `FLOAT_UNKNOWN` instead of `1.123…`.
+        self.translate.translate_base_mut().set_default_float_formats();
         // C++ `Architecture::restoreFromSpec` runs `parseCompilerConfig`
         // (architecture.cc:647) after `parseProcessorConfig`; the cspec
         // `<stackpointer>` element (parseCompilerConfig -> ELEM_STACKPOINTER ->
