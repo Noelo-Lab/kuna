@@ -1015,8 +1015,18 @@ fn w10_ptr_flow_load_explicit_deref_keeps_base_inside_star() {
     let dt = parse_datatest(&path).expect("parse nestedoffset.xml");
     let rendered = render_corpus(&dt).expect("readstruct must decompile");
 
-    // The body must dereference through the bound pointer parameter `a0`.
-    let star_deref_with_base = count_matches(r"\*\([^)]*\ba0\b", &rendered).unwrap_or(0);
+    // The body must dereference through the bound pointer parameter `a0`.  With
+    // the W10 `ActionSetCasts` cast plane now active, a type-less LOAD pointer
+    // (this `render_corpus` path does not apply the `parse line` struct types, so
+    // the address arrives as a generic integer) faithfully receives an explicit
+    // pointer cast — `*CAST(a0 + ..)` — exactly as the C++ `TypeOpLoad::getInputCast`
+    // builds a `getTypePointer(reqtype)` for a non-pointer LOAD address
+    // (typeop.cc:454).  The intent of this fence is unchanged: `a0` is *dereferenced*
+    // (a `*` deref or an `a0[..]` access), never left as a functional `LOAD(..)`.
+    // The deref regex therefore tolerates the optional `CAST` between `*` and the
+    // base; the typed datatest (`nestedoffset` with `parse line`) renders the clean
+    // `ptr->array[b + a]` and is checked by the engine parity run.
+    let star_deref_with_base = count_matches(r"\*(CAST)?\([^)]*\ba0\b", &rendered).unwrap_or(0);
     let plain_array = count_matches(r"\ba0\[", &rendered).unwrap_or(0);
     assert!(
         star_deref_with_base >= 1 || plain_array >= 1,
