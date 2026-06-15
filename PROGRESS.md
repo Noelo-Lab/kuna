@@ -1,6 +1,36 @@
 # kuna Progress Log
 
-## Session (2026-06-14) — rust-port W10 stack-var promotion: repair round (verifier REJECT)
+## Session (2026-06-15) — rust-port W10 parallel un-seam fleets → 59/549 datatest parity
+
+Pivoted from serial single-lever un-seams to **orchestrated parallel fleets** (Workflow
+tool, all agents Opus 4.8, isolated worktrees, porter→independent-verifier→repair). Two
+big fleets + a jump-table foundation landed this session:
+
+- **JumpTable foundation** (`rport/w10-jumptable-switch`, ACCEPT_WITH_LOSSES, merged
+  03c4cef): ported `EmulateFunction` (the syntax-tree value-flow emulator) + read-only
+  load-image-value + op-behavior plumbing — the keystone the JumpBasic index-range model
+  drives through. +5 tests; count unchanged (the end-to-end switch recovery chain is 6
+  subsystems deep — model/cloneOp/stageJumpTable/switchOver/BlockSwitch/emit — now in
+  flight as `rport/w10-jts-chain`).
+- **6-class exec-failure fleet** (all 6 ACCEPT/ACCEPT_WITH_LOSSES): float-family,
+  inline-inject, partial-types, rel-pointer, struct-return, const-prop-phi. Integrated
+  cleanly (all-additive shared-file unions) at **rust-port cd44e73**.
+
+**Integrated jump (the biggest single step so far):** exec-failure files **28 → 16**,
+assertions APPLIED **456 → 549** (+93), assertions PASSING **48 → 59** (+11). 3,336 Rust
+tests green; clippy -D warnings clean; boolless/readstruct/condconst_conn still
+byte-identical; **C++ oracle 207/207 + 675/675 PARITY OK, byte-untouched.** The honest
+−1 (struct-return retspecial) is more-correct-but-count-down: faithful hidden-return
+recovery loses a coincidental degraded `return;` match (LOSS-131 signature, accepted).
+
+**M3 map (from the 490 applied-but-failing assertions, histogrammed):** the gap is now
+per-feature seams, not the keystone (28 feature groups already byte-match). Biggest
+independent levers: div/mod strength-reduction (~99), typed-access (~150: union 33,
+bitfields 31+31, float/cast ~48), concat/piece (~29), + the 10 non-switch exec-failures
+(console command family / LOSS-119). **In flight:** `wi287re9j` (switch-chain) +
+`wyi68lmpv` (4-wave depth fleet: divmod / typed-access / concat-piece / console-family).
+
+
 
 Addressed the w10-stackvar-promotion REJECT (review F0-F7). Corrected the overstated
 "whole chain complete" claim and made the chain faithful + tested:
