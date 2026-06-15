@@ -326,3 +326,87 @@ fn w10_jts_recovery_is_data_driven_across_distinct_switches() {
     assert!(ind.contains("switch("), "switchind lost its switch:\n{ind}");
     assert!(multi.contains("switch("), "switchmulti lost its switch:\n{multi}");
 }
+
+// ===========================================================================
+// INDEPENDENT VERIFIER adversarial tests (round 1, w10-jts-chain).
+// Distinct from the porter's four above; these probe the spots the hunt list
+// flagged as most fragile: multi-label index ORDERING (block2addr sort +
+// get_index_by_block), a THIRD distinct switch (widening the no-hardcoding
+// proof), and the exact label CARDINALITY against the C++ oracle (no spurious
+// or missing labels leaking from a memoized/hardcoded path).
+// ===========================================================================
+
+/// VERIFIER: the multi-label case in switchind must list its labels in the
+/// SAME order the C++ oracle emits them — `case 4:` then `case 5:` then
+/// `case 10:`, all collapsed onto one arm.  This exercises `JumpTable::
+/// getIndexByBlock(bl, i)` over the `block2addr` sort (IndexPair: position,
+/// then addressIndex); a non-total comparator or an unsorted scan would reorder
+/// the labels (e.g. `case 10:` before `case 5:`) or drop one.  The oracle pins
+/// the sequence (switchind.xml: `case 4:`,`case 5:`,`case 10:` consecutive), so
+/// the rendered C must contain them in that left-to-right order.
+#[test]
+fn verifier_switchind_multilabel_arm_is_in_oracle_order() {
+    let c = render_datatest("switchind.xml");
+    let p4 = c.find("case 4:").expect("no `case 4:`");
+    let p5 = c.find("case 5:").expect("no `case 5:`");
+    let p10 = c.find("case 10:").expect("no `case 10:`");
+    assert!(p4 < p5, "`case 4:` must precede `case 5:` (block2addr order):\n{c}");
+    assert!(p5 < p10, "`case 5:` must precede `case 10:` (block2addr order):\n{c}");
+    // The three labels collapse onto ONE arm: no statement body separates them
+    // (the C++ oracle has them on consecutive lines with a shared body).  Assert
+    // the span between `case 4:` and `case 10:` carries no call/return body — only
+    // the intervening `case N:` labels and whitespace.
+    let span = &c[p4..p10];
+    assert!(
+        !span.contains("casefunc") && !span.contains("return") && !span.contains("switch"),
+        "multi-label arm `4/5/10` must share one body (no statements between labels):\n{span}"
+    );
+}
+
+/// VERIFIER: a THIRD, structurally different switch (switchloop — a switch
+/// inside a loop) also recovers through the same data-driven path and renders
+/// its OWN body (the `startval = startval + ...` arithmetic the oracle pins).
+/// Three distinct functions recovering three distinct switches with no shared
+/// constant rules out any per-function/per-address special-case.
+#[test]
+fn verifier_switchloop_third_distinct_switch_recovers_real_body() {
+    let c = render_datatest("switchloop.xml");
+    assert!(c.contains("switch("), "switchloop must recover a `switch(...)`:\n{c}");
+    // Its own distinct label set (the loop step is `a3 = N`, so the recovered
+    // index cases start at 1 — DIFFERENT from switchind's 0-based set).  Genuine
+    // recovery for a THIRD distinct switch through the same code path.
+    assert!(c.contains("case 1:"), "switchloop missing recovered `case 1:`:\n{c}");
+    assert!(c.contains("case 2:"), "switchloop missing recovered `case 2:`:\n{c}");
+    // The arms carry genuine recovered bodies (not empty stubs): each case
+    // mutates the accumulator (`v? = ... + N` / `* N`) — assert at least one real
+    // additive/multiplicative case body reached the rendered C.
+    assert!(
+        c.contains("+ 2") || c.contains("* 2") || c.contains("+ 100"),
+        "switchloop case bodies missing the real recovered arithmetic:\n{c}"
+    );
+    // No NO_LABEL leak.
+    assert!(!c.contains("0xbad1abe1"), "switchloop has an un-recovered NO_LABEL case:\n{c}");
+}
+
+/// VERIFIER: label CARDINALITY parity (in-scope: the case labels, not the
+/// default-arm rendering which is a separate seam).  The C++ B5 oracle for
+/// switchind recovers EXACTLY the distinct case labels {0,1,2,3,4,5,10}.  If a
+/// value were hardcoded or a memoized path injected a phantom arm, the set would
+/// differ.  Assert the rust render contains all seven AND no out-of-table
+/// numeric label (`case 6/7/8/9/11/12:` must be absent — they are not in the
+/// recovered address table).
+#[test]
+fn verifier_switchind_label_set_matches_oracle_cardinality() {
+    let c = render_datatest("switchind.xml");
+    for n in [0u32, 1, 2, 3, 4, 5, 10] {
+        assert!(c.contains(&format!("case {n}:")), "switchind missing oracle `case {n}:`:\n{c}");
+    }
+    // Labels that are NOT in the recovered table must not appear — guards against
+    // a phantom/hardcoded arm.
+    for n in [6u32, 7, 8, 9, 11, 12] {
+        assert!(
+            !c.contains(&format!("case {n}:")),
+            "switchind emitted out-of-table `case {n}:` (phantom label):\n{c}"
+        );
+    }
+}
