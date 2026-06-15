@@ -1684,6 +1684,71 @@ impl Funcdata {
         None
     }
 
+    /// Override the control-flow p-code op at \b addr (C++ `Funcdata::overrideFlow`,
+    /// `funcdata_op.cc:969`).  Used by `FlowInfo::process` when the per-function
+    /// `Override` set a flow override at this address (`override flow ...`).
+    ///
+    /// `type_` is the [`flow_type`](crate::overrides::flow_type) constant
+    /// (BRANCH/CALL/CALL_RETURN/RETURN).  Errors `"Could not apply flowoverride"`
+    /// when no matching primary branch exists (or it is not dead), matching the C++.
+    pub fn override_flow(&mut self, addr: &kuna_base::address::Address, type_: uint4) -> KunaResult<()> {
+        use crate::overrides::flow_type;
+        // iter = beginOp(addr); enditer = endOp(addr).
+        let ops: Vec<OpId> = self.obank().iter_at(addr).map(|(_, id)| id).collect();
+        let op = if type_ == flow_type::BRANCH {
+            self.find_primary_branch(&ops, false, true, true)
+        } else if type_ == flow_type::CALL {
+            self.find_primary_branch(&ops, true, false, true)
+        } else if type_ == flow_type::CALL_RETURN {
+            self.find_primary_branch(&ops, true, true, true)
+        } else if type_ == flow_type::RETURN {
+            self.find_primary_branch(&ops, true, true, false)
+        } else {
+            None
+        };
+        let op = match op {
+            Some(op) if self.obank().get(op).map(|o| o.is_dead()).unwrap_or(false) => op,
+            _ => return Err(KunaError::lowlevel("Could not apply flowoverride")),
+        };
+        let opc = self.obank().get(op).expect("override_flow: stale op").code();
+        if type_ == flow_type::BRANCH {
+            match opc {
+                OpCode::CPUI_CALL => self.op_set_opcode_code(op, OpCode::CPUI_BRANCH),
+                OpCode::CPUI_CALLIND => self.op_set_opcode_code(op, OpCode::CPUI_BRANCHIND),
+                OpCode::CPUI_RETURN => self.op_set_opcode_code(op, OpCode::CPUI_BRANCHIND),
+                _ => {}
+            }
+        } else if type_ == flow_type::CALL || type_ == flow_type::CALL_RETURN {
+            match opc {
+                OpCode::CPUI_BRANCH => self.op_set_opcode_code(op, OpCode::CPUI_CALL),
+                OpCode::CPUI_BRANCHIND => self.op_set_opcode_code(op, OpCode::CPUI_CALLIND),
+                OpCode::CPUI_CBRANCH => {
+                    return Err(KunaError::lowlevel("Do not currently support CBRANCH overrides"))
+                }
+                OpCode::CPUI_RETURN => self.op_set_opcode_code(op, OpCode::CPUI_CALLIND),
+                _ => {}
+            }
+            if type_ == flow_type::CALL_RETURN {
+                // Insert a new return op after the call.
+                let new_return = self.new_op(1, addr.clone());
+                self.op_set_opcode_code(new_return, OpCode::CPUI_RETURN);
+                let zero = self.new_constant(1, 0);
+                self.op_set_input(new_return, zero, 0)?;
+                self.op_dead_insert_after(new_return, op);
+            }
+        } else if type_ == flow_type::RETURN {
+            match opc {
+                OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_CALL => {
+                    return Err(KunaError::lowlevel("Do not currently support complex overrides"))
+                }
+                OpCode::CPUI_BRANCHIND => self.op_set_opcode_code(op, OpCode::CPUI_RETURN),
+                OpCode::CPUI_CALLIND => self.op_set_opcode_code(op, OpCode::CPUI_RETURN),
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // PcodeOp::nextOp / previousOp / target (block.rs/op.rs deferred to here)
     // -----------------------------------------------------------------------

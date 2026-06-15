@@ -308,7 +308,11 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let space = entry.get_space().expect("FlowInfo: entry has no space").clone();
         let baddr = Address::new(space.clone(), 0);
         let eaddr = Address::new(space, !0u64);
-        let flowoverride_present = env.has_flow_override();
+        // C++ flow.cc:43: `flowoverride_present = data.getOverride().hasFlowOverride()`.
+        // The per-function Override lives on the Funcdata (`localoverride`); the
+        // env-routed `has_flow_override` is the W2-era seam default (always false)
+        // and is OR'd in only for back-compat with envs that still carry it.
+        let flowoverride_present = data.get_override().has_flow_override() || env.has_flow_override();
         FlowInfo {
             data,
             env,
@@ -1013,10 +1017,12 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let emptyflag = self.data.obank().empty();
         let marker: Option<OpId> = if emptyflag { None } else { self.dead_tail() };
 
-        let flowoverride = if self.flowoverride_present {
-            self.env.flow_override(curaddr)
+        // C++ flow.cc:433: `flowoverride = data.getOverride().getFlowOverride(curaddr)`
+        // (the per-function Override lives on the Funcdata; `localoverride`).
+        let flowoverride: uint4 = if self.flowoverride_present {
+            self.data.get_override().get_flow_override(curaddr)
         } else {
-            FlowOverride::NONE
+            crate::overrides::flow_type::NONE
         };
 
         // step = glb->translate->oneInstruction(emitter, curaddr);
@@ -1069,8 +1075,9 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
             // data.opMarkStartInstruction(*oiter);
             self.op_mark_start_instruction(firstop);
-            if flowoverride != FlowOverride::NONE {
-                // data.overrideFlow(curaddr, flowoverride);  -- SEAM(W4): Override.
+            if flowoverride != crate::overrides::flow_type::NONE {
+                // C++ flow.cc:493: data.overrideFlow(curaddr, flowoverride).
+                self.data.override_flow(curaddr, flowoverride)?;
             }
             self.xref_control_flow(Some(firstop), startbasic, &mut isfallthru)?;
         }

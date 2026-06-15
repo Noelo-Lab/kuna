@@ -77,7 +77,9 @@ use crate::interface::{
     CommandStream, IfaceCommandAction, IfaceData, IfaceError, IfaceResult, IfaceStatus,
 };
 use kuna_base::types::{int4, uintm};
-use kuna_decomp::decompile_drive::{build_and_follow_flow, print_c};
+use kuna_decomp::decompile_drive::{
+    build_and_follow_flow, build_and_follow_flow_with_override, print_c,
+};
 use kuna_decomp::funcdata::Funcdata;
 use kuna_decomp::options::OptionDatabase;
 
@@ -131,6 +133,14 @@ pub struct IfaceDecompData {
     /// // SEAM(W4 queryFunction/FuncProto restore)
     pub pending_prototypes:
         std::collections::BTreeMap<String, kuna_decomp::fspec::PrototypePieces>,
+    /// Flow overrides installed by `override flow <addr> <type>`, keyed by
+    /// function name.  C++ keeps these on `dcp->fd->getOverride()` (the Funcdata
+    /// is reused); the kuna console rebuilds the IR on `load`/`decompile`, so the
+    /// `(address, flow_type)` facts are stashed here and re-seeded onto the fresh
+    /// Funcdata's `localoverride` at flow time (the `pending_prototypes`
+    /// precedent).
+    pub pending_flow_overrides:
+        std::collections::BTreeMap<String, Vec<(kuna_base::address::Address, kuna_base::types::uint4)>>,
 }
 
 impl IfaceData for IfaceDecompData {
@@ -727,14 +737,22 @@ decomp_command!(
         // C++: resolveScopeFromSymbolName + queryFunction; then if !hasNoCode,
         //      dcp->followFlow(*status->optr,0).  The kuna seam resolves the entry
         // from the binaryimage's own symbol records (the readLoaderSymbols seam).
+        let flow_overrides = dcp.pending_flow_overrides.get(&funcname).cloned().unwrap_or_default();
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
         let entry = match prog.lookup_symbol(&funcname) {
             Some(addr) => addr,
             None => return Err(IfaceError::execution(format!("Unknown function name: {funcname}"))),
         };
-        // Build the Funcdata + follow flow (C++ Funcdata + followFlow).
-        let fd = build_and_follow_flow(prog.arch_mut(), &funcname, entry, UNBOUNDED_SIZE)
-            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        // Build the Funcdata + follow flow (C++ Funcdata + followFlow), seeding any
+        // `override flow` facts stashed for this function before flow follows.
+        let fd = build_and_follow_flow_with_override(
+            prog.arch_mut(),
+            &funcname,
+            entry,
+            UNBOUNDED_SIZE,
+            &flow_overrides,
+        )
+        .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         dcp.fd = Some(fd);
         Ok(())
     }
@@ -1008,13 +1026,28 @@ decomp_command!(
         arch.symboltab
             .add_function(scope, &addr, &basename, min_size, type_code)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        // C++ `dcp->fd = scope->addFunction(addr,name)->getFunction()`: make the
+        // newly-mapped function the current function so the override commands
+        // (`override flow|prototype`, which require `dcp->fd != 0`) can attach to
+        // it.  The C++ `getFunction()` lazily builds the Funcdata WITHOUT following
+        // flow; the kuna seam builds the same un-followed Funcdata (the real flow
+        // follow runs at `load function`/`decompile`).
+        let fd = prog
+            .arch()
+            .new_funcdata(&name, addr.clone(), UNBOUNDED_SIZE)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         // Make the function loadable by `load function <name>` (the console seam).
         prog.register_symbol(&name, addr);
-        // C++ reads an optional trailing "nocode" keyword (setNoCode on fd); the
-        // kuna seam builds no Funcdata here, so `nocode` is consumed for parse
-        // fidelity but applied at follow-flow time (LOSS: nocode flag).
+        // C++ reads an optional trailing "nocode" keyword (setNoCode on fd).
         s.skip_ws();
-        let _nocode = s.read_token();
+        let nocode = s.read_token();
+        let dcp = dcp_mut(status)?;
+        dcp.fd = Some(fd);
+        if nocode == "nocode" {
+            if let Some(fd) = dcp.fd.as_mut() {
+                fd.set_no_code(true);
+            }
+        }
         Ok(())
     }
 );
@@ -1242,6 +1275,13 @@ decomp_command!(
                 }
             }
         };
+        // The `override flow` facts stashed for this function (re-seeded on the
+        // rebuilt IR, like `pending_proto`/`mapped_symbols`).
+        let flow_overrides = dcp_mut(status)?
+            .pending_flow_overrides
+            .get(&name)
+            .cloned()
+            .unwrap_or_default();
         if has_no_code {
             // Restore the program before the early return.
             dcp_mut(status)?.conf = Some(prog);
@@ -1259,13 +1299,14 @@ decomp_command!(
         // "Decompilation complete"/"Break at .." reporting.  The kuna decompile
         // drive (decompile_drive::decompile_func) installs the `decompile` root,
         // resets it, and runs the 252-pass perform loop to completion.
-        let result = kuna_decomp::decompile_drive::decompile_func_full(
+        let result = kuna_decomp::decompile_drive::decompile_func_full_with_override(
             prog.arch_mut(),
             &name,
             entry,
             size,
             &mapped_symbols,
             pending_proto.as_ref(),
+            &flow_overrides,
         );
         // Restore the program (and the fresh Funcdata on success) regardless.
         let dcp = dcp_mut(status)?;
@@ -1872,17 +1913,93 @@ decomp_command!(
 
 // --- override prototype / jumptable / flow (ifacedecomp.cc:1840-1953) ------
 
+/// A console-side [`FuncProtoOverride`](kuna_decomp::overrides::FuncProtoOverride)
+/// holding the parsed [`PrototypePieces`] for `override prototype <addr> <decl>`.
+///
+/// C++ wraps the pieces in a full `FuncProto` (`setInternal`/`setPieces`) and
+/// stores it in the function's `Override`.  The W4 `applyPrototype` consume
+/// (`FlowInfo::queryCall`) is still seamed (LOSS-031 neighborhood), so this wrapper
+/// only needs to round-trip the pieces; `encode`/`print_raw` (debug-only surfaces,
+/// not exercised by the datatest corpus) are faithful stubs.
+struct PiecesProtoOverride {
+    pieces: kuna_decomp::fspec::PrototypePieces,
+}
+
+impl kuna_decomp::overrides::FuncProtoOverride for PiecesProtoOverride {
+    fn set_override(&mut self, _val: bool) {
+        // C++ FuncProto::setOverride sets a flag consumed by the (seamed)
+        // applyPrototype; the pieces carry no such flag, so this is a no-op until
+        // the W4 FuncProto-backed override lands.
+    }
+    fn encode(&self, _encoder: &mut dyn kuna_base::marshal::Encoder) -> kuna_base::error::KunaResult<()> {
+        // SEAM(W4): FuncProto::encode of an override is a debug/save surface absent
+        // from the datatest corpus.
+        Err(kuna_base::error::KunaError::lowlevel(
+            "kuna rust port: prototype-override encode needs the W4 FuncProto::encode",
+        ))
+    }
+    fn print_raw(&self, s: &mut String) {
+        // C++ FuncProto::printRaw uses the literal name "func"; render the pieces'
+        // model name + arity for a faithful-enough debug line.
+        s.push_str("func(");
+        s.push_str(&self.pieces.intypes.len().to_string());
+        s.push(')');
+    }
+}
+
 decomp_command!(
     /// C++ `IfcProtooverride`: `override prototype <addr> <declaration>`.
+    ///
+    /// Parse the call-point address and the prototype declaration, find the call
+    /// site at that address, build a prototype override, and install it on the
+    /// function's `Override` (C++ `dcp->fd->getOverride().insertProtoOverride`).
     IfcProtooverride,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        // C++: if (dcp->fd==0) throw "No function selected".
+        if dcp_mut(status)?.fd.is_none() {
             return Err(IfaceError::execution("No function selected"));
         }
-        Err(engine_unavailable(
-            "parse_machaddr + parse_protopieces + Override::insertProtoOverride",
-        ))
+        let dcp = dcp_mut(status)?;
+        let prog = dcp.conf.as_ref().expect("conf present when fd present");
+        // C++ Address callpoint( parse_machaddr(s,discard,*dcp->conf->types) ).
+        let (callpoint, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        // C++ for(i..numCalls) if (getCallSpecs(i)->getOp()->getAddr()==callpoint) break;
+        //      if (i==numCalls) throw "No call is made at this address".
+        let fd = dcp.fd.as_ref().expect("fd present");
+        let mut found = false;
+        for i in 0..fd.num_calls() {
+            let op = fd.get_call_specs(i).get_op();
+            if let Some(o) = fd.obank().get(op) {
+                if o.get_addr() == &callpoint {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if !found {
+            return Err(IfaceError::execution("No call is made at this address"));
+        }
+        // C++ parse_protopieces(pieces,s,dcp->conf) — the remainder of the line.
+        s.skip_ws();
+        let decl = s.rest().trim().to_string();
+        let (addr_size, word_size) = prog.arch().data_org();
+        let org = crate::grammar::DataOrg { addr_size, word_size };
+        let pieces = crate::grammar::parse_protopieces(&decl, prog.arch().types(), org)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        // C++ builds a FuncProto (setInternal + setPieces) and
+        // insertProtoOverride(callpoint, newproto).  The W4 `applyPrototype` consume
+        // (FlowInfo::queryCall) is still seamed (LOSS-031 neighborhood), so the
+        // override is stored but not yet applied at flow time; the command succeeds
+        // (the script proceeds) exactly as C++.
+        let ov: Box<dyn kuna_decomp::overrides::FuncProtoOverride> =
+            Box::new(PiecesProtoOverride { pieces });
+        dcp.fd
+            .as_mut()
+            .expect("fd present")
+            .get_override_mut()
+            .insert_proto_override(callpoint, ov);
+        status.out("Successfully added override\n");
+        Ok(())
     }
 );
 
@@ -1901,14 +2018,37 @@ decomp_command!(
 decomp_command!(
     /// C++ `IfcFlowOverride`: `override flow <addr> branch|call|callreturn|return`.
     IfcFlowOverride,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
-        let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        // C++: if (dcp->fd==0) throw "No function selected".
+        if dcp_mut(status)?.fd.is_none() {
             return Err(IfaceError::execution("No function selected"));
         }
-        // C++ then parse_machaddr + the final token via Override::stringToType
-        // ("Missing override type" / "Bad override type").
-        Err(engine_unavailable("parse_machaddr + Override::insertFlowOverride"))
+        let dcp = dcp_mut(status)?;
+        let prog = dcp.conf.as_ref().expect("conf present when fd present");
+        // C++ Address addr( parse_machaddr(s,discard,*dcp->conf->types) ).
+        let (addr, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        s.skip_ws();
+        let token = s.read_token();
+        if token.is_empty() {
+            return Err(IfaceError::parse("Missing override type"));
+        }
+        // C++ type = Override::stringToType(token); if (type==NONE) "Bad override type".
+        let type_ = kuna_decomp::overrides::Override::string_to_type(token.as_bytes());
+        if type_ == kuna_decomp::overrides::flow_type::NONE {
+            return Err(IfaceError::parse("Bad override type"));
+        }
+        // C++ dcp->fd->getOverride().insertFlowOverride(addr,type).
+        let fname = dcp.fd.as_ref().expect("fd present").get_name().to_string();
+        dcp.fd
+            .as_mut()
+            .expect("fd present")
+            .get_override_mut()
+            .insert_flow_override(addr.clone(), type_);
+        // Stash by function name so the override survives the IR rebuild on
+        // `load function`/`decompile` (the kuna console rebuilds the Funcdata).
+        dcp.pending_flow_overrides.entry(fname).or_default().push((addr, type_));
+        status.out("Successfully added override\n");
+        Ok(())
     }
 );
 
@@ -2295,14 +2435,51 @@ decomp_command!(
 );
 
 decomp_command!(
-    /// C++ `IfcFixupApply`: `fixup apply <inject> <symbol>`.
+    /// C++ `IfcFixupApply`: `fixup apply <fixup> <function>`.
+    ///
+    /// Resolve the call-fixup by name (`getPayloadId(CALLFIXUP_TYPE,fixup)`) and the
+    /// function symbol by name, then set the fixup as the function's inject id (C++
+    /// `fd->getFuncProto().setInjectId(injectid)`).  The cspec `<callfixup>` elements
+    /// are decoded into `pcodeinjectlib` at bootstrap (`Architecture::decode_call_fixups`).
     IfcFixupApply,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
         if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No image loaded"));
+            return Err(IfaceError::execution("No load image present"));
         }
-        Err(engine_unavailable("PcodeInjectLibrary::getCallFixup + apply"))
+        s.skip_ws();
+        if s.eof() {
+            return Err(IfaceError::parse("Missing fixup name"));
+        }
+        let fixup_name = s.read_token();
+        s.skip_ws();
+        if s.eof() {
+            return Err(IfaceError::parse("Missing function name"));
+        }
+        let func_name = s.read_token();
+
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        // C++ injectid = pcodeinjectlib->getPayloadId(CALLFIXUP_TYPE, fixupName);
+        //      if (injectid < 0) throw "Unknown fixup: ".
+        let injectid = prog
+            .arch()
+            .pcodeinjectlib
+            .base
+            .get_payload_id(kuna_decomp::pcodeinject::CALLFIXUP_TYPE, fixup_name.as_bytes());
+        if injectid < 0 {
+            return Err(IfaceError::execution(format!("Unknown fixup: {fixup_name}")));
+        }
+        // C++ resolveScopeFromSymbolName + queryFunction; "Unknown function name" if
+        // no function symbol matches.  query_global_function folds both into the
+        // single resolution the loader-symbol table backs.
+        let sid = prog
+            .arch()
+            .query_global_function(&func_name)
+            .map_err(|_| IfaceError::execution(format!("Unknown function name: {func_name}")))?;
+        // C++ fd->getFuncProto().setInjectId(injectid).
+        prog.arch_mut().symboltab.set_function_inject_id(sid, injectid);
+        status.out("Successfully applied callfixup\n");
+        Ok(())
     }
 );
 

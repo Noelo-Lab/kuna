@@ -306,3 +306,56 @@ fn w3_ir_funcdata_op_next_op_through_empty_block() {
     assert_eq!(fd.bblocks_ref().block(b1).size_out(), 1);
     assert_eq!(fd.op_next_op(a), Some(c));
 }
+
+// -----------------------------------------------------------------------------
+// 7. override_flow — CALL -> BRANCH and CALL -> CALL_RETURN (return-op insert).
+//    (C++ Funcdata::overrideFlow, funcdata_op.cc:969)
+// -----------------------------------------------------------------------------
+#[test]
+fn w3_ir_funcdata_override_flow_call_to_branch() {
+    use kuna_decomp::overrides::flow_type;
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    let addr = Address::new(ram, 0x300);
+    // A dead CALL op at 0x300 (in0 = the call-target coderef varnode).
+    let call = mk_op(&mut fd, 1, 0x300, OpCode::CPUI_CALL);
+    let tgt = mk_vn(&mut fd, 0x500);
+    fd.op_set_input(call, tgt, 0).unwrap();
+    // BRANCH override: CALL -> BRANCH (findPrimaryBranch findcall=false,findbranch=false,findreturn=true,
+    // here BRANCH wants findcall=true via the BRANCH arm).
+    fd.override_flow(&addr, flow_type::BRANCH).unwrap();
+    assert_eq!(fd.obank().get(call).unwrap().code(), OpCode::CPUI_BRANCH);
+}
+
+#[test]
+fn w3_ir_funcdata_override_flow_call_return_inserts_return() {
+    use kuna_decomp::overrides::flow_type;
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    let addr = Address::new(ram, 0x300);
+    let call = mk_op(&mut fd, 1, 0x300, OpCode::CPUI_CALL);
+    let tgt = mk_vn(&mut fd, 0x500);
+    fd.op_set_input(call, tgt, 0).unwrap();
+    let before = fd.obank().iter_dead().count();
+    // CALL_RETURN: CALL stays CALL and a fresh RETURN op is inserted after it.
+    fd.override_flow(&addr, flow_type::CALL_RETURN).unwrap();
+    assert_eq!(fd.obank().get(call).unwrap().code(), OpCode::CPUI_CALL);
+    assert_eq!(fd.obank().iter_dead().count(), before + 1);
+    // The inserted op is a RETURN.
+    let has_return = fd
+        .obank()
+        .iter_dead()
+        .any(|op| fd.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_RETURN));
+    assert!(has_return);
+}
+
+#[test]
+fn w3_ir_funcdata_override_flow_no_matching_branch_errors() {
+    use kuna_decomp::overrides::flow_type;
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    let addr = Address::new(ram, 0x300);
+    // Only a COPY at the address: no primary branch -> "Could not apply flowoverride".
+    let _copy = mk_op(&mut fd, 0, 0x300, OpCode::CPUI_COPY);
+    assert!(fd.override_flow(&addr, flow_type::BRANCH).is_err());
+}

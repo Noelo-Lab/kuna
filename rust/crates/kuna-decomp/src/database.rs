@@ -515,6 +515,22 @@ pub enum SymbolKind {
         /// `Funcdata *fd`; the function-data subsystem is a later wave, so the
         /// arena stores only whether one exists.
         has_funcdata: bool,
+        /// `FuncProto::is_inline` for this function (C++ `getFuncProto().isInline()`).
+        /// The C++ stores this flag on the `FuncProto` owned by the FunctionSymbol's
+        /// lazily-built `Funcdata`; with the `Funcdata`-on-symbol subsystem deferred
+        /// (W5), the per-function inline property — set by `option inline <name>`
+        /// (`OptionInline`) and read at flow time (`FlowInfo::queryCall`) — is parked
+        /// here so the function's inline disposition survives between the two.
+        inline_func: bool,
+        /// `FuncProto::is_no_return` for this function (C++ `getFuncProto().isNoReturn()`).
+        /// Set by `option noreturn <name>` (`OptionNoReturn`); parked here for the
+        /// same reason as `inline_func`.
+        no_return: bool,
+        /// `FuncProto::injectid` for this function (C++ `getFuncProto().setInjectId(id)`):
+        /// the call-fixup injection id applied by `fixup apply <fixup> <name>`
+        /// (`IfcFixupApply`).  `-1` = no fixup.  Parked here for the same reason as
+        /// `inline_func` (the lazily-built `Funcdata`/`FuncProto` is W5).
+        inject_id: int4,
     },
     /// `EquateSymbol` — labels a constant (C++ `EquateSymbol`).
     Equate {
@@ -1884,7 +1900,13 @@ impl Database {
         sym.flags |= varnode_flags::namelock | varnode_flags::typelock; // FunctionSymbol::buildType
         sym.name = nm.to_string();
         sym.display_name = nm.to_string();
-        sym.kind = SymbolKind::Function { consume_size: min_funcsymbol_size, has_funcdata: false };
+        sym.kind = SymbolKind::Function {
+            consume_size: min_funcsymbol_size,
+            has_funcdata: false,
+            inline_func: false,
+            no_return: false,
+            inject_id: -1,
+        };
         let sid = self.symbols.insert(sym);
         self.add_symbol_internal(scope, sid)?;
         self.add_map_point(scope, sid, addr, &Address::new_invalid())?;
@@ -2209,6 +2231,72 @@ impl Database {
             }
         }
         None
+    }
+
+    /// C++ `Scope::queryFunction(const string&)` (`database.cc:1217-1230`): walk the
+    /// scope-name lookup (`queryByName`, which climbs to parent scopes) and return
+    /// the first `FunctionSymbol`.  In C++ this returns `funcsym->getFunction()` (a
+    /// `Funcdata*`); the function-data-on-symbol subsystem is W5, so this returns the
+    /// `SymbolId` of the FunctionSymbol — the stable handle whose parked
+    /// `inline_func`/`no_return` flags stand in for the lazily-built `FuncProto`.
+    pub fn query_function_by_name(&self, scope: ScopeId, nm: &str) -> Option<SymbolId> {
+        for sid in self.query_by_name(scope, nm) {
+            if matches!(self.symbols[sid].kind, SymbolKind::Function { .. }) {
+                return Some(sid);
+            }
+        }
+        None
+    }
+
+    /// Set the `FuncProto::is_inline` flag for a FunctionSymbol (C++
+    /// `infd->getFuncProto().setInline(val)` reached via `OptionInline::apply`).
+    /// No-op on a non-Function symbol.
+    pub fn set_function_inline(&mut self, sid: SymbolId, val: bool) {
+        if let SymbolKind::Function { inline_func, .. } = &mut self.symbols[sid].kind {
+            *inline_func = val;
+        }
+    }
+
+    /// Set the `FuncProto::is_no_return` flag for a FunctionSymbol (C++
+    /// `infd->getFuncProto().setNoReturn(val)` reached via `OptionNoReturn::apply`).
+    /// No-op on a non-Function symbol.
+    pub fn set_function_no_return(&mut self, sid: SymbolId, val: bool) {
+        if let SymbolKind::Function { no_return, .. } = &mut self.symbols[sid].kind {
+            *no_return = val;
+        }
+    }
+
+    /// Set the `FuncProto::injectid` for a FunctionSymbol (C++
+    /// `fd->getFuncProto().setInjectId(injectid)` reached via `IfcFixupApply`).
+    /// No-op on a non-Function symbol.
+    pub fn set_function_inject_id(&mut self, sid: SymbolId, injectid: int4) {
+        if let SymbolKind::Function { inject_id, .. } = &mut self.symbols[sid].kind {
+            *inject_id = injectid;
+        }
+    }
+
+    /// Is the FunctionSymbol at `addr` (in `scope`) marked \e inline (C++
+    /// `queryFunction(addr)->getFuncProto().isInline()`)?  `false` if no function
+    /// symbol starts at `addr`.  Read at flow time by `FlowInfo::queryCall`.
+    pub fn function_is_inline(&self, scope: ScopeId, addr: &Address) -> bool {
+        match self.find_function(scope, addr) {
+            Some(sid) => {
+                matches!(self.symbols[sid].kind, SymbolKind::Function { inline_func: true, .. })
+            }
+            None => false,
+        }
+    }
+
+    /// Is the FunctionSymbol at `addr` (in `scope`) marked \e noreturn (C++
+    /// `queryFunction(addr)->getFuncProto().isNoReturn()`)?  `false` if no function
+    /// symbol starts at `addr`.
+    pub fn function_is_no_return(&self, scope: ScopeId, addr: &Address) -> bool {
+        match self.find_function(scope, addr) {
+            Some(sid) => {
+                matches!(self.symbols[sid].kind, SymbolKind::Function { no_return: true, .. })
+            }
+            None => false,
+        }
     }
 
     /// C++ `ScopeInternal::findExternalRef` (`database.cc:2370-2388`).
@@ -3769,5 +3857,37 @@ mod tests {
         // Used from global: distinguishing scope is ns1 (sym's scope); the name
         // "ns1" isn't used in global, so depth is 1.
         assert_eq!(db.get_resolution_depth(sym, Some(g)), 1);
+    }
+
+    /// The per-function inline / noreturn / inject-id flags round-trip through the
+    /// FunctionSymbol kind (the parked-FuncProto facts `OptionInline` /
+    /// `OptionNoReturn` / `IfcFixupApply` set and `FlowInfo::queryCall` reads).
+    #[test]
+    fn function_inline_noreturn_injectid_roundtrip() {
+        let m = build_manager();
+        let (mut db, g) = db_with_global(m.num_spaces());
+        let addr = Address::new(space(&m, 2), 0x1000);
+        let sid = db.add_function(g, &addr, "callee", 1, dt(1)).unwrap();
+        // Resolve by name (queryFunction(name)) finds the FunctionSymbol.
+        assert_eq!(db.query_function_by_name(g, "callee"), Some(sid));
+        // Defaults: not inline, not noreturn.
+        assert!(!db.function_is_inline(g, &addr));
+        assert!(!db.function_is_no_return(g, &addr));
+        // OptionInline / OptionNoReturn set them; queryFunction(addr).isInline()
+        // reads them back at flow time.
+        db.set_function_inline(sid, true);
+        db.set_function_no_return(sid, true);
+        assert!(db.function_is_inline(g, &addr));
+        assert!(db.function_is_no_return(g, &addr));
+        db.set_function_inline(sid, false);
+        assert!(!db.function_is_inline(g, &addr));
+        // Inject id parks the call-fixup id (IfcFixupApply -> setInjectId).
+        db.set_function_inject_id(sid, 7);
+        match db.symbol(sid).kind {
+            SymbolKind::Function { inject_id, .. } => assert_eq!(inject_id, 7),
+            _ => panic!("expected a FunctionSymbol"),
+        }
+        // An unknown name resolves to None (the "Unknown function name" path).
+        assert_eq!(db.query_function_by_name(g, "nope"), None);
     }
 }

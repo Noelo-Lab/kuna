@@ -102,7 +102,32 @@ pub fn build_and_follow_flow(
     entry: Address,
     size: int4,
 ) -> KunaResult<Funcdata> {
-    let fd = arch.new_funcdata(name, entry, size)?;
+    build_and_follow_flow_with_override(arch, name, entry, size, &[])
+}
+
+/// Like [`build_and_follow_flow`], but seeds the fresh `Funcdata`'s per-function
+/// flow-`Override` (C++ `data.getOverride()`) before flow follows — so the console
+/// `override flow <addr> <type>` command (which sets the override on the function
+/// before `decompile` rebuilds the IR) takes effect at flow time
+/// (`FlowInfo::process` reads `hasFlowOverride`/`getFlowOverride` then
+/// `Funcdata::overrideFlow`).
+///
+/// `flow_overrides` are the `(address, flow_type)` facts the console stashed; they
+/// are re-inserted into the fresh Funcdata's `localoverride` (the C++ override is
+/// kept on the reused Funcdata, but the kuna console rebuilds the IR — see the
+/// `pending_prototypes`/`mapped_symbols` re-seed precedent).
+pub fn build_and_follow_flow_with_override(
+    arch: &Architecture,
+    name: &str,
+    entry: Address,
+    size: int4,
+    flow_overrides: &[(Address, kuna_base::types::uint4)],
+) -> KunaResult<Funcdata> {
+    let mut fd = arch.new_funcdata(name, entry, size)?;
+    for (addr, ty) in flow_overrides {
+        fd.get_override_mut().insert_flow_override(addr.clone(), *ty);
+    }
+    let fd = fd;
     let env = ArchFlowEnv { arch };
     let mut flow = FlowInfo::new(fd, &env);
     // C++ followFlow: generateOps() then generateBlocks().
@@ -197,7 +222,23 @@ pub fn decompile_func_full(
     mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
     pending_proto: Option<&crate::fspec::PrototypePieces>,
 ) -> KunaResult<Funcdata> {
-    let mut fd = build_and_follow_flow(arch, name, funcaddr, size)?;
+    decompile_func_full_with_override(arch, name, funcaddr, size, mapped_symbols, pending_proto, &[])
+}
+
+/// Like [`decompile_func_full`], but also seeds the per-function flow `Override`
+/// (`override flow <addr> <type>`) before flow follows — see
+/// [`build_and_follow_flow_with_override`].
+#[allow(clippy::too_many_arguments)]
+pub fn decompile_func_full_with_override(
+    arch: &mut Architecture,
+    name: &str,
+    funcaddr: Address,
+    size: int4,
+    mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
+    pending_proto: Option<&crate::fspec::PrototypePieces>,
+    flow_overrides: &[(Address, kuna_base::types::uint4)],
+) -> KunaResult<Funcdata> {
+    let mut fd = build_and_follow_flow_with_override(arch, name, funcaddr, size, flow_overrides)?;
     // Apply any parsed-and-locked prototype to the fresh funcp (the input-param
     // recovery SEED): after this the inputs/output are type-locked, so
     // ActionPrototypeTypes forces the typed Varnodes.

@@ -623,6 +623,22 @@ impl Architecture {
         s
     }
 
+    /// C++ `symboltab->getGlobalScope()->queryFunction(name)` reduced to the
+    /// FunctionSymbol handle: resolve the function symbol by name in the global
+    /// scope, erroring `RecovError("Unknown function name: "+name)` when no
+    /// FunctionSymbol of that name exists (the C++ `OptionInline`/`OptionNoReturn`
+    /// contract).  Used by the per-function property setters; the loader symbols
+    /// are read into the global scope at load (`read_loader_symbols`).
+    pub fn query_global_function(&self, name: &str) -> KunaResult<crate::database::SymbolId> {
+        let scope = self
+            .symboltab
+            .get_global_scope()
+            .ok_or_else(|| KunaError::recov(format!("Unknown function name: {name}")))?;
+        self.symboltab
+            .query_function_by_name(scope, name)
+            .ok_or_else(|| KunaError::recov(format!("Unknown function name: {name}")))
+    }
+
     // -----------------------------------------------------------------------
     // Funcdata construction (the W3 boot seam)
     // -----------------------------------------------------------------------
@@ -853,6 +869,55 @@ impl Architecture {
             stack_growth,
             true,
         )
+    }
+
+    /// Decode the cspec `<callfixup>` elements into the p-code injection library
+    /// (C++ `parseCompilerConfig` -> `ELEM_CALLFIXUP` ->
+    /// `pcodeinjectlib->decodeInject(archid+" : compiler spec","",CALLFIXUP_TYPE,decoder)`,
+    /// `architecture.cc:1291`).  After this every cspec-defined call-fixup is
+    /// registered (and resolvable by `getPayloadId(CALLFIXUP_TYPE,name)`), so the
+    /// console `fixup apply <fixup> <function>` command can find it.
+    ///
+    /// The SLEIGH compile of each fixup body (`parseInject`) stays deferred
+    /// (LOSS-031); only the decode/registration runs here, which is all
+    /// `getPayloadId`/`setInjectId` need.  General over any processor's cspec.
+    fn decode_call_fixups(&mut self) -> KunaResult<()> {
+        use kuna_base::marshal::{IdRegistry, XmlDecode};
+        use kuna_base::xml::DocumentStorage;
+
+        let Some(xml) = self.cspec_xml.clone() else {
+            return Ok(());
+        };
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(&xml)?.get_root().clone();
+        // Gather the <callfixup> children (the cspec root IS <compiler_spec>).
+        let fixups: Vec<Rc<kuna_base::xml::Element>> = root
+            .get_children()
+            .iter()
+            .filter(|c| c.get_name() == "callfixup")
+            .cloned()
+            .collect();
+        if fixups.is_empty() {
+            return Ok(());
+        }
+        // The injection element/attribute ids the payload decode reads
+        // (callfixup/pcode/body/target/name/...).
+        let manager = self.translate.base().manager_rc();
+        let mut registry = IdRegistry::with_base_ids();
+        crate::pcodeinject::register_ids(&mut registry);
+        for fixup in fixups.iter() {
+            let mut decoder = XmlDecode::new_with_root(&manager, &registry, fixup, 0);
+            // C++ src = archid+" : compiler spec"; the kuna engine carries no archid
+            // string here, so the source label is the constant suffix (only surfaces
+            // in error messages / debug dumps, never in test output).
+            self.pcodeinjectlib.decode_inject(
+                b" : compiler spec",
+                b"",
+                crate::pcodeinject::CALLFIXUP_TYPE,
+                &mut decoder,
+            )?;
+        }
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -1480,6 +1545,10 @@ impl Architecture {
         // Mirror that ordering here: finish the size/alignment setup first.
         self.finish_typegrp();
         self.build_core_types()?;
+        // C++ parseCompilerConfig dispatches each cspec child; the <callfixup>
+        // elements register their injections into pcodeinjectlib.  Run this BEFORE
+        // build_default_proto, which `take()`s the cspec XML.
+        self.decode_call_fixups()?;
         self.build_default_proto();
         self.build_action();
         self.print.initialize_from_architecture();
@@ -1610,14 +1679,21 @@ impl ArchOptionContext for Architecture {
         }
     }
 
-    // --- per-function properties (W4 symboltab + W6 fspec) -----------------
-    fn set_function_inline(&mut self, name: &str, _val: bool) -> KunaResult<()> {
-        // SEAM(W4 symboltab + W6 fspec): same as set_function_extra_pop.
-        Err(KunaError::recov(format!("Unknown function name: {name}")))
+    // --- per-function properties (C++ OptionInline / OptionNoReturn) -------
+    fn set_function_inline(&mut self, name: &str, val: bool) -> KunaResult<()> {
+        // C++ `OptionInline::apply`: `infd = symboltab->getGlobalScope()->queryFunction(p1);
+        // if (infd==0) throw RecovError("Unknown function name: "+p1); infd->getFuncProto().setInline(val)`.
+        // The FunctionSymbol's lazily-built Funcdata/FuncProto is W5; the inline flag
+        // is parked on the symbol (read back by FlowInfo::queryCall at flow time).
+        let sid = self.query_global_function(name)?;
+        self.symboltab.set_function_inline(sid, val);
+        Ok(())
     }
-    fn set_function_no_return(&mut self, name: &str, _val: bool) -> KunaResult<()> {
-        // SEAM(W4 symboltab + W6 fspec).
-        Err(KunaError::recov(format!("Unknown function name: {name}")))
+    fn set_function_no_return(&mut self, name: &str, val: bool) -> KunaResult<()> {
+        // C++ `OptionNoReturn::apply`: same shape as OptionInline, but setNoReturn.
+        let sid = self.query_global_function(name)?;
+        self.symboltab.set_function_no_return(sid, val);
+        Ok(())
     }
 
     // --- printer (wired to the owned PrintC) -------------------------------
