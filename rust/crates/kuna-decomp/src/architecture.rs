@@ -1299,11 +1299,12 @@ impl Architecture {
         Ok(model)
     }
 
-    /// Decode the `<pentry>` children of an `<input>`/`<output>` element into the
-    /// model's input or output [`ParamListStandard`] (C++
-    /// `ParamListStandard::decode` over `<pentry>` records).  `is_input` selects
-    /// the list.  Mirrors `parsePentry` + `ParamEntry::decode` + the
-    /// `finish_decode` tail (resource boundary, `calcDelay`, `populateResolver`).
+    /// Decode the `<pentry>`/`<group>` children of an `<input>`/`<output>`
+    /// element into the model's input or output [`ParamListStandard`] (C++
+    /// `ParamListStandard::decode`, `fspec.cc:1453`).  `is_input` selects the
+    /// list.  Mirrors the `<pentry>`/`<group>` dispatch loop (`parsePentry`,
+    /// `fspec.cc:1228`; `parseGroup`, `fspec.cc:1264`) + the `finish_decode` tail
+    /// (resource boundary, `calcDelay`, `populateResolver`).
     fn decode_pentry_list(
         &self,
         list_el: &Rc<kuna_base::xml::Element>,
@@ -1313,21 +1314,72 @@ impl Architecture {
         // C++ ParamListStandard::decode: normalstack = !reverse; the model's
         // stackgrowsnegative drives it (the default cspec stack convention).
         let normalstack = true;
-        // Collect entries, building each against the running prefix (resolveFirst/
-        // resolveJoin/resolveOverlap consult the entries decoded so far).
-        let mut group: int4 = 0;
+        // numgroup tracks the running group id, exactly as C++
+        // `ParamListStandard::numgroup`.  Entries accumulate in `pentries`, which
+        // doubles as the running prefix consulted by resolveFirst/resolveJoin/
+        // resolveOverlap (the C++ passes its growing `entry` vector for the same
+        // purpose).
+        let mut numgroup: int4 = 0;
         let mut pentries: Vec<crate::fspec::ParamEntry> = Vec::new();
         for child in list_el.get_children().iter() {
-            if child.get_name() != "pentry" {
-                continue;
+            match child.get_name() {
+                // C++ fspec.cc:1482-1484: a bare <pentry> is parsed at the current
+                // numgroup with grouped == false.
+                "pentry" => {
+                    let entry = self.decode_pentry(child, numgroup, normalstack, false, &pentries)?;
+                    // C++ parsePentry tail (fspec.cc:1251): numgroup advances past
+                    // the entry's highest group (1 past for an exclusion entry).
+                    let maxgroup = entry.get_all_groups().last().copied().unwrap_or(numgroup) + 1;
+                    if maxgroup > numgroup {
+                        numgroup = maxgroup;
+                    }
+                    pentries.push(entry);
+                }
+                // C++ fspec.cc:1485-1487 + parseGroup (fspec.cc:1264): every
+                // <pentry> inside the <group> shares basegroup == numgroup and is
+                // parsed with grouped == true.
+                "group" => {
+                    let basegroup = numgroup;
+                    // C++ parseGroup keeps the two previous entries to enforce
+                    // ParamEntry::orderWithinGroup pairwise (fspec.cc:1276-1282).
+                    let mut prev1: Option<usize> = None;
+                    let mut prev2: Option<usize> = None;
+                    for gchild in child.get_children().iter() {
+                        if gchild.get_name() != "pentry" {
+                            // C++ parseGroup only ever peeks <pentry> elements
+                            // inside <group>; ignore stray text/whitespace nodes.
+                            continue;
+                        }
+                        let entry =
+                            self.decode_pentry(gchild, basegroup, normalstack, true, &pentries)?;
+                        if entry.get_space().get_type() == kuna_base::space::spacetype::IPTR_JOIN {
+                            return Err(KunaError::lowlevel(
+                                "<pentry> in the join space not allowed in <group> tag",
+                            ));
+                        }
+                        let maxgroup =
+                            entry.get_all_groups().last().copied().unwrap_or(basegroup) + 1;
+                        if maxgroup > numgroup {
+                            numgroup = maxgroup;
+                        }
+                        let cur = pentries.len();
+                        pentries.push(entry);
+                        // orderWithinGroup(previous1, cur) and (previous2, cur).
+                        if let Some(p1) = prev1 {
+                            crate::fspec::ParamEntry::order_within_group(&pentries[p1], &pentries[cur])?;
+                            if let Some(p2) = prev2 {
+                                crate::fspec::ParamEntry::order_within_group(
+                                    &pentries[p2],
+                                    &pentries[cur],
+                                )?;
+                            }
+                        }
+                        prev2 = prev1;
+                        prev1 = Some(cur);
+                    }
+                }
+                _ => {}
             }
-            let entry = self.decode_pentry(child, group, normalstack, &pentries)?;
-            // numgroup advances by the entry's group span (1 for exclusion).
-            let maxgroup = entry.get_all_groups().last().copied().unwrap_or(group) + 1;
-            if maxgroup > group {
-                group = maxgroup;
-            }
-            pentries.push(entry);
         }
         let plist = if is_input { model.input_mut() } else { model.output_mut() };
         for e in pentries {
@@ -1345,6 +1397,7 @@ impl Architecture {
         pentry: &Rc<kuna_base::xml::Element>,
         group: int4,
         normalstack: bool,
+        grouped: bool,
         prev: &[crate::fspec::ParamEntry],
     ) -> KunaResult<crate::fspec::ParamEntry> {
         use crate::dtype::{string2typeclass, type_class};
@@ -1390,7 +1443,7 @@ impl Architecture {
         let (space, addressbase) = self.decode_pentry_storage(pentry)?;
         crate::fspec::ParamEntry::seed(
             group, type_, space, addressbase, size, minsize, alignment, flags, normalstack,
-            false, prev, self.manage(),
+            grouped, prev, self.manage(),
         )
     }
 
