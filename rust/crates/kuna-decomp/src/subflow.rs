@@ -6741,6 +6741,142 @@ mod tests {
         assert_eq!(rule.apply_op(copyop, &mut fd), 0);
     }
 
+    // ---- SplitDatatype split build path (subflow.cc:2390-2954) -------------
+    // item: rport/w10-splitdatatype (round 1).  Verifier adversarial tests
+    // targeting the fragile transcriptions: the testCopyConstraints boolean
+    // ladder, the generateConstants extended-precision shift arithmetic, and the
+    // getValueDatatype TYPE_PTR guard.
+
+    /// `SplitDatatype::testCopyConstraints` (subflow.cc:2390): the C++ rejects
+    /// COPYs whose input is a function input, and the written-LOAD-lone-descend
+    /// form (handled by splitCopy itself).  Verifies both early-false arms and the
+    /// true fallthrough for a plain written non-LOAD input.
+    #[test]
+    fn w10_splitdt_test_copy_constraints_ladder() {
+        // (a) input Varnode -> false (inVn->isInput()).
+        let mut fd = build_fd();
+        let sd = SplitDatatype::new(3);
+        let src = mk_input(&mut fd, 0x40, 8);
+        let copyop = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_COPY);
+        let outvn = mk_reg(&mut fd, 0x80, 8);
+        wire_in(&mut fd, copyop, src, 0);
+        let _ = wire_out(&mut fd, copyop, outvn);
+        assert!(!sd.test_copy_constraints(&fd, copyop), "input must be rejected");
+
+        // (b) written non-input, non-LOAD def -> the LOAD-lone-descend arm is
+        // skipped and the method returns true (the splittable case).
+        let mut fd = build_fd();
+        let sd = SplitDatatype::new(3);
+        let predop = mk_op(&mut fd, 0x80, 1, OpCode::CPUI_INT_2COMP);
+        let inarg = mk_input(&mut fd, 0x40, 8);
+        wire_in(&mut fd, predop, inarg, 0);
+        let mid = mk_reg(&mut fd, 0x48, 8);
+        let mid = wire_out(&mut fd, predop, mid); // written, def is not a LOAD
+        let copyop = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_COPY);
+        let outvn = mk_reg(&mut fd, 0x88, 8);
+        wire_in(&mut fd, copyop, mid, 0);
+        let _ = wire_out(&mut fd, copyop, outvn);
+        assert!(sd.test_copy_constraints(&fd, copyop), "written non-LOAD input is splittable");
+
+        // (c) written LOAD def whose lone descendant is the COPY -> false
+        // (handled by splitCopy()).  Exercises inVn->getDef()->code()==LOAD and
+        // loneDescend()==copyOp.
+        let mut fd = build_fd();
+        let sd = SplitDatatype::new(3);
+        let spaceid = mk_const(&mut fd, 8, 0);
+        let ptr = mk_input(&mut fd, 0x40, 8);
+        let loadop = mk_op(&mut fd, 0x90, 2, OpCode::CPUI_LOAD);
+        wire_in(&mut fd, loadop, spaceid, 0);
+        wire_in(&mut fd, loadop, ptr, 1);
+        let loaded = mk_reg(&mut fd, 0x50, 8);
+        let loaded = wire_out(&mut fd, loadop, loaded);
+        let copyop = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_COPY);
+        let outvn = mk_reg(&mut fd, 0x88, 8);
+        wire_in(&mut fd, copyop, loaded, 0); // loaded's lone descend is copyOp
+        let _ = wire_out(&mut fd, copyop, outvn);
+        assert!(
+            !sd.test_copy_constraints(&fd, copyop),
+            "LOAD-into-lone-COPY must be deferred to splitCopy()"
+        );
+    }
+
+    /// `SplitDatatype::generateConstants` (subflow.cc:2413): a little-endian
+    /// `INT_ZEXT(c)` is split into the precomputed `dataTypePieces`.  Verifies the
+    /// exact shift arithmetic (`val = lo >> sa*8` with `sa = offset`) and the
+    /// `dt->getSize() > sizeof(uintb)` overflow bail that clears the accumulator.
+    #[test]
+    fn w10_splitdt_generate_constants_zext_and_oversize_bail() {
+        let mut fd = build_fd();
+        let mut sd = SplitDatatype::new(3);
+        // Build a little-endian ZEXT(0x11223344 : 4) -> 8.  loneDescend must be
+        // present (a sink op) and the value must be a constant input.
+        let cst = mk_const(&mut fd, 4, 0x1122_3344);
+        let zext = mk_op(&mut fd, 0x80, 1, OpCode::CPUI_INT_ZEXT);
+        wire_in(&mut fd, zext, cst, 0);
+        let zout = mk_reg(&mut fd, 0x50, 8);
+        let zout = wire_out(&mut fd, zext, zout);
+        // A single descendant so loneDescend() != null.
+        let sink = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_COPY);
+        wire_in(&mut fd, sink, zout, 0);
+        let sinkout = mk_reg(&mut fd, 0x88, 8);
+        let _ = wire_out(&mut fd, sink, sinkout);
+
+        // Two int2 pieces at offsets 0 and 2 (low half of the ZEXT value).
+        let int2 = Rc::new(Datatype::new(2, type_metatype::TYPE_INT));
+        sd.data_type_pieces.push(Component { in_type: Rc::clone(&int2), out_type: Rc::clone(&int2), offset: 0 });
+        sd.data_type_pieces.push(Component { in_type: Rc::clone(&int2), out_type: Rc::clone(&int2), offset: 2 });
+        let mut inv: Vec<VarnodeId> = Vec::new();
+        assert!(sd.generate_constants(&mut fd, zout, &mut inv).unwrap());
+        assert_eq!(inv.len(), 2);
+        // ram space is little-endian here: offset 0 -> low 16 bits (0x3344),
+        // offset 2 -> next 16 bits (0x1122).  losize=4, sa<losize so val=lo>>sa*8.
+        assert_eq!(fd.vbank().get(inv[0]).unwrap().get_offset(), 0x3344);
+        assert_eq!(fd.vbank().get(inv[1]).unwrap().get_offset(), 0x1122);
+
+        // Oversize bail: a piece larger than sizeof(uintb) clears inVarnodes and
+        // returns false (the C++ `dt->getSize() > sizeof(uintb)` guard).
+        let mut fd = build_fd();
+        let mut sd = SplitDatatype::new(3);
+        let cst = mk_const(&mut fd, 4, 0xdead_beef);
+        let zext = mk_op(&mut fd, 0x80, 1, OpCode::CPUI_INT_ZEXT);
+        wire_in(&mut fd, zext, cst, 0);
+        let zout = mk_reg(&mut fd, 0x50, 16);
+        let zout = wire_out(&mut fd, zext, zout);
+        let sink = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_COPY);
+        wire_in(&mut fd, sink, zout, 0);
+        let sinkout = mk_reg(&mut fd, 0x90, 16);
+        let _ = wire_out(&mut fd, sink, sinkout);
+        let big = Rc::new(Datatype::new(16, type_metatype::TYPE_INT)); // > sizeof(uintb)
+        sd.data_type_pieces.push(Component { in_type: Rc::clone(&big), out_type: Rc::clone(&big), offset: 0 });
+        let mut inv: Vec<VarnodeId> = Vec::new();
+        assert!(!sd.generate_constants(&mut fd, zout, &mut inv).unwrap());
+        assert!(inv.is_empty(), "oversize piece must clear the accumulator");
+    }
+
+    /// `SplitDatatype::getValueDatatype` (subflow.cc:2925): a non-pointer
+    /// read-facing type returns None (the TYPE_PTR guard), regardless of size.
+    /// This is the guard `RuleSplitLoad`/`RuleSplitStore` lean on to early-out.
+    #[test]
+    fn w10_splitdt_get_value_datatype_rejects_non_pointer() {
+        let mut fd = build_fd();
+        let spaceid = mk_const(&mut fd, 8, 0);
+        // ptr Varnode carries a plain int8 (NOT a pointer) read-facing type.
+        let ptr = mk_input(&mut fd, 0x40, 8);
+        fd.vbank_mut()
+            .get_mut(ptr)
+            .unwrap()
+            .update_type(Rc::new(Datatype::new(8, type_metatype::TYPE_INT)));
+        let load = mk_op(&mut fd, 0x100, 2, OpCode::CPUI_LOAD);
+        wire_in(&mut fd, load, spaceid, 0);
+        wire_in(&mut fd, load, ptr, 1);
+        let loadout = mk_reg(&mut fd, 0x80, 8);
+        let _ = wire_out(&mut fd, load, loadout);
+        assert!(
+            SplitDatatype::get_value_datatype(&fd, load, 8).is_none(),
+            "non-pointer read-facing type must yield None"
+        );
+    }
+
     // ---- SubfloatFlow / RuleSubfloatConvert (subflow.cc:3085-3522) --------
 
     #[test]
