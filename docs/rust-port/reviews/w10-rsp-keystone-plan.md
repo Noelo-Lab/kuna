@@ -30,7 +30,29 @@ recovery.
 - **L5** restructureVarnode tail: `markUnaliased`/`checkUnaliasedReturn`/`nolocalalias` (absent/stubbed `funcdata_spacebase.rs:636-639`, LOSS-145/147). C++ `varmap.cc:1256-1286/1332/414-428` + `funcdata_varnode.cc:999-1001`. cast-output-typing (`xunknown1*`->`float4(*)[1]`) + inner-PTRSUB struct-member typing. **COLLIDES with cast-plane/printc** — sequence LAST.
 - **L6** for-loop reroll — ALREADY PORTED + INERT (`funcdata_block.rs:196` `has_overflow_syntax` bail). AUTO-ACTIVATES once L0-L5 strip the RSP noise so `bb_is_complex` drops. No code.
 
-**Minimal net-safe atomic landing = L0 + L1.**
+**Minimal net-safe atomic landing = L0 + L1.** ← **DISPROVEN — see CORRECTION below.**
+
+## CORRECTION (Wave A failed 2026-06-16, wxfjsp3lu — instrument-proven)
+
+L0+L1 alone is **NOT** net-safe — landing it regresses switchind (`switch(v1)`→`switch(0x100058)`,
+`if(v1<=10)`→`if(1)`). The porter instrumented and found: **L1 (`setEffectiveExtraPop`) never
+fires for switchind** — `analyze_extra_pop` (`coreaction_stackptr.rs`) **early-returns on the
+known `defaultfp` extrapop** before reaching the solve loop, so the StackSolver companion
+equation the plan hinged on is never exercised. The 13/16 switchind *assertion count* is
+unchanged but the full rendered C is not byte-identical (the switch index degrades to a raw
+constant). L0's 7× `INT_ADD(RSP,8)` per-call ops are inserted (confirmed via KUNA_L0DBG) but
+nothing neutralizes them in the jumptable clone before BRANCHIND emulation.
+
+**The TRUE keystone (must port BEFORE L0):** the C++ pass in the `"jumptable"` ActionDatabase
+group (`coreaction.cc:5694`, excludes typerecovery, includes stackptrflow) that **neutralizes
+the per-call `INT_ADD(RSP,8)` before BRANCHIND index emulation** — for the *known-extrapop*
+path (which bypasses `analyzeExtraPop`'s solve loop). It is NOT `analyzeExtraPop`/L1. Locate it
+(likely the StackSolver's main propagation in `ActionStackPtrFlow`, or a spacebase
+simplification in the jumptable group), port it, prove `KUNA_DUMP print raw` keeps
+`switch s0xffffffffffffffec:4(i)` (not `switch #0x100058`), THEN land L0+L1 on top. The faithful
+(compiling) L0+L1 transcription is saved at `w10-rsp-waveA-L0L1-wip.patch` for the retry.
+
+**Revised minimal landing = [jumptable INT_ADD consumer] + L0 + L1**, atomic.
 
 ## Sequenced waves
 

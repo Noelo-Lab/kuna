@@ -1,0 +1,252 @@
+diff --git a/rust/crates/kuna-decomp/src/coreaction_protos.rs b/rust/crates/kuna-decomp/src/coreaction_protos.rs
+index 8c66730..cd96620 100644
+--- a/rust/crates/kuna-decomp/src/coreaction_protos.rs
++++ b/rust/crates/kuna-decomp/src/coreaction_protos.rs
+@@ -89,7 +89,7 @@
+ 
+ use std::rc::Rc;
+ 
+-use kuna_base::types::int4;
++use kuna_base::types::{int4, uintb};
+ 
+ use kuna_num::opcodes::OpCode;
+ 
+@@ -467,46 +467,88 @@ impl Action for ActionExtraPopSetup {
+             stackspace: self.stackspace,
+         }))
+     }
+-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+-        // C++ coreaction.cc:1452 — ActionExtraPopSetup::apply
+-        //   if (stackspace == (AddrSpace *)0) return 0;   // No stack to speak of
+-        if self.stackspace.is_none() {
+-            return 0;
++    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
++        use kuna_base::address::Address;
++        use crate::fspec::EXTRAPOP_UNKNOWN;
++
++        // C++ coreaction.cc:1452-1482 — ActionExtraPopSetup::apply, transcribed
++        // verbatim.  L0 of the RSP keystone: insert the per-call spacebase
++        // relationship (INT_ADD if the extrapop is known, INDIRECT otherwise) so
++        // the stack-pointer flow across each sub-function call is modeled.  This is
++        // ONLY net-safe paired with L1 (setEffectiveExtraPop in
++        // ActionStackPtrFlow::analyzeExtraPop, coreaction_stackptr.rs); the two
++        // land atomically.
++
++        // if (stackspace == (AddrSpace *)0) return 0; // No stack to speak of
++        let stackspace_index = match self.stackspace {
++            Some(i) => i,
++            None => return 0,
++        };
++        // const VarnodeData &point(stackspace->getSpacebase(0));
++        // Address sb_addr(point.space,point.offset); int4 sb_size = point.size;
++        let stackspace = match data.get_arch().manage().get_space(stackspace_index) {
++            Some(s) => Rc::clone(s),
++            None => return 0,
++        };
++        let point = match stackspace.get_spacebase(0) {
++            Ok(p) => p,
++            Err(_) => return 0,
++        };
++        let point_space = match point.space.clone() {
++            Some(s) => s,
++            None => return 0,
++        };
++        let sb_addr = Address::new(point_space, point.offset);
++        let sb_size = point.size as int4;
++
++        // for(int4 i=0;i<data.numCalls();++i) {
++        for i in 0..data.num_calls() {
++            // fc = data.getCallSpecs(i);
++            // if (fc->getExtraPop() == 0) continue; // Stack pointer is undisturbed
++            let extrapop = data.get_call_specs(i).get_extra_pop();
++            if extrapop == 0 {
++                continue;
++            }
++            // op = data.newOp(2,fc->getOp()->getAddr());
++            let fc_op = data.get_call_specs(i).get_op();
++            let fc_op_addr = match data.obank().get(fc_op) {
++                Some(o) => o.get_addr().clone(),
++                None => continue,
++            };
++            let op = data.new_op(2, fc_op_addr);
++            // data.newVarnodeOut(sb_size,sb_addr,op);
++            if data.new_varnode_out(sb_size, &sb_addr, op).is_err() {
++                continue;
++            }
++            // data.opSetInput(op,data.newVarnode(sb_size,sb_addr),0);
++            let in0 = data.new_varnode(sb_size, &sb_addr, None);
++            let _ = data.op_set_input(op, in0, 0);
++            if extrapop != EXTRAPOP_UNKNOWN {
++                // We know exactly how stack pointer is changed.
++                //   fc->setEffectiveExtraPop(fc->getExtraPop());
++                data.get_call_specs_mut(i).set_effective_extra_pop(extrapop);
++                //   data.opSetOpcode(op,CPUI_INT_ADD);
++                data.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
++                //   data.opSetInput(op,data.newConstant(sb_size,fc->getExtraPop()),1);
++                // C++ widens `int4 fc->getExtraPop()` to the `uintb` parameter,
++                // i.e. signed widening (sign-extend through i64); `bare as` is the
++                // faithful reproduction of that conversion.
++                let in1 = data.new_constant(sb_size, extrapop as i64 as uintb);
++                let _ = data.op_set_input(op, in1, 1);
++                //   data.opInsertAfter(op,fc->getOp());
++                data.op_insert_after(op, fc_op);
++            } else {
++                // We don't know exactly, so we create INDIRECT.
++                //   data.opSetOpcode(op,CPUI_INDIRECT);
++                data.op_set_opcode_code(op, OpCode::CPUI_INDIRECT);
++                //   data.opSetInput(op,data.newVarnodeIop(fc->getOp()),1);
++                let in1 = data.new_varnode_iop(fc_op);
++                let _ = data.op_set_input(op, in1, 1);
++                //   data.opInsertBefore(op,fc->getOp());
++                data.op_insert_before(op, fc_op);
++            }
+         }
+-        // C++ (continued):
+-        //   point = stackspace->getSpacebase(0);
+-        //   sb_addr = Address(point.space, point.offset); sb_size = point.size;
+-        //   for (i=0; i<data.numCalls(); ++i):
+-        //       fc = data.getCallSpecs(i);
+-        //       if (fc->getExtraPop() == 0) continue;        // undisturbed
+-        //       op = data.newOp(2, fc->getOp()->getAddr());
+-        //       data.newVarnodeOut(sb_size, sb_addr, op);
+-        //       data.opSetInput(op, data.newVarnode(sb_size,sb_addr), 0);
+-        //       if (fc->getExtraPop() != ProtoModel::extrapop_unknown):
+-        //           fc->setEffectiveExtraPop(fc->getExtraPop());
+-        //           opSetOpcode(op, CPUI_INT_ADD);
+-        //           opSetInput(op, newConstant(sb_size, fc->getExtraPop()), 1);
+-        //           opInsertAfter(op, fc->getOp());
+-        //       else:
+-        //           opSetOpcode(op, CPUI_INDIRECT);
+-        //           opSetInput(op, newVarnodeIop(fc->getOp()), 1);
+-        //           opInsertBefore(op, fc->getOp());
+-        //   return 0;
+-        //
+-        // SEAM(W10-rsp-elim): the call-spec list IS now available
+-        // (`getCallSpecs(i)` / `numCalls()` are ported), and a faithful, verified
+-        // transcription of the loop above was attempted on this branch.  It is
+-        // DEFERRED again — not for lack of the call-spec list, but because the
+-        // INT_ADD/INDIRECT spacebase op it inserts at each call site is only
+-        // *net-safe* once the downstream spacebase keystone (ActionInferTypes::
+-        // propagateSpacebaseRef + the spacebase-store ActionDeadCode that C++
+-        // relies on, coreaction.cc) cleans it up.  Without that keystone the
+-        // surviving op disrupts stack-pointer flow and REGRESSES jump-table index
+-        // recovery: `switchind` loses its stack-local switch index (`switch(v1)`
+-        // -> `switch((int8)dat_... )`, case labels -> raw addresses), breaking the
+-        // committed `verify_w10_jts_chain` structural tests even though the loose
+-        // datatest `<stringmatch>` oracle gains +2.  The per-call insertion must
+-        // land TOGETHER with propagateSpacebaseRef, not before it.  Count stays 0.
++        // return 0;
+         0
+     }
+ }
+diff --git a/rust/crates/kuna-decomp/src/coreaction_stackptr.rs b/rust/crates/kuna-decomp/src/coreaction_stackptr.rs
+index fd04775..eed007a 100644
+--- a/rust/crates/kuna-decomp/src/coreaction_stackptr.rs
++++ b/rust/crates/kuna-decomp/src/coreaction_stackptr.rs
+@@ -279,10 +279,44 @@ impl StackSolver {
+                         }
+                     };
+                     self.companion[i] = idx;
+-                    // The IOP->FuncCallSpecs lookup (getOpFromConst/getCallSpecs)
+-                    // is the W6/W7 proto-recovery seam: the merged tree builds no
+-                    // call specs (numCalls()==0), so `fc==0` here for every call,
+-                    // and we take the C++ guess branch verbatim (rhs=4 guess).
++                    // C++ coreaction.cc:221-235 — if the INDIRECT is due to a call
++                    // (its in[1] is an IOP-space annotation) AND the call spec has a
++                    // KNOWN extrapop (set by L0/L1's setEffectiveExtraPop in the
++                    // de-indirect process), push the EXACT equation (rhs = extrapop)
++                    // instead of the rhs=4 guess.  In the merged tree numCalls()==0
++                    // so this falls through to the guess; in the `jumptable` clone
++                    // the call specs ARE present, so this builds the exact INDIRECT
++                    // equation for the switch index (the L1 net-safety coupling).
++                    use crate::fspec::EXTRAPOP_UNKNOWN;
++                    let iopvn = data.obank().get(op).and_then(|o| o.get_in(1));
++                    let is_iop = iopvn
++                        .and_then(|v| data.vbank().get(v))
++                        .and_then(|v| v.get_addr().get_space())
++                        .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_IOP)
++                        .unwrap_or(false);
++                    if is_iop {
++                        // PcodeOp *iop = getOpFromConst(iopvn->getAddr());
++                        let off = iopvn
++                            .and_then(|v| data.vbank().get(v))
++                            .map(|v| v.get_addr().get_offset());
++                        if let Some(off) = off {
++                            let iop = crate::funcdata_varnode::op_iop_decode(off);
++                            // FuncCallSpecs *fc = data.getCallSpecs(iop);
++                            if let Some(fc_idx) = data.get_call_specs_index(iop) {
++                                let extrapop = data.get_call_specs(fc_idx).get_extra_pop();
++                                if extrapop != EXTRAPOP_UNKNOWN {
++                                    // eqn.rhs = fc->getExtraPop(); eqs.push_back(eqn);
++                                    self.eqs.push(StackEqn {
++                                        var1: i as int4,
++                                        var2: idx,
++                                        rhs: extrapop,
++                                    });
++                                    continue;
++                                }
++                            }
++                        }
++                    }
++                    // eqn.rhs = 4; guess.push_back(eqn);  // Otherwise make a guess
+                     self.guess.push(StackEqn { var1: i as int4, var2: idx, rhs: 4 });
+                 }
+                 OpCode::CPUI_MULTIEQUAL => {
+@@ -682,16 +716,47 @@ pub(crate) fn analyze_extra_pop(
+             Some(o) => o,
+             None => continue,
+         };
+-        // INDIRECT companion -> setEffectiveExtraPop on the call spec.  The call
+-        // spec surface (getCallSpecs/setEffectiveExtraPop) is the W6/W7
+-        // proto-recovery seam (numCalls()==0 here), so this write has no target;
+-        // the INT_ADD rewrite below — the in-scope effect — still runs.  Tracked
+-        // as the extra-pop-propagation loss.
+-        //
+-        // (When the call-spec surface lands, replace this gap with:
+-        //  iop = getOpFromConst(op->getIn(1)->getAddr());
+-        //  fc  = getCallSpecs(iop);
+-        //  if (fc) fc->setEffectiveExtraPop(soln - companionSoln);)
++        // L1 (RSP keystone) — transcription of coreaction.cc:303-320.  When the
++        // solved producer is the per-call INDIRECT (the spacebase op L0 inserts at
++        // an `extrapop_unknown` call), propagate the recovered net stack change
++        // (soln - companionSoln) back onto the call spec via setEffectiveExtraPop.
++        // This is THE switchind gate (LOSS-148): the `jumptable` ActionDatabase
++        // group runs ActionStackPtrFlow over the partial clone (which DOES carry
++        // call specs), and StackSolver::build's INDIRECT-companion equation
++        // (coreaction.cc:226-228) reads getExtraPop() to build the exact equation
++        // for the switch index — so L0's INT_ADD/INDIRECT is cleanly solved
++        // instead of leaking stack-relative residue into the switch index.
++        if data.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_INDIRECT) {
++            // Varnode *iopvn = op->getIn(1);
++            let iopvn = data.obank().get(op).and_then(|o| o.get_in(1));
++            // if (iopvn->getSpace()->getType()==IPTR_IOP) {
++            let is_iop = iopvn
++                .and_then(|v| data.vbank().get(v))
++                .and_then(|v| v.get_addr().get_space())
++                .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_IOP)
++                .unwrap_or(false);
++            if is_iop {
++                // PcodeOp *iop = PcodeOp::getOpFromConst(iopvn->getAddr());
++                let iop_off = iopvn
++                    .and_then(|v| data.vbank().get(v))
++                    .map(|v| v.get_addr().get_offset());
++                if let Some(off) = iop_off {
++                    let iop = crate::funcdata_varnode::op_iop_decode(off);
++                    // FuncCallSpecs *fc = data.getCallSpecs(iop);
++                    // if (fc != 0) {
++                    if let Some(fc_idx) = data.get_call_specs_index(iop) {
++                        // int4 soln2 = 0;
++                        // int4 comp = solver.getCompanion(i);
++                        // if (comp >= 0) soln2 = solver.getSolution(comp);
++                        let comp = solver.companion[i];
++                        let soln2 = if comp >= 0 { solver.soln[comp as usize] } else { 0 };
++                        // fc->setEffectiveExtraPop(soln-soln2);
++                        data.get_call_specs_mut(fc_idx)
++                            .set_effective_extra_pop(soln - soln2);
++                    }
++                }
++            }
++        }
+ 
+         // paramlist = { invn, newConstant(sz, soln & calc_mask(sz)) };
+         // opSetOpcode(op, INT_ADD); opSetAllInput(op, paramlist).
