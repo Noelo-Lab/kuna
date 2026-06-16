@@ -1764,6 +1764,15 @@ impl Architecture {
         // build_default_proto, which `take()`s the cspec XML.
         self.decode_call_fixups()?;
         self.build_default_proto();
+        // Share `defaultfp` + the engine address-space manager into the type
+        // factory so the C-declaration grammar's nested function-pointer
+        // `buildType` path (`FunctionModifier::modType` -> `getTypeCode(
+        // PrototypePieces)` -> `TypeCode::setPrototype`) can run.  The C++
+        // `TypeFactory` reaches both through its `Architecture *glb`; the kuna
+        // factory is standalone, so the link is established once here, right
+        // after `defaultfp` is finalized.
+        self.types
+            .set_proto_context(self.defaultfp.clone(), self.translate.manager_rc());
         self.build_action();
         self.print.initialize_from_architecture();
         // C++ `symboltab->adjustCaches()` (architecture.cc, end of restoreFromSpec)
