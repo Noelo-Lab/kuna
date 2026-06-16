@@ -48,7 +48,11 @@ impl Funcdata {
     pub fn resolve_in_flow(&mut self, ct: &Rc<Datatype>, op: OpId, slot: int4) -> KunaResult<Rc<Datatype>> {
         match &ct.kind {
             // TypePointer::resolveInFlow (type.cc:1314-1333).
-            DatatypeKind::Pointer { ptrto, .. } => {
+            //
+            // `TypePointerRel : public TypePointer` (type.hh:724) does NOT override
+            // `resolveInFlow`, so a relative-pointer-to-union dispatches the
+            // inherited `TypePointer::resolveInFlow`.  Match both kinds.
+            DatatypeKind::Pointer { ptrto, .. } | DatatypeKind::PointerRel { ptrto, .. } => {
                 if ptrto.get_metatype() == type_metatype::TYPE_UNION {
                     self.resolve_in_flow_union_like(ct, op, slot)
                 } else {

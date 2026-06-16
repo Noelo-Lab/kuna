@@ -3117,14 +3117,19 @@ impl Datatype {
         match &self.kind {
             // TypePointer::findCompatibleResolve (type.cc:1347-1354): if `ct` is a
             // pointer, recurse on the pointed-to types.
-            DatatypeKind::Pointer { ptrto, .. } => {
+            //
+            // `TypePointerRel : public TypePointer` (type.hh:724) does NOT override
+            // `findCompatibleResolve`, so a relative pointer dispatches the inherited
+            // `TypePointer::findCompatibleResolve`.  The C++ reads `ct`'s ptrto via a
+            // `(TypePointer *)ct` cast, which is valid for a `TypePointerRel` argument
+            // too (the `ptrto` member is shared), so use `get_ptr_to` (both kinds).
+            DatatypeKind::Pointer { ptrto, .. } | DatatypeKind::PointerRel { ptrto, .. } => {
                 if ct.get_metatype() == type_metatype::TYPE_PTR {
                     // ((TypePointer *)ct)->ptrto
                     let ct_ptrto = ct
-                        .as_plain_pointer()
-                        .map(|(p, _, _)| p)
+                        .get_ptr_to()
                         .ok_or_else(|| Datatype::pointer_invariant_err("findCompatibleResolve"))?;
-                    return ptrto.find_compatible_resolve(ct_ptrto);
+                    return ptrto.find_compatible_resolve(&ct_ptrto);
                 }
                 Ok(-1)
             }
