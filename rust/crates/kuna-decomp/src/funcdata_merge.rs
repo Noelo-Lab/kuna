@@ -47,7 +47,7 @@ use crate::funcdata::Funcdata;
 use crate::merge::{AddrTiedRange, HighGroupInfo, MergeContext, MergePieceId};
 use crate::seams::{BlockId, HighVariableId, OpId, VarnodeId};
 use crate::variable::{
-    CompareNameView, HighContext, HighIntersectTest, VarnodeView, VarnodeViewLoc,
+    CompareNameView, HighContext, HighIntersectTest, VariablePieceId, VarnodeView, VarnodeViewLoc,
 };
 use kuna_base::space::spacetype;
 use kuna_base::types::{int2, int4, uintm};
@@ -191,6 +191,13 @@ impl Funcdata {
     }
 }
 
+/// Decode a [`MergePieceId`] (the seam's opaque `u64` handle) back to the
+/// bank's [`VariablePieceId`].  The encoding is `u64::from(piece.0)`, so the
+/// narrowing is exact (`piece.0` was a `u32`).
+fn decode_piece(piece: MergePieceId) -> VariablePieceId {
+    VariablePieceId(piece.0 as u32)
+}
+
 impl MergeContext for Funcdata {
     // --- HighVariable flag/type reads -------------------------------------
     fn high_is_type_lock(&mut self, high: HighVariableId) -> bool {
@@ -246,44 +253,67 @@ impl MergeContext for Funcdata {
         self.high_bank().get_cover(high).cloned().unwrap_or_else(Cover::new)
     }
     fn high_internal_cover(&self, high: HighVariableId) -> Cover {
-        // With no overlap pieces (the merged-tree default) the internal cover IS
-        // the high's cover (C++ `getCover()` == `internalCover` for an unpieced
-        // high).  The pieced path is a W7 overlap-group seam (see module docs).
-        self.high_bank().get_cover(high).cloned().unwrap_or_else(Cover::new)
+        // C++ `high->internalCover` (merge.cc:1622): the RAW internal cover, NOT
+        // `getCover()` (which is the piece's extended cover when the high is
+        // grouped).  `inflateTest` deliberately checks intersections only against
+        // the cover contributing to the inflate.
+        self.high_bank().internal_cover(high).cloned().unwrap_or_else(Cover::new)
     }
     fn bank_update_cover_for(&mut self, high: HighVariableId) {
         self.refresh_high_cover(high);
     }
 
-    // --- Bank-mediated piece introspection (no overlap pieces in merged tree;
-    //     `VariablePiece` is not exposed across the seam, so on the merged-tree
-    //     default — registers/locals without CONCAT overlap groups — every high
-    //     is unpieced and these report the empty/zero piece state) -----------
-    fn high_group_info(&self, _high: HighVariableId) -> Option<HighGroupInfo> {
-        None
+    // --- Bank-mediated piece introspection --------------------------------
+    //     The `VariableGroup`/`VariablePiece` overlap model lives in the
+    //     `high_bank` arena (variable.rs); these read it back across the seam so
+    //     `mergeTestRequired`'s piece-group arm (merge.cc:147-154),
+    //     `markInternalCopies`'s PIECE/SUBPIECE self-assign suppression
+    //     (merge.cc:1478-1528), and `inflateTest`'s extended-cover walk
+    //     (merge.cc:1631-1645) see the real pieces formed by `groupWith`/
+    //     `groupPartialRoot`.  A `MergePieceId(u64)` wraps the bank's
+    //     `VariablePieceId(u32)`; `piece_group` returns the `VariableGroupId(u32)`
+    //     widened to `u64` (a stable per-group identity, exactly what the C++
+    //     `groupIn == groupOut` pointer compare needs).
+    fn high_group_info(&self, high: HighVariableId) -> Option<HighGroupInfo> {
+        // high->piece != 0 ? { piece->getGroup(), piece->getSize(), group->getSize() }
+        let pid = self.high_bank().high_piece_id(high)?;
+        let group = self.high_bank().piece_group(pid)?;
+        Some(HighGroupInfo {
+            group: u64::from(group.0),
+            piece_size: self.high_bank().piece_size(pid),
+            group_size: self.high_bank().group_size(group),
+        })
     }
-    fn high_piece(&self, _high: HighVariableId) -> Option<MergePieceId> {
-        None
+    fn high_piece(&self, high: HighVariableId) -> Option<MergePieceId> {
+        self.high_bank().high_piece_id(high).map(|p| MergePieceId(u64::from(p.0)))
     }
-    fn piece_offset(&self, _piece: MergePieceId) -> int4 {
-        0
+    fn piece_offset(&self, piece: MergePieceId) -> int4 {
+        self.high_bank().piece_offset(decode_piece(piece))
     }
-    fn piece_size(&self, _piece: MergePieceId) -> int4 {
-        0
+    fn piece_size(&self, piece: MergePieceId) -> int4 {
+        self.high_bank().piece_size(decode_piece(piece))
     }
-    fn piece_group(&self, _piece: MergePieceId) -> u64 {
-        0
+    fn piece_group(&self, piece: MergePieceId) -> u64 {
+        self.high_bank()
+            .piece_group(decode_piece(piece))
+            .map(|g| u64::from(g.0))
+            .unwrap_or(0)
     }
-    fn piece_high(&self, _piece: MergePieceId) -> HighVariableId {
-        HighVariableId(0)
+    fn piece_high(&self, piece: MergePieceId) -> HighVariableId {
+        self.high_bank().piece_high(decode_piece(piece)).unwrap_or(HighVariableId(0))
     }
-    fn piece_num_intersection(&self, _piece: MergePieceId) -> int4 {
-        0
+    fn piece_num_intersection(&self, piece: MergePieceId) -> int4 {
+        self.high_bank().piece_num_intersection(decode_piece(piece))
     }
-    fn piece_intersection(&self, _piece: MergePieceId, _i: int4) -> MergePieceId {
-        MergePieceId(0)
+    fn piece_intersection(&self, piece: MergePieceId, i: int4) -> MergePieceId {
+        self.high_bank()
+            .piece_get_intersection(decode_piece(piece), i)
+            .map(|p| MergePieceId(u64::from(p.0)))
+            .unwrap_or(MergePieceId(0))
     }
-    fn bank_update_piece_intersections(&mut self, _piece: MergePieceId) {}
+    fn bank_update_piece_intersections(&mut self, piece: MergePieceId) {
+        self.high_bank_mut().update_piece_intersections(decode_piece(piece));
+    }
     fn bank_merge_highs(
         &mut self,
         high1: HighVariableId,
@@ -470,8 +500,10 @@ impl MergeContext for Funcdata {
     fn vn_copy_shadow(&self, a: VarnodeId, b: VarnodeId) -> bool {
         self.varnode_copy_shadow(a, b)
     }
-    fn vn_partial_copy_shadow(&self, _a: VarnodeId, _b: VarnodeId, _off: int4) -> bool {
-        false
+    fn vn_partial_copy_shadow(&self, a: VarnodeId, b: VarnodeId, off: int4) -> bool {
+        // C++ `b->partialCopyShadow(a, off)`: allow the partial-shadow overlap in
+        // the pieced inflate/intersection tests (merge.cc:1640, variable.cc).
+        self.varnode_partial_copy_shadow(a, b, off)
     }
     fn vn_characterize_overlap(&self, a: VarnodeId, b: VarnodeId) -> int4 {
         self.varnode_characterize_overlap(a, b)

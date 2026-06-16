@@ -452,6 +452,32 @@ pub fn decompile_func_full_with_override(
     pending_proto: Option<&crate::fspec::PrototypePieces>,
     flow_overrides: &[(Address, kuna_base::types::uint4)],
 ) -> KunaResult<Funcdata> {
+    decompile_func_full_with_override_dyn(
+        arch,
+        name,
+        funcaddr,
+        size,
+        mapped_symbols,
+        &[],
+        pending_proto,
+        flow_overrides,
+    )
+}
+
+/// Like [`decompile_func_full_with_override`], but also re-seeds the console-added
+/// dynamic (`map hash`) symbols (`(name, type, hashAddr, hash)`) into the rebuilt
+/// local scope, so `ActionDynamicSymbols` can name the matched temporaries.
+#[allow(clippy::too_many_arguments)]
+pub fn decompile_func_full_with_override_dyn(
+    arch: &mut Architecture,
+    name: &str,
+    funcaddr: Address,
+    size: int4,
+    mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
+    dynamic_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint8)],
+    pending_proto: Option<&crate::fspec::PrototypePieces>,
+    flow_overrides: &[(Address, kuna_base::types::uint4)],
+) -> KunaResult<Funcdata> {
     let mut fd = build_and_follow_flow_with_override(arch, name, funcaddr, size, flow_overrides)?;
     // Apply any parsed-and-locked prototype to the fresh funcp (the input-param
     // recovery SEED): after this the inputs/output are type-locked, so
@@ -461,6 +487,8 @@ pub fn decompile_func_full_with_override(
     }
     // Re-seed the console-mapped symbols (lost when the IR is rebuilt).
     fd.seed_mapped_symbols(mapped_symbols);
+    // Re-seed the console-added dynamic (`map hash`) symbols (likewise lost).
+    fd.seed_dynamic_symbols(dynamic_symbols);
     // With the single-manager unification (LOSS-132) the universalAction passes
     // now reach the *real* lifted varnodes, so the pipeline genuinely executes
     // heritage / simplification / merge / … on live IR.  Some pass BODIES are
