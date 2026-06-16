@@ -257,6 +257,16 @@ pub struct Architecture {
     pub nan_ignore_compare: bool,
     /// True if loader symbols have been read (C++ `loadersymbols_parsed`).
     pub loadersymbols_parsed: bool,
+    /// Ordered list of address spaces in which a constant pointer can be inferred
+    /// (C++ `Architecture::inferPtrSpaces`, architecture.hh).  Seeded by the cspec
+    /// `<global>` tag (`addToGlobalScope` pushes each global range's space) and
+    /// finalized by [`cache_addr_space_properties`](Architecture::cache_addr_space_properties)
+    /// (sort/dedup/filter, always include the default code+data spaces, promote the
+    /// default data space to position 0).  Shared onto the per-function `glb` so
+    /// `ActionConstantPtr::selectInferSpace` (coreaction.cc:1020-1047) can pick the
+    /// space a likely-pointer constant addresses.  Held as `Rc<AddrSpace>` (the
+    /// shared LOSS-132 space identities).
+    pub infer_ptr_spaces: Vec<Rc<AddrSpace>>,
 
     // --- kuna anchor flags (architecture.hh:179-201, the `(kuna)` members) -
     /// (kuna GH-6930) Infer single-bit constants matching an exact function
@@ -460,6 +470,7 @@ impl Architecture {
             nan_ignore_all: false,
             nan_ignore_compare: false,
             loadersymbols_parsed: false,
+            infer_ptr_spaces: Vec::new(),
 
             infer_funcentry: false,
             return_single: false,
@@ -769,6 +780,14 @@ impl Architecture {
         // `map addr`).  Global-mapped varnodes then pick up `persist`/`addrtied`
         // and their stores survive `ActionDeadCode`.
         seam.global_query = Some(Rc::new(self.symboltab.build_global_query()));
+        // Carry the constant-pointer-inference config (C++ `glb->infer_pointers` /
+        // `infer_funcentry`) and the ordered inferable-pointer spaces (C++
+        // `glb->inferPtrSpaces`, built by cacheAddrSpaceProperties) so
+        // `ActionConstantPtr` (run via `glb`) can rewrite a mapped global-constant
+        // address into a typed `PTRSUB(spacebase,off)`.
+        seam.infer_pointers = self.infer_pointers;
+        seam.infer_funcentry = self.infer_funcentry;
+        seam.infer_ptr_spaces = self.infer_ptr_spaces.clone();
         Rc::new(seam)
     }
 
@@ -940,6 +959,108 @@ impl Architecture {
         )
     }
 
+    /// Interpret a constant as a pointer into `spc` (C++ `Architecture::
+    /// resolveConstant`, viewed as an `AddrSpaceManager`).  A thin wrapper over the
+    /// shared engine manager so callers that hold `&self` (not the manager) can run
+    /// the resolve — the per-function `glb` carries its own
+    /// [`resolve_constant`](crate::seams::Architecture::resolve_constant), this is
+    /// the architecture-side analogue used while building `inferPtrSpaces`.
+    pub fn resolve_constant(
+        &self,
+        spc: &Rc<AddrSpace>,
+        val: uintb,
+        sz: int4,
+        point: &Address,
+        full_encoding: &mut uintb,
+    ) -> KunaResult<Address> {
+        self.manage().resolve_constant(spc, val, sz, point, full_encoding)
+    }
+
+    /// Determine the minimum pointer size for each space and set up the ordered,
+    /// filtered, deduplicated list of inferable spaces (C++
+    /// `Architecture::cacheAddrSpaceProperties`, architecture.cc:671-707).
+    ///
+    /// Inferable spaces are the default code+data spaces plus anything the cspec
+    /// `<global>` tag pushed onto `infer_ptr_spaces` (via [`decode_global`]), minus
+    /// register spaces (`getDelay() == 0`), spacebase spaces, OTHER spaces, and
+    /// overlays.  The list is sorted by space index and deduplicated, then the
+    /// default *data* space is promoted to position 0 (so it is the first space a
+    /// likely-pointer constant is tested against — the load-bearing line for the
+    /// x86-64 global arrays this wave targets, whose `myarray`/`paiGlob` live in
+    /// `ram`, the default data space).
+    ///
+    /// LOSS: the C++ segment-op near-pointer promotion (architecture.cc:696-700,
+    /// `getSegmentOp(spc)` -> `markNearPointers`) is not transcribed — no
+    /// `getSegmentOp(space)` lookup is wired here and no datatest exercises a
+    /// segmented near-pointer space (x86 real-mode `seg:off`); for the flat
+    /// spaces this wave's targets use, `getSegmentOp` is always null and the
+    /// loop is a no-op.  General over any processor's cspec: the spaces are read
+    /// from the manager and the cspec, with NO processor-name special-casing.
+    ///
+    /// [`decode_global`]: Architecture::decode_global
+    pub fn cache_addr_space_properties(&mut self) {
+        use kuna_base::space::spacetype;
+        // copyList = inferPtrSpaces; push default code + data spaces.
+        let mut copy_list: Vec<Rc<AddrSpace>> = self.infer_ptr_spaces.clone();
+        let code_spc = self.manage().get_default_code_space().cloned();
+        let data_spc = self.manage().get_default_data_space().cloned();
+        if let Some(spc) = code_spc {
+            copy_list.push(spc); // Make sure the default code space is present
+        }
+        if let Some(ref spc) = data_spc {
+            copy_list.push(Rc::clone(spc)); // Make sure the default data space is present
+        }
+        self.infer_ptr_spaces.clear();
+        // sort(copyList, AddrSpace::compareByIndex)
+        copy_list.sort_by(|a, b| {
+            if AddrSpace::compare_by_index(a, b) {
+                std::cmp::Ordering::Less
+            } else if AddrSpace::compare_by_index(b, a) {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        });
+        let mut last_space: Option<Rc<AddrSpace>> = None;
+        for spc in copy_list.into_iter() {
+            if let Some(ref last) = last_space {
+                if Rc::ptr_eq(last, &spc) {
+                    continue; // dedup (sorted)
+                }
+            }
+            last_space = Some(Rc::clone(&spc));
+            if spc.get_delay() == 0 {
+                continue; // Don't put in a register space
+            }
+            if spc.get_type() == spacetype::IPTR_SPACEBASE {
+                continue;
+            }
+            if spc.is_other_space() {
+                continue;
+            }
+            if spc.is_overlay() {
+                continue;
+            }
+            self.infer_ptr_spaces.push(spc);
+        }
+
+        // Promote the default DATA space to position 0 (the inferring default).
+        // (The C++ segment-op near-pointer markNearPointers loop is a LOSS here;
+        // the defPos search still runs so the data space leads.)
+        let mut def_pos: i32 = -1;
+        if let Some(ref data) = data_spc {
+            for (i, spc) in self.infer_ptr_spaces.iter().enumerate() {
+                if Rc::ptr_eq(spc, data) {
+                    def_pos = i as i32;
+                    break;
+                }
+            }
+        }
+        if def_pos > 0 {
+            self.infer_ptr_spaces.swap(0, def_pos as usize);
+        }
+    }
+
     /// Decode the cspec `<global>` element and seed the global scope's owned
     /// range tree (C++ `Architecture::decodeGlobal` + `addToGlobalScope`,
     /// `architecture.cc:816-848`, dispatched from `parseCompilerConfig`'s
@@ -1040,8 +1161,12 @@ impl Architecture {
             // RangeProperties::decode accepts only <range>/<register>.)
         }
         // C++ `addToGlobalScope`: symboltab->addRange(globalScope, spc, first, last)
-        // for each resolved range.
+        // for each resolved range, AND inferPtrSpaces.push_back(spc)
+        // (architecture.cc:836 — the LOSS-208 F1 site the global-persist2 wave left
+        // un-transcribed).  cacheAddrSpaceProperties (run from postSpecFile after
+        // this) then sorts/filters/dedups the pushed spaces.
         for (spc, first, last) in to_add {
+            self.infer_ptr_spaces.push(Rc::clone(&spc));
             self.symboltab.add_range(scope, spc, first, last);
         }
         Ok(())
@@ -2132,6 +2257,12 @@ impl Architecture {
         if align <= 8 {
             self.min_funcsymbol_size = align;
         }
+        // C++ `Architecture::postSpecFile()` (architecture.cc:620-624), called once
+        // the whole spec is restored: `cacheAddrSpaceProperties()`.  Run last, after
+        // `decode_global` pushed the cspec `<global>` spaces and every analysis
+        // space (fspec/iop/join/stack) exists, so the sort/dedup/filter sees the
+        // final space set and the default data space (`ram`) leads `inferPtrSpaces`.
+        self.cache_addr_space_properties();
         Ok(())
     }
 }

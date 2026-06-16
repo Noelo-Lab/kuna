@@ -1077,13 +1077,38 @@ impl Funcdata {
         // performs exactly this lookup and offset arithmetic and returns the
         // display name + in-symbol byte offset + symbol type, or None when no
         // entry contains `addr` (the C++ `entry == 0 -> return 0`).
-        let info = match self
+        //
+        // C++ `sb->getMap()` returns the scope tied to the spacebase's space: the
+        // LOCAL scope for a stack spacebase, the GLOBAL scope for a `ram`/global
+        // spacebase (the `PTRSUB(spacebaseConstant, off)` `ActionConstantPtr`
+        // builds, W10 type-seed).  Query the local scope first; on a miss fall back
+        // to `glb`'s frozen global-scope snapshot (`name_for_global_varnode`, the
+        // same `findContainer` + `(addr-entryAddr)+entryOffset` geometry restricted
+        // to the global scope) so a mapped global array (`map addr r0x601060 int4
+        // myarray[3][5]`) binds its name onto the offset constant's HighVariable.
+        // `(display_name, sym_off, sym_type, is_name_undefined)` from whichever
+        // scope contains `addr` (local stack frame first, then the global scope).
+        let resolved: Option<(String, int4, Option<Rc<Datatype>>, bool)> = match self
             .get_scope_local()
             .and_then(|lm| lm.query_container_for_link(&addr))
         {
-            Some(i) => i,
-            None => return false,
+            Some(i) => Some((i.display_name, i.sym_off, i.sym_type, i.is_name_undefined)),
+            None => {
+                // Global-scope fallback: glb->getGlobalScope()->queryContainer.  A
+                // global `map addr` symbol always has a defined name.
+                let invalid = Address::new_invalid();
+                self.get_arch()
+                    .name_for_global_varnode(&addr, 1, &invalid)
+                    .map(|(display_name, sym_off, sym_type)| {
+                        (display_name, sym_off, sym_type, false)
+                    })
+            }
         };
+        let (info_display_name, info_sym_off, info_sym_type, info_is_name_undefined) =
+            match resolved {
+                Some(i) => i,
+                None => return false,
+            };
         // C++ `linkSpacebaseSymbol` (coreaction.cc:3015) attaches the reference even
         // for an undefined-named Symbol, then records the offVn in `namerec` so
         // `ActionNameVars::apply` renames the shared Symbol to `vN` (the render then
@@ -1097,7 +1122,7 @@ impl Funcdata {
         // observably identical to the pre-render-finish state for an unmapped local.
         // A *mapped* Symbol (`map addr ... a[1]`) always has a defined name, so this
         // never suppresses the `&a` / `&myval.b` payoff.
-        if info.is_name_undefined {
+        if info_is_name_undefined {
             return false;
         }
         // vn->setSymbolReference(entry, off):
@@ -1108,9 +1133,9 @@ impl Funcdata {
             None => return false,
         };
         if let Some(h) = self.high_bank_mut().get_mut(high) {
-            h.set_kuna_name(info.display_name);
-            h.set_symbol_offset(info.sym_off);
-            if let Some(t) = info.sym_type {
+            h.set_kuna_name(info_display_name);
+            h.set_symbol_offset(info_sym_off);
+            if let Some(t) = info_sym_type {
                 h.set_symbol_type(t);
             }
         }

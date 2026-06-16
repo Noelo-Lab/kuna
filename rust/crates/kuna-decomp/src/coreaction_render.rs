@@ -107,10 +107,14 @@
 
 use std::rc::Rc;
 
+use kuna_base::address::{bit_transitions, Address};
 use kuna_base::space::AddrSpace;
+use kuna_base::types::uintb;
 
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
+use crate::dtype::type_metatype;
 use crate::funcdata::Funcdata;
+use crate::seams::GlobalContainer;
 use crate::subflow::LaneDivide;
 use crate::transform::{LaneDescription, LanedRegister};
 
@@ -652,41 +656,416 @@ impl Action for ActionConstantPtr {
     fn reset(&mut self, _data: &mut Funcdata) {
         self.localcount = 0;
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:1183 — ActionConstantPtr::apply
-        //   if (!data.hasTypeRecoveryStarted()) return 0;
-        //   if (localcount >= 4) return 0;          // At most 4 passes
-        //   localcount += 1;
-        //   cspc = getArch()->getConstantSpace();
-        //   for (vn in beginLoc(cspc)..endLoc(cspc)):
-        //       if (!vn->isConstant()) break;       // inserts may appear past enditer
-        //       if (vn->getOffset() == 0) continue; // never make const 0 a spacebase
-        //       if (vn->isPtrCheck()) continue;
-        //       if (vn->hasNoDescend()) continue;
-        //       if (vn->isSpacebase()) continue;
-        //       op = vn->loneDescend(); if (!op) continue;
-        //       rspc = selectInferSpace(vn, op, glb->inferPtrSpaces); if (!rspc) continue;
-        //       slot = op->getSlot(vn); opc = op->code();
-        //       if (opc == CPUI_INT_ADD && op->getIn(1-slot)->isSpacebase()) continue;
-        //       else if (opc == CPUI_PTRSUB || opc == CPUI_PTRADD) continue;
-        //       entry = isPointer(rspc, vn, op, slot, rampoint, fullEncoding, data);
-        //       vn->setPtrCheck();                  // set AFTER searching
-        //       if (entry):
-        //           data.spacebaseConstant(op,slot,entry,rampoint,fullEncoding,vn->getSize());
-        //           if (opc == CPUI_INT_ADD && slot == 1) data.opSwapInput(op,0,1);
-        //           count += 1;
-        //   return 0;
-        //
-        // The `localcount` cap and `hasTypeRecoveryStarted` gate are this action's
-        // own state, but the body they gate cannot run.
-        //
-        // SEAM(W8-funcdata): the constant-space loc-set (`beginLoc(cspc)`),
-        // `selectInferSpace`/`isPointer`/`searchForSpaceAttribute` (the global-
-        // symbol lookup, coreaction.cc:935-1180), the Varnode `ptrcheck`/
-        // `spacebase` flags, and `spacebaseConstant`/`opSwapInput` are not in the
-        // merged tree.  Body transcribed; no change applied (count stays 0).
+        if !data.has_type_recovery_started() {
+            return 0;
+        }
+        if self.localcount >= 4 {
+            // At most 4 passes (once type recovery starts)
+            return 0;
+        }
+        self.localcount += 1;
+
+        // C++ iterates `beginLoc(cspc)..endLoc(cspc)` (the constant space) with a
+        // `if (!vn->isConstant()) break;` guard for inserts past enditer.  Snapshot
+        // the constants present at the start of this pass: spacebaseConstant inserts
+        // NEW constants (past enditer in C++, never re-entered), so the snapshot is
+        // the faithful membership set.
+        let cspc = match data.get_arch().manage().get_constant_space() {
+            Some(s) => Rc::clone(s),
+            None => return 0,
+        };
+        let cspc_index = cspc.get_index();
+        let constants: Vec<VarnodeId> = data
+            .vbank()
+            .iter_loc()
+            .filter(|&id| {
+                data.vbank()
+                    .get(id)
+                    .map(|v| {
+                        v.is_constant()
+                            && v.get_addr().get_space().map(|s| s.get_index()) == Some(cspc_index)
+                    })
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        for vn in constants {
+            // Re-read each Varnode (earlier iterations may have rewritten the IR).
+            let (offset, is_ptr_check, has_no_descend, is_spacebase, size) = {
+                let v = match data.vbank().get(vn) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                if !v.is_constant() {
+                    break; // New varnodes may get inserted (C++ enditer break)
+                }
+                (
+                    v.get_offset(),
+                    v.is_ptr_check(),
+                    v.has_no_descend(),
+                    v.is_spacebase(),
+                    v.get_size(),
+                )
+            };
+            if offset == 0 {
+                continue; // Never make constant 0 into spacebase
+            }
+            if is_ptr_check {
+                continue; // Have we checked this variable before
+            }
+            if has_no_descend {
+                continue;
+            }
+            if is_spacebase {
+                continue; // Don't use constant 0 which is already spacebase
+            }
+
+            let op = match data.lone_descend(vn) {
+                Some(o) => o,
+                None => continue,
+            };
+            let rspc = match select_infer_space(data, vn, op) {
+                Some(s) => s,
+                None => continue,
+            };
+            let slot = data.obank().get(op).expect("constantptr: stale op").get_slot(vn);
+            let opc = data.obank().get(op).expect("constantptr: stale op").code();
+            if opc == OpCode::CPUI_INT_ADD {
+                // Make sure the other side is not a spacebase already.
+                let other = data
+                    .obank()
+                    .get(op)
+                    .expect("constantptr: stale op")
+                    .get_in(1 - slot)
+                    .expect("constantptr: INT_ADD missing other input");
+                if data.vbank().get(other).map(|v| v.is_spacebase()).unwrap_or(false) {
+                    continue;
+                }
+            } else if opc == OpCode::CPUI_PTRSUB || opc == OpCode::CPUI_PTRADD {
+                continue;
+            }
+
+            let mut full_encoding: uintb = 0;
+            let resolved = is_pointer(data, &rspc, vn, op, slot, &mut full_encoding);
+            // Set check flag AFTER searching for the symbol.
+            data.vbank_mut().get_mut(vn).expect("constantptr: stale vn").set_ptr_check();
+            if let Some((entry, rampoint)) = resolved {
+                // C++ `spacebaseConstant` never returns an error; the Rust signature
+                // is fallible only for the can't-happen missing-factory/entry-type
+                // paths (gated by is_pointer having returned a typed entry).  Skip
+                // defensively on the impossible error rather than abort the function.
+                if data
+                    .spacebase_constant(op, slot, &entry, &rampoint, full_encoding, size)
+                    .is_err()
+                {
+                    continue;
+                }
+                if opc == OpCode::CPUI_INT_ADD && slot == 1 {
+                    data.op_swap_input(op, 0, 1);
+                }
+                self.base.count += 1;
+            }
+        }
         0
     }
+}
+
+/// C++ `ActionConstantPtr::searchForSpaceAttribute` (coreaction.cc:972): from a
+/// constant, walk forward through INT_ADD/COPY/INDIRECT/MULTIEQUAL (up to 3 hops)
+/// looking for a LOAD/STORE whose space-id constant names the access space, or a
+/// pointer data-type carrying a space attribute.  Returns the discovered space or
+/// `None`.
+fn search_for_space_attribute(data: &Funcdata, mut vn: VarnodeId, mut op: OpId) -> Option<Rc<AddrSpace>> {
+    for _ in 0..3 {
+        // If the Varnode is explicitly a pointer carrying a space attribute, use it.
+        let dt = Rc::clone(data.vbank().get(vn)?.get_type());
+        if dt.get_metatype() == type_metatype::TYPE_PTR {
+            if let Some(spc) = dt.get_pointer_space() {
+                if spc.get_addr_size() as int4 == data.vbank().get(vn)?.get_size() {
+                    return Some(spc);
+                }
+            }
+        }
+        let opc = data.obank().get(op)?.code();
+        match opc {
+            OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_COPY
+            | OpCode::CPUI_INDIRECT
+            | OpCode::CPUI_MULTIEQUAL => {
+                vn = data.obank().get(op)?.get_out()?;
+                // C++ `op = vn->loneDescend(); if (op == 0) break;` — a null
+                // lone-descend ends the forward walk and FALLS THROUGH to the tail
+                // descend scan below (so a multi-descendant Varnode is still scanned
+                // for a direct LOAD/STORE reader).
+                match data.lone_descend(vn) {
+                    Some(next) => op = next,
+                    None => break,
+                }
+            }
+            OpCode::CPUI_LOAD => {
+                let in0 = data.obank().get(op)?.get_in(0)?;
+                return Some(space_from_const(data, in0));
+            }
+            OpCode::CPUI_STORE => {
+                let in1 = data.obank().get(op)?.get_in(1)?;
+                if in1 == vn {
+                    let in0 = data.obank().get(op)?.get_in(0)?;
+                    return Some(space_from_const(data, in0));
+                }
+                return None;
+            }
+            _ => return None,
+        }
+    }
+    // C++ tail descend scan: any LOAD/STORE reading vn directly.
+    let descend: Vec<OpId> = data.vbank().get(vn)?.descend_iter().collect();
+    for op in descend {
+        let opc = data.obank().get(op)?.code();
+        if opc == OpCode::CPUI_LOAD {
+            let in0 = data.obank().get(op)?.get_in(0)?;
+            return Some(space_from_const(data, in0));
+        } else if opc == OpCode::CPUI_STORE {
+            let in1 = data.obank().get(op)?.get_in(1)?;
+            if in1 == vn {
+                let in0 = data.obank().get(op)?.get_in(0)?;
+                return Some(space_from_const(data, in0));
+            }
+        }
+    }
+    None
+}
+
+/// Resolve `vn->getSpaceFromConst()`: the constant Varnode encodes a space-id in
+/// its offset (C++ `Varnode::getSpaceFromConst`, the LOAD/STORE space argument).
+fn space_from_const(data: &Funcdata, vn: VarnodeId) -> Rc<AddrSpace> {
+    let idx = data.vbank().get(vn).expect("space_from_const: stale vn").get_offset() as int4;
+    Rc::clone(
+        data.get_arch()
+            .manage()
+            .get_space(idx)
+            .expect("space_from_const: getSpaceFromConst out of range"),
+    )
+}
+
+/// C++ `ActionConstantPtr::selectInferSpace` (coreaction.cc:1020): pick the
+/// AddrSpace in which the given constant is inferred to be a pointer.  If the
+/// Varnode is already a TYPE_PTR with a space attribute matching its size, use
+/// that.  Otherwise scan `glb->inferPtrSpaces`, filtering by the space's
+/// minimum-pointer-size / address-size; on a second match, break the tie with
+/// `searchForSpaceAttribute`.
+fn select_infer_space(data: &Funcdata, vn: VarnodeId, op: OpId) -> Option<Rc<AddrSpace>> {
+    let vn_size = data.vbank().get(vn)?.get_size();
+    let dt = Rc::clone(data.vbank().get(vn)?.get_type());
+    if dt.get_metatype() == type_metatype::TYPE_PTR {
+        if let Some(spc) = dt.get_pointer_space() {
+            if spc.get_addr_size() as int4 == vn_size {
+                return Some(spc);
+            }
+        }
+    }
+    let mut res_space: Option<Rc<AddrSpace>> = None;
+    for spc in data.get_arch().infer_ptr_spaces().iter() {
+        let min_size = spc.get_minimum_ptr_size();
+        if min_size == 0 {
+            if vn_size != spc.get_addr_size() as int4 {
+                continue;
+            }
+        } else if vn_size < min_size {
+            continue;
+        }
+        if res_space.is_some() {
+            // Second match: disambiguate with the syntax tree.
+            if let Some(search_spc) = search_for_space_attribute(data, vn, op) {
+                res_space = Some(search_spc);
+            }
+            break;
+        }
+        res_space = Some(Rc::clone(spc));
+    }
+    res_space
+}
+
+/// C++ `ActionConstantPtr::checkCopy` (coreaction.cc:1056): for a COPY feeding a
+/// RETURN of a non-pointer locked output, do not infer; otherwise honor
+/// `glb->infer_pointers`.  The output-lock surface is the proto recovery seam; the
+/// merged `FuncProto::is_output_locked` reports the un-recovered default
+/// (`false`), so this reduces to `glb->infer_pointers` (the un-locked branch).
+fn check_copy(data: &Funcdata, _op: OpId) -> bool {
+    // C++: if the COPY feeds a RETURN and the output is locked to a non-pointer,
+    // return false.  With no locked output (the merged proto default), fall through.
+    data.get_arch().infer_pointers()
+}
+
+/// C++ `ActionConstantPtr::isPointer` (coreaction.cc:1085): determine if the given
+/// constant Varnode might be a pointer; if so return the global Symbol it points
+/// to and the resolved Address (the C++ `rampoint`).  `full_encoding` receives the
+/// full pointer encoding (the constant value for ordinary, non-near pointers).
+fn is_pointer(
+    data: &Funcdata,
+    spc: &Rc<AddrSpace>,
+    vn: VarnodeId,
+    op: OpId,
+    slot: int4,
+    full_encoding: &mut uintb,
+) -> Option<(GlobalContainer, Address)> {
+    let glb = Rc::clone(data.get_arch());
+    let vn_offset = data.vbank().get(vn)?.get_offset();
+    let vn_size = data.vbank().get(vn)?.get_size();
+    let op_addr = data.obank().get(op)?.get_addr().clone();
+
+    let mut needexacthit;
+    let rampoint;
+    // Are we explicitly marked as a pointer?
+    let read_facing_meta = data.vbank().get(vn)?.get_type_read_facing(op).get_metatype();
+    if read_facing_meta == type_metatype::TYPE_PTR {
+        rampoint = glb.resolve_constant(spc, vn_offset, vn_size, &op_addr, full_encoding).ok()?;
+        needexacthit = false;
+    } else {
+        if data.vbank().get(vn)?.is_type_lock() {
+            return None; // Locked as NOT a pointer
+        }
+        needexacthit = true;
+        let opc = data.obank().get(op)?.code();
+        match opc {
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                if slot == 0 {
+                    return None;
+                }
+                // A constant parameter could be a pointer.  The input-lock check
+                // (fc->isInputLocked + getParam metatype) is the call-spec seam; with
+                // no locked input we fall through to the infer_pointers gate.
+                if !glb.infer_pointers() {
+                    return None;
+                }
+            }
+            OpCode::CPUI_COPY => {
+                if !check_copy(data, op) {
+                    return None;
+                }
+            }
+            // Pointers get concatenated in structures; comparisons against a
+            // constant could be a pointer.
+            OpCode::CPUI_PIECE
+            | OpCode::CPUI_INT_EQUAL
+            | OpCode::CPUI_INT_NOTEQUAL
+            | OpCode::CPUI_INT_LESS
+            | OpCode::CPUI_INT_LESSEQUAL => {
+                if !glb.infer_pointers() {
+                    return None;
+                }
+            }
+            OpCode::CPUI_INT_ADD => {
+                let outvn = data.obank().get(op)?.get_out()?;
+                if data.vbank().get(outvn)?.get_type_def_facing().get_metatype()
+                    == type_metatype::TYPE_PTR
+                {
+                    // Is there another pointer base in this expression?
+                    let other = data.obank().get(op)?.get_in(1 - slot)?;
+                    if data.vbank().get(other)?.get_type_read_facing(op).get_metatype()
+                        == type_metatype::TYPE_PTR
+                    {
+                        return None; // If so, we are not a pointer
+                    }
+                    // FIXME (upstream): need to fully explore additive tree.
+                    needexacthit = false;
+                } else if !glb.infer_pointers() {
+                    return None;
+                }
+            }
+            OpCode::CPUI_STORE => {
+                if slot != 2 {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+        // Make sure the constant is in the expected range for a pointer.
+        if spc.get_pointer_lower_bound() > vn_offset {
+            return None;
+        }
+        if spc.get_pointer_upper_bound() < vn_offset {
+            return None;
+        }
+        // Check if the constant looks like a single bit or mask.  The kuna GH-6930
+        // divergence keeps single-bit values that are EXACT function entries; reuse
+        // kuna_is_function_entry (no re-special-casing).
+        if bit_transitions(vn_offset, vn_size) < 3
+            && !kuna_const_is_function_entry(data, spc, vn_offset, vn_size, &op_addr)
+        {
+            return None;
+        }
+        rampoint = glb.resolve_constant(spc, vn_offset, vn_size, &op_addr, full_encoding).ok()?;
+    }
+
+    if rampoint.is_invalid() {
+        return None;
+    }
+    // Since we are looking for a global address, assume it is address-tied and use
+    // an empty usepoint.  C++ `data.getScopeLocal()->getParent()->queryContainer(
+    // rampoint, 1, Address())` — routed through `glb`'s frozen global-scope snapshot.
+    let invalid = Address::new_invalid();
+    let entry = glb.query_container_global(&rampoint, 1, &invalid)?;
+    if let Some(ptr_type) = entry.symbol_type.as_ref() {
+        if ptr_type.get_metatype() == type_metatype::TYPE_ARRAY {
+            if let Some(base) = ptr_type.get_array_base() {
+                // In the special case of strings (character arrays) we allow the
+                // constant pointer to refer to the middle of the string.
+                if base.is_char_print() {
+                    needexacthit = false;
+                }
+            }
+        }
+    }
+    if needexacthit && entry.entry_addr != rampoint {
+        return None;
+    }
+    Some((entry, rampoint))
+}
+
+/// The `ActionConstantPtr::isPointer` `bit_transitions < 3` kuna GH-6930 escape
+/// (coreaction.cc:1159): a single-bit constant that resolves to an exact function
+/// entry stays a pointer.  Wraps [`kuna_is_function_entry`](crate::
+/// kuna_inferfuncentry::kuna_is_function_entry) — the function-entry query is the
+/// global-scope `queryFunction(rampoint)`, reached through `glb`'s snapshot: a
+/// covering global Symbol whose type is `TYPE_CODE` and whose entry address equals
+/// `rampoint`.  For ordinary data constants (no function there) this is `false`, so
+/// a single-bit data constant is never made a pointer (the switch-cluster guard).
+fn kuna_const_is_function_entry(
+    data: &Funcdata,
+    spc: &Rc<AddrSpace>,
+    vn_offset: uintb,
+    vn_size: int4,
+    op_addr: &Address,
+) -> bool {
+    let glb = data.get_arch();
+    let gate = glb.infer_funcentry();
+    if !gate {
+        return false;
+    }
+    let mut full_encoding: uintb = 0;
+    let rampoint = match glb.resolve_constant(spc, vn_offset, vn_size, op_addr, &mut full_encoding) {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    // queryFunction(rampoint): a covering global function Symbol whose entry
+    // address equals rampoint.  The frozen snapshot carries the Symbol type; a
+    // function Symbol is TYPE_CODE.
+    let invalid = Address::new_invalid();
+    let function_entry = glb.query_container_global(&rampoint, 1, &invalid).and_then(|e| {
+        let is_code = e
+            .symbol_type
+            .as_ref()
+            .map(|t| t.get_metatype() == type_metatype::TYPE_CODE)
+            .unwrap_or(false);
+        if is_code && e.entry_addr == rampoint {
+            Some(e.entry_addr)
+        } else {
+            None
+        }
+    });
+    crate::kuna_inferfuncentry::kuna_is_function_entry(gate, Some(&rampoint), function_entry.as_ref())
 }
 
 // =============================================================================

@@ -14,7 +14,7 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::space::AddrSpaceManager;
+use kuna_base::space::{AddrSpace, AddrSpaceManager};
 use kuna_base::types::{int4, uint4};
 use kuna_num::opcodes::OpCode;
 use slotmap::new_key_type;
@@ -492,6 +492,26 @@ pub struct Architecture {
     /// global-mapped varnodes so their stores survive `ActionDeadCode`.  `None`
     /// for hand-built fixtures (no symbol table).
     pub global_query: Option<Rc<GlobalQuery>>,
+    /// Infer pointers from likely-address constants (C++ `glb->infer_pointers`),
+    /// shared from the real [`crate::architecture::Architecture`] through
+    /// `build_arch_handle`.  Read by [`ActionConstantPtr`](crate::coreaction_render::
+    /// ActionConstantPtr)'s `isPointer`/`checkCopy` (coreaction.cc:1056-1144) to gate
+    /// the various pointer-inference arms.  Default-on (C++ `resetDefaults`); `false`
+    /// for hand-built fixtures (no constant-pointer recovery exercised).
+    pub infer_pointers: bool,
+    /// (kuna GH-6930) Infer single-bit constants matching an exact function entry
+    /// as pointers (C++ `glb->infer_funcentry`), shared from the real architecture.
+    /// Read by `ActionConstantPtr::isPointer`'s `bit_transitions < 3` guard
+    /// (coreaction.cc:1158-1159) via [`kuna_is_function_entry`](crate::
+    /// kuna_inferfuncentry::kuna_is_function_entry).  Default-on (DIV-2); `false`
+    /// for hand-built fixtures.
+    pub infer_funcentry: bool,
+    /// Ordered list of address spaces in which a constant pointer can be inferred
+    /// (C++ `Architecture::inferPtrSpaces`, built by `cacheAddrSpaceProperties` +
+    /// the cspec `<global>` push), shared from the real architecture through
+    /// `build_arch_handle`.  Iterated by `ActionConstantPtr::selectInferSpace`
+    /// (coreaction.cc:1020-1047).  Empty for hand-built fixtures.
+    pub infer_ptr_spaces: Vec<Rc<AddrSpace>>,
 }
 
 impl Architecture {
@@ -545,6 +565,15 @@ impl Architecture {
                 | crate::options::split_datatype::OPTION_ARRAY
                 | crate::options::split_datatype::OPTION_POINTER,
             global_query: None,
+            // C++ Architecture default: infer_pointers = true (resetDefaults);
+            // a hand-built fixture never exercises constant-pointer recovery, but
+            // the real lift+analyze path overwrites this from the real arch.
+            infer_pointers: false,
+            // (kuna) DIV-2 default-on (GH-6930): the real arch overwrites this.
+            infer_funcentry: false,
+            // No inferable spaces until cacheAddrSpaceProperties runs on the real
+            // arch and build_arch_handle shares the result.
+            infer_ptr_spaces: Vec::new(),
         }
     }
 
@@ -755,6 +784,96 @@ impl Architecture {
     /// (C++ `AddrSpaceManager::getConstant`).  // SEAM(W4)
     pub fn get_constant(&self, val: u64) -> Address {
         self.manage.get_constant(val)
+    }
+
+    /// Infer pointers from likely-address constants (C++ `glb->infer_pointers`).
+    /// Read by `ActionConstantPtr::isPointer`/`checkCopy`.
+    pub fn infer_pointers(&self) -> bool {
+        self.infer_pointers
+    }
+
+    /// (kuna GH-6930) Infer single-bit constants matching an exact function entry
+    /// as pointers (C++ `glb->infer_funcentry`).  Read by `ActionConstantPtr::
+    /// isPointer`'s `bit_transitions < 3` guard.
+    pub fn infer_funcentry(&self) -> bool {
+        self.infer_funcentry
+    }
+
+    /// The ordered inferable-pointer spaces (C++ `glb->inferPtrSpaces`), iterated
+    /// by `ActionConstantPtr::selectInferSpace`.
+    pub fn infer_ptr_spaces(&self) -> &[Rc<AddrSpace>] {
+        &self.infer_ptr_spaces
+    }
+
+    /// Interpret a constant as a pointer into `spc` (C++ `glb->resolveConstant`,
+    /// `AddrSpaceManager::resolveConstant`, `space.cc`).  A thin wrapper over the
+    /// shared manager: for an un-segmented space it is just
+    /// `Address(spc, byteToAddress(wrap(val)))` with `fullEncoding = val`; a
+    /// near-pointer space routes through its registered `SegmentedResolver`.
+    pub fn resolve_constant(
+        &self,
+        spc: &Rc<AddrSpace>,
+        val: u64,
+        sz: int4,
+        point: &Address,
+        full_encoding: &mut u64,
+    ) -> KunaResult<Address> {
+        self.manage.resolve_constant(spc, val, sz, point, full_encoding)
+    }
+
+    /// C++ `data.getScopeLocal()->getParent()->queryContainer(addr,size,usepoint)`
+    /// restricted to the global scope (the merged kuna `glb` carries the global
+    /// scope as the read-only [`GlobalQuery`] snapshot, not a live `Database`
+    /// parent chain).  Returns the smallest covering Symbol's
+    /// [`GlobalContainer`] (its data-type, entry address, and `getAllFlags()`), or
+    /// `None` when no global symbol table is shared (hand-built fixtures) or no
+    /// global Symbol covers `[addr, addr+size)`.
+    ///
+    /// This is the routing wire `ActionConstantPtr::isPointer` (coreaction.cc:1167)
+    /// needs: the entry's `getSymbol()->getType()` (`symbol_type`), `getAddr()`
+    /// (`entry_addr`), and — for `spacebase_constant`'s `sym->isTypeLocked()` —
+    /// the `typelock` bit in `all_flags`.
+    pub fn query_container_global(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<GlobalContainer> {
+        let gq = self.global_query.as_ref()?;
+        let e = gq.find_container_entry(addr, size, usepoint)?;
+        let space = addr.get_space()?;
+        Some(GlobalContainer {
+            symbol_type: e.symbol_type.clone(),
+            entry_addr: Address::new(Rc::clone(space), e.first),
+            all_flags: e.all_flags,
+        })
+    }
+}
+
+/// The fields of a global [`SymbolEntry`] that C++ `ActionConstantPtr::isPointer` /
+/// `Funcdata::spacebaseConstant` read off the result of `queryContainer`
+/// (`coreaction.cc:1167-1180`, `funcdata.cc:411-416`).  Flattened from a
+/// [`GlobalEntry`] by [`Architecture::query_container_global`] because the merged
+/// `glb` holds the frozen global scope as a snapshot, not the live `Scope`.
+#[derive(Debug, Clone)]
+pub struct GlobalContainer {
+    /// `entry->getSymbol()->getType()` — the covering Symbol's declared data-type
+    /// (e.g. the `int4[3][5]` of a `map addr r... int4 myarray[3][5]`).  `None` for
+    /// an entry whose snapshot carried no type (degrade as the C++ never would).
+    pub symbol_type: Option<std::rc::Rc<crate::dtype::Datatype>>,
+    /// `entry->getAddr()` — the entry's starting address (`Address(space, first)`),
+    /// for the `needexacthit && entry->getAddr() != rampoint` exact-hit test.
+    pub entry_addr: Address,
+    /// `entry->getAllFlags()` — used for the `typelock` bit
+    /// (`sym->isTypeLocked()`).
+    pub all_flags: uint4,
+}
+
+impl GlobalContainer {
+    /// `entry->getSymbol()->isTypeLocked()` (C++ `funcdata.cc:414`): the covering
+    /// Symbol's type is locked.
+    pub fn is_type_locked(&self) -> bool {
+        (self.all_flags & crate::varnode::varnode_flags::typelock) != 0
     }
 }
 
