@@ -1,5 +1,20 @@
 # kuna Progress Log
 
+## Session (2026-06-16b) — rust-port W10 → 307/675
+
+Waves since 290: MIPS dead-CALLOTHER (+3), union value-members (+5, HighVariable
+union-type retention), RSP/spacebase substrate (propagateSpacebaseRef + spacebase
+deadcode — 8 files transiently clean; the ExtraPop count-mover deferred, jumptable
+conflict), **pushPartialSymbol (+9: symbol-mapped struct/union members glob.intfield /
+val.mydouble / val.u.myint 2-deep walk — high-risk broad render landed monotonic).**
+rust-port 77ced72 = **675 applied / 307 passing / 0 exec-failures.** 3,5xx Rust tests
+green; clippy -D clean; boolless/readstruct/condconst_conn byte-identical; B0 unchanged;
+**C++ oracle 207/207 + 675/675 PARITY OK, byte-untouched.** RSP CHAIN ROOT proven (4
+diagnoses): the RSP input varnode must type TYPE_PTR->TYPE_SPACEBASE so
+propagateSpacebaseRef fires (cleans the 15 dirty-RSP files; the HELD for-loop reroll then
+auto-activates). IN FLIGHT: spacebase-input typing (the RSP keystone), union-truncation
+(resolveTruncation: val.c/globvar.b.bval1).
+
 ## Session (2026-06-16) — rust-port W10 → 290/675, ZERO exec-failures (full corpus applies)
 
 The whole datatest corpus now decodes end-to-end under the Rust engine. Waves since 242:
