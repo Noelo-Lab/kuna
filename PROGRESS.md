@@ -1,5 +1,32 @@
 # kuna Progress Log
 
+## Session (2026-06-16d) — rust-port W10: keystone grind 307 → 327/675
+
+Five verified waves carried the corpus from 307 to 327 passing (now **6.8× the M2 entry
+of 48**), all under the standard gate (cargo test --workspace green, clippy -D, byte-parity
+3/3 + 19/19, C++ oracle 207/207 + 675/675 PARITY OK byte-untouched, B0 unchanged, monotonic
+passing):
+
+- **global-persist2 (+7)** — `Scope::add_range` global-RAM seeding + `GlobalQuery.owned`
+  ram persist, co-landing the previously-held `revisit-ssa` guard-calls heritage pass
+  (the earlier proto-E/revisit `heritage.rs` conflict resolved here).
+- **bitfield tail / ScoreUnionFields** intermediate waves — union-field scoring +
+  bitfield pull/insert render arms.
+- **proto-unlock (keystone #2, substrate +1)** — Stage A `mark_output_storage_addr_tied`
+  AL sub-register **un-tie** (restores Promotion-on-compare #2, Return-Structure #3);
+  Stage B `decode_join_addr` + `processJoins` building the **x86win/x86gcc prototype
+  model** from the cspec `<addr space="join" piece1=.. piece2=../>` pentry (faithful per
+  space.cc:539 JoinSpace::decodeAttributes). The model now **builds** — the full
+  Return-Structure/mixfloat/longdouble render is gated on the float-typeclass +
+  SplitDatatype struct-split on top of it. HEAD **a4bcd0f**.
+
+KEYSTONE MAP (the remaining ~348 gate on ~5 named keystones): **#1 RSP/spacebase**
+(ExtraPopSetup + propagateSpacebaseRef per-CALL dead-code — deep, paused, gates ~half the
+remainder); **#2 proto model** (substrate landed; float-typeclass + struct-split are the
+payoff, IN FLIGHT as `w10-float-typeclass` for mixfloat+longdouble); **#4 mergepiece-dynsym**
+(MergeContext piece-read-back + ActionDynamicSymbols dyn-hash naming — IN FLIGHT);
+**#5 SplitDatatype struct-typing** (struct-return CONCAT split, partly RSP-gated).
+
 ## Session (2026-06-16c) — rust-port W10: for-loop reroll merged (INERT), 307/675 held
 
 Merged the held `rport/w10-forloop-reroll` (while->for conversion: `emit_for_loop` +
