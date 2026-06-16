@@ -253,6 +253,63 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
     // chain IMPLIED and the printer collapses it into the `return` expression
     // (`return (float4)(int4)(fval - 0x10) * dat;`).  This is a structural IR-shape
     // test off the recovered output, not a name/address special case.
+    // (kuna W4-ScopeLocal refinement) A return register whose marker writes are
+    // ALL phi/indirect joins over `persist` global values is not a genuine
+    // whole-function local: it merely carries a global (e.g. `glob1.a`) through the
+    // join.  C++ `inScope` keys on the local range tree, which never contains a
+    // global address, so the register stays un-tied and `Merge::mergeMarker` folds
+    // it into the persist HighVariable (`partialmerge`'s `return glob1.a + 7;`).
+    // Without this the over-tie makes `mergeTestRequired` reject the
+    // MULTIEQUAL-output→persist-input merge (the tied-addr-mismatch arm,
+    // merge.cc:111-115) and the trim COPY renders the `glob1.a = glob1.a`
+    // self-assign.  This runs regardless of `output_locked` (partial_restore's proto
+    // output is not yet locked here) because the value-source fact is independent of
+    // output recovery.  It is a persist-value test off the join, not a name/address
+    // special case: a register joining constants or stack/transient locals (boolless
+    // `ACC` joining `#1`, condconst) is NOT all-persist and stays tied, so the
+    // byte-identical clusters are unaffected.
+    let marker_writes: Vec<crate::seams::VarnodeId> = written
+        .iter()
+        .copied()
+        .filter(|&vn| {
+            data.vbank()
+                .get(vn)
+                .and_then(|v| v.get_def())
+                .map(|def| data.obank().get(def).map(|o| o.is_marker()).unwrap_or(false))
+                .unwrap_or(false)
+        })
+        .collect();
+    let all_marker_inputs_persist = !marker_writes.is_empty()
+        && marker_writes.iter().all(|&vn| {
+            let def = match data.vbank().get(vn).and_then(|v| v.get_def()) {
+                Some(d) => d,
+                None => return false,
+            };
+            let (ni, is_indirect) = match data.obank().get(def) {
+                Some(o) => (o.num_input(), o.code() == OpCode::CPUI_INDIRECT),
+                None => return false,
+            };
+            // INDIRECT slot-1 is the effect-op annotation, not a data input: only
+            // slot 0 carries the surviving value.  A MULTIEQUAL phi joins all inputs.
+            let nslots = if is_indirect { 1 } else { ni };
+            if nslots == 0 {
+                return false;
+            }
+            (0..nslots).all(|i| {
+                data.obank()
+                    .get(def)
+                    .and_then(|o| o.get_in(i))
+                    .and_then(|iv| data.vbank().get(iv))
+                    .map(|v| v.is_persist())
+                    .unwrap_or(false)
+            })
+        });
+    if all_marker_inputs_persist {
+        // The register is the persist global passing through the join — leave it
+        // un-tied so `mergeMarker` folds it into the global HighVariable.
+        return;
+    }
+
     if output_locked && !written.is_empty() {
         // A `marker` write (CPUI_MULTIEQUAL phi / CPUI_INDIRECT call-clobber
         // survival) is the structural signature of a register that heritage kept at
@@ -261,13 +318,7 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
         // their cover ends before the return computation, so the input SSA value
         // and the return-value SSA defs stay distinct in C++ (the input is rendered
         // by `baseExplicit`'s own `def==0` explicit rule, not by addr-tying).
-        let has_marker_write = written.iter().any(|&vn| {
-            data.vbank()
-                .get(vn)
-                .and_then(|v| v.get_def())
-                .map(|def| data.obank().get(def).map(|o| o.is_marker()).unwrap_or(false))
-                .unwrap_or(false)
-        });
+        let has_marker_write = !marker_writes.is_empty();
         if !has_marker_write {
             // Not a whole-function local: leave un-tied so the value can be IMPLIED
             // and the printer collapses the return-register round-trip / chain.
