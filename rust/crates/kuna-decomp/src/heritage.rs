@@ -1999,24 +1999,311 @@ impl Heritage {
         fd.vbank_mut().get_mut(unified).expect("guard_input: unified").set_active_heritage();
     }
 
-    /// Process join-space Varnodes before heritage (C++
+    /// Perform one level of Varnode splitting to match a [`JoinRecord`] (C++
+    /// `Heritage::splitJoinLevel`, `heritage.cc:2068`).
+    ///
+    /// Splits every Varnode in `lastcombo`, appending the two split halves for
+    /// each into `nextlev` (a `null`/`None` filler for the least-half keeps the
+    /// 2-1 mapping when a Varnode is not split this level).
+    fn split_join_level(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        lastcombo: &[crate::seams::VarnodeId],
+        nextlev: &mut Vec<Option<crate::seams::VarnodeId>>,
+        joinrec: &Rc<kuna_base::space::JoinRecord>,
+    ) {
+        let numpieces = joinrec.num_pieces();
+        let mut recnum: i32 = 0;
+        for &curvn in lastcombo.iter() {
+            let cursize = fd.vbank().get(curvn).expect("split_join_level: curvn").get_size();
+            if cursize == joinrec.get_piece(recnum).size as int4 {
+                nextlev.push(Some(curvn));
+                nextlev.push(None);
+                recnum += 1;
+            } else {
+                let mut sizeaccum = 0i32;
+                let mut j = recnum;
+                while j < numpieces {
+                    sizeaccum += joinrec.get_piece(j).size as int4;
+                    if sizeaccum == cursize {
+                        j += 1;
+                        break;
+                    }
+                    j += 1;
+                }
+                let numinhalf = (j - recnum) / 2; // Will be at least 1
+                sizeaccum = 0;
+                for k in 0..numinhalf {
+                    sizeaccum += joinrec.get_piece(recnum + k).size as int4;
+                }
+                let mosthalf = if numinhalf == 1 {
+                    let p = joinrec.get_piece(recnum);
+                    let spc = p.space.clone().expect("split_join_level: piece space");
+                    fd.new_varnode_space_off(sizeaccum, spc, p.offset)
+                } else {
+                    fd.new_unique(sizeaccum, None)
+                };
+                let leasthalf = if (j - recnum) == 2 {
+                    let vdata = joinrec.get_piece(recnum + 1);
+                    let spc = vdata.space.clone().expect("split_join_level: piece space");
+                    fd.new_varnode_space_off(vdata.size as int4, spc, vdata.offset)
+                } else {
+                    fd.new_unique(cursize - sizeaccum, None)
+                };
+                nextlev.push(Some(mosthalf));
+                nextlev.push(Some(leasthalf));
+                recnum = j;
+            }
+        }
+    }
+
+    /// Construct pieces for a \e join-space Varnode read by an operation (C++
+    /// `Heritage::splitJoinRead`, `heritage.cc:2119`).
+    ///
+    /// Builds a concatenation expression (PIECE ops) reconstructing `vn` out of
+    /// the real piece Varnodes named by `joinrec`.
+    fn split_join_read(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        vn: crate::seams::VarnodeId,
+        joinrec: &Rc<kuna_base::space::JoinRecord>,
+    ) {
+        use kuna_num::opcodes::OpCode;
+        // vn isFree, so loneDescend must be non-null.
+        let mut op = fd.lone_descend(vn).expect("split_join_read: vn has a lone descendant");
+        let is_primitive = {
+            let v = fd.vbank().get(vn).expect("split_join_read: vn");
+            if v.is_type_lock() {
+                v.get_type().is_primitive_whole()
+            } else {
+                true
+            }
+        };
+
+        let piece_typeop = typeop_skeleton(OpCode::CPUI_PIECE);
+        let mut lastcombo: Vec<crate::seams::VarnodeId> = vec![vn];
+        while (lastcombo.len() as i32) < joinrec.num_pieces() {
+            let mut nextlev: Vec<Option<crate::seams::VarnodeId>> = Vec::new();
+            self.split_join_level(fd, &lastcombo, &mut nextlev, joinrec);
+
+            for (i, &curvn) in lastcombo.iter().enumerate() {
+                let mosthalf = nextlev[2 * i];
+                let leasthalf = nextlev[2 * i + 1];
+                let Some(leasthalf) = leasthalf else { continue }; // not split this level
+                let mosthalf = mosthalf.expect("split_join_read: most half present when split");
+                let opaddr = fd.obank().get(op).expect("split_join_read: op").get_addr().clone();
+                let concat = fd.new_op(2, opaddr);
+                fd.op_set_opcode(concat, piece_typeop.clone());
+                fd.op_set_output(concat, curvn).expect("split_join_read: set output");
+                fd.op_set_input(concat, mosthalf, 0).expect("split_join_read: set in0");
+                fd.op_set_input(concat, leasthalf, 1).expect("split_join_read: set in1");
+                fd.op_insert_before(concat, op);
+                if is_primitive {
+                    fd.vbank_mut().get_mut(mosthalf).expect("split_join_read: mosthalf").set_precis_hi();
+                    fd.vbank_mut().get_mut(leasthalf).expect("split_join_read: leasthalf").set_precis_lo();
+                } else {
+                    fd.op_mark_no_collapse(concat);
+                }
+                op = concat; // Keep -op- as the earliest op in the concatenation
+            }
+
+            lastcombo = nextlev.into_iter().flatten().collect();
+        }
+    }
+
+    /// Split a written \e join-space Varnode into the specified pieces (C++
+    /// `Heritage::splitJoinWrite`, `heritage.cc:2172`).
+    ///
+    /// Builds SUBPIECE expressions that carve `vn` (its def, or an input) into the
+    /// real piece Varnodes named by `joinrec`.
+    fn split_join_write(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        vn: crate::seams::VarnodeId,
+        joinrec: &Rc<kuna_base::space::JoinRecord>,
+    ) {
+        use kuna_num::opcodes::OpCode;
+        // vn cannot be free: either it has a def, or it is input.
+        let mut op = fd.vbank().get(vn).expect("split_join_write: vn").get_def();
+        let is_input = fd.vbank().get(vn).expect("split_join_write: vn").is_input();
+        // C++ bb = getBasicBlocks().getBlock(0) (the entry block, index 0).
+        let bb = fd.bblocks_get_block(0);
+        let bb_start = fd.bblocks_block_start(bb);
+        let is_primitive = {
+            let v = fd.vbank().get(vn).expect("split_join_write: vn");
+            if v.is_type_lock() {
+                v.get_type().is_primitive_whole()
+            } else {
+                true
+            }
+        };
+        let sub_typeop = typeop_skeleton(OpCode::CPUI_SUBPIECE);
+
+        let mut lastcombo: Vec<crate::seams::VarnodeId> = vec![vn];
+        while (lastcombo.len() as i32) < joinrec.num_pieces() {
+            let mut nextlev: Vec<Option<crate::seams::VarnodeId>> = Vec::new();
+            self.split_join_level(fd, &lastcombo, &mut nextlev, joinrec);
+            for (i, &curvn) in lastcombo.iter().enumerate() {
+                let mosthalf = nextlev[2 * i];
+                let leasthalf = nextlev[2 * i + 1];
+                let Some(leasthalf) = leasthalf else { continue };
+                let mosthalf = mosthalf.expect("split_join_write: most half present when split");
+                let leastsize =
+                    fd.vbank().get(leasthalf).expect("split_join_write: leasthalf").get_size();
+
+                // First SUBPIECE: mosthalf = curvn >> leastsize.
+                let opaddr = if is_input {
+                    bb_start.clone()
+                } else {
+                    let prevop = op.expect("split_join_write: non-input has a def op");
+                    fd.obank().get(prevop).expect("split_join_write: op").get_addr().clone()
+                };
+                let split = fd.new_op(2, opaddr);
+                fd.op_set_opcode(split, sub_typeop.clone());
+                fd.op_set_output(split, mosthalf).expect("split_join_write: set output most");
+                fd.op_set_input(split, curvn, 0).expect("split_join_write: set in0 most");
+                let c = fd.new_constant(4, leastsize as u64);
+                fd.op_set_input(split, c, 1).expect("split_join_write: set in1 most");
+                match op {
+                    None => fd.op_insert_begin(split, bb),
+                    Some(prevop) => fd.op_insert_after(split, prevop),
+                }
+                op = Some(split); // Keep -op- as the latest op in the split construction
+
+                // Second SUBPIECE: leasthalf = curvn(0).
+                let prevop = op.expect("split_join_write: op anchors second SUBPIECE");
+                let opaddr2 =
+                    fd.obank().get(prevop).expect("split_join_write: op").get_addr().clone();
+                let split2 = fd.new_op(2, opaddr2);
+                fd.op_set_opcode(split2, sub_typeop.clone());
+                fd.op_set_output(split2, leasthalf).expect("split_join_write: set output least");
+                fd.op_set_input(split2, curvn, 0).expect("split_join_write: set in0 least");
+                let c0 = fd.new_constant(4, 0);
+                fd.op_set_input(split2, c0, 1).expect("split_join_write: set in1 least");
+                fd.op_insert_after(split2, prevop);
+                if is_primitive {
+                    fd.vbank_mut().get_mut(mosthalf).expect("split_join_write: mosthalf").set_precis_hi();
+                    fd.vbank_mut().get_mut(leasthalf).expect("split_join_write: leasthalf").set_precis_lo();
+                }
+                op = Some(split2); // latest op in the split construction
+            }
+            lastcombo = nextlev.into_iter().flatten().collect();
+        }
+    }
+
+    /// Create float truncation into a free lower-precision \e join-space Varnode
+    /// (C++ `Heritage::floatExtensionRead`, `heritage.cc:2236`).
+    fn float_extension_read(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        vn: crate::seams::VarnodeId,
+        joinrec: &Rc<kuna_base::space::JoinRecord>,
+    ) {
+        use kuna_num::opcodes::OpCode;
+        let op = fd.lone_descend(vn).expect("float_extension_read: vn has a lone descendant");
+        let opaddr = fd.obank().get(op).expect("float_extension_read: op").get_addr().clone();
+        let trunc = fd.new_op(1, opaddr);
+        // Float extensions have exactly 1 piece.
+        let vdata = joinrec.get_piece(0);
+        let spc = vdata.space.clone().expect("float_extension_read: piece space");
+        let bigvn = fd.new_varnode_space_off(vdata.size as int4, spc, vdata.offset);
+        fd.op_set_opcode(trunc, typeop_skeleton(OpCode::CPUI_FLOAT_FLOAT2FLOAT));
+        fd.op_set_output(trunc, vn).expect("float_extension_read: set output");
+        fd.op_set_input(trunc, bigvn, 0).expect("float_extension_read: set in0");
+        fd.op_insert_before(trunc, op);
+    }
+
+    /// Create float extension from a lower-precision \e join-space Varnode (C++
+    /// `Heritage::floatExtensionWrite`, `heritage.cc:2256`).
+    fn float_extension_write(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        vn: crate::seams::VarnodeId,
+        joinrec: &Rc<kuna_base::space::JoinRecord>,
+    ) {
+        use kuna_num::opcodes::OpCode;
+        let op = fd.vbank().get(vn).expect("float_extension_write: vn").get_def();
+        let is_input = fd.vbank().get(vn).expect("float_extension_write: vn").is_input();
+        // C++ bb = getBasicBlocks().getBlock(0) (the entry block, index 0).
+        let bb = fd.bblocks_get_block(0);
+        let bb_start = fd.bblocks_block_start(bb);
+        let opaddr = if is_input {
+            bb_start
+        } else {
+            let prevop = op.expect("float_extension_write: non-input has a def op");
+            fd.obank().get(prevop).expect("float_extension_write: op").get_addr().clone()
+        };
+        let ext = fd.new_op(1, opaddr);
+        // Float extensions have exactly 1 piece.
+        let vdata = joinrec.get_piece(0);
+        let spc = vdata.space.clone().expect("float_extension_write: piece space");
+        let outaddr = Address::new(spc, vdata.offset);
+        fd.op_set_opcode(ext, typeop_skeleton(OpCode::CPUI_FLOAT_FLOAT2FLOAT));
+        fd.new_varnode_out(vdata.size as int4, &outaddr, ext)
+            .expect("float_extension_write: new_varnode_out");
+        fd.op_set_input(ext, vn, 0).expect("float_extension_write: set in0");
+        match op {
+            None => fd.op_insert_begin(ext, bb),
+            Some(prevop) => fd.op_insert_after(ext, prevop),
+        }
+    }
+
+    /// Split \e join-space Varnodes up into their real components (C++
     /// `Heritage::processJoins`, `heritage.cc:2282`).
     ///
-    /// SEAM(W4/W6): the join space holds Varnodes formed by `splitJoinRead`/
-    /// `splitJoinWrite`/float-extension (the `JoinRecord` machinery).  A
-    /// function whose architecture defines no join space, or whose IR uses no
-    /// joined locations, has an empty join-space loc-set, so this is a no-op.
-    /// The split/float-extension transcription (heritage.cc:2282-2313) lands
-    /// with the W4 join subsystem; reaching a non-empty join space here would
-    /// need it.
+    /// For any Varnode in the \e join-space, look up its [`JoinRecord`] and split
+    /// it into the specified real components, so join-space addresses play no role
+    /// in the heritage process (there should be no free Varnodes in the join space
+    /// afterward).
     fn process_joins(&mut self, fd: &mut crate::funcdata::Funcdata) {
-        let joinspace = fd.get_arch().manage().get_join_space().cloned();
-        let Some(joinspace) = joinspace else { return };
-        let any = !fd.vbank().loc_space_ids(&joinspace).is_empty();
-        if any {
-            unimplemented_seam(
-                "Heritage::process_joins (join-space Varnodes need the W4 JoinRecord split)",
-            );
+        let joinspace = match fd.get_arch().manage().get_join_space().cloned() {
+            Some(s) => s,
+            None => return,
+        };
+
+        // C++ iterates beginLoc(joinspace)..endLoc(joinspace) over a live set; the
+        // split ops it creates land in the PIECE spaces (register/unique), NOT the
+        // join space, so a snapshot of the join-space loc-set is faithful (no new
+        // join-space Varnode is ever inserted by the split, and the C++ break
+        // condition `vn->getSpace() != joinspace` would stop at the first such).
+        let join_vns = fd.vbank().loc_space_ids(&joinspace);
+        for vn in join_vns {
+            // vn->getSpace() != joinspace would break; the snapshot is all-join.
+            let offset = fd.vbank().get(vn).expect("process_joins: vn").get_addr().get_offset();
+            let joinrec = fd
+                .get_arch()
+                .manage()
+                .find_join(offset)
+                .expect("process_joins: join Varnode has a JoinRecord");
+            let piecespace = joinrec.get_piece(0).space.clone().expect("process_joins: piece space");
+
+            let (unified_size, vn_size, is_free) = {
+                let v = fd.vbank().get(vn).expect("process_joins: vn");
+                (joinrec.get_unified().size as int4, v.get_size(), v.is_free())
+            };
+            if unified_size != vn_size {
+                panic!("Joined varnode does not match size of record");
+            }
+            if is_free {
+                if joinrec.is_float_extension() {
+                    self.float_extension_read(fd, vn, &joinrec);
+                } else {
+                    self.split_join_read(fd, vn, &joinrec);
+                }
+            }
+
+            // HeritageInfo *info = getInfo(piecespace);
+            // if (pass != info->delay) continue;  // too soon to heritage this space
+            let delay = self.get_info(&piecespace).delay;
+            if self.pass != delay {
+                continue;
+            }
+
+            if joinrec.is_float_extension() {
+                self.float_extension_write(fd, vn, &joinrec);
+            } else {
+                self.split_join_write(fd, vn, &joinrec); // Only once for a particular varnode
+            }
         }
     }
 
