@@ -335,12 +335,47 @@ pub fn bootstrap_program(
     // BEFORE handing it to the engine: the LoadImageXml exposes name+address.
     let symbols = read_loader_symbols(arch.loader());
 
+    // C++ `Architecture::fillinReadOnlyFromLoader` (architecture.cc:1375), part of
+    // the `Architecture::init` chain: query the load image for its read-only
+    // address ranges and OR `Varnode::readonly` over them in the symbol table's
+    // property map.  `setVarnodeProperties`/`queryProperties` then paints the
+    // `readonly` flag on varnodes reading those ranges, which `ActionVarnodeProps`
+    // folds into constants when `option readonly` is on (the float-cluster's
+    // IEEE-754 literals live in read-only RAM).  Collected here, while the opened
+    // `LoadImageXml` is still in hand, then applied to the symboltab below.
+    let readonly_ranges: Vec<(kuna_base::address::Address, kuna_base::address::Address)> =
+        if let Some(loader) = arch.loader() {
+            use kuna_base::address::RangeList;
+            use kuna_sleigh::loadimage::LoadImage;
+            let manage_ro: *const AddrSpaceManager = arch.sleigh().base().unwrap().manage();
+            let mut rangelist = RangeList::new();
+            loader.get_readonly(&mut rangelist);
+            // SAFETY: same outlives-the-call shape as the open() borrow above; the
+            // manager lives inside `arch` and is only read here.
+            let manage_ref = unsafe { &*manage_ro };
+            rangelist
+                .iter()
+                .map(|r| (r.get_first_addr(), r.get_last_addr_open(manage_ref)))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
     // Hand the opened loader to the engine (the C++ `loader` back-pointer the
     // decode reads on load_fill).
     let img = arch
         .take_loader()
         .ok_or_else(|| KunaError::lowlevel("loader vanished after open"))?;
     arch.sleigh_mut().base_mut().unwrap().set_loader(Box::new(img));
+
+    // Apply the collected read-only ranges to the symbol table's property map
+    // (C++ `symboltab->setPropertyRange(Varnode::readonly, *iter)`).
+    if let Some(base) = arch.sleigh_mut().base_mut() {
+        for (first, last_open) in &readonly_ranges {
+            base.symboltab
+                .set_property_range(kuna_decomp::varnode::varnode_flags::readonly, first, last_open);
+        }
+    }
 
     let description = arch.sleigh().base().unwrap().get_description().to_string();
 

@@ -3372,18 +3372,29 @@ impl PrintC {
         };
         if v.is_constant() {
             let (off, sz) = (v.get_offset(), v.get_size());
-            // C++ `PrintLanguage::pushVnExplicit` (printlanguage.cc:227) passes
-            // `ct->getDisplayFormat()` where `ct = vn->getHighTypeReadFacing(op)` —
-            // the read-facing type's forced format reaches `push_integer` as its
-            // `displayFormat` argument.  Inside `push_integer` (printc.cc:1376) the
-            // varnode high's equate-Symbol format then OVERRIDES it when present.
-            // So: equate-Symbol format wins; otherwise the read-facing type format
-            // (e.g. `force datatype octint4 oct` -> `globaloct = 05555`).
+            // C++ `PrintLanguage::pushVnExplicit` (printlanguage.cc:227) calls
+            // `pushConstant(vn->getOffset(), ct, ...)` with `ct =
+            // vn->getHighTypeReadFacing(op)`.  `pushConstant` (printc.cc:1813)
+            // switches on `ct->getMetatype()`: a `TYPE_FLOAT` constant is rendered
+            // by `push_float` (the decimal literal), every other metatype reaches
+            // `push_integer` with `ct->getDisplayFormat()` as its `displayFormat`.
+            let ct = v.get_type_read_facing(op).clone();
+            if ct.get_metatype() == crate::dtype::type_metatype::TYPE_FLOAT {
+                // C++ `pushConstant` -> `push_float(val, ct->getSize(), ...)`.  The
+                // float arm ignores the integer `displayFormat` entirely.
+                self.push_float_ir(arch, off, ct.get_size(), op);
+                return;
+            }
+            // Integer path.  Inside `push_integer` (printc.cc:1376) the varnode
+            // high's equate-Symbol format OVERRIDES the read-facing type's format
+            // when present.  So: equate-Symbol format wins; otherwise the
+            // read-facing type format (e.g. `force datatype octint4 oct` ->
+            // `globaloct = 05555`).
             let sym_fmt = fd.vn_high_display_format(vn);
             let display_fmt = if sym_fmt != display_format::NONE {
                 sym_fmt
             } else {
-                v.get_type_read_facing(op).get_display_format()
+                ct.get_display_format()
             };
             self.push_constant_ir_fmt(off, sz, op, display_fmt);
             return;
@@ -3753,6 +3764,46 @@ impl PrintC {
         let (print_negsign, val, display_fmt) =
             resolve_integer_format(val, sz, false, display_fmt_in, force_hex, force_dec);
         let tok = format_integer_token(print_negsign, val, display_fmt, sz, false, false, false, "");
+        self.push_atom(&Atom::with_op(
+            tok,
+            TagType::Syntax,
+            crate::printlanguage::SyntaxHighlight::const_color,
+            op_key(op),
+        ));
+    }
+
+    /// Render a floating-point constant — the `TYPE_FLOAT` arm of C++
+    /// `PrintC::pushConstant` (printc.cc:1859-1861) which delegates to
+    /// `PrintC::push_float` (printc.cc:1448-1492).  Decodes the raw encoding `val`
+    /// through `glb->translate->getFloatFormat(sz)`
+    /// ([`FloatFormat::get_host_float`]/`extract_sign`/`print_decimal`) and emits
+    /// the `INFINITY`/`NAN`/decimal token via [`format_float_token`].  When there
+    /// is no `FloatFormat` for the size, the token is `FLOAT_UNKNOWN`.
+    fn push_float_ir(&mut self, arch: &Architecture, val: uintb, sz: int4, op: OpId) {
+        use kuna_num::float::floatclass;
+        use kuna_sleigh::translate::Translate;
+        let force_scinote = self.context.is_set(modifiers::FORCE_SCINOTE);
+        let tok = match arch.translate().get_float_format(sz) {
+            None => format_float_token(FloatClass::Unknown, false, "", force_scinote),
+            Some(format) => {
+                let (floatval, class) = format.get_host_float(val);
+                let sign = format.extract_sign(val);
+                match class {
+                    floatclass::infinity => {
+                        format_float_token(FloatClass::Infinity, sign, "", force_scinote)
+                    }
+                    floatclass::nan => {
+                        format_float_token(FloatClass::Nan, sign, "", force_scinote)
+                    }
+                    // normalized / zero / denormalized all take the printDecimal
+                    // path (C++ `push_float` else-branch).
+                    _ => {
+                        let decimal = format.print_decimal(floatval, force_scinote);
+                        format_float_token(FloatClass::Normal, sign, &decimal, force_scinote)
+                    }
+                }
+            }
+        };
         self.push_atom(&Atom::with_op(
             tok,
             TagType::Syntax,
