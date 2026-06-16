@@ -871,3 +871,93 @@ fn vfy_op_is_moveable_point_must_follow_this() {
         "forward walk that never reaches an earlier point bails to false (no UB)"
     );
 }
+
+// --- VERIFIER (w10-forloop-reroll) adversarial tests -------------------------
+// The 5 porter unit tests + 3 porter "vfy_*" tests above cover: identity,
+// special-STORE reject, cross-block reject, simple forward move, reader-before-
+// point reject, the movingLoad allow path, moving-LOAD-blocked-by-STORE, and the
+// run-off-end bail.  The op.cc:251-278 special-op SWITCH arms reached while
+// scanning forward from `this` to `point` are otherwise UNCOVERED.  These pin
+// the three remaining arms of that switch on a *normal* op crossing an
+// intervening special op (movingLoad=false, no tied list):
+//   * CPUI_INDIRECT/SEGMENTOP/CPOOLREF -> let through (op.cc:267-270, `break`),
+//   * CPUI_CALL/CALLIND/NEW            -> allowed iff crossCalls (op.cc:271-275),
+//   * default special op (e.g. CALLOTHER) -> reject (op.cc:276-277).
+
+#[test]
+fn vfy_w10_forloop_normal_op_crosses_indirect_lets_through() {
+    // op.cc:267-270: an INDIRECT (special) between `this` and `point` is in the
+    // explicit let-through set.  A benign normal op (non-tied out, const inputs)
+    // is moveable across it.
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let x = mk_input(&mut fd, 0x10);
+    let this_op = mk_add(&mut fd, 0x100, x, 1, 0x40);
+    fd.op_insert_end(this_op, bl);
+    // Intervening INDIRECT (special, 2 inputs, with an unrelated output).
+    let indirect = mk_op_flags(&mut fd, 2, 0x104, OpCode::CPUI_INDIRECT, pcodeop_flags::special);
+    let iv = mk_input(&mut fd, 0x18);
+    let iarg = fd.new_constant(4, 0);
+    fd.op_set_input(indirect, iv, 0).unwrap();
+    fd.op_set_input(indirect, iarg, 1).unwrap();
+    let _ = give_out(&mut fd, indirect, 0x50);
+    fd.op_insert_end(indirect, bl);
+    // Move point after the INDIRECT.
+    let y = mk_input(&mut fd, 0x14);
+    let point = mk_add(&mut fd, 0x108, y, 2, 0x44);
+    fd.op_insert_end(point, bl);
+    assert!(
+        fd.op_is_moveable(this_op, point),
+        "a normal op crosses an INDIRECT (the op.cc let-through set)"
+    );
+}
+
+#[test]
+fn vfy_w10_forloop_normal_op_crosses_call_when_crosscalls() {
+    // op.cc:271-275: a CALL between `this` and `point` is allowed ONLY if
+    // crossCalls is set.  For a normal op whose output and all inputs are
+    // neither addr-tied nor persist (op.cc:227-238) crossCalls is TRUE, so the
+    // move across the CALL is permitted.  This pins the permissive cross-call
+    // arm (the porter's tests never cross a CALL).
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let x = mk_input(&mut fd, 0x10);
+    let this_op = mk_add(&mut fd, 0x100, x, 1, 0x40); // non-tied out, const/input inputs
+    fd.op_insert_end(this_op, bl);
+    // Intervening CALL (special, 1 input target, no output).
+    let call = mk_op_flags(&mut fd, 1, 0x104, OpCode::CPUI_CALL, pcodeop_flags::special);
+    let target = fd.new_constant(8, 0x400500);
+    fd.op_set_input(call, target, 0).unwrap();
+    fd.op_insert_end(call, bl);
+    let y = mk_input(&mut fd, 0x14);
+    let point = mk_add(&mut fd, 0x108, y, 2, 0x44);
+    fd.op_insert_end(point, bl);
+    assert!(
+        fd.op_is_moveable(this_op, point),
+        "a fully-untied normal op (crossCalls=true) may cross a CALL"
+    );
+}
+
+#[test]
+fn vfy_w10_forloop_unknown_special_op_blocks_move() {
+    // op.cc:276-277 (`default: return false`): a special op NOT in the
+    // let-through / LOAD / STORE / CALL set (here CALLOTHER) between `this` and
+    // `point` rejects the move outright.  Pins the catch-all reject arm.
+    let mut fd = build_fd();
+    let bl = mk_block(&mut fd);
+    let x = mk_input(&mut fd, 0x10);
+    let this_op = mk_add(&mut fd, 0x100, x, 1, 0x40);
+    fd.op_insert_end(this_op, bl);
+    // Intervening CALLOTHER (special, not in any allowed arm -> default reject).
+    let other = mk_op_flags(&mut fd, 1, 0x104, OpCode::CPUI_CALLOTHER, pcodeop_flags::special);
+    let sel = fd.new_constant(4, 7);
+    fd.op_set_input(other, sel, 0).unwrap();
+    fd.op_insert_end(other, bl);
+    let y = mk_input(&mut fd, 0x14);
+    let point = mk_add(&mut fd, 0x108, y, 2, 0x44);
+    fd.op_insert_end(point, bl);
+    assert!(
+        !fd.op_is_moveable(this_op, point),
+        "an unhandled special op (CALLOTHER) in the path blocks the move (default reject)"
+    );
+}
