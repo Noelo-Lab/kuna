@@ -385,6 +385,27 @@ impl SleighPayload {
             SleighPayload::Sleigh(p) => p,
         }
     }
+
+    /// The SLEIGH parse string of this payload (C++ `InjectPayloadSleigh::
+    /// parsestring`), the source `parse_inject` compiles into a `ConstructTpl`.
+    pub fn parsestring(&self) -> &[u8] {
+        match self {
+            SleighPayload::Callfixup(p) => &p.payload.parsestring,
+            SleighPayload::Callother(p) => &p.payload.parsestring,
+            SleighPayload::Executable(p) => &p.parsestring,
+            SleighPayload::Sleigh(p) => &p.parsestring,
+        }
+    }
+
+    /// Mark this payload's template as compiled (C++ `tpl != null`).
+    fn set_tpl_compiled(&mut self) {
+        match self {
+            SleighPayload::Callfixup(p) => p.payload.tpl_compiled = true,
+            SleighPayload::Callother(p) => p.payload.tpl_compiled = true,
+            SleighPayload::Executable(p) => p.tpl_compiled = true,
+            SleighPayload::Sleigh(p) => p.tpl_compiled = true,
+        }
+    }
 }
 
 /// \brief An implementation of an injection library using the internal SLEIGH
@@ -400,6 +421,11 @@ pub struct PcodeInjectLibrarySleigh {
     pub base: PcodeInjectLibraryBase,
     /// Registered injections (C++ `injection`).
     pub injection: Vec<SleighPayload>,
+    /// Compiled p-code templates, indexed by inject id (C++ keeps the
+    /// `ConstructTpl *tpl` inside each `InjectPayloadSleigh`; the port stores
+    /// them parallel to `injection` so a `&self` `get_tpl` does not borrow the
+    /// payload mutably).  `None` until `parse_inject` runs for that id.
+    pub tpls: Vec<Option<kuna_sleigh::semantics::ConstructTpl>>,
 }
 
 impl PcodeInjectLibrarySleigh {
@@ -410,6 +436,7 @@ impl PcodeInjectLibrarySleigh {
         PcodeInjectLibrarySleigh {
             base: PcodeInjectLibraryBase::new(tempbase),
             injection: Vec::new(),
+            tpls: Vec::new(),
         }
     }
 
@@ -434,7 +461,47 @@ impl PcodeInjectLibrarySleigh {
             SleighPayload::Sleigh(InjectPayloadSleigh::new(source_name, name, ptype))
         };
         self.injection.push(payload);
+        // Keep the compiled-template store parallel to `injection`; the tpl is
+        // filled in later by `parse_inject_all` (C++ `parseInject`).
+        self.tpls.push(None);
         injectid
+    }
+
+    /// Retrieve the compiled p-code template for an inject id, if compiled
+    /// (C++ reads `InjectPayloadSleigh::tpl`).  `None` when `parse_inject_all`
+    /// has not run for this id (the SLEIGH-language compile seam was not driven).
+    pub fn get_tpl(&self, id: int4) -> Option<&kuna_sleigh::semantics::ConstructTpl> {
+        self.tpls.get(id as usize).and_then(|t| t.as_ref())
+    }
+
+    /// Compile every registered payload's SLEIGH `parsestring` into a
+    /// `ConstructTpl` against the loaded language `slgh` (C++ `parseInject`,
+    /// driven for each payload as it is registered).  Idempotent: payloads
+    /// already compiled (or with an empty parse string, e.g. a dynamic payload)
+    /// are skipped.  The advancing tempbase is threaded exactly as the C++
+    /// `parseInject` advances `getUniqueBase()` for non-executable payloads.
+    pub fn parse_inject_all<L: crate::pcodeinject::SnippetLanguageProvider>(
+        &mut self,
+        slgh: &L,
+    ) -> KunaResult<()> {
+        for id in 0..self.injection.len() {
+            if self.tpls[id].is_some() {
+                continue;
+            }
+            let parsestring = self.injection[id].parsestring().to_vec();
+            if parsestring.is_empty() {
+                continue; // dynamic / not-yet-bodied payload (C++ tpl stays null)
+            }
+            let tempbase = self.base.tempbase;
+            let (tpl, new_tempbase) = {
+                let payload = self.injection[id].as_payload();
+                slgh.parse_inject(payload, &parsestring, tempbase)?
+            };
+            self.base.tempbase = new_tempbase;
+            self.tpls[id] = Some(tpl);
+            self.injection[id].set_tpl_compiled();
+        }
+        Ok(())
     }
 
     /// \brief Finalize a payload within the library (C++ `registerInject`).
@@ -535,6 +602,21 @@ impl PcodeInjectLibrarySleigh {
 // ---------------------------------------------------------------------------
 // parseInject (inject_sleigh.cc:373-416) — the public-API SLEIGH compile step
 // ---------------------------------------------------------------------------
+
+/// Blanket bridge: any loaded SLEIGH language (a [`SnippetLanguage`]) is a
+/// [`SnippetLanguageProvider`](crate::pcodeinject::SnippetLanguageProvider), so
+/// `PcodeInjectLibrarySleigh::parse_inject_all` can compile every payload's body
+/// against it without the library struct naming the kuna-sleigh trait.
+impl<L: SnippetLanguage> crate::pcodeinject::SnippetLanguageProvider for L {
+    fn parse_inject(
+        &self,
+        payload: &dyn InjectPayload,
+        parsestring: &[u8],
+        tempbase: kuna_base::types::uint4,
+    ) -> KunaResult<(kuna_sleigh::semantics::ConstructTpl, kuna_base::types::uint4)> {
+        parse_inject(self, payload, parsestring, tempbase)
+    }
+}
 
 /// \brief Convert SLEIGH syntax to p-code templates for the given payload
 /// (C++ `PcodeInjectLibrarySleigh::parseInject`).

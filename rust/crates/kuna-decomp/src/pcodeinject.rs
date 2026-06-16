@@ -473,6 +473,24 @@ pub trait InjectEngine {
     ) -> KunaResult<()>;
 }
 
+/// The compile half of the SLEIGH inject path (C++
+/// `PcodeInjectLibrarySleigh::parseInject`), abstracted so the engine-neutral
+/// library (`PcodeInjectLibrarySleigh::parse_inject_all`) can drive it without
+/// naming the kuna-sleigh `SnippetLanguage` trait directly.  Implemented by the
+/// loaded SLEIGH language ([`kuna_sleigh::sleigh::Sleigh`] / `SleighBase`); the
+/// blanket impl in `inject_sleigh.rs` forwards to [`crate::inject_sleigh::
+/// parse_inject`].
+pub trait SnippetLanguageProvider {
+    /// Compile `parsestring` for `payload` into a `(ConstructTpl, new_tempbase)`
+    /// pair (C++ `parseInject`).
+    fn parse_inject(
+        &self,
+        payload: &dyn InjectPayload,
+        parsestring: &[u8],
+        tempbase: uint4,
+    ) -> KunaResult<(kuna_sleigh::semantics::ConstructTpl, uint4)>;
+}
+
 // ---------------------------------------------------------------------------
 // PcodeInjectLibrary base (pcodeinject.hh:187-274 + pcodeinject.cc:208-359)
 // ---------------------------------------------------------------------------

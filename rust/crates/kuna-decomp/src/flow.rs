@@ -201,8 +201,40 @@ pub trait FlowEnvironment {
 
     /// Is the CALLOTHER `op` a user-op marked as \e injected (C++
     /// `glb->userops.getOp(in0)->getType() == UserPcodeOp::injected`).
-    /// // SEAM(W4): the user-op table lives on the W4 `Architecture`.
+    ///
+    /// The default reports `false` (the W3 shell has no user-op table); the
+    /// engine-backed [`ArchFlowEnv`](crate::decompile_drive) queries
+    /// `glb->userops.getOp(index)->getType()`.  When true, the CALLOTHER is
+    /// queued onto `injectlist` and replaced by its callother-fixup p-code in
+    /// `inject_pcode` (e.g. the MIPS `setISAMode` no-op that, once injected as a
+    /// dead COPY, is dead-code-eliminated).
     fn is_injected_userop(&self, _userop_index: uintb) -> bool {
+        false
+    }
+
+    /// Emit the callother-fixup p-code for the \e injected user-op `userop_index`
+    /// into `emit`, resolving its parameters against `context` (C++
+    /// `FlowInfo::injectUserOp` → `payload->inject(icontext,emitter)` via the
+    /// SLEIGH inject engine).
+    ///
+    /// The default errs (the W3 shell has no inject library / compiled template);
+    /// the engine-backed env looks up the user-op's `InjectedUserOp` payload, its
+    /// compiled `ConstructTpl`, and drives `SleighInjectEngine::emit_payload`.
+    fn inject_userop(
+        &self,
+        _userop_index: uintb,
+        _context: &mut crate::pcodeinject::InjectContext,
+        _emit: &mut dyn kuna_sleigh::translate::PcodeEmit,
+    ) -> KunaResult<()> {
+        Err(KunaError::lowlevel("inject_userop: no inject engine in this FlowEnvironment"))
+    }
+
+    /// Is the \e injected user-op `userop_index`'s callother-fixup payload marked
+    /// \e incidental-copy (C++ `payload->isIncidentalCopy()`)?  When true,
+    /// `doInjection` marks the injected COPYs incidental so deadcode/expression
+    /// folding can dissolve them (the MIPS `setISAMode` fixup sets it).  The W3
+    /// shell reports `false`.
+    fn is_incidental_copy_userop(&self, _userop_index: uintb) -> bool {
         false
     }
 
@@ -2151,12 +2183,11 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                 None => continue, // op was destroyed by a prior inline (nullified)
             };
             if code == OpCode::CPUI_CALLOTHER {
-                // injectUserOp(op): a CALLOTHER user-op marked \e injected.
-                //   -- SEAM(W4): `injectUserOp` needs the `PcodeInjectLibrary`
-                //      payload + `doInjection` (the p-code-template weaving), not
-                //      yet ported.  Leave the CALLOTHER op in place (faithful
-                //      partial: the un-injected user-op still renders as a call),
-                //      matching the pre-inline-wave behavior.  Recorded as a loss.
+                // injectUserOp(op): a CALLOTHER user-op marked \e injected.  Weave
+                // its callother-fixup p-code in and destroy the original CALLOTHER
+                // (e.g. the MIPS `setISAMode` no-op COPY, which deadcode then
+                // removes — eliminating the spurious ISA-mode-switch CALLOTHER).
+                self.inject_user_op(op)?;
                 continue;
             }
             // CPUI_CALL or CPUI_CALLIND.
@@ -2187,6 +2218,130 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             }
         }
         self.injectlist.clear();
+        Ok(())
+    }
+
+    /// Replace an \e injected user-op (CALLOTHER) with its callother-fixup p-code
+    /// (C++ `FlowInfo::injectUserOp`, `flow.cc:1214`).
+    ///
+    /// Builds the [`InjectContext`](crate::pcodeinject::InjectContext) from the
+    /// CALLOTHER's operands (skipping in0, the inject-id annotation) and output,
+    /// then drives [`do_injection`](Self::do_injection) to weave the fixup body in
+    /// and destroy the original op.
+    fn inject_user_op(&mut self, op: OpId) -> KunaResult<()> {
+        // userop = (InjectedUserOp *)glb->userops.getOp(op->getIn(0)->getOffset());
+        let in0 = self
+            .data
+            .obank()
+            .get(op)
+            .expect("injectUserOp: stale op")
+            .get_in(0)
+            .expect("injectUserOp: CALLOTHER has no in0 (C++ UB)");
+        let userop_index =
+            self.data.vbank().get(in0).expect("injectUserOp: stale in0").get_offset() as uintb;
+
+        // Build the InjectContext from the op's operands (C++ icontext setup).
+        let mut icontext = crate::pcodeinject::InjectContext::default();
+        let baseaddr = self.data.obank().get(op).expect("injectUserOp: stale op").get_addr().clone();
+        icontext.nextaddr = Some(baseaddr.clone());
+        icontext.baseaddr = Some(baseaddr);
+
+        // for (i=1; i<numInput; ++i)  — skip the inject-id annotation in slot 0.
+        let n = self.data.obank().get(op).expect("injectUserOp: stale op").num_input();
+        for i in 1..n {
+            let vn = match self.data.obank().get(op).expect("injectUserOp: stale op").get_in(i) {
+                Some(v) => v,
+                None => continue,
+            };
+            let v = self.data.vbank().get(vn).expect("injectUserOp: stale input vn");
+            let addr = v.get_addr();
+            icontext.inputlist.push(kuna_num::pcoderaw::VarnodeData {
+                space: addr.get_space().cloned(),
+                offset: addr.get_offset(),
+                size: v.get_size() as u32,
+            });
+        }
+        // output (rare for a CALLOTHER fixup; setISAMode has none).
+        if let Some(outvn) = self.data.obank().get(op).expect("injectUserOp: stale op").get_out() {
+            let v = self.data.vbank().get(outvn).expect("injectUserOp: stale out vn");
+            let addr = v.get_addr();
+            icontext.output.push(kuna_num::pcoderaw::VarnodeData {
+                space: addr.get_space().cloned(),
+                offset: addr.get_offset(),
+                size: v.get_size() as u32,
+            });
+        }
+
+        self.do_injection(userop_index, &mut icontext, op)
+    }
+
+    /// Weave an injection into the flow and destroy the original op (C++
+    /// `FlowInfo::doInjection`, `flow.cc:1179`).
+    ///
+    /// Emits the payload's p-code onto the tail of the dead list, cross-references
+    /// its control flow, marks it \e incidental (per the payload), moves it to sit
+    /// right after `op`, repoints the target map, and `opDestroyRaw`s `op`.  Only
+    /// the user-op path is wired here (the `fc` call-fixup variant is a separate
+    /// seam); the no-fallthru / incidental-copy handling is transcribed.
+    fn do_injection(
+        &mut self,
+        userop_index: uintb,
+        icontext: &mut crate::pcodeinject::InjectContext,
+        op: OpId,
+    ) -> KunaResult<()> {
+        // list<PcodeOp *>::const_iterator iter = obank.endDead(); --iter;
+        // (the marker op just before the injection lands).
+        let marker = self.dead_tail(); // there must be at least one op (`op` itself)
+
+        // payload->inject(icontext, emitter): emit the fixup p-code.
+        {
+            let mut emit = FlowEmit::new(&mut self.data, self.env);
+            self.env.inject_userop(userop_index, icontext, &mut emit)?;
+            if let Some(err) = emit.error.take() {
+                return Err(err);
+            }
+        }
+
+        // bool startbasic = op->isBlockStart();
+        let mut startbasic =
+            self.data.obank().get(op).expect("doInjection: stale op").is_block_start();
+        // ++iter; — first op in the injection.
+        let firstop = match marker {
+            Some(m) => self.dead_next(m),
+            None => self.dead_head(),
+        };
+        let firstop = match firstop {
+            Some(f) => f,
+            None => {
+                // Empty injection: C++ throws LowlevelError("Empty injection: ...").
+                // The setISAMode fixup is a non-empty `v0 = v0;` body, so an empty
+                // emit means the payload mis-compiled.
+                return Err(KunaError::lowlevel("Empty injection"));
+            }
+        };
+        // PcodeOp *lastop = xrefControlFlow(iter, startbasic, isfallthru, fc);
+        let mut isfallthru = true;
+        let lastop = self.xref_control_flow(Some(firstop), &mut startbasic, &mut isfallthru)?;
+        let lastop = lastop.unwrap_or(firstop);
+        let _ = isfallthru; // (the injection's fallthru is implied by the next op)
+
+        // if (startbasic) { iter = op->getInsertIter(); ++iter; mark next as block start }
+        if startbasic {
+            if let Some(nextop) = self.dead_next(op) {
+                self.op_mark_start_basic(nextop);
+            }
+        }
+
+        // if (payload->isIncidentalCopy()) obank.markIncidentalCopy(firstop,lastop);
+        if self.env.is_incidental_copy_userop(userop_index) {
+            self.data.obank_mut().mark_incidental_copy(firstop, lastop);
+        }
+        // obank.moveSequenceDead(firstop,lastop,op): move the injection after op.
+        self.data.obank_mut().move_sequence_dead(firstop, lastop, op);
+        // updateTarget(op, firstop): repoint the target map.
+        self.update_target(op, firstop);
+        // data.opDestroyRaw(op): drop the original CALLOTHER.
+        self.data.op_destroy_raw(op)?;
         Ok(())
     }
 

@@ -38,6 +38,8 @@
 //! This proves the full path RUNS and emits plausible C — not byte-parity (the
 //! W10 grind), which the e2e gate (`tests/decompile_e2e.rs`) asserts.
 
+use std::rc::Rc;
+
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::int4;
@@ -149,6 +151,61 @@ impl FlowEnvironment for ArchFlowEnv {
         // (the full entry-space) before generating ops.
         let fd = arch.new_funcdata(&name, entry.clone(), 0)?;
         Ok(Some(fd))
+    }
+
+    fn is_injected_userop(&self, userop_index: kuna_base::types::uintb) -> bool {
+        // C++ `glb->userops.getOp(in0)->getType() == UserPcodeOp::injected`.
+        let arch = self.arch();
+        match arch.userops.get_op(userop_index as kuna_base::types::uint4) {
+            Some(op) => op.get_type() == crate::userop::userop_type::injected,
+            None => false,
+        }
+    }
+
+    fn is_incidental_copy_userop(&self, userop_index: kuna_base::types::uintb) -> bool {
+        // C++ `payload->isIncidentalCopy()` for the user-op's injection payload.
+        let arch = self.arch();
+        let injectid = match arch
+            .userops
+            .get_op(userop_index as kuna_base::types::uint4)
+            .and_then(|op| op.get_inject_id())
+        {
+            Some(id) => id as int4,
+            None => return false,
+        };
+        arch.pcodeinjectlib.get_payload(injectid).core().is_incidental_copy()
+    }
+
+    fn inject_userop(
+        &self,
+        userop_index: kuna_base::types::uintb,
+        context: &mut crate::pcodeinject::InjectContext,
+        emit: &mut dyn kuna_sleigh::translate::PcodeEmit,
+    ) -> KunaResult<()> {
+        // C++ `FlowInfo::injectUserOp`'s emit step:
+        //   InjectedUserOp *userop = (InjectedUserOp *)glb->userops.getOp(idx);
+        //   InjectPayload *payload = glb->pcodeinjectlib->getPayload(userop->getInjectId());
+        //   payload->inject(icontext, emitter);
+        let arch = self.arch();
+        let injectid = arch
+            .userops
+            .get_op(userop_index as kuna_base::types::uint4)
+            .and_then(|op| op.get_inject_id())
+            .ok_or_else(|| KunaError::lowlevel("inject_userop: user-op is not injected"))?
+            as int4;
+        let payload = arch.pcodeinjectlib.get_payload(injectid);
+        let tpl = arch.pcodeinjectlib.get_tpl(injectid).ok_or_else(|| {
+            // The callother-fixup body never compiled (parse_inject_all was not
+            // driven, or the SLEIGH compile failed): cannot inject.
+            KunaError::lowlevel("inject_userop: callother-fixup template not compiled")
+        })?;
+        // SleighInjectEngine over the arch's const/unique/default-code spaces.
+        let engine = crate::inject_sleigh::SleighInjectEngine::new(
+            Rc::clone(arch.manage().get_constant_space().expect("no constant space")),
+            Rc::clone(arch.manage().get_unique_space().expect("no unique space")),
+            Rc::clone(arch.manage().get_default_code_space().expect("no default code space")),
+        );
+        engine.emit_payload(payload, tpl, context, emit)
     }
 }
 
