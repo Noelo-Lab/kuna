@@ -6,14 +6,14 @@
 //! surface (`RuleDoubleIn`, `SplitVarnode`) to pin behaviors the in-crate porter
 //! tests do not cover, focused on the hunt-list spots flagged most fragile:
 //!
-//!   - The two CONSERVATIVE cross-wave seams that DISABLE recovery rather than
-//!     produce wrong output, which a future restoration must re-enable:
-//!       * `op_is_arith_or_float` -> false (W6 `TypeOp::addlflags`
-//!         `isArithmeticOp`/`isFloatingPointOp`; double.cc:3238-3240).  The
-//!         dominant `RuleDoubleIn::attemptMarking` branch (a SUBPIECE off a
-//!         *written* whole) can NEVER mark, so recovery never starts for that
-//!         shape.  This is the single most behavior-shrinking loss in the port;
-//!         these tests are its regression guard.
+//!   - The arith/float classification that GATES recovery for the dominant
+//!     `RuleDoubleIn::attemptMarking` branch (a SUBPIECE off a *written* whole):
+//!       * `op_is_arith_or_float` now reads the W6 `TypeOp::addlflags`
+//!         `isArithmeticOp`/`isFloatingPointOp` (double.cc:3238-3240) from the
+//!         ported `type_op_info` table (`rport/w10-doublemove`).  An INT_ADD
+//!         whole IS arithmetic, so `attemptMarking` proceeds and marks the pair —
+//!         restoring the single most behavior-shrinking former loss in the port.
+//!         These tests pin the restored (C++-faithful) marking.
 //!   - `RuleDoubleIn::reset` MUST flip the function's double-precision-recovery
 //!     flag (double.cc:3198-3202) — a side effect later passes depend on.
 //!   - `exceedsConstPrecision` boundary at exactly `sizeof(uintb)` == 8
@@ -140,20 +140,19 @@ fn build_subpieces_off_written_add(
     (whole, lo, hi, subhi)
 }
 
-/// HUNT LIST (cross-wave seam / functional loss). The C++
+/// HUNT LIST (the dominant marking branch, restored). The C++
 /// `RuleDoubleIn::attemptMarking` (double.cc:3232-3256) for a *written* whole
 /// reaches `if (!typeop->isArithmeticOp() && !typeop->isFloatingPointOp())
-/// return 0;`.  An INT_ADD whole IS arithmetic, so C++ would proceed, find the
-/// precisLo companion off the SAME whole, set precisHi on `hi`/precisLo on `lo`,
-/// and return 1.
+/// return 0;`.  An INT_ADD whole IS arithmetic, so C++ proceeds, finds the
+/// precisLo companion off the SAME whole, sets precisHi on `hi`/precisLo on `lo`,
+/// and returns 1.
 ///
-/// The Rust port stubs `op_is_arith_or_float` -> false (W6 `addlflags` seam), so
-/// the same call returns 0 and marks NOTHING.  This test pins that OBSERVED
-/// (conservatively-degraded) behavior so the restoration is forced to notice it.
-/// The C++ oracle for this exact graph is: returns 1, `hi.isPrecisHi()` true,
-/// `lo` stays precisLo.
+/// The Rust port now classifies via the ported W6 `TypeOp::addlflags`
+/// (`op_is_arith_or_float`), so the same call returns 1 and marks the pair —
+/// faithful to the C++ oracle for this exact graph (returns 1,
+/// `hi.isPrecisHi()` true, `lo` stays precisLo).
 #[test]
-fn verify_w6_s5_double_arith_whole_marking_disabled_by_w6_seam() {
+fn verify_w6_s5_double_arith_whole_marking_restored() {
     let mut fd = build_fd();
     let (_whole, lo, hi, subhi) = build_subpieces_off_written_add(&mut fd);
 
@@ -161,20 +160,20 @@ fn verify_w6_s5_double_arith_whole_marking_disabled_by_w6_seam() {
     let mut rule = RuleDoubleIn::new("doubleprecis");
     let res = rule.apply_op(subhi, &mut fd);
 
-    // OBSERVED (Rust, W6 seam): no marking, recovery declines.
+    // C++ oracle (double.cc:3238-3256): INT_ADD is arithmetic -> mark + return 1.
     assert_eq!(
-        res, 0,
-        "W6 arith/float seam: attemptMarking returns 0 for a written INT_ADD whole \
-         (C++ oracle returns 1 — see double.cc:3238-3240)"
+        res, 1,
+        "attemptMarking returns 1 for a written INT_ADD whole \
+         (C++ oracle, double.cc:3238-3256)"
     );
     assert!(
-        !fd.vbank().get(hi).unwrap().is_precis_hi(),
-        "W6 seam: hi piece is NOT marked precisHi (C++ would mark it)"
+        fd.vbank().get(hi).unwrap().is_precis_hi(),
+        "hi piece is marked precisHi (double.cc:3255)"
     );
-    // lo keeps the mark it was given; the rule did not add/remove it.
+    // lo keeps its pre-existing precisLo mark; attemptMarking re-asserts it.
     assert!(
         fd.vbank().get(lo).unwrap().is_precis_lo(),
-        "lo retains its pre-existing precisLo mark"
+        "lo retains/keeps its precisLo mark (double.cc:3254)"
     );
 }
 
