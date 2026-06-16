@@ -831,6 +831,14 @@ pub struct LinkEntryInfo {
     pub entry_size: int4,
     /// `entry->getSymbol()->getCategory()` (a parameter is category 0).
     pub category: int4,
+    /// `entry->getSymbol()->isNameUndefined()` — the C++ `linkSpacebaseSymbol`
+    /// namerec discriminator (coreaction.cc:3015): an undefined-named Symbol is
+    /// the auto-created local that the C++ later renames via `buildDefaultName`.
+    /// The kuna namerec rename only reaches whole-symbol-cover locals
+    /// (`resolve_default_name`), so a spacebase-reference into an undefined-named
+    /// composite (an unmapped array auto-local) must NOT render its raw
+    /// `$$undefNN` placeholder; the caller falls back to the functional form.
+    pub is_name_undefined: bool,
 }
 
 // ===========================================================================
@@ -1369,6 +1377,7 @@ impl ScopeLocal {
             entry_addr,
             entry_size,
             category: symbol.get_category(),
+            is_name_undefined: symbol.is_name_undefined(),
         })
     }
 

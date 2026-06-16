@@ -1308,6 +1308,38 @@ fn name_local_highs_angr(data: &mut Funcdata) {
             h.set_kuna_name(name);
         }
     }
+
+    // C++ `ActionNameVars::linkSymbols` (coreaction.cc:3028) walks the spacebase
+    // Varnodes (const-space pass at :3040 + per-space `isSpacebase` pass at :3055)
+    // and calls `linkSpacebaseSymbol` on each, decoding the `&symbol` references
+    // encoded as `PTRSUB(spacebase, off)` and attaching the Symbol to the offset
+    // constant's HighVariable (`Funcdata::linkSymbolReference` ->
+    // `Varnode::setSymbolReference`).  This is the render payoff for the W10
+    // RSP-input spacebase typing: without it `PTRSUB(sp,-0x64)` renders the raw
+    // functional `PTRSUB(v1,...)`; with it the printer's `opPtrsub` SPACEBASE arm
+    // finds `symbol != null` and renders `&a` / `&myval.b`.
+    //
+    // ORDER (the load-bearing detail): in C++ a single shared `Symbol` object is
+    // attached to BOTH the offset-constant high and the stack-slot high, and the
+    // undefined ones are renamed ONCE at the end of `apply` (`buildDefaultName`,
+    // coreaction.cc:3092).  The render reads `getSymbol()->getDisplayName()` at
+    // print time, so it always sees the FINAL name.  The kuna model binds the name
+    // PER-HIGH off the database Symbol, so the spacebase pass must run AFTER the
+    // main naming loop — by which point the main loop's `resolve_default_name` has
+    // already renamed each undefined local Symbol to its `vN` in the database
+    // (varmap.rs:1334).  `link_symbol_reference` then reads that final name back via
+    // `query_container_for_link`, so an unmapped auto-local reference renders `&v3`
+    // (the renamed local) rather than the raw `$$undefNN`, and a mapped reference
+    // renders `&a` / `&myval.b`.  The spacebase pass touches only the disjoint
+    // offset-constant highs, so its placement does not perturb the local naming.
+    // `iter_loc` yields every space in C++ location order (const space first), so a
+    // single walk reproduces both the const-space and per-space calls.
+    let all_locs: Vec<crate::seams::VarnodeId> = data.vbank().iter_loc().collect();
+    for vn in &all_locs {
+        if data.vbank().get(*vn).map(|v| v.is_spacebase()).unwrap_or(false) {
+            data.link_spacebase_symbol(*vn);
+        }
+    }
 }
 
 /// Choose a *name* for all high-level variables (C++ `ActionNameVars`,

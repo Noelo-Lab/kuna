@@ -4219,8 +4219,120 @@ impl PrintC {
                 self.push_vn_ir_m(fd, arch, in0, op, m);
                 self.push_constant_ir(0, 4, op);
             }
+        } else if metameta == crate::dtype::type_metatype::TYPE_SPACEBASE {
+            // SPACEBASE arm (C++ `PrintC::opPtrsub`, printc.cc:1081-1121).  A
+            // `PTRSUB(spacebase, off)` is a `&symbol` reference into a stack/global
+            // frame.  `ActionNameVars::linkSpacebaseSymbol` decoded the reference
+            // and parked the Symbol on the offset constant's HighVariable
+            // (`Funcdata::link_symbol_reference` -> `kuna_name`/`symbol_offset`/
+            // `kuna_symbol_type`), so this reads it back here.
+            //
+            //   HighVariable *high = op->getIn(1)->getHigh();
+            //   Symbol *symbol = high->getSymbol();
+            // The kuna stand-in: read the reference triple off in1's high.
+            let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
+            let (sym_name, sym_off, sym_type) = match in1.and_then(|v| fd.vbank().get(v)).and_then(|v| v.get_high()) {
+                Some(high) => match fd.high_bank().get(high) {
+                    Some(h) => (
+                        h.kuna_name().map(|s| s.to_string()),
+                        h.kuna_symbol_offset(),
+                        h.kuna_symbol_type().cloned(),
+                    ),
+                    None => (None, -1, None),
+                },
+                None => (None, -1, None),
+            };
+
+            // C++ `opPtrsub` always reaches a Symbol here (`linkSpacebaseSymbol`
+            // attached one to every stack/global PTRSUB), branching on
+            // `symbol == 0` only for a never-linked spacebase.  In the kuna model
+            // `link_symbol_reference` deliberately attaches ONLY a defined-named
+            // Symbol (the mapped stack/global vars; an undefined-named auto-local is
+            // left unlinked — see `Funcdata::link_symbol_reference`).  So a missing
+            // `sym_name` here means "no reliable symbol surface for this reference":
+            // render the functional `PTRSUB(...)` form (the pre-render-finish state),
+            // NOT the C++ `pushUnnamedLocation` `&stackNN` leaf — which would expose
+            // an offset the kuna namerec layer has not yet resolved to a name.
+            let name = match &sym_name {
+                Some(n) => n.clone(),
+                None => {
+                    self.op_func_ir(fd, arch, op);
+                    return;
+                }
+            };
+
+            let mut arrayvalue = false; // arrayvalue = false;
+            if let Some(st) = &sym_type {
+                // ct = symbol->getType(); (symbol != 0 always here)  (printc.cc:1086)
+                let mt = st.get_metatype();
+                if mt == crate::dtype::type_metatype::TYPE_ARRAY {
+                    // The '&' is dropped if the output type is an array.
+                    arrayvalue = valueon; // If printing value, use [0]
+                    valueon = true; // If printing ptr, don't use &
+                } else if mt == crate::dtype::type_metatype::TYPE_CODE {
+                    valueon = true; // If printing ptr, don't use &
+                }
+            }
+
+            if !valueon {
+                // EMIT  &name  (printc.cc:1095)
+                self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+            } else if arrayvalue {
+                // EMIT  name  with a trailing subscript (printc.cc:1099)
+                self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+            }
+
+            // int4 off = high->getSymbolOffset();  (printc.cc:1108)
+            // off == 0 takes the bare `pushSymbol` arm; a `-1` `symboloffset` (the
+            // whole-symbol cover the C++ `setSymbol` records for a size-matching
+            // entry) is also a bare-name render, so `off <= 0` covers both.
+            if sym_off <= 0 {
+                // off == 0: pushSymbol(symbol, 0, op) — the bare name.
+                self.push_atom(&Atom::with_op(
+                    name.clone(),
+                    TagType::VarToken,
+                    crate::printlanguage::SyntaxHighlight::var_color,
+                    op_key(op),
+                ));
+            } else {
+                // off != 0: pushPartialSymbol(symbol, off, 0, 0, op, -1, false) —
+                // `name.field` (printc.cc:1116).
+                let st = sym_type.as_ref().map(std::rc::Rc::clone);
+                let pushed = if let Some(st) = st {
+                    self.push_partial_symbol_ir(
+                        fd,
+                        arch,
+                        &name,
+                        st,
+                        sym_off as int8,
+                        0,
+                        in1.unwrap_or_default(),
+                        op,
+                        -1,
+                        false,
+                    )
+                } else {
+                    false
+                };
+                if !pushed {
+                    // The partial walk produced no member token (a whole-symbol
+                    // cover): render the bare name, matching `pushPartialSymbol`'s
+                    // degenerate base case.
+                    self.push_atom(&Atom::with_op(
+                        name.clone(),
+                        TagType::VarToken,
+                        crate::printlanguage::SyntaxHighlight::var_color,
+                        op_key(op),
+                    ));
+                }
+            }
+
+            if arrayvalue {
+                // push_integer(0, 4, ...) — the `[0]` subscript index.
+                self.push_constant_ir(0, 4, op);
+            }
         } else {
-            // SPACEBASE (W4 symbol surface) and other: functional fallback.
+            // Union/other: functional fallback.
             self.op_func_ir(fd, arch, op);
         }
     }
