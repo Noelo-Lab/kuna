@@ -2031,3 +2031,274 @@ fn func_call_specs_transfer_locked_output_void_ok() {
     assert!(ok);
     assert!(no.is_empty());
 }
+
+// =========================================================================
+// ModelRule wiring (float-typeclass wave): the cspec `<rule>` actions are now
+// plumbed into `ParamListStandard::assign_address` (the `goto_stack` float10
+// model + the `pointermax` ConvertToPointer rule).  These exercise the
+// wired chain end-to-end: ModelRule precedence over the metatype fallback,
+// the goto_stack stack footprint for an oversized type, and the pointermax
+// conversion.
+// =========================================================================
+
+/// A 10-byte float (x87 long double / `float10`), aligned to 8 (the gcc
+/// alignment map gives `getAlignment(10)==8`; `getAlignSize` then rounds the
+/// 10-byte size up to the 16-byte 2-slot footprint).
+fn float10_type() -> Rc<Datatype> {
+    Rc::new(Datatype::new_with_align(10, 8, type_metatype::TYPE_FLOAT))
+}
+
+/// A model with one 8-byte general register (group 0) and an 8-byte-aligned,
+/// multi-slot stack resource (group 1), plus a single trailing `goto_stack`
+/// ModelRule.  Mirrors (in miniature) the SysV `<input>` list: registers for
+/// the small ints, the stack for everything the rule routes there.
+fn reg_plus_stack_gotostack_model(mgr: &AddrSpaceManager) -> (ParamListStandard, Rc<AddrSpace>, Rc<AddrSpace>) {
+    let reg = reg_space_le();
+    let stk = stack_space();
+    let mut model = ParamListStandard::new(ParamListKind::Standard);
+    // group 0: one 8-byte general register at reg:0x10.
+    let e0 = ParamEntry::seed(
+        0,
+        type_class::TYPECLASS_GENERAL,
+        Rc::clone(&reg),
+        0x10,
+        8,
+        1,
+        0,
+        0,
+        true,
+        false,
+        &[],
+        mgr,
+    )
+    .expect("seed reg entry");
+    model.push_entry(e0);
+    // group 1: an 8-byte-aligned multi-slot stack resource (size 0x100, align 8).
+    let e1 = stack_entry(1, &stk, 0x0, 0x100, 8, model.get_entry(), mgr);
+    model.push_entry(e1);
+    model.finish_decode();
+    // The trailing `<rule><datatype name="any"/><goto_stack/></rule>`: a
+    // (true-filter) GotoStack action whose stack_entry resolves to the model's
+    // stack resource.
+    let action = crate::modelrules::AssignAction::GotoStack {
+        stack_entry: model.get_stack_entry(),
+    };
+    let filter = crate::modelrules::DatatypeFilter::SizeRestricted(
+        crate::modelrules::SizeRestriction::new(0, 0),
+    );
+    model.push_model_rule(crate::modelrules::ModelRule::from_components(filter, action));
+    (model, reg, stk)
+}
+
+#[test]
+fn modelrule_gotostack_routes_oversized_float_to_aligned_stack_footprint() {
+    // float-typeclass wave: a 10-byte float10 (x87 long double) does not fit any
+    // register pentry (maxsize 8); the wired `goto_stack` ModelRule routes it to
+    // the stack, reserving a 16-byte (2 x align-8 slots) footprint so a following
+    // parameter lands at offset 0x10, not inside the float10.  This is the
+    // longdouble `passmany` stack layout: `x`(float10)@0x0..0x10, next@0x10.
+    let mgr = AddrSpaceManager::new();
+    let (model, _reg, stk) = reg_plus_stack_gotostack_model(&mgr);
+    let tf = PanicTypeFactory; // goto_stack never touches the TypeFactory
+    let proto = PrototypePieces {
+        name: "f".to_string(),
+        outtype: None,
+        intypes: vec![float10_type(), int4_type()],
+        innames: vec!["x".into(), "z".into()],
+        first_var_arg_slot: -1,
+    };
+    let mut res: Vec<ParameterPieces> = Vec::new();
+    model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
+    assert_eq!(res.len(), 2);
+    // float10 -> stack at 0x0 (the rule wins over the register fallback; the
+    // 10-byte float can't fit the 8-byte register anyway).
+    assert!(Rc::ptr_eq(res[0].addr.get_space().unwrap(), &stk));
+    assert_eq!(res[0].addr.get_offset(), 0x0);
+    assert_eq!(res[0].type_.as_ref().unwrap().get_size(), 10);
+    // The next int4 lands AFTER the float10's 16-byte (2-slot) footprint, at
+    // 0x10 — never overlapping the float10 (the dropped-`z` failure mode is
+    // exactly an overlapping next-param).
+    assert!(Rc::ptr_eq(res[1].addr.get_space().unwrap(), &stk));
+    assert_eq!(res[1].addr.get_offset(), 0x10);
+}
+
+#[test]
+fn modelrule_precedes_metatype_fallback() {
+    // The `goto_stack` (true-filter) rule fires for an int4 too, taking
+    // precedence over the metatype-keyed register fallback: the int4 is routed
+    // to the stack, NOT the general register, because the rule returns a
+    // non-fail response first (C++ `assignAddress` iterates rules before the
+    // fallback, fspec.cc:783-792).
+    let mgr = AddrSpaceManager::new();
+    let (model, reg, stk) = reg_plus_stack_gotostack_model(&mgr);
+    let tf = PanicTypeFactory;
+    let proto = PrototypePieces {
+        name: "f".to_string(),
+        outtype: None,
+        intypes: vec![int4_type()],
+        innames: vec!["a".into()],
+        first_var_arg_slot: -1,
+    };
+    let mut res: Vec<ParameterPieces> = Vec::new();
+    model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
+    assert_eq!(res.len(), 1);
+    assert!(Rc::ptr_eq(res[0].addr.get_space().unwrap(), &stk));
+    assert!(!Rc::ptr_eq(res[0].addr.get_space().unwrap(), &reg));
+}
+
+#[test]
+fn no_modelrule_falls_through_to_metatype_fallback() {
+    // Control: WITHOUT any ModelRule, the same int4 takes the register fallback
+    // (the pre-wiring behavior the 327-assertion baseline depends on stays
+    // intact for rule-less models).
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let mut model = ParamListStandard::new(ParamListKind::Standard);
+    let e0 = ParamEntry::seed(
+        0,
+        type_class::TYPECLASS_GENERAL,
+        Rc::clone(&reg),
+        0x10,
+        8,
+        1,
+        0,
+        0,
+        true,
+        false,
+        &[],
+        &mgr,
+    )
+    .expect("seed reg entry");
+    model.push_entry(e0);
+    model.finish_decode();
+    assert_eq!(model.num_model_rules(), 0);
+    let tf = PanicTypeFactory;
+    let proto = PrototypePieces {
+        name: "f".to_string(),
+        outtype: None,
+        intypes: vec![int4_type()],
+        innames: vec!["a".into()],
+        first_var_arg_slot: -1,
+    };
+    let mut res: Vec<ParameterPieces> = Vec::new();
+    model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
+    assert_eq!(res.len(), 1);
+    assert!(Rc::ptr_eq(res[0].addr.get_space().unwrap(), &reg));
+    assert_eq!(res[0].addr.get_offset(), 0x10);
+}
+
+#[test]
+fn push_pointermax_rule_appends_convert_to_pointer() {
+    // The synthetic `pointermax` rule (C++ fspec.cc:1507-1512): a
+    // SizeRestrictedFilter(pointermax+1, 0) feeding a ConvertToPointer action,
+    // appended to model_rules.  Verifies the count bump (the action's pointer
+    // build is exercised by the modelrules ConvertToPointer tests, which need a
+    // real TypeFactory).
+    let mgr = AddrSpaceManager::new();
+    let (mut model, _reg) = three_reg_model();
+    assert_eq!(model.num_model_rules(), 0);
+    model.push_pointermax_rule(8);
+    assert_eq!(model.num_model_rules(), 1);
+}
+
+// =========================================================================
+// Adversarial tests (verifier, w10-float-typeclass): the rule-iteration
+// boundary in `ParamListStandard::assign_address` (first non-fail wins, a
+// FAILING rule does not short-circuit the chain) and the `pointermax` rule
+// append-at-end ordering.  These target the most fragile spots of the
+// ModelRule wiring: the loop's continue-on-fail semantics (C++
+// fspec.cc:778-784) and the C++ "pointermax rule planted at the END of
+// modelRules" ordering (fspec.cc:1507-1512, after the decoded rules).
+// =========================================================================
+
+/// Build a model with a non-matching (size >= 20) filter on a FIRST goto_stack
+/// rule and a matching (true) filter on a SECOND goto_stack rule.  An int4 (4
+/// bytes) fails the first rule's size gate, so the chain must continue to the
+/// second rule — proving the loop does not stop at the first `fail`.
+#[test]
+fn w10_float_typeclass_failing_rule_does_not_short_circuit_chain() {
+    let mgr = AddrSpaceManager::new();
+    // Build a fresh reg+stack model and push a TWO-rule chain in order:
+    //   rule 1: size>=20 filter (an int4 fails its size gate -> returns `fail`),
+    //   rule 2: true-filter goto_stack (matches everything).
+    let reg = reg_space_le();
+    let stk = stack_space();
+    let mut model = ParamListStandard::new(ParamListKind::Standard);
+    let e0 = ParamEntry::seed(
+        0, type_class::TYPECLASS_GENERAL, Rc::clone(&reg), 0x10, 8, 1, 0, 0, true, false, &[], &mgr,
+    )
+    .expect("seed reg entry");
+    model.push_entry(e0);
+    let e1 = stack_entry(1, &stk, 0x0, 0x100, 8, model.get_entry(), &mgr);
+    model.push_entry(e1);
+    model.finish_decode();
+    // Rule 1: size>=20 filter -> an int4 never matches, the action is never
+    // consulted, the rule returns `fail`.
+    let fail_filter = crate::modelrules::DatatypeFilter::SizeRestricted(
+        crate::modelrules::SizeRestriction::new(20, 0),
+    );
+    let fail_action = crate::modelrules::AssignAction::GotoStack {
+        stack_entry: model.get_stack_entry(),
+    };
+    model.push_model_rule(crate::modelrules::ModelRule::from_components(fail_filter, fail_action));
+    // Rule 2: true filter goto_stack (matches everything).
+    let ok_filter = crate::modelrules::DatatypeFilter::SizeRestricted(
+        crate::modelrules::SizeRestriction::new(0, 0),
+    );
+    let ok_action = crate::modelrules::AssignAction::GotoStack {
+        stack_entry: model.get_stack_entry(),
+    };
+    model.push_model_rule(crate::modelrules::ModelRule::from_components(ok_filter, ok_action));
+    assert_eq!(model.num_model_rules(), 2);
+    let tf = PanicTypeFactory;
+    let proto = PrototypePieces {
+        name: "f".to_string(),
+        outtype: None,
+        intypes: vec![int4_type()],
+        innames: vec!["a".into()],
+        first_var_arg_slot: -1,
+    };
+    let mut res: Vec<ParameterPieces> = Vec::new();
+    model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
+    assert_eq!(res.len(), 1);
+    // The SECOND rule won (stack), proving the first `fail` did not abort the
+    // chain AND did not fall straight to the metatype fallback (which would have
+    // routed the int4 to the general register at 0x10).
+    assert!(Rc::ptr_eq(res[0].addr.get_space().unwrap(), &stk));
+    assert!(!Rc::ptr_eq(res[0].addr.get_space().unwrap(), &reg));
+}
+
+/// The synthetic `pointermax` rule is appended to the END of `model_rules`
+/// (C++ fspec.cc:1507-1512: `modelRules.emplace_back(...)` after the decoded
+/// rules).  A preceding `goto_stack` rule must therefore still win for a type
+/// that ALSO exceeds pointermax — the pointermax rule never preempts an earlier
+/// matching rule.
+#[test]
+fn w10_float_typeclass_pointermax_rule_appends_after_existing_rules() {
+    let mgr = AddrSpaceManager::new();
+    let (mut model, _reg, stk) = reg_plus_stack_gotostack_model(&mgr);
+    // model has one true-filter goto_stack rule.  Append pointermax(8): any type
+    // > 8 bytes would (in isolation) convert to a pointer.
+    assert_eq!(model.num_model_rules(), 1);
+    model.push_pointermax_rule(8);
+    assert_eq!(model.num_model_rules(), 2);
+    // A 10-byte float10 exceeds pointermax(8); but the goto_stack rule precedes
+    // the pointermax rule, so it wins -> the float10 lands on the stack at its
+    // full 10-byte size, NOT converted to a pointer (which would shrink it to
+    // the pointer width).
+    let tf = PanicTypeFactory;
+    let proto = PrototypePieces {
+        name: "f".to_string(),
+        outtype: None,
+        intypes: vec![float10_type()],
+        innames: vec!["x".into()],
+        first_var_arg_slot: -1,
+    };
+    let mut res: Vec<ParameterPieces> = Vec::new();
+    model.assign_map(&proto, &tf, &mut res, &mgr).unwrap();
+    assert_eq!(res.len(), 1);
+    assert!(Rc::ptr_eq(res[0].addr.get_space().unwrap(), &stk));
+    // Full float10 size preserved (the earlier goto_stack rule won; the
+    // pointermax ConvertToPointer never fired and never shrank it to ptr size).
+    assert_eq!(res[0].type_.as_ref().unwrap().get_size(), 10);
+}

@@ -1720,11 +1720,50 @@ impl Architecture {
                 _ => {}
             }
         }
+        // C++ ParamListStandard::decode (fspec.cc:1453): after the
+        // `<pentry>`/`<group>` elements the loop reads any `<rule>` elements
+        // (`modelRules.emplace_back(); modelRules.back().decode(decoder,this)`).
+        // The rule decoders consult the populated resource (`getSpacebase`,
+        // `getStackEntry`, `isBigEndian`), so the entries are pushed first; the
+        // `<rule>` subtrees are then decoded against the live resource via an
+        // `XmlDecode` rooted on each `<rule>` element (the modelrules ids are
+        // registered on a fresh registry).
         let plist = if is_input { model.input_mut() } else { model.output_mut() };
         for e in pentries {
             plist.push_entry(e);
         }
+        let rule_els: Vec<Rc<kuna_base::xml::Element>> = list_el
+            .get_children()
+            .iter()
+            .filter(|c| c.get_name() == "rule")
+            .cloned()
+            .collect();
+        if !rule_els.is_empty() {
+            let manager = self.manage();
+            let mut registry = kuna_base::marshal::IdRegistry::with_base_ids();
+            crate::modelrules::register_ids(&mut registry);
+            for rule_el in rule_els.iter() {
+                let rule = {
+                    let mut decoder = kuna_base::marshal::XmlDecode::new_with_root(
+                        manager, &registry, rule_el, 0,
+                    );
+                    crate::modelrules::ModelRule::decode(&mut decoder, plist)?
+                };
+                plist.push_model_rule(rule);
+            }
+        }
+        // C++ tail: resourceStart.push_back(numgroup); calcDelay();
+        // populateResolver().
         plist.finish_decode();
+        // C++ fspec.cc:1507-1512: if pointermax > 0, append a trailing
+        // ConvertToPointer rule (a SizeRestrictedFilter(pointermax+1,0) feeding a
+        // ConvertToPointer action).  `pointermax` is the `<input>`/`<output>`
+        // element attribute (default 0 => no rule).
+        if let Some(pmax) = attr_str(list_el, "pointermax").and_then(|s| s.parse::<int4>().ok()) {
+            if pmax > 0 {
+                plist.push_pointermax_rule(pmax);
+            }
+        }
         Ok(())
     }
 
