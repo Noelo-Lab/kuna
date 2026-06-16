@@ -755,6 +755,9 @@ impl Architecture {
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate
         // `Funcdata::fillinReadOnly` (the readonly-RAM-global constant fold).
         seam.readonlypropagate = self.readonlypropagate;
+        // Carry the data-type-splitting toggle bits (C++ `glb->split_datatype_config`)
+        // so `SplitDatatype` / `RuleSplit{Copy,Load,Store}` reach them per function.
+        seam.split_datatype_config = self.split_datatype_config;
         // Snapshot the global symbol table onto `glb` so the per-function
         // `setVarnodeProperties` can run `localmap->queryProperties`'s walk into
         // the global scope (C++ `glb` reaches the live `symboltab`; the merged
