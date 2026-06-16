@@ -20,10 +20,10 @@
 use std::rc::Rc;
 
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::types::int4;
+use kuna_base::types::{int4, int8};
 use kuna_num::opcodes::OpCode;
 
-use crate::dtype::{type_metatype, Datatype, DatatypeKind};
+use crate::dtype::{type_metatype, Datatype, DatatypeKind, TypeFactory};
 use crate::funcdata::Funcdata;
 use crate::seams::OpId;
 use crate::unionresolve::ResolvedUnion;
@@ -221,13 +221,11 @@ impl Funcdata {
     ///
     /// The truncation walk reaches `TypeUnion::resolveTruncation` (type.cc:2569),
     /// which is itself a scorer-driving surface (constructors 2/3 of
-    /// [`ScoreUnionFields`]).  That nested resolveTruncation is **not yet wired**
-    /// (`// SEAM(W10 partial-truncation)`): the partial-union arm falls through to
-    /// the `stripped` type (the C++ "Should never reach here / size mismatch"
-    /// fallback, type.cc:2971-2973) and caches that, which is the faithful
-    /// conservative result when the truncation does not resolve to a field.
-    /// `partialunion.xml`'s simple `u.b.bval1` accesses resolve through the cache
-    /// the cast plane already populated for the enclosing union read.
+    /// [`ScoreUnionFields`]); it is wired through [`Funcdata::resolve_truncation`]
+    /// below.  Each container hop pulls the resolved field's exact piece
+    /// (`glb->types->getExactPiece(field->type, curOff, size)`); when the walk does
+    /// not land on a field of the right size, `curType` falls to `stripped` (the
+    /// C++ "Should never reach here / size mismatch" fallback, type.cc:2971-2973).
     fn resolve_in_flow_partial(
         &mut self,
         ct: &Rc<Datatype>,
@@ -239,14 +237,241 @@ impl Funcdata {
         if let Some(res) = self.get_union_field(ct, op, slot) {
             return Ok(Rc::clone(res.get_datatype()));
         }
-        // The full container walk needs TypeUnion::resolveTruncation (the SUBPIECE
-        // / implied-truncation scorer constructors).  Until that is wired, take the
-        // C++ fall-through: curType = stripped; updateUnionField(this,op,slot,curType).
-        let stripped = ct.get_stripped().ok_or_else(|| {
-            KunaError::lowlevel("resolveInFlow: partial union missing stripped")
+        // Datatype *curType = container; int8 curOff = offset;
+        let size = ct.get_size();
+        let mut cur_type: Option<Rc<Datatype>> = ct.get_partial_base(); // container
+        let mut cur_off: int8 = ct.get_partial_offset().unwrap_or(0) as int8;
+        // while(curType != 0 && curType->getSize() > size)
+        while let Some(cur) = cur_type.clone() {
+            if cur.get_size() as int4 <= size {
+                break;
+            }
+            let meta = cur.get_metatype();
+            if meta == type_metatype::TYPE_PARTIALUNION {
+                // curOff += curPartial->getOffset();
+                cur_off += cur.get_partial_offset().unwrap_or(0) as int8;
+                // field = curPartial->getParentUnion()->resolveTruncation(curOff,op,slot,newOff);
+                let parent_union = cur.get_partial_base().ok_or_else(|| {
+                    KunaError::lowlevel("resolveInFlow: partial union missing container")
+                })?;
+                let resolved = self.resolve_truncation(&parent_union, cur_off, op, slot)?;
+                // curType = 0; if (field != 0) curType = getExactPiece(field->type, curOff, size);
+                cur_type = None;
+                if let Some((field_idx, _newoff)) = resolved {
+                    if let Some(ftype) = parent_union.get_field(field_idx).map(|f| Rc::clone(&f.field_type)) {
+                        let typegrp = self.get_arch().types_rc().ok_or_else(|| {
+                            KunaError::lowlevel("resolveInFlow: TypeFactory unavailable")
+                        })?;
+                        cur_type = typegrp.get_exact_piece(ftype, cur_off as int4, size)?;
+                    }
+                }
+                cur_off = 0;
+            } else if meta == type_metatype::TYPE_UNION {
+                // field = curType->resolveTruncation(curOff,op,slot,curOff);
+                let resolved = self.resolve_truncation(&cur, cur_off, op, slot)?;
+                cur_type = None;
+                if let Some((field_idx, newoff)) = resolved {
+                    cur_off = newoff; // resolveTruncation passes back curOff by &ref
+                    if let Some(ftype) = cur.get_field(field_idx).map(|f| Rc::clone(&f.field_type)) {
+                        let typegrp = self.get_arch().types_rc().ok_or_else(|| {
+                            KunaError::lowlevel("resolveInFlow: TypeFactory unavailable")
+                        })?;
+                        cur_type = typegrp.get_exact_piece(ftype, cur_off as int4, size)?;
+                    }
+                }
+                cur_off = 0;
+            } else {
+                // Should never reach here
+                cur_type = None;
+                break;
+            }
+        }
+        // if (curType == 0 || curType->getSize() != size) curType = stripped;
+        let cur_type = match cur_type {
+            Some(c) if c.get_size() as int4 == size => c,
+            _ => ct.get_stripped().ok_or_else(|| {
+                KunaError::lowlevel("resolveInFlow: partial union missing stripped")
+            })?,
+        };
+        // fd->updateUnionField(this, op, slot, curType);
+        self.update_union_field(ct, op, slot, Rc::clone(&cur_type));
+        Ok(cur_type)
+    }
+
+    /// `Datatype::resolveTruncation(offset, op, slot, &newoff)` dispatched against
+    /// the live union scorer + cache, for the `TypeUnion` and `TypePartialUnion`
+    /// overrides (C++ `TypeUnion::resolveTruncation`, type.cc:2569-2605; and
+    /// `TypePartialUnion::resolveTruncation`, type.cc:2994-2998, which delegates to
+    /// the container).  `self` stands in for `op->getParent()->getFuncdata()`.
+    ///
+    /// Returns `Some((field_index, newoff))` — the union field the truncation
+    /// resolves to and the residual byte offset into it — or `None` when no field
+    /// fits.  A `Datatype` that is neither union nor partial-union resolves to
+    /// `None` (the base/struct overrides do not score truncations through the
+    /// union cache; `Datatype::find_truncation` covers the struct field walk).
+    ///
+    /// This **writes** the per-function `union_map` cache (`setUnionField`), exactly
+    /// as the C++ override does, so the print-time `findTruncation` read finds the
+    /// resolved field.
+    pub fn resolve_truncation(
+        &mut self,
+        ct: &Rc<Datatype>,
+        offset: int8,
+        op: OpId,
+        slot: int4,
+    ) -> KunaResult<Option<(int4, int8)>> {
+        match &ct.kind {
+            // TypePartialUnion::resolveTruncation (type.cc:2994-2998):
+            //   return container->resolveTruncation(off + offset, op, slot, newoff);
+            DatatypeKind::PartialUnion { .. } => {
+                let container = ct.get_partial_base().ok_or_else(|| {
+                    KunaError::lowlevel("resolveTruncation: partial union missing container")
+                })?;
+                let part_off = ct.get_partial_offset().unwrap_or(0) as int8;
+                self.resolve_truncation(&container, offset + part_off, op, slot)
+            }
+            // TypeUnion::resolveTruncation (type.cc:2569-2605).
+            DatatypeKind::Union { .. } => self.resolve_truncation_union(ct, offset, op, slot),
+            // Datatype::resolveTruncation base / non-union: no field.
+            _ => Ok(None),
+        }
+    }
+
+    /// `TypeUnion::resolveTruncation` (type.cc:2569-2605): the cache lookup, the
+    /// address-based fallback, and — on a miss — the SUBPIECE artificial-slot-1
+    /// scorer (constructor 2, [`ScoreUnionFields::new_subpiece`]) or the
+    /// implied-truncation scorer (constructor 3,
+    /// [`ScoreUnionFields::new_truncation`]).
+    fn resolve_truncation_union(
+        &mut self,
+        ct: &Rc<Datatype>,
+        offset: int8,
+        op: OpId,
+        slot: int4,
+    ) -> KunaResult<Option<(int4, int8)>> {
+        // const ResolvedUnion *res = fd->getUnionResolution(this, op, slot);
+        // if (res == 0) { res = fd->getAddressBasedUnionField(...); if (res != 0) setUnionField(...); }
+        let mut have_cached: Option<int4> = self.get_union_resolution(ct, op, slot).map(|r| r.get_field_num());
+        if have_cached.is_none() {
+            let op_addr = self.obank().get(op).map(|o| o.get_addr().clone());
+            if let Some(addr) = &op_addr {
+                if let Some(res) = self.get_address_based_union_field(ct, addr, slot) {
+                    let res = res.clone();
+                    have_cached = Some(res.get_field_num());
+                    // fd->setUnionField(this, op, slot, *res);
+                    self.set_union_field(ct, op, slot, res);
+                }
+            }
+        }
+        // if (res != 0) { if (res->getFieldNum() >= 0) { ...; return field; } }
+        if let Some(field_num) = have_cached {
+            if field_num >= 0 {
+                let foff = ct.get_field(field_num).map(|f| f.offset).unwrap_or(0);
+                let newoff = offset - foff as int8;
+                return Ok(Some((field_num, newoff)));
+            }
+            // res != 0 but fieldNum < 0: C++ falls through to `return 0` (the
+            // else-if/else only run when res == 0).
+            return Ok(None);
+        }
+        // else if (op->code() == CPUI_SUBPIECE && slot == 1)  // artificial slot
+        let opc = self.obank().get(op).map(|o| o.code()).unwrap_or(OpCode::CPUI_COPY);
+        let typegrp = self.get_arch().types_rc().ok_or_else(|| {
+            KunaError::lowlevel("resolveTruncation: TypeFactory unavailable")
         })?;
-        // fd->updateUnionField(this, op, slot, curType);  // only updates an existing edge
-        self.update_union_field(ct, op, slot, Rc::clone(&stripped));
-        Ok(stripped)
+        if opc == OpCode::CPUI_SUBPIECE && slot == 1 {
+            // ScoreUnionFields scoreFields(*fd, this, offset, op);  // constructor 2
+            let result = {
+                let scorer = ScoreUnionFields::new_subpiece(
+                    self,
+                    typegrp.as_ref(),
+                    Rc::clone(ct),
+                    offset as int4,
+                    op,
+                )?;
+                scorer.into_result()
+            };
+            let field_num = result.get_field_num();
+            // fd->setUnionField(this, op, slot, scoreFields.getResult());
+            self.set_union_field(ct, op, slot, result);
+            if field_num >= 0 {
+                // newoff = 0; return getField(fieldNum);
+                return Ok(Some((field_num, 0)));
+            }
+        } else {
+            // ScoreUnionFields scoreFields(*fd, this, offset, op, slot);  // constructor 3
+            let result = {
+                let scorer = ScoreUnionFields::new_truncation(
+                    self,
+                    typegrp.as_ref(),
+                    Rc::clone(ct),
+                    offset as int4,
+                    op,
+                    slot,
+                )?;
+                scorer.into_result()
+            };
+            let field_num = result.get_field_num();
+            self.set_union_field(ct, op, slot, result);
+            if field_num >= 0 {
+                let foff = ct.get_field(field_num).map(|f| f.offset).unwrap_or(0);
+                let newoff = offset - foff as int8;
+                return Ok(Some((field_num, newoff)));
+            }
+        }
+        Ok(None)
+    }
+
+    /// `Datatype::findTruncation(off, sz, op, slot, &newoff)` dispatched against the
+    /// live union cache, for the `TypeUnion`/`TypePartialUnion` overrides (C++
+    /// `TypeUnion::findTruncation`, type.cc:2613-2627; `TypePartialUnion::
+    /// findTruncation`, type.cc:2882-2884) plus the `TypeStruct::findTruncation`
+    /// field walk (type.cc:1878-1892) for a plain struct/non-union receiver.
+    ///
+    /// Read-only: no scoring is done, only a cached resolution is returned (the
+    /// C++ findTruncation comment).  Returns `Some((field_index, newoff))` or
+    /// `None`.  `self` stands in for `op->getParent()->getFuncdata()`.
+    pub fn find_truncation(
+        &self,
+        ct: &Rc<Datatype>,
+        off: int8,
+        sz: int4,
+        op: OpId,
+        slot: int4,
+    ) -> KunaResult<Option<(int4, int8)>> {
+        match &ct.kind {
+            // TypePartialUnion::findTruncation (type.cc:2882-2884):
+            //   return container->findTruncation(off + offset, sz, op, slot, newoff);
+            DatatypeKind::PartialUnion { .. } => {
+                let container = ct.get_partial_base().ok_or_else(|| {
+                    KunaError::lowlevel("findTruncation: partial union missing container")
+                })?;
+                let part_off = ct.get_partial_offset().unwrap_or(0) as int8;
+                self.find_truncation(&container, off + part_off, sz, op, slot)
+            }
+            // TypeUnion::findTruncation (type.cc:2613-2627): cached resolution only.
+            DatatypeKind::Union { .. } => {
+                // const ResolvedUnion *res = fd->getUnionResolution(this, op, slot);
+                // if (res != 0 && res->getFieldNum() >= 0) { ... }
+                let field_num = match self.get_union_resolution(ct, op, slot) {
+                    Some(r) if r.get_field_num() >= 0 => r.get_field_num(),
+                    _ => return Ok(None),
+                };
+                let field = match ct.get_field(field_num) {
+                    Some(f) => f,
+                    None => return Ok(None),
+                };
+                // newoff = offset - field->offset;
+                let newoff = off - field.offset as int8;
+                // if (newoff + sz > field->type->getSize()) return 0;  // spans > one field
+                if newoff + sz as int8 > field.field_type.get_size() as int8 {
+                    return Ok(None);
+                }
+                Ok(Some((field_num, newoff)))
+            }
+            // TypeStruct::findTruncation (type.cc:1878-1892) / base: the struct field
+            // walk needs no cache, so the `Datatype` method covers it.
+            _ => ct.find_truncation(off, sz, op, slot),
+        }
     }
 }

@@ -56,7 +56,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use kuna_base::types::{int4, uintb};
+use kuna_base::types::{int4, int8, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::cast::{CastContext, CastStrategy, CastStrategyC, OpRef, VnRef};
@@ -890,12 +890,43 @@ fn get_output_token_subpiece(data: &mut Funcdata, op: OpId) -> Rc<Datatype> {
     };
     let ct = data.vn_high_type_read_facing(in0, op);
     let byte_off = subpiece_composite_byte_offset(data, op);
-    // field = ct->findTruncation(byteOff, out_size, op, 1, offset)
-    if let Ok(Some((field_idx, offset))) = ct.find_truncation(byte_off, out_size, op, 1) {
+    // field = ct->findTruncation(byteOff, out_size, op, 1, offset)  (typeop.cc:2152).
+    //
+    // In C++ the slot-1 (artificial) truncation edge has already been written by
+    // `TypeOpSubpiece::propagateType` -> `resolveTruncation(byteOff,op,1,byteOff)`
+    // during `ActionInferTypes`, so `getOutputToken` only *reads* it.  In the Rust
+    // port the per-op `propagateType` runs through an immutable `&Funcdata`, so the
+    // SUBPIECE union arm cannot write the cache there; `getOutputToken`
+    // (`ActionSetCasts`, `&mut Funcdata`) is the first reader and therefore drives
+    // the resolution.  For a union/partial-union receiver this calls
+    // `Funcdata::resolve_truncation` (the findTruncation-equivalent that scores on a
+    // cache miss and writes the slot-1 edge — `TypeUnion::resolveTruncation`,
+    // type.cc:2569); the resolved field is identical to what `findTruncation` would
+    // read post-propagateType, and the write lets the print-time
+    // `pushPartialSymbol`/`findTruncation` reads see the same field.  A plain struct
+    // receiver still uses the read-only field walk.
+    let field_lookup = {
+        let meta = ct.get_metatype();
+        if meta == type_metatype::TYPE_UNION || meta == type_metatype::TYPE_PARTIALUNION {
+            data.resolve_truncation(&ct, byte_off as int8, op, 1)
+        } else {
+            data.find_truncation(&ct, byte_off as int8, out_size, op, 1)
+        }
+    };
+    if let Ok(Some((field_idx, offset))) = field_lookup {
         let _ = offset;
-        if let Some(field) = ct.get_field(field_idx) {
-            if out_size == field.field_type.get_size() {
-                return Rc::clone(&field.field_type);
+        // For a partial-union receiver the resolved field index is into the
+        // container union; for a union/struct it is into `ct` directly.  Read the
+        // field type back from the same datatype the truncation resolved against.
+        let field_ty = match ct.get_metatype() {
+            type_metatype::TYPE_PARTIALUNION => ct
+                .get_partial_base()
+                .and_then(|c| c.get_field(field_idx).map(|f| Rc::clone(&f.field_type))),
+            _ => ct.get_field(field_idx).map(|f| Rc::clone(&f.field_type)),
+        };
+        if let Some(field_ty) = field_ty {
+            if out_size == field_ty.get_size() {
+                return field_ty;
             }
         }
     }
