@@ -637,14 +637,22 @@ pub(crate) fn analyze_extra_pop(
 ) -> int4 {
     use crate::fspec::EXTRAPOP_UNKNOWN;
 
-    // myfp = evalfp_called ?: defaultfp; if its extrapop is known, nothing to do.
-    let known = data
+    // C++ `ActionStackPtrFlow::analyzeExtraPop` (coreaction.cc:279-282):
+    //   ProtoModel *myfp = data.getArch()->evalfp_called;
+    //   if (myfp == 0) myfp = data.getArch()->defaultfp;
+    //   if (myfp->getExtraPop() != extrapop_unknown) return;
+    // The `evalfp_called ?: defaultfp` fallback is load-bearing: when no
+    // evaluation model is set, the C++ reads `defaultfp`'s extrapop, so a known
+    // default extrapop suppresses the solve (matching the byte oracle).
+    let myfp_extrapop = data
         .get_arch()
         .eval_fp_called()
-        .map(|m| m.get_extra_pop() != EXTRAPOP_UNKNOWN)
-        .unwrap_or(false);
-    if known {
-        return 0;
+        .or_else(|| data.get_arch().default_fp())
+        .map(|m| m.get_extra_pop());
+    if let Some(ep) = myfp_extrapop {
+        if ep != EXTRAPOP_UNKNOWN {
+            return 0;
+        }
     }
 
     let mut solver = StackSolver::new();
