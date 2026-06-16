@@ -1716,6 +1716,198 @@ use kuna_num::opcodes::OpCode;
 use std::rc::Rc;
 
 impl Funcdata {
+    /// Convert a constant pointer into a `PTRSUB(spacebase, off)` (+ extra/zext/
+    /// subpiece adjusters) anchored on the symbol the constant points to (C++
+    /// `Funcdata::spacebaseConstant`, `funcdata.cc:358-460`).
+    ///
+    /// `op` is the PcodeOp referencing the constant pointer in slot `slot`;
+    /// `entry` is the global Symbol being pointed (in)to (its data-type and entry
+    /// address, the result of `ActionConstantPtr::isPointer`'s `queryContainer`);
+    /// `rampoint` is the constant interpreted as an Address; `origval`/`origsize`
+    /// are the original constant value and Varnode size.
+    ///
+    /// The LOAD-BEARING lines (funcdata.cc:413/417): `ptrentrytype =
+    /// getTypePointerStripArray(sz, sym->getType(), wordsize)` — the STRIPPED-array
+    /// pointer type — is forced onto the PTRSUB output, so `RulePtrArith` (which
+    /// keys on a `TYPE_PTR` input) selects it and builds the already-correct
+    /// `AddTreeState` for the 2D/3D global array.
+    ///
+    /// `uintb` is `u64` with wrapping ops.
+    pub fn spacebase_constant(
+        &mut self,
+        op: OpId,
+        slot: int4,
+        entry: &crate::seams::GlobalContainer,
+        rampoint: &Address,
+        origval: u64,
+        origsize: int4,
+    ) -> KunaResult<()> {
+        use crate::dtype::TypeFactory;
+        use crate::varnode::varnode_flags;
+        use kuna_base::space::AddrSpace;
+
+        let sz = rampoint.get_addr_size();
+        let spaceid = rampoint.get_space().expect("spacebaseConstant: rampoint has no space").clone();
+        let wordsize = spaceid.get_word_size();
+
+        // sb_type = getTypePointer(sz, getTypeSpacebase(spaceid, Address()), wordsize)
+        // ptrentrytype = getTypePointerStripArray(sz, sym->getType(), wordsize)
+        let types =
+            self.get_arch().types_rc().ok_or_else(|| {
+                kuna_base::error::KunaError::lowlevel("spacebaseConstant: no type factory")
+            })?;
+        let invalid = Address::new_invalid();
+        let sb_spacebase = types.get_type_spacebase(Rc::clone(&spaceid), &invalid)?;
+        let sb_type = types.get_type_pointer(sz, sb_spacebase, wordsize)?;
+        // sym->getType(): the covering Symbol's declared type.
+        let entrytype = entry
+            .symbol_type
+            .clone()
+            .ok_or_else(|| kuna_base::error::KunaError::lowlevel("spacebaseConstant: entry has no type"))?;
+        let ptrentrytype =
+            types.get_type_pointer_strip_array(sz, Rc::clone(&entrytype), wordsize)?;
+
+        // extra = rampoint - entry->getAddr(); byteToAddress(extra, wordsize)
+        let extra_bytes = rampoint.get_offset().wrapping_sub(entry.entry_addr.get_offset());
+        let extra = AddrSpace::byte_to_address(extra_bytes, wordsize);
+
+        // COPY-replacement bookkeeping (funcdata.cc:370-388).  For the INT_ADD/
+        // STORE/CALL/comparison cases isCopy stays false and addOp/extraOp/... are
+        // freshly created below.
+        let opc = self.obank().get(op).expect("spacebaseConstant: stale op").code();
+        let mut add_op: Option<OpId> = None;
+        let mut extra_op: Option<OpId> = None;
+        let mut zext_op: Option<OpId> = None;
+        let mut sub_op: Option<OpId> = None;
+        let is_copy = opc == OpCode::CPUI_COPY;
+        if is_copy {
+            if sz < origsize {
+                zext_op = Some(op);
+            } else {
+                // op->insertInput(1): PTRSUB/ADD/SUBPIECE all take 2 parameters.
+                self.obank_mut().get_mut(op).expect("spacebaseConstant: stale op").insert_input(1);
+                if origsize < sz {
+                    sub_op = Some(op);
+                } else if extra != 0 {
+                    extra_op = Some(op);
+                } else {
+                    add_op = Some(op);
+                }
+            }
+        }
+
+        // spacebase_vn = newConstant(sz, 0); updateType(sb_type, true, true);
+        //                setFlags(Varnode::spacebase)
+        let spacebase_vn = self.new_constant(sz, 0);
+        {
+            let v = self.vbank_mut().get_mut(spacebase_vn).expect("spacebaseConstant: spacebase vn");
+            v.update_type_locked(sb_type, true, true);
+            v.set_flags_pub(varnode_flags::spacebase);
+        }
+
+        let op_addr = self.obank().get(op).expect("spacebaseConstant: stale op").get_addr().clone();
+        // addOp: reuse the COPY (if addOp==op) else create a fresh 2-input op.
+        let add_op = match add_op {
+            None => {
+                let new = self.new_op(2, op_addr.clone());
+                self.op_set_opcode_code(new, OpCode::CPUI_PTRSUB);
+                self.new_unique_out(sz, new)?;
+                self.op_insert_before(new, op);
+                new
+            }
+            Some(existing) => {
+                self.op_set_opcode_code(existing, OpCode::CPUI_PTRSUB);
+                existing
+            }
+        };
+        let mut outvn =
+            self.obank().get(add_op).expect("spacebaseConstant: addOp").get_out().expect("addOp out");
+
+        // newconstoff = origval - extra (all already in address units)
+        let newconstoff = origval.wrapping_sub(extra);
+        let newconst = self.new_constant(sz, newconstoff);
+        self.vbank_mut().get_mut(newconst).expect("spacebaseConstant: newconst").set_ptr_check();
+        if spaceid.is_truncated() {
+            self.obank_mut().get_mut(add_op).expect("spacebaseConstant: addOp").set_ptr_flow();
+        }
+        self.op_set_input(add_op, spacebase_vn, 0)?;
+        self.op_set_input(add_op, newconst, 1)?;
+
+        // outvn->updateType(ptrentrytype, typelock, false)  — THE load-bearing line.
+        let mut typelock = entry.is_type_locked();
+        if typelock && entrytype.get_metatype() == crate::dtype::type_metatype::TYPE_UNKNOWN {
+            typelock = false;
+        }
+        self.vbank_mut()
+            .get_mut(outvn)
+            .expect("spacebaseConstant: outvn")
+            .update_type_locked(ptrentrytype, typelock, false);
+
+        if extra != 0 {
+            let extra_op = match extra_op {
+                None => {
+                    let new = self.new_op(2, op_addr.clone());
+                    self.op_set_opcode_code(new, OpCode::CPUI_INT_ADD);
+                    self.new_unique_out(sz, new)?;
+                    self.op_insert_before(new, op);
+                    new
+                }
+                Some(existing) => {
+                    self.op_set_opcode_code(existing, OpCode::CPUI_INT_ADD);
+                    existing
+                }
+            };
+            let extconst = self.new_constant(sz, extra);
+            self.vbank_mut().get_mut(extconst).expect("spacebaseConstant: extconst").set_ptr_check();
+            self.op_set_input(extra_op, outvn, 0)?;
+            self.op_set_input(extra_op, extconst, 1)?;
+            outvn = self.obank().get(extra_op).expect("spacebaseConstant: extraOp").get_out().expect("extraOp out");
+        }
+
+        if sz < origsize {
+            // Extend the smaller new constant back up to the original Varnode size.
+            let zext_op = match zext_op {
+                None => {
+                    let new = self.new_op(1, op_addr.clone());
+                    self.op_set_opcode_code(new, OpCode::CPUI_INT_ZEXT);
+                    self.new_unique_out(origsize, new)?;
+                    self.op_insert_before(new, op);
+                    new
+                }
+                Some(existing) => {
+                    self.op_set_opcode_code(existing, OpCode::CPUI_INT_ZEXT);
+                    existing
+                }
+            };
+            self.op_set_input(zext_op, outvn, 0)?;
+            outvn = self.obank().get(zext_op).expect("spacebaseConstant: zextOp").get_out().expect("zextOp out");
+        } else if origsize < sz {
+            // Truncate the bigger new constant down to the original Varnode size.
+            let sub_op = match sub_op {
+                None => {
+                    let new = self.new_op(2, op_addr.clone());
+                    self.op_set_opcode_code(new, OpCode::CPUI_SUBPIECE);
+                    self.new_unique_out(origsize, new)?;
+                    self.op_insert_before(new, op);
+                    new
+                }
+                Some(existing) => {
+                    self.op_set_opcode_code(existing, OpCode::CPUI_SUBPIECE);
+                    existing
+                }
+            };
+            self.op_set_input(sub_op, outvn, 0)?;
+            let lsb = self.new_constant(4, 0); // Take least significant piece
+            self.op_set_input(sub_op, lsb, 1)?;
+            outvn = self.obank().get(sub_op).expect("spacebaseConstant: subOp").get_out().expect("subOp out");
+        }
+
+        if !is_copy {
+            self.op_set_input(op, outvn, slot)?;
+        }
+        Ok(())
+    }
+
     /// Borrow the HighVariable arena (the W7 high-variable map).
     pub fn high_bank(&self) -> &crate::variable::HighVariableBank {
         &self.high_bank
