@@ -1737,6 +1737,165 @@ impl Heritage {
         let _addrtied = (fl & varnode_flags::addrtied) != 0;
     }
 
+    /// Remove deprecated CPUI_MULTIEQUAL, CPUI_INDIRECT, or CPUI_COPY ops,
+    /// preparing to re-heritage (C++ `Heritage::removeRevisitedMarkers`,
+    /// `heritage.cc:245`).
+    ///
+    /// If a previous Varnode was heritaged through a MULTIEQUAL or INDIRECT op,
+    /// but now a larger range containing the Varnode is being heritaged, throw
+    /// away the op, letting the data-flow for the new larger range determine the
+    /// data-flow for the old Varnode.  The original Varnode is redefined as the
+    /// output of a SUBPIECE of a larger free Varnode.  Return-form COPYs are
+    /// simply removed, in preparation for a larger COPY.
+    fn remove_revisited_markers(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        remove: &[crate::seams::VarnodeId],
+        addr: &Address,
+        size: int4,
+    ) {
+        use kuna_num::opcodes::OpCode;
+
+        // HeritageInfo *info = getInfo(addr.getSpace());
+        // if (info->deadremoved > 0) { bumpDeadcodeDelay(...); warningHeader once. }
+        let space = addr.get_space().expect("remove_revisited_markers: addr space").clone();
+        if self.get_info(&space).deadremoved > 0 {
+            self.bump_deadcode_delay_seamed(fd, &space);
+            if !self.get_info(&space).warningissued {
+                self.get_info_mut(&space).warningissued = true;
+                // fd->warningHeader("Heritage AFTER dead removal. Revisit: <addr>")
+                // SEAM(W8): the warning text needs Varnode::printRaw on `addr` (the
+                // W8 print surface); the header is cosmetic (a block comment, not
+                // IR) and the dead-code-delay bump above already records the event,
+                // exactly as the `heritage()` deadremoved warning is handled.
+            }
+        }
+
+        // for (i = 0; i < remove.size(); ++i) { ... }
+        for &vn in remove {
+            // PcodeOp *op = vn->getDef(); BlockBasic *bl = op->getParent();
+            let op = fd
+                .vbank()
+                .get(vn)
+                .expect("remove_revisited_markers: stale remove vn")
+                .get_def()
+                .expect("remove_revisited_markers: marker vn has no def");
+            let bl = fd
+                .obank()
+                .get(op)
+                .expect("remove_revisited_markers: stale op")
+                .get_parent()
+                .expect("remove_revisited_markers: marker op has no parent");
+            let code = fd.obank().get(op).expect("remove_revisited_markers: stale op").code();
+
+            // `pos` is the C++ block iterator the SUBPIECE is inserted *before*;
+            // `None` denotes `bl->endOp()` (append at the block's end).
+            let pos: Option<crate::seams::OpId> = if code == OpCode::CPUI_INDIRECT {
+                // Varnode *iopVn = op->getIn(1);
+                // PcodeOp *targetOp = PcodeOp::getOpFromConst(iopVn->getAddr());
+                let iop_vn = fd
+                    .obank()
+                    .get(op)
+                    .expect("remove_revisited_markers: stale INDIRECT op")
+                    .get_in(1)
+                    .expect("remove_revisited_markers: INDIRECT has no iop input");
+                let iop_off = fd
+                    .vbank()
+                    .get(iop_vn)
+                    .expect("remove_revisited_markers: stale iop vn")
+                    .get_addr()
+                    .get_offset();
+                let target_op = crate::funcdata_varnode::op_iop_decode(iop_off);
+                // if (targetOp->isDead()) pos = op->getBasicIter(); else pos =
+                //   targetOp->getBasicIter(); ++pos;  -- insert SUBPIECE *after* the
+                //   target of the INDIRECT.
+                let anchor = if fd
+                    .obank()
+                    .get(target_op)
+                    .map(|o| o.is_dead())
+                    .unwrap_or(true)
+                {
+                    op
+                } else {
+                    target_op
+                };
+                // ++pos: the op following `anchor` in its block (None == endOp()).
+                let after = fd
+                    .obank()
+                    .get(anchor)
+                    .expect("remove_revisited_markers: stale anchor op")
+                    .basic_neighbours()
+                    .1;
+                // vn->clearAddrForce();  -- Replacement INDIRECT will hold the address
+                fd.vbank_mut()
+                    .get_mut(vn)
+                    .expect("remove_revisited_markers: stale vn for clearAddrForce")
+                    .clear_addr_force();
+                after
+            } else if code == OpCode::CPUI_MULTIEQUAL {
+                // pos = op->getBasicIter(); ++pos;  -- Insert SUBPIECE after all
+                // MULTIEQUALs in block: while(pos != endOp && (*pos)==MULTIEQUAL) ++pos;
+                let mut after = fd
+                    .obank()
+                    .get(op)
+                    .expect("remove_revisited_markers: stale MULTIEQUAL op")
+                    .basic_neighbours()
+                    .1;
+                while let Some(p) = after {
+                    let is_multi = fd
+                        .obank()
+                        .get(p)
+                        .map(|o| o.code() == OpCode::CPUI_MULTIEQUAL)
+                        .unwrap_or(false);
+                    if !is_multi {
+                        break;
+                    }
+                    after = fd
+                        .obank()
+                        .get(p)
+                        .expect("remove_revisited_markers: stale block op")
+                        .basic_neighbours()
+                        .1;
+                }
+                after
+            } else {
+                // Remove return form COPY.  fd->opUnlink(op); continue;
+                fd.op_unlink(op);
+                continue;
+            };
+
+            // int4 offset = vn->overlap(addr,size);
+            let offset = fd
+                .vbank()
+                .get(vn)
+                .expect("remove_revisited_markers: stale vn for overlap")
+                .overlap_range(addr, size);
+            // fd->opUninsert(op);
+            fd.op_uninsert(op);
+            // Varnode *big = fd->newVarnode(size,addr); big->setActiveHeritage();
+            let big = fd.new_varnode(size, addr, None);
+            fd.vbank_mut()
+                .get_mut(big)
+                .expect("remove_revisited_markers: new big vn")
+                .set_active_heritage();
+            // newInputs = { big, newConstant(4, offset) };
+            // cast: int4 offset -> uintb constant value, as the C++ `newConstant`
+            // widens the (non-negative) byte offset into the constant's value.
+            let off_const = fd.new_constant(4, offset as uintb);
+            // fd->opSetOpcode(op, CPUI_SUBPIECE); fd->opSetAllInput(op, newInputs);
+            fd.op_set_opcode(op, typeop_skeleton(OpCode::CPUI_SUBPIECE));
+            fd.op_set_all_input(op, &[big, off_const])
+                .expect("remove_revisited_markers: op_set_all_input");
+            // fd->opInsert(op, bl, pos);
+            fd.op_insert(op, bl, pos);
+            // vn->setWriteMask();
+            fd.vbank_mut()
+                .get_mut(vn)
+                .expect("remove_revisited_markers: stale vn for setWriteMask")
+                .set_write_mask();
+        }
+    }
+
     /// Normalize a too-small read Varnode (C++ `Heritage::normalizeReadSize`,
     /// `heritage.cc:391`).  Builds a SUBPIECE of a new full-size Varnode that
     /// defines the original (now masked) read, returning the new full read.
@@ -2685,14 +2844,15 @@ impl Heritage {
                 continue;
             }
             if !removevars.is_empty() {
-                // SEAM: removeRevisitedMarkers (heritage.cc:245) deletes stale
+                // removeRevisitedMarkers (heritage.cc:245): deletes stale
                 // MULTIEQUAL/INDIRECT markers from a previous pass over a now-
-                // smaller range; only reached when `collect` saw prior-pass
-                // marker writes smaller than the range (multi-pass overlap),
-                // which the single-pass critical path does not hit.
-                unimplemented_seam(
-                    "Heritage::placeMultiequals removeRevisitedMarkers (multi-pass overlap)",
-                );
+                // larger range, replacing each with a SUBPIECE of a new full-size
+                // free Varnode (return-form COPYs are simply removed).  Reached on
+                // the multi-pass overlap path (e.g. `revisit.xml`: a global is
+                // written at one size, an aliased access at a larger size forces
+                // the SSA form to be revisited).
+                let removed = std::mem::take(&mut removevars);
+                self.remove_revisited_markers(fd, &removed, &memrange.addr, size);
             }
             self.guard_input(fd, &memrange.addr, size, &inputvars);
             let add_indirects = memrange.new_addresses();
