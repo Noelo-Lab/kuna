@@ -1811,6 +1811,18 @@ impl Architecture {
                         .get_space_by_name(&spname)
                         .ok_or_else(|| KunaError::lowlevel("<addr> unknown space"))?
                         .clone();
+                    // C++ `VarnodeData::decodeFromAttributes` (pcoderaw.cc:33) reads the
+                    // `space` attribute, then dispatches `space->decodeAttributes(...)`.
+                    // For the join space that is `JoinSpace::decodeAttributes`
+                    // (space.cc:539): the `<addr space="join" piece1=".." piece2=".."/>`
+                    // pentry must be resolved by joining its register pieces, not read
+                    // as a plain offset.  Without this dispatch the x86 struct-return
+                    // (`<addr space="join" piece1="EDX" piece2="EAX"/>`) output pentry
+                    // decodes to offset 0 and `decode_default_proto` fails -> empty model.
+                    if space.get_type() == kuna_base::space::spacetype::IPTR_JOIN {
+                        let off = self.decode_join_addr(child)?;
+                        return Ok((space, off));
+                    }
                     let off = attr_str(child, "offset")
                         .and_then(|s| parse_int(&s))
                         .unwrap_or(0);
@@ -1820,6 +1832,93 @@ impl Architecture {
             }
         }
         Err(KunaError::lowlevel("<pentry> has no <register>/<addr> storage"))
+    }
+
+    /// Resolve a `<addr space="join" piece1=".." piece2=".."/>` element to the
+    /// unified offset within the join space (C++ `JoinSpace::decodeAttributes`,
+    /// space.cc:539).
+    ///
+    /// "piece1" corresponds to the most significant piece.  Each piece is either
+    /// a register name (no `:` — `getTrans()->getRegister(attrVal)`) or a
+    /// `space:offset:size` triple.  An optional `logicalsize` attribute carries
+    /// the unified size for a single-piece (float) join.  `find_add_join`
+    /// (space.rs:3014) constructs the logical address; we return its unified
+    /// offset (the `addr` arm has already resolved the join `AddrSpace`).
+    ///
+    /// This walks the XML element's attributes directly (the proto decode runs
+    /// over `xml::Element`s, not a `Decoder`), reproducing the C++
+    /// `getNextAttributeId` / `getIndexedAttributeId(ATTRIB_PIECE)` loop: the
+    /// legacy `pieceN` attribute name maps to `ATTRIB_PIECE` index `N-1`.
+    fn decode_join_addr(&self, addr_el: &Rc<kuna_base::xml::Element>) -> KunaResult<uintb> {
+        use kuna_base::space::VarnodeStorage;
+        let mut pieces: Vec<VarnodeStorage> = Vec::new();
+        let mut logicalsize: u32 = 0;
+        // C++ accumulates `sizesum` but never reads it (kept for line parity).
+        let mut _sizesum: u32 = 0;
+        let nattr = addr_el.get_num_attributes();
+        for i in 0..nattr {
+            let name = addr_el.get_attribute_name(i);
+            if name == "logicalsize" {
+                let raw = String::from_utf8_lossy(addr_el.get_attribute_value_at(i)).into_owned();
+                logicalsize = parse_int(&raw)
+                    .ok_or_else(|| KunaError::lowlevel("bad join logicalsize"))?
+                    as u32; // cast: uintb -> uint4 member (C++ readUnsignedInteger)
+                continue;
+            }
+            // The legacy indexed attribute is named "piece1", "piece2", ...; its
+            // ATTRIB_PIECE index is (N-1).  Non-`piece*` attributes (e.g.
+            // `space`) are skipped, matching the C++ `attribId < ATTRIB_PIECE`
+            // / non-piece branches.
+            let pos: i32 = match name.strip_prefix("piece") {
+                Some(rest) => match rest.parse::<i32>() {
+                    Ok(n) if n >= 1 => n - 1,
+                    _ => continue,
+                },
+                None => continue,
+            };
+            // C++ `if (pos > MAX_PIECES) continue;` (JoinSpace::MAX_PIECES = 64,
+            // space.hh:233; the constant is `pub(crate)` to kuna-base, so the
+            // literal is repeated here against the same source).
+            if pos > 64 {
+                continue;
+            }
+            while pieces.len() <= pos as usize {
+                // cast: int4 index -> usize, non-negative here (pos >= 0)
+                pieces.push(VarnodeStorage::default());
+            }
+            let attr_val = String::from_utf8_lossy(addr_el.get_attribute_value_at(i)).into_owned();
+            let vdat: VarnodeStorage = match attr_val.find(':') {
+                None => {
+                    // Register-name piece: C++ `getTrans()->getRegister(attrVal)`.
+                    let vd = self.translate.get_register_varnode(attr_val.as_bytes())?;
+                    VarnodeStorage { space: vd.space, offset: vd.offset, size: vd.size }
+                }
+                Some(offpos) => {
+                    let rest = &attr_val[offpos + 1..];
+                    let szrel = rest
+                        .find(':')
+                        .ok_or_else(|| KunaError::lowlevel("join address piece attribute is malformed"))?;
+                    let szpos = offpos + 1 + szrel;
+                    let spcname = &attr_val[..offpos];
+                    let space = self.manage().get_space_by_name(spcname).cloned();
+                    let offset = parse_int(&attr_val[offpos + 1..szpos]).unwrap_or(0);
+                    let size64 = parse_int(&attr_val[szpos + 1..]).unwrap_or(0);
+                    // C++ extraction into a uint4 saturates on overflow.
+                    let size = if size64 > u64::from(u32::MAX) {
+                        u32::MAX
+                    } else {
+                        size64 as u32 // cast: checked above (uintb -> uint4)
+                    };
+                    VarnodeStorage { space, offset, size }
+                }
+            };
+            _sizesum = _sizesum.wrapping_add(vdat.size);
+            pieces[pos as usize] = vdat; // cast: int4 index -> usize, non-negative here
+        }
+        let rec = self.manage().find_add_join(&pieces, logicalsize)?;
+        // C++ returns `rec->getUnified().offset` (and fills `size`, which the
+        // caller `ParamEntry` derives from maxsize, not this).
+        Ok(rec.get_unified().offset)
     }
 
     /// Build the universal Action tree + the "decompile" root (C++

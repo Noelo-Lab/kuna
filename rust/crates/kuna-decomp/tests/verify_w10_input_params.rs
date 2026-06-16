@@ -206,17 +206,22 @@ fn mixfloatint_multislot_group_recovers_full_arity() {
 /// (3) NO-REGRESSION fence: models that do not depend on the `<group>` decode
 /// (or whose recovery was already correct) must keep their exact decompiled
 /// body.  `nanops` already recovers a `float8` parameter through the model;
-/// `promote_compare` and `boolless` are `(void)` in the oracle and must stay
-/// that way.  The whole-suite cross-binary sweep (recorded in the verdict)
-/// proved these byte-identical to the `rust-port` baseline; here we additionally
-/// pin the exact signature line and run-to-run determinism so a later group
-/// change cannot silently perturb them.
+/// `boolless` is `(void)` in the oracle and must stay that way.
+///
+/// `promote_compare` exercises the x86 `<addr space="join" piece1="EDX"
+/// piece2="EAX"/>` struct-return output pentry: once the join-pentry proto model
+/// decodes (`decode_join_addr`), the default model builds and the C++ oracle's
+/// recovered `xunknown4 promote_compare(char *a0)` signature appears (it was
+/// `void promote_compare(void)` only while the join pentry failed to decode and
+/// the model fell back to empty).  We pin the recovered return-type + `char *`
+/// parameter shape (the oracle-faithful recovery) and run-to-run determinism so a
+/// later group/join change cannot silently perturb it.
 #[test]
 fn unrelated_models_keep_exact_signature() {
     for (stem, sig) in [
         ("boolless", "uint1 boolless(void)"),
         ("nan", "void nanops(float8)"),
-        ("promotecompare", "void promote_compare(void)"),
+        ("promotecompare", "xunknown4 promote_compare(char *"),
     ] {
         let a = match dump_body(&rust_test_bin(), stem) {
             Some(t) => t,

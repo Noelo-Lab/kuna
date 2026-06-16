@@ -225,9 +225,17 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
     //     MULTIEQUAL — boolless `ACC = #1` / `ACC = MULTIEQUAL(...)`) spans the
     //     whole function, so C++ ties it and it stays explicit (`v1 = ...;
     //     return v1;`).
+    //   * a pure constant-return transient (x86 `promote_compare`'s `EAX = #0x0`
+    //     / `EAX = #0x1`, every write a `COPY` of a constant, no phi join) is NOT
+    //     a whole-function local: C++ `inScope` leaves it free and the printer
+    //     collapses the `EAX = #N; return EAX;` round-trip to `return N;`.  The
+    //     all-constant-COPY test below (independent of `output_locked`) un-ties
+    //     exactly this shape — a register copying a *non-constant* value
+    //     (`readpartial`'s `EAX = COPY(glob1.a + 10)`) is not all-constant and
+    //     stays on the marker / `output_locked` arm.
     //   * the `output_locked` gate excludes a leftover register in a void
-    //     function (e.g. `global_cross`'s dead RAX): no declared output means this
-    //     storage is not the recovered return value, so it stays tied.
+    //     function (no declared output): with output unlocked and no constant
+    //     return shape it stays tied.
     // This is an IR-shape + recovered-output test, not a name/address special
     // case.
     let output_locked = data.get_func_proto().is_output_locked();
@@ -307,6 +315,41 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
     if all_marker_inputs_persist {
         // The register is the persist global passing through the join — leave it
         // un-tied so `mergeMarker` folds it into the global HighVariable.
+        return;
+    }
+
+    // (kuna over-tie fix) A return register written *only* by `COPY`s of a
+    // constant (x86 `promote_compare`'s `EAX = #0x0` / `EAX = #0x1` return
+    // constants) is a pure constant-return transient.  C++ `inScope` never
+    // restructures such a register into a whole-function local — it collapses the
+    // `EAX = #N; return EAX;` round-trip to `return N;`, leaving the register
+    // free.  Tying it (the previous behaviour for any unlocked output) pulls the
+    // overlapping AL low-byte's promotion `(uint1)` cast into the tied EAX group
+    // and drops it, regressing `Promotion on compare #2` once the join-pentry
+    // proto model builds.  This is a constant-source IR-shape test off the
+    // recovered output, not a name/address special case: a register copying a
+    // *non-constant* value (`readpartial`'s `EAX = COPY(glob1.a + 10)`) is not
+    // all-constant and stays handled by the marker/`output_locked` arm below, so
+    // its `Partial Merge #3` rendering is unaffected.
+    let all_writes_const_copy = !written.is_empty()
+        && written.iter().all(|&vn| {
+            let def = match data.vbank().get(vn).and_then(|v| v.get_def()) {
+                Some(d) => d,
+                None => return false, // inputs are not constant COPYs
+            };
+            match data.obank().get(def) {
+                Some(o) => {
+                    o.code() == OpCode::CPUI_COPY
+                        && o.get_in(0)
+                            .and_then(|iv| data.vbank().get(iv))
+                            .map(|v| v.is_constant())
+                            .unwrap_or(false)
+                }
+                None => false,
+            }
+        });
+    if all_writes_const_copy {
+        // Pure constant-return transient — leave un-tied (collapses to `return N;`).
         return;
     }
 
