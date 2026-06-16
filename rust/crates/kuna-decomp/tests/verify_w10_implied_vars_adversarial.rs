@@ -357,43 +357,50 @@ fn w10_implied_multiwrite_return_stays_explicit_not_overinlined() {
     };
     eprintln!("=== condconst_copy ===\n{rust}");
 
-    // The return value is a NAMED, EXPLICIT local that is assigned (not inlined).
+    // The store of `a0` is a NAMED, EXPLICIT statement that is assigned (not
+    // inlined / not dead-code eliminated).
     //
-    // NOTE (rport/w10-return-narrow): the return register here is the 8-byte RAX
-    // that the lift fills via `RAX = ZEXT(EAX)` and the SAME logical value `a0`.
-    // C++ `SubvariableFlow`/`RuleSubvarZext` (subflow.cc) traces the logical 4-byte
-    // value across the RETURN (`tryReturnPull`) and TRIMS the return to its used
-    // (int4) width, collapsing the ZEXT — so the assignment is `v1 = a0`, NOT
-    // `v1 = ZEXT(a0)`.  Before this wave `tryReturnPull` was a SEAM stub that
-    // aborted the trace, so the engine LEFT the ZEXT in place (a deviation from
-    // C++); with the seam closed the ZEXT correctly collapses.  The test's real
-    // intent — the multi-write return stays an explicit NAMED local rather than
-    // being over-inlined to `return <expr>;` — is unchanged and still asserted.
+    // NOTE (rport/w10-global-persist2): `condconst_copy` writes `a0` to the RAM
+    // address `r0x301020`.  The condconst.xml datatest names that address `glob2`
+    // (`map addr r0x301020 int4 glob2`) and asserts `glob2 = d;`.  This adversarial
+    // probe renders the SAME function WITHOUT the `map addr` console setup, so the
+    // global is auto-named `dat_301020`.  Once the global-scope ram range is seeded
+    // (Architecture::decodeGlobal + addToGlobalScope; the cspec
+    // `<global><range space="ram"/></global>`), `Scope::queryProperties`'s `inScope`
+    // discovery branch (database.cc:1276-1281) paints `0x301020` with
+    // `mapped|addrtied|persist`, so the store SURVIVES `ActionDeadCode` and renders
+    // as the explicit global write `dat_301020 = a0;` — exactly the C++ oracle's
+    // behavior for a persistent global with no Symbol name.  Before this wave the
+    // global range was unseeded, the store was incorrectly DCE'd, and the value
+    // leaked out as a synthetic local return (`v1 = a0; return v1;`) — a deviation
+    // from C++ this wave corrects.  The test's real intent — the multi-write store
+    // stays an EXPLICIT statement rather than being over-inlined / dropped — is
+    // unchanged and still asserted, now against the faithful persistent-global form.
     assert!(
-        rust.contains("v1 = a0"),
-        "the multi-write return must stay an explicit named local `v1 = a0`, got:\n{rust}"
+        rust.contains("dat_301020 = a0"),
+        "the persistent global store must stay an explicit statement \
+         `dat_301020 = a0` (global-scope ram range seeded -> persist+addrtied -> \
+         survives ActionDeadCode), got:\n{rust}"
     );
+    // CRITICAL anti-over-inline / anti-DCE: the store must NOT have been collapsed
+    // away.  Before global-persist it leaked as a synthetic local return; a regress
+    // would re-introduce `v1 = a0` / `return v1;` / `return a0;`.
     assert!(
-        rust.contains("return v1;"),
-        "the multi-write return must be returned by name `return v1;`, got:\n{rust}"
-    );
-    // CRITICAL anti-over-inline: it must NOT have collapsed the storage away into
-    // the return expression.  C++ keeps a multi-def/cover-conflicting value
-    // explicit; an over-un-tie would produce `return a0;` (or `return ZEXT(a0);`).
-    assert!(
-        !rust.contains("return a0") && !rust.contains("return ZEXT(a0)"),
-        "OVER-INLINE: a multi-write return value was inlined into the return \
-         expression — the cover/multi-def-conflicting storage must stay explicit, \
-         got:\n{rust}"
-    );
-    // The value is assigned exactly once and returned by name — it stays an
-    // explicit local, never inlined into the return expression.
-    assert_eq!(
-        rust.matches("v1 = a0").count(),
-        1,
-        "condconst_copy's functionally-equal multi-def `v1` must fold to one \
-         `v1 = a0` (C++ RuleMultiCollapse + SubvarZext return-trim), and stay \
+        !rust.contains("v1 = a0")
+            && !rust.contains("return v1")
+            && !rust.contains("return a0")
+            && !rust.contains("return ZEXT(a0)"),
+        "REGRESSION: the persistent global store was DCE'd / inlined back into a \
+         synthetic local return — the addrtied/persist global write must stay \
          explicit, got:\n{rust}"
+    );
+    // The global is stored exactly once — it stays an explicit statement, never
+    // inlined or duplicated.
+    assert_eq!(
+        rust.matches("dat_301020 = a0").count(),
+        1,
+        "condconst_copy's persistent global store must render as exactly one \
+         explicit `dat_301020 = a0;`, got:\n{rust}"
     );
 }
 

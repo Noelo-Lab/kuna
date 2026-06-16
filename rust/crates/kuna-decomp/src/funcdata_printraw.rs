@@ -18,6 +18,7 @@
 //! `dcp->fd->printRaw(*status->fileoptr)` against `dcp->conf`.
 
 use kuna_base::address::Address;
+use kuna_base::space::spacetype;
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
@@ -204,7 +205,34 @@ fn render_varnode(
     let is_written = v.is_written();
     let def = v.get_def();
 
-    let expect = render_varnode_no_markup(s, arch, &addr, size)?;
+    // C++ `printRawNoMarkup` dispatches `loc.printRaw(s)` to the space's
+    // `printRaw` override.  For an \e iop-space Varnode (the second input of a
+    // CPUI_INDIRECT, encoding the call/return op it guards around), that override
+    // is `IopSpace::printRaw` (op.cc:41-59), which decodes the offset back to the
+    // PcodeOp and prints `op->getSeqNum()` (the non-branch arm).  kuna-base's
+    // `IopSpace::printRaw` leaves this to W3 (LOSS-012), so route it here where the
+    // op arena is reachable: shortcut char `i` + the referenced op's seqnum.
+    let expect = if addr.get_space().map(|sp| sp.get_type() == spacetype::IPTR_IOP) == Some(true) {
+        // s << loc.getShortcut(); expect = trans->getDefaultSize(); loc.printRaw(s);
+        let space = addr.get_space().expect("render_varnode: iop space present");
+        s.push(space.get_shortcut());
+        let referenced = crate::funcdata_varnode::op_iop_decode(addr.get_offset());
+        // The non-branch (CPUI_INDIRECT) arm of IopSpace::printRaw needs only the
+        // op's seqnum.  The branch arm's `block_info` closure is unreached for an
+        // INDIRECT iop input (op.is_branch() == false); supply a panicking stub so
+        // a future branch-form iop varnode here is loudly caught, not silently
+        // mis-rendered.
+        if let Some(referenced_op) = fd.obank().get(referenced) {
+            crate::op::iop_space_print_raw(referenced_op, s, &|_op| {
+                unreachable!("iop-space printRaw branch arm unreached for an INDIRECT iop input")
+            })
+            .map_err(|e| e.explain().to_string())?;
+        }
+        // C++ `expect = trans->getDefaultSize()`.
+        arch.manage().get_default_size()
+    } else {
+        render_varnode_no_markup(s, arch, &addr, size)?
+    };
     if expect != size {
         // C++ `s << ':' << setw(1) << size;` — a single decimal field.
         s.push(':');

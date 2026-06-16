@@ -995,25 +995,54 @@ impl Architecture {
             Some(s) => s,
             None => return Ok(()), // no global scope attached (degrade gracefully)
         };
+        // Collect the resolved (space, first, last) triples first, so the register
+        // arm can borrow `self.translate` (via `get_register_varnode`) before the
+        // `&mut self.symboltab.add_range` below.
+        let mut to_add: Vec<(Rc<AddrSpace>, uintb, uintb)> = Vec::new();
         for child in global_el.get_children().iter() {
-            // Only <range>/<register> children carry storage (C++ peekElement loop
-            // over RangeProperties::decode, which only accepts those two elements).
             let nm = child.get_name();
-            if nm != "range" && nm != "register" {
-                continue;
+            if nm == "register" {
+                // C++ `Range::Range` register branch (address.cc:239-245):
+                //   point = trans->getRegister(properties.spaceName);
+                //   spc = point.space; first = point.offset;
+                //   last = (first-1) + point.size;
+                // We resolve through the Translate (the reliably-installed register
+                // lookup, the same path decode_stack_pointer uses) rather than
+                // kuna-base's `Range::from_properties`, whose `manage.register_lookup()`
+                // is not wired in every fixture.  `name` carries the register name.
+                let reg_name = match attr_str(child, "name") {
+                    Some(n) => n,
+                    None => continue,
+                };
+                let point = self.get_register_varnode(reg_name.as_bytes())?;
+                let spc = match point.space.clone() {
+                    Some(s) => s,
+                    None => continue, // null register space (C++ UB) — skip defensively
+                };
+                let first = point.offset;
+                // last = (first-1) + point.size, uintb wraparound (address.cc:244).
+                let last = first.wrapping_sub(1).wrapping_add(u64::from(point.size));
+                to_add.push((spc, first, last));
+            } else if nm == "range" {
+                // C++ `Range::Range` range branch: resolve the space, widen the
+                // empty form to spc->getHighest().  No register lookup needed.
+                let mut decoder = XmlDecode::new_with_root(&manager, &registry, child, 0);
+                let mut props = RangeProperties::new();
+                props.decode(&mut decoder)?;
+                let range = Range::from_properties(&props, self.manage())?;
+                to_add.push((
+                    Rc::clone(range.get_space()),
+                    range.get_first(),
+                    range.get_last(),
+                ));
             }
-            let mut decoder = XmlDecode::new_with_root(&manager, &registry, child, 0);
-            // `RangeProperties::decode` itself opens the element and rejects
-            // anything but <range>/<register> (we already filtered by name above,
-            // so the open always succeeds).
-            let mut props = RangeProperties::new();
-            props.decode(&mut decoder)?;
-            // C++ `addToGlobalScope(props)`: Range(props,this) resolves the space
-            // and (for the empty form) widens `last` to spc->getHighest(); then
-            // symboltab->addRange(globalScope, spc, range.getFirst(), range.getLast()).
-            let range = Range::from_properties(&props, self.manage())?;
-            let spc = Rc::clone(range.get_space());
-            self.symboltab.add_range(scope, spc, range.get_first(), range.get_last());
+            // (Any other child element is ignored, exactly as C++
+            // RangeProperties::decode accepts only <range>/<register>.)
+        }
+        // C++ `addToGlobalScope`: symboltab->addRange(globalScope, spc, first, last)
+        // for each resolved range.
+        for (spc, first, last) in to_add {
+            self.symboltab.add_range(scope, spc, first, last);
         }
         Ok(())
     }
