@@ -563,6 +563,40 @@ fn addlflag_predicates() {
     assert!(!type_op_info(OpCode::CPUI_INT_ADD).is_floating_point_op());
 }
 
+/// VERIFIER (w10-doublemove): pin the exact `isArithmeticOp() ||
+/// isFloatingPointOp()` disjunction that `double.rs::op_is_arith_or_float` now
+/// reads from this table (formerly a hard-coded `false`).  C++
+/// `RuleDoubleIn/Out::attemptMarking` (double.cc:3239,3320) uses this disjunction
+/// to decide whether a whole "produces/reads a logical whole".  The whole must
+/// classify TRUE for arithmetic (INT_ADD: addlflags=arithmetic_op|inherits_sign,
+/// typeop.cc:1172) and float (FLOAT_ADD: addlflags=floatingpoint_op,
+/// typeop.cc:1788) opcodes, and FALSE for the piece-forming opcodes the rule
+/// must never mistake for a whole (COPY/PIECE/SUBPIECE carry no addlflags —
+/// typeop.cc:391,2039,2068).  A regression here silently re-disables (false) or
+/// over-fires (true) the dominant marking branch.
+#[test]
+fn w10_doublemove_arith_or_float_classification() {
+    let arith_or_float = |opc: OpCode| {
+        let i = type_op_info(opc);
+        i.is_arithmetic_op() || i.is_floating_point_op()
+    };
+    // Wholes that DO produce/read a logical whole.
+    assert!(arith_or_float(OpCode::CPUI_INT_ADD), "INT_ADD is arithmetic");
+    assert!(arith_or_float(OpCode::CPUI_INT_MULT), "INT_MULT is arithmetic");
+    assert!(arith_or_float(OpCode::CPUI_INT_SUB), "INT_SUB is arithmetic");
+    assert!(arith_or_float(OpCode::CPUI_FLOAT_ADD), "FLOAT_ADD is floating-point");
+    assert!(arith_or_float(OpCode::CPUI_FLOAT_MULT), "FLOAT_MULT is floating-point");
+    // The piece-forming / move opcodes must NOT be mistaken for a logical whole.
+    assert!(!arith_or_float(OpCode::CPUI_COPY), "COPY is neither (typeop.cc:391)");
+    assert!(!arith_or_float(OpCode::CPUI_PIECE), "PIECE is neither (typeop.cc:2039)");
+    assert!(!arith_or_float(OpCode::CPUI_SUBPIECE), "SUBPIECE is neither");
+    // Logical (bitwise) ops are also NOT arithmetic/float — the comment in
+    // attemptMarking notes it is "hard to tell" for logical ops, and the C++
+    // deliberately declines them.
+    assert!(!arith_or_float(OpCode::CPUI_INT_AND), "INT_AND is logical, not arith/float");
+    assert!(!arith_or_float(OpCode::CPUI_INT_OR), "INT_OR is logical, not arith/float");
+}
+
 /// Build a factory wired with the alignment map + a max base size of 8, the
 /// minimal setup the `getBase` paths the local-type calculators hit require.
 fn factory() -> TypeFactoryImpl {

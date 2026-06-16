@@ -2963,4 +2963,97 @@ mod tests {
         assert!(v.is_input());
         assert_eq!(v.get_flags() & varnode_flags::input, varnode_flags::input);
     }
+
+    // =====================================================================
+    // VERIFIER (w10-doublemove): adversarial tests for combine_input_varnodes
+    // (funcdata_varnode.cc:383).  The ported body has NO porter unit test in
+    // this module, so these pin the C++-faithful behavior at the spots the
+    // hunt list flagged: the isInput / contiguity guards (and the partial-state
+    // they leave on the throw path), the little-endian contiguity arithmetic,
+    // and the PIECE-reader -> COPY collapse with the new combined input.
+    // =====================================================================
+
+    /// Build a 2-input PIECE op reading (vnhi, vnlo) and register it on both
+    /// operands' descend lists (mirrors how RuleDoubleOut would have wired it).
+    fn make_piece_reader(fd: &mut Funcdata, off: u64, vnhi: VarnodeId, vnlo: VarnodeId) -> OpId {
+        let r = ram(fd);
+        let pc = Address::new(r, off);
+        let op = fd.obank_mut().create_at(2, pc);
+        fd.obank_mut().change_opcode(op, TypeOp::new(OpCode::CPUI_PIECE, 0, "PIECE"));
+        fd.vbank_mut().add_descend(vnhi, op).unwrap();
+        fd.obank_mut().get_mut(op).unwrap().set_input(Some(vnhi), 0);
+        fd.vbank_mut().add_descend(vnlo, op).unwrap();
+        fd.obank_mut().get_mut(op).unwrap().set_input(Some(vnlo), 1);
+        op
+    }
+
+    /// HUNT LIST (Exception -> Result partial-state parity; isInput guard).
+    /// C++ `combineInputVarnodes` throws "Varnodes being combined are not inputs"
+    /// (funcdata_varnode.cc:386-387) BEFORE touching the graph.  The Rust port
+    /// must return Err at the same point with NO mutation (no destroyed
+    /// varnodes, no new input).  A free (non-input) hi varnode triggers it.
+    #[test]
+    fn combine_input_varnodes_w10dm_rejects_non_input_no_mutation() {
+        let mut fd = build_fd();
+        // lo is a real input at 0x100 size 4; hi is a *free* varnode at 0x104.
+        let lo = make_input(&mut fd, 0x100, 4);
+        let r = ram(&fd);
+        let hi = fd.new_varnode(4, &Address::new(r, 0x104), None);
+        let before = fd.num_varnodes();
+        let res = fd.combine_input_varnodes(hi, lo);
+        assert!(res.is_err(), "non-input hi must be rejected (cc:386-387)");
+        // Partial-state parity: the early throw leaves the graph untouched.
+        assert_eq!(fd.num_varnodes(), before, "no varnode created/destroyed on the reject");
+        assert!(fd.vbank().get(lo).unwrap().is_input(), "lo input survives");
+        assert!(fd.vbank().get(hi).unwrap().is_free(), "hi survives unchanged");
+    }
+
+    /// HUNT LIST (contiguity arithmetic + Result partial-state; little-endian).
+    /// C++ LE branch: `otheraddr = vnLo->getAddr() + vnLo->getSize();
+    /// isContiguous = (otheraddr == vnHi->getAddr())` (cc:395-398).  With lo@0x100
+    /// size 4 -> otheraddr 0x104; a hi placed at 0x108 (NOT 0x104) is a gap, so
+    /// the C++ throws "not contiguous" (cc:399-400) before any mutation.
+    #[test]
+    fn combine_input_varnodes_w10dm_rejects_noncontiguous_le() {
+        let mut fd = build_fd();
+        let lo = make_input(&mut fd, 0x100, 4);
+        let hi = make_input(&mut fd, 0x108, 4); // gap: 0x104 != 0x108
+        let before = fd.num_varnodes();
+        let res = fd.combine_input_varnodes(hi, lo);
+        assert!(res.is_err(), "non-contiguous LE pieces must be rejected (cc:399-400)");
+        assert_eq!(fd.num_varnodes(), before, "no mutation on the contiguity reject");
+        // The boundary case (hi exactly at otheraddr) is the *accepted* path,
+        // proven by the collapse test below — confirming the == is the real edge.
+    }
+
+    /// HUNT LIST (the happy path: PIECE-reader collapse, LE addr selection).
+    /// Two contiguous LE inputs (lo@0x100 sz4, hi@0x104 sz4) read by a single
+    /// PIECE(hi,lo).  Per cc:443-451 the originals are destroyed, a size-8 input
+    /// is created at `addr` (= lo's addr in LE, cc:389/396), and the PIECE
+    /// becomes a COPY reading that new input in slot 0.  No otherOps, so no
+    /// SUBPIECE replacements are made.
+    #[test]
+    fn combine_input_varnodes_w10dm_le_piece_collapses_to_copy() {
+        let mut fd = build_fd();
+        let r = ram(&fd);
+        let lo = make_input(&mut fd, 0x100, 4);
+        let hi = make_input(&mut fd, 0x104, 4);
+        let piece = make_piece_reader(&mut fd, 0x2000, hi, lo);
+
+        fd.combine_input_varnodes(hi, lo).expect("contiguous LE inputs combine");
+
+        // The PIECE became a COPY (cc:450).
+        assert_eq!(fd.obank().get(piece).unwrap().code(), OpCode::CPUI_COPY);
+        // Its single input is the new combined whole (slot 1 removed, cc:418).
+        assert_eq!(fd.obank().get(piece).unwrap().num_input(), 1, "COPY is unary now");
+        let whole = fd.obank().get(piece).unwrap().get_in(0).expect("copy in0");
+        let wv = fd.vbank().get(whole).unwrap();
+        assert!(wv.is_input(), "combined whole is a function input (cc:446-447)");
+        assert_eq!(wv.get_size(), 8, "outSize = hi.size + lo.size (cc:443)");
+        // LE: the new input sits at lo's address (addr = vnLo->getAddr()).
+        assert_eq!(wv.get_addr(), &Address::new(Rc::clone(&r), 0x100));
+        // Originals are gone.
+        assert!(fd.vbank().get(lo).is_none(), "vnLo destroyed (cc:445)");
+        assert!(fd.vbank().get(hi).is_none(), "vnHi destroyed (cc:444)");
+    }
 }
