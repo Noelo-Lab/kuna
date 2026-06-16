@@ -3055,14 +3055,21 @@ impl PrintC {
     /// *explicit* (or input/free) Varnode becomes a leaf atom.  Resolved
     /// directly (depth-first) rather than via the lazy nodepend queue.
     fn push_vn_ir(&mut self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) {
-        let (implied, def) = {
+        let (implied, has_field, def) = {
             let v = match fd.vbank().get(vn) {
                 Some(v) => v,
                 None => return,
             };
-            (v.is_implied(), v.get_def())
+            (v.is_implied(), v.has_implied_field(), v.get_def())
         };
         if implied {
+            // C++ `PrintLanguage::recurse` (printlanguage.cc:533): an implied
+            // Varnode carrying a resolved union/struct field renders as
+            // `<def-expr>.field` via `pushImpliedField`; otherwise just expand the
+            // defining op.
+            if has_field && self.push_implied_field_ir(fd, arch, vn, op) {
+                return;
+            }
             if let Some(defop) = def {
                 // defOp->getOpcode()->push(this,defOp,op): `op` is the reading op
                 // (the C++ `readOp`), threaded so opIntSext/opIntZext can test
@@ -3072,6 +3079,92 @@ impl PrintC {
             }
         }
         self.push_vn_explicit_ir(fd, arch, vn, op);
+    }
+
+    /// C++ `PrintC::pushImpliedField` (printc.cc:2161-2192): an implied Varnode
+    /// whose high data-type is a union (or a single-field struct) resolves, via the
+    /// per-function union cache, to a specific field; render `<def-expr>.field`.
+    ///
+    /// Returns `true` when the field render was emitted (the C++ `proceed` arm);
+    /// `false` when nothing resolved (the C++ "Just push original op" arm), so the
+    /// caller falls back to expanding the defining op.
+    ///
+    /// SEAM(merge high-type retention): the C++ reads the *unresolved* union parent
+    /// off `vn->getHigh()->getType()`, then resolves the field through the cache.
+    /// In the merged rust tree the implied Varnode's bare `get_type()` (the
+    /// print-time high surface) has already been *updated* to the resolved field
+    /// data-type by the cast/merge passes, so the union parent is not available
+    /// here and `parent.needs_resolution()` is false for the value-member cases
+    /// (`glob.intfield`, `(ptr->value).myint`).  This arm is therefore the faithful
+    /// port but is *inert* until the HighVariable retains the needs-resolution
+    /// union type at print time (a merge-stage surface owned elsewhere); it never
+    /// changes a render today (gated on `has_implied_field`, union-resolution-only)
+    /// and lights up the value-member renders once that retention lands.
+    fn push_implied_field_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        vn: VarnodeId,
+        op: OpId,
+    ) -> bool {
+        // Datatype *parent = vn->getHigh()->getType();  (bare type by print-time).
+        let parent = match fd.vbank().get(vn).map(|v| v.get_type().clone()) {
+            Some(t) => t,
+            None => return false,
+        };
+        let mut field: Option<(String, int4)> = None; // (name, ident)
+        // if (parent->needsResolution() && parent->getMetatype() != TYPE_PTR) {
+        if parent.needs_resolution()
+            && parent.get_metatype() != crate::dtype::type_metatype::TYPE_PTR
+        {
+            // int4 slot = op->getSlot(vn);
+            let slot = fd.obank().get(op).map(|o| o.get_slot(vn)).unwrap_or(-1);
+            // res = fd->getUnionField(parent, op, slot);
+            if let Some(res) = fd.get_union_field(&parent, op, slot) {
+                let field_num = res.get_field_num();
+                if field_num >= 0 {
+                    match parent.get_metatype() {
+                        // STRUCT with fieldNum == 0: beginField().
+                        crate::dtype::type_metatype::TYPE_STRUCT if field_num == 0 => {
+                            if let Some(f) = parent.get_field(0) {
+                                field = Some((f.name.clone(), f.ident));
+                            }
+                        }
+                        // UNION: getField(fieldNum).
+                        crate::dtype::type_metatype::TYPE_UNION => {
+                            if let Some(f) = parent.get_field(field_num) {
+                                field = Some((f.name.clone(), f.ident));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        // const PcodeOp *defOp = vn->getDef();
+        let def_op = match fd.vbank().get(vn).and_then(|v| v.get_def()) {
+            Some(d) => d,
+            None => return false,
+        };
+        let (fieldname, fieldid) = match field {
+            Some(f) => f,
+            // if (!proceed) { defOp->push(this,defOp,op); return; }  -> caller does it.
+            None => return false,
+        };
+        // pushOp(&object_member,op); defOp->push(this,defOp,op);
+        // pushAtom(Atom(field->name, fieldtoken, ..., parent, field->ident, op));
+        self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+        self.op_push_ir(fd, arch, def_op, Some(op));
+        let field_atom = Atom::field(
+            fieldname,
+            TagType::FieldToken,
+            crate::printlanguage::SyntaxHighlight::no_color,
+            0,
+            fieldid,
+            op_key(op),
+        );
+        self.push_atom(&field_atom);
+        true
     }
 
     /// `pushVn(vn, op, m)` — set the value-rendering mods (`print_load_value` /
@@ -3573,32 +3666,64 @@ impl PrintC {
                     return;
                 }
             }
-            // Union mid-flow field resolution is the W8 surface; only TYPE_STRUCT
-            // is on the corpus.
-            if metameta == crate::dtype::type_metatype::TYPE_UNION {
-                self.op_func_ir(fd, arch, op);
-                return;
-            }
             let suboff_bytes = AddrSpace::address_to_byte_int(suboff, word_size);
-            // fld = ct->findTruncation(suboff,0,op,0,newoff)
-            let fld = ct.find_truncation(suboff_bytes, 0, op, 0).ok().flatten();
-            let (fieldname, fieldtype, fieldid) = match fld {
-                Some((idx, _newoff)) => {
-                    let f = ct.get_field(idx);
-                    match f {
-                        Some(f) => (f.name.clone(), Some(f.field_type.clone()), f.ident),
-                        None => return,
-                    }
-                }
-                None => {
-                    if ct.get_size() as int8 <= suboff_bytes || suboff_bytes < 0 {
+            let (fieldname, fieldtype, fieldid) =
+                if metameta == crate::dtype::type_metatype::TYPE_UNION {
+                    // TYPE_UNION arm (printc.cc:1000-1014).
+                    // if (suboff != 0) throw "PTRSUB accesses union with non-zero offset";
+                    if suboff_bytes != 0 {
+                        // C++ throws; fall to the functional render so output stays
+                        // parseable rather than aborting the whole function.
                         self.op_func_ir(fd, arch, op);
                         return;
                     }
-                    // Default field name `field_0x<hex>`.
-                    (format!("field_0x{suboff_bytes:x}"), None, suboff_bytes as int4)
-                }
-            };
+                    // resUnion = fd->getUnionField(ptype, op, -1);
+                    // The cast plane (`ActionSetCasts::resolveUnion`) stored the
+                    // resolution on this PTRSUB's write edge keyed on the
+                    // pointer-to-union `ptype`; read it back here.
+                    let res_field = fd
+                        .get_union_field(&ptype, op, -1)
+                        .map(|r| r.get_field_num())
+                        .filter(|&n| n >= 0);
+                    let field_num = match res_field {
+                        Some(n) => n,
+                        None => {
+                            // C++ throws "PTRSUB for union that does not resolve
+                            // to a field"; fall to the functional render.
+                            self.op_func_ir(fd, arch, op);
+                            return;
+                        }
+                    };
+                    // fld = ((TypeUnion*)ct)->getField(resUnion->getFieldNum());
+                    match ct.get_field(field_num) {
+                        Some(f) => (f.name.clone(), Some(f.field_type.clone()), f.ident),
+                        None => {
+                            self.op_func_ir(fd, arch, op);
+                            return;
+                        }
+                    }
+                } else {
+                    // TYPE_STRUCT arm (printc.cc:1015-1033).
+                    // fld = ct->findTruncation(suboff,0,op,0,newoff)
+                    let fld = ct.find_truncation(suboff_bytes, 0, op, 0).ok().flatten();
+                    match fld {
+                        Some((idx, _newoff)) => {
+                            let f = ct.get_field(idx);
+                            match f {
+                                Some(f) => (f.name.clone(), Some(f.field_type.clone()), f.ident),
+                                None => return,
+                            }
+                        }
+                        None => {
+                            if ct.get_size() as int8 <= suboff_bytes || suboff_bytes < 0 {
+                                self.op_func_ir(fd, arch, op);
+                                return;
+                            }
+                            // Default field name `field_0x<hex>`.
+                            (format!("field_0x{suboff_bytes:x}"), None, suboff_bytes as int4)
+                        }
+                    }
+                };
             let mut arrayvalue = false;
             // The '&' is dropped if the field is an array.
             if let Some(ft) = &fieldtype {

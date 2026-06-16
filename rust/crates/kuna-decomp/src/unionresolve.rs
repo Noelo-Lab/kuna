@@ -264,6 +264,16 @@ impl ResolvedUnion {
         self.resolve = res;
     }
 
+    /// Set the resolved field index (C++ `result.fieldNum = ...`, written
+    /// directly by the friend `ScoreUnionFields::computeBestIndex`,
+    /// `unionresolve.cc:1061`).  The driver in [`crate::unionresolve_run`] cannot
+    /// reach the private field, so this is the faithful equivalent of the C++
+    /// friend write.
+    #[inline]
+    pub fn set_field_num(&mut self, field_num: int4) {
+        self.field_num = field_num;
+    }
+
     /// Set whether this resolution is locked against overrides (C++ `setLock`).
     #[inline]
     pub fn set_lock(&mut self, val: bool) {
