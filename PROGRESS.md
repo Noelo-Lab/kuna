@@ -1,5 +1,33 @@
 # kuna Progress Log
 
+## Session (2026-06-16c) — rust-port W10: for-loop reroll merged (INERT), 307/675 held
+
+Merged the held `rport/w10-forloop-reroll` (while->for conversion: `emit_for_loop` +
+`finalize_forloop_transform`/`finalize_forloop_printing` + `funcdata_block`/`funcdata_op`)
+onto the RSP-spacebase-rendered tree (`f621eee`).  The merge is BYTE-SAFE and INERT —
+**307/675 held, ZERO assertions lost/gained, switch cluster IDENTICAL, boolless/readstruct/
+condconst_conn byte-identical to the C++ oracle, B0 unchanged, 3,491 Rust tests green,
+production-lib clippy -D clean, C++ oracle 207/207 + 675/675 PARITY OK.**
+
+DIAGNOSIS (corrects the stage premise): the for-loop reroll does NOT activate, because the
+for-loop datatests are NOT RSP-clean.  The spacebase-typing keystone (13ed4c3) cleaned the
+*additive* `RSP + const` form (ptrtoarray's first function), but the for-loop files carry a
+DIFFERENT, un-eliminated RSP pattern — per-CALL dead return-address stores
+(`*(xunknown1 *)&v3[0xff..f8] = <retaddr>;`) + the `v3 = &v3[...]` stack-ptr adjust +
+`undefined8 v2/v3; // rsp` locals.  This is the work of the **DEFERRED**
+`ActionExtraPopSetup::apply` (coreaction_protos.rs:470, deferred at 10fc2ab): its per-call
+INT_ADD/INDIRECT spacebase op is only net-safe once `propagateSpacebaseRef` + the
+spacebase-store dead-code land WITH it.  Enabling it ALONE regresses jump-table index
+recovery (`switchind` — committed `verify_w10_jts_chain` tests), which the stage's hard
+constraint forbids.  So the reroll's `has_overflow_syntax()` guard correctly still declines.
+Proven via the faithful `decomp_test_dbg`+`KUNA_DUMP=1` harness; forloop1 C++ oracle target
+`for (v1 = 0; v1 < max; v1 = v1 + 1) { sub_400430(0x400820); }` vs Rust `while( true ) { if
+(max <= v1) break; ...dead rsp chain...; v1 = v1 + 1; }`.  NEXT KEYSTONE: co-land
+ActionExtraPopSetup + propagateSpacebaseRef per-CALL spacebase dead-code (a type-plane wave,
+not a render stage) — the reroll then auto-activates the whole For-loop cluster.  Added 5
+adversarial verifier tests (`verify_w10_spacebase_render.rs`) pinning the inert-merge state +
+switch-no-regression + protected-file byte-parity, written to flip green on activation.
+
 ## Session (2026-06-16b) — rust-port W10 → 307/675
 
 Waves since 290: MIPS dead-CALLOTHER (+3), union value-members (+5, HighVariable
