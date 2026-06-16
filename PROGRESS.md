@@ -1,6 +1,6 @@
 # kuna Progress Log
 
-## Session (2026-06-16d) — rust-port W10: keystone grind 307 → 327/675
+## Session (2026-06-16d) — rust-port W10: keystone grind 307 → 331/675
 
 Five verified waves carried the corpus from 307 to 327 passing (now **6.8× the M2 entry
 of 48**), all under the standard gate (cargo test --workspace green, clippy -D, byte-parity
@@ -19,6 +19,22 @@ passing):
   space.cc:539 JoinSpace::decodeAttributes). The model now **builds** — the full
   Return-Structure/mixfloat/longdouble render is gated on the float-typeclass +
   SplitDatatype struct-split on top of it. HEAD **a4bcd0f**.
+- **float-typeclass (+4 → 331, `258b015`, ACCEPT_WITH_LOSSES)** — the proto-model
+  payoff: float pentry typeclass separation + `hidden_return` ModelRule + float10
+  stack model. Flips **Return-Value-Input-Register** (`returnbig` struct-return renders
+  byte-exact). mixfloat's float8 *render* is diagnosed as a downstream **merge/type-
+  inference** artifact (XMM0 in/out overlap), NOT an fspec gap (fspec typeclass proven
+  correct — XMM1 `a2` already types `float8`); long-double struct-split stays RSP-gated.
+
+**Two probe waves (+0, cheap intelligence) + two design specs:** the arrays probe proved
+AddTreeState is already correct — nested-array failures are a **type-seed** gap (global
+const `0x601060` never typed `&myarray:int4[3][5]`), specced as `w10-typeseed-constptr`
+(un-stub `ActionConstantPtr` + `Funcdata::spacebase_constant` + `architecture`
+`cache_addr_space_properties`/`infer_ptr_spaces`; ~+4–8; must run after the funcdata/
+database files free up). The double-precision probe proved RuleDouble* IR is byte-identical
+— the gap is `ActionMarkExplicit::base_explicit` marking wide-float PIECE temps explicit;
+specced as INDEPENDENT (owns only `coreaction_cleanup.rs:470-588` + a `find_root` helper;
+~+4–10), launching now.
 
 KEYSTONE MAP (the remaining ~348 gate on ~5 named keystones): **#1 RSP/spacebase**
 (ExtraPopSetup + propagateSpacebaseRef per-CALL dead-code — deep, paused, gates ~half the
