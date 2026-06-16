@@ -39,12 +39,16 @@
 //! * `Varnode::getSymbolEntry` (W4 symbol table): `isAddrTiedContiguous`,
 //!   `RuleDoubleOut::attemptMarking`.
 //! * `Architecture::constructJoinAddress` (W4 join-space): `createJoinedWhole`.
-//! * `Funcdata::combineInputVarnodes` (W4 input-merge): `RuleDoubleOut::applyOp`.
 //! * `Funcdata::markReturnCopy` / `Varnode::setWriteMask`-style RETURN-copy form
 //!   (W4): `replaceCopyForce`.
-//! * `TypeOp::isArithmeticOp`/`isFloatingPointOp` and `Datatype::isPrimitiveWhole`
-//!   typelock gate (W6 typeop flags — present for the type, seamed for the op
-//!   flags): `RuleDoubleIn`/`RuleDoubleOut::attemptMarking`.
+//!
+//! Two formerly-seamed surfaces are now ported (`rport/w10-doublemove`):
+//! `Funcdata::combineInputVarnodes` (the input-varnode merge feeding
+//! `RuleDoubleOut::applyOp`, `funcdata_varnode.cc:383`), and
+//! `TypeOp::isArithmeticOp`/`isFloatingPointOp` (the W6 `addlflags`, read via
+//! [`crate::typeop::type_op_info`] in [`op_is_arith_or_float`] for
+//! `RuleDoubleIn`/`RuleDoubleOut::attemptMarking`).  `Datatype::isPrimitiveWhole`
+//! (the typelock gate) was already present.
 //!
 //! `op_set_opcode` needs a fully-formed `TypeOp` (opcode + property flags); the
 //! flag word is the W6 `TypeFactory` fill, so [`set_opcode_seam`] builds the
@@ -4726,15 +4730,20 @@ impl CopyForceForm {
 /// `TypeOp::isArithmeticOp() || TypeOp::isFloatingPointOp()` for the op defining
 /// or reading the putative logical whole.
 ///
-/// SEAM(W6): these read the `TypeOp::addlflags` (`arithmetic_op`=8,
-/// `floatingpoint_op`=0x20) the W6 `inst` table sets.  The W3 `TypeOp` skeleton
-/// (`seams.rs`) carries only the opcode + property-flag word (no `addlflags`),
-/// so the classification is unavailable.  Returning `false` makes
-/// `attemptMarking` decline to mark a pair as double precision — a conservative
-/// no-op (the recovery simply never starts).  Recorded as a loss.
-fn op_is_arith_or_float(_data: &Funcdata, _op: OpId) -> bool {
-    // SEAM(W6): TypeOp::isArithmeticOp / isFloatingPointOp (addlflags)
-    false
+/// Reads the `TypeOp::addlflags` (`arithmetic_op`=8, `floatingpoint_op`=0x20)
+/// from the W6 `inst` table ([`crate::typeop::type_op_info`]).  C++:
+/// `RuleDoubleIn::attemptMarking` (`double.cc:3238-3240`,
+/// `TypeOp *typeop = whole->getDef()->getOpcode();
+///  if (!typeop->isArithmeticOp() && !typeop->isFloatingPointOp()) return 0;`)
+/// and `RuleDoubleOut::attemptMarking` (`double.cc:3318-3322`,
+/// `TypeOp *typeop = (*iter)->getOpcode();
+///  if (typeop->isArithmeticOp() || typeop->isFloatingPointOp()) { isWhole = true; break; }`).
+/// The C++ pulls the `TypeOp` from the PcodeOp via `getOpcode()`; here the op's
+/// op-code keys the static `type_op_info` table, which carries the same
+/// `addlflags` bits (`typeop.cc` `TypeOp*` constructors).
+fn op_is_arith_or_float(data: &Funcdata, op: OpId) -> bool {
+    let info = crate::typeop::type_op_info(op_code(data, op));
+    info.is_arithmetic_op() || info.is_floating_point_op()
 }
 
 /// `whole->getType()->isPrimitiveWhole()` typelock gate — present (the W6
@@ -4867,16 +4876,19 @@ impl Rule for RuleDoubleIn {
 // =============================================================================
 
 /// `data.combineInputVarnodes(vnhi,vnlo)` — merge two persistent input pieces
-/// into one logical input.
+/// into one logical input (C++ `double.cc:3353`).
 ///
-/// SEAM(W4): `Funcdata::combineInputVarnodes` (the input-varnode merge,
-/// `funcdata_varnode.cc`) is a W4 surface not yet ported.  Without it
-/// `RuleDoubleOut::applyOp` cannot collapse the two input pieces; the rule
-/// performs every guard up to the merge and then declines (returns the C++
-/// `applyOp`'s pre-merge state with no change).  Recorded as a loss.
-fn combine_input_varnodes_seam(_data: &mut Funcdata, _vnhi: VarnodeId, _vnlo: VarnodeId) -> bool {
-    // SEAM(W4): Funcdata::combineInputVarnodes
-    false
+/// Routes to the ported [`Funcdata::combine_input_varnodes`]
+/// (`funcdata_varnode.cc:383`).  The caller (`RuleDoubleOut::applyOp`) has
+/// already established the contiguity precondition via `isAddrTiedContiguous`,
+/// matching the C++ ordering; the merge is unconditional there (C++ does not
+/// inspect a return value), so this returns `true`.  A `LowlevelError` from the
+/// merge (non-input or non-contiguous pieces) would be a real invariant
+/// violation; it is surfaced via `expect`, mirroring the C++ `throw`.
+fn combine_input_varnodes_seam(data: &mut Funcdata, vnhi: VarnodeId, vnlo: VarnodeId) -> bool {
+    data.combine_input_varnodes(vnhi, vnlo)
+        .expect("RuleDoubleOut: combineInputVarnodes on non-input/non-contiguous pieces");
+    true
 }
 
 /// Pull a double precision operation back one level, starting from inputs to a
@@ -4960,7 +4972,7 @@ impl Rule for RuleDoubleOut {
         if is_addr_tied_contiguous(data, vnlo, vnhi).is_none() {
             return 0;
         }
-        // SEAM(W4): combineInputVarnodes — decline if unavailable.
+        // data.combineInputVarnodes(vnhi,vnlo);  return 1;  (double.cc:3353-3354)
         if !combine_input_varnodes_seam(data, vnhi, vnlo) {
             return 0;
         }

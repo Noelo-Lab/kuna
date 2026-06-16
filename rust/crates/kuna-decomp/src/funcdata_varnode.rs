@@ -1198,6 +1198,160 @@ impl Funcdata {
         Ok(())
     }
 
+    /// Combine two contiguous input Varnodes into one logical input (C++
+    /// `Funcdata::combineInputVarnodes`, `funcdata_varnode.cc:383`).
+    ///
+    /// A new Varnode covering both originals is created and marked as a function
+    /// input.  Each `CPUI_PIECE` reading the two originals becomes a `CPUI_COPY`
+    /// reading the new whole; any *other* reader of an original is repointed to a
+    /// `SUBPIECE` of the new whole.  The originals are destroyed.  Drives
+    /// `RuleDoubleOut::applyOp` (double-precision register-pair recombine).
+    ///
+    /// ```text
+    /// if (!vnHi->isInput() || !vnLo->isInput()) throw "not inputs";
+    /// addr = vnLo->getAddr();
+    /// if (addr.isBigEndian()) { addr = vnHi->getAddr(); isContiguous = (vnHi->getAddr()+vnHi->getSize() == vnLo->getAddr()); }
+    /// else                    { isContiguous = (vnLo->getAddr()+vnLo->getSize() == vnHi->getAddr()); }
+    /// if (!isContiguous) throw "not contiguous";
+    /// ... collect PIECE readers, note any other readers of hi/lo ...
+    /// for(piece : pieceList) { opRemoveInput(piece,1); opUnsetInput(piece,0); }
+    /// if (otherOpsHi) { subHi=newOp@bb0; SUBPIECE,const(vnLo->getSize()); newHi=out@vnHi->getAddr(); insertBegin; totalReplace(vnHi,newHi); }
+    /// if (otherOpsLo) { subLo=newOp@bb0; SUBPIECE,const(0);            newLo=out@vnLo->getAddr(); insertBegin; totalReplace(vnLo,newLo); }
+    /// outSize = vnHi->getSize()+vnLo->getSize();
+    /// vbank.destroy(vnHi); vbank.destroy(vnLo);
+    /// inVn = setInputVarnode(newVarnode(outSize, addr));
+    /// for(piece : pieceList) { opSetInput(piece,inVn,0); opSetOpcode(piece, COPY); }
+    /// if (otherOpsHi) opSetInput(subHi,inVn,0);
+    /// if (otherOpsLo) opSetInput(subLo,inVn,0);
+    /// ```
+    pub fn combine_input_varnodes(
+        &mut self,
+        vn_hi: VarnodeId,
+        vn_lo: VarnodeId,
+    ) -> KunaResult<()> {
+        // if (!vnHi->isInput() || !vnLo->isInput()) throw "not inputs";
+        let (hi_is_input, hi_addr, hi_size) = {
+            let v = self.vbank().get(vn_hi).expect("combine_input_varnodes: stale vnHi");
+            (v.is_input(), v.get_addr().clone(), v.get_size())
+        };
+        let (lo_is_input, lo_addr, lo_size) = {
+            let v = self.vbank().get(vn_lo).expect("combine_input_varnodes: stale vnLo");
+            (v.is_input(), v.get_addr().clone(), v.get_size())
+        };
+        if !hi_is_input || !lo_is_input {
+            return Err(KunaError::lowlevel("Varnodes being combined are not inputs"));
+        }
+        // Address addr = vnLo->getAddr(); ... compute contiguity by endianness.
+        let is_contiguous: bool;
+        let addr: Address;
+        if lo_addr.is_big_endian() {
+            // addr = vnHi->getAddr(); otheraddr = addr + vnHi->getSize(); contig = (otheraddr == vnLo->getAddr());
+            addr = hi_addr.clone();
+            let otheraddr = &hi_addr + hi_size as i64;
+            is_contiguous = otheraddr == lo_addr;
+        } else {
+            // otheraddr = addr + vnLo->getSize(); contig = (otheraddr == vnHi->getAddr());
+            addr = lo_addr.clone();
+            let otheraddr = &lo_addr + lo_size as i64;
+            is_contiguous = otheraddr == hi_addr;
+        }
+        if !is_contiguous {
+            return Err(KunaError::lowlevel(
+                "Input varnodes being combined are not contiguous",
+            ));
+        }
+
+        // Partition the readers of vnHi/vnLo: PIECE(vnHi,vnLo) ops vs. all others.
+        let mut piece_list: Vec<OpId> = Vec::new();
+        let mut other_ops_hi = false;
+        let mut other_ops_lo = false;
+        // for(iter=vnHi->beginDescend(); ...) { if (op==PIECE && in0==vnHi && in1==vnLo) pieceList.push(op); else otherOpsHi=true; }
+        for op in self.descend_snapshot(vn_hi) {
+            let o = self.obank().get(op).expect("combine_input_varnodes: stale hi reader");
+            if o.code() == OpCode::CPUI_PIECE
+                && o.get_in(0) == Some(vn_hi)
+                && o.get_in(1) == Some(vn_lo)
+            {
+                piece_list.push(op);
+            } else {
+                other_ops_hi = true;
+            }
+        }
+        // for(iter=vnLo->beginDescend(); ...) { if (op!=PIECE || in0!=vnHi || in1!=vnLo) otherOpsLo=true; }
+        for op in self.descend_snapshot(vn_lo) {
+            let o = self.obank().get(op).expect("combine_input_varnodes: stale lo reader");
+            if o.code() != OpCode::CPUI_PIECE
+                || o.get_in(0) != Some(vn_hi)
+                || o.get_in(1) != Some(vn_lo)
+            {
+                other_ops_lo = true;
+            }
+        }
+        // for(i...) { opRemoveInput(pieceList[i], 1); opUnsetInput(pieceList[i], 0); }
+        for &piece in &piece_list {
+            self.op_remove_input(piece, 1);
+            self.op_unset_input(piece, 0);
+        }
+
+        // If non-PIECE readers exist, build replacement SUBPIECEs of the new whole.
+        let mut sub_hi: Option<OpId> = None;
+        let mut sub_lo: Option<OpId> = None;
+        if other_ops_hi {
+            // BlockBasic *bb = bblocks.getBlock(0);
+            let bb = self.bblocks_get_block(0);
+            let bbstart = self.bblocks_block_start(bb);
+            // subHi = newOp(2,bb->getStart()); SUBPIECE; in1 = newConstant(4, vnLo->getSize());
+            let op = self.new_op(2, bbstart);
+            self.op_set_opcode_code(op, OpCode::CPUI_SUBPIECE);
+            let con = self.new_constant(4, lo_size as uintb);
+            self.op_set_input(op, con, 1)?;
+            // newHi = newVarnodeOut(vnHi->getSize(), vnHi->getAddr(), subHi);
+            let new_hi = self.new_varnode_out(hi_size, &hi_addr, op)?;
+            self.op_insert_begin(op, bb);
+            // totalReplace(vnHi, newHi);
+            self.total_replace(vn_hi, new_hi)?;
+            sub_hi = Some(op);
+        }
+        if other_ops_lo {
+            let bb = self.bblocks_get_block(0);
+            let bbstart = self.bblocks_block_start(bb);
+            // subLo = newOp(2,bb->getStart()); SUBPIECE; in1 = newConstant(4, 0);
+            let op = self.new_op(2, bbstart);
+            self.op_set_opcode_code(op, OpCode::CPUI_SUBPIECE);
+            let con = self.new_constant(4, 0);
+            self.op_set_input(op, con, 1)?;
+            // newLo = newVarnodeOut(vnLo->getSize(), vnLo->getAddr(), subLo);
+            let new_lo = self.new_varnode_out(lo_size, &lo_addr, op)?;
+            self.op_insert_begin(op, bb);
+            // totalReplace(vnLo, newLo);
+            self.total_replace(vn_lo, new_lo)?;
+            sub_lo = Some(op);
+        }
+
+        // outSize = vnHi->getSize() + vnLo->getSize();
+        let out_size = hi_size + lo_size;
+        // vbank.destroy(vnHi); vbank.destroy(vnLo);
+        self.vbank_mut().destroy(vn_hi)?;
+        self.vbank_mut().destroy(vn_lo)?;
+        // inVn = newVarnode(outSize, addr); inVn = setInputVarnode(inVn);
+        let in_vn = self.new_varnode(out_size, &addr, None);
+        let in_vn = self.set_input_varnode(in_vn)?;
+        // for(i...) { opSetInput(pieceList[i],inVn,0); opSetOpcode(pieceList[i], COPY); }
+        for &piece in &piece_list {
+            self.op_set_input(piece, in_vn, 0)?;
+            self.op_set_opcode_code(piece, OpCode::CPUI_COPY);
+        }
+        // if (otherOpsHi) opSetInput(subHi,inVn,0);
+        if let Some(op) = sub_hi {
+            self.op_set_input(op, in_vn, 0)?;
+        }
+        // if (otherOpsLo) opSetInput(subLo,inVn,0);
+        if let Some(op) = sub_lo {
+            self.op_set_input(op, in_vn, 0)?;
+        }
+        Ok(())
+    }
+
     /// Set input `slot` of `op` to read `vn` (C++ `Funcdata::opSetInput`,
     /// `funcdata_op.cc:104`), replicated for the `totalReplace` rewiring.
     ///
