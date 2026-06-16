@@ -793,23 +793,18 @@ fn verify_w10_pspec_context_forloop_varused_lifts_64bit_and_structures() {
         "forloop_varused must render its function:\n{rendered}"
     );
 
-    // 64-bit lifting signal: a register either as a raw 64-bit token (when it is
+    // 64-bit lifting signal: a 64-bit register either as a raw token (when it is
     // not a coalesced local) OR as the storage comment on a now-named local
-    // (`// rsp` / `// rbp` / a 32-bit subreg like `// ebx`).  Since
-    // w10-highvar-naming coalesces the frame registers into named `vN` locals (the
-    // faithful angr default), the proxy accepts the lowercased storage comment the
-    // decl carries; and since `rport/w10-rsp-elim` (ActionExtraPopSetup) now
-    // eliminates the spurious raw RSP statements that C++ also drops, the frame
-    // pointer comment may be absent — the induction-variable register comment
-    // (`// ebx`) is the stable 64-bit-lift signal that survives (a 16-bit real-mode
-    // lift forms no back-edge, names no register local, and never reaches here).
+    // (`// rsp` / `// rbp`).  Since w10-highvar-naming coalesces the frame
+    // registers into named `vN` locals (the faithful angr default), the proxy must
+    // also accept the lowercased storage comment the decl carries (e.g. `// rsp`).
     let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0)
-        + count_matches(r"// (r|e)(sp|bp|di|si|ax|bx|cx|dx)\b", &rendered).unwrap_or(0);
+        + count_matches(r"// r(sp|bp|di|si|ax|bx|cx|dx)\b", &rendered).unwrap_or(0);
     assert!(
         sixtyfour >= 1,
         "forloop_varused must lift with 64-bit registers (RSP/… as a token or a \
-         `// rsp`/`// ebx` storage comment); got none (the pspec <context_data> \
-         paints were not applied):\n{rendered}"
+         `// rsp` storage comment); got none (the pspec <context_data> paints were \
+         not applied):\n{rendered}"
     );
     let realmode =
         count_matches(r"\bBX \+ SI\b|CALLOTHER\(0,DS|CALLOTHER\(0,SS|\b0xfffe\b", &rendered)

@@ -443,17 +443,22 @@ fn adv_w10_repair_overlapping_store_rejects_fold() {
 /// VERIFIER (w10-rsp-elim).  The C++ `ActionExtraPopSetup::apply` writes the
 /// extrapop INT_ADD constant with `newConstant(sb_size, fc->getExtraPop())`,
 /// where `getExtraPop()` is an `int4` and `newConstant` takes a `uintb`.  The
-/// Rust port writes `new_constant(sb_size, extrapop as uintb)`.  Because `int4`
-/// is `i32` and `uintb` is `u64`, the cast is a SIGN-EXTENDING widening, exactly
-/// matching the C++ `(uintb)(int4)` conversion.  A negative extrapop (the SP
-/// can be adjusted downward) must therefore sign-extend to the high half, NOT
+/// faithful Rust port writes `new_constant(sb_size, extrapop as uintb)`.  Because
+/// `int4` is `i32` and `uintb` is `u64`, the cast is a SIGN-EXTENDING widening,
+/// exactly matching the C++ `(uintb)(int4)` conversion.  A negative extrapop (the
+/// SP can be adjusted downward) must therefore sign-extend to the high half, NOT
 /// zero-extend.  newConstant does not mask (getConstant just wraps the value in
-/// a constant Address), so the stored value is the raw 64-bit pattern.  This
-/// pins the cast the diff added so a later "fix" to `as u32 as u64` (zero-extend)
-/// or a masked widening would fail.
+/// a constant Address), so the stored value is the raw 64-bit pattern.
+///
+/// NOTE (w10-rsp-elim repair): the `apply` body that USES this cast is currently
+/// DEFERRED (it regresses jump-table index recovery until the propagateSpacebaseRef
+/// keystone lands — see the SEAM comment in `coreaction_protos.rs`).  This test is
+/// retained as a forward contract: it pins the widening semantics so that when the
+/// per-call INT_ADD insertion is re-landed alongside the keystone, a `as u32 as u64`
+/// (zero-extend) or a masked widening will fail here.
 #[test]
 fn adv_w10_rspelim_extrapop_constant_widening_sign_extends() {
-    // The exact expression from coreaction_protos.rs:529 (`extrapop as uintb`).
+    // The exact expression the faithful `apply` port uses (`extrapop as uintb`).
     let widen = |ep: int4| -> kuna_base::types::uintb { ep as kuna_base::types::uintb };
 
     // A normal positive byte count (e.g. callee pops 0x20 bytes): plain widen.

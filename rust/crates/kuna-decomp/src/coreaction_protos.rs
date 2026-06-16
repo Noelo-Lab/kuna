@@ -89,12 +89,11 @@
 
 use std::rc::Rc;
 
-use kuna_base::types::{int4, uintb};
+use kuna_base::types::int4;
 
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
-use crate::fspec::EXTRAPOP_UNKNOWN;
 use crate::funcdata::Funcdata;
 
 // =============================================================================
@@ -468,78 +467,46 @@ impl Action for ActionExtraPopSetup {
             stackspace: self.stackspace,
         }))
     }
-    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:1452 — ActionExtraPopSetup::apply
         //   if (stackspace == (AddrSpace *)0) return 0;   // No stack to speak of
-        let ss_index = match self.stackspace {
-            Some(idx) => idx,
-            None => return 0,
-        };
-        // const VarnodeData &point(stackspace->getSpacebase(0));
-        // sb_addr = Address(point.space, point.offset); sb_size = point.size;
-        let stackspace = match data.get_arch().manage().get_space(ss_index) {
-            Some(s) => Rc::clone(s),
-            None => return 0,
-        };
-        let point = match stackspace.get_spacebase(0) {
-            Ok(p) => p,
-            Err(_) => return 0,
-        };
-        let sb_space = match point.space {
-            Some(s) => s,
-            None => return 0,
-        };
-        let sb_addr = kuna_base::address::Address::new(sb_space, point.offset);
-        let sb_size = point.size as int4;
-
-        // for (i=0; i<data.numCalls(); ++i):
-        for i in 0..data.num_calls() {
-            // fc = data.getCallSpecs(i);
-            // if (fc->getExtraPop() == 0) continue;  // Stack pointer is undisturbed
-            let extrapop = data.get_call_specs(i).get_extra_pop();
-            if extrapop == 0 {
-                continue;
-            }
-            // op = data.newOp(2, fc->getOp()->getAddr());
-            let callop = data.get_call_specs(i).get_op();
-            let callop_addr = match data.obank().get(callop) {
-                Some(o) => o.get_addr().clone(),
-                None => continue,
-            };
-            let op = data.new_op(2, callop_addr);
-            // data.newVarnodeOut(sb_size, sb_addr, op);
-            if data.new_varnode_out(sb_size, &sb_addr, op).is_err() {
-                continue;
-            }
-            // data.opSetInput(op, data.newVarnode(sb_size, sb_addr), 0);
-            let in0 = data.new_varnode(sb_size, &sb_addr, None);
-            let _ = data.op_set_input(op, in0, 0);
-            if extrapop != EXTRAPOP_UNKNOWN {
-                // We know exactly how stack pointer is changed:
-                //   fc->setEffectiveExtraPop(fc->getExtraPop());
-                //   opSetOpcode(op, CPUI_INT_ADD);
-                //   opSetInput(op, newConstant(sb_size, fc->getExtraPop()), 1);
-                //   opInsertAfter(op, fc->getOp());
-                data.get_call_specs_mut(i).set_effective_extra_pop(extrapop);
-                data.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
-                // The extrapop is a positive byte count; widen into the spacebase
-                // size unmasked (C++ `newConstant(sb_size, fc->getExtraPop())`).
-                // cast: extrapop is a non-negative int4 here (==0 short-circuited,
-                // ==UNKNOWN handled by the else); fits the uintb constant value.
-                let cval = data.new_constant(sb_size, extrapop as uintb);
-                let _ = data.op_set_input(op, cval, 1);
-                data.op_insert_after(op, callop);
-            } else {
-                // We don't know exactly, so we create INDIRECT:
-                //   opSetOpcode(op, CPUI_INDIRECT);
-                //   opSetInput(op, newVarnodeIop(fc->getOp()), 1);
-                //   opInsertBefore(op, fc->getOp());
-                data.op_set_opcode_code(op, OpCode::CPUI_INDIRECT);
-                let iopvn = data.new_varnode_iop(callop);
-                let _ = data.op_set_input(op, iopvn, 1);
-                data.op_insert_before(op, callop);
-            }
+        if self.stackspace.is_none() {
+            return 0;
         }
+        // C++ (continued):
+        //   point = stackspace->getSpacebase(0);
+        //   sb_addr = Address(point.space, point.offset); sb_size = point.size;
+        //   for (i=0; i<data.numCalls(); ++i):
+        //       fc = data.getCallSpecs(i);
+        //       if (fc->getExtraPop() == 0) continue;        // undisturbed
+        //       op = data.newOp(2, fc->getOp()->getAddr());
+        //       data.newVarnodeOut(sb_size, sb_addr, op);
+        //       data.opSetInput(op, data.newVarnode(sb_size,sb_addr), 0);
+        //       if (fc->getExtraPop() != ProtoModel::extrapop_unknown):
+        //           fc->setEffectiveExtraPop(fc->getExtraPop());
+        //           opSetOpcode(op, CPUI_INT_ADD);
+        //           opSetInput(op, newConstant(sb_size, fc->getExtraPop()), 1);
+        //           opInsertAfter(op, fc->getOp());
+        //       else:
+        //           opSetOpcode(op, CPUI_INDIRECT);
+        //           opSetInput(op, newVarnodeIop(fc->getOp()), 1);
+        //           opInsertBefore(op, fc->getOp());
+        //   return 0;
+        //
+        // SEAM(W10-rsp-elim): the call-spec list IS now available
+        // (`getCallSpecs(i)` / `numCalls()` are ported), and a faithful, verified
+        // transcription of the loop above was attempted on this branch.  It is
+        // DEFERRED again — not for lack of the call-spec list, but because the
+        // INT_ADD/INDIRECT spacebase op it inserts at each call site is only
+        // *net-safe* once the downstream spacebase keystone (ActionInferTypes::
+        // propagateSpacebaseRef + the spacebase-store ActionDeadCode that C++
+        // relies on, coreaction.cc) cleans it up.  Without that keystone the
+        // surviving op disrupts stack-pointer flow and REGRESSES jump-table index
+        // recovery: `switchind` loses its stack-local switch index (`switch(v1)`
+        // -> `switch((int8)dat_... )`, case labels -> raw addresses), breaking the
+        // committed `verify_w10_jts_chain` structural tests even though the loose
+        // datatest `<stringmatch>` oracle gains +2.  The per-call insertion must
+        // land TOGETHER with propagateSpacebaseRef, not before it.  Count stays 0.
         0
     }
 }
@@ -1771,38 +1738,5 @@ mod tests {
         let res: int4 = act.apply(&mut data, &mut ctx);
         assert_eq!(res, 0);
         assert_eq!(act.base().count, 0);
-    }
-
-    /// VERIFIER (w10-rsp-elim).  `apply` first resolves the stack space, then
-    /// `getSpacebase(0)`.  The Rust diff added a `get_spacebase(0).is_err() ->
-    /// return 0` guard for the off-the-happy-path case where the named space
-    /// carries no spacebase pointer (the `ram` fixture has none).  This must be a
-    /// clean no-op: zero ops created, return 0.  It also exercises the empty
-    /// `0..num_calls()` loop (the fixture makes no calls), the most fragile
-    /// container case on the hunt list — a faithless port that proceeded past a
-    /// missing spacebase, or that mishandled the empty-call loop, would create
-    /// stray ops here.
-    #[test]
-    fn adv_w10_rspelim_apply_spaceless_stack_and_no_calls_is_noop() {
-        let mut data = build_fd();
-        // Index of the `ram` space (a real, resolvable AddrSpace) — but it has no
-        // registered spacebase pointer, so getSpacebase(0) errors.
-        let ram_idx = data
-            .get_arch()
-            .manage()
-            .get_space_by_name("ram")
-            .unwrap()
-            .get_index();
-        let mut act = ActionExtraPopSetup {
-            base: ActionBase::new(ruleflags::rule_onceperfunc, "extrapopsetup", "g"),
-            stackspace: Some(ram_idx),
-        };
-        let before = data.obank().iter_all().count();
-        assert_eq!(data.num_calls(), 0, "fixture makes no calls (empty loop)");
-        let mut ctx = ActionContext::new();
-        let res: int4 = act.apply(&mut data, &mut ctx);
-        let after = data.obank().iter_all().count();
-        assert_eq!(res, 0, "missing-spacebase guard returns 0 changes");
-        assert_eq!(before, after, "no stray ops created on the guarded path");
     }
 }
