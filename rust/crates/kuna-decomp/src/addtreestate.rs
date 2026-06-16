@@ -225,27 +225,70 @@ impl<'a> AddTreeState<'a> {
             .expect("addtreestate: null op input (C++ UB)")
     }
 
+    /// `base_type->getSubType(off)` for the current base type, transparently
+    /// resolving the `TypeSpacebase` case through the function's local symbol scope
+    /// (C++ `TypeSpacebase::getSubType` needs the Architecture/Scope, which a pure
+    /// `Datatype` method cannot reach — see [`ScopeLocal::spacebase_get_sub_type`]).
+    /// Returns `(Some(type), newoff)`; for a spacebase the type is always non-null
+    /// (C++ falls back to `TYPE_UNKNOWN(1)`), matching `hasMatchingSubType`.
+    fn base_get_sub_type(&self, off: int8) -> (Option<Rc<Datatype>>, int8) {
+        if self.base_type.get_metatype() == type_metatype::TYPE_SPACEBASE {
+            if let (Some(lm), Some(types)) =
+                (self.data.get_scope_local(), self.data.get_arch().types_rc())
+            {
+                if let Ok((t, newoff)) = lm.spacebase_get_sub_type(off, types.as_ref()) {
+                    return (Some(t), newoff);
+                }
+            }
+            return (None, off);
+        }
+        match self.base_type.get_sub_type(off) {
+            Ok((t, newoff)) => (t, newoff),
+            Err(_) => (None, off),
+        }
+    }
+
+    /// `base_type->nearestArrayedComponentBackward(off, max)`, with the
+    /// `TypeSpacebase` Scope resolution (C++ `TypeSpacebase::nearestArrayedComponentBackward`).
+    fn base_nearest_backward(&self, off: int8, max: int8) -> (int8, int8, int8) {
+        if self.base_type.get_metatype() == type_metatype::TYPE_SPACEBASE {
+            if let (Some(lm), Some(types)) =
+                (self.data.get_scope_local(), self.data.get_arch().types_rc())
+            {
+                return lm.spacebase_nearest_arrayed_backward(off, max, types.as_ref());
+            }
+            return (-1, off, 0);
+        }
+        self.base_type.nearest_arrayed_component_backward(off, max).unwrap_or((-1, off, 0))
+    }
+
+    /// `base_type->nearestArrayedComponentForward(off, max)`, with the
+    /// `TypeSpacebase` Scope resolution (C++ `TypeSpacebase::nearestArrayedComponentForward`).
+    fn base_nearest_forward(&self, off: int8, max: int8) -> (int8, int8, int8) {
+        if self.base_type.get_metatype() == type_metatype::TYPE_SPACEBASE {
+            if let Some(lm) = self.data.get_scope_local() {
+                return lm.spacebase_nearest_arrayed_forward(off, max);
+            }
+            return (-1, off, 0);
+        }
+        self.base_type.nearest_arrayed_component_forward(off, max).unwrap_or((-1, off, 0))
+    }
+
     /// C++ `AddTreeState::hasMatchingSubType(off, arrayHint, &newoff)`.
     /// C++ `arrayHint` is `uint4` (ruleaction.hh:69).
     fn has_matching_sub_type(&self, off: int8, array_hint: uint4) -> (bool, int8) {
         if array_hint == 0 {
-            return match self.base_type.get_sub_type(off) {
-                Ok((Some(_), newoff)) => (true, newoff),
+            return match self.base_get_sub_type(off) {
+                (Some(_), newoff) => (true, newoff),
                 _ => (false, 0),
             };
         }
         // type_before = nearestArrayedComponentBackward(off,128,&offBefore,&elSizeBefore)
-        let (type_before, off_before, el_size_before) = self
-            .base_type
-            .nearest_arrayed_component_backward(off, 128)
-            .unwrap_or((-1, 0, 0));
-        let (type_after, off_after, el_size_after) = self
-            .base_type
-            .nearest_arrayed_component_forward(off, 128)
-            .unwrap_or((-1, 0, 0));
+        let (type_before, off_before, el_size_before) = self.base_nearest_backward(off, 128);
+        let (type_after, off_after, el_size_after) = self.base_nearest_forward(off, 128);
         if type_before < 0 && type_after < 0 {
-            return match self.base_type.get_sub_type(off) {
-                Ok((Some(_), newoff)) => (true, newoff),
+            return match self.base_get_sub_type(off) {
+                (Some(_), newoff) => (true, newoff),
                 _ => (false, 0),
             };
         }
@@ -267,7 +310,7 @@ impl<'a> AddTreeState<'a> {
                 return (true, off_after);
             }
         }
-        if let Ok((Some(_), newoff)) = self.base_type.get_sub_type(off) {
+        if let (Some(_), newoff) = self.base_get_sub_type(off) {
             if newoff == off_before || newoff == off_after {
                 return (true, newoff); // Offset is contained in an arrayed component
             }

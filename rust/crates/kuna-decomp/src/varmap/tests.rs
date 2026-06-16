@@ -627,6 +627,124 @@ fn scope_local_add_symbol_maps_a_named_local() {
 }
 
 #[test]
+fn spacebase_get_sub_type_resolves_mapped_local_and_falls_back_to_unknown() {
+    // The W10 spacebase-typing keystone: `TypeSpacebase::getSubType` must resolve
+    // the smallest containing Symbol in the local scope so `RulePtrArith`/
+    // `isPtrsubMatching` recognize `PTRSUB(sp, off)` as a stack-variable access.
+    let f = factory();
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let inv = Address::new_invalid();
+    // Map an `int4 c[16]` at stack offset 0xff..a8 (byte == address, word size 1).
+    let arr_addr = Address::new(Rc::clone(&spc), 0xffff_ffff_ffff_ffa8);
+    let arr_ty: Rc<Datatype> = {
+        let elem = base(4, type_metatype::TYPE_INT);
+        f.get_type_array(16, elem).expect("int4[16]")
+    };
+    sl.add_symbol("c", Rc::clone(&arr_ty), &arr_addr, &inv).expect("addSymbol c");
+
+    // Inside the symbol: getSubType returns the symbol's type with newoff = byte
+    // offset into the symbol (0 at its base).
+    let (ty, newoff) = sl
+        .spacebase_get_sub_type(0xffff_ffff_ffff_ffa8u64 as i64, &f)
+        .expect("getSubType inside c");
+    assert_eq!(ty.get_size(), arr_ty.get_size(), "resolves the mapped array type");
+    assert_eq!(newoff, 0, "newoff is the in-symbol offset (0 at the base)");
+
+    // Outside any symbol: NON-null TYPE_UNKNOWN(1) with newoff = 0 (the C++
+    // fallback that lets `hasMatchingSubType` always succeed off a spacebase ptr).
+    let (ty2, newoff2) = sl
+        .spacebase_get_sub_type(0x10i64, &f)
+        .expect("getSubType outside any symbol");
+    assert_eq!(ty2.get_metatype(), type_metatype::TYPE_UNKNOWN);
+    assert_eq!(ty2.get_size(), 1);
+    assert_eq!(newoff2, 0);
+}
+
+// === [w10-spacebase-typing] verifier adversarial tests ====================
+// These target the fragile spots the hunt list flagged for this item:
+// the `(addr - smallest.addr) + smallest.offset` newoff arithmetic at a
+// NON-base offset (C++ type.cc:3431, the only place the subtraction is not
+// trivially zero), and the `nearestArrayedComponentForward` no-symbol /
+// next-slot path (C++ type.cc:3445-3479).
+
+#[test]
+fn w10_spacebase_typing_get_sub_type_midsymbol_newoff_is_byte_offset_into_symbol() {
+    // Access landing in the MIDDLE of a mapped symbol (not at its base): the C++
+    // `*newoff = (addr - smallest.addr) + smallest.offset` (type.cc:3431) must be
+    // the byte offset INTO the symbol, i.e. addr - base.  Here addr = base+0x10
+    // (the 5th int4 element of c[16]) so newoff must be 0x10, and the resolved
+    // type is still the whole array type (smallest->getSymbol()->getType()).
+    let f = factory();
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let inv = Address::new_invalid();
+    let base_off: u64 = 0xffff_ffff_ffff_ffa8;
+    let arr_addr = Address::new(Rc::clone(&spc), base_off);
+    let arr_ty: Rc<Datatype> = {
+        let elem = base(4, type_metatype::TYPE_INT);
+        f.get_type_array(16, elem).expect("int4[16]")
+    };
+    sl.add_symbol("c", Rc::clone(&arr_ty), &arr_addr, &inv).expect("addSymbol c");
+
+    // addr = base + 0x10 (well within the 64-byte array)
+    let (ty, newoff) = sl
+        .spacebase_get_sub_type(base_off.wrapping_add(0x10) as i64, &f)
+        .expect("getSubType mid-symbol");
+    assert_eq!(ty.get_size(), arr_ty.get_size(), "still the whole symbol's array type");
+    assert_eq!(
+        newoff, 0x10,
+        "newoff must be the byte offset INTO the symbol (addr-base), not 0 and not the absolute addr"
+    );
+}
+
+#[test]
+fn w10_spacebase_typing_nearest_forward_no_symbol_returns_negative() {
+    // `nearestArrayedComponentForward` off an address that is in NO symbol, with
+    // nothing reachable in the +32 next slot either, must return distance < 0 and
+    // leave the offset out-param untouched (C++ type.cc:3464-3468 / 3479).  This
+    // pins the `(-1, off, 0)` no-array fallthrough that keeps `hasMatchingSubType`
+    // from inventing an array where the frame has none.
+    let f = factory();
+    let sl = scope_local(); // empty frame: no symbols mapped at all
+    let _ = &f;
+    let probe: int8 = 0x100;
+    let (distance, newoff, el_size) = sl.spacebase_nearest_arrayed_forward(probe, 128);
+    assert!(distance < 0, "no array forward from an unmapped offset => distance<0; got {distance}");
+    assert_eq!(newoff, probe, "the offset out-param is the unchanged probe on the negative path");
+    assert_eq!(el_size, 0);
+}
+
+#[test]
+fn w10_spacebase_typing_nearest_backward_resolves_array_distance() {
+    // `nearestArrayedComponentBackward` into a mapped `int4[16]` from an offset
+    // inside it defers to the array type's own backward probe (C++ type.cc:3482-
+    // 3496 -> TypeArray::nearestArrayedComponentBackward).  For an access at the
+    // base of an array the nearest array backward is the array itself at distance
+    // 0; the returned newoff is the in-symbol offset (0).  This guards the
+    // getSubType->backward delegation the addtree spacebase arm relies on.
+    let f = factory();
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let inv = Address::new_invalid();
+    let base_off: u64 = 0xffff_ffff_ffff_ffa8;
+    let arr_addr = Address::new(Rc::clone(&spc), base_off);
+    let arr_ty: Rc<Datatype> = {
+        let elem = base(4, type_metatype::TYPE_INT);
+        f.get_type_array(16, elem).expect("int4[16]")
+    };
+    sl.add_symbol("c", Rc::clone(&arr_ty), &arr_addr, &inv).expect("addSymbol c");
+
+    let (distance, newoff, _el) =
+        sl.spacebase_nearest_arrayed_backward(base_off as i64, 128, &f);
+    assert!(
+        distance >= 0,
+        "an access at the base of a mapped array must find an array backward; got {distance}"
+    );
+    assert_eq!(newoff, 0, "in-symbol offset at the array base is 0");
+}
+
+#[test]
 fn scope_local_reset_local_window_loads_proto_ranges() {
     // resetLocalWindow copies the proto's local+param ranges into the scope's
     // own rangetree (the layout window restructure consults via adjustFit).
