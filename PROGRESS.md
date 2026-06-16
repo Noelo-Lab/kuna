@@ -1,5 +1,20 @@
 # kuna Progress Log
 
+## Session (2026-06-16) — rust-port W10 → 290/675, ZERO exec-failures (full corpus applies)
+
+The whole datatest corpus now decodes end-to-end under the Rust engine. Waves since 242:
+SBORROW signed-compare normalization (+3), **float cluster +21** (fillinReadOnly
+readonly-constant fold + float-lane getNameRepresentative -> all 14 Float-print + casts +
+long-double), union cluster +5 (ScoreUnionFields::run + printc .field arm), **implied-var
+/ dominant-COPY collapse +18** (broad: floatcast tail + bitfields + union + deindirect),
+**indproto** (getTypeCode(PrototypePieces) nested function-pointer parse -> the LAST
+exec-failure closed). **rust-port d852f06 = 675 applied / 290 passing / 0 exec-failures.**
+3,5xx Rust tests green; clippy -D clean; boolless/readstruct/condconst_conn byte-identical;
+B0 list-action unchanged; **C++ oracle 207/207 + 675/675 PARITY OK, byte-untouched.**
+IN FLIGHT: union value-members (~30; HighVariable union-type retention + pushPartialSymbol),
+MIPS dead-CALLOTHER elimination. Remaining: bitfield tail, longdouble, for-loops, the
+smaller held branches.
+
 ## Session (2026-06-15d) — rust-port W10 → 242/672, only 1 exec-failure left
 
 Continued the verified-wave grind. Bitfield subsystem (2 waves: BitFieldPull/Insert +
