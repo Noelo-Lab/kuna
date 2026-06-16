@@ -1434,6 +1434,170 @@ impl ScopeLocal {
         Some(SyncOverlap { all_flags, entry_size, sized_type: sized, symbol_id: sym })
     }
 
+    /// C++ `TypeSpacebase::getSubType` (`type.cc:3411-3433`), realized against this
+    /// local scope's symbol table.
+    ///
+    /// The C++ `TypeSpacebase` carries a `glb` + a `localframe` address; `getMap()`
+    /// resolves that frame to the owning function's `ScopeLocal` (which is exactly
+    /// `self` here — the spacebase type seeded by `Funcdata::spacebase` uses
+    /// `getAddress()` as the localframe).  Resolve the byte `off` to a stack
+    /// address (`glb->resolveConstant`, which for the stack space is just
+    /// `wrapOffset(byteToAddress·addressToByte)` = `wrapOffset(off)`), look up the
+    /// smallest containing Symbol, and return its type with the offset *into* that
+    /// Symbol.  When no Symbol contains the address, the C++ returns
+    /// `getBase(1, TYPE_UNKNOWN)` with `newoff = 0` — a NON-null type, which is why
+    /// `hasMatchingSubType` always succeeds off a spacebase pointer.
+    pub fn spacebase_get_sub_type(
+        &self,
+        off: int8,
+        types: &dyn TypeFactory,
+    ) -> KunaResult<(Rc<Datatype>, int8)> {
+        // addrOff = byteToAddress(off, wordSize); addr = resolveConstant(...) for the
+        // stack space reduces to Address(space, wrapOffset(off)).
+        let word_size = self.space.get_word_size();
+        let addr_off = AddrSpace::byte_to_address(off as u64, word_size);
+        let addr_off = AddrSpace::address_to_byte(addr_off, word_size);
+        let addr_off = self.space.wrap_offset(addr_off);
+        let addr = Address::new(Rc::clone(&self.space), addr_off);
+
+        // smallest = scope->queryContainer(addr, 1, nullPoint)
+        match self.db.find_container(self.scope, &addr, 1, &Address::new_invalid()) {
+            Some(eref) => {
+                let entry = self.db.entry(self.scope, eref);
+                let entry_addr_off = entry.get_addr().get_offset();
+                let entry_off = entry.get_offset();
+                let sym = entry.symbol;
+                let sym_type = self.db.symbol(sym).dtype.clone();
+                // newoff = (addr - smallest.addr) + smallest.offset
+                let newoff =
+                    (addr_off.wrapping_sub(entry_addr_off) as int8) + entry_off as int8;
+                match sym_type {
+                    Some(t) => Ok((t, newoff)),
+                    // A Symbol with no type is degenerate; fall back to UNKNOWN(1)
+                    // (the C++ symbol always has a type here).
+                    None => Ok((types.get_base(1, type_metatype::TYPE_UNKNOWN)?, 0)),
+                }
+            }
+            None => Ok((types.get_base(1, type_metatype::TYPE_UNKNOWN)?, 0)),
+        }
+    }
+
+    /// C++ `TypeSpacebase::nearestArrayedComponentForward` (`type.cc:3435-3480`),
+    /// realized against this local scope's symbol table.
+    ///
+    /// Look up the Symbol containing `off`; if it starts exactly at the access
+    /// (`getOffset() == 0`), defer to its type's `nearestArrayedComponentForward`.
+    /// Otherwise advance to the next Symbol slot (`addr + 32` when the access is
+    /// inside an offset Symbol, else past the current one) and probe there.  The
+    /// returned `(distance, newoff, elSize)` matches the C++ out-params.
+    pub fn spacebase_nearest_arrayed_forward(
+        &self,
+        off: int8,
+        max: int8,
+    ) -> (int8, int8, int8) {
+        let word_size = self.space.get_word_size();
+        let to_addr = |o: int8| -> Address {
+            let a = AddrSpace::byte_to_address(o as u64, word_size);
+            let a = AddrSpace::address_to_byte(a, word_size);
+            Address::new(Rc::clone(&self.space), self.space.wrap_offset(a))
+        };
+        let addr = to_addr(off);
+        let smallest =
+            self.db.find_container(self.scope, &addr, 1, &Address::new_invalid());
+
+        let mut el_size: int8 = 0;
+        let next_addr: Address;
+        match smallest {
+            Some(eref) => {
+                let entry = self.db.entry(self.scope, eref);
+                let entry_off = entry.get_offset();
+                if entry_off != 0 {
+                    next_addr = &addr + 32;
+                } else {
+                    let sym = entry.symbol;
+                    let symbol_type = self.db.symbol(sym).dtype.clone();
+                    let entry_addr_off = entry.get_addr().get_offset();
+                    let entry_size = entry.get_size();
+                    let struct_off = addr.get_offset().wrapping_sub(entry_addr_off) as int8;
+                    if let Some(st) = &symbol_type {
+                        if let Ok((distance, _dummy, esz)) =
+                            st.nearest_arrayed_component_forward(struct_off, max)
+                        {
+                            if distance >= 0 {
+                                if distance > max {
+                                    return (-1, off, 0);
+                                }
+                                return (distance, struct_off, esz);
+                            }
+                        }
+                    }
+                    let sz = AddrSpace::byte_to_address_int(entry_size as i64, word_size);
+                    next_addr = entry.get_addr() + sz;
+                }
+            }
+            None => {
+                next_addr = &addr + 32;
+            }
+        }
+        // if (nextAddr < addr) return -1;  // Don't let the address wrap
+        if next_addr.get_offset() < addr.get_offset() {
+            return (-1, off, 0);
+        }
+        let smallest2 =
+            self.db.find_container(self.scope, &next_addr, 1, &Address::new_invalid());
+        let eref2 = match smallest2 {
+            Some(e) => e,
+            None => return (-1, off, 0),
+        };
+        let entry2 = self.db.entry(self.scope, eref2);
+        if entry2.get_offset() != 0 {
+            return (-1, off, 0);
+        }
+        let sym2 = entry2.symbol;
+        let symbol_type2 = self.db.symbol(sym2).dtype.clone();
+        let entry2_addr_off = entry2.get_addr().get_offset();
+        let newoff = addr.get_offset().wrapping_sub(entry2_addr_off) as int8;
+        if let Some(st2) = &symbol_type2 {
+            if let Ok((distance, _dummy, esz)) = st2.nearest_arrayed_component_forward(0, max) {
+                el_size = esz;
+                if distance >= 0 {
+                    let distance = distance - newoff;
+                    if distance > max {
+                        return (-1, off, 0);
+                    }
+                    return (distance, newoff, el_size);
+                }
+            }
+        }
+        let _ = el_size;
+        (-1, off, 0)
+    }
+
+    /// C++ `TypeSpacebase::nearestArrayedComponentBackward` (`type.cc:3482-3496`),
+    /// realized against this local scope's symbol table.  Resolve the containing
+    /// Symbol type (`getSubType`) then defer to its
+    /// `nearestArrayedComponentBackward`.
+    pub fn spacebase_nearest_arrayed_backward(
+        &self,
+        off: int8,
+        max: int8,
+        types: &dyn TypeFactory,
+    ) -> (int8, int8, int8) {
+        let (sub_type, newoff) = match self.spacebase_get_sub_type(off, types) {
+            Ok(r) => r,
+            Err(_) => return (-1, off, 0),
+        };
+        match sub_type.nearest_arrayed_component_backward(newoff, max) {
+            Ok((distance, _dummy, esz)) if distance >= 0 => {
+                if distance > max {
+                    return (-1, off, 0);
+                }
+                (distance, newoff, esz)
+            }
+            _ => (-1, off, 0),
+        }
+    }
+
     /// C++ `ScopeLocal::buildVariableName` (`varmap.cc:548`): the stack-frame
     /// naming convention (`<TypeBase><Space>[XY]_<hexoffset>`) for an addr-tied,
     /// non-persistent Varnode in this scope's space whose offset lies in the

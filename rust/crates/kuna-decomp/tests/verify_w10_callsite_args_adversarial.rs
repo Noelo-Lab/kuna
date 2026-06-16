@@ -405,8 +405,15 @@ fn w10_callsite_noforloop_alias_recovers_per_call_args() {
     // and rendering the string literal are the downstream type/stackvar/string
     // plane, LOSS-131.)
     assert_ne!(mc[0], "RDI", "the call arg must resolve to the data-flow value, not the raw register RDI; got `{}`", mc[0]);
+    // The resolved stack-address value.  Since the W10 spacebase-typing keystone
+    // (`TypeSpacebase::getSubType` Scope resolution -> `RulePtrArith` converts the
+    // raw `RSP + <const>` INT_ADD into `PTRSUB(sp, <const>)`), the arg now renders
+    // as the recognized stack-frame reference `PTRSUB(<sp>, <const>)` — the
+    // intermediate the printc spacebase arm finishes as `&i`.  Either the raw
+    // additive form (pre-keystone) or the PTRSUB form (post-keystone) is a resolved
+    // stack-address value; the raw register `RDI` (ruled out above) is not.
     assert!(
-        mc[0].contains("RSP") || mc[0].contains('+'),
+        mc[0].contains("RSP") || mc[0].contains('+') || mc[0].contains("PTRSUB"),
         "the 1-arg call must pass the resolved stack-address value (`&i`), got `{}`",
         mc[0]
     );
@@ -519,10 +526,29 @@ fn w10_callsite_dupptr_direct_call_arg_no_raw_op_form() {
         &rest[..end]
     };
     let inner = arglist.trim();
-    assert!(!inner.is_empty() && !inner.contains(','), "initstruct should recover exactly 1 arg; got `{inner}`");
+    // Count TOP-LEVEL commas only: the W10 spacebase-typing keystone renders the
+    // arg as `(xunknown1 *)PTRSUB(<sp>, <const>)`, whose `PTRSUB(<sp>,<const>)`
+    // carries its own depth>0 comma — that is NOT an argument separator.
+    let top_level_commas = {
+        let mut depth = 0i32;
+        let mut n = 0usize;
+        for c in inner.chars() {
+            match c {
+                '(' | '[' => depth += 1,
+                ')' | ']' => depth -= 1,
+                ',' if depth == 0 => n += 1,
+                _ => {}
+            }
+        }
+        n
+    };
+    assert!(!inner.is_empty() && top_level_commas == 0, "initstruct should recover exactly 1 arg; got `{inner}`");
     assert_ne!(inner, "RDI", "initstruct arg must resolve to the data-flow value, not the raw register RDI; got `{inner}`");
+    // The resolved stack-address value: the raw additive form `RSP + <const>`
+    // (pre-keystone) or the recognized `PTRSUB(<sp>, <const>)` stack-frame
+    // reference (post-keystone, finished as `&myval` by the printc spacebase arm).
     assert!(
-        inner.contains("RSP") || inner.contains('+'),
+        inner.contains("RSP") || inner.contains('+') || inner.contains("PTRSUB"),
         "initstruct arg must be the resolved stack-address value (`&myval`); got `{inner}`"
     );
 

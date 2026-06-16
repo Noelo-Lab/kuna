@@ -627,6 +627,41 @@ fn scope_local_add_symbol_maps_a_named_local() {
 }
 
 #[test]
+fn spacebase_get_sub_type_resolves_mapped_local_and_falls_back_to_unknown() {
+    // The W10 spacebase-typing keystone: `TypeSpacebase::getSubType` must resolve
+    // the smallest containing Symbol in the local scope so `RulePtrArith`/
+    // `isPtrsubMatching` recognize `PTRSUB(sp, off)` as a stack-variable access.
+    let f = factory();
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let inv = Address::new_invalid();
+    // Map an `int4 c[16]` at stack offset 0xff..a8 (byte == address, word size 1).
+    let arr_addr = Address::new(Rc::clone(&spc), 0xffff_ffff_ffff_ffa8);
+    let arr_ty: Rc<Datatype> = {
+        let elem = base(4, type_metatype::TYPE_INT);
+        f.get_type_array(16, elem).expect("int4[16]")
+    };
+    sl.add_symbol("c", Rc::clone(&arr_ty), &arr_addr, &inv).expect("addSymbol c");
+
+    // Inside the symbol: getSubType returns the symbol's type with newoff = byte
+    // offset into the symbol (0 at its base).
+    let (ty, newoff) = sl
+        .spacebase_get_sub_type(0xffff_ffff_ffff_ffa8u64 as i64, &f)
+        .expect("getSubType inside c");
+    assert_eq!(ty.get_size(), arr_ty.get_size(), "resolves the mapped array type");
+    assert_eq!(newoff, 0, "newoff is the in-symbol offset (0 at the base)");
+
+    // Outside any symbol: NON-null TYPE_UNKNOWN(1) with newoff = 0 (the C++
+    // fallback that lets `hasMatchingSubType` always succeed off a spacebase ptr).
+    let (ty2, newoff2) = sl
+        .spacebase_get_sub_type(0x10i64, &f)
+        .expect("getSubType outside any symbol");
+    assert_eq!(ty2.get_metatype(), type_metatype::TYPE_UNKNOWN);
+    assert_eq!(ty2.get_size(), 1);
+    assert_eq!(newoff2, 0);
+}
+
+#[test]
 fn scope_local_reset_local_window_loads_proto_ranges() {
     // resetLocalWindow copies the proto's local+param ranges into the scope's
     // own rangetree (the layout window restructure consults via adjustFit).

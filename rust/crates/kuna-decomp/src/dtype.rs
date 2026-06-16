@@ -2941,7 +2941,7 @@ impl Datatype {
     /// `true` (C++ `TypePointer::testForArraySlack`, type.cc:1131-1142).
     ///
     /// A static helper on the pointed-to data-type and the out-of-bounds offset.
-    fn test_for_array_slack(dt: &Datatype, off: int8) -> KunaResult<bool> {
+    pub(crate) fn test_for_array_slack(dt: &Datatype, off: int8) -> KunaResult<bool> {
         if dt.get_metatype() == type_metatype::TYPE_ARRAY {
             return Ok(true);
         }

@@ -22,7 +22,7 @@
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::types::{int4, uint4, uintb};
+use kuna_base::types::{int4, int8, uint4, uintb};
 
 use kuna_num::opcodes::OpCode;
 
@@ -130,6 +130,63 @@ impl Funcdata {
                 }
             }
         }
+    }
+
+    /// C++ `TypePointer::isPtrsubMatching` (`type.cc:1260-1312`), with the
+    /// `TYPE_SPACEBASE` arm resolved through this function's local symbol scope.
+    ///
+    /// A pure `Datatype::is_ptrsub_matching` cannot reach the symbol table that
+    /// `TypeSpacebase::getSubType` needs (the C++ `TypeSpacebase` carries `glb`);
+    /// for a pointer-to-spacebase we therefore resolve the sub-type here through
+    /// [`ScopeLocal::spacebase_get_sub_type`] and otherwise delegate to the pure
+    /// method.  Callers are `ActionSetCasts::castFixupPtrsub`
+    /// (`coreaction.cc:2837`) and `RulePtrsubUndo::applyOp` (`ruleaction.cc:7169`),
+    /// which must NOT undo a valid stack-frame `PTRSUB(sp, off)`.
+    pub fn is_ptrsub_matching_scope(
+        &self,
+        ptrtype: &Rc<crate::dtype::Datatype>,
+        off: int8,
+        extra: int8,
+        multiplier: int8,
+    ) -> bool {
+        use crate::dtype::type_metatype;
+        // Only the TYPE_PTR -> TYPE_SPACEBASE case needs scope resolution.
+        if ptrtype.get_metatype() == type_metatype::TYPE_PTR {
+            if let Some(ptrto) = ptrtype.get_ptr_to() {
+                if ptrto.get_metatype() == type_metatype::TYPE_SPACEBASE {
+                    let word_size = ptrtype.get_word_size().unwrap_or(1);
+                    let (lm, types) =
+                        match (self.get_scope_local(), self.get_arch().types_rc()) {
+                            (Some(lm), Some(t)) => (lm, t),
+                            _ => return false,
+                        };
+                    // newoff = addressToByteInt(off, wordsize)
+                    let new_off =
+                        kuna_base::space::AddrSpace::address_to_byte_int(off, word_size);
+                    let (sub_type, new_off2) =
+                        match lm.spacebase_get_sub_type(new_off, types.as_ref()) {
+                            Ok(r) => r,
+                            Err(_) => return false,
+                        };
+                    // if (subType == 0 || newoff != 0) return false;  (subType is
+                    // always Some here — TypeSpacebase::getSubType never returns null)
+                    if new_off2 != 0 {
+                        return false;
+                    }
+                    let extra_b =
+                        kuna_base::space::AddrSpace::address_to_byte_int(extra, word_size);
+                    if extra_b < 0 || extra_b >= sub_type.get_size() as i64 {
+                        match crate::dtype::Datatype::test_for_array_slack(&sub_type, extra_b) {
+                            Ok(true) => {}
+                            _ => return false,
+                        }
+                    }
+                    return true;
+                }
+            }
+        }
+        // Non-spacebase: the pure method is fully faithful.
+        ptrtype.is_ptrsub_matching(off, extra, multiplier).unwrap_or(false)
     }
 
     /// Make a clone of the defining op for every descendant after the first, so

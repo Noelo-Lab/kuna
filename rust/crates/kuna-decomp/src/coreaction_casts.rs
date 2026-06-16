@@ -1155,7 +1155,7 @@ impl Funcdata {
         };
         let curtype = self.vn_type_read_facing(in0, op);
         // !curtype->isPtrsubMatching(off, 0, 0)
-        let matching = curtype.is_ptrsub_matching(in1off as i64, 0, 0).unwrap_or(false);
+        let matching = self.is_ptrsub_matching_scope(&curtype, in1off as i64, 0i64, 0i64);
         if !matching {
             if in1off == 0 {
                 self.op_remove_input(op, 1);
