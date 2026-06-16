@@ -240,25 +240,37 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
             data.vbank().get(vn).map(|v| v.is_written() || v.is_input()).unwrap_or(false)
         })
         .collect();
-    if output_locked && written.len() == 1 {
-        let vn = written[0];
-        // Un-tie iff the single write is a CPUI_COPY (the return-value copy).
-        // A merged-register local (boolless ACC) is written by a MULTIEQUAL or
-        // has >1 write, so it never reaches here.
-        let single_copy_return = {
-            let def = data.vbank().get(vn).and_then(|v| v.get_def());
-            match def {
-                Some(def) => data
-                    .obank()
-                    .get(def)
-                    .map(|o| o.code() == OpCode::CPUI_COPY)
-                    .unwrap_or(false),
-                None => false, // input-only (e.g. a passthrough reg) -> keep tied
-            }
-        };
-        if single_copy_return {
-            // Not a whole-function local: leave un-tied so the value can be
-            // IMPLIED and the printer collapses the return-register round-trip.
+    // Whether C++ ties the return register comes down to one structural fact: the
+    // register is a whole-function local (and so `inScope`/`addrtied`,
+    // funcdata_varnode.cc:997) iff heritage left it occupying a *fixed* storage
+    // address across a control-flow join — i.e. one of its instances is written by
+    // a `marker` op (CPUI_MULTIEQUAL phi, or a CPUI_INDIRECT call-clobber survival).
+    // A return register that is instead a pure forward computation chain — every
+    // instance defined by an ordinary p-code op, no phi/indirect join (boolless's
+    // `ACC` HAS such a join; `rand_calc`'s `XMM0_Da` INT2FLOAT->MULT->COPY does
+    // NOT) — is fully SSA-renameable, so C++ never restructures it into a
+    // whole-function local and leaves it un-tied.  `baseExplicit` then marks the
+    // chain IMPLIED and the printer collapses it into the `return` expression
+    // (`return (float4)(int4)(fval - 0x10) * dat;`).  This is a structural IR-shape
+    // test off the recovered output, not a name/address special case.
+    if output_locked && !written.is_empty() {
+        // A `marker` write (CPUI_MULTIEQUAL phi / CPUI_INDIRECT call-clobber
+        // survival) is the structural signature of a register that heritage kept at
+        // a fixed address across a control-flow join — the whole-function local C++
+        // restructures and ties.  Function inputs (no def) do not signal a local:
+        // their cover ends before the return computation, so the input SSA value
+        // and the return-value SSA defs stay distinct in C++ (the input is rendered
+        // by `baseExplicit`'s own `def==0` explicit rule, not by addr-tying).
+        let has_marker_write = written.iter().any(|&vn| {
+            data.vbank()
+                .get(vn)
+                .and_then(|v| v.get_def())
+                .map(|def| data.obank().get(def).map(|o| o.is_marker()).unwrap_or(false))
+                .unwrap_or(false)
+        });
+        if !has_marker_write {
+            // Not a whole-function local: leave un-tied so the value can be IMPLIED
+            // and the printer collapses the return-register round-trip / chain.
             return;
         }
     }
