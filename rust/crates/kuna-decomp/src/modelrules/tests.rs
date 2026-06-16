@@ -763,6 +763,38 @@ fn register_ids_drives_production_rule_decode() {
 }
 
 #[test]
+fn w10_float_typeclass_register_ids_decodes_hidden_return_strategy() {
+    // Adversarial (verifier): the production `register_ids` registry must carry
+    // the multi-element `<hidden_return strategy="...">` rule — the exact rule
+    // shape that drives the +4 retspecial parity (`void returnbig(mystruct
+    // *rethidden,int4 num)`).  Decode it through `with_base_ids() +
+    // register_ids()` (NOT the test-only `decode_rule` registry) and assert the
+    // `<hidden_return>` element AND the `strategy` attribute both resolved (a
+    // missing ATTRIB_STRATEGY would silently default the strategy, changing the
+    // response code).
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let model = single_reg_model(&mgr, &reg);
+    let mut registry = IdRegistry::with_base_ids();
+    crate::modelrules::register_ids(&mut registry);
+    let mut decoder = XmlDecode::new(&mgr, &registry);
+    decoder
+        .ingest_stream(br#"<rule><datatype name="any"/><hidden_return strategy="normalparam"/></rule>"#)
+        .expect("ingest");
+    let rule = ModelRule::decode(&mut decoder, &model)
+        .expect("decode hidden_return via register_ids");
+    let mut status = vec![0i32; 2];
+    let mut res = ParameterPieces::default();
+    let r = rule
+        .assign_address(&dt_int(8), &proto_empty(), -1, &PanicFactory, &mut status, &mut res, &model, &mgr)
+        .unwrap();
+    // `strategy="normalparam"` -> hiddenret_ptrparam.  If ATTRIB_STRATEGY had not
+    // resolved through register_ids, the default (`special`) strategy would yield
+    // hiddenret_specialreg instead — so this distinguishes the two registrations.
+    assert_eq!(r, AssignActionResponse::hiddenret_ptrparam);
+}
+
+#[test]
 fn decode_rule_with_position_qualifier() {
     let mgr = AddrSpaceManager::new();
     let reg = reg_space_le();
