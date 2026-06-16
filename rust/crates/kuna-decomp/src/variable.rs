@@ -1364,6 +1364,64 @@ impl HighVariableBank {
         }
     }
 
+    /// Raw internal cover of a HighVariable (C++ `high->internalCover`,
+    /// distinct from `getCover()` which returns the piece's extended cover when
+    /// the high is grouped).  Used by `Merge::inflateTest` (`merge.cc:1622`).
+    pub fn internal_cover(&self, id: HighVariableId) -> Option<&Cover> {
+        self.highs.get(&id).map(|h| &h.internal_cover)
+    }
+
+    /// The HighVariable's `piece` id, if it belongs to a [`VariableGroup`] (C++
+    /// `high->piece`).
+    pub fn high_piece_id(&self, id: HighVariableId) -> Option<VariablePieceId> {
+        self.highs.get(&id).and_then(|h| h.piece)
+    }
+
+    /// Byte offset of a piece within its group (C++ `VariablePiece::getOffset`).
+    pub fn piece_offset(&self, piece: VariablePieceId) -> int4 {
+        self.pieces.get(&piece).map(|p| p.group_offset).unwrap_or(0)
+    }
+
+    /// Number of bytes in a piece (C++ `VariablePiece::getSize`).
+    pub fn piece_size(&self, piece: VariablePieceId) -> int4 {
+        self.pieces.get(&piece).map(|p| p.size).unwrap_or(0)
+    }
+
+    /// The central group id of a piece (C++ `VariablePiece::getGroup`).
+    pub fn piece_group(&self, piece: VariablePieceId) -> Option<VariableGroupId> {
+        self.pieces.get(&piece).map(|p| p.group)
+    }
+
+    /// The HighVariable owning a piece (C++ `VariablePiece::getHigh`).
+    pub fn piece_high(&self, piece: VariablePieceId) -> Option<HighVariableId> {
+        self.pieces.get(&piece).map(|p| p.high)
+    }
+
+    /// Number of contiguous bytes covered by a whole group (C++
+    /// `VariableGroup::getSize`).
+    pub fn group_size(&self, group: VariableGroupId) -> int4 {
+        self.groups.get(&group).map(|g| g.size).unwrap_or(0)
+    }
+
+    /// Number of pieces a piece intersects with (C++
+    /// `VariablePiece::numIntersection`), after the intersection list is current.
+    pub fn piece_num_intersection(&self, piece: VariablePieceId) -> int4 {
+        self.pieces.get(&piece).map(|p| p.intersection.len() as int4).unwrap_or(0)
+    }
+
+    /// The i-th piece a piece intersects with (C++
+    /// `VariablePiece::getIntersection`).
+    pub fn piece_get_intersection(&self, piece: VariablePieceId, i: int4) -> Option<VariablePieceId> {
+        self.pieces.get(&piece).and_then(|p| p.intersection.get(i as usize).copied())
+    }
+
+    /// Recompute a piece's intersection list (C++
+    /// `VariablePiece::updateIntersections`, driven by `Merge::inflateTest` /
+    /// `intersection`).  Public wrapper for the private `update_intersections`.
+    pub fn update_piece_intersections(&mut self, piece: VariablePieceId) {
+        self.update_intersections(piece);
+    }
+
     /// Is a HighVariable part of the same VariableGroup as another (C++ inline
     /// `isSameGroup`, `variable.hh:306-312`).
     pub fn is_same_group(&self, a: HighVariableId, b: HighVariableId) -> bool {

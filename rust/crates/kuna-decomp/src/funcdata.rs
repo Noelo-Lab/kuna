@@ -1823,6 +1823,229 @@ impl Funcdata {
         false
     }
 
+    /// One step up `vn`'s COPY chain (`vn->getDef()->getIn(0)` when `vn` is a
+    /// written COPY), or `None` at the chain source.  Shared by the shadow
+    /// helpers below (C++ inlines the same `while(isWritten && COPY)` walk).
+    fn copy_chain_pred(&self, vn: VarnodeId) -> Option<VarnodeId> {
+        let v = self.vbank.get(vn)?;
+        if !v.is_written() {
+            return None;
+        }
+        let def = v.get_def()?;
+        if self.obank.get(def).map(|o| o.code())? != OpCode::CPUI_COPY {
+            return None;
+        }
+        self.obank.get(def).and_then(|o| o.get_in(0))
+    }
+
+    /// Walk `vn` to the end of its COPY chain (`while(isWritten && COPY) vn = in0`).
+    fn skip_copy_chain(&self, mut vn: VarnodeId) -> VarnodeId {
+        while let Some(pred) = self.copy_chain_pred(vn) {
+            vn = pred;
+        }
+        vn
+    }
+
+    /// C++ `Varnode::findSubpieceShadow` (`varnode.cc:1025-1072`): does `vn`
+    /// equal `whole` truncated by `least_byte` least-significant bytes, allowing
+    /// COPY/MULTIEQUAL in the flow path (bounded recursion depth 1).
+    fn find_subpiece_shadow(&self, vn: VarnodeId, least_byte: int4, whole: VarnodeId, recurse: int4) -> bool {
+        let vn = self.skip_copy_chain(vn);
+        let v = match self.vbank.get(vn) {
+            Some(v) => v,
+            None => return false,
+        };
+        if !v.is_written() {
+            if v.get_addr().is_constant() {
+                let whole = self.skip_copy_chain(whole);
+                let wv = match self.vbank.get(whole) {
+                    Some(w) => w,
+                    None => return false,
+                };
+                if !wv.get_addr().is_constant() {
+                    return false;
+                }
+                // off = whole->getOffset() >> least_byte*8; off &= calc_mask(vn->getSize())
+                let off = (wv.get_offset() >> (least_byte * 8))
+                    & kuna_base::address::calc_mask(v.get_size());
+                return off == v.get_offset();
+            }
+            return false;
+        }
+        let def = match v.get_def() {
+            Some(d) => d,
+            None => return false,
+        };
+        let opc = self.obank.get(def).map(|o| o.code()).unwrap_or(OpCode::CPUI_COPY);
+        if opc == OpCode::CPUI_SUBPIECE {
+            let o = self.obank.get(def).unwrap();
+            let tmpvn = match o.get_in(0) {
+                Some(t) => t,
+                None => return false,
+            };
+            // off = (int4)getIn(1)->getOffset()
+            let off = o
+                .get_in(1)
+                .and_then(|c| self.vbank.get(c))
+                .map(|c| c.get_offset() as int4)
+                .unwrap_or(0);
+            let tmp_size = self.vbank.get(tmpvn).map(|t| t.get_size()).unwrap_or(0);
+            let whole_size = self.vbank.get(whole).map(|w| w.get_size()).unwrap_or(0);
+            if off != least_byte || tmp_size != whole_size {
+                return false;
+            }
+            if tmpvn == whole {
+                return true;
+            }
+            let mut tmpvn = tmpvn;
+            while let Some(pred) = self.copy_chain_pred(tmpvn) {
+                tmpvn = pred;
+                if tmpvn == whole {
+                    return true;
+                }
+            }
+        } else if opc == OpCode::CPUI_MULTIEQUAL {
+            let recurse = recurse + 1;
+            if recurse > 1 {
+                return false; // Truncate the recursion at maximum depth
+            }
+            let whole = self.skip_copy_chain(whole);
+            let wv = match self.vbank.get(whole) {
+                Some(w) => w,
+                None => return false,
+            };
+            if !wv.is_written() {
+                return false;
+            }
+            let big_op = match wv.get_def() {
+                Some(d) => d,
+                None => return false,
+            };
+            if self.obank.get(big_op).map(|o| o.code()) != Some(OpCode::CPUI_MULTIEQUAL) {
+                return false;
+            }
+            let small_op = def;
+            let big_parent = self.obank.get(big_op).and_then(|o| o.get_parent());
+            let small_parent = self.obank.get(small_op).and_then(|o| o.get_parent());
+            if big_parent != small_parent {
+                return false;
+            }
+            let ni = self.obank.get(small_op).map(|o| o.num_input()).unwrap_or(0);
+            for i in 0..ni {
+                let small_in = self.obank.get(small_op).and_then(|o| o.get_in(i));
+                let big_in = self.obank.get(big_op).and_then(|o| o.get_in(i));
+                match (small_in, big_in) {
+                    (Some(si), Some(bi)) => {
+                        if !self.find_subpiece_shadow(si, least_byte, bi, recurse) {
+                            return false;
+                        }
+                    }
+                    _ => return false,
+                }
+            }
+            return true; // All branches were copy shadows
+        }
+        false
+    }
+
+    /// C++ `Varnode::findPieceShadow` (`varnode.cc:1081-1110`): is `vn` formed out
+    /// of `piece` via PIECE (backtracking COPY chains and nested PIECEs), with
+    /// `least_byte` least-significant bytes truncated from `vn` to reach `piece`.
+    fn find_piece_shadow(&self, vn: VarnodeId, mut least_byte: int4, piece: VarnodeId) -> bool {
+        let vn = self.skip_copy_chain(vn);
+        let v = match self.vbank.get(vn) {
+            Some(v) => v,
+            None => return false,
+        };
+        if !v.is_written() {
+            return false;
+        }
+        let def = match v.get_def() {
+            Some(d) => d,
+            None => return false,
+        };
+        if self.obank.get(def).map(|o| o.code()) != Some(OpCode::CPUI_PIECE) {
+            return false;
+        }
+        // tmpvn = getIn(1) (least significant part)
+        let o = self.obank.get(def).unwrap();
+        let mut tmpvn = match o.get_in(1) {
+            Some(t) => t,
+            None => return false,
+        };
+        let tmp_size = self.vbank.get(tmpvn).map(|t| t.get_size()).unwrap_or(0);
+        let piece_size = self.vbank.get(piece).map(|p| p.get_size()).unwrap_or(0);
+        if least_byte >= tmp_size {
+            least_byte -= tmp_size;
+            tmpvn = match o.get_in(0) {
+                Some(t) => t,
+                None => return false,
+            };
+        } else if piece_size + least_byte > tmp_size {
+            return false;
+        }
+        let tmp_size = self.vbank.get(tmpvn).map(|t| t.get_size()).unwrap_or(0);
+        if least_byte == 0 && tmp_size == piece_size {
+            if tmpvn == piece {
+                return true;
+            }
+            let mut tmpvn = tmpvn;
+            while let Some(pred) = self.copy_chain_pred(tmpvn) {
+                tmpvn = pred;
+                if tmpvn == piece {
+                    return true;
+                }
+            }
+            return false;
+        }
+        // CPUI_PIECE input is too big, recursively search for another CPUI_PIECE
+        self.find_piece_shadow(tmpvn, least_byte, piece)
+    }
+
+    /// C++ `Varnode::partialCopyShadow` (`varnode.cc:1121-1147`): does one of `a`
+    /// / `b` contain the other (as a value) via a SUBPIECE or CONCAT chain at the
+    /// given relative byte offset.  Used by `Merge::inflateTest` /
+    /// `HighIntersectTest::blockIntersection` to allow partial-shadow overlaps.
+    pub(crate) fn varnode_partial_copy_shadow(&self, a: VarnodeId, b: VarnodeId, rel_off: int4) -> bool {
+        let sa = match self.vbank.get(a) {
+            Some(v) => v.get_size(),
+            None => return false,
+        };
+        let sb = match self.vbank.get(b) {
+            Some(v) => v.get_size(),
+            None => return false,
+        };
+        // Pick the smaller as `vn`, the larger as `op2` (swap rel_off when swapped).
+        let (vn, op2, rel_off) = if sa < sb {
+            (a, b, rel_off)
+        } else if sa > sb {
+            (b, a, -rel_off)
+        } else {
+            return false;
+        };
+        if rel_off < 0 {
+            return false; // Not proper containment
+        }
+        let vn_size = self.vbank.get(vn).map(|v| v.get_size()).unwrap_or(0);
+        let op2_size = self.vbank.get(op2).map(|v| v.get_size()).unwrap_or(0);
+        if rel_off + vn_size > op2_size {
+            return false; // Not proper containment
+        }
+        let big_endian = self
+            .vbank
+            .get(vn)
+            .map(|v| v.get_space().is_big_endian())
+            .unwrap_or(false);
+        let least_byte = if big_endian { (op2_size - vn_size) - rel_off } else { rel_off };
+        if self.find_subpiece_shadow(vn, least_byte, op2, 0) {
+            return true;
+        }
+        if self.find_piece_shadow(op2, least_byte, vn) {
+            return true;
+        }
+        false
+    }
+
     /// C++ `Varnode::characterizeOverlap` (`varnode.cc:155`): 0 = no overlap,
     /// 1 = partial, 2 = identical storage range.
     pub(crate) fn varnode_characterize_overlap(&self, a: VarnodeId, b: VarnodeId) -> int4 {
