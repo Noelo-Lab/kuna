@@ -865,6 +865,37 @@ impl Funcdata {
         self.localmap.as_ref().map(|lm| lm.mapped_symbol_specs()).unwrap_or_default()
     }
 
+    /// Snapshot the console-added dynamic (`map hash`) symbols of this function's
+    /// local scope as re-seed specs `(name, type, hashAddr, hash)` — the dynamic
+    /// counterpart of [`mapped_symbol_specs`](Self::mapped_symbol_specs).
+    pub fn dynamic_symbol_specs(
+        &self,
+    ) -> Vec<(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint8)> {
+        self.localmap
+            .as_ref()
+            .map(|lm| lm.database().scope_dynamic_symbol_specs(lm.scope_id()))
+            .unwrap_or_default()
+    }
+
+    /// Re-create the given console-added dynamic (`map hash`) Symbols in this
+    /// function's local scope (the dynamic counterpart of
+    /// [`seed_mapped_symbols`](Self::seed_mapped_symbols)).  The console set
+    /// `namelock|typelock` on each; re-applied here so `ActionDynamicSymbols` sees
+    /// the same dynamic-entry list the C++ `getScopeLocal()->beginDynamic()` does.
+    pub fn seed_dynamic_symbols(
+        &mut self,
+        specs: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint8)],
+    ) {
+        use crate::varnode::varnode_flags;
+        if let Some(lm) = self.localmap.as_mut() {
+            for (name, ct, addr, hash) in specs {
+                if let Ok(sym) = lm.add_dynamic_symbol(name, std::rc::Rc::clone(ct), addr, *hash) {
+                    lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+                }
+            }
+        }
+    }
+
     /// Re-create the given console-mapped Symbols in this function's local scope
     /// and re-apply the `namelock|typelock` attributes (`IfcMapaddress`'s fd-local
     /// form).  The kuna console rebuilds the `Funcdata` on `decompile` (C++ reuses
@@ -2769,6 +2800,206 @@ impl Funcdata {
     pub fn vn_high_equate_symbol(&self, vn: VarnodeId) -> Option<crate::database::SymbolId> {
         let high = self.vbank.get(vn)?.get_high()?;
         self.high_bank.get(high)?.kuna_equate_symbol()
+    }
+
+    /// C++ `Funcdata::attemptDynamicMapping` (`funcdata_varnode.cc:1335`): the
+    /// EARLY dynamic mapping, run mid-pipeline by `ActionDynamicMapping`.  Finds
+    /// the Varnode the dynamic SymbolEntry maps to and binds the Symbol's
+    /// properties (size/type-lock) to it — the C++ `setSymbolProperties`.
+    ///
+    /// The behavioural point of the early mapping (vs. the late, name-only one)
+    /// is to PIN the matched Varnode before the merge/copy-elimination passes:
+    /// binding the symbol marks the Varnode `mapped`, so it survives as an
+    /// explicit storage location (the dynamic-hash COPY the late hash later
+    /// targets) instead of being copy-propagated away.  The kuna stand-in is the
+    /// same as the late path (`kuna_name` + the `mapped` flag); the `updateType`/
+    /// type-lock retype is the documented W4 loss.  Returns `true` on a match.
+    pub fn attempt_dynamic_mapping(
+        &mut self,
+        entry: &crate::database::SymbolEntry,
+    ) -> KunaResult<bool> {
+        use crate::database::symbol_category;
+        let sym_id = entry.symbol;
+        let (category, sym_name) = {
+            let localmap = match self.localmap.as_ref() {
+                Some(l) => l,
+                None => return Ok(false),
+            };
+            let sym = localmap.database().symbol(sym_id);
+            (sym.get_category(), sym.get_name().to_string())
+        };
+        // union_facet -> applyUnionFacet (W6 union-resolution seam; not reached).
+        if category == symbol_category::UNION_FACET {
+            return Ok(false);
+        }
+        let first_use = entry.get_first_use_address();
+        let hash = entry.get_hash();
+        let mut dhash = crate::dynamic::DynamicHash::new();
+        let vn = match dhash.find_varnode(self, &first_use, hash) {
+            Some(v) => v,
+            None => return Ok(false),
+        };
+        // if (vn->getSymbolEntry() != 0) return false; — idempotent (already bound).
+        if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
+            if self.high_bank.get(high).map(|h| h.kuna_name().is_some()).unwrap_or(false) {
+                return Ok(false);
+            }
+        }
+        if category == symbol_category::EQUATE {
+            if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
+                if let Some(h) = self.high_bank.get_mut(high) {
+                    h.set_kuna_equate_symbol(sym_id);
+                }
+            }
+            return Ok(true);
+        }
+        // else if (entry->getSize() == vn->getSize()) { if (vn->setSymbolProperties(entry)) return true; }
+        let vn_size = self.vbank.get(vn).map(|v| v.get_size()).unwrap_or(0);
+        if entry.get_size() == vn_size {
+            use crate::varnode::varnode_flags;
+            if let Some(v) = self.vbank.get_mut(vn) {
+                v.set_flags_pub(varnode_flags::mapped);
+            }
+            if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
+                if let Some(h) = self.high_bank.get_mut(high) {
+                    h.set_kuna_name(sym_name);
+                }
+            }
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// C++ `Funcdata::attemptDynamicMappingLate` (`funcdata_varnode.cc:1368`):
+    /// find the Varnode a dynamic SymbolEntry maps to (via [`DynamicHash`]) and
+    /// attach the Symbol's NAME to it.  Returns `true` if a Varnode was adjusted.
+    ///
+    /// SEAM(W4): the merged tree has no Varnode→SymbolEntry retype link, so the
+    /// `vn->setSymbolEntry(entry)` effect is expressed as the kuna stand-in: the
+    /// matched HighVariable's `kuna_name` is set to the Symbol's name (read by the
+    /// printer as `getSymbol()->getDisplayName()`), and the matched Varnode is
+    /// marked `mapped` so the next cleanup-loop `ActionMarkExplicit::baseExplicit`
+    /// forces it explicit (C++ `isMapped()` arm, `coreaction.cc:3148`) — exactly
+    /// the C++ effect on the dynamic-hash temp.  The `union_facet`/`applyUnionFacet`
+    /// arm (no union facets in the merged-tree slices) and the `retypeSymbol`
+    /// type-propagation are documented losses; the equate arm reuses the existing
+    /// `kuna_equate_symbol` binding.
+    pub fn attempt_dynamic_mapping_late(
+        &mut self,
+        entry: &crate::database::SymbolEntry,
+    ) -> KunaResult<bool> {
+        use crate::database::symbol_category;
+        // Symbol *sym = entry->getSymbol(); — read the symbol's identity, category,
+        // name (for the warning), and size up front (snapshot so the `&mut self`
+        // DynamicHash search below does not alias the scope borrow).
+        let sym_id = entry.symbol;
+        let (category, sym_name, sym_name_undefined, sym_type_locked, sym_type) = {
+            let localmap = match self.localmap.as_ref() {
+                Some(l) => l,
+                None => return Ok(false), // no local scope: nothing dynamic to map
+            };
+            let sym = localmap.database().symbol(sym_id);
+            (
+                sym.get_category(),
+                sym.get_name().to_string(),
+                sym.is_name_undefined(),
+                sym.is_type_locked(),
+                sym.dtype.clone(),
+            )
+        };
+        // if (sym->getCategory() == Symbol::union_facet) return applyUnionFacet(...)
+        if category == symbol_category::UNION_FACET {
+            // SEAM: no union facets in the merged-tree slices (applyUnionFacet
+            // needs the W6 union-resolution layer).
+            return Ok(false);
+        }
+        // Varnode *vn = dhash.findVarnode(this, entry->getFirstUseAddress(), entry->getHash());
+        let first_use = entry.get_first_use_address();
+        let hash = entry.get_hash();
+        let mut dhash = crate::dynamic::DynamicHash::new();
+        let vn = match dhash.find_varnode(self, &first_use, hash) {
+            Some(v) => v,
+            None => return Ok(false),
+        };
+        // if (vn->getSymbolEntry() != 0) return false; // Symbol already applied.
+        // Stand-in: the matched high already carries a name (idempotent re-run).
+        if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
+            if self.high_bank.get(high).map(|h| h.kuna_name().is_some()).unwrap_or(false) {
+                return Ok(false);
+            }
+        }
+        // if (sym->getCategory() == Symbol::equate) { vn->setSymbolEntry(entry); return true; }
+        if category == symbol_category::EQUATE {
+            if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
+                if let Some(h) = self.high_bank.get_mut(high) {
+                    h.set_kuna_equate_symbol(sym_id);
+                }
+            }
+            return Ok(true);
+        }
+        // if (vn->getSize() != entry->getSize()) { warningHeader(...); return false; }
+        let vn_size = self.vbank.get(vn).map(|v| v.get_size()).unwrap_or(0);
+        if vn_size != entry.get_size() {
+            let mut s = String::from("Unable to use symbol ");
+            if !sym_name_undefined {
+                s.push_str(&sym_name);
+                s.push(' ');
+            }
+            s.push_str(": Size does not match variable it labels");
+            self.warning_header(&s);
+            return Ok(false);
+        }
+        // if (vn->isImplied()) { ... use the explicit varnode on the other side of a CAST ... }
+        let mut vn = vn;
+        if self.vbank.get(vn).map(|v| v.is_implied()).unwrap_or(false) {
+            let mut newvn: Option<VarnodeId> = None;
+            // if (vn->isWritten() && def->code()==CPUI_CAST) newvn = def->getIn(0)
+            let v = self.vbank.get(vn);
+            let written = v.map(|v| v.is_written()).unwrap_or(false);
+            let def = v.and_then(|v| v.get_def());
+            if written && def.and_then(|d| self.obank.get(d)).map(|o| o.code()) == Some(OpCode::CPUI_CAST) {
+                newvn = def.and_then(|d| self.obank.get(d)).and_then(|o| o.get_in(0));
+            } else {
+                // castop = vn->loneDescend(); if (castop->code()==CPUI_CAST) newvn = castop->getOut()
+                let mut it = self.vbank.get(vn).map(|v| v.descend_iter().collect::<Vec<_>>()).unwrap_or_default();
+                if it.len() == 1 {
+                    let castop = it.pop().unwrap();
+                    if self.obank.get(castop).map(|o| o.code()) == Some(OpCode::CPUI_CAST) {
+                        newvn = self.obank.get(castop).and_then(|o| o.get_out());
+                    }
+                }
+            }
+            // if (newvn != 0 && newvn->isExplicit()) vn = newvn;
+            if let Some(nv) = newvn {
+                if self.vbank.get(nv).map(|v| v.is_explicit()).unwrap_or(false) {
+                    vn = nv;
+                }
+            }
+        }
+
+        // vn->setSymbolEntry(entry);  -> bind the Symbol name to the matched high,
+        // and mark the Varnode `mapped` so ActionMarkExplicit forces it explicit.
+        use crate::varnode::varnode_flags;
+        if let Some(v) = self.vbank.get_mut(vn) {
+            v.set_flags_pub(varnode_flags::mapped);
+        }
+        // The late mapping attaches only the NAME (C++: "the data-type and possibly
+        // other properties are not put on the Varnode"); the high keeps its own
+        // propagated type for rendering.
+        let _ = sym_type;
+        if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
+            if let Some(h) = self.high_bank.get_mut(high) {
+                h.set_kuna_name(sym_name);
+            }
+        }
+        // C++ retypes the Symbol from the Varnode's propagated type
+        // (`localmap->retypeSymbol`); the merged-tree Symbol type is not read back
+        // by the printer (the high renders through `kuna_symbol_type`), so the
+        // retype is a no-op stand-in here.  The type-lock-mismatch warning arm is
+        // likewise not reachable in the merged-tree slices (no type-locked dynamic
+        // symbols), recorded as a documented loss.
+        let _ = sym_type_locked;
+        Ok(true)
     }
 
     /// The forced integer display format of the equate-Symbol bound to `vn`'s

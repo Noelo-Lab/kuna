@@ -1743,6 +1743,47 @@ impl Database {
         eref
     }
 
+    /// Snapshot the live dynamic [`SymbolEntry`]s of `scope`, in list order (C++
+    /// `Scope::beginDynamic()..endDynamic()`).  Erased slots (`None`) are skipped.
+    /// Returns owned copies so `ActionDynamicSymbols` can iterate the list while
+    /// it mutates the `Funcdata` IR (the C++ takes a `SymbolEntry *` per step).
+    pub fn dynamic_entries(&self, scope: ScopeId) -> Vec<SymbolEntry> {
+        self.scopes[scope]
+            .dynamicentry
+            .iter()
+            .filter_map(|e| e.clone())
+            .collect()
+    }
+
+    /// Snapshot the console-added dynamic symbols of `scope` as re-seed specs
+    /// `(name, type, hashAddr, hash)` (the `map hash` form, parallel to
+    /// [`scope_space_symbol_specs`](Self::scope_space_symbol_specs) for `map addr`).
+    /// The kuna console rebuilds the `Funcdata` on `decompile`, so the dynamic
+    /// `map hash` symbols must be carried across and re-added to the fresh scope.
+    pub fn scope_dynamic_symbol_specs(
+        &self,
+        scope: ScopeId,
+    ) -> Vec<(String, Rc<Datatype>, Address, uint8)> {
+        let mut out = Vec::new();
+        for slot in self.scopes[scope].dynamicentry.iter() {
+            let entry = match slot {
+                Some(e) => e,
+                None => continue,
+            };
+            // Only the whole-symbol starting entry (offset 0).
+            if entry.get_offset() != 0 {
+                continue;
+            }
+            let symbol = &self.symbols[entry.symbol];
+            let ct = match &symbol.dtype {
+                Some(c) => Rc::clone(c),
+                None => continue,
+            };
+            out.push((symbol.name.clone(), ct, entry.get_first_use_address(), entry.get_hash()));
+        }
+        out
+    }
+
     /// Read the [`SymbolEntry`] behind an [`EntryRef`] in `scope`.
     pub fn entry(&self, scope: ScopeId, eref: EntryRef) -> &SymbolEntry {
         match eref {

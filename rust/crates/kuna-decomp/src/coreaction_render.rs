@@ -2161,17 +2161,23 @@ impl Action for ActionDynamicMapping {
         }
         Some(Box::new(ActionDynamicMapping { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:5106 — ActionDynamicMapping::apply
         //   localmap = data.getScopeLocal();
         //   for (entry in localmap->beginDynamic()..endDynamic()):
         //       if (data.attemptDynamicMapping(entry, dhash)) count += 1;
         //   return 0;
-        //
-        // SEAM(W8-funcdata): `getScopeLocal`, the scope's dynamic-entry list
-        // (`beginDynamic`/`endDynamic`), `DynamicHash`, and
-        // `Funcdata::attemptDynamicMapping` are not in the merged tree.  Body
-        // transcribed; no change applied (count stays 0).
+        let entries = match data.get_scope_local() {
+            Some(lm) => lm.database().dynamic_entries(lm.scope_id()),
+            None => Vec::new(),
+        };
+        for entry in entries {
+            match data.attempt_dynamic_mapping(&entry) {
+                Ok(true) => self.base.count += 1, // C++ `count += 1`
+                Ok(false) => {}
+                Err(_) => {}
+            }
+        }
         0
     }
 }
@@ -2209,16 +2215,25 @@ impl Action for ActionDynamicSymbols {
         }
         Some(Box::new(ActionDynamicSymbols { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:5123 — ActionDynamicSymbols::apply
         //   localmap = data.getScopeLocal();
         //   for (entry in localmap->beginDynamic()..endDynamic()):
         //       if (data.attemptDynamicMappingLate(entry, dhash)) count += 1;
         //   return 0;
-        //
-        // SEAM(W8-funcdata): `getScopeLocal`, the scope dynamic-entry list, and
-        // `Funcdata::attemptDynamicMappingLate` are not in the merged tree.  Body
-        // transcribed; no change applied (count stays 0).
+        // (the harness's `count` is the per-apply work tally; the body always
+        // returns 0 / the action never re-schedules — `rule_onceperfunc`.)
+        let entries = match data.get_scope_local() {
+            Some(lm) => lm.database().dynamic_entries(lm.scope_id()),
+            None => Vec::new(),
+        };
+        for entry in entries {
+            match data.attempt_dynamic_mapping_late(&entry) {
+                Ok(true) => self.base.count += 1, // C++ `count += 1`
+                Ok(false) => {}
+                Err(_) => {} // a search/warning failure is non-fatal (C++ returns false)
+            }
+        }
         0
     }
 }
