@@ -732,6 +732,37 @@ fn decode_rule_goto_stack() {
 }
 
 #[test]
+fn register_ids_drives_production_rule_decode() {
+    // The architecture cspec loader builds its decode registry as
+    // `IdRegistry::with_base_ids()` + `modelrules::register_ids(..)`; verify that
+    // production registration (NOT the test-only `modelrules_registry`) carries
+    // every id `ModelRule::decode` consults, by decoding a `<rule>` through it.
+    use kuna_base::marshal::{Decoder, IdRegistry, XmlDecode};
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    let stk = stack_space();
+    let model = reg_and_stack_model(&mgr, &reg, &stk);
+    let mut registry = IdRegistry::with_base_ids();
+    crate::modelrules::register_ids(&mut registry);
+    let mut decoder = XmlDecode::new(&mgr, &registry);
+    decoder
+        .ingest_stream(br#"<rule><datatype name="any"/><goto_stack/></rule>"#)
+        .expect("ingest");
+    let rule = ModelRule::decode(&mut decoder, &model).expect("decode via register_ids");
+    // The decoded goto_stack rule routes any type to the stack resource (its
+    // canAffectFillinOutput is true), proving the `<rule>`/`<goto_stack>`/
+    // `<datatype>` element ids and the action all resolved through register_ids.
+    assert!(rule.can_affect_fillin_output());
+    let mut status = vec![0i32; 2];
+    let mut res = ParameterPieces::default();
+    let r = rule
+        .assign_address(&dt_int(4), &proto_empty(), 0, &PanicFactory, &mut status, &mut res, &model, &mgr)
+        .unwrap();
+    assert_eq!(r, AssignActionResponse::success);
+    assert!(res.addr.get_space().map(|s| Rc::ptr_eq(s, &stk)).unwrap_or(false));
+}
+
+#[test]
 fn decode_rule_with_position_qualifier() {
     let mgr = AddrSpaceManager::new();
     let reg = reg_space_le();

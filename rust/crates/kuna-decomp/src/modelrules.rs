@@ -145,6 +145,54 @@ pub const ELEM_CONSUME_REMAINING: ElementId = ElementId::new("consume_remaining"
 /// Marshaling element \<rule> (architecture.cc:75).
 pub const ELEM_RULE: ElementId = ElementId::new("rule", 153);
 
+/// Register every modelrules `<rule>`/action element id and the attribute ids the
+/// `ModelRule`/`AssignAction`/`DatatypeFilter`/`QualifierFilter` decoders consult,
+/// so an [`IdRegistry`](kuna_base::marshal::IdRegistry) configured for cspec
+/// decoding can drive `ModelRule::decode`.  Registration is keyed by name and is
+/// idempotent, matching the C++ static `ElementId`/`AttributeId` table (the kuna
+/// registry is the explicit form of the C++ global id space).
+pub fn register_ids(reg: &mut kuna_base::marshal::IdRegistry) {
+    for e in [
+        &ELEM_DATATYPE,
+        &ELEM_CONSUME,
+        &ELEM_CONSUME_EXTRA,
+        &ELEM_CONVERT_TO_PTR,
+        &ELEM_GOTO_STACK,
+        &ELEM_JOIN,
+        &ELEM_DATATYPE_AT,
+        &ELEM_POSITION,
+        &ELEM_VARARGS,
+        &ELEM_HIDDEN_RETURN,
+        &ELEM_JOIN_PER_PRIMITIVE,
+        &ELEM_JOIN_DUAL_CLASS,
+        &ELEM_EXTRA_STACK,
+        &ELEM_CONSUME_REMAINING,
+        &ELEM_RULE,
+    ] {
+        reg.register_element(e);
+    }
+    for a in [
+        &ATTRIB_SIZES,
+        &ATTRIB_MAX_PRIMITIVES,
+        &ATTRIB_REVERSESIGNIF,
+        &ATTRIB_MATCHSIZE,
+        &ATTRIB_AFTER_BYTES,
+        &ATTRIB_AFTER_STORAGE,
+        &ATTRIB_FILL_ALTERNATE,
+        &ATTRIB_MAXSIZE,
+        &ATTRIB_MINSIZE,
+        &ATTRIB_STRATEGY,
+        &ATTRIB_VOIDLOCK,
+        &ATTRIB_REVERSEJUSTIFY,
+        &ATTRIB_FIRST,
+        &ATTRIB_LAST,
+        &ATTRIB_A,
+        &ATTRIB_B,
+    ] {
+        reg.register_attribute(a);
+    }
+}
+
 // `AssignActionResponse` is the fspec `enum` inside `AssignAction`; reuse the
 // faithful constants (modelrules.hh:264-270).
 use AssignActionResponse::{

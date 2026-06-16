@@ -112,17 +112,16 @@ pub enum AssignActionResponse {
     hiddenret_specialreg_void = 5,
 }
 
-/// Placeholder for a `<modelrule>` assignment rule (C++ `ModelRule`,
-/// `modelrules.hh`).  // SEAM(w6-modelrules)
+/// A `<rule>` assignment rule (C++ `ModelRule`, `modelrules.hh`).
 ///
 /// The real `ModelRule` family (and the `AssignAction` subclasses it drives)
-/// lives in `modelrules.cc`, owned by a later item in this wave.  Until then a
-/// `ParamListStandard` carries an empty `Vec<ModelRule>`, so every assignment
-/// walk falls through to the fallback algorithm — exactly the documented C++
-/// behavior for a model with no `<modelrule>` elements.  This empty enum is
-/// uninhabitable; methods that would iterate over rules see an empty list.
-#[derive(Debug, Clone)]
-pub enum ModelRule {}
+/// lives in `modelrules.rs`; `ParamListStandard` now carries a populated
+/// `Vec<ModelRule>` (decoded from the cspec `<rule>` elements, plus the synthetic
+/// `pointermax` ConvertToPointer rule).  `assign_address` iterates these rules
+/// first and only falls through to the fallback algorithm when every rule
+/// returns `fail` — the C++ `ParamListStandard::assignAddress` behavior
+/// (fspec.cc:783-792).  // (kuna) float-typeclass wave: ModelRule now wired.
+pub use crate::modelrules::ModelRule;
 
 // =============================================================================
 // ParamEntry (fspec.hh:81-156, fspec.cc:62-596)
@@ -1773,14 +1772,18 @@ pub struct ParamListStandard {
     /// Map from space index to the offset->entry resolver (C++ `resolverMap`).
     /// Each resolver maps an offset to an index into `entry`.
     resolver_map: Vec<Option<ParamEntryResolver>>,
-    /// Rules to apply when assigning addresses (C++ `modelRules`).  Empty until
-    /// `modelrules.cc` is ported.  // SEAM(w6-modelrules)
+    /// Rules to apply when assigning addresses (C++ `modelRules`).  Decoded from
+    /// the cspec `<rule>` elements (plus the synthetic `pointermax`
+    /// ConvertToPointer rule) by the architecture cspec loader.
     model_rules: Vec<ModelRule>,
     /// Address space containing relative offset parameters (C++ `spacebase`).
     spacebase: Option<Rc<AddrSpace>>,
     /// If true, use the legacy fillin fallback for output (C++
-    /// `ParamListStandardOut::useFillinFallback`).  Always true while there are
-    /// no model rules.  // SEAM(w6-modelrules)
+    /// `ParamListStandardOut::useFillinFallback`).  Stays true here: the
+    /// output-side `fillinOutputMap`/`canAffectFillinOutput` wiring (C++
+    /// `ParamListStandardOut::initialize`, fspec.cc:1616-1628) is a separate
+    /// SEAM — the output TRIAL recovery keeps the legacy fallback while only the
+    /// `assignAddress` (locked-param storage) rule chain is wired.
     use_fillin_fallback: bool,
 }
 
@@ -2403,15 +2406,23 @@ impl ParamListStandard {
     pub fn assign_address(
         &self,
         dt: &Rc<Datatype>,
-        _proto: &PrototypePieces,
-        _pos: int4,
-        _tlist: &dyn TypeFactory,
+        proto: &PrototypePieces,
+        pos: int4,
+        tlist: &dyn TypeFactory,
         status: &mut [int4],
         res: &mut ParameterPieces,
         manager: &AddrSpaceManager,
     ) -> KunaResult<AssignActionResponse> {
-        // SEAM(w6-modelrules): with model rules ported, iterate model_rules here
-        // and return the first non-fail response.  model_rules is currently empty.
+        // C++ ParamListStandard::assignAddress (fspec.cc:783-792): try each
+        // ModelRule in order; the first non-fail response wins.  Only when every
+        // rule returns `fail` do we fall through to the metatype-keyed fallback.
+        for rule in self.model_rules.iter() {
+            let response_code =
+                rule.assign_address(dt, proto, pos, tlist, status, res, self, manager)?;
+            if response_code != AssignActionResponse::fail {
+                return Ok(response_code);
+            }
+        }
         let store = metatype2typeclass(dt.get_metatype());
         self.assign_address_fallback(store, dt, false, status, res, manager)
     }
@@ -3290,6 +3301,38 @@ impl ParamListStandard {
     /// for multi-section models built by tests.
     pub fn push_resource_start(&mut self, group: int4) {
         self.resource_start.push(group);
+    }
+
+    /// Append a decoded [`ModelRule`] (C++ `modelRules.emplace_back(...)` inside
+    /// `ParamListStandard::decode`, fspec.cc:1496-1497).  The architecture cspec
+    /// loader calls this for each `<rule>` element after the `<pentry>`/`<group>`
+    /// entries are present (the C++ ordering: rules come after entries).
+    pub fn push_model_rule(&mut self, rule: ModelRule) {
+        self.model_rules.push(rule);
+    }
+
+    /// Append the synthetic `pointermax` ConvertToPointer rule (C++
+    /// `ParamListStandard::decode`, fspec.cc:1507-1512): a `SizeRestrictedFilter`
+    /// (`pointermax+1`, 0) feeding a `ConvertToPointer` action, planted at the end
+    /// of `modelRules` so any data-type larger than `pointermax` is passed as a
+    /// pointer.  Called by the cspec loader when the model's `pointermax > 0`.
+    pub fn push_pointermax_rule(&mut self, pointermax: int4) {
+        // C++ `SizeRestrictedFilter typeFilter(pointermax+1,0)` (min=pointermax+1,
+        // max=0 => no upper bound).
+        let filter = crate::modelrules::DatatypeFilter::SizeRestricted(
+            crate::modelrules::SizeRestriction::new(pointermax + 1, 0),
+        );
+        // C++ `ConvertToPointer action(this)`: `space = res->getSpacebase()`.
+        let action = crate::modelrules::AssignAction::ConvertToPointer {
+            space: self.spacebase.clone(),
+        };
+        self.model_rules
+            .push(ModelRule::from_components(filter, action));
+    }
+
+    /// Number of decoded model rules (test/inspection seam).
+    pub fn num_model_rules(&self) -> usize {
+        self.model_rules.len()
     }
 }
 
