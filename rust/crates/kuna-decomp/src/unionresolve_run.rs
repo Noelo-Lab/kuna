@@ -795,6 +795,62 @@ impl<'a> ScoreUnionFields<'a> {
                 OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_PTRSUB => {
                     score = self.score_add_up(trial, def, meta);
                 }
+                OpCode::CPUI_SUBPIECE => {
+                    // unionresolve.cc:890-898 — live read of def->getIn(1)->getOffset().
+                    use type_metatype::*;
+                    if meta == TYPE_INT || meta == TYPE_UINT || meta == TYPE_BOOL {
+                        let in1off = self
+                            .data
+                            .obank()
+                            .get(def)
+                            .and_then(|o| o.get_in(1))
+                            .and_then(|v| self.data.vbank().get(v))
+                            .map(|v| v.get_offset())
+                            .unwrap_or(0);
+                        if in1off == 0 {
+                            score = 3; // Likely truncation
+                        } else {
+                            score = 1;
+                        }
+                    } else {
+                        score = -5;
+                    }
+                }
+                OpCode::CPUI_PTRADD => {
+                    // unionresolve.cc:900-912 — live read of def->getIn(2)->getOffset().
+                    use type_metatype::*;
+                    if meta == TYPE_PTR {
+                        // Datatype *ptrto = ((TypePointer *)trial.fitType)->getPtrTo();
+                        // if (ptrto->getAlignSize() == def->getIn(2)->getOffset())
+                        let align =
+                            trial.fit_type.get_ptr_to().map(|p| p.get_align_size()).unwrap_or(-1);
+                        let in2off = self
+                            .data
+                            .obank()
+                            .get(def)
+                            .and_then(|o| o.get_in(2))
+                            .and_then(|v| self.data.vbank().get(v))
+                            .map(|v| v.get_offset())
+                            .unwrap_or(0);
+                        // C++ compares `int4 alignSize == uintb offset` under
+                        // -Wno-sign-compare (the int4 promotes to uintb); mirror the
+                        // down-PTRADD arm (score_ptradd_down) which casts both to int8.
+                        if align as int8 == in2off as int8 {
+                            score = 10;
+                        } else {
+                            score = 2;
+                        }
+                    } else if meta == TYPE_ARRAY
+                        || meta == TYPE_STRUCT
+                        || meta == TYPE_UNION
+                        || meta == TYPE_CODE
+                        || meta == TYPE_FLOAT
+                    {
+                        score = -5;
+                    } else {
+                        score = 1;
+                    }
+                }
                 _ => {
                     score = -10; // Datatype doesn't fit (leaf table default)
                 }
