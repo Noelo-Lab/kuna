@@ -3300,14 +3300,18 @@ impl Datatype {
     /// `TypeStruct::findTruncation`, type.cc:1878-1892).
     ///
     /// Returns the index of the field containing `[off, off+sz)` and passes back
-    /// `newoff` (the offset into that field), or `None` if the requested piece
-    /// is not inside a single field.  `op`/`slot` are accepted for signature
-    /// parity (the struct override ignores them — only the `TypeUnion` override
-    /// consults the `Funcdata` resolution cache, which is a W6 seam).
+    /// `newoff` (the offset into that field), or `None` if the requested piece is
+    /// not inside a single field.  `op`/`slot` are accepted for signature parity
+    /// (the struct override ignores them).
     ///
-    /// The `TypeUnion::findTruncation` (type.cc:2613-2627) and
-    /// `TypePartialUnion::findTruncation` (type.cc:2880-2884) overrides need the
-    /// `Funcdata` union-resolution cache (`// SEAM(W6)`).
+    /// This is the **struct-only** override.  The `TypeUnion::findTruncation`
+    /// (type.cc:2613-2627) and `TypePartialUnion::findTruncation`
+    /// (type.cc:2880-2884) overrides consult the per-function union-resolution
+    /// cache and so live on `Funcdata`
+    /// ([`Funcdata::find_truncation`](crate::funcdata::Funcdata::find_truncation));
+    /// every wired caller routes a union/partial-union receiver through that
+    /// method first.  The union arms here remain a hard guard: a union `Datatype`
+    /// that reaches this struct-only method directly is a porting bug.
     pub fn find_truncation(
         &self,
         off: int8,
@@ -3330,13 +3334,13 @@ impl Datatype {
                 }
                 Ok(Some((i, noff)))
             }
-            // TypeUnion::findTruncation only returns a cached resolution.
+            // TypeUnion / TypePartialUnion findTruncation need the Funcdata cache;
+            // a union must route through `Funcdata::find_truncation` instead.
             DatatypeKind::Union { .. } => Err(KunaError::lowlevel(
-                "SEAM(W6): TypeUnion::findTruncation needs the Funcdata union-resolution cache",
+                "TypeUnion::findTruncation must route through Funcdata::find_truncation",
             )),
-            // TypePartialUnion::findTruncation delegates to the container union.
             DatatypeKind::PartialUnion { .. } => Err(KunaError::lowlevel(
-                "SEAM(W6): TypePartialUnion::findTruncation needs the Funcdata cache",
+                "TypePartialUnion::findTruncation must route through Funcdata::find_truncation",
             )),
             _ => Ok(None),
         }
@@ -3346,8 +3350,12 @@ impl Datatype {
     /// `TypeUnion::resolveTruncation`, type.cc:2569-2605; and the
     /// `TypePartialUnion` delegate, type.cc:2994-2998).
     ///
-    /// SEAM(W6): every path requires the `Funcdata` union-resolution cache and
-    /// `ScoreUnionFields` (the union scoring engine), which W6 wires up.
+    /// The real dispatch (cache lookup + address-based fallback + the
+    /// `ScoreUnionFields` SUBPIECE / implied-truncation scorer) needs the
+    /// per-function union cache and so lives on `Funcdata`
+    /// ([`Funcdata::resolve_truncation`](crate::funcdata::Funcdata::resolve_truncation)).
+    /// This bare `Datatype` method is only reachable for a non-union receiver (a
+    /// no-op `None`); the union arm is a hard guard against a mis-routed call.
     pub fn resolve_truncation(
         &self,
         _offset: int8,
@@ -3357,7 +3365,7 @@ impl Datatype {
         match &self.kind {
             DatatypeKind::Union { .. } | DatatypeKind::PartialUnion { .. } => {
                 Err(KunaError::lowlevel(
-                    "SEAM(W6): Datatype::resolveTruncation needs Funcdata union scoring",
+                    "Datatype::resolveTruncation must route through Funcdata::resolve_truncation",
                 ))
             }
             _ => Ok(None),
