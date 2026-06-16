@@ -3753,4 +3753,263 @@ mod tests {
             .collect();
         assert!(in_defs.contains(&w1) && in_defs.contains(&w2), "phi merges the two writes");
     }
+
+    // ---- w10-revisit-ssa: remove_revisited_markers adversarial tests --------
+    //
+    // These directly exercise `Heritage::remove_revisited_markers` (the
+    // re-heritage revisit, C++ heritage.cc:245), which is currently unreached on
+    // the datatest corpus (the upstream multi-pass `collect` machinery that
+    // populates `removevars` does not yet produce them in the Rust engine), so
+    // they are the only guards that the branch logic matches the C++.
+
+    use kuna_base::space::IopSpace;
+    use kuna_num::opcodes::OpCode as TOpCode;
+
+    /// Manager with constant / unique / iop / ram (the INDIRECT case needs the
+    /// iop space for `new_varnode_iop`).
+    fn build_manager_iop() -> AddrSpaceManager {
+        let mut m = AddrSpaceManager::new();
+        m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+        m.insert_space(Rc::new(IopSpace::new(2))).unwrap();
+        m.insert_space(Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            3,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        )))
+        .unwrap();
+        m
+    }
+
+    fn build_fd_iop() -> Funcdata {
+        let manage = build_manager_iop();
+        let glb = Rc::new(Architecture::new(manage));
+        let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        let addr = Address::new(ram, 0x1000);
+        Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
+    }
+
+    /// Build a marker op of `code` in block `bl` whose output Varnode is a
+    /// size-`out_size` write at `out_addr`.  Returns (op, out_vn).  Inserted at
+    /// the end of the block.
+    fn make_marker(
+        fd: &mut Funcdata,
+        bl: BlockId,
+        code: TOpCode,
+        out_addr: &Address,
+        out_size: int4,
+        ninputs: int4,
+    ) -> (crate::seams::OpId, crate::seams::VarnodeId) {
+        let pc = raddr(fd, 0x2000);
+        let op = fd.new_op(ninputs, pc);
+        // `remove_revisited_markers` branches only on `op.code()`; resolve the
+        // opcode through the generic `inst[]` seam (works for COPY/INDIRECT/
+        // MULTIEQUAL alike).
+        fd.op_set_opcode_code(op, code);
+        let out = fd.new_varnode_out(out_size, out_addr, op).expect("marker out");
+        // Wire every input slot to a fresh constant so op_unlink's per-input
+        // opUnsetInput has a real link to clear (C++ markers always have their
+        // inputs set before removeRevisitedMarkers runs).
+        for slot in 0..ninputs {
+            let c = fd.new_constant(out_size, slot as uintb);
+            fd.op_set_input(op, c, slot).expect("marker input");
+        }
+        fd.op_insert(op, bl, None); // append at block end
+        (op, out)
+    }
+
+    /// COPY branch: a return-form COPY marker is simply unlinked (no SUBPIECE),
+    /// matching C++ heritage.cc:282-284 (`opUnlink(op); continue;`).
+    #[test]
+    fn w10_revisit_remove_markers_copy_is_unlinked() {
+        let mut h = Heritage::new();
+        let mut fd = build_fd_iop();
+        h.build_info_list(&fd);
+        let blocks = build_cfg(&mut fd, 1, &[]);
+        let bl = blocks[0];
+
+        // A COPY marker writing a 2-byte slice; the larger range is 4 bytes at addr.
+        let addr = raddr(&fd, 0x100);
+        let copy_out_addr = raddr(&fd, 0x100);
+        let (copy_op, copy_out) = make_marker(&mut fd, bl, TOpCode::CPUI_COPY, &copy_out_addr, 2, 1);
+        assert_eq!(fd.bb_ops(bl).len(), 1, "block has the COPY before removal");
+
+        h.remove_revisited_markers(&mut fd, &[copy_out], &addr, 4);
+
+        // C++ opUnlink: op removed from its block (parent cleared), opcode untouched.
+        assert!(
+            fd.obank().get(copy_op).expect("copy op alive").get_parent().is_none(),
+            "return-form COPY is unlinked from its block"
+        );
+        assert_eq!(
+            fd.obank().get(copy_op).unwrap().code(),
+            TOpCode::CPUI_COPY,
+            "COPY is NOT rewritten to SUBPIECE (the COPY arm `continue`s before the SUBPIECE rewrite)"
+        );
+        assert!(fd.bb_ops(bl).is_empty(), "block is empty after the COPY unlink");
+    }
+
+    /// MULTIEQUAL branch: the marker is rewritten in place to a SUBPIECE of a
+    /// new full-size free Varnode, inserted AFTER the trailing run of
+    /// MULTIEQUALs in the block (C++ heritage.cc:276-281, 286-296).  The
+    /// SUBPIECE's offset operand is the byte overlap; the original output gets
+    /// the write-mask.
+    #[test]
+    fn w10_revisit_remove_markers_multiequal_rewritten_after_phis() {
+        let mut h = Heritage::new();
+        let mut fd = build_fd_iop();
+        h.build_info_list(&fd);
+        let blocks = build_cfg(&mut fd, 1, &[]);
+        let bl = blocks[0];
+
+        let addr = raddr(&fd, 0x200);
+        // Target MULTIEQUAL marker writes the low 2 bytes at addr (offset 0).
+        let (me_op, me_out) =
+            make_marker(&mut fd, bl, TOpCode::CPUI_MULTIEQUAL, &addr, 2, 2);
+        // A SECOND, trailing MULTIEQUAL follows it: the SUBPIECE must be inserted
+        // AFTER this one (the `while (*pos)==MULTIEQUAL ++pos` skip loop).
+        let trail_addr = raddr(&fd, 0x300);
+        let (trail_me, _trail_out) =
+            make_marker(&mut fd, bl, TOpCode::CPUI_MULTIEQUAL, &trail_addr, 2, 2);
+
+        h.remove_revisited_markers(&mut fd, &[me_out], &addr, 4);
+
+        // The op is rewritten in place to a SUBPIECE.
+        assert_eq!(
+            fd.obank().get(me_op).unwrap().code(),
+            TOpCode::CPUI_SUBPIECE,
+            "MULTIEQUAL marker rewritten to SUBPIECE"
+        );
+        // in0 = the new full-size free Varnode (size 4 at addr), in1 = const offset 0.
+        let big = fd.obank().get(me_op).unwrap().get_in(0).unwrap();
+        assert_eq!(fd.vbank().get(big).unwrap().get_size(), 4, "SUBPIECE in0 is the full-size vn");
+        assert_eq!(fd.vbank().get(big).unwrap().get_addr(), &addr, "full-size vn at the range addr");
+        let off = fd.obank().get(me_op).unwrap().get_in(1).unwrap();
+        assert!(fd.vbank().get(off).unwrap().is_constant(), "SUBPIECE in1 is a constant");
+        assert_eq!(
+            fd.vbank().get(off).unwrap().get_addr().get_offset(),
+            0,
+            "offset operand == vn->overlap(addr,size) == 0 for an LSB-aligned slice"
+        );
+        // The original output is write-masked.
+        assert!(
+            fd.vbank().get(me_out).unwrap().is_write_mask(),
+            "original marker output carries the write mask"
+        );
+        // Insertion order: the rewritten SUBPIECE must come AFTER the trailing
+        // MULTIEQUAL (it skipped the trailing phi run).
+        let ops = fd.bb_ops(bl);
+        let pos_sub = ops.iter().position(|&o| o == me_op).expect("SUBPIECE in block");
+        let pos_trail = ops.iter().position(|&o| o == trail_me).expect("trailing phi in block");
+        assert!(
+            pos_sub > pos_trail,
+            "SUBPIECE inserted after the trailing MULTIEQUAL (skip-trailing-phis loop), got sub@{pos_sub} trail@{pos_trail}"
+        );
+    }
+
+    /// INDIRECT branch: the SUBPIECE is inserted after the INDIRECT's *target*
+    /// op (decoded from the iop input via `op_iop_decode`), and the marker
+    /// output's addr-force is cleared (C++ heritage.cc:266-274).
+    #[test]
+    fn w10_revisit_remove_markers_indirect_inserts_after_live_target() {
+        let mut h = Heritage::new();
+        let mut fd = build_fd_iop();
+        h.build_info_list(&fd);
+        let blocks = build_cfg(&mut fd, 1, &[]);
+        let bl = blocks[0];
+
+        // A live "target" op (a COPY) the INDIRECT points at, inserted first.
+        let target = {
+            let pc = raddr(&fd, 0x2100);
+            let op = fd.new_op(1, pc);
+            fd.op_set_opcode(op, typeop_skeleton(TOpCode::CPUI_SUBPIECE));
+            fd.op_insert(op, bl, None);
+            op
+        };
+        assert!(!fd.obank().get(target).unwrap().is_dead(), "target op is live/in-block");
+
+        // A spacer op between the target and the INDIRECT, so the insertion
+        // point `++(target iter)` is a distinct op (not the INDIRECT itself):
+        // the SUBPIECE replaces the INDIRECT and is re-inserted *before* the
+        // spacer (i.e. immediately after the target), the C++ semantics.  (If
+        // the INDIRECT immediately followed its own target, `++pos` would land
+        // on the INDIRECT op being removed — a degenerate self-insert that is a
+        // latent C++ UB, not the path under test here.)
+        let spacer = {
+            let pc = raddr(&fd, 0x2110);
+            let op = fd.new_op(1, pc);
+            fd.op_set_opcode(op, typeop_skeleton(TOpCode::CPUI_SUBPIECE));
+            fd.op_insert(op, bl, None);
+            op
+        };
+
+        // The INDIRECT marker, in[1] = iop varnode encoding `target`.
+        let addr = raddr(&fd, 0x400);
+        let (ind_op, ind_out) =
+            make_marker(&mut fd, bl, TOpCode::CPUI_INDIRECT, &addr, 2, 2);
+        let iop = fd.new_varnode_iop(target);
+        fd.op_set_input(ind_op, iop, 1).expect("set iop input");
+        // Force the address on the marker output so we can observe clearAddrForce.
+        fd.vbank_mut().get_mut(ind_out).unwrap().set_addr_force();
+        assert!(fd.vbank().get(ind_out).unwrap().is_addr_force(), "addr-force set pre-call");
+
+        h.remove_revisited_markers(&mut fd, &[ind_out], &addr, 4);
+
+        // Rewritten to SUBPIECE, addr-force cleared on the original output.
+        assert_eq!(
+            fd.obank().get(ind_op).unwrap().code(),
+            TOpCode::CPUI_SUBPIECE,
+            "INDIRECT marker rewritten to SUBPIECE"
+        );
+        assert!(
+            !fd.vbank().get(ind_out).unwrap().is_addr_force(),
+            "clearAddrForce ran (replacement INDIRECT will hold the address)"
+        );
+        // The SUBPIECE is inserted immediately AFTER the live target op (before
+        // the spacer): C++ `pos = targetOp->getBasicIter(); ++pos;`.
+        let ops = fd.bb_ops(bl);
+        let pos_sub = ops.iter().position(|&o| o == ind_op).expect("SUBPIECE in block");
+        let pos_target = ops.iter().position(|&o| o == target).expect("target in block");
+        let pos_spacer = ops.iter().position(|&o| o == spacer).expect("spacer in block");
+        assert!(
+            pos_sub > pos_target && pos_sub < pos_spacer,
+            "SUBPIECE inserted right after the target op (before the spacer), got sub@{pos_sub} target@{pos_target} spacer@{pos_spacer}"
+        );
+    }
+
+    /// INDIRECT branch, big-endian overlap: a 2-byte slice at the high half of a
+    /// 4-byte big-endian range has a non-zero overlap offset, exercising the
+    /// signed `vn->overlap(addr,size)` -> `offset as uintb` widening at the
+    /// SUBPIECE in1 (the one bare `as` cast in the ported code).
+    #[test]
+    fn w10_revisit_remove_markers_offset_widening_le() {
+        let mut h = Heritage::new();
+        let mut fd = build_fd_iop();
+        h.build_info_list(&fd);
+        let blocks = build_cfg(&mut fd, 1, &[]);
+        let bl = blocks[0];
+
+        // Little-endian ram: a 2-byte marker at addr+2 overlaps the 4-byte range
+        // [addr, addr+4) at byte offset 2.
+        let base = raddr(&fd, 0x500);
+        let hi = raddr(&fd, 0x502);
+        let (me_op, me_out) = make_marker(&mut fd, bl, TOpCode::CPUI_MULTIEQUAL, &hi, 2, 2);
+
+        h.remove_revisited_markers(&mut fd, &[me_out], &base, 4);
+
+        let off = fd.obank().get(me_op).unwrap().get_in(1).unwrap();
+        assert_eq!(
+            fd.vbank().get(off).unwrap().get_addr().get_offset(),
+            2,
+            "offset operand == byte overlap (2) of the high slice into the LE range; widened int4->uintb"
+        );
+        // The constant is size 4 (C++ newConstant(4, offset)).
+        assert_eq!(fd.vbank().get(off).unwrap().get_size(), 4, "offset constant is 4 bytes");
+    }
 }
