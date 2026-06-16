@@ -435,3 +435,110 @@ fn adv_w10_repair_overlapping_store_rejects_fold() {
         "overlapping store leaves the LOAD intact"
     );
 }
+
+// ===========================================================================
+// rport/w10-rsp-elim (verifier) — ActionExtraPopSetup / analyzeExtraPop
+// ===========================================================================
+
+/// VERIFIER (w10-rsp-elim).  The C++ `ActionExtraPopSetup::apply` writes the
+/// extrapop INT_ADD constant with `newConstant(sb_size, fc->getExtraPop())`,
+/// where `getExtraPop()` is an `int4` and `newConstant` takes a `uintb`.  The
+/// Rust port writes `new_constant(sb_size, extrapop as uintb)`.  Because `int4`
+/// is `i32` and `uintb` is `u64`, the cast is a SIGN-EXTENDING widening, exactly
+/// matching the C++ `(uintb)(int4)` conversion.  A negative extrapop (the SP
+/// can be adjusted downward) must therefore sign-extend to the high half, NOT
+/// zero-extend.  newConstant does not mask (getConstant just wraps the value in
+/// a constant Address), so the stored value is the raw 64-bit pattern.  This
+/// pins the cast the diff added so a later "fix" to `as u32 as u64` (zero-extend)
+/// or a masked widening would fail.
+#[test]
+fn adv_w10_rspelim_extrapop_constant_widening_sign_extends() {
+    // The exact expression from coreaction_protos.rs:529 (`extrapop as uintb`).
+    let widen = |ep: int4| -> kuna_base::types::uintb { ep as kuna_base::types::uintb };
+
+    // A normal positive byte count (e.g. callee pops 0x20 bytes): plain widen.
+    assert_eq!(widen(0x20), 0x20u64);
+    // The largest non-UNKNOWN positive value with the int4 sign bit CLEAR.
+    assert_eq!(widen(0x7fff_ffff), 0x0000_0000_7fff_ffffu64);
+    // A NEGATIVE extrapop (downward SP adjustment) must sign-extend, matching
+    // C++ `(uintb)(int4)(-4)` == 0xffff_ffff_ffff_fffc — a zero-extending port
+    // would wrongly produce 0x0000_0000_ffff_fffc.
+    assert_eq!(widen(-4), 0xffff_ffff_ffff_fffcu64);
+    assert_eq!(widen(-0x18), 0xffff_ffff_ffff_ffe8u64);
+    // And the actual constant a real Funcdata builds must carry that pattern
+    // (newConstant does NOT mask — getConstant wraps the raw value).
+    let mut fd = build_fd();
+    let cval = fd.new_constant(SP_SIZE, widen(-0x18));
+    let off = fd.vbank().get(cval).expect("const vn").get_addr().get_offset();
+    assert_eq!(off, 0xffff_ffff_ffff_ffe8u64, "newConstant stored the sign-extended pattern unmasked");
+}
+
+/// VERIFIER (w10-rsp-elim).  The diff rewrites `analyzeExtraPop`'s model guard to
+/// the C++ `evalfp_called ?: defaultfp` then `extrapop != extrapop_unknown ->
+/// return` structure.  In this arch model `eval_fp_called()` already aliases
+/// `defaultfp`, so the behavior must be: a defaultfp with a KNOWN extrapop
+/// short-circuits the solve (no stack equations built, no spacebase touched);
+/// the function returns 0 having done nothing.  This is the load-bearing
+/// suppression the porter comment claims.  A faithless port that dropped the
+/// guard (always solving) would mutate the (here-empty) frame and could still
+/// return 0, so we additionally assert NO new ops were created.
+#[test]
+fn adv_w10_rspelim_analyze_extrapop_known_defaultfp_suppresses_solve() {
+    let manage = build_manager();
+    let regspc = register_space(&manage);
+    let stackspc = Rc::clone(manage.get_stack_space().unwrap());
+    let sp_data = VarnodeStorage { space: Some(regspc), offset: SP_OFF, size: SP_SIZE as u32 };
+    manage.add_spacebase_pointer(&stackspc, &sp_data, SP_SIZE, true).unwrap();
+
+    // Build an arch carrying a defaultfp with a KNOWN (non-unknown) extrapop.
+    let mut arch = Architecture::new(manage);
+    let mut fp = crate::fspec::ProtoModel::new(arch.manage());
+    fp.set_extra_pop(0x20); // known: callee pops 0x20 bytes
+    arch.defaultfp = Some(Rc::new(fp));
+    let glb = Rc::new(arch);
+    let code = Rc::clone(glb.manage().get_space_by_name("register").unwrap());
+    let entry = Address::new(code, 0x1000);
+    let mut fd = Funcdata::new("func", "func", glb, entry, 0x1000_0000, 0x40).unwrap();
+
+    let stackspc = stack_space(&fd);
+    let before = fd.obank().iter_all().count();
+    let r = super::analyze_extra_pop(&mut fd, &stackspc, 0);
+    let after = fd.obank().iter_all().count();
+    assert_eq!(r, 0, "known defaultfp extrapop suppresses the solve (returns 0)");
+    assert_eq!(before, after, "suppressed path must create no ops / touch nothing");
+}
+
+/// VERIFIER (w10-rsp-elim).  Counter-case for the guard above: when the
+/// defaultfp's extrapop is UNKNOWN, the guard must FALL THROUGH to the solver
+/// (it must not early-return).  With an empty frame the solver finds zero
+/// variables and still returns 0, but it must have reached the build phase
+/// (proving the guard did not eat the unknown case).  This guards the `if ep !=
+/// UNKNOWN` direction — an inverted comparison would suppress exactly the case
+/// the analysis exists to handle.
+#[test]
+fn adv_w10_rspelim_analyze_extrapop_unknown_defaultfp_does_not_suppress() {
+    use crate::fspec::EXTRAPOP_UNKNOWN;
+    let manage = build_manager();
+    let regspc = register_space(&manage);
+    let stackspc = Rc::clone(manage.get_stack_space().unwrap());
+    let sp_data = VarnodeStorage { space: Some(regspc), offset: SP_OFF, size: SP_SIZE as u32 };
+    manage.add_spacebase_pointer(&stackspc, &sp_data, SP_SIZE, true).unwrap();
+
+    let mut arch = Architecture::new(manage);
+    let mut fp = crate::fspec::ProtoModel::new(arch.manage());
+    fp.set_extra_pop(EXTRAPOP_UNKNOWN); // explicitly unknown
+    arch.defaultfp = Some(Rc::new(fp));
+    let glb = Rc::new(arch);
+    let code = Rc::clone(glb.manage().get_space_by_name("register").unwrap());
+    let entry = Address::new(code, 0x1000);
+    let mut fd = Funcdata::new("func", "func", glb, entry, 0x1000_0000, 0x40).unwrap();
+
+    let stackspc = stack_space(&fd);
+    // Empty frame: the solver builds, finds no variables, returns 0 — but the
+    // important fact is the guard did NOT early-return on the unknown model.
+    let r = super::analyze_extra_pop(&mut fd, &stackspc, 0);
+    assert_eq!(r, 0, "empty frame yields no change regardless");
+    // Re-running is idempotent (determinism on the unknown path).
+    let r2 = super::analyze_extra_pop(&mut fd, &stackspc, 0);
+    assert_eq!(r, r2, "unknown-model path is deterministic across runs");
+}

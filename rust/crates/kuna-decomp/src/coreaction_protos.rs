@@ -1772,4 +1772,37 @@ mod tests {
         assert_eq!(res, 0);
         assert_eq!(act.base().count, 0);
     }
+
+    /// VERIFIER (w10-rsp-elim).  `apply` first resolves the stack space, then
+    /// `getSpacebase(0)`.  The Rust diff added a `get_spacebase(0).is_err() ->
+    /// return 0` guard for the off-the-happy-path case where the named space
+    /// carries no spacebase pointer (the `ram` fixture has none).  This must be a
+    /// clean no-op: zero ops created, return 0.  It also exercises the empty
+    /// `0..num_calls()` loop (the fixture makes no calls), the most fragile
+    /// container case on the hunt list — a faithless port that proceeded past a
+    /// missing spacebase, or that mishandled the empty-call loop, would create
+    /// stray ops here.
+    #[test]
+    fn adv_w10_rspelim_apply_spaceless_stack_and_no_calls_is_noop() {
+        let mut data = build_fd();
+        // Index of the `ram` space (a real, resolvable AddrSpace) — but it has no
+        // registered spacebase pointer, so getSpacebase(0) errors.
+        let ram_idx = data
+            .get_arch()
+            .manage()
+            .get_space_by_name("ram")
+            .unwrap()
+            .get_index();
+        let mut act = ActionExtraPopSetup {
+            base: ActionBase::new(ruleflags::rule_onceperfunc, "extrapopsetup", "g"),
+            stackspace: Some(ram_idx),
+        };
+        let before = data.obank().iter_all().count();
+        assert_eq!(data.num_calls(), 0, "fixture makes no calls (empty loop)");
+        let mut ctx = ActionContext::new();
+        let res: int4 = act.apply(&mut data, &mut ctx);
+        let after = data.obank().iter_all().count();
+        assert_eq!(res, 0, "missing-spacebase guard returns 0 changes");
+        assert_eq!(before, after, "no stray ops created on the guarded path");
+    }
 }
