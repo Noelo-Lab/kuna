@@ -791,18 +791,35 @@ impl TypeModifier {
                 })?;
                 factory.get_type_array(*arraysize, base)
             }
-            TypeModifier::Function { .. } => {
-                // FunctionModifier::modType (grammar.cc:741-760) builds a
-                // PrototypePieces and calls glb->types->getTypeCode(proto).  The
-                // prototype-bearing TypeCode and the model lookup (decl->getModel)
-                // are W6/W4 seams (the kuna TypeFactory exposes only the
-                // anonymous getTypeCode(void), and Architecture has no model
-                // registry).  Top-level prototypes never reach here — they go
-                // through TypeDeclarator::get_prototype.  // SEAM(w6-fspec-2)
-                let _ = (base, factory, org);
-                Err(KunaError::lowlevel(
-                    "kuna rust port: nested function-pointer type (getTypeCode(PrototypePieces)) not yet ported",
-                ))
+            TypeModifier::Function { paramlist, .. } => {
+                // FunctionModifier::modType (grammar.cc:2306-2325): build a
+                // PrototypePieces describing the pointed-to function and intern a
+                // TypeCode for it via glb->types->getTypeCode(proto).
+                //
+                //   if (base == 0) proto.outtype = getTypeVoid(); else outtype = base;
+                let outtype = match base {
+                    Some(b) => b,
+                    None => factory.get_type_void()?,
+                };
+                // getInTypes(proto.intypes, glb).
+                let intypes = function_get_in_types(paramlist, factory, org)?;
+                // Varargs is encoded as an extra null pointer in paramlist; the
+                // Rust `paramlist` never holds that null (CParse::newFunc popped it
+                // into the modifier's `dotdotdot`, grammar.cc:2605-2618), so this
+                // C++ `paramlist.back() == 0` check never fires — transcribed
+                // faithfully (firstVarArgSlot stays -1 exactly as upstream).
+                //
+                // proto.model = decl->getModel(glb): a parsed function-pointer
+                // field carries no model name, so getModel returns glb->defaultfp;
+                // the factory supplies it inside getTypeCode(proto).  The kuna
+                // PrototypePieces carries no `model` field (// SEAM(w6-fspec-2)).
+                let proto = PrototypePieces {
+                    outtype: Some(outtype),
+                    intypes,
+                    first_var_arg_slot: -1,
+                    ..PrototypePieces::default()
+                };
+                factory.get_type_code_proto(&proto)
             }
         }
     }

@@ -794,8 +794,10 @@ pub enum DatatypeKind {
     /// `TypeCode` (type.hh:771-792): executable code / function-pointer target.
     Code {
         /// If present, describes the prototype of the underlying function (C++
-        /// `proto`, a `FuncProto *`).  // SEAM(W6) — the prototype model is W4/W6.
-        proto: Option<Rc<crate::seams::FuncProto>>,
+        /// `proto`, a `FuncProto *`).  Built by `getTypeCode(PrototypePieces)` ->
+        /// `TypeCode::setPrototype` (type.cc:3177-3190); the recovered/anonymous
+        /// case leaves it `None`.
+        proto: Option<Rc<crate::fspec::FuncProto>>,
     },
     /// `TypeSpacebase` (type.hh:799-824): a pointer that indexes the symbol table.
     Spacebase {
@@ -1668,15 +1670,16 @@ impl Datatype {
         Ok(0)
     }
 
-    /// `TypeCode::compare` body (type.cc:3292-3322).  The prototype walk needs the
-    /// W4/W6 `FuncProto` model (`numParams`/`getParam`/`getOutputType`), so the
-    /// `compareBasic == 2` ("carry on with parameters") path is a `// SEAM(W6)`;
-    /// the surface comparison ([`Self::compare_code_basic`]) is implemented.
+    /// `TypeCode::compare` body (type.cc:3292-3322): base step, surface
+    /// comparison, then (on `compareBasic == 2`) the per-parameter and
+    /// output-type structural recursion.  Both `proto` and `op`'s proto are
+    /// non-null in the `== 2` branch (that is exactly the surface-equal,
+    /// both-present case `compareBasic` returns 2 for).
     fn compare_code(
         &self,
         op: &Datatype,
         mut level: int4,
-        proto: Option<&Rc<crate::seams::FuncProto>>,
+        proto: Option<&Rc<crate::fspec::FuncProto>>,
     ) -> KunaResult<int4> {
         let res = self.compare_base(op);
         if res != 0 {
@@ -1696,11 +1699,34 @@ impl Datatype {
             }
             return Ok(if self.id < op.get_id() { -1 } else { 1 });
         }
-        // The remaining per-parameter / output-type recursion (type.cc:3306-3321)
-        // needs the FuncProto parameter/output model.  // SEAM(W6)
-        Err(KunaError::lowlevel(
-            "SEAM(W6): TypeCode::compare prototype-parameter recursion needs FuncProto model",
-        ))
+        // compareBasic == 2 implies both protos are present.
+        let proto = proto.ok_or_else(|| Datatype::code_invariant_err("compare"))?;
+        let op_proto = op_proto.ok_or_else(|| Datatype::code_invariant_err("compare"))?;
+        // for(i=0;i<nump;++i) param->compare(*opparam, level)
+        let nump = proto.num_params();
+        for i in 0..nump {
+            let param = proto
+                .get_param(i)
+                .and_then(|p| p.get_type().cloned())
+                .ok_or_else(|| Datatype::code_invariant_err("compare"))?;
+            let opparam = op_proto
+                .get_param(i)
+                .and_then(|p| p.get_type().cloned())
+                .ok_or_else(|| Datatype::code_invariant_err("compare"))?;
+            let c = param.compare(&opparam, level)?;
+            if c != 0 {
+                return Ok(c);
+            }
+        }
+        // Datatype *otype = proto->getOutputType(); (may be null)
+        let otype = proto.get_output_type();
+        let opotype = op_proto.get_output_type();
+        match (otype, opotype) {
+            (None, None) => Ok(0),
+            (None, Some(_)) => Ok(1),
+            (Some(_), None) => Ok(-1),
+            (Some(o), Some(oo)) => o.compare(oo, level),
+        }
     }
 
     /// `TypePartialStruct/TypePartialUnion/TypePartialEnum::compare` body — these
@@ -1836,7 +1862,7 @@ impl Datatype {
 
     /// Borrow a `TypeCode`'s `proto` payload, used where the C++ casts `&op` to
     /// `TypeCode *`.  `None` if not a code type.
-    fn as_code_proto(&self) -> Option<Option<&Rc<crate::seams::FuncProto>>> {
+    fn as_code_proto(&self) -> Option<Option<&Rc<crate::fspec::FuncProto>>> {
         match &self.kind {
             DatatypeKind::Code { proto } => Some(proto.as_ref()),
             _ => None,
@@ -1949,26 +1975,47 @@ impl Datatype {
     /// characteristics of two code prototypes without recursing into params.
     /// Returns -1/1 if they differ, 0 if equal with no params, 2 if equal on the
     /// surface but parameters must be compared.
-    ///
-    /// The `hasModel`/`getModelName`/`numParams`/`getComparableFlags` accessors
-    /// are part of the W4/W6 `FuncProto` model.  The proto-presence cases (one or
-    /// both `proto == null`) are fully implemented; the both-present-with-model
-    /// case routes to a `// SEAM(W6)` `Err`.
     fn compare_code_basic(
-        proto: Option<&Rc<crate::seams::FuncProto>>,
-        op_proto: Option<&Rc<crate::seams::FuncProto>>,
+        proto: Option<&Rc<crate::fspec::FuncProto>>,
+        op_proto: Option<&Rc<crate::fspec::FuncProto>>,
     ) -> KunaResult<int4> {
-        match (proto, op_proto) {
-            (None, None) => Ok(0),
-            (None, Some(_)) => Ok(1),
-            (Some(_), None) => Ok(-1),
-            (Some(_), Some(_)) => {
-                // hasModel/getModelName/numParams/getComparableFlags — FuncProto.
-                Err(KunaError::lowlevel(
-                    "SEAM(W6): TypeCode::compareBasic needs FuncProto model accessors",
-                ))
+        // if (proto == 0) { if (op->proto == 0) return 0; return 1; }
+        let proto = match proto {
+            None => {
+                return Ok(if op_proto.is_none() { 0 } else { 1 });
+            }
+            Some(p) => p,
+        };
+        // if (op->proto == 0) return -1;
+        let op_proto = match op_proto {
+            None => return Ok(-1),
+            Some(p) => p,
+        };
+        if !proto.has_model() {
+            if op_proto.has_model() {
+                return Ok(1);
+            }
+        } else {
+            if !op_proto.has_model() {
+                return Ok(-1);
+            }
+            let model1 = proto.get_model_name();
+            let model2 = op_proto.get_model_name();
+            if model1 != model2 {
+                return Ok(if model1 < model2 { -1 } else { 1 });
             }
         }
+        let nump = proto.num_params();
+        let opnump = op_proto.num_params();
+        if nump != opnump {
+            return Ok(if opnump < nump { -1 } else { 1 });
+        }
+        let myflags = proto.get_comparable_flags();
+        let opflags = op_proto.get_comparable_flags();
+        if myflags != opflags {
+            return Ok(if myflags < opflags { -1 } else { 1 });
+        }
+        Ok(2) // Carry on with comparison of parameters
     }
 
     /// Transcribe the C++ `spaceid` tie-break shared by `TypePointer::compare`
@@ -2259,12 +2306,15 @@ impl Datatype {
         Ok(0)
     }
 
-    /// `TypeCode::compareDependency` body (type.cc:3324-3350).  The param/output
-    /// recursion needs the `FuncProto` model.
+    /// `TypeCode::compareDependency` body (type.cc:3324-3350): base step, surface
+    /// comparison, then (on `compareBasic == 2`) per-parameter raw-pointer
+    /// comparison and the output-type pointer comparison.  The C++ "compare the
+    /// pointers directly" (`param < opparam`) is transcribed via
+    /// [`Self::compare_dependency_ptr`] (`Rc::as_ptr` identity ordering).
     fn compare_dependency_code(
         &self,
         op: &Datatype,
-        proto: Option<&Rc<crate::seams::FuncProto>>,
+        proto: Option<&Rc<crate::fspec::FuncProto>>,
     ) -> KunaResult<int4> {
         let res = self.compare_dependency_base(op);
         if res != 0 {
@@ -2277,10 +2327,35 @@ impl Datatype {
         if res != 2 {
             return Ok(res);
         }
-        // Per-parameter pointer comparison + output-type — FuncProto.  // SEAM(W6)
-        Err(KunaError::lowlevel(
-            "SEAM(W6): TypeCode::compareDependency prototype recursion needs FuncProto model",
-        ))
+        // compareBasic == 2 implies both protos are present.
+        let proto = proto.ok_or_else(|| Datatype::code_invariant_err("compareDependency"))?;
+        let op_proto =
+            op_proto.ok_or_else(|| Datatype::code_invariant_err("compareDependency"))?;
+        let nump = proto.num_params();
+        for i in 0..nump {
+            let param = proto
+                .get_param(i)
+                .and_then(|p| p.get_type().cloned())
+                .ok_or_else(|| Datatype::code_invariant_err("compareDependency"))?;
+            let opparam = op_proto
+                .get_param(i)
+                .and_then(|p| p.get_type().cloned())
+                .ok_or_else(|| Datatype::code_invariant_err("compareDependency"))?;
+            // if (param != opparam) return (param < opparam) ? -1 : 1;
+            let c = Datatype::compare_dependency_ptr(&param, &opparam);
+            if c != 0 {
+                return Ok(c);
+            }
+        }
+        // Datatype *otype = proto->getOutputType(); (may be null)
+        let otype = proto.get_output_type();
+        let opotype = op_proto.get_output_type();
+        match (otype, opotype) {
+            (None, None) => Ok(0),
+            (None, Some(_)) => Ok(1),
+            (Some(_), None) => Ok(-1),
+            (Some(o), Some(oo)) => Ok(Datatype::compare_dependency_ptr(o, oo)),
+        }
     }
 
     /// `TypeSpacebase::compareDependency` body (type.cc:3504-3514): base step,
@@ -3743,6 +3818,19 @@ pub trait TypeFactory {
     fn get_type_char(&self, s: int4) -> KunaResult<Rc<Datatype>>;
     /// Get an "anonymous" function data-type (C++ `getTypeCode(void)`).
     fn get_type_code(&self) -> KunaResult<Rc<Datatype>>;
+    /// Create a `TypeCode` carrying a specific function prototype (C++
+    /// `getTypeCode(const PrototypePieces&)`, type.cc:4476-4482).  Used by the
+    /// nested function-pointer `buildType` path (`FunctionModifier::modType`).
+    /// The default body errs (the lightweight test/seam factories never run the
+    /// C-declaration construction); the concrete `TypeFactoryImpl` overrides it.
+    fn get_type_code_proto(
+        &self,
+        _proto: &crate::fspec::PrototypePieces,
+    ) -> KunaResult<Rc<Datatype>> {
+        Err(KunaError::lowlevel(
+            "TypeFactory::getTypeCode(PrototypePieces) not supported by this factory",
+        ))
+    }
 
     // -- Pointer construction (type.hh:900-902,913-916) ---------------------
 
@@ -4076,6 +4164,18 @@ pub struct TypeFactoryImpl {
     truncate_big_endian: Cell<bool>,
     /// The interning state (C++ `tree`/`nametree`/`typecache*`/`charcache`).
     store: RefCell<FactoryStore>,
+    /// The default prototype model (C++ `glb->defaultfp`), shared from the owning
+    /// [`Architecture`](crate::architecture::Architecture).  `None` until init.
+    /// Used by `getTypeCode(PrototypePieces)` -> `TypeCode::setPrototype` as the
+    /// model a parsed function-pointer declarator resolves to (`decl->getModel`
+    /// returns `defaultfp` when the C declarator carries no model name, which is
+    /// always the case for a `void (*)(int4)` field).
+    defaultfp: RefCell<Option<Rc<crate::fspec::ProtoModel>>>,
+    /// The engine's address-space manager (C++ `glb` is itself the
+    /// `AddrSpaceManager`), shared from the owning architecture.  `None` until
+    /// init.  `getTypeCode(PrototypePieces)` needs it for
+    /// `FuncProto::updateAllTypes` -> `ProtoModel::assignParameterStorage`.
+    manager: RefCell<Option<Rc<kuna_base::space::AddrSpaceManager>>>,
 }
 
 impl Default for TypeFactoryImpl {
@@ -4101,7 +4201,24 @@ impl TypeFactoryImpl {
             max_basetype_size: Cell::new(0),
             truncate_big_endian: Cell::new(false),
             store: RefCell::new(FactoryStore::new()),
+            defaultfp: RefCell::new(None),
+            manager: RefCell::new(None),
         }
+    }
+
+    /// Share the architecture's default prototype model + address-space manager
+    /// into the factory so `getTypeCode(PrototypePieces)` (the nested
+    /// function-pointer `buildType` path) can run `TypeCode::setPrototype`.  The
+    /// C++ `TypeFactory` holds the `Architecture *glb` and reaches both directly;
+    /// the kuna factory is a standalone object, so the owning architecture wires
+    /// these in during `init`.
+    pub fn set_proto_context(
+        &self,
+        defaultfp: Option<Rc<crate::fspec::ProtoModel>>,
+        manager: Rc<kuna_base::space::AddrSpaceManager>,
+    ) {
+        *self.defaultfp.borrow_mut() = defaultfp;
+        *self.manager.borrow_mut() = Some(manager);
     }
 
     // -- Size configuration --------------------------------------------------
@@ -4805,6 +4922,62 @@ impl TypeFactoryImpl {
         self.find_add(tmp)
     }
 
+    /// Create a `TypeCode` associated with a specific function prototype (C++
+    /// `TypeFactory::getTypeCode(const PrototypePieces&)`, type.cc:4476-4482):
+    ///
+    /// ```text
+    ///   TypeCode tc;                              // getFuncdata type, no name
+    ///   tc.setPrototype(this, proto, getTypeVoid());
+    ///   tc.markComplete();
+    ///   return (TypeCode *) findAdd(tc);
+    /// ```
+    ///
+    /// `setPrototype` (type.cc:3177-3190) turns on `variable_length`, builds a
+    /// fresh [`FuncProto`](crate::fspec::FuncProto), seeds the internal store
+    /// (`setInternal(sig.model, voidtype)`), recomputes storage from the pieces
+    /// (`updateAllTypes(sig)`), and locks input + output.  The C++ `sig.model` is
+    /// the prototype model the declarator resolved (`decl->getModel(glb)`); a
+    /// parsed function-pointer field carries no model name, so it resolves to
+    /// `glb->defaultfp`, wired in via [`Self::set_proto_context`].
+    fn make_type_code_proto(
+        &self,
+        proto: &crate::fspec::PrototypePieces,
+    ) -> KunaResult<Rc<Datatype>> {
+        let model = self.defaultfp.borrow().clone().ok_or_else(|| {
+            KunaError::lowlevel(
+                "getTypeCode(PrototypePieces): no default prototype model (set_proto_context \
+                 not run)",
+            )
+        })?;
+        let manager_rc = self.manager.borrow().clone().ok_or_else(|| {
+            KunaError::lowlevel(
+                "getTypeCode(PrototypePieces): no address-space manager (set_proto_context \
+                 not run)",
+            )
+        })?;
+        let voidtype = self.get_type_void_impl()?;
+
+        // TypeCode(): Datatype(1,1,TYPE_CODE), flags |= type_incomplete.
+        let mut tc = Datatype::new_with_align(1, 1, type_metatype::TYPE_CODE);
+        tc.flags |= flags::type_incomplete;
+
+        // setPrototype(this, proto, voidtype):
+        //   flags |= variable_length;
+        tc.flags |= flags::variable_length;
+        //   proto = new FuncProto(); proto->setInternal(sig.model, voidtype);
+        let mut fp = crate::fspec::FuncProto::new();
+        fp.set_internal(model, voidtype);
+        //   proto->updateAllTypes(sig); setInputLock(true); setOutputLock(true);
+        fp.update_all_types(proto, self, &manager_rc)?;
+        fp.set_input_lock(true);
+        fp.set_output_lock(true);
+        tc.kind = DatatypeKind::Code { proto: Some(Rc::new(fp)) };
+
+        // markComplete(): clear type_incomplete.
+        tc.flags &= !flags::type_incomplete;
+        self.find_add(tc)
+    }
+
     /// Create a named "code" data-type (C++ `TypeFactory::getTypeCode(nm)`,
     /// type.cc:4188-4198).
     fn make_type_code_named(&self, nm: &str) -> KunaResult<Rc<Datatype>> {
@@ -5497,6 +5670,13 @@ impl TypeFactory for TypeFactoryImpl {
     }
     fn get_type_code(&self) -> KunaResult<Rc<Datatype>> {
         self.get_type_code_impl()
+    }
+
+    fn get_type_code_proto(
+        &self,
+        proto: &crate::fspec::PrototypePieces,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.make_type_code_proto(proto)
     }
 
     fn get_type_pointer_strip_array(
