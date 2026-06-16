@@ -3880,4 +3880,121 @@ mod tests {
             .collect();
         assert!(in_defs.contains(&w1) && in_defs.contains(&w2), "phi merges the two writes");
     }
+
+    // ---- w10-proto-cluster verifier: processJoins join-space splitting ----
+    //
+    // The branch named "w10-proto-cluster" actually ports
+    // `Heritage::processJoins` and its helpers (heritage.cc:2068-2313). These
+    // adversarial tests target the fragile spots the hunt list flagged:
+    // (A) `split_join_level` size-accumulation / branch selection
+    //     (register-piece vs newUnique, the at-least-once `numinhalf`),
+    // (B) the 2-1 `nextlev` mapping with the `None` filler for unsplit pieces,
+    // (C) the snapshot-vs-live-set loop boundary of `process_joins` on an
+    //     empty join space (the documented no-op path).
+
+    use kuna_base::space::{JoinSpace, VarnodeStorage};
+
+    /// Manager with a join space (index after the std spaces) plus two distinct
+    /// 8-byte register-bearing pieces in `ram`.
+    fn build_manager_with_join() -> AddrSpaceManager {
+        let mut m = build_manager(); // #(0) unique(1) ram(2)
+        // JoinSpace at index 3; insert_space wires manager.joinspace.
+        m.insert_space(Rc::new(JoinSpace::new(3, false))).unwrap();
+        m
+    }
+
+    fn vstore(spc: &Rc<AddrSpace>, off: u64, size: u32) -> VarnodeStorage {
+        VarnodeStorage { space: Some(Rc::clone(spc)), offset: off, size }
+    }
+
+    fn build_fd_with_join() -> Funcdata {
+        let manage = build_manager_with_join();
+        let glb = Rc::new(Architecture::new(manage));
+        let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        let addr = Address::new(ram, 0x1000);
+        Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
+    }
+
+    // (A)+(B): a 16-byte Varnode against a 2x8 JoinRecord. `split_join_level`
+    // must take the else-branch (cursize 16 != piece 8), find sizeaccum==16 at
+    // j=recnum+2 so (j-recnum)==2 and numinhalf==1, and emit BOTH halves as
+    // *register* pieces (newVarnode, not newUnique) at the recorded offsets,
+    // with a `None`-free `nextlev` of exactly [most, least].
+    #[test]
+    fn w10_proto_cluster_split_join_level_two_register_halves() {
+        let mut fd = build_fd_with_join();
+        let ram = ram(&fd);
+        // pieces: hi @ ram:0x40 (8 bytes), lo @ ram:0x48 (8 bytes) -> 16 logical
+        let pieces = [vstore(&ram, 0x40, 8), vstore(&ram, 0x48, 8)];
+        let joinrec = fd.get_arch().manage().find_add_join(&pieces, 0).unwrap();
+        assert_eq!(joinrec.num_pieces(), 2);
+
+        // A 16-byte unique Varnode standing in for the join whole.
+        let curvn = fd.new_unique(16, None);
+
+        let h = Heritage::new();
+        let mut nextlev: Vec<Option<crate::seams::VarnodeId>> = Vec::new();
+        h.split_join_level(&mut fd, &[curvn], &mut nextlev, &joinrec);
+
+        // 2-1 mapping: exactly two entries, both Some (this vn was split).
+        assert_eq!(nextlev.len(), 2, "2-1 mapping: one pair per input vn");
+        let most = nextlev[0].expect("most half present");
+        let least = nextlev[1].expect("least half present (split this level)");
+
+        // Both halves are *register* pieces at the recorded space/offset/size,
+        // NOT newUnique temporaries (numinhalf==1 and (j-recnum)==2).
+        let mv = fd.vbank().get(most).unwrap();
+        assert!(Rc::ptr_eq(mv.get_addr().get_space().unwrap(), &ram), "most half in ram (piece space)");
+        assert_eq!(mv.get_addr().get_offset(), 0x40, "most half at piece offset");
+        assert_eq!(mv.get_size(), 8, "most half is the hi piece size");
+        let lv = fd.vbank().get(least).unwrap();
+        assert!(Rc::ptr_eq(lv.get_addr().get_space().unwrap(), &ram), "least half in ram (piece space)");
+        assert_eq!(lv.get_addr().get_offset(), 0x48, "least half at piece offset");
+        assert_eq!(lv.get_size(), 8, "least half is the lo piece size");
+    }
+
+    // (A) fast-path: when cursize already equals the current piece size, the
+    // level pushes the Varnode unchanged plus a `None` filler and advances
+    // recnum by one — the 2-1 mapping must stay aligned across a 3-piece record
+    // whose middle position is consumed exactly.
+    #[test]
+    fn w10_proto_cluster_split_join_level_equal_piece_fast_path() {
+        let mut fd = build_fd_with_join();
+        let ram = ram(&fd);
+        // Three pieces 8+8+8 = 24 logical.
+        let pieces = [vstore(&ram, 0x40, 8), vstore(&ram, 0x48, 8), vstore(&ram, 0x50, 8)];
+        let joinrec = fd.get_arch().manage().find_add_join(&pieces, 0).unwrap();
+
+        // An already-8-byte Varnode equal to piece[0].size -> fast path.
+        let small = fd.new_unique(8, None);
+        let h = Heritage::new();
+        let mut nextlev: Vec<Option<crate::seams::VarnodeId>> = Vec::new();
+        h.split_join_level(&mut fd, &[small], &mut nextlev, &joinrec);
+
+        assert_eq!(nextlev.len(), 2, "fast path still emits a 2-1 pair");
+        assert_eq!(nextlev[0], Some(small), "fast path keeps the input vn as the most-half");
+        assert!(nextlev[1].is_none(), "fast path fills the least-half slot with None");
+    }
+
+    // (C): `process_joins` over a function whose join space holds NO Varnodes
+    // is a no-op and does not panic. This guards the snapshot/loop boundary:
+    // the loc-set is empty, so the `getSpace() != joinspace` break and the
+    // find_join/expect path are never reached. Op/Varnode counts are unchanged.
+    #[test]
+    fn w10_proto_cluster_process_joins_empty_join_space_noop() {
+        let mut fd = build_fd_with_join();
+        assert!(fd.get_arch().manage().get_join_space().is_some(), "fixture has a join space");
+        // Seed a non-join Varnode so "no-op" is meaningfully observable.
+        let ram = ram(&fd);
+        let _v = fd.new_varnode_space_off(8, ram, 0x100);
+        let nvarnodes_before = fd.vbank().num_varnodes();
+        let nops_before = fd.obank().num_alive();
+
+        let mut h = Heritage::new();
+        h.build_info_list(&fd);
+        h.process_joins(&mut fd); // must be a clean no-op
+
+        assert_eq!(fd.vbank().num_varnodes(), nvarnodes_before, "no Varnodes added");
+        assert_eq!(fd.obank().num_alive(), nops_before, "no ops added");
+    }
 }
