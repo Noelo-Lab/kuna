@@ -2062,9 +2062,14 @@ impl Funcdata {
         if rel_off + vn_size > op2_size {
             return false; // Not proper containment
         }
+        // C++ `bigEndian = getSpace()->isBigEndian()` reads the space of `this`
+        // (the original caller `b`, BEFORE the size-driven `vn`/`op2` swap), not
+        // of `vn`.  Read it from `b` to match (endianness is architecture-uniform
+        // per space, so this is equivalent on a single-arch corpus, but the
+        // faithful source is the caller varnode).
         let big_endian = self
             .vbank
-            .get(vn)
+            .get(b)
             .map(|v| v.get_space().is_big_endian())
             .unwrap_or(false);
         let least_byte = if big_endian { (op2_size - vn_size) - rel_off } else { rel_off };
@@ -2802,6 +2807,27 @@ impl Funcdata {
         self.high_bank.get(high)?.kuna_equate_symbol()
     }
 
+    /// The merged-tree stand-in for the C++ `vn->getSymbolEntry() != 0`
+    /// idempotency guard in `attemptDynamicMapping[Late]`
+    /// (`funcdata_varnode.cc:1347,1378`): a dynamic SymbolEntry has already been
+    /// bound to `vn` when its HighVariable carries either the attached name (the
+    /// non-equate arm's `set_kuna_name`) OR the attached equate Symbol (the
+    /// equate arm's `set_kuna_equate_symbol`).  Both arms set
+    /// `vn->setSymbolEntry(entry)` in the C++, so a faithful stand-in must treat
+    /// either binding as "already labeled" — otherwise a re-run of the (early)
+    /// equate arm would re-bind an already-equated Varnode (the C++ returns
+    /// `false` there).
+    fn vn_high_has_dynamic_binding(&self, vn: VarnodeId) -> bool {
+        let high = match self.vbank.get(vn).and_then(|v| v.get_high()) {
+            Some(h) => h,
+            None => return false,
+        };
+        match self.high_bank.get(high) {
+            Some(h) => h.kuna_name().is_some() || h.kuna_equate_symbol().is_some(),
+            None => false,
+        }
+    }
+
     /// C++ `Funcdata::attemptDynamicMapping` (`funcdata_varnode.cc:1335`): the
     /// EARLY dynamic mapping, run mid-pipeline by `ActionDynamicMapping`.  Finds
     /// the Varnode the dynamic SymbolEntry maps to and binds the Symbol's
@@ -2839,11 +2865,10 @@ impl Funcdata {
             Some(v) => v,
             None => return Ok(false),
         };
-        // if (vn->getSymbolEntry() != 0) return false; — idempotent (already bound).
-        if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
-            if self.high_bank.get(high).map(|h| h.kuna_name().is_some()).unwrap_or(false) {
-                return Ok(false);
-            }
+        // if (vn->getSymbolEntry() != 0) return false; — idempotent (already bound,
+        // by name OR equate; see vn_high_has_dynamic_binding).
+        if self.vn_high_has_dynamic_binding(vn) {
+            return Ok(false);
         }
         if category == symbol_category::EQUATE {
             if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
@@ -2922,11 +2947,10 @@ impl Funcdata {
             None => return Ok(false),
         };
         // if (vn->getSymbolEntry() != 0) return false; // Symbol already applied.
-        // Stand-in: the matched high already carries a name (idempotent re-run).
-        if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
-            if self.high_bank.get(high).map(|h| h.kuna_name().is_some()).unwrap_or(false) {
-                return Ok(false);
-            }
+        // Stand-in: the matched high already carries a name OR an equate binding
+        // (idempotent re-run; see vn_high_has_dynamic_binding).
+        if self.vn_high_has_dynamic_binding(vn) {
+            return Ok(false);
         }
         // if (sym->getCategory() == Symbol::equate) { vn->setSymbolEntry(entry); return true; }
         if category == symbol_category::EQUATE {
