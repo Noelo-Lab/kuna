@@ -990,6 +990,178 @@ impl Funcdata {
     }
 
     // -----------------------------------------------------------------------
+    // linkSpacebaseSymbol / linkSymbolReference (the `&name` render payoff)
+    // -----------------------------------------------------------------------
+
+    /// C++ `Funcdata::linkSymbolReference` (`funcdata_varnode.cc:1214`), realized
+    /// against the merged tree's HighVariable `kuna_*` symbol-reference fields.
+    ///
+    /// `offVn` is the constant **second input** to a `PTRSUB(spacebase, offset)`.
+    /// The C++ recovers the Symbol the constant address refers to and stores it on
+    /// the constant's HighVariable as a *reference* (`Varnode::setSymbolReference`
+    /// -> `HighVariable::setSymbolReference(sym, off)` sets `symbol`/`symboloffset`,
+    /// `variable.cc:283-289`).  The W4 `Symbol`/`SymbolEntry` layer is absent here,
+    /// so the reference is parked as the same `kuna_name`/`symbol_offset`/
+    /// `kuna_symbol_type` triple `ActionNameVars` uses for value reads; the printer
+    /// reads it back in the `PrintC::opPtrsub` SPACEBASE arm (`printc.cc:1081`).
+    ///
+    /// Faithful to the C++ body:
+    /// ```text
+    /// op = vn->loneDescend();
+    /// ptype = (TypePointer *)op->getIn(0)->getHigh()->getType();
+    /// if (ptype->getMetatype() != TYPE_PTR) return 0;
+    /// sb = (TypeSpacebase *)ptype->getPtrTo();
+    /// if (sb->getMetatype() != TYPE_SPACEBASE) return 0;
+    /// scope = sb->getMap();
+    /// addr = sb->getAddress(vn->getOffset(), in0->getSize(), op->getAddr());
+    /// entry = scope->queryContainer(addr, 1, Address());
+    /// if (entry == 0) return 0;
+    /// off = (int4)(addr.getOffset() - entry->getAddr().getOffset()) + entry->getOffset();
+    /// vn->setSymbolReference(entry, off);
+    /// ```
+    ///
+    /// Returns `true` when a Symbol reference was attached (the C++ non-null return,
+    /// used by `linkSpacebaseSymbol` to decide whether to record the offVn for later
+    /// default-naming).
+    fn link_symbol_reference(&mut self, off_vn: VarnodeId) -> bool {
+        // op = vn->loneDescend();  (the PTRSUB this constant feeds)
+        let op = match self.lone_descend(off_vn) {
+            Some(o) => o,
+            None => return false,
+        };
+        // in0 = op->getIn(0)  (the spacebase varnode)
+        let in0 = match self.obank().get(op).and_then(|o| o.get_in(0)) {
+            Some(v) => v,
+            None => return false,
+        };
+        // ptype = in0->getHigh()->getType().  The kuna render reads the varnode
+        // type for the same spacebase input (`op_ptrsub_ir` line in0 = get_type),
+        // which after the W10 spacebase-input typing IS the pointer-to-spacebase;
+        // use the same source so the action and the render agree.
+        let (ptype, in0_size) = match self.vbank().get(in0) {
+            Some(v) => (Rc::clone(v.get_type()), v.get_size()),
+            None => return false,
+        };
+        // if (ptype->getMetatype() != TYPE_PTR) return 0;
+        if ptype.get_metatype() != type_metatype::TYPE_PTR {
+            return false;
+        }
+        // sb = (TypeSpacebase *)ptype->getPtrTo();
+        let sb = match ptype.get_ptr_to() {
+            Some(s) => s,
+            None => return false,
+        };
+        // if (sb->getMetatype() != TYPE_SPACEBASE) return 0;
+        if sb.get_metatype() != type_metatype::TYPE_SPACEBASE {
+            return false;
+        }
+        // off_vn->getOffset() and op->getAddr()
+        let off_const = match self.vbank().get(off_vn) {
+            Some(v) => v.get_offset(),
+            None => return false,
+        };
+        let op_addr = match self.obank().get(op) {
+            Some(o) => o.get_addr().clone(),
+            None => return false,
+        };
+        // addr = sb->getAddress(vn->getOffset(), in0->getSize(), op->getAddr());
+        let manager = self.get_arch().manage();
+        let addr = match sb.spacebase_get_address(off_const, in0_size, &op_addr, manager) {
+            Some(a) => a,
+            // C++ throws "Unable to generate proper address from spacebase"; a
+            // failure to resolve simply means no reference is attached here.
+            None => return false,
+        };
+        // scope = sb->getMap(); entry = scope->queryContainer(addr,1,Address());
+        // off = (addr - entry.addr) + entry.offset.  `query_container_for_link`
+        // performs exactly this lookup and offset arithmetic and returns the
+        // display name + in-symbol byte offset + symbol type, or None when no
+        // entry contains `addr` (the C++ `entry == 0 -> return 0`).
+        let info = match self
+            .get_scope_local()
+            .and_then(|lm| lm.query_container_for_link(&addr))
+        {
+            Some(i) => i,
+            None => return false,
+        };
+        // C++ `linkSpacebaseSymbol` (coreaction.cc:3015) attaches the reference even
+        // for an undefined-named Symbol, then records the offVn in `namerec` so
+        // `ActionNameVars::apply` renames the shared Symbol to `vN` (the render then
+        // reads that final name).  The kuna namerec rename only reaches
+        // whole-symbol-cover locals (`resolve_default_name` renames in the
+        // database), so an undefined-named composite — an unmapped array auto-local
+        // — is never given a `vN` here.  Binding its raw `$$undefNN` placeholder
+        // onto the offset-constant high would leak it into the render
+        // (`&$$undef00000001`); instead leave the reference unattached so the
+        // printer's SPACEBASE arm falls back to the functional `PTRSUB(...)` form —
+        // observably identical to the pre-render-finish state for an unmapped local.
+        // A *mapped* Symbol (`map addr ... a[1]`) always has a defined name, so this
+        // never suppresses the `&a` / `&myval.b` payoff.
+        if info.is_name_undefined {
+            return false;
+        }
+        // vn->setSymbolReference(entry, off):
+        //   HighVariable::setSymbolReference(sym, off) — symbol = sym;
+        //   symboloffset = off.  Parked on the constant's HighVariable.
+        let high = match self.vbank().get(off_vn).and_then(|v| v.get_high()) {
+            Some(h) => h,
+            None => return false,
+        };
+        if let Some(h) = self.high_bank_mut().get_mut(high) {
+            h.set_kuna_name(info.display_name);
+            h.set_symbol_offset(info.sym_off);
+            if let Some(t) = info.sym_type {
+                h.set_symbol_type(t);
+            }
+        }
+        true
+    }
+
+    /// C++ `ActionNameVars::linkSpacebaseSymbol` (`coreaction.cc:3005`): look for
+    /// `PTRSUB` ops off the given spacebase Varnode that encode a `&symbol`
+    /// reference, and link each one's offset constant to its Symbol.
+    ///
+    /// ```text
+    /// if (!vn->isConstant() && !vn->isInput()) return;
+    /// for (op : vn->descend()) {
+    ///   if (op->code() != CPUI_PTRSUB) continue;
+    ///   offVn = op->getIn(1);
+    ///   sym = data.linkSymbolReference(offVn);
+    ///   if (sym != 0 && sym->isNameUndefined()) namerec.push_back(offVn);
+    /// }
+    /// ```
+    ///
+    /// The kuna mapped symbols always have a defined name (the `map addr` records),
+    /// so the `isNameUndefined()` namerec arm — which would route an unnamed
+    /// spacebase symbol through `buildDefaultName` — is a no-op for the corpus and
+    /// is intentionally not reproduced (no symbol reaching here is name-undefined).
+    pub fn link_spacebase_symbol(&mut self, vn: VarnodeId) {
+        // if (!vn->isConstant() && !vn->isInput()) return;
+        let (is_const, is_input) = match self.vbank().get(vn) {
+            Some(v) => (v.is_constant(), v.is_input()),
+            None => return,
+        };
+        if !is_const && !is_input {
+            return;
+        }
+        // Snapshot the descend list (the body does not mutate it, but a snapshot
+        // keeps the borrow short while link_symbol_reference takes &mut self).
+        for op in self.descend_snapshot(vn) {
+            // if (op->code() != CPUI_PTRSUB) continue;
+            if self.obank().get(op).map(|o| o.code()) != Some(OpCode::CPUI_PTRSUB) {
+                continue;
+            }
+            // offVn = op->getIn(1);
+            let off_vn = match self.obank().get(op).and_then(|o| o.get_in(1)) {
+                Some(v) => v,
+                None => continue,
+            };
+            // sym = data.linkSymbolReference(offVn);  (namerec arm omitted, above)
+            let _ = self.link_symbol_reference(off_vn);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // totalReplace (def-use rewiring; sequenced single-arena borrows)
     // -----------------------------------------------------------------------
 

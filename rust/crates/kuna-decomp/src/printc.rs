@@ -2329,14 +2329,61 @@ impl PrintC {
         }
     }
 
+    /// C++ `PrintC::emitForLoop` (printc.cc:3106): emit a `for (init; cond; iter)`
+    /// header (with the init/iterate statements hoisted out of the body) followed
+    /// by the loop body.  Reached from [`emit_block_while_do`] when the whiledo
+    /// node carries an `iterateOp` (set by `Funcdata::finalize_forloop_*`).
+    fn emit_for_loop(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        self.context.push_mod();
+        self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
+        // (emitAnyLabelStatement / emitCommentBlockTree: not ported — same
+        //  simplification as the plain while arm.)
+        let cond_block = fd.sblocks_ref().block(blk).get_block(0);
+        self.emit.tag_line();
+        self.emit.tag_op(keywords::KEYWORD_FOR, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+        self.emit.spaces(1, 0);
+        let id1 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+        self.context.push_mod();
+        self.context.set_mod(modifiers::COMMA_SEPARATE);
+        // Emit the (optional) initializer statement.
+        if let Some(op) = fd.sblocks_ref().block(blk).get_initialize_op() {
+            let id3 = self.emit.begin_statement(&MarkupRef::none());
+            self.emit_expression_ir(fd, arch, op);
+            self.emit.end_statement(id3);
+        }
+        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.emit.spaces(1, 0);
+        // Emit the conditional statement (the condition block, comma-separated).
+        self.emit_block(fd, arch, cond_block);
+        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.emit.spaces(1, 0);
+        // Emit the iterator statement.
+        if let Some(op) = fd.sblocks_ref().block(blk).get_iterate_op() {
+            let id4 = self.emit.begin_statement(&MarkupRef::none());
+            self.emit_expression_ir(fd, arch, op);
+            self.emit.end_statement(id4);
+        }
+        self.context.pop_mod();
+        self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id1);
+        let indent =
+            self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+        self.context.set_mod(modifiers::NO_BRANCH); // Don't print goto at bottom of clause
+        let id2 = self.emit.begin_block(0);
+        self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
+        self.emit.end_block(id2);
+        self.emit.close_brace_indent(keywords::CLOSE_CURLY, indent);
+        self.context.pop_mod();
+    }
+
     /// C++ `PrintC::emitBlockWhileDo` (printc.cc:3150): the top-tested loop.
-    /// Block 0 is the condition, block 1 the body.  When the loop has an
-    /// `iterateOp` the C++ emits a `for` loop (`emitForLoop`); that for-loop
-    /// detection (`findLoopVariable`/`findInitializer`) is the structuring wave's
-    /// surface, so when an iterate op is recorded we fall through to the plain
-    /// `while` form (a faithful degradation — the body is identical, only the
-    /// init/iterate hoisting differs).  Recorded as a loss.
+    /// Block 0 is the condition, block 1 the body.  When the loop carries an
+    /// `iterateOp` (recorded by the for-loop reroll), it is emitted as a `for`
+    /// loop ([`emit_for_loop`]); otherwise the plain `while` form is emitted.
     fn emit_block_while_do(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        if fd.sblocks_ref().block(blk).get_iterate_op().is_some() {
+            self.emit_for_loop(fd, arch, blk);
+            return;
+        }
         // whiledo block NEVER prints the final branch.
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
@@ -4219,8 +4266,120 @@ impl PrintC {
                 self.push_vn_ir_m(fd, arch, in0, op, m);
                 self.push_constant_ir(0, 4, op);
             }
+        } else if metameta == crate::dtype::type_metatype::TYPE_SPACEBASE {
+            // SPACEBASE arm (C++ `PrintC::opPtrsub`, printc.cc:1081-1121).  A
+            // `PTRSUB(spacebase, off)` is a `&symbol` reference into a stack/global
+            // frame.  `ActionNameVars::linkSpacebaseSymbol` decoded the reference
+            // and parked the Symbol on the offset constant's HighVariable
+            // (`Funcdata::link_symbol_reference` -> `kuna_name`/`symbol_offset`/
+            // `kuna_symbol_type`), so this reads it back here.
+            //
+            //   HighVariable *high = op->getIn(1)->getHigh();
+            //   Symbol *symbol = high->getSymbol();
+            // The kuna stand-in: read the reference triple off in1's high.
+            let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
+            let (sym_name, sym_off, sym_type) = match in1.and_then(|v| fd.vbank().get(v)).and_then(|v| v.get_high()) {
+                Some(high) => match fd.high_bank().get(high) {
+                    Some(h) => (
+                        h.kuna_name().map(|s| s.to_string()),
+                        h.kuna_symbol_offset(),
+                        h.kuna_symbol_type().cloned(),
+                    ),
+                    None => (None, -1, None),
+                },
+                None => (None, -1, None),
+            };
+
+            // C++ `opPtrsub` always reaches a Symbol here (`linkSpacebaseSymbol`
+            // attached one to every stack/global PTRSUB), branching on
+            // `symbol == 0` only for a never-linked spacebase.  In the kuna model
+            // `link_symbol_reference` deliberately attaches ONLY a defined-named
+            // Symbol (the mapped stack/global vars; an undefined-named auto-local is
+            // left unlinked — see `Funcdata::link_symbol_reference`).  So a missing
+            // `sym_name` here means "no reliable symbol surface for this reference":
+            // render the functional `PTRSUB(...)` form (the pre-render-finish state),
+            // NOT the C++ `pushUnnamedLocation` `&stackNN` leaf — which would expose
+            // an offset the kuna namerec layer has not yet resolved to a name.
+            let name = match &sym_name {
+                Some(n) => n.clone(),
+                None => {
+                    self.op_func_ir(fd, arch, op);
+                    return;
+                }
+            };
+
+            let mut arrayvalue = false; // arrayvalue = false;
+            if let Some(st) = &sym_type {
+                // ct = symbol->getType(); (symbol != 0 always here)  (printc.cc:1086)
+                let mt = st.get_metatype();
+                if mt == crate::dtype::type_metatype::TYPE_ARRAY {
+                    // The '&' is dropped if the output type is an array.
+                    arrayvalue = valueon; // If printing value, use [0]
+                    valueon = true; // If printing ptr, don't use &
+                } else if mt == crate::dtype::type_metatype::TYPE_CODE {
+                    valueon = true; // If printing ptr, don't use &
+                }
+            }
+
+            if !valueon {
+                // EMIT  &name  (printc.cc:1095)
+                self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+            } else if arrayvalue {
+                // EMIT  name  with a trailing subscript (printc.cc:1099)
+                self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+            }
+
+            // int4 off = high->getSymbolOffset();  (printc.cc:1108)
+            // off == 0 takes the bare `pushSymbol` arm; a `-1` `symboloffset` (the
+            // whole-symbol cover the C++ `setSymbol` records for a size-matching
+            // entry) is also a bare-name render, so `off <= 0` covers both.
+            if sym_off <= 0 {
+                // off == 0: pushSymbol(symbol, 0, op) — the bare name.
+                self.push_atom(&Atom::with_op(
+                    name.clone(),
+                    TagType::VarToken,
+                    crate::printlanguage::SyntaxHighlight::var_color,
+                    op_key(op),
+                ));
+            } else {
+                // off != 0: pushPartialSymbol(symbol, off, 0, 0, op, -1, false) —
+                // `name.field` (printc.cc:1116).
+                let st = sym_type.as_ref().map(std::rc::Rc::clone);
+                let pushed = if let Some(st) = st {
+                    self.push_partial_symbol_ir(
+                        fd,
+                        arch,
+                        &name,
+                        st,
+                        sym_off as int8,
+                        0,
+                        in1.unwrap_or_default(),
+                        op,
+                        -1,
+                        false,
+                    )
+                } else {
+                    false
+                };
+                if !pushed {
+                    // The partial walk produced no member token (a whole-symbol
+                    // cover): render the bare name, matching `pushPartialSymbol`'s
+                    // degenerate base case.
+                    self.push_atom(&Atom::with_op(
+                        name.clone(),
+                        TagType::VarToken,
+                        crate::printlanguage::SyntaxHighlight::var_color,
+                        op_key(op),
+                    ));
+                }
+            }
+
+            if arrayvalue {
+                // push_integer(0, 4, ...) — the `[0]` subscript index.
+                self.push_constant_ir(0, 4, op);
+            }
         } else {
-            // SPACEBASE (W4 symbol surface) and other: functional fallback.
+            // Union/other: functional fallback.
             self.op_func_ir(fd, arch, op);
         }
     }

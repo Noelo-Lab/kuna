@@ -159,6 +159,417 @@ impl Funcdata {
         }
     }
 
+    // =======================================================================
+    // for-loop reroll: BlockWhileDo::finalTransform / finalizePrinting
+    // (block.cc:3405 / block.cc:3454).  Drives the whiledo->for conversion by
+    // discovering the loop variable, iterator, and initializer statements and
+    // recording them on the structured BlockWhileDo so PrintC::emitForLoop can
+    // hoist them into the `for (init; cond; iter)` header.
+    // =======================================================================
+
+    /// `BlockGraph::finalTransform` over the structured graph: recurse into
+    /// every BlockWhileDo and run its `finalTransform` (C++ `block.cc:1356` +
+    /// `block.cc:3405`).  Called from `ActionStructureTransform::apply`.
+    pub fn finalize_forloop_transform(&mut self, allow_op_moves: bool) {
+        if !self.get_arch().analyze_for_loops {
+            return;
+        }
+        // Collect the sblocks whiledo node ids (immutable walk first), in arena
+        // order.  The C++ recursion sets `f_final_transform` on each BlockGraph,
+        // but the only side effects flow through the BlockWhileDo bodies, so the
+        // flat scan over whiledo nodes is equivalent for the transform's result.
+        let whiledo_ids: Vec<BlockId> = self
+            .sblocks_ref()
+            .arena
+            .iter()
+            .filter(|(_, b)| b.get_type() == crate::block::BlockType::WhileDo)
+            .map(|(id, _)| id)
+            .collect();
+        for wd in whiledo_ids {
+            self.whiledo_final_transform(wd, allow_op_moves);
+        }
+    }
+
+    /// `BlockWhileDo::finalTransform` for one whiledo node (block.cc:3405).
+    fn whiledo_final_transform(&mut self, wd: BlockId, allow_op_moves: bool) {
+        let sb = self.sblocks_ref();
+        if sb.block(wd).has_overflow_syntax() {
+            return;
+        }
+        // copyBl = getFrontLeaf(); head = (BlockBasic*)copyBl->subBlock(0).
+        let copy_bl = match sb.get_front_leaf(wd) {
+            Some(c) => c,
+            None => return,
+        };
+        let head = match sb.sub_block(copy_bl, 0) {
+            Some(h) => h,
+            None => return,
+        };
+        // head must be a basic block (in bblocks).
+        if self.bblocks_ref().block(head).get_type() != crate::block::BlockType::Basic {
+            return;
+        }
+        // lastOp = getBlock(1)->lastOp(); must exist for an iterator statement.
+        let body = self.sblocks_ref().sub_block(wd, 1);
+        let mut last_op = match body.and_then(|b| self.sblocks_ref().struct_last_op(b)) {
+            Some(o) => o,
+            None => return,
+        };
+        // tail = lastOp->getParent(); tail->sizeOut()!=1 || tail->getOut(0)!=head -> bail.
+        let tail = match self.obank().get(last_op).and_then(|o| o.get_parent()) {
+            Some(t) => t,
+            None => return,
+        };
+        if self.bblocks_ref().block(tail).size_out() != 1 {
+            return;
+        }
+        if self.bblocks_ref().block(tail).get_out(0) != head {
+            return;
+        }
+        // cbranch = getBlock(0)->lastOp(); must be a CBRANCH.
+        let cond = match self.sblocks_ref().sub_block(wd, 0) {
+            Some(c) => c,
+            None => return,
+        };
+        let cbranch = match self.sblocks_ref().struct_last_op(cond) {
+            Some(c) => c,
+            None => return,
+        };
+        if self.obank().get(cbranch).map(|o| o.code()) != Some(OpCode::CPUI_CBRANCH) {
+            return;
+        }
+        // If lastOp is a branch, step back: iterateOp must appear after it.
+        if self.obank().get(last_op).map(|o| o.is_branch()).unwrap_or(false) {
+            last_op = match self.op_previous_op(last_op) {
+                Some(p) => p,
+                None => return,
+            };
+        }
+
+        // findLoopVariable(cbranch, head, tail, lastOp): sets iterateOp + loopDef.
+        let (iterate_op, loop_def) = self.find_loop_variable(cbranch, head, tail, last_op);
+        let iterate_op = match iterate_op {
+            Some(o) => o,
+            None => return,
+        };
+        let loop_def = loop_def.expect("find_loop_variable sets loopDef with iterateOp");
+        // Record loopDef + iterateOp on the whiledo node.
+        self.sblocks_mut().block_mut(wd).set_loop_def(Some(loop_def));
+        self.sblocks_mut().block_mut(wd).set_iterate_op(Some(iterate_op));
+
+        // Move iterateOp to be the last op if it isn't (allow_op_moves gates it).
+        if iterate_op != last_op {
+            if !allow_op_moves {
+                self.sblocks_mut().block_mut(wd).set_iterate_op(None);
+                return;
+            }
+            self.op_uninsert(iterate_op);
+            self.op_insert_after(iterate_op, last_op);
+        }
+
+        // Set up initializer statement.
+        let slot = self.bblocks_ref().block(tail).get_out_rev_index(0);
+        let init_last_op = self.find_initializer(wd, head, slot);
+        let init_last_op = match init_last_op {
+            Some(o) => o,
+            None => return,
+        };
+        let initialize_op =
+            self.sblocks_ref().block(wd).get_initialize_op().expect("findInitializer sets it");
+        if !self.op_is_moveable(initialize_op, init_last_op) {
+            self.sblocks_mut().block_mut(wd).set_initialize_op(None); // Turn it off
+            return;
+        }
+        if initialize_op != init_last_op {
+            if !allow_op_moves {
+                self.sblocks_mut().block_mut(wd).set_initialize_op(None);
+                return;
+            }
+            self.op_uninsert(initialize_op);
+            self.op_insert_after(initialize_op, init_last_op);
+        }
+    }
+
+    /// `BlockWhileDo::findLoopVariable` (block.cc:3212).  Walks back from the
+    /// loop-exit `cbranch`'s tested Varnode looking for a MULTIEQUAL in the
+    /// `head` whose tail input is a moveable, non-marker op in `tail`.  Returns
+    /// `(iterateOp, loopDef)` or `(None, None)`.
+    fn find_loop_variable(
+        &self,
+        cbranch: OpId,
+        head: BlockId,
+        tail: BlockId,
+        last_op: OpId,
+    ) -> (Option<OpId>, Option<OpId>) {
+        let vn = match self.obank().get(cbranch).and_then(|o| o.get_in(1)) {
+            Some(v) => v,
+            None => return (None, None),
+        };
+        if !self.vbank().get(vn).map(|v| v.is_written()).unwrap_or(false) {
+            return (None, None); // No loop variable found
+        }
+        let op = self.vbank().get(vn).unwrap().get_def().unwrap();
+        let slot = self.bblocks_ref().block(tail).get_out_rev_index(0);
+
+        // path[4] of (op, slot); count starts at 0.
+        let mut path: Vec<(OpId, int4)> = Vec::with_capacity(4);
+        if self.obank().get(op).map(|o| o.is_call() || o.is_marker()).unwrap_or(true) {
+            return (None, None);
+        }
+        path.push((op, 0));
+        while !path.is_empty() {
+            let count = path.len() - 1;
+            let cur_op = path[count].0;
+            let ind = path[count].1;
+            path[count].1 += 1;
+            let num_in = self.obank().get(cur_op).map(|o| o.num_input()).unwrap_or(0);
+            if ind >= num_in {
+                path.pop();
+                continue;
+            }
+            let next_vn = match self.obank().get(cur_op).and_then(|o| o.get_in(ind)) {
+                Some(v) => v,
+                None => continue,
+            };
+            if !self.vbank().get(next_vn).map(|v| v.is_written()).unwrap_or(false) {
+                continue;
+            }
+            let def_op = self.vbank().get(next_vn).unwrap().get_def().unwrap();
+            if self.obank().get(def_op).map(|o| o.code()) == Some(OpCode::CPUI_MULTIEQUAL) {
+                if self.obank().get(def_op).and_then(|o| o.get_parent()) != Some(head) {
+                    continue;
+                }
+                let itvn = match self.obank().get(def_op).and_then(|o| o.get_in(slot)) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                if !self.vbank().get(itvn).map(|v| v.is_written()).unwrap_or(false) {
+                    continue;
+                }
+                let possible_iterate = self.vbank().get(itvn).unwrap().get_def().unwrap();
+                if self.obank().get(possible_iterate).and_then(|o| o.get_parent()) == Some(tail) {
+                    // Found proper head/tail configuration.
+                    if self.obank().get(possible_iterate).map(|o| o.is_marker()).unwrap_or(true) {
+                        continue; // No iteration in tail
+                    }
+                    if !self.op_is_moveable(possible_iterate, last_op) {
+                        continue; // Not the final statement
+                    }
+                    return (Some(possible_iterate), Some(def_op)); // loopDef + iterateOp
+                }
+            } else {
+                if count == 3 {
+                    continue;
+                }
+                if self.obank().get(def_op).map(|o| o.is_call() || o.is_marker()).unwrap_or(true) {
+                    continue;
+                }
+                path.push((def_op, 0));
+            }
+        }
+        (None, None) // No loop variable found
+    }
+
+    /// `BlockWhileDo::findInitializer` (block.cc:3271).  The initializer must be
+    /// read by `loopDef` from the non-tail slot, defined in the unique block
+    /// flowing into `head`.  On success sets `initializeOp` on the whiledo node
+    /// `wd` and returns the last (non-branch) op of the initializer block.
+    fn find_initializer(&mut self, wd: BlockId, head: BlockId, slot: int4) -> Option<OpId> {
+        if self.bblocks_ref().block(head).size_in() != 2 {
+            return None;
+        }
+        let slot = 1 - slot;
+        let loop_def = self.sblocks_ref().block(wd).get_loop_def()?;
+        let init_vn = self.obank().get(loop_def).and_then(|o| o.get_in(slot))?;
+        if !self.vbank().get(init_vn).map(|v| v.is_written()).unwrap_or(false) {
+            return None;
+        }
+        let res = self.vbank().get(init_vn).unwrap().get_def().unwrap();
+        if self.obank().get(res).map(|o| o.is_marker()).unwrap_or(true) {
+            return None;
+        }
+        let initial_block = self.obank().get(res).and_then(|o| o.get_parent())?;
+        // Statement must terminate in block flowing to head (head->getIn(slot)).
+        if initial_block != self.bblocks_ref().block(head).get_in(slot) {
+            return None;
+        }
+        let mut last_op = self.bblocks_ref().struct_last_op(initial_block)?;
+        if self.bblocks_ref().block(initial_block).size_out() != 1 {
+            return None; // Initializer block must flow only to the for loop
+        }
+        if self.obank().get(last_op).map(|o| o.is_branch()).unwrap_or(false) {
+            last_op = self.op_previous_op(last_op)?;
+        }
+        self.sblocks_mut().block_mut(wd).set_initialize_op(Some(res));
+        Some(last_op)
+    }
+
+    /// `BlockGraph::finalizePrinting` over the structured graph: recurse into
+    /// every BlockWhileDo and run its `finalizePrinting` (C++ `block.cc:1368` +
+    /// `block.cc:3454`).  Called from `ActionFinalStructure::apply`, after the
+    /// switch case labels are finalized.
+    pub fn finalize_forloop_printing(&mut self) {
+        let whiledo_ids: Vec<BlockId> = self
+            .sblocks_ref()
+            .arena
+            .iter()
+            .filter(|(_, b)| b.get_type() == crate::block::BlockType::WhileDo)
+            .map(|(id, _)| id)
+            .collect();
+        for wd in whiledo_ids {
+            self.whiledo_finalize_printing(wd);
+        }
+    }
+
+    /// `BlockWhileDo::finalizePrinting` for one whiledo node (block.cc:3454).
+    fn whiledo_finalize_printing(&mut self, wd: BlockId) {
+        let iterate_op = match self.sblocks_ref().block(wd).get_iterate_op() {
+            Some(o) => o,
+            None => return, // For-loop printing not enabled
+        };
+        // slot = iterateOp->getParent()->getOutRevIndex(0).
+        let iter_parent = match self.obank().get(iterate_op).and_then(|o| o.get_parent()) {
+            Some(p) => p,
+            None => {
+                self.sblocks_mut().block_mut(wd).set_iterate_op(None);
+                return;
+            }
+        };
+        let slot = self.bblocks_ref().block(iter_parent).get_out_rev_index(0);
+        // iterateOp = testTerminal(data, slot).
+        let new_iterate = self.while_test_terminal(wd, slot);
+        match new_iterate {
+            Some(o) => self.sblocks_mut().block_mut(wd).set_iterate_op(Some(o)),
+            None => {
+                self.sblocks_mut().block_mut(wd).set_iterate_op(None);
+                return;
+            }
+        }
+        if !self.while_test_iterate_form(wd) {
+            self.sblocks_mut().block_mut(wd).set_iterate_op(None);
+            return;
+        }
+        if self.sblocks_ref().block(wd).get_initialize_op().is_none() {
+            // Last chance initializer (loopDef->getParent(), slot).
+            let loop_def = self.sblocks_ref().block(wd).get_loop_def();
+            if let Some(ld) = loop_def {
+                if let Some(ld_parent) = self.obank().get(ld).and_then(|o| o.get_parent()) {
+                    self.find_initializer(wd, ld_parent, slot);
+                }
+            }
+        }
+        if self.sblocks_ref().block(wd).get_initialize_op().is_some() {
+            let new_init = self.while_test_terminal(wd, 1 - slot);
+            self.sblocks_mut().block_mut(wd).set_initialize_op(new_init);
+        }
+
+        let iterate_op = self.sblocks_ref().block(wd).get_iterate_op();
+        if let Some(o) = iterate_op {
+            self.op_mark_non_printing_pub(o);
+        }
+        let initialize_op = self.sblocks_ref().block(wd).get_initialize_op();
+        if let Some(o) = initialize_op {
+            self.op_mark_non_printing_pub(o);
+        }
+    }
+
+    /// `BlockWhileDo::testTerminal` (block.cc:3304).  Verify the statement read
+    /// by `loopDef` from `slot` is an explicit, printed, last-in-block op (or
+    /// can be moved to be so).  Returns the root explicit op or `None`.
+    fn while_test_terminal(&mut self, wd: BlockId, slot: int4) -> Option<OpId> {
+        let loop_def = self.sblocks_ref().block(wd).get_loop_def()?;
+        let vn = self.obank().get(loop_def).and_then(|o| o.get_in(slot))?;
+        if !self.vbank().get(vn).map(|v| v.is_written()).unwrap_or(false) {
+            return None;
+        }
+        let final_op = self.vbank().get(vn).unwrap().get_def().unwrap();
+        // parentBlock = loopDef->getParent()->getIn(slot).
+        let loop_parent = self.obank().get(loop_def).and_then(|o| o.get_parent())?;
+        let parent_block = self.bblocks_ref().block(loop_parent).get_in(slot);
+        let mut res_op = final_op;
+        let mut vn = vn;
+        if self.obank().get(final_op).map(|o| o.code()).unwrap_or(OpCode::CPUI_COPY)
+            == OpCode::CPUI_COPY
+            && self.obank().get(final_op).map(|o| o.not_printed()).unwrap_or(false)
+        {
+            vn = self.obank().get(final_op).and_then(|o| o.get_in(0))?;
+            if !self.vbank().get(vn).map(|v| v.is_written()).unwrap_or(false) {
+                return None;
+            }
+            res_op = self.vbank().get(vn).unwrap().get_def().unwrap();
+            if self.obank().get(res_op).and_then(|o| o.get_parent()) != Some(parent_block) {
+                return None;
+            }
+        }
+        if !self.vbank().get(vn).map(|v| v.is_explicit()).unwrap_or(false) {
+            return None;
+        }
+        if self.obank().get(res_op).map(|o| o.not_printed()).unwrap_or(true) {
+            return None; // Statement MUST be printed
+        }
+        // finalOp MUST be the last op in the block (except for the branch).
+        let fparent = self.obank().get(final_op).and_then(|o| o.get_parent())?;
+        let mut last_op = self.bblocks_ref().struct_last_op(fparent)?;
+        if self.obank().get(last_op).map(|o| o.is_branch()).unwrap_or(false) {
+            last_op = self.op_previous_op(last_op)?;
+        }
+        if !self.op_move_respecting_cover(final_op, last_op) {
+            return None;
+        }
+        Some(res_op)
+    }
+
+    /// `BlockWhileDo::testIterateForm` (block.cc:3335).  Confirm the loop
+    /// variable (loopDef's output HighVariable) is an input to the iterator
+    /// statement.
+    fn while_test_iterate_form(&self, wd: BlockId) -> bool {
+        let loop_def = match self.sblocks_ref().block(wd).get_loop_def() {
+            Some(o) => o,
+            None => return false,
+        };
+        let iterate_op = match self.sblocks_ref().block(wd).get_iterate_op() {
+            Some(o) => o,
+            None => return false,
+        };
+        let target_vn = match self.obank().get(loop_def).and_then(|o| o.get_out()) {
+            Some(v) => v,
+            None => return false,
+        };
+        let high = self.vbank().get(target_vn).and_then(|v| v.get_high());
+
+        let mut path: Vec<(OpId, int4)> = Vec::new();
+        path.push((iterate_op, 0));
+        while let Some(&(node_op, node_slot)) = path.last() {
+            let num_in = self.obank().get(node_op).map(|o| o.num_input()).unwrap_or(0);
+            if num_in <= node_slot {
+                path.pop();
+                continue;
+            }
+            let vn = self.obank().get(node_op).and_then(|o| o.get_in(node_slot));
+            path.last_mut().unwrap().1 += 1;
+            let vn = match vn {
+                Some(v) => v,
+                None => continue,
+            };
+            let v = self.vbank().get(vn).expect("while_test_iterate_form: stale vn");
+            if v.is_annotation() {
+                continue;
+            }
+            if v.get_high() == high {
+                return true;
+            }
+            if v.is_explicit() {
+                continue; // Truncate at explicit
+            }
+            if !v.is_written() {
+                continue;
+            }
+            let def = self.vbank().get(vn).unwrap().get_def().unwrap();
+            path.push((def, 0));
+        }
+        false
+    }
+
     /// Clear the structured-block graph (C++ `data.getStructure().clear()`,
     /// `BlockGraph::clear`, `block.cc:1239`): empties the sblocks component list
     /// and resets its flags, so the next `ActionBlockStructure::apply` sees

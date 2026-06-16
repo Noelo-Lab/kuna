@@ -516,6 +516,38 @@ impl FlowBlock {
             _ => None,
         }
     }
+    /// The initializer op of a `BlockWhileDo` (C++ `BlockWhileDo::getInitializeOp`).
+    pub fn get_initialize_op(&self) -> Option<crate::seams::OpId> {
+        match &self.kind {
+            BlockKind::WhileDo { initialize_op, .. } => *initialize_op,
+            _ => None,
+        }
+    }
+    /// The loop-def MULTIEQUAL of a `BlockWhileDo` (C++ `loopDef`).
+    pub fn get_loop_def(&self) -> Option<crate::seams::OpId> {
+        match &self.kind {
+            BlockKind::WhileDo { loop_def, .. } => *loop_def,
+            _ => None,
+        }
+    }
+    /// Set the iterate op of a `BlockWhileDo` (C++ `iterateOp = ...`).
+    pub fn set_iterate_op(&mut self, op: Option<crate::seams::OpId>) {
+        if let BlockKind::WhileDo { iterate_op, .. } = &mut self.kind {
+            *iterate_op = op;
+        }
+    }
+    /// Set the initializer op of a `BlockWhileDo` (C++ `initializeOp = ...`).
+    pub fn set_initialize_op(&mut self, op: Option<crate::seams::OpId>) {
+        if let BlockKind::WhileDo { initialize_op, .. } = &mut self.kind {
+            *initialize_op = op;
+        }
+    }
+    /// Set the loop-def MULTIEQUAL of a `BlockWhileDo` (C++ `loopDef = ...`).
+    pub fn set_loop_def(&mut self, op: Option<crate::seams::OpId>) {
+        if let BlockKind::WhileDo { loop_def, .. } = &mut self.kind {
+            *loop_def = op;
+        }
+    }
     /// The unstructured-branch target of a `BlockGoto` (C++
     /// `BlockGoto::getGotoTarget`), or `None` (also for non-Goto nodes).
     pub fn get_goto_target(&self) -> Option<BlockId> {
@@ -1304,6 +1336,42 @@ impl BlockGraph {
                 if self.arena[this_id].get_size() == 1 {
                     let b0 = self.sub_block(this_id, 0)?;
                     self.get_exit_leaf(b0)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// The last PcodeOp of a structured FlowBlock (C++ `FlowBlock::lastOp`,
+    /// virtual per subtype, `block.cc`).  Resolves down the structure to the
+    /// basic block carrying the block's final op:
+    ///   * `t_basic` (`block.cc:2348`): `op.back()` (the basic block's tail op).
+    ///   * `t_ls` (BlockList, `block.cc:3008`): `getBlock(size-1)->lastOp()`.
+    ///   * `t_condition` (`block.cc:3064`): `getBlock(1)->lastOp()`.
+    ///   * `t_if` (`block.cc:3167`): only an `ifgoto` (size 1) has a last op —
+    ///     `getBlock(0)->lastOp()`.
+    ///   * everything else (base default, `block.hh`): `None`.
+    pub fn struct_last_op(&self, this_id: BlockId) -> Option<crate::seams::OpId> {
+        match &self.arena[this_id].kind {
+            BlockKind::Basic(bd) => bd.op_tail,
+            BlockKind::Ls => {
+                let n = self.arena[this_id].get_size();
+                if n == 0 {
+                    return None;
+                }
+                let last = self.sub_block(this_id, n - 1)?;
+                self.struct_last_op(last)
+            }
+            BlockKind::Condition { .. } => {
+                let b1 = self.sub_block(this_id, 1)?;
+                self.struct_last_op(b1)
+            }
+            BlockKind::If { .. } => {
+                if self.arena[this_id].get_size() == 1 {
+                    let b0 = self.sub_block(this_id, 0)?;
+                    self.struct_last_op(b0)
                 } else {
                     None
                 }

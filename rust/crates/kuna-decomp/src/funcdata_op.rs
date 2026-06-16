@@ -1134,6 +1134,327 @@ impl Funcdata {
         res
     }
 
+    /// Test whether op `this_op` can be moved to occur immediately after op
+    /// `point` (within the same basic block), keeping equivalent data-flow
+    /// (C++ `PcodeOp::isMoveable`, `op.cc:201`).
+    ///
+    /// Ported as a `Funcdata` method because the C++ `PcodeOp` method walks both
+    /// the output's descendant list and the basic-block intrusive op list, which
+    /// in the rust port live on the banks owned by `Funcdata`.
+    pub fn op_is_moveable(&self, this_op: OpId, point: OpId) -> bool {
+        use crate::op::pcodeop_flags;
+        if this_op == point {
+            return true; // No movement necessary
+        }
+        let this = self.obank().get(this_op).expect("op_is_moveable: stale op");
+        let mut moving_load = false;
+        if this.get_eval_type() == pcodeop_flags::special {
+            if this.code() == OpCode::CPUI_LOAD {
+                moving_load = true; // Allow LOAD to be moved with extra restrictions
+            } else {
+                return false; // Don't move special ops
+            }
+        }
+        let this_parent = this.get_parent();
+        let point_parent =
+            self.obank().get(point).expect("op_is_moveable: stale point").get_parent();
+        if this_parent != point_parent {
+            return false; // Not in the same block
+        }
+        let this_out = this.get_out();
+        let point_order =
+            self.obank().get(point).expect("op_is_moveable").get_seq_num().get_order();
+        // Output cannot be moved past an op that reads it.
+        if let Some(outvn) = this_out {
+            let descend: Vec<OpId> = self
+                .vbank()
+                .get(outvn)
+                .expect("op_is_moveable: stale out")
+                .descend_iter()
+                .collect();
+            for read_op in descend {
+                let r = self.obank().get(read_op).expect("op_is_moveable: stale read");
+                if r.get_parent() != this_parent {
+                    continue;
+                }
+                if r.get_seq_num().get_order() <= point_order {
+                    return false; // Is in the block and is read before (or at) -point-
+                }
+            }
+        }
+        // Only allow a move across a CALL in very restrictive circumstances.
+        let mut cross_calls = false;
+        let this = self.obank().get(this_op).expect("op_is_moveable");
+        let num_input = this.num_input();
+        if this.get_eval_type() != pcodeop_flags::special {
+            // Normal op where all inputs and output are not address tied.
+            if let Some(outvn) = this_out {
+                let ov = self.vbank().get(outvn).expect("op_is_moveable: out");
+                if !ov.is_addr_tied() && !ov.is_persist() {
+                    let mut i = 0;
+                    while i < num_input {
+                        let vn = self.obank().get(this_op).unwrap().get_in(i).unwrap();
+                        let v = self.vbank().get(vn).expect("op_is_moveable: in");
+                        if v.is_addr_tied() || v.is_persist() {
+                            break;
+                        }
+                        i += 1;
+                    }
+                    if i == num_input {
+                        cross_calls = true;
+                    }
+                }
+            }
+        }
+        let mut tied_list: Vec<VarnodeId> = Vec::new();
+        for i in 0..num_input {
+            let vn = self.obank().get(this_op).unwrap().get_in(i).unwrap();
+            if self.vbank().get(vn).expect("op_is_moveable: in").is_addr_tied() {
+                tied_list.push(vn);
+            }
+        }
+        // Walk the basic-block op list forward from `this_op` up to and
+        // including `point` (C++ `do { ++biter; ... } while(biter != point)`).
+        let mut biter = this_op;
+        loop {
+            // ++biter
+            biter = match self
+                .obank()
+                .get(biter)
+                .expect("op_is_moveable: stale biter")
+                .basic_neighbours()
+                .1
+            {
+                Some(nx) => nx,
+                None => return false, // ran off the end before reaching point (C++ UB; bail)
+            };
+            let op_ref = self.obank().get(biter).expect("op_is_moveable: stale op");
+            let op_out = op_ref.get_out();
+            if op_ref.get_eval_type() == pcodeop_flags::special {
+                match op_ref.code() {
+                    OpCode::CPUI_LOAD => {
+                        if let Some(o) = this_out {
+                            if self.vbank().get(o).unwrap().is_addr_tied() {
+                                return false;
+                            }
+                        }
+                    }
+                    OpCode::CPUI_STORE => {
+                        if moving_load {
+                            return false;
+                        } else {
+                            if !tied_list.is_empty() {
+                                return false;
+                            }
+                            if let Some(o) = this_out {
+                                if self.vbank().get(o).unwrap().is_addr_tied() {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    OpCode::CPUI_INDIRECT | OpCode::CPUI_SEGMENTOP | OpCode::CPUI_CPOOLREF => {
+                        // Let thru, deal with what's INDIRECTed around separately
+                    }
+                    OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_NEW => {
+                        if !cross_calls {
+                            return false;
+                        }
+                    }
+                    _ => return false,
+                }
+            }
+            if let Some(out2) = op_out {
+                if moving_load && self.vbank().get(out2).unwrap().is_addr_tied() {
+                    return false;
+                }
+                for &tvn in &tied_list {
+                    let tv = self.vbank().get(tvn).expect("op_is_moveable: tied");
+                    let o2 = self.vbank().get(out2).expect("op_is_moveable: out2");
+                    if tv.overlap(o2) >= 0 {
+                        return false;
+                    }
+                    if o2.overlap(tv) >= 0 {
+                        return false;
+                    }
+                }
+            }
+            if biter == point {
+                break;
+            }
+        }
+        true
+    }
+
+    /// The HighVariable of `vn` (C++ `vn->getHigh()`), via the public banks so
+    /// the for-loop helpers below need no access to the merge-bank private API.
+    fn vn_high_pub(&self, vn: VarnodeId) -> Option<crate::seams::HighVariableId> {
+        self.vbank().get(vn).and_then(|v| v.get_high())
+    }
+    /// `high->isMark()` via the public high bank.
+    fn high_is_mark_pub(&self, high: crate::seams::HighVariableId) -> bool {
+        self.high_bank().get(high).map(|h| h.is_mark()).unwrap_or(false)
+    }
+    /// `high->setMark()` via the public high bank.
+    fn bank_set_mark_pub(&mut self, high: crate::seams::HighVariableId) {
+        if let Some(h) = self.high_bank_mut().get_mut(high) {
+            h.set_mark();
+        }
+    }
+    /// `high->clearMark()` via the public high bank.
+    fn bank_clear_mark_pub(&mut self, high: crate::seams::HighVariableId) {
+        if let Some(h) = self.high_bank_mut().get_mut(high) {
+            h.clear_mark();
+        }
+    }
+
+    /// Mark all the \e explicit HighVariables in the expression rooted at `vn`
+    /// and append them to `high_list` (C++ `HighVariable::markExpression`,
+    /// `variable.cc:885`).  Returns a value: `1` if a call op is in the
+    /// expression, `2` if a LOAD, `3` for both, `0` otherwise.
+    ///
+    /// Ported here (not in the concurrent-wave-owned `variable.rs`) as a
+    /// `Funcdata` helper for [`op_move_respecting_cover`]; it touches the
+    /// HighVariable mark bit only through the public high bank.
+    fn high_mark_expression(
+        &mut self,
+        vn: VarnodeId,
+        high_list: &mut Vec<crate::seams::HighVariableId>,
+    ) -> int4 {
+        let high = self.vn_high_pub(vn).expect("high_mark_expression: vn has no high");
+        self.bank_set_mark_pub(high);
+        high_list.push(high);
+        let mut ret_val: int4 = 0;
+        if !self.vbank().get(vn).expect("high_mark_expression: stale vn").is_written() {
+            return ret_val;
+        }
+        // path of (op, slot) pairs (C++ vector<PcodeOpNode>).
+        let mut path: Vec<(OpId, int4)> = Vec::new();
+        let op = self.vbank().get(vn).unwrap().get_def().unwrap();
+        if self.obank().get(op).expect("high_mark_expression: stale op").is_call() {
+            ret_val |= 1;
+        }
+        if self.obank().get(op).unwrap().code() == OpCode::CPUI_LOAD {
+            ret_val |= 2;
+        }
+        path.push((op, 0));
+        while let Some(&(cur_op, slot)) = path.last() {
+            let num_in =
+                self.obank().get(cur_op).expect("high_mark_expression: node op").num_input();
+            if num_in <= slot {
+                path.pop();
+                continue;
+            }
+            let cur_vn = self.obank().get(cur_op).unwrap().get_in(slot);
+            // node.slot += 1
+            path.last_mut().unwrap().1 += 1;
+            let cur_vn = match cur_vn {
+                Some(v) => v,
+                None => continue,
+            };
+            let cv = self.vbank().get(cur_vn).expect("high_mark_expression: stale curvn");
+            if cv.is_annotation() {
+                continue;
+            }
+            if cv.is_explicit() {
+                let h = self.vn_high_pub(cur_vn).expect("high_mark_expression: explicit high");
+                if self.high_is_mark_pub(h) {
+                    continue; // Already in the list
+                }
+                self.bank_set_mark_pub(h);
+                high_list.push(h);
+                continue; // Truncate at explicit
+            }
+            if !cv.is_written() {
+                continue;
+            }
+            let def = self.vbank().get(cur_vn).unwrap().get_def().unwrap();
+            if self.obank().get(def).expect("high_mark_expression: def op").is_call() {
+                ret_val |= 1;
+            }
+            if self.obank().get(def).unwrap().code() == OpCode::CPUI_LOAD {
+                ret_val |= 2;
+            }
+            path.push((def, 0));
+        }
+        ret_val
+    }
+
+    /// Determine if `op` can be moved (within its basic block) to after
+    /// `last_op`, respecting HighVariable covers; perform the move if possible
+    /// (C++ `Funcdata::moveRespectingCover`, `funcdata_op.cc:1498`).  Returns
+    /// `true` if the move is possible (and has been performed).
+    pub fn op_move_respecting_cover(&mut self, op: OpId, last_op: OpId) -> bool {
+        if op == last_op {
+            return true; // Nothing to move past
+        }
+        if self.obank().get(op).expect("op_move_respecting_cover: stale op").is_call() {
+            return false;
+        }
+        let mut prev_op: Option<OpId> = None;
+        if self.obank().get(op).unwrap().code() == OpCode::CPUI_CAST {
+            let vn = self.obank().get(op).unwrap().get_in(0).expect("CAST in0");
+            let cv = self.vbank().get(vn).expect("op_move_respecting_cover: cast in");
+            if !cv.is_explicit() {
+                // If CAST is part of expression, we need to move the previous op too.
+                if !cv.is_written() {
+                    return false;
+                }
+                let p = self.vbank().get(vn).unwrap().get_def().unwrap();
+                if self.obank().get(p).expect("op_move_respecting_cover: prev").is_call() {
+                    return false;
+                }
+                // Previous op must exist and feed into the CAST.
+                if self.op_previous_op(op) != Some(p) {
+                    return false;
+                }
+                prev_op = Some(p);
+            }
+        }
+        let rootvn =
+            self.obank().get(op).unwrap().get_out().expect("op_move_respecting_cover: out");
+        let mut high_list: Vec<crate::seams::HighVariableId> = Vec::new();
+        let type_val = self.high_mark_expression(rootvn, &mut high_list);
+        let mut cur_op = op;
+        loop {
+            let next_op = self.op_next_op(cur_op).expect("op_move_respecting_cover: nextOp");
+            let opc = self.obank().get(next_op).expect("op_move_respecting_cover: next").code();
+            if opc != OpCode::CPUI_COPY && opc != OpCode::CPUI_CAST {
+                break; // Limit to crossing only COPY and CAST ops
+            }
+            if Some(rootvn) == self.obank().get(next_op).unwrap().get_in(0) {
+                break; // Data-flow order dependence
+            }
+            let copy_vn = self.obank().get(next_op).unwrap().get_out().expect("copy out");
+            let copy_high = self.vn_high_pub(copy_vn).expect("copy high");
+            if self.high_is_mark_pub(copy_high) {
+                break; // Direct interference: COPY writes what original op reads
+            }
+            if type_val != 0 && self.vbank().get(copy_vn).unwrap().is_addr_tied() {
+                break; // Possible indirect interference
+            }
+            cur_op = next_op;
+            if cur_op == last_op {
+                break;
+            }
+        }
+        // Clear marks on the expression.
+        for h in high_list {
+            self.bank_clear_mark_pub(h);
+        }
+        if cur_op == last_op {
+            // We were able to cross everything: move -op- (and any CAST prev).
+            self.op_uninsert(op);
+            self.op_insert_after(op, last_op);
+            if let Some(p) = prev_op {
+                self.op_uninsert(p);
+                self.op_insert_after(p, last_op);
+            }
+            return true;
+        }
+        false
+    }
+
     /// Perform CSE on a list of `(hash, op)` pairs (descendants of one Varnode)
     /// (C++ `Funcdata::cseEliminateList`, `funcdata_op.cc:1459`).
     ///
