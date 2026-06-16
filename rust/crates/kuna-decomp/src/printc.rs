@@ -2329,14 +2329,61 @@ impl PrintC {
         }
     }
 
+    /// C++ `PrintC::emitForLoop` (printc.cc:3106): emit a `for (init; cond; iter)`
+    /// header (with the init/iterate statements hoisted out of the body) followed
+    /// by the loop body.  Reached from [`emit_block_while_do`] when the whiledo
+    /// node carries an `iterateOp` (set by `Funcdata::finalize_forloop_*`).
+    fn emit_for_loop(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        self.context.push_mod();
+        self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
+        // (emitAnyLabelStatement / emitCommentBlockTree: not ported — same
+        //  simplification as the plain while arm.)
+        let cond_block = fd.sblocks_ref().block(blk).get_block(0);
+        self.emit.tag_line();
+        self.emit.tag_op(keywords::KEYWORD_FOR, SyntaxHighlight::KeywordColor, &MarkupRef::none());
+        self.emit.spaces(1, 0);
+        let id1 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+        self.context.push_mod();
+        self.context.set_mod(modifiers::COMMA_SEPARATE);
+        // Emit the (optional) initializer statement.
+        if let Some(op) = fd.sblocks_ref().block(blk).get_initialize_op() {
+            let id3 = self.emit.begin_statement(&MarkupRef::none());
+            self.emit_expression_ir(fd, arch, op);
+            self.emit.end_statement(id3);
+        }
+        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.emit.spaces(1, 0);
+        // Emit the conditional statement (the condition block, comma-separated).
+        self.emit_block(fd, arch, cond_block);
+        self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
+        self.emit.spaces(1, 0);
+        // Emit the iterator statement.
+        if let Some(op) = fd.sblocks_ref().block(blk).get_iterate_op() {
+            let id4 = self.emit.begin_statement(&MarkupRef::none());
+            self.emit_expression_ir(fd, arch, op);
+            self.emit.end_statement(id4);
+        }
+        self.context.pop_mod();
+        self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id1);
+        let indent =
+            self.emit.open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_loop));
+        self.context.set_mod(modifiers::NO_BRANCH); // Don't print goto at bottom of clause
+        let id2 = self.emit.begin_block(0);
+        self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
+        self.emit.end_block(id2);
+        self.emit.close_brace_indent(keywords::CLOSE_CURLY, indent);
+        self.context.pop_mod();
+    }
+
     /// C++ `PrintC::emitBlockWhileDo` (printc.cc:3150): the top-tested loop.
-    /// Block 0 is the condition, block 1 the body.  When the loop has an
-    /// `iterateOp` the C++ emits a `for` loop (`emitForLoop`); that for-loop
-    /// detection (`findLoopVariable`/`findInitializer`) is the structuring wave's
-    /// surface, so when an iterate op is recorded we fall through to the plain
-    /// `while` form (a faithful degradation — the body is identical, only the
-    /// init/iterate hoisting differs).  Recorded as a loss.
+    /// Block 0 is the condition, block 1 the body.  When the loop carries an
+    /// `iterateOp` (recorded by the for-loop reroll), it is emitted as a `for`
+    /// loop ([`emit_for_loop`]); otherwise the plain `while` form is emitted.
     fn emit_block_while_do(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        if fd.sblocks_ref().block(blk).get_iterate_op().is_some() {
+            self.emit_for_loop(fd, arch, blk);
+            return;
+        }
         // whiledo block NEVER prints the final branch.
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);

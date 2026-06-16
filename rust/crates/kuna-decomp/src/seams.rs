@@ -442,6 +442,10 @@ pub struct Architecture {
     /// `Architecture::condexe_block_placement`, DIV-3 default-on.  Read by
     /// [`crate::condconst`].
     pub condexe_block_placement: bool,
+    /// Attempt conversion of `whiledo` loops to `for` loops (C++
+    /// `Architecture::analyze_for_loops`, default-on).  Read by
+    /// `Funcdata::finalize_forloop_transform` (the BlockWhileDo for-loop reroll).
+    pub analyze_for_loops: bool,
     /// The data-type factory (C++ `glb->types`), shared from the real
     /// [`crate::architecture::Architecture`] through `build_arch_handle`.
     /// `ActionInferTypes` reaches `getBase`/`getTypePointer`/`down_chain` through
@@ -518,6 +522,8 @@ impl Architecture {
             present_lessequal: true,
             // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.
             condexe_block_placement: true,
+            // C++ Architecture default: analyze_for_loops = true (architecture.cc).
+            analyze_for_loops: true,
             types: None,
             max_jumptable_size: 0,
             funcptr_align: 0,

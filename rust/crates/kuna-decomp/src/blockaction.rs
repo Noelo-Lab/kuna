@@ -3185,11 +3185,11 @@ impl Action for ActionStructureTransform {
             allow_op_moves: self.allow_op_moves,
         }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++: data.getStructure().finalTransform(data,allowOpMoves); return 0;
-        // SEAM(W7/W8): `BlockGraph::finalTransform` (the for-loop / op-move setup
-        // over BlockWhileDo nodes) is not ported in `block.rs`.  See losses.
-        let _ = self.allow_op_moves;
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ (coreaction.cc): data.getStructure().finalTransform(data,allowOpMoves);
+        // Drives BlockWhileDo::finalTransform — the whiledo->for reroll setup
+        // (find loop variable / iterator / initializer over BlockWhileDo nodes).
+        data.finalize_forloop_transform(self.allow_op_moves);
         0
     }
 }
@@ -3439,11 +3439,15 @@ impl Action for ActionFinalStructure {
         //   graph.markLabelBumpUp(false);// label fixup
         //
         // `finalizePrinting` is ported for the switch case: assign + sort the case
-        // labels from the recovered JumpTable so the printer can emit `case N:`.
+        // labels from the recovered JumpTable so the printer can emit `case N:`,
+        // and for the whiledo case: finalize the for-loop iterator/initializer
+        // (BlockWhileDo::finalizePrinting) so the printer can emit
+        // `for (init; cond; iter)`.
         // SEAM(W7/W8): `orderBlocks`/`scopeBreak`/`markUnstructured`/
         // `markLabelBumpUp` (the goto/break/label-bump print-prep) remain unported
         // in `block.rs`.  Recorded as losses.
         data.finalize_switch_printing();
+        data.finalize_forloop_printing();
         0
     }
 }
