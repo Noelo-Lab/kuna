@@ -208,13 +208,6 @@ fn typeop_for(opc: OpCode) -> TypeOp {
 }
 
 
-/// `Funcdata::opMarkSpecialPrint(op)` (field-extraction print marker). // SEAM(W6)
-#[inline]
-fn seam_op_mark_special_print(_data: &mut Funcdata, _op: OpId) -> KunaResult<()> {
-    Err(KunaError::lowlevel(
-        "ruleaction_6: opMarkSpecialPrint marker not wired (W6 print-markup)",
-    ))
-}
 
 /// `Varnode::getTypeReadFacing(op)` — the read-facing data-type resolution
 /// (union/flow aware) is W6.  // SEAM(W6)
@@ -759,12 +752,24 @@ impl Rule for RuleSubRight {
             return 0;
         }
         // if (op->getIn(0)->getTypeReadFacing(op)->isPieceStructured()) {
-        //   data.opMarkSpecialPrint(op); return 0; }  -- SEAM(W6)
+        //   data.opMarkSpecialPrint(op); return 0; }
+        //
+        // `Varnode::getTypeReadFacing(op)` (varnode.cc:658) returns the varnode's
+        // own `type` unless it needs resolution, in which case `findResolve`.  At
+        // cleanup time (where `RuleSubRight` runs) a struct/union/array input that
+        // a SUBPIECE truncates a field out of carries its composite `type`, which
+        // `isPieceStructured()` (metatype <= TYPE_ARRAY) reports true — so the op
+        // is marked for the field-extraction render (`PrintC::opSubpiece`,
+        // printc.cc:866).  The marker is a pure print flag (no IR rewrite, `return
+        // 0`); the rewrite tail below is unaffected.
         let a = in_vn(data, op, 0);
-        if seam_type_read_facing(data, a, op).is_err() {
-            // SEAM(W6): cannot evaluate isPieceStructured; the field-extraction
-            // marker (opMarkSpecialPrint) is also a seam.  Both guards block.
-            let _ = seam_op_mark_special_print(data, op);
+        let in0_piece = data
+            .vbank()
+            .get(a)
+            .map(|v| v.get_type_read_facing(op).is_piece_structured())
+            .unwrap_or(false);
+        if in0_piece {
+            data.op_mark_special_print(op); // Print this as a field extraction
             return 0;
         }
         // Remainder transcribed for the next wave; unreachable at this merge base:
