@@ -1,6 +1,30 @@
 # kuna Progress Log
 
-## Session (2026-06-16d) — rust-port W10: keystone grind 307 → 331/675
+## Session (2026-06-16d) — rust-port W10: keystone grind 307 → 333/675
+
+**Recent integrations + two honest walls (rust-port b7a1293 = 333):** float-typeclass
+(+4 → 331), mergepiece (prereq, 331 held), **type-seed (+2 → 333)** all integrated clean
+(byte-parity 3/3+19/19, switch 6/6 byte-identical, oracle PARITY OK). Two big levers hit
+walls that disproved their design premises — valuable failures, each leaving a precise
+next-step:
+- **RSP Wave A FAILED** (L0+L1 regresses switchind): the porter instrument-proved that L1
+  (`setEffectiveExtraPop`) never fires for switchind (`analyze_extra_pop` early-returns on
+  known `defaultfp` extrapop). The TRUE keystone is a different `jumptable`-group pass that
+  neutralizes the per-call `INT_ADD(RSP,8)` before BRANCHIND emulation — must port it FIRST.
+  Plan corrected in `w10-rsp-keystone-plan.md`; faithful L0+L1 transcription saved as a WIP
+  patch.
+- **struct-return REVERTED** (+1 on its branch, but 2 of its own tests fail on the integrated
+  tree): the CONCAT→PIECE split fired off `ed09d28` but **type-seed's type-flow changes break
+  it** on the post-type-seed tree (a real cross-wave interaction). The +20-30 cluster also needs
+  `linkProtoPartial` (`funcdata_varnode.cc:1153` + `establishGroupSymbolOffset`) to bind split
+  pieces to the root struct symbol so printc renders `v1.A`/`v1.B`. Re-land rebased on type-seed
+  + the field-binding finisher.
+- **f0-flag-untie** (register f0 over-marked `addrtied|mapped`; clean standalone +2 doublemove)
+  IN FLIGHT.
+Held branches (each paired to a pending unlock, files untouched in main so non-stale):
+forloop-reroll, base_explicit, struct-return.
+
+
 
 Five verified waves carried the corpus from 307 to 327 passing (now **6.8× the M2 entry
 of 48**), all under the standard gate (cargo test --workspace green, clippy -D, byte-parity
