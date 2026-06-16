@@ -36,6 +36,20 @@ database files free up). The double-precision probe proved RuleDouble* IR is byt
 specced as INDEPENDENT (owns only `coreaction_cleanup.rs:470-588` + a `find_root` helper;
 ~+4–10), launching now.
 
+**mergepiece-dynsym integrated (`ed09d28`, ACCEPT_WITH_LOSSES, +0-net but PREREQUISITE,
+331 held monotonic):** MergeContext piece-read-back + ActionDynamicSymbols dynamic-hash;
+removes spurious `glob1.a = glob1.a` self-assigns (partial_restore `return glob1.a + 7;`
+now byte-exact via the *real* piece-suppression collapse). **KEY REFRAME (design pass):**
+SplitDatatype is *already fully ported* (subflow.rs split_copy/build_out_concats/
+get_value_datatype + RuleSplit* live, ACCEPTed in w10-splitdatatype.md) — so the
+**retstruct/concat/concatsplit/packstructaccess cluster (~+20–30)** was gated precisely on
+mergepiece's piece-read-back *collapse*, NOT on a SplitDatatype stub and NOT on RSP (the
+register EAX:EDX / PIECE returns are join, not stack). With mergepiece now integrated, the
+**struct-return finish wave** (`subflow/merge/printc`, verify-and-finish the CONCAT→per-field
+collapse) is the single biggest remaining lever — launched off `ed09d28`. Three disjoint
+productive fronts now run: base_explicit (`coreaction_cleanup`), type-seed
+(`coreaction_render/funcdata/architecture`), struct-return (`subflow/merge/printc`).
+
 KEYSTONE MAP (the remaining ~348 gate on ~5 named keystones): **#1 RSP/spacebase**
 (ExtraPopSetup + propagateSpacebaseRef per-CALL dead-code — deep, paused, gates ~half the
 remainder); **#2 proto model** (substrate landed; float-typeclass + struct-split are the
