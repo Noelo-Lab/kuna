@@ -290,3 +290,83 @@ fn a4_protected_files_byte_identical_rust_vs_cpp() {
         );
     }
 }
+
+// =============================================================================
+// INDEPENDENT VERIFIER (Round 1) adversarial tests.
+//
+// The porter's `a4_protected_files_byte_identical_rust_vs_cpp` above keys on the
+// stems "readstruct" / "condconst_conn", which are NOT datatest *files* (they are
+// function names inside `nestedoffset.xml` / `condconst.xml`).  `dump_print_c`
+// finds no `===KUNA_DUMP_BEGIN` marker for them and returns None, so that test
+// silently checks only `boolless`.  These tests re-pin the byte-identity claim on
+// REAL datatest stems that carry stack locals and exercise the new SPACEBASE
+// `opPtrsub` arm, plus pin the two stage facts the independent review confirmed:
+// the SPACEBASE arm DOES fire and renders `&name` for mapped symbols, and it does
+// NOT leak a `$$undef` placeholder for unmapped auto-locals (the
+// `is_name_undefined` suppression in `link_symbol_reference`).
+// =============================================================================
+
+/// Real render-sensitive stems carrying stack locals: must be byte-identical
+/// Rust-vs-C++ at this stage (they pass on the suite; the merge must not shift
+/// their bytes).  Unlike the porter's A4 these use stems that actually emit a
+/// dump body, so the assertion is not vacuous.
+#[test]
+fn vfy_r1_real_protected_files_byte_identical() {
+    for stem in ["boolless", "nestedoffset", "condconst"] {
+        let Some(rust) = dump_print_c(&rust_harness(), stem) else { return };
+        let Some(cpp) = dump_print_c(&cpp_oracle(), stem) else { return };
+        assert!(!rust.is_empty(), "{stem}: empty Rust dump — stem is not a real datatest file");
+        assert_eq!(
+            rust, cpp,
+            "{stem}: Rust render diverged from the C++ oracle (real protected stem).\n\
+             --- RUST ---\n{rust}\n--- CPP ---\n{cpp}"
+        );
+    }
+}
+
+/// The new `opPtrsub` SPACEBASE arm is NOT dead code: for a *mapped* stack symbol
+/// it renders the `&name` reference form (the W10 render payoff), replacing the
+/// pre-stage functional `PTRSUB(vN, 0xff..)` text.  `partialsplit` maps stack
+/// locals (`stackfoo`/`stackmy`/`stackconst`) that are passed by address.
+#[test]
+fn vfy_r1_spacebase_arm_emits_addressof_name_for_mapped_local() {
+    let Some(rust) = dump_print_c(&rust_harness(), "partialsplit") else { return };
+    // The reference form appeared for the MAPPED locals (the SPACEBASE arm fired,
+    // reading the Symbol parked by link_symbol_reference).  Each is passed by
+    // address to sub_101010 as `&name`, not the pre-stage `PTRSUB(vN, off)`.
+    for sym in ["&stackfoo", "&stackmy", "&stackconst"] {
+        assert!(
+            rust.contains(sym),
+            "partialsplit: the SPACEBASE `&name` payoff `{sym}` did not render — \
+             the opPtrsub SPACEBASE arm is not firing for a mapped local. Body:\n{rust}"
+        );
+    }
+    // Faithful selectivity: an UNMAPPED stack slot in the same function still
+    // falls back to the functional `PTRSUB(...)` form (no fabricated name).  This
+    // confirms the arm keys on the parked Symbol, not on every spacebase PTRSUB.
+    assert!(
+        rust.contains("PTRSUB(v1,"),
+        "partialsplit: every PTRSUB became a &name — the arm stopped being \
+         selective (it must only name MAPPED slots). Body:\n{rust}"
+    );
+}
+
+/// The `is_name_undefined` suppression (Rust `link_symbol_reference` returns
+/// false for an undefined-named composite) must NOT introduce a NEW `&$$undef`
+/// leak: an unmapped auto-local reference falls back to the functional form, not
+/// to `&$$undefNN`.  The whole corpus carries exactly ONE pre-existing `&$$undef`
+/// (in `forloop_thruspecial`, unchanged by this stage); the SPACEBASE arm must
+/// not add a second.
+#[test]
+fn vfy_r1_no_new_addressof_undef_leak_from_spacebase_arm() {
+    // Stems where the SPACEBASE arm newly fires on (some) unmapped locals.
+    for stem in ["partialmerge", "partialsplit", "varcross", "noforloop_alias", "stackstring"] {
+        let Some(rust) = dump_print_c(&rust_harness(), stem) else { return };
+        assert!(
+            !rust.contains("&$$undef"),
+            "{stem}: the SPACEBASE arm leaked an `&$$undef` placeholder — the \
+             is_name_undefined suppression failed to keep an unmapped auto-local \
+             out of the render. Body:\n{rust}"
+        );
+    }
+}
