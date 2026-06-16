@@ -86,11 +86,12 @@ use kuna_base::address::{
     calc_mask, leastsigbit_set, mostsigbit_set, sign_extend_sized, Address,
 };
 use kuna_base::error::{KunaError, KunaResult};
+use kuna_base::space::AddrSpace;
 use kuna_base::types::{int4, int8, uint4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
-use crate::dtype::{type_metatype, Datatype};
+use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
 use crate::seams::{OpId, TypeOp, VarnodeId};
@@ -3286,12 +3287,21 @@ struct Component {
 //
 // `data_type_pieces`/`split_structures`/`split_arrays` and the logic methods
 // (`get_component`/`categorize_datatype`/`test_datatype_compatibility`) feed the
-// seam-gated `split{Copy,Load,Store}` build path; they run today only from the
-// categorization tests until the Funcdata arch bridge lands.  // SEAM(arch/W6)
-#[allow(dead_code)]
+// `split{Copy,Load,Store}` build path.  The C++ holds `Funcdata &data`,
+// `TypeFactory *types`, and a `ResolveCache resolver`; in Rust `data` is threaded
+// as a `&mut Funcdata` argument, `types` is a cloned `Rc<TypeFactoryImpl>` handle
+// (held across the `&mut Funcdata` borrow the build helpers need), and `resolver`
+// is owned here.  Union resolution is the only piece still seamed (W6/W7): every
+// `ResolveCache` method short-circuits on `!dt->needsResolution()` (unionresolve.cc
+// :1230/1269), so for the non-union corpus the resolver is a faithful no-op.
 pub struct SplitDatatype {
     /// Sequence of all data-type pairs being copied (C++ `dataTypePieces`).
     data_type_pieces: Vec<Component>,
+    /// The type factory (C++ `types`, a borrow of `glb->types`).  `None` only for
+    /// the bare-architecture unit-test fixtures; the entry rules always have one.
+    types: Option<Rc<crate::dtype::TypeFactoryImpl>>,
+    /// Union-resolution cache (C++ `resolver`).
+    resolver: crate::unionresolve::ResolveCache,
     /// Whether or not structures should be split (C++ `splitStructures`).
     split_structures: bool,
     /// Whether or not arrays should be split (C++ `splitArrays`).
@@ -3301,19 +3311,40 @@ pub struct SplitDatatype {
 }
 
 impl SplitDatatype {
-    /// Construct from the split-datatype config bits (C++
-    /// `SplitDatatype::SplitDatatype(Funcdata&)`, subflow.cc:2712).
-    ///
-    /// The C++ reads `glb->split_datatype_config`; the Funcdata-side
-    /// `Architecture` seam does not yet expose it, so the caller supplies the
-    /// config mask (the entry rules pass 0 until the arch bridge lands).
+    /// Construct from the split-datatype config bits, no factory handle (used by
+    /// the categorization unit tests that pass the factory explicitly).
     pub fn new(split_datatype_config: uint4) -> SplitDatatype {
         SplitDatatype {
             data_type_pieces: Vec::new(),
+            types: None,
+            resolver: crate::unionresolve::ResolveCache::new(),
             split_structures: (split_datatype_config & option_split_datatypes::OPTION_STRUCT) != 0,
             split_arrays: (split_datatype_config & option_split_datatypes::OPTION_ARRAY) != 0,
             is_load_store: false,
         }
+    }
+
+    /// Construct from the containing function (C++
+    /// `SplitDatatype::SplitDatatype(Funcdata&)`, subflow.cc:2712):
+    /// `types = glb->types; splitStructures/splitArrays = glb->split_datatype_config`.
+    pub fn from_funcdata(data: &Funcdata) -> SplitDatatype {
+        let config = data.get_arch().split_datatype_config;
+        SplitDatatype {
+            data_type_pieces: Vec::new(),
+            types: data.get_arch().types_rc(),
+            resolver: crate::unionresolve::ResolveCache::new(),
+            split_structures: (config & option_split_datatypes::OPTION_STRUCT) != 0,
+            split_arrays: (config & option_split_datatypes::OPTION_ARRAY) != 0,
+            is_load_store: false,
+        }
+    }
+
+    /// The held type factory (C++ `types`).  Errors if absent (only the bare
+    /// unit-test architecture has none; the entry rules always carry one).
+    fn types(&self) -> KunaResult<&crate::dtype::TypeFactoryImpl> {
+        self.types
+            .as_deref()
+            .ok_or_else(|| KunaError::lowlevel("SplitDatatype: no TypeFactory on Architecture"))
     }
 
     /// Obtain the component of the given data-type at the specified offset (C++
@@ -3539,71 +3570,860 @@ impl SplitDatatype {
         Ok(self.data_type_pieces.len() > 1)
     }
 
+    /// Test specific constraints for splitting the given COPY into pieces (C++
+    /// `SplitDatatype::testCopyConstraints`, subflow.cc:2390).
+    fn test_copy_constraints(&self, data: &Funcdata, copy_op: OpId) -> bool {
+        let in_vn = data.obank().get(copy_op).expect("stale copy").get_in(0).expect("copy in0");
+        if data.vbank().get(in_vn).expect("stale in").is_input() {
+            return false;
+        }
+        if data.vbank().get(in_vn).expect("stale in").is_addr_tied() {
+            let out_vn = data.obank().get(copy_op).expect("stale copy").get_out().expect("copy out");
+            if data.vbank().get(out_vn).expect("stale out").is_addr_tied()
+                && data.vbank().get(out_vn).expect("stale out").get_addr()
+                    == data.vbank().get(in_vn).expect("stale in").get_addr()
+            {
+                return false;
+            }
+        } else if data.vbank().get(in_vn).expect("stale in").is_written() {
+            let def = data.vbank().get(in_vn).expect("stale in").get_def().expect("in def");
+            if data.obank().get(def).expect("stale def").code() == OpCode::CPUI_LOAD
+                && data.lone_descend(in_vn) == Some(copy_op)
+            {
+                return false; // This situation is handled by splitCopy()
+            }
+        }
+        true
+    }
+
+    /// If the given Varnode is an extended-precision constant, create split
+    /// constants (C++ `SplitDatatype::generateConstants`, subflow.cc:2413).
+    fn generate_constants(
+        &self,
+        data: &mut Funcdata,
+        vn: VarnodeId,
+        in_varnodes: &mut Vec<VarnodeId>,
+    ) -> KunaResult<bool> {
+        if data.lone_descend(vn).is_none() {
+            return Ok(false);
+        }
+        if !data.vbank().get(vn).expect("stale vn").is_written() {
+            return Ok(false);
+        }
+        let op = data.vbank().get(vn).expect("stale vn").get_def().expect("vn def");
+        let opc = data.obank().get(op).expect("stale def").code();
+        if opc == OpCode::CPUI_INT_ZEXT {
+            let i0 = data.obank().get(op).expect("stale def").get_in(0).expect("zext in0");
+            if !data.vbank().get(i0).expect("stale in0").is_constant() {
+                return Ok(false);
+            }
+        } else if opc == OpCode::CPUI_PIECE {
+            let i0 = data.obank().get(op).expect("stale def").get_in(0).expect("piece in0");
+            let i1 = data.obank().get(op).expect("stale def").get_in(1).expect("piece in1");
+            if !data.vbank().get(i0).expect("stale in0").is_constant()
+                || !data.vbank().get(i1).expect("stale in1").is_constant()
+            {
+                return Ok(false);
+            }
+        } else {
+            return Ok(false);
+        }
+        let full_size = data.vbank().get(vn).expect("stale vn").get_size();
+        let is_big_endian = data.vbank().get(vn).expect("stale vn").get_space().is_big_endian();
+        let hi: uintb;
+        let lo: uintb;
+        let losize: int4;
+        if opc == OpCode::CPUI_INT_ZEXT {
+            let i0 = data.obank().get(op).expect("stale def").get_in(0).expect("zext in0");
+            hi = 0;
+            lo = data.vbank().get(i0).expect("stale in0").get_offset();
+            losize = data.vbank().get(i0).expect("stale in0").get_size();
+        } else {
+            let i0 = data.obank().get(op).expect("stale def").get_in(0).expect("piece in0");
+            let i1 = data.obank().get(op).expect("stale def").get_in(1).expect("piece in1");
+            hi = data.vbank().get(i0).expect("stale in0").get_offset();
+            lo = data.vbank().get(i1).expect("stale in1").get_offset();
+            losize = data.vbank().get(i1).expect("stale in1").get_size();
+        }
+        for i in 0..self.data_type_pieces.len() {
+            let dt = Rc::clone(&self.data_type_pieces[i].in_type);
+            if dt.get_size() as usize > std::mem::size_of::<uintb>() {
+                in_varnodes.clear();
+                return Ok(false);
+            }
+            // cast: piece offset + size are bounded by full_size (a Varnode size).
+            let sa: int4 = if is_big_endian {
+                full_size - (self.data_type_pieces[i].offset + dt.get_size())
+            } else {
+                self.data_type_pieces[i].offset
+            };
+            let mut val: uintb = if sa >= losize {
+                // cast: (sa-losize) is a non-negative bit-group shift < 64 here.
+                hi >> ((sa - losize) as u32)
+            } else {
+                let mut v = lo >> ((sa as u32).wrapping_mul(8));
+                if sa + dt.get_size() > losize {
+                    v |= hi.wrapping_shl(((losize - sa) as u32).wrapping_mul(8));
+                }
+                v
+            };
+            val &= calc_mask(dt.get_size());
+            let out_vn = data.new_constant(dt.get_size(), val);
+            in_varnodes.push(out_vn);
+            data.vbank_mut().get_mut(out_vn).expect("stale const").update_type(dt);
+        }
+        data.op_destroy(op);
+        Ok(true)
+    }
+
+    /// Assuming the input is a constant, build split constants (C++
+    /// `SplitDatatype::buildInConstants`, subflow.cc:2478).
+    fn build_in_constants(
+        &self,
+        data: &mut Funcdata,
+        root_vn: VarnodeId,
+        in_varnodes: &mut Vec<VarnodeId>,
+        big_endian: bool,
+    ) {
+        let base_val = data.vbank().get(root_vn).expect("stale root").get_offset();
+        let root_size = data.vbank().get(root_vn).expect("stale root").get_size();
+        for i in 0..self.data_type_pieces.len() {
+            let dt = Rc::clone(&self.data_type_pieces[i].in_type);
+            let off = if big_endian {
+                root_size - self.data_type_pieces[i].offset - dt.get_size()
+            } else {
+                self.data_type_pieces[i].offset
+            };
+            // cast: off is a byte offset within a Varnode (< 8 here).
+            let val = (base_val >> ((8 * off) as u32)) & calc_mask(dt.get_size());
+            let out_vn = data.new_constant(dt.get_size(), val);
+            in_varnodes.push(out_vn);
+            data.vbank_mut().get_mut(out_vn).expect("stale const").update_type(dt);
+        }
+    }
+
+    /// Build input Varnodes by extracting SUBPIECEs from the root (C++
+    /// `SplitDatatype::buildInSubpieces`, subflow.cc:2501).
+    fn build_in_subpieces(
+        &self,
+        data: &mut Funcdata,
+        root_vn: VarnodeId,
+        follow_op: OpId,
+        in_varnodes: &mut Vec<VarnodeId>,
+    ) -> KunaResult<()> {
+        if self.generate_constants(data, root_vn, in_varnodes)? {
+            return Ok(());
+        }
+        let base_addr = data.vbank().get(root_vn).expect("stale root").get_addr().clone();
+        let root_size = data.vbank().get(root_vn).expect("stale root").get_size();
+        let follow_addr = data.obank().get(follow_op).expect("stale follow").get_addr().clone();
+        for i in 0..self.data_type_pieces.len() {
+            let dt = Rc::clone(&self.data_type_pieces[i].in_type);
+            let mut off = self.data_type_pieces[i].offset;
+            let mut addr = &base_addr + off as i64;
+            addr.renormalize(dt.get_size(), data.get_arch().manage())?;
+            if addr.is_big_endian() {
+                off = root_size - off - dt.get_size();
+            }
+            let subpiece = data.new_op(2, follow_addr.clone());
+            data.op_set_opcode(subpiece, crate::typeop::type_op_for(OpCode::CPUI_SUBPIECE));
+            data.op_set_input(subpiece, root_vn, 0)?;
+            // cast: off fits int4 (bounded by Varnode size).
+            let offconst = data.new_constant(4, off as uintb);
+            data.op_set_input(subpiece, offconst, 1)?;
+            let out_vn = data.new_varnode_out(dt.get_size(), &addr, subpiece)?;
+            in_varnodes.push(out_vn);
+            data.vbank_mut().get_mut(out_vn).expect("stale sub out").update_type(dt);
+            data.op_insert_before(subpiece, follow_op);
+        }
+        Ok(())
+    }
+
+    /// Build output Varnodes with storage based on the given root (C++
+    /// `SplitDatatype::buildOutVarnodes`, subflow.cc:2531).
+    fn build_out_varnodes(
+        &self,
+        data: &mut Funcdata,
+        root_vn: VarnodeId,
+        out_varnodes: &mut Vec<VarnodeId>,
+    ) -> KunaResult<()> {
+        let base_addr = data.vbank().get(root_vn).expect("stale root").get_addr().clone();
+        for i in 0..self.data_type_pieces.len() {
+            let dt = Rc::clone(&self.data_type_pieces[i].out_type);
+            let off = self.data_type_pieces[i].offset;
+            let mut addr = &base_addr + off as i64;
+            addr.renormalize(dt.get_size(), data.get_arch().manage())?;
+            let out_vn = data.new_varnode(dt.get_size(), &addr, Some(dt));
+            out_varnodes.push(out_vn);
+        }
+        Ok(())
+    }
+
+    /// Concatenate output Varnodes into the given root via PIECE ops (C++
+    /// `SplitDatatype::buildOutConcats`, subflow.cc:2552).
+    fn build_out_concats(
+        &self,
+        data: &mut Funcdata,
+        root_vn: VarnodeId,
+        previous_op: OpId,
+        out_varnodes: &[VarnodeId],
+    ) -> KunaResult<()> {
+        if data.vbank().get(root_vn).expect("stale root").has_no_descend() {
+            return Ok(()); // Don't need to produce concatenation if unused
+        }
+        let base_addr = data.vbank().get(root_vn).expect("stale root").get_addr().clone();
+        let prev_addr = data.obank().get(previous_op).expect("stale prev").get_addr().clone();
+        let address_tied = data.vbank().get(root_vn).expect("stale root").is_addr_tied();
+        // We are creating a CONCAT stack, mark varnodes appropriately.
+        if !address_tied {
+            for &ov in out_varnodes {
+                data.vbank_mut().get_mut(ov).expect("stale out").set_proto_partial();
+            }
+        }
+        let mut vn: VarnodeId;
+        let mut concat_op: OpId;
+        let mut pre_op = previous_op;
+        if base_addr.is_big_endian() {
+            vn = out_varnodes[0];
+            let mut i = 1usize;
+            loop {
+                concat_op = data.new_op(2, prev_addr.clone());
+                data.op_set_opcode(concat_op, crate::typeop::type_op_for(OpCode::CPUI_PIECE));
+                data.op_set_input(concat_op, vn, 0)?; // Most significant
+                data.op_set_input(concat_op, out_varnodes[i], 1)?; // Least significant
+                data.op_insert_after(concat_op, pre_op);
+                if i + 1 >= out_varnodes.len() {
+                    break;
+                }
+                pre_op = concat_op;
+                let sz = data.vbank().get(vn).expect("stale vn").get_size()
+                    + data.vbank().get(out_varnodes[i]).expect("stale out").get_size();
+                let mut addr = base_addr.clone();
+                addr.renormalize(sz, data.get_arch().manage())?;
+                vn = data.new_varnode_out(sz, &addr, concat_op)?;
+                if !address_tied {
+                    data.vbank_mut().get_mut(vn).expect("stale vn").set_proto_partial();
+                }
+                i += 1;
+            }
+        } else {
+            vn = out_varnodes[out_varnodes.len() - 1];
+            let mut i: int4 = out_varnodes.len() as int4 - 2;
+            loop {
+                concat_op = data.new_op(2, prev_addr.clone());
+                data.op_set_opcode(concat_op, crate::typeop::type_op_for(OpCode::CPUI_PIECE));
+                data.op_set_input(concat_op, vn, 0)?; // Most significant
+                data.op_set_input(concat_op, out_varnodes[i as usize], 1)?; // Least significant
+                data.op_insert_after(concat_op, pre_op);
+                if i <= 0 {
+                    break;
+                }
+                pre_op = concat_op;
+                let sz = data.vbank().get(vn).expect("stale vn").get_size()
+                    + data.vbank().get(out_varnodes[i as usize]).expect("stale out").get_size();
+                let mut addr = data.vbank().get(out_varnodes[i as usize]).expect("stale out").get_addr().clone();
+                addr.renormalize(sz, data.get_arch().manage())?;
+                vn = data.new_varnode_out(sz, &addr, concat_op)?;
+                if !address_tied {
+                    data.vbank_mut().get_mut(vn).expect("stale vn").set_proto_partial();
+                }
+                i -= 1;
+            }
+        }
+        data.obank_mut().get_mut(concat_op).expect("stale concat").set_partial_root();
+        data.op_set_output(concat_op, root_vn)?;
+        if !address_tied {
+            data.with_covermerge(|merge, data| merge.register_proto_partial_root(data, root_vn));
+        }
+        Ok(())
+    }
+
+    /// Build a series of PTRSUB/PTRADD ops at different offsets given a root
+    /// pointer (C++ `SplitDatatype::buildPointers`, subflow.cc:2620).
+    // C++ signature: buildPointers(Varnode *rootVn, TypePointer *ptrType, int4
+    // baseOffset, PcodeOp *followOp, vector<Varnode*> &ptrVarnodes, bool isInput);
+    // `self`+`data` replace the implicit `this`+`data` member, hence 8 params.
+    #[allow(clippy::too_many_arguments)]
+    fn build_pointers(
+        &mut self,
+        data: &mut Funcdata,
+        root_vn: VarnodeId,
+        ptr_type: &Rc<Datatype>,
+        base_offset: int4,
+        follow_op: OpId,
+        ptr_varnodes: &mut Vec<VarnodeId>,
+        is_input: bool,
+    ) -> KunaResult<()> {
+        let base_type = ptr_type.get_ptr_to().expect("buildPointers: ptrType not a pointer");
+        let word_size = ptr_type.get_word_size().expect("buildPointers: ptrType wordsize");
+        let ptr_size = ptr_type.get_size();
+        let follow_addr = data.obank().get(follow_op).expect("stale follow").get_addr().clone();
+        for i in 0..self.data_type_pieces.len() {
+            let match_type = if is_input {
+                Rc::clone(&self.data_type_pieces[i].in_type)
+            } else {
+                Rc::clone(&self.data_type_pieces[i].out_type)
+            };
+            let mut cur_off: int8 = base_offset as int8 + self.data_type_pieces[i].offset as int8;
+            let mut tmp_type = Rc::clone(&base_type);
+            let mut in_ptr = root_vn;
+            loop {
+                let new_off: int8;
+                let new_type: Rc<Datatype>;
+                if cur_off < 0 || cur_off >= tmp_type.get_size() as int8 {
+                    // An offset not within the data-type indicates an array.
+                    new_type = Rc::clone(&tmp_type);
+                    let mut no = cur_off % tmp_type.get_size() as int8;
+                    no = if no < 0 { no + tmp_type.get_size() as int8 } else { no };
+                    new_off = no;
+                } else {
+                    let (sub, so) = tmp_type.get_sub_type(cur_off)?;
+                    match sub {
+                        Some(s) => {
+                            new_type = s;
+                            new_off = so;
+                        }
+                        None => {
+                            // Null only for a hole in a structure; use precomputed type.
+                            new_type = Rc::clone(&match_type);
+                            new_off = 0;
+                        }
+                    }
+                }
+                let res_type = if new_type.needs_resolution() {
+                    self.resolver.resolve(if is_input { 0 } else { 1 }, &new_type)
+                } else {
+                    Rc::clone(&new_type)
+                };
+
+                let new_op: OpId;
+                if Rc::ptr_eq(&tmp_type, &res_type)
+                    || tmp_type.get_metatype() == type_metatype::TYPE_ARRAY
+                {
+                    let mut final_offset = cur_off - new_off;
+                    let mut sz = res_type.get_size(); // Element size in bytes
+                    final_offset /= sz as int8; // Number of elements
+                    // cast: byteToAddressInt(int4,..) returns int4-range here.
+                    sz = AddrSpace::byte_to_address_int(sz as i64, word_size) as int4;
+                    new_op = data.new_op(3, follow_addr.clone());
+                    data.op_set_opcode(new_op, crate::typeop::type_op_for(OpCode::CPUI_PTRADD));
+                    data.op_set_input(new_op, in_ptr, 0)?;
+                    let in_ptr_size = data.vbank().get(in_ptr).expect("stale ptr").get_size();
+                    // cast: finalOffset is an element index that fits the pointer width.
+                    let index_vn = data.new_constant(in_ptr_size, final_offset as uintb);
+                    data.op_set_input(new_op, index_vn, 1)?;
+                    let szconst = data.new_constant(in_ptr_size, sz as uintb);
+                    data.op_set_input(new_op, szconst, 2)?;
+                    let index_size = data.vbank().get(index_vn).expect("stale idx").get_size();
+                    let index_type = self.types()?.get_base(index_size, type_metatype::TYPE_INT)?;
+                    data.vbank_mut().get_mut(index_vn).expect("stale idx").update_type(index_type);
+                } else {
+                    // cast: byteToAddressInt(int8,..) stays within int8.
+                    let final_offset =
+                        AddrSpace::byte_to_address_int(cur_off - new_off, word_size);
+                    new_op = data.new_op(2, follow_addr.clone());
+                    data.op_set_opcode(new_op, crate::typeop::type_op_for(OpCode::CPUI_PTRSUB));
+                    data.op_set_input(new_op, in_ptr, 0)?;
+                    let in_ptr_size = data.vbank().get(in_ptr).expect("stale ptr").get_size();
+                    let offconst = data.new_constant(in_ptr_size, final_offset as uintb);
+                    data.op_set_input(new_op, offconst, 1)?;
+                }
+                // resolver.inheritResolution — no-op for non-union types (W6/W7).
+                let in_ptr_size = data.vbank().get(in_ptr).expect("stale ptr").get_size();
+                in_ptr = data.new_unique_out(in_ptr_size, new_op)?;
+                let tmp_ptr = self
+                    .types()?
+                    .get_type_pointer_strip_array(ptr_size, Rc::clone(&new_type), word_size)?;
+                data.vbank_mut().get_mut(in_ptr).expect("stale ptr").update_type(tmp_ptr);
+                data.op_insert_before(new_op, follow_op);
+                tmp_type = res_type;
+                cur_off = new_off;
+                if tmp_type.get_size() <= match_type.get_size() {
+                    break;
+                }
+            }
+            ptr_varnodes.push(in_ptr);
+        }
+        Ok(())
+    }
+
+    /// Does the given Varnode have an arithmetic op as a descendant (C++
+    /// `SplitDatatype::isArithmeticInput`, subflow.cc:2688).
+    fn is_arithmetic_input(data: &Funcdata, vn: VarnodeId) -> bool {
+        let descend: Vec<OpId> = data.vbank().get(vn).expect("stale vn").descend_iter().collect();
+        for op in descend {
+            if crate::typeop::type_op_info(data.obank().get(op).expect("stale desc").code())
+                .is_arithmetic_op()
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Is the defining op arithmetic (C++ `SplitDatatype::isArithmeticOutput`,
+    /// subflow.cc:2704).
+    fn is_arithmetic_output(data: &Funcdata, vn: VarnodeId) -> bool {
+        if !data.vbank().get(vn).expect("stale vn").is_written() {
+            return false;
+        }
+        let def = data.vbank().get(vn).expect("stale vn").get_def().expect("vn def");
+        crate::typeop::type_op_info(data.obank().get(def).expect("stale def").code())
+            .is_arithmetic_op()
+    }
+
     /// Split a COPY operation (C++ `SplitDatatype::splitCopy`, subflow.cc:2728).
-    ///
-    /// SEAM(arch/W6): `testCopyConstraints`, `getTypeReadFacing`/`getTypeDefFacing`,
-    /// `ResolveCache::addResolution/inheritResolution`, the `build*` helpers, and
-    /// `RootPointer` all route through the unported Funcdata→Architecture→
-    /// TypeFactory/Translate bridge.  The detection in `RuleSplitCopy` already
-    /// returns 0 before reaching here on that seam; this body is the faithful
-    /// transcription guarded by the seam error.
     pub fn split_copy(
         &mut self,
-        _data: &mut Funcdata,
-        _copy_op: OpId,
-        _in_type: &Rc<Datatype>,
-        _out_type: &Rc<Datatype>,
+        data: &mut Funcdata,
+        copy_op: OpId,
+        in_type: &Rc<Datatype>,
+        out_type: &Rc<Datatype>,
     ) -> KunaResult<bool> {
-        split_datatype_seam("SplitDatatype::splitCopy")
+        if !self.test_copy_constraints(data, copy_op) {
+            return Ok(false);
+        }
+        let in_vn = data.obank().get(copy_op).expect("stale copy").get_in(0).expect("copy in0");
+        let in_constant = data.vbank().get(in_vn).expect("stale in").is_constant();
+        let types = self.types_clone()?;
+        if !self.test_datatype_compatibility(&*types, in_type, out_type, in_constant)? {
+            return Ok(false);
+        }
+        if Self::is_arithmetic_output(data, in_vn) {
+            return Ok(false); // Sanity check on input
+        }
+        let out_vn = data.obank().get(copy_op).expect("stale copy").get_out().expect("copy out");
+        if Self::is_arithmetic_input(data, out_vn) {
+            return Ok(false); // Sanity check on output
+        }
+        let mut in_varnodes: Vec<VarnodeId> = Vec::new();
+        let mut out_varnodes: Vec<VarnodeId> = Vec::new();
+        let _unres_out_type = data.vbank().get(out_vn).expect("stale out").get_type().clone();
+        // resolver.addResolution(0, unresOutType, copyOp, -1) — no-op (non-union).
+        if in_constant {
+            let big = data.vbank().get(out_vn).expect("stale out").get_space().is_big_endian();
+            self.build_in_constants(data, in_vn, &mut in_varnodes, big);
+        } else {
+            self.build_in_subpieces(data, in_vn, copy_op, &mut in_varnodes)?;
+        }
+        self.build_out_varnodes(data, out_vn, &mut out_varnodes)?;
+        self.build_out_concats(data, out_vn, copy_op, &out_varnodes)?;
+        let copy_addr = data.obank().get(copy_op).expect("stale copy").get_addr().clone();
+        for i in 0..in_varnodes.len() {
+            let new_copy_op = data.new_op(1, copy_addr.clone());
+            data.op_set_opcode(new_copy_op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+            data.op_set_input(new_copy_op, in_varnodes[i], 0)?;
+            data.op_set_output(new_copy_op, out_varnodes[i])?;
+            data.op_insert_before(new_copy_op, copy_op);
+            // resolver.inheritResolution — no-op for non-union types.
+        }
+        data.op_destroy(copy_op);
+        Ok(true)
     }
 
     /// Split a LOAD operation (C++ `SplitDatatype::splitLoad`, subflow.cc:2770).
     pub fn split_load(
         &mut self,
-        _data: &mut Funcdata,
-        _load_op: OpId,
-        _in_type: &Rc<Datatype>,
+        data: &mut Funcdata,
+        load_op: OpId,
+        in_type: &Rc<Datatype>,
     ) -> KunaResult<bool> {
         self.is_load_store = true;
-        split_datatype_seam("SplitDatatype::splitLoad")
+        let mut out_vn = data.obank().get(load_op).expect("stale load").get_out().expect("load out");
+        let mut copy_op: Option<OpId> = None;
+        if !data.vbank().get(out_vn).expect("stale out").is_addr_tied() {
+            copy_op = data.lone_descend(out_vn);
+        }
+        if let Some(cop) = copy_op {
+            let opc = data.obank().get(cop).expect("stale copy").code();
+            if opc == OpCode::CPUI_STORE {
+                return Ok(false); // Handled by RuleSplitStore
+            }
+            if opc == OpCode::CPUI_ZPULL || opc == OpCode::CPUI_SPULL {
+                return Ok(false);
+            }
+            if opc != OpCode::CPUI_COPY {
+                copy_op = None;
+            }
+        }
+        if let Some(cop) = copy_op {
+            out_vn = data.obank().get(cop).expect("stale copy").get_out().expect("copy out");
+        }
+        let out_type = data.vbank().get(out_vn).expect("stale out").get_type_def_facing().clone();
+        let types = self.types_clone()?;
+        if !self.test_datatype_compatibility(&*types, in_type, &out_type, false)? {
+            return Ok(false);
+        }
+        if Self::is_arithmetic_input(data, out_vn) {
+            return Ok(false); // Sanity check on output
+        }
+        let mut root = RootPointer::default();
+        if !root.find(data, &mut self.resolver, load_op, in_type)? {
+            return Ok(false);
+        }
+        let mut ptr_varnodes: Vec<VarnodeId> = Vec::new();
+        let mut out_varnodes: Vec<VarnodeId> = Vec::new();
+        let insert_point = copy_op.unwrap_or(load_op);
+        let root_ptr = root.pointer;
+        let root_ptr_type = root.ptr_type.clone().expect("root ptrType");
+        let root_base = root.base_offset;
+        self.build_pointers(data, root_ptr, &root_ptr_type, root_base, load_op, &mut ptr_varnodes, true)?;
+        self.build_out_varnodes(data, out_vn, &mut out_varnodes)?;
+        self.build_out_concats(data, out_vn, insert_point, &out_varnodes)?;
+        let load_in0 = data.obank().get(load_op).expect("stale load").get_in(0).expect("load in0");
+        let spc = space_from_const(data, load_in0);
+        let insert_addr = data.obank().get(insert_point).expect("stale insert").get_addr().clone();
+        for i in 0..ptr_varnodes.len() {
+            let new_load_op = data.new_op(2, insert_addr.clone());
+            data.op_set_opcode(new_load_op, crate::typeop::type_op_for(OpCode::CPUI_LOAD));
+            let spcvn = data.new_varnode_space(&spc);
+            data.op_set_input(new_load_op, spcvn, 0)?;
+            data.op_set_input(new_load_op, ptr_varnodes[i], 1)?;
+            data.op_set_output(new_load_op, out_varnodes[i])?;
+            data.op_insert_before(new_load_op, insert_point);
+        }
+        if let Some(cop) = copy_op {
+            data.op_destroy(cop);
+        }
+        data.op_destroy(load_op);
+        root.free_pointer_chain(data);
+        Ok(true)
     }
 
     /// Split a STORE operation (C++ `SplitDatatype::splitStore`, subflow.cc:2823).
     pub fn split_store(
         &mut self,
-        _data: &mut Funcdata,
-        _store_op: OpId,
-        _out_type: &Rc<Datatype>,
+        data: &mut Funcdata,
+        store_op: OpId,
+        out_type: &Rc<Datatype>,
     ) -> KunaResult<bool> {
         self.is_load_store = true;
-        split_datatype_seam("SplitDatatype::splitStore")
+        let in_vn = data.obank().get(store_op).expect("stale store").get_in(2).expect("store in2");
+        let mut load_op: Option<OpId> = None;
+        let mut in_type: Option<Rc<Datatype>> = None;
+        if data.vbank().get(in_vn).expect("stale in").is_written() {
+            let def = data.vbank().get(in_vn).expect("stale in").get_def().expect("in def");
+            if data.obank().get(def).expect("stale def").code() == OpCode::CPUI_LOAD
+                && data.lone_descend(in_vn) == Some(store_op)
+            {
+                let in_size = data.vbank().get(in_vn).expect("stale in").get_size();
+                load_op = Some(def);
+                in_type = Self::get_value_datatype(data, def, in_size);
+                if in_type.is_none() {
+                    load_op = None;
+                }
+            }
+        }
+        if in_type.is_none() {
+            in_type =
+                Some(data.vbank().get(in_vn).expect("stale in").get_type_read_facing(store_op).clone());
+        }
+        let mut in_type = in_type.expect("inType set above");
+        let in_constant = data.vbank().get(in_vn).expect("stale in").is_constant();
+        let types = self.types_clone()?;
+        if !self.test_datatype_compatibility(&*types, &in_type, out_type, in_constant)? {
+            if load_op.is_some() {
+                // Not compatible considering the LOAD; retry without the LOAD.
+                load_op = None;
+                in_type = data.vbank().get(in_vn).expect("stale in").get_type_read_facing(store_op).clone();
+                self.data_type_pieces.clear();
+                if !self.test_datatype_compatibility(&*types, &in_type, out_type, in_constant)? {
+                    return Ok(false);
+                }
+            } else {
+                return Ok(false);
+            }
+        }
+        if Self::is_arithmetic_output(data, in_vn) {
+            return Ok(false); // Sanity check
+        }
+        let mut store_root = RootPointer::default();
+        if !store_root.find(data, &mut self.resolver, store_op, out_type)? {
+            return Ok(false);
+        }
+        let mut load_root = RootPointer::default();
+        if let Some(lop) = load_op {
+            if !load_root.find(data, &mut self.resolver, lop, &in_type)? {
+                return Ok(false);
+            }
+        }
+        let store_in0 = data.obank().get(store_op).expect("stale store").get_in(0).expect("store in0");
+        let store_space = space_from_const(data, store_in0);
+        let mut in_varnodes: Vec<VarnodeId> = Vec::new();
+        if in_constant {
+            self.build_in_constants(data, in_vn, &mut in_varnodes, store_space.is_big_endian());
+        } else if let Some(lop) = load_op {
+            let mut load_ptrs: Vec<VarnodeId> = Vec::new();
+            let lr_ptr = load_root.pointer;
+            let lr_type = load_root.ptr_type.clone().expect("load root ptrType");
+            let lr_base = load_root.base_offset;
+            self.build_pointers(data, lr_ptr, &lr_type, lr_base, lop, &mut load_ptrs, true)?;
+            let load_in0 = data.obank().get(lop).expect("stale load").get_in(0).expect("load in0");
+            let load_space = space_from_const(data, load_in0);
+            let load_addr = data.obank().get(lop).expect("stale load").get_addr().clone();
+            // Parallel loop over load_ptrs and dataTypePieces (equal length): the
+            // C++ indexes both by `i`; iterate the pointer chain by value here.
+            for (i, load_ptr) in load_ptrs.iter().copied().enumerate() {
+                let new_load_op = data.new_op(2, load_addr.clone());
+                data.op_set_opcode(new_load_op, crate::typeop::type_op_for(OpCode::CPUI_LOAD));
+                let spcvn = data.new_varnode_space(&load_space);
+                data.op_set_input(new_load_op, spcvn, 0)?;
+                data.op_set_input(new_load_op, load_ptr, 1)?;
+                let dt = Rc::clone(&self.data_type_pieces[i].in_type);
+                let vn = data.new_unique_out(dt.get_size(), new_load_op)?;
+                data.vbank_mut().get_mut(vn).expect("stale load out").update_type(dt);
+                in_varnodes.push(vn);
+                data.op_insert_before(new_load_op, lop);
+            }
+        } else {
+            self.build_in_subpieces(data, in_vn, store_op, &mut in_varnodes)?;
+        }
+
+        let mut store_ptrs: Vec<VarnodeId> = Vec::new();
+        if data.vbank().get(store_root.pointer).expect("stale root").is_addr_tied() {
+            store_root.duplicate_to_temp(data, store_op)?;
+        }
+        let sr_ptr = store_root.pointer;
+        let sr_type = store_root.ptr_type.clone().expect("store root ptrType");
+        let sr_base = store_root.base_offset;
+        self.build_pointers(data, sr_ptr, &sr_type, sr_base, store_op, &mut store_ptrs, false)?;
+        // Preserve original STORE object (INDIRECT refs stay valid); convert it
+        // into the first of the smaller STOREs.
+        data.op_set_input(store_op, store_ptrs[0], 1)?;
+        data.op_set_input(store_op, in_varnodes[0], 2)?;
+        let mut last_store = store_op;
+        let store_addr = data.obank().get(store_op).expect("stale store").get_addr().clone();
+        for i in 1..store_ptrs.len() {
+            let new_store_op = data.new_op(3, store_addr.clone());
+            data.op_set_opcode(new_store_op, crate::typeop::type_op_for(OpCode::CPUI_STORE));
+            let spcvn = data.new_varnode_space(&store_space);
+            data.op_set_input(new_store_op, spcvn, 0)?;
+            data.op_set_input(new_store_op, store_ptrs[i], 1)?;
+            data.op_set_input(new_store_op, in_varnodes[i], 2)?;
+            data.op_insert_after(new_store_op, last_store);
+            last_store = new_store_op;
+        }
+
+        if let Some(lop) = load_op {
+            data.op_destroy(lop);
+            load_root.free_pointer_chain(data);
+        }
+        store_root.free_pointer_chain(data);
+        Ok(true)
     }
 
     /// Get a data-type description of the value pointed at by a LOAD/STORE (C++
     /// `SplitDatatype::getValueDatatype`, subflow.cc:2925).
-    ///
-    /// SEAM(W6): needs `loadStore->getIn(1)->getTypeReadFacing(loadStore)` and the
-    /// `TypeFactory` (`getTypeArray`/`getExactPiece`) — both off the Funcdata arch
-    /// seam.  Returns `None` (the C++ null) until that bridge lands.
     pub fn get_value_datatype(
-        _data: &Funcdata,
-        _load_store: OpId,
-        _size: int4,
+        data: &Funcdata,
+        load_store: OpId,
+        size: int4,
     ) -> Option<Rc<Datatype>> {
-        // C++: ptrType = loadStore->getIn(1)->getTypeReadFacing(loadStore); ...
+        let in1 = data.obank().get(load_store).expect("stale ls").get_in(1)?;
+        let ptr_type = data.vbank().get(in1).expect("stale in1").get_type_read_facing(load_store).clone();
+        if ptr_type.get_metatype() != type_metatype::TYPE_PTR {
+            return None;
+        }
+        let res_type: Rc<Datatype>;
+        let base_offset: int4;
+        if ptr_type.is_pointer_rel() {
+            res_type = ptr_type.get_rel_parent()?;
+            base_offset = ptr_type.get_byte_offset()?;
+        } else {
+            res_type = ptr_type.get_ptr_to()?;
+            base_offset = 0;
+        }
+        let metain = res_type.get_metatype();
+        let tlst = data.get_arch().types()?;
+        if res_type.get_align_size() < size {
+            if metain == type_metatype::TYPE_INT
+                || metain == type_metatype::TYPE_UINT
+                || metain == type_metatype::TYPE_BOOL
+                || metain == type_metatype::TYPE_FLOAT
+                || metain == type_metatype::TYPE_PTR
+            {
+                if size % res_type.get_align_size() == 0 {
+                    let num_el = size / res_type.get_align_size();
+                    return tlst.get_type_array(num_el, res_type).ok();
+                }
+            }
+        } else if metain == type_metatype::TYPE_STRUCT || metain == type_metatype::TYPE_ARRAY {
+            return tlst.get_exact_piece(res_type, base_offset, size).ok().flatten();
+        }
         None
+    }
+
+    /// Borrow the held factory as a `&dyn TypeFactory` (the explicit-factory
+    /// methods need a trait object); errors if no factory is attached.
+    #[allow(dead_code)]
+    fn types_handle(&self) -> KunaResult<&dyn crate::dtype::TypeFactory> {
+        Ok(self.types()? as &dyn crate::dtype::TypeFactory)
+    }
+
+    /// Clone the held factory `Rc` so it can be borrowed (`&*`) as the explicit
+    /// `types` argument of `test_datatype_compatibility`/`get_component` while
+    /// `self` is borrowed mutably (the C++ `types` is a separate member, not part
+    /// of the mutable `dataTypePieces` state).
+    fn types_clone(&self) -> KunaResult<Rc<crate::dtype::TypeFactoryImpl>> {
+        self.types
+            .clone()
+            .ok_or_else(|| KunaError::lowlevel("SplitDatatype: no TypeFactory on Architecture"))
     }
 }
 
-/// The shared SEAM error for the SplitDatatype graph-mutation path
-/// (Funcdata→Architecture→TypeFactory/Translate bridge + getTypeReadFacing/
-/// getTypeDefFacing + ResolveCache::addResolution + buildCopyTemp/getMerge).
-fn split_datatype_seam(what: &str) -> KunaResult<bool> {
-    Err(KunaError::lowlevel(format!(
-        "kuna rust port: {what} needs the Funcdata→Architecture→TypeFactory/Translate \
-         bridge, getTypeReadFacing/getTypeDefFacing (W6), ResolveCache::addResolution/\
-         inheritResolution (W6), and Funcdata::buildCopyTemp/getMerge — SEAM(arch/W6)"
-    )))
+/// A root pointer with an accumulated offset to the structure/array being split
+/// (C++ `SplitDatatype::RootPointer`, subflow.hh).
+#[derive(Default)]
+struct RootPointer {
+    /// The LOAD or STORE op (C++ `loadStore`).
+    load_store: Option<OpId>,
+    /// Base pointer data-type of the LOAD/STORE (C++ `ptrType`).
+    ptr_type: Option<Rc<Datatype>>,
+    /// First (original) pointer in the chain (C++ `firstPointer`).
+    first_pointer: Option<VarnodeId>,
+    /// The current root pointer Varnode (C++ `pointer`).
+    pointer: VarnodeId,
+    /// Offset of the structure/array relative to the root pointer (C++ `baseOffset`).
+    base_offset: int4,
+}
+
+impl RootPointer {
+    /// Back up the root pointer through a COPY/INT_ADD/PTRSUB/PTRADD (C++
+    /// `SplitDatatype::RootPointer::backUpPointer`, subflow.cc:2098).
+    fn back_up_pointer(&mut self, data: &Funcdata, implied_base: Option<&Rc<Datatype>>) -> bool {
+        let pointer = self.pointer;
+        if !data.vbank().get(pointer).expect("stale ptr").is_written() {
+            return false;
+        }
+        let add_op = data.vbank().get(pointer).expect("stale ptr").get_def().expect("ptr def");
+        let opc = data.obank().get(add_op).expect("stale add").code();
+        let off: int4;
+        if opc == OpCode::CPUI_PTRSUB || opc == OpCode::CPUI_INT_ADD || opc == OpCode::CPUI_PTRADD {
+            let cvn = data.obank().get(add_op).expect("stale add").get_in(1).expect("add in1");
+            if !data.vbank().get(cvn).expect("stale cvn").is_constant() {
+                return false;
+            }
+            // cast: pointer offsets are int4-range here (matches C++ `(int4)`).
+            off = data.vbank().get(cvn).expect("stale cvn").get_offset() as int4;
+        } else if opc == OpCode::CPUI_COPY {
+            off = 0;
+        } else {
+            return false;
+        }
+        let tmp_pointer = data.obank().get(add_op).expect("stale add").get_in(0).expect("add in0");
+        let ct = data.vbank().get(tmp_pointer).expect("stale tmp").get_type_read_facing(add_op).clone();
+        if ct.get_metatype() != type_metatype::TYPE_PTR {
+            return false;
+        }
+        let parent = ct.get_ptr_to().expect("pointer has ptrTo");
+        let meta = parent.get_metatype();
+        if meta != type_metatype::TYPE_STRUCT && meta != type_metatype::TYPE_ARRAY {
+            let parent_is_implied = match implied_base {
+                Some(ib) => Rc::ptr_eq(&parent, ib),
+                None => false,
+            };
+            if (opc != OpCode::CPUI_PTRADD && opc != OpCode::CPUI_COPY) || !parent_is_implied {
+                return false;
+            }
+        }
+        let word_size = ct.get_word_size().expect("pointer wordsize");
+        self.ptr_type = Some(ct);
+        let mut off = off;
+        if opc == OpCode::CPUI_PTRADD {
+            let i2 = data.obank().get(add_op).expect("stale add").get_in(2).expect("ptradd in2");
+            // cast: PTRADD element multiplier is int4-range.
+            off *= data.vbank().get(i2).expect("stale i2").get_offset() as int4;
+        }
+        // cast: addressToByteInt(int4,..) returns int4-range.
+        off = AddrSpace::address_to_byte_int(off as i64, word_size) as int4;
+        self.base_offset += off;
+        self.pointer = tmp_pointer;
+        true
+    }
+
+    /// Find the root pointer to the given value data-type (C++
+    /// `SplitDatatype::RootPointer::find`, subflow.cc:2144).
+    fn find(
+        &mut self,
+        data: &Funcdata,
+        resolver: &mut crate::unionresolve::ResolveCache,
+        op: OpId,
+        value_type: &Rc<Datatype>,
+    ) -> KunaResult<bool> {
+        let mut implied_base: Option<Rc<Datatype>> = None;
+        let mut value_type = Rc::clone(value_type);
+        if value_type.get_metatype() == type_metatype::TYPE_PARTIALSTRUCT {
+            value_type = value_type.get_partial_base().expect("partial parent");
+        }
+        if value_type.get_metatype() == type_metatype::TYPE_ARRAY {
+            value_type = value_type.get_array_base().expect("array base");
+            implied_base = Some(Rc::clone(&value_type)); // allow implied array (pointer to element)
+        }
+        let key = if data.obank().get(op).expect("stale op").code() == OpCode::CPUI_LOAD { 0 } else { 1 };
+        self.load_store = Some(op);
+        self.base_offset = 0;
+        let in1 = data.obank().get(op).expect("stale op").get_in(1).expect("ls in1");
+        self.first_pointer = Some(in1);
+        self.pointer = in1;
+        let ct = data.vbank().get(in1).expect("stale in1").get_type_read_facing(op).clone();
+        if ct.get_metatype() != type_metatype::TYPE_PTR {
+            return Ok(false);
+        }
+        // resolver.addResolution(key, pointer->getType(), op, 1) — no-op (non-union).
+        let _ = (resolver, key);
+        self.ptr_type = Some(Rc::clone(&ct));
+        let ptr_to = ct.get_ptr_to().expect("pointer ptrTo");
+        if !Rc::ptr_eq(&ptr_to, &value_type) {
+            if implied_base.is_some() {
+                return Ok(false);
+            }
+            if !self.back_up_pointer(data, implied_base.as_ref()) {
+                return Ok(false);
+            }
+            let cur_ptr_to = self.ptr_type.as_ref().expect("ptrType").get_ptr_to().expect("ptrTo");
+            if !Rc::ptr_eq(&cur_ptr_to, &value_type) {
+                return Ok(false);
+            }
+        }
+        // Back up to pointers to containing structures or arrays.
+        for _ in 0..3 {
+            if data.vbank().get(self.pointer).expect("stale ptr").is_addr_tied()
+                || data.lone_descend(self.pointer).is_none()
+            {
+                break;
+            }
+            if !self.back_up_pointer(data, implied_base.as_ref()) {
+                break;
+            }
+            // resolver.addResolution — no-op (non-union).
+        }
+        Ok(true)
+    }
+
+    /// COPY the root pointer into a unique temp so subsequent STOREs cannot mutate
+    /// it (C++ `SplitDatatype::RootPointer::duplicateToTemp`, subflow.cc:2187).
+    fn duplicate_to_temp(&mut self, data: &mut Funcdata, follow_op: OpId) -> KunaResult<()> {
+        let new_root = data.build_copy_temp(self.pointer, follow_op)?;
+        let ptr_type = self.ptr_type.clone().expect("ptrType");
+        data.vbank_mut().get_mut(new_root).expect("stale new root").update_type(ptr_type);
+        self.pointer = new_root;
+        Ok(())
+    }
+
+    /// Remove the now-dead pointer chain (C++
+    /// `SplitDatatype::RootPointer::freePointerChain`, subflow.cc:2199).
+    fn free_pointer_chain(&mut self, data: &mut Funcdata) {
+        let mut first = self.first_pointer.expect("firstPointer");
+        while first != self.pointer
+            && !data.vbank().get(first).expect("stale first").is_addr_tied()
+            && data.vbank().get(first).expect("stale first").has_no_descend()
+        {
+            let tmp_op = data.vbank().get(first).expect("stale first").get_def().expect("first def");
+            first = data.obank().get(tmp_op).expect("stale tmp").get_in(0).expect("tmp in0");
+            data.op_destroy(tmp_op);
+        }
+        self.first_pointer = Some(first);
+    }
 }
 
 /// Split COPY ops based on TypePartialStruct (C++ `RuleSplitCopy`).
@@ -3631,14 +4451,27 @@ impl Rule for RuleSplitCopy {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Datatype *inType = op->getIn(0)->getTypeReadFacing(op);   -- SEAM(W6)
-        // Datatype *outType = op->getOut()->getTypeDefFacing();     -- SEAM(W6)
-        // The type-facing accessors are off the Funcdata arch seam; the
-        // categorization on metatype below cannot run without them, so the rule
-        // returns 0 (no change) until the bridge lands.  // SEAM(arch/W6)
-        match split_copy_facing_seam(data, op) {
-            Ok(()) => 0,
-            Err(_) => 0,
+        // Datatype *inType = op->getIn(0)->getTypeReadFacing(op);
+        // Datatype *outType = op->getOut()->getTypeDefFacing();
+        let in0 = data.obank().get(op).expect("stale op").get_in(0).expect("copy in0");
+        let in_type = data.vbank().get(in0).expect("stale in0").get_type_read_facing(op).clone();
+        let out = data.obank().get(op).expect("stale op").get_out().expect("copy out");
+        let out_type = data.vbank().get(out).expect("stale out").get_type_def_facing().clone();
+        let metain = in_type.get_metatype();
+        let metaout = out_type.get_metatype();
+        if metain != type_metatype::TYPE_PARTIALSTRUCT
+            && metaout != type_metatype::TYPE_PARTIALSTRUCT
+            && metain != type_metatype::TYPE_ARRAY
+            && metaout != type_metatype::TYPE_ARRAY
+            && metain != type_metatype::TYPE_STRUCT
+            && metaout != type_metatype::TYPE_STRUCT
+        {
+            return 0;
+        }
+        let mut splitter = SplitDatatype::from_funcdata(data);
+        match splitter.split_copy(data, op, &in_type, &out_type) {
+            Ok(true) => 1,
+            _ => 0,
         }
     }
 }
@@ -3682,7 +4515,7 @@ impl Rule for RuleSplitLoad {
         {
             return 0;
         }
-        let mut splitter = SplitDatatype::new(0);
+        let mut splitter = SplitDatatype::from_funcdata(data);
         match splitter.split_load(data, op, &in_type) {
             Ok(true) => 1,
             _ => 0,
@@ -3729,21 +4562,12 @@ impl Rule for RuleSplitStore {
         {
             return 0;
         }
-        let mut splitter = SplitDatatype::new(0);
+        let mut splitter = SplitDatatype::from_funcdata(data);
         match splitter.split_store(data, op, &out_type) {
             Ok(true) => 1,
             _ => 0,
         }
     }
-}
-
-/// The COPY-split type-facing seam (C++ `op->getIn(0)->getTypeReadFacing(op)`
-/// / `op->getOut()->getTypeDefFacing()`).  SEAM(arch/W6).
-fn split_copy_facing_seam(_data: &Funcdata, _op: OpId) -> KunaResult<()> {
-    Err(KunaError::lowlevel(
-        "kuna rust port: RuleSplitCopy needs getTypeReadFacing/getTypeDefFacing off the \
-         Funcdata arch seam — SEAM(arch/W6)",
-    ))
 }
 
 // =============================================================================
@@ -5915,6 +6739,142 @@ mod tests {
         let _outvn = wire_out(&mut fd, copyop, outvn);
         let mut rule = RuleSplitCopy::new("g");
         assert_eq!(rule.apply_op(copyop, &mut fd), 0);
+    }
+
+    // ---- SplitDatatype split build path (subflow.cc:2390-2954) -------------
+    // item: rport/w10-splitdatatype (round 1).  Verifier adversarial tests
+    // targeting the fragile transcriptions: the testCopyConstraints boolean
+    // ladder, the generateConstants extended-precision shift arithmetic, and the
+    // getValueDatatype TYPE_PTR guard.
+
+    /// `SplitDatatype::testCopyConstraints` (subflow.cc:2390): the C++ rejects
+    /// COPYs whose input is a function input, and the written-LOAD-lone-descend
+    /// form (handled by splitCopy itself).  Verifies both early-false arms and the
+    /// true fallthrough for a plain written non-LOAD input.
+    #[test]
+    fn w10_splitdt_test_copy_constraints_ladder() {
+        // (a) input Varnode -> false (inVn->isInput()).
+        let mut fd = build_fd();
+        let sd = SplitDatatype::new(3);
+        let src = mk_input(&mut fd, 0x40, 8);
+        let copyop = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_COPY);
+        let outvn = mk_reg(&mut fd, 0x80, 8);
+        wire_in(&mut fd, copyop, src, 0);
+        let _ = wire_out(&mut fd, copyop, outvn);
+        assert!(!sd.test_copy_constraints(&fd, copyop), "input must be rejected");
+
+        // (b) written non-input, non-LOAD def -> the LOAD-lone-descend arm is
+        // skipped and the method returns true (the splittable case).
+        let mut fd = build_fd();
+        let sd = SplitDatatype::new(3);
+        let predop = mk_op(&mut fd, 0x80, 1, OpCode::CPUI_INT_2COMP);
+        let inarg = mk_input(&mut fd, 0x40, 8);
+        wire_in(&mut fd, predop, inarg, 0);
+        let mid = mk_reg(&mut fd, 0x48, 8);
+        let mid = wire_out(&mut fd, predop, mid); // written, def is not a LOAD
+        let copyop = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_COPY);
+        let outvn = mk_reg(&mut fd, 0x88, 8);
+        wire_in(&mut fd, copyop, mid, 0);
+        let _ = wire_out(&mut fd, copyop, outvn);
+        assert!(sd.test_copy_constraints(&fd, copyop), "written non-LOAD input is splittable");
+
+        // (c) written LOAD def whose lone descendant is the COPY -> false
+        // (handled by splitCopy()).  Exercises inVn->getDef()->code()==LOAD and
+        // loneDescend()==copyOp.
+        let mut fd = build_fd();
+        let sd = SplitDatatype::new(3);
+        let spaceid = mk_const(&mut fd, 8, 0);
+        let ptr = mk_input(&mut fd, 0x40, 8);
+        let loadop = mk_op(&mut fd, 0x90, 2, OpCode::CPUI_LOAD);
+        wire_in(&mut fd, loadop, spaceid, 0);
+        wire_in(&mut fd, loadop, ptr, 1);
+        let loaded = mk_reg(&mut fd, 0x50, 8);
+        let loaded = wire_out(&mut fd, loadop, loaded);
+        let copyop = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_COPY);
+        let outvn = mk_reg(&mut fd, 0x88, 8);
+        wire_in(&mut fd, copyop, loaded, 0); // loaded's lone descend is copyOp
+        let _ = wire_out(&mut fd, copyop, outvn);
+        assert!(
+            !sd.test_copy_constraints(&fd, copyop),
+            "LOAD-into-lone-COPY must be deferred to splitCopy()"
+        );
+    }
+
+    /// `SplitDatatype::generateConstants` (subflow.cc:2413): a little-endian
+    /// `INT_ZEXT(c)` is split into the precomputed `dataTypePieces`.  Verifies the
+    /// exact shift arithmetic (`val = lo >> sa*8` with `sa = offset`) and the
+    /// `dt->getSize() > sizeof(uintb)` overflow bail that clears the accumulator.
+    #[test]
+    fn w10_splitdt_generate_constants_zext_and_oversize_bail() {
+        let mut fd = build_fd();
+        let mut sd = SplitDatatype::new(3);
+        // Build a little-endian ZEXT(0x11223344 : 4) -> 8.  loneDescend must be
+        // present (a sink op) and the value must be a constant input.
+        let cst = mk_const(&mut fd, 4, 0x1122_3344);
+        let zext = mk_op(&mut fd, 0x80, 1, OpCode::CPUI_INT_ZEXT);
+        wire_in(&mut fd, zext, cst, 0);
+        let zout = mk_reg(&mut fd, 0x50, 8);
+        let zout = wire_out(&mut fd, zext, zout);
+        // A single descendant so loneDescend() != null.
+        let sink = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_COPY);
+        wire_in(&mut fd, sink, zout, 0);
+        let sinkout = mk_reg(&mut fd, 0x88, 8);
+        let _ = wire_out(&mut fd, sink, sinkout);
+
+        // Two int2 pieces at offsets 0 and 2 (low half of the ZEXT value).
+        let int2 = Rc::new(Datatype::new(2, type_metatype::TYPE_INT));
+        sd.data_type_pieces.push(Component { in_type: Rc::clone(&int2), out_type: Rc::clone(&int2), offset: 0 });
+        sd.data_type_pieces.push(Component { in_type: Rc::clone(&int2), out_type: Rc::clone(&int2), offset: 2 });
+        let mut inv: Vec<VarnodeId> = Vec::new();
+        assert!(sd.generate_constants(&mut fd, zout, &mut inv).unwrap());
+        assert_eq!(inv.len(), 2);
+        // ram space is little-endian here: offset 0 -> low 16 bits (0x3344),
+        // offset 2 -> next 16 bits (0x1122).  losize=4, sa<losize so val=lo>>sa*8.
+        assert_eq!(fd.vbank().get(inv[0]).unwrap().get_offset(), 0x3344);
+        assert_eq!(fd.vbank().get(inv[1]).unwrap().get_offset(), 0x1122);
+
+        // Oversize bail: a piece larger than sizeof(uintb) clears inVarnodes and
+        // returns false (the C++ `dt->getSize() > sizeof(uintb)` guard).
+        let mut fd = build_fd();
+        let mut sd = SplitDatatype::new(3);
+        let cst = mk_const(&mut fd, 4, 0xdead_beef);
+        let zext = mk_op(&mut fd, 0x80, 1, OpCode::CPUI_INT_ZEXT);
+        wire_in(&mut fd, zext, cst, 0);
+        let zout = mk_reg(&mut fd, 0x50, 16);
+        let zout = wire_out(&mut fd, zext, zout);
+        let sink = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_COPY);
+        wire_in(&mut fd, sink, zout, 0);
+        let sinkout = mk_reg(&mut fd, 0x90, 16);
+        let _ = wire_out(&mut fd, sink, sinkout);
+        let big = Rc::new(Datatype::new(16, type_metatype::TYPE_INT)); // > sizeof(uintb)
+        sd.data_type_pieces.push(Component { in_type: Rc::clone(&big), out_type: Rc::clone(&big), offset: 0 });
+        let mut inv: Vec<VarnodeId> = Vec::new();
+        assert!(!sd.generate_constants(&mut fd, zout, &mut inv).unwrap());
+        assert!(inv.is_empty(), "oversize piece must clear the accumulator");
+    }
+
+    /// `SplitDatatype::getValueDatatype` (subflow.cc:2925): a non-pointer
+    /// read-facing type returns None (the TYPE_PTR guard), regardless of size.
+    /// This is the guard `RuleSplitLoad`/`RuleSplitStore` lean on to early-out.
+    #[test]
+    fn w10_splitdt_get_value_datatype_rejects_non_pointer() {
+        let mut fd = build_fd();
+        let spaceid = mk_const(&mut fd, 8, 0);
+        // ptr Varnode carries a plain int8 (NOT a pointer) read-facing type.
+        let ptr = mk_input(&mut fd, 0x40, 8);
+        fd.vbank_mut()
+            .get_mut(ptr)
+            .unwrap()
+            .update_type(Rc::new(Datatype::new(8, type_metatype::TYPE_INT)));
+        let load = mk_op(&mut fd, 0x100, 2, OpCode::CPUI_LOAD);
+        wire_in(&mut fd, load, spaceid, 0);
+        wire_in(&mut fd, load, ptr, 1);
+        let loadout = mk_reg(&mut fd, 0x80, 8);
+        let _ = wire_out(&mut fd, load, loadout);
+        assert!(
+            SplitDatatype::get_value_datatype(&fd, load, 8).is_none(),
+            "non-pointer read-facing type must yield None"
+        );
     }
 
     // ---- SubfloatFlow / RuleSubfloatConvert (subflow.cc:3085-3522) --------

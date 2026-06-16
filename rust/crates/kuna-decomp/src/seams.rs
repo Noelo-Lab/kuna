@@ -478,6 +478,12 @@ pub struct Architecture {
     /// `getDisplay() != 0` is equivalent to `!functional` for the volatile-read op.
     /// `false` (non-functional) by default, matching the unconfigured `glb`.
     pub volatile_display_functional: bool,
+    /// Data-type-splitting toggle bits (C++ `Architecture::split_datatype_config`,
+    /// `option_struct`/`option_array`/`option_pointer`), carried into the
+    /// per-function `glb` so [`SplitDatatype`](crate::subflow::SplitDatatype) and
+    /// the `RuleSplit{Copy,Load,Store}` rules reach `glb->split_datatype_config`.
+    /// Default `struct|array|pointer` (C++ `Architecture::resetDefaults`).
+    pub split_datatype_config: uint4,
     /// Read-only snapshot of the global symbol table (C++ `glb->symboltab`'s
     /// global scope + property map), the wire for `localmap->queryProperties`'s
     /// walk up to the global scope.  Built at `build_arch_handle` (after every
@@ -534,6 +540,10 @@ impl Architecture {
             // Default volatile ops are non-functional (`getDisplay() != 0`), so the
             // volatile-read op's output is held; matches the unconfigured glb.
             volatile_display_functional: false,
+            // C++ Architecture default: struct|array|pointer (resetDefaults).
+            split_datatype_config: crate::options::split_datatype::OPTION_STRUCT
+                | crate::options::split_datatype::OPTION_ARRAY
+                | crate::options::split_datatype::OPTION_POINTER,
             global_query: None,
         }
     }

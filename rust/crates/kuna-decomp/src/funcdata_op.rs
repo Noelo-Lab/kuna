@@ -1043,6 +1043,92 @@ impl Funcdata {
         Ok(replace)
     }
 
+    /// Return a unique-space Varnode defined by a COPY of `vn`, usable at `point`
+    /// (C++ `Funcdata::buildCopyTemp`, `funcdata_op.cc:1167`).
+    ///
+    /// If a usable COPY-to-unique already exists it may be reused (moved earlier
+    /// in control flow if needed); otherwise a fresh COPY is inserted before
+    /// `point`.  Used by `SplitDatatype::RootPointer::duplicateToTemp`.
+    pub fn build_copy_temp(&mut self, vn: VarnodeId, point: OpId) -> KunaResult<VarnodeId> {
+        use kuna_base::space::spacetype;
+        // Find a preexisting COPY of vn into the unique space (not type-locked).
+        let mut other_op: Option<OpId> = None;
+        let descend: Vec<OpId> =
+            self.vbank().get(vn).expect("build_copy_temp: stale vn").descend_iter().collect();
+        for op in descend {
+            if self.obank().get(op).expect("build_copy_temp: stale op").code() != OpCode::CPUI_COPY {
+                continue;
+            }
+            let outvn = match self.obank().get(op).expect("build_copy_temp").get_out() {
+                Some(o) => o,
+                None => continue,
+            };
+            if self.vbank().get(outvn).expect("build_copy_temp: stale out").get_space().get_type()
+                == spacetype::IPTR_INTERNAL
+            {
+                if self.vbank().get(outvn).expect("build_copy_temp").is_type_lock() {
+                    continue;
+                }
+                other_op = Some(op);
+                break;
+            }
+        }
+        let mut used_copy: Option<OpId> = None;
+        if let Some(oop) = other_op {
+            let point_par = self.obank().get(point).expect("build_copy_temp: stale point").get_parent();
+            let other_par = self.obank().get(oop).expect("build_copy_temp: stale other").get_parent();
+            if point_par == other_par {
+                let porder =
+                    self.obank().get(point).expect("build_copy_temp").get_seq_num().get_order();
+                let oorder = self.obank().get(oop).expect("build_copy_temp").get_seq_num().get_order();
+                used_copy = if porder < oorder { None } else { Some(oop) };
+            } else {
+                let pp = point_par.expect("build_copy_temp: point has no parent (C++ UB)");
+                let op_par = other_par.expect("build_copy_temp: other has no parent (C++ UB)");
+                let common = self.bblocks_mut().find_common_block(pp, op_par);
+                if common == Some(pp) {
+                    used_copy = None;
+                } else if common == Some(op_par) {
+                    used_copy = Some(oop);
+                } else {
+                    // Neither op is ancestor of the other -- build a fresh COPY at common's stop.
+                    let common = common.expect("build_copy_temp: no common block (C++ UB)");
+                    let stop = crate::block::block_get_stop(&self.bblocks_ref().arena, common);
+                    let vnsize = self.vbank().get(vn).expect("build_copy_temp: stale vn").get_size();
+                    let uc = self.new_op(1, stop);
+                    self.op_set_opcode(uc, Self::w6_type_op(OpCode::CPUI_COPY));
+                    self.new_unique_out(vnsize, uc)?;
+                    self.op_set_input(uc, vn, 0)?;
+                    self.op_insert_end(uc, common);
+                    used_copy = Some(uc);
+                }
+            }
+        }
+        let used_copy = match used_copy {
+            Some(uc) => uc,
+            None => {
+                let point_addr =
+                    self.obank().get(point).expect("build_copy_temp: stale point").get_addr().clone();
+                let vnsize = self.vbank().get(vn).expect("build_copy_temp: stale vn").get_size();
+                let uc = self.new_op(1, point_addr);
+                self.op_set_opcode(uc, Self::w6_type_op(OpCode::CPUI_COPY));
+                self.new_unique_out(vnsize, uc)?;
+                self.op_set_input(uc, vn, 0)?;
+                self.op_insert_before(uc, point);
+                uc
+            }
+        };
+        if let Some(oop) = other_op {
+            if oop != used_copy {
+                let from = self.obank().get(oop).expect("build_copy_temp").get_out().expect("other out");
+                let to = self.obank().get(used_copy).expect("build_copy_temp").get_out().expect("used out");
+                self.total_replace(from, to)?;
+                self.op_destroy(oop);
+            }
+        }
+        Ok(self.obank().get(used_copy).expect("build_copy_temp").get_out().expect("used out"))
+    }
+
     /// Find an existing op in block `bl` that is functionally equal to `op`,
     /// reading the given Varnode `vn`, occurring no later than `earliest`
     /// (C++ `Funcdata::cseFindInBlock`, `funcdata_op.cc:1421`).
