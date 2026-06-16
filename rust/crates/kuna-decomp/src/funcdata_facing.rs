@@ -64,7 +64,12 @@ impl Funcdata {
         match &ct.kind {
             // TypePointer::findResolve (type.cc:1335-1345): only a pointer *to a
             // union* consults the cache; any other pointer returns itself.
-            DatatypeKind::Pointer { ptrto, .. } => {
+            //
+            // `TypePointerRel : public TypePointer` (type.hh:724) and does NOT
+            // override `findResolve`, so a relative-pointer-to-union dispatches the
+            // inherited `TypePointer::findResolve` — the same cache consult, keyed on
+            // the (stripped-pointer) ptrto id.  Match both kinds here.
+            DatatypeKind::Pointer { ptrto, .. } | DatatypeKind::PointerRel { ptrto, .. } => {
                 if ptrto.get_metatype() == type_metatype::TYPE_UNION {
                     if let Some(res) = self.get_union_field(ct, op, slot) {
                         return Rc::clone(res.get_datatype());
