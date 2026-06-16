@@ -907,3 +907,70 @@ impl SleighBase {
         &self.registry
     }
 }
+
+// ---------------------------------------------------------------------------
+// SnippetLanguage (pcodeparse.cc:3215 PcodeSnippet::lex + the SleighBase
+// surface PcodeSnippet pulls — getDefaultCodeSpace/getConstantSpace/
+// getUniqueSpace/numSpaces/getSpace).  Lets `parse_inject` compile a
+// `<callotherfixup>`/`<callfixup>` body against the real loaded language.
+// ---------------------------------------------------------------------------
+
+impl crate::pcodeparse::SnippetLanguage for SleighBase {
+    /// C++ `sleigh->findSymbol(name)`, classified by `PcodeSnippet::lex`'s
+    /// `switch(sym->getType())`.  Returns `None` for an unknown name (the lexer
+    /// then falls through to STRING) and for symbol kinds the snippet compiler
+    /// deliberately keeps invisible (the C++ `dummy_symbol`/`default` arms).
+    fn find_snippet_symbol(&self, name: &[u8]) -> Option<crate::pcodeparse::SnippetSymbol> {
+        use crate::pcodeparse::SnippetSymbol;
+        let sym = self.find_symbol(name)?;
+        match sym.kind() {
+            // case space_symbol: yylval.spacesym; return SPACESYM
+            SymbolKind::Space(s) => Some(SnippetSymbol::Space(Rc::clone(s.get_space()))),
+            // case userop_symbol: yylval.useropsym; return USEROPSYM
+            SymbolKind::UserOp(u) => Some(SnippetSymbol::UserOp(u.clone())),
+            // case varnode_symbol: yylval.varsym; return VARSYM
+            SymbolKind::Varnode(v) => Some(SnippetSymbol::Varnode(v.clone(), name.to_vec())),
+            // case operand_symbol: yylval.operandsym; return OPERANDSYM
+            SymbolKind::Operand(o) => Some(SnippetSymbol::Operand(o.get_index(), name.to_vec())),
+            // case start/end/next2/flowdest/flowref: return JUMPSYM
+            SymbolKind::Start(_) => Some(SnippetSymbol::Start(name.to_vec())),
+            SymbolKind::End(_) => Some(SnippetSymbol::End(name.to_vec())),
+            SymbolKind::Next2(_) => Some(SnippetSymbol::Next2(name.to_vec())),
+            SymbolKind::FlowDest(_) => Some(SnippetSymbol::FlowDest(name.to_vec())),
+            SymbolKind::FlowRef(_) => Some(SnippetSymbol::FlowRef(name.to_vec())),
+            // The translator may have other symbols (value/context/subtable/…)
+            // that the snippet compiler does not want visible: the C++ `default`
+            // arm falls through to STRING (no special symbol).
+            _ => None,
+        }
+    }
+
+    /// C++ `sleigh->getDefaultCodeSpace()`.
+    fn get_default_code_space(&self) -> Rc<AddrSpace> {
+        Rc::clone(
+            self.manager()
+                .get_default_code_space()
+                .expect("SnippetLanguage: no default code space"),
+        )
+    }
+
+    /// C++ `sleigh->getConstantSpace()`.
+    fn get_constant_space(&self) -> Rc<AddrSpace> {
+        Rc::clone(self.manager().get_constant_space().expect("SnippetLanguage: no constant space"))
+    }
+
+    /// C++ `sleigh->getUniqueSpace()`.
+    fn get_unique_space(&self) -> Rc<AddrSpace> {
+        Rc::clone(self.manager().get_unique_space().expect("SnippetLanguage: no unique space"))
+    }
+
+    /// C++ `sleigh->numSpaces()`.
+    fn num_spaces(&self) -> i32 {
+        self.manager().num_spaces()
+    }
+
+    /// C++ `sleigh->getSpace(i)`.
+    fn get_space(&self, i: i32) -> Option<Rc<AddrSpace>> {
+        self.manager().get_space(i).cloned()
+    }
+}

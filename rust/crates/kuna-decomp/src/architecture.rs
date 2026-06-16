@@ -47,7 +47,7 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::space::AddrSpaceManager;
+use kuna_base::space::{AddrSpace, AddrSpaceManager};
 use kuna_base::types::{int4, uint4, uintb};
 
 use kuna_sleigh::sleigh::Sleigh;
@@ -982,6 +982,78 @@ impl Architecture {
         Ok(())
     }
 
+    /// Initialize the user-op table and decode the cspec `<callotherfixup>`
+    /// elements, then compile every registered injection body (C++
+    /// `restoreFromSpec`: `userops.initialize(this)` at architecture.cc:641, plus
+    /// the `<callotherfixup>` dispatch in `parseCompilerConfig` →
+    /// `userops.decodeCallOtherFixup(decoder,this)` at architecture.cc:1294).
+    ///
+    /// `userops.initialize` assigns every translator-presented user-op a default
+    /// `UnspecializedPcodeOp` description (so e.g. MIPS `setISAMode` has an index
+    /// and name); each `<callotherfixup>` then *overrides* that base entry with an
+    /// `InjectedUserOp` carrying the compiled fixup p-code.  The compile
+    /// (`parseInject`) runs last, once the whole inject library is registered, so
+    /// the per-payload temporary-register base advances exactly as the C++.
+    ///
+    /// The `&mut self` borrow needed as `UseropArchitecture` aliases
+    /// `self.userops`, so the manager is moved out with `mem::take`, driven
+    /// against the rest of `self` (which still owns `pcodeinjectlib`), then
+    /// restored — the established split-borrow convention.
+    fn init_userops_and_fixups(&mut self) -> KunaResult<()> {
+        use kuna_base::marshal::{IdRegistry, XmlDecode};
+        use kuna_base::xml::DocumentStorage;
+
+        // 1. userops.initialize(this): default UnspecializedPcodeOp per translator
+        //    user-op name.
+        let mut userops = std::mem::take(&mut self.userops);
+        let init_res = userops.initialize(self);
+        if let Err(e) = init_res {
+            self.userops = userops;
+            return Err(e);
+        }
+
+        // 2. parseCompilerConfig: dispatch each cspec `<callotherfixup>` child to
+        //    userops.decodeCallOtherFixup(decoder,this).
+        let fixup_res = (|| -> KunaResult<()> {
+            let Some(xml) = self.cspec_xml.clone() else {
+                return Ok(());
+            };
+            let mut store = DocumentStorage::new();
+            let root = store.parse_document(&xml)?.get_root().clone();
+            let fixups: Vec<Rc<kuna_base::xml::Element>> = root
+                .get_children()
+                .iter()
+                .filter(|c| c.get_name() == "callotherfixup")
+                .cloned()
+                .collect();
+            if fixups.is_empty() {
+                return Ok(());
+            }
+            let manager = self.translate.base().manager_rc();
+            let mut registry = IdRegistry::with_base_ids();
+            crate::pcodeinject::register_ids(&mut registry);
+            crate::userop::register_ids(&mut registry);
+            for fixup in fixups.iter() {
+                let mut decoder = XmlDecode::new_with_root(&manager, &registry, fixup, 0);
+                userops.decode_call_other_fixup(&mut decoder, self)?;
+            }
+            Ok(())
+        })();
+        self.userops = userops;
+        fixup_res?;
+
+        // 3. parseInject: compile every registered injection body (callfixup +
+        //    callotherfixup) into a ConstructTpl against the loaded language.
+        //    Move the inject library out so the &Sleigh (SnippetLanguageProvider)
+        //    borrow of self.translate does not alias the &mut library.
+        let mut lib = std::mem::take(&mut self.pcodeinjectlib);
+        // The SnippetLanguage is the loaded `SleighBase`; drive parse_inject over
+        // it (the &SleighBase read does not alias the &mut library).
+        let parse_res = lib.parse_inject_all(self.translate.base());
+        self.pcodeinjectlib = lib;
+        parse_res
+    }
+
     // -----------------------------------------------------------------------
     // Owned-subsystem accessors (the `glb->types`/`glb->print`/… surface the
     // ifacedecomp porter confirmed were absent — w9x-arch-engine-glue)
@@ -1763,6 +1835,13 @@ impl Architecture {
         // elements register their injections into pcodeinjectlib.  Run this BEFORE
         // build_default_proto, which `take()`s the cspec XML.
         self.decode_call_fixups()?;
+        // C++ restoreFromSpec: userops.initialize(this) (architecture.cc:641) +
+        // the `<callotherfixup>` dispatch inside parseCompilerConfig
+        // (architecture.cc:1294).  Run after the call-fixups are registered so
+        // the whole inject library (callfixup + callotherfixup) is compiled
+        // together by parseInject — the MIPS `setISAMode` fixup that makes the
+        // dead ISA-mode-switch CALLOTHER injectable.
+        self.init_userops_and_fixups()?;
         self.build_default_proto();
         // Share `defaultfp` + the engine address-space manager into the type
         // factory so the C-declaration grammar's nested function-pointer
@@ -2028,6 +2107,62 @@ impl ArchOptionContext for Architecture {
     fn allow_context_set(&mut self, val: bool) {
         // C++ `glb->translate->allowContextSet(val)`.
         self.translate.allow_context_set(val);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// InjectArchitecture / UseropArchitecture (the `Architecture *glb` slice the
+// userop decode + inject-library decode reach — userop.cc:86-99 / 368-637).
+// Wires `userops.initialize` + `<callotherfixup>` decode at boot.
+// ---------------------------------------------------------------------------
+
+impl crate::pcodeinject::InjectArchitecture for Architecture {
+    fn get_default_code_space(&self) -> Rc<AddrSpace> {
+        // C++ `glb->getDefaultCodeSpace()`.
+        Rc::clone(self.manage().get_default_code_space().expect("no default code space"))
+    }
+    fn get_unique_space(&self) -> Rc<AddrSpace> {
+        // C++ `glb->getUniqueSpace()`.
+        Rc::clone(self.manage().get_unique_space().expect("no unique space"))
+    }
+}
+
+impl crate::userop::UseropArchitecture for Architecture {
+    fn get_user_op_names(&self) -> Vec<Vec<u8>> {
+        // C++ `glb->translate->getUserOpNames(res)`.  The Sleigh translate hands
+        // back display strings; convert to the byte-string form the manager keys.
+        let mut res: Vec<String> = Vec::new();
+        kuna_sleigh::translate::Translate::get_user_op_names(&self.translate, &mut res);
+        res.into_iter().map(String::into_bytes).collect()
+    }
+
+    fn decode_inject(
+        &mut self,
+        src: &[u8],
+        suffix: &[u8],
+        tp: int4,
+        decoder: &mut dyn kuna_base::marshal::Decoder,
+    ) -> KunaResult<int4> {
+        // C++ `glb->pcodeinjectlib->decodeInject(src,suffix,tp,decoder)`.
+        self.pcodeinjectlib.decode_inject(src, suffix, tp, decoder)
+    }
+
+    fn get_call_other_target(&self, injectid: int4) -> Vec<u8> {
+        // C++ `glb->pcodeinjectlib->getCallOtherTarget(injectid)`.
+        self.pcodeinjectlib.base.get_call_other_target(injectid)
+    }
+
+    fn payload_io_sizes(&self, injectid: int4) -> KunaResult<(int4, int4, int4, int4)> {
+        // C++ `SegmentOp::decode` reads payload->sizeOutput/sizeInput plus the
+        // first two input sizes after the `<pcode>` child is parsed.
+        let core = self.pcodeinjectlib.get_payload(injectid).core();
+        let size_output = core.size_output();
+        let size_input = core.size_input();
+        // get_size() is a uint4 (the InjectParameter size); narrow to int4 the
+        // same way the C++ reads `getInput(k).getSize()` into an int4.
+        let in0 = if size_input > 0 { core.get_input(0).get_size() as int4 } else { 0 };
+        let in1 = if size_input > 1 { core.get_input(1).get_size() as int4 } else { 0 };
+        Ok((size_output, size_input, in0, in1))
     }
 }
 
