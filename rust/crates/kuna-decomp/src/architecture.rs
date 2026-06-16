@@ -742,6 +742,10 @@ impl Architecture {
         // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
         // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.
         seam.condexe_block_placement = self.condexe_block_placement;
+        // (kuna) carry the whiledo->for reroll gate (C++ `glb->analyze_for_loops`)
+        // so `ActionStructureTransform` reaches it for
+        // `Funcdata::finalize_forloop_transform`.
+        seam.analyze_for_loops = self.analyze_for_loops;
         // Share the populated data-type factory so `ActionInferTypes` (run via
         // `glb`) reaches the same interned core types this side cached.
         seam.types = Some(self.types_rc());
