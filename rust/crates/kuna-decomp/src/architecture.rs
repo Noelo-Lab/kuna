@@ -940,6 +940,84 @@ impl Architecture {
         )
     }
 
+    /// Decode the cspec `<global>` element and seed the global scope's owned
+    /// range tree (C++ `Architecture::decodeGlobal` + `addToGlobalScope`,
+    /// `architecture.cc:816-848`, dispatched from `parseCompilerConfig`'s
+    /// `ELEM_GLOBAL` arm at `architecture.cc:1276-1277` and the deferred
+    /// `globalRanges` apply loop at `architecture.cc:1336-1337`).
+    ///
+    /// Each child `<range>`/`<register>` decodes to a [`RangeProperties`]; an
+    /// empty `<range space="ram"/>` (no `first`/`last`) widens to the whole space
+    /// (`Range::from_properties` sets `last = spc->getHighest()` when `seenLast`
+    /// is false).  The resulting `Range` is added to the global scope's rangetree
+    /// via `symboltab->addRange(globalScope, spc, first, last)`.
+    ///
+    /// This is THE seam the revisit / global-persist path depends on: with the
+    /// global scope owning the `ram` range, `Scope::queryProperties`'s `inScope`
+    /// discovery branch (database.cc:1276-1281) returns
+    /// `mapped | addrtied | persist` for any RAM Varnode with no covering Symbol,
+    /// so global RAM stores survive `ActionDeadCode` and hold their call
+    /// `INDIRECT`s.
+    ///
+    /// LOSS: the C++ overlay-space duplication (`addToGlobalScope`,
+    /// architecture.cc:838-846) and the `inferPtrSpaces` push (architecture.cc:836,
+    /// a pointer-inference seam) are not transcribed — no datatest exercises an
+    /// overlay base space here, and `inferPtrSpaces` feeds only `TypeFactory`
+    /// pointer inference (a separate seam).  General over any processor's cspec:
+    /// the space names are read from the XML and resolved through the engine, with
+    /// NO processor-name special-casing.
+    fn decode_global(&mut self) -> KunaResult<()> {
+        use kuna_base::address::{Range, RangeProperties};
+        use kuna_base::marshal::{IdRegistry, XmlDecode};
+        use kuna_base::xml::DocumentStorage;
+
+        let Some(xml) = self.cspec_xml.clone() else {
+            return Ok(()); // no cspec recorded: nothing to seed
+        };
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(&xml)?.get_root().clone();
+        // The resolved .cspec root IS <compiler_spec>; <global> is a direct child.
+        let Some(global_el) = find_child(&root, "global") else {
+            // No <global> in this cspec: the global scope owns no ranges (C++
+            // never reaches addToGlobalScope for such a spec).
+            return Ok(());
+        };
+
+        // C++ `Architecture::decodeGlobal`: openElement(GLOBAL); while
+        // peekElement() != 0 { rangeProps.emplace_back(); rangeProps.back().decode(decoder); }
+        // We decode the children directly (the kuna-base `RangeProperties::decode`
+        // is a `Decoder` consumer, identical to C++).  Each `<range>`/`<register>`
+        // becomes a `RangeProperties`, then `addToGlobalScope`'s `Range(props,this)`
+        // + `symboltab->addRange`.
+        let manager = self.translate.base().manager_rc();
+        let registry = IdRegistry::with_base_ids();
+        let scope = match self.symboltab.get_global_scope() {
+            Some(s) => s,
+            None => return Ok(()), // no global scope attached (degrade gracefully)
+        };
+        for child in global_el.get_children().iter() {
+            // Only <range>/<register> children carry storage (C++ peekElement loop
+            // over RangeProperties::decode, which only accepts those two elements).
+            let nm = child.get_name();
+            if nm != "range" && nm != "register" {
+                continue;
+            }
+            let mut decoder = XmlDecode::new_with_root(&manager, &registry, child, 0);
+            // `RangeProperties::decode` itself opens the element and rejects
+            // anything but <range>/<register> (we already filtered by name above,
+            // so the open always succeeds).
+            let mut props = RangeProperties::new();
+            props.decode(&mut decoder)?;
+            // C++ `addToGlobalScope(props)`: Range(props,this) resolves the space
+            // and (for the empty form) widens `last` to spc->getHighest(); then
+            // symboltab->addRange(globalScope, spc, range.getFirst(), range.getLast()).
+            let range = Range::from_properties(&props, self.manage())?;
+            let spc = Rc::clone(range.get_space());
+            self.symboltab.add_range(scope, spc, range.get_first(), range.get_last());
+        }
+        Ok(())
+    }
+
     /// Decode the cspec `<callfixup>` elements into the p-code injection library
     /// (C++ `parseCompilerConfig` -> `ELEM_CALLFIXUP` ->
     /// `pcodeinjectlib->decodeInject(archid+" : compiler spec","",CALLFIXUP_TYPE,decoder)`,
@@ -1849,6 +1927,16 @@ impl Architecture {
         // together by parseInject — the MIPS `setISAMode` fixup that makes the
         // dead ISA-mode-switch CALLOTHER injectable.
         self.init_userops_and_fixups()?;
+        // C++ `parseCompilerConfig` dispatches the cspec `<global>` element
+        // (ELEM_GLOBAL, architecture.cc:1276-1277) into a deferred `globalRanges`
+        // vector, then applies it via `addToGlobalScope` (architecture.cc:1336-1337)
+        // AFTER `<stackpointer>`/`<spacebase>` are parsed (so all spaces exist).
+        // Seed the global scope's rangetree here, after `decode_stack_pointer`
+        // created the stack `SpacebaseSpace`, so an empty `<range space="ram"/>`
+        // widens to the whole ram space and global RAM Varnodes pick up
+        // `mapped|addrtied|persist`.  Must run before `adjust_caches` (which only
+        // resizes per-scope maptables, not the rangetree) — ordering matches C++.
+        self.decode_global()?;
         self.build_default_proto();
         // Share `defaultfp` + the engine address-space manager into the type
         // factory so the C-declaration grammar's nested function-pointer
