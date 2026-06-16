@@ -54,6 +54,36 @@ simplification in the jumptable group), port it, prove `KUNA_DUMP print raw` kee
 
 **Revised minimal landing = [jumptable INT_ADD consumer] + L0 + L1**, atomic.
 
+## CORRECTION-2 (deep empirical re-diagnosis 2026-06-16, supersedes CORRECTION)
+
+The "missing jumptable INT_ADD consumer" hypothesis is ALSO wrong. The consumer is
+**`RuleAddMultCollapse`** (`ruleaction_3.rs:2082`, + `RuleCollectTerms` `ruleaction_1.rs:152`),
+in the `analysis` group which IS in the `"jumptable"` group (`action.rs:1589-1595`, byte-identical
+to C++) — **already ported and correct**. ExtraPopSetup's per-call `INT_ADD(RSP,8)` is the
+algebraic inverse of the SLEIGH CALL's retaddr push `RSP−8`; `RuleAddMultCollapse` folds
+`(RSP:2−8)+8 → RSP:2`. Proven from the committed goldens `tests/golden/snapshots/cpp/switchind/
+000-B3.txt`/`000-B4.txt` (C++ B4: `switch s0xfffffffffffffff4:4`, slot −0xc).
+
+**switchind is currently 13/16, NOT 16/16.** With ExtraPopSetup STUBBED (no `+8`), the index
+LOAD resolves to `0xc + (RSP:2−8) = RSP_in − 0x14` → a spurious `uint4 v1; // stack − 0x14`;
+the jump table still recovers structurally (13 assertions) but #15 (`get_value_byref(&val)`) and
+#16 (`switch(val)`) FAIL. (The `w10-extrapop-jumptable.md` review mis-stated #15/#16 as passing.)
+So landing L0 **correctly** FLIPS #15/#16 green (slot −0x14 → −0xc) → switchind 16/16 (+2/+3),
+it does NOT "regress switchind."
+
+**The Wave-A failure** (`switch #0x100058`) = the `+8`/`−8` fold did NOT fire in the clone: an
+**L0 op-insertion / heritage-ordering** problem (the `+8` op, `opInsertAfter(op, fc->getOp())`,
+must heritage onto the post-call RSP SSA value so `RuleAddMultCollapse` sees `(RSP−8)+8`), NOT a
+missing pass. **L1 (`setEffectiveExtraPop`) is irrelevant to switchind** (analyze_extra_pop
+early-returns on known defaultfp extrapop; it only covers `extrapop_unknown` INDIRECT calls) —
+keep it faithful-but-inert, drop it from the critical path.
+
+**Corrected gate** (NOT byte-identity — L0 legitimately changes the rendered C by fixing slots):
+switchind 13→16 (the 13 hold AND #15/#16 flip green; B4 shows `switch s0x..f4:4` not
+`switch #0x100058` not −0x14); all other switch datatests + the 333 suite MONOTONIC (none
+regress, may improve). **Wave A′ = L0 (WIP patch) + diagnose/repair the L0 op-insertion ordering
+so the existing fold fires.** Smaller + better-understood than the plan assumed.
+
 ## Sequenced waves
 
 - **Wave A = L0+L1** (atomic). Owns `coreaction_protos.rs` (ActionExtraPopSetup only) + `coreaction_stackptr.rs` (the `set_effective_extra_pop` wire). Expected +0 substrate; UNBLOCKS B/C/D. **HARD GATE: switchind byte-identical** (the 13 Switch-Indirect assertions #1-7,#9-14) + `verify_w10_jts_chain` + `verify_w10_extrapop_jumptable_noregress` green. *[LAUNCHED 2026-06-16 as wxfjsp3lu.]*
