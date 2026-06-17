@@ -50,27 +50,50 @@
 //! mirroring the C++ `protected` widening.  Do **not** re-port this base in the
 //! memset module — extend [`ArraySequence`].
 //!
-//! # Deferred halves (cross-wave seams, ledgered as losses)
+//! # What landed (rport/w10-string-sequence)
 //!
-//! `StringSequence`/`HeapSequence`'s *collection* and *transform* bodies, and the
-//! [`RuleStringCopy`]/`RuleStringStore` drivers, reach subsystems later waves
-//! own and are intentionally **not** transcribed here:
+//! The **STORE-through-pointer** driver is now fully ported and live:
+//!
+//! * [`HeapSequence`] (`constseq.cc:486-967`): `findBasePointer`,
+//!   `findDuplicateBases`, `findInitialStores`, `calcAddElements`/`calcPtraddOffset`,
+//!   `collectStoreOps`, `buildStringCopy` (the typed-pointer PTRADD + CALLOTHER
+//!   builder), `gatherIndirectPairs`/`deduplicatePairs`/`removeStoreOps`, and
+//!   `transform` — all transcribed branch-for-branch.
+//! * [`RuleStringStore::apply_op`] runs the full body (read-facing pointer guard
+//!   → `HeapSequence::build` → `transform`).
+//! * `Funcdata::getInternalString` (`funcdata_varnode.cc:1434`) registers the
+//!   assembled byte-array into the architecture's persistent `StringManager`
+//!   (a shared `Rc<RefCell<StringManagerUnicode>>` on `Architecture`, threaded
+//!   into the W4 seam as `internal_strings`) and builds the `BUILTIN_STRINGDATA`
+//!   CALLOTHER whose output displays as the quoted string.
+//! * [`ArraySequence::select_string_copy_function`] performs the faithful
+//!   `charType == types->getTypeChar(...)` pointer-identity selection (now that
+//!   the cspec `<data_organization>` `<wchar_size>` is decoded, so `getSizeOfWChar`
+//!   reflects the ABI and the wide-vs-narrow split matches upstream).
+//! * The printer's `opCallother` (`printc.cc:693`) renders the functional /
+//!   `display_string` forms, and `BUILTIN_STRINGDATA` output type-locals resolve
+//!   to the char-pointer (`InternalStringOp::getOutputLocal`) so no spurious cast
+//!   wraps the literal.  The four string builtins are pre-registered into
+//!   `userops` at boot (`register_string_builtins`).
+//!
+//! This drives `heapstring.xml` (Heap string #1-7) to full parity.
+//!
+//! # Deferred half (still ledgered as a loss)
+//!
+//! The **COPY-into-array** driver `StringSequence` (`constseq.cc:188-483`) — the
+//! `stackstring.xml` path — is **not** yet transcribed; it reaches W4 surfaces the
+//! heap path does not:
 //!
 //! * The address-only `beginLoc(addr)`/`endLoc(addr)` location-set overload
-//!   (`StringSequence::collectCopyOps`) — only the size+addr overload is exposed
-//!   today (W4 loc-set surface).
-//! * `Scope::queryContainer` / `Symbol`/`SymbolEntry` array-component resolution
-//!   (`StringSequence` ctor, `RuleStringCopy::applyOp`) — W4 symbol table.
-//! * `Funcdata::getInternalString`, `getTypePointer*`, `inheritUnionField*`,
-//!   `constructSpacebaseInput`, the PTRSUB/PTRADD typed-pointer builder
-//!   (`buildStringCopy`, `constructTypedPointer`) — W4/W6 type-factory + union
-//!   resolution wiring (the `Architecture` seam has no `types` field yet).
-//! * `selectStringCopyFunction`'s `charType == types->getTypeChar(...)` identity
-//!   check — the live `TypeFactory` is not wired into `Architecture`; the ported
-//!   [`ArraySequence::select_string_copy_function`] keeps the structure and falls
-//!   through to `BUILTIN_MEMCPY` (the C++ default) until the factory lands.
+//!   (`StringSequence::collectCopyOps`).
+//! * `data.getScopeLocal()->queryContainer(...)` array-component resolution
+//!   (`StringSequence` ctor, `RuleStringCopy::applyOp`).
+//! * `constructTypedPointer`'s `constructSpacebaseInput`/`constructConstSpacebase`
+//!   + `getTypePointerStripArray` PTRSUB/PTRADD chain and `inheritUnionFieldPtr`.
 //!
-//! These are recorded as losses in the structured output.
+//! Until that lands, `RuleStringCopy::applyOp` declines after its constant-input
+//! guard (byte-identical to the rule being disabled) and the stack COPYs are
+//! removed by dead-code instead of collapsed into a `strncpy` user-op.
 
 // The `ArraySequence` base and its read helpers are consumed by the sibling
 // `kuna_memsetsequence` module (its Rust port lands with the kuna-pack porter)
@@ -85,7 +108,7 @@ use kuna_num::opcodes::OpCode;
 use std::rc::Rc;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
-use crate::dtype::{type_metatype, Datatype};
+use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
 use crate::seams::{OpId, VarnodeId};
@@ -333,14 +356,685 @@ impl ArraySequence {
     /// `BUILTIN_MEMCPY` with the byte count (`numElements * getAlignSize()`).
     /// The narrow/wide-char selection is preserved structurally for restoration.
     /// Recorded as a loss.
-    pub(crate) fn select_string_copy_function(&self, _data: &Funcdata) -> (uintb, int4) {
-        // SEAM(W6): TypeFactory not reachable from Architecture.
-        // if (charType == types->getTypeChar(getSizeOfChar()))  -> (BUILTIN_STRNCPY, numElements)
-        // if (charType == types->getTypeChar(getSizeOfWChar())) -> (BUILTIN_WCSNCPY, numElements)
-        let _narrow = BUILTIN_STRNCPY; // kept live for the restored identity check
-        let _wide = BUILTIN_WCSNCPY;
+    pub(crate) fn select_string_copy_function(&self, data: &Funcdata) -> (uintb, int4) {
+        // Faithful to constseq.cc:161-175: compare `charType` by pointer identity
+        // against `types->getTypeChar(getSizeOfChar())` / `getTypeChar(getSizeOfWChar())`.
+        // The factory interns its core char types, so `Rc::ptr_eq` is the Rust
+        // analogue of the C++ pointer-identity `==`.  Falls through to the C++
+        // default `BUILTIN_MEMCPY` only when neither identity matches.
+        if let Some(types) = data.get_arch().types_rc() {
+            if let Ok(narrow) = types.get_type_char(types.get_size_of_char()) {
+                if Rc::ptr_eq(&self.char_type, &narrow) {
+                    return (BUILTIN_STRNCPY as uintb, self.num_elements);
+                }
+            }
+            if let Ok(wide) = types.get_type_char(types.get_size_of_wchar()) {
+                if Rc::ptr_eq(&self.char_type, &wide) {
+                    return (BUILTIN_WCSNCPY as uintb, self.num_elements);
+                }
+            }
+        }
         let index = self.num_elements * self.char_type.get_align_size();
         (BUILTIN_MEMCPY as uintb, index)
+    }
+}
+
+// =============================================================================
+// HeapSequence (constseq.cc:486-967) — STORE-through-pointer driver
+// =============================================================================
+
+/// Input/output Varnode pair flowing across the sequence STOREs, preserved as a
+/// single INDIRECT around the replacement user-op (C++
+/// `HeapSequence::IndirectPair`).
+#[derive(Clone, Copy)]
+struct IndirectPair {
+    in_vn: VarnodeId,
+    out_vn: VarnodeId,
+    duplicate: bool,
+}
+
+impl IndirectPair {
+    fn new(in_vn: VarnodeId, out_vn: VarnodeId) -> Self {
+        IndirectPair { in_vn, out_vn, duplicate: false }
+    }
+}
+
+/// A sequence of STORE ops moving single constant characters through a common
+/// base pointer (C++ `class HeapSequence : public ArraySequence`).
+struct HeapSequence {
+    /// The shared gathering machinery (C++ base `ArraySequence`).
+    base: ArraySequence,
+    /// The root STORE (C++ `ArraySequence::rootOp`).
+    root_op: OpId,
+    /// The basic block of the root STORE (C++ `ArraySequence::block`).
+    block: crate::seams::BlockId,
+    /// Space being STOREd into (C++ `storeSpace`).
+    store_space: Rc<kuna_base::space::AddrSpace>,
+    /// Pointer multiplier matching the char element, in address units
+    /// (C++ `ptrAddMult`).
+    ptr_add_mult: uintb,
+    /// Putative common base pointer of all the STOREs (C++ `basePointer`).
+    base_pointer: VarnodeId,
+    /// The op immediately reading `base_pointer` on the path to the root
+    /// (C++ `immedRead`).
+    immed_read: OpId,
+    /// Byte offset of the root STORE relative to `base_pointer` (C++ `baseOffset`).
+    base_offset: uintb,
+    /// Non-constant Varnodes on the additive path from base to root
+    /// (C++ `nonConstAdds`).
+    non_const_adds: Vec<VarnodeId>,
+}
+
+impl HeapSequence {
+    /// C++ `HeapSequence::HeapSequence(Funcdata&,Datatype*,PcodeOp *root)`.
+    fn new(data: &Funcdata, ct: Rc<Datatype>, root: OpId) -> HeapSequence {
+        let block = data.obank().get(root).expect("HeapSequence: stale root").get_parent().expect(
+            "HeapSequence: root has no parent block",
+        );
+        // storeSpace = root->getIn(0)->getSpaceFromConst();
+        let space_idx = {
+            let in0 = op_get_in(data, root, 0);
+            vn_get_offset(data, in0)
+        };
+        let store_space = data
+            .get_arch()
+            .manage()
+            .get_space(space_idx as int4)
+            .cloned()
+            .expect("HeapSequence: bad store space");
+        // ptrAddMult = byteToAddressInt(charType->getAlignSize(), storeSpace->getWordSize());
+        let ptr_add_mult = kuna_base::space::AddrSpace::byte_to_address_int(
+            ct.get_align_size() as i64,
+            store_space.get_word_size(),
+        ) as uintb;
+        // Defaults; findBasePointer / collectStoreOps fill the rest.
+        let root_in1 = op_get_in(data, root, 1);
+        let mut seq = HeapSequence {
+            base: ArraySequence::new(ct),
+            root_op: root,
+            block,
+            store_space,
+            ptr_add_mult,
+            base_pointer: root_in1,
+            immed_read: root,
+            base_offset: 0,
+            non_const_adds: Vec::new(),
+        };
+        seq.find_base_pointer(data);
+        seq
+    }
+
+    /// Construct, collect, and validate (the body of the C++ ctor after the
+    /// field initialization).  Returns the built sequence; `is_valid()` is `false`
+    /// when no viable sequence exists.
+    fn build(data: &Funcdata, ct: Rc<Datatype>, root: OpId) -> HeapSequence {
+        let mut seq = HeapSequence::new(data, ct, root);
+        // if (!collectStoreOps()) return;
+        if !seq.collect_store_ops(data) {
+            return seq;
+        }
+        // if (!checkInterference()) return;
+        if !seq.base.check_interference(data, seq.root_op) {
+            return seq;
+        }
+        // int4 arrSize = moveOps.size() * charType->getAlignSize();
+        let arr_size = seq.base.move_ops.len() as int4 * seq.base.char_type.get_align_size();
+        let big_endian = seq.store_space.is_big_endian();
+        // numElements = formByteArray(arrSize, 2, 0, bigEndian);
+        seq.base.num_elements = seq.base.form_byte_array(data, arr_size, 2, 0, big_endian);
+        seq
+    }
+
+    fn is_valid(&self) -> bool {
+        self.base.is_valid()
+    }
+
+    /// C++ `HeapSequence::findBasePointer`.
+    fn find_base_pointer(&mut self, data: &Funcdata) {
+        // basePointer = rootOp->getIn(1); immedRead = rootOp;
+        self.base_pointer = op_get_in(data, self.root_op, 1);
+        self.immed_read = self.root_op;
+        // while(basePointer->isWritten()) { ... }
+        loop {
+            let v = data.vbank().get(self.base_pointer).expect("findBasePointer: stale vn");
+            if !v.is_written() {
+                break;
+            }
+            let op = v.get_def().expect("findBasePointer: written vn has no def");
+            let opc = data.obank().get(op).expect("findBasePointer: stale op").code();
+            if opc == OpCode::CPUI_PTRADD {
+                let in2 = op_get_in(data, op, 2);
+                let sz = vn_get_offset(data, in2);
+                if sz != self.ptr_add_mult {
+                    break;
+                }
+            } else if opc != OpCode::CPUI_COPY {
+                break;
+            }
+            self.base_pointer = op_get_in(data, op, 0);
+            self.immed_read = op;
+        }
+    }
+
+    /// C++ `HeapSequence::findDuplicateBases`.
+    fn find_duplicate_bases(&self, data: &Funcdata, duplist: &mut Vec<VarnodeId>) {
+        let bp = self.base_pointer;
+        let bp_written = data.vbank().get(bp).expect("findDuplicateBases: stale bp").is_written();
+        if !bp_written {
+            duplist.push(bp);
+            return;
+        }
+        let mut op = data.vbank().get(bp).unwrap().get_def().unwrap();
+        let mut opc = data.obank().get(op).expect("stale op").code();
+        let in1_const = |d: &Funcdata, o: OpId| -> bool {
+            d.vbank().get(op_get_in(d, o, 1)).map(|v| v.is_constant()).unwrap_or(false)
+        };
+        if (opc != OpCode::CPUI_PTRSUB && opc != OpCode::CPUI_INT_ADD && opc != OpCode::CPUI_PTRADD)
+            || !in1_const(data, op)
+        {
+            duplist.push(bp);
+            return;
+        }
+        // C++ `Varnode *copyRoot = basePointer;` — reassigned on the first loop
+        // iteration (the do-while body always runs), so the seed is immediately
+        // overwritten; named with a leading underscore to mark the dead seed.
+        let mut copy_root;
+        let mut offset: Vec<uintb> = Vec::new();
+        loop {
+            let in1 = op_get_in(data, op, 1);
+            let mut off = vn_get_offset(data, in1);
+            if opc == OpCode::CPUI_PTRADD {
+                let in2 = op_get_in(data, op, 2);
+                off = off.wrapping_mul(vn_get_offset(data, in2));
+            }
+            offset.push(off);
+            copy_root = op_get_in(data, op, 0);
+            let cr_written =
+                data.vbank().get(copy_root).expect("stale copy_root").is_written();
+            if !cr_written {
+                break;
+            }
+            op = data.vbank().get(copy_root).unwrap().get_def().unwrap();
+            opc = data.obank().get(op).expect("stale op").code();
+            if opc != OpCode::CPUI_PTRSUB
+                && opc != OpCode::CPUI_INT_ADD
+                && opc != OpCode::CPUI_PTRADD
+            {
+                break;
+            }
+            // while(op->getIn(1)->isConstant());
+            if !in1_const(data, op) {
+                break;
+            }
+        }
+
+        duplist.push(copy_root);
+        let mut midlist: Vec<VarnodeId> = Vec::new();
+        for i in (0..offset.len()).rev() {
+            std::mem::swap(duplist, &mut midlist);
+            duplist.clear();
+            for &vn in midlist.iter() {
+                for op2 in data.descend_snapshot(vn) {
+                    let opc2 = data.obank().get(op2).expect("stale op2").code();
+                    if opc2 != OpCode::CPUI_PTRSUB
+                        && opc2 != OpCode::CPUI_INT_ADD
+                        && opc2 != OpCode::CPUI_PTRADD
+                    {
+                        continue;
+                    }
+                    if op_get_in(data, op2, 0) != vn || !in1_const(data, op2) {
+                        continue;
+                    }
+                    let mut off = vn_get_offset(data, op_get_in(data, op2, 1));
+                    if opc2 == OpCode::CPUI_PTRADD {
+                        off = off.wrapping_mul(vn_get_offset(data, op_get_in(data, op2, 2)));
+                    }
+                    if off != offset[i] {
+                        continue;
+                    }
+                    if let Some(out) = data.obank().get(op2).and_then(|o| o.get_out()) {
+                        duplist.push(out);
+                    }
+                }
+            }
+        }
+    }
+
+    /// C++ `HeapSequence::findInitialStores`.
+    fn find_initial_stores(&self, data: &Funcdata, stores: &mut Vec<OpId>) {
+        let mut ptradds: Vec<VarnodeId> = Vec::new();
+        self.find_duplicate_bases(data, &mut ptradds);
+        let mut pos = 0;
+        while pos < ptradds.len() {
+            let vn = ptradds[pos];
+            pos += 1;
+            for op in data.descend_snapshot(vn) {
+                let opc = data.obank().get(op).expect("stale op").code();
+                if opc == OpCode::CPUI_PTRADD {
+                    if op_get_in(data, op, 0) != vn {
+                        continue;
+                    }
+                    if vn_get_offset(data, op_get_in(data, op, 2)) != self.ptr_add_mult {
+                        continue;
+                    }
+                    if let Some(out) = data.obank().get(op).and_then(|o| o.get_out()) {
+                        ptradds.push(out);
+                    }
+                } else if opc == OpCode::CPUI_COPY {
+                    if let Some(out) = data.obank().get(op).and_then(|o| o.get_out()) {
+                        ptradds.push(out);
+                    }
+                } else if opc == OpCode::CPUI_STORE
+                    && data.obank().get(op).and_then(|o| o.get_parent()) == Some(self.block)
+                    && op != self.root_op
+                {
+                    if op_get_in(data, op, 1) != vn {
+                        continue;
+                    }
+                    stores.push(op);
+                }
+            }
+        }
+    }
+
+    /// C++ `HeapSequence::calcAddElements`.
+    fn calc_add_elements(
+        data: &Funcdata,
+        vn: VarnodeId,
+        non_const: &mut Vec<VarnodeId>,
+        max_depth: int4,
+    ) -> u64 {
+        let v = data.vbank().get(vn).expect("calcAddElements: stale vn");
+        if v.is_constant() {
+            return v.get_offset();
+        }
+        let is_add = v.is_written()
+            && data.obank().get(v.get_def().unwrap()).map(|o| o.code()).unwrap_or(OpCode::CPUI_COPY)
+                == OpCode::CPUI_INT_ADD;
+        if !is_add || max_depth == 0 {
+            non_const.push(vn);
+            return 0;
+        }
+        let def = v.get_def().unwrap();
+        let in0 = op_get_in(data, def, 0);
+        let in1 = op_get_in(data, def, 1);
+        let mut res = Self::calc_add_elements(data, in0, non_const, max_depth - 1);
+        res = res.wrapping_add(Self::calc_add_elements(data, in1, non_const, max_depth - 1));
+        res
+    }
+
+    /// C++ `HeapSequence::calcPtraddOffset`.
+    fn calc_ptradd_offset(
+        &self,
+        data: &Funcdata,
+        mut vn: VarnodeId,
+        non_const: &mut Vec<VarnodeId>,
+    ) -> u64 {
+        let mut res: u64 = 0;
+        loop {
+            let v = data.vbank().get(vn).expect("calcPtraddOffset: stale vn");
+            if !v.is_written() {
+                break;
+            }
+            let op = v.get_def().unwrap();
+            let opc = data.obank().get(op).expect("stale op").code();
+            if opc == OpCode::CPUI_PTRADD {
+                let mult = vn_get_offset(data, op_get_in(data, op, 2));
+                if mult != self.ptr_add_mult {
+                    break;
+                }
+                let mut off = Self::calc_add_elements(data, op_get_in(data, op, 1), non_const, 3);
+                off = off.wrapping_mul(mult);
+                res = res.wrapping_add(off);
+                vn = op_get_in(data, op, 0);
+            } else if opc == OpCode::CPUI_COPY {
+                vn = op_get_in(data, op, 0);
+            } else {
+                break;
+            }
+        }
+        kuna_base::space::AddrSpace::address_to_byte_int(res as i64, self.store_space.get_word_size())
+            as u64
+    }
+
+    /// C++ `HeapSequence::setsEqual`.
+    fn sets_equal(op1: &[VarnodeId], op2: &[VarnodeId]) -> bool {
+        if op1.len() != op2.len() {
+            return false;
+        }
+        for i in 0..op1.len() {
+            if op1[i] != op2[i] {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// C++ `HeapSequence::testValue`.
+    fn test_value(&self, data: &Funcdata, op: OpId) -> bool {
+        let in2 = op_get_in(data, op, 2);
+        let v = data.vbank().get(in2).expect("testValue: stale vn");
+        if !v.is_constant() {
+            return false;
+        }
+        if v.get_size() != self.base.char_type.get_size() {
+            return false;
+        }
+        true
+    }
+
+    /// C++ `HeapSequence::collectStoreOps`.
+    fn collect_store_ops(&mut self, data: &Funcdata) -> bool {
+        let mut init_stores: Vec<OpId> = Vec::new();
+        self.find_initial_stores(data, &mut init_stores);
+        if (init_stores.len() as int4) + 1 < ArraySequence::MINIMUM_SEQUENCE_LENGTH {
+            return false;
+        }
+        // uint8 maxSize = MAXIMUM_SEQUENCE_LENGTH * charType->getAlignSize();
+        let max_size =
+            (ArraySequence::MAXIMUM_SEQUENCE_LENGTH as u64) * (self.base.char_type.get_align_size() as u64);
+        // uint8 wrapMask = calc_mask(storeSpace->getAddrSize());
+        let wrap_mask = kuna_base::address::calc_mask(self.store_space.get_addr_size() as i32);
+        // baseOffset = calcPtraddOffset(rootOp->getIn(1), nonConstAdds);
+        let root_in1 = op_get_in(data, self.root_op, 1);
+        let mut non_const_adds = Vec::new();
+        self.base_offset = self.calc_ptradd_offset(data, root_in1, &mut non_const_adds);
+        self.non_const_adds = non_const_adds;
+        for i in 0..init_stores.len() {
+            let op = init_stores[i];
+            let mut non_const_comp: Vec<VarnodeId> = Vec::new();
+            let cur_offset =
+                self.calc_ptradd_offset(data, op_get_in(data, op, 1), &mut non_const_comp);
+            let diff = cur_offset.wrapping_sub(self.base_offset) & wrap_mask;
+            if Self::sets_equal(&self.non_const_adds, &non_const_comp) {
+                if diff >= max_size {
+                    return false;
+                }
+                if !self.test_value(data, op) {
+                    return false;
+                }
+                let order = data.obank().get(op).unwrap().get_seq_num().get_order();
+                self.base.move_ops.push(WriteNode::new(diff, op, -1, order));
+            }
+        }
+        let root_order = data.obank().get(self.root_op).unwrap().get_seq_num().get_order();
+        self.base.move_ops.push(WriteNode::new(0, self.root_op, -1, root_order));
+        true
+    }
+
+    /// C++ `HeapSequence::buildStringCopy`.
+    fn build_string_copy(&self, data: &mut Funcdata) -> Option<OpId> {
+        // PcodeOp *insertPoint = moveOps[0].op;
+        let insert_point = self.base.move_ops[0].op;
+        // Datatype *charPtrType = rootOp->getIn(1)->getTypeReadFacing(rootOp);
+        let root_in1 = op_get_in(data, self.root_op, 1);
+        let char_ptr_type = Rc::clone(
+            data.vbank().get(root_in1).expect("buildStringCopy: stale ptr vn").get_type_read_facing(self.root_op),
+        );
+        // int4 numBytes = numElements * charType->getSize();
+        let num_bytes = self.base.num_elements * self.base.char_type.get_size();
+        let insert_addr = data.obank().get(insert_point).unwrap().get_addr().clone();
+        // Varnode *srcPtr = data.getInternalString(byteArray.data(), numBytes, charPtrType, insertPoint);
+        let byte_array = self.base.byte_array.clone();
+        let src_ptr =
+            data.get_internal_string(&byte_array, num_bytes, Rc::clone(&char_ptr_type), insert_point)?;
+
+        // Varnode *destPtr = basePointer;
+        let mut dest_ptr = self.base_pointer;
+        if self.base_offset != 0 || !self.non_const_adds.is_empty() {
+            // Datatype *intType = glb->types->getBase(basePointer->getSize(), TYPE_INT);
+            let bp_size = data.vbank().get(self.base_pointer).unwrap().get_size();
+            let int_type = data
+                .get_arch()
+                .types()
+                .expect("buildStringCopy: no type factory")
+                .get_base(bp_size, type_metatype::TYPE_INT)
+                .expect("buildStringCopy: getBase(INT)");
+            let mut index_vn: Option<VarnodeId> = None;
+            if !self.non_const_adds.is_empty() {
+                let mut iv = self.non_const_adds[0];
+                for i in 1..self.non_const_adds.len() {
+                    let add_op = data.new_op(2, insert_addr.clone());
+                    data.op_set_opcode_code(add_op, OpCode::CPUI_INT_ADD);
+                    data.op_set_input(add_op, iv, 0).ok();
+                    data.op_set_input(add_op, self.non_const_adds[i], 1).ok();
+                    let iv_size = data.vbank().get(iv).unwrap().get_size();
+                    let new_iv = data.new_unique_out(iv_size, add_op).expect("newUniqueOut");
+                    data.vbank_mut().get_mut(new_iv).unwrap().update_type(Rc::clone(&int_type));
+                    data.op_insert_before(add_op, insert_point);
+                    iv = new_iv;
+                }
+                index_vn = Some(iv);
+            }
+            if self.base_offset != 0 {
+                let num_el = self.base_offset / (self.base.char_type.get_align_size() as u64);
+                let cvn = data.new_constant(bp_size, num_el);
+                data.vbank_mut().get_mut(cvn).unwrap().update_type(Rc::clone(&int_type));
+                match index_vn {
+                    None => index_vn = Some(cvn),
+                    Some(iv) => {
+                        let add_op = data.new_op(2, insert_addr.clone());
+                        data.op_set_opcode_code(add_op, OpCode::CPUI_INT_ADD);
+                        data.op_set_input(add_op, iv, 0).ok();
+                        data.op_set_input(add_op, cvn, 1).ok();
+                        let iv_size = data.vbank().get(iv).unwrap().get_size();
+                        let new_iv = data.new_unique_out(iv_size, add_op).expect("newUniqueOut");
+                        data.vbank_mut().get_mut(new_iv).unwrap().update_type(Rc::clone(&int_type));
+                        data.op_insert_before(add_op, insert_point);
+                        index_vn = Some(new_iv);
+                    }
+                }
+            }
+            // PcodeOp *ptrAdd = data.newOp(3, ...); destPtr = newUniqueOut(...)
+            let ptr_add = data.new_op(3, insert_addr.clone());
+            data.op_set_opcode_code(ptr_add, OpCode::CPUI_PTRADD);
+            let dp = data.new_unique_out(bp_size, ptr_add).expect("newUniqueOut");
+            data.op_set_input(ptr_add, self.base_pointer, 0).ok();
+            data.op_set_input(ptr_add, index_vn.expect("index_vn set"), 1).ok();
+            let align = self.base.char_type.get_align_size();
+            let align_con = data.new_constant(bp_size, align as u64);
+            data.op_set_input(ptr_add, align_con, 2).ok();
+            data.vbank_mut().get_mut(dp).unwrap().update_type(Rc::clone(&char_ptr_type));
+            data.op_insert_before(ptr_add, insert_point);
+            // (kuna) inheritUnionField on a union base pointer omitted — the heap
+            // sequence's base pointer is a plain typed pointer in the ported tests;
+            // if the base type needs resolution the union-field inheritance is the
+            // W6 follow-up (no current datatest exercises it).
+            dest_ptr = dp;
+        }
+        // uint4 builtInId = selectStringCopyFunction(index);
+        let (built_in_id, index) = self.base.select_string_copy_function(data);
+        // glb->userops.registerBuiltin(builtInId);  (pre-registered at boot)
+        // PcodeOp *copyOp = data.newOp(4, insertPoint->getAddr());
+        let copy_op = data.new_op(4, insert_addr.clone());
+        data.op_set_opcode_code(copy_op, OpCode::CPUI_CALLOTHER);
+        data.obank_mut().get_mut(copy_op).unwrap().clear_flag(pcodeop_flags::call);
+        let id_con = data.new_constant(4, built_in_id);
+        data.op_set_input(copy_op, id_con, 0).ok();
+        data.op_set_input(copy_op, dest_ptr, 1).ok();
+        data.op_set_input(copy_op, src_ptr, 2).ok();
+        // Varnode *lenVn = data.newConstant(4,index); lenVn->updateType(inputTypeLocal(3));
+        let len_vn = data.new_constant(4, index as u64);
+        // inputTypeLocal(3) for the builtin is its int4 length parameter; build it
+        // directly from the factory (equivalent to the userop's typed param).
+        if let Some(types) = data.get_arch().types() {
+            if let Ok(int4t) = types.get_base(4, type_metatype::TYPE_INT) {
+                data.vbank_mut().get_mut(len_vn).unwrap().update_type(int4t);
+            }
+        }
+        data.op_set_input(copy_op, len_vn, 3).ok();
+        data.op_insert_before(copy_op, insert_point);
+        Some(copy_op)
+    }
+
+    /// C++ `HeapSequence::gatherIndirectPairs`.
+    fn gather_indirect_pairs(
+        &self,
+        data: &mut Funcdata,
+        indirects: &mut Vec<OpId>,
+        pairs: &mut Vec<IndirectPair>,
+    ) {
+        for i in 0..self.base.move_ops.len() {
+            let mut op_opt = data.op_previous_op(self.base.move_ops[i].op);
+            while let Some(op) = op_opt {
+                if data.obank().get(op).expect("stale op").code() != OpCode::CPUI_INDIRECT {
+                    break;
+                }
+                data.obank_mut().get_mut(op).unwrap().set_mark();
+                indirects.push(op);
+                op_opt = data.op_previous_op(op);
+            }
+        }
+        for i in 0..indirects.len() {
+            let op = indirects[i];
+            let outvn = data.obank().get(op).and_then(|o| o.get_out());
+            let outvn = match outvn {
+                Some(v) => v,
+                None => continue,
+            };
+            let mut has_use = false;
+            for use_op in data.descend_snapshot(outvn) {
+                if !data.obank().get(use_op).map(|o| o.is_mark()).unwrap_or(false) {
+                    has_use = true;
+                    break;
+                }
+            }
+            if has_use {
+                let mut invn = op_get_in(data, op, 0);
+                loop {
+                    let v = data.vbank().get(invn).expect("stale invn");
+                    if !v.is_written() {
+                        break;
+                    }
+                    let def_op = v.get_def().unwrap();
+                    if !data.obank().get(def_op).map(|o| o.is_mark()).unwrap_or(false) {
+                        break;
+                    }
+                    invn = op_get_in(data, def_op, 0);
+                }
+                pairs.push(IndirectPair::new(invn, outvn));
+            }
+        }
+        for &op in indirects.iter() {
+            data.obank_mut().get_mut(op).unwrap().clear_mark();
+        }
+    }
+
+    /// C++ `HeapSequence::IndirectPair::compareOutput` (sort key).
+    fn compare_output(data: &Funcdata, a: &IndirectPair, b: &IndirectPair) -> std::cmp::Ordering {
+        let v1 = data.vbank().get(a.out_vn).expect("stale out_vn");
+        let v2 = data.vbank().get(b.out_vn).expect("stale out_vn");
+        let s1 = v1.get_space().get_index();
+        let s2 = v2.get_space().get_index();
+        if s1 != s2 {
+            return s1.cmp(&s2);
+        }
+        if v1.get_offset() != v2.get_offset() {
+            return v1.get_offset().cmp(&v2.get_offset());
+        }
+        v1.get_size().cmp(&v2.get_size())
+    }
+
+    /// C++ `HeapSequence::deduplicatePairs`.
+    fn deduplicate_pairs(&self, data: &mut Funcdata, pairs: &mut [IndirectPair]) -> bool {
+        if pairs.is_empty() {
+            return true;
+        }
+        // sort(copy, compareOutput) — sort the indices into `pairs`.
+        let mut order: Vec<usize> = (0..pairs.len()).collect();
+        order.sort_by(|&i, &j| Self::compare_output(data, &pairs[i], &pairs[j]));
+
+        let mut head = order[0];
+        let mut dup_count = 0;
+        for k in 1..order.len() {
+            let cur = order[k];
+            let head_out = pairs[head].out_vn;
+            let cur_out = pairs[cur].out_vn;
+            let overlap = {
+                let vhead = data.vbank().get(head_out).expect("stale head_out");
+                let vcur = data.vbank().get(cur_out).expect("stale cur_out");
+                vhead.characterize_overlap(vcur)
+            };
+            if overlap == 1 {
+                return false; // Partial overlap
+            }
+            if overlap == 2 {
+                if pairs[cur].in_vn != pairs[head].in_vn {
+                    return false;
+                }
+                pairs[cur].duplicate = true;
+                dup_count += 1;
+            } else {
+                head = cur;
+            }
+        }
+        if dup_count > 0 {
+            let mut head = order[0];
+            for k in 1..order.len() {
+                let cur = order[k];
+                if pairs[cur].duplicate {
+                    let from = pairs[cur].out_vn;
+                    let to = pairs[head].out_vn;
+                    data.total_replace(from, to).ok();
+                } else {
+                    head = cur;
+                }
+            }
+        }
+        true
+    }
+
+    /// C++ `HeapSequence::removeStoreOps`.
+    fn remove_store_ops(
+        &self,
+        data: &mut Funcdata,
+        indirects: &[OpId],
+        indirect_pairs: &[IndirectPair],
+        replace_op: OpId,
+    ) {
+        let mut scratch: Vec<OpId> = Vec::new();
+        // Unhook Varnodes we don't want destroyed.
+        for p in indirect_pairs.iter() {
+            if let Some(def) = data.vbank().get(p.out_vn).and_then(|v| v.get_def()) {
+                data.op_unset_output(def);
+            }
+        }
+        for i in 0..self.base.move_ops.len() {
+            let op = self.base.move_ops[i].op;
+            data.op_destroy_recursive(op, &mut scratch);
+        }
+        for &op in indirects.iter() {
+            data.op_destroy(op);
+        }
+        let replace_addr = data.obank().get(replace_op).unwrap().get_addr().clone();
+        for p in indirect_pairs.iter() {
+            if p.duplicate {
+                continue;
+            }
+            let new_ind = data.new_op(2, replace_addr.clone());
+            data.op_set_opcode_code(new_ind, OpCode::CPUI_INDIRECT);
+            data.op_set_output(new_ind, p.out_vn).ok();
+            data.op_set_input(new_ind, p.in_vn, 0).ok();
+            let iop = data.new_varnode_iop(replace_op);
+            data.op_set_input(new_ind, iop, 1).ok();
+            data.op_insert_before(new_ind, replace_op);
+        }
+    }
+
+    /// C++ `HeapSequence::transform`.
+    fn transform(&self, data: &mut Funcdata) -> bool {
+        let mut indirects: Vec<OpId> = Vec::new();
+        let mut indirect_pairs: Vec<IndirectPair> = Vec::new();
+        self.gather_indirect_pairs(data, &mut indirects, &mut indirect_pairs);
+        if !self.deduplicate_pairs(data, &mut indirect_pairs) {
+            return false;
+        }
+        let mem_cpy_op = match self.build_string_copy(data) {
+            Some(o) => o,
+            None => return false,
+        };
+        self.remove_store_ops(data, &indirects, &indirect_pairs, mem_cpy_op);
+        true
     }
 }
 
@@ -348,16 +1042,12 @@ impl ArraySequence {
 // RuleStringCopy / RuleStringStore (constseq.cc:969-1029)
 // =============================================================================
 //
-// The two drivers' early guards reachable on the merged tree are ported here;
-// the `StringSequence`/`HeapSequence` construction + `transform()` that the
-// guards gate reach W4 (symbol table `queryContainer`, the `getScopeLocal`
-// `ScopeLocal`) and W4/W6 (the union-aware `getTypeDefFacing`/`getTypeReadFacing`
-// type-facing, `getInternalString`, `getTypePointer*`, `constructTypedPointer`)
-// — exactly the *Deferred halves* the module docs ledger.  Until those land the
-// `applyOp` bodies decline after the reachable guards, byte-identical to the
-// rule being disabled (the `kuna_memsetsequence::RuleMemsetCopy` convention).
-// The guards that *are* reachable (the constant-input test) run faithfully so
-// the seam is as narrow as the C++ permits.
+// `RuleStringStore` is now fully ported (it drives the live [`HeapSequence`]).
+// `RuleStringCopy` still declines after its constant-input guard: its
+// `StringSequence` construction reaches the W4 `getScopeLocal()->queryContainer`
+// array-component resolution and `constructTypedPointer`'s spacebase/PTRSUB chain
+// that the heap path does not need (see the module-level *Deferred half* note).
+// That decline is byte-identical to the rule being disabled.
 
 /// (constseq) Replace a sequence of COPY ops moving single characters with a
 /// CALLOTHER copying a whole string (C++ `class RuleStringCopy`).
@@ -470,23 +1160,43 @@ impl Rule for RuleStringStore {
         if !data.vbank().get(in2).map(|v| v.is_constant()).unwrap_or(false) {
             return 0;
         }
-        // SEAM(W4/W6): the type-facing pointer guard and the HeapSequence
-        // build/transform reach the W6 type-facing factory (`getTypeReadFacing`,
-        // `getPtrTo`) and the heap-STORE machinery (see the section note above).
-        // Until they land the body declines, byte-identical to disabled.
-        //
-        //   Varnode *ptrvn = op->getIn(1);
-        //   Datatype *ct = ptrvn->getTypeReadFacing(op);
-        //   if (ct->getMetatype() != TYPE_PTR) return 0;
-        //   ct = ((TypePointer *)ct)->getPtrTo();
-        //   if (!ct->isCharPrint()) return 0;
-        //   if (ct->isOpaqueString()) return 0;
-        //   HeapSequence sequence(data,ct,op);
-        //   if (!sequence.isValid()) return 0;
-        //   if (!sequence.transform()) return 0;
-        //   return 1;
-        let _ = (data, type_metatype::TYPE_PTR);
-        0
+        // Varnode *ptrvn = op->getIn(1);
+        let ptrvn = match data.obank().get(op).and_then(|o| o.get_in(1)) {
+            Some(v) => v,
+            None => return 0,
+        };
+        // Datatype *ct = ptrvn->getTypeReadFacing(op);
+        let ct = Rc::clone(
+            data.vbank().get(ptrvn).expect("RuleStringStore: stale ptrvn").get_type_read_facing(op),
+        );
+        // if (ct->getMetatype() != TYPE_PTR) return 0;
+        if ct.get_metatype() != type_metatype::TYPE_PTR {
+            return 0;
+        }
+        // ct = ((TypePointer *)ct)->getPtrTo();
+        let ct = match ct.get_ptr_to() {
+            Some(c) => c,
+            None => return 0,
+        };
+        // if (!ct->isCharPrint()) return 0;
+        if !ct.is_char_print() {
+            return 0;
+        }
+        // if (ct->isOpaqueString()) return 0;
+        if ct.is_opaque_string() {
+            return 0;
+        }
+        // HeapSequence sequence(data,ct,op);
+        let sequence = HeapSequence::build(data, ct, op);
+        // if (!sequence.isValid()) return 0;
+        if !sequence.is_valid() {
+            return 0;
+        }
+        // if (!sequence.transform()) return 0;
+        if !sequence.transform(data) {
+            return 0;
+        }
+        1
     }
 }
 

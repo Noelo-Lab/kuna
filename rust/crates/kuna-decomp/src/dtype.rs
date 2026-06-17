@@ -4338,6 +4338,27 @@ impl TypeFactoryImpl {
         }
     }
 
+    /// Set the default char size (C++ `decodeDataOrganization`'s `<char_size>`).
+    pub fn set_size_of_char(&self, s: int4) {
+        self.size_of_char.set(s);
+    }
+    /// Set the default wchar_t size (C++ `decodeDataOrganization`'s `<wchar_size>`).
+    pub fn set_size_of_wchar(&self, s: int4) {
+        self.size_of_wchar.set(s);
+    }
+    /// Set the default int size (C++ `decodeDataOrganization`'s `<integer_size>`).
+    pub fn set_size_of_int(&self, s: int4) {
+        self.size_of_int.set(s);
+    }
+    /// Set the default long size (C++ `decodeDataOrganization`'s `<long_size>`).
+    pub fn set_size_of_long(&self, s: int4) {
+        self.size_of_long.set(s);
+    }
+    /// Set the default pointer size (C++ `decodeDataOrganization`'s `<pointer_size>`).
+    pub fn set_size_of_pointer(&self, s: int4) {
+        self.size_of_pointer.set(s);
+    }
+
     // -- Alignment queries (type.cc:3774-3798) -------------------------------
 
     /// Get data-type alignment based on size (C++ `TypeFactory::getAlignment`).

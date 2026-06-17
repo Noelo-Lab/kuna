@@ -472,6 +472,14 @@ pub struct Architecture {
     /// `ActionInferTypes` reaches `getBase`/`getTypePointer`/`down_chain` through
     /// it.  `None` for hand-built fixtures (no type factory registry).
     pub types: Option<Rc<crate::dtype::TypeFactoryImpl>>,
+    /// The decoded-string manager (C++ `glb->stringManager`), shared from the
+    /// real [`crate::architecture::Architecture`] through `build_arch_handle`.
+    /// `Funcdata::getInternalString` (the `RuleStringStore`/`RuleStringCopy`
+    /// transform) registers the assembled byte-array as an internal string here;
+    /// the printer reads it back through the same shared instance on the real
+    /// architecture.  `None` for hand-built fixtures (no internal strings).
+    pub internal_strings:
+        Option<Rc<std::cell::RefCell<crate::stringmanage::StringManagerUnicode>>>,
     /// Maximum number of entries in a single JumpTable (C++
     /// `Architecture::max_jumptable_size`), shared from the real architecture.
     /// Read by `JumpTable::recoverModel`.  `0` for hand-built fixtures.
@@ -584,6 +592,7 @@ impl Architecture {
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).
             analyze_for_loops: true,
             types: None,
+            internal_strings: None,
             max_jumptable_size: 0,
             alias_block_level: 2, // Architecture default: block structs and arrays
             funcptr_align: 0,
