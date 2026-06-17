@@ -1,6 +1,19 @@
 # kuna Progress Log
 
-## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 349/675
+## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 358/675
+
+**f0-flag-v2 LANDED (+9 → 358, ACCEPT_WITH_LOSSES):** mark_output_storage_addr_tied lifts the
+marker-write un-tie out of the output_locked gate (so output-UNLOCKED transient return registers
+un-tie -> render IMPLIED) + a LOSS-206 ScopeLocal-ownership gate so legit recovered locals stay
+tied. doublemove #1/#4 now `return glob1+glob1;` (byte-identical oracle) + collateral If/Switch
+#3/#5/#6, lzcount #1, mixfloat #2/#6, ModuloAlt #1. partialmerge #3 HOLDS; legit ties (global-RAM,
+boolless, readpartial) stay tied. Rigorous gate clean: cargo test --workspace 3646/0, byte-parity
+guards 3/3+19/19 (FULL counts — the multi-vN probe ADAPTED readstruct->loopcomment since the un-tie
+made readstruct render more oracle-faithful, NO assertion dropped), regressed-set EMPTY. Held
+base_explicit (the PIECE/ZEXT pair, now unblocked by the un-tie) left held for a careful re-base.
+IN FLIGHT: Convert-B1+B2 (+17). NEXT: base_explicit-v2 (re-implement the PIECE fall-through on the
+current base -> broader implied-float PIECE cluster, longdouble subset).
+
 
 **printc-decl-render LANDED (+1 → 349, ACCEPT_WITH_LOSSES):** all 3 printc seams now render
 byte-correct (concat shared `foo v1;` decl-collapse; twodim global-decl skip; checkAddressOfCast
