@@ -1785,6 +1785,33 @@ impl PcodeOpBank {
             .map(|(k, &v)| (k, v))
     }
 
+    /// The op id whose SeqNum is at or after `addr` (`optree.lower_bound(
+    /// SeqNum(addr,0))`), or `None` past the end.  The raw `beginOp(addr)` the
+    /// `CommentSorter` uses (no `target()` backward scan).
+    pub fn first_op_at_or_after(&self, addr: &Address) -> Option<OpId> {
+        let lo = SeqNum::new(addr.clone(), 0);
+        self.optree
+            .range((Bound::Included(lo), Bound::Unbounded))
+            .next()
+            .map(|(_, &v)| v)
+    }
+
+    /// The op id immediately before `op` in SeqNum order (C++ `--opiter`), or
+    /// `None` if `op` is already the first op (`opiter == beginOpAll()`).
+    pub fn op_before(&self, op: OpId) -> Option<OpId> {
+        let sq = self.arena.get(op)?.get_seq_num().clone();
+        self.optree
+            .range((Bound::Unbounded, Bound::Excluded(sq)))
+            .next_back()
+            .map(|(_, &v)| v)
+    }
+
+    /// The last op id in SeqNum order (C++ `--endOpAll()` on a non-empty tree),
+    /// or `None` if the bank is empty.
+    pub fn last_op_all(&self) -> Option<OpId> {
+        self.optree.iter().next_back().map(|(_, &v)| v)
+    }
+
     /// Find the first executing PcodeOp at or after `addr`, pre-block-layout
     /// (C++ `PcodeOpBank::target`, `op.cc:1119`).
     ///

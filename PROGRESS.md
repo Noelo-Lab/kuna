@@ -1,6 +1,16 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 449/675; +De Morgan, namespace, convert, RSP&v1, enum4/HighVar, BOOL_NEGATE, string-literal, longdouble, heap-string
+## Session (2026-06-17c) — rust-port W10: 408 → 465/675; +De Morgan, namespace, convert, RSP&v1, enum4/HighVar, BOOL_NEGATE, string-literal, longdouble, heap-string, else-if
+
+**else-if structuring + comment rendering +16 → 465 (session's biggest wave).** Four faithful
+roots: `ActionPreferComplement` (BlockIf::preferComplement/flipInPlace, blockaction.rs/
+funcdata_block.rs/funcdata_op.rs); PendingBrace in EmitNoMarkup (`else if` vs `else {`,
+prettyprint.rs/printc.rs emitBlockIf); `markUnstructured` (block.rs, goto-labels); CommentSorter
+wiring (printc.rs emitCommentGroup). Gained Else-if #1-6/#11/#14 (6/14→14/14), Loop comment #1-5
+(0/5→5/5), Copy trim #7, For-loop var used #2, Inlining #9. Gate: `[675,465]`, regressed-set
+EMPTY, switch 8/16/3, PARITY OK. Reconciled verify_w10_inline_body to 9/12 (Inlining #4 stack-frame
++ #9 else-if both pass — neither branch foresaw the combined count). Review
+`reviews/w10-elseif-structuring.md`.
 
 **heap-string sequence +7 → 449 (Heap string #1-7 full parity; heapstring LOSS resolved).** Ported
 `HeapSequence`/`RuleStringStore` (constseq.cc:486-1029) + `Funcdata::get_internal_string` +

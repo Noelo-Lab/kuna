@@ -3324,14 +3324,21 @@ impl Action for ActionPreferComplement {
             allow_op_mods: self.allow_op_mods,
         }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ walks the structured-block tree and calls
-        // curbl->preferComplement(data,allowOpMods) on each BlockGraph node.
-        //
-        // SEAM(W7/W8): `FlowBlock::preferComplement` (the symmetric-structuring
-        // choice via flipInPlaceTest/Execute) is left as W7 in `block.rs`; not
-        // available at this item's boundary.  See losses.
-        let _ = self.allow_op_mods;
+        // curbl->preferComplement(data,allowOpMods) on each BlockGraph node
+        // (blockaction.cc:2140); only BlockIf rearranges (the if/else complement
+        // choice via getSplitPoint/flipInPlaceTest/flipInPlaceExecute).
+        match data.prefer_complement(self.allow_op_mods) {
+            Ok(count) => {
+                self.base.count += count;
+            }
+            Err(_e) => {
+                // A residual flip seam (e.g. replace_lessequal on an unported
+                // shape) degrades to "no change made" rather than aborting the
+                // bare-int4 apply — the honest-partial-parity stance.
+            }
+        }
         0
     }
 }
@@ -3492,11 +3499,17 @@ impl Action for ActionFinalStructure {
         // and for the whiledo case: finalize the for-loop iterator/initializer
         // (BlockWhileDo::finalizePrinting) so the printer can emit
         // `for (init; cond; iter)`.
-        // SEAM(W7/W8): `orderBlocks`/`scopeBreak`/`markUnstructured`/
-        // `markLabelBumpUp` (the goto/break/label-bump print-prep) remain unported
-        // in `block.rs`.  Recorded as losses.
+        // SEAM(W7/W8): `orderBlocks`/`scopeBreak`/`markLabelBumpUp` (the rest of
+        // the goto/break/label-bump print-prep) remain unported in `block.rs`.
+        // Recorded as losses.
         data.finalize_switch_printing();
         data.finalize_forloop_printing();
+        // graph.markUnstructured(): flag goto targets so the printer emits a label
+        // line for them (and a clause carrying one suppresses the `else if`
+        // collapse).  The graph-side recursion is faithful; the op-flag print-prep
+        // it enables is the BlockCopy label statement.
+        let sroot = data.sblocks_root();
+        data.sblocks_mut().mark_unstructured(sroot);
         0
     }
 }

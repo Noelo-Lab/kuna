@@ -1844,14 +1844,62 @@ impl BlockGraph {
 
     /// Set properties on the first leaf FlowBlock
     /// (C++ `BlockGraph::markCopyBlock`, `block.cc:1233`).
-    ///
-    /// SEAM(W7): consumed only by the structuring `markUnstructured` overrides
-    /// (BlockGoto/BlockIf/BlockSwitch), which the W7 `blockaction` wave ports;
-    /// unused by the W3 tree deliverable alone, hence the allow.
-    #[allow(dead_code)]
     fn mark_copy_block(&mut self, bl: BlockId, fl: uint4) {
         if let Some(leaf) = self.get_front_leaf(bl) {
             self.arena[leaf].flags |= fl;
+        }
+    }
+
+    /// Mark the targets of unstructured (`goto`) edges so the printer can emit a
+    /// label statement for them (C++ `BlockGraph::markUnstructured` and the
+    /// `BlockGoto`/`BlockIf`/`BlockSwitch` overrides, `block.cc:1250/2904/3115/3654`).
+    ///
+    /// Walks the structured tree from `this_id`; for every `BlockGoto`/`BlockIf`/
+    /// `BlockSwitch` node whose `goto` target is a real (`f_goto_goto`) jump, sets
+    /// `f_unstructured_targ` on the target's front leaf (a `t_copy`).  Recursive.
+    pub fn mark_unstructured(&mut self, this_id: BlockId) {
+        // Recurse into every component first (C++ BlockGraph::markUnstructured).
+        let n = self.arena[this_id].get_size();
+        for i in 0..n {
+            if let Some(child) = self.arena[this_id].list.get(i as usize).copied() {
+                self.mark_unstructured(child);
+            }
+        }
+        match self.arena[this_id].get_type() {
+            // BlockGoto::markUnstructured: a real goto whose target is not the
+            // natural next block in flow (gotoPrints()).
+            BlockType::Goto => {
+                if self.arena[this_id].get_goto_type() == block_flags::f_goto_goto {
+                    if let Some(target) = self.arena[this_id].get_goto_target() {
+                        if self.goto_prints(this_id) {
+                            self.mark_copy_block(target, block_flags::f_unstructured_targ);
+                        }
+                    }
+                }
+            }
+            // BlockIf::markUnstructured: an if-goto with a real goto target.
+            BlockType::If => {
+                if self.arena[this_id].get_if_goto_type() == block_flags::f_goto_goto {
+                    if let Some(target) = self.arena[this_id].get_if_goto_target() {
+                        self.mark_copy_block(target, block_flags::f_unstructured_targ);
+                    }
+                }
+            }
+            // BlockSwitch::markUnstructured: each case whose edge is a real goto.
+            BlockType::Switch => {
+                let cases: Vec<(BlockId, uint4)> = match &self.arena[this_id].kind {
+                    BlockKind::Switch { caseblocks, .. } => {
+                        caseblocks.iter().map(|c| (c.block, c.gototype)).collect()
+                    }
+                    _ => Vec::new(),
+                };
+                for (caseblk, gototype) in cases {
+                    if gototype == block_flags::f_goto_goto {
+                        self.mark_copy_block(caseblk, block_flags::f_unstructured_targ);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 

@@ -603,6 +603,10 @@ pub struct CommentSorter {
     stop: Option<Subsort>,
     /// Statement landmark / walk terminator within the current set (C++ `opstop`).
     opstop: Option<Subsort>,
+    /// Key of the comment most recently returned by `get_next` (so the printer's
+    /// `emitLineComment` can flip its `emitted` flag).  Not part of C++ — the C++
+    /// printer holds the `const Comment*` directly; the port re-resolves by key.
+    last_returned: Option<Subsort>,
     /// True if unplaced comments should be displayed (in the header).
     display_unplaced_comments: bool,
 }
@@ -621,6 +625,7 @@ impl CommentSorter {
             start: None,
             stop: None,
             opstop: None,
+            last_returned: None,
             display_unplaced_comments: false,
         }
     }
@@ -778,12 +783,26 @@ impl CommentSorter {
     /// `res = (*start).second; ++start; return res`).
     ///
     /// Returns a reference into `commmap`; `start` advances to the next key.
+    /// Records the returned key so [`mark_last_emitted`](CommentSorter::mark_last_emitted)
+    /// can flip its `emitted` flag (the C++ `emitLineComment` `setEmitted(true)`).
     pub fn get_next(&mut self) -> &Comment {
         let key = self.start.expect("CommentSorter::get_next past end (C++ UB on ++start)");
         // ++start: the next key strictly greater than the current `start`.
         self.start = self.successor(&key);
+        self.last_returned = Some(key);
         // Resolve the comment at the original `start` key.
         self.commmap.get(&key).expect("CommentSorter::get_next: dangling start key")
+    }
+
+    /// Mark the comment most recently returned by [`get_next`](CommentSorter::get_next)
+    /// as emitted (C++ `Comment::setEmitted(true)`, called from
+    /// `emitLineComment`).  A later walk over the same window then skips it.
+    pub fn mark_last_emitted(&mut self) {
+        if let Some(key) = self.last_returned {
+            if let Some(c) = self.commmap.get_mut(&key) {
+                c.set_emitted(true);
+            }
+        }
     }
 
     // --- BTreeMap cursor helpers (the C++ map::lower_bound/upper_bound) ------

@@ -168,21 +168,29 @@ fn w10_inline_body_header_warnings_are_real_oracle_parity() {
         "expected `Success -- Inlining #2` (`if (x < 10)` — RuleSborrow folded \
          the SBORROW signed compare) in:\n{out}"
     );
-    // w10-stackframe-cluster: `PrintC::pushPtrCharConstant` now renders a constant
+    // w10-stackframe-cluster: `PrintC::pushPtrCharConstant` renders a constant
     // pointer to readonly char data as a quoted string literal, so the inlined
-    // `compare(x,100,"HUNDRED")` call (`#4`) — whose third argument is a constant
-    // pointer to the readonly `"HUNDRED"` bytes — newly passes, bumping 7/12 → 8/12.
+    // `compare(x,100,"HUNDRED")` call (`#4`) newly passes.
     assert!(
         out.contains("Success -- Inlining #4"),
         "expected `Success -- Inlining #4` (`compare(x,100,\"HUNDRED\")` — \
          pushPtrCharConstant rendered the readonly char-pointer literal) in:\n{out}"
     );
-    // 8/12 now pass (baseline 0/12, pre-w10 3/12 header-only, w10 6/12 +SBORROW
-    // 7/12, +pushPtrCharConstant 8/12).
+    // w10-elseif-structuring: the comment-rendering integration (CommentSorter +
+    // emitCommentGroup) emits the `WARNING: Could not inline here` instruction
+    // comments, so `#9` (those warnings appear twice) newly passes.
     assert!(
-        out.contains("Total passing tests = 8"),
+        out.contains("Success -- Inlining #9"),
+        "expected `Success -- Inlining #9` (`WARNING: Could not inline here` x2 — \
+         the CommentSorter/emitCommentGroup integration renders the instruction \
+         warning comments) in:\n{out}"
+    );
+    // 9/12 now pass (baseline 0/12, pre-w10 3/12 header-only, w10 6/12 +SBORROW
+    // 7/12, +pushPtrCharConstant 8/12 (#4), +comment-rendering 9/12 (#9)).
+    assert!(
+        out.contains("Total passing tests = 9"),
         "inline.xml must pass its 3 header + 3 body + 1 SBORROW + 1 string-literal \
-         assertion (8/12); baseline 0/12, pre-w10 3/12:\n{out}"
+         + 1 comment-warning assertion (9/12); baseline 0/12, pre-w10 3/12:\n{out}"
     );
 }
 
