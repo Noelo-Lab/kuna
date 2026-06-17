@@ -696,6 +696,23 @@ impl Architecture {
             .ok_or_else(|| KunaError::recov(format!("Unknown function name: {name}")))
     }
 
+    /// Park a source-declared prototype on the named global FunctionSymbol (C++
+    /// `Architecture::setPrototype`: `queryFunction(name)->getFuncProto()` is locked
+    /// from the parsed declaration).  A caller's `ActionDefaultParams::apply` later
+    /// `fc->copy(otherfunc->getFuncProto())` (`coreaction.cc:2385`) reads it back via
+    /// [`Database::function_proto_pieces`].  Silently no-ops when no FunctionSymbol of
+    /// that name exists (the kuna console re-applies the queried function's own
+    /// prototype through `apply_locked_prototype`; this path is for the *callees*).
+    pub fn set_function_prototype_pieces(
+        &mut self,
+        name: &str,
+        pieces: crate::fspec::PrototypePieces,
+    ) {
+        if let Ok(sid) = self.query_global_function(name) {
+            self.symboltab.set_function_proto_pieces(sid, pieces);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Funcdata construction (the W3 boot seam)
     // -----------------------------------------------------------------------
@@ -780,6 +797,11 @@ impl Architecture {
         // `map addr`).  Global-mapped varnodes then pick up `persist`/`addrtied`
         // and their stores survive `ActionDeadCode`.
         seam.global_query = Some(Rc::new(self.symboltab.build_global_query()));
+        // Snapshot every source-declared callee prototype (parked on the global
+        // FunctionSymbols by `set_function_prototype_pieces`) so the per-function
+        // `ActionDefaultParams` copies a known callee's locked `FuncProto` into the
+        // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).
+        seam.callee_protos = self.symboltab.build_callee_proto_pieces();
         // Carry the constant-pointer-inference config (C++ `glb->infer_pointers` /
         // `infer_funcentry`) and the ordered inferable-pointer spaces (C++
         // `glb->inferPtrSpaces`, built by cacheAddrSpaceProperties) so

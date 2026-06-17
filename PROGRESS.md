@@ -1,5 +1,50 @@
 # kuna Progress Log
 
+## Session (2026-06-17) — rust-port W10: Convert B1+B2 substrate (+22 → 371/675); B3 render = seam
+
+**Convert B1 (CALL-arg constant sizing) + B2 (mapped-COPY survival) + prereq LANDED
+(+22 → 371, regressed-set EMPTY).**  The real Convert root was upstream of the dynamic
+hash. `ActionDefaultParams` was a W4 seam that never copied a known callee's locked
+`FuncProto` into the call site (`coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`),
+so `recv_signed(int4)`'s param recovered at the full register size 8 instead of 4 — the
+size-8 CALL-arg constant's dynamic hash diverged from the canonical size-4 stored hash and
+`findVarnode` returned None.  **B1:** park each `parse line extern` callee prototype on its
+global FunctionSymbol (`Database::set_function_proto_pieces`), snapshot it onto the seam
+(`build_callee_proto_pieces` keyed by `(space,offset)`), and have `ActionDefaultParams`
+re-seed a locked `FuncProto` via `seed_locked_from_pieces` + `fc.copy()` — now the locked
+`int4` param sizes the constant to 4 and all 17 dynamic hashes match canonical
+(`dec 100`→`0xe1721eecc7` etc., proven by trace).  **Loop fix (the early-mapping idempotency
+key):** `ActionDynamicMapping` (rule_repeatapply) looped forever because the equate binding
+was parked on the HighVariable, which is absent at that early pass; moved it to the Varnode
+(`Varnode::kuna_symbol_entry`, mirroring C++ `vn->setSymbolEntry`/`getSymbolEntry`,
+`funcdata_varnode.cc:1348`) so it stays idempotent + marks `Varnode::mapped`.  **B2** (the
+mapped-COPY survives copy-elim) was already satisfied by `base_explicit`'s `is_mapped()` arm
+(`coreaction_cleanup.rs:533`, C++ `coreaction.cc:3148`) once the prereq's `mapped` flag stuck.
+Net **12/17 Convert** (the unsigned/positive equate cases #1/#3/#4/#5/#7/#8/#9/#11/#12/#13/
+#15/#16) **+ 10 collateral gains** (Concat, Pointer to array, Union — the locked callee proto
+improves CALL-arg typing corpus-wide, all CORRECT).
+
+**B3 (signed-render dispatch) NOT landed — reported as a SEAM.**  The remaining 8 assertions
+(Convert #2/#6/#10/#14 signed-negate + Bitfields #23, Intermediate pointers #10, MIPS
+Bitfields #23, Partial splitting #7) need C++ `pushConstant`'s `TYPE_INT`→`sign=true`
+dispatch (`printc.cc:1818-1836`) so the equated signed `int4` constants negate
+(`0xfffffe00`→`-512`).  That dispatch is structurally inside `PrintC::pushVnExplicit`'s
+integer arm in `printc.rs`, a RESERVED file in this charter (and actively contended by the
+printc render waves) — there is no faithful relocation out of it (the sign is derived from the
+read-facing metatype at the render and cannot be folded into the orthogonal `display_fmt`
+channel or blanket-applied to the shared `push_constant_ir_fmt` helper without corrupting the
+enum/shift-amount callers).  The substrate this branch lands makes the `int4` read-facing type
+present on those constants, so the 8 assertions are unblocked the moment the one-line
+`sign = ct.get_metatype()==TYPE_INT` dispatch lands on a printc wave (or via charter amendment).
+Convert #17 `L'a'` is a separate residual seam (the char equate's stored hash is size-8 but
+renders through a size-4 SUBPIECE — equate-through-truncation).  The generic free-function unit
+test `resolve_integer_signed_equate_negates_under_forced_format` (printc/tests.rs, NOT the
+reserved printc.rs) pins the signed-format resolution the substrate feeds.
+
+Full rigorous gate: cargo test --workspace 3631/0, clippy --workspace --lib clean, byte-parity
+corpus intact (boolless / switch* / condconst* / displayformat / partialunion all byte-IDENTICAL
+base↔branch), **regressed-set EMPTY**, C++ oracle PARITY OK byte-untouched.
+
 ## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 349/675
 
 **printc-decl-render LANDED (+1 → 349, ACCEPT_WITH_LOSSES):** all 3 printc seams now render

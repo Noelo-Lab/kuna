@@ -1400,7 +1400,7 @@ decomp_command!(
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         // Read the per-function values + take the program out so the engine work
         // borrows neither `status` nor `dcp` while the console output is written.
-        let (name, has_no_code, proc_started, entry, size, mapped_symbols, dynamic_symbols, pending_proto, mut prog) = {
+        let (name, has_no_code, proc_started, entry, size, mapped_symbols, dynamic_symbols, pending_proto, all_pending_protos, mut prog) = {
             let dcp = dcp_mut(status)?;
             let (name, has_no_code, proc_started, entry, size, mapped_symbols, dynamic_symbols) = match &dcp.fd {
                 None => return Err(IfaceError::execution("No function selected")),
@@ -1422,13 +1422,27 @@ decomp_command!(
             // (C++ Architecture::setPrototype applies it to the queried Funcdata;
             // here the IR is rebuilt on `decompile`, so it is re-applied below).
             let pending_proto = dcp.pending_prototypes.get(&name).cloned();
+            // All parsed prototypes (callees included).  C++ `setPrototype` locks each
+            // declared function's `FuncProto` on its (lazily-built) Funcdata; here every
+            // declared prototype is re-parked on its global FunctionSymbol below so a
+            // caller's `ActionDefaultParams` can `fc->copy(otherfunc->getFuncProto())`.
+            let all_pending_protos: Vec<kuna_decomp::fspec::PrototypePieces> =
+                dcp.pending_prototypes.values().cloned().collect();
             match dcp.conf.take() {
                 None => return Err(IfaceError::execution("No load image present")),
                 Some(prog) => {
-                    (name, has_no_code, proc_started, entry, size, mapped_symbols, dynamic_symbols, pending_proto, prog)
+                    (name, has_no_code, proc_started, entry, size, mapped_symbols, dynamic_symbols, pending_proto, all_pending_protos, prog)
                 }
             }
         };
+        // Re-park every parsed callee prototype on its global FunctionSymbol so the
+        // pipeline's `ActionDefaultParams` copies the locked callee proto into the
+        // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).
+        // Functions without a declared prototype (or whose symbol is absent) are
+        // unaffected — the default-model recovery still applies there.
+        for pieces in all_pending_protos {
+            prog.arch_mut().set_function_prototype_pieces(&pieces.name.clone(), pieces);
+        }
         // The `override flow` facts stashed for this function (re-seeded on the
         // rebuilt IR, like `pending_proto`/`mapped_symbols`).
         let flow_overrides = dcp_mut(status)?

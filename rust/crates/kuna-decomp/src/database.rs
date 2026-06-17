@@ -531,6 +531,16 @@ pub enum SymbolKind {
         /// (`IfcFixupApply`).  `-1` = no fixup.  Parked here for the same reason as
         /// `inline_func` (the lazily-built `Funcdata`/`FuncProto` is W5).
         inject_id: int4,
+        /// The parsed, source-declared prototype pieces for this function (C++
+        /// `parse line extern <decl>` → `Architecture::setPrototype` →
+        /// `queryFunction(name)->getFuncProto()`), parked on the FunctionSymbol so a
+        /// caller's `ActionDefaultParams::apply` can `fc->copy(otherfunc->getFuncProto())`
+        /// (`coreaction.cc:2385`).  The C++ owns the locked `FuncProto` on the
+        /// callee's lazily-built `Funcdata` (W5); the kuna console rebuilds each
+        /// queried `Funcdata` fresh, so the declared prototype is stashed here (by
+        /// name+address) and re-seeded into a `FuncProto` on demand.  `None` = no
+        /// source-declared prototype (the default-model recovery applies).
+        proto_pieces: Option<Box<crate::fspec::PrototypePieces>>,
     },
     /// `EquateSymbol` — labels a constant (C++ `EquateSymbol`).
     Equate {
@@ -1992,6 +2002,7 @@ impl Database {
             inline_func: false,
             no_return: false,
             inject_id: -1,
+            proto_pieces: None,
         };
         let sid = self.symbols.insert(sym);
         self.add_symbol_internal(scope, sid)?;
@@ -2361,6 +2372,36 @@ impl Database {
         }
     }
 
+    /// Park the source-declared prototype pieces on a FunctionSymbol (C++
+    /// `Architecture::setPrototype` → `queryFunction(name)->getFuncProto()` with the
+    /// parsed declaration; here stashed for re-seeding at `ActionDefaultParams`).
+    /// No-op on a non-Function symbol.
+    pub fn set_function_proto_pieces(
+        &mut self,
+        sid: SymbolId,
+        pieces: crate::fspec::PrototypePieces,
+    ) {
+        if let SymbolKind::Function { proto_pieces, .. } = &mut self.symbols[sid].kind {
+            *proto_pieces = Some(Box::new(pieces));
+        }
+    }
+
+    /// The source-declared prototype pieces parked on the FunctionSymbol at `addr`
+    /// (in `scope`), or `None` if no function symbol starts there or it carries no
+    /// declared prototype.  Read by a caller's `ActionDefaultParams::apply` to
+    /// `fc->copy(otherfunc->getFuncProto())` (C++ `coreaction.cc:2385`).
+    pub fn function_proto_pieces(
+        &self,
+        scope: ScopeId,
+        addr: &Address,
+    ) -> Option<&crate::fspec::PrototypePieces> {
+        let sid = self.find_function(scope, addr)?;
+        match &self.symbols[sid].kind {
+            SymbolKind::Function { proto_pieces, .. } => proto_pieces.as_deref(),
+            _ => None,
+        }
+    }
+
     /// Is the FunctionSymbol at `addr` (in `scope`) marked \e inline (C++
     /// `queryFunction(addr)->getFuncProto().isInline()`)?  `false` if no function
     /// symbol starts at `addr`.  Read at flow time by `FlowInfo::queryCall`.
@@ -2691,6 +2732,42 @@ impl Database {
             owned: scope.rangetree.clone(),
             flagbase: self.flagbase.clone(),
         }
+    }
+
+    /// Snapshot every global FunctionSymbol's source-declared prototype, keyed by
+    /// `(space_index, entry_offset)`, for the seam architecture (the kuna stand-in
+    /// for the C++ callee `Funcdata`'s lazily-built locked `FuncProto`, read by
+    /// `ActionDefaultParams::apply`'s `fc->copy(otherfunc->getFuncProto())`).  Only
+    /// functions whose prototype was parked by `set_function_proto_pieces` (i.e.
+    /// declared via `parse line extern`) appear; the rest recover with the default
+    /// model.  Frozen at `build_arch_handle`, after every `parse line` has run.
+    pub fn build_callee_proto_pieces(
+        &self,
+    ) -> Vec<(int4, uintb, crate::fspec::PrototypePieces)> {
+        let gid = match self.globalscope {
+            Some(g) => g,
+            None => return Vec::new(),
+        };
+        let scope = &self.scopes[gid];
+        let mut out: Vec<(int4, uintb, crate::fspec::PrototypePieces)> = Vec::new();
+        for (space_index, slot) in scope.maptable.iter().enumerate() {
+            let rangemap = match slot.as_ref() {
+                Some(rm) => rm,
+                None => continue,
+            };
+            for (_, rec) in rangemap.records() {
+                let entry = &rec.entry;
+                if entry.is_dynamic() {
+                    continue;
+                }
+                if let SymbolKind::Function { proto_pieces: Some(pieces), .. } =
+                    &self.symbols[entry.symbol].kind
+                {
+                    out.push((space_index as int4, entry.get_first(), (**pieces).clone()));
+                }
+            }
+        }
+        out
     }
 
     /// C++ `Scope::discoverScope` (`database.cc:1358-1370`): the sub/containing
@@ -4111,5 +4188,51 @@ mod tests {
         }
         // An unknown name resolves to None (the "Unknown function name" path).
         assert_eq!(db.query_function_by_name(g, "nope"), None);
+    }
+
+    /// Adversarial (Convert B1): a source-declared callee prototype parked on a
+    /// global FunctionSymbol (`set_function_proto_pieces`) round-trips through
+    /// `function_proto_pieces` (by address) and `build_callee_proto_pieces` (the
+    /// snapshot the seam reads in `ActionDefaultParams`), keyed by `(space, offset)`.
+    /// Functions WITHOUT a declared prototype never appear — so the proto-copy fires
+    /// only for genuinely declared callees, generic over the proto (no hardcoded
+    /// names / parameter sizes / the convert constants).
+    #[test]
+    fn callee_proto_pieces_roundtrip_only_for_declared_callees() {
+        let m = build_manager();
+        let (mut db, g) = db_with_global(m.num_spaces());
+        let ram = space(&m, 2);
+        let declared_addr = Address::new(Rc::clone(&ram), 0x2000);
+        let plain_addr = Address::new(Rc::clone(&ram), 0x3000);
+        let declared = db.add_function(g, &declared_addr, "declared_callee", 1, dt(1)).unwrap();
+        let _plain = db.add_function(g, &plain_addr, "plain_callee", 1, dt(1)).unwrap();
+
+        // No pieces yet anywhere; the snapshot is empty.
+        assert!(db.function_proto_pieces(g, &declared_addr).is_none());
+        assert!(db.build_callee_proto_pieces().is_empty());
+
+        // Park a prototype with one input on the declared callee (any shape — the
+        // mechanism is generic; here a single int4-ish input named "val").
+        let mut pieces = crate::fspec::PrototypePieces::default();
+        pieces.name = "declared_callee".to_string();
+        pieces.intypes = vec![dt(4)];
+        pieces.innames = vec!["val".to_string()];
+        pieces.first_var_arg_slot = -1;
+        db.set_function_proto_pieces(declared, pieces);
+
+        // The declared callee now reports its pieces by address; the plain one does not.
+        let got = db.function_proto_pieces(g, &declared_addr).expect("declared has pieces");
+        assert_eq!(got.intypes.len(), 1);
+        assert!(db.function_proto_pieces(g, &plain_addr).is_none());
+
+        // The seam snapshot carries exactly the one declared callee, keyed by
+        // (space_index, offset) — generic, address-driven, no special-casing.
+        let snap = db.build_callee_proto_pieces();
+        assert_eq!(snap.len(), 1);
+        let (si, off, snap_pieces) = &snap[0];
+        assert_eq!(*si, ram.get_index());
+        assert_eq!(*off, 0x2000);
+        assert_eq!(snap_pieces.name, "declared_callee");
+        assert_eq!(snap_pieces.intypes.len(), 1);
     }
 }

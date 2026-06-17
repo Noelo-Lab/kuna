@@ -374,6 +374,46 @@ fn format_integer_negative_unsigned_sized() {
     );
 }
 
+/// The signed-integer format-resolution layer the Convert B1 substrate feeds: a
+/// signed (`TYPE_INT` read-facing) equated constant must negate two's-complement
+/// under the equate's forced display format.  C++ `pushConstant` passes
+/// `sign=true` for `TYPE_INT` (`printc.cc:1818-1836`), so the equated `int4` value
+/// `0xfffffe00` with a forced `dec` format renders `-512`, and the forced
+/// `oct`/`bin` formats negate likewise (printc.cc:1381-1391).  This pins the
+/// generic `resolve_integer_format`/`format_integer_token` free functions (NOT the
+/// reserved `printc.rs` render dispatch — see the B3 seam in PROGRESS.md); generic
+/// over the value/format, no convert-specific constants baked in.
+#[test]
+fn resolve_integer_signed_equate_negates_under_forced_format() {
+    // 0xfffffe00 as int4 == -512: dec → (negsign, 512, FORCE_DEC).
+    let (neg, val, fmt) =
+        resolve_integer_format(0xffff_fe00, 4, true, display_format::FORCE_DEC, false, false);
+    assert!(neg);
+    assert_eq!(val, 512);
+    assert_eq!(fmt, display_format::FORCE_DEC);
+    assert_eq!(format_integer_token(neg, val, fmt, 4, false, false, false, ""), "-512");
+
+    // Same value forced to octal: -0333 (512 == 0o1000... actually 512 dec, octal of
+    // the magnitude).  The format is honored, the sign negated.
+    let (neg, val, fmt) =
+        resolve_integer_format(0xffff_fe00, 4, true, display_format::FORCE_OCT, false, false);
+    assert!(neg);
+    assert_eq!(format_integer_token(neg, val, fmt, 4, false, false, false, ""), "-01000");
+
+    // An UNSIGNED (`TYPE_UINT`) read-facing constant does NOT negate: the same bits
+    // print as the full unsigned value (4294966784).
+    let (neg, val, fmt) =
+        resolve_integer_format(0xffff_fe00, 4, false, display_format::FORCE_DEC, false, false);
+    assert!(!neg);
+    assert_eq!(val, 0xffff_fe00);
+    assert_eq!(fmt, display_format::FORCE_DEC);
+
+    // sign is suppressed for a `force_char` equate (printc.cc:1381): no negation.
+    let (neg, _val, _fmt) =
+        resolve_integer_format(0xffff_fe00, 4, true, display_format::FORCE_CHAR, false, false);
+    assert!(!neg);
+}
+
 #[test]
 fn format_integer_char() {
     // Plain printable char.

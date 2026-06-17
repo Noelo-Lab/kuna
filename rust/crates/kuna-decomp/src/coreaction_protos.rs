@@ -400,17 +400,67 @@ impl Action for ActionDefaultParams {
             Some(Ok(t)) => t,
             _ => return 0,
         };
+        // Clone the arch handle (Rc bump) so the callee-proto query/build below can
+        // borrow the architecture's declared-callee map / type factory / space
+        // manager while `data`'s call specs are mutated.
+        let arch = data.get_arch().clone();
+        let default_fp = arch.default_fp().cloned();
         let size = data.num_calls();
         for i in 0..size {
             if !data.get_call_specs(i).proto().has_model() {
-                // The callee `Funcdata` is a cross-function W4 reference; the
-                // recovered callee proto-copy (`fc->copy(otherfunc->getFuncProto())`)
-                // is the W4 path.  For an unknown callee (the common datatest case:
-                // a symbol with no Funcdata), set the default-model internal proto.
-                // SEAM(W4 callee-Funcdata copy): a known callee with a recovered
-                // proto would `copy` it; here the default model applies, which is
-                // what the register-parameter datatests resolve to.
-                data.get_call_specs_mut(i).proto_mut().set_internal(evalfp.clone(), void_ty.clone());
+                // C++ `coreaction.cc:2382-2390`:
+                //   Funcdata *otherfunc = fc->getFuncdata();
+                //   if (otherfunc != 0) {
+                //     fc->copy(otherfunc->getFuncProto());
+                //     if (!fc->isModelLocked() && !fc->hasMatchingModel(evalfp))
+                //       fc->setModel(evalfp);
+                //   } else fc->setInternal(evalfp, void);
+                // The callee's locked `FuncProto` is re-built here from the source-
+                // declared prototype pieces parked on its global FunctionSymbol by
+                // `Architecture::set_function_prototype_pieces` (the kuna stand-in for
+                // the C++ callee `Funcdata`'s lazily-built `FuncProto`).
+                let has_funcdata = data.get_call_specs(i).has_funcdata();
+                let callee_pieces = if has_funcdata {
+                    let entry = data.get_call_specs(i).get_entry_address().clone();
+                    arch.callee_proto_pieces(&entry).cloned()
+                } else {
+                    None
+                };
+                let callee_proto = match (callee_pieces, default_fp.clone(), arch.types()) {
+                    (Some(pieces), Some(dfp), Some(types)) => {
+                        let mut fp = crate::fspec::FuncProto::new();
+                        match fp.seed_locked_from_pieces(
+                            &pieces,
+                            dfp,
+                            void_ty.clone(),
+                            types,
+                            arch.manage(),
+                        ) {
+                            Ok(()) => Some(fp),
+                            // The callee storage assignment hit an un-ported seam: fall
+                            // back to the default-model recovery for this call site.
+                            Err(_) => None,
+                        }
+                    }
+                    _ => None,
+                };
+                match callee_proto {
+                    Some(calleeproto) => {
+                        // fc->copy(otherfunc->getFuncProto())
+                        data.get_call_specs_mut(i).proto_mut().copy(&calleeproto);
+                        // if (!fc->isModelLocked() && !fc->hasMatchingModel(evalfp)) fc->setModel(evalfp)
+                        let fc = data.get_call_specs(i);
+                        if !fc.proto().is_model_locked() && !fc.proto().has_matching_model(&evalfp) {
+                            data.get_call_specs_mut(i).proto_mut().set_model(Some(evalfp.clone()));
+                        }
+                    }
+                    None => {
+                        // No source-declared callee prototype (a symbol with no
+                        // Funcdata): set the default-model internal proto.  The
+                        // register-parameter datatests resolve here.
+                        data.get_call_specs_mut(i).proto_mut().set_internal(evalfp.clone(), void_ty.clone());
+                    }
+                }
             }
             // fc->insertPcode(data): inject any uponreturn p-code.  SEAM(W4
             // pcodeinjectlib): the default models on the datatest path declare no
