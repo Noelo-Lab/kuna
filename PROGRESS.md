@@ -1,6 +1,14 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 442/675; De Morgan, namespace, convert-negconst, RSP &v1-render, enum4/HighVariable, BOOL_NEGATE, string-literal render, longdouble-stride
+## Session (2026-06-17c) — rust-port W10: 408 → 449/675; +De Morgan, namespace, convert, RSP&v1, enum4/HighVar, BOOL_NEGATE, string-literal, longdouble, heap-string
+
+**heap-string sequence +7 → 449 (Heap string #1-7 full parity; heapstring LOSS resolved).** Ported
+`HeapSequence`/`RuleStringStore` (constseq.cc:486-1029) + `Funcdata::get_internal_string` +
+persistent StringManager (architecture.rs/seams.rs) + printer `op_callother_ir`/STRINGDATA render +
+the load-bearing `output_type_local` STRINGDATA cast fix (coreaction_infertypes, mirrors
+InternalStringOp::getOutputLocal). Gate: `[675,449]`, regressed-set EMPTY, switch 8/16/3, PARITY OK
+(printc auto-merged w/ longdouble). Review `reviews/w10-string-sequence.md`. stackstring (14) is the
+documented next-locus (StringSequence COPY-into-array driver, gated on the LOSS-229 dead-code timing).
 
 **longdouble array stride +1 → 442.** `PrintC::pushSymbolDetail` array branch strided by raw
 element size (`get_size()`=10 for float10) not aligned size — float10 array elements occupy 16
