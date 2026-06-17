@@ -3610,14 +3610,10 @@ impl Action for ActionReturnSplit {
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ (blockaction.cc:2265): iterate `data.beginOp(CPUI_RETURN)`, gather
         // goto-return blocks (`gatherReturnGotos`), pick splittable RETURN blocks
-        // (`isSplittable`), and `data.nodeSplit(retnode[i],splitedge[i])`.
-        //
-        // SEAM(W7/W4): the op-by-opcode iteration (`beginOp(CPUI_RETURN)`), the
-        // copy-map traversal `getCopyMap()`/`getGotoTarget()`/`subBlock` chain in
-        // `gatherReturnGotos`, and `Funcdata::nodeSplit` (p-code cloning across an
-        // edge) are not available in the merged tree.  Recorded as losses; the
-        // action shell is in place.
-        let _ = data;
+        // (`isSplittable`), and `data.nodeSplit(retnode[i],splitedge[i])`.  The
+        // driver lives on Funcdata (it needs op + block + cloner access).
+        let changes = data.return_split_apply();
+        self.base_mut().count += changes;
         0
     }
 }

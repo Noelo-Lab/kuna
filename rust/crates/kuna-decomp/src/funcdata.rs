@@ -1285,7 +1285,13 @@ impl Funcdata {
     pub(crate) fn seed_sblocks_copy(&mut self) {
         let sroot = self.sblocks.root.expect("sblocks root");
         let broot = self.bblocks.root.expect("bblocks root");
-        self.sblocks.build_copy_from(sroot, &self.bblocks, broot);
+        // C++ `buildCopy` writes `(*iter)->copymap = copyblock` back into each
+        // SOURCE basic block (block.cc:1938).  The cross-arena port returns the
+        // src(bblocks)->dst(sblocks BlockCopy) map; apply it here.
+        let copymap = self.sblocks.build_copy_from(sroot, &self.bblocks, broot);
+        for (src, dst) in copymap {
+            self.bblocks.set_copy_map(src, Some(dst));
+        }
     }
 
     // -----------------------------------------------------------------------

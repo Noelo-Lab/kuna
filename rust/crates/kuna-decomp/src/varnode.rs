@@ -574,6 +574,11 @@ impl Varnode {
     pub fn get_flags(&self) -> uint4 {
         self.flags
     }
+    /// Get the additional boolean attribute word (C++ `Varnode::addlflags`),
+    /// used by the block-split clone (`CloneBlockOps::buildVarnodeOutput`).
+    pub(crate) fn get_addlflags(&self) -> uint2 {
+        self.addlflags
+    }
     /// Get the Datatype (C++ `getType`).
     pub fn get_type(&self) -> &Rc<Datatype> {
         &self.type_
@@ -1110,6 +1115,30 @@ impl Varnode {
         self.flags |= fl;
         // if (high != null) { high->flagsDirty(); if (fl&coverdirty) high->coverDirty(); }
         //   -- SEAM(W7): high lives in Funcdata::high_bank; reconciled there.
+    }
+
+    /// Copy the masked clone flags from a source Varnode onto `self`
+    /// (C++ `CloneBlockOps::buildVarnodeOutput`, `funcdata_block.cc:1008-1016`):
+    /// the boolean attribute subset that survives a block-split clone, plus the
+    /// addl-flag subset.  `src_flags`/`src_addl` are the source's raw flag words.
+    pub(crate) fn copy_clone_flags(&mut self, src_flags: uint4, src_addl: uint2) {
+        let vflags = src_flags
+            & (varnode_flags::externref
+                | varnode_flags::volatil
+                | varnode_flags::incidental_copy
+                | varnode_flags::readonly
+                | varnode_flags::persist
+                | varnode_flags::addrtied
+                | varnode_flags::addrforce
+                | varnode_flags::nolocalalias
+                | varnode_flags::spacebase
+                | varnode_flags::indirect_creation
+                | varnode_flags::return_address
+                | varnode_flags::precislo
+                | varnode_flags::precishi);
+        self.set_flags(vflags);
+        let aflags = src_addl & (addl_flags::writemask | addl_flags::ptrflow | addl_flags::stack_store);
+        self.addlflags |= aflags;
     }
 
     /// C++ `clearFlags` (`varnode.cc:384`): clear the bits.  HighVariable
