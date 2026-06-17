@@ -87,6 +87,7 @@ fn named_entry(
         symbol_name: name.to_string(),
         symbol_offset: offset,
         symbol_type: None,
+        scope_path: Vec::new(),
     }
 }
 

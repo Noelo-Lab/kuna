@@ -86,6 +86,7 @@ fn typed_entry(
         symbol_name: name.to_string(),
         symbol_offset: offset,
         symbol_type,
+        scope_path: Vec::new(),
     }
 }
 
