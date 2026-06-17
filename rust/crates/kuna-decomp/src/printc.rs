@@ -4828,7 +4828,20 @@ impl PrintC {
         let force_hex = self.context.is_set(modifiers::FORCE_HEX);
         let (print_negsign, val, display_fmt) =
             resolve_integer_format(val, sz, false, display_fmt_in, force_hex, force_dec);
-        let tok = format_integer_token(print_negsign, val, display_fmt, sz, false, false, false, "");
+        // C++ `push_integer` (printc.cc:1417) gates the wide-char `L` prefix on
+        // `doEmitWideCharPrefix()` (always true for PrintC) AND `sz > 1`.  The
+        // earlier port passed `false` here, dropping the `L` from a size>1
+        // force_char constant (e.g. the convert `L'a'` equate on a size-4 char).
+        let tok = format_integer_token(
+            print_negsign,
+            val,
+            display_fmt,
+            sz,
+            false,
+            false,
+            true, // doEmitWideCharPrefix() — PrintC
+            "",
+        );
         self.push_atom(&Atom::with_op(
             tok,
             TagType::Syntax,
