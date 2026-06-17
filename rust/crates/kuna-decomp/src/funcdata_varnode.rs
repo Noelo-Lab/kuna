@@ -1088,10 +1088,16 @@ impl Funcdata {
         // myarray[3][5]`) binds its name onto the offset constant's HighVariable.
         // `(display_name, sym_off, sym_type, is_name_undefined)` from whichever
         // scope contains `addr` (local stack frame first, then the global scope).
-        let resolved: Option<(String, int4, Option<Rc<Datatype>>, bool)> = match self
-            .get_scope_local()
-            .and_then(|lm| lm.query_container_for_link(&addr))
-        {
+        // `info_is_global` is `true` when the `&symbol` reference resolved through the
+        // GLOBAL scope (`sb->getMap()` returns `glb->getGlobalScope()` for a ram
+        // spacebase) rather than the local frame.  A global Symbol is rendered by name
+        // in the body but never declared as a local (C++
+        // `emitScopeVarDecls(fd->getScopeLocal())`, printc.cc:2667); the flag is
+        // carried onto the high so the printer's local decl loop skips it.  Resolve
+        // the local frame first; on a miss fall back to the global scope.
+        let local_hit = self.get_scope_local().and_then(|lm| lm.query_container_for_link(&addr));
+        let info_is_global = local_hit.is_none();
+        let resolved: Option<(String, int4, Option<Rc<Datatype>>, bool)> = match local_hit {
             Some(i) => Some((i.display_name, i.sym_off, i.sym_type, i.is_name_undefined)),
             None => {
                 // Global-scope fallback: glb->getGlobalScope()->queryContainer.  A
@@ -1138,6 +1144,9 @@ impl Funcdata {
             if let Some(t) = info_sym_type {
                 h.set_symbol_type(t);
             }
+            // A reference resolved through the global scope is not a local symbol;
+            // mark it so the printer's local decl loop renders it by name only.
+            h.set_kuna_global(info_is_global);
         }
         true
     }
