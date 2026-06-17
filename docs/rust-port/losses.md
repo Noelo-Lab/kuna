@@ -2498,3 +2498,24 @@ The original LOSS-229 restoration note is WRONG. The mapped-copyelim wave dispro
   mapped cover-forced variable. Loci: `merge.rs` (copy_trim_op/mergeMultiEntry/cover-intersection) +
   `coreaction_render.rs::baseExplicit` isMapped arm (coreaction.cc:3148). This is DEEP merge infra —
   two waves (partial-merge, mapped-copyelim) have now bounced off it; defer to a dedicated effort.
+
+## LOSS-230 — Union (9) blocked; SUBPIECE-cast arm gated on a condconstsub flow bug
+
+- kind: deferred (the union test is `union_datatype.xml`, 24/33, 9 failing — three families)
+- **Family 1 (#8/#14/#28 + Bitfields #4) — the clean lever:** the SUBPIECE→cast render arm is
+  DELIBERATELY DISABLED at `printc.rs:3810-3822` (`op_subpiece_ir`, C++ `isSubpieceCast ?
+  opTypeCast : opFunc` printc.cc:892-897). Enabling it + switching `subpiece_is_cast`
+  (printc.rs:3847) to read `getHighTypeReadFacing`/`DefFacing` (not bare-Varnode types) gains
+  Union #8/#14/#28 + Bitfields #4. **BLOCKED only** because it regresses `Modified conditional
+  constant #4`: rust has a PRE-EXISTING IR divergence — `process` returns `SUB(ptr,0)` where C++
+  returns `v1 = otherfunc()` (an AARCH64 `callreturn`-override flow/dataflow bug in `flow.rs`/
+  `funcdata_resolveflow.rs`). The faithful cast renders that spurious SUBPIECE as `(int4)ptr`.
+  → FIX the condconstsub callreturn-override flow bug FIRST, then the cast-arm enable lands
+  +3/+4 with zero regression. This is the highest-leverage clean fix.
+- **Family 2 (#19/#22/#25):** extra `(float8)` cast on float4 union members — FLOAT2FLOAT
+  implied-cast marking in `ActionSetCasts` (`coreaction_casts.rs`). Deep/broad.
+- **Family 3 (#4/#27):** struct/array field render through union-member pointers — the
+  `inheritUnionField`/`needsResolution` SEAM is stubbed in `addtreestate.rs:737-758` +
+  `ruleaction_5.rs:1313,1361` (C++ `Funcdata::inheritUnionField`/`inheritUnionFieldPtr`
+  funcdata.cc:1079,1101). Multi-file union-resolution port.
+- recorded by the integrator after the Union wave BLOCKED (2026-06-17). [[kuna-rust-port]]
