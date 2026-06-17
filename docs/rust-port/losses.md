@@ -2425,7 +2425,12 @@ The diff ports two real upstream pieces: (a) `ScopeInternal::clearUnlockedCatego
 
 ## LOSS-228 — enum4 RuleExpandLoad substrate (+0): Enum #4 blocked by HighVariable representative selection
 
-- kind: deferred (downstream-gated)
+- **RESOLVED 2026-06-17** (wave `w10-highvar-typerep` @ ffb0d79, merged → 433). The true root was
+  NOT representative selection but the missing `high->typeDirty()` propagation from the varnode
+  arena (`Varnode::update_type` SEAM(W7) stub, varnode.cc:480): new `Funcdata::vn_update_type`
+  (funcdata.rs:2052) dirties the high at the 8 ActionSetCasts sites. The substrate below + this
+  fix landed Enum Reading #4 + Intermediate pointers #3/#4. See `reviews/w10-highvar-typerep.md`.
+- kind: deferred (downstream-gated) — historical, now resolved
 - what: `RuleExpandLoad` (LOAD-resize, C++ `ruleaction.cc:10942`) was a no-op stub in
   `rust/crates/kuna-decomp/src/ruleaction_8.rs`. Now faithfully ported (apply_op +
   `modify_and_comparison` `ruleaction.cc:10919` + local `space_from_const`). After the fix the

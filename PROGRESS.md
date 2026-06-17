@@ -1,6 +1,18 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 430/675; De Morgan + namespace + convert-negconst + RSP &v1-render (repaired); enum4 shelved (+0)
+## Session (2026-06-17c) — rust-port W10: 408 → 433/675; De Morgan + namespace + convert-negconst + RSP &v1-render + enum4/HighVariable
+
+**enum4 + HighVariable typeDirty INTEGRATED (+3 → 433; resolves LOSS-228).** The enum4
+`RuleExpandLoad` substrate (LOAD-resize, +0 alone) + the real fix: `Varnode::update_type` had a
+`SEAM(W7)` stub for `high->typeDirty()` (varnode.cc:480) — type changes never reached the
+HighVariable (separate arena), so the widened `(V&C)==D` AND-output kept its stale `xunknown1`
+high and `TypeOpEqual::getInputCast` emitted a spurious `(flags)` cast. New `Funcdata::
+vn_update_type` (funcdata.rs:2052) dirties the high; the 8 ActionSetCasts sites
+(coreaction_casts.rs) route through it. Gained Enum Reading #4 + Intermediate pointers #3/#4
+(the #3 a cross-wave bonus on the 430 tree). Gate: `[675,433]`, regressed-set EMPTY, switch
+cluster intact, cargo test 0-fail, PARITY OK. Review `reviews/w10-highvar-typerep.md`. A 529
+API-wide throttle killed all 4 waves of the first relaunch batch mid-flight; recovered after a
+wait, relaunched at 3 concurrent (4 is over the line). HighVariable resumed in-place from its WIP.
 
 **RSP &v1-render INTEGRATED (+7 → 430).** The repaired layer merged onto the 423 tree: the
 3-way reconcile auto-resolved `name_local_highs_angr` (namespace's global-name qualification +
