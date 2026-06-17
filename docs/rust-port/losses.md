@@ -2306,3 +2306,37 @@ The diff ports two real upstream pieces: (a) `ScopeInternal::clearUnlockedCatego
   / wide-float merge seam (LOSS-223) lands; at that point AT4 should be re-tightened to require
   the clean `x` and Long double #3/#4 flip green.
 - recorded by the RSP-keystone independent verifier.
+
+## LOSS-225 — RSP L4/L5 stack-frame infra: L5 input-effect-marking gated OFF (printc/render seam)
+
+- branch: `rport/w10-rsp-L4L5-stackframe` (@7f1f4df), parent `rust-port`@477d6f3.
+- what: `ActionRestrictLocal` (L4) + `ScopeLocal::markNotMapped`/`isUnaffectedStorage` +
+  `checkUnaliasedReturn`/`mark_not_mapped_core` are ported line-faithful and `restrict_local()`
+  is WIRED LIVE into the action. But the upstream co-requisite — `setInputVarnode`'s
+  `funcp.hasEffect` tail that marks saved-register / return-address INPUTS `unaffected`/
+  `return_address` (`funcdata_varnode.cc`) — is transcribed faithfully into
+  `apply_input_effect_marking` and held behind `INPUT_EFFECT_MARKING_ENABLED = false`
+  (`funcdata_varnode.rs:111`).
+- why gated: activating the input-marking on its own is net-NEGATIVE today — marking the
+  stack-pointer input `unaffected` removes the placeholder local that currently binds a raw
+  stack-pointer call argument, and the downstream chain that should re-render it as a typed
+  `&v1`/`PTRSUB(v1,..)` stack reference (the `ScopeLocal::restructureVarnode` stack-frame
+  typing + `annotateRawStackPtr` plane, which COLLIDES with `coreaction_casts.rs`/`printc.rs`
+  — reserved this wave) is not yet complete, so the arg would fall back to the bare `RSP`
+  register and regress the `switchhide` call-arg render (`verify_w10_callarg_piece_switchhide`
+  guard). With the gate OFF, loop 2 of `restrict_local` (the unaffected-input COPY sweep) is
+  inert — faithful for the current no-input-unaffected IR.
+- net effect: +0 on the 675 datatest assertion count (397 = 397, regressed-set EMPTY,
+  new-pass EMPTY; passing set byte-identical to base). The only rendered-C delta across the
+  whole 83-file corpus is in `longdouble.xml`: L4's `markNotMapped` correctly EXCISES a
+  spurious `xunknown2 v3; // stack - 0x10` (and `v2`) local in `printstruct`/`printldfirst`,
+  inlining the `CONCAT(SUB(...),...)` expression. This is directionally TOWARD the C++ oracle
+  (which has no such local) and flips no Long double assertion either way.
+- NO special-casing: every guard keys on Symbol category/typelock + AddrSpace identity
+  (or index proxy) + spacetype classification — zero register-name/offset/function-name
+  literals (verified by grep over all touched files incl. the 3 non-reserved seam files
+  database.rs/fspec.rs/funcdata_varnode.rs).
+- restoration: flip `INPUT_EFFECT_MARKING_ENABLED` to `true` once the L5 stack-frame typing /
+  `annotateRawStackPtr` render chain (the cast/printc plane) lands; loop 2 of `restrict_local`
+  then becomes active. This is the documented one-call flip.
+- recorded by the RSP-L4L5 independent verifier (round 1).

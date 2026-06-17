@@ -1,6 +1,21 @@
 # kuna Progress Log
 
-## Session (2026-06-16d/17) — rust-port W10: 307 → 397/675; RSP KEYSTONE CRACKED
+## Session (2026-06-16d/17) — rust-port W10: 307 → 400/675; RSP KEYSTONE + switchind 16/16
+
+**RSP #8 guard-fold LANDED (+3 → 400): switchind now FULLY recovers 16/16.** Enabled
+`fold_in_guards` + **wired `removeBranch`** (the W3-block seam — the `if(1)` constant-CBRANCH
+collapse) so the bound-check guard folds into the switch as `default:`. Flips Switch-Indirect #8
+(default:), If/Switch #2, Switch-Hide #2; regressed-set EMPTY, cargo test 3663/0, oracle PARITY.
+The `verify_w5_s3_coreaction_early` update is a STRENGTHENING (it now verifies removeBranch
+actually folds the 2 constant CBRANCHes — was a seam no-op pin). #8's independent verify died on
+a transient API 529; gate re-run + spot-checked clean in the main loop. **RSP HARVEST STATUS:**
+keystone (+13) + switchind-16/16 (+3) landed; the spacebase-render chain (L4/L5 substrate
+@ 7f1f4df + restructureVarnode stack-frame typing → the //rsp-local removal + the noforloop/
+stackstring/partialsplit/piecestruct/stackspill STACK arms) is IN PROGRESS — its wave died twice
+on API 529 (degraded); substrate preserved, relaunch when the API recovers. Remaining RSP-harvest
+seams: ActionReturnSplit/nodeSplit (switchmulti #2-9 structuring) + the render-chain stack-frame
+flips. Shelves to re-activate post-render-chain: longdouble-x87, base_explicit-v2, forloop-reroll.
+
 
 **RSP/SPACEBASE KEYSTONE CRACKED + INTEGRATED (+13 → 397, independently verified).** The
 dominant deferred keystone — the deepest, most cross-cutting subsystem in the port (~190
