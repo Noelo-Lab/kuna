@@ -2686,3 +2686,23 @@ hasNoLocalAlias.
   relative arm fires, #1/#2/#3 flip. LIKELY BROAD (type-locked-local typing across the suite).
   Touches funcdata.rs/funcdata_varnode.rs (foundational) — schedule when those are free. The other
   2 failures: #7 = float NAN-compare simplification (ruleaction), #8 = loop structuring. [[kuna-rust-port]]
+
+## LOSS-156 (D3) UPDATE — restructure tail DONE; 2 gaps remain (store-merge + ptr-forwarding), OR-wire ready
+
+The restructure-tail wave (branch `rport/w10-restructure-tail` @ 04cd2a2, carries the FULL Chain B
+substrate b120faf+604408a) fully ported `restructureVarnode`'s tail (clear_unlocked_category/
+clear_category(FAKE_INPUT)/fake_input_symbols, varmap.cc:1275-1448, in funcdata_spacebase.rs:601 +
+database.rs category helpers + varmap.rs wrappers). MEASURED: wiring the heritage.rs:1400 OR still
+gives +7/-4 EVEN WITH the tail — the tail does NOT close the gaps (hypothesis disproven). The 2 gaps
+are now cleanly isolated from restructure:
+- **Gap 1 (Store cross #1/#2):** the conditional addrforced mapped-array store-COPYs
+  (`local_array[10]=0x18; if() local_array[10]=0x48;`) do not re-merge into the oracle's phi-fed
+  single store (`v2=0x18; if() v2=0x48; local_array[10]=v2;`). A MULTIEQUAL/store-merge pass
+  (merge.rs/heritage), NOT a restructure concern. Closing also gains +3 (Store cross #3/#4/#5).
+- **Gap 2 (Intermediate pointers #3/#5):** `&v1.arr1[a]` (PTRSUB+PTRADD) intermediate pointer not
+  forwarded/collapsed (`v2 = &v1.arr1[a]; *v2 = ...` vs `v1.arr1[a] = ...`). An addtreestate/RulePtr*
+  concern (addtreestate.rs, ruleaction_5.rs RulePtr family).
+- The exact +10 enabler is `| fd.query_local_properties(addr,size,&usepoint)` at heritage.rs:1400
+  (one line, documented in the in-code comment) — flip ONLY after both gaps close. Substrate ready
+  at 04cd2a2. Five Chain B substrate waves landed +0 so far (b120faf→604408a→04cd2a2); the cluster
+  is a deep dependency tree. [[kuna-rust-port]]
