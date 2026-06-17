@@ -523,6 +523,48 @@ fn mark_property_range(
     Ok(())
 }
 
+/// C++ `Architecture::setPrototype(pieces)` (architecture.cc:393) for the
+/// console seam: find the FunctionSymbol named `pieces.name` in the global scope
+/// and lock the parsed prototype onto it.  The kuna model stores the locked
+/// signature as the symbol's `TypeCode` prototype (built by
+/// `TypeFactory::getTypeCode(PrototypePieces)` — the same construction the C++
+/// `FuncProto::setPieces` ultimately produces); we retype the FunctionSymbol to
+/// that prototype-bearing code type.  A missing symbol is a no-op (the C++ would
+/// throw "Unknown function name", but the kuna `parse line extern` path also
+/// stashes the pieces for the active-function load, so a name that is only ever
+/// the *current* decompile target is still handled there); a non-function symbol
+/// is left untouched.
+fn apply_prototype_to_symbol(
+    status: &mut IfaceStatus,
+    pieces: &kuna_decomp::fspec::PrototypePieces,
+) -> IfaceResult<()> {
+    let dcp = dcp_mut(status)?;
+    let prog = match dcp.conf.as_mut() {
+        Some(p) => p,
+        None => return Ok(()),
+    };
+    let arch = prog.arch_mut();
+    let scope = match arch.symboltab.get_global_scope() {
+        Some(s) => s,
+        None => return Ok(()),
+    };
+    // queryFunction(basename) — the function must already be a FunctionSymbol
+    // (a `<symbol>` loader record, or a prior `load function`).
+    let sid = match arch.symboltab.query_function_by_name(scope, &pieces.name) {
+        Some(s) => s,
+        None => return Ok(()),
+    };
+    // getTypeCode(pieces): the prototype-bearing TypeCode the symbol's
+    // getPrototype() will return.  A build failure (no proto context) is a
+    // no-op — fall back to the stashed-pieces path.
+    let type_code = match arch.types().get_type_code_proto(pieces) {
+        Ok(tc) => tc,
+        Err(_) => return Ok(()),
+    };
+    let _ = arch.symboltab.retype_symbol(sid, type_code);
+    Ok(())
+}
+
 /// Shared body of `IfcParseFile`/`IfcParseLine` (`ifacedecomp.cc:347,384`): run
 /// `parse_C` against the program's [`Architecture`].  A `ParseError` is reported
 /// as the C++ does — `"Error in C syntax: <explain>"` on the output stream, then
@@ -559,7 +601,22 @@ fn run_parse_c(status: &mut IfaceStatus, content: &str) -> IfaceResult<()> {
     match parse_result {
         Ok(()) => {
             if let Some(pieces) = extern_pieces {
-                // Stash for application at load time (the FuncProto restore seam).
+                // C++ `Architecture::setPrototype(pieces)` (architecture.cc:393):
+                // resolve the FunctionSymbol by name and lock the parsed prototype
+                // onto it (`fd->getFuncProto().setPieces(pieces)`).  In kuna the
+                // function's data-type IS its `TypeCode`, whose `getPrototype()`
+                // carries the locked `FuncProto`; so we build the prototype-bearing
+                // TypeCode (`getTypeCode(PrototypePieces)`) and retype the symbol.
+                // This makes a *callee*'s declared signature visible to
+                // `ActionDefaultParams`' `fc->copy(otherfunc->getFuncProto())` —
+                // without it a by-value struct call argument never gets the callee
+                // param type and `RulePieceStructure` cannot split its CONCAT into
+                // per-field writes.  (Generic over the signature: keyed by the
+                // declared name only, exactly as the C++ `queryFunction(basename)`.)
+                apply_prototype_to_symbol(status, &pieces)?;
+                // Also stash for re-application when THIS function is the one being
+                // decompiled (the IR is rebuilt on `decompile`, discarding the
+                // symbol-table proto link for the active Funcdata).
                 let dcp = dcp_mut(status)?;
                 dcp.pending_prototypes.insert(pieces.name.clone(), pieces);
             }
