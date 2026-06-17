@@ -1174,6 +1174,103 @@ impl Action for ActionCopyMarker {
 /// body Varnodes — the body then renders the recovered names, not the raw
 /// registers / stack addresses.  Highs with no covering Symbol that would route
 /// to `vN` (in-scope, address-tied, non-persistent locals) get the angr default.
+///
+/// C++ `Funcdata::linkProtoPartial` (`funcdata_varnode.cc:1153`), realized against
+/// the merged tree's HighVariable `kuna_*` naming fields: bind a CONCAT-tree piece
+/// to its root structure's symbol so it renders `root.field` (e.g. `v1.A`).
+///
+/// ```text
+/// HighVariable *high = vn->getHigh();
+/// if (high->getSymbol() != 0) return;            // already bound
+/// Varnode *rootVn = PieceNode::findRoot(vn);
+/// if (rootVn == vn) return;                       // vn IS the root
+/// HighVariable *rootHigh = rootVn->getHigh();
+/// if (!rootHigh->isSameGroup(high)) return;
+/// Varnode *nameRep = rootHigh->getNameRepresentative();
+/// Symbol *sym = linkSymbol(nameRep);              // name the root on demand
+/// if (sym == 0) return;
+/// rootHigh->establishGroupSymbolOffset();
+/// SymbolEntry *entry = sym->getFirstWholeMap();
+/// vn->setSymbolEntry(entry);                      // piece inherits root's symbol
+/// ```
+///
+/// The kuna model has no `SymbolEntry`; the equivalent of "the piece inherits the
+/// root's symbol" is stamping the root's display name + the root's struct type +
+/// the piece's group-relative in-symbol byte offset onto the piece's HighVariable
+/// — exactly the triple [`crate::printc`]'s `push_partial_symbol_ir` walks to emit
+/// `root.field`.  The piece's offset is `piece->getOffset() + group->getSymbolOffset()`
+/// (C++ `HighVariable::setSymbol`, `variable.cc:259`), where the group offset comes
+/// from `establishGroupSymbolOffset` on the root.
+///
+/// `linkSymbol(nameRep)` on the root is the on-demand naming the kuna loop performs
+/// here directly: if the root already carries a `kuna_name` (a container symbol or a
+/// previously-allocated `vN`), reuse it; otherwise allocate the next `vN` (consuming
+/// `base`) and bind it — pieces themselves never consume a `vN`.  Returns `true` when
+/// the piece was bound (caller skips the `vN` allocator).
+fn bind_proto_partial_piece(
+    data: &mut Funcdata,
+    piece_vn: crate::seams::VarnodeId,
+    piece_high: crate::seams::HighVariableId,
+    base: &mut int4,
+) -> bool {
+    // Varnode *rootVn = PieceNode::findRoot(vn);  if (rootVn == vn) return;
+    let root_vn = data.piece_find_root(piece_vn);
+    if root_vn == piece_vn {
+        return false;
+    }
+    let root_high = match data.vbank().get(root_vn).and_then(|v| v.get_high()) {
+        Some(h) => h,
+        None => return false,
+    };
+    // if (!rootHigh->isSameGroup(high)) return;
+    if !data.high_bank().is_same_group(root_high, piece_high) {
+        return false;
+    }
+    // Symbol *sym = linkSymbol(rootHigh->getNameRepresentative());  — name the root
+    // on demand.  Reuse an existing name (container symbol / earlier vN); otherwise
+    // allocate the next vN and bind it.  The root's struct type is the partial-symbol
+    // type the piece renders through.
+    let root_name = match data.high_bank().get(root_high).and_then(|h| h.kuna_name()) {
+        Some(n) => n.to_string(),
+        None => {
+            let name = format!("v{base}");
+            *base += 1;
+            if let Some(h) = data.high_bank_mut().get_mut(root_high) {
+                h.set_kuna_name(name.clone());
+            }
+            name
+        }
+    };
+    // The root struct data-type (the `sym->getType()` stand-in the piece walks); read
+    // from the root's representative Varnode (its `foo`/`fooshort` type).
+    let root_rep = data.high_name_representative(root_high).unwrap_or(root_vn);
+    let root_type = data.vbank().get(root_rep).map(|v| v.get_type().clone());
+    // rootHigh->establishGroupSymbolOffset();  — write the group's symbol offset so
+    // every piece can derive its own in-symbol offset.  On the invariant-violation
+    // Err (off < 0), bail rather than bind a bogus offset.
+    if data.high_bank_mut().establish_group_symbol_offset(root_high).is_err() {
+        return false;
+    }
+    // C++ `HighVariable::setSymbol` (`variable.cc:259`): the piece's in-symbol byte
+    // offset is `piece->getOffset() + piece->getGroup()->getSymbolOffset()`.
+    let piece_group_off = match data.high_bank().high_piece_id(piece_high) {
+        Some(p) => data.high_bank().piece_offset(p),
+        None => return false,
+    };
+    let group_sym_off = data.high_bank().group_symbol_offset(root_high);
+    let sym_off = piece_group_off + group_sym_off;
+    // vn->setSymbolEntry(...): bind the root's name + struct type + the piece's
+    // in-symbol offset onto the piece's HighVariable.
+    if let Some(h) = data.high_bank_mut().get_mut(piece_high) {
+        h.set_kuna_name(root_name);
+        h.set_symbol_offset(sym_off);
+        if let Some(t) = root_type {
+            h.set_symbol_type(t);
+        }
+    }
+    true
+}
+
 fn name_local_highs_angr(data: &mut Funcdata) {
     use crate::seams::HighVariableId;
     // Materialize the recovered/locked parameters as Symbols in the local scope
@@ -1214,6 +1311,23 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         }
         // Already named? (idempotent re-run / inherited name.)
         if data.high_bank().get(high).map(|h| h.kuna_name().is_some()).unwrap_or(false) {
+            continue;
+        }
+        // C++ `Funcdata::linkSymbol` (`funcdata_varnode.cc:1180-1181`): a proto-partial
+        // Varnode is a piece getting PIECEd into a larger structure (a struct-by-value
+        // return / param built by `RulePieceStructure`).  Before the generic symbol
+        // query, `linkProtoPartial` (`funcdata_varnode.cc:1153`) walks up to the CONCAT
+        // root, binds the root's symbol, and assigns the SAME symbol to the piece —
+        // so the piece renders `root.field` (e.g. `v1.A`) rather than its own raw `vN`
+        // / `dat_N`.  Pieces do NOT consume a `vN` slot (the root keeps `v1`).  This
+        // branch reproduces that against the kuna naming model (the name + group-
+        // relative in-symbol offset + root struct type are bound directly on the
+        // piece's HighVariable, the `vn->setSymbolEntry(sym->getFirstWholeMap())`
+        // stand-in) and `continue`s, skipping the `vN` allocator below.
+        let nr = name_rep.unwrap();
+        if data.vbank().get(nr).map(|v| v.is_proto_partial()).unwrap_or(false)
+            && bind_proto_partial_piece(data, nr, high, &mut base)
+        {
             continue;
         }
         let (v_persist, v_addr, v_size, v_input, v_addrtied, v_constant) =

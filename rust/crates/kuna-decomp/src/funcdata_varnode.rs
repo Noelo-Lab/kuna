@@ -1187,6 +1187,124 @@ impl Funcdata {
     }
 
     // -----------------------------------------------------------------------
+    // linkProtoPartial (the struct-return field-binding render payoff)
+    // -----------------------------------------------------------------------
+
+    /// C++ `PieceNode::findRoot` (`op.cc:854`): walk up the CONCAT/PIECE tree from
+    /// the given `vn` to the maximal Varnode that contains it as storage, following
+    /// the backward path through `CPUI_PIECE` operations.  Every node along the path
+    /// (except the root) is marked `isProtoPartial()` or `isAddrTied()`.
+    ///
+    /// ```text
+    /// while(vn->isProtoPartial() || vn->isAddrTied()) {
+    ///   pieceOp = 0;
+    ///   for (op : vn->descend()) {
+    ///     if (op->code() != CPUI_PIECE) continue;
+    ///     slot = op->getSlot(vn);
+    ///     addr = op->getOut()->getAddr();
+    ///     if (addr.getSpace()->isBigEndian() == (slot == 1))
+    ///       addr = addr + op->getIn(1-slot)->getSize();
+    ///     addr.renormalize(vn->getSize());
+    ///     if (addr == vn->getAddr()) {
+    ///       if (pieceOp != 0) { if (op->compareOrder(pieceOp)) pieceOp = op; }
+    ///       else pieceOp = op;
+    ///     }
+    ///   }
+    ///   if (pieceOp == 0) break;
+    ///   vn = pieceOp->getOut();
+    /// }
+    /// return vn;
+    /// ```
+    ///
+    /// The `compareOrder` tie-break (more than one valid PIECE descendant attaches
+    /// to the earliest one) needs the block graph; it is reproduced faithfully via
+    /// [`crate::block::pcodeop_compare_order`].  Faithful transcription of the C++.
+    pub fn piece_find_root(&mut self, mut vn: VarnodeId) -> VarnodeId {
+        loop {
+            let (pp, at) = match self.vbank().get(vn) {
+                Some(v) => (v.is_proto_partial(), v.is_addr_tied()),
+                None => return vn,
+            };
+            if !pp && !at {
+                break;
+            }
+            let vn_addr = self.vbank().get(vn).expect("piece_find_root: stale vn").get_addr().clone();
+            let vn_size = self.vbank().get(vn).expect("piece_find_root: stale vn").get_size();
+            let mut piece_op: Option<OpId> = None;
+            for op in self.descend_snapshot(vn) {
+                if self.obank().get(op).map(|o| o.code()) != Some(OpCode::CPUI_PIECE) {
+                    continue;
+                }
+                let slot = self.obank().get(op).expect("piece_find_root: stale op").get_slot(vn);
+                let out = match self.obank().get(op).and_then(|o| o.get_out()) {
+                    Some(o) => o,
+                    None => continue,
+                };
+                let mut addr =
+                    self.vbank().get(out).expect("piece_find_root: stale out").get_addr().clone();
+                // if (addr.getSpace()->isBigEndian() == (slot == 1)) addr += op->getIn(1-slot)->getSize();
+                let big_endian = addr.get_space().map(|s| s.is_big_endian()).unwrap_or(false);
+                if big_endian == (slot == 1) {
+                    let other = self
+                        .obank()
+                        .get(op)
+                        .and_then(|o| o.get_in(1 - slot))
+                        .expect("piece_find_root: null PIECE input");
+                    let other_size =
+                        self.vbank().get(other).expect("piece_find_root: stale other").get_size();
+                    // cast: a Varnode size (int4, small non-negative) widened to the
+                    // i64 the `Address + offset` operator takes; lossless and
+                    // sign-preserving (C++ `addr + op->getIn(1-slot)->getSize()`).
+                    addr = &addr + other_size as i64;
+                }
+                // addr.renormalize(vn->getSize());  // Allow for possible join address
+                if addr.renormalize(vn_size, self.get_arch().manage()).is_err() {
+                    continue;
+                }
+                if addr == vn_addr {
+                    match piece_op {
+                        Some(prev) => {
+                            // C++ op.cc:870-871:
+                            //   if (op->compareOrder(pieceOp)) pieceOp = op;
+                            // compareOrder returns -1/+1/0 (op.cc:806); the C++
+                            // `if(non-zero)` replaces the incumbent on BOTH -1 and
+                            // +1 and keeps it only on 0 (incomparable).  Faithful
+                            // predicate is `!= 0`, not `< 0`.
+                            if self.op_compare_order(op, prev) != 0 {
+                                piece_op = Some(op);
+                            }
+                        }
+                        None => piece_op = Some(op),
+                    }
+                }
+            }
+            let pop = match piece_op {
+                Some(p) => p,
+                None => break,
+            };
+            vn = match self.obank().get(pop).and_then(|o| o.get_out()) {
+                Some(o) => o,
+                None => break,
+            };
+        }
+        vn
+    }
+
+    /// C++ `PcodeOp::compareOrder` (`op.cc:808`) at the Funcdata level: returns -1
+    /// if `op_a` precedes `op_b`, +1 if it follows, 0 if incomparable.
+    fn op_compare_order(&mut self, op_a: OpId, op_b: OpId) -> int4 {
+        let parent_a = self.obank().get(op_a).and_then(|o| o.get_parent());
+        let parent_b = self.obank().get(op_b).and_then(|o| o.get_parent());
+        let (pa, pb) = match (parent_a, parent_b) {
+            (Some(a), Some(b)) => (a, b),
+            _ => return 0,
+        };
+        let a = self.obank().get(op_a).expect("op_compare_order: stale op_a").clone();
+        let b = self.obank().get(op_b).expect("op_compare_order: stale op_b").clone();
+        crate::block::pcodeop_compare_order(self.bblocks_mut(), &a, pa, &b, pb)
+    }
+
+    // -----------------------------------------------------------------------
     // totalReplace (def-use rewiring; sequenced single-arena borrows)
     // -----------------------------------------------------------------------
 
