@@ -1,6 +1,17 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 435/675; De Morgan + namespace + convert-negconst + RSP &v1-render + enum4/HighVariable + BOOL_NEGATE
+## Session (2026-06-17c) — rust-port W10: 408 → 441/675; De Morgan, namespace, convert-negconst, RSP &v1-render, enum4/HighVariable, BOOL_NEGATE, string-literal render
+
+**char-pointer string-literal render +6 → 441.** Ported `PrintC::pushPtrCharConstant`
+(printc.cc:1767) + `printCharacterConstant` (printc.cc:1602) — constant char* → string literal
+(StringManagerUnicode infra was already there, only the printc reader/escape was missing) +
+a dedup-by-Symbol decl fix (printc.cc:2696, +0 substrate). Gained Intermediate pointers #1/#2,
+Inlining #4, For-loop thru special #3, For-loop var used #3, Long double #10. Gate: `[675,441]`,
+regressed-set EMPTY, switch 8/16/3, PARITY OK (printc.rs auto-merged with BOOL_NEGATE). Review
+`reviews/w10-stackframe-cluster.md`. The 5 named stack families' real roots are DEEPER (reported
+for future waves): Stack string = StringSequence/transform unported in constseq.rs (heap-string
+wave's file); Partial splitting = SplitDatatype array-local gap; Piece Structure = RulePieceStructure
+in coreaction_cleanup; Stack spill/Return = struct-param prototype join in funcdata/variable.
 
 **BOOL_NEGATE printc dispatch +2 → 435.** `CPUI_BOOL_NEGATE` had no printc arm (fell through to
 `op_func_ir` → `BOOL_NEGATE(x)` not `!x`). Ported C++ `PrintC::opBoolNegate` (printc.cc:834) +
