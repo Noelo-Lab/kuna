@@ -2609,3 +2609,28 @@ IPTR_SPACEBASE arm are already restored.
   `query_local_properties` (substrate ready) → +7 clean. Struct-by-value-param families
   (stackspill/piecestruct/stackreturn) are a SEPARATE LOSS-153 seam (IPTR_JOIN func_link_input
   coreaction_protos.rs:698 + recovered-callee-proto struct param storage). [[kuna-rust-port]]
+
+## LOSS-156 REFINEMENT (stacklocal-downstream wave, 2026-06-17) — both gaps = ONE deep heritage wave (+10 potential)
+
+The stack-downstream wave confirmed both downstream gaps reduce to a SINGLE heritage-engine root
+(NOT merge.rs/ruleaction/addtreestate leaf fixes), and re-measured: wiring the heritage.rs:1381 OR
+lands exactly +7 (Partial splitting #15-19, Wayoff array #1, No for-loop alias #3) and regresses
+exactly 4 (Store cross #1/#2, Intermediate pointers #3/#5).
+- **Gap 1 — heritage phi-placement** (Store cross #1/#2): `RuleStoreVarnode` (ruleaction_4.rs,
+  faithful) folds the two conditional STOREs to COPYs at addrtied `local_array[10]`, but heritage
+  never places a MULTIEQUAL at the join (no SSA read forces it), so `merge_range_must` (merge.rs:
+  1654) unions the highs without a phi → renders split `local_array[10] = 0x18/0x48` vs oracle
+  `v2 = 0x18; if(...) v2 = 0x48; local_array[10] = v2;`. Root: heritage phi-placement for
+  addrforced stack addresses with no explicit downstream read. CLOSING IT GAINS +3 MORE
+  (Store cross #3/#4/#5 — not in base either) → the chain is +10, not +7.
+- **Gap 2 — INDIRECT-collapse** (Intermediate pointers #3/#5): with the OR, `query_local_properties`
+  makes the intermediate `&v1.arr1[a]` pointer-spill slots addrtied; `guard_calls` (heritage.rs:
+  1535) builds INDIRECTs on them across the `initstruct` call, and the INDIRECT-collapse /
+  `nolocalalias` copy-prop does NOT eliminate them → they survive as `v2 // stack-0x18`, blocking
+  the `*v2 → v1.arr1[a]` collapse. Root: INDIRECT-collapse over nolocalalias single-def/single-use
+  pointer-spill slots.
+- next: a DEDICATED heritage wave that (1) places MULTIEQUALs at joins for addrforced stack
+  addresses reaching a downstream whole-array read, and (2) collapses call-INDIRECTs over
+  nolocalalias single-def/single-use pointer-spill slots; then OR `query_local_properties` into
+  heritage.rs:1381 → +7 to +10. The query_local_properties plumbing is preserved at branch
+  `rport/w10-stacklocal-typing` @ b120faf. [[kuna-rust-port]]
