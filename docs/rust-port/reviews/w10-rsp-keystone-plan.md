@@ -101,3 +101,35 @@ so the existing fold fires.** Smaller + better-understood than the plan assumed.
 - `varmap.rs` (L4 markNotMapped/isUnaffectedStorage; L5 markUnaliased/checkUnaliasedReturn)
 - `funcdata_spacebase.rs` (L5 restructure tail + nolocalalias :636-639)
 - `coreaction_render.rs` (L3 deadcode_apply :2124 — verify only) ; `coreaction_infertypes.rs:1356` (L2 live) ; `funcdata_block.rs:196` (L6 inert→auto)
+
+## CORRECTION-4 (live-engine deep investigation 2026-06-17, wifc7lawm — DEFINITIVE)
+
+Instrumented (KUNA_RSPDBG probes + cpp/rust `decomp_dbg print raw` + KUNA_DUMP) — supersedes
+CORRECTION-3's "INT_ADD targets register-space" guess (that was wrong; `register:0x20` IS the
+RSP register and is correct).
+
+**THE SHARED ROOT (confirmed, both leads):** the per-call **extrapop=8** pop (cspec `__stdcall`
+extrapop=8) is unmodeled, so the SLEIGH CALL retaddr push (RSP−8, cspec stackshift=8) is never
+canceled → **every stack slot is skewed by exactly 8** (Rust −0x14 vs C++ −0xc). Lead A
+(switchind `&val`/switch-index lost) and Lead B (longdouble float10 stack-arg dropped/split)
+both depend on the coherent stack frame that only ExtraPopSetup + its downstream cleanup produce.
+
+**THE ATOMIC LANDING = L0 + L3** (single wave; L1/L4/L5 are not the critical-path blocker):
+- **L0** un-stub `ActionExtraPopSetup::apply` (coreaction_protos.rs; faithful body exists behind
+  `KUNA_L0=1` + the `w10-rsp-waveA-L0L1-wip.patch`). Inserts `INT_ADD(RSP@register:0x20,+8)` per
+  known-extrapop call. Proven correct in isolation but **NET-NEGATIVE alone** (switchind degrades
+  to `switch #0x100058`/`if(1)` — exactly the RSP A' failure).
+- **L3 (THE MISSING CO-REQUISITE — NOT the spacebase setup):** `ActionDeadCode` consume-sweep
+  (coreaction_render.rs `deadcode_apply` :1552) must remove the dead retaddr store + the folded
+  `+8` residue **inside the `"jumptable"`-group clone** (truncatedFlow; action.rs:1589 group is
+  byte-identical to coreaction.cc:5694). **Instrument the truncatedFlow clone body: confirm
+  `INT_ADD(RSP,8)` is gone and the BRANCHIND index varnode is `s0x..ec`-relative (a slot) NOT a
+  const, BEFORE reverse-emulation.** This is where every prior attempt must focus.
+- **NET-SAFETY:** L0 raises the slot −0x14→−0xc (correct); only L3 stops the jumptable clone from
+  const-folding the index. They MUST land together (L0-alone net-negative; L3-alone +0). Gate:
+  switchind 13→16 (#8 default:/#15 `get_value_byref(&val)`/#16 `switch(val)` flip; B4
+  `switch s0x..f4:4` slot −0xc), all switch + the 384-suite monotonic.
+- **L1** (analyze_extra_pop coreaction_stackptr.rs:650 early-returns on known defaultfp extrapop —
+  byte-faithful to coreaction.cc:282) is faithful-but-inert; NOT on the critical path.
+- **L4/L5** (ActionRestrictLocal un-stub + restructureVarnode tail) sequence AFTER L0+L3 for the
+  `&val` PTRSUB-arg + `int4 val // stack - 0xc` render.
