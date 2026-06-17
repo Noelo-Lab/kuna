@@ -2049,6 +2049,28 @@ impl Funcdata {
         &mut self.high_bank
     }
 
+    /// C++ `Varnode::updateType(Datatype*)` (`varnode.cc:475-483`) in full,
+    /// including the `high->typeDirty()` the Varnode-local
+    /// [`Varnode::update_type`](crate::varnode::Varnode::update_type) cannot reach
+    /// (the high lives in this arena, not on the Varnode).  Returns whether the
+    /// Datatype changed.
+    pub fn vn_update_type(&mut self, vn: VarnodeId, ct: std::rc::Rc<crate::dtype::Datatype>) -> bool {
+        let high = self.vbank().get(vn).and_then(|v| v.get_high());
+        let changed = self
+            .vbank_mut()
+            .get_mut(vn)
+            .map(|v| v.update_type(ct))
+            .unwrap_or(false);
+        if changed {
+            if let Some(h) = high {
+                if let Some(hh) = self.high_bank_mut().get_mut(h) {
+                    hh.type_dirty();
+                }
+            }
+        }
+        changed
+    }
+
     /// Map a `BlockId` to the block's own `getIndex()`.
     fn block_index(&self, bl: BlockId) -> int4 {
         self.bblocks.block(bl).get_index()
