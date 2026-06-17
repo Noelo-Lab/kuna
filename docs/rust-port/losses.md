@@ -2247,3 +2247,33 @@ The diff ports two real upstream pieces: (a) `ScopeInternal::clearUnlockedCatego
 - restoration: converges to the oracle fully when stack-var typing / RulePieceStructure
   prerequisites land.
 - recorded by the w10-callarg-piece independent verifier (round 2).
+
+## LOSS-223 — w10-longdouble-x87: float10 CALL-arg built but not folded to the clean render
+
+- item: rport/w10-longdouble-x87 @ b8a26af (independent verifier round 1, ACCEPT-WITH-LOSSES).
+- what: the wave ports the `ActionFuncLink::funcLinkInput` stack-parameter reassembly
+  (`opStackLoad` IPTR_SPACEBASE arm coreaction.cc:1514-1523 + the IPTR_JOIN x87/float10
+  PIECE-recombine arm coreaction.cc:1524-1551) plus the `baseExplicit` addrtied
+  SUBPIECE/INT_ZEXT/PIECE fall-throughs (coreaction.cc:3120-3146 / PieceNode::findRoot
+  op.cc:854). The previously-DROPPED float10 second argument of `writeLongDouble` is now BUILT:
+  baseline rendered `writeLongDouble(ldarr)` (arg gone); branch renders
+  `writeLongDouble(ldarr,(undefined10)CONCAT(z,CONCAT(v1,x)))` / `...,v2` etc. The CONCAT/cast
+  form is NOT yet folded to the byte-clean C++ oracle render `writeLongDouble(ldarr,x)` /
+  `writeLongDouble(ldarr,ptrldstr->a)`.
+- NOT a scored regression: longdouble assertions #3/#5/#6/#11 FAIL on BOTH baseline and branch;
+  the full-suite passing set is byte-identical (383 -> 383, independent diff: regressed EMPTY,
+  gained EMPTY). +0 net wave. The arg-built step is directionally CLOSER to the oracle (the
+  argument is reconstructed instead of dropped); the clean render needs the deeper 10-byte
+  stack-slot SSA-coherence seam (the slot is reassembled from sub-pieces in the Rust IR), a
+  separately-tracked render seam.
+- DISCLOSED + PINNED: `rust/crates/kuna-harness/tests/verify_w10_longdouble_x87.rs` (AT1 pins
+  "the arg is built, `writeLongDouble(ldarr)` is gone" without over-asserting the final `x`);
+  the docstrings explicitly call out the SSA-coherence render seam. AT4 in
+  `verify_w10_callarg_piece.rs` flipped from the gated negative guard to the built-positive guard.
+- NO special-casing: AT2 (`dldlll`, mixfloatint.xml) proves the SAME opStackLoad arm rebuilds
+  pure-INTEGER stack args (`a0 + 2`, `a0 + 3`) — baseline dropped them; geometry-keyed, not
+  float10-keyed. The base_explicit unit test `adversarial_no_special_casing_integer_piece_same_decision`
+  drives identical PIECE geometry with integer types to the same implied verdict.
+- restoration: converges to the oracle (`writeLongDouble(ldarr,x)`) automatically when the
+  10-byte stack-slot SSA-coherence / wide-float merge prerequisites land.
+- recorded by the w10-longdouble-x87 independent verifier (round 1).

@@ -1,6 +1,27 @@
 # kuna Progress Log
 
-## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 383/675
+## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 384/675; pivot to dedicated RSP
+
+**enum-truncation (+1 → 384, ACCEPT):** TypeOpSubpiece::propagateType propagates the enum
+type through the sub-byte field extract — Enum #3 `ptr->flagfield & (FLAG_20|FLAG_8|FLAG_4)`.
+Enum #4 (heritage load-resizing) + Convert #17 (DynamicHash size-sensitivity) are separate
+deeper seams. **longdouble-x87 (+0, SHELVED, ACCEPT_WITH_LOSSES):** PART 1 succeeded — the
+float10 CALL-arg CONCAT is now built (`writeLongDouble(ldarr,...CONCAT(z,...,x))`, arg present)
++ base_explicit-v2 folded in — but the verdicts don't flip: the float10 stack slot reassembles
+from sub-pieces instead of a single addrtied input = **stack-parameter SSA coherence = RSP
+heritage/ScopeLocal restructuring**. So the longdouble cluster is RSP-gated. Branch retained as
+a shelf, ready for when RSP lands.
+
+**INFLECTION (2026-06-17): the tractable tail is mostly exhausted.** The last several waves each
+flip +1 then reveal a DEEPER gate (longdouble->RSP stack-param, enum#4->heritage load-resize,
+convert#17->DynamicHash size, retstruct->dynamic-naming, packstruct->CALL-output typing). The
+remaining big value (~190 assertions) is concentrated in the **RSP/spacebase keystone**. Pivoting
+to a DEDICATED RSP effort: deep investigation of the two concrete leads — (a) the ExtraPopSetup
+spacebase varnode resolving to REGISTER-space (offset 32) not the stack slot (RSP A' finding),
+(b) the stack-param SSA sub-piece reassembly vs single addrtied input (longdouble-x87 finding) —
+likely a shared root in the stack-spacebase/ScopeLocal/MapState restructuring. Housekeeping done:
+~82 stale worktrees + 78 merged branches pruned; 3 held shelves + running retained.
+
 
 **Convert-B1+B2 LANDED (+25 net → 383, the session's biggest single integration,
 ACCEPT_WITH_LOSSES):** the real Convert root was upstream of the dynamic hash —
