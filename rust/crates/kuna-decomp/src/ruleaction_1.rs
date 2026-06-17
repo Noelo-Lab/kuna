@@ -1930,18 +1930,56 @@ impl Rule for RuleNotDistribute {
         //   case CPUI_BOOL_OR: opc = CPUI_BOOL_AND; break;
         //   default: return 0; }
         let comp_code = data.obank().get(compop).expect("RuleNotDistribute: stale compop").code();
-        let _opc = match comp_code {
+        let opc = match comp_code {
             OpCode::CPUI_BOOL_AND => OpCode::CPUI_BOOL_OR,
             OpCode::CPUI_BOOL_OR => OpCode::CPUI_BOOL_AND,
             _ => return 0,
         };
 
-        // newneg1 = data.newOp(1,op->getAddr()); newout1 = data.newUniqueOut(1,newneg1);
-        //   ... build two BOOL_NEGATE ops with unique outputs, retarget op ...
-        // SEAM(W3): the two new BOOL_NEGATE ops need `newUniqueOut` (the W3
-        // output-creation seam).  The BOOL_AND/BOOL_OR structural match above is
-        // ported; the construction body defers here.  No change.
-        0
+        // compop->getIn(0) / compop->getIn(1) and op->getAddr()
+        let comp_in0 = data
+            .obank()
+            .get(compop)
+            .expect("RuleNotDistribute: stale compop")
+            .get_in(0)
+            .expect("RuleNotDistribute: compop has no in0");
+        let comp_in1 = data
+            .obank()
+            .get(compop)
+            .expect("RuleNotDistribute: stale compop")
+            .get_in(1)
+            .expect("RuleNotDistribute: compop has no in1");
+        let op_addr = data.obank().get(op).expect("RuleNotDistribute: stale op").get_addr().clone();
+
+        // newneg1 = data.newOp(1,op->getAddr());
+        // newout1 = data.newUniqueOut(1,newneg1);
+        // data.opSetOpcode(newneg1,CPUI_BOOL_NEGATE);
+        // data.opSetInput(newneg1,compop->getIn(0),0);
+        // data.opInsertBefore(newneg1,op);
+        let newneg1 = data.new_op(1, op_addr.clone());
+        let newout1 = data.new_unique_out(1, newneg1).expect("RuleNotDistribute: newout1");
+        set_opcode_seam(data, newneg1, OpCode::CPUI_BOOL_NEGATE);
+        data.op_set_input(newneg1, comp_in0, 0).expect("RuleNotDistribute: newneg1 in0");
+        data.op_insert_before(newneg1, op);
+
+        // newneg2 = data.newOp(1,op->getAddr());
+        // newout2 = data.newUniqueOut(1,newneg2);
+        // data.opSetOpcode(newneg2,CPUI_BOOL_NEGATE);
+        // data.opSetInput(newneg2,compop->getIn(1),0);
+        // data.opInsertBefore(newneg2,op);
+        let newneg2 = data.new_op(1, op_addr);
+        let newout2 = data.new_unique_out(1, newneg2).expect("RuleNotDistribute: newout2");
+        set_opcode_seam(data, newneg2, OpCode::CPUI_BOOL_NEGATE);
+        data.op_set_input(newneg2, comp_in1, 0).expect("RuleNotDistribute: newneg2 in0");
+        data.op_insert_before(newneg2, op);
+
+        // data.opSetOpcode(op,opc);
+        // data.opSetInput(op,newout1,0);
+        // data.opInsertInput(op,newout2,1);
+        set_opcode_seam(data, op, opc);
+        data.op_set_input(op, newout1, 0).expect("RuleNotDistribute: op in0");
+        data.op_insert_input(op, newout2, 1).expect("RuleNotDistribute: op insert in1");
+        1
     }
 }
 
