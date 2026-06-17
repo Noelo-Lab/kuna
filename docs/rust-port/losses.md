@@ -2566,3 +2566,21 @@ root:
   (funcdata_op.rs) / `obank().iter_all()` order vs C++ `optree` map<SeqNum> order. A guard on
   RuleSubZext would be unfaithful (C++ has none). Likely affects Signed Division rendering broadly.
 - recorded by the integrator after the Switch Loop wave BLOCKED (2026-06-17). [[kuna-rust-port]]
+
+## LOSS-230 UPDATE 2 (killedbycall wave, 2026-06-17) — heritage seam DONE; remaining blocker is ActionDeindirect
+
+The killedbycall heritage seam is now IMPLEMENTED + faithful on branch `rport/w10-killedbycall`
+@ b72bfea (NOT merged — +3/-1): `Heritage::guard_calls` output-active trial + KILLEDBYCALL
+INDIRECT-creation (heritage.cc:1470-1526) + un-stubbed `init_active_output` (coreaction_protos.rs:
+748). Recovers call return outputs (condconstsub `v1 = otherfunc(); return v1;`). Gains Conditional
+Add #1, Conditional Subpiece #1, Modified conditional constant #2/#3.
+- The ONE regression (`Deindirect Output #2`) is caused by the SEPARATE `ActionDeindirect` STUB
+  (`coreaction_render.rs:1101`, apply returns 0): C++ deindirects the CALLIND `(*0x100046)(nm)` to
+  `call fobtainPtr` (single clean 8-byte RAX output) BEFORE output recovery; rust runs output
+  recovery on the raw CALLIND → two killed-output trials (AX:2 + high:6, CONCAT62), the offset-0 AX
+  collides with the post-call `xor eax,eax` → `return 0;` regresses to `v1 = 0; return v1;`.
+- CORRECTED next-locus: port `ActionDeindirect` (`coreaction_render.rs:1101`) = `FuncCallSpecs::
+  deindirect` (fspec.cc) + `Scope::queryFunction`/`queryExternalRefFunction` (database.cc), building
+  on b72bfea. Then the CALLIND deindirects to a known-proto CALL, single-output recovery makes
+  Deindirect Output #2 survive → regressed-set EMPTY → lands the +3 AND unblocks the printc.rs:3810
+  SUBPIECE-cast arm (Union #8/#14/#28 + Bitfields #4). [[kuna-rust-port]]
