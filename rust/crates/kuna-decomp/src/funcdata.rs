@@ -865,12 +865,13 @@ impl Funcdata {
         self.localmap.as_ref().map(|lm| lm.mapped_symbol_specs()).unwrap_or_default()
     }
 
-    /// Snapshot the console-added dynamic (`map hash`) symbols of this function's
-    /// local scope as re-seed specs `(name, type, hashAddr, hash)` — the dynamic
-    /// counterpart of [`mapped_symbol_specs`](Self::mapped_symbol_specs).
-    pub fn dynamic_symbol_specs(
-        &self,
-    ) -> Vec<(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint8)> {
+    /// Snapshot the console-added dynamic (`map hash` / `map convert`) symbols of
+    /// this function's local scope as re-seed specs — the dynamic counterpart of
+    /// [`mapped_symbol_specs`](Self::mapped_symbol_specs).  Each
+    /// [`DynamicSymbolSpec`](crate::database::DynamicSymbolSpec) carries the
+    /// symbol's category + display format so an `EquateSymbol` survives the
+    /// rebuild intact (see `seed_dynamic_symbols`).
+    pub fn dynamic_symbol_specs(&self) -> Vec<crate::database::DynamicSymbolSpec> {
         self.localmap
             .as_ref()
             .map(|lm| lm.database().scope_dynamic_symbol_specs(lm.scope_id()))
@@ -882,14 +883,37 @@ impl Funcdata {
     /// [`seed_mapped_symbols`](Self::seed_mapped_symbols)).  The console set
     /// `namelock|typelock` on each; re-applied here so `ActionDynamicSymbols` sees
     /// the same dynamic-entry list the C++ `getScopeLocal()->beginDynamic()` does.
-    pub fn seed_dynamic_symbols(
-        &mut self,
-        specs: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint8)],
-    ) {
+    pub fn seed_dynamic_symbols(&mut self, specs: &[crate::database::DynamicSymbolSpec]) {
+        use crate::database::symbol_category;
         use crate::varnode::varnode_flags;
         if let Some(lm) = self.localmap.as_mut() {
-            for (name, ct, addr, hash) in specs {
-                if let Ok(sym) = lm.add_dynamic_symbol(name, std::rc::Rc::clone(ct), addr, *hash) {
+            for spec in specs {
+                // An EquateSymbol (`map convert`) must be re-created via
+                // addEquateSymbol so its category stays `equate` and its forced
+                // display format (`dispflags`) + value are preserved — otherwise
+                // ActionDynamicMapping's equate arm never fires and the constant
+                // renders in the default format instead of the forced one.  The
+                // C++ console never rebuilds the IR, so this re-seed is the kuna
+                // stand-in for that persistence (the equate's type IS the
+                // `getBase(1,TYPE_UNKNOWN)` base1 the ctor uses).
+                if spec.category == symbol_category::EQUATE {
+                    if let Some(value) = spec.equate_value {
+                        let _ = lm.add_equate_symbol(
+                            &spec.name,
+                            spec.dispflags,
+                            value,
+                            &spec.addr,
+                            spec.hash,
+                            std::rc::Rc::clone(&spec.dtype),
+                        );
+                    }
+                    continue;
+                }
+                // A plain `map hash` dynamic symbol: namelock|typelock (the locks
+                // the console set on it).
+                if let Ok(sym) =
+                    lm.add_dynamic_symbol(&spec.name, std::rc::Rc::clone(&spec.dtype), &spec.addr, spec.hash)
+                {
                     lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
                 }
             }
@@ -3063,6 +3087,18 @@ impl Funcdata {
             return Ok(false);
         }
         if category == symbol_category::EQUATE {
+            // C++ `vn->setSymbolEntry(entry)` (varnode.cc:448) marks the matched
+            // Varnode `Varnode::mapped`.  That `mapped` bit is load-bearing for the
+            // EARLY mapping: it pins the dynamic-hash constant as explicit storage so
+            // it survives the merge/copy-propagation passes that run before the LATE
+            // mapping + render (the C++ class comment, coreaction.cc, calls this the
+            // whole point of the early pass).  Without it the COPY carrying the
+            // equated constant is propagated away, the late `findVarnode` finds
+            // nothing, and the forced display format is never applied.
+            use crate::varnode::varnode_flags;
+            if let Some(v) = self.vbank.get_mut(vn) {
+                v.set_flags_pub(varnode_flags::mapped);
+            }
             if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
                 if let Some(h) = self.high_bank.get_mut(high) {
                     h.set_kuna_equate_symbol(sym_id);
@@ -3146,6 +3182,12 @@ impl Funcdata {
         }
         // if (sym->getCategory() == Symbol::equate) { vn->setSymbolEntry(entry); return true; }
         if category == symbol_category::EQUATE {
+            // C++ `setSymbolEntry` marks the Varnode `Varnode::mapped` (varnode.cc:448);
+            // mirror it here as in the early arm (`attempt_dynamic_mapping`).
+            use crate::varnode::varnode_flags;
+            if let Some(v) = self.vbank.get_mut(vn) {
+                v.set_flags_pub(varnode_flags::mapped);
+            }
             if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
                 if let Some(h) = self.high_bank.get_mut(high) {
                     h.set_kuna_equate_symbol(sym_id);

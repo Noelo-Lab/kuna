@@ -474,7 +474,7 @@ pub fn decompile_func_full_with_override_dyn(
     funcaddr: Address,
     size: int4,
     mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
-    dynamic_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint8)],
+    dynamic_symbols: &[crate::database::DynamicSymbolSpec],
     pending_proto: Option<&crate::fspec::PrototypePieces>,
     flow_overrides: &[(Address, kuna_base::types::uint4)],
 ) -> KunaResult<Funcdata> {

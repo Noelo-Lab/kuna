@@ -569,6 +569,35 @@ pub enum EntryRef {
     Dynamic(usize),
 }
 
+/// A re-seed spec for a console-added dynamic symbol (`map hash` / `map convert`),
+/// carried across the kuna console's `Funcdata` rebuild on `decompile`.
+///
+/// (kuna) The C++ console reuses the same `Funcdata` across `decompile`, so its
+/// `ScopeLocal` dynamic symbols simply persist; the kuna console rebuilds the IR,
+/// so each dynamic symbol must be re-created on the fresh scope.  This spec
+/// preserves the FULL symbol identity — in particular `category` (so an
+/// `EquateSymbol` stays `Symbol::equate`, the arm `ActionDynamicMapping` keys on)
+/// and `dispflags`/`equate_value` (so the forced display format set by
+/// `map convert` survives the rebuild and `pushConstant` renders it).
+#[derive(Debug, Clone)]
+pub struct DynamicSymbolSpec {
+    /// Symbol local name (C++ `Symbol::name`).
+    pub name: String,
+    /// Symbol data-type (C++ `Symbol::type`).
+    pub dtype: Rc<Datatype>,
+    /// First-use address of the dynamic SymbolEntry (C++ `getFirstUseAddress`).
+    pub addr: Address,
+    /// The dynamic hash identifying the Varnode (C++ `SymbolEntry::hash`).
+    pub hash: uint8,
+    /// Symbol category (C++ `Symbol::category`); `equate` for `map convert`.
+    pub category: int4,
+    /// Display flags / forced format (C++ `Symbol::dispflags`).
+    pub dispflags: uint4,
+    /// The equated constant value (C++ `EquateSymbol::value`); `Some` iff the
+    /// symbol is an `EquateSymbol`.
+    pub equate_value: Option<uintb>,
+}
+
 /// The base class for a symbol in a symbol table or scope (C++ `Symbol`,
 /// `database.hh:166-258`).
 ///
@@ -1756,14 +1785,18 @@ impl Database {
     }
 
     /// Snapshot the console-added dynamic symbols of `scope` as re-seed specs
-    /// `(name, type, hashAddr, hash)` (the `map hash` form, parallel to
+    /// (the `map hash` / `map convert` forms, parallel to
     /// [`scope_space_symbol_specs`](Self::scope_space_symbol_specs) for `map addr`).
     /// The kuna console rebuilds the `Funcdata` on `decompile`, so the dynamic
-    /// `map hash` symbols must be carried across and re-added to the fresh scope.
-    pub fn scope_dynamic_symbol_specs(
-        &self,
-        scope: ScopeId,
-    ) -> Vec<(String, Rc<Datatype>, Address, uint8)> {
+    /// symbols must be carried across and re-added to the fresh scope.
+    ///
+    /// The spec carries the symbol's [`category`](Symbol::category),
+    /// [`dispflags`](Symbol::dispflags) and (for an [`SymbolKind::Equate`]) the
+    /// equated `value`, so an `EquateSymbol` added by `map convert` is re-created
+    /// as a *category-`equate`*, format-carrying symbol — not collapsed to a plain
+    /// dynamic symbol (which would drop the `force_hex`/`force_dec`/… display
+    /// format that `ActionDynamicMapping`'s equate arm and `pushConstant` read).
+    pub fn scope_dynamic_symbol_specs(&self, scope: ScopeId) -> Vec<DynamicSymbolSpec> {
         let mut out = Vec::new();
         for slot in self.scopes[scope].dynamicentry.iter() {
             let entry = match slot {
@@ -1779,7 +1812,19 @@ impl Database {
                 Some(c) => Rc::clone(c),
                 None => continue,
             };
-            out.push((symbol.name.clone(), ct, entry.get_first_use_address(), entry.get_hash()));
+            let equate_value = match symbol.kind {
+                SymbolKind::Equate { value } => Some(value),
+                _ => None,
+            };
+            out.push(DynamicSymbolSpec {
+                name: symbol.name.clone(),
+                dtype: ct,
+                addr: entry.get_first_use_address(),
+                hash: entry.get_hash(),
+                category: symbol.category,
+                dispflags: symbol.dispflags,
+                equate_value,
+            });
         }
         out
     }
