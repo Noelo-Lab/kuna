@@ -2664,3 +2664,25 @@ hasNoLocalAlias.
   to the phi single store (Gap 1) → THEN OR query_local_properties into heritage.rs:1381 → clean
   +7 to +10 (Partial splitting #15-19, Wayoff array #1, No for-loop alias #3, + Store cross
   #1-#5). This unblocks the broader ~65-assertion stack-struct-typing cluster's typing. [[kuna-rust-port]]
+
+## LOSS-232 — Relative pointers (#1/#2/#3) + broad: buildLocaltypes type-locked-symbol seed unported
+
+- kind: deferred (foundational type-inference seed)
+- what: `pointerrel.xml` #1/#2/#3 render `*ptrrel + ptrrel[1]` instead of C++ `ADJ(ptrrel)->c +
+  ADJ(ptrrel)->d`. The relative-pointer machinery is ALREADY fully ported (TypePointerRel
+  dtype.rs, AddTreeState addtreestate.rs `p_rel_type`, RuleStructOffset0 relative arm
+  ruleaction_5.rs:1285, `ADJ()` render printc.rs:4842). The root is UPSTREAM: the LOAD pointer
+  varnodes carry only the EPHEMERAL relative pointer (from propagateAddIn2Out), never the FORMAL
+  `myptroff`, because `sym_entry=None` (the varnode↔SymbolEntry binding for type-locked locals is
+  unported) and the buildLocaltypes seed arm is stubbed.
+- root (2 parts): (1) varnode↔SymbolEntry binding for type-locked local symbols (C++
+  `Funcdata::linkSymbol`/`coverVarnodes` → `Varnode::setSymbolEntry`, funcdata_varnode.cc:1182-1204,
+  1325; setters set_kuna_symbol_entry in funcdata.rs:3227/3326/3379 + funcdata_op.rs:312); (2) the
+  `buildLocaltypes` W4 seed arm (coreaction.cc:5276-5281) stubbed at coreaction_infertypes.rs:253
+  ("type-locked SymbolEntry piece path is a W4 surface — absent symbols fall through"): when
+  `!vn.is_type_lock()` but the bound symbol `is_type_locked()`, seed `get_exact_piece(symbol_type,
+  curOff, size)` (get_exact_piece already exists).
+- restoration: port both → the formal myptroff reaches the LOAD pointers, RuleStructOffset0's
+  relative arm fires, #1/#2/#3 flip. LIKELY BROAD (type-locked-local typing across the suite).
+  Touches funcdata.rs/funcdata_varnode.rs (foundational) — schedule when those are free. The other
+  2 failures: #7 = float NAN-compare simplification (ruleaction), #8 = loop structuring. [[kuna-rust-port]]
