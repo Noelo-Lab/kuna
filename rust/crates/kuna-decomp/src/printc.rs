@@ -4344,7 +4344,11 @@ impl PrintC {
                 if let Some(st) = &sym_type {
                     if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
                         if let Some(elem) = st.get_array_base() {
-                            let elsize = elem.get_size().max(1);
+                            // C++ `TypeArray::getSubEntry` (type.cc:1430-1434)
+                            // strides by the element's *aligned* size, not its raw
+                            // size: e.g. a 10-byte `float10` occupies 16 bytes per
+                            // element, so `ldarr[1]` lives at byte offset 0x10.
+                            let elsize = elem.get_align_size().max(1);
                             // The access maps to element `index` when it lies
                             // within the array and the offset divides the element.
                             if sym_off >= 0 && (sym_off % elsize) == 0 && st.get_size() > elsize {
