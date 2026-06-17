@@ -1326,11 +1326,7 @@ impl Funcdata {
         if vn_def_is_cast {
             if self.vbank().get(vn).map(|v| v.is_implied()).unwrap_or(false) {
                 if self.lone_descend(vn) == Some(op) {
-                    let changed = self
-                        .vbank_mut()
-                        .get_mut(vn)
-                        .map(|v| v.update_type(Rc::clone(&ct)))
-                        .unwrap_or(false);
+                    let changed = self.vn_update_type(vn, Rc::clone(&ct));
                     let _ = changed;
                     if self
                         .vbank()
@@ -1361,7 +1357,7 @@ impl Funcdata {
                 }
             }
         } else if self.vbank().get(vn).map(|v| v.is_constant()).unwrap_or(false) {
-            let _ = self.vbank_mut().get_mut(vn).map(|v| v.update_type(Rc::clone(&ct)));
+            let _ = self.vn_update_type(vn, Rc::clone(&ct));
             if self.vbank().get(vn).map(|v| Rc::ptr_eq(v.get_type(), &ct)).unwrap_or(false) {
                 return 1;
             }
@@ -1394,8 +1390,8 @@ impl Funcdata {
             Ok(v) => v,
             Err(_) => return 0,
         };
+        let _ = self.vn_update_type(vnout, Rc::clone(&ct));
         let _ = self.vbank_mut().get_mut(vnout).map(|v| {
-            v.update_type(Rc::clone(&ct));
             v.set_implied();
         });
         self.op_set_opcode_code(newop, OpCode::CPUI_CAST);
@@ -1463,7 +1459,7 @@ impl Funcdata {
                     force = !is_op_identical(&out_high_resolve, &tokenct);
                 }
             } else if out_high_resolve.get_metatype() != type_metatype::TYPE_PTR {
-                let _ = self.vbank_mut().get_mut(outvn).map(|v| v.update_type(Rc::clone(&tokenct)));
+                let _ = self.vn_update_type(outvn, Rc::clone(&tokenct));
                 out_high_resolve = self.vn_high_type_def_facing(outvn);
             } else if tokenct.get_metatype() == type_metatype::TYPE_PTR {
                 if let Some(outct) = out_high_resolve.get_ptr_to() {
@@ -1472,10 +1468,7 @@ impl Funcdata {
                         && meta != type_metatype::TYPE_STRUCT
                         && meta != type_metatype::TYPE_UNION
                     {
-                        let _ = self
-                            .vbank_mut()
-                            .get_mut(outvn)
-                            .map(|v| v.update_type(Rc::clone(&tokenct)));
+                        let _ = self.vn_update_type(outvn, Rc::clone(&tokenct));
                         out_high_resolve = self.vn_high_type_def_facing(outvn);
                     }
                 }
@@ -1498,8 +1491,8 @@ impl Funcdata {
         // Generate the cast op.
         let outvn_size = self.vbank().get(outvn).map(|v| v.get_size()).unwrap_or(1);
         let vn = self.new_unique(outvn_size, None);
+        let _ = self.vn_update_type(vn, Rc::clone(&tokenct));
         let _ = self.vbank_mut().get_mut(vn).map(|v| {
-            v.update_type(Rc::clone(&tokenct));
             v.set_implied();
         });
         let addr = match self.obank().get(op) {
@@ -1537,8 +1530,8 @@ impl Funcdata {
         let addr = self.obank().get(op).expect("insertPtrsubZero: stale op").get_addr().clone();
         let newop = self.new_op(2, addr);
         let vnout = self.new_unique_out(vn_size, newop).expect("insertPtrsubZero: new unique out");
+        let _ = self.vn_update_type(vnout, Rc::clone(&ct));
         let _ = self.vbank_mut().get_mut(vnout).map(|v| {
-            v.update_type(Rc::clone(&ct));
             v.set_implied();
         });
         self.op_set_opcode_code(newop, OpCode::CPUI_PTRSUB);
