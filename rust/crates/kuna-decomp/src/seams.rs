@@ -512,6 +512,13 @@ pub struct Architecture {
     /// `build_arch_handle`.  Iterated by `ActionConstantPtr::selectInferSpace`
     /// (coreaction.cc:1020-1047).  Empty for hand-built fixtures.
     pub infer_ptr_spaces: Vec<Rc<AddrSpace>>,
+    /// Source-declared callee prototypes, keyed by `(space_index, entry_offset)`
+    /// (C++ the callee `Funcdata`'s lazily-built locked `FuncProto`).  Snapshotted
+    /// from the global FunctionSymbols at `build_arch_handle`; read back by
+    /// `ActionDefaultParams::apply` via [`Architecture::callee_proto_pieces`] to
+    /// `fc->copy(otherfunc->getFuncProto())` (`coreaction.cc:2385`).  Empty for
+    /// hand-built fixtures and undeclared callees.
+    pub callee_protos: Vec<(int4, kuna_base::types::uintb, crate::fspec::PrototypePieces)>,
 }
 
 impl Architecture {
@@ -574,6 +581,8 @@ impl Architecture {
             // No inferable spaces until cacheAddrSpaceProperties runs on the real
             // arch and build_arch_handle shares the result.
             infer_ptr_spaces: Vec::new(),
+            // No declared callee prototypes until build_arch_handle snapshots them.
+            callee_protos: Vec::new(),
         }
     }
 
@@ -656,6 +665,21 @@ impl Architecture {
     /// The default prototype model (C++ `glb->defaultfp`), or `None`.
     pub fn default_fp(&self) -> Option<&Rc<crate::fspec::ProtoModel>> {
         self.defaultfp.as_ref()
+    }
+
+    /// The source-declared prototype pieces for the callee whose entry is `addr`
+    /// (C++ the callee `Funcdata`'s locked `FuncProto`), or `None` if that callee
+    /// had no `parse line extern` declaration.  Read by `ActionDefaultParams::apply`
+    /// to copy the locked callee prototype into the call site.  Matched by
+    /// `(space_index, offset)` — the seam carries no `Rc<AddrSpace>` identities for
+    /// the global scope, only the snapshotted indices.
+    pub fn callee_proto_pieces(&self, addr: &Address) -> Option<&crate::fspec::PrototypePieces> {
+        let space_index = addr.get_space()?.get_index();
+        let offset = addr.get_offset();
+        self.callee_protos
+            .iter()
+            .find(|(si, off, _)| *si == space_index && *off == offset)
+            .map(|(_, _, pieces)| pieces)
     }
 
     /// The current-evaluation model (C++ `glb->evalfp_current`), falling back to

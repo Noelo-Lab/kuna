@@ -485,6 +485,13 @@ pub struct Varnode {
     consumed: uintb,
     /// Which bits are known to be zero (C++ `uintb nzm`)
     nzm: uintb,
+    /// The dynamic SymbolEntry bound to this Varnode (C++ `Varnode::mapentry`,
+    /// set by `setSymbolEntry`).  kuna stores the owning Symbol's id (the
+    /// SymbolEntry is reachable from it); read by `getSymbolEntry`-style
+    /// idempotency checks so a re-run of `ActionDynamicMapping` does not re-bind an
+    /// already-mapped equate Varnode (C++ `attemptDynamicMapping`,
+    /// `funcdata_varnode.cc:1348`).  `None` = unbound.
+    kuna_symbol_entry: Option<crate::database::SymbolId>,
 }
 
 impl Varnode {
@@ -512,6 +519,7 @@ impl Varnode {
             cover: None,
             consumed: u64::MAX, // ~((uintb)0)
             nzm: 0,
+            kuna_symbol_entry: None,
         };
         // if (m.getSpace() == (AddrSpace *)0) { flags = 0; return; }
         let space = match vn.loc.get_space() {
@@ -840,6 +848,18 @@ impl Varnode {
     /// C++ `isMapped`.
     pub fn is_mapped(&self) -> bool {
         (self.flags & varnode_flags::mapped) != 0
+    }
+    /// The owning Symbol of the bound dynamic SymbolEntry (C++ `getSymbolEntry()`
+    /// presence test), or `None` if unbound.
+    pub fn kuna_symbol_entry(&self) -> Option<crate::database::SymbolId> {
+        self.kuna_symbol_entry
+    }
+    /// Bind a dynamic SymbolEntry's owning Symbol to this Varnode (C++
+    /// `setSymbolEntry`); also marks it `Varnode::mapped` exactly as the C++ does
+    /// (`varnode.cc:448`).
+    pub fn set_kuna_symbol_entry(&mut self, sym: crate::database::SymbolId) {
+        self.kuna_symbol_entry = Some(sym);
+        self.flags |= varnode_flags::mapped;
     }
     /// C++ `isUnaffected`.
     pub fn is_unaffected(&self) -> bool {

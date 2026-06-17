@@ -865,12 +865,13 @@ impl Funcdata {
         self.localmap.as_ref().map(|lm| lm.mapped_symbol_specs()).unwrap_or_default()
     }
 
-    /// Snapshot the console-added dynamic (`map hash`) symbols of this function's
-    /// local scope as re-seed specs `(name, type, hashAddr, hash)` — the dynamic
-    /// counterpart of [`mapped_symbol_specs`](Self::mapped_symbol_specs).
-    pub fn dynamic_symbol_specs(
-        &self,
-    ) -> Vec<(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint8)> {
+    /// Snapshot the console-added dynamic (`map hash` / `map convert`) symbols of
+    /// this function's local scope as re-seed specs — the dynamic counterpart of
+    /// [`mapped_symbol_specs`](Self::mapped_symbol_specs).  Each
+    /// [`DynamicSymbolSpec`](crate::database::DynamicSymbolSpec) carries the
+    /// symbol's category + display format so an `EquateSymbol` survives the
+    /// rebuild intact (see `seed_dynamic_symbols`).
+    pub fn dynamic_symbol_specs(&self) -> Vec<crate::database::DynamicSymbolSpec> {
         self.localmap
             .as_ref()
             .map(|lm| lm.database().scope_dynamic_symbol_specs(lm.scope_id()))
@@ -882,14 +883,37 @@ impl Funcdata {
     /// [`seed_mapped_symbols`](Self::seed_mapped_symbols)).  The console set
     /// `namelock|typelock` on each; re-applied here so `ActionDynamicSymbols` sees
     /// the same dynamic-entry list the C++ `getScopeLocal()->beginDynamic()` does.
-    pub fn seed_dynamic_symbols(
-        &mut self,
-        specs: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint8)],
-    ) {
+    pub fn seed_dynamic_symbols(&mut self, specs: &[crate::database::DynamicSymbolSpec]) {
+        use crate::database::symbol_category;
         use crate::varnode::varnode_flags;
         if let Some(lm) = self.localmap.as_mut() {
-            for (name, ct, addr, hash) in specs {
-                if let Ok(sym) = lm.add_dynamic_symbol(name, std::rc::Rc::clone(ct), addr, *hash) {
+            for spec in specs {
+                // An EquateSymbol (`map convert`) must be re-created via
+                // addEquateSymbol so its category stays `equate` and its forced
+                // display format (`dispflags`) + value are preserved — otherwise
+                // ActionDynamicMapping's equate arm never fires and the constant
+                // renders in the default format instead of the forced one.  The
+                // C++ console never rebuilds the IR, so this re-seed is the kuna
+                // stand-in for that persistence (the equate's type IS the
+                // `getBase(1,TYPE_UNKNOWN)` base1 the ctor uses).
+                if spec.category == symbol_category::EQUATE {
+                    if let Some(value) = spec.equate_value {
+                        let _ = lm.add_equate_symbol(
+                            &spec.name,
+                            spec.dispflags,
+                            value,
+                            &spec.addr,
+                            spec.hash,
+                            std::rc::Rc::clone(&spec.dtype),
+                        );
+                    }
+                    continue;
+                }
+                // A plain `map hash` dynamic symbol: namelock|typelock (the locks
+                // the console set on it).
+                if let Ok(sym) =
+                    lm.add_dynamic_symbol(&spec.name, std::rc::Rc::clone(&spec.dtype), &spec.addr, spec.hash)
+                {
                     lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
                 }
             }
@@ -2995,8 +3019,24 @@ impl Funcdata {
     /// `vn->getHigh()->getSymbol()` stand-in for the constant-format path).
     /// `None` if the Varnode has no high or no bound equate symbol.
     pub fn vn_high_equate_symbol(&self, vn: VarnodeId) -> Option<crate::database::SymbolId> {
-        let high = self.vbank.get(vn)?.get_high()?;
-        self.high_bank.get(high)?.kuna_equate_symbol()
+        // Prefer the HighVariable mirror (set when a High existed at mapping time),
+        // then fall back to the Varnode-level binding (C++ `vn->getSymbolEntry()`):
+        // the early `ActionDynamicMapping` may bind the constant before its High is
+        // built, so the render must still see the equate.  The fallback only applies
+        // when the bound Symbol is an equate (the render reads its display format).
+        if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
+            if let Some(sym) = self.high_bank.get(high).and_then(|h| h.kuna_equate_symbol()) {
+                return Some(sym);
+            }
+        }
+        let sym = self.vbank.get(vn)?.kuna_symbol_entry()?;
+        let localmap = self.localmap.as_ref()?;
+        if localmap.database().symbol(sym).get_category() == crate::database::symbol_category::EQUATE
+        {
+            Some(sym)
+        } else {
+            None
+        }
     }
 
     /// The merged-tree stand-in for the C++ `vn->getSymbolEntry() != 0`
@@ -3010,6 +3050,13 @@ impl Funcdata {
     /// equate arm would re-bind an already-equated Varnode (the C++ returns
     /// `false` there).
     fn vn_high_has_dynamic_binding(&self, vn: VarnodeId) -> bool {
+        // C++ `vn->getSymbolEntry() != 0` (funcdata_varnode.cc:1348): the binding
+        // lives on the Varnode itself, so it survives heritage rebuilding the High.
+        if self.vbank.get(vn).and_then(|v| v.kuna_symbol_entry()).is_some() {
+            return true;
+        }
+        // Fall back to the HighVariable mirror (set by the late name/equate arms when
+        // a High already exists) so a name bound there is likewise idempotent.
         let high = match self.vbank.get(vn).and_then(|v| v.get_high()) {
             Some(h) => h,
             None => return false,
@@ -3057,12 +3104,29 @@ impl Funcdata {
             Some(v) => v,
             None => return Ok(false),
         };
-        // if (vn->getSymbolEntry() != 0) return false; — idempotent (already bound,
-        // by name OR equate; see vn_high_has_dynamic_binding).
+        // if (vn->getSymbolEntry() != 0) return false; — idempotent (the Varnode is
+        // already bound to a dynamic SymbolEntry; C++ checks `vn->getSymbolEntry()`,
+        // `funcdata_varnode.cc:1348`).  The binding is parked on the Varnode (not the
+        // HighVariable, which may not exist yet at this early mapping or be rebuilt
+        // each heritage pass), so the re-run of this `rule_repeatapply` action does
+        // not re-report a change and loop forever.
         if self.vn_high_has_dynamic_binding(vn) {
             return Ok(false);
         }
         if category == symbol_category::EQUATE {
+            // C++ `vn->setSymbolEntry(entry)` (varnode.cc:448) marks the matched
+            // Varnode `Varnode::mapped`.  That `mapped` bit is load-bearing for the
+            // EARLY mapping: it pins the dynamic-hash constant as explicit storage so
+            // it survives the merge/copy-propagation passes that run before the LATE
+            // mapping + render (the C++ class comment, coreaction.cc, calls this the
+            // whole point of the early pass).  Without it the COPY carrying the
+            // equated constant is propagated away, the late `findVarnode` finds
+            // nothing, and the forced display format is never applied.  The binding
+            // (symbol id) goes on the Varnode so this stays idempotent across passes;
+            // the HighVariable mirror (read by the printer) is refreshed when present.
+            if let Some(v) = self.vbank.get_mut(vn) {
+                v.set_kuna_symbol_entry(sym_id);
+            }
             if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
                 if let Some(h) = self.high_bank.get_mut(high) {
                     h.set_kuna_equate_symbol(sym_id);
@@ -3071,9 +3135,19 @@ impl Funcdata {
             return Ok(true);
         }
         // else if (entry->getSize() == vn->getSize()) { if (vn->setSymbolProperties(entry)) return true; }
+        // C++ `Varnode::setSymbolProperties` (varnode.cc:429) updates the Varnode's
+        // type and (only when the Symbol is type-locked) binds `mapentry`; in either
+        // case the matched Varnode picks up the entry's flags (incl. `Varnode::mapped`
+        // via `getAllFlags`), pinning it explicit so it survives to the LATE pass.
+        // The kuna stand-in marks `mapped` here but does NOT bind the Varnode's
+        // symbol-entry: the NAME (and its struct type/offset) is attached to the
+        // HighVariable by the LATE `attemptDynamicMappingLate`, which must still run
+        // once a High exists (the early High is frequently absent).  When a High is
+        // already present the name is mirrored here too (idempotency key for this
+        // `rule_repeatapply` early pass — see `vn_high_has_dynamic_binding`).
+        use crate::varnode::varnode_flags;
         let vn_size = self.vbank.get(vn).map(|v| v.get_size()).unwrap_or(0);
         if entry.get_size() == vn_size {
-            use crate::varnode::varnode_flags;
             if let Some(v) = self.vbank.get_mut(vn) {
                 v.set_flags_pub(varnode_flags::mapped);
             }
@@ -3146,6 +3220,12 @@ impl Funcdata {
         }
         // if (sym->getCategory() == Symbol::equate) { vn->setSymbolEntry(entry); return true; }
         if category == symbol_category::EQUATE {
+            // C++ `setSymbolEntry` marks the Varnode `Varnode::mapped` (varnode.cc:448)
+            // and binds the entry; mirror both here as in the early arm
+            // (`attempt_dynamic_mapping`) so the re-run stays idempotent.
+            if let Some(v) = self.vbank.get_mut(vn) {
+                v.set_kuna_symbol_entry(sym_id);
+            }
             if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
                 if let Some(h) = self.high_bank.get_mut(high) {
                     h.set_kuna_equate_symbol(sym_id);
@@ -3195,9 +3275,9 @@ impl Funcdata {
 
         // vn->setSymbolEntry(entry);  -> bind the Symbol name to the matched high,
         // and mark the Varnode `mapped` so ActionMarkExplicit forces it explicit.
-        use crate::varnode::varnode_flags;
+        // The binding goes on the Varnode too (C++ `setSymbolEntry`) for idempotency.
         if let Some(v) = self.vbank.get_mut(vn) {
-            v.set_flags_pub(varnode_flags::mapped);
+            v.set_kuna_symbol_entry(sym_id);
         }
         // The late mapping attaches only the NAME (C++: "the data-type and possibly
         // other properties are not put on the Varnode"); the high keeps its own
@@ -3586,6 +3666,33 @@ mod tests {
             .build_dynamic_symbol(c, 8, unk)
             .expect_err("must reject a type-locked varnode");
         assert!(err.explain().contains("locked varnode"));
+    }
+
+    /// Adversarial (Convert B2): binding a dynamic SymbolEntry to a Varnode marks
+    /// it `Varnode::mapped` (the C++ `setSymbolEntry`/`varnode.cc:448` effect that
+    /// pins it explicit so the equated COPY survives copy-elimination), and the
+    /// binding is the idempotency key — `vn_high_has_dynamic_binding` reports it even
+    /// when the Varnode has no HighVariable yet (the early `ActionDynamicMapping`
+    /// runs before highs are built; without the Varnode-level key the repeat-apply
+    /// pass loops forever).  Generic over any SymbolId — no convert-specific value.
+    #[test]
+    fn varnode_symbol_entry_binding_marks_mapped_and_is_idempotent() {
+        use crate::database::SymbolId;
+        let mut fd = build_fd();
+        let c = fd.new_constant(4, 0x100);
+        // Unbound, no high: not mapped, no dynamic binding.
+        assert!(!fd.vbank.get(c).unwrap().is_mapped());
+        assert!(fd.vbank.get(c).unwrap().get_high().is_none());
+        assert!(!fd.vn_high_has_dynamic_binding(c));
+        // Bind an arbitrary symbol id (slotmap default key stands in for any equate).
+        let sym: SymbolId = Default::default();
+        fd.vbank.get_mut(c).unwrap().set_kuna_symbol_entry(sym);
+        // setSymbolEntry marks `mapped` (the B2 copy-elim survival pin) ...
+        assert!(fd.vbank.get(c).unwrap().is_mapped());
+        // ... and is the idempotency key even with no HighVariable present.
+        assert!(fd.vbank.get(c).unwrap().get_high().is_none());
+        assert!(fd.vn_high_has_dynamic_binding(c));
+        assert_eq!(fd.vbank.get(c).unwrap().kuna_symbol_entry(), Some(sym));
     }
 
     #[test]
