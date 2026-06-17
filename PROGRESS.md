@@ -1,6 +1,19 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 468/675; +De Morgan...else-if, mixed-float
+## Session (2026-06-17c) — rust-port W10: 408 → 473/675; +...mixed-float, call-return/deindirect
+
+**call-return recovery: killedbycall + ActionDeindirect +5 → 473 (Chain A).** Two-wave chain
+(LOSS-230): (1) killedbycall heritage seam (substrate b72bfea, +3/-1) = `Heritage::guard_calls`
+output-active trial + KILLEDBYCALL INDIRECT-creation (heritage.cc:1470-1526) + un-stubbed
+`init_active_output` — recovers call return outputs (condconstsub `v1=otherfunc();return v1;`);
+(2) ActionDeindirect (coreaction_render.rs:1101 + fspec.rs `FuncCallSpecs::deindirect` + seams.rs
+`query_function`) = CALLIND→CALL deindirection, removing the substrate's lone -1. Gained Conditional
+Add #1, Conditional Subpiece #1, Deindirect Output #3, Modified conditional constant #2/#3;
+Deindirect Output #2 recovered. Gate: `[675,473]`, regressed-set EMPTY, switch 8/16/3, PARITY OK.
+Review `reviews/w10-deindirect-killedbycall.md`. The printc.rs:3810 SUBPIECE-cast arm is now
+unblockable (Union #8/#14/#28 + Bitfields #4) — follow-up. BLOCKED-but-substrate this round: Chain B
+stack-typing (b120faf +0, LOSS-156 gate = heritage.rs:1370 query_local_properties OR, gated on
+store-cross-merge + ptr-forwarding — downstream wave running).
 
 **mixed float/int proto param names +3 → 468.** `emit_prototype_inputs` (printc.rs:1700) emitted
 empty names for recovered (unlocked) proto params; added a positional default-name fallback
