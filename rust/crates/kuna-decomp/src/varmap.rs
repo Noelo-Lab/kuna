@@ -917,6 +917,16 @@ impl ScopeLocal {
         })
     }
 
+    /// C++ `ScopeLocal::markUnaliased` (`varmap.cc:1290`): mark every local stack
+    /// Symbol not crossed by an alias as `nolocalalias`.  Thin wrapper over the
+    /// owned database's [`Database::mark_unaliased`], passing this scope's space
+    /// index and the architecture's `alias_block_level`.
+    pub fn mark_unaliased(&mut self, alias: &[uintb], alias_block_level: int4) {
+        let space_index = self.space.get_index() as usize;
+        self.db
+            .mark_unaliased(self.scope, space_index, alias, alias_block_level);
+    }
+
     /// C++ `ScopeLocal::addTypeRecommendation` (`varmap.cc:1590`): associate a
     /// data-type with a storage address.  If an input Varnode appears at this
     /// address with no other type info, the data-type is applied later by

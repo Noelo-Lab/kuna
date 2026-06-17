@@ -178,28 +178,39 @@ fn a1_forloop_files_render_plain_while_not_malformed_for() {
 }
 
 // =============================================================================
-// (A1b) The reroll merge did not perturb the for-loop bodies' BYTES: the Rust
-//       render is unchanged by the merge.  We pin the *shape* that proves the
-//       reroll is inert — the dead RSP return-address store + `// rsp` locals
-//       are STILL present (the exact thing the ExtraPopSetup deferral leaves),
-//       which is WHY the overflow guard declines.  This is the diagnostic the
-//       brief asked for, asserted as a tripwire: the day it flips, RSP got
-//       cleaned and the for-loop should form.
+// (A1b) POST-RSP-KEYSTONE (CORRECTION-7 stale-fence update): the dead RSP
+//       return-address store + `// rsp` locals are now CLEANED — the keystone
+//       (ActionExtraPopSetup + the effectlist/markUnaliased/heritage chain)
+//       eliminated the stack-pointer noise, so `forloop1`'s induction variable
+//       renders as a clean register local (`int4 v1; // ebx`) with NO `// rsp`
+//       spacebase-input local and NO raw PTRSUB-on-spacebase store chain.
+//       The for-loop reroll STILL does not fire (the body stays a `while`/`break`
+//       loop — see (A2), For-loop #1 remains FAIL): clean RSP is necessary but
+//       not sufficient for the reroll.  This fence now pins the cleaned shape.
 // =============================================================================
 #[test]
-fn a1b_forloop1_still_carries_dirty_rsp_proving_reroll_blocked() {
+fn a1b_forloop1_rsp_cleaned_by_keystone_but_reroll_still_blocked() {
     let Some(body) = dump_print_c(&rust_harness(), "forloop1") else { return };
-    // The proof the for-loop CANNOT form yet: the RSP input + stack-pointer
-    // chain survives (deferred ActionExtraPopSetup).  No register-name
-    // special-casing — we key on the `// rsp` comment the printer emits for an
-    // un-eliminated spacebase-input local and the raw PTRSUB-on-spacebase store.
+    // The dirty-RSP chain is GONE: no `// rsp` spacebase-input local and no raw
+    // PTRSUB-on-spacebase return-address store survives.  (No register-name
+    // special-casing — keyed on the printer's `// rsp` comment + the dead store.)
     let has_rsp_local = body.contains("// rsp");
     let has_dead_chain = body.contains("(xunknown1 *)") && body.contains("] = 0x");
     assert!(
-        has_rsp_local && has_dead_chain,
-        "forloop1: the dirty-RSP chain is GONE — RSP got cleaned. If so, the \
-         for-loop reroll should now FORM: update this test + (A2) to require the \
-         `for (v1 = 0; v1 < max; v1 = v1 + 1)` header.\nBody:\n{body}"
+        !has_rsp_local && !has_dead_chain,
+        "forloop1: the dirty-RSP chain REAPPEARED — the keystone's RSP cleanup \
+         regressed.\nBody:\n{body}"
+    );
+    // The reroll is still inert: the body is a `while`/`break` loop, never a
+    // fabricated `for (` header (consistent with (A2): For-loop #1 stays FAIL).
+    assert!(
+        !body.contains("for ("),
+        "forloop1: a `for (` header appeared — the reroll fired (update (A1)/(A2) \
+         to lock the new for-loop render).\nBody:\n{body}"
+    );
+    assert!(
+        body.contains("while") || body.contains("do {") || body.contains("goto"),
+        "forloop1: no loop structure — the render was corrupted.\nBody:\n{body}"
     );
 }
 
@@ -333,21 +344,29 @@ fn vfy_r1_spacebase_arm_emits_addressof_name_for_mapped_local() {
     let Some(rust) = dump_print_c(&rust_harness(), "partialsplit") else { return };
     // The reference form appeared for the MAPPED locals (the SPACEBASE arm fired,
     // reading the Symbol parked by link_symbol_reference).  Each is passed by
-    // address to sub_101010 as `&name`, not the pre-stage `PTRSUB(vN, off)`.
-    for sym in ["&stackfoo", "&stackmy", "&stackconst"] {
+    // address to its sub as `&name`, not the pre-stage `PTRSUB(vN, off)`.
+    //
+    // POST-RSP-KEYSTONE (CORRECTION-7 stale-fence update): `stackother` is now
+    // ALSO resolved as `&stackother`.  Before the keystone it fell back to the
+    // functional `PTRSUB(v1, off)` form (the slot's alias was unstable, so the
+    // SPACEBASE arm declined); the keystone's input-active recovery + the
+    // spacebase-PTRSUB typing fix make the slot's mapped Symbol resolve cleanly, so
+    // every passed-by-address stack local now renders `&name` (oracle-faithful —
+    // `Partial splitting #3` flips green).
+    for sym in ["&stackfoo", "&stackmy", "&stackconst", "&stackother"] {
         assert!(
             rust.contains(sym),
             "partialsplit: the SPACEBASE `&name` payoff `{sym}` did not render — \
              the opPtrsub SPACEBASE arm is not firing for a mapped local. Body:\n{rust}"
         );
     }
-    // Faithful selectivity: an UNMAPPED stack slot in the same function still
-    // falls back to the functional `PTRSUB(...)` form (no fabricated name).  This
-    // confirms the arm keys on the parked Symbol, not on every spacebase PTRSUB.
+    // The residual unstructured-stack-pointer form is gone for the passed-by-address
+    // locals: no functional `PTRSUB(v1, off)` survives on a mapped slot.
     assert!(
-        rust.contains("PTRSUB(v1,"),
-        "partialsplit: every PTRSUB became a &name — the arm stopped being \
-         selective (it must only name MAPPED slots). Body:\n{rust}"
+        !rust.contains("PTRSUB(v1,"),
+        "partialsplit: a functional `PTRSUB(v1, off)` survived on a mapped slot — \
+         the keystone should resolve every passed-by-address local to `&name`. \
+         Body:\n{rust}"
     );
 }
 
@@ -369,4 +388,78 @@ fn vfy_r1_no_new_addressof_undef_leak_from_spacebase_arm() {
              out of the render. Body:\n{rust}"
         );
     }
+}
+
+// =============================================================================
+// RSP-keystone type-collision adversarial assertions (PART 2, harness-driven so
+// the `<com>map ...</com>` symbol mappings are applied).  The spacebase-PTRSUB
+// scope-aware typing (`propagateAddIn2Out`) + the constant-reference-shadow decl
+// skip (printc) eliminate the int8-vs-int4 duplicate-HighVariable collision.  No
+// function-name / register / value special-casing — each keys on a structural
+// property of the rendered C.
+// =============================================================================
+
+/// ADV-2 — STACK-POINTER ARGUMENT TYPES WITHOUT A SPURIOUS POINTER CAST.  When a
+/// mapped stack local's address is passed to a sub-function, the `&name` argument
+/// must NOT carry an inserted pointer cast (`(int4 *)&name`, `(int8 *)&name`): the
+/// `PTRSUB(spacebase, off)` output must type as a pointer to the mapped local so
+/// `ActionSetCasts` finds the call-argument type already matching.  Keyed on the
+/// generic `(<...> *)&` shape, never a specific type or name.
+#[test]
+fn adv_keystone_addressof_stack_arg_has_no_spurious_pointer_cast() {
+    for stem in ["switchind", "partialsplit"] {
+        let Some(c) = dump_print_c(&rust_harness(), stem) else { return };
+        for (idx, _) in c.match_indices('&') {
+            let trimmed = c[..idx].trim_end();
+            // A `(... *)` cast immediately preceding the `&` is suspicious, but a
+            // `*(T *)&member` deref-of-typed-view is legitimate (reading a struct
+            // field through a precision cast).  The spurious-argument pattern is a
+            // pointer cast applied to an address-of CALL ARGUMENT — the cast's
+            // opening `(` is preceded by `(`/`,`, NOT by a `*` dereference.
+            let cast_before_amp = trimmed.ends_with(')')
+                && trimmed.rfind('(').is_some_and(|op| trimmed[op + 1..].contains('*'));
+            if !cast_before_amp {
+                continue;
+            }
+            let cast_open = trimmed.rfind('(').unwrap();
+            let is_deref_view = trimmed[..cast_open].trim_end().ends_with('*');
+            assert!(
+                is_deref_view,
+                "{stem}: an address-of CALL ARGUMENT carries a spurious pointer cast \
+                 (the spacebase-PTRSUB output typed wider than the mapped local — \
+                 the int8-vs-int4 collision regressed):\n{c}"
+            );
+        }
+    }
+}
+
+/// ADV-3 — THE SPACEBASE-PTRSUB TYPING IS SELECTIVE, NOT BLANKET.  The scope-aware
+/// `propagateAddIn2Out` spacebase arm resolves each MAPPED slot's OWN Symbol type,
+/// so distinct passed-by-address locals render as DISTINCT `&name` references — a
+/// blanket/over-merged typing would collapse them onto one identifier.  Pins that
+/// the fix keys on the parked per-slot Symbol, not on every spacebase PTRSUB.
+#[test]
+fn adv_keystone_spacebase_typing_keeps_distinct_named_locals() {
+    let Some(c) = dump_print_c(&rust_harness(), "partialsplit") else { return };
+    let mut refs: Vec<String> = Vec::new();
+    for (idx, _) in c.match_indices('&') {
+        let name: String = c[idx + 1..]
+            .chars()
+            .take_while(|ch| ch.is_alphanumeric() || *ch == '_')
+            .collect();
+        if name.len() > 1 && name.chars().next().is_some_and(|ch| ch.is_alphabetic() || ch == '_') {
+            refs.push(name);
+        }
+    }
+    let mut uniq = refs.clone();
+    uniq.sort();
+    uniq.dedup();
+    assert!(
+        uniq.len() >= 3,
+        "partialsplit: the mapped `&name` references collapsed to {} distinct \
+         name(s) ({:?}) — the spacebase typing over-merged distinct locals or \
+         stopped resolving mapped slots:\n{c}",
+        uniq.len(),
+        uniq
+    );
 }

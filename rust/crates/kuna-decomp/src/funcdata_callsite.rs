@@ -27,6 +27,7 @@
 
 use kuna_base::address::Address;
 use kuna_base::space::spacetype;
+use kuna_base::types::int4;
 
 use kuna_num::opcodes::OpCode;
 
@@ -43,12 +44,14 @@ use crate::varmap::AliasChecker;
 /// definitely-unused trial has its dataflow freed (`opSetInput` with a zero
 /// constant).  The `aliascheck` is the deferred-gather local alias checker
 /// (`AliasChecker::gather(..., defer=true)`), supplied by the caller.
-pub fn check_input_trial_use(
-    fc: &mut FuncCallSpecs,
-    data: &mut Funcdata,
-    aliascheck: &mut AliasChecker,
-) {
-    let op = fc.get_op();
+pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut AliasChecker) {
+    // INDEX-BASED (CORRECTION-7 #3): the call spec stays in `data.qlst` so the
+    // ancestor walk (`ancestor_op_use` -> `only_op_use` -> `check_call_double_use`)
+    // can look up the *other* call's spec via `get_call_specs_index(op)`.  We
+    // access this call's spec through `data.get_call_specs[_mut](idx)`, dropping
+    // that borrow before any `&mut data` op; the trial mutated by
+    // `ancestor_op_use` is cloned out, passed, then written back.
+    let op = data.get_call_specs(idx).get_op();
     if data.obank().get(op).map(|o| o.is_dead()).unwrap_or(true) {
         // C++ throw LowlevelError("Function call in dead code"); the action
         // wrapper would surface it — here a dead call spec is simply skipped (the
@@ -62,22 +65,22 @@ pub fn check_input_trial_use(
     // pops its own parameters and the extrapop is recovered (>4).
     let mut callee_pop = false;
     let mut expop = 0i32;
-    if fc.proto().has_model() {
-        callee_pop = fc.get_model_extra_pop() == crate::fspec::EXTRAPOP_UNKNOWN;
+    if data.get_call_specs(idx).proto().has_model() {
+        callee_pop = data.get_call_specs(idx).get_model_extra_pop() == crate::fspec::EXTRAPOP_UNKNOWN;
         if callee_pop {
-            expop = fc.get_extra_pop();
+            expop = data.get_call_specs(idx).get_extra_pop();
             if expop == crate::fspec::EXTRAPOP_UNKNOWN || expop <= 4 {
                 callee_pop = false;
             }
         }
     }
 
-    let num_trials = fc.get_active_input().get_num_trials();
+    let num_trials = data.get_call_specs_mut(idx).get_active_input().get_num_trials();
     for i in 0..num_trials {
-        if fc.get_active_input().get_trial(i).is_checked() {
+        if data.get_call_specs_mut(idx).get_active_input().get_trial(i).is_checked() {
             continue;
         }
-        let slot = fc.get_active_input().get_trial(i).get_slot();
+        let slot = data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_slot();
         let vn = match data.obank().get(op).and_then(|o| o.get_in(slot)) {
             Some(v) => v,
             None => continue,
@@ -102,81 +105,100 @@ pub fn check_input_trial_use(
                 let mut seam = data.alias_gather_seam();
                 aliascheck.has_local_alias(Some((vn_space.clone(), vn_offset)), &mut seam)
             };
-            let trial_addr = fc.get_active_input().get_trial(i).get_address().clone();
+            let trial_addr =
+                data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_address().clone();
             // C++ keeps these two no-use conditions as separate branches
             // (fspec.cc:5623-5626): a stack alias, OR a stack location outside the
             // callee's local range, both mean "not a parameter".
             #[allow(clippy::if_same_then_else)]
             if has_alias {
-                fc.get_active_input().get_trial_mut(i).mark_no_use();
+                data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
             } else if !data.get_func_proto().get_local_range().in_range(&trial_addr, 1) {
-                fc.get_active_input().get_trial_mut(i).mark_no_use();
+                data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
             } else if callee_pop {
                 let off = trial_addr.get_offset();
-                let sz = fc.get_active_input().get_trial(i).get_size();
+                let sz = data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_size();
                 // (int4)(off + (size - 1)) < expop
                 if (off as i64 + (sz as i64 - 1)) < expop as i64 {
-                    fc.get_active_input().get_trial_mut(i).mark_active();
+                    data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_active();
                 } else {
-                    fc.get_active_input().get_trial_mut(i).mark_no_use();
+                    data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
                 }
             } else {
                 let (trial_size, trial_cond) = {
-                    let t = fc.get_active_input().get_trial(i);
+                    let t = data.get_call_specs_mut(idx).get_active_input().get_trial(i);
                     (t.get_size(), t.has_cond_exe_effect())
                 };
                 let mut ancestor = AncestorRealistic::new();
                 let (realistic, solid) =
                     ancestor.execute(data, op, slot, trial_size, trial_cond, false);
-                ancestor.apply_trial(fc.get_active_input().get_trial_mut(i), realistic, solid);
+                ancestor.apply_trial(
+                    data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i),
+                    realistic,
+                    solid,
+                );
                 if realistic || solid {
-                    let only = {
-                        let trial = fc.get_active_input().get_trial_mut(i);
-                        data.ancestor_op_use(maxancestor, vn, op, trial, 0, 0)
-                    };
+                    // Clone the trial across `ancestor_op_use` (it needs `&mut
+                    // data`, and its walk reads the populated qlst); write the
+                    // mutated trial back afterward.
+                    let mut trial =
+                        data.get_call_specs(idx).active_input().get_trial(i).clone();
+                    let only = data.ancestor_op_use(maxancestor, vn, op, &mut trial, 0, 0);
+                    *data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i) = trial;
                     if only {
-                        fc.get_active_input().get_trial_mut(i).mark_active();
+                        data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_active();
                     } else {
-                        fc.get_active_input().get_trial_mut(i).mark_inactive();
+                        data.get_call_specs_mut(idx)
+                            .get_active_input()
+                            .get_trial_mut(i)
+                            .mark_inactive();
                     }
                 } else {
                     // Stackvar for unrealistic ancestor is definitely not a parameter
-                    fc.get_active_input().get_trial_mut(i).mark_no_use();
+                    data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
                 }
             }
         } else {
             let (trial_size, trial_cond) = {
-                let t = fc.get_active_input().get_trial(i);
+                let t = data.get_call_specs_mut(idx).get_active_input().get_trial(i);
                 (t.get_size(), t.has_cond_exe_effect())
             };
             let mut ancestor = AncestorRealistic::new();
             let (realistic, solid) =
                 ancestor.execute(data, op, slot, trial_size, trial_cond, true);
-            ancestor.apply_trial(fc.get_active_input().get_trial_mut(i), realistic, solid);
+            ancestor.apply_trial(
+                data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i),
+                realistic,
+                solid,
+            );
             if realistic || solid {
-                let only = {
-                    let trial = fc.get_active_input().get_trial_mut(i);
-                    data.ancestor_op_use(maxancestor, vn, op, trial, 0, 0)
-                };
+                let mut trial = data.get_call_specs(idx).active_input().get_trial(i).clone();
+                let only = data.ancestor_op_use(maxancestor, vn, op, &mut trial, 0, 0);
+                *data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i) = trial;
                 if only {
-                    fc.get_active_input().get_trial_mut(i).mark_active();
-                    if fc.get_active_input().get_trial(i).has_cond_exe_effect() {
-                        fc.get_active_input().mark_needs_final_check();
+                    data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_active();
+                    if data
+                        .get_call_specs_mut(idx)
+                        .get_active_input()
+                        .get_trial(i)
+                        .has_cond_exe_effect()
+                    {
+                        data.get_call_specs_mut(idx).get_active_input().mark_needs_final_check();
                     }
                 } else {
-                    fc.get_active_input().get_trial_mut(i).mark_inactive();
+                    data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
                 }
             } else if vn_is_input {
                 // Not likely a parameter but maybe
-                fc.get_active_input().get_trial_mut(i).mark_inactive();
+                data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
             } else {
                 // An ancestor is unaffected, an unusual input, or killed by a call
-                fc.get_active_input().get_trial_mut(i).mark_no_use();
+                data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
             }
         }
 
         // If definitely not used, free up the dataflow.
-        if fc.get_active_input().get_trial(i).is_definitely_not_used() {
+        if data.get_call_specs_mut(idx).get_active_input().get_trial(i).is_definitely_not_used() {
             let c = data.new_constant(vn_size, 0);
             let _ = data.op_set_input(op, c, slot);
         }

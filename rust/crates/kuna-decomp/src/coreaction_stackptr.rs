@@ -279,10 +279,44 @@ impl StackSolver {
                         }
                     };
                     self.companion[i] = idx;
-                    // The IOP->FuncCallSpecs lookup (getOpFromConst/getCallSpecs)
-                    // is the W6/W7 proto-recovery seam: the merged tree builds no
-                    // call specs (numCalls()==0), so `fc==0` here for every call,
-                    // and we take the C++ guess branch verbatim (rhs=4 guess).
+                    // C++ coreaction.cc:221-235 — if the INDIRECT is due to a call
+                    // (its in[1] is an IOP-space annotation) AND the call spec has a
+                    // KNOWN extrapop (set by L0/L1's setEffectiveExtraPop in the
+                    // de-indirect process), push the EXACT equation (rhs = extrapop)
+                    // instead of the rhs=4 guess.  In the merged tree numCalls()==0
+                    // so this falls through to the guess; in the `jumptable` clone
+                    // the call specs ARE present, so this builds the exact INDIRECT
+                    // equation for the switch index (the L1 net-safety coupling).
+                    use crate::fspec::EXTRAPOP_UNKNOWN;
+                    let iopvn = data.obank().get(op).and_then(|o| o.get_in(1));
+                    let is_iop = iopvn
+                        .and_then(|v| data.vbank().get(v))
+                        .and_then(|v| v.get_addr().get_space())
+                        .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_IOP)
+                        .unwrap_or(false);
+                    if is_iop {
+                        // PcodeOp *iop = getOpFromConst(iopvn->getAddr());
+                        let off = iopvn
+                            .and_then(|v| data.vbank().get(v))
+                            .map(|v| v.get_addr().get_offset());
+                        if let Some(off) = off {
+                            let iop = crate::funcdata_varnode::op_iop_decode(off);
+                            // FuncCallSpecs *fc = data.getCallSpecs(iop);
+                            if let Some(fc_idx) = data.get_call_specs_index(iop) {
+                                let extrapop = data.get_call_specs(fc_idx).get_extra_pop();
+                                if extrapop != EXTRAPOP_UNKNOWN {
+                                    // eqn.rhs = fc->getExtraPop(); eqs.push_back(eqn);
+                                    self.eqs.push(StackEqn {
+                                        var1: i as int4,
+                                        var2: idx,
+                                        rhs: extrapop,
+                                    });
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    // eqn.rhs = 4; guess.push_back(eqn);  // Otherwise make a guess
                     self.guess.push(StackEqn { var1: i as int4, var2: idx, rhs: 4 });
                 }
                 OpCode::CPUI_MULTIEQUAL => {
@@ -682,16 +716,46 @@ pub(crate) fn analyze_extra_pop(
             Some(o) => o,
             None => continue,
         };
-        // INDIRECT companion -> setEffectiveExtraPop on the call spec.  The call
-        // spec surface (getCallSpecs/setEffectiveExtraPop) is the W6/W7
-        // proto-recovery seam (numCalls()==0 here), so this write has no target;
-        // the INT_ADD rewrite below — the in-scope effect — still runs.  Tracked
-        // as the extra-pop-propagation loss.
-        //
-        // (When the call-spec surface lands, replace this gap with:
-        //  iop = getOpFromConst(op->getIn(1)->getAddr());
-        //  fc  = getCallSpecs(iop);
-        //  if (fc) fc->setEffectiveExtraPop(soln - companionSoln);)
+        // L1 (RSP keystone) — transcription of coreaction.cc:303-320.  When the
+        // solved producer is the per-call INDIRECT (the spacebase op L0 inserts at
+        // an `extrapop_unknown` call), propagate the recovered net stack change
+        // (soln - companionSoln) back onto the call spec via setEffectiveExtraPop.
+        // This is THE switchind gate (LOSS-148): the `jumptable` ActionDatabase
+        // group runs ActionStackPtrFlow over the partial clone (which DOES carry
+        // call specs), and StackSolver::build's INDIRECT-companion equation
+        // (coreaction.cc:226-228) reads getExtraPop() to build the exact equation
+        // for the switch index — so L0's INT_ADD/INDIRECT is cleanly solved
+        // instead of leaking stack-relative residue into the switch index.
+        if data.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_INDIRECT) {
+            // Varnode *iopvn = op->getIn(1);
+            let iopvn = data.obank().get(op).and_then(|o| o.get_in(1));
+            // if (iopvn->getSpace()->getType()==IPTR_IOP) {
+            let is_iop = iopvn
+                .and_then(|v| data.vbank().get(v))
+                .and_then(|v| v.get_addr().get_space())
+                .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_IOP)
+                .unwrap_or(false);
+            if is_iop {
+                // PcodeOp *iop = PcodeOp::getOpFromConst(iopvn->getAddr());
+                let iop_off = iopvn
+                    .and_then(|v| data.vbank().get(v))
+                    .map(|v| v.get_addr().get_offset());
+                if let Some(off) = iop_off {
+                    let iop = crate::funcdata_varnode::op_iop_decode(off);
+                    // FuncCallSpecs *fc = data.getCallSpecs(iop);
+                    // if (fc != 0) {
+                    if let Some(fc_idx) = data.get_call_specs_index(iop) {
+                        // int4 soln2 = 0;
+                        // int4 comp = solver.getCompanion(i);
+                        // if (comp >= 0) soln2 = solver.getSolution(comp);
+                        let comp = solver.companion[i];
+                        let soln2 = if comp >= 0 { solver.soln[comp as usize] } else { 0 };
+                        // fc->setEffectiveExtraPop(soln-soln2);
+                        data.get_call_specs_mut(fc_idx).set_effective_extra_pop(soln - soln2);
+                    }
+                }
+            }
+        }
 
         // paramlist = { invn, newConstant(sz, soln & calc_mask(sz)) };
         // opSetOpcode(op, INT_ADD); opSetAllInput(op, paramlist).

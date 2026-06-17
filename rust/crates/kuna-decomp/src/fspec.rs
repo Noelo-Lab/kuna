@@ -6240,6 +6240,16 @@ impl FuncCallSpecs {
     pub fn get_active_input(&mut self) -> &mut ParamActive {
         &mut self.activeinput
     }
+    /// Immutable view of the input-parameter recovery analysis object.
+    ///
+    /// C++ has only the non-const `getActiveInput()`, but `checkCallDoubleUse`
+    /// is a `const` Funcdata method reading another call's trials
+    /// (`fc->getActiveInput()->getTrialForInputVarnode(j)`); the Rust port keeps
+    /// that read-only path on a shared borrow so the cross-call lookup needs no
+    /// `&mut`.
+    pub fn active_input(&self) -> &ParamActive {
+        &self.activeinput
+    }
     /// The analysis object for return value recovery (C++ `getActiveOutput`).
     pub fn get_active_output(&mut self) -> &mut ParamActive {
         &mut self.activeoutput
@@ -6615,19 +6625,25 @@ impl FuncCallSpecs {
     pub fn create_placeholder(
         &mut self,
         data: &mut Funcdata,
-        _spacebase: &Rc<AddrSpace>,
+        spacebase: &Rc<AddrSpace>,
     ) -> KunaResult<()> {
+        // int4 slot = op->numInput();
         let slot = data
             .obank()
             .get(self.op)
             .expect("createPlaceholder: stale call op")
             .num_input();
-        // Varnode *loadval = data.opStackLoad(spacebase,0,1,op,0,false);
-        // SEAM(w6-fspec-3 W4): opStackLoad is a W4 Funcdata factory.
-        let _ = slot;
-        Err(KunaError::lowlevel(
-            "SEAM(w6-fspec-3 W4) FuncCallSpecs::createPlaceholder needs Funcdata::opStackLoad",
-        ))
+        // Varnode *loadval = data.opStackLoad(spacebase,0,1,op,(Varnode *)0,false);
+        let loadval = data.op_stack_load(spacebase, 0, 1, self.op, None, false)?;
+        // data.opInsertInput(op,loadval,slot);
+        data.op_insert_input(self.op, loadval, slot)?;
+        // setStackPlaceholderSlot(slot);
+        self.set_stack_placeholder_slot(slot);
+        // loadval->setSpacebasePlaceholder();
+        if let Some(v) = data.vbank_mut().get_mut(loadval) {
+            v.set_spacebase_placeholder();
+        }
+        Ok(())
     }
 
     /// Find the active stack-pointer Varnode at this call site by examining the

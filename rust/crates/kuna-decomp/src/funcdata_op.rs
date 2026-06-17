@@ -66,8 +66,11 @@
 //! `OpId` from an iop-space address offset) needs the iop-encoding the
 //! funcdata_varnode `newVarnodeIop` establishes; that branch is `// SEAM`-noted.
 
+use std::rc::Rc;
+
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::types::{int4, uint4};
+use kuna_base::space::AddrSpace;
+use kuna_base::types::{int4, uint4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::funcdata::Funcdata;
@@ -426,6 +429,129 @@ impl Funcdata {
     /// to `sq.getTime()+1` lives in [`create_seq`](crate::op::PcodeOpBank::create_seq).
     pub fn new_op_seq(&mut self, inputs: int4, sq: kuna_base::address::SeqNum) -> OpId {
         self.obank_mut().create_seq(inputs, sq)
+    }
+
+    /// Build a fresh spacebase-base-register reference Varnode (C++
+    /// `Funcdata::newSpacebasePtr`, `funcdata.cc:273`).
+    ///
+    /// `id` must have a base register (otherwise `getSpacebase(0)` errors).
+    pub fn new_spacebase_ptr(&mut self, id: &Rc<AddrSpace>) -> KunaResult<VarnodeId> {
+        // const VarnodeData &point(id->getSpacebase(0));
+        let point = id.get_spacebase(0)?;
+        let space = point
+            .space
+            .clone()
+            .ok_or_else(|| KunaError::lowlevel("newSpacebasePtr: spacebase has no space"))?;
+        // vn = newVarnode(point.size, Address(point.space,point.offset));
+        Ok(self.new_varnode(
+            point.size as int4,
+            &kuna_base::address::Address::new(space, point.offset),
+            None,
+        ))
+    }
+
+    /// Build the stack-pointer-relative reference `INT_ADD(spacebase, off)` for a
+    /// stack access at `off` in `spc` (C++ `Funcdata::createStackRef`,
+    /// `funcdata_op.cc:459`).
+    ///
+    /// `stackptr` reuses an existing stack-pointer reference, or `None` to build a
+    /// new `newSpacebasePtr`.  The `off` is byte-to-address scaled by the space's
+    /// word size.  The SEGMENTOP container arm (`getSegmentOp`) is unreached on
+    /// flat stacks (no segmented user-op on the x86 spacebase) — a faithful seam
+    /// (the Rust tree has no `SegmentOp` user-op surface yet); the plain INT_ADD
+    /// reference is the path the stack-relative parameter recovery exercises.
+    pub fn create_stack_ref(
+        &mut self,
+        spc: &Rc<AddrSpace>,
+        off: uintb,
+        op: OpId,
+        stackptr: Option<VarnodeId>,
+        insertafter: bool,
+    ) -> KunaResult<VarnodeId> {
+        // if (stackptr == 0) stackptr = newSpacebasePtr(spc);
+        let stackptr = match stackptr {
+            Some(v) => v,
+            None => self.new_spacebase_ptr(spc)?,
+        };
+        let addrsize = self
+            .vbank()
+            .get(stackptr)
+            .ok_or_else(|| KunaError::lowlevel("createStackRef: stale stackptr"))?
+            .get_size();
+        let op_addr = self
+            .obank()
+            .get(op)
+            .ok_or_else(|| KunaError::lowlevel("createStackRef: stale op"))?
+            .get_addr()
+            .clone();
+        // addop = newOp(2,op->getAddr()); opSetOpcode(addop,CPUI_INT_ADD);
+        let addop = self.new_op(2, op_addr);
+        self.op_set_opcode_code(addop, OpCode::CPUI_INT_ADD);
+        // addout = newUniqueOut(addrsize,addop);
+        let addout = self.new_unique_out(addrsize, addop)?;
+        // opSetInput(addop,stackptr,0);
+        self.op_set_input(addop, stackptr, 0)?;
+        // off = AddrSpace::byteToAddress(off,spc->getWordSize());
+        let off = AddrSpace::byte_to_address(off, spc.get_word_size());
+        // opSetInput(addop,newConstant(addrsize,off),1);
+        let coff = self.new_constant(addrsize, off);
+        self.op_set_input(addop, coff, 1)?;
+        if insertafter {
+            self.op_insert_after(addop, op);
+        } else {
+            self.op_insert_before(addop, op);
+        }
+        // SEAM(flat-stack): the SEGMENTOP container arm (glb->userops.getSegmentOp
+        // on spc->getContain()) only fires for segmented spacebases; the flat x86
+        // stack has no segment user-op, so addout is the reference directly.
+        Ok(addout)
+    }
+
+    /// Build `LOAD` of `sz` bytes from the stack at `off` in `spc` (C++
+    /// `Funcdata::opStackLoad`, `funcdata_op.cc:541`).
+    ///
+    /// `stackref` reuses an existing stack reference (else a new one is built via
+    /// [`Self::create_stack_ref`]).  The LOAD is inserted right after the stack
+    /// reference op regardless of `insertafter`.
+    pub fn op_stack_load(
+        &mut self,
+        spc: &Rc<AddrSpace>,
+        off: uintb,
+        sz: uint4,
+        op: OpId,
+        stackref: Option<VarnodeId>,
+        insertafter: bool,
+    ) -> KunaResult<VarnodeId> {
+        // Varnode *addout = createStackRef(spc,off,op,stackref,insertafter);
+        let addout = self.create_stack_ref(spc, off, op, stackref, insertafter)?;
+        let op_addr = self
+            .obank()
+            .get(op)
+            .ok_or_else(|| KunaError::lowlevel("opStackLoad: stale op"))?
+            .get_addr()
+            .clone();
+        // loadop = newOp(2,op->getAddr()); opSetOpcode(loadop,CPUI_LOAD);
+        let loadop = self.new_op(2, op_addr);
+        self.op_set_opcode_code(loadop, OpCode::CPUI_LOAD);
+        // opSetInput(loadop,newVarnodeSpace(spc->getContain()),0);
+        let contain = spc
+            .get_contain()
+            .cloned()
+            .ok_or_else(|| KunaError::lowlevel("opStackLoad: spacebase has no container"))?;
+        let spacevn = self.new_varnode_space(&contain);
+        self.op_set_input(loadop, spacevn, 0)?;
+        // opSetInput(loadop,addout,1);
+        self.op_set_input(loadop, addout, 1)?;
+        // res = newUniqueOut(sz,loadop);
+        let res = self.new_unique_out(sz as int4, loadop)?;
+        // opInsertAfter(loadop,addout->getDef());  // LOAD comes after the stack ref op
+        let addout_def = self
+            .vbank()
+            .get(addout)
+            .and_then(|v| v.get_def())
+            .ok_or_else(|| KunaError::lowlevel("opStackLoad: stack ref has no def"))?;
+        self.op_insert_after(loadop, addout_def);
+        Ok(res)
     }
 
     /// Build a `CPUI_INDIRECT` op modeling the indirect effect of `indeffect` (a

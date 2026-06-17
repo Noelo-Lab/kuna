@@ -700,6 +700,26 @@ impl Funcdata {
         self.qlst = qlst;
     }
 
+    /// Splice a single call spec out of `qlst` (CORRECTION-7 finalize tail).
+    ///
+    /// The input-trial *check* path keeps every spec on `qlst` so the cross-call
+    /// `getCallSpecs` lookup resolves; the *finalize* tail
+    /// (`final_input_check`/`build_input_from_trials`) instead needs a single
+    /// `&mut FuncCallSpecs` held alongside `&mut Funcdata`.  Removing the entry
+    /// shifts the higher indices down by one — paired with
+    /// [`Self::restore_call_specs_at`] (`insert(idx, ..)`) the index ordering is
+    /// re-established before the next outer-loop iteration, and the spec just
+    /// finalized is never looked up cross-call (its trials are resolved).
+    pub fn replace_call_specs(&mut self, index: int4) -> FuncCallSpecs {
+        self.qlst.remove(index as usize)
+    }
+
+    /// Re-insert a call spec spliced out by [`Self::replace_call_specs`] at the
+    /// same position, restoring index stability for the remaining iterations.
+    pub fn restore_call_specs_at(&mut self, index: int4, fc: FuncCallSpecs) {
+        self.qlst.insert(index as usize, fc);
+    }
+
     /// Remove the `qlst` entry at `index` (C++ `FlowInfo::deleteCallSpec`,
     /// `flow.cc:1308`): the call spec whose CALL op has just been in-lined /
     /// injected away is dropped.  Because the \e fspec handle is the call op's own
@@ -1671,6 +1691,57 @@ impl Funcdata {
             cur = self.obank.get(op).expect("bb_ops").basic_neighbours().1;
         }
         out
+    }
+
+    /// C++ `BlockBasic::noInterveningStatement` (`block.cc`): \b true if the block
+    /// contains no statement that would have to be emitted before a switch is
+    /// reached — i.e. every op is a marker/branch, a side-effect-free COPY/SUBPIECE,
+    /// or its output is used only within this block (so folding the guard branch
+    /// directly into the switch does not strand a visible statement).
+    pub fn block_no_intervening_statement(&self, bl: BlockId) -> bool {
+        use crate::op::pcodeop_flags;
+        for bop in self.bb_ops(bl) {
+            let o = match self.obank().get(bop) {
+                Some(o) => o,
+                None => continue,
+            };
+            if o.is_marker() {
+                continue;
+            }
+            if o.is_branch() {
+                continue;
+            }
+            if o.get_eval_type() == pcodeop_flags::special {
+                if o.is_call() {
+                    return false;
+                }
+                let opc = o.code();
+                if opc == OpCode::CPUI_STORE || opc == OpCode::CPUI_NEW {
+                    return false;
+                }
+            } else {
+                let opc = o.code();
+                if opc == OpCode::CPUI_COPY || opc == OpCode::CPUI_SUBPIECE {
+                    continue;
+                }
+            }
+            let outvn = match o.get_out() {
+                Some(v) => v,
+                None => continue,
+            };
+            if self.vbank().get(outvn).map(|v| v.is_addr_tied()).unwrap_or(false) {
+                return false;
+            }
+            // Every use of the output must be inside this same block.
+            let descend: Vec<OpId> =
+                self.vbank().get(outvn).map(|v| v.descend_iter().collect()).unwrap_or_default();
+            for dop in descend {
+                if self.obank().get(dop).and_then(|d| d.get_parent()) != Some(bl) {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     // Thin op-link setters so bb_* helpers don't repeatedly unwrap.

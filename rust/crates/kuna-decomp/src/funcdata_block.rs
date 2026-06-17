@@ -632,6 +632,38 @@ impl Funcdata {
         self.heritage_force_restructure();
     }
 
+    /// Push a CBRANCH edge into an indirect (switch) block (C++
+    /// `Funcdata::pushBranch`, `funcdata_block.cc`).
+    ///
+    /// Turns block `bb`'s conditional branch into an unconditional BRANCH and
+    /// re-routes its `slot` out-edge onto the BRANCHIND block `bbnew`, so the
+    /// guarded target becomes a destination of the switch.  Used by
+    /// `JumpBasic::foldInOneGuard` when the guard targets a block not already in
+    /// the switch table.
+    pub fn push_branch(&mut self, bb: BlockId, slot: int4, bbnew: BlockId) -> KunaResult<()> {
+        let cbranch = self
+            .bb_op_tail(bb)
+            .ok_or_else(|| KunaError::lowlevel("pushBranch: source block has no terminator"))?;
+        let cb_ok = self.obank().get(cbranch).map(|o| o.code()) == Some(OpCode::CPUI_CBRANCH)
+            && self.bblocks_ref().block(bb).size_out() == 2;
+        if !cb_ok {
+            return Err(KunaError::lowlevel("Cannot push non-conditional edge"));
+        }
+        let indop = self
+            .bb_op_tail(bbnew)
+            .ok_or_else(|| KunaError::lowlevel("pushBranch: target block has no terminator"))?;
+        if self.obank().get(indop).map(|o| o.code()) != Some(OpCode::CPUI_BRANCHIND) {
+            return Err(KunaError::lowlevel("Can only push branch into indirect jump"));
+        }
+        // Turn the conditional branch into an unconditional branch.
+        self.op_remove_input(cbranch, 1); // Remove the conditional variable
+        self.op_set_opcode_code(cbranch, OpCode::CPUI_BRANCH);
+        self.bblocks_mut().move_out_edge(bb, slot, bbnew);
+        // The indirect branch handles its new branch implicitly.
+        self.structure_reset();
+        Ok(())
+    }
+
     /// Convert a degenerate MULTIEQUAL (after an incoming edge was severed) into
     /// the appropriate simpler op (C++ `Funcdata::opZeroMulti`,
     /// `funcdata_block.cc:195`).

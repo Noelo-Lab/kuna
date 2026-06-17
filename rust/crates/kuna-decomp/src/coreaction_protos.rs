@@ -89,7 +89,7 @@
 
 use std::rc::Rc;
 
-use kuna_base::types::int4;
+use kuna_base::types::{int4, uintb};
 
 use kuna_num::opcodes::OpCode;
 
@@ -517,46 +517,85 @@ impl Action for ActionExtraPopSetup {
             stackspace: self.stackspace,
         }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:1452 — ActionExtraPopSetup::apply
-        //   if (stackspace == (AddrSpace *)0) return 0;   // No stack to speak of
-        if self.stackspace.is_none() {
-            return 0;
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        use crate::fspec::EXTRAPOP_UNKNOWN;
+        use kuna_base::address::Address;
+
+        // C++ coreaction.cc:1452-1482 — ActionExtraPopSetup::apply, transcribed
+        // verbatim.  L0 of the RSP keystone: insert the per-call spacebase
+        // relationship (INT_ADD if the extrapop is known, INDIRECT otherwise) so
+        // the stack-pointer flow across each sub-function call is modeled.
+
+        // if (stackspace == (AddrSpace *)0) return 0; // No stack to speak of
+        let stackspace_index = match self.stackspace {
+            Some(i) => i,
+            None => return 0,
+        };
+        // const VarnodeData &point(stackspace->getSpacebase(0));
+        // Address sb_addr(point.space,point.offset); int4 sb_size = point.size;
+        let stackspace = match data.get_arch().manage().get_space(stackspace_index) {
+            Some(s) => Rc::clone(s),
+            None => return 0,
+        };
+        let point = match stackspace.get_spacebase(0) {
+            Ok(p) => p,
+            Err(_) => return 0,
+        };
+        let point_space = match point.space.clone() {
+            Some(s) => s,
+            None => return 0,
+        };
+        let sb_addr = Address::new(point_space, point.offset);
+        let sb_size = point.size as int4;
+
+        // for(int4 i=0;i<data.numCalls();++i) {
+        for i in 0..data.num_calls() {
+            // fc = data.getCallSpecs(i);
+            // if (fc->getExtraPop() == 0) continue; // Stack pointer is undisturbed
+            let extrapop = data.get_call_specs(i).get_extra_pop();
+            if extrapop == 0 {
+                continue;
+            }
+            // op = data.newOp(2,fc->getOp()->getAddr());
+            let fc_op = data.get_call_specs(i).get_op();
+            let fc_op_addr = match data.obank().get(fc_op) {
+                Some(o) => o.get_addr().clone(),
+                None => continue,
+            };
+            let op = data.new_op(2, fc_op_addr);
+            // data.newVarnodeOut(sb_size,sb_addr,op);
+            if data.new_varnode_out(sb_size, &sb_addr, op).is_err() {
+                continue;
+            }
+            // data.opSetInput(op,data.newVarnode(sb_size,sb_addr),0);
+            let in0 = data.new_varnode(sb_size, &sb_addr, None);
+            let _ = data.op_set_input(op, in0, 0);
+            if extrapop != EXTRAPOP_UNKNOWN {
+                // We know exactly how stack pointer is changed.
+                //   fc->setEffectiveExtraPop(fc->getExtraPop());
+                data.get_call_specs_mut(i).set_effective_extra_pop(extrapop);
+                //   data.opSetOpcode(op,CPUI_INT_ADD);
+                data.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
+                //   data.opSetInput(op,data.newConstant(sb_size,fc->getExtraPop()),1);
+                // C++ widens `int4 fc->getExtraPop()` to the `uintb` parameter,
+                // i.e. signed widening (sign-extend through i64); `bare as` is the
+                // faithful reproduction of that conversion.
+                let in1 = data.new_constant(sb_size, extrapop as i64 as uintb);
+                let _ = data.op_set_input(op, in1, 1);
+                //   data.opInsertAfter(op,fc->getOp());
+                data.op_insert_after(op, fc_op);
+            } else {
+                // We don't know exactly, so we create INDIRECT.
+                //   data.opSetOpcode(op,CPUI_INDIRECT);
+                data.op_set_opcode_code(op, OpCode::CPUI_INDIRECT);
+                //   data.opSetInput(op,data.newVarnodeIop(fc->getOp()),1);
+                let in1 = data.new_varnode_iop(fc_op);
+                let _ = data.op_set_input(op, in1, 1);
+                //   data.opInsertBefore(op,fc->getOp());
+                data.op_insert_before(op, fc_op);
+            }
         }
-        // C++ (continued):
-        //   point = stackspace->getSpacebase(0);
-        //   sb_addr = Address(point.space, point.offset); sb_size = point.size;
-        //   for (i=0; i<data.numCalls(); ++i):
-        //       fc = data.getCallSpecs(i);
-        //       if (fc->getExtraPop() == 0) continue;        // undisturbed
-        //       op = data.newOp(2, fc->getOp()->getAddr());
-        //       data.newVarnodeOut(sb_size, sb_addr, op);
-        //       data.opSetInput(op, data.newVarnode(sb_size,sb_addr), 0);
-        //       if (fc->getExtraPop() != ProtoModel::extrapop_unknown):
-        //           fc->setEffectiveExtraPop(fc->getExtraPop());
-        //           opSetOpcode(op, CPUI_INT_ADD);
-        //           opSetInput(op, newConstant(sb_size, fc->getExtraPop()), 1);
-        //           opInsertAfter(op, fc->getOp());
-        //       else:
-        //           opSetOpcode(op, CPUI_INDIRECT);
-        //           opSetInput(op, newVarnodeIop(fc->getOp()), 1);
-        //           opInsertBefore(op, fc->getOp());
-        //   return 0;
-        //
-        // SEAM(W10-rsp-elim): the call-spec list IS now available
-        // (`getCallSpecs(i)` / `numCalls()` are ported), and a faithful, verified
-        // transcription of the loop above was attempted on this branch.  It is
-        // DEFERRED again — not for lack of the call-spec list, but because the
-        // INT_ADD/INDIRECT spacebase op it inserts at each call site is only
-        // *net-safe* once the downstream spacebase keystone (ActionInferTypes::
-        // propagateSpacebaseRef + the spacebase-store ActionDeadCode that C++
-        // relies on, coreaction.cc) cleans it up.  Without that keystone the
-        // surviving op disrupts stack-pointer flow and REGRESSES jump-table index
-        // recovery: `switchind` loses its stack-local switch index (`switch(v1)`
-        // -> `switch((int8)dat_... )`, case labels -> raw addresses), breaking the
-        // committed `verify_w10_jts_chain` structural tests even though the loose
-        // datatest `<stringmatch>` oracle gains +2.  The per-call insertion must
-        // land TOGETHER with propagateSpacebaseRef, not before it.  Count stays 0.
+        // return 0;
         0
     }
 }
@@ -595,7 +634,8 @@ impl ActionFuncLink {
     fn func_link_input(idx: int4, data: &mut Funcdata) {
         let inputlocked = data.get_call_specs(idx).proto().is_input_locked();
         let varargs = data.get_call_specs(idx).is_dotdotdot();
-        let has_spacebase = data.get_call_specs(idx).proto().get_spacebase().is_some();
+        // AddrSpace *spacebase = fc->getSpacebase(); // non-zero => stackplaceholder
+        let mut spacebase = data.get_call_specs(idx).proto().get_spacebase().cloned();
 
         if !inputlocked || varargs {
             data.get_call_specs_mut(idx).init_active_input();
@@ -607,6 +647,8 @@ impl ActionFuncLink {
         if inputlocked {
             let op = data.get_call_specs(idx).get_op();
             let numparam = data.get_call_specs(idx).proto().num_params();
+            // bool setplaceholder = varargs;
+            let mut setplaceholder = varargs;
             for i in 0..numparam {
                 let (paddr, psize) = {
                     let fc = data.get_call_specs(idx);
@@ -625,14 +667,40 @@ impl ActionFuncLink {
                     Some(s) => s.clone(),
                     None => continue,
                 };
-                if spc.get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE
-                    || spc.get_type() == kuna_base::space::spacetype::IPTR_JOIN
-                {
-                    // SEAM(W4 opStackLoad/findJoin): a stack-relative or joined
-                    // locked parameter needs `opStackLoad`/`findJoin`, which are W4.
-                    // The register-parameter datatests do not reach this; a
-                    // stack-passed locked param is left unmodeled here.
+                let off = paddr.get_offset();
+                if spc.get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE {
+                    // Param is stack relative: build the LOAD and insert it, marking
+                    // the first as the spacebase placeholder (so the explicit tail
+                    // createPlaceholder is unnecessary for a locked stack param).
+                    let loadval = match data.op_stack_load(
+                        &spc,
+                        off,
+                        psize as kuna_base::types::uint4,
+                        op,
+                        None,
+                        false,
+                    ) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+                    let nin = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+                    let _ = data.op_insert_input(op, loadval, nin);
+                    if !setplaceholder {
+                        setplaceholder = true;
+                        if let Some(v) = data.vbank_mut().get_mut(loadval) {
+                            v.set_spacebase_placeholder();
+                        }
+                        // With a locked stack parameter we don't need a placeholder.
+                        spacebase = None;
+                    }
                     continue;
+                }
+                if spc.get_type() == kuna_base::space::spacetype::IPTR_JOIN {
+                    // SEAM(W4 findJoin): a JOIN-split locked parameter with a stack
+                    // piece needs `getArch()->findJoin`/`stripJoinPiece`, not yet on
+                    // the Rust Funcdata; the flat-stack register/stack datatests do
+                    // not reach a joined locked param.  Fall through to the plain
+                    // insert so the trial still has an input Varnode.
                 }
                 // Plain register parameter: insert a fresh input Varnode at the end.
                 let pvn = data.new_varnode(psize, &paddr, None);
@@ -640,10 +708,15 @@ impl ActionFuncLink {
                 let _ = data.op_insert_input(op, pvn, nin);
             }
         }
-        // SEAM(W4 createPlaceholder): the spacebase stack placeholder
-        // (`fc->createPlaceholder`) needs `opStackLoad`; not reached by the
-        // register-parameter datatests.
-        let _ = has_spacebase;
+        // if (spacebase != 0) fc->createPlaceholder(data, spacebase);
+        if let Some(sb) = spacebase {
+            // create_placeholder needs `&mut FuncCallSpecs` + `&mut Funcdata`;
+            // splice the spec out and put it back at the same index (no cross-call
+            // lookup happens in funcLinkInput, so the index-stable take is safe).
+            let mut fc = data.replace_call_specs(idx);
+            let _ = fc.create_placeholder(data, &sb);
+            data.restore_call_specs_at(idx, fc);
+        }
     }
 
     /// Set up the return-value recovery for a single sub-function call (C++
@@ -858,15 +931,19 @@ impl Action for ActionActiveParam {
         let mut aliascheck = data.build_alias_checker_deferred();
         let manager_rc = data.get_arch().manage.clone();
 
-        // Lift the call specs out of `qlst` so each `&mut FuncCallSpecs` recovery
-        // can also take `&mut Funcdata` (the C++ holds a `FuncCallSpecs *` and
-        // mutates `data` through it).
-        let mut qlst = data.take_call_specs();
-        for fc in qlst.iter_mut() {
-            if !fc.is_input_active() {
+        // INDEX-BASED (CORRECTION-7 #3): keep the call specs ON `data.qlst` so
+        // each sub-function's input-trial ancestor walk can look up the *other*
+        // calls' specs (`checkCallDoubleUse` -> `getCallSpecs`).  The C++ holds a
+        // `FuncCallSpecs *` aliasing into `qlst` and mutates `data` through it; in
+        // Rust we re-borrow `data.get_call_specs[_mut](idx)` between `&mut data`
+        // ops.  The take/restore is used ONLY for the finalize tail
+        // (`final_input_check`/`build_input_from_trials`), which performs no
+        // cross-call lookup and needs a single `&mut FuncCallSpecs`.
+        for idx in 0..data.num_calls() {
+            if !data.get_call_specs(idx).is_input_active() {
                 continue;
             }
-            let op = fc.get_op();
+            let op = data.get_call_specs(idx).get_op();
             // A CALL op destroyed by block/deadcode removal (or whose slot was
             // reused by a non-CALL op) leaves a dangling call spec until
             // `deleteCallSpecs` prunes it; guard against touching it.
@@ -884,32 +961,43 @@ impl Action for ActionActiveParam {
             // trimmable = numPasses>0 || op->code() != CPUI_CALLIND.
             let is_callind =
                 data.obank().get(op).map(|o| o.code() == OpCode::CPUI_CALLIND).unwrap_or(false);
-            let trimmable = fc.get_active_input().get_num_passes() > 0 || !is_callind;
+            let trimmable =
+                data.get_call_specs_mut(idx).get_active_input().get_num_passes() > 0 || !is_callind;
 
-            if !fc.get_active_input().is_fully_checked() {
+            if !data.get_call_specs_mut(idx).get_active_input().is_fully_checked() {
                 if let Some(ac) = aliascheck.as_mut() {
-                    check_input_trial_use(fc, data, ac);
+                    check_input_trial_use(idx, data, ac);
                 }
             }
-            fc.get_active_input().finish_pass();
-            if fc.get_active_input().get_num_passes() > fc.get_active_input().get_max_pass() {
-                fc.get_active_input().mark_fully_checked();
+            data.get_call_specs_mut(idx).get_active_input().finish_pass();
+            let (passes, maxpass) = {
+                let ai = data.get_call_specs_mut(idx).get_active_input();
+                (ai.get_num_passes(), ai.get_max_pass())
+            };
+            if passes > maxpass {
+                data.get_call_specs_mut(idx).get_active_input().mark_fully_checked();
             } else {
                 self.base.count += 1; // still have work to do
             }
-            if trimmable && fc.get_active_input().is_fully_checked() {
+            if trimmable && data.get_call_specs_mut(idx).get_active_input().is_fully_checked() {
+                // Finalize: single-spec take/restore (no cross-call lookup needed).
+                // Splice this spec out so `final_input_check`/`build_input_from_trials`
+                // can hold `&mut FuncCallSpecs` and `&mut Funcdata` at once, then
+                // put it back at the same index so the qlst stays index-stable for
+                // the remaining iterations.
+                let mut fc = data.replace_call_specs(idx);
                 if fc.get_active_input().needs_final_check() {
-                    final_input_check(fc, data);
+                    final_input_check(&mut fc, data);
                 }
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
                 // the model and fill in the trial → parameter map.
                 let _ = fc.resolve_and_derive_input_map(&manager_rc);
-                build_input_from_trials(fc, data);
+                build_input_from_trials(&mut fc, data);
                 fc.clear_active_input();
+                data.restore_call_specs_at(idx, fc);
                 self.base.count += 1;
             }
         }
-        data.restore_call_specs(qlst);
         0
     }
 }

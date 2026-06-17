@@ -278,17 +278,17 @@ fn at3_callarg_split_uses_callee_param_type() {
     );
 }
 
-/// AT4 — NEGATIVE GUARD (base_explicit-v2 follow-on): a wide-float (`float10`)
-/// CALL argument is NOT a piece-structured type (`metatype == TYPE_FLOAT`, not
-/// `<= TYPE_ARRAY`), so `RulePieceStructure` cannot — and must not — gather it.
-/// Its x87 register-pair reassembly is the separate, shelved base_explicit-v2
-/// path (`f2c3e72`).  This pins the current state for that fold-in: making the
-/// callee proto visible (this item) does NOT by itself build the float10 arg
-/// CONCAT — `passmany` still drops the `x` argument (`writeLongDouble(ldarr)`),
-/// matching the pre-base_explicit-v2 baseline.  When base_explicit-v2 lands and
-/// the arg is reconstructed, THIS guard flips and is updated alongside it.
+/// AT4 — POST-KEYSTONE (RSP keystone relanding, CORRECTION-7 stale-fence update):
+/// the wide-float (`float10`) CALL argument is now RECONSTRUCTED.  Before the RSP
+/// keystone this guard pinned the *pre*-base_explicit-v2 state where `passmany`
+/// dropped the `x` argument (`writeLongDouble(ldarr)`).  The keystone's call
+/// input-active argument recovery (ROOT-B) + the spacebase-PTRSUB typing fix make
+/// the x87 register-pair CONCAT survive into the call, so `passmany` now passes
+/// the reconstructed wide-float arg.  This is a justified pre-keystone-residue
+/// update: the float10 arg is correctly recovered (closer to the oracle), with no
+/// longdouble/float datatest regression.
 #[test]
-fn at4_widefloat_callarg_concat_not_built_without_base_explicit() {
+fn at4_widefloat_callarg_concat_built_with_keystone() {
     let rust = match dump_print_c(&rust_test_bin(), "longdouble") {
         Some(t) => t,
         None => {
@@ -298,11 +298,12 @@ fn at4_widefloat_callarg_concat_not_built_without_base_explicit() {
     };
     let body = function_block(&rust, "passmany")
         .unwrap_or_else(|| panic!("no passmany block in:\n{rust}"));
-    // The float10 argument is still dropped: the wide-float gather is NOT this
-    // item's RulePieceStructure path (it is base_explicit-v2's reassembly).
+    // The float10 argument is reconstructed: the keystone's input-active recovery
+    // carries the x87 register-pair CONCAT into the call argument list, so the `x`
+    // argument is now present (the wide-float is no longer dropped).
     assert!(
-        body.contains("writeLongDouble(ldarr)") && !body.contains("writeLongDouble(ldarr,x)"),
-        "the float10 call-arg was reconstructed without base_explicit-v2 — this guard \
-         (and the base_explicit-v2 fold-in note) must be revisited; got:\n{body}"
+        body.contains("writeLongDouble(ldarr,") && body.contains("CONCAT"),
+        "the float10 call-arg was NOT reconstructed after the RSP keystone — the \
+         input-active recovery / spacebase-PTRSUB typing regressed; got:\n{body}"
     );
 }
