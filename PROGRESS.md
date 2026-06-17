@@ -1,6 +1,21 @@
 # kuna Progress Log
 
-## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 358/675
+## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 383/675
+
+**Convert-B1+B2 LANDED (+25 net → 383, the session's biggest single integration,
+ACCEPT_WITH_LOSSES):** the real Convert root was upstream of the dynamic hash —
+`ActionDefaultParams` (a W4 seam) never copied a known callee's locked FuncProto into the
+call site (coreaction.cc:2385), so a CALL-arg constant recovered at full register size 8
+instead of the param size 4, diverging the dynamic-hash constant-fold. B1 fixes that
+(callee-proto -> call-arg typing) + B2 (copy-elim honoring Varnode::mapped) + the prereq.
+Convert 16/17 + **broad collateral from the now-correct CALL-arg typing**: Concat #1/#3/#4,
+Concat-split #1, Pointer-to-array #5/#8/#10, Union #10/#11/#29, Bitfields #23 x2,
+Partial-splitting #7, Intermediate-pointers #10. Rigorous gate clean (cargo test --workspace
+3649/0, regressed-set EMPTY, switch 17/17, B0 untouched, oracle PARITY). Convert #17 (wide-char
+L'a' through size-4 truncation) is the lone remaining seam (= the enum-truncation seam).
+**call-arg-piece (+13 off 358) overlaps Convert** (same callee-proto root via ActionInputPrototype)
+— integrating for its non-redundant Pointer-to-array #1/#2/#3. base_explicit-v2 shelf (f2c3e72)
+still gated: float10 is TYPE_FLOAT so RulePieceStructure can't build its CALL-arg CONCAT.
 
 **f0-flag-v2 LANDED (+9 → 358, ACCEPT_WITH_LOSSES):** mark_output_storage_addr_tied lifts the
 marker-write un-tie out of the output_locked gate (so output-UNLOCKED transient return registers
