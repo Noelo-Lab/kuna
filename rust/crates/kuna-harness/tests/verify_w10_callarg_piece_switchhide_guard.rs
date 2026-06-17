@@ -12,7 +12,12 @@
 //! This is a render DELTA, not a scored regression:
 //!
 //!   - baseline (rust-port): `glob2struct();`
-//!   - this item:            `glob2struct(PTRSUB(v1,0xffffffffffffffe8));`
+//!   - this item:            `glob2struct(PTRSUB(v1,-0x18));`
+//!
+//! (w10-convert-negconst: the PTRSUB byte-offset constant is a signed
+//! (TYPE_INT) read-facing constant, so `pushConstant` now renders it as the
+//! two's-complement `-0x18` rather than the full unsigned `0xffffffffffffffe8`
+//! bit pattern — the faithful C++ `push_integer(sign=true)` form.)
 //!
 //! `switchhide.xml`'s four `<stringmatch>` assertions key on `case`/`default:`/
 //! `switch(v1.b)`/`v1.b = 2;`.  As of w10-rsp-8-guardfold the `JumpBasic::
@@ -80,13 +85,13 @@ fn switchhide_callarg_render_delta_pinned() {
     );
 
     // DISCLOSED DELTA: the `glob2struct` call now recovers its pointer argument.
-    // The exact argument form is `PTRSUB(v1,0xffffffffffffffe8)` (raw stack-var,
+    // The exact argument form is `PTRSUB(v1,-0x18)` (raw stack-var,
     // not yet `&v1`).  Pin that the call renders WITH an argument and that the
     // bare `glob2struct();` is gone — so this item's render churn is recorded.
     assert!(
-        out.contains("glob2struct(PTRSUB(v1,0xffffffffffffffe8));"),
+        out.contains("glob2struct(PTRSUB(v1,-0x18));"),
         "EXPECTED the disclosed call-arg-piece render `glob2struct(PTRSUB(v1,\
-         0xffffffffffffffe8));` (the callee proto is recovered, so the call now \
+         -0x18));` (the callee proto is recovered, so the call now \
          passes its pointer arg). If this changed, re-disclose the delta.\n\
          Full output:\n{out}"
     );
