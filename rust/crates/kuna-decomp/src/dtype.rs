@@ -1117,6 +1117,17 @@ impl Datatype {
         self.typedef_imm.as_ref()
     }
 
+    /// Get the function prototype of a `TypeCode` data-type (C++
+    /// `TypeCode::getPrototype`, type.hh:784: `const FuncProto *getPrototype()`).
+    /// `None` if this is not a code type or carries no recovered prototype.
+    #[inline]
+    pub fn get_code_prototype(&self) -> Option<&Rc<crate::fspec::FuncProto>> {
+        match &self.kind {
+            DatatypeKind::Code { proto } => proto.as_ref(),
+            _ => None,
+        }
+    }
+
     // -- Inline computed properties (type.hh inline section) ----------------
 
     /// Get the type id, without variable length size adjustment (C++

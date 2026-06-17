@@ -355,6 +355,33 @@ fn extend_input(
 // ActionDefaultParams (coreaction.hh:674, coreaction.cc:2369)
 // =============================================================================
 
+/// Resolve the callee `FuncProto` for a direct-call entry address (C++
+/// `FuncCallSpecs::getFuncdata()->getFuncProto()`).
+///
+/// In C++ the callee `Funcdata` owns a `FuncProto` (built from the callee's
+/// declared/recovered signature).  A *declared* callee (the datatest
+/// `parse line extern <sig>` path, or any locked function symbol) parks the full
+/// signature on its FunctionSymbol's data-type — a `TypeCode` whose
+/// `getPrototype()` returns exactly that `FuncProto` (`TypeFactory::getTypeCode
+/// (PrototypePieces)` builds it with `setInputLock(true)`/`setOutputLock(true)`,
+/// type.cc:3177).  Resolving the FunctionSymbol at the call's entry address and
+/// borrowing its TypeCode prototype yields the same `FuncProto` the C++ reaches
+/// through the callee `Funcdata`, without building the callee body.
+///
+/// This is generic over the callee's datatype/storage geometry: it walks the
+/// symbol table by *address* only and reads the parked prototype; no name- or
+/// value-keying.  `None` when the entry is invalid, unmapped, or the resolved
+/// symbol carries no code prototype (an unknown callee — the default-model arm).
+fn callee_func_proto(
+    data: &Funcdata,
+    entry: &kuna_base::address::Address,
+) -> Option<std::rc::Rc<crate::fspec::FuncProto>> {
+    if entry.is_invalid() {
+        return None;
+    }
+    data.get_arch().query_callee_proto(entry)
+}
+
 /// Find a prototype for each sub-function (C++ `ActionDefaultParams`,
 /// `coreaction.hh:674`).
 ///
@@ -403,14 +430,32 @@ impl Action for ActionDefaultParams {
         let size = data.num_calls();
         for i in 0..size {
             if !data.get_call_specs(i).proto().has_model() {
-                // The callee `Funcdata` is a cross-function W4 reference; the
-                // recovered callee proto-copy (`fc->copy(otherfunc->getFuncProto())`)
-                // is the W4 path.  For an unknown callee (the common datatest case:
-                // a symbol with no Funcdata), set the default-model internal proto.
-                // SEAM(W4 callee-Funcdata copy): a known callee with a recovered
-                // proto would `copy` it; here the default model applies, which is
-                // what the register-parameter datatests resolve to.
-                data.get_call_specs_mut(i).proto_mut().set_internal(evalfp.clone(), void_ty.clone());
+                // C++ `Funcdata *otherfunc = fc->getFuncdata();` — the callee
+                // `Funcdata` is a cross-function reference.  The callee's recovered
+                // `FuncProto` (which a declared/locked callee parks on its
+                // FunctionSymbol's TypeCode prototype — `TypeCode::getPrototype`,
+                // built by `parse line extern <sig>`) IS reachable from the symbol
+                // table without building the callee body: resolve the FunctionSymbol
+                // at the call's entry address and borrow its TypeCode prototype.
+                //   if (otherfunc != 0) { fc->copy(otherfunc->getFuncProto());
+                //                         if (!isModelLocked && !hasMatchingModel(evalfp))
+                //                           fc->setModel(evalfp); }
+                //   else fc->setInternal(evalfp, voidtype);
+                let entry = data.get_call_specs(i).get_entry_address().clone();
+                let callee_proto = callee_func_proto(data, &entry);
+                if let Some(callee_proto) = callee_proto {
+                    // fc->copy(otherfunc->getFuncProto())
+                    data.get_call_specs_mut(i).proto_mut().copy(&callee_proto);
+                    // if ((!fc->isModelLocked()) && !fc->hasMatchingModel(evalfp)) fc->setModel(evalfp);
+                    let fc = data.get_call_specs(i);
+                    if !fc.proto().is_model_locked() && !fc.proto().has_matching_model(&evalfp) {
+                        data.get_call_specs_mut(i).proto_mut().set_model(Some(evalfp.clone()));
+                    }
+                } else {
+                    // For an unknown callee (no declared symbol), set the
+                    // default-model internal proto.
+                    data.get_call_specs_mut(i).proto_mut().set_internal(evalfp.clone(), void_ty.clone());
+                }
             }
             // fc->insertPcode(data): inject any uponreturn p-code.  SEAM(W4
             // pcodeinjectlib): the default models on the datatest path declare no

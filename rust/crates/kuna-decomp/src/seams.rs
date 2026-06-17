@@ -849,6 +849,39 @@ impl Architecture {
             symbol_offset: e.symbol_offset,
         })
     }
+
+    /// C++ `data.getScopeLocal()->getParent()->queryFunction(entry)->getFuncProto()`
+    /// restricted to the global-scope snapshot: resolve the callee's recovered
+    /// prototype for a direct-call entry address.
+    ///
+    /// The frozen [`GlobalQuery`] carries every global SymbolEntry's `symbol_type`;
+    /// for a FunctionSymbol that is a `TypeCode` whose `getPrototype()` returns the
+    /// `FuncProto` the callee body would expose (a declared callee parks the locked
+    /// signature there — `TypeFactory::getTypeCode(PrototypePieces)`).  We match the
+    /// entry whose storage *starts* at `entry` (an exact function-entry hit) and
+    /// borrow its code prototype.  Generic over the callee signature: keyed only by
+    /// address, no name/value keying.  `None` when no global symbol table is shared
+    /// (hand-built fixtures), no entry starts at `entry`, or the entry's type is not
+    /// a code type with a prototype (an unknown callee).
+    pub fn query_callee_proto(
+        &self,
+        entry: &Address,
+    ) -> Option<std::rc::Rc<crate::fspec::FuncProto>> {
+        let gq = self.global_query.as_ref()?;
+        let space_index = entry.get_space()?.get_index();
+        let start = entry.get_offset();
+        for e in &gq.entries {
+            if e.space_index != space_index || e.first != start {
+                continue;
+            }
+            if let Some(ct) = &e.symbol_type {
+                if let Some(proto) = ct.get_code_prototype() {
+                    return Some(std::rc::Rc::clone(proto));
+                }
+            }
+        }
+        None
+    }
 }
 
 /// The fields of a global [`SymbolEntry`] that C++ `ActionConstantPtr::isPointer` /
