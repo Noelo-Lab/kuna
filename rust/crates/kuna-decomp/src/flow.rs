@@ -1793,10 +1793,74 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             // (no inject id) sets is_inline only; `IfcFixupApply` sets the inject
             // id (which also implies inline, fspec.cc `setInjectId`).
             let inject_id = self.env.query_call_inject_id(&entry);
+            let mut is_inline_call = false;
             if inject_id >= 0 {
                 fc.proto_mut().set_inject_id(inject_id);
+                is_inline_call = true;
             } else if self.env.query_call_inline(&entry) {
                 fc.proto_mut().set_inline(true);
+                is_inline_call = true;
+            }
+            // C++ `ActionDefaultParams::apply` (coreaction.cc:2379-2391) full
+            // callee-proto copy:
+            //   if (!fc->hasModel()) {
+            //     Funcdata *otherfunc = fc->getFuncdata();
+            //     if (otherfunc != 0) {
+            //       fc->copy(otherfunc->getFuncProto());
+            //       if ((!fc->isModelLocked()) && !fc->hasMatchingModel(evalfp))
+            //         fc->setModel(evalfp);
+            //     } else fc->setInternal(evalfp, voidtype);
+            //   }
+            // RELOCATION SEAM(W4 callee-Funcdata copy): the C++ does this copy at
+            // ActionDefaultParams time; flow.cc:683-686 deliberately POSTPONES the
+            // full copy from queryCall to ActionDefaultParams "so last-second
+            // prototype changes can come in".  kuna performs the copy HERE instead
+            // — `coreaction_protos.rs` (which hosts `ActionDefaultParams::apply`)
+            // is a reserved file, and a new schedule node would break the B0
+            // byte-identical `list action` listing.  On the kuna analysis path the
+            // declared callee signature is locked by `parse line extern` BEFORE
+            // flow runs, so no last-second change occurs and the observable result
+            // (the call spec carrying the callee's recovered FuncProto) is
+            // identical to the postponed C++ copy.  When `query_callee_proto`
+            // returns None (an unknown callee — the common datatest case),
+            // ActionDefaultParams still applies its default-model internal proto
+            // (the pristine `set_internal(evalfp, void)` arm, unchanged): we only
+            // pre-seat the model when a declared callee proto exists, which is the
+            // `fc->copy(otherfunc->getFuncProto())` arm.
+            //
+            // INLINE EXCLUSION (faithful to the postpone): an \e inline call is
+            // injected DURING flow (`checkForFlowModification` queues it on
+            // `injectlist`; `injectPcode` clones the callee body and removes the
+            // call op), so by C++ ActionDefaultParams time its FuncCallSpecs is
+            // already gone — the copy arm never runs for it.  Pre-seating a model
+            // here would instead corrupt the inline injection path (the inline
+            // datatest renders the cloned body, not a modeled call).  So we
+            // restrict the pre-seat to NON-inline calls, exactly mirroring which
+            // calls the C++ ActionDefaultParams copy arm actually reaches.
+            if !is_inline_call && !fc.proto().has_model() {
+                let callee_proto = if entry.is_invalid() {
+                    None
+                } else {
+                    self.data.get_arch().query_callee_proto(&entry)
+                };
+                if let Some(callee_proto) = callee_proto {
+                    // fc->copy(otherfunc->getFuncProto())
+                    fc.proto_mut().copy(&callee_proto);
+                    // if ((!fc->isModelLocked()) && !fc->hasMatchingModel(evalfp))
+                    //   fc->setModel(evalfp);
+                    let evalfp = self
+                        .data
+                        .get_arch()
+                        .eval_fp_called()
+                        .or_else(|| self.data.get_arch().default_fp())
+                        .cloned();
+                    if let Some(evalfp) = evalfp {
+                        if !fc.proto().is_model_locked() && !fc.proto().has_matching_model(&evalfp)
+                        {
+                            fc.proto_mut().set_model(Some(evalfp));
+                        }
+                    }
+                }
             }
         }
         // qlst.push_back(res); the index is the call spec's identity (looked up by

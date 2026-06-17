@@ -15,9 +15,18 @@
 //! callee FunctionSymbol's `TypeCode`.  This item:
 //!   * applies a parsed `extern` prototype to the matching FunctionSymbol
 //!     (`apply_prototype_to_symbol` → `retype_symbol` with `getTypeCode(pieces)`);
-//!   * surfaces the callee proto to `ActionDefaultParams` via the global-query
-//!     snapshot (`Architecture::query_callee_proto` reading `TypeCode::getPrototype`);
-//!   * copies it into the call spec (`callee_func_proto` + `fc.copy`).
+//!   * surfaces the callee proto via the global-query snapshot
+//!     (`Architecture::query_callee_proto` reading `TypeCode::getPrototype`);
+//!   * copies it into the call spec at flow-construction time
+//!     (`FlowInfo::build_call_specs`, flow.rs).
+//!
+//! The copy (`fc.proto_mut().copy(callee_proto)` + `setModel(evalfp)`) is the
+//! RELOCATED home of the C++ `ActionDefaultParams::apply` copy arm
+//! (coreaction.cc:2385): kuna performs it where `queryCall` already associates the
+//! callee (flow.cc:678-688) rather than in the reserved `coreaction_protos.rs`.
+//! The postpone is a documented no-op on the kuna path (the declared callee
+//! signature is locked by `parse line extern` before flow runs — see the SEAM
+//! comment in flow.rs).
 //!
 //! These drive the *real* gate path: the committed Rust `decomp_test_dbg`
 //! harness on `concat.xml` / `longdouble.xml` whose `<script>` runs
