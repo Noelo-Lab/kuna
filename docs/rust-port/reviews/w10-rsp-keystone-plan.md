@@ -284,3 +284,24 @@ Multi #1 still green + regressed-EMPTY.
 justified POST-KEYSTONE residue-updates** (float10-arg reconstruction, nanops 2nd float8 param,
 partialsplit &stackother, forloop //rsp cleanup) — each documented inline + being independently
 re-certified against the oracle by the keystone-verify.
+
+## CORRECTION-9 (render-chain attempt 2026-06-17, w3ijxsfqz — the harvest's L5-typing prerequisite)
+
+The L4/L5 substrate (7f1f4df) + flipping INPUT_EFFECT_MARKING_ENABLED removes the //rsp local
+(toward oracle) BUT is net-negative (LOSS-225): the spacebase-relative call arg renders bare
+`glob2struct(PTRSUB(RSP,...))` instead of the oracle's `glob2struct(&v1)`, breaking
+switchhide/switchmulti + the keystone fence switchhide_callarg_render_delta_pinned. So the gate
+stays OFF (substrate committed, +0).
+
+**THE HARVEST PREREQUISITE (the L5 cast-plane, sequenced last): STACK-FRAME TYPING.** Type the
+unaffected-RSP stack frame into the mapped symbol's struct/array type so restructureVarnode's
+gathered hint picks up `mystruct` (from the LOCKED CALLEE PROTO) instead of `$$undef`, the
+spacebase-input is pointer-typed, and ActionSetCasts renders the address-of as `&v1`. Entry
+points: ActionInferTypes backward type-prop through PTRSUB onto the stack Symbol (coreaction_
+infertypes), spacebase-input pointer-typing, ActionSetCasts address-of (coreaction_casts). C++:
+funcdata.cc:358 spacebaseConstant, coreaction.cc:1226, fspec.cc:4875 resolveSpacebaseRelative,
+varmap.cc:386 annotateRawStackPtr. ONLY after this lands can INPUT_EFFECT_MARKING_ENABLED flip
+without the switch-cluster regression → then the stack-frame cluster (the &v1 call-arg cases)
+flips. NOForloop needs ADDITIONAL layers beyond this (the i[0]/i[2]/i[3] array-init dead-code
+survival via the call INDIRECT-effect generation + the loop-condition structuring
+while(i[1]<max) vs while(true)/break) — so the harvest is fragmented across sub-layers.
