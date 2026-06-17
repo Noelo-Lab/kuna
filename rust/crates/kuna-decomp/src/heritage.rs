@@ -1440,6 +1440,46 @@ impl Heritage {
             }
             let trans_addr = Address::new(Rc::clone(&spc), off);
 
+            // effecttype = fc->hasEffect(transAddr, size).  `FuncCallSpecs : public
+            // FuncProto`, so `hasEffect` is the inherited `FuncProto::hasEffect`
+            // (fspec.cc:4239) reached through `proto()`.  Computed up front (C++
+            // heritage.cc:1468) because the output-active branch can promote it to
+            // `killedbycall`.
+            let mut effecttype = fc.proto().has_effect(&trans_addr, size);
+
+            // Output-active branch (heritage.cc:1470-1487): register a return-value
+            // trial for the call's killed output register and, when the effect is a
+            // register clobber, promote the effect to `killedbycall` so the INDIRECT
+            // *creation* branch below seeds the recovered return value.  `possibleout`
+            // tracks whether this range became a fresh output trial (controls the
+            // `markIndirectCreation` in0 flag).
+            let mut possibleoutput = false;
+            if fc.is_output_active() && tryregister {
+                let output_character = fc.proto().characterize_as_output(&trans_addr, size);
+                if output_character != Containment::NoContainment {
+                    if effecttype != effect_type::KILLEDBYCALL && fc.proto().is_auto_killed_by_call() {
+                        effecttype = effect_type::KILLEDBYCALL;
+                    }
+                    if output_character == Containment::ContainedBy {
+                        // tryOutputOverlapGuard: a partial-range output (SUBPIECE off
+                        // the return register / stack-join overlap).  `getBiggestContainedOutput`
+                        // + `guardOutputOverlap` (heritage.cc:1249/1293) are the
+                        // multi-piece return seam, not reached by the whole-register
+                        // return datatests.  SEAM(W4 output-overlap guard).
+                    } else {
+                        // active->whichTrial(transAddr,size)<0 ? registerTrial : possibleoutput
+                        if fc.get_active_output().which_trial(&trans_addr, size) < 0 {
+                            fc.get_active_output().register_trial(&trans_addr, size);
+                            possibleoutput = true;
+                        }
+                    }
+                }
+            }
+            // else if (fc->isStackOutputLock() && tryregister) { tryOutputStackGuard }
+            // — the locked stack-output build (heritage.cc:1488-1494) is the type
+            // recovery path, not reached by the default-model return datatests.
+            // SEAM(W4 stack output lock guard).
+
             // Input-active branch (heritage.cc:1496-1510): register an input
             // parameter trial and append the argument Varnode to the CALL op.  This
             // is what makes a register/stack argument appear as a call argument —
@@ -1463,58 +1503,12 @@ impl Heritage {
                 // reached by the whole-register-argument datatests.
             }
 
-            // effecttype = fc->hasEffect(transAddr, size).  `FuncCallSpecs : public
-            // FuncProto`, so `hasEffect` is the inherited `FuncProto::hasEffect`
-            // (fspec.cc:4239) reached through `proto()`.
-            let effecttype = fc.proto().has_effect(&trans_addr, size);
-
-            // The output-active return-value trial registration and the
-            // `killedbycall` INDIRECT-*creation* marker (the call's register clobber,
-            // heritage.cc:1481-1526) remain DEFERRED: that branch reaches the
-            // register-clobber INDIRECT-collapse seams (deadcode INDIRECT-creation
-            // collapse, the recovered return-value phi) that are not complete on the
-            // live IR, and destabilizes more functions than it fixes.  SEAM(W4
-            // killedbycall INDIRECT-creation chain) — see the loss ledger.
-            //
-            // The `unknown_effect`/`return_address` INDIRECT-*op* (heritage.cc:1514-
-            // 1521) is emitted for the PERSIST (global) range — the alias guard a
-            // call casts over an address-tied global range it might read/write
-            // through a pointer (`varcross.xml::global_cross`'s `read_glob()` over
-            // `glob1`).  Without it the global's Cover does not extend across the
-            // call, so the register value feeding the global store (`v1`) merges INTO
-            // the global (`mergeOpcode(COPY)` on `glob1 = v1` finds no Cover
-            // intersection) and the store collapses to `glob1 = <const>`.  The
-            // INDIRECT `out[addr] = INDIRECT(in[addr], iop(call))` re-reads the range
-            // across the call so its Cover spans the call site and the merge is
-            // correctly Cover-blocked, exactly as in C++ — and `setAddrForce` keeps
-            // it alive through `ActionDeadCode`.
-            //
-            // NARROWING (vs the broad C++ `unknown_effect` emission for every
-            // address-tied range): the gate is `(fl & persist)`, restricting the
-            // INDIRECT to GLOBAL ranges.  The non-persist address-tied case (a stack
-            // local an alias might cross) needs the same INDIRECT, but its downstream
-            // INDIRECT-collapse / cover seams are not yet complete on the live IR and
-            // a broad emission regressed `Else-if`/`Revisit SSA`/`No for-loop alias`.
-            // SEAM(W4 non-persist call-alias INDIRECT) — see the loss ledger.
-            //
-            // RSP keystone (rport/w10-rsp-5layer-atomic, CORRECTION-6): un-gating
-            // this to the C++-faithful `effecttype==unknown_effect||return_address`
-            // (no `persist &&`) IS required to keep the switch-index stack slot
-            // symbolic across calls (the C++ golden raw IR shows `s0x..f4:4 [] iop`
-            // INDIRECTs on the slot).  Held back here because the un-gate is
-            // net-negative until the call's input-active recovery passes
-            // `&val` (PTRSUB(RSP_in,-0xc)) — without that the slot's alias is
-            // unstable, markUnaliased mis-marks it `nolocalalias`, and the un-gated
-            // INDIRECTs over OTHER non-persist locals regress Pointer-to-array /
-            // Else-if.  Kept persist-gated; see the partial report for the blocker.
-            // RSP keystone un-gate (CORRECTION-7): C++-faithful — the INDIRECT is
-            // emitted for EVERY address-tied range whose effect is unknown/return-
-            // address (heritage.cc:1514, no persist restriction).  This keeps the
-            // switch-index stack slot symbolic across calls (the golden raw IR's
-            // `s0x..f4:4 [] iop` INDIRECTs on the slot).  Net-safe now because the
-            // call's input-active recovery (ROOT-B: createPlaceholder +
-            // check_call_double_use index-based) passes `&val` so the slot's alias
-            // is stable and markUnaliased no longer mis-marks it `nolocalalias`.
+            // The `unknown_effect`/`return_address` INDIRECT-*op* (heritage.cc:1512-
+            // 1521) re-reads the address-tied range across the call so its Cover spans
+            // the call site (the alias guard a call casts over an address-tied range it
+            // might read/write through a pointer, plus the saved return-address range).
+            // C++-faithful: emitted for EVERY address-tied range whose effect is
+            // unknown/return-address (no persist restriction).
             let _ = fl;
             if effecttype == effect_type::UNKNOWN_EFFECT
                 || effecttype == effect_type::RETURN_ADDRESS
@@ -1539,6 +1533,23 @@ impl Heritage {
                         if effecttype == effect_type::RETURN_ADDRESS {
                             v.set_return_address();
                         }
+                    }
+                    write.push(out);
+                }
+            }
+            // else if (effecttype == killedbycall) — the call clobbers this register
+            // and (when possibleoutput) produces it as a return value.  Seed an
+            // INDIRECT *creation* op `out[addr,size] = INDIRECT(0, iop(call))`; its
+            // output Varnode is the recovered return value that ActionActiveReturn's
+            // collectOutputTrialVarnodes/buildOutputFromTrials promotes to the CALL's
+            // output (heritage.cc:1522-1526).
+            else if effecttype == effect_type::KILLEDBYCALL {
+                // indop = fd->newIndirectCreation(fc->getOp(),addr,size,possibleoutput);
+                let indop = fd.new_indirect_creation(op, addr, size, possibleoutput);
+                // indop->getOut()->setActiveHeritage(); write.push_back(indop->getOut());
+                if let Some(out) = fd.obank().get(indop).and_then(|o| o.get_out()) {
+                    if let Some(v) = fd.vbank_mut().get_mut(out) {
+                        v.set_active_heritage();
                     }
                     write.push(out);
                 }

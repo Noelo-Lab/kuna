@@ -739,17 +739,13 @@ impl ActionFuncLink {
             // is the type-recovery path; the default-model datatests take the
             // unlocked branch.  Leave the output recovery to ActionActiveReturn.
         } else {
-            // C++ `fc->initActiveOutput()` begins gathering the call's return
-            // value.  In the live IR that gathering only works once the call's
-            // killed-by-call output range is guarded by an `INDIRECT` creation
-            // marker (`Heritage::guardCalls`) — that INDIRECT chain reaches the
-            // downstream INDIRECT-handling seams and is DEFERRED (see guardCalls).
-            // Without it, marking a call output-active leaves the return register
-            // as an un-guarded free read, which trips the heritage single-read
-            // invariant.  So call-return recovery is held off until that chain
-            // lands; the input-argument recovery (the `func(args)` goal) is
-            // independent and stays on.  SEAM(W4 call-return recovery) — loss ledger.
-            // data.get_call_specs_mut(idx).init_active_output();
+            // C++ `fc->initActiveOutput()` begins gathering the call's return value.
+            // The killed-by-call output range is now guarded by an INDIRECT *creation*
+            // marker in `Heritage::guardCalls`, whose output Varnode the downstream
+            // ActionActiveReturn (collectOutputTrialVarnodes/buildOutputFromTrials)
+            // promotes to the CALL's output — so the recovered return register flows
+            // to `w0 = call ...` instead of leaving a free read.
+            data.get_call_specs_mut(idx).init_active_output();
         }
     }
 }
