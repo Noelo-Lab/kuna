@@ -4203,7 +4203,15 @@ impl PrintC {
             } else {
                 ct.get_display_format()
             };
-            self.push_constant_ir_fmt(off, sz, op, display_fmt);
+            // C++ `pushConstant` (printc.cc:1817-1835) selects the `push_integer`
+            // `sign` from the read-facing metatype: TYPE_INT -> signed
+            // (printc.cc:1832), TYPE_UINT/TYPE_UNKNOWN -> unsigned (1824/1835).
+            // The float/enum/char arms were already dispatched above, so a plain
+            // integer constant rendered here is signed exactly when its type is
+            // TYPE_INT — which is what makes a negative `recv_signed(int4)` convert
+            // constant print `-512` instead of its unsigned bit pattern.
+            let sign = ct.get_metatype() == crate::dtype::type_metatype::TYPE_INT;
+            self.push_constant_ir_fmt_sign(off, sz, op, display_fmt, sign);
             return;
         }
         // HighVariable name resolution (C++ `pushSymbolDetail`: `high->getSymbol()`
@@ -4824,10 +4832,31 @@ impl PrintC {
     /// equate Symbol); it wins over the `val<=10`/`mostNaturalBase` default exactly
     /// as in [`resolve_integer_format`].
     fn push_constant_ir_fmt(&mut self, val: uintb, sz: int4, op: OpId, display_fmt_in: u32) {
+        self.push_constant_ir_fmt_sign(val, sz, op, display_fmt_in, false);
+    }
+
+    /// As [`push_constant_ir_fmt`](Self::push_constant_ir_fmt) but threading the
+    /// signedness the way C++ `PrintC::pushConstant` (printc.cc:1813) does: it
+    /// switches on the constant's read-facing data-type metatype and calls
+    /// `push_integer(..., sign, ...)` with `sign = (metatype == TYPE_INT)`
+    /// (printc.cc:1832 vs. the `TYPE_UINT`/`TYPE_UNKNOWN` arms at 1824/1835 which
+    /// pass `false`).  `push_integer` (printc.cc:1381-1391) then strips a set top
+    /// bit into a leading `-` and the two\'s-complement magnitude, so a negative
+    /// signed convert/equate constant renders `-512` / `-0xbb8` / `-0333` /
+    /// `-0b...` rather than its full unsigned bit pattern.  `force_char` short-
+    /// circuits the sign (printc.cc:1381), preserving the `L\'a\'` char convert.
+    fn push_constant_ir_fmt_sign(
+        &mut self,
+        val: uintb,
+        sz: int4,
+        op: OpId,
+        display_fmt_in: u32,
+        sign: bool,
+    ) {
         let force_dec = self.context.is_set(modifiers::FORCE_DEC);
         let force_hex = self.context.is_set(modifiers::FORCE_HEX);
         let (print_negsign, val, display_fmt) =
-            resolve_integer_format(val, sz, false, display_fmt_in, force_hex, force_dec);
+            resolve_integer_format(val, sz, sign, display_fmt_in, force_hex, force_dec);
         // C++ `push_integer` (printc.cc:1417) gates the wide-char `L` prefix on
         // `doEmitWideCharPrefix()` (always true for PrintC) AND `sz > 1`.  The
         // earlier port passed `false` here, dropping the `L` from a size>1
