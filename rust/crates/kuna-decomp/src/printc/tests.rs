@@ -767,6 +767,125 @@ fn rpn_stack_drains_to_empty() {
 }
 
 // ---------------------------------------------------------------------------
+// w10-enum-render VERIFIER adversarial tests.
+//
+// Target `PrintC::push_enum_constant_ir` — the enum arm of `pushConstant`
+// transcribing C++ `PrintC::pushEnumConstant` (printc.cc:1735-1756).  These
+// drive the REAL RPN/`EmitNoMarkup` back-end (`emit_expr`) so the assertion is
+// the actual rendered C string, then re-derive the expectation from
+// `Datatype::get_matches` + the C++ push order:
+//   - flag-OR decomposition (`(A|B|C)`, MSB-first name order),
+//   - a single matched flag (no `|`, no parens-from-cat),
+//   - a value with a numeric remainder no flag covers (fall back to the raw
+//     integer literal — `match_name` empty),
+//   - bitwise-complement (`~`),
+//   - GENERIC over an arbitrary namemap (no hardcoded flag names/values): the
+//     same value through two unrelated enums renders each enum's own names.
+//
+// C++ oracle: `decompiler/cpp/printc.cc:1735-1756`, `type.cc:1537-1586`.
+// ---------------------------------------------------------------------------
+mod w10_enum_render {
+    use super::*;
+    use crate::dtype::{flags, type_metatype, Datatype, DatatypeKind};
+    use crate::seams::{OpId, VarnodeId};
+    use std::collections::BTreeMap;
+
+    /// Build an enum (value -> name) the way `TypeEnum` looks after decode:
+    /// metatype TYPE_UINT plus the `enumtype` flag (dtype.rs:5244-5247).
+    fn make_enum(size: i32, entries: &[(u64, &str)]) -> Datatype {
+        let mut dt = Datatype::new_with_align(size, size, type_metatype::TYPE_UINT);
+        dt.flags |= flags::enumtype;
+        let mut namemap: BTreeMap<u64, String> = BTreeMap::new();
+        for (v, n) in entries {
+            namemap.insert(*v, (*n).to_string());
+        }
+        dt.kind = DatatypeKind::Enum { namemap };
+        dt
+    }
+
+    /// Render a single enum constant through the live RPN/emit driver.
+    fn render_enum(ct: &Datatype, val: u64) -> String {
+        emit_expr(|p| {
+            p.push_enum_constant_ir(ct, val, OpId::default(), VarnodeId::default());
+        })
+    }
+
+    /// Flag-OR: 0x2c = 0x20|0x8|0x4 over the enum.xml `flags`-style enum must
+    /// render `(FLAG_20|FLAG_8|FLAG_4)` — the MSB-first OR the C++
+    /// `pushEnumConstant` emits (one `enum_cat` `|` per gap, names in forward
+    /// order, the whole thing parenthesised by the surrounding `&`/`==`).  We
+    /// assert the bare expression here; the parens come from the parent op.
+    #[test]
+    fn flag_or_decomposition_msb_first() {
+        let e = make_enum(
+            8,
+            &[(0x4, "FLAG_4"), (0x8, "FLAG_8"), (0x20, "FLAG_20"), (0x100, "FLAG_100")],
+        );
+        // Cross-check the data layer drives the render (no hardcoding).
+        let rep = e.get_matches(0x2c).unwrap();
+        assert_eq!(
+            rep.match_name,
+            vec!["FLAG_20".to_string(), "FLAG_8".to_string(), "FLAG_4".to_string()],
+            "get_matches must yield MSB-first names"
+        );
+        assert!(!rep.complement && rep.shift_amount == 0);
+        assert_eq!(render_enum(&e, 0x2c), "FLAG_20|FLAG_8|FLAG_4");
+    }
+
+    /// A single matched flag emits exactly one name — no `|`, no `enum_cat`.
+    #[test]
+    fn single_flag_no_cat() {
+        let e = make_enum(4, &[(0x1, "A"), (0x2, "B"), (0x4, "C")]);
+        let rep = e.get_matches(0x4).unwrap();
+        assert_eq!(rep.match_name, vec!["C".to_string()]);
+        assert_eq!(render_enum(&e, 0x4), "C");
+    }
+
+    /// A value with a bit no flag covers has NO representation (`match_name`
+    /// empty) and falls back to the raw integer literal — NOT a partial
+    /// "names + remainder" mix (C++ pushEnumConstant else-branch, printc.cc:1753).
+    #[test]
+    fn numeric_remainder_falls_back_to_raw_integer() {
+        let e = make_enum(4, &[(0x1, "A"), (0x2, "B"), (0x4, "C")]);
+        // 0x10 has no covering flag in {1,2,4} within the 4-byte mask.
+        let rep = e.get_matches(0x10).unwrap();
+        assert!(rep.match_name.is_empty(), "no representation -> empty match_name");
+        // The render is the bare integer (default hex/dec format), no flag names.
+        let out = render_enum(&e, 0x10);
+        assert!(
+            !out.contains('A') && !out.contains('B') && !out.contains('C') && !out.contains('|'),
+            "remainder must render as a raw integer, got {out:?}"
+        );
+        assert_eq!(out, "0x10", "raw integer fallback: {out:?}");
+    }
+
+    /// The complement path: a value better represented as `~(flags)` emits a
+    /// leading `~` (C++ printc.cc:1744-1745).  For enum3 {EIGHT=8} (size 8) the
+    /// value `~8` (= 0xfffffffffffffff7) is `~EIGHT`.
+    #[test]
+    fn complement_emits_tilde() {
+        let e = make_enum(8, &[(0, "ZERO"), (1, "ONE"), (2, "TWO"), (4, "FOUR"), (8, "EIGHT")]);
+        let val = 0x8u64 ^ kuna_base::address::calc_mask(8); // ~8 in the 8-byte mask
+        let rep = e.get_matches(val).unwrap();
+        assert_eq!(rep.match_name, vec!["EIGHT".to_string()]);
+        assert!(rep.complement, "the ~ path must be taken");
+        assert_eq!(render_enum(&e, val), "~EIGHT");
+    }
+
+    /// NO SPECIAL-CASING: the arm is generic over the namemap.  The SAME value
+    /// 0x5 through two unrelated enums renders each enum's own names — there is
+    /// no hardcoded `FLAG_*`/value/function dependence anywhere in the arm.
+    #[test]
+    fn generic_over_namemap_no_hardcoding() {
+        let red = make_enum(4, &[(0x1, "RED_LO"), (0x4, "RED_HI")]);
+        let blue = make_enum(4, &[(0x1, "BLUE_BIT0"), (0x4, "BLUE_BIT2")]);
+        // 0x5 = 0x4 | 0x1 in both, but the names differ entirely.
+        assert_eq!(render_enum(&red, 0x5), "RED_HI|RED_LO");
+        assert_eq!(render_enum(&blue, 0x5), "BLUE_BIT2|BLUE_BIT0");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // w10-printc-body VERIFIER adversarial tests (round 1).
 // Target the most fragile transcription points: the postsurround id2
 // mirror-back across the two emit_op calls on one stack entry, deep
