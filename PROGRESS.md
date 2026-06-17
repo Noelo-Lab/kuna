@@ -1,6 +1,14 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 473/675; +...mixed-float, call-return/deindirect
+## Session (2026-06-17c) — rust-port W10: 408 → 476/675; +...call-return/deindirect, SUBPIECE-cast
+
+**SUBPIECE-cast render arm ENABLED +3 → 476 (Chain A cascade; closes LOSS-230 Family-1).** With
+the call-return IR bug fixed, enabled `printc.rs:3826` `op_subpiece_ir` cast arm (opSubpiece
+isSubpieceCast?opTypeCast:opFunc, printc.cc:892). Gained Bitfields #4, Union #8, Union #28;
+condconstsub #4 stays byte-identical. Gate: `[675,476]`, regressed-set EMPTY, switch intact,
+PARITY OK. Review `reviews/w10-subpiece-cast-v2-enable.md`. Union #14/#19/#22/#25/#4/#27 remain
+(LOSS-230 Family-2/3). Chain B (stack-typing) refined to ONE deep heritage wave (+10 potential,
+LOSS-156 REFINEMENT) — running.
 
 **call-return recovery: killedbycall + ActionDeindirect +5 → 473 (Chain A).** Two-wave chain
 (LOSS-230): (1) killedbycall heritage seam (substrate b72bfea, +3/-1) = `Heritage::guard_calls`

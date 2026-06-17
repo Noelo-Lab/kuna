@@ -2634,3 +2634,11 @@ exactly 4 (Store cross #1/#2, Intermediate pointers #3/#5).
   nolocalalias single-def/single-use pointer-spill slots; then OR `query_local_properties` into
   heritage.rs:1381 → +7 to +10. The query_local_properties plumbing is preserved at branch
   `rport/w10-stacklocal-typing` @ b120faf. [[kuna-rust-port]]
+
+## LOSS-230 UPDATE 3 — Family-1 CLOSED (subpiece-cast-v2 wave, +3 → 476)
+
+LOSS-230 Family-1 (the SUBPIECE-cast arm) is RESOLVED: with the call-return IR fix landed, the
+`printc.rs:3826` cast arm was enabled (opSubpiece isSubpieceCast?opTypeCast:opFunc) → Bitfields #4,
+Union #8, Union #28 (Union #14 belongs to Family-2/3, did not flip). Families 2 (#19/#22/#25
+FLOAT2FLOAT implied-cast) and 3 (#4/#27 inheritUnionField SEAM) remain open. See
+`reviews/w10-subpiece-cast-v2-enable.md`. [[kuna-rust-port]]
