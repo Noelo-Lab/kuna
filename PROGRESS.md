@@ -1,6 +1,17 @@
 # kuna Progress Log
 
-## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 348/675
+## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 349/675
+
+**printc-decl-render LANDED (+1 → 349, ACCEPT_WITH_LOSSES):** all 3 printc seams now render
+byte-correct (concat shared `foo v1;` decl-collapse; twodim global-decl skip; checkAddressOfCast
+`&c`) — net +1 (Pointer-to-array #7); the other cluster assertions are gated on deeper seams
+(struct-PARAM by-value split [LOSS-215], shared-array-read v1-temp, function-arg ptr typing).
+Render fidelity improved across 8 stems, regressed-set EMPTY. PATTERN NOTE: render fixes are
+flipping fewer datatest assertions than diagnosed because the stringmatch assertions check more
+than the one fixed line — the remaining clusters are increasingly fragmented across multiple
+seams. IN FLIGHT: f0-flag-v2 (+8). NEXT (dedicated): Convert-B1+B2 (+17, the CALL-arg constant
+size-4 fold + copy-elim-mapped, on the 5685b39 prereq).
+
 
 **Enum render LANDED (+1 → 348, ACCEPT):** PrintC::pushEnumConstant + the TYPE_ENUM dispatch
 arm (flag-OR constant render) — Enum Reading #5 (`(FLAG_100000|FLAG_800)`). #3/#4 turned out
