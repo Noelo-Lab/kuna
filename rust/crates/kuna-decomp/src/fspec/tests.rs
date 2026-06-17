@@ -1528,6 +1528,9 @@ fn fcs_manager() -> AddrSpaceManager {
         1,
     )))
     .unwrap();
+    // The fspec space, so deindirect's CALLIND->CALL rewrite can build the
+    // call-spec annotation Varnode (newVarnodeCallSpecs).
+    m.insert_space(Rc::new(kuna_base::space::FspecSpace::new(4))).unwrap();
     m.set_default_code_space(2).unwrap();
     m
 }

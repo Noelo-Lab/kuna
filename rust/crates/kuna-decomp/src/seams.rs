@@ -956,6 +956,45 @@ impl Architecture {
         }
         None
     }
+
+    /// C++ `Scope::queryFunction(addr)` (`database.cc:1292`) restricted to the
+    /// global-scope snapshot: resolve an address to the FunctionSymbol that
+    /// *starts* there and report its display name, entry address, and recovered
+    /// prototype.  A FunctionSymbol's storage is a `TYPE_CODE` Datatype whose
+    /// `getPrototype()` is the callee `FuncProto` (the `Funcdata::getFuncProto()`
+    /// the C++ `queryFunction` returns a `Funcdata *` for).  `None` when no global
+    /// symbol table is shared (hand-built fixtures), no entry starts at `entry`, or
+    /// the entry is not a code symbol with a prototype.
+    ///
+    /// This is the `ActionDeindirect::apply` lever: a CALLIND whose target is the
+    /// constant `entry` deindirects to a direct CALL to this function.
+    pub fn query_function(
+        &self,
+        entry: &Address,
+    ) -> Option<(String, Address, std::rc::Rc<crate::fspec::FuncProto>)> {
+        let gq = self.global_query.as_ref()?;
+        let space = entry.get_space()?;
+        let space_index = space.get_index();
+        let start = entry.get_offset();
+        for e in &gq.entries {
+            if e.space_index != space_index || e.first != start {
+                continue;
+            }
+            if let Some(ct) = &e.symbol_type {
+                if ct.get_metatype() != crate::dtype::type_metatype::TYPE_CODE {
+                    continue;
+                }
+                if let Some(proto) = ct.get_code_prototype() {
+                    return Some((
+                        e.symbol_name.clone(),
+                        Address::new(std::rc::Rc::clone(space), e.first),
+                        std::rc::Rc::clone(proto),
+                    ));
+                }
+            }
+        }
+        None
+    }
 }
 
 /// The fields of a global [`SymbolEntry`] that C++ `ActionConstantPtr::isPointer` /
