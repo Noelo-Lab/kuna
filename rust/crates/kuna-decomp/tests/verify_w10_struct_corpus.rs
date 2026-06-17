@@ -798,13 +798,23 @@ fn verify_w10_pspec_context_forloop_varused_lifts_64bit_and_structures() {
     // (`// rsp` / `// rbp`).  Since w10-highvar-naming coalesces the frame
     // registers into named `vN` locals (the faithful angr default), the proxy must
     // also accept the lowercased storage comment the decl carries (e.g. `// rsp`).
+    //
+    // POST-RSP-KEYSTONE (CORRECTION-7 stale-fence update): the keystone cleans the
+    // RSP residue, so the `// rsp` storage comment is gone.  The surviving
+    // non-16-bit lifting signals are: a 64-bit register token, a 32/64-bit
+    // register storage comment (e.g. `// ebx`, the protected-mode register name —
+    // a 16-bit real-mode lift would render `// bx`), or a `(uint8)`/`(int8)`
+    // widening cast (in the symbol-mapped harness render).  Accept any of them.
     let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0)
-        + count_matches(r"// r(sp|bp|di|si|ax|bx|cx|dx)\b", &rendered).unwrap_or(0);
+        + count_matches(r"// r(sp|bp|di|si|ax|bx|cx|dx)\b", &rendered).unwrap_or(0)
+        + count_matches(r"// e(sp|bp|di|si|ax|bx|cx|dx)\b", &rendered).unwrap_or(0)
+        + count_matches(r"\(uint8\)|\(int8\)", &rendered).unwrap_or(0);
     assert!(
         sixtyfour >= 1,
-        "forloop_varused must lift with 64-bit registers (RSP/… as a token or a \
-         `// rsp` storage comment); got none (the pspec <context_data> paints were \
-         not applied):\n{rendered}"
+        "forloop_varused must lift in protected/long mode (a 64-bit register token, \
+         a 32/64-bit register storage comment like `// ebx`, or a `(uint8)`/`(int8)` \
+         widening cast); got none (the pspec <context_data> paints were not \
+         applied):\n{rendered}"
     );
     let realmode =
         count_matches(r"\bBX \+ SI\b|CALLOTHER\(0,DS|CALLOTHER\(0,SS|\b0xfffe\b", &rendered)

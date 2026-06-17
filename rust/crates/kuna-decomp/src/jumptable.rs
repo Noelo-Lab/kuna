@@ -2440,10 +2440,16 @@ impl JumpModel for JumpBasicModel {
     }
 
     fn fold_in_guards(&mut self, _fd: &mut Funcdata, _jump: &mut JumpTable) -> KunaResult<bool> {
-        // SEAM(structuring): foldInOneGuard needs noInterveningStatement +
-        // pushBranch + addBlockToSwitch wiring (the switch-structuring stage).
-        // Returning false leaves the guards in place; the switch destinations are
-        // still installed (the guards render as ordinary branches until folded).
+        // SEAM(structuring): `foldInOneGuard` + `noInterveningStatement` +
+        // `pushBranch` are ported (see `JumpBasicModel::fold_in_one_guard`,
+        // `Funcdata::block_no_intervening_statement`/`push_branch`), but the
+        // constant-predicate CBRANCH the else-branch leaves (`if (1)`) is not yet
+        // collapsed by the downstream structuring/condexe re-run, so enabling the
+        // fold REGRESSES the switch render (the `if (1)` wrapper survives and
+        // `Switch Multi #1` breaks).  Held inert until the constant-guard collapse
+        // lands; the switch destinations still install (guards render as ordinary
+        // branches until folded).  The fold body is retained, compiled, and
+        // unit-reachable for that follow-up.
         Ok(false)
     }
 
@@ -2524,6 +2530,94 @@ impl JumpModel for JumpBasicModel {
 }
 
 impl JumpBasicModel {
+    /// Fold a single guard CBRANCH into the switch's default destination (C++
+    /// `JumpBasic::foldInOneGuard`, `jumptable.cc`).
+    ///
+    /// If the guard branch goes directly into the switch block, route its other
+    /// (out-of-range) target through the switch as the folded default — either by
+    /// adding it as a new no-label destination (and converting the CBRANCH to an
+    /// unconditional BRANCH into the switch via `pushBranch`) or, when the target
+    /// is already a switch destination, by making the CBRANCH unconditional toward
+    /// the switch and recording that destination as the default block.
+    ///
+    /// Ported and reachable, but currently kept inert by `fold_in_guards` (the
+    /// constant-guard collapse that removes the `if (1)` residue is not yet on the
+    /// structuring path — see the seam note there).
+    #[allow(dead_code)]
+    fn fold_in_one_guard(
+        fd: &mut Funcdata,
+        guard: &mut GuardRecord,
+        jump: &mut JumpTable,
+    ) -> KunaResult<bool> {
+        let cbranch = match guard.get_branch() {
+            Some(c) => c,
+            None => return Ok(false),
+        };
+        let cbranchblock = match fd.obank().get(cbranch).and_then(|o| o.get_parent()) {
+            Some(b) => b,
+            None => return Ok(false),
+        };
+        // The guard branch may have been converted between recovery and now.
+        if fd.bblocks_ref().block(cbranchblock).size_out() != 2 {
+            return Ok(false);
+        }
+        let mut indpath = guard.get_path();
+        if fd.bblocks_ref().block(cbranchblock).get_flip_path() {
+            indpath = 1 - indpath;
+        }
+        let switchbl = match jump.get_indirect_op().and_then(|io| fd.obank().get(io)).and_then(|o| o.get_parent()) {
+            Some(b) => b,
+            None => return Ok(false),
+        };
+        // Guard must go directly into the switch block.
+        if fd.bblocks_ref().block(cbranchblock).get_out(indpath) != switchbl {
+            return Ok(false);
+        }
+        let guardtarget = fd.bblocks_ref().block(cbranchblock).get_out(1 - indpath);
+
+        let nout = fd.bblocks_ref().block(switchbl).size_out();
+        let mut pos = 0;
+        while pos < nout {
+            if fd.bblocks_ref().block(switchbl).get_out(pos) == guardtarget {
+                break;
+            }
+            pos += 1;
+        }
+        // There can be only one folded target.
+        if jump.has_folded_default() && jump.get_default_block() != pos {
+            return Ok(false);
+        }
+        if !fd.block_no_intervening_statement(switchbl) {
+            return Ok(false);
+        }
+        if pos == nout {
+            // Add the new destination to the table without a label and treat it as
+            // the default/exit case; route the guard branch into the switch.
+            jump.add_block_to_switch(fd, guardtarget, NO_LABEL)?;
+            jump.set_last_as_default();
+            fd.push_branch(cbranchblock, 1 - indpath, switchbl)?;
+        } else {
+            // The guard's out-of-range target is already a switch destination:
+            // make the CBRANCH unconditional toward the switch (set the predicate
+            // constant) and record that block as the default.
+            let is_flip = fd.obank().get(cbranch).map(|o| o.is_boolean_flip()).unwrap_or(false);
+            let val: uintb = if (indpath == 0) != is_flip { 0 } else { 1 };
+            let in0_size = fd
+                .obank()
+                .get(cbranch)
+                .and_then(|o| o.get_in(0))
+                .and_then(|v| fd.vbank().get(v))
+                .map(|v| v.get_size())
+                .unwrap_or(1);
+            let c = fd.new_constant(in0_size, val);
+            fd.op_set_input(cbranch, c, 1)?;
+            jump.set_default_block(pos);
+        }
+        jump.set_folded_default();
+        guard.clear();
+        Ok(true)
+    }
+
     /// Construct an empty model-2 (C++ `JumpBasic2(JumpTable*)`).
     pub fn new_model2() -> JumpBasicModel {
         let mut m = JumpBasicModel::new();

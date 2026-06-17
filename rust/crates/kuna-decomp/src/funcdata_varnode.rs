@@ -1903,18 +1903,100 @@ impl Funcdata {
     /// Test if a Varnode use at a CALL/CALLIND is a legitimate double-use of a
     /// parameter (C++ `Funcdata::checkCallDoubleUse`, funcdata_varnode.cc:1802).
     ///
-    /// SEAM(W4): reaches `getCallSpecs` / `FuncCallSpecs::getActiveInput`, the
-    /// call-spec subsystem that is not on `Funcdata` in the merged tree
-    /// (`num_calls()==0` — no CALL ops in the IR), so this is never reachable on
-    /// the recovery path; it conservatively reports `false` (not a double-use).
+    /// `opmatch` is the first CALL linked to `trial`; `op` is a second CALL whose
+    /// data-flow `vn` also reaches.  Returns `true` for a legitimate double use
+    /// (the trial stays a likely parameter).  Index-based call-spec lookup
+    /// (`get_call_specs_index`/`get_call_specs`) is what makes the cross-call
+    /// `getActiveInput()->getTrialForInputVarnode(j)` read resolve — which only
+    /// works while the `qlst` stays populated (see `ActionActiveParam::apply`).
     fn check_call_double_use(
         &self,
-        _opmatch: OpId,
-        _op: OpId,
-        _vn: VarnodeId,
-        _fl: kuna_base::types::uint4,
-        _trial: &crate::fspec::ParamTrial,
+        opmatch: OpId,
+        op: OpId,
+        vn: VarnodeId,
+        fl: kuna_base::types::uint4,
+        trial: &crate::fspec::ParamTrial,
     ) -> bool {
+        use crate::expression::TraverseNode;
+        // int4 j = op->getSlot(vn);
+        let j = match self.obank().get(op) {
+            Some(o) => o.get_slot(vn),
+            None => return false,
+        };
+        // if (j<=0) return false; // indirect call variable, definitely not a param
+        if j <= 0 {
+            return false;
+        }
+        // FuncCallSpecs *fc = getCallSpecs(op);
+        // FuncCallSpecs *matchfc = getCallSpecs(opmatch);
+        let fc_idx = match self.get_call_specs_index(op) {
+            Some(i) => i,
+            None => return false,
+        };
+        let matchfc_idx = match self.get_call_specs_index(opmatch) {
+            Some(i) => i,
+            None => return false,
+        };
+        let fc = self.get_call_specs(fc_idx);
+        let matchfc = self.get_call_specs(matchfc_idx);
+        let op_code = self.obank().get(op).map(|o| o.code());
+        let match_code = self.obank().get(opmatch).map(|o| o.code());
+        // if (op->code() == opmatch->code()) {
+        if op_code.is_some() && op_code == match_code {
+            // bool isdirect = (opmatch->code() == CPUI_CALL);
+            let isdirect = match_code == Some(OpCode::CPUI_CALL);
+            // (isdirect && matchfc->getEntryAddress()==fc->getEntryAddress()) ||
+            // (!isdirect && op->getIn(0)==opmatch->getIn(0))
+            let same_func = if isdirect {
+                matchfc.get_entry_address() == fc.get_entry_address()
+            } else {
+                let op_in0 = self.obank().get(op).and_then(|o| o.get_in(0));
+                let match_in0 = self.obank().get(opmatch).and_then(|o| o.get_in(0));
+                op_in0.is_some() && op_in0 == match_in0
+            };
+            if same_func {
+                // const ParamTrial &curtrial( fc->getActiveInput()
+                //     ->getTrialForInputVarnode(j) );
+                let curtrial = fc.active_input().get_trial_for_input_varnode(j);
+                // if (curtrial.getAddress() == trial.getAddress()) {
+                if curtrial.get_address() == trial.get_address() {
+                    let op_parent = self.obank().get(op).and_then(|o| o.get_parent());
+                    let match_parent = self.obank().get(opmatch).and_then(|o| o.get_parent());
+                    // if (op->getParent() == opmatch->getParent()) {
+                    if op_parent.is_some() && op_parent == match_parent {
+                        let match_order =
+                            self.obank().get(opmatch).map(|o| o.get_seq_num().get_order());
+                        let op_order = self.obank().get(op).map(|o| o.get_seq_num().get_order());
+                        // if (opmatch->getSeqNum().getOrder() < op->getSeqNum().getOrder())
+                        //     return true; // opmatch has dibs, don't reject
+                        if let (Some(mo), Some(oo)) = (match_order, op_order) {
+                            if mo < oo {
+                                return true;
+                            }
+                        }
+                        // else: use earlier than match — might still reject (fall through)
+                    } else {
+                        // Same function, different basic blocks: assume legit doubleuse
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // if (fc->isInputActive()) {
+        if fc.is_input_active() {
+            // const ParamTrial &curtrial( fc->getActiveInput()
+            //     ->getTrialForInputVarnode(j) );
+            let curtrial = fc.active_input().get_trial_for_input_varnode(j);
+            if curtrial.is_checked() {
+                if curtrial.is_active() {
+                    return false;
+                }
+            } else if TraverseNode::is_alternate_path_valid(vn, fl, self.vbank(), self.obank()) {
+                return false;
+            }
+            return true;
+        }
         false
     }
 

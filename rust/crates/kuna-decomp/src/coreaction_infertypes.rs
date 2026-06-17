@@ -1092,6 +1092,38 @@ fn propagate_add_in2_out(
         // C++ do { pointer = pointer->downChain(typeOffset,...); if (0) break; }
         //      while(typeOffset != 0);
         while let Some(cur) = pointer.clone() {
+            // C++ `TypePointer::downChain` (type.cc:1224-1257) dispatches the
+            // pointed-to `getSubType(off,&off)` to `TypeSpacebase::getSubType`,
+            // which reaches the symbol scope to resolve the local/global Symbol at
+            // `off` (type.cc:1248).  The generic `Datatype::down_chain` cannot reach
+            // that scope, so a `PTRSUB(spacebase,-0xN)` would otherwise propagate as
+            // a bare 8-byte pointer (int8) and force a spurious cast to the mapped
+            // local's type.  Reproduce the spacebase arm here (scope-aware), exactly
+            // as `get_output_token_ptrsub` does for the cast plane, so the PTRSUB
+            // output is typed as a pointer to the mapped local during inference.
+            let cur_is_spacebase = cur
+                .get_ptr_to()
+                .map(|p| p.get_metatype() == type_metatype::TYPE_SPACEBASE)
+                .unwrap_or(false);
+            if cur_is_spacebase {
+                let sbptrto = cur.get_ptr_to()?;
+                let cur_size = cur.get_size();
+                let cur_ws = cur.get_word_size().unwrap_or(1);
+                if let Some((subtype, residual)) =
+                    data.spacebase_get_sub_type(&sbptrto, type_offset)
+                {
+                    type_offset = residual;
+                    // The spacebase is never an array/struct container itself, so
+                    // `par`/`parOff` stay unset; `!isArray -> getTypePointerStripArray`.
+                    pointer = tlst.get_type_pointer_strip_array(cur_size, subtype, cur_ws).ok();
+                } else {
+                    pointer = None;
+                }
+                if pointer.is_none() || type_offset == 0 {
+                    break;
+                }
+                continue;
+            }
             let (next, new_off, par, par_off) =
                 tlst.down_chain(&cur, type_offset, allow_wrap).ok()?;
             type_offset = new_off;

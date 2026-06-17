@@ -1774,6 +1774,49 @@ impl PrintC {
                 None => continue,
             };
             seen.insert(high);
+            // A `&symbol` reference's offset is a CONSTANT operand of the PTRSUB
+            // markup, not a scope Symbol.  When a constant-only reference high
+            // SHADOWS a real local that is already declared from its own storage —
+            // i.e. there is a whole-symbol sibling (`kuna_symbol_offset == -1`) with
+            // the same name — the constant reference must NOT be declared a second
+            // time (C++ `emitScopeVarDecls` walks the ScopeLocal Symbols once
+            // (printc.cc:2667); the `&val` reference renders inline via the PTRSUB
+            // markup).  Skipping it removes the spurious `int8 val;` shadow of the
+            // real `int4 val` stack local.  The whole-sibling guard is load-bearing:
+            // a constant-only reference with NO real sibling (the stack array `c` in
+            // passPtrToArray, materialized only through `&c`) IS the symbol's sole
+            // declaration and must still print.
+            let all_constant = fd
+                .high_bank()
+                .get(high)
+                .map(|h| {
+                    let n = h.num_instances();
+                    n > 0
+                        && (0..n).all(|i| {
+                            fd.vbank()
+                                .get(h.get_instance(i))
+                                .map(|v| v.is_constant())
+                                .unwrap_or(false)
+                        })
+                })
+                .unwrap_or(false);
+            // A real local with the same name exists when another HighVariable
+            // carries that name and has at least one NON-constant (storage)
+            // instance — the stack/register varnodes the printer declares from.
+            let has_storage_sibling = all_constant
+                && fd.high_bank().iter().any(|(id, h)| {
+                    id != high
+                        && h.kuna_name() == Some(name.as_str())
+                        && (0..h.num_instances()).any(|i| {
+                            fd.vbank()
+                                .get(h.get_instance(i))
+                                .map(|v| !v.is_constant())
+                                .unwrap_or(false)
+                        })
+                });
+            if has_storage_sibling {
+                continue;
+            }
             // C++ `emitLocalVarDecls` -> `emitScopeVarDecls(fd->getScopeLocal(),
             // no_category)` walks the LOCAL scope only (printc.cc:2336/2667).  A
             // global-mapped Symbol (`glob1`, `globalfree`, `myarray`) lives in the

@@ -410,3 +410,49 @@ fn verifier_switchind_label_set_matches_oracle_cardinality() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// RSP-keystone type-collision adversarial assertions (PART 2: the int8-vs-int4
+// duplicate-HighVariable fix — spacebase-PTRSUB scope-aware typing in
+// `propagateAddIn2Out` + the constant-reference-shadow decl skip in printc).
+// `render_datatest` does NOT apply the `<com>map ...</com>` console commands, so
+// these key on the WHOLE-corpus in-process render's structural shape; the
+// harness-driven (mapped) variants live in `verify_w10_spacebase_render.rs`
+// (`adv_keystone_*`).  No function-name / register / value special-casing.
+// ---------------------------------------------------------------------------
+
+/// ADV-1 — NO DUPLICATE DECLARATION.  No name may be declared twice in a single
+/// function body.  Before the keystone the recovered stack-pointer argument (an
+/// 8-byte register pointer) synthesized a second wider-typed declaration that
+/// shadowed the mapped local (`int8 val;` next to `int4 val; // stack - …`).  The
+/// scope-aware spacebase typing + the constant-reference-shadow decl skip collapse
+/// it to a single declaration per name.
+#[test]
+fn adv1_no_duplicate_declaration_in_any_function() {
+    let c = render_datatest("switchind.xml");
+    let body_start = c.find('{').unwrap_or(0);
+    let decl_block = &c[body_start..];
+    let mut names: Vec<&str> = Vec::new();
+    for line in decl_block.lines() {
+        let t = line.trim();
+        if t.contains('=') || t.contains("return") {
+            break; // reached the statement list
+        }
+        let code = t.split("//").next().unwrap_or(t).trim().trim_end_matches(';').trim();
+        if let Some(name) = code.rsplit([' ', '*', ']']).find(|s| !s.is_empty()) {
+            if name.chars().next().is_some_and(|ch| ch.is_alphabetic() || ch == '_') {
+                names.push(name);
+            }
+        }
+    }
+    for i in 0..names.len() {
+        for j in (i + 1)..names.len() {
+            assert_ne!(
+                names[i], names[j],
+                "switchind declared `{}` twice — a duplicate-HighVariable shadow \
+                 leaked (the int8-vs-int4 type collision regressed):\n{c}",
+                names[i]
+            );
+        }
+    }
+}

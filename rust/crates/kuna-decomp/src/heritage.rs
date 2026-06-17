@@ -1507,10 +1507,17 @@ impl Heritage {
             // unstable, markUnaliased mis-marks it `nolocalalias`, and the un-gated
             // INDIRECTs over OTHER non-persist locals regress Pointer-to-array /
             // Else-if.  Kept persist-gated; see the partial report for the blocker.
-            let persist_range = (fl & varnode_flags::persist) != 0;
-            if persist_range
-                && (effecttype == effect_type::UNKNOWN_EFFECT
-                    || effecttype == effect_type::RETURN_ADDRESS)
+            // RSP keystone un-gate (CORRECTION-7): C++-faithful — the INDIRECT is
+            // emitted for EVERY address-tied range whose effect is unknown/return-
+            // address (heritage.cc:1514, no persist restriction).  This keeps the
+            // switch-index stack slot symbolic across calls (the golden raw IR's
+            // `s0x..f4:4 [] iop` INDIRECTs on the slot).  Net-safe now because the
+            // call's input-active recovery (ROOT-B: createPlaceholder +
+            // check_call_double_use index-based) passes `&val` so the slot's alias
+            // is stable and markUnaliased no longer mis-marks it `nolocalalias`.
+            let _ = fl;
+            if effecttype == effect_type::UNKNOWN_EFFECT
+                || effecttype == effect_type::RETURN_ADDRESS
             {
                 // indop = fd->newIndirectOp(fc->getOp(), addr, size, 0);
                 let indop = fd.new_indirect_op(op, addr, size, 0);
