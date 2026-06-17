@@ -2542,3 +2542,27 @@ root:
   byte-identical with the cast arm still disabled), the `printc.rs:3810` cast-arm enable is the
   clean isolated final step → Union #8/#14/#28 + Bitfields #4. This is a deep call-return-recovery
   seam — likely affects many call-output assertions, not just these. [[kuna-rust-port]]
+
+## LOSS-231 — Switch Loop (9) blocked: idiv narrowing race (RuleSubCommute vs RuleSubZext SeqNum order)
+
+- kind: deferred (foundational op-ordering)
+- what: `switchloop.xml` #2-#10 fail. The switch-in-loop STRUCTURING is 100% correct (verified
+  KUNA_DUMP). All 9 fail from ONE root: case 4's 32-bit `cltd; idiv` stays a 64-bit `SDIV` in rust
+  (`v1 = (int8)(int4)startval / 10 & 0xffffffff`) vs C++'s narrowed `v2 = (int4)startval / 10`.
+- root: a RULE RACE. C++ narrows `SUBPIECE(SDIV(SEXT,SEXT),0) → SDIV` via `RuleSubCommute`
+  (ruleaction.cc:4592, lone-descend gate :4643). The `idiv` SLEIGH (ia.sinc:3580 +
+  check_EAX_dest:1509 → `RAX=zext(EAX)`) yields `ZEXT(SUBPIECE(quotient,0))`, which `RuleSubZext`
+  (ruleaction.cc) rewrites to `quotient & 0xffffffff` — giving the SDIV quotient a SECOND
+  descendant that permanently fails RuleSubCommute's lone-descend gate. C++ wins the race
+  (RuleSubCommute narrows first, then RuleSubZext bails on size-mismatch); rust's RuleSubZext wins.
+  Both rules are byte-faithful (ruleaction_4.rs:800/1569) and same-registered (universalaction.rs:
+  459/467). The divergence is op-processing/SeqNum order of the dividend PIECE→SEXT op vs the SDIV
+  SUBPIECE within the `analysis` ActionPool fixpoint (action.rs ActionPool::processOp). Downstream:
+  the un-narrowed 64-bit SDIV poisons the loop-carried `rax` MULTIEQUAL consume → SubvariableFlow
+  (subflow.rs:366) bails for the whole loop variable, blocking all 9 case-body narrowings.
+- restoration: align the SeqNum/op-creation order of the idiv lift (the dividend
+  `(zext(EDX)<<32)|zext(EAX) → SEXT` collapse vs the quotient SUBPIECE) so RuleSubCommute fires
+  before RuleSubZext forms the masking AND — investigate op SeqNum assignment in the SLEIGH→IR lift
+  (funcdata_op.rs) / `obank().iter_all()` order vs C++ `optree` map<SeqNum> order. A guard on
+  RuleSubZext would be unfaithful (C++ has none). Likely affects Signed Division rendering broadly.
+- recorded by the integrator after the Switch Loop wave BLOCKED (2026-06-17). [[kuna-rust-port]]
