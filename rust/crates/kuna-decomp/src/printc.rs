@@ -3878,6 +3878,17 @@ impl PrintC {
                 self.push_float_ir(arch, off, ct.get_size(), op);
                 return;
             }
+            // Enum arm.  C++ `pushConstant` (printc.cc:1817-1833) switches on the
+            // enum's base metatype (TYPE_INT / TYPE_UINT) and, when
+            // `ct->isEnumType()`, delegates to `pushEnumConstant` (printc.cc:1822/
+            // 1830) — which decomposes the value into the OR of matched flag names.
+            // In kuna an enum carries metatype TYPE_INT/TYPE_UINT plus the
+            // `enumtype` flag (dtype.rs:5244-5246), exactly as upstream, so the
+            // dispatch is the `is_enum_type()` flag check (not a metatype match).
+            if ct.is_enum_type() {
+                self.push_enum_constant_ir(&ct, off, op, vn);
+                return;
+            }
             // Integer path.  Inside `push_integer` (printc.cc:1376) the varnode
             // high's equate-Symbol format OVERRIDES the read-facing type's format
             // when present.  So: equate-Symbol format wins; otherwise the
@@ -4431,6 +4442,74 @@ impl PrintC {
     /// modifier stack (printc.cc:1397-1404).  Without this the `integerformat
     /// dec` datatests (e.g. `divopt.xml`) rendered every divisor in hex.  When
     /// neither force is active the prior `mostNaturalBase` default is preserved.
+    /// Render an enumeration constant — the enum arm of C++
+    /// `PrintC::pushConstant` (printc.cc:1822/1830) which delegates to
+    /// `PrintC::pushEnumConstant` (printc.cc:1735-1756).  `ct->getMatches`
+    /// decomposes `val` into a list of flag-name tokens (logically ORed), an
+    /// optional bitwise-complement (`~`), and an optional left-shift amount
+    /// (the partial-enum `>> 0x20` rendering).  When no representation is
+    /// possible (`matchname` empty) it falls back to the raw integer literal,
+    /// honoring the enum's display format.
+    ///
+    /// Faithful transcription of the C++ RPN push order (printc.cc:1741-1755):
+    /// `shift_right` op (if shifted), then `bitwise_not` op (if complemented),
+    /// then `matchname.size()-1` `enum_cat` (`|`) ops, then the flag-name atoms
+    /// in forward order, then — when shifted — the shift-amount integer.  The
+    /// direct-recursion engine emits in push order, so the op stack reads
+    /// `(name0 | name1 | ...) >> shift` for a shifted-and-ORed representation.
+    fn push_enum_constant_ir(&mut self, ct: &crate::dtype::Datatype, val: uintb, op: OpId, vn: VarnodeId) {
+        // C++ `ct->getMatches(val, rep)` (printc.cc:1740).  Our `get_matches`
+        // returns a Result (the Err is the non-enum invariant); the dispatch
+        // only reaches here for an `is_enum_type()` data-type, so a `getMatches`
+        // failure means a corrupt enum kind — fall back to the raw integer.
+        let rep = match ct.get_matches(val) {
+            Ok(rep) => rep,
+            Err(_) => {
+                self.push_constant_ir_fmt(val, ct.get_size(), op, ct.get_display_format());
+                return;
+            }
+        };
+        if !rep.match_name.is_empty() {
+            // printc.cc:1742-1743 — `if (rep.shiftAmount != 0) pushOp(&shift_right,op);`
+            if rep.shift_amount != 0 {
+                self.push_op(&tokens::SHIFT_RIGHT, Some(op_key(op)));
+            }
+            // printc.cc:1744-1745 — `if (rep.complement) pushOp(&bitwise_not,op);`
+            if rep.complement {
+                self.push_op(&tokens::BITWISE_NOT, Some(op_key(op)));
+            }
+            // printc.cc:1746-1747 — `for(i=size-1;i>0;--i) pushOp(&enum_cat,op);`
+            // one `|` op per gap between the matched names.
+            for _ in 1..rep.match_name.len() {
+                self.push_op(&tokens::ENUM_CAT, Some(op_key(op)));
+            }
+            // printc.cc:1748-1749 — the flag-name atoms in forward order.  The
+            // C++ uses `Atom(name,tag,const_color,op,vn,val)` with `tag =
+            // vartoken` (the tag pushVnExplicit threaded into pushConstant); for
+            // a non-casetoken tag the 6-arg ctor stores the Varnode (not val).
+            for name in &rep.match_name {
+                self.push_atom(&Atom::with_value(
+                    name.clone(),
+                    TagType::VarToken,
+                    crate::printlanguage::SyntaxHighlight::const_color,
+                    op_key(op),
+                    vn_key(vn),
+                    val,
+                ));
+            }
+            // printc.cc:1750-1751 — `if (rep.shiftAmount != 0)
+            // push_integer(rep.shiftAmount,4,false,tag,vn,op,0);` (the `>> 0x20`
+            // shift amount, rendered as a 4-byte unsigned literal, no format).
+            if rep.shift_amount != 0 {
+                self.push_constant_ir_fmt(rep.shift_amount as uintb, 4, op, display_format::NONE);
+            }
+        } else {
+            // printc.cc:1753-1754 — no named representation: the raw integer with
+            // the enum's display format.
+            self.push_constant_ir_fmt(val, ct.get_size(), op, ct.get_display_format());
+        }
+    }
+
     fn push_constant_ir(&mut self, val: uintb, sz: int4, op: OpId) {
         self.push_constant_ir_fmt(val, sz, op, display_format::NONE);
     }

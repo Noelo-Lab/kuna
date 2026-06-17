@@ -1,6 +1,14 @@
 # kuna Progress Log
 
-## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 347/675
+## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 348/675
+
+**Enum render LANDED (+1 → 348, ACCEPT):** PrintC::pushEnumConstant + the TYPE_ENUM dispatch
+arm (flag-OR constant render) — Enum Reading #5 (`(FLAG_100000|FLAG_800)`). #3/#4 turned out
+gated on a DIFFERENT seam (enum-through-truncation: an 8-byte enum read truncated by sub-byte
+SUBPIECE strips the enum type from the AND — TypeOpSubpiece::propagateType, queued); #1/#2
+RSP-stack. Freed printc for the decl-render follow-on. IN FLIGHT: f0-flag-v2 (+8), printc-decl-
+render (concat 15->18 decl-collapse + twodim/threedim #1/#2 global-mis-scoping/address-of-cast).
+
 
 **struct-return-v2 LANDED (+11 → 347, the session's biggest single integration):** the
 RETURN type-seed re-pin (RulePieceStructure splits register-returned structs on the
