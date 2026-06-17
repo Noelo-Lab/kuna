@@ -229,16 +229,17 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
     //     / `EAX = #0x1`, every write a `COPY` of a constant, no phi join) is NOT
     //     a whole-function local: C++ `inScope` leaves it free and the printer
     //     collapses the `EAX = #N; return EAX;` round-trip to `return N;`.  The
-    //     all-constant-COPY test below (independent of `output_locked`) un-ties
-    //     exactly this shape — a register copying a *non-constant* value
-    //     (`readpartial`'s `EAX = COPY(glob1.a + 10)`) is not all-constant and
-    //     stays on the marker / `output_locked` arm.
-    //   * the `output_locked` gate excludes a leftover register in a void
-    //     function (no declared output): with output unlocked and no constant
-    //     return shape it stays tied.
+    //     all-constant-COPY test below un-ties exactly this shape — a register
+    //     copying a *non-constant* value (`readpartial`'s `EAX = COPY(...)`) is not
+    //     all-constant and stays on the marker / forwarding-alias arm.
+    //   * a transient register written by a direct forward computation (doublemove
+    //     `f0 = FLOAT_ADD(...)`, ifswitch/modulo2 `EAX = ...`) — no control-flow-
+    //     join marker — is un-tied REGARDLESS of whether the proto output is locked
+    //     (doublemove's protos are output-unlocked yet f0 is a pure transient; the
+    //     `output_locked` requirement that previously fenced this arm is lifted, see
+    //     the LOSS-206 gate below).
     // This is an IR-shape + recovered-output test, not a name/address special
     // case.
-    let output_locked = data.get_func_proto().is_output_locked();
     let targets: Vec<crate::seams::VarnodeId> =
         data.vbank().iter_loc_size_addr(size, &addr).collect();
     let written: Vec<crate::seams::VarnodeId> = targets
@@ -353,18 +354,85 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
         return;
     }
 
-    if output_locked && !written.is_empty() {
-        // A `marker` write (CPUI_MULTIEQUAL phi / CPUI_INDIRECT call-clobber
-        // survival) is the structural signature of a register that heritage kept at
-        // a fixed address across a control-flow join — the whole-function local C++
-        // restructures and ties.  Function inputs (no def) do not signal a local:
-        // their cover ends before the return computation, so the input SSA value
-        // and the return-value SSA defs stay distinct in C++ (the input is rendered
-        // by `baseExplicit`'s own `def==0` explicit rule, not by addr-tying).
+    // (kuna LOSS-206 ScopeLocal-ownership gate) The C++ `addrtied` derivation for a
+    // register that "Could not find any symbol" reduces to one query
+    // (`funcdata_varnode.cc:993` `syncVarnodesWithSymbols`):
+    //   if (lm->inScope(addr,size,usepoint))  fl = Varnode::mapped|Varnode::addrtied;
+    // For a *processor register* (not the stack/local space `lm` owns) `inScope`
+    // (`database.hh:599` -> `rangetree.inRange`) is ALWAYS false, so C++ leaves the
+    // return register un-tied; `baseExplicit` then marks the forward-computed value
+    // IMPLIED and the printer collapses the return-register round-trip into the
+    // `return <expr>;` (doublemove `return glob1 + glob1;`, ifswitch/lzcount/
+    // mixfloatint/modulo2).  The marker-write tie below replicates the ONE shape
+    // where C++ *does* keep the register: heritage left it occupying a fixed
+    // address across a control-flow join (a CPUI_MULTIEQUAL/INDIRECT marker — the
+    // 8051 `boolless` ACC), which the W4 ScopeLocal restructures into a
+    // whole-function local.  That tie must run regardless of `output_locked`
+    // (doublemove's protos are output-unlocked yet f0 is a pure transient), so the
+    // gate is lifted out of the old `output_locked` arm.
+    //
+    // The single exception the lift must preserve is a return register that is a
+    // pure FORWARDING ALIAS of a *distinct register local* — the sole def is a
+    // CPUI_COPY whose source is another processor register (not the return
+    // register's own address, not a constant/persist-global/function-input).  In
+    // C++ that source register carries its own recovered local (e.g.
+    // `partialmerge::readpartial`'s `a_simple`, a `map hash` dynamic Symbol on
+    // `register:0x18`), so the value is named there and the un-tied return COPY just
+    // forwards it (`a_simple = glob1.a; return a_simple + 10;`).  kuna does not yet
+    // recover that per-Varnode dynamic mapentry (LOSS-206: the W4 `Varnode::
+    // getSymbolEntry`/`isMapped` link is unported), so without keeping the return
+    // register tied the forwarding COPY collapses and the NEGATIVE
+    // `Partial Merge #3` assertion (`return glob1.a + 10;` must NOT appear) is
+    // violated.  Keeping the register tied is the faithful stand-in for that absent
+    // source-register Symbol.  This is a generic space-type + storage-distinctness
+    // geometry (register-to-register forwarding move), not a name/address/value or
+    // float/f0 special case: a return register written by a direct computation
+    // (FLOAT_ADD/INT_*), by a COPY of a `unique` temp (`cntlzwtest`), of a constant,
+    // of a persist global (`readpartial_callinterfere`), or of ITSELF (the trim
+    // self-COPY) is NOT a forwarding alias and un-ties.
+    let is_register_space = |v: &crate::varnode::Varnode| {
+        v.get_addr()
+            .get_space()
+            .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR)
+            .unwrap_or(false)
+    };
+    let is_forwarding_register_alias = written.len() == 1
+        && written.iter().all(|&vn| {
+            let def = match data.vbank().get(vn).and_then(|v| v.get_def()) {
+                Some(d) => d,
+                None => return false, // an input is not a forwarding COPY
+            };
+            let op = match data.obank().get(def) {
+                Some(o) => o,
+                None => return false,
+            };
+            if op.code() != OpCode::CPUI_COPY {
+                return false;
+            }
+            let src = match op.get_in(0).and_then(|iv| data.vbank().get(iv)) {
+                Some(s) => s,
+                None => return false,
+            };
+            // The source must be a DISTINCT processor register holding its own
+            // (recovered-local) value: not the return register's own address (a
+            // trim self-COPY), and not a constant / persist global / function input
+            // (those are values the printer inlines directly, not register locals).
+            is_register_space(src)
+                && src.get_addr() != &addr
+                && !src.is_constant()
+                && !src.is_persist()
+                && !src.is_input()
+        });
+
+    if !written.is_empty() && !is_forwarding_register_alias {
+        // No control-flow-join marker => not a whole-function local C++ would tie
+        // (the marker-write tie itself is the fall-through below).  This runs
+        // independently of the proto's output-lock state: C++ `inScope` never ties
+        // a transient processor register whether or not the output is locked.
         let has_marker_write = !marker_writes.is_empty();
         if !has_marker_write {
-            // Not a whole-function local: leave un-tied so the value can be IMPLIED
-            // and the printer collapses the return-register round-trip / chain.
+            // Leave un-tied so `baseExplicit` marks the value IMPLIED and the
+            // printer collapses the return-register round-trip / chain.
             return;
         }
     }

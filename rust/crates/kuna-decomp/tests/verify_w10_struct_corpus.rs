@@ -858,14 +858,21 @@ fn verify_w10_symbol_naming_render_is_deterministic() {
 }
 
 /// `vN` NUMBERING: the unnamed locals get sequential `v1`, `v2`, … in location
-/// order (the `base++` counter starts at 1).  readstruct's body has two distinct
-/// unnamed result locals — they must render as `v1` and `v2` (not `v0`, not a
+/// order (the `base++` counter starts at 1).  `loopcomment`'s body has several
+/// distinct unnamed result locals — they must render from `v1` (not `v0`, not a
 /// gap, not duplicated), proving the counter and the per-high dedup both work.
+///
+/// (Was `readstruct`/nestedoffset.xml: since the `mark_output_storage_addr_tied`
+/// un-tie + ScopeLocal-ownership gate, readstruct's transient return register is
+/// correctly left IMPLIED — `return ptr->array[b + a];`, byte-identical to the C++
+/// oracle — so its body now has ZERO unnamed result locals.  `loopcomment` is a
+/// single-function corpus that still exercises the multi-`vN` numbering and is
+/// byte-unchanged by the un-tie, so it is the faithful probe here.)
 #[test]
 fn verify_w10_symbol_naming_local_vn_counter_is_sequential_from_v1() {
-    let path = repo_root().join("decompiler/datatests/nestedoffset.xml");
-    let dt = parse_datatest(&path).expect("parse nestedoffset.xml");
-    let rendered = render_corpus(&dt).expect("readstruct must decompile");
+    let path = repo_root().join("decompiler/datatests/loopcomment.xml");
+    let dt = parse_datatest(&path).expect("parse loopcomment.xml");
+    let rendered = render_corpus(&dt).expect("loopcomment must decompile");
     // The angr local default is `v<base>` with base starting at 1 (C++
     // `buildDefaultName`: `s << 'v' << dec << base++`, and apply() seeds base=1).
     // There must be NO `v0` (off-by-one would start the counter at 0).
@@ -1114,12 +1121,17 @@ fn verify_w10_hvnaming_register_local_gets_vn_not_dat() {
 /// block must be unique, contiguous from v1, with no v0.
 #[test]
 fn verify_w10_hvnaming_vn_indices_are_gapless_and_unique_from_v1() {
-    // A SINGLE-function corpus (readstruct in nestedoffset.xml) so the per-function
+    // A SINGLE-function corpus (loopcomment in loopcomment.xml) so the per-function
     // `base` counter (which restarts at 1 for every function/scope) yields one
     // contiguous run — a multi-function render legitimately repeats v1.. per body.
-    let path = repo_root().join("decompiler/datatests/nestedoffset.xml");
-    let dt = parse_datatest(&path).expect("parse nestedoffset.xml");
-    let rendered = render_corpus(&dt).expect("readstruct must decompile");
+    //
+    // (Was readstruct/nestedoffset.xml; the `mark_output_storage_addr_tied` un-tie
+    // now correctly leaves readstruct's transient return register IMPLIED so its
+    // body declares no `vN` locals.  `loopcomment` keeps several gapless `v1..`
+    // locals and is byte-unchanged by the un-tie.)
+    let path = repo_root().join("decompiler/datatests/loopcomment.xml");
+    let dt = parse_datatest(&path).expect("parse loopcomment.xml");
+    let rendered = render_corpus(&dt).expect("loopcomment must decompile");
     // Collect the DECLARED vN indices (a decl is `<type> vN;` at the head of a
     // line, optionally followed by a `// ..` storage comment).  The decl block is
     // the contiguous head of the single function body.
