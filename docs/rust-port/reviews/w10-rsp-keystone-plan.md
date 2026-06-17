@@ -133,3 +133,31 @@ both depend on the coherent stack frame that only ExtraPopSetup + its downstream
   byte-faithful to coreaction.cc:282) is faithful-but-inert; NOT on the critical path.
 - **L4/L5** (ActionRestrictLocal un-stub + restructureVarnode tail) sequence AFTER L0+L3 for the
   `&val` PTRSUB-arg + `int4 val // stack - 0xc` render.
+
+## CORRECTION-5 (L0+L3 attempt 2026-06-17, wpeihboit — the definitive scope)
+
+L0+L3 (CORRECTION-4's "jumptable-clone deadcode") is ALSO disproven by direct attempt:
+switchind stays 13/16, L3 is not the missing piece. The instrumented attempt establishes the
+TRUE coupled set (5 layers, atomic):
+
+- **L0** un-stub ActionExtraPopSetup (coreaction_protos.rs; WIP patch). Inserts the cancelling
+  per-call `INT_ADD(RSP,+8)`. **NOT separably landable**: its "+6 datatest (Concat-split +
+  For-loop-thru-special), regressed-set EMPTY" is the DATATEST COUNT MASKING the switchind
+  *render* fence regression (switch index degrades to `switch #0x100058`) — confirmed the
+  count-vs-fence lesson again. L0 only nets positive WITH the downstream cleanup below.
+- **heritage stack-INDIRECT guard** (`heritage.rs:1514`, `guard_calls` non-persist
+  unknown_effect INDIRECT for addr-tied ranges — currently gated). Make it C++-faithful
+  (heritage.cc:1514). **Un-gating ALONE is net −15** — needs the INDIRECT-collapse/cover + L4/L5
+  cleanup to be net-safe.
+- **`resolveSpacebaseRelative` call chain**: ported (`fspec.rs:6668`) but **UNCALLED**; the call
+  site is `ruleaction_4.rs:409`. Required for `tryreg=true` → #15 `get_value_byref(&val)` + the
+  proper stack offset.
+- **L4** ActionRestrictLocal un-stub (coreaction_protos.rs) + **L5** restructureVarnode tail —
+  the clean `int4 val; switch(val)` local render once the index stays symbolic.
+
+**VERDICT: RSP is a genuinely cross-cutting multi-layer coupled keystone** (heritage +
+jumptable-clone + action pipeline + varmap/ScopeLocal + fspec) requiring an ATOMIC 5-layer
+landing — net-safe only as a whole (L0 +6/render-break, guard −15, the rest +N). It is NOT
+crackable in a single wave; it needs a dedicated focused multi-wave session that lands all 5
+layers together against the switchind-16/16 gate. Gate unchanged: switchind 13→16 (#8/#15/#16
+flip, B4 slot −0xc), all switch + the suite monotonic, fences (not just the datatest count).
