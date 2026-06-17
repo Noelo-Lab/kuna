@@ -744,10 +744,17 @@ fn verify_w10_pspec_context_loopcomment_lifts_64bit_and_structures() {
     // signature absent.  `\bSP \+ 0xfffe\b`-class offsets and `BX + SI` and the
     // `CALLOTHER(0,DS|SS` segment ops are the unambiguous 16-bit-real-mode marks.
     // w10-highvar-naming coalesces the frame/return registers into named `vN`
-    // locals, so the proxy accepts either the raw 64-bit token or the lowercased
-    // `// rsp`/`// rax` storage comment the named local's decl carries.
+    // locals, so the proxy accepts the raw 64-bit token, the lowercased `// rsp`/
+    // `// rax` storage comment, OR — after the W10 RSP L4/L5 stack-frame render
+    // removes the spurious `//rsp` input local and coalesces the frame into named
+    // stack locals — the `// stack - 0x<N>` / `// fs_offset` storage comments the
+    // named locals carry.  Those `stack - 0x1c`/`0x28`-class frame offsets are the
+    // 64-bit spacebase frame; a 16-bit real-mode mis-lift shows the `SP + 0xfffe`
+    // garbage instead (ruled out separately below), never these >0x10 frame slots.
     let sixtyfour = count_matches(r"\bR(SP|BP|DI|SI|AX|BX|CX|DX)\b", &rendered).unwrap_or(0)
-        + count_matches(r"// r(sp|bp|di|si|ax|bx|cx|dx)\b", &rendered).unwrap_or(0);
+        + count_matches(r"// r(sp|bp|di|si|ax|bx|cx|dx)\b", &rendered).unwrap_or(0)
+        + count_matches(r"// stack - 0x", &rendered).unwrap_or(0)
+        + count_matches(r"// fs_offset\b", &rendered).unwrap_or(0);
     assert!(
         sixtyfour >= 1,
         "loopcomment must lift with 64-bit registers (RSP/RBP/… as a token or a \
@@ -1095,14 +1102,21 @@ fn w10_ptr_flow_load_explicit_deref_keeps_base_inside_star() {
 /// non-empty case) must NOT be misrouted to a `dat_<addr>` global token.  The C++
 /// `buildDefaultName` dat_ arm fires only for a *non-register* persistent address
 /// (database.cc:1780); the Rust proxy (`IPTR_PROCESSOR && !is_register`) must
-/// exclude registers.  loopcomment's body holds RAX/RSP-backed coalesced locals —
-/// they must surface as `vN` (with a `// rax`/`// rsp` storage comment), and NO
+/// exclude registers.  `floatconv`'s bodies hold RAX/RCX-backed coalesced locals —
+/// they must surface as `vN` (with a `// rax`/`// rcx` storage comment), and NO
 /// register-backed storage may render as `dat_<hexaddr>`.
+///
+/// (Was loopcomment; the W10 RSP L4/L5 stack-frame render removes loopcomment's
+/// spurious `//rsp` input local and coalesces its frame into named STACK locals
+/// (`// stack - 0x..`), so loopcomment no longer carries a register-backed `vN`.
+/// `floatconv` keeps stable `// rax`/`// rcx` register-backed locals and exercises
+/// the same persist-proxy `vN`-not-`dat_` property; it also has `<symbol>` entries
+/// `render_corpus` decompiles, which `elseif` lacks.)
 #[test]
 fn verify_w10_hvnaming_register_local_gets_vn_not_dat() {
-    let path = repo_root().join("decompiler/datatests/loopcomment.xml");
-    let dt = parse_datatest(&path).expect("parse loopcomment.xml");
-    let rendered = render_corpus(&dt).expect("loopcomment must decompile");
+    let path = repo_root().join("decompiler/datatests/floatconv.xml");
+    let dt = parse_datatest(&path).expect("parse floatconv.xml");
+    let rendered = render_corpus(&dt).expect("floatconv must decompile");
     // A register-backed coalesced local renders `<type> vN; // r<reg>`.  At least
     // one such named register local must exist (the persist-proxy did not deny it).
     let reg_named_local =
@@ -1219,12 +1233,20 @@ fn regex_lite_capture_vn_decl(line: &str) -> Option<u32> {
     if matches!(toks[0], "return" | "if" | "while" | "for" | "do" | "else" | "goto" | "switch") {
         return None;
     }
-    // last token (strip a trailing `[..]` array suffix and leading `*`) must be `vN`
-    let name = toks.last().unwrap().trim_start_matches('*');
-    let name = name.split('[').next().unwrap_or(name);
-    let n = name.strip_prefix('v')?;
-    if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
+    // The NAME token is `vN` — but an ARRAY decl renders the dimension as a
+    // SEPARATE whitespace token (`int4 v1 [4];` -> ["int4","v1","[4]"]), so the
+    // name is not always the last token.  Scan for the `v<digits>` token (after
+    // stripping a leading `*` and a trailing `[..]` suffix on the same token); a
+    // decl has exactly one such identifier.  This captures both the scalar form
+    // (`int4 v2;`) and the space-separated array form (`int4 v1 [4];`).
+    for tok in &toks {
+        let name = tok.trim_start_matches('*');
+        let name = name.split('[').next().unwrap_or(name);
+        if let Some(n) = name.strip_prefix('v') {
+            if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) {
+                return n.parse::<u32>().ok();
+            }
+        }
     }
-    n.parse::<u32>().ok()
+    None
 }

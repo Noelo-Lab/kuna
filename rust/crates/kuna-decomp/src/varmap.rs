@@ -1408,6 +1408,51 @@ impl ScopeLocal {
         Some((symbol.get_display_name().to_string(), sym_off, symbol.dtype.clone()))
     }
 
+    /// C++ `ActionNameVars::linkSpacebaseSymbol`'s namerec entry + the end-of-`apply`
+    /// rename (coreaction.cc:3016 + coreaction.cc:3087-3094): the spacebase pass
+    /// links a `PTRSUB(spacebase, off)` `&symbol` reference even when the covering
+    /// Symbol is name-undefined, recording `offVn` in `namerec`; `apply` then renames
+    /// the shared Symbol to its `buildDefaultName` (`v<base++>`).  Because the same
+    /// Symbol object backs both the reference high and any body member-access high,
+    /// the single rename makes BOTH render the final `vN` name.
+    ///
+    /// Here `addr` is the resolved symbol-reference address (C++
+    /// `sb->getAddress(...)`, the same address [`query_container_for_link`] consumes).
+    /// The reference targets the WHOLE symbol — the C++ namerec gate is `offVn`'s
+    /// `&symbol` reference (offset 0 into the Symbol), the spacebase analogue of
+    /// `high->getSymbolOffset() < 0`.  Renames the *smallest containing* undefined
+    /// Symbol whose base byte the reference addresses at offset 0, consuming `base`,
+    /// and returns the new name; returns `None` when there is no containing Symbol or
+    /// the reference is not a whole-symbol (offset-0) reference.  A symbol that is
+    /// already named is left untouched (idempotent re-run).
+    pub fn name_undefined_spacebase_symbol(
+        &mut self,
+        addr: &Address,
+        base: &mut int4,
+    ) -> Option<String> {
+        // queryContainer(addr,1,Address()) — the same lookup as link_symbol_reference.
+        let eref = self.db.find_container(self.scope, addr, 1, &Address::default())?;
+        let (sym, entry_addr_off, entry_off) = {
+            let entry = self.db.entry(self.scope, eref);
+            (entry.symbol, entry.get_addr().get_offset(), entry.get_offset())
+        };
+        // sym_off = (addr - entry_addr) + entry_off.  The reference must address the
+        // base of the Symbol (sym_off == 0) — the `&symbol` whole-symbol reference.
+        let sym_off = (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
+        if sym_off != 0 {
+            return None;
+        }
+        if !self.db.symbol(sym).is_name_undefined() {
+            return None;
+        }
+        // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm); then
+        // scope->renameSymbol(sym, newname).
+        let newname = format!("v{}", *base);
+        *base += 1;
+        let _ = self.db.rename_symbol(sym, &newname);
+        Some(newname)
+    }
+
     /// Query the *smallest containing* Symbol entry for the naming/linkSymbol pass
     /// — the C++ `localmap->queryProperties(vn->getAddr(), 1, usepoint, fl)` lookup
     /// of [`Funcdata::linkSymbol`](funcdata_varnode.cc:1190).  Unlike

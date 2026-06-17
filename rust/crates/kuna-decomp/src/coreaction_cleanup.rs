@@ -1351,6 +1351,15 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // `getNameRepresentative()` dedup.
     let vlist: Vec<crate::seams::VarnodeId> = data.vbank().iter_loc().collect();
     let mut base: int4 = 1;
+    // C++ `ActionNameVars::apply`'s namerec rename (coreaction.cc:3087-3094) for the
+    // spacebase `&symbol` references recorded by `linkSpacebaseSymbol` (3016): rename
+    // each undefined LOCAL whole-symbol addressed by a `PTRSUB(spacebase, off)` to its
+    // `buildDefaultName` (`v<base++>`) BEFORE the per-space body naming loop, so a body
+    // member-access query reads the final `v1` from the database (the shared-Symbol
+    // semantics) and the end-of-pass attach renders `&v1` / `v1.b`.  Shares `base` so
+    // the spacebase-referenced symbols are numbered ahead of the body-only locals,
+    // matching the C++ namerec ordering.
+    data.name_undefined_spacebase_symbols(&mut base);
     let mut seen: std::collections::BTreeSet<HighVariableId> = std::collections::BTreeSet::new();
     for vn in vlist {
         let high = match data.vbank().get(vn).and_then(|v| v.get_high()) {
