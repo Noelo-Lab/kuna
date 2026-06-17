@@ -1267,42 +1267,72 @@ impl Funcdata {
         if self.get_scope_local().is_none() {
             return;
         }
-        // beginLoc..endLoc over every space (C++ linkSymbols walks the const space and
-        // each non-const space); iter_loc yields all of them in location order.
+        // C++ `linkSymbols`' FIRST loop walks the CONSTANT space only
+        // (coreaction.cc:3040-3047) and calls `linkSpacebaseSymbol` on each constant
+        // spacebase Varnode, pushing its undefined `&symbol` references into `namerec`
+        // ahead of every per-space body high.  The non-const (register/stack) spacebase
+        // references are recorded LATER, interleaved with the body highs in the
+        // per-space loop (coreaction.cc:3055-3074), so they must NOT be front-loaded
+        // here — doing so steals a low `vN` from a body local that precedes the
+        // spacebase Varnode in location order (the switchmulti `v1` regression).  The
+        // per-space spacebase rename is driven from the body naming walk via
+        // [`name_undefined_spacebase_symbol_for_vn`] at each spacebase Varnode's
+        // location-ordered position.
         let all_locs: Vec<VarnodeId> = self.vbank().iter_loc().collect();
         for vn in all_locs {
-            // if (!curvn->isSpacebase()) continue;
-            if !self.vbank().get(vn).map(|v| v.is_spacebase()).unwrap_or(false) {
-                continue;
-            }
-            // if (!vn->isConstant() && !vn->isInput()) return;  (linkSpacebaseSymbol head)
-            let (is_const, is_input) = match self.vbank().get(vn) {
-                Some(v) => (v.is_constant(), v.is_input()),
+            // C++ first loop is restricted to the CONSTANT space; a Varnode in the
+            // constant space is exactly `isConstant()`.
+            let (is_const, is_sb) = match self.vbank().get(vn) {
+                Some(v) => (v.is_constant(), v.is_spacebase()),
                 None => continue,
             };
-            if !is_const && !is_input {
+            if !is_const || !is_sb {
                 continue;
             }
-            for op in self.descend_snapshot(vn) {
-                // if (op->code() != CPUI_PTRSUB) continue;
-                if self.obank().get(op).map(|o| o.code()) != Some(OpCode::CPUI_PTRSUB) {
-                    continue;
-                }
-                // offVn = op->getIn(1);
-                let off_vn = match self.obank().get(op).and_then(|o| o.get_in(1)) {
-                    Some(v) => v,
-                    None => continue,
-                };
-                // addr = sb->getAddress(...) — the same address the attach pass uses.
-                let addr = match self.resolve_spacebase_ref_addr(off_vn) {
-                    Some(a) => a,
-                    None => continue,
-                };
-                // sym = linkSymbolReference(offVn); if (sym && sym->isNameUndefined())
-                //   namerec.push_back(offVn);  ... renamed in apply via buildDefaultName.
-                if let Some(lm) = self.get_scope_local_mut() {
-                    let _ = lm.name_undefined_spacebase_symbol(&addr, base);
-                }
+            self.name_undefined_spacebase_symbol_for_vn(vn, base);
+        }
+    }
+
+    /// Per-Varnode arm of C++ `ActionNameVars::linkSpacebaseSymbol`
+    /// (coreaction.cc:3009-3022) restricted to the namerec rename: for the given
+    /// spacebase Varnode `vn`, walk its `PTRSUB` descendants, resolve each to its
+    /// referenced stack address, and rename the undefined LOCAL whole-symbol there
+    /// (consuming `base`).  Invoked at `vn`'s location-ordered position — from the
+    /// const-space pre-pass for constant spacebases and from the body naming walk for
+    /// register/stack-space spacebases — so the `base` ordering reproduces the C++
+    /// `namerec` push order (location order, spacebase ref before the same Varnode's
+    /// body high).
+    pub fn name_undefined_spacebase_symbol_for_vn(&mut self, vn: VarnodeId, base: &mut int4) {
+        if self.get_scope_local().is_none() {
+            return;
+        }
+        // if (!vn->isConstant() && !vn->isInput()) return;  (linkSpacebaseSymbol head)
+        let (is_const, is_input) = match self.vbank().get(vn) {
+            Some(v) => (v.is_constant(), v.is_input()),
+            None => return,
+        };
+        if !is_const && !is_input {
+            return;
+        }
+        for op in self.descend_snapshot(vn) {
+            // if (op->code() != CPUI_PTRSUB) continue;
+            if self.obank().get(op).map(|o| o.code()) != Some(OpCode::CPUI_PTRSUB) {
+                continue;
+            }
+            // offVn = op->getIn(1);
+            let off_vn = match self.obank().get(op).and_then(|o| o.get_in(1)) {
+                Some(v) => v,
+                None => continue,
+            };
+            // addr = sb->getAddress(...) — the same address the attach pass uses.
+            let addr = match self.resolve_spacebase_ref_addr(off_vn) {
+                Some(a) => a,
+                None => continue,
+            };
+            // sym = linkSymbolReference(offVn); if (sym && sym->isNameUndefined())
+            //   namerec.push_back(offVn);  ... renamed in apply via buildDefaultName.
+            if let Some(lm) = self.get_scope_local_mut() {
+                let _ = lm.name_undefined_spacebase_symbol(&addr, base);
             }
         }
     }

@@ -157,6 +157,49 @@ fn rsp_l4l5_noforloop_alias_no_rsp_local_no_special_casing() {
     );
 }
 
+/// ADVERSARIAL 4 — the namerec spacebase rename consumes its `vN` in C++ LOCATION
+/// ORDER (coreaction.cc:3055-3074: per-space spacebase ref INTERLEAVED with the body
+/// highs), NOT all-spacebase-first.  In `switchmulti` the stack-pointer INPUT
+/// spacebase Varnode (register space, offset 32) addresses a `&`-only stack struct
+/// that is *later* in location order than the loop-carried body register (register
+/// offset 8); so the body register must keep the LOW `v1` and the struct gets a
+/// higher number.  A front-loaded pre-pass would steal `v1` for the struct, pushing
+/// the loop var to `v2`/`v3` and breaking the `v1 + 10` / `v1 * 7` switch arms (the
+/// switchmulti −6 regression this repair fixes).  This pins the ordering: the loop
+/// variable is `v1` AND the `&v1`-style struct render is NOT present in switchmulti
+/// (the struct is `&`-only with no body member access here, so it never claims `v1`).
+#[test]
+fn rsp_l4l5_namerec_rename_is_location_ordered_not_spacebase_first() {
+    let out = match render_datatest("switchmulti") {
+        Some(o) => o,
+        None => return,
+    };
+    let body = body_of(&out);
+
+    // The loop-carried variable participating in the switch arms keeps `v1` — the
+    // body register precedes the stack-pointer-input spacebase ref in location order,
+    // so it is numbered first.  These are the exact `Switch Multi` scored arms.
+    assert!(
+        body.contains("v1 + 10;")
+            && body.contains("v1 * 7;")
+            && body.contains("v1 ^ 0xaba;")
+            && body.contains("v1 | 0x20;"),
+        "EXPECTED the switch arms to compute on `v1` (the body register keeps the low \
+         `vN`; the later stack-pointer-input spacebase ref must NOT steal it):\n{body}"
+    );
+    // The render must still be a real, non-trivial body (a crash from the interleaved
+    // rename would be its own regression).
+    assert!(
+        body.contains("switch(") && body.len() > 60,
+        "switchmulti must still render a real switch body:\n{body}"
+    );
+    // No `$$undef` placeholder leaked for the (now correctly numbered) locals.
+    assert!(
+        !body.contains("$$undef"),
+        "no `$$undef` placeholder may leak (every local is numbered):\n{body}"
+    );
+}
+
 /// ADVERSARIAL 3 — the rename is driven PURELY by the (undefined-name,
 /// whole-symbol) condition, not by any token.  A mapped GLOBAL `&symbol` reference
 /// (which already has a DEFINED name, e.g. `&myarray`) must STILL render its mapped

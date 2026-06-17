@@ -1,5 +1,46 @@
 # kuna Progress Log
 
+## Session (2026-06-17d) — rust-port W10 RSP &v1-render REPAIR: 410 → 416/675 (+6, regressed-set EMPTY)
+
+**The &v1-render layer now lands on the ActionReturnSplit tree — the masked switchmulti
+regression is FIXED.** Cherry-picked the L4/L5 substrate + &v1-render (`7f1f4df` + `06fc69f`)
+onto rust-port HEAD `1cc9c47`, then diagnosed and fixed the −6 Switch Multi regression the
+prior integration attempt aborted on.
+
+ROOT CAUSE (not ActionReturnSplit at all — a NAMING/numbering shift): the &v1-render's
+`Funcdata::name_undefined_spacebase_symbols` pre-pass ran as an ALL-spacebases-FIRST front
+load, consuming `v1` for the `&`-only stack struct addressed by the (now `unaffected`)
+stack-pointer INPUT spacebase Varnode. That stole the low `vN` from the switchmulti
+loop-carried body register, renumbering it `v1`→`v3`, so the scored switch arms rendered
+`v3 + 10` instead of the oracle `v1 + 10` (−6: Switch Multi #2/#4/#5/#6/#7/#8). The block
+structure (ActionReturnSplit/nodeSplit) was UNCHANGED — the count-masked −6 was pure
+variable numbering.
+
+FIX (faithful to C++ `ActionNameVars::linkSymbols`, coreaction.cc:3040-3074): the C++
+`namerec` is built in LOCATION ORDER — the CONSTANT-space spacebase refs first
+(coreaction.cc:3040), then each non-const space's spacebase refs INTERLEAVED with that
+space's body highs (coreaction.cc:3055, spacebase-ref-before-body-high per Varnode), and
+renamed in that combined push order. The port front-loaded ALL of it. Restructured
+`name_undefined_spacebase_symbols` to do ONLY the const-space pass (matching the C++ first
+loop) and factored a per-Varnode arm `name_undefined_spacebase_symbol_for_vn`, then drove
+the register/stack-space spacebase rename from the body naming walk
+(`name_local_highs_angr`) at each spacebase Varnode's location-ordered position, sharing
+`base`. Now a body local that PRECEDES the stack-pointer input in location order keeps the
+low `vN` (switchmulti loop var stays `v1`), while switchhide's `&v1` still shares the named
+Symbol with its body `v1.b` member accesses (the stack member highs follow the register
+input in location order, so they read the final name).
+
+Files: `funcdata_varnode.rs` (split the pre-pass; new per-vn helper),
+`coreaction_cleanup.rs` (interleaved the rename into the location-ordered body walk). C++
+oracle BYTE-UNTOUCHED. Gate: cargo test 3680/0, datatest 410→416, regressed-set EMPTY,
+PARITY OK, no decompiler/cpp or docs touched.
+
+GAINED +6: Switch Hide #3/#4, Return Value Input Register #6/#7, Intermediate pointers #5
+(the 5 &v1-render gains) PLUS Multi-size return #3 (`v2 = a0` — the location-order fix
+corrected its variable numbering too). Switch cluster: Switch Multi 8/9 (held), Switch Hide
+3/4 (#1 fail), Switch Indirect 16/16 (held), Switch Loop/return/If-Switch unchanged. New
+fence `rsp_l4l5_namerec_rename_is_location_ordered_not_spacebase_first` pins the ordering.
+
 ## Session (2026-06-17c) — rust-port W10: 408 → 410/675; De Morgan; RSP &v1-render REJECTED (masked switchmulti regression)
 
 **De Morgan +2 → 410 (merge `2d99361`).** `RuleNotDistribute::apply_op` (`ruleaction_1.rs`)
