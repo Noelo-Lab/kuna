@@ -305,3 +305,17 @@ without the switch-cluster regression → then the stack-frame cluster (the &v1 
 flips. NOForloop needs ADDITIONAL layers beyond this (the i[0]/i[2]/i[3] array-init dead-code
 survival via the call INDIRECT-effect generation + the loop-condition structuring
 while(i[1]<max) vs while(true)/break) — so the harvest is fragmented across sub-layers.
+
+## CORRECTION-10 (stack-frame typing attempt 2026-06-17, wrpm3g6wa — typing done; 2 render blockers)
+
+The stack-frame TYPING is already present at 7f1f4df (the mapped stack Symbol is typed `mystruct`).
+The `&v1` call-arg render is blocked by TWO un-ported render-plane layers (the gate-flip prerequisite):
+- **BLOCKER 1 (first):** `coreaction_cleanup.rs resolve_default_name` (C++ coreaction.cc:3061/3087
+  linkSymbols + ActionNameVars) — the typed `mystruct` stack Symbol is UNNAMED, leaks
+  `$$undef00000000`; must be NAMED `v1`.
+- **BLOCKER 2 (second):** `coreaction_casts.rs` ActionSetCasts address-of arm (C++ checkAddressOfCast)
+  + `funcdata_spacebase.rs annotate_raw_stack_ptr` (varmap.cc:386) — rewrite `PTRSUB(spacebase,off)`
+  feeding the call arg into `&v1` (address-of the named typed stack var).
+Then flip `INPUT_EFFECT_MARKING_ENABLED` (funcdata_varnode.rs:111) → //rsp removal + the stack-frame
+cluster flips. (Separately: switchhide's DATATEST also needs switch case-arm structuring — INDEPENDENT
+of the stack-frame typing.)
