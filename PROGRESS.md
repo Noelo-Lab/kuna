@@ -1,6 +1,29 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 413/675; De Morgan + namespace; RSP &v1-render REJECTED (masked switchmulti regression)
+## Session (2026-06-17c) — rust-port W10: 408 → 423/675; De Morgan + namespace + convert-negconst; RSP &v1-render repaired (+6, pending integration); enum4 shelved (+0)
+
+**Convert negative-constant render +10 → 423.** `printc.rs push_constant_ir_fmt` hardcoded
+`sign=false`, dropping the C++ `pushConstant` TYPE_INT metatype dispatch (`printc.cc:1813/1832`,
+`push_integer` 1381-1391). Set `sign = ct.metatype()==TYPE_INT` at the constant render site.
+Gained Convert #2/#6/#10/#14 + 6 collateral (Bitfields #23, MIPS Bitfields #23, If/Switch #1,
+Intermediate pointers #10, Partial splitting #7, Signed byte #3). Gate: `[675,423]`,
+regressed-set EMPTY, switch cluster intact, PARITY OK. Review `reviews/w10-convert-negconst.md`.
+
+**enum4 RuleExpandLoad (+0 shelf, LOSS-228).** Faithful LOAD-resize port (`ruleaction.cc:10942`)
+makes the `ptrenumhigh` IR byte-identical to the oracle, but Enum #4 stays blocked on a separate
+HighVariable representative-selection bug (`variable.rs:664`). Preserved at branch
+`rport/w10-enum4-loadresize` @ a9a686a; a follow-up W7 wave (`rport/w10-highvar-typerep`) attacks
+the root on top of it.
+
+**RSP &v1-render REPAIRED (+6 → 416 on its base, pending integration).** The earlier rejection's
+root was NOT a nodeSplit/input-effect structural interaction — it was a variable-NUMBERING shift:
+the all-spacebases-first naming pre-pass consumed `base=1` ahead of the switchmulti loop var,
+renumbering `v1`→`v3`. Fix: faithful location-ordered rename per C++ `ActionNameVars::linkSymbols`
+(coreaction.cc:3040-3074) — const-space spacebase refs first, then each space's spacebase refs
+interleaved with that space's body highs (NOT front-loaded). switchmulti held 8/9, +6 (Switch
+Hide #3/#4, RetVal #6/#7, Intermediate ptr #5, + bonus Multi-size return #3), cargo test 3680/0,
+regressed-set EMPTY. Branch `rport/w10-rsp-v1render-repair` @ 3fe92f7 — integration needs a
+3-way reconcile with namespace's `name_local_highs_angr` edit + convert's harness-pin edit.
 
 **Namespace-qualified render +3 → 413.** `Database::build_global_query` now descends namespace
 child scopes (C++ `getGlobalScope()->queryContainer`) + `IfcMapaddress` addRange on namespace
