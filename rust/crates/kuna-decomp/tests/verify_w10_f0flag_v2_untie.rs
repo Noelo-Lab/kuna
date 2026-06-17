@@ -312,3 +312,60 @@ fn untie_decision_is_per_function_no_token_leak() {
          decision, not a global): got:\n{dm_body}"
     );
 }
+
+/// (A5) REGRESSION PIN — `enum :: ptrenumequal` keeps its enum-named return-path
+/// constant (`Enum Reading #5`).  Round-1 review REJECTED a *stale* form of this
+/// branch: it was forked from a parent (`9ba537f`) that predated the rust-port
+/// `Enum render` integration (`80c65fe`, `PrintC::pushEnumConstant` / `TYPE_ENUM`
+/// dispatch).  Diffed against the post-enum baseline, `ptrenumequal` *appeared* to
+/// regress from `if (ptrequal->flagfield != (FLAG_100000|FLAG_800))` (enum-named)
+/// to `0x100800` (raw hex) — but that was the MISSING enum-render feature, not the
+/// un-tie.  This branch now carries the merge of rust-port HEAD, so the enum render
+/// is present; this test PINS the post-merge render so the un-tie can never be
+/// re-blamed for the enum-constant typing path.  The un-tie reshapes only the
+/// *return-register* storage; `ptrenumequal`'s `flagfield != …` constant is typed
+/// by the comparison's enum operand, an INDEPENDENT path, so it must stay
+/// enum-named (`(FLAG_100000|FLAG_800)`, never `0x100800`) — byte-identical to the
+/// C++ oracle.
+#[test]
+fn enum_reading_5_constant_stays_enum_named_not_raw_hex() {
+    let bin = match rust_test_bin_any() {
+        Some(b) => b,
+        None => {
+            eprintln!("SKIP: rust decomp_test_dbg unavailable");
+            return;
+        }
+    };
+    let rust = match dump_body(&bin, "enum") {
+        Some(t) => t,
+        None => {
+            eprintln!("SKIP: rust decomp_test_dbg / enum .sla unavailable");
+            return;
+        }
+    };
+    let body = function_block(&rust, "ptrenumequal(")
+        .unwrap_or_else(|| panic!("no ptrenumequal block in:\n{rust}"));
+    // The enum-named OR-of-flags must survive (Enum Reading #5, min=1).
+    assert!(
+        body.contains("(FLAG_100000|FLAG_800)"),
+        "ptrenumequal's flagfield constant must stay enum-named `(FLAG_100000|FLAG_800)` \
+         (Enum Reading #5); the un-tie must not strip the `flags` enum type; got:\n{body}"
+    );
+    // And it must NOT collapse to the raw-hex form the stale round-1 branch showed.
+    assert!(
+        !body.contains("0x100800"),
+        "ptrenumequal's flagfield constant must NOT render as raw hex `0x100800` \
+         (would be the enum-type loss the round-1 review flagged); got:\n{body}"
+    );
+
+    // Faithfulness direction: byte-identical to the C++ oracle on this function.
+    if let Some(cpp) = dump_body(&cpp_oracle_bin(), "enum") {
+        let cbody = function_block(&cpp, "ptrenumequal(")
+            .unwrap_or_else(|| panic!("no oracle ptrenumequal block in:\n{cpp}"));
+        assert_eq!(
+            body.trim_end(),
+            cbody.trim_end(),
+            "Rust ptrenumequal must be byte-identical to the C++ oracle:\nRUST:\n{body}\nCPP:\n{cbody}"
+        );
+    }
+}
