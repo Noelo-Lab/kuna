@@ -1,6 +1,19 @@
 # kuna Progress Log
 
-## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 336/675
+## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 347/675
+
+**struct-return-v2 LANDED (+11 → 347, the session's biggest single integration):** the
+RETURN type-seed re-pin (RulePieceStructure splits register-returned structs on the
+post-ActionConstantPtr fixpoint) + linkProtoPartial field-binding (funcdata_varnode.cc:1153 +
+establishGroupSymbolOffset variable.cc:623). concat **5/18 → 15/18** (register + edx:eax join
++ zerofield bodies); concatreturn now byte-identical to the oracle (`v1.B=retp2; v1.A=retp1;
+return v1;` — root keeps v1, pieces render v1.A/v1.B). Passed the full rigorous gate
+(`cargo test --workspace` 3631/0, regressed-set EMPTY, oracle PARITY). This validated the
+whole mergepiece→split→field-binding chain, and FREED coreaction_cleanup/coreaction_infertypes/
+funcdata_varnode/variable — unblocking f0-flag-v2 (+8) and Convert-B1 (+17). Remaining struct
+seams: concat 15→18 (printc declaration-collapse for proto-partial pieces — printc-gated),
+retstruct register (`tmp` dynamic-symbol naming), packstructaccess (CALL-output type recovery).
+
 
 **spacebase-PTRSUB cast LANDED (+3 → 336, ACCEPT_WITH_LOSSES):** ActionSetCasts no longer
 wraps the strip-array spacebase-PTRSUB output in a spurious `(int4 *[5])` cast — twodim now
