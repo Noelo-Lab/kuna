@@ -2422,3 +2422,29 @@ The diff ports two real upstream pieces: (a) `ScopeInternal::clearUnlockedCatego
   are both 0-diff. Disclosed; not a defect — the named files were a hypothesis, the real seam is the
   collapse-constant-symbol path.
 - recorded by the convert17-equate-rebind independent verifier (round 2).
+
+## LOSS-228 — enum4 RuleExpandLoad substrate (+0): Enum #4 blocked by HighVariable representative selection
+
+- kind: deferred (downstream-gated)
+- what: `RuleExpandLoad` (LOAD-resize, C++ `ruleaction.cc:10942`) was a no-op stub in
+  `rust/crates/kuna-decomp/src/ruleaction_8.rs`. Now faithfully ported (apply_op +
+  `modify_and_comparison` `ruleaction.cc:10919` + local `space_from_const`). After the fix the
+  post-cleanup IR is BYTE-IDENTICAL to the C++ oracle for `ptrenumhigh` (size-4 LOAD-at-
+  `flagfield+4` widened to size-8 whole-enum LOAD, `+4` INT_ADD absorbed, AND mask becomes the
+  un-shifted `#0x135700000000`).
+- why +0: Enum #4 (`ptrenumhigh`) still FAILs on a SEPARATE, pre-existing bug — after
+  RuleExpandLoad runs in the cleanup pool, the AND-output *varnode* carries the full `flags`
+  enum (size 8) but `vn_high_type_read_facing` returns the stale `xunknown1` (size 1), so
+  `TypeOpEqual::getInputCast` emits a spurious same-value `(flags)` cast that breaks the
+  `if ((ptrhigh->flagfield & ...` anchor. C++ avoids it because the AND-output's HighVariable
+  type is the un-stripped full `flags`.
+- restoration: fix HighVariable representative/type selection during merge —
+  `HighVariable::get_type_representative` (`rust/crates/kuna-decomp/src/variable.rs:664`) +
+  the `typedirty` early-out (`variable.rs:687`) select a size-1 `xunknown1` member instead of
+  the `flags`-typed varnode. This is shared W7 merge infrastructure affecting enum comparisons
+  broadly — its own W7-scoped wave, building on the substrate at branch
+  `rport/w10-enum4-loadresize` @ a9a686a. Combined, the two land Enum #4 (and likely more enum-
+  comparison cases).
+- substrate preserved: branch `rport/w10-enum4-loadresize` @ a9a686a (NOT merged to rust-port;
+  faithful, regressed-set EMPTY, cargo test 0-fail, PARITY OK). [[kuna-rust-port]]
+- recorded by the integrator after the enum4 wave (2026-06-17).
