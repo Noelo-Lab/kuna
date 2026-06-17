@@ -181,10 +181,19 @@ fn mixfloatint_multislot_group_recovers_full_arity() {
     // residual `XMM0_Db` high-half PIECE can survive because the recovered param
     // is sized `xunknown4`, not the oracle's `float8`; that widening is the
     // un-ported type plane, out of this item's scope — see the verdict / LOSS.)
+    //
+    // The body INCLUDES the `return` statement: the recovered return register is a
+    // pure transient that `mark_output_storage_addr_tied` now leaves un-tied (the
+    // C++ oracle `inScope`/`addrtied` derivation — `funcdata_varnode.cc:993` — never
+    // ties a processor register), so the value is IMPLIED and the param references
+    // render directly in `return (float8)a1 + a0 + a2 + ...;` (matching the oracle
+    // exactly) rather than in a tied `a0 = ...; return a0;` round-trip.  Extracting
+    // only the pre-`return` decl block would miss them.
     let dldlll_body: String = rust
         .lines()
         .skip_while(|l| !l.contains("dldlll("))
-        .take_while(|l| !l.contains("return"))
+        .skip(1)
+        .take_while(|l| !l.trim_start().starts_with('}'))
         .collect::<Vec<_>>()
         .join("\n");
     for p in ["a1", "a2", "a3", "a4", "a5"] {
