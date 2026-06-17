@@ -1007,7 +1007,14 @@ impl Rule for RuleDoubleArithShift {
         vec![OpCode::CPUI_INT_SRIGHT]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("doublearithshift") {
+        // (kuna) C++ `new RuleDoubleArithShift("analysis")` — the rule's runtime
+        // group is "analysis" (coreaction.cc:5808), so the live `universalAction`
+        // pool clone must test "analysis"; checking only the per-op placeholder
+        // name ("doublearithshift") dropped this rule from every cloned pool, so
+        // `(x s>> a) s>> b` collapses never ran — the signed div/mod
+        // reconstruction (RuleModOpt on `x % C`) depends on them.  Both are
+        // accepted so the placeholder-`specs()` contract still holds.
+        if !grouplist.contains("analysis") && !grouplist.contains("doublearithshift") {
             return None;
         }
         Some(Box::new(RuleDoubleArithShift))
