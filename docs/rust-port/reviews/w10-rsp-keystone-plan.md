@@ -195,3 +195,51 @@ markUnaliased → L0 → heritage-ungate gives switchind 14/16 (#16 green) but �
 over other locals need nolocalalias AND the &val alias stable); **ONLY the RDI &val recovery
 closes both at once → switchind 16/16.** NEXT = ROOT-B + L0 + heritage-ungate on the 0983561
 substrate.
+
+## CORRECTION-7 (ROOT-B attempt 2026-06-17, wv4xgtvsw — switchind 14/16 reached; ONE blocker left)
+
+ROOT-B IS the call input-active trial subsystem, and it reached **switchind 14/16** (#16
+`switch(val)` GREEN, slot −0xc, `&val` recovered, **+8 datatests**: Concat-split #2-6,
+For-loop-thru-special #2, Indirect-prototype #3, Switch-Indirect #16) — but a render FENCE
+regressed (loopcomment duplicate vN decls), so it reverted to the 0983561 substrate (the
+count-vs-fence lesson, AGAIN). The substrate's input-active branch (guardCalls is_input_active +
+characterize_as_input_param) ALREADY works (RDI→ContainsJustified, trial registered). ROOT-B is
+**three coupled gaps** (all verified necessary):
+
+1. **`Funcdata::check_call_double_use`** (funcdata_varnode.rs ~:1910) is a STUB returning `false`
+   (C++ funcdata_varnode.cc:1802) — THIS dead-codes RDI=&val (RDI flows into get_value_byref AND
+   the casefunc* calls; the non-matching calls hit check_call_double_use → stub `false` →
+   markInactive → trial not `used` → &val dropped). Port faithfully (getSlot/getCallSpecs/
+   getEntryAddress/getTrialForInputVarnode/isAlternatePathValid; add const `active_input()` to
+   FuncCallSpecs, use get_call_specs_index(op)+get_call_specs(idx)).
+2. **`FuncCallSpecs::createPlaceholder`** (fspec.rs ~:6615) + `Funcdata::opStackLoad`/
+   `createStackRef`/`newSpacebasePtr` (funcdata_op.rs) — stubbed W4 seams; port (createStackRef =
+   INT_ADD(spacebase, byteToAddress(off)); opStackLoad = LOAD; newSpacebasePtr at getSpacebase(0);
+   SEGMENTOP arm unreached on flat stacks — faithful seam comment). Wire createPlaceholder into
+   func_link_input's `if (spacebase != 0)` tail (else getSpacebaseOffset stays offset_unknown →
+   tryregister=false for the val slot).
+3. **ARCHITECTURE FIX — ActionActiveParam::apply + check_input_trial_use MUST be INDEX-BASED**
+   (keep call specs on data.qlst), NOT `take_call_specs` (the take empties data.qlst → 
+   get_call_specs_index(op) returns None → check_call_double_use can never find the other call's
+   spec). Iterate `for idx in 0..data.num_calls()`, mutate via get_call_specs_mut(idx)
+   .get_active_input(); for ancestor_op_use clone the trial then write back. Single-spec
+   take/restore ONLY for finalize (no cross-call lookup). ParamTrial is Clone.
+
+Plus re-apply L0 (ActionExtraPopSetup, w10-rsp-waveA-L0L1-wip.patch) + L1 (setEffectiveExtraPop)
++ heritage non-persist INDIRECT un-gate (heritage.rs ~:1510, drop `persist_range &&`). L0 alone
+const-folds the index BECAUSE &val isn't passed; ROOT-B's &val recovery is what stops the fold.
+
+**THE FINAL BLOCKER to 16/16 (#15 cast + #8 default) — the next target:** an **int8-vs-int4
+DUPLICATE-HIGHVARIABLE TYPE COLLISION** in the cast/merge plane. The recovered `&val` arg (RDI,
+8-byte register pointer) makes the decompiler synthesize a SECOND 8-byte HighVariable `int8 val`
+shadowing the mapped 4-byte `int4 val` (// stack −0xc). So &val types as int8* not int4* →
+ActionSetCasts inserts `(int4 *)` (breaks #15: `get_value_byref((int4 *)&val)` vs oracle
+`get_value_byref(&val)`), and `(uint4)val<=10` keeps the bound-check from folding into `default:`
+(#8). **The mapped int4-val type-lock must DOMINATE so PTRSUB(RSP,−0xc) types as int4*** —
+backward type-prop through TypeOpPtrsub / restructureVarnode unification (the L5 cast-plane). The
+SAME pathology corrupts loopcomment (3× `v2` decls int8/int8/int4) — caught by
+verify_w10_hvnaming...gapless. Fix the unification → #15/#8 + loopcomment all close → 16/16.
+
+STALE FENCES to update on relanding (pre-keystone residue now correctly cleaned): forloop1
+`// rsp` → a1b; nanops now recovers BOTH float8 params (oracle `void nanops(float8,float8)`);
+partialsplit `stackother` → `&stackother`; forloop_varused `// rsp` proxy → `(uint8)` cast proxy.
