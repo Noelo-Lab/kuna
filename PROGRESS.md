@@ -1,6 +1,18 @@
 # kuna Progress Log
 
-## Session (2026-06-16d) — rust-port W10: keystone grind 307 → 333/675
+## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 336/675
+
+**spacebase-PTRSUB cast LANDED (+3 → 336, ACCEPT_WITH_LOSSES):** ActionSetCasts no longer
+wraps the strip-array spacebase-PTRSUB output in a spurious `(int4 *[5])` cast — twodim now
+renders `myarray[i][j]`; flips Three-dim #1/#2 + Pointer-to-array. Passed the full rigorous
+gate (`cargo test --workspace` 3626/0, regressed-set EMPTY, switch byte-identical, oracle
+PARITY). The remaining twodim/threedim #1/#2 + ptrtoarray #7/#10 need a printc decl-render
+fix (global mis-scoping `undefined20 myarray[3]` + address-of-cast collapse) — queued
+follow-on (gated on the Enum wave freeing printc). Convert turned out gated on CALL-arg
+constant SIZE (not the hash, which is faithful) — shelved its prereq (5685b39), queued as a
+B1+B2 wave. IN FLIGHT: struct-return-v2 (+20-30), Enum (+3, printc). QUEUED: f0-flag-v2 (+8),
+Convert-B1+B2 (+17), printc-decl-render (twodim/threedim #1/#2), Heap-string (+7, W6-gated).
+
 
 **Recent integrations + two honest walls (rust-port b7a1293 = 333):** float-typeclass
 (+4 → 331), mergepiece (prereq, 331 held), **type-seed (+2 → 333)** all integrated clean
