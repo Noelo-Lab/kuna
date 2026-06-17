@@ -2584,3 +2584,28 @@ Add #1, Conditional Subpiece #1, Modified conditional constant #2/#3.
   on b72bfea. Then the CALLIND deindirects to a known-proto CALL, single-output recovery makes
   Deindirect Output #2 survive → regressed-set EMPTY → lands the +3 AND unblocks the printc.rs:3810
   SUBPIECE-cast arm (Union #8/#14/#28 + Bitfields #4). [[kuna-rust-port]]
+
+## LOSS-156 PROGRESS (stacklocal-typing wave, 2026-06-17) — last gate found; +7 gated on 2 downstream fixes
+
+The stack-local struct-typing cluster's LOSS-156 gate is now precisely located + a faithful
+substrate landed on branch `rport/w10-stacklocal-typing` @ b120faf (+0 inert, regressed-set EMPTY):
+`ScopeLocal::query_properties` + `Funcdata::query_local_properties` (the `localmap->queryProperties`
+local-scope half) + a pinning test. LOSS-070 (RuleLoad/StoreVarnode spacebase conv) and LOSS-153's
+IPTR_SPACEBASE arm are already restored.
+- THE GATE: for `map addr`-mapped stack structs, `Heritage::guard` (heritage.cc:1192 → heritage.rs:
+  1370) calls ONLY `query_global_properties`; C++ ORs in `getScopeLocal()->queryProperties` (the
+  local stack scope) which returns `mapped|addrtied` for a mapped stack range. Without it the symbol's
+  range never comes back addrtied → `guard_calls` (heritage.cc:1451, `holdind = fl & addrtied`) never
+  builds the addrForced INDIRECT → the stores are DCE'd → `propagateSpacebaseRef` has nothing to type
+  → the symbol degrades to int8/int2. VERIFIED: wiring the OR at heritage.rs:1370 gains +7 (Partial
+  splitting #15-19, Wayoff array #1, No for-loop alias #3).
+- BUT wiring it alone REGRESSES 4 via two downstream gaps (so it's gated, not yet wired):
+  1. Store-cross merge of addrForced array stores (Store cross #1/#2): two conditional
+     `local_array[10] = 0x18/0x48` stores stay split instead of phi-merging to `= v2` (Merge/
+     RuleStoreVarnode MULTIEQUAL phasing). [base "passes" only because it wrongly DCEs the stores]
+  2. Intermediate-pointer forwarding on a typed stack struct (Intermediate pointers #3/#5):
+     `&v1.arr1[a]` not collapsed to `v1.arr1[a]` (RulePushPtr/RulePtrArith PTRADD-collapse).
+- next: close the 2 downstream gaps, THEN drop heritage.rs:1370's global-only line and OR in
+  `query_local_properties` (substrate ready) → +7 clean. Struct-by-value-param families
+  (stackspill/piecestruct/stackreturn) are a SEPARATE LOSS-153 seam (IPTR_JOIN func_link_input
+  coreaction_protos.rs:698 + recovered-callee-proto struct param storage). [[kuna-rust-port]]
