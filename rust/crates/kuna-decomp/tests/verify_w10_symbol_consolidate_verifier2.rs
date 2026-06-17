@@ -76,6 +76,7 @@ fn entry(
         symbol_name: "g".to_string(),
         symbol_offset: 0,
         symbol_type: ty,
+        scope_path: Vec::new(),
     }
 }
 

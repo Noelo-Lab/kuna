@@ -2689,44 +2689,76 @@ impl Database {
             Some(g) => g,
             None => return GlobalQuery::default(),
         };
-        let scope = &self.scopes[gid];
         let mut entries: Vec<GlobalEntry> = Vec::new();
-        // Walk every per-space rangemap of the global scope, flattening each
-        // SymbolEntry (C++ iterates `maptable[i]->begin_list..end_list`).
-        for (space_index, slot) in scope.maptable.iter().enumerate() {
-            let rangemap = match slot.as_ref() {
-                Some(rm) => rm,
-                None => continue,
-            };
-            for (_, rec) in rangemap.records() {
-                let entry = &rec.entry;
-                // Dynamic (hash-only) entries have no address: queryProperties for
-                // a Varnode address never matches them (the `addr.isInvalid` skip).
-                if entry.is_dynamic() {
-                    continue;
+        // The C++ `getGlobalScope()->queryContainer` descends into namespace child
+        // scopes via the `resolvemap` (`Scope::mapScope`), so a Symbol mapped inside
+        // a namespace (`map addr ... a::spam`) is reachable through the global query.
+        // The kuna snapshot reproduces this by flattening every NON-FUNCTIONAL scope
+        // rooted at the global scope (global itself + each namespace descendant), not
+        // just the global scope's own maptable.  Each entry records its scope's
+        // display-name chain (innermost first, global excluded) for the printer's
+        // `pushSymbolScope` namespace qualification.
+        for (sid, scope) in self.scopes.iter() {
+            // Skip functional (local function) scopes — they are not part of the
+            // global namespace tree.  Skip any scope not rooted at the global scope.
+            if scope.is_functional {
+                continue;
+            }
+            if sid != gid && !self.is_sub_scope(sid, gid) {
+                continue;
+            }
+            // Build the scope's display-name chain: from this scope outward up to
+            // (but not including) the global scope.  Empty for the global scope.
+            let mut scope_path: Vec<String> = Vec::new();
+            {
+                let mut cur = Some(sid);
+                while let Some(c) = cur {
+                    if Some(c) == self.globalscope {
+                        break;
+                    }
+                    scope_path.push(self.scopes[c].get_display_name().to_string());
+                    cur = self.scopes[c].parent;
                 }
-                let sym = &self.symbols[entry.symbol];
-                let sym_flags = sym.flags;
-                entries.push(GlobalEntry {
-                    // cast: usize -> int4; `space_index` is a `maptable` slot index
-                    // (one per AddrSpace, < numSpaces ~ tens), always in i32 range.
-                    space_index: space_index as int4,
-                    first: entry.get_first(),
-                    last: entry.get_last(),
-                    size: entry.get_size(),
-                    // getAllFlags() = extraflags | symbol->getFlags().
-                    all_flags: entry.extraflags | sym_flags,
-                    addrtied: (sym_flags & varnode_flags::addrtied) != 0,
-                    uselimit: entry.uselimit.clone(),
-                    // Naming: the owning Symbol's display name + its in-symbol offset
-                    // + type, the slice `Funcdata::linkSymbol`'s global-scope reach
-                    // returns for `high->getSymbol()->getDisplayName()`.
-                    symbol_name: sym.get_display_name().to_string(),
-                    symbol_offset: entry.get_offset(),
-                    symbol_type: sym.dtype.clone(),
-                });
+            }
+            // Walk every per-space rangemap of this scope, flattening each
+            // SymbolEntry (C++ iterates `maptable[i]->begin_list..end_list`).
+            for (space_index, slot) in scope.maptable.iter().enumerate() {
+                let rangemap = match slot.as_ref() {
+                    Some(rm) => rm,
+                    None => continue,
+                };
+                for (_, rec) in rangemap.records() {
+                    let entry = &rec.entry;
+                    // Dynamic (hash-only) entries have no address: queryProperties for
+                    // a Varnode address never matches them (the `addr.isInvalid` skip).
+                    if entry.is_dynamic() {
+                        continue;
+                    }
+                    let sym = &self.symbols[entry.symbol];
+                    let sym_flags = sym.flags;
+                    entries.push(GlobalEntry {
+                        // cast: usize -> int4; `space_index` is a `maptable` slot index
+                        // (one per AddrSpace, < numSpaces ~ tens), always in i32 range.
+                        space_index: space_index as int4,
+                        first: entry.get_first(),
+                        last: entry.get_last(),
+                        size: entry.get_size(),
+                        // getAllFlags() = extraflags | symbol->getFlags().
+                        all_flags: entry.extraflags | sym_flags,
+                        addrtied: (sym_flags & varnode_flags::addrtied) != 0,
+                        uselimit: entry.uselimit.clone(),
+                        // Naming: the owning Symbol's display name + its in-symbol offset
+                        // + type, the slice `Funcdata::linkSymbol`'s global-scope reach
+                        // returns for `high->getSymbol()->getDisplayName()`.
+                        symbol_name: sym.get_display_name().to_string(),
+                        symbol_offset: entry.get_offset(),
+                        symbol_type: sym.dtype.clone(),
+                        scope_path: scope_path.clone(),
+                    });
+                }
             }
         }
+        let scope = &self.scopes[gid];
         crate::seams::GlobalQuery {
             entries,
             owned: scope.rangetree.clone(),
@@ -2843,6 +2875,11 @@ impl Database {
     }
 
     /// C++ `Database::addRange` (`database.cc:3076-3082`).
+    /// Does the given scope have a parent scope? (C++ `Scope::getParent() != 0`).
+    pub fn scope_has_parent(&self, scope: ScopeId) -> bool {
+        self.scopes[scope].parent.is_some()
+    }
+
     pub fn add_range(&mut self, scope: ScopeId, spc: Rc<AddrSpace>, first: uintb, last: uintb) {
         self.clear_resolve(scope);
         self.scopes[scope].rangetree.insert_range(spc, first, last);

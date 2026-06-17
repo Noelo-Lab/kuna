@@ -1020,11 +1020,21 @@ decomp_command!(
             .find_create_scope_from_symbol_name(&name, "::", None, num_spaces)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         let invalid = kuna_base::address::Address::new_invalid();
-        let (sym, _eref) = arch
+        let (sym, eref) = arch
             .symboltab
             .add_symbol_mapped(scope, &basename, ct, &addr, &invalid)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         arch.symboltab.set_attribute(sym, flags);
+        // C++ ifacedecomp.cc:573-576: if this is a (global) namespace scope (it has
+        // a parent), register the symbol's whole-map address range on that scope so
+        // address->symbol resolution descends into the namespace.
+        if arch.symboltab.scope_has_parent(scope) {
+            let entry = arch.symboltab.entry(scope, eref);
+            let spc = entry.addr.get_space().expect("mapped entry has a space").clone();
+            let first = entry.get_first();
+            let last = entry.get_last();
+            arch.symboltab.add_range(scope, spc, first, last);
+        }
         Ok(())
     }
 );

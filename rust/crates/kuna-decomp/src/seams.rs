@@ -142,6 +142,13 @@ pub struct GlobalEntry {
     /// The owning Symbol's data-type (C++ `SymbolEntry::getSymbol()->getType()`),
     /// for the HighVariable's symbol type after a global name binds.
     pub symbol_type: Option<std::rc::Rc<crate::dtype::Datatype>>,
+    /// Display names of the owning Symbol's scope chain, innermost first, from the
+    /// Symbol's own scope outward, EXCLUDING the global scope (C++ the scope chain
+    /// `Symbol::getScope()` -> `getParent()` ... up to but not including global).
+    /// Empty when the Symbol lives directly in the global scope.  Used by the
+    /// printer's `pushSymbolScope`/`getResolutionDepth` namespace qualification
+    /// (`printc.cc:203`, `database.cc:324`).
+    pub scope_path: Vec<String>,
 }
 
 /// A read-only snapshot of the global [`Scope`](crate::database::Scope)
@@ -282,6 +289,20 @@ impl GlobalQuery {
         size: int4,
         usepoint: &Address,
     ) -> Option<(String, int4, Option<std::rc::Rc<crate::dtype::Datatype>>)> {
+        self.name_for_varnode_scoped(addr, size, usepoint)
+            .map(|(n, off, t, _)| (n, off, t))
+    }
+
+    /// Like [`name_for_varnode`](Self::name_for_varnode) but also returns the owning
+    /// Symbol's scope-name chain (innermost first, global excluded) so the caller can
+    /// apply the printer's namespace qualification (`pushSymbolScope`).  Empty chain
+    /// for a Symbol that lives directly in the global scope.
+    pub fn name_for_varnode_scoped(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<(String, int4, Option<std::rc::Rc<crate::dtype::Datatype>>, Vec<String>)> {
         if addr.is_constant() {
             return None;
         }
@@ -291,7 +312,7 @@ impl GlobalQuery {
         // entry's starting offset (== entry addr offset).
         let sym_off = (addr.get_offset().wrapping_sub(e.first) as int4)
             .wrapping_add(e.symbol_offset);
-        Some((e.symbol_name.clone(), sym_off, e.symbol_type.clone()))
+        Some((e.symbol_name.clone(), sym_off, e.symbol_type.clone(), e.scope_path.clone()))
     }
 
     /// The type-locked covering Symbol's sized geometry for a Varnode — the input
@@ -751,6 +772,20 @@ impl Architecture {
         self.global_query
             .as_ref()
             .and_then(|gq| gq.name_for_varnode(addr, size, usepoint))
+    }
+
+    /// Like [`name_for_global_varnode`](Self::name_for_global_varnode) but also
+    /// returns the owning Symbol's scope-name chain (innermost first, global
+    /// excluded) for namespace-qualified rendering (`PrintC::pushSymbolScope`).
+    pub fn name_for_global_varnode_scoped(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<(String, int4, Option<std::rc::Rc<crate::dtype::Datatype>>, Vec<String>)> {
+        self.global_query
+            .as_ref()
+            .and_then(|gq| gq.name_for_varnode_scoped(addr, size, usepoint))
     }
 
     /// The type-locked covering global Symbol's `(symbol_type, in_symbol_offset)`

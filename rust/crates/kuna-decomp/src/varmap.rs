@@ -1402,6 +1402,16 @@ impl ScopeLocal {
         Some(self.db.symbol(entry.symbol).get_category())
     }
 
+    /// Is `nm` the name of a Symbol in this (local) function scope?  Backs the
+    /// `useScope->isNameUsed(distinguishName, terminatingScope)` collision check of
+    /// `Symbol::getResolutionDepth` (`database.cc:358`): the function's local scope is
+    /// detached (no parent), so the walk inspects only this scope — exactly the
+    /// "parameter/local name shadows a global" predicate that drives the `::`/`ns::`
+    /// namespace qualifier (the `namespace` datatest's `::spam` / `a::spam`).
+    pub fn local_name_used(&self, nm: &str) -> bool {
+        self.db.is_name_used(self.scope, nm, None)
+    }
+
     /// The category of the Symbol that **contains** a storage location (C++
     /// `Scope::queryProperties`/`findContainer` semantics, `database.cc:2128`), or
     /// `None` when no Symbol entry covers the *whole* `[addr, addr+size)` range.

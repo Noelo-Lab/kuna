@@ -1339,6 +1339,126 @@ fn bind_proto_partial_piece(
     true
 }
 
+/// Namespace-qualify a global Symbol's name for the body render, faithful to
+/// `PrintC::pushSymbolScope` (`printc.cc:203`) + `Symbol::getResolutionDepth`
+/// (`database.cc:324`) under the default `MINIMAL_NAMESPACES` strategy.
+///
+/// The kuna printer renders a HighVariable's bound `kuna_name` string verbatim, so
+/// the namespace qualifier is computed here (where the function's local scope, its
+/// namespace path, and the global Symbol's scope chain are all available) and baked
+/// into the bound name — exactly as the function's own `a::b::assign_vals` display
+/// name is baked in by `parse line`.
+///
+/// * `base` is the Symbol's bare name (e.g. `spam`).
+/// * `sym_scope_path` is the Symbol's scope chain, innermost first, GLOBAL excluded
+///   (`[]` for a global-scope Symbol, `["a"]` for `a::spam`).
+/// * `func_ns_path` is the current function's namespace path, outermost first,
+///   global excluded (`["a","b"]` for `a::b::assign_vals`) — the `curscope` ancestry.
+/// * `name_used` answers `useScope->isNameUsed(name, ..)`: is `name` a Symbol in the
+///   function's local scope (a parameter/local that shadows the global)?
+///
+/// Returns the (possibly qualified) name, e.g. `::spam`, `a::spam`, or just `spam`.
+fn kuna_qualify_global_name(
+    base: &str,
+    sym_scope_path: &[String],
+    func_ns_path: &[String],
+    name_used: &dyn Fn(&str) -> bool,
+) -> String {
+    // Full global-rooted name paths; index 0 is the global scope (sentinel "").
+    // symPath = [GLOBAL] ++ reverse(sym_scope_path)
+    // usePath = [GLOBAL] ++ func_ns_path ++ [<local>]  (the local scope marker
+    //           below never equals any namespace name, so it only affects lengths).
+    let mut sym_path: Vec<&str> = Vec::with_capacity(sym_scope_path.len() + 1);
+    sym_path.push("");
+    for s in sym_scope_path.iter().rev() {
+        sym_path.push(s.as_str());
+    }
+    let local_marker = "\0local";
+    let mut use_path: Vec<&str> = Vec::with_capacity(func_ns_path.len() + 2);
+    use_path.push("");
+    for s in func_ns_path.iter() {
+        use_path.push(s.as_str());
+    }
+    use_path.push(local_marker);
+
+    // findDistinguishingScope(sym, use) on the name-paths (database.cc:1486).
+    // Returns the index in sym_path of the first ancestor not shared by use_path,
+    // or None when sym's scope is an ancestor of use's scope.
+    let min = sym_path.len().min(use_path.len());
+    let mut distinguish_idx: Option<usize> = None;
+    for i in 0..min {
+        if sym_path[i] != use_path[i] {
+            distinguish_idx = Some(i);
+            break;
+        }
+    }
+    if distinguish_idx.is_none() {
+        if min < sym_path.len() {
+            // sym_path matches use_path but is longer -> first differing index.
+            distinguish_idx = Some(min);
+        } else if min < use_path.len() {
+            // use_path is longer: sym scope is an ancestor of use scope -> null.
+            distinguish_idx = None;
+        } else {
+            // Identical ancestor paths (only base scopes differ) -> sym itself.
+            distinguish_idx = Some(sym_path.len() - 1);
+        }
+    }
+
+    // getResolutionDepth (database.cc:340): derive the print depth + the name whose
+    // collision is checked against the local scope.
+    let mut depth: i32;
+    let distinguish_name: &str;
+    if distinguish_idx.is_none() {
+        // Symbol's scope is an ancestor of the use scope.
+        distinguish_name = base;
+        depth = 0;
+    } else {
+        let didx = distinguish_idx.unwrap();
+        // depthResolution = (#scopes from sym's own scope up to the distinguishing
+        // scope) + 1.  sym's own scope is sym_path.last(); the distinguishing scope
+        // is sym_path[didx].  The count of steps is (len-1 - didx) + 1.
+        depth = ((sym_path.len() - 1 - didx) as i32) + 1;
+        distinguish_name = sym_path[didx];
+    }
+    if name_used(distinguish_name) {
+        depth += 1;
+    }
+    if depth <= 0 {
+        return base.to_string();
+    }
+
+    // pushSymbolScope (printc.cc:217-228): walk the symbol's scope chain `depth`
+    // levels from innermost out, then emit them outermost-first as `name::`.
+    // chain_innermost = sym_scope_path ++ [GLOBAL("")] (the symbol's full ancestry,
+    // innermost first, including global so a global-scope symbol can print `::`).
+    let mut chain_innermost: Vec<&str> = Vec::with_capacity(sym_scope_path.len() + 1);
+    for s in sym_scope_path.iter() {
+        chain_innermost.push(s.as_str());
+    }
+    chain_innermost.push(""); // global scope, display name ""
+    let take = (depth as usize).min(chain_innermost.len());
+    let mut out = String::new();
+    for name in chain_innermost[..take].iter().rev() {
+        out.push_str(name);
+        out.push_str("::");
+    }
+    out.push_str(base);
+    out
+}
+
+/// The current function's namespace path (outermost first, global excluded), parsed
+/// from its `::`-qualified display name — `a::b::assign_vals` -> `["a","b"]`, a bare
+/// `main` -> `[]`.  This stands in for the `curscope` (the function's local scope)
+/// ancestry that `Symbol::getResolutionDepth` walks; the function's local scope is a
+/// detached scope in the kuna port, so its namespace ancestry is recovered from the
+/// name the function was loaded under (`lo fu a::b::assign_vals`).
+fn kuna_function_namespace_path(display_name: &str) -> Vec<String> {
+    let mut parts: Vec<&str> = display_name.split("::").collect();
+    parts.pop(); // drop the function's own base name
+    parts.into_iter().map(|s| s.to_string()).collect()
+}
+
 fn name_local_highs_angr(data: &mut Funcdata) {
     use crate::seams::HighVariableId;
     // Materialize the recovered/locked parameters as Symbols in the local scope
@@ -1557,11 +1677,23 @@ fn name_local_highs_angr(data: &mut Funcdata) {
             // address-tied).  A hit binds the high's name + symbol offset + type
             // identically to the local `resolve_default_name` branch above.
             let usepoint = kuna_base::address::Address::new_invalid();
-            if let Some((sym_name, sym_off, sym_type)) =
-                data.get_arch().name_for_global_varnode(&v_addr, v_size, &usepoint)
+            if let Some((sym_name, sym_off, sym_type, scope_path)) =
+                data.get_arch().name_for_global_varnode_scoped(&v_addr, v_size, &usepoint)
             {
+                // Namespace-qualify the global name for the body render (C++
+                // `PrintC::pushSymbolScope` -> `getResolutionDepth(curscope)`), where
+                // `curscope` is the function's local scope.  A bare global Symbol whose
+                // name collides with a local/parameter gets a `::` prefix; a Symbol in
+                // a namespace gets its `ns::` path.  Non-colliding globals are
+                // unchanged (`scope_path` empty and no local collision -> bare name).
+                let func_ns_path = kuna_function_namespace_path(data.get_display_name());
+                let name_used = |nm: &str| {
+                    data.get_scope_local().map(|lm| lm.local_name_used(nm)).unwrap_or(false)
+                };
+                let qualified =
+                    kuna_qualify_global_name(&sym_name, &scope_path, &func_ns_path, &name_used);
                 if let Some(h) = data.high_bank_mut().get_mut(high) {
-                    h.set_kuna_name(sym_name);
+                    h.set_kuna_name(qualified);
                     h.set_symbol_offset(sym_off);
                     if let Some(t) = sym_type {
                         h.set_symbol_type(t);
