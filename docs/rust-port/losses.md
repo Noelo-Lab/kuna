@@ -2706,3 +2706,20 @@ are now cleanly isolated from restructure:
   (one line, documented in the in-code comment) — flip ONLY after both gaps close. Substrate ready
   at 04cd2a2. Five Chain B substrate waves landed +0 so far (b120faf→604408a→04cd2a2); the cluster
   is a deep dependency tree. [[kuna-rust-port]]
+
+## LOSS-074 REFINEMENT — float-NaN-compare cluster gated on RuleConditionalMove (RuleIgnoreNan substrate ready)
+
+The float-NaN-compare wave ported `RuleIgnoreNan` FULLY + faithfully (branch `rport/w10-float-nan-compare`,
++0 inert substrate, ruleaction_7.rs:2066): for `(!NAN && a<=c) && (!NAN && a!=c)` it removes the NaN
+guards → RuleFloatRange (ruleaction_2.rs:285) then collapses to `a < c`. INERT because the rust input is
+`((!NAN(a)&&1) && a<=c) && ((!NAN(a)&&1) && a!=c)` — the `&& 1` (BOOL_AND const-true) blocks
+checkBackForCompare. ROOT: that boolean compound is produced POST-pool (block-structuring/IR-lowering),
+because `RuleConditionalMove` (ruleaction_7.rs, LOSS-074 no-op seam) doesn't rewrite the NaN-guarded
+MULTIEQUAL select into BOOL_AND/BOOL_OR DURING oppool1 (C++ ruleaction.cc:9405 checkBoolean/
+gatherExpression/constructBool). In rust the MULTIEQUALs survive to post-pool lowering where NO Rule runs
+(instrumentation: RuleTrivialBool dispatched 0× across all datatests, no pool walks any BOOL_AND).
+- next-locus: port `RuleConditionalMove` (ruleaction.cc:9405) — needs the `CloneBlockOps` rule-level
+  expression cloner (clone_block exists funcdata_block.rs:2621 but unwired; op_bool_negate exists
+  ruleaction_2.rs:157). Large block-topology port, entangled with block surfaces. Once it lands, the
+  ported RuleIgnoreNan + RuleFloatRange collapse the cluster (NaN operations #2, pointerrel #7 tail,
+  float-compare tails). [[kuna-rust-port]]
