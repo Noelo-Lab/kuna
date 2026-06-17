@@ -2856,6 +2856,58 @@ impl Database {
         self.fill_resolve(scope);
     }
 
+    /// Symbol-removal core of C++ `ScopeLocal::markNotMapped` (`varmap.cc:510-545`):
+    /// remove every Symbol overlapping `[first, first+sz)` in `space`, then drop the
+    /// range from the scope's mapped window.  Mirrors the C++ `findOverlap`/
+    /// `removeSymbol`/`removeRange` loop exactly:
+    ///
+    /// - a type-locked overlap is left in place and the walk stops (C++ warns via
+    ///   `warningHeader` and `return`s; the warning channel is the W5 seam, the early
+    ///   return is reproduced);
+    /// - a `fake_input` overlap (a stack input) is left in place and the walk stops;
+    /// - otherwise the Symbol is removed and `findOverlap` is re-queried.
+    ///
+    /// The caller ([`ScopeLocal::mark_not_mapped`](crate::varmap::ScopeLocal)) has
+    /// already folded `first`/`last` into `minParamOffset`/`maxParamOffset` and
+    /// clamped `last` to the space highest, so this takes `first`/`last` pre-clamped.
+    /// `space` is the scope's stack space; the caller has also verified `space == spc`
+    /// (the C++ `if (space != spc) return;` guard).
+    pub fn mark_not_mapped_core(
+        &mut self,
+        scope: ScopeId,
+        space: Rc<AddrSpace>,
+        first: uintb,
+        last: uintb,
+        sz: int4,
+        parameter: bool,
+    ) {
+        let addr = Address::new(Rc::clone(&space), first);
+        // Remove any symbols under range (C++ findOverlap/removeSymbol loop).
+        while let Some(eref) = self.find_overlap(scope, &addr, sz) {
+            let (space_index, idx) = match eref {
+                EntryRef::Mapped { space_index, idx } => (space_index, idx),
+                // findOverlap only returns Mapped entries.
+                EntryRef::Dynamic(_) => break,
+            };
+            let sym = self.mapped_entry(scope, space_index, idx).symbol;
+            let symflags = self.symbols[sym].get_flags();
+            let symcat = self.symbols[sym].get_category();
+            if (symflags & varnode_flags::typelock) != 0 {
+                // If the symbol and the use are both as parameters this is likely the
+                // special case of a shared return call sharing the parameter location
+                // of the original function (no warning); either way: stop (C++ return).
+                let _ = (parameter, symcat == symbol_category::FUNCTION_PARAMETER);
+                // SEAM(W5 warning channel): C++ `fd->warningHeader(...)` text is dropped.
+                return;
+            } else if symcat == symbol_category::FAKE_INPUT {
+                return; // Inputs in the stack space should not be unmapped.
+            }
+            self.remove_symbol(sym);
+        }
+        // glb->symboltab->removeRange(this,space,first,last);
+        self.remove_range(scope, space, first, last);
+    }
+
     /// C++ `Database::setPropertyRange` (`database.cc:3246-3265`): OR boolean
     /// properties over a memory range.  `last_open` is `range.getLastAddrOpen(glb)`
     /// (the architecture-relative one-past-the-end address; the caller supplies it

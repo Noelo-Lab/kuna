@@ -1275,7 +1275,7 @@ impl Action for ActionRestrictLocal {
         }
         Some(Box::new(ActionRestrictLocal { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:2003 — ActionRestrictLocal::apply
         //   for (i=0; i<data.numCalls(); ++i):
         //       fc = data.getCallSpecs(i); op = fc->getOp();
@@ -1296,11 +1296,11 @@ impl Action for ActionRestrictLocal {
         //               getScopeLocal()->markNotMapped(outvn space/off/size, false);
         //   return 0;
         //
-        // SEAM(W7/W8-funcdata): the first loop iterates
-        // `Funcdata::getCallSpecs(i)` (absent); the second reads
-        // `Funcdata::funcp` (empty `seams::FuncProto`) effect records and the
-        // local `Scope::markNotMapped` surface (the `Scope` is a placeholder in
-        // the merged tree).  Deferred (count stays 0).
+        // The two loops are realized on the Funcdata side (it owns `qlst`/`funcp`/
+        // the IR banks the walk needs); `Funcdata::restrict_local` is the faithful
+        // transcription.  Now that the RSP keystone made the effect list correct
+        // (RSP unaffected), this has the right input.
+        data.restrict_local();
         0
     }
 }

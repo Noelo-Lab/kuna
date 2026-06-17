@@ -1047,3 +1047,113 @@ fn adv_w10_gather_offset_int_sub_wraps_at_zero() {
     let masked4 = wrapped & kuna_base::address::calc_mask(4);
     assert_eq!(masked4, 0xfffffff4);
 }
+
+// --- L4 ActionRestrictLocal / markNotMapped ------------------------------
+//
+// These pin the *structural* L4 surface (`ScopeLocal::markNotMapped` /
+// `isUnaffectedStorage`) that `ActionRestrictLocal::apply` drives.  No
+// function-name / register / address / `//rsp` special-casing: the guards key
+// only on Symbol category/typelock and AddrSpace identity.
+
+/// ADVERSARIAL (L4): `markNotMapped` on an unlocked auto-recovered local removes
+/// the Symbol and drops the range from the mapped window — the mechanism that
+/// excises a spurious `undefined8 v//rsp` local once `ActionRestrictLocal`
+/// classifies its storage as a saved-register slot.  Faithful to C++
+/// `ScopeLocal::markNotMapped` (varmap.cc:510-545).
+#[test]
+fn adv_l4_mark_not_mapped_removes_unlocked_local() {
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let addr = Address::new(Rc::clone(&spc), 0xffff_ffff_ffff_ffe4);
+    let inv = Address::new_invalid();
+    let _sym = sl
+        .add_symbol("vrsp", base(8, type_metatype::TYPE_UNKNOWN), &addr, &inv)
+        .expect("addSymbol");
+    let scope = sl.scope_id();
+    assert!(
+        sl.database().find_overlap(scope, &addr, 8).is_some(),
+        "precondition: the local is mapped before markNotMapped"
+    );
+    // markNotMapped(space, off, size, parameter=false) — the save-register arm.
+    sl.mark_not_mapped(&spc, 0xffff_ffff_ffff_ffe4, 8, false);
+    assert!(
+        sl.database().find_overlap(scope, &addr, 8).is_none(),
+        "the unlocked local must be removed (no spurious //rsp local survives)"
+    );
+}
+
+/// ADVERSARIAL (L4): a *type-locked* overlap is left in place and the walk stops
+/// — the C++ guard that protects a user/locked stack symbol from being unmapped
+/// (varmap.cc:529-537).  Purely category/flag driven; no address special-casing.
+#[test]
+fn adv_l4_mark_not_mapped_preserves_typelocked_symbol() {
+    use crate::varnode::varnode_flags;
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let addr = Address::new(Rc::clone(&spc), 0xffff_ffff_ffff_ffe0);
+    let inv = Address::new_invalid();
+    let sym = sl
+        .add_symbol("locked", base(4, type_metatype::TYPE_INT), &addr, &inv)
+        .expect("addSymbol");
+    // Type-lock it (the bit markNotMapped checks before removing).
+    sl.set_attribute(sym, varnode_flags::typelock);
+    let scope = sl.scope_id();
+    sl.mark_not_mapped(&spc, 0xffff_ffff_ffff_ffe0, 4, false);
+    let found = sl.database().find_overlap(scope, &addr, 4);
+    assert!(
+        found.is_some(),
+        "a type-locked Symbol must NOT be unmapped (C++ stops the walk and returns)"
+    );
+    assert_eq!(
+        sl.database().symbol(sym).get_name(),
+        "locked",
+        "the locked Symbol survives intact"
+    );
+}
+
+/// ADVERSARIAL (no-special-casing): `isUnaffectedStorage` is decided ONLY by
+/// AddrSpace identity (C++ `vn->getSpace() == space`), never by register name or
+/// offset.  A Varnode in the scope's space is unaffected-storage; one in any
+/// other space is not — regardless of what that space is called.
+#[test]
+fn adv_l4_is_unaffected_storage_is_space_identity_only() {
+    let sl = scope_local();
+    let scope_space = Rc::clone(sl.get_space_id());
+    // Same space (by identity) -> true.
+    assert!(
+        sl.is_unaffected_storage(&scope_space),
+        "a Varnode in the scope's own space is unaffected-storage"
+    );
+    // A *different* space (here a register-like processor space) -> false, with
+    // no name inspection: build a distinct space at a different index.
+    let other = Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "register",
+        false,
+        8,
+        1,
+        2, // different index than the stack space (4)
+        addrspace_flags::hasphysical,
+        1,
+        1,
+    ));
+    assert!(
+        !sl.is_unaffected_storage(&other),
+        "a Varnode in a different space is NOT unaffected-storage"
+    );
+}
+
+/// ADVERSARIAL (L4 wrap): `markNotMapped`'s `last = first + sz - 1` must use
+/// unsigned (uintb) wrapping and clamp at the split point, never panic — a large
+/// negative stack offset (e.g. -0xc as 0xff..f4) plus its size wraps cleanly.
+#[test]
+fn adv_l4_mark_not_mapped_offset_wraps_without_panic() {
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    // No symbol mapped here: the call must still run the wrap/clamp + removeRange
+    // path without panicking (debug arithmetic is wrapping).
+    sl.mark_not_mapped(&spc, 0xffff_ffff_ffff_fff4, 8, true);
+    // minParamOffset is now <= the marked first (parameter=true extends it).
+    // (We only assert no panic + the call is idempotent.)
+    sl.mark_not_mapped(&spc, 0xffff_ffff_ffff_fff4, 8, true);
+}

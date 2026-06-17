@@ -101,6 +101,15 @@ use crate::varnode::{varnode_flags, DefOpInfo};
 /// an input `unaffected`/`return_address`.  The constants are transcribed
 /// verbatim so the W4 wave can wire `funcp.hasEffect` in without changing call
 /// sites.
+/// Gate for the `setInputVarnode` effect-marking tail (saved-register / return-
+/// address inputs marked `unaffected`/`return_address`).  Held `false` behind the
+/// W10 spacebase-typing render seam: the marking is faithful C++ but net-negative
+/// today because the chain that re-renders an unaffected stack-pointer call argument
+/// as a typed `&v1` stack reference is incomplete (it would otherwise fall back to
+/// the bare `RSP` register, regressing the `switchhide` call-arg render).  Flip to
+/// `true` once `ScopeLocal::restructureVarnode`'s stack-frame typing lands.
+const INPUT_EFFECT_MARKING_ENABLED: bool = false;
+
 #[allow(dead_code)]
 mod effect_record {
     use kuna_base::types::uint4;
@@ -639,10 +648,21 @@ impl Funcdata {
     /// the [`banks_mut`](Funcdata::banks_mut) split-borrow), `setVarnodeProperties`,
     /// and the `funcp.hasEffect` unaffected/return-address marking.
     ///
-    /// SEAM(W4): `funcp.hasEffect` (the prototype effect model) reports
-    /// `UNKNOWN_EFFECT` from the W3 `FuncProto` placeholder, so the
-    /// unaffected/return-address marks are never applied — faithful for the W3 IR
-    /// (no prototype yet), wired transparently when W4 lands.
+    /// SEAM(W10 spacebase-typing render): the C++ `funcp.hasEffect` tail marks
+    /// saved-register / return-address *inputs* `unaffected`/`return_address` (the
+    /// effect list is now populated by the RSP keystone, so `has_effect` returns the
+    /// right class — see the transcribed ladder below).  Activating it on its own is
+    /// *net-negative today*: marking the stack-pointer input `unaffected` removes the
+    /// `v//rsp` placeholder local that currently binds a raw stack-pointer call
+    /// argument, and the downstream chain that should re-render it as a typed
+    /// `&v1`/`PTRSUB(v1,..)` stack reference (`ScopeLocal::restructureVarnode`'s
+    /// stack-frame typing into `mystruct v1` + `annotateRawStackPtr` for additive
+    /// uses) is not yet complete, so the arg falls back to the bare `RSP` register
+    /// (regressing the `switchhide` call-arg render — `verify_w10_callarg_piece_
+    /// switchhide_guard`).  The marking is therefore held until that render chain
+    /// lands (LOSS recorded); `ActionRestrictLocal`'s loop over unaffected inputs
+    /// (`restrict_local` loop 2) is inert in the meantime, which is faithful for the
+    /// current (no-input-unaffected) IR.
     pub fn set_input_varnode(&mut self, vn: VarnodeId) -> KunaResult<VarnodeId> {
         // if (vn->isInput()) return vn;  // Already an input
         if self.vbank().get(vn).expect("set_input_varnode: stale vn").is_input() {
@@ -662,12 +682,39 @@ impl Funcdata {
         // setVarnodeProperties(vn);
         self.set_varnode_properties(vn);
         // uint4 effecttype = funcp.hasEffect(vn->getAddr(),vn->getSize());
-        //   -- SEAM(W4): the W3 FuncProto reports no effect record (UNKNOWN_EFFECT),
-        //      so neither `setUnaffected` nor `setReturnAddress` fires.  The C++
-        //      branch ladder is transcribed for the W4 wave:
         //   if (effecttype == unaffected) vn->setUnaffected();
         //   if (effecttype == return_address) { vn->setUnaffected(); vn->setReturnAddress(); }
+        // Held behind the W10 spacebase-typing render seam (see the doc comment): the
+        // faithful transcription is in [`apply_input_effect_marking`], gated off so
+        // the wire is a one-call flip once the render chain is ready.
+        if INPUT_EFFECT_MARKING_ENABLED {
+            self.apply_input_effect_marking(vn);
+        }
         Ok(vn)
+    }
+
+    /// The `funcp.hasEffect` tail of C++ `setInputVarnode` (`funcdata_varnode.cc`):
+    /// mark a saved-register input `unaffected` and a return-address input
+    /// `unaffected`+`return_address`.  Faithful transcription, currently gated off
+    /// by [`INPUT_EFFECT_MARKING_ENABLED`] behind the W10 spacebase-typing render
+    /// seam (see [`Funcdata::set_input_varnode`]).
+    fn apply_input_effect_marking(&mut self, vn: VarnodeId) {
+        let (vaddr, vsize) = {
+            let v = self.vbank().get(vn).expect("apply_input_effect_marking: stale vn");
+            (v.get_addr().clone(), v.get_size())
+        };
+        let effecttype = self.get_func_proto().has_effect(&vaddr, vsize);
+        if effecttype == effect_record::UNAFFECTED {
+            if let Some(v) = self.vbank_mut().get_mut(vn) {
+                v.set_unaffected();
+            }
+        } else if effecttype == effect_record::RETURN_ADDRESS {
+            if let Some(v) = self.vbank_mut().get_mut(vn) {
+                // Should be unaffected over the course of the function.
+                v.set_unaffected();
+                v.set_return_address();
+            }
+        }
     }
 
     // -----------------------------------------------------------------------

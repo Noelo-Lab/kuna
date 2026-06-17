@@ -927,6 +927,59 @@ impl ScopeLocal {
             .mark_unaliased(self.scope, space_index, alias, alias_block_level);
     }
 
+    /// C++ `ScopeLocal::isUnaffectedStorage` (`varmap.hh:244`): is `vn` stored in
+    /// this scope's (stack) address space?  Used by `ActionRestrictLocal` to test
+    /// whether a saved-register COPY's destination is a stack slot that should be
+    /// unmapped.
+    pub fn is_unaffected_storage(&self, vn_space: &Rc<AddrSpace>) -> bool {
+        Rc::ptr_eq(vn_space, &self.space) || vn_space.get_index() == self.space.get_index()
+    }
+
+    /// C++ `ScopeLocal::markNotMapped` (`varmap.cc:510-545`): mark the range
+    /// `[first, first+sz)` in `spc` as not mapped to a local Symbol, removing any
+    /// Symbols already created there and dropping the range from the discovery
+    /// window.  When `parameter` is set, the range start/end extend
+    /// `minParamOffset`/`maxParamOffset` (so a stack parameter passed to a locked
+    /// sub-function call is excised above the parameter boundary).
+    ///
+    /// Faithful transcription of the C++ head (the `last` wrap/clamp + the
+    /// parameter-boundary update); the symbol-removal loop and `removeRange` are the
+    /// owned-database [`Database::mark_not_mapped_core`].
+    pub fn mark_not_mapped(
+        &mut self,
+        spc: &Rc<AddrSpace>,
+        first: uintb,
+        sz: int4,
+        parameter: bool,
+    ) {
+        // if (space != spc) return;
+        if !self.is_unaffected_storage(spc) {
+            return;
+        }
+        // uintb last = first + sz - 1;  (uintb wrapping)
+        let mut last = first.wrapping_add(sz as uintb).wrapping_sub(1);
+        // Do not allow the range to cover the split point between "negative" and
+        // "positive" stack offsets.
+        let highest = self.space.get_highest();
+        if last < first {
+            // Check for possible wrap around.
+            last = highest;
+        } else if last > highest {
+            last = highest;
+        }
+        if parameter {
+            // Everything above parameter.
+            if first < self.min_param_offset {
+                self.min_param_offset = first;
+            }
+            if last > self.max_param_offset {
+                self.max_param_offset = last;
+            }
+        }
+        self.db
+            .mark_not_mapped_core(self.scope, Rc::clone(&self.space), first, last, sz, parameter);
+    }
+
     /// C++ `ScopeLocal::addTypeRecommendation` (`varmap.cc:1590`): associate a
     /// data-type with a storage address.  If an input Varnode appears at this
     /// address with no other type info, the data-type is applied later by
