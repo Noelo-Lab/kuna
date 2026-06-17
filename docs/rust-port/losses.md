@@ -2642,3 +2642,25 @@ LOSS-230 Family-1 (the SUBPIECE-cast arm) is RESOLVED: with the call-return IR f
 Union #8, Union #28 (Union #14 belongs to Family-2/3, did not flip). Families 2 (#19/#22/#25
 FLOAT2FLOAT implied-cast) and 3 (#4/#27 inheritUnionField SEAM) remain open. See
 `reviews/w10-subpiece-cast-v2-enable.md`. [[kuna-rust-port]]
+
+## LOSS-156 (D3) / LOSS-145 — Chain B FINAL gate: restructureVarnode markNotMapped/markUnaliased tail
+
+The deep-heritage wave (branch `rport/w10-heritage-phi` @ 604408a, +0 substrate carrying b120faf)
+drove the stack-typing chain to ONE final root: both downstream gaps depend on
+`ScopeLocal::restructureVarnode`'s `markNotMapped`/`markUnaliased`/`clearCategory(fake_input)` tail
+(varmap.cc) being ported. The wave LANDED the dependent substrate (dormant): `ScopeLocal::
+is_unmapped_unaliased` (varmap.rs, faithful varmap.cc:494) + wired it into the unmapped-alias arm
+(funcdata_spacebase.rs:~1149, replacing the `fl=0` stub per funcdata_varnode.cc:1001); and
+`RuleIndirectCollapse` (ruleaction_3.rs:692) already drops a call-INDIRECT whose output
+hasNoLocalAlias.
+- WHY dormant: under the heritage.rs:1381 OR, `query_local_properties` addrtied-s the stack range,
+  so the `&v1.arr1[a]` spill slots resolve via the MAPPED-symbol arm and never reach the unmapped
+  `nolocalalias` arm. They only unmap once `restructureVarnode`'s markNotMapped/markUnaliased tail
+  lands. Same dependency for Gap 1 (the mapped-array store path re-materializes the split stores;
+  un-mapping lets it collapse to the phi-fed single store).
+- THE FINAL WAVE: port `restructureVarnode`'s markNotMapped/markUnaliased/clearCategory(fake_input)
+  tail (varmap.cc) building on 604408a → the dormant is_unmapped_unaliased substrate activates →
+  RuleIndirectCollapse collapses the spill-slot INDIRECTs (Gap 2) + the mapped-array store collapses
+  to the phi single store (Gap 1) → THEN OR query_local_properties into heritage.rs:1381 → clean
+  +7 to +10 (Partial splitting #15-19, Wayoff array #1, No for-loop alias #3, + Store cross
+  #1-#5). This unblocks the broader ~65-assertion stack-struct-typing cluster's typing. [[kuna-rust-port]]
