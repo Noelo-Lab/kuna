@@ -2277,3 +2277,32 @@ The diff ports two real upstream pieces: (a) `ScopeInternal::clearUnlockedCatego
 - restoration: converges to the oracle (`writeLongDouble(ldarr,x)`) automatically when the
   10-byte stack-slot SSA-coherence / wide-float merge prerequisites land.
 - recorded by the w10-longdouble-x87 independent verifier (round 1).
+
+## LOSS-224 — w10-rsp-5layer-atomic: AT4 float10 CALL-arg is built but not folded to the clean oracle render (RSP-keystone surfacing of LOSS-223)
+
+- item: rport/w10-rsp-5layer-atomic @ bf4ca27 (RSP-keystone independent verifier — ACCEPT_WITH_LOSSES).
+- what: the keystone's call input-active argument recovery (ROOT-B: check_call_double_use +
+  createPlaceholder/opStackLoad + index-based ActionActiveParam) reconstructs the previously-
+  DROPPED float10 second argument of `writeLongDouble` in `passmany` (longdouble.xml). Baseline
+  (rust-port 384) rendered `writeLongDouble(ldarr)` (arg gone); bf4ca27 renders
+  `writeLongDouble(ldarr,(undefined10)CONCAT(z,CONCAT(v1,x)))`. This is the SAME residual
+  10-byte-stack-slot SSA-coherence render seam already tracked as LOSS-223 (w10-longdouble-x87),
+  now reachable through the RSP keystone's recovery path as well. The CONCAT/cast form is NOT
+  folded to the byte-clean C++ oracle render `writeLongDouble(ldarr,x)`.
+- NOT a scored regression: Long double assertions #3 (`writeLongDouble(ldarr,x)`) and #4
+  (`return (int4)y + (int4)z + (int4)w;`) FAIL on BOTH bf4ca27 AND the rust-port-384 baseline
+  (independent re-run); the full longdouble passing set is byte-identical across the two commits.
+  The whole-suite regressed set is EMPTY (397 = 384 + 13 strict superset). +0 longdouble net.
+- BORDERLINE fence (the reason for ACCEPT_WITH_LOSSES, not ACCEPT): the AT4 guard in
+  `rust/crates/kuna-decomp/tests/verify_w10_callarg_piece.rs` flipped from the negative
+  ("arg dropped: `writeLongDouble(ldarr)`, NOT `(ldarr,x)`") to the positive ("arg built:
+  `writeLongDouble(ldarr,` + `CONCAT`"). The flip is directionally TOWARD the oracle (the arg
+  appears instead of being absent) and masks no regression, but the new render is not the
+  oracle's clean `x` — so the fence pins a not-yet-oracle-faithful intermediate render.
+- NO special-casing: the AT4 assertion keys on the generic `writeLongDouble(ldarr,` + `CONCAT`
+  shape, not on `x`/float10/a function name; the source layers that produce it are line-faithful
+  to the C++ (verified) with zero hardcoded literals.
+- restoration: converges to `writeLongDouble(ldarr,x)` when the 10-byte stack-slot SSA-coherence
+  / wide-float merge seam (LOSS-223) lands; at that point AT4 should be re-tightened to require
+  the clean `x` and Long double #3/#4 flip green.
+- recorded by the RSP-keystone independent verifier.

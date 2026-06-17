@@ -1,5 +1,31 @@
 # kuna Progress Log
 
+## Session (2026-06-16d/17) — rust-port W10: 307 → 397/675; RSP KEYSTONE CRACKED
+
+**RSP/SPACEBASE KEYSTONE CRACKED + INTEGRATED (+13 → 397, independently verified).** The
+dominant deferred keystone — the deepest, most cross-cutting subsystem in the port (~190
+assertions) — solved through EIGHT live-engine corrections (CORRECTION-1..8 in
+w10-rsp-keystone-plan.md). The breakthrough: it was NEVER the action pipeline 5 prior attempts
+assumed — it was a **dead-code bug**. Three roots, each instrument-proven:
+- **ROOT-A:** the cspec `<unaffected>/<killedbycall>/<returnaddress>` effect blocks were NEVER
+  parsed — `push_effect` was dead code, effectlist always empty, so `hasEffect(RSP)` returned
+  `unknown_effect` not `unaffected`. The decompiler literally didn't know RSP was preserved
+  across calls. Fixed in architecture.rs::decode_default_proto → RSP effecttype 4→1 → stack
+  slot −0xc not −0x14.
+- **ROOT-B:** the `&val` call-arg (PTRSUB(RSP,−0xc) in RDI) wasn't recovered as an active input
+  trial — `check_call_double_use` stub + `createPlaceholder`/`opStackLoad` W4 seams + an
+  index-based `ActionActiveParam` refactor (take_call_specs emptied qlst).
+- **Type-collision:** the 8-byte `&val` shadowed the mapped 4-byte `int4 val` — fixed by
+  spacebase-aware `propagate_add_in2_out` (TypePointer::downChain→TypeSpacebase::getSubType) so
+  PTRSUB types int4* + a const-sibling decl-skip in printc.
+switchind 13→15 (#15 `get_value_byref(&val)` no cast, #16 `switch(val)` slot −0xc — GREEN);
+the 13 gained span Concat-split/For-loop/Partial-splitting/Ptr-to-array/Switch-Indirect/Union.
+Gate: cargo test --workspace 3659/0, regressed-set EMPTY (strict superset, both-engine diff),
+4 render fences re-certified justified-residue, oracle PARITY, B0 unchanged. **REMAINING:**
+#8 `default:` = the guard-fold `if(1)`-collapse seam (CORRECTION-8, fold_in_guards ported-inert)
+→ switchind 16/16; then L4/L5 + the auto-activating shelves (longdouble-x87/base_explicit-v2/
+forloop-reroll) open the rest of the stack-frame cluster.
+
 ## Session (2026-06-16d/17) — rust-port W10: keystone grind 307 → 384/675; pivot to dedicated RSP
 
 **enum-truncation (+1 → 384, ACCEPT):** TypeOpSubpiece::propagateType propagates the enum
