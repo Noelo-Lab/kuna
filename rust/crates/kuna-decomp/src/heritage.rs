@@ -1496,6 +1496,17 @@ impl Heritage {
             // INDIRECT-collapse / cover seams are not yet complete on the live IR and
             // a broad emission regressed `Else-if`/`Revisit SSA`/`No for-loop alias`.
             // SEAM(W4 non-persist call-alias INDIRECT) — see the loss ledger.
+            //
+            // RSP keystone (rport/w10-rsp-5layer-atomic, CORRECTION-6): un-gating
+            // this to the C++-faithful `effecttype==unknown_effect||return_address`
+            // (no `persist &&`) IS required to keep the switch-index stack slot
+            // symbolic across calls (the C++ golden raw IR shows `s0x..f4:4 [] iop`
+            // INDIRECTs on the slot).  Held back here because the un-gate is
+            // net-negative until the call's input-active recovery passes
+            // `&val` (PTRSUB(RSP_in,-0xc)) — without that the slot's alias is
+            // unstable, markUnaliased mis-marks it `nolocalalias`, and the un-gated
+            // INDIRECTs over OTHER non-persist locals regress Pointer-to-array /
+            // Else-if.  Kept persist-gated; see the partial report for the blocker.
             let persist_range = (fl & varnode_flags::persist) != 0;
             if persist_range
                 && (effecttype == effect_type::UNKNOWN_EFFECT

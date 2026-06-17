@@ -350,7 +350,7 @@ impl Funcdata {
     /// `markUnaliased`/`annotateRawStackPtr`) refines parameter and alias
     /// bookkeeping; the layout-creating core (gather + restructure) is realized
     /// here.
-    pub fn restructure_varnode(&mut self, _aliasyes: bool) {
+    pub fn restructure_varnode(&mut self, aliasyes: bool) {
         use crate::varmap::MapState;
 
         // C++ `restructureVarnode` head (varmap.cc:1259): clear out the unlocked
@@ -421,6 +421,21 @@ impl Funcdata {
         // A zero-offset use of the stack pointer (e.g. `&v1` passed to a call) gets
         // a `PTRSUB(sp,#0)` placeholder so the data-type system renders `&local`.
         state.sort_alias();
+        // C++ `restructureVarnode` tail (varmap.cc:1280-1285):
+        //   if (aliasyes) { markUnaliased(state.getAlias()); checkUnaliasedReturn(...); }
+        // markUnaliased paints `nolocalalias` on every stack Symbol no alias
+        // crosses, which is the gate `RuleIndirectCollapse` needs to drop the
+        // per-call INDIRECT the heritage stack-guard layer puts on each local.
+        // Without it the INDIRECTs persist and pollute the render (the RSP-keystone
+        // net-negative).  Cloned out the alias list + alias_block_level so the
+        // `&mut ScopeLocal` borrow does not alias the `&self` arch read.
+        if aliasyes {
+            let alias: Vec<uintb> = state.get_alias().to_vec();
+            let abl = self.get_arch().alias_block_level;
+            if let Some(lm) = self.get_scope_local_mut() {
+                lm.mark_unaliased(&alias, abl);
+            }
+        }
         let alias = state.get_alias();
         if alias.first() == Some(&0) {
             self.annotate_raw_stack_ptr(&space);

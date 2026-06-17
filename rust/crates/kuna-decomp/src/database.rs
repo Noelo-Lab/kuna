@@ -3464,6 +3464,114 @@ impl Database {
         Ok(())
     }
 
+    /// C++ `ScopeLocal::markUnaliased` (`varmap.cc:1290-1340`): mark every local
+    /// stack Symbol whose storage is NOT crossed by an alias as `nolocalalias` (so
+    /// `RuleIndirectCollapse` can drop the per-call INDIRECT guarding it).  `alias`
+    /// is the sorted list of alias starting offsets from the `MapState`;
+    /// `alias_block_level` is the architecture's structure/array alias-block level.
+    ///
+    /// Faithful transcription of the C++ list-walk: the EntryMap entries are
+    /// iterated in address order (the rangemap `records()` order matches the C++
+    /// `begin_list()`/`end_list()`), and the function range tree is walked in
+    /// lock-step to turn aliasing off past unmapped regions.
+    pub fn mark_unaliased(
+        &mut self,
+        scope: ScopeId,
+        space_index: usize,
+        alias: &[uintb],
+        alias_block_level: int4,
+    ) {
+        use crate::dtype::type_metatype;
+        // EntryMap *rangemap = maptable[space->getIndex()]; if 0 return;
+        let entries: Vec<(SymbolId, uintb)> = {
+            let rangemap = match self.scopes[scope]
+                .maptable
+                .get(space_index)
+                .and_then(|m| m.as_ref())
+            {
+                Some(rm) => rm,
+                None => return,
+            };
+            // curoff = entry.getAddr().getOffset() + entry.getSize() - 1
+            rangemap
+                .records()
+                .map(|(_, rec)| {
+                    let e = &rec.entry;
+                    // C++ uses `uintb` (wrapping) arithmetic; a stack offset is a
+                    // large unsigned value (e.g. 0xfff...f4 for -0xc), so the
+                    // `+ size - 1` must wrap exactly as the C++ does.
+                    let curoff = e
+                        .get_addr()
+                        .get_offset()
+                        .wrapping_add(e.get_size() as uintb)
+                        .wrapping_sub(1);
+                    (e.symbol, curoff)
+                })
+                .collect()
+        };
+        // Snapshot the function's mapped range tree for the space (the lock-step
+        // walk needs (space, first, last) per range).
+        let ranges: Vec<(i32, uintb, uintb)> = self.scopes[scope]
+            .get_range_tree()
+            .iter()
+            .map(|r| (r.get_space().get_index(), r.get_first(), r.get_last()))
+            .collect();
+        let space_idx_i32 = space_index as i32;
+
+        let mut aliason = false;
+        let mut curalias: uintb = 0;
+        let mut i = 0usize; // alias cursor
+        let mut rcur = 0usize; // range cursor
+
+        for (sym, curoff) in entries {
+            // while ((i<alias.size()) && (alias[i] <= curoff)) { aliason=true; curalias=alias[i++]; }
+            while i < alias.len() && alias[i] <= curoff {
+                aliason = true;
+                curalias = alias[i];
+                i += 1;
+            }
+            // Aliases shouldn't go thru unmapped regions of the local variables.
+            while rcur < ranges.len() {
+                let (rspace, rfirst, rlast) = ranges[rcur];
+                if rspace == space_idx_i32 {
+                    if rfirst > curalias && curoff >= rfirst {
+                        aliason = false;
+                    }
+                    if rlast >= curoff {
+                        break; // symbol within / before end of mapped range
+                    }
+                    if rlast > curalias {
+                        aliason = false;
+                    }
+                }
+                rcur += 1;
+            }
+            // Distance between symbol and last alias > 0xffff -> ignore alias.
+            if aliason && (curoff.wrapping_sub(curalias) > 0xffff) {
+                aliason = false;
+            }
+            if !aliason {
+                self.set_attribute(sym, varnode_flags::nolocalalias);
+            }
+            // Locked-data-type structure/array aliasing-block (alias_block_level).
+            if self.symbols[sym].is_type_locked() && alias_block_level != 0 {
+                if alias_block_level == 3 {
+                    aliason = false;
+                } else if let Some(ct) = self.symbols[sym].dtype.clone() {
+                    let meta = ct.get_metatype();
+                    // C++ varmap.cc: structures always block aliases; arrays block
+                    // only when alias_block_level > 1 (the two C++ `if`/`else if`
+                    // arms have the same body — collapsed here to keep clippy happy).
+                    if meta == type_metatype::TYPE_STRUCT
+                        || (meta == type_metatype::TYPE_ARRAY && alias_block_level > 1)
+                    {
+                        aliason = false;
+                    }
+                }
+            }
+        }
+    }
+
     /// C++ `ScopeInternal::assignDefaultNames` (`database.cc:2880-2895`): rename
     /// every symbol with an undefined name to a generated default.
     pub fn assign_default_names(

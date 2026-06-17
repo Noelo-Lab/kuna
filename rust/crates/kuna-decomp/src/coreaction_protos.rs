@@ -518,45 +518,22 @@ impl Action for ActionExtraPopSetup {
         }))
     }
     fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:1452 — ActionExtraPopSetup::apply
-        //   if (stackspace == (AddrSpace *)0) return 0;   // No stack to speak of
+        // C++ coreaction.cc:1452-1482 — ActionExtraPopSetup::apply (per-call
+        // INT_ADD(RSP, extrapop) / INDIRECT).  A faithful transcription was landed
+        // and instrument-verified on rport/w10-rsp-5layer-atomic; it is held back
+        // here because — even with the RSP effect-model fix (the cspec
+        // <unaffected>/<killedbycall>/<returnaddress> effectlist parsing landed in
+        // this worktree) and ScopeLocal::markUnaliased — L0 is net-safe ONLY once
+        // the call's input-active recovery passes `&val` (PTRSUB(RSP_in,-0xc)) to
+        // the sub-function.  Until that argument is recovered the switch-index
+        // slot's `&val` alias is unstable, markUnaliased wrongly marks the slot
+        // `nolocalalias`, the heritage stack-INDIRECT guard collapses, and the
+        // jumptable clone const-folds the index (`switch #0x100058`).  See the
+        // partial report (CORRECTION-6) for the exact remaining blocker.  Stub
+        // returns 0; the effectlist + markUnaliased substrate it builds on is live.
         if self.stackspace.is_none() {
             return 0;
         }
-        // C++ (continued):
-        //   point = stackspace->getSpacebase(0);
-        //   sb_addr = Address(point.space, point.offset); sb_size = point.size;
-        //   for (i=0; i<data.numCalls(); ++i):
-        //       fc = data.getCallSpecs(i);
-        //       if (fc->getExtraPop() == 0) continue;        // undisturbed
-        //       op = data.newOp(2, fc->getOp()->getAddr());
-        //       data.newVarnodeOut(sb_size, sb_addr, op);
-        //       data.opSetInput(op, data.newVarnode(sb_size,sb_addr), 0);
-        //       if (fc->getExtraPop() != ProtoModel::extrapop_unknown):
-        //           fc->setEffectiveExtraPop(fc->getExtraPop());
-        //           opSetOpcode(op, CPUI_INT_ADD);
-        //           opSetInput(op, newConstant(sb_size, fc->getExtraPop()), 1);
-        //           opInsertAfter(op, fc->getOp());
-        //       else:
-        //           opSetOpcode(op, CPUI_INDIRECT);
-        //           opSetInput(op, newVarnodeIop(fc->getOp()), 1);
-        //           opInsertBefore(op, fc->getOp());
-        //   return 0;
-        //
-        // SEAM(W10-rsp-elim): the call-spec list IS now available
-        // (`getCallSpecs(i)` / `numCalls()` are ported), and a faithful, verified
-        // transcription of the loop above was attempted on this branch.  It is
-        // DEFERRED again — not for lack of the call-spec list, but because the
-        // INT_ADD/INDIRECT spacebase op it inserts at each call site is only
-        // *net-safe* once the downstream spacebase keystone (ActionInferTypes::
-        // propagateSpacebaseRef + the spacebase-store ActionDeadCode that C++
-        // relies on, coreaction.cc) cleans it up.  Without that keystone the
-        // surviving op disrupts stack-pointer flow and REGRESSES jump-table index
-        // recovery: `switchind` loses its stack-local switch index (`switch(v1)`
-        // -> `switch((int8)dat_... )`, case labels -> raw addresses), breaking the
-        // committed `verify_w10_jts_chain` structural tests even though the loose
-        // datatest `<stringmatch>` oracle gains +2.  The per-call insertion must
-        // land TOGETHER with propagateSpacebaseRef, not before it.  Count stays 0.
         0
     }
 }

@@ -781,6 +781,7 @@ impl Architecture {
         // `funcptr_align`) and the load image (C++ `glb->loader`) so the
         // jump-table emulator reaches the read-only switch table.
         seam.max_jumptable_size = self.max_jumptable_size;
+        seam.alias_block_level = self.alias_block_level;
         seam.funcptr_align = self.funcptr_align;
         seam.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
@@ -1774,15 +1775,94 @@ impl Architecture {
         let strategy = attr_str(&proto, "strategy").unwrap_or_default();
         model.build_param_list(&strategy)?;
 
-        // Decode <input> and <output> pentry lists.
+        // Decode <input>/<output> pentry lists and the <unaffected>/
+        // <killedbycall>/<returnaddress> effect blocks.  C++ `ProtoModel::decode`
+        // (fspec.cc, the `subId == ELEM_UNAFFECTED/KILLEDBYCALL/RETURNADDRESS`
+        // arms) parses each block's `<register>`/`<addr>`/`<varnode>` children into
+        // an `EffectRecord` with the matching type and appends it to `effectlist`.
+        // This is the RSP keystone's root: without the `<unaffected>` RSP record,
+        // `FuncProto::hasEffect(RSP)` returns `unknown_effect` instead of
+        // `unaffected`, so heritage guards the stack pointer across every call and
+        // the whole stack frame is skewed by the unmodeled extrapop.
+        let mut saw_retaddr = false;
         for child in proto.get_children().iter() {
             match child.get_name() {
                 "input" => self.decode_pentry_list(child, &mut model, true)?,
                 "output" => self.decode_pentry_list(child, &mut model, false)?,
+                // else if (subId == ELEM_UNAFFECTED) { ... effectlist.back().decode(unaffected) }
+                "unaffected" => {
+                    self.decode_effect_block(child, &mut model, crate::fspec::effect_type::UNAFFECTED)?;
+                }
+                // else if (subId == ELEM_KILLEDBYCALL) { ... decode(killedbycall) }
+                "killedbycall" => {
+                    self.decode_effect_block(child, &mut model, crate::fspec::effect_type::KILLEDBYCALL)?;
+                }
+                // else if (subId == ELEM_RETURNADDRESS) { ... decode(return_address); sawretaddr=true }
+                "returnaddress" => {
+                    self.decode_effect_block(child, &mut model, crate::fspec::effect_type::RETURN_ADDRESS)?;
+                    saw_retaddr = true;
+                }
                 _ => {}
             }
         }
+        // C++ fspec.cc: if (!sawretaddr && glb->defaultReturnAddr.space != 0)
+        //   effectlist.push_back(EffectRecord(glb->defaultReturnAddr, return_address));
+        // `glb->defaultReturnAddr` is decoded from the cspec's top-level
+        // <returnaddress> (C++ Architecture::parseExtraRules / decode); parse that
+        // root element directly here so the per-call retaddr store is modeled even
+        // when the <prototype> omits its own <returnaddress> (the x86-64-gcc case).
+        if !saw_retaddr {
+            if let Some(ra_block) = find_child(&root, "returnaddress") {
+                self.decode_effect_block(
+                    &ra_block,
+                    &mut model,
+                    crate::fspec::effect_type::RETURN_ADDRESS,
+                )?;
+            }
+        }
         Ok(model)
+    }
+
+    /// Decode one `<unaffected>`/`<killedbycall>`/`<returnaddress>` effect block
+    /// (C++ `ProtoModel::decode`'s effect-block arms, fspec.cc): each child is a
+    /// `<register>`/`<addr>`/`<varnode>` storage element decoded into an
+    /// [`EffectRecord`] of the given `eff_type` and appended to the model's
+    /// effect list.  Mirrors `decode_pentry_storage`'s storage resolution.
+    fn decode_effect_block(
+        &self,
+        block: &Rc<kuna_base::xml::Element>,
+        model: &mut ProtoModel,
+        eff_type: u32,
+    ) -> KunaResult<()> {
+        for child in block.get_children().iter() {
+            let vd = match child.get_name() {
+                // <register name=".."/>  ->  getTrans()->getRegister(name)
+                "register" => {
+                    let nm = attr_str(child, "name")
+                        .ok_or_else(|| KunaError::lowlevel("<register> has no name"))?;
+                    self.translate.get_register_varnode(nm.as_bytes())?
+                }
+                // <varnode space=".." offset=".." size=".."/> or <addr .../>
+                "varnode" | "addr" => {
+                    let spname = attr_str(child, "space")
+                        .ok_or_else(|| KunaError::lowlevel("<varnode> effect has no space"))?;
+                    let space = self
+                        .manage()
+                        .get_space_by_name(&spname)
+                        .ok_or_else(|| KunaError::lowlevel("<varnode> effect unknown space"))?
+                        .clone();
+                    let offset =
+                        attr_str(child, "offset").and_then(|s| parse_int(&s)).unwrap_or(0);
+                    let size = attr_str(child, "size")
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(0);
+                    kuna_num::pcoderaw::VarnodeData { space: Some(space), offset, size }
+                }
+                _ => continue,
+            };
+            model.push_effect(crate::fspec::EffectRecord::from_varnode(vd, eff_type));
+        }
+        Ok(())
     }
 
     /// Decode the `<pentry>`/`<group>` children of an `<input>`/`<output>`

@@ -405,9 +405,38 @@ impl Rule for RuleLoadVarnode {
         data.op_set_input(op, newvn, 0).expect("RuleLoadVarnode: opSetInput");
         data.op_remove_input(op, 1);
         set_opcode(data, op, OpCode::CPUI_COPY);
-        // Varnode *refvn = op->getOut(); if (refvn->isSpacebasePlaceholder()) { ... }
-        //   -- SEAM(W4): getCallSpecs/resolveSpacebaseRelative unported (the
-        //   placeholder-clear tail).  Unreachable while check_spacebase yields None.
+        // C++ ruleaction.cc:4316-4324 — the spacebase-placeholder tail.  When the
+        // converted COPY output is the stack-pointer placeholder the call set up,
+        // clear the trigger and resolve the call's relative stack offset (the RSP
+        // keystone's resolveSpacebaseRelative wire: required so `tryreg=true` yields
+        // the proper stack offset and `&val` arg).
+        // Varnode *refvn = op->getOut();
+        let refvn = out_vn(data, op);
+        // if (refvn->isSpacebasePlaceholder()) {
+        let is_ph = data
+            .vbank()
+            .get(refvn)
+            .map(|v| v.is_spacebase_placeholder())
+            .unwrap_or(false);
+        if is_ph {
+            // refvn->clearSpacebasePlaceholder(); // Clear the trigger
+            if let Some(v) = data.vbank_mut().get_mut(refvn) {
+                v.clear_spacebase_placeholder();
+            }
+            // PcodeOp *placeOp = refvn->loneDescend();
+            if let Some(place_op) = data.lone_descend(refvn) {
+                // FuncCallSpecs *fc = data.getCallSpecs(placeOp);
+                if let Some(fc_idx) = data.get_call_specs_index(place_op) {
+                    // if (fc != 0) fc->resolveSpacebaseRelative(data, refvn);
+                    // The C++ mutates `fc` (a `FuncCallSpecs *`) while passing
+                    // `&data`; lift the call-spec out with take/restore so the
+                    // `&mut FuncCallSpecs` and `&mut Funcdata` borrows don't alias.
+                    let mut qlst = data.take_call_specs();
+                    let _ = qlst[fc_idx as usize].resolve_spacebase_relative(data, refvn);
+                    data.restore_call_specs(qlst);
+                }
+            }
+        }
         1
     }
 }

@@ -455,6 +455,11 @@ pub struct Architecture {
     /// `Architecture::max_jumptable_size`), shared from the real architecture.
     /// Read by `JumpTable::recoverModel`.  `0` for hand-built fixtures.
     pub max_jumptable_size: uint4,
+    /// Aliases blocked by 0=none,1=struct,2=array,3=all (C++
+    /// `Architecture::alias_block_level`), shared from the real architecture.
+    /// Read by `ScopeLocal::markUnaliased`.  Defaults to 2 (block structs and
+    /// arrays), matching the real architecture's startup default.
+    pub alias_block_level: int4,
     /// How many low bits of a recovered function pointer are forced to zero (C++
     /// `Architecture::funcptr_align`), shared from the real architecture.  Read
     /// by `JumpBasic::buildAddresses` to align recovered targets.  `0` (no
@@ -559,6 +564,7 @@ impl Architecture {
             analyze_for_loops: true,
             types: None,
             max_jumptable_size: 0,
+            alias_block_level: 2, // Architecture default: block structs and arrays
             funcptr_align: 0,
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
