@@ -927,6 +927,59 @@ impl ScopeLocal {
             .mark_unaliased(self.scope, space_index, alias, alias_block_level);
     }
 
+    /// C++ `ScopeLocal::isUnaffectedStorage` (`varmap.hh:244`): is `vn` stored in
+    /// this scope's (stack) address space?  Used by `ActionRestrictLocal` to test
+    /// whether a saved-register COPY's destination is a stack slot that should be
+    /// unmapped.
+    pub fn is_unaffected_storage(&self, vn_space: &Rc<AddrSpace>) -> bool {
+        Rc::ptr_eq(vn_space, &self.space) || vn_space.get_index() == self.space.get_index()
+    }
+
+    /// C++ `ScopeLocal::markNotMapped` (`varmap.cc:510-545`): mark the range
+    /// `[first, first+sz)` in `spc` as not mapped to a local Symbol, removing any
+    /// Symbols already created there and dropping the range from the discovery
+    /// window.  When `parameter` is set, the range start/end extend
+    /// `minParamOffset`/`maxParamOffset` (so a stack parameter passed to a locked
+    /// sub-function call is excised above the parameter boundary).
+    ///
+    /// Faithful transcription of the C++ head (the `last` wrap/clamp + the
+    /// parameter-boundary update); the symbol-removal loop and `removeRange` are the
+    /// owned-database [`Database::mark_not_mapped_core`].
+    pub fn mark_not_mapped(
+        &mut self,
+        spc: &Rc<AddrSpace>,
+        first: uintb,
+        sz: int4,
+        parameter: bool,
+    ) {
+        // if (space != spc) return;
+        if !self.is_unaffected_storage(spc) {
+            return;
+        }
+        // uintb last = first + sz - 1;  (uintb wrapping)
+        let mut last = first.wrapping_add(sz as uintb).wrapping_sub(1);
+        // Do not allow the range to cover the split point between "negative" and
+        // "positive" stack offsets.
+        let highest = self.space.get_highest();
+        if last < first {
+            // Check for possible wrap around.
+            last = highest;
+        } else if last > highest {
+            last = highest;
+        }
+        if parameter {
+            // Everything above parameter.
+            if first < self.min_param_offset {
+                self.min_param_offset = first;
+            }
+            if last > self.max_param_offset {
+                self.max_param_offset = last;
+            }
+        }
+        self.db
+            .mark_not_mapped_core(self.scope, Rc::clone(&self.space), first, last, sz, parameter);
+    }
+
     /// C++ `ScopeLocal::addTypeRecommendation` (`varmap.cc:1590`): associate a
     /// data-type with a storage address.  If an input Varnode appears at this
     /// address with no other type info, the data-type is applied later by
@@ -1353,6 +1406,51 @@ impl ScopeLocal {
         }
         let symbol = self.db.symbol(sym);
         Some((symbol.get_display_name().to_string(), sym_off, symbol.dtype.clone()))
+    }
+
+    /// C++ `ActionNameVars::linkSpacebaseSymbol`'s namerec entry + the end-of-`apply`
+    /// rename (coreaction.cc:3016 + coreaction.cc:3087-3094): the spacebase pass
+    /// links a `PTRSUB(spacebase, off)` `&symbol` reference even when the covering
+    /// Symbol is name-undefined, recording `offVn` in `namerec`; `apply` then renames
+    /// the shared Symbol to its `buildDefaultName` (`v<base++>`).  Because the same
+    /// Symbol object backs both the reference high and any body member-access high,
+    /// the single rename makes BOTH render the final `vN` name.
+    ///
+    /// Here `addr` is the resolved symbol-reference address (C++
+    /// `sb->getAddress(...)`, the same address [`query_container_for_link`] consumes).
+    /// The reference targets the WHOLE symbol — the C++ namerec gate is `offVn`'s
+    /// `&symbol` reference (offset 0 into the Symbol), the spacebase analogue of
+    /// `high->getSymbolOffset() < 0`.  Renames the *smallest containing* undefined
+    /// Symbol whose base byte the reference addresses at offset 0, consuming `base`,
+    /// and returns the new name; returns `None` when there is no containing Symbol or
+    /// the reference is not a whole-symbol (offset-0) reference.  A symbol that is
+    /// already named is left untouched (idempotent re-run).
+    pub fn name_undefined_spacebase_symbol(
+        &mut self,
+        addr: &Address,
+        base: &mut int4,
+    ) -> Option<String> {
+        // queryContainer(addr,1,Address()) — the same lookup as link_symbol_reference.
+        let eref = self.db.find_container(self.scope, addr, 1, &Address::default())?;
+        let (sym, entry_addr_off, entry_off) = {
+            let entry = self.db.entry(self.scope, eref);
+            (entry.symbol, entry.get_addr().get_offset(), entry.get_offset())
+        };
+        // sym_off = (addr - entry_addr) + entry_off.  The reference must address the
+        // base of the Symbol (sym_off == 0) — the `&symbol` whole-symbol reference.
+        let sym_off = (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
+        if sym_off != 0 {
+            return None;
+        }
+        if !self.db.symbol(sym).is_name_undefined() {
+            return None;
+        }
+        // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm); then
+        // scope->renameSymbol(sym, newname).
+        let newname = format!("v{}", *base);
+        *base += 1;
+        let _ = self.db.rename_symbol(sym, &newname);
+        Some(newname)
     }
 
     /// Query the *smallest containing* Symbol entry for the naming/linkSymbol pass

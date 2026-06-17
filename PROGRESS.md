@@ -1,6 +1,15 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 423/675; De Morgan + namespace + convert-negconst; RSP &v1-render repaired (+6, pending integration); enum4 shelved (+0)
+## Session (2026-06-17c) — rust-port W10: 408 → 430/675; De Morgan + namespace + convert-negconst + RSP &v1-render (repaired); enum4 shelved (+0)
+
+**RSP &v1-render INTEGRATED (+7 → 430).** The repaired layer merged onto the 423 tree: the
+3-way reconcile auto-resolved `name_local_highs_angr` (namespace's global-name qualification +
+RSP's location-ordered spacebase rename COMPOSE — different regions of the function), harness
+pin took the `&v1` form (supersedes convert's `PTRSUB(v1,-0x18)`). Gained Switch Hide #3/#4,
+RetVal #6/#7, Intermediate ptr #5, Multi-size return #3, + bonus Offset array #1. switchmulti
+8/9 + switchind 16/16 + Namespace #1-4 ALL held; regressed-set EMPTY, cargo test 3680/0, PARITY
+OK. Review `reviews/w10-rsp-v1render-repair.md`. This unblocks the stack-frame cluster tail
+(noforloop/stackstring/partialsplit/piecestruct/stackspill — next harvest targets).
 
 **Convert negative-constant render +10 → 423.** `printc.rs push_constant_ir_fmt` hardcoded
 `sign=false`, dropping the C++ `pushConstant` TYPE_INT metatype dispatch (`printc.cc:1813/1832`,

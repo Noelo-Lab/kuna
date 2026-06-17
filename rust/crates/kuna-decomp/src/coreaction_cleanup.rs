@@ -1471,17 +1471,48 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // `getNameRepresentative()` dedup.
     let vlist: Vec<crate::seams::VarnodeId> = data.vbank().iter_loc().collect();
     let mut base: int4 = 1;
+    // C++ `ActionNameVars::apply`'s namerec rename (coreaction.cc:3087-3094) for the
+    // spacebase `&symbol` references recorded by `linkSpacebaseSymbol` (3016): rename
+    // each undefined LOCAL whole-symbol addressed by a `PTRSUB(spacebase, off)` to its
+    // `buildDefaultName` (`v<base++>`) so a body member-access query reads the final
+    // `vN` from the database (the shared-Symbol semantics) and the end-of-pass attach
+    // renders `&vN` / `vN.b`.  Sharing `base` reproduces the C++ namerec ORDER, which
+    // is *location order* — NOT all-spacebase-first.  C++ `linkSymbols` records the
+    // CONSTANT-space spacebase refs first (coreaction.cc:3040), then walks each
+    // non-const space and records that space's spacebase refs INTERLEAVED with its
+    // body highs (coreaction.cc:3055), spacebase-ref-before-body-high within the same
+    // Varnode.  So only the const-space spacebases are front-loaded here; the
+    // register/stack spacebases are renamed inside the body walk at their location
+    // position (the call below), so a body local that precedes the stack-pointer input
+    // in location order keeps the lower `vN` (the switchmulti `v1` loop variable).
+    data.name_undefined_spacebase_symbols(&mut base);
     let mut seen: std::collections::BTreeSet<HighVariableId> = std::collections::BTreeSet::new();
     for vn in vlist {
+        // C++ `if (curvn->isFree()) continue;` (coreaction.cc:3058) — runs ahead of
+        // both the per-space spacebase rename and the body-high naming.
+        if data.vbank().get(vn).map(|v| v.is_free()).unwrap_or(true) {
+            continue;
+        }
+        // C++ per-space loop: `if (curvn->isSpacebase()) linkSpacebaseSymbol(curvn,..)`
+        // (coreaction.cc:3060) BEFORE this Varnode's body high is named — so the
+        // spacebase `&symbol` ref consumes its `vN` at this exact location position
+        // (the const-space spacebases were already handled in the pre-pass above; a
+        // constant is never free, so guard against double-processing them here).
+        let is_const_sb = data
+            .vbank()
+            .get(vn)
+            .map(|v| v.is_spacebase() && v.is_constant())
+            .unwrap_or(false);
+        if !is_const_sb
+            && data.vbank().get(vn).map(|v| v.is_spacebase()).unwrap_or(false)
+        {
+            data.name_undefined_spacebase_symbol_for_vn(vn, &mut base);
+        }
         let high = match data.vbank().get(vn).and_then(|v| v.get_high()) {
             Some(h) => h,
             None => continue,
         };
         if seen.contains(&high) {
-            continue;
-        }
-        // C++ `if (curvn->isFree()) continue;`
-        if data.vbank().get(vn).map(|v| v.is_free()).unwrap_or(true) {
             continue;
         }
         // Hit each high only at its name representative (C++ `linkSymbols`:

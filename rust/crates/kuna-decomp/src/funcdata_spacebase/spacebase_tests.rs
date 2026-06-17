@@ -319,3 +319,57 @@ fn w10_stacklocal_typing_apply_type_recommendations_unknown_stays_unlocked() {
          lock=false for TYPE_UNKNOWN)"
     );
 }
+
+// --- L5 checkUnaliasedReturn alias-overlap decision ----------------------
+//
+// Pins the C++ `ScopeLocal::checkUnaliasedReturn` lower_bound/overlap rule
+// (varmap.cc:421-425) that decides whether a return slot stays mapped (an alias
+// reaches into it) or gets unmapped (none does).  Purely offset arithmetic — no
+// register/name/value special-casing.
+
+#[test]
+fn adv_l5_alias_reaching_return_slot_keeps_it_mapped() {
+    // Return slot [0x10, 0x18); an alias starts exactly at 0x10 -> reaches in.
+    assert!(
+        Funcdata::alias_reaches_return_slot(&[0x4, 0x10, 0x40], 0x10, 8),
+        "an alias at the slot start reaches into the return storage (keep mapped)"
+    );
+    // Alias strictly inside the slot (0x14 in [0x10,0x18)).
+    assert!(
+        Funcdata::alias_reaches_return_slot(&[0x14], 0x10, 8),
+        "an alias inside the slot reaches in"
+    );
+}
+
+#[test]
+fn adv_l5_alias_past_return_slot_unmaps_it() {
+    // Nearest alias >= 0x10 is 0x18, which is just past the slot end (0x17).
+    assert!(
+        !Funcdata::alias_reaches_return_slot(&[0x4, 0x18, 0x40], 0x10, 8),
+        "an alias one byte past the slot end does NOT reach in (unmap)"
+    );
+    // No alias at or above the slot offset at all.
+    assert!(
+        !Funcdata::alias_reaches_return_slot(&[0x0, 0x4, 0x8], 0x10, 8),
+        "no alias >= the slot offset -> nothing reaches in (unmap)"
+    );
+    // Empty alias list -> nothing reaches in.
+    assert!(
+        !Funcdata::alias_reaches_return_slot(&[], 0x10, 8),
+        "an empty alias list never reaches the slot"
+    );
+}
+
+#[test]
+fn adv_l5_alias_overlap_size_minus_one_is_inclusive() {
+    // The C++ compares against `off + size - 1` (inclusive end).  A 1-byte slot at
+    // 0x10 has last == 0x10; an alias exactly at 0x10 reaches it, 0x11 does not.
+    assert!(
+        Funcdata::alias_reaches_return_slot(&[0x10], 0x10, 1),
+        "alias == off reaches a 1-byte slot (inclusive end off+size-1 == off)"
+    );
+    assert!(
+        !Funcdata::alias_reaches_return_slot(&[0x11], 0x10, 1),
+        "alias == off+1 is past a 1-byte slot"
+    );
+}

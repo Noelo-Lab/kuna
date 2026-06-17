@@ -9,27 +9,31 @@
 //! so the `glob2struct` call now recovers its pointer argument and the call
 //! renders WITH an argument instead of as a bare `glob2struct()`.
 //!
-//! This is a render DELTA, not a scored regression:
+//! This is a render DELTA, not a scored regression for the call-arg form:
 //!
-//!   - baseline (rust-port): `glob2struct();`
-//!   - this item:            `glob2struct(PTRSUB(v1,-0x18));`
+//!   - baseline (rust-port):       `glob2struct();`
+//!   - w10-callarg-piece:          `glob2struct(PTRSUB(v1,0xffffffffffffffe8));`
+//!   - w10-rsp-L4L5-stackframe:    `glob2struct(&v1);`  (THIS item — the oracle form)
 //!
-//! (w10-convert-negconst: the PTRSUB byte-offset constant is a signed
-//! (TYPE_INT) read-facing constant, so `pushConstant` now renders it as the
-//! two's-complement `-0x18` rather than the full unsigned `0xffffffffffffffe8`
-//! bit pattern — the faithful C++ `push_integer(sign=true)` form.)
+//! The W10 RSP L4/L5 stack-frame render closes the seam: the input-effect marking
+//! (`setInputVarnode`'s `funcp.hasEffect` tail) removes the spurious `//rsp` local,
+//! so the call argument resolves to a true spacebase reference `PTRSUB(spacebase,
+//! -0x18)`; `ActionNameVars::linkSpacebaseSymbol`'s namerec rename then names the
+//! covered stack Symbol `v1` (coreaction.cc:3016 + 3087-3094) and the `&symbol`
+//! attach renders it `&v1` — matching the C++ oracle.  The body member accesses on
+//! the SAME renamed Symbol now render `v1.b`.
 //!
 //! `switchhide.xml`'s four `<stringmatch>` assertions key on `case`/`default:`/
-//! `switch(v1.b)`/`v1.b = 2;`.  As of w10-rsp-8-guardfold the `JumpBasic::
-//! foldInGuards` guard-fold lands, so #2 (`default:`) now passes; #1/#3/#4 still
-//! FAIL (the 9-case count + bitfield switch-var typing need deeper structuring).
-//! Directionally the new render is CLOSER to the C++ oracle (`glob2struct(&v1)`)
-//! — it now passes the argument; it is still a raw `PTRSUB(v1,...)` rather than
-//! `&v1` only because stack-var typing is incomplete on the Rust side (a separate
-//! seam).  This test PINS the new render so the delta is disclosed, not silent:
-//! if the call-arg recovery ever stops firing here (regressing the argument off
-//! the call) OR if any of the four assertions starts passing (switch structuring
-//! landing), this guard fires loudly.
+//! `switch(v1.b)`/`v1.b = 2;`.  On the integrated tree (guard-fold + RSP L4/L5 +
+//! &v1-render, with ActionReturnSplit live):
+//!   - #2 (`default:`) PASSES via `JumpBasic::foldInGuards` (w10-rsp-8-guardfold).
+//!   - #3 (`switch(v1.b)`) and #4 (`v1.b = 2;`) PASS off the stack-var naming this
+//!     item lands.
+//!   - #1 (the 9-case count) still FAILs: it needs deeper switch case-arm
+//!     structuring (an independent jumptable seam, not this wave).
+//! This test PINS that exact #1-fail, #2/#3/#4-pass split plus the oracle-correct
+//! `glob2struct(&v1)` call-arg render, so any future drift (the arg regressing off
+//! `&v1`, or the structuring landing and flipping #1) fires loudly.
 
 use std::path::PathBuf;
 
@@ -48,16 +52,14 @@ fn specs_dir_string() -> String {
 }
 
 /// `switchhide.xml` `<stringmatch>` assertions that still FAIL: #1 (the 9-case
-/// count), #3 (`switch(v1.b)` — bitfield switch-var typing), #4 (`v1.b = 2;`).
-/// These need deeper switch/struct structuring that is still un-ported.
-const SWITCHHIDE_FAIL_NAMES: &[&str] =
-    &["Switch Hide #1", "Switch Hide #3", "Switch Hide #4"];
+/// count).  This needs deeper switch case-arm structuring that is still un-ported.
+const SWITCHHIDE_FAIL_NAMES: &[&str] = &["Switch Hide #1"];
 
-/// `switchhide.xml` assertions that now PASS post guard-fold: #2 (`default:`).
-/// The `JumpBasic::foldInGuards` guard-fold (w10-rsp-8-guardfold) routes the
-/// switch's out-of-range path into the table as a folded `default:` case, so the
-/// `default:` keyword now renders.  Disclosed forward movement (not a regression).
-const SWITCHHIDE_PASS_NAMES: &[&str] = &["Switch Hide #2"];
+/// `switchhide.xml` assertions that PASS on the integrated tree: #2 (`default:`)
+/// via the guard-fold, #3 (`switch(v1.b)`) and #4 (`v1.b = 2;`) off the stack-var
+/// naming this item lands.  Disclosed forward movement (not a regression).
+const SWITCHHIDE_PASS_NAMES: &[&str] =
+    &["Switch Hide #2", "Switch Hide #3", "Switch Hide #4"];
 
 #[test]
 fn switchhide_callarg_render_delta_pinned() {
@@ -84,15 +86,14 @@ fn switchhide_callarg_render_delta_pinned() {
         "switchhide.xml EXEC-FAILED under call-arg-piece:\n{out}"
     );
 
-    // DISCLOSED DELTA: the `glob2struct` call now recovers its pointer argument.
-    // The exact argument form is `PTRSUB(v1,-0x18)` (raw stack-var,
-    // not yet `&v1`).  Pin that the call renders WITH an argument and that the
-    // bare `glob2struct();` is gone — so this item's render churn is recorded.
+    // ORACLE-CORRECT RENDER: the `glob2struct` call passes its recovered pointer
+    // argument as the named typed stack reference `&v1` (the C++ oracle form), not
+    // the raw `PTRSUB(...)` and not the bare `glob2struct()`.
     assert!(
-        out.contains("glob2struct(PTRSUB(v1,-0x18));"),
-        "EXPECTED the disclosed call-arg-piece render `glob2struct(PTRSUB(v1,\
-         -0x18));` (the callee proto is recovered, so the call now \
-         passes its pointer arg). If this changed, re-disclose the delta.\n\
+        out.contains("glob2struct(&v1);"),
+        "EXPECTED the oracle call-arg render `glob2struct(&v1);` (the stack Symbol \
+         is named `v1` by the linkSpacebaseSymbol namerec rename and the `&symbol` \
+         reference is attached). If this changed, re-disclose the delta.\n\
          Full output:\n{out}"
     );
     assert!(
@@ -101,34 +102,40 @@ fn switchhide_callarg_render_delta_pinned() {
          recovery makes the callee proto visible and the call passes its arg.\n\
          Full output:\n{out}"
     );
+    assert!(
+        !out.contains("PTRSUB(v1") && !out.contains("PTRSUB(RSP"),
+        "The raw `PTRSUB(...)` call-arg intermediate should be GONE — the \
+         stack-frame render finishes it as `&v1`.\nFull output:\n{out}"
+    );
+    // The body member accesses on the SAME renamed Symbol render `v1.b`.
+    assert!(
+        out.contains("v1.b = 2;") && out.contains("switch(v1.b)"),
+        "EXPECTED the body to render `v1.b = 2;` and `switch(v1.b)` (the shared \
+         renamed Symbol).\nFull output:\n{out}"
+    );
 
-    // #1/#3/#4 still FAIL (deeper switch/struct structuring un-ported).
+    // #1 (the 9-case count) still FAILs — switch case-arm structuring is independent.
     for name in SWITCHHIDE_FAIL_NAMES {
         let fail_line = format!("FAIL -- {name}\n");
-        let success_line = format!("Success -- {name}\n");
         assert!(
             out.contains(&fail_line),
-            "EXPECTED `FAIL -- {name}` (switch/struct structuring un-ported).\n\
-             Full output:\n{out}"
-        );
-        assert!(
-            !out.contains(&success_line),
-            "`{name}` unexpectedly PASSES — re-disclose the delta.\n\
-             Full output:\n{out}"
+            "EXPECTED `FAIL -- {name}` (switch case-arm structuring un-ported; this \
+             item lands stack-var naming, not structuring).\nFull output:\n{out}"
         );
     }
-    // #2 (`default:`) now PASSES via the guard-fold (disclosed forward movement).
+    // #2 (`default:`) via guard-fold, #3/#4 off stack-var naming now PASS.
     for name in SWITCHHIDE_PASS_NAMES {
         let success_line = format!("Success -- {name}\n");
         let fail_line = format!("FAIL -- {name}\n");
         assert!(
             out.contains(&success_line),
-            "EXPECTED `Success -- {name}` — the guard-fold now renders `default:`.\n\
-             If this regressed, the fold stopped firing here.\nFull output:\n{out}"
+            "EXPECTED `Success -- {name}` (guard-fold default render and/or the \
+             stack Symbol named `v1`).  If this regressed, the fold/naming stopped \
+             firing here.\nFull output:\n{out}"
         );
         assert!(
             !out.contains(&fail_line),
-            "`{name}` unexpectedly FAILs — the guard-fold default render regressed.\n\
+            "`{name}` unexpectedly FAILs — the guard-fold/naming render regressed.\n\
              Full output:\n{out}"
         );
     }

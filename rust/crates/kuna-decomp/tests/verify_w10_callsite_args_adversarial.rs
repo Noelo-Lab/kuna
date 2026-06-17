@@ -405,16 +405,24 @@ fn w10_callsite_noforloop_alias_recovers_per_call_args() {
     // and rendering the string literal are the downstream type/stackvar/string
     // plane, LOSS-131.)
     assert_ne!(mc[0], "RDI", "the call arg must resolve to the data-flow value, not the raw register RDI; got `{}`", mc[0]);
-    // The resolved stack-address value.  Since the W10 spacebase-typing keystone
-    // (`TypeSpacebase::getSubType` Scope resolution -> `RulePtrArith` converts the
-    // raw `RSP + <const>` INT_ADD into `PTRSUB(sp, <const>)`), the arg now renders
-    // as the recognized stack-frame reference `PTRSUB(<sp>, <const>)` — the
-    // intermediate the printc spacebase arm finishes as `&i`.  Either the raw
-    // additive form (pre-keystone) or the PTRSUB form (post-keystone) is a resolved
-    // stack-address value; the raw register `RDI` (ruled out above) is not.
+    // The resolved stack-address value.  After the W10 RSP L4/L5 stack-frame render
+    // (`ActionNameVars::linkSpacebaseSymbol` namerec rename + the `&symbol` attach),
+    // the recovered `&i` argument now renders as the NAMED stack variable — the
+    // stack array gets its `buildDefaultName` `v1` and is passed by name (C++ array
+    // decay: the oracle renders `might_change(i)`, this engine `sub_40067b(v1)`).
+    // The pre-render-finish intermediates (the raw `RSP + <const>` additive form or
+    // the `PTRSUB(<sp>, <const>)` the keystone produced) are subsumed by the final
+    // named form; the raw register `RDI` (ruled out above) is the only non-resolution.
+    // Accept either the named stack var (`v<N>` / `&v<N>`) or any surviving
+    // pre-finish stack-address intermediate; reject only the raw register.
     assert!(
-        mc[0].contains("RSP") || mc[0].contains('+') || mc[0].contains("PTRSUB"),
-        "the 1-arg call must pass the resolved stack-address value (`&i`), got `{}`",
+        mc[0].starts_with('v')
+            || mc[0].starts_with("&v")
+            || mc[0].contains("RSP")
+            || mc[0].contains('+')
+            || mc[0].contains("PTRSUB"),
+        "the 1-arg call must pass the resolved stack-address value (`&i`, now the \
+         named stack var `v1`), got `{}`",
         mc[0]
     );
     assert_ne!(pc[0], "RDI", "printf arg0 must resolve to the format-string value, not the raw register RDI; got `{}`", pc[0]);
@@ -544,12 +552,25 @@ fn w10_callsite_dupptr_direct_call_arg_no_raw_op_form() {
     };
     assert!(!inner.is_empty() && top_level_commas == 0, "initstruct should recover exactly 1 arg; got `{inner}`");
     assert_ne!(inner, "RDI", "initstruct arg must resolve to the data-flow value, not the raw register RDI; got `{inner}`");
-    // The resolved stack-address value: the raw additive form `RSP + <const>`
-    // (pre-keystone) or the recognized `PTRSUB(<sp>, <const>)` stack-frame
-    // reference (post-keystone, finished as `&myval` by the printc spacebase arm).
+    // The resolved stack-address value.  After the W10 RSP L4/L5 stack-frame render
+    // (`ActionNameVars::linkSpacebaseSymbol` namerec rename + the `&symbol` attach),
+    // the recovered `&myval` argument now renders as the NAMED stack variable: the
+    // stack slot gets its `buildDefaultName` `v1` and is passed by name.  The oracle
+    // renders `initstruct(&v1)` (the slot typed `mystruct`, so `&`-of-struct); this
+    // engine renders `sub_100684(v1)` because the slot's type is still recovered as
+    // an ARRAY (`xunknown1 v1 [8]`) not a struct (the struct/piece-recovery TYPE
+    // plane, LOSS-131), and an array passed by name decays to its address — the same
+    // resolved value, one render step short.  The pre-finish intermediates (raw
+    // `RSP + <const>` or `PTRSUB(<sp>, <const>)`) are subsumed by the final named
+    // form; only the raw register `RDI` (ruled out above) is a non-resolution.
     assert!(
-        inner.contains("RSP") || inner.contains('+') || inner.contains("PTRSUB"),
-        "initstruct arg must be the resolved stack-address value (`&myval`); got `{inner}`"
+        inner.starts_with('v')
+            || inner.starts_with("&v")
+            || inner.contains("RSP")
+            || inner.contains('+')
+            || inner.contains("PTRSUB"),
+        "initstruct arg must be the resolved stack-address value (`&myval`, now the \
+         named stack var `v1`); got `{inner}`"
     );
 
     // The pre-wave raw rendering MUST NOT appear: the call is the functional

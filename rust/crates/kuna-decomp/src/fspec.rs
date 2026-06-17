@@ -5447,18 +5447,36 @@ impl FuncProto {
 
     /// Calculate the effect this has on a given storage location (C++
     /// `hasEffect`).
+    ///
+    /// C++ dereferences `model` unconditionally when `effectlist` is empty; in the
+    /// real pipeline the model is always present (a proto is always constructed with
+    /// one).  In the rust port the model is an `Option` (test fixtures may build a
+    /// bare `FuncProto` with none); a missing model contributes no EffectRecord, so
+    /// this returns `UNKNOWN_EFFECT` — the "absence of an EffectRecord" value — which
+    /// is the no-op the caller (`setInputVarnode`) already treats as "no marking".
     pub fn has_effect(&self, addr: &Address, size: int4) -> uint4 {
         if self.effectlist.is_empty() {
-            return self.model().has_effect(addr, size);
+            return match self.model.as_ref() {
+                Some(m) => m.has_effect(addr, size),
+                None => effect_type::UNKNOWN_EFFECT,
+            };
         }
         ProtoModel::lookup_effect(&self.effectlist, addr, size)
     }
 
     /// Get the effect list (C++ `effectBegin`/`effectEnd`): the override list if
     /// non-empty, else the model's list.
+    ///
+    /// C++ iterates `model->effectlist` when the override is empty; in the rust port
+    /// the model is an `Option` (a model-less test fixture would otherwise deref
+    /// null), so a missing model yields the empty slice — the "no side-effect
+    /// records" state, which is what an unconfigured proto reports.
     pub fn effect_list(&self) -> &[EffectRecord] {
         if self.effectlist.is_empty() {
-            self.model().effect_list()
+            match self.model.as_ref() {
+                Some(m) => m.effect_list(),
+                None => &[],
+            }
         } else {
             &self.effectlist
         }

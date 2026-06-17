@@ -101,6 +101,16 @@ use crate::varnode::{varnode_flags, DefOpInfo};
 /// an input `unaffected`/`return_address`.  The constants are transcribed
 /// verbatim so the W4 wave can wire `funcp.hasEffect` in without changing call
 /// sites.
+/// Gate for the `setInputVarnode` effect-marking tail (saved-register / return-
+/// address inputs marked `unaffected`/`return_address`).  ENABLED as of the W10 RSP
+/// L4/L5 stack-frame render: the marking removes the spurious `//rsp` input local so
+/// an unaffected stack-pointer call argument resolves to a true spacebase reference,
+/// which `ActionNameVars::linkSpacebaseSymbol`'s namerec rename
+/// ([`Funcdata::name_undefined_spacebase_symbols`], coreaction.cc:3016 + 3087-3094)
+/// then names `v1` and the `&symbol` attach renders `&v1` — matching the C++ oracle
+/// (the prior net-negative `PTRSUB(RSP,...)` fallback is resolved corpus-wide).
+const INPUT_EFFECT_MARKING_ENABLED: bool = true;
+
 #[allow(dead_code)]
 mod effect_record {
     use kuna_base::types::uint4;
@@ -639,10 +649,21 @@ impl Funcdata {
     /// the [`banks_mut`](Funcdata::banks_mut) split-borrow), `setVarnodeProperties`,
     /// and the `funcp.hasEffect` unaffected/return-address marking.
     ///
-    /// SEAM(W4): `funcp.hasEffect` (the prototype effect model) reports
-    /// `UNKNOWN_EFFECT` from the W3 `FuncProto` placeholder, so the
-    /// unaffected/return-address marks are never applied — faithful for the W3 IR
-    /// (no prototype yet), wired transparently when W4 lands.
+    /// SEAM(W10 spacebase-typing render): the C++ `funcp.hasEffect` tail marks
+    /// saved-register / return-address *inputs* `unaffected`/`return_address` (the
+    /// effect list is now populated by the RSP keystone, so `has_effect` returns the
+    /// right class — see the transcribed ladder below).  Activating it on its own is
+    /// *net-negative today*: marking the stack-pointer input `unaffected` removes the
+    /// `v//rsp` placeholder local that currently binds a raw stack-pointer call
+    /// argument, and the downstream chain that should re-render it as a typed
+    /// `&v1`/`PTRSUB(v1,..)` stack reference (`ScopeLocal::restructureVarnode`'s
+    /// stack-frame typing into `mystruct v1` + `annotateRawStackPtr` for additive
+    /// uses) is not yet complete, so the arg falls back to the bare `RSP` register
+    /// (regressing the `switchhide` call-arg render — `verify_w10_callarg_piece_
+    /// switchhide_guard`).  The marking is therefore held until that render chain
+    /// lands (LOSS recorded); `ActionRestrictLocal`'s loop over unaffected inputs
+    /// (`restrict_local` loop 2) is inert in the meantime, which is faithful for the
+    /// current (no-input-unaffected) IR.
     pub fn set_input_varnode(&mut self, vn: VarnodeId) -> KunaResult<VarnodeId> {
         // if (vn->isInput()) return vn;  // Already an input
         if self.vbank().get(vn).expect("set_input_varnode: stale vn").is_input() {
@@ -662,12 +683,39 @@ impl Funcdata {
         // setVarnodeProperties(vn);
         self.set_varnode_properties(vn);
         // uint4 effecttype = funcp.hasEffect(vn->getAddr(),vn->getSize());
-        //   -- SEAM(W4): the W3 FuncProto reports no effect record (UNKNOWN_EFFECT),
-        //      so neither `setUnaffected` nor `setReturnAddress` fires.  The C++
-        //      branch ladder is transcribed for the W4 wave:
         //   if (effecttype == unaffected) vn->setUnaffected();
         //   if (effecttype == return_address) { vn->setUnaffected(); vn->setReturnAddress(); }
+        // Held behind the W10 spacebase-typing render seam (see the doc comment): the
+        // faithful transcription is in [`apply_input_effect_marking`], gated off so
+        // the wire is a one-call flip once the render chain is ready.
+        if INPUT_EFFECT_MARKING_ENABLED {
+            self.apply_input_effect_marking(vn);
+        }
         Ok(vn)
+    }
+
+    /// The `funcp.hasEffect` tail of C++ `setInputVarnode` (`funcdata_varnode.cc`):
+    /// mark a saved-register input `unaffected` and a return-address input
+    /// `unaffected`+`return_address`.  Faithful transcription, currently gated off
+    /// by [`INPUT_EFFECT_MARKING_ENABLED`] behind the W10 spacebase-typing render
+    /// seam (see [`Funcdata::set_input_varnode`]).
+    fn apply_input_effect_marking(&mut self, vn: VarnodeId) {
+        let (vaddr, vsize) = {
+            let v = self.vbank().get(vn).expect("apply_input_effect_marking: stale vn");
+            (v.get_addr().clone(), v.get_size())
+        };
+        let effecttype = self.get_func_proto().has_effect(&vaddr, vsize);
+        if effecttype == effect_record::UNAFFECTED {
+            if let Some(v) = self.vbank_mut().get_mut(vn) {
+                v.set_unaffected();
+            }
+        } else if effecttype == effect_record::RETURN_ADDRESS {
+            if let Some(v) = self.vbank_mut().get_mut(vn) {
+                // Should be unaffected over the course of the function.
+                v.set_unaffected();
+                v.set_return_address();
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1023,53 +1071,53 @@ impl Funcdata {
     /// Returns `true` when a Symbol reference was attached (the C++ non-null return,
     /// used by `linkSpacebaseSymbol` to decide whether to record the offVn for later
     /// default-naming).
-    fn link_symbol_reference(&mut self, off_vn: VarnodeId) -> bool {
+    /// Resolve a `PTRSUB(spacebase, off)` offset constant `off_vn` to the stack-frame
+    /// address it references (C++ `linkSymbolReference`'s
+    /// `sb->getAddress(vn->getOffset(), in0->getSize(), op->getAddr())` prefix).
+    /// Returns `None` when `off_vn` does not feed a spacebase `PTRSUB` (its lone
+    /// descendant's `in(0)` is not a pointer-to-`TYPE_SPACEBASE`) or the address
+    /// cannot be generated — the same early-`return 0` arms `link_symbol_reference`
+    /// takes.  Shared by [`link_symbol_reference`] (the attach) and
+    /// [`name_undefined_spacebase_symbols`] (the namerec rename pre-pass) so the two
+    /// passes resolve the identical address.
+    fn resolve_spacebase_ref_addr(&mut self, off_vn: VarnodeId) -> Option<Address> {
         // op = vn->loneDescend();  (the PTRSUB this constant feeds)
-        let op = match self.lone_descend(off_vn) {
-            Some(o) => o,
-            None => return false,
-        };
+        let op = self.lone_descend(off_vn)?;
         // in0 = op->getIn(0)  (the spacebase varnode)
-        let in0 = match self.obank().get(op).and_then(|o| o.get_in(0)) {
-            Some(v) => v,
-            None => return false,
-        };
+        let in0 = self.obank().get(op).and_then(|o| o.get_in(0))?;
         // ptype = in0->getHigh()->getType().  The kuna render reads the varnode
         // type for the same spacebase input (`op_ptrsub_ir` line in0 = get_type),
         // which after the W10 spacebase-input typing IS the pointer-to-spacebase;
         // use the same source so the action and the render agree.
         let (ptype, in0_size) = match self.vbank().get(in0) {
             Some(v) => (Rc::clone(v.get_type()), v.get_size()),
-            None => return false,
+            None => return None,
         };
         // if (ptype->getMetatype() != TYPE_PTR) return 0;
         if ptype.get_metatype() != type_metatype::TYPE_PTR {
-            return false;
+            return None;
         }
         // sb = (TypeSpacebase *)ptype->getPtrTo();
-        let sb = match ptype.get_ptr_to() {
-            Some(s) => s,
-            None => return false,
-        };
+        let sb = ptype.get_ptr_to()?;
         // if (sb->getMetatype() != TYPE_SPACEBASE) return 0;
         if sb.get_metatype() != type_metatype::TYPE_SPACEBASE {
-            return false;
+            return None;
         }
         // off_vn->getOffset() and op->getAddr()
-        let off_const = match self.vbank().get(off_vn) {
-            Some(v) => v.get_offset(),
-            None => return false,
-        };
-        let op_addr = match self.obank().get(op) {
-            Some(o) => o.get_addr().clone(),
-            None => return false,
-        };
+        let off_const = self.vbank().get(off_vn)?.get_offset();
+        let op_addr = self.obank().get(op)?.get_addr().clone();
         // addr = sb->getAddress(vn->getOffset(), in0->getSize(), op->getAddr());
         let manager = self.get_arch().manage();
-        let addr = match sb.spacebase_get_address(off_const, in0_size, &op_addr, manager) {
+        // C++ throws "Unable to generate proper address from spacebase"; a
+        // failure to resolve simply means no reference is attached here.
+        sb.spacebase_get_address(off_const, in0_size, &op_addr, manager)
+    }
+
+    fn link_symbol_reference(&mut self, off_vn: VarnodeId) -> bool {
+        // addr = sb->getAddress(...) — resolve the referenced stack-frame address
+        // (the spacebase-PTRSUB prefix shared with the rename pre-pass).
+        let addr = match self.resolve_spacebase_ref_addr(off_vn) {
             Some(a) => a,
-            // C++ throws "Unable to generate proper address from spacebase"; a
-            // failure to resolve simply means no reference is attached here.
             None => return false,
         };
         // scope = sb->getMap(); entry = scope->queryContainer(addr,1,Address());
@@ -1192,6 +1240,100 @@ impl Funcdata {
             };
             // sym = data.linkSymbolReference(offVn);  (namerec arm omitted, above)
             let _ = self.link_symbol_reference(off_vn);
+        }
+    }
+
+    /// C++ `ActionNameVars::linkSpacebaseSymbol`'s namerec arm (coreaction.cc:3016)
+    /// + the end-of-`apply` rename (coreaction.cc:3087-3094), realized as a pre-pass.
+    ///
+    /// In C++ `linkSpacebaseSymbol` records every `&symbol` reference whose Symbol is
+    /// name-undefined into `namerec`, and `apply` later renames each such shared
+    /// Symbol to its `buildDefaultName` (`v<base++>`).  Because a SINGLE Symbol object
+    /// backs both the offset-constant reference high AND any body member-access high,
+    /// that one rename makes both render the final `vN`.  The kuna naming model binds
+    /// the name PER-HIGH off the *database* Symbol at query time, so the rename must
+    /// land in the database BEFORE the body highs are queried — i.e. this runs as a
+    /// pre-pass, ahead of the main `linkSymbols` per-space naming loop.  Sharing the
+    /// `base` counter with that loop reproduces the C++ namerec ordering (the
+    /// spacebase `&symbol` references, recorded in the const-space pass, are renamed
+    /// ahead of the body-only locals), so a stack struct addressed by `&v1` is `v1`.
+    ///
+    /// Walks every spacebase Varnode's `PTRSUB` descendants, resolves each to its
+    /// referenced stack address, and renames the undefined LOCAL whole-symbol there
+    /// ([`ScopeLocal::name_undefined_spacebase_symbol`]).  Mapped symbols already
+    /// carry a defined name and are untouched.  Returns nothing; `base` advances per
+    /// renamed symbol.
+    pub fn name_undefined_spacebase_symbols(&mut self, base: &mut int4) {
+        if self.get_scope_local().is_none() {
+            return;
+        }
+        // C++ `linkSymbols`' FIRST loop walks the CONSTANT space only
+        // (coreaction.cc:3040-3047) and calls `linkSpacebaseSymbol` on each constant
+        // spacebase Varnode, pushing its undefined `&symbol` references into `namerec`
+        // ahead of every per-space body high.  The non-const (register/stack) spacebase
+        // references are recorded LATER, interleaved with the body highs in the
+        // per-space loop (coreaction.cc:3055-3074), so they must NOT be front-loaded
+        // here — doing so steals a low `vN` from a body local that precedes the
+        // spacebase Varnode in location order (the switchmulti `v1` regression).  The
+        // per-space spacebase rename is driven from the body naming walk via
+        // [`name_undefined_spacebase_symbol_for_vn`] at each spacebase Varnode's
+        // location-ordered position.
+        let all_locs: Vec<VarnodeId> = self.vbank().iter_loc().collect();
+        for vn in all_locs {
+            // C++ first loop is restricted to the CONSTANT space; a Varnode in the
+            // constant space is exactly `isConstant()`.
+            let (is_const, is_sb) = match self.vbank().get(vn) {
+                Some(v) => (v.is_constant(), v.is_spacebase()),
+                None => continue,
+            };
+            if !is_const || !is_sb {
+                continue;
+            }
+            self.name_undefined_spacebase_symbol_for_vn(vn, base);
+        }
+    }
+
+    /// Per-Varnode arm of C++ `ActionNameVars::linkSpacebaseSymbol`
+    /// (coreaction.cc:3009-3022) restricted to the namerec rename: for the given
+    /// spacebase Varnode `vn`, walk its `PTRSUB` descendants, resolve each to its
+    /// referenced stack address, and rename the undefined LOCAL whole-symbol there
+    /// (consuming `base`).  Invoked at `vn`'s location-ordered position — from the
+    /// const-space pre-pass for constant spacebases and from the body naming walk for
+    /// register/stack-space spacebases — so the `base` ordering reproduces the C++
+    /// `namerec` push order (location order, spacebase ref before the same Varnode's
+    /// body high).
+    pub fn name_undefined_spacebase_symbol_for_vn(&mut self, vn: VarnodeId, base: &mut int4) {
+        if self.get_scope_local().is_none() {
+            return;
+        }
+        // if (!vn->isConstant() && !vn->isInput()) return;  (linkSpacebaseSymbol head)
+        let (is_const, is_input) = match self.vbank().get(vn) {
+            Some(v) => (v.is_constant(), v.is_input()),
+            None => return,
+        };
+        if !is_const && !is_input {
+            return;
+        }
+        for op in self.descend_snapshot(vn) {
+            // if (op->code() != CPUI_PTRSUB) continue;
+            if self.obank().get(op).map(|o| o.code()) != Some(OpCode::CPUI_PTRSUB) {
+                continue;
+            }
+            // offVn = op->getIn(1);
+            let off_vn = match self.obank().get(op).and_then(|o| o.get_in(1)) {
+                Some(v) => v,
+                None => continue,
+            };
+            // addr = sb->getAddress(...) — the same address the attach pass uses.
+            let addr = match self.resolve_spacebase_ref_addr(off_vn) {
+                Some(a) => a,
+                None => continue,
+            };
+            // sym = linkSymbolReference(offVn); if (sym && sym->isNameUndefined())
+            //   namerec.push_back(offVn);  ... renamed in apply via buildDefaultName.
+            if let Some(lm) = self.get_scope_local_mut() {
+                let _ = lm.name_undefined_spacebase_symbol(&addr, base);
+            }
         }
     }
 

@@ -335,6 +335,164 @@ impl Funcdata {
         self.vbank().find_input(point.size as int4, &addr)
     }
 
+    /// C++ `ActionRestrictLocal::apply` (`coreaction.cc:2003-2059`): restrict the
+    /// possible range of local variables by marking two classes of stack storage as
+    /// *not mapped* in the local scope.
+    ///
+    /// 1. The stack-passed parameter slots of every input-locked sub-function call
+    ///    (`numCalls`/`getCallSpecs`).  When the call's spacebase offset is known,
+    ///    each `IPTR_SPACEBASE` (or `IPTR_JOIN` of spacebase pieces) parameter
+    ///    address is mapped through the call's stack frame and excised.
+    /// 2. The save-register/return-address storage the function leaves *unaffected*
+    ///    (iterate the prototype effect list, skip `killedbycall`).  For an input
+    ///    Varnode that is `isUnaffected`, every `CPUI_COPY` descendant whose output
+    ///    lands in this scope's stack space (`isUnaffectedStorage`) is the slot the
+    ///    saved value is stashed in — unmap it so it is not promoted to a spurious
+    ///    `undefined8 v//rsp` local.
+    ///
+    /// Faithful transcription of the two C++ loops (no name/register/offset
+    /// special-casing; the spacebase/join classification and the unaffected/COPY
+    /// walk are purely structural).
+    pub fn restrict_local(&mut self) {
+        use kuna_base::space::spacetype;
+
+        // --- Loop 1: stack-passed params of input-locked locked calls -----------
+        // for(i=0;i<data.numCalls();++i)
+        let numcalls = self.num_calls();
+        for i in 0..numcalls {
+            // fc = data.getCallSpecs(i);  (op = fc->getOp(); unused below)
+            let (input_locked, spacebase_off) = {
+                let fc = self.get_call_specs(i);
+                (fc.is_input_locked(), fc.get_spacebase_offset())
+            };
+            // if (!fc->isInputLocked()) continue;
+            if !input_locked {
+                continue;
+            }
+            // if (fc->getSpacebaseOffset() == FuncCallSpecs::offset_unknown) continue;
+            if spacebase_off == crate::fspec::OFFSET_UNKNOWN {
+                continue;
+            }
+            // Snapshot each locked param's (space, offset, size) before mutating the
+            // scope (the &mut getScopeLocal borrow must not alias the &self read of
+            // the call spec / arch).
+            let numparam = self.get_call_specs(i).proto().num_params();
+            let mut marks: Vec<(Rc<kuna_base::space::AddrSpace>, uintb, int4)> = Vec::new();
+            for j in 0..numparam {
+                let (addr, psize) = {
+                    let fc = self.get_call_specs(i);
+                    match fc.proto().get_param(j) {
+                        Some(p) => (p.get_address(), p.get_size()),
+                        None => continue,
+                    }
+                };
+                let space = match addr.get_space() {
+                    Some(s) => Rc::clone(s),
+                    None => continue,
+                };
+                match space.get_type() {
+                    spacetype::IPTR_SPACEBASE => {
+                        // off = space->wrapOffset(spacebaseOffset + addr.getOffset());
+                        let off = space
+                            .wrap_offset(spacebase_off.wrapping_add(addr.get_offset()));
+                        marks.push((space, off, psize));
+                    }
+                    spacetype::IPTR_JOIN => {
+                        // joinRec = glb->findJoin(addr.getOffset());
+                        let joinrec = match self.get_arch().manage().find_join(addr.get_offset()) {
+                            Ok(jr) => jr,
+                            Err(_) => continue,
+                        };
+                        for k in 0..joinrec.num_pieces() {
+                            let piece = joinrec.get_piece(k);
+                            let pspace = match &piece.space {
+                                Some(s) => Rc::clone(s),
+                                None => continue,
+                            };
+                            if pspace.get_type() == spacetype::IPTR_SPACEBASE {
+                                let off = pspace
+                                    .wrap_offset(spacebase_off.wrapping_add(piece.offset));
+                                marks.push((pspace, off, piece.size as int4));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(lm) = self.get_scope_local_mut() {
+                for (space, off, psize) in marks {
+                    // data.getScopeLocal()->markNotMapped(space,off,size,true);
+                    lm.mark_not_mapped(&space, off, psize, true);
+                }
+            }
+        }
+
+        // --- Loop 2: saved-register / return-address storage --------------------
+        // eiter = data.getFuncProto().effectBegin(); ... iterate saved registers.
+        // Snapshot the (size, address) of the saved (non-killedbycall) effects.
+        let saved: Vec<(int4, Address)> = self
+            .get_func_proto()
+            .effect_list()
+            .iter()
+            .filter(|er| er.get_type() != crate::fspec::effect_type::KILLEDBYCALL)
+            .map(|er| (er.get_size(), er.get_address()))
+            .collect();
+
+        for (sz, addr) in saved {
+            // vn = data.findVarnodeInput(size, addr);
+            let vn = match self.find_varnode_input(sz, &addr) {
+                Some(v) => v,
+                None => continue,
+            };
+            // if (vn != 0 && vn->isUnaffected())
+            let unaffected = self.vbank().get(vn).map(|v| v.is_unaffected()).unwrap_or(false);
+            if !unaffected {
+                continue;
+            }
+            // For each COPY descendant whose output is in this scope's space, unmap it.
+            let descend: Vec<OpId> = match self.vbank().get(vn) {
+                Some(v) => v.descend_iter().collect(),
+                None => continue,
+            };
+            // Snapshot the (space, offset, size) to unmap before borrowing the scope.
+            let mut outs: Vec<(Rc<kuna_base::space::AddrSpace>, uintb, int4)> = Vec::new();
+            for op in descend {
+                let o = match self.obank().get(op) {
+                    Some(o) => o,
+                    None => continue,
+                };
+                // if (op->code() != CPUI_COPY) continue;
+                if o.code() != OpCode::CPUI_COPY {
+                    continue;
+                }
+                let outvn = match o.get_out() {
+                    Some(ov) => ov,
+                    None => continue,
+                };
+                let ov = match self.vbank().get(outvn) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let ospace = Rc::clone(ov.get_space());
+                // if (!data.getScopeLocal()->isUnaffectedStorage(outvn)) continue;
+                let is_unaff_storage = self
+                    .get_scope_local()
+                    .map(|lm| lm.is_unaffected_storage(&ospace))
+                    .unwrap_or(false);
+                if !is_unaff_storage {
+                    continue;
+                }
+                outs.push((ospace, ov.get_offset(), ov.get_size()));
+            }
+            if let Some(lm) = self.get_scope_local_mut() {
+                for (ospace, ooff, osize) in outs {
+                    // markNotMapped(outvn->getSpace(),getOffset(),getSize(),false);
+                    lm.mark_not_mapped(&ospace, ooff, osize, false);
+                }
+            }
+        }
+    }
+
     /// Recover the stack-frame layout for the function (C++
     /// `ScopeLocal::restructureVarnode`, `varmap.cc:1256`).
     ///
@@ -435,11 +593,84 @@ impl Funcdata {
             if let Some(lm) = self.get_scope_local_mut() {
                 lm.mark_unaliased(&alias, abl);
             }
+            // checkUnaliasedReturn(state.getAlias()): if the return value is passed
+            // back in this scope's space and no alias reaches it, unmap it (so an
+            // unmapped, unaliased return slot is not promoted to a spurious local).
+            self.check_unaliased_return(&space, &alias);
         }
         let alias = state.get_alias();
         if alias.first() == Some(&0) {
             self.annotate_raw_stack_ptr(&space);
         }
+    }
+
+    /// C++ `ScopeLocal::checkUnaliasedReturn` (`varmap.cc:414-428`): if the return
+    /// value is passed back in a location held by this scope's (stack) space, assume
+    /// it is unmapped — unless a specific alias reaches into the location — and mark
+    /// the range as not mapped.
+    ///
+    /// `alias` is the sorted list of alias offsets into the space (from the
+    /// `MapState`).  Called from [`restructure_varnode`] when `aliasyes` is set.
+    pub fn check_unaliased_return(
+        &mut self,
+        space: &Rc<kuna_base::space::AddrSpace>,
+        alias: &[uintb],
+    ) {
+        // PcodeOp *retOp = fd->getFirstReturnOp();
+        let retop = match self.get_first_return_op() {
+            Some(r) => r,
+            None => return,
+        };
+        // if (retOp == 0 || retOp->numInput() < 2) return;
+        let invn = {
+            let o = match self.obank().get(retop) {
+                Some(o) => o,
+                None => return,
+            };
+            if o.num_input() < 2 {
+                return;
+            }
+            // Varnode *vn = retOp->getIn(1);
+            match o.get_in(1) {
+                Some(v) => v,
+                None => return,
+            }
+        };
+        // if (vn->getSpace() != space) return;
+        let (vn_space, vn_off, vn_size) = {
+            let v = match self.vbank().get(invn) {
+                Some(v) => v,
+                None => return,
+            };
+            (Rc::clone(v.get_space()), v.get_offset(), v.get_size())
+        };
+        if !(Rc::ptr_eq(&vn_space, space) || vn_space.get_index() == space.get_index()) {
+            return;
+        }
+        // Assume vn is mapped.  Cannot check vn->isMapped() as we are mid-restructure.
+        if Self::alias_reaches_return_slot(alias, vn_off, vn_size) {
+            return; // Alias into return storage, don't continue.
+        }
+        // markNotMapped(space, vn->getOffset(), vn->getSize(), false);
+        if let Some(lm) = self.get_scope_local_mut() {
+            lm.mark_not_mapped(space, vn_off, vn_size, false);
+        }
+    }
+
+    /// The alias-overlap decision of C++ `ScopeLocal::checkUnaliasedReturn`
+    /// (`varmap.cc:421-425`): does any alias offset reach into the return slot
+    /// `[off, off+size)`?  `lower_bound(alias, off)` finds the first alias `>= off`;
+    /// if that alias is `<= off+size-1` it lands inside the slot.  When it does, the
+    /// slot stays mapped (aliased); otherwise the caller unmaps it.
+    fn alias_reaches_return_slot(alias: &[uintb], off: uintb, size: int4) -> bool {
+        // iter = lower_bound(alias.begin(), alias.end(), off);
+        let pos = alias.partition_point(|&a| a < off);
+        if pos < alias.len() {
+            // Alias is greater than or equal to vn offset.
+            let last = off.wrapping_add(size as uintb).wrapping_sub(1);
+            return alias[pos] <= last;
+        }
+        false
     }
 
     /// C++ `ScopeLocal::applyTypeRecommendations` (`varmap.cc:1574`): for each
