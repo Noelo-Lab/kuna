@@ -2153,6 +2153,7 @@ impl BlockGraph {
         cs: &[BlockId],
         has_exit: bool,
         jt_index: usize,
+        switch_case_edges: &std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
     ) -> KunaResult<BlockId> {
         let rootbl = cs[0];
         // const FlowBlock *leafbl = rootbl->getExitLeaf();
@@ -2171,7 +2172,7 @@ impl BlockGraph {
         // mirrors).  The case-topology (in/out indices) is computed against the
         // switch ROOT `rootbl` (its sblocks out-edges mirror the bblocks block's,
         // edge labels and all), so we pass `rootbl` as the topology anchor.
-        let caseblocks = self.grab_case_basic(ret, rootbl, cs);
+        let caseblocks = self.grab_case_basic(ret, rootbl, cs, switch_case_edges);
         if let BlockKind::Switch { caseblocks: cb, .. } = &mut self.arena[ret].kind {
             *cb = caseblocks;
         }
@@ -2200,13 +2201,14 @@ impl BlockGraph {
         switch_id: BlockId,
         switch_root: BlockId,
         cs: &[BlockId],
+        switch_case_edges: &std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
     ) -> Vec<CaseOrder> {
         let mut caseblocks: Vec<CaseOrder> = Vec::new();
         // casemap from outindex to caseblocks position (sizeOut of the switch).
         let sizeout = self.arena[switch_root].size_out();
         let mut casemap: Vec<int4> = vec![-1; sizeout as usize];
         for &casebl in cs.iter().skip(1) {
-            let curcase = self.make_case(switch_root, casebl, 0);
+            let curcase = self.make_case(switch_root, casebl, 0, switch_case_edges);
             let outindex = curcase.outindex;
             caseblocks.push(curcase);
             if (outindex as usize) < casemap.len() {
@@ -2241,7 +2243,7 @@ impl BlockGraph {
                 _ => Vec::new(),
             };
             for g in gotos {
-                let c = self.make_case(switch_root, g, block_flags::f_goto_goto);
+                let c = self.make_case(switch_root, g, block_flags::f_goto_goto, switch_case_edges);
                 caseblocks.push(c);
             }
         }
@@ -2251,24 +2253,51 @@ impl BlockGraph {
 
     /// Build a single [`CaseOrder`] for `bl` (C++ `BlockSwitch::addCase`,
     /// `block.cc:3546`).  `gt` is the unstructured branch type (0 if structured).
-    fn make_case(&self, switch_root: BlockId, bl: BlockId, gt: uint4) -> CaseOrder {
+    fn make_case(
+        &self,
+        switch_root: BlockId,
+        bl: BlockId,
+        gt: uint4,
+        switch_case_edges: &std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
+    ) -> CaseOrder {
         // const FlowBlock *basicbl = bl->getFrontLeaf()->subBlock(0);
         let front = self.get_front_leaf(bl);
         let basicblock = front.and_then(|f| self.sub_block(f, 0));
-        // int4 inindex = basicbl->getInIndex(switchbl);  (sblocks: front leaf vs
-        // switch root); outindex = basicbl->getInRevIndex(inindex).
-        let (outindex, isdefault) = match front {
-            Some(f) => {
-                let inindex = self.arena[f].get_in_index(switch_root);
-                if inindex == -1 {
-                    (0, false)
-                } else {
-                    let oi = self.arena[f].get_in_rev_index(inindex);
-                    let isdef = self.arena[switch_root].is_default_branch(oi);
-                    (oi, isdef)
+        // int4 inindex = basicbl->getInIndex(switchbl);
+        // curcase.outindex = basicbl->getInRevIndex(inindex);
+        // curcase.isdefault = switchbl->isDefaultBranch(curcase.outindex);
+        //
+        // C++ resolves this against the live `BlockBasic` (`bl->getFrontLeaf()->
+        // subBlock(0)`), whose in/out edges to/from the underlying switch BlockBasic
+        // are never severed by structuring.  In the dual-arena Rust port a case's
+        // *sblocks* front-leaf can lose its in-edge once wrapped in a BlockGoto, so
+        // resolve `(outindex, isdefault)` from the precomputed **bblocks** edge map
+        // (keyed by the switch's and this case's underlying bblocks blocks).  The
+        // switch root's bblocks block is its exit-leaf copy's `copy` pointer.
+        let switch_bb = self.get_exit_leaf(switch_root).and_then(|leaf| self.arena[leaf].get_copy());
+        let resolved = match (switch_bb, basicblock) {
+            (Some(sbb), Some(cbb)) => switch_case_edges.get(&(sbb, cbb)).copied(),
+            _ => None,
+        };
+        let (outindex, isdefault) = match resolved {
+            Some((oi, isdef)) => (oi, isdef),
+            None => {
+                // Fall back to the sblocks topology (exact for un-wrapped leaf cases
+                // and for hand-built unit-test graphs that have no bblocks map).
+                match front {
+                    Some(f) => {
+                        let inindex = self.arena[f].get_in_index(switch_root);
+                        if inindex == -1 {
+                            (0, false)
+                        } else {
+                            let oi = self.arena[f].get_in_rev_index(inindex);
+                            let isdef = self.arena[switch_root].is_default_branch(oi);
+                            (oi, isdef)
+                        }
+                    }
+                    None => (0, false),
                 }
             }
-            None => (0, false),
         };
         let isexit = if gt != 0 { false } else { self.arena[bl].size_out() == 1 };
         CaseOrder {

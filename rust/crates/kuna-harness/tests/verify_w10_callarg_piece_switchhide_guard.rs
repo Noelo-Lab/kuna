@@ -15,8 +15,9 @@
 //!   - this item:            `glob2struct(PTRSUB(v1,0xffffffffffffffe8));`
 //!
 //! `switchhide.xml`'s four `<stringmatch>` assertions key on `case`/`default:`/
-//! `switch(v1.b)`/`v1.b = 2;` — switch *structuring*, which is NOT ported — so
-//! all four FAIL on BOTH baseline and this item; the pass/fail set does not move.
+//! `switch(v1.b)`/`v1.b = 2;`.  As of w10-rsp-8-guardfold the `JumpBasic::
+//! foldInGuards` guard-fold lands, so #2 (`default:`) now passes; #1/#3/#4 still
+//! FAIL (the 9-case count + bitfield switch-var typing need deeper structuring).
 //! Directionally the new render is CLOSER to the C++ oracle (`glob2struct(&v1)`)
 //! — it now passes the argument; it is still a raw `PTRSUB(v1,...)` rather than
 //! `&v1` only because stack-var typing is incomplete on the Rust side (a separate
@@ -41,11 +42,17 @@ fn specs_dir_string() -> String {
     repo_root().join("specs").to_str().unwrap().to_string()
 }
 
-/// The four `switchhide.xml` `<stringmatch>` assertion names.  All FAIL on both
-/// baseline and this item (switch structuring un-ported); none may flip to
-/// `Success` here without a separate, disclosed change.
-const SWITCHHIDE_NAMES: &[&str] =
-    &["Switch Hide #1", "Switch Hide #2", "Switch Hide #3", "Switch Hide #4"];
+/// `switchhide.xml` `<stringmatch>` assertions that still FAIL: #1 (the 9-case
+/// count), #3 (`switch(v1.b)` — bitfield switch-var typing), #4 (`v1.b = 2;`).
+/// These need deeper switch/struct structuring that is still un-ported.
+const SWITCHHIDE_FAIL_NAMES: &[&str] =
+    &["Switch Hide #1", "Switch Hide #3", "Switch Hide #4"];
+
+/// `switchhide.xml` assertions that now PASS post guard-fold: #2 (`default:`).
+/// The `JumpBasic::foldInGuards` guard-fold (w10-rsp-8-guardfold) routes the
+/// switch's out-of-range path into the table as a folded `default:` case, so the
+/// `default:` keyword now renders.  Disclosed forward movement (not a regression).
+const SWITCHHIDE_PASS_NAMES: &[&str] = &["Switch Hide #2"];
 
 #[test]
 fn switchhide_callarg_render_delta_pinned() {
@@ -90,20 +97,34 @@ fn switchhide_callarg_render_delta_pinned() {
          Full output:\n{out}"
     );
 
-    // NO SCORED MOVEMENT: all four assertions still FAIL (switch structuring is
-    // un-ported); none may flip to Success here.
-    for name in SWITCHHIDE_NAMES {
+    // #1/#3/#4 still FAIL (deeper switch/struct structuring un-ported).
+    for name in SWITCHHIDE_FAIL_NAMES {
         let fail_line = format!("FAIL -- {name}\n");
         let success_line = format!("Success -- {name}\n");
         assert!(
             out.contains(&fail_line),
-            "EXPECTED `FAIL -- {name}` (switch structuring un-ported; the render \
-             delta does not move the scored set).\nFull output:\n{out}"
+            "EXPECTED `FAIL -- {name}` (switch/struct structuring un-ported).\n\
+             Full output:\n{out}"
         );
         assert!(
             !out.contains(&success_line),
-            "`{name}` unexpectedly PASSES — that would be a separate, undisclosed \
-             change (switch structuring landing).\nFull output:\n{out}"
+            "`{name}` unexpectedly PASSES — re-disclose the delta.\n\
+             Full output:\n{out}"
+        );
+    }
+    // #2 (`default:`) now PASSES via the guard-fold (disclosed forward movement).
+    for name in SWITCHHIDE_PASS_NAMES {
+        let success_line = format!("Success -- {name}\n");
+        let fail_line = format!("FAIL -- {name}\n");
+        assert!(
+            out.contains(&success_line),
+            "EXPECTED `Success -- {name}` — the guard-fold now renders `default:`.\n\
+             If this regressed, the fold stopped firing here.\nFull output:\n{out}"
+        );
+        assert!(
+            !out.contains(&fail_line),
+            "`{name}` unexpectedly FAILs — the guard-fold default render regressed.\n\
+             Full output:\n{out}"
         );
     }
 }

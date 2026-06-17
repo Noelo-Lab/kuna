@@ -345,19 +345,28 @@ fn block_with_const_cbranch(fd: &mut Funcdata, bl: BlockId, off: u64, cond: u64)
 #[test]
 fn determinedbranch_detects_constant_condition_without_panicking() {
     // A block whose last op is CBRANCH on a constant: the realized detection walk
-    // (lastOp == CBRANCH, condition isConstant) runs to completion; the removal
-    // is the funcdata_block seam, so no change is counted yet.
+    // (lastOp == CBRANCH, condition isConstant) runs to completion and the dead
+    // edge is severed by the now-ported `removeBranch` (the constant condition `1`
+    // with no boolean-flip => `num = 1`, so out-edge 1 is removed and the CBRANCH
+    // collapses to an unconditional BRANCH).  One change is counted.
     let mut fd = build_fd();
     let mut ctx = ActionContext::new();
     let root = fd.bblocks_root_pub();
     let bl = fd.bblocks_mut().new_block_basic(root);
+    let t0 = fd.bblocks_mut().new_block_basic(root);
+    let t1 = fd.bblocks_mut().new_block_basic(root);
+    // Two out-edges so the CBRANCH has a real binary decision to fold.
+    fd.bblocks_mut().add_edge(bl, t0);
+    fd.bblocks_mut().add_edge(bl, t1);
     let _op = block_with_const_cbranch(&mut fd, bl, 0x1000, 1);
 
     let mut act = ActionDeterminedBranch::boxed("base");
     let res = act.apply(&mut fd, &mut ctx);
     assert_eq!(res, 0);
-    // removeBranch is seamed (W3-block): detection ran, no change counted.
-    assert_eq!(act.base().count, 0);
+    // removeBranch is now wired: the determined (constant) branch folds, count==1.
+    assert_eq!(act.base().count, 1);
+    // The block is now an unconditional branch (one out-edge severed).
+    assert_eq!(fd.bblocks_ref().block(bl).size_out(), 1);
 }
 
 #[test]
