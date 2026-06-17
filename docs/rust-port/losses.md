@@ -2475,3 +2475,26 @@ The diff ports two real upstream pieces: (a) `ScopeInternal::clearUnlockedCatego
   (faithful to C++ — verify whether C++ `RulePropagateCopy::applyOp` guards on
   `vn->isAddrForce()`/`isMapped()`). This likely also lands the convert-dynhash B2 cases.
 - recorded by the integrator after the Partial Merge wave BLOCKED (2026-06-17).
+
+## LOSS-229 CORRECTION (mapped-copyelim wave, 2026-06-17) — the locus is merge cover-trim, NOT copy-prop
+
+The original LOSS-229 restoration note is WRONG. The mapped-copyelim wave disproved it with raw-pcode
++ instrumented traces on `partialmerge.xml::readpartial`:
+- Upstream `RulePropagateCopy::applyOp` (ruleaction.cc:3945) has NO `isMapped()` guard on its
+  non-marker path (the isAddrForce/isAddrTied guards are ONLY inside `if(op->isMarker())`,
+  ruleaction.cc:3963-3973). The Rust transcription (ruleaction_3.rs:1893) is FAITHFUL — C++ forwards
+  the mapped COPY exactly like Rust. Adding the guard INFINITE-LOOPS the rule engine (breaks the
+  action-loop fixpoint) — decisive proof it's wrong.
+- The COPY that SURVIVES in C++ output (create-index higher than the whole lift) is a LATE-inserted
+  explicit copy-marker re-materialized at the firstuse address by `Merge::allocateCopyTrim`
+  (merge.cc:411, `data.newOp(1,addr)` at firstuse). The persisted dynamic hash `3f9001cf6a` decodes
+  to opcode=1 (CPUI_COPY), slot=-1 (output) — `DynamicHash::gatherFirstLevelVars` (dynamic.cc:655)
+  needs a COPY at 0x1006a7. C++ has the re-trim; Rust's `merge.rs::copy_trim_op` (merge.rs:391)
+  never triggers for this dynamic-hash temp because the mapped binding is lost when the COPY is
+  forwarded and its High destroyed.
+- CORRECTED next-locus: a merge-wave that (1) preserves the dynamic-symbol/`mapped` binding on the
+  HighVariable when RulePropagateCopy collapses a mapped COPY, and (2) makes
+  `Merge::allocateCopyTrim`/cover-separation re-insert the explicit COPY at the firstuse address for a
+  mapped cover-forced variable. Loci: `merge.rs` (copy_trim_op/mergeMultiEntry/cover-intersection) +
+  `coreaction_render.rs::baseExplicit` isMapped arm (coreaction.cc:3148). This is DEEP merge infra —
+  two waves (partial-merge, mapped-copyelim) have now bounced off it; defer to a dedicated effort.
