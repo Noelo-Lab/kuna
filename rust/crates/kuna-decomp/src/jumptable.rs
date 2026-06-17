@@ -2439,18 +2439,48 @@ impl JumpModel for JumpBasicModel {
         Ok(Some(switchvn))
     }
 
-    fn fold_in_guards(&mut self, _fd: &mut Funcdata, _jump: &mut JumpTable) -> KunaResult<bool> {
-        // SEAM(structuring): `foldInOneGuard` + `noInterveningStatement` +
-        // `pushBranch` are ported (see `JumpBasicModel::fold_in_one_guard`,
-        // `Funcdata::block_no_intervening_statement`/`push_branch`), but the
-        // constant-predicate CBRANCH the else-branch leaves (`if (1)`) is not yet
-        // collapsed by the downstream structuring/condexe re-run, so enabling the
-        // fold REGRESSES the switch render (the `if (1)` wrapper survives and
-        // `Switch Multi #1` breaks).  Held inert until the constant-guard collapse
-        // lands; the switch destinations still install (guards render as ordinary
-        // branches until folded).  The fold body is retained, compiled, and
-        // unit-reachable for that follow-up.
-        Ok(false)
+    fn fold_in_guards(&mut self, fd: &mut Funcdata, jump: &mut JumpTable) -> KunaResult<bool> {
+        // C++ JumpBasic::foldInGuards (jumptable.cc:1709).
+        //   bool change = false;
+        //   for(i=0;i<selectguards.size();++i) {
+        //     cbranch = selectguards[i].getBranch();
+        //     if (cbranch == 0) continue;        // already normalized
+        //     if (cbranch->isDead()) { selectguards[i].clear(); continue; }
+        //     if (foldInOneGuard(fd,selectguards[i],jump)) change = true;
+        //   }
+        //   return change;
+        //
+        // The `pos == nout` arm of foldInOneGuard converts the guard CBRANCH into
+        // an unconditional BRANCH via pushBranch (no residue).  The `pos != nout`
+        // arm sets the guard CBRANCH predicate to a constant (an `if (1)`/`if (0)`
+        // residue); C++ collapses that with a SUBSEQUENT pass — ActionSwitchNorm
+        // (coreaction.cc:4793) returns a positive count when a guard folds AND does
+        // `getStructure().clear()`, which re-runs `actfullloop` (rule_repeatapply),
+        // so `ActionDeterminedBranch` (coreaction.cc:3688, in actmainloop) then
+        // severs the now-constant CBRANCH's dead edge.  The Rust port re-runs the
+        // loop identically; the only missing piece was that `removeBranch` was a
+        // seam in `ActionDeterminedBranch::apply` — now wired (coreaction_early.rs),
+        // so the `if (1)` collapses on the re-run exactly as upstream.
+        let mut change = false;
+        let nguards = self.selectguards.len();
+        for i in 0..nguards {
+            let cbranch = match self.selectguards[i].get_branch() {
+                Some(c) => c,
+                None => continue, // Already normalized
+            };
+            let is_dead = fd.obank().get(cbranch).map(|o| o.is_dead()).unwrap_or(true);
+            if is_dead {
+                self.selectguards[i].clear();
+                continue;
+            }
+            // foldInOneGuard mutates the guard record in place (`fold_in_one_guard`
+            // is an associated fn — it borrows the single guard, `fd`, and `jump`,
+            // all disjoint from the rest of `self`).
+            if Self::fold_in_one_guard(fd, &mut self.selectguards[i], jump)? {
+                change = true;
+            }
+        }
+        Ok(change)
     }
 
     fn sanity_check(
@@ -2540,10 +2570,8 @@ impl JumpBasicModel {
     /// is already a switch destination, by making the CBRANCH unconditional toward
     /// the switch and recording that destination as the default block.
     ///
-    /// Ported and reachable, but currently kept inert by `fold_in_guards` (the
-    /// constant-guard collapse that removes the `if (1)` residue is not yet on the
-    /// structuring path — see the seam note there).
-    #[allow(dead_code)]
+    /// Reached from `fold_in_guards` (the constant-predicate `if (1)` residue the
+    /// `pos != nout` arm leaves is collapsed in place here, see that arm).
     fn fold_in_one_guard(
         fd: &mut Funcdata,
         guard: &mut GuardRecord,

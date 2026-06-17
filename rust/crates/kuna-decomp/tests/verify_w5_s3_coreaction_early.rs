@@ -196,8 +196,10 @@ fn block_with_cbranch_cond(fd: &mut Funcdata, bl: BlockId, off: u64, cond_const:
 
 /// C++ `if (!cbranch->getIn(1)->isConstant()) continue;` (coreaction.cc:3700):
 /// a CBRANCH whose condition slot is *not* constant must be skipped — the walk
-/// must run to completion with no change and no panic, even across a mix of
-/// constant and non-constant CBRANCH blocks and an empty block.
+/// must run to completion with no panic across a mix of constant and
+/// non-constant CBRANCH blocks and an empty block.  The two *constant*-condition
+/// blocks have their determined branch folded by the now-ported `removeBranch`
+/// (one out-edge severed each), while the non-constant block is left untouched.
 #[test]
 fn determinedbranch_skips_nonconstant_and_walks_mixed_graph() {
     let mut fd = build_fd();
@@ -208,6 +210,10 @@ fn determinedbranch_skips_nonconstant_and_walks_mixed_graph() {
     let _empty = fd.bblocks_mut().new_block_basic(root);
     // Block 1: CBRANCH on a *non-constant* condition (a fresh non-const varnode).
     let nonconst = fd.bblocks_mut().new_block_basic(root);
+    let nc_t0 = fd.bblocks_mut().new_block_basic(root);
+    let nc_t1 = fd.bblocks_mut().new_block_basic(root);
+    fd.bblocks_mut().add_edge(nonconst, nc_t0);
+    fd.bblocks_mut().add_edge(nonconst, nc_t1);
     {
         let pc = ram_addr(&fd, 0x3000);
         let op = fd.new_op(2, pc);
@@ -218,21 +224,30 @@ fn determinedbranch_skips_nonconstant_and_walks_mixed_graph() {
         fd.op_set_opcode(op, TypeOp::new(OpCode::CPUI_CBRANCH, 0, "CPUI_CBRANCH"));
         fd.op_insert_end(op, nonconst);
     }
-    // Block 2: CBRANCH on constant 0.
+    // Block 2: CBRANCH on constant 0 (two out-edges to fold).
     let const0 = fd.bblocks_mut().new_block_basic(root);
+    let c0_t0 = fd.bblocks_mut().new_block_basic(root);
+    let c0_t1 = fd.bblocks_mut().new_block_basic(root);
+    fd.bblocks_mut().add_edge(const0, c0_t0);
+    fd.bblocks_mut().add_edge(const0, c0_t1);
     block_with_cbranch_cond(&mut fd, const0, 0x4000, Some(0));
-    // Block 3: CBRANCH on constant 1.
+    // Block 3: CBRANCH on constant 1 (two out-edges to fold).
     let const1 = fd.bblocks_mut().new_block_basic(root);
+    let c1_t0 = fd.bblocks_mut().new_block_basic(root);
+    let c1_t1 = fd.bblocks_mut().new_block_basic(root);
+    fd.bblocks_mut().add_edge(const1, c1_t0);
+    fd.bblocks_mut().add_edge(const1, c1_t1);
     block_with_cbranch_cond(&mut fd, const1, 0x5000, Some(1));
 
     let mut act = ActionDeterminedBranch::boxed("base");
     let res = act.apply(&mut fd, &mut ctx);
     assert_eq!(res, 0);
-    // removeBranch is the W3-block seam, so even the two constant blocks count 0;
-    // the point is the non-constant block is *skipped* (no panic on getOffset of
-    // a non-constant) and the whole walk completes.
-    assert_eq!(act.base().count, 0);
-    assert_eq!(fd.bblocks_get_size(), 4, "detection walk mutates nothing (seam)");
+    // The two constant-condition branches fold (removeBranch is now wired); the
+    // non-constant block is *skipped* (no panic on getOffset of a non-constant).
+    assert_eq!(act.base().count, 2, "both constant CBRANCHes fold; non-constant skipped");
+    assert_eq!(fd.bblocks_ref().block(const0).size_out(), 1, "const0 collapsed to BRANCH");
+    assert_eq!(fd.bblocks_ref().block(const1).size_out(), 1, "const1 collapsed to BRANCH");
+    assert_eq!(fd.bblocks_ref().block(nonconst).size_out(), 2, "non-constant untouched");
 }
 
 // ===========================================================================

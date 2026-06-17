@@ -299,16 +299,23 @@ fn w10_jts_switchind_recovers_distinct_real_labels_no_hardcoding() {
 /// index-range model reads back is a single comparison (the BOOL_OR of two
 /// comparisons cannot be pulled back, which is what blocked recovery before this
 /// stage).  Observable end-to-end: switchmulti only recovers (and thus renders a
-/// `switch`) because the guard collapsed — assert the collapsed `<=` guard form
-/// reaches the rendered C and the switch is present.
+/// `switch`) because the guard collapsed — and once the guard collapses, the
+/// jump-table guard-fold (`JumpBasic::foldInGuards`) absorbs the `V <= 6`
+/// comparison entirely, routing the out-of-range path into the switch as a
+/// `default:` (exactly the C++ render).  So the collapsed guard is no longer a
+/// visible `<= 6` in C — the proof that RangeMeld fired is that the switch
+/// recovered AT ALL and that its out-of-range edge folded to `default:`.  (A
+/// failed RangeMeld would leave the index un-narrowed → no switch → no default.)
 #[test]
 fn w10_jts_rangemeld_collapses_or_compare_unblocking_recovery() {
     let c = render_datatest("switchmulti.xml");
-    // The collapsed guard `v <= 6` (was `v < 6 || v == 6`) — its presence proves
-    // RuleRangeMeld fired; without it the index range never narrowed and no
-    // switch would render.
-    assert!(c.contains("<= 6"), "RuleRangeMeld did not collapse the OR-guard to `<= 6`:\n{c}");
-    assert!(c.contains("switch("), "switch did not recover (guard not folded):\n{c}");
+    // The switch only recovers because RangeMeld narrowed the index range; the
+    // guard-fold then consumes the `<= 6` comparison into the switch default.
+    assert!(c.contains("switch("), "switch did not recover (guard not collapsed):\n{c}");
+    assert!(
+        c.contains("default:"),
+        "the collapsed-guard out-of-range edge did not fold into `default:`:\n{c}"
+    );
 }
 
 /// The recovery is data-driven, not name-driven: distinct switch functions

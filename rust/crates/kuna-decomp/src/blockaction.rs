@@ -1474,6 +1474,17 @@ pub struct CollapseStructure<'a> {
     /// `new_block_switch` can attach the table to the `BlockSwitch` without a
     /// Funcdata back-pointer (C++ `BlockSwitch(ind)` does `ind->getJumptable()`).
     switch_blocks: std::collections::BTreeMap<BlockId, usize>,
+    /// Per-switch case-edge topology resolved against the **bblocks** graph (the
+    /// underlying basic blocks, whose in/out edges are never severed by the
+    /// sblocks structuring).  Keyed by `(switch_bblocks_block, case_bblocks_block)`
+    /// → `(outindex, isdefault)`.  This reproduces C++ `BlockSwitch::addCase`'s
+    /// `basicbl->getInIndex(switchbl)` / `getInRevIndex` / `isDefaultBranch`, which
+    /// in C++ runs on the live `BlockBasic` (`BlockCopy::subBlock(0)`) — the Rust
+    /// port's dual-arena structuring graph (a BlockCopy mirror) can lose a case's
+    /// in-edge once it is wrapped in a `BlockGoto`, so the case→outindex/default
+    /// resolution must use the stable bblocks topology.  Precomputed in
+    /// `ActionBlockStructure::apply` (which holds `&mut Funcdata`).
+    switch_case_edges: std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
 }
 
 impl<'a> CollapseStructure<'a> {
@@ -1493,6 +1504,7 @@ impl<'a> CollapseStructure<'a> {
             pending_flips: Vec::new(),
             complex_blocks: std::collections::BTreeSet::new(),
             switch_blocks: std::collections::BTreeMap::new(),
+            switch_case_edges: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1519,6 +1531,20 @@ impl<'a> CollapseStructure<'a> {
         switch_blocks: std::collections::BTreeMap<BlockId, usize>,
     ) -> Self {
         self.switch_blocks = switch_blocks;
+        self
+    }
+
+    /// Seed the per-switch case-edge topology resolved against the bblocks graph
+    /// (C++ `BlockSwitch::addCase`'s `basicbl->getInIndex(switchbl)` /
+    /// `getInRevIndex` / `isDefaultBranch`).  Keyed by `(switch_bblocks_block,
+    /// case_bblocks_block)` → `(outindex, isdefault)`.  Builder method; hand-built
+    /// unit-test graphs keep the empty default (those compute the in-index from the
+    /// sblocks topology, which is exact for un-wrapped leaf cases).
+    pub fn with_switch_case_edges(
+        mut self,
+        switch_case_edges: std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
+    ) -> Self {
+        self.switch_case_edges = switch_case_edges;
         self
     }
 
@@ -2539,7 +2565,13 @@ impl<'a> CollapseStructure<'a> {
                 return Ok(true);
             }
         };
-        self.graph.new_block_switch(self.graph_id, &cases, exitblock.is_some(), jt_index)?;
+        self.graph.new_block_switch(
+            self.graph_id,
+            &cases,
+            exitblock.is_some(),
+            jt_index,
+            &self.switch_case_edges,
+        )?;
         Ok(true)
     }
 
@@ -3374,11 +3406,28 @@ impl Action for ActionBlockStructure {
                 }
             }
         }
+        // Precompute the per-switch case-edge topology against the **bblocks**
+        // graph (C++ `BlockSwitch::addCase` resolves `outindex`/`isdefault` on the
+        // live BlockBasic, whose switch in/out edges structuring never severs).  For
+        // each switch BlockBasic, map `(switch_bb, target_bb) → (outindex,
+        // isdefault)` using the first out-edge to each target (C++ `getInIndex`
+        // returns the first matching in-edge).
+        let mut switch_case_edges: std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)> =
+            std::collections::BTreeMap::new();
+        for &sbb in switch_blocks.keys() {
+            let nout = data.bblocks_ref().block(sbb).size_out();
+            for j in 0..nout {
+                let target = data.bblocks_ref().block(sbb).get_out(j);
+                let isdef = data.bblocks_ref().block(sbb).is_default_branch(j);
+                switch_case_edges.entry((sbb, target)).or_insert((j, isdef));
+            }
+        }
         // CollapseStructure collapse(graph); collapse.collapseAll();
         let sroot = data.sblocks_root();
         let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
             .with_complex_blocks(complex_blocks)
-            .with_switch_blocks(switch_blocks);
+            .with_switch_blocks(switch_blocks)
+            .with_switch_case_edges(switch_case_edges);
         let collapse_res = collapse.collapse_all();
         let cc = collapse.get_change_count();
         // Realize the deferred data-flow half of BlockBasic::negateCondition: each

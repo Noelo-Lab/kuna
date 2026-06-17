@@ -36,7 +36,7 @@
 //! | `ActionDoNothing` | `"donothing"` | `rule_repeatapply` | partial (flags realized, surgery SEAM) |
 //! | `ActionLateDoNothing` | `"latedonothing"` | `0` | partial (flags realized, surgery SEAM) |
 //! | `ActionRedundBranch` | `"redundbranch"` | `0` | partial (splice realized, removeBranch SEAM) |
-//! | `ActionDeterminedBranch` | `"determinedbranch"` | `0` | partial (detect realized, removeBranch SEAM) |
+//! | `ActionDeterminedBranch` | `"determinedbranch"` | `0` | realized (detect + `removeBranch`) |
 //! | `ActionNormalizeSetup` | `"normalizesetup"` | `rule_onceperfunc` | realized `reset`, SEAM body (W4 proto) |
 //!
 //! **The boundary** is the next class, [`ActionDeadCode`] (`coreaction.hh:565`,
@@ -947,10 +947,13 @@ impl Action for ActionDeterminedBranch {
         //   int4 num = ((val!=0)!=cbranch->isBooleanFlip()) ? 0 : 1;
         //   data.removeBranch(bb,num); count += 1;
         //
-        // The detection — last op is a CBRANCH on a constant condition and the
-        // computed `num` — is **realized** (bb_op_tail == lastOp, code/getIn/
-        // isConstant/getOffset/isBooleanFlip all exist).  Only the final
-        // removeBranch edge removal is the funcdata_block seam.
+        // The last op of each block is a CBRANCH on a constant condition; the dead
+        // edge `num` is severed by `removeBranch`, collapsing the conditional into
+        // an unconditional branch.  `removeBranch` (funcdata_block) is now ported
+        // (used by `ActionUnreachable` above), so this is a complete transcription.
+        // `branchRemoveInternal` only severs an out-edge — it never removes a block
+        // — so `bblocks_get_size()` is stable across the loop (matching the C++
+        // `for(i=0;i<graph.getSize();++i)`).
         let size = data.bblocks_get_size();
         for i in 0..size {
             let bb = data.bblocks_get_block(i);
@@ -958,25 +961,35 @@ impl Action for ActionDeterminedBranch {
                 Some(op) => op,
                 None => continue, // lastOp() == (PcodeOp *)0
             };
-            let cbranch_op = data.obank().get(cbranch).expect("determinedbranch: cbranch");
-            if cbranch_op.code() != OpCode::CPUI_CBRANCH {
+            let (code, nin, is_flip) = {
+                let cbranch_op = data.obank().get(cbranch).expect("determinedbranch: cbranch");
+                (cbranch_op.code(), cbranch_op.num_input(), cbranch_op.is_boolean_flip())
+            };
+            if code != OpCode::CPUI_CBRANCH {
                 continue;
             }
-            let cond_vn_id = match cbranch_op.get_in(1) {
+            // A valid CBRANCH always has 2 inputs; a transient sub-2-input op (e.g.
+            // mid-conversion) is not a determined branch — skip it (C++ `getIn(1)`
+            // assumes the canonical form, which `bb_op_tail` may briefly violate).
+            if nin < 2 {
+                continue;
+            }
+            let cond_vn_id = data.obank().get(cbranch).expect("determinedbranch: cbranch").get_in(1);
+            let cond_vn_id = match cond_vn_id {
                 Some(v) => v,
                 None => continue,
             };
-            let cond_vn = data.vbank().get(cond_vn_id).expect("determinedbranch: cond vn");
-            if !cond_vn.is_constant() {
-                continue;
-            }
-            let val: uintb = cond_vn.get_offset();
-            let is_flip = cbranch_op.is_boolean_flip();
+            let val: uintb = {
+                let cond_vn = data.vbank().get(cond_vn_id).expect("determinedbranch: cond vn");
+                if !cond_vn.is_constant() {
+                    continue;
+                }
+                cond_vn.get_offset()
+            };
             // int4 num = ((val!=0)!=cbranch->isBooleanFlip()) ? 0 : 1;
-            let _num: i32 = if (val != 0) != is_flip { 0 } else { 1 };
-            // SEAM(W3-block): Funcdata::removeBranch(bb,num) not in the merged
-            // tree.  The constant-condition detection and `num` selection above
-            // are realized; the edge removal (and `count += 1`) is deferred.
+            let num: kuna_base::types::int4 = if (val != 0) != is_flip { 0 } else { 1 };
+            // data.removeBranch(bb,num); count += 1;
+            self.base.count += data.remove_branch(bb, num).map(|_| 1).unwrap_or(0);
         }
         0
     }
