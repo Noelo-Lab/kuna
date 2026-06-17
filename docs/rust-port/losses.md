@@ -2453,3 +2453,25 @@ The diff ports two real upstream pieces: (a) `ScopeInternal::clearUnlockedCatego
 - substrate preserved: branch `rport/w10-enum4-loadresize` @ a9a686a (NOT merged to rust-port;
   faithful, regressed-set EMPTY, cargo test 0-fail, PARITY OK). [[kuna-rust-port]]
 - recorded by the integrator after the enum4 wave (2026-06-17).
+
+## LOSS-229 — Partial Merge (9) blocked: mapped COPY dead-code-eliminated before the merge pass
+
+- kind: deferred (shared-infra root)
+- what: `partialmerge.xml` #1/#2/#4/#5/#6/#7/#8/#9/#10 fail. The root is NOT the merge pass
+  (`merge.rs` is faithful) — it is that a `mapped`/addr-tied register-write COPY (modeling
+  `mov reg32,[mem]`) is forwarded by `RulePropagateCopy` (ruleaction.cc:3945, rust
+  ruleaction_3.rs:1893) to its sole reader (the `+10` INT_ADD), orphaning the COPY output, which
+  `ActionDeadCode` (coreaction.cc:4146) then deletes IN THE MAIN LOOP — before the merge group
+  (coreaction.cc:6003-6011). So `DynamicHash::findVarnode` (dynamic.cc:571) gathers 0 ops at the
+  firstuse address and the late `ActionDynamicSymbols` mapping never binds; #4/#5 (no `map hash`)
+  fail the same way (the addr-tied param intermediate is gone before merge).
+- why blocked: the fix is in shared infra not owned by a merge wave — either (a)
+  `RulePropagateCopy`/`ActionDeadCode` must honor `Varnode::mapped`/`isMapped()` (varnode.hh:255)
+  and refuse to forward/delete a mapped COPY output (SAME root as the convert-dynhash B2 copy-elim
+  note in `reviews/w10-convert-dynhash.md`), or (b) the x86-64 lift/heritage of 32-bit register
+  writes produces an extra collapsible COPY that upstream keeps pinned. Loci: `ruleaction_3.rs`
+  RulePropagateCopy guard, `coreaction_render.rs` ActionDeadCode, `heritage.rs`. [[kuna-rust-port]]
+- restoration: a dedicated wave that makes copy-propagation + dead-code honor the `mapped` flag
+  (faithful to C++ — verify whether C++ `RulePropagateCopy::applyOp` guards on
+  `vn->isAddrForce()`/`isMapped()`). This likely also lands the convert-dynhash B2 cases.
+- recorded by the integrator after the Partial Merge wave BLOCKED (2026-06-17).
