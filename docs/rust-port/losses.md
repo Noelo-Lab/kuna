@@ -2340,3 +2340,85 @@ The diff ports two real upstream pieces: (a) `ScopeInternal::clearUnlockedCatego
   `annotateRawStackPtr` render chain (the cast/printc plane) lands; loop 2 of `restrict_local`
   then becomes active. This is the documented one-call flip.
 - recorded by the RSP-L4L5 independent verifier (round 1).
+
+## LOSS — heapstring transform half unported (w10-heapstring-constseq)
+
+- what: `RuleStringStore`/`RuleStringCopy` collect side + `select_string_copy_function`
+  are ported and faithful, but the `transform()`/`buildStringCopy()` half (the
+  CALLOTHER/builtin-strncpy insertion) is NOT — both `apply_op` bodies decline
+  (`return 0`), byte-identical to the rule being disabled
+  (`constseq.rs:427,494`).
+- why gated: `transform()` needs three subsystems not yet on the Rust seam —
+  `Funcdata::getInternalString` + the `StringManager`/`StringManagerUnicode`
+  registration (no `StringManager` field reachable from a live `Funcdata`), the
+  typed-pointer PTRSUB/PTRADD builder (`constructTypedPointer`/`buildStringCopy`),
+  and the W8 printer's CALLOTHER user-op-name resolution + `BUILTIN_STRINGDATA`→
+  string-literal lookup (`printc.cc:1609`). Several of these touch reserved files
+  (printc.rs) this wave.
+- net effect: +0 on the 675 datatest count (400 = 400, regressed-set EMPTY,
+  new-pass EMPTY; FAIL set byte-identical to base `79e51bd`). `heapstring.xml`
+  Heap string #1–#7 remain FAIL (independently re-run on the branch harness).
+- what landed this wave: the previously-stubbed `select_string_copy_function` is
+  now the faithful `charType`-identity selection (C++ `constseq.cc:161-175`) via
+  `Rc::ptr_eq` against the factory's interned core char types
+  (STRNCPY/WCSNCPY/MEMCPY with the correct char-count vs byte-count index). It is
+  correct but **dormant** — the rule never reaches it while the transform half is
+  gated.
+- NO special-casing: grep over the diff for string literals / datatest addresses /
+  name comparisons → zero hits. The selection is general, factory-driven.
+- restoration: wire `getInternalString`+StringManager, the typed-pointer builder,
+  and the printer CALLOTHER/STRINGDATA rendering; un-gate both `apply_op` bodies.
+- recorded by the heapstring-constseq independent verifier (round 1).
+
+## LOSS-226 — convert17-equate-rebind REJECTED round 1: faithful work landed on a RESERVED file (funcdata.rs)
+
+- branch: rport/w10-convert17-equate-rebind @ cc31cde (over merge-base 79e51bd = 400/675).
+- verdict: REJECT (independent verifier, round 1). Single dispositive ground: the diff edits the
+  RESERVED `rust/crates/kuna-decomp/src/funcdata.rs` (ActionReturnSplit-wave reserved file) — +67
+  lines, the `copy_symbol` + `copy_symbol_if_valid` SymbolEntry-copy primitives. Charter REJECT
+  condition "touches a reserved file" met. Secondary flag: `printc.rs` (+14/-1) is contended by the
+  open printc waves (b1b2 LOSS-220 #2), though not on this verifier's explicit reserved list.
+- NOT a correctness loss: everything else is GREEN and independently re-verified. The
+  `PcodeOp::collapse` markedInput plumbing (op.cc:473-495), `collapseConstantSymbol` opcode switch
+  (op.cc:527-564), `copySymbol`/`copySymbolIfValid` (varnode.cc:512-541), and the printc
+  `doEmitWideCharPrefix() && sz>1` flip (printc.cc:1417) are line-faithful; `dynamic.rs`/`calc_hash`
+  is 0-line diff (hash math UNCHANGED — the fix is the constant's re-BINDING across the size-fold, not
+  the hash). No special-casing (forbidden literals only in the 3 adversarial-test fixtures; production
+  fns clean). Real parity: Convert #17 genuinely passes (was b1b2 LOSS-220 #3's residual seam).
+- net effect: branch 401 vs merge-base 400, regressed-set EMPTY, gained = exactly {Convert #17};
+  displayformat/partialunion/16 convert equates/boolless/readstruct/condconst byte-identical; cargo
+  test 3653/0; clippy --lib clean; C++ oracle 675/675 + B0 untouched.
+- restoration: re-spin OFF funcdata.rs — relocate `copy_symbol`/`copy_symbol_if_valid` to a
+  non-reserved seam (or land on the ActionReturnSplit wave that owns funcdata.rs); coordinate the
+  printc.rs one-liner with the open printc waves. The transcription itself can land verbatim once off
+  the reserved surface.
+- recorded by the convert17-equate-rebind independent verifier (round 1).
+
+## LOSS-227 — w10-convert17-equate-rebind round 2: ACCEPT_WITH_LOSSES; round-1 reserved-file blocker resolved, printc.rs one-liner still contended by open printc waves
+
+- branch: rport/w10-convert17-equate-rebind @ 2bbfd5f (1 commit over merge-base 79e51bd = 400/675).
+- verdict: ACCEPT_WITH_LOSSES (independent verifier, round 2). The round-1 REJECT (LOSS-226) is
+  RESOLVED: `copy_symbol` + `copy_symbol_if_valid` relocated OFF the reserved `funcdata.rs` (now
+  0-line diff) to the non-reserved `funcdata_op.rs`. The diff touches exactly 3 rust files —
+  funcdata_op.rs, ruleaction_3.rs, printc.rs — NONE on the reserved set
+  {coreaction_infertypes, funcdata_spacebase, varmap, coreaction_casts, funcdata, funcdata_block,
+  blockaction}. All reserved files + dynamic.rs + coreaction_cleanup.rs + database.rs: 0-line diff.
+- independently re-verified GREEN: branch 401 vs merge-base 400, **regressed-set EMPTY**, gained =
+  exactly {Convert #17}; Convert #17 genuinely passes (stringmatch `recv_signed\(L'a'\)` min=1 max=1,
+  not vacuous); the 16 other convert equates / displayformat / partialunion / boolless / readstruct /
+  condconst byte-identical; cargo test --workspace 3653/0; the 3 adversarial w10 convert17 tests ran +
+  passed; clippy -p kuna-decomp --lib clean; C++ oracle 675/675 + B0 untouched by construction (only
+  rust/ touched). calc_hash (dynamic.rs) 0-line diff — hash math UNCHANGED; the fix is the constant's
+  re-BINDING across the size-fold. Faithful transcription of op.cc:473-495 / 527-564,
+  varnode.cc:512-541, database.cc:641-658, printc.cc:1417/1572. No special-casing (forbidden literals
+  only in test fixtures).
+- LOSS (the sole residual): the `printc.rs` one-line `doEmitWideCharPrefix()` flip (false→true, +14/-1)
+  lands on a file contended by the two open printc waves (per LOSS-220 #2). NOT a reserved-file edit on
+  this verifier's charter (printc.rs not in the reserved set) → not a REJECT — but it must be
+  coordinated with those waves at merge time to avoid a textual collision. The flip itself is faithful
+  (matches C++ printc.cc:1417 `doEmitWideCharPrefix() && sz>1`).
+- minor: the charter named the expected edit surface as "dynamic.rs/database.rs + tests"; the actual
+  (faithful) edit surface is funcdata_op.rs/ruleaction_3.rs/printc.rs + tests. dynamic.rs & database.rs
+  are both 0-diff. Disclosed; not a defect — the named files were a hypothesis, the real seam is the
+  collapse-constant-symbol path.
+- recorded by the convert17-equate-rebind independent verifier (round 2).

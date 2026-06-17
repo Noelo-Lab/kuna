@@ -1,5 +1,26 @@
 # kuna Progress Log
 
+## Session (2026-06-17b) — rust-port W10: 400 → 408/675; ActionReturnSplit + Convert #17
+
+**Two porter-committed survivor waves integrated via the main loop (+8 → 408).** Both waves'
+independent verify phases died on a transient API 529 throttle; their ports were committed
+before the death, so they were recovered and re-gated in the main loop (full per-assertion
+passing-set diff, fence catcher, switch-no-regression, oracle PARITY, C++ untouched).
+- **ActionReturnSplit + Funcdata::nodeSplit (+7 → 407)** — return-block duplication so the
+  structurer recovers per-arm `return <expr>;`. switchmulti 1/9 → 8/9 (Switch-Multi
+  #2/#4/#5/#6/#7/#8/#9; #3 pre-existing). Merge `7339946`; review
+  `reviews/w10-returnsplit-nodesplit.md`. Gate: cargo test 3666/0, `[675,407]`, regressed-set
+  EMPTY, PARITY OK.
+- **Convert #17 — equate survives the size-4 DynamicHash fold (+1 → 408)** — `recv_signed(L'a')`
+  now byte-identical to the oracle. The remaining convert fails (#2/#6/#10/#14) are a separate
+  pre-existing negative-constant rendering seam. Merge `71f495a`; review
+  `reviews/w10-convert17-equate-rebind.md`. Gate: cargo test 3669/0, `[675,408]`, regressed-set
+  EMPTY, PARITY OK.
+
+Server throttle finding: 7 concurrent heavy waves tripped a rate-limit/529; ~3–4 is the real
+ceiling. Dead waves to relaunch when stable: namespace (+3), enum4 (+1), De Morgan (+5–7),
+and the RSP-harvest &v1-render layer (L4/L5 branch @ `7f1f4df`, CORRECTION-10).
+
 ## Session (2026-06-16d/17) — rust-port W10: 307 → 400/675; RSP KEYSTONE + switchind 16/16
 
 **RSP #8 guard-fold LANDED (+3 → 400): switchind now FULLY recovers 16/16.** Enabled
