@@ -1,6 +1,19 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 476/675; +...call-return/deindirect, SUBPIECE-cast
+## Session (2026-06-17c) — rust-port W10: 408 → 479/675; +...SUBPIECE-cast, ModuloAlt
+
+**ModuloAlt — RuleDoubleArithShift clone-gate fix +3 → 479.** The rule was registered under group
+`"analysis"` but its clone gate tested the placeholder name `"doublearithshift"` → dropped from
+every ActionPool, never ran (ruleaction_2.rs:1009; sibling RuleDoubleShift had the same bug, already
+fixed). Fix: gate on `contains("analysis")||contains("doublearithshift")`. The uncollapsed double-
+shift in RuleDivOpt's sign-correction was blocking RuleModOpt. Gained ModuloAlt #2/#4 + If/Switch #4.
+Gate: `[675,479]`, regressed-set EMPTY, B0 byte-equal, switch intact, PARITY OK. Review
+`reviews/w10-moduloalt.md`. FLAGGED follow-up: RuleConcatShift (ruleaction_2.rs:1064) has the
+identical mis-gating (one-liner). ModuloAlt #3 = CMOVNS branchless-sign-mod (RuleSignMod2nOpt, gated
+on conditional-move elim). BLOCKED-this-round diagnoses → losses: LOSS-233 (Copy trim = missing CFG
+fall-through/exit block), LOSS-074 REFINEMENT (float-NaN = RuleConditionalMove seam, RuleIgnoreNan
+substrate 56dec01), LOSS-232 (Relative ptrs = buildLocaltypes seed), LOSS-156(D3) (Chain B: restructure
+tail DONE @ 04cd2a2, 2 gaps left — wave running).
 
 **SUBPIECE-cast render arm ENABLED +3 → 476 (Chain A cascade; closes LOSS-230 Family-1).** With
 the call-return IR bug fixed, enabled `printc.rs:3826` `op_subpiece_ir` cast arm (opSubpiece
