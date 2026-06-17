@@ -215,9 +215,13 @@ fn mixfloatint_multislot_group_recovers_full_arity() {
 /// (3) NO-REGRESSION fence: models that do not depend on the `<group>` decode
 /// (or whose recovery was already correct) must keep their exact decompiled
 /// body.  Post-RSP-keystone (CORRECTION-7 stale-fence update): `nanops` now
-/// recovers BOTH `float8` parameters (`void nanops(float8,float8)`), matching the
-/// oracle — the keystone's input-active recovery no longer drops the second
-/// XMM-passed float arg.  `boolless` is `(void)` in the oracle and must stay so.
+/// recovers BOTH `float8` parameters, matching the oracle — the keystone's
+/// input-active recovery no longer drops the second XMM-passed float arg.  Since
+/// the W10 mixed-float/int port the recovered (unlocked) parameter declarations
+/// also carry their default `aN` names (the C++ `ProtoStoreSymbol` →
+/// `buildDefaultName` surface), so the oracle-faithful signature is
+/// `void nanops(float8 a0,float8 a1)`.  `boolless` is `(void)` in the oracle
+/// (no params, no default-name fallback) and must stay so.
 ///
 /// `promote_compare` exercises the x86 `<addr space="join" piece1="EDX"
 /// piece2="EAX"/>` struct-return output pentry: once the join-pentry proto model
@@ -231,7 +235,7 @@ fn mixfloatint_multislot_group_recovers_full_arity() {
 fn unrelated_models_keep_exact_signature() {
     for (stem, sig) in [
         ("boolless", "uint1 boolless(void)"),
-        ("nan", "void nanops(float8,float8)"),
+        ("nan", "void nanops(float8 a0,float8 a1)"),
         ("promotecompare", "xunknown4 promote_compare(char *"),
     ] {
         let a = match dump_body(&rust_test_bin(), stem) {

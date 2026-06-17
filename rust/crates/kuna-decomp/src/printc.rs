@@ -1615,7 +1615,7 @@ impl PrintC {
         // declared type + name (`twostruct *ptr`, `int8 a`) via the C-declarator
         // builder; the backing-`Symbol` path (`emitVarDecl`) is the W4 scope
         // surface, so the param's own stored name + type are used directly.
-        self.emit_prototype_inputs(fd, &markup);
+        self.emit_prototype_inputs(fd, arch, &markup);
         self.emit.close_paren(")", id2);
         self.emit.close_group(id1g);
         self.emit.end_func_proto(idp);
@@ -1697,7 +1697,7 @@ impl PrintC {
     /// type (set by `update_all_types` from the parsed `PrototypePieces`), so the
     /// name + the C-declarator are rendered directly here — observationally the
     /// same text the C++ `emitVarDecl` produces for a named, typed parameter.
-    fn emit_prototype_inputs(&mut self, fd: &Funcdata, markup: &MarkupRef) {
+    fn emit_prototype_inputs(&mut self, fd: &Funcdata, arch: &Architecture, markup: &MarkupRef) {
         let proto = fd.get_func_proto();
         if !proto.has_store() {
             self.emit.tag_type("void", SyntaxHighlight::TypeColor, markup);
@@ -1720,7 +1720,23 @@ impl PrintC {
                     self.emit.print(",", SyntaxHighlight::NoColor);
                 }
                 print_comma = true;
-                let name = param.get_name();
+                // The function-being-decompiled's prototype is backed by a
+                // `ProtoStoreSymbol` in C++; a recovered (unlocked) parameter with
+                // an empty stored name resolves through its scope symbol to the
+                // default name (`Scope::buildDefaultName`, the
+                // `Symbol::function_parameter` branch).  kuna's merged-tree proto
+                // store keeps the literal empty name, so reproduce that default
+                // here: angr-style `a<i>`, ghidra-style `param_<i+1>`.
+                let default_name;
+                let mut name = param.get_name();
+                if name.is_empty() {
+                    default_name = if arch.name_style_angr {
+                        crate::database::kuna_arg_name(i)
+                    } else {
+                        format!("param_{}", i + 1)
+                    };
+                    name = default_name.as_str();
+                }
                 match param.get_type() {
                     Some(ty) => {
                         let (front, back) = declarator_parts(ty);
