@@ -2777,6 +2777,10 @@ impl PrintC {
             // shared `op_pull_ir`, falling back to `ZPULL(...)`/`SPULL(...)` when
             // the structure/bitfield can't be recovered.
             OpCode::CPUI_ZPULL | OpCode::CPUI_SPULL => self.op_pull_ir(fd, arch, op),
+            // BOOL_NEGATE (printc.cc:834 opBoolNegate): the `!x` unary, with the
+            // double-negation cancellation (`negatetoken`) and the
+            // flip-the-next-operator optimization (`checkPrintNegation`).
+            OpCode::CPUI_BOOL_NEGATE => self.op_bool_negate_ir(fd, arch, op),
             // SUBPIECE (printc.cc:863 opSubpiece): a field-extraction special-print
             // (`symbol.field`) or the cast/functional dispatch.
             OpCode::CPUI_SUBPIECE => self.op_subpiece_ir(fd, arch, op),
@@ -2850,6 +2854,67 @@ impl PrintC {
         self.push_op(tok, Some(op_key(op)));
         if let Some(v0) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
             self.push_vn_ir(fd, arch, v0, op);
+        }
+    }
+
+    /// C++ `PrintC::checkPrintNegation` (printc.cc:2464): can the value `vn` be
+    /// rendered with its *next* operator flipped (so the `!` is absorbed into a
+    /// comparison) instead of emitting an explicit `!`?  True when `vn` is an
+    /// implied, written value whose defining op-code has a boolean-flip complement
+    /// (`get_booleanflip` != `CPUI_MAX`).
+    fn check_print_negation(&self, fd: &Funcdata, vn: VarnodeId) -> bool {
+        let v = match fd.vbank().get(vn) {
+            Some(v) => v,
+            None => return false,
+        };
+        if !v.is_implied() {
+            return false;
+        }
+        if !v.is_written() {
+            return false;
+        }
+        let def = match v.get_def() {
+            Some(d) => d,
+            None => return false,
+        };
+        let code = match fd.obank().get(def) {
+            Some(o) => o.code(),
+            None => return false,
+        };
+        let mut reorder = false;
+        kuna_num::opcodes::get_booleanflip(code, &mut reorder) != OpCode::CPUI_MAX
+    }
+
+    /// C++ `PrintC::opBoolNegate` (printc.cc:834): print the `!x` boolean negate,
+    /// but check for opportunities to flip the next operator instead.
+    ///   - If we are negated by a previous BOOL_NEGATE (`negatetoken` is set),
+    ///     consume that mod and print our input unmodified (double negation cancels).
+    ///   - Else if the input's next operator can be flipped, don't print `!`; print
+    ///     the input with `negatetoken` set so its comparison renders its complement.
+    ///   - Otherwise print `!` followed by our input.
+    fn op_bool_negate_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
+        if self.context.is_set(modifiers::NEGATETOKEN) {
+            // Negated by a previous BOOL_NEGATE: consume the mod, print input as-is.
+            self.context.unset_mod(modifiers::NEGATETOKEN);
+            if let Some(vn) = in0 {
+                self.push_vn_ir(fd, arch, vn, op);
+            }
+        } else if in0.map(|vn| self.check_print_negation(fd, vn)).unwrap_or(false) {
+            // The next operator can be flipped: print the input with `negatetoken`
+            // active (C++ `pushVn(in0, op, mods|negatetoken)`).
+            self.context.push_mod();
+            self.context.set_mod(modifiers::NEGATETOKEN);
+            if let Some(vn) = in0 {
+                self.push_vn_ir(fd, arch, vn, op);
+            }
+            self.context.pop_mod();
+        } else {
+            // Otherwise print ourselves: `!` then the input.
+            self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
+            if let Some(vn) = in0 {
+                self.push_vn_ir(fd, arch, vn, op);
+            }
         }
     }
 
