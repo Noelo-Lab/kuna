@@ -1874,6 +1874,216 @@ impl Funcdata {
         bprime
     }
 
+    /// Split control-flow into a basic block, duplicating its p-code into a new
+    /// block (C++ `Funcdata::nodeSplit`, `funcdata_block.cc:864`).
+    ///
+    /// P-code is duplicated into another block, and control-flow is modified so
+    /// the new block takes over flow from one input edge to the original block.
+    /// The original block must have no out edges and more than one (non-redundant)
+    /// in edge.
+    pub fn node_split(&mut self, b: BlockId, inedge: int4) -> KunaResult<()> {
+        // Split node b along inedge.
+        if self.bblocks_ref().block(b).size_out() != 0 {
+            return Err(KunaError::lowlevel(
+                "Cannot (currently) nodesplit block with out flow",
+            ));
+        }
+        let size_in = self.bblocks_ref().block(b).size_in();
+        if size_in <= 1 {
+            return Err(KunaError::lowlevel("Cannot nodesplit block with only 1 in edge"));
+        }
+        // Detect redundant (duplicate) in edges via the mark bit, mirroring the
+        // C++ setMark/clearMark pass.
+        let mut seen: std::collections::BTreeSet<BlockId> = std::collections::BTreeSet::new();
+        for i in 0..size_in {
+            let inbl = self.bblocks_ref().block(b).get_in(i);
+            if !seen.insert(inbl) {
+                return Err(KunaError::lowlevel(
+                    "Cannot nodesplit block with redundant in edges",
+                ));
+            }
+        }
+
+        // Create duplicate block (control-flow half).
+        let bprime = self.node_split_block_edge(b, inedge);
+        // Copy b's ops into bprime (p-code half).
+        let mut cloner = CloneBlockOps::new();
+        cloner.clone_block(self, b, bprime, inedge)?;
+
+        // We would need to patch outputs here for the more general case when b
+        // has out edges (any references not in b to varnodes defined in b need
+        // MULTIEQUALs defined in b's out blocks).  b has no out edges here.
+        self.structure_reset();
+        Ok(())
+    }
+
+    /// Gather all structured blocks that have a \e goto edge to a RETURN block
+    /// (C++ `ActionReturnSplit::gatherReturnGotos`, `blockaction.cc:2206`).
+    ///
+    /// Collects BlockGoto/BlockIf nodes (in the structured `sblocks` tree) whose
+    /// unstructured branch flows to `parent` (a basic block ending in RETURN).
+    /// Each found block is marked (`set_mark`) and pushed into `vec`.
+    /// `parent` is a `bblocks` basic block id.
+    fn gather_return_gotos(&mut self, parent: BlockId, vec: &mut Vec<BlockId>) {
+        use crate::block::BlockType;
+        let size_in = self.bblocks_ref().block(parent).size_in();
+        for i in 0..size_in {
+            let inbl = self.bblocks_ref().block(parent).get_in(i);
+            // bl = parent->getIn(i)->getCopyMap();  (bblock -> structured copy)
+            let mut bl = self.bblocks_ref().block(inbl).get_copy_map();
+            while let Some(cur) = bl {
+                if !self.sblocks_ref().block(cur).is_mark() {
+                    let mut ret: Option<BlockId> = None;
+                    let ty = self.sblocks_ref().block(cur).get_type();
+                    if ty == BlockType::Goto {
+                        if self.sblocks_ref().goto_prints(cur) {
+                            ret = self.sblocks_ref().block(cur).get_goto_target();
+                        }
+                    } else if ty == BlockType::If {
+                        // ifgoto block: get target, otherwise null.
+                        ret = self.sblocks_ref().block(cur).get_if_goto_target();
+                    }
+                    if let Some(r) = ret {
+                        // C++ descends `while(ret->getType()!=t_basic) ret=ret->subBlock(0)`
+                        // then tests `ret == parent` (a BlockBasic pointer).  In this
+                        // cross-arena port the sblocks leaves are `BlockCopy` nodes
+                        // (t_copy) whose `copy` field is the *bblocks* id they mirror;
+                        // `descend_to_bblock` walks subBlock(0) through the structured
+                        // subtree and resolves the leaf Copy to its bblock, so the
+                        // comparison is `leaf_bblock == parent` (both bblocks ids).
+                        if self.descend_to_bblock(r) == Some(parent) {
+                            self.sblocks_mut().block_mut(cur).set_mark();
+                            vec.push(cur);
+                        }
+                    }
+                }
+                bl = self.sblocks_ref().block(cur).get_parent();
+            }
+        }
+    }
+
+    /// Descend a structured (`sblocks`) block to the `bblocks` basic block it
+    /// fronts (the cross-arena form of the C++
+    /// `while(ret->getType()!=t_basic) ret=ret->subBlock(0)` walk that ends at a
+    /// BlockBasic).  Walks `subBlock(0)` until a `BlockCopy` leaf, then returns the
+    /// `copy` field (the mirrored `bblocks` id).  `None` if no leaf is reachable.
+    fn descend_to_bblock(&self, start: BlockId) -> Option<BlockId> {
+        use crate::block::BlockType;
+        let mut r = start;
+        loop {
+            match self.sblocks_ref().block(r).get_type() {
+                BlockType::Copy => return self.sblocks_ref().block(r).get_copy(),
+                BlockType::Basic => return Some(r), // single-arena fallback
+                _ => match self.sblocks_ref().sub_block(r, 0) {
+                    Some(s) => r = s,
+                    None => return None,
+                },
+            }
+        }
+    }
+
+    /// Given a basic block ending in a RETURN, determine if there is any other
+    /// substantive operation in the block (C++ `ActionReturnSplit::isSplittable`,
+    /// `blockaction.cc:2242`).  Only MULTIEQUAL / COPY / RETURN ops with
+    /// constant/annotation/non-free inputs are allowed.
+    fn return_split_is_splittable(&self, b: BlockId) -> bool {
+        let mut cur = self.bb_op_head(b);
+        while let Some(op) = cur {
+            let o = self.obank().get(op).expect("isSplittable: stale op");
+            let opc = o.code();
+            let next = o.basic_neighbours().1;
+            match opc {
+                OpCode::CPUI_MULTIEQUAL => {}
+                OpCode::CPUI_COPY | OpCode::CPUI_RETURN => {
+                    let n = o.num_input();
+                    for i in 0..n {
+                        let inv = o.get_in(i).expect("isSplittable: input slot");
+                        let v = self.vbank().get(inv).expect("isSplittable: stale vn");
+                        if v.is_constant() || v.is_annotation() {
+                            continue;
+                        }
+                        if v.is_free() {
+                            return false;
+                        }
+                    }
+                }
+                _ => return false,
+            }
+            cur = next;
+        }
+        true
+    }
+
+    /// Split the epilog of the function (C++ `ActionReturnSplit::apply`,
+    /// `blockaction.cc:2265`).  Returns the number of edges split (the action's
+    /// change count).
+    pub(crate) fn return_split_apply(&mut self) -> int4 {
+        let mut count = 0;
+        // if (data.getStructure().getSize() == 0) return 0;
+        if self.sblocks_get_size() == 0 {
+            return 0; // Some other restructuring happened first
+        }
+        let mut splitedge: Vec<int4> = Vec::new();
+        let mut retnode: Vec<BlockId> = Vec::new();
+
+        let return_ops: Vec<OpId> = self.obank().iter_code(OpCode::CPUI_RETURN).collect();
+        for op in return_ops {
+            if self.obank().get(op).expect("returnsplit: stale op").is_dead() {
+                continue;
+            }
+            let parent = match self.obank().get(op).expect("returnsplit").get_parent() {
+                Some(p) => p,
+                None => continue,
+            };
+            if self.bblocks_ref().block(parent).size_in() <= 1 {
+                continue;
+            }
+            if !self.return_split_is_splittable(parent) {
+                continue;
+            }
+            let mut gotoblocks: Vec<BlockId> = Vec::new();
+            self.gather_return_gotos(parent, &mut gotoblocks);
+            if gotoblocks.is_empty() {
+                continue;
+            }
+
+            let mut splitcount = 0;
+            // splitedge holds edges to split, biggest index first, so edge removal
+            // does not shift the index of remaining edges.
+            let size_in = self.bblocks_ref().block(parent).size_in();
+            for i in (0..size_in).rev() {
+                let inbl = self.bblocks_ref().block(parent).get_in(i);
+                let mut bl = self.bblocks_ref().block(inbl).get_copy_map();
+                while let Some(cur) = bl {
+                    if self.sblocks_ref().block(cur).is_mark() {
+                        splitedge.push(i);
+                        retnode.push(parent);
+                        bl = None;
+                        splitcount += 1;
+                    } else {
+                        bl = self.sblocks_ref().block(cur).get_parent();
+                    }
+                }
+            }
+
+            for &gb in &gotoblocks {
+                self.sblocks_mut().block_mut(gb).clear_mark(); // Clear our marks
+            }
+
+            // Can't split ALL in edges.
+            if size_in == splitcount {
+                splitedge.pop();
+                retnode.pop();
+            }
+        }
+
+        for i in 0..splitedge.len() {
+            self.node_split(retnode[i], splitedge[i]).expect("ActionReturnSplit: nodeSplit");
+            count += 1;
+        }
+        count
+    }
+
     // --- Block-cover helpers (BlockBasic::setInitialRange/copyRange/mergeRange)
 
     /// First address covered by basic block `bb` (C++ `BlockBasic::getStart`,
@@ -2010,6 +2220,205 @@ impl Funcdata {
         let sroot = sb.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
         sb.root = Some(sroot);
         *self.sblocks_mut() = sb;
+    }
+}
+
+/// Helper for cloning the p-code ops of a basic block during a node-split
+/// (C++ `CloneBlockOps`, `funcdata_block.cc` / `funcdata.hh`).
+///
+/// Holds the clone bookkeeping: `clone_list` is the ordered (origOp, cloneOp)
+/// pairs, and `orig_to_clone` maps an original op to its clone so input
+/// Varnodes can be re-wired in [`patch_inputs`](CloneBlockOps::patch_inputs).
+struct CloneBlockOps {
+    /// Ordered (origOp, cloneOp) pairs (C++ `cloneList`).
+    clone_list: Vec<(OpId, OpId)>,
+    /// Map from original op to its clone (C++ `origToClone`).
+    orig_to_clone: std::collections::BTreeMap<OpId, OpId>,
+}
+
+impl CloneBlockOps {
+    fn new() -> Self {
+        CloneBlockOps { clone_list: Vec::new(), orig_to_clone: std::collections::BTreeMap::new() }
+    }
+
+    /// Make a basic clone of the p-code op copying its basic control-flow
+    /// properties (C++ `CloneBlockOps::buildOpClone`, `funcdata_block.cc:970`).
+    /// In the case of a \e branch, the op is not cloned and `None` is returned.
+    fn build_op_clone(&mut self, data: &mut Funcdata, op: OpId) -> KunaResult<Option<OpId>> {
+        let (is_branch, opc, num_input, addr, op_flags, op_addl) = {
+            let o = data.obank().get(op).expect("buildOpClone: stale op");
+            (o.is_branch(), o.code(), o.num_input(), o.get_addr().clone(), o.get_flags(), o.get_addlflags())
+        };
+        if is_branch {
+            if opc != OpCode::CPUI_BRANCH {
+                return Err(KunaError::lowlevel(
+                    "Cannot duplicate 2-way or n-way branch in nodeplit",
+                ));
+            }
+            return Ok(None);
+        }
+        let dup = data.new_op(num_input, addr);
+        data.op_set_opcode_code(dup, opc);
+        // Copy the flag subset that survives a clone (verbatim mask from
+        // `buildOpClone`, funcdata_block.cc:982-985).
+        use crate::op::pcodeop_flags as opf;
+        let fl = op_flags
+            & (opf::startbasic
+                | opf::nocollapse
+                | opf::startmark
+                | opf::nonprinting
+                | opf::halt
+                | opf::badinstruction
+                | opf::unimplemented
+                | opf::noreturn
+                | opf::missing
+                | opf::indirect_creation
+                | opf::indirect_store
+                // C++ (funcdata_block.cc:985) lists `PcodeOp::no_indirect_collapse`
+                // in this `op->flags & (...)` mask, but that constant (0x200) is
+                // the *addlflags* enum value; masked against the `flags` word it
+                // selects bit 0x200 == `fallthru_true`.  Transcribe the numeric
+                // behaviour faithfully (matches the upstream byte output).
+                | opf::fallthru_true
+                | opf::calculated_bool
+                | opf::ptrflow);
+        // The addl-flag subset (funcdata_block.cc:987-988).
+        use crate::op::pcodeop_addlflags as opaf;
+        let afl = op_addl
+            & (opaf::special_prop
+                | opaf::special_print
+                | opaf::incidental_copy
+                | opaf::is_cpool_transformed
+                | opaf::stop_type_propagation
+                | opaf::store_unmapped);
+        {
+            let o = data.obank_mut().get_mut(dup).expect("buildOpClone: stale dup");
+            o.set_flag(fl);
+            o.set_additional_flag(afl);
+        }
+        self.clone_list.push((op, dup)); // Map from clone to orig
+        self.orig_to_clone.insert(op, dup); // Map from orig to clone
+        Ok(Some(dup))
+    }
+
+    /// Make a basic clone of a Varnode and its flags, as the output of a cloned
+    /// op (C++ `CloneBlockOps::buildVarnodeOutput`, `funcdata_block.cc:1000`).
+    fn build_varnode_output(
+        &self,
+        data: &mut Funcdata,
+        orig_op: OpId,
+        clone_op: OpId,
+    ) -> KunaResult<()> {
+        let opvn = match data.obank().get(orig_op).expect("buildVarnodeOutput: stale op").get_out()
+        {
+            Some(v) => v,
+            None => return Ok(()),
+        };
+        let (size, addr, src_flags, src_addl) = {
+            let v = data.vbank().get(opvn).expect("buildVarnodeOutput: stale vn");
+            (v.get_size(), v.get_addr().clone(), v.get_flags(), v.get_addlflags())
+        };
+        let newvn = data.new_varnode_out(size, &addr, clone_op)?;
+        data.vbank_mut()
+            .get_mut(newvn)
+            .expect("buildVarnodeOutput: stale newvn")
+            .copy_clone_flags(src_flags, src_addl);
+        Ok(())
+    }
+
+    /// P-code in a basic block is cloned into the split version of the block
+    /// (C++ `CloneBlockOps::cloneBlock`, `funcdata_block.cc:1023`).
+    fn clone_block(
+        &mut self,
+        data: &mut Funcdata,
+        b: BlockId,
+        bprime: BlockId,
+        inedge: int4,
+    ) -> KunaResult<()> {
+        // Collect b's ops in order (the C++ `beginOp()..endOp()` block walk).
+        let mut ops: Vec<OpId> = Vec::new();
+        let mut cur = data.bb_op_head(b);
+        while let Some(o) = cur {
+            ops.push(o);
+            cur = data.obank().get(o).expect("cloneBlock: stale op").basic_neighbours().1;
+        }
+        for orig_op in ops {
+            let clone_op = match self.build_op_clone(data, orig_op)? {
+                Some(c) => c,
+                None => continue,
+            };
+            self.build_varnode_output(data, orig_op, clone_op)?;
+            data.op_insert_end(clone_op, bprime);
+        }
+        self.patch_inputs(data, inedge)
+    }
+
+    /// Map original-op input Varnodes to the input slots of the cloned ops
+    /// (C++ `CloneBlockOps::patchInputs`, `funcdata_block.cc:1066`).
+    fn patch_inputs(&self, data: &mut Funcdata, inedge: int4) -> KunaResult<()> {
+        for pos in 0..self.clone_list.len() {
+            let (orig_op, clone_op) = self.clone_list[pos];
+            let orig_code = data.obank().get(orig_op).expect("patchInputs: stale orig").code();
+            if orig_code == OpCode::CPUI_MULTIEQUAL {
+                // One edge now goes into the new block.
+                data.obank_mut().get_mut(clone_op).expect("patchInputs: stale clone").set_num_inputs(1);
+                data.op_set_opcode_code(clone_op, OpCode::CPUI_COPY);
+                let in_vn =
+                    data.obank().get(orig_op).expect("patchInputs").get_in(inedge).expect("MULTIEQUAL in");
+                data.op_set_input(clone_op, in_vn, 0)?;
+                // One edge is removed from the original block.
+                data.op_remove_input(orig_op, inedge);
+                if data.obank().get(orig_op).expect("patchInputs").num_input() == 1 {
+                    data.op_set_opcode_code(orig_op, OpCode::CPUI_COPY);
+                }
+            } else if orig_code == OpCode::CPUI_INDIRECT {
+                return Err(KunaError::lowlevel("Can't clone INDIRECTs"));
+            } else if data.obank().get(orig_op).expect("patchInputs").is_call() {
+                return Err(KunaError::lowlevel("Can't clone CALLs"));
+            } else {
+                let n_in = data.obank().get(clone_op).expect("patchInputs").num_input();
+                for i in 0..n_in {
+                    let orig_vn = data
+                        .obank()
+                        .get(orig_op)
+                        .expect("patchInputs")
+                        .get_in(i)
+                        .expect("patchInputs: input slot");
+                    let (is_const, is_annot, is_free, is_written, vdef, vaddr) = {
+                        let v = data.vbank().get(orig_vn).expect("patchInputs: stale in vn");
+                        (
+                            v.is_constant(),
+                            v.is_annotation(),
+                            v.is_free(),
+                            v.is_written(),
+                            v.get_def(),
+                            v.get_addr().clone(),
+                        )
+                    };
+                    let clone_vn = if is_const {
+                        orig_vn
+                    } else if is_annot {
+                        data.new_code_ref(&vaddr)
+                    } else if is_free {
+                        return Err(KunaError::lowlevel("Can't clone free varnode"));
+                    } else if is_written {
+                        match vdef.and_then(|d| self.orig_to_clone.get(&d).copied()) {
+                            Some(clone_def) => data
+                                .obank()
+                                .get(clone_def)
+                                .expect("patchInputs: stale clone def")
+                                .get_out()
+                                .expect("cloned def has output"),
+                            None => orig_vn,
+                        }
+                    } else {
+                        orig_vn
+                    };
+                    data.op_set_input(clone_op, clone_vn, i)?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -2520,5 +2929,176 @@ mod tests {
             fd.bb_unblocked_multi(bb, 0),
             "identical redundant MULTIEQUAL value -> unblocked"
         );
+    }
+
+    // =======================================================================
+    // VERIFIER adversarial tests (rport/w10-returnsplit-nodesplit): Funcdata::
+    // nodeSplit (return-block duplication per in-edge) + CloneBlockOps.
+    // =======================================================================
+
+    /// NS1 — `node_split` duplicates a multi-in-edge RETURN block per edge,
+    /// cloning its ops and pulling the split edge's MULTIEQUAL input out into a
+    /// COPY on the duplicate (C++ `Funcdata::nodeSplit` + `CloneBlockOps`).
+    /// Two predecessors flow into a return block whose RETURN reads a MULTIEQUAL;
+    /// splitting edge 0 moves predecessor `p0` onto a fresh duplicate carrying its
+    /// own (COPY-fed) RETURN, while the original keeps edge 1.
+    #[test]
+    fn ns1_node_split_return_block_clones_per_in_edge() {
+        let mut fd = build_fd();
+        let rs = ramspace(&fd);
+        let root = fd.bblocks_root_pub();
+        let p0 = fd.bblocks_mut().new_block_basic(root);
+        let p1 = fd.bblocks_mut().new_block_basic(root);
+        let ret = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(p0, ret);
+        fd.bblocks_mut().add_edge(p1, ret);
+        fd.set_basic_block_range(ret, &addr(&rs, 0x8000), &addr(&rs, 0x8010));
+
+        // A value feeding each MULTIEQUAL slot (written in the predecessors).
+        let c0 = copy_with_dead_out(&mut fd, p0, addr(&rs, 0x7f00), 0x40);
+        let v0 = fd.obank().get(c0).unwrap().get_out().unwrap();
+        let c1 = copy_with_dead_out(&mut fd, p1, addr(&rs, 0x7f04), 0x48);
+        let v1 = fd.obank().get(c1).unwrap().get_out().unwrap();
+
+        // MULTIEQUAL in `ret`: slot 0 <- v0 (from p0), slot 1 <- v1 (from p1).
+        let in0 = fd.bblocks_ref().block(ret).get_in_index(p0);
+        let in1 = fd.bblocks_ref().block(ret).get_in_index(p1);
+        let mq = fd.new_op(2, addr(&rs, 0x8000));
+        fd.op_set_opcode(mq, crate::typeop::type_op_for(OpCode::CPUI_MULTIEQUAL));
+        let mq_out = fd.new_varnode(4, &addr(&rs, 0x50), None);
+        fd.op_set_output(mq, mq_out).unwrap();
+        fd.op_set_input(mq, v0, in0).unwrap();
+        fd.op_set_input(mq, v1, in1).unwrap();
+        fd.obank_mut().mark_alive(mq);
+        fd.bb_insert_op(mq, ret, None);
+
+        // RETURN reads the MULTIEQUAL output (and a code-ref like a real return).
+        let retop = fd.new_op(1, addr(&rs, 0x8008));
+        fd.op_set_opcode(retop, crate::typeop::type_op_for(OpCode::CPUI_RETURN));
+        fd.op_set_input(retop, mq_out, 0).unwrap();
+        fd.obank_mut().mark_alive(retop);
+        fd.bb_insert_op(retop, ret, None);
+
+        let n_before = fd.bblocks_get_size();
+        // Split the edge from p0 (inedge index in0).
+        fd.node_split(ret, in0).expect("node_split");
+        // A duplicate block was created.
+        assert_eq!(fd.bblocks_get_size(), n_before + 1, "nodeSplit adds the duplicate block");
+        // p0 now flows to the duplicate, not the original ret.
+        let p0_out = fd.bblocks_ref().block(p0).get_out(0);
+        assert_ne!(p0_out, ret, "p0 re-routed onto the duplicate");
+        // The original ret keeps exactly the p1 in-edge.
+        assert_eq!(fd.bblocks_ref().block(ret).size_in(), 1);
+        assert_eq!(fd.bblocks_ref().block(ret).get_in(0), p1);
+        // The duplicate has p0 as its sole in-edge and carries a cloned RETURN.
+        assert_eq!(fd.bblocks_ref().block(p0_out).size_in(), 1);
+        assert_eq!(fd.bblocks_ref().block(p0_out).get_in(0), p0);
+        let dup_ret = fd.bb_op_tail(p0_out).expect("duplicate has ops");
+        assert_eq!(
+            fd.obank().get(dup_ret).unwrap().code(),
+            OpCode::CPUI_RETURN,
+            "the cloned tail is a RETURN"
+        );
+        // The original 2-input MULTIEQUAL had edge in0 removed -> 1 input -> COPY.
+        assert_eq!(
+            fd.obank().get(mq).unwrap().code(),
+            OpCode::CPUI_COPY,
+            "original MULTIEQUAL collapses to COPY after one edge is pulled out"
+        );
+    }
+
+    /// NS2 — `node_split` rejects a block with out-flow and a block with a single
+    /// in edge (C++ `nodeSplit` guards, funcdata_block.cc:867-870).  These are
+    /// pure structural guards — no function-name/value special-casing.
+    #[test]
+    fn ns2_node_split_rejects_outflow_and_single_inedge() {
+        let mut fd = build_fd();
+        let root = fd.bblocks_root_pub();
+        // Block with an out edge -> rejected.
+        let p0 = fd.bblocks_mut().new_block_basic(root);
+        let p1 = fd.bblocks_mut().new_block_basic(root);
+        let b = fd.bblocks_mut().new_block_basic(root);
+        let out = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(p0, b);
+        fd.bblocks_mut().add_edge(p1, b);
+        fd.bblocks_mut().add_edge(b, out); // out flow
+        let err = fd.node_split(b, 0).unwrap_err();
+        assert!(err.to_string().contains("out flow"), "out-flow block rejected");
+
+        // Block with a single in edge -> rejected.
+        let q0 = fd.bblocks_mut().new_block_basic(root);
+        let single = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(q0, single);
+        let err2 = fd.node_split(single, 0).unwrap_err();
+        assert!(err2.to_string().contains("only 1 in edge"), "single-in-edge block rejected");
+    }
+
+    /// NS3 — `CloneBlockOps` clones a generic calculation op verbatim (opcode,
+    /// inputs, constant sharing) — exercises the non-MULTIEQUAL `patch_inputs`
+    /// branch with no opcode/value special-casing.  An INT_ADD reading a written
+    /// value and a constant is duplicated into the split block with the same
+    /// opcode and the same constant input.
+    #[test]
+    fn ns3_clone_block_duplicates_generic_op_and_shares_constants() {
+        let mut fd = build_fd();
+        let rs = ramspace(&fd);
+        let root = fd.bblocks_root_pub();
+        let p0 = fd.bblocks_mut().new_block_basic(root);
+        let p1 = fd.bblocks_mut().new_block_basic(root);
+        let ret = fd.bblocks_mut().new_block_basic(root);
+        fd.bblocks_mut().add_edge(p0, ret);
+        fd.bblocks_mut().add_edge(p1, ret);
+        fd.set_basic_block_range(ret, &addr(&rs, 0x9000), &addr(&rs, 0x9010));
+
+        // MULTIEQUAL output `m`, then an INT_ADD: t = m + 7 (constant), then a
+        // RETURN reading t.  The INT_ADD is the generic op to clone.
+        let c0 = copy_with_dead_out(&mut fd, p0, addr(&rs, 0x8f00), 0x60);
+        let v0 = fd.obank().get(c0).unwrap().get_out().unwrap();
+        let c1 = copy_with_dead_out(&mut fd, p1, addr(&rs, 0x8f04), 0x68);
+        let v1 = fd.obank().get(c1).unwrap().get_out().unwrap();
+        let in0 = fd.bblocks_ref().block(ret).get_in_index(p0);
+        let in1 = fd.bblocks_ref().block(ret).get_in_index(p1);
+        let mq = fd.new_op(2, addr(&rs, 0x9000));
+        fd.op_set_opcode(mq, crate::typeop::type_op_for(OpCode::CPUI_MULTIEQUAL));
+        let m = fd.new_varnode(4, &addr(&rs, 0x70), None);
+        fd.op_set_output(mq, m).unwrap();
+        fd.op_set_input(mq, v0, in0).unwrap();
+        fd.op_set_input(mq, v1, in1).unwrap();
+        fd.obank_mut().mark_alive(mq);
+        fd.bb_insert_op(mq, ret, None);
+
+        let add = fd.new_op(2, addr(&rs, 0x9004));
+        fd.op_set_opcode(add, crate::typeop::type_op_for(OpCode::CPUI_INT_ADD));
+        let t = fd.new_varnode(4, &addr(&rs, 0x78), None);
+        fd.op_set_output(add, t).unwrap();
+        let k7 = fd.new_constant(4, 7);
+        fd.op_set_input(add, m, 0).unwrap();
+        fd.op_set_input(add, k7, 1).unwrap();
+        fd.obank_mut().mark_alive(add);
+        fd.bb_insert_op(add, ret, None);
+
+        let retop = fd.new_op(1, addr(&rs, 0x9008));
+        fd.op_set_opcode(retop, crate::typeop::type_op_for(OpCode::CPUI_RETURN));
+        fd.op_set_input(retop, t, 0).unwrap();
+        fd.obank_mut().mark_alive(retop);
+        fd.bb_insert_op(retop, ret, None);
+
+        fd.node_split(ret, in0).expect("node_split");
+        let dup = fd.bblocks_ref().block(p0).get_out(0);
+        // The duplicate carries a cloned INT_ADD whose constant input is shared.
+        let mut found_add = false;
+        let mut op = fd.bb_op_head(dup);
+        while let Some(o) = op {
+            let oref = fd.obank().get(o).unwrap();
+            if oref.code() == OpCode::CPUI_INT_ADD {
+                found_add = true;
+                let kin = oref.get_in(1).expect("clone INT_ADD second input");
+                let kv = fd.vbank().get(kin).expect("const in");
+                assert!(kv.is_constant(), "constant input shared verbatim on the clone");
+                assert_eq!(kv.get_offset(), 7, "constant value preserved (no special-casing)");
+            }
+            op = fd.obank().get(o).unwrap().basic_neighbours().1;
+        }
+        assert!(found_add, "the generic INT_ADD was cloned into the duplicate block");
     }
 }

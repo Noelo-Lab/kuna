@@ -1310,6 +1310,124 @@ impl BlockGraph {
         Some(bl)
     }
 
+    /// Within the hierarchy of `this_id`, assuming `bl` falls through at some
+    /// point, return the first leaf block (BlockBasic/BlockCopy) that executes
+    /// after `bl` completes — or `None` if the next block is not unique.
+    ///
+    /// Faithful transcription of the virtual `nextFlowAfter` hierarchy:
+    ///   * base `FlowBlock` (`block.hh:902`): `None`.
+    ///   * `BlockGraph` (`block.cc:1336`): block after `bl` in `list`, front-leaf;
+    ///     recurse into `getParent()` past the end of the list.
+    ///   * `BlockGoto` (`block.cc:2947`): `getGotoTarget()->getFrontLeaf()`.
+    ///   * `BlockMultiGoto`/`BlockCondition`/`BlockDoWhile` (`block.cc:2979`/`3101`/`3499`): `None`.
+    ///   * `BlockIf` (`block.cc:3175`): `None` if `bl` is the condition block,
+    ///     else recurse into the parent.
+    ///   * `BlockWhileDo`/`BlockInfLoop` (`block.cc:3389`/`3527`): front-leaf of
+    ///     `getBlock(0)` (the loop body re-executes), `None` for the while-do
+    ///     condition block.
+    ///   * `BlockSwitch` (`block.cc:3690`): next case block (fall-thru) front-leaf,
+    ///     or recurse into the parent for the last case; `None` otherwise.
+    pub fn next_flow_after(&self, this_id: BlockId, bl: BlockId) -> Option<BlockId> {
+        match self.arena[this_id].get_type() {
+            BlockType::Goto => {
+                let target = self.arena[this_id].get_goto_target()?;
+                self.get_front_leaf(target)
+            }
+            BlockType::If => {
+                // getBlock(0)==bl => None (don't know where flow goes)
+                if self.sub_block(this_id, 0) == Some(bl) {
+                    return None;
+                }
+                let parent = self.arena[this_id].get_parent()?;
+                self.next_flow_after(parent, this_id)
+            }
+            BlockType::WhileDo => {
+                if self.sub_block(this_id, 0) == Some(bl) {
+                    return None; // don't know what executes next
+                }
+                let b0 = self.sub_block(this_id, 0)?;
+                self.get_front_leaf(b0)
+            }
+            BlockType::InfLoop => {
+                let b0 = self.sub_block(this_id, 0)?;
+                self.get_front_leaf(b0)
+            }
+            BlockType::Switch => {
+                if self.sub_block(this_id, 0) == Some(bl) {
+                    return None;
+                }
+                // Fall-thru must be a goto block (else there is a break).
+                if self.arena[bl].get_type() != BlockType::Goto {
+                    return None;
+                }
+                let cases = self.arena[this_id].switch_caseblocks();
+                let mut idx = cases.len();
+                for (i, c) in cases.iter().enumerate() {
+                    if c.block == bl {
+                        idx = i;
+                        break;
+                    }
+                }
+                if idx == cases.len() {
+                    return None; // didn't find block
+                }
+                let next = idx + 1;
+                if next < cases.len() {
+                    let nb = cases[next].block;
+                    return self.get_front_leaf(nb);
+                }
+                // last case: flow is to the switch exit
+                let parent = self.arena[this_id].get_parent()?;
+                self.next_flow_after(parent, this_id)
+            }
+            BlockType::Graph | BlockType::Ls => {
+                // BlockGraph::nextFlowAfter: block after `bl` in `list`.
+                let list = &self.arena[this_id].list;
+                let mut pos = None;
+                for (i, &b) in list.iter().enumerate() {
+                    if b == bl {
+                        pos = Some(i);
+                        break;
+                    }
+                }
+                match pos {
+                    Some(i) if i + 1 < list.len() => {
+                        let nextbl = list[i + 1];
+                        self.get_front_leaf(nextbl)
+                    }
+                    _ => {
+                        // Off the end of the list (or not found): recurse up.
+                        let parent = self.arena[this_id].get_parent()?;
+                        self.next_flow_after(parent, this_id)
+                    }
+                }
+            }
+            // base FlowBlock + MultiGoto + Condition + DoWhile: None.
+            _ => None,
+        }
+    }
+
+    /// Should a `BlockGoto` emit a formal `goto` statement (C++
+    /// `BlockGoto::gotoPrints`, `block.cc:2929`)?  True when the goto target's
+    /// front-leaf is not the block that would execute next in normal flow.  For
+    /// non-Goto blocks, this is vacuously `false`.
+    pub fn goto_prints(&self, this_id: BlockId) -> bool {
+        if self.arena[this_id].get_type() != BlockType::Goto {
+            return false;
+        }
+        match self.arena[this_id].get_parent() {
+            Some(parent) => {
+                let nextbl = self.next_flow_after(parent, this_id);
+                let gotobl = self
+                    .arena[this_id]
+                    .get_goto_target()
+                    .and_then(|t| self.get_front_leaf(t));
+                gotobl != nextbl
+            }
+            None => false,
+        }
+    }
+
     /// Get the last leaf FlowBlock reachable as an exit (C++
     /// `FlowBlock::getExitLeaf`, virtual per subtype, `block.cc`/`block.hh`):
     ///   * `t_basic` / `t_copy`: returns itself.
@@ -2353,7 +2471,17 @@ impl BlockGraph {
     ///
     /// `graph_dst` is `self`'s root graph node; `src` is the source [`BlockGraph`]
     /// (e.g. `bblocks`) and `graph_src` its root graph node.
-    pub fn build_copy_from(&mut self, graph_dst: BlockId, src: &BlockGraph, graph_src: BlockId) {
+    ///
+    /// Returns the source-`bblocks`-id -> destination-`sblocks`-`BlockCopy`-id map
+    /// so the caller can write each source block's `copymap` field (the C++
+    /// `(*iter)->copymap = copyblock;` write-back at `block.cc:1938`, which a
+    /// cross-arena port cannot do directly since `src` is borrowed immutably).
+    pub fn build_copy_from(
+        &mut self,
+        graph_dst: BlockId,
+        src: &BlockGraph,
+        graph_src: BlockId,
+    ) -> std::collections::BTreeMap<BlockId, BlockId> {
         let startsize = self.arena[graph_dst].list.len();
         let srclist: Vec<BlockId> = src.arena[graph_src].list.clone();
         // src block id -> dst BlockCopy id (the C++ `bl->copymap`).
@@ -2381,6 +2509,13 @@ impl BlockGraph {
                 self.arena[it].immed_dom = copymap.get(&idom).copied();
             }
         }
+        copymap
+    }
+
+    /// Set the `BlockCopy` a block maps to (C++ `FlowBlock::copymap`), used by the
+    /// cross-arena `buildCopy` write-back (`block.cc:1938`).
+    pub fn set_copy_map(&mut self, this_id: BlockId, copyblock: Option<BlockId>) {
+        self.arena[this_id].copymap = copyblock;
     }
 
     /// Cross-arena variant of [`new_block_copy`](BlockGraph::new_block_copy) (C++
