@@ -1913,6 +1913,37 @@ impl PrintC {
             }
             decls.push((high, name));
         }
+        // C++ `emitScopeVarDecls` walks the ScopeLocal *Symbol* table and emits
+        // exactly one declaration per multi-entry Symbol (the `getFirstWholeMap()`
+        // entry; printc.cc:2696).  The kuna printer instead walks HighVariables and
+        // dedups by high id, so a single mapped composite Symbol that is
+        // represented by several `&symbol`-reference highs (each a piece of the
+        // array/struct, all constant-only PTRSUB operands) is declared once per
+        // high — a spurious repeat like `int2 arr [32]; int2 arr [32];`.
+        //
+        // Collapse to one declaration per Symbol: two declared highs are the same
+        // Symbol when they share a name AND the same *composite* mapped type by Rc
+        // identity.  The type factory interns array/struct/union types, so one
+        // mapped Symbol's pieces all carry the identical `kuna_symbol_type` Rc;
+        // distinct same-shaped locals are disambiguated by their (unique) names.
+        // Restricting to composites is load-bearing: primitive types are shared by
+        // every scalar local of that type, so `(name, int4-Rc)` would not identify
+        // a single Symbol — scalars keep the per-high behavior.
+        {
+            let mut seen_sym: std::collections::HashSet<(String, usize)> = std::collections::HashSet::new();
+            decls.retain(|(high, name)| {
+                let composite_rc = fd.high_bank().get(*high).and_then(|h| {
+                    let t = h.kuna_symbol_type()?;
+                    use crate::dtype::type_metatype::*;
+                    matches!(t.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION)
+                        .then(|| std::rc::Rc::as_ptr(t) as usize)
+                });
+                match composite_rc {
+                    Some(rc) => seen_sym.insert((name.clone(), rc)),
+                    None => true,
+                }
+            });
+        }
         decls.sort_by(|a, b| a.1.cmp(&b.1));
         if decls.is_empty() {
             return false;
@@ -4192,6 +4223,31 @@ impl PrintC {
                 self.push_enum_constant_ir(&ct, off, op, vn);
                 return;
             }
+            // Pointer arm.  C++ `pushConstant` (printc.cc:1842-1854): a TYPE_PTR /
+            // TYPE_PTRREL constant whose pointed-to type `isCharPrint()` is rendered
+            // as a quoted string literal when the constant resolves to readonly
+            // character data (`pushPtrCharConstant`).  If the pointer does not
+            // resolve to a readable readonly string, the C++ falls through to the
+            // default integer print — so does this arm (it only short-circuits on a
+            // successful string push).  The TYPE_CODE (function-name) sub-arm is a
+            // documented LOSS below.
+            use crate::dtype::type_metatype::{TYPE_PTR, TYPE_PTRREL};
+            if matches!(ct.get_metatype(), TYPE_PTR | TYPE_PTRREL) && off != 0 {
+                if let Some(sub) = ct.get_ptr_to() {
+                    if sub.is_char_print() {
+                        // point = op->getAddr() (the using op's address; used only
+                        // by a segmented resolver — flat spaces ignore it).
+                        let point = fd
+                            .obank()
+                            .get(op)
+                            .map(|o| o.get_addr().clone())
+                            .unwrap_or_default();
+                        if self.push_ptr_char_constant_ir(arch, off, &ct, &sub, &point, op, vn) {
+                            return;
+                        }
+                    }
+                }
+            }
             // Integer path.  Inside `push_integer` (printc.cc:1376) the varnode
             // high's equate-Symbol format OVERRIDES the read-facing type's format
             // when present.  So: equate-Symbol format wins; otherwise the
@@ -4917,6 +4973,120 @@ impl PrintC {
             crate::printlanguage::SyntaxHighlight::const_color,
             op_key(op),
         ));
+    }
+
+    /// Try to push a quoted string literal for a constant pointer to character
+    /// data — C++ `PrintC::pushPtrCharConstant` (printc.cc:1767).  Resolves the
+    /// constant pointer to a data-space address, requires the location to be
+    /// readonly, then reads/escapes the string via [`Self::print_character_constant`].
+    /// Returns `true` only when a literal token was pushed (so the caller can fall
+    /// through to the integer print otherwise).
+    fn push_ptr_char_constant_ir(
+        &mut self,
+        arch: &Architecture,
+        val: uintb,
+        ct: &crate::dtype::Datatype,
+        subct: &std::rc::Rc<crate::dtype::Datatype>,
+        point: &Address,
+        op: OpId,
+        vn: VarnodeId,
+    ) -> bool {
+        // AddrSpace *spc = glb->getDefaultDataSpace();
+        let spc = match arch.manage().get_default_data_space() {
+            Some(s) => std::rc::Rc::clone(s),
+            None => return false,
+        };
+        // Address stringaddr = glb->resolveConstant(spc,val,ct->getSize(),point,...)
+        let mut full_encoding: uintb = 0;
+        let stringaddr =
+            match arch.resolve_constant(&spc, val, ct.get_size(), point, &mut full_encoding) {
+                Ok(a) => a,
+                Err(_) => return false,
+            };
+        if stringaddr.is_invalid() {
+            return false;
+        }
+        // Check that string location is readonly:
+        //   glb->symboltab->getGlobalScope()->isReadOnly(stringaddr,1,Address())
+        let gscope = match arch.symboltab.get_global_scope() {
+            Some(g) => g,
+            None => return false,
+        };
+        let nulladdr = Address::new_invalid();
+        if !arch.symboltab.is_read_only(gscope, &stringaddr, 1, &nulladdr) {
+            return false;
+        }
+        // printCharacterConstant(str,stringaddr,subct)
+        let mut s = String::new();
+        if !self.print_character_constant(arch, &mut s, &stringaddr, subct) {
+            return false;
+        }
+        // pushAtom(Atom(str, vartoken, const_color, op, vn))
+        self.push_atom(&Atom::with_op_vn(
+            s,
+            TagType::VarToken,
+            crate::printlanguage::SyntaxHighlight::const_color,
+            op_key(op),
+            vn_key(vn),
+        ));
+        true
+    }
+
+    /// Render readonly character data at `addr` as a quoted C string literal —
+    /// C++ `PrintC::printCharacterConstant` (printc.cc:1602).  Reads the UTF-8
+    /// string bytes through the `StringManager` (over the loadimage), emits the
+    /// optional `L` wide prefix, then the escaped contents between quotes (with the
+    /// truncation marker when the literal was clipped).  Returns `false` when no
+    /// string data is available.
+    fn print_character_constant(
+        &self,
+        arch: &Architecture,
+        s: &mut String,
+        addr: &Address,
+        char_type: &std::rc::Rc<crate::dtype::Datatype>,
+    ) -> bool {
+        use crate::stringmanage::{StringManager, StringManagerUnicode};
+        use kuna_sleigh::translate::Translate;
+        // Pull UTF-8 string data over the loadimage.  The C++ keeps a persistent
+        // glb->stringManager cache; the kuna Architecture does not own a live
+        // instance, so a transient manager is used per call.  The result is the
+        // same UTF-8 byte buffer (the cache only avoids re-reading the image).
+        let loader_rc = arch.translate().loader_rc();
+        let mut mgr = StringManagerUnicode::new(2048);
+        let mut is_trunc = false;
+        let buffer: Vec<u8> = {
+            let mut loader = loader_rc.borrow_mut();
+            mgr.get_string_data(addr, char_type, &mut **loader, &mut is_trunc)
+                .to_vec()
+        };
+        if buffer.is_empty() {
+            return false;
+        }
+        // doEmitWideCharPrefix() (always true for PrintC) && size>1 && !opaque -> 'L'
+        if char_type.get_size() > 1 && !char_type.is_opaque_string() {
+            s.push('L');
+        }
+        s.push('"');
+        // escapeCharacterData(s, buffer, len, 1, glb->translate->isBigEndian()):
+        // the buffer is already UTF-8 (charsize 1); walk codepoints and re-escape.
+        let bigend = arch.translate().is_big_endian();
+        let mut i: int4 = 0;
+        let count = buffer.len() as int4;
+        while i < count {
+            let mut skip: int4 = 1;
+            let codepoint = StringManager::get_codepoint(&buffer[i as usize..], 1, bigend, &mut skip);
+            if codepoint == 0 || codepoint == -1 {
+                break;
+            }
+            print_unicode(s, codepoint);
+            i += skip;
+        }
+        if is_trunc {
+            s.push_str("...\" /* TRUNCATED STRING LITERAL */");
+        } else {
+            s.push('"');
+        }
+        true
     }
 }
 

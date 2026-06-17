@@ -168,11 +168,21 @@ fn w10_inline_body_header_warnings_are_real_oracle_parity() {
         "expected `Success -- Inlining #2` (`if (x < 10)` — RuleSborrow folded \
          the SBORROW signed compare) in:\n{out}"
     );
-    // 7/12 now pass (baseline 0/12, pre-w10 3/12 header-only, w10 6/12 +SBORROW).
+    // w10-stackframe-cluster: `PrintC::pushPtrCharConstant` now renders a constant
+    // pointer to readonly char data as a quoted string literal, so the inlined
+    // `compare(x,100,"HUNDRED")` call (`#4`) — whose third argument is a constant
+    // pointer to the readonly `"HUNDRED"` bytes — newly passes, bumping 7/12 → 8/12.
     assert!(
-        out.contains("Total passing tests = 7"),
-        "inline.xml must pass its 3 header + 3 body + 1 SBORROW assertion (7/12); \
-         baseline 0/12, pre-w10 3/12:\n{out}"
+        out.contains("Success -- Inlining #4"),
+        "expected `Success -- Inlining #4` (`compare(x,100,\"HUNDRED\")` — \
+         pushPtrCharConstant rendered the readonly char-pointer literal) in:\n{out}"
+    );
+    // 8/12 now pass (baseline 0/12, pre-w10 3/12 header-only, w10 6/12 +SBORROW
+    // 7/12, +pushPtrCharConstant 8/12).
+    assert!(
+        out.contains("Total passing tests = 8"),
+        "inline.xml must pass its 3 header + 3 body + 1 SBORROW + 1 string-literal \
+         assertion (8/12); baseline 0/12, pre-w10 3/12:\n{out}"
     );
 }
 
