@@ -277,7 +277,7 @@ impl Rule for RuleFloatRange {
         vec![OpCode::CPUI_BOOL_OR, OpCode::CPUI_BOOL_AND]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("floatrange") {
+        if !grouplist.contains("analysis") && !grouplist.contains("floatrange") {
             return None;
         }
         Some(Box::new(RuleFloatRange))
@@ -385,7 +385,7 @@ impl Rule for RuleAndCommute {
         vec![OpCode::CPUI_INT_AND]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("andcommute") {
+        if !grouplist.contains("analysis") && !grouplist.contains("andcommute") {
             return None;
         }
         Some(Box::new(RuleAndCommute))
@@ -571,7 +571,7 @@ impl Rule for RuleAndPiece {
         vec![OpCode::CPUI_INT_AND]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("andpiece") {
+        if !grouplist.contains("analysis") && !grouplist.contains("andpiece") {
             return None;
         }
         Some(Box::new(RuleAndPiece))
@@ -675,7 +675,7 @@ impl Rule for RuleAndZext {
         vec![OpCode::CPUI_INT_AND]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("andzext") {
+        if !grouplist.contains("analysis") && !grouplist.contains("andzext") {
             return None;
         }
         Some(Box::new(RuleAndZext))
@@ -729,7 +729,7 @@ impl Rule for RuleAndCompare {
         vec![OpCode::CPUI_INT_EQUAL, OpCode::CPUI_INT_NOTEQUAL]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("andcompare") {
+        if !grouplist.contains("analysis") && !grouplist.contains("andcompare") {
             return None;
         }
         Some(Box::new(RuleAndCompare))
@@ -821,7 +821,7 @@ impl Rule for RuleDoubleSub {
         vec![OpCode::CPUI_SUBPIECE]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("doublesub") {
+        if !grouplist.contains("analysis") && !grouplist.contains("doublesub") {
             return None;
         }
         Some(Box::new(RuleDoubleSub))
@@ -1068,7 +1068,7 @@ impl Rule for RuleConcatShift {
         vec![OpCode::CPUI_INT_RIGHT, OpCode::CPUI_INT_SRIGHT]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("concatshift") {
+        if !grouplist.contains("analysis") && !grouplist.contains("concatshift") {
             return None;
         }
         Some(Box::new(RuleConcatShift))
@@ -1138,7 +1138,7 @@ impl Rule for RuleLeftRight {
         vec![OpCode::CPUI_INT_RIGHT, OpCode::CPUI_INT_SRIGHT]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("leftright") {
+        if !grouplist.contains("analysis") && !grouplist.contains("leftright") {
             return None;
         }
         Some(Box::new(RuleLeftRight))
@@ -1220,7 +1220,7 @@ impl Rule for RuleShiftCompare {
         vec![OpCode::CPUI_INT_EQUAL, OpCode::CPUI_INT_NOTEQUAL]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("shiftcompare") {
+        if !grouplist.contains("analysis") && !grouplist.contains("shiftcompare") {
             return None;
         }
         Some(Box::new(RuleShiftCompare))
@@ -1363,7 +1363,7 @@ impl Rule for RuleLessEqual {
         vec![OpCode::CPUI_BOOL_OR]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("lessequal") {
+        if !grouplist.contains("analysis") && !grouplist.contains("lessequal") {
             return None;
         }
         Some(Box::new(RuleLessEqual))
@@ -1447,7 +1447,7 @@ impl Rule for RuleLessNotEqual {
         vec![OpCode::CPUI_BOOL_AND]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("lessnotequal") {
+        if !grouplist.contains("analysis") && !grouplist.contains("lessnotequal") {
             return None;
         }
         Some(Box::new(RuleLessNotEqual))
@@ -1644,7 +1644,7 @@ impl Rule for RuleTrivialBool {
         vec![OpCode::CPUI_BOOL_AND, OpCode::CPUI_BOOL_OR, OpCode::CPUI_BOOL_XOR]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("trivialbool") {
+        if !grouplist.contains("analysis") && !grouplist.contains("trivialbool") {
             return None;
         }
         Some(Box::new(RuleTrivialBool))
@@ -1699,7 +1699,7 @@ impl Rule for RuleZextEliminate {
         ]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("zexteliminate") {
+        if !grouplist.contains("analysis") && !grouplist.contains("zexteliminate") {
             return None;
         }
         Some(Box::new(RuleZextEliminate))
@@ -1768,7 +1768,7 @@ impl Rule for RuleSlessToLess {
         vec![OpCode::CPUI_INT_SLESS, OpCode::CPUI_INT_SLESSEQUAL]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("slesstoless") {
+        if !grouplist.contains("analysis") && !grouplist.contains("slesstoless") {
             return None;
         }
         Some(Box::new(RuleSlessToLess))
@@ -1804,7 +1804,7 @@ impl Rule for RuleZextSless {
         vec![OpCode::CPUI_INT_SLESS, OpCode::CPUI_INT_SLESSEQUAL]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("zextsless") {
+        if !grouplist.contains("analysis") && !grouplist.contains("zextsless") {
             return None;
         }
         Some(Box::new(RuleZextSless))
@@ -1875,7 +1875,7 @@ impl Rule for RuleBitUndistribute {
         vec![OpCode::CPUI_INT_AND, OpCode::CPUI_INT_OR, OpCode::CPUI_INT_XOR]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("bitundistribute") {
+        if !grouplist.contains("analysis") && !grouplist.contains("bitundistribute") {
             return None;
         }
         Some(Box::new(RuleBitUndistribute))
@@ -2016,7 +2016,7 @@ impl Rule for RuleBooleanUndistribute {
         vec![OpCode::CPUI_INT_EQUAL, OpCode::CPUI_INT_NOTEQUAL]
     }
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains("booleanundistribute") {
+        if !grouplist.contains("analysis") && !grouplist.contains("booleanundistribute") {
             return None;
         }
         Some(Box::new(RuleBooleanUndistribute))
