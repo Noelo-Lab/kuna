@@ -83,7 +83,7 @@ use std::rc::Rc;
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::{spacetype, AddrSpace};
-use kuna_base::types::{int4, uint4, uintb, uintm, Wrap};
+use kuna_base::types::{int4, uint1, uint4, uintb, uintm, Wrap};
 
 use kuna_num::opcodes::OpCode;
 
@@ -454,6 +454,80 @@ impl Funcdata {
         let vn = self.vbank_mut().create(8, Address::new(cspc, encoded), ct);
         self.assign_high(vn);
         vn
+    }
+
+    /// Create a Varnode (and associated PcodeOp) that will display as a string
+    /// constant (C++ `Funcdata::getInternalString`, `funcdata_varnode.cc:1434`).
+    ///
+    /// The raw `buf`/`size` encode a candidate string.  If they form a legal
+    /// string, the bytes are registered in the architecture's `StringManager`
+    /// (keyed on a hash off `readOp`'s address) and a `BUILTIN_STRINGDATA`
+    /// CALLOTHER is constructed whose unique output displays as the quoted string.
+    /// `ptr_type` is the pointer-to-character data-type assigned to the output
+    /// (and indicates the character encoding).  Returns the new output Varnode, or
+    /// `None` when the bytes are not a legal string.
+    pub fn get_internal_string(
+        &mut self,
+        buf: &[uint1],
+        size: int4,
+        ptr_type: Rc<Datatype>,
+        read_op: OpId,
+    ) -> Option<VarnodeId> {
+        use crate::userop::BUILTIN_STRINGDATA;
+        // if (ptrType->getMetatype() != TYPE_PTR) return 0;
+        if ptr_type.get_metatype() != type_metatype::TYPE_PTR {
+            return None;
+        }
+        // Datatype *charType = ((TypePointer *)ptrType)->getPtrTo();
+        let char_type = ptr_type.get_ptr_to()?;
+        // const Address &addr(readOp->getAddr());
+        let addr = self.obank().get(read_op).expect("get_internal_string: stale readOp").get_addr().clone();
+        // uint8 hash = glb->stringManager->registerInternalStringData(addr,buf,size,charType);
+        let manager_rc = self
+            .get_arch()
+            .internal_strings
+            .clone()
+            .expect("get_internal_string: no string manager on glb seam");
+        let manage = self.get_arch().manage();
+        let hash = manager_rc.borrow_mut().base.register_internal_string_data(
+            &addr,
+            buf,
+            size,
+            &char_type,
+            manage,
+        );
+        // if (hash == 0) return 0;
+        if hash == 0 {
+            return None;
+        }
+        // glb->userops.registerBuiltin(BUILTIN_STRINGDATA);  (pre-registered on the
+        // real Architecture at boot; see Architecture::register_string_builtins.)
+        // PcodeOp *stringOp = newOp(2,addr);
+        let string_op = self.new_op(2, addr.clone());
+        // opSetOpcode(stringOp, CPUI_CALLOTHER); stringOp->clearFlag(PcodeOp::call);
+        self.op_set_opcode_code(string_op, OpCode::CPUI_CALLOTHER);
+        self.obank_mut()
+            .get_mut(string_op)
+            .expect("get_internal_string: stale stringOp")
+            .clear_flag(crate::op::pcodeop_flags::call);
+        // opSetInput(stringOp, newConstant(4, BUILTIN_STRINGDATA), 0);
+        let idcon = self.new_constant(4, BUILTIN_STRINGDATA as uintb);
+        self.op_set_input(string_op, idcon, 0).expect("get_internal_string: setInput0");
+        // opSetInput(stringOp, newConstant(8, hash), 1);
+        let hashcon = self.new_constant(8, hash);
+        self.op_set_input(string_op, hashcon, 1).expect("get_internal_string: setInput1");
+        // Varnode *resVn = newUniqueOut(ptrType->getSize(), stringOp);
+        let res_vn = self
+            .new_unique_out(ptr_type.get_size(), string_op)
+            .expect("get_internal_string: newUniqueOut");
+        // resVn->updateType(ptrType, true, false);
+        self.vbank_mut()
+            .get_mut(res_vn)
+            .expect("get_internal_string: stale resVn")
+            .update_type_locked(ptr_type, true, false);
+        // opInsertBefore(stringOp, readOp);
+        self.op_insert_before(string_op, read_op);
+        Some(res_vn)
     }
 
     /// Create a constant Varnode encoding a reference to an address space

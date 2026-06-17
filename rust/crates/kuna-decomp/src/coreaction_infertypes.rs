@@ -64,6 +64,23 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
         .and_then(|v| data.vbank().get(v))
         .map(|v| v.get_size())
         .unwrap_or(1);
+    // C++ `TypeOpCallother::getOutputLocal` -> `userOp->getOutputLocal(op)`.  For
+    // the internal-string builtin (`InternalStringOp::getOutputLocal`,
+    // userop.cc:362) this is the op's own (locked) output type — so a
+    // `BUILTIN_STRINGDATA` CALLOTHER reports its char-pointer output token and
+    // `ActionSetCasts` inserts no spurious cast around the rendered string literal.
+    if o.code() == OpCode::CPUI_CALLOTHER {
+        let in0_off = o
+            .get_in(0)
+            .and_then(|v| data.vbank().get(v))
+            .map(|v| v.get_offset())
+            .unwrap_or(0);
+        if in0_off == crate::userop::BUILTIN_STRINGDATA as u64 {
+            if let Some(out) = o.get_out().and_then(|v| data.vbank().get(v)) {
+                return Rc::clone(out.get_type());
+            }
+        }
+    }
     let info = type_op_info(o.code());
     match arch.types() {
         Some(tlst) => info

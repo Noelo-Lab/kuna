@@ -342,6 +342,15 @@ pub struct Architecture {
     pub allacts: ActionDatabase,
     /// Specifically registered user-defined p-code ops (C++ `userops`).
     pub userops: UserOpManage,
+    /// Manager of decoded strings (C++ `stringManager`, a `StringManager*`).
+    /// `sleigh_arch.cc:250` seeds this with a `StringManagerUnicode(this,2048)`.
+    /// Held behind `Rc<RefCell<..>>` so the same instance can be *shared* into
+    /// the per-function W4 [`ArchSeam`] (`glb`): `Funcdata::getInternalString`
+    /// (driven through the seam during `RuleStringStore`/`RuleStringCopy`) must
+    /// `registerInternalStringData` into the very map the printer later reads back
+    /// via `getStringData` on this real `Architecture`.
+    pub string_manager:
+        Rc<std::cell::RefCell<crate::stringmanage::StringManagerUnicode>>,
     /// P-code injection manager (C++ `pcodeinjectlib`).  SLEIGH-backed.
     pub pcodeinjectlib: PcodeInjectLibrarySleigh,
     /// Comments for this architecture (C++ `commentdb`).  // SEAM(comment.cc)
@@ -498,6 +507,10 @@ impl Architecture {
             options: OptionDatabase::new(),
             allacts: ActionDatabase::new(),
             userops: UserOpManage::new(),
+            // sleigh_arch.cc:250: stringManager = new StringManagerUnicode(this,2048)
+            string_manager: Rc::new(std::cell::RefCell::new(
+                crate::stringmanage::StringManagerUnicode::new(2048),
+            )),
             pcodeinjectlib: PcodeInjectLibrarySleigh::new(inject_tempbase),
             commentdb: CommentDatabase::new(),
             // C++ ctor leaves types/print/defaultfp null; init() fills them.
@@ -777,6 +790,10 @@ impl Architecture {
         // Share the populated data-type factory so `ActionInferTypes` (run via
         // `glb`) reaches the same interned core types this side cached.
         seam.types = Some(self.types_rc());
+        // Share the decoded-string manager (C++ `glb->stringManager`) so the
+        // per-function `Funcdata::getInternalString` registers internal strings
+        // into the very instance the printer reads back on this architecture.
+        seam.internal_strings = Some(Rc::clone(&self.string_manager));
         // Jump-table recovery constants (C++ `glb->max_jumptable_size` /
         // `funcptr_align`) and the load image (C++ `glb->loader`) so the
         // jump-table emulator reaches the read-only switch table.
@@ -1316,6 +1333,39 @@ impl Architecture {
         parse_res
     }
 
+    /// (kuna) Register the fixed set of string-copy builtin user-ops into
+    /// `userops` so the printer's `opCallother` path resolves their name,
+    /// display, and typed parameters.  Mirrors the lazy
+    /// `userops.registerBuiltin(BUILTIN_*)` calls in `ArraySequence::buildStringCopy`
+    /// and `Funcdata::getInternalString` (C++ does these on demand during the
+    /// transform; the kuna seam can't reach the real `userops`, so they are
+    /// front-loaded here).
+    fn register_string_builtins(&mut self) -> KunaResult<()> {
+        use crate::userop::{
+            BUILTIN_MEMCPY, BUILTIN_STRINGDATA, BUILTIN_STRNCPY, BUILTIN_WCSNCPY,
+        };
+        // Split the &mut userops borrow from the &self type-factory read by
+        // building a small adapter over the (already-populated) factory.
+        let adapter = BuiltinTypeArch {
+            types: Rc::clone(&self.types),
+            data_word_size: self
+                .manage()
+                .get_default_data_space()
+                .map(|s| s.get_word_size() as int4)
+                .unwrap_or(1),
+        };
+        let mut userops = std::mem::take(&mut self.userops);
+        let res = (|| -> KunaResult<()> {
+            userops.register_builtin(BUILTIN_STRINGDATA, &adapter)?;
+            userops.register_builtin(BUILTIN_MEMCPY, &adapter)?;
+            userops.register_builtin(BUILTIN_STRNCPY, &adapter)?;
+            userops.register_builtin(BUILTIN_WCSNCPY, &adapter)?;
+            Ok(())
+        })();
+        self.userops = userops;
+        res
+    }
+
     // -----------------------------------------------------------------------
     // Owned-subsystem accessors (the `glb->types`/`glb->print`/… surface the
     // ifacedecomp porter confirmed were absent — w9x-arch-engine-glue)
@@ -1516,7 +1566,74 @@ impl Architecture {
     /// `<data_organization>` was registered).  Reads the architecture's default
     /// data-space / stack-pointer widths (the `glb->` accessors the C++
     /// `setupSizes` queries).
+    /// Parse the cspec `<data_organization>` size elements into the type factory
+    /// (C++ `TypeFactory::decodeDataOrganization`, type.cc:5107).  Sets the
+    /// integer/long/pointer/char/wchar default sizes from the compiler spec so
+    /// `getSizeOfWChar()` etc. reflect the real ABI (e.g. x86-64 gcc `wchar_size=4`);
+    /// `setupSizes` then only fills the elements the spec left unset.  The
+    /// `<size_alignment_map>` is left to the existing `set_default_alignment_map`
+    /// (a separate cspec item); only the scalar sizes are read here.
+    fn decode_data_organization(&self) -> KunaResult<()> {
+        use kuna_base::xml::DocumentStorage;
+        let Some(xml) = self.cspec_xml.clone() else {
+            return Ok(());
+        };
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(&xml)?.get_root().clone();
+        let Some(dorg) =
+            root.get_children().iter().find(|c| c.get_name() == "data_organization").cloned()
+        else {
+            return Ok(());
+        };
+        let read = |el: &Rc<kuna_base::xml::Element>| -> Option<int4> {
+            el.get_attribute_value("value")
+                .ok()
+                .and_then(|b| std::str::from_utf8(b).ok())
+                .and_then(|s| s.trim().parse::<int4>().ok())
+        };
+        for child in dorg.get_children().iter() {
+            match child.get_name() {
+                "integer_size" => {
+                    if let Some(v) = read(child) {
+                        self.types.set_size_of_int(v);
+                    }
+                }
+                "long_size" => {
+                    if let Some(v) = read(child) {
+                        self.types.set_size_of_long(v);
+                    }
+                }
+                "pointer_size" => {
+                    if let Some(v) = read(child) {
+                        self.types.set_size_of_pointer(v);
+                    }
+                }
+                "char_size" => {
+                    if let Some(v) = read(child) {
+                        self.types.set_size_of_char(v);
+                    }
+                }
+                "wchar_size" => {
+                    if let Some(v) = read(child) {
+                        self.types.set_size_of_wchar(v);
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Finish the type factory: set up the default sizes (C++
+    /// `types->setupSizes()`, the tail of `parseCompilerConfig` when no
+    /// `<data_organization>` was registered).  Reads the architecture's default
+    /// data-space / stack-pointer widths (the `glb->` accessors the C++
+    /// `setupSizes` queries).
     pub fn finish_typegrp(&self) {
+        // C++ `parseCompilerConfig` decodes `<data_organization>`
+        // (architecture.cc:1268) before the type factory's `setupSizes` defaults
+        // run, so spec-given sizes (e.g. gcc's `wchar_size=4`) take precedence.
+        let _ = self.decode_data_organization();
         let manage = self.manage();
         let default_size = manage.get_default_size();
         let default_data_addr_size = manage
@@ -2321,6 +2438,18 @@ impl Architecture {
         // together by parseInject — the MIPS `setISAMode` fixup that makes the
         // dead ISA-mode-switch CALLOTHER injectable.
         self.init_userops_and_fixups()?;
+        // (kuna) Eagerly register the string-copy builtins (C++ lazy
+        // `userops.registerBuiltin` is called from
+        // `ArraySequence::buildStringCopy` / `Funcdata::getInternalString` during
+        // the `RuleStringStore`/`RuleStringCopy` transform).  Those transforms run
+        // through the per-function W4 seam (`glb`), which carries no mutable
+        // `userops` handle; the printer, however, reads back the builtin
+        // name/display/typed-params on *this* real architecture (`opCallother` ->
+        // `userops.getOp`).  The builtin set + their typed signatures are fixed,
+        // so registering them once here (after the type factory is built) is
+        // equivalent to the lazy C++ registration and keeps the printer self-
+        // contained.  Idempotent (`register_builtin` is a no-op on a present id).
+        self.register_string_builtins()?;
         // C++ `parseCompilerConfig` dispatches the cspec `<global>` element
         // (ELEM_GLOBAL, architecture.cc:1276-1277) into a deferred `globalRanges`
         // vector, then applies it via `addToGlobalScope` (architecture.cc:1336-1337)
@@ -2692,6 +2821,51 @@ impl OwnedFloatFormats {
 impl kuna_num::opbehavior::FloatFormatProvider for OwnedFloatFormats {
     fn get_float_format(&self, size: i32) -> Option<&kuna_num::float::FloatFormat> {
         self.formats.iter().find(|f| f.get_size() == size)
+    }
+}
+
+/// (kuna) Adapter implementing [`UseropTypeArchitecture`] over the architecture's
+/// populated [`TypeFactoryImpl`], used by [`Architecture::register_string_builtins`]
+/// to build the typed builtin signatures without aliasing the `&mut userops`
+/// borrow.  Maps the trait's `glb->types->...` / `glb->getDefaultDataSpace()`
+/// reads onto the factory + the data-space word size captured at construction.
+struct BuiltinTypeArch {
+    types: Rc<TypeFactoryImpl>,
+    data_word_size: int4,
+}
+
+impl crate::userop::UseropTypeArchitecture for BuiltinTypeArch {
+    fn get_size_of_pointer(&self) -> int4 {
+        self.types.get_size_of_pointer()
+    }
+    fn get_default_data_space_word_size(&self) -> int4 {
+        self.data_word_size
+    }
+    fn get_type_void(&self) -> Rc<crate::dtype::Datatype> {
+        self.types.get_type_void().expect("builtin: getTypeVoid")
+    }
+    fn get_type_pointer(
+        &self,
+        ptr_size: int4,
+        base: Rc<crate::dtype::Datatype>,
+        word_size: int4,
+    ) -> Rc<crate::dtype::Datatype> {
+        self.types
+            .get_type_pointer(ptr_size, base, word_size as uint4)
+            .expect("builtin: getTypePointer")
+    }
+    fn get_base_int(&self, size: int4) -> Rc<crate::dtype::Datatype> {
+        self.types.get_base(size, type_metatype::TYPE_INT).expect("builtin: getBase(INT)")
+    }
+    fn get_type_char(&self) -> Rc<crate::dtype::Datatype> {
+        self.types
+            .get_type_char(self.types.get_size_of_char())
+            .expect("builtin: getTypeChar")
+    }
+    fn get_type_wchar(&self) -> Rc<crate::dtype::Datatype> {
+        self.types
+            .get_type_char(self.types.get_size_of_wchar())
+            .expect("builtin: getTypeChar(wchar)")
     }
 }
 

@@ -2823,6 +2823,11 @@ impl PrintC {
             OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
                 self.op_call_ir(fd, arch, op);
             }
+            // CALLOTHER (printc.cc:693 opCallother): a user p-code op.  The display
+            // class (`userop->getDisplay()`) chooses the form: functional
+            // `name(arg,...)` for a black-box op, `display_string` for the
+            // internal-string builtin, or the no-operator/annotation forms.
+            OpCode::CPUI_CALLOTHER => self.op_callother_ir(fd, arch, op),
             // FLOAT_INT2FLOAT (printc.cc:850 opFloatInt2Float): the int->float
             // conversion renders as a `(floatN)input` cast (NOT a functional
             // `FLOAT_INT2FLOAT(input)`), absorbing an implied INT_ZEXT on its
@@ -2985,6 +2990,122 @@ impl PrintC {
                 TagType::BlankToken,
                 crate::printlanguage::SyntaxHighlight::no_color,
             ));
+        }
+    }
+
+    /// C++ `PrintC::opCallother` (printc.cc:693): render a CALLOTHER (user
+    /// p-code op).  The op's in0 constant indexes a `UserPcodeOp` whose
+    /// `getDisplay()` selects the form:
+    ///   * `0` (functional): `name(arg1, arg2, ...)` over inputs 1..n-1, with the
+    ///     name resolved through the userop table (`getOperatorName`).
+    ///   * `annotation_assignment`: `in1 = in2`.
+    ///   * `no_operator`: just `in1`.
+    ///   * `display_string`: the output Varnode rendered as a quoted string
+    ///     literal (the internal-string builtin), via `printCharacterConstant` on
+    ///     the hash-keyed constant address in in1.
+    fn op_callother_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        use crate::userop::userop_flags;
+        let in0_off = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
+            Some(v) => fd.vbank().get(v).map(|vn| vn.get_offset()).unwrap_or(0),
+            None => 0,
+        };
+        // UserPcodeOp *userop = glb->userops.getOp(op->getIn(0)->getOffset());
+        let display = arch
+            .userops
+            .get_op(in0_off as u32)
+            .map(|u| u.get_display())
+            .unwrap_or(0);
+        let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+        if display == 0 {
+            // Functional syntax: string nm = op->getOpcode()->getOperatorName(op);
+            // For CALLOTHER this resolves to the userop's name (the base
+            // getOperatorName), or the generic `CALLOTHER[index]` fallback.
+            let nm = match arch.userops.get_op(in0_off as u32) {
+                Some(u) => String::from_utf8_lossy(u.get_name()).into_owned(),
+                None => format!("CALLOTHER[{:#x}]", in0_off),
+            };
+            self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+            self.push_atom(&Atom::with_op(
+                nm,
+                TagType::OpToken,
+                crate::printlanguage::SyntaxHighlight::funcname_color,
+                op_key(op),
+            ));
+            if nin > 1 {
+                // (numInput-2) comma operators glue args 1..numInput-1.
+                for _ in 1..(nin - 1) {
+                    self.push_op(&tokens::COMMA, Some(op_key(op)));
+                }
+                for i in 1..nin {
+                    if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
+                        self.push_vn_ir(fd, arch, vn, op);
+                    }
+                }
+            } else {
+                // Empty token for void (C++ blanktoken).
+                self.push_atom(&Atom::syntax(
+                    "",
+                    TagType::BlankToken,
+                    crate::printlanguage::SyntaxHighlight::no_color,
+                ));
+            }
+        } else if display == userop_flags::ANNOTATION_ASSIGNMENT {
+            self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
+            if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(2)) {
+                self.push_vn_ir(fd, arch, vn, op);
+            }
+            if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
+                self.push_vn_ir(fd, arch, vn, op);
+            }
+        } else if display == userop_flags::NO_OPERATOR {
+            if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
+                self.push_vn_ir(fd, arch, vn, op);
+            }
+        } else if display == userop_flags::DISPLAY_STRING {
+            // const Varnode *vn = op->getOut(); Datatype *ct = vn->getType();
+            let outvn = fd.obank().get(op).and_then(|o| o.get_out());
+            let mut s = String::new();
+            let mut ok = false;
+            if let Some(ovn) = outvn {
+                let ct = fd.vbank().get(ovn).map(|v| std::rc::Rc::clone(v.get_type()));
+                if let Some(ct) = ct {
+                    if ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR {
+                        if let Some(subct) = ct.get_ptr_to() {
+                            // printCharacterConstant(str, op->getIn(1)->getAddr(), subct)
+                            let in1addr = fd
+                                .obank()
+                                .get(op)
+                                .and_then(|o| o.get_in(1))
+                                .and_then(|v| fd.vbank().get(v).map(|vn| vn.get_addr().clone()));
+                            if let Some(addr) = in1addr {
+                                if self.print_character_constant(arch, &mut s, &addr, &subct) {
+                                    ok = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if !ok {
+                s.push_str("\"badstring\"");
+            }
+            // pushAtom(Atom(str.str(), vartoken, const_color, op, vn))
+            if let Some(ovn) = outvn {
+                self.push_atom(&Atom::with_op_vn(
+                    s,
+                    TagType::VarToken,
+                    crate::printlanguage::SyntaxHighlight::const_color,
+                    op_key(op),
+                    vn_key(ovn),
+                ));
+            } else {
+                self.push_atom(&Atom::with_op(
+                    s,
+                    TagType::VarToken,
+                    crate::printlanguage::SyntaxHighlight::const_color,
+                    op_key(op),
+                ));
+            }
         }
     }
 
@@ -5110,16 +5231,18 @@ impl PrintC {
         addr: &Address,
         char_type: &std::rc::Rc<crate::dtype::Datatype>,
     ) -> bool {
-        use crate::stringmanage::{StringManager, StringManagerUnicode};
+        use crate::stringmanage::StringManager;
         use kuna_sleigh::translate::Translate;
-        // Pull UTF-8 string data over the loadimage.  The C++ keeps a persistent
-        // glb->stringManager cache; the kuna Architecture does not own a live
-        // instance, so a transient manager is used per call.  The result is the
-        // same UTF-8 byte buffer (the cache only avoids re-reading the image).
+        // Pull UTF-8 string data through the architecture's persistent
+        // `stringManager` (C++ `glb->stringManager`).  Using the shared instance
+        // (not a transient one) is what lets `getInternalString`-registered
+        // strings — keyed on a constant-space hash address that is *not* in the
+        // loadimage — resolve here: `getStringData` returns the cached bytes for a
+        // hit and otherwise reads the loadimage exactly as before.
         let loader_rc = arch.translate().loader_rc();
-        let mut mgr = StringManagerUnicode::new(2048);
         let mut is_trunc = false;
         let buffer: Vec<u8> = {
+            let mut mgr = arch.string_manager.borrow_mut();
             let mut loader = loader_rc.borrow_mut();
             mgr.get_string_data(addr, char_type, &mut **loader, &mut is_trunc)
                 .to_vec()
