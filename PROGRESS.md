@@ -1,5 +1,28 @@
 # kuna Progress Log
 
+## Session (2026-06-17c) — rust-port W10: 408 → 410/675; De Morgan; RSP &v1-render REJECTED (masked switchmulti regression)
+
+**De Morgan +2 → 410 (merge `2d99361`).** `RuleNotDistribute::apply_op` (`ruleaction_1.rs`)
+was a SEAM(W3) stub; ported the faithful C++ body (`ruleaction.cc:1148-1184`): `!(V&&W) =>
+!V||!W` via two new BOOL_NEGATE ops + flipped BOOL_OR/AND, then RuleBoolNegate collapses to
+`(a==10 || b==0x14)` — the oracle form. Gained `Compare INT_OR #1`, `Signed byte #2`. Gate:
+cargo test 3669/0, `[675,410]`, regressed-set EMPTY, switch cluster intact, PARITY OK, B0
+byte-equal (only ruleaction_1.rs). Review `reviews/w10-demorgan-compare.md`.
+
+**RSP &v1-render layer (CORRECTION-10) — REJECTED at integration; the gate caught a masked
+switchmulti regression.** The wave (commit `06fc69f` on `rport/w10-rsp-L4L5-stackframe`)
+correctly landed the `&v1` render on its OWN base `7f1f4df` (+5: Switch Hide #3/#4, RetVal
+Input Reg #6/#7, Intermediate ptr #5), regressed-set EMPTY *vs its base*. But that base
+PRE-DATES ActionReturnSplit (407) — so its verify never saw the switchmulti gains. Merged onto
+the real 408 tree, the per-assertion diff showed +5 gained but **−6 Switch Multi (#2/#4/#5/#6/
+#7/#8)**: the `INPUT_EFFECT_MARKING` flip + spacebase-symbol-naming pre-pass perturbs the IR
+that ActionReturnSplit's nodeSplit predicate keys on. Count alone said 408→407 (−1, looks
+tiny); the diff revealed −6/+5. Classic masked regression — exactly why the FULL passing-set
+diff is mandatory. Merge ABORTED, rust-port restored to 408 clean. **Next:** a repair wave to
+rebase the &v1-render layer on current rust-port (with ActionReturnSplit present) and make the
+two compatible — diagnose why INPUT_EFFECT_MARKING/naming breaks nodeSplit on the switchmulti
+functions. The L4/L5 substrate + render is preserved at `06fc69f`.
+
 ## Session (2026-06-17b) — rust-port W10: 400 → 408/675; ActionReturnSplit + Convert #17
 
 **Two porter-committed survivor waves integrated via the main loop (+8 → 408).** Both waves'
