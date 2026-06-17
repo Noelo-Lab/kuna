@@ -854,11 +854,39 @@ fn get_output_token_ptrsub(data: &mut Funcdata, op: OpId) -> Rc<Datatype> {
     // C++ downChain takes `offset` by REFERENCE and updates it to the residual
     // offset *within* the reached sub-type; the `if (offset==0)` test uses that
     // UPDATED value (the Rust port returns it as the 2nd tuple element).
-    let down = tlst.down_chain(&ptype, offset, false);
-    if let Ok((Some(rettype), residual_off, _parent, _poff)) = down {
-        if residual_off == 0 {
-            // downChain reached the sub-type exactly; the token is that pointer.
-            return rettype;
+    //
+    // The generic `Datatype::down_chain` cannot reach the symbol table that a
+    // `TypeSpacebase` ptrto indexes (`TypeSpacebase::getSubType` needs `glb`), so
+    // for a pointer-to-spacebase the spacebase branch of `TypePointer::downChain`
+    // (type.cc:1224-1257) is reproduced here against `Funcdata`'s symbol scope.
+    // The spacebase has `getAlignSize()==0`, so the `off >= ptrtoSize` wrapping
+    // guard (type.cc:1225-1226) is skipped (`ptrtoSize != 0` is false); the type
+    // is not an array/struct, so `!isArray -> getTypePointerStripArray` applies.
+    let ptrto = ptype.get_ptr_to();
+    let is_spacebase = ptrto
+        .as_ref()
+        .map(|p| p.get_metatype() == type_metatype::TYPE_SPACEBASE)
+        .unwrap_or(false);
+    if is_spacebase {
+        let r = data.spacebase_get_sub_type(&ptrto.expect("spacebase ptrto present"), offset);
+        if let Some((subtype, residual_off)) = r {
+            if residual_off == 0 {
+                // `!isArray -> getTypePointerStripArray(size, pt, wordsize)`
+                // (type.cc:1255-1256).  The spacebase itself is never an array.
+                if let Ok(p) = tlst.get_type_pointer_strip_array(out_size, subtype, wordsize) {
+                    return p;
+                }
+            }
+        }
+        // Fall through to the `xunknown1 *` fallback below (residual != 0 or the
+        // strip-array build failed — the C++ getSubType-miss / non-exact branch).
+    } else {
+        let down = tlst.down_chain(&ptype, offset, false);
+        if let Ok((Some(rettype), residual_off, _parent, _poff)) = down {
+            if residual_off == 0 {
+                // downChain reached the sub-type exactly; the token is that pointer.
+                return rettype;
+            }
         }
     }
     // rettype = getBase(1, TYPE_UNKNOWN); getTypePointer(out_size, rettype, wordsize)

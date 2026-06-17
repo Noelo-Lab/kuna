@@ -26,6 +26,7 @@ use kuna_base::types::{int4, int8, uint4, uintb};
 
 use kuna_num::opcodes::OpCode;
 
+use crate::dtype::TypeFactory;
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
 use crate::seams::{OpId, TypeOp, VarnodeId};
@@ -187,6 +188,67 @@ impl Funcdata {
         }
         // Non-spacebase: the pure method is fully faithful.
         ptrtype.is_ptrsub_matching(off, extra, multiplier).unwrap_or(false)
+    }
+
+    /// C++ `TypeSpacebase::getSubType` (`type.cc:3411-3433`), resolved against the
+    /// scope the spacebase's `localframe` selects via `getMap()` (`type.cc:3398`):
+    /// the GLOBAL scope when `localframe.isInvalid()`, else the owning function's
+    /// `ScopeLocal`.
+    ///
+    /// The pure `Datatype::get_sub_type` cannot reach the symbol table that a
+    /// `TypeSpacebase` indexes (the C++ `TypeSpacebase` carries `glb`); the global
+    /// arm here routes through the frozen [`GlobalQuery`](crate::seams::GlobalQuery)
+    /// snapshot (`glb.resolve_constant` + `glb.query_container_global`), exactly as
+    /// `ActionConstantPtr::isPointer` does, and the local arm delegates to the
+    /// existing [`ScopeLocal::spacebase_get_sub_type`].  Returns
+    /// `(subtype, newoff)`; like the C++ it never yields a null sub-type — a miss
+    /// yields `getBase(1, TYPE_UNKNOWN)` with `newoff = 0`.
+    ///
+    /// `sb_type` is the `TYPE_SPACEBASE` data-type; `off` is the byte offset
+    /// (already address-to-byte converted by the caller, matching the `int8 off`
+    /// the C++ `getSubType` receives from `TypePointer::downChain`).
+    pub fn spacebase_get_sub_type(
+        &self,
+        sb_type: &Rc<crate::dtype::Datatype>,
+        off: int8,
+    ) -> Option<(Rc<crate::dtype::Datatype>, int8)> {
+        use crate::dtype::type_metatype;
+        let (spaceid, localframe) = sb_type.spacebase_parts()?;
+        let spaceid = spaceid?;
+        let types = self.get_arch().types_rc()?;
+        // Local-frame spacebase: getMap() -> the owning function's ScopeLocal.
+        if !localframe.is_invalid() {
+            let lm = self.get_scope_local()?;
+            return lm.spacebase_get_sub_type(off, types.as_ref()).ok();
+        }
+        // Global spacebase: getMap() -> the global scope (the GlobalQuery snapshot).
+        // addrOff = byteToAddress(off, wordSize); addr = resolveConstant(spaceid,
+        // addrOff, -1, nullPoint, fullEncoding).
+        let word_size = spaceid.get_word_size();
+        let addr_off = kuna_base::space::AddrSpace::byte_to_address(off as u64, word_size);
+        let null_point = Address::new_invalid();
+        let glb = Rc::clone(self.get_arch());
+        let mut full_encoding: uintb = 0;
+        let addr = glb
+            .resolve_constant(&spaceid, addr_off, -1, &null_point, &mut full_encoding)
+            .ok()?;
+        // smallest = scope->queryContainer(addr, 1, nullPoint).
+        match glb.query_container_global(&addr, 1, &null_point) {
+            Some(entry) => {
+                // newoff = (addr - smallest.addr) + smallest.offset.
+                let newoff = (addr.get_offset().wrapping_sub(entry.entry_addr.get_offset())
+                    as int8)
+                    + entry.symbol_offset as int8;
+                match entry.symbol_type {
+                    Some(t) => Some((t, newoff)),
+                    // A Symbol with no snapshot type degrades to UNKNOWN(1) (the C++
+                    // Symbol always has a type here).
+                    None => Some((types.get_base(1, type_metatype::TYPE_UNKNOWN).ok()?, 0)),
+                }
+            }
+            // No covering Symbol: *newoff = 0; return getBase(1, TYPE_UNKNOWN).
+            None => Some((types.get_base(1, type_metatype::TYPE_UNKNOWN).ok()?, 0)),
+        }
     }
 
     /// Make a clone of the defining op for every descendant after the first, so

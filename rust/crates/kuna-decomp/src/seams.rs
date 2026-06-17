@@ -846,6 +846,7 @@ impl Architecture {
             symbol_type: e.symbol_type.clone(),
             entry_addr: Address::new(Rc::clone(space), e.first),
             all_flags: e.all_flags,
+            symbol_offset: e.symbol_offset,
         })
     }
 }
@@ -867,6 +868,10 @@ pub struct GlobalContainer {
     /// `entry->getAllFlags()` — used for the `typelock` bit
     /// (`sym->isTypeLocked()`).
     pub all_flags: uint4,
+    /// `entry->getOffset()` — the byte offset of this storage piece within the
+    /// owning Symbol, for the `TypeSpacebase::getSubType` residual-offset
+    /// computation (`funcdata.cc` / `type.cc:3431`).
+    pub symbol_offset: int4,
 }
 
 impl GlobalContainer {
