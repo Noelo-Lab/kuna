@@ -2519,3 +2519,26 @@ The original LOSS-229 restoration note is WRONG. The mapped-copyelim wave dispro
   `ruleaction_5.rs:1313,1361` (C++ `Funcdata::inheritUnionField`/`inheritUnionFieldPtr`
   funcdata.cc:1079,1101). Multi-file union-resolution port.
 - recorded by the integrator after the Union wave BLOCKED (2026-06-17). [[kuna-rust-port]]
+
+## LOSS-230 CORRECTION (subpiece-cast wave, 2026-06-17) — Family-1 root is the killedbycall heritage seam, NOT flow.rs
+
+The subpiece-cast wave reproduced the IR divergence (KUNA_DUMP `print raw`): C++ Block 2 has
+`w0 = call fotherfunc` (call HAS output) + `return w0`; rust has `call fotherfunc` (NO output) +
+a spurious `w0 = SUB84(x0,0)` that the return reads. `flow.rs`/`funcdata_resolveflow.rs` are
+FAITHFUL (override_flow funcdata_op.rs:2447 + setup_call_specs flow.rs:1689 correct). The REAL
+root:
+- `ActionFuncLink::func_link_output` (`coreaction_protos.rs:741-753`) — the unlocked-proto
+  `initActiveOutput()` branch (C++ coreaction.cc:1611) is STUBBED. So the call is never
+  output-active, `w0` is never gathered as a return trial, the call gets no output, and heritage
+  resolves the free `w0` read back to input `x0` as `SUB84(x0,0)`.
+- That stub is gated on `Heritage::guard_calls` (`heritage.rs:1471-1477`) where the output-active
+  return-trial registration + the `killedbycall` INDIRECT-creation marker are DEFERRED
+  ("destabilizes more functions than it fixes" — the register-clobber INDIRECT-collapse seam is
+  incomplete on the live IR).
+- CORRECTED next-locus: a HERITAGE-focused wave owning `heritage.rs` + `coreaction_protos.rs` that
+  lands the `killedbycall` INDIRECT-creation chain in `guard_calls` (heritage.rs:1471) + its
+  downstream INDIRECT-collapse/return-value-phi handling, THEN un-stubs `init_active_output`
+  (coreaction_protos.rs:752). Once the call regains its `w0` output (and condconstsub #4 stays
+  byte-identical with the cast arm still disabled), the `printc.rs:3810` cast-arm enable is the
+  clean isolated final step → Union #8/#14/#28 + Bitfields #4. This is a deep call-return-recovery
+  seam — likely affects many call-output assertions, not just these. [[kuna-rust-port]]
