@@ -1,6 +1,14 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 433/675; De Morgan + namespace + convert-negconst + RSP &v1-render + enum4/HighVariable
+## Session (2026-06-17c) — rust-port W10: 408 → 435/675; De Morgan + namespace + convert-negconst + RSP &v1-render + enum4/HighVariable + BOOL_NEGATE
+
+**BOOL_NEGATE printc dispatch +2 → 435.** `CPUI_BOOL_NEGATE` had no printc arm (fell through to
+`op_func_ir` → `BOOL_NEGATE(x)` not `!x`). Ported C++ `PrintC::opBoolNegate` (printc.cc:834) +
+`checkPrintNegation` (printc.cc:2464) flip — wired the missing PRODUCER side of the negate-token
+mod. Gained Bitfields #8, MIPS Bitfields #10. Gate: `[675,435]`, regressed-set EMPTY, switch
+8/16/3, PARITY OK. Review `reviews/w10-bitfield-boolnegate.md`. NOTE: bitfield expr machinery is
+already ported; the remaining ~26 bitfield fails are stack-local-struct-typing-gated (LOSS-156/
+070/153) — overlaps the stack-frame cluster wave.
 
 **enum4 + HighVariable typeDirty INTEGRATED (+3 → 433; resolves LOSS-228).** The enum4
 `RuleExpandLoad` substrate (LOAD-resize, +0 alone) + the real fix: `Varnode::update_type` had a
