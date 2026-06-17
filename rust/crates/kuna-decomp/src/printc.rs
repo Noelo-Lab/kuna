@@ -1021,6 +1021,10 @@ pub struct PrintC {
     nodepend: Vec<crate::printlanguage::NodePending>,
     /// How much of `nodepend` is claimed (C++ `PrintLanguage::pending`).
     pending: usize,
+    /// Comment placement / walk state for the function being printed (C++
+    /// `PrintLanguage::commsorter`).  Seeded by [`setup_comments`] at the start of
+    /// the body and consulted by `emit_comment_block_tree`/`emit_comment_group`.
+    commsorter: crate::comment::CommentSorter,
 }
 
 impl Default for PrintC {
@@ -1042,6 +1046,7 @@ impl PrintC {
             revpol: Vec::new(),
             nodepend: Vec::new(),
             pending: 0,
+            commsorter: crate::comment::CommentSorter::new(),
         }
     }
 
@@ -1565,6 +1570,10 @@ impl PrintC {
     /// to the brace-matched shell so the output is still a complete function.
     pub fn doc_function_full(&mut self, fd: &Funcdata, arch: &Architecture) -> String {
         self.emit.set_output_stream();
+        // commsorter.setupFunctionList(...) (C++ printc.cc:2799): place this
+        // function's comments into their basic blocks so the body emitters can
+        // pick them up in order.
+        self.setup_comments(fd, arch);
         let markup = MarkupRef::none();
         let display = fd.get_display_name().to_string();
         // Return type from the recovered proto output (C++ `getFuncProto().
@@ -2127,10 +2136,156 @@ impl PrintC {
     /// C++ `PrintC::emitBlockCopy` (printc.cc:2908): emit the underlying basic
     /// block (the `BlockCopy.copy` points back into `bblocks`).
     fn emit_block_copy(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
-        // emitAnyLabelStatement(bl): labels need the goto/label machinery; skip.
+        // emitBlockBasic -> emitLabelStatement(bb) (printc.cc:2834): a label line
+        // for an unstructured-goto target.  Its `tag_line(0)` fires any pending
+        // `else if` brace, forcing `else { label: if ... }` (the `else if`
+        // collapse is suppressed when the clause carries a goto label).
+        self.emit_label_statement(fd, blk);
         if let Some(under) = fd.sblocks_ref().block(blk).get_copy() {
             // The copy's `copy` field is a *bblocks* BlockId.
             self.emit_basic_block_ops(fd, arch, under, true);
+        }
+    }
+
+    /// C++ `PrintC::emitLabelStatement` (printc.cc:3355), structured-print arm: a
+    /// `LABEL:` line for a `t_copy` block that is the target of an unstructured
+    /// goto.  The label name mirrors [`emit_goto_statement`]'s simplified
+    /// `LAB_<index>` form so a `goto`/target pair render the same name (the full
+    /// `emitLabel` entry-address/code-symbol naming routes through `database.rs`,
+    /// a concurrent wave's file).
+    fn emit_label_statement(&mut self, fd: &Funcdata, bl: BlockId) {
+        use crate::block::BlockType;
+        // if (isSet(only_branch)) return;
+        if self.context.is_set(modifiers::ONLY_BRANCH) {
+            return;
+        }
+        // Structured: only print labels for unstructured-jump targets that are
+        // t_copy leaves.
+        if !fd.sblocks_ref().block(bl).is_unstructured_target() {
+            return;
+        }
+        if fd.sblocks_ref().block(bl).get_type() != BlockType::Copy {
+            return;
+        }
+        // emit->tagLine(0); emitLabel(bl); emit->print(COLON);
+        self.emit.tag_line_indent(0);
+        let idx = fd.sblocks_ref().block(bl).get_index();
+        self.emit.print(&format!("LAB_{idx:08x}"), SyntaxHighlight::NoColor);
+        self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);
+    }
+
+    /// Seed [`commsorter`](PrintC::commsorter) with this function's comments (C++
+    /// `CommentSorter::setupFunctionList`, printc.cc:2799).  The architecture's
+    /// warning sink stores comments as flat `ArchWarning` records; rebuild a real
+    /// `CommentDatabaseInternal` (which sorts/uniqs by `(fad, addr, uniq)`) from
+    /// them so the sorter's block placement reads the same ordered set C++ does.
+    fn setup_comments(&mut self, fd: &Funcdata, arch: &Architecture) {
+        use crate::comment::comment_type as ct;
+        use crate::comment::{CommentDatabase, CommentDatabaseInternal};
+        // head_comment_type | instr_comment_type (printlanguage.cc:586-589).
+        let tp = ct::HEADER | ct::WARNINGHEADER | ct::USER2 | ct::WARNING;
+        let mut db = CommentDatabaseInternal::new();
+        for w in arch.commentdb.comments() {
+            db.add_comment(w.tp, &w.func_addr, &w.addr, w.text.as_bytes());
+        }
+        // option_unplaced is off by default (C++ resetDefaultsPrintC).
+        if let Err(_e) = self.commsorter.setup_function_list(tp, fd, &db, false) {
+            // A dead op reaching the sorter is a C++ LowlevelError; degrade to
+            // "no comments placed" rather than aborting the whole print.
+            self.commsorter = crate::comment::CommentSorter::new();
+        }
+    }
+
+    /// C++ `PrintC::emitCommentGroup` (printc.cc:3388): emit the comment lines the
+    /// sorter has associated with the statement rooted at `inst` (or, for `None`,
+    /// any remaining comments in the current block).  Only `instr_comment_type`
+    /// comments are shown.
+    fn emit_comment_group(&mut self, fd: &Funcdata, inst: Option<OpId>) {
+        use crate::comment::comment_type as ct;
+        let instr_comment_type = ct::USER2 | ct::WARNING;
+        // commsorter.setupOpList(inst).
+        let landmark = inst.and_then(|op| {
+            let o = fd.obank().get(op)?;
+            let parent = o.get_parent()?;
+            Some(crate::comment::OpListLandmark {
+                index: fd.bblocks_ref().block(parent).get_index(),
+                order: o.get_seq_num().get_order(),
+            })
+        });
+        self.commsorter.setup_op_list(landmark);
+        // while (hasNext()) { comm=getNext(); if emitted/type-mismatch skip; emitLineComment }
+        while self.commsorter.has_next() {
+            let (emitted, tp, text, addr) = {
+                let comm = self.commsorter.get_next();
+                (
+                    comm.is_emitted(),
+                    comm.get_type(),
+                    comm.get_text().to_vec(),
+                    comm.get_addr().clone(),
+                )
+            };
+            if emitted {
+                continue;
+            }
+            if (instr_comment_type & tp) == 0 {
+                continue;
+            }
+            self.emit_line_comment(-1, &text, &addr);
+            // emitLineComment sets comm->setEmitted(true) (printlanguage.cc:655),
+            // so a later walk over the same window skips it.
+            self.commsorter.mark_last_emitted();
+        }
+    }
+
+    /// C++ `PrintLanguage::emitLineComment` (printlanguage.cc:596): a fresh line
+    /// (at the comment indent) carrying `/* <text> */`.  The default C delimiters
+    /// are `/* ` / ` */`; a negative `indent` uses the configured comment indent.
+    fn emit_line_comment(&mut self, indent: int4, text: &[u8], addr: &kuna_base::address::Address) {
+        let indent = if indent < 0 { self.context.line_comment_indent() } else { indent };
+        let (space, off) = match addr.get_space() {
+            Some(s) => (std::rc::Rc::clone(s), addr.get_offset()),
+            None => return,
+        };
+        self.emit.tag_line_indent(indent);
+        let body = String::from_utf8_lossy(text);
+        self.emit.tag_comment(
+            &format!("/* {body} */"),
+            SyntaxHighlight::CommentColor,
+            &space,
+            off,
+        );
+    }
+
+    /// C++ `PrintC::emitCommentBlockTree` (printc.cc:3404): emit any comments
+    /// attached to basic blocks under the structured subtree rooted at the sblocks
+    /// node `bl`.  Used where statements from several basic blocks land on one
+    /// line (the `if (cond)` header) and a normal in-line comment would otherwise
+    /// print mid-line — here it forces the pending `else if` brace.
+    fn emit_comment_block_tree(&mut self, fd: &Funcdata, bl: BlockId) {
+        use crate::block::BlockType;
+        match fd.sblocks_ref().block(bl).get_type() {
+            // BlockCopy: descend to the underlying bblocks BlockBasic.
+            BlockType::Copy => {
+                if let Some(under) = fd.sblocks_ref().block(bl).get_copy() {
+                    // The copy's `copy` is a *bblocks* id (a BlockBasic).
+                    self.commsorter.setup_block_list(fd.bblocks_ref().block(under).get_index());
+                    self.emit_comment_group(fd, None);
+                }
+            }
+            BlockType::Plain => {}
+            // A bare sblocks BlockBasic (rare): its own index.
+            BlockType::Basic => {
+                self.commsorter.setup_block_list(fd.sblocks_ref().block(bl).get_index());
+                self.emit_comment_group(fd, None);
+            }
+            // BlockGraph subtype: recurse into every component.
+            _ => {
+                let n = fd.sblocks_ref().block(bl).get_size();
+                for i in 0..n {
+                    let child = fd.sblocks_ref().block(bl).get_block(i);
+                    self.emit_comment_block_tree(fd, child);
+                }
+            }
         }
     }
 
@@ -2183,9 +2338,21 @@ impl PrintC {
     /// (with optional `else`).  Block 0 is the condition, block 1 the true body,
     /// block 2 (optional) the else body.
     fn emit_block_if(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
+        use crate::prettyprint::Emit;
         let size = fd.sblocks_ref().block(blk).get_size();
         let cond_block = fd.sblocks_ref().block(blk).get_block(0);
-        // if-block never prints final branch: clear no_branch/only_branch.
+
+        // PendingBrace pendingBrace(option_brace_ifelse); if (isSet(pending_brace))
+        //   emit->setPendingPrint(&pendingBrace).  When *this* BlockIf is the
+        //   else-clause of a parent if, the parent set the pending_brace mod; we
+        //   register a brace that opens lazily so a real `else if` collapses.
+        let mut registered_pending = false;
+        if self.context.is_set(modifiers::PENDING_BRACE) {
+            self.emit.set_pending_brace(to_emit_brace(self.options.brace_ifelse));
+            registered_pending = true;
+        }
+
+        // if-block never prints final branch: clear no_branch/only_branch/pending_brace.
         self.context.push_mod();
         self.context.unset_mod(
             modifiers::NO_BRANCH | modifiers::ONLY_BRANCH | modifiers::PENDING_BRACE,
@@ -2196,7 +2363,26 @@ impl PrintC {
         self.context.set_mod(modifiers::NO_BRANCH);
         self.emit_block(fd, arch, cond_block);
         self.context.pop_mod();
-        self.emit.tag_line();
+        // emitCommentBlockTree(condBlock) (printc.cc:3048): emit any comments under
+        // the condition subtree before deciding `else if` vs `else {` — a comment
+        // forces the pending brace to fire (suppressing the `else if` collapse).
+        self.emit_comment_block_tree(fd, cond_block);
+
+        // If a pending brace was issued but did not emit (no statements forced a
+        // tag_line), cancel it to get `else if`; otherwise start `if` on a new
+        // line (C++ printc.cc:3049-3054).  When it *did* fire, snapshot the indent
+        // id it opened into a local — the shared emitter slot can be overwritten
+        // by a deeper BlockIf's own pending brace before we read it back.
+        let mut my_pending_indent = -1;
+        if self.emit.has_pending_brace() {
+            self.emit.cancel_pending_brace();
+            self.emit.spaces(1, 0);
+        } else {
+            if registered_pending {
+                my_pending_indent = self.emit.pending_brace_indent_id();
+            }
+            self.emit.tag_line();
+        }
 
         // ... then `if ` + the branch condition (only_branch).
         self.emit.tag_op(keywords::KEYWORD_IF, SyntaxHighlight::KeywordColor, &MarkupRef::none());
@@ -2212,44 +2398,50 @@ impl PrintC {
         if let Some(target) = goto_target {
             self.emit.spaces(1, 0);
             self.emit_goto_statement(fd, cond_block, target, fd.sblocks_ref().block(blk).get_if_goto_type());
-            self.context.pop_mod();
-            return;
-        }
+        } else {
+            // The true body in braces.
+            self.context.set_mod(modifiers::NO_BRANCH);
+            let id = self
+                .emit
+                .open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_ifelse));
+            let id1 = self.emit.begin_block(0);
+            self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
+            self.emit.end_block(id1);
+            self.emit.close_brace_indent(keywords::CLOSE_CURLY, id);
 
-        // The true body in braces.
-        self.context.set_mod(modifiers::NO_BRANCH);
-        let id = self
-            .emit
-            .open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_ifelse));
-        let id1 = self.emit.begin_block(0);
-        self.emit_block(fd, arch, fd.sblocks_ref().block(blk).get_block(1));
-        self.emit.end_block(id1);
-        self.emit.close_brace_indent(keywords::CLOSE_CURLY, id);
-
-        // Optional else.
-        if size == 3 {
-            self.emit.tag_line();
-            self.emit.print(keywords::KEYWORD_ELSE, SyntaxHighlight::KeywordColor);
-            let else_block = fd.sblocks_ref().block(blk).get_block(2);
-            let else_is_if = fd.sblocks_ref().block(else_block).get_type()
-                == crate::block::BlockType::If;
-            if else_is_if {
-                // `else if` merge: pending_brace.
-                self.context.set_mod(modifiers::PENDING_BRACE);
-                let id2 = self.emit.begin_block(0);
-                self.emit_block(fd, arch, else_block);
-                self.emit.end_block(id2);
-            } else {
-                let id2 = self
-                    .emit
-                    .open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_ifelse));
-                let id3 = self.emit.begin_block(0);
-                self.emit_block(fd, arch, else_block);
-                self.emit.end_block(id3);
-                self.emit.close_brace_indent(keywords::CLOSE_CURLY, id2);
+            // Optional else.
+            if size == 3 {
+                self.emit.tag_line();
+                self.emit.print(keywords::KEYWORD_ELSE, SyntaxHighlight::KeywordColor);
+                let else_block = fd.sblocks_ref().block(blk).get_block(2);
+                let else_is_if = fd.sblocks_ref().block(else_block).get_type()
+                    == crate::block::BlockType::If;
+                if else_is_if {
+                    // Attempt to merge the "else" and "if" syntax: set pending_brace
+                    // so the child BlockIf registers a lazy brace.
+                    self.context.set_mod(modifiers::PENDING_BRACE);
+                    let id2 = self.emit.begin_block(0);
+                    self.emit_block(fd, arch, else_block);
+                    self.emit.end_block(id2);
+                } else {
+                    let id2 = self
+                        .emit
+                        .open_brace_indent(keywords::OPEN_CURLY, to_emit_brace(self.options.brace_ifelse));
+                    let id3 = self.emit.begin_block(0);
+                    self.emit_block(fd, arch, else_block);
+                    self.emit.end_block(id3);
+                    self.emit.close_brace_indent(keywords::CLOSE_CURLY, id2);
+                }
             }
         }
         self.context.pop_mod();
+
+        // if (pendingBrace.getIndentId() >= 0) closeBraceIndent(...)  -- when our
+        // own pending brace actually fired (the else-clause had statements before
+        // its `if`, so it rendered `else { ... if`), close that brace.
+        if my_pending_indent >= 0 {
+            self.emit.close_brace_indent(keywords::CLOSE_CURLY, my_pending_indent);
+        }
     }
 
     /// C++ `PrintC::emitBlockSwitch` (printc.cc:3470): emit a `BlockSwitch` — the
@@ -2419,9 +2611,10 @@ impl PrintC {
     fn emit_for_loop(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
-        // (emitAnyLabelStatement / emitCommentBlockTree: not ported — same
-        //  simplification as the plain while arm.)
+        // emitCommentBlockTree(condBlock) (printc.cc:3116).  (emitAnyLabelStatement
+        // is a no-op here unless the for-loop head is an unstructured-goto target.)
         let cond_block = fd.sblocks_ref().block(blk).get_block(0);
+        self.emit_comment_block_tree(fd, cond_block);
         self.emit.tag_line();
         self.emit.tag_op(keywords::KEYWORD_FOR, SyntaxHighlight::KeywordColor, &MarkupRef::none());
         self.emit.spaces(1, 0);
@@ -2497,6 +2690,8 @@ impl PrintC {
             self.emit_goto_statement(fd, cond_block, cond_block, crate::block::block_flags::f_break_goto);
         } else {
             // while(condition) {
+            // emitCommentBlockTree(condBlock) (printc.cc:3197).
+            self.emit_comment_block_tree(fd, cond_block);
             self.emit.tag_line();
             self.emit.tag_op(keywords::KEYWORD_WHILE, SyntaxHighlight::KeywordColor, &MarkupRef::none());
             self.emit.spaces(1, 0);
@@ -2607,6 +2802,15 @@ impl PrintC {
         bb: BlockId,
         bblocks: bool,
     ) {
+        // commsorter.setupBlockList(bb) (printc.cc:2833): the comment walk window
+        // for this basic block.  The index is the *bblocks* BlockBasic's index
+        // (the sblocks node is a BlockCopy mirror, so resolve through `copy`).
+        let bb_index = if bblocks {
+            fd.bblocks_ref().block(bb).get_index()
+        } else {
+            sblocks_basic_block_index(fd, bb)
+        };
+        self.commsorter.setup_block_list(bb_index);
         // only_branch: print only the block's branch instruction (CBRANCH).
         if self.context.is_set(modifiers::ONLY_BRANCH) {
             let last = if bblocks { fd.bb_op_tail(bb) } else { sblocks_basic_tail(fd, bb) };
@@ -2643,13 +2847,23 @@ impl PrintC {
                 }
             }
             if separator {
-                // emitCommentGroup(inst); tagLine();
-                self.emit.tag_line();
+                if self.context.is_set(modifiers::COMMA_SEPARATE) {
+                    self.emit.print(keywords::COMMA, SyntaxHighlight::NoColor);
+                    self.emit.spaces(1, 0);
+                } else {
+                    self.emit_comment_group(fd, Some(inst));
+                    self.emit.tag_line();
+                }
             } else if !self.context.is_set(modifiers::COMMA_SEPARATE) {
+                self.emit_comment_group(fd, Some(inst));
                 self.emit.tag_line();
             }
             self.emit_statement(fd, arch, inst);
             separator = true;
+        }
+        // emitCommentGroup(None): any remaining comments in the block.
+        if !self.context.is_set(modifiers::COMMA_SEPARATE) {
+            self.emit_comment_group(fd, None);
         }
     }
 
@@ -5001,6 +5215,18 @@ fn sblocks_basic_tail(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
     match fd.sblocks_ref().block(bb).kind() {
         BlockKind::Basic(b) => b.op_tail,
         _ => None,
+    }
+}
+
+/// The `getIndex()` to feed `commsorter.setupBlockList` for an sblocks basic
+/// node.  When the node is a `BlockCopy` mirror, use the underlying bblocks
+/// block's index (the comment placement was keyed by the live basic block);
+/// otherwise the node's own index.
+fn sblocks_basic_block_index(fd: &Funcdata, bb: BlockId) -> int4 {
+    if let Some(under) = fd.sblocks_ref().block(bb).get_copy() {
+        fd.bblocks_ref().block(under).get_index()
+    } else {
+        fd.sblocks_ref().block(bb).get_index()
     }
 }
 

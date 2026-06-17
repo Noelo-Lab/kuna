@@ -47,6 +47,83 @@ use crate::block::{block_flags, BlockKind};
 use crate::funcdata::Funcdata;
 use crate::seams::{BlockId, OpId, VarnodeId};
 
+/// The deepest component that performs a conditional split (C++
+/// `FlowBlock::getSplitPoint`), tagged by which arena it lives in.  A leaf
+/// condition resolves to a **bblocks** `BlockBasic` (carrying the CBRANCH ops);
+/// a short-circuit AND/OR resolves to an **sblocks** `BlockCondition`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SplitPoint {
+    /// A bblocks `BlockBasic` (`BlockBasic::getSplitPoint` / `BlockCopy::copy`).
+    Basic(BlockId),
+    /// An sblocks `BlockCondition` (`BlockCondition::getSplitPoint`).
+    Condition(BlockId),
+}
+
+/// Encode an [`OpId`] into the opaque `usize` cursor the [`SorterFuncdata`]
+/// trait carries (the C++ `PcodeOpTree::const_iterator`), and back.  OpId is a
+/// slotmap key whose 64-bit ffi form fits a 64-bit `usize`.
+fn op_to_cursor(op: OpId) -> usize {
+    use slotmap::Key;
+    op.data().as_ffi() as usize
+}
+fn cursor_to_op(c: usize) -> OpId {
+    OpId::from(slotmap::KeyData::from_ffi(c as u64))
+}
+
+impl crate::comment::SorterFuncdata for Funcdata {
+    fn get_address(&self) -> &Address {
+        Funcdata::get_address(self)
+    }
+    fn op_tree_empty(&self) -> bool {
+        self.obank().empty()
+    }
+    fn first_op_at_or_after(&self, addr: &Address) -> crate::comment::OpProbe {
+        use crate::comment::{OpCursor, OpProbe};
+        match self.obank().first_op_at_or_after(addr) {
+            Some(op) => OpProbe::At(OpCursor(op_to_cursor(op))),
+            None => OpProbe::AtEnd,
+        }
+    }
+    fn prev_op(&self, probe: &crate::comment::OpProbe) -> Option<crate::comment::OpCursor> {
+        use crate::comment::{OpCursor, OpProbe};
+        // C++ `--opiter`, guarded by `opiter != beginOpAll()`.
+        match probe {
+            // At-end on a non-empty tree -> the last op.
+            OpProbe::AtEnd => self.obank().last_op_all().map(|op| OpCursor(op_to_cursor(op))),
+            OpProbe::At(c) => {
+                let op = cursor_to_op(c.0);
+                self.obank().op_before(op).map(|p| OpCursor(op_to_cursor(p)))
+            }
+        }
+    }
+    fn op_block_info(
+        &self,
+        cursor: &crate::comment::OpCursor,
+        addr: &Address,
+    ) -> KunaResult<crate::comment::OpBlockInfo> {
+        let op = cursor_to_op(cursor.0);
+        let o = self.obank().get(op).ok_or_else(|| {
+            KunaError::lowlevel("CommentSorter: stale op cursor")
+        })?;
+        // op->getParent() — a dead op (no parent) is C++ LowlevelError.
+        let parent = o
+            .get_parent()
+            .ok_or_else(|| KunaError::lowlevel("Dead op reaching CommentSorter"))?;
+        let block_index = self.bblocks_ref().block(parent).get_index();
+        let order = o.get_seq_num().get_order();
+        // block->contains(addr) == cover.inRange(addr,1).
+        let block_contains_comment = match self.bblocks_ref().block(parent).kind() {
+            BlockKind::Basic(b) => b.cover.in_range(addr, 1),
+            _ => false,
+        };
+        Ok(crate::comment::OpBlockInfo { block_index, order, block_contains_comment })
+    }
+    fn op_addr(&self, cursor: &crate::comment::OpCursor) -> Address {
+        let op = cursor_to_op(cursor.0);
+        self.obank().get(op).expect("op_addr: stale cursor").get_addr().clone()
+    }
+}
+
 impl Funcdata {
     // -----------------------------------------------------------------------
     // Class 1: self-contained at the W3 IR level
@@ -2211,6 +2288,219 @@ impl Funcdata {
     /// funcdata_block methods can reach it without re-deriving).
     pub(crate) fn bblocks_root_pub(&self) -> BlockId {
         self.bblocks_ref().root.expect("bblocks root not constructed (internal invariant)")
+    }
+
+    // -----------------------------------------------------------------------
+    // ActionPreferComplement support (C++ `FlowBlock::preferComplement` and the
+    // `getSplitPoint`/`flipInPlaceTest`/`flipInPlaceExecute` virtual cascade,
+    // block.cc:2365-2401 / 3024-3062 / block.hh:850-892).
+    //
+    // The structured graph (`sblocks`) is a `BlockCopy` mirror of the live basic-
+    // block graph (`bblocks`): each leaf `BlockCopy::copy` points at the bblocks
+    // `BlockBasic` carrying the ops.  A split point therefore resolves to one of
+    // two arenas: a bblocks `BlockBasic` (the leaf condition) or an sblocks
+    // `BlockCondition` (a short-circuit AND/OR).  `SplitPoint` tags which.
+    // -----------------------------------------------------------------------
+
+    /// `getBlock(0)->getSplitPoint()` resolved across the dual arena.  Walks the
+    /// sblocks structure from `sbl` (an sblocks node) down to the deepest
+    /// component that performs a conditional split, returning `None` if the
+    /// branch doesn't end in a 2-way condition (C++ `getSplitPoint` virtuals).
+    fn get_split_point(&self, sbl: BlockId) -> Option<SplitPoint> {
+        use crate::block::BlockType;
+        match self.sblocks_ref().block(sbl).get_type() {
+            // BlockCopy::getSplitPoint() -> copy->getSplitPoint(); the copy is a
+            // bblocks BlockBasic whose getSplitPoint returns itself iff sizeOut==2.
+            BlockType::Copy => {
+                let bb = self.sblocks_ref().block(sbl).get_copy()?;
+                if self.bblocks_ref().block(bb).size_out() != 2 {
+                    return None;
+                }
+                Some(SplitPoint::Basic(bb))
+            }
+            // BlockBasic::getSplitPoint() -> this iff sizeOut()==2.
+            BlockType::Basic => {
+                if self.sblocks_ref().block(sbl).size_out() != 2 {
+                    return None;
+                }
+                // A bare BlockBasic should not appear in sblocks (leaves are
+                // BlockCopy), but mirror C++ in case a hand-built graph does.
+                Some(SplitPoint::Basic(sbl))
+            }
+            // BlockList::getSplitPoint() -> getBlock(size-1)->getSplitPoint().
+            BlockType::Ls => {
+                let n = self.sblocks_ref().block(sbl).get_size();
+                if n == 0 {
+                    return None;
+                }
+                let last = self.sblocks_ref().block(sbl).get_block(n - 1);
+                self.get_split_point(last)
+            }
+            // BlockCondition::getSplitPoint() -> this (block.hh:645).
+            BlockType::Condition => Some(SplitPoint::Condition(sbl)),
+            // base FlowBlock::getSplitPoint() -> null.
+            _ => None,
+        }
+    }
+
+    /// `split->flipInPlaceTest(fliplist,allowOpRemoval)` across the dual arena
+    /// (C++ `BlockBasic::flipInPlaceTest` block.cc:2372, `BlockCondition::`
+    /// block.cc:3038).  Returns 0 (flip normalizes), 1 (denormalizes), 2 (not
+    /// possible); appends the ops to adjust to `fliplist`.
+    fn split_flip_in_place_test(
+        &self,
+        split: SplitPoint,
+        fliplist: &mut Vec<OpId>,
+        allow_op_removal: bool,
+    ) -> int4 {
+        match split {
+            SplitPoint::Basic(bb) => {
+                // PcodeOp *lastop = op.back(); if not CBRANCH return 2.
+                let lastop = match self.bb_op_tail(bb) {
+                    Some(op) => op,
+                    None => return 2,
+                };
+                if self.obank().get(lastop).expect("flip_test: stale op").code() != OpCode::CPUI_CBRANCH {
+                    return 2;
+                }
+                if self.obank().get(lastop).expect("flip_test: stale op").is_boolean_flip() {
+                    // Flip bit set: don't change any ops (use a throwaway list).
+                    let mut unused: Vec<OpId> = Vec::new();
+                    self.op_flip_in_place_test(lastop, &mut unused, allow_op_removal)
+                } else {
+                    self.op_flip_in_place_test(lastop, fliplist, allow_op_removal)
+                }
+            }
+            SplitPoint::Condition(scond) => {
+                // split1 = getBlock(0)->getSplitPoint(); split2 = getBlock(1)->...
+                let b0 = self.sblocks_ref().block(scond).get_block(0);
+                let split1 = match self.get_split_point(b0) {
+                    Some(s) => s,
+                    None => return 2,
+                };
+                let b1 = self.sblocks_ref().block(scond).get_block(1);
+                let split2 = match self.get_split_point(b1) {
+                    Some(s) => s,
+                    None => return 2,
+                };
+                let subtest1 = self.split_flip_in_place_test(split1, fliplist, allow_op_removal);
+                if subtest1 == 2 {
+                    return 2;
+                }
+                let subtest2 = self.split_flip_in_place_test(split2, fliplist, allow_op_removal);
+                if subtest2 == 2 {
+                    return 2;
+                }
+                subtest1
+            }
+        }
+    }
+
+    /// `split->flipInPlaceExecute()` across the dual arena (C++
+    /// `BlockBasic::flipInPlaceExecute` block.cc:2391, `BlockCondition::`
+    /// block.cc:3056).  Reverses the split's outgoing edge order without
+    /// modifying the comparison ops (those are handled by `opFlipInPlaceExecute`).
+    fn split_flip_in_place_execute(&mut self, split: SplitPoint) {
+        match split {
+            SplitPoint::Basic(bb) => {
+                // lastop->flipFlag(fallthru_true);
+                // if (lastop->isBooleanFlip()) lastop->flipFlag(boolean_flip);
+                if let Some(lastop) = self.bb_op_tail(bb) {
+                    let o = self.obank_mut().get_mut(lastop).expect("flip_exec: stale op");
+                    o.flip_flag(crate::op::pcodeop_flags::fallthru_true);
+                    if o.is_boolean_flip() {
+                        o.flip_flag(crate::op::pcodeop_flags::boolean_flip);
+                    }
+                }
+                // FlowBlock::negateCondition(true) -> swapEdges() on the bblocks block.
+                self.bblocks_mut().swap_edges(bb);
+            }
+            SplitPoint::Condition(scond) => {
+                // opc = (opc==BOOL_AND)?BOOL_OR:BOOL_AND;
+                self.sblocks_mut().block_mut(scond).flip_condition_opcode();
+                // getBlock(0)->getSplitPoint()->flipInPlaceExecute(); ditto block(1).
+                let b0 = self.sblocks_ref().block(scond).get_block(0);
+                if let Some(s0) = self.get_split_point(b0) {
+                    self.split_flip_in_place_execute(s0);
+                }
+                let b1 = self.sblocks_ref().block(scond).get_block(1);
+                if let Some(s1) = self.get_split_point(b1) {
+                    self.split_flip_in_place_execute(s1);
+                }
+            }
+        }
+    }
+
+    /// `BlockIf::preferComplement` (C++ block.cc:3141): for a 3-component
+    /// if/else, rearrange to the complementary (preferred) boolean form when the
+    /// condition's split point can be flipped to a normalized comparison.  `sif`
+    /// is the sblocks `BlockIf`.  Returns `true` if a change was made.
+    fn block_if_prefer_complement(&mut self, sif: BlockId, allow_op_removal: bool) -> KunaResult<bool> {
+        // if (getSize()!=3) return false;  -- only if/else collapses.
+        if self.sblocks_ref().block(sif).get_size() != 3 {
+            return Ok(false);
+        }
+        // FlowBlock *split = getBlock(0)->getSplitPoint(); if null return false.
+        let cond = self.sblocks_ref().block(sif).get_block(0);
+        let split = match self.get_split_point(cond) {
+            Some(s) => s,
+            None => return Ok(false),
+        };
+        // if (0 != split->flipInPlaceTest(fliplist,allowOpRemoval)) return false.
+        let mut fliplist: Vec<OpId> = Vec::new();
+        if self.split_flip_in_place_test(split, &mut fliplist, allow_op_removal) != 0 {
+            return Ok(false);
+        }
+        // split->flipInPlaceExecute();
+        self.split_flip_in_place_execute(split);
+        // data.opFlipInPlaceExecute(fliplist);
+        self.op_flip_in_place_execute(&fliplist)?;
+        // swapBlocks(1,2);  -- swap the BlockIf's true/false children.
+        self.sblocks_mut().swap_blocks(sif, 1, 2);
+        Ok(true)
+    }
+
+    /// `ActionPreferComplement::apply` (C++ blockaction.cc:2140): walk the
+    /// structured-block tree and call `preferComplement` on every `BlockGraph`
+    /// node (only `BlockIf` overrides it non-trivially).  Returns the number of
+    /// nodes rearranged.
+    pub fn prefer_complement(&mut self, allow_op_mods: bool) -> KunaResult<int4> {
+        use crate::block::BlockType;
+        // if (graph.getSize() == 0) return 0;
+        if self.sblocks_get_size() == 0 {
+            return Ok(0);
+        }
+        // if (graph.hasFinalTransform()) return 0;
+        let root = self.sblocks_root();
+        if self.sblocks_ref().block(root).has_final_transform() {
+            return Ok(0);
+        }
+        let mut count = 0;
+        // BFS the BlockGraph nodes (skip t_copy/t_basic leaves), preferComplement each.
+        let mut vec: Vec<BlockId> = vec![root];
+        let mut pos = 0;
+        while pos < vec.len() {
+            let curbl = vec[pos];
+            pos += 1;
+            let sz = self.sblocks_ref().block(curbl).get_size();
+            for i in 0..sz {
+                let childbl = self.sblocks_ref().block(curbl).get_block(i);
+                let bt = self.sblocks_ref().block(childbl).get_type();
+                if bt == BlockType::Copy || bt == BlockType::Basic {
+                    continue;
+                }
+                vec.push(childbl);
+            }
+            // Only BlockIf has a non-trivial preferComplement; all others are no-ops.
+            if self.sblocks_ref().block(curbl).get_type() == BlockType::If
+                && self.block_if_prefer_complement(curbl, allow_op_mods)?
+            {
+                count += 1;
+            }
+        }
+        // data.clearDeadOps();  -- clear ops removed by the BOOL_NEGATE folding.
+        self.clear_dead_ops();
+        Ok(count)
     }
 
     /// Reset `sblocks` to a fresh empty graph (C++ `sblocks.clear()`).

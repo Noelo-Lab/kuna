@@ -446,13 +446,55 @@ pub trait Emit {
         self.tag_line();
         self.print(brace, SyntaxHighlight::NoColor);
     }
+
+    /// Register a pending brace (C++ `Emit::setPendingPrint` of a `PendingBrace`).
+    /// The brace opens lazily at the next [`emit_pending`](Emit::emit_pending)
+    /// (the next `tag_line`) unless [`cancel_pending_brace`](Emit::cancel_pending_brace)
+    /// is called first — which yields the `else if` syntax.  Resets the fired-
+    /// result slot to -1 (a fresh registration).
+    fn set_pending_brace(&mut self, style: BraceStyle) {
+        let st = self.state_mut();
+        st.pend_print = Some(style);
+        st.pend_brace_indent = -1;
+    }
+
+    /// Is a brace still pending (C++ `Emit::hasPendingPrint`)?  True only while
+    /// the brace has neither fired nor been canceled.
+    fn has_pending_brace(&self) -> bool {
+        self.state().pend_print.is_some()
+    }
+
+    /// Cancel the pending brace without firing it (C++ `Emit::cancelPendingPrint`).
+    fn cancel_pending_brace(&mut self) {
+        self.state_mut().pend_print = None;
+    }
+
+    /// The indent id the most recently fired pending brace opened, or -1 if it
+    /// never fired (C++ `PendingBrace::getIndentId`).  Read after the else-clause
+    /// is emitted to decide whether a brace needs closing.
+    fn pending_brace_indent_id(&self) -> int4 {
+        self.state().pend_brace_indent
+    }
+
+    /// Fire any pending print command (C++ `Emit::emitPending`).  Clears the
+    /// pending slot *before* the callback (so the brace's own `tag_line` does not
+    /// re-enter), opens the indented brace, and records the resulting indent id
+    /// so [`pending_brace_indent_id`](Emit::pending_brace_indent_id) can return it.
+    fn emit_pending(&mut self) {
+        if let Some(style) = self.state().pend_print {
+            // Clear pending before the callback (C++ emitPending order).
+            self.state_mut().pend_print = None;
+            let id = self.open_brace_indent(OPEN_CURLY_FOR_PENDING, style);
+            // Record the fired brace's indent id (C++ PendingBrace::indentId).
+            self.state_mut().pend_brace_indent = id;
+        }
+    }
 }
 
+/// The `{` token a fired pending brace prints (C++ `PrintC::OPEN_CURLY`).
+const OPEN_CURLY_FOR_PENDING: &str = "{";
+
 /// Shared base state of every emitter (C++ `Emit` data members).
-///
-/// `pendPrint` (the cancelable callback) is intentionally *not* modeled here:
-/// it requires the `PrintC`/`Funcdata` print machinery (a later wave) and is a
-/// caller-side concern in the port; `emitPending()` is a no-op until then.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmitBase {
     /// Current indent level (in fixed-width characters).
@@ -461,6 +503,17 @@ pub struct EmitBase {
     pub parenlevel: int4,
     /// Change in `indentlevel` per level of nesting.
     pub indentincrement: int4,
+    /// The cancelable pending-print command (C++ `Emit::pendPrint`, whose only
+    /// concrete subtype is `PendingBrace`).  `Some(style)` while a brace is
+    /// registered and not yet fired or canceled.  Fired by
+    /// [`Emit::emit_pending`] at the next `tag_line`; if canceled first
+    /// ([`Emit::cancel_pending_brace`]) the brace never opens — the `else if`
+    /// syntax.
+    pub pend_print: Option<BraceStyle>,
+    /// Indent id the most recently *fired* pending brace opened, else -1 (C++
+    /// `PendingBrace::indentId`, which lives on the caller's stack frame).  Read
+    /// by `emit_block_if` to decide whether a brace needs closing.
+    pub pend_brace_indent: int4,
 }
 
 impl Default for EmitBase {
@@ -472,7 +525,13 @@ impl Default for EmitBase {
 impl EmitBase {
     /// C++ `Emit::Emit()`: zeroed counters, `resetDefaultsInternal()`.
     pub fn new() -> Self {
-        EmitBase { indentlevel: 0, parenlevel: 0, indentincrement: 2 }
+        EmitBase {
+            indentlevel: 0,
+            parenlevel: 0,
+            indentincrement: 2,
+            pend_print: None,
+            pend_brace_indent: -1,
+        }
     }
     /// C++ `Emit::resetDefaultsInternal()`.
     fn reset_defaults_internal(&mut self) {
@@ -541,12 +600,19 @@ impl Emit for EmitNoMarkup {
     fn end_block(&mut self, _id: int4) {}
 
     fn tag_line(&mut self) {
+        // In the kuna port the `print C` path drives `EmitNoMarkup` directly
+        // where C++ stacks `EmitPrettyPrint` over it (printlanguage.cc:69).
+        // EmitPrettyPrint::tagLine fires the pending brace before the break, so
+        // the collapsed EmitNoMarkup must absorb that responsibility here for the
+        // `else if` syntax to work.  Cleared-before-callback, so no re-entry.
+        self.emit_pending();
         self.out.push('\n');
         for _ in 0..self.base.indentlevel {
             self.out.push(' ');
         }
     }
     fn tag_line_indent(&mut self, indent: int4) {
+        self.emit_pending();
         self.out.push('\n');
         for _ in 0..indent {
             self.out.push(' ');
@@ -727,6 +793,9 @@ impl Emit for EmitMarkup {
     }
 
     fn tag_line(&mut self) {
+        // emitPending() (C++ EmitMarkup::tagLine): fire a registered PendingBrace
+        // before the break.  Cleared-before-callback, so no re-entry.
+        self.emit_pending();
         let indent = self.base.indentlevel;
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_BREAK);
@@ -735,6 +804,7 @@ impl Emit for EmitMarkup {
         });
     }
     fn tag_line_indent(&mut self, indent: int4) {
+        self.emit_pending();
         self.with_encoder(|e| {
             e.open_element(&ids::ELEM_BREAK);
             e.write_signed_integer(&ids::ATTRIB_INDENT, indent as i64);
@@ -2157,7 +2227,11 @@ impl EmitPrettyPrint {
     }
     /// Fallible C++ `tagLine()`.
     pub fn try_tag_line(&mut self) -> KunaResult<()> {
-        // emitPending() — pending-print callback not modeled (see EmitBase docs).
+        // emitPending() (C++ EmitPrettyPrint::tagLine): fire a registered
+        // PendingBrace before the line break.  `emit_pending` clears the pending
+        // slot before opening the brace, so the brace's own tag_line does not
+        // re-enter here.
+        Emit::emit_pending(self);
         self.checkbreak()?;
         let slot = self.tokqueue.push();
         self.tokqueue.get_ref_mut(slot).tag_line();

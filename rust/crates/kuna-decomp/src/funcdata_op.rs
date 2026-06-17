@@ -2303,22 +2303,67 @@ impl Funcdata {
     /// Perform the op-code flips computed by [`op_flip_in_place_test`] in place
     /// (C++ `Funcdata::opFlipInPlaceExecute`, `funcdata_op.cc:1296`).
     ///
-    /// SEAM(W6)+SEAM(W3-varnode): the per-op flip resolves a *new* op-code via
-    /// `get_booleanflip` (the W6 op-code table) and, for the LESSEQUAL→LESS
-    /// canonicalization, calls `replaceLessequal` (which builds a `newConstant`,
-    /// funcdata_varnode).  Both are out of this parallel item; the method returns
-    /// the seam error.  The flip *list* (`opFlipInPlaceTest`) is the W3-portable
-    /// half and is fully ported.  Recorded as a loss.
-    pub fn op_flip_in_place_execute(&mut self, _fliplist: &[OpId]) -> KunaResult<()> {
-        // for each op: opc=get_booleanflip(code(),flipyes); dispatch:
-        //   COPY  -> remove BOOL_NEGATE (opSetInput/opDestroy)
-        //   MAX   -> swap BOOL_AND<->BOOL_OR (opSetOpcode -- W6 inst table)
-        //   else  -> opSetOpcode(opc); if (flipyes) { opSwapInput; replaceLessequal }
-        //   -- SEAM(W6): get_booleanflip + glb->inst[opc]; SEAM(W3-varnode): replaceLessequal.
-        Err(KunaError::lowlevel(
-            "kuna rust port: Funcdata::opFlipInPlaceExecute needs get_booleanflip + glb->inst (W6) \
-             and replaceLessequal/newConstant (funcdata_varnode); flip-list (opFlipInPlaceTest) ported",
-        ))
+    /// For each op in `fliplist`, resolve its boolean-flipped op-code via
+    /// `get_booleanflip` (the W6 op-code table, now [`crate::typeop::type_op_for`])
+    /// and dispatch:
+    ///   * `CPUI_COPY` — the op is a `BOOL_NEGATE` being removed: propagate its
+    ///     input into the lone descendant in the negate's output slot, then destroy.
+    ///   * `CPUI_MAX` — swap `BOOL_AND`↔`BOOL_OR` in place.
+    ///   * otherwise — set the flipped op-code; when `flipyes`, swap operands and
+    ///     (for `<=`/`s<=`) fold the constant through [`replace_lessequal`].
+    pub fn op_flip_in_place_execute(&mut self, fliplist: &[OpId]) -> KunaResult<()> {
+        for &op in fliplist {
+            // bool flipyes; OpCode opc = get_booleanflip(op->code(),flipyes);
+            let mut flipyes = false;
+            let code = self.obank().get(op).expect("op_flip_in_place_execute: stale op").code();
+            let opc = kuna_num::opcodes::get_booleanflip(code, &mut flipyes);
+            if opc == OpCode::CPUI_COPY {
+                // We remove this (CPUI_BOOL_NEGATE) entirely.
+                // vn = op->getIn(0);
+                let vn = self
+                    .obank()
+                    .get(op)
+                    .expect("op_flip_in_place_execute: stale op")
+                    .get_in(0)
+                    .expect("opFlipInPlaceExecute: BOOL_NEGATE null in0 (C++ UB)");
+                // PcodeOp *otherop = op->getOut()->loneDescend();
+                let out_vn = self
+                    .obank()
+                    .get(op)
+                    .expect("op_flip_in_place_execute: stale op")
+                    .get_out()
+                    .expect("opFlipInPlaceExecute: BOOL_NEGATE null out (C++ UB)");
+                let otherop = self
+                    .vn_lone_descend(out_vn)
+                    .expect("opFlipInPlaceExecute: BOOL_NEGATE out not a lone descendant (C++ UB)");
+                // int4 slot = otherop->getSlot(op->getOut());
+                let slot = self.obank().get(otherop).expect("op_flip_in_place_execute: stale otherop").get_slot(out_vn);
+                // opSetInput(otherop,vn,slot);  -- propagate -vn- into otherop
+                self.op_set_input(otherop, vn, slot)?;
+                // opDestroy(op);
+                self.op_destroy(op);
+            } else if opc == OpCode::CPUI_MAX {
+                // Swap BOOL_AND <-> BOOL_OR.
+                if code == OpCode::CPUI_BOOL_AND {
+                    self.op_set_opcode_code(op, OpCode::CPUI_BOOL_OR);
+                } else if code == OpCode::CPUI_BOOL_OR {
+                    self.op_set_opcode_code(op, OpCode::CPUI_BOOL_AND);
+                } else {
+                    return Err(KunaError::lowlevel("Bad flipInPlace op"));
+                }
+            } else {
+                // opSetOpcode(op,opc);
+                self.op_set_opcode(op, crate::typeop::type_op_for(opc));
+                if flipyes {
+                    // opSwapInput(op,0,1);
+                    self.op_swap_input(op, 0, 1);
+                    if opc == OpCode::CPUI_INT_LESSEQUAL || opc == OpCode::CPUI_INT_SLESSEQUAL {
+                        self.replace_lessequal(op)?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     // -----------------------------------------------------------------------

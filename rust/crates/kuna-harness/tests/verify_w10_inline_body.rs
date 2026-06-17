@@ -168,11 +168,21 @@ fn w10_inline_body_header_warnings_are_real_oracle_parity() {
         "expected `Success -- Inlining #2` (`if (x < 10)` — RuleSborrow folded \
          the SBORROW signed compare) in:\n{out}"
     );
-    // 7/12 now pass (baseline 0/12, pre-w10 3/12 header-only, w10 6/12 +SBORROW).
+    // w10-elseif-structuring: the comment-rendering integration (CommentSorter +
+    // emitCommentGroup) now emits the `WARNING: Could not inline here` instruction
+    // comments, so `#9` (those warnings appear twice) newly passes — 7/12 → 8/12.
     assert!(
-        out.contains("Total passing tests = 7"),
-        "inline.xml must pass its 3 header + 3 body + 1 SBORROW assertion (7/12); \
-         baseline 0/12, pre-w10 3/12:\n{out}"
+        out.contains("Success -- Inlining #9"),
+        "expected `Success -- Inlining #9` (`WARNING: Could not inline here` x2 — \
+         the CommentSorter/emitCommentGroup integration renders the instruction \
+         warning comments) in:\n{out}"
+    );
+    // 8/12 now pass (baseline 0/12, pre-w10 3/12 header-only, w10 6/12 +SBORROW
+    // 7/12, +comment-rendering 8/12).
+    assert!(
+        out.contains("Total passing tests = 8"),
+        "inline.xml must pass its 3 header + 3 body + 1 SBORROW + 1 comment-warning \
+         assertion (8/12); baseline 0/12, pre-w10 3/12:\n{out}"
     );
 }
 
