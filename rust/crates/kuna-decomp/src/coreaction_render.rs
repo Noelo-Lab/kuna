@@ -1098,33 +1098,101 @@ impl Action for ActionDeindirect {
         }
         Some(Box::new(ActionDeindirect { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:1235 — ActionDeindirect::apply
-        //   for (i = 0; i < data.numCalls(); ++i):
-        //       fc = data.getCallSpecs(i); op = fc->getOp();
-        //       if (op->code() != CPUI_CALLIND) continue;
-        //       vn = op->getIn(0);
-        //       while (vn->isWritten() && vn->getDef()->code()==CPUI_COPY)
-        //           vn = vn->getDef()->getIn(0);              // trace through COPYs
-        //       if (vn->isPersist() && vn->isExternalRef()):  // external reference
-        //           newfd = scope->queryExternalRefFunction(vn->getAddr());
-        //           if (newfd) { fc->deindirect(data,newfd); count += 1; continue; }
-        //       else if (vn->isConstant()):                   // constant code address
-        //           offset = addressToByte(vn->getOffset(), sp->getWordSize());
-        //           if (align != 0) { offset >>= align; offset <<= align; }
-        //           newfd = scope->queryFunction(codeaddr);
-        //           if (newfd) { fc->deindirect(data,newfd); count += 1; continue; }
-        //       if (data.hasTypeRecoveryStarted()):           // function-pointer prototype
-        //           ct = op->getIn(0)->getTypeReadFacing(op);
-        //           if (ct is PTR-to-CODE with a prototype fp):
-        //               if (!fc->isInputLocked()) { fc->forceSet(data,*fp); count += 1; }
-        //   return 0;
-        //
-        // SEAM(W8-funcdata): the call-spec list (`numCalls`/`getCallSpecs`),
-        // `FuncCallSpecs::deindirect`/`forceSet`, the scope query surface
-        // (`getScopeLocal()->getParent()->queryFunction`/`queryExternalRefFunction`),
-        // and `getTypeReadFacing` are not in the merged tree.  Body transcribed;
-        // no change applied (count stays 0).
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // C++ coreaction.cc:1235 — ActionDeindirect::apply.  For each CALLIND whose
+        // target Varnode resolves (through COPYs) to a known function — an external
+        // reference or a constant code address — convert it to a direct CALL via
+        // FuncCallSpecs::deindirect.
+        let mut count: int4 = 0;
+        let ncalls = data.num_calls();
+        for i in 0..ncalls {
+            // fc = data.getCallSpecs(i); op = fc->getOp();
+            let op = data.get_call_specs(i).get_op();
+            // if (op->code() != CPUI_CALLIND) continue;
+            if data.obank().get(op).map(|o| o.code()) != Some(OpCode::CPUI_CALLIND) {
+                continue;
+            }
+            // vn = op->getIn(0); while (vn isWritten && def==COPY) vn = def->getIn(0);
+            let mut vn = match data.obank().get(op).and_then(|o| o.get_in(0)) {
+                Some(v) => v,
+                None => continue,
+            };
+            loop {
+                let def = data
+                    .vbank()
+                    .get(vn)
+                    .filter(|v| v.is_written())
+                    .and_then(|v| v.get_def());
+                match def {
+                    Some(d)
+                        if data.obank().get(d).map(|o| o.code()) == Some(OpCode::CPUI_COPY) =>
+                    {
+                        match data.obank().get(d).and_then(|o| o.get_in(0)) {
+                            Some(nv) => vn = nv,
+                            None => break,
+                        }
+                    }
+                    _ => break,
+                }
+            }
+
+            let v = match data.vbank().get(vn) {
+                Some(v) => v,
+                None => continue,
+            };
+            let glb = data.get_arch();
+
+            // queryFunction/queryExternalRefFunction resolve a target address to the
+            // global FunctionSymbol, returning its (name, entry, recovered proto).
+            let resolved: Option<(String, Address, std::rc::Rc<crate::fspec::FuncProto>)> =
+                if v.is_persist() && v.is_external_ref() {
+                    // Check for a possible external reference.
+                    // newfd = scope->queryExternalRefFunction(vn->getAddr());
+                    glb.query_function(v.get_addr())
+                } else if v.is_constant() {
+                    // Assume the function is in the same space as the calling function;
+                    // convert the constant to a byte address in that space.
+                    let sp = match data.get_address().get_space() {
+                        Some(s) => std::rc::Rc::clone(s),
+                        None => continue,
+                    };
+                    let mut offset = AddrSpace::address_to_byte(v.get_offset(), sp.get_word_size());
+                    // If we know function pointers should be aligned, remove any
+                    // encoding bits before querying for the function.
+                    let align = glb.funcptr_align;
+                    if align != 0 {
+                        offset >>= align;
+                        offset <<= align;
+                    }
+                    let codeaddr = Address::new(sp, offset);
+                    glb.query_function(&codeaddr)
+                } else {
+                    None
+                };
+
+            if let Some((name, entry, proto)) = resolved {
+                // fc->deindirect(data, newfd): splice the call spec out so it can be
+                // mutated alongside `&mut data` (the op rewrite + override + proto
+                // merge), then re-insert it at the same index to keep `qlst` ordering.
+                let no_return = proto.is_no_return();
+                let inline = proto.is_inline();
+                let mut fc = data.replace_call_specs(i);
+                let mut restartlog = crate::kuna_restartlog::RestartLog::new();
+                let r =
+                    fc.deindirect(data, entry, &name, &proto, no_return, inline, &mut restartlog);
+                data.restore_call_specs_at(i, fc);
+                r.expect("ActionDeindirect: deindirect failed");
+                count += 1;
+                continue;
+            }
+
+            // C++ data.hasTypeRecoveryStarted() function-pointer prototype arm
+            // (coreaction.cc:1274-1293, fc->forceSet from an attached TypeCode
+            // prototype) is not exercised by the deindirect datatests and its
+            // commit path (`FuncCallSpecs::forceSet` -> commitNewInputs/Outputs) is
+            // still a W4 seam; left for a follow-up.  No change applied here.
+        }
+        let _ = count; // change is observed through the rewritten ops / restart flag
         0
     }
 }

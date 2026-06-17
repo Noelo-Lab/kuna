@@ -325,7 +325,7 @@ pub trait FlowEnvironment {
 /// the fspec-space side table ([`FuncCallSpecs::register_in_fspec_space`]).  The
 /// handle is never used as a `qlst` index (call specs are looked up by op), so a
 /// simple ever-increasing id is sufficient and stable across `sortCallSpecs`.
-fn next_fspec_handle() -> kuna_base::types::uintb {
+pub(crate) fn next_fspec_handle() -> kuna_base::types::uintb {
     use std::sync::atomic::{AtomicU64, Ordering};
     // Start above 0 so the handle is never confused with a null offset; the high
     // bit is left clear so the value is a valid (small) address offset.
@@ -1764,12 +1764,34 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// in0 stays the indirect target Varnode, which the printer renders as the
     /// `(*funcptr)(...)` callee.
     fn setup_callind_specs(&mut self, op: OpId) -> KunaResult<bool> {
+        // C++ `data.getOverride().applyIndirect(data,*res)` (flow.cc:729): an
+        // indirect-call destination override (planted by `FuncCallSpecs::deindirect`
+        // on the previous decompilation pass) redirects this CALLIND to a known
+        // direct target.  Look it up by the op's address.
+        let op_addr = self
+            .data
+            .obank()
+            .get(op)
+            .map(|o| o.get_addr().clone())
+            .unwrap_or_default();
+        let direct = self.data.get_override().find_indirect_override(&op_addr).cloned();
+
+        if let Some(entry) = direct {
+            // res->getEntryAddress() is now valid -> change the indirect pcode call
+            // into a normal pcode call and run the full direct call-spec build
+            // (queryCall name + callee-proto copy + fspec annotation + CPUI_CALL),
+            // exactly as flow.cc:735-739 does after `applyIndirect`/`applyPrototype`.
+            self.data.op_set_opcode_code(op, OpCode::CPUI_CALL);
+            self.build_call_specs(op, entry.clone(), false)?;
+            self.qlst_count += 1;
+            return self.check_for_flow_modification(op, &entry);
+        }
+
         self.build_call_specs(op, Address::default(), true)?;
         self.qlst_count += 1;
         // C++ `return checkForFlowModification(*res)` (flow.cc:740).  An indirect
         // call has an invalid entry, so the inline/noreturn flow effects are only
-        // present if an override turned it direct (W4); here the fspec carries no
-        // inline flag for the indirect case, so this is a no-op return.
+        // present if an override turned it direct (handled above).
         self.check_for_flow_modification(op, &Address::default())
     }
 

@@ -6478,7 +6478,7 @@ impl FuncCallSpecs {
         }
         if restricted_proto.is_output_locked() {
             // Redo all the varnode outputs (if possible)
-            if !self.transfer_locked_output(newoutput, restricted_proto)? {
+            if !self.transfer_locked_output(data, newoutput, restricted_proto)? {
                 return Ok(false);
             }
         }
@@ -6509,16 +6509,30 @@ impl FuncCallSpecs {
         newproto_inline: bool,
         restartlog: &mut RestartLog,
     ) -> KunaResult<()> {
-        self.entryaddress = newfd_entry;
+        self.entryaddress = newfd_entry.clone();
         self.name = newfd_name.to_string();
         self.has_fd = true;
 
-        // data.newVarnodeCallSpecs(this); data.opSetInput(op,vn,0);
-        // data.opSetOpcode(op,CPUI_CALL); data.getOverride().insertIndirectOverride(...)
-        // — W4 IR mutation + override store; the call-spec handle would be
-        // registered into the FspecSpace registry here.
-        // SEAM(w6-fspec-3 W4): the IR rewrite is deferred; the restart decision
-        // below is the observable behavior this item carries.
+        // Vn *vn = data.newVarnodeCallSpecs(this); data.opSetInput(op,vn,0);
+        // data.opSetOpcode(op,CPUI_CALL); — convert the CALLIND into a direct CALL
+        // carrying this call spec's fspec annotation (the indirect target Varnode in
+        // slot 0 is replaced).  The handle is the process-unique fspec offset; the
+        // printed name + entry are registered in the fspec-space side table (the C++
+        // raw-pointer-cast equivalent), exactly as flow.rs `build_call_specs` does
+        // for a direct call.
+        let handle = crate::flow::next_fspec_handle();
+        let angr = data.get_arch().name_style_angr;
+        self.register_in_fspec_space(handle, angr);
+        let fspecvn = data.new_varnode_call_specs(handle);
+        data.op_set_input(self.op, fspecvn, 0)?;
+        data.op_set_opcode_code(self.op, OpCode::CPUI_CALL);
+
+        // data.getOverride().insertIndirectOverride(op->getAddr(), entryaddress);
+        // Record the indirect->direct redirect so that, on the restart this method
+        // schedules, `FlowInfo::setupCallindSpecs` (`applyIndirect`) rebuilds the
+        // CALLIND straight as a direct CALL to the resolved target.
+        let site = self.op_addr(data);
+        data.get_override_mut().insert_indirect_override(site, newfd_entry);
 
         // Try our best to merge existing prototype with the one just handed.
         let mut newinput: Vec<Option<VarnodeId>> = Vec::new();
@@ -6531,9 +6545,10 @@ impl FuncCallSpecs {
             }
 
             if self.late_restriction(data, newproto, &mut newinput, &mut newoutput)? {
-                // commitNewInputs(data,newinput); commitNewOutputs(data,newoutput);
-                // SEAM(w6-fspec-3 W4): commit reaches opSetAllInput/newVarnodeOut.
-                return Ok(());
+                // We have successfully updated the prototype: commit the new I/O.
+                self.commit_new_inputs(data, &mut newinput)?;
+                self.commit_new_outputs(data, &mut newoutput)?;
+                return Ok(()); // don't restart
             }
         }
         data.set_restart_pending(true);
@@ -6890,6 +6905,7 @@ impl FuncCallSpecs {
     /// (C++ `FuncCallSpecs::transferLockedOutput`, `fspec.cc:5135`).
     fn transfer_locked_output(
         &self,
+        data: &Funcdata,
         newoutput: &mut Vec<VarnodeId>,
         source: &FuncProto,
     ) -> KunaResult<bool> {
@@ -6897,12 +6913,393 @@ impl FuncCallSpecs {
         if param.get_type().map(|t| t.get_metatype()) == Some(type_metatype::TYPE_VOID) {
             return Ok(true);
         }
-        // transferLockedOutputParam(param, newoutput): reads the CALL/INDIRECT
-        // outputs (W3).  SEAM(w6-fspec-3 W4).
-        let _ = newoutput;
-        Err(KunaError::lowlevel(
-            "SEAM(w6-fspec-3 W4) FuncCallSpecs::transferLockedOutput needs the calling Funcdata CALL outputs",
-        ))
+        // transferLockedOutputParam(param, newoutput): the CALL's current output
+        // Varnode (op->getOut()) plus any leading INDIRECT-creation outputs that the
+        // (locked) return-value param justifiably contains, or that contain the
+        // param.  Before output recovery runs there is no output Varnode yet (the
+        // common deindirect case): the list comes back empty and the result is still
+        // accurate (the C++ always returns true).
+        self.transfer_locked_output_param(data, param, newoutput);
+        Ok(true)
+    }
+
+    /// Collect the CALL/INDIRECT-creation Varnodes matching a locked return-value
+    /// parameter (C++ `FuncCallSpecs::transferLockedOutputParam`, `fspec.cc:5073`).
+    fn transfer_locked_output_param(
+        &self,
+        data: &Funcdata,
+        param: &dyn ProtoParameter,
+        newoutput: &mut Vec<VarnodeId>,
+    ) {
+        let paddr = param.get_address();
+        let psize = param.get_size();
+        // Varnode *vn = op->getOut();
+        if let Some(out) = data.obank().get(self.op).and_then(|o| o.get_out()) {
+            if let Some(vn) = data.vbank().get(out) {
+                let vaddr = vn.get_addr();
+                let vsize = vn.get_size();
+                if paddr.justified_contain(psize, vaddr, vsize, false) >= 0
+                    || vaddr.justified_contain(vsize, &paddr, psize, false) >= 0
+                {
+                    newoutput.push(out);
+                }
+            }
+        }
+        // for (indop = op->previousOp(); indop && code==INDIRECT; indop = indop->previousOp())
+        let mut indop = data.op_previous_op(self.op);
+        while let Some(io) = indop {
+            let opref = match data.obank().get(io) {
+                Some(o) => o,
+                None => break,
+            };
+            if opref.code() != OpCode::CPUI_INDIRECT {
+                break;
+            }
+            if opref.is_indirect_creation() {
+                if let Some(out) = opref.get_out().and_then(|ov| data.vbank().get(ov).map(|_| ov)) {
+                    let vn = data.vbank().get(out).expect("transferLockedOutputParam: stale out");
+                    let vaddr = vn.get_addr();
+                    let vsize = vn.get_size();
+                    if paddr.justified_contain(psize, vaddr, vsize, false) >= 0
+                        || vaddr.justified_contain(vsize, &paddr, psize, false) >= 0
+                    {
+                        newoutput.push(out);
+                    }
+                }
+            }
+            indop = data.op_previous_op(io);
+        }
+    }
+
+    /// Build the Varnode matching a (locked) input parameter from existing
+    /// data-flow (C++ `FuncCallSpecs::buildParam`, `fspec.cc:5010`).  `vn` is the
+    /// reused CALL input Varnode (or `None` for a stack parameter), `stackref` the
+    /// resolved spacebase Varnode.  Truncates an over-wide input through a SUBPIECE
+    /// or loads a stack parameter; returns the Varnode to install as the CALL input.
+    fn build_param(
+        &self,
+        data: &mut Funcdata,
+        vn: Option<VarnodeId>,
+        param_addr: &Address,
+        param_size: int4,
+        stackref: Option<VarnodeId>,
+    ) -> KunaResult<VarnodeId> {
+        let opaddr =
+            data.obank().get(self.op).expect("buildParam: stale call op").get_addr().clone();
+        let vn = match vn {
+            None => {
+                // Need to build a spacebase relative varnode.
+                let spc = std::rc::Rc::clone(
+                    param_addr.get_space().expect("buildParam: param has no space"),
+                );
+                let off = param_addr.get_offset();
+                return data.op_stack_load(
+                    &spc,
+                    off,
+                    param_size as uint4,
+                    self.op,
+                    stackref,
+                    false,
+                );
+            }
+            Some(v) => v,
+        };
+        let vsize = data.vbank().get(vn).expect("buildParam: stale input vn").get_size();
+        if vsize == param_size {
+            return Ok(vn);
+        }
+        let newop = data.new_op(2, opaddr);
+        data.op_set_opcode_code(newop, OpCode::CPUI_SUBPIECE);
+        let newout = data.new_unique_out(param_size, newop)?;
+        // It is possible vn is free, in which case the SetInput would give it
+        // multiple descendants; construct a fresh version instead.
+        let use_vn = {
+            let v = data.vbank().get(vn).expect("buildParam: stale input vn");
+            if v.is_free() && !v.is_constant() && !v.has_no_descend() {
+                let (sz, addr) = (v.get_size(), v.get_addr().clone());
+                data.new_varnode(sz, &addr, None)
+            } else {
+                vn
+            }
+        };
+        data.op_set_input(newop, use_vn, 0)?;
+        let c0 = data.new_constant(4, 0);
+        data.op_set_input(newop, c0, 1)?;
+        data.op_insert_before(newop, self.op);
+        Ok(newout)
+    }
+
+    /// Update the CALL input Varnodes to reflect the locked formal input parameters
+    /// (C++ `FuncCallSpecs::commitNewInputs`, `fspec.cc:5155`).  `newinput` holds
+    /// the old input Varnodes (slot 0 = call destination) and is rewritten in place
+    /// to the new inputs before being installed with `opSetAllInput`.
+    fn commit_new_inputs(
+        &mut self,
+        data: &mut Funcdata,
+        newinput: &mut Vec<Option<VarnodeId>>,
+    ) -> KunaResult<()> {
+        if !self.is_input_locked() {
+            return Ok(());
+        }
+        let stackref = self.get_spacebase_relative(data);
+        let mut placeholder = if self.stack_placeholder_slot >= 0 {
+            data.obank()
+                .get(self.op)
+                .expect("commitNewInputs: stale call op")
+                .get_in(self.stack_placeholder_slot)
+        } else {
+            None
+        };
+        let mut noplacehold = true;
+
+        // Clear activeinput and old placeholder.
+        self.stack_placeholder_slot = -1;
+        let num_passes = self.activeinput.get_num_passes();
+        self.activeinput.clear();
+
+        let numparams = self.proto.num_params();
+        for i in 0..numparams {
+            let (paddr, psize, pspace_is_spacebase) = {
+                let param = self.proto.get_param(i).expect("commitNewInputs: source param missing");
+                let a = param.get_address();
+                let is_sb = a
+                    .get_space()
+                    .map(|s| s.get_type() == spacetype::IPTR_SPACEBASE)
+                    .unwrap_or(false);
+                (a, param.get_size(), is_sb)
+            };
+            let vn = self.build_param(data, newinput[(1 + i) as usize], &paddr, psize, stackref)?;
+            newinput[(1 + i) as usize] = Some(vn);
+            self.activeinput.register_trial(&paddr, psize);
+            self.activeinput.get_trial_mut(i).mark_active(); // not optional
+            if noplacehold && pspace_is_spacebase {
+                // A locked stack parameter: use it to recover the stack offset.
+                data.vbank_mut()
+                    .get_mut(vn)
+                    .expect("commitNewInputs: stale built vn")
+                    .set_spacebase_placeholder();
+                noplacehold = false;
+                placeholder = None; // with a locked stack param, no placeholder needed
+            }
+        }
+        if let Some(ph) = placeholder {
+            // Still need a placeholder: add it at the end of the parameters.
+            newinput.push(Some(ph));
+            self.set_stack_placeholder_slot((newinput.len() - 1) as int4);
+        }
+        let all: Vec<VarnodeId> =
+            newinput.iter().map(|v| v.expect("commitNewInputs: null input after build")).collect();
+        data.op_set_all_input(self.op, &all)?;
+        if !self.is_dotdotdot() {
+            self.clear_active_input();
+        } else if num_passes > 0 {
+            self.activeinput.finish_pass();
+        }
+        Ok(())
+    }
+
+    /// Update the CALL output Varnode to reflect the locked formal return value
+    /// (C++ `FuncCallSpecs::commitNewOutputs`, `fspec.cc:5206`).  `newoutput` holds
+    /// the intersecting output Varnodes gathered by `transferLockedOutput`; they are
+    /// merged into a single return-value Varnode (truncations/extensions/concats of
+    /// the real output) so the deindirected CALL has one clean output.
+    fn commit_new_outputs(
+        &mut self,
+        data: &mut Funcdata,
+        newoutput: &mut [VarnodeId],
+    ) -> KunaResult<()> {
+        if !self.proto.is_output_locked() {
+            return Ok(());
+        }
+        self.activeoutput.clear();
+        if newoutput.is_empty() {
+            return Ok(());
+        }
+
+        let (paddr, psize) = {
+            let param = self.proto.get_output();
+            (param.get_address(), param.get_size())
+        };
+        self.activeoutput.register_trial(&paddr, psize);
+        // (The BOOL/typeRecovery opMarkCalculatedBool arm is not reached by the
+        // deindirect datatests and needs a W4 surface; omitted faithfully — psize==1
+        // BOOL outputs do not occur here.)
+
+        // Find a Varnode that exactly matches the param size.
+        let exact_match = newoutput
+            .iter()
+            .copied()
+            .find(|v| data.vbank().get(*v).map(|vn| vn.get_size()) == Some(psize));
+
+        let opaddr =
+            data.obank().get(self.op).expect("commitNewOutputs: stale call op").get_addr().clone();
+
+        let real_out: VarnodeId = if let Some(em) = exact_match {
+            // Make sure the exact match is the output of the CALL.
+            let ind_op = data.vbank().get(em).and_then(|v| v.get_def());
+            if ind_op != Some(self.op) {
+                // -op- must currently have no output.
+                data.op_set_output(self.op, em)?;
+                if let Some(io) = ind_op {
+                    data.op_unlink(io); // an indirect creation no longer used
+                }
+            }
+            em
+        } else {
+            data.op_unset_output(self.op);
+            data.new_varnode_out(psize, &paddr, self.op)?
+        };
+
+        let realout_addr =
+            data.vbank().get(real_out).expect("commitNewOutputs: stale realOut").get_addr().clone();
+        let realout_size =
+            data.vbank().get(real_out).expect("commitNewOutputs: stale realOut").get_size();
+
+        for &old_out in newoutput.iter() {
+            if Some(old_out) == exact_match {
+                continue;
+            }
+            let oldsize = data.vbank().get(old_out).expect("commitNewOutputs: stale oldOut").get_size();
+            let oldaddr =
+                data.vbank().get(old_out).expect("commitNewOutputs: stale oldOut").get_addr().clone();
+            let mut ind_op = data.vbank().get(old_out).and_then(|v| v.get_def());
+            if ind_op == Some(self.op) {
+                ind_op = None;
+            }
+            if oldsize < psize {
+                // Truncate: oldOut is a SUBPIECE of realOut.
+                let sub = if let Some(io) = ind_op {
+                    data.op_uninsert(io);
+                    data.op_set_opcode_code(io, OpCode::CPUI_SUBPIECE);
+                    io
+                } else {
+                    let nop = data.new_op(2, opaddr.clone());
+                    data.op_set_opcode_code(nop, OpCode::CPUI_SUBPIECE);
+                    data.op_set_output(nop, old_out)?; // move oldOut from op to nop
+                    nop
+                };
+                let overlap = {
+                    let ov = data.vbank().get(old_out).expect("commitNewOutputs: stale oldOut");
+                    overlap_addr(ov.get_addr(), ov.get_size(), &realout_addr, realout_size)
+                };
+                data.op_set_input(sub, real_out, 0)?;
+                let c = data.new_constant(4, overlap as uintb);
+                data.op_set_input(sub, c, 1)?;
+                data.op_insert_after(sub, self.op);
+            } else if psize < oldsize {
+                // Extend: realOut is contained in oldOut.
+                let overlap =
+                    oldaddr.justified_contain(oldsize, &paddr, psize, false);
+                let mut vardata = VarnodeData::default();
+                let mut opc = self.proto.assumed_output_extension(&paddr, psize, &mut vardata);
+                if opc != OpCode::CPUI_COPY && overlap == 0 {
+                    // oldOut is a natural extension of the true output type.
+                    if opc == OpCode::CPUI_PIECE {
+                        opc = if self.proto.get_output().get_type().map(|t| t.get_metatype())
+                            == Some(type_metatype::TYPE_INT)
+                        {
+                            OpCode::CPUI_INT_SEXT
+                        } else {
+                            OpCode::CPUI_INT_ZEXT
+                        };
+                    }
+                    let ext = if let Some(io) = ind_op {
+                        data.op_uninsert(io);
+                        data.op_remove_input(io, 1);
+                        data.op_set_opcode_code(io, opc);
+                        data.op_set_input(io, real_out, 0)?;
+                        io
+                    } else {
+                        let extop = data.new_op(1, opaddr.clone());
+                        data.op_set_opcode_code(extop, opc);
+                        data.op_set_output(extop, old_out)?; // move oldOut to extop
+                        data.op_set_input(extop, real_out, 0)?;
+                        extop
+                    };
+                    data.op_insert_after(ext, self.op);
+                } else {
+                    // Concatenate extra bytes from something indirectly created.
+                    if let Some(io) = ind_op {
+                        data.op_unlink(io);
+                    }
+                    let most_sig_size = oldsize - overlap - realout_size;
+                    let mut last_op = self.op;
+                    let is_big_endian = oldaddr.is_big_endian();
+                    if overlap != 0 {
+                        // Append less-significant bytes to realOut for this oldOut.
+                        let lo_addr = if is_big_endian {
+                            &oldaddr + (oldsize - overlap) as i64
+                        } else {
+                            oldaddr.clone()
+                        };
+                        let new_ind = data.new_indirect_creation(self.op, &lo_addr, overlap, true);
+                        let new_ind_out = data
+                            .obank()
+                            .get(new_ind)
+                            .and_then(|o| o.get_out())
+                            .expect("commitNewOutputs: indirect-creation has no out");
+                        let concat = data.new_op(2, opaddr.clone());
+                        data.op_set_opcode_code(concat, OpCode::CPUI_PIECE);
+                        data.op_set_input(concat, real_out, 0)?; // most significant
+                        data.op_set_input(concat, new_ind_out, 1)?; // least significant
+                        data.op_insert_after(concat, self.op);
+                        if most_sig_size != 0 {
+                            let mid_addr =
+                                if is_big_endian { realout_addr.clone() } else { lo_addr.clone() };
+                            data.new_varnode_out(overlap + realout_size, &mid_addr, concat)?;
+                        }
+                        last_op = concat;
+                    }
+                    if most_sig_size != 0 {
+                        // Append more-significant bytes to realOut for this oldOut.
+                        let hi_addr = if !is_big_endian {
+                            &oldaddr + (realout_size + overlap) as i64
+                        } else {
+                            oldaddr.clone()
+                        };
+                        let new_ind =
+                            data.new_indirect_creation(self.op, &hi_addr, most_sig_size, true);
+                        let new_ind_out = data
+                            .obank()
+                            .get(new_ind)
+                            .and_then(|o| o.get_out())
+                            .expect("commitNewOutputs: indirect-creation has no out");
+                        let last_out = data
+                            .obank()
+                            .get(last_op)
+                            .and_then(|o| o.get_out())
+                            .expect("commitNewOutputs: lastOp has no out");
+                        let concat = data.new_op(2, opaddr.clone());
+                        data.op_set_opcode_code(concat, OpCode::CPUI_PIECE);
+                        data.op_set_input(concat, new_ind_out, 0)?;
+                        data.op_set_input(concat, last_out, 1)?;
+                        data.op_insert_after(concat, last_op);
+                        last_op = concat;
+                    }
+                    data.op_set_output(last_op, old_out)?; // redefinition complete
+                }
+            }
+        }
+        self.clear_active_output();
+        Ok(())
+    }
+}
+
+/// Relative point of overlap of `[addr, addr+size)` against another range
+/// (C++ `Varnode::overlap(const Address&,int4)` little-endian path,
+/// `varnode.cc`).  The deindirect commit only runs on processor (non-join)
+/// addresses; the big-endian justification is handled by the caller's address
+/// arithmetic, matching `Address::overlap`.
+fn overlap_addr(addr: &Address, size: int4, op: &Address, opsize: int4) -> int4 {
+    if !addr.is_big_endian() {
+        addr.overlap(0, op, opsize)
+    } else {
+        let over = addr.overlap(size - 1, op, opsize);
+        if over != -1 {
+            opsize - 1 - over
+        } else {
+            -1
+        }
     }
 }
 
