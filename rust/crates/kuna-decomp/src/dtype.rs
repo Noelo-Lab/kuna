@@ -1327,6 +1327,20 @@ impl Datatype {
         }
     }
 
+    /// The `(spaceid, localframe)` of a `TypeSpacebase` (C++ `TypeSpacebase`
+    /// `spaceid`/`localframe`, type.hh:801-802).  `None` for any non-spacebase
+    /// data-type.  Used by `Funcdata::spacebase_get_sub_type` to drive the
+    /// `TypeSpacebase::getSubType` symbol-table resolution (type.cc:3411-3433),
+    /// which the bare `Datatype::get_sub_type` cannot reach (it has no `glb`).
+    pub fn spacebase_parts(&self) -> Option<(Option<Rc<AddrSpace>>, Address)> {
+        match &self.kind {
+            DatatypeKind::Spacebase { spaceid, localframe } => {
+                Some((spaceid.clone(), localframe.clone()))
+            }
+            _ => None,
+        }
+    }
+
     /// Get any address space associated with this pointer (C++
     /// `TypePointer::getSpace`).  Returns `None` for non-pointers and for
     /// pointers without a bound space.
