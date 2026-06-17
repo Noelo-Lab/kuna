@@ -627,6 +627,30 @@ fn scope_local_add_symbol_maps_a_named_local() {
 }
 
 #[test]
+fn scope_local_query_properties_marks_mapped_range_addrtied() {
+    use crate::varnode::varnode_flags;
+    // C++ `Scope::queryProperties` (database.cc:1268): a storage range covered by
+    // a `map addr`-mapped stack Symbol comes back `mapped | addrtied` (plus the
+    // symbol's type/name lock).  This is the local-scope half of the
+    // `localmap->queryProperties` walk `Heritage::guard` runs to keep a mapped
+    // stack range's stores live across calls (LOSS-156 gate).
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let inv = Address::new_invalid();
+    let addr = Address::new(Rc::clone(&spc), 0xffff_ffff_ffff_ffe4);
+    sl.add_symbol("v", base(4, type_metatype::TYPE_INT), &addr, &inv).expect("addSymbol");
+
+    let fl = sl.query_properties(&addr, 4, &inv);
+    assert_ne!(fl & varnode_flags::mapped, 0, "a mapped stack symbol is `mapped`");
+    assert_ne!(fl & varnode_flags::addrtied, 0, "a mapped stack symbol is `addrtied`");
+
+    // A range with NO mapped symbol returns 0 (no symbol, scope does not own it):
+    // the conservative default that keeps the guard behavior unchanged off-symbol.
+    let bare = Address::new(Rc::clone(&spc), 0xffff_ffff_ffff_ff00);
+    assert_eq!(sl.query_properties(&bare, 4, &inv), 0, "an unmapped range carries no flags");
+}
+
+#[test]
 fn spacebase_get_sub_type_resolves_mapped_local_and_falls_back_to_unknown() {
     // The W10 spacebase-typing keystone: `TypeSpacebase::getSubType` must resolve
     // the smallest containing Symbol in the local scope so `RulePtrArith`/
