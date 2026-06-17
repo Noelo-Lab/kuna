@@ -192,3 +192,102 @@ fn at4_groupless_high_is_noop() {
     let lone2 = hb.new_high(vn2);
     assert!(!hb.is_same_group(lone, lone2));
 }
+
+// ---------------------------------------------------------------------------
+// AT5 — the `PieceNode::findRoot` multi-PIECE tie-break (C++ `op.cc:870-875`),
+// driven END-TO-END through the production `Funcdata::piece_find_root`.
+//
+//   if (pieceOp != 0) {                   // more than one valid PIECE
+//     if (op->compareOrder(pieceOp))      // <-- `if (non-zero)`: -1 OR +1
+//       pieceOp = op;
+//   }
+//
+// `PcodeOp::compareOrder` (`op.cc:808`) returns -1 / +1 / 0.  In C++ `if(-1)` and
+// `if(+1)` are BOTH true: the incumbent `pieceOp` is replaced whenever the new
+// candidate is *comparable* (either control-flow order) and kept only when the two
+// are incomparable (0).  The faithful Rust predicate is therefore `!= 0`; a `< 0`
+// guard replaces ONLY on -1 and silently keeps the incumbent on +1.
+//
+// This builds the exact shape a struct-return CONCAT leaf produces — ONE
+// proto-partial leaf varnode read at slot 1 by TWO PIECE ops in the SAME basic
+// block, with distinct outputs that both renormalize back to the leaf's address
+// (so both are "valid" PIECE descendants) — and asserts which output
+// `piece_find_root` walks up to.  The descend list is [piece_early, piece_late];
+// `piece_late` is inserted last, so it carries the higher seq-num order and
+// `compareOrder(piece_late, piece_early)` == +1.  The faithful `!= 0` therefore
+// REPLACES the incumbent and the root walks to `out_late`; the buggy `< 0` keeps
+// `piece_early` and walks to `out_early`.  The two outputs are distinct varnodes,
+// so the returned root id distinguishes the two engines unambiguously.
+#[test]
+fn at5_findroot_tiebreak_must_replace_on_compareorder_nonzero_not_only_negative() {
+    use kuna_base::address::Address;
+    use kuna_decomp::funcdata::Funcdata;
+    use kuna_decomp::seams::{Architecture, BlockId, OpId, TypeOp, VarnodeId};
+    use kuna_num::opcodes::OpCode;
+
+    fn build_fd() -> Funcdata {
+        let glb = Rc::new(Architecture::new(manager()));
+        let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        let entry = Address::new(ram, 0x1000);
+        Funcdata::new("func", "func", glb, entry, 0x10000000, 0x40).unwrap()
+    }
+    fn ram_addr(fd: &Funcdata, off: u64) -> Address {
+        Address::new(Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap()), off)
+    }
+
+    let mut fd = build_fd();
+    // A real BlockBasic under the graph root (the `bblocks_ref().root` is the
+    // container/graph root, not a basic block — `op_insert` needs a BlockBasic).
+    let root: BlockId = fd.bblocks_ref().root.expect("bblocks root");
+    let bl: BlockId = fd.bblocks_mut().new_block_basic(root);
+    fd.set_basic_block_range(bl, &ram_addr(&fd, 0x100), &ram_addr(&fd, 0x100));
+
+    // The proto-partial CONCAT leaf: a WRITTEN varnode (output of a COPY) at ram
+    // 0x200, size 4.  WRITTEN (not free) so the bank permits the two PIECE
+    // descendants; `set_proto_partial` makes `piece_find_root`'s loop guard fire.
+    let leaf_addr = ram_addr(&fd, 0x200);
+    let src = fd.new_constant(4, 0);
+    let copy = fd.new_op(1, ram_addr(&fd, 0x100));
+    fd.op_set_opcode(copy, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
+    fd.op_set_input(copy, src, 0).unwrap();
+    let leaf: VarnodeId = fd.new_varnode_out(4, &leaf_addr, copy).unwrap();
+    fd.op_insert_end(copy, bl);
+    fd.vbank_mut().get_mut(leaf).unwrap().set_proto_partial();
+
+    // Build one PIECE op `CONCAT(hi, leaf)` with output at `leaf_addr` size 8.
+    // Slot 1 (leaf is the low piece) in little-endian ram: the
+    // `isBigEndian()==(slot==1)` predicate is `false==true`==false, so no address
+    // shift — the output's address IS the leaf's address and the PIECE is "valid".
+    let piece_at = |fd: &mut Funcdata, pc: u64, hi_off: u64| -> (OpId, VarnodeId) {
+        let hi = fd.new_varnode(4, &ram_addr(fd, hi_off), None);
+        let op = fd.new_op(2, ram_addr(fd, pc));
+        fd.op_set_opcode(op, TypeOp::new(OpCode::CPUI_PIECE, 0, "CONCAT"));
+        fd.op_set_input(op, hi, 0).unwrap();
+        fd.op_set_input(op, leaf, 1).unwrap();
+        let out = fd.new_varnode_out(8, &leaf_addr, op).unwrap();
+        fd.op_insert_end(op, bl);
+        (op, out)
+    };
+    // `piece_early` is created/inserted FIRST -> earlier in the leaf's descend list
+    // AND lower seq-num order; `piece_late` SECOND -> later on both.
+    let (_early, out_early) = piece_at(&mut fd, 0x101, 0x300);
+    let (_late, out_late) = piece_at(&mut fd, 0x102, 0x304);
+    assert_ne!(out_early, out_late, "the two PIECE outputs must be distinct varnodes");
+
+    let root = fd.piece_find_root(leaf);
+
+    // Faithful C++ `findRoot`: the +1 (`piece_late` later than `piece_early`)
+    // compareOrder is truthy, so the incumbent is REPLACED and the root path runs
+    // through `piece_late` -> `out_late`.  The buggy `< 0` guard would keep
+    // `piece_early` and return `out_early`.
+    assert_eq!(
+        root, out_late,
+        "F1: piece_find_root must REPLACE the incumbent on a +1 (later same-block) \
+         compareOrder, per C++ `if (op->compareOrder(pieceOp))` (op.cc:871, `!= 0`); \
+         the shipped `< 0` guard returns out_early instead"
+    );
+    assert_ne!(
+        root, out_early,
+        "the `< 0` guard's (incorrect) selection must NOT be what production returns"
+    );
+}

@@ -1252,6 +1252,9 @@ impl Funcdata {
                         .expect("piece_find_root: null PIECE input");
                     let other_size =
                         self.vbank().get(other).expect("piece_find_root: stale other").get_size();
+                    // cast: a Varnode size (int4, small non-negative) widened to the
+                    // i64 the `Address + offset` operator takes; lossless and
+                    // sign-preserving (C++ `addr + op->getIn(1-slot)->getSize()`).
                     addr = &addr + other_size as i64;
                 }
                 // addr.renormalize(vn->getSize());  // Allow for possible join address
@@ -1261,8 +1264,13 @@ impl Funcdata {
                 if addr == vn_addr {
                     match piece_op {
                         Some(prev) => {
-                            // if (op->compareOrder(pieceOp)) pieceOp = op;  // earliest
-                            if self.op_compare_order(op, prev) < 0 {
+                            // C++ op.cc:870-871:
+                            //   if (op->compareOrder(pieceOp)) pieceOp = op;
+                            // compareOrder returns -1/+1/0 (op.cc:806); the C++
+                            // `if(non-zero)` replaces the incumbent on BOTH -1 and
+                            // +1 and keeps it only on 0 (incomparable).  Faithful
+                            // predicate is `!= 0`, not `< 0`.
+                            if self.op_compare_order(op, prev) != 0 {
                                 piece_op = Some(op);
                             }
                         }
