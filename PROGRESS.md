@@ -24,6 +24,22 @@ next-step:
 Held branches (each paired to a pending unlock, files untouched in main so non-stale):
 forloop-reroll, base_explicit, struct-return.
 
+**RSP DEFERRED (CORRECTION-3, `1596ad6`) — the decisive meta-lesson of the session.** Wave A′
+landed L0 (ActionExtraPopSetup un-stub, faithful) and the datatest count rose to **340 (+7)** —
+but the rigorous finalize gate proved that was MASKING: the +7 came from concatsplit/forloop
+(unrelated), while `cargo test --workspace` caught **8 real fence regressions** (switchind STILL
+13/16 — `switch(0x100058)`; nanops spurious param; forloop lost 64-bit lift) that the loose
+datatest stringmatch oracle hides. Root cause: the inserted `INT_ADD` targets the **register-space
+spacebase (offset 32), not the stack slot**, so RuleAddMultCollapse can't fold it; L0 is genuinely
+COUPLED (needs propagateSpacebaseRef-consume + spacebase-deadcode atomically, exactly as the
+original deferred-stub comment predicted). RSP is now thrice-disproven and deferred to a dedicated
+multi-wave effort (lead: the register-vs-stack spacebase bug). **TWO META-LESSONS (logged):
+(1) read-only design passes repeatedly get the MECHANISM wrong — the port attempt with the live
+engine is the real test; (2) the datatest count alone masks regressions — every gate MUST run
+`cargo test --workspace` (the fence tests). Pivoted to the tractable clusters.** IN FLIGHT:
+struct-return-v2 (+20-30, split re-pin + linkProtoPartial), spacebase-PTRSUB cast (+6-8, the
+type-seed cast follow-on). QUEUED: f0-flag-v2 (+8, coreaction_cleanup un-tie + LOSS-206 gate).
+
 
 
 Five verified waves carried the corpus from 307 to 327 passing (now **6.8× the M2 entry
