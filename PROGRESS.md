@@ -1,6 +1,17 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 465/675; +De Morgan, namespace, convert, RSP&v1, enum4/HighVar, BOOL_NEGATE, string-literal, longdouble, heap-string, else-if
+## Session (2026-06-17c) — rust-port W10: 408 → 468/675; +De Morgan...else-if, mixed-float
+
+**mixed float/int proto param names +3 → 468.** `emit_prototype_inputs` (printc.rs:1700) emitted
+empty names for recovered (unlocked) proto params; added a positional default-name fallback
+(faithful to `Scope::buildDefaultName` database.cc:2511, gated on empty name only). Gained Mixed
+float/int #3/#4/#5. Gate: `[675,468]`, regressed-set EMPTY, switch intact, PARITY OK; re-pinned
+verify_w10_input_params nanops to the oracle-faithful named form. Review
+`reviews/w10-mixed-floatint.md`. Remaining #1/#7-#10 = XMM float8 lane-divide register recovery
+(coreaction_render lanedivide + type.rs) — separate root. BLOCKED diagnoses this round: Partial
+Merge + mapped-copyelim (LOSS-229 corrected → merge cover-trim re-materialization, deferred);
+Union (LOSS-230 → SUBPIECE-cast arm printc.rs:3810 gated on a condconstsub callreturn-override
+flow bug, now in a targeted wave).
 
 **else-if structuring + comment rendering +16 → 465 (session's biggest wave).** Four faithful
 roots: `ActionPreferComplement` (BlockIf::preferComplement/flipInPlace, blockaction.rs/
