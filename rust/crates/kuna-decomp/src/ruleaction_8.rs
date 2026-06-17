@@ -56,12 +56,15 @@
 //!   value 0, so `RuleFuncPtrEncoding` no-ops) and no call-spec table (so
 //!   `RulePiecePathology` no-ops).
 
+use std::rc::Rc;
+
 use kuna_base::address::{calc_mask, leastsigbit_set, mostsigbit_set, popcount};
 use kuna_base::error::KunaResult;
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
+use crate::dtype::Datatype;
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
 use crate::seams::{OpId, TypeOp, VarnodeId};
@@ -155,6 +158,22 @@ fn lone_descend(data: &Funcdata, vn: VarnodeId) -> Option<OpId> {
 /// rule can iterate while mutating (the C++ holds a `list::const_iterator`).
 fn descend_ops(data: &Funcdata, vn: VarnodeId) -> Vec<OpId> {
     data.vbank().get(vn).expect("descend_ops: stale vn").descend_iter().collect()
+}
+
+/// C++ `Varnode::getSpaceFromConst` (`varnode.hh:427`): decode the AddrSpace a
+/// constant-space Varnode encodes (the LOAD/STORE space operand).  The C++ stores
+/// the raw `AddrSpace *` in the offset; the Rust port (LOSS-015) stores the
+/// space's manager index, resolved back here through the function's space manager.
+fn space_from_const(
+    data: &Funcdata,
+    vn: VarnodeId,
+) -> Option<Rc<kuna_base::space::AddrSpace>> {
+    let idx = data.vbank().get(vn)?.get_offset();
+    let manage = data.get_arch().manage();
+    if idx >= manage.num_spaces() as uintb {
+        return None;
+    }
+    manage.get_space(idx as i32).map(Rc::clone)
 }
 
 /// `TypeOp::floatSignManipulation(op)` (C++, `typeop.cc`): classify `op` as a
@@ -1596,6 +1615,48 @@ impl RuleExpandLoad {
         }
         true
     }
+
+    /// \brief Expand the constants in the previously scanned `(V & C) == D` forms
+    /// (C++ `RuleExpandLoad::modifyAndComparison`).
+    ///
+    /// Change the size and data-type of all the AND/EQUAL constants in these
+    /// expressions: replace the input `oldVn` with the bigger `newVn` and shift
+    /// each constant up by `offset` *bytes*.
+    fn modify_and_comparison(
+        data: &mut Funcdata,
+        old_vn: VarnodeId,
+        new_vn: VarnodeId,
+        dt: &Rc<Datatype>,
+        offset: int4,
+    ) {
+        let shift = 8 * offset; // Convert to shift amount (bits)
+        let dt_size = dt.get_size();
+        // Snapshot descendants before mutating (the C++ advances the iterator
+        // before modifying each op).
+        for and_op in descend_ops(data, old_vn) {
+            // PcodeOp *compOp = andOp->getOut()->loneDescend();
+            let and_out = data.obank().get(and_op).expect("mac: stale and").get_out().expect("mac: and out");
+            let comp_op = lone_descend(data, and_out).expect("mac: checkAndComparison guaranteed lone descend");
+            // newOff = andOp->getIn(1)->getOffset(); newOff <<= offset;
+            let and_c = data.obank().get(and_op).expect("mac: stale and").get_in(1).expect("mac: and in1");
+            let and_off = data.vbank().get(and_c).expect("mac: stale and const").get_offset();
+            let new_and_off = and_off << shift;
+            // Varnode *vn = data.newConstant(dt->getSize(), newOff); vn->updateType(dt);
+            let new_and_const = data.new_constant(dt_size, new_and_off);
+            data.vbank_mut().get_mut(new_and_const).expect("mac: stale new and const").update_type(Rc::clone(dt));
+            // opSetInput(andOp, newVn, 0); opSetInput(andOp, vn, 1);
+            data.op_set_input(and_op, new_vn, 0).expect("mac: opSetInput and 0");
+            data.op_set_input(and_op, new_and_const, 1).expect("mac: opSetInput and 1");
+            // newOff = compOp->getIn(1)->getOffset(); newOff <<= offset;
+            let comp_c = data.obank().get(comp_op).expect("mac: stale comp").get_in(1).expect("mac: comp in1");
+            let comp_off = data.vbank().get(comp_c).expect("mac: stale comp const").get_offset();
+            let new_comp_off = comp_off << shift;
+            let new_comp_const = data.new_constant(dt_size, new_comp_off);
+            data.vbank_mut().get_mut(new_comp_const).expect("mac: stale new comp const").update_type(Rc::clone(dt));
+            // opSetInput(compOp, vn, 1);
+            data.op_set_input(comp_op, new_comp_const, 1).expect("mac: opSetInput comp 1");
+        }
+    }
 }
 
 impl Rule for RuleExpandLoad {
@@ -1611,18 +1672,166 @@ impl Rule for RuleExpandLoad {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        use crate::dtype::type_metatype;
+
         // Varnode *outVn = op->getOut(); int4 outSize = outVn->getSize();
-        let _out_vn = data.obank().get(op).expect("el: stale op").get_out().expect("el: out");
-        // The body needs the W6 facing-type queries (rootPtr->getTypeReadFacing,
-        // outVn->getTypeDefFacing), TypePointer::getPtrTo, getSpaceFromConst, and
-        // the W6 TypeFactory (glb->types->getBase), plus newUnique/opSetOutput
-        // (SEAM(W3)) and the SUBPIECE/AND constant rewrites (modifyAndComparison).
-        // None of the facing-type machinery is ported, so the metatype guard
-        // (elType->getMetatype() != TYPE_PTR) cannot be confirmed and the rule
-        // no-ops, exactly as the C++ does for a non-pointer LOAD.
-        // SEAM(W6): getTypeReadFacing/getTypeDefFacing/getPtrTo/getSpaceFromConst/
-        //           glb->types->getBase.  SEAM(W3): newUnique/opSetOutput.
-        0
+        let out_vn = data.obank().get(op).expect("el: stale op").get_out().expect("el: out");
+        let out_size = data.vbank().get(out_vn).expect("el: stale outVn").get_size();
+        // Varnode *rootPtr = op->getIn(1);
+        let mut root_ptr = data.obank().get(op).expect("el: stale op").get_in(1).expect("el: load ptr");
+        let mut add_op: Option<OpId> = None;
+        let mut offset: int4 = 0;
+        // Datatype *elType;
+        let el_type: Rc<Datatype>;
+        let root_v = data.vbank().get(root_ptr).expect("el: stale rootPtr");
+        if root_v.is_written() {
+            let def_op = root_v.get_def().expect("el: written rootPtr has def");
+            let def_code = data.obank().get(def_op).expect("el: stale defOp").code();
+            let def_in1 = data.obank().get(def_op).expect("el: stale defOp").get_in(1);
+            let def_in1_const = def_in1
+                .map(|v| data.vbank().get(v).expect("el: stale defOp in1").is_constant())
+                .unwrap_or(false);
+            if def_code == OpCode::CPUI_INT_ADD && def_in1_const {
+                add_op = Some(def_op);
+                let new_root = data.obank().get(def_op).expect("el: stale defOp").get_in(0).expect("el: defOp in0");
+                // uintb off = defOp->getIn(1)->getOffset();
+                let off = data.vbank().get(def_in1.unwrap()).expect("el: stale defOp in1").get_offset();
+                if off > 16 {
+                    return 0; // INT_ADD offset must be small
+                }
+                offset = off as int4;
+                // if (defOp->getOut()->loneDescend() == 0) return 0;  // used only once
+                let def_out = data.obank().get(def_op).expect("el: stale defOp").get_out().expect("el: defOp out");
+                if lone_descend(data, def_out).is_none() {
+                    return 0;
+                }
+                root_ptr = new_root;
+                // elType = rootPtr->getTypeReadFacing(defOp);
+                el_type = Rc::clone(
+                    data.vbank().get(root_ptr).expect("el: stale rootPtr").get_type_read_facing(def_op),
+                );
+            } else {
+                // elType = rootPtr->getTypeReadFacing(op);
+                el_type = Rc::clone(
+                    data.vbank().get(root_ptr).expect("el: stale rootPtr").get_type_read_facing(op),
+                );
+            }
+        } else {
+            el_type = Rc::clone(
+                data.vbank().get(root_ptr).expect("el: stale rootPtr").get_type_read_facing(op),
+            );
+        }
+        // if (elType->getMetatype() != TYPE_PTR) return 0;
+        if el_type.get_metatype() != type_metatype::TYPE_PTR {
+            return 0;
+        }
+        // elType = ((TypePointer *)elType)->getPtrTo();
+        let el_type = match el_type.get_ptr_to() {
+            Some(p) => p,
+            None => return 0,
+        };
+        // if (elType->getSize() <= outSize) return 0;  // pointer data-type must be bigger
+        if el_type.get_size() <= out_size {
+            return 0;
+        }
+        // if (elType->getSize() < outSize + offset) return 0;
+        if el_type.get_size() < out_size + offset {
+            return 0;
+        }
+
+        let meta = el_type.get_metatype();
+        if meta == type_metatype::TYPE_UNKNOWN
+            || meta == type_metatype::TYPE_STRUCT
+            || meta == type_metatype::TYPE_ARRAY
+            || meta == type_metatype::TYPE_UNION
+            || meta == type_metatype::TYPE_PARTIALSTRUCT
+            || meta == type_metatype::TYPE_PARTIALUNION
+        {
+            return 0;
+        }
+        // bool addForm = checkAndComparison(outVn);
+        let add_form = RuleExpandLoad::check_and_comparison(data, out_vn);
+        // AddrSpace *spc = op->getIn(0)->getSpaceFromConst();
+        let space_const = data.obank().get(op).expect("el: stale op").get_in(0).expect("el: load space");
+        let spc = match space_from_const(data, space_const) {
+            Some(s) => s,
+            None => return 0,
+        };
+        let mut lsb_cut: int4 = 0;
+        if add_form {
+            if spc.is_big_endian() {
+                lsb_cut = el_type.get_size() - out_size - offset;
+            } else {
+                lsb_cut = offset;
+            }
+        } else {
+            // Check for natural integer truncation.
+            if meta != type_metatype::TYPE_INT && meta != type_metatype::TYPE_UINT {
+                return 0;
+            }
+            // type_metatype outMeta = outVn->getTypeDefFacing()->getMetatype();
+            let out_meta = data
+                .vbank()
+                .get(out_vn)
+                .expect("el: stale outVn")
+                .get_type_def_facing()
+                .get_metatype();
+            if out_meta != type_metatype::TYPE_INT
+                && out_meta != type_metatype::TYPE_UINT
+                && out_meta != type_metatype::TYPE_UNKNOWN
+                && out_meta != type_metatype::TYPE_BOOL
+            {
+                // C++ `return false;` (treated as no-op).
+                return 0;
+            }
+            // Check that LOAD is grabbing least significant bytes.
+            if spc.is_big_endian() {
+                if out_size + offset != el_type.get_size() {
+                    return 0;
+                }
+            } else if offset != 0 {
+                return 0;
+            }
+        }
+
+        // Modify the LOAD.
+        // Varnode *newOut = data.newUnique(elType->getSize(), elType);
+        let new_out = data.new_unique(el_type.get_size(), Some(Rc::clone(&el_type)));
+        data.op_set_output(op, new_out).expect("el: opSetOutput newOut");
+        if let Some(add) = add_op {
+            // data.opSetInput(op, rootPtr, 1); data.opDestroy(addOp);
+            data.op_set_input(op, root_ptr, 1).expect("el: opSetInput rootPtr");
+            data.op_destroy(add);
+        }
+        if add_form {
+            // if (meta != TYPE_INT && meta != TYPE_UINT)
+            //   elType = data.getArch()->types->getBase(elType->getSize(), TYPE_UINT);
+            let dt = if meta != type_metatype::TYPE_INT && meta != type_metatype::TYPE_UINT {
+                data.get_arch()
+                    .types()
+                    .expect("el: types factory")
+                    .get_base(el_type.get_size(), type_metatype::TYPE_UINT)
+                    .expect("el: getBase UINT")
+            } else {
+                Rc::clone(&el_type)
+            };
+            RuleExpandLoad::modify_and_comparison(data, out_vn, new_out, &dt, lsb_cut);
+        } else {
+            // PcodeOp *subOp = data.newOp(2, op->getAddr());
+            let opaddr = data.obank().get(op).expect("el: stale op").get_addr().clone();
+            let sub_op = data.new_op(2, opaddr);
+            rule_set_opcode(data, sub_op, OpCode::CPUI_SUBPIECE);
+            // opSetInput(subOp, newOut, 0);
+            data.op_set_input(sub_op, new_out, 0).expect("el: opSetInput sub 0");
+            // opSetInput(subOp, newConstant(4, 0), 1);
+            let zero = data.new_constant(4, 0);
+            data.op_set_input(sub_op, zero, 1).expect("el: opSetInput sub 1");
+            // opSetOutput(subOp, outVn);
+            data.op_set_output(sub_op, out_vn).expect("el: opSetOutput sub");
+            // opInsertAfter(subOp, op);
+            data.op_insert_after(sub_op, op);
+        }
+        1
     }
 }
 
