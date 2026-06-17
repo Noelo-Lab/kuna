@@ -346,6 +346,14 @@ pub struct HighVariable {
     /// `getDisplayFormat()` — the `vn->getHigh()->getSymbol()->getDisplayFormat()`
     /// path of `PrintC::push_integer` (printc.cc:1370-1376).  `None` == no equate.
     kuna_equate_symbol: Option<crate::database::SymbolId>,
+    /// (kuna) The name bound to this high names a Symbol in the GLOBAL scope (set
+    /// when `ActionNameVars::linkSpacebaseSymbol` resolves the `&symbol` reference
+    /// through `glb->getGlobalScope()` rather than `fd->getScopeLocal()`).  C++
+    /// `PrintC::emitLocalVarDecls` declares only the LOCAL scope
+    /// (`emitScopeVarDecls(fd->getScopeLocal(), ...)`, printc.cc:2336/2667), so a
+    /// global Symbol is rendered by name in the body but never carries a local
+    /// declaration.  `false` == a local-scope (or unscoped) high (declarable).
+    kuna_global: bool,
 }
 
 impl HighVariable {
@@ -373,6 +381,7 @@ impl HighVariable {
             kuna_name: None,
             kuna_symbol_type: None,
             kuna_equate_symbol: None,
+            kuna_global: false,
         }
     }
 
@@ -407,6 +416,19 @@ impl HighVariable {
     /// (kuna) The mapped Symbol's data-type, or `None`.
     pub fn kuna_symbol_type(&self) -> Option<&Rc<Datatype>> {
         self.kuna_symbol_type.as_ref()
+    }
+
+    /// (kuna) Mark that this high's name resolves to a GLOBAL-scope Symbol (the
+    /// `linkSpacebaseSymbol` global-scope fallback).  See [`Self::kuna_global`].
+    pub fn set_kuna_global(&mut self, global: bool) {
+        self.kuna_global = global;
+    }
+
+    /// (kuna) Whether this high names a GLOBAL-scope Symbol (rendered by name but
+    /// never declared in the function body — C++ `emitScopeVarDecls` walks only the
+    /// local scope, printc.cc:2667).
+    pub fn kuna_global(&self) -> bool {
+        self.kuna_global
     }
 
     /// (kuna) Bind the local-scope EquateSymbol to this high (the merged-tree
@@ -1173,6 +1195,13 @@ impl HighVariableBank {
     /// Borrow a HighVariable by id.
     pub fn get(&self, id: HighVariableId) -> Option<&HighVariable> {
         self.highs.get(&id)
+    }
+
+    /// Iterate `(id, &HighVariable)` over every live HighVariable.  Used by the
+    /// printer's local declaration loop to find a piece's whole-symbol sibling (the
+    /// `getFirstWholeMap()` root) without a dedicated group index.
+    pub fn iter(&self) -> impl Iterator<Item = (HighVariableId, &HighVariable)> + '_ {
+        self.highs.iter().map(|(id, h)| (*id, h))
     }
 
     /// Mutably borrow a HighVariable by id.

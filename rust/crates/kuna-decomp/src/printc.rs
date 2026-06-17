@@ -1775,22 +1775,62 @@ impl PrintC {
             };
             seen.insert(high);
             // C++ `emitLocalVarDecls` -> `emitScopeVarDecls(fd->getScopeLocal(),
-            // no_category)` walks the LOCAL scope only (printc.cc:2652).  A
-            // global-mapped Symbol (`glob1`, `globalfree`) lives in the GLOBAL
-            // scope, so it is never declared in a function body — it is named in the
-            // body's statements but carries no local declaration.  The discriminator
-            // is `Varnode::isPersist` (a global RAM store is persist; a local stack /
-            // register high is not): skip a high any of whose members is persist.
+            // no_category)` walks the LOCAL scope only (printc.cc:2336/2667).  A
+            // global-mapped Symbol (`glob1`, `globalfree`, `myarray`) lives in the
+            // GLOBAL scope, so it is never declared in a function body — it is named
+            // in the body's statements but carries no local declaration.  Two global
+            // discriminators, both faithful to "not in `fd->getScopeLocal()`":
+            //   * `Varnode::isPersist` — a persistent global RAM store/load high
+            //     (`glob1 = 0`), whose member varnodes are flagged persist; and
+            //   * `HighVariable::kuna_global` — a `&symbol` reference whose
+            //     `linkSpacebaseSymbol` resolved through the GLOBAL scope
+            //     (`sb->getMap()` == the global scope for a ram spacebase, e.g.
+            //     `myarray` materialized as a const base address).  A *local*-frame
+            //     spacebase reference (`&a`, `&myval.b`, `&c` in passPtrToArray) is
+            //     NOT flagged, so its stack-symbol decl still prints.
             let is_global = fd
                 .high_bank()
                 .get(high)
                 .map(|h| {
-                    (0..h.num_instances()).any(|i| {
-                        fd.vbank().get(h.get_instance(i)).map(|v| v.is_persist()).unwrap_or(false)
-                    })
+                    h.kuna_global()
+                        || (0..h.num_instances()).any(|i| {
+                            fd.vbank().get(h.get_instance(i)).map(|v| v.is_persist()).unwrap_or(false)
+                        })
                 })
                 .unwrap_or(false);
             if is_global {
+                continue;
+            }
+            // SEAM A — C++ `emitScopeVarDecls`: `if (entry->isPiece()) continue;`
+            // (printc.cc:2688) plus the multi-entry `getFirstWholeMap() != entry`
+            // skip (printc.cc:2697).  A register-returned struct is split into
+            // per-field proto-partial pieces (`RulePieceStructure`); each piece's
+            // HighVariable is bound to the ROOT's name + the ROOT's whole-struct type
+            // + its own in-symbol byte offset (`bind_proto_partial_piece`,
+            // coreaction_cleanup.rs).  C++ shares ONE declaration for the whole
+            // Symbol (the `getFirstWholeMap()` entry, type `foo`); the pieces are
+            // partial entries and emit none.
+            //
+            // The kuna stand-in for "this entry is a piece of a multi-entry Symbol
+            // whose first-whole-map is a different entry": the piece carries a
+            // composite `kuna_symbol_type` (the root's struct/array/union whole type,
+            // which a scalar field varnode never has on its own) AND a sibling ROOT
+            // high exists — same shared name, `kuna_symbol_offset == -1` (the whole
+            // keeps the `-1` default; pieces carry `>= 0`).  The sibling root IS the
+            // `getFirstWholeMap()` entry and declares the shared `foo v1;` from its
+            // own whole-struct varnode type.  A referenced *whole* local (`&a`,
+            // `&myval.b` in passPtrToArray) carries a composite `kuna_symbol_type`
+            // too but has NO `-1` sibling of the same name, so it stays declarable.
+            let is_proto_partial_piece = fd.high_bank().get(high).is_some_and(|h| {
+                let composite = h.kuna_symbol_type().is_some_and(|t| {
+                    use crate::dtype::type_metatype::*;
+                    matches!(t.get_metatype(), TYPE_STRUCT | TYPE_ARRAY | TYPE_UNION)
+                });
+                composite
+                    && h.kuna_symbol_offset() >= 0
+                    && high_name_has_whole_sibling(fd, high, &name)
+            });
+            if is_proto_partial_piece {
                 continue;
             }
             // C++ `emitLocalVarDecls` -> `emitScopeVarDecls(scope, no_category)`:
@@ -2850,7 +2890,9 @@ impl PrintC {
     ///
     /// ```text
     ///   Datatype *dt = op->getOut()->getHighTypeDefFacing();
-    ///   if (dt->isPointerToArray()) { ... addressof ... }   // SEAM below
+    ///   if (dt->isPointerToArray()) {
+    ///     if (checkAddressOfCast(op)) { pushOp(&addressof,op); pushVn(in0); return; }
+    ///   }
     ///   if (!option_nocasts) { pushOp(&typecast,op); pushType(dt); }
     ///   pushVn(op->getIn(0),op,mods);
     /// ```
@@ -2858,15 +2900,35 @@ impl PrintC {
     /// With `option_nocasts` the cast is suppressed and only the operand prints
     /// (the underlying value flows through, parenthesized by precedence).
     ///
-    /// The `isPointerToArray()` / `checkAddressOfCast` arm — which renders a
-    /// pointer-to-array cast as an address-of `&sym` instead of `(T(*)[n])` — is a
-    /// documented seam: it needs the input's read-facing high type and the
-    /// `TypePointer`/`TypeArray` element-type walk (a separate layer), and never
-    /// fires for the scalar `CPUI_CAST` / float-conversion casts this routes
-    /// (whose output is a scalar `floatN`/`intN`, not a pointer-to-array).  When
-    /// the upstream cast-strategy/array layer lands it slots in here unchanged.
-    /// // SEAM(printc opTypeCast pointer-to-array address-of arm)
+    /// The `isPointerToArray()` / [`check_address_of_cast`](Self::check_address_of_cast)
+    /// arm renders a pointer-to-array cast as an address-of `&sym` (dropping the
+    /// spurious `(T(*)[n])` cast) when the input is the address of an array Symbol of
+    /// the matching size.  It never fires for the scalar `CPUI_CAST` /
+    /// float-conversion casts this routes (whose output is a scalar `floatN`/`intN`,
+    /// not a pointer-to-array).
     fn op_type_cast_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        // C++ `opTypeCast` (printc.cc:468-484): when the target type is a
+        // pointer-to-array, a CAST that is really an address-of an array Symbol
+        // renders as `&sym` (dropping the spurious `(T(*)[n])` cast) instead of the
+        // C cast form.  `checkAddressOfCast` decides this purely from the in/out
+        // high types and the input's symbol/PTRSUB geometry — never opcode- or
+        // name-keyed.
+        let out_def = fd
+            .obank()
+            .get(op)
+            .and_then(|o| o.get_out())
+            .and_then(|out| fd.vbank().get(out))
+            .map(|v| v.get_type_def_facing().clone());
+        if out_def.as_ref().map(|t| t.is_pointer_to_array()).unwrap_or(false)
+            && self.check_address_of_cast(fd, op)
+        {
+            // pushOp(&addressof,op); pushVn(op->getIn(0),op,mods);
+            self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+            if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+                self.push_vn_ir(fd, arch, vn, op);
+            }
+            return;
+        }
         if !self.options.nocasts {
             // pushOp(&typecast,op); pushType(op->getOut()->getHighTypeDefFacing()).
             self.push_op(&tokens::TYPECAST, Some(op_key(op)));
@@ -2881,6 +2943,204 @@ impl PrintC {
         if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
             self.push_vn_ir(fd, arch, vn, op);
         }
+    }
+
+    /// C++ `PrintC::checkAddressOfCast` (printc.cc:396-438): check that the output
+    /// data-type is a pointer to an array and the input data-type is a pointer to
+    /// the element type, and that the input variable represents a Symbol with an
+    /// array data-type of the same total size.  When this holds the CAST is the
+    /// implicit array-to-pointer decay of taking `&sym`, so the cast is dropped in
+    /// favor of `&sym`.  Returns `true` if the CAST can be rendered as `&`.
+    ///
+    /// ```text
+    ///   Datatype *dt0 = op->getOut()->getHighTypeDefFacing();
+    ///   const Varnode *vnin = op->getIn(0);
+    ///   Datatype *dt1 = vnin->getHighTypeReadFacing(op);
+    ///   if (dt0->getMetatype()!=TYPE_PTR || dt1->getMetatype()!=TYPE_PTR) return false;
+    ///   const Datatype *base0 = ((TypePointer*)dt0)->getPtrTo();
+    ///   const Datatype *base1 = ((TypePointer*)dt1)->getPtrTo();
+    ///   if (base0->getMetatype()!=TYPE_ARRAY) return false;
+    ///   int4 arraySize = base0->getSize();
+    ///   base0 = ((TypeArray*)base0)->getBase();
+    ///   while(base0->getTypedef()) base0 = base0->getTypedef();
+    ///   while(base1->getTypedef()) base1 = base1->getTypedef();
+    ///   if (base0 != base1) return false;
+    ///   Datatype *symbolType = 0;
+    ///   if (vnin->getSymbolEntry() && vnin->getHigh()->getSymbolOffset()==-1)
+    ///     symbolType = vnin->getSymbolEntry()->getSymbol()->getType();
+    ///   else if (vnin->isWritten()) {
+    ///     const PcodeOp *ptrsub = vnin->getDef();
+    ///     if (ptrsub->code()==CPUI_PTRSUB) {
+    ///       Datatype *rootType = ptrsub->getIn(0)->getHighTypeReadFacing(ptrsub);
+    ///       if (rootType->getMetatype()==TYPE_PTR) {
+    ///         rootType = ((TypePointer*)rootType)->getPtrTo();
+    ///         int8 off = ptrsub->getIn(1)->getOffset();
+    ///         symbolType = rootType->getSubType(off,&off);
+    ///         if (off != 0) return false;
+    ///       }
+    ///     }
+    ///   }
+    ///   if (symbolType==0) return false;
+    ///   if (symbolType->getMetatype()!=TYPE_ARRAY || symbolType->getSize()!=arraySize)
+    ///     return false;
+    ///   return true;
+    /// ```
+    fn check_address_of_cast(&self, fd: &Funcdata, op: OpId) -> bool {
+        use crate::dtype::type_metatype;
+        // dt0 = op->getOut()->getHighTypeDefFacing();
+        let dt0 = match fd
+            .obank()
+            .get(op)
+            .and_then(|o| o.get_out())
+            .and_then(|out| fd.vbank().get(out))
+            .map(|v| v.get_type_def_facing().clone())
+        {
+            Some(t) => t,
+            None => return false,
+        };
+        // const Varnode *vnin = op->getIn(0); dt1 = vnin->getHighTypeReadFacing(op);
+        let vnin = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
+            Some(v) => v,
+            None => return false,
+        };
+        let dt1 = match fd.vbank().get(vnin).map(|v| v.get_type_read_facing(op).clone()) {
+            Some(t) => t,
+            None => return false,
+        };
+        // if (dt0->getMetatype()!=TYPE_PTR || dt1->getMetatype()!=TYPE_PTR) return false;
+        if dt0.get_metatype() != type_metatype::TYPE_PTR
+            || dt1.get_metatype() != type_metatype::TYPE_PTR
+        {
+            return false;
+        }
+        // base0 = dt0->getPtrTo(); base1 = dt1->getPtrTo();
+        let base0 = match dt0.get_ptr_to() {
+            Some(b) => b,
+            None => return false,
+        };
+        let mut base1 = match dt1.get_ptr_to() {
+            Some(b) => b,
+            None => return false,
+        };
+        // if (base0->getMetatype()!=TYPE_ARRAY) return false;
+        if base0.get_metatype() != type_metatype::TYPE_ARRAY {
+            return false;
+        }
+        // int4 arraySize = base0->getSize(); base0 = ((TypeArray*)base0)->getBase();
+        let array_size = base0.get_size();
+        let mut base0 = match base0.get_array_base() {
+            Some(b) => b,
+            None => return false,
+        };
+        // while(base0->getTypedef()) base0 = base0->getTypedef();
+        while let Some(t) = base0.get_typedef().cloned() {
+            base0 = t;
+        }
+        // while(base1->getTypedef()) base1 = base1->getTypedef();
+        while let Some(t) = base1.get_typedef().cloned() {
+            base1 = t;
+        }
+        // if (base0 != base1) return false;
+        // C++ tests Datatype *pointer* identity; the kuna factory interns every
+        // data-type to a unique allocation, so `Rc::ptr_eq` is the faithful identity
+        // check.  As a structural fallback (the element types here are scalars whose
+        // `compare` is implemented) a `compare == 0` also counts as equal; a compare
+        // SEAM (`Err`) is treated as not-equal (conservative: never collapses a cast
+        // it cannot prove redundant).
+        let base_eq = std::rc::Rc::ptr_eq(&base0, &base1)
+            || matches!(base0.compare(&base1, 10), Ok(0));
+        if !base_eq {
+            return false;
+        }
+        // Datatype *symbolType = 0;
+        // if (vnin->getSymbolEntry() && vnin->getHigh()->getSymbolOffset()==-1)
+        //   symbolType = vnin->getSymbolEntry()->getSymbol()->getType();
+        // The kuna `getSymbolEntry()` stand-in is the high's bound Symbol — a
+        // `kuna_name` with the mapped `kuna_symbol_type`; `getSymbolOffset()==-1`
+        // is the whole-symbol match.
+        let mut symbol_type: Option<std::rc::Rc<crate::dtype::Datatype>> = None;
+        let vnin_high = fd.vbank().get(vnin).and_then(|v| v.get_high());
+        let whole_sym = vnin_high.and_then(|h| fd.high_bank().get(h)).and_then(|h| {
+            if h.kuna_symbol_offset() == -1 {
+                h.kuna_symbol_type().cloned()
+            } else {
+                None
+            }
+        });
+        if let Some(st) = whole_sym {
+            symbol_type = Some(st);
+        } else if fd.vbank().get(vnin).map(|v| v.is_written()).unwrap_or(false) {
+            // else if (vnin->isWritten()) { ptrsub = vnin->getDef(); ... }
+            let ptrsub = fd.vbank().get(vnin).and_then(|v| v.get_def());
+            if let Some(ptrsub) = ptrsub {
+                if fd.obank().get(ptrsub).map(|o| o.code()) == Some(OpCode::CPUI_PTRSUB) {
+                    // rootType = ptrsub->getIn(0)->getHighTypeReadFacing(ptrsub);
+                    let root_in0 = fd.obank().get(ptrsub).and_then(|o| o.get_in(0));
+                    let root_type = root_in0
+                        .and_then(|v| fd.vbank().get(v))
+                        .map(|v| v.get_type_read_facing(ptrsub).clone());
+                    if let Some(root_type) = root_type {
+                        // if (rootType->getMetatype()==TYPE_PTR) {
+                        if root_type.get_metatype() == type_metatype::TYPE_PTR {
+                            // rootType = ((TypePointer*)rootType)->getPtrTo();
+                            if let Some(root_ptr_to) = root_type.get_ptr_to() {
+                                // int8 off = ptrsub->getIn(1)->getOffset();
+                                let off = fd
+                                    .obank()
+                                    .get(ptrsub)
+                                    .and_then(|o| o.get_in(1))
+                                    .and_then(|v| fd.vbank().get(v))
+                                    .map(|v| v.get_offset())
+                                    .unwrap_or(0) as int8;
+                                // symbolType = rootType->getSubType(off,&off);
+                                // if (off != 0) return false;
+                                // The virtual `getSubType` is `TypeSpacebase::getSubType`
+                                // (type.cc:3411) for a spacebase root — it indexes the
+                                // symbol-table Scope, which the bare `Datatype::get_sub_type`
+                                // cannot reach (it routes to a `SEAM(W6)` Err).  Route a
+                                // spacebase through `Funcdata::spacebase_get_sub_type` (the
+                                // ported `TypeSpacebase::getSubType`, funcdata_spacebase.rs),
+                                // exactly as the spacebase-PTRSUB cast wave does; every other
+                                // root keeps the pure `Datatype::get_sub_type`.
+                                let resolved: Option<(std::rc::Rc<crate::dtype::Datatype>, int8)> =
+                                    if root_ptr_to.get_metatype()
+                                        == type_metatype::TYPE_SPACEBASE
+                                    {
+                                        fd.spacebase_get_sub_type(&root_ptr_to, off)
+                                    } else {
+                                        match root_ptr_to.get_sub_type(off) {
+                                            Ok((sub, newoff)) => sub.map(|s| (s, newoff)),
+                                            Err(_) => return false,
+                                        }
+                                    };
+                                match resolved {
+                                    Some((sub, newoff)) => {
+                                        if newoff != 0 {
+                                            return false;
+                                        }
+                                        symbol_type = Some(sub);
+                                    }
+                                    None => return false,
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // if (symbolType==0) return false;
+        let symbol_type = match symbol_type {
+            Some(s) => s,
+            None => return false,
+        };
+        // if (symbolType->getMetatype()!=TYPE_ARRAY || symbolType->getSize()!=arraySize)
+        //   return false;
+        if symbol_type.get_metatype() != type_metatype::TYPE_ARRAY
+            || symbol_type.get_size() != array_size
+        {
+            return false;
+        }
+        true
     }
 
     /// C++ `PrintC::opHiddenFunc` (printc.cc:494): the syntax represents `op`
@@ -4690,6 +4950,26 @@ fn type_name_for_decl(t: &std::rc::Rc<crate::dtype::Datatype>) -> String {
         type_metatype::TYPE_VOID => "void".to_string(),
         _ => format!("undefined{}", t.get_size()),
     }
+}
+
+/// SEAM A helper — the kuna stand-in for C++ `Symbol::getFirstWholeMap() != entry`
+/// (printc.cc:2697): is there a *whole-symbol* sibling high (the proto-partial
+/// ROOT) sharing `name` whose `kuna_symbol_offset == -1`?  A register-returned
+/// struct's per-field pieces are all bound to the root's shared name; the root
+/// keeps the `-1` whole-symbol-match offset and is the one entry that declares.
+/// Per-function names are unique (the `vN` allocator), so the only sibling with a
+/// shared name is the group's root, never an unrelated scalar.  `except` is the
+/// piece itself (excluded so a lone whole high is not its own sibling).
+fn high_name_has_whole_sibling(
+    fd: &Funcdata,
+    except: crate::seams::HighVariableId,
+    name: &str,
+) -> bool {
+    fd.high_bank().iter().any(|(id, h)| {
+        id != except
+            && h.kuna_symbol_offset() == -1
+            && h.kuna_name() == Some(name)
+    })
 }
 
 /// Whether `spc` should use the kuna angr-style `dat_<addr>` global naming (a
