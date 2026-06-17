@@ -5283,8 +5283,22 @@ impl TypeFactoryImpl {
         sz: int4,
     ) -> KunaResult<Rc<Datatype>> {
         let strip = self.get_base_impl(sz, type_metatype::TYPE_UNKNOWN)?;
+        // C++ `TypePartialEnum(par,off,sz,strip)` (type.cc:2683) chains through
+        // `TypeEnum(sz,TYPE_PARTIALENUM)` (type.hh:548): the `TypeBase(s,m)` base
+        // sets `metatype=TYPE_PARTIALENUM` / `submeta=base2sub(TYPE_PARTIALENUM)=
+        // SUB_UINT_PARTIALENUM`, then the `TypeEnum` ctor body **overrides**
+        // `metatype = (TYPE_PARTIALENUM==TYPE_ENUM_INT) ? TYPE_INT : TYPE_UINT`
+        // (so TYPE_UINT) and sets `flags |= enumtype` — leaving `submeta`
+        // untouched.  The `TypePartialEnum` body then adds
+        // `inheritForPartial()` and `has_stripped`.  `new_with_align` seeds
+        // `metatype`/`submeta` from `TYPE_PARTIALENUM`; restore the enum
+        // metatype override and the enum/stripped flags so the partial enum is
+        // recognised as an enum by `is_enum_type()`/`getExactPiece`.
         let mut tpe = Datatype::new_with_align(sz, -1, type_metatype::TYPE_PARTIALENUM);
+        tpe.metatype = type_metatype::TYPE_UINT;
+        tpe.flags |= flags::enumtype;
         tpe.flags |= contain.inherit_for_partial();
+        tpe.flags |= flags::has_stripped;
         tpe.kind = DatatypeKind::PartialEnum { stripped: strip, parent: contain, offset: off };
         self.find_add(tpe)
     }
@@ -6760,6 +6774,124 @@ mod tests {
         let part = f.get_exact_piece(Rc::clone(&s), 2, 4).unwrap().unwrap();
         assert_eq!(part.get_metatype(), TYPE_PARTIALSTRUCT);
         assert_eq!(part.get_size(), 4);
+    }
+
+    /// W10 (rport/w10-enum-trunc-propagate) adversarial: `getTypePartialEnum`
+    /// (type.cc:2683 via `TypeEnum(sz,TYPE_PARTIALENUM)`, type.hh:548) must
+    /// produce a data-type that is RECOGNISED AS AN ENUM through the truncation,
+    /// not a bare `TYPE_PARTIALENUM` metatype.  The C++ ctor chain overrides the
+    /// live metatype to `(TYPE_PARTIALENUM==TYPE_ENUM_INT)?TYPE_INT:TYPE_UINT`
+    /// (=TYPE_UINT) and sets `flags|=enumtype|has_stripped`, leaving only the
+    /// `submeta` (`SUB_UINT_PARTIALENUM`) and the marshalling override carrying
+    /// the partial-enum identity.  Without this, `pushConstant` (printc.cc:1817)
+    /// — which switches on `getMetatype()==TYPE_UINT/TYPE_INT` and `isEnumType()`
+    /// — never reaches `pushEnumConstant`, and a truncated enum AND constant
+    /// renders as a raw hex literal (`& 0x2c`) instead of by flag-name
+    /// (`& (FLAG_20|FLAG_8|FLAG_4)`).
+    #[test]
+    fn factory_partial_enum_is_recognised_as_enum() {
+        use type_metatype::*;
+        let f = factory();
+        f.get_base(1, TYPE_UNKNOWN).unwrap(); // stripped base for partials
+        f.get_base(4, TYPE_UNKNOWN).unwrap();
+        // An 8-byte enum (the `flags` data-type in enum.xml).
+        let en = {
+            let mut e = Datatype::new(8, TYPE_ENUM_UINT);
+            e.name = "flags".to_string();
+            e.display_name = "flags".to_string();
+            e.flags |= flags::enumtype;
+            e.metatype = TYPE_UINT;
+            e.kind = DatatypeKind::Enum { namemap: std::collections::BTreeMap::new() };
+            e.id = Datatype::hash_name("flags");
+            f.find_add(e).unwrap()
+        };
+        assert!(en.is_enum_type());
+
+        // Generic over the truncation geometry: BOTH the offset-0/size-1 piece
+        // (enum #3, ptrenumlow) AND the offset-4/size-4 piece (enum #4,
+        // ptrenumhigh) must come back recognisable as enums.  No special-casing
+        // on the offset, the size, or the value.
+        let geometries: [(int4, int4); 5] = [(0, 1), (4, 4), (0, 4), (2, 1), (7, 1)];
+        for &(off, sz) in geometries.iter() {
+            let pe = f.get_type_partial_enum(Rc::clone(&en), off, sz).unwrap();
+            assert!(
+                pe.is_enum_type(),
+                "partial enum (off={off},sz={sz}) must keep the enumtype flag"
+            );
+            assert_eq!(
+                pe.get_metatype(),
+                TYPE_UINT,
+                "TypeEnum ctor overrides the partial-enum metatype to TYPE_UINT (off={off},sz={sz})"
+            );
+            assert_eq!(
+                pe.get_sub_meta(),
+                sub_metatype::SUB_UINT_PARTIALENUM,
+                "the partial-enum identity survives in submeta (off={off},sz={sz})"
+            );
+            assert!(
+                pe.has_stripped(),
+                "TypePartialEnum sets has_stripped (type.cc:2687) (off={off},sz={sz})"
+            );
+            assert_eq!(pe.get_size(), sz, "partial covers exactly the requested size");
+        }
+    }
+
+    /// W10 adversarial: `getExactPiece` of a SUB-FIELD slice of an enum struct
+    /// member yields an enum-typed partial — the exact `propagateFromPointer`
+    /// pointer-rel path (typeop.cc:219-224 -> `getExactPiece(...,isEnumType)`) the
+    /// enum.xml `ptr->flagfield` truncated reads drive.  Generic: keyed only on
+    /// the enum data-type + the slice geometry, never on a field/flag name.
+    #[test]
+    fn factory_get_exact_piece_enum_member_yields_partial_enum() {
+        use type_metatype::*;
+        let f = factory();
+        f.get_base(1, TYPE_UNKNOWN).unwrap();
+        f.get_base(4, TYPE_UNKNOWN).unwrap();
+        let i4 = f.get_base(4, TYPE_INT).unwrap();
+        // enumstruct { int a@0; int b@4; flags flagfield@8; } (size 16) — the
+        // enum.xml fixture struct.
+        let en = {
+            let mut e = Datatype::new(8, TYPE_ENUM_UINT);
+            e.name = "flags".to_string();
+            e.display_name = "flags".to_string();
+            e.flags |= flags::enumtype;
+            e.metatype = TYPE_UINT;
+            e.kind = DatatypeKind::Enum { namemap: std::collections::BTreeMap::new() };
+            e.id = Datatype::hash_name("flags");
+            f.find_add(e).unwrap()
+        };
+        let mut s = Datatype::new_with_align(16, 8, TYPE_STRUCT);
+        s.kind = DatatypeKind::Struct {
+            field: vec![
+                TypeField::new(0, 0, "a", Rc::clone(&i4)),
+                TypeField::new(1, 4, "b", Rc::clone(&i4)),
+                TypeField::new(2, 8, "flagfield", Rc::clone(&en)),
+            ],
+            bitfield: vec![],
+        };
+        let s = f.find_add(s).unwrap();
+
+        // Whole field (offset 8, size 8) -> the enum itself (perfect size match).
+        let whole = f.get_exact_piece(Rc::clone(&s), 8, 8).unwrap().unwrap();
+        assert!(Rc::ptr_eq(&whole, &en), "perfect-size read of the field is the enum");
+        // ptrenumlow: 1-byte low slice of the field (struct offset 8) -> enum.
+        let low = f.get_exact_piece(Rc::clone(&s), 8, 1).unwrap().unwrap();
+        assert!(low.is_enum_type(), "byte slice of an enum field stays an enum");
+        assert_eq!(low.get_metatype(), TYPE_UINT);
+        assert_eq!(low.get_size(), 1);
+        // ptrenumhigh: 4-byte high slice of the field (struct offset 12) -> enum.
+        let high = f.get_exact_piece(Rc::clone(&s), 12, 4).unwrap().unwrap();
+        assert!(high.is_enum_type(), "high dword slice of an enum field stays an enum");
+        assert_eq!(high.get_metatype(), TYPE_UINT);
+        assert_eq!(high.get_size(), 4);
+        // The C++ partial-enum carries the offset into the parent enum (the
+        // `>> 0x20` shift for the high slice); the slice at offset 12 = field
+        // offset 4 must record offset 4 so getMatches shifts correctly.
+        assert_eq!(
+            high.get_partial_offset(),
+            Some(4),
+            "high slice records its byte offset into the parent enum"
+        );
     }
 
     /// `getPtrToFromParent` (type.cc:3157-3171) walks `getSubType` down a container

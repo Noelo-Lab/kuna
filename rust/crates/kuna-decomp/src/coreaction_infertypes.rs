@@ -1723,11 +1723,23 @@ mod propagate_type_tests {
         let ptr = f.get_type_pointer(8, Rc::clone(&en), 1).unwrap();
         // Dereference at a strictly smaller size than the enum.
         let out = propagate_from_pointer(&f, ptr, 1).expect("partial enum, not null");
+        // C++ `TypePartialEnum(par,off,sz,strip)` chains `TypeEnum(sz,
+        // TYPE_PARTIALENUM)`, whose ctor body **overrides** the live metatype to
+        // `(TYPE_PARTIALENUM==TYPE_ENUM_INT)?TYPE_INT:TYPE_UINT` = TYPE_UINT and
+        // sets the `enumtype` flag (type.hh:548, type.cc:2683).  The
+        // `TYPE_PARTIALENUM` value survives only in `submeta`
+        // (`SUB_UINT_PARTIALENUM`) and as the marshalling override.  So the
+        // result must read as an ENUM, not as a bare TYPE_PARTIALENUM metatype.
+        assert!(
+            out.is_enum_type(),
+            "partial enum keeps the enumtype flag so getExactPiece/AND typing recognises it"
+        );
         assert_eq!(
             out.get_metatype(),
-            type_metatype::TYPE_PARTIALENUM,
-            "C++ returns getTypePartialEnum, metatype TYPE_PARTIALENUM"
+            type_metatype::TYPE_UINT,
+            "TypeEnum ctor overrides metatype to TYPE_UINT for a partial enum"
         );
+        assert!(out.has_stripped(), "TypePartialEnum sets has_stripped (type.cc:2687)");
         assert_eq!(out.get_size(), 1, "partial covers the dereferenced size");
     }
 
