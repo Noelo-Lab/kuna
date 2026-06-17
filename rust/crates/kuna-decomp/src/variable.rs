@@ -1437,6 +1437,67 @@ impl HighVariableBank {
         }
     }
 
+    /// C++ `HighVariable::establishGroupSymbolOffset` (`variable.cc:623`): if `id`
+    /// is part of a larger group and has had its `symboloffset` set, use it to
+    /// compute the group's `symbolOffset` so every other HighVariable in the group
+    /// can derive its own in-symbol offset.
+    ///
+    /// ```text
+    /// VariableGroup *group = piece->getGroup();
+    /// int4 off = symboloffset;
+    /// if (off < 0) off = 0;
+    /// off -= piece->getOffset();
+    /// if (off < 0) throw LowlevelError("Symbol offset is incompatible with VariableGroup");
+    /// group->setSymbolOffset(off);
+    /// ```
+    ///
+    /// Returns `Err` on the `off < 0` invariant violation (the C++ `throw`), so the
+    /// caller can fall back rather than abort.  Faithful transcription of
+    /// `variable.cc:623`.
+    pub fn establish_group_symbol_offset(
+        &mut self,
+        id: HighVariableId,
+    ) -> kuna_base::error::KunaResult<()> {
+        let piece = self.highs.get(&id).and_then(|h| h.piece);
+        let piece = match piece {
+            Some(p) => p,
+            // C++ derefs `piece` unconditionally; a non-group high never reaches
+            // here in the call sites (guarded by `isSameGroup`), so a missing
+            // piece is a no-op rather than a panic.
+            None => return Ok(()),
+        };
+        let group = match self.pieces.get(&piece).map(|p| p.group) {
+            Some(g) => g,
+            None => return Ok(()),
+        };
+        let mut off = self.highs.get(&id).map(|h| h.symbol_offset).unwrap_or(-1);
+        if off < 0 {
+            off = 0;
+        }
+        off -= self.pieces.get(&piece).map(|p| p.group_offset).unwrap_or(0);
+        if off < 0 {
+            return Err(kuna_base::error::KunaError::lowlevel(
+                "Symbol offset is incompatible with VariableGroup",
+            ));
+        }
+        if let Some(g) = self.groups.get_mut(&group) {
+            g.symbol_offset = off;
+        }
+        Ok(())
+    }
+
+    /// The group-relative symbol offset cached on a HighVariable's group (C++
+    /// `piece->getGroup()->getSymbolOffset()`), or 0 when the high is groupless.
+    pub fn group_symbol_offset(&self, id: HighVariableId) -> int4 {
+        self.highs
+            .get(&id)
+            .and_then(|h| h.piece)
+            .and_then(|p| self.pieces.get(&p))
+            .and_then(|p| self.groups.get(&p.group))
+            .map(|g| g.symbol_offset)
+            .unwrap_or(0)
+    }
+
     /// Remove a member Varnode from a HighVariable (C++ `HighVariable::remove`),
     /// propagating the piece extend-cover dirtiness (the C++
     /// `piece->markExtendCoverDirty()` at the end of `remove`).

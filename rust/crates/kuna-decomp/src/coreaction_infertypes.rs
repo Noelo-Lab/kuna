@@ -94,6 +94,24 @@ pub(crate) fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Data
         }
     }
 
+    // C++ `TypeOpReturn::getInputLocal` (typeop.cc:903-921): a RETURN's value input
+    // (slot >= 1) suggests the *function's* recovered output data-type, so a
+    // struct-by-value return (e.g. `foo` in rax / edx:eax) flows onto the returned
+    // Varnode and `RulePieceStructure` can split the forming PIECE tree into per-field
+    // writes.  The guard mirrors the C++ exactly: non-VOID output type whose size
+    // equals the input Varnode's size; otherwise the generic `getBase(size, UNKNOWN)`
+    // default applies (the `bb == null` arm is implicit — a live RETURN op always has
+    // a parent).  The `has_store()` precondition is the W4 no-store SEAM guard: an
+    // unrecovered proto has no output type to consult (typeop.cc:917 `getFuncProto`
+    // is always backed by a store in C++; the merged tree may lack one).
+    if opcode == OpCode::CPUI_RETURN && slot >= 1 && data.get_func_proto().has_store() {
+        if let Some(ct) = data.get_func_proto().get_output_type() {
+            if ct.get_metatype() != type_metatype::TYPE_VOID && ct.get_size() == in_size {
+                return Rc::clone(ct);
+            }
+        }
+    }
+
     let info = type_op_info(opcode);
     match arch.types() {
         Some(tlst) => info
