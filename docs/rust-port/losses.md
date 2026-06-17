@@ -2723,3 +2723,22 @@ gatherExpression/constructBool). In rust the MULTIEQUALs survive to post-pool lo
   ruleaction_2.rs:157). Large block-topology port, entangled with block surfaces. Once it lands, the
   ported RuleIgnoreNan + RuleFloatRange collapse the cluster (NaN operations #2, pointerrel #7 tail,
   float-compare tails). [[kuna-rust-port]]
+
+## LOSS-233 — Copy trim (#1/#3/#6/#8) blocked: missing CFG block (block-construction divergence)
+
+- kind: deferred (CFG fidelity)
+- what: `copytrim.xml` 4/8 (#1/#3/#6/#8 fail). Disproved the subvariable hypothesis — copytrim has
+  ZERO sub-variable content (all full-width int4); SubvariableFlow/RuleSubvar never apply. The root
+  is shared by all 4: a dedicated single-entry/single-exit basic block that should carry a
+  MULTIEQUAL trim-COPY is MISSING in the Rust CFG, so the COPY is hoisted into a predecessor that
+  runs on extra paths.
+- root: rust builds 6 blocks for `myglob` vs C++'s 7 — the fall-through block at file-offset 0x60
+  (`globvar = ESI` for the `a0==1` arm) is fused into Block_0, so the COPY lands UNCONDITIONALLY
+  before the branch (`globvar = a1` hoisted out of the `if`). Same for `myloop`: the loop-exit block
+  at 0x43 is missing, so `myarr[0] = size` lands in the loop header. `Merge::trimOpInput` →
+  `opInsertEnd(getParent()->getIn(slot))` (merge.cc:699-711) is FAITHFUL in rust (merge.rs:1611);
+  the divergence is UPSTREAM in block construction/structuring — a single-in/single-out fall-through
+  successor of a 2-out-edge block is fused into its predecessor (or never created).
+- restoration: diff the rust vs C++ basic-block set after ActionBlockStructure/heritage block-build
+  for myglob/myloop; find where the fall-through/loop-exit block is fused/missing
+  (blockaction.rs/heritage.rs/funcdata block construction). A CFG-fidelity wave. [[kuna-rust-port]]
