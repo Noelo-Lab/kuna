@@ -1,6 +1,14 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 410/675; De Morgan; RSP &v1-render REJECTED (masked switchmulti regression)
+## Session (2026-06-17c) — rust-port W10: 408 → 413/675; De Morgan + namespace; RSP &v1-render REJECTED (masked switchmulti regression)
+
+**Namespace-qualified render +3 → 413.** `Database::build_global_query` now descends namespace
+child scopes (C++ `getGlobalScope()->queryContainer`) + `IfcMapaddress` addRange on namespace
+scopes (ifacedecomp.cc:573-576) + `name_local_highs_angr` qualifies the bound global per
+`PrintC::pushSymbolScope`/`getResolutionDepth` (MINIMAL_NAMESPACES) via `ScopeLocal::
+local_name_used`. Gained Namespace #2 (`::spam`), #3 (`a::spam`), #4 (`c::spam`). Gate:
+`[675,413]`, regressed-set EMPTY, switch cluster intact, PARITY OK. Review
+`reviews/w10-namespace-render.md`.
 
 **De Morgan +2 → 410 (merge `2d99361`).** `RuleNotDistribute::apply_op` (`ruleaction_1.rs`)
 was a SEAM(W3) stub; ported the faithful C++ body (`ruleaction.cc:1148-1184`): `!(V&&W) =>
