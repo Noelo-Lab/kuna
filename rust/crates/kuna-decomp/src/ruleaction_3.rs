@@ -1694,10 +1694,17 @@ impl Rule for RuleCollapseConstants {
         // vn = data.newVarnode(out->getSize(), getArch()->getConstant(collapsed));
         let newval = data.get_arch().get_constant(collapsed);
         let vn = data.new_varnode(out_size, &newval, None);
-        // collapseConstantSymbol(vn) — SEAM(W4): symbol propagation needs
-        // `getSymbolEntry` (no symbols recovered yet); markedInput is always
-        // false in the merged tree, so the symbol copy is a faithful no-op.
-        let _ = marked_input;
+        // collapseConstantSymbol(vn): when a constant input carried a bound
+        // (dynamic) SymbolEntry, propagate the markup onto the new collapsed
+        // constant (C++ `PcodeOp::collapseConstantSymbol`, op.cc:528).  This is
+        // load-bearing for an equate that lands on a constant which is then
+        // size-folded (e.g. the convert `L'a'` force_char equate, mapped onto a
+        // size-8 char constant that the CALL-arg sizing truncates to size-4):
+        // without the propagation the late `findVarnode` cannot re-locate the
+        // re-sized constant and the forced display format is dropped.
+        if marked_input {
+            collapse_constant_symbol(op, vn, data);
+        }
         // for(i=numInput()-1;i>0;--i) opRemoveInput(op,i);  -- unlink old constants
         let n = data.obank().get(op).expect("RuleCollapseConstants: stale op").num_input();
         let mut i = n - 1;
@@ -1719,7 +1726,9 @@ impl Rule for RuleCollapseConstants {
 /// constant-folded (the C++ throws `LowlevelError` -> caught -> opMarkNoCollapse).
 ///
 /// `markedInput` mirrors the C++ "one of the inputs carries symbol info"
-/// pass-back; with the W4 symbol seam (no `getSymbolEntry`) it is always false.
+/// pass-back: it is set when a constant input has a bound (dynamic) SymbolEntry
+/// (`vn->getSymbolEntry() != 0`), so [`RuleCollapseConstants`] knows to propagate
+/// the markup onto the collapsed constant.
 fn dc_collapse(op: OpId, data: &Funcdata) -> Option<(u64, bool)> {
     let (eval_type, opc, num_input, in0, in1, out_size) = {
         let o = data.obank().get(op).expect("collapse: stale op");
@@ -1738,8 +1747,10 @@ fn dc_collapse(op: OpId, data: &Funcdata) -> Option<(u64, bool)> {
         let v = data.vbank().get(in0).expect("collapse: stale in0");
         (v.get_size(), v.get_offset())
     };
-    // markedInput stays false (getSymbolEntry is a W4 seam; see doc above).
-    let marked_input = false;
+    // vn0 = getIn(0); if (vn0->getSymbolEntry() != 0) markedInput = true;
+    // (C++ `PcodeOp::collapse`, op.cc:477-479).
+    let mut marked_input =
+        data.vbank().get(in0).and_then(|v| v.kuna_symbol_entry()).is_some();
     if (eval_type & pcodeop_flags::unary) != 0 {
         match behave.evaluate_unary(out_size, in0_size, in0_off) {
             Ok(v) => Some((v, marked_input)),
@@ -1747,6 +1758,11 @@ fn dc_collapse(op: OpId, data: &Funcdata) -> Option<(u64, bool)> {
         }
     } else if (eval_type & pcodeop_flags::binary) != 0 {
         let in1 = in1?;
+        // vn1 = getIn(1); if (vn1->getSymbolEntry() != 0) markedInput = true;
+        // (C++ op.cc:485-487 — checked only on the binary path).
+        if data.vbank().get(in1).and_then(|v| v.kuna_symbol_entry()).is_some() {
+            marked_input = true;
+        }
         let in1_off = data.vbank().get(in1).expect("collapse: stale in1").get_offset();
         match behave.evaluate_binary(out_size, in0_size, in0_off, in1_off) {
             Ok(v) => Some((v, marked_input)),
@@ -1756,6 +1772,63 @@ fn dc_collapse(op: OpId, data: &Funcdata) -> Option<(u64, bool)> {
         // default: throw LowlevelError("Invalid constant collapse")
         None
     }
+}
+
+/// C++ `PcodeOp::collapseConstantSymbol` (op.cc:528): the op just collapsed its
+/// constant inputs (one carrying symbol content); figure out whether the symbol
+/// should propagate to the new output constant `new_const`.
+///
+/// Selects the marked input (`copyVn`) by opcode exactly as the C++, then calls
+/// the [`copy_symbol_if_valid`] equate-close check.  Opcodes not listed in the
+/// C++ switch leave the new constant unmarked.
+fn collapse_constant_symbol(op: OpId, new_const: VarnodeId, data: &mut Funcdata) {
+    let (code, in0, in1) = {
+        let o = data.obank().get(op).expect("collapseConstantSymbol: stale op");
+        (o.code(), o.get_in(0), if o.num_input() > 1 { o.get_in(1) } else { None })
+    };
+    let has_sym = |v: Option<VarnodeId>| -> bool {
+        v.and_then(|x| data.vbank().get(x)).and_then(|x| x.kuna_symbol_entry()).is_some()
+    };
+    let copy_vn: Option<VarnodeId> = match code {
+        OpCode::CPUI_SUBPIECE => {
+            // Must be truncating the high bytes: getIn(1)->getOffset() == 0.
+            let off1 = in1
+                .and_then(|v| data.vbank().get(v))
+                .map(|v| v.get_offset())
+                .unwrap_or(1);
+            if off1 != 0 {
+                return; // truncating low bytes -- do not propagate
+            }
+            in0
+        }
+        OpCode::CPUI_COPY
+        | OpCode::CPUI_INT_ZEXT
+        | OpCode::CPUI_INT_NEGATE
+        | OpCode::CPUI_INT_2COMP
+        | OpCode::CPUI_INT_LEFT
+        | OpCode::CPUI_INT_RIGHT
+        | OpCode::CPUI_INT_SRIGHT => in0, // marked varnode must be first input
+        OpCode::CPUI_INT_ADD
+        | OpCode::CPUI_INT_MULT
+        | OpCode::CPUI_INT_AND
+        | OpCode::CPUI_INT_OR
+        | OpCode::CPUI_INT_XOR => {
+            // copyVn = getIn(0); if (copyVn->getSymbolEntry() == 0) copyVn = getIn(1);
+            if has_sym(in0) {
+                in0
+            } else {
+                in1
+            }
+        }
+        _ => return, // default: not a symbol-propagating collapse
+    };
+    // if (copyVn->getSymbolEntry() == 0) return;  -- first input must be marked
+    let copy_vn = match copy_vn {
+        Some(v) if has_sym(Some(v)) => v,
+        _ => return,
+    };
+    // newConst->copySymbolIfValid(copyVn);
+    data.copy_symbol_if_valid(new_const, copy_vn);
 }
 
 // =============================================================================
@@ -3395,5 +3468,146 @@ mod tests {
         assert!(vn_is_constant(&fd, nc));
         // newval = -5 & mask(4) = 0xfffffffb
         assert_eq!(vn_offset(&fd, nc), 0xfffffffb);
+    }
+
+    // --- W10: Convert #17 equate survives the size-4 fold (DynamicHash re-bind) -
+
+    use crate::database::{symbol_dispflags, SymbolId};
+    use crate::dtype::{type_metatype, Datatype};
+    use kuna_base::space::SpacebaseSpace;
+    use kuna_base::types::{uint4, uintb};
+
+    /// Like [`build_fd`] but with a `stack` spacebase space registered, so
+    /// `Funcdata::new` attaches a `ScopeLocal` (`localmap`) — required for the
+    /// equate-Symbol lookups the dynamic-mapping re-bind exercises.
+    fn build_fd_with_localmap() -> Fd {
+        let mut manage = build_manager();
+        let ram = Rc::clone(manage.get_space_by_name("ram").unwrap());
+        // A spacebase space literally named "stack" is what `insert_space`
+        // recognizes as the stack space (space.rs:2507).
+        manage
+            .insert_space(Rc::new(SpacebaseSpace::new("stack", 5, 8, &ram, 0, true, false)))
+            .unwrap();
+        let glb = Rc::new(Architecture::new(manage));
+        let r = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        let addr = Address::new(r, 0x1000);
+        let mut fd = Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap();
+        let root = fd.bblocks_root_pub();
+        let block = fd.bblocks_mut().new_block_basic(root);
+        Fd { fd, block }
+    }
+
+    /// Register an EquateSymbol in the function's local scope with the given
+    /// display `format` and `value` (the convert `map ... <fmt> <val>` effect),
+    /// returning its Symbol id.  No special-casing: the caller supplies value and
+    /// format, exactly as the datatest's `map convert` line does.
+    fn add_equate(fd: &mut Fd, format: uint4, value: uintb) -> SymbolId {
+        let base1 = Rc::new(Datatype::new(1, type_metatype::TYPE_UNKNOWN));
+        let addr = pc(fd);
+        fd.fd
+            .get_scope_local_mut()
+            .expect("build_fd_with_localmap registers a stack space -> localmap is Some")
+            .add_equate_symbol("", format, value, &addr, 0, base1)
+            .expect("add_equate_symbol")
+    }
+
+    /// Adversarial #1: an equate parked on a size-8 constant survives the
+    /// constant-fold to a size-4 constant (SUBPIECE truncating high bytes,
+    /// op.cc:531) — the new constant re-binds the equate and the forced char
+    /// display format is recovered.  This is the convert `L'a'` (#17) mechanism.
+    #[test]
+    fn w10_equate_survives_size4_fold_via_collapse_subpiece() {
+        let mut fd = build_fd_with_localmap();
+        let sym = add_equate(&mut fd, symbol_dispflags::FORCE_CHAR, 0x61);
+
+        // Size-8 source constant carrying the equate binding (the early
+        // ActionDynamicMapping `setSymbolEntry` effect).
+        let src8 = fd.new_constant(8, 0x61);
+        fd.vbank_mut().get_mut(src8).unwrap().set_kuna_symbol_entry(sym);
+        assert_eq!(fd.vn_high_display_format(src8), symbol_dispflags::FORCE_CHAR);
+
+        // A SUBPIECE(src8, 0) truncating the HIGH bytes — exactly the op shape
+        // `RuleCollapseConstants` collapses, with `markedInput` set because src8
+        // carries the equate.  The arithmetic fold needs the engine's OpBehavior
+        // table (absent in the hand-built test arch), so drive the
+        // symbol-propagation half (`collapseConstantSymbol`) directly on the
+        // fresh size-4 folded constant the rule would produce.
+        let off0 = fd.new_constant(8, 0); // SUBPIECE slot-1 offset == 0 -> high trunc
+        let (subop, _subout) = def_op(&mut fd, OpCode::CPUI_SUBPIECE, &[src8, off0], 4);
+        let folded = fd.new_constant(4, 0x61);
+        collapse_constant_symbol(subop, folded, &mut fd);
+
+        // The equate re-bound onto the folded size-4 constant AND the forced
+        // char format is recovered (would render `L'a'`).
+        assert_eq!(fd.vbank().get(folded).unwrap().get_size(), 4);
+        assert!(fd.vbank().get(folded).unwrap().kuna_symbol_entry().is_some());
+        assert_eq!(fd.vn_high_display_format(folded), symbol_dispflags::FORCE_CHAR);
+
+        // Negative control on the opcode selection: a SUBPIECE truncating the LOW
+        // bytes (slot-1 offset != 0) must NOT propagate (op.cc:530-532).
+        let off1 = fd.new_constant(8, 4);
+        let (sublow, _o) = def_op(&mut fd, OpCode::CPUI_SUBPIECE, &[src8, off1], 4);
+        let folded_low = fd.new_constant(4, 0x61);
+        collapse_constant_symbol(sublow, folded_low, &mut fd);
+        assert!(
+            fd.vbank().get(folded_low).unwrap().kuna_symbol_entry().is_none(),
+            "low-byte SUBPIECE truncation must not carry the equate"
+        );
+    }
+
+    /// Adversarial #2: a non-folding equate (the constant is NOT size-folded;
+    /// the value stays put) keeps working — a same-size COPY collapse re-binds
+    /// the equate just like the 16 convert equates that never fold size.
+    #[test]
+    fn w10_non_folding_equate_still_rebinds_on_copy() {
+        let mut fd = build_fd_with_localmap();
+        let sym = add_equate(&mut fd, symbol_dispflags::FORCE_HEX, 0x3e8);
+
+        let src4 = fd.new_constant(4, 0x3e8);
+        fd.vbank_mut().get_mut(src4).unwrap().set_kuna_symbol_entry(sym);
+
+        // INT_ADD(src4, 0): the marked input is slot 0 (collapseConstantSymbol's
+        // INT_ADD arm, op.cc:551).  Same-size, value-identical fold (isValueClose
+        // trivially true).  Drive `collapseConstantSymbol` directly on the folded
+        // constant (the arithmetic fold needs OpBehavior, absent in the test arch).
+        let zero = fd.new_constant(4, 0);
+        let (addop, _out) = def_op(&mut fd, OpCode::CPUI_INT_ADD, &[src4, zero], 4);
+        let folded = fd.new_constant(4, 0x3e8);
+        collapse_constant_symbol(addop, folded, &mut fd);
+        assert_eq!(vn_offset(&fd, folded), 0x3e8);
+        assert!(fd.vbank().get(folded).unwrap().kuna_symbol_entry().is_some());
+        // Format faithfully follows the Symbol (hex here, not char) — no
+        // hardcoded value/format anywhere in the path.
+        assert_eq!(fd.vn_high_display_format(folded), symbol_dispflags::FORCE_HEX);
+    }
+
+    /// Adversarial #3 (no special-casing): the re-bind is purely value-driven by
+    /// `EquateSymbol::isValueClose`.  A two's-complement fold (value 0x61 ->
+    /// folded constant -0x61) still re-binds (isValueClose accepts negation),
+    /// while a genuinely distant constant does NOT — proving the gate keys on the
+    /// equate value, not on any hardcoded constant/function name.
+    #[test]
+    fn w10_value_close_gate_drives_rebind_not_special_case() {
+        // Negation transform: copy_symbol_if_valid copies (isValueClose true).
+        let mut fd = build_fd_with_localmap();
+        let sym = add_equate(&mut fd, symbol_dispflags::FORCE_CHAR, 0x61);
+        let src = fd.new_constant(8, 0x61);
+        fd.vbank_mut().get_mut(src).unwrap().set_kuna_symbol_entry(sym);
+        // -0x61 in size-4 (two's complement) — close to the equate by negation.
+        let neg = fd.new_constant(4, 0x61u64.wrapping_neg() & 0xffff_ffff);
+        fd.copy_symbol_if_valid(neg, src);
+        assert!(
+            fd.vbank().get(neg).unwrap().kuna_symbol_entry().is_some(),
+            "isValueClose(negation) must re-bind"
+        );
+
+        // A distant value (0x12345) is NOT close -> no re-bind (no special-case
+        // that blindly copies whenever a binding is present).
+        let far = fd.new_constant(4, 0x12345);
+        fd.copy_symbol_if_valid(far, src);
+        assert!(
+            fd.vbank().get(far).unwrap().kuna_symbol_entry().is_none(),
+            "a distant constant must NOT inherit the equate"
+        );
     }
 }

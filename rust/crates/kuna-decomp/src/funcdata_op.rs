@@ -292,6 +292,72 @@ impl Funcdata {
         self.obank_mut().get_mut(op).expect("op_unset_input: stale op").clear_input(slot);
     }
 
+    /// C++ `Varnode::copySymbol` (varnode.cc:512): copy any bound dynamic
+    /// SymbolEntry from `src` onto `dst`.  In the merged-tree stand-in the
+    /// SymbolEntry binding is the `kuna_symbol_entry` Symbol id parked on the
+    /// Varnode (and, for an equate, mirrored on its HighVariable so the printer's
+    /// `vn_high_equate_symbol` lookup finds it).  The C++ also copies the type and
+    /// the type/name locks; the equate's type is `getBase(1,TYPE_UNKNOWN)` and the
+    /// forced display format is carried by the Symbol itself, so reusing the
+    /// existing binding (without retyping `dst`) preserves the render facet while
+    /// avoiding a spurious size-1 retype of the collapsed constant.
+    pub(crate) fn copy_symbol(&mut self, dst: VarnodeId, src: VarnodeId) {
+        let sym = match self.vbank().get(src).and_then(|v| v.kuna_symbol_entry()) {
+            Some(s) => s,
+            None => return,
+        };
+        // dst->setSymbolEntry-equivalent: park the binding on the Varnode (this
+        // marks it `Varnode::mapped`), then mirror onto its High for the printer.
+        if let Some(v) = self.vbank_mut().get_mut(dst) {
+            v.set_kuna_symbol_entry(sym);
+        }
+        let is_equate = self
+            .get_scope_local()
+            .map(|l| {
+                l.database().symbol(sym).get_category() == crate::database::symbol_category::EQUATE
+            })
+            .unwrap_or(false);
+        if is_equate {
+            if let Some(high) = self.vbank().get(dst).and_then(|v| v.get_high()) {
+                if let Some(h) = self.high_bank_mut().get_mut(high) {
+                    h.set_kuna_equate_symbol(sym);
+                }
+            }
+        }
+    }
+
+    /// C++ `Varnode::copySymbolIfValid` (varnode.cc:528): copy symbol info from the
+    /// constant `src` onto the constant `dst`, but only when `src` carries an
+    /// EquateSymbol whose value is \e close (negation, complement, ±1, sign-extend
+    /// fold) to `dst`'s constant value at `dst`'s size — the test that lets an
+    /// equate survive the constant-folding transforms (`isValueClose`,
+    /// database.cc:641).  Drives the convert `L'a'` force_char equate across the
+    /// CALL-arg size-8 -> size-4 truncation.
+    pub fn copy_symbol_if_valid(&mut self, dst: VarnodeId, src: VarnodeId) {
+        // SymbolEntry *mapEntry = vn->getSymbolEntry(); if (mapEntry==0) return;
+        let sym = match self.vbank().get(src).and_then(|v| v.kuna_symbol_entry()) {
+            Some(s) => s,
+            None => return,
+        };
+        // EquateSymbol *sym = dynamic_cast<EquateSymbol*>(mapEntry->getSymbol());
+        // if (sym == 0) return;  -- only equate symbols propagate this way.
+        let equate_value = match self.get_scope_local() {
+            Some(l) => match l.database().symbol(sym).kind {
+                crate::database::SymbolKind::Equate { value } => value,
+                _ => return, // dynamic_cast<EquateSymbol*> == 0 -> not an equate
+            },
+            None => return,
+        };
+        // if (sym->isValueClose(loc.getOffset(), size)) copySymbol(vn);
+        let (dst_off, dst_size) = match self.vbank().get(dst) {
+            Some(v) => (v.get_offset(), v.get_size()),
+            None => return,
+        };
+        if crate::database::equate_is_value_close(equate_value, dst_off, dst_size) {
+            self.copy_symbol(dst, src);
+        }
+    }
+
     /// Set the operand Varnode in the given input slot of the given op
     /// (C++ `Funcdata::opSetInput`, `funcdata_op.cc:104`).
     ///
@@ -337,7 +403,12 @@ impl Funcdata {
                 // Varnode *cvn = newConstant(vn->getSize(), vn->getOffset());
                 let (size, off) = (v.get_size(), v.get_offset());
                 let cvn = self.new_constant(size, off);
-                // cvn->copySymbol(vn);  -- SEAM(W4): type/symbol propagation (see doc).
+                // cvn->copySymbol(vn);  -- preserve any bound (dynamic) SymbolEntry
+                // onto the duplicated constant (C++ `funcdata_op.cc:111`).  Without
+                // this an equate parked on a shared constant is lost the first time
+                // RulePropagateCopy duplicates it, before the size-fold collapse can
+                // propagate it forward.  Same-size copy, so no value-close gate.
+                self.copy_symbol(cvn, vn);
                 // vn = cvn;
                 vn = cvn;
             }
