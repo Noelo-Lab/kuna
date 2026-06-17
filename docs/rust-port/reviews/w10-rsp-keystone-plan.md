@@ -161,3 +161,37 @@ landing — net-safe only as a whole (L0 +6/render-break, guard −15, the rest 
 crackable in a single wave; it needs a dedicated focused multi-wave session that lands all 5
 layers together against the switchind-16/16 gate. Gate unchanged: switchind 13→16 (#8/#15/#16
 flip, B4 slot −0xc), all switch + the suite monotonic, fences (not just the datatest count).
+
+## CORRECTION-6 (5-layer attempt 2026-06-17, way4ufw8y — THE BREAKTHROUGH, disproves the 5-layer premise)
+
+The blocker is NOT the action pipeline (L0/heritage/resolveSpacebase/L4/L5). It is TWO
+precisely-instrumented gaps no prior attempt found:
+
+**ROOT-A (THE TRUE ROOT — NOW FIXED, net-zero-safe, in branch rport/w10-rsp-5layer-atomic
+@ 0983561):** the Rust port never parsed the cspec `<unaffected>/<killedbycall>/<returnaddress>`
+effect blocks into `ProtoModel::effectlist` — `push_effect` was **DEAD CODE** (never called),
+effectlist always empty, so `FuncProto::hasEffect(register:0x20 / RSP)` returned
+`unknown_effect(4)` instead of `unaffected(1)`. Fixed in `architecture.rs::decode_default_proto`
++ new `decode_effect_block` (faithful to ProtoModel::decode). **Instrument-proven RSP effecttype
+4→1; this is what makes the slot resolve to −0xc not −0x14** (with L0+heritage+this, switchind B4
+= `int4 val; // stack - 0xc; switch(val)`, #16 GREEN). *This is why every prior attempt failed —
+they patched the action pipeline while the proto effectlist was silently empty.* Also landed
+net-zero-safe in 0983561: `ScopeLocal::markUnaliased` (database.rs/varmap.rs) + the
+`resolveSpacebaseRelative` call-site wire (ruleaction_4.rs).
+
+**ROOT-B (THE SINGLE REMAINING BLOCKER for #15/#8 + switchind 16/16):** the call
+INPUT-ACTIVE argument recovery does NOT pass `&val = PTRSUB(RSP_in,−0xc)` (in register RDI) to
+`get_value_byref`. The binary does `lea rdi,[rsp+0xc]` before the call; the decompiler must
+register RDI as an **active input trial** (`heritage.rs guardCalls is_input_active` →
+RDI `characterize_as_input_param` yields `ContainsJustified` for get_value_byref's recovered
+proto) so RDI=&val survives as the call argument. Currently RDI is dead-coded → &val absent →
+(a) #15 fails, (b) the −0xc alias is unstable in the AliasChecker → markUnaliased mis-marks the
+val slot nolocalalias → heritage guard collapses → index const-folds.
+
+**The genuine FINAL layer = the call input-active argument recovery** (ActionActiveParam /
+`is_input_active` trial for the RDI stack-pointer arg) — a DISTINCT parameter-recovery-trial
+subsystem, tractable but not in any prior plan. Instrument-verified order: effectlist →
+markUnaliased → L0 → heritage-ungate gives switchind 14/16 (#16 green) but −6 (heritage INDIRECTs
+over other locals need nolocalalias AND the &val alias stable); **ONLY the RDI &val recovery
+closes both at once → switchind 16/16.** NEXT = ROOT-B + L0 + heritage-ungate on the 0983561
+substrate.
