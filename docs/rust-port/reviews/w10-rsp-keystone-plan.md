@@ -243,3 +243,44 @@ verify_w10_hvnaming...gapless. Fix the unification → #15/#8 + loopcomment all 
 STALE FENCES to update on relanding (pre-keystone residue now correctly cleaned): forloop1
 `// rsp` → a1b; nanops now recovers BOTH float8 params (oracle `void nanops(float8,float8)`);
 partialsplit `stackother` → `&stackother`; forloop_varused `// rsp` proxy → `(uint8)` cast proxy.
+
+## CORRECTION-8 (final RSP wave 2026-06-17, whezwcpck — KEYSTONE CRACKED: switchind 15/16, +13)
+
+ROOT-A + ROOT-B + the int8-vs-int4 type-collision are ALL SOLVED. switchind 13→15 (#15
+`get_value_byref(&val)` NO cast + #16 `switch(val)` slot −0xc both GREEN), datatests 384→397
+(**+13**, regressed-set EMPTY), loopcomment CLEAN, cargo test green, oracle PARITY. State on
+branch rport/w10-rsp-5layer-atomic @ bf4ca27 (pending keystone-verify → integration).
+
+**PART 2 (type-collision) SOLVED by two C++-faithful changes (re-apply on any reland):**
+- (A) `coreaction_infertypes.rs propagate_add_in2_out`: when the down_chain `cur`'s ptr_to is
+  TYPE_SPACEBASE, resolve via `data.spacebase_get_sub_type(&sbptrto, type_offset)` +
+  `get_type_pointer_strip_array` (scope-aware — reproducing C++ TypePointer::downChain's
+  `ptrto->getSubType` → TypeSpacebase::getSubType, type.cc:1248) INSTEAD of the generic
+  `tlst.down_chain` (which can't reach the symbol scope → PTRSUB(RSP,−0xc) propagated as bare
+  int8* and forced casts). Now the PTRSUB output types int4* during inference → cast_output
+  token==high → no cast.
+- (B) `printc.rs emit_local_var_decls`: skip declaring a constant-only HighVariable that has a
+  storage-sibling of the same name (≥1 non-constant instance). The WHOLE-SIBLING guard is
+  load-bearing — do NOT use bare all_constant (it drops the const-only `&c` stack array in
+  passPtrToArray which has no storage sibling; t2b_local_frame_spacebase_symbol_still_declared
+  catches that).
+
+**THE ONLY REMAINING PIECE for switchind 16/16 = #8 `default:`** (a SEPARATE structuring seam;
+#8 also fails on baseline 384, so 15/16 is NOT a regression): the `if ((uint4)val <= 10)` guard
+must fold into the switch as `default:`. The fold machinery is ALREADY PORTED but inert
+(jumptable.rs `JumpBasicModel::fold_in_one_guard` #[allow(dead_code)], funcdata.rs
+`block_no_intervening_statement`, funcdata_block.rs `push_branch`; `install_switch_defaults`
+already marks the default edge from get_default_block). Enabling `fold_in_guards` (return the
+real result not Ok(false)) folds the guard BUT leaves an `if(1)` constant-CBRANCH residue — C++
+relies on a SUBSEQUENT condexe/deadcode pass to collapse it; the Rust pipeline doesn't
+re-simplify after ActionSwitchNorm, so `if(1)` survives, the switch never absorbs `default:`,
+AND Switch-Multi #1 regresses. **TO CLOSE #8:** after fold_in_guards sets the default + constant
+predicate, run a condexe/RuleConditionalMove/deadcode re-pass over the folded block to collapse
+the `if(1)` (or convert the else-branch CBRANCH to an unconditional BRANCH in-place, like the
+pos==nout push_branch arm). Then enable fold_in_guards. Commit only at switchind 16/16 + Switch
+Multi #1 still green + regressed-EMPTY.
+
+**The 4 updated render fences (jts_chain/spacebase_render/input_params/struct_corpus) are
+justified POST-KEYSTONE residue-updates** (float10-arg reconstruction, nanops 2nd float8 param,
+partialsplit &stackother, forloop //rsp cleanup) — each documented inline + being independently
+re-certified against the oracle by the keystone-verify.
