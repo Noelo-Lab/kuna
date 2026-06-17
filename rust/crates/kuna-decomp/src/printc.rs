@@ -3823,19 +3823,21 @@ impl PrintC {
                 }
             }
         }
-        // Non-special-print SUBPIECE: preserve the prior dispatch exactly (the
-        // `_ => Custom` arm routed every SUBPIECE to `op_func_ir`).  The C++
-        // `opSubpiece` does `isSubpieceCast ? opTypeCast : opFunc` here, but
-        // activating the cast arm perturbs an unrelated (different-IR) render in
-        // this port (`condconstsub`: a non-composite SUBPIECE the merge left as a
-        // truncation would print `(int4)ptr`, tripping a min=0/max=0 assertion).
-        // The cast-vs-func selection for the non-composite SUBPIECE is a separate
-        // seam; gate it out so only the composite field-extraction path is new and
-        // every other SUBPIECE stays byte-identical.  `subpiece_is_cast` is kept
-        // (it is the faithful predicate the composite arm needs and the next wave
-        // will switch on) but only the functional tail fires today.
-        let _ = self.subpiece_is_cast(fd, arch, op);
-        self.op_func_ir(fd, arch, op);
+        // Non-special-print SUBPIECE (printc.cc:892-897):
+        //   isSubpieceCast(out->getHighTypeDefFacing(),
+        //                  in0->getHighTypeReadFacing(op), in1->getOffset())
+        //     ? opTypeCast : opFunc
+        // The cast arm was previously gated out because it tripped a spurious
+        // `(int4)ptr` cast on condconstsub (a free SUBPIECE the call-return seam
+        // had left in the IR).  That IR bug is now fixed (the call-return-recovery
+        // + ActionDeindirect wave landed: condconstsub's `process` returns the
+        // recovered call output, no spurious SUBPIECE), so the faithful dispatch
+        // is restored.
+        if self.subpiece_is_cast(fd, arch, op) {
+            self.op_type_cast_ir(fd, arch, op);
+        } else {
+            self.op_func_ir(fd, arch, op);
+        }
     }
 
     /// C++ `castStrategy->isSubpieceCast(out->getHighTypeDefFacing(),
