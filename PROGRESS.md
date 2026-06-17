@@ -1,6 +1,14 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 441/675; De Morgan, namespace, convert-negconst, RSP &v1-render, enum4/HighVariable, BOOL_NEGATE, string-literal render
+## Session (2026-06-17c) — rust-port W10: 408 → 442/675; De Morgan, namespace, convert-negconst, RSP &v1-render, enum4/HighVariable, BOOL_NEGATE, string-literal render, longdouble-stride
+
+**longdouble array stride +1 → 442.** `PrintC::pushSymbolDetail` array branch strided by raw
+element size (`get_size()`=10 for float10) not aligned size — float10 array elements occupy 16
+aligned bytes, so `ldarr[1]`@0x10 failed `16%10` and fell through to bare `ldarr`. Fix =
+`get_align_size()` per C++ `TypeArray::getSubEntry` (type.cc:1430). Gained Long double #2. Gate:
+`[675,442]`, regressed-set EMPTY, switch 8/16/3, PARITY OK. Review
+`reviews/w10-longdouble-x87-v2-stride.md`. Remaining longdouble #3-#11 = float10 x87-reassembly
+(coreaction_protos) — separate root.
 
 **char-pointer string-literal render +6 → 441.** Ported `PrintC::pushPtrCharConstant`
 (printc.cc:1767) + `printCharacterConstant` (printc.cc:1602) — constant char* → string literal
