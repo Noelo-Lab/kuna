@@ -3342,3 +3342,21 @@ recovers correctly. The two halves CONCAT44 in the body → param degrades to `x
 overlapping the return register (heritage.rs input/return-guard interaction) must coalesce the
 register-pair into one 8-byte input BEFORE ActionInputPrototype's trial gather (coreaction_protos.rs:1551)
 — no fspec/modelrules-only fix exists (the split is upstream). [[kuna-rust-port]]
+
+## LOSS-231 UPDATE 6 (transient-over-tie wave, 2026-06-18) — Switch Loop IS the return-register over-tie root (NOT oppool1); needs the loop/input-carried distinction
+
+The Bitfields-#18 over-tie fix (mark_output_storage_addr_tied skip-tie when a non-marker same-address
+SSA version consumes another) is the SAME root as Switch Loop. The BROAD version of that fix (drop the
+marker tie entirely) reached **+10/-0 on datatests INCLUDING all 8 Switch Loop** — but stripped boolless's
+`// acc` whole-function-local rendering and failed 6 verify_* byte-parity unit tests (a real regression).
+So Switch Loop #2-4/#6-10 ARE the return-register over-tie splitting a transient — supersedes the
+oppool1-subregister-collapse next-locus (UPDATE 5). The narrow gate (`has_transient_self_chain`) does NOT
+fire for the Switch Loop shape: the return register's phi carries the INPUT PARAMETER through a LOOP, with
+no same-address def-use chain. NEXT-LOCUS: extend the un-tie gate (coreaction_cleanup.rs
+mark_output_storage_addr_tied) to ALSO not-tie a return register whose multi-instance high is a
+loop-carried/input-parameter phi (the C++ `syncVarnodesWithSymbols` funcdata_varnode.cc:993 only ties via
+`lm->inScope`, always false for a processor register — so the faithful end-state is: a processor register
+is NEVER tied by this stand-in; the kuna marker-tie is the workaround that must be narrowed to exactly the
+cases the real inScope/storage-class tying would cover). Must hold boolless's `// acc` (its ACC phi joins
+two COPYs with no ACC-reads-ACC chain) + the LOSS-206 readpartial forwarding-alias. This is the most
+promising Switch Loop lead — a refined over-tie gate, NOT oppool1. [[kuna-rust-port]]
