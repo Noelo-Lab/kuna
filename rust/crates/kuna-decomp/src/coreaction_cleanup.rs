@@ -514,7 +514,78 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
             })
         });
 
-        if !has_marker_write || has_transient_self_chain {
+        // (kuna LOSS-231 loop-carried return-register over-tie fix) A return
+        // register whose `marker` (phi) join is LOOP-CARRIED — its phi output
+        // flows, through a back-edge, around an SSA def-use cycle back into one
+        // of the phi's own inputs — is NOT a whole-function local C++ ties.  In
+        // `switchloop` the return is `EAX`, whose loop-tail phi `EAX_tail =
+        // MULTIEQUAL(case results…)` feeds the back-edge COPY `u = EAX_tail`,
+        // which is an input to the loop-header phi `R8D = MULTIEQUAL(EDI(input),
+        // u)`; the case bodies read `R8D` and feed `EAX_tail` again — a cycle.
+        // The loop-carried value genuinely lives in the loop-header storage
+        // (`R8D`/`startval`, the input parameter carried around the loop); the
+        // return register is only the loop-exit copy of it.  C++
+        // `syncVarnodesWithSymbols` (funcdata_varnode.cc:993) ties an un-symboled
+        // processor register ONLY via `lm->inScope`, ALWAYS false for a register,
+        // so C++ never restructures this loop-carried register into a
+        // whole-function local: it leaves `EAX` un-tied, `Merge` folds it into the
+        // loop-carried `startval` HighVariable, and each case renders `startval =
+        // startval + N;` directly (not the over-tied `v1 = startval + N; … startval
+        // = v1;` split).  Over-tying `EAX` here force-merges every same-address
+        // `EAX` SSA version (`Merge::mergeAddrTied`, merge.cc:631) into one
+        // multi-instance return high, which then cannot merge with the
+        // differently-addressed `startval`, so the loop-tail COPY `startval = EAX`
+        // survives explicitly and the cases split.
+        //
+        // The marker-write tie below STILL fires for an ACYCLIC whole-function
+        // register local (8051 `boolless`'s `ACC`: a `COPY(dat_52)` and a `COPY(#1)`
+        // joined by a single if-merge phi — its phi output reaches only the RETURN,
+        // never cycles back to its own input), so `boolless`'s `// acc` rendering is
+        // preserved.  This is a def-use-cycle IR-shape test on the return-register
+        // marker (the structural signature of a loop-carried register), not a
+        // name/address/value or loop-flag special case.
+        let has_loop_carried_marker = marker_writes.iter().any(|&mvn| {
+            let mdef = match data.vbank().get(mvn).and_then(|v| v.get_def()) {
+                Some(d) => d,
+                None => return false,
+            };
+            // Forward def-use reachability from the marker's output: if it can
+            // reach its OWN defining op again, the marker is in a cycle (its value
+            // is carried around a loop back-edge).  Bounded by a varnode visited
+            // set (each varnode is enqueued at most once); the merged-tree function
+            // IR is small.
+            let mout = match data.obank().get(mdef).and_then(|o| o.get_out()) {
+                Some(o) => o,
+                None => return false,
+            };
+            let mut visited: Vec<crate::seams::VarnodeId> = Vec::new();
+            let mut stack: Vec<crate::seams::VarnodeId> = vec![mout];
+            while let Some(cur) = stack.pop() {
+                if visited.contains(&cur) {
+                    continue;
+                }
+                visited.push(cur);
+                let descs: Vec<crate::seams::OpId> = match data.vbank().get(cur) {
+                    Some(v) => v.descend_iter().collect(),
+                    None => continue,
+                };
+                for d in descs {
+                    if d == mdef {
+                        // Reached the marker's own defining op via the back-edge —
+                        // the marker is loop-carried.
+                        return true;
+                    }
+                    if let Some(nxt) = data.obank().get(d).and_then(|o| o.get_out()) {
+                        if !visited.contains(&nxt) {
+                            stack.push(nxt);
+                        }
+                    }
+                }
+            }
+            false
+        });
+
+        if !has_marker_write || has_transient_self_chain || has_loop_carried_marker {
             // Leave un-tied so `baseExplicit` marks the value IMPLIED and the
             // printer collapses the return-register round-trip / chain.
             return;
