@@ -211,6 +211,110 @@ impl Funcdata {
         true
     }
 
+    /// \brief Apply a `UnionFacetSymbol` to force a union-field interpretation at
+    /// the data-flow edge it is dynamic-hashed to (C++ `Funcdata::applyUnionFacet`,
+    /// `funcdata_varnode.cc:1658-1696`).
+    ///
+    /// This is the consumer of the `map unionfacet <union> <field> <addr> <hash>`
+    /// console command (`IfcMapunionfacet` -> `Scope::addUnionFacetSymbol`): the
+    /// facet Symbol carries a forced field number and a [`DynamicHash`] locating the
+    /// op/slot the user pinned.  We re-find that op, build a *locked* [`ResolvedUnion`]
+    /// for the forced field, and install it via [`set_union_field`](Self::set_union_field)
+    /// / [`set_address_based_union_field`](Self::set_address_based_union_field) so the
+    /// W8 cast/render layer reads the user's field instead of the default
+    /// `resolveInFlow` pick.  Returns `true` when a (new) resolution was installed.
+    ///
+    /// Reached from [`attempt_dynamic_mapping`](Funcdata::attempt_dynamic_mapping)
+    /// and [`attempt_dynamic_mapping_late`](Funcdata::attempt_dynamic_mapping_late)
+    /// for a `union_facet`-category SymbolEntry.
+    pub fn apply_union_facet(&mut self, entry: &crate::database::SymbolEntry) -> KunaResult<bool> {
+        let sym_id = entry.symbol;
+        let (sym_type, field_number, addr_based) = {
+            let localmap = match self.get_scope_local() {
+                Some(l) => l,
+                None => return Ok(false),
+            };
+            let sym = localmap.database().symbol(sym_id);
+            let dt = match sym.dtype.as_ref() {
+                Some(d) => Rc::clone(d),
+                None => return Ok(false),
+            };
+            (dt, sym.get_field_number(), sym.is_addr_based())
+        };
+        let typegrp = match self.get_arch().types_rc() {
+            Some(t) => t,
+            None => return Ok(false),
+        };
+        // sym->isAddrBased(): build a locked resolution keyed on the first-use
+        // address + the hash-encoded slot (C++ funcdata_varnode.cc:1661-1666).
+        if addr_based {
+            let mut resolve = ResolvedUnion::new_field(Rc::clone(&sym_type), field_number, typegrp.as_ref())?;
+            resolve.set_lock(true);
+            let slot = crate::dynamic::DynamicHash::get_slot_from_hash(entry.get_hash());
+            let first_use = entry.get_first_use_address();
+            return Ok(self.set_address_based_union_field(&sym_type, &first_use, slot, resolve));
+        }
+        // op = dhash.findOp(this, entry->getFirstUseAddress(), entry->getHash());
+        let first_use = entry.get_first_use_address();
+        let hash = entry.get_hash();
+        let mut dhash = crate::dynamic::DynamicHash::new();
+        let op = match dhash.find_op(self, &first_use, hash) {
+            Some(o) => o,
+            None => return Ok(false),
+        };
+        // slot = DynamicHash::getSlotFromHash(entry->getHash());
+        let slot = crate::dynamic::DynamicHash::get_slot_from_hash(hash);
+        // const ResolvedUnion *res = getUnionResolution(sym->getType(), op, slot);
+        // if (res && res->getFieldNum() == sym->getFieldNumber()) return false;
+        if let Some(res) = self.get_union_resolution(&sym_type, op, slot) {
+            if res.get_field_num() == field_number {
+                return Ok(false);
+            }
+        }
+        // Varnode *vn = (slot < 0) ? op->getOut() : op->getIn(slot);
+        let vn = if slot < 0 {
+            self.obank().get(op).and_then(|o| o.get_out())
+        } else {
+            self.obank().get(op).and_then(|o| o.get_in(slot))
+        };
+        let vn = match vn {
+            Some(v) => v,
+            None => return Ok(false),
+        };
+        // Datatype *dt = vn->getType();  — widen unresType to the pointer / partial
+        // wrapper the Varnode actually carries, when it wraps the facet's union.
+        let mut unres_type = Rc::clone(&sym_type);
+        if let Some(dt) = self.vbank().get(vn).map(|v| Rc::clone(v.get_type())) {
+            match dt.get_metatype() {
+                type_metatype::TYPE_PTR => {
+                    // if (((TypePointer*)dt)->getPtrTo() == unresType) unresType = dt;
+                    if dt.get_ptr_to().map(|p| Rc::ptr_eq(&p, &sym_type)).unwrap_or(false) {
+                        unres_type = dt;
+                    }
+                }
+                type_metatype::TYPE_PARTIALSTRUCT => {
+                    // if (((TypePartialStruct*)dt)->getParent() == unresType) unresType = dt;
+                    if dt.get_partial_base().map(|p| Rc::ptr_eq(&p, &sym_type)).unwrap_or(false) {
+                        unres_type = dt;
+                    }
+                }
+                type_metatype::TYPE_PARTIALUNION => {
+                    // if (((TypePartialUnion*)dt)->getParentUnion() == unresType) unresType = dt;
+                    if dt.get_partial_base().map(|p| Rc::ptr_eq(&p, &sym_type)).unwrap_or(false) {
+                        unres_type = dt;
+                    }
+                }
+                _ => {}
+            }
+        }
+        // ResolvedUnion resolve(unresType, sym->getFieldNumber(), *glb->types);
+        // resolve.setLock(true); setUnionField(unresType, op, slot, resolve);
+        let mut resolve = ResolvedUnion::new_field(Rc::clone(&unres_type), field_number, typegrp.as_ref())?;
+        resolve.set_lock(true);
+        self.set_union_field(&unres_type, op, slot, resolve);
+        Ok(true)
+    }
+
     /// \brief Update the resolution data-type for a given edge (C++
     /// `Funcdata::updateUnionField`, `funcdata.cc:1038-1049`).
     ///

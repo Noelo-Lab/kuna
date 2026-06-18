@@ -672,6 +672,22 @@ impl ActionFuncLink {
         let mut spacebase = data.get_call_specs(idx).proto().get_spacebase().cloned();
 
         if !inputlocked || varargs {
+            // NEXT-LOCUS (Local cross #2, BLOCKED): the undeclared callee `retval`
+            // takes the unlocked active-input recovery path here.  rust keeps a live
+            // RDI input on the `call fretval` (`call fretval(RDI)`), where C++ prunes
+            // it to a zero-arg `call fretval()`.  The divergence is upstream of
+            // rendering: at the prior `call fothercall` rust materialises an INDIRECT
+            // `RDI = RDI [](free)` (a killedbycall indirect-creation) that keeps RDI
+            // live across the call, so the active-input trial for `retval`'s RDI is
+            // never killed; C++'s `killedbycall` effect drops RDI so no live trial
+            // exists.  rust also recovers an 8-byte RAX return (`xunknown8 v1` +
+            // `SUB84`/`(int4)` truncation) where C++ recovers the 4-byte EAX
+            // (`int4 v1`).  Both stem from the call-effect / return-storage trial
+            // scoring: FIX SEAM is the `killedbycall` indirect-creation suppression
+            // for `othercall` (so RDI is not regenerated) plus the return-trial
+            // size pruning (RAX vs EAX) in the active-param recovery
+            // (`ActionActiveParam`/`checkInputTrialUse` + `ParamActive` return
+            // scoring) — the W4 killedbycall cluster (cf. `rport/w10-killedbycall`).
             data.get_call_specs_mut(idx).init_active_input();
         }
         // Locked-prototype branch (coreaction.cc:1500-1554): register a trial and

@@ -994,6 +994,27 @@ impl Funcdata {
                     }
                     continue;
                 }
+                // A UnionFacetSymbol (`map unionfacet`) must be re-created via
+                // addUnionFacetSymbol so its category stays `union_facet` AND its
+                // forced field number survives the rebuild — otherwise
+                // ActionDynamicSymbols' `applyUnionFacet` arm (which reads
+                // `getFieldNumber()`) never fires and the union store/load renders
+                // through the default `resolveInFlow` field instead of the user's.
+                // The console form is always non-addr-based (`addr_based == false`).
+                if spec.category == symbol_category::UNION_FACET {
+                    if let Some((field_num, _addr_based)) = spec.union_facet {
+                        if let Ok(sym) = lm.add_union_facet_symbol(
+                            &spec.name,
+                            std::rc::Rc::clone(&spec.dtype),
+                            field_num,
+                            &spec.addr,
+                            spec.hash,
+                        ) {
+                            lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+                        }
+                    }
+                    continue;
+                }
                 // A plain `map hash` dynamic symbol: namelock|typelock (the locks
                 // the console set on it).
                 if let Ok(sym) =
@@ -3316,9 +3337,9 @@ impl Funcdata {
             let sym = localmap.database().symbol(sym_id);
             (sym.get_category(), sym.get_name().to_string())
         };
-        // union_facet -> applyUnionFacet (W6 union-resolution seam; not reached).
+        // if (sym->getCategory() == Symbol::union_facet) return applyUnionFacet(entry,dhash);
         if category == symbol_category::UNION_FACET {
-            return Ok(false);
+            return self.apply_union_facet(entry);
         }
         let first_use = entry.get_first_use_address();
         let hash = entry.get_hash();
@@ -3426,11 +3447,9 @@ impl Funcdata {
                 sym.dtype.clone(),
             )
         };
-        // if (sym->getCategory() == Symbol::union_facet) return applyUnionFacet(...)
+        // if (sym->getCategory() == Symbol::union_facet) return applyUnionFacet(entry,dhash);
         if category == symbol_category::UNION_FACET {
-            // SEAM: no union facets in the merged-tree slices (applyUnionFacet
-            // needs the W6 union-resolution layer).
-            return Ok(false);
+            return self.apply_union_facet(entry);
         }
         // Varnode *vn = dhash.findVarnode(this, entry->getFirstUseAddress(), entry->getHash());
         let first_use = entry.get_first_use_address();
