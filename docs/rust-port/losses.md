@@ -3101,3 +3101,34 @@ None → return 0. This is correct fail-closed behavior; the render substrate ne
   that currently SKIPS mapped stack varnodes in propagate_ref). This is the LOSS-131/132
   dual-AddrSpaceManager keystone; deep multi-pass type-inference, high corpus-wide regression risk,
   own dedicated wave. [[kuna-rust-port]]
+
+## LOSS-237 CORRECTION (longdouble-storeload wave, 2026-06-18) — root is missing pre-heritage stack store-load forwarding, NOT Heritage::refinement
+
+The LOSS-237 "Heritage::refinement cuts the 10-byte access at 8-byte lanes" diagnosis is **REFUTED** by
+a line-by-line comparison: `build_refinement`/`split_by_refinement`/`refine_read|write|input`/
+`remove13_refinement`/`refinement` (heritage.rs:3138-3308) are a faithful transcription of
+heritage.cc:1705/1734/1891 — boundaries come ONLY from actual varnode start/end addresses; there is NO
+8-byte-lane logic in either engine. Refinement is not the lever.
+- The split is present at RAW-LIFT time: the `writeLongDouble(float10)` call arg is `push qword
+  [rdi+0x18]` + `push qword [rdi+0x10]` (two 8-byte stack pushes of the float10 member); both engines
+  lift to two 8-byte LOADs.
+- The real upstream oracle (`decompiler/cpp/decomp_test_dbg`, behind docs/baseline.json) PASSES #5/#6/#11
+  and at its first-heritage breakpoint already shows a SINGLE 10-byte LOAD `u…:a = *(ram, RDI+0x10)` —
+  the two pushes/stores are store-load-forwarded and merged into one 10-byte load DURING/BEFORE the
+  first heritage pass. Rust instead carries the two 8-byte LOADs all the way as
+  `CONCAT28(SUB82(LOAD8(rdi+0x18)), LOAD8(rdi+0x10))`.
+- `RuleExpandLoad` correctly bails in BOTH engines (offset=8 fails `el.size<out+offset` 10<16; offset=0
+  hits the `meta!=INT&&meta!=UINT→return 0` gate at ruleaction.cc:10996, TYPE_FLOAT excluded) — not the
+  lever.
+- CORRECTED next-locus: rust's pre-/first-heritage STACK STORE-LOAD VALUE FORWARDING for the call
+  argument — the path that takes `STORE(stack,LOAD8(rdi+0x10)); STORE(stack+8,LOAD8(rdi+0x18)); arg=read
+  10 bytes off stack` and forwards it to `arg = LOAD10(rdi+0x10)` (one 10-byte LOAD before SSA renaming
+  completes). Investigate rust's heritage stack-space store-forwarding / FuncCallSpecs call-argument
+  pull width, NOT Heritage::refinement. Broad, high-regression-risk (affects every multi-store→wide-read
+  forwarding); own wave.
+- METHODOLOGY CAVEAT raised by the wave (UNVERIFIED by the integrator — flagged for follow-up): the
+  agent claimed `KUNA_ENGINE=cpp` via `decompile`/decomp_dbg reproduces the bug while only the datatest
+  `decomp_test_dbg` passes. The integrator's `KUNA_ENGINE=cpp run_tests --datatests` measures [675,675]
+  (cpp passes all incl. #5/#6/#11), so any divergence is a `decompile` vs `decomp_test_dbg` harness-setup
+  nuance (the XML script), NOT cpp being an unfaithful oracle. Verify against `decomp_test_dbg` when
+  taking this up. [[kuna-rust-port]]
