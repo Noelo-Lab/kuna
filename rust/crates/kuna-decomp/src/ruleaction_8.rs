@@ -1154,7 +1154,8 @@ impl Rule for RulePiecePathology {
     }
 
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains(RULE_GROUP) {
+        // C++ getGroup() == "protorecovery" (coreaction.cc), not RULE_GROUP/"analysis".
+        if !grouplist.contains("protorecovery") && !grouplist.contains("piecepathology") {
             return None;
         }
         Some(Box::new(RulePiecePathology))
@@ -1444,7 +1445,8 @@ impl Rule for RuleFloatSignCleanup {
     }
 
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains(RULE_GROUP) {
+        // C++ getGroup() == "cleanup" (coreaction.cc), not RULE_GROUP/"analysis".
+        if !grouplist.contains("cleanup") && !grouplist.contains("floatsigncleanup") {
             return None;
         }
         Some(Box::new(RuleFloatSignCleanup))
@@ -1665,7 +1667,8 @@ impl Rule for RuleExpandLoad {
     }
 
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
-        if !grouplist.contains(RULE_GROUP) {
+        // C++ getGroup() == "cleanup" (coreaction.cc), not RULE_GROUP/"analysis".
+        if !grouplist.contains("cleanup") && !grouplist.contains("expandload") {
             return None;
         }
         Some(Box::new(RuleExpandLoad))
@@ -1850,13 +1853,16 @@ pub fn specs() -> Vec<RuleSpec> {
         RuleSpec { group: RULE_GROUP, ctor: || Box::new(RuleFuncPtrEncoding) },
         RuleSpec { group: RULE_GROUP, ctor: || Box::new(RuleThreeWayCompare) },
         RuleSpec { group: RULE_GROUP, ctor: || Box::new(RulePopcountBoolXor) },
-        RuleSpec { group: RULE_GROUP, ctor: || Box::new(RulePiecePathology) },
+        // Registered "protorecovery" (coreaction.cc / universalaction.rs), not RULE_GROUP.
+        RuleSpec { group: "protorecovery", ctor: || Box::new(RulePiecePathology) },
         RuleSpec { group: RULE_GROUP, ctor: || Box::new(RuleXorSwap) },
         RuleSpec { group: RULE_GROUP, ctor: || Box::new(RuleLzcountShiftBool) },
         RuleSpec { group: RULE_GROUP, ctor: || Box::new(RuleFloatSign) },
-        RuleSpec { group: RULE_GROUP, ctor: || Box::new(RuleFloatSignCleanup) },
+        // Registered "cleanup" (coreaction.cc / universalaction.rs), not RULE_GROUP.
+        RuleSpec { group: "cleanup", ctor: || Box::new(RuleFloatSignCleanup) },
         RuleSpec { group: RULE_GROUP, ctor: || Box::new(RuleOrCompare) },
-        RuleSpec { group: RULE_GROUP, ctor: || Box::new(RuleExpandLoad) },
+        // Registered "cleanup" (coreaction.cc / universalaction.rs), not RULE_GROUP.
+        RuleSpec { group: "cleanup", ctor: || Box::new(RuleExpandLoad) },
     ]
 }
 
@@ -2042,13 +2048,19 @@ mod tests {
     fn specs_lists_twelve_rules_in_order() {
         let s = specs();
         assert_eq!(s.len(), 12);
-        // Every spec registers against the analysis group.
+        // Most specs register against the analysis group; three register against
+        // their own pool (RulePiecePathology -> "protorecovery", RuleFloatSignCleanup
+        // and RuleExpandLoad -> "cleanup"), matching coreaction.cc getGroup(). Each
+        // spec's ctor yields a rule that clones in *its own* group's grouplist and is
+        // filtered out of an empty grouplist.
         for spec in &s {
-            assert_eq!(spec.group, "analysis");
-            // The ctor yields a rule that clones in the analysis grouplist and is
-            // filtered out otherwise.
             let r = (spec.ctor)();
-            assert!(r.clone_rule(&groups()).is_some());
+            let yes = ActionGroupList::from_names([spec.group]);
+            assert!(
+                r.clone_rule(&yes).is_some(),
+                "{} should clone in its registration group",
+                spec.group
+            );
             assert!(r.clone_rule(&ActionGroupList::new()).is_none());
         }
     }
