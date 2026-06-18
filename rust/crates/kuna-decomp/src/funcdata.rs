@@ -2674,8 +2674,12 @@ impl Funcdata {
     pub(crate) fn do_snip_reads_insert_point(&self, vn: VarnodeId) -> (BlockId, Address, Option<OpId>) {
         let v = self.vbank.get(vn).expect("snip_reads_insert_point: stale vn");
         if v.is_input() {
+            // C++ `Merge::snipReads` (merge.cc:454): for an input Varnode the trim
+            // COPY is placed at the entry block's START (`bl->getStart()`), not its
+            // stop — so the firstuse-address dynamic-hash COPY lands at the function
+            // entry where `DynamicHash::findVarnode` (dynamic.cc:571) expects it.
             let bl = self.bblocks_get_block(0);
-            (bl, self.block_stop_addr(bl), None)
+            (bl, self.bblocks_block_start(bl), None)
         } else {
             let def = v.get_def().expect("snip_reads_insert_point: non-input has no def");
             let bl = self.obank.get(def).and_then(|o| o.get_parent()).expect("snip: def no parent");

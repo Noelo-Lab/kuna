@@ -52,6 +52,16 @@ use crate::variable::{
 use kuna_base::space::spacetype;
 use kuna_base::types::{int2, int4, uintm};
 
+/// (kuna LOSS-229) Disjoint id-spaces for `MergeContext::bank_symbol`.  A local
+/// (dynamic/equate) Symbol is a slotmap ffi key; a global mapped Symbol is keyed
+/// off its storage address.  We clear the top bit on the local id and set it on
+/// the global id so the two id-spaces never collide in the `mergeTestRequired`
+/// symbol guard (`symbolIn != symbolOut`).  A slotmap ffi key never legitimately
+/// reaches the top bit (the index/version halves are far smaller), so clearing it
+/// is a no-op on every real local Symbol.
+const SYM_ID_LOCAL_MASK: u64 = !(1u64 << 63);
+const SYM_ID_GLOBAL_TAG: u64 = 1u64 << 63;
+
 // =============================================================================
 // HighContext for Funcdata (the read view the bank's lazy re-derivation needs)
 // =============================================================================
@@ -142,6 +152,82 @@ impl Funcdata {
         if self.covermerge.is_none() {
             self.covermerge = Some(Self::make_covermerge());
         }
+    }
+
+    /// (kuna LOSS-229) Model `HighVariable::getSymbol()` (variable.cc:418-432) for a
+    /// `map addr`-mapped access, returning the covering Symbol's storage address and
+    /// in-symbol byte offset `(entry_addr, sym_off)`, or `None`.
+    ///
+    /// C++ `updateSymbol()` scans the high's member Varnodes for one carrying a
+    /// `SymbolEntry`; for a `map addr` symbol (global *or* a stack-mapped local) that
+    /// entry is the Symbol's.  The merged kuna tree does not paint mapped SymbolEntries
+    /// onto varnodes before the merge group (`ActionMapGlobals` runs after it,
+    /// coreaction.cc:6025; the local sync only updates flags), so we resolve the
+    /// covering Symbol directly from the scope snapshot — the same
+    /// `Scope::queryContainer` covering-entry lookup `linkSymbol` would use.
+    ///
+    /// Restricted to an address-tied member: a `map addr` global is persist+addrtied,
+    /// a `map addr` stack symbol is addrtied — exactly the Varnodes C++
+    /// `handleSymbolConflict` (funcdata_varnode.cc:1023) attaches the SymbolEntry to,
+    /// and never a free/internal temp.  The local stack scope is queried first (a
+    /// stack member is never global), the frozen global scope second.  Returns
+    /// `(entry_addr, sym_off)` for the first member that maps, location-ordered (the
+    /// C++ `updateSymbol` first-hit; members of one high share the same Symbol).
+    fn kuna_mapped_symbol_entry(&self, high: HighVariableId) -> Option<(Address, int4)> {
+        let h = self.high_bank().get(high)?;
+        let invalid = Address::new_invalid();
+        let n = h.num_instances();
+        for i in 0..n {
+            let vn = h.get_instance(i);
+            let v = match self.vbank().get(vn) {
+                Some(v) => v,
+                None => continue,
+            };
+            // Only an address-tied member carries a `map addr` SymbolEntry pre-merge
+            // (C++ handleSymbolConflict's input/addrtied/persist/constant arm).  A
+            // free/internal temp never does.
+            if v.is_free() || !v.is_addr_tied() {
+                continue;
+            }
+            let addr = v.get_addr().clone();
+            let size = v.get_size();
+            // Local (stack) scope first: a `map addr s...` symbol.  `entry_addr` is the
+            // covering Symbol's storage address (its identity), `sym_off` the in-symbol
+            // byte offset of the access.
+            if let Some(lm) = self.get_scope_local() {
+                if let Some(info) = lm.query_container_for_link(&addr) {
+                    return Some((info.entry_addr, info.sym_off));
+                }
+            }
+            // Then the frozen global scope (`map addr r...`): the covering global Symbol.
+            if let Some(c) = self.get_arch().query_container_global(&addr, size, &invalid) {
+                let delta = addr.get_offset().wrapping_sub(c.entry_addr.get_offset()) as int4;
+                return Some((c.entry_addr, delta.wrapping_add(c.symbol_offset)));
+            }
+        }
+        None
+    }
+
+    /// (kuna LOSS-229) The `map addr` Symbol id for the `bank_symbol` guard, keyed off
+    /// the covering entry's storage address (a `map addr` Symbol has one storage),
+    /// tagged into the mapped id-space so it never collides with a local slotmap key.
+    fn kuna_mapped_symbol_id(&self, high: HighVariableId) -> Option<u64> {
+        let (entry_addr, _off) = self.kuna_mapped_symbol_entry(high)?;
+        let off = entry_addr.get_offset();
+        let space = entry_addr.get_space().map(|s| s.get_index() as u64).unwrap_or(0);
+        // Combine space + offset into one id; clear the top bit of the payload then
+        // tag the mapped id-space.  Two members of the same Symbol resolve to the same
+        // entry_addr -> same id (the C++ `symbolIn == symbolOut`); space differentiates
+        // a stack symbol from a global at the same numeric offset.
+        Some(SYM_ID_GLOBAL_TAG | (((space << 48) ^ off) & SYM_ID_LOCAL_MASK))
+    }
+
+    /// (kuna LOSS-229) The in-symbol byte offset for a `map addr` access (C++
+    /// `HighVariable::setSymbol`'s `symboloffset`, variable.cc:269: `(addr -
+    /// entry_addr) + entry_offset`), used by the `mergeTestRequired` "different parts
+    /// of same symbol" arm.
+    fn kuna_mapped_symbol_offset(&self, high: HighVariableId) -> Option<int4> {
+        self.kuna_mapped_symbol_entry(high).map(|(_addr, off)| off)
     }
 
     /// Run a closure with the persistent merge engine and `self` as the
@@ -400,17 +486,36 @@ impl MergeContext for Funcdata {
 
     // --- Symbol reads on a HighVariable (W4 surface; un-recovered default) ---
     fn bank_symbol(&self, high: HighVariableId) -> Option<u64> {
-        // (kuna LOSS-229) Expose the dynamic-mapping Symbol id bound to this high so
+        // (kuna LOSS-229) Expose the Symbol id bound to this high so
         // `Merge::mergeTestRequired` (merge.cc:157-164) keeps a dynamic temp distinct
         // from the storage it copies.  Equate symbols count too (same C++ guard).
         use slotmap::Key;
         let h = self.high_bank().get(high)?;
-        h.kuna_dynamic_symbol()
-            .or_else(|| h.kuna_equate_symbol())
-            .map(|s| s.data().as_ffi())
+        if let Some(s) = h.kuna_dynamic_symbol().or_else(|| h.kuna_equate_symbol()) {
+            // Tag with the top bit cleared so a slotmap ffi key never collides with a
+            // mapped-Symbol id (which is keyed off the entry storage address + tag bit).
+            return Some(s.data().as_ffi() & SYM_ID_LOCAL_MASK);
+        }
+        // C++ `HighVariable::getSymbol()` also resolves a `map addr` access to its
+        // Symbol (the member Varnode carries the SymbolEntry, variable.cc:418-432).
+        // The merged kuna tree does not paint mapped SymbolEntries onto varnodes before
+        // the merge group (ActionMapGlobals runs after, coreaction.cc:6025), so resolve
+        // the covering Symbol directly from the scope snapshot (the local stack scope,
+        // then the frozen global scope) — the same covering-entry lookup `linkSymbol`
+        // would use.
+        self.kuna_mapped_symbol_id(high)
     }
     fn bank_symbol_offset(&self, high: HighVariableId) -> int4 {
-        self.high_bank().get(high).map(|h| h.get_symbol_offset()).unwrap_or(-1)
+        let h = match self.high_bank().get(high) {
+            Some(h) => h,
+            None => return -1,
+        };
+        // A dynamic/equate symbol parks its in-symbol offset on the high; a `map addr`
+        // access reads the covering entry's `(addr - entry_addr) + entry_off`.
+        if h.kuna_dynamic_symbol().is_some() || h.kuna_equate_symbol().is_some() {
+            return h.get_symbol_offset();
+        }
+        self.kuna_mapped_symbol_offset(high).unwrap_or_else(|| h.get_symbol_offset())
     }
     fn bank_symbol_isolated(&self, _high: HighVariableId) -> bool {
         false
