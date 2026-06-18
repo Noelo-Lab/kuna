@@ -21,16 +21,19 @@
 //!   `Funcdata::banks_mut()` split-borrow accessor is missing, so any rule that
 //!   *creates a new op with an output* defers at the output-creation step):
 //!   `RuleCollectTerms`, `RuleNotDistribute`, `RuleAndDistribute`,
-//!   `RulePullsubMulti`, `RulePullsubIndirect`, `RulePushMulti`.
+//!   `RulePullsubMulti`, `RulePullsubIndirect`.
+//!   (`RulePushMulti` no longer defers — its full body, including
+//!   `findSubstitute`, is ported below.)
 //! * `deadRemovalAllowedSeen` (heritage seam): `RuleEarlyRemoval`.
 //! * `cseEliminateList` (funcdata CSE seam): `RuleSelectCse`.
 //! * `replaceLessequal` (funcdata compare-form seam): `RuleIntLessEqual`.
 //! * `distributeIntMultAdd` + `TermOrder` (expression seam): `RuleCollectTerms`.
 //! * `functionalEquality` / `functionalEqualityLevel` (expression seam):
-//!   `RuleEquality`, `RulePushMulti`, `RuleRangeMeld`.
+//!   `RuleEquality`, `RuleRangeMeld`.
 //! * `getOpFromConst` / `newIndirectCreation` (W3/W4 seam): `RulePullsubIndirect`.
 //! * `findJoin` (W5 join-record seam): `RulePullsubMulti::build_subpiece`.
-//! * `cseFindInBlock` / `earliestUse` (block/CSE seam): `RulePushMulti`.
+//!   (`cseFindInBlock` / `earliestUse` for `RulePushMulti` are now wired to the
+//!   ported `Funcdata::cse_find_in_block` / `block_earliest_use`.)
 //! * `CircleRange::pullBack`/`circleUnion`/`translate2Op`/`intersect`
 //!   (rangeutil seam): `RuleRangeMeld`.
 //! * `op_set_opcode` requires a fully-formed `TypeOp` (opcode + property flags +
@@ -2078,6 +2081,86 @@ impl RulePushMulti {
     pub fn new(g: impl Into<String>) -> RulePushMulti {
         RulePushMulti { group: g.into() }
     }
+
+    /// Find a previously existing MULTIEQUAL taking the given inputs in block
+    /// `bb`, or an equivalent common sub-expression (C++
+    /// `RulePushMulti::findSubstitute`, `ruleaction.cc:1032`).
+    fn find_substitute(
+        data: &Funcdata,
+        in1: VarnodeId,
+        in2: VarnodeId,
+        bb: crate::seams::BlockId,
+        earliest: Option<OpId>,
+    ) -> Option<OpId> {
+        // iter = in1->beginDescend(); while(iter != enditer) { ... }
+        let descend: Vec<OpId> =
+            data.vbank().get(in1).expect("find_substitute: stale in1").descend_iter().collect();
+        for op in descend {
+            let opref = data.obank().get(op).expect("find_substitute: stale descend op");
+            // if (op->getParent() != bb) continue;
+            if opref.get_parent() != Some(bb) {
+                continue;
+            }
+            // if (op->code() != CPUI_MULTIEQUAL) continue;
+            if opref.code() != OpCode::CPUI_MULTIEQUAL {
+                continue;
+            }
+            // if (op->getIn(0) != in1) continue;
+            if opref.get_in(0) != Some(in1) {
+                continue;
+            }
+            // if (op->getIn(1) != in2) continue;
+            if opref.get_in(1) != Some(in2) {
+                continue;
+            }
+            return Some(op);
+        }
+        // if (in1 == in2) return (PcodeOp *)0;
+        if in1 == in2 {
+            return None;
+        }
+        // if (0!=functionalEqualityLevel(in1,in2,buf1,buf2)) return (PcodeOp *)0;
+        let mut buf1 = [in1, in1];
+        let mut buf2 = [in2, in2];
+        if crate::expression::functional_equality_level(
+            in1,
+            in2,
+            &mut buf1,
+            &mut buf2,
+            data.vbank(),
+            data.obank(),
+        ) != 0
+        {
+            return None;
+        }
+        // PcodeOp *op1 = in1->getDef();  PcodeOp *op2 = in2->getDef();
+        // in1 and in2 must be written to not be equal and pass functional equality test
+        let op1 = data.vbank().get(in1).expect("find_substitute: stale in1").get_def().expect(
+            "find_substitute: in1 not written (functionalEqualityLevel==0 implies written)",
+        );
+        let op2 = data.vbank().get(in2).expect("find_substitute: stale in2").get_def().expect(
+            "find_substitute: in2 not written (functionalEqualityLevel==0 implies written)",
+        );
+        // for(int4 i=0;i<op1->numInput();++i) { ... }
+        let num = data.obank().get(op1).expect("find_substitute: stale op1").num_input();
+        for i in 0..num {
+            let vn = data
+                .obank()
+                .get(op1)
+                .expect("find_substitute: stale op1")
+                .get_in(i)
+                .expect("find_substitute: op1 null input");
+            // if (vn->isConstant()) continue;
+            if data.vbank().get(vn).expect("find_substitute: stale vn").is_constant() {
+                continue;
+            }
+            // if (vn == op2->getIn(i)) return Funcdata::cseFindInBlock(op1,vn,bb,earliest);
+            if Some(vn) == data.obank().get(op2).expect("find_substitute: stale op2").get_in(i) {
+                return data.cse_find_in_block(op1, vn, bb, earliest);
+            }
+        }
+        None
+    }
 }
 
 impl Rule for RulePushMulti {
@@ -2122,15 +2205,160 @@ impl Rule for RulePushMulti {
         }
 
         // int4 res = functionalEqualityLevel(in1,in2,buf1,buf2);
-        //   ... the rest builds/relocates ops (opSetOutput, opUninsert, newOp,
-        //   newVarnodeOut/newUniqueOut, findSubstitute -> cseFindInBlock,
-        //   earliestUse, opDestroy) ...
-        // SEAM(expression/W3/block): `functionalEqualityLevel` (expression.cc),
-        // `findSubstitute` -> `cseFindInBlock`/`earliestUse`, and the op
-        // relocation (`opSetOutput` + `newVarnodeOut`/`newUniqueOut`, the W3
-        // output-creation seam) are all unavailable.  The two-branch / written /
-        // spacebase guards above are ported; the body defers here.  No change.
-        0
+        let mut buf1 = [in1, in1];
+        let mut buf2 = [in2, in2];
+        let res = crate::expression::functional_equality_level(
+            in1,
+            in2,
+            &mut buf1,
+            &mut buf2,
+            data.vbank(),
+            data.obank(),
+        );
+        // if (res < 0) return 0;
+        if res < 0 {
+            return 0;
+        }
+        // if (res > 1) return 0;
+        if res > 1 {
+            return 0;
+        }
+        // PcodeOp *op1 = in1->getDef();
+        let op1 = data.vbank().get(in1).expect("RulePushMulti: stale in1").get_def().expect(
+            "RulePushMulti: in1 written but no def",
+        );
+        // if (op1->code() == CPUI_SUBPIECE) return 0; // SUBPIECE is pulled not pushed
+        if data.obank().get(op1).expect("RulePushMulti: stale op1").code() == OpCode::CPUI_SUBPIECE {
+            return 0;
+        }
+
+        // BlockBasic *bl = op->getParent();
+        let bl = data
+            .obank()
+            .get(op)
+            .expect("RulePushMulti: stale op")
+            .get_parent()
+            .expect("RulePushMulti: MULTIEQUAL has no parent");
+        // PcodeOp *earliest = bl->earliestUse(op->getOut());
+        let outvn = data
+            .obank()
+            .get(op)
+            .expect("RulePushMulti: stale op")
+            .get_out()
+            .expect("RulePushMulti: MULTIEQUAL has no output");
+        let earliest = data.block_earliest_use(bl, outvn);
+
+        let op1_code = data.obank().get(op1).expect("RulePushMulti: stale op1").code();
+        // if (op1->code() == CPUI_COPY) { Special case of MERGE of 2 shadowing varnodes
+        if op1_code == OpCode::CPUI_COPY {
+            // if (res==0) return 0;
+            if res == 0 {
+                return 0;
+            }
+            // PcodeOp *substitute = findSubstitute(buf1[0],buf2[0],bl,earliest);
+            let substitute = match RulePushMulti::find_substitute(data, buf1[0], buf2[0], bl, earliest)
+            {
+                None => return 0,
+                Some(s) => s,
+            };
+            // Eliminate this op in favor of the shadowed merge
+            // data.totalReplace(op->getOut(),substitute->getOut());
+            let subout = data
+                .obank()
+                .get(substitute)
+                .expect("RulePushMulti: stale substitute")
+                .get_out()
+                .expect("RulePushMulti: substitute has no output");
+            data.total_replace(outvn, subout).expect("RulePushMulti: totalReplace (COPY case)");
+            // data.opDestroy(op);
+            data.op_destroy(op);
+            return 1;
+        }
+
+        // PcodeOp *op2 = in2->getDef();
+        let op2 = data.vbank().get(in2).expect("RulePushMulti: stale in2").get_def().expect(
+            "RulePushMulti: in2 written but no def",
+        );
+        // if (in1->loneDescend() != op) return 0;
+        if data.lone_descend(in1) != Some(op) {
+            return 0;
+        }
+        // if (in2->loneDescend() != op) return 0;
+        if data.lone_descend(in2) != Some(op) {
+            return 0;
+        }
+
+        // Varnode *outvn = op->getOut();  (already bound above)
+
+        // data.opSetOutput(op1,outvn); // Move MULTIEQUAL output to op1
+        data.op_set_output(op1, outvn).expect("RulePushMulti: opSetOutput");
+        // data.opUninsert(op1); // Move the unified op
+        data.op_uninsert(op1);
+        // if (res == 1) {
+        if res == 1 {
+            // int4 slot1 = op1->getSlot(buf1[0]);
+            let slot1 = data.obank().get(op1).expect("RulePushMulti: stale op1").get_slot(buf1[0]);
+            // PcodeOp *substitute = findSubstitute(buf1[0],buf2[0],bl,earliest);
+            let substitute =
+                match RulePushMulti::find_substitute(data, buf1[0], buf2[0], bl, earliest) {
+                    Some(s) => s,
+                    None => {
+                        // substitute = data.newOp(2,op->getAddr());
+                        let op_addr =
+                            data.obank().get(op).expect("RulePushMulti: stale op").get_addr().clone();
+                        let substitute = data.new_op(2, op_addr);
+                        // data.opSetOpcode(substitute,CPUI_MULTIEQUAL);
+                        set_opcode_seam(data, substitute, OpCode::CPUI_MULTIEQUAL);
+                        // Try to preserve the storage location if the input varnodes share it
+                        // But don't propagate addrtied varnode (thru MULTIEQUAL)
+                        let b1_addr =
+                            data.vbank().get(buf1[0]).expect("RulePushMulti: stale buf1").get_addr().clone();
+                        let b2_addr =
+                            data.vbank().get(buf2[0]).expect("RulePushMulti: stale buf2").get_addr().clone();
+                        let b1_size =
+                            data.vbank().get(buf1[0]).expect("RulePushMulti: stale buf1").get_size();
+                        let b1_addrtied =
+                            data.vbank().get(buf1[0]).expect("RulePushMulti: stale buf1").is_addr_tied();
+                        // if ((buf1[0]->getAddr() == buf2[0]->getAddr())&&(!buf1[0]->isAddrTied()))
+                        if b1_addr == b2_addr && !b1_addrtied {
+                            // data.newVarnodeOut(buf1[0]->getSize(),buf1[0]->getAddr(),substitute);
+                            data.new_varnode_out(b1_size, &b1_addr, substitute)
+                                .expect("RulePushMulti: newVarnodeOut");
+                        } else {
+                            // data.newUniqueOut(buf1[0]->getSize(),substitute);
+                            data.new_unique_out(b1_size, substitute)
+                                .expect("RulePushMulti: newUniqueOut");
+                        }
+                        // data.opSetInput(substitute,buf1[0],0);
+                        data.op_set_input(substitute, buf1[0], 0)
+                            .expect("RulePushMulti: substitute in0");
+                        // data.opSetInput(substitute,buf2[0],1);
+                        data.op_set_input(substitute, buf2[0], 1)
+                            .expect("RulePushMulti: substitute in1");
+                        // data.opInsertBegin(substitute,bl);
+                        data.op_insert_begin(substitute, bl);
+                        substitute
+                    }
+                };
+            // data.opSetInput(op1,substitute->getOut(),slot1);
+            let subout = data
+                .obank()
+                .get(substitute)
+                .expect("RulePushMulti: stale substitute")
+                .get_out()
+                .expect("RulePushMulti: substitute has no output");
+            data.op_set_input(op1, subout, slot1).expect("RulePushMulti: op1 slot1 input");
+            // data.opInsertAfter(op1,substitute); // Complete move of unified op into merge block
+            data.op_insert_after(op1, substitute);
+        } else {
+            // data.opInsertBegin(op1,bl); // Complete move of unified op into merge block
+            data.op_insert_begin(op1, bl);
+        }
+        // data.opDestroy(op); // Destroy the MULTIEQUAL
+        data.op_destroy(op);
+        // data.opDestroy(op2); // Remove the duplicate (in favor of the unified)
+        data.op_destroy(op2);
+        1
     }
 }
 
