@@ -409,10 +409,41 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
             if op.code() != OpCode::CPUI_COPY {
                 return false;
             }
-            let src = match op.get_in(0).and_then(|iv| data.vbank().get(iv)) {
+            let src_vn = match op.get_in(0) {
                 Some(s) => s,
                 None => return false,
             };
+            let src = match data.vbank().get(src_vn) {
+                Some(s) => s,
+                None => return false,
+            };
+            // (kuna LOSS-234 condmove) The forwarding-alias tie is the stand-in for an
+            // absent *recovered-local Symbol* on the source register (the `map hash`
+            // dynamic SymbolEntry `a_simple` on `register:0x18` in
+            // `partialmerge::readpartial`).  It must fire ONLY when the source register
+            // genuinely carries such a recovered local — otherwise it wrongly ties a
+            // transient flag-register boolean the printer inlines.  In `condmove`,
+            // `r0:1 = COPY(tmpZR)` copies the ARM zero-flag register `tmpZR` (offset
+            // 0x60), which holds the pure transient comparison `cptr[8] != 'a'`: its
+            // HighVariable carries NO recovered Symbol (no dynamic/equate mapentry), so
+            // C++ `inScope` never restructures it into a whole-function local, leaves
+            // the return register un-tied, and `baseExplicit` inlines the boolean into
+            // `return cptr[8] != 'a';`.  Gate the alias arm on the source high carrying
+            // a recovered-local Symbol (the `vn->getSymbolEntry()` link the readpartial
+            // dynamic-map establishes) so the readpartial tie is preserved while the
+            // condmove transient un-ties.  This is a recovered-Symbol structural test
+            // (the same SymbolEntry fact C++ keys `inScope` on), not a register-name or
+            // value special case.
+            let src_high_has_symbol = data
+                .vbank()
+                .get(src_vn)
+                .and_then(|v| v.get_high())
+                .and_then(|h| data.high_bank().get(h))
+                .map(|h| h.kuna_dynamic_symbol().is_some() || h.kuna_equate_symbol().is_some())
+                .unwrap_or(false);
+            if !src_high_has_symbol {
+                return false;
+            }
             // The source must be a DISTINCT processor register holding its own
             // (recovered-local) value: not the return register's own address (a
             // trim self-COPY), and not a constant / persist global / function input
@@ -1961,7 +1992,6 @@ fn name_local_highs_angr(data: &mut Funcdata) {
             // (`entry->isDynamic()` is `entry->getAddr().isInvalid()`; a mapped
             // local entry is never dynamic here, so the predicate reduces to the
             // four Varnode flags.)
-            let reuse_directly = v_input || v_addrtied || v_persist || v_constant;
             // The `handleSymbolConflict` scan only matters when the representative's
             // storage genuinely DIFFERS in width from the containing entry — the
             // `float8` lane (8 bytes at XMM0_Qa) reaching into the `float4 a`
@@ -1975,6 +2005,48 @@ fn name_local_highs_angr(data: &mut Funcdata) {
             // :1031` `otherVn->getSize() != entry->getSize()`) without depending on
             // whether the rust merge happened to unify equal-width siblings.
             let size_mismatch = v_size != info.entry_size;
+            // (kuna LOSS-234 zeroprop) C++ `queryProperties(vn->getAddr(),1,usepoint)`
+            // returns the SMALLEST containing SymbolEntry.  When a *narrower* addr-tied
+            // local (the 1-byte char-return register r0 in `zeroprop`) shares a base
+            // address with a *wider* function input/parameter (the 4-byte `int4 *ptrint`
+            // at the same r0), C++'s ScopeLocal has restructured the return register into
+            // its OWN size-1 local Symbol, so the size-1 query returns that distinct
+            // entry — never the wider param.  `handleSymbolConflict` then reuses the
+            // (matching-size) entry and the return is named `v1`.  The kuna W4 ScopeLocal
+            // stand-in has no separate size-1 entry, so `query_container_for_link` returns
+            // the wider param entry here; the `v_addrtied` `reuse_directly` arm would then
+            // bind the *param's* name (`ptrint`) onto the char-return high.  Detect that
+            // exact shape — an addr-tied (not input/persist/constant) representative
+            // strictly NARROWER than its containing entry — and let the conflict scan run:
+            // a different-high input/param at the entry's exact wider storage is a genuine
+            // storage conflict, routing the return to the fresh-`vN`/dynamic-symbol tail
+            // (C++ `buildDynamicSymbol`).  This is a storage-geometry test (narrower
+            // addr-tied local overlapping a wider distinct entry), not a name/address/size
+            // special case: an addr-tied rep matching its entry's width (the ordinary
+            // mapped local / equal-width param) keeps `reuse_directly` and is unaffected.
+            // The containing entry must be a SCALAR (non-composite) Symbol for this to
+            // be a genuine distinct-variable conflict.  When the wider entry is a
+            // STRUCT/UNION/ARRAY, a narrower addr-tied access at a field offset is a
+            // legitimate MEMBER of that composite (the `stackmy.b` / `hilo_stack.b` /
+            // `firstval.b` struct-field renders) and MUST reuse the entry — C++
+            // `queryProperties` returns the composite and the member maps into it.  Only
+            // a narrower addr-tied local overlapping a wider SCALAR entry (zeroprop's
+            // 1-byte char return at the base of the `int4 *ptrint` parameter) is a true
+            // storage conflict that C++ resolves with a fresh size-1 local.
+            let entry_is_composite = info
+                .sym_type
+                .as_ref()
+                .map(|t| {
+                    use crate::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
+                    matches!(t.get_metatype(), TYPE_STRUCT | TYPE_UNION | TYPE_ARRAY)
+                })
+                .unwrap_or(false);
+            let narrower_addrtied_local =
+                v_addrtied && !v_input && !v_persist && !v_constant
+                    && size_mismatch && v_size < info.entry_size
+                    && !entry_is_composite;
+            let reuse_directly =
+                (v_input || v_addrtied || v_persist || v_constant) && !narrower_addrtied_local;
             let conflict = if reuse_directly || !size_mismatch {
                 false
             } else {

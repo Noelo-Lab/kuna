@@ -171,14 +171,22 @@ fn f0_untied_renders_implied_return_expr() {
     }
 }
 
-/// (A2) THE GUARD — `partialmerge :: Partial Merge #3` storage STAYS tied.  This
-/// is the negative assertion the naive lift regresses: `readpartial`'s `EAX` is a
-/// pure forwarding COPY of the distinct register `0x18` that in C++ carries the
-/// recovered `a_simple` dynamic Symbol.  kuna does not yet recover that
-/// per-Varnode dynamic mapentry (LOSS-206), so the return register must STAY tied
-/// (explicit) — the body must NOT collapse to the forbidden `return glob1.a + 10;`
-/// (datatest `Partial Merge #3`, `min=0 max=0`).  A return-register local must
-/// remain to anchor the forwarded value.
+/// (A2) THE GUARD — `partialmerge :: Partial Merge #3` storage STAYS recovered.
+/// This is the negative assertion the naive lift regresses: `readpartial`'s `EAX`
+/// is a pure forwarding COPY of the distinct register `0x18` that in C++ carries
+/// the recovered `a_simple` dynamic Symbol.  The body must NOT collapse to the
+/// forbidden `return glob1.a + 10;` (datatest `Partial Merge #3`, `min=0 max=0`):
+/// the `a_simple` recovered local must survive to anchor the forwarded value.
+///
+/// (LOSS-234 update) The forwarding-alias return-register tie is a stand-in for an
+/// absent recovered-local Symbol *on the source register*; it must fire ONLY when
+/// the source actually carries one (`readpartial`'s `a_simple`), never for a bare
+/// transient (`condmove`'s flag register).  With that narrowed, `readpartial` now
+/// renders BYTE-IDENTICAL to the C++ oracle — `a_simple = glob1.a; return a_simple
+/// + 10;` (datatest `Partial Merge #2`) — instead of the prior extra `v1 = a_simple
+/// + 10; return v1;` round-trip the over-tie inserted.  The real invariant (a_simple
+/// stays explicit, the full-collapse is forbidden) is preserved and now matches the
+/// oracle exactly.
 #[test]
 fn partialmerge_3_forwarding_alias_storage_stays_tied() {
     let bin = match rust_test_bin_any() {
@@ -205,11 +213,26 @@ fn partialmerge_3_forwarding_alias_storage_stays_tied() {
         "readpartial's forwarding-alias return register must STAY tied; it must NOT \
          collapse to the forbidden `return glob1.a + 10;` (Partial Merge #3, min=0); got:\n{body}"
     );
-    // A return-register local survives to hold the forwarded value (explicit).
+    // The recovered local `a_simple` survives to anchor the forwarded value — it is
+    // assigned the partial load (`a_simple = glob1.a;`) and returned (`return
+    // a_simple + 10;`).  This is the oracle-faithful form (byte-identical to C++);
+    // the prior extra `v1 = a_simple + 10; return v1;` tied round-trip was a kuna
+    // over-tie the LOSS-234 narrowing removed.
     assert!(
-        body.contains("return v1;") || body.contains("= glob1.a + 10;"),
-        "readpartial must keep the return value explicit in a tied local; got:\n{body}"
+        body.contains("a_simple = glob1.a;") && body.contains("return a_simple + 10;"),
+        "readpartial must keep the recovered `a_simple` local explicit and return it \
+         directly (oracle form `a_simple = glob1.a; return a_simple + 10;`); got:\n{body}"
     );
+    // Byte-identical to the C++ oracle on this function (the faithfulness direction).
+    if let Some(cpp) = dump_body(&cpp_oracle_bin(), "partialmerge") {
+        if let Some(cbody) = function_block(&cpp, "readpartial(") {
+            assert_eq!(
+                body.trim_end(),
+                cbody.trim_end(),
+                "Rust readpartial must be byte-identical to the C++ oracle:\nRUST:\n{body}\nCPP:\n{cbody}"
+            );
+        }
+    }
 }
 
 /// (A3) ANTI-SPECIAL-CASING — the un-tie fires on storage of DIFFERENT space
