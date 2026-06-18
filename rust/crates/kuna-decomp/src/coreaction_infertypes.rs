@@ -1411,14 +1411,14 @@ fn propagate_ref(data: &mut Funcdata, vn: VarnodeId, addr: &Address) {
     let mut lastsize: int4 = ct_size;
     let mut lastct: Option<Rc<Datatype>> = Some(Rc::clone(&ct));
     for curvn in curvns {
-        let (is_annot, written, no_descend, typelock, mapped, curoff_abs, cursize) =
+        let (is_annot, written, no_descend, typelock, has_symentry, curoff_abs, cursize) =
             match data.vbank().get(curvn) {
                 Some(v) => (
                     v.is_annotation(),
                     v.is_written(),
                     v.has_no_descend(),
                     v.is_type_lock(),
-                    v.is_mapped(),
+                    v.kuna_symbol_entry().is_some(),
                     v.get_offset(),
                     v.get_size(),
                 ),
@@ -1433,11 +1433,15 @@ fn propagate_ref(data: &mut Funcdata, vn: VarnodeId, addr: &Address) {
         if typelock {
             continue;
         }
-        // C++ `curvn->getSymbolEntry() != 0` (skip already-bound Varnodes).  This
-        // port carries no per-Varnode `mapentry`; the `mapped` flag (set when
-        // `syncVarnodesWithSymbol` bound the Varnode to a stack Symbol) is the
-        // available proxy (LOSS recorded — see structured output).
-        if mapped {
+        // C++ `if (curvn->getSymbolEntry() != 0) continue;` (coreaction.cc:5490):
+        // skip Varnodes already bound to a Symbol's SymbolEntry.  kuna's
+        // `kuna_symbol_entry` is the faithful `mapentry` proxy (set by
+        // `setSymbolEntry`/`syncVarnodesWithSymbol` when a Varnode is bound to a
+        // stack Symbol) — NOT the `isMapped()` flag (a distinct bit set far earlier
+        // at heritage time on every stack-frame Varnode).  Using `isMapped()` here
+        // over-skipped EVERY stack Varnode, killing the spacebase type seed (the W4
+        // proxy LOSS); `getSymbolEntry()` is the correct, more permissive gate.
+        if has_symentry {
             continue;
         }
         let curoff = curoff_abs.wrapping_sub(off);
