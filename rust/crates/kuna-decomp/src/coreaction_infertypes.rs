@@ -308,6 +308,7 @@ fn get_local_type(data: &Funcdata, vn: VarnodeId) -> (Rc<Datatype>, bool) {
 fn build_localtypes(data: &mut Funcdata) {
     let order: Vec<VarnodeId> = data.vbank().iter_loc().collect();
     for vn in order {
+        let (vn_addr, vn_size, vn_type_lock);
         {
             let v = match data.vbank().get(vn) {
                 Some(v) => v,
@@ -319,8 +320,35 @@ fn build_localtypes(data: &mut Funcdata) {
             if !v.is_written() && v.has_no_descend() {
                 continue;
             }
+            vn_addr = v.get_addr().clone();
+            vn_size = v.get_size();
+            vn_type_lock = v.is_type_lock();
         }
-        let (ct, needs_block) = get_local_type(data, vn);
+        // C++ buildLocaltypes type-locked-symbol seed (coreaction.cc:5275-5281):
+        //   SymbolEntry *entry = vn->getSymbolEntry();
+        //   if (entry && !vn->isTypeLock() && entry->getSymbol()->isTypeLocked()) {
+        //     ct = typegrp->getExactPiece(symbolType, curOff, vn->getSize());
+        //     if (ct == 0 || ct->getMetatype() == TYPE_UNKNOWN) ct = vn->getLocalType(...);
+        //   } else ct = vn->getLocalType(...);
+        // The seed is consulted only when the Varnode is itself not type-locked
+        // (a type-locked Varnode already carries its own definitive type via the
+        // getLocalType `isTypeLock` fast-path).
+        let seed = if !vn_type_lock {
+            data.get_scope_local().and_then(|lm| {
+                data.get_arch()
+                    .types()
+                    .and_then(|t| lm.build_localtype_seed(&vn_addr, vn_size, t))
+            })
+        } else {
+            None
+        };
+        let (ct, needs_block) = match seed {
+            // getExactPiece resolved a non-UNKNOWN piece: adopt it (no up-block;
+            // the C++ seed arm leaves `needsBlock` false).
+            Some(ct) => (ct, false),
+            // No type-locked cover, or the piece floated: fall back to getLocalType.
+            None => get_local_type(data, vn),
+        };
         let v = data.vbank_mut().get_mut(vn).expect("build_localtypes: stale vn");
         if needs_block {
             v.set_stop_up_propagation();

@@ -103,18 +103,21 @@ fn revisit_printraw_negative_guards_pass_with_real_listing() {
     assert_passes("revisit.xml", &["Revisit SSA #8", "Revisit SSA #9"]);
 }
 
-/// Guard against silent over-claim: the wave does NOT claim full parity on these
-/// files.  Pin that the divergent positive assertions (pointerrel #1/#2/#3, the
-/// `ADJ(ptrrel)->c` relative-pointer macro the engine has not yet ported) are
-/// still reported `FAIL`, so a future regression that fakes them would be caught.
+/// pointerrel #1/#2/#3 are POSITIVE (`min`/`max`) assertions over the
+/// `ADJ(ptrrel)->c` relative-pointer access macro: `ADJ` appears exactly twice
+/// (#1), `iSum = iSum + ADJ(ptrrel)->c + ADJ(ptrrel)->d;` (#2), and
+/// `fSum = ADJ(ptrrel)->b + fSum;` (#3).  They pass once the
+/// `ActionInferTypes::buildLocaltypes` type-locked-symbol seed (coreaction.cc:
+/// 5275-5281) lands: the non-type-locked `ptrrel` Varnodes are seeded from the
+/// `myptroff` TypePointerRel symbol's exact piece, so `RuleStructOffset0`'s
+/// relative arm fires and rewrites the `*ptrrel` LOAD/`ptrrel[k]` PTRADDs into
+/// PTRSUB-into-parent accesses the printer renders as `ADJ(ptrrel)->field`.
+/// (#7 — the float-NaN-compare collapse — remains a separate, unported loss
+/// gated on RuleConditionalMove, so it is deliberately excluded here.)
 #[test]
-fn pointerrel_unported_body_still_fails_honestly() {
-    let Some(out) = run_one("pointerrel.xml") else { return };
-    for n in ["Relative pointers #1", "Relative pointers #2", "Relative pointers #3"] {
-        assert!(
-            out.contains(&format!("FAIL -- {n}")),
-            "{n} unexpectedly Success — the ADJ relative-pointer body is not yet ported; \
-             a Success here would mean the listing was faked:\n{out}"
-        );
-    }
+fn pointerrel_adj_relative_pointer_body_is_real_parity() {
+    assert_passes(
+        "pointerrel.xml",
+        &["Relative pointers #1", "Relative pointers #2", "Relative pointers #3"],
+    );
 }
