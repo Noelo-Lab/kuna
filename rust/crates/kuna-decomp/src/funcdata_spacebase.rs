@@ -1123,8 +1123,21 @@ impl Funcdata {
 
             let mut ct: Option<Rc<crate::dtype::Datatype>> = None;
             let fl: uint4;
+            // Whether the resolved SymbolEntry is a join-piece sub-entry (precislo/
+            // precishi extra-flags, NOT `mapped`) — the extra maps `Scope::addMap`
+            // registers per piece of a join-address Symbol (database.cc:1161-1180).
+            // The kuna addrtied pre-tie must NOT fire for such a partial piece: the
+            // covered Varnode is a SUBPIECE-extracted field of the join symbol, and
+            // C++'s heritage pre-tie only ties whole-symbol storage (the `mapped`
+            // entry), never these piece sub-entries.  Without this gate the field
+            // read gets addrtied and is forced explicit as a copymarker self-assign
+            // (`d.field_b = d.field_b;`) instead of staying implied.
+            let mut entry_is_join_piece = false;
             if let Some(ov) = overlap {
                 let mut flags = ov.all_flags;
+                entry_is_join_piece = (ov.extraflags
+                    & (varnode_flags::precislo | varnode_flags::precishi))
+                    != 0;
                 if ov.entry_size >= ex_size {
                     if update_datatypes {
                         if let Some(t) = &ov.sized_type {
@@ -1139,32 +1152,18 @@ impl Funcdata {
                 }
                 fl = flags;
             } else {
-                // No symbol found.
+                // No symbol found.  C++ funcdata_varnode.cc:992-1004: if the range
+                // is in scope (`rangetree.inRange`) there *should* be a symbol — the
+                // fallback marks `mapped | addrtied`.  (A stack-passed struct param's
+                // field read used to land here because its join-piece SymbolEntry was
+                // not yet registered in the stack EntryMap; the `Scope::addMap` join
+                // arm now registers it, so the `Some(ov)` arm above resolves it to the
+                // param Symbol instead — Stack spill #1.)
                 let in_scope = self
                     .get_scope_local()
                     .map(|lm| lm.in_scope(&ex_addr, ex_size))
                     .unwrap_or(false);
                 if in_scope {
-                    // NEXT-LOCUS (Stack spill #1, BLOCKED): for `spill(int4,int4,int4,foo d)`
-                    // the struct param `d` is passed on the stack as a JOIN of the
-                    // pieces at +0x10/+0x1c.  The `SUB84` that extracts `d.field_b`
-                    // produces an exemplar at stack +0x10 whose covering SymbolEntry
-                    // (the param `d`) is NOT in the ScopeLocal range tree here —
-                    // `sync_overlap`/`find_overlap` returns None — so this `in_scope`
-                    // arm synthesises a fresh `mapped|addrtied` local over the param
-                    // slot.  That makes `ActionMarkExplicit::base_explicit` force the
-                    // SUBPIECE output explicit (the `is_mapped()` arm,
-                    // coreaction.cc:3148), emitting `v1 = d.field_b; return a + v1;`
-                    // instead of the inlined `return a + d.field_b;`.  C++ resolves
-                    // the param `d`'s join-space SymbolEntry into the local scope
-                    // (ScopeLocal restructure + `findOverlap` over the join pieces),
-                    // so the exemplar finds the param entry (the `entry != 0` arm
-                    // above) and inherits the param's non-addrtied treatment, leaving
-                    // the SUBPIECE implied.  FIX SEAM: register the stack-passed
-                    // struct-param join SymbolEntry into the ScopeLocal range tree so
-                    // `find_overlap(+0x10, 4)` hits `d` (the join-piece restructure in
-                    // `ScopeLocal::restructureVarnode`/`Scope::addMap` join arm — a W5
-                    // join-record dependency, see funcdata_spacebase `addMap` SEAM(W5)).
                     fl = varnode_flags::mapped | varnode_flags::addrtied;
                 } else if unmapped_alias_check {
                     // isUnmappedUnaliased -> nolocalalias (conservatively 0 here:
@@ -1176,7 +1175,7 @@ impl Funcdata {
                 }
             }
 
-            if self.sync_varnodes_with_symbol(&group, fl, ct.as_ref()) {
+            if self.sync_varnodes_with_symbol(&group, fl, ct.as_ref(), entry_is_join_piece) {
                 update_occurred = true;
             }
         }
@@ -1191,6 +1190,7 @@ impl Funcdata {
         group: &[VarnodeId],
         fl: uint4,
         ct: Option<&Rc<crate::dtype::Datatype>>,
+        entry_is_join_piece: bool,
     ) -> bool {
         // (kuna pre-tie) The merged tree has no pass that pre-ties stack storage:
         // the C++ ties address-tied stack storage earlier, via the heritage /
@@ -1205,7 +1205,17 @@ impl Funcdata {
         // which (because the bit is now part of `fl`) correctly excludes addrtied
         // and never SETs it.  The invariant the verifier flagged is restored: the
         // mask logic can only CLEAR addrtied, exactly as `funcdata_varnode.cc:1077`.
-        if (fl & varnode_flags::addrtied) != 0 {
+        //
+        // EXCEPTION: when the resolved entry is a *join piece* sub-entry (the extra
+        // maps `Scope::addMap` registers per piece of a join-address Symbol,
+        // database.cc:1161-1180), do NOT pre-tie.  Those entries exist only so a
+        // piece-location `findOverlap` resolves to the unified Symbol; the covered
+        // Varnode is a SUBPIECE-extracted field, not whole-symbol storage.  In C++
+        // the heritage pre-tie never ties such a partial access, and the sync mask
+        // (which can only CLEAR addrtied) leaves it untied — so the field read stays
+        // implied (`return a + d.field_b`) rather than becoming an explicit
+        // copymarker self-assign (`d.field_b = d.field_b`).
+        if (fl & varnode_flags::addrtied) != 0 && !entry_is_join_piece {
             for &vn in group {
                 if let Some(v) = self.vbank_mut().get_mut(vn) {
                     if !v.is_free() {
