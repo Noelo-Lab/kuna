@@ -513,6 +513,122 @@ impl RulePtrsubUndo {
         extra = sign_extend(extra, 8 * size(data, outvn) - 1);
         (extra, multiplier)
     }
+
+    /// `RulePtrsubUndo::removeLocalAddRecurse` (ruleaction.cc:7071) — recursively
+    /// remove additive constants behind the `slot` input of `op`, converting the
+    /// constant-adding INT_ADDs to COPY.  Returns the sum of removed constants.
+    fn remove_local_add_recurse(
+        data: &mut Funcdata,
+        op: OpId,
+        slot: int4,
+        max_level: int4,
+    ) -> int8 {
+        // Varnode *vn = op->getIn(slot);
+        let vn = in_vn(data, op, slot);
+        if !is_written(data, vn) {
+            return 0;
+        }
+        // if (vn->loneDescend() != op) return 0;  // not used anywhere else
+        if lone_descend(data, vn) != Some(op) {
+            return 0;
+        }
+        let max_level = max_level - 1;
+        if max_level < 0 {
+            return 0;
+        }
+        // op = vn->getDef();
+        let op = def_of(data, vn).expect("removeLocalAddRecurse: written vn has no def");
+        let mut retval: int8 = 0;
+        if code(data, op) == OpCode::CPUI_INT_ADD {
+            if is_const(data, in_vn(data, op, 1)) {
+                retval = retval.wadd(offset(data, in_vn(data, op, 1)) as int8);
+                data.op_remove_input(op, 1);
+                data.op_set_opcode(op, typeop_for(OpCode::CPUI_COPY));
+            } else {
+                retval =
+                    retval.wadd(Self::remove_local_add_recurse(data, op, 0, max_level));
+                retval =
+                    retval.wadd(Self::remove_local_add_recurse(data, op, 1, max_level));
+            }
+        }
+        retval
+    }
+
+    /// `RulePtrsubUndo::removeLocalAdds` (ruleaction.cc:7106) — convert any
+    /// additional PTRADD/PTRSUB/INT_ADD that uses `vn` and adds a constant into a
+    /// COPY, plus any reachable constant-adding INT_ADD.  Returns the sum of the
+    /// removed constants.
+    fn remove_local_adds(data: &mut Funcdata, vn: VarnodeId) -> int8 {
+        let mut extra: int8 = 0;
+        // PcodeOp *op = vn->loneDescend();
+        let mut op = lone_descend(data, vn);
+        // Varnode *nextVn = vn;
+        let mut next_vn = vn;
+        while let Some(curop) = op {
+            let opc = code(data, curop);
+            if opc == OpCode::CPUI_INT_ADD {
+                // int4 slot = op->getSlot(nextVn);
+                let slot = slot_of(data, curop, next_vn);
+                if slot == 0 && is_const(data, in_vn(data, curop, 1)) {
+                    extra = extra.wadd(offset(data, in_vn(data, curop, 1)) as int8);
+                    data.op_remove_input(curop, 1);
+                    data.op_set_opcode(curop, typeop_for(OpCode::CPUI_COPY));
+                } else {
+                    extra = extra.wadd(Self::remove_local_add_recurse(
+                        data,
+                        curop,
+                        1 - slot,
+                        Self::DEPTH_LIMIT,
+                    ));
+                }
+            } else if opc == OpCode::CPUI_PTRSUB {
+                extra = extra.wadd(offset(data, in_vn(data, curop, 1)) as int8);
+                data.obank_mut()
+                    .get_mut(curop)
+                    .expect("removeLocalAdds: stale ptrsub")
+                    .clear_stop_type_propagation();
+                data.op_remove_input(curop, 1);
+                data.op_set_opcode(curop, typeop_for(OpCode::CPUI_COPY));
+            } else if opc == OpCode::CPUI_PTRADD {
+                // if (op->getIn(0) != nextVn) break;
+                if in_vn(data, curop, 0) != next_vn {
+                    break;
+                }
+                // int8 ptraddmult = op->getIn(2)->getOffset();
+                let ptraddmult = offset(data, in_vn(data, curop, 2)) as int8;
+                let invn = in_vn(data, curop, 1);
+                if is_const(data, invn) {
+                    extra = extra.wadd(ptraddmult.wmul(offset(data, invn) as int8));
+                    data.op_remove_input(curop, 2);
+                    data.op_remove_input(curop, 1);
+                    data.op_set_opcode(curop, typeop_for(OpCode::CPUI_COPY));
+                } else {
+                    data.op_undo_ptradd(curop, false);
+                    extra = extra.wadd(Self::remove_local_add_recurse(
+                        data,
+                        curop,
+                        1,
+                        Self::DEPTH_LIMIT,
+                    ));
+                }
+            } else {
+                break;
+            }
+            // nextVn = op->getOut();
+            next_vn = out_vn(data, curop);
+            // op = nextVn->loneDescend();
+            op = lone_descend(data, next_vn);
+        }
+        // if (nextVn != vn) vn->updateType(nextVn->getType());
+        if next_vn != vn {
+            let nt = vn_type(data, next_vn);
+            data.vbank_mut()
+                .get_mut(vn)
+                .expect("removeLocalAdds: stale vn")
+                .update_type(nt);
+        }
+        extra
+    }
 }
 
 impl Rule for RulePtrsubUndo {
@@ -528,26 +644,60 @@ impl Rule for RulePtrsubUndo {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        // if (!data.hasTypeRecoveryStarted()) return 0;
         if !data.has_type_recovery_started() {
             return 0;
         }
         let basevn = in_vn(data, op, 0);
         let cvn = in_vn(data, op, 1);
-        let _val: int8 = offset(data, cvn) as int8;
+        // int8 val = cvn->getOffset();
+        let mut val: int8 = offset(data, cvn) as int8;
         // int8 extra = getExtraOffset(op,multiplier);
-        let (_extra, _multiplier) = Self::get_extra_offset(data, op);
-        // if (basevn->getTypeReadFacing(op)->isPtrsubMatching(val,extra,multiplier)) return 0;
-        //   -- SEAM(W6): read-facing type + isPtrsubMatching.  Without it we cannot
-        //   decide whether the PTRSUB is valid, so we must not transform.
-        // kunaPreserveThumbFuncPtr(...) -- (kuna) GH-8471 guard, also type-based.
-        // data.opSetOpcode(op,CPUI_INT_ADD); op->clearStopTypePropagation();
-        // extra = removeLocalAdds(op->getOut(),data); if (extra != 0) { val += extra;
-        //   opSetInput(op,newConstant(...),1); } return 1;
-        let _ = cvn;
-        if seam_type_read_facing(data, basevn, op).is_err() {
-            return 0; // SEAM(W6)
+        let (extra0, multiplier) = Self::get_extra_offset(data, op);
+        // if (basevn->getTypeReadFacing(op)->isPtrsubMatching(val,extra,multiplier))
+        //   return 0;
+        // `getTypeReadFacing(op)->isPtrsubMatching` dispatches through
+        // TypeSpacebase, which the kuna `is_ptrsub_matching_scope` resolves via the
+        // local-variable Scope (the same call ActionSetCasts::castFixupPtrsub uses).
+        let read_facing = data.vn_type_read_facing(basevn, op);
+        if data.is_ptrsub_matching_scope(&read_facing, val, extra0, multiplier) {
+            return 0;
         }
-        0
+        // if (kunaPreserveThumbFuncPtr(basevn,op,val,extra,multiplier,data.getArch()))
+        //   return 0;  -- (kuna) GH-8471
+        // The C++ guard short-circuits on `!preserve_thumb_funcptr ||
+        // funcptr_align == 0` before touching any type query; under that condition
+        // it is always `false` (no preservation).  Only `funcptr_align` is surfaced
+        // into the kuna arch seam, and it is `0` for every non-thumb target, so the
+        // guard is always `false` here.  The live-thumb branch (which needs
+        // TypeSpacebase::getSubType, still SEAM(W6)) is unreachable while
+        // funcptr_align == 0.
+        if data.get_arch().funcptr_align != 0 {
+            // SEAM(W6): live ARM-thumb path needs TypeSpacebase::getSubType +
+            // the `preserve_thumb_funcptr` gate (not yet surfaced into the seam).
+            // Stay conservative (preserve the PTRSUB) rather than mis-transform.
+            return 0;
+        }
+
+        // data.opSetOpcode(op,CPUI_INT_ADD);
+        data.op_set_opcode(op, typeop_for(OpCode::CPUI_INT_ADD));
+        // op->clearStopTypePropagation();
+        data.obank_mut()
+            .get_mut(op)
+            .expect("ptrsubundo: stale op")
+            .clear_stop_type_propagation();
+        // extra = removeLocalAdds(op->getOut(),data);
+        let outvn = out_vn(data, op);
+        let extra = Self::remove_local_adds(data, outvn);
+        if extra != 0 {
+            // val = val + extra;
+            val = val.wadd(extra);
+            // data.opSetInput(op,data.newConstant(cvn->getSize(), val & calc_mask(...)),1);
+            let csize = size(data, cvn);
+            let nc = data.new_constant(csize, (val as uintb) & calc_mask(csize));
+            data.op_set_input(op, nc, 1).expect("ptrsubundo: opSetInput");
+        }
+        1
     }
 }
 
