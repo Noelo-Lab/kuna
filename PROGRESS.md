@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 482/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 485/675; +...clone-gate audit, deindirect-output-type
+
+**Floating-point convert — RuleAddUnsigned +3 → 485.** `RuleAddUnsigned::apply_op` (ruleaction_6.rs:629) was stubbed at the W6 getTypeReadFacing seam (now landed: vn_type_read_facing); ported faithfully (ruleaction.cc:7215) so INT_ADD(V,0xff..) → V-0x00... Gained Floating-point convert #1, Promotion on compare #1, Switch Multi #3 (switchmulti now 9/9 — fully recovered). Gate: `[675,485]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Review `reviews/w10-fpconvert.md`. floatconv #2/#3 = RuleInt2FloatCollapse (ruleaction_8.rs:420, unsigned-64→double idiom) — next-locus. BLOCKED this round: Immediate Conditional (LOSS-234: RuleConditionalMove #7 + new mergeAddrTied overlapLoc seam #2/#3/#4).
 
 **clone-gate audit ra5/ra8 +0 fidelity → 482.** ruleaction_5 confirmed clean (dynamic self.group). Found 3 more mis-gated rules in ruleaction_8 (RulePiecePathology→protorecovery, RuleFloatSignCleanup/RuleExpandLoad→cleanup; a single RULE_GROUP="analysis" const gated all 12). Fixed → correct pool membership. Regressed-set EMPTY, +0 (no datatest observes the pool change), cargo --no-fail-fast 0-fail, PARITY OK. The clone-gate bug class is now FULLY swept (20 rules total: 17 ra2 + 3 ra8; ra1/3/4/5/6/7 clean).
 
