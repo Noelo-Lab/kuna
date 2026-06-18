@@ -392,6 +392,52 @@ impl UserPcodeOp {
         }
     }
 
+    /// C++ virtual `UserPcodeOp::getOperatorName(op)` — the symbol formally
+    /// displayed in source for this CALLOTHER (`typeop.cc` `getOperatorName`
+    /// resolves the userop index and calls this).  The base returns the
+    /// low-level `name`; the volatile read/write overrides append the access
+    /// size suffix (`read_volatile_1`, `write_volatile_4`, …).
+    ///
+    /// `out_size` is the output varnode size (used by `VolatileReadOp`); `in2_size`
+    /// is the third input's size (used by `VolatileWriteOp`).  Both are `None`
+    /// when the op lacks that operand, matching the C++ early `return name`.
+    pub fn get_operator_name(&self, out_size: Option<int4>, in2_size: Option<int4>) -> Vec<u8> {
+        match self.base.utype {
+            // VolatileReadOp::getOperatorName (userop.cc:122): append out.size,
+            // or bare name when there is no output.
+            userop_type::volatile_read => match out_size {
+                Some(sz) => Self::append_size(&self.base.name, sz),
+                None => self.base.name.clone(),
+            },
+            // VolatileWriteOp::getOperatorName (userop.cc:153): append in(2).size,
+            // or bare name when numInput < 3.
+            userop_type::volatile_write => match in2_size {
+                Some(sz) => Self::append_size(&self.base.name, sz),
+                None => self.base.name.clone(),
+            },
+            // Base UserPcodeOp::getOperatorName (userop.hh:95): the low-level name.
+            _ => self.base.name.clone(),
+        }
+    }
+
+    /// C++ virtual `UserPcodeOp::extractAnnotationSize(vn, op)` (userop.cc:144/175):
+    /// the byte width the printer should query the symbol scope with for a
+    /// volatile annotation.  `VolatileReadOp` uses the read op's output size (1
+    /// when there is no output); `VolatileWriteOp` uses the written value size
+    /// (input slot 2).  The base op has no annotation and returns 0 (the C++
+    /// default is never reached for a non-volatile CALLOTHER, since `pushAnnotation`
+    /// only fires on an `isAnnotation()` operand).
+    ///
+    /// `out_size` is the op output varnode size; `in2_size` is the op's input(2)
+    /// size.  Both `None` when that operand is absent.
+    pub fn extract_annotation_size(&self, out_size: Option<int4>, in2_size: Option<int4>) -> int4 {
+        match self.base.utype {
+            userop_type::volatile_read => out_size.unwrap_or(1),
+            userop_type::volatile_write => in2_size.unwrap_or(0),
+            _ => 0,
+        }
+    }
+
     /// Append a size suffix to a name (C++ static `VolatileOp::appendSize`).
     pub fn append_size(base: &[u8], size: int4) -> Vec<u8> {
         let mut out = base.to_vec();
