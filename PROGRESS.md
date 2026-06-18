@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 488/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 490/675; +...clone-gate audit, deindirect-output-type
+
+**char-const type +2 → 490.** Root was NOT propagate_across_compare (faithful) — it was `kuna_compareform.rs::restore_lessequal` stubbing copySymbol (kuna_compareform.cc:55), dropping the constant's int1 type so ActionSetCasts re-typed it char. Fixed: ported `copy_symbol_fields` (varnode.rs) + wired into restore_lessequal + the validated pushCharConstant arm (printc.rs, printc.cc:1819/1675). Gained Pointer Compare #3, Conditional Subpiece #3 (bonus); Signed byte #4 held. Gate: `[675,490]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK.
 
 **Pointer-compare decl render +2 → 488.** `type_name_for_decl` (printc.rs:5646) flattened unnamed decl types to undefined<N>; routed TYPE_PTR through declarator_parts (PrintC::pushTypeStart printc.cc:265) → `char *pchar`. Gained Pointer Compare #2, Relative base #4. Gate: `[675,488]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Two NEW roots found (LOSS-235): Pointer Compare #1 = FOR-LOOP STRUCTURING entirely unported (blockaction.rs — gates ALL forloop*.xml, a BIG cluster); Pointer Compare #3 = char-constant type-inference (sbyte compare-const wrongly typed char by propagate_across_compare infertypes.rs:961 — the faithful pushCharConstant arm is ready but blocked).
 
