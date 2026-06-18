@@ -3480,3 +3480,36 @@ the failures are distinct emergent fixpoints:
   (contiguous-piece coalescing for #11; constant-forward for Gp #2) — a value-set/forward port at Heritage::heritage
   (heritage.rs:3870). Broadest change class (every multi-store→wide-read; every constant stack slot crossing a call),
   VERY HIGH regression risk, no narrow regression-free lever. Each its own dedicated wave. [[kuna-rust-port]]
+
+## LOSS-248 — Partial Merge #4/#5 is a 4-LOCUS problem (the register over-tie is a red herring)
+
+IR byte-identical to C++ (`EAX = glob1.a + ESI`); C++ renders `a1 = glob1.a + a1; return a1+10;`, rust folds
+`return glob1.a + a1 + 10;`. The divergence is HighVariable merge + explicit/implied marking. FOUR ordered
+loci (a substrate landed 2 regression-free on branch worktree-agent-ae24754e6fd999130 @ 528cbb6, NOT merged):
+- L1 (faithful): ActionDirectWrite register-param legalization — coreaction_render.rs:1283 had a kuna `has_store() &&`
+  guard C++ lacks (coreaction.cc:1384); a recovered fn's ProtoStoreInternal isn't attached at main-loop time so the
+  legal ESI param stayed isIllegalInput → mergeTestAdjacent (merge.cc:196) refused. + FuncProto::possible_input_param
+  (fspec.rs:5674) no-store/no-model robust.
+- L2 (faithful): bank_symbol mirrors HighVariable::updateSymbol; bank_symbol_isolated (was stub false) via
+  Symbol::isIsolated + ScopeLocal::covering_symbol_isolated (varmap.rs) → mergeTestAdjacent isolated arm (merge.cc:198).
+- L3 (BLOCKED): op-local-type interning — Funcdata::op_{output,input}_type_local_pub (funcdata.rs:2647/2691) returns a
+  FRESH Rc<Datatype> per call so mergeAdjacent's pointer-identity same-type test (merge.cc:990) never fires. Routing
+  through TypeOp::get_*_local on the interned TypeFactory GAINS #4/#5 but -4 (Return Structure #1/#2/#4, Long double #4):
+  the console `type varnode %EAX int4 tmp` Symbol's `isolated` flag does NOT survive the `decompile` ScopeLocal rebuild
+  (find_container returns tmp with iso=false at merge time). NEXT = ScopeLocal symbol persistence across decompile.
+- L4 (BLOCKED): checkImpliedCover inflateTest arm (coreaction.cc:3510, coreaction_cleanup.rs:1270) — rust Cover::intersect
+  over-reports a boundary touch (==1, allowed in C++) as a real overlap (==2) for a CAST input → wrongly forces (int4)z
+  explicit (Long double #4 regression). NEXT = Cover::intersect boundary semantics + internalCover extent.
+
+## LOSS-249 — Local cross #2 output-half + Stack spill #1 copymarker caveat
+
+- **Local cross #2** input-half LANDED (AncestorRealistic killedbycall pop_fail, funcdata_varnode.cc:2086 de-stubbed —
+  `call fretval()` no args). Output-half BLOCKED: the fretval RETURN trial is sized 8 (RAX) in rust vs 4 (EAX) in C++ →
+  `xunknown8 v1` + `return (int4)v1` vs `int4 v1` + `return v1`. Root: the RAX disjoint range reaches
+  Heritage::place_multiequals (heritage.rs:3429) at size=8 maxw=8 (an 8-byte RAX killedbycall INDIRECT-creation write
+  present) so refinement (size>4 && maxw<size) is blocked → output trial at RAX(8). C++ sizes it EAX(4) on an earlier
+  heritage pass before the 8-byte RAX INDIRECT-creation write exists. NEXT = heritage refinement pass-ordering /
+  deadcode-INDIRECT-collapse (LOSS-230 downstream). Broad.
+- **Stack spill #1** (landed) residual: a cosmetic `d.field_b = d.field_b;` copymarker self-assign cpp suppresses (a
+  spurious whole-local entry at +0x10 shadows the piece entry in find_overlap) — doesn't break the min=1 assertion.
+  NEXT = copymarker-render seam. [[kuna-rust-port]]
