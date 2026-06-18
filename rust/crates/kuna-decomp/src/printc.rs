@@ -1995,7 +1995,12 @@ impl PrintC {
             let id = self.emit.begin_var_decl(&markup);
             let decl_type = array_count.as_ref().map(|(t, _)| t.clone()).unwrap_or(type_name);
             self.emit.tag_type(&decl_type, SyntaxHighlight::TypeColor, &markup);
-            self.emit.spaces(1, 0);
+            // C++ `ptr_expr` glues the `*` directly to the identifier (no space);
+            // every other base type gets the single `type_expr_space`.  A pointer
+            // declarator front already ends in `*`, so suppress the separator.
+            if !decl_type.ends_with('*') {
+                self.emit.spaces(1, 0);
+            }
             self.emit.tag_variable(name, SyntaxHighlight::VarColor, &markup);
             if let Some((_, count)) = &array_count {
                 // ` [count]` (C++ `emitArrayDecl`: a space then the bracketed count).
@@ -5631,6 +5636,13 @@ pub(crate) fn declarator_parts(ct: &std::rc::Rc<crate::dtype::Datatype>) -> (Str
     (front_full, back)
 }
 
+/// The type-token text for a local declaration.  Mirrors C++ `pushTypeStart`
+/// (printc.cc:265): a named/base type prints its name; an *anonymous pointer*
+/// (e.g. `char *`) prints the full declarator front via `declarator_parts` so a
+/// `char *pchar` local is not flattened to `undefined8`.  The trailing `*` is
+/// kept on the type token — the emit loop suppresses the separating space before
+/// the identifier when the front ends in `*` (the C++ `ptr_expr` glues `*` to the
+/// identifier with no space).
 fn type_name_for_decl(t: &std::rc::Rc<crate::dtype::Datatype>) -> String {
     use crate::dtype::type_metatype;
     let name = t.get_name();
@@ -5639,6 +5651,13 @@ fn type_name_for_decl(t: &std::rc::Rc<crate::dtype::Datatype>) -> String {
     }
     match t.get_metatype() {
         type_metatype::TYPE_VOID => "void".to_string(),
+        // An anonymous pointer renders as `<pointee> *` (recursively), exactly as
+        // `push_cast_type` does for a `(char *)` cast.  `declarator_parts` walks
+        // the modifier chain to the named base and lays out the `*` front.
+        type_metatype::TYPE_PTR => {
+            let (front, _back) = declarator_parts(t);
+            front
+        }
         _ => format!("undefined{}", t.get_size()),
     }
 }
