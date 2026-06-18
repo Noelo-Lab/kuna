@@ -1942,11 +1942,19 @@ impl Rule for RulePropagateCopy {
                 }
                 // if (op->code()==MULTIEQUAL && copyop->getParent()==op->getParent()->getIn(i))
                 //   op->setCopyImmed(i);
-                // SEAM(W3-block): the MULTIEQUAL copy-immediate mark needs the
-                // op's parent's i-th in-edge block (block adjacency, not yet wired
-                // for this read) and setCopyImmed (an addlflags bit not exposed
-                // here).  The propagation below is unaffected by skipping the mark
-                // (it is a printing hint); recorded as a partial.
+                if op_code(data, op) == OpCode::CPUI_MULTIEQUAL {
+                    let op_parent =
+                        data.obank().get(op).expect("RulePropagateCopy: stale op").get_parent();
+                    let copy_parent =
+                        data.obank().get(copyop).expect("RulePropagateCopy: stale copyop").get_parent();
+                    if let (Some(op_parent), Some(copy_parent)) = (op_parent, copy_parent) {
+                        // op->getParent()->getIn(i)
+                        let in_blk = data.bblocks_ref().block(op_parent).get_in(i);
+                        if copy_parent == in_blk {
+                            data.op_set_copy_immed(op, i);
+                        }
+                    }
+                }
             }
             data.op_set_input(op, invn, i).expect("RulePropagateCopy: opSetInput"); // propagate just a single copy
             return 1;

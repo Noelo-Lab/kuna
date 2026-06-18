@@ -131,11 +131,9 @@ impl Rule for RuleEarlyRemoval {
         if spc.does_deadcode() {
             //   if (!data.deadRemovalAllowedSeen(spc))
             //     return 0;
-            // SEAM(heritage): Funcdata::deadRemovalAllowedSeen delegates to the
-            // Heritage subsystem (heritage.rs is a stub).  Without it we cannot
-            // confirm dead removal is allowed for this space, so we
-            // conservatively decline (the C++ also returns 0 in that case).
-            return 0;
+            if !data.dead_removal_allowed_seen(&spc) {
+                return 0;
+            }
         }
 
         // data.opDestroy(op);		// Get rid of unused op

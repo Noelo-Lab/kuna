@@ -846,6 +846,16 @@ impl Funcdata {
         self.heritage.seen_dead_code(spc);
     }
 
+    /// Is dead-code removal safe for a space, and if so mark that it happened
+    /// (C++ `Funcdata::deadRemovalAllowedSeen`, `funcdata.hh:268` —
+    /// `heritage.deadRemovalAllowedSeen(spc)`).
+    pub fn dead_removal_allowed_seen(
+        &mut self,
+        spc: &std::rc::Rc<kuna_base::space::AddrSpace>,
+    ) -> bool {
+        self.heritage.dead_removal_allowed_seen(spc)
+    }
+
     /// Delete any dead PcodeOps (C++ `Funcdata::clearDeadOps`, `funcdata.hh:437`
     /// — `obank.destroyDead()`).
     pub fn clear_dead_ops(&mut self) {
@@ -2789,7 +2799,7 @@ impl Funcdata {
 
     /// `outVn->getHigh()->remove(outVn)` across the bank field split (the high
     /// loses one member; its cover is marked dirty).
-    fn high_remove_member(&mut self, high: crate::seams::HighVariableId, vn: VarnodeId) {
+    pub(crate) fn high_remove_member(&mut self, high: crate::seams::HighVariableId, vn: VarnodeId) {
         let has_symbol_entry = false; // no symbol entries in the merged tree
         let Funcdata { high_bank, vbank, obank, .. } = self;
         let ctx = HighReadView::new(vbank, obank);

@@ -288,7 +288,7 @@ impl Funcdata {
         }
         // lastOp = getBlock(1)->lastOp(); must exist for an iterator statement.
         let body = self.sblocks_ref().sub_block(wd, 1);
-        let mut last_op = match body.and_then(|b| self.sblocks_ref().struct_last_op(b)) {
+        let mut last_op = match body.and_then(|b| self.fd_sblock_last_op(b)) {
             Some(o) => o,
             None => return,
         };
@@ -308,7 +308,7 @@ impl Funcdata {
             Some(c) => c,
             None => return,
         };
-        let cbranch = match self.sblocks_ref().struct_last_op(cond) {
+        let cbranch = match self.fd_sblock_last_op(cond) {
             Some(c) => c,
             None => return,
         };
@@ -1006,6 +1006,77 @@ impl Funcdata {
         let outedge = g.block(parent).get_in_rev_index(slot);
         // return inbl->hasImmedCopyEdge(outedge);
         g.block(inbl).has_immed_copy_edge(outedge)
+    }
+
+    /// The last PcodeOp of a structured **sblocks** FlowBlock, threading the
+    /// sblocks→bblocks cross-arena `BlockCopy` hop (C++ `FlowBlock::lastOp`,
+    /// virtual per subtype, `block.cc`/`block.hh:546`).
+    ///
+    /// [`BlockGraph::struct_last_op`](crate::block::BlockGraph::struct_last_op)
+    /// resolves the structured sblocks subtypes (`t_ls`/`t_condition`/`t_if`),
+    /// but lacks the `t_copy` arm (`BlockCopy::lastOp` = `copy->lastOp()`,
+    /// `block.hh:546`) because a `BlockCopy`'s `copy` points into the **bblocks**
+    /// arena, which the sblocks `BlockGraph` cannot reach.  This dispatches the
+    /// structured arms by recursion and resolves a `t_copy` leaf to the wrapped
+    /// bblocks `BlockBasic`'s tail op.
+    pub fn fd_sblock_last_op(&self, this_id: BlockId) -> Option<OpId> {
+        let sb = self.sblocks_ref();
+        match sb.block(this_id).get_type() {
+            // BlockCopy::lastOp() = copy->lastOp(): hop to the bblocks block.
+            crate::block::BlockType::Copy => {
+                let bb = sb.block(this_id).get_copy()?;
+                // copy->lastOp(); the wrapped block is a bblocks BlockBasic.
+                self.bb_op_tail(bb)
+            }
+            // BlockBasic::lastOp() = op.back(): same arena, direct tail.
+            crate::block::BlockType::Basic => self.bb_op_tail(this_id),
+            // BlockList::lastOp() = getBlock(size-1)->lastOp().
+            crate::block::BlockType::Ls => {
+                let n = sb.block(this_id).get_size();
+                if n == 0 {
+                    return None;
+                }
+                let last = sb.sub_block(this_id, n - 1)?;
+                self.fd_sblock_last_op(last)
+            }
+            // BlockCondition::lastOp() = getBlock(1)->lastOp().
+            crate::block::BlockType::Condition => {
+                let b1 = sb.sub_block(this_id, 1)?;
+                self.fd_sblock_last_op(b1)
+            }
+            // BlockIf::lastOp(): only an ifgoto (size 1) has a last op.
+            crate::block::BlockType::If => {
+                if sb.block(this_id).get_size() == 1 {
+                    let b0 = sb.sub_block(this_id, 0)?;
+                    self.fd_sblock_last_op(b0)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Mark that a COPY propagation from the immediate input block at `slot` of
+    /// `op` has happened (C++ `PcodeOp::setCopyImmed`, `op.cc:128`).  Needs
+    /// `op`'s parent block (to resolve the in-edge), so it lives on `Funcdata`.
+    pub fn op_set_copy_immed(&mut self, op: OpId, slot: int4) {
+        let parent = match self.obank().get(op).and_then(|o| o.get_parent()) {
+            Some(p) => p,
+            None => return,
+        };
+        // FlowBlock *inbl = parent->getIn(slot);
+        // int4 outedge = parent->getInRevIndex(slot);
+        let (inbl, outedge) = {
+            let g = self.bblocks_ref();
+            (g.block(parent).get_in(slot), g.block(parent).get_in_rev_index(slot))
+        };
+        // inbl->setImmedCopyEdge(outedge);
+        self.bblocks_mut().set_immed_copy_edge(inbl, outedge);
+        // addlflags |= immed_copy;
+        if let Some(o) = self.obank_mut().get_mut(op) {
+            o.set_additional_flag(crate::op::pcodeop_addlflags::immed_copy);
+        }
     }
 
     /// Remove an outgoing branch of the given basic block, patching MULTIEQUAL

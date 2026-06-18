@@ -1917,20 +1917,18 @@ impl Funcdata {
     /// Destroy the given op: unset its output/inputs and move it permanently to
     /// the dead list (C++ `Funcdata::opDestroy`, `funcdata_op.cc:203`).
     ///
-    /// SEAM(W3-varnode): the C++ `destroyVarnode(op->getOut())` frees the output
-    /// Varnode's object resources (the funcdata_varnode factory).  The op-graph
-    /// half is ported faithfully — the output is *unset* (made free) here in
-    /// place of destroyed; the input links are unset; the op is marked dead and
-    /// removed from its block.  This keeps the IR consistent (no dangling
-    /// def/use) at the cost of leaving a now-orphan free output Varnode in the
-    /// bank until the funcdata_varnode wave wires `destroy_varnode`.  Recorded as
-    /// a loss.
+    /// Faithful: `destroyVarnode(op->getOut())` frees the output Varnode (now
+    /// that `destroy_varnode` is ported), which also purges it from its
+    /// HighVariable's instance list (the `~Varnode` `high->remove` step) so a
+    /// later naming pass never derefs a freed member.  Then the input links are
+    /// unset, the op is marked dead and removed from its block.
     pub fn op_destroy(&mut self, op: OpId) {
         // if (op->getOut() != 0) destroyVarnode(op->getOut());
-        //   -- SEAM(W3-varnode): destroyVarnode not yet ported; unset instead so
-        //      the def/use graph stays consistent.
-        if self.obank().get(op).expect("op_destroy: stale op").get_out().is_some() {
-            self.op_unset_output(op);
+        if let Some(out) = self.obank().get(op).expect("op_destroy: stale op").get_out() {
+            // destroyVarnode clears each reader's input, nulls out->def (and the
+            // op's output back-link), then frees the varnode — purging it from
+            // its HighVariable on the way (the ~Varnode high->remove step).
+            self.destroy_varnode(out).expect("op_destroy: destroyVarnode(out)");
         }
         // for(i=0;i<numInput();++i) { vn=op->getIn(i); if (vn!=0) opUnsetInput(op,i); }
         let n = self.obank().get(op).expect("op_destroy").num_input();

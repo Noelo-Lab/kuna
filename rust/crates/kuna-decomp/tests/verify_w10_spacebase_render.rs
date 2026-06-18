@@ -152,41 +152,34 @@ fn verdict_for(stream: &str, name: &str) -> Option<bool> {
 }
 
 // =============================================================================
-// (A1) The reroll merge is INERT, not destructive: for-loop files still render
-//      the plain `while`/`if-break` body and NEVER a malformed `for (` header.
-//      `emit_for_loop` is reachable only when a whiledo node carries an iterate
-//      op; none does at this stage, so the body must be byte-stable.
+// (A1) RE-PINNED (W10 for-loop chain landed): the for-loop reroll now FIRES.
+//      The RuleEarlyRemoval seam + setCopyImmed + fd_sblock_last_op chain
+//      clears the cond-block overflow and threads the whiledo->for conversion,
+//      so for-loop files render a real `for (init; cond; incr)` header
+//      byte-identical to the C++ oracle.  (Previously the reroll was inert and
+//      the body stayed a `while`/`break` loop — that pin is now stale.)
 // =============================================================================
 #[test]
 fn a1_forloop_files_render_plain_while_not_malformed_for() {
     for stem in ["forloop1", "forloop_thruspecial", "forloop_varused", "loopcomment"] {
         let Some(body) = dump_print_c(&rust_harness(), stem) else { return };
-        // The body must structure as a `while`/`do`/`if`-break loop, never a
-        // `for (` header (the reroll is inert: no iterate op is recorded).
+        // The reroll fires: a real `for (` header is emitted (the iterate op is
+        // recorded on the whiledo node and emit_for_loop runs).
         assert!(
-            !body.contains("for ("),
-            "{stem}: a `for (` header appeared — the reroll fired without a clean \
-             RSP body (or fabricated a header). Body:\n{body}"
-        );
-        // It IS still a loop (sanity: we are looking at the right function): the
-        // render contains a loop keyword, confirming the body wasn't dropped.
-        assert!(
-            body.contains("while") || body.contains("do {") || body.contains("goto"),
-            "{stem}: no loop structure at all — the merge corrupted the render. Body:\n{body}"
+            body.contains("for ("),
+            "{stem}: no `for (` header — the for-loop reroll regressed (the \
+             RuleEarlyRemoval/setCopyImmed/fd_sblock_last_op chain). Body:\n{body}"
         );
     }
 }
 
 // =============================================================================
-// (A1b) POST-RSP-KEYSTONE (CORRECTION-7 stale-fence update): the dead RSP
-//       return-address store + `// rsp` locals are now CLEANED — the keystone
-//       (ActionExtraPopSetup + the effectlist/markUnaliased/heritage chain)
-//       eliminated the stack-pointer noise, so `forloop1`'s induction variable
-//       renders as a clean register local (`int4 v1; // ebx`) with NO `// rsp`
-//       spacebase-input local and NO raw PTRSUB-on-spacebase store chain.
-//       The for-loop reroll STILL does not fire (the body stays a `while`/`break`
-//       loop — see (A2), For-loop #1 remains FAIL): clean RSP is necessary but
-//       not sufficient for the reroll.  This fence now pins the cleaned shape.
+// (A1b) RE-PINNED (W10 for-loop chain landed): the RSP keystone cleanup STILL
+//       holds (no `// rsp` spacebase local, no dead PTRSUB-on-spacebase store),
+//       AND the for-loop reroll now FIRES on top of the clean RSP body —
+//       `forloop1` renders the real `for (v1 = 0; v1 < max; v1 = v1 + 1)`
+//       header (byte-identical to the C++ oracle, For-loop #1 now passes).
+//       (Previously the reroll was blocked; that pin is now stale.)
 // =============================================================================
 #[test]
 fn a1b_forloop1_rsp_cleaned_by_keystone_but_reroll_still_blocked() {
@@ -201,33 +194,29 @@ fn a1b_forloop1_rsp_cleaned_by_keystone_but_reroll_still_blocked() {
         "forloop1: the dirty-RSP chain REAPPEARED — the keystone's RSP cleanup \
          regressed.\nBody:\n{body}"
     );
-    // The reroll is still inert: the body is a `while`/`break` loop, never a
-    // fabricated `for (` header (consistent with (A2): For-loop #1 stays FAIL).
+    // The reroll now fires on the clean RSP body: a real `for (` header renders.
     assert!(
-        !body.contains("for ("),
-        "forloop1: a `for (` header appeared — the reroll fired (update (A1)/(A2) \
-         to lock the new for-loop render).\nBody:\n{body}"
-    );
-    assert!(
-        body.contains("while") || body.contains("do {") || body.contains("goto"),
-        "forloop1: no loop structure — the render was corrupted.\nBody:\n{body}"
+        body.contains("for ("),
+        "forloop1: no `for (` header — the for-loop reroll regressed.\nBody:\n{body}"
     );
 }
 
 // =============================================================================
-// (A2) NO FALSE-POSITIVE for-loop: the engine does not fabricate the `for`
-//      header it cannot legitimately structure.  The For-loop #1 datatest stays
-//      FAIL under Rust while it is Success under the C++ oracle (the seam).
+// (A2) RE-PINNED (W10 for-loop chain landed): For-loop #1 now PASSES under Rust,
+//      matching the C++ oracle.  The engine legitimately structures the
+//      whiledo->for conversion (the chain cleared the cond-block overflow), so
+//      the seam is closed.  (Previously Rust declined and the assertion FAILed;
+//      that pin is now stale.)
 // =============================================================================
 #[test]
 fn a2_forloop_assertion_stays_fail_no_fabrication() {
     let Some(rust) = rust_verdicts() else { return };
-    // Rust: the for-loop assertion does NOT pass (the engine declines honestly).
+    // Rust: the for-loop assertion now PASSES (the reroll fires correctly).
     match verdict_for(&rust, "For-loop #1") {
-        Some(false) => {} // expected: the seam is open
-        Some(true) => panic!(
-            "For-loop #1 now PASSES under Rust — the for-loop reroll activated. \
-             Update (A1)/(A1b)/(A2) to lock the new for-loop render in place."
+        Some(true) => {} // expected: the for-loop chain landed
+        Some(false) => panic!(
+            "For-loop #1 now FAILS under Rust — the for-loop reroll regressed \
+             (the RuleEarlyRemoval/setCopyImmed/fd_sblock_last_op chain)."
         ),
         None => panic!("For-loop #1 not found in the Rust verdict stream"),
     }
