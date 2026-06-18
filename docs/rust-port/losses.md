@@ -3360,3 +3360,19 @@ is NEVER tied by this stand-in; the kuna marker-tie is the workaround that must 
 cases the real inScope/storage-class tying would cover). Must hold boolless's `// acc` (its ACC phi joins
 two COPYs with no ACC-reads-ACC chain) + the LOSS-206 readpartial forwarding-alias. This is the most
 promising Switch Loop lead — a refined over-tie gate, NOT oppool1. [[kuna-rust-port]]
+
+## LOSS-231 RESOLVED (loop-carried over-tie wave, 2026-06-18) — +8, the full Switch Loop cluster
+
+After SIX progressive refinements (rule-race → MULTIEQUAL-width → un-narrowed SDIV/RulePullsubMulti +2 →
+RulePushMulti → ActionMultiCse → oppool1 → the return-register over-tie), the root is the kuna marker-tie
+workaround over-tying a LOOP-CARRIED return register. Fix (coreaction_cleanup.rs:493 `mark_output_storage_addr_tied`):
+also un-tie a return-register marker (phi) write whose FORWARD def-use reachability returns to its own
+defining op — i.e. the phi sits in an SSA def-use CYCLE (loop-carried). Bounded forward walk over
+descend→get_out with a visited list (no HashSet). C++'s syncVarnodesWithSymbols (funcdata_varnode.cc:993)
+never ties an un-symboled processor register (lm->inScope always false for a register), so it folds the
+loop-carried EAX into the input param `startval` → `startval = startval + N;` per case. Discriminator vs
+KEEP-TIED boolless ACC: ACC's phi joins two COPYs at an if-merge and reaches only the RETURN (ACYCLIC) →
+stays tied → `// acc` preserved. Bitfields #18 (self-chain arm) + readpartial (LOSS-206) untouched.
+Gained Switch Loop #2/#3/#4/#6/#7/#8/#9/#10. Gate: `[675,658]`, regressed-set EMPTY, cargo --no-fail-fast
+0-fail (all 6 verify_* the broad fix broke stay green), PARITY OK. The oppool1/MULTIEQUAL-width/RulePushMulti
+next-loci (UPDATEs 3-5) are SUPERSEDED. [[kuna-rust-port]]
