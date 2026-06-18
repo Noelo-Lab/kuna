@@ -1925,6 +1925,39 @@ impl Heritage {
         }
     }
 
+    /// Determine if a CALL/CALLIND `op` has an indirect effect on the memory
+    /// range `[addr, addr+size)` (C++ `Heritage::callOpIndirectEffect`,
+    /// `heritage.cc:359`).
+    ///
+    /// For a CALL/CALLIND we consult the call's `FuncCallSpecs`: a missing
+    /// call-spec assumes an indirect effect (`true`); otherwise the effect is
+    /// "indirect" unless `hasEffectTranslate` reports the range `unaffected`.
+    /// CALLOTHER/NEW (the only other writers reaching here) are assumed to have
+    /// no effect on `fd` variables except their own output (`false`).
+    fn call_op_indirect_effect(
+        &self,
+        fd: &crate::funcdata::Funcdata,
+        addr: &Address,
+        size: int4,
+        op: crate::seams::OpId,
+    ) -> bool {
+        use kuna_num::opcodes::OpCode;
+        let code = fd.obank().get(op).expect("call_op_indirect_effect: stale op").code();
+        if code == OpCode::CPUI_CALL || code == OpCode::CPUI_CALLIND {
+            // We should be able to get the callspec.
+            match fd.get_call_specs_index(op) {
+                None => true, // Assume indirect effect
+                Some(i) => {
+                    let effect = fd.get_call_specs(i).has_effect_translate(addr, size);
+                    effect != crate::fspec::effect_type::UNAFFECTED
+                }
+            }
+        } else {
+            // CALLOTHER, NEW: no effect on -fd- variables except op->getOut().
+            false
+        }
+    }
+
     /// Normalize a too-small read Varnode (C++ `Heritage::normalizeReadSize`,
     /// `heritage.cc:391`).  Builds a SUBPIECE of a new full-size Varnode that
     /// defines the original (now masked) read, returning the new full read.
@@ -2033,11 +2066,12 @@ impl Heritage {
             } else {
                 addr + (overlap + vsize) as i64
             };
-            if op_is_call {
-                // CALL partial-write indirect creation (W4 FuncCallSpecs seam).
-                unimplemented_seam(
-                    "Heritage::normalize_write_size CALL most-sig piece (needs newIndirectCreation)",
-                );
+            if op_is_call && self.call_op_indirect_effect(fd, &pieceaddr, mostsigsize, op) {
+                // Does the CALL have an effect on the piece?  Don't create a new
+                // big read if the write is from a CALL — model the killed piece
+                // as an indirect creation off the CALL op.
+                let newop = fd.new_indirect_creation(op, &pieceaddr, mostsigsize, false);
+                mostvn = fd.obank().get(newop).and_then(|o| o.get_out());
             } else {
                 let newop = fd.new_op(2, op_addr.clone());
                 let mvn = fd
@@ -2063,10 +2097,11 @@ impl Heritage {
             } else {
                 addr.clone()
             };
-            if op_is_call {
-                unimplemented_seam(
-                    "Heritage::normalize_write_size CALL least-sig piece (needs newIndirectCreation)",
-                );
+            if op_is_call && self.call_op_indirect_effect(fd, &pieceaddr, overlap, op) {
+                // Unless the CALL definitely has no effect on the piece: don't
+                // create a new big read if the write is from a CALL.
+                let newop = fd.new_indirect_creation(op, &pieceaddr, overlap, false);
+                leastvn = fd.obank().get(newop).and_then(|o| o.get_out());
             } else {
                 let newop = fd.new_op(2, op_addr.clone());
                 let lvn = fd
