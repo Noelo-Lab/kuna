@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 630/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 634/675; +...clone-gate audit, deindirect-output-type
+
+**Float-rule reductions +4 → 634.** RuleIgnoreNan full body (ruleaction_7.rs:2297, ruleaction.cc:9619 checkBackForCompare/isAnotherNan/testForComparison — the x87 `(NAN||NAN||a<b)||(NAN||NAN||a==b)` chain folds to one FLOAT_LESSEQUAL → `val2 <= val1`; nan_ignore_all seam default-off) + RuleFloatSign classifier wired (ruleaction_8.rs:236 → typeop float_sign_manipulation typeop.rs:1122: `x^0x8000` → -v1, `x&0x7fff` → ABS). Gained Status Compare #3 + Floating-point cast #10 + NaN operations #2 + Relative pointers #7. Gate: `[675,634]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Status Compare #1 (float globals print dat_<addr>), Floating-point convert #3 (param storage lock), Mixed float/int #1 (float-reg-pair param merge) = prototype/symbol-recovery seams (separate).
 
 **Switch Loop RulePullsubMulti +2 → 630 (the MULTIEQUAL-width diagnosis was ALSO wrong — both engines carry 4-byte R8D).** The root was the STUBBED RulePullsubMulti (ruleaction.cc:881): C++ pulls the 8-byte idiv-SDIV truncation SUBPIECE through the result MULTIEQUAL → RuleSubCancel+RuleSubCommute narrow the SDIV to 32-bit; the stub never made the SUBPIECE so the 64-bit SDIV + `& 0xffffffff` survived. Implemented it faithfully (ruleaction_1.rs: build_subpiece/find_subpiece/replace_descendants cc:720/777/850). Gained Switch Loop #5 + ModuloAlt #3. Gate: `[675,630]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Switch Loop #2-4/#6-10 NEXT = RulePushMulti stub (empty loop-latch block elimination, ruleaction_1.rs). Enum Reading/Gp Test blocked (LOSS-240: infertypes fixpoint oscillation / AliasChecker gp-into-call).
 
