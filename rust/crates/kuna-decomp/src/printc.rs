@@ -2985,18 +2985,34 @@ impl PrintC {
             // `if` keyword is printed by emit_block_if.  yesparen = !comma_separate.
             OpCode::CPUI_CBRANCH => {
                 let yesparen = !self.context.is_set(modifiers::COMMA_SEPARATE);
-                let booleanflip = fd.obank().get(op).map(|o| o.is_boolean_flip()).unwrap_or(false);
+                let mut booleanflip = fd.obank().get(op).map(|o| o.is_boolean_flip()).unwrap_or(false);
                 let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
                 let id = if yesparen {
                     self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0)
                 } else {
                     self.emit.open_group()
                 };
+                // C++ opCbranch (printc.cc:578): if the condition op can be
+                // negated as a token (INT_EQUAL->INT_NOTEQUAL etc.), absorb the
+                // `!` into the comparison via the `negatetoken` modifier instead
+                // of emitting an explicit BOOL_NEGATE.
+                let use_negate_token =
+                    booleanflip && in1.map(|vn| self.check_print_negation(fd, vn)).unwrap_or(false);
+                if use_negate_token {
+                    booleanflip = false;
+                }
                 if booleanflip {
                     self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
                 }
+                if use_negate_token {
+                    self.context.push_mod();
+                    self.context.set_mod(modifiers::NEGATETOKEN);
+                }
                 if let Some(vn) = in1 {
                     self.push_vn_ir(fd, arch, vn, op);
+                }
+                if use_negate_token {
+                    self.context.pop_mod();
                 }
                 // recurse() drains the stack: direct resolution above already
                 // drained it (the RPN engine unwinds on the final push_atom), so

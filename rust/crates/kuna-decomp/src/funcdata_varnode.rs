@@ -892,6 +892,18 @@ impl Funcdata {
             // "integrated varnode" guard (def != 0) passes.
             self.vbank_mut().make_free(vn);
         }
+        // ~Varnode(): if (high != 0) { high->remove(this); if (high->isUnattached())
+        //   delete high; }  (varnode.cc:629).  vbank.destroy() runs `delete vn`,
+        // which fires this purge in C++; the Rust bank has no destructor, so it
+        // is done explicitly here before the varnode is freed.  Without it a
+        // destroyed varnode lingers in its HighVariable's `inst` list and a later
+        // naming pass (get_name_representative) derefs the freed vn.
+        if let Some(high) = self.vbank().get(vn).and_then(|v| v.get_high()) {
+            self.high_remove_member(high, vn);
+            if self.high_bank().is_unattached(high) {
+                self.high_bank_mut().erase(high);
+            }
+        }
         // vn->destroyDescend();  vbank.destroy(vn);
         self.vbank_mut().destroy_descend(vn);
         self.vbank_mut().destroy(vn)

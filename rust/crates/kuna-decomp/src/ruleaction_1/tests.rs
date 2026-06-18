@@ -1179,11 +1179,14 @@ fn earlyremoval_destroys_unused_op() {
         .unwrap()
         .get_space()
         .does_deadcode();
+    // The real pipeline builds the per-space heritage info list in
+    // startProcessing before any rule runs; deadRemovalAllowedSeen indexes it.
+    fd.ensure_heritage_info_list();
     let mut r = RuleEarlyRemoval::new("analysis");
     let res = r.apply_op(op, &mut fd);
     if does_dead {
-        // ram does deadcode -> hits the heritage seam (deadRemovalAllowedSeen),
-        // declines without destroying.
+        // ram does deadcode -> deadRemovalAllowedSeen(ram) is false at pass 0
+        // (pass <= deadcodedelay), so the op survives undestroyed.
         assert_eq!(res, 0);
         assert!(fd.obank().get(op).is_some());
     } else {

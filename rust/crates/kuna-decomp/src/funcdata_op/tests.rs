@@ -652,8 +652,9 @@ fn cse_eliminate_list_collapses_same_block_match() {
     assert_eq!(outlist, vec![out1], "survivor output recorded");
     assert!(fd.obank().get(op2).unwrap().is_dead(), "duplicate op destroyed");
     assert!(!fd.obank().get(op1).unwrap().is_dead(), "dominator survives");
-    // out2 was freed by op_destroy/op_unset_output (its def cleared).
-    assert!(fd.vbank().get(out2).unwrap().get_def().is_none());
+    // out2 was fully freed by op_destroy -> destroyVarnode (C++ opDestroy frees
+    // the output Varnode, not merely unsets it), so it is gone from the bank.
+    assert!(fd.vbank().get(out2).is_none(), "destroyed op output is freed");
 }
 
 #[test]

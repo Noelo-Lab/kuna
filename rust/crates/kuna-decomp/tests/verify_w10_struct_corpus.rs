@@ -597,34 +597,31 @@ fn verify_w10_r2_divopt_stores_through_rdi_straightline() {
     );
 }
 
-/// ADVERSARIAL: forloop1's structurer collapse must be a REAL bounded loop, not
-/// a bare keyword.  The oracle is `for(v1=0; v1<max; v1=v1+1)`; the engine
-/// renders `while( true ) { … break; }`.  Require BOTH the loop keyword AND a
-/// `break` inside it (the structurer recognized the exit edge) AND the
-/// induction step (`+ 1`) — a substring like `while` in a comment could not
-/// satisfy all three.  This pins the loop EMITTER on a genuine collapse.
+/// ADVERSARIAL (RE-PINNED — W10 for-loop chain landed): forloop1's structurer
+/// collapse is now a REAL `for` loop, not a `while(true){...break;}`.  The
+/// oracle is `for(v1=0; v1<max; v1=v1+1)` and the engine now matches it
+/// byte-for-byte.  Require the `for (` header AND the induction step (`+ 1`) in
+/// the header — a clean for-loop carries the exit test in its header, so there
+/// is NO `break;` (the old `break;` pin is stale).  This pins the for EMITTER
+/// on a genuine whiledo->for conversion.
 #[test]
 fn verify_w10_r2_forloop1_is_bounded_loop_not_bare_keyword() {
     let path = repo_root().join("decompiler/datatests/forloop1.xml");
     let dt = parse_datatest(&path).expect("parse forloop1.xml");
     let rendered = render_corpus(&dt).expect("forloop1 must decompile");
 
-    let loop_kw =
-        count_matches(r"\bwhile *\(|\bfor *\(|\bdo \{", &rendered).unwrap_or(0);
-    assert!(loop_kw >= 1, "forloop1 must render a loop keyword:\n{rendered}");
-    // The structurer found the loop's exit edge -> a `break;` inside the body.
-    let breaks = count_matches(r"\bbreak;", &rendered).unwrap_or(0);
+    // The whiledo->for conversion fired: a real `for (` header is emitted.
+    let for_kw = count_matches(r"\bfor *\(", &rendered).unwrap_or(0);
     assert!(
-        breaks >= 1,
-        "forloop1's loop collapse must emit a `break;` for the recovered exit \
-         edge (proves a real CFG collapse, not a bare keyword):\n{rendered}"
+        for_kw >= 1,
+        "forloop1 must render a `for (` header (the for-loop reroll):\n{rendered}"
     );
-    // The induction step (the counter increment) survives in the body — proves
-    // the loop body, not an empty/garbage loop, was structured.
+    // The induction step (the counter increment) survives in the for header —
+    // proves a structured loop, not an empty/garbage loop, was recovered.
     let step = count_matches(r"\+ 1", &rendered).unwrap_or(0);
     assert!(
         step >= 1,
-        "forloop1's loop body must carry the induction step (`+ 1`):\n{rendered}"
+        "forloop1's for header must carry the induction step (`+ 1`):\n{rendered}"
     );
 }
 

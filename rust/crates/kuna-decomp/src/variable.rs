@@ -1548,6 +1548,18 @@ impl HighVariableBank {
         }
     }
 
+    /// Return \b true if the given HighVariable has no member Varnodes left
+    /// (C++ `HighVariable::isUnattached`).  Absent ids count as unattached.
+    pub fn is_unattached(&self, id: HighVariableId) -> bool {
+        self.highs.get(&id).map(|h| h.is_unattached()).unwrap_or(true)
+    }
+
+    /// Delete an (unattached) HighVariable from the bank (C++ `delete high`
+    /// in `Varnode::~Varnode`, run once the high has lost its last member).
+    pub fn erase(&mut self, id: HighVariableId) {
+        self.highs.remove(&id);
+    }
+
     /// Swap `origvn` with `replacevn` between their respective HighVariables
     /// (C++ `Varnode::replaceInHigh`, `varnode.cc:353`).
     ///
