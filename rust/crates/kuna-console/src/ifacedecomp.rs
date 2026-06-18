@@ -152,6 +152,17 @@ pub struct IfaceDecompData {
         String,
         Vec<(kuna_base::address::Address, kuna_decomp::fspec::PrototypePieces)>,
     >,
+    /// Parameter storage locks installed by `map param <i> <addr> <typedecl>`
+    /// (`IfcMapParam`), keyed by function name.  C++ writes these straight onto
+    /// the queried Funcdata's live `FuncProto` via `setParam`; the kuna console
+    /// rebuilds the IR on `decompile`, so the `(index, name, pieces)` facts are
+    /// stashed here and re-seeded onto the fresh Funcdata's prototype at decompile
+    /// time (the `pending_prototypes` precedent).  The pieces already carry the
+    /// `typelock|namelock` flags the directive set.
+    pub pending_param_maps: std::collections::BTreeMap<
+        String,
+        Vec<(kuna_base::types::int4, String, kuna_decomp::fspec::ParameterPieces)>,
+    >,
 }
 
 impl IfaceData for IfaceDecompData {
@@ -1138,6 +1149,15 @@ decomp_command!(
         let fd = dcp.fd.as_mut().expect("fd checked Some above");
         fd.get_func_proto_mut().attach_internal_store(void_type);
         fd.get_func_proto_mut().set_param(i, &name, &piece);
+        // Stash the lock keyed by function name so the `decompile` IR rebuild can
+        // re-seed it on the fresh prototype (C++ keeps it on the reused Funcdata;
+        // the kuna console discards `dcp.fd` on `decompile`).  Precedent:
+        // `pending_prototypes` / `pending_flow_overrides`.
+        let fname = fd.get_name().to_string();
+        dcp.pending_param_maps
+            .entry(fname)
+            .or_default()
+            .push((i, name, piece));
         Ok(())
     }
 );
@@ -1549,6 +1569,13 @@ decomp_command!(
             .get(&name)
             .cloned()
             .unwrap_or_default();
+        // The `map param <i> <addr> <decl>` storage locks stashed for this
+        // function (re-seeded on the rebuilt IR, like `pending_proto`).
+        let mapped_params = dcp_mut(status)?
+            .pending_param_maps
+            .get(&name)
+            .cloned()
+            .unwrap_or_default();
         // The `override prototype` facts stashed for this function (re-seeded on the
         // rebuilt IR), consumed at flow time as `Override::applyPrototype`.
         let proto_overrides = dcp_mut(status)?
@@ -1584,6 +1611,7 @@ decomp_command!(
             pending_proto.as_ref(),
             &flow_overrides,
             &proto_overrides,
+            &mapped_params,
         );
         // Restore the program (and the fresh Funcdata on success) regardless.
         let dcp = dcp_mut(status)?;
