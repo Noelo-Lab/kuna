@@ -3202,3 +3202,42 @@ SUBPIECE-vs-COPY divergence is DOWNSTREAM of a WIDTH choice on the loop-carried 
   the idiv SDIV is narrowed (match C++ ordering where R8 stays 8-byte through
   RuleSubZext→RuleShiftPiece(CDQ)→RuleSubCommute). High-regression-risk subregister-heritage ordering;
   own dedicated wave. [[kuna-rust-port]]
+
+## LOSS-231 RESOLVED-PARTIAL (RulePullsubMulti wave, 2026-06-18) — +2 (Switch Loop #5 + ModuloAlt #3); the CORRECTION-2 width premise was ALSO wrong
+
+The Switch Loop root was the STUBBED `RulePullsubMulti` (ruleaction.cc:881), not MULTIEQUAL width.
+Dual-engine `print raw` shows BOTH engines carry an identical 4-byte `R8D` loop MULTIEQUAL (refuting
+CORRECTION-2). The divergence was the idiv alone: C++ `EAX = (cast)R8D / #0xa:4` (4-byte SDIV) vs rust
+`SDIV(SEXT48(R8D),#0xa)` + `& 0xffffffff` (8-byte SDIV survives). In C++ the 8-byte SDIV's truncation
+SUBPIECE is pulled through the (non-loop-header) result MULTIEQUAL by `RulePullsubMulti` → RuleSubCancel
+collapses the AND → RuleSubCommute's SDIV/SEXT arm narrows to 32-bit. The stub never created that
+SUBPIECE. Implemented RulePullsubMulti faithfully (ruleaction_1.rs: build_subpiece cc:777, find_subpiece
+cc:850, replace_descendants cc:720 + the narrowed-SUBPIECE/MULTIEQUAL construction) → Switch Loop #5 +
+ModuloAlt #3, regressed-EMPTY, fence 0.
+- REMAINING Switch Loop #2-4/#6-10 (separate wave): rust keeps the EMPTY loop-latch block 0x1000c4
+  carrying a 12-input merge MULTIEQUAL; C++ eliminates it (cases jump straight to the loop header, a
+  single 12-input header MULTIEQUAL). NEXT-LOCUS: empty-block-join / MULTIEQUAL-push — `RulePushMulti`
+  is STILL A STUB in `ruleaction_1.rs` (C++ ruleaction.cc). A CFG/merge concern, not subregister/SDIV.
+  [[kuna-rust-port]]
+
+## LOSS-240 — Enum Reading (2) + Gp Test (2) blocked: infertypes fixpoint oscillation + AliasChecker gp-into-call
+
+Two independent small clusters, each a deep convergence/alias seam (commit 2a514f1 carries comment-only
+next-loci; no behavior change):
+- **Enum Reading #1/#2** (`enum.xml`): the OR-of-enum-members render works; the gap is the stack local
+  `v1` from `setStruct(&v1)` (param type-locked `enumstruct*`) is not recovered as the `enumstruct`
+  struct → renders `undefined1 v1`/`v1` not `v1.flagfield`/`v1.flagfield._4_4_`. The whole type path is
+  faithful in isolation (call_input_type_local coreaction_infertypes.rs:157 → enumstruct*; write_back
+  PTR→STRUCT; gather_open funcdata_spacebase.rs:1005 OPEN RangeHint; create_entry varmap.rs:1305
+  STRUCT/16). The failure is NON-CONVERGENCE across actfullloop: the recovered type oscillates
+  STRUCT(16)↔ARRAY(8) because `clearUnlockedCategory(-1)` drops the symbol each pass and infertypes only
+  re-commits PTR→STRUCT intermittently → final printed symbol is the size-1 fallback. NEXT-LOCUS: the
+  infertypes/restructure FIXPOINT (temptype seed/reset ordering, funcdata_spacebase.rs:530
+  restructure_varnode), not the merge/create_entry path.
+- **Gp Test #1/#2** (`gp.xml`, MIPS -fPIC): the spilled `$gp` constant (`gp = t9 + 0x410020`, t9→0)
+  can't propagate through the per-call INDIRECT on its stack slot (s-0x10). `RuleIndirectCollapse`
+  (ruleaction_3.rs:692) needs `hasNoLocalAlias`, but the slot stays aliased: AliasChecker::gather
+  (varmap.rs:649) carries the `&v1` arg offset (sp-0x18) and the distance to sp-0x10 is `< 0xffff`, so
+  the markUnaliased heuristic (database.rs:3707) keeps it aliased. cpp marks it unaliased (gp fully
+  constant-folds → `populate(v1)`/`printf("Hello",a0)`). NEXT-LOCUS: the AliasChecker alias-offset
+  derivation (varmap.rs:649) for a pointer that only escapes into a call. [[kuna-rust-port]]
