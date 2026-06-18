@@ -2538,7 +2538,7 @@ impl Action for ActionUnjustifiedParams {
         }
         Some(Box::new(ActionUnjustifiedParams { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:5018 — ActionUnjustifiedParams::apply
         //   proto = data.getFuncProto();
         //   for (vn in beginDef(input)..endDef(input)):
@@ -2568,11 +2568,128 @@ impl Action for ActionUnjustifiedParams {
         //       count += 1;
         //   return 0;
         //
-        // SEAM(W8-funcdata): the input def-set iteration (`beginDef(input)`),
-        // `FuncProto::unjustifiedInputParam`, the `getArch()->input_varnode_adjust`
-        // tunable (kuna GH-9218), and `adjustInputVarnodes` (which rebuilds the
-        // partial input as a SUBPIECE of a full container) are not in the merged
-        // tree.  Body transcribed; no change applied (count stays 0).
+        // (w10-mixfloatint) The input def-set iteration, `unjustifiedInputParam`,
+        // the GH-9218 `input_varnode_adjust` forward-absorb, and
+        // `adjustInputVarnodes` are now ported.  This recombines a register pair
+        // that an earlier heritage `refinement` split into two contiguous
+        // sub-size input pieces (e.g. an xmm0 float8 read whose halves split
+        // because the return-register lane COPYs made the disjoint range's max
+        // write size 4) back into one whole input — fixing Mixed float/int #1.
+        use kuna_num::pcoderaw::VarnodeData;
+        // The unjustified-param query reads the prototype model/store; a model-less
+        // fixture (no ActionPrototypeTypes seed) has neither, so there is nothing
+        // to adjust — bail (mirrors ActionInputPrototype's `recoverable` guard).
+        // The unjustified-param query reads the prototype model; a model-less
+        // fixture (no ActionPrototypeTypes seed) has nothing to adjust.  The
+        // unlocked-recovery merged-tree proto carries a model but no W4 symbol
+        // store, so the query routes through the model-level ParamList
+        // (`ProtoModel::unjustifiedInputParam`) — faithful, since for an unlocked
+        // proto C++'s FuncProto::unjustifiedInputParam falls through to the model
+        // anyway.  A locked-input proto IS handled by the store path; defer it to
+        // the W4 store wave (the recovery path that motivates this is unlocked).
+        if !data.get_func_proto().has_model() || data.get_func_proto().is_input_locked() {
+            return 0;
+        }
+        let input_adjust = data.get_arch().input_varnode_adjust;
+
+        // iter = beginDef(input); the def-set is Address-then-size ordered.
+        // Snapshot the input list once; `adjustInputVarnodes` rewrites it, so we
+        // re-seek (C++ resets the iterator after each adjustment).
+        loop {
+            let inputs: Vec<crate::seams::VarnodeId> =
+                data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();
+            let mut adjusted = false;
+            'scan: for (idx, &vn) in inputs.iter().enumerate() {
+                let (vn_addr, vn_size) = {
+                    let v = match data.vbank().get(vn) {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    (v.get_addr().clone(), v.get_size())
+                };
+                let mut vdata = VarnodeData::default();
+                if !data
+                    .get_func_proto()
+                    .model()
+                    .unjustified_input_param(&vn_addr, vn_size, &mut vdata)
+                {
+                    continue;
+                }
+                let vspace = match vdata.space.clone() {
+                    Some(s) => s,
+                    None => continue,
+                };
+                // Widen the container to absorb overlapping inputs.
+                loop {
+                    let mut overlaps = false;
+                    // Backward scan: widen DOWNWARD over earlier inputs that overlap.
+                    for &ovn in inputs[..idx].iter().rev() {
+                        let v = match data.vbank().get(ovn) {
+                            Some(v) => v,
+                            None => continue,
+                        };
+                        if v.get_addr().get_space().map_or(true, |s| !Rc::ptr_eq(s, &vspace)) {
+                            continue;
+                        }
+                        let ooff = v.get_addr().get_offset();
+                        let last = ooff.wrapping_add((v.get_size() - 1) as u64);
+                        // if (offset >= vdata.offset && vn->getOffset() < vdata.offset)
+                        if last >= vdata.offset && ooff < vdata.offset {
+                            overlaps = true;
+                            let endpoint = vdata.offset.wrapping_add(vdata.size as u64);
+                            vdata.offset = ooff;
+                            vdata.size = (endpoint.wrapping_sub(vdata.offset)) as u32;
+                        }
+                    }
+                    if input_adjust {
+                        // (kuna GH-9218) forward scan UPWARD: absorb an input
+                        // that overlaps the container and extends above its end.
+                        for &fvn in inputs[idx..].iter() {
+                            let v = match data.vbank().get(fvn) {
+                                Some(v) => v,
+                                None => continue,
+                            };
+                            if v.get_addr().get_space().map_or(true, |s| !Rc::ptr_eq(s, &vspace)) {
+                                continue;
+                            }
+                            let foff = v.get_addr().get_offset();
+                            if foff >= vdata.offset.wrapping_add(vdata.size as u64) {
+                                break; // past the container; def-set is address-ordered
+                            }
+                            let flast = foff.wrapping_add((v.get_size() - 1) as u64);
+                            if flast >= vdata.offset.wrapping_add(vdata.size as u64) {
+                                overlaps = true;
+                                vdata.size = (flast + 1).wrapping_sub(vdata.offset) as u32;
+                            }
+                        }
+                    }
+                    if !overlaps {
+                        break;
+                    }
+                    // Container may no longer be justified after widening.
+                    let waddr = Address::new(Rc::clone(&vspace), vdata.offset);
+                    if !data.get_func_proto().model().unjustified_input_param(
+                        &waddr,
+                        vdata.size as int4,
+                        &mut vdata,
+                    ) {
+                        break;
+                    }
+                }
+                let cont_addr = Address::new(Rc::clone(&vspace), vdata.offset);
+                if data
+                    .adjust_input_varnodes(&cont_addr, vdata.size as int4)
+                    .is_ok()
+                {
+                    self.base.count += 1;
+                    adjusted = true;
+                    break 'scan;
+                }
+            }
+            if !adjusted {
+                break;
+            }
+        }
         0
     }
 }

@@ -1305,17 +1305,124 @@ impl ActionReturnRecovery {
             let _ = data.op_set_all_input(retop, &newparam);
             return;
         }
-        // Multi-piece concatenation (coreaction.cc:1896-1951): two-piece PIECE
-        // via a JOIN address, or the many-piece container concat.  Both require
-        // `getArch()->translate` for `constructJoinAddress` (the JOIN-space
-        // register-name lookup), which the merged `ArchHandle` seam does not
-        // carry (the engine `Translate` is not shared onto the IR handle).  The
-        // default models on the recovery path return a single register (no
-        // multi-piece output), so this branch is not reached on the live path;
-        // it is left as a SEAM(W4 translate-on-handle) and the RETURN keeps the
-        // first recovered piece rather than fabricating a malformed concat.
-        newparam.truncate(2);
-        let _ = data.op_set_all_input(retop, &newparam);
+        if newparam.len() == 3 {
+            // Two-piece concatenation (coreaction.cc:1896-1913): a return value
+            // recovered as two contiguous register pieces (e.g. an xmm0 float8
+            // whose low/high 4-byte lanes split during heritage refinement).
+            // Build PIECE(hi,lo) at the JOIN/parent-register address so the
+            // RETURN reads one whole varnode.
+            let lovn = newparam[1];
+            let hivn = newparam[2];
+            let (lo_addr, lo_size) =
+                (active.get_trial(0).get_address().clone(), active.get_trial(0).get_size());
+            let (hi_addr, hi_size) =
+                (active.get_trial(1).get_address().clone(), active.get_trial(1).get_size());
+            let manage = data.get_arch().manage.clone();
+            let join = manage.register_lookup().and_then(|rl| {
+                manage
+                    .construct_join_address(rl.as_ref(), &hi_addr, hi_size, &lo_addr, lo_size)
+                    .ok()
+            });
+            match join {
+                Some(joinaddr) => {
+                    let retaddr = data.obank().get(retop).map(|o| o.get_addr().clone());
+                    if let Some(retaddr) = retaddr {
+                        let newop = data.new_op(2, retaddr);
+                        data.op_set_opcode_code(newop, OpCode::CPUI_PIECE);
+                        if let Ok(newwhole) =
+                            data.new_varnode_out(hi_size + lo_size, &joinaddr, newop)
+                        {
+                            // Don't let the new whole cause additional heritage.
+                            if let Some(v) = data.vbank_mut().get_mut(newwhole) {
+                                v.set_write_mask();
+                            }
+                            data.op_insert_before(newop, retop);
+                            newparam.pop();
+                            let last = newparam.len() - 1;
+                            newparam[last] = newwhole;
+                            let _ = data.op_set_all_input(retop, &newparam);
+                            let _ = data.op_set_input(newop, hivn, 0); // most-sig
+                            let _ = data.op_set_input(newop, lovn, 1); // least-sig
+                            return;
+                        }
+                    }
+                }
+                None => {}
+            }
+            // Fall back to the first piece if the join could not be constructed.
+            newparam.truncate(2);
+            let _ = data.op_set_all_input(retop, &newparam);
+            return;
+        }
+        // Many-piece single-container concatenation (coreaction.cc:1915-1951):
+        // walk the contiguous used trials, building a PIECE chain at the earliest
+        // address.  Not reached by the default x86-64 register models (which
+        // recover at most two pieces); kept faithful for completeness.
+        let mut chained: Vec<crate::seams::VarnodeId> = Vec::new();
+        if let Some(in0) = data.obank().get(retop).and_then(|o| o.get_in(0)) {
+            chained.push(in0);
+        }
+        let mut offmatch: int4 = 0;
+        let mut preexist: Option<crate::seams::VarnodeId> = None;
+        let nin = data.obank().get(retop).map(|o| o.num_input()).unwrap_or(0);
+        for i in 0..active.get_num_trials() {
+            let (used, slot, toff, tsize) = {
+                let t = active.get_trial(i);
+                (t.is_used(), t.get_slot(), t.get_offset(), t.get_size())
+            };
+            if !used || slot >= nin {
+                break;
+            }
+            let vn = match data.obank().get(retop).and_then(|o| o.get_in(slot)) {
+                Some(v) => v,
+                None => break,
+            };
+            match preexist {
+                None => {
+                    preexist = Some(vn);
+                    offmatch = toff + tsize;
+                }
+                Some(pre) if offmatch == toff => {
+                    offmatch += tsize;
+                    let (pre_addr, pre_size) = {
+                        let v = data.vbank().get(pre).expect("buildReturnOutput: pre");
+                        (v.get_addr().clone(), v.get_size())
+                    };
+                    let vn_addr =
+                        data.vbank().get(vn).expect("buildReturnOutput: vn").get_addr().clone();
+                    let addr = if vn_addr.cmp(&pre_addr) == std::cmp::Ordering::Less {
+                        vn_addr
+                    } else {
+                        pre_addr
+                    };
+                    let retaddr = data.obank().get(retop).map(|o| o.get_addr().clone());
+                    if let Some(retaddr) = retaddr {
+                        let newop = data.new_op(2, retaddr);
+                        data.op_set_opcode_code(newop, OpCode::CPUI_PIECE);
+                        if let Ok(newout) =
+                            data.new_varnode_out(pre_size + tsize, &addr, newop)
+                        {
+                            if let Some(v) = data.vbank_mut().get_mut(newout) {
+                                v.set_write_mask();
+                            }
+                            let _ = data.op_set_input(newop, vn, 0); // most-sig
+                            let _ = data.op_set_input(newop, pre, 1);
+                            data.op_insert_before(newop, retop);
+                            preexist = Some(newout);
+                        }
+                    }
+                }
+                _ => break,
+            }
+        }
+        let mut finalparam: Vec<crate::seams::VarnodeId> = Vec::new();
+        if let Some(in0) = data.obank().get(retop).and_then(|o| o.get_in(0)) {
+            finalparam.push(in0);
+        }
+        if let Some(pre) = preexist {
+            finalparam.push(pre);
+        }
+        let _ = data.op_set_all_input(retop, &finalparam);
     }
 }
 
