@@ -1171,8 +1171,25 @@ decomp_command!(
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         // C++: dcp->fd->getFuncProto().setOutput(piece).
         let fd = dcp.fd.as_mut().expect("fd checked Some above");
+        let fname = fd.get_name().to_string();
         fd.get_func_proto_mut().attach_internal_store(void_type);
         fd.get_func_proto_mut().set_output(&piece);
+        // (kuna) C++ keeps this locked output live on the callee `Funcdata`, so a
+        // caller's `ActionDefaultParams` (`fc->copy(otherfunc->getFuncProto())`)
+        // picks up the custom (possibly stack-relative) return storage.  The
+        // merged tree rebuilds callee prototypes from `PrototypePieces`, so park an
+        // *output-only* pieces (no declared inputs → input recovery stays
+        // model-driven, matching C++ `map return`) carrying the explicit output
+        // storage.  Merge into any existing pending proto for this function.
+        let entry = dcp
+            .pending_prototypes
+            .entry(fname.clone())
+            .or_insert_with(|| kuna_decomp::fspec::PrototypePieces {
+                name: fname.clone(),
+                first_var_arg_slot: -1,
+                ..Default::default()
+            });
+        entry.output_storage = Some(piece);
         Ok(())
     }
 );

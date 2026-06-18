@@ -107,6 +107,7 @@ fn proto_returning(outtype: Rc<Datatype>) -> PrototypePieces {
         intypes: Vec::new(),
         innames: Vec::new(),
         first_var_arg_slot: -1,
+        output_storage: None,
     }
 }
 

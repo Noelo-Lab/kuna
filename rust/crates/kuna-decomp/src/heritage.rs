@@ -1507,9 +1507,25 @@ impl Heritage {
                 }
             }
             // else if (fc->isStackOutputLock() && tryregister) { tryOutputStackGuard }
-            // — the locked stack-output build (heritage.cc:1488-1494) is the type
-            // recovery path, not reached by the default-model return datatests.
-            // SEAM(W4 stack output lock guard).
+            // — the locked stack-output build (heritage.cc:1488-1494): the callee
+            // returns a struct-by-value into a callee-relative stack location, and
+            // ActionFuncLink::func_link_output deliberately delayed creating the
+            // CALL op's output Varnode (setStackOutputLock(true)).  When the
+            // heritaged stack range overlaps that locked return storage, materialize
+            // the caller-perspective output and truncate/piece it into the range.
+            else if fc.is_stack_output_lock() && tryregister {
+                let output_character = fc.proto().characterize_as_output(&trans_addr, size);
+                if output_character != Containment::NoContainment {
+                    // effecttype = EffectRecord::unknown_effect;
+                    effecttype = effect_type::UNKNOWN_EFFECT;
+                    if self.try_output_stack_guard(
+                        fd, fc, addr, &trans_addr, size, output_character, write,
+                    ) {
+                        // Range is handled, don't do additional guarding.
+                        effecttype = effect_type::UNAFFECTED;
+                    }
+                }
+            }
 
             // Input-active branch (heritage.cc:1496-1510): register an input
             // parameter trial and append the argument Varnode to the CALL op.  This
@@ -1587,6 +1603,205 @@ impl Heritage {
             }
         }
         fd.restore_call_specs(qlst);
+    }
+
+    /// Attempt to guard a stack range against a call whose return value overlaps
+    /// that range (C++ `Heritage::tryOutputStackGuard`, `heritage.cc:1392`).
+    ///
+    /// The call has a locked output stored on the stack.  ActionFuncLink
+    /// deliberately delayed creating the CALL op's output Varnode; this method
+    /// materializes it now.  If the return storage *contains* the guard range, a
+    /// guard-range Varnode is pulled off the return via SUBPIECE; if the guard
+    /// range *contains* the return storage, a final guard-range Varnode is pieced
+    /// together from the return storage plus the surrounding INDIRECT stack pieces
+    /// (`guard_output_overlap_stack`).
+    fn try_output_stack_guard(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        trans_addr: &Address,
+        size: int4,
+        output_character: crate::fspec::Containment,
+        write: &mut Vec<crate::seams::VarnodeId>,
+    ) -> bool {
+        use kuna_num::opcodes::OpCode;
+        use kuna_num::pcoderaw::VarnodeData;
+        let call_op = fc.get_op();
+        if output_character == crate::fspec::Containment::ContainedBy {
+            // The return storage contains the heritage range: pull the smaller
+            // guard range out via a join of stack pieces.
+            let mut vdata = VarnodeData::default();
+            if !fc.proto().get_biggest_contained_output(trans_addr, size, &mut vdata) {
+                return false;
+            }
+            let vspace = match vdata.space.clone() {
+                Some(s) => s,
+                None => return false,
+            };
+            // truncAddr (callee perspective) -> caller perspective via diff.
+            let trunc_off_callee = vdata.offset;
+            let diff = trunc_off_callee.wrapping_sub(trans_addr.get_offset());
+            let trunc_addr = addr + diff as i64;
+            // (truncAddr keeps the return-storage space only conceptually; the
+            // caller-perspective address lives in `addr`'s space, mirroring
+            // `truncAddr = addr + diff` in C++.)
+            let _ = vspace;
+            self.guard_output_overlap_stack(
+                fd,
+                call_op,
+                addr,
+                size,
+                &trunc_addr,
+                vdata.size as int4,
+                write,
+            );
+            return true;
+        }
+        // Reaching here, output exists and contains the heritage range.
+        let ret_addr_callee = fc.proto().get_output().get_address();
+        let diff = addr.get_offset().wrapping_sub(trans_addr.get_offset());
+        let ret_addr = &ret_addr_callee + diff as i64; // caller perspective
+        let ret_size = fc.proto().get_output().get_size();
+        // outvn = callOp->getOut();  (None — ActionFuncLink delayed it)
+        let mut outvn = fd.obank().get(call_op).and_then(|o| o.get_out());
+        let mut vn_final: Option<crate::seams::VarnodeId> = None;
+        if outvn.is_none() {
+            let v = fd
+                .new_varnode_out(ret_size, &ret_addr, call_op)
+                .expect("tryOutputStackGuard: new outvn");
+            outvn = Some(v);
+            vn_final = Some(v);
+        }
+        if size < ret_size {
+            let sub_piece = fd.new_op(2, fd.obank().get(call_op).expect("tryOutputStackGuard: stale call").get_addr().clone());
+            fd.op_set_opcode(sub_piece, typeop_skeleton(OpCode::CPUI_SUBPIECE));
+            let truncate_amount = ret_addr.justified_contain(ret_size, addr, size, false);
+            let c = fd.new_constant(4, truncate_amount as i64 as u64);
+            let _ = fd.op_set_input(sub_piece, c, 1);
+            let _ = fd.op_set_input(sub_piece, outvn.expect("tryOutputStackGuard: outvn"), 0);
+            let v = fd
+                .new_varnode_out(size, addr, sub_piece)
+                .expect("tryOutputStackGuard: subpiece out");
+            vn_final = Some(v);
+            fd.op_insert_after(sub_piece, call_op);
+        }
+        if let Some(vf) = vn_final {
+            if let Some(v) = fd.vbank_mut().get_mut(vf) {
+                v.set_active_heritage();
+            }
+            write.push(vf);
+        }
+        true
+    }
+
+    /// Guard a stack range that properly contains the return value storage for a
+    /// call (C++ `Heritage::guardOutputOverlapStack`, `heritage.cc:1323`).
+    ///
+    /// The pieces of the range on either side of the return storage flow through
+    /// the call via INDIRECT (pulled off the full range with SUBPIECE), then
+    /// rejoin the return storage via CPUI_PIECE.
+    #[allow(clippy::too_many_arguments)]
+    fn guard_output_overlap_stack(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        call_op: crate::seams::OpId,
+        addr: &Address,
+        size: int4,
+        ret_addr: &Address,
+        ret_size: int4,
+        write: &mut Vec<crate::seams::VarnodeId>,
+    ) {
+        use kuna_num::opcodes::OpCode;
+        let size_front = (ret_addr.get_offset().wrapping_sub(addr.get_offset())) as i64 as int4;
+        let size_back = size - ret_size - size_front;
+        let call_addr = fd.obank().get(call_op).expect("guardOutputOverlapStack: stale call").get_addr().clone();
+        let mut insert_point = call_op;
+        // vnCollect = callOp->getOut(); if null, newVarnodeOut(retSize, retAddr, callOp)
+        let mut vn_collect = match fd.obank().get(call_op).and_then(|o| o.get_out()) {
+            Some(v) => v,
+            None => fd
+                .new_varnode_out(ret_size, ret_addr, call_op)
+                .expect("guardOutputOverlapStack: new vnCollect"),
+        };
+        if size_front != 0 {
+            let new_input = fd.new_varnode(size, addr, None);
+            fd.vbank_mut()
+                .get_mut(new_input)
+                .expect("guardOutputOverlapStack: front newInput")
+                .set_active_heritage();
+            let sub_piece = fd.new_op(2, call_addr.clone());
+            fd.op_set_opcode(sub_piece, typeop_skeleton(OpCode::CPUI_SUBPIECE));
+            let truncate_amount = addr.justified_contain(size, addr, size_front, false);
+            let c = fd.new_constant(4, truncate_amount as i64 as u64);
+            let _ = fd.op_set_input(sub_piece, c, 1);
+            let _ = fd.op_set_input(sub_piece, new_input, 0);
+            // indOpFront = newIndirectOp(callOp, addr, sizeFront, 0)
+            let ind_op_front = fd.new_indirect_op(call_op, addr, size_front, 0);
+            // opSetOutput(subPiece, indOpFront->getIn(0))
+            let ind_in0 = fd
+                .obank()
+                .get(ind_op_front)
+                .and_then(|o| o.get_in(0))
+                .expect("guardOutputOverlapStack: front ind in0");
+            let _ = fd.op_set_output(sub_piece, ind_in0);
+            fd.op_insert_before(sub_piece, call_op);
+            let new_front = fd
+                .obank()
+                .get(ind_op_front)
+                .and_then(|o| o.get_out())
+                .expect("guardOutputOverlapStack: front ind out");
+            let concat_front = fd.new_op(2, call_addr.clone());
+            let slot_new: int4 = if ret_addr.is_big_endian() { 0 } else { 1 };
+            fd.op_set_opcode(concat_front, typeop_skeleton(OpCode::CPUI_PIECE));
+            let _ = fd.op_set_input(concat_front, new_front, slot_new);
+            let _ = fd.op_set_input(concat_front, vn_collect, 1 - slot_new);
+            vn_collect = fd
+                .new_varnode_out(size_front + ret_size, addr, concat_front)
+                .expect("guardOutputOverlapStack: front concat out");
+            fd.op_insert_after(concat_front, insert_point);
+            insert_point = concat_front;
+        }
+        if size_back != 0 {
+            let new_input = fd.new_varnode(size, addr, None);
+            fd.vbank_mut()
+                .get_mut(new_input)
+                .expect("guardOutputOverlapStack: back newInput")
+                .set_active_heritage();
+            let addr_back = ret_addr + ret_size as i64;
+            let sub_piece = fd.new_op(2, call_addr.clone());
+            fd.op_set_opcode(sub_piece, typeop_skeleton(OpCode::CPUI_SUBPIECE));
+            let truncate_amount = addr.justified_contain(size, &addr_back, size_back, false);
+            let c = fd.new_constant(4, truncate_amount as i64 as u64);
+            let _ = fd.op_set_input(sub_piece, c, 1);
+            let _ = fd.op_set_input(sub_piece, new_input, 0);
+            let ind_op_back = fd.new_indirect_op(call_op, &addr_back, size_back, 0);
+            let ind_in0 = fd
+                .obank()
+                .get(ind_op_back)
+                .and_then(|o| o.get_in(0))
+                .expect("guardOutputOverlapStack: back ind in0");
+            let _ = fd.op_set_output(sub_piece, ind_in0);
+            fd.op_insert_before(sub_piece, call_op);
+            let new_back = fd
+                .obank()
+                .get(ind_op_back)
+                .and_then(|o| o.get_out())
+                .expect("guardOutputOverlapStack: back ind out");
+            let concat_back = fd.new_op(2, call_addr.clone());
+            let slot_new: int4 = if ret_addr.is_big_endian() { 1 } else { 0 };
+            fd.op_set_opcode(concat_back, typeop_skeleton(OpCode::CPUI_PIECE));
+            let _ = fd.op_set_input(concat_back, new_back, slot_new);
+            let _ = fd.op_set_input(concat_back, vn_collect, 1 - slot_new);
+            vn_collect = fd
+                .new_varnode_out(size, addr, concat_back)
+                .expect("guardOutputOverlapStack: back concat out");
+            fd.op_insert_after(concat_back, insert_point);
+        }
+        if let Some(v) = fd.vbank_mut().get_mut(vn_collect) {
+            v.set_active_heritage();
+        }
+        write.push(vn_collect);
     }
 
     /// Guard RETURN ops for a global/output range (C++ `Heritage::guardReturns`,

@@ -306,6 +306,7 @@ fn assign_parameter_storage_ignore_output_propagates_nonparamunassigned_w6s4f2()
         intypes: vec![int4_type()],
         innames: vec!["a".into()],
         first_var_arg_slot: -1,
+        output_storage: None,
     };
     let mut res: Vec<ParameterPieces> = Vec::new();
     // ignore_output_error = true: C++ catches ParamUnassignedError only.  A
@@ -344,6 +345,7 @@ fn update_all_types_propagates_seam_lowlevel_w6s4f1() {
         intypes: vec![int4_type()],
         innames: vec!["a".into()],
         first_var_arg_slot: -1,
+        output_storage: None,
     };
     let r = fp.update_all_types(&proto, &tf, &mgr);
     // Repaired port behavior: the non-ParamUnassigned Lowlevel error escapes
@@ -376,6 +378,7 @@ fn update_all_types_happy_path_assigns_output_no_error_w6s4() {
         intypes: vec![int4_type(), int4_type()],
         innames: vec!["a".into(), "b".into()],
         first_var_arg_slot: -1,
+        output_storage: None,
     };
     fp.update_all_types(&proto, &tf, &mgr).unwrap();
     assert!(
