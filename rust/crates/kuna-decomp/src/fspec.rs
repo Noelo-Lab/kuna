@@ -6112,6 +6112,28 @@ impl FuncCallSpecs {
     pub fn get_spacebase_offset(&self) -> uintb {
         self.stackoffset
     }
+    /// Determine the side-effect of \b this call on a memory range, first
+    /// translating a stack address into the callee's spacebase point of view
+    /// (C++ `FuncCallSpecs::hasEffectTranslate`, `fspec.cc:5941`).
+    ///
+    /// For a non-spacebase address this is just `FuncProto::hasEffect`.  For a
+    /// spacebase (stack) address: if the call's stack offset is unknown the
+    /// effect is `unknown_effect`; otherwise the offset is shifted by
+    /// `-stackoffset` (wrapped in the space) to land in the callee's frame, then
+    /// `hasEffect` is consulted.
+    pub fn has_effect_translate(&self, addr: &Address, size: int4) -> uint4 {
+        let spc = addr.get_space().expect("has_effect_translate: addr space");
+        if spc.get_type() != kuna_base::space::spacetype::IPTR_SPACEBASE {
+            return self.proto.has_effect(addr, size);
+        }
+        if self.stackoffset == OFFSET_UNKNOWN {
+            return effect_type::UNKNOWN_EFFECT;
+        }
+        // Translate to callee's spacebase point of view.
+        let newoff = spc.wrap_offset(addr.get_offset().wrapping_sub(self.stackoffset));
+        let translated = Address::new(Rc::clone(spc), newoff);
+        self.proto.has_effect(&translated, size)
+    }
     /// Set a parameter shift for this call site (C++ `setParamshift`).
     pub fn set_paramshift(&mut self, val: int4) {
         self.paramshift = val;
