@@ -395,12 +395,29 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
         Some(v) => v,
         None => return false,
     };
-    // alttype = invn->getTempType().  (needsResolution()/resolveInFlow is a W8
-    // union-resolution surface; the common, non-union path is alttype = temptype.)
-    let alttype = match data.vbank().get(invn).and_then(|v| v.get_temp_type().cloned()) {
+    // alttype = invn->getTempType();
+    let mut alttype = match data.vbank().get(invn).and_then(|v| v.get_temp_type().cloned()) {
         Some(t) => t,
         None => return false,
     };
+    // if (alttype->needsResolution()) {
+    //   Datatype *resType = alttype->resolveInFlow(op, inslot);
+    //   if (!op->isMarker()) alttype = resType;
+    // }
+    // (C++ coreaction.cc:5335-5341)  Always give the incoming union/relative-pointer
+    // a chance to resolve so the field choice is cached for later facing lookups,
+    // but only adopt the resolved type for the propagation when `op` is not a MULTIEQUAL
+    // marker (a marker keeps the unresolved union flowing through both edges).
+    if alttype.needs_resolution() {
+        let res_type = match data.resolve_in_flow(&alttype, op, inslot) {
+            Ok(t) => t,
+            Err(_) => Rc::clone(&alttype),
+        };
+        let is_marker = data.obank().get(op).map(|o| o.is_marker()).unwrap_or(false);
+        if !is_marker {
+            alttype = res_type;
+        }
+    }
 
     // Resolve the outgoing Varnode.
     let outvn = if outslot < 0 {
