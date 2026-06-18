@@ -26,10 +26,10 @@
 //!     then `TransformManager::apply` (W6-seamed in the merged transform.rs —
 //!     `createReplacement` needs `glb->inst[opc]`).
 //!   * `SubfloatFlow` / `RuleSubfloatConvert` (item `w8x-subflow-splits`).  The
-//!     precision-tracing engine is ported verbatim; the `FloatFormat` acquisition
-//!     (`f->getArch()->translate->getFloatFormat`) and the `preserveAddress`
-//!     override are arch/transform seams (see [`subfloat_float_format`] and the
-//!     losses output).
+//!     precision-tracing engine is ported verbatim, including the `FloatFormat`
+//!     acquisition (`f->getArch()->translate->getFloatFormat`) and the
+//!     constant-conversion (`FloatFormat::convertEncoding`); only the
+//!     `preserveAddress` override remains a transform seam.
 //!   * `SplitDatatype` / `RuleSplit{Copy,Load,Store}` / `RuleDumptyHumpLate`
 //!     (item `w8x-subflow-splits`).  The datatype-splitting engine
 //!     (`RootPointer`/`Component`, `categorizeDatatype`/`testDatatypeCompatibility`/
@@ -94,7 +94,7 @@ use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::seams::{ArchHandle, OpId, TypeOp, VarnodeId};
 use crate::transform::{LaneDescription, TVarRef, TransformManager};
 use std::rc::Rc;
 
@@ -4708,13 +4708,12 @@ impl RuleDumptyHumpLate {
 // =============================================================================
 //
 // SubfloatFlow traces a lower-precision float value through higher-precision
-// storage.  The trace/precision engine is ported verbatim; the FloatFormat
-// acquisition (`f->getArch()->translate->getFloatFormat`) is an arch seam (see
-// [`subfloat_float_format`]) and SubfloatFlow's `preserveAddress` override
-// (`return vn->isInput()`) cannot be injected into the merged
-// `TransformManager::new_piece` (transform.rs, not owned) — both recorded as
-// losses.  The constant-conversion in `setReplacement` (`format->convertEncoding`)
-// is reachable only with a real FloatFormat and so is seam-gated.
+// storage.  The trace/precision engine is ported verbatim, including the
+// FloatFormat acquisition (`f->getArch()->translate->getFloatFormat`, held as
+// the `arch` handle) and the `setReplacement` constant-conversion
+// (`format->convertEncoding`).  Only SubfloatFlow's `preserveAddress` override
+// (`return vn->isInput()`) remains a transform seam — it cannot be injected into
+// the merged `TransformManager::new_piece` (transform.rs, not owned).
 
 /// Internal state for walking floating-point data-flow (C++
 /// `SubfloatFlow::State`).
@@ -4746,9 +4745,13 @@ pub struct SubfloatFlow {
     precision: int4,
     /// Number of terminating nodes reachable via the root (C++ `terminatorCount`).
     terminator_count: int4,
-    /// True if a usable FloatFormat was found (C++ `format != 0`).  The actual
-    /// FloatFormat lives behind the arch seam (see [`subfloat_float_format`]).
+    /// True if a usable FloatFormat was found (C++ `format != 0`).
     has_format: bool,
+    /// The arch handle (`Rc<Architecture>`) carrying `translate->getFloatFormat`
+    /// (C++ `format = f->getArch()->translate->getFloatFormat(precision)`).  Held
+    /// so [`set_replacement`]'s constant branch can `convertEncoding` between the
+    /// source and `precision` float formats.
+    arch: ArchHandle,
     /// Current list of placeholders still to be traced (C++ `worklist`).
     worklist: Vec<TVarRef>,
     /// Maximum precision flowing into a particular float op (C++ `maxPrecisionMap`).
@@ -4759,16 +4762,18 @@ impl SubfloatFlow {
     /// Construct the engine for a function/root/precision (C++
     /// `SubfloatFlow::SubfloatFlow`, subflow.cc:3456).
     ///
-    /// SEAM(arch): `format = f->getArch()->translate->getFloatFormat(precision)`
-    /// is unavailable off the Funcdata arch seam, so `has_format` is whatever
-    /// [`subfloat_float_format`] reports and `setReplacement(root)` is only run
-    /// when a format is present (matching the C++ early return on null format).
+    /// `format = f->getArch()->translate->getFloatFormat(precision)`; if the
+    /// arch has no format for the requested precision, the engine degrades to
+    /// the C++ null-format early return (`setReplacement(root)` is skipped).
     pub fn new(data: &mut Funcdata, root: VarnodeId, prec: int4) -> SubfloatFlow {
+        let arch = data.get_arch().clone();
+        let has_format = arch.get_float_format(prec).is_some();
         let mut sf = SubfloatFlow {
             tm: TransformManager::new(),
             precision: prec,
             terminator_count: 0,
-            has_format: subfloat_float_format(data, prec),
+            has_format,
+            arch,
             worklist: Vec::new(),
             max_precision_map: BTreeMap::new(),
         };
@@ -4904,9 +4909,22 @@ impl SubfloatFlow {
 
         if v.is_constant() {
             // const FloatFormat *form2 = translate->getFloatFormat(vn->getSize());
+            // if (form2 == 0) return 0;  // Unsupported constant format
             // return newConstant(precision, 0, format->convertEncoding(vn->getOffset(), form2));
-            // SEAM(arch): both float formats come off the unported arch seam.
-            return subfloat_convert_constant_seam();
+            let vn_size = v.get_size();
+            let off = v.get_offset();
+            let form2 = match self.arch.get_float_format(vn_size) {
+                Some(f) => f,
+                None => return Ok(None), // Unsupported constant format
+            };
+            // `format` is the precision-size target format (guaranteed present:
+            // `has_format` gated entry into the trace).
+            let format = self
+                .arch
+                .get_float_format(self.precision)
+                .expect("set_replacement: precision FloatFormat checked at construction");
+            let converted = format.convert_encoding(off, form2);
+            return Ok(Some(self.tm.new_constant(self.precision, 0, converted)));
         }
 
         if v.is_free() {
@@ -5953,24 +5971,6 @@ impl LaneDivide {
     pub fn apply(&mut self, data: &mut Funcdata) -> KunaResult<()> {
         self.tm.apply(data)
     }
-}
-
-/// SEAM(arch): `f->getArch()->translate->getFloatFormat(precision)` is not on the
-/// Funcdata arch seam (the stub `Architecture` carries no `Translate`).  Report
-/// "no format" so SubfloatFlow degrades to the C++ null-format early return.
-fn subfloat_float_format(_data: &Funcdata, _precision: int4) -> bool {
-    false
-}
-
-/// SEAM(arch): the constant-conversion branch of `SubfloatFlow::setReplacement`
-/// needs `translate->getFloatFormat` + `format->convertEncoding`, both off the
-/// unported arch seam.  Unreachable while [`subfloat_float_format`] reports no
-/// format (the engine never traces); kept for faithful dispatch.
-fn subfloat_convert_constant_seam() -> KunaResult<Option<TVarRef>> {
-    Err(KunaError::lowlevel(
-        "kuna rust port: SubfloatFlow::setReplacement constant conversion needs \
-         translate->getFloatFormat + FloatFormat::convertEncoding — SEAM(arch)",
-    ))
 }
 
 /// Perform SubfloatFlow analysis triggered by FLOAT_FLOAT2FLOAT (C++
