@@ -1560,6 +1560,17 @@ use crate::seams::{BlockId, OpId, VarnodeId};
 use kuna_num::opcodes::OpCode;
 use kuna_base::space::RegisterLookup;
 
+/// One resolved member token of a partial-symbol access walk (C++
+/// `PartialSymbolEntry`, printc.cc:1985-1994).  A struct/union field becomes a
+/// `Member` (`.field`); an array element becomes a `Subscript` (`[index]`).
+enum PartialEntry {
+    /// `object_member` token: `.field` with the field's name + `ident`
+    /// (printc.cc:2046-2052).
+    Member(String, int4),
+    /// `subscript` token: `[index]` for an array element (printc.cc:2062-2070).
+    Subscript(int4),
+}
+
 impl PrintC {
     /// Faithful transcription of C++ `PrintC::docFunction` (printc.cc:2790)
     /// driven over a real [`Funcdata`] + [`Architecture`]: emit the signature
@@ -4463,9 +4474,10 @@ impl PrintC {
         }
     }
 
-    /// C++ `PrintC::pushPartialSymbol` (printc.cc:2019-2141), restricted to the
-    /// STRUCT/UNION arms of the type walk (the symbol-mapped member-access render
-    /// `glob.intfield` / `val.c` / `globvar.b.bval1`).
+    /// C++ `PrintC::pushPartialSymbol` (printc.cc:2019-2141), the STRUCT / UNION /
+    /// ARRAY arms of the type walk (the symbol-mapped member-access render
+    /// `glob.intfield` / `val.c` / `globvar.b.bval1` and the array-element render
+    /// `v1.arr[i]` for a struct field that is an array).
     ///
     /// Reconciled with the kuna naming layer: the base symbol name comes from the
     /// HighVariable's `kuna_name` binding (the `pushSymbol(sym,vn,op)` stand-in,
@@ -4479,10 +4491,10 @@ impl PrintC {
     /// Returns `true` when the walk produced a genuine member token (the partial
     /// cover render fired) and `false` otherwise — on `false` the caller renders
     /// the bare symbol name, so a non-partial read stays byte-identical.  The
-    /// ARRAY arm (printc.cc:2062-2076, needs `TypeArray::getSubEntry`) and the
-    /// `allowCast` SUBPIECE-cast arm (printc.cc:2094-2105) are not reached from
-    /// this entry (`allow_cast == false`); an array Symbol is handled by the
-    /// caller's existing `name[index]` branch.
+    /// `allowCast` SUBPIECE-cast arm (printc.cc:2094-2105) is not reached from this
+    /// entry (`allow_cast == false`); a whole-array Symbol is still handled by the
+    /// caller's existing `name[index]` branch (this ARRAY arm only fires for an
+    /// array nested inside a struct field, e.g. `mypiece.arr[i]`).
     #[allow(clippy::too_many_arguments)]
     fn push_partial_symbol_ir(
         &mut self,
@@ -4499,9 +4511,10 @@ impl PrintC {
     ) -> bool {
         use crate::dtype::type_metatype;
         // PartialSymbolEntry stack (C++ `vector<PartialSymbolEntry> stack`,
-        // printc.cc:2026): each entry is a resolved member token.  We collect
-        // (field_name, field_ident) for an `object_member` token.
-        let mut stack: Vec<(String, int4)> = Vec::new();
+        // printc.cc:2026): each entry is a resolved member token — either an
+        // `object_member` (`.field`) for a struct/union field, or a `subscript`
+        // (`[index]`) for an array element (printc.cc:2062-2070).
+        let mut stack: Vec<PartialEntry> = Vec::new();
         let mut ct = Some(sym_type);
         let mut off: int8 = off_in;
         let sz: int4 = sz_in;
@@ -4530,13 +4543,29 @@ impl PrintC {
                     Ok(Some((idx, newoff))) => {
                         if let Some(f) = cur.get_field(idx) {
                             off = newoff;
-                            stack.push((f.name.clone(), f.ident));
+                            stack.push(PartialEntry::Member(f.name.clone(), f.ident));
                             ct = Some(std::rc::Rc::clone(&f.field_type));
                             succeeded = true;
                         }
                     }
                     Ok(None) => {}
                     Err(_) => {}
+                }
+            } else if meta == type_metatype::TYPE_ARRAY {
+                // C++ `TypeArray::getSubEntry` (type.cc:1430): the access maps to
+                // element `el = off / elementAlignSize`, with `newoff = off %
+                // elementAlignSize` the remaining offset INTO that element.  A
+                // request spanning more than one element returns null (no subscript).
+                if let Some(elem) = cur.get_array_base() {
+                    let elsize = elem.get_align_size().max(1);
+                    let noff = off % elsize as int8;
+                    let nel = (off / elsize as int8) as int4;
+                    if noff + sz as int8 <= elsize as int8 {
+                        off = noff;
+                        stack.push(PartialEntry::Subscript(nel));
+                        ct = Some(elem);
+                        succeeded = true;
+                    }
                 }
             } else if meta == type_metatype::TYPE_UNION {
                 // TypeUnion::findTruncation (type.cc:2613): read the cached union
@@ -4563,7 +4592,7 @@ impl PrintC {
                             // !succeeded artificial-field fallthrough below.
                         } else {
                             off = newoff;
-                            stack.push((fname, fident));
+                            stack.push(PartialEntry::Member(fname, fident));
                             ct = Some(ftype);
                             succeeded = true;
                         }
@@ -4597,12 +4626,20 @@ impl PrintC {
             return false;
         }
 
-        // Push these on the RPN stack in reverse order (printc.cc:2124-2126):
-        // pushOp(object_member) once per member, then the base symbol, then the
-        // field atoms in forward order.  The direct-recursion engine emits in push
-        // order, so: N object_member ops, base name, then N field atoms.
-        for _ in 0..stack.len() {
-            self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+        // Push the member ops in REVERSE stack order (C++ printc.cc:2124-2126:
+        // `for(i=stack.size()-1;i>=0;--i) pushOp(stack[i].token,op)`).  The
+        // outermost access (the last-resolved element) binds tightest, so e.g. for
+        // `v1.arr[i]` the stack is `[Member("arr"), Subscript(i)]` and the ops emit
+        // SUBSCRIPT then OBJECT_MEMBER, yielding `(v1.arr)[i]` not `(v1[i]).arr`.
+        for entry in stack.iter().rev() {
+            match entry {
+                PartialEntry::Member(_, _) => {
+                    self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+                }
+                PartialEntry::Subscript(_) => {
+                    self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                }
+            }
         }
         // pushSymbol(sym,vn,op) — the base name (the kuna_name stand-in).
         self.push_atom(&Atom::with_op_vn(
@@ -4612,17 +4649,31 @@ impl PrintC {
             op_key(op),
             vn_key(vn),
         ));
-        // pushAtom(Atom(field->name,fieldtoken,...,parent,field->ident,op)) per
-        // entry, in forward order (printc.cc:2128-2140).
-        for (fname, fident) in &stack {
-            self.push_atom(&Atom::field(
-                fname.clone(),
-                TagType::FieldToken,
-                crate::printlanguage::SyntaxHighlight::no_color,
-                0,
-                *fident,
-                op_key(op),
-            ));
+        // Per entry, in forward order (printc.cc:2128-2140): a field emits its name
+        // Atom (`Atom(field->name,fieldtoken,...,parent,field->ident,op)`); an array
+        // subscript emits the index as a constant-color integer literal
+        // (`push_integer(entry.offset,...)`, printc.cc:2133).
+        for entry in &stack {
+            match entry {
+                PartialEntry::Member(fname, fident) => {
+                    self.push_atom(&Atom::field(
+                        fname.clone(),
+                        TagType::FieldToken,
+                        crate::printlanguage::SyntaxHighlight::no_color,
+                        0,
+                        *fident,
+                        op_key(op),
+                    ));
+                }
+                PartialEntry::Subscript(index) => {
+                    self.push_atom(&Atom::with_op(
+                        format!("{index}"),
+                        TagType::Syntax,
+                        crate::printlanguage::SyntaxHighlight::const_color,
+                        op_key(op),
+                    ));
+                }
+            }
         }
         true
     }
