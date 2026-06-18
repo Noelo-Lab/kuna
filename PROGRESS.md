@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 509/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 512/675; +...clone-gate audit, deindirect-output-type
+
+**RuleConditionalMove + CloneBlockOps +3 → 512 (closes LOSS-074 RuleConditionalMove half).** Ported the no-op SEAM (ruleaction_7.rs:1883) + its prereqs: `CloneBlockOps::clone_expression` (funcdata_block.rs:2659, funcdata_block.cc:1043) + `op_bool_negate` (funcdata_op.rs:2153, funcdata_op.cc:560). Pulls the boolean expr out of a conditional block, collapsing the flag-chain MULTIEQUAL into BOOL_AND/BOOL_OR → downstream RuleSborrow/RuleFloatRange/RuleIgnoreNan fire. Gained Ccmp #2/#3, NaN operations #1. Gate: `[675,512]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Review `reviews/w10-conditionalmove.md`. condmove #7 (LOSS-234) + NaN tail (&&1, LOSS-074 REFINEMENT) = separate roots. [OPS: the merge landed on a detached HEAD (main tree had checked out an agent branch); caught via the pre-merge branch check, recovered by FF — verify active branch before every integrate.]
 
 **Multi-size return +2 → 509.** `op_func_ir` rendered bare "CONCAT" instead of the size-suffixed `CONCAT31`/`CONCAT22` from TypeOpPiece::getOperatorName (typeop.cc:2050); ported `func_operator_name` (printc.rs, PIECE/ZEXT/SEXT/SUBPIECE/CARRY/SCARRY/SBORROW suffixes). Gained Multi-size return #1/#2 (multiret 3/3). Gate: `[675,509]`, regressed-set EMPTY, PARITY OK. (retstruct/stackreturn blocked: heritage tryOutputStackGuard SEAM + namelocked-isolated-symbol in varmap/merge.) Ccmp blocked (LOSS-074 RuleConditionalMove). L4/L5 param-spill BLOCKED but DECISIVELY sharpened → heritage spacebase store→load forwarding TIMING (heritage.rs:1366-1380, convergent root for for-loop + stack-cluster + Chain B).
 
