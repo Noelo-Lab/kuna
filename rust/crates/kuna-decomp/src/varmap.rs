@@ -1016,6 +1016,19 @@ impl ScopeLocal {
         self.scope
     }
 
+    /// C++ `Scope::queryProperties` (`database.cc:1268`) on the local stack scope:
+    /// the Varnode boolean properties (`mapped | addrtied | typelock | ...`) of a
+    /// storage range covered by — or owned by — this scope.  Returns `0` when the
+    /// range is not in this scope's map.  This is the local-scope half of the
+    /// `localmap->queryProperties` walk `Heritage::guard` runs to mark a mapped
+    /// stack range address-tied (so its def chain is guarded across calls and
+    /// survives `ActionDeadCode`); the global-scope half is
+    /// [`ArchHandle::query_global_properties`](crate::seams::ArchHandle::query_global_properties).
+    pub fn query_properties(&self, addr: &Address, size: int4, usepoint: &Address) -> uint4 {
+        let (_, flags) = self.db.query_properties(self.scope, addr, size, usepoint);
+        flags
+    }
+
     /// Did the last `restructure` leave unreconciled overlaps (C++
     /// `overlapProblems`)?
     pub fn has_overlap_problems(&self) -> bool {

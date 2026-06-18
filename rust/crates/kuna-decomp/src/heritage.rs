@@ -1362,8 +1362,42 @@ impl Heritage {
             // wave's `ScopeLocal` and is left as a documented seam.  Local stack
             // ranges are not persistent, so `fl`'s persist bit comes only from the
             // global query here, which is faithful for the global-store cases.)
+            //
+            // NOTE (LOSS-156 gate, w10-stacklocal-typing): the local-scope half of
+            // this walk is now AVAILABLE as `fd.query_local_properties(addr,size,
+            // usepoint)` (the faithful `localmap->queryProperties` port — see
+            // `Funcdata::query_local_properties` / `ScopeLocal::query_properties`).
+            // OR-ing it into `fl` here is the FULL fix for `map addr`-mapped stack
+            // structs (it gains Partial splitting #15-19 + Wayoff array #1 by giving
+            // a mapped stack range `addrtied`, so `guard_calls` builds the INDIRECT
+            // that keeps its stores live across calls and `propagateSpacebaseRef`
+            // types it). It is held OUT here because enabling it ALSO exposes two
+            // downstream gaps that regress 4 assertions: (a) addrForced array stores
+            // do not store-cross-merge (varcross "Store cross #1/#2"), and (b) a
+            // typed stack struct's `&v1.arr1[a]` intermediate pointer is not
+            // forwarded/collapsed (dupptr "Intermediate pointers #3/#5"). Wire this
+            // OR once the store-cross-merge + pointer-forwarding gaps close.
             let usepoint = Address::new_invalid();
             let fl: uint4 = fd.get_arch().query_global_properties(addr, size, &usepoint);
+            // (kuna w10-chainb-gaps) The local-scope OR — `fl |=
+            // fd.query_local_properties(addr, size, &usepoint)` — gives +7
+            // (Partial splitting #15-19, Wayoff array #1, No-for-loop alias #3).
+            // Gap-2 (intermediate-pointer spill) is now CLOSED upstream of here
+            // by the `add_map` persist fix (database.rs: a stack local is no
+            // longer spuriously `persist`, so `guard_returns` stops materializing
+            // dead `&struct.field[idx]` spills — dupptr Intermediate pointers #3/#5
+            // pass with the OR on).  The OR stays OUT for ONE remaining gap:
+            // Gap-1, addrforced mapped-array store-cross merge (varcross "Store
+            // cross #1/#2").  That merge correctly snips in C++ because
+            // `Merge::mergeIndirect`'s cover-intersection consults
+            // `StackAffectingOps` (merge.cc:63) — the W7 set of CALL + store-guard
+            // STOREs.  In kuna `populate_affecting_ops` (funcdata_merge.rs) is a
+            // stub and the loop store `*v1=0` is not a discovered store-guard
+            // (W6 `discoverIndexedStackPointers`/`analyzeNewLoadGuards` unported),
+            // so the test sees an empty op-set, the merge succeeds, and ECX folds
+            // into `local_array[10]` (split stores instead of `v2; ...[10]=v2`).
+            // Wire this OR once W7 `StackAffectingOps` + its W6 store-guard source
+            // land.
             self.guard_calls(fd, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
             // if (fd->getArch()->highPtrPossible(addr,size)) { guardStores; guardLoads; }
