@@ -1957,7 +1957,57 @@ impl Database {
                 consume_size,
                 &entry.uselimit,
             )?;
-            // SEAM(W5): join-address piece expansion deferred (see doc above).
+            // C++ `Scope::addMap` join arm (database.cc:1161-1180): when the
+            // Symbol's address is a join, register one extra SymbolEntry per
+            // piece, each in the piece's own (e.g. stack) space, so that a later
+            // `findOverlap` over a piece location resolves to this Symbol.  The
+            // pieces carry only the precislo/precishi extra-flags (NOT `mapped`),
+            // so a Varnode that merely extracts a piece (a `SUBPIECE` off the
+            // join) inherits the Symbol via the entry rather than being painted
+            // `mapped|addrtied` by the `syncVarnodesWithSymbols` "no symbol but
+            // in scope" fallback (funcdata_varnode.cc:993-997) — which is what
+            // forced the stack-passed struct-param field read explicit
+            // (`v1 = d.field_b; return a + v1;` instead of `return a + d.field_b`).
+            if addr.is_join() {
+                let join_space = addr
+                    .get_space()
+                    .cloned()
+                    .ok_or_else(|| KunaError::lowlevel("addMap join address has no space"))?;
+                let rec = join_space.find_join(addr.get_offset())?;
+                let num = rec.num_pieces();
+                let bigendian = addr.is_big_endian();
+                let mut off: int4 = 0;
+                for j in 0..num {
+                    // Take pieces in endian order (database.cc:1169).
+                    let i = if bigendian { j } else { num - 1 - j };
+                    let vdat = rec.get_piece(i);
+                    // i==0 is most-significant: precishi; i==num-1: precislo;
+                    // middle pieces carry both (database.cc:1171-1176).
+                    let exfl = if i == 0 {
+                        varnode_flags::precishi
+                    } else if i == num - 1 {
+                        varnode_flags::precislo
+                    } else {
+                        varnode_flags::precislo | varnode_flags::precishi
+                    };
+                    let vdat_addr = vdat.get_addr();
+                    let vdat_size = vdat.size as int4;
+                    // NOTE (database.cc:1177): the mapped flag is NOT turned on
+                    // for the pieces — only the precis* extra-flags above.
+                    self.add_map_internal(
+                        scope,
+                        sym,
+                        exfl,
+                        &vdat_addr,
+                        off,
+                        vdat_size,
+                        &entry.uselimit,
+                    )?;
+                    off += vdat_size;
+                }
+                // Fall through to return the unified Symbol's entry (the `res`
+                // from the join-address add_map_internal above), per C++.
+            }
             Ok(res)
         }
     }

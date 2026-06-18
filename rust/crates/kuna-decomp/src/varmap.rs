@@ -807,6 +807,13 @@ pub struct SyncOverlap {
     pub sized_type: Option<Rc<Datatype>>,
     /// The owning Symbol id (so the naming pass can read its name).
     pub symbol_id: crate::database::SymbolId,
+    /// C++ `entry->extraflags` — the per-entry extra flags.  For a join-piece
+    /// SymbolEntry (the extra maps `Scope::addMap` registers over each piece of
+    /// a join-address Symbol, database.cc:1161-1180) these carry precislo/precishi
+    /// and NOT `mapped`; the kuna addrtied pre-tie consults this to avoid tying a
+    /// partial (SUBPIECE-extracted) piece access, matching C++ where the heritage
+    /// pre-tie only ties whole-symbol storage.
+    pub extraflags: uint4,
 }
 
 /// The smallest-containing SymbolEntry metadata `Funcdata::linkSymbol`'s
@@ -1725,7 +1732,7 @@ impl ScopeLocal {
                 .wrapping_add(entry_off);
             types.get_exact_piece(Rc::clone(cur), off, size).ok().flatten()
         });
-        Some(SyncOverlap { all_flags, entry_size, sized_type: sized, symbol_id: sym })
+        Some(SyncOverlap { all_flags, entry_size, sized_type: sized, symbol_id: sym, extraflags })
     }
 
     /// The `ActionInferTypes::buildLocaltypes` type-locked-symbol seed (C++

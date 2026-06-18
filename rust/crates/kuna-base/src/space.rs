@@ -1199,6 +1199,19 @@ impl AddrSpace {
         }
     }
 
+    /// Find the JoinRecord whose unified range starts exactly at \e offset
+    /// within \b this (join) space (C++ `AddrSpaceManager::findJoin`, reached
+    /// here through the join space's own `JoinState` rather than the C++
+    /// `glb->findJoin` manager back-pointer — mirrors how [`overlap_join`]
+    /// reaches the table).  Errors if \b this is not a join space or the offset
+    /// is unlinked.
+    pub fn find_join(&self, offset: u64) -> KunaResult<Rc<JoinRecord>> {
+        match self.join_state() {
+            Some(state) => state.borrow().find_join(offset),
+            None => Err(KunaError::lowlevel("find_join on a non-join space")),
+        }
+    }
+
     /// \brief Determine if a given point is contained in an address range in
     /// \b this address space
     ///
