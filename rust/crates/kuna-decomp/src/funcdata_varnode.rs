@@ -2868,6 +2868,12 @@ pub(crate) struct AncestorRealistic {
     /// The current trial's size (C++ `trial->getSize()`), read by the PIECE
     /// truncation logic in `enterNode`.
     trial_size: int4,
+    /// The current trial's `killedbycall` flag (C++ `trial->isKilledByCall()`),
+    /// read by the INDIRECT (non-store) branch of `enterNode`.  A register
+    /// trial whose ancestry flows THROUGH a call is "likely killedbycall" and
+    /// thus an invalid input — that path must `pop_fail`
+    /// (funcdata_varnode.cc:2086).
+    trial_killed_by_call: bool,
     /// Accumulated trial mutations (the C++ mutates `trial` in place during the
     /// walk; collected here and applied by the caller after `execute`).
     set_ind_create_formed: bool,
@@ -2882,6 +2888,7 @@ impl AncestorRealistic {
             multi_depth: 0,
             allow_failing_path: false,
             trial_size: 0,
+            trial_killed_by_call: false,
             set_ind_create_formed: false,
             set_cond_exe_effect: false,
         }
@@ -2967,11 +2974,16 @@ impl AncestorRealistic {
                     if out_retaddr {
                         return AncestorCmd::PopFail;
                     }
-                    // trial->isKilledByCall(): the caller passes the trial; the
-                    // recovery-path register trials are not killedbycall once a
-                    // model output entry matches.  Reflected via the trial flag
-                    // the caller seeds; conservatively treat as not-killed here
-                    // (SEAM: the killedbycall path needs the trial reference).
+                    // if (trial->isKilledByCall()) return pop_fail; — a register
+                    // trial whose data-flow goes THROUGH a call (this non-store
+                    // INDIRECT) is "likely killedbycall" and so an invalid input
+                    // (funcdata_varnode.cc:2086).  `ParamActive::registerTrial`
+                    // marks every non-spacebase (register) trial killedbycall, so
+                    // a register argument backtracing through a prior call's
+                    // clobber INDIRECT is rejected here.
+                    if self.trial_killed_by_call {
+                        return AncestorCmd::PopFail;
+                    }
                 }
                 self.state_stack.push(AncestorState::new(op, 0));
                 AncestorCmd::EnterNode
@@ -3201,10 +3213,12 @@ impl AncestorRealistic {
         slot: int4,
         trial_size: int4,
         trial_has_cond_exe: bool,
+        trial_killed_by_call: bool,
         allow_fail: bool,
     ) -> (bool, bool) {
         self.allow_failing_path = allow_fail;
         self.trial_size = trial_size;
+        self.trial_killed_by_call = trial_killed_by_call;
         self.marked_vn.clear();
         self.state_stack.clear();
         self.multi_depth = 0;
