@@ -1,6 +1,25 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 479/675; +...SUBPIECE-cast, ModuloAlt
+## Session (2026-06-17c) — rust-port W10: 408 → 481/675; +...ModuloAlt, clone-gate audit
+
+**clone-gate audit +2 → 481.** Systematic sweep of the ModuloAlt bug class: 17 `"analysis"`-grouped
+rules in ruleaction_2.rs whose clone-gate tested the placeholder name (not the group) → DROPPED from
+every ActionPool, never fired. Fixed all 17 (`contains("analysis")||contains("<placeholder>")`).
+Gained Bitfields #2, Signed byte #4 (other 15 gain-or-neutral fidelity). Gate: `[675,481]`,
+regressed-set EMPTY, B0 byte-equal, cargo --no-fail-fast 0-fail, PARITY OK. Review
+`reviews/w10-clonegate-audit.md`. ruleaction_5.rs still needs the same audit.
+
+**[OPS NOTE — branch-pointer recovery]** Mid-session, after the LOSS-230 commit (65326a2), the
+`rust-port` BRANCH pointer stopped advancing — ~24 commits of work (deindirect→ModuloAlt) silently
+accumulated on `rport/w10-subpiece-cast` (HEAD was on it unknowingly). NO WORK LOST: b54ffbc is a
+clean linear descendant of 65326a2; `git reset --hard b54ffbc` on rust-port fast-forwarded the
+pointer to recover all 24 commits. Also learned: `cargo test --workspace` (no --no-fail-fast) ABORTS
+early on a panicking binary, so the awk-sum fence could under-report (showed 3680/0 while a binary
+aborted); USE `--no-fail-fast` for the fence. The mixfloatint_multislot fence test is order/global-
+state dependent (passes in full suite, fails in isolation) — a test-hygiene quirk, not a regression.
+Chain B (+1 StackAffectingOps) was REVERTED — it failed mixfloatint in the full-suite fence; substrate
+preserved on `rport/w10-chainb-finish` for refinement. Datatest parity (the authoritative measure)
+was solid 479→481 throughout.
 
 **ModuloAlt — RuleDoubleArithShift clone-gate fix +3 → 479.** The rule was registered under group
 `"analysis"` but its clone gate tested the placeholder name `"doublearithshift"` → dropped from
