@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 501/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 507/675; +...clone-gate audit, deindirect-output-type
+
+**Two dimension — ActionMarkImplied alias guard +6 → 507.** `check_implied_cover` (coreaction_cleanup.rs) was stubbed `{true}` (always inline); ported `is_possible_alias`/`is_possible_alias_step` + the LOAD/CALL-crossing arms (coreaction.cc:3479/3382-3470) so a LOAD crossing an aliasing STORE/CALL factors into a `v1` temp instead of inlining twice. Gained Two dimension #1/#2 + Partial splitting #8-11 (one alias-guard root). Gate: `[675,507]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Review `reviews/w10-two-dimension.md`.
 
 **func_link_output LOCKED + heritage normalize_write_size CALL +11 → 501 (resolves LOSS-236).** Two-wave chain: (1) func_link_output LOCKED-output arm (coreaction_protos.rs:736, coreaction.cc:1582-1613: new_varnode_out + assumed_output_extension) = committed-prototype callee output recovery, +7/-5 substrate; (2) heritage normalize_write_size CALL most/least-sig arms (heritage.rs:2069/2100, heritage.cc:435-459, reused new_indirect_creation) = removes the float-return panic. Gained Access packed fields #1-4, Conditional Subpiece #4-6, Mixed float/int #7-10. Gate: `[675,501]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, switch 16/9, PARITY OK. Review `reviews/w10-funclink-heritage-callwrite.md`. CROSSED 500.
 
