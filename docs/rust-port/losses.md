@@ -3424,3 +3424,39 @@ merges into the 8-byte funcptr → printer CONCATs `(v1,a0)`.
   in add_param_symbol. Until (1) lands, (2) regresses Inlining. Inject Override #1 ALSO needs the
   indirect-call override-proto input-slot printer fix (the CONCAT `(v1,a0)`), independent of the INDIRECT
   root. This likely also gates Partial Merge #4/#5 + Stack Return #4/#5 (over-tie residuals). [[kuna-rust-port]]
+
+## LOSS-244 CORRECTION + LOSS-245/246/247 (CA/CB/CC waves, 2026-06-18) — Inject Override #1 was a PRINTER bug; the remaining 11 sharpened
+
+- **Inject Override #1 RESOLVED (+1, NOT the over-tie):** the IR was already byte-identical to C++ (dead
+  ECX/EDX INDIRECTs DO collapse in rust). It was a pure printer bug: `op_call_ir` CALLIND arm (printc.rs:4028)
+  pushed commas first + callee last, so the unary dereference mis-associated → `(*(v1,a0))(a1)`. Fix: push
+  callee in0 FIRST, then count-1 commas, then args → `(*v1)(a0,a1)`. LOSS-244's claim that Inject Override #1
+  needed the un-tie/coverage-merge was WRONG.
+- **LOSS-245 — Partial Merge #4/#5 + Stack Return #4/#5 (partial-field coverage grouping, NOT the register
+  un-tie):** these are HighVariable coverage-SPLITS where a named symbol-mapped slot is broken into anonymous
+  v1/v2/v3. Stack Return #4/#5 are over the STACK slot `local` (`map addr s…fff0 int8 local`) — a register-param
+  un-tie cannot be their cause; `local`'s int4/int2 sub-accesses (`(int4)local`, `local._2_2_`) split into v2/v3
+  instead of grouping as partials of the one tied int8 `local`. NEXT-LOCUS: `Merge::mergeAddrTied`'s `groupWith`
+  partial arm (merge.rs:1633 / bank_group_with) + name-binding via SymbolEntry::in_use (database.rs:364) +
+  find_addr/find_container (database.rs:2349/2374) — partial-field coverage grouping + Symbol-name absorption for
+  differently-sized Varnodes at one symbol-mapped address. The register-param un-tie (LOSS-244 fix 2) is a RED
+  HERRING for these (it only perturbs the register Inlining case, a -3 regression). Best remaining convergent
+  target (4 assertions).
+- **LOSS-246 — Long double #11 (by-value-struct stack store-load forwarding before refinement):** on the 2nd
+  heritage pass rust's refine_input (heritage.rs:3279) fragments the whole 32-byte struct input `s0x18:0x20(i)`
+  into addr-tied lanes 0/8/0x10/0x14 — the cut at 8 BISECTS the float10 → irreversible CONCAT28. C++ keeps the
+  input whole + extracts via single SUB3210 because its store-load forwarding collapses the spill+reload before
+  refinement sees the 8-byte boundary. RULED OUT: RuleDoubleLoad (needs CPUI_LOAD pieces; #11's are spacebase
+  SUBPIECEs — #5/#6 are heap LOADs, #11 is stack), RuleDoubleIn (needs symmetric N+N; float10 is 8+2),
+  ActionParamDouble (wrong direction). NEXT-LOCUS: heritage stack store-load value forwarding collapse the
+  two-8-byte-spill→10-byte-readback into one 10-byte access of the struct input BEFORE refinement. Broad.
+- **LOSS-247 — Stack string #9 + Gp Test #2 (heritage fixpoint/forwarding):** Stack string #9 is a fixpoint
+  RACE — RuleStoreVarnode makes the addr-tied `s..d1:1 = COPY(DIL)` byte home + ActionRestructureVarnode forms
+  `CONCAT11(stack:d1,d0:1)` (the cpp form) on pass 1, but next mainloop oppool1's RulePropagateCopy
+  (ruleaction_3.rs:1893, byte-faithful) folds the addr-tied stack-store COPY into its non-marker PIECE consumer,
+  destroying the d1 refinement boundary; cpp self-sustains the d1 home. NEXT = type-driven byte-refinement
+  re-split (build_refinement heritage.rs:3163 is extent-driven, never type-driven). Gp Test #2: cpp has NO
+  gp-slot INDIRECT (constant gp store→reload forwarded before heritage); rust's guardCalls UNKNOWN_EFFECT arm
+  (heritage.rs:1560) creates it, keeping the slot live → coarse local range tree markUnaliased can't unalias
+  (the LOSS-240 AliasChecker framing is a downstream symptom). NEXT = constant-stack-store→reload forwarding
+  at/before first heritage. [[kuna-rust-port]]
