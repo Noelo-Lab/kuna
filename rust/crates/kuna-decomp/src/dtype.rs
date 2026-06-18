@@ -5280,9 +5280,27 @@ impl TypeFactoryImpl {
         sz: int4,
     ) -> KunaResult<Rc<Datatype>> {
         let strip = self.get_base_impl(sz, type_metatype::TYPE_UNKNOWN)?;
-        // TypePartialStruct(contain,off,sz,strip).
+        // TypePartialStruct(contain,off,sz,strip) (type.cc:2759-2780).
+        // If the container is itself a partial struct, unwrap to the real parent
+        // and fold the offset (`contain = partial->getParent(); off += ...`).
+        let (contain, off) = if contain.get_metatype() == type_metatype::TYPE_PARTIALSTRUCT {
+            let parent = contain.get_partial_base().unwrap_or_else(|| Rc::clone(&contain));
+            let poff = contain.get_partial_offset().unwrap_or(0);
+            (parent, off + poff)
+        } else {
+            (contain, off)
+        };
         let mut tps = Datatype::new_with_align(sz, -1, type_metatype::TYPE_PARTIALSTRUCT);
         tps.flags |= contain.inherit_for_partial();
+        tps.flags |= flags::has_stripped;
+        // C++ type.cc:2776-2779: inherit the `has_bitfields` flag when the parent
+        // struct contains bitfields that overlap the [offset, offset+sz) window.
+        // Without this a 1-byte stack-struct member access (the bitfield byte of a
+        // typed stack `struct`) reports `hasBitfields()==false`, so the bitfield
+        // insert/extract rules (RuleBitFieldOut/In) never fire on stack locals.
+        if contain.has_bitfields() && contain.has_bit_fields_in_range(off, sz) {
+            tps.flags |= flags::has_bitfields;
+        }
         tps.kind = DatatypeKind::PartialStruct { stripped: strip, container: contain, offset: off };
         self.find_add(tps)
     }
