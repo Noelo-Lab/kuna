@@ -2899,3 +2899,32 @@ HERITAGE-SPACEBASE-FORWARDING-TIMING divergence:
   that lets rust reach blockstructure on iteration 1 before re-heritage forwards the spill. This is THE
   dominant lever; it has absorbed 5+ prior +0 substrate waves (b120faf→604408a→04cd2a2). Needs a
   dedicated HERITAGE wave (not varmap/spacebase/stackptr leaves), heritage.rs free. [[kuna-rust-port]]
+
+## LOSS-235/156 SUPERSEDED — for-loop/stack convergent root is S7 BLOCK-STRUCTURE (structureReset + whiledo arena), NOT heritage
+
+The heritage-spacebase wave FALSIFIED the "heritage spacebase forwarding timing" diagnosis with
+break-driven C++ oracle p-code (`break start universal:fullloop:mainloop:blockstructure`):
+- C++ is ALSO DIRTY at the first ActionBlockStructure — BB1 has the IDENTICAL RSP-spill→LOAD chain
+  (`u=RSP-0x1c; u4=*(ram,u); u=EBX<u4; CBRANCH`). BOTH engines forward the spill in oppool2/
+  RuleLoadVarnode AFTER the first structure build (rust ActionHeritage probe: nload=5 pass1, nload=0
+  pass2). heritage.rs:1366-1380 is NOT the lever.
+- REAL ROOT (two coupled S7 fixes, all in funcdata_block.rs/block.rs/blockaction.rs/coreaction_early.rs):
+  1. **Structure REBUILD trigger.** rust builds the structure graph ONCE (`sblocks_get_size()!=0` guard
+     blockaction.rs:3380 blocks rebuild) → the dirty `overflow_syntax` set on that single build
+     (is_complex→new_while_do→setOverflowSyntax, blockaction.rs:2326/2336) persists → for-loop gate
+     `whiledo_final_transform` bails on `hasOverflowSyntax()` (funcdata_block.rs:273). C++ produces a
+     `for` DESPITE building dirty → it must REBUILD CLEAN after the spill forwards, via
+     `Funcdata::structureReset()→sblocks.clear()` (funcdata_block.cc:723/747) triggered by
+     `removeUnreachableBlocks`/`removeDoNothingBlock`/`removeBranch`/`spliceBlockBasic`. The deletion
+     half of `removeUnreachableBlocks` is a SEAM in rust `ActionUnreachable::apply` (coreaction_early.rs,
+     returns 0). The rebuild must happen BEFORE the cleanup-stage `ActionStructureTransform(allow_op_moves
+     =true)` (universalaction.rs:672) — the only pass that may MOVE the iterator/init ops.
+  2. **whiledo arena-correctness on a rebuilt while-do.** Confirmed by experiment (env-gated
+     structure_reset flips `while(true){if break}` → `while(v1<max){}` — overflow cleared — but STILL
+     renders `while` not `for`): `BlockGraph::struct_last_op` (block.rs:1474) has NO `BlockKind::Copy`
+     arm (C++ `BlockCopy::lastOp{return copy->lastOp();}` block.hh:546) → body check fails; and head/tail/
+     `find_loop_variable`/`find_initializer` mix sblocks-Copy ids with bblocks ids (front-leaf resolution
+     yields sblocks ids where code reads `bblocks_ref().block(head)`). The for-loop has NEVER formed
+     anywhere in the suite → this rebuilt-structure body resolution is unexercised/unfinished.
+- gates: for-loop cluster ~8 + stack-struct-typing ~66 (Bitfields/MIPS/Partial splitting/Stack string/
+  Piece/Stack Return-spill). The DEEPEST convergent root, now correctly localized to S7. [[kuna-rust-port]]
