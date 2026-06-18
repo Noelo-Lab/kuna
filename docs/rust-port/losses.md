@@ -3152,3 +3152,26 @@ heritage.cc:1705/1734/1891 — boundaries come ONLY from actual varnode start/en
 - restoration: port the C++ decl-comment emission in printc.rs `emit_local_var_decls`/`push_symbol`;
   re-tighten the test's byte-identical compare to full identity. Low priority (cosmetic, 0 datatests).
   [[kuna-rust-port]]
+
+## LOSS-239 — Stack spill (5) JOIN substrate landed (+0 enabler); blocked on the `dvar` local-naming seam
+
+- kind: deferred (substrate landed, naming seam remains)
+- what: `stackspill.xml` #1-#5 need a MIPS struct-by-value arg (`foo d`, 8B) that the cspec
+  `<join align="true"/>` rule splits across register a3 (0x1c) + stack slot 0x10. Two W4 SEAM stubs
+  blocked the join; both now ported FAITHFULLY (IR byte-matches the C++ oracle, regression-free):
+  (1) `ParameterPieces::assignAddressFromPieces` (fspec.cc:2196) → `fspec.rs:1591` (mergeSequence +
+  find_add_join; callers modelrules.rs:1232/1285/1399) — `spill` recovers the full
+  `(int4 a,int4 b,int4 c,foo d)` proto + `j{0x10,0x1c}:8(i)`/`SUB84` input join; (2)
+  `ActionFuncLink::funcLinkInput` JOIN arm (coreaction.cc:1524-1550) → `coreaction_protos.rs:731`
+  (opStackLoad + stripJoinPiece + CPUI_PIECE → newUniqueOut) — `callspill`'s call builds the exact
+  `u…:8 = CONCAT44(...)` unique-space arg.
+- still +0: the struct local renders `v1` not `dvar` (#2/#3/#4/#5) — RULED OUT
+  `ActionNameVars::lookForFuncParamNames`/`makeRec` (coreaction.cc:2913-2994): it's gated on
+  `param->isNameLocked()`, but neither `parse line`→setPieces→updateAllTypes nor
+  assignParameterStorage/ModelRule set `ParameterPieces::namelock` (all flags=0), so makeRec does NOT
+  fire in the C++ oracle either (ported it, recmap empty, reverted). The real `dvar` source is a
+  different, still-unidentified naming-propagation path — start the next wave from how C++ names the
+  unique-space CONCAT-root local `dvar`. #1 is independent (struct-member-read inlining:
+  `v1 = d.field_b; return a + v1;` vs oracle inlined `return a + d.field_b;`).
+- recorded by the integrator after merging the Stack-spill substrate (commit on rust-port, 2026-06-18).
+  [[kuna-rust-port]]
