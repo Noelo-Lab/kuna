@@ -4674,12 +4674,21 @@ impl PrintC {
                     ));
                 }
                 PartialEntry::Subscript(index) => {
-                    self.push_atom(&Atom::with_op(
-                        format!("{index}"),
-                        TagType::Syntax,
-                        crate::printlanguage::SyntaxHighlight::const_color,
-                        op_key(op),
-                    ));
+                    // C++ `push_integer(entry.offset, entry.size, (entry.offset < 0),
+                    // syntax, 0, op, 0)` (printc.cc:2132): an array-subscript entry
+                    // has `entry.size == 0`, so the index renders through the integer
+                    // formatter — the `val<=10 -> dec` / `mostNaturalBase` hex/dec
+                    // rule, NOT an unconditional decimal.  (Previously emitted
+                    // `format!("{index}")`, which forced decimal and lost the oracle's
+                    // `arr[0xb]` hex rendering for an index whose natural base is 16.)
+                    let sign = *index < 0;
+                    self.push_constant_ir_fmt_sign(
+                        *index as uintb,
+                        0,
+                        op,
+                        display_format::NONE,
+                        sign,
+                    );
                 }
             }
         }
@@ -4766,12 +4775,19 @@ impl PrintC {
                                     op_key(op),
                                     vn_key(vn),
                                 ));
-                                self.push_atom(&Atom::with_op(
-                                    format!("{index}"),
-                                    TagType::Syntax,
-                                    crate::printlanguage::SyntaxHighlight::const_color,
-                                    op_key(op),
-                                ));
+                                // C++ `pushPartialSymbol` ARRAY arm: the subscript
+                                // index renders via `push_integer(el, 0, (el < 0),
+                                // syntax, 0, op, 0)` (printc.cc:2132) — the
+                                // `val<=10 -> dec` / `mostNaturalBase` hex/dec rule,
+                                // not an unconditional decimal.
+                                let sign = index < 0;
+                                self.push_constant_ir_fmt_sign(
+                                    index as uintb,
+                                    0,
+                                    op,
+                                    display_format::NONE,
+                                    sign,
+                                );
                                 return;
                             }
                         }
@@ -5039,12 +5055,21 @@ impl PrintC {
                                     op_key(op),
                                     vn_key(vn),
                                 ));
-                                self.push_atom(&Atom::with_op(
-                                    format!("{index}"),
-                                    TagType::Syntax,
-                                    crate::printlanguage::SyntaxHighlight::const_color,
-                                    op_key(op),
-                                ));
+                                // C++ `pushPartialSymbol` ARRAY arm renders the index
+                                // via `push_integer(el, 0, (el < 0), syntax, 0, op, 0)`
+                                // (printc.cc:2132), so the subscript follows the
+                                // `val<=10 -> dec` / `mostNaturalBase` hex/dec rule —
+                                // not an unconditional decimal.  Without this an index
+                                // whose natural base is 16 (e.g. `arr[0xb]`) lost the
+                                // oracle's hex rendering.
+                                let sign = index < 0;
+                                self.push_constant_ir_fmt_sign(
+                                    index as uintb,
+                                    0,
+                                    op,
+                                    display_format::NONE,
+                                    sign,
+                                );
                                 return;
                             }
                         }
