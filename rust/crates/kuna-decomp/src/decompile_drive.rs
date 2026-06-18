@@ -615,6 +615,7 @@ pub fn decompile_func_full_with_override(
         pending_proto,
         flow_overrides,
         &[],
+        &[],
     )
 }
 
@@ -633,6 +634,7 @@ pub fn decompile_func_full_with_override_dyn(
     pending_proto: Option<&crate::fspec::PrototypePieces>,
     flow_overrides: &[(Address, kuna_base::types::uint4)],
     proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
+    mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
 ) -> KunaResult<Funcdata> {
     let mut fd =
         build_and_follow_flow_with_override_and_protos(arch, name, funcaddr, size, flow_overrides, proto_overrides)?;
@@ -642,6 +644,11 @@ pub fn decompile_func_full_with_override_dyn(
     if let Some(pieces) = pending_proto {
         fd.apply_locked_prototype(pieces)?;
     }
+    // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
+    // when the IR is rebuilt, like `pending_proto`/`mapped_symbols`).  This makes
+    // the rebuilt proto input-locked so `ActionPrototypeTypes` forces the typed
+    // input Varnode (C++ `IfcMapParam` writes straight onto the live FuncProto).
+    fd.apply_mapped_params(mapped_params);
     // Re-seed the console-mapped symbols (lost when the IR is rebuilt).
     fd.seed_mapped_symbols(mapped_symbols);
     // Re-seed the usepoint-scoped console symbols (the register-storage

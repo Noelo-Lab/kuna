@@ -581,6 +581,36 @@ impl Funcdata {
         Ok(())
     }
 
+    /// Re-apply a console `map param <i> <addr> <typedecl>` storage lock to the
+    /// (rebuilt) prototype.
+    ///
+    /// The C++ console (`IfcMapParam::execute`, ifacedecomp.cc:613) writes the
+    /// locked input straight onto the queried Funcdata's live `FuncProto` via
+    /// `setParam` (`store->setInput`).  In kuna the `decompile` command rebuilds
+    /// the Funcdata from scratch, discarding that console-set store, so the lock
+    /// must be re-seeded here on the fresh prototype — the same re-seed model as
+    /// [`Self::apply_locked_prototype`] / [`Self::seed_mapped_symbols`].  Each
+    /// `(i, name, piece)` carries the parsed `ParameterPieces` (typelock|namelock
+    /// already set by the directive), so the rebuilt proto becomes input-locked
+    /// and `ActionPrototypeTypes` forces the typed input Varnode.
+    pub fn apply_mapped_params(
+        &mut self,
+        params: &[(int4, String, crate::fspec::ParameterPieces)],
+    ) {
+        if params.is_empty() {
+            return;
+        }
+        let void_type =
+            Rc::new(crate::dtype::Datatype::new(0, crate::dtype::type_metatype::TYPE_VOID));
+        // C++ `getFuncProto().setParam` relies on the store the Funcdata's
+        // `setScope` attached at construction; the rebuilt proto may have no store
+        // yet, so attach the internal store first (as `IfcMapParam` does).
+        self.funcp.attach_internal_store(void_type);
+        for (i, name, piece) in params {
+            self.funcp.set_param(*i, name, piece);
+        }
+    }
+
     /// The active return-value recovery state, or `None` if output recovery is
     /// not in progress (C++ `Funcdata::getActiveOutput`).
     ///
