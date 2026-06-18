@@ -1374,6 +1374,16 @@ impl ScopeLocal {
         self.db.scope_space_symbol_specs(self.scope, idx)
     }
 
+    /// The usepoint-scoped Symbol specs in this scope (across all spaces) — the
+    /// register-storage locals a `type varnode %REG(pc) <type> <name>` directive
+    /// creates, whose `SymbolEntry::inUse` is restricted to a code address range.
+    /// Carried (WITH the use address) across the kuna console's IR rebuild so the
+    /// rebuilt-IR `linkSymbol` query still binds them at the read they scope
+    /// (see [`crate::database::Database::scope_usepoint_symbol_specs`]).
+    pub fn usepoint_symbol_specs(&self) -> Vec<(String, Rc<Datatype>, Address, uint4, Address)> {
+        self.db.scope_usepoint_symbol_specs(self.scope)
+    }
+
     /// The `(start, type, type_locked)` hints for every Symbol mapped into this
     /// scope's space, in EntryMap list order (C++ `MapState::gatherSymbols`).
     pub fn gather_symbol_hints(&self) -> Vec<(uintb, Rc<Datatype>, bool)> {
@@ -1496,9 +1506,23 @@ impl ScopeLocal {
     /// Returns `None` when no Symbol *contains* the base byte (then `linkSymbol`'s
     /// `else` arm creates a fresh local Symbol — the angr `vN` path the caller's
     /// `resolve_default_name`/`vN` tail already implements).
-    pub fn query_container_for_link(&self, addr: &Address) -> Option<LinkEntryInfo> {
-        // C++ queryProperties(addr, 1, usepoint=Address()) -> findContainer.
-        let eref = self.db.find_container(self.scope, addr, 1, &Address::default())?;
+    pub fn query_container_for_link(
+        &self,
+        addr: &Address,
+        usepoint: &Address,
+    ) -> Option<LinkEntryInfo> {
+        // C++ `Funcdata::linkSymbol` (`funcdata_varnode.cc:1190`):
+        //   queryProperties(vn->getAddr(), 1, vn->getUsePoint(*this), fl) -> findContainer.
+        // The `usepoint` is the Varnode's use address (def-op address if written,
+        // else `fd.getAddress()-1`).  `findContainer` consults `SymbolEntry::inUse`
+        // (`database.cc:115`): an addr-tied / empty-`uselimit` Symbol is in use at
+        // every code address (so its container hit is usepoint-independent — passing
+        // an invalid usepoint or the real one is equivalent), but a register-storage
+        // local with a non-empty `uselimit` range (e.g. the `type varnode %EAX(pc)`
+        // directive's usepoint-scoped Symbol) only matches when the usepoint falls in
+        // its range.  Threading the real usepoint here is what lets such a Symbol bind
+        // at the register read it is scoped to (the `tmp` retstruct return Symbol).
+        let eref = self.db.find_container(self.scope, addr, 1, usepoint)?;
         let entry = self.db.entry(self.scope, eref);
         let sym = entry.symbol;
         let entry_addr = entry.get_addr().clone();

@@ -1484,9 +1484,9 @@ decomp_command!(
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         // Read the per-function values + take the program out so the engine work
         // borrows neither `status` nor `dcp` while the console output is written.
-        let (name, has_no_code, proc_started, entry, size, mapped_symbols, dynamic_symbols, pending_proto, all_pending_protos, mut prog) = {
+        let (name, has_no_code, proc_started, entry, size, mapped_symbols, usepoint_symbols, dynamic_symbols, pending_proto, all_pending_protos, mut prog) = {
             let dcp = dcp_mut(status)?;
-            let (name, has_no_code, proc_started, entry, size, mapped_symbols, dynamic_symbols) = match &dcp.fd {
+            let (name, has_no_code, proc_started, entry, size, mapped_symbols, usepoint_symbols, dynamic_symbols) = match &dcp.fd {
                 None => return Err(IfaceError::execution("No function selected")),
                 Some(fd) => (
                     fd.get_name().to_string(),
@@ -1497,6 +1497,10 @@ decomp_command!(
                     // The console-mapped `map addr` symbols (carried across the
                     // IR rebuild below, which discards the current Funcdata).
                     fd.mapped_symbol_specs(),
+                    // The console-added usepoint-scoped `type varnode %REG(pc)`
+                    // symbols (e.g. retstruct's `tmp`), carried WITH their use
+                    // address so `linkSymbol`'s usepoint query still binds them.
+                    fd.usepoint_symbol_specs(),
                     // The console-added `map hash` dynamic symbols (likewise carried
                     // across so `ActionDynamicSymbols` can name the matched temps).
                     fd.dynamic_symbol_specs(),
@@ -1515,7 +1519,7 @@ decomp_command!(
             match dcp.conf.take() {
                 None => return Err(IfaceError::execution("No load image present")),
                 Some(prog) => {
-                    (name, has_no_code, proc_started, entry, size, mapped_symbols, dynamic_symbols, pending_proto, all_pending_protos, prog)
+                    (name, has_no_code, proc_started, entry, size, mapped_symbols, usepoint_symbols, dynamic_symbols, pending_proto, all_pending_protos, prog)
                 }
             }
         };
@@ -1557,6 +1561,7 @@ decomp_command!(
             entry,
             size,
             &mapped_symbols,
+            &usepoint_symbols,
             &dynamic_symbols,
             pending_proto.as_ref(),
             &flow_overrides,

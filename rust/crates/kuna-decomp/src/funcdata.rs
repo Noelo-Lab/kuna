@@ -907,6 +907,19 @@ impl Funcdata {
         self.localmap.as_ref().map(|lm| lm.mapped_symbol_specs()).unwrap_or_default()
     }
 
+    /// The usepoint-scoped console Symbol specs in this function's local scope (the
+    /// register-storage `type varnode %REG(pc) <type> <name>` symbols), each paired
+    /// with its use address.  Empty when there is no local scope.  Carried across
+    /// the kuna console's IR rebuild on `decompile` (the register `tmp` retstruct
+    /// return Symbol) — the usepoint-aware counterpart of
+    /// [`mapped_symbol_specs`](Self::mapped_symbol_specs).
+    #[allow(clippy::type_complexity)]
+    pub fn usepoint_symbol_specs(
+        &self,
+    ) -> Vec<(String, std::rc::Rc<crate::dtype::Datatype>, Address, uint4, Address)> {
+        self.localmap.as_ref().map(|lm| lm.usepoint_symbol_specs()).unwrap_or_default()
+    }
+
     /// Snapshot the console-added dynamic (`map hash` / `map convert`) symbols of
     /// this function's local scope as re-seed specs — the dynamic counterpart of
     /// [`mapped_symbol_specs`](Self::mapped_symbol_specs).  Each
@@ -977,6 +990,29 @@ impl Funcdata {
                 if let Ok(sym) = lm.add_symbol(name, std::rc::Rc::clone(ct), addr, &invalid) {
                     // Re-apply the locks the console set (namelock|typelock and any
                     // inherited global property bits carried in `flags`).
+                    let lock = flags & (varnode_flags::namelock | varnode_flags::typelock);
+                    lm.set_attribute(sym, lock);
+                }
+            }
+        }
+    }
+
+    /// Re-create the given usepoint-scoped console Symbols (the register-storage
+    /// `type varnode %REG(pc)` symbols) in this function's local scope, mapping each
+    /// at its recorded **use address** so its `SymbolEntry::uselimit` is restored.
+    /// The usepoint-aware counterpart of
+    /// [`seed_mapped_symbols`](Self::seed_mapped_symbols): the kuna console rebuilds
+    /// the `Funcdata` on `decompile` (C++ reuses the same `fd`), and unlike the
+    /// addr-tied `map addr` symbols these would be lost unless re-mapped with their
+    /// usepoint (an invalid usepoint would make `inUse` false at every read).
+    pub fn seed_usepoint_symbols(
+        &mut self,
+        specs: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, uint4, Address)],
+    ) {
+        use crate::varnode::varnode_flags;
+        if let Some(lm) = self.localmap.as_mut() {
+            for (name, ct, addr, flags, usepoint) in specs {
+                if let Ok(sym) = lm.add_symbol(name, std::rc::Rc::clone(ct), addr, usepoint) {
                     let lock = flags & (varnode_flags::namelock | varnode_flags::typelock);
                     lm.set_attribute(sym, lock);
                 }
@@ -1425,8 +1461,9 @@ impl Funcdata {
     /// `queryProperties` look-up.
     ///
     /// Consumed by [`Funcdata::set_varnode_properties`] as the `usepoint` of the
-    /// global `queryProperties` look-up.
-    fn vn_use_point(&self, vn: VarnodeId) -> Address {
+    /// global `queryProperties` look-up, and by `linkSymbol`'s
+    /// `query_container_for_link` (the local-scope usepoint-scoped Symbol query).
+    pub(crate) fn vn_use_point(&self, vn: VarnodeId) -> Address {
         let v = self.vbank().get(vn).expect("vn_use_point: stale vn");
         if v.is_written() {
             if let Some(op) = v.get_def() {
