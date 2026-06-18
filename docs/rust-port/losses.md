@@ -3132,3 +3132,23 @@ heritage.cc:1705/1734/1891 — boundaries come ONLY from actual varnode start/en
   (cpp passes all incl. #5/#6/#11), so any divergence is a `decompile` vs `decomp_test_dbg` harness-setup
   nuance (the XML script), NOT cpp being an unfaithful oracle. Verify against `decomp_test_dbg` when
   taking this up. [[kuna-rust-port]]
+
+## LOSS-238 — printc omits the `// name` declaration-line comment (decl-comment gap, faithfulness nit)
+
+- kind: behavior-divergence (cosmetic, no datatest assertion affected)
+- what: for some recovered locals the C++ oracle emits a trailing declaration-line comment of the
+  symbol's storage/secondary name — e.g. `int4 a_simple; // tmp` in `partialmerge.xml::readpartial`
+  — where rust currently renders `int4 a_simple;` (no comment). The structural code is byte-identical.
+- surface: NO datatest assertion (the 675) checks this — confirmed by the regressed-EMPTY datatest
+  diff across the Immediate-Conditional wave that exposed it. Only the internal cargo test
+  `partialmerge_3_forwarding_alias_storage_stays_tied` (verify_w10_f0flag_v2_untie.rs) pinned full
+  byte-identity; that assertion was narrowed to strip trailing `// ...` decl-comments before the
+  structural compare (the meaningful invariants — no forbidden `return glob1.a + 10;` collapse,
+  `a_simple` stays explicit — remain pinned).
+- root: the declaration-comment emission in C++ `PrintC::emitVarDecls`/`pushSymbol` (the symbol's
+  storage-name/secondary-name decl comment) is not reproduced in rust printc. Pre-existing; NOT
+  introduced by the Immediate-Conditional (LOSS-234) wave — that wave correctly removed the readpartial
+  over-tie so the structure now MATCHES the oracle, which is what newly exposed the decl-comment gap.
+- restoration: port the C++ decl-comment emission in printc.rs `emit_local_var_decls`/`push_symbol`;
+  re-tighten the test's byte-identical compare to full identity. Low priority (cosmetic, 0 datatests).
+  [[kuna-rust-port]]
