@@ -40,7 +40,10 @@
 //!   load-bearing part for these rules and the action engine's per-op dispatch —
 //!   is correct; the cached flag bits are filled when W6 lands.  // SEAM(W6)
 
+use std::rc::Rc;
+
 use kuna_base::address::{calc_mask, leastsigbit_set, pcode_left, pcode_right};
+use kuna_base::error::KunaResult;
 use kuna_base::types::{int4, uintb, Wrap};
 use kuna_num::opcodes::OpCode;
 
@@ -1607,6 +1610,213 @@ impl RulePullsubMulti {
         // return false;
         false
     }
+
+    /// Build a SUBPIECE of the given base Varnode near its definition (C++
+    /// `RulePullsubMulti::buildSubpiece`, `ruleaction.cc:777`).
+    pub fn build_subpiece(
+        data: &mut Funcdata,
+        basevn: VarnodeId,
+        outsize: u32,
+        shift: u32,
+    ) -> KunaResult<VarnodeId> {
+        // Address newaddr; PcodeOp *new_op; Varnode *outvn;
+        let basev = data.vbank().get(basevn).expect("build_subpiece: stale basevn");
+        let base_is_input = basev.is_input();
+        let base_is_written = basev.is_written();
+        let base_addr = basev.get_addr().clone();
+        let base_size = basev.get_size();
+        let base_space = Rc::clone(basev.get_space());
+        // if (basevn->isInput()) newaddr = bb0->getStart(); else newaddr = def->getAddr();
+        let newaddr: kuna_base::address::Address = if base_is_input {
+            let bb0 = data.bblocks_get_block(0);
+            data.bblocks_block_start(bb0)
+        } else {
+            let def = basev.get_def().expect("build_subpiece: undefined pullsub");
+            data.obank().get(def).expect("build_subpiece: stale def").get_addr().clone()
+        };
+
+        // Compute the truncated-piece address (smalladdr1) and the usetmp flag.
+        let mut smalladdr1: Option<kuna_base::address::Address> = None;
+        let mut usetmp = false;
+        if base_addr.is_join() {
+            // C++: usetmp=true; joinrec = glb->findJoin(basevn->getOffset()); ...
+            usetmp = true;
+            let joinrec = data
+                .get_arch()
+                .manage()
+                .find_join(base_addr.get_offset())
+                .expect("build_subpiece: findJoin");
+            if joinrec.num_pieces() > 1 {
+                let mut skipleft = shift;
+                // Move from least significant to most (i from numPieces-1 down to 0).
+                let mut i = joinrec.num_pieces() - 1;
+                loop {
+                    let vdata = joinrec.get_piece(i);
+                    let vsize = vdata.size;
+                    if skipleft >= vsize {
+                        skipleft -= vsize;
+                    } else {
+                        if skipleft + outsize > vsize {
+                            break;
+                        }
+                        let vaddr = vdata.get_addr();
+                        let vbe = vdata
+                            .space
+                            .as_ref()
+                            .map(|s| s.is_big_endian())
+                            .unwrap_or(false);
+                        if vbe {
+                            smalladdr1 = Some(&vaddr + (vsize - (outsize + skipleft)) as i64);
+                        } else {
+                            smalladdr1 = Some(&vaddr + skipleft as i64);
+                        }
+                        usetmp = false;
+                        break;
+                    }
+                    if i == 0 {
+                        break;
+                    }
+                    i -= 1;
+                }
+            }
+        } else if !base_space.is_big_endian() {
+            smalladdr1 = Some(&base_addr + shift as i64);
+        } else {
+            smalladdr1 = Some(&base_addr + (base_size as u32 - (shift + outsize)) as i64);
+        }
+
+        // Build new subpiece near definition of basevn.
+        let new_op = data.new_op(2, newaddr);
+        data.op_set_opcode_code(new_op, OpCode::CPUI_SUBPIECE);
+        let outvn = if usetmp {
+            data.new_unique_out(outsize as int4, new_op)?
+        } else {
+            let mut sa = smalladdr1.expect("build_subpiece: smalladdr1 unset");
+            sa.renormalize(outsize as i32, data.get_arch().manage())
+                .expect("build_subpiece: renormalize");
+            data.new_varnode_out(outsize as int4, &sa, new_op)?
+        };
+        data.op_set_input(new_op, basevn, 0)?;
+        let shiftc = data.new_constant(4, shift as uintb);
+        data.op_set_input(new_op, shiftc, 1)?;
+
+        // if (basevn->isInput()) opInsertBegin(new_op, bb0); else opInsertAfter(new_op, def);
+        if base_is_input {
+            let bb0 = data.bblocks_get_block(0);
+            data.op_insert_begin(new_op, bb0);
+        } else {
+            debug_assert!(base_is_written);
+            let def =
+                data.vbank().get(basevn).expect("build_subpiece: stale basevn").get_def().expect(
+                    "build_subpiece: undefined pullsub",
+                );
+            data.op_insert_after(new_op, def);
+        }
+        Ok(outvn)
+    }
+
+    /// Find a predefined SUBPIECE of a base Varnode in the same block (C++
+    /// `RulePullsubMulti::findSubpiece`, `ruleaction.cc:850`).
+    pub fn find_subpiece(
+        data: &Funcdata,
+        basevn: VarnodeId,
+        outsize: int4,
+        shift: uintb,
+    ) -> Option<VarnodeId> {
+        let basev = data.vbank().get(basevn).expect("find_subpiece: stale basevn");
+        let base_is_input = basev.is_input();
+        let base_is_written = basev.is_written();
+        let base_def = basev.get_def();
+        let descs: Vec<OpId> = basev.descend_iter().collect();
+        for prevop in descs {
+            let pop = data.obank().get(prevop).expect("find_subpiece: stale prevop");
+            // if (prevop->code() != CPUI_SUBPIECE) continue;
+            if pop.code() != OpCode::CPUI_SUBPIECE {
+                continue;
+            }
+            // if (basevn->isInput() && prevop->getParent()->getIndex()!=0) continue;
+            if base_is_input {
+                let par = pop.get_parent().expect("find_subpiece: prevop has no parent");
+                if data.bblocks_ref().block(par).get_index() != 0 {
+                    continue;
+                }
+            }
+            // if (!basevn->isWritten()) continue;
+            if !base_is_written {
+                continue;
+            }
+            // if (basevn->getDef()->getParent() != prevop->getParent()) continue;
+            let def = base_def.expect("find_subpiece: written basevn has no def");
+            let def_par =
+                data.obank().get(def).expect("find_subpiece: stale def").get_parent();
+            if def_par != pop.get_parent() {
+                continue;
+            }
+            // Match the SUBPIECE form: in0==basevn, out size==outsize, in1 offset==shift
+            let in0 = pop.get_in(0);
+            let out = pop.get_out().expect("find_subpiece: SUBPIECE has no out");
+            let in1 = pop.get_in(1).expect("find_subpiece: SUBPIECE has no in1");
+            let out_size = data.vbank().get(out).expect("find_subpiece: stale out").get_size();
+            let in1_off = data.vbank().get(in1).expect("find_subpiece: stale in1").get_offset();
+            if in0 == Some(basevn) && out_size == outsize && in1_off == shift {
+                return Some(out);
+            }
+        }
+        None
+    }
+
+    /// Replace given Varnode with the smaller `new_vn` in all (SUBPIECE)
+    /// descendants (C++ `RulePullsubMulti::replaceDescendants`, `ruleaction.cc:720`).
+    pub fn replace_descendants(
+        data: &mut Funcdata,
+        orig_vn: VarnodeId,
+        new_vn: VarnodeId,
+        _max_byte: int4,
+        min_byte: int4,
+    ) -> KunaResult<()> {
+        let new_size = data.vbank().get(new_vn).expect("replace_descendants: stale new_vn").get_size();
+        // Snapshot the descend list (C++ advances the iterator before mutating).
+        let descs: Vec<OpId> =
+            data.vbank().get(orig_vn).expect("replace_descendants: stale orig").descend_iter().collect();
+        for op in descs {
+            let opc = data.obank().get(op).expect("replace_descendants: stale op").code();
+            if opc == OpCode::CPUI_SUBPIECE {
+                let in1 = data.obank().get(op).expect("replace_descendants: stale op").get_in(1).expect(
+                    "replace_descendants: SUBPIECE has no in1",
+                );
+                let trunc_amount =
+                    data.vbank().get(in1).expect("replace_descendants: stale in1").get_offset() as int4;
+                let outsz = {
+                    let outv = data.obank().get(op).expect("replace_descendants: stale op").get_out().expect(
+                        "replace_descendants: SUBPIECE has no out",
+                    );
+                    data.vbank().get(outv).expect("replace_descendants: stale out").get_size()
+                };
+                data.op_set_input(op, new_vn, 0)?;
+                if new_size == outsz {
+                    if trunc_amount != min_byte {
+                        panic!("Could not perform -replaceDescendants-");
+                    }
+                    data.op_set_opcode_code(op, OpCode::CPUI_COPY);
+                    data.op_remove_input(op, 1);
+                } else if new_size > outsz {
+                    let new_trunc = trunc_amount - min_byte;
+                    if new_trunc < 0 {
+                        panic!("Could not perform -replaceDescendants-");
+                    }
+                    if new_trunc != trunc_amount {
+                        let nc = data.new_constant(4, new_trunc as uintb);
+                        data.op_set_input(op, nc, 1)?;
+                    }
+                } else {
+                    panic!("Could not perform -replaceDescendants-");
+                }
+            } else {
+                panic!("Could not perform -replaceDescendants-");
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Rule for RulePullsubMulti {
@@ -1723,15 +1933,55 @@ impl Rule for RulePullsubMulti {
             }
         }
 
-        // ... smalladdr2; build new SUBPIECE per branch (findSubpiece/buildSubpiece);
-        //     newOp + newVarnodeOut MULTIEQUAL; opSetAllInput; opInsertBegin;
-        //     replaceDescendants(...);
-        // SEAM(W3/W5): `buildSubpiece`/`findSubpiece`/`replaceDescendants` create
-        // new SUBPIECE/MULTIEQUAL ops with outputs (`newVarnodeOut`/`newUniqueOut`
-        // — the W3 output-creation seam) and `buildSubpiece` also calls
-        // `glb->findJoin` (the W5 join-record table).  Every early-out guard above
-        // is ported faithfully; the construction body defers here.  No change.
-        0
+        // Address smalladdr2;
+        let vn_addr = data.vbank().get(vn).expect("RulePullsubMulti: stale vn").get_addr().clone();
+        let vn_space_be =
+            data.vbank().get(vn).expect("RulePullsubMulti: stale vn").get_space().is_big_endian();
+        let mut smalladdr2 = if !vn_space_be {
+            &vn_addr + min_byte as i64
+        } else {
+            &vn_addr + (vn_size - max_byte - 1) as i64
+        };
+
+        // vector<Varnode *> params; for each MULTIEQUAL branch build/find a SUBPIECE.
+        let mut params: Vec<VarnodeId> = Vec::with_capacity(branches as usize);
+        for i in 0..branches {
+            let vn_piece = data.obank().get(mult).expect("RulePullsubMulti: stale mult").get_in(i).expect(
+                "RulePullsubMulti: mult input null",
+            );
+            // We have to be wary of exponential splittings here: reuse a previous SUBPIECE.
+            let vn_sub = match RulePullsubMulti::find_subpiece(data, vn_piece, new_size, min_byte as uintb) {
+                Some(s) => s,
+                None => RulePullsubMulti::build_subpiece(
+                    data,
+                    vn_piece,
+                    new_size as u32,
+                    min_byte as u32,
+                )
+                .expect("RulePullsubMulti: build_subpiece"),
+            };
+            params.push(vn_sub);
+        }
+
+        // Build new multiequal near original multiequal.
+        let mult_addr = data.obank().get(mult).expect("RulePullsubMulti: stale mult").get_addr().clone();
+        let mult_parent = data.obank().get(mult).expect("RulePullsubMulti: stale mult").get_parent().expect(
+            "RulePullsubMulti: mult has no parent",
+        );
+        let new_multi = data.new_op(params.len() as int4, mult_addr);
+        smalladdr2
+            .renormalize(new_size, data.get_arch().manage())
+            .expect("RulePullsubMulti: renormalize");
+        let new_vn = data
+            .new_varnode_out(new_size, &smalladdr2, new_multi)
+            .expect("RulePullsubMulti: newVarnodeOut");
+        data.op_set_opcode_code(new_multi, OpCode::CPUI_MULTIEQUAL);
+        data.op_set_all_input(new_multi, &params).expect("RulePullsubMulti: opSetAllInput");
+        data.op_insert_begin(new_multi, mult_parent);
+
+        RulePullsubMulti::replace_descendants(data, vn, new_vn, max_byte, min_byte)
+            .expect("RulePullsubMulti: replaceDescendants");
+        1
     }
 }
 
