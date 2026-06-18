@@ -1916,6 +1916,42 @@ impl PrintC {
             if is_proto_partial_piece {
                 continue;
             }
+            // SEAM A (scalar analogue) — C++ `emitScopeVarDecls` walks the ScopeLocal
+            // *Symbol* table ONCE per Symbol (printc.cc:2667/2696), so a tied SCALAR
+            // local read at several widths (the int8 `local` of LOSS-245, accessed as
+            // int4/int2 sub-fields that `mergeAddrTied`/`groupWith` grouped) yields ONE
+            // declaration (`int8 local;`) — not one per partial high.  The kuna printer
+            // walks HighVariables, so each partial cover of the one scalar Symbol shows
+            // up as its own would-be decl.  Skip a high that is a STRICT PARTIAL of a
+            // scalar mapped Symbol (its storage rep is narrower than the whole Symbol
+            // type, or it is offset into the symbol) when a WHOLE-cover sibling of the
+            // same name exists (an instance-0 storage rep of exactly the symbol type's
+            // size at offset 0) — that sibling is the C++ `getFirstWholeMap()` entry and
+            // emits the single declaration.  Composites are handled above; this targets
+            // the scalar tied-local case only and is inert when no whole sibling exists
+            // (the partial then remains the symbol's sole declaration, e.g. a lone
+            // mapped sub-access).
+            let is_scalar_partial_piece = fd.high_bank().get(high).is_some_and(|h| {
+                let scalar_sym = h.kuna_symbol_type().is_some_and(|t| {
+                    use crate::dtype::type_metatype::*;
+                    !matches!(t.get_metatype(), TYPE_STRUCT | TYPE_ARRAY | TYPE_UNION)
+                });
+                if !scalar_sym {
+                    return false;
+                }
+                let sym_size = h.kuna_symbol_type().map(|t| t.get_size()).unwrap_or(0);
+                let rep_size = if h.num_instances() > 0 {
+                    fd.vbank().get(h.get_instance(0)).map(|v| v.get_size()).unwrap_or(0)
+                } else {
+                    0
+                };
+                // A strict partial: offset into the symbol, or narrower than the whole.
+                let is_strict_partial = h.kuna_symbol_offset() > 0 || rep_size < sym_size;
+                is_strict_partial && high_name_has_scalar_whole_sibling(fd, high, &name)
+            });
+            if is_scalar_partial_piece {
+                continue;
+            }
             // C++ `emitLocalVarDecls` -> `emitScopeVarDecls(scope, no_category)`:
             // only `no_category` Symbols are declared in the body.  A high bound to
             // a `function_parameter` Symbol renders in the signature, never as a body
@@ -4786,12 +4822,18 @@ impl PrintC {
                 // already collected: emit the leftover as an artificial `._o_s_`
                 // member rather than discarding the resolved prefix (C++ reaches the
                 // `!succeeded` branch here too).  Leaving `succeeded == false`.
-            } else {
-                // Top-level ARRAY/scalar with allowCast disabled and nothing
-                // resolved yet: bail so the caller renders the bare name (the array
-                // Symbol takes the caller's `name[index]` branch).
-                return false;
             }
+            // NOTE: a top-level ARRAY is fully handled by the `TYPE_ARRAY` arm above
+            // (it never reaches this point), so the only leaf landing here with an
+            // empty stack and `allow_cast == false` is a SCALAR.  C++ `pushPartialSymbol`
+            // (printc.cc:2106-2117) takes the `!succeeded` artificial-field branch for a
+            // scalar truncation that is not a SUBPIECE cast — the LOSS-245 store LHS
+            // `local._2_2_ = big(...)` (an int2 write at offset 2 of the tied int8
+            // `local`, `allowCast` off because the assignment output is not a read).
+            // So this scalar leaf FALLS THROUGH (no bail) to the `._<off>_<sz>_` token
+            // emitter below, matching the C++ render.  (Previously this bailed with
+            // `return false` so a scalar rendered its bare name; that suppressed the
+            // partial-field render for tied scalar sub-accesses.)
             if !succeeded {
                 // Subtype was not good (printc.cc:2106-2117): generate an artificial
                 // member name based on offset/size (`unnamedField(off,sz)` →
@@ -5344,6 +5386,65 @@ impl PrintC {
                                 );
                                 return;
                             }
+                        }
+                    }
+                }
+                // Scalar partial-cover access (C++ `pushSymbolDetail`,
+                // printlanguage.cc:256-258): when a Varnode reads only PART of a
+                // mapped SCALAR Symbol — `symboloff + vn->getSize() <=
+                // sym->getType()->getSize()` and the access is NOT the whole symbol
+                // — C++ routes it through `pushPartialSymbol`, NOT a bare name.  For
+                // an int4/int2 sub-access of a tied int8 stack `local` (the
+                // `mergeAddrTied`/`groupWith` partial-field members of LOSS-245),
+                // `pushPartialSymbol`'s scalar arms render `(int4)local` (a
+                // SUBPIECE-style `finalcast` for an off-0 truncation, printc.cc:2094-
+                // 2105) or `local._2_2_` (the artificial `unnamedField` token for a
+                // non-zero offset, printc.cc:2106-2117).  The composite branches above
+                // already covered STRUCT/UNION/ARRAY symbols; this adds the scalar leaf
+                // the C++ `pushSymbolDetail` treats identically.  `allowCast == isRead`
+                // (the input slot is a read; the assignment LHS is an output), matching
+                // the C++ `inslot`/`isRead` derivation.
+                if let Some(st) = &sym_type {
+                    let mt = st.get_metatype();
+                    let is_composite = matches!(
+                        mt,
+                        crate::dtype::type_metatype::TYPE_STRUCT
+                            | crate::dtype::type_metatype::TYPE_UNION
+                            | crate::dtype::type_metatype::TYPE_ARRAY
+                    );
+                    let symoff = if sym_off < 0 { 0 } else { sym_off };
+                    let asize = v.get_size();
+                    // The C++ `pushSymbolDetail` gate (printlanguage.cc:256): the
+                    // access fits within the symbol type and is a genuine PARTIAL
+                    // (off > 0 or strictly narrower) — a whole-symbol cover keeps the
+                    // bare name below (and `push_partial_symbol_ir` returns false for
+                    // it anyway, so this is a no-op for the common full-width read).
+                    let is_partial = symoff > 0 || asize < st.get_size();
+                    if !is_composite
+                        && is_partial
+                        && (symoff as int8) + (asize as int8) <= st.get_size() as int8
+                    {
+                        let is_out =
+                            fd.obank().get(op).and_then(|o| o.get_out()) == Some(vn);
+                        let is_read = !is_out;
+                        let inslot = if is_read {
+                            fd.obank().get(op).map(|o| o.get_slot(vn)).unwrap_or(-1)
+                        } else {
+                            -1
+                        };
+                        if self.push_partial_symbol_ir(
+                            fd,
+                            arch,
+                            &name,
+                            std::rc::Rc::clone(st),
+                            symoff as int8,
+                            asize,
+                            vn,
+                            op,
+                            inslot,
+                            is_read,
+                        ) {
+                            return;
                         }
                     }
                 }
@@ -6302,6 +6403,38 @@ fn high_name_has_whole_sibling(
         id != except
             && h.kuna_symbol_offset() == -1
             && h.kuna_name() == Some(name)
+    })
+}
+
+/// Does another HighVariable share `name` and represent the WHOLE scalar Symbol —
+/// a storage rep at offset 0 whose size equals the mapped scalar symbol type's size
+/// (the C++ `getFirstWholeMap()` entry that emits the single declaration)?  Used by
+/// the decl walk to suppress the per-partial declarations of a tied scalar local
+/// (LOSS-245: `int8 local` accessed as int4/int2 sub-fields) without affecting a
+/// lone partial that has no whole cover.
+fn high_name_has_scalar_whole_sibling(
+    fd: &Funcdata,
+    except: crate::seams::HighVariableId,
+    name: &str,
+) -> bool {
+    fd.high_bank().iter().any(|(id, h)| {
+        if id == except || h.kuna_name() != Some(name) {
+            return false;
+        }
+        if h.kuna_symbol_offset() != 0 {
+            return false;
+        }
+        let sym_size = match h.kuna_symbol_type() {
+            Some(t) => t.get_size(),
+            None => return false,
+        };
+        if h.num_instances() == 0 {
+            return false;
+        }
+        fd.vbank()
+            .get(h.get_instance(0))
+            .map(|v| v.get_size() == sym_size)
+            .unwrap_or(false)
     })
 }
 
