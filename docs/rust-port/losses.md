@@ -2776,3 +2776,24 @@ From the Pointer Compare wave:
   read-facing type propagation `propagate_across_compare` (coreaction_infertypes.rs:961) hands the
   compare's char operand-type onto the constant; needs to match C++ (int1 for sbyte compare, char for
   the pointercmp store). Once fixed, re-add the validated pushCharConstant arm for +1+. [[kuna-rust-port]]
+
+## LOSS-235 UPDATE — For-loop cluster: structuring is ALREADY PORTED; gated on RSP-noise elimination
+
+The for-loop wave proved the BlockWhileDo→for structuring + render is ALREADY COMPLETE on rust-port
+HEAD (funcdata_block.rs:250 finalize_forloop_transform, :271 whiledo_final_transform, :488/:502
+finalize_forloop_printing, block.rs:350 WhileDo{initialize_op,iterate_op}, printc.rs:2663
+emit_for_loop — all present, ActionStructureTransform/ActionFinalStructure registered
+universalaction.rs:672/690/698, analyze_for_loops default true seams.rs:593).
+- It is UNIFORMLY INERT: `whiledo_final_transform` bails at `has_overflow_syntax()` because
+  `BlockBasic::isComplex` (funcdata_block.rs:944) returns true on the LOOP CONDITION BLOCK (stmt
+  count > 2). The 3 excess statements are RESIDUAL RAW RSP/SPACEBASE ops the rust engine fails to
+  eliminate (C++ does): `PIECE→register:0x38` (RSP reconstruction), `COPY→unique:0x4f900`,
+  `COPY→unique:0x10000009` (synthetic spacebase 0x10000000 range) — all `nodesc=true`, no
+  descendants, yet survive dead-code elim because stack/spacebase-pinned.
+- ROOT: RSP-elimination / `ActionExtraPopSetup`, which was DELIBERATELY REVERTED at commit `10fc2ab`
+  ("regressed jumptable recovery"). Re-land ActionExtraPopSetup WITHOUT the jumptable/switch
+  regression → isComplex < 3 on the loop cond block → overflow clears → the WHOLE For-loop cluster
+  lights up at once (For-loop #1, var used, with skip, iterator load, thru special, Pointer Compare
+  #1 — easily 8-12 assertions). Loci: heritage.rs/coreaction_stackptr/ActionExtraPopSetup +
+  ActionDeadCode for the spacebase-pinned no-descendant COPYs. HAZARD: the switch datatests (the
+  10fc2ab revert reason) — must stay green. [[kuna-rust-port]]
