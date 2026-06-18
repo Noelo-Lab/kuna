@@ -2393,6 +2393,23 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                         data.vbank().get(other).and_then(|v| v.get_high());
                     if let Some(oh) = other_high {
                         if oh != high {
+                            // C++ `Merge::mergeAddrTied` (merge.cc:636-643) calls
+                            // `vn2->getHigh()->groupWith(off, vn1->getHigh())` for the
+                            // partial-field members of one symbol-mapped address: a tied
+                            // int8 `local` read as int4/int2 sub-accesses lands the SUB84/
+                            // SUB82 outputs in distinct HighVariables that nonetheless share
+                            // ONE `VariableGroup`.  Such a member is part of the symbol's
+                            // variable — the C++ `handleSymbolConflict` whole-cover member
+                            // the partial groups with — NOT a conflicting distinct variable.
+                            // So a same-group `otherVn` is NOT a conflict: the addr-tied
+                            // partial reuses the entry and renders `(int4)local`/`local._2_2_`
+                            // (the C++ `setSymbolEntry(entry)` outcome).  Only a genuinely
+                            // separate-group high at the entry's exact wider storage (the
+                            // zeroprop char-return overlapping the int4* `ptrint` param, which
+                            // `groupWith` never grouped) is a real conflict routed to `vN`.
+                            if data.high_bank().is_same_group(oh, high) {
+                                continue;
+                            }
                             found = true;
                             break;
                         }
