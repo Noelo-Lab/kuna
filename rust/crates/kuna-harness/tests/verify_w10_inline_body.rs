@@ -185,12 +185,33 @@ fn w10_inline_body_header_warnings_are_real_oracle_parity() {
          the CommentSorter/emitCommentGroup integration renders the instruction \
          warning comments) in:\n{out}"
     );
-    // 9/12 now pass (baseline 0/12, pre-w10 3/12 header-only, w10 6/12 +SBORROW
-    // 7/12, +pushPtrCharConstant 8/12 (#4), +comment-rendering 9/12 (#9)).
+    // w10-inline-fspec-unwrap: a cloned inline CALL keeps the *callee's* fspec
+    // annotation in slot 0 (not a raw code-ref), so `FlowInfo::setupCallSpecs`
+    // must unwrap it back to the callee entry (C++ fspec.cc:4940-4945
+    // `getFspecFromConst(...)->entryaddress`).  With the unwrap in place the
+    // inlined call targets resolve to their real symbols instead of a bogus
+    // `sub_<fspec-offset>`, so `#3` (`puts("TEN")` in the inlined `compare`
+    // body) and `#8` (`= collatz(val)`, the recursive self-call surfacing
+    // through the inlined `collatz1` body) newly pass.
+    for n in ["Inlining #3", "Inlining #8"] {
+        assert!(
+            out.contains(&format!("Success -- {n}")),
+            "expected `Success -- {n}` (inline CALL fspec-unwrap resolves the \
+             cloned call target to its real symbol) in:\n{out}"
+        );
+    }
+    // 11/12 now pass (baseline 0/12, pre-w10 3/12 header-only, w10 6/12 +SBORROW
+    // 7/12, +pushPtrCharConstant 8/12 (#4), +comment-rendering 9/12 (#9),
+    // +inline-fspec-unwrap 11/12 (#3, #8)).  #5 (`val & 1U` — the `U` unsigned
+    // suffix on the AND constant) is a deferred typing seam (the inlined `val`'s
+    // recovered metatype must be signed `int4` so `CastStrategy::markExplicit-
+    // Unsigned` forces the suffix; cast.rs:291 short-circuits on TYPE_UINT/
+    // UNKNOWN), not an inline-flow defect — tracked for the type-recovery wave.
     assert!(
-        out.contains("Total passing tests = 9"),
+        out.contains("Total passing tests = 11"),
         "inline.xml must pass its 3 header + 3 body + 1 SBORROW + 1 string-literal \
-         + 1 comment-warning assertion (9/12); baseline 0/12, pre-w10 3/12:\n{out}"
+         + 1 comment-warning + 2 fspec-unwrap assertions (11/12); the lone fail is \
+         #5 (`val & 1U`, deferred typing seam):\n{out}"
     );
 }
 
