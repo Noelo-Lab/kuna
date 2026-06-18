@@ -3376,3 +3376,24 @@ stays tied → `// acc` preserved. Bitfields #18 (self-chain arm) + readpartial 
 Gained Switch Loop #2/#3/#4/#6/#7/#8/#9/#10. Gate: `[675,658]`, regressed-set EMPTY, cargo --no-fail-fast
 0-fail (all 6 verify_* the broad fix broke stay green), PARITY OK. The oppool1/MULTIEQUAL-width/RulePushMulti
 next-loci (UPDATEs 3-5) are SUPERSEDED. [[kuna-rust-port]]
+
+## LOSS-243 — Inject Override #1 + Indirect prototype #2: two DISTINCT call-input roots (NOT a shared guardCallOverlappingInput)
+
+Dual-engine raw IR refutes the shared-root hypothesis: `guardCallOverlappingInput` is faithfully reachable
+but never fires for either (inject has no 8-byte-containing-4-byte range; indproto trials are all
+ContainsJustified not ContainedBy).
+- **Inject Override #1** (`(*v1)(a0,a1)` expected; rust `(*(v1,a0))(a1)`): the `void func(int4,int4)`
+  override locks ECX/EDX (4-byte); both engines make the unknown_effect clobber INDIRECT on ECX/EDX in
+  guardCalls (x64-win cspec lists only RAX/XMM0 killedbycall). C++ collapses the dead INDIRECT via
+  RuleIndirectCollapse's `getOut()->hasNoLocalAlias()` branch (ruleaction.cc:3218→3240); rust's faithful
+  branch (ruleaction_3.rs:692) never fires because the register INDIRECT outputs come back
+  `has_no_local_alias()==false`. ROOT: unported register-unaliased half of syncVarnodesWithSymbols
+  (funcdata_varnode.cc:959; kuna uses the mark_output_storage_addr_tied stand-in). The surviving addr-forced
+  INDIRECT merges into the 8-byte funcptr → printer CONCATs `(v1,a0)`.
+- **Indirect prototype #2** (`(*ptr->peek)(a)` expected; rust `(*ptr->peek)()`): both sibling CALLINDs
+  register the same EDI trial symmetrically; the asymmetry is the ancestor `onlyOpUse`/`checkCallDoubleUse`
+  arbitration (funcdata_varnode.cc:1851/1802): only=false for offset-0 `peek`, only=true for offset-8 `get`
+  (so #3 passes). ROOT: the indirect-call double-use scoring, NOT forceSet (wiring ActionDeindirect's
+  forceSet arm restart-looped and regressed #3 — reverted). NEXT-LOCUS: align Funcdata::only_op_use/
+  check_call_double_use so a value feeding two sibling CALLINDs in different blocks scores only=true for
+  each → the already-faithful force_set path then locks it without a restart. [[kuna-rust-port]]

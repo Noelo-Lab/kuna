@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 658/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 660/675; +...clone-gate audit, deindirect-output-type
+
+**Switch Hide #1 + Switch return #1 +2 → 660.** Switch return: testForReturnAddress (funcdata_block.rs:1676, funcdata_varnode.cc:1463 COPY/INDIRECT/INT_AND def-walk vs default_return_addr) + defaultReturnAddr cspec `<returnaddress>` decode (architecture.rs/seams.rs) + truncate_indirect_jump warnings (flow.rs:2690, flow.cc:750 MIPS BRANCHIND-as-ret). Switch Hide: truncated_flow_clone (funcdata_block.rs:1625) skipped cloning the discovered FuncCallSpecs → the jump-table partial's call lost its FuncProto effect list → readonly-folded into a 1-entry table; added FuncCallSpecs::clone_for_op (fspec.rs, fspec.cc:4969) + qlst re-attach → full 9-case recovery. Gate: `[675,660]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. (Inject Override #1 + Indirect prototype #2 BLOCKED, LOSS-243: two distinct roots — register-unaliased syncVarnodesWithSymbols + only_op_use double-use scoring.)
 
 **SWITCH LOOP CLOSED +8 → 658 (the hardest root — refined 6x).** mark_output_storage_addr_tied (coreaction_cleanup.rs:493) also un-ties a return-register marker whose forward def-use reaches its own defining op (loop-carried SSA cycle) — C++ never ties an un-symboled processor register (syncVarnodesWithSymbols inScope always false for a register), so it folds the loop-carried EAX into the input param `startval`. Discriminator vs boolless ACC: ACC's phi is ACYCLIC (joins 2 COPYs, reaches only RETURN) → stays tied → `// acc` held; Bitfields #18 self-chain + readpartial untouched. Gained all 8 Switch Loop (#2/3/4/6/7/8/9/10). Gate: `[675,658]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail (the 6 verify_* the broad fix broke stay green), PARITY OK. LOSS-231 RESOLVED (oppool1/width/RulePushMulti next-loci superseded).
 
