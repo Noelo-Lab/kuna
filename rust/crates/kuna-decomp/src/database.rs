@@ -2208,6 +2208,61 @@ impl Database {
         out
     }
 
+    /// The `(name, type, addr, all_flags, usepoint)` specs for every **usepoint-
+    /// scoped** Symbol mapped into this scope (across ALL spaces): a non-addr-tied
+    /// SymbolEntry whose `uselimit` restricts it to a code-address range (e.g. the
+    /// `type varnode %EAX(pc) int4 tmp` directive's register Symbol).  Unlike
+    /// [`scope_space_symbol_specs`] (which carries the addr-tied stack `map addr`
+    /// symbols whose `inUse` is usepoint-independent), these must be re-seeded WITH
+    /// their use address so the rebuilt-IR `linkSymbol` query
+    /// (`queryProperties(addr,1,usepoint)`) still finds them at the read they are
+    /// scoped to.  `usepoint` is the entry's first use address
+    /// ([`SymbolEntry::get_first_use_address`]).
+    pub fn scope_usepoint_symbol_specs(
+        &self,
+        scope: ScopeId,
+    ) -> Vec<(String, Rc<Datatype>, Address, uint4, Address)> {
+        let mut out = Vec::new();
+        for space_index in 0..self.scopes[scope].maptable.len() {
+            let rangemap = match self.scopes[scope].maptable.get(space_index).and_then(|m| m.as_ref()) {
+                Some(rm) => rm,
+                None => continue,
+            };
+            for (_, rec) in rangemap.records() {
+                let entry = &rec.entry;
+                // Only the whole-symbol starting entry (offset 0); pieces are
+                // rebuilt by re-mapping the whole symbol.
+                if entry.get_offset() != 0 {
+                    continue;
+                }
+                let sym = entry.symbol;
+                let symbol = &self.symbols[sym];
+                // addr-tied / empty-uselimit symbols are usepoint-independent and
+                // already carried by `scope_space_symbol_specs` for the stack space;
+                // here we only carry the genuinely usepoint-scoped ones.
+                if (symbol.flags & varnode_flags::addrtied) != 0 || entry.uselimit.empty() {
+                    continue;
+                }
+                let ct = match &symbol.dtype {
+                    Some(c) => Rc::clone(c),
+                    None => continue,
+                };
+                let usepoint = entry.get_first_use_address();
+                if usepoint.is_invalid() {
+                    continue;
+                }
+                out.push((
+                    symbol.name.clone(),
+                    ct,
+                    entry.get_addr().clone(),
+                    symbol.flags,
+                    usepoint,
+                ));
+            }
+        }
+        out
+    }
+
     /// C++ `ScopeInternal::findAddr` (`database.cc:2252-2276`): find a Symbol at
     /// exactly `addr`, valid at `usepoint`.
     pub fn find_addr(&self, scope: ScopeId, addr: &Address, usepoint: &Address) -> Option<EntryRef> {

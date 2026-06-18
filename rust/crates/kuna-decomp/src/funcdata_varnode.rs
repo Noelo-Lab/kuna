@@ -1313,7 +1313,13 @@ impl Funcdata {
         // `emitScopeVarDecls(fd->getScopeLocal())`, printc.cc:2667); the flag is
         // carried onto the high so the printer's local decl loop skips it.  Resolve
         // the local frame first; on a miss fall back to the global scope.
-        let local_hit = self.get_scope_local().and_then(|lm| lm.query_container_for_link(&addr));
+        // The `&symbol` target address is a mapped (addr-tied) stack/global Symbol,
+        // for which `SymbolEntry::inUse` is usepoint-independent — an invalid usepoint
+        // resolves the same container the prior call did.
+        let sb_usepoint = Address::new_invalid();
+        let local_hit = self
+            .get_scope_local()
+            .and_then(|lm| lm.query_container_for_link(&addr, &sb_usepoint));
         let info_is_global = local_hit.is_none();
         let resolved: Option<(String, int4, Option<Rc<Datatype>>, bool)> = match local_hit {
             Some(i) => Some((i.display_name, i.sym_off, i.sym_type, i.is_name_undefined)),

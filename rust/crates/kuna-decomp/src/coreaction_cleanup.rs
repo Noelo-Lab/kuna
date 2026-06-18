@@ -1629,8 +1629,11 @@ fn bind_proto_partial_piece(
     // on addr-tied reproduces that usepoint discrimination without the usepoint query.
     let root_addr_tied = data.vbank().get(root_rep).map(|v| v.is_addr_tied()).unwrap_or(false);
     let container = if root_addr_tied {
+        // The root is addr-tied, so `SymbolEntry::inUse` is usepoint-independent —
+        // an invalid usepoint resolves the same container as the root's real one.
+        let usepoint = kuna_base::address::Address::new_invalid();
         data.get_scope_local()
-            .and_then(|lm| lm.query_container_for_link(&root_addr))
+            .and_then(|lm| lm.query_container_for_link(&root_addr, &usepoint))
     } else {
         None
     };
@@ -1936,9 +1939,21 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         // binds the high to that Symbol's display name (+ the in-symbol byte offset
         // for an array/struct member access) — what gives the body its
         // `ptr`/`a`/`b`/`i`.
+        //
+        // The usepoint is `vn->getUsePoint(*this)` (the representative's def-op
+        // address if written, else `fd.getAddress()-1`) — C++ `linkSymbol`
+        // (`funcdata_varnode.cc:1189`).  Threading it (rather than an invalid
+        // usepoint) lets a register-storage local Symbol scoped to a specific use
+        // address bind at that read: the `type varnode %EAX(pc) int4 tmp` directive
+        // creates a usepoint-scoped Symbol whose `SymbolEntry::inUse` only matches at
+        // `pc`, so the EAX read renders `tmp` instead of a fresh `vN`.  For an
+        // addr-tied / empty-`uselimit` Symbol (the ordinary mapped local / parameter
+        // case) `inUse` is usepoint-independent, so this is identical to the prior
+        // invalid-usepoint query.
+        let usepoint = data.vn_use_point(name_rep.unwrap());
         let container = data
             .get_scope_local()
-            .and_then(|lm| lm.query_container_for_link(&v_addr));
+            .and_then(|lm| lm.query_container_for_link(&v_addr, &usepoint));
         if let Some(info) = container {
             // C++ `handleSymbolConflict(entry, vn)` (`funcdata_varnode.cc:1018`):
             //   if (vn->isInput() || vn->isAddrTied() || vn->isPersist() ||

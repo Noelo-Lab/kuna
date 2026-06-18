@@ -459,6 +459,7 @@ pub fn decompile_func_full_with_override(
         size,
         mapped_symbols,
         &[],
+        &[],
         pending_proto,
         flow_overrides,
     )
@@ -474,6 +475,7 @@ pub fn decompile_func_full_with_override_dyn(
     funcaddr: Address,
     size: int4,
     mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
+    usepoint_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4, Address)],
     dynamic_symbols: &[crate::database::DynamicSymbolSpec],
     pending_proto: Option<&crate::fspec::PrototypePieces>,
     flow_overrides: &[(Address, kuna_base::types::uint4)],
@@ -487,6 +489,10 @@ pub fn decompile_func_full_with_override_dyn(
     }
     // Re-seed the console-mapped symbols (lost when the IR is rebuilt).
     fd.seed_mapped_symbols(mapped_symbols);
+    // Re-seed the usepoint-scoped console symbols (the register-storage
+    // `type varnode %REG(pc)` symbols, e.g. retstruct's `tmp`) WITH their use
+    // address so `linkSymbol`'s usepoint query binds them at the scoped read.
+    fd.seed_usepoint_symbols(usepoint_symbols);
     // Re-seed the console-added dynamic (`map hash`) symbols (likewise lost).
     fd.seed_dynamic_symbols(dynamic_symbols);
     // With the single-manager unification (LOSS-132) the universalAction passes
