@@ -3370,6 +3370,17 @@ pub struct PrototypePieces {
     /// First position of a variable argument, or -1 if not varargs (C++
     /// `firstVarArgSlot`).
     pub first_var_arg_slot: int4,
+    /// (kuna) Explicit, model-overriding locked output storage, as established by
+    /// the console `map return <addr> <type>` (`IfcMapReturn`).  C++ keeps a
+    /// callee's locked `FuncProto` live on its `Funcdata` and `ActionDefaultParams`
+    /// does `fc->copy(otherfunc->getFuncProto())`, carrying the custom output
+    /// storage verbatim; the merged tree reconstructs callee prototypes from
+    /// `PrototypePieces`, which only describe *types* (storage is re-derived from
+    /// the model).  A custom stack-relative return (e.g. `s0x10`) cannot be
+    /// re-derived, so it rides here and `set_pieces` re-applies it after the
+    /// model-driven `update_all_types`.  `None` is the normal (model-derived)
+    /// case.
+    pub output_storage: Option<ParameterPieces>,
 }
 
 // =============================================================================
@@ -5361,6 +5372,14 @@ impl FuncProto {
             self.set_model(model);
         }
         self.update_all_types(pieces, typefactory, manager)?;
+        // (kuna) A console `map return <addr>` parks an explicit, model-overriding
+        // locked output storage on the pieces.  `update_all_types` re-derived the
+        // output from the model (e.g. RAX for an int8 return); replace it with the
+        // custom storage so a stack-relative return survives the callee-proto
+        // reconstruction (C++ keeps it verbatim via `fc->copy(callee FuncProto)`).
+        if let Some(custom_out) = pieces.output_storage.as_ref() {
+            self.store_mut().set_output(custom_out);
+        }
         self.set_input_lock(true);
         self.set_output_lock(true);
         self.set_model_lock(true);

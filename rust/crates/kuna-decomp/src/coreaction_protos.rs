@@ -426,23 +426,43 @@ impl Action for ActionDefaultParams {
                 } else {
                     None
                 };
-                let callee_proto = match (callee_pieces, default_fp.clone(), arch.types()) {
-                    (Some(pieces), Some(dfp), Some(types)) => {
-                        let mut fp = crate::fspec::FuncProto::new();
-                        match fp.seed_locked_from_pieces(
-                            &pieces,
-                            dfp,
-                            void_ty.clone(),
-                            types,
-                            arch.manage(),
-                        ) {
-                            Ok(()) => Some(fp),
-                            // The callee storage assignment hit an un-ported seam: fall
-                            // back to the default-model recovery for this call site.
-                            Err(_) => None,
-                        }
+                // (kuna) An *output-only* callee pieces (no declared inputs / void
+                // outtype, but a custom locked output) is what the console
+                // `map return <addr>` parks: in C++ `map return` locks only the
+                // callee's output, leaving its inputs to be recovered by the model.
+                // Detect that here so the input recovery stays default-model-driven
+                // (set_internal) while the custom locked output is applied verbatim
+                // — distinct from a full `parse line` prototype, which input-locks.
+                let custom_output_only = match &callee_pieces {
+                    Some(pieces) => {
+                        let out_only = pieces.intypes.is_empty()
+                            && pieces.outtype.is_none()
+                            && pieces.output_storage.is_some();
+                        if out_only { pieces.output_storage.clone() } else { None }
                     }
-                    _ => None,
+                    None => None,
+                };
+                let callee_proto = if custom_output_only.is_some() {
+                    None
+                } else {
+                    match (callee_pieces, default_fp.clone(), arch.types()) {
+                        (Some(pieces), Some(dfp), Some(types)) => {
+                            let mut fp = crate::fspec::FuncProto::new();
+                            match fp.seed_locked_from_pieces(
+                                &pieces,
+                                dfp,
+                                void_ty.clone(),
+                                types,
+                                arch.manage(),
+                            ) {
+                                Ok(()) => Some(fp),
+                                // The callee storage assignment hit an un-ported seam: fall
+                                // back to the default-model recovery for this call site.
+                                Err(_) => None,
+                            }
+                        }
+                        _ => None,
+                    }
                 };
                 match callee_proto {
                     Some(calleeproto) => {
@@ -459,6 +479,19 @@ impl Action for ActionDefaultParams {
                         // Funcdata): set the default-model internal proto.  The
                         // register-parameter datatests resolve here.
                         data.get_call_specs_mut(i).proto_mut().set_internal(evalfp.clone(), void_ty.clone());
+                        // (kuna) A console `map return <addr>`-only callee: keep the
+                        // model-driven input recovery just established, but lock the
+                        // custom return storage on top (the C++ `map return` locks
+                        // only the output).  This sets the typed output Varnode at
+                        // the (possibly stack-relative) return address and the output
+                        // lock, so `ActionFuncLink::funcLinkOutput` flags
+                        // `setStackOutputLock` and `Heritage::tryOutputStackGuard`
+                        // materializes the caller-perspective output.
+                        if let Some(out_piece) = custom_output_only.as_ref() {
+                            let fc = data.get_call_specs_mut(i);
+                            fc.proto_mut().set_output(out_piece);
+                            fc.proto_mut().set_output_lock(true);
+                        }
                     }
                 }
             }
