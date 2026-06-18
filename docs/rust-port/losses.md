@@ -2820,3 +2820,24 @@ universalaction.rs:672/690/698, analyze_for_loops default true seams.rs:593).
   committed-prototype-callee datatest; full passing-set diff is the safety net. (This is the LOCKED
   sibling of the killedbycall/init_active_output UNLOCKED arm landed earlier.) [[kuna-rust-port]]
 - recorded by the integrator after the Access packed fields wave BLOCKED (2026-06-18).
+
+## LOSS-235 CORRECTION 2 — for-loop blocker is L4/L5 param-spill promotion (converges with Chain B), NOT L0/L3
+
+The ExtraPop L0+L3 wave proved the LOSS-235 UPDATE premise STALE: L0 (ActionExtraPopSetup, coreaction_protos.rs:520-602) AND L3 (jumptable consume-sweep) are BOTH already landed+active on HEAD (switchind already 16/16 — the 10fc2ab switch hazard is permanently resolved; re-landing 141a2f6 would be a byte-no-op). The RSP-noise on the cond block is already eliminated.
+- REAL blocker: the loop-condition BlockBasic keeps a residual stack-LOAD chain for the parameter at
+  STRUCTURING time — `INT_ADD(RSP,-0x1c) → LOAD stack[-0x1c] → COPY` (3 stmts > 2 → bb_is_complex →
+  new_while_do sets overflow (blockaction.rs:2336) → whiledo_final_transform bails (funcdata_block.rs:
+  271)). C++ reads the param directly from EDI (no LOAD at structuring). The action ORDER is byte-
+  identical (coreaction.cc:5928-5940: actstackstall→ActionBlockStructure→oppool2/RuleLoadVarnode, and
+  the structure graph is built ONCE). The divergence: rust keeps the param SPILLED on the stack longer
+  — it fails to unify the `stack[-0x1c]` spill slot with the EDI parameter BEFORE the first
+  ActionBlockStructure. RuleLoadVarnode (group stackvars, oppool2) cleans it too late.
+- ROOT: L4/L5 PARAMETER-SPILL PROMOTION — `ScopeLocal::restructureVarnode` spill↔param unification +
+  read-facing `propagateSpacebaseRef` (coreaction_infertypes.rs/varmap.rs/funcdata_spacebase.rs).
+  ActionRestrictLocal (L4, coreaction_protos.rs:1270) + ActionStackPtrFlow::adjustLoad/repair/checkClog
+  (coreaction_stackptr.rs:424-688) are ALREADY ported; the missing piece is finer — the stack-slot↔
+  EDI-param unification that makes the spill not survive into the cond block.
+- CONVERGENCE: this is the SAME restructureVarnode/spill-promotion seam as the Chain B stack-typing
+  cluster (LOSS-156). A wave that lands L4/L5 spill↔param unification + read-facing spacebase
+  propagation unlocks BOTH the for-loop cluster (~8) AND advances Chain B (~65). The deepest, highest-
+  value convergent root remaining. [[kuna-rust-port]]
