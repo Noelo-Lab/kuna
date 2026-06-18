@@ -2856,3 +2856,22 @@ main's decompile → whole file fails to apply.
   newIndirectCreation for CALL most-sig/least-sig piece) FIRST, building on the func_link_output
   substrate; then the +7 lands regressed-set EMPTY (and unblocks the broader retstruct cluster). The
   heritage seam is the precise prerequisite. [[kuna-rust-port]]
+
+## LOSS-074 UPDATE 2 — RuleConditionalMove also gates Ccmp (CloneBlockOps wave gates ~6)
+
+The Ccmp wave confirmed: `ccmp.xml` #1/#2/#3 (AARCH64 conditional-compare) is gated on
+`RuleConditionalMove` (ruleaction_7.rs:1883-1940, no-op SEAM at :1935). The CCMP lifts to flags
+(NG/ZR/OV) pre-set 0 in the init block, recomputed (SBORROW/`val-9<0`/`val==9`) in a conditional
+block, MULTIEQUAL-merged at the join into `ZR || (NG!=OV)`. C++ `RuleConditionalMove`
+(ruleaction.cc:9376-9405, keyed on MULTIEQUAL, the `res = boolcond || differentcond` variation)
+pulls the boolean expression out of the conditional block via `CloneBlockOps::cloneExpression`
+(funcdata_block.cc:881) + `Funcdata::opBoolNegate` (funcdata_op.cc:560, routes through opSetOutput
+LOSS-035/036), producing the BOOL_OR; then `RuleSborrow` (ruleaction_3.rs:942, already ported but
+gated behind this — its SBORROW output only descends into COPY/MULTIEQUAL, never INT_NOTEQUAL)
+fires → `val <= 9`. C++ output `if (ptr[1] == 0x3c && val <= 9)`.
+- THE DEDICATED WAVE (gates ~6: NaN operations 2 + Immediate Conditional #7 condmove + Ccmp 3, and
+  the RuleIgnoreNan substrate on rport/w10-float-nan-compare): port `CloneBlockOps::cloneExpression`/
+  `gatherExpression`/`buildOpClone`/`patchInputs` + `Funcdata::opBoolNegate` + the `opSetOutput`
+  output-creation seam (LOSS-035/036), then close the RuleConditionalMove arm at ruleaction_7.rs:1935.
+  Loci: funcdata.rs/funcdata_op.rs/funcdata_block.rs + ruleaction_7.rs. [[kuna-rust-port]]
+- recorded by the integrator after the Ccmp wave BLOCKED (2026-06-18).
