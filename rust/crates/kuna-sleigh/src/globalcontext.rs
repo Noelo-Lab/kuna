@@ -452,6 +452,14 @@ pub trait ContextDatabase {
     /// \return the list of TrackedContext objects
     fn get_tracked_set(&self, addr: &Address) -> &TrackedSet;
 
+    /// Snapshot the entire tracked-register part-map (the `set track` database).
+    ///
+    /// The per-function `ArchHandle` is a detached skeleton that does not hold
+    /// the engine's `ContextDatabase`; `ActionConstbase` needs to query the
+    /// tracked set for the function's entry address through that skeleton, so
+    /// `build_arch_handle` clones this map onto the seam.
+    fn clone_trackbase(&self) -> PartMap<Address, TrackedSet>;
+
     /// \brief Create a tracked register set that is valid over the given
     /// range
     ///
@@ -955,6 +963,10 @@ impl ContextDatabase for ContextInternal {
 
     fn get_tracked_set(&self, addr: &Address) -> &TrackedSet {
         self.trackbase.get_value(addr)
+    }
+
+    fn clone_trackbase(&self) -> PartMap<Address, TrackedSet> {
+        self.trackbase.clone()
     }
 
     fn create_set(&mut self, addr1: &Address, addr2: &Address) -> &mut TrackedSet {

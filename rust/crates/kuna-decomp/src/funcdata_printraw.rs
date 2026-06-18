@@ -19,7 +19,7 @@
 
 use kuna_base::address::Address;
 use kuna_base::space::spacetype;
-use kuna_base::types::{int4, uintb};
+use kuna_base::types::{int4, uint4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::architecture::Architecture;
@@ -336,6 +336,45 @@ fn operator_name(fd: &Funcdata, op: OpId, opc: OpCode) -> Result<String, String>
     })
 }
 
+/// C++ `TypeOpCallother::getOperatorName(op)` (typeop.cc): resolve the userop
+/// index in `op`'s input(0) against `glb->userops` and return its displayed
+/// symbol; on an unknown index fall back to `<callother>[<in0>]`.
+fn callother_operator_name(
+    arch: &Architecture,
+    fd: &Funcdata,
+    op: OpId,
+) -> Result<String, String> {
+    let o = fd.obank().get(op).ok_or_else(|| "callother: stale op".to_string())?;
+    let in0 = o.get_in(0);
+    if let Some(in0) = in0 {
+        let in0vn = fd.vbank().get(in0).ok_or_else(|| "callother: stale in0".to_string())?;
+        let index = in0vn.get_offset() as uint4;
+        if let Some(userop) = arch.userops.get_op(index) {
+            // out.size for VolatileReadOp, in(2).size for VolatileWriteOp; the
+            // base override ignores both.
+            let out_size = o
+                .get_out()
+                .and_then(|v| fd.vbank().get(v))
+                .map(|v| v.get_size());
+            let in2_size = if o.num_input() > 2 {
+                o.get_in(2).and_then(|v| fd.vbank().get(v)).map(|v| v.get_size())
+            } else {
+                None
+            };
+            let name = userop.get_operator_name(out_size, in2_size);
+            return Ok(String::from_utf8_lossy(&name).into_owned());
+        }
+    }
+    // Unknown index: `<callother-base-name>[<in0 raw>]`.
+    let mut fallback = type_op_info(OpCode::CPUI_CALLOTHER).get_name().to_string();
+    fallback.push('[');
+    let mut in0buf = String::new();
+    render_varnode_opt(&mut in0buf, arch, fd, in0)?;
+    fallback.push_str(&in0buf);
+    fallback.push(']');
+    Ok(fallback)
+}
+
 /// C++ `PcodeOp::printRaw(s)` = `opcode->printRaw(s,this)` — the per-op-code
 /// dispatch.  The special op-codes (LOAD/STORE/branches/calls/RETURN/marker)
 /// match their `TypeOp*::printRaw` override; everything else falls to the
@@ -397,14 +436,17 @@ fn render_op(s: &mut String, arch: &Architecture, fd: &Funcdata, op: OpId) -> Re
             render_call(s, arch, fd, op, type_op_info(opc).get_name(), false)?;
         }
         OpCode::CPUI_CALLOTHER => {
-            // TypeOpCallother: `[out =] <name>(in1,...)` (typeop.cc:820).  The
-            // user-op operator name is a later seam; the base name + `[]` suffix
-            // form is not required by the corpus, so the bare op name is used.
+            // TypeOpCallother::printRaw (typeop.cc:820): `[out =] <name>(in1,...)`,
+            // where `<name>` is `getOperatorName(op)` — resolve the userop index in
+            // input(0) against `glb->userops` and ask it for the displayed symbol
+            // (`read_volatile_1`, etc.).  When the index is unknown the C++ falls
+            // back to `<baseopname>[<in0>]` (typeop.cc getOperatorName tail).
             if out.is_some() {
                 render_varnode_opt(s, arch, fd, out)?;
                 s.push_str(" = ");
             }
-            s.push_str(type_op_info(opc).get_name());
+            let name = callother_operator_name(arch, fd, op)?;
+            s.push_str(&name);
             if num_input > 1 {
                 s.push('(');
                 render_varnode_opt(s, arch, fd, in_at(1))?;

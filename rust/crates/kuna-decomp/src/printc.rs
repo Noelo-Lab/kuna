@@ -3312,11 +3312,19 @@ impl PrintC {
                 ));
             }
         } else if display == userop_flags::ANNOTATION_ASSIGNMENT {
+            // C++ (printc.cc:713): pushOp(assignment); pushVn(in2); pushVn(in1).
+            // The C++ pushes onto a LIFO that reverses, so in(1) (the volatile
+            // annotation) ends up the LHS and in(2) (the value) the RHS:
+            // `NVRAM[20] = 0`.  This direct-recursion engine renders in push
+            // order (first push = leftmost), the inverse of the C++ LIFO, so the
+            // annotation (in1) is pushed FIRST and the value (in2) second to keep
+            // the same `annotation = value` shape (the same inversion op_store_ir
+            // applies to its ptr/value pair).
             self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
-            if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(2)) {
+            if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
                 self.push_vn_ir(fd, arch, vn, op);
             }
-            if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
+            if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(2)) {
                 self.push_vn_ir(fd, arch, vn, op);
             }
         } else if display == userop_flags::NO_OPERATOR {
@@ -4678,6 +4686,143 @@ impl PrintC {
         true
     }
 
+    /// C++ `PrintC::pushAnnotation` (printc.cc:1929): render a volatile
+    /// read/write annotation operand.  Compute the annotation size from the
+    /// userop (`extractAnnotationSize`), query the local scope's container at the
+    /// annotation address, and render the whole Symbol (`NVRAM` when it covers
+    /// exactly) or the partial-symbol array element (`NVRAM[30]`).  When no Symbol
+    /// contains the access, fall to the register-name / `dat_<addr>` unnamed tail
+    /// (printc.cc:1957-1974).
+    fn push_annotation_ir(&mut self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) {
+        let v = match fd.vbank().get(vn) {
+            Some(v) => v,
+            None => return,
+        };
+        let vaddr = v.get_addr().clone();
+        let vsize = v.get_size();
+        let opaddr = fd.obank().get(op).map(|o| o.get_addr().clone());
+
+        // size = glb->userops.getOp(userind)->extractAnnotationSize(vn, op) for a
+        // CALLOTHER; 0 otherwise.
+        let mut size = 0i32;
+        if let Some(o) = fd.obank().get(op) {
+            if o.code() == OpCode::CPUI_CALLOTHER {
+                let userind = o
+                    .get_in(0)
+                    .and_then(|c| fd.vbank().get(c))
+                    .map(|cvn| cvn.get_offset())
+                    .unwrap_or(0);
+                let out_size = o.get_out().and_then(|x| fd.vbank().get(x)).map(|x| x.get_size());
+                let in2_size = if o.num_input() > 2 {
+                    o.get_in(2).and_then(|x| fd.vbank().get(x)).map(|x| x.get_size())
+                } else {
+                    None
+                };
+                if let Some(u) = arch.userops.get_op(userind as u32) {
+                    size = u.extract_annotation_size(out_size, in2_size);
+                }
+            }
+        }
+
+        // entry = symScope->queryContainer(addr, size||1, op->getAddr()).  The
+        // `map addr` global Symbol lives in the architecture's global scope, which
+        // the detached per-function `localmap` reaches only through the
+        // `GlobalQuery` snapshot (the same wire the high-naming pass uses); query
+        // it for the covering Symbol.  When `size` was 0 the C++ queries with 1 and
+        // then adopts the entry's own size — here `name_for_global_varnode` already
+        // returns the covering Symbol regardless of the probe size.
+        let usepoint = opaddr.unwrap_or_else(|| vaddr.clone());
+        let query_size = if size != 0 { size } else { 1 };
+        let arch_handle = fd.get_arch();
+        let entry = arch_handle.name_for_global_varnode(&vaddr, query_size, &usepoint);
+        // size adopts vn->getSize() only when the userop reported 0 and no entry.
+        let size = if size != 0 { size } else { vsize };
+
+        if let Some((name, sym_off, sym_type)) = entry {
+            // The volatile annotation Symbol renders in special_color (C++
+            // pushSymbol: `sym->isVolatile()` -> special_color).  The mapped global
+            // carried the `volatil` flag (set by `volatile [ram,...]`), so use it.
+            let color = crate::printlanguage::SyntaxHighlight::special_color;
+            // Whole-symbol when the access starts at the symbol base and spans the
+            // whole type (C++ entry->getSize() == size).  Otherwise a partial cover.
+            let whole = sym_off == 0
+                && sym_type.as_ref().map(|t| t.get_size() == size).unwrap_or(false);
+            if !whole {
+                // Partial symbol (printc.cc:1953-1954 pushPartialSymbol).  For an
+                // array-of-element symbol the access maps to element
+                // `sym_off / elsize` — the array-subscript shape
+                // push_vn_explicit_ir renders for symbol-bound highs.
+                if let Some(st) = &sym_type {
+                    if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
+                        if let Some(elem) = st.get_array_base() {
+                            let elsize = elem.get_align_size().max(1);
+                            if sym_off >= 0 && (sym_off % elsize) == 0 && st.get_size() > elsize {
+                                let index = sym_off / elsize;
+                                self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                                self.push_atom(&Atom::with_op_vn(
+                                    name,
+                                    TagType::VarToken,
+                                    color,
+                                    op_key(op),
+                                    vn_key(vn),
+                                ));
+                                self.push_atom(&Atom::with_op(
+                                    format!("{index}"),
+                                    TagType::Syntax,
+                                    crate::printlanguage::SyntaxHighlight::const_color,
+                                    op_key(op),
+                                ));
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            // Whole symbol, or a partial cover the array/struct walk did not turn
+            // into a member token: render the bare Symbol name (printc.cc:1951).
+            self.push_atom(&Atom::with_op_vn(
+                name,
+                TagType::VarToken,
+                color,
+                op_key(op),
+                vn_key(vn),
+            ));
+            return;
+        }
+
+        // No containing Symbol: register name, then kuna `dat_<addr>` / `Space<hex>`
+        // (printc.cc:1957-1974).
+        let spc = match vaddr.get_space() {
+            Some(s) => s,
+            None => return,
+        };
+        let regname = arch.translate().get_register_name(spc, vaddr.get_offset(), size);
+        let name = if !regname.is_empty() {
+            regname
+        } else if kuna_global_naming(spc) {
+            kuna_global_data_name(spc, vaddr.get_offset())
+        } else {
+            let mut s = String::new();
+            let sn = spc.get_name();
+            let mut chars = sn.chars();
+            if let Some(c0) = chars.next() {
+                s.extend(c0.to_uppercase());
+            }
+            s.push_str(chars.as_str());
+            let byte_addr =
+                kuna_base::space::AddrSpace::byte_to_address(vaddr.get_offset(), spc.get_word_size());
+            s.push_str(&format!("{:0width$x}", byte_addr, width = 2 * spc.get_addr_size() as usize));
+            s
+        };
+        self.push_atom(&Atom::with_op_vn(
+            name,
+            TagType::VarToken,
+            crate::printlanguage::SyntaxHighlight::special_color,
+            op_key(op),
+            vn_key(vn),
+        ));
+    }
+
     /// C++ `PrintLanguage::pushVnExplicit` (printlanguage.cc:218) + the
     /// `PrintC` leaf-naming (`pushVnExplicit`/`pushUnnamedLocation`, printc.cc:
     /// 1900-2017): annotation -> constant -> SymbolEntry -> register name ->
@@ -4687,6 +4832,13 @@ impl PrintC {
             Some(v) => v,
             None => return,
         };
+        // C++ `PrintLanguage::pushVnExplicit` (printlanguage.cc:221): an annotation
+        // operand (the volatile read/write address ref) routes through
+        // `pushAnnotation`, never the constant/symbol paths.
+        if v.is_annotation() {
+            self.push_annotation_ir(fd, arch, vn, op);
+            return;
+        }
         if v.is_constant() {
             let (off, sz) = (v.get_offset(), v.get_size());
             // C++ `PrintLanguage::pushVnExplicit` (printlanguage.cc:227) calls

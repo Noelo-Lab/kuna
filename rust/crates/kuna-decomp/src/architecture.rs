@@ -834,6 +834,10 @@ impl Architecture {
         seam.infer_pointers = self.infer_pointers;
         seam.infer_funcentry = self.infer_funcentry;
         seam.infer_ptr_spaces = self.infer_ptr_spaces.clone();
+        // Snapshot the tracked-register database (C++ `glb->context`'s track base,
+        // populated by `set track`) so `ActionConstbase` can query it for the
+        // function entry address through the detached per-function skeleton.
+        seam.tracked_sets = self.with_context_db_mut(|db| db.clone_trackbase());
         Rc::new(seam)
     }
 
@@ -1348,7 +1352,8 @@ impl Architecture {
     /// front-loaded here).
     fn register_string_builtins(&mut self) -> KunaResult<()> {
         use crate::userop::{
-            BUILTIN_MEMCPY, BUILTIN_STRINGDATA, BUILTIN_STRNCPY, BUILTIN_WCSNCPY,
+            BUILTIN_MEMCPY, BUILTIN_STRINGDATA, BUILTIN_STRNCPY, BUILTIN_VOLATILE_READ,
+            BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
         };
         // Split the &mut userops borrow from the &self type-factory read by
         // building a small adapter over the (already-populated) factory.
@@ -1363,6 +1368,15 @@ impl Architecture {
         let mut userops = std::mem::take(&mut self.userops);
         let res = (|| -> KunaResult<()> {
             userops.register_builtin(BUILTIN_STRINGDATA, &adapter)?;
+            // The volatile builtins (`read_volatile`/`write_volatile`) are
+            // registered lazily by `Funcdata::replaceVolatile`'s
+            // `glb->userops.registerBuiltin(...)` in C++ (userop.cc:444-448); the
+            // call is idempotent and only populates `builtinmap` so the print pass
+            // can resolve the CALLOTHER index to its operator name.  They carry no
+            // type-factory dependency, so pre-seeding them here is behaviorally
+            // equivalent and keeps `replaceVolatile` free of an `&mut glb` borrow.
+            userops.register_builtin(BUILTIN_VOLATILE_READ, &adapter)?;
+            userops.register_builtin(BUILTIN_VOLATILE_WRITE, &adapter)?;
             userops.register_builtin(BUILTIN_MEMCPY, &adapter)?;
             userops.register_builtin(BUILTIN_STRNCPY, &adapter)?;
             userops.register_builtin(BUILTIN_WCSNCPY, &adapter)?;

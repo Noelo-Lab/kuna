@@ -81,7 +81,7 @@
 //! type exposes `new(group)` returning the boxed action.  [`early_actions`]
 //! enumerates the full early set in C++ definition order for the W8 assembler.
 
-use kuna_base::types::uintb;
+use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
@@ -287,11 +287,53 @@ impl Action for ActionConstbase {
         if data.bblocks_get_size() == 0 {
             return 0; // No blocks
         }
-        // SEAM(W4): getFuncProto().getInjectUponEntry, getArch()->pcodeinjectlib,
-        // getArch()->context->getTrackedSet, and doLiveInject are W4 prototype/
-        // inject surfaces (FuncProto is an empty Default placeholder in seams.rs).
-        // No tracked set / inject => no COPY ops emitted; matches the C++ when the
-        // model has no upon-entry inject and no tracked registers (count stays 0).
+        // Entry block (block 0) — constructed to have nothing falling into it.
+        let bb = data.bblocks_get_block(0);
+        let bb_start = data.bblocks_block_start(bb);
+
+        // SEAM(W4): getFuncProto().getInjectUponEntry + doLiveInject are the
+        // upon-entry pcode-inject surface (FuncProto is an empty Default
+        // placeholder in seams.rs).  None of the tracked-register datatests drive
+        // it, so it stays deferred; the tracked-set COPY injection below is the
+        // half `set track <reg> <val> [start end]` (ifacedecomp.cc `IfcSettrackedrange`)
+        // depends on.
+
+        //   const TrackedSet trackset(...context->getTrackedSet(data.getAddress()));
+        // C++ takes a copy; the per-function `glb` skeleton holds a snapshot of the
+        // engine track base (taken at `build_arch_handle`), so clone the queried set
+        // out before mutating the funcdata.
+        let func_addr = data.get_address().clone();
+        let arch = data.get_arch().clone();
+        let trackset: Vec<kuna_sleigh::globalcontext::TrackedContext> =
+            arch.get_tracked_set(&func_addr).clone();
+        if trackset.is_empty() {
+            return 0;
+        }
+
+        // For each tracked register: emit a `COPY #val` whose output is the
+        // register storage, inserted at the start of the entry block (C++
+        // coreaction.cc:709-719).
+        for ctx in &trackset {
+            // Address addr(ctx.loc.space, ctx.loc.offset);
+            let space = ctx
+                .loc
+                .space
+                .as_ref()
+                .expect("ActionConstbase: tracked register has null space")
+                .clone();
+            let addr = kuna_base::address::Address::new(space, ctx.loc.offset);
+            let size = ctx.loc.size as int4;
+            // op = newOp(1, bb->getStart());
+            let op = data.new_op(1, bb_start.clone());
+            // newVarnodeOut(ctx.loc.size, addr, op);
+            data.new_varnode_out(size, &addr, op).expect("ActionConstbase: newVarnodeOut");
+            // vnin = newConstant(ctx.loc.size, ctx.val);
+            let vnin = data.new_constant(size, ctx.val);
+            // opSetOpcode(op, CPUI_COPY); opSetInput(op, vnin, 0); opInsertBegin(op, bb);
+            data.op_set_opcode_code(op, OpCode::CPUI_COPY);
+            data.op_set_input(op, vnin, 0).expect("ActionConstbase: opSetInput");
+            data.op_insert_begin(op, bb);
+        }
         0
     }
 }

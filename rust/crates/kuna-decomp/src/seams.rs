@@ -559,6 +559,14 @@ pub struct Architecture {
     /// `fc->copy(otherfunc->getFuncProto())` (`coreaction.cc:2385`).  Empty for
     /// hand-built fixtures and undeclared callees.
     pub callee_protos: Vec<(int4, kuna_base::types::uintb, crate::fspec::PrototypePieces)>,
+    /// Snapshot of the engine's tracked-register database (C++ `glb->context`'s
+    /// track base, populated by `set track <reg> <val> [start end]`).  The
+    /// per-function `glb` skeleton does not hold the `ContextDatabase`, so
+    /// `build_arch_handle` clones the part-map here; [`ActionConstbase`](crate::
+    /// coreaction_early::ActionConstbase) queries it for the entry address to emit
+    /// the `COPY #val -> reg` ops (`coreaction.cc:707`).  Empty for hand-built
+    /// fixtures and when no register is tracked.
+    pub tracked_sets: kuna_base::partmap::PartMap<Address, kuna_sleigh::globalcontext::TrackedSet>,
 }
 
 impl Architecture {
@@ -626,7 +634,16 @@ impl Architecture {
             infer_ptr_spaces: Vec::new(),
             // No declared callee prototypes until build_arch_handle snapshots them.
             callee_protos: Vec::new(),
+            // No tracked registers until build_arch_handle snapshots the context DB.
+            tracked_sets: kuna_base::partmap::PartMap::default(),
         }
+    }
+
+    /// Tracked-register values valid at `addr` (C++ `glb->context->getTrackedSet`).
+    /// Reads the [`tracked_sets`](Self::tracked_sets) snapshot taken at
+    /// `build_arch_handle`.
+    pub fn get_tracked_set(&self, addr: &Address) -> &kuna_sleigh::globalcontext::TrackedSet {
+        self.tracked_sets.get_value(addr)
     }
 
     /// Read a `sz`-byte value out of the program load image at `addr` (C++
