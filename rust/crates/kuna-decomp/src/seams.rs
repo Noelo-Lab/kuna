@@ -473,6 +473,12 @@ pub struct Architecture {
     /// `Architecture::analyze_for_loops`, default-on).  Read by
     /// `Funcdata::finalize_forloop_transform` (the BlockWhileDo for-loop reroll).
     pub analyze_for_loops: bool,
+    /// Ignore NaN operations entirely, assuming `nan()` always returns false
+    /// (C++ `Architecture::nan_ignore_all`, default-off).  Read by
+    /// [`RuleIgnoreNan`](crate::ruleaction_7::RuleIgnoreNan); set via the
+    /// `nanignore all` option and shared from the real
+    /// [`crate::architecture::Architecture`] through `build_arch_handle`.
+    pub nan_ignore_all: bool,
     /// The data-type factory (C++ `glb->types`), shared from the real
     /// [`crate::architecture::Architecture`] through `build_arch_handle`.
     /// `ActionInferTypes` reaches `getBase`/`getTypePointer`/`down_chain` through
@@ -606,6 +612,10 @@ impl Architecture {
             condexe_block_placement: true,
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).
             analyze_for_loops: true,
+            // C++ Architecture default: nan_ignore_all = false (architecture.cc:1453);
+            // only `nanignore all` flips it. nan_ignore_compare drives the rule's
+            // enabled state at registration, not this flag.
+            nan_ignore_all: false,
             types: None,
             internal_strings: None,
             max_jumptable_size: 0,

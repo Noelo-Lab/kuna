@@ -793,6 +793,9 @@ impl Architecture {
         // so `ActionStructureTransform` reaches it for
         // `Funcdata::finalize_forloop_transform`.
         seam.analyze_for_loops = self.analyze_for_loops;
+        // Carry the `nanignore all` flag (C++ `glb->nan_ignore_all`) so
+        // `RuleIgnoreNan` reaches it via `glb`.
+        seam.nan_ignore_all = self.nan_ignore_all;
         // Share the populated data-type factory so `ActionInferTypes` (run via
         // `glb`) reaches the same interned core types this side cached.
         seam.types = Some(self.types_rc());

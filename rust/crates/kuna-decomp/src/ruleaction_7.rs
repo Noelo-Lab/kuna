@@ -28,10 +28,23 @@
 //!   `SegmentOp::execute`, `getSpaceFromConst`, and the `contiguous_test`/
 //!   `findContiguousWhole` expression helpers; `RulePtrFlow` needs the
 //!   `Architecture` (`glb`), `getDefaultCodeSpace`, and `isTruncated`;
-//!   `RuleIgnoreNan` needs `nan_ignore_all`, `TypeOp::isFloatingPointOp`, and
-//!   `functionalEquality`; `RuleConditionalMove` needs `opBoolNegate` and the
+//!   `RuleConditionalMove` needs `opBoolNegate` and the
 //!   `CloneBlockOps` expression cloner.  These match as far as the available IR
 //!   surface allows and bail at the unported step.  // SEAM(W4)
+//!
+//! `RuleIgnoreNan` is now fully ported (the comparison-based NaN removal +
+//! `nan_ignore_all` arm), folding the x87 status-word `(NAN||NAN||a<b)||
+//! (NAN||NAN||a==b)` chain to a single `FLOAT_LESSEQUAL` (Status Compare #3,
+//! NaN operations #2).
+//!
+//! NEXT-LOCUS (not a float rule, so out of this wave's scope):
+//! * **Status Compare #1** — the fold is correct (`val2 <= val1`), but the
+//!   `map addr r0x10000 float4 val1` globals print as `dat_10000`/`dat_20000`:
+//!   the global-symbol-from-load-address resolution does not name a `float4`
+//!   global here (the only failing `map addr` assertion among many passing
+//!   ones).  Locus: global symbol address→name resolution for float-typed
+//!   globals (HighVariable naming / `Scope::queryByAddr` for the read varnode),
+//!   NOT a ruleaction float rule.
 //!
 //! Every seam is also recorded in this item's `losses` output.
 
@@ -40,6 +53,7 @@ use kuna_base::types::{int4, uintb, Wrap};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
+use crate::expression::functional_equality;
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
 use crate::seams::{BlockId, OpId, TypeOp, VarnodeId};
@@ -148,6 +162,28 @@ fn vn_is_addr_tied(data: &Funcdata, vn: VarnodeId) -> bool {
 #[inline]
 fn vn_descend(data: &Funcdata, vn: VarnodeId) -> Vec<OpId> {
     data.vbank().get(vn).expect("vn_descend: stale vn").descend_iter().collect()
+}
+/// `op->isBoolOutput()`
+#[inline]
+fn op_is_bool_output(data: &Funcdata, op: OpId) -> bool {
+    data.obank().get(op).expect("op_is_bool_output: stale op").is_bool_output()
+}
+/// `op->isBooleanFlip()`
+#[inline]
+fn op_is_boolean_flip(data: &Funcdata, op: OpId) -> bool {
+    data.obank().get(op).expect("op_is_boolean_flip: stale op").is_boolean_flip()
+}
+/// `op->getParent()`
+#[inline]
+fn op_get_parent(data: &Funcdata, op: OpId) -> Option<BlockId> {
+    data.obank().get(op).expect("op_get_parent: stale op").get_parent()
+}
+/// `op->getOpcode()->isFloatingPointOp()` — resolved through the canonical
+/// `inst[]` table (`type_op_info`); the op's cached `TypeOp` seam on the op
+/// itself carries no `addlflags`, so the `floatingpoint_op` bit is read here.
+#[inline]
+fn op_is_floating_point(data: &Funcdata, op: OpId) -> bool {
+    crate::typeop::type_op_info(op_code(data, op)).is_floating_point_op()
 }
 
 // =============================================================================
@@ -2277,11 +2313,12 @@ impl Rule for RuleFloatCast {
 /// `RuleIgnoreNan` — remove certain NaN operations by assuming their result is
 /// always \b false.
 ///
-/// // SEAM(W4): the non-`nan_ignore_all` path needs `TypeOp::isFloatingPointOp`,
-/// `functionalEquality`, and `nan_ignore_all` (an `Architecture` flag).  None are
-/// ported.  The `nan_ignore_all` arm reads that flag (defaulted off, so this arm
-/// is unreachable until W4); the comparison-based arm is deferred to W4.  The
-/// `getOpList`/clone are exact.
+/// Faithful port of `RuleIgnoreNan` (ruleaction.cc:9619-9797): the
+/// `nan_ignore_all` arm (read from `Architecture::nan_ignore_all`) replaces the
+/// NaN with constant 0; the comparison-based arm walks the boolean fan-out and
+/// removes the NaN data-flow when it protects a floating-point comparison with
+/// the same value.  `checkBackForCompare`/`isAnotherNan`/`testForComparison` are
+/// transcribed below as free functions.
 pub struct RuleIgnoreNan;
 
 impl RuleIgnoreNan {
@@ -2297,6 +2334,153 @@ impl Default for RuleIgnoreNan {
     }
 }
 
+/// C++ `RuleIgnoreNan::checkBackForCompare` (ruleaction.cc:9637): check if a
+/// boolean Varnode incorporates a floating-point comparison with the given value.
+fn ignorenan_check_back_for_compare(
+    data: &Funcdata,
+    float_var: VarnodeId,
+    root: VarnodeId,
+) -> bool {
+    if !vn_is_written(data, root) {
+        return false;
+    }
+    let mut def1 = vn_def(data, root).expect("ignorenan: root written");
+    if !op_is_bool_output(data, def1) {
+        return false;
+    }
+    if op_code(data, def1) == OpCode::CPUI_BOOL_NEGATE {
+        let vn = op_in(data, def1, 0).expect("ignorenan: negate in0");
+        if !vn_is_written(data, vn) {
+            return false;
+        }
+        def1 = vn_def(data, vn).expect("ignorenan: negate in0 written");
+    }
+    if op_is_floating_point(data, def1) {
+        if op_num_input(data, def1) != 2 {
+            return false;
+        }
+        let in0 = op_in(data, def1, 0).expect("ignorenan: cmp in0");
+        let in1 = op_in(data, def1, 1).expect("ignorenan: cmp in1");
+        if functional_equality(float_var, in0, data.vbank(), data.obank()) {
+            return true;
+        }
+        if functional_equality(float_var, in1, data.vbank(), data.obank()) {
+            return true;
+        }
+        return false;
+    }
+    let opc = op_code(data, def1);
+    if opc != OpCode::CPUI_BOOL_AND && opc != OpCode::CPUI_BOOL_OR {
+        return false;
+    }
+    for i in 0..2 {
+        let vn = match op_in(data, def1, i) {
+            Some(v) => v,
+            None => continue,
+        };
+        if !vn_is_written(data, vn) {
+            continue;
+        }
+        let def2 = vn_def(data, vn).expect("ignorenan: bool-arg written");
+        if !op_is_bool_output(data, def2) {
+            continue;
+        }
+        if !op_is_floating_point(data, def2) {
+            continue;
+        }
+        if op_num_input(data, def2) != 2 {
+            continue;
+        }
+        let in0 = op_in(data, def2, 0).expect("ignorenan: cmp2 in0");
+        let in1 = op_in(data, def2, 1).expect("ignorenan: cmp2 in1");
+        if functional_equality(float_var, in0, data.vbank(), data.obank()) {
+            return true;
+        }
+        if functional_equality(float_var, in1, data.vbank(), data.obank()) {
+            return true;
+        }
+    }
+    false
+}
+
+/// C++ `RuleIgnoreNan::isAnotherNan` (ruleaction.cc:9679): test if the given
+/// Varnode is the (possibly negated) output of a NaN operation.
+fn ignorenan_is_another_nan(data: &Funcdata, vn: VarnodeId) -> bool {
+    if !vn_is_written(data, vn) {
+        return false;
+    }
+    let mut op = vn_def(data, vn).expect("ignorenan: another-nan written");
+    let mut opc = op_code(data, op);
+    if opc == OpCode::CPUI_BOOL_NEGATE {
+        let inner = match op_in(data, op, 0) {
+            Some(v) if vn_is_written(data, v) => v,
+            _ => return false,
+        };
+        op = vn_def(data, inner).expect("ignorenan: another-nan negate written");
+        opc = op_code(data, op);
+    }
+    opc == OpCode::CPUI_FLOAT_NAN
+}
+
+/// C++ `RuleIgnoreNan::testForComparison` (ruleaction.cc:9711): test whether a
+/// boolean expression incorporates a floating-point comparison and, if so, remove
+/// the NaN data-flow into `op`.  Returns `op->getOut()` when `op` matches
+/// `match_code` and feeds another NaN (so the caller can recurse), else `None`.
+fn ignorenan_test_for_comparison(
+    data: &mut Funcdata,
+    float_var: VarnodeId,
+    op: OpId,
+    slot: int4,
+    match_code: OpCode,
+    count: &mut int4,
+) -> Option<VarnodeId> {
+    let opc = op_code(data, op);
+    if opc == match_code {
+        let vn = op_in(data, op, 1 - slot).expect("ignorenan: match in");
+        if ignorenan_check_back_for_compare(data, float_var, vn) {
+            data.op_set_opcode(op, typeop_for(OpCode::CPUI_COPY));
+            data.op_remove_input(op, 1);
+            data.op_set_input(op, vn, 0).expect("ignorenan: copy in0");
+            *count += 1;
+        } else if ignorenan_is_another_nan(data, vn) {
+            return op_out(data, op);
+        }
+    } else if opc == OpCode::CPUI_INT_EQUAL || opc == OpCode::CPUI_INT_NOTEQUAL {
+        let vn = op_in(data, op, 1 - slot).expect("ignorenan: inteq in");
+        if ignorenan_check_back_for_compare(data, float_var, vn) {
+            let cval = if match_code == OpCode::CPUI_BOOL_OR { 0 } else { 1 };
+            let c = data.new_constant(1, cval);
+            data.op_set_input(op, c, slot).expect("ignorenan: inteq const");
+            *count += 1;
+        }
+    } else if opc == OpCode::CPUI_CBRANCH {
+        let parent = op_get_parent(data, op).expect("ignorenan: cbranch parent");
+        let mut out_dir = if match_code == OpCode::CPUI_BOOL_OR { 0 } else { 1 };
+        if op_is_boolean_flip(data, op) {
+            out_dir = 1 - out_dir;
+        }
+        let out_branch = data.bblocks_ref().block(parent).get_out(out_dir);
+        let last_op = data.bblocks_ref().struct_last_op(out_branch);
+        if let Some(last_op) = last_op {
+            if op_code(data, last_op) == OpCode::CPUI_CBRANCH {
+                let other_branch = data.bblocks_ref().block(parent).get_out(1 - out_dir);
+                let ob0 = data.bblocks_ref().block(out_branch).get_out(0);
+                let ob1 = data.bblocks_ref().block(out_branch).get_out(1);
+                if ob0 == other_branch || ob1 == other_branch {
+                    let cmpvn = op_in(data, last_op, 1).expect("ignorenan: lastop in1");
+                    if ignorenan_check_back_for_compare(data, float_var, cmpvn) {
+                        let cval = if match_code == OpCode::CPUI_BOOL_OR { 0 } else { 1 };
+                        let c = data.new_constant(1, cval);
+                        data.op_set_input(op, c, 1).expect("ignorenan: cbranch const");
+                        *count += 1;
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 impl Rule for RuleIgnoreNan {
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_FLOAT_NAN]
@@ -2310,14 +2494,59 @@ impl Rule for RuleIgnoreNan {
         }
     }
 
-    fn apply_op(&mut self, _op: OpId, _data: &mut Funcdata) -> int4 {
-        // SEAM(W4): if (data.getArch()->nan_ignore_all) { opSetOpcode(op,CPUI_COPY);
-        //   opSetInput(op,newConstant(1,0),0); return 1; }
-        //   -- nan_ignore_all is an unported Architecture flag (defaults off).
-        // The comparison-based removal (testForComparison / checkBackForCompare /
-        // isAnotherNan) needs isFloatingPointOp + functionalEquality (W4/W6).
-        // No change.
-        0
+    fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        if data.get_arch().nan_ignore_all {
+            // Treat these NaN operation as always returning false (0)
+            data.op_set_opcode(op, typeop_for(OpCode::CPUI_COPY));
+            let c = data.new_constant(1, 0);
+            data.op_set_input(op, c, 0).expect("ignorenan: all const");
+            return 1;
+        }
+        let float_var = op_in(data, op, 0).expect("ignorenan: in0");
+        if vn_is_free(data, float_var) {
+            return 0;
+        }
+        let out1 = op_out(data, op).expect("ignorenan: out");
+        let mut count: int4 = 0;
+        // out1 may be truncated from boolRead1 below; snapshot the descend list.
+        for bool_read1 in vn_descend(data, out1) {
+            let mut match_code = OpCode::CPUI_BOOL_OR;
+            let out2: Option<VarnodeId>;
+            if op_code(data, bool_read1) == OpCode::CPUI_BOOL_NEGATE {
+                match_code = OpCode::CPUI_BOOL_AND;
+                out2 = op_out(data, bool_read1);
+            } else {
+                let slot = op_slot(data, bool_read1, out1);
+                out2 = ignorenan_test_for_comparison(
+                    data, float_var, bool_read1, slot, match_code, &mut count,
+                );
+            }
+            let out2 = match out2 {
+                Some(v) => v,
+                None => continue,
+            };
+            for bool_read2 in vn_descend(data, out2) {
+                let slot = op_slot(data, bool_read2, out2);
+                let out3 = ignorenan_test_for_comparison(
+                    data, float_var, bool_read2, slot, match_code, &mut count,
+                );
+                let out3 = match out3 {
+                    Some(v) => v,
+                    None => continue,
+                };
+                for bool_read3 in vn_descend(data, out3) {
+                    let slot = op_slot(data, bool_read3, out3);
+                    ignorenan_test_for_comparison(
+                        data, float_var, bool_read3, slot, match_code, &mut count,
+                    );
+                }
+            }
+        }
+        if count > 0 {
+            1
+        } else {
+            0
+        }
     }
 }
 

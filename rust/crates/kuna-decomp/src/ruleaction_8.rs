@@ -44,11 +44,27 @@
 //!   (`RuleUnsigned2Float`/`RuleInt2FloatCollapse`/`RuleLzcountShiftBool`/
 //!   `RuleOrCompare`/`RuleExpandLoad`) bail at that point via
 //!   [`new_unique_out`] returning the seam error.  Recorded as losses.
-//! * **SEAM(W6) — type queries.**  `TypeOp::floatSignManipulation`,
-//!   `TypeOpFloatInt2Float::preferredZextSize`, `Varnode::getTypeReadFacing`/
-//!   `getTypeDefFacing`, and `TypePointer::getPtrTo` are W6.  The local
-//!   [`float_sign_manipulation`]/[`preferred_zext_size`] helpers return the
-//!   guard-failing value so the dependent rules no-op.
+//! * **SEAM(W6) — type queries.**  `TypeOpFloatInt2Float::preferredZextSize`,
+//!   `Varnode::getTypeReadFacing`/`getTypeDefFacing`, and `TypePointer::getPtrTo`
+//!   are W6.  The local [`preferred_zext_size`] helper returns the guard-failing
+//!   value so the dependent rules no-op.  `TypeOp::floatSignManipulation` is now
+//!   wired to [`crate::typeop::float_sign_manipulation`] (the local
+//!   [`float_sign_manipulation`] adapter extracts the op-code + constant slot-1),
+//!   so `RuleFloatSign`/`RuleFloatSignCleanup` recognize `x & 0x7fff.. => ABS`
+//!   and `x ^ 0x8000.. => -x` (Floating-point cast #10, Relative pointers #7).
+//!
+//! NEXT-LOCUS (not a float rule, so out of this wave's scope):
+//! * **Floating-point convert #3** — `ulconv_win` prints `(void)` /
+//!   `(float8)(uint8)(v1 - 0x10)` instead of `ulconv_win(uint8 llval)` /
+//!   `(float8)(llval - 0x10)`.  The `map param 0 [register,8,8] uint8 llval`
+//!   storage lock is not reflected in the recovered prototype (the rcx param
+//!   stays a free `v1`), so the `(uint8)` cast is forced.  Locus: console
+//!   `IfcMapParam` -> `FuncProto::setParam` register-storage param lock reaching
+//!   `ActionFuncLink`/param recovery, NOT a float rule.
+//! * **Mixed float/int #1** — `dldlll`'s first arg recovers as `xunknown4`
+//!   (`CONCAT44(v1,a0)`) instead of `float8 a0`; the 8-byte float register pair
+//!   is not merged.  Locus: float-register-pair param type recovery / merge,
+//!   NOT a float-conversion ruleaction.
 //! * **`FlowBlock::findCondition` (formerly SEAM(W3-block)).**  Used only by
 //!   `RuleInt2FloatCollapse`; transcribed here as the local [`find_condition`]
 //!   helper (faithful to `block.cc:839`), so that rule now completes.
@@ -225,17 +241,32 @@ fn space_from_const(
     manage.get_space(idx as i32).map(Rc::clone)
 }
 
-/// `TypeOp::floatSignManipulation(op)` (C++, `typeop.cc`): classify `op` as a
+/// `TypeOp::floatSignManipulation(op)` (C++ `typeop.cc:154`): classify `op` as a
 /// floating-point sign-bit manipulation and return the equivalent FLOAT_ABS /
 /// FLOAT_NEG op-code, or `CPUI_MAX` if it is not one.
 ///
-/// SEAM(W6): the real classifier inspects the W6 `TypeOp`/`OpBehavior` of the op
-/// and the constant mask.  It is not ported; returning `CPUI_MAX` makes the
-/// callers (`RuleFloatSign`/`RuleFloatSignCleanup`) treat every op as "not a sign
-/// manipulation", i.e. a faithful no-op.  Recorded as a loss.
-fn float_sign_manipulation(_data: &Funcdata, _op: OpId) -> OpCode {
-    // SEAM(W6): TypeOp::floatSignManipulation
-    OpCode::CPUI_MAX
+/// The classifier proper lives in [`crate::typeop::float_sign_manipulation`]
+/// (`x & 0x7fff.. => ABS`, `x ^ 0x8000.. => NEG`).  This adapter extracts the
+/// op-code and the constant slot-1 `(size, offset)` (`op->getIn(1)` when constant)
+/// the C++ inspects, then delegates — matching the C++ which reads `op->getIn(1)`
+/// for both INT_AND and INT_XOR.
+fn float_sign_manipulation(data: &Funcdata, op: OpId) -> OpCode {
+    let opc = data.obank().get(op).expect("fsm: stale op").code();
+    // The classifier only fires for INT_AND / INT_XOR with a constant slot 1; for
+    // any other op-code in1 is irrelevant, so resolve it lazily.
+    if opc != OpCode::CPUI_INT_AND && opc != OpCode::CPUI_INT_XOR {
+        return OpCode::CPUI_MAX;
+    }
+    let in1 = data.obank().get(op).expect("fsm: op").get_in(1);
+    let in1const = in1.and_then(|vn| {
+        let v = data.vbank().get(vn).expect("fsm: in1 vn");
+        if v.is_constant() {
+            Some((v.get_size(), v.get_offset()))
+        } else {
+            None
+        }
+    });
+    crate::typeop::float_sign_manipulation(opc, in1const)
 }
 
 /// `TypeOpFloatInt2Float::preferredZextSize(inSize)` (C++ `typeop.cc:1893`): the
@@ -1630,7 +1661,6 @@ impl Rule for RuleFloatSignCleanup {
             return 0;
         }
         // OpCode opc = TypeOp::floatSignManipulation(op); if (opc == CPUI_MAX) return 0;
-        //   -- SEAM(W6): floatSignManipulation returns CPUI_MAX, so the rule no-ops.
         let opc = float_sign_manipulation(data, op);
         if opc == OpCode::CPUI_MAX {
             return 0;
@@ -2668,9 +2698,12 @@ mod tests {
     }
 
     #[test]
-    fn floatsigncleanup_noops_at_w6_seam_with_float_output() {
-        // Float output passes the first guard, but floatSignManipulation is the W6
-        // seam (returns CPUI_MAX) so the rule no-ops without altering the op.
+    fn floatsigncleanup_converts_and_signmask_to_float_abs() {
+        // Float output passes the first guard; `x & 0x7fffffff` clears the float
+        // sign bit, so `floatSignManipulation` classifies it as FLOAT_ABS and the
+        // rule rewrites the op (input 1 removed, op-code -> FLOAT_ABS).
+        // (Was the W6 seam no-op; the classifier is now wired to
+        // `typeop::float_sign_manipulation`.)
         let mut fd = build_fd();
         let bl = mk_block(&mut fd);
         let x = {
@@ -2682,8 +2715,13 @@ mod tests {
         wire(&mut fd, x, andop, 0);
         wire(&mut fd, mask, andop, 1);
         let _ = set_output(&mut fd, andop, 0x20, float_t(4)); // FLOAT output
-        assert_eq!(RuleFloatSignCleanup.apply_op(andop, &mut fd), 0);
-        assert_eq!(code(&fd, andop), OpCode::CPUI_INT_AND); // unchanged (W6 seam)
+        assert_eq!(RuleFloatSignCleanup.apply_op(andop, &mut fd), 1);
+        assert_eq!(code(&fd, andop), OpCode::CPUI_FLOAT_ABS); // x & 0x7fff.. -> ABS(x)
+        assert_eq!(
+            fd.obank().get(andop).unwrap().num_input(),
+            1,
+            "the constant mask input is removed"
+        );
     }
 
     // =====================================================================
