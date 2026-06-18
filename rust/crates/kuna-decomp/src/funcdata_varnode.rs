@@ -2370,12 +2370,41 @@ impl Funcdata {
             let isdirect = match_code == Some(OpCode::CPUI_CALL);
             // (isdirect && matchfc->getEntryAddress()==fc->getEntryAddress()) ||
             // (!isdirect && op->getIn(0)==opmatch->getIn(0))
+            //
+            // (kuna divergence, LOSS-243 / Indirect prototype #2) For two indirect
+            // calls the C++ accepts the double-use only when the function-pointer
+            // Varnodes are identical (`op->getIn(0)==opmatch->getIn(0)`).  Two
+            // *sibling* CALLINDs that take the SAME value as the SAME parameter but
+            // call distinct targets (e.g. `ptr->peek(a)` / `ptr->get(a)` from one
+            // struct) have distinct funcptr Varnodes, so this gate rejects them and
+            // — depending on which call's input trial happens to be checked first —
+            // one sibling's argument is dropped.  Upstream recovers the dropped
+            // argument later via `ActionDeindirect`'s `forceSet` + the proto-override
+            // restart (coreaction.cc:1274 / fspec.cc:5491); that recovery rides a
+            // W4 `Override` seam (a recovered `FuncProto` stored back into the
+            // override store and re-applied on restart) not yet ported.  Here we
+            // instead admit the double-use directly: the value reaching slot `j` of
+            // `op` is the SAME logical parameter as `trial` (verified by the inner
+            // `curtrial.getAddress()==trial.getAddress()` guard below), so it is a
+            // legitimate shared parameter, not an exclusive non-parameter use.  The
+            // inner same-address / different-block guards keep this as tight as the
+            // upstream same-target arm; it produces output identical to upstream on
+            // the full datatest + unit suites.
             let same_func = if isdirect {
                 matchfc.get_entry_address() == fc.get_entry_address()
             } else {
                 let op_in0 = self.obank().get(op).and_then(|o| o.get_in(0));
                 let match_in0 = self.obank().get(opmatch).and_then(|o| o.get_in(0));
-                op_in0.is_some() && op_in0 == match_in0
+                if op_in0.is_some() && op_in0 == match_in0 {
+                    true
+                } else {
+                    // Sibling CALLINDs: accept when the value is the same logical
+                    // parameter to both (same trial address).  The remaining
+                    // same-address + different-block guards inside the `if same_func`
+                    // body decide the actual double-use verdict.
+                    let curtrial = fc.active_input().get_trial_for_input_varnode(j);
+                    curtrial.get_address() == trial.get_address()
+                }
             };
             if same_func {
                 // const ParamTrial &curtrial( fc->getActiveInput()
