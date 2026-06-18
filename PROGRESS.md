@@ -2,6 +2,8 @@
 
 ## Session (2026-06-17c/18) — rust-port W10: 408 → 482/675; +...clone-gate audit, deindirect-output-type
 
+**clone-gate audit ra5/ra8 +0 fidelity → 482.** ruleaction_5 confirmed clean (dynamic self.group). Found 3 more mis-gated rules in ruleaction_8 (RulePiecePathology→protorecovery, RuleFloatSignCleanup/RuleExpandLoad→cleanup; a single RULE_GROUP="analysis" const gated all 12). Fixed → correct pool membership. Regressed-set EMPTY, +0 (no datatest observes the pool change), cargo --no-fail-fast 0-fail, PARITY OK. The clone-gate bug class is now FULLY swept (20 rules total: 17 ra2 + 3 ra8; ra1/3/4/5/6/7 clean).
+
 **deindirect output type +1 → 482.** `output_type_local` (coreaction_infertypes.rs:59) was missing
 the CALL/CALLIND locked-output arm (TypeOpCall::getOutputLocal typeop.cc:722 returns
 fc->getOutputType() for a locked non-VOID output), so a deindirected `int4 *obtainPtr` return stayed
