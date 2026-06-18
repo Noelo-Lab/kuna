@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 538/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 549/675; +...clone-gate audit, deindirect-output-type
+
+**CHAIN B COMPLETE — query_local_properties OR wired +11 → 549 (the stack-symbol struct-typing root, after ~8 substrate waves).** The OR at heritage.rs:1381 is now ON. Two gaps closed: Gap-2 = Scope::addMap (database.rs:1875) wrongly persist-marked every mapped stack local (tested globalscope, but a ScopeLocal's private root IS the stack scope) → fixed via is_global() (database.cc:1141); Gap-1 = W6 store-guard discovery (heritage.rs discover_indexed_stack_pointers, heritage.cc:987) + W7 StackAffectingOps::populate (funcdata_merge.rs, merge.cc:63) + cover.rs PcodeOpSet mutators so test_untied_call_intersection no longer mis-merges the store value. Gained Local cross #1, No-for-loop alias #3, Partial splitting #15-19, Wayoff array #1, Store cross #3/#4/#5. Gate: `[675,549]`, regressed-set EMPTY on BOTH oracles, cargo --no-fail-fast 0-fail, MIXFLOATINT HELD 9/9 (the prior-attempt hazard didn't recur), switch/for-loop held, PARITY OK. Review `reviews/w10-chainb-complete.md`. Foundational stack-symbol typing now ON; broader Bitfields/Stack-string render needs per-family work.
 
 **unsigned/long literal suffix +1 → 538.** The cast predicate was faithful (val IS signed int4); the gap was printc — `push_constant_ir_fmt_sign` (printc.rs:5360) hardcoded force_unsigned=false and never read the Varnode's isUnsignedPrint()/isLongPrint() flags or emitted the size suffix (printc.cc:1378/1430). Fixed: thread both flags + L/LL size-suffix into format_integer_token. Gained Inlining #5 (`val & 1U`); also fixes any isLongPrint constant. Gate: `[675,538]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK.
 
