@@ -3397,3 +3397,30 @@ ContainsJustified not ContainedBy).
   forceSet arm restart-looped and regressed #3 — reverted). NEXT-LOCUS: align Funcdata::only_op_use/
   check_call_double_use so a value feeding two sibling CALLINDs in different blocks scores only=true for
   each → the already-faithful force_set path then locks it without a restart. [[kuna-rust-port]]
+
+## LOSS-147 UPDATE / LOSS-244 (sync-unaliased wave, 2026-06-18) — the register-param over-tie root CONFIRMED + a 2-locus ordered restoration; the over-tie is a LOAD-BEARING hack
+
+The LOSS-243 "register-unaliased half of syncVarnodesWithSymbols" framing is MIS-LOCALIZED: that function
+only touches the STACK space; the failing INDIRECT outputs (Inject Override #1) are REGISTER varnodes it
+never visits. The real root (dual-engine confirmed): the dead call-clobber INDIRECTs on ECX/EDX come back
+`addrtied|addrforce|mapped|directwrite` in rust vs `mapped`-only in C++. The extra addrforce makes
+RuleIndirectCollapse's `has_no_local_alias()` arm (ruleaction_3.rs:692) unreachable → INDIRECT persists →
+merges into the 8-byte funcptr → printer CONCATs `(v1,a0)`.
+- SOURCE of the over-tie: `ScopeLocal::add_param_symbol` (varmap.rs:1132) always passes
+  `usepoint=Address::new_invalid()` to add_symbol_mapped → Scope::addMap (database.rs:1916) hits the
+  `uselimit.empty()` arm and SETs addrtied on EVERY register param symbol. C++ does NOT: ProtoStoreSymbol::
+  setInput (fspec.cc:3172) calls discoverScope(addr); for a register (not in any scope range) it returns
+  null → substitutes restricted_usepoint (= baseaddr-1, fspec.cc:3887) → non-empty uselimit → addMap
+  (database.cc:1154) does NOT tie. Stack params discover the scope → usepoint stays invalid → tied (faithful).
+- The faithful fix (thread restricted_usepoint into add_param_symbol + discover_scope null→restricted) makes
+  the IR BYTE-IDENTICAL to C++ (both ECX/EDX INDIRECTs collapse) — BUT regresses Inlining #6/#7/#8 (-3),
+  because un-tying the register param exposes that rust's un-tied-register HighVariable COVERAGE MERGE
+  (Merge::mergeByDatatype/mergeLinear unifying same-address same-type non-interfering register highs so the
+  body redefs absorb the param Symbol name) is an UNPORTED seam. So the over-tie is a LOAD-BEARING
+  compensating hack. SymbolEntry::inUse (database.cc:115) returns true for tied entries but only at the
+  uselimit usepoint for un-tied — that distinction is what rust doesn't reproduce.
+- RESTORATION (2-locus, ORDERED): (1) port the un-tied-register HighVariable coverage merge + wire
+  SymbolEntry::inUse's tied-vs-uselimit distinction faithfully; THEN (2) apply the restricted_usepoint fix
+  in add_param_symbol. Until (1) lands, (2) regresses Inlining. Inject Override #1 ALSO needs the
+  indirect-call override-proto input-slot printer fix (the CONCAT `(v1,a0)`), independent of the INDIRECT
+  root. This likely also gates Partial Merge #4/#5 + Stack Return #4/#5 (over-tie residuals). [[kuna-rust-port]]

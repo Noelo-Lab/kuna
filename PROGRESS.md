@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 661/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 663/675; +...clone-gate audit, deindirect-output-type
+
+**For-loop iterator load #1 + Partial union #5 +2 → 663.** For-loop iterator load: printc push_vn_explicit_ir pointer arm (printc.rs:5098) dropped to the integer path losing the `(int4 **)0x0` cast+force_hex that PrintC::pushConstant's TYPE_PTR tail emits (printc.cc:1842); ported the pointer arm. Partial union: applyUnionFacet (funcdata_union.rs, funcdata_varnode.cc:1658) was seamed-out + the facet symbol lost its category/field across the console IR rebuild → added UNION_FACET dynamic-symbol re-seed (database.rs:1825). Gate: `[675,663]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. (Stack spill #1 = W5 join-record SymbolEntry restructure; Local cross #2 = killedbycall return-trial size; both BLOCKED.) Register-param over-tie root CONFIRMED (LOSS-244): add_param_symbol passes invalid usepoint → spurious addrtied; the un-tie is a load-bearing hack for the unported un-tied-register HighVariable coverage merge (gates Inject Override #1 + Partial Merge #4/#5 + Stack Return #4/#5).
 
 **Mixed float/int input coalescing +1 → 661.** xmm0 (1st float8 param AND return reg) split into two 4-byte lanes by Heritage::refinement (identically in both engines); C++ recombines, rust didn't. Ported adjustInputVarnodes (funcdata_varnode.rs:1825, funcdata_varnode.cc:496) + ActionUnjustifiedParams (coreaction_render.rs:2541, coreaction.cc:5018 — widen container + rebuild the two fragments as SUBPIECEs of one 8-byte input via ParamList::unjustifiedInputParam) + ReturnRecovery two-piece JOIN concat (coreaction_protos.rs:1304, coreaction.cc:1896). Gained Mixed float/int #1. Gate: `[675,661]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Long double #11 distinct (struct-field SUB3210 extraction).
 
