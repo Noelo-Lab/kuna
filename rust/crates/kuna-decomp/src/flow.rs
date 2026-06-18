@@ -1688,8 +1688,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// `ActionDefaultParams` time, exactly as the C++ `queryCall` postpone notes).
     fn setup_call_specs(&mut self, op: OpId) -> KunaResult<bool> {
         // C++ FuncCallSpecs(op) reads the entry address off op->getIn(0) for a
-        // direct CALL.
-        let entry = self
+        // direct CALL (fspec.cc:4938-4945).
+        let mut entry = self
             .data
             .obank()
             .get(op)
@@ -1697,6 +1697,23 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             .and_then(|vn| self.data.vbank().get(vn))
             .map(|v| v.get_addr().clone())
             .unwrap_or_default();
+        // if (entryaddress.getSpace()->getType() == IPTR_FSPEC) { ... }
+        // op->getIn(0) was already converted to an fspec pointer.  This happens
+        // when we are cloning an op for inlining (inlineClone -> xrefInlinedBranch
+        // -> setupCallSpecs): the cloned CALL still carries the *callee's* fspec
+        // annotation in slot 0, not a raw code-ref.  C++ recovers the original
+        // entry via `getFspecFromConst(entryaddress)->entryaddress`; here the fspec
+        // offset is a process-unique handle into the side table, so unwrap it the
+        // same way (fspec.cc:4940-4945).
+        if entry
+            .get_space()
+            .map(|sp| sp.get_type() == kuna_base::space::spacetype::IPTR_FSPEC)
+            .unwrap_or(false)
+        {
+            if let Some(info) = kuna_base::space::fspec_lookup(entry.get_offset()) {
+                entry = info.entry;
+            }
+        }
         self.build_call_specs(op, entry.clone(), false)?;
         self.qlst_count += 1;
         // C++ `return checkForFlowModification(*res)` (flow.cc:712).
