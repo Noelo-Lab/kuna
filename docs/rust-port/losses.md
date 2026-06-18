@@ -2954,3 +2954,34 @@ three faithful fixes (all validated):
 - Combined: +10 for-loop cluster (For-loop #1/var-used/with-skip/thru-special, No-for-loop, Pointer
   Compare #1, Relative pointers #8, Inline target #4) + ~4 Copy trim. THE highest-value validated lever.
   Fix 2 (CFG exit-block) is the gating prerequisite; Fix 1+3 are validated and ready. [[kuna-rust-port]]
+
+## LOSS-235/233 NEAR-LANDED — for-loop+Copy-trim is +15 (regressed-EMPTY on oracle), gated on 2 fence-caught latent bugs
+
+The for-loop-complete wave applied all 3 validated fixes + the real Fix-2 root and measured
+**+15 datatests (footer [675,529]), regressed-set EMPTY on the datatest oracle, all 37 switch
+datatests identical, Copy trim #2 stays passing** — the for-loop renders byte-identical to C++.
+- **LOSS-233 ROOT corrected:** NOT flow.rs CFG construction. It is the `setCopyImmed` SEAM in
+  `RulePropagateCopy::apply_op` (ruleaction_3.rs:1943-1949, skipped C++ `op->setCopyImmed(i)`
+  ruleaction.cc:3972). FIX: `Funcdata::op_set_copy_immed` (= `getIn(slot).setImmedCopyEdge(
+  getInRevIndex(slot))` + `addlflags|=immed_copy`, op.cc:128). With it, the MULTIEQUAL loop-exit
+  in-edge is marked immediate → `ActionDoNothing` (coreaction_early.rs:701) DELAYS the exit-block
+  removal instead of hoisting the trim COPY into the cond block → exit COPY stays in its own Block 3
+  (0x100043-0x100046), byte-identical to C++. The CFG is built correctly once the edge is marked.
+  Gains: Copy trim #1/#3/#6/#8 + the +10 for-loop cluster + Partial union #3 = +15.
+- **2 FENCE-CAUGHT latent bugs (the blocker — datatest oracle is clean, but cargo --no-fail-fast fails 5):**
+  1. **switchloop stale-HighVariable crash** (variable.rs:807 get_name_representative → funcdata.rs:3501
+     vn_name_view stale-vn panic, via coreaction_cleanup::name_local_highs_angr): when the delayed
+     do-nothing block's COPY is finally destroyed (ActionLateDoNothing), its output varnode is NOT
+     purged from its HighVariable's `inst` list → naming derefs a freed vn → panic. C++'s high-cleanup
+     on op-destroy is complete. (switchloop DATATEST still passes; only the kuna angr-naming verifier
+     crashes.) FIX: purge destroyed vn from its HighVariable inst list on op-destroy (variable.rs).
+  2. **condconst_conn byte-divergence** (`!(y==10)` vs C++ `y != 10`): the surviving immediate-COPY
+     block changes structuring so C++ folds the CBRANCH negate into INT_NOTEQUAL but rust keeps
+     INT_EQUAL wrapped in BOOL_NEGATE — the flipInPlace/bool-negate canonicalization (block.cc/
+     ruleaction) fires differently. Breaks condconst_conn byte-identity (a must-hold).
+- Plus: re-pin 4 STALE for-loop verifier tests (a1_forloop.../a2_forloop.../a1b_forloop1.../
+  verify_w10_r2_forloop1...) that pinned the OLD broken while/FAIL behavior (their comments say to
+  re-pin to the new for-loop render).
+- THE COMPLETE CHAIN (Fix 1 RuleEarlyRemoval + Fix 2 setCopyImmed + Fix 3 fd_sblock_last_op + Fix 4
+  variable.rs purge + Fix 5 flipInPlace + re-pin 4 tests) lands +15 regressed-set EMPTY AND fence-clean.
+  Every piece precisely diagnosed; Fix 1/2/3 validated. [[kuna-rust-port]]
