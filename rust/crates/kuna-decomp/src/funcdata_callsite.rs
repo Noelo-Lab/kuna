@@ -125,13 +125,13 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
                 }
             } else {
-                let (trial_size, trial_cond) = {
+                let (trial_size, trial_cond, trial_killed) = {
                     let t = data.get_call_specs_mut(idx).get_active_input().get_trial(i);
-                    (t.get_size(), t.has_cond_exe_effect())
+                    (t.get_size(), t.has_cond_exe_effect(), t.is_killed_by_call())
                 };
                 let mut ancestor = AncestorRealistic::new();
                 let (realistic, solid) =
-                    ancestor.execute(data, op, slot, trial_size, trial_cond, false);
+                    ancestor.execute(data, op, slot, trial_size, trial_cond, trial_killed, false);
                 ancestor.apply_trial(
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i),
                     realistic,
@@ -159,13 +159,13 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                 }
             }
         } else {
-            let (trial_size, trial_cond) = {
+            let (trial_size, trial_cond, trial_killed) = {
                 let t = data.get_call_specs_mut(idx).get_active_input().get_trial(i);
-                (t.get_size(), t.has_cond_exe_effect())
+                (t.get_size(), t.has_cond_exe_effect(), t.is_killed_by_call())
             };
             let mut ancestor = AncestorRealistic::new();
             let (realistic, solid) =
-                ancestor.execute(data, op, slot, trial_size, trial_cond, true);
+                ancestor.execute(data, op, slot, trial_size, trial_cond, trial_killed, true);
             ancestor.apply_trial(
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i),
                 realistic,
@@ -220,12 +220,13 @@ pub fn final_input_check(fc: &mut FuncCallSpecs, data: &mut Funcdata) {
         if !fc.get_active_input().get_trial(i).has_cond_exe_effect() {
             continue;
         }
-        let (slot, trial_size, trial_cond) = {
+        let (slot, trial_size, trial_cond, trial_killed) = {
             let t = fc.get_active_input().get_trial(i);
-            (t.get_slot(), t.get_size(), t.has_cond_exe_effect())
+            (t.get_slot(), t.get_size(), t.has_cond_exe_effect(), t.is_killed_by_call())
         };
         let mut ancestor = AncestorRealistic::new();
-        let (realistic, solid) = ancestor.execute(data, op, slot, trial_size, trial_cond, false);
+        let (realistic, solid) =
+            ancestor.execute(data, op, slot, trial_size, trial_cond, trial_killed, false);
         ancestor.apply_trial(fc.get_active_input().get_trial_mut(i), realistic, solid);
         if !(realistic || solid) {
             fc.get_active_input().get_trial_mut(i).mark_no_use();

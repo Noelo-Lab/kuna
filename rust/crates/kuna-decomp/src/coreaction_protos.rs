@@ -1489,10 +1489,13 @@ impl Action for ActionReturnRecovery {
                 // ancestorReal.execute(op,slot,&trial,false) &&
                 //   data.ancestorOpUse(maxancestor,vn,op,trial,0,0)
                 let mut ancestor = crate::funcdata_varnode::AncestorRealistic::new();
-                let (trial_size, trial_cond) =
-                    (active.get_trial(i).get_size(), active.get_trial(i).has_cond_exe_effect());
+                let (trial_size, trial_cond, trial_killed) = (
+                    active.get_trial(i).get_size(),
+                    active.get_trial(i).has_cond_exe_effect(),
+                    active.get_trial(i).is_killed_by_call(),
+                );
                 let (realistic, solid) =
-                    ancestor.execute(data, op, slot, trial_size, trial_cond, false);
+                    ancestor.execute(data, op, slot, trial_size, trial_cond, trial_killed, false);
                 ancestor.apply_trial(active.get_trial_mut(i), realistic, solid);
                 if realistic || solid {
                     // The trial's data-flow ancestry is realistic; now test that
