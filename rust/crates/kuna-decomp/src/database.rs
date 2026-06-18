@@ -1874,9 +1874,22 @@ impl Database {
             self.symbols[sym].flags |= varnode_flags::persist;
         } else if !entry.addr.is_invalid() {
             // If a non-global scope but the address is in the global discovery
-            // range, still mark persistent.
+            // range, still mark persistent.  C++ tests against the architecture's
+            // real global scope (`glb->symboltab->getGlobalScope()`, database.cc:1141),
+            // which is never functional and whose rangetree covers only the
+            // ram/data discovery range — never the stack.  (kuna) A `ScopeLocal`
+            // owns a *private* `Database` whose root ("globalscope") IS the
+            // functional local stack scope itself (varmap.rs `ScopeLocal::new`
+            // creates it parentless); using it here would mark every mapped stack
+            // local `persist`, because its rangetree is the stack discovery
+            // window.  Restrict the test to a true (non-functional) global scope
+            // so a stack local is never spuriously persistent — without this the
+            // local `queryProperties` returns `persist` for spilled-pointer stack
+            // slots, and `Heritage::guardReturns` (`(fl&persist)!=0`) builds
+            // addrforce return-COPYs that materialize dead `&struct.field[idx]`
+            // pointer spills (dupptr "Intermediate pointers #3/#5").
             if let Some(gid) = self.globalscope {
-                let in_global = {
+                let in_global = self.scopes[gid].is_global() && {
                     let addr = entry.addr.clone();
                     self.scopes[gid].in_scope(&addr, 1, &Address::new_invalid())
                 };
