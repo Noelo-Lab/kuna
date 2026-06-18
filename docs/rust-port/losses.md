@@ -2928,3 +2928,29 @@ break-driven C++ oracle p-code (`break start universal:fullloop:mainloop:blockst
      anywhere in the suite → this rebuilt-structure body resolution is unexercised/unfinished.
 - gates: for-loop cluster ~8 + stack-struct-typing ~66 (Bitfields/MIPS/Partial splitting/Stack string/
   Piece/Stack Return-spill). The DEEPEST convergent root, now correctly localized to S7. [[kuna-rust-port]]
+
+## LOSS-235/233 RESOLVED-PATH — for-loop cluster is a VALIDATED 3-fix chain gated on the Copy-trim CFG exit-block
+
+The S7 wave VALIDATED the full for-loop port (produces `for(v1=0; v1<max; v1=v1+1)` byte-identical to
+C++) and falsified the structureReset diagnosis. Measured +10/-1 (the -1 is the gating CFG bug). The
+three faithful fixes (all validated):
+1. **RuleEarlyRemoval SEAM** (ruleaction_1.rs:131): `apply_op` has a `// SEAM(heritage)` that `return
+   0`s for every deadcode-managed space → Rust fires ZERO `earlyremoval` in oppool1 pass1 (C++ fires
+   ~20, pruning the spill/flag dead-ops BEFORE structuring). So at ActionBlockStructure the C++ cond
+   block has 5 ops (isComplex=false) but rust has 12 (is_complex=true → overflow → for-loop bails).
+   FIX (2-line): replace the seam with `if !data.dead_removal_allowed_seen(&spc) { return 0; }` +
+   `Funcdata::dead_removal_allowed_seen` (= heritage.dead_removal_allowed + heritage.seen_dead_code,
+   both already present) in funcdata.rs. Validated: alone clears overflow_syntax.
+2. **CFG exit-block placement** (LOSS-233, flow.rs/heritage): the BLOCKER. For copytrim::myloop the
+   loop-exit COPY (`u0x1000004c`, the forwarded post-loop value) lands INSIDE the cond block in rust
+   but in a SEPARATE exit BlockBasic (0x100046, C++ Block 3) — a basic-block boundary divergence at
+   instruction 0x100041 vs 0x100046, PRE-EXISTING on base (the for-loop formation merely surfaces it →
+   regresses Copy trim #2 `for(.*myarr[0] = `). Fix the loop-exit COPY into its own exit block
+   (flow.rs CFG construction / phi-placement). This ALSO lands Copy trim #1/#3/#6/#8 (LOSS-233).
+3. **fd_sblock_last_op Copy-arm** (funcdata_block.rs, IN-ownership, validated): `BlockGraph::
+   struct_last_op` (block.rs:1474) lacks the `BlockKind::Copy` arm (C++ BlockCopy::lastOp, block.hh:546);
+   added `Funcdata::fd_sblock_last_op` threading the sblocks→bblocks cross-arena hop (Copy leaf →
+   bb_op_tail(copy)), pointed the 2 sblocks call sites at it.
+- Combined: +10 for-loop cluster (For-loop #1/var-used/with-skip/thru-special, No-for-loop, Pointer
+  Compare #1, Relative pointers #8, Inline target #4) + ~4 Copy trim. THE highest-value validated lever.
+  Fix 2 (CFG exit-block) is the gating prerequisite; Fix 1+3 are validated and ready. [[kuna-rust-port]]
