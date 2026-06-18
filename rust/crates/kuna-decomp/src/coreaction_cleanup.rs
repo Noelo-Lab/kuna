@@ -785,7 +785,7 @@ impl Action for ActionMarkImplied {
                 if idx == descs.len() {
                     // All descendants traced -> classify vncur.
                     count += 1; // will be marked explicit or implied
-                    if check_implied_cover(data, vncur) {
+                    if check_implied_cover(&mut *data, vncur) {
                         // Merge::markImplied: set the implied flag (the cover-dirty
                         // bookkeeping on inputs is merge state the printer ignores).
                         data.vbank_mut().get_mut(vncur).expect("markimplied").set_implied();
@@ -817,19 +817,279 @@ impl Action for ActionMarkImplied {
     }
 }
 
+/// The `(block_index, CoverPoint)` of `op`, the pair `Cover::contain` keys on
+/// (mirrors the `MergeContext::op_cover_point` bridge, built from the public
+/// `block_index`/`op_cover_point` Funcdata accessors so this file needs no
+/// `MergeContext` import).
+fn op_cover_pair(
+    data: &Funcdata,
+    op: crate::seams::OpId,
+) -> (int4, crate::cover::CoverPoint) {
+    let parent = data.obank().get(op).and_then(|o| o.get_parent());
+    let blk = parent.map(|p| data.block_index_pub(p)).unwrap_or(0);
+    (blk, data.op_cover_point_pub(op))
+}
+
+/// Return false only if one Varnode is obtained by adding a non-zero thing to
+/// the other (C++ `ActionMarkImplied::isPossibleAliasStep`, coreaction.cc:3382).
+/// Order of the Varnodes is not important.
+fn is_possible_alias_step(
+    data: &Funcdata,
+    vn1: crate::seams::VarnodeId,
+    vn2: crate::seams::VarnodeId,
+) -> bool {
+    let var = [vn1, vn2];
+    for i in 0..2 {
+        let vncur = var[i];
+        let v = match data.vbank().get(vncur) {
+            Some(v) => v,
+            None => continue,
+        };
+        if !v.is_written() {
+            continue;
+        }
+        let op = v.get_def().expect("isPossibleAliasStep: written no def");
+        let dop = data.obank().get(op).expect("isPossibleAliasStep: stale def");
+        let opc = dop.code();
+        if opc != OpCode::CPUI_INT_ADD
+            && opc != OpCode::CPUI_PTRSUB
+            && opc != OpCode::CPUI_PTRADD
+            && opc != OpCode::CPUI_INT_XOR
+        {
+            continue;
+        }
+        if dop.get_in(0) != Some(var[1 - i]) {
+            continue;
+        }
+        if let Some(in1) = dop.get_in(1) {
+            if data.vbank().get(in1).map(|x| x.is_constant()).unwrap_or(false) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Return false \b only if we can guarantee two Varnodes have different values
+/// (C++ `ActionMarkImplied::isPossibleAlias`, coreaction.cc:3406).  `depth`
+/// bounds the recursion.
+fn is_possible_alias(
+    data: &Funcdata,
+    vn1: crate::seams::VarnodeId,
+    vn2: crate::seams::VarnodeId,
+    depth: int4,
+) -> bool {
+    if vn1 == vn2 {
+        return true; // Definite alias
+    }
+    let v1 = data.vbank().get(vn1).expect("isPossibleAlias: stale vn1");
+    let v2 = data.vbank().get(vn2).expect("isPossibleAlias: stale vn2");
+    if !v1.is_written() || !v2.is_written() {
+        if v1.is_constant() && v2.is_constant() {
+            return v1.get_offset() == v2.get_offset();
+        }
+        return is_possible_alias_step(data, vn1, vn2);
+    }
+
+    if !is_possible_alias_step(data, vn1, vn2) {
+        return false;
+    }
+    let op1 = v1.get_def().expect("isPossibleAlias: vn1 no def");
+    let op2 = v2.get_def().expect("isPossibleAlias: vn2 no def");
+    let dop1 = data.obank().get(op1).expect("isPossibleAlias: stale op1");
+    let dop2 = data.obank().get(op2).expect("isPossibleAlias: stale op2");
+    let mut opc1 = dop1.code();
+    let mut opc2 = dop2.code();
+    let mut mult1: i64 = 1;
+    let mut mult2: i64 = 1;
+    if opc1 == OpCode::CPUI_PTRSUB {
+        opc1 = OpCode::CPUI_INT_ADD;
+    } else if opc1 == OpCode::CPUI_PTRADD {
+        opc1 = OpCode::CPUI_INT_ADD;
+        mult1 = dop1
+            .get_in(2)
+            .and_then(|x| data.vbank().get(x))
+            .map(|x| x.get_offset() as i64)
+            .unwrap_or(1);
+    }
+    if opc2 == OpCode::CPUI_PTRSUB {
+        opc2 = OpCode::CPUI_INT_ADD;
+    } else if opc2 == OpCode::CPUI_PTRADD {
+        opc2 = OpCode::CPUI_INT_ADD;
+        mult2 = dop2
+            .get_in(2)
+            .and_then(|x| data.vbank().get(x))
+            .map(|x| x.get_offset() as i64)
+            .unwrap_or(1);
+    }
+    if opc1 != opc2 {
+        return true;
+    }
+    if depth == 0 {
+        return true; // Couldn't find absolute difference
+    }
+    let depth = depth - 1;
+    let fe = |a: crate::seams::VarnodeId, b: crate::seams::VarnodeId| {
+        crate::expression::functional_equality(a, b, data.vbank(), data.obank())
+    };
+    match opc1 {
+        OpCode::CPUI_COPY
+        | OpCode::CPUI_INT_ZEXT
+        | OpCode::CPUI_INT_SEXT
+        | OpCode::CPUI_INT_2COMP
+        | OpCode::CPUI_INT_NEGATE => {
+            is_possible_alias(data, dop1.get_in(0).unwrap(), dop2.get_in(0).unwrap(), depth)
+        }
+        OpCode::CPUI_INT_ADD => {
+            let cvn1 = dop1.get_in(1).unwrap();
+            let cvn2 = dop2.get_in(1).unwrap();
+            let cv1 = data.vbank().get(cvn1).unwrap();
+            let cv2 = data.vbank().get(cvn2).unwrap();
+            if cv1.is_constant() && cv2.is_constant() {
+                let val1 = (mult1 as i128) * (cv1.get_offset() as i128);
+                let val2 = (mult2 as i128) * (cv2.get_offset() as i128);
+                if val1 == val2 {
+                    return is_possible_alias(
+                        data,
+                        dop1.get_in(0).unwrap(),
+                        dop2.get_in(0).unwrap(),
+                        depth,
+                    );
+                }
+                return !fe(dop1.get_in(0).unwrap(), dop2.get_in(0).unwrap());
+            }
+            if mult1 != mult2 {
+                return true;
+            }
+            let a0 = dop1.get_in(0).unwrap();
+            let a1 = dop1.get_in(1).unwrap();
+            let b0 = dop2.get_in(0).unwrap();
+            let b1 = dop2.get_in(1).unwrap();
+            if fe(a0, b0) {
+                return is_possible_alias(data, a1, b1, depth);
+            }
+            if fe(a1, b1) {
+                return is_possible_alias(data, a0, b0, depth);
+            }
+            if fe(a0, b1) {
+                return is_possible_alias(data, a1, b0, depth);
+            }
+            if fe(a1, b0) {
+                return is_possible_alias(data, a0, b1, depth);
+            }
+            true
+        }
+        _ => true,
+    }
+}
+
 /// Test if marking `vn` implied would violate a HighVariable cover (C++
 /// `ActionMarkImplied::checkImpliedCover`, coreaction.cc:3479).
 ///
-/// The full C++ test walks LOAD-crossing-STORE / call-crossing covers and the
-/// `Merge::inflateTest` HighVariable-intersection check.  Those read the
-/// HighVariable cover graph, which the merge bridge does not yet surface here;
-/// the conservative C++-default for a Varnode with no cover conflict is to allow
-/// the implied marking (`return true`), which is correct for the common
-/// single-def/single-use expression with no aliasing.  Marking implied only
-/// changes *inlining*, never correctness of the emitted token stream, so the
-/// over-inlining risk is bounded to genuinely-aliasing LOADs (rare; the
-/// documented next layer once the Merge cover bridge lands).
-fn check_implied_cover(_data: &Funcdata, _vn: crate::seams::VarnodeId) -> bool {
+/// Marking a Varnode implied lets its defining op's inputs propagate farther in
+/// the output, which can make a value visible at a program point where it no
+/// longer holds.  Two cases force a Varnode \e explicit (return false):
+///
+///  * a LOAD whose live range crosses a STORE/CALL into the same space whose
+///    address might alias the load address (`isPossibleAlias`) — the array
+///    read/write pair `v1 = a[i][j]; a[i][k] = v1+10;` is exactly this: the
+///    read crosses the write into `a` and the pointers possibly alias, so the
+///    read earns its own `v1` statement (the twodim datatest), and
+///  * any non-constant defining input whose HighVariable would intersect `vn`'s
+///    after inflation (`Merge::inflateTest`).
+///
+/// The `inflateTest` arm reads the HighVariable extended-cover/intersection
+/// graph; that bridge is not yet surfaced here, so it takes the C++-default
+/// "no intersection" branch (allow implied).  Omitting it only ever yields
+/// *more* inlining than the oracle, never less — and it is the documented next
+/// layer.  The LOAD/CALL-crossing arm IS ported faithfully (it is what the
+/// array datatests need and is self-contained on the Cover the merge pass
+/// already builds).
+fn check_implied_cover(data: &mut Funcdata, vn: crate::seams::VarnodeId) -> bool {
+    let def = match data.vbank().get(vn).and_then(|v| v.get_def()) {
+        Some(d) => d,
+        None => return true,
+    };
+    let opc = data.obank().get(def).expect("checkImpliedCover: stale def").code();
+
+    // Refresh `vn`'s Cover (C++ `getCover()` lazily calls `updateCover`).  The
+    // merge pass allocates the Cover (calcCover); if none was allocated, the
+    // crossing tests are vacuously satisfied (C++ getCover would return null and
+    // the LOAD/CALL loops below never run).
+    if data.vbank().get(vn).map(|v| v.has_cover()).unwrap_or(false) {
+        data.update_varnode_cover(vn);
+    }
+    let has_cover = data.vbank().get(vn).map(|v| v.cover().is_some()).unwrap_or(false);
+
+    if opc == OpCode::CPUI_LOAD && has_cover {
+        // Check for loads crossing stores.
+        let load_space_off = data
+            .obank()
+            .get(def)
+            .and_then(|o| o.get_in(0))
+            .and_then(|s| data.vbank().get(s))
+            .map(|s| s.get_offset())
+            .unwrap_or(0);
+        let load_ptr = data.obank().get(def).and_then(|o| o.get_in(1));
+        let store_ops: Vec<crate::seams::OpId> =
+            data.obank().iter_code(OpCode::CPUI_STORE).collect();
+        for storeop in store_ops {
+            let sop = match data.obank().get(storeop) {
+                Some(s) => s,
+                None => continue,
+            };
+            if sop.is_dead() {
+                continue;
+            }
+            let (blk, point) = op_cover_pair(data, storeop);
+            let crosses = data
+                .vbank()
+                .get(vn)
+                .and_then(|v| v.cover())
+                .map(|c| c.contain(blk, point, 2))
+                .unwrap_or(false);
+            if crosses {
+                // The LOAD crosses a STORE.  Let it through (cavalier) unless we
+                // can verify the pointers are the same.
+                let store_space_off = data
+                    .obank()
+                    .get(storeop)
+                    .and_then(|o| o.get_in(0))
+                    .and_then(|s| data.vbank().get(s))
+                    .map(|s| s.get_offset())
+                    .unwrap_or(0);
+                if store_space_off == load_space_off {
+                    let store_ptr = data.obank().get(storeop).and_then(|o| o.get_in(1));
+                    if let (Some(sp), Some(lp)) = (store_ptr, load_ptr) {
+                        if is_possible_alias(data, sp, lp, 2) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (data.obank().get(def).map(|o| o.is_call()).unwrap_or(false) || opc == OpCode::CPUI_LOAD)
+        && has_cover
+    {
+        // loads / calls crossing calls.
+        let ncalls = data.num_calls();
+        for i in 0..ncalls {
+            let callop = data.get_call_specs(i).get_op();
+            let (blk, point) = op_cover_pair(data, callop);
+            let crosses = data
+                .vbank()
+                .get(vn)
+                .and_then(|v| v.cover())
+                .map(|c| c.contain(blk, point, 2))
+                .unwrap_or(false);
+            if crosses {
+                return false;
+            }
+        }
+    }
+    // The `Merge::inflateTest` input-intersection arm is the documented next
+    // layer (see fn doc); default to "no intersection" (allow implied).
     true
 }
 
