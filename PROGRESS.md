@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 490/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 501/675; +...clone-gate audit, deindirect-output-type
+
+**func_link_output LOCKED + heritage normalize_write_size CALL +11 → 501 (resolves LOSS-236).** Two-wave chain: (1) func_link_output LOCKED-output arm (coreaction_protos.rs:736, coreaction.cc:1582-1613: new_varnode_out + assumed_output_extension) = committed-prototype callee output recovery, +7/-5 substrate; (2) heritage normalize_write_size CALL most/least-sig arms (heritage.rs:2069/2100, heritage.cc:435-459, reused new_indirect_creation) = removes the float-return panic. Gained Access packed fields #1-4, Conditional Subpiece #4-6, Mixed float/int #7-10. Gate: `[675,501]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, switch 16/9, PARITY OK. Review `reviews/w10-funclink-heritage-callwrite.md`. CROSSED 500.
 
 **char-const type +2 → 490.** Root was NOT propagate_across_compare (faithful) — it was `kuna_compareform.rs::restore_lessequal` stubbing copySymbol (kuna_compareform.cc:55), dropping the constant's int1 type so ActionSetCasts re-typed it char. Fixed: ported `copy_symbol_fields` (varnode.rs) + wired into restore_lessequal + the validated pushCharConstant arm (printc.rs, printc.cc:1819/1675). Gained Pointer Compare #3, Conditional Subpiece #3 (bonus); Signed byte #4 held. Gate: `[675,490]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK.
 
