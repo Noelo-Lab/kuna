@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 507/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 509/675; +...clone-gate audit, deindirect-output-type
+
+**Multi-size return +2 → 509.** `op_func_ir` rendered bare "CONCAT" instead of the size-suffixed `CONCAT31`/`CONCAT22` from TypeOpPiece::getOperatorName (typeop.cc:2050); ported `func_operator_name` (printc.rs, PIECE/ZEXT/SEXT/SUBPIECE/CARRY/SCARRY/SBORROW suffixes). Gained Multi-size return #1/#2 (multiret 3/3). Gate: `[675,509]`, regressed-set EMPTY, PARITY OK. (retstruct/stackreturn blocked: heritage tryOutputStackGuard SEAM + namelocked-isolated-symbol in varmap/merge.) Ccmp blocked (LOSS-074 RuleConditionalMove). L4/L5 param-spill BLOCKED but DECISIVELY sharpened → heritage spacebase store→load forwarding TIMING (heritage.rs:1366-1380, convergent root for for-loop + stack-cluster + Chain B).
 
 **Two dimension — ActionMarkImplied alias guard +6 → 507.** `check_implied_cover` (coreaction_cleanup.rs) was stubbed `{true}` (always inline); ported `is_possible_alias`/`is_possible_alias_step` + the LOAD/CALL-crossing arms (coreaction.cc:3479/3382-3470) so a LOAD crossing an aliasing STORE/CALL factors into a `v1` temp instead of inlining twice. Gained Two dimension #1/#2 + Partial splitting #8-11 (one alias-guard root). Gate: `[675,507]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Review `reviews/w10-two-dimension.md`.
 

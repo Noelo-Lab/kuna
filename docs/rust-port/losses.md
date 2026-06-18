@@ -2875,3 +2875,27 @@ fires → `val <= 9`. C++ output `if (ptr[1] == 0x3c && val <= 9)`.
   output-creation seam (LOSS-035/036), then close the RuleConditionalMove arm at ruleaction_7.rs:1935.
   Loci: funcdata.rs/funcdata_op.rs/funcdata_block.rs + ruleaction_7.rs. [[kuna-rust-port]]
 - recorded by the integrator after the Ccmp wave BLOCKED (2026-06-18).
+
+## LOSS-235/156 CONVERGENCE SHARPENED — heritage spacebase store→load forwarding TIMING (heritage.rs:1366-1380)
+
+The param-spill wave delivered DECISIVE before/after p-code from both engines on forloop1.xml. The
+root is NOT a varmap/restructureVarnode/propagateSpacebaseRef leaf (all verified faithful) — it is a
+HERITAGE-SPACEBASE-FORWARDING-TIMING divergence:
+- At the FIRST `ActionBlockStructure` (sblocks=0, graph built ONCE): C++ cond block (BB1) is CLEAN
+  (`EBX = phi; EBX < EDI; CBRANCH`, 3 ops, complex=false — param reads directly from EDI). Rust cond
+  block is DIRTY (12 ops incl. the spill chain `INT_ADD(RSP,-0x1c) → LOAD stack[-0x1c] → COPY → ...
+  → INT_SLESS(EBX, loaded_max)`, complex=TRUE → new_while_do sets overflow_syntax →
+  whiledo_final_transform bails funcdata_block.rs:273).
+- Rust DOES clean it later (every later ActionBlockStructure sees complex=false/3 ops) but the
+  structure graph is never rebuilt (no structure_reset after the dirty build) → overflow persists →
+  for-loop never forms. Both engines schedule RuleLoadVarnode in oppool2 AFTER ActionBlockStructure
+  (verified identical: universalaction.rs:621/542 == coreaction.cc:5930/5939). The divergence is WHEN
+  the spacebase spill `STORE stack[-0x1c]=EDI → LOAD stack[-0x1c]` is FORWARDED to EDI: C++ forwards
+  it BEFORE its first structure build (the intermediate `s0xffffffffffffffe4` phi is already present
+  pre-structure); rust forwards one structuring too late.
+- CONVERGENT ROOT (for-loop ~8 + stack-struct-typing ~66 + Chain B): `heritage.rs:1366-1380` — the
+  LOSS-156 spacebase guard (`high_ptr_possible=false` + global-only `query_global_properties` SEAM)
+  that leaves the spacebase STORE/LOAD un-forwarded during heritage, AND/OR the mainloop convergence
+  that lets rust reach blockstructure on iteration 1 before re-heritage forwards the spill. This is THE
+  dominant lever; it has absorbed 5+ prior +0 substrate waves (b120faf→604408a→04cd2a2). Needs a
+  dedicated HERITAGE wave (not varmap/spacebase/stackptr leaves), heritage.rs free. [[kuna-rust-port]]
