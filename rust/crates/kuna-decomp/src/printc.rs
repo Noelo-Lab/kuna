@@ -1569,6 +1569,10 @@ enum PartialEntry {
     Member(String, int4),
     /// `subscript` token: `[index]` for an array element (printc.cc:2062-2070).
     Subscript(int4),
+    /// Artificial `object_member` with no backing field (C++ `entry.field == 0`,
+    /// printc.cc:2106-2117): renders `unnamedField(offset,size)` = `._<off>_<sz>_`
+    /// when a composite member walk lands on an offset/size with no exact field.
+    Unnamed(int8, int4),
 }
 
 impl PrintC {
@@ -1987,7 +1991,30 @@ impl PrintC {
         let markup = MarkupRef::none();
         for (high, name) in &decls {
             // Type: the high's recovered type name (W8-unknown -> `undefined<N>`).
-            let (type_name, comment) = self.local_decl_type_and_comment(fd, arch, *high);
+            let (mut type_name, comment) = self.local_decl_type_and_comment(fd, arch, *high);
+            // C++ `emitVarDecl` declares the whole *Symbol*'s type (printc.cc:1719
+            // `sym->getType()`), not the partial member Varnode's type.  When the
+            // high is a non-array partial cover of a composite Symbol (a struct/
+            // union member, `kuna_symbol_offset() >= 0`), the local storage
+            // representative carries only the truncated member type (e.g. the
+            // 1-byte `flagfield` read => `undefined1`); declare the composite Symbol
+            // type (`enumstruct`) so the member access `v1.flagfield` has a base of
+            // the right type.  (The array case is handled by `array_count` below, so
+            // it is excluded here.)
+            if let Some(st) = fd.high_bank().get(*high).and_then(|h| {
+                if h.kuna_symbol_offset() >= 0 {
+                    h.kuna_symbol_type()
+                } else {
+                    None
+                }
+            }) {
+                let mt = st.get_metatype();
+                if mt == crate::dtype::type_metatype::TYPE_STRUCT
+                    || mt == crate::dtype::type_metatype::TYPE_UNION
+                {
+                    type_name = type_name_for_decl(st);
+                }
+            }
             // Array member: if the mapped Symbol is an array, declare the base
             // type and an `[count]` adornment after the name (C++ `emitVarDecl`'s
             // array branch).
@@ -4424,6 +4451,61 @@ impl PrintC {
         }
     }
 
+    /// Push the structure-carrying Symbol token of a bit-field assignment LHS,
+    /// faithful to C++ `pushPartialSymbol(symbol, offsetToBitStruct,
+    /// theStruct->getSize(), out, op, -1, false)` (printc.cc:2633).  The key is
+    /// `sz = theStruct->getSize()` (the WHOLE struct), so the partial walk stops at
+    /// the struct and renders the bare symbol name — the bit-field field token is
+    /// appended by the caller.  Falls back to the plain explicit name when the
+    /// output high carries no composite Symbol (the bit-field op already validated
+    /// the form, so this is the degenerate no-symbol case).
+    fn push_bitfield_struct_symbol(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        out: VarnodeId,
+        op: OpId,
+        expr: &crate::bitfield::expression::InsertExpression,
+    ) {
+        let named = fd
+            .vbank()
+            .get(out)
+            .and_then(|v| v.get_high())
+            .and_then(|h| fd.high_bank().get(h))
+            .and_then(|h| h.kuna_name().map(|n| (n.to_string(), h.kuna_symbol_type().cloned())));
+        if let Some((name, Some(st))) = named {
+            let mt = st.get_metatype();
+            if (mt == crate::dtype::type_metatype::TYPE_STRUCT
+                || mt == crate::dtype::type_metatype::TYPE_UNION)
+                && self.push_partial_symbol_ir(
+                    fd,
+                    arch,
+                    &name,
+                    std::rc::Rc::clone(&st),
+                    expr.expr.offset_to_bit_struct as int8,
+                    st.get_size(),
+                    out,
+                    op,
+                    -1,
+                    false,
+                )
+            {
+                return;
+            }
+            // Whole-symbol cover (the common bit-field case): render the bare name.
+            self.push_atom(&Atom::with_op_vn(
+                name,
+                TagType::VarToken,
+                crate::printlanguage::SyntaxHighlight::var_color,
+                op_key(op),
+                vn_key(out),
+            ));
+            return;
+        }
+        // No composite Symbol bound: fall back to the explicit-name surface.
+        self.push_vn_explicit_ir(fd, arch, out, op);
+    }
+
     /// C++ `PrintC::emitBitFieldExpression` (printc.cc:2622-2637): render a
     /// bitfield write into an explicit (mapped) Varnode as `symbol.field = value`.
     ///
@@ -4440,12 +4522,16 @@ impl PrintC {
         };
         self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
         self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
-        // pushPartialSymbol(symbol,offsetToBitStruct,theStruct->getSize(),out,..):
-        // the (partial) symbol carrying the structure.  In the merged tree the
-        // symbol name is bound on the output's HighVariable, so push the output
-        // Varnode's explicit name (the same surface push_vn_explicit_ir reads).
+        // C++ `pushPartialSymbol(symbol, offsetToBitStruct, theStruct->getSize(),
+        // out, op, -1, false)` (printc.cc:2633): the (partial) symbol carrying the
+        // *structure* — note `sz == theStruct->getSize()`, not the bit-field
+        // Varnode's truncated size, so the partial walk stops at the struct
+        // (`off==0 && sz==structSize` -> break) and renders the bare symbol name;
+        // the bit-field field token is appended by `push_bitfield_atom` below.
+        // Passing the truncated Varnode size here instead would drive the walk into
+        // the artificial `._<off>_<sz>_` member (`v1._0_1_.fieldb`).
         if let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()) {
-            self.push_vn_explicit_ir(fd, arch, out, op);
+            self.push_bitfield_struct_symbol(fd, arch, out, op, &expr);
         }
         self.push_bitfield_atom(&bitfield, op);
         if let Some(val) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
@@ -4507,7 +4593,7 @@ impl PrintC {
     fn push_partial_symbol_ir(
         &mut self,
         fd: &Funcdata,
-        _arch: &Architecture,
+        arch: &Architecture,
         name: &str,
         sym_type: std::rc::Rc<crate::dtype::Datatype>,
         off_in: int8,
@@ -4515,7 +4601,7 @@ impl PrintC {
         vn: VarnodeId,
         op: OpId,
         slot: int4,
-        _allow_cast: bool,
+        allow_cast: bool,
     ) -> bool {
         use crate::dtype::type_metatype;
         // PartialSymbolEntry stack (C++ `vector<PartialSymbolEntry> stack`,
@@ -4525,7 +4611,11 @@ impl PrintC {
         let mut stack: Vec<PartialEntry> = Vec::new();
         let mut ct = Some(sym_type);
         let mut off: int8 = off_in;
-        let sz: int4 = sz_in;
+        let mut sz: int4 = sz_in;
+        // C++ `Datatype *finalcast = 0` (printc.cc:2024): set by the `allowCast`
+        // arm when the trailing truncation is a SUBPIECE-style cast (`(undefined1)
+        // v1.flagfield`); rendered as a leading `(cast)` before the member tokens.
+        let mut finalcast: Option<std::rc::Rc<crate::dtype::Datatype>> = None;
 
         // while (ct != 0)  (printc.cc:2032).
         while let Some(cur) = ct.clone() {
@@ -4556,8 +4646,19 @@ impl PrintC {
                             succeeded = true;
                         }
                     }
-                    Ok(None) => {}
-                    Err(_) => {}
+                    Ok(None) | Err(_) => {
+                        // C++ printc.cc:2057-2059: `else if (op->code()==CPUI_ZPULL ||
+                        // CPUI_SPULL) break;` — the final byte field cannot be
+                        // resolved because it is a *bit field* extracted by a
+                        // ZPULL/SPULL; the Varnode is already fully resolved (the
+                        // bitfield op carries the member), so stop WITHOUT emitting an
+                        // artificial `._o_s_` token (which would wrongly produce
+                        // `v1._0_1_.fieldb`).
+                        let opc = fd.obank().get(op).map(|o| o.code());
+                        if opc == Some(OpCode::CPUI_ZPULL) || opc == Some(OpCode::CPUI_SPULL) {
+                            break;
+                        }
+                    }
                 }
             } else if meta == type_metatype::TYPE_ARRAY {
                 // C++ `TypeArray::getSubEntry` (type.cc:1430): the access maps to
@@ -4612,26 +4713,79 @@ impl PrintC {
                         }
                     }
                 }
+            } else if allow_cast {
+                // C++ `else if (allowCast)` (printc.cc:2094-2105): the walk has
+                // reached a scalar leaf (e.g. the `flags` enum field) but the access
+                // truncates it (a 1-byte read of the 8-byte `flagfield`).  When the
+                // truncation is a low-end SUBPIECE-style cast, render it as a leading
+                // `(outtype)` cast over the whole member: `(undefined1)v1.flagfield`.
+                //   outtype = vn->getHigh()->getType();
+                //   spc = sym->getFirstWholeMap()->getAddr().getSpace();  // for endian
+                //   if (castStrategy->isSubpieceCastEndian(outtype,ct,off,isBig))
+                //     { finalcast = outtype; ct = 0; succeeded = true; }
+                // `vn->getHigh()->getType()`: by the W10 print convention the high
+                // type is pinned to the Varnode's own type at print-time (the same
+                // stand-in `vn_high_type` uses), so read it directly.
+                let outtype = fd.vbank().get(vn).map(|v| std::rc::Rc::clone(v.get_type()));
+                // `getFirstWholeMap()->getAddr().getSpace()` is the Symbol's storage
+                // space (the stack space for a stack local); its endianness gates the
+                // SUBPIECE direction.  The Varnode's own space is the same storage
+                // here, so use it as the C++ `spc == 0` fallback already does.
+                let is_big = fd
+                    .vbank()
+                    .get(vn)
+                    .and_then(|v| v.get_addr().get_space().map(|s| s.is_big_endian()))
+                    .unwrap_or(false);
+                if let (Some(outtype), Some(strat)) = (outtype, cast_strategy_for(arch)) {
+                    let off_u = if off >= 0 { off as uint4 } else { 0 };
+                    if strat.is_subpiece_cast_endian(&outtype, &cur, off_u, is_big) {
+                        finalcast = Some(outtype);
+                        ct = None;
+                        succeeded = true;
+                    }
+                }
+                // If the truncation is NOT a plain SUBPIECE-style cast, fall through
+                // to the `!succeeded` artificial-field branch (C++ printc.cc:2106):
+                // the leftover offset/size renders as `._<off>_<sz>_`.
+            } else if !stack.is_empty() {
+                // ARRAY/scalar leaf with allowCast disabled, but a member token was
+                // already collected: emit the leftover as an artificial `._o_s_`
+                // member rather than discarding the resolved prefix (C++ reaches the
+                // `!succeeded` branch here too).  Leaving `succeeded == false`.
             } else {
-                // ARRAY / scalar / allowCast arms are not handled by this entry.
-                // Bail out so the caller renders the bare name (the array Symbol
-                // takes the caller's `name[index]` branch).
+                // Top-level ARRAY/scalar with allowCast disabled and nothing
+                // resolved yet: bail so the caller renders the bare name (the array
+                // Symbol takes the caller's `name[index]` branch).
                 return false;
             }
             if !succeeded {
                 // Subtype was not good (printc.cc:2106-2117): generate an artificial
-                // member name based on offset/size.  We only reach here for a
-                // composite whose member walk failed mid-way; rather than emit a
-                // synthesized `field_*` name that the corpus never expects, bail so
-                // the bare-name render (byte-identical) wins.  A correct partial
-                // cover always `succeeded` above.
-                return false;
+                // member name based on offset/size (`unnamedField(off,sz)` →
+                // `._<off>_<sz>_`).  Reached when a composite member walk lands on an
+                // offset/size with no exact field — the C++ emits the synthetic
+                // `_o_s_` token and stops (`ct = 0`).
+                if sz == 0 {
+                    sz = cur.get_size() - off as int4;
+                }
+                stack.push(PartialEntry::Unnamed(off, sz));
+                ct = None;
             }
         }
 
-        // No member tokens collected: this is a whole-symbol cover, render bare.
-        if stack.is_empty() {
+        // No member tokens collected and no trailing cast: this is a whole-symbol
+        // cover, render bare (the caller emits the plain name).
+        if stack.is_empty() && finalcast.is_none() {
             return false;
+        }
+
+        // C++ `if (finalcast && !option_nocasts) { pushOp(&typecast,op);
+        // pushType(finalcast); }` (printc.cc:2119-2122): a leading `(cast)` over the
+        // whole member access.
+        if let Some(fc) = &finalcast {
+            if !self.options.nocasts {
+                self.push_op(&tokens::TYPECAST, Some(op_key(op)));
+                self.push_cast_type(fc);
+            }
         }
 
         // Push the member ops in REVERSE stack order (C++ printc.cc:2124-2126:
@@ -4641,7 +4795,9 @@ impl PrintC {
         // SUBSCRIPT then OBJECT_MEMBER, yielding `(v1.arr)[i]` not `(v1[i]).arr`.
         for entry in stack.iter().rev() {
             match entry {
-                PartialEntry::Member(_, _) => {
+                PartialEntry::Member(_, _) | PartialEntry::Unnamed(_, _) => {
+                    // C++ both the field and the artificial-name entry use
+                    // `entry.token = &object_member` (printc.cc:2049 / 2109).
                     self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
                 }
                 PartialEntry::Subscript(_) => {
@@ -4689,6 +4845,28 @@ impl PrintC {
                         display_format::NONE,
                         sign,
                     );
+                }
+                PartialEntry::Unnamed(eoff, esize) => {
+                    // C++ printc.cc:2129-2135 (`entry.field == 0`): a negative/zero
+                    // `size` renders the offset as an integer; a positive size emits
+                    // the synthetic `_<off>_<size>_` field atom.
+                    if *esize <= 0 {
+                        self.push_constant_ir_fmt_sign(
+                            *eoff as uintb,
+                            *esize,
+                            op,
+                            display_format::NONE,
+                            *eoff < 0,
+                        );
+                    } else {
+                        let field = crate::printlanguage::unnamed_field(*eoff as int4, *esize);
+                        self.push_atom(&Atom::with_op(
+                            field,
+                            TagType::Syntax,
+                            crate::printlanguage::SyntaxHighlight::no_color,
+                            op_key(op),
+                        ));
+                    }
                 }
             }
         }
