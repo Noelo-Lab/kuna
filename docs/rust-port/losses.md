@@ -2841,3 +2841,18 @@ The ExtraPop L0+L3 wave proved the LOSS-235 UPDATE premise STALE: L0 (ActionExtr
   cluster (LOSS-156). A wave that lands L4/L5 spill↔param unification + read-facing spacebase
   propagation unlocks BOTH the for-loop cluster (~8) AND advances Chain B (~65). The deepest, highest-
   value convergent root remaining. [[kuna-rust-port]]
+
+## LOSS-236 UPDATE — func_link_output port DONE (+7/-5 substrate); blocked on heritage normalize_write_size CALL arms
+
+The func_link_output LOCKED-output arm is now ported + faithful on branch `rport/w10-funclink-output`
+(coreaction_protos.rs:736 = coreaction.cc:1582-1613: new_varnode_out + assumed_output_extension +
+post-call SEXT/ZEXT/PIECE; funcdata_op.rs:131 op_mark_calculated_bool). It GAINS +7 (Access packed
+fields #1-4 + Conditional Subpiece #4-6) but REGRESSES Mixed float/int #2-6 (-5): float-returning
+committed-prototype callees (`float8 dldlll`, `float4 fi`) flow the new locked-output varnode into
+heritage, hitting the UNPORTED seam `Heritage::normalize_write_size` CALL most-significant-piece path
+(heritage.rs:2038-2040, `unimplemented_seam`, needs `newIndirectCreation`-for-CALL) → panic-abort of
+main's decompile → whole file fails to apply.
+- next: port the heritage `normalize_write_size` CALL partial-write arms (heritage.rs:2036-2069 — the
+  newIndirectCreation for CALL most-sig/least-sig piece) FIRST, building on the func_link_output
+  substrate; then the +7 lands regressed-set EMPTY (and unblocks the broader retstruct cluster). The
+  heritage seam is the precise prerequisite. [[kuna-rust-port]]
