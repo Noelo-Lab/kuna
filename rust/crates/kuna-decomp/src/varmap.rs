@@ -1371,7 +1371,16 @@ impl ScopeLocal {
     /// per non-dynamic, address-tied SymbolEntry.
     pub fn mapped_symbol_specs(&self) -> Vec<(String, Rc<Datatype>, Address, uint4)> {
         let idx = self.space.get_index() as usize;
-        self.db.scope_space_symbol_specs(self.scope, idx)
+        let mut out = self.db.scope_space_symbol_specs(self.scope, idx);
+        // The console `map addr <ramaddr> <type> <name>` form maps a global RAM/data
+        // Symbol into this (functional) local scope (C++ `IfcMapaddress`,
+        // `getScopeLocal()->addSymbol`).  `Scope::addMap` marks it addr-tied, but it
+        // lives in the ram space, not the stack space scanned above — so it is lost
+        // on the kuna IR rebuild unless carried here.  Append the addr-tied mapped
+        // symbols from every NON-stack space so they are re-seeded into the rebuilt
+        // local scope and `linkSymbol` binds the global Varnode's name.
+        out.extend(self.db.scope_nonstack_addrtied_specs(self.scope, idx));
+        out
     }
 
     /// The usepoint-scoped Symbol specs in this scope (across all spaces) — the

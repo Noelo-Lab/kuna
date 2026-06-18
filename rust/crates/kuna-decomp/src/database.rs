@@ -2208,6 +2208,59 @@ impl Database {
         out
     }
 
+    /// The `(name, type, addr, all_flags)` specs for every **addr-tied** (empty-
+    /// `uselimit`) Symbol mapped into this scope in a space OTHER than
+    /// `skip_space_index`.  The console `map addr <ramaddr> <type> <name>` form
+    /// (C++ `IfcMapaddress` with `dcp->fd != 0`) adds a global RAM/data Symbol into
+    /// the function's local scope (`getScopeLocal()->addSymbol`, `ifacedecomp.cc:562`);
+    /// `Scope::addMap` (`database.cc:1154`) marks it addr-tied.  Such a symbol lives
+    /// in the ram (processor) space, not the stack space, so the stack-only
+    /// [`scope_space_symbol_specs`] carrier misses it and it is lost when the kuna
+    /// console rebuilds the `Funcdata` on `decompile` (C++ reuses the same `fd`).
+    /// This carries those non-stack addr-tied `map addr` symbols so the rebuilt-IR
+    /// `linkSymbol` query (`queryProperties(addr,1,usepoint)`) binds the global
+    /// Varnode's high to the mapped name (`val1`/`val2`) instead of falling to
+    /// `pushUnnamedLocation`'s `dat_<addr>`.  `skip_space_index` is the stack space
+    /// already carried by [`scope_space_symbol_specs`]; usepoint-scoped (non-addr-
+    /// tied) symbols are carried separately by [`scope_usepoint_symbol_specs`].
+    pub fn scope_nonstack_addrtied_specs(
+        &self,
+        scope: ScopeId,
+        skip_space_index: usize,
+    ) -> Vec<(String, Rc<Datatype>, Address, uint4)> {
+        let mut out = Vec::new();
+        for space_index in 0..self.scopes[scope].maptable.len() {
+            if space_index == skip_space_index {
+                continue;
+            }
+            let rangemap = match self.scopes[scope].maptable.get(space_index).and_then(|m| m.as_ref()) {
+                Some(rm) => rm,
+                None => continue,
+            };
+            for (_, rec) in rangemap.records() {
+                let entry = &rec.entry;
+                // Only the whole-symbol starting entry (offset 0); pieces are rebuilt
+                // by re-mapping the whole symbol.
+                if entry.get_offset() != 0 {
+                    continue;
+                }
+                let sym = entry.symbol;
+                let symbol = &self.symbols[sym];
+                // Only addr-tied (usepoint-independent) symbols here; usepoint-scoped
+                // ones go through `scope_usepoint_symbol_specs` with their use address.
+                if (symbol.flags & varnode_flags::addrtied) == 0 {
+                    continue;
+                }
+                let ct = match &symbol.dtype {
+                    Some(c) => Rc::clone(c),
+                    None => continue,
+                };
+                out.push((symbol.name.clone(), ct, entry.get_addr().clone(), symbol.flags));
+            }
+        }
+        out
+    }
+
     /// The `(name, type, addr, all_flags, usepoint)` specs for every **usepoint-
     /// scoped** Symbol mapped into this scope (across ALL spaces): a non-addr-tied
     /// SymbolEntry whose `uselimit` restricts it to a code-address range (e.g. the
