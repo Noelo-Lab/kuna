@@ -4026,19 +4026,38 @@ impl PrintC {
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
 
         if opc == OpCode::CPUI_CALLIND {
-            // CALLIND: `(*funcptr)(args)`.  The dereference operator wraps in0; args
-            // are in[1..].  count = numInput-1 (no hidden-this here).
+            // CALLIND: `(*funcptr)(args)` (C++ `PrintC::opCallind`, printc.cc:657).
+            // `function_call` is already pushed above; push the `dereference` that
+            // wraps the callee.  The operand push ORDER is load-bearing: the RPN
+            // emitter (`pushVnImplied`) pops operands off the stack in reverse, so
+            // C++ pushes the implied varnodes in REVERSE so they emit forward.  The
+            // `count==1` vs `count>1` split (printc.cc:669-690) also differs in which
+            // operand is pushed first, so it must be replicated exactly — pushing
+            // the callee first and the args forward (the prior code) mis-associates
+            // the unary `dereference` with the first argument, printing a spurious
+            // `(*(funcptr,arg0))(arg1)` CONCAT-looking grouping.  No hidden-`this`
+            // slot here (`skip = -1`), so `count = numInput - 1`.
             self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
             let count = nin - 1;
             if count >= 1 {
-                // (count-1) comma operators glue the argument list.
-                for _ in 0..(count - 1).max(0) {
-                    self.push_op(&tokens::COMMA, Some(op_key(op)));
-                }
-                // The dereferenced callee (in0) is the function expression; the
-                // args are in[1..].  Push the callee first, then the args in order.
+                // One or more parameters (C++ printc.cc:669-686): the callee (in0) is
+                // the operand the unary `dereference` wraps, so it MUST be pushed
+                // before the argument operands.  C++ pushes the callee first only in
+                // its `count>1` arm and (for `count==1`) pushes the arg then callee —
+                // because its `pushVnImplied` pops the operand stack LIFO.  The kuna
+                // emitter pops the operand list FIFO (the direct-CALL path below
+                // already relies on forward push order), so a single unified arm
+                // suffices: callee first, then `(count-1)` comma operators, then the
+                // args in source order (in[1] .. in[numInput-1]).  Pushing the callee
+                // *after* the args (the prior code) mis-associated the dereference
+                // with the first argument, printing a spurious `(*(funcptr,arg0))(..)`
+                // CONCAT-looking grouping.  No hidden-`this` slot (`skip = -1`), so
+                // `count = numInput - 1`.
                 if let Some(callee) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
                     self.push_vn_ir(fd, arch, callee, op);
+                }
+                for _ in 0..(count - 1) {
+                    self.push_op(&tokens::COMMA, Some(op_key(op)));
                 }
                 for i in 1..nin {
                     if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
