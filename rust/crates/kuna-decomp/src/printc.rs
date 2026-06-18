@@ -3933,9 +3933,24 @@ impl PrintC {
             Some(v) => v.get_type_def_facing().clone(),
             None => return false,
         };
+        // intype = in0->getHighTypeReadFacing(op)  (printc.cc:892).  For a union
+        // (or other needs-resolution composite) the C++ high read-facing accessor
+        // resolves the field for this read edge through the per-function union
+        // cache (`Datatype::findResolve`, type.cc:590).  The bare-Varnode
+        // `getTypeReadFacing` stub leaves the unresolved union in place, so a
+        // narrowing SUBPIECE of a resolved scalar union member (e.g. `int8 mylong`
+        // → int4) would mis-dispatch to the functional `SUB84(...)` arm instead of
+        // the `(int4)` cast.  Apply the same immutable cache consult the high
+        // accessor would: see [`Funcdata::find_resolve_facing`].
         let intype = match fd.vbank().get(invn) {
             Some(v) => v.get_type_read_facing(op).clone(),
             None => return false,
+        };
+        let intype = if intype.needs_resolution() {
+            let slot = fd.obank().get(op).map(|o| o.get_slot(invn)).unwrap_or(-1);
+            fd.find_resolve_facing(&intype, op, slot)
+        } else {
+            intype
         };
         strat.is_subpiece_cast(&outtype, &intype, offset)
     }
@@ -5174,8 +5189,29 @@ impl PrintC {
                 // and falls straight through to the bare-name render below.
                 if let Some(st) = &sym_type {
                     let mt = st.get_metatype();
+                    // C++ `pushSymbolDetail` (printlanguage.cc:256-258) routes EVERY
+                    // composite-cover access through `pushPartialSymbol`, whose walk
+                    // descends array/struct/union members uniformly.  The rust leaf
+                    // render handled STRUCT/UNION here but split ARRAY off into a
+                    // dedicated `name[index]` branch below — which stops at the
+                    // subscript and never descends into a union *element*.  For an
+                    // array whose element needs union resolution (e.g.
+                    // `simpunion arr[10]`, the `arr[3].ffield` access), route the
+                    // ARRAY through the partial walk too so the cached union field
+                    // resolves to `.ffield`; the walk's ARRAY arm emits the same
+                    // `[index]` subscript, then its UNION arm appends the member.
+                    // `push_partial_symbol_ir` returns `false` (falling through to
+                    // the bare `name[index]` branch) for a plain (non-resolving)
+                    // array, so this is byte-inert for the pointer/array corpus.
+                    let array_elem_needs_resolution = mt
+                        == crate::dtype::type_metatype::TYPE_ARRAY
+                        && st
+                            .get_array_base()
+                            .map(|e| e.needs_resolution())
+                            .unwrap_or(false);
                     if mt == crate::dtype::type_metatype::TYPE_STRUCT
                         || mt == crate::dtype::type_metatype::TYPE_UNION
+                        || array_elem_needs_resolution
                     {
                         // C++ `pushSymbolDetail`: `isRead` is true when `op` reads
                         // `vn` (the input slot); false when `vn` is the output (the
