@@ -511,6 +511,29 @@ impl Action for ActionMergeRequired {
             }
             let _ = merge.merge_marker(data);
         });
+
+        // (kuna LOSS-229) Re-attach dynamic-hash symbols to the firstuse COPYs that
+        // `mergeAddrTied` just re-materialised.  In upstream the firstuse COPY that a
+        // dynamic SymbolEntry targets is never destroyed, so the EARLY
+        // `ActionDynamicMapping` binding (set in the fullloop) is still present on the
+        // COPY output when `ActionMergeCopy` (`mergeOpcode(CPUI_COPY)` ->
+        // `mergeTestRequired` symbol guard, merge.cc:157-164) runs — keeping the
+        // dynamic temp a distinct HighVariable from the field it copies.  In the kuna
+        // pipeline `RulePropagateCopy` collapses that COPY in the fullloop and the
+        // cover-separation above re-inserts a FRESH COPY whose output never received
+        // the early binding; without re-binding now, `ActionMergeCopy` (which runs
+        // before the post-merge late `ActionDynamicSymbols`) merges the dynamic temp
+        // back into the field high and `markInternalCopies` then hides the assignment.
+        // Re-running the (idempotent) early mapping here binds the symbol to the new
+        // COPY output before `ActionMergeCopy`, reproducing the upstream state.  The
+        // mapping no-ops for every function with no re-materialised dynamic firstuse.
+        let entries = match data.get_scope_local() {
+            Some(lm) => lm.database().dynamic_entries(lm.scope_id()),
+            None => Vec::new(),
+        };
+        for entry in entries {
+            let _ = data.attempt_dynamic_mapping(&entry);
+        }
         0
     }
 }

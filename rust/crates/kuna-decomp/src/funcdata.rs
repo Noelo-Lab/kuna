@@ -2483,6 +2483,21 @@ impl Funcdata {
         let out_vn = self.new_unique(size, Some(ct));
         self.op_set_output(copy_op, out_vn)?;
         self.op_set_input(copy_op, in_vn, 0)?;
+        // (kuna LOSS-229) Preserve the dynamic-symbol / `mapped` binding across a
+        // cover-trim re-insertion.  In upstream the firstuse COPY that carries a
+        // dynamic-hash symbol is never destroyed, so its `mapped` output survives to
+        // `ActionMarkExplicit` (coreaction.cc:3148, isMapped arm) and is rendered as
+        // an explicit named local.  In the kuna pipeline `RulePropagateCopy` collapses
+        // that COPY during the fullloop and `Merge::mergeAddrTied` cover-separation
+        // re-materialises it here; the fresh unique output must inherit the `mapped`
+        // bit from the cover-forced input so the SAME markexplicit arm fires (the
+        // post-merge late `ActionDynamicSymbols` then re-attaches the name).  Guarded
+        // on the input actually being mapped, so non-dynamic cover trims are unchanged.
+        if self.vbank.get(in_vn).map(|v| v.is_mapped()).unwrap_or(false) {
+            if let Some(v) = self.vbank.get_mut(out_vn) {
+                v.set_flags_pub(crate::varnode::varnode_flags::mapped);
+            }
+        }
         Ok(copy_op)
     }
 
@@ -2565,16 +2580,23 @@ impl Funcdata {
     }
 
     /// C++ `Cover single; single.addDefPoint(vn); single.addRefPoint(op,vn)`
-    /// (`merge.cc:503-505`) — the cover of a single read.  Reached by
-    /// `eliminateIntersect` (not on the `mergeMarker` path, which is what the
-    /// boolless vertical slice drives); the full `addRefPoint` walk is the
-    /// [`Cover::rebuild`] machinery, surfaced when `processCopyTrims`/
-    /// `eliminateIntersect` are scheduled.
-    pub(crate) fn build_single_read_cover(&self, vn: VarnodeId, _op: OpId) -> Cover {
+    /// (`merge.cc:503-505`) — the cover of a single read, used by
+    /// `Merge::eliminateIntersect` to decide whether the read crosses an
+    /// intervening write at the same storage address.
+    pub(crate) fn build_single_read_cover(&self, vn: VarnodeId, op: OpId) -> Cover {
+        // C++ `Merge::eliminateIntersect` (merge.cc:502-505):
+        //   Cover single;
+        //   single.addDefPoint(vn);
+        //   single.addRefPoint(op,vn);   // Build range for a single read
+        // The `addRefPoint` extends the cover from `vn`'s def to the reading op so
+        // intervening writes at the same storage address fall inside it; omitting it
+        // collapses the cover to the def point and no intersection is ever found
+        // (LOSS-229: the dynamic-hash firstuse COPY was never cover-trimmed).
         let mut single = Cover::new();
         let ctx = FuncdataCoverCtx { fd: self };
         let (def, is_input) = ctx.def_point(vn);
         single.add_def_point(def, is_input);
+        single.add_ref_point_for(&ctx, op, vn);
         single
     }
 
@@ -3284,6 +3306,11 @@ impl Funcdata {
             if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
                 if let Some(h) = self.high_bank.get_mut(high) {
                     h.set_kuna_name(sym_name);
+                    // (kuna LOSS-229) Bind the Symbol id on the high too (C++
+                    // `setSymbolProperties`/`high->setSymbol`) so the merge passes'
+                    // symbol guard (mergeTestRequired) keeps the dynamic temp distinct
+                    // from the field it copies — see ActionMergeRequired re-mapping.
+                    h.set_kuna_dynamic_symbol(sym_id);
                 }
             }
             return Ok(true);
@@ -3416,6 +3443,8 @@ impl Funcdata {
         if let Some(high) = self.vbank.get(vn).and_then(|v| v.get_high()) {
             if let Some(h) = self.high_bank.get_mut(high) {
                 h.set_kuna_name(sym_name);
+                // (kuna LOSS-229) mirror the early-arm symbol binding.
+                h.set_kuna_dynamic_symbol(sym_id);
             }
         }
         // C++ retypes the Symbol from the Varnode's propagated type
