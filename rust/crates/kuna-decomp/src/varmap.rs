@@ -1719,6 +1719,61 @@ impl ScopeLocal {
         Some(SyncOverlap { all_flags, entry_size, sized_type: sized, symbol_id: sym })
     }
 
+    /// The `ActionInferTypes::buildLocaltypes` type-locked-symbol seed (C++
+    /// `coreaction.cc:5275-5281`).  When a (non-type-locked) Varnode at
+    /// `(addr, size)` is covered by a SymbolEntry whose owning Symbol *is*
+    /// type-locked, the local data-type is seeded from the exact piece of the
+    /// Symbol's type at the access offset, rather than floating from the local
+    /// def/use flow (`Varnode::getLocalType`):
+    ///
+    /// ```text
+    /// SymbolEntry *entry = vn->getSymbolEntry();
+    /// if (entry && !vn->isTypeLock() && entry->getSymbol()->isTypeLocked()) {
+    ///   curOff = (vn->getAddr().getOffset() - entry->getAddr().getOffset()) + entry->getOffset();
+    ///   ct = typegrp->getExactPiece(entry->getSymbol()->getType(), curOff, vn->getSize());
+    ///   if (ct == 0 || ct->getMetatype() == TYPE_UNKNOWN) ct = vn->getLocalType(...);  // float
+    /// }
+    /// ```
+    ///
+    /// Returns:
+    /// * `Some(ct)` — the seeded exact-piece type (the caller adopts it),
+    /// * `None` — no type-locked covering Symbol *or* the piece resolved to
+    ///   null/`TYPE_UNKNOWN` (the caller falls through to `getLocalType`, i.e.
+    ///   "let the data-type float even though the parent symbol is type-locked").
+    ///
+    /// `vn->getSymbolEntry()` is the SymbolEntry `linkSymbol`/`coverVarnodes`
+    /// cache on the Varnode; here it is resolved freshly via `findOverlap`
+    /// (`queryProperties`), the exact lookup that cache mirrors, so the seed is
+    /// available on every InferTypes round without depending on the link pass
+    /// having already run.
+    pub fn build_localtype_seed(
+        &self,
+        addr: &Address,
+        size: int4,
+        types: &dyn TypeFactory,
+    ) -> Option<Rc<Datatype>> {
+        let eref = self.db.find_overlap(self.scope, addr, size)?;
+        let entry = self.db.entry(self.scope, eref);
+        let entry_off = entry.get_offset();
+        let entry_addr_off = entry.get_addr().get_offset();
+        let sym = entry.symbol;
+        let symbol = self.db.symbol(sym);
+        // entry->getSymbol()->isTypeLocked()
+        if !symbol.is_type_locked() {
+            return None;
+        }
+        let sym_type = Rc::clone(symbol.dtype.as_ref()?);
+        // curOff = (vn->getAddr().getOffset() - entry->getAddr().getOffset()) + entry->getOffset();
+        let cur_off = (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
+        // ct = typegrp->getExactPiece(symbolType, curOff, size);
+        let ct = types.get_exact_piece(sym_type, cur_off, size).ok().flatten()?;
+        // if (ct->getMetatype() == TYPE_UNKNOWN) let the type float.
+        if ct.get_metatype() == crate::dtype::type_metatype::TYPE_UNKNOWN {
+            return None;
+        }
+        Some(ct)
+    }
+
     /// C++ `TypeSpacebase::getSubType` (`type.cc:3411-3433`), realized against this
     /// local scope's symbol table.
     ///
