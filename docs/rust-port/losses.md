@@ -3241,3 +3241,39 @@ next-loci; no behavior change):
   the markUnaliased heuristic (database.rs:3707) keeps it aliased. cpp marks it unaliased (gp fully
   constant-folds → `populate(v1)`/`printf("Hello",a0)`). NEXT-LOCUS: the AliasChecker alias-offset
   derivation (varmap.rs:649) for a pointer that only escapes into a call. [[kuna-rust-port]]
+
+## LOSS-231 UPDATE 3 (RulePushMulti wave, 2026-06-18) — RulePushMulti de-stubbed but is NOT the Switch Loop gate; real gate is a latch-resident COPY
+
+`RulePushMulti` was a stub; de-stubbed faithfully (ruleaction_1.rs: findSubstitute ruleaction.cc:1032 +
+apply_op COPY-shadow/general-push ruleaction.cc:1075), regression-free, +0. Instrumentation proved it's
+NOT the Switch Loop #2-4/#6-10 gate: on switchloop the header MULTIEQUAL is `R8D = EDI(input) ? u…41`;
+in1=EDI is a function INPUT (not written) → RulePushMulti's isWritten guard bails (C++ bails identically).
+- REAL GATE: rust keeps an EMPTY loop-latch block 0x1000c4 carrying the 12-input EAX/ECX MULTIEQUALs
+  PLUS a non-marker COPY `u0x10000041:4 = EAX(latch_multiequal)` feeding the 2-input header MULTIEQUAL.
+  That COPY makes `bb_is_do_nothing`→`bb_has_only_markers` return false (funcdata_block.rs:807/842) so
+  `ActionDoNothing::remove_do_nothing_block` never fires. C++ has NO latch-resident COPY — its 12
+  case-block COPYs (def addrs in the case blocks) flow straight into a 12-input HEADER MULTIEQUAL; the
+  latch was eliminated + its phi merged via blockRemoveInternal (already faithful in rust at
+  funcdata_block.rs:1368). The block-removal + MULTIEQUAL-merge machinery is correct — the only missing
+  piece is whatever removes/relocates that latch-resident COPY.
+- NEXT-LOCUS: what creates `u0x10000041 = EAX(latch MULTIEQUAL)` in the latch and why C++ doesn't keep
+  it there. Candidates: a COPY-into-MULTIEQUAL propagation / `propagateCopyAway` (heritage.cc:675) analog,
+  or `ActionMultiCse`'s copy-aware MULTIEQUAL dedup (coreaction.cc:806-857 — note its
+  `getDef()->getIn(0)` copy-prop unwrap, which rust may not mirror). Dual-engine raw: COPY seqnum 1d2
+  lives at 0x0010004b (case block) in C++ vs 0x001000c7 (latch) in rust. [[kuna-rust-port]]
+
+## LOSS-237 CORRECTION 2 (longdouble-storeload wave 2, 2026-06-18) — both engines byte-identical at first heritage; the collapse is a post-heritage contiguous-LOAD-piece → wide-LOAD
+
+Further refines LOSS-237 CORRECTION: both engines are BYTE-IDENTICAL at the first-heritage boundary —
+the float10 call arg is a SINGLE 10-byte stack LOAD in both (cpp `u…:a = *(ram, RSP+8)`, rust
+`unique:…:10 = LOAD[stack, rsp+8]`), built by ActionFuncLink::funcLinkInput→opStackLoad
+(coreaction.cc:1515/funcdata_op.cc:543). The pre-heritage store-load-forwarding framing was imprecise.
+The REAL divergence is DOWNSTREAM of first heritage: cpp collapses to ONE wide RAM LOAD
+`*(ram, RDI->#0x10)`; rust ends at `PIECE(SUBPIECE(LOAD8(rdi+0x18),0,2), LOAD8(rdi+0x10))` (built by
+rust normalize_write_size heritage.rs:2270 at heritage pass ~2, never collapsed). It is a
+CONTIGUOUS-LOAD-PIECE → WIDE-LOAD collapse rust lacks, firing in the rule round after first heritage.
+- NEXT-LOCUS (audit FIRST): `ActionParamDouble::apply` is a STUBBED SEAM in rust
+  (coreaction_protos.rs:1036, returns 0) — its cpp inHandHi/inHandLo + SplitVarnode::getWhole
+  double-precision-join arm (coreaction.cc:1681-1705) re-derives a `whole` from a hi/lo PIECE pair, same
+  shape as `PIECE(hi2,lo8)`. Highest-value suspect. Also: RuleLoadVarnode::resolveSpacebaseRelative
+  (ruleaction.cc:4318). Broad/high-regression — own wave; verify against decomp_test_dbg. [[kuna-rust-port]]
