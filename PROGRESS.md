@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 514/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 517/675; +...clone-gate audit, deindirect-output-type
+
+**Union Family-2 (SubfloatFlow wiring) +3 → 517.** The extra `(float8)` on float4 union members is a real FLOAT2FLOAT that C++ narrows via RuleSubfloatConvert→SubfloatFlow (subflow.cc:3215) — registered in rust but INERT because the FloatFormat table was never carried onto the glb seam (subfloat_float_format()=false, constant-conv a SEAM). Fixed: wire float_formats through (translate.rs accessor + seams.rs floatformats field + architecture.rs populate + subflow.rs SubfloatFlow holds ArchHandle). Gained Union #19/#22, Implied Fields #1. Gate: `[675,517]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Union Family-3 (#4/#25/#27 inheritUnionField) + #14/#17 open.
 
 **Inlining fspec unwrap +2 → 514.** A cloned inline CALL carried the callee's fspec annotation in slot 0; `setup_call_specs` (flow.rs:1697) read the fspec address as the entry → bogus `sub_<offset>`. Fixed: unwrap IPTR_FSPEC via fspec_lookup (C++ fspec.cc:4938). Gained Inlining #3/#8. Gate: `[675,514]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Inlining #5 (`val & 1U`) = separate cast/typing seam (cast.rs markExplicitUnsigned).
 
