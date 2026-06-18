@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 666/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 667/675; +...clone-gate audit, deindirect-output-type
+
+**Indirect prototype #2 +1 → 667.** Two sibling CALLINDs at the same EDI trial addr (0x38) in different blocks with distinct funcptrs (ptr->peek vs ptr->get): C++'s indirect double-use gate `getIn(0)==opmatch->getIn(0)` fails (different funcptrs) → drops to isInputActive where whichever call is checked first (rust qlst [get,peek]) wins, dropping the loser's arg. Fix (funcdata_varnode.rs:2373 check_call_double_use): admit the double-use when the value reaching slot j of the second CALLIND is the same trial address, so both sibling trials stay active (no restart, no unported Override seam). Marked `(kuna)`; byte-identical to upstream across the full suite. Gained Indirect prototype #2. Gate: `[675,667]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK.
 
 **Stack Return partial-field coverage grouping +2 → 666.** The IR was byte-identical; the split was naming+printer. (1) handleSymbolConflict (coreaction_cleanup.rs:2388, funcdata_varnode.cc:1021) — an otherVn whose high is in the SAME VariableGroup as the partial is NOT a conflict (the whole-cover member it groups with); same_group separates stackreturn (group) from zeroprop char-return (genuine conflict→v1). (2) scalar partial-cover render (printc, printlanguage.cc:256 pushSymbolDetail routes scalars through pushPartialSymbol too: `(int4)local` SUBPIECE finalcast off 0 + `local._2_2_` artificial field off 2 + one decl `int8 local;`). Gained Stack Return #4/#5. Gate: `[675,666]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Partial Merge #4/#5 still BLOCKED (LOSS-244 register coverage-merge — un-tie is a -3 hack).
 

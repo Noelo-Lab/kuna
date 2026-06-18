@@ -3460,3 +3460,23 @@ merges into the 8-byte funcptr → printer CONCATs `(v1,a0)`.
   (heritage.rs:1560) creates it, keeping the slot live → coarse local range tree markUnaliased can't unalias
   (the LOSS-240 AliasChecker framing is a downstream symptom). NEXT = constant-stack-store→reload forwarding
   at/before first heritage. [[kuna-rust-port]]
+
+## LOSS-246/247 CORRECTION (store-load-convergence wave, 2026-06-18) — the 3 cases are DISTINCT fixpoints, NOT one shared store-load gap
+
+The "one missing store-load forwarding" convergent hypothesis is REFUTED (dual-engine KUNA_DUMP + reverted
+probes in Heritage::refinement + AliasChecker::gather): all three target functions are faithfully transcribed;
+the failures are distinct emergent fixpoints:
+- **Long double #11**: at heritage pass 1 the struct range (off24 size32) collects read=[24:8 32:8] → refine[8]=1
+  bisects the float10. The spill SLOT refines identically in both engines (8/2/6) — refinement is NOT the lever.
+  cpp coalesces the contiguous-store roundtrip into one 10-byte input read BEFORE place_multiequals re-reads the
+  input as 8+8. op_stack_load (funcdata_op.rs:634) + resolve_spacebase_relative (ruleaction_4.rs:435) are faithful
+  + wired (refuting LOSS-246's op_stack_load/RuleLoadVarnode next-loci).
+- **Gp Test #2**: alias_boundary=-0x30 computed identically in both engines, so mark_unaliased (database.rs:3720)
+  CORRECTLY keeps the gp slot aliased — the AliasChecker framing (LOSS-240) is a SYMPTOM. Real gate: cpp forwards
+  the constant #0x410020 store→reload BEFORE guard_calls (heritage.rs:1423) casts the cross-call INDIRECT; rust
+  creates the INDIRECT first (chicken-and-egg).
+- **Stack string #9**: orthogonal RulePropagateCopy-vs-restructure race (ruleaction_3.rs:1893), not store-forwarding.
+- COMMON NEXT-LOCUS (but 3 separate fixes): pre-refinement / pre-guard_calls spacebase store→load forwarding ORDER
+  (contiguous-piece coalescing for #11; constant-forward for Gp #2) — a value-set/forward port at Heritage::heritage
+  (heritage.rs:3870). Broadest change class (every multi-store→wide-read; every constant stack slot crossing a call),
+  VERY HIGH regression risk, no narrow regression-free lever. Each its own dedicated wave. [[kuna-rust-port]]
