@@ -399,8 +399,15 @@ impl MergeContext for Funcdata {
     }
 
     // --- Symbol reads on a HighVariable (W4 surface; un-recovered default) ---
-    fn bank_symbol(&self, _high: HighVariableId) -> Option<u64> {
-        None
+    fn bank_symbol(&self, high: HighVariableId) -> Option<u64> {
+        // (kuna LOSS-229) Expose the dynamic-mapping Symbol id bound to this high so
+        // `Merge::mergeTestRequired` (merge.cc:157-164) keeps a dynamic temp distinct
+        // from the storage it copies.  Equate symbols count too (same C++ guard).
+        use slotmap::Key;
+        let h = self.high_bank().get(high)?;
+        h.kuna_dynamic_symbol()
+            .or_else(|| h.kuna_equate_symbol())
+            .map(|s| s.data().as_ffi())
     }
     fn bank_symbol_offset(&self, high: HighVariableId) -> int4 {
         self.high_bank().get(high).map(|h| h.get_symbol_offset()).unwrap_or(-1)

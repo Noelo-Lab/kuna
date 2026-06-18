@@ -408,6 +408,19 @@ impl HighVariable {
         self.symbol_offset
     }
 
+    /// (kuna LOSS-229) Bind the dynamic-mapping Symbol id to this high (C++
+    /// `HighVariable::setSymbol` via `vn->setSymbolEntry`).  Read by
+    /// `Merge::mergeTestRequired`'s symbol guard (merge.cc:157-164) so a dynamic
+    /// temp does not get merged back into the storage it copies.
+    pub fn set_kuna_dynamic_symbol(&mut self, sym: crate::database::SymbolId) {
+        self.symbol = Some(sym);
+    }
+
+    /// (kuna LOSS-229) The dynamic-mapping Symbol id bound to this high, or `None`.
+    pub fn kuna_dynamic_symbol(&self) -> Option<crate::database::SymbolId> {
+        self.symbol
+    }
+
     /// (kuna) Bind the mapped Symbol's data-type (for array/struct rendering).
     pub fn set_symbol_type(&mut self, ct: Rc<Datatype>) {
         self.kuna_symbol_type = Some(ct);
