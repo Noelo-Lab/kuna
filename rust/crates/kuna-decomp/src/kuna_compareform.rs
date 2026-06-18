@@ -212,7 +212,20 @@ fn restore_lessequal(op: OpId, data: &mut Funcdata) -> bool {
     let res: uintb = val.wrapping_add(diff as u64) & calc_mask(size);
     // Varnode *newvn = data.newConstant(vn->getSize(),res);
     let newvn = data.new_constant(size, res);
-    // newvn->copySymbol(vn);  -- SEAM(W4): data-type / Symbol propagation (see module docs).
+    // newvn->copySymbol(vn);  -- preserve the original constant's data-type (and
+    // type/name lock flags) so the restored compare constant keeps its inferred
+    // type (e.g. `int1` for a signed-byte compare, an enum for enum typing)
+    // rather than reverting to TYPE_UNKNOWN; the fresh-UNKNOWN constant would
+    // otherwise be re-typed `char` by `ActionSetCasts` (getBase(1,TYPE_INT)
+    // returns char) and mis-render `'a'` instead of `0x61`.  The mapentry/Symbol
+    // copy stays a W4 SEAM (no mapentry link in the merged tree).
+    let src_info =
+        data.vbank().get(vn).map(|s| (std::rc::Rc::clone(s.get_type()), s.get_flags()));
+    if let Some((src_type, src_flags)) = src_info {
+        if let Some(dst) = data.vbank_mut().get_mut(newvn) {
+            dst.copy_symbol_fields(src_type, src_flags);
+        }
+    }
     // data.opSetInput(op,newvn,i);
     data.op_set_input(op, newvn, i).expect("restore_lessequal: opSetInput");
     // op->clearCanonicalLessequal();

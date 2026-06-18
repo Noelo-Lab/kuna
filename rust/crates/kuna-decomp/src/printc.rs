@@ -4646,6 +4646,19 @@ impl PrintC {
                 self.push_enum_constant_ir(&ct, off, op, vn);
                 return;
             }
+            // Char arm.  C++ `pushConstant` (printc.cc:1819/1827): a TYPE_INT /
+            // TYPE_UINT constant whose data-type `isCharPrint()` is rendered as a
+            // quoted character literal (`pushCharConstant`, printc.cc:1675).  This
+            // is the metatype-driven char render (distinct from the equate-Symbol
+            // `force_char` display-format path, which already routes through the
+            // integer arm below with a FORCE_CHAR display-format override).
+            {
+                use crate::dtype::type_metatype::{TYPE_INT, TYPE_UINT};
+                if matches!(ct.get_metatype(), TYPE_INT | TYPE_UINT) && ct.is_char_print() {
+                    self.push_char_constant_ir(fd, &ct, off, op, vn);
+                    return;
+                }
+            }
             // Pointer arm.  C++ `pushConstant` (printc.cc:1842-1854): a TYPE_PTR /
             // TYPE_PTRREL constant whose pointed-to type `isCharPrint()` is rendered
             // as a quoted string literal when the constant resolves to readonly
@@ -5360,6 +5373,42 @@ impl PrintC {
             crate::printlanguage::SyntaxHighlight::const_color,
             op_key(op),
         ));
+    }
+
+    /// Render a constant whose data-type prints as a character — C++
+    /// `PrintC::pushCharConstant` (printc.cc:1675).  Resolves the varnode-high's
+    /// equate/display-format override exactly as C++ does, honors the
+    /// `caresAboutCharRepresentation == false` base-CastStrategy short-circuit
+    /// (printc.cc:1693-1698, which routes a non-`force_char` forced format back to
+    /// the integer print), then emits the `'a'` literal through the shared
+    /// FORCE_CHAR formatter ([`push_constant_ir_fmt_sign`], which reproduces the
+    /// printc.cc:1699-1723 size==1/`val>=0x80` and `printUnicode` arms).
+    fn push_char_constant_ir(&mut self, fd: &Funcdata, ct: &crate::dtype::Datatype, val: uintb, op: OpId, vn: VarnodeId) {
+        // C++ `bool isSigned = (ct->getMetatype() == TYPE_INT);` (printc.cc:1679).
+        let is_signed = ct.get_metatype() == crate::dtype::type_metatype::TYPE_INT;
+        // C++ resolves `displayFormat` from the varnode-high's equate Symbol /
+        // type (printc.cc:1680-1692).  The equate short-circuit needs the W7
+        // EquateSymbol graph (not yet ported — the equate path renders via the
+        // integer arm's `force_char` route instead); here we read the Symbol /
+        // read-facing display-format override that `vn_high_display_format`
+        // already exposes (the same value C++ `sym->getDisplayFormat()` /
+        // `high->getType()->getDisplayFormat()` produces for a non-equate high).
+        let mut display_fmt = fd.vn_high_display_format(vn);
+        if display_fmt == display_format::NONE {
+            display_fmt = ct.get_display_format();
+        }
+        // printc.cc:1693-1698 — a forced format other than `force_char`, when the
+        // CastStrategy does not care about the char representation (the base
+        // `caresAboutCharRepresentation` returns false), prints as an integer.
+        if display_fmt != display_format::NONE && display_fmt != display_format::FORCE_CHAR {
+            self.push_constant_ir_fmt_sign(val, ct.get_size(), op, display_fmt, is_signed);
+            return;
+        }
+        // printc.cc:1699-1723: emit the `'a'` / `L'...'` / hex-escape literal.
+        // `push_constant_ir_fmt_sign` -> `format_integer_token` reproduces the
+        // size==1/`val>=0x80` ASCII guard and the `printUnicode`/`printCharHexEscape`
+        // split under a FORCE_CHAR display-format.
+        self.push_constant_ir_fmt_sign(val, ct.get_size(), op, display_format::FORCE_CHAR, is_signed);
     }
 
     /// Render a floating-point constant — the `TYPE_FLOAT` arm of C++
