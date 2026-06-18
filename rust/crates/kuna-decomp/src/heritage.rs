@@ -1362,6 +1362,21 @@ impl Heritage {
             // wave's `ScopeLocal` and is left as a documented seam.  Local stack
             // ranges are not persistent, so `fl`'s persist bit comes only from the
             // global query here, which is faithful for the global-store cases.)
+            //
+            // NOTE (LOSS-156 gate, w10-stacklocal-typing): the local-scope half of
+            // this walk is now AVAILABLE as `fd.query_local_properties(addr,size,
+            // usepoint)` (the faithful `localmap->queryProperties` port — see
+            // `Funcdata::query_local_properties` / `ScopeLocal::query_properties`).
+            // OR-ing it into `fl` here is the FULL fix for `map addr`-mapped stack
+            // structs (it gains Partial splitting #15-19 + Wayoff array #1 by giving
+            // a mapped stack range `addrtied`, so `guard_calls` builds the INDIRECT
+            // that keeps its stores live across calls and `propagateSpacebaseRef`
+            // types it). It is held OUT here because enabling it ALSO exposes two
+            // downstream gaps that regress 4 assertions: (a) addrForced array stores
+            // do not store-cross-merge (varcross "Store cross #1/#2"), and (b) a
+            // typed stack struct's `&v1.arr1[a]` intermediate pointer is not
+            // forwarded/collapsed (dupptr "Intermediate pointers #3/#5"). Wire this
+            // OR once the store-cross-merge + pointer-forwarding gaps close.
             let usepoint = Address::new_invalid();
             let fl: uint4 = fd.get_arch().query_global_properties(addr, size, &usepoint);
             self.guard_calls(fd, fl, addr, size, write);

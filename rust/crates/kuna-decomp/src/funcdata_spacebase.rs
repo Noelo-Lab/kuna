@@ -335,6 +335,25 @@ impl Funcdata {
         self.vbank().find_input(point.size as int4, &addr)
     }
 
+    /// C++ `localmap->queryProperties(addr,size,usepoint,...)` for the local stack
+    /// scope (`database.cc:1268` via [`crate::varmap::ScopeLocal::query_properties`]):
+    /// the Varnode boolean properties (`mapped | addrtied | typelock | ...`) a
+    /// `map addr`-mapped stack range carries.  Returns `0` when there is no local
+    /// scope or the range is not in its map.  This is the local-scope half of the
+    /// `Heritage::guard` property walk; the global-scope half is
+    /// [`crate::seams::ArchHandle::query_global_properties`].
+    pub fn query_local_properties(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> kuna_base::types::uint4 {
+        match self.get_scope_local() {
+            Some(lm) => lm.query_properties(addr, size, usepoint),
+            None => 0,
+        }
+    }
+
     /// C++ `ActionRestrictLocal::apply` (`coreaction.cc:2003-2059`): restrict the
     /// possible range of local variables by marking two classes of stack storage as
     /// *not mapped* in the local scope.
