@@ -1469,6 +1469,26 @@ impl Varnode {
         // if (high != null) high->typeDirty();  -- SEAM(W7)
         true
     }
+
+    /// Copy the data-type (and type/name lock flags) from another Varnode's
+    /// pre-read `(type, flags)` (C++ `Varnode::copySymbol`, varnode.cc:512 — the
+    /// fields are pulled out by the caller so the source and destination can be
+    /// borrowed from the same Varnode bank).  The `mapentry`/Symbol copy
+    /// and the `high->setSymbol`/`typeDirty` notifications are the W4/W7 SEAMs
+    /// (the merged tree carries no `mapentry` link); the data-type and lock-flag
+    /// copy is the part needed when a transform synthesizes a replacement
+    /// constant that must keep the original's typing (e.g. `ActionPresentCompareForm`
+    /// restoring `V <= c` from the canonical `V < c+1`, where the original
+    /// constant was typed `int1`/enum by inference and the fresh constant would
+    /// otherwise be `TYPE_UNKNOWN`).
+    pub fn copy_symbol_fields(&mut self, src_type: Rc<Datatype>, src_flags: uint4) {
+        self.type_ = src_type; // Copy any type
+        // mapentry = vn->mapentry;  -- SEAM(W4): no mapentry link in the merged tree
+        self.flags &= !(varnode_flags::typelock | varnode_flags::namelock);
+        self.flags |= (varnode_flags::typelock | varnode_flags::namelock) & src_flags;
+        // if (high != 0) { high->typeDirty(); if (mapentry) high->setSymbol(this); }
+        //   -- SEAM(W7): high typeDirty / setSymbol notification
+    }
 }
 
 /// Compare the spaces of two addresses by raw pointer identity, as the C++
