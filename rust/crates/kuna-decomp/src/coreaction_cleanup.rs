@@ -461,7 +461,60 @@ fn mark_output_storage_addr_tied(data: &mut Funcdata) {
         // independently of the proto's output-lock state: C++ `inScope` never ties
         // a transient processor register whether or not the output is locked.
         let has_marker_write = !marker_writes.is_empty();
-        if !has_marker_write {
+
+        // (kuna LOSS-241 transient-register over-tie fix) Even WITH a control-flow
+        // join marker, a return register is NOT a whole-function local C++ ties when
+        // one of its non-marker SSA versions is a TRANSIENT INTERMEDIATE that feeds
+        // ANOTHER write of the same return address.  In `dostackextract` the field3
+        // ZPULL result `AX = ZPULL(...)` is consumed by `AX = INT_ADD(AX_field3,
+        // field5)` — both at the return address — so that field3 AX is an
+        // intermediate of the add, not the joined whole-function variable.  C++
+        // `syncVarnodesWithSymbols` (funcdata_varnode.cc:993-997) ties an un-symboled
+        // register ONLY via `lm->inScope`, which is always false for a processor
+        // register, so C++ never restructures this transient chain into a
+        // whole-function local — it leaves the register un-tied and
+        // `ActionMarkExplicit::baseExplicit` (coreaction.cc:3119/3120) marks the
+        // field3 AX IMPLIED, folding `v1 = v2.field3 + v2.field5;`.  Over-tying it
+        // here force-merges every same-address SSA version (`Merge::mergeAddrTied`,
+        // merge.cc:631 ties ALL varnodes at an address once one is addrtied), pulling
+        // the field3 AX into the multi-instance return high so `baseExplicit` forces
+        // it explicit and the expression SPLITS (`v1 = v2.field3; v1 = v1 +
+        // v2.field5;`).
+        //
+        // The marker-write tie below STILL fires for a genuine whole-function
+        // register local whose joined SSA versions are all leaf computations (8051
+        // `boolless`'s `ACC`: a `COPY(dat_52)` and a `COPY(#1)` joined by a phi — no
+        // ACC write reads another ACC version), so its `// acc` storage rendering is
+        // preserved.  This is an IR-shape test (a same-address def-use chain among the
+        // return-register SSA versions), not a name/address/value special case.
+        // `targets` is the (small) set of same-size/same-address return-register
+        // Varnodes; a `Vec::contains` membership test keeps the lookup deterministic
+        // (ADR 0002 forbids HashSet) without needing an ordered set for this size.
+        let has_transient_self_chain = written.iter().any(|&vn| {
+            let def = match data.vbank().get(vn).and_then(|v| v.get_def()) {
+                Some(d) => d,
+                None => return false,
+            };
+            let (is_marker, ni) = match data.obank().get(def) {
+                Some(o) => (o.is_marker(), o.num_input()),
+                None => return false,
+            };
+            // A `marker` (phi/indirect) join IS the whole-function variable, not a
+            // transient computation; only an ordinary p-code op that consumes another
+            // same-address SSA version marks an intermediate.
+            if is_marker {
+                return false;
+            }
+            (0..ni).any(|i| {
+                data.obank()
+                    .get(def)
+                    .and_then(|o| o.get_in(i))
+                    .map(|iv| targets.contains(&iv))
+                    .unwrap_or(false)
+            })
+        });
+
+        if !has_marker_write || has_transient_self_chain {
             // Leave un-tied so `baseExplicit` marks the value IMPLIED and the
             // printer collapses the return-register round-trip / chain.
             return;
