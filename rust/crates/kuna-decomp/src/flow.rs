@@ -137,6 +137,20 @@ pub enum FlowOverride {
     NONE,
 }
 
+/// Which kind of injection [`FlowInfo::do_injection`] is weaving in (C++
+/// `doInjection` resolves the payload differently for the two callers, but the
+/// weave-in tail is shared).
+#[derive(Debug, Clone, Copy)]
+enum InjectSource {
+    /// A CALLOTHER user-op injection — payload resolved via the user-op table
+    /// (C++ `FlowInfo::injectUserOp`, `fc == 0`).  Carries the user-op index.
+    UserOp(uintb),
+    /// A CALL/CALLIND call-fixup injection — payload resolved by the call spec's
+    /// parked inject id (C++ `FlowInfo::injectSubFunction`, `fc != 0`).  Carries
+    /// the inject id.
+    CallFixup(int4),
+}
+
 /// \brief A helper describing the number of bytes in a machine instruction and
 /// the starting p-code op (C++ `struct FlowInfo::VisitStat`, `flow.hh:77`).
 #[derive(Debug, Clone)]
@@ -236,6 +250,60 @@ pub trait FlowEnvironment {
     /// shell reports `false`.
     fn is_incidental_copy_userop(&self, _userop_index: uintb) -> bool {
         false
+    }
+
+    /// Emit a \e call-fixup injection payload (resolved by raw inject id) into
+    /// `emit` (C++ `FlowInfo::injectSubFunction` → `payload->inject(icontext,
+    /// emitter)` via the SLEIGH inject engine).  Unlike [`inject_userop`] the
+    /// payload is named by `inject_id` directly (`fc->getInjectId()`, parked by
+    /// `IfcFixupApply`), not via the user-op table.  The default errs (no inject
+    /// engine in the W3 shell); the engine-backed env drives
+    /// `SleighInjectEngine::emit_payload` over the library payload + compiled tpl.
+    fn inject_call_fixup_payload(
+        &self,
+        _inject_id: int4,
+        _context: &mut crate::pcodeinject::InjectContext,
+        _emit: &mut dyn kuna_sleigh::translate::PcodeEmit,
+    ) -> KunaResult<()> {
+        Err(KunaError::lowlevel(
+            "inject_call_fixup_payload: no inject engine in this FlowEnvironment",
+        ))
+    }
+
+    /// Is the call-fixup payload `inject_id`'s body marked \e incidental-copy
+    /// (C++ `payload->isIncidentalCopy()`)?  The W3 shell reports `false`.
+    fn is_incidental_copy_payload(&self, _inject_id: int4) -> bool {
+        false
+    }
+
+    /// The \e param-shift of the call-fixup payload `inject_id` (C++
+    /// `payload->getParamShift()`): the number of parameters shifted in the
+    /// original call, propagated to the injected call's callspec.  The W3 shell
+    /// reports `0`.
+    fn call_fixup_param_shift(&self, _inject_id: int4) -> int4 {
+        0
+    }
+
+    /// The display name of the call-fixup `inject_id` (C++
+    /// `glb->pcodeinjectlib->getCallFixupName(injectid)`), used in the
+    /// `warningHeader` after a sub-function injection.  The W3 shell reports an
+    /// empty name.
+    fn call_fixup_name(&self, _inject_id: int4) -> String {
+        String::new()
+    }
+
+    /// Build a locked override [`FuncProto`](crate::fspec::FuncProto) from the
+    /// parsed [`PrototypePieces`](crate::fspec::PrototypePieces) of an `override
+    /// prototype <addr> <decl>` (C++ `IfcProtooverride`'s `new FuncProto;
+    /// setInternal(pieces.model, void); setPieces(pieces)`).  Used by
+    /// `build_call_specs` to apply the override onto the matching call spec
+    /// (`Override::applyPrototype` → `fspecs.copy(*proto)`).  The W3 shell has no
+    /// type factory / model registry and reports `None`.
+    fn build_override_proto(
+        &self,
+        _pieces: &crate::fspec::PrototypePieces,
+    ) -> KunaResult<Option<crate::fspec::FuncProto>> {
+        Ok(None)
     }
 
     /// (kuna) GH-8817: is `op` a V850 `jmp [reg]` CALLIND to reclassify as
@@ -405,6 +473,13 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// cannot be inlined again (the cycle break that prints "Could not inline
     /// here").
     inline_recursion: std::collections::BTreeSet<Address>,
+    /// Entry address of the call-fixup whose body is currently being woven in
+    /// (C++ `setupCallSpecs(op, fc)`'s non-NULL `fc` argument — the call site
+    /// being injected).  While a [`do_injection`](Self::do_injection) for a
+    /// call-fixup is xref-classifying its emitted ops, a nested CALL/CALLIND to
+    /// the SAME entry must `cancel_inject_id` so the injection does not recurse.
+    /// `None` outside a call-fixup injection (the user-op path passes NULL `fc`).
+    injecting_entry: Option<Address>,
 }
 
 impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
@@ -445,6 +520,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             qlst_count: 0,
             inline_head: None,
             inline_recursion: std::collections::BTreeSet::new(),
+            injecting_entry: None,
         }
     }
 
@@ -1716,6 +1792,15 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         }
         self.build_call_specs(op, entry.clone(), false)?;
         self.qlst_count += 1;
+        // C++ flow.cc:708-711: `if (fc != 0 && fc->getEntryAddress() ==
+        // res->getEntryAddress()) res->cancelInjectId();` — while weaving a
+        // call-fixup body, a nested direct CALL to the SAME fixup entry must NOT
+        // re-inject (cycle break).
+        if self.injecting_entry.as_ref() == Some(&entry) {
+            if let Some(idx) = self.data.get_call_specs_index(op) {
+                self.data.get_call_specs_mut(idx).proto_mut().cancel_inject_id();
+            }
+        }
         // C++ `return checkForFlowModification(*res)` (flow.cc:712).
         self.check_for_flow_modification(op, &entry)
     }
@@ -1791,7 +1876,15 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             .get(op)
             .map(|o| o.get_addr().clone())
             .unwrap_or_default();
-        let direct = self.data.get_override().find_indirect_override(&op_addr).cloned();
+        let mut direct = self.data.get_override().find_indirect_override(&op_addr).cloned();
+
+        // C++ flow.cc:730-731: `if (fc != 0 && fc->getEntryAddress() ==
+        // res->getEntryAddress()) res->setAddress(Address());` — while weaving a
+        // call-fixup body, cancel an indirect override that would redirect this
+        // CALLIND back to the SAME fixup entry (cycle break).
+        if direct.is_some() && direct.as_ref() == self.injecting_entry.as_ref() {
+            direct = None;
+        }
 
         if let Some(entry) = direct {
             // res->getEntryAddress() is now valid -> change the indirect pcode call
@@ -1818,6 +1911,29 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     fn build_call_specs(&mut self, op: OpId, entry: Address, indirect: bool) -> KunaResult<()> {
         use crate::fspec::FuncCallSpecs;
         let mut fc = FuncCallSpecs::new(op, entry.clone());
+        // C++ `data.getOverride().applyPrototype(data, *res)` (flow.cc:706 direct /
+        // flow.cc:732 indirect, BEFORE `queryCall`): an `override prototype <addr>
+        // <decl>` keyed by the call op's address copies its parsed prototype onto
+        // this call spec (`fspecs.copy(*proto)`).  Applies to BOTH direct and
+        // indirect calls.  Runs BEFORE the inject-id query so the queryCall-equiv
+        // `copyFlowEffects` (inline/inject id, below) is NOT clobbered by the copy —
+        // matching the C++ `applyPrototype` → `queryCall` order, which is what lets
+        // an injected CALLIND carry BOTH the override args and the fixup injection.
+        {
+            let op_addr =
+                self.data.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
+            let pieces = self
+                .data
+                .get_override()
+                .find_proto_override(&op_addr)
+                .and_then(|ov| ov.pieces())
+                .cloned();
+            if let Some(pieces) = pieces {
+                if let Some(proto) = self.env.build_override_proto(&pieces)? {
+                    fc.proto_mut().copy(&proto);
+                }
+            }
+        }
         // queryCall: resolve the direct callee symbol's name (W4 proto copy
         // postponed to ActionDefaultParams).
         if !indirect && !entry.is_invalid() {
@@ -2306,13 +2422,18 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             let entry = fc.get_entry_address().clone();
             let name = fc.get_name().to_string();
             if inject_id >= 0 {
-                // injectSubFunction(fc): a registered call-fixup payload.
-                //   -- SEAM(W4): `injectSubFunction` needs the `PcodeInjectLibrary`
-                //      payload + `doInjection` (the p-code-template weaving), not
-                //      yet ported.  Leave the CALL in place (faithful partial: the
-                //      un-injected fixup call still renders), matching the
-                //      pre-inline-wave behavior.  Recorded as a loss.
-                continue;
+                // injectSubFunction(fc): weave a registered call-fixup payload in
+                // at the call site, replacing the original CALL/CALLIND.
+                if self.inject_sub_function(idx, op)? {
+                    // data.warningHeader("Function: "+fc->getName()+
+                    //   " replaced with injection: "+getCallFixupName(injectid));
+                    let fixup = self.env.call_fixup_name(inject_id);
+                    self.data.warning_header(&format!(
+                        "Function: {name} replaced with injection: {fixup}"
+                    ));
+                    // deleteCallSpec(fc): remove the now-injected call from qlst.
+                    self.data.delete_call_spec(idx);
+                }
             } else if self.inline_sub_function(op, &entry)? {
                 // data.warningHeader("Inlined function: " + fc->getName());
                 self.data.warning_header(&format!("Inlined function: {name}"));
@@ -2375,7 +2496,54 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             });
         }
 
-        self.do_injection(userop_index, &mut icontext, op)
+        self.do_injection(InjectSource::UserOp(userop_index), &mut icontext, op)
+    }
+
+    /// Inject a registered \e call-fixup payload at a call site and weave it into
+    /// the flow, replacing the original CALL/CALLIND (C++
+    /// `FlowInfo::injectSubFunction`, `flow.cc:1286`).
+    ///
+    /// Unlike [`inject_user_op`], the payload is named by the call spec's parked
+    /// inject id (`fc->getInjectId()`, set by `IfcFixupApply`); the injection
+    /// context carries the call's `baseaddr`/`nextaddr` plus the resolved callee
+    /// `calladdr` (so address-relative templates resolve against the fixup
+    /// target), but NO operand inputs.  After the weave, the payload's
+    /// param-shift is propagated to the injected call's call spec (the last one
+    /// pushed onto `qlst` during the woven body's xref).  Returns `true` (the
+    /// injection happened; the caller deletes the original call spec).
+    fn inject_sub_function(&mut self, idx: int4, op: OpId) -> KunaResult<bool> {
+        let fc = self.data.get_call_specs(idx);
+        let inject_id = fc.proto().get_inject_id();
+        let entry = fc.get_entry_address().clone();
+        let baseaddr = self.data.obank().get(op).expect("injectSubFunction: stale op").get_addr().clone();
+
+        // InjectContext: clear(); baseaddr = nextaddr = op->getAddr();
+        // calladdr = fc->getEntryAddress().  No inputlist/output (flow.cc:1292-1296).
+        let mut icontext = crate::pcodeinject::InjectContext::default();
+        icontext.baseaddr = Some(baseaddr.clone());
+        icontext.nextaddr = Some(baseaddr);
+        icontext.calladdr = Some(entry.clone());
+
+        // While the body's emitted ops are xref-classified, a nested CALL/CALLIND
+        // to the SAME fixup entry must not re-inject (C++ passes `fc` to
+        // `xrefControlFlow` -> `setupCallSpecs(op, fc)`).
+        let saved_injecting = self.injecting_entry.take();
+        self.injecting_entry = Some(entry);
+        let result = self.do_injection(InjectSource::CallFixup(inject_id), &mut icontext, op);
+        self.injecting_entry = saved_injecting;
+        result?;
+
+        // if (payload->getParamShift() != 0) qlst.back()->setParamshift(...).
+        // The injected call's spec is the last one appended to qlst during the
+        // woven body's xref (flow.cc:1299-1302).
+        let param_shift = self.env.call_fixup_param_shift(inject_id);
+        if param_shift != 0 {
+            let n = self.data.num_calls();
+            if n > 0 {
+                self.data.get_call_specs_mut(n - 1).set_paramshift(param_shift);
+            }
+        }
+        Ok(true)
     }
 
     /// Weave an injection into the flow and destroy the original op (C++
@@ -2388,7 +2556,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     /// seam); the no-fallthru / incidental-copy handling is transcribed.
     fn do_injection(
         &mut self,
-        userop_index: uintb,
+        source: InjectSource,
         icontext: &mut crate::pcodeinject::InjectContext,
         op: OpId,
     ) -> KunaResult<()> {
@@ -2396,10 +2564,19 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         // (the marker op just before the injection lands).
         let marker = self.dead_tail(); // there must be at least one op (`op` itself)
 
-        // payload->inject(icontext, emitter): emit the fixup p-code.
+        // payload->inject(icontext, emitter): emit the fixup p-code.  The C++
+        // resolves the payload differently for a user-op (CALLOTHER) vs a
+        // call-fixup (CALL/CALLIND), but the weave-in tail is identical.
         {
             let mut emit = FlowEmit::new(&mut self.data, self.env);
-            self.env.inject_userop(userop_index, icontext, &mut emit)?;
+            match source {
+                InjectSource::UserOp(userop_index) => {
+                    self.env.inject_userop(userop_index, icontext, &mut emit)?;
+                }
+                InjectSource::CallFixup(inject_id) => {
+                    self.env.inject_call_fixup_payload(inject_id, icontext, &mut emit)?;
+                }
+            }
             if let Some(err) = emit.error.take() {
                 return Err(err);
             }
@@ -2436,7 +2613,11 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         }
 
         // if (payload->isIncidentalCopy()) obank.markIncidentalCopy(firstop,lastop);
-        if self.env.is_incidental_copy_userop(userop_index) {
+        let incidental = match source {
+            InjectSource::UserOp(userop_index) => self.env.is_incidental_copy_userop(userop_index),
+            InjectSource::CallFixup(inject_id) => self.env.is_incidental_copy_payload(inject_id),
+        };
+        if incidental {
             self.data.obank_mut().mark_incidental_copy(firstop, lastop);
         }
         // obank.moveSequenceDead(firstop,lastop,op): move the injection after op.

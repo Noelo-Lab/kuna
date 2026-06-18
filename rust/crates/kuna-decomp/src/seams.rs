@@ -149,6 +149,20 @@ pub struct GlobalEntry {
     /// printer's `pushSymbolScope`/`getResolutionDepth` namespace qualification
     /// (`printc.cc:203`, `database.cc:324`).
     pub scope_path: Vec<String>,
+    /// Whether the owning Symbol is a `FunctionSymbol` (C++ the entry's
+    /// `getSymbol()` is a `FunctionSymbol`, so `Scope::queryFunction(addr)` returns
+    /// its `Funcdata`).  A bare loader function symbol carries a generic code type
+    /// with NO recovered prototype, so `query_function` must still resolve it (with
+    /// the default void proto) for `ActionDeindirect` to convert a CALLIND through
+    /// its address into a direct CALL.
+    pub is_function: bool,
+    /// The owning FunctionSymbol's parked call-fixup inject id (C++
+    /// `FunctionSymbol::getFunction()->getFuncProto().getInjectId()`, set by
+    /// `IfcFixupApply` → `setInjectId`, which ALSO marks the proto inline).  `-1`
+    /// when none / not a function.  `query_function` carries this onto the proto it
+    /// hands `ActionDeindirect` so the deindirect sees an inline (inject-bearing)
+    /// callee and restarts — the restart re-flows and the now-direct CALL injects.
+    pub func_inject_id: int4,
 }
 
 /// A read-only snapshot of the global [`Scope`](crate::database::Scope)
@@ -1012,18 +1026,57 @@ impl Architecture {
             if e.space_index != space_index || e.first != start {
                 continue;
             }
+            // C++ `Scope::queryFunction(addr)` returns the `FunctionSymbol`'s
+            // `Funcdata`, whose `getFuncProto()` is its recovered prototype — or,
+            // for a bare loader symbol, the default (void, unlocked) proto.  A
+            // FunctionSymbol carries a generic code data-type that usually holds NO
+            // recovered `FuncProto`, so resolve on the function-ness of the symbol,
+            // not on a code prototype being present.
+            if !e.is_function {
+                continue;
+            }
+            let entry_addr = Address::new(std::rc::Rc::clone(space), e.first);
+            // Prefer a recovered code prototype when the type carries one (a
+            // declared callee, e.g. `parse line extern void f(...)`); otherwise
+            // hand back the default void proto the C++ funcsym's `getFuncProto`
+            // would return for an undeclared loader symbol.
             if let Some(ct) = &e.symbol_type {
-                if ct.get_metatype() != crate::dtype::type_metatype::TYPE_CODE {
-                    continue;
-                }
-                if let Some(proto) = ct.get_code_prototype() {
-                    return Some((
-                        e.symbol_name.clone(),
-                        Address::new(std::rc::Rc::clone(space), e.first),
-                        std::rc::Rc::clone(proto),
-                    ));
+                if ct.get_metatype() == crate::dtype::type_metatype::TYPE_CODE {
+                    if let Some(proto) = ct.get_code_prototype() {
+                        // A declared callee already carries its model/params; but the
+                        // parked inject id (call-fixup) lives on the FunctionSymbol,
+                        // not the type — re-apply it so `deindirect` sees an inline
+                        // (inject-bearing) callee even for a typed prototype.
+                        if e.func_inject_id >= 0 && proto.get_inject_id() < 0 {
+                            let mut p = crate::fspec::FuncProto::new();
+                            p.copy(proto);
+                            p.set_inject_id(e.func_inject_id);
+                            return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(p)));
+                        }
+                        return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::clone(proto)));
+                    }
                 }
             }
+            // Default (void, unlocked) proto on the default model — the shape the
+            // C++ funcsym's `getFuncProto` carries after `setInternal(defaultfp,
+            // void)`.  A model IS required: the deindirect proto-merge compares
+            // models (`FuncProto::is_compatible` dereferences `op2->model()`).  If
+            // the architecture has not shared its default model / type factory
+            // (hand-built fixtures), fall back to a bare proto.
+            let mut proto = crate::fspec::FuncProto::new();
+            if let (Some(model), Some(types)) = (self.default_fp(), self.types()) {
+                if let Ok(void) = types.get_type_void() {
+                    proto.set_internal(std::rc::Rc::clone(model), void);
+                }
+            }
+            // C++ `IfcFixupApply`'s `setInjectId` also marks the funcsym proto
+            // inline; carry that so `deindirect`'s `isInline()` test triggers the
+            // restart that re-flows and injects the call-fixup at the now-direct
+            // call site.
+            if e.func_inject_id >= 0 {
+                proto.set_inject_id(e.func_inject_id);
+            }
+            return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(proto)));
         }
         None
     }

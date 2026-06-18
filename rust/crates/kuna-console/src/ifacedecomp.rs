@@ -141,6 +141,17 @@ pub struct IfaceDecompData {
     /// precedent).
     pub pending_flow_overrides:
         std::collections::BTreeMap<String, Vec<(kuna_base::address::Address, kuna_base::types::uint4)>>,
+    /// Prototype overrides installed by `override prototype <addr> <decl>`, keyed
+    /// by function name.  C++ keeps these on `dcp->fd->getOverride()` (the Funcdata
+    /// is reused); the kuna console rebuilds the IR on `decompile`, so the
+    /// `(callpoint, pieces)` facts are stashed here and re-seeded onto the fresh
+    /// Funcdata's `localoverride` at flow time (the `pending_flow_overrides`
+    /// precedent) — `FlowInfo::build_call_specs` consumes them as
+    /// `Override::applyPrototype` (`fspecs.copy(*proto)`).
+    pub pending_proto_overrides: std::collections::BTreeMap<
+        String,
+        Vec<(kuna_base::address::Address, kuna_decomp::fspec::PrototypePieces)>,
+    >,
 }
 
 impl IfaceData for IfaceDecompData {
@@ -1538,6 +1549,13 @@ decomp_command!(
             .get(&name)
             .cloned()
             .unwrap_or_default();
+        // The `override prototype` facts stashed for this function (re-seeded on the
+        // rebuilt IR), consumed at flow time as `Override::applyPrototype`.
+        let proto_overrides = dcp_mut(status)?
+            .pending_proto_overrides
+            .get(&name)
+            .cloned()
+            .unwrap_or_default();
         if has_no_code {
             // Restore the program before the early return.
             dcp_mut(status)?.conf = Some(prog);
@@ -1565,6 +1583,7 @@ decomp_command!(
             &dynamic_symbols,
             pending_proto.as_ref(),
             &flow_overrides,
+            &proto_overrides,
         );
         // Restore the program (and the fresh Funcdata on success) regardless.
         let dcp = dcp_mut(status)?;
@@ -2405,6 +2424,9 @@ impl kuna_decomp::overrides::FuncProtoOverride for PiecesProtoOverride {
         s.push_str(&self.pieces.intypes.len().to_string());
         s.push(')');
     }
+    fn pieces(&self) -> Option<&kuna_decomp::fspec::PrototypePieces> {
+        Some(&self.pieces)
+    }
 }
 
 decomp_command!(
@@ -2451,6 +2473,15 @@ decomp_command!(
         // (FlowInfo::queryCall) is still seamed (LOSS-031 neighborhood), so the
         // override is stored but not yet applied at flow time; the command succeeds
         // (the script proceeds) exactly as C++.
+        // The kuna console rebuilds the IR on `decompile`, dropping this fd's
+        // Override; stash the (callpoint, pieces) by function name so the next
+        // `decompile` re-seeds it onto the fresh Funcdata (the `flow`/`proto`
+        // override precedent).
+        let funcname = dcp.fd.as_ref().expect("fd present").get_display_name().to_string();
+        dcp.pending_proto_overrides
+            .entry(funcname)
+            .or_default()
+            .push((callpoint.clone(), pieces.clone()));
         let ov: Box<dyn kuna_decomp::overrides::FuncProtoOverride> =
             Box::new(PiecesProtoOverride { pieces });
         dcp.fd

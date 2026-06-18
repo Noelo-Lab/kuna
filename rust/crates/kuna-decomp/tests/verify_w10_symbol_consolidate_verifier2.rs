@@ -77,6 +77,8 @@ fn entry(
         symbol_offset: 0,
         symbol_type: ty,
         scope_path: Vec::new(),
+        is_function: false,
+        func_inject_id: -1,
     }
 }
 

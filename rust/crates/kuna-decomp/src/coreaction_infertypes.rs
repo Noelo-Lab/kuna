@@ -122,6 +122,24 @@ pub(crate) fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Data
         }
     }
 
+    // C++ `TypeOpCallind::getInputLocal(op, 0)` (typeop.cc:763-768): the first input
+    // of a CALLIND is the *function pointer*, so its suggested type is `code *` —
+    // `getTypePointer(in0Size, getTypeCode(), spc->getWordSize())`.  This is what
+    // types the indirect-call target Varnode `code *v1` (and lets the printer render
+    // `(*v1)(...)` rather than treating the funcptr as a plain integer).
+    if opcode == OpCode::CPUI_CALLIND && slot == 0 {
+        if let Some(tlst) = arch.types() {
+            let code = tlst.get_type_code().unwrap_or_else(|_| {
+                Rc::new(Datatype::new(0, type_metatype::TYPE_CODE))
+            });
+            let spc = o.get_addr().get_space().cloned();
+            let wordsize = spc.as_ref().map(|s| s.get_word_size()).unwrap_or(1);
+            if let Ok(ptr) = tlst.get_type_pointer(in_size, code, wordsize) {
+                return ptr;
+            }
+        }
+    }
+
     // C++ `TypeOpReturn::getInputLocal` (typeop.cc:903-921): a RETURN's value input
     // (slot >= 1) suggests the *function's* recovered output data-type, so a
     // struct-by-value return (e.g. `foo` in rax / edx:eax) flows onto the returned

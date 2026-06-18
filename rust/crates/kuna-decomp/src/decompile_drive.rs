@@ -207,6 +207,70 @@ impl FlowEnvironment for ArchFlowEnv {
         );
         engine.emit_payload(payload, tpl, context, emit)
     }
+
+    fn inject_call_fixup_payload(
+        &self,
+        inject_id: int4,
+        context: &mut crate::pcodeinject::InjectContext,
+        emit: &mut dyn kuna_sleigh::translate::PcodeEmit,
+    ) -> KunaResult<()> {
+        // C++ `FlowInfo::injectSubFunction`'s emit step:
+        //   InjectPayload *payload = glb->pcodeinjectlib->getPayload(fc->getInjectId());
+        //   payload->inject(icontext, emitter);
+        let arch = self.arch();
+        let payload = arch.pcodeinjectlib.get_payload(inject_id);
+        let tpl = arch.pcodeinjectlib.get_tpl(inject_id).ok_or_else(|| {
+            // The call-fixup body never compiled (parse_inject_all was not driven,
+            // or the SLEIGH compile failed): cannot inject.
+            KunaError::lowlevel("inject_call_fixup_payload: call-fixup template not compiled")
+        })?;
+        let engine = crate::inject_sleigh::SleighInjectEngine::new(
+            Rc::clone(arch.manage().get_constant_space().expect("no constant space")),
+            Rc::clone(arch.manage().get_unique_space().expect("no unique space")),
+            Rc::clone(arch.manage().get_default_code_space().expect("no default code space")),
+        );
+        engine.emit_payload(payload, tpl, context, emit)
+    }
+
+    fn is_incidental_copy_payload(&self, inject_id: int4) -> bool {
+        let arch = self.arch();
+        arch.pcodeinjectlib.get_payload(inject_id).core().is_incidental_copy()
+    }
+
+    fn call_fixup_param_shift(&self, inject_id: int4) -> int4 {
+        let arch = self.arch();
+        arch.pcodeinjectlib.get_payload(inject_id).core().get_param_shift()
+    }
+
+    fn call_fixup_name(&self, inject_id: int4) -> String {
+        let arch = self.arch();
+        String::from_utf8_lossy(&arch.pcodeinjectlib.base.get_call_fixup_name(inject_id)).into_owned()
+    }
+
+    fn build_override_proto(
+        &self,
+        pieces: &crate::fspec::PrototypePieces,
+    ) -> KunaResult<Option<crate::fspec::FuncProto>> {
+        // C++ `IfcProtooverride`: `new FuncProto; setInternal(pieces.model,
+        // getTypeVoid()); setPieces(pieces)`.  The pieces carry no model
+        // back-pointer in the merged tree (// SEAM(w6-fspec-2)), so use the default
+        // model (the console parses `override prototype` against the default model
+        // unless a `__model` was named — not exercised by the corpus).
+        let arch = self.arch();
+        let model = match arch.default_fp() {
+            Some(m) => Rc::clone(m),
+            None => return Ok(None),
+        };
+        let void = arch.types().get_type_void()?;
+        let mut proto = crate::fspec::FuncProto::new();
+        proto.set_internal(model.clone(), void);
+        proto.set_pieces(pieces, Some(model), arch.types(), arch.manage())?;
+        // insertProtoOverride marked this an override (locked); `set_pieces` already
+        // sets the input/output/model locks.  Flag the override bit so the call
+        // spec's `isOverride()` short-circuit (deindirect proto-merge) sees it.
+        proto.set_override(true);
+        Ok(Some(proto))
+    }
 }
 
 /// Build a [`Funcdata`] for the function `name` at `entry` and follow its flow,
@@ -252,11 +316,47 @@ pub fn build_and_follow_flow_with_override(
     size: int4,
     flow_overrides: &[(Address, kuna_base::types::uint4)],
 ) -> KunaResult<Funcdata> {
+    build_and_follow_flow_with_override_and_protos(arch, name, entry, size, flow_overrides, &[])
+}
+
+/// Like [`build_and_follow_flow_with_override`], but also re-seeds the
+/// `override prototype <addr> <decl>` facts onto the fresh `Funcdata`'s
+/// `localoverride` (the proto-override store) before flow follows, so
+/// `FlowInfo::build_call_specs` applies them (`Override::applyPrototype`).  The
+/// override survives the deindirect-driven `clear()` + re-flow, so a prototype
+/// forced onto an injected CALLIND (the `injectoverride` corpus case) takes
+/// effect on the restart re-flow.
+#[allow(clippy::mutable_key_type)]
+pub fn build_and_follow_flow_with_override_and_protos(
+    arch: &mut Architecture,
+    name: &str,
+    entry: Address,
+    size: int4,
+    flow_overrides: &[(Address, kuna_base::types::uint4)],
+    proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
+) -> KunaResult<Funcdata> {
     let mut fd = arch.new_funcdata(name, entry, size)?;
     for (addr, ty) in flow_overrides {
         fd.get_override_mut().insert_flow_override(addr.clone(), *ty);
     }
-    let fd = fd;
+    for (callpoint, pieces) in proto_overrides {
+        let ov: Box<dyn crate::overrides::FuncProtoOverride> =
+            Box::new(crate::overrides::PiecesProtoOverride { pieces: pieces.clone() });
+        fd.get_override_mut().insert_proto_override(callpoint.clone(), ov);
+    }
+    follow_flow_on_fd(arch, fd)
+}
+
+/// Follow flow for an (already-constructed) `fd`, returning the IR-populated
+/// `Funcdata`.  Shared by the fresh build ([`build_and_follow_flow_with_override`])
+/// and the restart re-flow ([`refollow_flow`], C++ `ActionStart::startProcessing`
+/// → `followFlow` after `clearAnalysis`): both run the same
+/// `generateOps`/`generateBlocks`/`startProcessing` sequence; the only difference
+/// is whether `fd` is brand-new or just `clear()`ed (its per-function `Override`
+/// — including the indirect override a prior `deindirect` installed — survives the
+/// clear, so the re-flow rebuilds the CALLIND straight as a direct CALL).
+#[allow(clippy::mutable_key_type)]
+fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
     let env = ArchFlowEnv { arch: arch as *const Architecture };
     let mut flow = FlowInfo::new(fd, &env);
     // C++ followFlow: generateOps() then generateBlocks().  The jump-table
@@ -378,13 +478,65 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
     // C++ allacts.setCurrent("decompile") derives the filtered decompile root
     // (idempotent if already current).
     arch.allacts.set_current("decompile")?;
-    let mut ctx = ActionContext::new();
-    let root = arch
-        .allacts
-        .get_current_mut()
-        .ok_or_else(|| kuna_base::error::KunaError::lowlevel("no current action"))?;
-    root.reset(fd);
-    Ok(root.perform(fd, &mut ctx))
+    // The action loop's in-loop restart cannot re-follow flow (no SLEIGH
+    // translator inside `allacts`); it hands a pending restart up here via
+    // `ctx.reflow_requested`.  This outer loop owns `&mut Architecture`, so it can
+    // `clear()` + re-`followFlow` the IR (C++ `clearAnalysis` + `ActionStart` →
+    // `startProcessing`) and re-perform the root — exactly the C++ restart
+    // semantics, just relocated out of the borrow-restricted action loop.  Bound
+    // the iterations defensively (the action layer's own `maxrestarts` already
+    // caps in-loop restarts; this caps cross-flow restarts).
+    const MAX_REFLOW: int4 = 8;
+    let mut total: int4 = 0;
+    for _ in 0..=MAX_REFLOW {
+        let res = {
+            let root = arch
+                .allacts
+                .get_current_mut()
+                .ok_or_else(|| kuna_base::error::KunaError::lowlevel("no current action"))?;
+            root.reset(fd);
+            let mut ctx = ActionContext::new();
+            let r = root.perform(fd, &mut ctx);
+            (r, ctx.reflow_requested)
+        };
+        let (r, reflow_requested) = res;
+        if r < 0 {
+            return Ok(r); // breakpoint — propagate verbatim (no re-flow)
+        }
+        total += r;
+        if !(reflow_requested && fd.has_restart_pending()) {
+            return Ok(total);
+        }
+        // Re-follow flow against the same Funcdata (its Override — incl. the
+        // deindirect's indirect override — survives `clear()`), then loop to
+        // re-perform.  `clear()` resets the restart flag, so a fresh request must
+        // come from the re-flowed pass to loop again.
+        refollow_flow(arch, fd)?;
+    }
+    // Exceeded the cross-flow restart budget; keep the last analyzed IR.
+    fd.set_restart_pending(false);
+    Ok(total)
+}
+
+/// Re-follow flow on an existing, already-analyzed `fd` after a restart request
+/// (C++ `ActionRestartGroup` → `clearAnalysis` + `ActionStart::startProcessing` →
+/// `followFlow`).  Clears the analysis-derived IR (`Funcdata::clear`) while
+/// preserving the per-function `Override`, then re-runs the flow follow in place.
+#[allow(clippy::mutable_key_type)]
+fn refollow_flow(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<()> {
+    // C++ `glb->clearAnalysis(&data)` == fd->clear() (the comment-DB clear is the
+    // W4 seam) — drops ops/vbank/blocks/qlst/heritage but keeps `localoverride`.
+    fd.clear();
+    // Move the cleared shell out so `follow_flow_on_fd` can re-flow it (it takes
+    // `fd` by value, mirroring the fresh-build path), then put the re-flowed IR
+    // back into the caller's slot.  The throwaway placeholder is a minimal valid
+    // Funcdata at the same entry (so `new_funcdata`'s space lookup succeeds); it is
+    // immediately overwritten by the re-flowed result.
+    let entry = fd.get_address().clone();
+    let placeholder = arch.new_funcdata("", entry, 0)?;
+    let shell = std::mem::replace(fd, placeholder);
+    *fd = follow_flow_on_fd(arch, shell)?;
+    Ok(())
 }
 
 /// Decompile the function `name` at `funcaddr` to a ready-to-print
@@ -462,6 +614,7 @@ pub fn decompile_func_full_with_override(
         &[],
         pending_proto,
         flow_overrides,
+        &[],
     )
 }
 
@@ -479,8 +632,10 @@ pub fn decompile_func_full_with_override_dyn(
     dynamic_symbols: &[crate::database::DynamicSymbolSpec],
     pending_proto: Option<&crate::fspec::PrototypePieces>,
     flow_overrides: &[(Address, kuna_base::types::uint4)],
+    proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
 ) -> KunaResult<Funcdata> {
-    let mut fd = build_and_follow_flow_with_override(arch, name, funcaddr, size, flow_overrides)?;
+    let mut fd =
+        build_and_follow_flow_with_override_and_protos(arch, name, funcaddr, size, flow_overrides, proto_overrides)?;
     // Apply any parsed-and-locked prototype to the fresh funcp (the input-param
     // recovery SEED): after this the inputs/output are type-locked, so
     // ActionPrototypeTypes forces the typed Varnodes.
