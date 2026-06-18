@@ -49,8 +49,9 @@
 //!   `getTypeDefFacing`, and `TypePointer::getPtrTo` are W6.  The local
 //!   [`float_sign_manipulation`]/[`preferred_zext_size`] helpers return the
 //!   guard-failing value so the dependent rules no-op.
-//! * **SEAM(W3-block) — `FlowBlock::findCondition`.**  Used only by
-//!   `RuleInt2FloatCollapse`; absent here, so that rule no-ops.
+//! * **`FlowBlock::findCondition` (formerly SEAM(W3-block)).**  Used only by
+//!   `RuleInt2FloatCollapse`; transcribed here as the local [`find_condition`]
+//!   helper (faithful to `block.cc:839`), so that rule now completes.
 //! * **SEAM(W4) — `Architecture::funcptr_align` and `FuncCallSpecs`.**  The W4
 //!   `Architecture` skeleton has no `funcptr_align` (defaults to the "disabled"
 //!   value 0, so `RuleFuncPtrEncoding` no-ops) and no call-spec table (so
@@ -160,6 +161,54 @@ fn descend_ops(data: &Funcdata, vn: VarnodeId) -> Vec<OpId> {
     data.vbank().get(vn).expect("descend_ops: stale vn").descend_iter().collect()
 }
 
+/// Last op of a basic block (C++ `BlockBasic::lastOp` = `op.back()`); `None` for
+/// an empty block or a non-basic FlowBlock.
+fn last_op_of(data: &Funcdata, bl: crate::seams::BlockId) -> Option<OpId> {
+    match data.bblocks_ref().block(bl).kind() {
+        crate::block::BlockKind::Basic(bd) => bd.op_tail,
+        _ => None,
+    }
+}
+
+/// `FlowBlock::findCondition(bl1, edge1, bl2, edge2, slot1)` (C++ `block.cc:839`).
+///
+/// Find the conditional block that decides between two control-flow edges.  There
+/// must be a unique path from the conditional block through the first edge, and a
+/// second unique path through the second edge; otherwise `None`.  On success the
+/// output slot of the conditional leading to the first edge is returned alongside
+/// the block id (the C++ passes this back through `slot1`).
+fn find_condition(
+    data: &Funcdata,
+    mut bl1: crate::seams::BlockId,
+    mut edge1: int4,
+    mut bl2: crate::seams::BlockId,
+    mut edge2: int4,
+) -> Option<(crate::seams::BlockId, int4)> {
+    let g = data.bblocks_ref();
+    // FlowBlock *cond = bl1->getIn(edge1);
+    let mut cond = g.block(bl1).get_in(edge1);
+    // while (cond->sizeOut() != 2) { if (cond->sizeOut() != 1) return 0; bl1=cond; edge1=0; cond=bl1->getIn(0); }
+    while g.block(cond).size_out() != 2 {
+        if g.block(cond).size_out() != 1 {
+            return None;
+        }
+        bl1 = cond;
+        edge1 = 0;
+        cond = g.block(bl1).get_in(0);
+    }
+    // while (cond != bl2->getIn(edge2)) { bl2=bl2->getIn(edge2); if (bl2->sizeOut()!=1) return 0; edge2=0; }
+    while cond != g.block(bl2).get_in(edge2) {
+        bl2 = g.block(bl2).get_in(edge2);
+        if g.block(bl2).size_out() != 1 {
+            return None;
+        }
+        edge2 = 0;
+    }
+    // slot1 = bl1->getInRevIndex(edge1); return cond;
+    let slot1 = g.block(bl1).get_in_rev_index(edge1);
+    Some((cond, slot1))
+}
+
 /// C++ `Varnode::getSpaceFromConst` (`varnode.hh:427`): decode the AddrSpace a
 /// constant-space Varnode encodes (the LOAD/STORE space operand).  The C++ stores
 /// the raw `AddrSpace *` in the offset; the Rust port (LOSS-015) stores the
@@ -189,15 +238,20 @@ fn float_sign_manipulation(_data: &Funcdata, _op: OpId) -> OpCode {
     OpCode::CPUI_MAX
 }
 
-/// `TypeOpFloatInt2Float::preferredZextSize(inSize)` (C++, `typeop.cc`): the
+/// `TypeOpFloatInt2Float::preferredZextSize(inSize)` (C++ `typeop.cc:1893`): the
 /// preferred size for the INT_ZEXT feeding an unsigned FLOAT_INT2FLOAT.
 ///
-/// SEAM(W6): only reached by rules that also need `newUniqueOut` (W3 seam), so
-/// they abort before this matters.  The conservative default returns the input
-/// size; it never affects a completing path.
+/// Faithful transcription of the upstream body (the W6 seam note no longer
+/// applies — `RuleUnsigned2Float`/`RuleInt2FloatCollapse` complete through
+/// `new_unique_out`, so the exact zext size is load-bearing).
 fn preferred_zext_size(in_size: int4) -> int4 {
-    // SEAM(W6): TypeOpFloatInt2Float::preferredZextSize
-    in_size
+    if in_size < 4 {
+        4
+    } else if in_size < 8 {
+        8
+    } else {
+        in_size + 1
+    }
 }
 
 /// `data.getArch()->funcptr_align` (C++).  // SEAM(W4)
@@ -413,16 +467,130 @@ impl Rule for RuleInt2FloatCollapse {
         }
         // PcodeOp *multiop = op->getOut()->loneDescend(); if (multiop == 0) return 0;
         let opout = data.obank().get(op).expect("i2fc").get_out().expect("i2fc: op out");
-        let _multiop = match lone_descend(data, opout) {
+        let multiop = match lone_descend(data, opout) {
             Some(m) => m,
             None => return 0,
         };
-        // The remainder needs FlowBlock::findCondition (SEAM(W3-block)) to verify
-        // the dominating CBRANCH guard, and newUniqueOut (SEAM(W3)) to build the
-        // collapsed unsigned conversion.  Neither is available; the rule no-ops
-        // exactly as the C++ does whenever the condition cannot be confirmed.
-        // SEAM(W3-block): FlowBlock::findCondition; SEAM(W3): newUniqueOut.
-        0
+        // if (multiop->code() != CPUI_MULTIEQUAL) return 0;  // Output comes together with 1 other flow
+        if data.obank().get(multiop).expect("i2fc").code() != OpCode::CPUI_MULTIEQUAL {
+            return 0;
+        }
+        // if (multiop->numInput() != 2) return 0;
+        if data.obank().get(multiop).expect("i2fc").num_input() != 2 {
+            return 0;
+        }
+        // int4 slot = multiop->getSlot(op->getOut());
+        let slot = data.obank().get(multiop).expect("i2fc").get_slot(opout);
+        // Varnode *otherout = multiop->getIn(1-slot);
+        let otherout = data
+            .obank()
+            .get(multiop)
+            .expect("i2fc")
+            .get_in(1 - slot)
+            .expect("i2fc: multiop other in");
+        // if (!otherout->isWritten()) return 0;
+        if !data.vbank().get(otherout).expect("i2fc").is_written() {
+            return 0;
+        }
+        // PcodeOp *op2 = otherout->getDef();
+        let op2 = data.vbank().get(otherout).expect("i2fc").get_def().expect("i2fc: otherout def");
+        // if (op2->code() != CPUI_FLOAT_INT2FLOAT) return 0;  // The other flow must be a signed FLOAT_INT2FLOAT
+        if data.obank().get(op2).expect("i2fc").code() != OpCode::CPUI_FLOAT_INT2FLOAT {
+            return 0;
+        }
+        // if (basevn != op2->getIn(0)) return 0;  // taking the same input
+        if Some(basevn) != data.obank().get(op2).expect("i2fc").get_in(0) {
+            return 0;
+        }
+        // int4 dir2unsigned;  // Control path to unsigned conversion
+        // FlowBlock *cond = FlowBlock::findCondition(multiop->getParent(), slot, multiop->getParent(), 1-slot, dir2unsigned);
+        let outbl = data.obank().get(multiop).expect("i2fc").get_parent().expect("i2fc: multiop parent");
+        let (cond, dir2unsigned) = match find_condition(data, outbl, slot, outbl, 1 - slot) {
+            Some(pair) => pair,
+            None => return 0,
+        };
+        // PcodeOp *cbranch = cond->lastOp();
+        // if (cbranch == 0 || cbranch->code() != CPUI_CBRANCH) return 0;
+        let cbranch = match last_op_of(data, cond) {
+            Some(c) => c,
+            None => return 0,
+        };
+        if data.obank().get(cbranch).expect("i2fc").code() != OpCode::CPUI_CBRANCH {
+            return 0;
+        }
+        // if (!cbranch->getIn(1)->isWritten()) return 0;
+        let cbr_in1 = match data.obank().get(cbranch).expect("i2fc").get_in(1) {
+            Some(v) => v,
+            None => return 0,
+        };
+        if !data.vbank().get(cbr_in1).expect("i2fc").is_written() {
+            return 0;
+        }
+        // if (cbranch->isBooleanFlip()) return 0;
+        if data.obank().get(cbranch).expect("i2fc").is_boolean_flip() {
+            return 0;
+        }
+        // PcodeOp *compare = cbranch->getIn(1)->getDef();
+        let compare = data.vbank().get(cbr_in1).expect("i2fc").get_def().expect("i2fc: cbranch cond def");
+        // if (compare->code() != CPUI_INT_SLESS) return 0;
+        if data.obank().get(compare).expect("i2fc").code() != OpCode::CPUI_INT_SLESS {
+            return 0;
+        }
+        let cmp_in0 = data.obank().get(compare).expect("i2fc").get_in(0).expect("i2fc: compare in0");
+        let cmp_in1 = data.obank().get(compare).expect("i2fc").get_in(1).expect("i2fc: compare in1");
+        let basevn_size = data.vbank().get(basevn).expect("i2fc").get_size();
+        // if (compare->getIn(1)->constantMatch(0)) {       // If condition is (basevn < 0)
+        if data.vbank().get(cmp_in1).expect("i2fc").constant_match(0) {
+            // if (compare->getIn(0) != basevn) return 0;
+            if cmp_in0 != basevn {
+                return 0;
+            }
+            // if (dir2unsigned != 1) return 0;  // True branch must be the unsigned FLOAT_INT2FLOAT
+            if dir2unsigned != 1 {
+                return 0;
+            }
+        }
+        // else if (compare->getIn(0)->constantMatch(calc_mask(basevn->getSize()))) {  // If condition is (-1 < basevn)
+        else if data.vbank().get(cmp_in0).expect("i2fc").constant_match(calc_mask(basevn_size)) {
+            // if (compare->getIn(1) != basevn) return 0;
+            if cmp_in1 != basevn {
+                return 0;
+            }
+            // if (dir2unsigned == 1) return 0;  // True branch must be to signed FLOAT_INT2FLOAT
+            if dir2unsigned == 1 {
+                return 0;
+            }
+        }
+        // else return 0;
+        else {
+            return 0;
+        }
+        // BlockBasic *outbl = multiop->getParent();   (already captured as `outbl`)
+        // data.opUninsert(multiop);
+        data.op_uninsert(multiop);
+        // data.opSetOpcode(multiop, CPUI_FLOAT_INT2FLOAT);  // Redefine the MULTIEQUAL as unsigned FLOAT_INT2FLOAT
+        rule_set_opcode(data, multiop, OpCode::CPUI_FLOAT_INT2FLOAT);
+        // data.opRemoveInput(multiop, 0);
+        data.op_remove_input(multiop, 0);
+        let multiop_addr = data.obank().get(multiop).expect("i2fc").get_addr().clone();
+        // PcodeOp *newzext = data.newOp(1, multiop->getAddr());
+        let newzext = data.new_op(1, multiop_addr);
+        // data.opSetOpcode(newzext, CPUI_INT_ZEXT);
+        rule_set_opcode(data, newzext, OpCode::CPUI_INT_ZEXT);
+        // Varnode *newout = data.newUniqueOut(preferredZextSize(basevn->getSize()), newzext);
+        let newout = match new_unique_out(data, preferred_zext_size(basevn_size), newzext) {
+            Ok(v) => v,
+            Err(_) => return 0,
+        };
+        // data.opSetInput(newzext, basevn, 0);
+        data.op_set_input(newzext, basevn, 0).expect("i2fc: opSetInput newzext");
+        // data.opSetInput(multiop, newout, 0);
+        data.op_set_input(multiop, newout, 0).expect("i2fc: opSetInput multiop");
+        // data.opInsertBegin(multiop, outbl);  // Reinsert modified MULTIEQUAL after any other MULTIEQUAL
+        data.op_insert_begin(multiop, outbl);
+        // data.opInsertBefore(newzext, multiop);
+        data.op_insert_before(newzext, multiop);
+        1
     }
 }
 
