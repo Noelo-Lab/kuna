@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 485/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 486/675; +...clone-gate audit, deindirect-output-type
+
+**RuleInt2FloatCollapse +1 → 486.** Ported the stubbed body (ruleaction_8.rs:397, SEAM findCondition/newUniqueOut now resolvable) + a local find_condition helper (block.cc:839): the unsigned-64→double idiom `(int8)v1<0 ? (float8)v1 : (float8)(int8)v1` folds to single `FLOAT_INT2FLOAT(zext(basevn))` (ruleaction.cc:9878). Gained Floating-point convert #2. Gate: `[675,486]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. floatconv #3 (unsigned-long-long variant) = separate root (RuleUnsigned2Float wider-zext path).
 
 **Floating-point convert — RuleAddUnsigned +3 → 485.** `RuleAddUnsigned::apply_op` (ruleaction_6.rs:629) was stubbed at the W6 getTypeReadFacing seam (now landed: vn_type_read_facing); ported faithfully (ruleaction.cc:7215) so INT_ADD(V,0xff..) → V-0x00... Gained Floating-point convert #1, Promotion on compare #1, Switch Multi #3 (switchmulti now 9/9 — fully recovered). Gate: `[675,485]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Review `reviews/w10-fpconvert.md`. floatconv #2/#3 = RuleInt2FloatCollapse (ruleaction_8.rs:420, unsigned-64→double idiom) — next-locus. BLOCKED this round: Immediate Conditional (LOSS-234: RuleConditionalMove #7 + new mergeAddrTied overlapLoc seam #2/#3/#4).
 
