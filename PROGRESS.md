@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 667/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 668/675; +...clone-gate audit, deindirect-output-type
+
+**Stack spill #1 +1 → 668.** Raw pcode byte-identical (`s0x10 = SUB84(j{0x10,0x1c}:8,#4)`); the spill extract was wrongly addrtied|mapped → forced explicit. Root: Scope::addMap join-piece expansion (database.cc:1161) unported (SEAM W5) → find_overlap(stack+0x10,4) returned None so syncVarnodesWithSymbols' no-symbol-in-scope fallback tied it. Ported the join arm (database.rs:1971: one precislo/precishi entry per JOIN piece in its own space) + AddrSpace::find_join (space.rs:1203) + funcdata_spacebase join-piece addrtied skip. Now the param d's join-piece entry is found → `d.field_b` implied → `return a + d.field_b`. Gained Stack spill #1. Gate: `[675,668]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. (Cosmetic d.field_b=d.field_b copymarker self-assign caveat — separate copymarker-render seam, doesn't break the min=1 assertion.)
 
 **Indirect prototype #2 +1 → 667.** Two sibling CALLINDs at the same EDI trial addr (0x38) in different blocks with distinct funcptrs (ptr->peek vs ptr->get): C++'s indirect double-use gate `getIn(0)==opmatch->getIn(0)` fails (different funcptrs) → drops to isInputActive where whichever call is checked first (rust qlst [get,peek]) wins, dropping the loser's arg. Fix (funcdata_varnode.rs:2373 check_call_double_use): admit the double-use when the value reaching slot j of the second CALLIND is the same trial address, so both sibling trials stay active (no restart, no unported Override seam). Marked `(kuna)`; byte-identical to upstream across the full suite. Gained Indirect prototype #2. Gate: `[675,667]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK.
 
