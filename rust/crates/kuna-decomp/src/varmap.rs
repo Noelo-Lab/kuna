@@ -1426,6 +1426,22 @@ impl ScopeLocal {
         size: int4,
         base: &mut int4,
     ) -> Option<(String, int4, Option<Rc<Datatype>>)> {
+        self.resolve_default_name_override(addr, size, base, None)
+    }
+
+    /// `resolve_default_name` with an optional callee-parameter-name override
+    /// (`ActionNameVars::lookForFuncParamNames`, coreaction.cc:2992): when the
+    /// covered Symbol's name is undefined and the high represents the whole symbol,
+    /// rename it to `makeNameUnique(override)` (the callee parameter name) INSTEAD of
+    /// the `vN` default, and do NOT consume `base`.  With `override == None` this is
+    /// byte-identical to the plain `resolve_default_name` `vN` path.
+    pub fn resolve_default_name_override(
+        &mut self,
+        addr: &Address,
+        size: int4,
+        base: &mut int4,
+        override_name: Option<&str>,
+    ) -> Option<(String, int4, Option<Rc<Datatype>>)> {
         let eref = self.db.find_overlap(self.scope, addr, size)?;
         let (sym, entry_addr_off, entry_off, entry_size) = {
             let entry = self.db.entry(self.scope, eref);
@@ -1438,11 +1454,21 @@ impl ScopeLocal {
         // access is `sym_off == 0 && size == entry_size` (the entire mapped entry).
         let undefined = self.db.symbol(sym).is_name_undefined();
         if undefined && sym_off == 0 && size == entry_size {
-            // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm).
-            let newname = format!("v{}", *base);
-            *base += 1;
-            // makeNameUnique then renameSymbol.
-            let _ = self.db.rename_symbol(sym, &newname);
+            match override_name {
+                // lookForFuncParamNames: renameSymbol(makeNameUnique(namerec)) — the
+                // callee parameter name wins over `vN` and does not consume `base`.
+                Some(nm) => {
+                    let newname = self.db.public_make_name_unique(self.scope, nm);
+                    let _ = self.db.rename_symbol(sym, &newname);
+                }
+                None => {
+                    // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm).
+                    let newname = format!("v{}", *base);
+                    *base += 1;
+                    // makeNameUnique then renameSymbol.
+                    let _ = self.db.rename_symbol(sym, &newname);
+                }
+            }
         }
         let symbol = self.db.symbol(sym);
         Some((symbol.get_display_name().to_string(), sym_off, symbol.dtype.clone()))
@@ -1605,6 +1631,14 @@ impl ScopeLocal {
     /// namespace qualifier (the `namespace` datatest's `::spam` / `a::spam`).
     pub fn local_name_used(&self, nm: &str) -> bool {
         self.db.is_name_used(self.scope, nm, None)
+    }
+
+    /// Disambiguate `nm` against this local scope (C++ `ScopeLocal::makeNameUnique`):
+    /// returns `nm` if unused, else a suffixed variant.  Used by the
+    /// `lookForFuncParamNames` rename for an unmapped local that reaches the `vN`
+    /// tail (no covering Symbol to rename in place).
+    pub fn make_local_name_unique(&self, nm: &str) -> String {
+        self.db.public_make_name_unique(self.scope, nm)
     }
 
     /// The category of the Symbol that **contains** a storage location (C++

@@ -5087,6 +5087,24 @@ impl FuncProto {
         for i in 0..num {
             if let Some(param) = self.store_mut().get_input_mut(i) {
                 param.set_type_lock(val);
+                // (kuna) C++ `setInputLock` calls `param->setTypeLock(val)` where
+                // `param` is a symbol-backed `ParameterSymbol`, whose
+                // `setTypeLock` (fspec.cc:3052-3062) ALSO toggles the NAME lock
+                // for a NAMED parameter (`if (!sym->isNameUndefined()) attrs |=
+                // Varnode::namelock`).  The rust port collapses both C++ param
+                // subclasses onto `ParameterBasic`, whose `set_type_lock` matches
+                // only the plain `ParameterBasic::setTypeLock` (no namelock).  A
+                // function prototype committed via `parse line` / `setPieces` is
+                // symbol-backed in the oracle, so its named params end up
+                // type+name locked (verified under gdb: the `receive` proto params
+                // carry `flags 0x300` at `ActionNameVars::makeRec` time).
+                // Replicate the symbol-backed `setTypeLock` here so a named,
+                // committed param is name-locked — the gate
+                // `ActionNameVars::lookForFuncParamNames` requires to propagate a
+                // callee parameter name to its argument local.
+                if !param.is_name_undefined() {
+                    param.set_name_lock(val);
+                }
             }
         }
     }
