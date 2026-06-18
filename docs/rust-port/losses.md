@@ -2742,3 +2742,19 @@ gatherExpression/constructBool). In rust the MULTIEQUALs survive to post-pool lo
 - restoration: diff the rust vs C++ basic-block set after ActionBlockStructure/heritage block-build
   for myglob/myloop; find where the fall-through/loop-exit block is fused/missing
   (blockaction.rs/heritage.rs/funcdata block construction). A CFG-fidelity wave. [[kuna-rust-port]]
+
+## LOSS-234 — Immediate Conditional (4) blocked: RuleConditionalMove (#7) + mergeAddrTied seam (#2/#3/#4)
+
+- kind: deferred (2 deep roots, both characterized)
+- `condmove #7` (`return cptr[8] != 'a';`): RuleConditionalMove SEAM (LOSS-074, ruleaction_7.rs:
+  1883-1939 — matches up to CBRANCH then returns 0; the gatherExpression/constructBool/CloneBlockOps/
+  opBoolNegate/MULTIEQUAL rewrite unported, C++ ruleaction.cc:9292). C++ collapses the boolean
+  MULTIEQUAL+CBRANCH to `r0:1 = tmpZR; return r0:1`; rust keeps the branch+MULTIEQUAL.
+- `zeroprop #2/#3/#4` (`return v1;`/`v1='\0';`/`v1='a';`): NEW root — the raw p-code is BYTE-IDENTICAL
+  between C++ and rust (rules are correct); the divergence is post-rule HighVariable merge. C++ keeps
+  the input pointer high (`ptrint`, int4*) SEPARATE from the char-return output high (auto-named `v1`,
+  char); rust MERGES them onto one high → output renders `ptrint`, input loses its pointer type (rust
+  `if (ptrint != 0)` vs C++ `if (ptrint != (int4 *)0x0)`). Root: `Merge::mergeAddrTied` overlapLoc/
+  beginMultiEntry seam (merge.rs:421-433, W7/W4 unported; C++ merge.cc:609-648). NO conditional/printc
+  fix applies. This mergeAddrTied seam likely gates other addr-tied-merge cases broadly. [[kuna-rust-port]]
+- recorded by the integrator after the Immediate Conditional wave BLOCKED (2026-06-18).
