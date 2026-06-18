@@ -422,8 +422,25 @@ impl Funcdata {
     /// `copySymbol` is currently a structural no-op.  Recorded as a (latent) loss.
     pub fn op_set_input(&mut self, op: OpId, vn: VarnodeId, slot: int4) -> KunaResult<()> {
         let mut vn = vn;
+        // C++ `opSetInput` takes `Varnode *vn`, which may be `(Varnode *)0`
+        // (e.g. `opInsertInput(op,(Varnode *)0,slot)` from `setInsertInputs`'s
+        // input-growth loop).  The C++ null Varnode is `VarnodeId::default()` here.
+        // C++ then hits `if (vn == op->getIn(slot)) return;` — for a null `vn`
+        // against the freshly-grown (null) slot this is the null==null early
+        // return, so a null insert is a structural no-op (the slot is just grown).
+        // Without this short-circuit the null `vn` falls through to the
+        // `vn->isConstant()` deref below and panics on a stale/non-existent
+        // Varnode (the stack-struct bitfield INSERT-input growth path).
+        let cur = self.obank().get(op).expect("op_set_input: stale op").get_in(slot);
+        if vn == VarnodeId::default() {
+            // null vn: only valid when the slot is already null (matches the C++
+            // `vn == getIn(slot)` null==null early return).
+            if cur.is_none() {
+                return Ok(());
+            }
+        }
         // if (vn == op->getIn(slot)) return; // Already set to this vn
-        if self.obank().get(op).expect("op_set_input: stale op").get_in(slot) == Some(vn) {
+        if cur == Some(vn) {
             return Ok(());
         }
         // if (vn->isConstant()) { if (!vn->hasNoDescend()) if (!vn->isSpacebase()) {...} }
