@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 621/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 624/675; +...clone-gate audit, deindirect-output-type
+
+**Volatile cluster +3 → 624 (Read Volatile #1/2 + Dead Volatile #1; cluster 4/4).** 5-stage fix: (1) register_builtin VOLATILE_READ/WRITE at init (architecture.rs:1373, userop.cc:444 — was resolving CALLOTHER 0x10000001 to syscall); (2) callother_operator_name from TypeOpCallother::getOperatorName (funcdata_printraw.rs, userop.rs get_operator_name/extract_annotation_size); (3) ActionConstbase trackset COPY-injection un-stub (coreaction_early.rs, coreaction.cc:707; `set track A0` via seams.rs tracked_sets + globalcontext clone_trackbase); (4) op_callother_ir operand order (printc.rs, op_store_ir inversion); (5) pushAnnotation (printc.rs push_annotation_ir, printc.cc:1929 → NVRAM[30] not dat_<addr>). Gate: `[675,624]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Review `reviews/w10-volatile.md`. Status Compare #1/#3 = x87 status-word FLOAT_LESSEQUAL fold (separate float cluster).
 
 **Stack spill dvar naming +4 → 621 (LOSS-239 resolved; corrects the prior wave's wrong ruling-out).** makeRec/lookForFuncParamNames DOES fire — the gate was `ParameterBasic::set_type_lock` (fspec.rs) never name-locking named params. Fixed `FuncProto::set_input_lock` (fspec.rs:5087, C++ fspec.cc:3936/3056 ParameterSymbol::setTypeLock sets namelock when !isNameUndefined) + ported makeRec/lookForFuncParamNames + apply-gate (coreaction_cleanup.rs build_func_param_name_recmap/func_param_name_for_high, applied at resolve_default_name + vN tail + bind_proto_partial_piece) + varmap resolve_default_name_override. Gained Stack spill #2/3/4/5. Gate: `[675,621]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. #1 = independent struct-member-read explicit-marking.
 
