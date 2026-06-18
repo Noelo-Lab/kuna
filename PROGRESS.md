@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 537/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 538/675; +...clone-gate audit, deindirect-output-type
+
+**unsigned/long literal suffix +1 → 538.** The cast predicate was faithful (val IS signed int4); the gap was printc — `push_constant_ir_fmt_sign` (printc.rs:5360) hardcoded force_unsigned=false and never read the Varnode's isUnsignedPrint()/isLongPrint() flags or emitted the size suffix (printc.cc:1378/1430). Fixed: thread both flags + L/LL size-suffix into format_integer_token. Gained Inlining #5 (`val & 1U`); also fixes any isLongPrint constant. Gate: `[675,538]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK.
 
 **Long double alignment-map +5 → 537.** The gcc cspec `<size_alignment_map>` (1→1..16→16) was NEVER decoded into the TypeFactory — float10 aligned to 8 (default) not 16 (gcc map), mis-placing the stack param at 0x10 not 0x18 → the float10 value reassembled from 3 CONCAT stack pieces instead of a direct read. Fixed: `decode_alignment_map` (dtype.rs:4291, type.cc:5143) + architecture.rs decode the map + install default only if spec gave none (type.cc:3623). Gained Long double #3/#4/#7/#8/#9. Gate: `[675,537]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. #5/#6/#11 (struct-field float10) = separate root.
 
