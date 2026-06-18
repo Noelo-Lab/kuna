@@ -3196,7 +3196,7 @@ impl PrintC {
     /// next layer).
     fn op_func_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         let opc = fd.obank().get(op).expect("op_func_ir: stale op").code();
-        let name = opcode_print_name(opc);
+        let name = func_operator_name(fd, op, opc);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         // The name is pushed as an *operator* token (C++ `optoken`, no_color).
         self.push_atom(&Atom::with_op(
@@ -5962,6 +5962,50 @@ impl CastContext for PrintCastContext<'_> {
 
     fn vn_set_long_print(&mut self, _vn: VnRef) {
         unreachable!("PrintCastContext is read-only: vn_set_long_print not used by isExtensionCastImplied");
+    }
+}
+
+/// C++ `op->getOpcode()->getOperatorName(op)` for the op-codes rendered through
+/// `PrintC::opFunc` (printc.cc:449).  Most opcodes return the bare static name
+/// ([`opcode_print_name`]), but several `TypeOp*` overrides append the operand
+/// sizes to disambiguate the functional form: ZEXT/SEXT/SUBPIECE append
+/// `in0.size`+`out.size` (typeop.cc:1124/1150/2129), CONCAT appends
+/// `in0.size`+`in1.size` (typeop.cc:2050), and CARRY/SCARRY/SBORROW append
+/// `in0.size` (typeop.cc:1342/1358/1374).  Matches the raw-printer's
+/// `operator_name` (funcdata_printraw.rs).
+fn func_operator_name(fd: &Funcdata, op: OpId, opc: OpCode) -> String {
+    use OpCode::*;
+    let base = opcode_print_name(opc);
+    let in_size = |i: int4| -> Option<int4> {
+        fd.obank()
+            .get(op)
+            .and_then(|o| o.get_in(i))
+            .and_then(|v| fd.vbank().get(v))
+            .map(|vn| vn.get_size())
+    };
+    let out_size = || -> Option<int4> {
+        fd.obank()
+            .get(op)
+            .and_then(|o| o.get_out())
+            .and_then(|v| fd.vbank().get(v))
+            .map(|vn| vn.get_size())
+    };
+    match opc {
+        CPUI_INT_ZEXT | CPUI_INT_SEXT | CPUI_SUBPIECE => {
+            match (in_size(0), out_size()) {
+                (Some(a), Some(b)) => format!("{base}{a}{b}"),
+                _ => base,
+            }
+        }
+        CPUI_PIECE => match (in_size(0), in_size(1)) {
+            (Some(a), Some(b)) => format!("{base}{a}{b}"),
+            _ => base,
+        },
+        CPUI_INT_CARRY | CPUI_INT_SCARRY | CPUI_INT_SBORROW => match in_size(0) {
+            Some(a) => format!("{base}{a}"),
+            None => base,
+        },
+        _ => base,
     }
 }
 
