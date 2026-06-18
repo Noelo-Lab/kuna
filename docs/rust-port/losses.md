@@ -3024,3 +3024,28 @@ correctly typed (`v1.arr1[a]` renders). Two precise gaps, BOTH must close for mo
   likely varmap.rs MapState for the 32-byte struct param. #5/#6 (heap LOAD) + #11 (struct-param SUBPIECE)
   share this one root; #7/#8/#9 pass because their fields are 8-byte-lane-aligned. [[kuna-rust-port]]
 - recorded by the integrator after the Long-double struct-field wave BLOCKED (2026-06-18).
+
+## LOSS-156 PROGRESS — Gap-2 CLOSED (addMap persist bug); only Gap-1 (W7 StackAffectingOps) left, OR-wire is +7/-2
+
+The chainb-gaps wave CLOSED Gap-2 (substrate branch `rport/w10-chainb-gaps` @ 4084bf0, carries b120faf
+plumbing + the Gap-2 fix; +0 inert with OR off, regressed-EMPTY). Gap-2 was NOT ptr-forwarding/
+AddTreeState — it was a PERSIST-FLAG bug: `Scope::addMap` (database.rs:1875-1897) marks a mapped local
+`persist` if its address is in the global discovery range, but tested `self.globalscope` — and a
+`ScopeLocal` owns a PRIVATE Database whose parentless root IS the local stack scope, so every mapped
+stack local wrongly got `persist`. With the OR wired, `Heritage::guardReturns` (`(fl&persist)!=0`) then
+built addrforce return-COPYs materializing dead `&struct.field[idx]` spills (the `int4 *v2; //stack-0x18`
+locals). FIX: gate the in-global persist test on `is_global()` (== !is_functional), matching C++
+`glb->symboltab->getGlobalScope()` (database.cc:1141). dupptr now 10/10 with the OR on.
+- With the OR wired now: +7 (Partial splitting #15-19, Wayoff array #1, No-for-loop alias #3) / -2
+  (Store cross #1/#2 only — was -4). ONE gap left.
+- **Gap-1 (the last blocker, Store cross #1/#2):** dataflow is correct (`v2 = MULTIEQUAL(0x18,0x48);
+  local_array[10] = v2`); the SPLIT is a MERGE defect — `Merge::mergeIndirect` (merge.rs:1484) merges
+  the store value ECX into the addrforced `local_array[10]` because `test_untied_call_intersection`
+  (merge.rs:896) finds an EMPTY affecting-op set. `populate_affecting_ops` (funcdata_merge.rs:878) is a
+  W7 stub; the loop store `*v1=0` that should block the merge is only added by `StackAffectingOps::
+  populate` (merge.cc:63) if it's a discovered store-guard — and `discoverIndexedStackPointers`/
+  `analyzeNewLoadGuards` (W6) are unported so `getStoreGuards()` is empty. The CALL-arm of
+  StackAffectingOps is portable (but the prior chainb-finish StackAffectingOps attempt regressed
+  mixfloatint — must verify mixfloatint holds). FIX: port W7 StackAffectingOps populate
+  (funcdata_merge.rs:878 + cover.rs PcodeOpSet mutators) + the W6 store-guard source
+  (discoverIndexedStackPointers), THEN wire the OR at heritage.rs:1380 → +7/0. [[kuna-rust-port]]
