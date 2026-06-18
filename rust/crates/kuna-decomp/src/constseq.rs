@@ -103,7 +103,8 @@
 // `(kuna)` note) — kept whole for the memset porter to extend, NOT re-ported.
 #![allow(dead_code)]
 
-use kuna_base::types::{int4, uintb};
+use kuna_base::address::Address;
+use kuna_base::types::{int4, int8, uintb};
 use kuna_num::opcodes::OpCode;
 use std::rc::Rc;
 
@@ -1039,15 +1040,513 @@ impl HeapSequence {
 }
 
 // =============================================================================
+// StringSequence (constseq.cc:188-483) — COPY-into-array driver
+// =============================================================================
+
+/// A sequence of COPY ops moving single constant characters into a contiguous
+/// array memory region tied to a (stack) Symbol (C++
+/// `class StringSequence : public ArraySequence`).
+struct StringSequence {
+    /// The shared gathering machinery (C++ base `ArraySequence`).
+    base: ArraySequence,
+    /// The root COPY (C++ `ArraySequence::rootOp`).
+    root_op: OpId,
+    /// The basic block of the root COPY (C++ `ArraySequence::block`).
+    block: crate::seams::BlockId,
+    /// Address being COPYed into by the root op (C++ `rootAddr`).
+    root_addr: Address,
+    /// Starting address of the array containing the character data (C++ `startAddr`).
+    start_addr: Address,
+    /// Snapshot of the containing Symbol entry (C++ `entry`).
+    entry: crate::varmap::StringContainerEntry,
+}
+
+impl StringSequence {
+    /// C++ `StringSequence::StringSequence(Funcdata&,Datatype*,SymbolEntry*,PcodeOp*,const Address&)`
+    /// followed by the ctor body (`collectCopyOps`/`checkInterference`/`formByteArray`).
+    ///
+    /// Returns the built sequence; `is_valid()` is `false` when no viable
+    /// COPY-into-array string exists for the given root.
+    fn build(
+        data: &Funcdata,
+        ct: Rc<Datatype>,
+        entry: crate::varmap::StringContainerEntry,
+        root: OpId,
+        addr: Address,
+    ) -> Option<StringSequence> {
+        let block =
+            data.obank().get(root).expect("StringSequence: stale root").get_parent().expect(
+                "StringSequence: root has no parent block",
+            );
+        let mut seq = StringSequence {
+            base: ArraySequence::new(ct),
+            root_op: root,
+            block,
+            root_addr: addr.clone(),
+            start_addr: addr.clone(),
+            entry,
+        };
+        // if (entry->getAddr().getSpace() != addr.getSpace()) return;
+        let entry_space = seq.entry.addr.get_space()?.clone();
+        let addr_space = addr.get_space()?.clone();
+        if !Rc::ptr_eq(&entry_space, &addr_space) {
+            return Some(seq); // invalid (num_elements stays 0)
+        }
+        // int8 off = rootAddr.getOffset() - entry->getFirst();
+        let mut off: int8 = seq.root_addr.get_offset().wrapping_sub(seq.entry.first) as int8;
+        // if (off >= entry->getSize()) return;
+        if off >= seq.entry.size as int8 {
+            return Some(seq);
+        }
+        // if (rootOp->getIn(0)->getOffset() == 0) return;
+        let in0 = op_get_in(data, seq.root_op, 0);
+        if vn_get_offset(data, in0) == 0 {
+            return Some(seq);
+        }
+        // Walk down the parent type to the array of `ct`.  `parent_type` is `None`
+        // once the walk falls off the end (C++ parentType==0).
+        let mut parent_type: Option<Rc<Datatype>> = Some(Rc::clone(&seq.entry.sym_type));
+        let mut array_type: Option<Rc<Datatype>> = None;
+        let mut last_off: int8 = 0;
+        loop {
+            let pt = match &parent_type {
+                Some(p) => Rc::clone(p),
+                None => break, // parentType == 0
+            };
+            // if (parentType == ct) break;
+            if Rc::ptr_eq(&pt, &seq.base.char_type) {
+                break;
+            }
+            array_type = Some(Rc::clone(&pt));
+            last_off = off;
+            if pt.needs_resolution() {
+                // const TypeField *field = parentType->resolveTruncation(off, root, -1, off);
+                match Self::resolve_field(data, &pt, off, root, -1) {
+                    Some((field_ty, new_off)) => {
+                        off = new_off;
+                        parent_type = Some(field_ty);
+                    }
+                    None => break,
+                }
+            } else {
+                // parentType = parentType->getSubType(off, &off);
+                match pt.get_sub_type(off) {
+                    Ok((Some(sub), new_off)) => {
+                        off = new_off;
+                        parent_type = Some(sub);
+                    }
+                    // parentType == 0: loop exits, post-check fails.
+                    _ => parent_type = None,
+                }
+            }
+        }
+        // if (parentType != ct || arrayType == 0 || arrayType->getMetatype() != TYPE_ARRAY) return;
+        let parent_matches_ct =
+            parent_type.as_ref().map(|p| Rc::ptr_eq(p, &seq.base.char_type)).unwrap_or(false);
+        if !parent_matches_ct {
+            return Some(seq);
+        }
+        let array_type = match array_type {
+            Some(a) if a.get_metatype() == type_metatype::TYPE_ARRAY => a,
+            _ => return Some(seq),
+        };
+        // startAddr = rootAddr - lastOff;
+        seq.start_addr = &seq.root_addr + (-last_off);
+        // if (!collectCopyOps(arrayType->getSize())) return;
+        if !seq.collect_copy_ops(data, array_type.get_size()) {
+            return Some(seq);
+        }
+        // if (!checkInterference()) return;
+        if !seq.base.check_interference(data, seq.root_op) {
+            return Some(seq);
+        }
+        // int4 arrSize = arrayType->getSize() - (int4)(rootAddr.getOffset() - startAddr.getOffset());
+        let arr_size = array_type.get_size()
+            - (seq.root_addr.get_offset().wrapping_sub(seq.start_addr.get_offset()) as int4);
+        // numElements = formByteArray(arrSize, 0, rootAddr.getOffset(), rootAddr.isBigEndian());
+        let big_endian = seq.root_addr.is_big_endian();
+        seq.base.num_elements =
+            seq.base.form_byte_array(data, arr_size, 0, seq.root_addr.get_offset(), big_endian);
+        Some(seq)
+    }
+
+    fn is_valid(&self) -> bool {
+        self.base.is_valid()
+    }
+
+    /// Resolve a union/partial-union field via `Funcdata::resolve_truncation`,
+    /// returning `(field_type, newoff)` (the C++ `resolveTruncation` returning a
+    /// `TypeField *` plus `newoff`).  `data` is `&Funcdata` here (the read-only
+    /// resolution path); `resolve_truncation` needs `&mut`, but the ctor runs
+    /// before the transform with the COPYs already in place — the union path is
+    /// not exercised by the stack-string datatests (plain `char[]` arrays), so
+    /// the read-only walk returns `None` for unions, matching the C++ "no field"
+    /// fall-through (the resolved-field branch is the deferred union follow-up).
+    fn resolve_field(
+        _data: &Funcdata,
+        _ct: &Rc<Datatype>,
+        _off: int8,
+        _op: OpId,
+        _slot: int4,
+    ) -> Option<(Rc<Datatype>, int8)> {
+        // Union resolution requires `&mut Funcdata` (scoring writes the slot-1
+        // edge); the COPY-array driver runs on `&Funcdata`.  No stack-string
+        // datatest reaches a union container, so decline (== C++ field==0).
+        None
+    }
+
+    /// C++ `StringSequence::collectCopyOps`.
+    ///
+    /// Gather constant-input COPYs into the formal array `[startAddr, startAddr+size)`,
+    /// in the root block, skipping earlier elements and stopping at the first gap.
+    /// Returns `false` on a wrong-size COPY, a COPY to the element just before the
+    /// root (root is not first), or fewer than the minimum number of COPYs.
+    fn collect_copy_ops(&mut self, data: &Funcdata, size: int4) -> bool {
+        // Address endAddr = startAddr + (size - 1);
+        let end_addr = &self.start_addr + i64::from(size - 1);
+        // Address beginAddr = startAddr; if (startAddr != rootAddr) beginAddr = rootAddr - charType->getAlignSize();
+        let begin_addr = if self.start_addr != self.root_addr {
+            &self.root_addr + (-(self.base.char_type.get_align_size() as i64))
+        } else {
+            self.start_addr.clone()
+        };
+        // iter = beginLoc(beginAddr); enditer = endLoc(endAddr);  (address-only overload)
+        // endLoc(endAddr) == lower_bound(endAddr + 1); the half-open window is
+        // [beginAddr, endAddr + 1).
+        let scan_end = &end_addr + 1;
+        let ids: Vec<VarnodeId> =
+            data.vbank().iter_loc_addr_range(&begin_addr, &scan_end).collect();
+        let mut diff: int4 =
+            self.root_addr.get_offset().wrapping_sub(self.start_addr.get_offset()) as int4;
+        let align = self.base.char_type.get_align_size();
+        let char_size = self.base.char_type.get_size();
+        for vn in ids {
+            let v = data.vbank().get(vn).expect("collectCopyOps: stale vn");
+            // if (!vn->isWritten()) continue;
+            if !v.is_written() {
+                continue;
+            }
+            let op = v.get_def().expect("collectCopyOps: written vn has no def");
+            // if (op->code() != CPUI_COPY) continue;
+            if data.obank().get(op).expect("collectCopyOps: stale op").code() != OpCode::CPUI_COPY {
+                continue;
+            }
+            // if (op->getParent() != block) continue;
+            if data.obank().get(op).unwrap().get_parent() != Some(self.block) {
+                continue;
+            }
+            // if (!op->getIn(0)->isConstant()) continue;
+            let in0 = op_get_in(data, op, 0);
+            if !data.vbank().get(in0).map(|x| x.is_constant()).unwrap_or(false) {
+                continue;
+            }
+            // if (vn->getSize() != charType->getSize()) return false;  (not yet split)
+            if v.get_size() != char_size {
+                return false;
+            }
+            // int4 tmpDiff = vn->getOffset() - startAddr.getOffset();
+            let tmp_diff: int4 =
+                v.get_offset().wrapping_sub(self.start_addr.get_offset()) as int4;
+            if tmp_diff < diff {
+                // if (tmpDiff + charType->getAlignSize() == diff) return false;
+                if tmp_diff + align == diff {
+                    return false; // COPY to previous element, root is not first
+                }
+                continue;
+            } else if tmp_diff > diff {
+                // if (tmpDiff - diff < charType->getAlignSize()) continue;
+                if tmp_diff - diff < align {
+                    continue;
+                }
+                // if (tmpDiff - diff > charType->getAlignSize()) break;  (gap)
+                if tmp_diff - diff > align {
+                    break;
+                }
+                diff = tmp_diff; // Advanced by one character
+            }
+            // moveOps.emplace_back(vn->getOffset(), op, -1);
+            let order = data.obank().get(op).unwrap().get_seq_num().get_order();
+            self.base.move_ops.push(WriteNode::new(v.get_offset(), op, -1, order));
+        }
+        self.base.move_ops.len() as int4 >= ArraySequence::MINIMUM_SEQUENCE_LENGTH
+    }
+
+    /// C++ `StringSequence::constructTypedPointer`.
+    ///
+    /// Build a typed pointer (in)to the containing Symbol at `rootAddr`, emitting
+    /// PTRSUB/PTRADD ops before `insert_point` with the appropriate pointer
+    /// data-types, and return the final pointer Varnode.
+    fn construct_typed_pointer(&self, data: &mut Funcdata, insert_point: OpId) -> Option<VarnodeId> {
+        use crate::dtype::TypeFactory;
+        let spc = self.root_addr.get_space()?.clone();
+        let types = data.get_arch().types_rc()?;
+        let insert_addr = data.obank().get(insert_point)?.get_addr().clone();
+        // spacePtr = (spc->getType()==IPTR_SPACEBASE) ? constructSpacebaseInput(spc) : constructConstSpacebase(spc);
+        let mut space_ptr = if spc.get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE {
+            data.construct_spacebase_input(&spc).ok()?
+        } else {
+            data.construct_const_spacebase(&spc).ok()?
+        };
+        let mut base_type = Rc::clone(&self.entry.sym_type);
+        // PTRSUB from base register to the Symbol.
+        let ptrsub = data.new_op(2, insert_addr.clone());
+        data.op_set_opcode_code(ptrsub, OpCode::CPUI_PTRSUB);
+        data.op_set_input(ptrsub, space_ptr, 0).ok();
+        let sp_size = data.vbank().get(space_ptr)?.get_size();
+        // uintb baseOff = byteToAddress(entry->getFirst(), spc->getWordSize());
+        let mut base_off =
+            kuna_base::space::AddrSpace::byte_to_address(self.entry.first, spc.get_word_size());
+        let off_con = data.new_constant(sp_size, base_off);
+        data.op_set_input(ptrsub, off_con, 1).ok();
+        space_ptr = data.new_unique_out(sp_size, ptrsub).ok()?;
+        data.op_insert_before(ptrsub, insert_point);
+        // TypePointer *curType = getTypePointerStripArray(sz, baseType, wordsize);
+        let mut cur_type = types
+            .get_type_pointer_strip_array(sp_size, Rc::clone(&base_type), spc.get_word_size())
+            .ok()?;
+        data.vbank_mut().get_mut(space_ptr)?.update_type(Rc::clone(&cur_type));
+        // int8 curOff = rootAddr.getOffset() - entry->getFirst();
+        let mut cur_off: int8 = self.root_addr.get_offset().wrapping_sub(self.entry.first) as int8;
+        while !Rc::ptr_eq(&base_type, &self.base.char_type) {
+            // int4 elSize = (baseType->getMetatype()==TYPE_ARRAY) ? base->getAlignSize() : -1;
+            let el_size: int4 = if base_type.get_metatype() == type_metatype::TYPE_ARRAY {
+                base_type.get_array_base().map(|b| b.get_align_size()).unwrap_or(-1)
+            } else {
+                -1
+            };
+            let new_off: int8;
+            if base_type.needs_resolution() {
+                match Self::resolve_field(data, &base_type, cur_off, insert_point, -1) {
+                    Some((field_ty, no)) => {
+                        base_type = field_ty;
+                        cur_off = no;
+                        continue; // Do not create PTRSUB for union resolution here
+                    }
+                    None => break,
+                }
+            } else {
+                // baseType = baseType->getSubType(curOff, &newOff);
+                match base_type.get_sub_type(cur_off) {
+                    Ok((Some(sub), no)) => {
+                        base_type = sub;
+                        new_off = no;
+                    }
+                    _ => break,
+                }
+            }
+            // curOff -= newOff;
+            cur_off -= new_off;
+            base_off =
+                kuna_base::space::AddrSpace::byte_to_address(cur_off as u64, spc.get_word_size());
+            let ptr_op: OpId;
+            if el_size >= 0 {
+                if cur_off == 0 {
+                    // Don't create a PTRADD(#0, ...); baseType already updated, type already stripped.
+                    cur_off = new_off;
+                    continue;
+                }
+                // PTRADD: in1 = numEl, in2 = elSize
+                ptr_op = data.new_op(3, insert_addr.clone());
+                data.op_set_opcode_code(ptr_op, OpCode::CPUI_PTRADD);
+                let num_el = cur_off / (el_size as int8);
+                let numel_con = data.new_constant(4, num_el as u64);
+                data.op_set_input(ptr_op, numel_con, 1).ok();
+                let elsz_con = data.new_constant(4, el_size as u64);
+                data.op_set_input(ptr_op, elsz_con, 2).ok();
+            } else {
+                // PTRSUB: in1 = baseOff
+                ptr_op = data.new_op(2, insert_addr.clone());
+                data.op_set_opcode_code(ptr_op, OpCode::CPUI_PTRSUB);
+                let boff_con = data.new_constant(sp_size, base_off);
+                data.op_set_input(ptr_op, boff_con, 1).ok();
+            }
+            data.op_set_input(ptr_op, space_ptr, 0).ok();
+            // if (curType->needsResolution()) inheritUnionFieldPtr(curType, ptrsub, 0, insertPoint, -1);
+            if cur_type.needs_resolution() {
+                data.inherit_union_field_ptr(Rc::clone(&cur_type), ptr_op, 0, insert_point, -1).ok();
+            }
+            space_ptr = data.new_unique_out(sp_size, ptr_op).ok()?;
+            data.op_insert_before(ptr_op, insert_point);
+            cur_type = types
+                .get_type_pointer_strip_array(sp_size, Rc::clone(&base_type), spc.get_word_size())
+                .ok()?;
+            data.vbank_mut().get_mut(space_ptr)?.update_type(Rc::clone(&cur_type));
+            cur_off = new_off;
+        }
+        if cur_off != 0 {
+            // INT_ADD spacePtr + byteToAddress(curOff)
+            let add_op = data.new_op(2, insert_addr.clone());
+            data.op_set_opcode_code(add_op, OpCode::CPUI_INT_ADD);
+            data.op_set_input(add_op, space_ptr, 0).ok();
+            base_off =
+                kuna_base::space::AddrSpace::byte_to_address(cur_off as u64, spc.get_word_size());
+            let boff_con = data.new_constant(sp_size, base_off);
+            data.op_set_input(add_op, boff_con, 1).ok();
+            space_ptr = data.new_unique_out(sp_size, add_op).ok()?;
+            data.op_insert_before(add_op, insert_point);
+            cur_type = types
+                .get_type_pointer(sp_size, Rc::clone(&self.base.char_type), spc.get_word_size())
+                .ok()?;
+            data.vbank_mut().get_mut(space_ptr)?.update_type(Rc::clone(&cur_type));
+        }
+        Some(space_ptr)
+    }
+
+    /// C++ `StringSequence::buildStringCopy`.
+    fn build_string_copy(&self, data: &mut Funcdata) -> Option<OpId> {
+        use crate::dtype::TypeFactory;
+        // PcodeOp *insertPoint = moveOps[0].op;
+        let insert_point = self.base.move_ops[0].op;
+        // int4 numBytes = moveOps.size() * charType->getSize();
+        let num_bytes = self.base.move_ops.len() as int4 * self.base.char_type.get_size();
+        let types = data.get_arch().types_rc()?;
+        let word_size = self.root_addr.get_space()?.get_word_size();
+        // charPtrType = getTypePointer(getSizeOfPointer(), charType, rootAddr.getSpace()->getWordSize());
+        let char_ptr_type = types
+            .get_type_pointer(
+                types.get_size_of_pointer(),
+                Rc::clone(&self.base.char_type),
+                word_size,
+            )
+            .ok()?;
+        // Varnode *srcPtr = data.getInternalString(byteArray.data(), numBytes, charPtrType, insertPoint);
+        let byte_array = self.base.byte_array.clone();
+        let src_ptr = data.get_internal_string(&byte_array, num_bytes, char_ptr_type, insert_point)?;
+        // uint4 builtInId = selectStringCopyFunction(index);  (registerBuiltin pre-done at boot)
+        let (built_in_id, index) = self.base.select_string_copy_function(data);
+        let insert_addr = data.obank().get(insert_point)?.get_addr().clone();
+        // PcodeOp *copyOp = data.newOp(4, insertPoint->getAddr());
+        let copy_op = data.new_op(4, insert_addr);
+        data.op_set_opcode_code(copy_op, OpCode::CPUI_CALLOTHER);
+        data.obank_mut().get_mut(copy_op)?.clear_flag(pcodeop_flags::call);
+        let id_con = data.new_constant(4, built_in_id);
+        data.op_set_input(copy_op, id_con, 0).ok();
+        // Varnode *destPtr = constructTypedPointer(insertPoint);
+        let dest_ptr = self.construct_typed_pointer(data, insert_point)?;
+        data.op_set_input(copy_op, dest_ptr, 1).ok();
+        data.op_set_input(copy_op, src_ptr, 2).ok();
+        // if (destPtr->getType()->needsResolution()) inheritUnionFieldPtr(destPtr->getType(), copyOp, 1, insertPoint, -1);
+        let dest_ty = Rc::clone(data.vbank().get(dest_ptr)?.get_type_def_facing());
+        if dest_ty.needs_resolution() {
+            data.inherit_union_field_ptr(dest_ty, copy_op, 1, insert_point, -1).ok();
+        }
+        // Varnode *lenVn = data.newConstant(4, index); lenVn->updateType(copyOp->inputTypeLocal(3));
+        let len_vn = data.new_constant(4, index as u64);
+        if let Ok(int4t) = types.get_base(4, type_metatype::TYPE_INT) {
+            data.vbank_mut().get_mut(len_vn)?.update_type(int4t);
+        }
+        data.op_set_input(copy_op, len_vn, 3).ok();
+        data.op_insert_before(copy_op, insert_point);
+        Some(copy_op)
+    }
+
+    /// C++ `StringSequence::removeForward`.
+    fn remove_forward(
+        data: &mut Funcdata,
+        cur_node: WriteNode,
+        xref: &mut std::collections::HashMap<OpId, usize>,
+        points: &mut Vec<RemovePoint>,
+        dead_ops: &mut Vec<WriteNode>,
+    ) {
+        let vn = match data.obank().get(cur_node.op).and_then(|o| o.get_out()) {
+            Some(v) => v,
+            None => return,
+        };
+        for op in data.descend_snapshot(vn) {
+            if let Some(&idx) = xref.get(&op) {
+                // Seen the PIECE twice: merge offsets, drop the recorded point, add the PIECE.
+                let off = points[idx].alive.map(|p| p.offset.min(cur_node.offset)).unwrap_or(cur_node.offset);
+                points[idx].alive = None; // erase
+                let order = data.obank().get(op).map(|o| o.get_seq_num().get_order()).unwrap_or(0);
+                dead_ops.push(WriteNode::new(off, op, -1, order));
+                xref.remove(&op);
+            } else {
+                let slot = data.obank().get(op).map(|o| o.get_slot(vn)).unwrap_or(-1);
+                points.push(RemovePoint { alive: Some(WriteNode::new(cur_node.offset, op, slot, 0)) });
+                if data.obank().get(op).map(|o| o.code() == OpCode::CPUI_PIECE).unwrap_or(false) {
+                    xref.insert(op, points.len() - 1);
+                }
+            }
+        }
+    }
+
+    /// C++ `StringSequence::removeCopyOps`.
+    fn remove_copy_ops(&self, data: &mut Funcdata, replace_op: OpId) {
+        let mut concat_set: std::collections::HashMap<OpId, usize> = std::collections::HashMap::new();
+        let mut points: Vec<RemovePoint> = Vec::new();
+        let mut dead_ops: Vec<WriteNode> = Vec::new();
+        for i in 0..self.base.move_ops.len() {
+            Self::remove_forward(data, self.base.move_ops[i], &mut concat_set, &mut points, &mut dead_ops);
+        }
+        let mut pos = 0;
+        while pos < dead_ops.len() {
+            Self::remove_forward(data, dead_ops[pos], &mut concat_set, &mut points, &mut dead_ops);
+            pos += 1;
+        }
+        let replace_addr = data.obank().get(replace_op).unwrap().get_addr().clone();
+        for point in points.iter() {
+            let p = match point.alive {
+                Some(p) => p,
+                None => continue,
+            };
+            let vn = match data.obank().get(p.op).and_then(|o| o.get_in(p.slot)) {
+                Some(v) => v,
+                None => continue,
+            };
+            // if (vn->getDef()->code() != CPUI_INDIRECT) { ...build INDIRECT(0, iop)... }
+            let is_indirect = data
+                .vbank()
+                .get(vn)
+                .and_then(|v| v.get_def())
+                .map(|d| data.obank().get(d).map(|o| o.code() == OpCode::CPUI_INDIRECT).unwrap_or(false))
+                .unwrap_or(false);
+            if !is_indirect {
+                let sz = data.vbank().get(vn).unwrap().get_size();
+                let new_in = data.new_constant(sz, 0);
+                let ind_op = data.new_op(2, replace_addr.clone());
+                data.op_set_opcode_code(ind_op, OpCode::CPUI_INDIRECT);
+                data.op_set_input(ind_op, new_in, 0).ok();
+                let iop = data.new_varnode_iop(replace_op);
+                data.op_set_input(ind_op, iop, 1).ok();
+                data.op_set_output(ind_op, vn).ok();
+                data.mark_indirect_creation(ind_op, false).ok();
+                data.op_insert_before(ind_op, replace_op);
+            }
+        }
+        for i in 0..self.base.move_ops.len() {
+            data.op_destroy(self.base.move_ops[i].op);
+        }
+        for i in 0..dead_ops.len() {
+            data.op_destroy(dead_ops[i].op);
+        }
+    }
+
+    /// C++ `StringSequence::transform`.
+    fn transform(&self, data: &mut Funcdata) -> bool {
+        let mem_cpy_op = match self.build_string_copy(data) {
+            Some(o) => o,
+            None => return false,
+        };
+        self.remove_copy_ops(data, mem_cpy_op);
+        true
+    }
+}
+
+/// A recorded read point in `removeCopyOps`, modeling the C++
+/// `list<WriteNode>` element that may be erased (the `points` list).  An erased
+/// element keeps its slot in the Vec with `alive == None` (the C++ `list::erase`
+/// is emulated by tombstoning so the `xref` indices stay stable).
+struct RemovePoint {
+    alive: Option<WriteNode>,
+}
+
+// =============================================================================
 // RuleStringCopy / RuleStringStore (constseq.cc:969-1029)
 // =============================================================================
 //
-// `RuleStringStore` is now fully ported (it drives the live [`HeapSequence`]).
-// `RuleStringCopy` still declines after its constant-input guard: its
-// `StringSequence` construction reaches the W4 `getScopeLocal()->queryContainer`
-// array-component resolution and `constructTypedPointer`'s spacebase/PTRSUB chain
-// that the heap path does not need (see the module-level *Deferred half* note).
-// That decline is byte-identical to the rule being disabled.
+// Both `RuleStringStore` (STORE-through-pointer, [`HeapSequence`]) and
+// `RuleStringCopy` (COPY-into-array, [`StringSequence`]) drive their live
+// transforms.
 
 /// (constseq) Replace a sequence of COPY ops moving single characters with a
 /// CALLOTHER copying a whole string (C++ `class RuleStringCopy`).
@@ -1093,25 +1592,70 @@ impl Rule for RuleStringCopy {
         if !data.vbank().get(in0).map(|v| v.is_constant()).unwrap_or(false) {
             return 0;
         }
-        // SEAM(W4/W6): the remaining guards and the StringSequence build/transform
-        // reach the W6 type-facing factory and the W4 symbol table (see the
-        // section note above).  Until they land the body declines, which is
-        // byte-identical to the rule being disabled.
-        //
-        //   Varnode *outvn = op->getOut();
-        //   Datatype *ct = outvn->getTypeDefFacing();
-        //   if (!ct->isCharPrint()) return 0;
-        //   if (ct->isOpaqueString()) return 0;
-        //   if (!outvn->isAddrTied()) return 0;
-        //   SymbolEntry *entry = data.getScopeLocal()->queryContainer(
-        //       outvn->getAddr(), outvn->getSize(), op->getAddr());
-        //   if (entry == 0) return 0;
-        //   StringSequence sequence(data,ct,entry,op,outvn->getAddr());
-        //   if (!sequence.isValid()) return 0;
-        //   if (!sequence.transform()) return 0;
-        //   return 1;
-        let _ = data;
-        0
+        // Varnode *outvn = op->getOut();
+        let outvn = match data.obank().get(op).and_then(|o| o.get_out()) {
+            Some(v) => v,
+            None => return 0,
+        };
+        // Datatype *ct = outvn->getTypeDefFacing();
+        let ct = Rc::clone(data.vbank().get(outvn).expect("RuleStringCopy: stale outvn").get_type_def_facing());
+        // if (!ct->isCharPrint()) return 0;
+        if !ct.is_char_print() {
+            return 0;
+        }
+        // if (ct->isOpaqueString()) return 0;
+        if ct.is_opaque_string() {
+            return 0;
+        }
+        // if (!outvn->isAddrTied()) return 0;
+        if !data.vbank().get(outvn).unwrap().is_addr_tied() {
+            return 0;
+        }
+        // SymbolEntry *entry = data.getScopeLocal()->queryContainer(outvn->getAddr(), outvn->getSize(), op->getAddr());
+        let out_addr = data.vbank().get(outvn).unwrap().get_addr().clone();
+        let out_size = data.vbank().get(outvn).unwrap().get_size();
+        let op_addr = data.obank().get(op).unwrap().get_addr().clone();
+        // The C++ `getScopeLocal()->queryContainer` walks up to the global parent
+        // scope.  In the merged tree the local `ScopeLocal::db` only carries the
+        // function's stack scope; a global-mapped array (`map addr ... char
+        // globstring[32]`) lives in the frozen global-scope snapshot on `glb`.  So
+        // try the local stack scope first, then fall back to the global container.
+        let entry = data
+            .get_scope_local()
+            .and_then(|lm| lm.query_container(&out_addr, out_size, &op_addr))
+            .or_else(|| {
+                data.get_arch()
+                    .query_container_global(&out_addr, out_size, &op_addr)
+                    .and_then(|g| {
+                        let sym_type = g.symbol_type.clone()?;
+                        // entry->getFirst()/getSize() for a whole-symbol global
+                        // mapping: the entry starts at the symbol and spans its type.
+                        Some(crate::varmap::StringContainerEntry {
+                            first: g.entry_addr.get_offset(),
+                            size: sym_type.get_size(),
+                            addr: g.entry_addr.clone(),
+                            sym_type,
+                        })
+                    })
+            });
+        let entry = match entry {
+            Some(e) => e,
+            None => return 0,
+        };
+        // StringSequence sequence(data,ct,entry,op,outvn->getAddr());
+        let sequence = match StringSequence::build(data, ct, entry, op, out_addr) {
+            Some(s) => s,
+            None => return 0,
+        };
+        // if (!sequence.isValid()) return 0;
+        if !sequence.is_valid() {
+            return 0;
+        }
+        // if (!sequence.transform()) return 0;
+        if !sequence.transform(data) {
+            return 0;
+        }
+        1
     }
 }
 

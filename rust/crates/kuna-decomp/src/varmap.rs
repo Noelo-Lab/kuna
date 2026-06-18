@@ -841,6 +841,23 @@ pub struct LinkEntryInfo {
     pub is_name_undefined: bool,
 }
 
+/// A snapshot of the SymbolEntry `RuleStringCopy`'s `queryContainer` returns,
+/// holding the container entry's storage range and the owning Symbol's whole
+/// data-type as owned values (so the `StringSequence` COPY driver can run its
+/// mutating transform without keeping a `Database` borrow live).  Produced by
+/// [`ScopeLocal::query_container`].
+#[derive(Debug, Clone)]
+pub struct StringContainerEntry {
+    /// `entry->getAddr()` — the base address of the containing entry.
+    pub addr: Address,
+    /// `entry->getFirst()` — the first offset of the entry's storage.
+    pub first: uintb,
+    /// `entry->getSize()` — the byte width of the containing entry.
+    pub size: int4,
+    /// `entry->getSymbol()->getType()` — the owning Symbol's whole data-type.
+    pub sym_type: Rc<Datatype>,
+}
+
 // ===========================================================================
 // ScopeLocal (varmap.hh:212-269, varmap.cc:341-1620)
 // ===========================================================================
@@ -1539,6 +1556,33 @@ impl ScopeLocal {
         let eref = self.db.find_container(self.scope, addr, size, &Address::default())?;
         let entry = self.db.entry(self.scope, eref);
         Some(self.db.symbol(entry.symbol).get_category())
+    }
+
+    /// C++ `Scope::queryContainer` (`database.cc:1251`) on the local stack scope,
+    /// snapshotting the matching SymbolEntry's storage range and the owning
+    /// Symbol's whole data-type into owned values.  Backs `RuleStringCopy`'s
+    /// `data.getScopeLocal()->queryContainer(addr, size, usepoint)` (the
+    /// COPY-into-array `StringSequence` driver, `constseq.cc:990`).
+    ///
+    /// Returns `None` when no Symbol *contains* `[addr, addr+size)` or the owning
+    /// Symbol has no data-type yet.  The snapshot lets `StringSequence` walk the
+    /// container array and build the typed destination pointer without holding a
+    /// borrow on the `Database` across the (mutating) transform.
+    pub fn query_container(
+        &self,
+        addr: &Address,
+        size: int4,
+        usepoint: &Address,
+    ) -> Option<StringContainerEntry> {
+        let (escope, eref) = self.db.query_container(self.scope, addr, size, usepoint)?;
+        let entry = self.db.entry(escope, eref);
+        let sym_type = self.db.symbol(entry.symbol).dtype.clone()?;
+        Some(StringContainerEntry {
+            addr: entry.get_addr().clone(),
+            first: entry.get_first(),
+            size: entry.get_size(),
+            sym_type,
+        })
     }
 
     /// Information about the Symbol overlapping a storage location, for

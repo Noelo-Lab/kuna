@@ -1485,14 +1485,14 @@ impl Funcdata {
         };
         if !already_mapped {
             // `localmap->queryProperties(vn->getAddr(), vn->getSize(),
-            // vn->getUsePoint(*this), vflags)`.  The local symbol-map half of the
-            // walk (recovered stack locals) is the naming wave's `ScopeLocal` seam;
-            // the GLOBAL half — the parent-scope reach that paints a global-mapped
-            // RAM store `mapped | addrtied | persist` (+ `readonly`/`volatile`) — is
-            // the `GlobalQuery` snapshot wired onto `glb`.  For a register / unique /
-            // stack address the global query returns 0 (no global entry, not in the
-            // global rangetree), so non-global Varnodes are untouched, exactly as the
-            // C++ local-then-global walk leaves them with `vflags == 0`.
+            // vn->getUsePoint(*this), vflags)`.  Both halves of the C++ walk are now
+            // wired: the LOCAL symbol-map half (recovered stack locals, via
+            // `ScopeLocal::query_properties`) and the GLOBAL half — the parent-scope
+            // reach that paints a global-mapped RAM store `mapped | addrtied |
+            // persist` (+ `readonly`/`volatile`), the `GlobalQuery` snapshot wired
+            // onto `glb`.  For a register / unique address both queries return 0, so
+            // such Varnodes are untouched, exactly as the C++ local-then-global walk
+            // leaves them with `vflags == 0`.
             //
             // Marking `addrtied`/`persist` here is the keystone the merge + naming
             // seams need: `Merge::mergeTestSpeculative` (merge.cc:226-233) refuses to
@@ -1507,7 +1507,16 @@ impl Funcdata {
                 None => return,
             };
             use crate::varnode::varnode_flags;
-            let vflags = self.get_arch().query_global_properties(&addr, size, &usepoint);
+            // C++ `localmap->queryProperties(addr, size, usepoint, vflags)` — the
+            // LOCAL-scope half of `setVarnodeProperties` (funcdata_varnode.cc:30).
+            // A `map addr`/restructure-mapped stack range returns `mapped|addrtied`
+            // here, so a Varnode freshly created at a mapped stack address (e.g. a
+            // per-byte COPY output split out of a wide stack COPY by `RuleSplitCopy`
+            // in the cleanup pool, just before `RuleStringCopy`) is marked
+            // address-tied — the keystone `RuleStringCopy::applyOp`'s
+            // `outvn->isAddrTied()` guard reads.  OR'd with the global half below.
+            let mut vflags = self.query_local_properties(&addr, size, &usepoint);
+            vflags |= self.get_arch().query_global_properties(&addr, size, &usepoint);
             if vflags != 0 {
                 // C++ `vn->setFlags(vflags & ~Varnode::typelock)` (typelock is set by
                 // `updateType`, never here).  These flags (`mapped|addrtied|persist`,

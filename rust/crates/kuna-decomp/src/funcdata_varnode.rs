@@ -530,6 +530,90 @@ impl Funcdata {
         Some(res_vn)
     }
 
+    /// If it doesn't exist, create an input Varnode of the base register
+    /// corresponding to the given address space (C++
+    /// `Funcdata::constructSpacebaseInput`, `funcdata.cc:307`).
+    ///
+    /// The address space must have a base register (`numSpacebase() != 0`) or a
+    /// `LowlevelError` is returned.  If the incoming base-register input already
+    /// exists it is returned; otherwise a fresh input with the `TypeSpacebase`
+    /// pointer data-type and the `spacebase` flag is created.  Backs
+    /// `StringSequence::constructTypedPointer` for an `IPTR_SPACEBASE` (stack)
+    /// destination array.
+    pub fn construct_spacebase_input(&mut self, id: &Rc<AddrSpace>) -> KunaResult<VarnodeId> {
+        use crate::dtype::TypeFactory;
+        // Varnode *spacePtr = findSpacebaseInput(id); if (spacePtr) return spacePtr;
+        if let Some(space_ptr) = self.find_spacebase_input(id) {
+            return Ok(space_ptr);
+        }
+        // if (id->numSpacebase() == 0) throw LowlevelError(...);
+        if id.num_spacebase() == 0 {
+            return Err(KunaError::lowlevel(format!(
+                "Unable to construct pointer into space: {}",
+                id.get_name()
+            )));
+        }
+        // const VarnodeData &point(id->getSpacebase(0));
+        let point = id.get_spacebase(0)?;
+        let point_space =
+            point.space.as_ref().ok_or_else(|| KunaError::lowlevel("constructSpacebaseInput: spacebase has no space"))?;
+        let point_addr = Address::new(Rc::clone(point_space), point.offset);
+        // Datatype *ct = glb->types->getTypeSpacebase(id, getAddress());
+        // Datatype *ptr = glb->types->getTypePointer(point.size, ct, id->getWordSize());
+        let types = self
+            .get_arch()
+            .types_rc()
+            .ok_or_else(|| KunaError::lowlevel("constructSpacebaseInput: no type factory"))?;
+        let func_addr = self.get_address().clone();
+        let ct = types.get_type_spacebase(Rc::clone(id), &func_addr)?;
+        let ptr = types.get_type_pointer(point.size as int4, ct, id.get_word_size())?;
+        // spacePtr = newVarnode(point.size, point.getAddr(), ptr);
+        let space_ptr = self.new_varnode(point.size as int4, &point_addr, Some(Rc::clone(&ptr)));
+        // spacePtr = setInputVarnode(spacePtr);
+        let space_ptr = self.set_input_varnode(space_ptr)?;
+        // spacePtr->setFlags(Varnode::spacebase); spacePtr->updateType(ptr, true, true);
+        {
+            let v = self
+                .vbank_mut()
+                .get_mut(space_ptr)
+                .expect("constructSpacebaseInput: stale spacePtr");
+            v.set_flags_pub(varnode_flags::spacebase);
+            v.update_type_locked(ptr, true, true);
+        }
+        Ok(space_ptr)
+    }
+
+    /// Create a constant representing the \e base of the given global address
+    /// space (C++ `Funcdata::constructConstSpacebase`, `funcdata.cc:330`).
+    ///
+    /// The returned constant `0` carries the `TypeSpacebase` pointer data-type
+    /// and the `spacebase` flag.  Backs `StringSequence::constructTypedPointer`
+    /// for a non-`IPTR_SPACEBASE` (e.g. `ram`/global) destination array.
+    pub fn construct_const_spacebase(&mut self, id: &Rc<AddrSpace>) -> KunaResult<VarnodeId> {
+        use crate::dtype::TypeFactory;
+        let types = self
+            .get_arch()
+            .types_rc()
+            .ok_or_else(|| KunaError::lowlevel("constructConstSpacebase: no type factory"))?;
+        // Datatype *ct = glb->types->getTypeSpacebase(id, Address());
+        let invalid = Address::new_invalid();
+        let ct = types.get_type_spacebase(Rc::clone(id), &invalid)?;
+        // Datatype *ptr = glb->types->getTypePointer(id->getAddrSize(), ct, id->getWordSize());
+        let ptr = types.get_type_pointer(id.get_addr_size() as int4, ct, id.get_word_size())?;
+        // Varnode *spacePtr = newConstant(id->getAddrSize(), 0);
+        let space_ptr = self.new_constant(id.get_addr_size() as int4, 0);
+        // spacePtr->updateType(ptr, true, true); spacePtr->setFlags(Varnode::spacebase);
+        {
+            let v = self
+                .vbank_mut()
+                .get_mut(space_ptr)
+                .expect("constructConstSpacebase: stale spacePtr");
+            v.update_type_locked(ptr, true, true);
+            v.set_flags_pub(varnode_flags::spacebase);
+        }
+        Ok(space_ptr)
+    }
+
     /// Create a constant Varnode encoding a reference to an address space
     /// (C++ `Funcdata::newVarnodeSpace`, `funcdata_varnode.cc:192`).
     ///
