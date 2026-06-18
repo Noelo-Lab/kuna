@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 660/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 661/675; +...clone-gate audit, deindirect-output-type
+
+**Mixed float/int input coalescing +1 → 661.** xmm0 (1st float8 param AND return reg) split into two 4-byte lanes by Heritage::refinement (identically in both engines); C++ recombines, rust didn't. Ported adjustInputVarnodes (funcdata_varnode.rs:1825, funcdata_varnode.cc:496) + ActionUnjustifiedParams (coreaction_render.rs:2541, coreaction.cc:5018 — widen container + rebuild the two fragments as SUBPIECEs of one 8-byte input via ParamList::unjustifiedInputParam) + ReturnRecovery two-piece JOIN concat (coreaction_protos.rs:1304, coreaction.cc:1896). Gained Mixed float/int #1. Gate: `[675,661]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Long double #11 distinct (struct-field SUB3210 extraction).
 
 **Switch Hide #1 + Switch return #1 +2 → 660.** Switch return: testForReturnAddress (funcdata_block.rs:1676, funcdata_varnode.cc:1463 COPY/INDIRECT/INT_AND def-walk vs default_return_addr) + defaultReturnAddr cspec `<returnaddress>` decode (architecture.rs/seams.rs) + truncate_indirect_jump warnings (flow.rs:2690, flow.cc:750 MIPS BRANCHIND-as-ret). Switch Hide: truncated_flow_clone (funcdata_block.rs:1625) skipped cloning the discovered FuncCallSpecs → the jump-table partial's call lost its FuncProto effect list → readonly-folded into a 1-entry table; added FuncCallSpecs::clone_for_op (fspec.rs, fspec.cc:4969) + qlst re-attach → full 9-case recovery. Gate: `[675,660]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. (Inject Override #1 + Indirect prototype #2 BLOCKED, LOSS-243: two distinct roots — register-unaliased syncVarnodesWithSymbols + only_op_use double-use scoring.)
 
