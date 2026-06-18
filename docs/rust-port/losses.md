@@ -3005,3 +3005,22 @@ correctly typed (`v1.arr1[a]` renders). Two precise gaps, BOTH must close for mo
   nolocalalias substrate (04cd2a2) does NOT close it.
 - COMBINED: close Gap-1 (merge.rs) + Gap-2 (addtreestate/RulePtr*) THEN OR-wire heritage.rs:1380 →
   +7 (and unblocks the broader ~66 stack-struct-typing cluster's typing). Substrate fully in place. [[kuna-rust-port]]
+
+## LOSS-237 — Long double #5/#6/#11 (struct-field float10): Heritage::refinement splits the 10-byte access at 8-byte lanes
+
+- kind: deferred (heritage refinement)
+- what: a 10-byte `float10` STRUCT MEMBER is read as two `xunknown8` loads + CONCAT28
+  (`(float10)CONCAT28((int2)*(xunknown8*)(...+8), *(xunknown8*)...)`) vs C++ single `ptrldstr->a`/
+  `firstval.a`. The split happens in `Heritage::refinement` (heritage.rs:3062, build_refinement:2892,
+  normalize_read_size:2024; C++ heritage.cc:1891/1695) BEFORE type inference — rust builds refinement
+  boundaries at 8-byte lanes, cutting the odd-sized (10-byte) access; C++ keeps it as a SINGLE
+  refinement piece (extracts with one `SUB3210`/one 10-byte LOAD). So infertypes/printc/typeop are all
+  DOWNSTREAM of the structural split and cannot fix it.
+- correctly ruled OUT (not the lever): `RuleSplitLoad` gated off for float10 (`SplitDatatype::
+  getValueDatatype` null because float10.align_size=16 is not < size=10, subflow.rs:4217); RulePieceStructure
+  does not apply (float10 atomic). float10 align_size already 16 (alignment-map wave).
+- next: make `Heritage::refinement` keep a 10-byte float10 member access as a single refinement piece
+  (not cut at 8-byte lanes). Files: heritage.rs refinement/build_refinement/normalize_read_size +
+  likely varmap.rs MapState for the 32-byte struct param. #5/#6 (heap LOAD) + #11 (struct-param SUBPIECE)
+  share this one root; #7/#8/#9 pass because their fields are 8-byte-lane-aligned. [[kuna-rust-port]]
+- recorded by the integrator after the Long-double struct-field wave BLOCKED (2026-06-18).
