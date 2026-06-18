@@ -665,6 +665,7 @@ impl ActionFuncLink {
     /// `findJoin` are not on the W3 Funcdata) — recorded as a loss; they are not
     /// reached by the register-parameter call-rendering datatests.
     fn func_link_input(idx: int4, data: &mut Funcdata) {
+        use kuna_base::address::Address;
         let inputlocked = data.get_call_specs(idx).proto().is_input_locked();
         let varargs = data.get_call_specs(idx).is_dotdotdot();
         // AddrSpace *spacebase = fc->getSpacebase(); // non-zero => stackplaceholder
@@ -729,11 +730,97 @@ impl ActionFuncLink {
                     continue;
                 }
                 if spc.get_type() == kuna_base::space::spacetype::IPTR_JOIN {
-                    // SEAM(W4 findJoin): a JOIN-split locked parameter with a stack
-                    // piece needs `getArch()->findJoin`/`stripJoinPiece`, not yet on
-                    // the Rust Funcdata; the flat-stack register/stack datatests do
-                    // not reach a joined locked param.  Fall through to the plain
-                    // insert so the trial still has an input Varnode.
+                    // JOIN-split locked parameter (coreaction.cc:1524-1550): a
+                    // struct-by-value argument whose storage joins a stack piece and
+                    // a register piece.  When one end of the join is a stack
+                    // (IPTR_SPACEBASE) piece, materialize the stack half with a LOAD,
+                    // the register remainder with a plain Varnode, concatenate them
+                    // via CPUI_PIECE into a fresh UNIQUE output, and pass that as the
+                    // argument.  (A join with no stack piece falls through to the
+                    // plain insert below.)
+                    let manager = data.get_arch().manage.clone();
+                    if let Ok(join) = manager.find_join(off) {
+                        let npieces = join.num_pieces();
+                        // index = which end of the join is the stack piece (0 or last)
+                        let mut index: i32 = -1;
+                        if join.get_piece(0).space.as_ref().map(|s| s.get_type())
+                            == Some(kuna_base::space::spacetype::IPTR_SPACEBASE)
+                        {
+                            index = 0;
+                        } else if join
+                            .get_piece(npieces - 1)
+                            .space
+                            .as_ref()
+                            .map(|s| s.get_type())
+                            == Some(kuna_base::space::spacetype::IPTR_SPACEBASE)
+                        {
+                            index = npieces - 1;
+                        }
+                        if index >= 0 {
+                            // const VarnodeData &stack(join->getPiece(index));
+                            let stack = join.get_piece(index).clone();
+                            // const VarnodeData &remain(stripJoinPiece(join, index));
+                            if let Ok(remain) = manager.strip_join_piece(&join, index) {
+                                let stack_space = match stack.space.clone() {
+                                    Some(s) => s,
+                                    None => continue,
+                                };
+                                let remain_space = match remain.space.clone() {
+                                    Some(s) => s,
+                                    None => continue,
+                                };
+                                // loadval = opStackLoad(stack.space,stack.offset,stack.size,op,0,false)
+                                let loadval = match data.op_stack_load(
+                                    &stack_space,
+                                    stack.offset,
+                                    stack.size,
+                                    op,
+                                    None,
+                                    false,
+                                ) {
+                                    Ok(v) => v,
+                                    Err(_) => continue,
+                                };
+                                // remainval = newVarnode(remain.size, remain.space, remain.offset)
+                                let remain_addr =
+                                    Address::new(remain_space, remain.offset);
+                                let remainval =
+                                    data.new_varnode(remain.size as int4, &remain_addr, None);
+                                // concatOp = newOp(2,op->getAddr()); opSetOpcode(CPUI_PIECE)
+                                let op_addr = data
+                                    .obank()
+                                    .get(op)
+                                    .expect("funcLinkInput: stale call op")
+                                    .get_addr()
+                                    .clone();
+                                let concat_op = data.new_op(2, op_addr);
+                                data.op_set_opcode_code(
+                                    concat_op,
+                                    kuna_num::opcodes::OpCode::CPUI_PIECE,
+                                );
+                                // index==0 ? (load,remain) : (remain,load)
+                                if index == 0 {
+                                    let _ = data.op_set_input(concat_op, loadval, 0);
+                                    let _ = data.op_set_input(concat_op, remainval, 1);
+                                } else {
+                                    let _ = data.op_set_input(concat_op, remainval, 0);
+                                    let _ = data.op_set_input(concat_op, loadval, 1);
+                                }
+                                // outvn = newUniqueOut(sz, concatOp)
+                                let outvn = match data.new_unique_out(psize, concat_op) {
+                                    Ok(v) => v,
+                                    Err(_) => continue,
+                                };
+                                // opInsertBefore(concatOp, op)
+                                data.op_insert_before(concat_op, op);
+                                // opInsertInput(op, outvn, op->numInput())
+                                let nin =
+                                    data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+                                let _ = data.op_insert_input(op, outvn, nin);
+                                continue;
+                            }
+                        }
+                    }
                 }
                 // Plain register parameter: insert a fresh input Varnode at the end.
                 let pvn = data.new_varnode(psize, &paddr, None);

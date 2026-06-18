@@ -1582,27 +1582,66 @@ impl ParameterPieces {
     }
 
     /// Generate a parameter address from the list of Varnodes making up the
-    /// parameter (C++ `assignAddressFromPieces`).
+    /// parameter (C++ `ParameterPieces::assignAddressFromPieces`, fspec.cc:2196).
     ///
-    /// SEAM(W4): the C++ reaches `JoinRecord::mergeSequence` /
-    /// `Architecture::findAddJoin` (the `Architecture`/`Translate` wiring is
-    /// W4).  The reversal logic is faithful; the multi-piece join construction
-    /// is deferred.
+    /// `pieces` is assumed ordered most-significant-to-least when `most_to_least`
+    /// is set; otherwise it is reversed first.  Contiguous register/stack pieces
+    /// are merged (`JoinRecord::mergeSequence`); if a single piece remains its
+    /// address is used directly, otherwise a JOIN-space record is found/created
+    /// (`Architecture::findAddJoin`) and its unified address is the storage.
     pub fn assign_address_from_pieces(
         &mut self,
-        pieces: &mut [VarnodeData],
+        pieces: &mut Vec<VarnodeData>,
         most_to_least: bool,
+        manager: &AddrSpaceManager,
     ) -> KunaResult<()> {
+        // if (!mostToLeast && pieces.size() > 1) reverse the list
         if !most_to_least && pieces.len() > 1 {
             pieces.reverse();
         }
-        if pieces.len() == 1 {
-            self.addr = pieces[0].get_addr();
+        // JoinRecord::mergeSequence(pieces, glb->translate);
+        // The kuna join machinery operates on `VarnodeStorage`; convert the
+        // `VarnodeData` triples in place, merge contiguous ranges through the
+        // manager's installed RegisterLookup (the C++ `glb->translate`), then
+        // continue on the merged storage list.
+        let mut seq: Vec<VarnodeStorage> = pieces
+            .iter()
+            .map(|p| VarnodeStorage { space: p.space.clone(), offset: p.offset, size: p.size })
+            .collect();
+        if let Some(lookup) = manager.register_lookup() {
+            let lookup = Rc::clone(lookup);
+            JoinRecord::merge_sequence(&mut seq, lookup.as_ref());
+        }
+        // if (pieces.size() == 1) { addr = pieces[0].getAddr(); return; }
+        if seq.len() == 1 {
+            let p = &seq[0];
+            self.addr = Address::new(
+                p.space.clone().ok_or_else(|| {
+                    KunaError::lowlevel("assignAddressFromPieces: merged piece has no space")
+                })?,
+                p.offset,
+            );
+            // Reflect the merge back into the caller's piece list.
+            *pieces = seq.iter().map(|p| VarnodeData {
+                space: p.space.clone(), offset: p.offset, size: p.size,
+            }).collect();
             return Ok(());
         }
-        Err(KunaError::lowlevel(
-            "SEAM(W4) ParameterPieces::assign_address_from_pieces: join construction not yet ported",
-        ))
+        // JoinRecord *joinRecord = glb->findAddJoin(pieces, 0);
+        // addr = joinRecord->getUnified().getAddr();
+        let join_record = manager.find_add_join(&seq, 0)?;
+        let unified = join_record.get_unified();
+        self.addr = Address::new(
+            unified.space.clone().ok_or_else(|| {
+                KunaError::lowlevel("assignAddressFromPieces: join record has no unified space")
+            })?,
+            unified.offset,
+        );
+        // Reflect the (possibly merged) piece list back to the caller.
+        *pieces = seq.iter().map(|p| VarnodeData {
+            space: p.space.clone(), offset: p.offset, size: p.size,
+        }).collect();
+        Ok(())
     }
 }
 
