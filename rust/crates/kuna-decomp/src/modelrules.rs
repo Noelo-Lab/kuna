@@ -1213,7 +1213,7 @@ impl AssignAction {
         status.copy_from_slice(&tmp_status); // Commit resource usage for all the pieces
         res.flags = 0;
         res.type_ = Some(Rc::clone(dt));
-        res.assign_address_from_pieces(&mut pieces, consume_most_sig)?;
+        res.assign_address_from_pieces(&mut pieces, consume_most_sig, manager)?;
         Ok(RES_SUCCESS)
     }
 
@@ -1266,7 +1266,7 @@ impl AssignAction {
         status.copy_from_slice(&tmp_status); // Commit resource usage for all the pieces
         res.flags = 0;
         res.type_ = Some(Rc::clone(dt));
-        res.assign_address_from_pieces(&mut pieces, consume_most_sig)?;
+        res.assign_address_from_pieces(&mut pieces, consume_most_sig, manager)?;
         Ok(RES_SUCCESS)
     }
 
@@ -1380,7 +1380,7 @@ impl AssignAction {
         status.copy_from_slice(&tmp_status); // Commit resource usage for all the pieces
         res.flags = 0;
         res.type_ = Some(Rc::clone(dt));
-        res.assign_address_from_pieces(&mut pieces, consume_most_sig)?;
+        res.assign_address_from_pieces(&mut pieces, consume_most_sig, manager)?;
         Ok(RES_SUCCESS)
     }
 
