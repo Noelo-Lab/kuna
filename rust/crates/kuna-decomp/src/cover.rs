@@ -26,6 +26,7 @@
 
 use std::collections::BTreeMap;
 
+use kuna_base::address::Address;
 use kuna_base::types::{int4, uintm};
 use kuna_num::opcodes::OpCode;
 
@@ -634,8 +635,10 @@ impl Cover {
     /// Does \b this cover any PcodeOp in the given PcodeOpSet (C++
     /// `Cover::intersect(const PcodeOpSet &,Varnode *)`, `cover.cc:342-382`).
     ///
-    /// `rep` is the representative Varnode for the secondary `affectsTest`.
-    pub fn intersect_op_set(&self, op_set: &PcodeOpSet, rep: crate::seams::VarnodeId) -> bool {
+    /// `rep_addr` is the address of the representative Varnode for the secondary
+    /// `affectsTest` (the C++ passes `Varnode *vn` and reads only `vn->getAddr()`
+    /// in `StackAffectingOps::affectsTest`, so we thread the resolved address).
+    pub fn intersect_op_set(&self, op_set: &PcodeOpSet, rep_addr: &Address) -> bool {
         if op_set.op_list.is_empty() {
             return false;
         }
@@ -669,7 +672,7 @@ impl Cover {
                         // Does range contain the call?
                         if cover_block.boundary(Some(entry.point)) == 0 {
                             // Is the call on the boundary
-                            if op_set.affects_test(entry.id, rep) {
+                            if op_set.affects_test(entry.id, rep_addr) {
                                 return true;
                             }
                         }
@@ -743,8 +746,10 @@ pub struct PcodeOpSet {
     block_start: Vec<int4>,
     /// Has `populate()` been called (C++ `is_pop`).
     is_pop: bool,
-    /// The `affectsTest` secondary test (C++ pure-virtual override).
-    affects: Box<dyn Fn(OpId, crate::seams::VarnodeId) -> bool>,
+    /// The `affectsTest` secondary test (C++ pure-virtual override).  The C++
+    /// `affectsTest(PcodeOp *op,Varnode *vn)` reads only `vn->getAddr()`, so the
+    /// closure takes the resolved `Address`.
+    affects: Box<dyn Fn(OpId, &Address) -> bool>,
     /// The `populate()` call-back: returns the unsorted op entries to add.
     populate_fn: Box<dyn Fn() -> Vec<PcodeOpSetEntry>>,
 }
@@ -754,7 +759,7 @@ impl PcodeOpSet {
     /// `affectsTest` override and the `populate()` call-back.
     pub fn new(
         populate_fn: Box<dyn Fn() -> Vec<PcodeOpSetEntry>>,
-        affects: Box<dyn Fn(OpId, crate::seams::VarnodeId) -> bool>,
+        affects: Box<dyn Fn(OpId, &Address) -> bool>,
     ) -> PcodeOpSet {
         PcodeOpSet {
             op_list: Vec::new(),
@@ -779,8 +784,28 @@ impl PcodeOpSet {
 
     /// Secondary test that the given PcodeOp affects the Varnode (C++
     /// `affectsTest`).
-    fn affects_test(&self, op: OpId, vn: crate::seams::VarnodeId) -> bool {
-        (self.affects)(op, vn)
+    fn affects_test(&self, op: OpId, vn_addr: &Address) -> bool {
+        (self.affects)(op, vn_addr)
+    }
+
+    /// Add a single resolved op entry directly (the owner-driven `populate()`
+    /// path: `Funcdata::populateAffectingOps` adds each op via `addOp`).  The
+    /// caller must follow with [`finalize_pub`](Self::finalize_pub).
+    pub fn add_op_entry(&mut self, entry: PcodeOpSetEntry) {
+        self.op_list.push(entry);
+    }
+
+    /// Install the secondary `affectsTest` (C++ pure-virtual override) — used by
+    /// the owner-driven populate path to bind the freshly snapshotted
+    /// store-guard data.
+    pub fn set_affects(&mut self, affects: Box<dyn Fn(OpId, &Address) -> bool>) {
+        self.affects = affects;
+    }
+
+    /// Sort the directly-added ops into blocks and mark the set populated (C++
+    /// `finalize`).  Pairs with [`add_op_entry`](Self::add_op_entry).
+    pub fn finalize_pub(&mut self) {
+        self.finalize();
     }
 
     /// Compare PcodeOps for \b this set: block index, then `SeqNum::order` (C++
@@ -1236,5 +1261,70 @@ mod tests {
         assert_eq!(set.op_list[2].block_index, 2);
         // blockStart: index 0 (block 0), index 2 (block 2)
         assert_eq!(set.block_start, vec![0, 2]);
+    }
+
+    /// The owner-driven populate path used by `StackAffectingOps::populate`
+    /// (`Funcdata::populate_affecting_ops`): direct `add_op_entry` + `finalize_pub`
+    /// + `set_affects` reproduce the same sorted/blocked layout as the closure
+    /// `populate()`, and the freshly-bound `affectsTest` runs against the resolved
+    /// address (verify_w10_chainb_gap1).
+    #[test]
+    fn verify_w10_chainb_gap1_owner_driven_populate_and_affects() {
+        use kuna_base::address::Address;
+
+        let entry = |u: uintm, blk: int4| PcodeOpSetEntry {
+            id: OpId::from(KeyData::from_ffi(u64::from(u) + 1)),
+            block_index: blk,
+            point: op_point(u),
+            order: u,
+        };
+        let mut set = PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _: &Address| false));
+        assert!(!set.is_populated());
+        // add out of block/order order; finalize must sort + block-index them.
+        set.add_op_entry(entry(50, 2));
+        set.add_op_entry(entry(20, 0));
+        set.add_op_entry(entry(10, 0));
+        // bind a store-guard-style affectsTest: only op #20 (a guarded STORE whose
+        // range is [0x10, 0x20]) "affects"; everything else (a CALL) always does.
+        let guarded = OpId::from(KeyData::from_ffi(u64::from(20u32) + 1));
+        set.set_affects(Box::new(move |op, addr: &Address| {
+            if op == guarded {
+                let off = addr.get_offset();
+                (0x10..=0x20).contains(&off)
+            } else {
+                true // CALL / unguarded STORE always affects
+            }
+        }));
+        set.finalize_pub();
+        assert!(set.is_populated());
+        assert_eq!(set.op_list[0].order, 10);
+        assert_eq!(set.op_list[1].order, 20);
+        assert_eq!(set.op_list[2].block_index, 2);
+        assert_eq!(set.block_start, vec![0, 2]);
+
+        // affectsTest on the bound closure: a CALL (op #10) always affects;
+        // the guarded STORE (op #20) only affects an address inside its range.
+        let call_op = OpId::from(KeyData::from_ffi(u64::from(10u32) + 1));
+        let in_range = Address::new(test_ram_space(), 0x18);
+        let out_of_range = Address::new(test_ram_space(), 0x40);
+        assert!(set.affects_test(call_op, &out_of_range)); // CALL always affects
+        assert!(set.affects_test(guarded, &in_range)); // STORE: addr in guard range
+        assert!(!set.affects_test(guarded, &out_of_range)); // STORE: addr outside
+    }
+
+    /// Minimal RAM-like space for the affectsTest address fixture.
+    fn test_ram_space() -> std::rc::Rc<kuna_base::space::AddrSpace> {
+        use kuna_base::space::{addrspace_flags, spacetype, AddrSpace};
+        std::rc::Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            2,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        ))
     }
 }

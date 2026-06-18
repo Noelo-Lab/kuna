@@ -2370,7 +2370,7 @@ mod tests {
     #[test]
     fn high_edge_order_and_cache() {
         let populate = || Vec::new();
-        let affects = |_: crate::seams::OpId, _: VarnodeId| false;
+        let affects = |_: crate::seams::OpId, _: &kuna_base::address::Address| false;
         let opset = PcodeOpSet::new(Box::new(populate), Box::new(affects));
         let mut test = HighIntersectTest::new(opset);
         let a = HighVariableId(1);
@@ -2388,7 +2388,7 @@ mod tests {
     #[test]
     fn move_intersect_tests_transfers_yes() {
         let populate = || Vec::new();
-        let affects = |_: crate::seams::OpId, _: VarnodeId| false;
+        let affects = |_: crate::seams::OpId, _: &kuna_base::address::Address| false;
         let opset = PcodeOpSet::new(Box::new(populate), Box::new(affects));
         let mut test = HighIntersectTest::new(opset);
         let high1 = HighVariableId(10);
