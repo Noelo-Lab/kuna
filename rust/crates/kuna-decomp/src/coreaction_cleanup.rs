@@ -1594,6 +1594,7 @@ fn bind_proto_partial_piece(
     piece_vn: crate::seams::VarnodeId,
     piece_high: crate::seams::HighVariableId,
     base: &mut int4,
+    recmap: &std::collections::BTreeMap<crate::seams::HighVariableId, OpRecommend>,
 ) -> bool {
     // Varnode *rootVn = PieceNode::findRoot(vn);  if (rootVn == vn) return;
     let root_vn = data.piece_find_root(piece_vn);
@@ -1668,6 +1669,17 @@ fn bind_proto_partial_piece(
     } else {
         None
     };
+    // lookForFuncParamNames override (coreaction.cc:2992): when the CONCAT root IS a
+    // sub-function's argument (the recovered struct-by-value local passed to `receive`),
+    // the callee's locked parameter name (`dvar`) overrides the `vN` default the root
+    // would otherwise consume.  The root is the C++ `vn` makeRec recorded; its high is
+    // the recmap key.  Only a root with no existing name (about to receive a default) is
+    // a candidate — a root already bound to a mapped composite Symbol keeps that name.
+    let root_rec_name = if existing_name.is_none() {
+        func_param_name_for_high(data, recmap, root_high, root_rep)
+    } else {
+        None
+    };
     let (root_name, root_sym_off, root_type) = match container {
         Some(info) => {
             // Member of a mapped composite.  Resolve the name on demand: reuse the
@@ -1690,14 +1702,21 @@ fn bind_proto_partial_piece(
         None => {
             // No mapped container — the whole-value (register-return) path.  Keep the
             // root's own type + already-bound in-symbol offset; allocate `vN` only if
-            // unnamed.
+            // unnamed.  A callee-parameter recommendation for this root wins over the
+            // `vN` default and does not consume `base`.
             let name = match existing_name {
                 Some(n) => n,
-                None => {
-                    let n = format!("v{base}");
-                    *base += 1;
-                    n
-                }
+                None => match &root_rec_name {
+                    Some(rec) => data
+                        .get_scope_local_mut()
+                        .map(|lm| lm.make_local_name_unique(rec))
+                        .unwrap_or_else(|| rec.clone()),
+                    None => {
+                        let n = format!("v{base}");
+                        *base += 1;
+                        n
+                    }
+                },
             };
             let cur_off = data.high_bank().get(root_high).map(|h| h.get_symbol_offset()).unwrap_or(-1);
             let rep_ty = data.vbank().get(root_rep).map(|v| v.get_type().clone());
@@ -1860,12 +1879,197 @@ fn kuna_function_namespace_path(display_name: &str) -> Vec<String> {
     parts.into_iter().map(|s| s.to_string()).collect()
 }
 
+/// A name recommendation for a HighVariable, collected from a sub-function's locked
+/// parameter (C++ `ActionNameVars::OpRecommend`, `coreaction.hh:478`).  `ct` is the
+/// recommended data-type (`None` when the source was reached through a `CPUI_CAST`, a
+/// less-preferred recommendation), `name` is the callee's parameter name.
+struct OpRecommend {
+    ct: Option<std::rc::Rc<crate::dtype::Datatype>>,
+    name: String,
+}
+
+/// Collect potential variable names from sub-function parameters — the faithful
+/// `ActionNameVars::lookForFuncParamNames` recmap build (`coreaction.cc:2956-2977`)
+/// plus `makeRec` (`coreaction.cc:2913-2947`).
+///
+/// For every call with a locked input prototype, each locked, NAMED parameter whose
+/// storage size matches the argument Varnode contributes a name recommendation keyed
+/// by the argument's HighVariable.  The argument local then renders the callee's
+/// parameter name (`receive(...,foo dvar)` -> the `callspill` struct local renders
+/// `dvar`).  This is the source of the spill-struct `dvar` name (Stack spill
+/// #2/#3/#4/#5): the recovered struct argument has an undefined-name local Symbol that
+/// `lookForFuncParamNames` renames to the callee's `dvar` before the `vN` default is
+/// assigned.
+///
+/// Mirrors `makeRec`'s gates exactly: skip un-namelocked / undefined-named params
+/// (`isNameLocked`/`isNameUndefined`), skip a size mismatch, unwrap a `CPUI_CAST` into
+/// the function (recording a null-typed, less-preferred recommendation), skip an
+/// address-tied target high (`Don't propagate parameter name to address tied variable`),
+/// and skip generated default param names (`kunaIsGeneratedName`, the (kuna) `aN`/`vN`
+/// guard at `coreaction.cc:2929`).  The type-order tiebreak keeps the more-specified
+/// recommendation when one high is fed by several calls (`makeRec`'s `typeOrder` check).
+fn build_func_param_name_recmap(
+    data: &mut Funcdata,
+) -> std::collections::BTreeMap<crate::seams::HighVariableId, OpRecommend> {
+    use crate::seams::HighVariableId;
+    let mut recmap: std::collections::BTreeMap<HighVariableId, OpRecommend> =
+        std::collections::BTreeMap::new();
+
+    let numfunc = data.num_calls();
+    for i in 0..numfunc {
+        let fc = data.get_call_specs(i);
+        // if (!fc->isInputLocked()) continue;
+        if !fc.proto().is_input_locked() {
+            continue;
+        }
+        let op = fc.get_op();
+        let numparam = fc.proto().num_params();
+        let op_ninput = match data.obank().get(op) {
+            Some(o) => o.num_input(),
+            None => continue,
+        };
+        // if (numparam >= op->numInput()) numparam = op->numInput()-1;
+        let numparam = if numparam >= op_ninput { op_ninput - 1 } else { numparam };
+        for j in 0..numparam {
+            // ProtoParameter *param = fc->getParam(j);  Varnode *vn = op->getIn(j+1);
+            let fc = data.get_call_specs(i);
+            let param = match fc.proto().get_param(j) {
+                Some(p) => p,
+                None => continue,
+            };
+            // makeRec gates (coreaction.cc:2916-2918):
+            //   if (!param->isNameLocked()) return;
+            //   if (param->isNameUndefined()) return;
+            if !param.is_name_locked() || param.is_name_undefined() {
+                continue;
+            }
+            let param_name = param.get_name().to_string();
+            let param_size = param.get_size();
+            // (kuna) coreaction.cc:2929: skip generated defaults (param_N / aN / vN).
+            if crate::kuna_naming::kuna_is_generated_name(&param_name) {
+                continue;
+            }
+            let mut ct: Option<std::rc::Rc<crate::dtype::Datatype>> = param.get_type().cloned();
+
+            let arg_vn = match data.obank().get(op).and_then(|o| o.get_in(j + 1)) {
+                Some(v) => v,
+                None => continue,
+            };
+            // if (vn->getSize() != param->getSize()) return;
+            let vn_size = match data.vbank().get(arg_vn) {
+                Some(v) => v.get_size(),
+                None => continue,
+            };
+            if vn_size != param_size {
+                continue;
+            }
+            // if (vn->isImplied() && vn->isWritten()) { skip a CPUI_CAST into the
+            // function } (coreaction.cc:2920-2926): unwrap the cast and mark the
+            // recommendation less-preferred (null type).
+            let mut vn = arg_vn;
+            let (is_implied, is_written) = match data.vbank().get(vn) {
+                Some(v) => (v.is_implied(), v.is_written()),
+                None => continue,
+            };
+            if is_implied && is_written {
+                if let Some(def) = data.vbank().get(vn).and_then(|v| v.get_def()) {
+                    if data.obank().get(def).map(|o| o.code()) == Some(OpCode::CPUI_CAST) {
+                        if let Some(inner) = data.obank().get(def).and_then(|o| o.get_in(0)) {
+                            vn = inner;
+                            ct = None; // less preferred name (cast)
+                        }
+                    }
+                }
+            }
+            // HighVariable *high = vn->getHigh();
+            let high = match data.vbank().get(vn).and_then(|v| v.get_high()) {
+                Some(h) => h,
+                None => continue,
+            };
+            // if (high->isAddrTied()) return;  — the C++ guard reads the high's
+            // addr-tied flag; the rust high mirrors the representative Varnode's flag.
+            let high_addr_tied = data
+                .high_name_representative(high)
+                .and_then(|rep| data.vbank().get(rep))
+                .map(|v| v.is_addr_tied())
+                .unwrap_or(false);
+            if high_addr_tied {
+                continue;
+            }
+            // recmap dedup with the typeOrder tiebreak (coreaction.cc:2931-2946).
+            match recmap.get(&high) {
+                Some(existing) => {
+                    // if (ct == null) return;  — cannot override with a casted (null) type.
+                    let newt = match ct.as_ref() {
+                        Some(t) => t,
+                        None => continue,
+                    };
+                    // if (oldtype != null && oldtype->typeOrder(*ct) <= 0) return;
+                    if let Some(oldtype) = existing.ct.as_ref() {
+                        if oldtype.type_order(newt).map(|ord| ord <= 0).unwrap_or(false) {
+                            continue; // oldtype is more specified
+                        }
+                    }
+                    recmap.insert(high, OpRecommend { ct, name: param_name });
+                }
+                None => {
+                    recmap.insert(high, OpRecommend { ct, name: param_name });
+                }
+            }
+        }
+    }
+    recmap
+}
+
+/// The callee-parameter name recommendation for `high`, if the
+/// `ActionNameVars::lookForFuncParamNames` apply-gates (coreaction.cc:2981-2993)
+/// admit it: the representative is not free / not an input, the high has a single
+/// merge class (`getNumMergeClasses() <= 1` — don't inherit a name across a
+/// speculative merge), and the recommendation map has an entry.  The caller has
+/// already established that the high's Symbol name is undefined (it is about to
+/// receive a `vN` default), the C++ `sym->isNameUndefined()` gate.  Returns the
+/// recommended callee parameter name (`receive`'s `dvar`) to use INSTEAD of the
+/// `vN` default.
+fn func_param_name_for_high(
+    data: &mut Funcdata,
+    recmap: &std::collections::BTreeMap<crate::seams::HighVariableId, OpRecommend>,
+    high: crate::seams::HighVariableId,
+    name_rep: crate::seams::VarnodeId,
+) -> Option<String> {
+    if recmap.is_empty() {
+        return None;
+    }
+    // if (vn->isFree()) continue;  if (vn->isInput()) continue;
+    let (is_free, is_input) = match data.vbank().get(name_rep) {
+        Some(v) => (v.is_free(), v.is_input()),
+        None => return None,
+    };
+    if is_free || is_input {
+        return None;
+    }
+    // if (high->getNumMergeClasses() > 1) continue;  — don't inherit a name if
+    // speculatively merged.
+    let merge_classes = data.high_bank().get(high).map(|h| h.get_num_merge_classes()).unwrap_or(1);
+    if merge_classes > 1 {
+        return None;
+    }
+    recmap.get(&high).map(|r| r.name.clone())
+}
+
 fn name_local_highs_angr(data: &mut Funcdata) {
     use crate::seams::HighVariableId;
     // Materialize the recovered/locked parameters as Symbols in the local scope
     // (C++ `ProtoStoreSymbol::setInput` did this at recovery time; the kuna
     // `ProtoStoreInternal` does not, so it is done here before the walk).
     data.link_proto_params();
+
+    // C++ `ActionNameVars::apply` (coreaction.cc:3084) calls
+    // `lookForFuncParamNames(data,namerec)` AFTER `linkSymbols` but BEFORE the
+    // `buildDefaultName` (`vN`) rename loop (coreaction.cc:3087): a sub-function's
+    // locked parameter name (`receive`'s `dvar`) overrides the `vN` default for the
+    // matching argument local.  The kuna walk assigns defaults inline, so build the
+    // recommendation map up front and consult it at each default-naming site below.
+    let func_param_recmap = build_func_param_name_recmap(data);
 
     // Iterate Varnodes in C++ location order; hit each high once at its name
     // representative (the highest-priority member), matching `linkSymbols`'
@@ -1946,7 +2150,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         // stand-in) and `continue`s, skipping the `vN` allocator below.
         let nr = name_rep.unwrap();
         if data.vbank().get(nr).map(|v| v.is_proto_partial()).unwrap_or(false)
-            && bind_proto_partial_piece(data, nr, high, &mut base)
+            && bind_proto_partial_piece(data, nr, high, &mut base, &func_param_recmap)
         {
             continue;
         }
@@ -2080,9 +2284,15 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 // renders `v1` rather than `$$undefNNN`.  It re-queries the same
                 // entry via `findOverlap`; for a non-conflicting hit the two queries
                 // agree.
-                let resolved = data
-                    .get_scope_local_mut()
-                    .and_then(|lm| lm.resolve_default_name(&v_addr, v_size, &mut base));
+                // lookForFuncParamNames override (coreaction.cc:2992): a sub-function's
+                // locked parameter name for this argument high wins over the `vN`
+                // default for an undefined whole-symbol cover (the spill struct local
+                // renders `dvar`).
+                let rec_name =
+                    func_param_name_for_high(data, &func_param_recmap, high, name_rep.unwrap());
+                let resolved = data.get_scope_local_mut().and_then(|lm| {
+                    lm.resolve_default_name_override(&v_addr, v_size, &mut base, rec_name.as_deref())
+                });
                 let (sym_name, sym_off, sym_type) = match resolved {
                     Some(t) => t,
                     None => (info.display_name, info.sym_off, info.sym_type),
@@ -2195,8 +2405,21 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         // non-parameter input (unaffected/illegal/leftover) — is named `vN` exactly
         // like any other local, with no `isInput()` special-casing (the angr
         // `buildDefaultName` arm has none).
-        let name = format!("v{base}");
-        base += 1;
+        // lookForFuncParamNames override (coreaction.cc:2992): a callee parameter name
+        // for this argument high wins over the `vN` default (and does not consume
+        // `base`) for an unmapped local that reaches the tail.
+        let name = match func_param_name_for_high(data, &func_param_recmap, high, name_rep.unwrap())
+        {
+            Some(rec) => data
+                .get_scope_local_mut()
+                .map(|lm| lm.make_local_name_unique(&rec))
+                .unwrap_or(rec),
+            None => {
+                let n = format!("v{base}");
+                base += 1;
+                n
+            }
+        };
         if let Some(h) = data.high_bank_mut().get_mut(high) {
             h.set_kuna_name(name);
         }
