@@ -2150,6 +2150,37 @@ impl Funcdata {
         self.op_insert(op, parent, point);
     }
 
+    /// Construct the boolean negation of a given boolean Varnode into a temporary
+    /// register (C++ `Funcdata::opBoolNegate`, `funcdata_op.cc:560`).
+    ///
+    /// Creates a `BOOL_NEGATE` of `vn`, inserts it before/after `op`
+    /// (per `insertafter`), and returns the size-1 result Varnode.  The output
+    /// is a freshly created unique with no readers, so the `newUniqueOut`
+    /// def-rewiring repoints nothing.
+    pub fn op_bool_negate(
+        &mut self,
+        vn: VarnodeId,
+        op: OpId,
+        insertafter: bool,
+    ) -> KunaResult<VarnodeId> {
+        // PcodeOp *negateop = newOp(1,op->getAddr());
+        let addr = self.obank().get(op).expect("opBoolNegate: stale op").get_addr().clone();
+        let negateop = self.new_op(1, addr);
+        // opSetOpcode(negateop,CPUI_BOOL_NEGATE);
+        self.op_set_opcode_code(negateop, OpCode::CPUI_BOOL_NEGATE);
+        // Varnode *resvn = newUniqueOut(1,negateop);
+        let resvn = self.new_unique_out(1, negateop)?;
+        // opSetInput(negateop,vn,0);
+        self.op_set_input(negateop, vn, 0)?;
+        // if (insertafter) opInsertAfter(...) else opInsertBefore(...);
+        if insertafter {
+            self.op_insert_after(negateop, op);
+        } else {
+            self.op_insert_before(negateop, op);
+        }
+        Ok(resvn)
+    }
+
     /// Insert the given op as the \e first op in the basic block, honoring the
     /// MULTIEQUAL-first invariant (C++ `Funcdata::opInsertBegin`,
     /// `funcdata_op.cc:413`).
