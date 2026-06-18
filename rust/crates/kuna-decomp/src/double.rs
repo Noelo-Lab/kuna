@@ -1183,19 +1183,29 @@ fn adjacent_offsets(data: &Funcdata, vn1: VarnodeId, vn2: VarnodeId, size1: uint
 }
 
 /// `Varnode::getSpaceFromConst` — resolve a constant LOAD/STORE pointer's
-/// space-id annotation into an `AddrSpace` index.
+/// space-id annotation into an `AddrSpace` *manager index*.
 ///
-/// SEAM(W4): the C++ `Varnode::getSpaceFromConst` does
-/// `getSpace()->getManager()->getSpace((int4)getOffset())` — it reads the
-/// space-id encoded as the constant's offset and indexes the space manager.
-/// The space-manager-by-id lookup off a constant Varnode is a W4 surface not
-/// reachable here, so this returns `None`; the callers
-/// (`testContiguousPointers`, `noWriteConflict`, the LOAD/STORE rules) treat a
-/// `None` space as "spaces don't match"/"conflict" and decline — a conservative
-/// no-op.  Recorded as a loss.
-fn space_from_const_index(_data: &Funcdata, _vn: VarnodeId) -> Option<i32> {
-    // SEAM(W4): Varnode::getSpaceFromConst
-    None
+/// C++ `Varnode::getSpaceFromConst` (`varnode.hh:427`) does
+/// `getSpace()->getManager()->getSpace((int4)getOffset())` — it reinterprets the
+/// constant's offset as the space-id and indexes the manager.  The kuna port
+/// (LOSS-015) stores the space's manager *index* in that offset (exactly the
+/// representation decoded by the real `RuleLoadVarnode` helper
+/// `space_from_const` in `ruleaction_4.rs`), so here we read that index back.
+///
+/// The callers (`testContiguousPointers`, `noWriteConflict`, the
+/// `RuleDoubleLoad`/`RuleDoubleStore` rules) thread the returned index back
+/// through `Architecture::manage().get_space(idx)` (`space_is_big_endian_by_index`,
+/// `space_index_to_varnode`), which is the same index-keyed lookup, so the index
+/// is the right currency to return.  An out-of-range offset (a hand-built fixture
+/// constant that is not a genuine space-id) is rejected rather than panicking on
+/// the manager's bounds — mirroring `space_from_const`'s guard.
+fn space_from_const_index(data: &Funcdata, vn: VarnodeId) -> Option<i32> {
+    let idx = vn_get_offset(data, vn);
+    let manage = data.get_arch().manage();
+    if idx >= manage.num_spaces() as uintb {
+        return None;
+    }
+    manage.get_space(idx as i32).map(|s| s.get_index())
 }
 
 /// Verify two LOAD/STORE pointers address contiguous memory (C++
