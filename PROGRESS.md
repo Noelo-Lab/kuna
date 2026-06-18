@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 617/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 621/675; +...clone-gate audit, deindirect-output-type
+
+**Stack spill dvar naming +4 → 621 (LOSS-239 resolved; corrects the prior wave's wrong ruling-out).** makeRec/lookForFuncParamNames DOES fire — the gate was `ParameterBasic::set_type_lock` (fspec.rs) never name-locking named params. Fixed `FuncProto::set_input_lock` (fspec.rs:5087, C++ fspec.cc:3936/3056 ParameterSymbol::setTypeLock sets namelock when !isNameUndefined) + ported makeRec/lookForFuncParamNames + apply-gate (coreaction_cleanup.rs build_func_param_name_recmap/func_param_name_for_high, applied at resolve_default_name + vN tail + bind_proto_partial_piece) + varmap resolve_default_name_override. Gained Stack spill #2/3/4/5. Gate: `[675,621]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. #1 = independent struct-member-read explicit-marking.
 
 **Union Family-3 inheritUnionField/resolveInFlow +3 → 617.** The in-flow union resolution cache was never populated → RulePtrArith saw the union-member load as TYPE_UNION (needsResolution) and declined the offset-4 PTRSUB fold. Added the producer `resolve_in_flow` in propagate_type_edge (coreaction_infertypes.rs:398, coreaction.cc:5335) + inheritUnionField/forceFacingType PTRADD/PTRSUB/RuleStructOffset0 consumer arms (addtreestate.rs:739/773, ruleaction_5.rs, ruleaction.cc:6524/6741) + RulePtraddUndo/RuleSubRight facing fix (ruleaction_6.rs:373/955, stops the RulePtrArith oscillation). Gained Union #4/#25/#27. Gate: `[675,617]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Review `reviews/w10-union-inherit-field.md`. Union #14/#17 = Family-2 longField (separate).
 

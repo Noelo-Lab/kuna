@@ -3153,7 +3153,9 @@ heritage.cc:1705/1734/1891 — boundaries come ONLY from actual varnode start/en
   re-tighten the test's byte-identical compare to full identity. Low priority (cosmetic, 0 datatests).
   [[kuna-rust-port]]
 
-## LOSS-239 — Stack spill (5) JOIN substrate landed (+0 enabler); blocked on the `dvar` local-naming seam
+## LOSS-239 — Stack spill (5) RESOLVED (JOIN substrate + dvar naming both landed)
+
+**RESOLVED 2026-06-18:** the `dvar` naming wave found the prior ruling-out was WRONG — `ActionNameVars::makeRec`/`lookForFuncParamNames` DOES fire; the gate was `ParameterBasic::set_type_lock` (fspec.rs) not name-locking named params (C++ `ParameterSymbol::setTypeLock` fspec.cc:3056 sets namelock when `!isNameUndefined`, via `FuncProto::setInputLock` fspec.cc:3936). Fixed `set_input_lock` (fspec.rs:5087) + ported makeRec/lookForFuncParamNames (coreaction_cleanup.rs) → Stack spill #2/3/4/5 gained. #1 (struct-member-read explicit-marking) remains. Original (now-corrected) note below.
 
 - kind: deferred (substrate landed, naming seam remains)
 - what: `stackspill.xml` #1-#5 need a MIPS struct-by-value arg (`foo d`, 8B) that the cspec
