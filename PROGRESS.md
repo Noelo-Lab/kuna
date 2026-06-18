@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 641/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 644/675; +...clone-gate audit, deindirect-output-type
+
+**printc pushPartialSymbol arms +3 → 644 (LOSS-240 Enum was WRONG — no oscillation, it's a printc stub).** The stack symbol converges cleanly to enumstruct STRUCT(16); the gap was PrintC::pushPartialSymbol (printc.rs, printc.cc:2019) stubbed arms: the allowCast SUBPIECE-cast arm (cc:2094) + the artificial `._<off>_<size>_` member arm (cc:2106) returned false → bare `v1`. Implemented both + ZPULL/SPULL bitfield break (cc:2057) + whole-composite decl → `(undefined1)v1.flagfield` (#1) / `v1.flagfield._4_4_` (#2); fixed the artificial-arm mis-fire on stack bitfield stores via push_bitfield_struct_symbol (cc:2633). Gained Enum Reading #1/#2 + Return Value Input Register #5. Gate: `[675,644]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Switch Loop refined a 5th time (heritage PROVEN faithful; gate = oppool1 latch-resident R8=COPY(R8) subregister-collapse remnant; blocked on unavailable C++ oppool1 IR).
 
 **printc array-subscript hex/dec render +2 → 641.** Three C array-subscript sites emitted the index with `format!({index})` (unconditional decimal); C++ pushPartialSymbol (printc.cc:2128) renders via push_integer so element 11 prints `arr[0xb]` (val<=10→dec rule). Routed printc.rs:4676/5048/4778 through push_constant_ir_fmt_sign. Gained Partial splitting #2 + Stack string #5. Gate: `[675,641]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Bitfields #18 deferred (LOSS-241: transient field3-AX over-merged into addrtied 5-instance return high → forced explicit → split; IR byte-identical). Switch Loop latch-COPY refined (LOSS-231 UPDATE 4: heritage loop-carried SSA/COPY placement; clearing the immed regresses copytrim/partialunion).
 
