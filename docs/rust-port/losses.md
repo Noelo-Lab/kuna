@@ -2797,3 +2797,26 @@ universalaction.rs:672/690/698, analyze_for_loops default true seams.rs:593).
   #1 — easily 8-12 assertions). Loci: heritage.rs/coreaction_stackptr/ActionExtraPopSetup +
   ActionDeadCode for the spacebase-pinned no-descendant COPYs. HAZARD: the switch datatests (the
   10fc2ab revert reason) — must stay green. [[kuna-rust-port]]
+
+## LOSS-236 — func_link_output LOCKED-output seam: gates packed-fields + retstruct/Return-Structure cluster (~15)
+
+- kind: deferred (high-value CALL-output recovery seam)
+- what: `ActionFuncLink::func_link_output` (coreaction_protos.rs:736-740) — the LOCKED-output build is an
+  unimplemented SEAM. When `is_output_locked()` is true it does nothing and relies on
+  ActionActiveReturn, so a committed-prototype callee returning a struct/value in a register (e.g.
+  `tinystruct getstruct(int4)`) never gets its typed output varnode → stays `xunknown8` → the
+  SUBPIECE-at-offset ops never resolve to packed field accesses (`v1.a`/`(int4)v1.b`/`(int4)v1.c`).
+  Confirmed: call spec IS input+output-locked with `tinystruct`, but no typed output varnode created.
+- root/fix: transcribe C++ `ActionFuncLink::funcLinkOutput` LOCKED-output arm (coreaction.cc:1582-1613):
+  `data.newVarnodeOut(sz, addr, callop)` for a non-spacebase non-bool locked output, + (only if
+  `fc->assumedOutputExtension(...) != COPY`) insert the post-call INT_SEXT/ZEXT/PIECE extension. For
+  the 8-byte-struct-in-8-byte-reg case assumedOutputExtension=COPY → just the newVarnodeOut. Downstream
+  is READY: locked-output typing is wired (coreaction_infertypes.rs:219 call_output_type_local), and
+  PrintC SUBPIECE→field render works for struct-typed varnodes (passing array/nested-offset cases).
+  May need `FuncCallSpecs::assumedOutputExtension` ported (fspec.cc).
+- gates: Access packed fields (4) + likely retstruct/retspecial/stackreturn/Return Structure (~15
+  total — every committed-prototype callee returning a struct/value in a register).
+- HAZARD: func_link_output is shared by every locked-output call site — regression risk on any
+  committed-prototype-callee datatest; full passing-set diff is the safety net. (This is the LOCKED
+  sibling of the killedbycall/init_active_output UNLOCKED arm landed earlier.) [[kuna-rust-port]]
+- recorded by the integrator after the Access packed fields wave BLOCKED (2026-06-18).
