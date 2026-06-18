@@ -138,6 +138,48 @@ pub trait FuncProtoOverride {
     /// Append a debug description of the prototype (C++ `FuncProto::printRaw`,
     /// here always with the C++ literal name `"func"`).
     fn print_raw(&self, s: &mut String);
+
+    /// The parsed [`PrototypePieces`](crate::fspec::PrototypePieces) this override
+    /// forces, when it is a parsed-declaration override (`override prototype <addr>
+    /// <decl>`).  `None` for an XML-decoded / non-pieces override.  Drives
+    /// `FlowInfo`'s flow-time `applyPrototype` (C++ `Override::applyPrototype` →
+    /// `fspecs.copy(*proto)`): the pieces are built into a locked `FuncProto`
+    /// copied onto the matching call spec.
+    fn pieces(&self) -> Option<&crate::fspec::PrototypePieces> {
+        None
+    }
+}
+
+/// A [`FuncProtoOverride`] backed by parsed [`PrototypePieces`](crate::fspec::PrototypePieces),
+/// the value an `override prototype <addr> <decl>` installs (C++ `IfcProtooverride`
+/// builds a `FuncProto` from the pieces; the kuna store keeps the pieces and
+/// reconstructs the `FuncProto` at flow-time `applyPrototype`).  Mirrors the
+/// console's wrapper; lives here so the re-seed path
+/// ([`crate::decompile_drive`]) can construct it without depending on the console
+/// crate.
+pub struct PiecesProtoOverride {
+    /// The parsed prototype declaration.
+    pub pieces: crate::fspec::PrototypePieces,
+}
+
+impl FuncProtoOverride for PiecesProtoOverride {
+    fn set_override(&mut self, _val: bool) {
+        // The override flag rides on the rebuilt `FuncProto` (set in
+        // `ArchFlowEnv::build_override_proto`), not on the pieces.
+    }
+    fn encode(&self, _encoder: &mut dyn Encoder) -> KunaResult<()> {
+        Err(KunaError::lowlevel(
+            "kuna rust port: prototype-override encode needs the W4 FuncProto::encode",
+        ))
+    }
+    fn print_raw(&self, s: &mut String) {
+        s.push_str("func(");
+        s.push_str(&self.pieces.intypes.len().to_string());
+        s.push(')');
+    }
+    fn pieces(&self) -> Option<&crate::fspec::PrototypePieces> {
+        Some(&self.pieces)
+    }
 }
 
 /// The W4 construct-and-decode callback used by [`Override::decode`] for the

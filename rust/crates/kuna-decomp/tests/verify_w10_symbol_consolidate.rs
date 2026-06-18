@@ -87,6 +87,8 @@ fn typed_entry(
         symbol_offset: offset,
         symbol_type,
         scope_path: Vec::new(),
+        is_function: false,
+        func_inject_id: -1,
     }
 }
 

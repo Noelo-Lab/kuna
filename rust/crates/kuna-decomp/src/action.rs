@@ -564,6 +564,13 @@ pub struct ActionContext {
     /// function.  See `LOSS` in the call-site recovery review (restart re-flow is
     /// the next blocker).
     pub can_reflow: bool,
+    /// Set by [`ActionRestartGroup::apply`] when a restart is pending but the
+    /// action loop itself cannot re-follow flow (`!can_reflow`): the outer driver
+    /// ([`crate::decompile_drive`]'s `run_pipeline`) owns the `Architecture` and
+    /// the SLEIGH translator, so it re-follows flow and re-performs the root.  The
+    /// `restart_pending` flag on the Funcdata is left SET in this case (the outer
+    /// loop consumes it after re-flow), unlike the in-loop restart which clears it.
+    pub reflow_requested: bool,
 }
 
 impl ActionContext {
@@ -836,16 +843,15 @@ impl Action for ActionRestartGroup {
                 return 0;
             }
             if !ctx.can_reflow {
-                // SEAM(ActionStart re-flow): the C++ restart re-follows flow
-                // (`startProcessing` → `followFlow`) to rebuild the IR; the Rust
-                // flow follower needs the `Architecture`'s SLEIGH translator, which
-                // is not threaded into the action loop yet.  Clearing the IR here
-                // without re-flowing would leave an empty function, so the restart
-                // is dropped and the current (already-analyzed) IR is kept — a
-                // strictly better result than the empty body.  The restart-pending
-                // flag is cleared so downstream passes do not re-trip on it.
-                data.set_restart_pending(false);
-                self.curstart = -1;
+                // The C++ restart re-follows flow (`startProcessing` →
+                // `followFlow`) to rebuild the IR; the Rust flow follower needs the
+                // `Architecture`'s SLEIGH translator, which is NOT available inside
+                // the action loop (the loop carries only the IR-boundary `glb`
+                // handle).  Hand the restart up to the outer driver
+                // (`run_pipeline`), which owns `&mut Architecture`: it re-follows
+                // flow and re-performs this root.  Leave `restart_pending` SET so
+                // the outer loop sees the request; signal it via the context.
+                ctx.reflow_requested = true;
                 return 0;
             }
             self.curstart += 1;

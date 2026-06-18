@@ -2822,6 +2822,11 @@ impl Database {
                         symbol_offset: entry.get_offset(),
                         symbol_type: sym.dtype.clone(),
                         scope_path: scope_path.clone(),
+                        is_function: matches!(sym.kind, SymbolKind::Function { .. }),
+                        func_inject_id: match sym.kind {
+                            SymbolKind::Function { inject_id, .. } => inject_id,
+                            _ => -1,
+                        },
                     });
                 }
             }

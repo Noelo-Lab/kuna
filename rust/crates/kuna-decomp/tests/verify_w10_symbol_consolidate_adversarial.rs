@@ -88,6 +88,8 @@ fn named_entry(
         symbol_offset: offset,
         symbol_type: None,
         scope_path: Vec::new(),
+        is_function: false,
+        func_inject_id: -1,
     }
 }
 
