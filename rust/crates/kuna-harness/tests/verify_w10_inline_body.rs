@@ -200,18 +200,27 @@ fn w10_inline_body_header_warnings_are_real_oracle_parity() {
              cloned call target to its real symbol) in:\n{out}"
         );
     }
-    // 11/12 now pass (baseline 0/12, pre-w10 3/12 header-only, w10 6/12 +SBORROW
+    // w10-unsigned-cast: `PrintC::push_integer` now threads the Varnode's
+    // `isUnsignedPrint()` flag (set by `CastStrategy::markExplicitUnsigned`
+    // during ActionSetCasts) into the rendered integer token, so the AND
+    // constant in the inlined `collatz` body prints `1U` — `#5` (`if ((val &
+    // 1U)`) newly passes.  The cast predicate was already faithful (the inlined
+    // `val` resolves to signed `int4`, so markExplicitUnsigned correctly set the
+    // flag); the gap was purely the print path dropping the `U` suffix.
+    for n in ["Inlining #5"] {
+        assert!(
+            out.contains(&format!("Success -- {n}")),
+            "expected `Success -- {n}` (`val & 1U` — push_integer threaded the \
+             Varnode isUnsignedPrint flag into the rendered literal) in:\n{out}"
+        );
+    }
+    // 12/12 now pass (baseline 0/12, pre-w10 3/12 header-only, w10 6/12 +SBORROW
     // 7/12, +pushPtrCharConstant 8/12 (#4), +comment-rendering 9/12 (#9),
-    // +inline-fspec-unwrap 11/12 (#3, #8)).  #5 (`val & 1U` — the `U` unsigned
-    // suffix on the AND constant) is a deferred typing seam (the inlined `val`'s
-    // recovered metatype must be signed `int4` so `CastStrategy::markExplicit-
-    // Unsigned` forces the suffix; cast.rs:291 short-circuits on TYPE_UINT/
-    // UNKNOWN), not an inline-flow defect — tracked for the type-recovery wave.
+    // +inline-fspec-unwrap 11/12 (#3, #8), +unsigned-cast print 12/12 (#5)).
     assert!(
-        out.contains("Total passing tests = 11"),
+        out.contains("Total passing tests = 12"),
         "inline.xml must pass its 3 header + 3 body + 1 SBORROW + 1 string-literal \
-         + 1 comment-warning + 2 fspec-unwrap assertions (11/12); the lone fail is \
-         #5 (`val & 1U`, deferred typing seam):\n{out}"
+         + 1 comment-warning + 2 fspec-unwrap + 1 unsigned-cast assertions (12/12):\n{out}"
     );
 }
 

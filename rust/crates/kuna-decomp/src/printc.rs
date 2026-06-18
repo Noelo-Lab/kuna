@@ -4719,7 +4719,38 @@ impl PrintC {
             // TYPE_INT — which is what makes a negative `recv_signed(int4)` convert
             // constant print `-512` instead of its unsigned bit pattern.
             let sign = ct.get_metatype() == crate::dtype::type_metatype::TYPE_INT;
-            self.push_constant_ir_fmt_sign(off, sz, op, display_fmt, sign);
+            // C++ `push_integer` (printc.cc:1378-1379) reads the explicit-print
+            // flags off the Varnode: `isUnsignedPrint()` -> a `U` suffix,
+            // `isLongPrint()` -> the `sizeSuffix` ("LL"/"L").  These are set by
+            // `CastStrategy::markExplicitUnsigned`/`markExplicitLongSize` during
+            // ActionSetCasts; without threading them here the `(val & 1U)` /
+            // `<long>L` literals lose their suffix.
+            let (force_unsigned, force_sized) = fd
+                .vbank()
+                .get(vn)
+                .map(|v| (v.is_unsigned_print(), v.is_long_print()))
+                .unwrap_or((false, false));
+            // C++ `sizeSuffix` (printc.cc:2412-2415): "LL" when long and int are
+            // the same width, otherwise "L".
+            let size_suffix = if force_sized {
+                if arch.types().get_size_of_long() == arch.types().get_size_of_int() {
+                    "LL"
+                } else {
+                    "L"
+                }
+            } else {
+                ""
+            };
+            self.push_constant_ir_fmt_sign_flags(
+                off,
+                sz,
+                op,
+                display_fmt,
+                sign,
+                force_unsigned,
+                force_sized,
+                size_suffix,
+            );
             return;
         }
         // HighVariable name resolution (C++ `pushSymbolDetail`: `high->getSymbol()`
@@ -5365,8 +5396,35 @@ impl PrintC {
         display_fmt_in: u32,
         sign: bool,
     ) {
+        self.push_constant_ir_fmt_sign_flags(val, sz, op, display_fmt_in, sign, false, false, "");
+    }
+
+    /// As [`push_constant_ir_fmt_sign`](Self::push_constant_ir_fmt_sign) but
+    /// threading the Varnode's `isUnsignedPrint()`/`isLongPrint()` flags, exactly
+    /// as C++ `PrintC::push_integer` (printc.cc:1378-1379) reads them from the
+    /// `vn` argument.  `force_unsigned` appends the `U` suffix and `force_sized`
+    /// appends `size_suffix` (the `sizeSuffix` member, "LL"/"L", printc.cc:1430-
+    /// 1433).  C++ clears `force_unsigned_token` when the value is printed signed
+    /// (printc.cc:1387) — i.e. when `sign` is set and the format is not
+    /// `force_char` — so this mirrors that gate before emitting the `U`.
+    #[allow(clippy::too_many_arguments)]
+    fn push_constant_ir_fmt_sign_flags(
+        &mut self,
+        val: uintb,
+        sz: int4,
+        op: OpId,
+        display_fmt_in: u32,
+        sign: bool,
+        force_unsigned: bool,
+        force_sized: bool,
+        size_suffix: &str,
+    ) {
         let force_dec = self.context.is_set(modifiers::FORCE_DEC);
         let force_hex = self.context.is_set(modifiers::FORCE_HEX);
+        // C++ `push_integer` (printc.cc:1387): the `U` suffix is suppressed when
+        // the constant is rendered as signed (sign && displayFormat != force_char).
+        let signed_render = sign && display_fmt_in != display_format::FORCE_CHAR;
+        let force_unsigned = force_unsigned && !signed_render;
         let (print_negsign, val, display_fmt) =
             resolve_integer_format(val, sz, sign, display_fmt_in, force_hex, force_dec);
         // C++ `push_integer` (printc.cc:1417) gates the wide-char `L` prefix on
@@ -5378,10 +5436,10 @@ impl PrintC {
             val,
             display_fmt,
             sz,
-            false,
-            false,
+            force_unsigned,
+            force_sized,
             true, // doEmitWideCharPrefix() — PrintC
-            "",
+            size_suffix,
         );
         self.push_atom(&Atom::with_op(
             tok,
