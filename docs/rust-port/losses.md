@@ -2758,3 +2758,21 @@ gatherExpression/constructBool). In rust the MULTIEQUALs survive to post-pool lo
   beginMultiEntry seam (merge.rs:421-433, W7/W4 unported; C++ merge.cc:609-648). NO conditional/printc
   fix applies. This mergeAddrTied seam likely gates other addr-tied-merge cases broadly. [[kuna-rust-port]]
 - recorded by the integrator after the Immediate Conditional wave BLOCKED (2026-06-18).
+
+## LOSS-235 — for-loop structuring UNPORTED (big cluster) + char-constant type-inference seam
+
+From the Pointer Compare wave:
+- **For-loop structuring is UNPORTED** (Pointer Compare #1 + ALL forloop*.xml): the rust engine emits
+  `while(true){ if(<cond>) break; ...; <incr>; }` instead of `for(init; cond; incr){...}`. Gates the
+  whole For-loop family (For-loop #1.., For-loop var used, For-loop with skip, For-loop thru special,
+  For-loop iterator load, etc. — a LARGE cluster). Locus: `blockaction.rs` for-loop recovery — C++
+  `BlockWhileDo::finalTransform`/`ActionBlockStructure` for-loop pattern (`block.cc`/`blockaction.cc`
+  the `whiledo`→`for` conversion). A dedicated structuring wave. (Note: the shelf branch
+  `rport/w10-forloop-reroll` may have prior context.)
+- **char-constant type-inference seam** (Pointer Compare #3 `*pchar = 'a'`): the faithful printc
+  `pushCharConstant` arm (printc.cc:1819/1827, `is_char_print`) was TRANSCRIBED + validated (produces
+  `*pchar = 'a'`) but BLOCKED because it regresses `sbyte.xml Signed byte #4` (`v1 <= 0x61` → `v1 <=
+  'a'`): rust types the sbyte COMPARE constant `0x61` as `char` where C++ types it `int1`. Root: the
+  read-facing type propagation `propagate_across_compare` (coreaction_infertypes.rs:961) hands the
+  compare's char operand-type onto the constant; needs to match C++ (int1 for sbyte compare, char for
+  the pointercmp store). Once fixed, re-add the validated pushCharConstant arm for +1+. [[kuna-rust-port]]

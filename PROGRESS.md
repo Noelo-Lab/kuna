@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 486/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 488/675; +...clone-gate audit, deindirect-output-type
+
+**Pointer-compare decl render +2 → 488.** `type_name_for_decl` (printc.rs:5646) flattened unnamed decl types to undefined<N>; routed TYPE_PTR through declarator_parts (PrintC::pushTypeStart printc.cc:265) → `char *pchar`. Gained Pointer Compare #2, Relative base #4. Gate: `[675,488]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Two NEW roots found (LOSS-235): Pointer Compare #1 = FOR-LOOP STRUCTURING entirely unported (blockaction.rs — gates ALL forloop*.xml, a BIG cluster); Pointer Compare #3 = char-constant type-inference (sbyte compare-const wrongly typed char by propagate_across_compare infertypes.rs:961 — the faithful pushCharConstant arm is ready but blocked).
 
 **RuleInt2FloatCollapse +1 → 486.** Ported the stubbed body (ruleaction_8.rs:397, SEAM findCondition/newUniqueOut now resolvable) + a local find_condition helper (block.cc:839): the unsigned-64→double idiom `(int8)v1<0 ? (float8)v1 : (float8)(int8)v1` folds to single `FLOAT_INT2FLOAT(zext(basevn))` (ruleaction.cc:9878). Gained Floating-point convert #2. Gate: `[675,486]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. floatconv #3 (unsigned-long-long variant) = separate root (RuleUnsigned2Float wider-zext path).
 
