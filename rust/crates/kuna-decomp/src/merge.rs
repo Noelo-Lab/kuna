@@ -914,8 +914,9 @@ impl MergeIntersect {
         if !cache.affecting_ops_mut().is_populated() {
             ctx.populate_affecting_ops(cache.affecting_ops_mut());
         }
+        let rep_addr = ctx.vn_loc_view(vn).addr;
         let untied_cover = ctx.high_get_cover(untied);
-        untied_cover.intersect_op_set(cache.affecting_ops_mut(), vn)
+        untied_cover.intersect_op_set(cache.affecting_ops_mut(), &rep_addr)
     }
 
     /// Update a HighVariable's Cover if dirty, purging stale cache tests (C++

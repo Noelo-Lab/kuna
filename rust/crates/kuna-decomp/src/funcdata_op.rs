@@ -128,6 +128,26 @@ impl Funcdata {
             .set_flag(crate::op::pcodeop_flags::nocollapse);
     }
 
+    /// Mark a PcodeOp as a LOAD/STORE through a spacebase pointer (C++
+    /// `Funcdata::opMarkSpacebasePtr`, `funcdata.hh:496` —
+    /// `op->setFlag(PcodeOp::spacebase_ptr)`).
+    pub fn op_mark_spacebase_ptr(&mut self, op: OpId) {
+        self.obank_mut()
+            .get_mut(op)
+            .expect("op_mark_spacebase_ptr: stale op")
+            .set_flag(pcodeop_flags::spacebase_ptr);
+    }
+
+    /// Unmark a PcodeOp as using a spacebase pointer (C++
+    /// `Funcdata::opClearSpacebasePtr`, `funcdata.hh:497` —
+    /// `op->clearFlag(PcodeOp::spacebase_ptr)`).
+    pub fn op_clear_spacebase_ptr(&mut self, op: OpId) {
+        self.obank_mut()
+            .get_mut(op)
+            .expect("op_clear_spacebase_ptr: stale op")
+            .clear_flag(pcodeop_flags::spacebase_ptr);
+    }
+
     /// Mark a PcodeOp as having a boolean output (C++
     /// `Funcdata::opMarkCalculatedBool`, `funcdata.hh:495` —
     /// `op->setFlag(PcodeOp::calculated_bool)`).

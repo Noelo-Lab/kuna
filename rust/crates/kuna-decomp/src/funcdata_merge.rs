@@ -875,7 +875,68 @@ impl MergeContext for Funcdata {
     }
     fn symbol_set_merge_problems(&mut self, _symbol: u64) {}
     fn symbol_merge_warning(&mut self, _symbol: u64, _m: int4, _s: int4, _c: int4) {}
-    fn populate_affecting_ops(&self, _op_set: &mut PcodeOpSet) {}
+    fn populate_affecting_ops(&self, op_set: &mut PcodeOpSet) {
+        // C++ `StackAffectingOps::populate` (merge.cc:63): add every CALL op,
+        // then every still-valid store-guard STORE; finalize; then `affectsTest`
+        // (merge.cc:78) does the secondary test (a STORE consults its store-guard
+        // `isGuarded(vn->getAddr())`, a CALL always affects).
+        use crate::cover::PcodeOpSetEntry;
+        use kuna_base::types::uintb;
+
+        // CALL-arm: every call site (data.numCalls()/getCallSpecs(i)->getOp()).
+        for i in 0..self.num_calls() {
+            let op = self.get_call_specs(i).get_op();
+            let (block_index, point) = self.op_cover_point(op);
+            let order = self.op_order(op);
+            op_set.add_op_entry(PcodeOpSetEntry { id: op, block_index, point, order });
+        }
+
+        // store-guard arm: every store-guard whose op is still a live STORE
+        // (`(*iter).isValid(CPUI_STORE)`), plus snapshot its guard range so the
+        // `affectsTest` closure can run `isGuarded(vn->getAddr())` without the
+        // arena.
+        let mut guard_ranges: Vec<(OpId, Rc<kuna_base::space::AddrSpace>, uintb, uintb)> =
+            Vec::new();
+        for guard in self.get_store_guards() {
+            let op = guard.op;
+            let valid = self
+                .obank()
+                .get(op)
+                .map(|o| !o.is_dead() && o.code() == OpCode::CPUI_STORE)
+                .unwrap_or(false);
+            if !valid {
+                continue;
+            }
+            let (block_index, point) = self.op_cover_point(op);
+            let order = self.op_order(op);
+            op_set.add_op_entry(PcodeOpSetEntry { id: op, block_index, point, order });
+            guard_ranges.push((
+                op,
+                Rc::clone(&guard.spc),
+                guard.get_minimum(),
+                guard.get_maximum(),
+            ));
+        }
+
+        op_set.finalize_pub();
+
+        // Bind the secondary `affectsTest`: a STORE with a guard tests
+        // `isGuarded(addr)`; a STORE without a guard (or a CALL) always affects.
+        op_set.set_affects(Box::new(move |op, addr: &kuna_base::address::Address| {
+            match guard_ranges.iter().find(|(g, ..)| *g == op) {
+                None => true, // not a guarded STORE (a CALL, or a STORE with no record)
+                Some((_, spc, min, max)) => {
+                    // LoadGuard::isGuarded(addr): same space, offset within range.
+                    match addr.get_space() {
+                        Some(s) if Rc::ptr_eq(s, spc) => {}
+                        _ => return false,
+                    }
+                    let off = addr.get_offset();
+                    off >= *min && off <= *max
+                }
+            }
+        }));
+    }
     fn gather_pieces(&self, vn: VarnodeId, base_offset: int4) -> Vec<(VarnodeId, int4)> {
         // PieceNode::gatherPieces(pieces, vn, vn->getDef(), baseOffset, baseOffset)
         let def = match self.vbank().get(vn).and_then(|v| v.get_def()) {

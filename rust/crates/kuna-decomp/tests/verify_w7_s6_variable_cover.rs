@@ -171,7 +171,7 @@ fn intersect_op_set_skips_boundary_ops() {
 
     let tested: Rc<RefCell<Vec<u64>>> = Rc::new(RefCell::new(Vec::new()));
     let tested_c = Rc::clone(&tested);
-    let affects = move |op: OpId, _vn: VarnodeId| {
+    let affects = move |op: OpId, _addr: &kuna_base::address::Address| {
         use slotmap::Key;
         tested_c.borrow_mut().push(op.data().as_ffi());
         true // claim every interior op affects => first interior op returns true
@@ -186,8 +186,8 @@ fn intersect_op_set_skips_boundary_ops() {
     let mut op_set = PcodeOpSet::new(Box::new(populate), Box::new(affects));
     op_set.populate();
 
-    let rep = VarnodeId::from(KeyData::from_ffi(7));
-    let res = cover.intersect_op_set(&op_set, rep);
+    let rep_addr = kuna_base::address::Address::new_invalid();
+    let res = cover.intersect_op_set(&op_set, &rep_addr);
     // The interior op (15) is contained and not on a boundary => affectsTest
     // fires and returns true.
     assert!(res);

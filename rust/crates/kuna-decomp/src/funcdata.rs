@@ -823,6 +823,18 @@ impl Funcdata {
         self.heritage.get_pass()
     }
 
+    /// Get the list of guarded STOREs (C++ `Funcdata::getStoreGuards`,
+    /// `funcdata.hh:277` — `heritage.getStoreGuards()`).
+    pub fn get_store_guards(&self) -> &[crate::heritage::LoadGuard] {
+        self.heritage.get_store_guards()
+    }
+
+    /// Get the LoadGuard associated with a STORE op, if any (C++
+    /// `Funcdata::getStoreGuard`, `funcdata.hh:278` — `heritage.getStoreGuard(op)`).
+    pub fn get_store_guard(&self, op: crate::seams::OpId) -> Option<&crate::heritage::LoadGuard> {
+        self.heritage.get_store_guard(op)
+    }
+
     /// Force the heritage engine to regenerate its block structures on the next
     /// pass (C++ `Funcdata::structureReset` -> `heritage.forceRestructure()`).
     ///

@@ -1362,8 +1362,39 @@ impl Heritage {
             // wave's `ScopeLocal` and is left as a documented seam.  Local stack
             // ranges are not persistent, so `fl`'s persist bit comes only from the
             // global query here, which is faithful for the global-store cases.)
+            //
+            // NOTE (LOSS-156 gate, w10-stacklocal-typing): the local-scope half of
+            // this walk is now AVAILABLE as `fd.query_local_properties(addr,size,
+            // usepoint)` (the faithful `localmap->queryProperties` port — see
+            // `Funcdata::query_local_properties` / `ScopeLocal::query_properties`).
+            // OR-ing it into `fl` here is the FULL fix for `map addr`-mapped stack
+            // structs (it gains Partial splitting #15-19 + Wayoff array #1 by giving
+            // a mapped stack range `addrtied`, so `guard_calls` builds the INDIRECT
+            // that keeps its stores live across calls and `propagateSpacebaseRef`
+            // types it). It is held OUT here because enabling it ALSO exposes two
+            // downstream gaps that regress 4 assertions: (a) addrForced array stores
+            // do not store-cross-merge (varcross "Store cross #1/#2"), and (b) a
+            // typed stack struct's `&v1.arr1[a]` intermediate pointer is not
+            // forwarded/collapsed (dupptr "Intermediate pointers #3/#5"). Wire this
+            // OR once the store-cross-merge + pointer-forwarding gaps close.
             let usepoint = Address::new_invalid();
-            let fl: uint4 = fd.get_arch().query_global_properties(addr, size, &usepoint);
+            let mut fl: uint4 = fd.get_arch().query_global_properties(addr, size, &usepoint);
+            // (kuna w10-chainb-gap1) WIRED: the local-scope OR — the faithful
+            // `localmap->queryProperties` half of `Heritage::guard`'s
+            // `queryProperties` (heritage.cc:1192).  This gives a `map addr`-mapped
+            // stack range its `mapped|addrtied` properties, so `guard_calls`/
+            // `guard_stores` build the INDIRECT that keeps its stores live across
+            // calls and `propagateSpacebaseRef` types the symbol.  Both prior
+            // downstream gaps are now CLOSED: Gap-2 (intermediate-pointer spill)
+            // by the `add_map` is_global persist fix (database.rs, chainb-gaps);
+            // Gap-1 (addrforced mapped-array store-cross merge, varcross "Store
+            // cross #1/#2") by the W7 `StackAffectingOps::populate` +
+            // W6 `discoverIndexedStackPointers` store-guard source landed in this
+            // wave — `Merge::testUntiedCallIntersection`'s cover test now sees the
+            // loop store `*v1=0` as a store-guard and blocks ECX from folding into
+            // `local_array[10]`.  Net +7 (Partial splitting #15-19, Wayoff array
+            // #1, No-for-loop alias #3), regressed-set empty.
+            fl |= fd.query_local_properties(addr, size, &usepoint);
             self.guard_calls(fd, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
             // if (fd->getArch()->highPtrPossible(addr,size)) { guardStores; guardLoads; }
@@ -3243,6 +3274,348 @@ impl Heritage {
         self.merge.clear();
     }
 
+    /// Generate a guard record for an indexed LOAD into a stack space (C++
+    /// `Heritage::generateLoadGuard`, `heritage.cc:910`).
+    fn generate_load_guard(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        offset: uintb,
+        op: crate::seams::OpId,
+        spc: &Rc<AddrSpace>,
+    ) {
+        let uses = fd.obank().get(op).expect("generate_load_guard: stale op").uses_spacebase_ptr();
+        if !uses {
+            self.load_guard.push(LoadGuard::set(op, spc, offset));
+            fd.op_mark_spacebase_ptr(op);
+        }
+    }
+
+    /// Generate a guard record for an indexed STORE to a stack space (C++
+    /// `Heritage::generateStoreGuard`, `heritage.cc:927`).
+    fn generate_store_guard(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        offset: uintb,
+        op: crate::seams::OpId,
+        spc: &Rc<AddrSpace>,
+    ) {
+        let uses = fd.obank().get(op).expect("generate_store_guard: stale op").uses_spacebase_ptr();
+        if !uses {
+            self.store_guard.push(LoadGuard::set(op, spc, offset));
+            fd.op_mark_spacebase_ptr(op);
+        }
+    }
+
+    /// Identify CPUI_STORE ops that use a free pointer from a given address space
+    /// (C++ `Heritage::protectFreeStores`, `heritage.cc:945`).
+    fn protect_free_stores(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        spc: &Rc<AddrSpace>,
+        free_stores: &mut Vec<crate::seams::OpId>,
+    ) -> bool {
+        use kuna_num::opcodes::OpCode;
+        let stores: Vec<crate::seams::OpId> = fd.obank().iter_code(OpCode::CPUI_STORE).collect();
+        let mut has_new = false;
+        for op in stores {
+            let dead = fd.obank().get(op).expect("protect_free_stores: stale op").is_dead();
+            if dead {
+                continue;
+            }
+            // vn = op->getIn(1); strip COPY / INT_ADD-by-constant chains.
+            let mut vn = match fd.obank().get(op).and_then(|o| o.get_in(1)) {
+                Some(v) => v,
+                None => continue,
+            };
+            loop {
+                let written = fd.vbank().get(vn).expect("protect_free_stores: stale vn").is_written();
+                if !written {
+                    break;
+                }
+                let def = fd
+                    .vbank()
+                    .get(vn)
+                    .and_then(|v| v.get_def())
+                    .expect("protect_free_stores: written vn has def");
+                let opc = fd.obank().get(def).expect("protect_free_stores: stale def").code();
+                if opc == OpCode::CPUI_COPY {
+                    vn = fd.obank().get(def).and_then(|o| o.get_in(0)).expect("COPY in0");
+                } else if opc == OpCode::CPUI_INT_ADD
+                    && fd
+                        .obank()
+                        .get(def)
+                        .and_then(|o| o.get_in(1))
+                        .map(|v| fd.vbank().get(v).map(|x| x.is_constant()).unwrap_or(false))
+                        .unwrap_or(false)
+                {
+                    vn = fd.obank().get(def).and_then(|o| o.get_in(0)).expect("INT_ADD in0");
+                } else {
+                    break;
+                }
+            }
+            let (is_free, same_spc) = {
+                let v = fd.vbank().get(vn).expect("protect_free_stores: stale vn (test)");
+                (v.is_free(), Rc::ptr_eq(v.get_space(), spc))
+            };
+            if is_free && same_spc {
+                fd.op_mark_spacebase_ptr(op); // mark op as spacebase STORE, even though unsure
+                free_stores.push(op);
+                has_new = true;
+            }
+        }
+        has_new
+    }
+
+    /// Trace input stack-pointer to any indexed LOAD/STORE, generating guard
+    /// records (C++ `Heritage::discoverIndexedStackPointers`, `heritage.cc:987`).
+    ///
+    /// Returns `true` if there are incomplete (free-pointer) STOREs needing a
+    /// follow-up pass, passing those back in `free_stores`.
+    ///
+    /// The C++ holds a live `list<PcodeOp*>::const_iterator` inside each
+    /// `StackNode`; here each node snapshots its Varnode's descendant op list
+    /// (read-only during the walk) and an index cursor — the same DFS order.
+    fn discover_indexed_stack_pointers(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        spc: &Rc<AddrSpace>,
+        free_stores: &mut Vec<crate::seams::OpId>,
+        check_free_stores: bool,
+    ) -> bool {
+        use kuna_num::opcodes::OpCode;
+
+        /// One node of the DFS over stack-pointer descendants (C++
+        /// `Heritage::StackNode`, with the live iterator replaced by a snapshot).
+        struct StackNode {
+            vn: crate::seams::VarnodeId,
+            offset: uintb,
+            traversals: uint4,
+            descend: Vec<crate::seams::OpId>,
+            iter: usize,
+        }
+
+        // We mark Varnodes independently of the depth-first path to avoid
+        // exponential ladders.
+        let mut marked_vn: Vec<crate::seams::VarnodeId> = Vec::new();
+        let mut path: Vec<StackNode> = Vec::new();
+        let mut unknown_stack_storage = false;
+
+        let num_sb = spc.num_spacebase();
+        for i in 0..num_sb {
+            let stack_pointer = match spc.get_spacebase(i) {
+                Ok(sp) => sp,
+                Err(_) => continue,
+            };
+            let sp_addr = Address::new(
+                stack_pointer.space.clone().expect("spacebase has space"),
+                stack_pointer.offset,
+            );
+            let sp_input = match fd.find_varnode_input(stack_pointer.size as int4, &sp_addr) {
+                Some(v) => v,
+                None => continue,
+            };
+            let descend: Vec<crate::seams::OpId> =
+                fd.vbank().get(sp_input).expect("sp_input vn").descend_iter().collect();
+            path.push(StackNode { vn: sp_input, offset: 0, traversals: 0, descend, iter: 0 });
+
+            while let Some(cur) = path.last_mut() {
+                if cur.iter >= cur.descend.len() {
+                    path.pop();
+                    continue;
+                }
+                let op = cur.descend[cur.iter];
+                cur.iter += 1;
+                let cur_vn = cur.vn;
+                let cur_offset = cur.offset;
+                let cur_traversals = cur.traversals;
+
+                let out_vn = fd.obank().get(op).and_then(|o| o.get_out());
+                if let Some(ov) = out_vn {
+                    let marked = fd.vbank().get(ov).map(|v| v.is_mark()).unwrap_or(false);
+                    if marked {
+                        continue; // Don't revisit Varnodes
+                    }
+                }
+                let code = fd.obank().get(op).expect("discover: stale op").code();
+
+                // Helper to push the next node onto the path (or flag unknown
+                // stack storage if the output has no further descendants but
+                // lands in a spacebase space).
+                macro_rules! descend_into {
+                    ($outvn:expr, $newoff:expr, $newtrav:expr) => {{
+                        let ov = $outvn;
+                        let d: Vec<crate::seams::OpId> =
+                            fd.vbank().get(ov).expect("descend_into: stale outvn").descend_iter().collect();
+                        if !d.is_empty() {
+                            fd.vbank_mut().get_mut(ov).expect("descend_into: mark outvn").set_mark();
+                            path.push(StackNode {
+                                vn: ov,
+                                offset: $newoff,
+                                traversals: $newtrav,
+                                descend: d,
+                                iter: 0,
+                            });
+                            marked_vn.push(ov);
+                        } else if fd.vbank().get(ov).map(|v| v.get_space().get_type()).unwrap_or(spacetype::IPTR_CONSTANT)
+                            == spacetype::IPTR_SPACEBASE
+                        {
+                            unknown_stack_storage = true;
+                        }
+                    }};
+                }
+
+                match code {
+                    OpCode::CPUI_INT_ADD => {
+                        let slot = fd.obank().get(op).expect("discover: stale op").get_slot(cur_vn);
+                        let other_vn = fd
+                            .obank()
+                            .get(op)
+                            .and_then(|o| o.get_in(1 - slot))
+                            .expect("INT_ADD other input");
+                        let other_is_const =
+                            fd.vbank().get(other_vn).map(|v| v.is_constant()).unwrap_or(false);
+                        let ov = match out_vn {
+                            Some(v) => v,
+                            None => continue,
+                        };
+                        if other_is_const {
+                            let other_off =
+                                fd.vbank().get(other_vn).expect("INT_ADD const").get_offset();
+                            let new_offset = spc.wrap_offset(cur_offset.wrapping_add(other_off));
+                            descend_into!(ov, new_offset, cur_traversals);
+                        } else {
+                            descend_into!(
+                                ov,
+                                cur_offset,
+                                cur_traversals | stacknode_flags::nonconstant_index
+                            );
+                        }
+                    }
+                    OpCode::CPUI_SEGMENTOP => {
+                        // Check that the stackpointer comes in as the inner pointer.
+                        let in2 = fd.obank().get(op).and_then(|o| o.get_in(2));
+                        if in2 != Some(cur_vn) {
+                            continue;
+                        }
+                        // Treat output as having the same offset (fallthru to COPY).
+                        let ov = match out_vn {
+                            Some(v) => v,
+                            None => continue,
+                        };
+                        descend_into!(ov, cur_offset, cur_traversals);
+                    }
+                    OpCode::CPUI_INDIRECT | OpCode::CPUI_COPY => {
+                        let ov = match out_vn {
+                            Some(v) => v,
+                            None => continue,
+                        };
+                        descend_into!(ov, cur_offset, cur_traversals);
+                    }
+                    OpCode::CPUI_MULTIEQUAL => {
+                        let ov = match out_vn {
+                            Some(v) => v,
+                            None => continue,
+                        };
+                        descend_into!(ov, cur_offset, cur_traversals | stacknode_flags::multiequal);
+                    }
+                    OpCode::CPUI_LOAD => {
+                        // If ANY path had a traversal (non-constant ADD or MULTIEQUAL),
+                        // THIS path must too (the other elements have one path through).
+                        if cur_traversals != 0 {
+                            self.generate_load_guard(fd, cur_offset, op, spc);
+                        }
+                    }
+                    OpCode::CPUI_STORE => {
+                        // Make sure the STORE pointer comes from our path.
+                        let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
+                        if in1 == Some(cur_vn) {
+                            if cur_traversals != 0 {
+                                self.generate_store_guard(fd, cur_offset, op, spc);
+                            } else {
+                                // No traversals: the pointer is the stackpointer plus
+                                // a constant (possibly through an indirect).  Likely
+                                // resolved next heritage pass; keep the spacebaseptr
+                                // mark so the indirects don't get removed.
+                                fd.op_mark_spacebase_ptr(op);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        for vn in marked_vn {
+            if let Some(v) = fd.vbank_mut().get_mut(vn) {
+                v.clear_mark();
+            }
+        }
+        if unknown_stack_storage && check_free_stores {
+            return self.protect_free_stores(fd, spc, free_stores);
+        }
+        false
+    }
+
+    /// Revisit STOREs with free pointers after a heritage pass completed (C++
+    /// `Heritage::reprocessFreeStores`, `heritage.cc:1112`).
+    ///
+    /// Regenerates STORE LoadGuard records, then cross-references the originally
+    /// free STOREs: any that did not actually need a guard is unmarked and the
+    /// spurious INDIRECTs it caused are removed.
+    fn reprocess_free_stores(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        spc: &Rc<AddrSpace>,
+        free_stores: &mut Vec<crate::seams::OpId>,
+    ) {
+        use kuna_num::opcodes::OpCode;
+        for &op in free_stores.iter() {
+            fd.op_clear_spacebase_ptr(op);
+        }
+
+        self.discover_indexed_stack_pointers(fd, spc, free_stores, false);
+
+        let free: Vec<crate::seams::OpId> = free_stores.clone();
+        for op in free {
+            // If the STORE is now marked as using a spacebase ptr, it was
+            // appropriately marked to begin with; nothing to clean up.
+            if fd.obank().get(op).expect("reprocess: stale op").uses_spacebase_ptr() {
+                continue;
+            }
+            // Otherwise the STORE may have triggered unnecessary INDIRECTs.
+            let mut ind_op = fd.op_previous_op(op);
+            while let Some(iop) = ind_op {
+                if fd.obank().get(iop).expect("reprocess: stale indop").code() != OpCode::CPUI_INDIRECT
+                {
+                    break;
+                }
+                let iop_vn = match fd.obank().get(iop).and_then(|o| o.get_in(1)) {
+                    Some(v) => v,
+                    None => break,
+                };
+                if fd.vbank().get(iop_vn).map(|v| v.get_space().get_type()).unwrap_or(spacetype::IPTR_CONSTANT)
+                    != spacetype::IPTR_IOP
+                {
+                    break;
+                }
+                if Some(op) != op_from_const_seam(fd, iop) {
+                    break;
+                }
+                let next_op = fd.op_previous_op(iop);
+                let ind_out = fd.obank().get(iop).and_then(|o| o.get_out());
+                let same_space = ind_out
+                    .map(|o| Rc::ptr_eq(fd.vbank().get(o).expect("reprocess: stale indout").get_space(), spc))
+                    .unwrap_or(false);
+                if same_space {
+                    let in0 = fd.obank().get(iop).and_then(|o| o.get_in(0)).expect("INDIRECT in0");
+                    let out = ind_out.expect("INDIRECT out");
+                    fd.total_replace(out, in0).expect("reprocess: total_replace");
+                    fd.op_destroy(iop); // get rid of the INDIRECT
+                }
+                ind_op = next_op;
+            }
+        }
+    }
+
     /// Perform one pass of heritage (C++ `Heritage::heritage`,
     /// `heritage.cc:2667`).
     ///
@@ -3277,6 +3650,10 @@ impl Heritage {
         // is a no-op for an architecture with no <splitrecords> (the critical
         // path); it splits SIMD-style registers when present.
 
+        let mut reprocess_stack_count = 0;
+        let mut stack_space: Option<Rc<AddrSpace>> = None;
+        let mut free_stores: Vec<crate::seams::OpId> = Vec::new();
+
         let nspaces = fd.get_arch().manage().num_spaces() as usize;
         for i in 0..nspaces {
             // info = &infolist[i];
@@ -3289,17 +3666,26 @@ impl Heritage {
             if self.infolist[i].has_call_placeholders {
                 self.clear_stack_placeholders(i);
             }
-            if !self.infolist[i].load_guard_search {
-                self.infolist[i].load_guard_search = true;
-                // discoverIndexedStackPointers(info->space,freeStores,true)
-                // SEAM(W4): the indexed-stack LOAD/STORE discovery walks the
-                // stack-pointer input's descendants; inert (returns false) for a
-                // function with no indexed stack accesses (no reprocess needed).
-            }
             let space = self.infolist[i]
                 .space
                 .clone()
                 .expect("heritage: heritaged info has a space");
+            if !self.infolist[i].load_guard_search {
+                self.infolist[i].load_guard_search = true;
+                // discoverIndexedStackPointers(info->space,freeStores,true)
+                // (kuna w10-chainb-gap1) W6 indexed-stack LOAD/STORE discovery:
+                // walks the stack-pointer input's descendants and records guard
+                // records for STOREs/LOADs reached through a non-constant ADD or
+                // a MULTIEQUAL.  The store-guard set is the W7 `StackAffectingOps`
+                // cross-call test source.  ValueSet-based range refinement
+                // (`analyzeNewLoadGuards`) is still a seam; the initial guard
+                // covers the whole space (`LoadGuard::set`), which is faithful and
+                // is exactly what `Merge::testUntiedCallIntersection` consults.
+                if self.discover_indexed_stack_pointers(fd, &space, &mut free_stores, true) {
+                    reprocess_stack_count += 1;
+                    stack_space = Some(space.clone());
+                }
+            }
             let mut needwarning = false;
             let mut warnvn: Option<crate::seams::VarnodeId> = None;
 
@@ -3370,8 +3756,17 @@ impl Heritage {
         }
         self.place_multiequals(fd);
         self.rename(fd);
-        // reprocessFreeStores / analyzeNewLoadGuards / handleNewLoadCopies:
-        // SEAM(W4) — inert without discovered load guards (see above).
+        // (kuna w10-chainb-gap1) reprocessFreeStores: re-derive the STORE guards
+        // now that this pass completed, dropping spurious INDIRECTs on STOREs
+        // that turned out not to need a guard (only reached when discovery saw
+        // unknown stack storage and collected free STOREs).
+        if reprocess_stack_count > 0 {
+            let spc = stack_space.expect("heritage: reprocess set without a stack space");
+            self.reprocess_free_stores(fd, &spc, &mut free_stores);
+        }
+        // analyzeNewLoadGuards / handleNewLoadCopies: SEAM(W6) — ValueSet range
+        // refinement + LOAD-COPY handling; the initial whole-space store guard
+        // already serves the merge cross-call test.
         // splitmanage.splitAdditional() on pass 0: SEAM(W6) PreferSplitManager.
         self.pass += 1;
     }
