@@ -1519,6 +1519,49 @@ impl ScopeLocal {
         })
     }
 
+    /// C++ `Funcdata::linkSymbol(nameRep)` (`funcdata_varnode.cc:1177`) for the
+    /// on-demand naming of a CONCAT-tree ROOT in `linkProtoPartial`
+    /// (`funcdata_varnode.cc:1164-1166`).  The root's name representative is an
+    /// addr-tied/mapped storage location whose smallest containing Symbol is the
+    /// whole structure the pieces feed (e.g. the unified `mypiece/8` stack symbol
+    /// the `propagateSpacebaseRef` seed formed).
+    ///
+    /// Unlike [`query_container_for_link`] (a pure lookup) this also performs the
+    /// `ActionNameVars::apply` rename (coreaction.cc:3088-3092): if the containing
+    /// Symbol is still name-undefined it is renamed to its `buildDefaultName`
+    /// (`v<base++>`, the angr arm) ONCE — every later piece/root resolving to the
+    /// SAME Symbol object then reuses that single name, exactly as the C++
+    /// `namerec`/`renameSymbol` pass renames the one shared Symbol once.  This is
+    /// what makes all members of one struct render through a single `v1` (e.g.
+    /// `v1.a`/`v1.b`/`v1.arr[i]`) rather than a fresh `vN` per CONCAT root.
+    ///
+    /// Returns `(display_name, sym_off, whole_symbol_type)` where `sym_off` is the
+    /// root's byte offset within the containing Symbol (the `getFirstWholeMap`
+    /// base the piece offsets are measured from) and `whole_symbol_type` is the
+    /// Symbol's full data-type (the struct the field render walks).  `None` when no
+    /// Symbol contains the base byte (the caller keeps the `vN`-allocator fallback).
+    pub fn link_symbol_root(
+        &mut self,
+        addr: &Address,
+        base: &mut int4,
+    ) -> Option<(String, int4, Option<Rc<Datatype>>)> {
+        let eref = self.db.find_container(self.scope, addr, 1, &Address::default())?;
+        let (sym, entry_addr_off, entry_off) = {
+            let entry = self.db.entry(self.scope, eref);
+            (entry.symbol, entry.get_addr().get_offset(), entry.get_offset())
+        };
+        let sym_off =
+            (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
+        // ActionNameVars::apply: rename the undefined-named Symbol to `vN` once.
+        if self.db.symbol(sym).is_name_undefined() {
+            let newname = format!("v{}", *base);
+            *base += 1;
+            let _ = self.db.rename_symbol(sym, &newname);
+        }
+        let symbol = self.db.symbol(sym);
+        Some((symbol.get_display_name().to_string(), sym_off, symbol.dtype.clone()))
+    }
+
     /// The category of the Symbol covering a storage location (C++
     /// `Symbol::getCategory` via `findOverlap`), or `None` when none overlaps.
     /// `function_parameter` (0) marks a high the body decl block must skip — C++

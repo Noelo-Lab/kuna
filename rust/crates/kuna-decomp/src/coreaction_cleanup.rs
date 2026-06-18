@@ -1578,24 +1578,108 @@ fn bind_proto_partial_piece(
         return false;
     }
     // Symbol *sym = linkSymbol(rootHigh->getNameRepresentative());  — name the root
-    // on demand.  Reuse an existing name (container symbol / earlier vN); otherwise
-    // allocate the next vN and bind it.  The root's struct type is the partial-symbol
-    // type the piece renders through.
-    let root_name = match data.high_bank().get(root_high).and_then(|h| h.kuna_name()) {
-        Some(n) => n.to_string(),
+    // on demand (`funcdata_varnode.cc:1164-1166`).  The root's name representative is
+    // the addr-tied/mapped storage whose smallest containing Symbol is the whole
+    // structure the pieces feed (the unified `mypiece/8` stack symbol formed by the
+    // `propagateSpacebaseRef` seed).  `linkSymbol` queries the localmap, binds that
+    // Symbol to the root high, and (in `ActionNameVars::apply`, coreaction.cc:3088)
+    // renames the undefined Symbol to its `buildDefaultName` (`vN`) ONCE — so every
+    // CONCAT root that resolves to the SAME Symbol shares one name (`v1.a`/`v1.b` and
+    // `v1.arr[i]` all naming `v1`).  Without this query the root would consume a fresh
+    // `vN` per tree and the two halves of one struct would render as `v2`/`v1`.
+    //
+    // Reuse the name already on the root high (idempotent re-run / a sibling piece of
+    // the same root already bound it this pass) before re-querying the localmap.
+    let root_rep = match data.high_name_representative(root_high) {
+        Some(r) => r,
+        None => return false,
+    };
+    let root_addr = match data.vbank().get(root_rep) {
+        Some(v) => v.get_addr().clone(),
+        None => return false,
+    };
+    // `linkSymbol(nameRep)` resolves the root's Symbol via the localmap.  Two cases:
+    //
+    //  * The root's name representative is contained by a mapped Symbol (the unified
+    //    `mypiece/8` stack symbol the `propagateSpacebaseRef` seed forms): the root is
+    //    a MEMBER of a larger structure.  Bind the Symbol's NAME (renamed to a shared
+    //    `vN` once, so every CONCAT root of the same struct shares it), the root's
+    //    in-symbol byte OFFSET, and the Symbol's WHOLE data-type.  This is what makes
+    //    `v1.a`/`v1.b` (root at struct off 0) and `v1.arr[i]` (root at off 4) all name
+    //    one `v1` of type `mypiece`.
+    //
+    //  * No containing Symbol (a register-pair struct return — the `fooshort` value in
+    //    `rax`, whose root maps to no localmap entry): the root IS the whole value.
+    //    Keep its existing name (or allocate a fresh `vN`), its OWN representative
+    //    data-type, and its already-established in-symbol offset — the prior behavior
+    //    the register-return Concat/Partial-splitting renders depend on.
+    let existing_name = data
+        .high_bank()
+        .get(root_high)
+        .and_then(|h| h.kuna_name())
+        .map(|s| s.to_string());
+    // The member-of-mapped-composite path applies only when the root's name
+    // representative is ADDR-TIED storage (the unified stack symbol the
+    // `propagateSpacebaseRef` seed forms) — that is the C++ `linkSymbol` query that
+    // returns a mapped composite SymbolEntry covering the root.  A transient
+    // register/unique CONCAT root (a struct built from register parameters, e.g.
+    // `concatregparam`'s `regp1`/`regp2`, or a register-pair struct RETURN) is NOT
+    // addr-tied: its `queryProperties(addr,1,usepoint)` would not return the
+    // entry-usepoint parameter Symbol, so it keeps the whole-value `vN` path.  Gating
+    // on addr-tied reproduces that usepoint discrimination without the usepoint query.
+    let root_addr_tied = data.vbank().get(root_rep).map(|v| v.is_addr_tied()).unwrap_or(false);
+    let container = if root_addr_tied {
+        data.get_scope_local()
+            .and_then(|lm| lm.query_container_for_link(&root_addr))
+    } else {
+        None
+    };
+    let (root_name, root_sym_off, root_type) = match container {
+        Some(info) => {
+            // Member of a mapped composite.  Resolve the name on demand: reuse the
+            // root's existing name; else rename the undefined Symbol to `vN` once
+            // (shared across all members of the struct), consuming `base`.
+            let name = match existing_name {
+                Some(n) => n,
+                None => data
+                    .get_scope_local_mut()
+                    .and_then(|lm| lm.link_symbol_root(&root_addr, base))
+                    .map(|(n, _, _)| n)
+                    .unwrap_or_else(|| {
+                        let n = format!("v{base}");
+                        *base += 1;
+                        n
+                    }),
+            };
+            (name, info.sym_off, info.sym_type)
+        }
         None => {
-            let name = format!("v{base}");
-            *base += 1;
-            if let Some(h) = data.high_bank_mut().get_mut(root_high) {
-                h.set_kuna_name(name.clone());
-            }
-            name
+            // No mapped container — the whole-value (register-return) path.  Keep the
+            // root's own type + already-bound in-symbol offset; allocate `vN` only if
+            // unnamed.
+            let name = match existing_name {
+                Some(n) => n,
+                None => {
+                    let n = format!("v{base}");
+                    *base += 1;
+                    n
+                }
+            };
+            let cur_off = data.high_bank().get(root_high).map(|h| h.get_symbol_offset()).unwrap_or(-1);
+            let rep_ty = data.vbank().get(root_rep).map(|v| v.get_type().clone());
+            (name, cur_off, rep_ty)
         }
     };
-    // The root struct data-type (the `sym->getType()` stand-in the piece walks); read
-    // from the root's representative Varnode (its `foo`/`fooshort` type).
-    let root_rep = data.high_name_representative(root_high).unwrap_or(root_vn);
-    let root_type = data.vbank().get(root_rep).map(|v| v.get_type().clone());
+    // Bind the resolved Symbol (name + the root's in-symbol byte offset + the whole
+    // struct type) onto the root high, the `vn->setSymbolEntry(sym->getFirstWholeMap())`
+    // stand-in for the root itself.  `establishGroupSymbolOffset` reads this offset.
+    if let Some(h) = data.high_bank_mut().get_mut(root_high) {
+        h.set_kuna_name(root_name.clone());
+        h.set_symbol_offset(root_sym_off);
+        if let Some(t) = root_type.clone() {
+            h.set_symbol_type(t);
+        }
+    }
     // rootHigh->establishGroupSymbolOffset();  — write the group's symbol offset so
     // every piece can derive its own in-symbol offset.  On the invariant-violation
     // Err (off < 0), bail rather than bind a bogus offset.
