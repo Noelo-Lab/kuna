@@ -3049,3 +3049,55 @@ locals). FIX: gate the in-global persist test on `is_global()` (== !is_functiona
   mixfloatint — must verify mixfloatint holds). FIX: port W7 StackAffectingOps populate
   (funcdata_merge.rs:878 + cover.rs PcodeOpSet mutators) + the W6 store-guard source
   (discoverIndexedStackPointers), THEN wire the OR at heritage.rs:1380 → +7/0. [[kuna-rust-port]]
+
+## LOSS-231 CORRECTION (switchloop-subreg wave, 2026-06-18) — root is pre-pool subregister heritage, NOT the rule-pool SeqNum race
+
+The LOSS-231 two-rule SeqNum-race hypothesis (RuleSubCommute vs RuleSubZext op-ordering, fixable in
+funcdata_op.rs/action.rs) is **REFUTED** by direct dual-engine `trace`/instrumented-`processOp`
+traces on `switchloop.xml` case 4 (`cltd; idiv`). The rules and their registration are faithful; the
+divergence is UPSTREAM of the analysis pool, in how the idiv dividend low-half `EAX` is represented:
+- **C++**: `EAX = SUB84(RAX,0)` — a SUBPIECE of the 8-byte loop-carried `RAX` MULTIEQUAL. The
+  dividend low-part is `ZEXT(SUBPIECE(RAX))`, so `RuleSubZext` (guard `subop->code()==SUBPIECE`) FIRES
+  early, the shiftpiece OR then takes the CDQ:IDIV special arm → `INT_SEXT`, and `RuleSubCommute`
+  narrows the SDIV to 32-bit. C++'s RuleSubZext DOES fire here — a guard on it would be doubly wrong.
+- **Rust**: that same `EAX` is a `CPUI_COPY` of a 4-byte MULTIEQUAL (verified: ZEXT in0.def = COPY of
+  off=0x80 sz=4, def MULTIEQUAL), NOT `SUBPIECE(RAX,0)`. `RuleSubZext`'s SUBPIECE guard fails →
+  `RulePropagateCopy` fires → the OR stays a clean `(zext<<32)|zext` that `RuleShiftPiece` greedily
+  turns into a PIECE → `RulePiece2Sext` collapses it → `RuleSubCommute`/`RuleSubCancel` never fire →
+  the 64-bit SDIV survives and `RuleSubZext` masks it `& 0xffffffff`. Downstream the un-narrowed
+  SDIV poisons the loop-carried `rax` MULTIEQUAL → SubvariableFlow bails for the whole loop var,
+  blocking all 9 case narrowings.
+- CORRECTED next-locus: make the rust **pre-pool** subregister representation match C++ — keep the
+  dividend low-part `EAX` as `SUBPIECE(RAX,0)` (not collapse to `COPY(MULTIEQUAL:4)`) through to the
+  first analysis pool pass. Investigate in order: (1) heritage's `SUBPIECE(RAX,0)` emission for
+  overlapping subregister reads vs the rust path yielding `COPY(MULTIEQUAL:4)`; (2) `selectcse`
+  (C++ DEBUG 3 rewires the `8b` input to the CSE'd SUBPIECE); (3) `subvar_zext/sext` +
+  `RulePropagateCopy` firing earlier in rust. The dividing test: at the moment the analysis pool first
+  reaches the idiv ops, is `op(ZEXT_lowpart).getIn(0).getDef()` a SUBPIECE (C++→gain) or a COPY
+  (rust→loss). High-regression-risk heritage/CSE work; own wave. [[kuna-rust-port]]
+
+## LOSS-168 UPDATE 2 (piecestruct-activation wave, 2026-06-18) — RulePieceStructure FIRES live but bails fail-closed; root is the un-typed PIECE output (whole-struct local recovery)
+
+The LOSS-168/215/217 "dormant — RulePieceStructure never fires on a live structured CONCAT tree"
+claim is now CORRECTED: with the Chain-B/Bitfields/Stack-string stack-var typing landed (count 588),
+`RulePieceStructure::apply_op` (ruleaction_6.rs:1341) FIRES live (282× corpus-wide, 4× on
+`piecestruct.xml::assign`'s cleanup PIECE ops). It bails fail-closed at `determine_datatype`
+(ruleaction_6.rs:1197 → `Varnode::get_structured_type` varnode.rs:611) because each PIECE-op OUTPUT
+varnode has `metatype=TYPE_UNKNOWN` / `is_piece_structured()=false` → `getStructuredType` returns
+None → return 0. This is correct fail-closed behavior; the render substrate needs NO edit.
+- The struct write routes as `CPUI_PIECE → unique(UNKNOWN) → CPUI_INDIRECT(call-effect) → stack:-0x18`.
+  The struct type lands ONLY on the addrtied stack varnode and ONLY as FRAGMENTED
+  `TYPE_PARTIALSTRUCT/4` (a/b head) + a separate `TYPE_ARRAY/4` (the `arr` at -0x14) — never the whole
+  8-byte struct, and never on the PIECE output. C++ at cleanup has the whole struct type directly on
+  the PIECE output (its `getStructuredType` `else ct=type` arm succeeds).
+- CORRECTED next-locus (the real gate for Piece Structure 6 + Return Structure 5 + the LOSS-215/217
+  concatreturn/retstruct field renders): the upstream WHOLE-STRUCT LOCAL RECOVERY —
+  `ActionInferTypes::propagateSpacebaseRef` (cpp coreaction.cc:5521/5666; rust
+  coreaction_infertypes.rs:1374 `propagate_ref` / :1701 `run_infer_types`) flowing the
+  `print(mypiece*)` argument's pointed-to type into the stack slice as a unified `mypiece`, PLUS the
+  `MapState`/`ScopeLocal` restructure (varmap.rs `add_fixed_type`:1993, funcdata_spacebase.rs
+  `sync_varnodes_with_symbols`:1061) unifying the two fragments, PLUS the mapped-varnode propagation
+  seed (coreaction_infertypes.rs:1440, the documented W4 `getSymbolEntry()!=0`→mapped-flag proxy LOSS
+  that currently SKIPS mapped stack varnodes in propagate_ref). This is the LOSS-131/132
+  dual-AddrSpaceManager keystone; deep multi-pass type-inference, high corpus-wide regression risk,
+  own dedicated wave. [[kuna-rust-port]]
