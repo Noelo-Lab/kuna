@@ -1028,11 +1028,8 @@ impl Rule for RulePtrArith {
                 Some(v) => v,
                 None => continue,
             };
-            let meta = data
-                .vbank()
-                .get(invn)
-                .map(|v| v.get_type_read_facing(op).get_metatype())
-                .unwrap_or(crate::dtype::type_metatype::TYPE_UNKNOWN);
+            // ct = op->getIn(slot)->getTypeReadFacing(op); (resolve union/relptr in-flow)
+            let meta = data.vn_type_read_facing(invn, op).get_metatype();
             if meta == crate::dtype::type_metatype::TYPE_PTR {
                 slot = s;
                 break;
@@ -1085,8 +1082,8 @@ pub(crate) fn evaluate_pointer_expression(data: &Funcdata, op: OpId, slot: int4)
     // if (op->getIn(1-slot)->getTypeReadFacing(op)->getMetatype() == TYPE_PTR) res = 2;
     let other = data.obank().get(op).and_then(|o| o.get_in(1 - slot));
     if let Some(other) = other {
-        if data.vbank().get(other).map(|v| v.get_type_read_facing(op).get_metatype())
-            == Some(crate::dtype::type_metatype::TYPE_PTR)
+        if data.vn_type_read_facing(other, op).get_metatype()
+            == crate::dtype::type_metatype::TYPE_PTR
         {
             res = 2;
         }
@@ -1118,8 +1115,8 @@ pub(crate) fn evaluate_pointer_expression(data: &Funcdata, op: OpId, slot: int4)
             if is_free && !is_const {
                 return 0; // data-flow not fully linked
             }
-            if data.vbank().get(other_vn).map(|v| v.get_type_read_facing(dec_op).get_metatype())
-                == Some(crate::dtype::type_metatype::TYPE_PTR)
+            if data.vn_type_read_facing(other_vn, dec_op).get_metatype()
+                == crate::dtype::type_metatype::TYPE_PTR
             {
                 res = 2; // Do not push in the presence of other pointers
             }
@@ -1179,16 +1176,14 @@ fn verify_preferred_pointer(data: &Funcdata, op: OpId, slot: int4) -> bool {
         .obank()
         .get(pre_op)
         .and_then(|o| o.get_in(0))
-        .and_then(|v| data.vbank().get(v))
-        .map(|v| v.get_type_read_facing(pre_op).get_metatype());
+        .map(|v| data.vn_type_read_facing(v, pre_op).get_metatype());
     if meta0 != Some(crate::dtype::type_metatype::TYPE_PTR) {
         preslot = 1;
         let meta1 = data
             .obank()
             .get(pre_op)
             .and_then(|o| o.get_in(1))
-            .and_then(|v| data.vbank().get(v))
-            .map(|v| v.get_type_read_facing(pre_op).get_metatype());
+            .map(|v| data.vn_type_read_facing(v, pre_op).get_metatype());
         if meta1 != Some(crate::dtype::type_metatype::TYPE_PTR) {
             return true;
         }
@@ -1268,11 +1263,8 @@ impl Rule for RuleStructOffset0 {
             Some(v) => v,
             None => return 0,
         };
-        let ct = data.vbank().get(ptr_vn).map(|v| v.get_type_read_facing(op).clone());
-        let ct = match ct {
-            Some(c) => c,
-            None => return 0,
-        };
+        // Datatype *ct = ptrVn->getTypeReadFacing(op); (resolve union/relptr in-flow)
+        let ct = data.vn_type_read_facing(ptr_vn, op);
         if ct.get_metatype() != type_metatype::TYPE_PTR {
             return 0;
         }
@@ -1310,7 +1302,12 @@ impl Rule for RuleStructOffset0 {
             let sub_offset = newoff_addr.wrapping_neg() & calc_mask(ptr_size);
             let off_const = data.new_constant(ptr_size, sub_offset);
             let newop = data.new_op_before(op, OpCode::CPUI_PTRSUB, ptr_vn, off_const, None);
-            // needsResolution union arm: SEAM(W8) inheritUnionField — no-op for plain.
+            // if (ptrVn->getType()->needsResolution())
+            //   data.inheritUnionField(ptrVn->getType(),newop, 0, op, 1);
+            let ptr_ty = Rc::clone(data.vbank().get(ptr_vn).expect("RuleStructOffset0: stale ptrVn").get_type());
+            if ptr_ty.needs_resolution() {
+                data.inherit_union_field(&ptr_ty, newop, 0, op, 1);
+            }
             data.op_set_stop_type_propagation(newop);
             let newop_out = data
                 .obank()
@@ -1358,7 +1355,12 @@ impl Rule for RuleStructOffset0 {
         }
         let zero = data.new_constant(ptr_size, 0);
         let newop = data.new_op_before(op, OpCode::CPUI_PTRSUB, ptr_vn, zero, None);
-        // SEAM(W8) inheritUnionField — no-op for plain pointers.
+        // if (ptrVn->getType()->needsResolution())
+        //   data.inheritUnionField(ptrVn->getType(),newop, 0, op, 1);
+        let ptr_ty = Rc::clone(data.vbank().get(ptr_vn).expect("RuleStructOffset0: stale ptrVn").get_type());
+        if ptr_ty.needs_resolution() {
+            data.inherit_union_field(&ptr_ty, newop, 0, op, 1);
+        }
         data.op_set_stop_type_propagation(newop);
         let newop_out = data
             .obank()
@@ -1427,9 +1429,7 @@ impl Rule for RulePushPtr {
                 Some(v) => v,
                 None => continue,
             };
-            if data.vbank().get(v).map(|x| x.get_type_read_facing(op).get_metatype())
-                == Some(type_metatype::TYPE_PTR)
-            {
+            if data.vn_type_read_facing(v, op).get_metatype() == type_metatype::TYPE_PTR {
                 slot = s;
                 vni = Some(v);
                 break;

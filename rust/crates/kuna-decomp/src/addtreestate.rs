@@ -97,7 +97,9 @@ impl<'a> AddTreeState<'a> {
         let base_slot = slot;
         let ptr = data.obank().get(op)?.get_in(slot)?;
         // ct = (const TypePointer *)ptr->getTypeReadFacing(op);
-        let ct = data.vbank().get(ptr)?.get_type_read_facing(op).clone();
+        // (route through the Funcdata facing accessor so a union/relative-pointer
+        // resolves against the in-flow union cache; C++ Varnode::getTypeReadFacing.)
+        let ct = data.vn_type_read_facing(ptr, op);
         let ptrsize = data.vbank().get(ptr)?.get_size();
         let ptrmask = calc_mask(ptrsize);
         let mut base_type = ct.get_ptr_to()?;
@@ -734,8 +736,21 @@ impl<'a> AddTreeState<'a> {
                 mn,
                 Some(size_const),
             );
-            // needsResolution union branch (faithful no-op for plain pointers).
-            // SEAM(W8 union): forceFacingType / inheritUnionField.
+            // if (ptr->getType()->needsResolution()) {
+            //   if (((TypePointer *)ptr->getType())->getPtrTo()->getSize() == baseType->getSize())
+            //     data.forceFacingType(ptr->getType(),-1,newop, 0);   // hold off resolving before indexing
+            //   else
+            //     data.inheritUnionField(ptr->getType(), newop, 0, baseOp, baseSlot);
+            // }
+            let ptr_ty = Rc::clone(self.data.vbank().get(self.ptr).expect("build_tree: stale ptr").get_type());
+            if ptr_ty.needs_resolution() {
+                let ptrto_size = ptr_ty.get_ptr_to().map(|p| p.get_size());
+                if ptrto_size == Some(self.base_type.get_size()) {
+                    let _ = self.data.force_facing_type(ptr_ty, -1, op, 0);
+                } else {
+                    self.data.inherit_union_field(&ptr_ty, op, 0, self.base_op, self.base_slot);
+                }
+            }
             if self.data.is_type_recovery_exceeded() {
                 self.assign_propagated_type(op);
             }
@@ -755,7 +770,14 @@ impl<'a> AddTreeState<'a> {
                 off_const,
                 None,
             );
-            // SEAM(W8 union): inheritUnionField (no-op for plain pointers).
+            // if (multNode->getType()->needsResolution())
+            //   data.inheritUnionField(multNode->getType(),newop, 0, baseOp, baseSlot);
+            let mult_ty = Rc::clone(
+                self.data.vbank().get(mult_node).expect("build_tree: stale multNode").get_type(),
+            );
+            if mult_ty.needs_resolution() {
+                self.data.inherit_union_field(&mult_ty, op, 0, self.base_op, self.base_slot);
+            }
             if self.data.is_type_recovery_exceeded() {
                 self.assign_propagated_type(op);
             }

@@ -369,8 +369,8 @@ impl Rule for RulePtraddUndo {
         // int4 size = (int4)op->getIn(2)->getOffset();  // PTRADD element size
         let size = offset(data, in_vn(data, op, 2)) as int4;
         let basevn = in_vn(data, op, 0);
-        // Datatype *dt = basevn->getTypeReadFacing(op);
-        let dt = data.vbank().get(basevn).map(|v| v.get_type_read_facing(op).clone());
+        // Datatype *dt = basevn->getTypeReadFacing(op);  (resolve union/relptr in-flow)
+        let dt = Some(data.vn_type_read_facing(basevn, op));
         if let Some(dt) = dt {
             if dt.get_metatype() == type_metatype::TYPE_PTR {
                 // Still a pointer; check the element size and zero index.
@@ -952,11 +952,7 @@ impl Rule for RuleSubRight {
         // printc.cc:866).  The marker is a pure print flag (no IR rewrite, `return
         // 0`); the rewrite tail below is unaffected.
         let a = in_vn(data, op, 0);
-        let in0_piece = data
-            .vbank()
-            .get(a)
-            .map(|v| v.get_type_read_facing(op).is_piece_structured())
-            .unwrap_or(false);
+        let in0_piece = data.vn_type_read_facing(a, op).is_piece_structured();
         if in0_piece {
             data.op_mark_special_print(op); // Print this as a field extraction
             return 0;
