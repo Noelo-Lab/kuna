@@ -195,7 +195,7 @@ impl Funcdata {
             // covering Symbol's storage address (its identity), `sym_off` the in-symbol
             // byte offset of the access.
             if let Some(lm) = self.get_scope_local() {
-                if let Some(info) = lm.query_container_for_link(&addr) {
+                if let Some(info) = lm.query_container_for_link(&addr, &invalid) {
                     return Some((info.entry_addr, info.sym_off));
                 }
             }
