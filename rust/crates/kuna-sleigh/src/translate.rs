@@ -317,6 +317,11 @@ impl TranslateBase {
         self.floatformats.iter().find(|fmt| fmt.get_size() == size)
     }
 
+    /// All floating-point formats the processor uses (C++ `Translate::floatformats`).
+    pub fn float_formats(&self) -> &[FloatFormat] {
+        &self.floatformats
+    }
+
     /// Get the instruction alignment for the processor.
     ///
     /// If machine instructions need to have a specific alignment for this
@@ -486,6 +491,11 @@ pub trait Translate: RegisterLookup {
     /// `Translate::getFloatFormat`).
     fn get_float_format(&self, size: i32) -> Option<&FloatFormat> {
         self.translate_base().get_float_format(size)
+    }
+
+    /// All floating-point formats the processor uses (C++ `Translate::floatformats`).
+    fn float_formats(&self) -> &[FloatFormat] {
+        self.translate_base().float_formats()
     }
 
     /// Get the instruction alignment for the processor (C++

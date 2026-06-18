@@ -771,6 +771,12 @@ impl Architecture {
         // clones; the IR-transform passes (RuleCollapseConstants) fold constants
         // through `glb.op_behavior(opc)`.
         seam.opbehaviors = self.opbehaviors.clone();
+        // Share the processor's float formats with `glb` (the C++ `Architecture`
+        // IS-A `Translate`, so `glb->translate->getFloatFormat` reaches them).
+        // `SubfloatFlow` reads them off the per-function `glb` to drive the
+        // float-precision narrowing (`RuleSubfloatConvert`); cheap clones of the
+        // small format records.
+        seam.floatformats = self.translate.float_formats().to_vec();
         // Share the prototype-model registry handles (C++ `glb->defaultfp` /
         // `evalfp_current`) so the proto-recovery actions can set the function's
         // model and run output recovery against the real param lists.

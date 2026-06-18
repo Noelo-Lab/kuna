@@ -429,6 +429,12 @@ pub struct Architecture {
     /// path populates it from the engine's table in
     /// `Architecture::build_arch_handle`.
     pub opbehaviors: Vec<Option<Rc<dyn kuna_num::opbehavior::OpBehavior>>>,
+    /// The processor's floating-point formats (C++ `glb->translate->floatformats`),
+    /// shared from the real [`crate::architecture::Architecture`]'s SLEIGH engine
+    /// through `build_arch_handle`.  `SubfloatFlow` reaches them off `glb` to
+    /// decide the precision-trace and convert constant encodings.  Empty for
+    /// hand-built fixtures (those never run float-precision narrowing).
+    pub floatformats: Vec<kuna_num::float::FloatFormat>,
     /// The default prototype model (C++ `Architecture::defaultfp`), shared from
     /// the real [`crate::architecture::Architecture`] registry through
     /// `build_arch_handle`.  The proto-recovery actions read it to set the
@@ -576,6 +582,7 @@ impl Architecture {
             min_laned_register_size: 4,
             lanerecords: Vec::new(),
             opbehaviors: Vec::new(),
+            floatformats: Vec::new(),
             defaultfp: None,
             evalfp_current: None,
             // C++ Architecture default: trim_recurse_max = 5 (resetDefaults).
@@ -683,6 +690,14 @@ impl Architecture {
 
     pub fn types(&self) -> Option<&dyn crate::dtype::TypeFactory> {
         self.types.as_deref().map(|t| t as &dyn crate::dtype::TypeFactory)
+    }
+
+    /// Get the floating-point format for the given size in bytes, or `None` if
+    /// the processor has no format of that size (C++
+    /// `glb->translate->getFloatFormat`).  Reads the [`floatformats`](Self::floatformats)
+    /// table shared in `build_arch_handle`.
+    pub fn get_float_format(&self, size: int4) -> Option<&kuna_num::float::FloatFormat> {
+        self.floatformats.iter().find(|fmt| fmt.get_size() == size)
     }
 
     /// Borrow the concrete data-type factory (for the `TypeFactoryImpl`-only
