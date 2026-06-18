@@ -1822,6 +1822,111 @@ impl Funcdata {
         Ok(())
     }
 
+    /// Adjust input Varnodes contained in the given range (C++
+    /// `Funcdata::adjustInputVarnodes`, `funcdata_varnode.cc:496`).
+    ///
+    /// After this call a single \e input Varnode fills the range; any prior input
+    /// Varnodes contained in it are redefined as a `CPUI_SUBPIECE` off the new
+    /// whole.  This is what recombines a register-pair that an earlier heritage
+    /// `refinement` split into two contiguous sub-size input pieces (e.g. an
+    /// 8-byte float register read whose low/high halves were split because a
+    /// lane-COPY return write made the disjoint range's max write size 4) back
+    /// into one whole input — driven by `ActionUnjustifiedParams`.
+    ///
+    /// ```text
+    /// endaddr = addr + (sz-1);
+    /// for (vn in beginDef(input,addr)..endDef(input,endaddr)):
+    ///   if (vn->getOffset()+(vn->getSize()-1) > endaddr) throw "Cannot properly adjust";
+    ///   inlist.push(vn);
+    /// for (vn in inlist):
+    ///   sa = addr.justifiedContain(sz, vn->getAddr(), vn->getSize(), false);
+    ///   if (!vn->isInput() || sa<0 || sz<=vn->getSize()) throw "Bad adjustment";
+    ///   subop = newOp(2,getAddress()); SUBPIECE; in1=newConstant(4,sa);
+    ///   newvn = newVarnodeOut(vn->getSize(), vn->getAddr(), subop);
+    ///   opInsertBegin(subop, bblocks.getBlock(0)); totalReplace(vn,newvn);
+    ///   deleteVarnode(vn); inlist[i]=newvn;
+    /// invn = setInputVarnode(newVarnode(sz,addr)); invn->setWriteMask();
+    /// for (newvn in inlist): opSetInput(newvn->getDef(), invn, 0);
+    /// ```
+    pub fn adjust_input_varnodes(&mut self, addr: &Address, sz: int4) -> KunaResult<()> {
+        // endaddr = addr + (sz-1);  gather inputs whose start is within [addr,endaddr].
+        let end_off = addr.get_offset().wrapping_add((sz - 1) as u64);
+        let space = match addr.get_space() {
+            Some(s) => Rc::clone(s),
+            None => return Ok(()),
+        };
+        let mut inlist: Vec<VarnodeId> = Vec::new();
+        // beginDef(input,addr)..endDef(input,endaddr): the input def-set is
+        // Address-then-size ordered; select inputs in this space whose start
+        // offset is within [addr.offset, endaddr.offset].
+        for id in self.vbank().iter_def_flag(varnode_flags::input) {
+            let v = self.vbank().get(id).expect("adjust_input_varnodes: stale input");
+            let vaddr = v.get_addr();
+            if vaddr.get_space().map_or(true, |s| !Rc::ptr_eq(s, &space)) {
+                continue;
+            }
+            let voff = vaddr.get_offset();
+            if voff < addr.get_offset() || voff > end_off {
+                continue;
+            }
+            // if (vn->getOffset()+(vn->getSize()-1) > endaddr) throw "Cannot properly adjust"
+            if voff.wrapping_add((v.get_size() - 1) as u64) > end_off {
+                return Err(KunaError::lowlevel("Cannot properly adjust input varnodes"));
+            }
+            inlist.push(id);
+        }
+
+        let bb = self.bblocks_get_block(0);
+        let fdaddr = self.get_address().clone();
+        // Pull each intersecting input out as a SUBPIECE placeholder of the whole.
+        for i in 0..inlist.len() {
+            let vn = inlist[i];
+            let (is_input, vsize, vaddr) = {
+                let v = self.vbank().get(vn).expect("adjust_input_varnodes: stale vn");
+                (v.is_input(), v.get_size(), v.get_addr().clone())
+            };
+            // sa = addr.justifiedContain(sz, vn->getAddr(), vn->getSize(), false);
+            let sa = addr.justified_contain(sz, &vaddr, vsize, false);
+            if !is_input || sa < 0 || sz <= vsize {
+                return Err(KunaError::lowlevel("Bad adjustment to input varnode"));
+            }
+            // subop = newOp(2,getAddress()); SUBPIECE; in1 = newConstant(4,sa);
+            let subop = self.new_op(2, fdaddr.clone());
+            self.op_set_opcode_code(subop, OpCode::CPUI_SUBPIECE);
+            let con = self.new_constant(4, sa as uintb);
+            self.op_set_input(subop, con, 1)?;
+            // newvn = newVarnodeOut(vn->getSize(), vn->getAddr(), subop);
+            let newvn = self.new_varnode_out(vsize, &vaddr, subop)?;
+            // newvn must not be free in order to give all vn's descendants
+            self.op_insert_begin(subop, bb);
+            self.total_replace(vn, newvn)?;
+            // deleteVarnode(vn): get rid of old input before creating new input.
+            self.delete_varnode(vn)?;
+            inlist[i] = newvn;
+        }
+
+        // Now create the new whole input.
+        let invn = self.new_varnode(sz, addr, None);
+        let invn = self.set_input_varnode(invn)?;
+        // The new input may cause new heritage / "Heritage AFTER dead removal"
+        // errors, so tell heritage to ignore it.
+        self.vbank_mut()
+            .get_mut(invn)
+            .expect("adjust_input_varnodes: new whole input")
+            .set_write_mask();
+        // Now change all old inputs to be created as SUBPIECE from the new input.
+        for &newvn in &inlist {
+            let def = self
+                .vbank()
+                .get(newvn)
+                .expect("adjust_input_varnodes: stale newvn")
+                .get_def()
+                .expect("adjust_input_varnodes: newvn has SUBPIECE def");
+            self.op_set_input(def, invn, 0)?;
+        }
+        Ok(())
+    }
+
     /// Set input `slot` of `op` to read `vn` (C++ `Funcdata::opSetInput`,
     /// `funcdata_op.cc:104`), replicated for the `totalReplace` rewiring.
     ///

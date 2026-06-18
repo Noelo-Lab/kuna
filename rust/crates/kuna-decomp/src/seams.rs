@@ -475,6 +475,10 @@ pub struct Architecture {
     pub max_implied_ref: int4,
     /// (kuna) GH-6990: keep only the first return register (C++ `return_single`).
     pub return_single: bool,
+    /// (kuna GH-9218) When adjusting an unjustified input parameter container,
+    /// also absorb an overlapping input that extends ABOVE the container's end
+    /// (forward scan in `ActionUnjustifiedParams`).  C++ `input_varnode_adjust`.
+    pub input_varnode_adjust: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
     /// `sub_<addr>` / `dat_<addr>` rather than `func_<addr>` (C++
     /// `Architecture::name_style_angr`, default-on).  Read by the call-spec
@@ -626,6 +630,9 @@ impl Architecture {
             // C++ Architecture default: max_implied_ref = 2 (resetDefaults).
             max_implied_ref: 2,
             return_single: false,
+            // (kuna) GH-9218 DIV-3 default-on; the real value is copied from the
+            // engine Architecture in `build_arch_handle`.
+            input_varnode_adjust: true,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
             // (kuna) DIV-2 default-on (GH-558): resetDefaults sets present_lessequal=true.

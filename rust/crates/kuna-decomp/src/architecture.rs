@@ -797,6 +797,9 @@ impl Architecture {
         seam.trim_recurse_max = self.trim_recurse_max;
         seam.max_implied_ref = self.max_implied_ref;
         seam.return_single = self.return_single;
+        // (kuna GH-9218) carry the unjustified-input forward-absorb gate so
+        // `ActionUnjustifiedParams` reaches it via `glb`.
+        seam.input_varnode_adjust = self.input_varnode_adjust;
         seam.name_style_angr = self.name_style_angr;
         // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
         // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.
