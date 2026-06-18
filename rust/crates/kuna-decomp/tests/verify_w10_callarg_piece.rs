@@ -278,15 +278,20 @@ fn at3_callarg_split_uses_callee_param_type() {
     );
 }
 
-/// AT4 — POST-KEYSTONE (RSP keystone relanding, CORRECTION-7 stale-fence update):
-/// the wide-float (`float10`) CALL argument is now RECONSTRUCTED.  Before the RSP
-/// keystone this guard pinned the *pre*-base_explicit-v2 state where `passmany`
-/// dropped the `x` argument (`writeLongDouble(ldarr)`).  The keystone's call
-/// input-active argument recovery (ROOT-B) + the spacebase-PTRSUB typing fix make
-/// the x87 register-pair CONCAT survive into the call, so `passmany` now passes
-/// the reconstructed wide-float arg.  This is a justified pre-keystone-residue
-/// update: the float10 arg is correctly recovered (closer to the oracle), with no
-/// longdouble/float datatest regression.
+/// AT4 — POST-ALIGNMENT-MAP (w10-longdouble-reassembly, LOSS-223/224 restoration):
+/// the wide-float (`float10`) CALL argument now folds to the BYTE-CLEAN oracle
+/// render `writeLongDouble(ldarr,x)`.  The earlier waves built the float10 arg but
+/// left it as `(float10)CONCAT28(z,CONCAT62(v1,x))` because the float10 *input
+/// parameter* `x` was placed at the wrong stack offset (0x10 vs the oracle's
+/// 0x18): its alignment resolved to 8 instead of 16.  Root: the cspec
+/// `<size_alignment_map>` (x86-64 gcc 16->16) was never decoded into the
+/// `TypeFactory`, so `getAlignment(getPrimitiveAlignSize(10)=16)` fell back to the
+/// default map (->8).  Decoding the cspec map (this wave) gives float10 the
+/// correct alignment 16, the param lands at 0x18 covering the call's stack value
+/// exactly, and the CONCAT is no longer needed.  This is the documented LOSS-223
+/// restoration ("converges to `writeLongDouble(ldarr,x)` when the stack-slot
+/// coherence lands; re-tighten AT4 to require the clean `x`").  Long double
+/// #3/#4/#7/#8/#9 flip green; regressed set EMPTY.
 #[test]
 fn at4_widefloat_callarg_concat_built_with_keystone() {
     let rust = match dump_print_c(&rust_test_bin(), "longdouble") {
@@ -298,12 +303,12 @@ fn at4_widefloat_callarg_concat_built_with_keystone() {
     };
     let body = function_block(&rust, "passmany")
         .unwrap_or_else(|| panic!("no passmany block in:\n{rust}"));
-    // The float10 argument is reconstructed: the keystone's input-active recovery
-    // carries the x87 register-pair CONCAT into the call argument list, so the `x`
-    // argument is now present (the wide-float is no longer dropped).
+    // The float10 argument folds to the clean oracle render: the input parameter
+    // `x` (float10, alignment 16 -> stack 0x18) covers the call's stack value
+    // exactly, so the call passes `x` directly with no piece reassembly.
     assert!(
-        body.contains("writeLongDouble(ldarr,") && body.contains("CONCAT"),
-        "the float10 call-arg was NOT reconstructed after the RSP keystone — the \
-         input-active recovery / spacebase-PTRSUB typing regressed; got:\n{body}"
+        body.contains("writeLongDouble(ldarr,x);") && !body.contains("CONCAT"),
+        "the float10 call-arg did not fold to the clean oracle render \
+         `writeLongDouble(ldarr,x)` (alignment-map / param-offset regression); got:\n{body}"
     );
 }

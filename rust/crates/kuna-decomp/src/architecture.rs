@@ -1624,6 +1624,32 @@ impl Architecture {
                         self.types.set_size_of_wchar(v);
                     }
                 }
+                "size_alignment_map" => {
+                    // C++ `TypeFactory::decodeAlignmentMap` (type.cc:5143): each
+                    // `<entry size=N alignment=M/>` child contributes a pair; the
+                    // map drives `getAlignment(size)` and so the over-aligned
+                    // primitive layout (e.g. x86-64 gcc float10 align=16).
+                    let read_attr = |el: &Rc<kuna_base::xml::Element>, attr: &str| -> Option<int4> {
+                        el.get_attribute_value(attr)
+                            .ok()
+                            .and_then(|b| std::str::from_utf8(b).ok())
+                            .and_then(|s| s.trim().parse::<int4>().ok())
+                    };
+                    let mut pairs: Vec<(int4, int4)> = Vec::new();
+                    for entry in child.get_children().iter() {
+                        if entry.get_name() != "entry" {
+                            continue;
+                        }
+                        if let (Some(sz), Some(al)) =
+                            (read_attr(entry, "size"), read_attr(entry, "alignment"))
+                        {
+                            pairs.push((sz, al));
+                        }
+                    }
+                    if !pairs.is_empty() {
+                        self.types.decode_alignment_map(&pairs)?;
+                    }
+                }
                 _ => {}
             }
         }
@@ -1660,7 +1686,13 @@ impl Architecture {
             .map(|s| s.is_big_endian())
             .unwrap_or(false);
         self.types.set_truncate_big_endian(big_endian);
-        self.types.set_default_alignment_map();
+        // C++ `setupSizes` installs the default map only when the cspec did not
+        // register a `<size_alignment_map>` (`if (alignMap.empty())`,
+        // type.cc:3623).  `decode_data_organization` above already populated the
+        // map from the spec when present (e.g. x86-64 gcc 16->16), so preserve it.
+        if self.types.alignment_map_is_empty() {
+            self.types.set_default_alignment_map();
+        }
         self.types.setup_sizes(stack_pointer_size, default_data_addr_size, default_size);
     }
 
