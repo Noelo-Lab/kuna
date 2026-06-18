@@ -128,6 +128,16 @@ impl Funcdata {
             .set_flag(crate::op::pcodeop_flags::nocollapse);
     }
 
+    /// Mark a PcodeOp as having a boolean output (C++
+    /// `Funcdata::opMarkCalculatedBool`, `funcdata.hh:495` —
+    /// `op->setFlag(PcodeOp::calculated_bool)`).
+    pub fn op_mark_calculated_bool(&mut self, op: OpId) {
+        self.obank_mut()
+            .get_mut(op)
+            .expect("op_mark_calculated_bool: stale op")
+            .set_flag(pcodeop_flags::calculated_bool);
+    }
+
     /// Mark up the given CPUI_RETURN op with a \e halt type
     /// (C++ `Funcdata::opMarkHalt`, `funcdata_op.cc:37`).
     ///

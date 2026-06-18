@@ -734,10 +734,66 @@ impl ActionFuncLink {
             data.op_unset_output(callop);
         }
         if data.get_call_specs(idx).proto().is_output_locked() {
-            // SEAM(W6 locked-output build): the locked-output Varnode + extension op
-            // (assumedOutputExtension / opMarkCalculatedBool / stack output lock)
-            // is the type-recovery path; the default-model datatests take the
-            // unlocked branch.  Leave the output recovery to ActionActiveReturn.
+            // C++ coreaction.cc:1582-1613 — locked-output build.  Materialize the
+            // typed output Varnode at the locked output address, and (when the
+            // prototype model assumes the small output is sign/zero/piece-extended
+            // to a full register) insert the post-call extension op.
+            use kuna_num::pcoderaw::VarnodeData;
+            let outparam = data.get_call_specs(idx).proto().get_output();
+            // Datatype *outtype = outparam->getType();  (None is the C++ null;
+            // a locked output always carries a type, but guard defensively.)
+            let outtype = match outparam.get_type() {
+                Some(t) => Rc::clone(t),
+                None => return,
+            };
+            let metatype = outtype.get_metatype();
+            if metatype != crate::dtype::type_metatype::TYPE_VOID {
+                let sz = outparam.get_size();
+                let addr = outparam.get_address();
+                // if (outtype==BOOL && isTypeRecoveryOn()) opMarkCalculatedBool(callop)
+                if metatype == crate::dtype::type_metatype::TYPE_BOOL && data.is_type_recovery_on()
+                {
+                    data.op_mark_calculated_bool(callop);
+                }
+                // Stack-relative output: defer the Varnode until stack heritage.
+                let is_spacebase = addr
+                    .get_space()
+                    .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE)
+                    .unwrap_or(false);
+                if is_spacebase {
+                    data.get_call_specs_mut(idx).set_stack_output_lock(true);
+                    return;
+                }
+                // data.newVarnodeOut(sz, addr, callop);
+                let _ = data.new_varnode_out(sz, &addr, callop);
+                // OpCode res = fc->assumedOutputExtension(addr, sz, vdata);
+                let mut vdata = VarnodeData::default();
+                let mut res = data
+                    .get_call_specs(idx)
+                    .proto()
+                    .assumed_output_extension(&addr, sz, &mut vdata);
+                if res == OpCode::CPUI_PIECE {
+                    // Pick an extension based on type.
+                    res = if metatype == crate::dtype::type_metatype::TYPE_INT {
+                        OpCode::CPUI_INT_SEXT
+                    } else {
+                        OpCode::CPUI_INT_ZEXT
+                    };
+                }
+                if res != OpCode::CPUI_COPY {
+                    // The (small-size) output is extended to a full register;
+                    // create the extension op immediately after the call.
+                    let pc = data.obank().get(callop).map(|o| o.get_addr().clone()).unwrap();
+                    let op = data.new_op(1, pc);
+                    let ext_addr = vdata.get_addr();
+                    let ext_size = vdata.size as int4;
+                    let _ = data.new_varnode_out(ext_size, &ext_addr, op);
+                    let invn = data.new_varnode(sz, &addr, None);
+                    let _ = data.op_set_input(op, invn, 0);
+                    data.op_set_opcode_code(op, res);
+                    data.op_insert_after(op, callop);
+                }
+            }
         } else {
             // C++ `fc->initActiveOutput()` begins gathering the call's return value.
             // The killed-by-call output range is now guarded by an INDIRECT *creation*
