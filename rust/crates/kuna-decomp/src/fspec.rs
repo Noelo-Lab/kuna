@@ -6124,6 +6124,35 @@ impl FuncCallSpecs {
         }
     }
 
+    /// Clone this call spec onto a new CALL/CALLIND op (C++
+    /// `FuncCallSpecs::clone(PcodeOp *newop)`, `fspec.cc:4969`).
+    ///
+    /// Used by `Funcdata::truncatedFlow` to re-attach the discovered call specs
+    /// to the matching ops of a partial (jump-table recovery) clone.  Copies the
+    /// `FuncProto` portion (incl. the effect list that drives the call's INDIRECT
+    /// markers, which keep a post-call stack slot symbolic during recovery),
+    /// `effective_extrapop`/`stackoffset`/`paramshift`/`isbadjumptable`, and the
+    /// entry/name/funcdata identity.  `activeinput`/`activeoutput` are skipped,
+    /// exactly as the C++ does.
+    pub fn clone_for_op(&self, newop: OpId) -> FuncCallSpecs {
+        let mut res = FuncCallSpecs::new(newop, self.entryaddress.clone());
+        // setFuncdata(fd): sets op (already), name, address, fd.
+        if self.has_fd {
+            // Mirror setFuncdata(fd) — entry/name already on res; mark fd present.
+            res.has_fd = true;
+            res.name = self.name.clone();
+        } else {
+            res.name = self.name.clone();
+        }
+        res.effective_extrapop = self.effective_extrapop;
+        res.stackoffset = self.stackoffset;
+        res.paramshift = self.paramshift;
+        // We are skipping activeinput, activeoutput (per C++).
+        res.isbadjumptable = self.isbadjumptable;
+        res.proto.copy(&self.proto); // Copy the FuncProto portion
+        res
+    }
+
     // -- FuncProto base access ----------------------------------------------
 
     /// The `FuncProto` base (C++ upcast to `FuncProto`).

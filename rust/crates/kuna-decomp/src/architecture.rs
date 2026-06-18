@@ -378,6 +378,12 @@ pub struct Architecture {
     /// The current-evaluation prototype model (C++ `evalfp_current`); falls
     /// back to `defaultfp` when unset.
     evalfp_current: Option<Rc<ProtoModel>>,
+    /// Default storage location of a function's return address (C++
+    /// `Architecture::defaultReturnAddr`), decoded from the cspec's top-level
+    /// `<returnaddress>` element by [`build_default_proto`].  `None` when the
+    /// cspec has no `<returnaddress>` (then `testForReturnAddress` returns
+    /// `false`, exactly as the C++ does for `defaultReturnAddr.space == 0`).
+    default_return_addr: Option<kuna_num::pcoderaw::VarnodeData>,
     /// Raw compiler-spec (`.cspec`) XML content, set by the frontend before
     /// [`init_post_engine`](Architecture::init_post_engine).  The C++
     /// `parseCompilerConfig` decodes the `<default_proto>`/`<prototype>` tags
@@ -519,6 +525,7 @@ impl Architecture {
             proto_models: std::collections::BTreeMap::new(),
             defaultfp: None,
             evalfp_current: None,
+            default_return_addr: None,
             cspec_xml: None,
             pspec_xml: None,
             lanerecords: Vec::new(),
@@ -782,6 +789,11 @@ impl Architecture {
         // model and run output recovery against the real param lists.
         seam.defaultfp = self.defaultfp.clone();
         seam.evalfp_current = self.evalfp_current.clone();
+        // Carry the cspec's return-address storage (C++ `glb->defaultReturnAddr`)
+        // so the per-function `Funcdata::testForReturnAddress` can detect a
+        // BRANCHIND that is really a tail return through the return-address
+        // register (the Switch-return jump-table failure mode `fail_return`).
+        seam.default_return_addr = self.default_return_addr.clone();
         seam.trim_recurse_max = self.trim_recurse_max;
         seam.max_implied_ref = self.max_implied_ref;
         seam.return_single = self.return_single;
@@ -1730,6 +1742,13 @@ impl Architecture {
     /// proto-recovery actions can fire.  Otherwise a name-only default model is
     /// registered so the engine still has a non-null `defaultfp`.
     pub fn build_default_proto(&mut self) {
+        // C++ `Architecture::decodeReturnAddress` (architecture.cc:902) decodes the
+        // cspec's top-level <returnaddress> into `defaultReturnAddr`.  Do it here
+        // before the `take()` below consumes the cspec; a missing/empty element
+        // leaves `default_return_addr` as `None` (== `space == 0`).
+        if let Some(xml) = self.cspec_xml.clone() {
+            self.default_return_addr = self.decode_default_return_addr(&xml);
+        }
         if let Some(xml) = self.cspec_xml.take() {
             match self.decode_default_proto(&xml) {
                 Ok(model) => {
@@ -1923,6 +1942,43 @@ impl Architecture {
     /// `<pentry>` parameter lists).  General over any processor's cspec; the
     /// register/`<addr>` storage of each `<pentry>` is resolved through the
     /// engine `Translate`, exactly as `ParamEntry::decode` resolves `<addr>`.
+    /// Decode the cspec's top-level `<returnaddress>` storage element into the
+    /// `defaultReturnAddr` VarnodeData (C++ `Architecture::decodeReturnAddress`,
+    /// architecture.cc:902 -> `VarnodeData::decode`).  The element wraps a single
+    /// `<register>`/`<varnode>`/`<addr>` storage child; resolve it through the
+    /// engine `Translate` exactly as the effect-block decode does.  Returns `None`
+    /// when there is no `<returnaddress>` or it is empty (C++ leaves
+    /// `defaultReturnAddr.space == 0`).
+    fn decode_default_return_addr(&self, xml: &[u8]) -> Option<kuna_num::pcoderaw::VarnodeData> {
+        use kuna_base::xml::DocumentStorage;
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(xml).ok()?.get_root().clone();
+        let ra = find_child(&root, "returnaddress")?;
+        for child in ra.get_children().iter() {
+            match child.get_name() {
+                "register" => {
+                    let nm = attr_str(child, "name")?;
+                    return self.translate.get_register_varnode(nm.as_bytes()).ok();
+                }
+                "varnode" | "addr" => {
+                    let spname = attr_str(child, "space")?;
+                    let space = self.manage().get_space_by_name(&spname)?.clone();
+                    let offset =
+                        attr_str(child, "offset").and_then(|s| parse_int(&s)).unwrap_or(0);
+                    let size =
+                        attr_str(child, "size").and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+                    return Some(kuna_num::pcoderaw::VarnodeData {
+                        space: Some(space),
+                        offset,
+                        size,
+                    });
+                }
+                _ => continue,
+            }
+        }
+        None
+    }
+
     fn decode_default_proto(&self, xml: &[u8]) -> KunaResult<ProtoModel> {
         use kuna_base::xml::DocumentStorage;
         let mut store = DocumentStorage::new();

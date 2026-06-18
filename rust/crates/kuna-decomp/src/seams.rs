@@ -458,6 +458,13 @@ pub struct Architecture {
     /// The current-evaluation prototype model (C++ `evalfp_current`); falls back
     /// to `defaultfp` when unset.  Shared from the real architecture.
     pub evalfp_current: Option<Rc<crate::fspec::ProtoModel>>,
+    /// Default storage location of a function's return address (C++
+    /// `Architecture::defaultReturnAddr`), carried from the real architecture's
+    /// cspec `<returnaddress>` decode.  `None` (== `space == 0`) for hand-built
+    /// fixtures and cspecs without a `<returnaddress>`.  Read by
+    /// `Funcdata::test_for_return_address` to detect a BRANCHIND that is really a
+    /// tail return through the return-address register.
+    pub default_return_addr: Option<kuna_num::pcoderaw::VarnodeData>,
     /// Maximum recursion depth for `Funcdata::ancestorOpUse` (C++
     /// `Architecture::trim_recurse_max`).  Drives `ActionReturnRecovery`'s
     /// ancestor-realism walk.
@@ -613,6 +620,7 @@ impl Architecture {
             floatformats: Vec::new(),
             defaultfp: None,
             evalfp_current: None,
+            default_return_addr: None,
             // C++ Architecture default: trim_recurse_max = 5 (resetDefaults).
             trim_recurse_max: 5,
             // C++ Architecture default: max_implied_ref = 2 (resetDefaults).
