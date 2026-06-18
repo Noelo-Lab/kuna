@@ -3277,3 +3277,33 @@ CONTIGUOUS-LOAD-PIECE → WIDE-LOAD collapse rust lacks, firing in the rule roun
   double-precision-join arm (coreaction.cc:1681-1705) re-derives a `whole` from a hi/lo PIECE pair, same
   shape as `PIECE(hi2,lo8)`. Highest-value suspect. Also: RuleLoadVarnode::resolveSpacebaseRelative
   (ruleaction.cc:4318). Broad/high-regression — own wave; verify against decomp_test_dbg. [[kuna-rust-port]]
+
+## LOSS-231 UPDATE 4 (latch-COPY wave, 2026-06-18) — Switch Loop gate is heritage loop-carried SSA/COPY placement; do-nothing/CSE predicates are CORRECT, clearing the immed regresses Copy-trim/Partial-union
+
+Refutes the ActionMultiCse/propagateCopyAway next-locus. Probe (`KUNA_PROBE_STALE_IMMED`, reverted):
+the gate is `bb_has_no_immediate_copy(latch,0)=false` (funcdata_block.rs:904) → ActionDoNothing defers
+(coreaction_early.rs:743/751) → ActionLateDoNothing finds the latch non-do-nothing → never removed. The
+stale `f_immed_copy` edge label + header-phi immed_copy op flag are set by RulePropagateCopy
+(ruleaction_3.rs:1968 / funcdata_block.rs:1063, faithful to ruleaction.cc:3971). Rust has a TRANSIENT
+latch-resident `COPY(INT_ZEXT…)` (the division-case `(int4)a0/10` cast) that RulePropagateCopy
+propagates away WHILE marking the edge — before the latch's first do-nothing check; C++ reads the latch
+MULTIEQUAL directly across the header phi (no latch COPY) and removes the latch on the FIRST
+ActionDoNothing. CLEARING the stale immed gains all 8 BUT regresses Copy trim #1/2/3/6/8 + Partial
+union #3 → unfaithful; the do-nothing/immed predicates are CORRECT and must not be touched.
+- NEXT-LOCUS: heritage loop-carried-value SSA/COPY placement (heritage.rs renameRecurse / phi-input
+  linkage; rust introduces a unique `u0x6e`, C++ keeps R8D) — make the header phi read the latch phi
+  directly so RulePropagateCopy never marks the edge. High regression risk (heritage + copytrim/
+  partialunion); own wave. [[kuna-rust-port]]
+
+## LOSS-241 — Bitfields #18 / MIPS Bitfields #18: transient field3-AX over-merged into the addrtied 5-instance return high → forced explicit → expression split
+
+The raw IR for `dostackextract` is BYTE-IDENTICAL between rust and the C++ oracle
+(`AX=ZPULL(stack,#0,#3)` field3, `DX=ZPULL(stack,#0,#5)` field5, `AX=AX+DX`). cpp folds to
+`v1 = v2.field3 + v2.field5;`; rust splits into `v1 = v2.field3; v1 = v1 + v2.field5;`. Root: the field3
+ZPULL result `AX(0x100379)` is `addrtied=true, num_instances=5` in rust (it was merged into the
+5-instance return-AX HighVariable), so `ActionMarkExplicit::baseExplicit` (coreaction_cleanup.rs:592,
+faithful to coreaction.cc:3105) returns -1 (explicit) at both the numInstances()>1 (cc:3119) and addrtied
+(cc:3120) gates → forced split. In the C++ oracle that transient AX stays num_instances=1, non-addrtied →
+implicit → inlined. NEXT-LOCUS: the HighVariable register-merge / addrtied-marking layer (merge.rs
+mergeAddrTied + the addrtied-flag painting reachable from heritage.rs) that over-ties the transient
+return-register SSA version. Broad SSA-core seam. [[kuna-rust-port]]

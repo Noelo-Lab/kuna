@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 639/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 641/675; +...clone-gate audit, deindirect-output-type
+
+**printc array-subscript hex/dec render +2 → 641.** Three C array-subscript sites emitted the index with `format!({index})` (unconditional decimal); C++ pushPartialSymbol (printc.cc:2128) renders via push_integer so element 11 prints `arr[0xb]` (val<=10→dec rule). Routed printc.rs:4676/5048/4778 through push_constant_ir_fmt_sign. Gained Partial splitting #2 + Stack string #5. Gate: `[675,641]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Bitfields #18 deferred (LOSS-241: transient field3-AX over-merged into addrtied 5-instance return high → forced explicit → split; IR byte-identical). Switch Loop latch-COPY refined (LOSS-231 UPDATE 4: heritage loop-carried SSA/COPY placement; clearing the immed regresses copytrim/partialunion).
 
 **Long double RuleDoubleLoad unblock +2 → 639.** De-stubbed `space_from_const_index` (double.rs:1196, was SEAM(W4) returning None) — reads the space-manager index back from the space-const Varnode offset (LOSS-015), mirroring space_from_const. The already-ported+registered `RuleDoubleLoad` (double.rs:5107, double.cc:3436) was silently dead because test_contiguous_pointers (double.rs:1208) bailed at the first space-match on every candidate. Now it collapses `PIECE(SUBPIECE(load8@+8,0),load8@+0)` → one wide 10-byte LOAD. Gained Long double #5/#6. Gate: `[675,639]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. (ActionParamDouble was DISPROVEN — C++ never has a PIECE at the call site.) #11 = input-whole/combineInputVarnodes (struct-by-value stack pieces, separate).
 
