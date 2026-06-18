@@ -81,6 +81,17 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
             }
         }
     }
+    // C++ `TypeOpCall::getOutputLocal` (typeop.cc:722) / `TypeOpCallind::getOutputLocal`
+    // (typeop.cc:778): when the resolved `FuncCallSpecs` has a locked (committed)
+    // output prototype, the call output Varnode's suggested type is the callee's
+    // (non-VOID) return data-type.  This is what lets a deindirected CALL to a
+    // known-proto function (e.g. `int4 *obtainPtr(char *)`) type its return Varnode
+    // directly, so `ActionSetCasts` inserts no spurious `(int4 *)` cast.
+    if o.code() == OpCode::CPUI_CALL || o.code() == OpCode::CPUI_CALLIND {
+        if let Some(ct) = call_output_type_local(data, op, o.code()) {
+            return ct;
+        }
+    }
     let info = type_op_info(o.code());
     match arch.types() {
         Some(tlst) => info
@@ -198,6 +209,50 @@ fn call_input_type_local(
         }
     }
     None
+}
+
+/// The locked-output arm of `TypeOpCall::getOutputLocal` (typeop.cc:722-738) /
+/// `TypeOpCallind::getOutputLocal` (typeop.cc:778-791): resolve the `FuncCallSpecs`
+/// for the CALL/CALLIND op and, if its output prototype is locked (committed) and
+/// non-VOID, return that return data-type.  `None` falls back to the generic
+/// size-only `getOutputLocal`.
+fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<Rc<Datatype>> {
+    // C++ `TypeOpCall`: the prototype lives only when in(0) is an fspec reference;
+    // a CALL whose in(0) is not an fspec falls through to the default.
+    if opcode == OpCode::CPUI_CALL {
+        let in0 = data.obank().get(op)?.get_in(0)?;
+        let is_fspec = data
+            .vbank()
+            .get(in0)
+            .and_then(|v| v.get_addr().get_space())
+            .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_FSPEC)
+            .unwrap_or(false);
+        if !is_fspec {
+            return None;
+        }
+    }
+    // Resolve the FuncCallSpecs for this op (C++ `getFspecFromConst` for CALL /
+    // `getCallSpecs` for CALLIND; this port keys `qlst` by the spec's CALL op).
+    let n = data.num_calls();
+    let mut fc = None;
+    for i in 0..n {
+        if data.get_call_specs(i).get_op() == op {
+            fc = Some(data.get_call_specs(i));
+            break;
+        }
+    }
+    let fc = fc?;
+    let proto = fc.proto();
+    // if (!fc->isOutputLocked()) return default;
+    if !proto.is_output_locked() {
+        return None;
+    }
+    // ct = fc->getOutputType(); if (ct->metatype == VOID) return default; return ct.
+    let ct = proto.get_output_type()?;
+    if ct.get_metatype() == type_metatype::TYPE_VOID {
+        return None;
+    }
+    Some(Rc::clone(ct))
 }
 
 /// C++ `Varnode::getLocalType(bool &blockup)` (varnode.cc:919).  Determine an
