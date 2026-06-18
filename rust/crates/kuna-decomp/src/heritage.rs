@@ -2995,6 +2995,31 @@ impl Heritage {
     // wire `finalvn` as the output) and `vnlist[i]` is the current piece — both
     // the position test and the element read are needed, so the C++ indexed walk
     // is the faithful form.
+    //
+    // BLOCKED next-locus — "Stack string #9" (`stackstring.xml`, `alterString`):
+    // the 1-byte store `mov [rsp+9], dil` into a `char v1[40]` (the array typing
+    // comes from the `customPrint(char *)` callee proto) must render `v1[9] = a0`
+    // but renders `v1[8] = CONCAT11(a0,v1[8])`.  The seam is purely a single op in
+    // the raw IR at the store instruction (0x100170):
+    //
+    //   CPP:  a3: s0x..d1:1 = DIL                       (byte's own v1[9] stack home)
+    //         6e: s0x..d0:2 = CONCAT11(s0x..d1:1, s0x..d0:1)
+    //   RUST: 6e: s0x..d0:2 = CONCAT11(DIL, s0x..d0:1)  (no a3; reads the register)
+    //
+    // i.e. CPP gives the stored byte its OWN address-tied 1-byte stack varnode at
+    // the store-target offset (v1[9]) and feeds THAT into the read-modify-write
+    // CONCAT11 that rebuilds the adjacent 2-byte element; the printer then folds the
+    // CONCAT tail and emits the plain `v1[9] = a0` byte-store.  Confirmed (cpp +
+    // rust both reproduce in isolation given `option readonly on` + `parse line
+    // extern void customPrint(char *)`) to be a FLOW/early-analysis difference, not
+    // a print arm and not a late rule: the `a3` COPY is already present at the very
+    // first action (`break action normalanalysis`), gated on the char-array typing
+    // of `v1` (absent it, both engines emit `CONCAT11(DIL,..)` and an `xunknown8`
+    // local).  The faithful fix lives in the spacebase-relative byte-STORE lowering
+    // / `ScopeLocal` byte-element refinement that places a register byte stored into
+    // a typed stack-array element into its own addr-tied 1-byte stack home before
+    // the RMW CONCAT is built (the cpp `s0x..d1:1 = DIL` COPY) — NOT in `printc`'s
+    // CONCAT11 render arm (which is byte-faithful here).
     #[allow(clippy::needless_range_loop)]
     fn concat_pieces(
         &self,
