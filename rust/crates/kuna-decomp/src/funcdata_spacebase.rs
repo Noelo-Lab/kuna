@@ -1145,6 +1145,26 @@ impl Funcdata {
                     .map(|lm| lm.in_scope(&ex_addr, ex_size))
                     .unwrap_or(false);
                 if in_scope {
+                    // NEXT-LOCUS (Stack spill #1, BLOCKED): for `spill(int4,int4,int4,foo d)`
+                    // the struct param `d` is passed on the stack as a JOIN of the
+                    // pieces at +0x10/+0x1c.  The `SUB84` that extracts `d.field_b`
+                    // produces an exemplar at stack +0x10 whose covering SymbolEntry
+                    // (the param `d`) is NOT in the ScopeLocal range tree here —
+                    // `sync_overlap`/`find_overlap` returns None — so this `in_scope`
+                    // arm synthesises a fresh `mapped|addrtied` local over the param
+                    // slot.  That makes `ActionMarkExplicit::base_explicit` force the
+                    // SUBPIECE output explicit (the `is_mapped()` arm,
+                    // coreaction.cc:3148), emitting `v1 = d.field_b; return a + v1;`
+                    // instead of the inlined `return a + d.field_b;`.  C++ resolves
+                    // the param `d`'s join-space SymbolEntry into the local scope
+                    // (ScopeLocal restructure + `findOverlap` over the join pieces),
+                    // so the exemplar finds the param entry (the `entry != 0` arm
+                    // above) and inherits the param's non-addrtied treatment, leaving
+                    // the SUBPIECE implied.  FIX SEAM: register the stack-passed
+                    // struct-param join SymbolEntry into the ScopeLocal range tree so
+                    // `find_overlap(+0x10, 4)` hits `d` (the join-piece restructure in
+                    // `ScopeLocal::restructureVarnode`/`Scope::addMap` join arm — a W5
+                    // join-record dependency, see funcdata_spacebase `addMap` SEAM(W5)).
                     fl = varnode_flags::mapped | varnode_flags::addrtied;
                 } else if unmapped_alias_check {
                     // isUnmappedUnaliased -> nolocalalias (conservatively 0 here:

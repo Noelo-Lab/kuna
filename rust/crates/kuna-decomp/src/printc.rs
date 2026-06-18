@@ -5096,21 +5096,60 @@ impl PrintC {
             // successful string push).  The TYPE_CODE (function-name) sub-arm is a
             // documented LOSS below.
             use crate::dtype::type_metatype::{TYPE_PTR, TYPE_PTRREL};
-            if matches!(ct.get_metatype(), TYPE_PTR | TYPE_PTRREL) && off != 0 {
-                if let Some(sub) = ct.get_ptr_to() {
-                    if sub.is_char_print() {
-                        // point = op->getAddr() (the using op's address; used only
-                        // by a segmented resolver — flat spaces ignore it).
-                        let point = fd
-                            .obank()
-                            .get(op)
-                            .map(|o| o.get_addr().clone())
-                            .unwrap_or_default();
-                        if self.push_ptr_char_constant_ir(arch, off, &ct, &sub, &point, op, vn) {
-                            return;
+            if matches!(ct.get_metatype(), TYPE_PTR | TYPE_PTRREL) {
+                if off != 0 {
+                    if let Some(sub) = ct.get_ptr_to() {
+                        if sub.is_char_print() {
+                            // point = op->getAddr() (the using op's address; used only
+                            // by a segmented resolver — flat spaces ignore it).
+                            let point = fd
+                                .obank()
+                                .get(op)
+                                .map(|o| o.get_addr().clone())
+                                .unwrap_or_default();
+                            if self.push_ptr_char_constant_ir(arch, off, &ct, &sub, &point, op, vn) {
+                                return;
+                            }
                         }
                     }
                 }
+                // C++ `pushConstant` TYPE_PTR/TYPE_PTRREL arm (printc.cc:1842-1880).
+                // After the `pushPtrCharConstant` string short-circuit (above) and
+                // the TYPE_CODE function-name sub-arm (a documented LOSS) fail, the
+                // C++ `break`s to the shared "Default printing" tail:
+                //   if (option_NULL && val==0) pushAtom(nullToken); return;   // gated
+                //   if (!option_nocasts) { pushOp(&typecast); pushType(ct); }
+                //   pushMod(); if (!isSet(force_dec)) setMod(force_hex);
+                //   push_integer(val, ct->getSize(), false, ...); popMod();
+                // This is what renders a pointer-typed null as `(int4 **)0x0` — the
+                // for-loop iterator compare `loopvar != (int4 **)0x0` — rather than a
+                // bare decimal `0`.  Previously this arm fell straight through to the
+                // signed/unsigned integer path below, dropping both the leading
+                // typecast and the force_hex, so the pointer constant printed as `0`.
+                if self.options.null && off == 0 {
+                    // option_NULL set (OFF by kuna default): emit the NULL token.
+                    self.push_atom(&Atom::with_op_vn(
+                        "NULL".to_string(),
+                        TagType::VarToken,
+                        crate::printlanguage::SyntaxHighlight::var_color,
+                        op_key(op),
+                        vn_key(vn),
+                    ));
+                    return;
+                }
+                if !self.options.nocasts {
+                    self.push_op(&tokens::TYPECAST, Some(op_key(op)));
+                    self.push_cast_type(&ct);
+                }
+                // pushMod(); if (!isSet(force_dec)) setMod(force_hex); push_integer(
+                // val, size, /*sign*/ false, ...); popMod().
+                self.context.push_mod();
+                if !self.context.is_set(modifiers::FORCE_DEC) {
+                    self.context.set_mod(modifiers::FORCE_HEX);
+                }
+                self.push_constant_ir_fmt_sign(off, sz, op, display_format::NONE, false);
+                self.context.pop_mod();
+                return;
             }
             // Integer path.  Inside `push_integer` (printc.cc:1376) the varnode
             // high's equate-Symbol format OVERRIDES the read-facing type's format

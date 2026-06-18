@@ -606,6 +606,11 @@ pub struct DynamicSymbolSpec {
     /// The equated constant value (C++ `EquateSymbol::value`); `Some` iff the
     /// symbol is an `EquateSymbol`.
     pub equate_value: Option<uintb>,
+    /// The forced field number of a `UnionFacetSymbol` (C++
+    /// `UnionFacetSymbol::fieldNum`); `Some` iff the symbol is a `UnionFacetSymbol`.
+    /// Carried so the `map unionfacet` symbol is re-created with its forced field on
+    /// the console IR rebuild (otherwise `applyUnionFacet` is never reached).
+    pub union_facet: Option<(int4, bool)>,
 }
 
 /// The base class for a symbol in a symbol table or scope (C++ `Symbol`,
@@ -814,6 +819,24 @@ impl Symbol {
         match &self.kind {
             SymbolKind::Function { consume_size, .. } => *consume_size,
             _ => self.dtype.as_ref().map(|t| t.get_size()).unwrap_or(0),
+        }
+    }
+
+    /// The forced field number of a `UnionFacetSymbol` (C++
+    /// `UnionFacetSymbol::getFieldNumber`).  `-1` for any other Symbol kind.
+    pub fn get_field_number(&self) -> int4 {
+        match &self.kind {
+            SymbolKind::UnionFacet { field_num, .. } => *field_num,
+            _ => -1,
+        }
+    }
+
+    /// Whether a `UnionFacetSymbol` is the *address-based* form (C++
+    /// `UnionFacetSymbol::isAddrBased`).  `false` for any other Symbol kind.
+    pub fn is_addr_based(&self) -> bool {
+        match &self.kind {
+            SymbolKind::UnionFacet { addr_based, .. } => *addr_based,
+            _ => false,
         }
     }
 }
@@ -1826,6 +1849,10 @@ impl Database {
                 SymbolKind::Equate { value } => Some(value),
                 _ => None,
             };
+            let union_facet = match symbol.kind {
+                SymbolKind::UnionFacet { field_num, addr_based } => Some((field_num, addr_based)),
+                _ => None,
+            };
             out.push(DynamicSymbolSpec {
                 name: symbol.name.clone(),
                 dtype: ct,
@@ -1834,6 +1861,7 @@ impl Database {
                 category: symbol.category,
                 dispflags: symbol.dispflags,
                 equate_value,
+                union_facet,
             });
         }
         out
