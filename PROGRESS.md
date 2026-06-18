@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 644/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 645/675; +...clone-gate audit, deindirect-output-type
+
+**IfcMapParam across IR rebuild +1 → 645.** The console `decompile` rebuilds the IR and discarded the `map param` register lock → ActionPrototypeTypes saw is_input_locked()=false. Added pending_param_maps (ifacedecomp.rs) re-applied by Funcdata::apply_mapped_params (funcdata.rs:584) so the rebuilt proto is input-locked → `float8 ulconv_win(uint8 llval)`. Gained Floating-point convert #3. Gate: `[675,645]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Mixed float/int #1 (LOSS-242, xmm0-is-return-reg split, heritage) + Switch Loop (LOSS-231 UPDATE 5, oppool1 subreg-collapse, hard) deferred.
 
 **printc pushPartialSymbol arms +3 → 644 (LOSS-240 Enum was WRONG — no oscillation, it's a printc stub).** The stack symbol converges cleanly to enumstruct STRUCT(16); the gap was PrintC::pushPartialSymbol (printc.rs, printc.cc:2019) stubbed arms: the allowCast SUBPIECE-cast arm (cc:2094) + the artificial `._<off>_<size>_` member arm (cc:2106) returned false → bare `v1`. Implemented both + ZPULL/SPULL bitfield break (cc:2057) + whole-composite decl → `(undefined1)v1.flagfield` (#1) / `v1.flagfield._4_4_` (#2); fixed the artificial-arm mis-fire on stack bitfield stores via push_bitfield_struct_symbol (cc:2633). Gained Enum Reading #1/#2 + Return Value Input Register #5. Gate: `[675,644]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Switch Loop refined a 5th time (heritage PROVEN faithful; gate = oppool1 latch-resident R8=COPY(R8) subregister-collapse remnant; blocked on unavailable C++ oppool1 IR).
 

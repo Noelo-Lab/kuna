@@ -3307,3 +3307,38 @@ faithful to coreaction.cc:3105) returns -1 (explicit) at both the numInstances()
 implicit → inlined. NEXT-LOCUS: the HighVariable register-merge / addrtied-marking layer (merge.rs
 mergeAddrTied + the addrtied-flag painting reachable from heritage.rs) that over-ties the transient
 return-register SSA version. Broad SSA-core seam. [[kuna-rust-port]]
+
+## LOSS-231 UPDATE 5 (heritage-SSA wave, 2026-06-18) — heritage PROVEN faithful; the Switch Loop gate is an oppool1 subregister-collapse remnant, blocked on unavailable C++ oppool1 IR
+
+Refutes UPDATE 4's heritage-SSA locus. Per-action `print_raw` dumps (KUNA_DUMP_ACTION, reverted) prove:
+(1) immediately after `heritage` the rust header phi reads the latch MULTIEQUAL DIRECTLY
+(`register:0x80:8(0x100027) = R8(0x100004) ? R8(0x1000c4)` — NO latch COPY, NO unique); the uniques
+appear only at/after oppool1. So "make the header phi read the latch phi directly" is ALREADY true.
+(2) The blocking COPY is NOT the division-cast — it's an 8-byte `register:0x80:8 = COPY(register:0x80:8)`
+(R8 self-copy), the collapse remnant of the latch's loop-value reconstruction chain
+`R8 = ZEXT48(SUB84(R8,0))` / `CONCAT44(0,R8D)` that rust materializes in the latch. RulePropagateCopy
+(ruleaction_3.rs:1945, faithful) sets the back-edge `f_immed_copy` during the FIRST oppool1 (before any
+ActionDoNothing), blocking the empty-latch do-nothing removal. C++'s oppool1 never produces that latch
+COPY — its case values flow into the latch MULTIEQUAL leaving the latch a pure-phi; C++ removes the
+latch on the first donothing (final C++ header is a 12-input R8D phi reading case-block trim COPYs; C++
+has NO 0x1000c4 block).
+- ALL removal/predicate machinery is byte-faithful (isDoNothing funcdata_block.rs:807, hasNoImmediateCopy
+  :904, setCopyImmed ruleaction_3.rs:1945, donothing defer coreaction_early.rs:742) — do NOT touch.
+- NEXT-LOCUS: the oppool1 SUBREGISTER-COLLAPSE order — make rust's oppool1 collapse the
+  `ZEXT48(SUB84(R8,0))`/`CONCAT44(0,R8D)` 8↔4 reconciliation the way C++ does (case trim COPYs in the
+  case blocks, latch left a pure-phi) so no latch-resident `R8=COPY(R8)` crosses the back-edge. SubvariableFlow
+  (subflow.rs:1907 get_replace_varnode/use_same_address) + the SUB/ZEXT/CONCAT collapse rules in
+  ruleaction_3/_4. BLOCKED: requires C++ intermediate oppool1 IR to transcribe against, but
+  `break start/action` SEGFAULTS in decomp_test_dbg for switchloop — no faithful change authorable
+  without it. FIVE waves have now refined this; it is the hardest remaining root. [[kuna-rust-port]]
+
+## LOSS-242 — Mixed float/int #1: xmm0 float8 param that is ALSO the return register splits into two 4-byte inputs
+
+`dldlll`'s 1st param is `float8` in xmm0 (also the return register); heritage forms xmm0 as TWO separate
+4-byte input varnodes (`register:0x1200:4` possible=true + `register:0x1204:4` possible=false) instead of
+one 8-byte input — whereas xmm2 (3rd float8 param, not a return register) is a single `0x1280:8` and
+recovers correctly. The two halves CONCAT44 in the body → param degrades to `xunknown4`
+(`CONCAT44(v1,a0)` not `float8 a0`). NEXT-LOCUS: heritage's input-varnode formation for a float register
+overlapping the return register (heritage.rs input/return-guard interaction) must coalesce the
+register-pair into one 8-byte input BEFORE ActionInputPrototype's trial gather (coreaction_protos.rs:1551)
+— no fspec/modelrules-only fix exists (the split is upstream). [[kuna-rust-port]]
