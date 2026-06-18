@@ -1,6 +1,8 @@
 # kuna Progress Log
 
-## Session (2026-06-17c/18) — rust-port W10: 408 → 512/675; +...clone-gate audit, deindirect-output-type
+## Session (2026-06-17c/18) — rust-port W10: 408 → 514/675; +...clone-gate audit, deindirect-output-type
+
+**Inlining fspec unwrap +2 → 514.** A cloned inline CALL carried the callee's fspec annotation in slot 0; `setup_call_specs` (flow.rs:1697) read the fspec address as the entry → bogus `sub_<offset>`. Fixed: unwrap IPTR_FSPEC via fspec_lookup (C++ fspec.cc:4938). Gained Inlining #3/#8. Gate: `[675,514]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Inlining #5 (`val & 1U`) = separate cast/typing seam (cast.rs markExplicitUnsigned).
 
 **RuleConditionalMove + CloneBlockOps +3 → 512 (closes LOSS-074 RuleConditionalMove half).** Ported the no-op SEAM (ruleaction_7.rs:1883) + its prereqs: `CloneBlockOps::clone_expression` (funcdata_block.rs:2659, funcdata_block.cc:1043) + `op_bool_negate` (funcdata_op.rs:2153, funcdata_op.cc:560). Pulls the boolean expr out of a conditional block, collapsing the flag-chain MULTIEQUAL into BOOL_AND/BOOL_OR → downstream RuleSborrow/RuleFloatRange/RuleIgnoreNan fire. Gained Ccmp #2/#3, NaN operations #1. Gate: `[675,512]`, regressed-set EMPTY, cargo --no-fail-fast 0-fail, PARITY OK. Review `reviews/w10-conditionalmove.md`. condmove #7 (LOSS-234) + NaN tail (&&1, LOSS-074 REFINEMENT) = separate roots. [OPS: the merge landed on a detached HEAD (main tree had checked out an agent branch); caught via the pre-merge branch check, recovered by FF — verify active branch before every integrate.]
 
