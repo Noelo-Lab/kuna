@@ -627,33 +627,72 @@ impl Rule for RuleAddUnsigned {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        use crate::dtype::type_metatype;
         let constvn = in_vn(data, op, 1);
+
+        // if (!constvn->isConstant()) return 0;
         if !is_const(data, constvn) {
             return 0;
         }
-        // Datatype *dt = constvn->getTypeReadFacing(op);  // SEAM(W6)
+        // Datatype *dt = constvn->getTypeReadFacing(op);
         // if (dt->getMetatype() != TYPE_UINT) return 0;
-        // if (dt->isCharPrint()) return 0;
-        //   The "first quarter of bits all 1's" check below is pure, but the
-        //   dt-based guards (UINT/charprint/equate/enum) and the opSetOpcode commit
-        //   are W6.  Without the read-facing type we cannot evaluate the metatype
-        //   guard, so we must not transform.
-        if seam_type_read_facing(data, constvn, op).is_err() {
-            return 0; // SEAM(W6)
+        // if (dt->isCharPrint()) return 0;     // Only change integer forms
+        let dt = data.vn_type_read_facing(constvn, op);
+        if dt.get_metatype() != type_metatype::TYPE_UINT {
+            return 0;
         }
-        // The remainder (kept for the next wave; not reached at this merge base):
-        //   uintb val = constvn->getOffset();
-        //   uintb mask = calc_mask(constvn->getSize());
-        //   int4 sa = constvn->getSize() * 6;   // 1/4 less than full bitsize
-        //   uintb quarter = (mask>>sa) << sa;
-        //   if ((val & quarter) != quarter) return 0;
-        //   ... equate name-lock guard (W4) ...
-        //   uintb negatedVal = (-val) & mask;
-        //   ... enum hasNamedValue guard (W6) ...
-        //   data.opSetOpcode(op,CPUI_INT_SUB);
-        //   Varnode *cvn = data.newConstant(constvn->getSize(), negatedVal);
-        //   cvn->copySymbol(constvn); data.opSetInput(op,cvn,1); return 1;
-        0
+        if dt.is_char_print() {
+            return 0;
+        }
+        // uintb val = constvn->getOffset();
+        // uintb mask = calc_mask(constvn->getSize());
+        // int4 sa = constvn->getSize() * 6;    // 1/4 less than full bitsize
+        // uintb quarter = (mask>>sa) << sa;
+        // if ((val & quarter) != quarter) return 0;  // first quarter bits all 1's
+        let val = offset(data, constvn);
+        let cv_size = size(data, constvn);
+        let mask = calc_mask(cv_size);
+        let sa = (cv_size * 6) as uint4; // 1/4 less than full bitsize
+        let quarter = (mask >> sa) << sa;
+        if (val & quarter) != quarter {
+            return 0;
+        }
+        // if (constvn->getSymbolEntry() != 0) {
+        //   EquateSymbol *sym = dynamic_cast<EquateSymbol*>(...->getSymbol());
+        //   if (sym != 0) { if (sym->isNameLocked()) return 0; }   // named equate
+        // }
+        if let Some(sym) = data.vbank().get(constvn).and_then(|v| v.kuna_symbol_entry()) {
+            if let Some(local) = data.get_scope_local() {
+                let s = local.database().symbol(sym);
+                if s.get_category() == crate::database::symbol_category::EQUATE
+                    && s.is_name_locked()
+                {
+                    return 0;
+                }
+            }
+        }
+        // uintb negatedVal = (-val) & mask;
+        let negated_val = val.wrapping_neg() & mask;
+        // if (dt->isEnumType()) {
+        //   TypeEnum *enumType = (TypeEnum *)dt;
+        //   if (!enumType->hasNamedValue(negatedVal) && enumType->hasNamedValue((~val)&mask))
+        //     return 0;
+        // }
+        if dt.is_enum_type()
+            && !dt.has_named_value(negated_val)
+            && dt.has_named_value((!val) & mask)
+        {
+            return 0;
+        }
+        // data.opSetOpcode(op,CPUI_INT_SUB);
+        data.op_set_opcode_code(op, OpCode::CPUI_INT_SUB);
+        // Varnode *cvn = data.newConstant(constvn->getSize(), negatedVal);
+        let cvn = data.new_constant(cv_size, negated_val);
+        // cvn->copySymbol(constvn);
+        data.copy_symbol(cvn, constvn);
+        // data.opSetInput(op,cvn,1);
+        let _ = data.op_set_input(op, cvn, 1);
+        1
     }
 }
 
