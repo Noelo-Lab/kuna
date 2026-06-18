@@ -137,6 +137,11 @@ fn vn_is_free(data: &Funcdata, vn: VarnodeId) -> bool {
 fn vn_def(data: &Funcdata, vn: VarnodeId) -> Option<OpId> {
     data.vbank().get(vn).expect("vn_def: stale vn").get_def()
 }
+/// `vn->isAddrTied()`
+#[inline]
+fn vn_is_addr_tied(data: &Funcdata, vn: VarnodeId) -> bool {
+    data.vbank().get(vn).expect("vn_is_addr_tied: stale vn").is_addr_tied()
+}
 /// `vn->beginDescend()..endDescend()` snapshotted to a Vec (rules mutate during
 /// iteration; the C++ holds a live list iterator — collecting first is the
 /// arena-safe equivalent that preserves descend-list order).
@@ -1824,12 +1829,11 @@ impl Rule for RuleNegateNegate {
 
 /// `RuleConditionalMove` — simplify various conditional-move situations.
 ///
-/// // SEAM(W4): `constructBool` needs the `CloneBlockOps` expression cloner
-/// (`cloneExpression`) and `gatherExpression` ordering, and several arms call
-/// `data.opBoolNegate` (unported — it routes through output creation).  The
-/// matching/topology (`checkBoolean`, the block-shape analysis up to the CBRANCH
-/// discovery) is ported; the transformation arms that require the cloner /
-/// `opBoolNegate` bail at the seam (no change).
+/// Ported in full (C++ `ruleaction.cc:9292`).  The boolean MULTIEQUAL select
+/// produced by a conditional diamond is collapsed into BOOL_AND/BOOL_OR/
+/// zext(cond) by pulling the conditional-branch expression out of the branch
+/// via `CloneBlockOps::cloneExpression` ([`Funcdata::clone_expression`]) and
+/// `Funcdata::opBoolNegate` ([`Funcdata::op_bool_negate`]).
 pub struct RuleConditionalMove;
 
 impl RuleConditionalMove {
@@ -1858,6 +1862,99 @@ impl RuleConditionalMove {
             }
         }
         None
+    }
+
+    /// Determine if the given expression can be propagated out of the condition,
+    /// collecting the ops that need duplication into `ops`
+    /// (C++ `RuleConditionalMove::gatherExpression`, `ruleaction.cc:9329`).
+    fn gather_expression(
+        data: &Funcdata,
+        vn: VarnodeId,
+        ops: &mut Vec<OpId>,
+        root: BlockId,
+        branch: BlockId,
+    ) -> bool {
+        if vn_is_constant(data, vn) {
+            return true; // Constants can always be propagated
+        }
+        if vn_is_free(data, vn) {
+            return false;
+        }
+        if vn_is_addr_tied(data, vn) {
+            return false;
+        }
+        if root == branch {
+            return true; // Can always propagate if there is no branch
+        }
+        if !vn_is_written(data, vn) {
+            return true;
+        }
+        let op = vn_def(data, vn).expect("gatherExpression: vn written");
+        if data.obank().get(op).expect("gatherExpression: op").get_parent() != Some(branch) {
+            return true; // Can propagate if value formed before branch
+        }
+        ops.push(op);
+        let mut pos = 0;
+        while pos < ops.len() {
+            let op = ops[pos];
+            pos += 1;
+            if data.obank().get(op).expect("gatherExpression: op").get_eval_type()
+                == pcodeop_flags::special
+            {
+                return false;
+            }
+            let num_in = op_num_input(data, op);
+            for i in 0..num_in {
+                let in0 = op_in(data, op, i).expect("gatherExpression: input slot");
+                if vn_is_free(data, in0) && !vn_is_constant(data, in0) {
+                    return false;
+                }
+                let in0_def = vn_def(data, in0);
+                if vn_is_written(data, in0)
+                    && in0_def
+                        .map(|d| {
+                            data.obank().get(d).expect("gatherExpression: def").get_parent()
+                                == Some(branch)
+                        })
+                        .unwrap_or(false)
+                {
+                    // Don't pull out results that can be indirectly addressed.
+                    if vn_is_addr_tied(data, in0) {
+                        return false;
+                    }
+                    // Don't pull out results with more than one use.
+                    if data.lone_descend(in0) != Some(op) {
+                        return false;
+                    }
+                    if ops.len() >= 4 {
+                        return false;
+                    }
+                    ops.push(in0_def.expect("gatherExpression: written def"));
+                }
+            }
+        }
+        true
+    }
+
+    /// Reproduce the boolean expression resulting in `vn`, either reusing the
+    /// existing Varnode or reconstructing it via the expression cloner so the
+    /// result does not depend on data inside the branch
+    /// (C++ `RuleConditionalMove::constructBool`, `ruleaction.cc:9362`).
+    fn construct_bool(
+        data: &mut Funcdata,
+        vn: VarnodeId,
+        insertop: OpId,
+        ops: &mut Vec<OpId>,
+    ) -> VarnodeId {
+        if !ops.is_empty() {
+            // sort(ops.begin(),ops.end(),compareOp);  // by seqnum order
+            ops.sort_by_key(|&o| {
+                data.obank().get(o).expect("constructBool: stale op").get_seq_num().get_order()
+            });
+            data.clone_expression(ops, insertop).expect("constructBool: cloneExpression")
+        } else {
+            vn
+        }
     }
 }
 
@@ -1932,11 +2029,161 @@ impl Rule for RuleConditionalMove {
             return 0;
         }
 
-        // SEAM(W4): the remainder (gatherExpression, constructBool/CloneBlockOps,
-        // opBoolNegate, and the MULTIEQUAL rewrites) needs the expression cloner
-        // and opBoolNegate, neither ported.  All match conditions up to the
-        // CBRANCH discovery are faithful; the rewrite is deferred (no change).
-        0
+        // Re-resolve the boolean roots (checkBoolean returns the expression root).
+        let bool0 = RuleConditionalMove::check_boolean(data, in0).expect("condmove: bool0");
+        let bool1 = RuleConditionalMove::check_boolean(data, in1).expect("condmove: bool1");
+
+        let mut op_list0: Vec<OpId> = Vec::new();
+        if !RuleConditionalMove::gather_expression(data, bool0, &mut op_list0, rootblock0, inblock0)
+        {
+            return 0;
+        }
+        let mut op_list1: Vec<OpId> = Vec::new();
+        if !RuleConditionalMove::gather_expression(data, bool1, &mut op_list1, rootblock0, inblock1)
+        {
+            return 0;
+        }
+
+        // bool path0istrue
+        let mut path0istrue = if rootblock0 != inblock0 {
+            block_get_true_out(data, rootblock0) == inblock0
+        } else {
+            block_get_true_out(data, rootblock0) != inblock1
+        };
+        if data.obank().get(cbranch).expect("condmove: cbranch").is_boolean_flip() {
+            path0istrue = !path0istrue;
+        }
+
+        let bool0_const = vn_is_constant(data, bool0);
+        let bool1_const = vn_is_constant(data, bool1);
+
+        if !bool0_const && !bool1_const {
+            if inblock0 == rootblock0 {
+                let mut boolvn = op_in(data, cbranch, 1).expect("condmove: cbranch in1");
+                let mut andorselect = path0istrue;
+                // Force 0 branch to either be boolvn OR !boolvn
+                if boolvn != in0 {
+                    if !vn_is_written(data, boolvn) {
+                        return 0;
+                    }
+                    let negop = vn_def(data, boolvn).expect("condmove: boolvn written");
+                    if op_code(data, negop) != OpCode::CPUI_BOOL_NEGATE {
+                        return 0;
+                    }
+                    if op_in(data, negop, 0) != Some(in0) {
+                        return 0;
+                    }
+                    andorselect = !andorselect;
+                    let _ = &mut boolvn;
+                }
+                let opc = if andorselect { OpCode::CPUI_BOOL_OR } else { OpCode::CPUI_BOOL_AND };
+                data.op_uninsert(op);
+                data.op_set_opcode_code(op, opc);
+                data.op_insert_begin(op, bb);
+                let firstvn = RuleConditionalMove::construct_bool(data, bool0, op, &mut op_list0);
+                let secondvn = RuleConditionalMove::construct_bool(data, bool1, op, &mut op_list1);
+                data.op_set_input(op, firstvn, 0).expect("condmove: set in0");
+                data.op_set_input(op, secondvn, 1).expect("condmove: set in1");
+                return 1;
+            } else if inblock1 == rootblock0 {
+                let boolvn = op_in(data, cbranch, 1).expect("condmove: cbranch in1");
+                let mut andorselect = !path0istrue;
+                // Force 1 branch to either be boolvn OR !boolvn
+                if boolvn != in1 {
+                    if !vn_is_written(data, boolvn) {
+                        return 0;
+                    }
+                    let negop = vn_def(data, boolvn).expect("condmove: boolvn written");
+                    if op_code(data, negop) != OpCode::CPUI_BOOL_NEGATE {
+                        return 0;
+                    }
+                    if op_in(data, negop, 0) != Some(in1) {
+                        return 0;
+                    }
+                    andorselect = !andorselect;
+                }
+                data.op_uninsert(op);
+                let opc = if andorselect { OpCode::CPUI_BOOL_OR } else { OpCode::CPUI_BOOL_AND };
+                data.op_set_opcode_code(op, opc);
+                data.op_insert_begin(op, bb);
+                let firstvn = RuleConditionalMove::construct_bool(data, bool1, op, &mut op_list1);
+                let secondvn = RuleConditionalMove::construct_bool(data, bool0, op, &mut op_list0);
+                data.op_set_input(op, firstvn, 0).expect("condmove: set in0");
+                data.op_set_input(op, secondvn, 1).expect("condmove: set in1");
+                return 1;
+            }
+            return 0;
+        }
+
+        // Below here some change is being made.
+        data.op_uninsert(op); // Changing from MULTIEQUAL, this should be reinserted
+        let out_vn = data.obank().get(op).expect("condmove: op").get_out().expect("condmove: out");
+        let sz = vn_size(data, out_vn);
+        if bool0_const && bool1_const {
+            if vn_offset(data, bool0) == vn_offset(data, bool1) {
+                data.op_remove_input(op, 1);
+                data.op_set_opcode_code(op, OpCode::CPUI_COPY);
+                let cvn = data.new_constant(sz, vn_offset(data, bool0));
+                data.op_set_input(op, cvn, 0).expect("condmove: set const");
+                data.op_insert_begin(op, bb);
+            } else {
+                data.op_remove_input(op, 1);
+                let boolvn = op_in(data, cbranch, 1).expect("condmove: cbranch in1");
+                let needcomplement = (vn_offset(data, bool0) == 0) == path0istrue;
+                if sz == 1 {
+                    if needcomplement {
+                        data.op_set_opcode_code(op, OpCode::CPUI_BOOL_NEGATE);
+                    } else {
+                        data.op_set_opcode_code(op, OpCode::CPUI_COPY);
+                    }
+                    data.op_insert_begin(op, bb);
+                    data.op_set_input(op, boolvn, 0).expect("condmove: set boolvn");
+                } else {
+                    data.op_set_opcode_code(op, OpCode::CPUI_INT_ZEXT);
+                    data.op_insert_begin(op, bb);
+                    let boolvn = if needcomplement {
+                        data.op_bool_negate(boolvn, op, false).expect("condmove: opBoolNegate")
+                    } else {
+                        boolvn
+                    };
+                    data.op_set_input(op, boolvn, 0).expect("condmove: set boolvn");
+                }
+            }
+        } else if bool0_const {
+            let needcomplement = path0istrue != (vn_offset(data, bool0) != 0);
+            let opc = if vn_offset(data, bool0) != 0 {
+                OpCode::CPUI_BOOL_OR
+            } else {
+                OpCode::CPUI_BOOL_AND
+            };
+            data.op_set_opcode_code(op, opc);
+            data.op_insert_begin(op, bb);
+            let mut boolvn = op_in(data, cbranch, 1).expect("condmove: cbranch in1");
+            if needcomplement {
+                boolvn = data.op_bool_negate(boolvn, op, false).expect("condmove: opBoolNegate");
+            }
+            let body1 = RuleConditionalMove::construct_bool(data, bool1, op, &mut op_list1);
+            data.op_set_input(op, boolvn, 0).expect("condmove: set boolvn");
+            data.op_set_input(op, body1, 1).expect("condmove: set body1");
+        } else {
+            // bool1 must be constant
+            let needcomplement = path0istrue == (vn_offset(data, bool1) != 0);
+            let opc = if vn_offset(data, bool1) != 0 {
+                OpCode::CPUI_BOOL_OR
+            } else {
+                OpCode::CPUI_BOOL_AND
+            };
+            data.op_set_opcode_code(op, opc);
+            data.op_insert_begin(op, bb);
+            let mut boolvn = op_in(data, cbranch, 1).expect("condmove: cbranch in1");
+            if needcomplement {
+                boolvn = data.op_bool_negate(boolvn, op, false).expect("condmove: opBoolNegate");
+            }
+            let body0 = RuleConditionalMove::construct_bool(data, bool0, op, &mut op_list0);
+            data.op_set_input(op, boolvn, 0).expect("condmove: set boolvn");
+            data.op_set_input(op, body0, 1).expect("condmove: set body0");
+        }
+        1
     }
 }
 

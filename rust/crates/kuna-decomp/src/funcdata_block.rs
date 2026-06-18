@@ -1994,6 +1994,19 @@ impl Funcdata {
         Ok(())
     }
 
+    /// Clone the p-code ops of an expression right before `follow_op`, returning
+    /// the output Varnode of the last cloned op (drives `CloneBlockOps::
+    /// cloneExpression`).  Used by `RuleConditionalMove::constructBool` to pull a
+    /// boolean expression out of a conditional block via duplication.
+    pub fn clone_expression(
+        &mut self,
+        ops: &[OpId],
+        follow_op: OpId,
+    ) -> KunaResult<VarnodeId> {
+        let mut cloner = CloneBlockOps::new();
+        cloner.clone_expression(self, ops, follow_op)
+    }
+
     /// Gather all structured blocks that have a \e goto edge to a RETURN block
     /// (C++ `ActionReturnSplit::gatherReturnGotos`, `blockaction.cc:2206`).
     ///
@@ -2641,6 +2654,37 @@ impl CloneBlockOps {
             data.op_insert_end(clone_op, bprime);
         }
         self.patch_inputs(data, inedge)
+    }
+
+    /// Clone the p-code ops in an expression right before the given `follow_op`,
+    /// returning the output Varnode of the last cloned op (C++
+    /// `CloneBlockOps::cloneExpression`, `funcdata_block.cc:1043`).
+    fn clone_expression(
+        &mut self,
+        data: &mut Funcdata,
+        ops: &[OpId],
+        follow_op: OpId,
+    ) -> KunaResult<VarnodeId> {
+        for &orig_op in ops {
+            let clone_op = match self.build_op_clone(data, orig_op)? {
+                Some(c) => c,
+                None => continue,
+            };
+            self.build_varnode_output(data, orig_op, clone_op)?;
+            data.op_insert_before(clone_op, follow_op);
+        }
+        if self.clone_list.is_empty() {
+            return Err(KunaError::lowlevel("No expression to clone"));
+        }
+        self.patch_inputs(data, 0)?;
+        // cloneOp = cloneList.back().cloneOp; return cloneOp->getOut();
+        let last_clone = self.clone_list.last().expect("cloneExpression: non-empty cloneList").1;
+        Ok(data
+            .obank()
+            .get(last_clone)
+            .expect("cloneExpression: stale last clone")
+            .get_out()
+            .expect("cloneExpression: last clone has output"))
     }
 
     /// Map original-op input Varnodes to the input slots of the cloned ops
