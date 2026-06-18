@@ -1,6 +1,14 @@
 # kuna Progress Log
 
-## Session (2026-06-17c) — rust-port W10: 408 → 481/675; +...ModuloAlt, clone-gate audit
+## Session (2026-06-17c/18) — rust-port W10: 408 → 482/675; +...clone-gate audit, deindirect-output-type
+
+**deindirect output type +1 → 482.** `output_type_local` (coreaction_infertypes.rs:59) was missing
+the CALL/CALLIND locked-output arm (TypeOpCall::getOutputLocal typeop.cc:722 returns
+fc->getOutputType() for a locked non-VOID output), so a deindirected `int4 *obtainPtr` return stayed
+undefined8 and ActionSetCasts added a spurious `(int4 *)`. Added `call_output_type_local`. Gained
+Deindirect Output #1 (the deindirect family is now fully recovered, #1/#2/#3). Gate: `[675,482]`,
+regressed-set EMPTY, cargo --no-fail-fast 0-fail, switch 8/16/3, PARITY OK. Review
+`reviews/w10-deindirect-output-type.md`.
 
 **clone-gate audit +2 → 481.** Systematic sweep of the ModuloAlt bug class: 17 `"analysis"`-grouped
 rules in ruleaction_2.rs whose clone-gate tested the placeholder name (not the group) → DROPPED from
