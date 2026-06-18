@@ -4288,6 +4288,44 @@ impl TypeFactoryImpl {
         *self.align_map.borrow_mut() = m;
     }
 
+    /// Whether the size→alignment map has been populated (C++
+    /// `alignMap.empty()`, read by `setupSizes` to decide whether to install the
+    /// default map).
+    pub fn alignment_map_is_empty(&self) -> bool {
+        self.align_map.borrow().is_empty()
+    }
+
+    /// Recover the map from data-type size to preferred alignment from the cspec
+    /// `<size_alignment_map>` (`entry` pairs) (C++
+    /// `TypeFactory::decodeAlignmentMap`, type.cc:5143-5168).  `entries` is the
+    /// decoded `(size, alignment)` list in document order.  Indices left unset by
+    /// the cspec inherit the nearest explicitly-set lower alignment.
+    pub fn decode_alignment_map(&self, entries: &[(int4, int4)]) -> KunaResult<()> {
+        let mut m: Vec<int4> = Vec::new();
+        for &(sz, val) in entries {
+            // while(alignMap.size() <= sz) alignMap.push_back(-1);
+            while (m.len() as int4) <= sz {
+                m.push(-1);
+            }
+            m[sz as usize] = val;
+        }
+        if m.is_empty() {
+            return Err(KunaError::lowlevel("Alignment map empty"));
+        }
+        m[0] = 1;
+        let mut cur_align = 1;
+        for sz in 1..m.len() {
+            let tmp_align = m[sz];
+            if tmp_align == -1 {
+                m[sz] = cur_align; // Copy alignment from nearest explicitly set value
+            } else {
+                cur_align = tmp_align;
+            }
+        }
+        *self.align_map.borrow_mut() = m;
+        Ok(())
+    }
+
     /// Set up default values for the core sizes and alignment/enum config (a
     /// faithful transcription of `TypeFactory::setupSizes`, type.cc:3596-3629,
     /// with the `Architecture`-derived defaults supplied by the caller instead of
