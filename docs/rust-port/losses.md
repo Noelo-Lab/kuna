@@ -3177,3 +3177,28 @@ heritage.cc:1705/1734/1891 — boundaries come ONLY from actual varnode start/en
   `v1 = d.field_b; return a + v1;` vs oracle inlined `return a + d.field_b;`).
 - recorded by the integrator after merging the Stack-spill substrate (commit on rust-port, 2026-06-18).
   [[kuna-rust-port]]
+
+## LOSS-231 CORRECTION 2 (switchloop-subreg-width wave, 2026-06-18) — root is the loop-carried MULTIEQUAL WIDTH (8→4 narrowed early), one level above the SUBPIECE-vs-COPY framing
+
+Dual-engine instrumentation (rust post-heritage IR dump + per-rule fire trace + RuleSubZext entry
+trace; C++ `decomp_dbg` `break start oppool1` + `print raw`) refines LOSS-231 CORRECTION: the
+SUBPIECE-vs-COPY divergence is DOWNSTREAM of a WIDTH choice on the loop-carried value.
+- At the pool pass that first reaches the idiv (`cltd; idiv`, e.g. case 5 `startval/10`, pc 0x100074),
+  BOTH engines start with structurally identical 64-bit SDIV IR `SDIV((SEXT(EDX)<<32)|ZEXT(EAX),SEXT(EDI))`.
+- C++ keeps the loop-carried value as the 8-byte `R8` MULTIEQUAL (`R8 = R8 ? R8`), every case reading
+  `R8D = SUB84(R8,0)` → dividend low half `ZEXT(SUB84(R8,0))` → RuleSubZext fires (SUBPIECE branch) →
+  RuleShiftPiece CDQ:IDIV special arm → INT_SEXT → RuleSubCommute narrows the SDIV to 32-bit → loop
+  carries a clean 4-byte value → all 9 fold.
+- Rust narrows the loop MULTIEQUAL 8-byte `R8` → 4-byte `R8D` during the SAME pool pass (verified:
+  heritage pass 7 = `register:0x80:8 MULTIEQUAL`; pass 8 = `register:0x80:4 MULTIEQUAL`). Dividend low
+  half becomes `ZEXT(R8D_4=MULTIEQUAL)` → RuleSubZext's SUBPIECE guard can't match → returns 0 →
+  RuleShiftPiece base arm → PIECE → RulePiece2Sext → SEXT; RuleSubCommute never fires → 64-bit SDIV
+  survives + masks `& 0xffffffff` → poisons the loop MULTIEQUAL → SubvariableFlow bails → all 9 fail.
+- CORRECTED dividing test: at the first idiv pool pass, is the loop-carried value the 8-byte `R8`
+  MULTIEQUAL (C++→gain) or the 4-byte `R8D` MULTIEQUAL (rust→loss). RuleShiftPiece CDQ arm
+  (ruleaction_3.rs:1578) and RuleSubZext (ruleaction_4.rs:1550) are BOTH faithful — not the bug.
+- NEXT-LOCUS: the rust SubvariableFlow / MULTIEQUAL-width handling (`subflow.rs` trace/doTrace/MULTIEQUAL
+  splitting + the subvar rules) narrows `R8`→`R8D` too early; make it defer the narrowing until AFTER
+  the idiv SDIV is narrowed (match C++ ordering where R8 stays 8-byte through
+  RuleSubZext→RuleShiftPiece(CDQ)→RuleSubCommute). High-regression-risk subregister-heritage ordering;
+  own dedicated wave. [[kuna-rust-port]]
