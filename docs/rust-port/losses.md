@@ -2985,3 +2985,23 @@ datatests identical, Copy trim #2 stays passing** — the for-loop renders byte-
 - THE COMPLETE CHAIN (Fix 1 RuleEarlyRemoval + Fix 2 setCopyImmed + Fix 3 fd_sblock_last_op + Fix 4
   variable.rs purge + Fix 5 flipInPlace + re-pin 4 tests) lands +15 regressed-set EMPTY AND fence-clean.
   Every piece precisely diagnosed; Fix 1/2/3 validated. [[kuna-rust-port]]
+
+## LOSS-156 RE-CONFIRMED (post-for-loop) — OR-wire is +7/-4; gaps are Gap-1 store-merge + Gap-2 ptr-forwarding (both must close)
+
+Re-measured after the for-loop chain landed: the `query_local_properties` OR-wire (heritage.rs:1380,
+one line on the b120faf substrate) is +7 (Partial splitting #15-19, Wayoff array #1, No-for-loop
+alias #3) / -4 (Store cross #1/#2, Intermediate pointers #3/#5) — IDENTICAL to b120faf/04cd2a2;
+setCopyImmed + HighVariable-purge did NOT clear either gap. With the wire the stack struct IS
+correctly typed (`v1.arr1[a]` renders). Two precise gaps, BOTH must close for monotonic +7:
+- **Gap-1 (Store cross #1/#2):** addrforced mapped-array store-COPYs stay SPLIT (`local_array[10]=0x18;
+  if() local_array[10]=0x48;`) vs oracle phi-merged (`v2=0x18; if() v2=0x48; local_array[10]=v2;`). A
+  merge.rs multiequal/store-merge for addrforced mapped-array stores at the join. (In base #1/#2 pass
+  only because the stores are dead-eliminated; #3/#4/#5 fail both ways.)
+- **Gap-2 (Intermediate pointers #3/#5, the cleaner/higher-leverage gap):** `&v1.arr1[a]` (PTRSUB+
+  PTRADD) spills to an addrtied stack pointer (`int4 *v2; // stack-0x18`) NOT forwarded/collapsed into
+  its single use (`v2 = &v1.arr1[a]; *v2 = *v2>>3&0xf;` vs oracle `v1.arr1[a] = v1.arr1[a]>>3&0xf;`,
+  dupptr.xml loadstore_fieldarray). The OR's new addrtied marking creates the un-collapsible spilled
+  intermediate; needs the PTRSUB+PTRADD inlining in addtreestate.rs/RulePtr*. is_unmapped_unaliased/
+  nolocalalias substrate (04cd2a2) does NOT close it.
+- COMBINED: close Gap-1 (merge.rs) + Gap-2 (addtreestate/RulePtr*) THEN OR-wire heritage.rs:1380 →
+  +7 (and unblocks the broader ~66 stack-struct-typing cluster's typing). Substrate fully in place. [[kuna-rust-port]]
