@@ -2690,7 +2690,9 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
     fn truncate_indirect_jump(&mut self, op: OpId, mode: RecoveryMode) -> KunaResult<()> {
         if mode == RecoveryMode::FailReturn {
             self.data.op_set_opcode_code(op, OpCode::CPUI_RETURN);
-            // data.warning("Treating indirect jump as return", ...) -- SEAM(W4)
+            // C++ flow.cc:750 -- data.warning("Treating indirect jump as return", op->getAddr())
+            let addr = self.data.obank().get(op).unwrap().get_addr().clone();
+            self.data.warning("Treating indirect jump as return", &addr);
             return Ok(());
         }
         self.data.op_set_opcode_code(op, OpCode::CPUI_CALLIND);
@@ -2705,6 +2707,18 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             0
         };
         let addr = self.data.obank().get(op).unwrap().get_addr().clone();
+        // C++ flow.cc:766/773 emits a warning in the callother/normal failure modes.
+        match mode {
+            RecoveryMode::FailCallother => {
+                // fc->setNoReturn(true) is the SEAM(W4) FuncCallSpecs surface.
+                self.data.warning("Does not return", &addr);
+            }
+            RecoveryMode::FailThunk => {}
+            _ => {
+                // fc->setBadJumpTable(true) is the SEAM(W4) FuncCallSpecs surface.
+                self.data.warning("Treating indirect jump as call", &addr);
+            }
+        }
         let truncop = self.artificial_halt(&addr, return_type)?;
         self.data.op_dead_insert_after(truncop, op);
         Ok(())

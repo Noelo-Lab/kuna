@@ -27,13 +27,17 @@
 //! `switch(v1.b)`/`v1.b = 2;`.  On the integrated tree (guard-fold + RSP L4/L5 +
 //! &v1-render, with ActionReturnSplit live):
 //!   - #2 (`default:`) PASSES via `JumpBasic::foldInGuards` (w10-rsp-8-guardfold).
-//!   - #3 (`switch(v1.b)`) and #4 (`v1.b = 2;`) PASS off the stack-var naming this
-//!     item lands.
-//!   - #1 (the 9-case count) still FAILs: it needs deeper switch case-arm
-//!     structuring (an independent jumptable seam, not this wave).
-//! This test PINS that exact #1-fail, #2/#3/#4-pass split plus the oracle-correct
-//! `glob2struct(&v1)` call-arg render, so any future drift (the arg regressing off
-//! `&v1`, or the structuring landing and flipping #1) fires loudly.
+//!   - #3 (`switch(v1.b)`) and #4 (`v1.b = 2;`) PASS off the stack-var naming.
+//!   - #1 (the 9-case count) now PASSES: the jump-table partial clone re-attaches
+//!     the discovered `FuncCallSpecs` (`Funcdata::truncatedFlow`'s qlst clone,
+//!     funcdata_op.cc:803-815).  Before that, the partial dropped the `glob2struct`
+//!     call's effect list, so the readonly-propagated `v1.b = 2` folded straight
+//!     through and the table collapsed to a single (default) entry; with the spec
+//!     cloned, the post-call INDIRECT keeps the switch variable symbolic and the
+//!     full 9-case table recovers.
+//! This test PINS the all-four-pass state plus the oracle-correct `glob2struct(&v1)`
+//! call-arg render, so any future drift (the arg regressing off `&v1`, or the
+//! switch recovery regressing and dropping cases) fires loudly.
 
 use std::path::PathBuf;
 
@@ -51,15 +55,16 @@ fn specs_dir_string() -> String {
     repo_root().join("specs").to_str().unwrap().to_string()
 }
 
-/// `switchhide.xml` `<stringmatch>` assertions that still FAIL: #1 (the 9-case
-/// count).  This needs deeper switch case-arm structuring that is still un-ported.
-const SWITCHHIDE_FAIL_NAMES: &[&str] = &["Switch Hide #1"];
+/// `switchhide.xml` `<stringmatch>` assertions that still FAIL: none — the
+/// jump-table partial-clone qlst re-attach lands the 9-case recovery, so #1 now
+/// passes alongside #2/#3/#4.
+const SWITCHHIDE_FAIL_NAMES: &[&str] = &[];
 
-/// `switchhide.xml` assertions that PASS on the integrated tree: #2 (`default:`)
-/// via the guard-fold, #3 (`switch(v1.b)`) and #4 (`v1.b = 2;`) off the stack-var
-/// naming this item lands.  Disclosed forward movement (not a regression).
+/// `switchhide.xml` assertions that PASS on the integrated tree: #1 (the 9-case
+/// count) off the jump-table partial-clone qlst re-attach, #2 (`default:`) via the
+/// guard-fold, #3 (`switch(v1.b)`) and #4 (`v1.b = 2;`) off the stack-var naming.
 const SWITCHHIDE_PASS_NAMES: &[&str] =
-    &["Switch Hide #2", "Switch Hide #3", "Switch Hide #4"];
+    &["Switch Hide #1", "Switch Hide #2", "Switch Hide #3", "Switch Hide #4"];
 
 #[test]
 fn switchhide_callarg_render_delta_pinned() {
@@ -114,16 +119,16 @@ fn switchhide_callarg_render_delta_pinned() {
          renamed Symbol).\nFull output:\n{out}"
     );
 
-    // #1 (the 9-case count) still FAILs — switch case-arm structuring is independent.
+    // No switchhide assertion FAILs now (the qlst re-attach lands the 9-case count).
     for name in SWITCHHIDE_FAIL_NAMES {
         let fail_line = format!("FAIL -- {name}\n");
         assert!(
             out.contains(&fail_line),
-            "EXPECTED `FAIL -- {name}` (switch case-arm structuring un-ported; this \
-             item lands stack-var naming, not structuring).\nFull output:\n{out}"
+            "EXPECTED `FAIL -- {name}`.\nFull output:\n{out}"
         );
     }
-    // #2 (`default:`) via guard-fold, #3/#4 off stack-var naming now PASS.
+    // #1 (9-case count) off the qlst re-attach, #2 (`default:`) via guard-fold,
+    // #3/#4 off stack-var naming all PASS.
     for name in SWITCHHIDE_PASS_NAMES {
         let success_line = format!("Success -- {name}\n");
         let fail_line = format!("FAIL -- {name}\n");

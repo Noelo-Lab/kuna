@@ -1636,7 +1636,26 @@ impl Funcdata {
         }
         self.obank_mut().set_uniq_id(src.obank().get_uniq_id());
 
-        // SEAM(W4): clone FuncCallSpecs (qlst) — the W4 call-spec surface.
+        // Clone callspecs (C++ `Funcdata::truncatedFlow`, funcdata_op.cc:803-815):
+        // re-attach each discovered FuncCallSpecs to the partial's matching op
+        // (found by SeqNum).  This carries the call's FuncProto effect list, which
+        // is what produces the post-call INDIRECT on a stack slot — without it a
+        // constant written before the call (e.g. a switch variable) folds straight
+        // through in the partial and the jump table collapses to one entry.  The
+        // fspec handle is the call op's own identity here (lookup is by op, not by
+        // the offset), so the cloned op's in0 fspec annotation already resolves;
+        // only the spec entries themselves need re-pointing at the cloned ops.
+        let src_q = src.num_calls();
+        for i in 0..src_q {
+            let oldspec = src.get_call_specs(i);
+            let oldop = oldspec.get_op();
+            let seq = src.obank().get(oldop).unwrap().get_seq_num().clone();
+            let newop = self.obank().find_op(&seq).ok_or_else(|| {
+                KunaError::lowlevel("Could not trace call spec across partial clone")
+            })?;
+            let newspec = oldspec.clone_for_op(newop);
+            self.push_call_specs(newspec);
+        }
 
         // Clone the jumptables: relink each to the partial's matching op.
         let src_n = src.num_jump_tables();
@@ -1667,14 +1686,63 @@ impl Funcdata {
     /// Test whether the given Varnode holds the function's return address (C++
     /// `Funcdata::testForReturnAddress`, `funcdata_varnode.cc:1463`).
     ///
-    /// SEAM(W4): the comparison target is `glb->defaultReturnAddr`, which the W3
-    /// seam [`Architecture`](crate::seams::Architecture) does not carry; the C++
-    /// returns `false` whenever `defaultReturnAddr.space == 0` (no standard
-    /// storage), so the W3 behavior is the same `false` — the BRANCHIND is treated
-    /// as a genuine switch (the common case), not a tail-`ret`.  Recorded as a
-    /// loss for the rare "indirect jump to the return address" pattern.
-    pub fn test_for_return_address(&self, _vn: VarnodeId) -> bool {
-        false
+    /// Follow the Varnode back through COPY, INDIRECT, and alignment-mask INT_AND
+    /// ops; if it terminates at the function input Varnode occupying
+    /// `glb->defaultReturnAddr`'s storage, the BRANCHIND is really a tail return
+    /// through the return-address register (the jump-table `fail_return` mode).
+    /// `glb.default_return_addr == None` (C++ `space == 0`, no standard return
+    /// storage in the cspec) yields `false`, exactly as the C++ does.
+    pub fn test_for_return_address(&self, vn: VarnodeId) -> bool {
+        let retaddr = match self.get_arch().default_return_addr.as_ref() {
+            Some(rd) => rd,
+            None => return false, // No standard storage location to compare to
+        };
+        let ra_space = match retaddr.space.as_ref() {
+            Some(sp) => sp,
+            None => return false,
+        };
+        let mut cur = vn;
+        // Follow the def chain while the Varnode is written.
+        while self.vbank().get(cur).map(|v| v.is_written()).unwrap_or(false) {
+            let op = self.vbank().get(cur).unwrap().get_def().unwrap();
+            let opc = self.obank().get(op).map(|o| o.code());
+            match opc {
+                Some(OpCode::CPUI_INDIRECT) | Some(OpCode::CPUI_COPY) => {
+                    cur = match self.obank().get(op).and_then(|o| o.get_in(0)) {
+                        Some(v) => v,
+                        None => return false,
+                    };
+                }
+                Some(OpCode::CPUI_INT_AND) => {
+                    // Only allow "alignment" style masking (constant mask).
+                    let in1 = match self.obank().get(op).and_then(|o| o.get_in(1)) {
+                        Some(v) => v,
+                        None => return false,
+                    };
+                    if !self.vbank().get(in1).map(|v| v.is_constant()).unwrap_or(false) {
+                        return false;
+                    }
+                    cur = match self.obank().get(op).and_then(|o| o.get_in(0)) {
+                        Some(v) => v,
+                        None => return false,
+                    };
+                }
+                _ => return false,
+            }
+        }
+        // Compare the terminal Varnode to defaultReturnAddr's storage and require
+        // it be a function input (C++ `vn->isInput()`).
+        let v = match self.vbank().get(cur) {
+            Some(v) => v,
+            None => return false,
+        };
+        if v.get_space().get_index() != ra_space.get_index()
+            || v.get_offset() != retaddr.offset
+            || v.get_size() != retaddr.size as int4
+        {
+            return false;
+        }
+        v.is_input()
     }
 
     /// Recover a jump-table for a BRANCHIND using the existing flow, running the
