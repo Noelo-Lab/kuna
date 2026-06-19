@@ -1020,6 +1020,195 @@ impl SleighBase {
 }
 
 // ---------------------------------------------------------------------------
+// Compile-side build API (the WS4b `SleighCompile` driver drives `SleighBase`
+// through these — the C++ `SleighBase`/`AddrSpaceManager`/`Translate` build
+// surface the compiler inherits).  Additive: the decode path is untouched.
+// ---------------------------------------------------------------------------
+impl SleighBase {
+    /// Read access to the symbol table (`SleighBase::symtab`).
+    pub fn symtab(&self) -> &SymbolTable {
+        &self.symtab
+    }
+
+    /// Mutable access to the symbol table (the compiler builds into it).
+    pub fn symtab_mut(&mut self) -> &mut SymbolTable {
+        &mut self.symtab
+    }
+
+    /// Set the root subtable symbol id (C++ `root = ...`).
+    pub fn set_root(&mut self, id: u32) {
+        self.root = Some(id);
+    }
+
+    /// Get the root subtable symbol id (C++ `root`).
+    pub fn get_root(&self) -> Option<u32> {
+        self.root
+    }
+
+    /// Read access to the `ConstructTpl` arena (C++ template store).
+    pub fn templates(&self) -> &[ConstructTpl] {
+        &self.templates
+    }
+
+    /// Mutable access to one `ConstructTpl` by handle (for the WS4b
+    /// `changeHandleIndex`/`shiftUnique` fix-ups, which mutate handles owned by
+    /// this arena).
+    pub fn template_mut(&mut self, handle: ConstructTplHandle) -> Option<&mut ConstructTpl> {
+        self.templates.get_mut(handle)
+    }
+
+    /// Push a parsed `ConstructTpl` into the arena, returning its handle
+    /// (C++ stores the `ConstructTpl *` directly; the kuna seam keys by index).
+    pub fn add_template(&mut self, tpl: ConstructTpl) -> ConstructTplHandle {
+        let handle = self.templates.len();
+        self.templates.push(tpl);
+        handle
+    }
+
+    /// Set the C++ `numSections` field (the maximum named-section count).
+    pub fn set_num_sections(&mut self, n: u32) {
+        self.num_sections = n;
+    }
+
+    /// C++ `numSections`.
+    pub fn get_num_sections(&self) -> u32 {
+        self.num_sections
+    }
+
+    /// Bump the maximum delay-slot byte count (C++ `maxdelayslotbytes`).
+    pub fn set_max_delay_slot_bytes(&mut self, n: u32) {
+        if n > self.maxdelayslotbytes {
+            self.maxdelayslotbytes = n;
+        }
+    }
+
+    /// C++ `unique_allocatemask`.
+    pub fn set_unique_allocatemask(&mut self, mask: u32) {
+        self.unique_allocatemask = mask;
+    }
+
+    /// C++ `unique_allocatemask`.
+    pub fn get_unique_allocatemask(&self) -> u32 {
+        self.unique_allocatemask
+    }
+
+    /// C++ `Translate::setBigEndian`.
+    pub fn set_big_endian(&mut self, val: bool) {
+        self.base.set_big_endian(val);
+    }
+
+    /// C++ `Translate::isBigEndian`.
+    pub fn is_big_endian(&self) -> bool {
+        self.base.is_big_endian()
+    }
+
+    /// C++ `Translate::setAlignment` (`alignment = val`).
+    pub fn set_alignment(&mut self, val: i32) {
+        self.base.alignment = val;
+    }
+
+    /// C++ `Translate::getUniqueBase`.
+    pub fn get_unique_base(&self) -> u32 {
+        self.base.get_unique_base()
+    }
+
+    /// C++ `Translate::setUniqueBase`.  Unlike the guarded
+    /// [`TranslateBase::set_unique_base`], the compiler needs the raw set used
+    /// by `getUniqueAddr`/`checkUniqueAllocation` (both only ever increase it,
+    /// so the guard is equivalent, but mirror C++ exactly).
+    pub fn set_unique_base(&mut self, val: u32) {
+        self.base.set_unique_base(val);
+    }
+
+    /// The source-file indexer (C++ `indexer`), mutable — `createConstructor`
+    /// indexes the defining filename.
+    pub fn indexer_mut(&mut self) -> &mut SourceFileIndexer {
+        &mut self.indexer
+    }
+
+    /// C++ `AddrSpaceManager::insertSpace`.
+    pub fn insert_space(&mut self, spc: Rc<AddrSpace>) -> KunaResult<()> {
+        manager_get_mut(&mut self.manager).insert_space(spc)
+    }
+
+    /// C++ `numSpaces`.
+    pub fn num_spaces(&self) -> i32 {
+        self.manager.num_spaces()
+    }
+
+    /// C++ `getConstantSpace`.
+    pub fn constant_space(&self) -> Option<Rc<AddrSpace>> {
+        self.manager.get_constant_space().cloned()
+    }
+
+    /// C++ `getUniqueSpace`.
+    pub fn unique_space(&self) -> Option<Rc<AddrSpace>> {
+        self.manager.get_unique_space().cloned()
+    }
+
+    /// C++ `getDefaultCodeSpace` (None until a `default` space is declared).
+    pub fn default_code_space(&self) -> Option<Rc<AddrSpace>> {
+        self.manager.get_default_code_space().cloned()
+    }
+
+    /// C++ `setDefaultCodeSpace(index)`.
+    pub fn set_default_code_space(&mut self, index: i32) -> KunaResult<()> {
+        manager_get_mut(&mut self.manager).set_default_code_space(index)
+    }
+
+    /// Look up a space by name (C++ `getSpaceByName`).
+    pub fn space_by_name(&self, nm: &str) -> Option<Rc<AddrSpace>> {
+        self.manager.get_space_by_name(nm).cloned()
+    }
+
+    /// C++ `SleighCompile::predefinedSymbols` space half: create the const,
+    /// OTHER, and unique spaces and insert them.  The symbol half (the
+    /// `SpaceSymbol`/`StartSymbol`/… additions) is done by the driver since it
+    /// owns symbol-add error reporting.  Returns the three spaces.
+    pub fn create_predefined_spaces(
+        &mut self,
+    ) -> KunaResult<(Rc<AddrSpace>, Rc<AddrSpace>, Rc<AddrSpace>)> {
+        let big = self.is_big_endian();
+        let constant = Rc::new(ConstantSpace::new());
+        self.insert_space(Rc::clone(&constant))?;
+        let other = Rc::new(OtherSpace::new(OtherSpace::INDEX));
+        self.insert_space(Rc::clone(&other))?;
+        let unique_index = self.num_spaces();
+        let unique = Rc::new(UniqueSpace::new(unique_index, 0, big));
+        self.insert_space(Rc::clone(&unique))?;
+        Ok((constant, other, unique))
+    }
+
+    /// C++ `SleighCompile::newSpace`: build a `IPTR_PROCESSOR` space with the
+    /// parsed qualities and insert it.  Returns the new space.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_processor_space(
+        &mut self,
+        name: &str,
+        size: u32,
+        wordsize: u32,
+        is_register: bool,
+    ) -> KunaResult<Rc<AddrSpace>> {
+        let big = self.is_big_endian();
+        let index = self.num_spaces();
+        let delay = if is_register { 0 } else { 1 };
+        let spc = Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            name,
+            big,
+            size,
+            wordsize,
+            index,
+            addrspace_flags::hasphysical,
+            delay,
+            delay,
+        ));
+        self.insert_space(Rc::clone(&spc))?;
+        Ok(spc)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // SnippetLanguage (pcodeparse.cc:3215 PcodeSnippet::lex + the SleighBase
 // surface PcodeSnippet pulls — getDefaultCodeSpace/getConstantSpace/
 // getUniqueSpace/numSpaces/getSpace).  Lets `parse_inject` compile a

@@ -323,6 +323,15 @@ fn name_text(name: &[u8]) -> String {
     String::from_utf8_lossy(name).into_owned()
 }
 
+/// (WS4b renumber) remap the `OperandValue` subtable-id inside a `PatternValue`,
+/// if any (the table-driven family symbols carry no subtable id; an
+/// `OperandValue` does).
+fn remap_patval_table(pv: Option<&mut PatternValue>, map: &impl Fn(u32) -> u32) {
+    if let Some(PatternValue::OperandValue(ov)) = pv {
+        ov.set_table_id(map(ov.table_id()));
+    }
+}
+
 /// C++ `s << "0x" << hex << val` / `s << "-0x" << hex << -val` idiom shared
 /// by the `print` methods (ValueSymbol, ValueMapSymbol, OperandSymbol).
 fn push_hex_intb(s: &mut String, val: i64) {
@@ -970,6 +979,12 @@ impl SubtableSymbol {
             .ok_or_else(|| KunaError::sleigh("constructor id out of range (C++ indexes unchecked)"))
     }
 
+    /// Mutable constructor access for the WS4b driver (`getConstructor`,
+    /// build side).
+    pub fn get_constructor_mut(&mut self, id: u32) -> Option<&mut Constructor> {
+        self.construct.get_mut(id as usize)
+    }
+
     /// The decoded decision tree (None for an undecoded shell).
     pub fn get_decision_tree(&self) -> Option<&DecisionNode> {
         self.decisiontree.as_ref()
@@ -1238,6 +1253,12 @@ pub struct Constructor {
     pattern: Option<TokenPattern>,
     /// (kuna build side) C++ `mutable bool inerror`.
     inerror: bool,
+    /// (kuna build side, WS4b seam) the operand handle re-index map computed
+    /// by [`SymbolTable::order_operands`] (`handmap[original_index] =
+    /// new_index`).  C++ applies `templ->changeHandleIndex(handmap)` inline,
+    /// but the kuna `ConstructTpl` arena is owned by the WS4b driver, so the
+    /// map is stashed here for the driver to apply.  Empty until ordered.
+    handmap: Vec<i32>,
 }
 
 impl Constructor {
@@ -1260,6 +1281,15 @@ impl Constructor {
     /// C++ `Constructor::getPatternEquation` (the arena id).
     pub fn get_pattern_equation(&self) -> Option<EqId> {
         self.pateq
+    }
+
+    /// (kuna build side, WS4b seam) the operand handle re-index map computed
+    /// during [`SymbolTable::order_operands`].  `handmap[original_index] =
+    /// new_index`.  The WS4b driver applies it to the constructor's
+    /// `ConstructTpl` sections via `change_handle_index` (the C++ inline
+    /// `templ->changeHandleIndex(handmap)`).  Empty if no reorder ran.
+    pub fn get_handmap(&self) -> &[i32] {
+        &self.handmap
     }
 
     /// C++ `Constructor::getPattern` (the built [`TokenPattern`]).
@@ -2493,10 +2523,61 @@ impl SleighSymbol {
         }
     }
 
+    /// Mutable subtable access (WS4b build side).
+    pub fn as_subtable_mut(&mut self) -> Option<&mut SubtableSymbol> {
+        match &mut self.kind {
+            SymbolKind::Subtable(v) => Some(v),
+            _ => None,
+        }
+    }
+
     /// Mutable access to the subclass payload (compiler-style setup such as
     /// `UserOpSymbol::setIndex` / `VarnodeSymbol::markAsContext`).
     pub fn kind_mut(&mut self) -> &mut SymbolKind {
         &mut self.kind
+    }
+
+    /// (WS4b purge/renumber) re-point every encoded symbol-id cross-reference
+    /// inside this symbol's content through `remap` (`old_id -> Some(new_id)`,
+    /// `None` if the referenced symbol was purged).  C++ keeps these as
+    /// pointers (immune to renumber); the kuna port stores ids and must remap.
+    fn remap_symbol_refs(&mut self, remap: &[Option<u32>]) {
+        let map = |id: u32| remap.get(id as usize).copied().flatten().unwrap_or(id);
+        match &mut self.kind {
+            SymbolKind::Context(c) => {
+                if let Some(vn) = c.vn {
+                    c.vn = Some(map(vn));
+                }
+                remap_patval_table(c.value.patval.as_mut(), &map);
+            }
+            SymbolKind::VarnodeList(v) => {
+                for e in v.varnode_table.iter_mut() {
+                    if let Some(id) = e {
+                        *e = Some(map(*id));
+                    }
+                }
+                remap_patval_table(v.value.patval.as_mut(), &map);
+            }
+            SymbolKind::Operand(o) => {
+                if let Some(t) = o.triple {
+                    o.triple = Some(map(t));
+                }
+                if let Some(le) = o.localexp.as_mut() {
+                    le.set_table_id(map(le.table_id()));
+                }
+            }
+            SymbolKind::Value(v) => remap_patval_table(v.patval.as_mut(), &map),
+            SymbolKind::ValueMap(v) => remap_patval_table(v.value.patval.as_mut(), &map),
+            SymbolKind::Name(v) => remap_patval_table(v.value.patval.as_mut(), &map),
+            SymbolKind::Subtable(st) => {
+                for ct in st.construct.iter_mut() {
+                    if let Some(p) = ct.parent {
+                        ct.parent = Some(map(p));
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     /// C++ virtual `getType`.
@@ -3286,6 +3367,12 @@ impl SymbolTable {
         self.symbollist.get(id as usize).and_then(|s| s.as_ref())
     }
 
+    /// Mutable `findSymbol(uintm id)` for the WS4b build side (`setIndex`,
+    /// `markAsContext`, `addConstructor`, operand mutators, ...).
+    pub fn find_symbol_by_id_mut(&mut self, id: u32) -> Option<&mut SleighSymbol> {
+        self.symbollist.get_mut(id as usize).and_then(|s| s.as_mut())
+    }
+
     /// `findSymbol(id)` at sites where C++ dereferences the result
     /// immediately (an error instead of UB).
     fn symbol(&self, id: u32) -> KunaResult<&SleighSymbol> {
@@ -3745,9 +3832,10 @@ impl SymbolTable {
             }
         }
         ct.operands = new_operand_ids;
-        // NOTE: ConstructTpl handle-index fix-up (templ->changeHandleIndex)
-        // is performed by WS4b's driver, which owns the ConstructTpl arena;
-        // it has the handmap available there (freeze-interface for WS4b).
+        // Stash the handmap for WS4b: ConstructTpl handle-index fix-up
+        // (templ->changeHandleIndex) is performed by WS4b's driver, which
+        // owns the ConstructTpl arena (freeze-interface for WS4b).
+        ct.handmap = handmap;
         Ok(())
     }
 
@@ -3787,6 +3875,185 @@ impl SymbolTable {
         tree.split(props);
         self.subtable_symbol_mut(table_id)?.decisiontree = Some(tree);
         Ok(())
+    }
+
+    /// C++ `SymbolTable::replaceSymbol(SleighSymbol *a, SleighSymbol *b)`
+    /// (slghsymbol.cc:123).  Replace the symbol named like `b` (assumed equal
+    /// to the existing symbol `a`'s name) in place, preserving `a`'s id and
+    /// scopeid.  Used by the `attach*` directives to swap a `ValueSymbol` for
+    /// a `ValueMapSymbol`/`NameSymbol`/`VarnodeListSymbol`.
+    pub fn replace_symbol(&mut self, a_id: u32, mut b: SleighSymbol) -> KunaResult<()> {
+        let (name, scopeid) = {
+            let a = self.symbol(a_id)?;
+            (a.name.clone(), a.scopeid)
+        };
+        // C++ walks scopes from the back looking for the symbol by name; the
+        // resident scope is `a`'s scopeid (the tree keys by name).
+        if let Some(scope) = self.table.get_mut(scopeid as usize).and_then(|s| s.as_mut()) {
+            scope.remove_symbol(&name);
+            b.id = a_id;
+            b.scopeid = scopeid;
+            scope.add_symbol(name, a_id);
+        }
+        self.symbollist[a_id as usize] = Some(b);
+        Ok(())
+    }
+
+    /// C++ `SymbolTable::purge` (slghsymbol.cc:281): get rid of unsavable
+    /// symbols and scopes, then [`renumber`](Self::renumber) so the saved
+    /// stream has no id gaps.  In the global scope only
+    /// space/token/epsilon/section/bitrange/macro/subtable survive; in any
+    /// child scope only operands survive.  Removing a macro or an unreferenced
+    /// subtable also removes its operand locals.
+    pub fn purge(&mut self) {
+        for i in 0..self.symbollist.len() {
+            // Decide whether to drop slot i (and collect any operand locals to
+            // also drop), without holding an outstanding borrow.
+            let (drop_self, scopeid, name): (bool, u32, Vec<u8>) = {
+                let sym = match self.symbollist[i].as_ref() {
+                    Some(s) => s,
+                    None => continue,
+                };
+                let scopeid = sym.scopeid;
+                let name = sym.name.clone();
+                let ty = sym.get_type();
+                if scopeid != 0 {
+                    // Not in global scope: keep only operands.
+                    if ty == SymbolType::Operand {
+                        continue;
+                    }
+                    (true, scopeid, name)
+                } else {
+                    match ty {
+                        SymbolType::Space
+                        | SymbolType::Token
+                        | SymbolType::Epsilon
+                        | SymbolType::Section
+                        | SymbolType::Bitrange => (true, scopeid, name),
+                        SymbolType::Macro => {
+                            // Macro symbols themselves are removed, plus their
+                            // operand locals.  (Macro operand locals are not
+                            // tracked here as a separate kind class — the
+                            // MacroSymbol payload is not yet ported; when it
+                            // is, drop its operands here.)
+                            (true, scopeid, name)
+                        }
+                        SymbolType::Subtable => {
+                            // Drop only an *unused* subtable (no built pattern),
+                            // along with its constructors' operand locals.
+                            let keep = self
+                                .symbollist[i]
+                                .as_ref()
+                                .and_then(|s| s.as_subtable())
+                                .map(|st| st.get_pattern().is_some())
+                                .unwrap_or(true);
+                            if keep {
+                                continue;
+                            }
+                            // Collect this subtable's operand locals and drop
+                            // them too.
+                            let mut to_drop: Vec<(u32, u32, Vec<u8>)> = Vec::new();
+                            if let Some(st) = self.symbollist[i].as_ref().and_then(|s| s.as_subtable()) {
+                                for con in &st.construct {
+                                    for &opid in &con.operands {
+                                        if let Some(op) = self.symbollist.get(opid as usize).and_then(|s| s.as_ref()) {
+                                            to_drop.push((opid, op.scopeid, op.name.clone()));
+                                        }
+                                    }
+                                }
+                            }
+                            for (opid, opscope, opname) in to_drop {
+                                if let Some(sc) = self.table.get_mut(opscope as usize).and_then(|s| s.as_mut()) {
+                                    sc.remove_symbol(&opname);
+                                }
+                                self.symbollist[opid as usize] = None;
+                            }
+                            (true, scopeid, name)
+                        }
+                        _ => continue, // keep everything else? No: C++ default => continue (skip removal)
+                    }
+                }
+            };
+            if drop_self {
+                if let Some(sc) = self.table.get_mut(scopeid as usize).and_then(|s| s.as_mut()) {
+                    sc.remove_symbol(&name);
+                }
+                self.symbollist[i] = None;
+            }
+        }
+        // Remove any empty scopes (except the global scope 0).
+        for i in 1..self.table.len() {
+            let empty = self.table[i].as_ref().map(|s| s.is_empty()).unwrap_or(false);
+            if empty {
+                self.table[i] = None;
+            }
+        }
+        self.renumber();
+    }
+
+    /// C++ `SymbolTable::renumber` (slghsymbol.cc): compact `table` and
+    /// `symbollist` so there are no id gaps, fixing up each survivor's
+    /// `id`/`scopeid`.  Cross-references between symbols are by-pointer in
+    /// C++ (immune to renumber); in the kuna port the by-id references that
+    /// matter for the saved stream are the pattern/decision-tree data (already
+    /// built into numeric form) and the scope parent ids (remapped here).
+    fn renumber(&mut self) {
+        // First renumber the scopes: new scope id = position in the compacted
+        // table.  Build old-id -> new-id map.
+        let mut scope_remap: Vec<Option<u32>> = vec![None; self.table.len()];
+        let mut newtable: Vec<Option<SymbolScope>> = Vec::new();
+        for i in 0..self.table.len() {
+            if self.table[i].is_some() {
+                let newid = newtable.len() as u32;
+                scope_remap[i] = Some(newid);
+                let mut scope = self.table[i].take().unwrap();
+                scope.id = newid;
+                newtable.push(Some(scope));
+            }
+        }
+        // Fix parent ids through the remap (C++ keeps the pointer, whose id was
+        // updated in place; we remap the stored parent id).
+        for slot in newtable.iter_mut() {
+            if let Some(scope) = slot.as_mut() {
+                if let Some(p) = scope.parent {
+                    scope.parent = scope_remap.get(p as usize).copied().flatten();
+                }
+            }
+        }
+        // Build the symbol-id remap (old id -> new id) first, so cross-refs
+        // inside symbol contents can be rewritten.
+        let mut sym_remap: Vec<Option<u32>> = vec![None; self.symbollist.len()];
+        {
+            let mut next = 0u32;
+            for (i, slot) in self.symbollist.iter().enumerate() {
+                if slot.is_some() {
+                    sym_remap[i] = Some(next);
+                    next += 1;
+                }
+            }
+        }
+        // Now renumber the symbols.
+        let mut newsymbol: Vec<Option<SleighSymbol>> = Vec::new();
+        for i in 0..self.symbollist.len() {
+            if self.symbollist[i].is_some() {
+                let newid = newsymbol.len() as u32;
+                let mut sym = self.symbollist[i].take().unwrap();
+                sym.scopeid = scope_remap
+                    .get(sym.scopeid as usize)
+                    .copied()
+                    .flatten()
+                    .unwrap_or(0);
+                sym.id = newid;
+                // Re-point every encoded symbol-id cross-reference.
+                sym.remap_symbol_refs(&sym_remap);
+                newsymbol.push(Some(sym));
+            }
+        }
+        self.table = newtable;
+        self.symbollist = newsymbol;
+        // C++ leaves curscope pointing at table[0] implicitly via later use;
+        // after purge the table is only read for encode.
+        self.curscope = self.table.first().and_then(|s| s.as_ref()).map(|s| s.get_id());
     }
 
     /// C++ `SymbolTable::encode`.
