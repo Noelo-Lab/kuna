@@ -677,6 +677,12 @@ impl OperandValue {
         self.table_id
     }
 
+    /// (WS4b purge/renumber) re-point the owning-subtable id after the symbol
+    /// table is renumbered.
+    pub fn set_table_id(&mut self, id: u32) {
+        self.table_id = id;
+    }
+
     /// The id of the constructor within its table.
     pub fn ct_id(&self) -> u32 {
         self.ct_id
