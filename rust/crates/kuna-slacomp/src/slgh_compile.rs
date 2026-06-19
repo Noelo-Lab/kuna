@@ -1392,6 +1392,12 @@ impl SleighCompile {
             }
         };
         let mut errs: Vec<String> = Vec::new();
+        // C++ `root->buildPattern(msg)` "should recursively hit everything":
+        // `Constructor::buildPattern` recurses into subtable operands, so the
+        // single root build reaches every *reachable* subtable.  An unreferenced
+        // subtable is intentionally left pattern-less (warned + purged) — do NOT
+        // build the `tables` list directly (that would give unused subtables a
+        // pattern and keep them through purge, diverging from C++).
         {
             let arena = std::mem::take(&mut self.arena);
             let r = self
@@ -1402,15 +1408,6 @@ impl SleighCompile {
             r?;
         }
         let tables = self.tables.clone();
-        for &t in &tables {
-            let arena = std::mem::take(&mut self.arena);
-            let r = self
-                .base
-                .symtab_mut()
-                .build_subtable_pattern(t, &arena, &mut errs);
-            self.arena = arena;
-            r?;
-        }
         self.apply_handmaps(root);
         for &t in &tables {
             self.apply_handmaps(t);
