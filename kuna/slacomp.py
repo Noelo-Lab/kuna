@@ -64,9 +64,28 @@ def _compile_in_isolation(compiler: Path, slaspec: Path) -> bytes | None:
         return out.read_bytes() if out.exists() else None
 
 
+def _content(sla: bytes) -> bytes | None:
+    """The decompressed `.sla` element stream. The file is a 4-byte magic
+    (``sla\\x04``) + a zlib stream; the *compressed* bytes differ between the
+    Rust (flate2/miniz_oxide) and C (zlib) deflate backends (LOSS-010), but the
+    decompressed element stream is the meaningful, byte-comparable content."""
+    import zlib
+    i = sla.find(b"\x78\x9c")
+    if i < 0:
+        return None
+    try:
+        return sla[:i] + zlib.decompress(sla[i:])
+    except zlib.error:
+        return None
+
+
 def diff_one(slaspec: Path) -> dict:
     cpp, rust = _cpp_sleigh(), _rust_slacomp()
-    rec = {"spec": str(slaspec.relative_to(ROOT)), "ok": False, "reason": ""}
+    try:
+        rel = str(Path(slaspec).resolve().relative_to(ROOT))
+    except ValueError:
+        rel = str(slaspec)
+    rec = {"spec": rel, "ok": False, "reason": ""}
     if not cpp.exists():
         rec["reason"] = "cpp sleigh_opt missing (run `make sleigh`)"
         return rec
@@ -74,7 +93,6 @@ def diff_one(slaspec: Path) -> dict:
     if cpp_sla is None:
         rec["reason"] = "cpp compile failed"
         return rec
-    rec["cpp_bytes"] = len(cpp_sla)
     if not rust.exists():
         rec["reason"] = "rust slacomp missing (build kuna-slacomp)"
         return rec
@@ -82,14 +100,20 @@ def diff_one(slaspec: Path) -> dict:
     if rust_sla is None:
         rec["reason"] = "rust compile failed"
         return rec
-    rec["rust_bytes"] = len(rust_sla)
-    if cpp_sla == rust_sla:
+    # The gate is decompressed-content equality (raw bytes differ by the deflate
+    # backend only, LOSS-010). `raw_ok` is reported for visibility.
+    rec["raw_ok"] = cpp_sla == rust_sla
+    cc, rc = _content(cpp_sla), _content(rust_sla)
+    if cc is None or rc is None:
+        rec["reason"] = "could not decompress .sla element stream"
+        return rec
+    rec["content_bytes"] = len(cc)
+    if cc == rc:
         rec["ok"] = True
     else:
-        # first differing byte offset, for triage
-        n = min(len(cpp_sla), len(rust_sla))
-        off = next((i for i in range(n) if cpp_sla[i] != rust_sla[i]), n)
-        rec["reason"] = f"byte mismatch @ {off} (cpp {len(cpp_sla)}b / rust {len(rust_sla)}b)"
+        n = min(len(cc), len(rc))
+        off = next((i for i in range(n) if cc[i] != rc[i]), n)
+        rec["reason"] = f"content mismatch @ {off} (cpp {len(cc)}b / rust {len(rc)}b)"
     return rec
 
 
