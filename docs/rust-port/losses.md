@@ -3639,3 +3639,17 @@ dies. NEXT-LOCUS: the deadcode-driven re-heritage path (heritage.rs:~3985 driver
 bump_deadcode_delay, heritage.cc:2640-2680) — the dead RAX-ZEXT's removal by ActionDeadCode must create a new free
 EAX varnode that RE-TRIGGERS `globaldisjoint.add` for register 0x0 on a later pass so the range refines to EAX(4).
 Confirm by instrumenting whether rust re-adds register 0x0 to the disjoint after the dead ZEXT is consumed. [[kuna-rust-port]]
+
+## LOSS-249 RESOLVED (Local cross #2, 2026-06-19) +1 — M3: FULL DATATEST PARITY 675/675
+
+The LOSS-249 v2 deadcode-re-heritage thesis was misdirected. Dual-engine tracing (instrumented /tmp C++ copy)
+proved BOTH engines create the retval-call killedbycall indirect-creation at RAX(8) on heritage pass 0
+(heritage identical). The real lever: `RulePullsubIndirect` (ruleaction.cc:955) — on `EAX=SUB84(RAX_indcreate,0)`
+with the upper RAX bytes unconsumed, C++ rewrites the RAX(8) indirect-creation into a fresh EAX(4)
+indirect-creation + replaces the SUBPIECE descendants, so collectOutputTrialVarnodes (fspec.cc:5543) commits
+EAX(4) → no cast. Rust's `RulePullsubIndirect::apply_op` (ruleaction_1.rs:2019) was a STUB (structural guards
+only). Ported the deferred body faithful to ruleaction.cc:963-1019 (getOpFromConst via op_iop_decode, isDead/
+isAddrForce guards, minMaxUse/newSize/acceptableSize, the upper-bit consume gate, the isIndirectCreation branch
+new_indirect_creation + the plain-INDIRECT find/build_subpiece branch, then replace_descendants — all seams
+pre-existed from RulePullsubMulti). NO special-casing. Gate: **`[675, 675]`** regressed-set EMPTY, cargo 0-fail,
+PARITY OK. **M3 ACHIEVED — the Rust port passes ALL 675 datatest assertions, C++ oracle byte-untouched.** [[kuna-rust-port]]
