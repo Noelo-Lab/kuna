@@ -946,7 +946,7 @@ impl Funcdata {
     #[allow(clippy::type_complexity)]
     pub fn usepoint_symbol_specs(
         &self,
-    ) -> Vec<(String, std::rc::Rc<crate::dtype::Datatype>, Address, uint4, Address)> {
+    ) -> Vec<(String, std::rc::Rc<crate::dtype::Datatype>, Address, uint4, Address, bool)> {
         self.localmap.as_ref().map(|lm| lm.usepoint_symbol_specs()).unwrap_or_default()
     }
 
@@ -1058,14 +1058,21 @@ impl Funcdata {
     /// usepoint (an invalid usepoint would make `inUse` false at every read).
     pub fn seed_usepoint_symbols(
         &mut self,
-        specs: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, uint4, Address)],
+        specs: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, uint4, Address, bool)],
     ) {
         use crate::varnode::varnode_flags;
         if let Some(lm) = self.localmap.as_mut() {
-            for (name, ct, addr, flags, usepoint) in specs {
+            for (name, ct, addr, flags, usepoint, isolated) in specs {
                 if let Ok(sym) = lm.add_symbol(name, std::rc::Rc::clone(ct), addr, usepoint) {
                     let lock = flags & (varnode_flags::namelock | varnode_flags::typelock);
                     lm.set_attribute(sym, lock);
+                    // (kuna L4) Restore `Symbol::setIsolated(true)` for the
+                    // `type varnode` register temp so `mergeAdjacent`'s isolated
+                    // arm refuses to over-merge it into the param it shares storage
+                    // with (Return Structure #1/#2/#4).
+                    if *isolated {
+                        lm.set_symbol_isolated(sym, true);
+                    }
                 }
             }
         }
@@ -2641,29 +2648,55 @@ impl Funcdata {
         }
     }
 
-    /// `op->outputTypeLocal()` — the local-from-op output type (W6 type-op
-    /// table).  Conservative unknown of the op's output size; reached only by
-    /// `markInternalCopies` (not on the `mergeMarker` path).
+    /// `op->outputTypeLocal()` — the local-from-op output type (C++
+    /// `TypeOp::getOutputLocal`, typeop.cc:262).
+    ///
+    /// (kuna L3) Routes through the per-op-code [`type_op_info`] dispatch on the
+    /// shared (INTERNED) [`TypeFactory`] (`glb->types`), so two ops whose local
+    /// type is the same size+metatype return the SAME `Rc<Datatype>`.  This is
+    /// load-bearing for `Merge::mergeAdjacent`'s pointer-identity same-type test
+    /// (merge.cc:990 `ct != op->inputTypeLocal(i)`): a fresh `Rc` per call would
+    /// never compare equal, so `mergeAdjacent` could never tie an op's input to
+    /// its output.  Falls back to a fresh unknown only when no TypeFactory is
+    /// attached (hand-built fixtures) or the op-code's dispatch errors.
     pub(crate) fn op_output_type_local_pub(&self, op: OpId) -> Rc<Datatype> {
-        let sz = self
-            .obank
-            .get(op)
-            .and_then(|o| o.get_out())
-            .and_then(|out| self.vbank.get(out))
-            .map(|v| v.get_size())
-            .unwrap_or(1);
+        let (sz, opc) = match self.obank.get(op) {
+            Some(o) => {
+                let sz = o
+                    .get_out()
+                    .and_then(|out| self.vbank.get(out))
+                    .map(|v| v.get_size())
+                    .unwrap_or(1);
+                (sz, o.code())
+            }
+            None => (1, OpCode::CPUI_COPY),
+        };
+        if let Some(tlst) = self.get_arch().types() {
+            if let Ok(ct) = crate::typeop::type_op_info(opc).get_output_local(tlst, sz) {
+                return ct;
+            }
+        }
         Rc::new(Datatype::new(sz, crate::dtype::type_metatype::TYPE_UNKNOWN))
     }
 
     /// `op->inputTypeLocal(slot)` — see [`op_output_type_local_pub`].
     pub(crate) fn op_input_type_local_pub(&self, op: OpId, slot: int4) -> Rc<Datatype> {
-        let sz = self
-            .obank
-            .get(op)
-            .and_then(|o| o.get_in(slot))
-            .and_then(|inv| self.vbank.get(inv))
-            .map(|v| v.get_size())
-            .unwrap_or(1);
+        let (sz, opc) = match self.obank.get(op) {
+            Some(o) => {
+                let sz = o
+                    .get_in(slot)
+                    .and_then(|inv| self.vbank.get(inv))
+                    .map(|v| v.get_size())
+                    .unwrap_or(1);
+                (sz, o.code())
+            }
+            None => (1, OpCode::CPUI_COPY),
+        };
+        if let Some(tlst) = self.get_arch().types() {
+            if let Ok(ct) = crate::typeop::type_op_info(opc).get_input_local(tlst, slot, sz) {
+                return ct;
+            }
+        }
         Rc::new(Datatype::new(sz, crate::dtype::type_metatype::TYPE_UNKNOWN))
     }
 

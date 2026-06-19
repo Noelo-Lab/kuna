@@ -2352,7 +2352,7 @@ impl Database {
     pub fn scope_usepoint_symbol_specs(
         &self,
         scope: ScopeId,
-    ) -> Vec<(String, Rc<Datatype>, Address, uint4, Address)> {
+    ) -> Vec<(String, Rc<Datatype>, Address, uint4, Address, bool)> {
         let mut out = Vec::new();
         for space_index in 0..self.scopes[scope].maptable.len() {
             let rangemap = match self.scopes[scope].maptable.get(space_index).and_then(|m| m.as_ref()) {
@@ -2388,6 +2388,13 @@ impl Database {
                     entry.get_addr().clone(),
                     symbol.flags,
                     usepoint,
+                    // (kuna L4) Carry `Symbol::isIsolated()` (dispflags, not the
+                    // varnode `flags`) so the `type varnode` isolated `tmp` Symbol
+                    // survives the `decompile` ScopeLocal rebuild — otherwise the
+                    // re-seeded Symbol has iso=false and `mergeAdjacent` over-merges
+                    // the dynamic temp into its register param (Return Structure
+                    // #1/#2/#4 regress once the inflateTest arm lands).
+                    symbol.is_isolated(),
                 ));
             }
         }

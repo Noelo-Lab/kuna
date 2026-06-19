@@ -517,7 +517,60 @@ impl MergeContext for Funcdata {
         }
         self.kuna_mapped_symbol_offset(high).unwrap_or_else(|| h.get_symbol_offset())
     }
-    fn bank_symbol_isolated(&self, _high: HighVariableId) -> bool {
+    fn bank_symbol_isolated(&self, high: HighVariableId) -> bool {
+        // (kuna L2) C++ `Merge::mergeTestAdjacent` (merge.cc:196-205):
+        //   Symbol *symbol = high->getSymbol();
+        //   if (symbol != 0 && symbol->isIsolated()) return false;
+        // Resolve the SAME Symbol `bank_symbol` resolves, then read its
+        // `Symbol::isIsolated()` (database.hh:241).  A dynamic-hash / equate
+        // Symbol is bound directly on the high (`type varnode`/equate); a
+        // `map addr` access resolves through the covering SymbolEntry.  Mirrors
+        // `HighVariable::updateSymbol`'s first-hit member scan.
+        let h = match self.high_bank().get(high) {
+            Some(h) => h,
+            None => return false,
+        };
+        // Dynamic / equate Symbol bound on the high (the `type varnode tmp`
+        // isolated return temp, or an equate): read its isolated flag from the
+        // local scope's symbol table.
+        if let Some(sym) = h.kuna_dynamic_symbol().or_else(|| h.kuna_equate_symbol()) {
+            if let Some(lm) = self.get_scope_local() {
+                return lm.symbol_isolated(sym);
+            }
+            return false;
+        }
+        // A covering Symbol: query the same containing entry the `bank_symbol`
+        // member scan resolves and read its isolated flag.  The local scope
+        // carries the `isolate`-able Symbol; a frozen global entry is never
+        // isolated in the merged-tree snapshots.
+        //
+        // (kuna L4) Unlike `bank_symbol`'s addr-tied member scan, a `type varnode
+        // %REG(pc)` isolated Symbol is REGISTER storage (not addr-tied) and is
+        // usepoint-SCOPED: `find_container` only matches it when the query
+        // usepoint falls in the entry's `uselimit`.  Iterate ALL members (not
+        // just addr-tied), query at each member's real use point, and return
+        // isolated on the first covering entry — mirroring `HighVariable::
+        // getSymbol`'s first-hit member scan against a properly painted
+        // SymbolEntry.
+        let members: Vec<VarnodeId> = (0..h.num_instances()).map(|i| h.get_instance(i)).collect();
+        for vn in members {
+            let (addr, is_free) = match self.vbank().get(vn) {
+                Some(v) => (v.get_addr().clone(), v.is_free()),
+                None => continue,
+            };
+            if is_free {
+                continue;
+            }
+            let usepoint = self.vn_use_point(vn);
+            if let Some(lm) = self.get_scope_local() {
+                if let Some(info) = lm.query_container_for_link(&addr, &usepoint) {
+                    if info.is_isolated {
+                        return true;
+                    }
+                }
+            }
+            // Global covering entry: not isolated in the merged-tree snapshots.
+        }
         false
     }
     fn bank_tied_addr(&self, high: HighVariableId) -> Address {
