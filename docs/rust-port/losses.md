@@ -3513,3 +3513,23 @@ loci (a substrate landed 2 regression-free on branch worktree-agent-ae24754e6fd9
 - **Stack spill #1** (landed) residual: a cosmetic `d.field_b = d.field_b;` copymarker self-assign cpp suppresses (a
   spurious whole-local entry at +0x10 shadows the piece entry in find_overlap) — doesn't break the min=1 assertion.
   NEXT = copymarker-render seam. [[kuna-rust-port]]
+
+## LOSS-248/247 UPDATE (EA-fu/EB-fu, 2026-06-19) — both gains staged behind ONE deeper prerequisite each
+
+- **Partial Merge #4/#5**: the L4 inflateTest arm (coreaction.cc:3509) is byte-faithful and GAINS #4/#5, but
+  regresses Long double #4 via a PRE-EXISTING passmany divergence: passmany's int2 stack param `y`@s0x8 is read
+  via a 4-byte spacebase LOAD (`*(RSP+0x20)`→s0x8:4) whose only live use is `SEXT24(SUBPIECE(s0x8:4,0,2))`. C++
+  NARROWS that load to its used 2-byte slice (clean `SEXT24(s0x8:2(i))`, no INDIRECT); rust keeps size-4 →
+  Heritage::collect (heritage.rs:3952) unions a size-4 disjoint → guardInput hole-fills s0xa:2 → CONCAT22 → the
+  size-4 range queries mapped|addrtied → chainb-gap1 OR sets holdind → guard_calls builds an addrForced INDIRECT
+  over writeLongDouble that survives DCE → inflate_test correctly forces the SEXT outputs explicit. param sizing
+  / assumed-extension / effect-model / queryProperties / guardInput / inflate_test / Cover all RULED OUT
+  byte-faithful. FIX = narrow the 4-byte stack-param spacebase LOAD to its used 2-byte slice (SUBPIECE-through-LOAD
+  or W4 ScopeLocal param-symbol population so stackContainer matches the size-2 entry), THEN land the L4 arm.
+- **Gp Test #2**: protect_switch_paths now byte-faithful (fixed a real out-of-bounds getIn(1) panic; the prior
+  wave's "30 Switch regressions" were the harness catching that panic, NOT over-marking) + wired +0;
+  is_unmapped_unaliased (varmap.rs:979) ready. Flipping it (funcdata_spacebase.rs:1168) GAINS Gp #2 AND holds all
+  48 switch — but regresses Gp #1 via a downstream HighVariable OVER-MERGE: the `&v1` stack-address COPY merges
+  into the `a0` input param (rust `xunknown1 *a0`+`a0=v1;populate(a0)` vs C++ distinct single-use SSA →
+  `populate(v1)`). FIX = merge.rs input-merge eligibility under nolocalalias (the LOSS-247 stack-COPY-into-input
+  family), THEN flip. [[kuna-rust-port]]
