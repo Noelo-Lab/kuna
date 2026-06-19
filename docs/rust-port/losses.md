@@ -3551,3 +3551,33 @@ by-value float10 at the 8-byte boundary — ONE root for all 4. NEXT-LOCUS: the 
 collapse + addrForced-INDIRECT DCE for an addrtied stack-param hole-filled range (why rust's s0x8:4 chain
 re-heritages passes 2-5 instead of collapsing/DCE'ing like C++). The L4 inflateTest arm is byte-faithful
 (coreaction_cleanup.rs:1325, gated `enabled=false`) — flip once the residue collapses. [[kuna-rust-port]]
+
+## LOSS-248 ROOT v6 + LOSS-247 v2 (GC/GD convergence, 2026-06-19) — the final 5 all gate on ONE heritage subsystem: typed-stack-element byte-refinement + addrForced-INDIRECT direct-write DCE
+
+The remaining 5 (Partial Merge #4/#5, Local cross #2, Long double #11, Stack string #9) are now PROVEN to
+share one deeply-interconnected heritage-convergence root, refined to:
+- **ROOT v6 (PM #4/#5 + Local cross #2 + Long double #11):** the L4 inflateTest arm is byte-faithful and
+  intersects a SURVIVING addrForced INDIRECT over writeLongDouble. That INDIRECT's `addrForce` is NEVER
+  cleared by ActionDeadCode (coreaction.cc:4165 `isAddrForce()&&!isDirectWrite()`) because its output is
+  `isDirectWrite()==true` — the direct-write taint flows input-param `s0x8:2` → the dead
+  `s0x8:4 = CONCAT22(s0xa:2,s0x8:2)` hole-fill (a PIECE = assignment) → the INDIRECT output
+  (ActionDirectWrite forward-taint, coreaction.cc:1437/coreaction_render.rs:1369). C++ never reaches this:
+  the `s0x8:4` CONCAT22 doesn't survive (nothing reads s0x8:4 once SEXT narrows to read s0x8:2 directly), so
+  the INDIRECT loses its direct-write input, addrForce clears, it's DCE'd, the range collapses to width-2.
+  NEXT = remove/avoid the dead `s0x8:4` CONCAT22 hole-fill whose output is consumed ONLY by a same-address
+  INDIRECT (guardInput heritage.rs:2417 + the per-pass re-heritage that re-forms width-4). The L4 arm is
+  preserved one flip away behind `KUNA_L4_INFLATE_ARM` (coreaction_cleanup.rs:1296, OFF) on branch
+  worktree-agent-a302bf38bab6bca3b @ 7e54ff7 — flip once the residue collapses.
+- **LOSS-247 v2 (Stack string #9):** OVERTURNS the "RulePropagateCopy folds the d1 home" thesis — C++ folds
+  the d1 stack-store COPY into the PIECE IDENTICALLY to rust (a fold guard would be non-faithful), then
+  RE-CREATES the addr-tied byte home each mainloop pass (pass 7: `s..d1:1 = DIL`), re-splitting the high byte
+  of the 2-byte addr-tied write `s..d0:2` back into its char-array element `v1[9]`, self-sustaining. Rust
+  folds and NEVER re-splits (`KUNA_TRACE_REFINE` empty — refinement never fires for this region because the
+  collected disjoint cover lacks the d1 byte boundary after the fold). NEXT = the type-driven byte re-split
+  must come from the ARRAY-ELEMENT DISJOINT PARTITION in heritage collect/disjoint (heritage.rs:3163/3333
+  refinement + the typed char-array element boundary), NOT build_refinement alone and NOT a RulePropagateCopy
+  guard.
+- ASSESSMENT: these are ONE interconnected heritage subsystem (collect/disjoint/refinement of typed
+  stack-element byte boundaries + the guardInput hole-fill + addrForced-INDIRECT direct-write/DCE chain).
+  Each wave peels a layer; it needs a single dedicated deep effort on that subsystem, not more fan-out.
+  [[kuna-rust-port]]
