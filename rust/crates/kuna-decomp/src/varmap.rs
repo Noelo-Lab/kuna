@@ -970,12 +970,10 @@ impl ScopeLocal {
     /// are known).  Used by `syncVarnodesWithSymbol` to mark such a slot
     /// `nolocalalias` so `RuleIndirectCollapse` can drop the per-call INDIRECT that
     /// guards a saved-register (e.g. MIPS gp) spill that `markNotMapped` unmapped.
-    ///
-    /// BLOCKED next-locus (gp-spill wave): wiring this into
-    /// `Funcdata::sync_varnodes_with_symbols` (the `unmapped_alias_check` arm)
-    /// forwards Gp Test #2 but regresses the Switch suite until
-    /// `protect_switch_paths` is correctly ported.  Kept ready (`#[allow(dead_code)]`).
-    #[allow(dead_code)]
+    /// Wired into `Funcdata::sync_varnodes_with_symbols` (the `unmapped_alias_check`
+    /// arm) — it forwards Gp Test #2; the Switch suite holds because
+    /// `protect_switch_paths` shields the switch INDIRECTs in the jump-table-
+    /// recovery partial clone.
     pub fn is_unmapped_unaliased(&self, vn_space: &Rc<AddrSpace>, vn_offset: uintb) -> bool {
         // if (vn->getSpace() != space) return false;
         if !(Rc::ptr_eq(vn_space, &self.space) || vn_space.get_index() == self.space.get_index()) {
