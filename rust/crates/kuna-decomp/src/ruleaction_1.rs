@@ -2055,14 +2055,123 @@ impl Rule for RulePullsubIndirect {
         }
 
         // PcodeOp *targ_op = PcodeOp::getOpFromConst(indir->getIn(1)->getAddr());
+        // The iop-space second input encodes the affected PcodeOp (the same
+        // decode heritage's INDIRECT carve-out uses: op_iop_decode of the iop
+        // varnode's offset — C++ `PcodeOp::getOpFromConst`).
+        let iop_off = data
+            .vbank()
+            .get(indir_in1)
+            .expect("RulePullsubIndirect: stale indir_in1")
+            .get_addr()
+            .get_offset();
+        let targ_op = crate::funcdata_varnode::op_iop_decode(iop_off);
         // if (targ_op->isDead()) return 0;
-        //   ... newSize/minMaxUse/acceptableSize/consume guards; then
-        //   newIndirectCreation or newOp(INDIRECT)+newVarnodeOut; replaceDescendants ...
-        // SEAM(W3/W4): `PcodeOp::getOpFromConst` (iop-space decode — the W3-varnode
-        // seam funcdata_op also notes) and `newIndirectCreation`/`newVarnodeOut`
-        // (W3 output-creation seam) are unavailable.  The INDIRECT/iop structural
-        // guards above are ported; the body defers here.  No change.
-        0
+        if data.obank().get(targ_op).map(|o| o.is_dead()).unwrap_or(true) {
+            return 0;
+        }
+        // if (vn->isAddrForce()) return 0;
+        if data.vbank().get(vn).expect("RulePullsubIndirect: stale vn").is_addr_force() {
+            return 0;
+        }
+
+        // RulePullsubMulti::minMaxUse(vn, maxByte, minByte);
+        let mut max_byte: int4 = 0;
+        let mut min_byte: int4 = 0;
+        RulePullsubMulti::min_max_use(data, vn, &mut max_byte, &mut min_byte);
+        // newSize = maxByte - minByte + 1;
+        let new_size = max_byte - min_byte + 1;
+        // if (maxByte < minByte || (newSize >= vn->getSize())) return 0;
+        if max_byte < min_byte || new_size >= vn_size {
+            return 0;
+        }
+        // if (!RulePullsubMulti::acceptableSize(newSize)) return 0;
+        if !RulePullsubMulti::acceptable_size(new_size) {
+            return 0;
+        }
+        // Varnode *outvn = op->getOut();
+        let outvn = data.obank().get(op).expect("RulePullsubIndirect: stale op").get_out().expect(
+            "RulePullsubIndirect: SUBPIECE has no output",
+        );
+        // if (outvn->isPrecisLo()||outvn->isPrecisHi()) return 0; // Don't pull apart double precision
+        {
+            let ov = data.vbank().get(outvn).expect("RulePullsubIndirect: stale outvn");
+            if ov.is_precis_lo() || ov.is_precis_hi() {
+                return 0;
+            }
+        }
+
+        // uintb consume = calc_mask(newSize) << 8 * minByte;  consume = ~consume;
+        let consume: uintb = !(calc_mask(new_size) << (8 * min_byte));
+        // if ((consume & indir->getIn(0)->getConsume())!=0) return 0;
+        let indir_in0 = data.obank().get(indir).expect("RulePullsubIndirect: stale indir").get_in(0).expect(
+            "RulePullsubIndirect: INDIRECT has no in0",
+        );
+        let in0_consume =
+            data.vbank().get(indir_in0).expect("RulePullsubIndirect: stale indir_in0").get_consume();
+        if (consume & in0_consume) != 0 {
+            return 0;
+        }
+
+        // Compute the truncated-piece address (smalladdr2).
+        let vn_addr = data.vbank().get(vn).expect("RulePullsubIndirect: stale vn").get_addr().clone();
+        let vn_be =
+            data.vbank().get(vn).expect("RulePullsubIndirect: stale vn").get_space().is_big_endian();
+        let smalladdr2 = if !vn_be {
+            &vn_addr + min_byte as i64
+        } else {
+            &vn_addr + (vn_size - max_byte - 1) as i64
+        };
+
+        let small2: VarnodeId;
+        // if (indir->isIndirectCreation()) { ... newIndirectCreation ... }
+        if data.obank().get(indir).expect("RulePullsubIndirect: stale indir").is_indirect_creation() {
+            // bool possibleout = !indir->getIn(0)->isIndirectZero();
+            let possibleout =
+                !data.vbank().get(indir_in0).expect("RulePullsubIndirect: stale indir_in0").is_indirect_zero();
+            // new_ind = data.newIndirectCreation(targ_op,smalladdr2,newSize,possibleout);
+            let new_ind = data.new_indirect_creation(targ_op, &smalladdr2, new_size, possibleout);
+            // small2 = new_ind->getOut();
+            small2 = data.obank().get(new_ind).expect("RulePullsubIndirect: stale new_ind").get_out().expect(
+                "RulePullsubIndirect: newIndirectCreation has no out",
+            );
+        } else {
+            // Varnode *basevn = indir->getIn(0);
+            let basevn = indir_in0;
+            // Varnode *small1 = findSubpiece(basevn,newSize,op->getIn(1)->getOffset());
+            let sub_off = {
+                let in1 = data.obank().get(op).expect("RulePullsubIndirect: stale op").get_in(1).expect(
+                    "RulePullsubIndirect: SUBPIECE has no in1",
+                );
+                data.vbank().get(in1).expect("RulePullsubIndirect: stale in1").get_offset()
+            };
+            let small1 = match RulePullsubMulti::find_subpiece(data, basevn, new_size, sub_off) {
+                Some(s) => s,
+                None => RulePullsubMulti::build_subpiece(
+                    data,
+                    basevn,
+                    new_size as u32,
+                    sub_off as u32,
+                )
+                .expect("RulePullsubIndirect: build_subpiece"),
+            };
+            // Create new indirect near original indirect.
+            let indir_addr =
+                data.obank().get(indir).expect("RulePullsubIndirect: stale indir").get_addr().clone();
+            let new_ind = data.new_op(2, indir_addr);
+            data.op_set_opcode_code(new_ind, OpCode::CPUI_INDIRECT);
+            small2 = data
+                .new_varnode_out(new_size, &smalladdr2, new_ind)
+                .expect("RulePullsubIndirect: newVarnodeOut");
+            data.op_set_input(new_ind, small1, 0).expect("RulePullsubIndirect: opSetInput 0");
+            let iop = data.new_varnode_iop(targ_op);
+            data.op_set_input(new_ind, iop, 1).expect("RulePullsubIndirect: opSetInput 1");
+            data.op_insert_before(new_ind, indir);
+        }
+
+        // RulePullsubMulti::replaceDescendants(vn, small2, maxByte, minByte, data);
+        RulePullsubMulti::replace_descendants(data, vn, small2, max_byte, min_byte)
+            .expect("RulePullsubIndirect: replaceDescendants");
+        1
     }
 }
 
