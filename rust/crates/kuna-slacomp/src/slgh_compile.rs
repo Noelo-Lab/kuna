@@ -586,8 +586,24 @@ impl SleighCompile {
         }
         self.contextlock = true;
         let mut context_offset = 0;
+        // C++ `stable_sort` with `FieldContext::operator<` (slgh_compile.cc:1777):
+        // order by the containing varnode symbol's NAME, then by `qual->low` —
+        // NOT by symbol id (the ids and names can order differently).
+        let name_of = |id: SymbolId| -> Vec<u8> {
+            self.base
+                .symtab()
+                .find_symbol_by_id(id)
+                .map(|s| s.get_name().to_vec())
+                .unwrap_or_default()
+        };
+        // Precompute names to avoid borrow issues inside the comparator.
+        let names: BTreeMap<SymbolId, Vec<u8>> = self
+            .contexttable
+            .iter()
+            .map(|fc| (fc.sym, name_of(fc.sym)))
+            .collect();
         self.contexttable.sort_by(|a, b| {
-            (a.sym, a.qual.low, a.qual.high).cmp(&(b.sym, b.qual.low, b.qual.high))
+            (names.get(&a.sym), a.qual.low).cmp(&(names.get(&b.sym), b.qual.low))
         });
         let mut begin = 0usize;
         while begin < self.contexttable.len() {

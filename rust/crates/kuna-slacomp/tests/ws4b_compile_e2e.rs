@@ -132,6 +132,21 @@ fn ws4c_compile_content_identical() {
         "specs/Ghidra/Processors/SuperH4/data/languages/SuperH4_be.slaspec",
         "specs/Ghidra/Processors/SuperH4/data/languages/SuperH4_le.slaspec",
         "specs/Ghidra/Processors/tricore/data/languages/tricore.slaspec",
+        // Large ISAs (exercise the decision-tree order + context layout + the
+        // full ConsistencyChecker over thousands of constructors).
+        "specs/Ghidra/Processors/x86/data/languages/x86.slaspec",
+        "specs/Ghidra/Processors/x86/data/languages/x86-64.slaspec",
+        "specs/Ghidra/Processors/ARM/data/languages/ARM8_le.slaspec",
+        "specs/Ghidra/Processors/MIPS/data/languages/mips32le.slaspec",
+        "specs/Ghidra/Processors/MIPS/data/languages/mips64be.slaspec",
+        "specs/Ghidra/Processors/AARCH64/data/languages/AARCH64.slaspec",
+        "specs/Ghidra/Processors/RISCV/data/languages/riscv.ilp32d.slaspec",
+        "specs/Ghidra/Processors/Atmel/data/languages/avr32a.slaspec",
+        "specs/Ghidra/Processors/6502/data/languages/6502.slaspec",
+        "specs/Ghidra/Processors/Z80/data/languages/z80.slaspec",
+        "specs/Ghidra/Processors/eBPF/data/languages/eBPF_le.slaspec",
+        "specs/Ghidra/Processors/JVM/data/languages/JVM.slaspec",
+        "specs/Ghidra/Processors/Dalvik/data/languages/Dalvik_Base.slaspec",
     ];
     for rel in SPECS {
         if repo_root().join(rel).exists() {
