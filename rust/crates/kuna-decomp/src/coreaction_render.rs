@@ -1509,8 +1509,17 @@ impl Action for ActionRestructureVarnode {
         if data.sync_varnodes_with_symbols(false, aliasyes) {
             count += 1;
         }
-        // SEAM(W8-funcdata): `protectSwitchPaths` (BRANCHIND/INDIRECT collapse
-        // protection) needs `isJumptableRecoveryOn`; not modeled here.
+        // C++ coreaction.cc:2342-2343:
+        //   if (data.isJumptableRecoveryOn()) protectSwitchPaths(data);
+        // Only the inner jump-table-recovery clone has `jumptablerecovery_on`
+        // set (Funcdata::stageJumpTable).  There, walk each BRANCHIND switch's
+        // data-flow path and mark the earliest INDIRECT on a constant-origin
+        // path `noIndirectCollapse`, so the indirect switch value survives the
+        // RuleIndirectCollapse passes that the unmapped-unaliased `nolocalalias`
+        // flip now lets fire.
+        if data.is_jumptable_recovery_on() {
+            data.protect_switch_paths();
+        }
         self.numpass += 1;
         count
     }

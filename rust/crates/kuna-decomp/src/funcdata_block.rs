@@ -2666,7 +2666,6 @@ impl Funcdata {
 
     /// C++ `ActionRestructureVarnode::isCopyConstant` (`coreaction.cc:2232`): is
     /// `vn` a constant or a `COPY` of a constant?
-    #[allow(dead_code)] // gp-spill wave next-locus (see protect_switch_paths)
     fn switch_is_copy_constant(&self, vn: VarnodeId) -> bool {
         let v = match self.vbank().get(vn) {
             Some(v) => v,
@@ -2697,7 +2696,6 @@ impl Funcdata {
 
     /// C++ `ActionRestructureVarnode::isDelayedConstant` (`coreaction.cc:2246`):
     /// `vn` is a constant, or the not-yet-simplified `COPY`/`INT_ADD` of constants.
-    #[allow(dead_code)] // gp-spill wave next-locus (see protect_switch_paths)
     fn switch_is_delayed_constant(&self, vn: VarnodeId) -> bool {
         let v = match self.vbank().get(vn) {
             Some(v) => v,
@@ -2713,12 +2711,20 @@ impl Funcdata {
             Some(d) => d,
             None => return false,
         };
-        let (opc, in0, in1) = match self.obank().get(def) {
-            Some(o) => (o.code(), o.get_in(0), o.get_in(1)),
+        // C++ `isDelayedConstant` (coreaction.cc:2245): for CPUI_COPY it reads
+        // ONLY getIn(0); getIn(1) is reached solely on the CPUI_INT_ADD path.
+        // The slot reads must stay deferred behind the opcode check — a COPY def
+        // has a single input, so eagerly reading getIn(1) panics (op.rs:568
+        // bounds check).  This is the over-/under-protect bug from the prior wave.
+        let opc = match self.obank().get(def) {
+            Some(o) => o.code(),
             None => return false,
         };
         if opc == OpCode::CPUI_COPY {
-            return in0
+            return self
+                .obank()
+                .get(def)
+                .and_then(|o| o.get_in(0))
                 .and_then(|i| self.vbank().get(i))
                 .map(|v| v.is_constant())
                 .unwrap_or(false);
@@ -2726,9 +2732,12 @@ impl Funcdata {
         if opc != OpCode::CPUI_INT_ADD {
             return false;
         }
-        let (i0, i1) = match (in0, in1) {
-            (Some(a), Some(b)) => (a, b),
-            _ => return false,
+        let (i0, i1) = match self.obank().get(def) {
+            Some(o) => match (o.get_in(0), o.get_in(1)) {
+                (Some(a), Some(b)) => (a, b),
+                _ => return false,
+            },
+            None => return false,
         };
         self.switch_is_copy_constant(i1) && self.switch_is_copy_constant(i0)
     }
@@ -2738,7 +2747,6 @@ impl Funcdata {
     /// destination; if it originates from a constant but passes through INDIRECT
     /// ops, mark the earliest INDIRECT `noIndirectCollapse` so the indirect switch
     /// value is not lost when later analysis collapses INDIRECTs.
-    #[allow(dead_code)] // gp-spill wave next-locus (see protect_switch_paths)
     fn protect_switch_path_indirects(&mut self, branchind: OpId) {
         use crate::op::pcodeop_flags as pf;
         let mut last_indirect: Option<OpId> = None;
@@ -2755,8 +2763,17 @@ impl Funcdata {
                 Some(d) => d,
                 None => break,
             };
+            // C++ accesses getIn(slot) only within the per-opcode arms below, so a
+            // slot is never read past `numInput`.  Read in0/in1 bounds-safely here
+            // (a unary/COPY/single-input INDIRECT def has only slot 0 — eagerly
+            // reading slot 1 would index out of bounds: op.rs:568 panic).
             let (eval_type, code, ninput, in0, in1) = match self.obank().get(cur_op) {
-                Some(o) => (o.get_eval_type(), o.code(), o.num_input(), o.get_in(0), o.get_in(1)),
+                Some(o) => {
+                    let n = o.num_input();
+                    let i0 = if n > 0 { o.get_in(0) } else { None };
+                    let i1 = if n > 1 { o.get_in(1) } else { None };
+                    (o.get_eval_type(), o.code(), n, i0, i1)
+                }
                 None => return,
             };
             if (eval_type & (pf::binary | pf::ternary)) != 0 {
@@ -2838,16 +2855,16 @@ impl Funcdata {
 
     /// C++ `ActionRestructureVarnode::protectSwitchPaths` (`coreaction.cc:2320`):
     /// run through BRANCHIND ops (switches) and protect the data-flow path to the
-    /// destination variable from INDIRECT collapse.
-    ///
-    /// BLOCKED next-locus for the gp-spill forwarding wave: this shape-faithful port
-    /// is NOT yet correct — wiring it into `ActionRestructureVarnode::apply`
-    /// (gated on `is_jumptable_recovery_on`) together with the `is_unmapped_unaliased`
-    /// `nolocalalias` flip REGRESSED 30+ Switch Indirect/Multi/Loop/Hide assertions
-    /// (over-marks / wrong backtrack vs the C++).  Debug this against the C++ before
-    /// flipping `funcdata_spacebase.rs` `is_unmapped_unaliased` on.  Left unwired
-    /// (`#[allow(dead_code)]`) so the substrate stays regression-free.
-    #[allow(dead_code)]
+    /// destination variable from INDIRECT collapse.  Wired into
+    /// `ActionRestructureVarnode::apply` (gated on `is_jumptable_recovery_on`) and
+    /// byte-faithful (the prior wave's "30 Switch regressions" were really an
+    /// out-of-bounds `getIn(1)` panic in `switch_is_delayed_constant` / the walk's
+    /// eager input read — now fixed — that aborted jump-table recovery).  It shields
+    /// the switch-index INDIRECTs in the jump-table-recovery partial clone from the
+    /// RuleIndirectCollapse passes that the `is_unmapped_unaliased` `nolocalalias`
+    /// flip enables; with it correct, all switch datatests hold when that flip is
+    /// turned on (the flip is staged-off pending the Gp Test #1 over-merge — see
+    /// `Funcdata::sync_varnodes_with_symbols`).
     pub(crate) fn protect_switch_paths(&mut self) {
         let nblocks = self.bblocks_get_size();
         let mut branchinds: Vec<OpId> = Vec::new();

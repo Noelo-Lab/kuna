@@ -1167,16 +1167,36 @@ impl Funcdata {
                     fl = varnode_flags::mapped | varnode_flags::addrtied;
                 } else if unmapped_alias_check {
                     // C++ funcdata_varnode.cc:999-1001:
-                    //   fl = lm->isUnmappedUnaliased(vn) ? nolocalalias : 0;
-                    // BLOCKED (gp-spill forwarding wave): wiring `is_unmapped_unaliased`
-                    // here forwards the MIPS gp spill (Gp Test #2) but lets
-                    // RuleIndirectCollapse eat INDIRECTs on switch (BRANCHIND) data-flow
-                    // paths that C++ shields via the unported `protectSwitchPaths`
-                    // (ActionRestructureVarnode, coreaction.cc:2320) — net-negative
-                    // (Switch Indirect/Multi/Loop/Hide regress).  Next-locus:
-                    // port `protectSwitchPaths` correctly (the naive port in
-                    // funcdata_block.rs over-marks), then flip this to:
-                    //   fl = is_unmapped_unaliased(..) ? nolocalalias : 0;
+                    //   fl = lm->isUnmappedUnaliased(vnexemplar) ? nolocalalias : 0;
+                    // The faithful flip is [`ScopeLocal::is_unmapped_unaliased`]
+                    // (varmap.rs).  Wiring it here forwards the MIPS gp spill (Gp Test
+                    // #2 GAINED: the unmapped, unaliased gp-spill slot gets
+                    // `nolocalalias`, RuleIndirectCollapse drops the per-call INDIRECT,
+                    // and the constant reaches the GOT loads → `printf("Hello",a0)`),
+                    // and — now that `protect_switch_paths` is byte-faithful (the
+                    // out-of-bounds `getIn(1)` panic in `switch_is_delayed_constant` /
+                    // the walk's eager input read is fixed) — ALL 6 switch datatests
+                    // (switchind 16/16, switchmulti 9/9, switchloop 10/10, switchhide,
+                    // switchreturn, ifswitch) HOLD.
+                    //
+                    // BLOCKED on ONE residual: Gp Test #1 (`populate(v1)`).  The flip
+                    // is byte-faithful (C++ flips the same -0x10 gp slot), but in rust
+                    // the resulting alias change drives a HighVariable OVER-MERGE: the
+                    // `&v1` stack-address COPY merges into the `a0` input parameter
+                    // (param typed `xunknown1 *a0` instead of C++'s `xunknown4 a0`),
+                    // so `a0 = v1; populate(a0)` is emitted explicitly where C++ keeps
+                    // the populate-arg and printf-arg `a0` as distinct single-use SSA
+                    // versions and implies the COPY → `populate(v1)`.  This is a
+                    // DOWNSTREAM merge/HighVariable divergence (the LOSS-247 stack-
+                    // COPY-into-input family), not in either of these two pieces.
+                    // NEXT-LOCUS: stop the speculative merge of the `&v1` address COPY
+                    // into the `a0` input param (merge.rs / ActionMerge* input-merge
+                    // eligibility under `nolocalalias`), THEN flip this on:
+                    //   let unaliased = self.get_scope_local().and_then(|lm|
+                    //       ex_addr.get_space().map(|spc|
+                    //           lm.is_unmapped_unaliased(&spc, ex_addr.get_offset())))
+                    //       .unwrap_or(false);
+                    //   fl = if unaliased { varnode_flags::nolocalalias } else { 0 };
                     let _ = &ex_addr;
                     fl = 0;
                 } else {
