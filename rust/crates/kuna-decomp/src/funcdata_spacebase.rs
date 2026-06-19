@@ -1197,8 +1197,11 @@ impl Funcdata {
                     //           lm.is_unmapped_unaliased(&spc, ex_addr.get_offset())))
                     //       .unwrap_or(false);
                     //   fl = if unaliased { varnode_flags::nolocalalias } else { 0 };
-                    let _ = &ex_addr;
-                    fl = 0;
+                    let unaliased = self.get_scope_local().and_then(|lm|
+                        ex_addr.get_space().map(|spc|
+                            lm.is_unmapped_unaliased(&spc, ex_addr.get_offset())))
+                        .unwrap_or(false);
+                    fl = if unaliased { varnode_flags::nolocalalias } else { 0 };
                 } else {
                     fl = 0;
                 }

@@ -2466,6 +2466,49 @@ impl Database {
         bestentry
     }
 
+    /// Like [`Database::find_container`] but ignores the SymbolEntry `in_use`
+    /// (uselimit) test — return the smallest Symbol entry whose storage *contains*
+    /// `[addr, addr+size)` regardless of code-address validity.
+    ///
+    /// `find_container` only returns an entry valid at `usepoint`; a register
+    /// function parameter mapped through `ProtoStoreSymbol::setInput`'s
+    /// `restricted_usepoint` (entry-1, so it is NOT `addrtied`) is not valid at an
+    /// invalid usepoint, so the usepoint-keyed query misses it.  The C++ body
+    /// declaration emitter (`Printer::emitScopeVarDecls`, printc.cc:2696) walks the
+    /// local Scope's Symbol *table* by category and never does a usepoint query, so
+    /// it always recognizes the parameter Symbol.  This containment-only lookup
+    /// gives the kuna high-walking printer the same category answer (the parameter
+    /// Symbol's `function_parameter` category is a property of the Symbol, not of
+    /// any single use-point).
+    pub fn find_container_ignore_usepoint(
+        &self,
+        scope: ScopeId,
+        addr: &Address,
+        size: int4,
+    ) -> Option<EntryRef> {
+        let space = addr.get_space()?;
+        let space_index = space.get_index() as usize;
+        let rangemap = self.scopes[scope].maptable.get(space_index)?.as_ref()?;
+        let mut it =
+            rangemap.find_subsorts(addr.get_offset(), EntrySubsort::minimal(), EntrySubsort::maximal());
+        let mut bestentry: Option<EntryRef> = None;
+        let mut oldsize: int4 = -1;
+        let end = addr.get_offset().wrapping_add(size as uintb).wrapping_sub(1);
+        while let Some(idx) = it.next_back() {
+            let entry = self.mapped_entry(scope, space_index, idx);
+            if entry.get_last() >= end {
+                if entry.get_size() < oldsize || oldsize == -1 {
+                    bestentry = Some(EntryRef::Mapped { space_index, idx });
+                    if entry.get_size() == size {
+                        break;
+                    }
+                    oldsize = entry.get_size();
+                }
+            }
+        }
+        bestentry
+    }
+
     /// C++ `ScopeInternal::findClosestFit` (`database.cc:2312-2347`).
     pub fn find_closest_fit(
         &self,

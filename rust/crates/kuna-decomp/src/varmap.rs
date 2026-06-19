@@ -1154,6 +1154,7 @@ impl ScopeLocal {
         name: &str,
         ct: Rc<Datatype>,
         addr: &Address,
+        restricted_usepoint: &Address,
     ) -> KunaResult<Option<crate::database::SymbolId>> {
         if addr.is_invalid() || ct.get_size() < 1 {
             return Ok(None);
@@ -1164,7 +1165,47 @@ impl ScopeLocal {
         if self.db.find_overlap(self.scope, addr, ct.get_size()).is_some() {
             return Ok(None);
         }
-        let usepoint = Address::new_invalid();
+        // C++ `ProtoStoreSymbol::setInput` (fspec.cc:3170-3171): the usepoint is
+        // empty (whole-function) only when some Scope already *owns* the
+        // parameter's storage range — otherwise it is the function's
+        // `restricted_usepoint` (entry-1).  A register parameter's storage is NOT
+        // owned by the local stack scope, so `discoverScope` returns null and the
+        // usepoint becomes `restricted_usepoint`.  This keeps the SymbolEntry's
+        // `uselimit` NON-empty so `addMapInternal` does NOT mark the register
+        // parameter `addrtied` (database.cc:1154) — matching C++, where `a0(i)` is
+        // `mapped` but not `tied`.  Passing an invalid usepoint here (the prior
+        // kuna behavior) made every register parameter `addrtied`, which let
+        // `mergeAddrTied` over-merge the input register version with any later
+        // same-register value (the LOSS-247 Gp-#2 `&v1`->`a0` over-merge).
+        // C++ `ProtoStoreSymbol::setInput` (fspec.cc:3170): usepoint stays empty
+        // (whole-function ⇒ `addrtied`) only when a Scope already *owns* the
+        // parameter's storage; otherwise it is `restricted_usepoint` (entry-1),
+        // keeping the SymbolEntry NON-empty ⇒ NOT `addrtied`.
+        //
+        // The over-merge this corrects is specifically a REGISTER input parameter
+        // (the LOSS-247 Gp-#2 `&v1`->`a0`): a register's storage is owned by no
+        // Scope, so `discoverScope` returns null and the register parameter is NOT
+        // addrtied — which is what stops `mergeAddrTied` from grouping the input
+        // register version with later same-register values.  Restricting the
+        // restricted-usepoint to register storage keeps the join/stack struct
+        // parameter path (`d` in Stack-spill) byte-identical to its prior behavior:
+        // those go through `Scope::addMap`'s join arm (the per-piece stack entries),
+        // whose kuna rendering already inlines `d.field_b`, and which the
+        // single-point `restricted_usepoint` uselimit would otherwise de-tie and
+        // split.  `discover_scope` already returns null for a register, so this is a
+        // faithful subset of the C++ condition (it never *adds* a usepoint the C++
+        // would not).
+        let is_register = addr
+            .get_space()
+            .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR)
+            .unwrap_or(false);
+        let usepoint = if is_register
+            && self.db.discover_scope(self.scope, addr, ct.get_size(), &Address::new_invalid()).is_none()
+        {
+            restricted_usepoint.clone()
+        } else {
+            Address::new_invalid()
+        };
         let (sym, _eref) = self.db.add_symbol_mapped(self.scope, name, ct, addr, &usepoint)?;
         self.db.set_category(
             self.scope,
@@ -1708,7 +1749,17 @@ impl ScopeLocal {
     /// (`funcdata_varnode.cc:1018`: a size/high conflict spawns a fresh dynamic
     /// Symbol rather than reusing the parameter).
     pub fn containing_category_for_varnode(&self, addr: &Address, size: int4) -> Option<int4> {
-        let eref = self.db.find_container(self.scope, addr, size, &Address::default())?;
+        // Containment-only (ignore the SymbolEntry uselimit/`in_use`): the
+        // category is a property of the Symbol, not of a single use-point.  A
+        // register `function_parameter` Symbol is mapped through
+        // `restricted_usepoint` (entry-1, NOT addrtied — see
+        // `ScopeLocal::add_param_symbol`), so the prior usepoint-keyed
+        // `find_container(&Address::default())` (invalid usepoint ⇒ `in_use`
+        // false for a non-addrtied entry) missed it and the printer wrongly
+        // declared the register parameter as a body local.  C++
+        // `emitScopeVarDecls` finds parameters by walking the Symbol table by
+        // category, never by a usepoint query — this matches that.
+        let eref = self.db.find_container_ignore_usepoint(self.scope, addr, size)?;
         let entry = self.db.entry(self.scope, eref);
         Some(self.db.symbol(entry.symbol).get_category())
     }
