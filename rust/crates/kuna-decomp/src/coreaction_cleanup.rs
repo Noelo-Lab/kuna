@@ -1266,8 +1266,7 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::seams::VarnodeId) -> bool
             }
         }
     }
-    // (kuna L4 — BLOCKED) The `Merge::inflateTest` input-intersection arm
-    // (coreaction.cc:3509-3514) is the documented final layer:
+    // The `Merge::inflateTest` input-intersection arm (coreaction.cc:3509-3514):
     //   for(i=0;i<op->numInput();++i) {
     //     defvn = op->getIn(i);
     //     if (defvn->isConstant()) continue;
@@ -1278,22 +1277,33 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::seams::VarnodeId) -> bool
     // Partial Merge #4/#5 (the `EAX = glob1.a + ESI` register-param temp earns
     // its own statement instead of folding into the return).
     //
-    // The faithful arm + `Merge::inflate_test` (merge.rs) are PORTED and verified
-    // (they gain PM #4/#5 via the piece arm's `intersect==2`).  But landing them
-    // regresses **Long double #4** (`passmany`): the rust IR for `passmany`
-    // mis-recovers its int2 STACK params (it carries spurious `xunknown4 y/z/w`
-    // + `v1/v2/v3 xunknown2` locals that the C++ oracle does NOT — verified with
-    // a freshly-built `decomp_test_dbg`, C++ renders a clean
-    // `return (int4)y + (int4)z + (int4)w` with NO extra locals).  On that broken
-    // IR the (faithful) piece-intersection graph includes an INDIRECT temp whose
-    // single-point cover falls strictly inside the SEXT-output high's
-    // SEXT→RETURN internalCover, so `inflate_test` returns true and the SEXT
-    // outputs are wrongly forced explicit (`y + v2 + v1`).  `Cover::intersect`
-    // and `CoverBlock::intersect` are byte-faithful (cover.cc:59-102 / 269-297),
-    // and `VariablePiece::updateIntersections` is byte-faithful
-    // (variable.cc:140-157) — the divergence is UPSTREAM in `passmany`'s int2
-    // stack-param recovery, not in the inflate machinery.  BLOCK the arm until
-    // that recovery is fixed so it is not exposed.  See losses.md LOSS-248.
+    // (kuna LOSS-248 W11) This arm was BLOCKED through W10 because it regressed
+    // Long double #4: `passmany`'s int2 stack params were mis-recovered (spurious
+    // `xunknown4 y/z/w` + `xunknown2 v1/v2/v3` locals) so a surviving addrForced
+    // INDIRECT over `writeLongDouble` polluted the piece-intersection graph and
+    // `inflate_test` mis-fired on the SEXT outputs.  W11 fixed the ROOT (the locked
+    // stack params are now mapped into the local scope before restructure/sync, so
+    // the dead width-N hole-fill collapses and the INDIRECT is DCE'd — the IR now
+    // matches the C++ oracle).  With the residue gone the arm is byte-faithful and
+    // safe to enable.
+    let high = match data.vbank().get(vn).and_then(|v| v.get_high()) {
+        Some(h) => h,
+        None => return true,
+    };
+    let inputs: Vec<crate::seams::VarnodeId> = {
+        let o = data.obank().get(def).expect("checkImpliedCover: stale def (inflate)");
+        let n = o.num_input();
+        (0..n).filter_map(|i| o.get_in(i)).collect()
+    };
+    for defvn in inputs {
+        if data.vbank().get(defvn).map(|v| v.is_constant()).unwrap_or(true) {
+            continue;
+        }
+        let intersects = data.with_covermerge(|merge, data| merge.inflate_test(data, defvn, high));
+        if intersects {
+            return false;
+        }
+    }
     true
 }
 
