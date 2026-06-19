@@ -1429,12 +1429,47 @@ pub fn piece_is_leaf(
     vn: VarnodeId,
     rel_offset: int4,
 ) -> bool {
+    piece_is_leaf_inner(obank, vbank, root_vn, vn, rel_offset, None)
+}
+
+/// Container-entry-aware identity for a Varnode (kuna analog of
+/// `Varnode::getSymbolEntry()`); see [`piece_is_leaf_inner`].
+pub type SymbolEntryKey = (crate::database::SymbolId, uintb, int4);
+
+/// Core of [`piece_is_leaf`] with an optional Symbol-entry resolver.
+///
+/// When `entry_of` is supplied, the mapped arm faithfully transcribes C++
+/// `if (vn->isMapped() && rootVn->getSymbolEntry() != vn->getSymbolEntry())
+/// return true;` — a mapped Varnode is a leaf only when it resolves to a
+/// *different* containing SymbolEntry than the root.  When `entry_of` is `None`
+/// (the proto-partial-tree path that has no scope handle), the conservative W4
+/// seam is preserved: any mapped non-root Varnode is a leaf.
+pub fn piece_is_leaf_inner(
+    obank: &PcodeOpBank,
+    vbank: &VarnodeBank,
+    root_vn: VarnodeId,
+    vn: VarnodeId,
+    rel_offset: int4,
+    entry_of: Option<&dyn Fn(VarnodeId) -> Option<SymbolEntryKey>>,
+) -> bool {
     let v = vbank.get(vn).expect("piece_is_leaf: stale vn");
     // if (vn->isMapped() && rootVn->getSymbolEntry() != vn->getSymbolEntry()) return true;
     if v.is_mapped() {
-        // SEAM(W4): without mapentry we cannot compare symbol entries; a mapped
-        // leaf that is not the root is a separate symbol -> leaf.
-        return true;
+        match entry_of {
+            Some(resolve) => {
+                // C++ compares SymbolEntry pointers: leaf iff the entries differ.
+                if resolve(vn) != resolve(root_vn) {
+                    return true;
+                }
+                // Same containing entry as the root -> fall through (not a leaf
+                // on this account); the structural tests below still apply.
+            }
+            None => {
+                // SEAM(W4): without a resolver we cannot compare entries; a mapped
+                // non-root Varnode is conservatively a leaf.
+                return true;
+            }
+        }
     }
     // if (!vn->isWritten()) return true;
     if !v.is_written() {
@@ -1475,6 +1510,23 @@ pub fn gather_pieces(
     base_offset: int4,
     root_offset: int4,
 ) {
+    gather_pieces_inner(stack, obank, vbank, root_vn, op, base_offset, root_offset, None)
+}
+
+/// [`gather_pieces`] with an optional Symbol-entry resolver threaded to
+/// [`piece_is_leaf_inner`] (C++ `RulePieceStructure` supplies the real
+/// `getSymbolEntry()` comparison; the proto-partial-tree caller passes `None`).
+#[allow(clippy::too_many_arguments)]
+pub fn gather_pieces_inner(
+    stack: &mut Vec<PieceNode>,
+    obank: &PcodeOpBank,
+    vbank: &VarnodeBank,
+    root_vn: VarnodeId,
+    op: OpId,
+    base_offset: int4,
+    root_offset: int4,
+    entry_of: Option<&dyn Fn(VarnodeId) -> Option<SymbolEntryKey>>,
+) {
     let root_big_endian = vbank
         .get(root_vn)
         .expect("gather_pieces: stale root")
@@ -1492,11 +1544,11 @@ pub fn gather_pieces(
         } else {
             base_offset
         };
-        let res = piece_is_leaf(obank, vbank, root_vn, vn, offset - root_offset);
+        let res = piece_is_leaf_inner(obank, vbank, root_vn, vn, offset - root_offset, entry_of);
         stack.push(PieceNode::new(op, i, offset, res));
         if !res {
             let def = vbank.get(vn).expect("gather_pieces: stale vn").get_def().expect("gather_pieces: non-leaf vn has no def");
-            gather_pieces(stack, obank, vbank, root_vn, def, offset, root_offset);
+            gather_pieces_inner(stack, obank, vbank, root_vn, def, offset, root_offset, entry_of);
         }
     }
 }

@@ -310,11 +310,6 @@ fn is_proto_partial(data: &Funcdata, vn: VarnodeId) -> bool {
 fn vn_addr(data: &Funcdata, vn: VarnodeId) -> kuna_base::address::Address {
     data.vbank().get(vn).expect("ruleaction_6: stale vn").get_addr().clone()
 }
-/// `vn->getStructuredType()`.
-#[inline]
-fn vn_structured_type(data: &Funcdata, vn: VarnodeId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
-    data.vbank().get(vn).expect("ruleaction_6: stale vn").get_structured_type()
-}
 /// `vn->getType()` (cloned `Rc`).
 #[inline]
 fn vn_type(data: &Funcdata, vn: VarnodeId) -> std::rc::Rc<crate::dtype::Datatype> {
@@ -1183,26 +1178,73 @@ impl RulePieceStructure {
     }
 
     /// Find the base structure or array data-type that `outvn` is part of and the
-    /// Varnode's starting offset within it (C++ `RulePieceStructure::determineDatatype`).
+    /// Varnode's starting offset within it (C++ `RulePieceStructure::determineDatatype`,
+    /// ruleaction.cc:7496, including the `Varnode::getStructuredType` mapentry path,
+    /// varnode.cc:1156).
     ///
-    /// Returns `(Some(ct), baseOffset)` or `(None, _)`.  The C++ partial-symbol arm
-    /// (`vn->getSymbolEntry()->getOffset()` / `getAddr().overlap(...)`) needs the W4
-    /// `mapentry` link which the merged Varnode lacks; when `ct->getSize() ==
-    /// vn->getSize()` (a whole struct value flowing through the tree — the common
-    /// case) `baseOffset` is 0 and no symbol entry is consulted. // SEAM(W4 partial)
+    /// C++ `getStructuredType` prefers the containing Symbol's type
+    /// (`mapentry->getSymbol()->getType()`) over the Varnode's own type; we re-derive
+    /// the `mapentry` with the local-scope containment query (`query_container_for_link`,
+    /// the same lookup `linkSymbol` uses).  When the resolved structured type is wider
+    /// than the Varnode (the partial-symbol case) the C++ branch computes
+    /// `baseOffset = vn->getAddr().overlap(0, entry->getAddr(), ct->getSize()) +
+    /// entry->getOffset()` (== the entry query's `sym_off`) and walks the type tree to
+    /// confirm the concrete sub-type is itself structured; otherwise it returns null so
+    /// the CONCAT forming a non-structured sub-type is left intact.
     fn determine_datatype(
         data: &Funcdata,
         vn: VarnodeId,
     ) -> KunaResult<(Option<std::rc::Rc<crate::dtype::Datatype>>, int4)> {
-        let ct = match vn_structured_type(data, vn) {
-            Some(c) => c,
-            None => return Ok((None, 0)),
+        let vnsize = size(data, vn);
+        // getStructuredType(): mapentry ? symbol->getType() : vn->getType(); piece-structured else null.
+        // Resolve the containing local SymbolEntry (the kuna `mapentry`).
+        let usepoint = data.vn_use_point(vn);
+        let addr = vn_addr(data, vn);
+        let container = data
+            .get_scope_local()
+            .and_then(|lm| lm.query_container_for_link(&addr, &usepoint));
+        // ct = mapentry ? mapentry->getSymbol()->getType() : vn->getType()
+        let (ct, base_offset_hint) = match container
+            .as_ref()
+            .and_then(|c| c.sym_type.as_ref().map(|t| (std::rc::Rc::clone(t), c.sym_off)))
+        {
+            Some((symty, off)) => (symty, off),
+            None => (vn_type(data, vn), 0),
         };
-        if ct.get_size() != size(data, vn) {
-            // vn is a partial.  The W4 mapentry/overlap geometry is not available
-            // on the merged Varnode, so the partial-symbol split is a seam: decline
-            // (return null) rather than guess a wrong base offset. // SEAM(W4 partial)
+        // if (ct->isPieceStructured()) ... else return null.
+        if !ct.is_piece_structured() {
             return Ok((None, 0));
+        }
+
+        if ct.get_size() != vnsize {
+            // vn is a partial.  baseOffset = overlap(0, entry, ct.size) + entry.offset
+            // == the container query's sym_off (which already folds in entry->getOffset()).
+            let base_offset = base_offset_hint;
+            if base_offset < 0 {
+                return Ok((None, 0));
+            }
+            // Walk to the concrete sub-type that matches the Varnode size.
+            let mut sub_type = Some(std::rc::Rc::clone(&ct));
+            let mut sub_offset: int8 = base_offset as int8;
+            while let Some(st) = &sub_type {
+                if st.get_size() <= vnsize {
+                    break;
+                }
+                let (next, off2) = st.get_sub_type(sub_offset)?;
+                sub_offset = off2;
+                sub_type = next;
+            }
+            if let Some(st) = &sub_type {
+                if st.get_size() == vnsize && sub_offset == 0 {
+                    // Concrete sub-type matches the Varnode exactly.
+                    if !st.is_piece_structured() {
+                        // and the concrete sub-type is not structured itself:
+                        // don't split out the CONCAT forming the sub-type.
+                        return Ok((None, 0));
+                    }
+                }
+            }
+            return Ok((Some(ct), base_offset));
         }
         Ok((Some(ct), 0))
     }
@@ -1367,18 +1409,27 @@ impl Rule for RulePieceStructure {
         }
 
         // Build the CONCAT tree, replacing INT_ZEXT leaves with PIECE as needed.
+        // The Symbol-entry resolver gives `PieceNode::isLeaf` the C++
+        // `getSymbolEntry()` comparison (a mapped piece sharing the root's entry is
+        // not a leaf — so a CONCAT into the same stack symbol is split per element).
+        // The resolver borrows `data` immutably, so the gather runs in an inner
+        // scope that drops it before the `&mut data` `findReplaceZext`.
         let mut stack: Vec<crate::op::PieceNode> = Vec::new();
         loop {
             stack.clear();
-            crate::op::gather_pieces(
-                &mut stack,
-                data.obank(),
-                data.vbank(),
-                outvn,
-                op,
-                base_offset,
-                base_offset,
-            );
+            {
+                let entry_of = |q: VarnodeId| data.vn_container_entry_key(q);
+                crate::op::gather_pieces_inner(
+                    &mut stack,
+                    data.obank(),
+                    data.vbank(),
+                    outvn,
+                    op,
+                    base_offset,
+                    base_offset,
+                    Some(&entry_of),
+                );
+            }
             match Self::find_replace_zext(data, &stack, &ct) {
                 Ok(true) => continue, // found some; regenerate the tree
                 Ok(false) => break,
