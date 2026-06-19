@@ -44,6 +44,8 @@ use std::collections::BTreeMap;
 use kuna_base::error::KunaResult;
 
 use crate::pcodecompile_actions::SleighPcode;
+use crate::slghparse::{ConstOp, FieldQual, ParserActions, PcodeOpc, SpaceQual};
+use crate::slghscan::{ScannerHost, SymbolTokenKind};
 
 /// A symbol's id in the `kuna_sleigh` `SymbolTable` (`symbollist` index).
 /// Replaces the C++ `SleighSymbol *` / `*Symbol` return/param types.
@@ -646,5 +648,382 @@ impl SleighCompile {
     /// `calcContextVarLayout` (slgh_compile.cc:2025).
     fn calc_context_var_layout(&mut self, _start: i32, _sz: i32, _numbits: i32) -> i32 {
         todo!("WS4: SleighCompile::calcContextVarLayout (slgh_compile.cc:2025-2085)")
+    }
+}
+
+// ===========================================================================
+// WS2 driver seam -- ScannerHost + ParserActions impls (FREEZE INTERFACE for WS4)
+//
+// The WS2 parser (`slghparse.rs`) drives the compile through these two traits.
+// Every method here corresponds to a `slgh->...` / `slgh->pcode....` call in the
+// bison grammar (slghparse.y); WS2 froze the *signatures* (and the arena-id
+// convention: pattern equations / expressions / ConstructTpl sections / ExprTrees
+// / VarnodeTpls / op lists / StarQuality are all driver-owned `u32` arena ids).
+// WS4 fills the bodies -- each is a `todo!()` so `cargo build -p kuna-slacomp` is
+// green and the parser links, while the real symbol-table / template build lands
+// in WS4.  The golden-parse tests (tests/slghparse_golden.rs) exercise WS2 against
+// a recording mock that implements the SAME two traits, so these `todo!()`s do not
+// gate WS2's verification.
+// ===========================================================================
+
+impl ScannerHost for SleighCompile {
+    fn next_line(&mut self) {
+        SleighCompile::next_line(self)
+    }
+    fn calc_context_layout(&mut self) {
+        SleighCompile::calc_context_layout(self)
+    }
+    fn read_include(&mut self, _fname: &[u8]) -> Option<Vec<u8>> {
+        todo!("WS4: ScannerHost::read_include -> parseFromNewFile + grabCurrentFilePath + read (slgh_compile.cc:2558)")
+    }
+    fn parse_file_finished(&mut self) {
+        SleighCompile::parse_file_finished(self)
+    }
+    fn parse_preproc_macro(&mut self) {
+        SleighCompile::parse_preproc_macro(self)
+    }
+    fn get_preproc_value(&self, name: &[u8]) -> Option<Vec<u8>> {
+        SleighCompile::get_preproc_value(self, name)
+    }
+    fn set_preproc_value(&mut self, name: &[u8], value: &[u8]) {
+        SleighCompile::set_preproc_value(self, name, value)
+    }
+    fn undefine_preproc_value(&mut self, name: &[u8]) -> bool {
+        SleighCompile::undefine_preproc_value(self, name)
+    }
+    fn find_symbol_kind(&self, _name: &[u8]) -> Option<SymbolTokenKind> {
+        todo!("WS4: ScannerHost::find_symbol_kind -> SymbolTable::findSymbol kind (slghscan.l:389)")
+    }
+}
+
+impl ParserActions for SleighCompile {
+    fn set_endian(&mut self, big: i32) {
+        SleighCompile::set_endian(self, big)
+    }
+    fn set_alignment(&mut self, val: i32) {
+        SleighCompile::set_alignment(self, val)
+    }
+    fn define_token(&mut self, _name: &[u8], _sz: u64, _endian: i32) -> SymbolId {
+        todo!("WS4: ParserActions::define_token -> SleighCompile::defineToken (slgh_compile.cc:2640)")
+    }
+    fn add_token_field(&mut self, _sym: SymbolId, _qual: FieldQual) {
+        todo!("WS4: ParserActions::add_token_field -> SleighCompile::addTokenField (slgh_compile.cc:2668)")
+    }
+    fn context_prop_begin(&mut self, varsym: SymbolId) -> SymbolId {
+        // `contextprop: DEFINE_KEY CONTEXT_KEY VARSYM { $$ = $3; }` (slghparse.y:199):
+        // the production just threads the varnode symbol through.
+        varsym
+    }
+    fn add_context_field(&mut self, _sym: SymbolId, _qual: FieldQual) -> bool {
+        todo!("WS4: ParserActions::add_context_field -> SleighCompile::addContextField (slgh_compile.cc:2690)")
+    }
+    fn new_space(&mut self, _qual: SpaceQual) {
+        todo!("WS4: ParserActions::new_space -> SleighCompile::newSpace (slgh_compile.cc:2713)")
+    }
+    fn define_varnodes(&mut self, _spacesym: SymbolId, _off: u64, _size: u64, _names: Vec<Vec<u8>>) {
+        todo!("WS4: ParserActions::define_varnodes -> SleighCompile::defineVarnodes (slgh_compile.cc:2776)")
+    }
+    fn define_bitrange(&mut self, _name: &[u8], _sym: SymbolId, _bitoffset: u32, _numb: u32) {
+        todo!("WS4: ParserActions::define_bitrange -> SleighCompile::defineBitrange (slgh_compile.cc:2800)")
+    }
+    fn add_user_op(&mut self, _names: Vec<Vec<u8>>) {
+        todo!("WS4: ParserActions::add_user_op -> SleighCompile::addUserOp (slgh_compile.cc:2833)")
+    }
+    fn attach_values(&mut self, _symlist: Vec<SymbolId>, _numlist: Vec<i64>) {
+        todo!("WS4: ParserActions::attach_values -> SleighCompile::attachValues (slgh_compile.cc:2872)")
+    }
+    fn attach_names(&mut self, _symlist: Vec<SymbolId>, _names: Vec<Vec<u8>>) {
+        todo!("WS4: ParserActions::attach_names -> SleighCompile::attachNames (slgh_compile.cc:2900)")
+    }
+    fn attach_varnodes(&mut self, _symlist: Vec<SymbolId>, _varlist: Vec<SymbolId>) {
+        todo!("WS4: ParserActions::attach_varnodes -> SleighCompile::attachVarnodes (slgh_compile.cc:2928)")
+    }
+    fn build_macro(&mut self, _sym: SymbolId, _rtl: u32) {
+        todo!("WS4: ParserActions::build_macro -> SleighCompile::buildMacro (slgh_compile.cc:3737)")
+    }
+    fn create_macro(&mut self, _name: &[u8], _params: Vec<Vec<u8>>) -> SymbolId {
+        todo!("WS4: ParserActions::create_macro -> SleighCompile::createMacro (slgh_compile.cc:3180)")
+    }
+    fn push_with(&mut self, _ss: Option<SymbolId>, _pateq: Option<u32>, _contvec: Option<Vec<u32>>) {
+        todo!("WS4: ParserActions::push_with -> SleighCompile::pushWith (slgh_compile.cc:3676)")
+    }
+    fn pop_with(&mut self) {
+        todo!("WS4: ParserActions::pop_with -> SleighCompile::popWith (slgh_compile.cc:3684)")
+    }
+    fn new_table(&mut self, _nm: &[u8]) -> SymbolId {
+        todo!("WS4: ParserActions::new_table -> SleighCompile::newTable (slgh_compile.cc:2968)")
+    }
+    fn create_constructor(&mut self, _sym: Option<SymbolId>) -> u32 {
+        todo!("WS4: ParserActions::create_constructor -> SleighCompile::createConstructor (slgh_compile.cc:3364)")
+    }
+    fn reset_constructors(&mut self) {
+        todo!("WS4: ParserActions::reset_constructors -> SleighCompile::resetConstructors (slgh_compile.cc:3384)")
+    }
+    fn add_syntax(&mut self, _ct: u32, _syntax: &[u8]) {
+        todo!("WS4: ParserActions::add_syntax -> Constructor::addSyntax (slghparse.y:275)")
+    }
+    fn new_operand(&mut self, _ct: u32, _nm: &[u8]) {
+        todo!("WS4: ParserActions::new_operand -> SleighCompile::newOperand (slgh_compile.cc:2984)")
+    }
+    fn is_in_root(&self, _ct: u32) -> bool {
+        todo!("WS4: ParserActions::is_in_root -> SleighCompile::isInRoot (slghparse.y:277)")
+    }
+    fn build_constructor(&mut self, _big: u32, _pateq: Option<u32>, _contvec: Option<Vec<u32>>, _vec: u32) {
+        todo!("WS4: ParserActions::build_constructor -> SleighCompile::buildConstructor (slgh_compile.cc:3698)")
+    }
+    fn standalone_section(&mut self, _main: u32) -> u32 {
+        todo!("WS4: ParserActions::standalone_section -> SleighCompile::standaloneSection (slgh_compile.cc:3257)")
+    }
+    fn final_named_section(&mut self, _vec: u32, _section: u32) -> u32 {
+        todo!("WS4: ParserActions::final_named_section -> SleighCompile::finalNamedSection (slgh_compile.cc:3317)")
+    }
+    fn first_named_section(&mut self, _main: u32, _sym: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::first_named_section -> SleighCompile::firstNamedSection (slgh_compile.cc:3272)")
+    }
+    fn next_named_section(&mut self, _vec: u32, _section: u32, _sym: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::next_named_section -> SleighCompile::nextNamedSection (slgh_compile.cc:3295)")
+    }
+    fn new_section_symbol(&mut self, _nm: &[u8]) -> SymbolId {
+        todo!("WS4: ParserActions::new_section_symbol -> SleighCompile::newSectionSymbol (slgh_compile.cc:2742)")
+    }
+    fn enter_section(&mut self) -> u32 {
+        todo!("WS4: ParserActions::enter_section -> SleighCompile::enterSection (slgh_compile.cc:3351)")
+    }
+    fn finish_main_rtl(&mut self, _rtlmid: u32) -> u32 {
+        todo!("WS4: ParserActions::finish_main_rtl -> rtl: rtlmid + recordNop (slghparse.y:355)")
+    }
+    fn set_result_varnode(&mut self, _ct: u32, _vn: u32) -> u32 {
+        todo!("WS4: ParserActions::set_result_varnode -> SleighCompile::setResultVarnode (slgh_compile.cc:3099)")
+    }
+    fn set_result_star_varnode(&mut self, _ct: u32, _star: u32, _vn: u32) -> u32 {
+        todo!("WS4: ParserActions::set_result_star_varnode -> SleighCompile::setResultStarVarnode (slgh_compile.cc:3115)")
+    }
+    fn rtl_add_oplist(&mut self, _sec: u32, _stmt: u32) -> bool {
+        todo!("WS4: ParserActions::rtl_add_oplist -> ConstructTpl::addOpList (slghparse.y:362)")
+    }
+    fn peq_and(&mut self, _l: u32, _r: u32) -> u32 {
+        todo!("WS4: ParserActions::peq_and -> new EquationAnd (slghparse.y:310)")
+    }
+    fn peq_or(&mut self, _l: u32, _r: u32) -> u32 {
+        todo!("WS4: ParserActions::peq_or -> new EquationOr (slghparse.y:311)")
+    }
+    fn peq_cat(&mut self, _l: u32, _r: u32) -> u32 {
+        todo!("WS4: ParserActions::peq_cat -> new EquationCat (slghparse.y:312)")
+    }
+    fn peq_left_ellipsis(&mut self, _e: u32) -> u32 {
+        todo!("WS4: ParserActions::peq_left_ellipsis -> new EquationLeftEllipsis (slghparse.y:314)")
+    }
+    fn peq_right_ellipsis(&mut self, _e: u32) -> u32 {
+        todo!("WS4: ParserActions::peq_right_ellipsis -> new EquationRightEllipsis (slghparse.y:317)")
+    }
+    fn peq_equal(&mut self, _fam: SymbolId, _rhs: u32) -> u32 {
+        todo!("WS4: ParserActions::peq_equal -> new EqualEquation (slghparse.y:323)")
+    }
+    fn peq_notequal(&mut self, _fam: SymbolId, _rhs: u32) -> u32 {
+        todo!("WS4: ParserActions::peq_notequal -> new NotEqualEquation (slghparse.y:324)")
+    }
+    fn peq_less(&mut self, _fam: SymbolId, _rhs: u32) -> u32 {
+        todo!("WS4: ParserActions::peq_less -> new LessEquation (slghparse.y:325)")
+    }
+    fn peq_lessequal(&mut self, _fam: SymbolId, _rhs: u32) -> u32 {
+        todo!("WS4: ParserActions::peq_lessequal -> new LessEqualEquation (slghparse.y:326)")
+    }
+    fn peq_greater(&mut self, _fam: SymbolId, _rhs: u32) -> u32 {
+        todo!("WS4: ParserActions::peq_greater -> new GreaterEquation (slghparse.y:327)")
+    }
+    fn peq_greaterequal(&mut self, _fam: SymbolId, _rhs: u32) -> u32 {
+        todo!("WS4: ParserActions::peq_greaterequal -> new GreaterEqualEquation (slghparse.y:328)")
+    }
+    fn constrain_operand(&mut self, _sym: SymbolId, _patexp: u32) -> Option<u32> {
+        todo!("WS4: ParserActions::constrain_operand -> SleighCompile::constrainOperand (slgh_compile.cc:3000)")
+    }
+    fn peq_operand_equation(&mut self, _sym: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::peq_operand_equation -> new OperandEquation (slghparse.y:332)")
+    }
+    fn self_define(&mut self, _sym: SymbolId) {
+        todo!("WS4: ParserActions::self_define -> SleighCompile::selfDefine (slgh_compile.cc:3072)")
+    }
+    fn peq_unconstrained(&mut self, _spec: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::peq_unconstrained -> new UnconstrainedEquation (slghparse.y:333)")
+    }
+    fn define_invisible_operand(&mut self, _sym: SymbolId) -> Option<u32> {
+        todo!("WS4: ParserActions::define_invisible_operand -> SleighCompile::defineInvisibleOperand (slgh_compile.cc:3044)")
+    }
+    fn pexp_constant(&mut self, _val: i64) -> u32 {
+        todo!("WS4: ParserActions::pexp_constant -> new ConstantValue (slghparse.y:290)")
+    }
+    fn pexp_family_value(&mut self, _fam: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::pexp_family_value -> FamilySymbol::getPatternValue (slghparse.y:292)")
+    }
+    fn pexp_spec_expression(&mut self, _spec: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::pexp_spec_expression -> SpecificSymbol::getPatternExpression (slghparse.y:295)")
+    }
+    fn pexp_plus(&mut self, _l: u32, _r: u32) -> u32 {
+        todo!("WS4: ParserActions::pexp_plus -> new PlusExpression (slghparse.y:297)")
+    }
+    fn pexp_sub(&mut self, _l: u32, _r: u32) -> u32 {
+        todo!("WS4: ParserActions::pexp_sub -> new SubExpression (slghparse.y:298)")
+    }
+    fn pexp_mult(&mut self, _l: u32, _r: u32) -> u32 {
+        todo!("WS4: ParserActions::pexp_mult -> new MultExpression (slghparse.y:299)")
+    }
+    fn pexp_leftshift(&mut self, _l: u32, _r: u32) -> u32 {
+        todo!("WS4: ParserActions::pexp_leftshift -> new LeftShiftExpression (slghparse.y:300)")
+    }
+    fn pexp_rightshift(&mut self, _l: u32, _r: u32) -> u32 {
+        todo!("WS4: ParserActions::pexp_rightshift -> new RightShiftExpression (slghparse.y:301)")
+    }
+    fn pexp_and(&mut self, _l: u32, _r: u32) -> u32 {
+        todo!("WS4: ParserActions::pexp_and -> new AndExpression (slghparse.y:302)")
+    }
+    fn pexp_or(&mut self, _l: u32, _r: u32) -> u32 {
+        todo!("WS4: ParserActions::pexp_or -> new OrExpression (slghparse.y:303)")
+    }
+    fn pexp_xor(&mut self, _l: u32, _r: u32) -> u32 {
+        todo!("WS4: ParserActions::pexp_xor -> new XorExpression (slghparse.y:304)")
+    }
+    fn pexp_div(&mut self, _l: u32, _r: u32) -> u32 {
+        todo!("WS4: ParserActions::pexp_div -> new DivExpression (slghparse.y:305)")
+    }
+    fn pexp_minus(&mut self, _e: u32) -> u32 {
+        todo!("WS4: ParserActions::pexp_minus -> new MinusExpression (slghparse.y:306)")
+    }
+    fn pexp_not(&mut self, _e: u32) -> u32 {
+        todo!("WS4: ParserActions::pexp_not -> new NotExpression (slghparse.y:307)")
+    }
+    fn context_mod(&mut self, _vec: &mut Vec<u32>, _sym: SymbolId, _pe: u32) -> bool {
+        todo!("WS4: ParserActions::context_mod -> SleighCompile::contextMod (slgh_compile.cc:3137)")
+    }
+    fn context_set(&mut self, _vec: &mut Vec<u32>, _sym: SymbolId, _cvar: SymbolId) {
+        todo!("WS4: ParserActions::context_set -> SleighCompile::contextSet (slgh_compile.cc:3164)")
+    }
+    fn define_operand(&mut self, _sym: SymbolId, _patexp: u32) {
+        todo!("WS4: ParserActions::define_operand -> SleighCompile::defineOperand (slgh_compile.cc:3022)")
+    }
+    fn pcode_new_local_definition(&mut self, _name: &[u8], _size: Option<u64>) {
+        todo!("WS4: ParserActions::pcode_new_local_definition -> pcode.newLocalDefinition (slghparse.y:363)")
+    }
+    fn pcode_new_output(&mut self, _islocal: bool, _expr: u32, _name: &[u8], _size: Option<u64>) -> u32 {
+        todo!("WS4: ParserActions::pcode_new_output -> pcode.newOutput (slghparse.y:367)")
+    }
+    fn stmt_assign(&mut self, _lhs: u32, _expr: u32) -> u32 {
+        todo!("WS4: ParserActions::stmt_assign -> ExprTree::setOutput+toVector (slghparse.y:366)")
+    }
+    fn pcode_create_store(&mut self, _star: u32, _ptr: u32, _val: u32) -> u32 {
+        todo!("WS4: ParserActions::pcode_create_store -> pcode.createStore (slghparse.y:372)")
+    }
+    fn pcode_create_user_op_noout(&mut self, _sym: SymbolId, _params: Vec<u32>) -> u32 {
+        todo!("WS4: ParserActions::pcode_create_user_op_noout -> pcode.createUserOpNoOut (slghparse.y:373)")
+    }
+    fn pcode_assign_bitrange_idx(&mut self, _lhs: u32, _off: u32, _size: u32, _expr: u32) -> u32 {
+        todo!("WS4: ParserActions::pcode_assign_bitrange_idx -> pcode.assignBitRange (slghparse.y:374)")
+    }
+    fn pcode_assign_bitrange_bitsym(&mut self, _bitsym: SymbolId, _expr: u32) -> u32 {
+        todo!("WS4: ParserActions::pcode_assign_bitrange_bitsym -> pcode.assignBitRange (slghparse.y:375)")
+    }
+    fn pcode_create_op_const(&mut self, _op: ConstOp, _val: u64) -> u32 {
+        todo!("WS4: ParserActions::pcode_create_op_const -> pcode.createOpConst (slghparse.y:378)")
+    }
+    fn create_cross_build(&mut self, _addr: u32, _sym: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::create_cross_build -> SleighCompile::createCrossBuild (slgh_compile.cc:3330)")
+    }
+    fn pcode_create_op_noout(&mut self, _opc: PcodeOpc, _a: u32, _cond: Option<u32>) -> u32 {
+        todo!("WS4: ParserActions::pcode_create_op_noout -> pcode.createOpNoOut (slghparse.y:382)")
+    }
+    fn create_macro_use_stmt(&mut self, _sym: SymbolId, _param: Vec<u32>) -> u32 {
+        todo!("WS4: ParserActions::create_macro_use_stmt -> SleighCompile::createMacroUse (slgh_compile.cc:3235)")
+    }
+    fn pcode_place_label(&mut self, _label: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::pcode_place_label -> pcode.placeLabel (slghparse.y:390)")
+    }
+    fn expr_from_varnode(&mut self, _vn: u32) -> u32 {
+        todo!("WS4: ParserActions::expr_from_varnode -> new ExprTree (slghparse.y:392)")
+    }
+    fn pcode_create_load(&mut self, _star: u32, _ptr: u32) -> u32 {
+        todo!("WS4: ParserActions::pcode_create_load -> pcode.createLoad (slghparse.y:393)")
+    }
+    fn pcode_create_op(&mut self, _opc: PcodeOpc, _a: u32, _b: Option<u32>) -> u32 {
+        todo!("WS4: ParserActions::pcode_create_op -> pcode.createOp (slghparse.y:395)")
+    }
+    fn pcode_create_bitrange_colon(&mut self, _spec: SymbolId, _nbytes: u64) -> u32 {
+        todo!("WS4: ParserActions::pcode_create_bitrange_colon -> pcode.createBitRange (slghparse.y:454)")
+    }
+    fn pcode_create_bitrange_idx(&mut self, _spec: SymbolId, _off: u32, _size: u32) -> u32 {
+        todo!("WS4: ParserActions::pcode_create_bitrange_idx -> pcode.createBitRange (slghparse.y:455)")
+    }
+    fn pcode_create_bitrange_bitsym(&mut self, _bitsym: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::pcode_create_bitrange_bitsym -> pcode.createBitRange (slghparse.y:456)")
+    }
+    fn pcode_create_user_op(&mut self, _sym: SymbolId, _params: Vec<u32>) -> u32 {
+        todo!("WS4: ParserActions::pcode_create_user_op -> pcode.createUserOp (slghparse.y:457)")
+    }
+    fn pcode_create_variadic_cpoolref(&mut self, _params: Vec<u32>) -> u32 {
+        todo!("WS4: ParserActions::pcode_create_variadic_cpoolref -> pcode.createVariadic (slghparse.y:458)")
+    }
+    fn pcode_create_subpiece(&mut self, _spec: SymbolId, _off: u32) -> u32 {
+        todo!("WS4: ParserActions::pcode_create_subpiece -> pcode.createOp(CPUI_SUBPIECE) (slghparse.y:453)")
+    }
+    fn sizedstar_space_sz(&mut self, _spacesym: SymbolId, _size: u64) -> u32 {
+        todo!("WS4: ParserActions::sizedstar_space_sz -> new StarQuality (slghparse.y:460)")
+    }
+    fn sizedstar_space(&mut self, _spacesym: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::sizedstar_space -> new StarQuality (slghparse.y:461)")
+    }
+    fn sizedstar_default_sz(&mut self, _size: u64) -> u32 {
+        todo!("WS4: ParserActions::sizedstar_default_sz -> new StarQuality (slghparse.y:462)")
+    }
+    fn sizedstar_default(&mut self) -> u32 {
+        todo!("WS4: ParserActions::sizedstar_default -> new StarQuality (slghparse.y:463)")
+    }
+    fn jumpdest_jumpsym(&mut self, _sym: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::jumpdest_jumpsym -> new VarnodeTpl(j_curspace) (slghparse.y:465)")
+    }
+    fn jumpdest_integer(&mut self, _val: u64) -> u32 {
+        todo!("WS4: ParserActions::jumpdest_integer -> new VarnodeTpl(j_curspace) (slghparse.y:466)")
+    }
+    fn jumpdest_operandsym(&mut self, _sym: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::jumpdest_operandsym -> OperandSymbol::getVarnode+setCodeAddress (slghparse.y:468)")
+    }
+    fn jumpdest_integer_space(&mut self, _val: u64, _spacesym: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::jumpdest_integer_space -> new VarnodeTpl(spc) (slghparse.y:469)")
+    }
+    fn jumpdest_label(&mut self, _label: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::jumpdest_label -> new VarnodeTpl(j_relative) (slghparse.y:470)")
+    }
+    fn varnode_spec(&mut self, _spec: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::varnode_spec -> SpecificSymbol::getVarnode (slghparse.y:473)")
+    }
+    fn intvn_integer(&mut self, _val: u64) -> u32 {
+        todo!("WS4: ParserActions::intvn_integer -> new VarnodeTpl(constant) (slghparse.y:478)")
+    }
+    fn intvn_integer_colon(&mut self, _val: u64, _size: u64) -> u32 {
+        todo!("WS4: ParserActions::intvn_integer_colon -> new VarnodeTpl(constant) (slghparse.y:480)")
+    }
+    fn pcode_address_of(&mut self, _vn: u32, _size: u64) -> u32 {
+        todo!("WS4: ParserActions::pcode_address_of -> pcode.addressOf (slghparse.y:481)")
+    }
+    fn lhsvarnode_spec(&mut self, _spec: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::lhsvarnode_spec -> SpecificSymbol::getVarnode (slghparse.y:484)")
+    }
+    fn exportvarnode_spec(&mut self, _spec: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::exportvarnode_spec -> SpecificSymbol::getVarnode (slghparse.y:491)")
+    }
+    fn exportvarnode_integer_colon(&mut self, _val: u64, _size: u64) -> u32 {
+        todo!("WS4: ParserActions::exportvarnode_integer_colon -> new VarnodeTpl(constant) (slghparse.y:494)")
+    }
+    fn label_sym(&mut self, _sym: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::label_sym -> LabelSymbol thread (slghparse.y:488)")
+    }
+    fn pcode_define_label(&mut self, _name: &[u8]) -> u32 {
+        todo!("WS4: ParserActions::pcode_define_label -> pcode.defineLabel (slghparse.y:489)")
+    }
+    fn resolve_symbol(&mut self, _name: &[u8]) -> SymbolId {
+        todo!("WS4: ParserActions::resolve_symbol -> SymbolTable::findSymbol id (slghscan find_symbol)")
+    }
+    fn operand_index(&mut self, _sym: SymbolId) -> u32 {
+        todo!("WS4: ParserActions::operand_index -> OperandSymbol::getIndex (slghparse.y:332)")
+    }
+    fn report_error(&mut self, msg: &str) {
+        SleighCompile::report_error(self, msg)
     }
 }
