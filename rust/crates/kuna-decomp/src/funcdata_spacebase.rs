@@ -541,6 +541,23 @@ impl Funcdata {
             let _ = lm.clear_unlocked_category_negative();
         }
 
+        // (kuna) C++ maps the locked/recovered parameters into the local scope at
+        // prototype-attach time (`ProtoStoreSymbol::setInput`, fspec.cc:3174), so
+        // they are present in the scope's EntryMap during EVERY restructure/sync
+        // pass.  The kuna `ProtoStoreInternal` keeps parameters off the scope, and
+        // `link_proto_params` was only run at the final naming pass — so the
+        // restructure/sync passes saw NO param entry and `syncVarnodesWithSymbols`
+        // took the no-symbol `mapped|addrtied` fallback (keeping `addrforce` on a
+        // dead width-N hole-fill that overlaps an int2 stack param).  Materialize
+        // the param symbols here so `findOverlap`/sync resolve them like C++ (the
+        // overlapping-but-smaller param entry clears `addrforce` once `markUnaliased`
+        // paints `nolocalalias`).  Idempotent (`add_param_symbol` skips on overlap).
+        // Guarded on a present proto store: a partial-clone / jump-table-recovery
+        // Funcdata reaches restructure with no `ProtoStoreInternal` attached.
+        if self.get_func_proto().has_store() {
+            self.link_proto_params();
+        }
+
         let (space, local_range, param_range, default_unknown, bounds) = {
             let lm = match self.get_scope_local() {
                 Some(lm) => lm,
