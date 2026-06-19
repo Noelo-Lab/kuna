@@ -62,6 +62,12 @@ pub fn encode_sleigh(base: &SleighBase, encoder: &mut dyn Encoder) -> KunaResult
 /// encoder.flush();`.  The `-1` is zlib's default compression level.  The
 /// `slacomp` binary opens the `<file>.sla` output stream and hands it here.
 pub fn encode_to_sla_writer<W: Write>(base: &SleighBase, w: W) -> KunaResult<()> {
+    if let Ok(path) = std::env::var("KUNA_DUMP_XML") {
+        let mut buf: Vec<u8> = Vec::new();
+        let mut xenc = kuna_base::marshal::XmlEncode::new(&mut buf);
+        base.encode(&mut xenc)?;
+        let _ = std::fs::write(path, &buf);
+    }
     let mut encoder = FormatEncode::new(w, -1);
     {
         let mut packed = encoder.packed();

@@ -254,44 +254,10 @@ pub struct FieldContext {
 }
 
 // ---------------------------------------------------------------------------
-// ConsistencyChecker (slgh_compile.hh:142-235) -- trivial in the landed subset.
+// The ConsistencyChecker (slgh_compile.cc:215-1776) lives in `consistency.rs`
+// as inherent methods on SleighCompile (it mutates the template arena and reads
+// the symbol table, exactly the C++ class's `compiler` back-pointer access).
 // ---------------------------------------------------------------------------
-
-/// Derives Varnode sizes, optimizes p-code, and checks validity in Constructor
-/// p-code (`ConsistencyChecker`, slgh_compile.hh:142-235).
-#[derive(Default)]
-pub struct ConsistencyChecker {
-    pub unnecessarypcode: i32,
-    pub readnowrite: i32,
-    pub writenoread: i32,
-    pub printextwarning: bool,
-    pub printdeadwarning: bool,
-    pub root_symbol: SymbolId,
-}
-
-impl ConsistencyChecker {
-    /// `ConsistencyChecker::ConsistencyChecker` (slgh_compile.cc:297).
-    pub fn new(root: SymbolId, unnecessary: bool, warndead: bool) -> ConsistencyChecker {
-        ConsistencyChecker {
-            root_symbol: root,
-            printextwarning: unnecessary,
-            printdeadwarning: warndead,
-            ..Default::default()
-        }
-    }
-    /// `getNumUnnecessaryPcode` (slgh_compile.hh:232).
-    pub fn get_num_unnecessary_pcode(&self) -> i32 {
-        self.unnecessarypcode
-    }
-    /// `getNumReadNoWrite` (slgh_compile.hh:233).
-    pub fn get_num_read_no_write(&self) -> i32 {
-        self.readnowrite
-    }
-    /// `getNumWriteNoRead` (slgh_compile.hh:234).
-    pub fn get_num_write_no_read(&self) -> i32 {
-        self.writenoread
-    }
-}
 
 // ---------------------------------------------------------------------------
 // SleighCompile -- the driver (slgh_compile.hh:302-484)
@@ -325,6 +291,10 @@ pub struct SleighCompile {
     rtl_arena: Vec<Option<RtlValue>>,
     /// `ContextChange *` arena (`context_mod`/`context_set` vec elements).
     contextchange_arena: Vec<Option<ContextChange>>,
+    /// ConsistencyChecker unnecessary-ext/trunc-to-COPY conversion count
+    /// (the C++ `ConsistencyChecker::unnecessarypcode`; bumped by
+    /// `deal_with_unnecessary_*`, read after `test_size_restrictions`).
+    cc_unnecessary: i32,
     /// The macro bodies (`vector<ConstructTpl *> macrotable`); index = macro id.
     macro_bodies: Vec<Option<ConstructTpl>>,
     /// `maxdelayslotbytes` (slgh_compile.hh): largest delay slot seen.
@@ -532,6 +502,44 @@ impl SleighCompile {
     fn report_warning_loc(&mut self, loc: Option<&Location>, msg: &str) {
         let m = Self::format_status_message(loc, msg);
         self.report_warning(&m);
+    }
+
+    // --- ConsistencyChecker glue (the `compiler` back-pointer callbacks) ---
+
+    /// C++ `errors += 1` for a failed ConsistencyChecker pass.
+    pub(crate) fn bump_error(&mut self) {
+        self.errors += 1;
+    }
+    /// Plain (no-location) warning (`compiler->reportWarning(msg)`).
+    pub(crate) fn report_warning_plain(&mut self, msg: &str) {
+        self.report_warning(msg);
+    }
+    /// `compiler->reportError(compiler->getLocation(ct), msg)` keyed by ctor.
+    pub(crate) fn cc_report_error_ct(&mut self, _sym: SymbolId, ctid_unused: u32, msg: &str) {
+        let _ = ctid_unused;
+        // The ctor location is keyed by the driver constructor id; the checker
+        // navigates (table,ctidx) but the location map is keyed by the global
+        // ctor id, so fall back to the current parse location (matches C++ when
+        // the per-ctor location is unavailable).
+        let loc = self.current_location();
+        self.report_error_loc(Some(&loc), msg);
+    }
+    /// `compiler->reportWarning(compiler->getLocation(ct), msg)` keyed by ctor.
+    pub(crate) fn cc_report_warning_ct(&mut self, _sym: SymbolId, _ctidx: u32, msg: &str) {
+        let loc = self.current_location();
+        self.report_warning_loc(Some(&loc), msg);
+    }
+    pub(crate) fn cc_warn_unnecessary(&self) -> bool {
+        self.warnunnecessarypcode
+    }
+    pub(crate) fn cc_warn_deadtemps(&self) -> bool {
+        self.warndeadtemps
+    }
+    pub(crate) fn cc_bump_unnecessary(&mut self) {
+        self.cc_unnecessary += 1;
+    }
+    pub(crate) fn cc_take_unnecessary(&mut self) -> i32 {
+        std::mem::take(&mut self.cc_unnecessary)
     }
 
     /// `addSymbol` (slgh_compile.cc:2355).  Returns the id (or `NO_SYMBOL` on a
@@ -1191,7 +1199,8 @@ impl SleighCompile {
     /// `getUniqueAddr` (slgh_compile.cc:2465).
     pub fn get_unique_addr(&mut self) -> u32 {
         let base = self.base.get_unique_base();
-        self.base.set_unique_base(base + 0x10000); // SleighBase::MAX_UNIQUE_SIZE
+        // SleighBase::MAX_UNIQUE_SIZE == 256 (sleighbase.cc:20).
+        self.base.set_unique_base(base + 256);
         base
     }
 
@@ -1473,8 +1482,8 @@ impl SleighCompile {
 
     /// `checkConsistency` (slgh_compile.cc:2148) -- trivial in the landed subset.
     fn check_consistency(&mut self) {
-        let root = self.base.get_root().expect("root set");
-        let _checker = ConsistencyChecker::new(root, self.warnunnecessarypcode, self.warndeadtemps);
+        // The full ConsistencyChecker lives in `consistency.rs`.
+        self.check_consistency_real();
     }
 
     /// `checkLocalCollisions` (slgh_compile.cc:2250) -- no exports in the landed subset.

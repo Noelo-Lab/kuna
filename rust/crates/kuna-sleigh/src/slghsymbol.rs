@@ -859,6 +859,17 @@ impl OperandSymbol {
         }
     }
 
+    /// (WS4c) Remap operand-value indices embedded in this operand's defining
+    /// expression through `handmap` (`original_index -> new_index`).  C++ shares
+    /// the operand `localexp` pointers, so a single `changeIndex` updates every
+    /// reference; the kuna port clones, so the defexp's references are remapped
+    /// separately after `order_operands`.
+    pub fn remap_defexp_operand_index(&mut self, handmap: &[i32]) {
+        if let Some(de) = self.defexp.as_mut() {
+            de.remap_operand_index(handmap);
+        }
+    }
+
     /// C++ `OperandSymbol::print`.
     fn print(
         &self,
@@ -1042,6 +1053,22 @@ impl ContextOp {
         })
     }
 
+    /// (WS4c) Remap the embedded operand-value indices after `order_operands`
+    /// (C++ shares the operand's `localexp` pointer; the kuna port clones, so
+    /// the ContextOp's own copy must be remapped through the handmap).
+    pub fn remap_operand_index(&mut self, handmap: &[i32]) {
+        if let Some(pe) = self.patexp.as_mut() {
+            pe.remap_operand_index(handmap);
+        }
+    }
+
+    /// (WS4c renumber) Remap the embedded operand-value `table_id`s.
+    pub fn remap_table_id(&mut self, remap: &dyn Fn(u32) -> u32) {
+        if let Some(pe) = self.patexp.as_mut() {
+            pe.remap_table_id(remap);
+        }
+    }
+
     /// C++ `ContextOp::validate`: error if the expression uses an operand
     /// that is not constructor-relative (such operands are evaluated BEFORE
     /// their offset is recovered).
@@ -1150,6 +1177,15 @@ impl ContextCommit {
     /// C++ `ContextCommit::apply`.
     pub fn apply(&self, walker: &mut dyn SymbolWalkerChange) {
         walker.add_commit(self.sym, self.num, self.mask, self.flow);
+    }
+
+    /// The committed-to symbol id (for renumber remapping).
+    pub fn get_sym(&self) -> u32 {
+        self.sym
+    }
+    /// Renumber the committed-to symbol id (WS4c purge/renumber).
+    pub fn set_sym(&mut self, sym: u32) {
+        self.sym = sym;
     }
 
     /// C++ `ContextCommit::encode`.
@@ -2803,6 +2839,11 @@ impl SleighSymbol {
                 if let Some(le) = o.localexp.as_mut() {
                     le.set_table_id(map(le.table_id()));
                 }
+                // The operand's defining expression may embed OperandValue
+                // references to other operands (their `table_id` must remap too).
+                if let Some(de) = o.defexp.as_mut() {
+                    de.remap_table_id(&map);
+                }
             }
             SymbolKind::Value(v) => remap_patval_table(v.patval.as_mut(), &map),
             SymbolKind::ValueMap(v) => remap_patval_table(v.value.patval.as_mut(), &map),
@@ -2811,6 +2852,27 @@ impl SleighSymbol {
                 for ct in st.construct.iter_mut() {
                     if let Some(p) = ct.parent {
                         ct.parent = Some(map(p));
+                    }
+                    // The constructor references its operands by symbol id; C++
+                    // keeps `OperandSymbol *` pointers (immune to renumber), so
+                    // the kuna port must remap each id here.
+                    for opid in ct.operands.iter_mut() {
+                        *opid = map(*opid);
+                    }
+                    // ContextCommit references a `TripleSymbol *` (the globalset
+                    // address symbol) by id; remap it too.  ContextOp embeds a
+                    // PatternExpression that may reference operands of OTHER
+                    // constructors by table id (`OperandValue.table_id`); remap
+                    // those as well (C++ keeps `Constructor *` pointers).
+                    for cc in ct.context.iter_mut() {
+                        match cc {
+                            ContextChange::Commit(commit) => {
+                                commit.set_sym(map(commit.get_sym()));
+                            }
+                            ContextChange::Op(op) => {
+                                op.remap_table_id(&map);
+                            }
+                        }
                     }
                 }
             }
@@ -4272,6 +4334,14 @@ impl SymbolTable {
 
         // Reorder the constructor's operand id vector + fix printpiece refs.
         let new_operand_ids: Vec<u32> = neworder.iter().map(|&idx| operand_ids[idx as usize]).collect();
+        // Remap operand-value indices embedded in each operand's defining
+        // expression (`op << 8 | op` etc.) through the handmap (C++ shares the
+        // operand `localexp` pointers; the kuna port clones them).  Done before
+        // re-borrowing the constructor below.
+        for &opid in &operand_ids {
+            self.operand_symbol_mut(opid)?
+                .remap_defexp_operand_index(&handmap);
+        }
         let ct = self.subtable_symbol_mut(table_id)?.construct_mut(ct_id)?;
         // Fix up printpiece operand refs through the handmap.
         for piece in ct.printpiece.iter_mut() {
@@ -4282,6 +4352,14 @@ impl SymbolTable {
             }
         }
         ct.operands = new_operand_ids;
+        // Remap operand-value indices embedded in the constructor's ContextOps
+        // through the handmap (C++ shares the operand's localexp pointer; the
+        // kuna port clones it into the ContextOp, so it must be remapped here).
+        for cc in ct.context.iter_mut() {
+            if let ContextChange::Op(op) = cc {
+                op.remap_operand_index(&handmap);
+            }
+        }
         // Stash the handmap for WS4b: ConstructTpl handle-index fix-up
         // (templ->changeHandleIndex) is performed by WS4b's driver, which
         // owns the ConstructTpl arena (freeze-interface for WS4b).
