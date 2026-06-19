@@ -2033,6 +2033,13 @@ impl Architecture {
                     self.decode_effect_block(child, &mut model, crate::fspec::effect_type::RETURN_ADDRESS)?;
                     saw_retaddr = true;
                 }
+                // else if (subId == ELEM_INTERNAL_STORAGE) { while peekElement: internalstorage.back().decode() }
+                // (fspec.cc:2673) — registers (e.g. MIPS gp) the compiler may save to
+                // the stack across a call; ActionInternalStorage unmaps their
+                // eventual-constant spills so the value forwards across the call.
+                "internal_storage" => {
+                    self.decode_internal_storage_block(child, &mut model)?;
+                }
                 _ => {}
             }
         }
@@ -2092,6 +2099,44 @@ impl Architecture {
                 _ => continue,
             };
             model.push_effect(crate::fspec::EffectRecord::from_varnode(vd, eff_type));
+        }
+        Ok(())
+    }
+
+    /// Decode an `<internal_storage>` block (C++ `ProtoModel::decode`,
+    /// `fspec.cc:2673`): each `<register>`/`<varnode>`/`<addr>` child is a storage
+    /// `VarnodeData` appended to the model's internal-storage list (sorted by
+    /// `push_internal_storage`).  Same storage resolution as `decode_effect_block`.
+    fn decode_internal_storage_block(
+        &self,
+        block: &Rc<kuna_base::xml::Element>,
+        model: &mut ProtoModel,
+    ) -> KunaResult<()> {
+        for child in block.get_children().iter() {
+            let vd = match child.get_name() {
+                "register" => {
+                    let nm = attr_str(child, "name")
+                        .ok_or_else(|| KunaError::lowlevel("<register> has no name"))?;
+                    self.translate.get_register_varnode(nm.as_bytes())?
+                }
+                "varnode" | "addr" => {
+                    let spname = attr_str(child, "space")
+                        .ok_or_else(|| KunaError::lowlevel("<varnode> internal_storage has no space"))?;
+                    let space = self
+                        .manage()
+                        .get_space_by_name(&spname)
+                        .ok_or_else(|| KunaError::lowlevel("<varnode> internal_storage unknown space"))?
+                        .clone();
+                    let offset =
+                        attr_str(child, "offset").and_then(|s| parse_int(&s)).unwrap_or(0);
+                    let size = attr_str(child, "size")
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(0);
+                    kuna_num::pcoderaw::VarnodeData { space: Some(space), offset, size }
+                }
+                _ => continue,
+            };
+            model.push_internal_storage(vd);
         }
         Ok(())
     }

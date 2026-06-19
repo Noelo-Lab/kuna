@@ -959,6 +959,32 @@ impl ScopeLocal {
         Rc::ptr_eq(vn_space, &self.space) || vn_space.get_index() == self.space.get_index()
     }
 
+    /// C++ `ScopeLocal::isUnmappedUnaliased` (`varmap.cc:494`): is the (unmapped)
+    /// Varnode at `(vn_space, vn_offset)` provably NOT crossed by any pointer alias?
+    /// True only for a stack-space location that lies outside the recovered stack-
+    /// parameter window `[minParamOffset, maxParamOffset]` (or when no stack params
+    /// are known).  Used by `syncVarnodesWithSymbol` to mark such a slot
+    /// `nolocalalias` so `RuleIndirectCollapse` can drop the per-call INDIRECT that
+    /// guards a saved-register (e.g. MIPS gp) spill that `markNotMapped` unmapped.
+    ///
+    /// BLOCKED next-locus (gp-spill wave): wiring this into
+    /// `Funcdata::sync_varnodes_with_symbols` (the `unmapped_alias_check` arm)
+    /// forwards Gp Test #2 but regresses the Switch suite until
+    /// `protect_switch_paths` is correctly ported.  Kept ready (`#[allow(dead_code)]`).
+    #[allow(dead_code)]
+    pub fn is_unmapped_unaliased(&self, vn_space: &Rc<AddrSpace>, vn_offset: uintb) -> bool {
+        // if (vn->getSpace() != space) return false;
+        if !(Rc::ptr_eq(vn_space, &self.space) || vn_space.get_index() == self.space.get_index()) {
+            return false;
+        }
+        // if (maxParamOffset < minParamOffset) return true;  (no known stack params)
+        if self.max_param_offset < self.min_param_offset {
+            return true;
+        }
+        // if (off < minParamOffset || off > maxParamOffset) return true;
+        vn_offset < self.min_param_offset || vn_offset > self.max_param_offset
+    }
+
     /// C++ `ScopeLocal::markNotMapped` (`varmap.cc:510-545`): mark the range
     /// `[first, first+sz)` in `spc` as not mapped to a local Symbol, removing any
     /// Symbols already created there and dropping the range from the discovery

@@ -2663,6 +2663,208 @@ impl Funcdata {
         sb.root = Some(sroot);
         *self.sblocks_mut() = sb;
     }
+
+    /// C++ `ActionRestructureVarnode::isCopyConstant` (`coreaction.cc:2232`): is
+    /// `vn` a constant or a `COPY` of a constant?
+    #[allow(dead_code)] // gp-spill wave next-locus (see protect_switch_paths)
+    fn switch_is_copy_constant(&self, vn: VarnodeId) -> bool {
+        let v = match self.vbank().get(vn) {
+            Some(v) => v,
+            None => return false,
+        };
+        if v.is_constant() {
+            return true;
+        }
+        if !v.is_written() {
+            return false;
+        }
+        let def = match v.get_def() {
+            Some(d) => d,
+            None => return false,
+        };
+        let o = match self.obank().get(def) {
+            Some(o) => o,
+            None => return false,
+        };
+        if o.code() != OpCode::CPUI_COPY {
+            return false;
+        }
+        match o.get_in(0) {
+            Some(i0) => self.vbank().get(i0).map(|v| v.is_constant()).unwrap_or(false),
+            None => false,
+        }
+    }
+
+    /// C++ `ActionRestructureVarnode::isDelayedConstant` (`coreaction.cc:2246`):
+    /// `vn` is a constant, or the not-yet-simplified `COPY`/`INT_ADD` of constants.
+    #[allow(dead_code)] // gp-spill wave next-locus (see protect_switch_paths)
+    fn switch_is_delayed_constant(&self, vn: VarnodeId) -> bool {
+        let v = match self.vbank().get(vn) {
+            Some(v) => v,
+            None => return false,
+        };
+        if v.is_constant() {
+            return true;
+        }
+        if !v.is_written() {
+            return false;
+        }
+        let def = match v.get_def() {
+            Some(d) => d,
+            None => return false,
+        };
+        let (opc, in0, in1) = match self.obank().get(def) {
+            Some(o) => (o.code(), o.get_in(0), o.get_in(1)),
+            None => return false,
+        };
+        if opc == OpCode::CPUI_COPY {
+            return in0
+                .and_then(|i| self.vbank().get(i))
+                .map(|v| v.is_constant())
+                .unwrap_or(false);
+        }
+        if opc != OpCode::CPUI_INT_ADD {
+            return false;
+        }
+        let (i0, i1) = match (in0, in1) {
+            (Some(a), Some(b)) => (a, b),
+            _ => return false,
+        };
+        self.switch_is_copy_constant(i1) && self.switch_is_copy_constant(i0)
+    }
+
+    /// C++ `ActionRestructureVarnode::protectSwitchPathIndirects`
+    /// (`coreaction.cc:2264`): backtrack the data-flow path from a BRANCHIND switch
+    /// destination; if it originates from a constant but passes through INDIRECT
+    /// ops, mark the earliest INDIRECT `noIndirectCollapse` so the indirect switch
+    /// value is not lost when later analysis collapses INDIRECTs.
+    #[allow(dead_code)] // gp-spill wave next-locus (see protect_switch_paths)
+    fn protect_switch_path_indirects(&mut self, branchind: OpId) {
+        use crate::op::pcodeop_flags as pf;
+        let mut last_indirect: Option<OpId> = None;
+        let mut cur_vn = match self.obank().get(branchind).and_then(|o| o.get_in(0)) {
+            Some(v) => v,
+            None => return,
+        };
+        loop {
+            let written = self.vbank().get(cur_vn).map(|v| v.is_written()).unwrap_or(false);
+            if !written {
+                break;
+            }
+            let cur_op = match self.vbank().get(cur_vn).and_then(|v| v.get_def()) {
+                Some(d) => d,
+                None => break,
+            };
+            let (eval_type, code, ninput, in0, in1) = match self.obank().get(cur_op) {
+                Some(o) => (o.get_eval_type(), o.code(), o.num_input(), o.get_in(0), o.get_in(1)),
+                None => return,
+            };
+            if (eval_type & (pf::binary | pf::ternary)) != 0 {
+                if ninput > 1 {
+                    let i0 = match in0 {
+                        Some(v) => v,
+                        None => return,
+                    };
+                    let i1 = match in1 {
+                        Some(v) => v,
+                        None => return,
+                    };
+                    if self.switch_is_delayed_constant(i1) {
+                        cur_vn = i0;
+                    } else if self.switch_is_delayed_constant(i0) {
+                        cur_vn = i1;
+                    } else {
+                        return; // Multiple paths
+                    }
+                } else {
+                    cur_vn = match in0 {
+                        Some(v) => v,
+                        None => return,
+                    };
+                }
+            } else if (eval_type & pf::unary) != 0 {
+                cur_vn = match in0 {
+                    Some(v) => v,
+                    None => return,
+                };
+            } else if code == OpCode::CPUI_INDIRECT {
+                last_indirect = Some(cur_op);
+                cur_vn = match in0 {
+                    Some(v) => v,
+                    None => return,
+                };
+            } else if code == OpCode::CPUI_LOAD {
+                cur_vn = match in1 {
+                    Some(v) => v,
+                    None => return,
+                };
+            } else if code == OpCode::CPUI_MULTIEQUAL {
+                // A path from a constant that splits and rejoins: protect an INDIRECT
+                // input if present, else assume the MULTIEQUAL is unlikely to collapse.
+                for k in 0..ninput {
+                    let inv = match self.obank().get(cur_op).and_then(|o| o.get_in(k)) {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    if !self.vbank().get(inv).map(|v| v.is_written()).unwrap_or(false) {
+                        continue;
+                    }
+                    let indef = match self.vbank().get(inv).and_then(|v| v.get_def()) {
+                        Some(d) => d,
+                        None => continue,
+                    };
+                    if self.obank().get(indef).map(|o| o.code()) == Some(OpCode::CPUI_INDIRECT) {
+                        if let Some(o) = self.obank_mut().get_mut(indef) {
+                            o.set_no_indirect_collapse();
+                        }
+                        break;
+                    }
+                }
+                return; // Don't backtrack further
+            } else {
+                return;
+            }
+        }
+        // Exactly one path, from a constant to a switch.
+        if !self.vbank().get(cur_vn).map(|v| v.is_constant()).unwrap_or(false) {
+            return;
+        }
+        if let Some(li) = last_indirect {
+            if let Some(o) = self.obank_mut().get_mut(li) {
+                o.set_no_indirect_collapse();
+            }
+        }
+    }
+
+    /// C++ `ActionRestructureVarnode::protectSwitchPaths` (`coreaction.cc:2320`):
+    /// run through BRANCHIND ops (switches) and protect the data-flow path to the
+    /// destination variable from INDIRECT collapse.
+    ///
+    /// BLOCKED next-locus for the gp-spill forwarding wave: this shape-faithful port
+    /// is NOT yet correct — wiring it into `ActionRestructureVarnode::apply`
+    /// (gated on `is_jumptable_recovery_on`) together with the `is_unmapped_unaliased`
+    /// `nolocalalias` flip REGRESSED 30+ Switch Indirect/Multi/Loop/Hide assertions
+    /// (over-marks / wrong backtrack vs the C++).  Debug this against the C++ before
+    /// flipping `funcdata_spacebase.rs` `is_unmapped_unaliased` on.  Left unwired
+    /// (`#[allow(dead_code)]`) so the substrate stays regression-free.
+    #[allow(dead_code)]
+    pub(crate) fn protect_switch_paths(&mut self) {
+        let nblocks = self.bblocks_get_size();
+        let mut branchinds: Vec<OpId> = Vec::new();
+        for i in 0..nblocks {
+            let bl = self.bblocks_get_block(i);
+            let op = match self.bb_op_tail(bl) {
+                Some(o) => o,
+                None => continue,
+            };
+            if self.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_BRANCHIND) {
+                branchinds.push(op);
+            }
+        }
+        for op in branchinds {
+            self.protect_switch_path_indirects(op);
+        }
+    }
 }
 
 /// Helper for cloning the p-code ops of a basic block during a node-split

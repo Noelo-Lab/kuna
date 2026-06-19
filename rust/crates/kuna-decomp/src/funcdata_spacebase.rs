@@ -1166,9 +1166,18 @@ impl Funcdata {
                 if in_scope {
                     fl = varnode_flags::mapped | varnode_flags::addrtied;
                 } else if unmapped_alias_check {
-                    // isUnmappedUnaliased -> nolocalalias (conservatively 0 here:
-                    // the alias map is built by restructureVarnode; if absent we
-                    // do not assert unaliased).
+                    // C++ funcdata_varnode.cc:999-1001:
+                    //   fl = lm->isUnmappedUnaliased(vn) ? nolocalalias : 0;
+                    // BLOCKED (gp-spill forwarding wave): wiring `is_unmapped_unaliased`
+                    // here forwards the MIPS gp spill (Gp Test #2) but lets
+                    // RuleIndirectCollapse eat INDIRECTs on switch (BRANCHIND) data-flow
+                    // paths that C++ shields via the unported `protectSwitchPaths`
+                    // (ActionRestructureVarnode, coreaction.cc:2320) — net-negative
+                    // (Switch Indirect/Multi/Loop/Hide regress).  Next-locus:
+                    // port `protectSwitchPaths` correctly (the naive port in
+                    // funcdata_block.rs over-marks), then flip this to:
+                    //   fl = is_unmapped_unaliased(..) ? nolocalalias : 0;
+                    let _ = &ex_addr;
                     fl = 0;
                 } else {
                     fl = 0;
@@ -1371,12 +1380,18 @@ impl Funcdata {
     /// slot eligible for a redundant local — it does not corrupt the call list.
     pub(crate) fn scope_local_mark_not_mapped(
         &mut self,
-        _spc: &Rc<kuna_base::space::AddrSpace>,
-        _first: uintb,
-        _sz: int4,
-        _param: bool,
+        spc: &Rc<kuna_base::space::AddrSpace>,
+        first: uintb,
+        sz: int4,
+        param: bool,
     ) {
-        // no-op until ScopeLocal::markNotMapped lands (W4)
+        // C++ `data.getScopeLocal()->markNotMapped(spc, first, sz, param)`.
+        // ScopeLocal::markNotMapped IS ported (varmap.rs); delegate so a STORE the
+        // internal-storage pass flagged unmapped removes its slot's Symbol and
+        // range (the alias gather then can't propagate through the gap).
+        if let Some(lm) = self.get_scope_local_mut() {
+            lm.mark_not_mapped(spc, first, sz, param);
+        }
     }
 
     /// C++ `AliasChecker::gatherAdditiveBase` (`varmap.cc:736`): collect the roots
