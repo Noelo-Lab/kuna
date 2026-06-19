@@ -2229,9 +2229,16 @@ impl SleighCompile {
 
     /// `specificsymbol '(' integervarnode ')'` -> SUBPIECE
     /// (`createOp(CPUI_SUBPIECE, ExprTree(sym->getVarnode()), ExprTree(intvn))`).
+    /// `off` is the raw `integervarnode: INTEGER` value; build its constant
+    /// varnode here (C++ `new VarnodeTpl(constspace, real(off), real(0))`).
     pub fn pcode_create_subpiece(&mut self, spec: SymbolId, off: u32) -> u32 {
         let vn = self.symbol_varnode(spec);
-        let offvn = self.take_vntpl(off);
+        let cs = self.get_constant_space_rc();
+        let offvn = VarnodeTpl::new(
+            ConstTpl::new_space(cs),
+            ConstTpl::new_real(ConstType::Real, u64::from(off)),
+            ConstTpl::new_real(ConstType::Real, 0),
+        );
         let a = ExprTree::new(vn);
         let b = ExprTree::new(offvn);
         let res = self.create_op2(OpCode::CPUI_SUBPIECE, a, b);
