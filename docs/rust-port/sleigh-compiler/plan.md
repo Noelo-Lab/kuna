@@ -70,6 +70,21 @@ Resolved by `kuna/slacomp.py` as `rust/target/release/slacomp` (or `$KUNA_SLACOM
 - **WS7**: parity grind — drive `kuna.slacomp --all` to 148/148 byte-identical, spec by
   spec, simplest-ISA first (e.g. 6502/AVR) → x86/ARM.
 
+
+## WS4 re-sequence (discovered 2026-06-19): WS4a (pattern-build machinery) before WS4b (driver)
+
+WS4 found the compile-side **pattern construction** machinery was never ported (the decode side
+is, in kuna-sleigh, but the *build* side the parser drives is absent): the `PatternEquation`
+hierarchy + `genPattern`/`genMinPattern`/`resolveOperands`, `TokenPattern`, the `PatternExpression`
+arithmetic/instruction subclasses, `Constructor::buildPattern`/`orderOperands`,
+`SubtableSymbol::buildPattern`/`buildDecisionTree`, and `DecisionNode` build. Inventory +
+anchors in `ws4-blocker.md`. Re-sequence:
+- **WS4a**: land the compile-side pattern/equation/expression/decision/pattern-build machinery in
+  `kuna-sleigh` (additive to `slghpatexpress.rs`/`slghpattern.rs`/`slghsymbol.rs`; must NOT touch the
+  decode path — gate on 675/675 + PARITY OK), golden-dump verified (built pattern/decision-tree vs
+  instrumented /tmp C++).
+- **WS4b**: the `SleighCompile` driver (the original WS4 brief) on top of WS4a — incl. ConsistencyChecker.
+
 ## Methodology (same as the decompiler port)
 
 Orchestrated background porter agents (Opus, worktree-isolated, file-disjoint),
