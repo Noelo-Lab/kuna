@@ -95,6 +95,7 @@ use crate::slghpatexpress::{
     PatternExpressionContext, PatternValue, StartInstructionValue, TokenPattern,
 };
 use crate::slghpattern::{DisjointPattern, Pattern};
+use crate::semantics::{ConstTpl, ConstType, ConstructTpl, VarnodeTpl};
 
 /// `.sla`-format ElementIds/AttributeIds used by the symbol system
 /// (slaformat.cc, `FORMAT_SCOPE`).  Extends the set already defined by the
@@ -767,6 +768,16 @@ impl OperandSymbol {
     /// C++ `OperandSymbol::isOffsetIrrelevant`.
     pub fn is_offset_irrelevant(&self) -> bool {
         (self.flags & Self::OFFSET_IRREL) != 0
+    }
+
+    /// C++ `OperandSymbol::setOffsetIrrelevant`.
+    pub fn set_offset_irrelevant(&mut self) {
+        self.flags |= Self::OFFSET_IRREL;
+    }
+
+    /// C++ `OperandSymbol::setCodeAddress`.
+    pub fn set_code_address(&mut self) {
+        self.flags |= Self::CODE_ADDRESS;
     }
 
     /// The local operand expression (C++ `getPatternExpression` returns it).
@@ -1456,6 +1467,28 @@ impl Constructor {
         self.namedtempl.len() as i32 // size_t -> int4 as in C++
     }
 
+    /// The operand symbol ids (C++ `vector<OperandSymbol *> operands`).
+    pub fn get_operands(&self) -> &[u32] {
+        &self.operands
+    }
+
+    /// C++ `Constructor::setMainSection(ConstructTpl *tpl)` (slghsymbol.cc):
+    /// the section ConstructTpl is owned by the WS4c driver's section arena and
+    /// added to the base template arena; the resulting handle is stored here.
+    pub fn set_main_section(&mut self, handle: ConstructTplHandle) {
+        self.templ = Some(handle);
+    }
+
+    /// C++ `Constructor::setNamedSection(ConstructTpl *tpl,int4 id)`
+    /// (slghsymbol.cc): grow `namedtempl` to fit `id`, then store the handle.
+    pub fn set_named_section(&mut self, handle: ConstructTplHandle, id: i32) {
+        // C++ `while(namedtempl.size() <= id) namedtempl.push_back((ConstructTpl *)0);`
+        while self_namedtempl_len_i64(&self.namedtempl) <= i64::from(id) {
+            self.namedtempl.push(None);
+        }
+        self.namedtempl[id as usize] = Some(handle);
+    }
+
     /// The raw print pieces (test/inspection surface).
     pub fn get_print_pieces(&self) -> &[Vec<u8>] {
         &self.printpiece
@@ -1744,6 +1777,22 @@ impl Constructor {
 /// Helper for the `namedtempl.size() <= sectionid` mixed comparison.
 fn self_namedtempl_len_i64(v: &[Option<ConstructTplHandle>]) -> i64 {
     v.len() as i64 // size_t -> i64: section counts are tiny
+}
+
+/// C++ `dynamic_cast<SpecificSymbol *>` predicate: the symbol kinds that
+/// override `SpecificSymbol::getVarnode`.
+fn is_specific_symbol(kind: &SymbolKind) -> bool {
+    matches!(
+        kind,
+        SymbolKind::Epsilon(_)
+            | SymbolKind::Varnode(_)
+            | SymbolKind::Operand(_)
+            | SymbolKind::Start(_)
+            | SymbolKind::End(_)
+            | SymbolKind::Next2(_)
+            | SymbolKind::FlowDest(_)
+            | SymbolKind::FlowRef(_)
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -2239,6 +2288,187 @@ impl OperandResolveSink for ConstructorOperandSink<'_> {
 }
 
 // ---------------------------------------------------------------------------
+// Compiler-only symbol kinds (Macro / Section / Bitrange / Label)
+//
+// These four C++ classes (`slghsymbol.hh`) exist only during compilation; they
+// are removed from the symbol table by `SymbolTable::purge` before encode, so
+// none of them has an `encode`/`decode`.  WS4c adds them so the p-code section
+// path (macro definitions, named p-code sections, `define bitrange`, branch
+// labels) can build into the real symbol table.
+// ---------------------------------------------------------------------------
+
+/// C++ `SectionSymbol` (slghsymbol.hh:120): a named p-code section.
+#[derive(Debug, Clone)]
+pub struct SectionSymbol {
+    /// C++ `templateid`: index into the ConstructTpl array.
+    templateid: i32,
+    /// C++ `define_count`: number of definitions of this named section.
+    define_count: i32,
+    /// C++ `ref_count`: number of references to this named section.
+    ref_count: i32,
+}
+
+impl SectionSymbol {
+    /// C++ `SectionSymbol(const string &nm,int4 id)`.
+    pub fn new(id: i32) -> SectionSymbol {
+        SectionSymbol {
+            templateid: id,
+            define_count: 0,
+            ref_count: 0,
+        }
+    }
+    /// C++ `SectionSymbol::getTemplateId`.
+    pub fn get_template_id(&self) -> i32 {
+        self.templateid
+    }
+    /// C++ `SectionSymbol::incrementDefineCount`.
+    pub fn increment_define_count(&mut self) {
+        self.define_count += 1;
+    }
+    /// C++ `SectionSymbol::incrementRefCount`.
+    pub fn increment_ref_count(&mut self) {
+        self.ref_count += 1;
+    }
+    /// C++ `SectionSymbol::getDefineCount`.
+    pub fn get_define_count(&self) -> i32 {
+        self.define_count
+    }
+    /// C++ `SectionSymbol::getRefCount`.
+    pub fn get_ref_count(&self) -> i32 {
+        self.ref_count
+    }
+}
+
+/// C++ `BitrangeSymbol` (slghsymbol.hh:266): a smaller bitrange within a varnode.
+#[derive(Debug, Clone)]
+pub struct BitrangeSymbol {
+    /// C++ `varsym`: id of the varnode containing the bitrange.
+    varsym: u32,
+    /// C++ `bitoffset`: least significant bit of the range.
+    bitoffset: u32,
+    /// C++ `numbits`: number of bits in the range.
+    numbits: u32,
+}
+
+impl BitrangeSymbol {
+    /// C++ `BitrangeSymbol(const string &nm,VarnodeSymbol *sym,uint4 bitoff,uint4 num)`.
+    pub fn new(varsym: u32, bitoff: u32, num: u32) -> BitrangeSymbol {
+        BitrangeSymbol {
+            varsym,
+            bitoffset: bitoff,
+            numbits: num,
+        }
+    }
+    /// C++ `BitrangeSymbol::getParentSymbol` (the varnode symbol id).
+    pub fn get_parent_symbol(&self) -> u32 {
+        self.varsym
+    }
+    /// C++ `BitrangeSymbol::getBitOffset`.
+    pub fn get_bit_offset(&self) -> u32 {
+        self.bitoffset
+    }
+    /// C++ `BitrangeSymbol::numBits`.
+    pub fn num_bits(&self) -> u32 {
+        self.numbits
+    }
+}
+
+/// C++ `MacroSymbol` (slghsymbol.hh:607): a user-defined p-code macro.
+#[derive(Debug, Clone)]
+pub struct MacroSymbol {
+    /// C++ `index`: the macro's slot in the macro table.
+    index: i32,
+    /// C++ `ConstructTpl *construct`: the macro body (set by `buildMacro`).
+    construct: Option<ConstructTpl>,
+    /// C++ `vector<OperandSymbol *> operands`: parameter operand symbol ids.
+    operands: Vec<u32>,
+}
+
+impl MacroSymbol {
+    /// C++ `MacroSymbol(const string &nm,int4 i)`.
+    pub fn new(i: i32) -> MacroSymbol {
+        MacroSymbol {
+            index: i,
+            construct: None,
+            operands: Vec::new(),
+        }
+    }
+    /// C++ `MacroSymbol::getIndex`.
+    pub fn get_index(&self) -> i32 {
+        self.index
+    }
+    /// C++ `MacroSymbol::setConstruct`.
+    pub fn set_construct(&mut self, ct: ConstructTpl) {
+        self.construct = Some(ct);
+    }
+    /// C++ `MacroSymbol::getConstruct`.
+    pub fn get_construct(&self) -> Option<&ConstructTpl> {
+        self.construct.as_ref()
+    }
+    /// C++ `MacroSymbol::addOperand`.
+    pub fn add_operand(&mut self, sym: u32) {
+        self.operands.push(sym);
+    }
+    /// C++ `MacroSymbol::getNumOperands`.
+    pub fn get_num_operands(&self) -> usize {
+        self.operands.len()
+    }
+    /// C++ `MacroSymbol::getOperand`.
+    pub fn get_operand(&self, i: usize) -> u32 {
+        self.operands[i]
+    }
+    /// The operand symbol ids (for purge: macro operand locals are dropped too).
+    pub fn operand_ids(&self) -> &[u32] {
+        &self.operands
+    }
+}
+
+/// C++ `LabelSymbol` (slghsymbol.hh:623): a branch label living in the symbol
+/// table.  (The p-code compiler also owns a `pcodecompile::LabelSymbol` carrying
+/// the same fields; this symbol-table kind is what `checkSymbols` walks the
+/// constructor scope for to detect unplaced/unreferenced labels.)
+#[derive(Debug, Clone)]
+pub struct LabelTableSymbol {
+    /// C++ `index`: local 1-up index of the label.
+    index: u32,
+    /// C++ `isplaced`: has the label been placed (not just referenced).
+    isplaced: bool,
+    /// C++ `refcount`: number of references to this label.
+    refcount: u32,
+}
+
+impl LabelTableSymbol {
+    /// C++ `LabelSymbol(const string &nm,uint4 i)`.
+    pub fn new(i: u32) -> LabelTableSymbol {
+        LabelTableSymbol {
+            index: i,
+            isplaced: false,
+            refcount: 0,
+        }
+    }
+    /// C++ `LabelSymbol::getIndex`.
+    pub fn get_index(&self) -> u32 {
+        self.index
+    }
+    /// C++ `LabelSymbol::incrementRefCount`.
+    pub fn increment_ref_count(&mut self) {
+        self.refcount += 1;
+    }
+    /// C++ `LabelSymbol::getRefCount`.
+    pub fn get_ref_count(&self) -> u32 {
+        self.refcount
+    }
+    /// C++ `LabelSymbol::setPlaced`.
+    pub fn set_placed(&mut self) {
+        self.isplaced = true;
+    }
+    /// C++ `LabelSymbol::isPlaced`.
+    pub fn is_placed(&self) -> bool {
+        self.isplaced
+    }
+}
+
+// ---------------------------------------------------------------------------
 // SleighSymbol
 // ---------------------------------------------------------------------------
 
@@ -2280,6 +2510,14 @@ pub enum SymbolKind {
     FlowRef(FlowRefSymbol),
     /// C++ `SubtableSymbol`.
     Subtable(SubtableSymbol),
+    /// C++ `MacroSymbol` (compiler-only; purged before encode).
+    Macro(MacroSymbol),
+    /// C++ `SectionSymbol` (compiler-only; purged before encode).
+    Section(SectionSymbol),
+    /// C++ `BitrangeSymbol` (compiler-only; purged before encode).
+    Bitrange(BitrangeSymbol),
+    /// C++ `LabelSymbol` (compiler-only; purged before encode).
+    Label(LabelTableSymbol),
 }
 
 /// C++ `SleighSymbol`: the name/id/scope header common to every symbol,
@@ -2600,6 +2838,60 @@ impl SleighSymbol {
             SymbolKind::FlowDest(_) => SymbolType::FlowDest,
             SymbolKind::FlowRef(_) => SymbolType::FlowRef,
             SymbolKind::Subtable(_) => SymbolType::Subtable,
+            SymbolKind::Macro(_) => SymbolType::Macro,
+            SymbolKind::Section(_) => SymbolType::Section,
+            SymbolKind::Bitrange(_) => SymbolType::Bitrange,
+            SymbolKind::Label(_) => SymbolType::Label,
+        }
+    }
+
+    /// `&MacroSymbol` when this symbol is a macro, else `None`.
+    pub fn as_macro(&self) -> Option<&MacroSymbol> {
+        match &self.kind {
+            SymbolKind::Macro(m) => Some(m),
+            _ => None,
+        }
+    }
+    /// Mutable macro access (WS4c build side: `setConstruct`/`addOperand`).
+    pub fn as_macro_mut(&mut self) -> Option<&mut MacroSymbol> {
+        match &mut self.kind {
+            SymbolKind::Macro(m) => Some(m),
+            _ => None,
+        }
+    }
+    /// `&SectionSymbol` when this symbol is a section, else `None`.
+    pub fn as_section(&self) -> Option<&SectionSymbol> {
+        match &self.kind {
+            SymbolKind::Section(s) => Some(s),
+            _ => None,
+        }
+    }
+    /// Mutable section access (`incrementDefineCount`/`incrementRefCount`).
+    pub fn as_section_mut(&mut self) -> Option<&mut SectionSymbol> {
+        match &mut self.kind {
+            SymbolKind::Section(s) => Some(s),
+            _ => None,
+        }
+    }
+    /// `&BitrangeSymbol` when this symbol is a bitrange, else `None`.
+    pub fn as_bitrange(&self) -> Option<&BitrangeSymbol> {
+        match &self.kind {
+            SymbolKind::Bitrange(b) => Some(b),
+            _ => None,
+        }
+    }
+    /// `&LabelTableSymbol` when this symbol is a label, else `None`.
+    pub fn as_label(&self) -> Option<&LabelTableSymbol> {
+        match &self.kind {
+            SymbolKind::Label(l) => Some(l),
+            _ => None,
+        }
+    }
+    /// Mutable label access (`incrementRefCount`/`setPlaced`).
+    pub fn as_label_mut(&mut self) -> Option<&mut LabelTableSymbol> {
+        match &mut self.kind {
+            SymbolKind::Label(l) => Some(l),
+            _ => None,
         }
     }
 
@@ -2651,9 +2943,15 @@ impl SleighSymbol {
             }
             SymbolKind::Subtable(_) => Err(KunaError::sleigh("Cannot use subtable in expression")),
             // Not a TripleSymbol in C++ (unreachable through ported paths)
-            SymbolKind::Space(_) | SymbolKind::Token(_) | SymbolKind::UserOp(_) => Err(
-                KunaError::sleigh("symbol has no pattern expression (not a TripleSymbol in C++)"),
-            ),
+            SymbolKind::Space(_)
+            | SymbolKind::Token(_)
+            | SymbolKind::UserOp(_)
+            | SymbolKind::Macro(_)
+            | SymbolKind::Section(_)
+            | SymbolKind::Bitrange(_)
+            | SymbolKind::Label(_) => Err(KunaError::sleigh(
+                "symbol has no pattern expression (not a TripleSymbol in C++)",
+            )),
         }
     }
 
@@ -2811,7 +3109,13 @@ impl SleighSymbol {
                 return Err(KunaError::sleigh("Cannot use subtable in expression"));
             }
             // Not a TripleSymbol in C++ (unreachable through ported paths)
-            SymbolKind::Space(_) | SymbolKind::Token(_) | SymbolKind::UserOp(_) => {
+            SymbolKind::Space(_)
+            | SymbolKind::Token(_)
+            | SymbolKind::UserOp(_)
+            | SymbolKind::Macro(_)
+            | SymbolKind::Section(_)
+            | SymbolKind::Bitrange(_)
+            | SymbolKind::Label(_) => {
                 return Err(KunaError::sleigh(
                     "symbol has no fixed handle (not a TripleSymbol in C++)",
                 ));
@@ -2908,9 +3212,15 @@ impl SleighSymbol {
             }
             SymbolKind::Subtable(_) => Err(KunaError::sleigh("Cannot use subtable in expression")),
             // Not a TripleSymbol in C++ (unreachable through ported paths)
-            SymbolKind::Space(_) | SymbolKind::Token(_) | SymbolKind::UserOp(_) => Err(
-                KunaError::sleigh("symbol is not printable (not a TripleSymbol in C++)"),
-            ),
+            SymbolKind::Space(_)
+            | SymbolKind::Token(_)
+            | SymbolKind::UserOp(_)
+            | SymbolKind::Macro(_)
+            | SymbolKind::Section(_)
+            | SymbolKind::Bitrange(_)
+            | SymbolKind::Label(_) => Err(KunaError::sleigh(
+                "symbol is not printable (not a TripleSymbol in C++)",
+            )),
         }
     }
 
@@ -3110,8 +3420,15 @@ impl SleighSymbol {
                 encoder.close_element(&sla::ELEM_SUBTABLE_SYM);
             }
             // SleighSymbol::encode base: not directly encodable
-            SymbolKind::Space(_) | SymbolKind::Token(_) | SymbolKind::FlowDest(_)
-            | SymbolKind::FlowRef(_) => {
+            SymbolKind::Space(_)
+            | SymbolKind::Token(_)
+            | SymbolKind::FlowDest(_)
+            | SymbolKind::FlowRef(_)
+            // Compiler-only kinds are purged before encode (never reached).
+            | SymbolKind::Macro(_)
+            | SymbolKind::Section(_)
+            | SymbolKind::Bitrange(_)
+            | SymbolKind::Label(_) => {
                 return Err(KunaError::lowlevel(format!(
                     "Symbol {} cannot be encoded to stream directly",
                     name_text(&self.name)
@@ -3441,6 +3758,139 @@ impl SymbolTable {
         })?;
         let opid = ct.get_operand(ov.index())?;
         Ok(self.symbol(opid)?.get_name())
+    }
+
+    /// C++ `SpecificSymbol::getVarnode()` (slghsymbol.cc): build the
+    /// `VarnodeTpl` for a symbol used directly in a p-code expression.  Driven
+    /// through the symbol table because `OperandSymbol::getVarnode` recurses
+    /// into its defining triple symbol.
+    pub fn get_varnode(&self, id: u32) -> KunaResult<VarnodeTpl> {
+        let sym = self.symbol(id)?;
+        match &sym.kind {
+            SymbolKind::Epsilon(e) => {
+                let cs = e
+                    .const_space
+                    .clone()
+                    .ok_or_else(|| KunaError::sleigh("epsilon symbol has no constant space"))?;
+                Ok(VarnodeTpl::new(
+                    ConstTpl::new_space(cs),
+                    ConstTpl::new_real(ConstType::Real, 0),
+                    ConstTpl::new_real(ConstType::Real, 0),
+                ))
+            }
+            SymbolKind::Varnode(v) => {
+                let spc = v
+                    .fix
+                    .space
+                    .clone()
+                    .ok_or_else(|| KunaError::sleigh("varnode symbol has no space"))?;
+                Ok(VarnodeTpl::new(
+                    ConstTpl::new_space(spc),
+                    ConstTpl::new_real(ConstType::Real, v.fix.offset),
+                    ConstTpl::new_real(ConstType::Real, u64::from(v.fix.size)),
+                ))
+            }
+            SymbolKind::Start(s) => self.jump_varnode(s.const_space.as_ref(), ConstType::JStart),
+            SymbolKind::End(s) => self.jump_varnode(s.const_space.as_ref(), ConstType::JNext),
+            SymbolKind::Next2(s) => self.jump_varnode(s.const_space.as_ref(), ConstType::JNext2),
+            SymbolKind::FlowDest(s) => {
+                self.jump_varnode(s.const_space.as_ref(), ConstType::JFlowdest)
+            }
+            SymbolKind::FlowRef(s) => self.jump_varnode(s.const_space.as_ref(), ConstType::JFlowref),
+            SymbolKind::Operand(op) => {
+                if op.defexp.is_some() {
+                    // Definite constant handle.
+                    return Ok(VarnodeTpl::new_from_handle(op.hand, true));
+                }
+                match op.triple {
+                    Some(tid) => {
+                        let tsym = self.symbol(tid)?;
+                        if is_specific_symbol(&tsym.kind) {
+                            self.get_varnode(tid)
+                        } else if matches!(tsym.get_type(), SymbolType::ValueMap | SymbolType::Name)
+                        {
+                            Ok(VarnodeTpl::new_from_handle(op.hand, true)) // Zero-size symbols
+                        } else {
+                            Ok(VarnodeTpl::new_from_handle(op.hand, false)) // Possible dynamic handle
+                        }
+                    }
+                    None => Ok(VarnodeTpl::new_from_handle(op.hand, false)),
+                }
+            }
+            _ => Err(KunaError::sleigh(format!(
+                "symbol id {id} has no varnode (not a SpecificSymbol in C++)"
+            ))),
+        }
+    }
+
+    /// C++ `dynamic_cast<SpecificSymbol *>` predicate over a symbol kind.
+    fn jump_varnode(
+        &self,
+        const_space: Option<&Rc<AddrSpace>>,
+        jtype: ConstType,
+    ) -> KunaResult<VarnodeTpl> {
+        let cs = const_space
+            .cloned()
+            .ok_or_else(|| KunaError::sleigh("jump symbol has no constant space"))?;
+        Ok(VarnodeTpl::new(
+            ConstTpl::new_space(cs),
+            ConstTpl::new_type(jtype),
+            ConstTpl::new_real(ConstType::Real, 0),
+        ))
+    }
+
+    /// C++ `SleighCompile::checkSymbols(SymbolScope *scope)` (slgh_compile.cc:2334):
+    /// walk the scope's label symbols, reporting any placed-but-unused or
+    /// referenced-but-never-placed.  Returns the (possibly empty) error string.
+    pub fn check_symbols(&self, scope_id: u32) -> String {
+        let mut msg = String::new();
+        let scope = match self.get_scope(scope_id) {
+            Some(s) => s,
+            None => return msg,
+        };
+        for symid in scope.symbol_ids() {
+            let sym = match self.find_symbol_by_id(symid) {
+                Some(s) => s,
+                None => continue,
+            };
+            let lab = match sym.as_label() {
+                Some(l) => l,
+                None => continue, // not a label symbol
+            };
+            if lab.get_ref_count() == 0 {
+                msg.push_str(&format!(
+                    "   Label <{}> was placed but not used\n",
+                    name_text(sym.get_name())
+                ));
+            } else if !lab.is_placed() {
+                msg.push_str(&format!(
+                    "   Label <{}> was referenced but never placed\n",
+                    name_text(sym.get_name())
+                ));
+            }
+        }
+        msg
+    }
+
+    /// C++ `Constructor::markSubtableOperands(vector<int4> &check)`
+    /// (slghsymbol.cc:1577): one entry per operand — 0 if the operand's
+    /// defining symbol is a subtable, else 2.  Driven through the symbol table
+    /// since operands store ids.
+    pub fn mark_subtable_operands(&self, operand_ids: &[u32]) -> Vec<i32> {
+        let mut check = vec![2i32; operand_ids.len()];
+        for (i, &opid) in operand_ids.iter().enumerate() {
+            let is_subtable = self
+                .find_symbol_by_id(opid)
+                .and_then(|s| match &s.kind {
+                    SymbolKind::Operand(op) => op.get_defining_symbol(),
+                    _ => None,
+                })
+                .and_then(|defid| self.find_symbol_by_id(defid))
+                .map(|d| d.get_type() == SymbolType::Subtable)
+                .unwrap_or(false);
+            check[i] = if is_subtable { 0 } else { 2 };
+        }
+        check
     }
 
     // -----------------------------------------------------------------
@@ -3932,10 +4382,26 @@ impl SymbolTable {
                         | SymbolType::Bitrange => (true, scopeid, name),
                         SymbolType::Macro => {
                             // Macro symbols themselves are removed, plus their
-                            // operand locals.  (Macro operand locals are not
-                            // tracked here as a separate kind class — the
-                            // MacroSymbol payload is not yet ported; when it
-                            // is, drop its operands here.)
+                            // operand locals (C++ `purge`: MacroSymbol case
+                            // walks getOperand(j) and deletes each).
+                            let mut to_drop: Vec<(u32, u32, Vec<u8>)> = Vec::new();
+                            if let Some(m) = self.symbollist[i].as_ref().and_then(|s| s.as_macro()) {
+                                for &opid in m.operand_ids() {
+                                    if let Some(op) =
+                                        self.symbollist.get(opid as usize).and_then(|s| s.as_ref())
+                                    {
+                                        to_drop.push((opid, op.scopeid, op.name.clone()));
+                                    }
+                                }
+                            }
+                            for (opid, opscope, opname) in to_drop {
+                                if let Some(sc) =
+                                    self.table.get_mut(opscope as usize).and_then(|s| s.as_mut())
+                                {
+                                    sc.remove_symbol(&opname);
+                                }
+                                self.symbollist[opid as usize] = None;
+                            }
                             (true, scopeid, name)
                         }
                         SymbolType::Subtable => {
