@@ -8,8 +8,8 @@
 //! semantics templates (`semantics.rs`).  Those were written/exercised by the
 //! decoder round-trip and are reused verbatim.
 //!
-//! What is **missing** is the single top-level orchestrator that the C++ compiler
-//! calls at the end of `run_compilation`:
+//! What was **missing** is the single top-level orchestrator that the C++
+//! compiler calls at the end of `run_compilation`:
 //!
 //! - `SleighBase::encode` (sleighbase.cc:226-255): opens `<sleigh>`, writes the
 //!   version/endian/align/uniqbase/maxdelay/uniqmask/numsections attributes,
@@ -17,35 +17,64 @@
 //! - `SleighBase::encodeSlaSpace` (sleighbase.cc:197-225): one `<space>` element
 //!   per non-internal address space.
 //!
-//! WS5 ports those two as compiler-side helpers here (rather than editing
-//! `kuna-sleigh`), driving the existing `kuna-sleigh` sub-encodes.  The byte
-//! oracle (`python -m kuna.slacomp`) verifies the produced stream is identical to
-//! `sleigh_opt`'s.
+//! WS5 landed those two **in `kuna-sleigh`** (`SleighBase::encode` /
+//! `SleighBase::encode_sla_space`, next to `SleighBase::decode`) because they
+//! need `&self` access to the private symbol-table / address-space / template
+//! state and the private `SlaTrans` `ConstructTpl`-encode seam.  The plan
+//! (`docs/rust-port/sleigh-compiler/map.md` WS5) explicitly allows this and
+//! records it as a freeze interface.  This module is the compiler-side wiring:
+//! it drives `SleighBase::encode` through a `FormatEncode` (header + packed
+//! stream + deflate) to produce the final `.sla` byte buffer, exactly as the
+//! C++ `run_compilation` does (`FormatEncode encoder(s,-1); encode(encoder);
+//! encoder.flush();`).
 //!
 //! ## Module ownership: WS5 owns this file exclusively.
 
 #![allow(dead_code)]
 
+use std::io::Write;
+
 use kuna_base::error::KunaResult;
 use kuna_base::marshal::Encoder;
 
-use crate::slgh_compile::SleighCompile;
+use kuna_sleigh::slaformat::FormatEncode;
+use kuna_sleigh::sleighbase::SleighBase;
 
 /// Emit the entire compiled spec as the `.sla` element stream
-/// (`SleighBase::encode`, sleighbase.cc:226).
+/// (`SleighBase::encode`, sleighbase.cc:226) into an already-open encoder.
 ///
-/// Orchestrates: `<sleigh>` header attributes -> source-file indexer ->
-/// `<spaces>` -> symbol table.  Each sub-part calls the already-ported
-/// `kuna-sleigh` `encode(...)` methods.  Called by
-/// [`SleighCompile::run_compilation`](crate::slgh_compile::SleighCompile::run_compilation)
-/// once parse + `process` succeed with no errors.
-pub fn encode_sleigh(_compiler: &SleighCompile, _encoder: &mut dyn Encoder) -> KunaResult<()> {
-    todo!("WS5: SleighBase::encode (sleighbase.cc:226-255) -- top-level .sla emit")
+/// This is the thin compiler-side delegate: the orchestration body lives on
+/// `kuna_sleigh::SleighBase::encode` (the C++ method is on `SleighBase`, and
+/// `SleighCompile` *is-a* `SleighBase`).  Drive it with a `<sleigh>`-capable
+/// `Encoder` -- for the real `.sla` output that is a `FormatEncode`'s
+/// [`packed`](kuna_sleigh::slaformat::FormatEncode::packed) view; see
+/// [`encode_to_sla_writer`] / [`encode_to_sla_bytes`].
+pub fn encode_sleigh(base: &SleighBase, encoder: &mut dyn Encoder) -> KunaResult<()> {
+    base.encode(encoder)
 }
 
-/// Emit one `<space>` element for an address space (`SleighBase::encodeSlaSpace`,
-/// sleighbase.cc:197).  Skips the internal spaces (constant/fspec/iop/join), as
-/// the C++ `encode` loop does.
-fn encode_sla_space(_compiler: &SleighCompile, _encoder: &mut dyn Encoder, _space_index: usize) -> KunaResult<()> {
-    todo!("WS5: SleighBase::encodeSlaSpace (sleighbase.cc:197-225)")
+/// Write the complete `.sla` byte stream for a compiled spec to `w`,
+/// byte-for-byte as `sleigh_opt` writes it: the `sla\x04` header followed by the
+/// deflate-compressed packed element stream from `SleighBase::encode`.
+///
+/// Mirrors the tail of C++ `SleighCompile::run_compilation`
+/// (slgh_compile.cc:3805-3807): `FormatEncode encoder(s,-1); encode(encoder);
+/// encoder.flush();`.  The `-1` is zlib's default compression level.  The
+/// `slacomp` binary opens the `<file>.sla` output stream and hands it here.
+pub fn encode_to_sla_writer<W: Write>(base: &SleighBase, w: W) -> KunaResult<()> {
+    let mut encoder = FormatEncode::new(w, -1);
+    {
+        let mut packed = encoder.packed();
+        base.encode(&mut packed)?;
+    }
+    encoder.flush()
+}
+
+/// Produce the complete `.sla` byte buffer for a compiled spec (the in-memory
+/// form of [`encode_to_sla_writer`], used by the byte-identity round-trip
+/// tests and any caller that wants the bytes rather than a stream).
+pub fn encode_to_sla_bytes(base: &SleighBase) -> KunaResult<Vec<u8>> {
+    let mut out: Vec<u8> = Vec::new();
+    encode_to_sla_writer(base, &mut out)?;
+    Ok(out)
 }
