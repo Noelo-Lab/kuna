@@ -1,0 +1,4 @@
+# a comment here
+define bitrange x=y[0,8];
+define pcodeop mypcodeop;
+signed noflow hex dec

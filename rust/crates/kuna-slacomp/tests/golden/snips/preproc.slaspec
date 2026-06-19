@@ -1,0 +1,12 @@
+@define FOO "bar"
+@ifdef FOO
+define alignment = 1;
+@endif
+@ifndef BAZ
+define alignment = 2;
+@else
+define alignment = 9;
+@endif
+@if defined(FOO)
+define alignment = 3;
+@endif
