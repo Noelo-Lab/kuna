@@ -1532,6 +1532,23 @@ impl Funcdata {
         &self.get_address().clone() + -1
     }
 
+    /// Identity of the smallest containing local SymbolEntry for a Varnode — the
+    /// kuna analog of C++ `Varnode::getSymbolEntry()` (the `mapentry` pointer).
+    ///
+    /// Re-derives the entry with the same containment query `linkSymbol` uses
+    /// (`localmap->findContainer(addr, 1, vn->getUsePoint())`) and keys it by
+    /// `(SymbolId, entry-base-offset, entry-size)`.  Returns `None` when the
+    /// Varnode is not mapped into the local scope (no containing entry).  Used by
+    /// `RulePieceStructure`/`PieceNode::isLeaf` to compare two Varnodes' entries.
+    pub(crate) fn vn_container_entry_key(
+        &self,
+        vn: VarnodeId,
+    ) -> Option<(crate::database::SymbolId, kuna_base::types::uintb, int4)> {
+        let usepoint = self.vn_use_point(vn);
+        let addr = self.vbank().get(vn)?.get_addr().clone();
+        self.get_scope_local()?.container_entry_key(&addr, &usepoint)
+    }
+
     /// Look-up boolean properties and data-type information for a Varnode
     /// (C++ `Funcdata::setVarnodeProperties`, `funcdata_varnode.cc:25`).
     ///

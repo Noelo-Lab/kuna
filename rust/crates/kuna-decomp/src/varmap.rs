@@ -1619,6 +1619,27 @@ impl ScopeLocal {
     /// Returns `None` when no Symbol *contains* the base byte (then `linkSymbol`'s
     /// `else` arm creates a fresh local Symbol — the angr `vN` path the caller's
     /// `resolve_default_name`/`vN` tail already implements).
+    /// Identity of the smallest containing SymbolEntry for a storage location —
+    /// the kuna analog of C++ `Varnode::getSymbolEntry()` (the `mapentry` pointer)
+    /// used by `PieceNode::isLeaf` / `RulePieceStructure::determineDatatype` to
+    /// decide whether two Varnodes share a Symbol.
+    ///
+    /// C++ compares `SymbolEntry*` pointers; the merged W3/W4 Varnode carries no
+    /// stored `mapentry`, so we re-derive it with the same containment query
+    /// (`findContainer(addr, 1, usepoint)`, exactly as `linkSymbol` does) and key
+    /// the entry by `(SymbolId, entry-base-offset, entry-size)`.  Two Varnodes that
+    /// resolve to the same key share a `SymbolEntry`; `None` (no container) is
+    /// treated as a distinct "no symbol" key by the callers.
+    pub fn container_entry_key(
+        &self,
+        addr: &Address,
+        usepoint: &Address,
+    ) -> Option<(crate::database::SymbolId, uintb, int4)> {
+        let eref = self.db.find_container(self.scope, addr, 1, usepoint)?;
+        let entry = self.db.entry(self.scope, eref);
+        Some((entry.symbol, entry.get_addr().get_offset(), entry.get_size()))
+    }
+
     pub fn query_container_for_link(
         &self,
         addr: &Address,
