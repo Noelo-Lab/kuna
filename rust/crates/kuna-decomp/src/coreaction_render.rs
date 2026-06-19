@@ -1280,15 +1280,14 @@ fn directwrite_apply(data: &mut Funcdata, propagate_indirect: bool) -> ApplyResu
             if is_persist || is_spacebase {
                 data.vbank_mut().get_mut(vn).expect("dw").set_direct_write();
                 worklist.push(vn);
-            } else if data.get_func_proto().has_store()
-                && data.get_func_proto().possible_input_param(&addr, sz)
-            {
-                // C++ `getFuncProto().possibleInputParam(...)`: the C++ FuncProto
-                // always has a proto store; the merged kuna `ProtoStoreInternal`
-                // may be absent for an un-recovered function (`has_store()` false),
-                // in which case no input is yet a possible parameter (the
-                // un-recovered default), so the seed is skipped (a register input
-                // that is not yet a param is not auto-direct-write).
+            } else if data.get_func_proto().possible_input_param(&addr, sz) {
+                // C++ `getFuncProto().possibleInputParam(...)` (coreaction.cc:1384),
+                // called unconditionally. The kuna `has_store() &&` pre-guard was
+                // dropped (L1): `possible_input_param` is now no-store/no-model
+                // robust, so a recovered register input (e.g. ESI) whose
+                // `ProtoStoreInternal` is not yet attached at main-loop time is
+                // still legalized via the model -- otherwise it stayed
+                // `isIllegalInput` and `Merge::mergeTestAdjacent` refused the tie.
                 data.vbank_mut().get_mut(vn).expect("dw").set_direct_write();
                 worklist.push(vn);
             }

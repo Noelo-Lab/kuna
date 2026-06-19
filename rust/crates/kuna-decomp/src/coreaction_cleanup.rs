@@ -1266,8 +1266,34 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::seams::VarnodeId) -> bool
             }
         }
     }
-    // The `Merge::inflateTest` input-intersection arm is the documented next
-    // layer (see fn doc); default to "no intersection" (allow implied).
+    // (kuna L4 — BLOCKED) The `Merge::inflateTest` input-intersection arm
+    // (coreaction.cc:3509-3514) is the documented final layer:
+    //   for(i=0;i<op->numInput();++i) {
+    //     defvn = op->getIn(i);
+    //     if (defvn->isConstant()) continue;
+    //     if (data.getMerge().inflateTest(defvn, vn->getHigh())) return false;
+    //   }
+    // A non-constant defining input whose HighVariable would intersect `vn`'s
+    // internalCover after inflation forces `vn` EXPLICIT — this is what GAINS
+    // Partial Merge #4/#5 (the `EAX = glob1.a + ESI` register-param temp earns
+    // its own statement instead of folding into the return).
+    //
+    // The faithful arm + `Merge::inflate_test` (merge.rs) are PORTED and verified
+    // (they gain PM #4/#5 via the piece arm's `intersect==2`).  But landing them
+    // regresses **Long double #4** (`passmany`): the rust IR for `passmany`
+    // mis-recovers its int2 STACK params (it carries spurious `xunknown4 y/z/w`
+    // + `v1/v2/v3 xunknown2` locals that the C++ oracle does NOT — verified with
+    // a freshly-built `decomp_test_dbg`, C++ renders a clean
+    // `return (int4)y + (int4)z + (int4)w` with NO extra locals).  On that broken
+    // IR the (faithful) piece-intersection graph includes an INDIRECT temp whose
+    // single-point cover falls strictly inside the SEXT-output high's
+    // SEXT→RETURN internalCover, so `inflate_test` returns true and the SEXT
+    // outputs are wrongly forced explicit (`y + v2 + v1`).  `Cover::intersect`
+    // and `CoverBlock::intersect` are byte-faithful (cover.cc:59-102 / 269-297),
+    // and `VariablePiece::updateIntersections` is byte-faithful
+    // (variable.cc:140-157) — the divergence is UPSTREAM in `passmany`'s int2
+    // stack-param recovery, not in the inflate machinery.  BLOCK the arm until
+    // that recovery is fixed so it is not exposed.  See losses.md LOSS-248.
     true
 }
 

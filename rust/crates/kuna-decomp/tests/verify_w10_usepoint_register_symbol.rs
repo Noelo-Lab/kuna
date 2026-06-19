@@ -165,7 +165,10 @@ fn at3_usepoint_specs_carry_register_symbol_with_use_address() {
 
     let eax = Address::new(Rc::clone(&reg), 0);
     let pc = Address::new(Rc::clone(&ram), 0x100010);
-    db.add_symbol_mapped(g, "tmp", dt(4), &eax, &pc).unwrap();
+    let (tmp_sym, _entry) = db.add_symbol_mapped(g, "tmp", dt(4), &eax, &pc).unwrap();
+    // (kuna L4) Mirror the console `type varnode` flow: the tmp Symbol is marked
+    // isolated so the spec must carry that flag across the rebuild.
+    db.symbol_mut(tmp_sym).set_isolated(true);
     // An addr-tied stack local — must NOT appear in the usepoint specs.
     db.add_symbol_mapped(
         g,
@@ -178,8 +181,11 @@ fn at3_usepoint_specs_carry_register_symbol_with_use_address() {
 
     let specs = db.scope_usepoint_symbol_specs(g);
     assert_eq!(specs.len(), 1, "exactly the usepoint-scoped tmp is carried");
-    let (name, _ct, addr, _flags, usepoint) = &specs[0];
+    let (name, _ct, addr, _flags, usepoint, isolated) = &specs[0];
     assert_eq!(name, "tmp");
+    // (kuna L4) The `type varnode` Symbol is isolated; the spec carries the flag
+    // so it survives the `decompile` ScopeLocal rebuild.
+    assert!(*isolated, "the usepoint-scoped tmp Symbol is isolated");
     // Carried at its register storage AND its use address (so the re-seed can
     // restore the uselimit and `inUse` matches at the same read).
     assert_eq!(addr.get_offset(), 0);

@@ -846,6 +846,10 @@ pub struct LinkEntryInfo {
     /// composite (an unmapped array auto-local) must NOT render its raw
     /// `$$undefNN` placeholder; the caller falls back to the functional form.
     pub is_name_undefined: bool,
+    /// `entry->getSymbol()->isIsolated()` — the C++ `Symbol::isIsolated` flag
+    /// (database.hh:241) read by `Merge::mergeTestAdjacent` (merge.cc:198-205):
+    /// an isolated covering Symbol refuses any speculative tie. (kuna L2)
+    pub is_isolated: bool,
 }
 
 /// A snapshot of the SymbolEntry `RuleStringCopy`'s `queryContainer` returns,
@@ -1396,7 +1400,9 @@ impl ScopeLocal {
     /// Carried (WITH the use address) across the kuna console's IR rebuild so the
     /// rebuilt-IR `linkSymbol` query still binds them at the read they scope
     /// (see [`crate::database::Database::scope_usepoint_symbol_specs`]).
-    pub fn usepoint_symbol_specs(&self) -> Vec<(String, Rc<Datatype>, Address, uint4, Address)> {
+    pub fn usepoint_symbol_specs(
+        &self,
+    ) -> Vec<(String, Rc<Datatype>, Address, uint4, Address, bool)> {
         self.db.scope_usepoint_symbol_specs(self.scope)
     }
 
@@ -1582,7 +1588,15 @@ impl ScopeLocal {
             entry_size,
             category: symbol.get_category(),
             is_name_undefined: symbol.is_name_undefined(),
+            is_isolated: symbol.is_isolated(),
         })
+    }
+
+    /// Read `Symbol::isIsolated()` for a SymbolId in this scope (C++
+    /// `sym->isIsolated()`).  Used by the merge's `bank_symbol_isolated` for a
+    /// dynamic-hash / equate Symbol bound directly on a HighVariable. (kuna L2)
+    pub fn symbol_isolated(&self, sym: crate::database::SymbolId) -> bool {
+        self.db.symbol(sym).is_isolated()
     }
 
     /// C++ `Funcdata::linkSymbol(nameRep)` (`funcdata_varnode.cc:1177`) for the

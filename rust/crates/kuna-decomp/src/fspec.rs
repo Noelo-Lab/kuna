@@ -5676,7 +5676,13 @@ impl FuncProto {
             if (self.flags & func_proto_flags::VOIDINPUTLOCK) != 0 {
                 return false;
             }
-            let num = self.num_params();
+            // (kuna) C++ FuncProto always has a ProtoStore; the merged kuna
+            // FuncProto may have its `ProtoStoreInternal` un-attached at
+            // main-loop time (un-recovered output/input). With no store there
+            // are no locked params to test, so fall straight through to the
+            // model -- mirrors C++ with `numParams()==0`. Guard the store call
+            // so it never panics.
+            let num = if self.has_store() { self.num_params() } else { 0 };
             if num > 0 {
                 let mut locktest = false;
                 for i in 0..num {
@@ -5698,7 +5704,12 @@ impl FuncProto {
                 }
             }
         }
-        self.model().possible_input_param(addr, size)
+        // (kuna) C++ always has a model here; an un-recovered kuna FuncProto may
+        // not -- with no model nothing is yet a possible parameter.
+        match &self.model {
+            Some(m) => m.possible_input_param(addr, size),
+            None => false,
+        }
     }
 
     /// Decide whether a storage location could be a return value (C++
