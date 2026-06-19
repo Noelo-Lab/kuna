@@ -97,6 +97,17 @@ specs: $(SLEIGH)
 $(SLEIGH):
 	$(MAKE) sleigh
 
+# Compile every .slaspec with the RUST SLEIGH compiler (kuna-slacomp). It speaks
+# sleigh_opt's CLI (`-a <dir>`), produces .sla whose decompressed element stream
+# is byte-identical to sleigh_opt's, and is the path toward dropping the C++ tree.
+# Per-spec content-parity gate: `python -m kuna.slacomp --all`.
+SLACOMP := $(ROOT)/rust/target/release/slacomp
+specs-rust: $(SLACOMP)
+	$(SLACOMP) -a $(SPECS)
+
+$(SLACOMP):
+	cd $(ROOT)/rust && cargo build --release -p kuna-slacomp
+
 # Run the upstream test harness: 204 C++ unit tests + 83 XML datatests.
 # Explicit -sleighpath/-path (never SLEIGHHOME) for reproducibility.
 # Exit code = number of failed tests.
