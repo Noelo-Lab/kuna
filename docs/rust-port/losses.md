@@ -3533,3 +3533,21 @@ loci (a substrate landed 2 regression-free on branch worktree-agent-ae24754e6fd9
   into the `a0` input param (rust `xunknown1 *a0`+`a0=v1;populate(a0)` vs C++ distinct single-use SSA →
   `populate(v1)`). FIX = merge.rs input-merge eligibility under nolocalalias (the LOSS-247 stack-COPY-into-input
   family), THEN flip. [[kuna-rust-port]]
+
+## LOSS-248 ROOT v5 (heritage-narrowing wave, 2026-06-19) — NOT pre-heritage narrowing; it's the failure to COLLAPSE+DCE the addrtied stack-param hole-fill residue (re-heritages passes 2-5)
+
+Empirically OVERTURNS the LOSS-248/247 "narrow read before first heritage" thesis (instrumented C++
+decomp_test_dbg, vendored tree byte-untouched): on pass 1 (stack delay==1) BOTH engines see at s0x8 a
+width-2 input `s0x8:2(i)` AND a width-4 free COPY-read `s0x8:4` → BOTH union a width-4 disjoint
+(heritage.rs:3943); BOTH `queryProperties(s0x8,4)` return fl=0x208000 addrtied (holdind=true) → the
+addrForced INDIRECT is born in C++ too. The divergence is a LATER cleanup: C++ collapses
+`COPY(s0x8:4)→SUBPIECE(.,0,2)→SEXT24` to a direct `EAX=SEXT24(s0x8:2(i))` (no residual COPY/CONCAT22/
+INDIRECT; s0x8:4 never reappears after pass 1), while rust LEAVES the residue (`u…:2 = COPY(s0x8:2(i))`
++ the s0x8:4 CONCAT22 hole-fill + its addrForced INDIRECT) which RE-HERITAGES on passes 2-5 instead of
+settling. That surviving INDIRECT temp's cover is exactly what the faithful inflate_test piece arm
+(merge.rs:1163) intersects → Long double #4 false-positive (blocking the L4 arm for PM #4/#5). The SAME
+residue sizes Local cross #2's fretval RETURN trial RAX(8)-vs-EAX(4) and fragments Long double #11's
+by-value float10 at the 8-byte boundary — ONE root for all 4. NEXT-LOCUS: the SUBPIECE-through-COPY
+collapse + addrForced-INDIRECT DCE for an addrtied stack-param hole-filled range (why rust's s0x8:4 chain
+re-heritages passes 2-5 instead of collapsing/DCE'ing like C++). The L4 inflateTest arm is byte-faithful
+(coreaction_cleanup.rs:1325, gated `enabled=false`) — flip once the residue collapses. [[kuna-rust-port]]
