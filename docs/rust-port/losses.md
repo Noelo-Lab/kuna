@@ -3581,3 +3581,27 @@ share one deeply-interconnected heritage-convergence root, refined to:
   stack-element byte boundaries + the guardInput hole-fill + addrForced-INDIRECT direct-write/DCE chain).
   Each wave peels a layer; it needs a single dedicated deep effort on that subsystem, not more fan-out.
   [[kuna-rust-port]]
+
+## LOSS-248 RESOLVED + the REAL root (unified-subsystem wave, 2026-06-19) — locked params kept off the local scope; +3
+
+The 6-wave ROOT v2-v6 chain (heritage disjoint/hole-fill/addrForced-INDIRECT direct-write/DCE) was ALL
+SYMPTOM, proven byte-identical dual-engine (instrumented /tmp C++ decomp_dbg). The REAL root: kuna's
+`ProtoStoreInternal` keeps function parameters OFF the local scope, while C++ `ProtoStoreSymbol::setInput`
+(fspec.cc:3174) maps them into the scope `EntryMap` at prototype-attach. So during ActionRestructureVarnode
+/syncVarnodesWithSymbols, rust's `findOverlap(s0x8,4)` returned None → the no-symbol `in_scope ⇒
+mapped|addrtied` fallback kept addrforce on the dead width-4 hole-fill → the addrForced INDIRECT survived +
+re-heritaged. C++ resolves the `int2 y` param entry (size 2, nolocalalias) → sync clears addrforce →
+DeadCode DCEs the INDIRECT+CONCAT22 → SEXT reads s0x8:2(i) directly. FIX (2 lines of real change):
+- funcdata_spacebase.rs:540 — call `link_proto_params()` (the kuna analog of ProtoStoreSymbol::setInput) at
+  the HEAD of `restructure_varnode`, guarded on `has_store()`, so locked params are in the scope during
+  every restructure/sync pass. Alone gained Long double #11 + made passmany byte-match C++.
+- coreaction_cleanup.rs:1269 — with the residue gone, ENABLED the L4 `inflate_test` arm of
+  check_implied_cover (coreaction.cc:3509). Gained Partial Merge #4/#5, no Long double #4 regression.
+Gate: `[675,673]`, regressed-set EMPTY, cargo 0-fail, PARITY OK. The remaining 2 are DISTINCT subsystems:
+- **Local cross #2**: return output-trial sizing — unprototyped `retval()` CALL output recovered as RAX(8)
+  vs C++ EAX(4) → `(int4)v1` vs `v1`. NEXT = funcdata_callsite.rs:403 build_output_from_trials /
+  check_output_trial_use + ParamActive output-trial sizing (consumed-bytes must pick the 4-byte EAX trial).
+- **Stack string #9**: C++ RE-INTRODUCES a STORE at 0x100170 in a later full-loop iteration which
+  RuleStoreVarnode re-converts to the d1 byte home (`v1[9]=a0`); rust converts the STORE once and never
+  re-introduces it. NEXT = the post-heritage STORE re-introduction for an addr-tied write whose stack slot
+  escaped via customPrint(v1) — ruleaction_4.rs RuleStoreVarnode re-fire path / ActionStackPtrFlow. [[kuna-rust-port]]
