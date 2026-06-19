@@ -3605,3 +3605,37 @@ Gate: `[675,673]`, regressed-set EMPTY, cargo 0-fail, PARITY OK. The remaining 2
   RuleStoreVarnode re-converts to the d1 byte home (`v1[9]=a0`); rust converts the STORE once and never
   re-introduces it. NEXT = the post-heritage STORE re-introduction for an addr-tied write whose stack slot
   escaped via customPrint(v1) — ruleaction_4.rs RuleStoreVarnode re-fire path / ActionStackPtrFlow. [[kuna-rust-port]]
+
+## LOSS-247 RESOLVED (Stack string #9, 2026-06-19) +1 — RulePieceStructure W4 mapentry seam (NOT RuleStoreVarnode/refinement)
+
+All prior Stack string #9 theses (RulePropagateCopy fold, refinement, RuleStoreVarnode re-fire) were wrong.
+Dual-engine `trace address` shows the re-split `s..d1:1(a3)=DIL` (→ `v1[9]=a0`) is done by `RulePieceStructure`
+(C++ trace DEBUG 126). The rule IS ported in rust but declined two W4 mapentry seams:
+- `PieceNode::isLeaf` (op.cc:831): C++ `if (vn->isMapped() && rootVn->getSymbolEntry()!=vn->getSymbolEntry())
+  return true;`. Rust returned leaf for ANY mapped vn → the d0:2 CONCAT11 was a single leaf, never split into
+  d0/d1 array elements.
+- `RulePieceStructure::determineDatatype` (ruleaction.cc:7496) + `Varnode::getStructuredType` (varnode.cc:1156):
+  C++ prefers the containing Symbol's type (`char[40]`) via mapentry + computes the partial baseOffset; rust used
+  the Varnode's own 2-byte type with baseOffset 0.
+FIX: re-derive the kuna mapentry with the same containment query Funcdata::linkSymbol uses
+(`localmap->findContainer(addr,1,usepoint)`), keyed by `(SymbolId, entry-base-offset, entry-size)` — no
+special-casing. `ScopeLocal::container_entry_key` (varmap.rs) + `Funcdata::vn_container_entry_key` (funcdata.rs:1535,
+the getSymbolEntry analog) + `piece_is_leaf_inner`/`gather_pieces_inner` take an optional Symbol-entry resolver
+(proto-partial-tree caller keeps the conservative None seam; RulePieceStructure passes the real entry comparison)
++ `determine_datatype` ports the full body incl the partial-symbol arm (ruleaction_6.rs:1199). Gate: `[675,674]`,
+regressed-set EMPTY, cargo 0-fail, PARITY OK.
+
+## LOSS-249 v2 — Local cross #2 (the LAST one): deadcode-driven re-heritage of a register range (RAX→EAX) not firing
+
+Output-trial sizing (funcdata_callsite build_output_from_trials/check_output_trial_use, fspec.cc:5543/5668/5777)
+is byte-faithful — NOT the lever. The x86-64 lift emits the std `RAX(0x0:8)=INT_ZEXT(EAX(0x0:4))` upper-zeroing
+idiom near the return (identical .sla both engines). At pass 1 `collect` returns maxw=8 (the ZEXT write) for the
+RAX range so refinement (heritage.rs:3429 `size>4 && maxw<size`) is BLOCKED → RAX processed once at pass 0, locked
+size 8 → killedbycall INDIRECT-creation (heritage.rs:1503 register_trial) at RAX(8) → output recovered RAX(8) →
+`EAX=SUB84(RAX,0)` → `(int4)v1`. C++ starts RAX(8) too BUT across later mainloop iterations the dead RAX=ZEXT(EAX)
+is consumed/removed and the RAX range RE-HERITAGES + refines to EAX(4) BEFORE output recovery commits → EAX(4)
+output, no cast → `v1`. ROOT: rust never re-enters RAX into the heritage disjoint after pass 0 once the dead ZEXT
+dies. NEXT-LOCUS: the deadcode-driven re-heritage path (heritage.rs:~3985 driver prev/deadremoved/
+bump_deadcode_delay, heritage.cc:2640-2680) — the dead RAX-ZEXT's removal by ActionDeadCode must create a new free
+EAX varnode that RE-TRIGGERS `globaldisjoint.add` for register 0x0 on a later pass so the range refines to EAX(4).
+Confirm by instrumenting whether rust re-adds register 0x0 to the disjoint after the dead ZEXT is consumed. [[kuna-rust-port]]
