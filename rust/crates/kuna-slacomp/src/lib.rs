@@ -33,6 +33,7 @@
 //! - WS4 owns `slgh_compile.rs`
 //! - WS5 owns `encode.rs`
 
+pub mod consistency;
 pub mod encode;
 pub mod pcodecompile_actions;
 pub mod slgh_compile;

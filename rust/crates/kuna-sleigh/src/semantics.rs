@@ -1323,6 +1323,23 @@ impl ConstructTpl {
         self.result = t;
     }
 
+    /// Mutable result access (C++ mutates `result` through its pointer in
+    /// `forceExportSize`).
+    pub fn get_result_mut(&mut self) -> Option<&mut HandleTpl> {
+        self.result.as_mut()
+    }
+
+    /// C++ `setNumLabels`.
+    pub fn set_num_labels(&mut self, num: u32) {
+        self.numlabels = num;
+    }
+
+    /// C++ `setOpvec`: replace the op-template vector wholesale (used by
+    /// `expandMacros` after building the macro-expanded list).
+    pub fn set_opvec(&mut self, opvec: Vec<OpTpl>) {
+        self.vec = opvec;
+    }
+
     /// C++ `fillinBuild`: make sure there is a build statement for all
     /// subtable params.  Return 0 upon success, 1 if there is a duplicate
     /// BUILD, 2 if there is a build for a non-subtable.

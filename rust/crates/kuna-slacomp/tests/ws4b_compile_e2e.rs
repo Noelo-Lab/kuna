@@ -94,3 +94,63 @@ fn ws4b_compile_data_le_64() {
 fn ws4b_compile_data_be_64() {
     check_byte_identical("specs/Ghidra/Processors/DATA/data/languages/data-be-64.slaspec");
 }
+
+/// WS4c content-identity gate: every spec the p-code-section RTL path + the
+/// ConsistencyChecker drives to a decompressed element stream byte-identical to
+/// C++ `sleigh_opt`.  Covers the full Toy family plus the real ISAs that land
+/// (BPF, SparcV9, SuperH4, tricore, nds32, 8048, CR16B, m8c, 6805/6809, H6309).
+#[test]
+fn ws4c_compile_content_identical() {
+    const SPECS: &[&str] = &[
+        // Toy family (the smallest real constructors/patterns/p-code).
+        "specs/Ghidra/Processors/Toy/data/languages/toy_builder_le.slaspec",
+        "specs/Ghidra/Processors/Toy/data/languages/toy_builder_be.slaspec",
+        "specs/Ghidra/Processors/Toy/data/languages/toy_builder_le_align2.slaspec",
+        "specs/Ghidra/Processors/Toy/data/languages/toy_builder_be_align2.slaspec",
+        "specs/Ghidra/Processors/Toy/data/languages/toy_le.slaspec",
+        "specs/Ghidra/Processors/Toy/data/languages/toy_be.slaspec",
+        "specs/Ghidra/Processors/Toy/data/languages/toy_be_posStack.slaspec",
+        "specs/Ghidra/Processors/Toy/data/languages/toy_wsz_be.slaspec",
+        "specs/Ghidra/Processors/Toy/data/languages/toy_wsz_le.slaspec",
+        "specs/Ghidra/Processors/Toy/data/languages/toy64_le.slaspec",
+        "specs/Ghidra/Processors/Toy/data/languages/toy64_be.slaspec",
+        "specs/Ghidra/Processors/Toy/data/languages/toy64_be_harvard.slaspec",
+        "specs/Ghidra/Processors/Toy/data/languages/toy64_be_harvard_rev.slaspec",
+        // Real ISAs.
+        "specs/Ghidra/Processors/BPF/data/languages/BPF_le.slaspec",
+        "specs/Ghidra/Processors/8048/data/languages/8048.slaspec",
+        "specs/Ghidra/Processors/CR16/data/languages/CR16B.slaspec",
+        "specs/Ghidra/Processors/M8C/data/languages/m8c.slaspec",
+        "specs/Ghidra/Processors/MC6800/data/languages/6805.slaspec",
+        "specs/Ghidra/Processors/MC6800/data/languages/6809.slaspec",
+        "specs/Ghidra/Processors/MC6800/data/languages/H6309.slaspec",
+        "specs/Ghidra/Processors/NDS32/data/languages/nds32be.slaspec",
+        "specs/Ghidra/Processors/NDS32/data/languages/nds32le.slaspec",
+        "specs/Ghidra/Processors/Sparc/data/languages/SparcV9_32.slaspec",
+        "specs/Ghidra/Processors/Sparc/data/languages/SparcV9_64.slaspec",
+        "specs/Ghidra/Processors/SuperH/data/languages/sh-1.slaspec",
+        "specs/Ghidra/Processors/SuperH4/data/languages/SuperH4_be.slaspec",
+        "specs/Ghidra/Processors/SuperH4/data/languages/SuperH4_le.slaspec",
+        "specs/Ghidra/Processors/tricore/data/languages/tricore.slaspec",
+        // Large ISAs (exercise the decision-tree order + context layout + the
+        // full ConsistencyChecker over thousands of constructors).
+        "specs/Ghidra/Processors/x86/data/languages/x86.slaspec",
+        "specs/Ghidra/Processors/x86/data/languages/x86-64.slaspec",
+        "specs/Ghidra/Processors/ARM/data/languages/ARM8_le.slaspec",
+        "specs/Ghidra/Processors/MIPS/data/languages/mips32le.slaspec",
+        "specs/Ghidra/Processors/MIPS/data/languages/mips64be.slaspec",
+        "specs/Ghidra/Processors/AARCH64/data/languages/AARCH64.slaspec",
+        "specs/Ghidra/Processors/RISCV/data/languages/riscv.ilp32d.slaspec",
+        "specs/Ghidra/Processors/Atmel/data/languages/avr32a.slaspec",
+        "specs/Ghidra/Processors/6502/data/languages/6502.slaspec",
+        "specs/Ghidra/Processors/Z80/data/languages/z80.slaspec",
+        "specs/Ghidra/Processors/eBPF/data/languages/eBPF_le.slaspec",
+        "specs/Ghidra/Processors/JVM/data/languages/JVM.slaspec",
+        "specs/Ghidra/Processors/Dalvik/data/languages/Dalvik_Base.slaspec",
+    ];
+    for rel in SPECS {
+        if repo_root().join(rel).exists() {
+            check_byte_identical(rel);
+        }
+    }
+}
