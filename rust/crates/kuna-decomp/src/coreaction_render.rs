@@ -2835,7 +2835,7 @@ impl Action for ActionInternalStorage {
         }
         Some(Box::new(ActionInternalStorage { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:5192 — ActionInternalStorage::apply
         //   proto = data.getFuncProto();
         //   for (vdata in proto.internalBegin()..internalEnd()):
@@ -2846,10 +2846,60 @@ impl Action for ActionInternalStorage {
         //                   op->setStoreUnmapped();
         //   return 0;     // (no count bump: marking only)
         //
-        // SEAM(W8-funcdata): the proto internal-storage list (`internalBegin`),
-        // the (sz,addr) loc-set iteration, `Varnode::isEventualConstant`, and
-        // `PcodeOp::setStoreUnmapped` are not in the merged tree.  Body
-        // transcribed; no change applied (count stays 0).
+        // An <internal_storage> register (e.g. MIPS `gp`, saved to the stack across
+        // a call) that holds an eventual-constant is marked so the STORE of it gets
+        // unmapped (RuleStoreVarnode -> ScopeLocal::markNotMapped).  Unmapping the
+        // slot breaks alias propagation through it so markUnaliased can flag it
+        // `nolocalalias` and RuleIndirectCollapse can drop the per-call INDIRECT
+        // guarding the saved-register stack slot — letting the constant forward.
+
+        // C++ `data.getFuncProto()` always has a model; the rust seam/empty-Funcdata
+        // test fixtures do not, and `FuncProto::internal_list()` -> `model()` would
+        // panic.  No model means no internal-storage list, so bail (matches an empty
+        // `internalBegin()..internalEnd()` range).
+        if !data.get_func_proto().has_model() {
+            return 0;
+        }
+        // Snapshot the internal-storage (size, addr) list before borrowing the
+        // varnode/op banks (the proto borrow must not alias the bank reads).
+        let internals: Vec<(int4, Address)> = data
+            .get_func_proto()
+            .internal_list()
+            .iter()
+            .filter_map(|vd| {
+                let space = vd.space.clone()?;
+                Some((vd.size as int4, Address::new(space, vd.offset)))
+            })
+            .collect();
+
+        // Collect the STORE ops to mark; isEventualConstant reads the banks
+        // immutably, so do the marking in a second pass.
+        let mut to_mark: Vec<OpId> = Vec::new();
+        for (sz, addr) in internals {
+            let vns: Vec<VarnodeId> = data.vbank().iter_loc_size_addr(sz, &addr).collect();
+            for vn in vns {
+                let descend: Vec<OpId> = match data.vbank().get(vn) {
+                    Some(v) => v.descend_iter().collect(),
+                    None => continue,
+                };
+                for op in descend {
+                    let is_store =
+                        data.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_STORE);
+                    if !is_store {
+                        continue;
+                    }
+                    // vn->isEventualConstant(3,0)
+                    if dc_is_eventual_constant(data, vn, 3, 0) {
+                        to_mark.push(op);
+                    }
+                }
+            }
+        }
+        for op in to_mark {
+            if let Some(o) = data.obank_mut().get_mut(op) {
+                o.set_store_unmapped();
+            }
+        }
         0
     }
 }

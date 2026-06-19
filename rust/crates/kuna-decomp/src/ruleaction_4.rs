@@ -497,9 +497,15 @@ impl Rule for RuleStoreVarnode {
         data.op_remove_input(op, 1);
         data.op_remove_input(op, 0);
         set_opcode(data, op, OpCode::CPUI_COPY);
-        // if (op->isStoreUnmapped()) data.getScopeLocal()->markNotMapped(...);
-        //   -- SEAM(W4): ScopeLocal::markNotMapped unported.  Unreachable while
-        //   check_spacebase yields None.
+        // if (op->isStoreUnmapped()) data.getScopeLocal()->markNotMapped(baseoff,offoff,size,false);
+        // ActionInternalStorage flags an eventual-constant STORE of an
+        // <internal_storage> register (e.g. MIPS gp) as unmapped; converting it to a
+        // COPY here unmaps the destination stack slot so it does not propagate as a
+        // local alias across calls.
+        let store_unmapped = data.obank().get(op).map(|o| o.is_store_unmapped()).unwrap_or(false);
+        if store_unmapped {
+            data.scope_local_mark_not_mapped(&baseoff, offoff, size, false);
+        }
         1
     }
 }
