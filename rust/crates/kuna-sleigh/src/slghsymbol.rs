@@ -90,11 +90,11 @@ use kuna_num::pcoderaw::VarnodeData;
 
 use crate::context::{FixedHandle, Token};
 use crate::slghpatexpress::{
-    ConstantValue, ContextField, EndInstructionValue, Next2InstructionValue, OperandValue,
-    OperandValueResolver, PatternExpression, PatternExpressionContext, PatternValue,
-    StartInstructionValue,
+    ConstantValue, ContextField, EndInstructionValue, EqId, EquationArena, Next2InstructionValue,
+    OperandResolve, OperandResolveSink, OperandValue, OperandValueResolver, PatternExpression,
+    PatternExpressionContext, PatternValue, StartInstructionValue, TokenPattern,
 };
-use crate::slghpattern::DisjointPattern;
+use crate::slghpattern::{DisjointPattern, Pattern};
 
 /// `.sla`-format ElementIds/AttributeIds used by the symbol system
 /// (slaformat.cc, `FORMAT_SCOPE`).  Extends the set already defined by the
@@ -784,6 +784,61 @@ impl OperandSymbol {
         Ok(())
     }
 
+    // ---- build side (ws4a) ----
+
+    /// C++ `OperandSymbol::isMarked`.
+    pub fn is_marked(&self) -> bool {
+        (self.flags & Self::MARKED) != 0
+    }
+
+    /// C++ `OperandSymbol::setMark`.
+    pub fn set_mark(&mut self) {
+        self.flags |= Self::MARKED;
+    }
+
+    /// C++ `OperandSymbol::clearMark`.
+    pub fn clear_mark(&mut self) {
+        self.flags &= !Self::MARKED;
+    }
+
+    /// C++ `OperandSymbol::isVariableLength`.
+    pub fn is_variable_length(&self) -> bool {
+        (self.flags & Self::VARIABLE_LEN) != 0
+    }
+
+    /// C++ `OperandSymbol::setVariableLength`.
+    pub fn set_variable_length(&mut self) {
+        self.flags |= Self::VARIABLE_LEN;
+    }
+
+    /// C++ direct member writes `sym->offsetbase = ...; sym->reloffset = ...`.
+    pub fn set_offset(&mut self, offsetbase: i32, reloffset: u32) {
+        self.offsetbase = offsetbase;
+        self.reloffset = reloffset;
+    }
+
+    /// C++ direct member write `sym->offsetbase = ...`.
+    pub fn set_offset_base(&mut self, offsetbase: i32) {
+        self.offsetbase = offsetbase;
+    }
+
+    /// C++ direct member write `sym->minimumlength = ...`.
+    pub fn set_minimum_length(&mut self, l: i32) {
+        self.minimumlength = l;
+    }
+
+    /// C++ direct member write `newops[i]->hand = i`.
+    pub fn set_hand(&mut self, hand: i32) {
+        self.hand = hand;
+    }
+
+    /// C++ `newops[i]->localexp->changeIndex(i)`.
+    pub fn change_local_index(&mut self, newind: i32) {
+        if let Some(le) = self.localexp.as_mut() {
+            le.change_index(newind);
+        }
+    }
+
     /// C++ `OperandSymbol::print`.
     fn print(
         &self,
@@ -851,11 +906,18 @@ pub struct FlowRefSymbol {
 
 /// C++ `SubtableSymbol`: a table of constructors with its decode-time
 /// decision tree.  The compiler-only `TokenPattern *pattern` and
-/// `beingbuilt`/`errors` flags are dropped (LOSS-001).
+/// `beingbuilt`/`errors` flags are present for the build side (ws4a); the
+/// decode path leaves them at their defaults.
 #[derive(Debug, Clone, Default)]
 pub struct SubtableSymbol {
     construct: Vec<Constructor>,
     decisiontree: Option<DecisionNode>,
+    /// (kuna build side) C++ `TokenPattern *pattern`.
+    pattern: Option<TokenPattern>,
+    /// (kuna build side) C++ `bool beingbuilt` (recursion guard).
+    beingbuilt: bool,
+    /// (kuna build side) C++ `bool errors`.
+    errors: bool,
 }
 
 impl SubtableSymbol {
@@ -864,6 +926,27 @@ impl SubtableSymbol {
         // size_t -> uintm id assignment as in C++ `ct->setId(construct.size())`
         ct.set_id(self.construct.len() as u32);
         self.construct.push(ct);
+    }
+
+    /// C++ `SubtableSymbol::isBeingBuilt`.
+    pub fn is_being_built(&self) -> bool {
+        self.beingbuilt
+    }
+
+    /// C++ `SubtableSymbol::isError`.
+    pub fn is_error(&self) -> bool {
+        self.errors
+    }
+
+    /// C++ `SubtableSymbol::getPattern` (the built [`TokenPattern`]).
+    pub fn get_pattern(&self) -> Option<&TokenPattern> {
+        self.pattern.as_ref()
+    }
+
+    /// Inject the subtable's built [`TokenPattern`] (golden tests / out-of-band
+    /// build) so `build_decision_tree` sees a "fully formed" table.
+    pub fn set_built_pattern_for_test(&mut self, tp: TokenPattern) {
+        self.pattern = Some(tp);
     }
 
     /// C++ `SubtableSymbol::getNumConstructors` (`size_t` returned as
@@ -877,6 +960,13 @@ impl SubtableSymbol {
     pub fn get_constructor(&self, id: u32) -> KunaResult<&Constructor> {
         self.construct
             .get(id as usize)
+            .ok_or_else(|| KunaError::sleigh("constructor id out of range (C++ indexes unchecked)"))
+    }
+
+    /// Mutable `getConstructor` (build side).
+    fn construct_mut(&mut self, id: u32) -> KunaResult<&mut Constructor> {
+        self.construct
+            .get_mut(id as usize)
             .ok_or_else(|| KunaError::sleigh("constructor id out of range (C++ indexes unchecked)"))
     }
 
@@ -1139,6 +1229,15 @@ pub struct Constructor {
     lineno: i32,
     /// Source file index.
     src_index: i32,
+    /// (kuna build side) C++ `PatternEquation *pateq`: the constructor's
+    /// pattern equation, as an arena id ([`EqId`]) into the driver-owned
+    /// [`EquationArena`].  `None` for a decode shell.
+    pateq: Option<EqId>,
+    /// (kuna build side) C++ `TokenPattern *pattern`: the built pattern,
+    /// `None` until [`Constructor::build_pattern`] runs.
+    pattern: Option<TokenPattern>,
+    /// (kuna build side) C++ `mutable bool inerror`.
+    inerror: bool,
 }
 
 impl Constructor {
@@ -1150,6 +1249,38 @@ impl Constructor {
             flowthruindex: -1,
             ..Default::default()
         }
+    }
+
+    /// C++ `Constructor::addEquation(PatternEquation *pe)`: set the pattern
+    /// equation (as its arena id).
+    pub fn add_equation(&mut self, pe: EqId) {
+        self.pateq = Some(pe);
+    }
+
+    /// C++ `Constructor::getPatternEquation` (the arena id).
+    pub fn get_pattern_equation(&self) -> Option<EqId> {
+        self.pateq
+    }
+
+    /// C++ `Constructor::getPattern` (the built [`TokenPattern`]).
+    pub fn get_pattern(&self) -> Option<&TokenPattern> {
+        self.pattern.as_ref()
+    }
+
+    /// Inject a pre-built [`TokenPattern`] (golden tests / WS4b that build the
+    /// pattern out of band).
+    pub fn set_built_pattern_for_test(&mut self, tp: TokenPattern) {
+        self.pattern = Some(tp);
+    }
+
+    /// C++ `Constructor::setError`.
+    pub fn set_error(&mut self, val: bool) {
+        self.inerror = val;
+    }
+
+    /// C++ `Constructor::isError`.
+    pub fn is_error(&self) -> bool {
+        self.inerror
     }
 
     /// C++ `Constructor::setMinimumLength`.
@@ -1647,6 +1778,288 @@ impl DecisionNode {
         &self.children
     }
 
+    /// The decision field (test/inspection surface): `(startbit, bitsize,
+    /// contextdecision)`.
+    pub fn get_field(&self) -> (i32, i32, bool) {
+        (self.startbit, self.bitsize, self.contextdecision)
+    }
+
+    // ---- build side (ws4a) ----
+
+    /// C++ `DecisionNode(DecisionNode *p)` for the root (`p == 0`).
+    fn new_root() -> DecisionNode {
+        DecisionNode::default()
+    }
+
+    /// C++ `DecisionNode(DecisionNode *p)` child node.
+    fn new_child() -> DecisionNode {
+        DecisionNode::default()
+    }
+
+    /// C++ `DecisionNode::addConstructorPair`.
+    fn add_constructor_pair(&mut self, pat: &DisjointPattern, ct: u32) {
+        // C++ clones via simplifyClone so the node owns its pattern.
+        let clone = expect_disjoint_clone(&pat.simplify_clone());
+        self.list.push((clone, ct));
+        self.num += 1;
+    }
+
+    /// C++ `DecisionNode::getMaximumLength(bool context)`.
+    fn get_maximum_length(&self, context: bool) -> i32 {
+        let mut max = 0;
+        for (pat, _) in &self.list {
+            let val = pat.get_length(context);
+            if val > max {
+                max = val;
+            }
+        }
+        max
+    }
+
+    /// C++ `DecisionNode::getNumFixed(int4 low,int4 size,bool context)`.
+    fn get_num_fixed(&self, low: i32, size: i32, context: bool) -> i32 {
+        let mut count = 0;
+        // m = (size==32) ? 0 : (1<<size); m = m-1
+        let mut m: u32 = if size == 32 { 0 } else { 1u32 << size };
+        m = m.wrapping_sub(1);
+        for (pat, _) in &self.list {
+            let mask = pat.get_mask(low, size, context);
+            if (mask & m) == m {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// C++ `DecisionNode::getScore(int4 low,int4 size,bool context)`.
+    fn get_score(&self, low: i32, size: i32, context: bool) -> f64 {
+        let num_bins = 1usize << size; // size is between 1 and 8
+        let mut m: u32 = 1u32 << size;
+        m = m.wrapping_sub(1);
+
+        let mut total = 0i32;
+        let mut count = vec![0i32; num_bins];
+
+        for (pat, _) in &self.list {
+            let mask = pat.get_mask(low, size, context);
+            if (mask & m) != m {
+                continue; // Skip if field not fully specified
+            }
+            let val = pat.get_value(low, size, context);
+            total += 1;
+            count[val as usize] += 1;
+        }
+        if total <= 0 {
+            return -1.0;
+        }
+        let mut sc = 0.0f64;
+        let listlen = self.list.len() as i32;
+        for &c in count.iter().take(num_bins) {
+            if c <= 0 {
+                continue;
+            }
+            if c >= listlen {
+                return -1.0;
+            }
+            let p = (c as f64) / (total as f64);
+            sc -= p * p.ln();
+        }
+        sc / 2.0f64.ln()
+    }
+
+    /// C++ `DecisionNode::chooseOptimalField`.
+    fn choose_optimal_field(&mut self) {
+        let mut score = 0.0f64;
+        let mut maxfixed = 1i32;
+
+        // single-bit fields, context then instruction
+        let mut context = true;
+        loop {
+            let maxlength = 8 * self.get_maximum_length(context);
+            for sbit in 0..maxlength {
+                let numfixed = self.get_num_fixed(sbit, 1, context);
+                if numfixed < maxfixed {
+                    continue;
+                }
+                let sc = self.get_score(sbit, 1, context);
+                if numfixed > maxfixed && sc > 0.0 {
+                    score = sc;
+                    maxfixed = numfixed;
+                    self.startbit = sbit;
+                    self.bitsize = 1;
+                    self.contextdecision = context;
+                    continue;
+                }
+                if sc > score {
+                    score = sc;
+                    self.startbit = sbit;
+                    self.bitsize = 1;
+                    self.contextdecision = context;
+                }
+            }
+            context = !context;
+            if context {
+                break;
+            }
+        }
+
+        // multi-bit fields (2..=8), context then instruction
+        let mut context = true;
+        loop {
+            let maxlength = 8 * self.get_maximum_length(context);
+            for size in 2..=8 {
+                let mut sbit = 0;
+                while sbit < maxlength - size + 1 {
+                    if self.get_num_fixed(sbit, size, context) >= maxfixed {
+                        let sc = self.get_score(sbit, size, context);
+                        if sc > score {
+                            score = sc;
+                            self.startbit = sbit;
+                            self.bitsize = size;
+                            self.contextdecision = context;
+                        }
+                    }
+                    sbit += 1;
+                }
+            }
+            context = !context;
+            if context {
+                break;
+            }
+        }
+        if score <= 0.0 {
+            self.bitsize = 0; // treat the node as terminal
+        }
+    }
+
+    /// C++ `DecisionNode::consistentValues(vector<uint4> &bins,
+    /// DisjointPattern *pat)`.
+    fn consistent_values(&self, bins: &mut Vec<u32>, pat: &DisjointPattern) {
+        let mut m: u32 = if self.bitsize == 32 { 0 } else { 1u32 << self.bitsize };
+        m = m.wrapping_sub(1);
+        let common_mask = m & pat.get_mask(self.startbit, self.bitsize, self.contextdecision);
+        let common_value = common_mask & pat.get_value(self.startbit, self.bitsize, self.contextdecision);
+        let dont_care_mask = m ^ common_mask;
+
+        let mut i: u32 = 0;
+        loop {
+            if (i & dont_care_mask) == i {
+                bins.push(common_value | i);
+            }
+            if i == dont_care_mask {
+                break;
+            }
+            i += 1;
+        }
+    }
+
+    /// C++ `DecisionNode::split(DecisionProperties &props)`.
+    fn split(&mut self, props: &mut DecisionProperties) {
+        if self.list.len() <= 1 {
+            self.bitsize = 0; // Only one pattern, terminal node by default
+            return;
+        }
+        self.choose_optimal_field();
+        if self.bitsize == 0 {
+            self.order_patterns(props);
+            return;
+        }
+        // C++ guard: a child cannot keep as many patterns as the parent (the
+        // recursion would not terminate).  The parent check uses parent->num;
+        // here `self.num` already equals the parent's count at split time.
+        let num_children = 1usize << self.bitsize;
+        let mut children: Vec<DecisionNode> = Vec::with_capacity(num_children);
+        for _ in 0..num_children {
+            children.push(DecisionNode::new_child());
+        }
+        // Move each pattern into every consistent bin.
+        let list = std::mem::take(&mut self.list);
+        for (pat, ct) in &list {
+            let mut vals: Vec<u32> = Vec::new();
+            self.consistent_values(&mut vals, pat);
+            for &v in &vals {
+                children[v as usize].add_constructor_pair(pat, *ct);
+            }
+        }
+        self.children = children;
+        for child in self.children.iter_mut() {
+            child.split(props);
+        }
+    }
+
+    /// C++ `DecisionNode::orderPatterns(DecisionProperties &props)`.
+    fn order_patterns(&mut self, props: &mut DecisionProperties) {
+        let mut conflictlist: Vec<(usize, usize)> = Vec::new();
+
+        // Check for identical patterns.
+        for i in 0..self.list.len() {
+            for j in 0..i {
+                if self.list[i].0.identical(&self.list[j].0) {
+                    props.identical_pattern(self.list[i].1, self.list[j].1);
+                }
+            }
+        }
+
+        // Insertion-sort by specialization (most specialized first), tracking
+        // conflicts.  We mirror the C++ index dance on a working copy.
+        let original = self.list.clone();
+        let mut sorted: Vec<(DisjointPattern, u32)> = Vec::with_capacity(original.len());
+        for i in 0..original.len() {
+            let ipat = &original[i].0;
+            let iconst = original[i].1;
+            let mut j = 0usize;
+            while j < i {
+                let jpat = &original[j].0;
+                let jconst = original[j].1;
+                if ipat.specializes(jpat) {
+                    break;
+                }
+                if !jpat.specializes(ipat) {
+                    // potential conflict
+                    if iconst != jconst {
+                        conflictlist.push((i, j));
+                    }
+                }
+                j += 1;
+            }
+            // insert original[i] at position j in sorted
+            sorted.insert(j, original[i].clone());
+        }
+        self.list = sorted;
+
+        // Check if intersection patterns resolve each conflict.
+        let mut k = 0;
+        while k < conflictlist.len() {
+            let (i, j) = conflictlist[k];
+            let pat1 = &original[i].0;
+            let const1 = original[i].1;
+            let pat2 = &original[j].0;
+            let const2 = original[j].1;
+            let mut resolved = false;
+            for (tpat, tconst) in &self.list {
+                if std::ptr::eq(tpat, pat1) {}
+                // C++ compares pointer identity (tpat==pat1 && tconst==const1)
+                // to detect "ran out of specializations".  After the sort the
+                // patterns are clones, so identity is lost; mirror the C++
+                // semantics by value+constructor identity instead.
+                if tpat.identical(pat1) && *tconst == const1 {
+                    break;
+                }
+                if tpat.identical(pat2) && *tconst == const2 {
+                    break;
+                }
+                if tpat.resolves_intersect(pat1, pat2) {
+                    resolved = true;
+                    break;
+                }
+            }
+            if !resolved {
+                props.conflicting_pattern(const1, const2);
+            }
+            k += 1;
+        }
+    }
+
     /// C++ `DecisionNode::encode`.
     pub fn encode(&self, encoder: &mut dyn Encoder) {
         encoder.open_element(&sla::ELEM_DECISION);
@@ -1702,6 +2115,96 @@ impl DecisionNode {
         }
         decoder.close_element(el)?;
         Ok(node)
+    }
+}
+
+/// C++ `DecisionProperties`: collects the identical/conflicting constructor
+/// pairs found by `DecisionNode::orderPatterns`.  C++ keys these by
+/// `Constructor*` and flips `Constructor::setError` directly; here they are
+/// recorded as `(constructor index in subtable)` pairs and the driver (WS4b)
+/// reports them / flips the error flag.
+#[derive(Debug, Clone, Default)]
+pub struct DecisionProperties {
+    identerrors: Vec<(u32, u32)>,
+    conflicterrors: Vec<(u32, u32)>,
+}
+
+impl DecisionProperties {
+    /// A fresh property collector.
+    pub fn new() -> DecisionProperties {
+        DecisionProperties::default()
+    }
+
+    /// C++ `DecisionProperties::identicalPattern` (records the pair once).
+    fn identical_pattern(&mut self, a: u32, b: u32) {
+        if !self.identerrors.contains(&(a, b)) && !self.identerrors.contains(&(b, a)) {
+            self.identerrors.push((a, b));
+        }
+    }
+
+    /// C++ `DecisionProperties::conflictingPattern`.
+    fn conflicting_pattern(&mut self, a: u32, b: u32) {
+        if !self.conflicterrors.contains(&(a, b)) && !self.conflicterrors.contains(&(b, a)) {
+            self.conflicterrors.push((a, b));
+        }
+    }
+
+    /// C++ `DecisionProperties::getIdentErrors`.
+    pub fn get_ident_errors(&self) -> &[(u32, u32)] {
+        &self.identerrors
+    }
+
+    /// C++ `DecisionProperties::getConflictErrors`.
+    pub fn get_conflict_errors(&self) -> &[(u32, u32)] {
+        &self.conflicterrors
+    }
+}
+
+/// The C++ `(DisjointPattern *)pat->simplifyClone()` cast: a result that is
+/// not disjoint is UB upstream, an error/clone-panic here (ADR 0004).
+fn expect_disjoint(p: &Pattern) -> KunaResult<DisjointPattern> {
+    match p {
+        Pattern::Disjoint(d) => Ok(d.clone()),
+        Pattern::Or(_) => Err(KunaError::sleigh(
+            "decision tree: expected a DisjointPattern (C++ UB cast)",
+        )),
+    }
+}
+
+/// `(DisjointPattern *)pat->simplifyClone()` where the C++ result is known to
+/// be disjoint (the input was a `DisjointPattern`); panics otherwise.
+fn expect_disjoint_clone(p: &Pattern) -> DisjointPattern {
+    match p {
+        Pattern::Disjoint(d) => d.clone(),
+        Pattern::Or(_) => {
+            panic!("addConstructorPair: simplifyClone of a DisjointPattern is not disjoint (C++ UB)")
+        }
+    }
+}
+
+/// Bridges `OperandEquation::resolveOperandLeft`'s operand mutations to the
+/// [`SymbolTable`] (the C++ `state.operands[index]` member writes).
+struct ConstructorOperandSink<'a> {
+    table: &'a mut SymbolTable,
+    operand_ids: &'a [u32],
+}
+
+impl OperandResolveSink for ConstructorOperandSink<'_> {
+    fn is_offset_irrelevant(&self, index: i32) -> bool {
+        let opid = self.operand_ids[index as usize];
+        // C++ dereferences unchecked; treat a bad symbol as not-irrelevant
+        // (the build would already have errored earlier).
+        self.table
+            .operand_symbol(opid)
+            .map(|op| op.is_offset_irrelevant())
+            .unwrap_or(false)
+    }
+
+    fn set_offset(&mut self, index: i32, offsetbase: i32, reloffset: u32) {
+        let opid = self.operand_ids[index as usize];
+        if let Ok(op) = self.table.operand_symbol_mut(opid) {
+            op.set_offset(offsetbase, reloffset);
+        }
     }
 }
 
@@ -1979,6 +2482,15 @@ impl SleighSymbol {
     /// The subclass payload.
     pub fn kind(&self) -> &SymbolKind {
         &self.kind
+    }
+
+    /// `&SubtableSymbol` when this symbol is a subtable (C++
+    /// `dynamic_cast<SubtableSymbol*>`), else `None`.
+    pub fn as_subtable(&self) -> Option<&SubtableSymbol> {
+        match &self.kind {
+            SymbolKind::Subtable(v) => Some(v),
+            _ => None,
+        }
     }
 
     /// Mutable access to the subclass payload (compiler-style setup such as
@@ -2842,6 +3354,439 @@ impl SymbolTable {
         })?;
         let opid = ct.get_operand(ov.index())?;
         Ok(self.symbol(opid)?.get_name())
+    }
+
+    // -----------------------------------------------------------------
+    // Build side (ws4a): constructor / subtable / decision-tree build
+    // -----------------------------------------------------------------
+
+    /// Mutable `SubtableSymbol` by id (build side; C++ casts unchecked).
+    fn subtable_symbol_mut(&mut self, id: u32) -> KunaResult<&mut SubtableSymbol> {
+        let sym = self
+            .symbollist
+            .get_mut(id as usize)
+            .and_then(|s| s.as_mut())
+            .ok_or_else(|| KunaError::sleigh(format!("symbol id {id} is undefined")))?;
+        match &mut sym.kind {
+            SymbolKind::Subtable(v) => Ok(v),
+            _ => Err(KunaError::sleigh(format!(
+                "symbol id {id} is not a subtable symbol (C++ casts unchecked)"
+            ))),
+        }
+    }
+
+    /// Mutable `OperandSymbol` by id (build side; C++ casts unchecked).
+    fn operand_symbol_mut(&mut self, id: u32) -> KunaResult<&mut OperandSymbol> {
+        let sym = self
+            .symbollist
+            .get_mut(id as usize)
+            .and_then(|s| s.as_mut())
+            .ok_or_else(|| KunaError::sleigh(format!("symbol id {id} is undefined")))?;
+        match &mut sym.kind {
+            SymbolKind::Operand(v) => Ok(v),
+            _ => Err(KunaError::sleigh(format!(
+                "symbol id {id} is not an operand symbol (C++ casts unchecked)"
+            ))),
+        }
+    }
+
+    /// C++ `SubtableSymbol::buildPattern(ostream &s)` driven from the symbol
+    /// table.  Builds each constructor's pattern, folds the subtable pattern
+    /// as the common subpattern, sets `beingbuilt`/`errors`.  Errors are
+    /// accumulated into `errs` (the C++ `ostream &s`) rather than thrown so a
+    /// faulty constructor does not abort the whole table — exactly as C++.
+    pub fn build_subtable_pattern(
+        &mut self,
+        table_id: u32,
+        arena: &EquationArena,
+        errs: &mut Vec<String>,
+    ) -> KunaResult<()> {
+        // Already built?
+        if self.subtable_symbol(table_id)?.pattern.is_some() {
+            return Ok(());
+        }
+        {
+            let sub = self.subtable_symbol_mut(table_id)?;
+            sub.errors = false;
+            sub.beingbuilt = true;
+            // C++ sets `pattern = new TokenPattern()` then overwrites it.
+            sub.pattern = Some(TokenPattern::new_true());
+        }
+        let numct = self.subtable_symbol(table_id)?.construct.len();
+        if numct == 0 {
+            errs.push(format!(
+                "Error: There are no constructors in table: {}",
+                name_text(self.symbol(table_id)?.get_name())
+            ));
+            self.subtable_symbol_mut(table_id)?.errors = true;
+            return Ok(());
+        }
+        // First constructor seeds the pattern.
+        match self.build_constructor_pattern(table_id, 0, arena, errs) {
+            Ok(()) => {}
+            Err(e) => {
+                let info = self.constructor_info(table_id, 0)?;
+                errs.push(format!("Error: {}: for {}", e.explain(), info));
+                self.subtable_symbol_mut(table_id)?.errors = true;
+            }
+        }
+        let mut acc = self
+            .subtable_symbol(table_id)?
+            .construct[0]
+            .pattern
+            .clone()
+            .unwrap_or_else(TokenPattern::new_true);
+        for i in 1..numct {
+            match self.build_constructor_pattern(table_id, i as u32, arena, errs) {
+                Ok(()) => {}
+                Err(e) => {
+                    let info = self.constructor_info(table_id, i as u32)?;
+                    errs.push(format!("Error: {}: for {}", e.explain(), info));
+                    self.subtable_symbol_mut(table_id)?.errors = true;
+                }
+            }
+            let ctpat = self
+                .subtable_symbol(table_id)?
+                .construct[i]
+                .pattern
+                .clone()
+                .unwrap_or_else(TokenPattern::new_true);
+            // C++: *pattern = construct[i]->getPattern()->commonSubPattern(*pattern)
+            acc = ctpat.common_sub_pattern(&acc)?;
+        }
+        let sub = self.subtable_symbol_mut(table_id)?;
+        sub.pattern = Some(acc);
+        sub.beingbuilt = false;
+        Ok(())
+    }
+
+    /// C++ `Constructor::printInfo` text without the double-borrow (reads
+    /// the parent name + lineno).
+    fn constructor_info(&self, table_id: u32, ct_id: u32) -> KunaResult<String> {
+        let ct = self.subtable_symbol(table_id)?.get_constructor(ct_id)?;
+        let lineno = ct.get_lineno();
+        Ok(format!(
+            "table \"{}\" constructor starting at line {}",
+            name_text(self.symbol(table_id)?.get_name()),
+            lineno
+        ))
+    }
+
+    /// C++ `Constructor::buildPattern(ostream &s)` driven from the symbol
+    /// table.  Generates a [`TokenPattern`] per operand, runs the
+    /// constructor's pattern equation, resolves operand offsets, validates
+    /// context, and orders the operands.
+    fn build_constructor_pattern(
+        &mut self,
+        table_id: u32,
+        ct_id: u32,
+        arena: &EquationArena,
+        errs: &mut Vec<String>,
+    ) -> KunaResult<()> {
+        // Already built?
+        if self
+            .subtable_symbol(table_id)?
+            .get_constructor(ct_id)?
+            .pattern
+            .is_some()
+        {
+            return Ok(());
+        }
+        let operand_ids: Vec<u32> = self
+            .subtable_symbol(table_id)?
+            .get_constructor(ct_id)?
+            .operands
+            .clone();
+        let mut oppattern: Vec<TokenPattern> = Vec::with_capacity(operand_ids.len());
+        let mut recursion = false;
+
+        for &opid in &operand_ids {
+            // Read the operand's defining symbol / expression.
+            let (triple, defexp) = {
+                let sym = self.operand_symbol(opid)?;
+                (sym.get_defining_symbol(), sym.get_defining_expression().cloned())
+            };
+            let sympat: TokenPattern = if let Some(tripid) = triple {
+                let is_subtable =
+                    self.symbol(tripid)?.get_type() == SymbolType::Subtable;
+                if is_subtable {
+                    if self.subtable_symbol(tripid)?.is_being_built() {
+                        // Detected recursion
+                        if recursion {
+                            return Err(KunaError::sleigh("Illegal recursion"));
+                        }
+                        recursion = true;
+                        TokenPattern::new_true()
+                    } else {
+                        self.build_subtable_pattern(tripid, arena, errs)?;
+                        self.subtable_symbol(tripid)?
+                            .get_pattern()
+                            .cloned()
+                            .unwrap_or_else(TokenPattern::new_true)
+                    }
+                } else {
+                    // triple->getPatternExpression()->genMinPattern(oppattern)
+                    let patexp = self.symbol(tripid)?.get_pattern_expression()?;
+                    match patexp {
+                        Some(pe) => pe.gen_min_pattern(&oppattern),
+                        None => TokenPattern::new_true(),
+                    }
+                }
+            } else if let Some(pe) = defexp {
+                pe.gen_min_pattern(&oppattern)
+            } else {
+                let nm = name_text(self.symbol(opid)?.get_name()).to_string();
+                return Err(KunaError::sleigh(format!("{nm}: operand is undefined")));
+            };
+
+            let min_len = sympat.get_minimum_length();
+            let var_len = sympat.get_left_ellipsis() || sympat.get_right_ellipsis();
+            {
+                let op = self.operand_symbol_mut(opid)?;
+                op.set_minimum_length(min_len);
+                if var_len {
+                    op.set_variable_length();
+                }
+            }
+            oppattern.push(sympat);
+        }
+
+        let pateq = self
+            .subtable_symbol(table_id)?
+            .get_constructor(ct_id)?
+            .get_pattern_equation()
+            .ok_or_else(|| KunaError::sleigh("Missing equation"))?;
+
+        // Build the entire pattern
+        let mut pattern = arena.gen_pattern(pateq, &oppattern)?;
+        if pattern.always_false() {
+            return Err(KunaError::sleigh("Impossible pattern"));
+        }
+        if recursion {
+            pattern.set_right_ellipsis(true);
+        }
+        let minimumlength = pattern.get_minimum_length();
+        {
+            let ct = self.subtable_symbol_mut(table_id)?.construct_mut(ct_id)?;
+            ct.pattern = Some(pattern);
+            ct.minimumlength = minimumlength;
+        }
+
+        // Resolve offsets of the operands.
+        let mut resolve = OperandResolve::new();
+        {
+            let mut sink = ConstructorOperandSink {
+                table: self,
+                operand_ids: &operand_ids,
+            };
+            if !arena.resolve_operand_left(pateq, &mut resolve, &oppattern, &mut sink)? {
+                return Err(KunaError::sleigh("Unable to resolve operand offsets"));
+            }
+        }
+
+        // Unravel relative offsets to absolute (if possible).
+        for &opid in &operand_ids {
+            let (irrel, mut base, mut offset) = {
+                let op = self.operand_symbol(opid)?;
+                (
+                    op.is_offset_irrelevant(),
+                    op.get_offset_base(),
+                    op.get_relative_offset() as i32,
+                )
+            };
+            if irrel {
+                self.operand_symbol_mut(opid)?.set_offset(-1, 0);
+                continue;
+            }
+            while base >= 0 {
+                let baseid = operand_ids[base as usize];
+                let bop = self.operand_symbol(baseid)?;
+                if bop.is_variable_length() {
+                    break; // Cannot resolve to absolute
+                }
+                let bbase = bop.get_offset_base();
+                offset += bop.get_minimum_length();
+                offset += bop.get_relative_offset() as i32;
+                base = bbase;
+                if base < 0 {
+                    self.operand_symbol_mut(opid)?.set_offset(base, offset as u32);
+                }
+            }
+        }
+
+        // Make sure context expressions are valid.
+        let context = self
+            .subtable_symbol(table_id)?
+            .get_constructor(ct_id)?
+            .context
+            .clone();
+        for change in &context {
+            change.validate(self)?;
+        }
+
+        // Order the operands based on offset dependency.
+        self.order_operands(table_id, ct_id, arena)?;
+        Ok(())
+    }
+
+    /// C++ `Constructor::orderOperands` driven from the symbol table.
+    fn order_operands(
+        &mut self,
+        table_id: u32,
+        ct_id: u32,
+        arena: &EquationArena,
+    ) -> KunaResult<()> {
+        let operand_ids: Vec<u32> = self
+            .subtable_symbol(table_id)?
+            .get_constructor(ct_id)?
+            .operands
+            .clone();
+        let n = operand_ids.len();
+        let pateq = self
+            .subtable_symbol(table_id)?
+            .get_constructor(ct_id)?
+            .get_pattern_equation()
+            .ok_or_else(|| KunaError::sleigh("Missing equation"))?;
+
+        // pateq->operandOrder(this, patternorder) — returns operand indices.
+        let mut patternorder: Vec<i32> = Vec::new();
+        {
+            let mut seen = vec![false; n];
+            arena.operand_order(pateq, &mut patternorder, &mut seen);
+            // Marking mirrors C++ setMark during operandOrder; reflect it.
+            for (i, &s) in seen.iter().enumerate() {
+                if s {
+                    self.operand_symbol_mut(operand_ids[i])?.set_mark();
+                }
+            }
+        }
+        // Make sure patternorder contains all operands (mark the rest).
+        for i in 0..n {
+            if !self.operand_symbol(operand_ids[i])?.is_marked() {
+                patternorder.push(i as i32);
+                self.operand_symbol_mut(operand_ids[i])?.set_mark();
+            }
+        }
+
+        // Build the new operand order honoring offset dependencies.
+        let mut neworder: Vec<i32> = Vec::new();
+        loop {
+            let lastsize = neworder.len();
+            for &idx in &patternorder {
+                let op = self.operand_symbol(operand_ids[idx as usize])?;
+                if !op.is_marked() {
+                    continue; // already in neworder
+                }
+                if op.is_offset_irrelevant() {
+                    continue; // expression operands come last
+                }
+                let base = op.get_offset_base();
+                let base_marked = base != -1
+                    && self
+                        .operand_symbol(operand_ids[base as usize])?
+                        .is_marked();
+                if base == -1 || !base_marked {
+                    neworder.push(idx);
+                    self.operand_symbol_mut(operand_ids[idx as usize])?.clear_mark();
+                }
+            }
+            if neworder.len() == lastsize {
+                break;
+            }
+        }
+        // Tack on expression operands.
+        for &idx in &patternorder {
+            if self
+                .operand_symbol(operand_ids[idx as usize])?
+                .is_offset_irrelevant()
+            {
+                neworder.push(idx);
+                self.operand_symbol_mut(operand_ids[idx as usize])?.clear_mark();
+            }
+        }
+
+        if neworder.len() != n {
+            return Err(KunaError::sleigh(
+                "Circular offset dependency between operands",
+            ));
+        }
+
+        // Fix up operand indices: newops[i]->hand = i; localexp->changeIndex(i)
+        for (i, &idx) in neworder.iter().enumerate() {
+            let op = self.operand_symbol_mut(operand_ids[idx as usize])?;
+            op.set_hand(i as i32);
+            op.change_local_index(i as i32);
+        }
+        // handmap[i] = operands[i]->hand  (original index -> new index)
+        let mut handmap: Vec<i32> = Vec::with_capacity(n);
+        for &opid in &operand_ids {
+            handmap.push(self.operand_symbol(opid)?.get_index());
+        }
+        // Fix up offsetbase through the handmap.
+        for &idx in &neworder {
+            let opid = operand_ids[idx as usize];
+            let base = self.operand_symbol(opid)?.get_offset_base();
+            if base == -1 {
+                continue;
+            }
+            let newbase = handmap[base as usize];
+            self.operand_symbol_mut(opid)?.set_offset_base(newbase);
+        }
+
+        // Reorder the constructor's operand id vector + fix printpiece refs.
+        let new_operand_ids: Vec<u32> = neworder.iter().map(|&idx| operand_ids[idx as usize]).collect();
+        let ct = self.subtable_symbol_mut(table_id)?.construct_mut(ct_id)?;
+        // Fix up printpiece operand refs through the handmap.
+        for piece in ct.printpiece.iter_mut() {
+            if piece.first() == Some(&b'\n') {
+                let index = i32::from(piece[1]) - i32::from(b'A');
+                let newindex = handmap[index as usize];
+                piece[1] = (i32::from(b'A') + newindex) as u8;
+            }
+        }
+        ct.operands = new_operand_ids;
+        // NOTE: ConstructTpl handle-index fix-up (templ->changeHandleIndex)
+        // is performed by WS4b's driver, which owns the ConstructTpl arena;
+        // it has the handmap available there (freeze-interface for WS4b).
+        Ok(())
+    }
+
+    /// C++ `SubtableSymbol::buildDecisionTree(DecisionProperties &props)`
+    /// driven from the symbol table.
+    pub fn build_decision_tree(
+        &mut self,
+        table_id: u32,
+        props: &mut DecisionProperties,
+    ) -> KunaResult<()> {
+        // Pattern not fully formed?
+        if self.subtable_symbol(table_id)?.pattern.is_none() {
+            return Ok(());
+        }
+        let numct = self.subtable_symbol(table_id)?.construct.len();
+        let mut tree = DecisionNode::new_root();
+        for i in 0..numct {
+            // C++ uses construct[i]->getPattern()->getPattern() (the inner
+            // Pattern of the constructor's TokenPattern).
+            let pat: Pattern = match self.subtable_symbol(table_id)?.construct[i].get_pattern() {
+                Some(tp) => tp.get_pattern().clone(),
+                None => continue,
+            };
+            let ndisjoint = pat.num_disjoint();
+            if ndisjoint == 0 {
+                let dp = expect_disjoint(&pat)?;
+                tree.add_constructor_pair(&dp, i as u32);
+            } else {
+                for j in 0..ndisjoint {
+                    let dp = pat.get_disjoint(j).ok_or_else(|| {
+                        KunaError::sleigh("decision tree: missing disjoint pattern")
+                    })?;
+                    tree.add_constructor_pair(dp, i as u32);
+                }
+            }
+        }
+        tree.split(props);
+        self.subtable_symbol_mut(table_id)?.decisiontree = Some(tree);
+        Ok(())
     }
 
     /// C++ `SymbolTable::encode`.
