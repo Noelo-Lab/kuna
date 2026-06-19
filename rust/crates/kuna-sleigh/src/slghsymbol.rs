@@ -2116,28 +2116,38 @@ impl DecisionNode {
         }
 
         // Insertion-sort by specialization (most specialized first), tracking
-        // conflicts.  We mirror the C++ index dance on a working copy.
+        // conflicts.  Faithful to C++ `orderPatterns`: the break-point `j` is
+        // computed by comparing the ORIGINAL item `i` (`newlist[i]`) against the
+        // PARTIALLY-SORTED current list (`list[j]`), not against the original
+        // item `j` — the in-place shift-and-insert keeps `list` sorted as it
+        // goes.  (Comparing against the original `j` reorders ties differently.)
         let original = self.list.clone();
         let mut sorted: Vec<(DisjointPattern, u32)> = Vec::with_capacity(original.len());
         for i in 0..original.len() {
             let ipat = &original[i].0;
             let iconst = original[i].1;
             let mut j = 0usize;
-            while j < i {
-                let jpat = &original[j].0;
-                let jconst = original[j].1;
+            while j < sorted.len() {
+                let jpat = &sorted[j].0;
+                let jconst = sorted[j].1;
                 if ipat.specializes(jpat) {
                     break;
                 }
                 if !jpat.specializes(ipat) {
-                    // potential conflict
+                    // potential conflict (record the original-list indices so
+                    // the resolve loop below matches the C++ pat/const pairs)
                     if iconst != jconst {
-                        conflictlist.push((i, j));
+                        // map sorted[j] back to its original index by value+const
+                        let oj = original
+                            .iter()
+                            .position(|(p, c)| p.identical(jpat) && *c == jconst)
+                            .unwrap_or(j);
+                        conflictlist.push((i, oj));
                     }
                 }
                 j += 1;
             }
-            // insert original[i] at position j in sorted
+            // insert original[i] at position j in the sorted list
             sorted.insert(j, original[i].clone());
         }
         self.list = sorted;
