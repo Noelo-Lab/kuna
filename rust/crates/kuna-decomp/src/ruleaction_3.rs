@@ -316,13 +316,115 @@ impl Rule for RuleBooleanDedup {
         {
             return 0;
         }
-        // SEAM(expression): isMatch == BooleanMatch::evaluate (expression.cc),
-        // which is a separate W5 file (still a stub).  Every guard above is
-        // ported; the value-correlation test that selects the (leftA/rightA/
-        // leftO/rightO) partition cannot run without it, so the rule
-        // conservatively does not apply.  Recorded as a loss.
-        let _ = (op, ins, opc0, opc1);
-        0
+        // `isMatch(left,right,isFlip)` == BooleanMatch::evaluate(left,right,1):
+        //   same        => isFlip=false, true
+        //   complementary=> isFlip=true,  true
+        //   otherwise   => false
+        // (C++ RuleBooleanDedup::isMatch, ruleaction.cc:2836-2849, now wired to
+        // the fully-ported `expression::BooleanMatch::evaluate`).
+        let is_match = |data: &Funcdata, left: VarnodeId, right: VarnodeId| -> Option<bool> {
+            let val = crate::expression::BooleanMatch::evaluate(left, right, 1, data.vbank(), data.obank());
+            if val == crate::expression::boolean_match::same {
+                Some(false)
+            } else if val == crate::expression::boolean_match::complementary {
+                Some(true)
+            } else {
+                None
+            }
+        };
+
+        let mut isflipped = false;
+        let left_a;
+        let right_a;
+        let left_o;
+        let right_o;
+        if let Some(f) = is_match(data, ins[0], ins[2]) {
+            isflipped = f;
+            left_a = ins[0];
+            right_a = ins[2];
+            left_o = ins[1];
+            right_o = ins[3];
+        } else if let Some(f) = is_match(data, ins[0], ins[3]) {
+            isflipped = f;
+            left_a = ins[0];
+            right_a = ins[3];
+            left_o = ins[1];
+            right_o = ins[2];
+        } else if let Some(f) = is_match(data, ins[1], ins[2]) {
+            isflipped = f;
+            left_a = ins[1];
+            right_a = ins[2];
+            left_o = ins[0];
+            right_o = ins[3];
+        } else if let Some(f) = is_match(data, ins[1], ins[3]) {
+            isflipped = f;
+            left_a = ins[1];
+            right_a = ins[3];
+            left_o = ins[0];
+            right_o = ins[2];
+        } else {
+            return 0;
+        }
+        let _ = right_a;
+        let central_opc = op_code(data, op);
+        let bc_opc: OpCode;
+        let final_opc: OpCode;
+        let final_a: VarnodeId;
+        if isflipped {
+            if central_opc == OpCode::CPUI_BOOL_AND
+                && opc0 == OpCode::CPUI_BOOL_AND
+                && opc1 == OpCode::CPUI_BOOL_AND
+            {
+                // (A && B) && (!A && C)  => whole expression is false
+                set_opcode(data, op, OpCode::CPUI_COPY);
+                data.op_remove_input(op, 1);
+                let zero = data.new_constant(1, 0);
+                data.op_set_input(op, zero, 0).expect("RuleBooleanDedup: opSetInput");
+                return 1;
+            }
+            if central_opc == OpCode::CPUI_BOOL_OR
+                && opc0 == OpCode::CPUI_BOOL_OR
+                && opc1 == OpCode::CPUI_BOOL_OR
+            {
+                // (A || B) || (!A || C)  => whole expression is true
+                set_opcode(data, op, OpCode::CPUI_COPY);
+                data.op_remove_input(op, 1);
+                let one = data.new_constant(1, 1);
+                data.op_set_input(op, one, 0).expect("RuleBooleanDedup: opSetInput");
+                return 1;
+            }
+            if central_opc == OpCode::CPUI_BOOL_OR && opc0 != opc1 {
+                // (A || B) || (!A && C)
+                final_a = if opc0 == OpCode::CPUI_BOOL_OR { left_a } else { right_a };
+                final_opc = OpCode::CPUI_BOOL_OR;
+                bc_opc = OpCode::CPUI_BOOL_OR;
+            } else {
+                return 0;
+            }
+        } else if central_opc == opc0 && central_opc == opc1 {
+            // (A && B) && (A && C)    or   (A || B) || (A || C)
+            final_a = left_a;
+            final_opc = central_opc;
+            bc_opc = central_opc;
+        } else if opc0 == opc1 && central_opc != opc0 {
+            // (A && B) || (A && C)    or   (A || B) && (A || C)
+            final_a = left_a;
+            final_opc = opc0;
+            bc_opc = central_opc;
+        } else {
+            return 0;
+        }
+        let opaddr = data.obank().get(op).expect("RuleBooleanDedup: stale op").get_addr().clone();
+        let bc_op = data.new_op(2, opaddr);
+        let tmp = new_unique_out(data, 1, bc_op);
+        set_opcode(data, bc_op, bc_opc);
+        data.op_set_input(bc_op, left_o, 0).expect("RuleBooleanDedup: opSetInput");
+        data.op_set_input(bc_op, right_o, 1).expect("RuleBooleanDedup: opSetInput");
+        data.op_insert_before(bc_op, op);
+        set_opcode(data, op, final_opc);
+        data.op_set_input(op, final_a, 0).expect("RuleBooleanDedup: opSetInput");
+        data.op_set_input(op, tmp, 1).expect("RuleBooleanDedup: opSetInput");
+        1
     }
 }
 
