@@ -72,7 +72,9 @@ use kuna_base::marshal::{Decoder, Encoder};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::Wrap;
 
-use crate::slghpattern::sla;
+use crate::slghpattern::{
+    sla, ContextPattern, DisjointPattern, InstructionPattern, Pattern, PatternBlock,
+};
 
 // ---------------------------------------------------------------------------
 // PatternExpressionContext — the ParserWalker seam
@@ -226,14 +228,38 @@ pub struct TokenField {
     byteend: i32,
     /// Amount to shift to align value (bitstart % 8)
     shift: i32,
+    /// (kuna build side) The owning `Token`'s byte size, retained so the
+    /// SLEIGH-compiler `genPattern`/`genMinPattern` can build a
+    /// `TokenPattern`.  C++ carries `Token *tok` here; the decode path nulls
+    /// it (and never calls genPattern) so the decode factory leaves this -1.
+    tok_size: i32,
+    /// (kuna build side) The owning `Token`'s index (its identity in the
+    /// pattern token list, replacing the C++ `Token *` pointer-identity).
+    /// -1 after decode (no token).
+    tok_index: i32,
 }
 
 impl TokenField {
     /// C++ `TokenField(Token *tk,bool s,int4 bstart,int4 bend)`.  `Token` is
-    /// SLEIGH-compiler state that is not ported; the two properties the C++
-    /// constructor reads from it (`tok->getSize()`, `tok->isBigEndian()`)
-    /// are passed directly.
+    /// SLEIGH-compiler state; the three properties the C++ constructor reads
+    /// from it (`tok->getSize()`, `tok->isBigEndian()`, and — for the build
+    /// side — `tok->getIndex()` for token identity) are passed directly.
+    /// `tok_index` defaults to -1 for callers that do not build patterns
+    /// (use [`TokenField::new_for_build`] to carry the token identity).
     pub fn new(tok_size: i32, tok_bigendian: bool, s: bool, bstart: i32, bend: i32) -> TokenField {
+        TokenField::new_for_build(tok_size, tok_bigendian, -1, s, bstart, bend)
+    }
+
+    /// C++ `TokenField(Token *tk,bool s,int4 bstart,int4 bend)` retaining the
+    /// token index (its identity) for the SLEIGH-compiler build side.
+    pub fn new_for_build(
+        tok_size: i32,
+        tok_bigendian: bool,
+        tok_index: i32,
+        s: bool,
+        bstart: i32,
+        bend: i32,
+    ) -> TokenField {
         let (bytestart, byteend) = if tok_bigendian {
             ((tok_size * 8 - bend - 1) / 8, (tok_size * 8 - bstart - 1) / 8)
         } else {
@@ -247,7 +273,34 @@ impl TokenField {
             bytestart,
             byteend,
             shift: bstart % 8,
+            tok_size,
+            tok_index,
         }
+    }
+
+    /// C++ `TokenField::genPattern(intb val)`: the basic instruction pattern
+    /// `TokenPattern(tok, val, bitstart, bitend)`.
+    pub fn gen_pattern(&self, val: i64) -> TokenPattern {
+        TokenPattern::new_instruction_field(
+            BuildToken {
+                size: self.tok_size,
+                bigendian: self.bigendian,
+                index: self.tok_index,
+            },
+            val,
+            self.bitstart,
+            self.bitend,
+        )
+    }
+
+    /// C++ `TokenField::genMinPattern`: `TokenPattern(tok)` (a TRUE pattern
+    /// associated with the field's token).
+    pub fn gen_min_pattern(&self) -> TokenPattern {
+        TokenPattern::new_token(BuildToken {
+            size: self.tok_size,
+            bigendian: self.bigendian,
+            index: self.tok_index,
+        })
     }
 
     /// C++ `TokenField::getValue`: construct value given specific
@@ -309,6 +362,9 @@ impl TokenField {
             bytestart,
             byteend,
             shift,
+            // C++ decode nulls `tok` and never calls genPattern; -1 sentinel.
+            tok_size: -1,
+            tok_index: -1,
         })
     }
 }
@@ -350,6 +406,17 @@ impl ContextField {
     /// C++ `ContextField::getSignBit`.
     pub fn get_sign_bit(&self) -> bool {
         self.signbit
+    }
+
+    /// C++ `ContextField::genPattern(intb val)`:
+    /// `TokenPattern(val, startbit, endbit)` (a context pattern).
+    pub fn gen_pattern(&self, val: i64) -> TokenPattern {
+        TokenPattern::new_context_field(val, self.startbit, self.endbit)
+    }
+
+    /// C++ `ContextField::genMinPattern`: `TokenPattern()` (TRUE, no token).
+    pub fn gen_min_pattern(&self) -> TokenPattern {
+        TokenPattern::new_true()
     }
 
     /// C++ `ContextField::getValue`.
@@ -734,6 +801,41 @@ impl PatternValue {
         }
     }
 
+    /// C++ virtual `PatternValue::genPattern(intb val)`: the pattern forcing
+    /// this value to `val`.  `OperandValue::genPattern` throws (operands
+    /// cannot appear in a pattern expression).
+    pub fn gen_pattern(&self, val: i64) -> KunaResult<TokenPattern> {
+        match self {
+            PatternValue::TokenField(v) => Ok(v.gen_pattern(val)),
+            PatternValue::ContextField(v) => Ok(v.gen_pattern(val)),
+            // C++ `ConstantValue::genPattern`: `TokenPattern(val==v)`
+            PatternValue::ConstantValue(v) => Ok(TokenPattern::new_bool(v.get_value() == val)),
+            PatternValue::OperandValue(_) => {
+                Err(KunaError::sleigh("Operand used in pattern expression"))
+            }
+            // Start/End/Next2 `genPattern` all return `TokenPattern()` (TRUE)
+            PatternValue::StartInstructionValue(_)
+            | PatternValue::EndInstructionValue(_)
+            | PatternValue::Next2InstructionValue(_) => Ok(TokenPattern::new_true()),
+        }
+    }
+
+    /// C++ virtual `PatternValue::genMinPattern(const vector<TokenPattern>&)`.
+    /// `TokenField` returns its token; `OperandValue` returns `ops[index]`;
+    /// the rest return TRUE.
+    pub fn gen_min_pattern(&self, ops: &[TokenPattern]) -> TokenPattern {
+        match self {
+            PatternValue::TokenField(v) => v.gen_min_pattern(),
+            PatternValue::ContextField(v) => v.gen_min_pattern(),
+            // C++ `OperandValue::genMinPattern`: `return ops[index]`
+            PatternValue::OperandValue(v) => ops[v.index() as usize].clone(),
+            PatternValue::ConstantValue(_)
+            | PatternValue::StartInstructionValue(_)
+            | PatternValue::EndInstructionValue(_)
+            | PatternValue::Next2InstructionValue(_) => TokenPattern::new_true(),
+        }
+    }
+
     /// C++ `PatternValue::getSubValue`: `return replace[listpos++]`
     /// (overridden by `OperandValue`).
     pub fn get_sub_value(&self, replace: &[i64], listpos: &mut i32) -> KunaResult<i64> {
@@ -945,6 +1047,17 @@ impl PatternExpression {
                 let val = u.get_unary().get_value(walker)?;
                 Ok(!val)
             }
+        }
+    }
+
+    /// C++ virtual `genMinPattern(const vector<TokenPattern> &ops)`.  Only
+    /// `PatternValue` leaves do anything; every `BinaryExpression`/
+    /// `UnaryExpression` returns `TokenPattern()` (TRUE).
+    pub fn gen_min_pattern(&self, ops: &[TokenPattern]) -> TokenPattern {
+        match self {
+            PatternExpression::Value(v) => v.gen_min_pattern(ops),
+            // BinaryExpression::genMinPattern / UnaryExpression::genMinPattern
+            _ => TokenPattern::new_true(),
         }
     }
 
@@ -1216,6 +1329,949 @@ impl PatternExpression {
         } else {
             Err(KunaError::decoder("Invalid pattern expression element"))
         }
+    }
+}
+
+// ===========================================================================
+// SLEIGH-compiler build side (ws4a): TokenPattern + PatternEquation arena
+//
+// Port of the compile-only half of slghpatexpress.{hh,cc} — the machinery the
+// SLEIGH compiler drives to turn the parsed grammar into `Pattern`s.  This is
+// ADDITIVE to the decode side above; the decoder never enters this code.
+//
+// Ownership / arena convention (consumed by WS4b's driver):
+//   * `TokenPattern` is a value type (Clone) wrapping a `Pattern` plus its
+//     token alignment list; the C++ `Pattern *pattern` + `simplifyClone`
+//     ownership protocol becomes plain Rust ownership (`simplifyClone` IS the
+//     Clone the assignment operator performed).
+//   * `PatternEquation` is an `enum` stored in an `EquationArena` and
+//     referenced by a `u32` arena id (`EqId`) — exactly the `u32` the WS2
+//     parser actions thread.  The C++ refcounted `PatternEquation *` tree
+//     (layClaim/release) becomes an arena of nodes whose children are `EqId`s.
+//     The driver owns the arena; the parser returns the ids the arena indexes.
+//   * Equation `genPattern` is non-const in C++ (it caches `resultpattern`);
+//     here `gen_pattern` is a pure function returning the `TokenPattern` (no
+//     mutable cache needed — the callers in slghsymbol read it back through
+//     the return value).
+// ===========================================================================
+
+/// The three `Token` properties the build-side `TokenField`/`TokenPattern`
+/// machinery reads (C++ `Token *`): byte size, endianness, and a unique index
+/// standing in for pointer identity in the token-alignment list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuildToken {
+    /// C++ `tok->getSize()`.
+    pub size: i32,
+    /// C++ `tok->isBigEndian()`.
+    pub bigendian: bool,
+    /// C++ pointer identity, as the token's `getIndex()`.
+    pub index: i32,
+}
+
+/// C++ `TokenPattern`: the token-aligned pattern builder.  Wraps a
+/// [`Pattern`] together with the list of tokens it spans (for alignment) and
+/// the two ellipsis flags.
+#[derive(Debug, Clone)]
+pub struct TokenPattern {
+    pattern: Pattern,
+    toklist: Vec<BuildToken>,
+    leftellipsis: bool,
+    rightellipsis: bool,
+}
+
+impl TokenPattern {
+    /// C++ `TokenPattern(void)`: TRUE pattern unassociated with a token.
+    pub fn new_true() -> TokenPattern {
+        TokenPattern {
+            pattern: Pattern::Disjoint(DisjointPattern::Instruction(
+                InstructionPattern::new_always(true),
+            )),
+            toklist: Vec::new(),
+            leftellipsis: false,
+            rightellipsis: false,
+        }
+    }
+
+    /// C++ `TokenPattern(bool tf)`: TRUE or FALSE pattern, no token.
+    pub fn new_bool(tf: bool) -> TokenPattern {
+        TokenPattern {
+            pattern: Pattern::Disjoint(DisjointPattern::Instruction(
+                InstructionPattern::new_always(tf),
+            )),
+            toklist: Vec::new(),
+            leftellipsis: false,
+            rightellipsis: false,
+        }
+    }
+
+    /// C++ `TokenPattern(Token *tok)`: TRUE pattern associated with `tok`.
+    pub fn new_token(tok: BuildToken) -> TokenPattern {
+        TokenPattern {
+            pattern: Pattern::Disjoint(DisjointPattern::Instruction(
+                InstructionPattern::new_always(true),
+            )),
+            toklist: vec![tok],
+            leftellipsis: false,
+            rightellipsis: false,
+        }
+    }
+
+    /// C++ `TokenPattern(Token *tok,intb value,int4 bitstart,int4 bitend)`:
+    /// a basic instruction pattern.
+    pub fn new_instruction_field(
+        tok: BuildToken,
+        value: i64,
+        bitstart: i32,
+        bitend: i32,
+    ) -> TokenPattern {
+        let block = if tok.bigendian {
+            build_big_block(tok.size, bitstart, bitend, value)
+        } else {
+            build_little_block(tok.size, bitstart, bitend, value)
+        };
+        TokenPattern {
+            pattern: Pattern::Disjoint(DisjointPattern::Instruction(InstructionPattern::new(block))),
+            toklist: vec![tok],
+            leftellipsis: false,
+            rightellipsis: false,
+        }
+    }
+
+    /// C++ `TokenPattern(intb value,int4 startbit,int4 endbit)`: a basic
+    /// context pattern.
+    pub fn new_context_field(value: i64, startbit: i32, endbit: i32) -> TokenPattern {
+        let size = (endbit / 8) + 1;
+        let block = build_big_block(size, size * 8 - 1 - endbit, size * 8 - 1 - startbit, value);
+        TokenPattern {
+            pattern: Pattern::Disjoint(DisjointPattern::Context(ContextPattern::new(block))),
+            toklist: Vec::new(),
+            leftellipsis: false,
+            rightellipsis: false,
+        }
+    }
+
+    /// The wrapped [`Pattern`] (C++ `getPattern`).
+    pub fn get_pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    /// Consume into the wrapped [`Pattern`].
+    pub fn into_pattern(self) -> Pattern {
+        self.pattern
+    }
+
+    /// C++ `TokenPattern::setLeftEllipsis`.
+    pub fn set_left_ellipsis(&mut self, val: bool) {
+        self.leftellipsis = val;
+    }
+
+    /// C++ `TokenPattern::setRightEllipsis`.
+    pub fn set_right_ellipsis(&mut self, val: bool) {
+        self.rightellipsis = val;
+    }
+
+    /// C++ `TokenPattern::getLeftEllipsis`.
+    pub fn get_left_ellipsis(&self) -> bool {
+        self.leftellipsis
+    }
+
+    /// C++ `TokenPattern::getRightEllipsis`.
+    pub fn get_right_ellipsis(&self) -> bool {
+        self.rightellipsis
+    }
+
+    /// C++ `TokenPattern::alwaysTrue`.
+    pub fn always_true(&self) -> bool {
+        self.pattern.always_true()
+    }
+
+    /// C++ `TokenPattern::alwaysFalse`.
+    pub fn always_false(&self) -> bool {
+        self.pattern.always_false()
+    }
+
+    /// C++ `TokenPattern::alwaysInstructionTrue`.
+    pub fn always_instruction_true(&self) -> bool {
+        self.pattern.always_instruction_true()
+    }
+
+    /// C++ `TokenPattern::getMinimumLength`: sum of the spanned token sizes.
+    pub fn get_minimum_length(&self) -> i32 {
+        let mut length = 0;
+        for tok in &self.toklist {
+            length += tok.size;
+        }
+        length
+    }
+
+    /// C++ `TokenPattern::resolveTokens`: decide how `tok1`/`tok2` align,
+    /// returning the shift `tok2` needs and storing the resulting token list
+    /// and ellipses into `self`.
+    fn resolve_tokens(
+        &mut self,
+        tok1: &TokenPattern,
+        tok2: &TokenPattern,
+    ) -> KunaResult<i32> {
+        let mut reversedirection = false;
+        self.leftellipsis = false;
+        self.rightellipsis = false;
+        let mut ressa: i32 = 0;
+        let l1 = tok1.toklist.len();
+        let l2 = tok2.toklist.len();
+        let minsize = l1.min(l2);
+        if minsize == 0 {
+            // Check if pattern doesn't care about tokens
+            if l1 == 0 && !tok1.leftellipsis && !tok1.rightellipsis {
+                self.toklist = tok2.toklist.clone();
+                self.leftellipsis = tok2.leftellipsis;
+                self.rightellipsis = tok2.rightellipsis;
+                return Ok(0);
+            } else if l2 == 0 && !tok2.leftellipsis && !tok2.rightellipsis {
+                self.toklist = tok1.toklist.clone();
+                self.leftellipsis = tok1.leftellipsis;
+                self.rightellipsis = tok1.rightellipsis;
+                return Ok(0);
+            }
+            // If one of the ellipses is true then the pattern still cares
+            // about tokens even though none are specified
+        }
+
+        if tok1.leftellipsis {
+            reversedirection = true;
+            if tok2.rightellipsis {
+                return Err(KunaError::sleigh("Right/left ellipsis"));
+            } else if tok2.leftellipsis {
+                self.leftellipsis = true;
+            } else if l1 != minsize {
+                return Err(KunaError::sleigh(format!(
+                    "Mismatched pattern sizes -- {} != {}",
+                    l1, minsize
+                )));
+            } else if l1 == l2 {
+                return Err(KunaError::sleigh("Pattern size cannot vary (missing '...'?)"));
+            }
+        } else if tok1.rightellipsis {
+            if tok2.leftellipsis {
+                return Err(KunaError::sleigh("Left/right ellipsis"));
+            } else if tok2.rightellipsis {
+                self.rightellipsis = true;
+            } else if l1 != minsize {
+                return Err(KunaError::sleigh(format!(
+                    "Mismatched pattern sizes -- {} != {}",
+                    l1, minsize
+                )));
+            } else if l1 == l2 {
+                return Err(KunaError::sleigh("Pattern size cannot vary (missing '...'?)"));
+            }
+        } else if tok2.leftellipsis {
+            reversedirection = true;
+            if l2 != minsize {
+                return Err(KunaError::sleigh(format!(
+                    "Mismatched pattern sizes -- {} != {}",
+                    l2, minsize
+                )));
+            } else if l1 == l2 {
+                return Err(KunaError::sleigh("Pattern size cannot vary (missing '...'?)"));
+            }
+        } else if tok2.rightellipsis {
+            if l2 != minsize {
+                return Err(KunaError::sleigh(format!(
+                    "Mismatched pattern sizes -- {} != {}",
+                    l2, minsize
+                )));
+            } else if l1 == l2 {
+                return Err(KunaError::sleigh("Pattern size cannot vary (missing '...'?)"));
+            }
+        } else if l2 != l1 {
+            return Err(KunaError::sleigh(format!(
+                "Mismatched pattern sizes -- {} != {}",
+                l2, l1
+            )));
+        }
+
+        if reversedirection {
+            for i in 0..minsize {
+                if tok1.toklist[l1 - 1 - i] != tok2.toklist[l2 - 1 - i] {
+                    return Err(KunaError::sleigh(format!(
+                        "Mismatched tokens when combining patterns -- {} != {}",
+                        tok1.toklist[l1 - 1 - i].index,
+                        tok2.toklist[l2 - 1 - i].index
+                    )));
+                }
+            }
+            if l1 <= l2 {
+                for i in minsize..l2 {
+                    ressa += tok2.toklist[l2 - 1 - i].size;
+                }
+            } else {
+                for i in minsize..l1 {
+                    ressa += tok1.toklist[l1 - 1 - i].size;
+                }
+            }
+            if l1 < l2 {
+                ressa = -ressa;
+            }
+        } else {
+            for i in 0..minsize {
+                if tok1.toklist[i] != tok2.toklist[i] {
+                    return Err(KunaError::sleigh(format!(
+                        "Mismatched tokens when combining patterns -- {} != {}",
+                        tok1.toklist[i].index, tok2.toklist[i].index
+                    )));
+                }
+            }
+        }
+        // Save the results into -self-
+        if l1 <= l2 {
+            self.toklist = tok2.toklist.clone();
+        } else {
+            self.toklist = tok1.toklist.clone();
+        }
+        Ok(ressa)
+    }
+
+    /// C++ `TokenPattern::doAnd`.
+    pub fn do_and(&self, tokpat: &TokenPattern) -> KunaResult<TokenPattern> {
+        let mut res = TokenPattern::new_true();
+        res.toklist.clear();
+        let sa = res.resolve_tokens(self, tokpat)?;
+        // C++ returns `res` by value; the caller's TokenPattern copy/assign
+        // runs `pattern->simplifyClone()`.  Apply it here so the stored
+        // pattern is the simplified one (e.g. a trivial AND collapses).
+        res.pattern = self.pattern.do_and(&tokpat.pattern, sa).simplify_clone();
+        Ok(res)
+    }
+
+    /// C++ `TokenPattern::doOr`.
+    pub fn do_or(&self, tokpat: &TokenPattern) -> KunaResult<TokenPattern> {
+        let mut res = TokenPattern::new_true();
+        res.toklist.clear();
+        let sa = res.resolve_tokens(self, tokpat)?;
+        // do_or takes &mut on both operands (the upstream const-cast quirk);
+        // operate on clones since C++ `doOr` may mutate either receiver.
+        let mut left = self.pattern.clone();
+        let mut right = tokpat.pattern.clone();
+        res.pattern = left.do_or(&mut right, sa).simplify_clone();
+        Ok(res)
+    }
+
+    /// C++ `TokenPattern::doCat`: concatenation of `self` and `tokpat`.
+    pub fn do_cat(&self, tokpat: &TokenPattern) -> KunaResult<TokenPattern> {
+        let mut res = TokenPattern::new_true();
+        res.toklist.clear();
+        res.leftellipsis = self.leftellipsis;
+        res.rightellipsis = self.rightellipsis;
+        res.toklist = self.toklist.clone();
+        let sa: i32;
+        if self.rightellipsis || tokpat.leftellipsis {
+            // Check for interior ellipsis
+            if self.rightellipsis && !tokpat.always_instruction_true() {
+                return Err(KunaError::sleigh("Interior ellipsis in pattern"));
+            }
+            if tokpat.leftellipsis {
+                if !self.always_instruction_true() {
+                    return Err(KunaError::sleigh("Interior ellipsis in pattern"));
+                }
+                res.leftellipsis = true;
+            }
+            sa = -1;
+        } else {
+            let mut acc = 0;
+            for tok in &self.toklist {
+                acc += tok.size;
+            }
+            sa = acc;
+            for tok in &tokpat.toklist {
+                res.toklist.push(*tok);
+            }
+            res.rightellipsis = tokpat.rightellipsis;
+        }
+        if res.rightellipsis && res.leftellipsis {
+            return Err(KunaError::sleigh("Double ellipsis in pattern"));
+        }
+        if sa < 0 {
+            res.pattern = self.pattern.do_and(&tokpat.pattern, 0).simplify_clone();
+        } else {
+            res.pattern = self.pattern.do_and(&tokpat.pattern, sa).simplify_clone();
+        }
+        Ok(res)
+    }
+
+    /// C++ `TokenPattern::commonSubPattern`.
+    pub fn common_sub_pattern(&self, tokpat: &TokenPattern) -> KunaResult<TokenPattern> {
+        let mut patres = TokenPattern::new_true();
+        patres.toklist.clear();
+        let mut reversedirection = false;
+
+        if self.leftellipsis || tokpat.leftellipsis {
+            if self.rightellipsis || tokpat.rightellipsis {
+                return Err(KunaError::sleigh("Right/left ellipsis in commonSubPattern"));
+            }
+            reversedirection = true;
+        }
+
+        // Find common subset of tokens and ellipses
+        patres.leftellipsis = self.leftellipsis || tokpat.leftellipsis;
+        patres.rightellipsis = self.rightellipsis || tokpat.rightellipsis;
+        let mut minnum = self.toklist.len();
+        let mut maxnum = tokpat.toklist.len();
+        if maxnum < minnum {
+            std::mem::swap(&mut minnum, &mut maxnum);
+        }
+        let mut i = 0usize;
+        if reversedirection {
+            while i < minnum {
+                let tok = self.toklist[self.toklist.len() - 1 - i];
+                if tok == tokpat.toklist[tokpat.toklist.len() - 1 - i] {
+                    patres.toklist.insert(0, tok);
+                } else {
+                    break;
+                }
+                i += 1;
+            }
+            if i < maxnum {
+                patres.leftellipsis = true;
+            }
+        } else {
+            while i < minnum {
+                let tok = self.toklist[i];
+                if tok == tokpat.toklist[i] {
+                    patres.toklist.push(tok);
+                } else {
+                    break;
+                }
+                i += 1;
+            }
+            if i < maxnum {
+                patres.rightellipsis = true;
+            }
+        }
+        patres.pattern = self
+            .pattern
+            .common_sub_pattern(&tokpat.pattern, 0)
+            .simplify_clone();
+        Ok(patres)
+    }
+}
+
+/// C++ static `TokenPattern::buildSingle(int4 startbit,int4 endbit,uintm
+/// byteval)`: a mask/value pattern within a single word.  bit 0 is the MOST
+/// significant bit of the word.
+fn build_single(mut startbit: i32, mut endbit: i32, mut byteval: u32) -> PatternBlock {
+    let mut offset = 0;
+    let size = endbit - startbit + 1;
+    while startbit >= 8 {
+        offset += 1;
+        startbit -= 8;
+        endbit -= 8;
+    }
+    // mask = (~0) << (32 - size); shift count in [0,32) for valid fields
+    let mut mask: u32 = (!0u32).wshl((32 - size) as u32);
+    byteval = byteval.wshl((32 - size) as u32) & mask;
+    mask = mask.wshr(startbit as u32);
+    byteval = byteval.wshr(startbit as u32);
+    PatternBlock::new(offset, mask, byteval)
+}
+
+/// C++ static `TokenPattern::buildBigBlock(int4 size,int4 bitstart,int4
+/// bitend,intb value)`: pattern block for a bigendian contiguous bit range.
+fn build_big_block(size: i32, bitstart: i32, bitend: i32, mut value: i64) -> PatternBlock {
+    let startbit = 8 * size - 1 - bitend;
+    let mut endbit = 8 * size - 1 - bitstart;
+
+    let mut block: Option<PatternBlock> = None;
+    while endbit >= startbit {
+        let mut tmpstart = endbit - (endbit & 7);
+        if tmpstart < startbit {
+            tmpstart = startbit;
+        }
+        let tmpblock = build_single(tmpstart, endbit, value as u32);
+        block = Some(match block {
+            None => tmpblock,
+            Some(b) => b.intersect(&tmpblock),
+        });
+        // value >>= (endbit-tmpstart+1): intb arithmetic shift, count in [1,8]
+        value = value.wshr((endbit - tmpstart + 1) as u32);
+        endbit = tmpstart - 1;
+    }
+    // C++ may return a null block when endbit < startbit on entry; that only
+    // happens for an empty range, which the build call sites never produce.
+    block.expect("build_big_block: empty bit range (C++ returns a null PatternBlock)")
+}
+
+/// C++ static `TokenPattern::buildLittleBlock(int4 size,int4 bitstart,int4
+/// bitend,intb value)`: pattern block for a littleendian contiguous bit
+/// range.
+fn build_little_block(size: i32, mut bitstart: i32, mut bitend: i32, mut value: i64) -> PatternBlock {
+    let _ = size; // C++ takes size but never reads it in this branch
+    let mut startbit = (bitstart / 8) * 8;
+    let endbit = (bitend / 8) * 8;
+    bitend %= 8;
+    bitstart %= 8;
+
+    let block: PatternBlock;
+    if startbit == endbit {
+        startbit += 7 - bitend;
+        let e = endbit + 7 - bitstart;
+        block = build_single(startbit, e, value as u32);
+    } else {
+        let mut blk = build_single(startbit, startbit + (7 - bitstart), value as u32);
+        value = value.wshr((8 - bitstart) as u32); // Cut off bits we just encoded
+        startbit += 8;
+        while startbit != endbit {
+            let tmpblock = build_single(startbit, startbit + 7, value as u32);
+            blk = blk.intersect(&tmpblock);
+            value = value.wshr(8);
+            startbit += 8;
+        }
+        let tmpblock = build_single(endbit + (7 - bitend), endbit + 7, value as u32);
+        blk = blk.intersect(&tmpblock);
+        block = blk;
+    }
+    block
+}
+
+/// C++ static `advance_combo`: increment the multi-dimensional counter `val`
+/// (each digit ranges `[min, max]` inclusive); returns false when it wraps.
+fn advance_combo(val: &mut [i64], min: &[i64], max: &[i64]) -> bool {
+    let mut i = 0;
+    while i < val.len() {
+        val[i] += 1;
+        if val[i] <= max[i] {
+            // maximum is inclusive
+            return true;
+        }
+        val[i] = min[i];
+        i += 1;
+    }
+    false
+}
+
+/// C++ static `buildPattern(PatternValue *lhs,intb lhsval,vector<const
+/// PatternValue*> &semval,vector<intb> &val)`: AND the lhs's pattern with the
+/// forced pattern of every rhs leaf.
+fn build_equation_pattern(
+    lhs: &PatternValue,
+    lhsval: i64,
+    semval: &[&PatternValue],
+    val: &[i64],
+) -> KunaResult<TokenPattern> {
+    let mut respattern = lhs.gen_pattern(lhsval)?;
+    for (i, sv) in semval.iter().enumerate() {
+        respattern = respattern.do_and(&sv.gen_pattern(val[i])?)?;
+    }
+    Ok(respattern)
+}
+
+// ---------------------------------------------------------------------------
+// OperandResolve (slghpatexpress.hh:339)
+// ---------------------------------------------------------------------------
+
+/// C++ `OperandResolve`: the traversal state for `resolveOperandLeft`.  The
+/// C++ struct holds a `vector<OperandSymbol*> &operands`; here the operand
+/// updates flow through the [`OperandResolveSink`] seam so the equation code
+/// stays independent of the symbol table.
+pub struct OperandResolve {
+    /// Current base operand (as we traverse left to right).
+    pub base: i32,
+    /// Bytes traversed from the LEFT edge of the current base.
+    pub offset: i32,
+    /// (resulting) rightmost operand in the pattern.
+    pub cur_rightmost: i32,
+    /// (resulting) bytes traversed from the LEFT edge of the rightmost.
+    pub size: i32,
+}
+
+impl Default for OperandResolve {
+    fn default() -> OperandResolve {
+        OperandResolve {
+            base: -1,
+            offset: 0,
+            cur_rightmost: -1,
+            size: 0,
+        }
+    }
+}
+
+impl OperandResolve {
+    /// C++ `OperandResolve(vector<OperandSymbol*> &ops)`.
+    pub fn new() -> OperandResolve {
+        OperandResolve::default()
+    }
+}
+
+/// Seam for the operand mutations `OperandEquation::resolveOperandLeft`
+/// performs on a `OperandSymbol` (C++ reaches through `state.operands[index]`
+/// directly).  Implemented by the slghsymbol build side.
+pub trait OperandResolveSink {
+    /// C++ `OperandSymbol::isOffsetIrrelevant()` for operand `index`.
+    fn is_offset_irrelevant(&self, index: i32) -> bool;
+    /// C++ `sym->offsetbase = base; sym->reloffset = offset;` for `index`.
+    fn set_offset(&mut self, index: i32, offsetbase: i32, reloffset: u32);
+}
+
+// ---------------------------------------------------------------------------
+// PatternEquation arena (slghpatexpress.hh:351-487, slghpatexpress.cc)
+// ---------------------------------------------------------------------------
+
+/// Arena id of a [`PatternEquation`] node (the `u32` the WS2 parser threads).
+pub type EqId = u32;
+
+/// C++ `PatternEquation` hierarchy as an arena enum.  Children are stored as
+/// [`EqId`]s into the owning [`EquationArena`] (replacing the C++ refcounted
+/// `PatternEquation *` pointers); leaf payloads (the value/expression of a
+/// comparison, the operand index, the unconstrained expression) are owned
+/// inline.
+#[derive(Debug, Clone)]
+pub enum PatternEquation {
+    /// C++ `OperandEquation(int4 index)`.
+    Operand { index: i32 },
+    /// C++ `UnconstrainedEquation(PatternExpression*)`.
+    Unconstrained { patex: PatternExpression },
+    /// C++ `EqualEquation(PatternValue*, PatternExpression*)`.
+    Equal { lhs: PatternValue, rhs: PatternExpression },
+    /// C++ `NotEqualEquation`.
+    NotEqual { lhs: PatternValue, rhs: PatternExpression },
+    /// C++ `LessEquation`.
+    Less { lhs: PatternValue, rhs: PatternExpression },
+    /// C++ `LessEqualEquation`.
+    LessEqual { lhs: PatternValue, rhs: PatternExpression },
+    /// C++ `GreaterEquation`.
+    Greater { lhs: PatternValue, rhs: PatternExpression },
+    /// C++ `GreaterEqualEquation`.
+    GreaterEqual { lhs: PatternValue, rhs: PatternExpression },
+    /// C++ `EquationAnd(left,right)`.
+    And { left: EqId, right: EqId },
+    /// C++ `EquationOr(left,right)`.
+    Or { left: EqId, right: EqId },
+    /// C++ `EquationCat(left,right)`.
+    Cat { left: EqId, right: EqId },
+    /// C++ `EquationLeftEllipsis(eq)`.
+    LeftEllipsis { eq: EqId },
+    /// C++ `EquationRightEllipsis(eq)`.
+    RightEllipsis { eq: EqId },
+}
+
+/// The driver-owned arena of [`PatternEquation`] nodes (the storage the WS2
+/// `u32` equation ids index).
+#[derive(Debug, Clone, Default)]
+pub struct EquationArena {
+    nodes: Vec<PatternEquation>,
+}
+
+impl EquationArena {
+    /// A fresh empty arena.
+    pub fn new() -> EquationArena {
+        EquationArena { nodes: Vec::new() }
+    }
+
+    /// Store a node and return its id.
+    pub fn alloc(&mut self, eq: PatternEquation) -> EqId {
+        let id = self.nodes.len() as u32;
+        self.nodes.push(eq);
+        id
+    }
+
+    /// Borrow a node by id (panics on a bad id — an internal invariant
+    /// violation, ADR 0004).
+    pub fn get(&self, id: EqId) -> &PatternEquation {
+        &self.nodes[id as usize]
+    }
+
+    /// Number of nodes (test surface).
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Whether the arena is empty.
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
+    /// C++ `PatternEquation::genPattern(const vector<TokenPattern> &ops)`:
+    /// build the [`TokenPattern`] for equation `id` (returned, not cached).
+    pub fn gen_pattern(&self, id: EqId, ops: &[TokenPattern]) -> KunaResult<TokenPattern> {
+        match self.get(id) {
+            // OperandEquation::genPattern: resultpattern = ops[index]
+            PatternEquation::Operand { index } => Ok(ops[*index as usize].clone()),
+            // UnconstrainedEquation::genPattern: patex->genMinPattern(ops)
+            PatternEquation::Unconstrained { patex } => Ok(patex.gen_min_pattern(ops)),
+            PatternEquation::Equal { lhs, rhs } => {
+                gen_comparison(lhs, rhs, ops, Comparison::Equal)
+            }
+            PatternEquation::NotEqual { lhs, rhs } => {
+                gen_comparison(lhs, rhs, ops, Comparison::NotEqual)
+            }
+            PatternEquation::Less { lhs, rhs } => {
+                gen_comparison(lhs, rhs, ops, Comparison::Less)
+            }
+            PatternEquation::LessEqual { lhs, rhs } => {
+                gen_comparison(lhs, rhs, ops, Comparison::LessEqual)
+            }
+            PatternEquation::Greater { lhs, rhs } => {
+                gen_comparison(lhs, rhs, ops, Comparison::Greater)
+            }
+            PatternEquation::GreaterEqual { lhs, rhs } => {
+                gen_comparison(lhs, rhs, ops, Comparison::GreaterEqual)
+            }
+            // EquationAnd::genPattern
+            PatternEquation::And { left, right } => {
+                let l = self.gen_pattern(*left, ops)?;
+                let r = self.gen_pattern(*right, ops)?;
+                l.do_and(&r)
+            }
+            // EquationOr::genPattern
+            PatternEquation::Or { left, right } => {
+                let l = self.gen_pattern(*left, ops)?;
+                let r = self.gen_pattern(*right, ops)?;
+                l.do_or(&r)
+            }
+            // EquationCat::genPattern
+            PatternEquation::Cat { left, right } => {
+                let l = self.gen_pattern(*left, ops)?;
+                let r = self.gen_pattern(*right, ops)?;
+                l.do_cat(&r)
+            }
+            // EquationLeftEllipsis::genPattern
+            PatternEquation::LeftEllipsis { eq } => {
+                let mut p = self.gen_pattern(*eq, ops)?;
+                p.set_left_ellipsis(true);
+                Ok(p)
+            }
+            // EquationRightEllipsis::genPattern
+            PatternEquation::RightEllipsis { eq } => {
+                let mut p = self.gen_pattern(*eq, ops)?;
+                p.set_right_ellipsis(true);
+                Ok(p)
+            }
+        }
+    }
+
+    /// C++ `PatternEquation::resolveOperandLeft(OperandResolve &state)`.  The
+    /// equation needs each sub-equation's `resultpattern` (its
+    /// [`TokenPattern`]'s length/ellipses); `ops` is the operand pattern list
+    /// the caller already built (the same `ops` passed to [`Self::gen_pattern`]).
+    pub fn resolve_operand_left(
+        &self,
+        id: EqId,
+        state: &mut OperandResolve,
+        ops: &[TokenPattern],
+        sink: &mut dyn OperandResolveSink,
+    ) -> KunaResult<bool> {
+        match self.get(id) {
+            PatternEquation::Operand { index } => {
+                let index = *index;
+                if sink.is_offset_irrelevant(index) {
+                    sink.set_offset(index, -1, 0);
+                    return Ok(true);
+                }
+                if state.base == -2 {
+                    // We have no base
+                    return Ok(false);
+                }
+                sink.set_offset(index, state.base, state.offset as u32);
+                state.cur_rightmost = index;
+                state.size = 0; // Distance from right edge
+                Ok(true)
+            }
+            // UnconstrainedEquation / ValExpressEquation share resolveOperandLeft
+            PatternEquation::Unconstrained { .. }
+            | PatternEquation::Equal { .. }
+            | PatternEquation::NotEqual { .. }
+            | PatternEquation::Less { .. }
+            | PatternEquation::LessEqual { .. }
+            | PatternEquation::Greater { .. }
+            | PatternEquation::GreaterEqual { .. } => {
+                state.cur_rightmost = -1;
+                let pat = self.gen_pattern(id, ops)?;
+                if pat.get_left_ellipsis() || pat.get_right_ellipsis() {
+                    state.size = -1; // don't know length
+                } else {
+                    state.size = pat.get_minimum_length();
+                }
+                Ok(true)
+            }
+            // EquationAnd / EquationOr share resolveOperandLeft
+            PatternEquation::And { left, right } | PatternEquation::Or { left, right } => {
+                let mut cur_rightmost = -1;
+                let mut cur_size = -1;
+                if !self.resolve_operand_left(*right, state, ops, sink)? {
+                    return Ok(false);
+                }
+                if state.cur_rightmost != -1 && state.size != -1 {
+                    cur_rightmost = state.cur_rightmost;
+                    cur_size = state.size;
+                }
+                if !self.resolve_operand_left(*left, state, ops, sink)? {
+                    return Ok(false);
+                }
+                if state.cur_rightmost == -1 || state.size == -1 {
+                    state.cur_rightmost = cur_rightmost;
+                    state.size = cur_size;
+                }
+                Ok(true)
+            }
+            PatternEquation::Cat { left, right } => {
+                if !self.resolve_operand_left(*left, state, ops, sink)? {
+                    return Ok(false);
+                }
+                let cur_base = state.base;
+                let cur_offset = state.offset;
+                let leftpat = self.gen_pattern(*left, ops)?;
+                if !leftpat.get_left_ellipsis() && !leftpat.get_right_ellipsis() {
+                    // Keep the same base
+                    state.offset += leftpat.get_minimum_length();
+                } else if state.cur_rightmost != -1 {
+                    state.base = state.cur_rightmost;
+                    state.offset = state.size;
+                } else if state.size != -1 {
+                    state.offset += state.size;
+                } else {
+                    state.base = -2; // We have no anchor
+                }
+                let cur_rightmost = state.cur_rightmost;
+                let cur_size = state.size;
+                if !self.resolve_operand_left(*right, state, ops, sink)? {
+                    return Ok(false);
+                }
+                state.base = cur_base; // Restore base and offset
+                state.offset = cur_offset;
+                if state.cur_rightmost == -1
+                    && state.size != -1
+                    && cur_rightmost != -1
+                    && cur_size != -1
+                {
+                    state.cur_rightmost = cur_rightmost;
+                    state.size += cur_size;
+                }
+                Ok(true)
+            }
+            PatternEquation::LeftEllipsis { eq } => {
+                let cur_base = state.base;
+                state.base = -2;
+                if !self.resolve_operand_left(*eq, state, ops, sink)? {
+                    return Ok(false);
+                }
+                state.base = cur_base;
+                Ok(true)
+            }
+            PatternEquation::RightEllipsis { eq } => {
+                if !self.resolve_operand_left(*eq, state, ops, sink)? {
+                    return Ok(false);
+                }
+                state.size = -1; // Cannot predict size
+                Ok(true)
+            }
+        }
+    }
+
+    /// C++ `PatternEquation::operandOrder(Constructor*,vector<OperandSymbol*>
+    /// &order)`: append the self-defining operand indices in left-to-right
+    /// order, skipping ones already in `order` (the C++ `isMarked` set is the
+    /// `seen` set here).
+    pub fn operand_order(&self, id: EqId, order: &mut Vec<i32>, seen: &mut Vec<bool>) {
+        match self.get(id) {
+            PatternEquation::Operand { index } => {
+                let index = *index;
+                let idx = index as usize;
+                if idx < seen.len() && !seen[idx] {
+                    order.push(index);
+                    seen[idx] = true;
+                }
+            }
+            PatternEquation::And { left, right }
+            | PatternEquation::Or { left, right }
+            | PatternEquation::Cat { left, right } => {
+                self.operand_order(*left, order, seen); // List operands left
+                self.operand_order(*right, order, seen); //  to right
+            }
+            PatternEquation::LeftEllipsis { eq } | PatternEquation::RightEllipsis { eq } => {
+                self.operand_order(*eq, order, seen);
+            }
+            // ValExpress/Unconstrained equations have no operandOrder override
+            _ => {}
+        }
+    }
+}
+
+/// The six comparison flavors of `ValExpressEquation::genPattern`.
+#[derive(Clone, Copy)]
+enum Comparison {
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+}
+
+/// Shared body of the six `ValExpressEquation` subclasses' `genPattern`: for
+/// every combination of rhs leaf values and every lhs value passing the
+/// comparison, OR in `buildPattern(lhs,lhsval,semval,cur)`.
+fn gen_comparison(
+    lhs: &PatternValue,
+    rhs: &PatternExpression,
+    _ops: &[TokenPattern],
+    cmp: Comparison,
+) -> KunaResult<TokenPattern> {
+    let lhsmin = lhs.min_value()?;
+    let lhsmax = lhs.max_value()?;
+    let mut semval: Vec<&PatternValue> = Vec::new();
+    rhs.list_values(&mut semval);
+    let mut min: Vec<i64> = Vec::new();
+    let mut max: Vec<i64> = Vec::new();
+    rhs.get_min_max(&mut min, &mut max)?;
+    let mut cur = min.clone();
+
+    let mut result: Option<TokenPattern> = None;
+    loop {
+        let val = rhs.get_sub_value_root(&cur)?;
+        match cmp {
+            Comparison::Equal => {
+                if val >= lhsmin && val <= lhsmax {
+                    let p = build_equation_pattern(lhs, val, &semval, &cur)?;
+                    result = Some(match result {
+                        None => p,
+                        Some(acc) => acc.do_or(&p)?,
+                    });
+                }
+            }
+            _ => {
+                let mut lhsval = lhsmin;
+                while lhsval <= lhsmax {
+                    let keep = match cmp {
+                        Comparison::NotEqual => lhsval != val,
+                        Comparison::Less => lhsval < val,
+                        Comparison::LessEqual => lhsval <= val,
+                        Comparison::Greater => lhsval > val,
+                        Comparison::GreaterEqual => lhsval >= val,
+                        Comparison::Equal => unreachable!(),
+                    };
+                    if keep {
+                        let p = build_equation_pattern(lhs, lhsval, &semval, &cur)?;
+                        result = Some(match result {
+                            None => p,
+                            Some(acc) => acc.do_or(&p)?,
+                        });
+                    }
+                    lhsval += 1;
+                }
+            }
+        }
+        if !advance_combo(&mut cur, &min, &max) {
+            break;
+        }
+    }
+    match result {
+        Some(p) => Ok(p),
+        None => Err(KunaError::sleigh(match cmp {
+            Comparison::Equal => "Equal constraint is impossible to match",
+            Comparison::NotEqual => "Notequal constraint is impossible to match",
+            Comparison::Less => "Less than constraint is impossible to match",
+            Comparison::LessEqual => "Less than or equal constraint is impossible to match",
+            Comparison::Greater => "Greater than constraint is impossible to match",
+            Comparison::GreaterEqual => "Greater than or equal constraint is impossible to match",
+        })),
     }
 }
 
@@ -1735,5 +2791,135 @@ mod tests {
         let mut dec2 = PackedDecode::new(&manager);
         dec2.ingest_stream(&buf).unwrap();
         Next2InstructionValue::decode(&mut dec2).unwrap();
+    }
+
+    // -- build side (ws4a) ---------------------------------------------------
+
+    fn op8_field(bstart: i32, bend: i32) -> PatternValue {
+        // 1-byte little-endian token, index 0
+        PatternValue::TokenField(TokenField::new_for_build(1, false, 0, false, bstart, bend))
+    }
+
+    fn cexpr(v: i64) -> PatternExpression {
+        PatternExpression::Value(PatternValue::ConstantValue(ConstantValue::new(v)))
+    }
+
+    #[test]
+    fn token_pattern_do_and_two_fields() {
+        // op8 high nibble == 0xa AND low nibble == 0x5 -> byte 0xa5
+        let mut arena = EquationArena::new();
+        let hi = arena.alloc(PatternEquation::Equal {
+            lhs: op8_field(4, 7),
+            rhs: cexpr(0xa),
+        });
+        let lo = arena.alloc(PatternEquation::Equal {
+            lhs: op8_field(0, 3),
+            rhs: cexpr(0x5),
+        });
+        let and = arena.alloc(PatternEquation::And { left: hi, right: lo });
+        let tp = arena.gen_pattern(and, &[]).unwrap();
+        // single instruction pattern with mask 0xff, value 0xa5
+        let pat = tp.get_pattern();
+        match pat {
+            Pattern::Disjoint(DisjointPattern::Instruction(ip)) => {
+                assert_eq!(ip.get_block().get_mask(0, 8), 0xff);
+                assert_eq!(ip.get_block().get_value(0, 8), 0xa5);
+            }
+            other => panic!("expected instruction pattern, got {other:?}"),
+        }
+        assert_eq!(tp.get_minimum_length(), 1);
+    }
+
+    #[test]
+    fn token_pattern_do_or_two_values() {
+        // op8 == 0x10 OR op8 == 0x20
+        let mut arena = EquationArena::new();
+        let a = arena.alloc(PatternEquation::Equal {
+            lhs: op8_field(0, 7),
+            rhs: cexpr(0x10),
+        });
+        let b = arena.alloc(PatternEquation::Equal {
+            lhs: op8_field(0, 7),
+            rhs: cexpr(0x20),
+        });
+        let or = arena.alloc(PatternEquation::Or { left: a, right: b });
+        let tp = arena.gen_pattern(or, &[]).unwrap();
+        assert_eq!(tp.get_pattern().num_disjoint(), 2);
+    }
+
+    /// Records the offset sink writes for inspection.
+    #[derive(Default)]
+    struct RecordSink {
+        irrelevant: Vec<i32>,
+        offsets: Vec<(i32, i32, u32)>, // (index, base, reloffset)
+    }
+
+    impl OperandResolveSink for RecordSink {
+        fn is_offset_irrelevant(&self, index: i32) -> bool {
+            self.irrelevant.contains(&index)
+        }
+        fn set_offset(&mut self, index: i32, offsetbase: i32, reloffset: u32) {
+            self.offsets.push((index, offsetbase, reloffset));
+        }
+    }
+
+    #[test]
+    fn resolve_operand_left_cat_offsets() {
+        // EquationCat(Operand(0), Operand(1)) where operand 0 occupies a
+        // 1-byte token (ops[0] is a token pattern) and operand 1 follows it.
+        let mut arena = EquationArena::new();
+        let op0 = arena.alloc(PatternEquation::Operand { index: 0 });
+        let op1 = arena.alloc(PatternEquation::Operand { index: 1 });
+        let cat = arena.alloc(PatternEquation::Cat {
+            left: op0,
+            right: op1,
+        });
+        // ops[0]: a 1-byte token pattern; ops[1]: empty (TRUE)
+        let ops = vec![
+            TokenPattern::new_token(BuildToken {
+                size: 1,
+                bigendian: false,
+                index: 0,
+            }),
+            TokenPattern::new_true(),
+        ];
+        let mut state = OperandResolve::new();
+        let mut sink = RecordSink::default();
+        let ok = arena
+            .resolve_operand_left(cat, &mut state, &ops, &mut sink)
+            .unwrap();
+        assert!(ok);
+        // operand 0 anchored at base -1 offset 0; operand 1 at base -1 offset
+        // 1 (after operand 0's 1-byte token).  Resolution runs left then
+        // right: operand 0 sets (0,-1,0); the Cat advances offset by operand
+        // 0's minimum length (1) before resolving operand 1.
+        assert!(sink.offsets.contains(&(0, -1, 0)));
+        assert!(sink.offsets.iter().any(|&(i, b, o)| i == 1 && b == -1 && o == 1));
+    }
+
+    #[test]
+    fn operand_order_left_to_right() {
+        // EquationCat(Operand(2), Operand(0)) lists operands in pattern order.
+        let mut arena = EquationArena::new();
+        let a = arena.alloc(PatternEquation::Operand { index: 2 });
+        let b = arena.alloc(PatternEquation::Operand { index: 0 });
+        let cat = arena.alloc(PatternEquation::Cat { left: a, right: b });
+        let mut order = Vec::new();
+        let mut seen = vec![false; 3];
+        arena.operand_order(cat, &mut order, &mut seen);
+        assert_eq!(order, vec![2, 0]);
+        assert_eq!(seen, vec![true, false, true]);
+    }
+
+    #[test]
+    fn equal_constraint_impossible_errors() {
+        // op8 field [0,3] (max 15) == 100 is impossible.
+        let mut arena = EquationArena::new();
+        let eq = arena.alloc(PatternEquation::Equal {
+            lhs: op8_field(0, 3),
+            rhs: cexpr(100),
+        });
+        let err = arena.gen_pattern(eq, &[]).unwrap_err();
+        assert!(format!("{err}").contains("impossible to match"));
     }
 }
