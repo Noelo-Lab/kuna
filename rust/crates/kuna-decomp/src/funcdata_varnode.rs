@@ -193,9 +193,15 @@ impl Funcdata {
             };
             specs.push((i, name, ty, addr));
         }
+        // C++ `funcp.setScope(localmap, baseaddr + -1)` (funcdata.cc:69): the
+        // function's `restricted_usepoint` is the entry address minus one, used by
+        // `ProtoStoreSymbol::setInput` when a parameter's storage is not owned by
+        // any scope (e.g. a register).
+        let restricted_usepoint = &self.get_address().clone() + -1;
         for (i, name, ty, addr) in specs {
+            let rup = restricted_usepoint.clone();
             if let Some(lm) = self.get_scope_local_mut() {
-                let _ = lm.add_param_symbol(i, &name, ty, &addr);
+                let _ = lm.add_param_symbol(i, &name, ty, &addr, &rup);
             }
         }
     }
