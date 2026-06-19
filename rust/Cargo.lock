@@ -103,6 +103,7 @@ dependencies = [
 name = "kuna-slacomp"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "kuna-base",
  "kuna-num",
  "kuna-sleigh",

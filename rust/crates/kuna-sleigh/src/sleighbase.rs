@@ -94,6 +94,17 @@ impl SourceFileIndexer {
             decoder.close_element(subel)?;
             self.file_to_index.insert(filename.clone(), index);
             self.index_to_file.insert(index, filename);
+            // C++ `decode` does not touch `leastUnusedIndex`; that is harmless
+            // upstream because `encode` only ever runs on a compiler-populated
+            // indexer (built via `index()`).  kuna's WS5 round-trip *does*
+            // re-encode a decoded indexer, and `encode` iterates
+            // `0..leastUnusedIndex` -- so keep the one-up count consistent with
+            // the restored indices (the contiguous `0..=max` invariant the
+            // compiler maintains).  This re-establishes the invariant without
+            // altering any compiler-path behavior. (kuna)
+            if index >= self.least_unused_index {
+                self.least_unused_index = index + 1;
+            }
         }
         decoder.close_element(el)
     }
@@ -491,6 +502,106 @@ impl SleighBase {
         if !error_pairs.is_empty() {
             return Err(KunaError::sleigh("Duplicate register pairs"));
         }
+        Ok(())
+    }
+
+    /// C++ `SleighBase::encodeSlaSpace` (sleighbase.cc:197-225): write one
+    /// `<space>`/`<space_other>`/`<space_unique>` element fully describing an
+    /// address space.  Mirrors the C++ attribute order exactly (name, index,
+    /// bigendian, delay, size, optional wordsize, physical).
+    fn encode_sla_space(&self, encoder: &mut dyn Encoder, spc: &AddrSpace) {
+        let elem = if spc.get_type() == spacetype::IPTR_INTERNAL {
+            &sla::ELEM_SPACE_UNIQUE
+        } else if spc.is_other_space() {
+            &sla::ELEM_SPACE_OTHER
+        } else {
+            &sla::ELEM_SPACE
+        };
+        encoder.open_element(elem);
+        encoder.write_string(&sla::ATTRIB_NAME, spc.get_name().as_bytes());
+        encoder.write_signed_integer(&sla::ATTRIB_INDEX, i64::from(spc.get_index()));
+        encoder.write_bool(&sla::ATTRIB_BIGENDIAN, self.base.is_big_endian());
+        encoder.write_signed_integer(&sla::ATTRIB_DELAY, i64::from(spc.get_delay()));
+        encoder.write_signed_integer(&sla::ATTRIB_SIZE, i64::from(spc.get_addr_size()));
+        if spc.get_word_size() > 1 {
+            encoder.write_signed_integer(&sla::ATTRIB_WORDSIZE, i64::from(spc.get_word_size()));
+        }
+        encoder.write_bool(&sla::ATTRIB_PHYSICAL, spc.has_physical());
+        encoder.close_element(elem);
+    }
+
+    /// C++ `SleighBase::encode` (sleighbase.cc:226-255): write the whole `.sla`
+    /// element stream.  Opens `<sleigh>`, writes the header attributes
+    /// (version/bigendian/align/uniqbase + the optional maxdelay/uniqmask/
+    /// numsections), then the source-file indexer, the `<spaces>` block (skipping
+    /// the internal constant/fspec/iop/join spaces), then the symbol table.
+    ///
+    /// This is the top-level orchestrator the SLEIGH compiler calls at the end of
+    /// `run_compilation`.  Every sub-part (`SourceFileIndexer::encode`,
+    /// `SymbolTable::encode`, and the per-symbol/pattern/semantics `encode`
+    /// methods underneath) was already ported for the decoder round-trip and is
+    /// reused verbatim.
+    pub fn encode(&self, encoder: &mut dyn Encoder) -> KunaResult<()> {
+        encoder.open_element(&sla::ELEM_SLEIGH);
+        encoder.write_signed_integer(&sla::ATTRIB_VERSION, i64::from(sla::FORMAT_VERSION));
+        encoder.write_bool(&sla::ATTRIB_BIGENDIAN, self.base.is_big_endian());
+        encoder.write_signed_integer(&sla::ATTRIB_ALIGN, i64::from(self.base.alignment));
+        encoder
+            .write_unsigned_integer(&sla::ATTRIB_UNIQBASE, u64::from(self.base.get_unique_base()));
+        if self.maxdelayslotbytes > 0 {
+            encoder
+                .write_unsigned_integer(&sla::ATTRIB_MAXDELAY, u64::from(self.maxdelayslotbytes));
+        }
+        if self.unique_allocatemask != 0 {
+            encoder
+                .write_unsigned_integer(&sla::ATTRIB_UNIQMASK, u64::from(self.unique_allocatemask));
+        }
+        if self.num_sections != 0 {
+            encoder
+                .write_unsigned_integer(&sla::ATTRIB_NUMSECTIONS, u64::from(self.num_sections));
+        }
+        self.indexer.encode(encoder);
+
+        encoder.open_element(&sla::ELEM_SPACES);
+        let defaultspace = self
+            .manager
+            .get_default_code_space()
+            .ok_or_else(|| KunaError::sleigh("no default code space to encode"))?
+            .get_name()
+            .as_bytes()
+            .to_vec();
+        encoder.write_string(&sla::ATTRIB_DEFAULTSPACE, &defaultspace);
+        let n = self.manager.num_spaces();
+        for i in 0..n {
+            let spc = match self.manager.get_space(i) {
+                None => continue,
+                Some(s) => Rc::clone(s),
+            };
+            match spc.get_type() {
+                spacetype::IPTR_CONSTANT
+                | spacetype::IPTR_FSPEC
+                | spacetype::IPTR_IOP
+                | spacetype::IPTR_JOIN => continue,
+                _ => {}
+            }
+            self.encode_sla_space(encoder, &spc);
+        }
+        encoder.close_element(&sla::ELEM_SPACES);
+
+        // SymbolTable::encode needs the SleighBaseTrans seam (for the per-section
+        // ConstructTpl encode).  The seam borrows the template store; encode only
+        // reads it, but SlaTrans holds `&mut`, so clone the store to satisfy the
+        // signature (encode never mutates the templates).
+        let const_space = self
+            .manager
+            .get_constant_space()
+            .cloned()
+            .ok_or_else(|| KunaError::sleigh("constant space not registered"))?;
+        let mut templates = self.templates.clone();
+        let trans = SlaTrans { const_space, templates: &mut templates };
+        self.symtab.encode(encoder, &trans)?;
+
+        encoder.close_element(&sla::ELEM_SLEIGH);
         Ok(())
     }
 }

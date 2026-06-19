@@ -30,6 +30,12 @@ kuna-base.workspace = true
 kuna-num.workspace = true
 kuna-sleigh.workspace = true
 
+[dev-dependencies]
+# Used by the WS5 encode round-trip tests to inflate a .sla body and compare the
+# uncompressed element stream (the deflate backend is the same flate2 the
+# shared FormatEncode/CompressBuffer use).
+flate2.workspace = true
+
 [lints]
 workspace = true
 
