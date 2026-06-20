@@ -1,29 +1,8 @@
 # Kuna
 
 An agent-first decompiler, based on [Ghidra](https://github.com/NationalSecurityAgency/ghidra), written in Rust.
-
-## Why Another Decompiler?
-
-LLM agents, like [Codex](https://chatgpt.com/codex/), have fundamentally changed how we reverse engineer and ultimately secure binaries.
-Instead of humans looking directly at decompilers, LLMs are increasingly the ones using them, and humans instead read the agents' logs. As such, it feels natural that decompilers should become oriented and optimized around agents.
-
-This paradigm shift requires more than just an [MCP](https://modelcontextprotocol.io/docs/getting-started/intro) or a [generic CLI](https://github.com/binsync/declib). It requires a composable, tunable decompiler design that can be modified on-the-fly for the situation. This hypothetical decompiler must also be fast, to reduce the agent bottleneck, and positioned to be developed rapidly.
-
-Kuna prioritizes the following:
-
-* Quality decompilation: text is what LLMs consume, so make it the best on the planet to get better performance from LLMs.
-* Speed: remove the bottleneck common on larger binaries.
-* Flexibility: give LLMs access to many knobs that change decompilation based on the goal.
-* Quick development: LLMs will do the majority of coding, so target ways to improve that experience.
-
-To achieve this, Kuna is built as an agent-first decompiler. 
-The decompiler is broken into stages that can be adjusted during runtime using assertions, allowing decompilation behavior to be tuned for the task at hand. 
-It is based on Ghidra, due to its speed and architectural support, but rewritten in Rust to enable safer and faster LLM-assisted development.
-
-Kuna is also being actively improved with state-of-the-art techniques from decompilers like [angr](https://github.com/angr/angr), differential testing against Hex-Rays, and new workflows designed specifically for agent-driven reverse engineering.
-
-There is still a lot of work to do. If you are interested in decompilers, reverse engineering, program analysis, or building tools for the next generation of LLM agents, we'd love your help. 
-Join us as we push decompilers into their next stage of evolution.
+Kuna aims to improve fundamental decompiler techniques, while making them more accessible to agents and thier human users.
+Interested in why? Read our [motivating statement](#motivation-why-another-decompiler). 
 
 ## Install & Usage
 ### Install
@@ -54,6 +33,30 @@ void main(void)
 kuna reads ELF/PE/etc. via the `object` crate and selects the SLEIGH language automatically.
 `decompile` drives `decomp_dbg` and captures the emitted C cleanly (interactive prompts never
 pollute the output).
+
+## Motivation: Why Another Decompiler?
+
+LLM agents, like [Codex](https://chatgpt.com/codex/), have fundamentally changed how we reverse engineer and ultimately secure binaries.
+Instead of humans looking directly at decompilers, LLMs are increasingly the ones using them, and humans instead read the agents' logs. As such, it feels natural that decompilers should become oriented and optimized around agents.
+
+This paradigm shift requires more than just an [MCP](https://modelcontextprotocol.io/docs/getting-started/intro) or a [generic CLI](https://github.com/binsync/declib). It requires a composable, tunable decompiler design that can be modified on-the-fly for the situation. This hypothetical decompiler must also be fast, to reduce the agent bottleneck, and positioned to be developed rapidly.
+
+Kuna prioritizes the following:
+
+* Quality decompilation: text is what LLMs consume, so make it the best on the planet to get better performance from LLMs.
+* Speed: remove the bottleneck common on larger binaries.
+* Flexibility: give LLMs access to many knobs that change decompilation based on the goal.
+* Quick development: LLMs will do the majority of coding, so target ways to improve that experience.
+
+To achieve this, Kuna is built as an agent-first decompiler. 
+The decompiler is broken into stages that can be adjusted during runtime using assertions, allowing decompilation behavior to be tuned for the task at hand. 
+It is based on Ghidra, due to its speed and architectural support, but rewritten in Rust to enable safer and faster LLM-assisted development.
+
+Kuna is also being actively improved with state-of-the-art techniques from decompilers like [angr](https://github.com/angr/angr), differential testing against Hex-Rays, and new workflows designed specifically for agent-driven reverse engineering.
+
+There is still a lot of work to do. If you are interested in decompilers, reverse engineering, program analysis, or building tools for the next generation of LLM agents, we'd love your help. 
+Join us as we push decompilers into their next stage of evolution.
+
 
 ## Design
 kuna is organized around an explicit **stage model** (a P0 knowledge plane + S1–S9 with a
