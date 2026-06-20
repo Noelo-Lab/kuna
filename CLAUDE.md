@@ -53,36 +53,45 @@ SLEIGH compiler is `slacomp` (matches `sleigh_opt`'s CLI: `slacomp <file.slaspec
 `-a <dir>` recurses). All under `rust/target/release/`. Work in the cargo workspace
 directly (`cd rust && cargo build/test ...`) for development.
 
-## Python tooling
+## The `kuna` CLI
 
-Install editable into the project venv (`~/.virtualenvs/kuna`): `pip install -e .`
+The user-facing commands are the single Rust binary `kuna` (`rust/crates/kuna-cli`,
+built to `rust/target/release/kuna` by `make binaries`) — the Python CLIs
+(`kuna/{decompile,run_tests,catalog,slacomp}.py`) were ported to it and removed (see
+`docs/RUST_PORT.md` and `docs/rust-port/cli-port.md`). Build it, then:
 
 ```bash
 # Run the decompiler test suite with baseline parity checking
-python -m kuna.run_tests --all --baseline docs/baseline.json   # expect: PARITY OK
+kuna test --all --baseline docs/baseline.json                  # expect: PARITY OK
+kuna test --datatests --json                                   # machine-readable
 
 # Decompile a function from a binary
-python -m kuna.decompile ./a.out main
-python -m kuna.decompile ./stripped.bin 0x401040 --addr
+kuna decompile ./a.out main
+kuna decompile ./stripped.bin 0x401040 --addr
 
 # Flip a stage-model assertion per decompilation (the LLM control surface)
-python -m kuna.catalog --json                                  # discover settable assertions
-python -m kuna.decompile ./a.out main --option compareform canonical
-python -m kuna.decompile ./sparc.elf main --option returnpair single
+kuna catalog --json                                            # discover settable assertions
+kuna decompile ./a.out main --option compareform canonical
+kuna decompile ./sparc.elf main --option returnpair single
 ```
 
-`run_tests` parses the harness's two streams separately (unit results on **stderr**,
+`kuna test` parses the harness's two streams separately (unit results on **stderr**,
 datatest results on **stdout**) and exits nonzero on any failure or baseline regression.
-`decompile` drives `decomp_dbg` as a subprocess and captures `print C` via
+`kuna decompile` drives `decomp_dbg` as a subprocess and captures `print C` via
 `openfile write` so interactive prompts never pollute the output; `--option NAME VALUE`
 (repeatable) and `--kassert "<args>"` flip stage-model sub-stage assertions per run.
-`catalog` is the **discovery half of the LLM control API**: it parses the decompiler's
-`stage catalog` JSON (single source of truth: `settableTable` in `kuna_stages.cc`) into
-the documented, flippable assertion list — `--json` for an agent, `--markdown` to
-regenerate `docs/assertions.md`, `--check` to fail on catalog/registration drift (CI).
-The full catalog also renders to `docs/assertions.md`; the model behind it is
-`docs/stages.md` / `docs/stage-model.md`, and the defaults are recorded in
-`docs/divergences.md`.
+`kuna catalog` is the **discovery half of the LLM control API**: it parses the decompiler's
+`stage catalog` JSON (single source of truth: `settableTable`, generated from
+`rust/crates/kuna-decomp/stages.toml`) into the documented, flippable assertion list —
+`--json` for an agent, `--markdown` to regenerate `docs/assertions.md`, `--check` to fail
+on catalog/registration drift (CI; cross-checks the catalog against
+`kuna_decomp::options::KUNA_OPTION_NAMES` in-process). The full catalog also renders to
+`docs/assertions.md`; the model behind it is `docs/stages.md` / `docs/stage-model.md`, and
+the defaults are recorded in `docs/divergences.md`.
+
+The still-Python `kuna/pipeline/` (the autonomous feature loop, out of scope) imports the
+thin library shim `kuna/decompile.py::decompile`; `pip install -e .` still installs the
+`kuna` package for it.
 
 ## Tests
 

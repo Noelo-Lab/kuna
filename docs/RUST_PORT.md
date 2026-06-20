@@ -136,14 +136,37 @@ correctness.
 ## Building and testing now
 
 ```sh
-make binaries     # cargo build the Rust decomp_dbg/decomp_test_dbg + slacomp
+make binaries     # cargo build the Rust decomp_dbg/decomp_test_dbg + slacomp + the `kuna` CLI
 make specs        # compile every .slaspec -> .sla with the Rust SLEIGH compiler (slacomp)
-make test         # the 675/675 datatest parity (Rust harness + baseline) -- needs no C++
+make test         # the 675/675 datatest parity (the `kuna` CLI + baseline) -- needs no C++
 make rust-test    # the full cargo workspace test suite (ported units + golden + .sla parity)
 ```
 
 `make test` is the self-sufficient correctness gate: it compiles the specs with the Rust
 `slacomp` and decodes the corpus with the Rust decompiler, end to end, with no C++.
+
+### The user-facing CLI is the `kuna` binary
+
+The Python user-facing commands were ported to a single Rust binary, `kuna`
+(`rust/crates/kuna-cli`, built by `make binaries` to `rust/target/release/kuna`) — so the
+whole project now lives under one Rust paradigm. The four entry points:
+
+```sh
+kuna decompile <binary> <func> [--addr] [--option NAME VALUE]... [--kassert ARGS]...
+kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]
+kuna catalog [--json|--markdown|--check] [--option NAME]
+kuna specs [-a <dir>] [<slaspec>...] [--diff]
+```
+
+Each shells out to the existing engine binaries (the same console surface the Python drove)
+and parses their streams in Rust, so the output is byte-identical to the old `python -m
+kuna.{decompile,run_tests,catalog}`; `catalog --check` runs in-process against `kuna-decomp`
+(it cross-checks the catalog the binary emits against the registered kuna-option set
+`KUNA_OPTION_NAMES`, the Rust-world replacement for the old `check_drift` that parsed the
+removed C++ `options.cc`). The ported Python modules (`kuna/decompile.py`'s CLI,
+`kuna/run_tests.py`, `kuna/catalog.py`, `kuna/slacomp.py`) were removed; `kuna/decompile.py`
+remains only as a thin **library** shim for the still-Python `kuna/pipeline/` (the autonomous
+feature loop, out of scope). See `docs/rust-port/cli-port.md` for the differential checks.
 
 `python -m kuna.slacomp --all` (the per-spec `.sla` content byte-diff) was the SLEIGH-compiler
 validation gate **during** the port; it diffs against the C++ `sleigh_opt`, so re-running it now

@@ -17,10 +17,12 @@ PYTHON  ?= python3
 
 all: binaries specs
 
-# Build the Rust decompiler console binaries (decomp_dbg, decomp_test_dbg) + the
-# Rust SLEIGH compiler (slacomp). Cargo manages parallelism + incrementality.
+# Build the Rust decompiler console binaries (decomp_dbg, decomp_test_dbg), the
+# Rust SLEIGH compiler (slacomp), and the user-facing `kuna` CLI (kuna-cli).
+# Cargo manages parallelism + incrementality. (decomp_test_dbg lives in
+# kuna-harness; kuna-cli pulls it in as a sibling at build time.)
 binaries:
-	cd $(RUSTDIR) && cargo build --$(PROFILE) -p kuna-console -p kuna-slacomp
+	cd $(RUSTDIR) && cargo build --$(PROFILE) -p kuna-console -p kuna-harness -p kuna-slacomp -p kuna-cli
 
 rust: binaries
 
@@ -39,18 +41,22 @@ $(SLACOMP):
 
 # Run the datatest harness (the Rust decomp_test_dbg) over the vendored XML
 # regression tests, with baseline parity checking. Builds binaries/specs if
-# missing. Exit code is nonzero on any failure or baseline regression.
-test:
+# missing. Driven by the Rust `kuna` CLI (the port of kuna.run_tests); exit code
+# is nonzero on any failure or baseline regression.
+test: $(BINDIR)/kuna
 	@test -x $(BINDIR)/decomp_test_dbg || $(MAKE) binaries
 	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
-	cd $(ROOT) && KUNA_ENGINE=rust $(PYTHON) -m kuna.run_tests --datatests --baseline docs/baseline.json
+	cd $(ROOT) && KUNA_ENGINE=rust $(BINDIR)/kuna test --datatests --baseline docs/baseline.json
 
 # Same harness over the kuna-owned stage-model issue testcases (tests/stages/).
-test-stages:
+test-stages: $(BINDIR)/kuna
 	@test -x $(BINDIR)/decomp_test_dbg || $(MAKE) binaries
 	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
-	cd $(ROOT) && KUNA_ENGINE=rust $(PYTHON) -m kuna.run_tests --datatests \
+	cd $(ROOT) && KUNA_ENGINE=rust $(BINDIR)/kuna test --datatests \
 	  --datatests-dir tests/stages --baseline docs/baseline-stages.json
+
+$(BINDIR)/kuna:
+	cd $(RUSTDIR) && cargo build --$(PROFILE) -p kuna-cli
 
 # The Rust workspace's own unit/integration tests (the ported TEST() suites, the
 # golden differential vectors, the SLEIGH-compiler .sla content-parity tests, ...).
