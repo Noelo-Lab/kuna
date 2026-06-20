@@ -5,7 +5,7 @@
     3) + the goto-count structure-quality metric (observable half of roadmap
     item 4).
 
-    Reuses the upstream elseif binary (decompiler/datatests/elseif.xml):
+    Reuses the upstream elseif binary (tests/datatests/elseif.xml):
     testElseIf structures with exactly one unstructured edge, carried by a
     BlockIf goto target (`else if (b == 0x1d) goto ...`).
 

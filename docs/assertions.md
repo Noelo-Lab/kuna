@@ -1,8 +1,8 @@
 # kuna assertion catalog
 
-**Generated** from the decompiler's `stage catalog` command (`python -m kuna.catalog --markdown`) -- do not edit by hand; edit `settableTable` in `decompiler/cpp/kuna_stages.cc` and regenerate.
+**Generated** from the decompiler's `stage catalog` command (`kuna catalog --markdown`) -- do not edit by hand; edit `settableTable` in `decompiler/crates/kuna-decomp/stages.toml` and regenerate.
 
-These are the kuna stage-model sub-stage decisions an operator (human or LLM) can flip per decompilation. Defaults are the shipped values (post-DIV-2, see `docs/divergences.md`). Set any of them with `python -m kuna.decompile <bin> <fn> --option <name> <value>` (or, per function, `--kassert "<stage> <substage> ..."`); revert any one with its `off`/`canonical` value.
+These are the kuna stage-model sub-stage decisions an operator (human or LLM) can flip per decompilation. Defaults are the shipped values (post-DIV-2, see `docs/divergences.md`). Set any of them with `kuna decompile <bin> <fn> --option <name> <value>` (or, per function, `--kassert "<stage> <substage> ..."`); revert any one with its `off`/`canonical` value.
 
 | Option | Values | Default | Stage / sub-stage | Source | Kind | Decision | When to flip |
 |---|---|---|---|---|---|---|---|
@@ -33,11 +33,11 @@ These are the kuna stage-model sub-stage decisions an operator (human or LLM) ca
 
 ```bash
 # discover (machine-readable):
-python -m kuna.catalog --json
+kuna catalog --json
 
 # decompile with an assertion flipped (repeatable):
-python -m kuna.decompile ./a.out main --option compareform canonical
-python -m kuna.decompile ./sparc.elf main --option returnpair single
+kuna decompile ./a.out main --option compareform canonical
+kuna decompile ./sparc.elf main --option returnpair single
 ```
 
 The `⚠️ opt-in` defaults (`returnpair`, `v850indirectbranch`) are documented as destructive global defaults and ship off; apply them per function / per program only (see each row's *When to flip*).

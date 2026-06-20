@@ -6,7 +6,7 @@ Rust port must reproduce these byte-for-byte (same CSV rows from its own
 OpBehavior / FloatFormat / Address implementations).
 
 Generated at C++ tree rev `87016be` against the pinned architecture datatest
-`decompiler/datatests/floatprint.xml` (x86:LE:64:default:gcc).
+`tests/datatests/floatprint.xml` (x86:LE:64:default:gcc).
 
 ## Regeneration
 
@@ -15,7 +15,7 @@ make binaries        # rebuild decomp_dbg after any C++ change
 ~/.virtualenvs/kuna/bin/python tools/rust-port/gen_vectors.py
 ```
 
-(Equivalently at the console: `load test file decompiler/datatests/floatprint.xml`,
+(Equivalently at the console: `load test file tests/datatests/floatprint.xml`,
 then `golden opbehavior` / `golden float` / `golden addrsort` under
 `openfile write <path>` / `closefile`.)
 

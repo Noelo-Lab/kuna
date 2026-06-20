@@ -1,31 +1,11 @@
-# Upstream Makefile build output dirs (created under decompiler/cpp/)
-decompiler/cpp/com_dbg/
-decompiler/cpp/com_opt/
-decompiler/cpp/test_dbg/
-decompiler/cpp/ghi_dbg/
-decompiler/cpp/ghi_opt/
-decompiler/cpp/sla_dbg/
-decompiler/cpp/sla_opt/
-
-# Built binaries
-decompiler/cpp/decomp_dbg
-decompiler/cpp/decomp_opt
-decompiler/cpp/decomp_test_dbg
-decompiler/cpp/sleigh_dbg
-decompiler/cpp/sleigh_opt
-decompiler/cpp/ghidra_dbg
-decompiler/cpp/ghidra_opt
-decompiler/cpp/*.a
-*.o
-
 # Generated SLEIGH artifacts (built by `make specs`)
 specs/**/*.sla
 specs/**/*.sla.lock
 
-# Rust port build output (rust/, see docs/rust-port/)
-rust/target/
+# Rust build output (decompiler/, the Cargo workspace)
+decompiler/target/
 
-# Golden snapshot dumps produced by the Rust-port differential harness
+# Golden snapshot dumps produced by the differential harness
 tests/golden/snapshots/
 
 # Python
@@ -33,9 +13,6 @@ __pycache__/
 *.egg-info/
 *.pyc
 .pytest_cache/
-
-# Local libbfd prefix fetched by tools/fetch_bfd.sh (no-root builds)
-.bfdlocal/
 
 # kuna pipeline runtime state: worker inventory, heartbeats, logs, isolated worktrees.
 # The durable backlog (docs/pipeline/*.json, matrix.md) IS committed; live state is not.

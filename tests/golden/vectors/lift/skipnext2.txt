@@ -1,5 +1,5 @@
 # kuna golden lift fixture (per-instruction raw p-code from the C++ oracle)
-# corpus: decompiler/datatests/skipnext2.xml
+# corpus: tests/datatests/skipnext2.xml
 # sla: Ghidra/Processors/Toy/data/languages/toy_builder_be_align2.sla (relative to specs/)
 # cap: 80 instructions per lift point
 # lift-points (space:byte-offset name): ram:0x10=skipinst

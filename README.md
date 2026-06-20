@@ -9,10 +9,10 @@ Interested in why? Read our [motivating statement](#motivation-why-another-decom
 Use the release. 
 
 ### Usage
-The user-facing command is the single Rust binary **`kuna`** (`rust/target/release/kuna`):
+The user-facing command is the single Rust binary **`kuna`** (`decompiler/target/release/kuna`):
 
 ```bash
-KUNA=rust/target/release/kuna
+KUNA=decompiler/target/release/kuna
 
 # Decompile a function by name, or by address in a stripped binary
 $KUNA decompile ./a.out main
@@ -96,8 +96,8 @@ make specs      # compile every SLEIGH .slaspec -> .sla with slacomp (the decode
 make            # = binaries + specs
 ```
 
-Everything lands in `rust/target/release/`. For development, work in the cargo workspace
-directly: `cd rust && cargo build` / `cargo test --workspace`.
+Everything lands in `decompiler/target/release/`. For development, work in the cargo workspace
+directly: `cd decompiler && cargo build` / `cargo test --workspace`.
 
 ### Test
 ```bash
@@ -107,24 +107,24 @@ make rust-test   # the full cargo workspace suite (ported unit tests, golden dif
 ```
 
 `make test` compiles the specs with the Rust SLEIGH compiler and decodes the XML regression
-corpus (`decompiler/datatests/`, 83 files / 675 assertions) with the Rust decompiler, end to
+corpus (`tests/datatests/`, 83 files / 675 assertions) with the Rust decompiler, end to
 end — the self-sufficient correctness gate. `docs/baseline.json` is the recorded oracle.
 
 ### Layout
 
 | Path | What it is |
 |---|---|
-| `rust/` | The engine — a cargo workspace. `kuna-base`/`kuna-num`/`kuna-sleigh`/`kuna-decomp` (decompiler), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-slacomp` (SLEIGH compiler, `slacomp`), `kuna-cli` (the `kuna` binary) |
-| `decompiler/datatests/` | Upstream XML decompilation regression tests (83 files → 675 assertions); the corpus `make test` runs |
+| `decompiler/` | The engine — a cargo workspace. `kuna-base`/`kuna-num`/`kuna-sleigh`/`kuna-decomp` (decompiler), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-slacomp` (SLEIGH compiler, `slacomp`), `kuna-cli` (the `kuna` binary) |
+| `tests/datatests/` | Upstream XML decompilation regression tests (83 files → 675 assertions); the corpus `make test` runs |
 | `specs/Ghidra/Processors/` | Vendored SLEIGH processor specs; `.sla` are build artifacts produced by `slacomp` |
 | `Makefile` | Top-level build/test driver (Rust-only) |
 | `docs/RUST_PORT.md` | The port summary (what/why/how/validation) |
-| `kuna/` | Remaining Python: the autonomous feature `pipeline/` + a few helpers (the user-facing CLI is now the Rust `kuna` binary) |
-| `tools/sync_upstream.py` | Pulls upstream Ghidra `specs/` + `datatests/` updates |
+| `scripts/` | Python helpers backing the autonomous feature `pipeline/` (the user-facing CLI is the Rust `kuna` binary) |
+| `tools/sync_upstream.py` | Pulls upstream Ghidra `specs/` + `tests/datatests/` updates |
 
 ## Provenance
 
 Ported from Ghidra commit `cef869af04c4740a71ad31a55704045b1b0d1644`. The SLEIGH specs and the
 XML regression corpus are still vendored from upstream; the C++ source that the engine was
 ported from is recorded at that commit and recoverable from git history (the tree was removed
-once the port was proven — see `UPSTREAM.md` and `docs/RUST_PORT.md`).
+once the port was proven — see `docs/UPSTREAM.md` and `docs/RUST_PORT.md`).

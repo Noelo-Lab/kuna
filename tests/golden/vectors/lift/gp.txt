@@ -1,5 +1,5 @@
 # kuna golden lift fixture (per-instruction raw p-code from the C++ oracle)
-# corpus: decompiler/datatests/gp.xml
+# corpus: tests/datatests/gp.xml
 # sla: Ghidra/Processors/MIPS/data/languages/mips32be.sla (relative to specs/)
 # cap: 80 instructions per lift point
 # lift-points (space:byte-offset name): ram:0x410024=printf ram:0x410030=populate ram:0x410040=test_gp

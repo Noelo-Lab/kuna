@@ -5,7 +5,7 @@ PHADE issue dataset), each demonstrating that the issue is fixable through the k
 stage model (`docs/stages.md`, `docs/stage-model.md`): a named sub-stage decision point,
 controlled by a durable P0 assertion, instead of a hardcoded heuristic.
 
-These run with the same upstream harness as `decompiler/datatests/` but from a
+These run with the same upstream harness as `tests/datatests/` but from a
 separate directory so the upstream baseline (`docs/baseline.json`) is never touched:
 
 ```bash
