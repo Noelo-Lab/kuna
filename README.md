@@ -2,7 +2,7 @@
 
 An agent-first decompiler, based on [Ghidra](https://github.com/NationalSecurityAgency/ghidra), written in Rust.
 Kuna aims to improve fundamental decompiler techniques, while making them more accessible to agents and thier human users.
-Interested in why? Read our [motivating statement](#motivation-why-another-decompiler). 
+Interested in why? Read our [motivating statement](#motivation-why-another-decompiler) and our [design principles](#design). 
 
 ## Install & Usage
 ### Install
