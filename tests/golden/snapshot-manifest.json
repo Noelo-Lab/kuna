@@ -1,0 +1,1668 @@
+{
+ "boundaries": [
+  "B0",
+  "B2",
+  "B3",
+  "B4",
+  "B5"
+ ],
+ "git_rev": "87016be447d51604493677f73466c140e4f71c69",
+ "schema": 1,
+ "tests": {
+  "bitfields": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 8,
+   "files": {
+    "B0": 1,
+    "B2": 8,
+    "B3": 8,
+    "B4": 8,
+    "B5": 8
+   },
+   "source": "decompiler/datatests/bitfields.xml",
+   "status": "ok"
+  },
+  "bitfields2": {
+   "arch": "MIPS:BE:32:default:default",
+   "decompiles": 8,
+   "files": {
+    "B0": 1,
+    "B2": 8,
+    "B3": 8,
+    "B4": 8,
+    "B5": 8
+   },
+   "source": "decompiler/datatests/bitfields2.xml",
+   "status": "ok"
+  },
+  "boolless": {
+   "arch": "8051:BE:16:default:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/boolless.xml",
+   "status": "ok"
+  },
+  "ccmp": {
+   "arch": "AARCH64:LE:64:v8A:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/ccmp.xml",
+   "status": "ok"
+  },
+  "concat": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 6,
+   "files": {
+    "B0": 1,
+    "B2": 6,
+    "B3": 6,
+    "B4": 6,
+    "B5": 6
+   },
+   "source": "decompiler/datatests/concat.xml",
+   "status": "ok"
+  },
+  "concatsplit": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/concatsplit.xml",
+   "status": "ok"
+  },
+  "condconst": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 3,
+   "files": {
+    "B0": 1,
+    "B2": 3,
+    "B3": 3,
+    "B4": 3,
+    "B5": 3
+   },
+   "source": "decompiler/datatests/condconst.xml",
+   "status": "ok"
+  },
+  "condconst2": {
+   "arch": "ARM:LE:32:v8:default",
+   "decompiles": 3,
+   "files": {
+    "B0": 1,
+    "B2": 3,
+    "B3": 3,
+    "B4": 3,
+    "B5": 3
+   },
+   "source": "decompiler/datatests/condconst2.xml",
+   "status": "ok"
+  },
+  "condconstsub": {
+   "arch": "AARCH64:LE:64:v8A:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/condconstsub.xml",
+   "status": "ok"
+  },
+  "condexesub": {
+   "arch": "ARM:LE:32:v8:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "decompiler/datatests/condexesub.xml",
+   "status": "ok"
+  },
+  "condmulti": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/condmulti.xml",
+   "status": "ok"
+  },
+  "convert": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/convert.xml",
+   "status": "ok"
+  },
+  "copytrim": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "decompiler/datatests/copytrim.xml",
+   "status": "ok"
+  },
+  "deadvolatile": {
+   "arch": "MIPS:LE:32:default:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/deadvolatile.xml",
+   "status": "ok"
+  },
+  "deindirect": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/deindirect.xml",
+   "status": "ok"
+  },
+  "deindirect2": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/deindirect2.xml",
+   "status": "ok"
+  },
+  "displayformat": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/displayformat.xml",
+   "status": "ok"
+  },
+  "divopt": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 4,
+   "files": {
+    "B0": 1,
+    "B2": 4,
+    "B3": 4,
+    "B4": 4,
+    "B5": 4
+   },
+   "source": "decompiler/datatests/divopt.xml",
+   "status": "ok"
+  },
+  "doublemove": {
+   "arch": "MIPS:BE:32:default:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "decompiler/datatests/doublemove.xml",
+   "status": "ok"
+  },
+  "dupptr": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 7,
+   "files": {
+    "B0": 1,
+    "B2": 7,
+    "B3": 7,
+    "B4": 7,
+    "B5": 7
+   },
+   "source": "decompiler/datatests/dupptr.xml",
+   "status": "ok"
+  },
+  "elseif": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/elseif.xml",
+   "status": "ok"
+  },
+  "enum": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 5,
+   "files": {
+    "B0": 1,
+    "B2": 5,
+    "B3": 5,
+    "B4": 5,
+    "B5": 5
+   },
+   "source": "decompiler/datatests/enum.xml",
+   "status": "ok"
+  },
+  "floatcast": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "decompiler/datatests/floatcast.xml",
+   "status": "ok"
+  },
+  "floatconv": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 3,
+   "files": {
+    "B0": 1,
+    "B2": 3,
+    "B3": 3,
+    "B4": 3,
+    "B5": 3
+   },
+   "source": "decompiler/datatests/floatconv.xml",
+   "status": "ok"
+  },
+  "floatprint": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/floatprint.xml",
+   "status": "ok"
+  },
+  "forloop1": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/forloop1.xml",
+   "status": "ok"
+  },
+  "forloop_loaditer": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/forloop_loaditer.xml",
+   "status": "ok"
+  },
+  "forloop_thruspecial": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/forloop_thruspecial.xml",
+   "status": "ok"
+  },
+  "forloop_varused": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/forloop_varused.xml",
+   "status": "ok"
+  },
+  "forloop_withskip": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/forloop_withskip.xml",
+   "status": "ok"
+  },
+  "gh1243-8051-addc": {
+   "arch": "8051:BE:16:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "tests/stages/gh1243-8051-addc.xml",
+   "status": "ok"
+  },
+  "gh1276-flagcompare-boolsign": {
+   "arch": "8051:BE:16:default:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh1276-flagcompare-boolsign.xml",
+   "status": "ok"
+  },
+  "gh1282-boolsignshift": {
+   "arch": "8051:BE:16:default:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh1282-boolsignshift.xml",
+   "status": "ok"
+  },
+  "gh1537-simd-memset": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh1537-simd-memset.xml",
+   "status": "ok"
+  },
+  "gh1951-avr-rcallwrap": {
+   "arch": "avr8:LE:16:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "tests/stages/gh1951-avr-rcallwrap.xml",
+   "status": "ok"
+  },
+  "gh2786-unaryspacing": {
+   "arch": "MIPS:BE:32:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "tests/stages/gh2786-unaryspacing.xml",
+   "status": "ok"
+  },
+  "gh4788-v850-bcond-disp17": {
+   "arch": "V850:LE:32:default",
+   "decompiles": 0,
+   "files": {
+    "B0": 1
+   },
+   "source": "tests/stages/gh4788-v850-bcond-disp17.xml",
+   "status": "ok"
+  },
+  "gh558-arraynotation": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh558-arraynotation.xml",
+   "status": "ok"
+  },
+  "gh558-compareform": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh558-compareform.xml",
+   "status": "ok"
+  },
+  "gh5897-arm-cpy-mov": {
+   "arch": "ARM:LE:32:v7",
+   "decompiles": 0,
+   "files": {
+    "B0": 1
+   },
+   "source": "tests/stages/gh5897-arm-cpy-mov.xml",
+   "status": "ok"
+  },
+  "gh6389-8085-undoc": {
+   "arch": "8085:LE:16:default",
+   "decompiles": 0,
+   "files": {
+    "B0": 1
+   },
+   "source": "tests/stages/gh6389-8085-undoc.xml",
+   "status": "ok"
+  },
+  "gh6882-sparcstructret": {
+   "arch": "sparc:BE:32:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh6882-sparcstructret.xml",
+   "status": "ok"
+  },
+  "gh6904-ppc-e500-concat44": {
+   "arch": "PowerPC:BE:32:e500",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "tests/stages/gh6904-ppc-e500-concat44.xml",
+   "status": "ok"
+  },
+  "gh6930-inferfuncentry": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh6930-inferfuncentry.xml",
+   "status": "ok"
+  },
+  "gh6990-returnpair": {
+   "arch": "sparc:BE:32:default:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh6990-returnpair.xml",
+   "status": "ok"
+  },
+  "gh7139-x86-16-disp16-signed": {
+   "arch": "x86:LE:16:Real Mode",
+   "decompiles": 0,
+   "files": {
+    "B0": 1
+   },
+   "source": "tests/stages/gh7139-x86-16-disp16-signed.xml",
+   "status": "ok"
+  },
+  "gh7190-ovlesssimplify": {
+   "arch": "V850:LE:32:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh7190-ovlesssimplify.xml",
+   "status": "ok"
+  },
+  "gh7418-x86-call-rel16-mask": {
+   "arch": "x86:LE:32:default",
+   "decompiles": 0,
+   "files": {
+    "B0": 1
+   },
+   "source": "tests/stages/gh7418-x86-call-rel16-mask.xml",
+   "status": "ok"
+  },
+  "gh7451-riscvzfaflis": {
+   "arch": "RISCV:LE:32:default",
+   "decompiles": 0,
+   "files": {
+    "B0": 1
+   },
+   "source": "tests/stages/gh7451-riscvzfaflis.xml",
+   "status": "ok"
+  },
+  "gh7890-arm-vcvt": {
+   "arch": "ARM:LE:32:v8",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "tests/stages/gh7890-arm-vcvt.xml",
+   "status": "ok"
+  },
+  "gh8017-stackprobeloop": {
+   "arch": "x86:LE:64:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh8017-stackprobeloop.xml",
+   "status": "ok"
+  },
+  "gh8391-arm-thumb-mrrc": {
+   "arch": "ARM:LE:32:v8-m",
+   "decompiles": 0,
+   "files": {
+    "B0": 1
+   },
+   "source": "tests/stages/gh8391-arm-thumb-mrrc.xml",
+   "status": "ok"
+  },
+  "gh8456-arm-mrs-banked": {
+   "arch": "ARM:LE:32:v8",
+   "decompiles": 0,
+   "files": {
+    "B0": 1
+   },
+   "source": "tests/stages/gh8456-arm-mrs-banked.xml",
+   "status": "ok"
+  },
+  "gh8467-dynamichashmax": {
+   "arch": "AARCH64:LE:64:v8A",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "tests/stages/gh8467-dynamichashmax.xml",
+   "status": "ok"
+  },
+  "gh8471-thumbfuncptr": {
+   "arch": "ARM:LE:32:v8:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh8471-thumbfuncptr.xml",
+   "status": "ok"
+  },
+  "gh8500-stackalias": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh8500-stackalias.xml",
+   "status": "ok"
+  },
+  "gh8724-arraystride": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh8724-arraystride.xml",
+   "status": "ok"
+  },
+  "gh8777-flagcompare-sborrow": {
+   "arch": "PIC-24F:LE:24:default:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh8777-flagcompare-sborrow.xml",
+   "status": "ok"
+  },
+  "gh8790-x86-prefetch-regform": {
+   "arch": "x86:LE:64:default",
+   "decompiles": 0,
+   "files": {
+    "B0": 1
+   },
+   "source": "tests/stages/gh8790-x86-prefetch-regform.xml",
+   "status": "ok"
+  },
+  "gh8817-v850indbranch": {
+   "arch": "V850:LE:32:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh8817-v850indbranch.xml",
+   "status": "ok"
+  },
+  "gh8844-avr-rjmpwrap": {
+   "arch": "avr8:LE:16:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "tests/stages/gh8844-avr-rjmpwrap.xml",
+   "status": "ok"
+  },
+  "gh8913-addcarrychain": {
+   "arch": "6502:LE:16:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh8913-addcarrychain.xml",
+   "status": "ok"
+  },
+  "gh9001-hcs12brn": {
+   "arch": "HCS12:BE:24:default",
+   "decompiles": 0,
+   "files": {
+    "B0": 1
+   },
+   "source": "tests/stages/gh9001-hcs12brn.xml",
+   "status": "ok"
+  },
+  "gh9184-x86-fma-ymm256": {
+   "arch": "x86:LE:64:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "tests/stages/gh9184-x86-fma-ymm256.xml",
+   "status": "ok"
+  },
+  "gh9191-switchmodbound": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh9191-switchmodbound.xml",
+   "status": "ok"
+  },
+  "gh9203-condexe-loopcopy": {
+   "arch": "RISCV:LE:64:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh9203-condexe-loopcopy.xml",
+   "status": "ok"
+  },
+  "gh9218-inputvarnodeadjust": {
+   "arch": "68000:BE:32:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "tests/stages/gh9218-inputvarnodeadjust.xml",
+   "status": "ok"
+  },
+  "gh9230-memsetseq": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/gh9230-memsetseq.xml",
+   "status": "ok"
+  },
+  "ghangr-ite-region-converter-missing-5db28e": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/ghangr-ite-region-converter-missing-5db28e.xml",
+   "status": "ok"
+  },
+  "ghangr-loweredswitch": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/ghangr-loweredswitch.xml",
+   "status": "ok"
+  },
+  "ghangr-loweredswitch-mv": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/ghangr-loweredswitch-mv.xml",
+   "status": "ok"
+  },
+  "gp": {
+   "arch": "MIPS:BE:32:default:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/gp.xml",
+   "status": "ok"
+  },
+  "heapstring": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 5,
+   "files": {
+    "B0": 1,
+    "B2": 5,
+    "B3": 5,
+    "B4": 5,
+    "B5": 5
+   },
+   "source": "decompiler/datatests/heapstring.xml",
+   "status": "ok"
+  },
+  "ifswitch": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/ifswitch.xml",
+   "status": "ok"
+  },
+  "impliedfield": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/impliedfield.xml",
+   "status": "ok"
+  },
+  "indproto": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/indproto.xml",
+   "status": "ok"
+  },
+  "injectoverride": {
+   "arch": "x86:LE:64:default:windows",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "decompiler/datatests/injectoverride.xml",
+   "status": "ok"
+  },
+  "inline": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 3,
+   "files": {
+    "B0": 1,
+    "B2": 3,
+    "B3": 3,
+    "B4": 3,
+    "B5": 3
+   },
+   "source": "decompiler/datatests/inline.xml",
+   "status": "ok"
+  },
+  "inlinetarget": {
+   "arch": "PowerPC:BE:32:default:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/inlinetarget.xml",
+   "status": "ok"
+  },
+  "kuna-assert": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/kuna-assert.xml",
+   "status": "ok"
+  },
+  "kuna-catalog": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 0,
+   "files": {
+    "B0": 1
+   },
+   "source": "tests/stages/kuna-catalog.xml",
+   "status": "ok"
+  },
+  "kuna-console": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 0,
+   "files": {
+    "B0": 1
+   },
+   "source": "tests/stages/kuna-console.xml",
+   "status": "ok"
+  },
+  "kuna-pipeline-quality": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/kuna-pipeline-quality.xml",
+   "status": "ok"
+  },
+  "kuna-regions": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "tests/stages/kuna-regions.xml",
+   "status": "ok"
+  },
+  "kuna-restarts": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/kuna-restarts.xml",
+   "status": "ok"
+  },
+  "longdouble": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 6,
+   "files": {
+    "B0": 1,
+    "B2": 6,
+    "B3": 6,
+    "B4": 6,
+    "B5": 6
+   },
+   "source": "decompiler/datatests/longdouble.xml",
+   "status": "ok"
+  },
+  "loopcomment": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/loopcomment.xml",
+   "status": "ok"
+  },
+  "lzcount": {
+   "arch": "PowerPC:BE:32:default:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/lzcount.xml",
+   "status": "ok"
+  },
+  "mixfloatint": {
+   "arch": "x86:LE:64:default:windows",
+   "decompiles": 5,
+   "files": {
+    "B0": 1,
+    "B2": 5,
+    "B3": 5,
+    "B4": 5,
+    "B5": 5
+   },
+   "source": "decompiler/datatests/mixfloatint.xml",
+   "status": "ok"
+  },
+  "modulo": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/modulo.xml",
+   "status": "ok"
+  },
+  "modulo2": {
+   "arch": "x86:LE:64:default:windows",
+   "decompiles": 4,
+   "files": {
+    "B0": 1,
+    "B2": 4,
+    "B3": 4,
+    "B4": 4,
+    "B5": 4
+   },
+   "source": "decompiler/datatests/modulo2.xml",
+   "status": "ok"
+  },
+  "multiret": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/multiret.xml",
+   "status": "ok"
+  },
+  "namespace": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/namespace.xml",
+   "status": "ok"
+  },
+  "namestyle": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "tests/stages/namestyle.xml",
+   "status": "ok"
+  },
+  "nan": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/nan.xml",
+   "status": "ok"
+  },
+  "nestedoffset": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/nestedoffset.xml",
+   "status": "ok"
+  },
+  "noforloop_alias": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/noforloop_alias.xml",
+   "status": "ok"
+  },
+  "noforloop_globcall": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/noforloop_globcall.xml",
+   "status": "ok"
+  },
+  "noforloop_iterused": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/noforloop_iterused.xml",
+   "status": "ok"
+  },
+  "offsetarray": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/offsetarray.xml",
+   "status": "ok"
+  },
+  "orcompare": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "decompiler/datatests/orcompare.xml",
+   "status": "ok"
+  },
+  "packstructaccess": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/packstructaccess.xml",
+   "status": "ok"
+  },
+  "partialmerge": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 5,
+   "files": {
+    "B0": 1,
+    "B2": 5,
+    "B3": 5,
+    "B4": 5,
+    "B5": 5
+   },
+   "source": "decompiler/datatests/partialmerge.xml",
+   "status": "ok"
+  },
+  "partialsplit": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 6,
+   "files": {
+    "B0": 1,
+    "B2": 6,
+    "B3": 6,
+    "B4": 6,
+    "B5": 6
+   },
+   "source": "decompiler/datatests/partialsplit.xml",
+   "status": "ok"
+  },
+  "partialunion": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "decompiler/datatests/partialunion.xml",
+   "status": "ok"
+  },
+  "piecestruct": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/piecestruct.xml",
+   "status": "ok"
+  },
+  "pointercmp": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/pointercmp.xml",
+   "status": "ok"
+  },
+  "pointerrel": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "decompiler/datatests/pointerrel.xml",
+   "status": "ok"
+  },
+  "pointersub": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/pointersub.xml",
+   "status": "ok"
+  },
+  "promotecompare": {
+   "arch": "x86:LE:32:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/promotecompare.xml",
+   "status": "ok"
+  },
+  "ptrtoarray": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "decompiler/datatests/ptrtoarray.xml",
+   "status": "ok"
+  },
+  "readvolatile": {
+   "arch": "68000:BE:32:MC68020:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/readvolatile.xml",
+   "status": "ok"
+  },
+  "retspecial": {
+   "arch": "AARCH64:LE:64:v8A:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "decompiler/datatests/retspecial.xml",
+   "status": "ok"
+  },
+  "retstruct": {
+   "arch": "x86:LE:32:default:win",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/retstruct.xml",
+   "status": "ok"
+  },
+  "revisit": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/revisit.xml",
+   "status": "ok"
+  },
+  "sbyte": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/sbyte.xml",
+   "status": "ok"
+  },
+  "skipnext2": {
+   "arch": "Toy:BE:32:builder.align2:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/skipnext2.xml",
+   "status": "ok"
+  },
+  "stackreturn": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/stackreturn.xml",
+   "status": "ok"
+  },
+  "stackspill": {
+   "arch": "MIPS:LE:32:default:default",
+   "decompiles": 2,
+   "files": {
+    "B0": 1,
+    "B2": 2,
+    "B3": 2,
+    "B4": 2,
+    "B5": 2
+   },
+   "source": "decompiler/datatests/stackspill.xml",
+   "status": "ok"
+  },
+  "stackstring": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 7,
+   "files": {
+    "B0": 1,
+    "B2": 7,
+    "B3": 7,
+    "B4": 7,
+    "B5": 7
+   },
+   "source": "decompiler/datatests/stackstring.xml",
+   "status": "ok"
+  },
+  "statuscmp": {
+   "arch": "x86:LE:32:default:windows",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/statuscmp.xml",
+   "status": "ok"
+  },
+  "switchhide": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/switchhide.xml",
+   "status": "ok"
+  },
+  "switchind": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/switchind.xml",
+   "status": "ok"
+  },
+  "switchloop": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/switchloop.xml",
+   "status": "ok"
+  },
+  "switchmulti": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/switchmulti.xml",
+   "status": "ok"
+  },
+  "switchreturn": {
+   "arch": "MIPS:LE:32:default:default",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/switchreturn.xml",
+   "status": "ok"
+  },
+  "threedim": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/threedim.xml",
+   "status": "ok"
+  },
+  "twodim": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/twodim.xml",
+   "status": "ok"
+  },
+  "union_datatype": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 13,
+   "files": {
+    "B0": 1,
+    "B2": 13,
+    "B3": 13,
+    "B4": 13,
+    "B5": 13
+   },
+   "source": "decompiler/datatests/union_datatype.xml",
+   "status": "ok"
+  },
+  "varcross": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 3,
+   "files": {
+    "B0": 1,
+    "B2": 3,
+    "B3": 3,
+    "B4": 3,
+    "B5": 3
+   },
+   "source": "decompiler/datatests/varcross.xml",
+   "status": "ok"
+  },
+  "wayoffarray": {
+   "arch": "x86:LE:64:default:gcc",
+   "decompiles": 1,
+   "files": {
+    "B0": 1,
+    "B2": 1,
+    "B3": 1,
+    "B4": 1,
+    "B5": 1
+   },
+   "source": "decompiler/datatests/wayoffarray.xml",
+   "status": "ok"
+  }
+ }
+}

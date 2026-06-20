@@ -27,8 +27,10 @@ import time
 from . import config
 
 # Ordered worker phases (for display + progress sense).
-PHASES = ["queued", "setup", "analyze", "design", "code", "build", "test", "docs",
-          "commit", "pr", "done", "failed"]
+# Feature-mode workers use: analyze, design, code, build, test, docs, commit, pr.
+# Port-mode workers (PIPELINE_MODE=port) use: analyze, port|verify, gate, commit, pr.
+PHASES = ["queued", "setup", "analyze", "design", "code", "port", "verify", "build",
+          "test", "gate", "docs", "commit", "pr", "done", "failed"]
 
 
 def _state_dir():

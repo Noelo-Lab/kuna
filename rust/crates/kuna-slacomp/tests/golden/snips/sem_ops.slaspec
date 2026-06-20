@@ -1,0 +1,17 @@
+:x is y {
+  a = b f+ c; d = e f- g; h = i f* j; k = l f/ m;
+  n = o == p; q = r != s; t = u f== v; w = x f!= z;
+  aa = bb << cc; dd = ee >> ff; gg = hh s>> ii;
+  jj = kk s/ ll; mm = nn s% oo; pp = qq s< rr; ss = tt s> uu;
+  vv = ww s<= xx; yy = zz s>= a2;
+  b2 = c2 f< d2; e2 = f2 f> g2; h2 = i2 f<= j2; k2 = l2 f>= m2;
+  n2 = o2 <= p2; q2 = r2 >= s2;
+  bo = a3 || b3; ba = c3 && d3; bx = e3 ^^ f3;
+  zz1 = zext(a); zz2 = sext(b); cy = carry(c,d); by = borrow(e,f);
+  sc = scarry(g,h); sb = sborrow(i,j); nn1 = nan(k); ab = abs(l);
+  sq = sqrt(m); ce = ceil(n); fl = floor(o); ro = round(p);
+  i2f = int2float(q); f2f = float2float(r); tr = trunc(s);
+  pc = popcount(t); lz = lzcount(u);
+  if (cc) goto <lab>; call dest; return [v];
+  local tmp:4 = w; delayslot(1); export x; build y; crossbuild z,sec;
+}

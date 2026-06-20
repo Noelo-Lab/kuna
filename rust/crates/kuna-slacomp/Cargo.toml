@@ -1,0 +1,44 @@
+# kuna Rust port: the SLEIGH compiler (`sleigh_opt` / `slacomp`).
+#
+# This crate is the compiler half of SLEIGH -- it PARSES `.slaspec` text and
+# ENCODES the compiled `.sla`.  It mirrors the C++ compiler-specific sources
+# (the `SLACOMP` link group) 1:1:
+#
+#   slghscan.l    -> src/slghscan.rs              (WS1: lexer)
+#   slghparse.y   -> src/slghparse.rs             (WS2: hand recursive-descent parser)
+#   pcodecompile  -> src/pcodecompile_actions.rs  (WS3: compiler-side PcodeCompile actions)
+#   slgh_compile  -> src/slgh_compile.rs          (WS4: the SleighCompile driver + subsystems)
+#   encode side   -> src/encode.rs                (WS5: .sla emit orchestration glue)
+#
+# It REUSES (does not re-port) the consumer-side symbol/pattern/semantics/encode
+# types already ported in `kuna-sleigh` (SleighBase, the SleighSymbol table,
+# SlghPattern, PatternExpression, ConstructTpl/OpTpl, slaformat's FormatEncode).
+# The compiler BUILDS those structures and calls their existing `encode(...)`.
+#
+# See docs/rust-port/sleigh-compiler/map.md for the full C++ -> module map.
+[package]
+name = "kuna-slacomp"
+description = "kuna Rust port: SLEIGH compiler (.slaspec -> .sla), the sleigh_opt replacement"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+kuna-base.workspace = true
+kuna-num.workspace = true
+kuna-sleigh.workspace = true
+
+[dev-dependencies]
+# Used by the WS5 encode round-trip tests to inflate a .sla body and compare the
+# uncompressed element stream (the deflate backend is the same flate2 the
+# shared FormatEncode/CompressBuffer use).
+flate2.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "slacomp"
+path = "src/bin/slacomp.rs"

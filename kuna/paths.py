@@ -37,13 +37,55 @@ def stage_datatests_dir() -> Path:
     return repo_root() / "tests" / "stages"
 
 
-def binary(name: str, env_var: str = None) -> Path:
-    """Resolve a built binary under decompiler/cpp/, honoring an env override."""
+def binary(name: str, env_var: str = None, engine: str = None) -> Path:
+    """Resolve a built binary, honoring an env override and the engine switch.
+
+    Resolution order: an explicit per-binary override always wins. When an
+    ``engine`` is explicitly requested (``"cpp"`` / ``"rust"``), an engine-suffixed
+    override (``<env_var>_CPP`` / ``<env_var>_RUST``, e.g. ``KUNA_DECOMP_DBG_RUST``)
+    is consulted first -- this lets one process point each engine at its own
+    out-of-tree binary, which is what the pipeline's cross-engine comparison needs
+    (a single bare ``KUNA_DECOMP_DBG`` can only name one binary). The bare
+    ``<env_var>`` applies only in the ambient case (no explicit ``engine``), so it
+    keeps the single-engine ``KUNA_ENGINE=rust`` + ``KUNA_DECOMP_DBG`` workflow
+    intact without hijacking the *other* engine during a comparison.
+
+    Absent an override, the engine selects the build -- an explicit ``engine``
+    overrides the ambient ``KUNA_ENGINE`` env var, so a single process can resolve
+    both engines' binaries without mutating the environment. ``rust`` selects the
+    Rust port's build at ``rust/target/<KUNA_RUST_PROFILE or release>/<name>`` (the
+    Rust binaries use the same names); ``cpp`` (the default) selects the C++ build
+    under ``decompiler/cpp/``.
+    """
+    # The C++ tree was removed (see docs/RUST_PORT.md); the Rust port is the only
+    # build, so it is the default. An explicit ``engine="cpp"`` is still honored via
+    # an override env var (for anyone who rebuilds the old tree out-of-tree) but
+    # otherwise fails clearly rather than silently pointing at a missing path.
+    selected = engine if engine is not None else (os.environ.get("KUNA_ENGINE") or "rust")
     if env_var:
-        env = os.environ.get(env_var)
-        if env:
-            return Path(env).resolve()
-    return cpp_dir() / name
+        if engine is not None:
+            # Engine-specific override (e.g. KUNA_DECOMP_DBG_RUST) -- so a single
+            # process can give each engine its own binary during a comparison.
+            suffixed = os.environ.get("%s_%s" % (env_var, engine.upper()))
+            if suffixed:
+                return Path(suffixed).resolve()
+        else:
+            # Ambient (no explicit engine): the bare override names the one engine
+            # in play. Don't apply it when an explicit engine was requested, or it
+            # would clobber the *other* engine's binary mid-comparison.
+            bare = os.environ.get(env_var)
+            if bare:
+                return Path(bare).resolve()
+    if selected == "rust":
+        profile = os.environ.get("KUNA_RUST_PROFILE") or "release"
+        # The Rust SLEIGH compiler binary is named ``slacomp`` (the decompiler
+        # binaries keep the upstream names ``decomp_dbg``/``decomp_test_dbg``).
+        rust_name = "slacomp" if name == "sleigh_opt" else name
+        return repo_root() / "rust" / "target" / profile / rust_name
+    raise RuntimeError(
+        "the C++ tree was removed (see docs/RUST_PORT.md); the Rust port is the only "
+        "engine. Set $%s to an out-of-tree C++ binary if you really need engine=cpp." % (env_var or "")
+    )
 
 
 def decomp_dbg() -> Path:

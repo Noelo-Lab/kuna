@@ -4,93 +4,94 @@ Guidance for working in this repository.
 
 ## What kuna is
 
-kuna is a **standalone extraction of Ghidra's C++ decompiler** (the "deep decompiler,"
-built around SLEIGH) lifted out of the Ghidra Java application so the core
-decompilation pipeline can be studied, instrumented, and refined stage by stage.
+kuna is a **standalone Rust port of Ghidra's decompiler** (the "deep decompiler," built
+around SLEIGH) and its **SLEIGH compiler** — extracted from the Ghidra Java application and
+ported, line-faithfully, from C++ to Rust so the core pipeline can be studied, instrumented,
+and refined stage by stage in a memory-safe, modular engine.
 
-It is **derived from Ghidra** (https://github.com/NationalSecurityAgency/ghidra),
-Apache-2.0 licensed. The C++ source under `decompiler/` and the SLEIGH specs under
-`specs/` are **verbatim copies of upstream Ghidra** — see `UPSTREAM.md` for the exact
-commit (`GHIDRA_REV`) and path map. Upstream changes can be pulled in later; see
-**Porting upstream changes** below.
+It began as a verbatim extraction of Ghidra's C++ decompiler (**derived from Ghidra**,
+https://github.com/NationalSecurityAgency/ghidra, Apache-2.0). That C++ tree was then ported
+to Rust and **removed once the port was proven equivalent** (675/675 decompiler datatests +
+148/148 SLEIGH specs compiling to byte-identical `.sla`) — see **`docs/RUST_PORT.md`** for the
+full what/why/how/validation. The SLEIGH `specs/` and the XML regression corpus
+(`decompiler/datatests/`) remain vendored from upstream (`UPSTREAM.md` has the `GHIDRA_REV`).
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `decompiler/cpp/` | Upstream C++ decompiler source + upstream Makefile. **Diverged from upstream as of 2026-06 (GH-558 prototype)** — kuna additions live in `kuna_*.cc/.hh` (auto-linked); anchor edits to upstream files are minimal and tracked in `UPSTREAM.md` *Divergence*. |
-| `decompiler/unittests/` | Upstream C++ unit tests + kuna's `testkunaregion.cc` (207 tests). Vendored. |
-| `decompiler/datatests/` | Upstream XML regression tests (83 files → 675 assertions). Vendored. |
-| `specs/Ghidra/Processors/` | Vendored SLEIGH specs (all upstream modules). `.sla` are **built artifacts** (gitignored). |
-| `Makefile` | Build driver (kuna-owned). |
-| `kuna/` | Python package: `decompile.py`, `run_tests.py`, `catalog.py`, `paths.py`, and `pipeline/` (the angr-inspired feature loop — see `docs/pipeline.md`). |
+| `rust/` | **The engine.** Cargo workspace: `kuna-base`/`kuna-num`/`kuna-sleigh`/`kuna-decomp` (the ported decompiler), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-slacomp` (the ported SLEIGH compiler, binary `slacomp`). See `docs/RUST_PORT.md`. |
+| `decompiler/datatests/` | Upstream XML regression tests (83 files → 675 assertions). The corpus the Rust harness runs. Vendored. |
+| `specs/Ghidra/Processors/` | Vendored SLEIGH specs (all upstream modules). `.sla` are **built artifacts** (gitignored), produced by `slacomp`. |
+| `Makefile` | Build driver (kuna-owned, Rust-only). |
+| `kuna/` | Python helpers: `run_tests.py` (datatest harness), `slacomp.py` (.sla differential), `decompile.py`, `catalog.py`, `paths.py`, and `pipeline/`. (To be ported to Rust — see RUST_PORT follow-up.) |
 | `tools/pipeline/` | Driver + worker for the continuous feature pipeline (`run.sh`, `worker.sh`, `worker_prompt.md`, `install_gh.sh`). |
-| `tools/sync_upstream.py` | Port upstream Ghidra changes into kuna. |
-| `tools/fetch_bfd.sh` | Fetch libbfd without root (see Build). |
+| `tools/sync_upstream.py` | Port upstream Ghidra changes into kuna (now specs/datatests only — the C++ source is removed). |
+| `docs/RUST_PORT.md` | **The port summary**: what was ported (decompiler + SLEIGH compiler), why, how, and the validation gates. The C++ tree (`decompiler/cpp/`, `decompiler/unittests/`) was removed once the port was proven; history retained in git. |
 | `docs/stages.md` | The normative stage model (P0 plane, S1–S9, Band B, feedback edges); full model in `docs/stage-model.md`. |
 | `docs/stage-mapping.md` | Every `.cc` mapped to a stage: §0 = current model (P0/S1–S9, matches the runtime registry `kuna_stages.cc`); legacy 19-stage tables kept for per-file role descriptions. |
 | `docs/baseline.json` | Recorded test-pass oracle (parity check) — the **kuna** oracle since DIV-2 (`docs/divergences.md`), no longer pristine-upstream. |
 
 ## Build
 
-Prereqs: `g++` (C++11), `make`, `zlib1g-dev`, and **`binutils-dev`** (libbfd — required to
-link `decomp_dbg`/`decomp_opt`/`decomp_test_dbg`). `bison`/`flex` are only needed if you
-edit a `.y`/`.l` grammar (the generated outputs are committed upstream).
+**The decompiler and the SLEIGH compiler are now fully ported to Rust and the vendored
+C++ tree has been removed — see `docs/RUST_PORT.md`.** Everything builds and tests through
+the Rust workspace under `rust/`. Prereqs: a Rust toolchain (`cargo`). (No g++/libbfd/bison/
+flex — those were only for the removed C++ tree.)
 
 ```bash
-make            # binaries + specs
-make binaries   # decomp_opt, decomp_dbg, sleigh_opt, decomp_test_dbg
-make specs      # compile all .slaspec -> .sla with the freshly built sleigh compiler
-make test       # run the upstream harness directly (unit tests + datatests)
+make            # binaries + specs (all Rust)
+make binaries   # cargo build the Rust decomp_dbg/decomp_test_dbg + slacomp
+make specs      # compile all .slaspec -> .sla with the Rust SLEIGH compiler (slacomp)
+make test       # the 675/675 datatest parity (Rust harness + docs/baseline.json)
+make rust-test  # the full cargo workspace suite (ported units + golden + .sla parity)
 make clean
 ```
 
-**No root for libbfd?** `sleigh_opt` and all `.sla` build without it; only the
-console/test binaries need it. Fetch it locally and inject via `BFD_PREFIX` (this routes
-through the upstream Makefile's own `ADDITIONAL_FLAGS`/`BFDLIB` knobs — it does **not**
-edit upstream):
+The decompiler binaries keep the upstream names (`decomp_dbg`, `decomp_test_dbg`); the
+SLEIGH compiler is `slacomp` (matches `sleigh_opt`'s CLI: `slacomp <file.slaspec>`,
+`-a <dir>` recurses). All under `rust/target/release/`. Work in the cargo workspace
+directly (`cd rust && cargo build/test ...`) for development.
 
-```bash
-./tools/fetch_bfd.sh                      # -> ./.bfdlocal (gitignored)
-make BFD_PREFIX="$(pwd)/.bfdlocal" all
-```
+## The `kuna` CLI
 
-Build gotcha (already handled by the Makefile's `touch-generated`): the committed
-bison/flex outputs must stay newer than their `.y`/`.l` sources or `make` will try to
-regenerate them. Always build through the top-level `Makefile`, not by calling the
-upstream Makefile directly. Each upstream binary must be built in its **own** `make`
-invocation (the upstream Makefile keys dependency selection on a single `MAKECMDGOALS`).
-
-## Python tooling
-
-Install editable into the project venv (`~/.virtualenvs/kuna`): `pip install -e .`
+The user-facing commands are the single Rust binary `kuna` (`rust/crates/kuna-cli`,
+built to `rust/target/release/kuna` by `make binaries`) — the Python CLIs
+(`kuna/{decompile,run_tests,catalog,slacomp}.py`) were ported to it and removed (see
+`docs/RUST_PORT.md` and `docs/rust-port/cli-port.md`). Build it, then:
 
 ```bash
 # Run the decompiler test suite with baseline parity checking
-python -m kuna.run_tests --all --baseline docs/baseline.json   # expect: PARITY OK
+kuna test --all --baseline docs/baseline.json                  # expect: PARITY OK
+kuna test --datatests --json                                   # machine-readable
 
 # Decompile a function from a binary
-python -m kuna.decompile ./a.out main
-python -m kuna.decompile ./stripped.bin 0x401040 --addr
+kuna decompile ./a.out main
+kuna decompile ./stripped.bin 0x401040 --addr
 
 # Flip a stage-model assertion per decompilation (the LLM control surface)
-python -m kuna.catalog --json                                  # discover settable assertions
-python -m kuna.decompile ./a.out main --option compareform canonical
-python -m kuna.decompile ./sparc.elf main --option returnpair single
+kuna catalog --json                                            # discover settable assertions
+kuna decompile ./a.out main --option compareform canonical
+kuna decompile ./sparc.elf main --option returnpair single
 ```
 
-`run_tests` parses the harness's two streams separately (unit results on **stderr**,
+`kuna test` parses the harness's two streams separately (unit results on **stderr**,
 datatest results on **stdout**) and exits nonzero on any failure or baseline regression.
-`decompile` drives `decomp_dbg` as a subprocess and captures `print C` via
+`kuna decompile` drives `decomp_dbg` as a subprocess and captures `print C` via
 `openfile write` so interactive prompts never pollute the output; `--option NAME VALUE`
 (repeatable) and `--kassert "<args>"` flip stage-model sub-stage assertions per run.
-`catalog` is the **discovery half of the LLM control API**: it parses the decompiler's
-`stage catalog` JSON (single source of truth: `settableTable` in `kuna_stages.cc`) into
-the documented, flippable assertion list — `--json` for an agent, `--markdown` to
-regenerate `docs/assertions.md`, `--check` to fail on catalog/registration drift (CI).
-The full catalog also renders to `docs/assertions.md`; the model behind it is
-`docs/stages.md` / `docs/stage-model.md`, and the defaults are recorded in
-`docs/divergences.md`.
+`kuna catalog` is the **discovery half of the LLM control API**: it parses the decompiler's
+`stage catalog` JSON (single source of truth: `settableTable`, generated from
+`rust/crates/kuna-decomp/stages.toml`) into the documented, flippable assertion list —
+`--json` for an agent, `--markdown` to regenerate `docs/assertions.md`, `--check` to fail
+on catalog/registration drift (CI; cross-checks the catalog against
+`kuna_decomp::options::KUNA_OPTION_NAMES` in-process). The full catalog also renders to
+`docs/assertions.md`; the model behind it is `docs/stages.md` / `docs/stage-model.md`, and
+the defaults are recorded in `docs/divergences.md`.
+
+The still-Python `kuna/pipeline/` (the autonomous feature loop, out of scope) imports the
+thin library shim `kuna/decompile.py::decompile`; `pip install -e .` still installs the
+`kuna` package for it.
 
 ## Tests
 
@@ -137,14 +138,15 @@ When you update the baseline after an intentional upstream behavior change, rege
 ## Conventions
 
 - Commit at milestones with descriptive messages; keep `PROGRESS.md` current.
-- New functionality → new files (`decompiler/cpp/kuna_*.cc/.hh` for decompiler code —
-  the upstream Makefile's `$(wildcard *.cc)` links them automatically). Edits to
-  upstream files are allowed when an anchor demands it, but keep them minimal, mark
-  them with a `(kuna)` comment, and record them in `UPSTREAM.md` *Divergence*.
+- Decompiler code lives in the `rust/` cargo workspace (`kuna-decomp` etc.); the SLEIGH
+  compiler in `kuna-slacomp`. New functionality → new modules; match the surrounding code's
+  conventions (the ported files name methods after their C++ originals).
 - kuna ElementIds use the 4000+ range (upstream max ~290); kuna PcodeOp addlflags
   bits start at 0x1000.
 - Issue-derived stage-model testcases go in `tests/stages/` (`make test-stages`,
   baseline `docs/baseline-stages.json`); see `tests/stages/README.md`.
-- Don't commit build artifacts (binaries, `*.o`, `*.sla`, `.bfdlocal/`) — they're gitignored.
+- Don't commit build artifacts (`rust/target/`, `*.sla`) — they're gitignored.
 - To understand a source file's role, start from `docs/stage-mapping.md` and the real pass
-  order in `decompiler/cpp/coreaction.cc` (`ActionDatabase::universalAction`).
+  order in `rust/crates/kuna-decomp/src/coreaction*.rs` (the `universalAction` registration).
+  The original C++ anchors cited throughout the code/docs map to upstream Ghidra at the
+  `GHIDRA_REV` in `UPSTREAM.md` (recoverable from git history or an upstream checkout).

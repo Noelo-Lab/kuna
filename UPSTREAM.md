@@ -1,6 +1,14 @@
 # Upstream provenance and sync
 
-kuna vendors Ghidra's C++ decompiler and its SLEIGH processor specifications.
+> **The vendored C++ source (`decompiler/cpp/`, `decompiler/unittests/`) has been removed** —
+> the decompiler and SLEIGH compiler are now fully ported to Rust (`rust/`); see
+> `docs/RUST_PORT.md`. Still vendored from upstream: the SLEIGH `specs/` and the XML
+> regression corpus `decompiler/datatests/`. The C++ anchors cited throughout the Rust code
+> and docs refer to the upstream Ghidra commit below (recoverable from git history or an
+> upstream checkout). `tools/sync_upstream.py` now applies only to `specs/` + `datatests/`.
+
+kuna vendors Ghidra's SLEIGH processor specifications and decompiler regression corpus (the
+C++ decompiler source it was ported from is recorded at the commit below).
 
 ## Source
 

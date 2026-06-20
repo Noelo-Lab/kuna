@@ -1,0 +1,40 @@
+=== MACRO BODY (pre-expansion) (5 ops) ===
+  op[0] opcode=1
+    out: space=handle(hi=0,sel=v_space,plus=0x0) off=handle(hi=0,sel=v_offset,plus=0x0) sz=handle(hi=0,sel=v_size,plus=0x0)
+    in[0]: space=handle(hi=1,sel=v_space,plus=0x0) off=handle(hi=1,sel=v_offset,plus=0x0) sz=handle(hi=1,sel=v_size,plus=0x0)
+  op[1] opcode=19
+    out: space=handle(hi=0,sel=v_space,plus=0x0) off=handle(hi=0,sel=v_offset,plus=0x0) sz=handle(hi=0,sel=v_size,plus=0x0)
+    in[0]: space=handle(hi=0,sel=v_space,plus=0x0) off=handle(hi=0,sel=v_offset,plus=0x0) sz=handle(hi=0,sel=v_size,plus=0x0)
+    in[1]: space=spaceid(space=const) off=real(0x1) sz=real(0x4)
+  op[2] opcode=65
+    out: <null>
+    in[0]: space=spaceid(space=const) off=real(0x0) sz=real(0x4)
+  op[3] opcode=4
+    out: <null>
+    in[0]: space=spaceid(space=const) off=j_relative(0x0) sz=real(0x8)
+  op[4] opcode=1
+    out: space=spaceid(space=unique) off=real(0x500) sz=real(0x2)
+    in[0]: space=handle(hi=1,sel=v_space,plus=0x0) off=handle(hi=1,sel=v_offset_plus,plus=0x2) sz=real(0x2)
+=== EXPANSION (post MacroBuilder::build) (6 ops) ===
+  op[0] opcode=1
+    out: space=spaceid(space=unique) off=real(0x100) sz=real(0x4)
+    in[0]: space=spaceid(space=unique) off=real(0x200) sz=real(0x4)
+  op[1] opcode=19
+    out: space=spaceid(space=unique) off=real(0x100) sz=real(0x4)
+    in[0]: space=spaceid(space=unique) off=real(0x100) sz=real(0x4)
+    in[1]: space=spaceid(space=const) off=real(0x1) sz=real(0x4)
+  op[2] opcode=65
+    out: <null>
+    in[0]: space=spaceid(space=const) off=real(0x3) sz=real(0x4)
+  op[3] opcode=4
+    out: <null>
+    in[0]: space=spaceid(space=const) off=j_relative(0x3) sz=real(0x8)
+  op[4] opcode=63
+    out: space=spaceid(space=unique) off=real(0x0) sz=real(0x2)
+    in[0]: space=spaceid(space=unique) off=real(0x200) sz=real(0x4)
+    in[1]: space=spaceid(space=const) off=real(0x2) sz=real(0x4)
+  op[5] opcode=1
+    out: space=spaceid(space=unique) off=real(0x500) sz=real(0x2)
+    in[0]: space=spaceid(space=unique) off=real(0x0) sz=real(0x2)
+haserror=0
+labelbase_used=3

@@ -1,0 +1,186 @@
+# kuna golden lift fixture (per-instruction raw p-code from the C++ oracle)
+# corpus: decompiler/datatests/gp.xml
+# sla: Ghidra/Processors/MIPS/data/languages/mips32be.sla (relative to specs/)
+# cap: 80 instructions per lift point
+# lift-points (space:byte-offset name): ram:0x410024=printf ram:0x410030=populate ram:0x410040=test_gp
+# regenerate: python tools/rust-port/gen_lift.py  (see tests/golden/vectors/lift/README.md)
+# golden liftctx (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)
+archid MIPS:BE:32:default:default
+languageid MIPS:BE:32:default
+slafile mips32be.sla
+endian big
+contextsize 1
+space const index=0 size=8 wordsize=1 bigendian=0
+space OTHER index=1 size=8 wordsize=1 bigendian=0
+space unique index=2 size=4 wordsize=1 bigendian=1
+space ram index=3 size=4 wordsize=1 bigendian=1
+space register index=4 size=4 wordsize=1 bigendian=1
+space fspec index=5 size=8 wordsize=1 bigendian=0
+space iop index=6 size=8 wordsize=1 bigendian=0
+space join index=7 size=4 wordsize=1 bigendian=1
+space stack index=8 size=4 wordsize=1 bigendian=1
+context ISA_MODE=0
+context LowBitCodeMode=0
+context PAIR_INSTRUCTION_FLAG=0
+context REL6=0
+context RELP=1
+context ext_16_rshi=0
+context ext_16_rslo=0
+context ext_32_addim=0
+context ext_32_addims=0
+context ext_32_basea=0
+context ext_32_code=0
+context ext_32_codes=0
+context ext_32_imm2=0
+context ext_32_imm2s=0
+context ext_32_imm3=0
+context ext_32_imm3s=0
+context ext_32_imm5=0
+context ext_32_imm5s=0
+context ext_32_imm6=0
+context ext_32_rdset=0
+context ext_32_rlist=0
+context ext_32_rs1set=0
+context ext_delay=0
+context ext_done=0
+context ext_imm_1620=0
+context ext_imm_1920=0
+context ext_imm_21=0
+context ext_imm_2123=0
+context ext_imm_2124=0
+context ext_imm_2226=0
+context ext_imm_2426=0
+context ext_imm_2526=0
+context ext_is_ext=0
+context ext_isjal=0
+context ext_off16_s=0
+context ext_off16_u=0
+context ext_reg_high=0
+context ext_reg_low=0
+context ext_svrs_s0=0
+context ext_svrs_s1=0
+context ext_svrs_xs=0
+context ext_t4=0
+context ext_tgt_2016=0
+context ext_tgt_2521=0
+context ext_tgt_x=0
+context ext_tra=0
+context ext_value=0
+context ext_value_1004=0
+context ext_value_1005=0
+context ext_value_1411=0
+context ext_value_1411s=0
+context ext_value_1511=0
+context ext_value_1511s=0
+context ext_value_areg=0
+context ext_value_b0=0
+context ext_value_b1=0
+context ext_value_b2=0
+context ext_value_b3=0
+context ext_value_frame=0
+context ext_value_sa40=0
+context ext_value_saz=0
+context ext_value_select=0
+context ext_value_xreg=0
+# golden lift ram:0x410024 80 (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)
+lifterror dataunavail ram:0x410024 Bytes at 0x00410024 are not mapped
+# golden lift ram:0x410030 80 (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)
+lifterror dataunavail ram:0x410030 Bytes at 0x00410030 are not mapped
+# golden lift ram:0x410040 80 (kuna_goldengen.cc; see tests/golden/vectors/lift/README.md)
+insn ram:0x410040 4
+  INT_LEFT (register,0x70,4) (const,0x41,4) (const,0x10,4)
+insn ram:0x410044 4
+  INT_ADD (register,0x70,4) (register,0x70,4) (const,0x20,4)
+insn ram:0x410048 4
+  INT_ADD (register,0x70,4) (register,0x70,4) (register,0x64,4)
+insn ram:0x41004c 4
+  INT_ADD (register,0x74,4) (register,0x74,4) (const,0xffffffd0,4)
+insn ram:0x410050 4
+  INT_ADD (unique,0x200,4) (register,0x70,4) (const,0x94,4)
+  COPY (unique,0x300,4) (const,0x0,4)
+  COPY (unique,0x300,4) (unique,0x200,4)
+  LOAD (register,0x64,4) (const,ram,8) (unique,0x300,4)
+insn ram:0x410054 4
+  INT_ADD (unique,0x200,4) (register,0x74,4) (const,0x24,4)
+  COPY (unique,0x300,4) (const,0x0,4)
+  COPY (unique,0x300,4) (unique,0x200,4)
+  STORE - (const,ram,8) (unique,0x300,4) (register,0x7c,4)
+insn ram:0x410058 4
+  INT_ADD (unique,0x200,4) (register,0x74,4) (const,0x28,4)
+  COPY (unique,0x300,4) (const,0x0,4)
+  COPY (unique,0x300,4) (unique,0x200,4)
+  STORE - (const,ram,8) (unique,0x300,4) (register,0x40,4)
+insn ram:0x41005c 4
+  INT_ADD (unique,0x200,4) (register,0x74,4) (const,0x20,4)
+  COPY (unique,0x300,4) (const,0x0,4)
+  COPY (unique,0x300,4) (unique,0x200,4)
+  STORE - (const,ram,8) (unique,0x300,4) (register,0x70,4)
+insn ram:0x410060 4
+  INT_OR (register,0x40,4) (register,0x10,4) (const,0x0,4)
+insn ram:0x410064 8
+  INT_AND (unique,0x1900,4) (register,0x64,4) (const,0x1,4)
+  INT_NOTEQUAL (register,0x3f00,1) (unique,0x1900,4) (const,0x0,4)
+  CALLOTHER - (const,0x0,4) (register,0x3f00,1)
+  INT_2COMP (unique,0x1c00,4) (const,0x2,4)
+  INT_AND (unique,0x1c00,4) (unique,0x1c00,4) (register,0x64,4)
+  COPY (register,0x80,4) (unique,0x1c00,4)
+  COPY (register,0x7c,4) (const,0x41006c,4)
+  INT_ADD (register,0x10,4) (register,0x74,4) (const,0x18,4)
+  CALLIND - (register,0x80,4)
+insn ram:0x41006c 4
+  INT_ADD (unique,0x200,4) (register,0x74,4) (const,0x20,4)
+  COPY (unique,0x300,4) (const,0x0,4)
+  COPY (unique,0x300,4) (unique,0x200,4)
+  LOAD (register,0x70,4) (const,ram,8) (unique,0x300,4)
+insn ram:0x410070 4
+  INT_OR (register,0x14,4) (register,0x40,4) (const,0x0,4)
+insn ram:0x410074 4
+  INT_ADD (unique,0x200,4) (register,0x70,4) (const,0x90,4)
+  COPY (unique,0x300,4) (const,0x0,4)
+  COPY (unique,0x300,4) (unique,0x200,4)
+  LOAD (register,0x10,4) (const,ram,8) (unique,0x300,4)
+insn ram:0x410078 4
+  INT_ADD (unique,0x200,4) (register,0x70,4) (const,0x98,4)
+  COPY (unique,0x300,4) (const,0x0,4)
+  COPY (unique,0x300,4) (unique,0x200,4)
+  LOAD (register,0x64,4) (const,ram,8) (unique,0x300,4)
+insn ram:0x41007c 4
+insn ram:0x410080 8
+  INT_AND (unique,0x1900,4) (register,0x64,4) (const,0x1,4)
+  INT_NOTEQUAL (register,0x3f00,1) (unique,0x1900,4) (const,0x0,4)
+  CALLOTHER - (const,0x0,4) (register,0x3f00,1)
+  INT_2COMP (unique,0x1c00,4) (const,0x2,4)
+  INT_AND (unique,0x1c00,4) (unique,0x1c00,4) (register,0x64,4)
+  COPY (register,0x80,4) (unique,0x1c00,4)
+  COPY (register,0x7c,4) (const,0x410088,4)
+  INT_ADD (register,0x10,4) (register,0x10,4) (const,0x0,4)
+  CALLIND - (register,0x80,4)
+insn ram:0x410088 4
+  INT_ADD (unique,0x200,4) (register,0x74,4) (const,0x24,4)
+  COPY (unique,0x300,4) (const,0x0,4)
+  COPY (unique,0x300,4) (unique,0x200,4)
+  LOAD (register,0x7c,4) (const,ram,8) (unique,0x300,4)
+insn ram:0x41008c 4
+  INT_ADD (unique,0x200,4) (register,0x74,4) (const,0x1c,4)
+  COPY (unique,0x300,4) (const,0x0,4)
+  COPY (unique,0x300,4) (unique,0x200,4)
+  LOAD (register,0x8,4) (const,ram,8) (unique,0x300,4)
+insn ram:0x410090 4
+  INT_ADD (unique,0x200,4) (register,0x74,4) (const,0x20,4)
+  COPY (unique,0x300,4) (const,0x0,4)
+  COPY (unique,0x300,4) (unique,0x200,4)
+  LOAD (register,0x40,4) (const,ram,8) (unique,0x300,4)
+insn ram:0x410094 8
+  INT_AND (unique,0x1900,4) (register,0x7c,4) (const,0x1,4)
+  INT_NOTEQUAL (register,0x3f00,1) (unique,0x1900,4) (const,0x0,4)
+  CALLOTHER - (const,0x0,4) (register,0x3f00,1)
+  INT_2COMP (unique,0x1c00,4) (const,0x2,4)
+  INT_AND (unique,0x1c00,4) (unique,0x1c00,4) (register,0x7c,4)
+  COPY (register,0x80,4) (unique,0x1c00,4)
+  INT_ADD (register,0x74,4) (register,0x74,4) (const,0x28,4)
+  RETURN - (register,0x80,4)
+insn ram:0x41009c 4
+insn ram:0x4100a0 4
+  CALLOTHER (unique,0x7900,4) (const,0x21,4) (const,0x2,1) (const,0x6c6c,4)
+  INT_RIGHT (register,0x14,4) (unique,0x7900,4) (const,0x20,4)
+lifterror baddata ram:0x4100a4 r0x004100a4: Unable to resolve constructor

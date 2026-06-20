@@ -1,0 +1,16 @@
+[package]
+name = "kuna-sleigh"
+description = "kuna Rust port: SLEIGH .sla reader + instruction decode runtime (no compiler)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+kuna-base.workspace = true
+kuna-num.workspace = true
+object.workspace = true
+
+[lints]
+workspace = true

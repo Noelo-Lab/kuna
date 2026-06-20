@@ -1,0 +1,25 @@
+[package]
+name = "kuna-cli"
+description = "kuna Rust port: the user-facing `kuna` CLI (decompile / test / catalog / specs)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# The single user-facing binary.  It reimplements the four Python entry points
+# (kuna/decompile.py, kuna/run_tests.py, kuna/catalog.py, kuna/slacomp.py) so the
+# whole project lives under one Rust paradigm.  Most subcommands shell out to the
+# already-built engine binaries (decomp_dbg / decomp_test_dbg / slacomp) exactly
+# as the Python did — guaranteeing byte-identical output — and parse their
+# streams in Rust; `catalog --check` is in-process (it cross-checks the catalog
+# table against the registered kuna-option set via `kuna-decomp`).
+[dependencies]
+kuna-decomp.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "kuna"
+path = "src/main.rs"

@@ -1,0 +1,47 @@
+=== empty ===
+V: 7 7 7 7 7 7 7 7
+K:
+B0: v=7 valid=3
+B1: v=7 valid=3
+B9: v=7 valid=3
+B10: v=7 valid=3
+B15: v=7 valid=3
+B20: v=7 valid=3
+B18446744073709551614: v=7 valid=3
+B18446744073709551615: v=7 valid=3
+=== splits ===
+resplit10=1
+V: 5 5 5 1 1 2 2 9
+K: 0=5 10=1 20=2 18446744073709551615=9
+B0: v=5 valid=0 before=0 after=10
+B1: v=5 valid=0 before=0 after=10
+B9: v=5 valid=0 before=0 after=10
+B10: v=1 valid=0 before=10 after=20
+B15: v=1 valid=0 before=10 after=20
+B20: v=2 valid=0 before=20 after=18446744073709551615
+B18446744073709551614: v=2 valid=0 before=20 after=18446744073709551615
+B18446744073709551615: v=9 valid=2 before=18446744073709551615
+=== clearRange(10,MAX) ===
+ret=1
+V: 5 5 5 1 1 1 1 9
+K: 0=5 10=1 18446744073709551615=9
+B0: v=5 valid=0 before=0 after=10
+B1: v=5 valid=0 before=0 after=10
+B9: v=5 valid=0 before=0 after=10
+B10: v=1 valid=0 before=10 after=18446744073709551615
+B15: v=1 valid=0 before=10 after=18446744073709551615
+B20: v=1 valid=0 before=10 after=18446744073709551615
+B18446744073709551614: v=1 valid=0 before=10 after=18446744073709551615
+B18446744073709551615: v=9 valid=2 before=18446744073709551615
+=== getValue lower edge ===
+split1=5
+V: 5 5 5 1 1 1 1 9
+K: 0=5 1=5 10=1 18446744073709551615=9
+B0: v=5 valid=0 before=0 after=1
+B1: v=5 valid=0 before=1 after=10
+B9: v=5 valid=0 before=1 after=10
+B10: v=1 valid=0 before=10 after=18446744073709551615
+B15: v=1 valid=0 before=10 after=18446744073709551615
+B20: v=1 valid=0 before=10 after=18446744073709551615
+B18446744073709551614: v=1 valid=0 before=10 after=18446744073709551615
+B18446744073709551615: v=9 valid=2 before=18446744073709551615

@@ -1,0 +1,2 @@
+define token t (16) f=(0,7);
+:y is z=0x1F & w=0b101 & q=42 unimpl
