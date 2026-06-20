@@ -1762,7 +1762,7 @@ fn is_absolute_path(p: &[u8]) -> bool {
 /// C++ `UNIQUE_CROSSBUILD_POSITION` / `UNIQUE_CROSSBUILD_NUMBITS`
 /// (slgh_compile.cc): the bit field carved out of the unique-space offset for
 /// the run-time crossbuild collision avoidance.
-const UNIQUE_CROSSBUILD_POSITION: u32 = 16;
+const UNIQUE_CROSSBUILD_POSITION: u32 = 8;
 const UNIQUE_CROSSBUILD_NUMBITS: u32 = 8;
 
 /// C++ `SleighCompile::insertCrossBuildRegion(uintb addr)` (slgh_compile.cc:3566).
@@ -1946,29 +1946,30 @@ impl SleighCompile {
     /// C++ `SleighCompile::newSectionSymbol(const string &nm)`
     /// (slgh_compile.cc:2742): find or create the named section symbol.
     pub fn new_section_symbol(&mut self, nm: &[u8]) -> SymbolId {
-        // C++: SectionSymbol *sym = (SectionSymbol*)symtab.findSymbol(nm);
-        // create one if absent (using sections.size() as the template id).
-        if let Some(existing) = self.base.symtab().find_symbol(nm) {
-            let id = existing.get_id();
-            let is_section = existing.get_type() == SymbolType::Section;
-            if is_section {
-                return id;
-            }
-            // C++ reports a parse error for a name clash.
-            let loc = self.current_location();
-            self.report_error_loc(
-                Some(&loc),
-                &format!(
-                    "'{}' is already defined as a different type of symbol",
-                    String::from_utf8_lossy(nm)
-                ),
-            );
-            return id;
-        }
+        // C++ `SleighCompile::newSectionSymbol` (slgh_compile.cc:2742): always
+        // create a fresh SectionSymbol (templateid = sections.size()) and add it
+        // to the *global* scope, so the lexer's find_symbol recognizes repeat
+        // `<<name>>` occurrences as SECTIONSYM (reused via the
+        // `OP_LEFT SECTIONSYM OP_RIGHT` production) rather than re-creating a
+        // section for every occurrence.  This production fires only on the STRING
+        // form (a name not yet defined), so no dedup is needed here.
         let templateid = self.sections.len() as i32;
         let sym = SleighSymbol::new(nm, SymbolKind::Section(SectionSymbol::new(templateid)));
-        let id = self.add_sleigh_symbol(sym);
+        let loc = self.current_location();
+        let id = match self.base.symtab_mut().add_global_symbol(sym) {
+            Ok(id) => {
+                self.symbol_loc.insert(id, loc);
+                id
+            }
+            Err(e) => {
+                self.report_error_loc(Some(&loc), &e.explain());
+                NO_SYMBOL
+            }
+        };
         self.sections.push(id);
+        // C++ `numSections = sections.size();` (slgh_compile.cc:2752): the sla
+        // header's `numsections` attribute is the count of named p-code sections.
+        self.base.set_num_sections(self.sections.len() as u32);
         id
     }
 
@@ -3315,6 +3316,10 @@ impl SleighCompile {
             return;
         }
         self.unique_allocatemask = 0xff; // 8 bits of free space
+        // C++ `unique_allocatemask` is a SleighBase member; the compile-side
+        // mirror above must be written through so the sla header's `uniqmask`
+        // attribute is emitted (encode reads SleighBase::unique_allocatemask).
+        self.base.set_unique_allocatemask(self.unique_allocatemask);
         // Gather every constructor's template handles (main + named).
         let mut handles: Vec<ConstructTplHandle> = Vec::new();
         let mut subtables: Vec<SymbolId> = Vec::new();
