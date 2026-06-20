@@ -255,6 +255,14 @@ def main(argv=None):
         with open(args.baseline) as fh:
             base = json.load(fh)
         base_pass = set(base.get("passing", []))
+        # Scope the baseline to the modes actually run. A datatests-only run must
+        # not be penalized for not running the unit tests -- in the Rust-only world
+        # the ported unit tests live in the cargo workspace (`make rust-test`), not
+        # in the datatest harness, so a full baseline.json carries `unit:` keys the
+        # `--datatests` harness never produces.
+        run_prefixes = ({"unit:", "data:"} if args.mode == "all"
+                        else ({"unit:"} if args.mode == "unittests" else {"data:"}))
+        base_pass = {k for k in base_pass if any(k.startswith(p) for p in run_prefixes)}
         now_pass = set(passkeys)
         regressed = sorted(base_pass - now_pass)   # passed before, not now
         newly_pass = sorted(now_pass - base_pass)  # informational

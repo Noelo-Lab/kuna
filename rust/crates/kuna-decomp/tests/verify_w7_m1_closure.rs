@@ -48,25 +48,33 @@ fn read_test_file(stem: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-fn read_cpp(stem: &str) -> String {
-    let path = repo_root()
-        .join("decompiler/unittests")
-        .join(format!("{stem}.cc"));
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
-}
-
-/// Extract every `TEST(name)` from a C++ unittest file.
+/// The C++ `TEST(name)` names of the three in-scope upstream unit-test files,
+/// FROZEN here. They were derived from `decompiler/unittests/<stem>.cc` while the
+/// C++ tree existed; that tree has since been removed (see docs/RUST_PORT.md), so
+/// the name-parity contract is now pinned to this snapshot — a future rename in the
+/// Rust files still fails this test, which is the contract's whole point.
 fn cpp_test_names(stem: &str) -> Vec<String> {
-    let src = read_cpp(stem);
-    let mut names = Vec::new();
-    for line in src.lines() {
-        if let Some(rest) = line.trim_start().strip_prefix("TEST(") {
-            if let Some(end) = rest.find(')') {
-                names.push(rest[..end].to_string());
-            }
-        }
-    }
-    names
+    let names: &[&str] = match stem {
+        "testfuncproto" => &[
+            "funcproto_register", "funcproto_smallregister", "funcproto_stackalign",
+            "funcproto_pointeroverflow", "funcproto_stackoverflow", "funcproto_floatreg",
+            "funcproto_floattogeneric", "funcproto_grouped", "funcproto_join", "funcproto_nojoin",
+            "funcproto_hiddenreturn", "funcproto_mixedmeta", "funcproto_recoverbasic",
+            "funcproto_recoversmallreg", "funcproto_recoverstack", "funcproto_recoverunrefregister",
+            "funcproto_recoverunrefstack", "funcproto_recovergroups", "funcproto_recoverholes",
+            "funcproto_recoverfloat", "funcproto_recovermixedmeta",
+        ],
+        "testparamstore" => &[
+            "paramstore_x64", "paramstore_ppc64be_stdcall", "paramstore_mips32be_stdcall",
+            "paramstore_aarch64_cdecl",
+        ],
+        "testtypes" => &[
+            "cast_basic", "cast_pointer", "cast_enum", "cast_compare", "type_ordering",
+            "cast_integertoken", "enum_matching", "enum_matching2",
+        ],
+        other => panic!("no frozen TEST-name list for {other}"),
+    };
+    names.iter().map(|s| s.to_string()).collect()
 }
 
 /// Extract every `#[test] fn name` from a Rust test file (the function name on
