@@ -154,3 +154,17 @@ fn ws4c_compile_content_identical() {
         }
     }
 }
+
+/// WS7 content-identity gate for `hexagon` — the last vendored spec to land.
+/// It is the only spec that exercises the **named p-code section** body form
+/// (`{ rtl <<SECTION>> rtlmid ... }`, slghparse.y:268-271/347-360) together with
+/// the **crossbuild** directive (which carves the unique-space crossbuild region,
+/// driving `numsections` / `uniqmask` and the `UNIQUE_CROSSBUILD_POSITION`
+/// uniqbase adjustment).  Asserting byte-identity here pins all of that path.
+#[test]
+fn ws7_compile_hexagon_content_identical() {
+    let rel = "specs/Ghidra/Processors/Hexagon/data/languages/hexagon.slaspec";
+    if repo_root().join(rel).exists() {
+        check_byte_identical(rel);
+    }
+}

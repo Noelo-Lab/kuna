@@ -916,7 +916,15 @@ impl SleighParser {
             return Ok(u32::MAX);
         }
         self.expect(d, TokenKind::Char1(b'{'))?;
-        let main = self.rtlmid(d)?;
+        // The first chunk is always a full `rtl` (`rtlmid` plus an optional
+        // `EXPORT ...;` tail), shared by both the standalone body (`'{' rtl '}'`)
+        // and the named-section body (`rtlfirstsection: rtl section_def`,
+        // slghparse.y:350).  bison reduces `rtl` (firing finish_main_rtl /
+        // setResultVarnode) before deciding which `rtlbody` alternative applies,
+        // so finish_rtl_tail must run on the first chunk regardless of whether a
+        // `<<section>>` delimiter follows.
+        let main_mid = self.rtlmid(d)?;
+        let main = self.finish_rtl_tail(d, main_mid)?;
         if self.at_section_def(d)? {
             // rtlfirstsection: rtl section_def (slghparse.y:350).
             let firstsec = self.section_def(d)?;
@@ -936,10 +944,9 @@ impl SleighParser {
                 }
             }
         } else {
-            let sec = self.finish_rtl_tail(d, main)?;
             self.expect(d, TokenKind::Char1(b'}'))?;
             d.trace("standaloneSection");
-            Ok(d.standalone_section(sec))
+            Ok(d.standalone_section(main))
         }
     }
 
