@@ -1,29 +1,23 @@
-"""Decompile a function from a binary using the extracted Ghidra console decompiler.
+"""Thin library shim: ``decompile(binary, target, ...)`` for the pipeline.
 
-This drives the ``decomp_dbg`` console binary as a subprocess, feeding it the same
-command language the upstream datatests use (``load file`` / ``load function`` /
-``decompile`` / ``print C``). The decompiled C is captured via ``openfile write
-<tmp>`` / ``closefile``, which redirects the decompiler's bulk-output stream
-(``fileoptr``) to a temp file while interactive prompts stay on stdout -- so the
-captured C is free of prompt/echo noise.
+The **user-facing CLI** that used to live here (``python -m kuna.decompile``) was
+ported to the Rust ``kuna`` binary (``kuna decompile <binary> <func> ...``); see
+``rust/crates/kuna-cli`` and ``docs/rust-port/cli-port.md``. The Rust binary is the
+one project paradigm now.
 
-Real binaries: both engines load real ELFs from ``load file`` -- the C++ engine
-via GNU BFD (``LoadImageBfd``), the Rust engine (``--engine rust``) via the
-``object``-crate ``ObjectLoadImage`` (W11), which detects the ELF, picks the
-SLEIGH language from the ELF machine (e.g. x86-64 -> ``x86:LE:64:default:gcc``),
-maps the loadable segments, and lifts the named/addressed function. The XML
-``<binaryimage>`` datatest format still loads through ``load file`` on both
-engines (the file's leading bytes select ELF vs XML).
+What remains here is **only the library function** the still-Python pipeline
+(``kuna/pipeline/`` — out of scope for the CLI port) imports as
+``from .. import decompile as kdecompile`` and calls as ``kdecompile.decompile(...)``
+/ ``kdecompile.DecompileError``. The ``argparse`` ``main()`` was removed (the Rust
+``kuna decompile`` replaces it, verified byte-identical against the old CLI). If the
+pipeline is itself ported to Rust later, this shim can go.
 
-CLI:
-    python -m kuna.decompile <binary> <function-name-or-0xADDR> [--addr]
-                             [--target BFD_TARGET] [--raw] [--regions]
-                             [--decomp-dbg PATH] [--sleighpath DIR] [--timeout S]
+It drives the (Rust) ``decomp_dbg`` console binary as a subprocess, feeding it the
+same command language the datatests use and capturing the decompiled C via
+``openfile write`` / ``closefile`` so prompts never pollute the output.
 """
-import argparse
 import os
 import subprocess
-import sys
 import tempfile
 
 from . import paths
@@ -42,7 +36,7 @@ class LoadError(DecompileError):
 
 
 class FunctionNotFound(DecompileError):
-    """No function with the requested name (try an address with --addr)."""
+    """No function with the requested name (try an address with by_address)."""
 
 
 class NoOutput(DecompileError):
@@ -55,8 +49,7 @@ class DecompileTimeout(DecompileError):
 
 def _looks_like_addr(target: str) -> bool:
     # Only a 0x-prefixed token auto-selects address mode. A bare hex-looking token
-    # (e.g. "add", "dead", "face") is treated as a function name; use --addr for
-    # bare numeric addresses.
+    # (e.g. "add", "dead", "face") is treated as a function name.
     return target.startswith("0x") or target.startswith("0X")
 
 
@@ -77,38 +70,7 @@ def decompile(
 ):
     """Decompile ``target`` (a function name or address) in ``binary`` to C source.
 
-    Parameters
-    ----------
-    binary : path to the binary to decompile.
-    target : a function name, or an address like ``0x401000`` when ``by_address``.
-    by_address : treat ``target`` as an address (uses ``load addr``). Auto-enabled
-        if ``target`` looks like ``0x...``.
-    bfd_target : optional explicit ``load file`` target token. For the C++ engine
-        this is a BFD target (e.g. ``elf64-x86-64``); for the Rust engine it is an
-        explicit SLEIGH language id that overrides the ELF-derived one (e.g.
-        ``x86:LE:64:default:gcc``) -- useful for an ELF machine the loader does
-        not yet auto-map.
-    raw : also emit the raw p-code listing (``print raw``) after the C.
-    regions : also run the S7 region-identification commands (``region blocks`` /
-        ``region tree``, the angr RegionIdentifier port -- see docs/regions.md)
-        and return ``(c_text, regions_text)`` instead of just the C. Captured via
-        a second ``openfile write`` so the region dump never mixes with the C.
-    options : iterable of ``(name, value)`` kuna/Ghidra options to set before
-        decompiling (program-scoped; e.g. ``("compareform", "canonical")``). These are
-        exactly the assertions documented by :mod:`kuna.catalog`; an LLM picks them
-        from that catalog. Set after the image loads, before the function is selected.
-    kasserts : iterable of kuna ``kassert`` argument strings, set after the function
-        loads (function-scoped; e.g. ``"S7 edge-virtualization 0x401000 0x401020"``).
-    decomp_dbg : path to the decomp_dbg binary (defaults to the built one).
-    engine : ``"cpp"`` or ``"rust"`` -- which port's ``decomp_dbg`` to run. When
-        given (and ``decomp_dbg`` is not), the binary is resolved through
-        :func:`kuna.paths.binary` for that engine instead of the ambient
-        ``KUNA_ENGINE``; this is concurrency-safe (no env mutation) and is how the
-        pipeline runs both engines on the same function in one process (the W11
-        Rust-engine binding -- see ``kuna.pipeline.reference.KunaReference``).
-    sleighpath : SLEIGH specs root (defaults to ``<repo>/specs``).
-    timeout : seconds before the subprocess is killed.
-
+    The library entry point the pipeline depends on; see the module docstring.
     Returns the decompiled C as a string (or ``(c, regions)`` with ``regions=True``).
     """
     binary = os.path.abspath(str(binary))
@@ -118,8 +80,6 @@ def decompile(
     if decomp_dbg is not None:
         bin_path = os.path.abspath(str(decomp_dbg))
     elif engine is not None:
-        # Resolve the chosen engine's decomp_dbg directly (no KUNA_ENGINE mutation),
-        # honoring the same per-binary override (KUNA_DECOMP_DBG) as the default path.
         bin_path = str(paths.binary("decomp_dbg", "KUNA_DECOMP_DBG", engine=engine))
     else:
         bin_path = str(paths.decomp_dbg())
@@ -136,9 +96,7 @@ def decompile(
     if not by_address and _looks_like_addr(target):
         by_address = True
 
-    out_file = tempfile.NamedTemporaryFile(
-        prefix="kuna_c_", suffix=".c", delete=False
-    )
+    out_file = tempfile.NamedTemporaryFile(prefix="kuna_c_", suffix=".c", delete=False)
     out_path = out_file.name
     out_file.close()
 
@@ -156,12 +114,6 @@ def decompile(
             regions_path=regions_path,
         )
         env = dict(os.environ)
-        # SLEIGHHOME is the load-bearing mechanism: decomp_dbg scans it
-        # RECURSIVELY for Ghidra/Processors/*/data/languages dirs (the layout of
-        # kuna's specs/ root), overriding any hostile value in the caller's env.
-        # "-s" only adds the dir literally (non-recursive), which does nothing
-        # for the specs/ root but keeps `--sleighpath <dir-with-.ldefs>` working
-        # when pointed directly at a languages directory.
         env["SLEIGHHOME"] = specs
 
         try:
@@ -189,7 +141,6 @@ def decompile(
 
         c_text = c_text.strip("\n")
         if not c_text.strip():
-            # No C produced and no recognized error string -> generic failure.
             raise NoOutput(
                 "no C output for %r in %s; decompiler said:\n%s"
                 % (target, binary, combined.strip()[:2000])
@@ -218,17 +169,12 @@ def _build_script(binary, target, by_address, bfd_target, raw, out_path,
                   options=None, kasserts=None, regions_path=None):
     lines = []
     if bfd_target:
-        # Two-token form: `load file <target> <path>` (target first per IfcLoadFile).
         lines.append("load file %s %s" % (bfd_target, binary))
     else:
         lines.append("load file %s" % binary)
 
-    # `load file` does not populate the symbol table; the console needs this
-    # explicitly (the XML datatests auto-read symbols, the BFD console path does not).
     lines.append("read symbols")
 
-    # Program-scoped options (the kuna.catalog assertions) operate on the now-loaded
-    # Architecture, before any function is selected.
     for name, value in (options or []):
         lines.append("option %s %s" % (name, value))
 
@@ -238,7 +184,6 @@ def _build_script(binary, target, by_address, bfd_target, raw, out_path,
     else:
         lines.append("load function %s" % target)
 
-    # Function-scoped kuna assertions, after the function is loaded, before decompile.
     for ka in (kasserts or []):
         lines.append("kassert %s" % ka)
 
@@ -248,8 +193,6 @@ def _build_script(binary, target, by_address, bfd_target, raw, out_path,
     if raw:
         lines.append("print raw")
     lines.append("closefile")
-    # S7 region identification (angr RegionIdentifier port): captured through a
-    # second openfile so the dump is cleanly separable from the C.
     if regions_path is not None:
         lines.append("openfile write %s" % regions_path)
         lines.append("region blocks")
@@ -262,7 +205,7 @@ def _build_script(binary, target, by_address, bfd_target, raw, out_path,
 def _check_errors(out, target, binary, by_address):
     if "Could not discover root of Ghidra installation" in out:
         raise SpecsNotFound(
-            "decomp_dbg could not find SLEIGH specs; pass --sleighpath or set SLEIGHHOME"
+            "decomp_dbg could not find SLEIGH specs; pass sleighpath or set SLEIGHHOME"
         )
     if "Could not create architecture" in out:
         raise LoadError(
@@ -270,72 +213,6 @@ def _check_errors(out, target, binary, by_address):
         )
     if not by_address and ("Unknown function name:" in out or "Bad namespace:" in out):
         raise FunctionNotFound(
-            "no function %r in %s; for a stripped binary pass an address with --addr"
+            "no function %r in %s; for a stripped binary pass an address with by_address"
             % (target, binary)
         )
-
-
-def main(argv=None):
-    p = argparse.ArgumentParser(
-        prog="python -m kuna.decompile",
-        description="Decompile a function from a binary with Ghidra's extracted C++ decompiler.",
-    )
-    p.add_argument("binary", help="path to the binary")
-    p.add_argument("target", help="function name, or an address like 0x401000 (with --addr)")
-    p.add_argument("--addr", action="store_true", help="treat target as an address (load addr)")
-    p.add_argument("--target", dest="bfd_target", default=None,
-                   help="explicit BFD target for load file (e.g. elf64-x86-64)")
-    p.add_argument("--raw", action="store_true", help="also print the raw p-code listing")
-    p.add_argument("--regions", action="store_true",
-                   help="also print the S7 region-identification dump (angr "
-                        "RegionIdentifier port; see docs/regions.md)")
-    p.add_argument("--option", dest="options", nargs=2, action="append",
-                   metavar=("NAME", "VALUE"), default=[],
-                   help="set a decompiler option/assertion before decompiling "
-                        "(repeatable; see `python -m kuna.catalog`), e.g. "
-                        "--option compareform canonical")
-    p.add_argument("--kassert", dest="kasserts", action="append", default=[],
-                   metavar="ARGS",
-                   help="apply a function-scoped kuna kassert (repeatable), e.g. "
-                        "--kassert 'S7 edge-virtualization 0x401000 0x401020'")
-    p.add_argument("--decomp-dbg", default=None, help="path to the decomp_dbg binary")
-    p.add_argument("--engine", choices=("cpp", "rust"), default=None,
-                   help="which port's binaries to run (sets KUNA_ENGINE; default: env, else cpp)")
-    p.add_argument("--sleighpath", default=None, help="SLEIGH specs root (default: <repo>/specs)")
-    p.add_argument("--timeout", type=float, default=120, help="subprocess timeout in seconds")
-    args = p.parse_args(argv)
-
-    if args.engine:
-        os.environ["KUNA_ENGINE"] = args.engine  # before any paths.binary() resolution
-
-    try:
-        result = decompile(
-            args.binary,
-            args.target,
-            by_address=args.addr,
-            bfd_target=args.bfd_target,
-            raw=args.raw,
-            regions=args.regions,
-            options=[(n, v) for n, v in args.options],
-            kasserts=args.kasserts,
-            decomp_dbg=args.decomp_dbg,
-            engine=args.engine,
-            sleighpath=args.sleighpath,
-            timeout=args.timeout,
-        )
-    except DecompileError as e:
-        print("error: %s" % e, file=sys.stderr)
-        return 1
-    if args.regions:
-        c, regions_text = result
-        print(c)
-        print()
-        print("// ==== kuna regions (S7) ====")
-        print(regions_text)
-    else:
-        print(result)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

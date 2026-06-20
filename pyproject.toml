@@ -5,13 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kuna"
 version = "0.1.0"
-description = "Standalone driver and Python wrapper for Ghidra's extracted C++ decompiler"
+description = "Python pipeline helpers for the Rust kuna decompiler (the user-facing CLI is the `kuna` binary)"
 requires-python = ">=3.9"
 dependencies = []
 
-[project.scripts]
-kuna-decompile = "kuna.decompile:main"
-kuna-test = "kuna.run_tests:main"
+# The former console_scripts (kuna-decompile = kuna.decompile:main,
+# kuna-test = kuna.run_tests:main) were removed when those CLIs were ported to the
+# Rust `kuna` binary (`kuna decompile` / `kuna test` / `kuna catalog`; see
+# rust/crates/kuna-cli and docs/rust-port/cli-port.md). Build it with
+# `make binaries` and run `kuna ...`.
 
 [tool.setuptools]
 packages = ["kuna", "kuna.pipeline", "kuna.pipeline.reference"]
