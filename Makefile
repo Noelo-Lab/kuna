@@ -1,15 +1,16 @@
-# kuna top-level build driver (Rust-only).
+# kuna top-level build driver (Rust).
 #
-# The C++ decompiler + SLEIGH compiler have been fully ported to Rust and the
-# vendored C++ tree was removed (see docs/RUST_PORT.md). Everything below builds
-# and tests the Rust port. The decompiler binaries keep the upstream names
+# The decompiler and the SLEIGH compiler are a Rust port of Ghidra's C++
+# originals (see docs/RUST_PORT.md); the vendored C++ tree was removed once the
+# port reached parity. Everything below builds and tests the Rust engine under
+# decompiler/. The decompiler binaries keep the upstream names
 # (decomp_dbg / decomp_test_dbg); the SLEIGH compiler is `slacomp`.
 
-ROOT  := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-SPECS := $(ROOT)/specs
-RUSTDIR := $(ROOT)/rust
+ROOT   := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+SPECS  := $(ROOT)/specs
+ENGINE := $(ROOT)/decompiler
 PROFILE ?= release
-BINDIR  := $(RUSTDIR)/target/$(PROFILE)
+BINDIR  := $(ENGINE)/target/$(PROFILE)
 SLACOMP := $(BINDIR)/slacomp
 PYTHON  ?= python3
 
@@ -17,53 +18,48 @@ PYTHON  ?= python3
 
 all: binaries specs
 
-# Build the Rust decompiler console binaries (decomp_dbg, decomp_test_dbg), the
-# Rust SLEIGH compiler (slacomp), and the user-facing `kuna` CLI (kuna-cli).
+# Build the decompiler console binaries (decomp_dbg, decomp_test_dbg), the
+# SLEIGH compiler (slacomp), and the user-facing `kuna` CLI (kuna-cli).
 # Cargo manages parallelism + incrementality. (decomp_test_dbg lives in
 # kuna-harness; kuna-cli pulls it in as a sibling at build time.)
 binaries:
-	cd $(RUSTDIR) && cargo build --$(PROFILE) -p kuna-console -p kuna-harness -p kuna-slacomp -p kuna-cli
+	cd $(ENGINE) && cargo build --$(PROFILE) -p kuna-console -p kuna-harness -p kuna-slacomp -p kuna-cli
 
 rust: binaries
 
 # Compile every vendored .slaspec -> .sla (next to the spec, gitignored) with the
-# Rust SLEIGH compiler. End-to-end correctness is `make test` (the Rust-built specs
-# decode the corpus to 675/675). `python -m kuna.slacomp --all` byte-diffs the .sla
-# element stream against a C++ sleigh_opt oracle (built out-of-tree if you want it).
+# SLEIGH compiler. End-to-end correctness is `make test` (the built specs decode
+# the corpus to 675/675).
 specs: $(SLACOMP)
 	$(SLACOMP) -a $(SPECS)
 
-# Back-compat alias (the port used `specs-rust` while the C++ `specs` still existed).
-specs-rust: specs
-
 $(SLACOMP):
-	cd $(RUSTDIR) && cargo build --$(PROFILE) -p kuna-slacomp
+	cd $(ENGINE) && cargo build --$(PROFILE) -p kuna-slacomp
 
-# Run the datatest harness (the Rust decomp_test_dbg) over the vendored XML
-# regression tests, with baseline parity checking. Builds binaries/specs if
-# missing. Driven by the Rust `kuna` CLI (the port of kuna.run_tests); exit code
-# is nonzero on any failure or baseline regression.
+# Run the datatest harness (decomp_test_dbg) over the vendored XML regression
+# tests, with baseline parity checking. Builds binaries/specs if missing. Driven
+# by the `kuna` CLI; exit code is nonzero on any failure or baseline regression.
 test: $(BINDIR)/kuna
 	@test -x $(BINDIR)/decomp_test_dbg || $(MAKE) binaries
 	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
-	cd $(ROOT) && KUNA_ENGINE=rust $(BINDIR)/kuna test --datatests --baseline docs/baseline.json
+	cd $(ROOT) && $(BINDIR)/kuna test --datatests --baseline docs/baseline.json
 
 # Same harness over the kuna-owned stage-model issue testcases (tests/stages/).
 test-stages: $(BINDIR)/kuna
 	@test -x $(BINDIR)/decomp_test_dbg || $(MAKE) binaries
 	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
-	cd $(ROOT) && KUNA_ENGINE=rust $(BINDIR)/kuna test --datatests \
+	cd $(ROOT) && $(BINDIR)/kuna test --datatests \
 	  --datatests-dir tests/stages --baseline docs/baseline-stages.json
 
 $(BINDIR)/kuna:
-	cd $(RUSTDIR) && cargo build --$(PROFILE) -p kuna-cli
+	cd $(ENGINE) && cargo build --$(PROFILE) -p kuna-cli
 
 # The Rust workspace's own unit/integration tests (the ported TEST() suites, the
 # golden differential vectors, the SLEIGH-compiler .sla content-parity tests, ...).
 rust-test:
-	cd $(RUSTDIR) && cargo test --workspace --no-fail-fast
+	cd $(ENGINE) && cargo test --workspace --no-fail-fast
 
 clean:
-	cd $(RUSTDIR) && cargo clean
+	cd $(ENGINE) && cargo clean
 	find $(SPECS) -name '*.sla' -delete
 	find $(SPECS) -name '*.sla.lock' -delete

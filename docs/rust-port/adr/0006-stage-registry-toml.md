@@ -12,7 +12,7 @@ from documentation just as easily.
 
 ## Decision
 
-The four tables move to `rust/crates/kuna-decomp/stages.toml` as the single
+The four tables move to `decompiler/crates/kuna-decomp/stages.toml` as the single
 source of truth. A `build.rs` codegen step reads it and generates: the static
 tables, typed `OptionValues` (each settable becomes a typed field with its
 enum of allowed values), and the live-value `match` that maps a settable name

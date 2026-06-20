@@ -1,5 +1,5 @@
 # kuna golden lift fixture (per-instruction raw p-code from the C++ oracle)
-# corpus: decompiler/datatests/ccmp.xml
+# corpus: tests/datatests/ccmp.xml
 # sla: Ghidra/Processors/AARCH64/data/languages/AARCH64.sla (relative to specs/)
 # cap: 80 instructions per lift point
 # lift-points (space:byte-offset name): ram:0x42caec=ccmp ram:0x4f9588=otherfunc

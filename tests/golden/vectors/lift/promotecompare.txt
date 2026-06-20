@@ -1,5 +1,5 @@
 # kuna golden lift fixture (per-instruction raw p-code from the C++ oracle)
-# corpus: decompiler/datatests/promotecompare.xml
+# corpus: tests/datatests/promotecompare.xml
 # sla: Ghidra/Processors/x86/data/languages/x86.sla (relative to specs/)
 # cap: 80 instructions per lift point
 # lift-points (space:byte-offset name): ram:0x80662e0=promote_compare

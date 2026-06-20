@@ -1,5 +1,5 @@
 # kuna golden lift fixture (per-instruction raw p-code from the C++ oracle)
-# corpus: decompiler/datatests/readvolatile.xml
+# corpus: tests/datatests/readvolatile.xml
 # sla: Ghidra/Processors/68000/data/languages/68020.sla (relative to specs/)
 # cap: 80 instructions per lift point
 # lift-points (space:byte-offset name): ram:0x484=iofunc

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Port upstream Ghidra decompiler changes into kuna.
+"""Port upstream Ghidra changes into kuna.
 
-kuna vendors a byte-identical copy of Ghidra's C++ decompiler and its SLEIGH
-processor specs (see UPSTREAM.md). This script diffs a Ghidra checkout between the
-recorded ``GHIDRA_REV`` and a target revision, restricted to the vendored upstream
-paths, rewrites the path prefixes to kuna's layout, and applies the patch with
-``git apply`` (plain apply first, ``--3way`` fallback). On success it rewrites
-``GHIDRA_REV`` in UPSTREAM.md.
+kuna no longer vendors Ghidra's C++ decompiler source (it was ported to Rust and
+removed); what remains vendored from upstream is the SLEIGH processor specs and the
+XML decompiler datatest corpus (see docs/UPSTREAM.md). This script diffs a Ghidra
+checkout between the recorded ``GHIDRA_REV`` and a target revision, restricted to
+those vendored paths, rewrites the path prefixes to kuna's layout, and applies the
+patch with ``git apply`` (plain apply first, ``--3way`` fallback). On success it
+rewrites ``GHIDRA_REV`` in docs/UPSTREAM.md.
 
 The upstream diff is taken with ``--no-renames`` so every change arrives as a plain
 add/delete/modify of a single path -- a rename can then never straddle the vendored
@@ -26,10 +27,10 @@ import subprocess
 import sys
 
 # Vendored path map: upstream prefix -> kuna prefix. Order matters (longest first).
+# (The C++ decompiler source and its unittests are no longer vendored -- ported to
+# Rust and removed -- so only the datatest corpus and processor specs are synced.)
 PATH_MAP = [
-    ("Ghidra/Features/Decompiler/src/decompile/cpp/", "decompiler/cpp/"),
-    ("Ghidra/Features/Decompiler/src/decompile/unittests/", "decompiler/unittests/"),
-    ("Ghidra/Features/Decompiler/src/decompile/datatests/", "decompiler/datatests/"),
+    ("Ghidra/Features/Decompiler/src/decompile/datatests/", "tests/datatests/"),
     # Processors are matched generically below (per-module <P>).
 ]
 # Generic processor-spec mapping handled via regex (any module P).
@@ -40,8 +41,6 @@ PROC_SUFFIX = "/data/languages/"
 EXCLUDE = ["Ghidra/Features/Decompiler/src/decompile/zlib/"]
 
 UPSTREAM_PREFIXES = [
-    "Ghidra/Features/Decompiler/src/decompile/cpp",
-    "Ghidra/Features/Decompiler/src/decompile/unittests",
     "Ghidra/Features/Decompiler/src/decompile/datatests",
     "Ghidra/Processors",
 ]
@@ -192,18 +191,13 @@ def analyze(diff_text):
     Paths in the result are kuna paths; non-vendored files (which rewrite_patch
     drops) are excluded so the report matches what will actually be applied.
     """
-    added, deleted, changed_y, changed_cc = [], [], set(), set()
+    added, deleted = [], []
     new_datatests = []
     cur_k = None
     for line in diff_text.splitlines():
         m = _DIFF_GIT.match(line)
         if m:
             cur_k = map_path(m.group("b"))
-            if cur_k is not None:
-                if cur_k.endswith((".y", ".l")):
-                    changed_y.add(cur_k)
-                if cur_k.endswith(".cc"):
-                    changed_cc.add(cur_k)
             continue
         if cur_k is None:
             continue
@@ -213,16 +207,9 @@ def analyze(diff_text):
                 new_datatests.append(cur_k)
         elif line.startswith("deleted file mode"):
             deleted.append(cur_k)
-    # .y/.l changed without its regenerated .cc in the same diff?
-    y_without_cc = []
-    for y in changed_y:
-        stem = y[:-2]  # strip .y / .l (both two chars)
-        if stem + ".cc" not in changed_cc:
-            y_without_cc.append(y)
     return {
         "added": added,
         "deleted": deleted,
-        "y_without_cc": y_without_cc,
         "new_datatests": new_datatests,
     }
 
@@ -246,7 +233,7 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     root = os.path.abspath(args.root)
-    upstream_md = os.path.join(root, "UPSTREAM.md")
+    upstream_md = os.path.join(root, "docs", "UPSTREAM.md")
     ghidra = os.path.abspath(args.ghidra)
 
     if not os.path.isdir(os.path.join(ghidra, ".git")):
@@ -317,9 +304,7 @@ def main(argv=None):
     if skipped:
         print("  skipped (not vendored, e.g. zlib): %d files" % len(skipped))
     for f in info["deleted"]:
-        print("  ! deleted: %s (changes upstream Makefile $(wildcard *.cc); rebuild after)" % f)
-    for y in info["y_without_cc"]:
-        print("  ! grammar %s changed without its generated .cc -> bison/flex needed locally" % y)
+        print("  ! deleted: %s" % f)
 
     vendored = vendored_processor_modules(root)
     for dt in info["new_datatests"]:
@@ -365,8 +350,7 @@ def main(argv=None):
               file=sys.stderr)
         return 1
     print("Applied. Updated GHIDRA_REV -> %s" % to_full)
-    print("Next: `make test` and `python -m kuna.run_tests --baseline docs/baseline.json`, "
-          "then review `git diff` and commit.")
+    print("Next: `make test` (675/675 PARITY OK), then review `git diff` and commit.")
     return 0
 
 

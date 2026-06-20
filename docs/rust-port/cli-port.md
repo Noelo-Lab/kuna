@@ -1,8 +1,8 @@
 # CLI port — the user-facing `kuna` binary
 
 The four Python user-facing entry points were ported to a single Rust binary,
-`kuna` (crate `rust/crates/kuna-cli`, built by `make binaries` to
-`rust/target/release/kuna`), so the whole project lives under one Rust paradigm
+`kuna` (crate `decompiler/crates/kuna-cli`, built by `make binaries` to
+`decompiler/target/release/kuna`), so the whole project lives under one Rust paradigm
 now that the C++ tree is gone.
 
 | Python module (removed) | Rust subcommand | Strategy |

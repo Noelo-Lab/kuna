@@ -19,7 +19,7 @@
     "B4": 8,
     "B5": 8
    },
-   "source": "decompiler/datatests/bitfields.xml",
+   "source": "tests/datatests/bitfields.xml",
    "status": "ok"
   },
   "bitfields2": {
@@ -32,7 +32,7 @@
     "B4": 8,
     "B5": 8
    },
-   "source": "decompiler/datatests/bitfields2.xml",
+   "source": "tests/datatests/bitfields2.xml",
    "status": "ok"
   },
   "boolless": {
@@ -45,7 +45,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/boolless.xml",
+   "source": "tests/datatests/boolless.xml",
    "status": "ok"
   },
   "ccmp": {
@@ -58,7 +58,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/ccmp.xml",
+   "source": "tests/datatests/ccmp.xml",
    "status": "ok"
   },
   "concat": {
@@ -71,7 +71,7 @@
     "B4": 6,
     "B5": 6
    },
-   "source": "decompiler/datatests/concat.xml",
+   "source": "tests/datatests/concat.xml",
    "status": "ok"
   },
   "concatsplit": {
@@ -84,7 +84,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/concatsplit.xml",
+   "source": "tests/datatests/concatsplit.xml",
    "status": "ok"
   },
   "condconst": {
@@ -97,7 +97,7 @@
     "B4": 3,
     "B5": 3
    },
-   "source": "decompiler/datatests/condconst.xml",
+   "source": "tests/datatests/condconst.xml",
    "status": "ok"
   },
   "condconst2": {
@@ -110,7 +110,7 @@
     "B4": 3,
     "B5": 3
    },
-   "source": "decompiler/datatests/condconst2.xml",
+   "source": "tests/datatests/condconst2.xml",
    "status": "ok"
   },
   "condconstsub": {
@@ -123,7 +123,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/condconstsub.xml",
+   "source": "tests/datatests/condconstsub.xml",
    "status": "ok"
   },
   "condexesub": {
@@ -136,7 +136,7 @@
     "B4": 2,
     "B5": 2
    },
-   "source": "decompiler/datatests/condexesub.xml",
+   "source": "tests/datatests/condexesub.xml",
    "status": "ok"
   },
   "condmulti": {
@@ -149,7 +149,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/condmulti.xml",
+   "source": "tests/datatests/condmulti.xml",
    "status": "ok"
   },
   "convert": {
@@ -162,7 +162,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/convert.xml",
+   "source": "tests/datatests/convert.xml",
    "status": "ok"
   },
   "copytrim": {
@@ -175,7 +175,7 @@
     "B4": 2,
     "B5": 2
    },
-   "source": "decompiler/datatests/copytrim.xml",
+   "source": "tests/datatests/copytrim.xml",
    "status": "ok"
   },
   "deadvolatile": {
@@ -188,7 +188,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/deadvolatile.xml",
+   "source": "tests/datatests/deadvolatile.xml",
    "status": "ok"
   },
   "deindirect": {
@@ -201,7 +201,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/deindirect.xml",
+   "source": "tests/datatests/deindirect.xml",
    "status": "ok"
   },
   "deindirect2": {
@@ -214,7 +214,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/deindirect2.xml",
+   "source": "tests/datatests/deindirect2.xml",
    "status": "ok"
   },
   "displayformat": {
@@ -227,7 +227,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/displayformat.xml",
+   "source": "tests/datatests/displayformat.xml",
    "status": "ok"
   },
   "divopt": {
@@ -240,7 +240,7 @@
     "B4": 4,
     "B5": 4
    },
-   "source": "decompiler/datatests/divopt.xml",
+   "source": "tests/datatests/divopt.xml",
    "status": "ok"
   },
   "doublemove": {
@@ -253,7 +253,7 @@
     "B4": 2,
     "B5": 2
    },
-   "source": "decompiler/datatests/doublemove.xml",
+   "source": "tests/datatests/doublemove.xml",
    "status": "ok"
   },
   "dupptr": {
@@ -266,7 +266,7 @@
     "B4": 7,
     "B5": 7
    },
-   "source": "decompiler/datatests/dupptr.xml",
+   "source": "tests/datatests/dupptr.xml",
    "status": "ok"
   },
   "elseif": {
@@ -279,7 +279,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/elseif.xml",
+   "source": "tests/datatests/elseif.xml",
    "status": "ok"
   },
   "enum": {
@@ -292,7 +292,7 @@
     "B4": 5,
     "B5": 5
    },
-   "source": "decompiler/datatests/enum.xml",
+   "source": "tests/datatests/enum.xml",
    "status": "ok"
   },
   "floatcast": {
@@ -305,7 +305,7 @@
     "B4": 2,
     "B5": 2
    },
-   "source": "decompiler/datatests/floatcast.xml",
+   "source": "tests/datatests/floatcast.xml",
    "status": "ok"
   },
   "floatconv": {
@@ -318,7 +318,7 @@
     "B4": 3,
     "B5": 3
    },
-   "source": "decompiler/datatests/floatconv.xml",
+   "source": "tests/datatests/floatconv.xml",
    "status": "ok"
   },
   "floatprint": {
@@ -331,7 +331,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/floatprint.xml",
+   "source": "tests/datatests/floatprint.xml",
    "status": "ok"
   },
   "forloop1": {
@@ -344,7 +344,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/forloop1.xml",
+   "source": "tests/datatests/forloop1.xml",
    "status": "ok"
   },
   "forloop_loaditer": {
@@ -357,7 +357,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/forloop_loaditer.xml",
+   "source": "tests/datatests/forloop_loaditer.xml",
    "status": "ok"
   },
   "forloop_thruspecial": {
@@ -370,7 +370,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/forloop_thruspecial.xml",
+   "source": "tests/datatests/forloop_thruspecial.xml",
    "status": "ok"
   },
   "forloop_varused": {
@@ -383,7 +383,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/forloop_varused.xml",
+   "source": "tests/datatests/forloop_varused.xml",
    "status": "ok"
   },
   "forloop_withskip": {
@@ -396,7 +396,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/forloop_withskip.xml",
+   "source": "tests/datatests/forloop_withskip.xml",
    "status": "ok"
   },
   "gh1243-8051-addc": {
@@ -902,7 +902,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/gp.xml",
+   "source": "tests/datatests/gp.xml",
    "status": "ok"
   },
   "heapstring": {
@@ -915,7 +915,7 @@
     "B4": 5,
     "B5": 5
    },
-   "source": "decompiler/datatests/heapstring.xml",
+   "source": "tests/datatests/heapstring.xml",
    "status": "ok"
   },
   "ifswitch": {
@@ -928,7 +928,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/ifswitch.xml",
+   "source": "tests/datatests/ifswitch.xml",
    "status": "ok"
   },
   "impliedfield": {
@@ -941,7 +941,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/impliedfield.xml",
+   "source": "tests/datatests/impliedfield.xml",
    "status": "ok"
   },
   "indproto": {
@@ -954,7 +954,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/indproto.xml",
+   "source": "tests/datatests/indproto.xml",
    "status": "ok"
   },
   "injectoverride": {
@@ -967,7 +967,7 @@
     "B4": 2,
     "B5": 2
    },
-   "source": "decompiler/datatests/injectoverride.xml",
+   "source": "tests/datatests/injectoverride.xml",
    "status": "ok"
   },
   "inline": {
@@ -980,7 +980,7 @@
     "B4": 3,
     "B5": 3
    },
-   "source": "decompiler/datatests/inline.xml",
+   "source": "tests/datatests/inline.xml",
    "status": "ok"
   },
   "inlinetarget": {
@@ -993,7 +993,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/inlinetarget.xml",
+   "source": "tests/datatests/inlinetarget.xml",
    "status": "ok"
   },
   "kuna-assert": {
@@ -1076,7 +1076,7 @@
     "B4": 6,
     "B5": 6
    },
-   "source": "decompiler/datatests/longdouble.xml",
+   "source": "tests/datatests/longdouble.xml",
    "status": "ok"
   },
   "loopcomment": {
@@ -1089,7 +1089,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/loopcomment.xml",
+   "source": "tests/datatests/loopcomment.xml",
    "status": "ok"
   },
   "lzcount": {
@@ -1102,7 +1102,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/lzcount.xml",
+   "source": "tests/datatests/lzcount.xml",
    "status": "ok"
   },
   "mixfloatint": {
@@ -1115,7 +1115,7 @@
     "B4": 5,
     "B5": 5
    },
-   "source": "decompiler/datatests/mixfloatint.xml",
+   "source": "tests/datatests/mixfloatint.xml",
    "status": "ok"
   },
   "modulo": {
@@ -1128,7 +1128,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/modulo.xml",
+   "source": "tests/datatests/modulo.xml",
    "status": "ok"
   },
   "modulo2": {
@@ -1141,7 +1141,7 @@
     "B4": 4,
     "B5": 4
    },
-   "source": "decompiler/datatests/modulo2.xml",
+   "source": "tests/datatests/modulo2.xml",
    "status": "ok"
   },
   "multiret": {
@@ -1154,7 +1154,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/multiret.xml",
+   "source": "tests/datatests/multiret.xml",
    "status": "ok"
   },
   "namespace": {
@@ -1167,7 +1167,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/namespace.xml",
+   "source": "tests/datatests/namespace.xml",
    "status": "ok"
   },
   "namestyle": {
@@ -1193,7 +1193,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/nan.xml",
+   "source": "tests/datatests/nan.xml",
    "status": "ok"
   },
   "nestedoffset": {
@@ -1206,7 +1206,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/nestedoffset.xml",
+   "source": "tests/datatests/nestedoffset.xml",
    "status": "ok"
   },
   "noforloop_alias": {
@@ -1219,7 +1219,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/noforloop_alias.xml",
+   "source": "tests/datatests/noforloop_alias.xml",
    "status": "ok"
   },
   "noforloop_globcall": {
@@ -1232,7 +1232,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/noforloop_globcall.xml",
+   "source": "tests/datatests/noforloop_globcall.xml",
    "status": "ok"
   },
   "noforloop_iterused": {
@@ -1245,7 +1245,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/noforloop_iterused.xml",
+   "source": "tests/datatests/noforloop_iterused.xml",
    "status": "ok"
   },
   "offsetarray": {
@@ -1258,7 +1258,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/offsetarray.xml",
+   "source": "tests/datatests/offsetarray.xml",
    "status": "ok"
   },
   "orcompare": {
@@ -1271,7 +1271,7 @@
     "B4": 2,
     "B5": 2
    },
-   "source": "decompiler/datatests/orcompare.xml",
+   "source": "tests/datatests/orcompare.xml",
    "status": "ok"
   },
   "packstructaccess": {
@@ -1284,7 +1284,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/packstructaccess.xml",
+   "source": "tests/datatests/packstructaccess.xml",
    "status": "ok"
   },
   "partialmerge": {
@@ -1297,7 +1297,7 @@
     "B4": 5,
     "B5": 5
    },
-   "source": "decompiler/datatests/partialmerge.xml",
+   "source": "tests/datatests/partialmerge.xml",
    "status": "ok"
   },
   "partialsplit": {
@@ -1310,7 +1310,7 @@
     "B4": 6,
     "B5": 6
    },
-   "source": "decompiler/datatests/partialsplit.xml",
+   "source": "tests/datatests/partialsplit.xml",
    "status": "ok"
   },
   "partialunion": {
@@ -1323,7 +1323,7 @@
     "B4": 2,
     "B5": 2
    },
-   "source": "decompiler/datatests/partialunion.xml",
+   "source": "tests/datatests/partialunion.xml",
    "status": "ok"
   },
   "piecestruct": {
@@ -1336,7 +1336,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/piecestruct.xml",
+   "source": "tests/datatests/piecestruct.xml",
    "status": "ok"
   },
   "pointercmp": {
@@ -1349,7 +1349,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/pointercmp.xml",
+   "source": "tests/datatests/pointercmp.xml",
    "status": "ok"
   },
   "pointerrel": {
@@ -1362,7 +1362,7 @@
     "B4": 2,
     "B5": 2
    },
-   "source": "decompiler/datatests/pointerrel.xml",
+   "source": "tests/datatests/pointerrel.xml",
    "status": "ok"
   },
   "pointersub": {
@@ -1375,7 +1375,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/pointersub.xml",
+   "source": "tests/datatests/pointersub.xml",
    "status": "ok"
   },
   "promotecompare": {
@@ -1388,7 +1388,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/promotecompare.xml",
+   "source": "tests/datatests/promotecompare.xml",
    "status": "ok"
   },
   "ptrtoarray": {
@@ -1401,7 +1401,7 @@
     "B4": 2,
     "B5": 2
    },
-   "source": "decompiler/datatests/ptrtoarray.xml",
+   "source": "tests/datatests/ptrtoarray.xml",
    "status": "ok"
   },
   "readvolatile": {
@@ -1414,7 +1414,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/readvolatile.xml",
+   "source": "tests/datatests/readvolatile.xml",
    "status": "ok"
   },
   "retspecial": {
@@ -1427,7 +1427,7 @@
     "B4": 2,
     "B5": 2
    },
-   "source": "decompiler/datatests/retspecial.xml",
+   "source": "tests/datatests/retspecial.xml",
    "status": "ok"
   },
   "retstruct": {
@@ -1440,7 +1440,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/retstruct.xml",
+   "source": "tests/datatests/retstruct.xml",
    "status": "ok"
   },
   "revisit": {
@@ -1453,7 +1453,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/revisit.xml",
+   "source": "tests/datatests/revisit.xml",
    "status": "ok"
   },
   "sbyte": {
@@ -1466,7 +1466,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/sbyte.xml",
+   "source": "tests/datatests/sbyte.xml",
    "status": "ok"
   },
   "skipnext2": {
@@ -1479,7 +1479,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/skipnext2.xml",
+   "source": "tests/datatests/skipnext2.xml",
    "status": "ok"
   },
   "stackreturn": {
@@ -1492,7 +1492,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/stackreturn.xml",
+   "source": "tests/datatests/stackreturn.xml",
    "status": "ok"
   },
   "stackspill": {
@@ -1505,7 +1505,7 @@
     "B4": 2,
     "B5": 2
    },
-   "source": "decompiler/datatests/stackspill.xml",
+   "source": "tests/datatests/stackspill.xml",
    "status": "ok"
   },
   "stackstring": {
@@ -1518,7 +1518,7 @@
     "B4": 7,
     "B5": 7
    },
-   "source": "decompiler/datatests/stackstring.xml",
+   "source": "tests/datatests/stackstring.xml",
    "status": "ok"
   },
   "statuscmp": {
@@ -1531,7 +1531,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/statuscmp.xml",
+   "source": "tests/datatests/statuscmp.xml",
    "status": "ok"
   },
   "switchhide": {
@@ -1544,7 +1544,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/switchhide.xml",
+   "source": "tests/datatests/switchhide.xml",
    "status": "ok"
   },
   "switchind": {
@@ -1557,7 +1557,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/switchind.xml",
+   "source": "tests/datatests/switchind.xml",
    "status": "ok"
   },
   "switchloop": {
@@ -1570,7 +1570,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/switchloop.xml",
+   "source": "tests/datatests/switchloop.xml",
    "status": "ok"
   },
   "switchmulti": {
@@ -1583,7 +1583,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/switchmulti.xml",
+   "source": "tests/datatests/switchmulti.xml",
    "status": "ok"
   },
   "switchreturn": {
@@ -1596,7 +1596,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/switchreturn.xml",
+   "source": "tests/datatests/switchreturn.xml",
    "status": "ok"
   },
   "threedim": {
@@ -1609,7 +1609,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/threedim.xml",
+   "source": "tests/datatests/threedim.xml",
    "status": "ok"
   },
   "twodim": {
@@ -1622,7 +1622,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/twodim.xml",
+   "source": "tests/datatests/twodim.xml",
    "status": "ok"
   },
   "union_datatype": {
@@ -1635,7 +1635,7 @@
     "B4": 13,
     "B5": 13
    },
-   "source": "decompiler/datatests/union_datatype.xml",
+   "source": "tests/datatests/union_datatype.xml",
    "status": "ok"
   },
   "varcross": {
@@ -1648,7 +1648,7 @@
     "B4": 3,
     "B5": 3
    },
-   "source": "decompiler/datatests/varcross.xml",
+   "source": "tests/datatests/varcross.xml",
    "status": "ok"
   },
   "wayoffarray": {
@@ -1661,7 +1661,7 @@
     "B4": 1,
     "B5": 1
    },
-   "source": "decompiler/datatests/wayoffarray.xml",
+   "source": "tests/datatests/wayoffarray.xml",
    "status": "ok"
   }
  }

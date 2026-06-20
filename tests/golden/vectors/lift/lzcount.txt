@@ -1,5 +1,5 @@
 # kuna golden lift fixture (per-instruction raw p-code from the C++ oracle)
-# corpus: decompiler/datatests/lzcount.xml
+# corpus: tests/datatests/lzcount.xml
 # sla: Ghidra/Processors/PowerPC/data/languages/ppc_32_be.sla (relative to specs/)
 # cap: 80 instructions per lift point
 # lift-points (space:byte-offset name): ram:0x10020=cntlzwtest

@@ -19,8 +19,8 @@ up the post-dominator tree.
 
 | kuna file | contents | angr source |
 |---|---|---|
-| `decompiler/cpp/kuna_regiongraph.{hh,cc}` | `KunaRegionNode`, `KunaRegionGraph` (mutable digraph), DFS back edges, deterministic postorder, quasi-topological sort, `subgraph_between_nodes`, immediate dominators, `KunaIncrementalDominators` | `angr/utils/graph.py`, `angr/utils/doms.py` |
-| `decompiler/cpp/kuna_regionid.{hh,cc}` | `KunaGraphRegion`, `KunaRegionVisitor`, `KunaRegionIdentifier` (supergraph, cyclic + acyclic phases, outputs), console commands | `angr/analyses/decompiler/region_identifier.py`, `graph_region.py` |
+| `decompiler/crates/kuna-decomp/src/kuna_regiongraph.rs` | `KunaRegionNode`, `KunaRegionGraph` (mutable digraph), DFS back edges, deterministic postorder, quasi-topological sort, `subgraph_between_nodes`, immediate dominators, `KunaIncrementalDominators` | `angr/utils/graph.py`, `angr/utils/doms.py` |
+| `decompiler/crates/kuna-decomp/src/kuna_regionid.rs` | `KunaGraphRegion`, `KunaRegionVisitor`, `KunaRegionIdentifier` (supergraph, cyclic + acyclic phases, outputs), console commands | `angr/analyses/decompiler/region_identifier.py`, `graph_region.py` |
 
 The identifier builds its own private graph from `Funcdata::getBasicBlocks()`
 (read-only — **the decompiler's CFG and structuring are never touched**, so
@@ -75,16 +75,16 @@ Hex is lowercase and unpadded.
 `loop-refinement` (whose region-shaping *options* remain LATENT — these
 commands are the observable half).
 
-## Python / LLM access
+## CLI / LLM access
 
 ```bash
-python -m kuna.decompile ./a.out main --regions
+kuna decompile ./a.out main --regions
 ```
 
 prints the C, then a `// ==== kuna regions (S7) ====` separator, then the
 `region blocks` + `region tree` dumps (captured through a second
-`openfile write`, so the region text never mixes with the C). The library
-call `kuna.decompile.decompile(..., regions=True)` returns
+`openfile write`, so the region text never mixes with the C). The Python
+library call `scripts.decompile.decompile(..., regions=True)` returns
 `(c_text, regions_text)`.
 
 ## C++ API (walking a region's blocks)

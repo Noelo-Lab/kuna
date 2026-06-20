@@ -41,7 +41,7 @@ replicate them, and (b) they can be reported/ported upstream deliberately later.
 - Workaround: none needed in C++ (wrap-then-truncate is the de facto oracle
   behavior on the oracle platform).
 - Rust port requirement: transcribe as wrapping i32 arithmetic per ADR 0003
-  (done in `rust/crates/kuna-base/src/xml.rs::convert_char_ref`, oracle-pinned by
+  (done in `decompiler/crates/kuna-base/src/xml.rs::convert_char_ref`, oracle-pinned by
   `verify_w1_base_xml` cases `&#99999999999999999999;`, `&#2147483648;`,
   `&#xffffffff;`).
 
@@ -79,7 +79,7 @@ replicate them, and (b) they can be reported/ported upstream deliberately later.
 - Workaround: none needed in the C++ tree (no in-tree caller does unaligned chunk I/O
   on a default-page bank; `MemoryImage` and `MemoryPageOverlay` override the page
   methods).
-- Rust port note: `rust/crates/kuna-sleigh/src/memstate.rs` transcribes the word-loop
+- Rust port note: `decompiler/crates/kuna-sleigh/src/memstate.rs` transcribes the word-loop
   arithmetic exactly; the overrun becomes a slice-bounds panic (ADR 0004 UB state,
   pinned by `verify_w2emulate_unaligned_chunk_default_getpage_cpp_overrun_panics`) and
   the full-word overread zero-fills the missing bytes (module docs, anomalies 1-2).

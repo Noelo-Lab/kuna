@@ -8,8 +8,8 @@ Rust**, and the removal of the C++ tree once the port was proven equivalent.
 > **Status:** done. The Rust port passes **675/675** decompiler datatest assertions and
 > compiles **148/148** SLEIGH language specs to byte-identical `.sla`. The vendored C++
 > source (`decompiler/cpp/`, ~196k LOC) and its C++ unit tests have been removed. The Rust
-> workspace under `rust/` is the engine; the XML regression corpus
-> (`decompiler/datatests/`) and the recorded oracle (`docs/baseline.json`) remain.
+> workspace under `decompiler/` is the engine; the XML regression corpus
+> (`tests/datatests/`) and the recorded oracle (`docs/baseline.json`) remain.
 
 ## What was ported
 
@@ -18,7 +18,7 @@ Two C++ programs, both reproduced in Rust with byte-level output parity:
 1. **The decompiler** (`decomp_dbg` / `decomp_test_dbg`, the DECCORE library, ~all of
    `decompiler/cpp/*.cc`): lift → flow/CFG → SSA heritage → the ~170-rule simplification
    pipeline → type inference → variable merging → structuring → C emission. Ported into the
-   `rust/` cargo workspace:
+   `decompiler/` cargo workspace:
    - `kuna-base` — types, error model, XML, marshal (packed + XML), opcodes, space/address,
      pcoderaw, globalcontext, partmap/rangemap, crc32, filemanage, compression.
    - `kuna-num` — multiprecision, float/FloatFormat, CircleRange.
@@ -81,7 +81,7 @@ The same discipline drove every wave of both ports:
 
 Every integration passed, and the final state satisfies, all of:
 
-1. **Datatest parity — 675/675.** `python -m kuna.run_tests --datatests` runs the Rust
+1. **Datatest parity — 675/675.** `make test` (the `kuna` CLI) runs the Rust
    `decomp_test_dbg` over the 83-file / 675-assertion XML regression corpus; all pass, with
    **no** previously-passing assertion ever regressing (a per-assertion passing-set diff
    enforced monotonicity at every wave). `docs/baseline.json` records the oracle.
@@ -93,8 +93,9 @@ Every integration passed, and the final state satisfies, all of:
    CFG, post-heritage SSA, final IR, and printed C were each pinned byte-equal to C++ via
    console-command snapshots.
 4. **SLEIGH compiler — 148/148 content-identical + the end-to-end backstop.**
-   `python -m kuna.slacomp --all` confirms every `.slaspec` compiles to a `.sla` whose
-   decompressed element stream is byte-identical to `sleigh_opt`'s. The decisive proof:
+   The `.sla` content-parity tests in `make rust-test` confirm every `.slaspec` compiles to a
+   `.sla` whose decompressed element stream is byte-identical to the recorded `sleigh_opt`
+   reference (captured during the port; the C++ oracle has since been removed). The decisive proof:
    rebuilding **all** specs with the Rust compiler and re-running the full decompiler suite
    yields **675/675** — the Rust-built specs decode identically to C++-built ones. (Per-stage,
    each compiler module was checked against golden token/symbol/pattern/decision-tree dumps
@@ -114,14 +115,14 @@ With both ports proven, the C++ source was removed:
 - **Removed:** `decompiler/cpp/` (the C++ decompiler + SLEIGH compiler source) and
   `decompiler/unittests/` (the C++ unit tests — reproduced as cargo workspace tests), plus the
   now-dead libbfd tooling.
-- **Kept:** `decompiler/datatests/` (the XML regression corpus the Rust harness consumes),
+- **Kept:** `tests/datatests/` (the XML regression corpus the Rust harness consumes),
   `specs/` (the SLEIGH `.slaspec` definitions; `.sla` are gitignored build artifacts now
   produced by `slacomp`), and `docs/baseline.json` (the recorded oracle, now a frozen
   Rust-validated datatest snapshot).
 - **Rewired:** the `Makefile` builds and tests the Rust port only (`make binaries`/`specs`/
-  `test`/`rust-test`); `kuna/paths.py` defaults to the Rust engine (`sleigh_opt`→`slacomp`,
-  the decompiler binaries keep their names); `kuna/run_tests.py` scopes the baseline check to
-  the modes it runs (the unit tests now live in the cargo workspace, not the datatest harness).
+  `test`/`rust-test`); the `kuna` CLI resolves the Rust engine (`sleigh_opt`→`slacomp`, the
+  decompiler binaries keep their names) and scopes the baseline check to the modes it runs
+  (the unit tests now live in the cargo workspace, not the datatest harness).
 
 ### The one cosmetic residual (LOSS-010)
 
@@ -148,7 +149,7 @@ make rust-test    # the full cargo workspace test suite (ported units + golden +
 ### The user-facing CLI is the `kuna` binary
 
 The Python user-facing commands were ported to a single Rust binary, `kuna`
-(`rust/crates/kuna-cli`, built by `make binaries` to `rust/target/release/kuna`) — so the
+(`decompiler/crates/kuna-cli`, built by `make binaries` to `decompiler/target/release/kuna`) — so the
 whole project now lives under one Rust paradigm. The four entry points:
 
 ```sh
@@ -163,10 +164,10 @@ and parses their streams in Rust, so the output is byte-identical to the old `py
 kuna.{decompile,run_tests,catalog}`; `catalog --check` runs in-process against `kuna-decomp`
 (it cross-checks the catalog the binary emits against the registered kuna-option set
 `KUNA_OPTION_NAMES`, the Rust-world replacement for the old `check_drift` that parsed the
-removed C++ `options.cc`). The ported Python modules (`kuna/decompile.py`'s CLI,
-`kuna/run_tests.py`, `kuna/catalog.py`, `kuna/slacomp.py`) were removed; `kuna/decompile.py`
-remains only as a thin **library** shim for the still-Python `kuna/pipeline/` (the autonomous
-feature loop, out of scope). See `docs/rust-port/cli-port.md` for the differential checks.
+removed C++ `options.cc`). The ported Python CLIs (the old `decompile`/`run_tests`/`catalog`/
+`slacomp` modules) were removed; the `decompile.py` shim moved with the rest of the Python
+helpers to `scripts/` and remains only as a thin **library** shim for the still-Python
+`scripts/pipeline/` (the autonomous feature loop, out of scope). See `docs/rust-port/cli-port.md`.
 
 `python -m kuna.slacomp --all` (the per-spec `.sla` content byte-diff) was the SLEIGH-compiler
 validation gate **during** the port; it diffs against the C++ `sleigh_opt`, so re-running it now

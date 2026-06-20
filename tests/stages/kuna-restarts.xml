@@ -6,7 +6,7 @@
     Mechanism (c) - global restart with persisted hints - is the most
     diagnostic feedback signal in the engine and was previously invisible.
     This test reuses the upstream switchmulti binary
-    (decompiler/datatests/switchmulti.xml): its jump table is not fully
+    (tests/datatests/switchmulti.xml): its jump table is not fully
     recovered during flow analysis, so JumpTable::recoverLabels installs an
     Override::insertMultistageJump hint and restarts the function (edge 2 of
     the stage model).  The kuna recorder at that trigger site makes the

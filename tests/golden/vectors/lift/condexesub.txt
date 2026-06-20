@@ -1,5 +1,5 @@
 # kuna golden lift fixture (per-instruction raw p-code from the C++ oracle)
-# corpus: decompiler/datatests/condexesub.xml
+# corpus: tests/datatests/condexesub.xml
 # sla: Ghidra/Processors/ARM/data/languages/ARM8_le.sla (relative to specs/)
 # cap: 80 instructions per lift point
 # lift-points (space:byte-offset name): ram:0x402d29a8=func ram:0x402d295c=other ram:0x402d29e0=iblockadd
