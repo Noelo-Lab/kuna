@@ -2099,9 +2099,16 @@ impl PrintC {
             }
             self.emit.end_var_decl(id);
             self.emit.print(";", SyntaxHighlight::NoColor);
-            if let Some((ctext, spc, off)) = comment {
-                self.emit.spaces(1, 0);
-                self.emit.tag_comment(&format!("// {ctext}"), SyntaxHighlight::CommentColor, &spc, off);
+            // (kuna) the storage comment (`// eax` / `// stack - 0xNN`) is the
+            // angr-style local annotation; the ghidra naming scheme (`option
+            // namestyle ghidra`, `name_style_angr = false`) emits no storage
+            // comment.  Gate the emit on the flag (default angr → unchanged, so
+            // the 675 corpus is unaffected).
+            if arch.name_style_angr {
+                if let Some((ctext, spc, off)) = comment {
+                    self.emit.spaces(1, 0);
+                    self.emit.tag_comment(&format!("// {ctext}"), SyntaxHighlight::CommentColor, &spc, off);
+                }
             }
         }
         // Blank separating line before the body (C++ emits a tag_line after the
