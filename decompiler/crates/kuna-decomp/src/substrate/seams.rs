@@ -1229,6 +1229,89 @@ impl FuncProto {
     }
 }
 
+// ===========================================================================
+// DatabaseArch / TranslateSeam / TypeFactorySeam on the real seam Architecture.
+// ===========================================================================
+//
+// SEAM(W4/W5/W6) closure: `database.rs` declares these traits (the slice of
+// `glb` the symbol database needs) and the in-crate `TestArch` implements them
+// for unit tests.  There was no NON-test impl, so the ghidra-style naming in
+// `Database::build_variable_name` / `build_default_name` was unreachable in the
+// live pipeline (`ActionNameVars` hardcoded `format!("v{base}")`).  Implementing
+// the traits here on the real seam `Architecture` wires the live engine to that
+// renderer so `option namestyle ghidra` produces `iVarN` locals.
+
+impl crate::database::TranslateSeam for Architecture {
+    /// C++ `Translate::getRegisterName(spc,off,sz)` — forward to the engine's
+    /// register lookup installed on the shared `AddrSpaceManager`.
+    fn get_register_name(&self, space: &Rc<AddrSpace>, off: u64, size: int4) -> String {
+        match self.manage.register_lookup() {
+            Some(rl) => rl.get_register_name(space, off, size),
+            None => String::new(),
+        }
+    }
+}
+
+impl crate::database::TypeFactorySeam for Architecture {
+    /// C++ `TypeFactory::getBase(size,metatype)` — forward to the shared
+    /// `TypeFactoryImpl`, falling back to a bare placeholder when no factory is
+    /// shared (hand-built fixtures) or the lookup errs.
+    fn get_base(
+        &self,
+        size: int4,
+        meta: crate::dtype::type_metatype,
+    ) -> Rc<crate::dtype::Datatype> {
+        use crate::dtype::TypeFactory;
+        match self.types.as_deref() {
+            Some(tf) => tf
+                .get_base(size, meta)
+                .unwrap_or_else(|_| Rc::new(crate::dtype::Datatype::new(size, meta))),
+            None => Rc::new(crate::dtype::Datatype::new(size, meta)),
+        }
+    }
+
+    /// C++ `TypeFactory::getTypeCode()` — the "code" placeholder for function
+    /// symbols, forwarded to the shared factory with a placeholder fallback.
+    fn get_type_code(&self) -> Rc<crate::dtype::Datatype> {
+        use crate::dtype::TypeFactory;
+        match self.types.as_deref() {
+            Some(tf) => tf.get_type_code().unwrap_or_else(|_| {
+                Rc::new(crate::dtype::Datatype::new(1, crate::dtype::type_metatype::TYPE_CODE))
+            }),
+            None => Rc::new(crate::dtype::Datatype::new(1, crate::dtype::type_metatype::TYPE_CODE)),
+        }
+    }
+}
+
+impl crate::database::DatabaseArch for Architecture {
+    fn num_spaces(&self) -> int4 {
+        self.manage.num_spaces()
+    }
+    fn types(&self) -> &dyn crate::database::TypeFactorySeam {
+        self
+    }
+    fn translate(&self) -> &dyn crate::database::TranslateSeam {
+        self
+    }
+    fn min_funcsymbol_size(&self) -> int4 {
+        // The seam Architecture carries no `min_funcsymbol_size`; the symbol
+        // database's only use of it is `FunctionSymbol` mapping (not the naming
+        // path), and the engine default is 1.
+        1
+    }
+    fn name_style_angr(&self) -> bool {
+        self.name_style_angr
+    }
+    /// C++ `Datatype::printNameBase` (`type.hh:286`): the first char of the type
+    /// name (the `iVar`/`uVar`/`fVar`/`pVar` prefix), empty for a nameless type.
+    fn type_name_base(&self, dt: &crate::dtype::Datatype) -> String {
+        match dt.get_name().chars().next() {
+            Some(c) => c.to_string(),
+            None => String::new(),
+        }
+    }
+}
+
 /// Shared handle to the [`Architecture`] (C++ `Funcdata::glb`, a borrowed
 /// `Architecture *`).
 ///

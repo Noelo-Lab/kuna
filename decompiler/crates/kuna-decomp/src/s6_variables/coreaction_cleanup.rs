@@ -2181,6 +2181,37 @@ fn build_func_param_name_recmap(
     recmap
 }
 
+/// Build the default name for an unmapped local high (the `vN` tail of
+/// `ActionNameVars::linkSymbols`), honoring the `option namestyle` toggle.
+///
+/// C++ `Scope::buildDefaultName` (database.cc:1786) routes an unnamed local to
+/// `buildVariableName`, whose local arm renders `<printNameBase(type)>Var<index>`
+/// (`iVar1`, `uVar2`, ...) — the upstream Ghidra scheme.  kuna's angr default
+/// (DIV-5) instead renders `v<index>`.  This consumes one `base` index either way.
+///
+/// `ct` is the high representative's data-type (the declaration type, e.g.
+/// `int4`); `printNameBase` is its first character.  A nameless type contributes
+/// no prefix (so the ghidra name degenerates to `Var<index>`, matching the C++
+/// empty-`printNameBase` case).
+fn kuna_default_local_name(
+    arch: &crate::seams::Architecture,
+    ct: Option<&crate::dtype::Datatype>,
+    base: &mut int4,
+) -> String {
+    use crate::database::DatabaseArch;
+    if arch.name_style_angr() {
+        let n = format!("v{base}");
+        *base += 1;
+        n
+    } else {
+        // buildVariableName local arm: `<printNameBase>` + "Var" + index.
+        let prefix = ct.map(|c| arch.type_name_base(c)).unwrap_or_default();
+        let n = format!("{prefix}Var{base}");
+        *base += 1;
+        n
+    }
+}
+
 /// The callee-parameter name recommendation for `high`, if the
 /// `ActionNameVars::lookForFuncParamNames` apply-gates (coreaction.cc:2981-2993)
 /// admit it: the representative is not free / not an input, the high has a single
@@ -2592,9 +2623,13 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 .map(|lm| lm.make_local_name_unique(&rec))
                 .unwrap_or(rec),
             None => {
-                let n = format!("v{base}");
-                base += 1;
-                n
+                // C++ `Scope::buildDefaultName`'s local arm (database.cc:1786 ->
+                // `buildVariableName`): the angr style names every local `v<base>`;
+                // the ghidra style names it `<printNameBase(type)>Var<base>`
+                // (`iVar1`/`uVar1`/...).  Pick the rep's data-type for the prefix
+                // (the same type that renders the declaration, e.g. `int4`).
+                let rep_ty = data.vbank().get(name_rep.unwrap()).map(|v| v.get_type().clone());
+                kuna_default_local_name(data.get_arch(), rep_ty.as_deref(), &mut base)
             }
         };
         if let Some(h) = data.high_bank_mut().get_mut(high) {
