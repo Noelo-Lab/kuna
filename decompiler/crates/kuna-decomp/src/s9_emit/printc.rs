@@ -2068,17 +2068,23 @@ impl PrintC {
             // Array member: if the mapped Symbol is an array, declare the base
             // type and an `[count]` adornment after the name (C++ `emitVarDecl`'s
             // array branch).
-            let array_count = fd.high_bank().get(*high).and_then(|h| {
-                let st = h.kuna_symbol_type()?;
-                if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
-                    let base = st.get_array_base()?;
-                    let elsize = base.get_size().max(1);
-                    let count = st.get_size() / elsize;
-                    Some((type_name_for_decl(&base, rt), count))
-                } else {
-                    None
-                }
-            });
+            let array_count = fd
+                .high_bank()
+                .get(*high)
+                .and_then(|h| {
+                    let st = h.kuna_symbol_type()?;
+                    array_decl_parts(&st, rt)
+                })
+                // No mapped-Symbol array: fall back to the declaration representative's
+                // own data-type.  An anonymous `undefined1 [N]` array (an oversize
+                // unknown - e.g. a 32-byte YMM FMA accumulator, GH-9184 - that
+                // `getBase` widened past `max_basetype_size`) lives on the Varnode
+                // itself, never a Symbol; declare it `<base> name [N]` instead of
+                // flattening it to a scalar `undefined<N>`.
+                .or_else(|| {
+                    let v = decl_rep_varnode(fd, *high).and_then(|vn| fd.vbank().get(vn))?;
+                    array_decl_parts(v.get_type(), rt)
+                });
             self.emit.tag_line();
             let id = self.emit.begin_var_decl(&markup);
             let decl_type = array_count.as_ref().map(|(t, _)| t.clone()).unwrap_or(type_name);
@@ -2130,14 +2136,11 @@ impl PrintC {
             Some(h) => h,
             None => return ("undefined1".to_string(), None),
         };
-        // Type name + storage comment: from the high's storage representative —
+        // Type name + storage comment: from the high's storage representative -
         // the addr-tied (mapped, in-scope) member, which is the C++ symbol's
         // `getFirstWholeMap()` storage (e.g. the ACC register), NOT a trim-COPY
         // unique.  Fall back to instance 0 if none is addr-tied.
-        let rep = (0..h.num_instances())
-            .map(|i| h.get_instance(i))
-            .find(|&vn| fd.vbank().get(vn).map(|v| v.is_addr_tied()).unwrap_or(false))
-            .or_else(|| (0..h.num_instances()).map(|i| h.get_instance(i)).next());
+        let rep = decl_rep_varnode(fd, high);
         let (type_name, comment) = match rep.and_then(|vn| fd.vbank().get(vn)) {
             Some(v) => {
                 let tn = type_name_for_decl(v.get_type(), self.rt_ctx);
@@ -6293,6 +6296,40 @@ fn sblocks_basic_block_index(fd: &Funcdata, bb: BlockId) -> int4 {
     } else {
         fd.sblocks_ref().block(bb).get_index()
     }
+}
+
+/// (kuna) The declaration *representative* Varnode of a local high: the addr-tied
+/// (mapped, in-scope) storage member - the C++ symbol's `getFirstWholeMap()`
+/// storage - else instance 0.  Shared by the type-name/comment path and the
+/// array-declarator fallback (GH-9184) so both anchor on the same Varnode.
+fn decl_rep_varnode(
+    fd: &Funcdata,
+    high: crate::seams::HighVariableId,
+) -> Option<crate::seams::VarnodeId> {
+    let h = fd.high_bank().get(high)?;
+    (0..h.num_instances())
+        .map(|i| h.get_instance(i))
+        .find(|&vn| fd.vbank().get(vn).map(|v| v.is_addr_tied()).unwrap_or(false))
+        .or_else(|| (0..h.num_instances()).map(|i| h.get_instance(i)).next())
+}
+
+/// (kuna) If `ct` is a `TYPE_ARRAY`, the `(base_type_name, count)` pair that
+/// declares it `<base> name [count]` (C++ `emitVarDecl`'s array branch, where the
+/// declared type is the *element* type and the count adorns the identifier).  The
+/// base name is resolved with the realtypes context - so an anonymous
+/// `undefined1 [N]` array (e.g. a 32-byte oversize-unknown YMM FMA accumulator,
+/// GH-9184) declares its element type, not the whole-array `undefined<N>` scalar.
+fn array_decl_parts(
+    ct: &std::rc::Rc<crate::dtype::Datatype>,
+    rt: RealTypeCtx,
+) -> Option<(String, int4)> {
+    if ct.get_metatype() != crate::dtype::type_metatype::TYPE_ARRAY {
+        return None;
+    }
+    let base = ct.get_array_base()?;
+    let elsize = base.get_size().max(1);
+    let count = ct.get_size() / elsize;
+    Some((type_name_for_decl(&base, rt), count))
 }
 
 /// The type name to render in a declaration (C++ `Datatype::getName`), with the
