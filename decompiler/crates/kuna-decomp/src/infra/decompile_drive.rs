@@ -309,6 +309,30 @@ impl FlowEnvironment for ArchFlowEnv {
             regname.as_deref(),
         )
     }
+
+    fn is_sparc_struct_ret_trap(&self, fd: &Funcdata, op: crate::seams::OpId) -> bool {
+        // (kuna) GH-6882: wire the ported `kunaIsSparcStructRetTrap` predicate.
+        // The gate is the architecture-owned `sparc_struct_return` flag (`option
+        // sparcstructret on|off`, default off / upstream byte-identical); the
+        // user-op name resolution is `glb->userops.getOp(id)->getName()` (None ==
+        // the C++ null `UserPcodeOp *`).
+        let arch = self.arch();
+        if !arch.sparc_struct_return {
+            // Fast-path the default-off gate without touching the IR (matches the
+            // predicate's leading `if (!gate) return false`).
+            return false;
+        }
+        crate::kuna_sparcstructret::kuna_is_sparc_struct_ret_trap(
+            fd,
+            op,
+            arch.sparc_struct_return,
+            |id| {
+                arch.userops
+                    .get_op(id)
+                    .map(|uo| String::from_utf8_lossy(uo.get_name()).into_owned())
+            },
+        )
+    }
 }
 
 /// Build a [`Funcdata`] for the function `name` at `entry` and follow its flow,
