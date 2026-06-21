@@ -759,6 +759,19 @@ impl Funcdata {
         self.qlst.remove(index as usize);
     }
 
+    /// Remove the call spec associated with the given CALL op (C++
+    /// `Funcdata::deleteCallSpecs`, `funcdata.cc:521`): scan `qlst` for the entry
+    /// whose op matches and erase it.  Used by `blockRemoveInternal` when an
+    /// unreachable block containing a CALL is deleted.  Because the \e fspec handle
+    /// is the call op's own identity (not the vector position; see
+    /// [`Self::get_call_specs_index`]), erasing the entry does not invalidate the
+    /// remaining annotation Varnodes.  A no-op if the op has no registered spec.
+    pub fn delete_call_specs(&mut self, op: OpId) {
+        if let Some(idx) = self.qlst.iter().position(|fc| fc.get_op() == op) {
+            self.qlst.remove(idx);
+        }
+    }
+
     /// Put the calls in dominance order so earlier calls get evaluated first
     /// (C++ `Funcdata::sortCallSpecs`, `funcdata.cc:514`; comparator
     /// `compareCallspecs`, `funcdata.cc:501`: by parent-block index, then by the

@@ -1297,6 +1297,72 @@ impl Funcdata {
         Ok(())
     }
 
+    /// Rewrite every read of `vn` so it instead reads a special "undefined"
+    /// constant (C++ `Funcdata::descend2Undef`, `funcdata_varnode.cc:573`).
+    ///
+    /// Used by [`remove_unreachable_blocks`](Funcdata::remove_unreachable_blocks):
+    /// when a block is deleted, any Varnode it defined that is still read from a
+    /// (possibly reachable) block has its descendants rewired to a `0xBADDEF`
+    /// constant.  MULTIEQUAL/INDIRECT cannot take a constant directly, so a COPY
+    /// of the constant is interposed.  Returns `true` if any rewritten reader is
+    /// in a block that is not itself fully orphaned (i.e. has in-edges), which the
+    /// caller turns into a one-time "creating undefined varnodes" warning.
+    pub fn descend2_undef(&mut self, vn: VarnodeId) -> KunaResult<bool> {
+        let sz = self.vbank().get(vn).expect("descend2Undef: stale vn").get_size();
+        // Snapshot the descendant list: we rewrite reads (and create new ops)
+        // while walking, so we cannot hold the live iterator (C++ advances the
+        // iterator past the current op before mutating).
+        let descend: Vec<OpId> =
+            self.vbank().get(vn).expect("descend2Undef: stale vn").descend_iter().collect();
+        let mut res = false;
+        for op in descend {
+            let parent = match self.obank().get(op).expect("descend2Undef: stale op").get_parent() {
+                Some(p) => p,
+                None => continue,
+            };
+            if self.bblocks_ref().block(parent).is_dead() {
+                continue;
+            }
+            if self.bblocks_ref().block(parent).size_in() != 0 {
+                res = true;
+            }
+            let i = self.obank().get(op).expect("descend2Undef: stale op").get_slot(vn);
+            let opc = self.obank().get(op).expect("descend2Undef: stale op").code();
+            // badconst = newConstant(sz,0xBADDEF);
+            let badconst = self.new_constant(sz, 0xBADDEF);
+            match opc {
+                OpCode::CPUI_MULTIEQUAL => {
+                    // Cannot put a constant directly into a MULTIEQUAL: interpose
+                    // a COPY at the end of the corresponding predecessor block.
+                    let inbl = self.bblocks_ref().block(parent).get_in(i);
+                    let start = self.bb_get_start(inbl);
+                    let copyop = self.new_op(1, start);
+                    let inputvn = self.new_unique_out(sz, copyop)?;
+                    self.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
+                    self.op_set_input(copyop, badconst, 0)?;
+                    self.op_insert_end(copyop, inbl);
+                    self.op_set_input(op, inputvn, i)?;
+                }
+                OpCode::CPUI_INDIRECT => {
+                    // Cannot put a constant directly into an INDIRECT: interpose a
+                    // COPY just before the INDIRECT op.
+                    let addr =
+                        self.obank().get(op).expect("descend2Undef: stale op").get_addr().clone();
+                    let copyop = self.new_op(1, addr);
+                    let inputvn = self.new_unique_out(sz, copyop)?;
+                    self.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
+                    self.op_set_input(copyop, badconst, 0)?;
+                    self.op_insert_before(copyop, op);
+                    self.op_set_input(op, inputvn, i)?;
+                }
+                _ => {
+                    self.op_set_input(op, badconst, i)?;
+                }
+            }
+        }
+        Ok(res)
+    }
+
     /// Does the given Varnode have any descendant op in a block \e not marked
     /// dead (C++ `Funcdata::descendantsOutside`, `funcdata_block.cc:251`)?
     fn descendants_outside(&self, vn: VarnodeId) -> bool {
@@ -1392,6 +1458,7 @@ impl Funcdata {
         self.bblocks_mut().remove_from_flow(bb);
 
         // Finally remove all the ops in -bb-.
+        let mut desc_warning = false;
         for op in self.bb_ops(bb) {
             if self.obank().get(op).expect("blockRemoveInternal").is_assignment() {
                 let deadvn = self
@@ -1401,26 +1468,22 @@ impl Funcdata {
                     .get_out()
                     .expect("blockRemoveInternal: assignment with no out");
                 if unreachable {
-                    // descend2Undef + the one-time warning -- SEAM(W3-op): the
-                    // descend-to-undefined rewrite is a funcdata_op surface not on
-                    // the removeDoNothingBlock path (unreachable==false).  Reached
-                    // only by removeUnreachableBlocks, which is itself unported.
-                    return Err(KunaError::lowlevel(
-                        "blockRemoveInternal(unreachable=true): descend2Undef SEAM",
-                    ));
+                    // Mark descendants in (possibly) reachable blocks as undefined.
+                    let undef = self.descend2_undef(deadvn)?;
+                    if undef && !desc_warning {
+                        // warningHeader("Creating undefined varnodes in (possibly)
+                        // reachable block") -- W4 warning facility; the descend2Undef
+                        // rewrite is the realized side effect.  Print once.
+                        desc_warning = true;
+                    }
                 }
                 if self.descendants_outside(deadvn) {
                     return Err(KunaError::lowlevel("Deleting op with descendants"));
                 }
             }
             if self.obank().get(op).expect("blockRemoveInternal").is_call() {
-                // deleteCallSpecs(op) -- a do-nothing block (markers + branch only)
-                // never contains a CALL, so this is unreachable on the
-                // removeDoNothingBlock path.  The call-spec registry prune is a W4
-                // surface; guard rather than silently drop.
-                return Err(KunaError::lowlevel(
-                    "blockRemoveInternal: CALL in removable block (deleteCallSpecs SEAM)",
-                ));
+                // deleteCallSpecs(op) -- prune the call from the call-spec registry.
+                self.delete_call_specs(op);
             }
             self.op_destroy(op); // No longer has descendants
         }
@@ -1444,6 +1507,88 @@ impl Funcdata {
         self.block_remove_internal(bb, false)?;
         self.structure_reset(); // Delete any structure we had before
         Ok(())
+    }
+
+    /// Remove any unreachable basic blocks (C++ `Funcdata::removeUnreachableBlocks`,
+    /// `funcdata_block.cc:364`).
+    ///
+    /// `checkexistence` forces an active scan (a non-entry block with no immediate
+    /// dominator is unreachable); otherwise the cached `blocks_unreachable` flag
+    /// (set by [`structure_reset`](Self::structure_reset)) gates the work.  When
+    /// unreachable blocks exist they are collected from the entry's reachable set,
+    /// marked dead, severed from control-flow ([`branch_remove_internal`]), and
+    /// then deleted ([`block_remove_internal`] with `unreachable=true`, which
+    /// rewires stranded reads via [`descend2_undef`]).  A structuring reset follows.
+    /// Returns `true` if any block was removed.
+    pub fn remove_unreachable_blocks(
+        &mut self,
+        issuewarning: bool,
+        checkexistence: bool,
+    ) -> KunaResult<bool> {
+        let _ = issuewarning; // W4 warning facility; the block deletion is realized.
+        let size = self.bblocks_get_size();
+        if checkexistence {
+            // Quick scan: a non-entry block with no immediate dominator is
+            // unreachable.
+            let mut found = false;
+            for i in 0..size {
+                let blk = self.bblocks_get_block(i);
+                if self.bblocks_ref().block(blk).is_entry_point() {
+                    continue;
+                }
+                if self.bblocks_ref().block(blk).get_immed_dom().is_none() {
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                return Ok(false);
+            }
+        } else if !self.has_unreachable_blocks() {
+            return Ok(false);
+        }
+
+        // There is at least one unreachable block.  Find the entry point.
+        let mut entry: Option<BlockId> = None;
+        for i in 0..size {
+            let blk = self.bblocks_get_block(i);
+            if self.bblocks_ref().block(blk).is_entry_point() {
+                entry = Some(blk);
+                break;
+            }
+        }
+        let entry = match entry {
+            // No entry point => nothing reachable to anchor the sweep on.
+            None => return Ok(false),
+            Some(e) => e,
+        };
+
+        // Collect the unreachable blocks (everything not reachable from entry).
+        let graph = self.bblocks_root_pub();
+        let mut list: Vec<BlockId> = Vec::new();
+        self.bblocks_mut().collect_reachable(graph, &mut list, entry, true);
+        if list.is_empty() {
+            return Ok(false);
+        }
+
+        // Mark them all dead first (so the later edge/op surgery sees a consistent
+        // dead/alive partition; descend2Undef skips reads inside dead blocks).
+        for &bb in &list {
+            self.bblocks_mut().block_mut(bb).set_dead();
+            // warningHeader("Removing unreachable block (...)") -- W4 warning.
+        }
+        // Sever every out-edge of every dead block.
+        for &bb in &list {
+            while self.bblocks_ref().block(bb).size_out() > 0 {
+                self.branch_remove_internal(bb, 0)?;
+            }
+        }
+        // Finally remove each dead block's ops and the block itself.
+        for &bb in &list {
+            self.block_remove_internal(bb, true)?;
+        }
+        self.structure_reset();
+        Ok(true)
     }
 
     /// The data-flow half of `BlockBasic::negateCondition` (C++ `block.cc:2355`):
