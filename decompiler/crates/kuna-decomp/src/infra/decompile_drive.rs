@@ -271,6 +271,44 @@ impl FlowEnvironment for ArchFlowEnv {
         proto.set_override(true);
         Ok(Some(proto))
     }
+
+    fn is_v850_indirect_jmp(&self, fd: &Funcdata, op: crate::seams::OpId) -> bool {
+        // (kuna) GH-8817: wire the ported `kunaIsV850IndirectJmp` predicate.  The
+        // gate is the architecture-owned `v850_indirect_branch` flag (`option
+        // v850indirectbranch on|off`, default off / upstream byte-identical); the
+        // register name is `glb->translate->getRegisterName(spc, off, size)` of
+        // op's input-0 varnode (None == the C++ empty string, "not a named
+        // register").
+        let arch = self.arch();
+        if !arch.v850_indirect_branch {
+            // Fast-path the default-off gate without touching the IR (matches the
+            // predicate's leading `if (!gate) return false`).
+            return false;
+        }
+        // Resolve the input-0 register name for the predicate (the predicate
+        // re-checks CALLIND / processor-space / null-input, so only the name
+        // resolution lives here).
+        let regname: Option<String> = (|| {
+            let opref = fd.obank().get(op)?;
+            let vn = opref.get_in(0)?;
+            let vnref = fd.vbank().get(vn)?;
+            let space = vnref.get_space();
+            let off = vnref.get_offset();
+            let size = vnref.get_size();
+            let raw = arch.translate().base().get_register_name(space, off, size);
+            if raw.is_empty() {
+                None
+            } else {
+                Some(String::from_utf8_lossy(&raw).into_owned())
+            }
+        })();
+        crate::kuna_v850indbranch::kuna_is_v850_indirect_jmp(
+            fd,
+            op,
+            arch.v850_indirect_branch,
+            regname.as_deref(),
+        )
+    }
 }
 
 /// Build a [`Funcdata`] for the function `name` at `entry` and follow its flow,
