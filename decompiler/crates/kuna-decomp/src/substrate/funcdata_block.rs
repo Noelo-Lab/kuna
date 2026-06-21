@@ -2473,6 +2473,20 @@ impl Funcdata {
         }
     }
 
+    /// (kuna GH-8467) The entry address of a structured block, for angr-style
+    /// `label_<addr>` goto-label naming (C++ `PrintC::emitLabelStatement`'s
+    /// `getFrontLeaf()` basic-block start).  Invalid when the block has no leaf.
+    pub fn sblock_entry_addr(&self, bl: BlockId) -> Address {
+        let front = match self.sblocks_ref().get_front_leaf(bl) {
+            Some(f) => f,
+            None => return Address::new_invalid(),
+        };
+        match self.sblocks_ref().sub_block(front, 0) {
+            Some(bb) => self.bb_get_start(bb),
+            None => Address::new_invalid(),
+        }
+    }
+
     /// Mutable access to a basic block's address cover (`BasicData::cover`).
     fn basic_cover_mut(&mut self, bb: BlockId) -> &mut kuna_base::address::RangeList {
         match self.bblocks_mut().block_mut(bb).kind_mut() {

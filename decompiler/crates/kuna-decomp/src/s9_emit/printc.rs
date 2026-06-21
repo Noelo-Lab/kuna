@@ -2297,12 +2297,26 @@ impl PrintC {
         }
     }
 
+    /// The display name for a goto target / label line (C++ `PrintC::emitLabel`,
+    /// printc.cc:3328): the **entry address** of the block's front-leaf basic
+    /// block, rendered in kuna's angr style as `label_<addr>`
+    /// ([`kuna_label_name`](crate::database::kuna_label_name)).  Falls back to the
+    /// reverse-post `LAB_<index>` form only when the block has no resolvable entry
+    /// address, keeping a `goto`/target pair always consistent.
+    fn block_label_name(&self, fd: &Funcdata, bl: BlockId) -> String {
+        let addr = fd.sblock_entry_addr(bl);
+        if addr.is_invalid() {
+            let idx = fd.sblocks_ref().block(bl).get_index();
+            format!("LAB_{idx:08x}")
+        } else {
+            crate::database::kuna_label_name(&addr)
+        }
+    }
+
     /// C++ `PrintC::emitLabelStatement` (printc.cc:3355), structured-print arm: a
     /// `LABEL:` line for a `t_copy` block that is the target of an unstructured
-    /// goto.  The label name mirrors [`emit_goto_statement`]'s simplified
-    /// `LAB_<index>` form so a `goto`/target pair render the same name (the full
-    /// `emitLabel` entry-address/code-symbol naming routes through `database.rs`,
-    /// a concurrent wave's file).
+    /// goto.  The label name is the block's entry-address-based `label_<addr>`
+    /// ([`block_label_name`]) so a `goto`/target pair render the same name.
     fn emit_label_statement(&mut self, fd: &Funcdata, bl: BlockId) {
         use crate::block::BlockType;
         // if (isSet(only_branch)) return;
@@ -2319,8 +2333,7 @@ impl PrintC {
         }
         // emit->tagLine(0); emitLabel(bl); emit->print(COLON);
         self.emit.tag_line_indent(0);
-        let idx = fd.sblocks_ref().block(bl).get_index();
-        self.emit.print(&format!("LAB_{idx:08x}"), SyntaxHighlight::NoColor);
+        self.emit.print(&self.block_label_name(fd, bl), SyntaxHighlight::NoColor);
         self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);
     }
 
@@ -2934,8 +2947,7 @@ impl PrintC {
             _ => {
                 self.emit.print(keywords::KEYWORD_GOTO, SyntaxHighlight::KeywordColor);
                 self.emit.spaces(1, 0);
-                let idx = fd.sblocks_ref().block(target).get_index();
-                self.emit.print(&format!("LAB_{idx:08x}"), SyntaxHighlight::NoColor);
+                self.emit.print(&self.block_label_name(fd, target), SyntaxHighlight::NoColor);
             }
         }
         self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
