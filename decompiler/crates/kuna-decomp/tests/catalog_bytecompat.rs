@@ -22,20 +22,21 @@
 //!
 //! ## Regenerating the fixture
 //!
-//! The fixture is captured from the MAIN tree's C++ binary (the test ORACLE)
-//! using the `openfile write` capture trick (the same one `kuna/decompile.py`
-//! uses, so console prompts never pollute the bytes):
+//! The original fixture was captured from the (now-removed) C++ binary. Since the
+//! C++ tree is gone and kuna is Rust-only, the Rust `emit_catalog_json` emitter is
+//! the authoritative source; kuna-native settables (e.g. `realtypes`, DIV-6) have
+//! no C++ origin. Recapture from the Rust `decomp_dbg` with the `openfile write`
+//! trick (the same one `kuna decompile` uses, so console prompts never pollute the
+//! bytes), with no program loaded so `kunaLiveValue` returns `""` (no `current`):
 //!
 //! ```sh
 //! printf 'openfile write /tmp/cap.json\nstage catalog\nclosefile\nquit\n' \
-//!   | /home/mahaloz/github/kuna/decompiler/cpp/decomp_dbg \
-//!       -s /home/mahaloz/github/kuna/specs/Ghidra/Processors >/dev/null 2>&1
+//!   | decompiler/target/release/decomp_dbg -s "$PWD/specs" >/dev/null 2>&1
 //! cp /tmp/cap.json decompiler/crates/kuna-decomp/tests/fixtures/stage_catalog.json
 //! ```
 //!
 //! Regenerate it whenever `stages.toml` gains/loses a settable or a settable's
-//! catalog text changes (and re-confirm the C++ `kuna_stages.cc settableTable`
-//! is the source of that change, since this is a port-fidelity gate).
+//! catalog text changes.
 
 use kuna_decomp::kuna_stages::{emit_catalog_json, emit_catalog_json_one, lookup_settable};
 
@@ -75,9 +76,9 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_22_settables() {
+fn fixture_has_all_23_settables() {
     // One `"option":` per settable row.
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 22);
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 23);
 }
 
 #[test]

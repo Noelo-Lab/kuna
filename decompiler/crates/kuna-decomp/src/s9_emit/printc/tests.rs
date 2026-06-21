@@ -58,7 +58,10 @@ mod w10_input_prototype_declarator {
     #[test]
     fn base_type_no_modifier() {
         let t = named(8, type_metatype::TYPE_INT, "int8");
-        assert_eq!(declarator_parts(&t), ("int8".to_string(), String::new()));
+        assert_eq!(
+            declarator_parts(&t, crate::printc::RealTypeCtx::OFF),
+            ("int8".to_string(), String::new())
+        );
     }
 
     /// A pointer puts a `*` on the front glued to the base name with a single
@@ -68,7 +71,10 @@ mod w10_input_prototype_declarator {
     fn pointer_front_star() {
         let base = named(8, type_metatype::TYPE_STRUCT, "twostruct");
         let p = ptr_to(base);
-        assert_eq!(declarator_parts(&p), ("twostruct *".to_string(), String::new()));
+        assert_eq!(
+            declarator_parts(&p, crate::printc::RealTypeCtx::OFF),
+            ("twostruct *".to_string(), String::new())
+        );
     }
 
     /// An array goes on the tail: `int4[4]` -> `("int4", "[4]")` -> `int4 a[4]`.
@@ -77,7 +83,10 @@ mod w10_input_prototype_declarator {
     fn array_tail_no_paren() {
         let base = named(4, type_metatype::TYPE_INT, "int4");
         let a = array_of(base, 4);
-        assert_eq!(declarator_parts(&a), ("int4".to_string(), "[4]".to_string()));
+        assert_eq!(
+            declarator_parts(&a, crate::printc::RealTypeCtx::OFF),
+            ("int4".to_string(), "[4]".to_string())
+        );
     }
 
     /// DIVERGENCE (verdict F1 / LOSS): the pointer/array parenthesisation in
@@ -106,14 +115,14 @@ mod w10_input_prototype_declarator {
         // pointer-to-array int4 (*)[1] — C++ would give ("int4 (*", ")[1]").
         let pta = ptr_to(array_of(base.clone(), 1));
         assert_eq!(
-            declarator_parts(&pta),
+            declarator_parts(&pta, crate::printc::RealTypeCtx::OFF),
             ("int4 *".to_string(), "[1]".to_string()),
             "BUG: pointer-to-array renders as array-of-pointer (paren inverted)"
         );
         // array-of-pointer int4 *[1] — C++ would give ("int4 *", "[1]").
         let aop = array_of(ptr_to(base), 1);
         assert_eq!(
-            declarator_parts(&aop),
+            declarator_parts(&aop, crate::printc::RealTypeCtx::OFF),
             ("int4 (*".to_string(), ")[1]".to_string()),
             "BUG: array-of-pointer renders as pointer-to-array (paren inverted)"
         );
@@ -126,9 +135,15 @@ mod w10_input_prototype_declarator {
     fn anonymous_base_generic_name() {
         let anon = Rc::new(Datatype::new_with_align(4, -1, type_metatype::TYPE_UNKNOWN));
         let p = ptr_to(anon);
-        assert_eq!(declarator_parts(&p), ("undefined4 *".to_string(), String::new()));
+        assert_eq!(
+            declarator_parts(&p, crate::printc::RealTypeCtx::OFF),
+            ("undefined4 *".to_string(), String::new())
+        );
         let v = Rc::new(Datatype::new_with_align(0, 1, type_metatype::TYPE_VOID));
-        assert_eq!(declarator_parts(&v), ("void".to_string(), String::new()));
+        assert_eq!(
+            declarator_parts(&v, crate::printc::RealTypeCtx::OFF),
+            ("void".to_string(), String::new())
+        );
     }
 
     /// Pointer-to-pointer keeps both stars on the front, no parens:
@@ -137,7 +152,39 @@ mod w10_input_prototype_declarator {
     fn pointer_to_pointer() {
         let base = named(1, type_metatype::TYPE_INT, "char");
         let pp = ptr_to(ptr_to(base));
-        assert_eq!(declarator_parts(&pp), ("char **".to_string(), String::new()));
+        assert_eq!(
+            declarator_parts(&pp, crate::printc::RealTypeCtx::OFF),
+            ("char **".to_string(), String::new())
+        );
+    }
+
+    /// (kuna DIV-6) With the `realtypes` context ON, a residual TYPE_UNKNOWN base
+    /// is relabelled to a real C type by size, and a pointer-to-unknown reads
+    /// `void *`.  Sizes with no natural single C type keep `undefined<N>`.
+    #[test]
+    fn realtypes_relabels_unknown_bases() {
+        let on = crate::printc::RealTypeCtx { enabled: true, long_is_8: true };
+        let unk = |sz: i32| Rc::new(Datatype::new_with_align(sz, -1, type_metatype::TYPE_UNKNOWN));
+        // Scalars: 1->char, 2->unsigned short, 4->unsigned int, 8->unsigned long.
+        assert_eq!(declarator_parts(&unk(1), on).0, "char");
+        assert_eq!(declarator_parts(&unk(2), on).0, "unsigned short");
+        assert_eq!(declarator_parts(&unk(4), on).0, "unsigned int");
+        assert_eq!(declarator_parts(&unk(8), on).0, "unsigned long");
+        // LLP64: 8-byte unknown reads `unsigned long long` when long is 4 bytes.
+        let llp64 = crate::printc::RealTypeCtx { enabled: true, long_is_8: false };
+        assert_eq!(declarator_parts(&unk(8), llp64).0, "unsigned long long");
+        // Odd size keeps the placeholder.
+        assert_eq!(declarator_parts(&unk(3), on).0, "undefined3");
+        // Pointer-to-unknown -> `void *`; pointer-to-pointer-to-unknown -> `void **`.
+        assert_eq!(declarator_parts(&ptr_to(unk(8)), on), ("void *".to_string(), String::new()));
+        assert_eq!(
+            declarator_parts(&ptr_to(ptr_to(unk(1))), on),
+            ("void **".to_string(), String::new())
+        );
+        // Array of unknown -> `char [8]` (element relabelled, count preserved).
+        assert_eq!(declarator_parts(&array_of(unk(1), 8), on), ("char".to_string(), "[8]".to_string()));
+        // Gate OFF leaves the placeholder untouched.
+        assert_eq!(declarator_parts(&unk(4), crate::printc::RealTypeCtx::OFF).0, "undefined4");
     }
 }
 
@@ -1191,14 +1238,14 @@ mod w10_float_family {
         t.name = "float8".to_string();
         t.display_name = "float8".to_string();
         let t = Rc::new(t);
-        let (front, back) = declarator_parts(&t);
+        let (front, back) = declarator_parts(&t, crate::printc::RealTypeCtx::OFF);
         assert_eq!(front, "float8");
         assert_eq!(back, "");
         // float4 likewise (the conversion-source-width family).
         let mut t4 = Datatype::new_with_align(4, -1, type_metatype::TYPE_FLOAT);
         t4.name = "float4".to_string();
         t4.display_name = "float4".to_string();
-        let (f4, b4) = declarator_parts(&Rc::new(t4));
+        let (f4, b4) = declarator_parts(&Rc::new(t4), crate::printc::RealTypeCtx::OFF);
         assert_eq!((f4.as_str(), b4.as_str()), ("float4", ""));
     }
 }

@@ -258,6 +258,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "loweredswitch",
     "stackguard",
     "namestyle",
+    "realtypes",
 ];
 
 // ---------------------------------------------------------------------------

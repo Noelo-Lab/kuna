@@ -5,7 +5,7 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=90, settable=22.
+# Counts (asserted in tests): group=39, substage=40, surface=90, settable=23.
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -1191,7 +1191,7 @@ substage = "naming-policy"
 note = "(kuna angr-naming) master default-name scheme: angr vN/aN/dat_/sub_/label_ + location comments vs upstream Ghidra naming"
 
 # ---------------------------------------------------------------------------
-# settableTable: one row per kuna ArchOption -- the LLM control surface (22).
+# settableTable: one row per kuna ArchOption -- the LLM control surface (23).
 # live_field/live_true/live_false give build.rs the typed OptionValues field +
 # the live-value reader mapping (the literal `flag ? live_true : live_false`
 # ternary of kuna_console.cc kunaLiveValue); the three options with no live
@@ -1627,3 +1627,23 @@ example = "option namestyle ghidra"
 source_decompiler = "angr"
 inspiration = "angr decompiler default naming scheme (vN / aN / sub_<addr> / dat_<addr> / label_<addr>)"
 change_kind = "presentation-default"
+
+[[settable]]
+option = "realtypes"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S9"
+substage = "literal-format"
+strength = "HARD"
+rewind = "S9"
+issue = "kuna-realtypes"
+summary = "Render residual TYPE_UNKNOWN (xunknownN) values as real C types by size — 1->char, 2/4/8->unsigned short/int/long (conservative on sign), pointer-to-unknown->void * — instead of the xunknownN/undefined<N> placeholder."
+use_when = "On (default) emits real C types for un-inferred values; off restores the upstream xunknownN/undefined<N> rendering for byte-for-byte comparison."
+example = "option realtypes off"
+source_decompiler = "kuna"
+inspiration = "user request: drop fake unknownN types in favour of size-correct C types"
+change_kind = "presentation-default"
+live_field = "realtypes"
+live_true = "on"
+live_false = "off"

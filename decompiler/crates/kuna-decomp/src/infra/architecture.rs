@@ -326,6 +326,11 @@ pub struct Architecture {
     /// (kuna) Use angr-style default naming (vN/aN/dat_/sub_/label_ + comments)
     /// (C++ `name_style_angr`).
     pub name_style_angr: bool,
+    /// (kuna DIV-6) Render residual `TYPE_UNKNOWN` (`xunknownN`) values as real C
+    /// types by size — 1→`char`, 2/4/8→unsigned ints, pointer-to-unknown→`void *` —
+    /// instead of the `xunknownN`/`undefined<N>` placeholder.  Default-on; read by
+    /// the printc declarator chokepoints (`RealTypeCtx`).
+    pub realtypes: bool,
     /// (kuna GH-558) Restore canonicalized comparisons to LESSEQUAL form for
     /// presentation (C++ `present_lessequal`).
     pub present_lessequal: bool,
@@ -506,6 +511,7 @@ impl Architecture {
             recover_lowered_switch: false,
             strip_stack_guard: false,
             name_style_angr: false,
+            realtypes: false,
             present_lessequal: false,
             preserve_thumb_funcptr: false,
 
@@ -571,6 +577,7 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.name_style_angr = true; // (kuna) default-on: angr-style default naming
+        self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
         self.model_stack_probe_loop = true; // (kuna) DIV-3 default-on (GH-8017)

@@ -1025,6 +1025,12 @@ pub struct PrintC {
     /// `PrintLanguage::commsorter`).  Seeded by [`setup_comments`] at the start of
     /// the body and consulted by `emit_comment_block_tree`/`emit_comment_group`.
     commsorter: crate::comment::CommentSorter,
+    /// (kuna) Resolved `realtypes` rendering context for the function currently
+    /// being printed — the `Architecture::realtypes` gate plus the data-model fact
+    /// (`long` is 8 bytes) needed to relabel residual `TYPE_UNKNOWN` (`xunknownN`)
+    /// types as real C types.  Refreshed at the top of [`doc_function_full`] from
+    /// the live `arch`; `OFF` until then (so an out-of-band print never relabels).
+    rt_ctx: RealTypeCtx,
 }
 
 impl Default for PrintC {
@@ -1047,6 +1053,7 @@ impl PrintC {
             nodepend: Vec::new(),
             pending: 0,
             commsorter: crate::comment::CommentSorter::new(),
+            rt_ctx: RealTypeCtx::OFF,
         }
     }
 
@@ -1585,6 +1592,10 @@ impl PrintC {
     /// to the brace-matched shell so the output is still a complete function.
     pub fn doc_function_full(&mut self, fd: &Funcdata, arch: &Architecture) -> String {
         self.emit.set_output_stream();
+        // (kuna) Resolve the `realtypes` rendering context once per function from
+        // the live architecture (the gate + the `long`-is-8 data-model fact); every
+        // type-name chokepoint below reads `self.rt_ctx`.
+        self.rt_ctx = RealTypeCtx::from_arch(arch);
         // commsorter.setupFunctionList(...) (C++ printc.cc:2799): place this
         // function's comments into their basic blocks so the body emitters can
         // pick them up in order.
@@ -1598,10 +1609,11 @@ impl PrintC {
         // lands the recovered output type is the size-correct but un-inferred
         // base (metatype UNKNOWN), rendered as `undefined<N>` — the documented
         // residual vs. the oracle's inferred `uint1`.
+        let rt = self.rt_ctx;
         let ret_type = if fd.get_func_proto().has_store() {
             fd.get_func_proto()
                 .get_output_type()
-                .map(type_name_for_decl)
+                .map(|t| type_name_for_decl(t, rt))
                 .unwrap_or_else(|| "void".to_string())
         } else {
             "void".to_string()
@@ -1754,7 +1766,7 @@ impl PrintC {
                 }
                 match param.get_type() {
                     Some(ty) => {
-                        let (front, back) = declarator_parts(ty);
+                        let (front, back) = declarator_parts(ty, self.rt_ctx);
                         // C++ `pushTypeStart(type, noident)`: the separating token is
                         // `type_expr_nospace` only when there is no identifier AND no
                         // declarator modifier (`noident && typestack.size()==1`); else
@@ -2028,6 +2040,8 @@ impl PrintC {
         for (high, name) in &decls {
             // Type: the high's recovered type name (W8-unknown -> `undefined<N>`).
             let (mut type_name, comment) = self.local_decl_type_and_comment(fd, arch, *high);
+            let rt = self.rt_ctx; // (kuna) realtypes ctx for the composite/array relabel
+
             // C++ `emitVarDecl` declares the whole *Symbol*'s type (printc.cc:1719
             // `sym->getType()`), not the partial member Varnode's type.  When the
             // high is a non-array partial cover of a composite Symbol (a struct/
@@ -2048,7 +2062,7 @@ impl PrintC {
                 if mt == crate::dtype::type_metatype::TYPE_STRUCT
                     || mt == crate::dtype::type_metatype::TYPE_UNION
                 {
-                    type_name = type_name_for_decl(st);
+                    type_name = type_name_for_decl(st, rt);
                 }
             }
             // Array member: if the mapped Symbol is an array, declare the base
@@ -2060,7 +2074,7 @@ impl PrintC {
                     let base = st.get_array_base()?;
                     let elsize = base.get_size().max(1);
                     let count = st.get_size() / elsize;
-                    Some((type_name_for_decl(&base), count))
+                    Some((type_name_for_decl(&base, rt), count))
                 } else {
                     None
                 }
@@ -2119,7 +2133,7 @@ impl PrintC {
             .or_else(|| (0..h.num_instances()).map(|i| h.get_instance(i)).next());
         let (type_name, comment) = match rep.and_then(|vn| fd.vbank().get(vn)) {
             Some(v) => {
-                let tn = type_name_for_decl(v.get_type());
+                let tn = type_name_for_decl(v.get_type(), self.rt_ctx);
                 let loc = v.get_addr().clone();
                 let size = v.get_size();
                 let comment = loc.get_space().and_then(|spc| {
@@ -4033,7 +4047,7 @@ impl PrintC {
     /// layer; this renders the base-type front of [`declarator_parts`], which
     /// is the only form the int→float cast produces (a scalar `floatN`).
     fn push_cast_type(&mut self, ct: &std::rc::Rc<crate::dtype::Datatype>) {
-        let (front, back) = declarator_parts(ct);
+        let (front, back) = declarator_parts(ct, self.rt_ctx);
         let mut name = front;
         name.push_str(&back);
         // The C++ pushes a type Atom carrying the Datatype pointer; the kuna
@@ -6295,7 +6309,10 @@ fn sblocks_basic_block_index(fd: &Funcdata, bb: BlockId) -> int4 {
 /// on the front (`*`), array/function modifiers on the tail (`[N]`/`(...)`), and
 /// a `*` front nested inside an array/function tail is parenthesised — the
 /// precedence the RPN `ptr_expr`/`array_expr` tokens encode.
-pub(crate) fn declarator_parts(ct: &std::rc::Rc<crate::dtype::Datatype>) -> (String, String) {
+pub(crate) fn declarator_parts(
+    ct: &std::rc::Rc<crate::dtype::Datatype>,
+    rt: RealTypeCtx,
+) -> (String, String) {
     use crate::dtype::type_metatype;
     // buildTypeStack: walk to the base (named) type, recording the modifier chain.
     let mut stack: Vec<std::rc::Rc<crate::dtype::Datatype>> = Vec::new();
@@ -6317,7 +6334,15 @@ pub(crate) fn declarator_parts(ct: &std::rc::Rc<crate::dtype::Datatype>) -> (Str
     }
     // The base type's display name (anonymous → `undefined<N>` / `void`).
     let base = stack.last().expect("declarator: non-empty stack");
-    let base_name = if base.get_name().is_empty() {
+    // (kuna) realtypes: relabel a residual TYPE_UNKNOWN base as a real C type by
+    // size.  If the base sits under any pointer modifier the whole declarator reads
+    // `void *` (base `void`; the `*` chain is laid out by the modifier walk below).
+    let under_pointer = stack[..stack.len() - 1]
+        .iter()
+        .any(|m| matches!(m.get_metatype(), type_metatype::TYPE_PTR));
+    let base_name = if let Some(n) = realtype_relabel(&rt, base, under_pointer) {
+        n.to_string()
+    } else if base.get_name().is_empty() {
         match base.get_metatype() {
             type_metatype::TYPE_VOID => "void".to_string(),
             _ => format!("undefined{}", base.get_size()),
@@ -6367,8 +6392,13 @@ pub(crate) fn declarator_parts(ct: &std::rc::Rc<crate::dtype::Datatype>) -> (Str
 /// kept on the type token — the emit loop suppresses the separating space before
 /// the identifier when the front ends in `*` (the C++ `ptr_expr` glues `*` to the
 /// identifier with no space).
-fn type_name_for_decl(t: &std::rc::Rc<crate::dtype::Datatype>) -> String {
+fn type_name_for_decl(t: &std::rc::Rc<crate::dtype::Datatype>, rt: RealTypeCtx) -> String {
     use crate::dtype::type_metatype;
+    // (kuna) realtypes: a scalar residual TYPE_UNKNOWN (the named `xunknownN` core
+    // type or an anonymous `undefined<N>`) becomes its real C type by size.
+    if let Some(n) = realtype_relabel(&rt, t, false) {
+        return n.to_string();
+    }
     let name = t.get_name();
     if !name.is_empty() {
         return name.to_string();
@@ -6379,11 +6409,70 @@ fn type_name_for_decl(t: &std::rc::Rc<crate::dtype::Datatype>) -> String {
         // `push_cast_type` does for a `(char *)` cast.  `declarator_parts` walks
         // the modifier chain to the named base and lays out the `*` front.
         type_metatype::TYPE_PTR => {
-            let (front, _back) = declarator_parts(t);
+            let (front, _back) = declarator_parts(t, rt);
             front
         }
         _ => format!("undefined{}", t.get_size()),
     }
+}
+
+/// (kuna) The `realtypes` rendering context: the `Architecture::realtypes` gate
+/// plus the data-model fact that `long` is 8 bytes (so an 8-byte unknown reads
+/// `unsigned long` on LP64, `unsigned long long` on LLP64).  `Copy` so it threads
+/// cheaply through the declarator chokepoints.
+#[derive(Clone, Copy)]
+pub(crate) struct RealTypeCtx {
+    enabled: bool,
+    long_is_8: bool,
+}
+
+impl RealTypeCtx {
+    /// The disabled context — never relabels (preserves the upstream
+    /// `xunknownN`/`undefined<N>` rendering).
+    pub(crate) const OFF: RealTypeCtx = RealTypeCtx { enabled: false, long_is_8: true };
+
+    /// Resolve the context from the live architecture: the `realtypes` gate and
+    /// the target's `long` size (from the type factory's data organization).
+    fn from_arch(arch: &Architecture) -> RealTypeCtx {
+        RealTypeCtx { enabled: arch.realtypes, long_is_8: arch.types().get_size_of_long() == 8 }
+    }
+}
+
+/// (kuna) Real C name for a residual `TYPE_UNKNOWN` base, or `None` when the gate
+/// is off / the type is not unknown.  Conservative on sign (multi-byte unknowns
+/// are unsigned, since the real sign is genuinely unknown); a pointer-to-unknown
+/// base reads `void`.
+fn realtype_relabel(
+    rt: &RealTypeCtx,
+    dt: &std::rc::Rc<crate::dtype::Datatype>,
+    under_pointer: bool,
+) -> Option<&'static str> {
+    if !rt.enabled || dt.get_metatype() != crate::dtype::type_metatype::TYPE_UNKNOWN {
+        return None;
+    }
+    realtype_unknown_base(dt.get_size(), under_pointer, rt.long_is_8)
+}
+
+/// (kuna) Size → standard-C name for an unknown value.  `None` for sizes with no
+/// natural single C type (3/5/6/7/10/16…), which keep the `undefined<N>` form.
+fn realtype_unknown_base(size: int4, under_pointer: bool, long_is_8: bool) -> Option<&'static str> {
+    if under_pointer {
+        // pointer-to-unknown → `void *` (the modifier walk adds the `*` chain).
+        return Some("void");
+    }
+    Some(match size {
+        1 => "char",
+        2 => "unsigned short",
+        4 => "unsigned int",
+        8 => {
+            if long_is_8 {
+                "unsigned long"
+            } else {
+                "unsigned long long"
+            }
+        }
+        _ => return None,
+    })
 }
 
 /// SEAM A helper — the kuna stand-in for C++ `Symbol::getFirstWholeMap() != entry`
