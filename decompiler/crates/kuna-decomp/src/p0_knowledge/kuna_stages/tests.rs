@@ -1,7 +1,7 @@
 //! Unit tests for the kuna stage registry (`kuna_stages.rs`).
 //!
 //! Parity targets transcribed from `decompiler/cpp/kuna_stages.cc`:
-//! group=39, substage=40, surface=90, settable=22, plus the stage-code helpers,
+//! group=39, substage=40, surface=90, settable=23, plus the stage-code helpers,
 //! the lookup API, the typed `OptionValues` defaults, and the catalog emitter.
 
 use super::*;
@@ -27,9 +27,9 @@ fn surface_count_is_90() {
 }
 
 #[test]
-fn settable_count_is_22() {
-    assert_eq!(kuna_num_settables(), 22);
-    assert_eq!(SETTABLE_TABLE.len(), 22);
+fn settable_count_is_23() {
+    assert_eq!(kuna_num_settables(), 23);
+    assert_eq!(SETTABLE_TABLE.len(), 23);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -208,10 +208,11 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_19_suppressed_for_3() {
+fn option_values_live_value_present_for_20_suppressed_for_3() {
     let ov = OptionValues::default();
-    // 19 options have a live reader; the field-backed live_value returns the
-    // current value for them and None for loweredswitch/stackguard/namestyle.
+    // 20 options have a live reader (realtypes joins the field-backed group); the
+    // live_value returns the current value for them and None for
+    // loweredswitch/stackguard/namestyle.
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
         let st = kuna_settable_by_index(i);
@@ -229,7 +230,7 @@ fn option_values_live_value_present_for_19_suppressed_for_3() {
             }
         }
     }
-    assert_eq!(with_live, 19);
+    assert_eq!(with_live, 20);
 }
 
 #[test]
@@ -294,8 +295,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 22 rows: 21 trailing commas (the last has none).
-    assert_eq!(json.matches("},\n").count(), 21);
+    // 23 rows: 22 trailing commas (the last has none).
+    assert_eq!(json.matches("},\n").count(), 22);
 }
 
 #[test]

@@ -161,10 +161,11 @@ fn w10_proto_unlock_const_return_collapses_no_tied_roundtrip() {
         }
     };
     // The join pentry decoded -> a non-empty model with a `char *` parameter and
-    // the oracle's `xunknown4` return type (was `void promote_compare(void)`
-    // while the join pentry failed).
+    // the recovered 4-byte return type (was `void promote_compare(void)` while the
+    // join pentry failed).  (kuna DIV-6 realtypes) the un-inferred return renders
+    // as `unsigned int` (was `xunknown4`).
     assert!(
-        a.contains("xunknown4 promote_compare(char *"),
+        a.contains("unsigned int promote_compare(char *"),
         "promote_compare lost its join-recovered signature:\n{a}"
     );
     // The constant returns collapsed (the over-tie fix): both literal returns

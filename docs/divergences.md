@@ -161,3 +161,42 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   pinning both the angr names (`a0`/`v1; // eax`/`sub_401106`/`dat_40402c`) and the restored
   Ghidra names (`param_1`/`iVar1`/`func_0x00401106`). `docs/baseline-stages.json` (141 assertions).
 - **Date**: 2026-06-09.
+
+## DIV-6: residual unknown types render as real C types
+
+- **Flip**: `realtypes` → **on** (master toggle; `option realtypes off` restores the
+  upstream `xunknownN`/`undefined<N>` rendering). A value whose real type type-inference
+  never resolves (metatype `TYPE_UNKNOWN`) is relabelled to a size-correct **real C type**
+  instead of the `xunknownN` placeholder:
+  - 1 byte → `char`;
+  - 2/4/8 bytes → `unsigned short` / `unsigned int` / `unsigned long` (or `unsigned long
+    long` on an LLP64 target where `long` is 4 bytes) — **unsigned**, since the real sign is
+    genuinely unknown (conservative; matches Ghidra's documented "`TYPE_UNKNOWN` is treated
+    as an unsigned integer");
+  - a pointer-to-unknown (any depth) → `void *` (`void **`, …);
+  - sizes with no single natural C type (3/5/6/7/10/16…) keep the `undefined<N>` form.
+  Like DIV-4/DIV-5 this is **not a correctness fix** — it is a deliberate presentation
+  default (P0 surface-rendering, S9 sub-stage `literal-format`), recorded here because it
+  changes default output. It deliberately goes beyond upstream Ghidra, which keeps
+  `undefinedN` as first-class types and renders pointer-to-unknown as `undefined *`.
+- **Mechanism**: a per-`Architecture` flag `realtypes` (default on, set in `resetDefaults`)
+  read by the printc declarator chokepoints (`declarator_parts` / `type_name_for_decl` /
+  `push_cast_type`) via a `RealTypeCtx` resolved once per function in `doc_function_full`.
+  Pure presentation: the relabel changes only the printed type NAME — the `Datatype` and its
+  `TYPE_UNKNOWN` metatype are untouched, so type propagation, merge, cast insertion
+  (`ActionSetCasts`), and constant-literal formatting (`'a'` vs `0x61`) are all unchanged.
+- **Changed upstream assertions: 0 of 675** (`make test` stays PARITY OK without
+  regeneration) — the corpus has no `<stringmatch>` asserting an `xunknown`/`undefined`
+  token, so the relabel is invisible to it. Two kuna integration tests that pinned the old
+  `xunknown4 promote_compare` signature were updated in place to `unsigned int
+  promote_compare` (the new default); the catalog byte-compat fixture was regenerated from
+  the Rust emitter to carry the new 23rd settable.
+- **Stage-testcase**: `tests/stages/realtypes-fauxware.xml` decompiles the `authenticate`
+  function of the `fauxware` test binary (no prototype declared, so its 8-byte params /
+  1-byte buffer / 4-byte temp stay `TYPE_UNKNOWN`) and asserts the real-C-type signature
+  `unsigned long authenticate(unsigned long a0,unsigned long a1)`, a `char [8]` buffer and an
+  `unsigned int` temp, and that no `xunknown`/`undefined` placeholder survives.
+  `docs/baseline-stages.json` (+5 assertions). Single-pass (no `option` command): the kuna
+  option-toggle runtime write-path is an unimplemented seam on this tree, so the off-pass is
+  exercised by the printc unit test `realtypes_relabels_unknown_bases` instead.
+- **Date**: 2026-06-21.

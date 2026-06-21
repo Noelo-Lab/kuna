@@ -1630,8 +1630,8 @@ mod tests {
                 count += 1;
             }
         }
-        // 83 datatests + 48 stage testcases
-        assert_eq!(count, 131, "corpus file count drifted");
+        // 83 datatests + 49 stage testcases
+        assert_eq!(count, 132, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

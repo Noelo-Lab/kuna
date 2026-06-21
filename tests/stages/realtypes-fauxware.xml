@@ -1,0 +1,40 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna realtypes (DIV-6): render residual TYPE_UNKNOWN (xunknownN) values as real
+    C types by size instead of the xunknownN / undefinedN placeholder.
+
+    Binary: the `authenticate` function from the `fauxware` test binary
+    (decompiler/crates/kuna-sleigh/tests/fixtures/fauxware, x86-64 ELF), embedded as
+    its raw 137 bytes at its real load address 0x400664.  No prototype is declared,
+    so type inference leaves the 8-byte parameters / 1-byte buffer / 4-byte temp as
+    TYPE_UNKNOWN - exactly the case the `realtypes` default-on P0 surface relabels.
+
+    Stage model: S9 presentation (sub-stage `literal-format`), P0 assertion
+    `option realtypes on|off` (default on).  Single-pass: the default pipeline must
+    emit real C types and NOT the fake xunknownN / undefinedN placeholders.
+
+    Expected (realtypes on, the shipped default):
+      unsigned long authenticate(unsigned long a0,unsigned long a1)
+      with `unsigned long`, `char` buffer, and `unsigned int` locals; no xunknown.
+-->
+<bytechunk space="ram" offset="0x400664" readonly="true">
+554889e54883ec2048897de8488975e0c645f800488b15c9092000488b45e04889d64889c7e8c2feffff85c07507b801000000eb52488b45e8be000000004889c7b800000000e8b1feffff8945fc488d4df08b45fcba080000004889ce89c7e868feffff488d55f0488b45e04889d64889c7e875feffff85c07507b801000000eb05b800000000c9c3
+</bytechunk>
+<symbol space="ram" offset="0x400664" name="authenticate"/>
+</binaryimage>
+<script>
+  <com>lo fu authenticate</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<!-- realtypes ON (default): the 8-byte params + return relabel to `unsigned long`,
+     the 1-byte stack buffer to `char [8]`, the 4-byte temp to `unsigned int`. -->
+<stringmatch name="REALTYPES #1: signature uses real C types, not xunknown8" min="1" max="1">unsigned long authenticate\(unsigned long a0,unsigned long a1\)</stringmatch>
+<stringmatch name="REALTYPES #2: 1-byte stack buffer is char[8], not xunknown1[8]" min="1" max="999">char v[0-9]+ \[8\]</stringmatch>
+<stringmatch name="REALTYPES #3: 4-byte temp is unsigned int, not xunknown4" min="1" max="999">unsigned int v[0-9]+</stringmatch>
+<!-- The fake placeholders must be entirely gone from the rendered C. -->
+<stringmatch name="REALTYPES #4: no xunknown placeholder remains" min="0" max="0">xunknown</stringmatch>
+<stringmatch name="REALTYPES #5: no undefined placeholder remains" min="0" max="0">undefined</stringmatch>
+</decompilertest>

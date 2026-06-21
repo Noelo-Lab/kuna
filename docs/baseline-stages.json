@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    154,
-    154
+    159,
+    159
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -157,7 +157,12 @@
     "data:namestyle #4 default: global data renders as dat_<addr> (lowercase, no leading zeros)",
     "data:namestyle #5 ghidra restores: argument renders as param_N",
     "data:namestyle #6 ghidra restores: local renders as iVar with no location comment",
-    "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>"
+    "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>",
+    "data:REALTYPES #1: signature uses real C types, not xunknown8",
+    "data:REALTYPES #2: 1-byte stack buffer is char[8], not xunknown1[8]",
+    "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",
+    "data:REALTYPES #4: no xunknown placeholder remains",
+    "data:REALTYPES #5: no undefined placeholder remains"
   ],
   "returncode": 0,
   "unit_footer": null

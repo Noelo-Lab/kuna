@@ -186,6 +186,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "stackprobeloop" => on_off(conf.model_stack_probe_loop),
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
+        "realtypes" => on_off(conf.realtypes),
         // C++: return ""; -> no current field.
         _ => return None,
     })
