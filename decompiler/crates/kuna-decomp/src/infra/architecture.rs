@@ -2009,7 +2009,11 @@ impl Architecture {
         use kuna_base::xml::DocumentStorage;
         use kuna_sleigh::globalcontext::register_globalcontext_ids;
 
-        let Some(xml) = self.pspec_xml.take() else {
+        // C++ keeps the parsed pspec `DocumentStorage` for the whole
+        // `restoreFromSpec`/`buildSymbols` window; the deferred `<default_symbols>`
+        // apply (build_symbols, run after adjustCaches) re-reads it.  Clone (not
+        // take) so the raw XML stays available for build_symbols.
+        let Some(xml) = self.pspec_xml.clone() else {
             return Ok(());
         };
         let mut store = DocumentStorage::new();
@@ -2034,6 +2038,17 @@ impl Architecture {
             self.decode_register_data(&register_data)?;
         }
 
+        // C++ parseProcessorConfig ELEM_VOLATILE branch (architecture.cc:1187 ->
+        // decodeVolatile).  Paint each `<range>` in the `<volatile>` element with
+        // the `volatil` boolean property so `ActionVarnodeProps` converts accesses
+        // to those addresses into `read_volatile`/`write_volatile` user-ops (the
+        // CALLOTHER form survives dead-code, which a plain COPY to an SFR-space
+        // varnode does not).  Must run before the global-query snapshot is taken
+        // (build_arch_handle) so the painted flagbase reaches the per-function seam.
+        if let Some(volatile_el) = find_child(&pspec, "volatile") {
+            self.decode_volatile(&volatile_el)?;
+        }
+
         // C++ parseProcessorConfig ELEM_CONTEXT_DATA branch.  A pspec with no
         // <context_data> (e.g. a 32-bit-default processor) leaves the zero
         // context, which is correct for it.
@@ -2051,6 +2066,143 @@ impl Architecture {
         let mut decoder = XmlDecode::new_with_root(&manager, &registry, &context_data, 0);
         self.translate
             .with_context_db_mut(|db| db.decode_from_spec(&mut decoder))?;
+        Ok(())
+    }
+
+    /// Apply a `<volatile>` element, marking the contained `<range>` regions as
+    /// holding volatile memory/registers (C++ `Architecture::decodeVolatile`,
+    /// `architecture.cc:881`).
+    ///
+    /// The C++ `userops.decodeVolatile` half (reading `inputop`/`outputop` and
+    /// registering the `VolatileReadOp`/`VolatileWriteOp` builtins with those
+    /// names) is already satisfied: kuna pre-seeds `BUILTIN_VOLATILE_READ`/
+    /// `BUILTIN_VOLATILE_WRITE` with the canonical `read_volatile`/`write_volatile`
+    /// names (and the non-functional display = `annotation_assignment`/`no_operator`)
+    /// in `register_string_builtins`, matching every vendored pspec's `<volatile
+    /// outputop="write_volatile" inputop="read_volatile">`.  This method ports the
+    /// range-painting half: for each `<range>` child,
+    /// `symboltab->setPropertyRange(Varnode::volatil, range)`.
+    fn decode_volatile(
+        &mut self,
+        volatile_el: &Rc<kuna_base::xml::Element>,
+    ) -> KunaResult<()> {
+        use crate::varnode::varnode_flags;
+        use kuna_base::address::{Range, RangeProperties};
+        use kuna_base::marshal::{IdRegistry, XmlDecode};
+
+        let manager = self.translate.base().manager_rc();
+        let registry = IdRegistry::with_base_ids();
+        // C++ `decodeVolatile`: while peekElement() != 0 { Range r; r.decode(decoder);
+        // symboltab->setPropertyRange(Varnode::volatil, r); }.  Each child is a
+        // `<range>`; resolve it through `Range::from_properties` exactly as
+        // `decode_global` does, then paint [first, lastOpen) with `volatil`.
+        for child in volatile_el.get_children().iter() {
+            if child.get_name() != "range" {
+                continue;
+            }
+            let mut decoder = XmlDecode::new_with_root(&manager, &registry, child, 0);
+            let mut props = RangeProperties::new();
+            props.decode(&mut decoder)?;
+            let range = Range::from_properties(&props, self.manage())?;
+            let addr1 = range.get_first_addr();
+            let addr2 = range.get_last_addr_open(self.manage());
+            self.symboltab
+                .set_property_range(varnode_flags::volatil, &addr1, &addr2);
+        }
+        Ok(())
+    }
+
+    /// Apply the pspec `<default_symbols>` element as named global symbols (C++
+    /// `SleighArchitecture::buildSymbols`, `sleigh_arch.cc:265`).
+    ///
+    /// Each `<symbol name=… address=… [size=…] [volatile=…]>` is parsed into a
+    /// global-scope symbol: the address via `parseAddressSimple` (with the C++
+    /// `address="next"` continuation), the size defaulting to the space word size,
+    /// the type `getBase(size, TYPE_UNKNOWN)`, and an optional `volatile` attribute
+    /// re-painting the `volatil` property range.  This is what gives the 8051 SFR
+    /// addresses their names (`P0`@SFR:80, `P1`@SFR:90), so an SFR write renders
+    /// `P0 = 1` rather than `dat_80 = 1`.  Run after `adjust_caches` so the global
+    /// scope's per-space maptable already covers every spec-created space.
+    fn build_symbols(&mut self) -> KunaResult<()> {
+        use crate::dtype::type_metatype::TYPE_UNKNOWN;
+        use crate::varnode::varnode_flags;
+        use kuna_base::address::{Address, Range};
+        use kuna_base::xml::DocumentStorage;
+
+        let Some(xml) = self.pspec_xml.clone() else {
+            return Ok(());
+        };
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(&xml)?.get_root().clone();
+        let pspec = if root.get_name() == "processor_spec" {
+            root
+        } else {
+            match find_child(&root, "processor_spec") {
+                Some(el) => el,
+                None => return Ok(()),
+            }
+        };
+        let Some(symbols_el) = find_child(&pspec, "default_symbols") else {
+            return Ok(());
+        };
+        let Some(scope) = self.symboltab.get_global_scope() else {
+            return Ok(());
+        };
+        let usepoint = Address::new_invalid();
+
+        // C++ `buildSymbols` tracks (lastAddr, lastSize) for the `address="next"`
+        // continuation form.
+        let mut last_addr = Address::new_invalid();
+        let mut last_size: int4 = -1;
+        for child in symbols_el.get_children().iter() {
+            if child.get_name() != "symbol" {
+                continue;
+            }
+            let name = match attr_str(child, "name") {
+                Some(n) if !n.is_empty() => n,
+                _ => return Err(KunaError::lowlevel(
+                    "Missing name attribute in <symbol> element",
+                )),
+            };
+            let addr_str = attr_str(child, "address").unwrap_or_default();
+            let addr = if addr_str == "next" && last_size != -1 {
+                &last_addr + (last_size as i64)
+            } else {
+                self.manage().parse_address_simple(&addr_str)?
+            };
+            if addr.is_invalid() {
+                return Err(KunaError::lowlevel(
+                    "Missing address attribute in <symbol> element",
+                ));
+            }
+            // size defaults to the space word size (C++ addr.getSpace()->getWordSize()).
+            let mut size = attr_str(child, "size")
+                .and_then(|s| s.parse::<int4>().ok())
+                .unwrap_or(0);
+            if size == 0 {
+                size = addr.get_space().map(|s| s.get_word_size() as int4).unwrap_or(1);
+            }
+            // Optional <symbol volatile="true|false"> re-paints the volatil property.
+            if let Some(volstr) = attr_str(child, "volatile") {
+                let volatile_state = matches!(volstr.as_str(), "true" | "1" | "yes");
+                if let Some(spc) = addr.get_space() {
+                    let range =
+                        Range::new(Rc::clone(spc), addr.get_offset(), addr.get_offset() + (size as u64 - 1));
+                    let a1 = range.get_first_addr();
+                    let a2 = range.get_last_addr_open(self.manage());
+                    if volatile_state {
+                        self.symboltab.set_property_range(varnode_flags::volatil, &a1, &a2);
+                    } else {
+                        self.symboltab.clear_property_range(varnode_flags::volatil, &a1, &a2);
+                    }
+                }
+            }
+            let ct = self.types.get_base(size, TYPE_UNKNOWN)?;
+            self.symboltab
+                .add_symbol_mapped(scope, &name, ct, &addr, &usepoint)?;
+            last_addr = addr;
+            last_size = size;
+        }
         Ok(())
     }
 
@@ -2837,6 +2989,12 @@ impl Architecture {
         // higher-indexed stack space indexes past its end.
         let num_spaces = self.manage().num_spaces();
         self.symboltab.adjust_caches(num_spaces);
+        // C++ `Architecture::buildSymbols(store)` (architecture.cc:1408), right
+        // after `adjustCaches` and before `postSpecFile`/`buildInstructions`:
+        // apply the pspec `<default_symbols>` (e.g. the 8051 SFR names `P0`@SFR:80,
+        // `P1`@SFR:90) as named global symbols.  Without this an SFR write renders
+        // `dat_80 = 1` instead of `P0 = 1`.
+        self.build_symbols()?;
         self.build_instructions();
         // C++ `min_funcsymbol_size = translate->getAlignment()` when <= 8
         // (restoreFromSpec, architecture.cc:646).
