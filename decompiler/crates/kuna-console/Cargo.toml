@@ -12,6 +12,7 @@ kuna-decomp.workspace = true
 kuna-base.workspace = true
 kuna-num.workspace = true
 kuna-sleigh.workspace = true
+kuna-analysis.workspace = true
 
 [lints]
 workspace = true

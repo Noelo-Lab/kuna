@@ -17,6 +17,43 @@ The live, normative stage model is in [`stages.md`](stages.md) /
 to a stage in [`stage-mapping.md`](stage-mapping.md). The items below are the
 *application-layer* steps that sit **outside** that stage model.
 
+## Where these live: the `kuna-analysis` crate
+
+These analyses have a dedicated home: the **`kuna-analysis`** crate
+(`decompiler/crates/kuna-analysis/`). It sits *above* `kuna-decomp` in the
+dependency graph so an analysis can both read the parsed object (via
+`kuna-sleigh`'s loader + the `object` crate) and seed the engine's symbol/type
+tables (`kuna_decomp::{architecture, database}`):
+
+```text
+kuna-base / kuna-num -> kuna-sleigh -> kuna-decomp -> kuna-analysis -> kuna-console / kuna-cli
+```
+
+Modules are grouped by the stage they feed (mostly P0/S1), mirroring the
+`kuna-decomp` stage-folder scheme: `loadimage_object.rs` (the real-ELF
+`LoadImage` backend), `s1_loader/` (PLT/GOT markup — `elf_plt.rs` — and, planned,
+the `.symtab`/`.dynsym` reader and no-return detection), and one folder per
+planned analysis (`s1_strings/`, `s1_dwarf/`, `s1_demangle/`, `s1_entry/`,
+`s1_protos/`).
+
+Each analysis implements **`kuna_analysis::pass::AnalysisPass`** — the
+generalization of the de-facto `elf_plt` contract: a focused module that reads
+the object and produces a flat, deduplicated `AnalysisOutput` of *facts*
+(symbols, entries, no-return names, read-only ranges), never panicking and never
+failing — it only ever contributes more knowledge. `run_analyses()` merges all
+enabled passes; the merged output is then committed once into the engine at the
+bootstrap seam (`kuna-console`'s `engine::bootstrap_from_elf`). Each pass's
+`id()` registers in `stages.toml` like the `kuna_*` sub-stage fixes, so it
+appears in `kuna catalog --json` and is flippable per-decompilation via
+`--option <id> on|off` (and can default off, keeping the XML datatest gate — which
+never constructs an `ObjectLoadImage` — untouched).
+
+> Status: the crate, the `AnalysisPass` interface, and the relocated PLT/GOT path
+> (`elf_plt` + `loadimage_object` + fixtures, moved out of `kuna-sleigh`) are in
+> place. The PLT path still commits inline in `loadimage_object`; lifting it onto
+> the `AnalysisPass`/`commit` seam lands with the first new pass (string-literal
+> detection). The per-analysis roadmap with testcases is at the bottom of this file.
+
 ## Legend
 
 - ✅ **Fixed** — implemented in kuna now.
@@ -129,14 +166,36 @@ already work:
 
 ---
 
-## Priority for closing the remaining gaps
+## Port roadmap (ranked, with testcases)
 
-1. **String-literal typing** (#6) — highest output-quality-per-effort; makes
-   `puts("…")` render the text. Needs a `.rodata` string scan + `char*` typing of
-   pointer constants into the type manager.
-2. **DWARF** (#3) — large but high-value where present; recovers real local/param
-   names and types.
-3. **Demangling** (#5) — self-contained; a name-string transform at load time.
-4. **PPC64/MIPS PLT + external/thunk model** (#1 remainder) — finishes import
-   naming coverage and enables thunk inlining.
-5. **Function-start discovery** (#4) — needed for fully stripped targets.
+Each row is a future `AnalysisPass` (or extension) under `kuna-analysis/src/s1_*`.
+Difficulty: **easy** = self-contained byte/string transform, no new heavy dep;
+**med** = needs an engine API or a parser; **hard** = a new subsystem (a
+debug-format reader or a discovery loop). Vendored fixtures live in
+`decompiler/crates/kuna-analysis/tests/fixtures/` (`fauxware`, `cet_pie_x86_64`,
+`stripped_dynamic_x86_64`).
+
+| # | Analysis | Stage | Diff | Concrete testcase (fixture → assertion) |
+|---|----------|-------|------|------------------------------------------|
+| ✅ | PLT/GOT import names | S1 | done | **fauxware**: `0x400510→puts`, no symbol at `0x0`, no `@` in names (`kuna-analysis` tests + console e2e) |
+| 1 | String-literal detection + `char*` typing | S1 | easy-med | **fauxware**: `kuna decompile fauxware main` stdout contains `"Username: "`, `"Password: "` (not raw `0x40xxxx`) |
+| 2 | Demangling (Itanium C++ / Rust) | S1 | easy-med | unit: `demangle("_Z3fooi") == "foo(int)"`; + small `g++ -c` fixture → mangled symbol resolves to its demangled form |
+| 3 | No-return detection | S1 | easy | **fauxware** `authenticate` calls `exit`: no dead fall-through after the call; unit: `exit`/`abort` flagged from the import-name set |
+| 4 | DWARF debug-info | S1 | hard | **cet_pie_x86_64** (has `.debug_info`): recovered function names + ≥1 typed parameter appear (not `param_1`) |
+| 5 | Library prototype seeding | S1/P0 | med | **fauxware**: first `printf` arg typed `char *` from a seeded libc signature (composes with #1 → `printf("Password: ")`) |
+| 6 | Function-start / entry discovery | S1 | hard | **stripped_dynamic_x86_64**: discovered entry set includes the real `main`/entry, decompilable without a supplied address |
+| 7 | External / thunk object model | S1 | hard | **fauxware**: PLT thunk to `puts` modeled as a thunk (tail-call inlined), not a standalone `sub_` |
+| 8 | Arch markers (ARM/Thumb `$t`, MIPS `$gp`, x86 purge) | S1 | med | needs an ARM/MIPS fixture (not yet vendored): a Thumb function decodes as Thumb from its `$t` mapping symbol |
+| 9 | Jump-table post-typing refinement | S2 (feedback) | hard | needs a switch-heavy fixture (not yet vendored): refined case count matches the typed table after a second pass |
+
+### Do first (the simplest-to-easy, highest-impact)
+
+1. **String-literal detection** (#1) — highest output-quality-per-effort; a
+   `.rodata` NUL-terminated scan + a `char[]` typed-data symbol; no new dependency.
+2. **Demangling** (#2) — a self-contained name transform; unit-testable with no
+   binary; composes with kuna's existing `::` namespace split.
+3. **No-return detection** (#3) — a fixed libc import-name set + the existing
+   `FuncProto` no-return flag; removes spurious dead code after `exit`/`abort`.
+
+All three are easy/easy-med, test against already-vendored fixtures (or pure unit
+tests), and never touch the XML datatest parity path — both gates stay green.

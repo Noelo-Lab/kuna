@@ -1,6 +1,6 @@
 [package]
-name = "kuna-sleigh"
-description = "kuna Rust port: SLEIGH .sla reader + instruction decode runtime (no compiler)"
+name = "kuna-analysis"
+description = "kuna Rust port: program-prep loader + analyzer layer (the Ghidra 'Run Analysis' tier)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,6 +10,9 @@ publish.workspace = true
 [dependencies]
 kuna-base.workspace = true
 kuna-num.workspace = true
+kuna-sleigh.workspace = true
+kuna-decomp.workspace = true
+object.workspace = true
 
 [lints]
 workspace = true

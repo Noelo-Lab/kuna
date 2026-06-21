@@ -37,6 +37,7 @@ kuna-base = { path = "crates/kuna-base" }
 kuna-num = { path = "crates/kuna-num" }
 kuna-sleigh = { path = "crates/kuna-sleigh" }
 kuna-decomp = { path = "crates/kuna-decomp" }
+kuna-analysis = { path = "crates/kuna-analysis" }
 kuna-console = { path = "crates/kuna-console" }
 
 [workspace.lints.clippy]

@@ -48,7 +48,7 @@ use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase, Sleig
 use kuna_decomp::xml_arch::XmlArchitectureCapability;
 
 use kuna_sleigh::loadimage::{LoadImage, LoadImageFunc};
-use kuna_sleigh::loadimage_object::ObjectLoadImage;
+use kuna_analysis::loadimage_object::ObjectLoadImage;
 use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
 use kuna_sleigh::translate::register_translate_ids;

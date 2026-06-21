@@ -29,9 +29,9 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// The vendored fauxware fixture (shared with the kuna-sleigh loader gate).
+/// The vendored fauxware fixture (shared with the kuna-analysis loader gate).
 fn fauxware() -> PathBuf {
-    repo_root().join("decompiler/crates/kuna-sleigh/tests/fixtures/fauxware")
+    repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fauxware")
 }
 
 #[test]
