@@ -1707,7 +1707,28 @@ decomp_command!(
                 status.out("Decompilation complete\n");
                 Ok(())
             }
-            Err(e) => Err(IfaceError::execution(e.explain().to_string())),
+            Err(e) => {
+                let msg = e.explain().to_string();
+                // (kuna GH-6904) A *recoverable* per-function abort — the pipeline
+                // hit a documented un-ported seam (LOSS-131) and unwound, discarding
+                // this function's half-built IR — degrades gracefully instead of
+                // poisoning the whole console session.  This mirrors the C++
+                // `IfcProduceC::iterationCallback` catch (`ifacedecomp.cc:2402`):
+                // print "Skipping <name>: <err>" and continue, so a subsequent
+                // `print C` still renders (the prior, un-decompiled `dcp.fd`) and a
+                // datatest's `<stringmatch>` rules are evaluated rather than the
+                // whole file being marked an execution error.  Only the LOSS-131
+                // seam-abort is swallowed; a genuine fatal `IfaceExecutionError`
+                // (e.g. "No function selected") still propagates.  The whole-corpus
+                // (675/675) is inert here: no datatest function aborts, so this arm
+                // is never reached for them.
+                if msg.contains("LOSS-131") {
+                    status.out(&format!("Skipping {name}: {msg}\n"));
+                    Ok(())
+                } else {
+                    Err(IfaceError::execution(msg))
+                }
+            }
         }
     }
 );
