@@ -574,6 +574,12 @@ pub struct Architecture {
     /// architecture.  Read by [`RulePtrsubUndo`](crate::ruleaction_6::RulePtrsubUndo)'s
     /// thumb-funcptr guard.  Default-on (DIV-2); `false` for hand-built fixtures.
     pub preserve_thumb_funcptr: bool,
+    /// (kuna) Bound a LOAD-table jumptable by a modulo/and-mask on its index when
+    /// the basic model fails to bound it (C++ `Architecture::switch_modulo_bound`,
+    /// flipped by `option switchmodbound`, GH-9191), shared from the real
+    /// architecture.  Read by `JumpBasic::recoverModel` before
+    /// `kunaTryModuloBoundTable`.  `false` (default off / upstream byte-identical).
+    pub switch_modulo_bound: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -710,6 +716,7 @@ impl Architecture {
             // build_arch_handle.  A hand-built fixture has funcptr_align == 0, so
             // the thumb guard never fires regardless of this flag.
             preserve_thumb_funcptr: true,
+            switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.

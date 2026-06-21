@@ -2101,12 +2101,182 @@ impl JumpBasicModel {
         let parent = fd.obank().get(indop).unwrap().get_parent().unwrap();
         self.find_normalized(fd, parent, -1, matchsize, maxtablesize, indop)?;
         if self.jrange().get_size() > maxtablesize as uintb {
-            // (kuna) GH-9191 kunaTryModuloBoundTable is gated default-off; the
-            // straight model declined. SEAM(kuna): modulo-bound table.
+            // (kuna) GH-9191: the basic model could not bound the table.  When
+            // `option switchmodbound on`, look for a modulo/and-mask bound on the
+            // LOAD-table index and re-bound the table to [0, N).
+            if fd.get_arch().switch_modulo_bound
+                && self.kuna_try_modulo_bound_table(fd, maxtablesize)
+            {
+                self.mark_foldable_guards(fd);
+                return Ok(true);
+            }
             return Ok(false);
         }
         self.mark_foldable_guards(fd);
         Ok(true)
+    }
+
+    /// (kuna) GH-9191: bound a LOAD-table jump-table by a modulo/and-mask on its
+    /// index when the basic model could not bound it (C++ header:
+    /// `JumpBasic::kunaTryModuloBoundTable`).  Gated by `option switchmodbound`.
+    ///
+    /// Walks the melded path from the BRANCHIND toward the switch variable,
+    /// allowing only the realigning ops `INT_ADD`/`INT_MULT`/`INT_LEFT`/
+    /// `SUBPIECE`/`INT_ZEXT`/`INT_SEXT`/`INT_OR`/`COPY` (each with a constant
+    /// other-input where binary), and a single table `LOAD`.  When it finds an
+    /// `INT_REM`/`INT_SREM` by a constant `N` (resp. an `INT_AND` with a clean
+    /// covering mask `mask`, bound `mask+1`) with `bound` in `[2, maxtablesize]`,
+    /// it rebuilds the model so the index iterates over `[0, bound)`: the jrange
+    /// start becomes the modulo/mask **result** varnode (the value is already in
+    /// `[0, bound)` post-bound, so the bound op itself is skipped during
+    /// emulation) and `varnodeIndex` points at it.
+    ///
+    /// Returns `true` if the table was re-bounded, `false` otherwise (the caller
+    /// then declines the model exactly as before — upstream byte-identical when
+    /// the gate is off, since this is only reached with the gate on).
+    fn kuna_try_modulo_bound_table(&mut self, fd: &mut Funcdata, maxtablesize: uint4) -> bool {
+        // Resolve a varnode to a constant value, tracing through a single
+        // zero/sign-extension or copy (the SLEIGH lifter widens a small constant
+        // divisor to the division width via INT_ZEXT/INT_SEXT).
+        fn resolve_const(fd: &Funcdata, vn: VarnodeId) -> Option<uintb> {
+            let v = fd.vbank().get(vn)?;
+            if v.is_constant() {
+                return Some(v.get_offset());
+            }
+            let def = v.get_def()?;
+            let dop = fd.obank().get(def)?;
+            match dop.code() {
+                OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT | OpCode::CPUI_COPY => {
+                    let inv = dop.get_in(0)?;
+                    let ivr = fd.vbank().get(inv)?;
+                    if ivr.is_constant() {
+                        Some(ivr.get_offset())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        }
+
+        // Scan the melded ops for the bounding op (INT_REM/INT_SREM/INT_AND).
+        // The op_meld is in execution order from the BRANCHIND back; only the ops
+        // strictly between the BRANCHIND and the bound participate, and they must
+        // all be realigning ops or the single table LOAD.
+        let num_ops = self.path_meld.num_ops();
+        let mut load_seen = 0;
+        let mut bound: Option<uintb> = None;
+        let mut bound_out: Option<VarnodeId> = None;
+        for i in 0..num_ops {
+            let op = match self.path_meld.get_op(i) {
+                Some(o) => o,
+                None => continue,
+            };
+            let code = match fd.obank().get(op) {
+                Some(o) => o.code(),
+                None => return false,
+            };
+            match code {
+                OpCode::CPUI_INT_REM | OpCode::CPUI_INT_SREM => {
+                    let divisor = match fd.obank().get(op).and_then(|o| o.get_in(1)) {
+                        Some(d) => d,
+                        None => return false,
+                    };
+                    let n = match resolve_const(fd, divisor) {
+                        Some(n) => n,
+                        None => return false, // non-constant modulus: cannot bound
+                    };
+                    bound = Some(n);
+                    bound_out = fd.obank().get(op).and_then(|o| o.get_out());
+                    break;
+                }
+                OpCode::CPUI_INT_AND => {
+                    // A clean covering mask 0b0..01..1 (mask = bound-1) bounds the
+                    // index to [0, mask+1).
+                    let other = match fd.obank().get(op).and_then(|o| o.get_in(1)) {
+                        Some(d) => d,
+                        None => return false,
+                    };
+                    let m = match resolve_const(fd, other) {
+                        Some(m) => m,
+                        None => return false,
+                    };
+                    // Require a covering mask (all set bits contiguous from bit 0).
+                    if m == 0 || (m & m.wadd(1)) != 0 {
+                        return false;
+                    }
+                    bound = Some(m.wadd(1));
+                    bound_out = fd.obank().get(op).and_then(|o| o.get_out());
+                    break;
+                }
+                // Realigning ops the index calculation may pass through.
+                OpCode::CPUI_INT_ADD
+                | OpCode::CPUI_INT_MULT
+                | OpCode::CPUI_INT_LEFT
+                | OpCode::CPUI_INT_OR
+                | OpCode::CPUI_SUBPIECE
+                | OpCode::CPUI_INT_ZEXT
+                | OpCode::CPUI_INT_SEXT
+                | OpCode::CPUI_COPY
+                | OpCode::CPUI_BRANCHIND => {}
+                OpCode::CPUI_LOAD => {
+                    load_seen += 1;
+                    if load_seen > 1 {
+                        return false; // only a single table LOAD is supported
+                    }
+                }
+                // Any other op in the path means this is not a clean modulo/mask
+                // LOAD-table dispatch — decline.
+                _ => return false,
+            }
+        }
+
+        let bound = match bound {
+            Some(b) => b,
+            None => return false,
+        };
+        // A single table LOAD must be in the path (this is a LOAD-table dispatch,
+        // not a direct computed jump).
+        if load_seen != 1 {
+            return false;
+        }
+        // bound must be in [2, maxtablesize].
+        if bound < 2 || bound > maxtablesize as uintb {
+            return false;
+        }
+        let bound_out = match bound_out {
+            Some(v) => v,
+            None => return false,
+        };
+        // Locate the bound-result varnode in the common path: emulation will start
+        // there with the index already reduced to [0, bound).
+        let mut pos: int4 = -1;
+        for i in 0..self.path_meld.num_common_varnode() {
+            if self.path_meld.get_varnode(i) == bound_out {
+                pos = i;
+                break;
+            }
+        }
+        if pos < 0 {
+            return false; // bound result is not a common path varnode
+        }
+        // The op that consumes the bound result (the next op toward the BRANCHIND)
+        // is the emulation start op.
+        let startop = match self.path_meld.get_earliest_op(pos) {
+            Some(o) => o,
+            None => return false,
+        };
+        let vsize = match fd.vbank().get(bound_out) {
+            Some(v) => v.get_size(),
+            None => return false,
+        };
+        self.varnode_index = pos;
+        let jr = self.jrange_range_mut();
+        // [0, bound) over the bound-result width, step 1.
+        jr.set_range(CircleRange::new(0, bound, vsize, 1));
+        jr.set_start_vn(bound_out);
+        jr.set_start_op(startop);
+        true
     }
 
     /// Build the explicit address table by emulating the switch calculation for

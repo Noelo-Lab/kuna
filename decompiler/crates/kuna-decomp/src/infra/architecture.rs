@@ -944,6 +944,9 @@ impl Architecture {
         // (kuna GH-8471) Carry the Thumb-funcptr preservation gate so
         // `RulePtrsubUndo`'s thumb guard reads `glb->preserve_thumb_funcptr`.
         seam.preserve_thumb_funcptr = self.preserve_thumb_funcptr;
+        // (kuna) GH-9191: carry the modulo/and-mask jump-table index-bound gate
+        // (`option switchmodbound`) so `JumpBasic::recoverModel` reaches it.
+        seam.switch_modulo_bound = self.switch_modulo_bound;
         seam.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate
