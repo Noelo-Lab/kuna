@@ -1487,8 +1487,8 @@ impl Architecture {
     /// front-loaded here).
     fn register_string_builtins(&mut self) -> KunaResult<()> {
         use crate::userop::{
-            BUILTIN_MEMCPY, BUILTIN_STRINGDATA, BUILTIN_STRNCPY, BUILTIN_VOLATILE_READ,
-            BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
+            BUILTIN_MEMCPY, BUILTIN_MEMSET, BUILTIN_STRINGDATA, BUILTIN_STRNCPY,
+            BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
         };
         // Split the &mut userops borrow from the &self type-factory read by
         // building a small adapter over the (already-populated) factory.
@@ -1515,6 +1515,8 @@ impl Architecture {
             userops.register_builtin(BUILTIN_MEMCPY, &adapter)?;
             userops.register_builtin(BUILTIN_STRNCPY, &adapter)?;
             userops.register_builtin(BUILTIN_WCSNCPY, &adapter)?;
+            // (kuna GH-9230/1537) the constant-fill recovery CALLOTHER.
+            userops.register_builtin(BUILTIN_MEMSET, &adapter)?;
             Ok(())
         })();
         self.userops = userops;

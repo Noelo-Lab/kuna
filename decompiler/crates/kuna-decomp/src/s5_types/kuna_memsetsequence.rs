@@ -31,31 +31,31 @@
 //!   from a string (and from a lone NUL terminator), so it is the core that
 //!   decides whether GH-9230 fires.
 //!
-//! # Deferred halves (cross-wave seams, ledgered as losses)
+//! # The live recovery path (now ported, GH-9230/1537)
 //!
-//! The *collection*, *build*, *transform*, and *driver* halves reach subsystems
-//! later waves own and are intentionally **not** transcribed (they are exactly
-//! the same seams `constseq.rs` lists for `StringSequence`/`RuleStringCopy`):
+//! The *build*/*transform*/*teardown* halves the C++ `MemsetSequence : public
+//! StringSequence` inherits are now ported on the shared [`StringSequence`]
+//! machinery — the same machinery `RuleStringCopy` drives — exposed as
+//! `pub(crate)` entry points in `constseq.rs`:
 //!
-//! * [`MemsetSequence::collect_fill_run`] (`collectFillRun`) needs the
-//!   address-only `beginLoc(addr)`/`endLoc(addr)` location-set overload (W4
-//!   loc-set surface), `SymbolEntry`/`Symbol::getType` array-component navigation
-//!   and `Datatype::getSubType`/`resolveTruncation` walking, and per-op block
-//!   membership.  Body is a documented stub.
-//! * [`MemsetSequence::build_memset`] (`buildMemset`) needs
-//!   `UserPcodeOpManager::registerBuiltin(BUILTIN_MEMSET)`, the inherited
-//!   `constructTypedPointer` (W4/W6 typed-pointer builder), `inheritUnionFieldPtr`,
-//!   and `inputTypeLocal` (W6 type-factory).  Body is a documented stub.
-//! * [`MemsetSequence::transform`] (`transform`) needs `build_memset` plus the
-//!   inherited `removeCopyOps` (the constseq COPY teardown, itself deferred).
-//! * [`RuleMemsetCopy::apply_op`] (`RuleMemsetCopy::applyOp`) needs
-//!   `getTypeDefFacing`/`isCharPrint`/`isOpaqueString`/`isAddrTied` (W6 type
-//!   facing) and `Scope::queryContainer` (W4 symbol table) before it can even
-//!   construct a [`MemsetSequence`].  The gate and structure are ported; the
-//!   seam-blocked body declines (returns 0), byte-identical to the option being
-//!   off.
+//! * [`StringSequence::build_for_fill`](crate::constseq) — the containing-array
+//!   type-walk + the constant COPY collection (`collect_fill_run`, recording each
+//!   COPY's byte stride in the `WriteNode` slot).
+//! * [`detect_fill_run`] — the single-value-fill detection (`formFillRun`),
+//!   shared with [`MemsetSequence::form_fill_run`] (the detection model the unit
+//!   tests drive via `from_collected`).
+//! * `StringSequence::build_memset` — the `builtin_memset(dest,value,count)`
+//!   CALLOTHER (`registerBuiltin(BUILTIN_MEMSET)` is wired at arch init) using the
+//!   inherited `constructTypedPointer`; `StringSequence::transform_memset` then
+//!   reuses `removeCopyOps` to tear down the COPY run.
+//! * [`RuleMemsetCopy::apply_op`] — the live driver (the `getTypeDefFacing`/
+//!   `isCharPrint`/`isOpaqueString`/`isAddrTied` guards + `Scope::queryContainer`,
+//!   then `build_for_fill` → `detect_fill_run` → `transform_memset`), mirroring
+//!   `RuleStringCopy::apply_op`.
 //!
-//! These are recorded as losses in the structured output.
+//! The remaining stub is [`MemsetSequence::collect_fill_run`] (the
+//! direct-construction `collectFillRun`); the live path collects via
+//! `StringSequence::build_for_fill` instead, so it is unused.
 //!
 //! ## Gate wiring — SEAM(W4)
 //!
@@ -78,7 +78,7 @@ use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
-use crate::constseq::{ArraySequence, WriteNode};
+use crate::constseq::{ArraySequence, StringSequence, WriteNode};
 use crate::dtype::Datatype;
 use crate::funcdata::Funcdata;
 use crate::seams::OpId;
@@ -204,89 +204,19 @@ impl MemsetSequence {
     /// footprint.  On success `move_ops` is truncated to the contiguous run and
     /// `fill_value`/`fill_count`/`num_elements` are recorded.
     fn form_fill_run(&mut self, data: &Funcdata) {
-        // if (moveOps.size() < 1) return;
-        if self.base.move_ops.is_empty() {
-            return;
+        if let Some((fb, total_bytes)) = detect_fill_run(data, &mut self.base.move_ops) {
+            self.fill_value = fb;
+            self.fill_count = total_bytes;
+            self.base.num_elements = total_bytes;
         }
-        // sort(moveOps.begin(),moveOps.end(),[](a,b){ return a.offset < b.offset; });
-        self.base.move_ops.sort_by(|a, b| a.offset.cmp(&b.offset));
-        // uint8 first = moveOps[0].op->getIn(0)->getOffset();
-        let first: uintb = copy_const_offset(data, self.base.move_ops[0].op);
-        // uint1 fb = (uint1)(first & 0xff);
-        let fb: u8 = (first & 0xff) as u8;
-        // uint8 runStart = moveOps[0].offset;
-        let run_start: u64 = self.base.move_ops[0].offset;
-        // uint8 expect = runStart;  int4 lastIdx = -1;
-        let mut expect: u64 = run_start;
-        let mut last_idx: i64 = -1;
-        // for(int4 i=0;i<moveOps.size();++i) {
-        for i in 0..self.base.move_ops.len() {
-            // if (moveOps[i].offset != expect) break;   // Gap or overlap
-            if self.base.move_ops[i].offset != expect {
-                break;
-            }
-            // uint8 v = moveOps[i].op->getIn(0)->getOffset();
-            let v: uintb = copy_const_offset(data, self.base.move_ops[i].op);
-            // if ((uint1)(v & 0xff) != fb) break;       // Different fill byte
-            if (v & 0xff) as u8 != fb {
-                break;
-            }
-            // expect = moveOps[i].offset + moveOps[i].slot;   // slot holds the COPY byte-size
-            expect = self.base.move_ops[i].offset + self.base.move_ops[i].slot as u64;
-            last_idx = i as i64;
-        }
-        // if (lastIdx < 1) return;   // A memset is a RUN: require at least 2 COPYs
-        if last_idx < 1 {
-            return;
-        }
-        // int4 totalBytes = (int4)(expect - runStart);
-        let total_bytes: int4 = (expect - run_start) as int4;
-        // if (totalBytes < 16) return;   // ...and a minimum fill footprint
-        if total_bytes < Self::MINIMUM_FILL_BYTES {
-            return;
-        }
-        // if (lastIdx + 1 != (int4)moveOps.size())
-        //   moveOps.resize(lastIdx + 1, WriteNode(0,(PcodeOp *)0,-1));   // Drop ops past the run
-        let keep = (last_idx + 1) as usize;
-        if keep != self.base.move_ops.len() {
-            self.base.move_ops.truncate(keep);
-        }
-        // rootAddr = startAddr + (int4)(runStart - startAddr.getOffset());  // SEAM: anchor pointer at run
-        //   start -- startAddr/rootAddr live on the deferred StringSequence half;
-        //   recorded as a loss (buildMemset needs them).
-        // fillValue = fb;  fillCount = totalBytes;  numElements = totalBytes;
-        self.fill_value = fb;
-        self.fill_count = total_bytes;
-        self.base.num_elements = total_bytes;
     }
 
-    /// Build the builtin_memset CALLOTHER (C++ `MemsetSequence::buildMemset`).
-    ///
-    /// SEAM(W4/W6): `registerBuiltin(BUILTIN_MEMSET)`, the inherited
-    /// `constructTypedPointer` typed-pointer builder, `inheritUnionFieldPtr`, and
-    /// `inputTypeLocal` (W6 type factory) are not yet reachable.  Documented stub;
-    /// recorded as a loss.
-    fn build_memset(&self, _data: &mut Funcdata) -> Option<OpId> {
-        // SEAM(W4/W6): UserPcodeOp::BUILTIN_MEMSET registration, constructTypedPointer,
-        // inheritUnionFieldPtr, newConstant + inputTypeLocal typing, opInsertBefore.
-        None
-    }
-
-    /// Build the memset and remove the original COPY run (C++ `MemsetSequence::transform`).
-    ///
-    /// SEAM: needs [`build_memset`] plus the inherited `removeCopyOps` (the
-    /// constseq COPY teardown, itself a deferred constseq seam).  Documented stub;
-    /// recorded as a loss.
-    pub fn transform(&self, data: &mut Funcdata) -> bool {
-        // PcodeOp *memsetOp = buildMemset(); if (memsetOp == 0) return false;
-        // removeCopyOps(memsetOp); return true;
-        match self.build_memset(data) {
-            // SEAM: removeCopyOps (constseq COPY teardown) not ported; even a
-            // built memset cannot complete the transform yet.
-            Some(_memset_op) => false,
-            None => false, // C++ `if (memsetOp == 0) return false;`
-        }
-    }
+    // The live `build_memset`/`transform`/`removeCopyOps` (C++
+    // `MemsetSequence::buildMemset`/`transform`) are now ported on the shared
+    // `StringSequence` machinery (`build_for_fill` -> `detect_fill_run` ->
+    // `transform_memset`), driven by `RuleMemsetCopy::apply_op` below.  This
+    // `MemsetSequence` struct remains the detection model (`form_fill_run`) the
+    // unit tests drive directly via `from_collected`.
 }
 
 /// (kuna GH-9230) Recognize a constant-fill run of COPY ops as builtin_memset
@@ -340,24 +270,67 @@ impl Rule for RuleMemsetCopy {
         if !data.vbank().get(in0).map(|v| v.is_constant()).unwrap_or(false) {
             return 0;
         }
-        // SEAM(W4/W6): the remaining guards — getTypeDefFacing()->isCharPrint() /
-        // isOpaqueString(), outvn->isAddrTied(), getScopeLocal()->queryContainer()
-        // — and the MemsetSequence construction/transform reach the W4 symbol table
-        // and W6 type-facing factory (see module docs).  Until they land the body
-        // declines, which is byte-identical to `option memsetrecover off`.
-        //
-        //   Datatype *ct = outvn->getTypeDefFacing();
-        //   if (!ct->isCharPrint()) return 0;
-        //   if (ct->isOpaqueString()) return 0;
-        //   if (!outvn->isAddrTied()) return 0;
-        //   SymbolEntry *entry = data.getScopeLocal()->queryContainer(...);
-        //   if (entry == 0) return 0;
-        //   MemsetSequence sequence(data,ct,entry,op,outvn->getAddr());
-        //   if (!sequence.isValidFill()) return 0;
-        //   if (!sequence.transform()) return 0;
-        //   return 1;
-        let _ = data;
-        0
+        // Varnode *outvn = op->getOut();
+        let outvn = match data.obank().get(op).and_then(|o| o.get_out()) {
+            Some(v) => v,
+            None => return 0,
+        };
+        // Datatype *ct = outvn->getTypeDefFacing(); if (!ct->isCharPrint()) return 0;
+        let ct = Rc::clone(
+            data.vbank().get(outvn).expect("RuleMemsetCopy: stale outvn").get_type_def_facing(),
+        );
+        if !ct.is_char_print() {
+            return 0;
+        }
+        // if (ct->isOpaqueString()) return 0;
+        if ct.is_opaque_string() {
+            return 0;
+        }
+        // if (!outvn->isAddrTied()) return 0;
+        if !data.vbank().get(outvn).unwrap().is_addr_tied() {
+            return 0;
+        }
+        // SymbolEntry *entry = data.getScopeLocal()->queryContainer(outvn->getAddr(),
+        //   outvn->getSize(), op->getAddr());  — local stack scope first, then the
+        // frozen global-scope snapshot (mirrors `RuleStringCopy::apply_op`).
+        let out_addr = data.vbank().get(outvn).unwrap().get_addr().clone();
+        let out_size = data.vbank().get(outvn).unwrap().get_size();
+        let op_addr = data.obank().get(op).unwrap().get_addr().clone();
+        let entry = data
+            .get_scope_local()
+            .and_then(|lm| lm.query_container(&out_addr, out_size, &op_addr))
+            .or_else(|| {
+                data.get_arch().query_container_global(&out_addr, out_size, &op_addr).and_then(|g| {
+                    let sym_type = g.symbol_type.clone()?;
+                    Some(crate::varmap::StringContainerEntry {
+                        first: g.entry_addr.get_offset(),
+                        size: sym_type.get_size(),
+                        addr: g.entry_addr.clone(),
+                        sym_type,
+                    })
+                })
+            });
+        let entry = match entry {
+            Some(e) => e,
+            None => return 0,
+        };
+        // MemsetSequence sequence(data,ct,entry,op,outvn->getAddr()): the array
+        // type-walk + COPY collection (reusing the StringSequence machinery), then
+        // the single-value-fill detection.
+        let mut sequence = match StringSequence::build_for_fill(data, ct, entry, op, out_addr) {
+            Some(s) => s,
+            None => return 0,
+        };
+        // if (!sequence.isValidFill()) return 0;
+        let (fill_value, fill_count) = match detect_fill_run(data, sequence.fill_move_ops_mut()) {
+            Some(fv) => fv,
+            None => return 0,
+        };
+        // if (!sequence.transform()) return 0; return 1;
+        if !sequence.transform_memset(data, fill_value, fill_count) {
+            return 0;
+        }
+        1
     }
 }
 
@@ -428,6 +401,59 @@ fn copy_const_offset(data: &Funcdata, op: OpId) -> uintb {
         .and_then(|o| o.get_in(0))
         .expect("memset: COPY missing input 0");
     data.vbank().get(in0).expect("memset: stale COPY input").get_offset()
+}
+
+/// The single-value-fill detection (C++ `MemsetSequence::formFillRun`), factored
+/// out of [`MemsetSequence::form_fill_run`] so the live driver
+/// ([`RuleMemsetCopy::apply_op`]) can run it over the COPY run gathered into a
+/// [`StringSequence`] (via `build_for_fill`/`collect_fill_run`).
+///
+/// Sort the collected COPYs by offset, verify they tile a contiguous byte region
+/// (no gap/overlap) all holding the SAME low fill byte, require a RUN (at least 2
+/// COPYs — a lone store like a string NUL is never claimed) and a minimum 16-byte
+/// footprint.  On success `move_ops` is truncated to the contiguous run and
+/// `(fill_byte, total_bytes)` is returned.  Each `WriteNode.slot` carries the
+/// COPY's byte stride.
+pub(crate) fn detect_fill_run(data: &Funcdata, move_ops: &mut Vec<WriteNode>) -> Option<(u8, int4)> {
+    // if (moveOps.size() < 1) return;
+    if move_ops.is_empty() {
+        return None;
+    }
+    // sort by offset.
+    move_ops.sort_by(|a, b| a.offset.cmp(&b.offset));
+    // uint1 fb = (uint1)(moveOps[0].op->getIn(0)->getOffset() & 0xff);
+    let fb: u8 = (copy_const_offset(data, move_ops[0].op) & 0xff) as u8;
+    let run_start: u64 = move_ops[0].offset;
+    let mut expect: u64 = run_start;
+    let mut last_idx: i64 = -1;
+    for i in 0..move_ops.len() {
+        // if (moveOps[i].offset != expect) break;  // Gap or overlap
+        if move_ops[i].offset != expect {
+            break;
+        }
+        // if ((uint1)(v & 0xff) != fb) break;       // Different fill byte
+        if (copy_const_offset(data, move_ops[i].op) & 0xff) as u8 != fb {
+            break;
+        }
+        // expect = moveOps[i].offset + moveOps[i].slot;  // slot holds the COPY byte-size
+        expect = move_ops[i].offset + move_ops[i].slot as u64;
+        last_idx = i as i64;
+    }
+    // if (lastIdx < 1) return;   // A memset is a RUN: require at least 2 COPYs
+    if last_idx < 1 {
+        return None;
+    }
+    let total_bytes: int4 = (expect - run_start) as int4;
+    // if (totalBytes < 16) return;   // ...and a minimum fill footprint
+    if total_bytes < MemsetSequence::MINIMUM_FILL_BYTES {
+        return None;
+    }
+    // Drop ops past the run.
+    let keep = (last_idx + 1) as usize;
+    if keep != move_ops.len() {
+        move_ops.truncate(keep);
+    }
+    Some((fb, total_bytes))
 }
 
 #[cfg(test)]
