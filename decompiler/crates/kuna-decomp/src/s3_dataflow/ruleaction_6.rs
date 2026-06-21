@@ -50,6 +50,8 @@
 //! returns `0` — "made no change" — preserving the engine contract.  These are
 //! enumerated in the item's `losses` output.
 
+use std::rc::Rc;
+
 use kuna_base::address::{
     calc_mask, count_leading_zeros, popcount, sign_extend, sign_extend_sized, signbit_negative,
 };
@@ -624,6 +626,76 @@ impl RulePtrsubUndo {
         }
         extra
     }
+
+    /// (kuna) GH-8471 guard: should `RulePtrsubUndo` preserve this PTRSUB as a
+    /// mode-bit-encoded (Thumb) function pointer rather than collapse it to raw
+    /// hex?  Resolves the W6 [`ThumbPtrTypeFacts`] from the read-facing pointer
+    /// type and the (global-scope) `TypeSpacebase::getSubType` walk, then defers
+    /// to [`kuna_preserve_thumb_funcptr`].
+    ///
+    /// `read_facing` is `basevn->getTypeReadFacing(op)`; `val`/`extra`/`multiplier`
+    /// are the PTRSUB constant decomposition exactly as `applyOp` computes them.
+    fn preserve_thumb_funcptr(
+        data: &Funcdata,
+        read_facing: &Rc<crate::dtype::Datatype>,
+        val: int8,
+        extra: int8,
+        multiplier: int8,
+    ) -> bool {
+        use crate::dtype::type_metatype;
+        use crate::kuna_thumbfuncptr::{
+            kuna_preserve_thumb_funcptr, ThumbPtrTypeFacts, ThumbSubTypeFact,
+        };
+        let arch = data.get_arch();
+        let funcptr_align = arch.funcptr_align;
+        // Mirror the C++ short-circuit: `!preserve_thumb_funcptr || funcptr_align
+        // == 0` -> false, before any type query.
+        if !arch.preserve_thumb_funcptr || funcptr_align == 0 {
+            return false;
+        }
+        // bt = basevn->getTypeReadFacing(op); require TYPE_PTR -> TYPE_SPACEBASE.
+        let base_metatype = read_facing.get_metatype();
+        if base_metatype != type_metatype::TYPE_PTR {
+            return false;
+        }
+        let ptr_to = match read_facing.get_ptr_to() {
+            Some(p) => p,
+            None => return false,
+        };
+        let ptr_to_metatype = ptr_to.get_metatype();
+        let word_size = read_facing.get_word_size().unwrap_or(1);
+        // newoff = AddrSpace::addressToByteInt(val, ptype->getWordSize()).
+        // The `getSubType` resolution only applies to the spacebase pointee; the
+        // predicate re-checks `ptr_to_metatype == TYPE_SPACEBASE` itself, so only
+        // resolve the sub-type when that holds.
+        let sub = if ptr_to_metatype == type_metatype::TYPE_SPACEBASE {
+            let newoff =
+                kuna_base::space::AddrSpace::address_to_byte_int(val, word_size);
+            match data.spacebase_get_sub_type(&ptr_to, newoff) {
+                Some((sub_type, residual)) => Some(ThumbSubTypeFact {
+                    metatype: sub_type.get_metatype(),
+                    residual_offset: residual,
+                }),
+                None => None,
+            }
+        } else {
+            None
+        };
+        let facts = ThumbPtrTypeFacts {
+            base_metatype,
+            ptr_to_metatype,
+            word_size,
+            sub,
+        };
+        kuna_preserve_thumb_funcptr(
+            arch.preserve_thumb_funcptr,
+            funcptr_align,
+            val,
+            extra,
+            multiplier,
+            &facts,
+        )
+    }
 }
 
 impl Rule for RulePtrsubUndo {
@@ -660,17 +732,16 @@ impl Rule for RulePtrsubUndo {
         }
         // if (kunaPreserveThumbFuncPtr(basevn,op,val,extra,multiplier,data.getArch()))
         //   return 0;  -- (kuna) GH-8471
-        // The C++ guard short-circuits on `!preserve_thumb_funcptr ||
-        // funcptr_align == 0` before touching any type query; under that condition
-        // it is always `false` (no preservation).  Only `funcptr_align` is surfaced
-        // into the kuna arch seam, and it is `0` for every non-thumb target, so the
-        // guard is always `false` here.  The live-thumb branch (which needs
-        // TypeSpacebase::getSubType, still SEAM(W6)) is unreachable while
-        // funcptr_align == 0.
-        if data.get_arch().funcptr_align != 0 {
-            // SEAM(W6): live ARM-thumb path needs TypeSpacebase::getSubType +
-            // the `preserve_thumb_funcptr` gate (not yet surfaced into the seam).
-            // Stay conservative (preserve the PTRSUB) rather than mis-transform.
+        // A pointer to a Thumb function carries the mode bit in its LSB
+        // (`value = fn|1`).  When `option thumbfuncptr on` and the architecture
+        // has aligned function pointers (`funcptr_align != 0`), keep the
+        // `PTRSUB(fn) + 1` symbolic rather than collapsing it back to raw hex.
+        // The predicate (`kuna_preserve_thumb_funcptr`) needs the resolved
+        // TypeSpacebase::getSubType walk, which `is_ptrsub_matching_scope` already
+        // routes through the function's scope; the global-symbol arm of
+        // `spacebase_get_sub_type` resolves the constant `fn` to its TYPE_CODE
+        // symbol type (the same path ActionConstantPtr::isPointer uses).
+        if Self::preserve_thumb_funcptr(data, &read_facing, val, extra0, multiplier) {
             return 0;
         }
 

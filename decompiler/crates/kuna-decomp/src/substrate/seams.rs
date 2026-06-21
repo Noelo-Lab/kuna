@@ -568,6 +568,12 @@ pub struct Architecture {
     /// by `JumpBasic::buildAddresses` to align recovered targets.  `0` (no
     /// alignment) for hand-built fixtures.
     pub funcptr_align: int4,
+    /// (kuna GH-8471) Keep a mode-bit-encoded (Thumb) function pointer symbolic
+    /// (`PTRSUB(fn) + 1`) instead of letting `RulePtrsubUndo` collapse it back to
+    /// raw hex (C++ `Architecture::preserve_thumb_funcptr`), shared from the real
+    /// architecture.  Read by [`RulePtrsubUndo`](crate::ruleaction_6::RulePtrsubUndo)'s
+    /// thumb-funcptr guard.  Default-on (DIV-2); `false` for hand-built fixtures.
+    pub preserve_thumb_funcptr: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -700,6 +706,10 @@ impl Architecture {
             max_jumptable_size: 0,
             alias_block_level: 2, // Architecture default: block structs and arrays
             funcptr_align: 0,
+            // (kuna GH-8471) DIV-2 default-on; the real arch overwrites this in
+            // build_arch_handle.  A hand-built fixture has funcptr_align == 0, so
+            // the thumb guard never fires regardless of this flag.
+            preserve_thumb_funcptr: true,
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.

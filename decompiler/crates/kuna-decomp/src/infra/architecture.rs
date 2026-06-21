@@ -941,6 +941,9 @@ impl Architecture {
         seam.max_jumptable_size = self.max_jumptable_size;
         seam.alias_block_level = self.alias_block_level;
         seam.funcptr_align = self.funcptr_align;
+        // (kuna GH-8471) Carry the Thumb-funcptr preservation gate so
+        // `RulePtrsubUndo`'s thumb guard reads `glb->preserve_thumb_funcptr`.
+        seam.preserve_thumb_funcptr = self.preserve_thumb_funcptr;
         seam.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate
@@ -1142,6 +1145,51 @@ impl Architecture {
             stack_growth,
             true,
         )
+    }
+
+    /// Decode the cspec `<funcptr align="N"/>` element into [`funcptr_align`]
+    /// (C++ `Architecture::decodeFuncPtrAlign`, `architecture.cc:1048`,
+    /// dispatched from `parseCompilerConfig`'s `ELEM_FUNCPTR` arm).
+    ///
+    /// The XML `align` attribute is a byte alignment (`2` for ARM word-aligned
+    /// function pointers whose least-significant bit encodes the Thumb mode);
+    /// `funcptr_align` stores the *bit position* of its first set bit (so
+    /// `align="2"` → `funcptr_align = 1`), exactly as the C++ `while((align&1)==0)`
+    /// loop computes.  An absent element leaves `funcptr_align = 0` (no alignment),
+    /// matching the C++ default.  General over any cspec — no processor special-
+    /// casing.  Feeds the kuna GH-8471 `RulePtrsubUndo` thumb-funcptr guard (and
+    /// the already-ported `RuleFuncPtrEncoding`/jumptable readers of this field).
+    ///
+    /// [`funcptr_align`]: Architecture::funcptr_align
+    fn decode_funcptr_align(&mut self) -> KunaResult<()> {
+        use kuna_base::xml::DocumentStorage;
+        let Some(xml) = self.cspec_xml.clone() else {
+            return Ok(()); // no cspec recorded: leave funcptr_align = 0
+        };
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(&xml)?.get_root().clone();
+        // The resolved .cspec root IS <compiler_spec>; <funcptr> is a direct child.
+        let Some(fp) = find_child(&root, "funcptr") else {
+            return Ok(()); // no <funcptr> in this cspec: funcptr_align stays 0
+        };
+        // int4 align = decoder.readSignedInteger(ATTRIB_ALIGN);
+        let align: i64 = match attr_str(&fp, "align").and_then(|s| parse_int(&s)) {
+            Some(a) => a as i64,
+            None => return Ok(()), // malformed/absent attr: leave default
+        };
+        if align == 0 {
+            self.funcptr_align = 0; // No alignment
+            return Ok(());
+        }
+        // bits = position of the first set bit (C++ `while((align&1)==0) bits++`).
+        let mut bits: int4 = 0;
+        let mut a = align;
+        while (a & 1) == 0 {
+            bits += 1;
+            a >>= 1;
+        }
+        self.funcptr_align = bits;
+        Ok(())
     }
 
     /// Interpret a constant as a pointer into `spc` (C++ `Architecture::
@@ -2719,6 +2767,12 @@ impl Architecture {
         // engine has no IPTR_SPACEBASE space, `s0x…` stack addresses fail to
         // parse, and `Funcdata.localmap` stays `None`.
         self.decode_stack_pointer()?;
+        // C++ `parseCompilerConfig` dispatches the cspec `<funcptr>` element
+        // (ELEM_FUNCPTR -> `decodeFuncPtrAlign`, architecture.cc:1048) to record
+        // how many low bits of a function pointer are alignment-encoding (the ARM
+        // Thumb LSB).  Decode it here alongside the other cspec children so the
+        // GH-8471 `RulePtrsubUndo` thumb-funcptr guard can read `funcptr_align`.
+        self.decode_funcptr_align()?;
         self.build_typegrp();
         // C++ `TypeFactory::TypeFactory` runs `setupSizes()` (the alignment map
         // + the core sizes) in the constructor, *before* `buildCoreTypes` calls
