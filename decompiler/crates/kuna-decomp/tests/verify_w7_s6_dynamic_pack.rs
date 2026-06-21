@@ -346,27 +346,30 @@ fn build_canary_epilogue(fd: &mut Funcdata) -> BlockId {
 }
 
 #[test]
-fn t5_stackguard_action_inert_both_gates() {
+fn t5_stackguard_action_gate_off_inert_on_strips() {
     // Gate OFF: inert, CFG untouched.
     let mut fd = build_fd();
-    let _h = build_canary_epilogue(&mut fd);
+    let h = build_canary_epilogue(&mut fd);
     let before = fd.bblocks_get_size();
     let mut off = ActionStripStackGuard::new(false, "stackptrflow");
     let mut ctx = ActionContext::default();
     assert_eq!(off.apply(&mut fd, &mut ctx), 0, "gate off => inert");
     assert_eq!(fd.bblocks_get_size(), before, "gate off leaves the CFG untouched");
+    assert_eq!(fd.bblocks_ref().block(h).size_out(), 2, "gate off keeps both edges");
 
-    // Gate ON over a *real* canary epilogue: the detection runs, but the
-    // removeBranch/removeUnreachableBlocks surgery is the W4/W8 seam, so the
-    // Action still reports no change and the CFG is intact (LOSS pin: when the
-    // primitive lands, this flips to 1 + one fewer edge).
+    // Gate ON over a *real* canary epilogue: the detection runs and the strip is
+    // applied — `removeBranch` severs the corrupted-canary edge (dropping the
+    // CBRANCH), so the Action reports a change and the header keeps a single
+    // fall-through out-edge.  (The orphaned handler is then collected by
+    // `removeUnreachableBlocks` in the real pipeline; this hand-built fixture has
+    // no dominator tree, so that collection is a no-op here.)
     let mut on = ActionStripStackGuard::new(true, "stackptrflow");
+    assert_eq!(on.apply(&mut fd, &mut ctx), 1, "gate on strips the canary => change");
     assert_eq!(
-        on.apply(&mut fd, &mut ctx),
-        0,
-        "detection-only until the removeBranch seam lands"
+        fd.bblocks_ref().block(h).size_out(),
+        1,
+        "gate on severs the corrupted-canary edge",
     );
-    assert_eq!(fd.bblocks_get_size(), before, "gate on (seam) leaves the CFG untouched");
     assert_eq!(on.get_name(), "stripstackguard");
 }
 

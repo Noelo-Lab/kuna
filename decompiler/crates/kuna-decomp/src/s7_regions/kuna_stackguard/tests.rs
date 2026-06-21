@@ -323,20 +323,27 @@ fn action_inert_when_gate_off() {
 }
 
 #[test]
-fn action_detects_but_does_not_mutate_when_on() {
-    // With the gate on the canary epilogue is *detected* (the scan reaches the
-    // victim-edge index), but the removeBranch/removeUnreachableBlocks CFG
-    // surgery is the W4/W8 seam, so the Action reports no change and leaves the
-    // CFG intact.  This pins the seam boundary: when removeBranch lands, this
-    // test's expectation flips to `1` + one fewer edge.
+fn action_strips_canary_edge_when_on() {
+    // With the gate on the canary epilogue is detected (the scan reaches the
+    // victim-edge index) and stripped: `removeBranch` severs the `h -> fail`
+    // corrupted-canary edge and drops the CBRANCH, so the header keeps a single
+    // (fall-through) out-edge and the Action reports a change.  (The handler
+    // block is then collected by `removeUnreachableBlocks`; in this hand-built
+    // fixture without a full dominator tree the collection is a no-op, but the
+    // edge sever — the observable that eliminates the goto/label in the real
+    // pipeline — is realized.)
     let mut fd = build_fd();
-    let (_h, _cbr, _fail) = build_canary_epilogue(&mut fd);
-    let blocks_before = fd.bblocks_get_size();
+    let (h, _cbr, _fail) = build_canary_epilogue(&mut fd);
+    assert_eq!(fd.bblocks_ref().block(h).size_out(), 2, "header has both edges before strip");
     let mut act = ActionStripStackGuard::new(true, "stackptrflow");
     let mut ctx = ActionContext::default();
     let res = act.apply(&mut fd, &mut ctx);
-    assert_eq!(res, 0, "detection-only until the removeBranch seam lands");
-    assert_eq!(fd.bblocks_get_size(), blocks_before, "CFG untouched (seam)");
+    assert_eq!(res, 1, "strip applied => change reported");
+    assert_eq!(
+        fd.bblocks_ref().block(h).size_out(),
+        1,
+        "corrupted-canary edge severed; header falls through to the OK block",
+    );
     // sanity: the action name is correct.
     assert_eq!(act.get_name(), "stripstackguard");
 }
