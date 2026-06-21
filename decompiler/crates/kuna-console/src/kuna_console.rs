@@ -160,9 +160,9 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
                 "canonical"
             }
         }
-        // SEAM(W8): conf->print (PrintC::getArrayNotation) is not exposed; the
-        // C++ "" path -> no current field.
-        "arraynotation" => return None,
+        // C++ `arraynotation` reads `conf->print` (PrintC::getArrayNotation), now
+        // exposed via `Architecture::print()` (the owned `PrintC`).
+        "arraynotation" => on_off(conf.print().options.array_notation()),
         "thumbfuncptr" => on_off(conf.preserve_thumb_funcptr),
         "inferfuncentry" => on_off(conf.infer_funcentry),
         "booleanmask" => on_off(conf.fold_boolean_mask),

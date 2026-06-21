@@ -593,6 +593,93 @@ impl Architecture {
         self.max_jumptable_size = 1024;
     }
 
+    /// Apply a kuna stage-model option (`option <name> <value>`), the analogue of
+    /// an upstream `ArchOption::apply` for the 23 kuna-owned knobs in
+    /// [`KUNA_OPTION_NAMES`](crate::options::KUNA_OPTION_NAMES).
+    ///
+    /// Unlike the upstream options (dispatched through `OptionDatabase` keyed by a
+    /// registered `ElementId`), the kuna options write configuration flags that
+    /// live directly on this `Architecture` (or, for `arraynotation`, on the
+    /// owned [`PrintC`]).  Each arm reuses the per-option parse helper that owns
+    /// the value validation + confirmation text (`parse_compare_form`,
+    /// `parse_return_pair_form`, `parse_memset_recover_form`,
+    /// `parse_stack_probe_loop_form`, the `OptionNameStyle`/`OptionArrayNotation`/
+    /// `OptionLowerSwitch::apply` bodies) or the shared
+    /// [`on_or_off`](crate::options::on_or_off) toggle parser, then writes the
+    /// resolved value into the live flag the consuming action/printer reads.
+    ///
+    /// The console (`IfcOption`) and the `kassert` dispatcher route a name in
+    /// `KUNA_OPTION_NAMES` here; an unknown name is the caller's bug (it is gated
+    /// by the allowlist) and surfaces as a parse error.
+    pub fn set_kuna_option(&mut self, name: &str, p1: &str) -> KunaResult<String> {
+        use crate::options::on_or_off;
+        // Shared on/off arm: parse the toggle, write the field, format the message.
+        macro_rules! on_off {
+            ($field:ident, $label:literal) => {{
+                let val = on_or_off(p1)?;
+                self.$field = val;
+                Ok(format!(
+                    concat!($label, " turned {}"),
+                    if val { "on" } else { "off" }
+                ))
+            }};
+        }
+        match name {
+            "compareform" => {
+                let (form, msg) = crate::kuna_compareform::parse_compare_form(p1)?;
+                self.present_lessequal = form.present_lessequal();
+                Ok(msg)
+            }
+            "arraynotation" => {
+                let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;
+                self.print_mut().options.set_array_notation(val);
+                Ok(msg)
+            }
+            "thumbfuncptr" => on_off!(preserve_thumb_funcptr, "Thumb function-pointer preservation"),
+            "inferfuncentry" => on_off!(infer_funcentry, "Function-entry constant inference"),
+            "returnpair" => {
+                let (form, msg) = crate::kuna_returnpair::parse_return_pair_form(p1)?;
+                self.return_single = form.return_single();
+                Ok(msg)
+            }
+            "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
+            "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
+            "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
+            "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
+            "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
+            "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
+            "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
+            "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
+            "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
+            "stackalias" => on_off!(stack_alias_deadstore, "Stack-pointer-alias dead-store hold"),
+            "dynamichashmax" => on_off!(dynamic_hash_maxdup_high, "DynamicHash collision budget"),
+            "stackprobeloop" => {
+                let (form, msg) = crate::kuna_stackprobeloop::parse_stack_probe_loop_form(p1)?;
+                self.model_stack_probe_loop = form.model_stack_probe_loop();
+                Ok(msg)
+            }
+            "memsetrecover" => {
+                let (form, msg) = crate::kuna_memsetsequence::parse_memset_recover_form(p1)?;
+                self.memset_recover = form.memset_recover();
+                Ok(msg)
+            }
+            "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
+            "loweredswitch" => {
+                let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
+                self.recover_lowered_switch = val;
+                Ok(msg)
+            }
+            "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
+            "namestyle" => {
+                let (val, msg) = crate::kuna_naming::OptionNameStyle.apply(p1)?;
+                self.name_style_angr = val;
+                Ok(msg)
+            }
+            "realtypes" => on_off!(realtypes, "Real-C-type rendering for unknowns"),
+            other => Err(KunaError::parse(format!("Unknown kuna option: {other}"))),
+        }
+    }
+
     /// Reset options modifiable by the OptionDatabase, including the action
     /// database (C++ `Architecture::resetDefaults`, `architecture.cc:1463`).
     ///
@@ -808,6 +895,23 @@ impl Architecture {
         // `ActionUnjustifiedParams` reaches it via `glb`.
         seam.input_varnode_adjust = self.input_varnode_adjust;
         seam.name_style_angr = self.name_style_angr;
+        // (kuna GH-558) carry the comparison-presentation gate so the
+        // `compareform canonical|original` option reaches
+        // `ActionPresentCompareForm` via `glb` (the seam read site).
+        seam.present_lessequal = self.present_lessequal;
+        // (kuna) carry the remaining stage-model rule gates so their `option
+        // <name> on|off` reaches the consuming Rule/Action via `glb` (each rule
+        // reads `data.get_arch().<flag>`; the rule is registered `enabled=false`
+        // so the live flag drives both the DIV default and the toggle).
+        seam.fold_boolean_mask = self.fold_boolean_mask; // GH-1282 booleanmask
+        seam.fold_flag_compare = self.fold_flag_compare; // GH-1276/8777 flagcompare
+        seam.add_carry_chain = self.add_carry_chain; // GH-8913 addcarrychain
+        seam.ov_less_simplify = self.ov_less_simplify; // GH-7190 ovlesssimplify
+        seam.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
+        seam.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
+        seam.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
+        seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
+        seam.strip_stack_guard = self.strip_stack_guard; // stackguard
         // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
         // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.
         seam.condexe_block_placement = self.condexe_block_placement;

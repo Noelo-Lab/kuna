@@ -259,9 +259,10 @@ impl Action for ActionStripStackGuard {
     /// module docs); the scan still runs and `idx` is computed so the seam is
     /// a single drop-in point.
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ `if (!data.getArch()->strip_stack_guard) return 0;` — resolved at
-        // construction (SEAM(W4); see module docs).
-        if !self.enabled {
+        // C++ `if (!data.getArch()->strip_stack_guard) return 0;` — the live gate
+        // is carried on the seam Architecture (`build_arch_handle`); `enabled`
+        // stays as the unit-test OR-override (action registered false).
+        if !self.enabled && !data.get_arch().strip_stack_guard {
             return 0; // P0 assertion not set
         }
 

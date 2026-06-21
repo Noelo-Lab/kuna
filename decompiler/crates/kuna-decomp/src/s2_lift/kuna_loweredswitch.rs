@@ -705,7 +705,7 @@ impl ActionLowerSwitchDetect {
     /// Returns the number of records added (0 unless a cascade was recorded).
     pub fn detect(&mut self, data: &mut Funcdata) -> int4 {
         // if (!data.getArch()->recover_lowered_switch) return 0;  // P0 assertion not set
-        if !self.enabled {
+        if !self.enabled && !data.get_arch().recover_lowered_switch {
             return 0;
         }
         // if (data.isJumptableRecoveryOn()) return 0;  // not inside partial-fn recovery
@@ -959,9 +959,9 @@ impl ActionLowerSwitchInstall {
     /// surfaces land — see the struct docs).
     pub fn install(&mut self, data: &mut Funcdata) -> int4 {
         // if (!data.getArch()->recover_lowered_switch) return 0;
-        // SEAM(W4): the seam Architecture on Funcdata has no flag; the gate is the
-        // resolved `enabled` field (the Detect convention).
-        if !self.enabled {
+        // The live gate is carried on the seam Architecture (`build_arch_handle`);
+        // `enabled` stays as the unit-test OR-override (action registered false).
+        if !self.enabled && !data.get_arch().recover_lowered_switch {
             return 0;
         }
         // if (data.getHeritagePass() != 0) return 0;  // only in the pre-SSA window

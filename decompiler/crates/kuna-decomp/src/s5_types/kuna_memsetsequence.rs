@@ -328,8 +328,8 @@ impl Rule for RuleMemsetCopy {
     /// C++ `RuleMemsetCopy::applyOp` (`kuna_memsetsequence.cc:188`) — gate +
     /// structure ported; the seam-blocked body declines.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->memset_recover) return 0;  // (kuna) gate (SEAM(W4))
-        if !self.enabled {
+        // if (!data.getArch()->memset_recover) return 0;  // (kuna) gate (seam-carried)
+        if !self.enabled && !data.get_arch().memset_recover {
             return 0;
         }
         // if (!op->getIn(0)->isConstant()) return 0;   // Constant

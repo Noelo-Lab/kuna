@@ -85,8 +85,9 @@ impl Rule for RuleBoolSignShift {
     /// C++ `RuleBoolSignShift::applyOp` (`kuna_booleanmask.cc:19`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         // if (!data.getArch()->fold_boolean_mask) return 0;  // (kuna) default gate
-        // SEAM(W4): the gate is resolved at construction (see module docs).
-        if !self.enabled {
+        // The live gate is carried on the seam Architecture (`build_arch_handle`);
+        // `enabled` stays as the unit-test OR-override (rule registered false).
+        if !self.enabled && !data.get_arch().fold_boolean_mask {
             return 0;
         }
 

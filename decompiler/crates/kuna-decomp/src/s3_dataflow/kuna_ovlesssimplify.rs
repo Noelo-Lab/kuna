@@ -73,8 +73,8 @@ impl Rule for RuleOvLessSimplify {
     /// C++ `RuleOvLessSimplify::applyOp` (`kuna_ovlesssimplify.cc:48`) —
     /// transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->ov_less_simplify) return 0;  // (kuna) gate (SEAM(W4))
-        if !self.enabled {
+        // if (!data.getArch()->ov_less_simplify) return 0;  // (kuna) gate (seam-carried)
+        if !self.enabled && !data.get_arch().ov_less_simplify {
             return 0;
         }
 

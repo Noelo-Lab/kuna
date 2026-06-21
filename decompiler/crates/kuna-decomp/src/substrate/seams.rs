@@ -488,6 +488,43 @@ pub struct Architecture {
     /// their original `x <= c` form (C++ `present_lessequal`, DIV-2 default-on).
     /// Read by [`ActionPresentCompareForm`](crate::kuna_compareform::ActionPresentCompareForm).
     pub present_lessequal: bool,
+    /// (kuna) GH-1282: fold `(b<<k) s>> k` boolean sign-extension-mask idioms
+    /// (C++ `fold_boolean_mask`, DIV-2 default-on).  Read by
+    /// [`RuleBoolSignShift`](crate::kuna_booleanmask::RuleBoolSignShift).
+    pub fold_boolean_mask: bool,
+    /// (kuna) GH-1276/8777: fold flag-modelled comparison idioms (C++
+    /// `fold_flag_compare`, DIV-3 default-on).  Read by
+    /// [`RuleBoolSignLess`](crate::kuna_flagcompare::RuleBoolSignLess) /
+    /// [`RuleSborrowGe`](crate::kuna_flagcompare::RuleSborrowGe).
+    pub fold_flag_compare: bool,
+    /// (kuna) GH-8913: fuse 8-bit carry-chain 16-bit adds into one wide add (C++
+    /// `add_carry_chain`, DIV-2 default-on).  Read by
+    /// [`RuleAddCarryChain`](crate::kuna_addcarrychain::RuleAddCarryChain).
+    pub add_carry_chain: bool,
+    /// (kuna) GH-7190: collapse the OV-flag signed-less-than idiom to INT_SLESS
+    /// (C++ `ov_less_simplify`, DIV-2 default-on).  Read by
+    /// [`RuleOvLessSimplify`](crate::kuna_ovlesssimplify::RuleOvLessSimplify).
+    pub ov_less_simplify: bool,
+    /// (kuna) GH-8724: re-express a strided-induction offset as counter*stride
+    /// (C++ `recover_array_stride`, DIV-3 default-on).  Read by
+    /// [`RuleArrayStride`](crate::kuna_arraystride::RuleArrayStride).
+    pub recover_array_stride: bool,
+    /// (kuna) GH-9230/1537: recover constant-fill store/copy runs as
+    /// `builtin_memset` (C++ `memset_recover`, DIV-2 default-on).  Read by
+    /// [`RuleMemsetCopy`](crate::kuna_memsetsequence::RuleMemsetCopy).
+    pub memset_recover: bool,
+    /// (kuna) GH-8017: resolve the gcc stack-probe loop SP MULTIEQUAL to a
+    /// constant (C++ `model_stack_probe_loop`, DIV-3 default-on).  Read by
+    /// [`RuleStackProbeLoop`](crate::kuna_stackprobeloop::RuleStackProbeLoop).
+    pub model_stack_probe_loop: bool,
+    /// (kuna) reconstruct a compiler-lowered comparison cascade into a switch
+    /// (C++ `recover_lowered_switch`, default-on).  Read by the
+    /// [`crate::kuna_loweredswitch`] detect/install actions.
+    pub recover_lowered_switch: bool,
+    /// (kuna) strip the glibc -fstack-protector canary epilogue (C++
+    /// `strip_stack_guard`, opt-in default-off).  Read by
+    /// [`crate::kuna_stackguard`]'s `ActionStripStackGuard`.
+    pub strip_stack_guard: bool,
     /// (kuna) GH-9203: when set, `ActionConditionalConst::handlePhiNodes` declines
     /// to materialize a propagated constant as a COPY inside a loop predecessor
     /// block (which would render as a spurious `= 0` in the do/while body).  C++
@@ -637,6 +674,19 @@ impl Architecture {
             name_style_angr: true,
             // (kuna) DIV-2 default-on (GH-558): resetDefaults sets present_lessequal=true.
             present_lessequal: true,
+            // (kuna) the real arch overwrites each of these in `build_arch_handle`;
+            // hand-built fixtures (no `build_arch_handle`) get `false`, so a rule
+            // registered `enabled=false` is inert there — matching the gate-off
+            // unit tests (and the `infer_funcentry` seam-default convention).
+            fold_boolean_mask: false,    // GH-1282 booleanmask
+            fold_flag_compare: false,    // GH-1276/8777 flagcompare
+            add_carry_chain: false,      // GH-8913 addcarrychain
+            ov_less_simplify: false,     // GH-7190 ovlesssimplify
+            recover_array_stride: false, // GH-8724 arraystride
+            memset_recover: false,       // GH-9230/1537 memsetrecover
+            model_stack_probe_loop: false, // GH-8017 stackprobeloop
+            recover_lowered_switch: false, // loweredswitch
+            strip_stack_guard: false,    // stackguard (opt-in default-off)
             // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.
             condexe_block_placement: true,
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).
