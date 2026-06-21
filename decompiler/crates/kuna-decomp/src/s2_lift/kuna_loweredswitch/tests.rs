@@ -4,9 +4,11 @@
 //! lowered binary-search cascade, the default (gate-off) behavior, the sticky
 //! side table, and the [`OptionLowerSwitch::apply`] parse.
 //!
-//! The install half (`Funcdata::kunaInstallLoweredSwitch`) is a documented
-//! SEAM(W7/W4) — it needs `getHeritagePass`, a real `JumpTable` registry and
-//! `removeUnreachableBlocks`, none yet ported — so it is not exercised here.
+//! The install half (`Funcdata::kuna_install_lowered_switch`) is exercised
+//! end-to-end by the `ghangr-loweredswitch` / `ghangr-loweredswitch-mv`
+//! stage-model datatests; the unit tests below cover the install Action's gate /
+//! store-lookup structure (the surgery declines gracefully on the empty unit `fd`,
+//! which has no block at the recorded branch address).
 
 use std::rc::Rc;
 
@@ -204,8 +206,8 @@ fn detect_recovers_lowered_switch() {
     assert!(fd.has_restart_pending(), "detect should set restart-pending");
 
     // The sticky side table now reports a record (kunaLoweredSwitchHasRecord).
-    assert!(act.store().has_record(&fd));
-    let recs = act.store().records(&fd);
+    assert!(act.store().borrow().has_record(&fd));
+    let recs = act.store().borrow().records(&fd).to_vec();
     assert_eq!(recs.len(), 1);
     let rec = &recs[0];
 
@@ -236,7 +238,7 @@ fn detect_is_sticky_and_idempotent() {
     assert_eq!(act.detect(&mut fd), 1);
     // A second detect on the same function is a no-op (already discovered).
     assert_eq!(act.detect(&mut fd), 0, "sticky: no second record");
-    assert_eq!(act.store().records(&fd).len(), 1);
+    assert_eq!(act.store().borrow().records(&fd).len(), 1);
 }
 
 // -----------------------------------------------------------------------------
@@ -251,7 +253,7 @@ fn gate_off_records_nothing() {
     // option loweredswitch off => the Detect Action is inert.
     let mut act = ActionLowerSwitchDetect::new(false, "base");
     assert_eq!(act.detect(&mut fd), 0);
-    assert!(!act.store().has_record(&fd));
+    assert!(!act.store().borrow().has_record(&fd));
     assert!(!fd.has_restart_pending());
 }
 
@@ -268,7 +270,7 @@ fn apply_returns_zero_and_leaves_count_untouched() {
     assert_eq!(res, 0, "apply returns 0 to quiesce the loop");
     assert_eq!(act.base().count, 0, "apply does not count a change");
     // The record was still stored and the restart requested.
-    assert!(act.store().has_record(&fd));
+    assert!(act.store().borrow().has_record(&fd));
     assert!(fd.has_restart_pending());
 }
 
@@ -302,7 +304,7 @@ fn linear_equality_chain_is_not_a_switch() {
 
     let mut act = ActionLowerSwitchDetect::new(true, "base");
     assert_eq!(act.detect(&mut fd), 0, "linear equality chain rejected (no range node)");
-    assert!(!act.store().has_record(&fd));
+    assert!(!act.store().borrow().has_record(&fd));
 }
 
 #[test]
@@ -328,7 +330,7 @@ fn too_few_cases_rejected() {
 
     let mut act = ActionLowerSwitchDetect::new(true, "base");
     assert_eq!(act.detect(&mut fd), 0, "fewer than 3 cases rejected");
-    assert!(!act.store().has_record(&fd));
+    assert!(!act.store().borrow().has_record(&fd));
 }
 
 // -----------------------------------------------------------------------------
@@ -434,7 +436,7 @@ fn install_gate_off_is_inert() {
     let mut fd = build_fd();
     let mut act = ActionLowerSwitchInstall::new(false, "base"); // gate off
     let rec = sample_record(&fd);
-    act.store_mut().push(&fd, rec);
+    act.store_mut().borrow_mut().push(&fd, rec);
     // Even with a record present, the gate-off install declines.
     assert_eq!(act.install(&mut fd), 0);
 }
@@ -443,19 +445,20 @@ fn install_gate_off_is_inert() {
 fn install_no_record_short_circuits() {
     let mut fd = build_fd();
     let mut act = ActionLowerSwitchInstall::new(true, "base"); // gate on, empty store
-    assert!(!act.store().has_record(&fd));
+    assert!(!act.store().borrow().has_record(&fd));
     assert_eq!(act.install(&mut fd), 0);
 }
 
 #[test]
-fn install_with_record_declines_at_surgery_seam() {
+fn install_with_record_declines_when_cfg_does_not_match() {
     let mut fd = build_fd();
     let mut act = ActionLowerSwitchInstall::new(true, "base");
     let rec = sample_record(&fd);
-    act.store_mut().push(&fd, rec);
-    assert!(act.store().has_record(&fd), "the record is present");
-    // The store lookup succeeds; the install declines at the W7/W4 CFG-surgery
-    // seam (Funcdata::kunaInstallLoweredSwitch unported).
+    act.store_mut().borrow_mut().push(&fd, rec);
+    assert!(act.store().borrow().has_record(&fd), "the record is present");
+    // The store lookup succeeds, but the empty test `fd` has no block whose
+    // terminator is at the recorded branch address, so the surgery declines
+    // gracefully (Ok(None)) rather than corrupting the CFG.
     assert_eq!(act.install(&mut fd), 0);
 }
 
@@ -464,7 +467,7 @@ fn install_apply_leaves_count_zero() {
     let mut fd = build_fd();
     let mut act = ActionLowerSwitchInstall::new(true, "base");
     let rec = sample_record(&fd);
-    act.store_mut().push(&fd, rec);
+    act.store_mut().borrow_mut().push(&fd, rec);
     let mut ctx = ActionContext::default();
     let res = act.apply(&mut fd, &mut ctx);
     assert_eq!(res, 0);

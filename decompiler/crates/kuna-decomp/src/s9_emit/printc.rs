@@ -2701,10 +2701,18 @@ impl PrintC {
                 self.emit.spaces(1, 0);
                 // pushConstant(val, ct, casetoken, 0, op, displayFormat); recurse();
                 let sz = self.switch_var_size(fd, blk);
-                if let Some(op) = firstop {
-                    self.push_constant_ir(val, sz, op);
-                } else if let Some(op) = self.any_op(fd, case.block) {
-                    self.push_constant_ir(val, sz, op);
+                // (kuna) Render the label signed when the recovered switch variable
+                // is signed (the lowered-switch install records this on the table;
+                // the C++ derives it from `getSwitchType()`'s signedness).
+                let signed = jt_index
+                    .map(|j| fd.get_jump_table(j as int4).kuna_has_signed_labels())
+                    .unwrap_or(false);
+                if let Some(op) = firstop.or_else(|| self.any_op(fd, case.block)) {
+                    if signed {
+                        self.push_constant_ir_fmt_sign(val, sz, op, display_format::NONE, true);
+                    } else {
+                        self.push_constant_ir(val, sz, op);
+                    }
                 }
                 self.recurse();
                 self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);

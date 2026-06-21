@@ -1828,6 +1828,319 @@ impl Funcdata {
         self.jumpvec_slice()
     }
 
+    /// Recover the switch-variable Varnode read by the head's comparison (the
+    /// non-constant operand of the comparison that writes the CBRANCH boolean).
+    /// Peels transparent COPY/CAST/ZEXT/SEXT/zero-SUBPIECE ops so the BRANCHIND
+    /// reads the canonical switch value (the `canonSwitchVar` analog).  Returns the
+    /// canonical Varnode, or `None` if the head is not a comparison-on-constant.
+    fn kuna_head_switch_var(&self, cbranch: OpId, var_addr: &Address) -> Option<VarnodeId> {
+        let boolvn = self.obank().get(cbranch)?.get_in(1)?;
+        let cmp = self.vbank().get(boolvn)?.get_def()?;
+        let v0 = self.obank().get(cmp)?.get_in(0)?;
+        let v1 = self.obank().get(cmp)?.get_in(1)?;
+        // The switch variable is the non-constant operand.
+        let mut vn = if self.vbank().get(v0).map(|v| v.is_constant()).unwrap_or(false) {
+            v1
+        } else {
+            v0
+        };
+        // Peel transparent ops (bounded, the canonSwitchVar guard).
+        for _ in 0..8 {
+            let v = match self.vbank().get(vn) {
+                Some(v) => v,
+                None => break,
+            };
+            if v.is_constant() || !v.is_written() {
+                break;
+            }
+            let def = match v.get_def() {
+                Some(d) => d,
+                None => break,
+            };
+            let oc = self.obank().get(def).map(|o| o.code());
+            match oc {
+                Some(OpCode::CPUI_COPY)
+                | Some(OpCode::CPUI_CAST)
+                | Some(OpCode::CPUI_INT_ZEXT)
+                | Some(OpCode::CPUI_INT_SEXT) => {
+                    match self.obank().get(def).and_then(|o| o.get_in(0)) {
+                        Some(nv) => vn = nv,
+                        None => break,
+                    }
+                }
+                Some(OpCode::CPUI_SUBPIECE) => {
+                    let in1 = self.obank().get(def).and_then(|o| o.get_in(1));
+                    let zero = in1
+                        .and_then(|i| self.vbank().get(i))
+                        .map(|v| v.is_constant() && v.get_offset() == 0)
+                        .unwrap_or(false);
+                    if zero {
+                        match self.obank().get(def).and_then(|o| o.get_in(0)) {
+                            Some(nv) => vn = nv,
+                            None => break,
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        let _ = var_addr;
+        Some(vn)
+    }
+
+    /// Find the basic block whose first address is `addr` (the install's
+    /// target-block locator; the cascade record stores block START addresses).
+    fn kuna_block_at_start(&self, addr: &Address) -> Option<BlockId> {
+        let n = self.bblocks_get_size();
+        for i in 0..n {
+            let bl = self.bblocks_get_block(i);
+            if self.bblocks_ref().block(bl).get_type() != crate::block::BlockType::Basic {
+                continue;
+            }
+            if &crate::block::block_get_start(&self.bblocks_ref().arena, bl) == addr {
+                return Some(bl);
+            }
+        }
+        None
+    }
+
+    /// Find the basic block whose terminating op is at address `addr` (the
+    /// cascade head, recorded as `branch_addr` = the head CBRANCH's op address).
+    fn kuna_block_with_tail_at(&self, addr: &Address) -> Option<BlockId> {
+        let n = self.bblocks_get_size();
+        for i in 0..n {
+            let bl = self.bblocks_get_block(i);
+            if self.bblocks_ref().block(bl).get_type() != crate::block::BlockType::Basic {
+                continue;
+            }
+            if let Some(tail) = self.bb_op_tail(bl) {
+                if self.obank().get(tail).map(|o| o.get_addr()) == Some(addr) {
+                    return Some(bl);
+                }
+            }
+        }
+        None
+    }
+
+    /// (kuna) Manufacture the S2 switch artifact from a recovered lowered
+    /// comparison cascade (C++ `Funcdata::kunaInstallLoweredSwitch`,
+    /// `kuna_loweredswitch.cc:463`).
+    ///
+    /// Runs pre-SSA on the restart pass (`ActionLowerSwitchInstall::apply`, before
+    /// `ActionHeritage`).  It:
+    ///   1. finds the cascade head (the block whose terminating op is at
+    ///      `branch_addr`);
+    ///   2. resolves the distinct target blocks (the case bodies + the default)
+    ///      by their recorded start addresses;
+    ///   3. rewires the head: drops its out-edges, replaces the trailing CBRANCH
+    ///      with a `BRANCHIND(V)` over a fresh Varnode at the switch-variable
+    ///      storage (heritage renames it to the value reaching the head), and adds
+    ///      one out-edge per distinct target (cases first, default last);
+    ///   4. sweeps the now-orphaned comparison-cascade spine
+    ///      (`removeUnreachableBlocks`);
+    ///   5. builds a fully-labelled, trivial-model `JumpTable` in `jumpvec` linked
+    ///      to the new BRANCHIND so the existing structurer + printer emit a
+    ///      `switch`.
+    ///
+    /// Returns `Ok(Some(jt_index))` on success, `Ok(None)` if the CFG no longer
+    /// matches the record (e.g. the head/targets were merged away — install
+    /// declines gracefully rather than corrupting the CFG).
+    #[allow(clippy::too_many_arguments)]
+    pub fn kuna_install_lowered_switch(
+        &mut self,
+        branch_addr: &Address,
+        var_addr: &Address,
+        var_size: int4,
+        case_vals: &[kuna_base::types::uintb],
+        case_targets: &[Address],
+        default_target: &Address,
+    ) -> KunaResult<Option<usize>> {
+        use kuna_base::types::uintb;
+
+        // Don't re-install if a table already exists for this branch address.
+        if self.jumpvec_ref().iter().any(|jt| jt.get_op_address() == branch_addr) {
+            return Ok(None);
+        }
+
+        // (1) Locate the cascade head block.
+        let head = match self.kuna_block_with_tail_at(branch_addr) {
+            Some(h) => h,
+            None => return Ok(None),
+        };
+
+        // (2) Build the ordered distinct out-edge target list: each distinct case
+        // target (in first-seen order), then the default last.  Record, per
+        // out-edge, a representative case label (the printer emits one `case` per
+        // address-table entry; duplicate-valued cases collapse to the same edge,
+        // and the C++ trivial recovery emits one label per edge).
+        let mut out_targets: Vec<Address> = Vec::new();
+        let mut out_label: Vec<uintb> = Vec::new();
+        let mut out_is_default: Vec<bool> = Vec::new();
+
+        for (i, tgt) in case_targets.iter().enumerate() {
+            if tgt == default_target {
+                continue; // a case that coincides with the default folds away
+            }
+            if out_targets.iter().any(|a| a == tgt) {
+                continue; // duplicate target: keep the first label
+            }
+            out_targets.push(tgt.clone());
+            out_label.push(case_vals[i]);
+            out_is_default.push(false);
+        }
+        // Default out-edge last.
+        out_targets.push(default_target.clone());
+        out_label.push(0);
+        out_is_default.push(true);
+
+        // Resolve every target to a live basic block; if any is missing the CFG no
+        // longer matches — decline.
+        let mut out_blocks: Vec<BlockId> = Vec::with_capacity(out_targets.len());
+        for tgt in &out_targets {
+            match self.kuna_block_at_start(tgt) {
+                Some(b) => out_blocks.push(b),
+                None => return Ok(None),
+            }
+        }
+        // Need at least 2 case edges + a default for a switch.
+        if out_blocks.len() < 3 {
+            return Ok(None);
+        }
+
+        // The head's trailing op must be the recorded CBRANCH.
+        let cbranch = match self.bb_op_tail(head) {
+            Some(o) => o,
+            None => return Ok(None),
+        };
+        if self.obank().get(cbranch).map(|o| o.code()) != Some(OpCode::CPUI_CBRANCH) {
+            return Ok(None);
+        }
+
+        // Recover the live switch-variable Varnode from the head comparison BEFORE
+        // any surgery: the CBRANCH's boolean input is written by a comparison whose
+        // non-constant operand is the switch variable.  Reusing that exact Varnode
+        // (rather than a fresh free read of `var_addr`) keeps its full def-use chain
+        // intact so heritage threads SSA through it and the printer names it.
+        let swvn = self.kuna_head_switch_var(cbranch, var_addr);
+        // The comparison op writing the CBRANCH boolean (destroyed below so the
+        // switch variable is read only by the new BRANCHIND at heritage time —
+        // heritage's `guard` requires a free read to have exactly one descendant).
+        let head_cmp = self
+            .obank()
+            .get(cbranch)
+            .and_then(|o| o.get_in(1))
+            .and_then(|b| self.vbank().get(b))
+            .and_then(|v| v.get_def());
+
+        // (3) Rewire the head block.
+        //
+        // Sever ALL of the head's existing out-edges.  branch_remove_internal
+        // destroys the CBRANCH on the first call (sizeOut()==2); subsequent calls
+        // just drop edges.  We run pre-SSA (no MULTIEQUALs yet), so this is a clean
+        // edge drop with no phi patch-up.
+        while self.bblocks_ref().block(head).size_out() > 0 {
+            self.branch_remove_internal(head, 0)?;
+        }
+        // Destroy the now-dead head comparison chain (its boolean fed only the
+        // destroyed CBRANCH) so the switch variable's sole remaining reader is the
+        // BRANCHIND we add next.  op_destroy_recursive drops the comparison and any
+        // transparent peel ops that become dead, but stops at live Varnodes (so the
+        // recovered switch variable's def survives).
+        if let Some(cmp) = head_cmp {
+            if self.obank().get(cmp).is_some() {
+                let mut scratch: Vec<OpId> = Vec::new();
+                self.op_destroy_recursive(cmp, &mut scratch);
+            }
+        }
+
+        // Build the BRANCHIND at the head's branch address over the recovered
+        // switch variable (falling back to a fresh free read of `var_addr` if the
+        // head comparison did not yield a still-live Varnode — heritage then
+        // renames it).
+        let swvn = match swvn {
+            Some(v) if self.vbank().get(v).is_some() => v,
+            _ => self.new_varnode(var_size, var_addr, None),
+        };
+        let newop = self.new_op(1, branch_addr.clone());
+        self.op_set_opcode_code(newop, OpCode::CPUI_BRANCHIND);
+        self.op_set_input(newop, swvn, 0)?;
+        // Append the BRANCHIND as the head's terminator (the branch flag marks the
+        // block is_switch_out, the same path bb_insert_op uses).
+        self.bb_insert_op(newop, head, None);
+
+        // Add one out-edge per distinct target, in (case…, default) order.  The
+        // out-edge index equals the order of insertion.
+        for &tb in &out_blocks {
+            self.bblocks_mut().add_edge(head, tb);
+        }
+
+        // (4) Sweep the now-unreachable comparison-cascade spine.  structure_reset
+        // recomputes dominators so removeUnreachableBlocks can find the orphans.
+        self.structure_reset();
+        self.remove_unreachable_blocks(false, true)?;
+
+        // Re-find the head after the sweep (block ids are stable, but be defensive)
+        // and build the table against its post-sweep out-edge indices.
+        let head = match self.kuna_block_with_tail_at(branch_addr) {
+            Some(h) => h,
+            None => return Ok(None),
+        };
+        let nout = self.bblocks_ref().block(head).size_out();
+        if nout as usize != out_blocks.len() {
+            return Ok(None);
+        }
+
+        // (5) Build the JumpTable: one address-table entry per out-edge, mapped to
+        // its out-edge index; the case label is the representative constant; the
+        // default out-edge is recorded as the table's default block.
+        let indop = self
+            .bb_op_tail(head)
+            .ok_or_else(|| KunaError::lowlevel("install: head lost its BRANCHIND"))?;
+        let opaddr = self.obank().get(indop).unwrap().get_addr().clone();
+        let mut jt = crate::jumptable::JumpTable::new(opaddr.clone());
+        jt.set_indirect_op_addr(indop, opaddr);
+        jt.kuna_set_trivial_model();
+
+        let mut default_out_index: int4 = -1;
+        for oi in 0..nout {
+            let outbl = self.bblocks_ref().block(head).get_out(oi);
+            let start = crate::block::block_get_start(&self.bblocks_ref().arena, outbl);
+            let mut lab: uintb = 0;
+            let mut isdef = false;
+            for k in 0..out_blocks.len() {
+                if out_blocks[k] == outbl {
+                    lab = out_label[k];
+                    isdef = out_is_default[k];
+                    break;
+                }
+            }
+            if isdef {
+                default_out_index = oi;
+            }
+            jt.kuna_push_entry(start, oi, lab);
+        }
+        jt.kuna_finalize(default_out_index);
+        jt.mark_complete();
+
+        // Render case labels signed when any recovered case constant is negative
+        // in the switch-variable width (the cascade used signed comparisons over a
+        // signed `int` switch value — the getopt-return idiom; the C++ derives this
+        // from `getSwitchType()`).
+        let signbit = if var_size >= 8 {
+            1u64 << 63
+        } else {
+            1u64 << (var_size * 8 - 1)
+        };
+        let signed = case_vals.iter().any(|&v| (v & signbit) != 0);
+        jt.kuna_set_signed_labels(signed);
+
+        self.jumpvec_mut().push(jt);
+        let idx = self.num_jump_tables() as usize - 1;
+        Ok(Some(idx))
+    }
+
     /// Test whether the given Varnode holds the function's return address (C++
     /// `Funcdata::testForReturnAddress`, `funcdata_varnode.cc:1463`).
     ///

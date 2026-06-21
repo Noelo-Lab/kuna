@@ -3061,6 +3061,11 @@ pub struct JumpTable {
     /// The \e default block is the target of a folded CBRANCH (cannot have a
     /// label) (C++ `defaultIsFolded`).
     default_is_folded: bool,
+    /// (kuna) Render case labels as signed integers.  Set by the lowered-switch
+    /// install when the recovered switch variable is signed (the C++ derives this
+    /// from `getSwitchType()`; a kuna hand-built table records it directly because
+    /// the synthesized BRANCHIND input may not carry the recovered signed type).
+    kuna_signed_labels: bool,
 }
 
 impl JumpTable {
@@ -3087,6 +3092,7 @@ impl JumpTable {
             partial_table: false,
             collectloads: false,
             default_is_folded: false,
+            kuna_signed_labels: false,
         }
     }
 
@@ -3115,6 +3121,7 @@ impl JumpTable {
             partial_table: op2.partial_table,
             collectloads: op2.collectloads,
             default_is_folded: false,
+            kuna_signed_labels: op2.kuna_signed_labels,
         }
     }
 
@@ -3146,6 +3153,49 @@ impl JumpTable {
     /// Mark whatever is recovered so far as the complete table (C++ `markComplete`).
     pub fn mark_complete(&mut self) {
         self.partial_table = false;
+    }
+
+    /// (kuna) Attach a trivial (non-override) model to a hand-built table (C++
+    /// `JumpTable::kunaSetTrivialModel`, `jumptable.cc`).
+    ///
+    /// The lowered-switch install manufactures the `addresstable`/`label`/
+    /// `block2addr` directly from the recovered cascade, so the table never goes
+    /// through `recoverModel`.  A [`JumpModelTrivial`] makes the model-bearing
+    /// queries (`isOverride`, the `clear` path) behave as for a recovered switch
+    /// without re-deriving anything from the BRANCHIND.
+    pub fn kuna_set_trivial_model(&mut self) {
+        self.jmodel = Some(Box::new(JumpModelTrivial::new()));
+    }
+
+    /// (kuna) Append one explicit (target-start, out-edge-index, label) entry to
+    /// a hand-built table (the install's `addBlockToSwitch` analog, but taking the
+    /// target block's start address + out-edge index directly so the caller need
+    /// not re-resolve them through `getParent()->sizeOut()`).
+    pub fn kuna_push_entry(&mut self, target_start: Address, out_index: int4, lab: uintb) {
+        self.addresstable.push(target_start);
+        self.last_block = out_index;
+        self.block2addr
+            .push(IndexPair::new(out_index, self.addresstable.len() as int4 - 1));
+        self.label.push(lab);
+    }
+
+    /// (kuna) Finalize a hand-built table: sort `block2addr` (by out-edge then
+    /// address index, the `switchOver` post-condition the structurer/printer rely
+    /// on) and record the default out-edge.
+    pub fn kuna_finalize(&mut self, default_out_index: int4) {
+        self.block2addr.sort();
+        self.default_block = default_out_index;
+        self.partial_table = false;
+    }
+
+    /// (kuna) Mark/query whether case labels should render as signed integers.
+    pub fn kuna_set_signed_labels(&mut self, signed: bool) {
+        self.kuna_signed_labels = signed;
+    }
+
+    /// (kuna) Whether case labels for this table render as signed integers.
+    pub fn kuna_has_signed_labels(&self) -> bool {
+        self.kuna_signed_labels
     }
 
     /// Return the size of the address table for \b this jump-table
