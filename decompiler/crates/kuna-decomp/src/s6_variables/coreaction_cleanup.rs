@@ -833,6 +833,152 @@ fn base_explicit(data: &Funcdata, vn: crate::seams::VarnodeId, mut maxref: int4)
     desccount
 }
 
+/// One entry of the `processMultiplier` expression-walk stack (C++
+/// `ActionMarkExplicit::OpStackElement`, `coreaction.cc:3140`).
+struct OpStackElement {
+    /// The Varnode at this point in the path.
+    vn: crate::seams::VarnodeId,
+    /// Slot of the first input Varnode to traverse in this subexpression.
+    slot: int4,
+    /// Slot(+1) of the last input Varnode to traverse in this subexpression.
+    slotback: int4,
+}
+
+impl OpStackElement {
+    /// C++ `OpStackElement::OpStackElement(Varnode *v)` (`coreaction.cc:3140`).
+    fn new(data: &Funcdata, vn: crate::seams::VarnodeId) -> OpStackElement {
+        let mut slot = 0;
+        let mut slotback = 0;
+        let v = data.vbank().get(vn).expect("OpStackElement: stale vn");
+        if v.is_written() {
+            let def = v.get_def().expect("OpStackElement: written vn w/o def");
+            let dop = data.obank().get(def).expect("OpStackElement: stale def");
+            let opc = dop.code();
+            if opc == OpCode::CPUI_LOAD {
+                slot = 1;
+                slotback = 2;
+            } else if opc == OpCode::CPUI_PTRADD {
+                slotback = 1; // Don't traverse the multiplier slot
+            } else if opc == OpCode::CPUI_SEGMENTOP {
+                slot = 2;
+                slotback = 3;
+            } else {
+                slotback = dop.num_input() as int4;
+            }
+        }
+        OpStackElement { vn, slot, slotback }
+    }
+}
+
+/// For a given multi-descendant Varnode, decide if it should be explicit by
+/// counting the terminal terms duplicated through its expression (C++
+/// `ActionMarkExplicit::processMultiplier`, `coreaction.cc:3211`).
+fn process_multiplier(data: &mut Funcdata, vn: crate::seams::VarnodeId, max: int4) {
+    let mut opstack: Vec<OpStackElement> = vec![OpStackElement::new(data, vn)];
+    let mut finalcount = 0;
+    while let Some(top) = opstack.last_mut() {
+        let vncur = top.vn;
+        let v = data.vbank().get(vncur).expect("processMultiplier: stale vncur");
+        let isaterm = v.is_explicit() || !v.is_written();
+        if isaterm || (top.slotback <= top.slot) {
+            // Trimming condition.
+            if isaterm {
+                if !v.is_spacebase() {
+                    finalcount += 1; // Don't count space base
+                }
+            }
+            if finalcount > max {
+                let m = data.vbank_mut().get_mut(vn).expect("processMultiplier: stale vn");
+                m.set_explicit(); // Make this variable explicit
+                m.clear_implied();
+                return;
+            }
+            opstack.pop();
+        } else {
+            let def = v.get_def().expect("processMultiplier: written vncur w/o def");
+            let slot = top.slot;
+            top.slot += 1;
+            let newvn = data
+                .obank()
+                .get(def)
+                .expect("processMultiplier: stale def")
+                .get_in(slot)
+                .expect("processMultiplier: null input");
+            if data.vbank().get(newvn).map(|x| x.is_mark()).unwrap_or(false) {
+                // An ancestor is marked (also possibly an implied with multiple
+                // descendants) -> automatically consider this to be explicit.
+                let m = data.vbank_mut().get_mut(vn).expect("processMultiplier: stale vn");
+                m.set_explicit();
+                m.clear_implied();
+            }
+            opstack.push(OpStackElement::new(data, newvn));
+        }
+    }
+}
+
+/// Find multiple-descendant chains and promote interacting implieds to explicit
+/// (C++ `ActionMarkExplicit::multipleInteraction`, `coreaction.cc:3177`).
+/// Returns the number of Varnodes promoted to explicit.
+fn multiple_interaction(data: &mut Funcdata, multlist: &[crate::seams::VarnodeId]) -> int4 {
+    let mut purgelist: Vec<crate::seams::VarnodeId> = Vec::new();
+    for &vn in multlist {
+        // All elements in this list should have a defining op.
+        let def = data
+            .vbank()
+            .get(vn)
+            .and_then(|v| v.get_def())
+            .expect("multipleInteraction: multlist vn w/o def");
+        let dop = data.obank().get(def).expect("multipleInteraction: stale def");
+        let opc = dop.code();
+        if dop.is_bool_output()
+            || opc == OpCode::CPUI_INT_ZEXT
+            || opc == OpCode::CPUI_INT_SEXT
+            || opc == OpCode::CPUI_PTRADD
+        {
+            let mut maxparam = 2;
+            let ni = dop.num_input() as int4;
+            if ni < maxparam {
+                maxparam = ni;
+            }
+            for j in 0..maxparam {
+                let topvn = match data.obank().get(def).unwrap().get_in(j) {
+                    Some(t) => t,
+                    None => continue,
+                };
+                let tv = data.vbank().get(topvn).expect("multipleInteraction: stale topvn");
+                if tv.is_mark() {
+                    // A "multiple" interaction between -topvn- and -vn-.
+                    let mut topopc = OpCode::CPUI_COPY;
+                    if tv.is_written() {
+                        let tdef = tv.get_def().expect("multipleInteraction: written topvn w/o def");
+                        let tdop = data.obank().get(tdef).expect("multipleInteraction: stale tdef");
+                        if tdop.is_bool_output() {
+                            continue; // Try not to make boolean outputs explicit
+                        }
+                        topopc = tdop.code();
+                    }
+                    if opc == OpCode::CPUI_PTRADD {
+                        if topopc == OpCode::CPUI_PTRADD {
+                            purgelist.push(topvn);
+                        }
+                    } else {
+                        purgelist.push(topvn);
+                    }
+                }
+            }
+        }
+    }
+
+    let n = purgelist.len() as int4;
+    for vn in purgelist {
+        let m = data.vbank_mut().get_mut(vn).expect("multipleInteraction: stale purge vn");
+        m.set_explicit();
+        m.clear_implied();
+        m.clear_mark();
+    }
+    n
+}
+
 /// Find *explicit* Varnodes — those that have an explicit token representing them
 /// in the output (C++ `ActionMarkExplicit`, `coreaction.cc:3340`).
 pub struct ActionMarkExplicit {
@@ -893,12 +1039,21 @@ impl Action for ActionMarkExplicit {
         }
         // multipleInteraction(multlist) / processMultiplier(multlist,maxdup):
         // the term-duplication refinement that promotes some >1-descendant
-        // implieds to explicit.  Taking the conservative C++-default path (leave
-        // them implied) is faithful for the single-descendant boolless shape and
-        // for any function where no multi-descendant implied chain exists; the
-        // refinement is the documented next layer.  Clear the marks set above so
-        // no stray Varnode::mark escapes into later passes (C++ clears them at
-        // the tail of apply).
+        // implieds to explicit (C++ coreaction.cc:3348-3357).  Now ported (gh1276,
+        // gh9218): an implied Varnode that interacts with a marked ancestor through
+        // a bool/zext/sext/ptradd op, or whose duplicated expression exceeds
+        // `max_term_duplication`, is forced explicit so it gets its own named local
+        // instead of being inlined into every use.
+        count += multiple_interaction(data, &multlist);
+        let maxdup = data.get_arch().max_term_duplication;
+        for &vn in &multlist {
+            // Mark may have been cleared by multipleInteraction.
+            if data.vbank().get(vn).map(|v| v.is_mark()).unwrap_or(false) {
+                process_multiplier(data, vn, maxdup);
+            }
+        }
+        // Clear the marks set above so no stray Varnode::mark escapes into later
+        // passes (C++ clears them at the tail of apply).
         for vn in &multlist {
             data.vbank_mut().get_mut(*vn).expect("markexplicit clearmark").clear_mark();
         }

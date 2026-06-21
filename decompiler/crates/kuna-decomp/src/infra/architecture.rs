@@ -896,6 +896,7 @@ impl Architecture {
         seam.default_return_addr = self.default_return_addr.clone();
         seam.trim_recurse_max = self.trim_recurse_max;
         seam.max_implied_ref = self.max_implied_ref;
+        seam.max_term_duplication = self.max_term_duplication;
         seam.return_single = self.return_single;
         // (kuna GH-9218) carry the unjustified-input forward-absorb gate so
         // `ActionUnjustifiedParams` reaches it via `glb`.

@@ -1708,9 +1708,28 @@ impl Funcdata {
                 }
             }
         }
-        // C++ `if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }` — the
-        // cover rebuild is driven separately by the cross-arena `updateCover`
-        // (the lazy `coverdirty` walk), so nothing to do here.
+        // C++ `if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }`
+        // (funcdata_varnode.cc:42).  This ALLOCATES the Varnode's Cover object (and
+        // sets `coverdirty`) the first time `setVarnodeProperties` runs on a
+        // covered, high-enabled Varnode — for example the fresh `newUnique` output
+        // of a `Merge::allocateCopyTrim` COPY, which `opSetOutput` routes through
+        // here right after `setDef` marks it written.  Without this, the trim
+        // COPY's `cover` field stays `None`; the lazy `Varnode::updateCover`
+        // (`update_varnode_cover`) only rebuilds a cover it can clone out (i.e. a
+        // `Some(_)`), so a `None` cover never gets rebuilt and the Varnode
+        // contributes an EMPTY cover to its HighVariable.  That fragments a
+        // register's merged high (the loop-counter phi-temps lose their back-edge
+        // span), letting an unrelated same-typed value speculatively merge into it
+        // — the gh1276 / gh9218 cover-fragmentation bug.  (kuna fix)
+        let needs_calc = match self.vbank().get(vn) {
+            Some(v) => v.cover().is_none(),
+            None => return,
+        };
+        if needs_calc && self.is_high_on() {
+            if let Some(v) = self.vbank_mut().get_mut(vn) {
+                v.calc_cover();
+            }
+        }
     }
 
     // -----------------------------------------------------------------------

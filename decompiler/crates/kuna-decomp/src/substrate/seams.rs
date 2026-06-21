@@ -473,6 +473,11 @@ pub struct Architecture {
     /// explicit (C++ `Architecture::max_implied_ref`, default 2).  Drives
     /// `ActionMarkExplicit::baseExplicit`.
     pub max_implied_ref: int4,
+    /// Maximum number of duplicating terms allowed in an implied expression
+    /// before the multi-descendant Varnode is forced explicit (C++
+    /// `Architecture::max_term_duplication`, default 2).  Drives
+    /// `ActionMarkExplicit::processMultiplier`.
+    pub max_term_duplication: int4,
     /// (kuna) GH-6990: keep only the first return register (C++ `return_single`).
     pub return_single: bool,
     /// (kuna GH-9218) When adjusting an unjustified input parameter container,
@@ -678,6 +683,8 @@ impl Architecture {
             trim_recurse_max: 5,
             // C++ Architecture default: max_implied_ref = 2 (resetDefaults).
             max_implied_ref: 2,
+            // C++ Architecture default: max_term_duplication = 2 (resetDefaults).
+            max_term_duplication: 2,
             return_single: false,
             // (kuna) GH-9218 DIV-3 default-on; the real value is copied from the
             // engine Architecture in `build_arch_handle`.
