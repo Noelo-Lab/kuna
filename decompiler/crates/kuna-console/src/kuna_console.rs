@@ -69,6 +69,7 @@ use crate::interface::{
 };
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::kuna_assert::{validate_assertion, AssertLog, Dispatch, KunaAssertion};
+use kuna_decomp::kuna_regionid::KunaRegionIdentifier;
 use kuna_decomp::kuna_stages::{
     emit_catalog_json, emit_catalog_json_one, kuna_group_by_index, kuna_num_groups,
     kuna_num_substages, kuna_num_surfaces, kuna_substage_by_index, kuna_surface_by_index,
@@ -426,15 +427,29 @@ pub struct IfcKunaStageStatus;
 impl IfaceCommandAction for IfcKunaStageStatus {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No load image present"));
-        }
-        // C++: allacts.getCurrentName() + present_lessequal are expressible, but
-        // the arraynotation line needs conf->print (PrintC::getArrayNotation),
-        // which is SEAM(W8).
-        Err(engine_unavailable(
-            "Architecture::print (PrintC::getArrayNotation) for the arraynotation status line",
-        ))
+        let conf = match dcp.conf.as_ref() {
+            Some(c) => c.arch(),
+            None => return Err(IfaceError::execution("No load image present")),
+        };
+        // C++ IfcKunaStageStatus::execute:
+        //   *optr << "pipeline variant: " << allacts.getCurrentName() << endl;
+        //   *optr << "compareform: " << (present_lessequal ? "original" : "canonical") << endl;
+        //   *optr << "arraynotation: " << (print->getArrayNotation() ? "on" : "off") << endl;
+        let mut os = String::new();
+        os.push_str("pipeline variant: ");
+        os.push_str(conf.allacts.get_current_name());
+        os.push('\n');
+        os.push_str("compareform: ");
+        os.push_str(if conf.present_lessequal { "original" } else { "canonical" });
+        os.push('\n');
+        os.push_str("arraynotation: ");
+        os.push_str(if conf.print().options.array_notation() { "on" } else { "off" });
+        os.push('\n');
+        // C++ writes the bulk stream (`*status->fileoptr`); the datatest harness
+        // sets `fileoptr` to the matched bulk buffer (the interactive console
+        // falls back to stdout when no `openfile` redirect is active).
+        status.file_out(&os);
+        Ok(())
     }
     fn module(&self) -> String {
         DECOMPILE_MODULE.to_string()
@@ -593,7 +608,7 @@ impl IfaceCommandAction for IfcKunaAssert {
             Some(fd) => fd.get_name().to_string(),
             None => "(global)".to_string(),
         };
-        let _record = KunaAssertion {
+        let record = KunaAssertion {
             func_name,
             stage: validated.stage,
             substage: validated.substage.clone(),
@@ -601,6 +616,26 @@ impl IfaceCommandAction for IfcKunaAssert {
             strength: validated.requested,
             applied: validated.applied,
             rewind: validated.rewind,
+        };
+
+        // C++ `kassert applied:` confirmation line (written to `*optr`), emitted
+        // after a routable store mutation succeeds:
+        //   "kassert applied: [" << code(stage) << "] " << substage [<< ' ' << args]
+        //     << "  rewind->" << code(rewind) << " (Ghidra-actual: whole-function)"
+        let applied_line = {
+            let mut s = String::new();
+            s.push_str("kassert applied: [");
+            s.push_str(record.stage.code());
+            s.push_str("] ");
+            s.push_str(&record.substage);
+            if !record.args.is_empty() {
+                s.push(' ');
+                s.push_str(&record.args);
+            }
+            s.push_str("  rewind->");
+            s.push_str(record.rewind.code());
+            s.push_str(" (Ghidra-actual: whole-function)\n");
+            s
         };
 
         // Dispatch: the store mutation. The LATENT/unroutable arms touch no store
@@ -644,12 +679,68 @@ impl IfaceCommandAction for IfcKunaAssert {
             Dispatch::Isolate => Err(engine_unavailable(
                 "Symbol::setIsolated (IfaceDecompData::readSymbol) for kassert merge-aggressiveness",
             )),
-            Dispatch::Rename => Err(engine_unavailable(
-                "Scope::renameSymbol (IfaceDecompData::readSymbol) for kassert naming-policy",
-            )),
-            Dispatch::Option(name) => Err(engine_unavailable(&format!(
-                "OptionDatabase::set (option {name}, Architecture: ArchOptionContext) for kassert"
-            ))),
+            Dispatch::Rename => {
+                // C++ kassert naming-policy -> Scope::renameSymbol + namelock,
+                // exactly like IfcRename (ifacedecomp.rs IfcRename::execute):
+                //   readSymbol(oldname) -> getScopeLocal()->renameSymbol(sym,newname)
+                //   -> setAttribute(sym, namelock|typelock).
+                use kuna_decomp::varnode::varnode_flags;
+                if tokens.len() < 2 {
+                    return Err(IfaceError::parse(
+                        "naming-policy assertion needs <oldname> <newname>",
+                    ));
+                }
+                let oldname = tokens[0].clone();
+                let newname = tokens[1].clone();
+                let dcp = dcp_mut(status)?;
+                let sym_list = dcp.read_symbol(&oldname)?;
+                if sym_list.is_empty() {
+                    return Err(IfaceError::execution(format!("No symbol named: {oldname}")));
+                }
+                if sym_list.len() > 1 {
+                    return Err(IfaceError::execution(format!(
+                        "More than one symbol named: {oldname}"
+                    )));
+                }
+                let sym = sym_list[0];
+                let fd = dcp.fd.as_mut().expect("read_symbol succeeded => fd present");
+                let lm = fd
+                    .get_scope_local_mut()
+                    .ok_or_else(|| IfaceError::execution("Function has no local scope"))?;
+                lm.rename_symbol(sym, &newname)
+                    .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+                lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+                status.out(&applied_line);
+                self.assert_log.borrow_mut().push(record);
+                Ok(())
+            }
+            Dispatch::Option(name) => {
+                // C++ kassert option -> OptionDatabase::set (the kuna options are
+                // not in the OptionDatabase; `set_kuna_option` dispatches them into
+                // the live architecture flags — e.g. compareform original sets
+                // present_lessequal). Then emit the option's confirmation message
+                // and the `kassert applied:` line, and record the assertion.
+                if tokens.is_empty() {
+                    return Err(IfaceError::parse(format!(
+                        "option assertion for {name} needs a value"
+                    )));
+                }
+                let dcp = dcp_mut(status)?;
+                let conf = dcp
+                    .conf
+                    .as_mut()
+                    .expect("conf checked non-None at command entry");
+                let msg = conf
+                    .arch_mut()
+                    .set_kuna_option(name, &tokens[0])
+                    .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+                let mut out = msg;
+                out.push('\n');
+                out.push_str(&applied_line);
+                status.out(&out);
+                self.assert_log.borrow_mut().push(record);
+                Ok(())
+            }
         }
     }
     fn module(&self) -> String {
@@ -675,12 +766,19 @@ pub struct IfcKunaRestarts;
 impl IfaceCommandAction for IfcKunaRestarts {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
-            return Err(IfaceError::execution("No function selected"));
-        }
-        Err(engine_unavailable(
-            "kunaDumpRestarts (Architecture-owned RestartLog)",
-        ))
+        let fd = match dcp.fd.as_ref() {
+            Some(fd) => fd,
+            None => return Err(IfaceError::execution("No function selected")),
+        };
+        // C++: kunaDumpRestarts(*status->fileoptr, *dcp->fd) over the
+        // Architecture-owned RestartLog.
+        let conf = match dcp.conf.as_ref() {
+            Some(c) => c.arch(),
+            None => return Err(IfaceError::execution("No load image present")),
+        };
+        let text = conf.restart_log().render(fd);
+        status.file_out(&text);
+        Ok(())
     }
     fn module(&self) -> String {
         DECOMPILE_MODULE.to_string()
@@ -756,12 +854,55 @@ impl IfaceCommandAction for IfcKunaPipeline {
             status.out(&line);
             return Ok(());
         }
-        // The remainder (clearAnalysis, allacts.setCurrent/reset/perform/restore)
-        // is the reduced-pipeline decompile drive, not assembled at the
-        // Architecture level in the merged tree.
-        Err(engine_unavailable(
-            "ActionDatabase reduced-pipeline drive (clearAnalysis + getCurrent()->reset/perform)",
-        ))
+        // C++ reduced-pipeline sub-query: rebuild the IR, run the named action
+        // group as the current root, restore `decompile` (clearAnalysis +
+        // allacts.setCurrent/reset/perform/restore).  Mirror IfcDecompile's
+        // take-program pattern so the engine work borrows neither status nor dcp.
+        let (fname, has_no_code, proc_started, entry, size, mut prog) = {
+            let dcp = dcp_mut(status)?;
+            let fd = dcp.fd.as_ref().expect("fd checked Some above");
+            let info = (
+                fd.get_name().to_string(),
+                fd.has_no_code(),
+                fd.is_proc_started(),
+                fd.get_address().clone(),
+                fd.get_size(),
+            );
+            let prog = dcp.conf.take().expect("conf checked Some above");
+            (info.0, info.1, info.2, info.3, info.4, prog)
+        };
+        if has_no_code {
+            dcp_mut(status)?.conf = Some(prog);
+            status.out(&format!("No code for {fname}\n"));
+            return Ok(());
+        }
+        // C++: clearAnalysis notice if a prior decompilation exists.
+        if proc_started {
+            status.out("Clearing old decompilation\n");
+        }
+        status.out(&format!(
+            "Processing {fname} under reduced pipeline `{name}`\n"
+        ));
+        let result = kuna_decomp::decompile_drive::run_named_pipeline_variant(
+            prog.arch_mut(),
+            &fname,
+            entry,
+            size,
+            &name,
+        );
+        // Restore the program (and the reduced-pipeline Funcdata on success).
+        let dcp = dcp_mut(status)?;
+        dcp.conf = Some(prog);
+        match result {
+            Ok(fd) => {
+                dcp.fd = Some(fd);
+                status.out(
+                    "Sub-query complete (root action restored to `decompile`)\n",
+                );
+                Ok(())
+            }
+            Err(e) => Err(IfaceError::execution(e.explain().to_string())),
+        }
     }
     fn module(&self) -> String {
         DECOMPILE_MODULE.to_string()
@@ -800,11 +941,24 @@ impl IfaceCommandAction for IfcKunaQuality {
             status.file_out(&line);
             return Ok(());
         }
-        // The goto walk needs BlockGoto::gotoPrints (FlowBlock::nextFlowAfter,
-        // SEAM(W7)) for the `(printed: M)` count.
-        Err(engine_unavailable(
-            "BlockGoto::gotoPrints (FlowBlock::nextFlowAfter) for the goto-count metric",
-        ))
+        // C++ IfcKunaQuality: count gotos/multi-gotos/if-gotos over the
+        // structured tree (kunaCountGotos), report the goto-count quality signal.
+        let name = fd.get_name().to_string();
+        let basic_blocks = fd.bblocks_get_size();
+        let counts = fd.kuna_quality_counts();
+        let unstructured = counts.printed_gotos + counts.multigoto_edges + counts.ifgoto_edges;
+        let mut os = String::new();
+        os.push_str(&format!("Structure quality for {name}:\n"));
+        os.push_str(&format!("  basic blocks: {basic_blocks}\n"));
+        os.push_str(&format!(
+            "  goto nodes: {} (printed: {})\n",
+            counts.goto_nodes, counts.printed_gotos
+        ));
+        os.push_str(&format!("  multi-goto edges: {}\n", counts.multigoto_edges));
+        os.push_str(&format!("  if-goto edges: {}\n", counts.ifgoto_edges));
+        os.push_str(&format!("  unstructured total: {unstructured}\n"));
+        status.file_out(&os);
+        Ok(())
     }
     fn module(&self) -> String {
         DECOMPILE_MODULE.to_string()
@@ -826,20 +980,148 @@ impl IfaceCommandAction for IfcKunaQuality {
 /// sequences (the prefix surface the datatests rely on) and route through
 /// [`engine_unavailable`] after the `No function selected` guard.
 ///
-/// `entry` names the exact unported region adapter for the self-describing
-/// console error.
-struct IfcKunaRegionStub {
-    /// The unported entry point named in the `engine_unavailable` message.
-    entry: &'static str,
+/// Build a [`KunaRegionIdentifier`] from the current function's basic-block
+/// graph (the C++ `IfcKunaRegion*` `buildFromBlockGraph` adapter): one synthetic
+/// node per basic block (keyed on its start address) and one synthetic edge per
+/// CFG out-edge; the entry address is block 0's start.  Returns the computed
+/// identifier ready for tree/blocks/walk rendering.
+fn build_region_identifier(
+    fd: &kuna_decomp::funcdata::Funcdata,
+) -> IfaceResult<KunaRegionIdentifier> {
+    use std::collections::HashMap;
+    let bg = fd.bblocks_ref();
+    let mut ri = KunaRegionIdentifier::new();
+    let size = fd.bblocks_get_size();
+    // First pass: one synthetic node per basic block, tracking BlockId -> node.
+    let mut node: HashMap<kuna_decomp::seams::BlockId, kuna_decomp::kuna_regiongraph::KunaNodeId> =
+        HashMap::new();
+    let mut entry_addr: Option<u64> = None;
+    for i in 0..size {
+        let bl = fd.bblocks_get_block(i);
+        let addr = fd.bblocks_block_start(bl).get_offset();
+        if i == 0 {
+            entry_addr = Some(addr);
+        }
+        let n = ri.add_synthetic_block(addr);
+        node.insert(bl, n);
+    }
+    // Second pass: one synthetic edge per CFG out-edge.
+    for i in 0..size {
+        let bl = fd.bblocks_get_block(i);
+        let block = bg.block(bl);
+        let from = node[&bl];
+        for j in 0..block.size_out() {
+            let out = block.get_out(j);
+            if let Some(&to) = node.get(&out) {
+                ri.add_synthetic_edge(from, to);
+            }
+        }
+    }
+    if let Some(addr) = entry_addr {
+        ri.set_entry_addr(addr);
+    }
+    ri.compute().map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+    Ok(ri)
 }
 
-impl IfaceCommandAction for IfcKunaRegionStub {
+/// (kuna) `region tree`: render the nested region hierarchy (C++
+/// `IfcKunaRegionTree`).
+struct IfcKunaRegionTree;
+
+impl IfaceCommandAction for IfcKunaRegionTree {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
-            return Err(IfaceError::execution("No function selected"));
+        let fd = match dcp.fd.as_ref() {
+            Some(fd) => fd,
+            None => return Err(IfaceError::execution("No function selected")),
+        };
+        let fname = fd.get_name().to_string();
+        let ri = build_region_identifier(fd)?;
+        let mut os = String::new();
+        os.push_str("Region tree for ");
+        os.push_str(&fname);
+        os.push_str(":\n");
+        os.push_str(&ri.render_tree());
+        status.file_out(&os);
+        Ok(())
+    }
+    fn module(&self) -> String {
+        DECOMPILE_MODULE.to_string()
+    }
+}
+
+/// (kuna) `region blocks`: list each region's flat block-address set (C++
+/// `IfcKunaRegionBlocks`).
+struct IfcKunaRegionBlocks;
+
+impl IfaceCommandAction for IfcKunaRegionBlocks {
+    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+        let dcp = dcp_mut(status)?;
+        let fd = match dcp.fd.as_ref() {
+            Some(fd) => fd,
+            None => return Err(IfaceError::execution("No function selected")),
+        };
+        let fname = fd.get_name().to_string();
+        let ri = build_region_identifier(fd)?;
+        let lists = ri.get_regions_by_block_addrs();
+        let mut os = String::new();
+        os.push_str("Regions for ");
+        os.push_str(&fname);
+        os.push_str(": ");
+        os.push_str(&lists.len().to_string());
+        os.push('\n');
+        for list in lists {
+            os.push('[');
+            for (i, a) in list.iter().enumerate() {
+                if i != 0 {
+                    os.push_str(", ");
+                }
+                os.push_str(&format!("0x{a:x}"));
+            }
+            os.push_str("]\n");
         }
-        Err(engine_unavailable(self.entry))
+        status.file_out(&os);
+        Ok(())
+    }
+    fn module(&self) -> String {
+        DECOMPILE_MODULE.to_string()
+    }
+}
+
+/// Visitor for `region walk`: pushes a `walk 0x<addr>` line per leaf block.
+struct RegionWalkVisitor {
+    out: String,
+}
+
+impl kuna_decomp::kuna_regionid::KunaRegionVisitor for RegionWalkVisitor {
+    fn visit_block(&mut self, _block: Option<kuna_decomp::seams::BlockId>, addr: u64) {
+        self.out.push_str(&format!("walk 0x{addr:x}\n"));
+    }
+}
+
+/// (kuna) `region walk`: visit the region tree's leaf blocks in walk order (C++
+/// `IfcKunaRegionWalk`).
+struct IfcKunaRegionWalk;
+
+impl IfaceCommandAction for IfcKunaRegionWalk {
+    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+        let dcp = dcp_mut(status)?;
+        let fd = match dcp.fd.as_ref() {
+            Some(fd) => fd,
+            None => return Err(IfaceError::execution("No function selected")),
+        };
+        let fname = fd.get_name().to_string();
+        let ri = build_region_identifier(fd)?;
+        let mut visitor = RegionWalkVisitor { out: String::new() };
+        ri.walk_blocks(&mut visitor)
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        let mut os = String::new();
+        os.push_str("Region walk for ");
+        os.push_str(&fname);
+        os.push_str(":\n");
+        os.push_str(&visitor.out);
+        status.file_out(&os);
+        Ok(())
     }
     fn module(&self) -> String {
         DECOMPILE_MODULE.to_string()
@@ -868,24 +1150,9 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
     status.register_com(Box::new(IfcKunaRestarts), &["restarts"]);
     status.register_com(Box::new(IfcKunaPipeline), &["pipeline"]);
     status.register_com(Box::new(IfcKunaQuality), &["quality"]);
-    status.register_com(
-        Box::new(IfcKunaRegionStub {
-            entry: "KunaRegionIdentifier::buildFromBlockGraph (region tree, SEAM W7)",
-        }),
-        &["region", "tree"],
-    );
-    status.register_com(
-        Box::new(IfcKunaRegionStub {
-            entry: "KunaRegionIdentifier::buildFromBlockGraph (region blocks, SEAM W7)",
-        }),
-        &["region", "blocks"],
-    );
-    status.register_com(
-        Box::new(IfcKunaRegionStub {
-            entry: "KunaRegionIdentifier::buildFromBlockGraph (region walk, SEAM W7)",
-        }),
-        &["region", "walk"],
-    );
+    status.register_com(Box::new(IfcKunaRegionTree), &["region", "tree"]);
+    status.register_com(Box::new(IfcKunaRegionBlocks), &["region", "blocks"]);
+    status.register_com(Box::new(IfcKunaRegionWalk), &["region", "walk"]);
 }
 
 /// Join tokens with single spaces — C++ `joinTokens(tokens,0,tokens.size())`.

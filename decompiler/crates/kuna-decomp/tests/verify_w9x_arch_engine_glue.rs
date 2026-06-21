@@ -231,18 +231,16 @@ fn w9x_decompile_func_runs_perform_and_prints() {
     };
     let arch = xarch.sleigh_mut().base_mut().expect("base");
     let (name, entry) = first_mapped_symbol(&dt, arch).expect("a mapped corpus function");
-    // FINDING (F1, init unfaithfulness): C++ `buildAction` -> `resetDefaults`
-    // (action.cc:1003) ends with `setCurrent("decompile")`, so after init the
-    // current action is the derived "decompile" root and `getCurrent() != null`.
-    // The Rust `build_action` omits that step, so right after `init_post_engine`
-    // there is NO current action.  The `run_pipeline` drive papers over it by
-    // calling `set_current("decompile")` itself (which C++ `IfcDecompile` does
-    // NOT do).  We assert the *observed* (unfaithful) post-init state so this
-    // divergence is pinned; if a fix later sets current in init, flip to
-    // `assert!(arch.has_current_action())`.
+    // FINDING (F1, FIXED): C++ `buildAction` -> `resetDefaults` (action.cc:1003)
+    // ends with `setCurrent("decompile")`, so after init the current action is
+    // the derived "decompile" root and `getCurrent() != null`.  The Rust
+    // `build_action` now mirrors that (it calls `set_current("decompile")` after
+    // `install_universal`), so right after `init_post_engine` the current action
+    // is "decompile" — faithful to upstream and required by the kuna `stage
+    // status` / `pipeline list (current)` console readers.
     assert!(
-        !arch.has_current_action(),
-        "init_post_engine now sets a current action (F1 may be fixed) — update this assertion"
+        arch.has_current_action(),
+        "init_post_engine should set the `decompile` current action (F1 fix)"
     );
     let fd = decompile_func(arch, &name, entry, 0).expect("decompile_func ran perform");
     let c = print_c(arch, &fd);

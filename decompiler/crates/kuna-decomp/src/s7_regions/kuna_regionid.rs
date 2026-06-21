@@ -1999,6 +1999,69 @@ impl KunaRegionIdentifier {
         self.walk_region_blocks(top, visitor);
         Ok(())
     }
+
+    /// Read a node's address (C++ `KunaRegionNode::getAddr`); the pool is
+    /// private, so this exposes a single node's address for console rendering.
+    pub fn node_addr(&self, id: KunaNodeId) -> uintb {
+        self.pool.get(id).get_addr()
+    }
+
+    /// Render the nested region tree (C++ `IfcKunaRegionTree::printRegion`
+    /// recursion): one `region head=0x.. nodes=N [cyclic]` line per region,
+    /// `block 0x..` per leaf block, indent 2 spaces per depth.  The members are
+    /// iterated in `KunaNodeOrder` (the `node_keys` order the walker uses), so
+    /// the text is deterministic.  Returns the empty string if `compute()` has
+    /// not run.
+    pub fn render_tree(&self) -> String {
+        let mut os = String::new();
+        if let Some(top) = self.top_region {
+            self.render_region(top, 0, &mut os);
+        }
+        os
+    }
+
+    /// Recursive helper for [`render_tree`].
+    fn render_region(&self, region_id: RegionPayloadId, depth: usize, os: &mut String) {
+        let region = &self.region_pool[region_id.0 as usize];
+        for _ in 0..depth {
+            os.push_str("  ");
+        }
+        os.push_str("region head=0x");
+        let head_addr = region.get_head().map(|h| self.pool.get(h).get_addr()).unwrap_or(0);
+        os.push_str(&format!("{head_addr:x}"));
+        os.push_str(" nodes=");
+        os.push_str(&region.graph.num_nodes().to_string());
+        if region.is_cyclic() {
+            os.push_str(" cyclic");
+        }
+        os.push('\n');
+        let member_keys: Vec<KunaNodeKey> = region.graph.node_keys().copied().collect();
+        for mk in member_keys {
+            let node = self.pool.get(mk.id);
+            if node.is_region() {
+                if let Some(sub) = node.get_region() {
+                    self.render_region(sub, depth + 1, os);
+                }
+            } else if node.is_multi() {
+                let chain: Vec<KunaNodeId> = node.get_chain().to_vec();
+                for m in chain {
+                    for _ in 0..depth + 1 {
+                        os.push_str("  ");
+                    }
+                    os.push_str("block 0x");
+                    os.push_str(&format!("{:x}", self.pool.get(m).get_addr()));
+                    os.push('\n');
+                }
+            } else if node.get_kind() == NodeKind::Block {
+                for _ in 0..depth + 1 {
+                    os.push_str("  ");
+                }
+                os.push_str("block 0x");
+                os.push_str(&format!("{:x}", node.get_addr()));
+                os.push('\n');
+            }
+        }
+    }
 }
 
 #[cfg(test)]

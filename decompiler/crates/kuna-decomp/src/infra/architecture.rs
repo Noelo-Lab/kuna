@@ -345,6 +345,11 @@ pub struct Architecture {
     pub options: OptionDatabase,
     /// Actions that can be applied in this architecture (C++ `allacts`).
     pub allacts: ActionDatabase,
+    /// (kuna) Per-program restart-trigger side table (C++ file-static
+    /// `restartTable`, owned here per `docs/RUST_PORT.md` — one log per loaded
+    /// program; survives `Funcdata::clear()` because it lives outside the
+    /// Funcdata).  The `restarts` console command renders it.
+    pub restart_log: crate::kuna_restartlog::RestartLog,
     /// Specifically registered user-defined p-code ops (C++ `userops`).
     pub userops: UserOpManage,
     /// Manager of decoded strings (C++ `stringManager`, a `StringManager*`).
@@ -518,6 +523,7 @@ impl Architecture {
             symboltab,
             options: OptionDatabase::new(),
             allacts: ActionDatabase::new(),
+            restart_log: crate::kuna_restartlog::RestartLog::new(),
             userops: UserOpManage::new(),
             // sleigh_arch.cc:250: stringManager = new StringManagerUnicode(this,2048)
             string_manager: Rc::new(std::cell::RefCell::new(
@@ -1540,6 +1546,18 @@ impl Architecture {
     /// Borrow the c-language printer (C++ `glb->print`).
     pub fn print(&self) -> &PrintC {
         &self.print
+    }
+
+    /// (kuna) Borrow the per-program restart-trigger log (read by the `restarts`
+    /// console command).
+    pub fn restart_log(&self) -> &crate::kuna_restartlog::RestartLog {
+        &self.restart_log
+    }
+
+    /// (kuna) Mutably borrow the restart-trigger log (the trigger sites record
+    /// into it).
+    pub fn restart_log_mut(&mut self) -> &mut crate::kuna_restartlog::RestartLog {
+        &mut self.restart_log
     }
 
     /// Mutably borrow the c-language printer (drives `docFunction` + the print
@@ -2587,6 +2605,15 @@ impl Architecture {
             stackspace_index,
             Vec::new(),
         );
+        // C++ `Architecture::buildAction` runs `allacts.resetDefaults()`
+        // (coreaction.cc `ActionDatabase::resetDefaults` -> `setCurrent(...)`),
+        // which leaves the "decompile" root as the current action *before* any
+        // function is decompiled.  The merged tree previously deferred the
+        // `setCurrent` to the decompile drive, leaving `getCurrentName()` empty
+        // at rest; that broke the `stage status`/`pipeline list (current)`
+        // readers (kuna_console).  Set it here so the at-rest current name is
+        // "decompile", matching upstream `resetDefaults`.
+        let _ = self.allacts.set_current("decompile");
     }
 
     /// Register the p-code OpBehavior table (C++ `Architecture::buildInstructions`,

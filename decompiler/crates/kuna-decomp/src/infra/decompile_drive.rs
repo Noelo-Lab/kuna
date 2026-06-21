@@ -685,6 +685,54 @@ pub fn decompile_func_full_with_override_dyn(
     }
 }
 
+/// (kuna) Build the IR for `name` and run a **named reduced pipeline** variant
+/// over it as a sub-query (C++ `IfcKunaPipeline::execute`).
+///
+/// Mirrors [`decompile_func_full_with_override_dyn`] but installs the named
+/// action group (`normalize`/`paramid`/`register`/`firstpass`/`jumptable`)
+/// instead of `decompile`, runs it once (no cross-flow restart loop — a reduced
+/// variant has no restart group), then restores `decompile` as the current root
+/// (the C++ save/switch/perform/restore around `allacts.setCurrent`).  The
+/// resulting [`Funcdata`] holds whatever IR the reduced pipeline produced (for
+/// `normalize`, no `sblocks` — `quality` then hits its `hasNoStructBlocks`
+/// guard).  Seam aborts degrade to a recoverable `Err`, like the full drive.
+pub fn run_named_pipeline_variant(
+    arch: &mut Architecture,
+    name: &str,
+    funcaddr: Address,
+    size: int4,
+    variant: &str,
+) -> KunaResult<Funcdata> {
+    let mut fd = build_and_follow_flow(arch, name, funcaddr, size)?;
+    let saved = arch.allacts.get_current_name().to_string();
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        arch.allacts.set_current(variant)?;
+        let mut ctx = ActionContext::new();
+        let root = arch
+            .allacts
+            .get_current_mut()
+            .ok_or_else(|| KunaError::lowlevel(format!("no current {variant} action")))?;
+        root.reset(&mut fd);
+        let r = root.perform(&mut fd, &mut ctx);
+        if r < 0 {
+            return Err(KunaError::lowlevel(format!(
+                "{variant} pipeline hit a breakpoint"
+            )));
+        }
+        Ok(())
+    }));
+    // Restore the root action regardless of outcome (C++ restores setCurrent).
+    let _ = arch.allacts.set_current(&saved);
+    match res {
+        Ok(Ok(())) => Ok(fd),
+        Ok(Err(e)) => Err(e),
+        Err(payload) => Err(KunaError::lowlevel(format!(
+            "{variant} pipeline reached an un-ported seam: {}",
+            panic_message(&payload)
+        ))),
+    }
+}
+
 /// Best-effort extraction of a panic payload's message (the `panic!` string),
 /// for surfacing an un-ported-seam abort as a recoverable [`KunaError`].
 fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {

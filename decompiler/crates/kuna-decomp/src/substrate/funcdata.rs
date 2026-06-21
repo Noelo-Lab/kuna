@@ -1391,6 +1391,16 @@ impl Funcdata {
         self.sblocks.block(root).get_size()
     }
 
+    /// (kuna) Tally the `quality` goto-count structure-quality metric over the
+    /// structured tree (C++ `IfcKunaQuality`).  Pub wrapper over the private
+    /// `sblocks_root` so the console command can read the metric.
+    pub fn kuna_quality_counts(&self) -> crate::block::KunaQualityCounts {
+        let mut counts = crate::block::KunaQualityCounts::default();
+        let root = self.sblocks_root();
+        self.sblocks.kuna_count_quality(root, &mut counts);
+        counts
+    }
+
     /// Seed `sblocks` with a `BlockCopy` mirror of every `bblocks` basic block
     /// (the first half of C++ `ActionBlockStructure::apply`, blockaction.cc:2170 —
     /// `graph.buildCopy(data.getBasicBlocks())`).  Borrows `sblocks` mutably and
