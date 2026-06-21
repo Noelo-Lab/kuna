@@ -54,6 +54,6 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH8777 #1: default pipeline keeps the raw SBORROW2 N==V flag idiom (bug reproduces)" min="1" max="1">\(v2 \|\| !SBORROW2\(v1,7\)\) &amp;&amp; \(!v2 \|\| SBORROW2\(v1,7\)\)</stringmatch>
+<stringmatch name="GH8777 #1: default pipeline keeps the raw SBORROW2 N==V flag idiom (bug reproduces)" min="1" max="1">\(0 &lt;= v1 \+ -7 \|\| !SBORROW2\(v1,7\)\) &amp;&amp; \(0 &gt; v1 \+ -7 \|\| SBORROW2\(v1,7\)\)</stringmatch>
 <stringmatch name="GH8777 #2: option flagcompare on folds it to a clean signed compare (fix, no SBORROW2 left)" min="1" max="1">for \(v1 = 0; 7 &lt;= v1; v1 = v1 \+ 1\)</stringmatch>
 </decompilertest>

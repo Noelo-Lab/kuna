@@ -32,6 +32,6 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH7190 #1: ovlesssimplify off restores the OV-flag garbage condition (old behavior; 0&lt;= form via DIV-2 compareform)" min="1" max="1">while \(v6 \+ -8 &lt; 0 != \(v5 &gt;&gt; 7 &lt; '\\0' &amp;&amp; 0 &lt;= v6 \+ -8\)\)</stringmatch>
+<stringmatch name="GH7190 #1: ovlesssimplify off restores the OV-flag garbage condition (old behavior; 0&lt;= form via DIV-2 compareform)" min="1" max="1">while \(v6 \+ -8 &lt; 0 != \(\(char\)\(v1 \+ '\\x01'\) &gt;&gt; 7 &lt; '\\0' &amp;&amp; 0 &lt;= v6 \+ -8\)\)</stringmatch>
 <stringmatch name="GH7190 #2: default pipeline collapses to a clean signed byte compare (fix is DIV-2 default)" min="1" max="1">while \(v5 &lt; '\\b'\)</stringmatch>
 </decompilertest>

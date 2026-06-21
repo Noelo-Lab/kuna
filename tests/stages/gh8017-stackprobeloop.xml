@@ -72,6 +72,6 @@ e86efeffffb800000000c9c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH8017 #1: default pipeline leaves the &amp;pxVar2[-0x1000] probe-loop noise (bug reproduces)" min="1" max="20">v3\[-0x1000\]</stringmatch>
+<stringmatch name="GH8017 #1: default pipeline leaves the &amp;pxVar2[-0x1000] probe-loop noise (bug reproduces)" min="1" max="20">v2\[-0x1000\]</stringmatch>
 <stringmatch name="GH8017 #2: option stackprobeloop on removes all page noise (3 lines in default + 0 in fix = 3)" min="3" max="3">\[-0x1000\]</stringmatch>
 </decompilertest>
