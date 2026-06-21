@@ -52,6 +52,7 @@
 //! (PE/Mach-O) are a seam — this loader is ELF-only, matching the W11 task.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
@@ -197,17 +198,67 @@ impl ObjectLoadImage {
             sections.push(SectionInfo { vma: sec.address(), size: sec.size(), flags });
         }
 
-        // Snapshot the function symbols (BFD BSF_FUNCTION with a name).
+        // Snapshot the function symbols.  Three sources, deduped by address so an
+        // import that appears in several tables is registered exactly once:
+        //   1. `.symtab` defined functions (BFD BSF_FUNCTION with a name),
+        //   2. PLT stubs → imported library names (the kuna analog of Ghidra's
+        //      `ElfDefaultGotPltMarkup`; see [`crate::elf_plt`]),
+        //   3. `.dynsym` defined functions, for stripped-but-dynamic binaries
+        //      whose `.symtab` is gone.
         let mut funcsyms: Vec<FuncSym> = Vec::new();
+        let mut seen: HashSet<u64> = HashSet::new();
+
+        // 1. `.symtab` defined functions.  Skip UND import entries (`st_value == 0`,
+        //    e.g. `puts@@GLIBC_2.2.5`), which are not real code addresses, and
+        //    strip any `@VERSION` suffix.
         for sym in file.symbols() {
             if sym.kind() != SymbolKind::Text {
                 continue;
             }
+            let addr = sym.address();
+            if addr == 0 {
+                continue; // UND / absolute import stub, not a code address
+            }
             let name = match sym.name_bytes() {
-                Ok(n) if !n.is_empty() => n.to_vec(),
+                Ok(n) if !n.is_empty() => crate::elf_plt::strip_version(n),
                 _ => continue, // a->name != (const char *)0
             };
-            funcsyms.push(FuncSym { addr: sym.address(), name });
+            if name.is_empty() {
+                continue;
+            }
+            if seen.insert(addr) {
+                funcsyms.push(FuncSym { addr, name });
+            }
+        }
+
+        // 2. PLT stubs → imported library names.
+        for p in crate::elf_plt::resolve_plt_imports(&file) {
+            if seen.insert(p.addr) {
+                funcsyms.push(FuncSym { addr: p.addr, name: p.name });
+            }
+        }
+
+        // 3. `.dynsym` defined functions (stripped-but-dynamic fallback): a
+        //    dynamic binary stripped of `.symtab` still exports its defined
+        //    functions in `.dynsym`.
+        for sym in file.dynamic_symbols() {
+            if sym.kind() != SymbolKind::Text {
+                continue;
+            }
+            let addr = sym.address();
+            if addr == 0 {
+                continue;
+            }
+            let name = match sym.name_bytes() {
+                Ok(n) if !n.is_empty() => crate::elf_plt::strip_version(n),
+                _ => continue,
+            };
+            if name.is_empty() {
+                continue;
+            }
+            if seen.insert(addr) {
+                funcsyms.push(FuncSym { addr, name });
+            }
         }
 
         Ok(ObjectLoadImage {
@@ -798,5 +849,89 @@ mod tests {
     fn non_elf_is_rejected() {
         let err = ObjectLoadImage::from_bytes("x", b"not an object file").unwrap_err();
         assert!(matches!(err, KunaError::Lowlevel { .. }));
+    }
+
+    // ---- Real-ELF PLT/GOT import-name resolution (elf_plt) -----------------
+    //
+    // These load vendored fixture binaries (tests/fixtures/) and check the
+    // resolved `addr -> name` function-symbol stream — the exact stream the
+    // engine feeds the decompiler via `read_loader_symbols_generic`.  The XML
+    // datatest corpus cannot exercise this (it embeds bytechunks + explicit
+    // <symbol> defs and never constructs an `ObjectLoadImage`), so the gate lives
+    // here in the cargo workspace suite.
+
+    /// Load a vendored fixture ELF and collect its resolved `addr -> name` map.
+    fn fixture_funcsyms(name: &str) -> std::collections::HashMap<u64, String> {
+        let path = format!("{}/tests/fixtures/{}", env!("CARGO_MANIFEST_DIR"), name);
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+        img.attach_to_space(Rc::clone(&ram));
+        let mut out = std::collections::HashMap::new();
+        img.open_symbols();
+        loop {
+            let mut rec = LoadImageFunc::default();
+            if !img.get_next_symbol(&mut rec) {
+                break;
+            }
+            out.insert(rec.address.get_offset(), String::from_utf8_lossy(&rec.name).into_owned());
+        }
+        out
+    }
+
+    #[test]
+    fn fauxware_plt_imports_resolve_to_named_functions() {
+        let syms = fixture_funcsyms("fauxware");
+        // PLT stubs → imported libc names at their stub entry addresses (classic
+        // non-PIE x86-64, no CET: stub start == the `FF 25` jmp).
+        for (addr, want) in [
+            (0x400510u64, "puts"),
+            (0x400520, "printf"),
+            (0x400530, "read"),
+            (0x400540, "__libc_start_main"),
+            (0x400550, "strcmp"),
+            (0x400560, "open"),
+            (0x400570, "exit"),
+        ] {
+            assert_eq!(syms.get(&addr).map(String::as_str), Some(want), "PLT import at {addr:#x}");
+        }
+        // The pre-existing `.symtab` defined-function path still works.
+        for (addr, want) in [
+            (0x400664u64, "authenticate"),
+            (0x4006ed, "accepted"),
+            (0x4006fd, "rejected"),
+            (0x40071d, "main"),
+        ] {
+            assert_eq!(syms.get(&addr).map(String::as_str), Some(want), "defined fn at {addr:#x}");
+        }
+        // No symbol at address 0 (the old UND-import-at-0x0 bug) and no
+        // `@VERSION` suffix leaks through.
+        assert!(!syms.contains_key(&0), "no function should be registered at 0x0");
+        assert!(syms.values().all(|n| !n.contains('@')), "no @VERSION in names");
+    }
+
+    #[test]
+    fn cet_plt_sec_imports_resolve_at_call_targets() {
+        // PIE + CET: calls target `.plt.sec` (`endbr64; FF 25`).  The stub entry
+        // (the call target) is the endbr64, so names must land there, not at the
+        // `FF 25` four bytes in.
+        let syms = fixture_funcsyms("cet_pie_x86_64");
+        assert_eq!(syms.get(&0x10d0).map(String::as_str), Some("free"));
+        assert_eq!(syms.get(&0x10e0).map(String::as_str), Some("fread"));
+        assert!(syms.values().any(|n| n == "fclose"), "fclose import");
+        assert!(syms.values().any(|n| n == "memcmp"), "memcmp import");
+        assert!(!syms.contains_key(&0));
+        assert!(syms.values().all(|n| !n.contains('@')));
+    }
+
+    #[test]
+    fn stripped_dynamic_plt_imports_resolve_without_symtab() {
+        // No `.symtab`: PLT resolution must work off `.dynsym`/`.rela.plt` alone.
+        let syms = fixture_funcsyms("stripped_dynamic_x86_64");
+        for want in ["free", "fread", "fclose", "memcmp", "fprintf", "malloc"] {
+            assert!(syms.values().any(|n| n == want), "missing import {want}");
+        }
+        assert!(!syms.contains_key(&0));
     }
 }
