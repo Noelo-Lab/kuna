@@ -63,7 +63,7 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::Wrap;
 
-use crate::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageSection};
+use kuna_sleigh::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageSection};
 
 /// Default read-buffer size (C++ `LoadImageBfd::bufsize`, `loadimage_bfd.cc:36`).
 const BUFSIZE: usize = 512;
@@ -202,7 +202,7 @@ impl ObjectLoadImage {
         // import that appears in several tables is registered exactly once:
         //   1. `.symtab` defined functions (BFD BSF_FUNCTION with a name),
         //   2. PLT stubs → imported library names (the kuna analog of Ghidra's
-        //      `ElfDefaultGotPltMarkup`; see [`crate::elf_plt`]),
+        //      `ElfDefaultGotPltMarkup`; see [`crate::s1_loader::elf_plt`]),
         //   3. `.dynsym` defined functions, for stripped-but-dynamic binaries
         //      whose `.symtab` is gone.
         let mut funcsyms: Vec<FuncSym> = Vec::new();
@@ -220,7 +220,7 @@ impl ObjectLoadImage {
                 continue; // UND / absolute import stub, not a code address
             }
             let name = match sym.name_bytes() {
-                Ok(n) if !n.is_empty() => crate::elf_plt::strip_version(n),
+                Ok(n) if !n.is_empty() => crate::s1_loader::elf_plt::strip_version(n),
                 _ => continue, // a->name != (const char *)0
             };
             if name.is_empty() {
@@ -232,7 +232,7 @@ impl ObjectLoadImage {
         }
 
         // 2. PLT stubs → imported library names.
-        for p in crate::elf_plt::resolve_plt_imports(&file) {
+        for p in crate::s1_loader::elf_plt::resolve_plt_imports(&file) {
             if seen.insert(p.addr) {
                 funcsyms.push(FuncSym { addr: p.addr, name: p.name });
             }
@@ -250,7 +250,7 @@ impl ObjectLoadImage {
                 continue;
             }
             let name = match sym.name_bytes() {
-                Ok(n) if !n.is_empty() => crate::elf_plt::strip_version(n),
+                Ok(n) if !n.is_empty() => crate::s1_loader::elf_plt::strip_version(n),
                 _ => continue,
             };
             if name.is_empty() {

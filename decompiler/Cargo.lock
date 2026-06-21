@@ -43,6 +43,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuna-analysis"
+version = "0.1.0"
+dependencies = [
+ "kuna-base",
+ "kuna-decomp",
+ "kuna-num",
+ "kuna-sleigh",
+ "object",
+]
+
+[[package]]
 name = "kuna-base"
 version = "0.1.0"
 dependencies = [
@@ -61,6 +72,7 @@ dependencies = [
 name = "kuna-console"
 version = "0.1.0"
 dependencies = [
+ "kuna-analysis",
  "kuna-base",
  "kuna-decomp",
  "kuna-num",
@@ -122,7 +134,6 @@ version = "0.1.0"
 dependencies = [
  "kuna-base",
  "kuna-num",
- "object",
 ]
 
 [[package]]

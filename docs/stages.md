@@ -34,6 +34,35 @@ inside one repeating `mainloop` (no inter-stage boundary exists in the code); an
 run them as ordered passes with types as a terminal solver. Within-band order is a
 per-decompiler scheduling regime, not part of the model.
 
+## Source layout (the stages on disk)
+
+The decompiler source is **physically organized by stage**: every module file under
+`decompiler/crates/kuna-decomp/src/` lives in a stage-named folder (the folder name keeps the
+canonical `Sx` code so it greps against this doc and the registry, and adds a plain word so the
+tree reads to a newcomer). Module *names* stay flat (`kuna_decomp::flow`) via re-exports in
+`lib.rs`, so the layout is documentation, not an API change. The per-file assignment is
+`docs/stage-mapping.md`; the live group→stage registry is `stages.toml`.
+
+| Stage | Folder | Reads as |
+|---|---|---|
+| — (substrate) | `substrate/` | shared IR & containers used by every stage (`varnode`/`op`/`block`/`funcdata*`, `dtype`, rewrite helpers) |
+| P0 | `p0_knowledge/` | knowledge & configuration plane (symbol DB, options, overrides, the stage registry) |
+| S1 | `s1_partition/` | image & code partition (architecture/loader binding) |
+| S2 | `s2_lift/` | flow & op-graph recovery (lift, CFG, jump tables, p-code injection) |
+| S3 | `s3_dataflow/` | definition web (SSA/heritage + the simplification rule pools) |
+| S4 | `s4_calls/` | call & prototype model |
+| S5 | `s5_types/` | value & type facts (type system + inference) |
+| S6 | `s6_variables/` | variable & storage model (HighVariables, merge, stack layout) |
+| S7 | `s7_regions/` | region hierarchy (the angr RegionIdentifier port) |
+| S8 | `s8_structure/` | structured AST & goto quality (the structuring engine, `blockaction`) |
+| S9 | `s9_emit/` | surface rendering & refinement (PrintC, casts, strings, naming) |
+| Infra | `infra/` | orchestration & framework (the schedule, the Action/Rule engine) |
+
+The **program-prep analyses** that sit *outside* this stage model (the loader/analyzer tier
+Ghidra runs as "Run Analysis": PLT/GOT markup, strings, DWARF, demangling, function-start
+discovery, …) live in their own crate, `kuna-analysis` (P0/S1), organized by the same scheme
+(`s1_loader/`, `s1_strings/`, …). See `docs/missing-analyses.md`.
+
 ## Sub-stages
 
 A **sub-stage** is a named decision point inside a stage where a different choice — by

@@ -1,5 +1,49 @@
 # kuna Progress Log
 
+## Session (2026-06-21b) — stage-aligned source reorg + the `kuna-analysis` crate (orienting the repo for the missing Ghidra analyses)
+
+**Why:** the previous session (ELF PLT/GOT) exposed the gap — kuna ports Ghidra's C++
+*decompiler* but not the Java *loader/analyzer* tier ("Run Analysis": strings, DWARF,
+demangling, function-start, …). Before porting those, reorganize the repo so each new analysis
+has an obvious, tested home, and so the existing engine is legible by stage.
+
+**Reorg (Milestone 1).** Moved all 111 flat module files under
+`decompiler/crates/kuna-decomp/src/` into **stage-named folders** matching the normative stage
+model (`docs/stages.md`): `substrate/`, `p0_knowledge/`, `s1_partition/`, `s2_lift/`,
+`s3_dataflow/`, `s4_calls/`, `s5_types/`, `s6_variables/`, `s7_regions/`, `s8_structure/`,
+`s9_emit/`, `infra/`. S8 (`blockaction`, the structured-AST/goto engine) gets its own folder,
+distinct from S7 (`s7_regions`: the angr RegionIdentifier port). Mechanism: each folder is a
+private module group (`folder/mod.rs` lists its `pub mod`s) and `lib.rs` re-exports them flatly
+(`pub use <folder>::*;`) — module names unchanged, so every `kuna_decomp::flow` / `crate::dtype`
+path resolves exactly as before (zero consumer edits). Chose this over `#[path]` because a
+`#[path]`-loaded module resolves child modules as *siblings* (it broke `bitfield`'s submodules
+and would have broken the 100 `mod tests;` companions); the nested form preserves native child
+resolution and all `super::`/`crate::` paths (verified: every `super::` is a within-subtree
+reference, every `super::super::` is an inline-test→its-module hop). Files moved with their
+companion `X/` test dirs as a unit.
+
+**`kuna-analysis` crate (Milestone 2).** New crate
+(`decompiler/crates/kuna-analysis/`) as the home for the program-prep loader/analyzer tier. It
+depends on `kuna-sleigh` + `kuna-decomp` (sits above the decompiler so a pass can read the
+parsed object *and* seed the engine's symbol/type tables). Moved `elf_plt.rs` →
+`s1_loader/elf_plt.rs` and the ELF `loadimage_object.rs` + `tests/fixtures/` out of
+`kuna-sleigh` into it (zero behavior change — `elf_plt`'s only caller, `loadimage_object`,
+moved with it; the `object` dep moved out of `kuna-sleigh` too). Added the
+`pass::AnalysisPass` interface (the generalized `elf_plt` contract: focused, additive,
+never-failing fact producer + `run_analyses` merge driver) as the seam future analyses plug
+into; rewired `kuna-console::engine` to the new path. Stage-folder stubs + the ranked port
+roadmap (strings → demangling → no-return → DWARF → prototypes → function-start) with concrete
+testcases are in `docs/missing-analyses.md`.
+
+**Docs.** `docs/stages.md` gains a stage→folder layout table; `docs/missing-analyses.md` gains
+the crate-home description + the `AnalysisPass` interface + the ranked port roadmap;
+`docs/agents.md` (CLAUDE/AGENTS) updated with the new crate + the stage-folder layout.
+
+Verification (both gates green throughout, per-milestone commits):
+- Milestone 1 reorg: `make rust-test` **3753 passed / 0 failed**, `make test` **675/675, PARITY OK**.
+- Milestone 2 crate: workspace builds; `kuna-analysis` **12/12** (relocated fixture + decoder
+  tests), console ELF e2e **1/1** (`fauxware` → `puts`/`read` still named).
+
 ## Session (2026-06-21) — ELF PLT/GOT import-name resolution (the `sub_<addr>` → `puts`/`read` fix)
 
 **PLT imports now resolve to library names on real ELFs — multi-arch.** Symptom: `kuna decompile fauxware main` rendered library calls as `sub_400510(...)`/`sub_400530(...)` while local `.text` functions (`authenticate`, `accepted`) were named correctly. Root: kuna ports the C++ *decompiler* but not Ghidra's Java *loader/analyzer* PLT markup (`ElfDefaultGotPltMarkup` + `ElfProgramBuilder.createExternalFunctionLinkage`); the ELF loader (`loadimage_object.rs:202`) read only `.symtab` `Text` symbols, so a CALL to a PLT stub had no symbol and `query_call` (`decompile_drive.rs:97`) fell back to `sub_<addr>`. Fix: new `kuna-sleigh/src/elf_plt.rs` (`resolve_plt_imports`) reconstructs `got_slot → name` from the dynamic relocations (resolving the symbol index against the **dynamic** symbol table, not `.symtab`) and decodes each `.plt*` stub's GOT reference per architecture, matching the decoded target against the relocation map (self-correcting: PLT0 / IFUNC stubs fall out). Per-arch decoders, all validated against `clang`-assembled ground-truth bytes: **x86-64** (`FF 25` rip-rel, incl. CET `.plt.sec` `endbr64`/`bnd` stub-start backup), **x86-32** (`FF 25` abs; PIC `FF A3` is a seam), **AArch64** (`adrp x16`+`ldr x17`), **ARM32** (`add ip,pc`+`add`+`ldr pc` veneer, `+8` pipeline), **RISC-V RV32/RV64** (`auipc t3`+`l[wd] t3`, 12-bit sign-extended lo). PPC64/MIPS (irregular `.plt`) left as documented seams. Results feed the existing `funcsyms`→`read_loader_symbols`→`add_function` stream as named functions (the "correct-names" model; thunk/external object model deferred). Also fixed a pre-existing loader bug — UND imports (`puts@@GLIBC_2.2.5`, `st_value==0`) were registered as functions at `0x0`; now skipped, `@VERSION` stripped, and `.dynsym` defined functions read for stripped-but-dynamic binaries.

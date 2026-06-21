@@ -19,115 +19,56 @@
 //! Action/Rule dispatch and scheduling follow ADR 0005; re-runability and the
 //! P0 store follow ADR 0007.
 //!
+//! # Source layout (stage-aligned)
+//!
+//! The module **files** are grouped on disk into stage-named folders that mirror
+//! the normative stage model (`docs/stages.md`, `docs/stage-mapping.md`); the
+//! module **names** stay flat (`kuna_decomp::flow`, `crate::dtype`) via the
+//! `pub use <folder>::*;` re-exports below, so the public and internal APIs are
+//! unchanged. An outsider can read the tree to see what each file does in the
+//! pipeline (each folder's `mod.rs` carries a one-line stage gloss):
+//!
+//! - `substrate/`     -- shared IR & containers used by every stage (varnode/op/block/funcdata*, dtype, ...)
+//! - `p0_knowledge/`  -- P0: knowledge & configuration plane (symbol DB, options, overrides, the stage registry)
+//! - `s1_partition/`  -- S1: image & code partition (architecture/loader binding)
+//! - `s2_lift/`       -- S2: flow & op-graph recovery (lift, CFG, jump tables, injection)
+//! - `s3_dataflow/`   -- S3: definition web (SSA/heritage + the simplification rule pools)
+//! - `s4_calls/`      -- S4: call & prototype model
+//! - `s5_types/`      -- S5: value & type facts (type system + inference)
+//! - `s6_variables/`  -- S6: variable & storage model (HighVariables, merge, stack layout)
+//! - `s7_regions/`    -- S7: region hierarchy (the angr RegionIdentifier port)
+//! - `s8_structure/`  -- S8: structured AST & goto quality (the structuring engine)
+//! - `s9_emit/`       -- S9: surface rendering & refinement (PrintC, casts, strings, naming)
+//! - `infra/`         -- orchestration & framework (the schedule, the Action/Rule engine, ...)
+//!
+//! The stage folders are private module groups; the `pub use ::*` re-exports keep
+//! every module reachable by its flat name (`kuna_decomp::flow`). Module names are
+//! unique across folders, so the glob re-exports never collide.
+//!
 //! Lints are inherited from the workspace (`[lints] workspace = true`).
-pub mod varnode;
-pub mod op;
-pub mod block;
-pub mod funcdata;
-pub mod funcdata_block;
-pub mod funcdata_callsite;
-pub mod funcdata_facing;
-pub mod funcdata_merge;
-pub mod funcdata_op;
-pub mod funcdata_printraw;
-pub mod funcdata_resolveflow;
-pub mod funcdata_spacebase;
-pub mod funcdata_union;
-pub mod funcdata_varnode;
-pub mod flow;
-pub mod jumptable;
-pub mod kuna_emulatefunction;
-pub mod userop;
-pub mod pcodeinject;
-pub mod inject_sleigh;
-pub mod dtype;
-pub mod seams;
-pub mod kuna_v850indbranch;
-pub mod kuna_switchmodbound;
-pub mod kuna_thumbfuncptr;
-pub mod kuna_inferfuncentry;
-pub mod kuna_sparcstructret;
-pub mod action;
-pub mod options;
-pub mod database;
-pub mod architecture;
-pub mod decompile_drive;
-pub mod capability;
-pub mod libdecomp;
-pub mod overrides;
-pub mod comment;
-pub mod cpool;
-pub mod graph;
-pub mod callgraph;
-pub mod sleigh_arch;
-pub mod raw_arch;
-pub mod xml_arch;
-pub mod kuna_stages;
-pub mod kuna_assert;
-pub mod kuna_restartlog;
-pub mod heritage;
-pub mod cover;
-pub mod variable;
-pub mod merge;
-pub mod subflow;
-pub mod condexe;
-pub mod condconst;
-pub mod blockaction;
-pub mod expression;
-pub mod transform;
-pub mod coreaction_early;
-pub mod ruleaction_1;
-pub mod ruleaction_2;
-pub mod ruleaction_3;
-pub mod ruleaction_4;
-pub mod ruleaction_5;
-pub mod ruleaction_6;
-pub mod ruleaction_7;
-pub mod ruleaction_8;
-pub mod kuna_addcarrychain;
-pub mod kuna_booleanmask;
-pub mod kuna_ovlesssimplify;
-pub mod kuna_flagcompare;
-pub mod kuna_stackalias;
-pub mod kuna_arraystride;
-pub mod kuna_condexeplace;
-pub mod fspec;
-pub mod varmap;
-pub mod modelrules;
-pub mod typeop;
-pub mod unionresolve;
-pub mod unionresolve_run;
-pub mod rangeutil;
-pub mod double;
-pub mod bitfield;
-pub mod constseq;
-pub mod prefersplit;
-pub mod coreaction_protos;
-pub mod coreaction_cleanup;
-pub mod coreaction_casts;
-pub mod coreaction_infertypes;
-pub mod addtreestate;
-pub mod kuna_returnpair;
-pub mod kuna_memsetsequence;
-pub mod kuna_compareform;
-pub mod dynamic;
-pub mod kuna_dynamichashmax;
-pub mod kuna_stackguard;
-pub mod kuna_stackprobeloop;
-pub mod kuna_regiongraph;
-pub mod kuna_regionid;
-pub mod kuna_loweredswitch;
-pub mod printlanguage;
-pub mod printc;
-pub mod prettyprint;
-pub mod printjava;
-pub mod cast;
-pub mod signature;
-pub mod analyzesigs;
-pub mod paramid;
-pub mod stringmanage;
-pub mod kuna_naming;
-pub mod kuna_arraynotation;
-pub mod coreaction_render;
-pub mod coreaction_stackptr;
-pub mod universalaction;
+
+mod substrate;
+mod p0_knowledge;
+mod s1_partition;
+mod s2_lift;
+mod s3_dataflow;
+mod s4_calls;
+mod s5_types;
+mod s6_variables;
+mod s7_regions;
+mod s8_structure;
+mod s9_emit;
+mod infra;
+
+pub use substrate::*;
+pub use p0_knowledge::*;
+pub use s1_partition::*;
+pub use s2_lift::*;
+pub use s3_dataflow::*;
+pub use s4_calls::*;
+pub use s5_types::*;
+pub use s6_variables::*;
+pub use s7_regions::*;
+pub use s8_structure::*;
+pub use s9_emit::*;
+pub use infra::*;

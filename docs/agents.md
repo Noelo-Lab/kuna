@@ -21,7 +21,7 @@ full what/why/how/validation. The SLEIGH `specs/` and the XML regression corpus
 
 | Path | What |
 |---|---|
-| `decompiler/` | **The engine.** Cargo workspace: `kuna-base`/`kuna-num`/`kuna-sleigh`/`kuna-decomp` (the decompiler), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-slacomp` (the SLEIGH compiler, binary `slacomp`), `kuna-cli` (the user-facing `kuna` binary), `kuna-harness`/`kuna-lift-diff` (dev test harness). See `docs/RUST_PORT.md`. |
+| `decompiler/` | **The engine.** Cargo workspace: `kuna-base`/`kuna-num`/`kuna-sleigh`/`kuna-decomp` (the decompiler), `kuna-analysis` (the program-prep loader/analyzer tier — ELF markup, strings, DWARF, …; the Ghidra "Run Analysis" layer), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-slacomp` (the SLEIGH compiler, binary `slacomp`), `kuna-cli` (the user-facing `kuna` binary), `kuna-harness`/`kuna-lift-diff` (dev test harness). `kuna-decomp/src/` is organized into stage-named folders (`s1_partition/`…`s9_emit/`, `substrate/`, `p0_knowledge/`, `infra/`) per `docs/stages.md`. See `docs/RUST_PORT.md`. |
 | `tests/datatests/` | Upstream XML regression tests (83 files → 675 assertions). The corpus `make test` runs. Vendored. |
 | `tests/stages/` | kuna-owned stage-model issue testcases (`make test-stages`, baseline `docs/baseline-stages.json`). |
 | `tests/golden/` | Differential golden vectors for the workspace test suite (`make rust-test`). |
@@ -150,9 +150,11 @@ When you update the baseline after an intentional upstream behavior change, rege
 - Issue-derived stage-model testcases go in `tests/stages/` (`make test-stages`,
   baseline `docs/baseline-stages.json`); see `tests/stages/README.md`.
 - Don't commit build artifacts (`decompiler/target/`, `*.sla`) — they're gitignored.
-- To understand a source file's role, start from `docs/stage-mapping.md` and the real pass
-  order in `decompiler/crates/kuna-decomp/src/coreaction*.rs` (the `universalAction`
-  registration). **Code comments cite their C++ origin as `decompiler/cpp/<file>.{cc,hh}`** —
+- To understand a source file's role, start from `docs/stages.md` (the stage→folder layout)
+  and `docs/stage-mapping.md`, then the real pass order in
+  `decompiler/crates/kuna-decomp/src/infra/universalaction.rs` + the `coreaction_*.rs` files
+  (now under their stage folders, e.g. `s5_types/coreaction_infertypes.rs`,
+  `s9_emit/coreaction_render.rs`). **Code comments cite their C++ origin as `decompiler/cpp/<file>.{cc,hh}`** —
   these are **upstream Ghidra** anchors (the tree kuna was ported from, at the `GHIDRA_REV` in
   `docs/UPSTREAM.md`, recoverable from git history or an upstream checkout), *not* paths in
   this repo's `decompiler/` workspace.
