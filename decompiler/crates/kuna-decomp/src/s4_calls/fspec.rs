@@ -3084,16 +3084,68 @@ impl ParamListStandard {
         active.sort_trials(&self.entry);
     }
 
-    /// `ParamListStandardOut::fillinMap` — with no model rules, dispatches to
-    /// the legacy fallback (C++ `useFillinFallback == true`).
-    /// // SEAM(w6-modelrules)
+    /// `ParamListStandardOut::fillinMap` (C++ fspec.cc:1721-1763).
+    ///
+    /// When `use_fillin_fallback` is set (no output `<rule>`), dispatch to the
+    /// legacy fallback.  Otherwise drive the decoded ModelRules: tag each active
+    /// trial with the `ParamEntry` it lands in, then ask each rule's
+    /// `fillinOutputMap` whether the trials form that rule's output storage.  The
+    /// first rule that matches marks the covered active trials used (the SPARC
+    /// `<join storage="general">` joins the o0:o1 return pair so both registers
+    /// are kept used and `buildReturnOutput` emits the CONCAT44 join).  If no
+    /// rule matches, fall back with `first_only == true`.
     fn fillin_map_standard_out(&self, active: &mut ParamActive) {
         if active.get_num_trials() == 0 {
             return;
         }
-        // SEAM(w6-modelrules): when model rules exist, the non-fallback path
-        // runs first; with none, useFillinFallback is true.
-        self.fillin_map_fallback(active, false);
+        if self.use_fillin_fallback {
+            self.fillin_map_fallback(active, false);
+            return;
+        }
+        for i in 0..active.get_num_trials() {
+            let (addr, size, is_act, rem_or_ind) = {
+                let trial = active.get_trial(i);
+                (
+                    trial.get_address().clone(),
+                    trial.get_size(),
+                    trial.is_active(),
+                    trial.is_rem_formed() || trial.is_ind_create_formed(),
+                )
+            };
+            active.get_trial_mut(i).set_entry(None, 0);
+            if !is_act {
+                continue;
+            }
+            let entry = match self.find_entry(&addr, size, false) {
+                Some(e) => e,
+                None => {
+                    active.get_trial_mut(i).mark_no_use();
+                    continue;
+                }
+            };
+            let res = self.entry[entry].justified_contain(&addr, size);
+            if rem_or_ind && !self.entry[entry].is_first_in_class() {
+                active.get_trial_mut(i).mark_no_use();
+                continue;
+            }
+            active.get_trial_mut(i).set_entry(Some(entry), res);
+        }
+        active.sort_trials(&self.entry);
+        for rule in self.model_rules.iter() {
+            if rule.fillin_output_map(active, self) {
+                for i in 0..active.get_num_trials() {
+                    if active.get_trial(i).is_active() {
+                        active.get_trial_mut(i).mark_used();
+                    } else {
+                        let t = active.get_trial_mut(i);
+                        t.mark_no_use();
+                        t.set_entry(None, 0);
+                    }
+                }
+                return;
+            }
+        }
+        self.fillin_map_fallback(active, true);
     }
 
     /// Find the return value storage using the older fallback method (C++
@@ -3256,12 +3308,22 @@ impl ParamListStandard {
     }
 
     /// Cache ModelRule information after decode (C++
-    /// `ParamListStandardOut::initialize`).  With no model rules,
-    /// `use_fillin_fallback` stays true and `auto_killed_by_call` is set (legacy
-    /// behavior).  // SEAM(w6-modelrules)
+    /// `ParamListStandardOut::initialize`, fspec.cc:1614-1628).
+    ///
+    /// Scans the decoded `model_rules` for any rule whose `AssignAction` can
+    /// drive `fillinOutputMap` (a `<join>`/`<consume>`/... output rule).  If one
+    /// exists, the model uses the ModelRule output-map path (the
+    /// `<join storage="general">` that joins a SPARC o0:o1 return pair) and
+    /// `use_fillin_fallback` becomes false.  With no such rule the legacy
+    /// fallback stays on and `auto_killed_by_call` is set (legacy behavior).
     pub fn initialize(&mut self) {
         self.use_fillin_fallback = true;
-        // SEAM(w6-modelrules): scan model_rules for canAffectFillinOutput here.
+        for rule in self.model_rules.iter() {
+            if rule.can_affect_fillin_output() {
+                self.use_fillin_fallback = false;
+                break;
+            }
+        }
         if self.use_fillin_fallback {
             self.auto_killed_by_call = true; // Legacy behavior if there are no rules
         }
@@ -3334,6 +3396,13 @@ impl ParamListStandard {
         self.resource_start.push(self.numgroup);
         self.calc_delay();
         self.populate_resolver();
+        // C++ `ParamListStandardOut::decode` calls `initialize()` after the base
+        // `ParamListStandard::decode` (fspec.cc:1604), which scans the decoded
+        // `<rule>`s for an output `fillinOutputMap` action and clears
+        // `useFillinFallback`.  Harmless on the input lists (their
+        // `use_fillin_fallback` flag is read only by the `StandardOut`/
+        // `RegisterOut` fillin path).
+        self.initialize();
     }
 
     /// Push a resource-section boundary (the C++ `resourceStart.push_back`),
