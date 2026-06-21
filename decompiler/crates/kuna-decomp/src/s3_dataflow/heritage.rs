@@ -4011,20 +4011,38 @@ impl Heritage {
         self.pass += 1;
     }
 
-    /// `bumpDeadcodeDelay` routed through a fresh [`Override`]/[`RestartLog`]
-    /// (C++ `fd->getOverride()` / `kunaRecordRestart` are W7 seams on
-    /// `Funcdata`).  The realized [`bump_deadcode_delay`](Heritage::bump_deadcode_delay)
-    /// takes them explicitly; here we use function-local instances so the bump
-    /// protocol (delay install, restart-pending) runs against the real
-    /// `Funcdata`.  // SEAM(W7)
+    /// `bumpDeadcodeDelay` routed through the function's **persistent**
+    /// [`Override`] (C++ `fd->getOverride()`, `heritage.cc:2576`).
+    ///
+    /// The C++ suppression guard `if (fd->getOverride().hasDeadcodeDelay(spc))
+    /// return;` is what makes the deadcode-delay bump fire **at most once** per
+    /// space: the first call installs the delay on the function's Override (which
+    /// survives `Funcdata::clear()` across restart re-flows) and sets restart
+    /// pending; every later call sees the installed delay and returns WITHOUT
+    /// re-requesting a restart, so the deadcode-ordering restart converges.
+    ///
+    /// Earlier this routed through a *fresh* `Override::new()` per call, so
+    /// `has_deadcode_delay` was always false — the bump fired on every heritage
+    /// pass and the function restart-looped until `run_pipeline`'s `MAX_REFLOW`
+    /// budget exhausted, leaving the IR cleared (no `sblocks` → "structuring
+    /// declined at a seam").  The companion half is
+    /// [`Funcdata::op_heritage`](crate::funcdata::Funcdata::op_heritage), which now
+    /// re-applies the persisted Override delay to the per-space `HeritageInfo` on
+    /// each pass (C++ `Funcdata::startProcessing` → `applyDeadCodeDelay`).
+    ///
+    /// The [`Override`] is moved out of `fd` for the call (so `bump_deadcode_delay`
+    /// can take both `&mut Funcdata` for `setRestartPending` and `&mut Override`)
+    /// and moved back; the [`RestartLog`] remains function-local (cosmetic — it
+    /// records restart events for diagnostics, no behavioral effect).
     fn bump_deadcode_delay_seamed(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         spc: &Rc<AddrSpace>,
     ) {
-        let mut ovr = Override::new();
+        let mut ovr = std::mem::take(fd.get_override_mut());
         let mut log = RestartLog::new();
         self.bump_deadcode_delay(fd, &mut ovr, &mut log, spc);
+        *fd.get_override_mut() = ovr;
     }
 }
 

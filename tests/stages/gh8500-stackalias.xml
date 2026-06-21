@@ -16,29 +16,44 @@
     and re-read through `p` (`return *p`).  Resolving the alias requires the
     indirect STORE/LOAD through `p` to be recognized as touching s-0x1c.
 
-    Bug: the store-through-pointer is dropped.  The STORE `*p = x` is converted
-    to a stack varnode (s-0x1c = x) and then dead-code-eliminated in the SAME
-    main-loop iteration, one step BEFORE the aliasing LOAD `return *p`
-    collapses to read s-0x1c.  With the store already gone, the load re-heritages
-    s-0x1c with no reaching definition, so it resolves to an *uninitialized*
-    stack input.  The rendered C returns an undefined local:
+    Bug surface: the store-through-pointer was being dropped.  The STORE `*p = x`
+    converts to a stack varnode (s-0x1c = x); if it is dead-code-eliminated one
+    main-loop iteration BEFORE the aliasing LOAD `return *p` collapses to read
+    s-0x1c, the load re-heritages s-0x1c with no reaching definition and the
+    rendered C returns an undefined local (`return xStack_1c;`).
 
-        return xStack_1c;
+    Root cause (kuna): this race is exactly what Ghidra's heritage deadcode-delay
+    restart is designed to defuse.  When `Heritage::removeRevisitedMarkers` runs
+    AFTER a dead-removal, it calls `Heritage::bumpDeadcodeDelay`, which installs a
+    one-pass deadcode delay on the affected space and requests a restart; the
+    restart re-flows with the bumped delay so the LOAD resolves before the stack
+    store can die.  In kuna that mechanism was BROKEN: `bumpDeadcodeDelay` was
+    routed through a *fresh* `Override` each call, so its "delay already installed"
+    suppression guard never fired and the bump re-requested a restart on every
+    heritage pass.  The function therefore restart-looped until the driver's
+    `MAX_REFLOW` budget exhausted, leaving the IR cleared (no structured blocks at
+    all - `print C` rendered an empty `/* structuring declined at a seam */`
+    shell, returning NEITHER the parameter nor the local).
 
-    Stage model: S6 "alias-facets" / heritage ordering.  The kuna fix is an
-    option-gated extension of ActionDeadCode::lastChanceLoad (the existing
-    mechanism that already defers dead-store removal for not-yet-resolved
-    LOADs whose pointer is an "eventual constant"): when a LOAD dereferences a
-    pointer that is itself a value living on the stack (an unresolved
-    pointer-to-stack alias), it conservatively holds the stack stores alive for
-    that deadcode round, so the store survives until the alias resolves.
-    Gated by the default-off arch flag stack_alias_deadstore
-    (`option stackalias on`).
+    Fix: route `bumpDeadcodeDelay` through the function's PERSISTENT `Override`
+    (which survives `Funcdata::clear()` across restart re-flows, exactly as C++
+    `fd.getOverride()` does) and re-apply the persisted per-space delays to the
+    `HeritageInfo` after `buildInfoList` on each pass (C++
+    `Funcdata::startProcessing` then `Override::applyDeadCodeDelay`).  The bump now
+    fires at most once, the restart converges, and the aliasing LOAD resolves
+    BEFORE the stack store dies, so the store-through-pointer survives and the
+    function correctly returns the parameter.
 
-    Pass 1 (default pipeline) reproduces the bug: the function returns the
-    uninitialized local `xStack_1c` (assert #1).
-    Pass 2 (after `option stackalias on`) recovers the store-through-pointer,
-    so the function returns the parameter (assert #2): no `xStack_1c` survives.
+    Stage model: S3 dataflow / heritage deadcode-delay ordering.  This is a
+    general heritage-ordering correctness fix; it is NOT gated on the
+    `stack_alias_deadstore` arch flag.  The standard Ghidra deadcode-delay restart
+    subsumes the previously-planned option-gated `holdStackAliasStores` hold for
+    this minimized testcase, so `option stackalias on` is a no-op here and both
+    passes recover the parameter.
+
+    Pass 1 (default pipeline) now recovers the store-through-pointer: the function
+    returns the parameter `a0`, and no uninitialized `xStack_*` local survives.
+    Pass 2 (after `option stackalias on`) is identical (the option is subsumed).
 
     Disassembly (identity @ 0x1139):
       1139 55              PUSH RBP
@@ -68,6 +83,6 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH8500 #1: default pipeline drops the store-through-pointer, returns an uninitialized stack local (bug)" min="1" max="1">return v1;</stringmatch>
-<stringmatch name="GH8500 #2: option stackalias on recovers the alias and returns the parameter (fix)" min="1" max="1">return a0;</stringmatch>
+<stringmatch name="GH8500 #1: heritage deadcode-delay restart converges; no uninitialized stack local survives (bug fixed)" min="0" max="0">xStack</stringmatch>
+<stringmatch name="GH8500 #2: both passes recover the store-through-pointer and return the parameter (deadcode-delay fix, option subsumed)" min="2" max="2">return a0;</stringmatch>
 </decompilertest>

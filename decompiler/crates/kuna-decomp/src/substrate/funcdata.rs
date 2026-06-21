@@ -836,6 +836,26 @@ impl Funcdata {
     pub fn op_heritage(&mut self) {
         let mut heritage = std::mem::take(&mut self.heritage);
         heritage.build_info_list(self);
+        // C++ `Funcdata::startProcessing` runs `localoverride.applyDeadCodeDelay`
+        // right after `buildInfoList` (funcdata.cc:167): re-apply any persisted
+        // per-space deadcode delays (installed by `Heritage::bumpDeadcodeDelay`
+        // on the restart) to the freshly-built per-space `HeritageInfo`.  Without
+        // this, a deadcode-delay bump installed on the Override before a restart
+        // re-flow would be lost when `build_info_list` re-seeds the info to the
+        // space defaults, so the stack-alias store would still be dead-eliminated
+        // one pass before the aliasing LOAD resolves.  The C++ does this in
+        // `startProcessing` (which re-runs each restart); the merged tree drives
+        // heritage lazily here, so the apply lands at the same point in the order.
+        for (space_index, delay) in self.localoverride.deadcode_delays() {
+            if let Some(spc) = self.glb.manage().get_space(space_index) {
+                let spc = std::rc::Rc::clone(spc);
+                // C++ `setDeadCodeDelay` throws if `delay < info.delay`; the
+                // bump only ever installs `deadcodeDelay+1 >= delay`, so this is
+                // well-formed.  Swallow the error defensively (a malformed
+                // console-supplied `override deadcodedelay` degrades to no-op).
+                let _ = heritage.set_dead_code_delay(&spc, delay);
+            }
+        }
         heritage.heritage(self);
         self.heritage = heritage;
     }
