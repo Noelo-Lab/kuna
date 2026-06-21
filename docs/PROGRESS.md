@@ -1,5 +1,22 @@
 # kuna Progress Log
 
+## Session (2026-06-21e) — parallel cluster fan-out: 7 worktree agents on the remaining test-stages tail
+
+Fanned out 7 worktree-isolated agents (one per file-cluster, to keep merges clean), each implementing + self-verifying (675 PARITY OK + stage count rise + units green + no runaway-hang) and landing on a `fix/<cluster>` branch; integrated each by cherry-pick onto `fix-test-stages`, re-verifying the full gate after each. **`tests/stages` 114 → 128 passing** (675 PARITY OK throughout).
+
+Landed:
+- **fix/naming** (namestyle #6/#7, +2): implemented `DatabaseArch`/`TranslateSeam`/`TypeFactorySeam` for the live seam `Architecture` (previously only `TestArch` did, so the ghidra `iVarN` path in `Database::build_variable_name` was unreachable); routed `ActionNameVars`' `vN` tail through it under `option namestyle ghidra`.
+- **fix/storage** (gh8471 thumbfuncptr, +2): ported `decode_funcptr_align` (`<funcptr align>` pspec) + the precise `RulePtrsubUndo` thumb guard via a `preserve_thumb_funcptr` seam flag.
+- **fix/heritage** (gh6882/gh6990 panic removed, +0 but a real seam port): ported `Funcdata::removeUnreachableBlocks` + `descend2Undef` so `ActionUnreachable` actually deletes orphan blocks before heritage `build_adt` (was a no-op SEAM that crashed). gh6882/gh6990 now decompile (the e500 gh6904 overlap is separate, deferred).
+- **fix/types** (gh9184, +1): a *rendering* bug — the var-decl emitter only declared `[N]` arrays for mapped-Symbol arrays, flattening an unmapped auto-local (the 256-bit YMM accumulator, correctly inferred as `undefined1[32]`) to scalar `undefined32`. Fixed the emitter to use the decl-rep varnode's own array type; realigned the stale `xunknown1[32]` assertion to the realtypes-consistent `char[32]`.
+- **fix/jumptable** (gh8817 v850indbranch + gh9191 switchmodbound, +4): overrode `ArchFlowEnv::is_v850_indirect_jmp` to reclassify CALLIND→BRANCHIND; ported `kunaTryModuloBoundTable` into `recover_model_basic` (new `switch_modulo_bound` seam flag).
+- **fix/spec8051** (gh1243, +2): the dropped 8051 body — `<volatile>` (`decodeVolatile`) and `<default_symbols>` (`buildSymbols`) pspec handling were unported, so the SFR (P0/P1) writes were dead-code-eliminated. Ported both in `init_post_engine`; benefits all SFR-style targets.
+- **fix/simplify** (gh8913 addcarrychain + gh8467 dynamichashmax, +3): `RuleAddCarryChain` built PIECE/ZEXT/ADD with a zero-flag `TypeOp` skeleton so `CONCAT11(c,c)` never collapsed — switched to `op_set_opcode_code`; gh8467 was a `LAB_<idx>` vs angr `label_<addr>` label-naming gap (added `Funcdata::sblock_entry_addr`). (Took only the non-duplicate parts; its independently re-ported `removeUnreachableBlocks` was dropped in favor of fix/heritage's.)
+
+Process note: git's **stash stack and refs are shared across worktrees** under one repo — agents' `git stash` use cross-contaminated working trees (and leaked a printc.rs edit into the main tree). Integration handled this with cherry-pick + manual conflict resolution; future fan-outs should forbid `git stash` in worktree agents.
+
+Remaining (18, all deep/architectural — agent-characterized): gh6882 (sparcstructret flow consumer unported), gh6990 (subsumed — heritage makes the default correctly single-register, invalidating the bug premise), gh8500 (stack-alias LOAD never structures), gh9218 (realtypes type-string + a structuring loss), KUNA-RESTARTS #1 (kuna's single-pass jumptable recovery never triggers the 1→>1 restart), gh6904 (e500 mixed-width input overlap), ghangr-loweredswitch ×2 (a corpus-wide `RuleExpandLoad` `get_in(1)` panic + unported lowered-switch install surgery), gh1276 (register-naming + carry-borrow simplification), angr-StackGuard ×4 (canary-strip logic).
+
 ## Session (2026-06-21d) — restore test-stages: the kuna-option write-path seam + disassemble + the infra commands
 
 **Fixed the documented "unimplemented kuna-option write-path seam"** (the 2026-06-21c entry's `make test-stages` "135 regressed / 43 file-ERRORs" cause). Two root causes:
