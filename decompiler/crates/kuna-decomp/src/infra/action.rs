@@ -1370,13 +1370,13 @@ fn all_opcodes() -> Vec<OpCode> {
 
 /// The SeqNum of the first optree entry strictly greater than `sq`, or `None`.
 fn next_seqnum_after(data: &Funcdata, sq: &SeqNum) -> Option<SeqNum> {
-    data.obank().iter_all().find(|(k, _)| *k > sq).map(|(k, _)| k.clone())
+    data.obank().first_after_seq(sq).map(|(k, _)| k.clone())
 }
 
 /// The op at the first optree entry strictly greater than `sq` (the C++
 /// `++op_state` then deref).
 fn first_op_after(data: &Funcdata, sq: &SeqNum) -> Option<OpId> {
-    data.obank().iter_all().find(|(k, _)| *k > sq).map(|(_, id)| id)
+    data.obank().first_after_seq(sq).map(|(_, id)| id)
 }
 
 /// Pull the next token from a `:`-separated list of Action/Rule names (C++
