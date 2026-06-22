@@ -1854,8 +1854,10 @@ impl PcodeOpBank {
     /// O(log n) `BTreeMap::range` — the ActionPool op-cursor advance, which the
     /// C++ does in O(1) by incrementing a `PcodeOpTree::const_iterator`.
     pub fn first_after_seq(&self, sq: &SeqNum) -> Option<(&SeqNum, OpId)> {
+        // Borrow `sq` into the range bound (the `(Bound<&T>, Bound<&T>)`
+        // RangeBounds impl) so the per-op cursor advance does not clone the key.
         self.optree
-            .range((Bound::Excluded(sq.clone()), Bound::Unbounded))
+            .range((Bound::Excluded(sq), Bound::Unbounded))
             .next()
             .map(|(k, &v)| (k, v))
     }
