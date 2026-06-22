@@ -45,3 +45,4 @@ pub mod loadimage_object;
 pub mod s1_loader;
 pub mod s1_demangle;
 pub mod s1_strings;
+pub mod s1_protos;

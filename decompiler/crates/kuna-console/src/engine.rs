@@ -655,6 +655,18 @@ fn commit_analysis_output(
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
     }
 
+    // 5. Library prototypes (the kuna analog of ApplyDataArchiveAnalyzer): park each
+    //    on its named global callee. `ActionDefaultParams` later copies the callee's
+    //    prototype into the caller's call spec, so the argument constants get typed
+    //    (e.g. `puts(char*)` types `0x400915` as a char pointer, which — with the
+    //    read-only markup applied above and the StringManager — renders the string
+    //    literal `puts("Username: ")`). A name with no matching FunctionSymbol is a
+    //    silent no-op.
+    for pieces in out.prototypes {
+        let name = pieces.name.clone();
+        prog.arch_mut().set_function_prototype_pieces(&name, pieces);
+    }
+
     Ok(())
 }
 

@@ -184,25 +184,26 @@ debug-format reader or a discovery loop). Vendored fixtures live in
 | ✅ | PLT/GOT import names | S1 | done | **fauxware**: `0x400510→puts`, no symbol at `0x0`, no `@` in names (`kuna-analysis` tests + console e2e) |
 | ✅ | **Foundation: generic commit seam** | S1 | done | `bootstrap_from_elf` runs `run_default_analyses` + `commit_analysis_output`; no funcsym regression (`make test` PARITY OK) |
 | ✅ | **No-return detection** | S1 | done | **fauxware** `rejected` calls `exit`: no dead fall-through after `exit(1)` (5 unit tests + e2e). See [`analysis-port-log.md`](analysis-port-log.md) increment 1 |
-| 1 | String-literal detection + `char*` typing | S1 | easy-med | **fauxware**: `kuna decompile fauxware main` stdout contains `"Username: "`, `"Password: "` (not raw `0x40xxxx`) |
-| 2 | Demangling (Itanium C++ / Rust) | S1 | easy-med | unit: `demangle("_ZN3foo3barEv") == "foo::bar"`; + small `g++ -c` fixture → mangled symbol resolves to its demangled form |
+| ✅ | **Demangling** (Itanium C++ / Rust) | S1 | done | `cpp_mangled` `main` renders `foo::Bar::baz(...)` (cpp_demangle + rustc-demangle; needed the cross-scope call-resolution fix). Increment 2 |
+| ✅ | **Library prototype seeding** | S1 | done | **fauxware** `main`: `puts("Username: ")`, `puts("Password: ")` (libproto types arg `char*`; the route that actually renders literals in kuna). Increment 3 |
+| 🟡 | String-literal detection | S1 | n/a | implemented + tested but **disabled by default**: kuna's printer renders a named `char[]` symbol as its name (`s_400915`), shadowing the literal; literals come from prototype/usage `char*` typing instead. Increment 3 |
 | 4 | DWARF debug-info | S1 | hard | **cet_pie_x86_64** (has `.debug_info`): recovered function names + ≥1 typed parameter appear (not `param_1`) |
-| 5 | Library prototype seeding | S1/P0 | med | **fauxware**: first `printf` arg typed `char *` from a seeded libc signature (composes with #1 → `printf("Password: ")`) |
 | 6 | Function-start / entry discovery | S1 | hard | **stripped_dynamic_x86_64**: discovered entry set includes the real `main`/entry, decompilable without a supplied address |
 | 7 | External / thunk object model | S1 | hard | **fauxware**: PLT thunk to `puts` modeled as a thunk (tail-call inlined), not a standalone `sub_` |
 | 8 | Arch markers (ARM/Thumb `$t`, MIPS `$gp`, x86 purge) | S1 | med | needs an ARM/MIPS fixture (not yet vendored): a Thumb function decodes as Thumb from its `$t` mapping symbol |
 | 9 | Jump-table post-typing refinement | S2 (feedback) | hard | needs a switch-heavy fixture (not yet vendored): refined case count matches the typed table after a second pass |
 
-### Do first (the simplest-to-easy, highest-impact)
+### Do first — ✅ all three done (increments 1–3)
 
-1. ~~**No-return detection**~~ — ✅ **done** (increment 1): a fixed import-name set
-   + the `FuncProto` no-return flag; removes spurious dead code after `exit`/`abort`.
-2. **Demangling** (#2) — a self-contained name transform; unit-testable with no
-   binary; composes with kuna's existing `::` namespace split.
-3. **String-literal detection** (#1) — a `.rodata` NUL-terminated scan + a `char[]`
-   typed-data symbol; the read-only markup it needs is already on the ELF path now.
-   (Headline `puts("Username: ")` rendering may also need library-prototype seeding
-   — see the strings/libproto rows above.)
+1. ~~**No-return detection**~~ — ✅ done (increment 1).
+2. ~~**Demangling**~~ — ✅ done (increment 2; needed the cross-scope call-resolution fix).
+3. ~~**String literals**~~ — ✅ achieved (increment 3) via **library-prototype seeding**
+   (`char*` arg typing + readonly + StringManager), *not* via planting `char[]` data
+   symbols — kuna's printer prefers a symbol name over the literal, so the plant-a-symbol
+   `StringsAnalyzer` mechanism is implemented but disabled. See
+   [`analysis-port-log.md`](analysis-port-log.md) Increment 3 for the full finding.
 
-All test against already-vendored fixtures (or pure unit tests) and never touch the
-XML datatest parity path — both gates stay green.
+The remaining roadmap items (DWARF, entry discovery, the printer change that re-enables
+the strings pass, per-run option gating) are tracked in
+[`analysis-port-log.md`](analysis-port-log.md). None of the work touches the XML datatest
+parity path — both gates stay green.

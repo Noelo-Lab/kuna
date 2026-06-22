@@ -56,8 +56,8 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `foundation` | generic `AnalysisOutput` commit seam | med | bootstrap_from_elf commits with no funcsym regression |
 | ✅ | `noreturn_known` | No-return known list (`NoReturnFunctionAnalyzer`) | easy | fauxware `rejected`: no dead code after `exit(1)` |
 | ✅ | `s1-demangle` | Demangling (`GnuDemanglerAnalyzer` + Rust) | easy | `cpp_mangled` `main`: call renders `foo::Bar::baz(...)` |
-| ✅ | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | fauxware: typed `char[]` globals (`puts(s_400915)`); inline `"…"` literal needs `s1-libproto` |
-| ⬜ | `s1-libproto` | Library prototype seeding (`ApplyDataArchiveAnalyzer`) | med | `printf` arg0 typed `char *` |
+| ✅ | `s1-libproto` | Library prototype seeding (`ApplyDataArchiveAnalyzer`) | med | fauxware `main`: `puts("Username: ")`, `puts("Password: ")`; `rejected`: `printf("Go away!")` |
+| 🟡 | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | implemented + tested but **disabled by default** — its named `char[]` symbol *blocks* literal rendering in kuna's printer; literals come from `s1-libproto` instead (see Increment 3) |
 | ⬜ | `s1-dwarf` | DWARF names+types (`DWARFAnalyzer`) | hard | cet_pie: real fn names + ≥1 typed param |
 | ⬜ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`) | hard | stripped: decompile entry without `--addr` |
 | ⬜ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle) | hard | C++ fixture: FDE starts ⊆ discovered entries |
@@ -218,10 +218,56 @@ global names, so the 675 datatests are unaffected.
   fixtures); `make test` **PARITY OK** (675/675, including after the engine
   call-resolution change); `make rust-test` green.
 
-### Next: `s1-libproto` (completes the string literal)
+### Increment 3 — library prototypes + the strings/printer finding ✅
 
-Seed prototypes for common libc functions (`puts(char*)`, `printf(char*,...)`,
-`malloc`, …) so call arguments get typed — turning `puts(s_400915)` into
-`puts("Username: ")`. Commit via the existing `set_function_prototype_pieces` /
-`apply_prototype_to_symbol` path (the console already parses C decls into
-`PrototypePieces`). Depends on `s1-strings` (done).
+**`s1-libproto`** — port of `ApplyDataArchiveAnalyzer`. Ghidra applies parsed C
+header archives (`.gdt`, binary, not vendored) to give imports their signatures.
+Substituted a **built-in table of ~25 common libc signatures** (`puts(char*)`,
+`printf(char*,...)`, `strcmp(char*,char*)`, `malloc`, `memcpy`, …) — a faithful
+minimal stand-in (documented LOSS: covers the table, not a full archive). New
+`s1_protos` module: for each table entry whose name is present as a function, build
+`PrototypePieces` from the arch type factory and emit it; the commit seam parks each
+on its callee via `Architecture::set_function_prototype_pieces`. `ActionDefaultParams`
+then copies the callee signature into the caller, typing the argument constants.
+
+**The headline result.** With `puts` typed `int puts(char *)`, the constant `0x400915`
+becomes a `char *` to readonly memory, the printer's `push_ptr_char_constant_ir` fires,
+and the StringManager reads the bytes:
+```c
+puts("Username: ");
+puts("Password: ");          // fauxware main
+printf("Go away!");          // fauxware rejected
+```
+
+**Key architectural finding — how kuna renders string literals (vs Ghidra).** Ghidra's
+`StringsAnalyzer` *creates a string data object* at the address, and Ghidra's decompiler
+renders a pointer to it as the literal. **kuna's printer renders a constant that maps to
+a named global symbol as that symbol's NAME** (`puts(s_400915)`), which *shadows* the
+literal path. So planting a `char[N]` data symbol (Ghidra's mechanism, which the
+`s1-strings` pass faithfully implements) actually **blocks** `puts("Username: ")` in kuna.
+An A/B test confirmed it: with the strings pass on, `puts(s_400915)`; with it off (libproto
+only), `puts("Username: ")`. Therefore:
+
+- kuna renders string literals via **type-driven rendering** — a `char *`-typed constant
+  (from `s1-libproto`, or from S5 usage inference) pointing at readonly memory, read by the
+  already-ported `StringManager` — **not** via Ghidra's plant-a-data-symbol path.
+- `s1-strings` is kept (a faithful, tested `StringsAnalyzer` port) but **disabled by
+  default**, because enabling it is net-negative (it trades literals for `s_<addr>` named
+  refs). Re-enabling it cleanly requires a **deferred printer change**: render a pointer to
+  a readonly char-array symbol as the literal (the Ghidra behavior), so the data symbol and
+  the literal coexist. Until then, `s1-libproto` + S5 usage inference cover literal rendering.
+
+This is exactly the kind of "Ghidra mechanism that doesn't map 1:1 onto the ported engine"
+the port is meant to surface: the *end result* (`puts("Username: ")`) is achieved, by a
+different, more kuna-native route.
+
+- **Tests:** `kuna-analysis` 34 tests pass; `make test` **PARITY OK** (675/675);
+  `make rust-test` green.
+
+### Next candidates
+
+Per the work-list, in rough priority: **DWARF** (`s1-dwarf`, biggest naming/typing
+source, hard — `gimli`), **entry discovery** (`s1-entry-disc`, hard), the **printer change**
+to let `s1-strings` render literals (re-enables it), the **per-run `--option` gating** of
+all passes (the deferred conflict #4), and the **no-return × demangle** cross-pass seam fix
+(match the installed/demangled name). Inherited/out-of-scope items need no work (see table).

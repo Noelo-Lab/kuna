@@ -26,7 +26,22 @@ pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
         Box::new(crate::s1_loader::noreturn::NoReturnKnownPass),
         // S1 strings: NUL-terminated ASCII string-literal detection. Mirrors
         // Ghidra's `StringsAnalyzer` (min length 5, require-NUL-end).
-        Box::new(crate::s1_strings::StringLiteralPass { min_len: 5 }),
+        // S1 library prototypes: seed common libc signatures (puts(char*), …) so
+        // call arguments get typed. Mirrors Ghidra's `ApplyDataArchiveAnalyzer`.
+        // THIS is what renders string literals in kuna: typing a call argument
+        // `char *` lets the printer's pointer-char-constant path read the readonly
+        // bytes via the StringManager and emit `puts("Username: ")`.
+        Box::new(crate::s1_protos::LibProtoPass),
+        // S1 strings (StringLiteralPass) is implemented + tested but **disabled by
+        // default**: kuna's printer renders a constant that maps to a *named* global
+        // symbol as that symbol's NAME (`s_400915`), which SHADOWS the string-literal
+        // path. So planting a `char[N]` data symbol (Ghidra's StringsAnalyzer
+        // mechanism) actually *blocks* `puts("Username: ")` in kuna, where the literal
+        // instead comes from type-driven rendering (libproto/usage `char *` typing +
+        // readonly + StringManager). Re-enabling it requires teaching the printer to
+        // render a pointer to a readonly char-array symbol as the literal (the Ghidra
+        // behavior) — a deferred printer change. See docs/analysis-port-log.md.
+        // Box::new(crate::s1_strings::StringLiteralPass { min_len: 5 }),
     ]
 }
 

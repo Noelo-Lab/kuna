@@ -78,6 +78,12 @@ pub struct AnalysisOutput {
     pub readonly: Vec<(u64, u64)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
+    /// Library-function prototypes to seed onto matching FunctionSymbols (the kuna
+    /// analog of Ghidra's `ApplyDataArchiveAnalyzer` / `.gdt` archives). Each is
+    /// parked on its named callee via `set_function_prototype_pieces`, so a caller
+    /// copies the callee signature and the argument constants get typed (e.g.
+    /// `puts(char*)` types `0x400915` as `char*`, rendering the string literal).
+    pub prototypes: Vec<kuna_decomp::fspec::PrototypePieces>,
 }
 
 impl AnalysisOutput {
@@ -88,6 +94,7 @@ impl AnalysisOutput {
         self.noreturn.extend(other.noreturn);
         self.readonly.extend(other.readonly);
         self.strings.extend(other.strings);
+        self.prototypes.extend(other.prototypes);
     }
 }
 

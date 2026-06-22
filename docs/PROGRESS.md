@@ -33,11 +33,32 @@ analysis). Process log: **`docs/analysis-port-log.md`**; gap inventory: `docs/mi
   as a Ghidra-front-end drop-in, because the C++ decompiler protocol is pull-based
   (`ArchitectureGhidra` queries the client and forbids inventing symbols) and kuna's passes
   are bound to the standalone ELF path the protocol never uses. Recorded in the log.
-- **Tests:** 5 new unit tests (`kuna-analysis` `noreturn::tests`); `make test` PARITY OK
-  (675/675); `make rust-test` green; `kuna catalog --check` clean.
-- **Deferred (next increments):** demangle → strings → libproto passes; per-run `--option`
-  gating of passes (needs the CLI `build_script`/`IfcReadSymbols` reorder — conflict #4 in
-  the log).
+- **Increment 2 — demangle + strings (fanned out to parallel worktree agents).**
+  `s1-demangle`: port of `GnuDemanglerAnalyzer` via `cpp_demangle` + `rustc-demangle` crates
+  (faithful — Ghidra itself shells out to libiberty; nothing to transcribe for Itanium),
+  name-only reduction for kuna's `::` splitter, applied at funcsym build. `s1-strings`: port
+  of `StringsAnalyzer` (matcher + char[N] typing). **Engine fix demangle uncovered:**
+  call resolution (`query_call` + variants) only searched the GLOBAL scope, so a namespaced
+  callee rendered `sub_<addr>`; added `Database::find_function_across_scopes` + qualified-name
+  + cross-scope no-return/inline/inject, matching C++ `queryFunction(Address)`. Now
+  `cpp_mangled` `main` renders `foo::Bar::baz(&v1,0x2a)`.
+- **Increment 3 — library prototypes + the strings/printer finding.** `s1-libproto`: port of
+  `ApplyDataArchiveAnalyzer` via a built-in table of ~25 libc signatures (`puts(char*)`, …)
+  parked on callees via `set_function_prototype_pieces`. **This is what renders string
+  literals in kuna** (typing the arg `char*` → printer's char-constant path + readonly +
+  StringManager): fauxware `main` now prints `puts("Username: ")` / `puts("Password: ")`,
+  `rejected` prints `printf("Go away!")`. **Finding:** Ghidra's StringsAnalyzer plants a
+  string *data object*; kuna's printer renders a constant mapping to a *named* symbol as the
+  name (`s_400915`), which *shadows* the literal — so the `s1-strings` plant-a-symbol pass
+  *blocks* the literal and is kept but disabled-by-default (re-enabling needs a printer change
+  to render string-symbol refs as literals). A/B verified. kuna achieves the literal by a more
+  native route (type-driven), not Ghidra's data-object route.
+- **Net:** 4 analyses ported (no-return, demangle, libproto, + PLT already) + 1 engine fix
+  (cross-scope resolution); `s1-strings` implemented/disabled. `kuna-analysis` 34 unit tests;
+  every increment held `make test` PARITY OK (675/675) + `make rust-test` green.
+- **Deferred (next):** DWARF, entry discovery, the printer change that re-enables `s1-strings`,
+  per-run `--option` gating of passes (conflict #4 in the log), the no-return×demangle
+  cross-pass seam. Full work-list + downstream-compat analysis in `docs/analysis-port-log.md`.
 
 ## Session (2026-06-21f) — grind the deep tail one-by-one: 128 → 157/159 (REGRESSED 31 → 2)
 
