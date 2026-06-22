@@ -409,6 +409,11 @@ impl Action for ActionHeritage {
         // changes (the C++ does too — heritage registers no change count, which
         // is why `break action heritage` never fires; see kuna/goldens.py B3).
         data.op_heritage();
+        // (kuna) Repair any synthetic lowered-switch BRANCHIND whose input
+        // heritage normalized away (see `kuna_repair_lowered_switch_inputs`).
+        // A no-op unless a lowered-switch was installed this function, so it
+        // never perturbs the datatest corpus.
+        data.kuna_repair_lowered_switch_inputs();
         0
     }
 }

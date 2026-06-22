@@ -2135,10 +2135,130 @@ impl Funcdata {
         };
         let signed = case_vals.iter().any(|&v| (v & signbit) != 0);
         jt.kuna_set_signed_labels(signed);
+        // Record the recovered switch-variable storage so the post-heritage
+        // repair (`kuna_repair_lowered_switch_inputs`) can re-point the
+        // synthesized BRANCHIND at the live SSA value if heritage normalized the
+        // too-small switch-var read up to the register range's width and then
+        // swept the resulting undefined wide read (nulling the BRANCHIND input).
+        jt.kuna_set_lowered_var(var_addr.clone(), var_size);
 
         self.jumpvec_mut().push(jt);
         let idx = self.num_jump_tables() as usize - 1;
         Ok(Some(idx))
+    }
+
+    /// (kuna) Post-heritage repair of synthetic lowered-switch BRANCHIND inputs.
+    ///
+    /// `kuna_install_lowered_switch` runs pre-SSA and points the synthesized
+    /// `BRANCHIND` at a *free read* of the recovered switch-variable storage
+    /// (e.g. a 4-byte `EAX` read), trusting heritage to thread SSA through it.
+    /// But when that register's overlapping range is read elsewhere at a wider
+    /// width (e.g. the full 8-byte `RAX`), heritage's `guard`/`normalizeReadSize`
+    /// widens the too-small read to the range width — wrapping it in a
+    /// `SUBPIECE` of a fresh wide free read.  At the BRANCHIND's program point no
+    /// wide reaching def exists (only the narrow switch value reaches), so the
+    /// wide read is undefined and dead-code removal sweeps the SUBPIECE,
+    /// **nulling the BRANCHIND input** — the header then renders the invalid
+    /// `switch()`.
+    ///
+    /// This runs right after [`op_heritage`](crate::funcdata::Funcdata::op_heritage)
+    /// (its only caller is the action wired immediately after `ActionHeritage`).
+    /// For each synthetic lowered-switch table (the only ones carrying
+    /// [`JumpTable::kuna_lowered_var`]) whose BRANCHIND input is null/free, it
+    /// finds the live SSA Varnode of exactly the recorded `(addr,size)` reaching
+    /// the BRANCHIND — the narrow switch value (e.g. the call output) — by
+    /// scanning the BRANCHIND's own block backward and then up the dominator
+    /// tree, and re-points input 0 at it.  Scoped strictly to the recorded
+    /// synthetic tables, so it cannot perturb the datatest corpus (which has no
+    /// `kuna_lowered_var` tables).  Declines silently if no exact-size reaching
+    /// def is found, leaving the current behavior intact.
+    pub fn kuna_repair_lowered_switch_inputs(&mut self) {
+        // Snapshot the (indirect op, var addr, var size) of every synthetic table.
+        let targets: Vec<(OpId, Address, int4)> = self
+            .jumpvec_ref()
+            .iter()
+            .filter_map(|jt| {
+                let (a, s) = jt.kuna_lowered_var()?;
+                let op = jt.get_indirect_op()?;
+                Some((op, a.clone(), *s))
+            })
+            .collect();
+        for (indop, var_addr, var_size) in targets {
+            // Confirm this op is still a live BRANCHIND.
+            if self.obank().get(indop).map(|o| o.code()) != Some(OpCode::CPUI_BRANCHIND) {
+                continue;
+            }
+            // If input 0 already names a live, non-free Varnode, leave it.
+            let in0 = self.obank().get(indop).and_then(|o| o.get_in(0));
+            let healthy = in0
+                .and_then(|v| self.vbank().get(v))
+                .map(|v| v.is_written() || v.is_input())
+                .unwrap_or(false);
+            if healthy {
+                continue;
+            }
+            // Find the live reaching def of exactly (var_addr, var_size).
+            if let Some(def_vn) = self.kuna_reaching_def_at(indop, &var_addr, var_size) {
+                let _ = self.op_set_input(indop, def_vn, 0);
+            }
+        }
+    }
+
+    /// (kuna) Find the live SSA Varnode of exactly `(addr,size)` reaching `op`
+    /// (its def dominates `op`).  Scans `op`'s own block backward from `op`, then
+    /// walks the immediate-dominator chain scanning each block's ops in reverse;
+    /// returns the first output Varnode matching the storage exactly.  Returns
+    /// `None` if no exact match dominates `op` (the caller then declines).
+    ///
+    /// Used only by [`kuna_repair_lowered_switch_inputs`]; an exact-size match is
+    /// required so we never re-point a BRANCHIND at a mis-sized value.
+    fn kuna_reaching_def_at(
+        &self,
+        op: OpId,
+        addr: &Address,
+        size: int4,
+    ) -> Option<VarnodeId> {
+        let want_space = addr.get_space()?.get_index();
+        let want_off = addr.get_offset();
+        let matches = |this: &Self, vn: VarnodeId| -> bool {
+            let v = match this.vbank().get(vn) {
+                Some(v) => v,
+                None => return false,
+            };
+            v.get_size() == size
+                && v.get_offset() == want_off
+                && v.get_addr().get_space().map(|s| s.get_index()) == Some(want_space)
+        };
+        // Start in the BRANCHIND's own block, scanning ops strictly before it.
+        let mut block = self.obank().get(op)?.get_parent()?;
+        let mut stop_before: Option<OpId> = Some(op);
+        // Bound the dominator walk defensively (the tree depth is finite).
+        for _ in 0..4096 {
+            let ops = self.bb_ops(block);
+            // On the start block, restrict to ops strictly before `op`; on every
+            // dominator block, scan the whole block.
+            let upper = match stop_before {
+                Some(stop) => ops.iter().position(|&o| o == stop).unwrap_or(ops.len()),
+                None => ops.len(),
+            };
+            // Reverse scan: the closest-preceding def reaches `op`.
+            for &bop in ops[..upper].iter().rev() {
+                if let Some(out) = self.obank().get(bop).and_then(|o| o.get_out()) {
+                    if matches(self, out) {
+                        return Some(out);
+                    }
+                }
+            }
+            // Move to the immediate dominator and scan its whole block.
+            match self.bblocks_ref().block(block).get_immed_dom() {
+                Some(idom) if idom != block => {
+                    block = idom;
+                    stop_before = None;
+                }
+                _ => break,
+            }
+        }
+        None
     }
 
     /// Test whether the given Varnode holds the function's return address (C++

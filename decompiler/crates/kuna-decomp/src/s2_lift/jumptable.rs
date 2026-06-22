@@ -3066,6 +3066,16 @@ pub struct JumpTable {
     /// from `getSwitchType()`; a kuna hand-built table records it directly because
     /// the synthesized BRANCHIND input may not carry the recovered signed type).
     kuna_signed_labels: bool,
+    /// (kuna) For a synthetic lowered-switch table only: the storage `(addr,size)`
+    /// of the recovered switch variable.  `kuna_install_lowered_switch` runs
+    /// pre-SSA and points the synthesized BRANCHIND at a free read of this
+    /// storage; heritage may then normalize that too-small read up to the
+    /// register range's full width, leaving no reaching def at the BRANCHIND's
+    /// program point and nulling the input.  `kuna_repair_lowered_switch_inputs`
+    /// uses this record (set only on the synthetic table) to re-point the
+    /// BRANCHIND at the live SSA value reaching it, so the header renders
+    /// `switch(V)`.  `None` on every naturally-recovered table.
+    kuna_lowered_var: Option<(Address, int4)>,
 }
 
 impl JumpTable {
@@ -3093,6 +3103,7 @@ impl JumpTable {
             collectloads: false,
             default_is_folded: false,
             kuna_signed_labels: false,
+            kuna_lowered_var: None,
         }
     }
 
@@ -3122,6 +3133,7 @@ impl JumpTable {
             collectloads: op2.collectloads,
             default_is_folded: false,
             kuna_signed_labels: op2.kuna_signed_labels,
+            kuna_lowered_var: op2.kuna_lowered_var.clone(),
         }
     }
 
@@ -3196,6 +3208,18 @@ impl JumpTable {
     /// (kuna) Whether case labels for this table render as signed integers.
     pub fn kuna_has_signed_labels(&self) -> bool {
         self.kuna_signed_labels
+    }
+
+    /// (kuna) Record the recovered switch-variable storage for a synthetic
+    /// lowered-switch table (consumed by `kuna_repair_lowered_switch_inputs`).
+    pub fn kuna_set_lowered_var(&mut self, addr: Address, size: int4) {
+        self.kuna_lowered_var = Some((addr, size));
+    }
+
+    /// (kuna) The recorded lowered-switch variable storage, if this is a
+    /// synthetic lowered-switch table; `None` on naturally-recovered tables.
+    pub fn kuna_lowered_var(&self) -> Option<&(Address, int4)> {
+        self.kuna_lowered_var.as_ref()
     }
 
     /// Return the size of the address table for \b this jump-table
