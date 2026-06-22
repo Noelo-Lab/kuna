@@ -121,10 +121,10 @@ impl Rule for RuleStackProbeLoop {
 
     /// C++ `RuleStackProbeLoop::applyOp` (`kuna_stackprobeloop.cc:63`).
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->model_stack_probe_loop) return 0;  // default-off: byte-identical
-        // SEAM(W4): the seam Architecture on Funcdata has no flag; the gate is the
-        // resolved `enabled` field (see module docs).
-        if !self.enabled {
+        // if (!data.getArch()->model_stack_probe_loop) return 0;
+        // The live gate is carried on the seam Architecture (`build_arch_handle`);
+        // `enabled` stays as the unit-test OR-override (rule registered false).
+        if !self.enabled && !data.get_arch().model_stack_probe_loop {
             return 0;
         }
 

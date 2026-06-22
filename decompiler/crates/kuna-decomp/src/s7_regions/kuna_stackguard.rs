@@ -38,18 +38,16 @@
 //! upstream byte-identical; the Action is inert when off).  The live flag is
 //! [`Architecture::strip_stack_guard`](crate::architecture::Architecture).
 //!
-//! ## SEAM(W4/W8) — the CFG surgery
+//! ## The CFG surgery
 //!
-//! `Funcdata::removeBranch` and `Funcdata::removeUnreachableBlocks` are the
-//! block-graph structuring primitives that are **not yet in the merged tree**
-//! (the same seam `ActionDeterminedBranch`/`ActionUnreachable` in
-//! `coreaction_early.rs` document — they realize the detection and defer the
-//! edge removal).  [`ActionStripStackGuard::apply`] therefore ports the entire
-//! canary *detection and victim-edge selection* faithfully and stops at the
-//! `data.removeBranch(h,idx); data.removeUnreachableBlocks(false,true);` pair,
-//! which is left as a documented seam.  When those primitives land (the
-//! W4/W8 funcdata_block wave), the two calls drop into [`apply`] at the marked
-//! point and the `return 1` is restored.  Noted in the structured losses.
+//! [`ActionStripStackGuard::apply`] ports the canary *detection and victim-edge
+//! selection* faithfully, then performs the edit with the block-graph structuring
+//! primitives `Funcdata::removeBranch` (CBRANCH → fall-through, MULTIEQUALs
+//! patched) and `Funcdata::removeUnreachableBlocks` (collect the orphaned
+//! `__stack_chk_fail` handler) — the same primitives `ActionDeterminedBranch`/
+//! `ActionUnreachable` use.  After the strip the shared return tail is a bare
+//! `return v` that `ActionReturnSplit` (the next action in the `returnsplit`
+//! group) duplicates into each predecessor, eliminating the goto/label.
 
 use std::collections::BTreeSet;
 
@@ -259,9 +257,10 @@ impl Action for ActionStripStackGuard {
     /// module docs); the scan still runs and `idx` is computed so the seam is
     /// a single drop-in point.
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ `if (!data.getArch()->strip_stack_guard) return 0;` — resolved at
-        // construction (SEAM(W4); see module docs).
-        if !self.enabled {
+        // C++ `if (!data.getArch()->strip_stack_guard) return 0;` — the live gate
+        // is carried on the seam Architecture (`build_arch_handle`); `enabled`
+        // stays as the unit-test OR-override (action registered false).
+        if !self.enabled && !data.get_arch().strip_stack_guard {
             return 0; // P0 assertion not set
         }
 
@@ -316,17 +315,25 @@ impl Action for ActionStripStackGuard {
             if idx < 0 {
                 continue;
             }
-            // SEAM(W4/W8 — funcdata_block): the in-place CFG surgery is not in
-            // the merged tree.  The C++ here is:
+            // The in-place CFG surgery (the W4/W8 funcdata_block primitives are
+            // now in the merged tree).  The C++ here is:
             //   data.removeBranch(h,idx);                  // CBRANCH -> fall-through, MULTIEQUALs patched
             //   data.removeUnreachableBlocks(false,true);  // collect the orphaned handler block
             //   return 1; // one canary per apply; the fullloop re-invokes and self-gates
-            // `idx`/`h` are computed above so this drops in directly when
-            // removeBranch/removeUnreachableBlocks land.  Until then the Action
-            // detects-but-does-not-mutate (it cannot change the graph yet), so
-            // it reports no change and the option is structurally inert.
-            let _ = (h, idx);
-            return 0;
+            // `removeBranch` severs the corrupted-canary edge (dropping the
+            // CBRANCH and patching the saved-canary MULTIEQUAL phis), leaving the
+            // `__stack_chk_fail` handler block unreachable; `removeUnreachableBlocks`
+            // then collects it.  The shared bare-return tail that survives is
+            // duplicated into each predecessor by the immediately-following
+            // `ActionReturnSplit`, eliminating the goto/label and inlining the deep
+            // match path as a direct `return 1`.
+            data.remove_branch(h, idx).expect("ActionStripStackGuard: removeBranch");
+            data.remove_unreachable_blocks(false, true)
+                .expect("ActionStripStackGuard: removeUnreachableBlocks");
+            self.base.count += 1;
+            // One canary per apply; the fullloop re-invokes and self-gates (the
+            // compare/handler are gone on the next pass).
+            return 1;
         }
         0
     }

@@ -53,7 +53,7 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
-use crate::seams::{OpId, TypeOp, VarnodeId};
+use crate::seams::{OpId, VarnodeId};
 use crate::varnode::{DefOpInfo, VarnodeBank};
 
 /// (kuna GH-8913) Fuse an 8-bit carry-chained 16-bit add reassembled by CONCAT
@@ -91,8 +91,8 @@ impl Rule for RuleAddCarryChain {
 
     /// C++ `RuleAddCarryChain::applyOp` (`kuna_addcarrychain.cc:77`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->add_carry_chain) return 0;  // (kuna) gate (SEAM(W4))
-        if !self.enabled {
+        // if (!data.getArch()->add_carry_chain) return 0;  // (kuna) gate (seam-carried)
+        if !self.enabled && !data.get_arch().add_carry_chain {
             return 0;
         }
 
@@ -181,8 +181,13 @@ impl Rule for RuleAddCarryChain {
         let base_outsize = vn_size(data, hipart) + vn_size(data, baselo);
         let _base_out = new_unique_out(data, base_outsize, baseop)
             .expect("RuleAddCarryChain: newUniqueOut(base) (internal invariant)");
-        // data.opSetOpcode(baseop,CPUI_PIECE);  // SEAM(W6): glb->inst[CPUI_PIECE]
-        data.op_set_opcode(baseop, TypeOp::new(OpCode::CPUI_PIECE, 0, "PIECE"));
+        // data.opSetOpcode(baseop,CPUI_PIECE);  -- resolve glb->inst[CPUI_PIECE]
+        // through the W6 inst[] table so the op carries the real `binary` eval-type
+        // flag.  A zero-flag skeleton leaves PIECE(const,const) uncollapsible
+        // (`dc_collapse` reads the eval-type bit), so the reassembled 16-bit base
+        // would render as a literal `CONCAT11(0xNN,0xNN)` instead of folding to the
+        // base constant (GH-8913 #2).
+        data.op_set_opcode_code(baseop, OpCode::CPUI_PIECE);
         // data.opSetInput(baseop,hipart,0);  data.opSetInput(baseop,baselo,1);
         data.op_set_input(baseop, hipart, 0)
             .expect("RuleAddCarryChain: opSetInput baseop.0");
@@ -197,8 +202,8 @@ impl Rule for RuleAddCarryChain {
         // data.newUniqueOut(outsize,zextop);
         let _zext_out = new_unique_out(data, outsize, zextop)
             .expect("RuleAddCarryChain: newUniqueOut(zext) (internal invariant)");
-        // data.opSetOpcode(zextop,CPUI_INT_ZEXT);  // SEAM(W6)
-        data.op_set_opcode(zextop, TypeOp::new(OpCode::CPUI_INT_ZEXT, 0, "INT_ZEXT"));
+        // data.opSetOpcode(zextop,CPUI_INT_ZEXT);  -- resolve glb->inst[] (W6)
+        data.op_set_opcode_code(zextop, OpCode::CPUI_INT_ZEXT);
         // data.opSetInput(zextop,indexvn,0);
         data.op_set_input(zextop, indexvn, 0)
             .expect("RuleAddCarryChain: opSetInput zextop.0");
@@ -206,8 +211,8 @@ impl Rule for RuleAddCarryChain {
         data.op_insert_before(zextop, op);
 
         // Rewrite the PIECE op itself into the wide add:  out = base + zext(index).
-        // data.opSetOpcode(op,CPUI_INT_ADD);  // SEAM(W6)
-        data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_ADD, 0, "INT_ADD"));
+        // data.opSetOpcode(op,CPUI_INT_ADD);  -- resolve glb->inst[] (W6)
+        data.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
         // data.opSetInput(op,baseop->getOut(),0);
         let base_out = data.obank().get(baseop).expect("baseop live").get_out().expect("baseop out");
         data.op_set_input(op, base_out, 0)

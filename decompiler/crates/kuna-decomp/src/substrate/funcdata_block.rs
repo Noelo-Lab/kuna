@@ -1297,6 +1297,72 @@ impl Funcdata {
         Ok(())
     }
 
+    /// Rewrite every read of `vn` so it instead reads a special "undefined"
+    /// constant (C++ `Funcdata::descend2Undef`, `funcdata_varnode.cc:573`).
+    ///
+    /// Used by [`remove_unreachable_blocks`](Funcdata::remove_unreachable_blocks):
+    /// when a block is deleted, any Varnode it defined that is still read from a
+    /// (possibly reachable) block has its descendants rewired to a `0xBADDEF`
+    /// constant.  MULTIEQUAL/INDIRECT cannot take a constant directly, so a COPY
+    /// of the constant is interposed.  Returns `true` if any rewritten reader is
+    /// in a block that is not itself fully orphaned (i.e. has in-edges), which the
+    /// caller turns into a one-time "creating undefined varnodes" warning.
+    pub fn descend2_undef(&mut self, vn: VarnodeId) -> KunaResult<bool> {
+        let sz = self.vbank().get(vn).expect("descend2Undef: stale vn").get_size();
+        // Snapshot the descendant list: we rewrite reads (and create new ops)
+        // while walking, so we cannot hold the live iterator (C++ advances the
+        // iterator past the current op before mutating).
+        let descend: Vec<OpId> =
+            self.vbank().get(vn).expect("descend2Undef: stale vn").descend_iter().collect();
+        let mut res = false;
+        for op in descend {
+            let parent = match self.obank().get(op).expect("descend2Undef: stale op").get_parent() {
+                Some(p) => p,
+                None => continue,
+            };
+            if self.bblocks_ref().block(parent).is_dead() {
+                continue;
+            }
+            if self.bblocks_ref().block(parent).size_in() != 0 {
+                res = true;
+            }
+            let i = self.obank().get(op).expect("descend2Undef: stale op").get_slot(vn);
+            let opc = self.obank().get(op).expect("descend2Undef: stale op").code();
+            // badconst = newConstant(sz,0xBADDEF);
+            let badconst = self.new_constant(sz, 0xBADDEF);
+            match opc {
+                OpCode::CPUI_MULTIEQUAL => {
+                    // Cannot put a constant directly into a MULTIEQUAL: interpose
+                    // a COPY at the end of the corresponding predecessor block.
+                    let inbl = self.bblocks_ref().block(parent).get_in(i);
+                    let start = self.bb_get_start(inbl);
+                    let copyop = self.new_op(1, start);
+                    let inputvn = self.new_unique_out(sz, copyop)?;
+                    self.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
+                    self.op_set_input(copyop, badconst, 0)?;
+                    self.op_insert_end(copyop, inbl);
+                    self.op_set_input(op, inputvn, i)?;
+                }
+                OpCode::CPUI_INDIRECT => {
+                    // Cannot put a constant directly into an INDIRECT: interpose a
+                    // COPY just before the INDIRECT op.
+                    let addr =
+                        self.obank().get(op).expect("descend2Undef: stale op").get_addr().clone();
+                    let copyop = self.new_op(1, addr);
+                    let inputvn = self.new_unique_out(sz, copyop)?;
+                    self.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
+                    self.op_set_input(copyop, badconst, 0)?;
+                    self.op_insert_before(copyop, op);
+                    self.op_set_input(op, inputvn, i)?;
+                }
+                _ => {
+                    self.op_set_input(op, badconst, i)?;
+                }
+            }
+        }
+        Ok(res)
+    }
+
     /// Does the given Varnode have any descendant op in a block \e not marked
     /// dead (C++ `Funcdata::descendantsOutside`, `funcdata_block.cc:251`)?
     fn descendants_outside(&self, vn: VarnodeId) -> bool {
@@ -1392,6 +1458,7 @@ impl Funcdata {
         self.bblocks_mut().remove_from_flow(bb);
 
         // Finally remove all the ops in -bb-.
+        let mut desc_warning = false;
         for op in self.bb_ops(bb) {
             if self.obank().get(op).expect("blockRemoveInternal").is_assignment() {
                 let deadvn = self
@@ -1401,26 +1468,22 @@ impl Funcdata {
                     .get_out()
                     .expect("blockRemoveInternal: assignment with no out");
                 if unreachable {
-                    // descend2Undef + the one-time warning -- SEAM(W3-op): the
-                    // descend-to-undefined rewrite is a funcdata_op surface not on
-                    // the removeDoNothingBlock path (unreachable==false).  Reached
-                    // only by removeUnreachableBlocks, which is itself unported.
-                    return Err(KunaError::lowlevel(
-                        "blockRemoveInternal(unreachable=true): descend2Undef SEAM",
-                    ));
+                    // Mark descendants in (possibly) reachable blocks as undefined.
+                    let undef = self.descend2_undef(deadvn)?;
+                    if undef && !desc_warning {
+                        // warningHeader("Creating undefined varnodes in (possibly)
+                        // reachable block") -- W4 warning facility; the descend2Undef
+                        // rewrite is the realized side effect.  Print once.
+                        desc_warning = true;
+                    }
                 }
                 if self.descendants_outside(deadvn) {
                     return Err(KunaError::lowlevel("Deleting op with descendants"));
                 }
             }
             if self.obank().get(op).expect("blockRemoveInternal").is_call() {
-                // deleteCallSpecs(op) -- a do-nothing block (markers + branch only)
-                // never contains a CALL, so this is unreachable on the
-                // removeDoNothingBlock path.  The call-spec registry prune is a W4
-                // surface; guard rather than silently drop.
-                return Err(KunaError::lowlevel(
-                    "blockRemoveInternal: CALL in removable block (deleteCallSpecs SEAM)",
-                ));
+                // deleteCallSpecs(op) -- prune the call from the call-spec registry.
+                self.delete_call_specs(op);
             }
             self.op_destroy(op); // No longer has descendants
         }
@@ -1444,6 +1507,88 @@ impl Funcdata {
         self.block_remove_internal(bb, false)?;
         self.structure_reset(); // Delete any structure we had before
         Ok(())
+    }
+
+    /// Remove any unreachable basic blocks (C++ `Funcdata::removeUnreachableBlocks`,
+    /// `funcdata_block.cc:364`).
+    ///
+    /// `checkexistence` forces an active scan (a non-entry block with no immediate
+    /// dominator is unreachable); otherwise the cached `blocks_unreachable` flag
+    /// (set by [`structure_reset`](Self::structure_reset)) gates the work.  When
+    /// unreachable blocks exist they are collected from the entry's reachable set,
+    /// marked dead, severed from control-flow ([`branch_remove_internal`]), and
+    /// then deleted ([`block_remove_internal`] with `unreachable=true`, which
+    /// rewires stranded reads via [`descend2_undef`]).  A structuring reset follows.
+    /// Returns `true` if any block was removed.
+    pub fn remove_unreachable_blocks(
+        &mut self,
+        issuewarning: bool,
+        checkexistence: bool,
+    ) -> KunaResult<bool> {
+        let _ = issuewarning; // W4 warning facility; the block deletion is realized.
+        let size = self.bblocks_get_size();
+        if checkexistence {
+            // Quick scan: a non-entry block with no immediate dominator is
+            // unreachable.
+            let mut found = false;
+            for i in 0..size {
+                let blk = self.bblocks_get_block(i);
+                if self.bblocks_ref().block(blk).is_entry_point() {
+                    continue;
+                }
+                if self.bblocks_ref().block(blk).get_immed_dom().is_none() {
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                return Ok(false);
+            }
+        } else if !self.has_unreachable_blocks() {
+            return Ok(false);
+        }
+
+        // There is at least one unreachable block.  Find the entry point.
+        let mut entry: Option<BlockId> = None;
+        for i in 0..size {
+            let blk = self.bblocks_get_block(i);
+            if self.bblocks_ref().block(blk).is_entry_point() {
+                entry = Some(blk);
+                break;
+            }
+        }
+        let entry = match entry {
+            // No entry point => nothing reachable to anchor the sweep on.
+            None => return Ok(false),
+            Some(e) => e,
+        };
+
+        // Collect the unreachable blocks (everything not reachable from entry).
+        let graph = self.bblocks_root_pub();
+        let mut list: Vec<BlockId> = Vec::new();
+        self.bblocks_mut().collect_reachable(graph, &mut list, entry, true);
+        if list.is_empty() {
+            return Ok(false);
+        }
+
+        // Mark them all dead first (so the later edge/op surgery sees a consistent
+        // dead/alive partition; descend2Undef skips reads inside dead blocks).
+        for &bb in &list {
+            self.bblocks_mut().block_mut(bb).set_dead();
+            // warningHeader("Removing unreachable block (...)") -- W4 warning.
+        }
+        // Sever every out-edge of every dead block.
+        for &bb in &list {
+            while self.bblocks_ref().block(bb).size_out() > 0 {
+                self.branch_remove_internal(bb, 0)?;
+            }
+        }
+        // Finally remove each dead block's ops and the block itself.
+        for &bb in &list {
+            self.block_remove_internal(bb, true)?;
+        }
+        self.structure_reset();
+        Ok(true)
     }
 
     /// The data-flow half of `BlockBasic::negateCondition` (C++ `block.cc:2355`):
@@ -1681,6 +1826,439 @@ impl Funcdata {
     /// Immutable view of the jump-table vector (companion to `jumpvec_mut`).
     fn jumpvec_ref(&self) -> &[crate::jumptable::JumpTable] {
         self.jumpvec_slice()
+    }
+
+    /// Recover the switch-variable Varnode read by the head's comparison (the
+    /// non-constant operand of the comparison that writes the CBRANCH boolean).
+    /// Peels transparent COPY/CAST/ZEXT/SEXT/zero-SUBPIECE ops so the BRANCHIND
+    /// reads the canonical switch value (the `canonSwitchVar` analog).  Returns the
+    /// canonical Varnode, or `None` if the head is not a comparison-on-constant.
+    fn kuna_head_switch_var(&self, cbranch: OpId, var_addr: &Address) -> Option<VarnodeId> {
+        let boolvn = self.obank().get(cbranch)?.get_in(1)?;
+        let cmp = self.vbank().get(boolvn)?.get_def()?;
+        let v0 = self.obank().get(cmp)?.get_in(0)?;
+        let v1 = self.obank().get(cmp)?.get_in(1)?;
+        // The switch variable is the non-constant operand.
+        let mut vn = if self.vbank().get(v0).map(|v| v.is_constant()).unwrap_or(false) {
+            v1
+        } else {
+            v0
+        };
+        // Peel transparent ops (bounded, the canonSwitchVar guard).
+        for _ in 0..8 {
+            let v = match self.vbank().get(vn) {
+                Some(v) => v,
+                None => break,
+            };
+            if v.is_constant() || !v.is_written() {
+                break;
+            }
+            let def = match v.get_def() {
+                Some(d) => d,
+                None => break,
+            };
+            let oc = self.obank().get(def).map(|o| o.code());
+            match oc {
+                Some(OpCode::CPUI_COPY)
+                | Some(OpCode::CPUI_CAST)
+                | Some(OpCode::CPUI_INT_ZEXT)
+                | Some(OpCode::CPUI_INT_SEXT) => {
+                    match self.obank().get(def).and_then(|o| o.get_in(0)) {
+                        Some(nv) => vn = nv,
+                        None => break,
+                    }
+                }
+                Some(OpCode::CPUI_SUBPIECE) => {
+                    let in1 = self.obank().get(def).and_then(|o| o.get_in(1));
+                    let zero = in1
+                        .and_then(|i| self.vbank().get(i))
+                        .map(|v| v.is_constant() && v.get_offset() == 0)
+                        .unwrap_or(false);
+                    if zero {
+                        match self.obank().get(def).and_then(|o| o.get_in(0)) {
+                            Some(nv) => vn = nv,
+                            None => break,
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        let _ = var_addr;
+        Some(vn)
+    }
+
+    /// Find the basic block whose first address is `addr` (the install's
+    /// target-block locator; the cascade record stores block START addresses).
+    fn kuna_block_at_start(&self, addr: &Address) -> Option<BlockId> {
+        let n = self.bblocks_get_size();
+        for i in 0..n {
+            let bl = self.bblocks_get_block(i);
+            if self.bblocks_ref().block(bl).get_type() != crate::block::BlockType::Basic {
+                continue;
+            }
+            if &crate::block::block_get_start(&self.bblocks_ref().arena, bl) == addr {
+                return Some(bl);
+            }
+        }
+        None
+    }
+
+    /// Find the basic block whose terminating op is at address `addr` (the
+    /// cascade head, recorded as `branch_addr` = the head CBRANCH's op address).
+    fn kuna_block_with_tail_at(&self, addr: &Address) -> Option<BlockId> {
+        let n = self.bblocks_get_size();
+        for i in 0..n {
+            let bl = self.bblocks_get_block(i);
+            if self.bblocks_ref().block(bl).get_type() != crate::block::BlockType::Basic {
+                continue;
+            }
+            if let Some(tail) = self.bb_op_tail(bl) {
+                if self.obank().get(tail).map(|o| o.get_addr()) == Some(addr) {
+                    return Some(bl);
+                }
+            }
+        }
+        None
+    }
+
+    /// (kuna) Manufacture the S2 switch artifact from a recovered lowered
+    /// comparison cascade (C++ `Funcdata::kunaInstallLoweredSwitch`,
+    /// `kuna_loweredswitch.cc:463`).
+    ///
+    /// Runs pre-SSA on the restart pass (`ActionLowerSwitchInstall::apply`, before
+    /// `ActionHeritage`).  It:
+    ///   1. finds the cascade head (the block whose terminating op is at
+    ///      `branch_addr`);
+    ///   2. resolves the distinct target blocks (the case bodies + the default)
+    ///      by their recorded start addresses;
+    ///   3. rewires the head: drops its out-edges, replaces the trailing CBRANCH
+    ///      with a `BRANCHIND(V)` over a fresh Varnode at the switch-variable
+    ///      storage (heritage renames it to the value reaching the head), and adds
+    ///      one out-edge per distinct target (cases first, default last);
+    ///   4. sweeps the now-orphaned comparison-cascade spine
+    ///      (`removeUnreachableBlocks`);
+    ///   5. builds a fully-labelled, trivial-model `JumpTable` in `jumpvec` linked
+    ///      to the new BRANCHIND so the existing structurer + printer emit a
+    ///      `switch`.
+    ///
+    /// Returns `Ok(Some(jt_index))` on success, `Ok(None)` if the CFG no longer
+    /// matches the record (e.g. the head/targets were merged away — install
+    /// declines gracefully rather than corrupting the CFG).
+    #[allow(clippy::too_many_arguments)]
+    pub fn kuna_install_lowered_switch(
+        &mut self,
+        branch_addr: &Address,
+        var_addr: &Address,
+        var_size: int4,
+        case_vals: &[kuna_base::types::uintb],
+        case_targets: &[Address],
+        default_target: &Address,
+    ) -> KunaResult<Option<usize>> {
+        use kuna_base::types::uintb;
+
+        // Don't re-install if a table already exists for this branch address.
+        if self.jumpvec_ref().iter().any(|jt| jt.get_op_address() == branch_addr) {
+            return Ok(None);
+        }
+
+        // (1) Locate the cascade head block.
+        let head = match self.kuna_block_with_tail_at(branch_addr) {
+            Some(h) => h,
+            None => return Ok(None),
+        };
+
+        // (2) Build the ordered distinct out-edge target list: each distinct case
+        // target (in first-seen order), then the default last.  Record, per
+        // out-edge, a representative case label (the printer emits one `case` per
+        // address-table entry; duplicate-valued cases collapse to the same edge,
+        // and the C++ trivial recovery emits one label per edge).
+        let mut out_targets: Vec<Address> = Vec::new();
+        let mut out_label: Vec<uintb> = Vec::new();
+        let mut out_is_default: Vec<bool> = Vec::new();
+
+        for (i, tgt) in case_targets.iter().enumerate() {
+            if tgt == default_target {
+                continue; // a case that coincides with the default folds away
+            }
+            if out_targets.iter().any(|a| a == tgt) {
+                continue; // duplicate target: keep the first label
+            }
+            out_targets.push(tgt.clone());
+            out_label.push(case_vals[i]);
+            out_is_default.push(false);
+        }
+        // Default out-edge last.
+        out_targets.push(default_target.clone());
+        out_label.push(0);
+        out_is_default.push(true);
+
+        // Resolve every target to a live basic block; if any is missing the CFG no
+        // longer matches — decline.
+        let mut out_blocks: Vec<BlockId> = Vec::with_capacity(out_targets.len());
+        for tgt in &out_targets {
+            match self.kuna_block_at_start(tgt) {
+                Some(b) => out_blocks.push(b),
+                None => return Ok(None),
+            }
+        }
+        // Need at least 2 case edges + a default for a switch.
+        if out_blocks.len() < 3 {
+            return Ok(None);
+        }
+
+        // The head's trailing op must be the recorded CBRANCH.
+        let cbranch = match self.bb_op_tail(head) {
+            Some(o) => o,
+            None => return Ok(None),
+        };
+        if self.obank().get(cbranch).map(|o| o.code()) != Some(OpCode::CPUI_CBRANCH) {
+            return Ok(None);
+        }
+
+        // Recover the live switch-variable Varnode from the head comparison BEFORE
+        // any surgery: the CBRANCH's boolean input is written by a comparison whose
+        // non-constant operand is the switch variable.  Reusing that exact Varnode
+        // (rather than a fresh free read of `var_addr`) keeps its full def-use chain
+        // intact so heritage threads SSA through it and the printer names it.
+        let swvn = self.kuna_head_switch_var(cbranch, var_addr);
+        // The comparison op writing the CBRANCH boolean (destroyed below so the
+        // switch variable is read only by the new BRANCHIND at heritage time —
+        // heritage's `guard` requires a free read to have exactly one descendant).
+        let head_cmp = self
+            .obank()
+            .get(cbranch)
+            .and_then(|o| o.get_in(1))
+            .and_then(|b| self.vbank().get(b))
+            .and_then(|v| v.get_def());
+
+        // (3) Rewire the head block.
+        //
+        // Sever ALL of the head's existing out-edges.  branch_remove_internal
+        // destroys the CBRANCH on the first call (sizeOut()==2); subsequent calls
+        // just drop edges.  We run pre-SSA (no MULTIEQUALs yet), so this is a clean
+        // edge drop with no phi patch-up.
+        while self.bblocks_ref().block(head).size_out() > 0 {
+            self.branch_remove_internal(head, 0)?;
+        }
+        // Destroy the now-dead head comparison chain (its boolean fed only the
+        // destroyed CBRANCH) so the switch variable's sole remaining reader is the
+        // BRANCHIND we add next.  op_destroy_recursive drops the comparison and any
+        // transparent peel ops that become dead, but stops at live Varnodes (so the
+        // recovered switch variable's def survives).
+        if let Some(cmp) = head_cmp {
+            if self.obank().get(cmp).is_some() {
+                let mut scratch: Vec<OpId> = Vec::new();
+                self.op_destroy_recursive(cmp, &mut scratch);
+            }
+        }
+
+        // Build the BRANCHIND at the head's branch address over the recovered
+        // switch variable (falling back to a fresh free read of `var_addr` if the
+        // head comparison did not yield a still-live Varnode — heritage then
+        // renames it).
+        let swvn = match swvn {
+            Some(v) if self.vbank().get(v).is_some() => v,
+            _ => self.new_varnode(var_size, var_addr, None),
+        };
+        let newop = self.new_op(1, branch_addr.clone());
+        self.op_set_opcode_code(newop, OpCode::CPUI_BRANCHIND);
+        self.op_set_input(newop, swvn, 0)?;
+        // Append the BRANCHIND as the head's terminator (the branch flag marks the
+        // block is_switch_out, the same path bb_insert_op uses).
+        self.bb_insert_op(newop, head, None);
+
+        // Add one out-edge per distinct target, in (case…, default) order.  The
+        // out-edge index equals the order of insertion.
+        for &tb in &out_blocks {
+            self.bblocks_mut().add_edge(head, tb);
+        }
+
+        // (4) Sweep the now-unreachable comparison-cascade spine.  structure_reset
+        // recomputes dominators so removeUnreachableBlocks can find the orphans.
+        self.structure_reset();
+        self.remove_unreachable_blocks(false, true)?;
+
+        // Re-find the head after the sweep (block ids are stable, but be defensive)
+        // and build the table against its post-sweep out-edge indices.
+        let head = match self.kuna_block_with_tail_at(branch_addr) {
+            Some(h) => h,
+            None => return Ok(None),
+        };
+        let nout = self.bblocks_ref().block(head).size_out();
+        if nout as usize != out_blocks.len() {
+            return Ok(None);
+        }
+
+        // (5) Build the JumpTable: one address-table entry per out-edge, mapped to
+        // its out-edge index; the case label is the representative constant; the
+        // default out-edge is recorded as the table's default block.
+        let indop = self
+            .bb_op_tail(head)
+            .ok_or_else(|| KunaError::lowlevel("install: head lost its BRANCHIND"))?;
+        let opaddr = self.obank().get(indop).unwrap().get_addr().clone();
+        let mut jt = crate::jumptable::JumpTable::new(opaddr.clone());
+        jt.set_indirect_op_addr(indop, opaddr);
+        jt.kuna_set_trivial_model();
+
+        let mut default_out_index: int4 = -1;
+        for oi in 0..nout {
+            let outbl = self.bblocks_ref().block(head).get_out(oi);
+            let start = crate::block::block_get_start(&self.bblocks_ref().arena, outbl);
+            let mut lab: uintb = 0;
+            let mut isdef = false;
+            for k in 0..out_blocks.len() {
+                if out_blocks[k] == outbl {
+                    lab = out_label[k];
+                    isdef = out_is_default[k];
+                    break;
+                }
+            }
+            if isdef {
+                default_out_index = oi;
+            }
+            jt.kuna_push_entry(start, oi, lab);
+        }
+        jt.kuna_finalize(default_out_index);
+        jt.mark_complete();
+
+        // Render case labels signed when any recovered case constant is negative
+        // in the switch-variable width (the cascade used signed comparisons over a
+        // signed `int` switch value — the getopt-return idiom; the C++ derives this
+        // from `getSwitchType()`).
+        let signbit = if var_size >= 8 {
+            1u64 << 63
+        } else {
+            1u64 << (var_size * 8 - 1)
+        };
+        let signed = case_vals.iter().any(|&v| (v & signbit) != 0);
+        jt.kuna_set_signed_labels(signed);
+        // Record the recovered switch-variable storage so the post-heritage
+        // repair (`kuna_repair_lowered_switch_inputs`) can re-point the
+        // synthesized BRANCHIND at the live SSA value if heritage normalized the
+        // too-small switch-var read up to the register range's width and then
+        // swept the resulting undefined wide read (nulling the BRANCHIND input).
+        jt.kuna_set_lowered_var(var_addr.clone(), var_size);
+
+        self.jumpvec_mut().push(jt);
+        let idx = self.num_jump_tables() as usize - 1;
+        Ok(Some(idx))
+    }
+
+    /// (kuna) Post-heritage repair of synthetic lowered-switch BRANCHIND inputs.
+    ///
+    /// `kuna_install_lowered_switch` runs pre-SSA and points the synthesized
+    /// `BRANCHIND` at a *free read* of the recovered switch-variable storage
+    /// (e.g. a 4-byte `EAX` read), trusting heritage to thread SSA through it.
+    /// But when that register's overlapping range is read elsewhere at a wider
+    /// width (e.g. the full 8-byte `RAX`), heritage's `guard`/`normalizeReadSize`
+    /// widens the too-small read to the range width — wrapping it in a
+    /// `SUBPIECE` of a fresh wide free read.  At the BRANCHIND's program point no
+    /// wide reaching def exists (only the narrow switch value reaches), so the
+    /// wide read is undefined and dead-code removal sweeps the SUBPIECE,
+    /// **nulling the BRANCHIND input** — the header then renders the invalid
+    /// `switch()`.
+    ///
+    /// This runs right after [`op_heritage`](crate::funcdata::Funcdata::op_heritage)
+    /// (its only caller is the action wired immediately after `ActionHeritage`).
+    /// For each synthetic lowered-switch table (the only ones carrying
+    /// [`JumpTable::kuna_lowered_var`]) whose BRANCHIND input is null/free, it
+    /// finds the live SSA Varnode of exactly the recorded `(addr,size)` reaching
+    /// the BRANCHIND — the narrow switch value (e.g. the call output) — by
+    /// scanning the BRANCHIND's own block backward and then up the dominator
+    /// tree, and re-points input 0 at it.  Scoped strictly to the recorded
+    /// synthetic tables, so it cannot perturb the datatest corpus (which has no
+    /// `kuna_lowered_var` tables).  Declines silently if no exact-size reaching
+    /// def is found, leaving the current behavior intact.
+    pub fn kuna_repair_lowered_switch_inputs(&mut self) {
+        // Snapshot the (indirect op, var addr, var size) of every synthetic table.
+        let targets: Vec<(OpId, Address, int4)> = self
+            .jumpvec_ref()
+            .iter()
+            .filter_map(|jt| {
+                let (a, s) = jt.kuna_lowered_var()?;
+                let op = jt.get_indirect_op()?;
+                Some((op, a.clone(), *s))
+            })
+            .collect();
+        for (indop, var_addr, var_size) in targets {
+            // Confirm this op is still a live BRANCHIND.
+            if self.obank().get(indop).map(|o| o.code()) != Some(OpCode::CPUI_BRANCHIND) {
+                continue;
+            }
+            // If input 0 already names a live, non-free Varnode, leave it.
+            let in0 = self.obank().get(indop).and_then(|o| o.get_in(0));
+            let healthy = in0
+                .and_then(|v| self.vbank().get(v))
+                .map(|v| v.is_written() || v.is_input())
+                .unwrap_or(false);
+            if healthy {
+                continue;
+            }
+            // Find the live reaching def of exactly (var_addr, var_size).
+            if let Some(def_vn) = self.kuna_reaching_def_at(indop, &var_addr, var_size) {
+                let _ = self.op_set_input(indop, def_vn, 0);
+            }
+        }
+    }
+
+    /// (kuna) Find the live SSA Varnode of exactly `(addr,size)` reaching `op`
+    /// (its def dominates `op`).  Scans `op`'s own block backward from `op`, then
+    /// walks the immediate-dominator chain scanning each block's ops in reverse;
+    /// returns the first output Varnode matching the storage exactly.  Returns
+    /// `None` if no exact match dominates `op` (the caller then declines).
+    ///
+    /// Used only by [`kuna_repair_lowered_switch_inputs`]; an exact-size match is
+    /// required so we never re-point a BRANCHIND at a mis-sized value.
+    fn kuna_reaching_def_at(
+        &self,
+        op: OpId,
+        addr: &Address,
+        size: int4,
+    ) -> Option<VarnodeId> {
+        let want_space = addr.get_space()?.get_index();
+        let want_off = addr.get_offset();
+        let matches = |this: &Self, vn: VarnodeId| -> bool {
+            let v = match this.vbank().get(vn) {
+                Some(v) => v,
+                None => return false,
+            };
+            v.get_size() == size
+                && v.get_offset() == want_off
+                && v.get_addr().get_space().map(|s| s.get_index()) == Some(want_space)
+        };
+        // Start in the BRANCHIND's own block, scanning ops strictly before it.
+        let mut block = self.obank().get(op)?.get_parent()?;
+        let mut stop_before: Option<OpId> = Some(op);
+        // Bound the dominator walk defensively (the tree depth is finite).
+        for _ in 0..4096 {
+            let ops = self.bb_ops(block);
+            // On the start block, restrict to ops strictly before `op`; on every
+            // dominator block, scan the whole block.
+            let upper = match stop_before {
+                Some(stop) => ops.iter().position(|&o| o == stop).unwrap_or(ops.len()),
+                None => ops.len(),
+            };
+            // Reverse scan: the closest-preceding def reaches `op`.
+            for &bop in ops[..upper].iter().rev() {
+                if let Some(out) = self.obank().get(bop).and_then(|o| o.get_out()) {
+                    if matches(self, out) {
+                        return Some(out);
+                    }
+                }
+            }
+            // Move to the immediate dominator and scan its whole block.
+            match self.bblocks_ref().block(block).get_immed_dom() {
+                Some(idom) if idom != block => {
+                    block = idom;
+                    stop_before = None;
+                }
+                _ => break,
+            }
+        }
+        None
     }
 
     /// Test whether the given Varnode holds the function's return address (C++
@@ -2325,6 +2903,20 @@ impl Funcdata {
                 None => Address::new_invalid(),
             },
             _ => Address::new_invalid(),
+        }
+    }
+
+    /// (kuna GH-8467) The entry address of a structured block, for angr-style
+    /// `label_<addr>` goto-label naming (C++ `PrintC::emitLabelStatement`'s
+    /// `getFrontLeaf()` basic-block start).  Invalid when the block has no leaf.
+    pub fn sblock_entry_addr(&self, bl: BlockId) -> Address {
+        let front = match self.sblocks_ref().get_front_leaf(bl) {
+            Some(f) => f,
+            None => return Address::new_invalid(),
+        };
+        match self.sblocks_ref().sub_block(front, 0) {
+            Some(bb) => self.bb_get_start(bb),
+            None => Address::new_invalid(),
         }
     }
 

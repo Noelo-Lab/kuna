@@ -271,6 +271,68 @@ impl FlowEnvironment for ArchFlowEnv {
         proto.set_override(true);
         Ok(Some(proto))
     }
+
+    fn is_v850_indirect_jmp(&self, fd: &Funcdata, op: crate::seams::OpId) -> bool {
+        // (kuna) GH-8817: wire the ported `kunaIsV850IndirectJmp` predicate.  The
+        // gate is the architecture-owned `v850_indirect_branch` flag (`option
+        // v850indirectbranch on|off`, default off / upstream byte-identical); the
+        // register name is `glb->translate->getRegisterName(spc, off, size)` of
+        // op's input-0 varnode (None == the C++ empty string, "not a named
+        // register").
+        let arch = self.arch();
+        if !arch.v850_indirect_branch {
+            // Fast-path the default-off gate without touching the IR (matches the
+            // predicate's leading `if (!gate) return false`).
+            return false;
+        }
+        // Resolve the input-0 register name for the predicate (the predicate
+        // re-checks CALLIND / processor-space / null-input, so only the name
+        // resolution lives here).
+        let regname: Option<String> = (|| {
+            let opref = fd.obank().get(op)?;
+            let vn = opref.get_in(0)?;
+            let vnref = fd.vbank().get(vn)?;
+            let space = vnref.get_space();
+            let off = vnref.get_offset();
+            let size = vnref.get_size();
+            let raw = arch.translate().base().get_register_name(space, off, size);
+            if raw.is_empty() {
+                None
+            } else {
+                Some(String::from_utf8_lossy(&raw).into_owned())
+            }
+        })();
+        crate::kuna_v850indbranch::kuna_is_v850_indirect_jmp(
+            fd,
+            op,
+            arch.v850_indirect_branch,
+            regname.as_deref(),
+        )
+    }
+
+    fn is_sparc_struct_ret_trap(&self, fd: &Funcdata, op: crate::seams::OpId) -> bool {
+        // (kuna) GH-6882: wire the ported `kunaIsSparcStructRetTrap` predicate.
+        // The gate is the architecture-owned `sparc_struct_return` flag (`option
+        // sparcstructret on|off`, default off / upstream byte-identical); the
+        // user-op name resolution is `glb->userops.getOp(id)->getName()` (None ==
+        // the C++ null `UserPcodeOp *`).
+        let arch = self.arch();
+        if !arch.sparc_struct_return {
+            // Fast-path the default-off gate without touching the IR (matches the
+            // predicate's leading `if (!gate) return false`).
+            return false;
+        }
+        crate::kuna_sparcstructret::kuna_is_sparc_struct_ret_trap(
+            fd,
+            op,
+            arch.sparc_struct_return,
+            |id| {
+                arch.userops
+                    .get_op(id)
+                    .map(|uo| String::from_utf8_lossy(uo.get_name()).into_owned())
+            },
+        )
+    }
 }
 
 /// Build a [`Funcdata`] for the function `name` at `entry` and follow its flow,
@@ -682,6 +744,54 @@ pub fn decompile_func_full_with_override_dyn(
                 "decompile pipeline reached an un-ported seam (LOSS-131): {msg}"
             )))
         }
+    }
+}
+
+/// (kuna) Build the IR for `name` and run a **named reduced pipeline** variant
+/// over it as a sub-query (C++ `IfcKunaPipeline::execute`).
+///
+/// Mirrors [`decompile_func_full_with_override_dyn`] but installs the named
+/// action group (`normalize`/`paramid`/`register`/`firstpass`/`jumptable`)
+/// instead of `decompile`, runs it once (no cross-flow restart loop — a reduced
+/// variant has no restart group), then restores `decompile` as the current root
+/// (the C++ save/switch/perform/restore around `allacts.setCurrent`).  The
+/// resulting [`Funcdata`] holds whatever IR the reduced pipeline produced (for
+/// `normalize`, no `sblocks` — `quality` then hits its `hasNoStructBlocks`
+/// guard).  Seam aborts degrade to a recoverable `Err`, like the full drive.
+pub fn run_named_pipeline_variant(
+    arch: &mut Architecture,
+    name: &str,
+    funcaddr: Address,
+    size: int4,
+    variant: &str,
+) -> KunaResult<Funcdata> {
+    let mut fd = build_and_follow_flow(arch, name, funcaddr, size)?;
+    let saved = arch.allacts.get_current_name().to_string();
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        arch.allacts.set_current(variant)?;
+        let mut ctx = ActionContext::new();
+        let root = arch
+            .allacts
+            .get_current_mut()
+            .ok_or_else(|| KunaError::lowlevel(format!("no current {variant} action")))?;
+        root.reset(&mut fd);
+        let r = root.perform(&mut fd, &mut ctx);
+        if r < 0 {
+            return Err(KunaError::lowlevel(format!(
+                "{variant} pipeline hit a breakpoint"
+            )));
+        }
+        Ok(())
+    }));
+    // Restore the root action regardless of outcome (C++ restores setCurrent).
+    let _ = arch.allacts.set_current(&saved);
+    match res {
+        Ok(Ok(())) => Ok(fd),
+        Ok(Err(e)) => Err(e),
+        Err(payload) => Err(KunaError::lowlevel(format!(
+            "{variant} pipeline reached an un-ported seam: {}",
+            panic_message(&payload)
+        ))),
     }
 }
 

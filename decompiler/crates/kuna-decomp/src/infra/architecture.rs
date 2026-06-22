@@ -345,6 +345,11 @@ pub struct Architecture {
     pub options: OptionDatabase,
     /// Actions that can be applied in this architecture (C++ `allacts`).
     pub allacts: ActionDatabase,
+    /// (kuna) Per-program restart-trigger side table (C++ file-static
+    /// `restartTable`, owned here per `docs/RUST_PORT.md` — one log per loaded
+    /// program; survives `Funcdata::clear()` because it lives outside the
+    /// Funcdata).  The `restarts` console command renders it.
+    pub restart_log: crate::kuna_restartlog::RestartLog,
     /// Specifically registered user-defined p-code ops (C++ `userops`).
     pub userops: UserOpManage,
     /// Manager of decoded strings (C++ `stringManager`, a `StringManager*`).
@@ -518,6 +523,7 @@ impl Architecture {
             symboltab,
             options: OptionDatabase::new(),
             allacts: ActionDatabase::new(),
+            restart_log: crate::kuna_restartlog::RestartLog::new(),
             userops: UserOpManage::new(),
             // sleigh_arch.cc:250: stringManager = new StringManagerUnicode(this,2048)
             string_manager: Rc::new(std::cell::RefCell::new(
@@ -591,6 +597,93 @@ impl Architecture {
         self.split_datatype_config =
             split_datatype::OPTION_STRUCT | split_datatype::OPTION_ARRAY | split_datatype::OPTION_POINTER;
         self.max_jumptable_size = 1024;
+    }
+
+    /// Apply a kuna stage-model option (`option <name> <value>`), the analogue of
+    /// an upstream `ArchOption::apply` for the 23 kuna-owned knobs in
+    /// [`KUNA_OPTION_NAMES`](crate::options::KUNA_OPTION_NAMES).
+    ///
+    /// Unlike the upstream options (dispatched through `OptionDatabase` keyed by a
+    /// registered `ElementId`), the kuna options write configuration flags that
+    /// live directly on this `Architecture` (or, for `arraynotation`, on the
+    /// owned [`PrintC`]).  Each arm reuses the per-option parse helper that owns
+    /// the value validation + confirmation text (`parse_compare_form`,
+    /// `parse_return_pair_form`, `parse_memset_recover_form`,
+    /// `parse_stack_probe_loop_form`, the `OptionNameStyle`/`OptionArrayNotation`/
+    /// `OptionLowerSwitch::apply` bodies) or the shared
+    /// [`on_or_off`](crate::options::on_or_off) toggle parser, then writes the
+    /// resolved value into the live flag the consuming action/printer reads.
+    ///
+    /// The console (`IfcOption`) and the `kassert` dispatcher route a name in
+    /// `KUNA_OPTION_NAMES` here; an unknown name is the caller's bug (it is gated
+    /// by the allowlist) and surfaces as a parse error.
+    pub fn set_kuna_option(&mut self, name: &str, p1: &str) -> KunaResult<String> {
+        use crate::options::on_or_off;
+        // Shared on/off arm: parse the toggle, write the field, format the message.
+        macro_rules! on_off {
+            ($field:ident, $label:literal) => {{
+                let val = on_or_off(p1)?;
+                self.$field = val;
+                Ok(format!(
+                    concat!($label, " turned {}"),
+                    if val { "on" } else { "off" }
+                ))
+            }};
+        }
+        match name {
+            "compareform" => {
+                let (form, msg) = crate::kuna_compareform::parse_compare_form(p1)?;
+                self.present_lessequal = form.present_lessequal();
+                Ok(msg)
+            }
+            "arraynotation" => {
+                let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;
+                self.print_mut().options.set_array_notation(val);
+                Ok(msg)
+            }
+            "thumbfuncptr" => on_off!(preserve_thumb_funcptr, "Thumb function-pointer preservation"),
+            "inferfuncentry" => on_off!(infer_funcentry, "Function-entry constant inference"),
+            "returnpair" => {
+                let (form, msg) = crate::kuna_returnpair::parse_return_pair_form(p1)?;
+                self.return_single = form.return_single();
+                Ok(msg)
+            }
+            "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
+            "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
+            "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
+            "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
+            "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
+            "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
+            "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
+            "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
+            "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
+            "stackalias" => on_off!(stack_alias_deadstore, "Stack-pointer-alias dead-store hold"),
+            "dynamichashmax" => on_off!(dynamic_hash_maxdup_high, "DynamicHash collision budget"),
+            "stackprobeloop" => {
+                let (form, msg) = crate::kuna_stackprobeloop::parse_stack_probe_loop_form(p1)?;
+                self.model_stack_probe_loop = form.model_stack_probe_loop();
+                Ok(msg)
+            }
+            "memsetrecover" => {
+                let (form, msg) = crate::kuna_memsetsequence::parse_memset_recover_form(p1)?;
+                self.memset_recover = form.memset_recover();
+                Ok(msg)
+            }
+            "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
+            "loweredswitch" => {
+                let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
+                self.recover_lowered_switch = val;
+                Ok(msg)
+            }
+            "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
+            "namestyle" => {
+                let (val, msg) = crate::kuna_naming::OptionNameStyle.apply(p1)?;
+                self.name_style_angr = val;
+                Ok(msg)
+            }
+            "realtypes" => on_off!(realtypes, "Real-C-type rendering for unknowns"),
+            other => Err(KunaError::parse(format!("Unknown kuna option: {other}"))),
+        }
     }
 
     /// Reset options modifiable by the OptionDatabase, including the action
@@ -803,11 +896,29 @@ impl Architecture {
         seam.default_return_addr = self.default_return_addr.clone();
         seam.trim_recurse_max = self.trim_recurse_max;
         seam.max_implied_ref = self.max_implied_ref;
+        seam.max_term_duplication = self.max_term_duplication;
         seam.return_single = self.return_single;
         // (kuna GH-9218) carry the unjustified-input forward-absorb gate so
         // `ActionUnjustifiedParams` reaches it via `glb`.
         seam.input_varnode_adjust = self.input_varnode_adjust;
         seam.name_style_angr = self.name_style_angr;
+        // (kuna GH-558) carry the comparison-presentation gate so the
+        // `compareform canonical|original` option reaches
+        // `ActionPresentCompareForm` via `glb` (the seam read site).
+        seam.present_lessequal = self.present_lessequal;
+        // (kuna) carry the remaining stage-model rule gates so their `option
+        // <name> on|off` reaches the consuming Rule/Action via `glb` (each rule
+        // reads `data.get_arch().<flag>`; the rule is registered `enabled=false`
+        // so the live flag drives both the DIV default and the toggle).
+        seam.fold_boolean_mask = self.fold_boolean_mask; // GH-1282 booleanmask
+        seam.fold_flag_compare = self.fold_flag_compare; // GH-1276/8777 flagcompare
+        seam.add_carry_chain = self.add_carry_chain; // GH-8913 addcarrychain
+        seam.ov_less_simplify = self.ov_less_simplify; // GH-7190 ovlesssimplify
+        seam.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
+        seam.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
+        seam.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
+        seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
+        seam.strip_stack_guard = self.strip_stack_guard; // stackguard
         // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
         // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.
         seam.condexe_block_placement = self.condexe_block_placement;
@@ -831,6 +942,12 @@ impl Architecture {
         seam.max_jumptable_size = self.max_jumptable_size;
         seam.alias_block_level = self.alias_block_level;
         seam.funcptr_align = self.funcptr_align;
+        // (kuna GH-8471) Carry the Thumb-funcptr preservation gate so
+        // `RulePtrsubUndo`'s thumb guard reads `glb->preserve_thumb_funcptr`.
+        seam.preserve_thumb_funcptr = self.preserve_thumb_funcptr;
+        // (kuna) GH-9191: carry the modulo/and-mask jump-table index-bound gate
+        // (`option switchmodbound`) so `JumpBasic::recoverModel` reaches it.
+        seam.switch_modulo_bound = self.switch_modulo_bound;
         seam.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate
@@ -1032,6 +1149,51 @@ impl Architecture {
             stack_growth,
             true,
         )
+    }
+
+    /// Decode the cspec `<funcptr align="N"/>` element into [`funcptr_align`]
+    /// (C++ `Architecture::decodeFuncPtrAlign`, `architecture.cc:1048`,
+    /// dispatched from `parseCompilerConfig`'s `ELEM_FUNCPTR` arm).
+    ///
+    /// The XML `align` attribute is a byte alignment (`2` for ARM word-aligned
+    /// function pointers whose least-significant bit encodes the Thumb mode);
+    /// `funcptr_align` stores the *bit position* of its first set bit (so
+    /// `align="2"` → `funcptr_align = 1`), exactly as the C++ `while((align&1)==0)`
+    /// loop computes.  An absent element leaves `funcptr_align = 0` (no alignment),
+    /// matching the C++ default.  General over any cspec — no processor special-
+    /// casing.  Feeds the kuna GH-8471 `RulePtrsubUndo` thumb-funcptr guard (and
+    /// the already-ported `RuleFuncPtrEncoding`/jumptable readers of this field).
+    ///
+    /// [`funcptr_align`]: Architecture::funcptr_align
+    fn decode_funcptr_align(&mut self) -> KunaResult<()> {
+        use kuna_base::xml::DocumentStorage;
+        let Some(xml) = self.cspec_xml.clone() else {
+            return Ok(()); // no cspec recorded: leave funcptr_align = 0
+        };
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(&xml)?.get_root().clone();
+        // The resolved .cspec root IS <compiler_spec>; <funcptr> is a direct child.
+        let Some(fp) = find_child(&root, "funcptr") else {
+            return Ok(()); // no <funcptr> in this cspec: funcptr_align stays 0
+        };
+        // int4 align = decoder.readSignedInteger(ATTRIB_ALIGN);
+        let align: i64 = match attr_str(&fp, "align").and_then(|s| parse_int(&s)) {
+            Some(a) => a as i64,
+            None => return Ok(()), // malformed/absent attr: leave default
+        };
+        if align == 0 {
+            self.funcptr_align = 0; // No alignment
+            return Ok(());
+        }
+        // bits = position of the first set bit (C++ `while((align&1)==0) bits++`).
+        let mut bits: int4 = 0;
+        let mut a = align;
+        while (a & 1) == 0 {
+            bits += 1;
+            a >>= 1;
+        }
+        self.funcptr_align = bits;
+        Ok(())
     }
 
     /// Interpret a constant as a pointer into `spc` (C++ `Architecture::
@@ -1377,8 +1539,8 @@ impl Architecture {
     /// front-loaded here).
     fn register_string_builtins(&mut self) -> KunaResult<()> {
         use crate::userop::{
-            BUILTIN_MEMCPY, BUILTIN_STRINGDATA, BUILTIN_STRNCPY, BUILTIN_VOLATILE_READ,
-            BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
+            BUILTIN_MEMCPY, BUILTIN_MEMSET, BUILTIN_STRINGDATA, BUILTIN_STRNCPY,
+            BUILTIN_VOLATILE_READ, BUILTIN_VOLATILE_WRITE, BUILTIN_WCSNCPY,
         };
         // Split the &mut userops borrow from the &self type-factory read by
         // building a small adapter over the (already-populated) factory.
@@ -1405,6 +1567,8 @@ impl Architecture {
             userops.register_builtin(BUILTIN_MEMCPY, &adapter)?;
             userops.register_builtin(BUILTIN_STRNCPY, &adapter)?;
             userops.register_builtin(BUILTIN_WCSNCPY, &adapter)?;
+            // (kuna GH-9230/1537) the constant-fill recovery CALLOTHER.
+            userops.register_builtin(BUILTIN_MEMSET, &adapter)?;
             Ok(())
         })();
         self.userops = userops;
@@ -1436,6 +1600,18 @@ impl Architecture {
     /// Borrow the c-language printer (C++ `glb->print`).
     pub fn print(&self) -> &PrintC {
         &self.print
+    }
+
+    /// (kuna) Borrow the per-program restart-trigger log (read by the `restarts`
+    /// console command).
+    pub fn restart_log(&self) -> &crate::kuna_restartlog::RestartLog {
+        &self.restart_log
+    }
+
+    /// (kuna) Mutably borrow the restart-trigger log (the trigger sites record
+    /// into it).
+    pub fn restart_log_mut(&mut self) -> &mut crate::kuna_restartlog::RestartLog {
+        &mut self.restart_log
     }
 
     /// Mutably borrow the c-language printer (drives `docFunction` + the print
@@ -1834,7 +2010,11 @@ impl Architecture {
         use kuna_base::xml::DocumentStorage;
         use kuna_sleigh::globalcontext::register_globalcontext_ids;
 
-        let Some(xml) = self.pspec_xml.take() else {
+        // C++ keeps the parsed pspec `DocumentStorage` for the whole
+        // `restoreFromSpec`/`buildSymbols` window; the deferred `<default_symbols>`
+        // apply (build_symbols, run after adjustCaches) re-reads it.  Clone (not
+        // take) so the raw XML stays available for build_symbols.
+        let Some(xml) = self.pspec_xml.clone() else {
             return Ok(());
         };
         let mut store = DocumentStorage::new();
@@ -1859,6 +2039,17 @@ impl Architecture {
             self.decode_register_data(&register_data)?;
         }
 
+        // C++ parseProcessorConfig ELEM_VOLATILE branch (architecture.cc:1187 ->
+        // decodeVolatile).  Paint each `<range>` in the `<volatile>` element with
+        // the `volatil` boolean property so `ActionVarnodeProps` converts accesses
+        // to those addresses into `read_volatile`/`write_volatile` user-ops (the
+        // CALLOTHER form survives dead-code, which a plain COPY to an SFR-space
+        // varnode does not).  Must run before the global-query snapshot is taken
+        // (build_arch_handle) so the painted flagbase reaches the per-function seam.
+        if let Some(volatile_el) = find_child(&pspec, "volatile") {
+            self.decode_volatile(&volatile_el)?;
+        }
+
         // C++ parseProcessorConfig ELEM_CONTEXT_DATA branch.  A pspec with no
         // <context_data> (e.g. a 32-bit-default processor) leaves the zero
         // context, which is correct for it.
@@ -1876,6 +2067,143 @@ impl Architecture {
         let mut decoder = XmlDecode::new_with_root(&manager, &registry, &context_data, 0);
         self.translate
             .with_context_db_mut(|db| db.decode_from_spec(&mut decoder))?;
+        Ok(())
+    }
+
+    /// Apply a `<volatile>` element, marking the contained `<range>` regions as
+    /// holding volatile memory/registers (C++ `Architecture::decodeVolatile`,
+    /// `architecture.cc:881`).
+    ///
+    /// The C++ `userops.decodeVolatile` half (reading `inputop`/`outputop` and
+    /// registering the `VolatileReadOp`/`VolatileWriteOp` builtins with those
+    /// names) is already satisfied: kuna pre-seeds `BUILTIN_VOLATILE_READ`/
+    /// `BUILTIN_VOLATILE_WRITE` with the canonical `read_volatile`/`write_volatile`
+    /// names (and the non-functional display = `annotation_assignment`/`no_operator`)
+    /// in `register_string_builtins`, matching every vendored pspec's `<volatile
+    /// outputop="write_volatile" inputop="read_volatile">`.  This method ports the
+    /// range-painting half: for each `<range>` child,
+    /// `symboltab->setPropertyRange(Varnode::volatil, range)`.
+    fn decode_volatile(
+        &mut self,
+        volatile_el: &Rc<kuna_base::xml::Element>,
+    ) -> KunaResult<()> {
+        use crate::varnode::varnode_flags;
+        use kuna_base::address::{Range, RangeProperties};
+        use kuna_base::marshal::{IdRegistry, XmlDecode};
+
+        let manager = self.translate.base().manager_rc();
+        let registry = IdRegistry::with_base_ids();
+        // C++ `decodeVolatile`: while peekElement() != 0 { Range r; r.decode(decoder);
+        // symboltab->setPropertyRange(Varnode::volatil, r); }.  Each child is a
+        // `<range>`; resolve it through `Range::from_properties` exactly as
+        // `decode_global` does, then paint [first, lastOpen) with `volatil`.
+        for child in volatile_el.get_children().iter() {
+            if child.get_name() != "range" {
+                continue;
+            }
+            let mut decoder = XmlDecode::new_with_root(&manager, &registry, child, 0);
+            let mut props = RangeProperties::new();
+            props.decode(&mut decoder)?;
+            let range = Range::from_properties(&props, self.manage())?;
+            let addr1 = range.get_first_addr();
+            let addr2 = range.get_last_addr_open(self.manage());
+            self.symboltab
+                .set_property_range(varnode_flags::volatil, &addr1, &addr2);
+        }
+        Ok(())
+    }
+
+    /// Apply the pspec `<default_symbols>` element as named global symbols (C++
+    /// `SleighArchitecture::buildSymbols`, `sleigh_arch.cc:265`).
+    ///
+    /// Each `<symbol name=… address=… [size=…] [volatile=…]>` is parsed into a
+    /// global-scope symbol: the address via `parseAddressSimple` (with the C++
+    /// `address="next"` continuation), the size defaulting to the space word size,
+    /// the type `getBase(size, TYPE_UNKNOWN)`, and an optional `volatile` attribute
+    /// re-painting the `volatil` property range.  This is what gives the 8051 SFR
+    /// addresses their names (`P0`@SFR:80, `P1`@SFR:90), so an SFR write renders
+    /// `P0 = 1` rather than `dat_80 = 1`.  Run after `adjust_caches` so the global
+    /// scope's per-space maptable already covers every spec-created space.
+    fn build_symbols(&mut self) -> KunaResult<()> {
+        use crate::dtype::type_metatype::TYPE_UNKNOWN;
+        use crate::varnode::varnode_flags;
+        use kuna_base::address::{Address, Range};
+        use kuna_base::xml::DocumentStorage;
+
+        let Some(xml) = self.pspec_xml.clone() else {
+            return Ok(());
+        };
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(&xml)?.get_root().clone();
+        let pspec = if root.get_name() == "processor_spec" {
+            root
+        } else {
+            match find_child(&root, "processor_spec") {
+                Some(el) => el,
+                None => return Ok(()),
+            }
+        };
+        let Some(symbols_el) = find_child(&pspec, "default_symbols") else {
+            return Ok(());
+        };
+        let Some(scope) = self.symboltab.get_global_scope() else {
+            return Ok(());
+        };
+        let usepoint = Address::new_invalid();
+
+        // C++ `buildSymbols` tracks (lastAddr, lastSize) for the `address="next"`
+        // continuation form.
+        let mut last_addr = Address::new_invalid();
+        let mut last_size: int4 = -1;
+        for child in symbols_el.get_children().iter() {
+            if child.get_name() != "symbol" {
+                continue;
+            }
+            let name = match attr_str(child, "name") {
+                Some(n) if !n.is_empty() => n,
+                _ => return Err(KunaError::lowlevel(
+                    "Missing name attribute in <symbol> element",
+                )),
+            };
+            let addr_str = attr_str(child, "address").unwrap_or_default();
+            let addr = if addr_str == "next" && last_size != -1 {
+                &last_addr + (last_size as i64)
+            } else {
+                self.manage().parse_address_simple(&addr_str)?
+            };
+            if addr.is_invalid() {
+                return Err(KunaError::lowlevel(
+                    "Missing address attribute in <symbol> element",
+                ));
+            }
+            // size defaults to the space word size (C++ addr.getSpace()->getWordSize()).
+            let mut size = attr_str(child, "size")
+                .and_then(|s| s.parse::<int4>().ok())
+                .unwrap_or(0);
+            if size == 0 {
+                size = addr.get_space().map(|s| s.get_word_size() as int4).unwrap_or(1);
+            }
+            // Optional <symbol volatile="true|false"> re-paints the volatil property.
+            if let Some(volstr) = attr_str(child, "volatile") {
+                let volatile_state = matches!(volstr.as_str(), "true" | "1" | "yes");
+                if let Some(spc) = addr.get_space() {
+                    let range =
+                        Range::new(Rc::clone(spc), addr.get_offset(), addr.get_offset() + (size as u64 - 1));
+                    let a1 = range.get_first_addr();
+                    let a2 = range.get_last_addr_open(self.manage());
+                    if volatile_state {
+                        self.symboltab.set_property_range(varnode_flags::volatil, &a1, &a2);
+                    } else {
+                        self.symboltab.clear_property_range(varnode_flags::volatil, &a1, &a2);
+                    }
+                }
+            }
+            let ct = self.types.get_base(size, TYPE_UNKNOWN)?;
+            self.symboltab
+                .add_symbol_mapped(scope, &name, ct, &addr, &usepoint)?;
+            last_addr = addr;
+            last_size = size;
+        }
         Ok(())
     }
 
@@ -2483,6 +2811,15 @@ impl Architecture {
             stackspace_index,
             Vec::new(),
         );
+        // C++ `Architecture::buildAction` runs `allacts.resetDefaults()`
+        // (coreaction.cc `ActionDatabase::resetDefaults` -> `setCurrent(...)`),
+        // which leaves the "decompile" root as the current action *before* any
+        // function is decompiled.  The merged tree previously deferred the
+        // `setCurrent` to the decompile drive, leaving `getCurrentName()` empty
+        // at rest; that broke the `stage status`/`pipeline list (current)`
+        // readers (kuna_console).  Set it here so the at-rest current name is
+        // "decompile", matching upstream `resetDefaults`.
+        let _ = self.allacts.set_current("decompile");
     }
 
     /// Register the p-code OpBehavior table (C++ `Architecture::buildInstructions`,
@@ -2586,6 +2923,12 @@ impl Architecture {
         // engine has no IPTR_SPACEBASE space, `s0x…` stack addresses fail to
         // parse, and `Funcdata.localmap` stays `None`.
         self.decode_stack_pointer()?;
+        // C++ `parseCompilerConfig` dispatches the cspec `<funcptr>` element
+        // (ELEM_FUNCPTR -> `decodeFuncPtrAlign`, architecture.cc:1048) to record
+        // how many low bits of a function pointer are alignment-encoding (the ARM
+        // Thumb LSB).  Decode it here alongside the other cspec children so the
+        // GH-8471 `RulePtrsubUndo` thumb-funcptr guard can read `funcptr_align`.
+        self.decode_funcptr_align()?;
         self.build_typegrp();
         // C++ `TypeFactory::TypeFactory` runs `setupSizes()` (the alignment map
         // + the core sizes) in the constructor, *before* `buildCoreTypes` calls
@@ -2647,6 +2990,12 @@ impl Architecture {
         // higher-indexed stack space indexes past its end.
         let num_spaces = self.manage().num_spaces();
         self.symboltab.adjust_caches(num_spaces);
+        // C++ `Architecture::buildSymbols(store)` (architecture.cc:1408), right
+        // after `adjustCaches` and before `postSpecFile`/`buildInstructions`:
+        // apply the pspec `<default_symbols>` (e.g. the 8051 SFR names `P0`@SFR:80,
+        // `P1`@SFR:90) as named global symbols.  Without this an SFR write renders
+        // `dat_80 = 1` instead of `P0 = 1`.
+        self.build_symbols()?;
         self.build_instructions();
         // C++ `min_funcsymbol_size = translate->getAlignment()` when <= 8
         // (restoreFromSpec, architecture.cc:646).

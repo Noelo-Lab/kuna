@@ -473,6 +473,11 @@ pub struct Architecture {
     /// explicit (C++ `Architecture::max_implied_ref`, default 2).  Drives
     /// `ActionMarkExplicit::baseExplicit`.
     pub max_implied_ref: int4,
+    /// Maximum number of duplicating terms allowed in an implied expression
+    /// before the multi-descendant Varnode is forced explicit (C++
+    /// `Architecture::max_term_duplication`, default 2).  Drives
+    /// `ActionMarkExplicit::processMultiplier`.
+    pub max_term_duplication: int4,
     /// (kuna) GH-6990: keep only the first return register (C++ `return_single`).
     pub return_single: bool,
     /// (kuna GH-9218) When adjusting an unjustified input parameter container,
@@ -488,6 +493,43 @@ pub struct Architecture {
     /// their original `x <= c` form (C++ `present_lessequal`, DIV-2 default-on).
     /// Read by [`ActionPresentCompareForm`](crate::kuna_compareform::ActionPresentCompareForm).
     pub present_lessequal: bool,
+    /// (kuna) GH-1282: fold `(b<<k) s>> k` boolean sign-extension-mask idioms
+    /// (C++ `fold_boolean_mask`, DIV-2 default-on).  Read by
+    /// [`RuleBoolSignShift`](crate::kuna_booleanmask::RuleBoolSignShift).
+    pub fold_boolean_mask: bool,
+    /// (kuna) GH-1276/8777: fold flag-modelled comparison idioms (C++
+    /// `fold_flag_compare`, DIV-3 default-on).  Read by
+    /// [`RuleBoolSignLess`](crate::kuna_flagcompare::RuleBoolSignLess) /
+    /// [`RuleSborrowGe`](crate::kuna_flagcompare::RuleSborrowGe).
+    pub fold_flag_compare: bool,
+    /// (kuna) GH-8913: fuse 8-bit carry-chain 16-bit adds into one wide add (C++
+    /// `add_carry_chain`, DIV-2 default-on).  Read by
+    /// [`RuleAddCarryChain`](crate::kuna_addcarrychain::RuleAddCarryChain).
+    pub add_carry_chain: bool,
+    /// (kuna) GH-7190: collapse the OV-flag signed-less-than idiom to INT_SLESS
+    /// (C++ `ov_less_simplify`, DIV-2 default-on).  Read by
+    /// [`RuleOvLessSimplify`](crate::kuna_ovlesssimplify::RuleOvLessSimplify).
+    pub ov_less_simplify: bool,
+    /// (kuna) GH-8724: re-express a strided-induction offset as counter*stride
+    /// (C++ `recover_array_stride`, DIV-3 default-on).  Read by
+    /// [`RuleArrayStride`](crate::kuna_arraystride::RuleArrayStride).
+    pub recover_array_stride: bool,
+    /// (kuna) GH-9230/1537: recover constant-fill store/copy runs as
+    /// `builtin_memset` (C++ `memset_recover`, DIV-2 default-on).  Read by
+    /// [`RuleMemsetCopy`](crate::kuna_memsetsequence::RuleMemsetCopy).
+    pub memset_recover: bool,
+    /// (kuna) GH-8017: resolve the gcc stack-probe loop SP MULTIEQUAL to a
+    /// constant (C++ `model_stack_probe_loop`, DIV-3 default-on).  Read by
+    /// [`RuleStackProbeLoop`](crate::kuna_stackprobeloop::RuleStackProbeLoop).
+    pub model_stack_probe_loop: bool,
+    /// (kuna) reconstruct a compiler-lowered comparison cascade into a switch
+    /// (C++ `recover_lowered_switch`, default-on).  Read by the
+    /// [`crate::kuna_loweredswitch`] detect/install actions.
+    pub recover_lowered_switch: bool,
+    /// (kuna) strip the glibc -fstack-protector canary epilogue (C++
+    /// `strip_stack_guard`, opt-in default-off).  Read by
+    /// [`crate::kuna_stackguard`]'s `ActionStripStackGuard`.
+    pub strip_stack_guard: bool,
     /// (kuna) GH-9203: when set, `ActionConditionalConst::handlePhiNodes` declines
     /// to materialize a propagated constant as a COPY inside a loop predecessor
     /// block (which would render as a spurious `= 0` in the do/while body).  C++
@@ -531,6 +573,18 @@ pub struct Architecture {
     /// by `JumpBasic::buildAddresses` to align recovered targets.  `0` (no
     /// alignment) for hand-built fixtures.
     pub funcptr_align: int4,
+    /// (kuna GH-8471) Keep a mode-bit-encoded (Thumb) function pointer symbolic
+    /// (`PTRSUB(fn) + 1`) instead of letting `RulePtrsubUndo` collapse it back to
+    /// raw hex (C++ `Architecture::preserve_thumb_funcptr`), shared from the real
+    /// architecture.  Read by [`RulePtrsubUndo`](crate::ruleaction_6::RulePtrsubUndo)'s
+    /// thumb-funcptr guard.  Default-on (DIV-2); `false` for hand-built fixtures.
+    pub preserve_thumb_funcptr: bool,
+    /// (kuna) Bound a LOAD-table jumptable by a modulo/and-mask on its index when
+    /// the basic model fails to bound it (C++ `Architecture::switch_modulo_bound`,
+    /// flipped by `option switchmodbound`, GH-9191), shared from the real
+    /// architecture.  Read by `JumpBasic::recoverModel` before
+    /// `kunaTryModuloBoundTable`.  `false` (default off / upstream byte-identical).
+    pub switch_modulo_bound: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -629,6 +683,8 @@ impl Architecture {
             trim_recurse_max: 5,
             // C++ Architecture default: max_implied_ref = 2 (resetDefaults).
             max_implied_ref: 2,
+            // C++ Architecture default: max_term_duplication = 2 (resetDefaults).
+            max_term_duplication: 2,
             return_single: false,
             // (kuna) GH-9218 DIV-3 default-on; the real value is copied from the
             // engine Architecture in `build_arch_handle`.
@@ -637,6 +693,19 @@ impl Architecture {
             name_style_angr: true,
             // (kuna) DIV-2 default-on (GH-558): resetDefaults sets present_lessequal=true.
             present_lessequal: true,
+            // (kuna) the real arch overwrites each of these in `build_arch_handle`;
+            // hand-built fixtures (no `build_arch_handle`) get `false`, so a rule
+            // registered `enabled=false` is inert there — matching the gate-off
+            // unit tests (and the `infer_funcentry` seam-default convention).
+            fold_boolean_mask: false,    // GH-1282 booleanmask
+            fold_flag_compare: false,    // GH-1276/8777 flagcompare
+            add_carry_chain: false,      // GH-8913 addcarrychain
+            ov_less_simplify: false,     // GH-7190 ovlesssimplify
+            recover_array_stride: false, // GH-8724 arraystride
+            memset_recover: false,       // GH-9230/1537 memsetrecover
+            model_stack_probe_loop: false, // GH-8017 stackprobeloop
+            recover_lowered_switch: false, // loweredswitch
+            strip_stack_guard: false,    // stackguard (opt-in default-off)
             // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.
             condexe_block_placement: true,
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).
@@ -650,6 +719,11 @@ impl Architecture {
             max_jumptable_size: 0,
             alias_block_level: 2, // Architecture default: block structs and arrays
             funcptr_align: 0,
+            // (kuna GH-8471) DIV-2 default-on; the real arch overwrites this in
+            // build_arch_handle.  A hand-built fixture has funcptr_align == 0, so
+            // the thumb guard never fires regardless of this flag.
+            preserve_thumb_funcptr: true,
+            switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.
@@ -1176,6 +1250,89 @@ impl FuncProto {
     /// un-recovered default.
     pub fn get_return_bytes_consumed(&self) -> i32 {
         0
+    }
+}
+
+// ===========================================================================
+// DatabaseArch / TranslateSeam / TypeFactorySeam on the real seam Architecture.
+// ===========================================================================
+//
+// SEAM(W4/W5/W6) closure: `database.rs` declares these traits (the slice of
+// `glb` the symbol database needs) and the in-crate `TestArch` implements them
+// for unit tests.  There was no NON-test impl, so the ghidra-style naming in
+// `Database::build_variable_name` / `build_default_name` was unreachable in the
+// live pipeline (`ActionNameVars` hardcoded `format!("v{base}")`).  Implementing
+// the traits here on the real seam `Architecture` wires the live engine to that
+// renderer so `option namestyle ghidra` produces `iVarN` locals.
+
+impl crate::database::TranslateSeam for Architecture {
+    /// C++ `Translate::getRegisterName(spc,off,sz)` — forward to the engine's
+    /// register lookup installed on the shared `AddrSpaceManager`.
+    fn get_register_name(&self, space: &Rc<AddrSpace>, off: u64, size: int4) -> String {
+        match self.manage.register_lookup() {
+            Some(rl) => rl.get_register_name(space, off, size),
+            None => String::new(),
+        }
+    }
+}
+
+impl crate::database::TypeFactorySeam for Architecture {
+    /// C++ `TypeFactory::getBase(size,metatype)` — forward to the shared
+    /// `TypeFactoryImpl`, falling back to a bare placeholder when no factory is
+    /// shared (hand-built fixtures) or the lookup errs.
+    fn get_base(
+        &self,
+        size: int4,
+        meta: crate::dtype::type_metatype,
+    ) -> Rc<crate::dtype::Datatype> {
+        use crate::dtype::TypeFactory;
+        match self.types.as_deref() {
+            Some(tf) => tf
+                .get_base(size, meta)
+                .unwrap_or_else(|_| Rc::new(crate::dtype::Datatype::new(size, meta))),
+            None => Rc::new(crate::dtype::Datatype::new(size, meta)),
+        }
+    }
+
+    /// C++ `TypeFactory::getTypeCode()` — the "code" placeholder for function
+    /// symbols, forwarded to the shared factory with a placeholder fallback.
+    fn get_type_code(&self) -> Rc<crate::dtype::Datatype> {
+        use crate::dtype::TypeFactory;
+        match self.types.as_deref() {
+            Some(tf) => tf.get_type_code().unwrap_or_else(|_| {
+                Rc::new(crate::dtype::Datatype::new(1, crate::dtype::type_metatype::TYPE_CODE))
+            }),
+            None => Rc::new(crate::dtype::Datatype::new(1, crate::dtype::type_metatype::TYPE_CODE)),
+        }
+    }
+}
+
+impl crate::database::DatabaseArch for Architecture {
+    fn num_spaces(&self) -> int4 {
+        self.manage.num_spaces()
+    }
+    fn types(&self) -> &dyn crate::database::TypeFactorySeam {
+        self
+    }
+    fn translate(&self) -> &dyn crate::database::TranslateSeam {
+        self
+    }
+    fn min_funcsymbol_size(&self) -> int4 {
+        // The seam Architecture carries no `min_funcsymbol_size`; the symbol
+        // database's only use of it is `FunctionSymbol` mapping (not the naming
+        // path), and the engine default is 1.
+        1
+    }
+    fn name_style_angr(&self) -> bool {
+        self.name_style_angr
+    }
+    /// C++ `Datatype::printNameBase` (`type.hh:286`): the first char of the type
+    /// name (the `iVar`/`uVar`/`fVar`/`pVar` prefix), empty for a nameless type.
+    fn type_name_base(&self, dt: &crate::dtype::Datatype) -> String {
+        match dt.get_name().chars().next() {
+            Some(c) => c.to_string(),
+            None => String::new(),
+        }
     }
 }
 

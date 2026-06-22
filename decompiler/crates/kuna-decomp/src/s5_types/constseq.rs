@@ -113,7 +113,7 @@ use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
 use crate::seams::{OpId, VarnodeId};
-use crate::userop::{BUILTIN_MEMCPY, BUILTIN_STRNCPY, BUILTIN_WCSNCPY};
+use crate::userop::{BUILTIN_MEMCPY, BUILTIN_MEMSET, BUILTIN_STRNCPY, BUILTIN_WCSNCPY};
 
 /// Helper holding a data-flow edge and optionally a memory offset being COPYed
 /// into or from (C++ `ArraySequence::WriteNode`).
@@ -1046,7 +1046,7 @@ impl HeapSequence {
 /// A sequence of COPY ops moving single constant characters into a contiguous
 /// array memory region tied to a (stack) Symbol (C++
 /// `class StringSequence : public ArraySequence`).
-struct StringSequence {
+pub(crate) struct StringSequence {
     /// The shared gathering machinery (C++ base `ArraySequence`).
     base: ArraySequence,
     /// The root COPY (C++ `ArraySequence::rootOp`).
@@ -1528,6 +1528,230 @@ impl StringSequence {
             None => return false,
         };
         self.remove_copy_ops(data, mem_cpy_op);
+        true
+    }
+
+    // ---------------------------------------------------------------------
+    // Constant-fill (memset/bzero) recovery — kuna GH-9230/1537.
+    //
+    // The C++ `MemsetSequence : public StringSequence` reuses StringSequence's
+    // `constructTypedPointer`/`removeCopyOps`; the Rust port keeps that reuse in
+    // this `impl StringSequence` (private fields are reachable here) and exposes
+    // only the `pub(crate)` entry points the `kuna_memsetsequence` driver needs.
+    // ---------------------------------------------------------------------
+
+    /// (kuna GH-9230) Build a fill sequence for memset recovery: the same
+    /// containing-array type-walk as [`build`](Self::build), but gathers the
+    /// constant COPY run with each COPY's byte size recorded in the `WriteNode`
+    /// slot (via [`collect_fill_run`](Self::collect_fill_run)) and skips
+    /// `formByteArray` — the driver runs the single-value-fill detection
+    /// ([`detect_fill_run`](crate::kuna_memsetsequence::detect_fill_run)) on the
+    /// returned `move_ops` and then [`transform_memset`](Self::transform_memset).
+    /// Returns `None` when no containing `ct`-array exists or no run was gathered.
+    pub(crate) fn build_for_fill(
+        data: &Funcdata,
+        ct: Rc<Datatype>,
+        entry: crate::varmap::StringContainerEntry,
+        root: OpId,
+        addr: Address,
+    ) -> Option<StringSequence> {
+        let block = data.obank().get(root)?.get_parent()?;
+        let mut seq = StringSequence {
+            base: ArraySequence::new(ct),
+            root_op: root,
+            block,
+            root_addr: addr.clone(),
+            start_addr: addr.clone(),
+            entry,
+        };
+        // entry/addr must share an address space, and the root must be inside the
+        // entry, with a non-zero (real) fill offset — same gates as `build`.
+        let entry_space = seq.entry.addr.get_space()?.clone();
+        let addr_space = addr.get_space()?.clone();
+        if !Rc::ptr_eq(&entry_space, &addr_space) {
+            return None;
+        }
+        let off0: int8 = seq.root_addr.get_offset().wrapping_sub(seq.entry.first) as int8;
+        if off0 >= seq.entry.size as int8 {
+            return None;
+        }
+        // Walk the containing Symbol's type down to the `ct`-array (mirrors `build`).
+        let mut off = off0;
+        let mut parent_type: Option<Rc<Datatype>> = Some(Rc::clone(&seq.entry.sym_type));
+        let mut array_type: Option<Rc<Datatype>> = None;
+        let mut last_off: int8 = 0;
+        loop {
+            let pt = match &parent_type {
+                Some(p) => Rc::clone(p),
+                None => break,
+            };
+            if Rc::ptr_eq(&pt, &seq.base.char_type) {
+                break;
+            }
+            array_type = Some(Rc::clone(&pt));
+            last_off = off;
+            if pt.needs_resolution() {
+                match Self::resolve_field(data, &pt, off, root, -1) {
+                    Some((field_ty, new_off)) => {
+                        off = new_off;
+                        parent_type = Some(field_ty);
+                    }
+                    None => break,
+                }
+            } else {
+                match pt.get_sub_type(off) {
+                    Ok((Some(sub), new_off)) => {
+                        off = new_off;
+                        parent_type = Some(sub);
+                    }
+                    _ => parent_type = None,
+                }
+            }
+        }
+        let parent_matches_ct =
+            parent_type.as_ref().map(|p| Rc::ptr_eq(p, &seq.base.char_type)).unwrap_or(false);
+        if !parent_matches_ct {
+            return None;
+        }
+        let array_type = match array_type {
+            Some(a) if a.get_metatype() == type_metatype::TYPE_ARRAY => a,
+            _ => return None,
+        };
+        seq.start_addr = &seq.root_addr + (-last_off);
+        if !seq.collect_fill_run(data, array_type.get_size()) {
+            return None;
+        }
+        Some(seq)
+    }
+
+    /// (kuna GH-9230) Mirror of [`collect_copy_ops`](Self::collect_copy_ops), but
+    /// records each COPY's byte size in the `WriteNode` slot (the memset fill
+    /// detection needs the per-COPY stride) instead of `-1`.  The constant
+    /// uniform-byte check is deferred to `detect_fill_run`; here it only gathers
+    /// in-block constant COPYs tiling the `ct`-array region.
+    pub(crate) fn collect_fill_run(&mut self, data: &Funcdata, size: int4) -> bool {
+        let end_addr = &self.start_addr + i64::from(size - 1);
+        let begin_addr = if self.start_addr != self.root_addr {
+            &self.root_addr + (-(self.base.char_type.get_align_size() as i64))
+        } else {
+            self.start_addr.clone()
+        };
+        let scan_end = &end_addr + 1;
+        let ids: Vec<VarnodeId> =
+            data.vbank().iter_loc_addr_range(&begin_addr, &scan_end).collect();
+        let mut diff: int4 =
+            self.root_addr.get_offset().wrapping_sub(self.start_addr.get_offset()) as int4;
+        let align = self.base.char_type.get_align_size();
+        let char_size = self.base.char_type.get_size();
+        for vn in ids {
+            let v = data.vbank().get(vn).expect("collect_fill_run: stale vn");
+            if !v.is_written() {
+                continue;
+            }
+            let op = v.get_def().expect("collect_fill_run: written vn has no def");
+            if data.obank().get(op).expect("collect_fill_run: stale op").code() != OpCode::CPUI_COPY {
+                continue;
+            }
+            if data.obank().get(op).unwrap().get_parent() != Some(self.block) {
+                continue;
+            }
+            let in0 = op_get_in(data, op, 0);
+            if !data.vbank().get(in0).map(|x| x.is_constant()).unwrap_or(false) {
+                continue;
+            }
+            // A memset element COPY is exactly one array element wide (the SIMD
+            // wide-store form lifts to per-element COPYs by this stage).
+            if v.get_size() != char_size {
+                return false;
+            }
+            let tmp_diff: int4 =
+                v.get_offset().wrapping_sub(self.start_addr.get_offset()) as int4;
+            if tmp_diff < diff {
+                if tmp_diff + align == diff {
+                    return false;
+                }
+                continue;
+            } else if tmp_diff > diff {
+                if tmp_diff - diff < align {
+                    continue;
+                }
+                if tmp_diff - diff > align {
+                    break;
+                }
+                diff = tmp_diff;
+            }
+            let order = data.obank().get(op).unwrap().get_seq_num().get_order();
+            // slot carries the COPY byte size (the fill stride), not -1.
+            self.base.move_ops.push(WriteNode::new(v.get_offset(), op, v.get_size(), order));
+        }
+        self.base.move_ops.len() as int4 >= ArraySequence::MINIMUM_SEQUENCE_LENGTH
+    }
+
+    /// Mutable access to the gathered fill run, so the driver can run the
+    /// single-value-fill detection (`detect_fill_run`) which truncates the run.
+    pub(crate) fn fill_move_ops_mut(&mut self) -> &mut Vec<WriteNode> {
+        &mut self.base.move_ops
+    }
+
+    /// (kuna GH-9230) Build the `builtin_memset(dest, value, count)` CALLOTHER
+    /// (C++ `MemsetSequence::buildMemset`), mirroring
+    /// [`build_string_copy`](Self::build_string_copy): construct the typed dest
+    /// pointer into the array, then a 4-input CALLOTHER with the registered
+    /// `BUILTIN_MEMSET` id, the fill value, and the byte count.
+    pub(crate) fn build_memset(
+        &self,
+        data: &mut Funcdata,
+        fill_value: u8,
+        fill_count: int4,
+    ) -> Option<OpId> {
+        use crate::dtype::TypeFactory;
+        let insert_point = self.base.move_ops[0].op;
+        let insert_addr = data.obank().get(insert_point)?.get_addr().clone();
+        let types = data.get_arch().types_rc()?;
+        // PcodeOp *memsetOp = data.newOp(4, insertPoint->getAddr()); CALLOTHER.
+        let memset_op = data.new_op(4, insert_addr);
+        data.op_set_opcode_code(memset_op, OpCode::CPUI_CALLOTHER);
+        data.obank_mut().get_mut(memset_op)?.clear_flag(pcodeop_flags::call);
+        let id_con = data.new_constant(4, BUILTIN_MEMSET as uintb);
+        data.op_set_input(memset_op, id_con, 0).ok();
+        // in1 = constructTypedPointer(insertPoint).
+        let dest_ptr = self.construct_typed_pointer(data, insert_point)?;
+        data.op_set_input(memset_op, dest_ptr, 1).ok();
+        if let Ok(dest_v) = data.vbank().get(dest_ptr).ok_or(()) {
+            let dest_ty = Rc::clone(dest_v.get_type_def_facing());
+            if dest_ty.needs_resolution() {
+                data.inherit_union_field_ptr(dest_ty, memset_op, 1, insert_point, -1).ok();
+            }
+        }
+        let int4t = types.get_base(4, type_metatype::TYPE_INT).ok();
+        // in2 = fill value (the repeated byte), in3 = fill byte count.
+        let val_vn = data.new_constant(4, fill_value as uintb);
+        if let Some(t) = int4t.clone() {
+            data.vbank_mut().get_mut(val_vn)?.update_type(t);
+        }
+        data.op_set_input(memset_op, val_vn, 2).ok();
+        let cnt_vn = data.new_constant(4, fill_count as uintb);
+        if let Some(t) = int4t {
+            data.vbank_mut().get_mut(cnt_vn)?.update_type(t);
+        }
+        data.op_set_input(memset_op, cnt_vn, 3).ok();
+        data.op_insert_before(memset_op, insert_point);
+        Some(memset_op)
+    }
+
+    /// (kuna GH-9230) `MemsetSequence::transform`: build the memset and tear down
+    /// the original COPY run (reusing [`remove_copy_ops`](Self::remove_copy_ops)).
+    pub(crate) fn transform_memset(
+        &self,
+        data: &mut Funcdata,
+        fill_value: u8,
+        fill_count: int4,
+    ) -> bool {
+        let memset_op = match self.build_memset(data, fill_value, fill_count) {
+            Some(o) => o,
+            None => return false,
+        };
+        self.remove_copy_ops(data, memset_op);
         true
     }
 }

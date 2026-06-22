@@ -189,7 +189,7 @@ fn v1_var_count_tie_is_deterministic_first_created_wins() {
 
     let mut act = ActionLowerSwitchDetect::new(true, "base");
     assert_eq!(act.detect(&mut fd), 1, "exactly one cascade recovered on a var tie");
-    let recs = act.store().records(&fd);
+    let recs = act.store().borrow().records(&fd).to_vec();
     assert_eq!(recs.len(), 1);
     // Deterministic resolution: the earlier-created varnode (v1) wins the
     // strict-`>` `bestCount` pick, so its cascade (head CBRANCH at 0x1001,
@@ -254,7 +254,7 @@ fn v2_cap_boundary_16_accepted_17_rejected() {
     build_n_case_cascade(&mut fd16, v16, 16);
     let mut act16 = ActionLowerSwitchDetect::new(true, "base");
     assert_eq!(act16.detect(&mut fd16), 1, "16 cases is at the cap, accepted");
-    assert_eq!(act16.store().records(&fd16)[0].case_vals.len(), 16);
+    assert_eq!(act16.store().borrow().records(&fd16)[0].case_vals.len(), 16);
 
     // 17 cases: rejected by the `> 16` fail-safe cap.
     let mut fd17 = build_fd();
@@ -262,7 +262,7 @@ fn v2_cap_boundary_16_accepted_17_rejected() {
     build_n_case_cascade(&mut fd17, v17, 17);
     let mut act17 = ActionLowerSwitchDetect::new(true, "base");
     assert_eq!(act17.detect(&mut fd17), 0, "17 cases exceeds the cap, rejected");
-    assert!(!act17.store().has_record(&fd17));
+    assert!(!act17.store().borrow().has_record(&fd17));
 }
 
 // -----------------------------------------------------------------------------
@@ -307,7 +307,7 @@ fn v3_duplicate_case_value_bails() {
 
     let mut act = ActionLowerSwitchDetect::new(true, "base");
     assert_eq!(act.detect(&mut fd), 0, "duplicate case value 5 must bail recoverCascade");
-    assert!(!act.store().has_record(&fd));
+    assert!(!act.store().borrow().has_record(&fd));
 }
 
 // -----------------------------------------------------------------------------
@@ -352,7 +352,8 @@ fn v4_notequal_match_is_the_not_taken_edge() {
 
     let mut act = ActionLowerSwitchDetect::new(true, "base");
     assert_eq!(act.detect(&mut fd), 1, "NOTEQUAL cascade recovered");
-    let rec = &act.store().records(&fd)[0];
+    let recs = act.store().borrow().records(&fd).to_vec();
+    let rec = &recs[0];
     // 3 distinct cases {0,2 -> A ; 1 -> B}; default = the common range sink.
     assert_eq!(rec.case_vals, vec![0u64, 1u64, 2u64]);
     assert_eq!(off(&rec.case_targets[0]), 0x2000, "V==0 -> A (the false/not-taken edge)");

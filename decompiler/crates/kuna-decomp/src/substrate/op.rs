@@ -563,9 +563,11 @@ impl PcodeOp {
         self.output
     }
     /// Get a specific input Varnode to this op (C++ `getIn`).  The slot may hold
-    /// `None` (a null input).
+    /// `None` (a null input); an out-of-range slot is also `None` (matching the
+    /// `Option` contract — callers that peek `getIn(1)` on an op before confirming
+    /// it has two inputs, e.g. `RuleExpandLoad`, must not panic).
     pub fn get_in(&self, slot: int4) -> Option<VarnodeId> {
-        self.inrefs[slot as usize]
+        self.inrefs.get(slot as usize).copied().flatten()
     }
     /// Get the parent basic block (C++ `getParent`).  SEAM(W3-block).
     pub fn get_parent(&self) -> Option<crate::seams::BlockId> {

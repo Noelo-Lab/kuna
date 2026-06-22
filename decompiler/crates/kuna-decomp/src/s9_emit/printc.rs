@@ -2068,17 +2068,23 @@ impl PrintC {
             // Array member: if the mapped Symbol is an array, declare the base
             // type and an `[count]` adornment after the name (C++ `emitVarDecl`'s
             // array branch).
-            let array_count = fd.high_bank().get(*high).and_then(|h| {
-                let st = h.kuna_symbol_type()?;
-                if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
-                    let base = st.get_array_base()?;
-                    let elsize = base.get_size().max(1);
-                    let count = st.get_size() / elsize;
-                    Some((type_name_for_decl(&base, rt), count))
-                } else {
-                    None
-                }
-            });
+            let array_count = fd
+                .high_bank()
+                .get(*high)
+                .and_then(|h| {
+                    let st = h.kuna_symbol_type()?;
+                    array_decl_parts(&st, rt)
+                })
+                // No mapped-Symbol array: fall back to the declaration representative's
+                // own data-type.  An anonymous `undefined1 [N]` array (an oversize
+                // unknown - e.g. a 32-byte YMM FMA accumulator, GH-9184 - that
+                // `getBase` widened past `max_basetype_size`) lives on the Varnode
+                // itself, never a Symbol; declare it `<base> name [N]` instead of
+                // flattening it to a scalar `undefined<N>`.
+                .or_else(|| {
+                    let v = decl_rep_varnode(fd, *high).and_then(|vn| fd.vbank().get(vn))?;
+                    array_decl_parts(v.get_type(), rt)
+                });
             self.emit.tag_line();
             let id = self.emit.begin_var_decl(&markup);
             let decl_type = array_count.as_ref().map(|(t, _)| t.clone()).unwrap_or(type_name);
@@ -2099,9 +2105,16 @@ impl PrintC {
             }
             self.emit.end_var_decl(id);
             self.emit.print(";", SyntaxHighlight::NoColor);
-            if let Some((ctext, spc, off)) = comment {
-                self.emit.spaces(1, 0);
-                self.emit.tag_comment(&format!("// {ctext}"), SyntaxHighlight::CommentColor, &spc, off);
+            // (kuna) the storage comment (`// eax` / `// stack - 0xNN`) is the
+            // angr-style local annotation; the ghidra naming scheme (`option
+            // namestyle ghidra`, `name_style_angr = false`) emits no storage
+            // comment.  Gate the emit on the flag (default angr → unchanged, so
+            // the 675 corpus is unaffected).
+            if arch.name_style_angr {
+                if let Some((ctext, spc, off)) = comment {
+                    self.emit.spaces(1, 0);
+                    self.emit.tag_comment(&format!("// {ctext}"), SyntaxHighlight::CommentColor, &spc, off);
+                }
             }
         }
         // Blank separating line before the body (C++ emits a tag_line after the
@@ -2123,14 +2136,11 @@ impl PrintC {
             Some(h) => h,
             None => return ("undefined1".to_string(), None),
         };
-        // Type name + storage comment: from the high's storage representative —
+        // Type name + storage comment: from the high's storage representative -
         // the addr-tied (mapped, in-scope) member, which is the C++ symbol's
         // `getFirstWholeMap()` storage (e.g. the ACC register), NOT a trim-COPY
         // unique.  Fall back to instance 0 if none is addr-tied.
-        let rep = (0..h.num_instances())
-            .map(|i| h.get_instance(i))
-            .find(|&vn| fd.vbank().get(vn).map(|v| v.is_addr_tied()).unwrap_or(false))
-            .or_else(|| (0..h.num_instances()).map(|i| h.get_instance(i)).next());
+        let rep = decl_rep_varnode(fd, high);
         let (type_name, comment) = match rep.and_then(|vn| fd.vbank().get(vn)) {
             Some(v) => {
                 let tn = type_name_for_decl(v.get_type(), self.rt_ctx);
@@ -2287,12 +2297,26 @@ impl PrintC {
         }
     }
 
+    /// The display name for a goto target / label line (C++ `PrintC::emitLabel`,
+    /// printc.cc:3328): the **entry address** of the block's front-leaf basic
+    /// block, rendered in kuna's angr style as `label_<addr>`
+    /// ([`kuna_label_name`](crate::database::kuna_label_name)).  Falls back to the
+    /// reverse-post `LAB_<index>` form only when the block has no resolvable entry
+    /// address, keeping a `goto`/target pair always consistent.
+    fn block_label_name(&self, fd: &Funcdata, bl: BlockId) -> String {
+        let addr = fd.sblock_entry_addr(bl);
+        if addr.is_invalid() {
+            let idx = fd.sblocks_ref().block(bl).get_index();
+            format!("LAB_{idx:08x}")
+        } else {
+            crate::database::kuna_label_name(&addr)
+        }
+    }
+
     /// C++ `PrintC::emitLabelStatement` (printc.cc:3355), structured-print arm: a
     /// `LABEL:` line for a `t_copy` block that is the target of an unstructured
-    /// goto.  The label name mirrors [`emit_goto_statement`]'s simplified
-    /// `LAB_<index>` form so a `goto`/target pair render the same name (the full
-    /// `emitLabel` entry-address/code-symbol naming routes through `database.rs`,
-    /// a concurrent wave's file).
+    /// goto.  The label name is the block's entry-address-based `label_<addr>`
+    /// ([`block_label_name`]) so a `goto`/target pair render the same name.
     fn emit_label_statement(&mut self, fd: &Funcdata, bl: BlockId) {
         use crate::block::BlockType;
         // if (isSet(only_branch)) return;
@@ -2309,8 +2333,7 @@ impl PrintC {
         }
         // emit->tagLine(0); emitLabel(bl); emit->print(COLON);
         self.emit.tag_line_indent(0);
-        let idx = fd.sblocks_ref().block(bl).get_index();
-        self.emit.print(&format!("LAB_{idx:08x}"), SyntaxHighlight::NoColor);
+        self.emit.print(&self.block_label_name(fd, bl), SyntaxHighlight::NoColor);
         self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);
     }
 
@@ -2678,10 +2701,18 @@ impl PrintC {
                 self.emit.spaces(1, 0);
                 // pushConstant(val, ct, casetoken, 0, op, displayFormat); recurse();
                 let sz = self.switch_var_size(fd, blk);
-                if let Some(op) = firstop {
-                    self.push_constant_ir(val, sz, op);
-                } else if let Some(op) = self.any_op(fd, case.block) {
-                    self.push_constant_ir(val, sz, op);
+                // (kuna) Render the label signed when the recovered switch variable
+                // is signed (the lowered-switch install records this on the table;
+                // the C++ derives it from `getSwitchType()`'s signedness).
+                let signed = jt_index
+                    .map(|j| fd.get_jump_table(j as int4).kuna_has_signed_labels())
+                    .unwrap_or(false);
+                if let Some(op) = firstop.or_else(|| self.any_op(fd, case.block)) {
+                    if signed {
+                        self.push_constant_ir_fmt_sign(val, sz, op, display_format::NONE, true);
+                    } else {
+                        self.push_constant_ir(val, sz, op);
+                    }
                 }
                 self.recurse();
                 self.emit.print(keywords::COLON, SyntaxHighlight::NoColor);
@@ -2924,8 +2955,7 @@ impl PrintC {
             _ => {
                 self.emit.print(keywords::KEYWORD_GOTO, SyntaxHighlight::KeywordColor);
                 self.emit.spaces(1, 0);
-                let idx = fd.sblocks_ref().block(target).get_index();
-                self.emit.print(&format!("LAB_{idx:08x}"), SyntaxHighlight::NoColor);
+                self.emit.print(&self.block_label_name(fd, target), SyntaxHighlight::NoColor);
             }
         }
         self.emit.print(keywords::SEMICOLON, SyntaxHighlight::NoColor);
@@ -6286,6 +6316,40 @@ fn sblocks_basic_block_index(fd: &Funcdata, bb: BlockId) -> int4 {
     } else {
         fd.sblocks_ref().block(bb).get_index()
     }
+}
+
+/// (kuna) The declaration *representative* Varnode of a local high: the addr-tied
+/// (mapped, in-scope) storage member - the C++ symbol's `getFirstWholeMap()`
+/// storage - else instance 0.  Shared by the type-name/comment path and the
+/// array-declarator fallback (GH-9184) so both anchor on the same Varnode.
+fn decl_rep_varnode(
+    fd: &Funcdata,
+    high: crate::seams::HighVariableId,
+) -> Option<crate::seams::VarnodeId> {
+    let h = fd.high_bank().get(high)?;
+    (0..h.num_instances())
+        .map(|i| h.get_instance(i))
+        .find(|&vn| fd.vbank().get(vn).map(|v| v.is_addr_tied()).unwrap_or(false))
+        .or_else(|| (0..h.num_instances()).map(|i| h.get_instance(i)).next())
+}
+
+/// (kuna) If `ct` is a `TYPE_ARRAY`, the `(base_type_name, count)` pair that
+/// declares it `<base> name [count]` (C++ `emitVarDecl`'s array branch, where the
+/// declared type is the *element* type and the count adorns the identifier).  The
+/// base name is resolved with the realtypes context - so an anonymous
+/// `undefined1 [N]` array (e.g. a 32-byte oversize-unknown YMM FMA accumulator,
+/// GH-9184) declares its element type, not the whole-array `undefined<N>` scalar.
+fn array_decl_parts(
+    ct: &std::rc::Rc<crate::dtype::Datatype>,
+    rt: RealTypeCtx,
+) -> Option<(String, int4)> {
+    if ct.get_metatype() != crate::dtype::type_metatype::TYPE_ARRAY {
+        return None;
+    }
+    let base = ct.get_array_base()?;
+    let elsize = base.get_size().max(1);
+    let count = ct.get_size() / elsize;
+    Some((type_name_for_decl(&base, rt), count))
 }
 
 /// The type name to render in a declaration (C++ `Datatype::getName`), with the

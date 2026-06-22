@@ -409,6 +409,11 @@ impl Action for ActionHeritage {
         // changes (the C++ does too — heritage registers no change count, which
         // is why `break action heritage` never fires; see kuna/goldens.py B3).
         data.op_heritage();
+        // (kuna) Repair any synthetic lowered-switch BRANCHIND whose input
+        // heritage normalized away (see `kuna_repair_lowered_switch_inputs`).
+        // A no-op unless a lowered-switch was installed this function, so it
+        // never perturbs the datatest corpus.
+        data.kuna_repair_lowered_switch_inputs();
         0
     }
 }
@@ -658,16 +663,20 @@ impl Action for ActionUnreachable {
         }
         Some(Box::new(ActionUnreachable { base: self.base.clone() }))
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:3560
         //   if (data.removeUnreachableBlocks(true,false)) count += 1;
         //   return 0;
-        // SEAM(W3-block): Funcdata::removeUnreachableBlocks (the reachability sweep
-        // + block deletion) is a funcdata_block primitive not in the merged tree.
-        // The read-only reachability check Funcdata::has_unreachable_blocks IS
-        // realized, but the C++ removeUnreachableBlocks both detects *and* deletes
-        // and only returns true when it actually deleted a block; without the
-        // deletion primitive the action must report no change (count stays 0).
+        // The reachability sweep + block deletion is now realized: unreachable
+        // blocks are collected from the entry's reachable set, severed, and
+        // removed (stranded reads rewritten to 0xBADDEF via descend2Undef).  A
+        // LowlevelError on the surgery path (C++ `throw`) surfaces as a panic.
+        if data
+            .remove_unreachable_blocks(true, false)
+            .expect("ActionUnreachable: removeUnreachableBlocks")
+        {
+            self.base.count += 1;
+        }
         0
     }
 }

@@ -85,8 +85,8 @@ impl Rule for RuleArrayStride {
 
     /// C++ `RuleArrayStride::applyOp` (`kuna_arraystride.cc:88`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // if (!data.getArch()->recover_array_stride) return 0;  // (kuna) gate (SEAM(W4))
-        if !self.enabled {
+        // if (!data.getArch()->recover_array_stride) return 0;  // (kuna) gate (seam-carried)
+        if !self.enabled && !data.get_arch().recover_array_stride {
             return 0;
         }
 

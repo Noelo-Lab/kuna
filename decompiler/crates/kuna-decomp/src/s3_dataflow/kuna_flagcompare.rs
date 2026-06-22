@@ -74,7 +74,7 @@ impl Rule for RuleBoolSignLess {
     /// C++ `RuleBoolSignLess::applyOp` (`kuna_flagcompare.cc:23`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         // if (!data.getArch()->fold_flag_compare) return 0;  // (kuna) gate (SEAM(W4))
-        if !self.enabled {
+        if !self.enabled && !data.get_arch().fold_flag_compare {
             return 0;
         }
 
@@ -191,7 +191,7 @@ impl Rule for RuleSborrowGe {
     /// C++ `RuleSborrowGe::applyOp` (`kuna_flagcompare.cc:242`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         // if (!data.getArch()->fold_flag_compare) return 0;  // (kuna) gate (SEAM(W4))
-        if !self.enabled {
+        if !self.enabled && !data.get_arch().fold_flag_compare {
             return 0;
         }
 

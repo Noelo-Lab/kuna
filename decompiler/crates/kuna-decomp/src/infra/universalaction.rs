@@ -526,9 +526,10 @@ pub fn universal_sched(
         rrow!("doublestore", "doubleprecis", crate::double::RuleDoubleStore::new("doubleprecis")),
         rrow!("doublein", "doubleprecis", crate::double::RuleDoubleIn::new("doubleprecis")),
         rrow!("doubleout", "doubleprecis", crate::double::RuleDoubleOut::new("doubleprecis")),
-        // (kuna) GH-8017/6858: gated by arch flag model_stack_probe_loop, resolved
-        // at construction (default-on, DIV-3); does not affect the dump.
-        rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new(true, "analysis")),
+        // (kuna) GH-8017/6858: gated by the live arch flag model_stack_probe_loop,
+        // carried on the seam and read in apply_op; registered `false` so the flag
+        // (default-on, DIV-3) drives both the default and the `stackprobeloop off` toggle.
+        rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new(false, "analysis")),
     ];
     // C++: `for(iter=conf->extra_pool_rules...) actprop->addRule(*iter);`
     oppool1_rules.extend(extra_pool_rules);
@@ -569,6 +570,14 @@ pub fn universal_sched(
         rrow!("insert_absorb", "bitfields", crate::bitfield::RuleInsertAbsorb),
     ];
 
+    // (kuna) One shared lowered-switch hint store (the C++ file-static
+    // `loweredStore`): the Detect half (fullloop) writes it, the Install half
+    // (mainloop) reads it on the restart.  Cloned into both action closures so
+    // they reference the same inner table.
+    let lowered_store = crate::kuna_loweredswitch::new_shared_store();
+    let lowered_store_install = lowered_store.clone();
+    let lowered_store_detect = lowered_store;
+
     // --- stackstall (inside mainloop) -------------------------------------
     let ss_for_pf = stackspace;
     let stackstall = SchedNode::Group {
@@ -597,7 +606,13 @@ pub fn universal_sched(
             // (coreaction.cc:5755).  `enabled` resolves the C++
             // `glb->recover_lowered_switch` gate (default-on, DIV-3); the gate does
             // not affect the dump.
-            act!(crate::kuna_loweredswitch::ActionLowerSwitchInstall::boxed(true, "switchnorm")),
+            SchedNode::Action(Box::new(move || {
+                Box::new(crate::kuna_loweredswitch::ActionLowerSwitchInstall::with_store(
+                    false,
+                    "switchnorm",
+                    lowered_store_install.clone(),
+                ))
+            })),
             act!(ActionHeritage::boxed("base")),
             act!(ActionParamDouble::boxed("protorecovery")),
             act!(ActionSegmentize::boxed("base")),
@@ -639,7 +654,13 @@ pub fn universal_sched(
             act!(ActionDeadCode::boxed("deadcode")),
             act!(ActionDoNothing::boxed("deadcontrolflow")),
             act!(ActionSwitchNorm::boxed("switchnorm")),
-            act!(Box::new(crate::kuna_loweredswitch::ActionLowerSwitchDetect::new(true, "switchnorm"))),
+            SchedNode::Action(Box::new(move || {
+                Box::new(crate::kuna_loweredswitch::ActionLowerSwitchDetect::with_store(
+                    false,
+                    "switchnorm",
+                    lowered_store_detect.clone(),
+                ))
+            })),
             act!(Box::new(crate::kuna_stackguard::ActionStripStackGuard::new(false, "returnsplit"))),
             act!(ActionReturnSplit::boxed("returnsplit")),
             act!(ActionUnjustifiedParams::boxed("protorecovery")),

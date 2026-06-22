@@ -759,6 +759,19 @@ impl Funcdata {
         self.qlst.remove(index as usize);
     }
 
+    /// Remove the call spec associated with the given CALL op (C++
+    /// `Funcdata::deleteCallSpecs`, `funcdata.cc:521`): scan `qlst` for the entry
+    /// whose op matches and erase it.  Used by `blockRemoveInternal` when an
+    /// unreachable block containing a CALL is deleted.  Because the \e fspec handle
+    /// is the call op's own identity (not the vector position; see
+    /// [`Self::get_call_specs_index`]), erasing the entry does not invalidate the
+    /// remaining annotation Varnodes.  A no-op if the op has no registered spec.
+    pub fn delete_call_specs(&mut self, op: OpId) {
+        if let Some(idx) = self.qlst.iter().position(|fc| fc.get_op() == op) {
+            self.qlst.remove(idx);
+        }
+    }
+
     /// Put the calls in dominance order so earlier calls get evaluated first
     /// (C++ `Funcdata::sortCallSpecs`, `funcdata.cc:514`; comparator
     /// `compareCallspecs`, `funcdata.cc:501`: by parent-block index, then by the
@@ -823,6 +836,26 @@ impl Funcdata {
     pub fn op_heritage(&mut self) {
         let mut heritage = std::mem::take(&mut self.heritage);
         heritage.build_info_list(self);
+        // C++ `Funcdata::startProcessing` runs `localoverride.applyDeadCodeDelay`
+        // right after `buildInfoList` (funcdata.cc:167): re-apply any persisted
+        // per-space deadcode delays (installed by `Heritage::bumpDeadcodeDelay`
+        // on the restart) to the freshly-built per-space `HeritageInfo`.  Without
+        // this, a deadcode-delay bump installed on the Override before a restart
+        // re-flow would be lost when `build_info_list` re-seeds the info to the
+        // space defaults, so the stack-alias store would still be dead-eliminated
+        // one pass before the aliasing LOAD resolves.  The C++ does this in
+        // `startProcessing` (which re-runs each restart); the merged tree drives
+        // heritage lazily here, so the apply lands at the same point in the order.
+        for (space_index, delay) in self.localoverride.deadcode_delays() {
+            if let Some(spc) = self.glb.manage().get_space(space_index) {
+                let spc = std::rc::Rc::clone(spc);
+                // C++ `setDeadCodeDelay` throws if `delay < info.delay`; the
+                // bump only ever installs `deadcodeDelay+1 >= delay`, so this is
+                // well-formed.  Swallow the error defensively (a malformed
+                // console-supplied `override deadcodedelay` degrades to no-op).
+                let _ = heritage.set_dead_code_delay(&spc, delay);
+            }
+        }
         heritage.heritage(self);
         self.heritage = heritage;
     }
@@ -1391,6 +1424,16 @@ impl Funcdata {
         self.sblocks.block(root).get_size()
     }
 
+    /// (kuna) Tally the `quality` goto-count structure-quality metric over the
+    /// structured tree (C++ `IfcKunaQuality`).  Pub wrapper over the private
+    /// `sblocks_root` so the console command can read the metric.
+    pub fn kuna_quality_counts(&self) -> crate::block::KunaQualityCounts {
+        let mut counts = crate::block::KunaQualityCounts::default();
+        let root = self.sblocks_root();
+        self.sblocks.kuna_count_quality(root, &mut counts);
+        counts
+    }
+
     /// Seed `sblocks` with a `BlockCopy` mirror of every `bblocks` basic block
     /// (the first half of C++ `ActionBlockStructure::apply`, blockaction.cc:2170 —
     /// `graph.buildCopy(data.getBasicBlocks())`).  Borrows `sblocks` mutably and
@@ -1665,9 +1708,28 @@ impl Funcdata {
                 }
             }
         }
-        // C++ `if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }` — the
-        // cover rebuild is driven separately by the cross-arena `updateCover`
-        // (the lazy `coverdirty` walk), so nothing to do here.
+        // C++ `if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }`
+        // (funcdata_varnode.cc:42).  This ALLOCATES the Varnode's Cover object (and
+        // sets `coverdirty`) the first time `setVarnodeProperties` runs on a
+        // covered, high-enabled Varnode — for example the fresh `newUnique` output
+        // of a `Merge::allocateCopyTrim` COPY, which `opSetOutput` routes through
+        // here right after `setDef` marks it written.  Without this, the trim
+        // COPY's `cover` field stays `None`; the lazy `Varnode::updateCover`
+        // (`update_varnode_cover`) only rebuilds a cover it can clone out (i.e. a
+        // `Some(_)`), so a `None` cover never gets rebuilt and the Varnode
+        // contributes an EMPTY cover to its HighVariable.  That fragments a
+        // register's merged high (the loop-counter phi-temps lose their back-edge
+        // span), letting an unrelated same-typed value speculatively merge into it
+        // — the gh1276 / gh9218 cover-fragmentation bug.  (kuna fix)
+        let needs_calc = match self.vbank().get(vn) {
+            Some(v) => v.cover().is_none(),
+            None => return,
+        };
+        if needs_calc && self.is_high_on() {
+            if let Some(v) = self.vbank_mut().get_mut(vn) {
+                v.calc_cover();
+            }
+        }
     }
 
     // -----------------------------------------------------------------------

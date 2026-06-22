@@ -957,6 +957,20 @@ pub type BlockArena = SlotMap<BlockId, FlowBlock>;
 /// owning arena is shared across the whole function (ADR 0001), so a
 /// [`BlockGraph`] pairs the arena with the root [`BlockId`] of the graph node.
 ///
+/// (kuna) Tally for the `quality` goto-count structure-quality metric (C++
+/// `IfcKunaQuality`), filled by [`BlockGraph::kuna_count_quality`].
+#[derive(Default, Clone, Copy, Debug)]
+pub struct KunaQualityCounts {
+    /// `BlockGoto` nodes in the structured tree.
+    pub goto_nodes: int4,
+    /// Of those, how many actually print a `goto` (`gotoPrints`).
+    pub printed_gotos: int4,
+    /// Virtual edges across all `BlockMultiGoto` nodes.
+    pub multigoto_edges: int4,
+    /// `BlockIf` if-gotos whose branch target is a real `f_goto_goto` jump.
+    pub ifgoto_edges: int4,
+}
+
 /// All edge-manipulation and the dominator/spanning-tree algorithms are methods
 /// on this struct so they can read/write across the arena.
 #[derive(Default)]
@@ -1897,6 +1911,44 @@ impl BlockGraph {
                     if gototype == block_flags::f_goto_goto {
                         self.mark_copy_block(caseblk, block_flags::f_unstructured_targ);
                     }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// (kuna) Recursively tally the goto-count structure-quality metric over the
+    /// structured tree from `this_id` (C++ `IfcKunaQuality kunaCountGotos`).
+    ///
+    /// Templated on [`mark_unstructured`](BlockGraph::mark_unstructured) (it
+    /// walks the same tree): counts `BlockGoto` nodes (and how many actually
+    /// *print* a goto via [`goto_prints`](BlockGraph::goto_prints)),
+    /// `BlockMultiGoto` virtual edges, and `BlockIf` if-gotos whose target is a
+    /// real `f_goto_goto` jump.  Read-only.
+    pub fn kuna_count_quality(&self, this_id: BlockId, counts: &mut KunaQualityCounts) {
+        let n = self.arena[this_id].get_size();
+        for i in 0..n {
+            if let Some(child) = self.arena[this_id].list.get(i as usize).copied() {
+                self.kuna_count_quality(child, counts);
+            }
+        }
+        match self.arena[this_id].get_type() {
+            BlockType::Goto => {
+                counts.goto_nodes += 1;
+                if self.goto_prints(this_id) {
+                    counts.printed_gotos += 1;
+                }
+            }
+            BlockType::MultiGoto => {
+                if let BlockKind::MultiGoto { gotoedges, .. } = &self.arena[this_id].kind {
+                    counts.multigoto_edges += gotoedges.len() as int4;
+                }
+            }
+            BlockType::If => {
+                if self.arena[this_id].get_if_goto_target().is_some()
+                    && self.arena[this_id].get_if_goto_type() == block_flags::f_goto_goto
+                {
+                    counts.ifgoto_edges += 1;
                 }
             }
             _ => {}
