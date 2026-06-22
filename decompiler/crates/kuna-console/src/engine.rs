@@ -610,6 +610,51 @@ fn commit_analysis_output(
         }
     }
 
+    // 4. Detected string literals: place a typelocked `char[len]` data symbol at
+    //    each (the kuna analog of `DataUtilities.createData` for an ASCII string),
+    //    so the engine+printer render the literal instead of the bare constant.
+    //    Ghidra's StringsAnalyzer marks the data and locks its type; the typelock
+    //    is what keeps the array char[N] type through type propagation.
+    for fact in &out.strings {
+        let addr = Address::new(Rc::clone(code_space), fact.addr);
+        // Conservative guard: skip an address that already carries a symbol (an
+        // existing data/function symbol must not be shadowed). Ghidra likewise
+        // only lays string data where the listing is undefined.
+        let occupied = {
+            let arch = prog.arch();
+            match arch.symboltab.get_global_scope() {
+                Some(global) => {
+                    arch.symboltab.find_function(global, &addr).is_some()
+                        || arch
+                            .symboltab
+                            .find_container(global, &addr, 1, &Address::new_invalid())
+                            .is_some()
+                }
+                None => false,
+            }
+        };
+        if occupied {
+            continue;
+        }
+
+        // char[len]: getTypeChar(getSizeOfChar()) -> getTypeArray(len, char). Both
+        // are fallible TypeFactory queries (the type group must be built by now).
+        let char_size = prog.arch().types().get_size_of_char();
+        let ch = prog.arch().types().get_type_char(char_size)?;
+        let arr = prog.arch().types().get_type_array(fact.len as i32, ch)?;
+
+        // A cosmetic synthetic name `s_<addr>` (the symbol exists to carry the
+        // char[N] type at the address; the printer renders the literal, not the
+        // name). Placed in its namespace-resolved scope (global here).
+        let name = format!("s_{:x}", fact.addr);
+        let arch = prog.arch_mut();
+        let (scope, base) =
+            arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
+        let (sid, _) =
+            arch.symboltab.add_symbol_mapped(scope, &base, arr, &addr, &Address::new_invalid())?;
+        arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
+    }
+
     Ok(())
 }
 

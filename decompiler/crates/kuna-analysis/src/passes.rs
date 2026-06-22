@@ -24,6 +24,9 @@ pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
         // S1 loader: known no-return functions (exit/abort/…). Mirrors Ghidra's
         // default-on `NoReturnFunctionAnalyzer`.
         Box::new(crate::s1_loader::noreturn::NoReturnKnownPass),
+        // S1 strings: NUL-terminated ASCII string-literal detection. Mirrors
+        // Ghidra's `StringsAnalyzer` (min length 5, require-NUL-end).
+        Box::new(crate::s1_strings::StringLiteralPass { min_len: 5 }),
     ]
 }
 

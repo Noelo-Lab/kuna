@@ -49,6 +49,21 @@ pub struct SymFact {
     pub kind: SymKind,
 }
 
+/// A detected NUL-terminated string literal: a `char[len]` data object at `addr`.
+///
+/// `len` is the byte length **including** the terminating NUL (visible chars + 1),
+/// matching what `DataUtilities.createData` / a `char[N]` array should span — the
+/// length the commit seam passes to `get_type_array` so the printer renders the
+/// literal.  Produced by [`crate::s1_strings`] (the kuna analog of Ghidra's
+/// `StringsAnalyzer`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StringFact {
+    /// Virtual address of the first string byte.
+    pub addr: u64,
+    /// Array length in bytes, including the trailing NUL (visible_len + 1).
+    pub len: u32,
+}
+
 /// The facts one analysis contributes. Every field is additive and may be empty;
 /// merging two outputs is concatenation (the driver dedups by address).
 #[derive(Default, Debug)]
@@ -61,6 +76,8 @@ pub struct AnalysisOutput {
     pub noreturn: Vec<String>,
     /// Extra read-only address ranges (e.g. `.got` after relocation).
     pub readonly: Vec<(u64, u64)>,
+    /// Detected NUL-terminated string literals (a typed `char[N]` per address).
+    pub strings: Vec<StringFact>,
 }
 
 impl AnalysisOutput {
@@ -70,6 +87,7 @@ impl AnalysisOutput {
         self.entries.extend(other.entries);
         self.noreturn.extend(other.noreturn);
         self.readonly.extend(other.readonly);
+        self.strings.extend(other.strings);
     }
 }
 
