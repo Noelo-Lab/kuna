@@ -44,6 +44,67 @@ binding is also what keeps kuna a faithful drop-in for a Ghidra front-end (see
 | readonly range | `Database::set_property_range(varnode_flags::readonly, a1, a2_open)` | now applied on the ELF path too (was XML-only); load-bearing for string rendering |
 | entry point | `name_function(addr)` → `add_function` + `register_symbol` (the `map function` recipe) | commit side is solved; *discovery* is the hard part |
 
+## Is this every Ghidra analyzer? (complete inventory)
+
+**No — and most should not be ported.** Ghidra ships **142** non-test `*Analyzer.java`
+classes. Only a minority are program-analysis steps relevant to a *standalone ELF
+decompiler*; the rest are per-CPU listing helpers, non-ELF format loaders, or infra. Full
+accounting (every one of the 142 falls in exactly one bucket):
+
+### Core program-analysis tier — `Features/{Base,Decompiler,GnuDemangler,FunctionID,DecompilerDependent}` (~57)
+
+**Ported (4) + PLT:** `NoReturnFunctionAnalyzer`, `GnuDemanglerAnalyzer`,
+`ApplyDataArchiveAnalyzer`, `StringsAnalyzer` (disabled — see Increment 3); plus
+`ElfDefaultGotPltMarkup` (loader code, done pre-this-effort).
+
+**🟡 Inherited — the ported engine already does this, no analyzer needed (~11):**
+`DecompilerSwitchAnalyzer`, `DecompilerFunctionAnalyzer`, `DecompilerCallConventionAnalyzer`
+(these literally *run the decompiler* — kuna **is** that engine), `ConstantPropagationAnalyzer`
+(S3 SSA value-set), `StackVariableAnalyzer` (S5), `FunctionAnalyzer` ×2 (proto/param recovery, S4),
+`SharedReturnAnalyzer`, `SharedReturnJumpAnalyzer`, `SegmentedCallingConventionAnalyzer`.
+
+**⬜ Real gaps worth porting (deferred, in the work-list):** `DWARFAnalyzer`,
+`EntryPointAnalyzer` (+ `ExternalEntryFunctionAnalyzer`, + the 5 `BytePatterns/FunctionStart*`
+below), `GccExceptionAnalyzer` (.eh_frame), `FormatStringAnalyzer` (printf varargs typing),
+`ArmSymbolAnalyzer` ($t/$a), `AddressTableAnalyzer`, the operand/reference markup family
+(`OperandReferenceAnalyzer`, `DataOperandReferenceAnalyzer`, `ScalarOperandAnalyzer`,
+`ElfScalarOperandAnalyzer` — mostly listing-level, low decompiler payoff), `CallFixupAnalyzer`,
+`AggressiveInstructionFinderAnalyzer`, `SourceLanguageAnalyzer`.
+
+**⛔ Out of scope / infeasible-at-this-tier (documented):** `FindNoReturnFunctionsAnalyzer`
+(flow heuristic — no pre-decompile listing), `CreateThunkAnalyzer` (thunk object model),
+`ExternalSymbolResolverAnalyzer` (multi-program project), `CondenseFillerBytesAnalyzer`,
+`EmbeddedMediaAnalyzer`, `FidAnalyzer` (Function-ID fingerprinting subsystem),
+`X86FunctionPurgeAnalyzer` (Win32 stdcall), `Golang{String,Symbol}Analyzer`,
+`MingwRelocationAnalyzer`; non-ELF format loaders `Coff*`, `Macho*`, `Pef*`,
+`PortableExecutableAnalyzer`, `AppleSingleDoubleAnalyzer`, `CliMetadataTokenAnalyzer`, `ElfAnalyzer`
+(the loader wrapper); plus abstract bases (`AbstractAnalyzer`, `Analyzer`, `Abstract*`,
+`HeadlessAnalyzer`, `MySwitchAnalyzer`).
+
+### Processor-specific — `Processors/*` (31) — ⛔ out of scope (per-CPU listing helpers)
+
+`X86`, `Arm`, `Mips{Address,Pre,Symbol}`, `Sparc{,EarlyAddress}`, `PowerPCAddress`, `RISCVAddress`,
+`SH4{Address,EarlyAddress}`, `Pic{12,16,17c7xx,18,24DInit}`, `PicSwitch`,
+`Hexagon{,PrologEpilog,Thunk,UnsupportSemantic}`, `Java`/`Jvm`/`AbstractJava`, `eBPFSyscall`,
+`Motorola68K`, `NDS32`, `Loongson`, `HCS12Convention`, `AARCH64PltThunk`, `Toy`. These are per-arch
+address/switch/reference heuristics at the **listing** level; kuna's SLEIGH engine handles
+decoding, and PLT/thunk naming is done generically.
+
+### Other `Features/*` — format/OS/lang specific (~52) — mostly ⛔
+
+`FileFormats/*` (Android/iOS/Mach-O/DEX/ext4/DTB/… ~38), `MicrosoftCodeAnalyzer/*` (PE/RTTI/TEB/SEH),
+`MicrosoftDemangler`, `Objective-C/*`, `PDB/*`, `Swift/*` — all non-ELF. **Partially relevant:**
+`BytePatterns/FunctionStart*` (5 — byte-pattern function-start discovery, folds into the deferred
+`s1-entry-disc`); `Rust/RustDemanglerAnalyzer` (**already covered** — kuna's demangle pass handles
+Rust via `rustc-demangle`); `Rust/RustStringAnalyzer` (⬜ deferred).
+
+### Framework/Build (2) — ⛔ `JitDataFlowBlockAnalyzer` (JIT infra), `SkeletonAnalyzer` (template).
+
+**Summary:** of 142 analyzers, ~4 ported + ~11 inherited by the engine + ~15 are real
+ELF-relevant gaps (deferred, tracked below) + ~112 are out of scope for a standalone ELF
+decompiler (per-CPU helpers, non-ELF formats, Windows/Go/Swift/ObjC, infra). The work-list
+below tracks the relevant set; this section is the evidence it's exhaustive.
+
 ## Work-list
 
 Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it) ·

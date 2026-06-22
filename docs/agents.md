@@ -94,12 +94,14 @@ run it from the repo root (`python -m scripts.pipeline.<mod>`). See `docs/pipeli
 
 ## Tests
 
-Two gates, both Rust:
+Three gates, all Rust:
 
 - `make test` — the datatest parity gate: the `kuna` CLI drives `decomp_test_dbg` over the
   83-file / 675-assertion XML corpus (`tests/datatests/`) and checks it against
-  `docs/baseline.json` (expect **PARITY OK**). `make test-stages` does the same over the
-  kuna-owned `tests/stages/` corpus against `docs/baseline-stages.json`.
+  `docs/baseline.json` (expect **PARITY OK**).
+- `make test-stages` — the kuna-owned stage-model corpus (`tests/stages/`) against
+  `docs/baseline-stages.json`. **Run this too on every change** (expect **PARITY OK**,
+  158/158 since #9). Any failure means a regression — confirm against `main` if unsure.
 - `make rust-test` — the full cargo workspace suite: the ported unit tests, the golden
   differential vectors, and the SLEIGH-compiler `.sla` content-parity tests.
 
@@ -108,8 +110,9 @@ kuna's defaults intentionally diverge from upstream — 22 datatest assertions w
 in place to kuna's default output (eight stage-model sub-stage fixes on by default; per-option
 `option <name> off` restores the upstream rendering).
 
-Any change to the build or the vendored tree must keep `make test` at **PARITY OK** (and
-`make rust-test` green) before committing.
+Any change to the build or the vendored tree must keep `make test` at **PARITY OK**,
+`make rust-test` green, and `make test-stages` with **no new failures beyond the 2 known**
+(above) — run all three before committing.
 
 ## Porting upstream changes (kuna is derived from Ghidra)
 
