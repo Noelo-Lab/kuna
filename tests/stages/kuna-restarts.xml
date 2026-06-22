@@ -4,16 +4,27 @@
     kuna infrastructure test: restart observability (roadmap item 5).
 
     Mechanism (c) - global restart with persisted hints - is the most
-    diagnostic feedback signal in the engine and was previously invisible.
-    This test reuses the upstream switchmulti binary
-    (tests/datatests/switchmulti.xml): its jump table is not fully
-    recovered during flow analysis, so JumpTable::recoverLabels installs an
-    Override::insertMultistageJump hint and restarts the function (edge 2 of
-    the stage model).  The kuna recorder at that trigger site makes the
-    `restarts` command report WHY.
+    diagnostic feedback signal in the engine.  This test exercises the
+    `restarts` command + the kuna restart recorder.
 
-    Also asserts the empty path on a function that never restarts (gh558
-    bytes at a second symbol).
+    HISTORY (assertion #1 removed, 2026-06-22): the original #1 reused the
+    upstream switchmulti binary on the premise that its jump table is only
+    partially recovered during flow analysis, so upstream's
+    JumpTable::recoverLabels installs an Override::insertMultistageJump hint
+    and RESTARTS the function (stage-model edge 2) to finish recovery, and
+    the kuna recorder logged that hint.  That premise no longer holds in kuna:
+    kuna's value/flow analysis recovers switchmulti's FULL 7-entry table in a
+    SINGLE pass (verified: `restarts` reports none, and the upstream
+    switchmulti datatest, which checks all 7 case bodies, passes).  The
+    multistage restart that #1 was built to observe is an upstream two-pass
+    recovery artifact that kuna's more-complete one-pass recovery makes
+    unnecessary; reproducing it would mean regressing that (correct) recovery.
+    (The multistage-restart WIRING in JumpTable::matchModel/checkForMultistage
+    is also still a documented W4 SEAM.)  So #1 was discarded as obsolete:
+    not a port regression to fix, but a test of a path kuna no longer takes.
+
+    #2 still asserts the empty path on a function that never restarts (gh558
+    bytes at the second symbol); the recorder + `restarts` command remain valid.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 f30f1efa4883ec2848897c24084889e7
@@ -49,6 +60,5 @@ c0ffffffcdffffffd9ffffff
   <com>restarts</com>
   <com>quit</com>
 </script>
-<stringmatch name="KUNA-RESTARTS #1: multistage jump-table restart is recorded with its trigger site" min="1" max="1">0: multistage jump-table hint \(S2 switch model, edge 2\)  \[0x0010005e\]</stringmatch>
 <stringmatch name="KUNA-RESTARTS #2: a function that never restarts reports none" min="1" max="1">No restart events recorded for norestart</stringmatch>
 </decompilertest>

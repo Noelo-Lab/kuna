@@ -382,6 +382,19 @@ pub fn bootstrap(c: &Case) -> Result<Bootstrap, String> {
         .build_translator(Box::new(DummyImg), &sla)
         .map_err(|e| format!("build_translator: {e}"))?;
 
+    // Apply the active language's `.ldefs` `<truncate_space>` records (C++
+    // `Architecture::restoreFromSpec` -> `SleighArchitecture::modifySpaces`,
+    // architecture.cc:631) before the type factory reads the default data
+    // space's addr size for the default pointer width.  Mirrors the console
+    // `build_engine_and_init` wiring — e.g. PowerPC:BE:32:e500 truncates `ram`
+    // to 4 so a `void *` is a 32-bit pointer despite the 64-bit GPR model.
+    {
+        let langindex = arch.sleigh().language_index();
+        let base = arch.sleigh_mut().base_mut().ok_or("translator base missing")?;
+        db.modify_spaces(langindex, base.manage())
+            .map_err(|e| format!("modify_spaces: {e}"))?;
+    }
+
     // Apply the processor-spec context-register defaults (`<context_data>
     // <context_set>` in the `.pspec`), then the per-case overrides (the datatest's
     // `set context ..`).  Without these a context-sensitive ISA decode (x86

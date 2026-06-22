@@ -239,6 +239,20 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
     // image replaces it after init (mirrors corpus_bootstrap.rs / the e2e gate).
     sleigh.build_translator(Box::new(NullLoad), &sla)?;
 
+    // Apply the active language's `.ldefs` `<truncate_space>` records (C++
+    // `Architecture::restoreFromSpec` -> `SleighArchitecture::modifySpaces`,
+    // architecture.cc:631).  This shrinks an address space's addr size before the
+    // type factory reads `getDefaultDataSpace()->getAddrSize()` for the default
+    // pointer width — e.g. PowerPC:BE:32:e500 truncates `ram` to 4 so a `void *`
+    // is a 32-bit pointer even though the GPRs (and the space) are modeled 64-bit.
+    {
+        let langindex = sleigh.language_index();
+        let arch = sleigh
+            .base_mut()
+            .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?;
+        db.modify_spaces(langindex, arch.manage())?;
+    }
+
     // Hand the resolved compiler-spec (`.cspec`) XML to the architecture so
     // `build_default_proto` can decode the real `<default_proto>` input/output
     // parameter lists (the C++ `parseCompilerConfig` reads the cspec here).

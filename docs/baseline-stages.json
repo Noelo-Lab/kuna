@@ -132,7 +132,6 @@
     "data:KUNA-REGIONS #3: region blocks lists the single-block loop region on its own",
     "data:KUNA-REGIONS #4: the recursive walker visits the entry block exactly once",
     "data:KUNA-REGIONS #5: stage map routes region tree to S7 loop-refinement",
-    "data:KUNA-RESTARTS #1: multistage jump-table restart is recorded with its trigger site",
     "data:KUNA-RESTARTS #2: a function that never restarts reports none",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-LoweredSwitch #2: default present",
