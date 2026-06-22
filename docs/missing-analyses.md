@@ -122,6 +122,17 @@ listing has functions even where no symbol exists.
 It does not hunt for unlabeled functions. For a stripped binary the user must
 supply addresses.
 
+**Aggressive Instruction Finder (`AggressiveInstructionFinderAnalyzer`) — ⛔
+infeasible-at-tier.** AIF is a *speculative* extension of entry discovery: it guesses
+code in undefined gaps via instruction-mask fingerprinting + recursive-descent
+PseudoDisassembly. It is **off-by-default upstream** (`setDefaultEnablement(false)`,
+warns "MAY CREATE A LOT OF BAD CODE!") and requires a post-disassembly
+Listing/FunctionManager (≥20 found functions) + a PseudoDisassembler — none of which
+exist at the kuna-analysis tier (which runs before decompilation). Its sound output (new
+entries) is subsumed by `s1-entry-disc` + `s1-eh-frame` for kuna's given-entries model.
+Documented ⛔ out-of-scope (see [`analysis-port-log.md`](analysis-port-log.md) Increment 4),
+the same call as `FindNoReturnFunctionsAnalyzer`.
+
 ## 5. Demangling (C++ / Rust / Go / Swift) — ⛔ Gap
 
 **Ghidra:** the demangler analyzers turn `_ZN3foo3barEv` → `foo::bar()`.
@@ -141,12 +152,44 @@ types the references as `char *`, so the decompiler prints `puts("Username: ")`.
 typed `0x400915` as a string. The engine's type inference (🟡, below) can turn a
 pointer into `char *` from *usage*, but it does not materialize the literal text.
 
+**Operand/scalar reference markup (`OperandReferenceAnalyzer` family) — ⛔
+out-of-scope-at-tier.** Ghidra's operand-reference analyzers (`OperandReferenceAnalyzer`,
+`DataOperandReferenceAnalyzer`, `ScalarOperandAnalyzer`, `ElfScalarOperandAnalyzer`) create
+listing *references* — strings, pointers, address tables — from disassembled operands. They
+need the disassembled Listing + ReferenceManager, neither of which exists at this tier, and
+references never reach kuna's decompiler (it reads loadimage bytes + the symbol/type tables,
+not the ReferenceManager). Their products are already covered: strings → `s1-strings`
+(disabled, this section), address/switch tables → §7, function creation → §4 (`s1-entry-disc`).
+`ScalarOperandAnalyzer` is even default-OFF for ELF upstream, and `ElfScalarOperandAnalyzer`
+only *removes* bad `.got`/`.plt` references (which `elf_plt.rs` already names correctly). The
+one relevant idea — typing a scalar that points at a `.rodata` string as `char*` — is blocked
+by the same printer/MapGlobals shadowing that disables `s1-strings`, and is already delivered
+by `s1-libproto` + S5 usage. Documented ⛔ (see
+[`analysis-port-log.md`](analysis-port-log.md) Increment 4).
+
 ## 7. Switch / jump-table recovery — 🟡 Inherited (core) / ⛔ refinement gap
 
 The decompiler's jump-table machinery is ported (it is part of the engine, S2 +
 feedback). What Ghidra adds at the application layer is *re-running* table
 recovery after type recovery to refine case ranges with aggregate-type info; that
 post-typing refinement loop is not part of the standalone engine.
+
+**Two distinct application-layer items, both classified (do not conflate with the
+inherited core):**
+
+- **Absolute address-table discovery (`AddressTableAnalyzer`) — 🟡
+  ported-but-disabled.** A *byte-level data scan*: walk `.rodata`/`.data` for a run of
+  consecutive pointer-width values that all land in an executable section (an absolute
+  jump/function-pointer table) and lay down data labels. This is **NOT** switch recovery
+  (that is the inherited engine machinery above) and **NOT** the post-typing refinement
+  loop below. Faithfully ported in `s1_addrtable` (the scanner finds the 8-entry table @
+  `0x402008` in the `switchtab_x86_64` fixture) but **disabled by default** — Ghidra ships
+  it `setDefaultEnablement(false)` and a pointer-run scanner over-accepts (false-positive
+  risk). See [`analysis-port-log.md`](analysis-port-log.md) Increment 4.
+- **Post-typing refinement loop (roadmap #9) — ⛔ engine S2, not analyzer-tier.** The
+  decompiler-internal multistage re-recovery (`recover_count > 1`), gated behind the
+  `Override::queryMultistageJumptable` engine seam. It is an *engine* (S2-feedback) change,
+  not a `kuna-analysis` pass; deferred as a separate future engine task.
 
 ## 8. Library prototype seeding (signatures for `printf`, `malloc`, …) — ⛔ Gap
 
@@ -187,6 +230,9 @@ debug-format reader or a discovery loop). Vendored fixtures live in
 | ✅ | **Demangling** (Itanium C++ / Rust) | S1 | done | `cpp_mangled` `main` renders `foo::Bar::baz(...)` (cpp_demangle + rustc-demangle; needed the cross-scope call-resolution fix). Increment 2 |
 | ✅ | **Library prototype seeding** | S1 | done | **fauxware** `main`: `puts("Username: ")`, `puts("Password: ")` (libproto types arg `char*`; the route that actually renders literals in kuna). Increment 3 |
 | 🟡 | String-literal detection | S1 | n/a | implemented + tested but **disabled by default**: kuna's printer renders a named `char[]` symbol as its name (`s_400915`), shadowing the literal; literals come from prototype/usage `char*` typing instead. Increment 3 |
+| 🟡 | Absolute address-table discovery (`AddressTableAnalyzer`) | S1 | n/a | implemented + tested but **disabled by default** (Ghidra parity + false-positive risk): **switchtab_x86_64** — `scan_address_tables` finds the 8-entry table @ `0x402008`, all elements in `.text`. NOT switch recovery (inherited S2) and NOT #9 below. Increment 4 |
+| ⛔ | Aggressive Instruction Finder (`AggressiveInstructionFinderAnalyzer` + ARM) | S1 | n/a | infeasible-at-tier: needs post-disasm Listing/FunctionManager/PseudoDisassembler + ≥20 found functions; off-by-default upstream; subsumed by entry-disc + eh-frame. Increment 4 |
+| ⛔ | Operand/scalar reference markup (`OperandReferenceAnalyzer` family) | S1 | n/a | out-of-scope-at-tier: no Listing/ReferenceManager; products subsumed by strings/jumptables/entry-disc; scalar→`char*` blocked by the same printer/MapGlobals shadowing as strings. Increment 4 |
 | 4 | DWARF debug-info | S1 | hard | **cet_pie_x86_64** (has `.debug_info`): recovered function names + ≥1 typed parameter appear (not `param_1`) |
 | 6 | Function-start / entry discovery | S1 | hard | **stripped_dynamic_x86_64**: discovered entry set includes the real `main`/entry, decompilable without a supplied address |
 | 7 | External / thunk object model | S1 | hard | **fauxware**: PLT thunk to `puts` modeled as a thunk (tail-call inlined), not a standalone `sub_` |

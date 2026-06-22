@@ -42,6 +42,31 @@ pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
         // render a pointer to a readonly char-array symbol as the literal (the Ghidra
         // behavior) — a deferred printer change. See docs/analysis-port-log.md.
         // Box::new(crate::s1_strings::StringLiteralPass { min_len: 5 }),
+
+        // S1 address tables (AddrTablePass) is implemented + tested but **disabled
+        // by default**, matching Ghidra's `AddressTableAnalyzer.setDefaultEnablement(false)`.
+        // It scans .rodata/.data for a run of consecutive pointer-width values that
+        // all land inside an executable section (an absolute address/jump table) and
+        // emits Data symbols + a readonly range. It is OFF because (a) Ghidra ships
+        // it off (parity); (b) a pointer-run scanner over-accepts — any coincidental
+        // run of in-range aligned values reads as a "table" (real false-positive
+        // risk), and the relocation guard that defends it is weak on non-PIE EXEC
+        // (absolute .text pointers carry no relocation). NOTE this is NOT switch
+        // recovery (that is the INHERITED S2 engine machinery, s2_lift/jumptable.rs)
+        // and NOT the roadmap-#9 post-typing refinement (that is an engine S2 feedback
+        // change behind the Override::queryMultistageJumptable seam) — it is only the
+        // application-layer absolute-pointer-table discovery. See docs/analysis-port-log.md.
+        // Box::new(crate::s1_addrtable::AddrTablePass { min_run: 2 }),
+
+        // DELIBERATELY ABSENT — `AggressiveInstructionFinderAnalyzer` (AIF, + the ARM
+        // variant). Not ported: it is a *post-disassembly* speculative gap-filler that
+        // requires a fully-populated Listing/FunctionManager (≥20 found functions) +
+        // a PseudoDisassembler — none of which exist at the kuna-analysis tier (which
+        // runs *before* decompilation). It is off-by-default upstream
+        // (`setDefaultEnablement(false)`) and its sound output (new entries) is
+        // subsumed by `s1-entry-disc` + `s1-eh-frame`. Documented ⛔ infeasible-at-tier,
+        // same as `FindNoReturnFunctionsAnalyzer` (see s1_loader/noreturn.rs and
+        // docs/analysis-port-log.md). No `AnalysisPass` impl exists for it.
     ]
 }
 

@@ -68,13 +68,23 @@ accounting (every one of the 142 falls in exactly one bucket):
 **⬜ Real gaps worth porting (deferred, in the work-list):** `DWARFAnalyzer`,
 `EntryPointAnalyzer` (+ `ExternalEntryFunctionAnalyzer`, + the 5 `BytePatterns/FunctionStart*`
 below), `GccExceptionAnalyzer` (.eh_frame), `FormatStringAnalyzer` (printf varargs typing),
-`ArmSymbolAnalyzer` ($t/$a), `AddressTableAnalyzer`, the operand/reference markup family
-(`OperandReferenceAnalyzer`, `DataOperandReferenceAnalyzer`, `ScalarOperandAnalyzer`,
-`ElfScalarOperandAnalyzer` — mostly listing-level, low decompiler payoff), `CallFixupAnalyzer`,
-`AggressiveInstructionFinderAnalyzer`, `SourceLanguageAnalyzer`.
+`ArmSymbolAnalyzer` ($t/$a), `CallFixupAnalyzer`, `SourceLanguageAnalyzer`.
+
+**🟡 Ported-but-disabled-by-default:** `StringsAnalyzer` (Increment 3) and
+`AddressTableAnalyzer` (Increment 4) are both faithfully ported + unit-tested but
+**registered commented-out** in `default_passes()` — off by default for Ghidra parity
+(`AddressTableAnalyzer.setDefaultEnablement(false)`) and false-positive risk. They are
+inert until a future per-run `--option <id> on` increment.
 
 **⛔ Out of scope / infeasible-at-this-tier (documented):** `FindNoReturnFunctionsAnalyzer`
-(flow heuristic — no pre-decompile listing), `CreateThunkAnalyzer` (thunk object model),
+(flow heuristic — no pre-decompile listing), `AggressiveInstructionFinderAnalyzer` (+ ARM —
+needs a post-disassembly Listing/FunctionManager/PseudoDisassembler + ≥20 found functions;
+off-by-default upstream; subsumed by `s1-entry-disc` + `s1-eh-frame` — Increment 4), the
+operand/reference markup family (`OperandReferenceAnalyzer`, `DataOperandReferenceAnalyzer`,
+`ScalarOperandAnalyzer`, `ElfScalarOperandAnalyzer` — all operate on the disassembled
+Listing/ReferenceManager, which does not exist at this tier; their products are subsumed by
+`s1-strings`/`s2`-jumptables/`s1-entry-disc`, and the one relevant idea is blocked by the same
+printer/MapGlobals shadowing as `s1-strings` — Increment 4), `CreateThunkAnalyzer` (thunk object model),
 `ExternalSymbolResolverAnalyzer` (multi-program project), `CondenseFillerBytesAnalyzer`,
 `EmbeddedMediaAnalyzer`, `FidAnalyzer` (Function-ID fingerprinting subsystem),
 `X86FunctionPurgeAnalyzer` (Win32 stdcall), `Golang{String,Symbol}Analyzer`,
@@ -102,10 +112,13 @@ Rust via `rustc-demangle`); `Rust/RustStringAnalyzer` (⬜ deferred).
 
 ### Framework/Build (2) — ⛔ `JitDataFlowBlockAnalyzer` (JIT infra), `SkeletonAnalyzer` (template).
 
-**Summary:** of 142 analyzers, ~4 ported + ~11 inherited by the engine + ~15 are real
-ELF-relevant gaps (deferred, tracked below) + ~112 are out of scope for a standalone ELF
-decompiler (per-CPU helpers, non-ELF formats, Windows/Go/Swift/ObjC, infra). The work-list
-below tracks the relevant set; this section is the evidence it's exhaustive.
+**Summary:** of 142 analyzers, ~4 ported (+ `StringsAnalyzer`/`AddressTableAnalyzer` ported
+but disabled-by-default) + ~11 inherited by the engine + the remaining real ELF-relevant gaps
+deferred (DWARF, entry-disc, eh-frame, format-string, ARM/MIPS markers, callfixup, sourcelang)
++ ~112 out of scope for a standalone ELF decompiler (per-CPU helpers, non-ELF formats,
+Windows/Go/Swift/ObjC, infra) — now including AIF and the operand/reference markup family,
+both reclassified ⛔ infeasible-at-tier (Increment 4). The work-list below tracks the relevant
+set; this section is the evidence it's exhaustive.
 
 ## Work-list
 
@@ -125,8 +138,11 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ⬜ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`) | hard | stripped: decompile entry without `--addr` |
 | ⬜ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle) | hard | C++ fixture: FDE starts ⊆ discovered entries |
 | ⬜ | `arm-mips-markers` | ARM `$t`/MIPS `$gp` mapping symbols | med | (needs ARM/MIPS fixture, not vendored) |
+| 🟡 | `addrtable` | Absolute address-table discovery (`AddressTableAnalyzer`) | med | implemented + tested but **disabled by default** (Ghidra `setDefaultEnablement(false)` + false-positive risk); scanner finds the 8-entry table @ `0x402008` in `switchtab_x86_64`. See Increment 4 |
 | 🟡 | `switch-recovery` | `DecompilerSwitchAnalyzer` | — | the engine **is** this (S2 jump-tables ported) |
 | 🟡 | `const-prop` | `ConstantPropagationAnalyzer` | — | engine does its own SSA const-prop (S3) |
+| ⛔ | `s1-aif` | Aggressive Instruction Finder (`AggressiveInstructionFinderAnalyzer` + ARM) | xhard | needs post-disassembly Listing/FunctionManager/PseudoDisassembler + ≥20 found functions — not at this tier; off-by-default upstream; folds into `s1-entry-disc` + `s1-eh-frame`. Increment 4 |
+| ⛔ | `operand-refs` | Operand/scalar reference markup (`OperandReferenceAnalyzer`, `DataOperandReferenceAnalyzer`, `ScalarOperandAnalyzer`, `ElfScalarOperandAnalyzer`) | easy | no Listing/ReferenceManager at this tier; products subsumed by `s1-strings`/`s2`-jumptables/`s1-entry-disc`; the one relevant idea (scalar→`char*`) is blocked by the same printer/MapGlobals shadowing as `s1-strings`. Increment 4 |
 | ⛔ | `s1-noreturn-discovered` | `FindNoReturnFunctionsAnalyzer` (flow heuristic) | hard | needs pre-decompile listing/flow — not at this tier |
 | ⛔ | `thunk-model` | thunk/external object model | hard | needs `ExternalLocation`/S2-S4 internals |
 | ⛔ | `x86-purge` | `X86FunctionPurgeAnalyzer` | — | Linux ELF x86 is cdecl; engine infers `extrapop=0` |
@@ -326,6 +342,103 @@ different, more kuna-native route.
 
 - **Tests:** `kuna-analysis` 34 tests pass; `make test` **PARITY OK** (675/675);
   `make rust-test` green.
+
+### Increment 4 — address-table discovery (disabled) + two scope decisions ✅
+
+Three Ghidra disassembler/analysis-tier items resolved together: one disabled-by-default
+code pass and two documented ⛔ out-of-scope decisions. None can move the parity oracles
+(the pass is inert by default; the other two are doc-only).
+
+**`addrtable`** — port of `AddressTableAnalyzer` ("Create Address Tables"). New
+`s1_addrtable` module: a faithful transcription of the `AddressTable.getEntry` pointer-run
+scanner. `scan_address_tables(file, min_run, ptr_size)` walks the searchable
+(allocated + initialized, non-executable: `.rodata`/`.data`/`.data.rel.ro`/`.got`) sections
+and accepts a run of `>= min_run` consecutive pointer-width values that each (a) are `!= 0`,
+(b) `>= minAddressOffset`/`MINIMUM_SAFE_ADDRESS`, (c) land inside an executable section, and
+(d) pass the `isValidRelocationAddress` guard. The pass emits a **Data** symbol at each table
+head + a read-only range over the body — **never** an `entries`/Function fact (faithful to the
+analyzer, whose function-making code is commented out; real code targets are found by the
+separate `s1-entry-disc` pass and the engine's switch recovery).
+
+*Faithful relocation-guard activation (the one design judgement).* The guard
+(`isValidRelocationAddress`) is sound only on a **relocatable / PIE** image (`ET_REL`/`ET_DYN`),
+where *every* real absolute pointer is relocated. On a non-PIE `ET_EXEC` (the
+`switchtab_x86_64` fixture) the binary still has a couple of dynamic relocations (GOT slots
+for `__libc_start_main`/`__gmon_start__`), but those do NOT cover the program's absolute
+`.rodata` switch-table pointers — so the guard is gated on `file.kind()` being
+Relocatable/Dynamic. On `ET_EXEC` the guard is OFF and only the heuristic checks apply
+(in-exec + min-addr + string-guard + min-run) — the over-acceptance-prone path that is exactly
+why Ghidra (and kuna) ship this pass disabled.
+
+*Result.* The unit test drives `scan_address_tables` over the vendored `switchtab_x86_64`
+fixture directly (NOT via `default_passes`, which leaves the pass commented out) and confirms
+it **FINDS the 8-entry absolute jump table at vma `0x402008`** (the `jmp *0x402008(,%rdi,8)`
+target), with all 8 elements landing inside `.text` (pinned consts read off
+`readelf -x .rodata`/`objdump -d`). A negative test confirms no spurious table over fauxware's
+string data, and a threshold test confirms the 8-entry table is rejected at `min_run=64`.
+
+*Disabled-by-default.* Registered commented-out in `passes.rs::default_passes()`, exactly like
+`s1-strings`: (a) Ghidra parity (`setDefaultEnablement(false)`); (b) false-positive risk (a
+pointer-run scanner over-accepts; the reloc guard is weak on non-PIE). NOTE the careful
+classification this task is as much about: this is **NOT** switch recovery (that is the
+INHERITED S2 engine machinery, `s2_lift/jumptable.rs`, the analog of `DecompilerSwitchAnalyzer`)
+and **NOT** roadmap-#9 post-typing refinement (that is the decompiler-internal multistage
+re-recovery, `recover_count > 1`, ENGINE-RESIDENT S2 behind the `Override::queryMultistageJumptable`
+seam) — it is only the application-layer absolute-pointer-table discovery. #9 stays a separate,
+deferred *engine* task; this increment classifies it, it does not touch it.
+
+**`aggressive-disasm` — ⛔ doc-only decision (NOT ported).** Ghidra's
+`AggressiveInstructionFinderAnalyzer` (AIF, + the ARM variant) is **infeasible at the
+kuna-analysis tier and out of scope.** It is a *post-disassembly, whole-program, iterative*
+speculative gap-filler that (1) requires a fully-populated Listing + FunctionManager with
+**≥20 functions already found** (`AggressiveInstructionFinderAnalyzer.java:97-102`,
+`MINIMUM_FUNCTION_COUNT=20`) — kuna's analysis tier runs *before* any decompilation, with no
+Listing and no global function discovery; (2) builds a function-start byte-fingerprint histogram
+via `SleighDebugLogger`/`getInstructionMask` and accepts a gap candidate only if its masked
+prefix matches a fingerprint seen ≥4 times with matching disassembly context — kuna has no
+instruction-mask/SleighDebugLogger machinery; (3) speculatively disassembles undefined gaps with
+`PseudoDisassembler.followSubFlows` + `checkValidSubroutine` — kuna has no recursive-descent
+PseudoDisassembler at this tier. It is also **off-by-default upstream**
+(`setDefaultEnablement(false)`) and its own DESCRIPTION warns "IT MAY CREATE A LOT OF BAD CODE!"
+For a decompiler that is *given* function entries, AIF's only useful output (new entries) is
+delivered more soundly by `s1-entry-disc` (`EntryPointAnalyzer` + `FunctionStart*` byte patterns)
+and `s1-eh-frame` (FDE starts); AIF's distinctive contribution — guessing code in gaps with no
+symbol/FDE/xref — is precisely the high-false-positive case Ghidra disables by default. A naive
+"port" (linear gap disassembly) would silently drop AIF's entire correctness model and is exactly
+the unfaithful move to avoid. **No `AnalysisPass` impl, no `default_passes()` entry**; a Ghidra-origin
+"deliberately absent" note sits beside the disabled-pass block in `passes.rs`. Mirrors how
+`FindNoReturnFunctionsAnalyzer` was handled (`s1_loader/noreturn.rs`).
+
+**`operand-refs` — ⛔ doc-only decision (NOT ported as a producing pass).** The
+operand/scalar reference markup family (`OperandReferenceAnalyzer`, `DataOperandReferenceAnalyzer`,
+`ScalarOperandAnalyzer`, `ElfScalarOperandAnalyzer`) is **out of scope at this tier.** All four
+operate on the disassembled *Listing* + `ReferenceManager`, neither of which exists in
+`kuna-analysis` (its `AnalysisCtx` is object-file + loadimage bytes only). And references are a
+UI/listing artifact: kuna's decompiler consumes loadimage bytes + the symbol/type tables, **not**
+the ReferenceManager (verified: no `AnalysisOutput` fact kind or commit-seam API carries a
+"reference"; the kinds are symbols/entries/noreturn/readonly/strings/prototypes only). Per-analyzer:
+(1) `OperandReferenceAnalyzer`'s four products are all already covered or unsurfaceable — ASCII/Unicode
+strings == `s1-strings` (disabled), address/switch tables == the inherited S2 jump-table engine,
+subroutine disassembly + function creation == the deferred `s1-entry-disc`, pointer creation needs a
+disassembled-listing target that does not exist here AND would not surface (ActionMapGlobals is a stub,
+`s9_emit/coreaction_render.rs`); (2) `DataOperandReferenceAnalyzer` == (1) minus function creation;
+(3) `ScalarOperandAnalyzer` produces only listing *references* from scalar operands and is **default-OFF
+for ELF** in Ghidra (`getDefaultEnablement` returns false for ELF), so porting it on the ELF path would
+not even be faithful; (4) `ElfScalarOperandAnalyzer` is a *corrective* subclass that *removes* bad
+`.got`/`.plt` scalar references — it only matters as a fixup of (3), and kuna already gets correct
+`.plt`/`.got` naming from `elf_plt.rs`, so there is nothing to correct. The one idea with any decompiler
+relevance — typing a scalar that actually points at a `.rodata` string as `char*` — is already delivered
+by `s1-libproto` + S5 usage inference, and a standalone "plant a typed pointer at the constant" mechanism
+is **blocked by the same printer/MapGlobals shadowing** that disabled `s1-strings` (Increment 3): kuna's
+printer renders a constant mapping to a named global as that symbol's NAME, shadowing the literal. **No
+producing pass added** (an optional default-OFF micro-pass was considered and declined — it is provably
+net-zero/net-negative for the same reason `s1-strings` is disabled).
+
+- **Tests:** `kuna-analysis` 41 tests pass (7 new in `s1_addrtable::tests`, incl. the
+  switchtab `0x402008` headline + the fauxware negative + the `min_run` threshold guard);
+  `make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test`
+  green. The addrtable pass is inert by default, so it cannot perturb any gate; the other two
+  are doc-only.
 
 ### Next candidates
 
