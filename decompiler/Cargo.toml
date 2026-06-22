@@ -32,6 +32,18 @@ object = { version = "0.39", default-features = false, features = ["read_core", 
 # (ECMAScript) has no Rust equivalent; the regex crate is the documented
 # substitution (LOSS-007).  Used by the harness crate only -- never the engine.
 regex = "1"
+# Symbol demangling (kuna-analysis / `s1_demangle/`), the kuna analog of
+# Ghidra's `GnuDemanglerAnalyzer`.  Ghidra's GNU/Itanium demangler is NOT Java
+# logic: `GnuDemanglerNativeProcess` shells out to a native `demangle`
+# executable (libiberty `cplus_demangle`), so mirroring Ghidra = "call a
+# third-party demangler and consume its string".  Per the same
+# dependency-substitution LOSS the BFD object model takes (see
+# `loadimage_object.rs` / docs/rust-port/losses.md), these permissive crates
+# replace Ghidra's native `demangle`/libiberty dependency.  cpp_demangle =
+# Itanium C++ (MIT/Apache); rustc-demangle = Rust legacy `_ZN` + v0 `_R`
+# (MIT/Apache).  Used by kuna-analysis only -- never the engine.
+cpp_demangle = "0.5"
+rustc-demangle = "0.1"
 # Intra-workspace
 kuna-base = { path = "crates/kuna-base" }
 kuna-num = { path = "crates/kuna-num" }

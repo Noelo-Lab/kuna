@@ -15,7 +15,11 @@ real ELF parser.
 | `fauxware` | classic non-PIE x86-64, not stripped (the angr `fauxware` sample) | `.plt` classic stubs (`FF 25` rip-rel), `.symtab` defined functions |
 | `cet_pie_x86_64` | PIE x86-64 with CET (`.plt.sec`) | `endbr64; FF 25` CET stubs, naming at the `.plt.sec` call target |
 | `stripped_dynamic_x86_64` | PIE x86-64, `.symtab` stripped (only `.dynsym`) | PLT resolution with no `.symtab` (dynsym/rela.plt only) |
+| `cpp_mangled_x86_64` | non-PIE x86-64 C++, not stripped | symbol demangling (`s1_demangle`): a defined `.symtab` C++ method `_ZN3foo3Bar3bazEi` must surface name-only as `foo::Bar::baz` |
 
-Provenance: copied verbatim from `bs-artifacts/binaries/` (`fauxware`,
-`debug_symbol`, `debug_symbol_mod_stripped` respectively). They are checked in
-(each well under 32 KB) so the gates are hermetic and reproducible.
+Provenance: `fauxware`, `cet_pie_x86_64`, `stripped_dynamic_x86_64` copied
+verbatim from `bs-artifacts/binaries/` (`fauxware`, `debug_symbol`,
+`debug_symbol_mod_stripped` respectively). `cpp_mangled_x86_64` was built locally
+with `g++ -O0 -no-pie -fno-pic` from a tiny `namespace foo { struct Bar { void
+baz(int); }; } void foo::Bar::baz(int){...} int main(){...}` source. They are
+checked in (each well under 32 KB) so the gates are hermetic and reproducible.

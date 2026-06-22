@@ -43,4 +43,5 @@ pub mod pass;
 pub mod passes;
 pub mod loadimage_object;
 pub mod s1_loader;
+pub mod s1_demangle;
 pub mod s1_strings;
