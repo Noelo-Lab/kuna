@@ -1041,9 +1041,12 @@ pub struct ActionPool {
     base: ActionBase,
     /// The set of rules in this pool, in insertion order (C++ `allrules`).
     allrules: Vec<RuleEntry>,
-    /// Rules associated with each OpCode, in insertion order (C++
-    /// `perop[CPUI_MAX]`).  Keyed by [`OpCode`]; a missing key is an empty list.
-    perop: BTreeMap<OpCode, PerOp>,
+    /// Rules associated with each OpCode, in insertion order — a flat
+    /// `CPUI_MAX`-element table indexed by `opc as usize`, exactly the C++
+    /// `vector<Rule*> perop[CPUI_MAX]`.  An unregistered opcode is an empty
+    /// list.  (Was a `BTreeMap<OpCode,_>`; the per-op rule loop probes this
+    /// millions of times, so O(1) indexing replaces the O(log n) tree walk.)
+    perop: Vec<PerOp>,
     /// Resumable cursor over the function's ops (C++ `op_state`, a
     /// `PcodeOpTree::const_iterator`).  `None` before the first op / after the
     /// last; otherwise the [`SeqNum`] of the *next* op to visit (see module
@@ -1084,7 +1087,7 @@ impl ActionPool {
         ActionPool {
             base: ActionBase::new(f, nm, ""),
             allrules: Vec::new(),
-            perop: BTreeMap::new(),
+            perop: vec![PerOp::new(); OpCode::CPUI_MAX as usize],
             op_state: OpCursor::Unstarted,
             rule_index: 0,
             warnings: WarningSink::new(),
@@ -1100,7 +1103,7 @@ impl ActionPool {
         let oplist = rule.get_op_list();
         self.allrules.push(RuleEntry { state, rule });
         for opc in oplist {
-            self.perop.entry(opc).or_default().push(idx);
+            self.perop[opc as usize].push(idx);
         }
     }
 
@@ -1118,7 +1121,7 @@ impl ActionPool {
 
     /// The per-opcode rule list for `opc`, by name (test/inspection helper).
     pub fn perop_names(&self, opc: OpCode) -> Vec<String> {
-        match self.perop.get(&opc) {
+        match self.perop.get(opc as usize) {
             Some(list) => list.iter().map(|&i| self.allrules[i].state.name.clone()).collect(),
             None => Vec::new(),
         }
@@ -1191,12 +1194,12 @@ impl ActionPool {
     /// Length of `perop[opc]` (C++ `perop[opc].size()`); 0 for an unregistered
     /// opcode.
     fn perop_len(&self, opc: OpCode) -> usize {
-        self.perop.get(&opc).map(|v| v.len()).unwrap_or(0)
+        self.perop.get(opc as usize).map(|v| v.len()).unwrap_or(0)
     }
 
     /// `perop[opc][i]` (C++ index into the per-opcode rule list).
     fn perop_idx(&self, opc: OpCode, i: usize) -> usize {
-        self.perop.get(&opc).expect("perop_idx: opcode out of range")[i]
+        self.perop[opc as usize][i]
     }
 
     /// Advance `op_state` past `op` (the C++ `op_state++`).  Records `op`'s
@@ -1212,11 +1215,13 @@ impl ActionPool {
             .get(op)
             .map(|o| o.get_seq_num().clone())
             .expect("advance_op_state: op already gone");
-        // Is there any optree entry strictly greater than sq?
-        let next = next_seqnum_after(data, &sq);
-        self.op_state = match next {
-            Some(_) => OpCursor::After(sq),
-            None => OpCursor::Done,
+        // Is there any optree entry strictly greater than sq?  Only existence
+        // matters here, so probe with first_after_seq (O(log n)) rather than
+        // cloning the successor key just to throw it away.
+        self.op_state = if data.obank().first_after_seq(&sq).is_some() {
+            OpCursor::After(sq)
+        } else {
+            OpCursor::Done
         };
     }
 
@@ -1368,15 +1373,10 @@ fn all_opcodes() -> Vec<OpCode> {
     v
 }
 
-/// The SeqNum of the first optree entry strictly greater than `sq`, or `None`.
-fn next_seqnum_after(data: &Funcdata, sq: &SeqNum) -> Option<SeqNum> {
-    data.obank().iter_all().find(|(k, _)| *k > sq).map(|(k, _)| k.clone())
-}
-
 /// The op at the first optree entry strictly greater than `sq` (the C++
 /// `++op_state` then deref).
 fn first_op_after(data: &Funcdata, sq: &SeqNum) -> Option<OpId> {
-    data.obank().iter_all().find(|(k, _)| *k > sq).map(|(_, id)| id)
+    data.obank().first_after_seq(sq).map(|(_, id)| id)
 }
 
 /// Pull the next token from a `:`-separated list of Action/Rule names (C++

@@ -1850,6 +1850,18 @@ impl PcodeOpBank {
             .map(|(_, &v)| v)
     }
 
+    /// The first optree entry strictly greater than `sq` (C++ `++op_state`).
+    /// O(log n) `BTreeMap::range` — the ActionPool op-cursor advance, which the
+    /// C++ does in O(1) by incrementing a `PcodeOpTree::const_iterator`.
+    pub fn first_after_seq(&self, sq: &SeqNum) -> Option<(&SeqNum, OpId)> {
+        // Borrow `sq` into the range bound (the `(Bound<&T>, Bound<&T>)`
+        // RangeBounds impl) so the per-op cursor advance does not clone the key.
+        self.optree
+            .range((Bound::Excluded(sq), Bound::Unbounded))
+            .next()
+            .map(|(k, &v)| (k, v))
+    }
+
     /// The op id immediately before `op` in SeqNum order (C++ `--opiter`), or
     /// `None` if `op` is already the first op (`opiter == beginOpAll()`).
     pub fn op_before(&self, op: OpId) -> Option<OpId> {
