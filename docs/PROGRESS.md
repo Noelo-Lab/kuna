@@ -1,5 +1,30 @@
 # kuna Progress Log
 
+## Session (2026-06-22) — analyzer-tier Wave 1: DWARF + entry-discovery + source-lang + addrtable
+
+Rebased the analysis-tier branch onto `main` (#8 perf + #9 test-stages fix → test-stages now
+158/158 PARITY OK, no regression from this work), then executed **Wave 1** of
+`docs/analysis-port-plan.md` as **4 parallel worktree sub-agents**, integrated sequentially with
+all-three-gates after each:
+- **DWARF** (`s1_dwarf`, gimli 0.33): function names + **typed signatures** from `.debug_*`.
+  `cet_pie` → `elaborate_debug_symbol(char *a0)` (the DWARF `char*` param flows to callers);
+  `dwarf_stripped` (new fixture, `.symtab` emptied via `objcopy --wildcard --strip-symbol='*'`)
+  → names with no symbol table. Subtask-3 (stack locals, engine change) deferred.
+- **Entry discovery + `.eh_frame`** (`s1_entry`): e_entry + init/fini arrays + FDE pcBegin +
+  `_start`→`main` idiom + prologue patterns → `AnalysisOutput.entries`. `stripped_dynamic` →
+  `sub_1405` (main) decompiles **without `--addr`**.
+- **Source-language + Rust** (`s1_sourcelang`): compiler detection (`.comment`/mangled/rodata)
+  gates the vendored **Rust no-return wildcard list** (`RustFunctionsThatDoNotReturn`); rust-str
+  split documented infeasible-at-tier.
+- **Address-tables** (`s1_addrtable`, **disabled by default** like strings) + doc-only ⛔
+  decisions for AIF and the operand-reference family.
+- All wave-1 passes use **existing commit arms** (entries/symbols/prototypes) — zero `engine.rs`
+  change, so structurally parity-safe. Every increment held `make test` 675/675, `make test-stages`
+  158/158, `make rust-test` green. ~8 of the ELF-relevant analyzers now ported (see
+  `docs/analysis-port-log.md` Increments 4–7 + the 142-analyzer inventory).
+- **Deferred to Wave 2/3** (engine seams): printer-change-to-re-enable-strings, per-run `--option`
+  gating, no-return×demangle seam, DWARF stack-locals, arch-markers, callfixup, format-string.
+
 ## Session (2026-06-22) — close out the final two: test-stages 158/158 PARITY OK
 
 The last two test-stages failures, resolved — **`tests/stages` is now fully green (158/158, REGRESSED 0, PARITY OK)**.
