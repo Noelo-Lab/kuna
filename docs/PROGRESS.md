@@ -8,6 +8,37 @@ The last two test-stages failures, resolved — **`tests/stages` is now fully gr
 
 - **gh6904 — fixed for real (the e500 `<truncate_space>` was never applied).** Root cause was neither the SLEIGH spec nor a heritage bug, but a **missing port wiring**: the e500 ldefs carries `<truncate_space space="ram" size="4"/>` (a 32-bit Book E core whose GPRs/`ram` are modeled 64-bit only for SPE), and kuna had the faithful `LanguageDatabase::modify_spaces` (C++ `SleighArchitecture::modifySpaces`) but **never called it**. So `ram` stayed 8 bytes → `void*`/`void**` were 8 bytes → the locked `void **ptr` param didn't fit the 4-byte `_r3` input pentry, fell through to the stack, shifted `call` into `_r3` (the param swap), and the resulting `r3:8`-over-`_r3:4` register overlap threw `"Overlapping input varnodes"` in heritage → the empty degraded body. Fix: call `db.modify_spaces(langindex, arch)` right after `build_translator` on both engine-assembly paths (`kuna-console/engine.rs`, `kuna-harness/corpus.rs`), exactly where C++ `Architecture::restoreFromSpec` calls `modifySpaces` — before the type factory reads `getDefaultDataSpace()->getAddrSize()` for the default pointer width. e500 `ram` now truncates to 4 → `void*` is a 32-bit pointer → `ptr`→`_r3`, `call`→`_r4`, no overlap. `some_funcptr_func` decompiles to `void some_funcptr_func(void **ptr,int4 call)` with `if (ptr != (void **)0x0)` (the remaining `CONCAT44` is over the funcptr return, matching the C++ reference). **Verified against the upstream C++ decompiler built at `GHIDRA_REV`** — it assigns `ptr` as size-4 in `_r3` and passes #1/#2/#3 too, confirming a faithful restoration. A general fix (also affects e500mc/quicciii, AARCH64 ilp32, MIPS 64-32addr — none in the 675 corpus, so a no-op there). No `.sla`/`.sinc`/`.cspec` change. The gh6904 graceful-degradation net (session-f) stays as a robustness backstop but is no longer triggered here.
 
+## Session (2026-06-22) — analysis-tier port: foundation seam + no-return (increment 1)
+
+Began porting Ghidra's Java **analyzer/loader tier** (the "Run Analysis" layer) into the
+`kuna-analysis` crate, feature by feature, each with a testcase. Driven by a research
+fan-out (5 agents mapping the engine commit APIs + deep-reading `StringsAnalyzer`/
+demangler/`NoReturnFunctionAnalyzer` + an expanded work-list + a downstream-compat
+analysis). Process log: **`docs/analysis-port-log.md`**; gap inventory: `docs/missing-analyses.md`.
+
+- **Foundation — generic `AnalysisOutput` commit seam.** `bootstrap_from_elf` now reads
+  the image bytes once, runs `kuna_analysis::passes::run_default_analyses`, applies
+  read-only markup (new on the ELF path — load-bearing for future string rendering), and
+  commits the merged facts via the new `engine.rs::commit_analysis_output` (function /
+  data / entry / no-return fact kinds all wired; verified against the real engine APIs).
+  Bound to the real-ELF path ONLY — the XML datatest path never runs analyses, so 675/675
+  parity is structurally untouched.
+- **`noreturn_known`** ported from `NoReturnFunctionAnalyzer` ("Known") + the verbatim
+  `ElfFunctionsThatDoNotReturn` list (vendored at `kuna-analysis/data/`). Faithful matcher
+  (strip ALL leading `_`, exact-then-wildcard, namespace guard). fauxware `rejected`
+  collapsed from a wall of dead fall-through to `printf(...); exit(1);` (+ the "Subroutine
+  does not return" warning). The flow-based "Discovered" analyzer is documented infeasible
+  at this tier (no pre-decompile listing/flow model).
+- **Downstream compat (the drop-in question):** adding analyzer passes does NOT break kuna
+  as a Ghidra-front-end drop-in, because the C++ decompiler protocol is pull-based
+  (`ArchitectureGhidra` queries the client and forbids inventing symbols) and kuna's passes
+  are bound to the standalone ELF path the protocol never uses. Recorded in the log.
+- **Tests:** 5 new unit tests (`kuna-analysis` `noreturn::tests`); `make test` PARITY OK
+  (675/675); `make rust-test` green; `kuna catalog --check` clean.
+- **Deferred (next increments):** demangle → strings → libproto passes; per-run `--option`
+  gating of passes (needs the CLI `build_script`/`IfcReadSymbols` reorder — conflict #4 in
+  the log).
+
 ## Session (2026-06-21f) — grind the deep tail one-by-one: 128 → 157/159 (REGRESSED 31 → 2)
 
 Continued from the fan-out (128/143) by grinding the deepest remaining test-stages failures with sequential worktree-agent batches, integrating + full-gating each (675 PARITY OK + units green) before the next. Several items the first round had flagged as "architectural / corpus-risky / out-of-scope" turned out to have faithful root-cause ports once isolated. **`tests/stages` 128 → 157/159 passing; REGRESSED 31 → 2.** Every cross-corpus engine change held 675/675.

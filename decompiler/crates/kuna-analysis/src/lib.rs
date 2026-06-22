@@ -40,5 +40,6 @@
 //! Lints are inherited from the workspace (`[lints] workspace = true`).
 
 pub mod pass;
+pub mod passes;
 pub mod loadimage_object;
 pub mod s1_loader;

@@ -48,11 +48,15 @@ appears in `kuna catalog --json` and is flippable per-decompilation via
 `--option <id> on|off` (and can default off, keeping the XML datatest gate — which
 never constructs an `ObjectLoadImage` — untouched).
 
-> Status: the crate, the `AnalysisPass` interface, and the relocated PLT/GOT path
-> (`elf_plt` + `loadimage_object` + fixtures, moved out of `kuna-sleigh`) are in
-> place. The PLT path still commits inline in `loadimage_object`; lifting it onto
-> the `AnalysisPass`/`commit` seam lands with the first new pass (string-literal
-> detection). The per-analysis roadmap with testcases is at the bottom of this file.
+> Status: the crate, the `AnalysisPass` interface, the relocated PLT/GOT path,
+> **and the generic commit seam are in place**. `bootstrap_from_elf` now runs
+> `kuna_analysis::passes::run_default_analyses` and commits the merged
+> `AnalysisOutput` via `engine.rs::commit_analysis_output` (function/data/entry/
+> no-return fact kinds wired). The first pass on the seam — **no-return**
+> (`NoReturnFunctionAnalyzer`) — is done. The PLT path still commits inline in
+> `loadimage_object` (lifting it onto the pass list is cosmetic and deferred). The
+> running process log is **[`analysis-port-log.md`](analysis-port-log.md)**; the
+> per-analysis roadmap with testcases is at the bottom of this file.
 
 ## Legend
 
@@ -178,9 +182,10 @@ debug-format reader or a discovery loop). Vendored fixtures live in
 | # | Analysis | Stage | Diff | Concrete testcase (fixture → assertion) |
 |---|----------|-------|------|------------------------------------------|
 | ✅ | PLT/GOT import names | S1 | done | **fauxware**: `0x400510→puts`, no symbol at `0x0`, no `@` in names (`kuna-analysis` tests + console e2e) |
+| ✅ | **Foundation: generic commit seam** | S1 | done | `bootstrap_from_elf` runs `run_default_analyses` + `commit_analysis_output`; no funcsym regression (`make test` PARITY OK) |
+| ✅ | **No-return detection** | S1 | done | **fauxware** `rejected` calls `exit`: no dead fall-through after `exit(1)` (5 unit tests + e2e). See [`analysis-port-log.md`](analysis-port-log.md) increment 1 |
 | 1 | String-literal detection + `char*` typing | S1 | easy-med | **fauxware**: `kuna decompile fauxware main` stdout contains `"Username: "`, `"Password: "` (not raw `0x40xxxx`) |
-| 2 | Demangling (Itanium C++ / Rust) | S1 | easy-med | unit: `demangle("_Z3fooi") == "foo(int)"`; + small `g++ -c` fixture → mangled symbol resolves to its demangled form |
-| 3 | No-return detection | S1 | easy | **fauxware** `authenticate` calls `exit`: no dead fall-through after the call; unit: `exit`/`abort` flagged from the import-name set |
+| 2 | Demangling (Itanium C++ / Rust) | S1 | easy-med | unit: `demangle("_ZN3foo3barEv") == "foo::bar"`; + small `g++ -c` fixture → mangled symbol resolves to its demangled form |
 | 4 | DWARF debug-info | S1 | hard | **cet_pie_x86_64** (has `.debug_info`): recovered function names + ≥1 typed parameter appear (not `param_1`) |
 | 5 | Library prototype seeding | S1/P0 | med | **fauxware**: first `printf` arg typed `char *` from a seeded libc signature (composes with #1 → `printf("Password: ")`) |
 | 6 | Function-start / entry discovery | S1 | hard | **stripped_dynamic_x86_64**: discovered entry set includes the real `main`/entry, decompilable without a supplied address |
@@ -190,12 +195,14 @@ debug-format reader or a discovery loop). Vendored fixtures live in
 
 ### Do first (the simplest-to-easy, highest-impact)
 
-1. **String-literal detection** (#1) — highest output-quality-per-effort; a
-   `.rodata` NUL-terminated scan + a `char[]` typed-data symbol; no new dependency.
+1. ~~**No-return detection**~~ — ✅ **done** (increment 1): a fixed import-name set
+   + the `FuncProto` no-return flag; removes spurious dead code after `exit`/`abort`.
 2. **Demangling** (#2) — a self-contained name transform; unit-testable with no
    binary; composes with kuna's existing `::` namespace split.
-3. **No-return detection** (#3) — a fixed libc import-name set + the existing
-   `FuncProto` no-return flag; removes spurious dead code after `exit`/`abort`.
+3. **String-literal detection** (#1) — a `.rodata` NUL-terminated scan + a `char[]`
+   typed-data symbol; the read-only markup it needs is already on the ELF path now.
+   (Headline `puts("Username: ")` rendering may also need library-prototype seeding
+   — see the strings/libproto rows above.)
 
-All three are easy/easy-med, test against already-vendored fixtures (or pure unit
-tests), and never touch the XML datatest parity path — both gates stay green.
+All test against already-vendored fixtures (or pure unit tests) and never touch the
+XML datatest parity path — both gates stay green.

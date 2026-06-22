@@ -38,7 +38,7 @@ use std::rc::Rc;
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::IdRegistry;
-use kuna_base::space::AddrSpaceManager;
+use kuna_base::space::{AddrSpace, AddrSpaceManager};
 use kuna_base::types::int4;
 use kuna_base::xml::{DocumentStorage, Element};
 
@@ -426,8 +426,12 @@ pub fn bootstrap_from_elf(
 ) -> KunaResult<ConsoleProgram> {
     let registry = build_registry();
 
+    // Read the image bytes once: reused for the loader AND the analysis-pass
+    // object::File view (the analyzers need a parsed object the loader drops).
+    let bytes = std::fs::read(path)
+        .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?;
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
-    let mut loader = ObjectLoadImage::open(path)?;
+    let mut loader = ObjectLoadImage::from_bytes(path, &bytes)?;
 
     // resolveArchitecture: the arch id is the loader's getArchType() (the ELF
     // machine → SLEIGH language id), unless an explicit target overrides it.
@@ -457,7 +461,34 @@ pub fn bootstrap_from_elf(
             .get_default_code_space()
             .ok_or_else(|| KunaError::lowlevel("no default code space after init"))?,
     );
-    loader.attach_to_space(code_space);
+    loader.attach_to_space(Rc::clone(&code_space));
+
+    // Architecture::fillinReadOnlyFromLoader on the ELF path (the analog of the
+    // XML path's collect-before-handoff above): gather the loader's read-only
+    // ranges while the image is still in hand. Load-bearing for string rendering
+    // (the printer's push_ptr_char_constant_ir gates a string literal on
+    // is_read_only at the constant's address).
+    let readonly_ranges: Vec<(Address, Address)> = {
+        use kuna_base::address::RangeList;
+        use kuna_sleigh::loadimage::LoadImage;
+        let manage_ptr: *const AddrSpaceManager = sleigh.base().unwrap().manage();
+        let mut rangelist = RangeList::new();
+        loader.get_readonly(&mut rangelist);
+        // SAFETY: same outlives-the-call shape as the XML path's open() borrow;
+        // the manager lives inside `sleigh` and is only read here.
+        let manage_ref = unsafe { &*manage_ptr };
+        rangelist
+            .iter()
+            .map(|r| (r.get_first_addr(), r.get_last_addr_open(manage_ref)))
+            .collect()
+    };
+
+    // Run the program-prep analysis passes (the kuna analyzer tier) over the
+    // parsed object. Read-only; produces additive facts committed below. Bound to
+    // the real-ELF path ONLY — the XML <binaryimage> bootstrap never runs these,
+    // so the datatest parity oracle is structurally untouched.
+    let analysis_out =
+        kuna_analysis::passes::run_default_analyses(&bytes, &loader, sleigh.base().unwrap());
 
     // readLoaderSymbols (the ELF FUNC symbols) BEFORE handing the loader off.
     let symbols = read_loader_symbols_generic(&loader);
@@ -471,7 +502,115 @@ pub fn bootstrap_from_elf(
     let mut prog = ConsoleProgram { arch: sleigh, registry, symbols, description };
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     prog.read_loader_symbols()?;
+
+    // Apply the collected read-only ranges to the symbol table property map
+    // (C++ symboltab->setPropertyRange(Varnode::readonly, *iter)), now that prog
+    // owns the architecture.
+    for (first, last_open) in &readonly_ranges {
+        prog.arch_mut().symboltab.set_property_range(
+            kuna_decomp::varnode::varnode_flags::readonly,
+            first,
+            last_open,
+        );
+    }
+
+    // Commit the analysis-pass facts into the engine (additive; never
+    // authoritative). AFTER read_loader_symbols so no-return name resolution
+    // (query_global_function) finds the just-installed FunctionSymbols.
+    commit_analysis_output(&mut prog, &code_space, analysis_out)?;
+
     Ok(prog)
+}
+
+/// Commit a merged [`kuna_analysis::pass::AnalysisOutput`] into the engine's
+/// symbol/type tables — the kuna-console side of the kuna-analysis pass seam.
+///
+/// Each fact is **additive** (only adds knowledge) and **idempotent** against the
+/// funcsym stream `read_loader_symbols` already committed (the `find_function`
+/// overlap check no-ops a duplicate). Bound to the real-ELF path; the XML
+/// `<binaryimage>` path never produces an `AnalysisOutput`, so this never runs
+/// there. See `docs/missing-analyses.md` for the per-fact-kind API rationale.
+fn commit_analysis_output(
+    prog: &mut ConsoleProgram,
+    code_space: &Rc<AddrSpace>,
+    out: kuna_analysis::pass::AnalysisOutput,
+) -> KunaResult<()> {
+    use kuna_analysis::pass::SymKind;
+
+    let num_spaces = prog.arch().manage().num_spaces();
+
+    // 1. Extra symbols a pass discovered. Function symbols install like the
+    //    funcsym stream (idempotent); Data symbols (typed string/data objects)
+    //    land via add_symbol_mapped. (No pass emits these yet in this increment;
+    //    the commit path is wired so the string/entry passes plug in cleanly.)
+    for s in &out.symbols {
+        let addr = Address::new(Rc::clone(code_space), s.addr);
+        match s.kind {
+            SymKind::Function => {
+                let type_code = prog.arch().types().get_type_code()?;
+                let min_size = prog.arch().min_funcsymbol_size;
+                {
+                    let arch = prog.arch_mut();
+                    let (scope, base) = arch
+                        .symboltab
+                        .find_create_scope_from_symbol_name(&s.name, "::", None, num_spaces)?;
+                    if arch.symboltab.find_function(scope, &addr).is_none() {
+                        arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
+                    }
+                }
+                prog.register_symbol(&s.name, addr);
+            }
+            SymKind::Data => {
+                let arch = prog.arch_mut();
+                let (scope, base) = arch
+                    .symboltab
+                    .find_create_scope_from_symbol_name(&s.name, "::", None, num_spaces)?;
+                // Untyped data object (a typed string symbol carries its char[N]
+                // type through a dedicated fact added with the string pass).
+                let ct = arch.types().get_type_code()?;
+                let (sid, _) =
+                    arch.symboltab.add_symbol_mapped(scope, &base, ct, &addr, &Address::new_invalid())?;
+                arch.symboltab
+                    .set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
+            }
+        }
+    }
+
+    // 2. Discovered entry points (stripped targets): name + add_function +
+    //    register_symbol (the `map function` recipe).
+    for &vma in &out.entries {
+        let addr = Address::new(Rc::clone(code_space), vma);
+        let name = prog.arch().name_function(&addr);
+        let type_code = prog.arch().types().get_type_code()?;
+        let min_size = prog.arch().min_funcsymbol_size;
+        {
+            let arch = prog.arch_mut();
+            let (scope, base) = arch
+                .symboltab
+                .find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
+            if arch.symboltab.find_function(scope, &addr).is_none() {
+                arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
+            }
+        }
+        prog.register_symbol(&name, addr);
+    }
+
+    // 3. No-return functions: resolve each name to its global FunctionSymbol and
+    //    set the no-return flag (the batch form of OptionNoReturn::apply). A name
+    //    with no matching function is the faithful no-op — Ghidra only iterates
+    //    existing symbols. NOTE: query_global_function (public) then the public
+    //    Database method, NOT the private Architecture::set_function_no_return.
+    let mut nr = out.noreturn.clone();
+    nr.sort();
+    nr.dedup();
+    for name in &nr {
+        let resolved = prog.arch().query_global_function(name);
+        if let Ok(sid) = resolved {
+            prog.arch_mut().symboltab.set_function_no_return(sid, true);
+        }
+    }
+
+    Ok(())
 }
 
 /// Bootstrap from a parsed XML document root (a `<binaryimage>` or a
