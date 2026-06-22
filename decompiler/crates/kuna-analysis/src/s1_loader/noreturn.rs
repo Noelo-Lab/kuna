@@ -19,10 +19,18 @@
 //!   (the `added` loop + `makeNoReturnFunction` namespace guard).
 //! - name set: `Ghidra/Features/Base/data/ElfFunctionsThatDoNotReturn`, vendored
 //!   verbatim at `decompiler/crates/kuna-analysis/data/ElfFunctionsThatDoNotReturn`.
+//! - source-language selection: `Ghidra/Features/Base/data/noReturnFunctionConstraints.xml`
+//!   adds `RustFunctionsThatDoNotReturn` to the match set for an ELF whose
+//!   compiler is detected as `rustc`. kuna mirrors this: when
+//!   [`crate::s1_sourcelang::detect_compiler`] reports `Rustc`, the Rust wildcard
+//!   list (vendored at `data/RustFunctionsThatDoNotReturn`) is parsed **in
+//!   addition** to the base ELF list. See [`NoReturnKnownPass::rust`].
 //!
 //! Effect: marking `exit`/`abort`/… no-return inserts an artificial halt at the
 //! call site (the engine's `flow.rs` artificialHalt path), so the dead
-//! fall-through after a tail `exit()` disappears from the decompiled output.
+//! fall-through after a tail `exit()` disappears from the decompiled output. For
+//! a Rust binary this additionally elides the dead code after a tail
+//! `core::panicking::panic` / `handle_alloc_error` / `rust_begin_unwind`.
 
 use object::read::{Object, ObjectSymbol};
 use object::SymbolKind;
@@ -35,7 +43,29 @@ const ELF_NORETURN_LIST: &str = include_str!("../../data/ElfFunctionsThatDoNotRe
 
 /// Port of `NoReturnFunctionAnalyzer` ("Known"): flag every imported/defined
 /// function whose name matches the shipped ELF no-return list.
-pub struct NoReturnKnownPass;
+///
+/// `rust` selects whether the Rust no-return wildcard list is matched **in
+/// addition** to the base ELF list — set it when the source language is detected
+/// as Rust (faithful to `noReturnFunctionConstraints.xml`'s `compiler
+/// name="rustc"` arm). The default ([`NoReturnKnownPass::elf`]) matches only the
+/// base ELF list, as Ghidra does for a non-Rust ELF.
+#[derive(Clone, Copy, Default)]
+pub struct NoReturnKnownPass {
+    /// Also match the vendored `RustFunctionsThatDoNotReturn` wildcard list.
+    pub rust: bool,
+}
+
+impl NoReturnKnownPass {
+    /// The base ELF pass (no Rust list) — Ghidra's default for a non-Rust ELF.
+    pub fn elf() -> Self {
+        NoReturnKnownPass { rust: false }
+    }
+
+    /// The pass for a Rust-detected ELF: base ELF list + the Rust wildcard list.
+    pub fn rust() -> Self {
+        NoReturnKnownPass { rust: true }
+    }
+}
 
 /// Strip **all** leading underscores (faithful to
 /// `NoReturnFunctionAnalyzer.java:84-91` — a loop, not a single strip: so
@@ -99,13 +129,22 @@ fn name_matches(name: &str, exact: &[String], wildcard: &[String]) -> bool {
 /// names. Emits the **original installed name** (not the stripped form) for each
 /// hit so the commit's `query_global_function` resolves the FunctionSymbol that
 /// actually exists. Shared by [`AnalysisPass::run`] and the unit tests.
-fn scan_noreturn(file: &object::File) -> AnalysisOutput {
+///
+/// `rust` adds the vendored `RustFunctionsThatDoNotReturn` wildcard list to the
+/// match set (faithful to `noReturnFunctionConstraints.xml`'s `rustc` arm).
+fn scan_noreturn(file: &object::File, rust: bool) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     // ELF-only list; only fires on ELF objects (the only format kuna loads).
     if !matches!(file.format(), object::BinaryFormat::Elf) {
         return out;
     }
-    let (exact, wildcard) = parse_list(ELF_NORETURN_LIST);
+    let (mut exact, mut wildcard) = parse_list(ELF_NORETURN_LIST);
+    // Rust source language: append the Rust wildcard list (panic/abort/oom/…).
+    if rust {
+        let (r_exact, r_wildcard) = parse_list(crate::s1_sourcelang::rust_noreturn_list());
+        exact.extend(r_exact);
+        wildcard.extend(r_wildcard);
+    }
     let mut seen = std::collections::HashSet::new();
     // The same FUNC streams `loadimage_object::from_bytes` installs as
     // FunctionSymbols: a dynamic import like `exit` exists only in `.dynsym` /
@@ -135,7 +174,7 @@ impl AnalysisPass for NoReturnKnownPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        scan_noreturn(ctx.file)
+        scan_noreturn(ctx.file, self.rust)
     }
 }
 
@@ -191,13 +230,46 @@ mod tests {
     #[test]
     fn run_over_fauxware_flags_exit_only() {
         // Drive the full scan over the vendored fauxware bytes: it must surface
-        // `exit` (a dynamic import named by elf_plt) and nothing spurious.
+        // `exit` (a dynamic import named by elf_plt) and nothing spurious. The
+        // base ELF pass (rust=false) is what fauxware (a C binary) gets.
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
         let bytes = std::fs::read(path).expect("read fauxware fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
-        let out = scan_noreturn(&file);
+        let out = scan_noreturn(&file, false);
         assert!(out.noreturn.iter().any(|n| n == "exit"), "exit must be flagged");
         assert!(!out.noreturn.iter().any(|n| n == "puts"), "puts must not be flagged");
         assert!(!out.noreturn.iter().any(|n| n == "read"), "read must not be flagged");
+    }
+
+    /// The Rust wildcard list must match a Rust panic symbol ONLY when the pass
+    /// is in Rust mode (compiler detected as `rustc`) — never for a C ELF. This
+    /// is the gated-list contract the sourcelang task delivers.
+    #[test]
+    fn rust_list_gated_on_rust_detection() {
+        let panic = "ZN4core9panicking5panic17h0123456789abcdefE";
+
+        // Base ELF list: no wildcards, so the Rust panic symbol is NOT flagged.
+        let (e_elf, w_elf) = parse_list(ELF_NORETURN_LIST);
+        assert!(!name_matches(panic, &e_elf, &w_elf), "C ELF must not flag a Rust panic");
+
+        // ELF + Rust list: the `ZN4core9panicking5panic17h*` wildcard matches it.
+        let (r_exact, r_wildcard) = parse_list(crate::s1_sourcelang::rust_noreturn_list());
+        let mut e_rust = e_elf.clone();
+        let mut w_rust = w_elf.clone();
+        e_rust.extend(r_exact);
+        w_rust.extend(r_wildcard);
+        assert!(name_matches(panic, &e_rust, &w_rust), "Rust ELF must flag a Rust panic");
+        // a couple more Rust no-return forms
+        assert!(name_matches(
+            "ZN5alloc5alloc18handle_alloc_error17hcafebabecafebabeE",
+            &e_rust,
+            &w_rust
+        ));
+        assert!(name_matches("rust_begin_unwind", &e_rust, &w_rust));
+        // the leading-underscore strip still applies to the Rust forms
+        assert!(name_matches("_ZN4core9panicking5panic17h0123456789abcdefE", &e_rust, &w_rust));
+
+        // an ordinary Rust function (no panic/abort) is never flagged
+        assert!(!name_matches("ZN5nostd1m12rusty_helper17h76f46bb3af543e7bE", &e_rust, &w_rust));
     }
 }

@@ -141,7 +141,9 @@ the same call as `FindNoReturnFunctionsAnalyzer`.
 `beanstalk_cpp` fixture would show mangled import names.) Note: kuna's loader
 splits names on `::` into namespaces, so an *already-demangled* name nests
 correctly — but kuna does no demangling itself. C imports (`puts`, `read`) are
-unaffected.
+unaffected. **Status:** ✅ done (Increment 2 — Itanium C++ + Rust). The Rust
+*source-language* detection that gates Rust-specific behavior (e.g. the Rust
+no-return list) is a separate piece, ✅ done in Increment 4 (`s1_sourcelang`).
 
 ## 6. String-literal detection — ⛔ Gap (partly masked by the engine)
 
@@ -230,11 +232,15 @@ debug-format reader or a discovery loop). Vendored fixtures live in
 | ✅ | **Demangling** (Itanium C++ / Rust) | S1 | done | `cpp_mangled` `main` renders `foo::Bar::baz(...)` (cpp_demangle + rustc-demangle; needed the cross-scope call-resolution fix). Increment 2 |
 | ✅ | **Library prototype seeding** | S1 | done | **fauxware** `main`: `puts("Username: ")`, `puts("Password: ")` (libproto types arg `char*`; the route that actually renders literals in kuna). Increment 3 |
 | 🟡 | String-literal detection | S1 | n/a | implemented + tested but **disabled by default**: kuna's printer renders a named `char[]` symbol as its name (`s_400915`), shadowing the literal; literals come from prototype/usage `char*` typing instead. Increment 3 |
+| ✅ | **DWARF debug-info** (`DWARFAnalyzer`) | S1 | done | **cet_pie_x86_64**: `elaborate_debug_symbol`'s param recovered as `char *binary` (gimli); **dwarf_stripped**: names with no `.symtab`. Subtask-3 stack-locals deferred. Increment 6 |
+| ✅ | **Function-start / entry discovery** (`EntryPointAnalyzer`) | S1 | done | **stripped_dynamic_x86_64**: `sub_1405` (main) decompiles without `--addr` (e_entry + init arrays + `.eh_frame` FDEs + `_start`→`main` idiom + prologues). Increment 5 |
+| ✅ | **`.eh_frame` FDE starts** (`GccExceptionAnalyzer`, entry oracle) | S1 | done | **fauxware**: 7 FDE starts ⊇ the funcsyms; feeds entry discovery. Increment 5 |
+| ✅ | **Source-language detection** (`SourceLanguageAnalyzer`) | S1 | done | **rust_hello_x86_64** ⇒ `Compiler::Rustc` (`.comment` `rustc version` + `_ZN…17h…E`); **fauxware**/**cpp_mangled** ⇒ `Gcc`. Gates the Rust no-return list. Increment 7 |
+| ✅ | **Rust no-return list** (`RustFunctionsThatDoNotReturn`) | S1 | done | vendored + matched only when compiler==Rustc: `ZN4core9panicking5panic17h*` flagged for Rust, not for a C ELF. Increment 7 |
+| 🟡 | **Rust str-slice split** (`RustStringAnalyzer`) | S1 | n/a | detection ported (shares the source-lang detector); the **split is infeasible-at-tier** — needs post-disasm interior reference destinations + a ReferenceManager (same wall as no-return-discovered/entry-disc), and even with boundaries the printer would shadow the literal. Documented, no split code. Increment 7 |
 | 🟡 | Absolute address-table discovery (`AddressTableAnalyzer`) | S1 | n/a | implemented + tested but **disabled by default** (Ghidra parity + false-positive risk): **switchtab_x86_64** — `scan_address_tables` finds the 8-entry table @ `0x402008`, all elements in `.text`. NOT switch recovery (inherited S2) and NOT #9 below. Increment 4 |
 | ⛔ | Aggressive Instruction Finder (`AggressiveInstructionFinderAnalyzer` + ARM) | S1 | n/a | infeasible-at-tier: needs post-disasm Listing/FunctionManager/PseudoDisassembler + ≥20 found functions; off-by-default upstream; subsumed by entry-disc + eh-frame. Increment 4 |
 | ⛔ | Operand/scalar reference markup (`OperandReferenceAnalyzer` family) | S1 | n/a | out-of-scope-at-tier: no Listing/ReferenceManager; products subsumed by strings/jumptables/entry-disc; scalar→`char*` blocked by the same printer/MapGlobals shadowing as strings. Increment 4 |
-| 4 | DWARF debug-info | S1 | hard | **cet_pie_x86_64** (has `.debug_info`): recovered function names + ≥1 typed parameter appear (not `param_1`) |
-| 6 | Function-start / entry discovery | S1 | hard | **stripped_dynamic_x86_64**: discovered entry set includes the real `main`/entry, decompilable without a supplied address |
 | 7 | External / thunk object model | S1 | hard | **fauxware**: PLT thunk to `puts` modeled as a thunk (tail-call inlined), not a standalone `sub_` |
 | 8 | Arch markers (ARM/Thumb `$t`, MIPS `$gp`, x86 purge) | S1 | med | needs an ARM/MIPS fixture (not yet vendored): a Thumb function decodes as Thumb from its `$t` mapping symbol |
 | 9 | Jump-table post-typing refinement | S2 (feedback) | hard | needs a switch-heavy fixture (not yet vendored): refined case count matches the typed table after a second pass |

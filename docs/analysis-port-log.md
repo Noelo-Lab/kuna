@@ -55,8 +55,9 @@ accounting (every one of the 142 falls in exactly one bucket):
 
 ### Core program-analysis tier — `Features/{Base,Decompiler,GnuDemangler,FunctionID,DecompilerDependent}` (~57)
 
-**Ported (4) + PLT:** `NoReturnFunctionAnalyzer`, `GnuDemanglerAnalyzer`,
-`ApplyDataArchiveAnalyzer`, `StringsAnalyzer` (disabled — see Increment 3); plus
+**Ported (5) + PLT:** `NoReturnFunctionAnalyzer`, `GnuDemanglerAnalyzer`,
+`ApplyDataArchiveAnalyzer`, `StringsAnalyzer` (disabled — see Increment 3),
+`SourceLanguageAnalyzer` (detection half — see Increment 4); plus
 `ElfDefaultGotPltMarkup` (loader code, done pre-this-effort).
 
 **🟡 Inherited — the ported engine already does this, no analyzer needed (~11):**
@@ -68,7 +69,7 @@ accounting (every one of the 142 falls in exactly one bucket):
 **⬜ Real gaps worth porting (deferred, in the work-list):** `DWARFAnalyzer`,
 `EntryPointAnalyzer` (+ `ExternalEntryFunctionAnalyzer`, + the 5 `BytePatterns/FunctionStart*`
 below), `GccExceptionAnalyzer` (.eh_frame), `FormatStringAnalyzer` (printf varargs typing),
-`ArmSymbolAnalyzer` ($t/$a), `CallFixupAnalyzer`, `SourceLanguageAnalyzer`.
+`ArmSymbolAnalyzer` ($t/$a), `CallFixupAnalyzer`, `FormatStringAnalyzer`.
 
 **🟡 Ported-but-disabled-by-default:** `StringsAnalyzer` (Increment 3) and
 `AddressTableAnalyzer` (Increment 4) are both faithfully ported + unit-tested but
@@ -108,17 +109,19 @@ decoding, and PLT/thunk naming is done generically.
 `MicrosoftDemangler`, `Objective-C/*`, `PDB/*`, `Swift/*` — all non-ELF. **Partially relevant:**
 `BytePatterns/FunctionStart*` (5 — byte-pattern function-start discovery, folds into the deferred
 `s1-entry-disc`); `Rust/RustDemanglerAnalyzer` (**already covered** — kuna's demangle pass handles
-Rust via `rustc-demangle`); `Rust/RustStringAnalyzer` (⬜ deferred).
+Rust via `rustc-demangle`); `Rust/RustStringAnalyzer` (🟡 detection ported in Increment 4; the
+str-slice split is infeasible-at-tier — see the work-list `ruststring` row).
 
 ### Framework/Build (2) — ⛔ `JitDataFlowBlockAnalyzer` (JIT infra), `SkeletonAnalyzer` (template).
 
-**Summary:** of 142 analyzers, ~4 ported (+ `StringsAnalyzer`/`AddressTableAnalyzer` ported
-but disabled-by-default) + ~11 inherited by the engine + the remaining real ELF-relevant gaps
-deferred (DWARF, entry-disc, eh-frame, format-string, ARM/MIPS markers, callfixup, sourcelang)
-+ ~112 out of scope for a standalone ELF decompiler (per-CPU helpers, non-ELF formats,
-Windows/Go/Swift/ObjC, infra) — now including AIF and the operand/reference markup family,
-both reclassified ⛔ infeasible-at-tier (Increment 4). The work-list below tracks the relevant
-set; this section is the evidence it's exhaustive.
+**Summary:** of 142 analyzers, **~8 ported** (PLT, no-return, demangle, libproto, DWARF,
+entry-disc/eh-frame, source-language + Rust no-return; plus `StringsAnalyzer`/`AddressTableAnalyzer`
+ported-but-disabled-by-default) + ~11 inherited by the engine + the few remaining real
+ELF-relevant gaps deferred to Wave 2/3 (format-string, ARM/MIPS markers, callfixup, the DWARF
+stack-locals subtask, the printer change to re-enable strings) + ~112 out of scope for a
+standalone ELF decompiler (per-CPU helpers, non-ELF formats, Windows/Go/Swift/ObjC, infra —
+including AIF and the operand/reference markup family, both ⛔ infeasible-at-tier, Increment 4).
+The work-list below tracks the relevant set; this section is the evidence it's exhaustive.
 
 ## Work-list
 
@@ -137,6 +140,9 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `s1-dwarf` | DWARF names+types (`DWARFAnalyzer`) via gimli | hard | dwarf_stripped: `add_values`/`compute`/`main` recovered (no .symtab); cet_pie: `elaborate_debug_symbol`'s param typed `char *` (subtasks 1+2; **subtask-3 stack-locals deferred**, engine change) |
 | ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5) |
 | ✅ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle, `GccExceptionAnalyzer`) | hard | fauxware: FDE starts ⊆ discovered entries (7 starts incl. `_start`/`main`) (Increment 5) |
+| ✅ | `sourcelang` | Source-language / compiler detection (`SourceLanguageAnalyzer`) | easy | `s1_sourcelang::detect_compiler`: `rust_hello` ⇒ `Rustc` (`.comment` + `_ZN…17h…E`), `fauxware`/`cpp_mangled` ⇒ `Gcc` (Increment 7) |
+| ✅ | `s1-rust-golang-noreturn` | Rust no-return list selection (`noReturnFunctionConstraints.xml` `rustc` arm) | easy | `RustFunctionsThatDoNotReturn` vendored + parsed only when compiler==Rustc; `ZN4core9panicking5panic17h*` flagged for Rust, not C ELF (Increment 7) |
+| 🟡 | `ruststring` | Rust str-slice split (`RustStringAnalyzer`) | med | **detection ported** (shares `s1_sourcelang`); the **split is infeasible-at-tier** (needs post-disasm interior refs + a populated ReferenceManager — same wall as `FindNoReturnFunctionsAnalyzer`). Documented, no split code (Increment 7) |
 | ⬜ | `arm-mips-markers` | ARM `$t`/MIPS `$gp` mapping symbols | med | (needs ARM/MIPS fixture, not vendored) |
 | 🟡 | `addrtable` | Absolute address-table discovery (`AddressTableAnalyzer`) | med | implemented + tested but **disabled by default** (Ghidra `setDefaultEnablement(false)` + false-positive risk); scanner finds the 8-entry table @ `0x402008` in `switchtab_x86_64`. See Increment 4 |
 | 🟡 | `switch-recovery` | `DecompilerSwitchAnalyzer` | — | the engine **is** this (S2 jump-tables ported) |
@@ -583,6 +589,73 @@ module.
   defined-subprogram SymFacts + the `char *` param chain) + the e2e
   `verify_s1_dwarf.rs` (name recovery on dwarf_stripped, typed `char *` on cet_pie);
   `kuna-analysis` 36 tests pass; `make test` **PARITY OK** (675/675);
+  `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+
+### Increment 7 — source-language detection + Rust no-return list ✅
+
+Combined `sourcelang` + `ruststring` (they share the Rust/compiler detector).
+
+**`s1_sourcelang`** — port of `SourceLanguageAnalyzer` + the per-language
+`*SourceLanguage.existsIn` predicates. New module
+[`s1_sourcelang/mod.rs`](../decompiler/crates/kuna-analysis/src/s1_sourcelang/mod.rs)
+with a pure `detect_compiler(&object::File) -> Compiler` (`Gcc`/`Clang`/`Rustc`/`Go`/
+`Unknown`). Detection paths, faithful to Ghidra:
+- **Rust** — `.comment` `rustc version …` record (`ElfRustSourceLanguage.java:34`'s
+  `^rustc version .*$` regex, reduced to an anchored NUL-record prefix test), OR a
+  Rust-mangled symbol (`_R…` v0 / `_ZN…17h<hex16>E` legacy — the same gate the loader's
+  demangle uses), OR a `.rodata` `RUST_SIGNATURES` byte signature
+  (`RustConstants.java:29-33` = `RUST_BACKTRACE`/`RUST_MIN_STACK`/`/rustc/`,
+  `RustSourceLanguage.isRust`).
+- **Go** — `.go.buildinfo` / `.note.go.buildid` section present (`GoBuildInfo.java:45`,
+  `NoteGoBuildId.java:30`).
+- **Gcc/Clang** — `.comment` `GCC: (…)` / `clang version …` record (a documented **kuna
+  convenience**, not a faithful Ghidra SourceLanguage ID — Ghidra ships no generic C one).
+
+The detector runs once in `passes::run_default_analyses` before pass selection (the kuna
+analog of `SourceLanguageAnalyzer` running early and gating language-specific analyzers).
+`default_passes()` is now `passes_for(Compiler)`; a guard unit test asserts
+`passes_for(Unknown)` == `default_passes()` so the no-Rust default never silently drops a
+pass. **PARTIAL scope**: only the detection half is ported — Ghidra's spec-extension /
+`.gdt` data-archive application (`addSpecExtensions`, `getDataArchives`) is out of scope
+(no SpecExtension subsystem in kuna), same depth as the demangle pass's name-only scope.
+
+**`s1-rust-golang-noreturn`** (the deferred partial from Increment 1) — now **done**. The
+Rust no-return wildcard list (`Ghidra/Features/Base/data/RustFunctionsThatDoNotReturn`,
+vendored verbatim at `data/RustFunctionsThatDoNotReturn`) is parsed **in addition** to the
+base ELF list when `detect_compiler == Rustc`, mirroring
+`noReturnFunctionConstraints.xml`'s `compiler name="rustc"` arm. Wired into the existing
+`NoReturnKnownPass` via a `rust: bool` field (`::elf()` / `::rust()` constructors); the
+existing `*`-wildcard parser already handles the Rust forms
+(`ZN4core9panicking5panic17h*`, `ZN5alloc5alloc18handle_alloc_error17h*`,
+`rust_begin_unwind`, …). Gating contract is unit-tested: a `ZN4core9panicking5panic17h…E`
+symbol is flagged no-return when `rust=true` but NOT for a C ELF (`rust=false`). The
+fauxware exit test (`run_over_fauxware_flags_exit_only`) still passes unchanged.
+
+**`ruststring`** — `RustStringAnalyzer`. **Detection ported** (it is exactly the
+`s1_sourcelang` Rust detector, shared, not duplicated). The analyzer's actual job — the
+str-slice split — is **infeasible at the kuna-analysis tier** and is *not* built (no
+str-splitter code). Why: Rust `&str` literals sit byte-adjacent in `.rodata` with no NUL
+separators; the only thing marking each slice boundary is an interior **code reference**
+(a PC-relative `lea` of `ptr+len`). `RustStringAnalyzer` splits each over-long string at
+the next `ReferenceManager.getReferenceDestinationIterator` destination — a post-disassembly
+artifact the analyzer tier (object view only) does not have. This is the same wall
+`FindNoReturnFunctionsAnalyzer`/`EntryPointAnalyzer` hit (see `noreturn.rs:9-15`). It is a
+strict superset of the deferred `s1-strings` blocker (even with boundaries, a named
+`char[N]` symbol would shadow the literal in kuna's printer, per Increment 3). LOSS
+recorded; a full port would be a post-decompile feedback pass (engine feedback edge), out
+of scope here.
+
+**Fixture.** Vendored `tests/fixtures/rust_hello_x86_64` — a tiny (2576-byte)
+**un**stripped `#![no_std]` rustc 1.90 PIE that carries BOTH a `rustc version` `.comment`
+record and a `_ZN5nostd1m12rusty_helper17h…E` mangled symbol, so one fixture exercises both
+detection paths e2e at the unit level. (No `kuna-console` `.sla` e2e was added — there is
+no decompiler-output headline for *detection*; the win is the no-return list, asserted at
+the pass level. An e2e showing dead-code elision after a tail Rust panic is a documented
+follow-up: it needs a Rust fixture whose `main` tail-calls `core::panicking::panic`, larger
+than this minimal no_std fixture.)
+
+- **Tests:** `kuna-analysis` 44 tests pass (34 + 10 new: 7 `s1_sourcelang`, 1 `noreturn`
+  Rust-gating, 2 `passes` selection guards). `make test` **PARITY OK** (675/675);
   `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
 
 ### Next candidates (Wave 2/3 — engine seams, deferred)

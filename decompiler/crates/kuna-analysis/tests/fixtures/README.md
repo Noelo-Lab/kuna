@@ -20,6 +20,7 @@ real ELF parser.
 | `cpp_mangled_x86_64` | non-PIE x86-64 C++, not stripped | symbol demangling (`s1_demangle`): a defined `.symtab` C++ method `_ZN3foo3Bar3bazEi` must surface name-only as `foo::Bar::baz` |
 | `dwarf_stripped_x86_64` | non-PIE x86-64, **`.symtab`/`.dynsym` FUNC names removed but `.debug_*` kept** | DWARF recovery (`s1_dwarf`): names + typed signatures of `add_values`/`compute`/`main` come **only** from `.debug_info` (the funcsym stream has none) |
 | `switchtab_x86_64` | non-PIE x86-64, dense `switch(x){0..7}` | address/jump tables (`addrtable`): an absolute 8-byte jump table in `.rodata` at vma `0x402008` (`jmp *0x402008(,%rdi,8)`) |
+| `rust_hello_x86_64` | tiny `#![no_std]` rustc PIE (x86-64), **not stripped** | source-language detection (`s1_sourcelang`): `.comment` carries `rustc version 1.90.0 …` (the faithful `ElfRustSourceLanguage` comment path) AND `.symtab` carries a Rust-mangled symbol `_ZN5nostd1m12rusty_helper17h…E` (the legacy `_ZN…17h<hex>E` heuristic) — both detection paths fire |
 
 Provenance: `fauxware`, `cet_pie_x86_64`, `stripped_dynamic_x86_64` copied
 verbatim from `bs-artifacts/binaries/` (`fauxware`, `debug_symbol`,
@@ -30,6 +31,15 @@ baz(int); }; } void foo::Bar::baz(int){...} int main(){...}` source.
 `objcopy --wildcard --strip-symbol='*' x dwarf_stripped_x86_64` (empties the symbol
 table, keeps `.debug_*` — so DWARF is the sole name source; `t.c` = three funcs
 `add_values`/`compute`/`main`). `switchtab_x86_64`: `gcc -O1 -no-pie -fno-pic s.c`
-with a `switch(argc){case 0..7}`. They are checked in (each well under 32 KB) so the
-gates are hermetic and reproducible. **Pin load-bearing VMAs as test consts** (read
-via `objdump`/`readelf` at build time) — addresses shift across toolchains.
+with a `switch(argc){case 0..7}`. `rust_hello_x86_64`: built with rustc 1.90.0
+(`1159e78c4 2025-09-14`, x86_64-unknown-linux-gnu) as a freestanding `#![no_std]`
+`#![no_main]` binary —
+`rustc -C panic=abort -C opt-level=1 -C codegen-units=1 --target x86_64-unknown-linux-gnu -C link-args=-nostartfiles tiny.rs -o rust_hello_x86_64`
+where `tiny.rs` defines a `#[panic_handler]`, a `#[no_mangle] black_box`, a
+`mod m { #[inline(never)] pub fn rusty_helper(x:u64)->u64 {…} }`, and a
+`#[no_mangle] _start`. The `#![no_std]` form keeps it tiny (2576 bytes, kept
+**un**stripped so the Rust-mangled symbol survives) while still emitting the
+`rustc version` `.comment` record and a `_ZN…17h<hex>E` symbol. They are checked
+in (each well under 32 KB) so the gates are hermetic and reproducible. **Pin
+load-bearing VMAs as test consts** (read via `objdump`/`readelf` at build time) —
+addresses shift across toolchains.

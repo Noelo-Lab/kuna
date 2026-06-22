@@ -13,17 +13,37 @@ use kuna_decomp::architecture::Architecture;
 
 use crate::loadimage_object::ObjectLoadImage;
 use crate::pass::{run_analyses, AnalysisCtx, AnalysisOutput, AnalysisPass};
+use crate::s1_sourcelang::Compiler;
 
 /// The default program-prep passes, in stage order.
 ///
 /// These run at load time over the parsed ELF and produce an additive
 /// [`AnalysisOutput`] the console commits into the engine. Adding a new analysis
 /// is: implement [`AnalysisPass`] in an `s1_*` module, then add it here.
+///
+/// This is the back-compat entry: it builds the pass list as if the source
+/// language were [`Compiler::Unknown`] (no Rust widening). The real bootstrap
+/// path uses [`passes_for`] with the detected compiler.
 pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
+    passes_for(Compiler::Unknown)
+}
+
+/// Build the program-prep pass list for a detected source-language
+/// [`Compiler`]. This is the kuna analog of Ghidra's source-language-gated
+/// analyzer selection (`SourceLanguageAnalyzer` records the IDs;
+/// language-specific analyzers gate on them). Today the only gate is the
+/// no-return list widening for Rust (`noReturnFunctionConstraints.xml`'s `rustc`
+/// arm); future Rust/Go-specific passes plug in here with one line.
+pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
     vec![
         // S1 loader: known no-return functions (exit/abort/…). Mirrors Ghidra's
-        // default-on `NoReturnFunctionAnalyzer`.
-        Box::new(crate::s1_loader::noreturn::NoReturnKnownPass),
+        // default-on `NoReturnFunctionAnalyzer`. For a Rust binary, also match the
+        // Rust wildcard list (panic/handle_alloc_error/rust_begin_unwind/…).
+        Box::new(if compiler.is_rust() {
+            crate::s1_loader::noreturn::NoReturnKnownPass::rust()
+        } else {
+            crate::s1_loader::noreturn::NoReturnKnownPass::elf()
+        }),
         // S1 strings: NUL-terminated ASCII string-literal detection. Mirrors
         // Ghidra's `StringsAnalyzer` (min length 5, require-NUL-end).
         // S1 library prototypes: seed common libc signatures (puts(char*), …) so
@@ -103,6 +123,43 @@ pub fn run_default_analyses(
     let Ok(file) = object::File::parse(bytes) else {
         return AnalysisOutput::default();
     };
+    // Source-language detection runs once, before pass selection, and shapes the
+    // pass list (the kuna analog of `SourceLanguageAnalyzer` running early and
+    // gating the language-specific analyzers).
+    let compiler = crate::s1_sourcelang::detect_compiler(&file);
     let ctx = AnalysisCtx { file: &file, image, arch };
-    run_analyses(&ctx, &default_passes())
+    run_analyses(&ctx, &passes_for(compiler))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pass::AnalysisPass;
+
+    fn ids(passes: &[Box<dyn AnalysisPass>]) -> Vec<&'static str> {
+        passes.iter().map(|p| p.id()).collect()
+    }
+
+    /// `passes_for(Unknown)` MUST be exactly today's `default_passes()` contents
+    /// — the no-Rust default must never silently drop a pass (the guard the
+    /// sourcelang brief calls for).
+    #[test]
+    fn unknown_matches_default_passes() {
+        assert_eq!(ids(&passes_for(Compiler::Unknown)), ids(&default_passes()));
+        // Both must still carry the always-on analysis passes.
+        let want = ["noreturn_known", "libproto"];
+        for id in want {
+            assert!(
+                ids(&default_passes()).contains(&id),
+                "default_passes must include {id}"
+            );
+        }
+    }
+
+    /// Rust vs non-Rust selection differs ONLY in the no-return pass variant, not
+    /// the pass set — the same ids in the same order.
+    #[test]
+    fn rust_and_non_rust_have_same_pass_ids() {
+        assert_eq!(ids(&passes_for(Compiler::Rustc)), ids(&passes_for(Compiler::Gcc)));
+    }
 }
