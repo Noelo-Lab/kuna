@@ -55,8 +55,8 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `symtab-dynsym` | `.symtab`/`.dynsym` function reader | — | `fixture_funcsyms` |
 | ✅ | `foundation` | generic `AnalysisOutput` commit seam | med | bootstrap_from_elf commits with no funcsym regression |
 | ✅ | `noreturn_known` | No-return known list (`NoReturnFunctionAnalyzer`) | easy | fauxware `rejected`: no dead code after `exit(1)` |
-| ⬜ | `s1-demangle` | Demangling (`GnuDemanglerAnalyzer` + Rust) | easy | `demangle("_ZN3foo3barEv")=="foo::bar"` |
-| ⬜ | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | fauxware `main`: `puts("Username: ")` |
+| ✅ | `s1-demangle` | Demangling (`GnuDemanglerAnalyzer` + Rust) | easy | `cpp_mangled` `main`: call renders `foo::Bar::baz(...)` |
+| ✅ | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | fauxware: typed `char[]` globals (`puts(s_400915)`); inline `"…"` literal needs `s1-libproto` |
 | ⬜ | `s1-libproto` | Library prototype seeding (`ApplyDataArchiveAnalyzer`) | med | `printf` arg0 typed `char *` |
 | ⬜ | `s1-dwarf` | DWARF names+types (`DWARFAnalyzer`) | hard | cet_pie: real fn names + ≥1 typed param |
 | ⬜ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`) | hard | stripped: decompile entry without `--addr` |
@@ -155,3 +155,73 @@ yet per-run toggleable via `--option`. The pre-existing per-name surface
   ```
 - **Tests:** 5 unit tests (`kuna-analysis` `noreturn::tests`); `make test`
   **PARITY OK** (675/675); `make rust-test` green.
+
+### Increment 2 — demangling + strings (fanned out, parallel) ✅
+
+Two passes implemented concurrently in isolated worktree agents (both Opus), then
+integrated sequentially with gates after each.
+
+**`s1-demangle`** — port of `GnuDemanglerAnalyzer`. The decisive finding: Ghidra's
+GNU/Itanium demangler is **not Java** — it shells out to a native `demangle`
+(libiberty `cplus_demangle`). So "line-faithful port" has nothing to transcribe for
+Itanium; mirroring Ghidra means *calling a 3rd-party demangler* — exactly a crate dep.
+Added `cpp_demangle` 0.5.1 (Itanium) + `rustc-demangle` 0.1.27 (Rust legacy + v0) as a
+documented dependency-substitution LOSS (same move as BFD→`object`). New `s1_demangle`
+module: `demangle_raw` (full `foo(int)`) + `demangle_name` (name-only `foo::bar`).
+The **name-only reduction is mandatory** — kuna's `::` splitter
+(`find_create_scope_from_symbol_name`) splits the *entire* string, so a leftover
+signature/template `::` would create junk scopes. Applied at funcsym build in
+`loadimage_object.rs` (all 3 sources, after `strip_version`). 11 unit tests + a real
+`g++`-built `cpp_mangled_x86_64` fixture. Scoped LOSS: name+namespace only, not
+signature/param-type application (kuna recovers those from usage, S4/S5).
+
+**`s1-strings`** — port of `StringsAnalyzer`. New `s1_strings` module: a faithful
+transcription of `MinLengthCharSequenceMatcher` + `AsciiCharSetRecognizer` (printable
+`0x20..=0x7e`+CR/LF/TAB, min length **5**, require-NUL-end, ASCII/1-byte only). Scans
+allocated+initialized sections; emits `StringFact{addr,len}` (new `AnalysisOutput`
+field). The commit arm types each as a typelocked `char[N]` data symbol. **LOSS:** the
+n-gram trigram false-positive filter (`StringModel.sng`) is unportable (model not in
+tree) — substituted "printable+NUL+min-5", which over-accepts; harmless for real
+literals, documented. 5 unit + fixture tests.
+
+**Honest rendering verdict (strings):** `puts("Username: ")` does **not** render yet —
+the call shows `puts(s_400915)` (the constant now references the typed `char[]` global
+instead of a bare `0x400915`, a real improvement). The inline literal needs the call
+argument typed `char *`, which comes from a library prototype (`puts(char*)`) — i.e.
+the **`s1-libproto`** pass. This exactly matches the research's conflict #8: a
+typelocked `char[N]` data symbol alone does not retype the call-site constant; readonly
+markup (foundation) is necessary but insufficient without the proto. So strings is a
+faithful, complete `StringsAnalyzer` port; the headline literal is gated on libproto
+(next increment).
+
+**Engine fix uncovered by demangle — cross-scope call resolution.** Demangle placing
+`foo::Bar::baz` into the nested `foo::Bar` scope exposed a latent limitation: the call
+resolver (`decompile_drive.rs::query_call` + the no-return/inline/inject variants) only
+searched the **global** scope's address map (`find_function(global, addr)`), so a
+namespaced callee resolved to `sub_<addr>` (worse than the mangled name). C++
+`Scope::queryFunction(Address)` spans the scope tree. Added
+`Database::find_function_across_scopes` + `function_display_name_across_scopes`
+(qualified name) + no-return/inline/inject cross-scope variants, and switched the four
+`query_call*` resolvers to them. Now `main` renders `foo::Bar::baz(&v1,0x2a)`
+(fully-qualified) and `__stack_chk_fail()` is correctly no-return. Identical for flat
+global names, so the 675 datatests are unaffected.
+
+- **Known cross-pass seam:** the no-return pass matches on *raw object-symbol* names
+  while demangle renames the *funcsym*; a no-return C++ symbol (e.g. `_ZSt9terminatev`)
+  would be installed as `std::terminate`, so the no-return commit's
+  `query_global_function("_ZSt9terminatev")` would miss it. Harmless for the common
+  case (C libc no-return imports are unmangled). Documented for a later fix (match
+  on the installed/demangled name, or resolve no-return across scopes by the demangled
+  name).
+
+- **Tests:** `kuna-analysis` 32 tests pass (noreturn 5 + strings + demangle 11 +
+  fixtures); `make test` **PARITY OK** (675/675, including after the engine
+  call-resolution change); `make rust-test` green.
+
+### Next: `s1-libproto` (completes the string literal)
+
+Seed prototypes for common libc functions (`puts(char*)`, `printf(char*,...)`,
+`malloc`, …) so call arguments get typed — turning `puts(s_400915)` into
+`puts("Username: ")`. Commit via the existing `set_function_prototype_pieces` /
+`apply_prototype_to_symbol` path (the console already parses C decls into
+`PrototypePieces`). Depends on `s1-strings` (done).
