@@ -135,8 +135,8 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `s1-libproto` | Library prototype seeding (`ApplyDataArchiveAnalyzer`) | med | fauxware `main`: `puts("Username: ")`, `puts("Password: ")`; `rejected`: `printf("Go away!")` |
 | 🟡 | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | implemented + tested but **disabled by default** — its named `char[]` symbol *blocks* literal rendering in kuna's printer; literals come from `s1-libproto` instead (see Increment 3) |
 | ⬜ | `s1-dwarf` | DWARF names+types (`DWARFAnalyzer`) | hard | cet_pie: real fn names + ≥1 typed param |
-| ⬜ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`) | hard | stripped: decompile entry without `--addr` |
-| ⬜ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle) | hard | C++ fixture: FDE starts ⊆ discovered entries |
+| ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 4) |
+| ✅ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle, `GccExceptionAnalyzer`) | hard | fauxware: FDE starts ⊆ discovered entries (7 starts incl. `_start`/`main`) (Increment 4) |
 | ⬜ | `arm-mips-markers` | ARM `$t`/MIPS `$gp` mapping symbols | med | (needs ARM/MIPS fixture, not vendored) |
 | 🟡 | `addrtable` | Absolute address-table discovery (`AddressTableAnalyzer`) | med | implemented + tested but **disabled by default** (Ghidra `setDefaultEnablement(false)` + false-positive risk); scanner finds the 8-entry table @ `0x402008` in `switchtab_x86_64`. See Increment 4 |
 | 🟡 | `switch-recovery` | `DecompilerSwitchAnalyzer` | — | the engine **is** this (S2 jump-tables ported) |
@@ -440,10 +440,76 @@ net-zero/net-negative for the same reason `s1-strings` is disabled).
   green. The addrtable pass is inert by default, so it cannot perturb any gate; the other two
   are doc-only.
 
+### Increment 5 — function entry discovery + `.eh_frame` FDE oracle ✅
+
+**`s1-entry-disc` + `s1-eh-frame`** — ported as ONE fused, additive
+`EntryDiscoveryPass` (new `s1_entry` module, registered after `LibProtoPass`,
+always-on like noreturn/libproto). It fills only `AnalysisOutput.entries`; the
+existing commit seam (`engine.rs::commit_analysis_output` step 2: `name_function`
++ `add_function` + `register_symbol`, idempotent via `find_function`) turns each
+discovered VMA into a `sub_<addr>` function — **no engine change**. The pure core
+`collect_entries(&object::File) -> Vec<u64>` unions five oracles, validates each
+VMA is inside an executable section, drops any already covered by a funcsym
+(`.symtab`/`.dynsym` defined FUNC + PLT stubs), and dedups.
+
+**The five oracles** (faithful subsets of Ghidra's Listing-coupled analyzers):
+1. ELF `e_entry` — `EntryPointAnalyzer` external entry.
+2. `DT_INIT`/`DT_FINI` + `DT_INIT_ARRAY`/`DT_FINI_ARRAY` pointer tables (read
+   from the `.dynamic` section as `Elf64_Dyn` pairs; array bytes sliced from the
+   containing section) — the loader-seeded external entry points.
+3. **`.eh_frame` FDE `pcBegin`** (`scan_eh_frame_starts`) — a hand-port of the
+   CIE/FDE walk + DW_EH_PE decoder (`GccExceptionAnalyzer` +
+   `ehFrame/{Cie,FrameDescriptionEntry}` + `DwarfDecoderFactory`), scoped to
+   FDE-start extraction (NOT CFI/LSDA). The CIE augmentation `z`/`R`/`L`/`P`/`S`
+   walk extracts the FDE pointer-encoding byte; the FDE→CIE back-pointer is
+   `(o+4) - cieId`. No `gimli`; ~150 lines, faithful per the brief.
+4. x86-64 `_start`→`main` libc-start idiom: the `lea rdi,[rip+disp]` before
+   `call *__libc_start_main@GOT` carries `main` (the disassembly-free stand-in
+   for the general call-target sweep, infeasible at this tier).
+5. x86-64 gcc prologue byte patterns (`FunctionStartAnalyzer` port:
+   `DittedBitSequence` matcher + a minimal bare-`<funcstart/>` set).
+
+**Headline result.** On `stripped_dynamic_x86_64` (PIE, `.symtab` stripped) the
+pass discovers `main` at 0x1405 (via BOTH the libc-start idiom AND an FDE start)
+even though no symbol names it. The e2e gate (`verify_s1_entry.rs`) decompiles it
+by name with NO `--addr`:
+```c
+unsigned long sub_1405(int4 a0,void *a1) {
+  if (a0 <= 1) { fprintf(dat_4020,"Usage: %s <binary>\n",*a1); ... }
+  else { v1 = sub_1357(a1[1]); }  // sub_1357 is another discovered entry
+  return v1;
+}
+```
+On `fauxware` (`.eh_frame` present) the FDE oracle yields all seven known starts
+(0x400500 `_start`, 0x400664 `authenticate`, 0x4006ed `accepted`, 0x4006fd
+`rejected`, 0x40071d `main`, 0x4007e0 `register_tm_clones`, 0x400870) — the four
+funcsyms are a proper subset (the oracle property), and `collect_entries` then
+skips those funcsyms, emitting only the genuinely-new starts.
+
+**LOSS / scope** (documented in the module): general undirected call-target sweep
+is infeasible at the analyzer tier (no Listing) — substituted by oracle 4 + 5;
+the `after="defined"`/`validcode` pattern post-rules are dropped (no
+PseudoDisassembler); oracles 4–5 are x86-64-only in v1 (other arches no-op;
+1–3 are arch-independent); 64-bit-length and `indirect`/forward-referencing-CIE
+eh_frame records are skipped (never in the fixtures); static-image base-0 PIE
+assumption for array-pointer / absptr decode (kuna never rebases).
+
+**Function-count note:** the pass DOES add functions on a symboled binary (the
+new FDE/idiom starts with no symbol, e.g. `register_tm_clones`). No rust-test
+asserts a post-bootstrap total function COUNT, so nothing needed updating —
+`verify_w11_elf_loader` (synthetic single-`add` ELF: no entry/eh_frame/dynamic →
+discovery no-op) and `verify_w11_elf_plt_names` (asserts named imports, not a
+count) are unaffected.
+
+- **Tests:** `kuna-analysis` 43 tests pass (8 new `s1_entry` unit tests over the
+  fixtures); new `verify_s1_entry.rs` e2e gate green; `make test` **PARITY OK**
+  (675/675); `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+
 ### Next candidates
 
 Per the work-list, in rough priority: **DWARF** (`s1-dwarf`, biggest naming/typing
-source, hard — `gimli`), **entry discovery** (`s1-entry-disc`, hard), the **printer change**
-to let `s1-strings` render literals (re-enables it), the **per-run `--option` gating** of
-all passes (the deferred conflict #4), and the **no-return × demangle** cross-pass seam fix
-(match the installed/demangled name). Inherited/out-of-scope items need no work (see table).
+source, hard — `gimli`), the **printer change** to let `s1-strings` render literals
+(re-enables it), the **per-run `--option` gating** of all passes (the deferred
+conflict #4), and the **no-return × demangle** cross-pass seam fix (match the
+installed/demangled name). Entry discovery (`s1-entry-disc` + `s1-eh-frame`) landed
+in Increment 4. Inherited/out-of-scope items need no work (see table).

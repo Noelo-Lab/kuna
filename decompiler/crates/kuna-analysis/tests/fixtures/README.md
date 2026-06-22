@@ -2,8 +2,10 @@
 
 Small, real, dynamically-linked ELF binaries used by the loader gates in
 `loadimage_object.rs`'s test module (PLT/GOT import-name resolution — see
-`src/elf_plt.rs`) and the console e2e gate
-(`kuna-console/tests/verify_w11_elf_plt_names.rs`).
+`src/elf_plt.rs`), the analysis-pass unit tests (`s1_demangle`, `s1_protos`,
+`s1_entry`, …), and the console e2e gates
+(`kuna-console/tests/verify_w11_elf_plt_names.rs`,
+`kuna-console/tests/verify_s1_entry.rs`).
 
 The XML datatest corpus cannot exercise these: it embeds raw bytechunks with
 explicit `<symbol>` definitions and never constructs an `ObjectLoadImage`, so the
@@ -12,9 +14,9 @@ real ELF parser.
 
 | File | What | Exercises |
 |---|---|---|
-| `fauxware` | classic non-PIE x86-64, not stripped (the angr `fauxware` sample) | `.plt` classic stubs (`FF 25` rip-rel), `.symtab` defined functions |
+| `fauxware` | classic non-PIE x86-64, not stripped (the angr `fauxware` sample) | `.plt` classic stubs (`FF 25` rip-rel), `.symtab` defined functions; `.eh_frame` FDE starts (`s1_entry`: 7 FDE starts incl. `_start`/`main`/`register_tm_clones`) |
 | `cet_pie_x86_64` | PIE x86-64 with CET (`.plt.sec`) | `endbr64; FF 25` CET stubs, naming at the `.plt.sec` call target |
-| `stripped_dynamic_x86_64` | PIE x86-64, `.symtab` stripped (only `.dynsym`) | PLT resolution with no `.symtab` (dynsym/rela.plt only) |
+| `stripped_dynamic_x86_64` | PIE x86-64, `.symtab` stripped (only `.dynsym`) | PLT resolution with no `.symtab` (dynsym/rela.plt only); entry discovery (`s1_entry`): `e_entry`=0x1160, `DT_INIT`=0x1000, `DT_FINI`=0x1464, INIT/FINI_ARRAY ptrs, `_start`→`main` idiom → 0x1405, `.eh_frame` FDE starts — `sub_1405` (main) decompiles without `--addr` |
 | `cpp_mangled_x86_64` | non-PIE x86-64 C++, not stripped | symbol demangling (`s1_demangle`): a defined `.symtab` C++ method `_ZN3foo3Bar3bazEi` must surface name-only as `foo::Bar::baz` |
 | `dwarf_stripped_x86_64` | non-PIE x86-64, **`.symtab`/`.dynsym` FUNC names removed but `.debug_*` kept** | DWARF recovery (`s1_dwarf`): names + typed signatures of `add_values`/`compute`/`main` come **only** from `.debug_info` (the funcsym stream has none) |
 | `switchtab_x86_64` | non-PIE x86-64, dense `switch(x){0..7}` | address/jump tables (`addrtable`): an absolute 8-byte jump table in `.rodata` at vma `0x402008` (`jmp *0x402008(,%rdi,8)`) |

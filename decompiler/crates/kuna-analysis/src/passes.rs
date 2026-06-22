@@ -32,6 +32,16 @@ pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
         // `char *` lets the printer's pointer-char-constant path read the readonly
         // bytes via the StringManager and emit `puts("Username: ")`.
         Box::new(crate::s1_protos::LibProtoPass),
+        // S1 entry discovery: find function entry points for stripped targets —
+        // ELF e_entry, DT_INIT/DT_FINI + INIT_ARRAY/FINI_ARRAY pointer tables,
+        // `.eh_frame` FDE pcBegin starts, the x86-64 `_start`→`main` libc-start
+        // idiom, and conservative prologue byte patterns. Fuses Ghidra's
+        // EntryPointAnalyzer/ExternalEntryFunctionAnalyzer/FunctionStartAnalyzer
+        // + the GccExceptionAnalyzer `.eh_frame` FDE oracle into one additive pass
+        // (the commit seam's `out.entries` arm names + adds each discovered VMA,
+        // idempotent against the funcsym stream). After LibProtoPass so prototypes
+        // are seeded first. Always-on, like noreturn/libproto.
+        Box::new(crate::s1_entry::EntryDiscoveryPass),
         // S1 strings (StringLiteralPass) is implemented + tested but **disabled by
         // default**: kuna's printer renders a constant that maps to a *named* global
         // symbol as that symbol's NAME (`s_400915`), which SHADOWS the string-literal
