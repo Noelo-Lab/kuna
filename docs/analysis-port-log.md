@@ -134,9 +134,9 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `s1-demangle` | Demangling (`GnuDemanglerAnalyzer` + Rust) | easy | `cpp_mangled` `main`: call renders `foo::Bar::baz(...)` |
 | ✅ | `s1-libproto` | Library prototype seeding (`ApplyDataArchiveAnalyzer`) | med | fauxware `main`: `puts("Username: ")`, `puts("Password: ")`; `rejected`: `printf("Go away!")` |
 | 🟡 | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | implemented + tested but **disabled by default** — its named `char[]` symbol *blocks* literal rendering in kuna's printer; literals come from `s1-libproto` instead (see Increment 3) |
-| ⬜ | `s1-dwarf` | DWARF names+types (`DWARFAnalyzer`) | hard | cet_pie: real fn names + ≥1 typed param |
-| ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 4) |
-| ✅ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle, `GccExceptionAnalyzer`) | hard | fauxware: FDE starts ⊆ discovered entries (7 starts incl. `_start`/`main`) (Increment 4) |
+| ✅ | `s1-dwarf` | DWARF names+types (`DWARFAnalyzer`) via gimli | hard | dwarf_stripped: `add_values`/`compute`/`main` recovered (no .symtab); cet_pie: `elaborate_debug_symbol`'s param typed `char *` (subtasks 1+2; **subtask-3 stack-locals deferred**, engine change) |
+| ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5) |
+| ✅ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle, `GccExceptionAnalyzer`) | hard | fauxware: FDE starts ⊆ discovered entries (7 starts incl. `_start`/`main`) (Increment 5) |
 | ⬜ | `arm-mips-markers` | ARM `$t`/MIPS `$gp` mapping symbols | med | (needs ARM/MIPS fixture, not vendored) |
 | 🟡 | `addrtable` | Absolute address-table discovery (`AddressTableAnalyzer`) | med | implemented + tested but **disabled by default** (Ghidra `setDefaultEnablement(false)` + false-positive risk); scanner finds the 8-entry table @ `0x402008` in `switchtab_x86_64`. See Increment 4 |
 | 🟡 | `switch-recovery` | `DecompilerSwitchAnalyzer` | — | the engine **is** this (S2 jump-tables ported) |
@@ -505,11 +505,92 @@ count) are unaffected.
   fixtures); new `verify_s1_entry.rs` e2e gate green; `make test` **PARITY OK**
   (675/675); `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
 
-### Next candidates
+### Increment 6 — DWARF names + typed signatures (`DWARFAnalyzer`) via gimli ✅
 
-Per the work-list, in rough priority: **DWARF** (`s1-dwarf`, biggest naming/typing
-source, hard — `gimli`), the **printer change** to let `s1-strings` render literals
-(re-enables it), the **per-run `--option` gating** of all passes (the deferred
-conflict #4), and the **no-return × demangle** cross-pass seam fix (match the
-installed/demangled name). Entry discovery (`s1-entry-disc` + `s1-eh-frame`) landed
-in Increment 4. Inherited/out-of-scope items need no work (see table).
+**`s1-dwarf`** — port of `DWARFAnalyzer` (driver `DWARFAnalyzer.added()` →
+`DWARFFunctionImporter.importFunctions` + `DWARFFunction.read` + `DWARFDataTypeImporter.getDataType`).
+When a binary carries `.debug_*` sections the compiler has already recorded the
+source function names, parameter names, and *types*; this pass reads them and
+installs them onto kuna's symbol + type tables. New `s1_dwarf` module
+(`crates/kuna-analysis/src/s1_dwarf/mod.rs`), registered AFTER `LibProtoPass` in
+`passes.rs::default_passes()` (so a DWARF prototype wins over a libproto guess for
+the same name). Pure additive S1 pass — read-only over `ctx.file` + `ctx.arch`,
+skips cleanly (empty output, never fails) on a non-DWARF binary.
+
+**Dependency-substitution LOSS.** Ghidra hand-rolls a complete DWARF reader in
+`ghidra.app.util.bin.format.dwarf.*` (DWARFProgram, DebugInfoEntry, DIEAggregate,
+DWARFAbbreviation, StringTable). kuna substitutes **`gimli`** (the de-facto Rust
+DWARF reader, MIT/Apache) for that parser *wholesale* — the same move as BFD →
+`object`. Added `gimli = { version = "0.33", default-features=false,
+features=["read","std"] }` to `[workspace.dependencies]` (+ `gimli.workspace=true`
+in kuna-analysis), Cargo.lock committed for offline-gate safety. We use gimli's
+high-level `attr_string`/`attr_address` accessors so the DWARF-5 `strx`/`addrx`
+indirections (cet_pie is DWARF 5) resolve correctly.
+
+**Subtask 1 (names + globals).** Each *defined* `DW_TAG_subprogram` (one with
+`DW_AT_low_pc`; declaration-only DIEs — no low_pc / `DW_AT_declaration` — are
+skipped so the pass never fights libproto for the same imports) emits a
+`SymFact{Function}` at its entry VMA; each CU-top-level `DW_TAG_variable` with a
+`DW_OP_addr` location emits a `SymFact{Data}`. Reuses the existing commit arm 1
+(no engine change). Headline win on the new vendored `dwarf_stripped_x86_64`
+fixture (FUNC names ONLY in DWARF — `.symtab` stripped): `add_values`@0x401136,
+`compute`@0x401153, `main`@0x401198 are recovered and decompile by name instead of
+`FUN_`/`sub_`.
+
+**Subtask 2 (typed signatures — the headline).** A DIE→`Datatype` mapper (faithful
+reduction of `DWARFDataTypeImporter.getDataType`'s tag switch) maps base_type
+(by `DW_AT_encoding`: signed→TYPE_INT, unsigned→TYPE_UINT, signed/unsigned_char→
+char, float→TYPE_FLOAT, boolean→TYPE_BOOL), pointer_type, typedef/const/volatile/
+restrict (transparent pass-through), array_type, struct/union (named opaque),
+enum (→underlying int) against the arch's `TypeFactory`. A **recursion cap of
+depth 3** (port of `trackRecursion`) survives struct→ptr→struct type cycles. For
+each defined subprogram a `PrototypePieces{name, outtype, intypes, innames,
+first_var_arg_slot, output_storage:None}` is built from the return-type DIE +
+`DW_TAG_formal_parameter` children (`DW_TAG_unspecified_parameters` sets the
+vararg slot) and emitted into `AnalysisOutput.prototypes` — parked on the callee
+via the existing commit arm 5, exactly the path `s1-libproto` proved (no engine
+change). `ActionDefaultParams` then copies the DWARF callee signature into each
+caller. Verified end-to-end on cet_pie: `main` calls
+`elaborate_debug_symbol((char *)a1[1])` — the `char *binary` parameter type
+(DWARF `pointer → const → char`) typing the call argument, and the `int` return
+giving `int4 v1`, where the engine alone would emit `undefined8`/`long`. (cet_pie
+is non-stripped, so the *names* come from `.symtab`; DWARF's value here is the
+types.) Note: a `char *` (8-byte, register-width) applies and renders cleanly; a
+declared 4-byte `int` parameter passed in an 8-byte register stays `int8` after
+propagation (standard engine width behavior, not a DWARF-application failure — the
+return-type lock and pointer typing both verifiably apply).
+
+**Subtask 3 (DEFERRED — stack-local `ScopeLocal` map).** Per-local `DW_OP_fbreg`
+stack-variable naming+typing (`DWARFVariable.readLocalVariableStorage`) needs a
+new `locals` fact + an engine-side commit path mapping each into the function's
+`ScopeLocal` stack space with a typelock — a wave-3 engine change (database/console
+wiring). Left as a documented follow-up, parallel to the deferred
+`FindNoReturnFunctionsAnalyzer`. The `DwarfPass` already decodes `DW_OP_fbreg`
+locations to `None` (only `DW_OP_addr` globals are emitted), so wiring subtask-3
+is purely additive.
+
+**Faithful losses (DOC).** Skip `DW_TAG_label`, `DW_TAG_call_site`,
+inlined-subroutine, lexical-block comments, source-info/plate comments (listing
+cosmetics, zero decompiler-output payoff — same scope as the strings/demangle
+losses). Type recovery is name/signature-level: a struct maps to a *named opaque*
+struct (enough to render `struct foo *`), not a per-field layout. **PIE/load-bias
+limitation:** kuna's loader treats `DW_AT_low_pc` as the runtime VMA verbatim (true
+for cet_pie: DWARF low_pc 0x1357 == `.symtab` address); a nonzero load bias would
+need a base adjustment (Ghidra's `DWARFProgram.getCodeAddress`), DOC'd in the
+module.
+
+- **Tests:** new `s1_dwarf` unit tests (snapshot-parse both fixtures, assert the
+  defined-subprogram SymFacts + the `char *` param chain) + the e2e
+  `verify_s1_dwarf.rs` (name recovery on dwarf_stripped, typed `char *` on cet_pie);
+  `kuna-analysis` 36 tests pass; `make test` **PARITY OK** (675/675);
+  `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+
+### Next candidates (Wave 2/3 — engine seams, deferred)
+
+Wave 1 is complete (Increments 4–7: addrtable, entry-disc/eh-frame, DWARF, source-lang/Rust).
+What remains, per [`analysis-port-plan.md`](analysis-port-plan.md), all engine-touching:
+the **printer change** to let `s1-strings` render literals (re-enables it), the **per-run
+`--option` gating** of all passes (deferred conflict #4), the **no-return × demangle**
+cross-pass seam fix, the **DWARF subtask-3** stack-local map (engine change),
+**arch-markers** (ARM Thumb decode mode), **callfixup**, and **format-string** varargs
+typing. Inherited/out-of-scope items need no work (see table + inventory).

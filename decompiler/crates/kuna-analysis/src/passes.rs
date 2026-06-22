@@ -42,6 +42,13 @@ pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
         // idempotent against the funcsym stream). After LibProtoPass so prototypes
         // are seeded first. Always-on, like noreturn/libproto.
         Box::new(crate::s1_entry::EntryDiscoveryPass),
+        // S1 DWARF: recover function/global names and TYPED function signatures
+        // from `.debug_*` sections (the kuna analog of Ghidra's `DWARFAnalyzer`).
+        // Registered AFTER LibProtoPass so for any name both emit, the DWARF
+        // (real source) prototype wins (last-write in set_function_prototype_pieces).
+        // Skips cleanly on a non-DWARF binary. Subtask-3 (DW_OP_fbreg stack-local
+        // ScopeLocal map) is a deferred engine change — see s1_dwarf docs.
+        Box::new(crate::s1_dwarf::DwarfPass),
         // S1 strings (StringLiteralPass) is implemented + tested but **disabled by
         // default**: kuna's printer renders a constant that maps to a *named* global
         // symbol as that symbol's NAME (`s_400915`), which SHADOWS the string-literal

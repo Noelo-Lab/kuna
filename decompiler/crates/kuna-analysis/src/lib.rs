@@ -48,3 +48,4 @@ pub mod s1_strings;
 pub mod s1_protos;
 pub mod s1_addrtable;
 pub mod s1_entry;
+pub mod s1_dwarf;
