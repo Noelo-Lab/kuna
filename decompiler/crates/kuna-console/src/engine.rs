@@ -276,6 +276,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "entry_disc" => arch.analysis_entry_disc,
         "arm_markers" => arch.analysis_arm_markers,
         "mips_gp" => arch.analysis_mips_gp,
+        "mips_isa" => arch.analysis_mips_isa,
         "dwarf" => arch.analysis_dwarf,
         "callfixup" => arch.analysis_callfixup,
         "addrtable" => arch.analysis_addrtable,

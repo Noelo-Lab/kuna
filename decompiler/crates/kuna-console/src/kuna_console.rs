@@ -198,6 +198,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "entry_disc" => on_off(conf.analysis_entry_disc),
         "arm_markers" => on_off(conf.analysis_arm_markers),
         "mips_gp" => on_off(conf.analysis_mips_gp),
+        "mips_isa" => on_off(conf.analysis_mips_isa),
         "dwarf" => on_off(conf.analysis_dwarf),
         "callfixup" => on_off(conf.analysis_callfixup),
         "addrtable" => on_off(conf.analysis_addrtable),
