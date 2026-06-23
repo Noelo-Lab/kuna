@@ -1,5 +1,33 @@
 # kuna Progress Log
 
+## Session (2026-06-23) — analyzer-tier deferred frontier complete (Increments 14–17)
+
+Took on the whole deferred frontier from `docs/analysis-port-plan.md` (+ a completeness sweep
+for any other feasible analysis) as 4 parallel worktree sub-agents, integrated sequentially with
+all gates green. **Every deferred-frontier item that is feasible in-env is now done; the analyzer
+tier is essentially complete.**
+- **DWARF subtask-3 — named/typed stack locals** (Increment 14): the `ScopeLocal` seam was
+  reachable via the existing `seed_mapped_symbols`/`map addr` path; DWARF `DW_OP_fbreg` locals
+  (name + type + CFA-adjusted offset) now install as typelocked stack vars →
+  `int4 accumulator`/`counter` instead of `local_10` (fixture `stacklocal_x86_64`).
+- **Golang no-return + completeness sweep** (Increment 15): `GolangFunctionsThatDoNotReturn`
+  gated on Go detection (Go ELF built at test runtime). The sweep confirms **every feasible-at-tier
+  ELF analyzer is ported** (ELF matches base+rustc+golang no-return lists); the only feasible
+  remainder is the cosmetic `_INIT_`/`_FINI_` array-element naming (addresses already discovered).
+- **format-string-B — varargs typing** (Increment 16, gated off): `--option formatstring on`
+  reads the printf format constant at the call site, parses it, installs a per-call-site proto
+  override, re-decompiles → `printf("%d %s\n",a0,(char *)*a1)`. Default-off → byte-identical.
+- **MIPS `$gp` recovery + ARM Thumb-FUNC re-home** (Increment 17): tracked-register seam
+  (`create_set`/`TrackedContext`/`ActionConstbase`); seeds `t9 = func_entry` (MIPS PIC ABI) so
+  `$gp`-relative GOT loads resolve (fixture `mips_gp_le32`, built with `mipsel-linux-gnu-gcc`).
+  ARM Thumb FUNCs are now also known at their even entry. **ARM decode e2e remains off-host
+  blocked** (no ARM linker in-env) — the only remaining frontier gap, plus the cosmetic init-array
+  naming.
+- New options (settables 31→33): `formatstring` (default off), `mips_gp` (default on). New
+  fixtures: `stacklocal_x86_64`, `fmt_x86_64`, `mips_gp_le32` (+ runtime-built Go). All gates held
+  675/675, 158/158, `make rust-test`, `kuna catalog --check`. PR #10 (branch
+  `analysis-port-noreturn`) carries Increments 1–17.
+
 ## Session (2026-06-23) — DWARF stack-local recovery (subtask 3, Increment 14)
 
 Resolved the last deferred DWARF piece — per-function **named, typed stack locals** — without a
