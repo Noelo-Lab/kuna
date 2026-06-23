@@ -1418,6 +1418,56 @@ catalog --check` **catalog OK**.
   registration). `kuna-decomp` count tests bumped (settable 31→32) + `stage_catalog.json`
   fixture regenerated.
 
+### Increment 20 — RISC-V64 PLT import-name end-to-end (linked fixture) ✅
+
+Proves the `elf_plt.rs` RISC-V PLT-veneer decoder end-to-end on a **real, linked,
+dynamically-linked RISC-V64 executable**. Increment 1 (`plt-got`) already carried the RISC-V
+(RV32/RV64) arm of the per-arch PLT decoder (`decode_riscv`: the 16-byte
+`auipc t3,hi; l[wd] t3,lo(t3); jalr t1,t3; nop` GNU `ld` import veneer) plus a synthetic
+unit test pinning its arithmetic (`riscv_plt_decode`, positive + sign-extended-negative lo12),
+but the proof had run only on x86 fixtures — no linked RISC-V binary existed in-tree to
+exercise the full ELF parse → GOT-name-map → stub-decode → funcsym install → decode → print
+path. A dev container now carries a RISC-V64 toolchain + linker, so this increment vendors a
+linked fixture and adds the e2e gate.
+
+**No `elf_plt.rs` change was needed.** The RISC-V decoder, the `build_got_name_map`
+(`R_RISCV_JUMP_SLOT` → `.dynsym` name), and the `bootstrap_from_elf` arch auto-detect
+(`RISCV:LE:64:default` → `riscv.lp64d.sla`) all resolve the imports as-is. The increment is
+purely **additive coverage** (one linked fixture + one console e2e), so the XML datatest oracle
+is structurally untouched (the `<binaryimage>` path never constructs an `ObjectLoadImage`).
+
+**Fixture (`plt_riscv64`, 8520 bytes, source `plt_riscv64.c` vendored alongside).** A dynamic
+RISC-V64 PIE built with `riscv64-linux-gnu-gcc 11.4.0` (`-O0`, not stripped). `main` (`0x6b8`)
+calls `puts("hello")` (`puts@plt`=`0x5e0` → GOT slot `0x2020`) and `printf("%d\n", argc)`
+(`printf@plt`=`0x5f0` → GOT slot `0x2028`); both are `R_RISCV_JUMP_SLOT` relocations in
+`.rela.plt` naming `puts`/`printf`, and the stubs are the textbook
+`auipc t3,0x2; ld t3,-N(t3); jalr t1,t3; nop` veneer the decoder recognizes (the compressed
+`main` body also decodes — RVC). The build host's `kuna-dev` image ships `libc6-riscv64-cross`
+(shared libs) but not the dev package; the fixture build installs `libc6-dev-riscv64-cross`
+(headers + crt1) in the same root container invocation (see fixtures/README.md provenance).
+
+**Result (the proof).** `kuna decompile plt_riscv64 main`:
+
+```c
+unsigned long main(int4 a0)
+
+{
+  puts("hello");
+  printf("%d\n",(int8)a0);
+  return 0;
+}
+```
+
+The PLT imports render as `puts`/`printf` (not `sub_5e0`/`sub_5f0`), and the `.rodata` string
+constants are recovered too. `make test` **675/675 PARITY OK**; `make test-stages`
+**158/158 PARITY OK**; `make rust-test` green.
+
+- **Tests:** `kuna-console` +1 e2e (`verify_riscv64_plt.rs`,
+  `riscv64_plt_calls_are_named_in_decompiled_c`) — modeled on `verify_w11_elf_plt_names.rs`
+  (x86), same specs-absent skip guard; it asserts `main` decoded (real, not skipped) and that
+  `puts(`/`printf(` are named while `sub_5e0`/`sub_5f0` are gone. This retires the
+  RISC-V half of the "decode e2e proven only on x86" caveat; the ARM-link e2e remains the lone
+  off-host blocker (no in-env ARM linker).
 ### Increment 19 — AArch64 PLT import-name end-to-end (linked fixture) ✅
 
 **What.** Proved the `elf_plt` AArch64 path (`src/s1_loader/elf_plt.rs::decode_aarch64`) resolves
