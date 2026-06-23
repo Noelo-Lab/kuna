@@ -40,23 +40,36 @@ Each analysis implements **`kuna_analysis::pass::AnalysisPass`** — the
 generalization of the de-facto `elf_plt` contract: a focused module that reads
 the object and produces a flat, deduplicated `AnalysisOutput` of *facts*
 (symbols, entries, no-return names, read-only ranges), never panicking and never
-failing — it only ever contributes more knowledge. `run_analyses()` merges all
-enabled passes; the merged output is then committed once into the engine at the
-bootstrap seam (`kuna-console`'s `engine::bootstrap_from_elf`). Each pass's
-`id()` registers in `stages.toml` like the `kuna_*` sub-stage fixes, so it
-appears in `kuna catalog --json` and is flippable per-decompilation via
-`--option <id> on|off` (and can default off, keeping the XML datatest gate — which
-never constructs an `ObjectLoadImage` — untouched).
+failing — it only ever contributes more knowledge. Each pass's `id()` registers
+in `stages.toml` as a settable option (and in `KUNA_OPTION_NAMES`), so it appears
+in `kuna catalog --json` and is **flippable per-decompilation via `--option <id>
+on|off`** — implemented as of the analysis-port "option-gating" Increment. The
+passes are **default-on** (faithful to Ghidra's default-on analyzers), except
+`addrtable`, which ships **off** (Ghidra `AddressTableAnalyzer` parity).
+
+The gating's commit timing: `bootstrap_from_elf` runs
+`run_default_analyses_per_pass` and **stashes** the per-pass `AnalysisOutput` on
+the `ConsoleProgram` at load (it does NOT commit eagerly). The commit is deferred
+to `read symbols` (`IfcReadSymbols::commit_pending_analysis`), which runs AFTER
+the CLI's `option` lines (the `build_script` emits `option …` before `read
+symbols`), so a per-run gate is in effect: each pass's enable flag
+(`Architecture::analysis_*`) is consulted and a disabled pass's facts are
+dropped. The XML datatest path stashes nothing, so the gated commit is a no-op
+there — the parity gate (which never constructs an `ObjectLoadImage`) is
+structurally untouched.
 
 > Status: the crate, the `AnalysisPass` interface, the relocated PLT/GOT path,
-> **and the generic commit seam are in place**. `bootstrap_from_elf` now runs
-> `kuna_analysis::passes::run_default_analyses` and commits the merged
-> `AnalysisOutput` via `engine.rs::commit_analysis_output` (function/data/entry/
-> no-return fact kinds wired). The first pass on the seam — **no-return**
-> (`NoReturnFunctionAnalyzer`) — is done. The PLT path still commits inline in
-> `loadimage_object` (lifting it onto the pass list is cosmetic and deferred). The
-> running process log is **[`analysis-port-log.md`](analysis-port-log.md)**; the
-> per-analysis roadmap with testcases is at the bottom of this file.
+> the generic commit seam, **and per-run `--option` gating of every pass are in
+> place**. `bootstrap_from_elf` stashes the per-pass `AnalysisOutput` and commits
+> it (gated) via `engine.rs::commit_analysis_output` at `read symbols`
+> (function/data/entry/no-return/strings/prototypes/context/call-fixup fact kinds
+> wired). All Wave-1/2/3 passes are done (no-return, demangle, strings, libproto,
+> entry-disc, ARM markers, DWARF, call-fixup) and the printer renders
+> readonly-char-array symbols as string literals. The PLT path still commits
+> inline in `loadimage_object` (lifting it onto the pass list is cosmetic and
+> deferred). The running process log is
+> **[`analysis-port-log.md`](analysis-port-log.md)**; the per-analysis roadmap
+> with testcases is at the bottom of this file.
 
 ## Legend
 
@@ -255,7 +268,7 @@ debug-format reader or a discovery loop). Vendored fixtures live in
    `StringsAnalyzer` mechanism is implemented but disabled. See
    [`analysis-port-log.md`](analysis-port-log.md) Increment 3 for the full finding.
 
-The remaining roadmap items (DWARF, entry discovery, the printer change that re-enables
-the strings pass, per-run option gating) are tracked in
-[`analysis-port-log.md`](analysis-port-log.md). None of the work touches the XML datatest
-parity path — both gates stay green.
+DWARF, entry discovery, the printer change that re-enables the strings pass, and **per-run
+option gating** (each pass flippable via `--option <id> on|off`, conflict #4) are all DONE —
+see [`analysis-port-log.md`](analysis-port-log.md) Increments 5–13. None of the work touches
+the XML datatest parity path — both gates stay green.

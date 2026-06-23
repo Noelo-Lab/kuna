@@ -203,19 +203,20 @@ guard asserting `run_default_analyses` is never invoked on the XML path is a
 recommended follow-up (today the structural separation + `make test` PARITY is
 the de-facto guard).
 
-## Open architectural decision: per-run option gating (deferred)
+## Open architectural decision: per-run option gating (✅ RESOLVED — Increment "option-gating")
 
 `docs/missing-analyses.md` promises each pass be flippable via `--option <id> on|off`
-and discoverable in `kuna catalog`. There is a real ordering wrinkle: the analysis
-commit happens in the `load file` body (`bootstrap_from_elf`), but `kuna decompile`
-emits `option <id> <val>` *after* `load file`, so the gate would be a no-op as
-wired. **Resolution (deferred to a dedicated increment):** move the `option` lines
-before `read symbols` in the CLI `build_script`, stash the per-pass `AnalysisOutput`
-on the program at load, and commit (gated by the now-set option) inside the
-currently-stub `IfcReadSymbols`. Until then, passes are **default-on and bound to
-the ELF path** (faithful to Ghidra's default-on analyzers, parity-safe), but not
-yet per-run toggleable via `--option`. The pre-existing per-name surface
-`--option noreturn <name>` still works as a manual override.
+and discoverable in `kuna catalog`. There was a real ordering wrinkle (**conflict #4**):
+the analysis commit happened in the `load file` body (`bootstrap_from_elf`), but `kuna
+decompile` emits `option <id> <val>` *after* `load file`, so a per-run gate would be a
+no-op as wired. **This is now resolved** (see the "option-gating" Increment below): the
+per-pass `AnalysisOutput` is stashed on the program at load, the commit is deferred to
+`IfcReadSymbols` (`read symbols`), the CLI `build_script` emits the `option` lines
+**before** `read symbols`, and the commit consults each pass's per-id enable flag and
+drops a disabled pass's facts. All eight pass ids are registered settable options
+(`stages.toml` + `KUNA_OPTION_NAMES`), default-on (except `addrtable`, off — Ghidra
+parity), so behavior is unchanged when no `--option` is passed. The pre-existing
+per-name surface `--option noreturn <name>` still works as a manual override.
 
 ## Increments
 
@@ -1005,14 +1006,71 @@ change that same call would have rendered the bare `s_<addr>` name.
   `kuna-analysis` 88 tests pass. `make test` **PARITY OK** (675/675 — byte-identical);
   `make test-stages` **PARITY OK** (158/158 — byte-identical); `make rust-test` green.
 
+### Increment 13 — per-run `--option <id> on|off` gating of the analysis passes (conflict #4) ✅
+
+Makes each `kuna_analysis` pass flippable per decompilation and discoverable in `kuna
+catalog`, resolving the deferred **conflict #4** (the commit-timing ordering bug above).
+
+**The commit-timing change (the core fix).** The analysis-pass commit moved OUT of the eager
+`bootstrap_from_elf` body and INTO the (previously stub) `IfcReadSymbols` handler (`read
+symbols`). At load, `bootstrap_from_elf` now calls the new
+`kuna_analysis::passes::run_default_analyses_per_pass` (returns `Vec<(&'static str,
+AnalysisOutput)>` — per-pass split keyed by `AnalysisPass::id`) and **stashes** that on the
+`ConsoleProgram` (`pending_analysis` + the captured `analysis_code_space`) instead of
+committing. `read_loader_symbols()` + the readonly loader markup stay eager where they were
+(they are NOT gated passes; the invariant "commit AFTER `read_loader_symbols`" is preserved —
+the deferred commit runs strictly later). `ConsoleProgram::commit_pending_analysis` drains the
+stash, keeps only the **enabled** passes' outputs (per-id flag via `analysis_pass_enabled`),
+merges them in pass order, and runs the existing `commit_analysis_output`. `IfcReadSymbols`
+calls it; `IfcFuncload`/`IfcAddrrangeLoad` call it as a fail-open safety commit (a hand
+session that skips `read symbols` still gets the default-on facts before any decode).
+
+**The build_script reorder.** `kuna-cli`'s `build_script` now emits the `option <id> <val>`
+lines **before** `read symbols` (was after), so a per-run gate is set before the commit reads
+it. Upstream/printer options are order-independent w.r.t. `read symbols`, so this is safe.
+
+**The option registration (option (a) — names in `KUNA_OPTION_NAMES`).** Eight settable rows
+added to `stages.toml` (`noreturn_known`, `libproto`, `strings`, `entry_disc`, `arm_markers`,
+`dwarf`, `callfixup`, `addrtable`) — the option id IS the pass's `id()`. Each has **no
+`live_field`** (they flip a plain `analysis_*` bool, not a printer/engine "live value"
+reader), so the codegen `live_from_arch`/`live_value` returns `None` for them; their live
+`current` state is surfaced console-side via the hand-written `kuna_live_value`. The same
+eight names were added to `kuna_decomp::options::KUNA_OPTION_NAMES` and eight `on_off!` arms to
+`Architecture::set_kuna_option`, backed by eight new `analysis_*: bool` fields on
+`Architecture` (defaulted in `reset_defaults_internal`: all **on** except `addrtable` **off**,
+matching Ghidra's `AddressTableAnalyzer.setDefaultEnablement(false)`). Choosing option (a)
+keeps `kuna catalog --check` (which cross-checks `KUNA_OPTION_NAMES` ↔ the catalog) green.
+
+**Defaults / parity.** All-on (except addrtable) = the prior always-on behavior, so the
+default render is unchanged. Bound to the real-ELF path only: the XML datatest path stashes
+nothing, so the gated commit is a structural no-op there.
+
+**Result (the proof).** `kuna decompile fauxware main` — UNCHANGED (`puts("Username: ")`
+etc.). `kuna decompile fauxware rejected --option noreturn_known off` → the no-return is NOT
+applied: `exit()` renders as returning and the dead fall-through reappears (vs the default
+clean `exit(1)` terminator). `kuna catalog --json` lists all 8 pass options; `kuna catalog
+--check` → `catalog OK`.
+
+- **Divergence/LOSS:** none to the parity oracles — default behavior unchanged. The per-pass
+  gating granularity is the pass-output split (a disabled pass's *whole* output is dropped);
+  this is faithful to Ghidra's per-analyzer enablement. No new analysis logic.
+- **Tests:** count tests bumped (settable 23→31: `stages.toml` header, `kuna_stages` tests,
+  `catalog_bytecompat`), the `stage_catalog.json` byte-compat fixture regenerated (31 rows),
+  the live-reader allowlist test extended for the 8 no-`live_field` gates. Two e2e gates that
+  inspected committed facts directly after `bootstrap_from_elf` (`verify_s1_entry`,
+  `verify_s1_strings`) now call `commit_pending_analysis()` first (the new contract). `make
+  test` **PARITY OK** (675/675); `make test-stages` **PARITY OK** (158/158); `make rust-test`
+  green; `kuna catalog --check` **catalog OK**.
+
 ### Next candidates (Wave 3 — remaining engine seams)
 
 Wave 1 complete (Increments 4–7). **Wave 2 complete** (Increments 8–10): ARM/Thumb context
-painting, the format-string parser half (A), and cspec call-fixup auto-apply. **Wave 3 in
-progress:** the **no-return × demangle** seam (Increment 11) and the **printer change** that
-re-enables `s1-strings` (Increment 12) are DONE. What remains, per
-[`analysis-port-plan.md`](analysis-port-plan.md): the **per-run `--option` gating** of all
-passes (deferred conflict #4), the **DWARF subtask-3** stack-local map (engine change),
-**format-string-B** (the decompile-loop varargs override wiring, building on Increment 9's
-parser), and the **arch-markers e2e + Thumb-FUNC re-home / MIPS `$gp`** follow-ups (need a
-LINKED ARM / MIPS fixture). Inherited/out-of-scope items need no work (see table + inventory).
+painting, the format-string parser half (A), and cspec call-fixup auto-apply. **Wave 3:** the
+**no-return × demangle** seam (Increment 11), the **printer change** that re-enables
+`s1-strings` (Increment 12), and the **per-run `--option` gating** of all passes (Increment 13
+— conflict #4 RESOLVED) are DONE. What remains, per
+[`analysis-port-plan.md`](analysis-port-plan.md): the **DWARF subtask-3** stack-local map
+(engine change), **format-string-B** (the decompile-loop varargs override wiring, building on
+Increment 9's parser), and the **arch-markers e2e + Thumb-FUNC re-home / MIPS `$gp`**
+follow-ups (need a LINKED ARM / MIPS fixture). Inherited/out-of-scope items need no work (see
+table + inventory).

@@ -188,6 +188,18 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
         "realtypes" => on_off(conf.realtypes),
+        // (kuna) Analysis-pass gates: the live `current` field reflects each pass's
+        // per-run enable flag (set by `--option <id> on|off`). Real-ELF path only;
+        // with no program loaded these never reach (kuna_live_value's caller passes
+        // None), so the no-program catalog byte-compat fixture is untouched.
+        "noreturn_known" => on_off(conf.analysis_noreturn_known),
+        "libproto" => on_off(conf.analysis_libproto),
+        "strings" => on_off(conf.analysis_strings),
+        "entry_disc" => on_off(conf.analysis_entry_disc),
+        "arm_markers" => on_off(conf.analysis_arm_markers),
+        "dwarf" => on_off(conf.analysis_dwarf),
+        "callfixup" => on_off(conf.analysis_callfixup),
+        "addrtable" => on_off(conf.analysis_addrtable),
         // C++: return ""; -> no current field.
         _ => return None,
     })

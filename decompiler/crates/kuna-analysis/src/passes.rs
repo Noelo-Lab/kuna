@@ -148,6 +148,31 @@ pub fn run_default_analyses(
     run_analyses(&ctx, &passes_for(compiler))
 }
 
+/// Like [`run_default_analyses`], but keep each pass's output keyed by its
+/// [`AnalysisPass::id`] instead of merging.
+///
+/// This is the per-run-gating entry: the console stashes the per-pass split at
+/// load and commits only the **enabled** passes' facts at `read symbols` (after
+/// the per-pass `--option <id> on|off` flags have been applied). The id is the
+/// pass's `id()` string, which doubles as its settable-option name (`stages.toml`
+/// + `KUNA_OPTION_NAMES`). A parse failure yields an empty list (additive, never
+/// fails). Pairs preserve pass order so the commit order is deterministic.
+pub fn run_default_analyses_per_pass(
+    bytes: &[u8],
+    image: &ObjectLoadImage,
+    arch: &Architecture,
+) -> Vec<(&'static str, AnalysisOutput)> {
+    let Ok(file) = object::File::parse(bytes) else {
+        return Vec::new();
+    };
+    let compiler = crate::s1_sourcelang::detect_compiler(&file);
+    let ctx = AnalysisCtx { file: &file, image, arch };
+    passes_for(compiler)
+        .iter()
+        .map(|pass| (pass.id(), pass.run(&ctx)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

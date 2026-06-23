@@ -76,7 +76,7 @@ fn planted_string_symbol_and_literal_coexist() {
         None => return,
     };
 
-    let prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let mut prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(
@@ -87,6 +87,11 @@ fn planted_string_symbol_and_literal_coexist() {
             return;
         }
     };
+
+    // (kuna) Analysis facts now commit at `read symbols` (gated by `--option`),
+    // not eagerly at bootstrap — trigger the commit (what `IfcReadSymbols` does)
+    // so the planted string symbol is visible to the direct symbol-table query.
+    prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     // The StringLiteralPass + commit seam planted the typelocked `char[N]` data
     // symbol `s_400915` at the "Username: " address — the Ghidra StringsAnalyzer

@@ -435,7 +435,7 @@ Each accepted table yields, per element, a `SymFact{ addr: target, name: format!
 - LOSS: no listing/Bookmark/`makeTable`/`autoLabel` side effects (Ghidra mutates the Program listing; kuna has no pre-decompile listing — same tier limitation already documented for the noreturn "Discovered" analyzer in noreturn.rs:9-15). kuna emits *facts only*.
 - LOSS: no index-table (secondary byte-index) recovery (getEntry :1267-1328, `checkForIndex`) and no shifted-address tables — document as deferred; they are rare on x86-64 ELF.
 - LOSS: roadmap #9 multistage refinement is explicitly deferred to a future ENGINE task (not this pass).
-- Keep the pass disabled-by-default in `default_passes()` (Ghidra parity + low payoff + over-acceptance risk), with the gate id wired so `--option addrtable on` enables it once the per-run option-gating increment lands (the deferred conflict #4 in analysis-port-log.md:179).
+- Keep the pass disabled-by-default in `default_passes()` (Ghidra parity + low payoff + over-acceptance risk). The per-run option-gating increment (conflict #4) has LANDED: `addrtable` is a registered settable, default **off**; `--option addrtable on` enables it per-run. (The `AddrTablePass` row in `passes_for` is still commented out — flipping its default requires uncommenting it AND defaulting `analysis_addrtable=true`; today the gate exists but the pass is not in the list, so `--option addrtable on` is a no-op until the pass is uncommented. The gate registration is faithful and parity-safe.)
 
 **Risks.** ## Faithfulness / payoff risks
 
@@ -707,9 +707,9 @@ Flip `Rust/RustStringAnalyzer` from `⬜ deferred` to a documented PARTIAL in do
 
 **SCOPE/LOSS:** purely a render coexistence fix; the strings pass logic is unchanged. If the A/B shows the literal still comes from libproto's `char*` typing (not the planted symbol) and the planted symbol is genuinely inert, the lighter alternative is to skip planting a symbol where the literal already renders — but the brief's intent is the printer change, so prefer teaching the arm to prefer the literal.
 
-## Sub-item (2) — PER-RUN OPTION GATING of analysis passes (conflict #4)
+## Sub-item (2) — PER-RUN OPTION GATING of analysis passes (conflict #4) ✅ DONE (analysis-port-log.md Increment 13)
 
-**Goal:** make each pass id (`noreturn_known`, `strings`, `s1-libproto`/`LibProtoPass`'s id, future passes) a settable assertion so `kuna catalog` lists it and `kuna decompile --option <id> on|off` toggles whether its facts are committed.
+**Goal (achieved):** make each pass id (`noreturn_known`, `libproto`, `strings`, `entry_disc`, `arm_markers`, `dwarf`, `callfixup`, `addrtable`) a settable assertion so `kuna catalog` lists it and `kuna decompile --option <id> on|off` toggles whether its facts are committed. Implemented via option (a) — names in `KUNA_OPTION_NAMES` + a per-id `analysis_*` bool on `Architecture`; commit deferred from `bootstrap_from_elf` to `IfcReadSymbols`; `build_script` emits `option …` before `read symbols`. Default-on (except `addrtable` off). See the Increment 13 writeup for the full shape.
 
 **The ordering bug (confirmed):** CLI `build_script` (`kuna-cli/src/decompile.rs:48-55`) emits `load file` → `read symbols` → `option ...`. But the analysis commit runs inside `bootstrap_from_elf` (`kuna-console/src/engine.rs:490-520`, at `load file`), BEFORE any `option` line arrives. So a gate option set on the command line is a no-op as wired.
 

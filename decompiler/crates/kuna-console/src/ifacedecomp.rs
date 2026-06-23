@@ -916,6 +916,12 @@ decomp_command!(
         // from the binaryimage's own symbol records (the readLoaderSymbols seam).
         let flow_overrides = dcp.pending_flow_overrides.get(&funcname).cloned().unwrap_or_default();
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        // (kuna) Safety commit: if a session loads a function without an explicit
+        // `read symbols`, commit the stashed analysis facts now (default gates;
+        // no-op once committed). The CLI always emits `read symbols` first, where
+        // the per-pass `--option` gates apply; this only covers a hand session.
+        prog.commit_pending_analysis()
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         let entry = match prog.lookup_symbol(&funcname) {
             Some(addr) => addr,
             None => return Err(IfaceError::execution(format!("Unknown function name: {funcname}"))),
@@ -945,6 +951,10 @@ decomp_command!(
             return Err(IfaceError::execution("No binary loaded"));
         }
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        // (kuna) Safety commit (see IfcFuncload): commit stashed analysis facts if
+        // a session reaches `load addr` without an explicit `read symbols`.
+        prog.commit_pending_analysis()
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         // C++ Address offset = parse_machaddr(s,size,*dcp->conf->types) — the full
         // console address grammar over the engine spaces.
         let (offset, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
@@ -978,8 +988,19 @@ decomp_command!(
         // C++ `dcp->conf->readLoaderSymbols("::")`.  The kuna XML engine reads the
         // binaryimage's `<symbol>` records into the program's name→address table
         // at `load file` (the readLoaderSymbols seam runs eagerly there), so the
-        // symbols are already available; this is a faithful no-op success (the
-        // symbol-table `Scope::addFunction` markup is a later W4 item).
+        // symbols are already available.
+        //
+        // (kuna) This is also the gated-commit point for the kuna_analysis passes:
+        // `bootstrap_from_elf` STASHES the per-pass facts at load (no longer
+        // commits them eagerly) so they can be committed here, AFTER the per-pass
+        // `--option <id> on|off` flags have been applied — the CLI `build_script`
+        // emits the `option` lines BEFORE `read symbols`. A disabled pass's facts
+        // are dropped; the default (all-on except addrtable) commit is identical to
+        // the old eager behavior. A no-op on the XML datatest path (nothing
+        // stashed), so the 675/158 parity oracles are structurally untouched.
+        let prog = dcp.conf.as_mut().expect("conf checked non-None above");
+        prog.commit_pending_analysis()
+            .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         Ok(())
     }
 );

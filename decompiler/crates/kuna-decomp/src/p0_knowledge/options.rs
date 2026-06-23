@@ -229,12 +229,17 @@ pub const ELEM_HIDEEXTENSIONS: ElementId = ElementId::new("hideextensions", 4090
 // kuna option names (kuna_stages.cc settableTable, options.cc:156-177).
 // ---------------------------------------------------------------------------
 
-/// The 22 kuna-registered option names (`OptionDatabase` ctor, options.cc) plus
-/// the additional kuna ArchOptions registered there that are not in the 22-row
-/// settable catalog.  Their `ArchOption` impls + `ELEM_*` (4000+) live in the
-/// `kuna_*.rs` modules; `w4-kuna-p0-pack` wires each into the database via
-/// [`OptionDatabase::register_option`].  Listed here so the registration set is
-/// documented in one place and a missing wiring is a visible gap, not silent.
+/// The kuna-registered option names: the 23 stage-model knobs (`OptionDatabase`
+/// ctor, options.cc) plus the 8 analysis-pass gates (per-run `--option <id>
+/// on|off` enablement of the `kuna_analysis` passes — see
+/// `docs/missing-analyses.md`).  The stage-model knobs' `ArchOption` impls +
+/// `ELEM_*` (4000+) live in the `kuna_*.rs` modules; the analysis-pass gates flip
+/// a plain `analysis_*` bool on the `Architecture` (no `ELEM_*`), consulted by
+/// the console's `commit_analysis_output`.  All route through
+/// [`crate::architecture::Architecture::set_kuna_option`].  Listed here so the
+/// registration set is documented in one place and a missing wiring is a visible
+/// gap, not silent — this list must equal the `SETTABLE_TABLE` rows
+/// (`stages.toml`), which `kuna catalog --check` cross-checks.
 pub const KUNA_OPTION_NAMES: &[&str] = &[
     "compareform",
     "arraynotation",
@@ -259,6 +264,20 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "stackguard",
     "namestyle",
     "realtypes",
+    // (kuna) Analysis-pass gates (per-run `--option <id> on|off`): one settable
+    // per `kuna_analysis::passes` pass id, default-on (except `addrtable`, off).
+    // These do NOT dispatch through the upstream `OptionDatabase`; like the other
+    // kuna options they route to `Architecture::set_kuna_option`, which flips the
+    // matching `analysis_*` enable flag the console's `commit_analysis_output`
+    // reads. See `docs/missing-analyses.md` "Where these live".
+    "noreturn_known",
+    "libproto",
+    "strings",
+    "entry_disc",
+    "arm_markers",
+    "dwarf",
+    "callfixup",
+    "addrtable",
 ];
 
 // ---------------------------------------------------------------------------

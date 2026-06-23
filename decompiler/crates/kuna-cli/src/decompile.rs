@@ -49,10 +49,16 @@ fn build_script(
         Some(t) if !t.is_empty() => lines.push(format!("load file {t} {binary}")),
         _ => lines.push(format!("load file {binary}")),
     }
-    lines.push("read symbols".into());
+    // `option` lines MUST precede `read symbols`: the kuna_analysis passes are
+    // committed (gated by the per-pass `--option <id> on|off` flags) inside
+    // `read symbols` (IfcReadSymbols -> commit_pending_analysis). Emitting the
+    // options first lets a per-run pass gate take effect; an option after the
+    // commit would be a no-op (the analysis-port conflict #4 ordering fix). The
+    // upstream/printer options here are order-independent w.r.t. `read symbols`.
     for (name, value) in options {
         lines.push(format!("option {name} {value}"));
     }
+    lines.push("read symbols".into());
     if by_address {
         let addr = if target.starts_with("0x") || target.starts_with("0X") {
             target.to_string()

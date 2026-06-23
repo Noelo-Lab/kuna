@@ -76,9 +76,10 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_23_settables() {
-    // One `"option":` per settable row.
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 23);
+fn fixture_has_all_31_settables() {
+    // One `"option":` per settable row: 23 stage-model knobs + 8 analysis-pass
+    // gates (per-run `--option <id> on|off` enablement of the kuna_analysis passes).
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 31);
 }
 
 #[test]

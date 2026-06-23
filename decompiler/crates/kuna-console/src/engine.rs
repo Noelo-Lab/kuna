@@ -85,6 +85,20 @@ pub struct ConsoleProgram {
     /// A human-readable description of the loaded program (C++
     /// `conf->getDescription()`).
     description: String,
+    /// (kuna) Per-pass analysis facts stashed at load (real-ELF path only),
+    /// keyed by `AnalysisPass::id`, awaiting the gated commit at `read symbols`.
+    ///
+    /// The commit is **deferred** out of `bootstrap_from_elf` so it runs AFTER the
+    /// per-pass `--option <id> on|off` flags are applied (the CLI emits the
+    /// `option` lines before `read symbols`). `IfcReadSymbols` consults each pass's
+    /// enable flag on the `Architecture` and commits only the enabled passes'
+    /// facts (see [`commit_analysis_passes`]). Empty on the XML datatest path (no
+    /// analysis tier runs), so the gated commit is a faithful no-op there. The
+    /// stash is drained on commit so a second `read symbols` does not re-commit.
+    pending_analysis: Vec<(&'static str, kuna_analysis::pass::AnalysisOutput)>,
+    /// (kuna) The engine default code space captured at load, used to build the
+    /// `Address`es when the stashed analysis facts are committed at `read symbols`.
+    analysis_code_space: Option<Rc<AddrSpace>>,
 }
 
 impl ConsoleProgram {
@@ -166,6 +180,54 @@ impl ConsoleProgram {
     pub fn register_symbol(&mut self, name: &str, addr: Address) {
         self.symbols.retain(|s| s.name != name);
         self.symbols.push(ProgramSymbol { name: name.to_string(), addr });
+    }
+
+    /// (kuna) Commit the stashed per-pass analysis facts, gated by the per-pass
+    /// `--option <id> on|off` enable flags — the deferred half of the analysis
+    /// seam (conflict #4). Called from `IfcReadSymbols` (`read symbols`), which
+    /// runs AFTER the CLI's `option` lines, so a disabled pass's facts are
+    /// dropped here rather than committed.
+    ///
+    /// Drains the stash (so a second `read symbols` does not re-commit), merges
+    /// only the **enabled** passes' outputs in pass order, and commits the merged
+    /// [`AnalysisOutput`] via [`commit_analysis_output`]. A no-op when nothing is
+    /// stashed (the XML datatest path — parity is structurally untouched).
+    pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
+        if self.pending_analysis.is_empty() {
+            return Ok(());
+        }
+        let pending = std::mem::take(&mut self.pending_analysis);
+        let Some(code_space) = self.analysis_code_space.take() else {
+            // No code space captured (should not happen on the ELF path); nothing
+            // to commit against.
+            return Ok(());
+        };
+        // Filter by the per-pass enable flags (default-on, set by the user's
+        // `--option <id> on|off`), then merge the survivors in pass order.
+        let mut merged = kuna_analysis::pass::AnalysisOutput::default();
+        for (id, out) in pending {
+            if analysis_pass_enabled(self.arch(), id) {
+                merged.merge(out);
+            }
+        }
+        commit_analysis_output(self, &code_space, merged)
+    }
+}
+
+/// (kuna) Read a `kuna_analysis` pass's per-run enable flag off the
+/// [`Architecture`] by the pass's `AnalysisPass::id`. An unknown id defaults to
+/// enabled (a new pass with no registered gate still runs — fail-open, additive).
+fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
+    match pass_id {
+        "noreturn_known" => arch.analysis_noreturn_known,
+        "libproto" => arch.analysis_libproto,
+        "strings" => arch.analysis_strings,
+        "entry_disc" => arch.analysis_entry_disc,
+        "arm_markers" => arch.analysis_arm_markers,
+        "dwarf" => arch.analysis_dwarf,
+        "callfixup" => arch.analysis_callfixup,
+        "addrtable" => arch.analysis_addrtable,
+        _ => true,
     }
 }
 
@@ -395,7 +457,16 @@ pub fn bootstrap_program(
 
     // Slice the XML leaf back to its `SleighArchitecture` (the XML-specific
     // loader/adjustvma machinery is spent; the engine owns the opened image).
-    let mut prog = ConsoleProgram { arch: arch.into_sleigh(), registry, symbols, description };
+    // The XML path runs no analysis tier, so no facts are stashed and the gated
+    // commit at `read symbols` is a no-op (parity is structurally untouched).
+    let mut prog = ConsoleProgram {
+        arch: arch.into_sleigh(),
+        registry,
+        symbols,
+        description,
+        pending_analysis: Vec::new(),
+        analysis_code_space: None,
+    };
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
     // to its callee name at flow-analysis time.
@@ -484,11 +555,15 @@ pub fn bootstrap_from_elf(
     };
 
     // Run the program-prep analysis passes (the kuna analyzer tier) over the
-    // parsed object. Read-only; produces additive facts committed below. Bound to
-    // the real-ELF path ONLY — the XML <binaryimage> bootstrap never runs these,
-    // so the datatest parity oracle is structurally untouched.
-    let analysis_out =
-        kuna_analysis::passes::run_default_analyses(&bytes, &loader, sleigh.base().unwrap());
+    // parsed object, keeping each pass's facts keyed by id. Read-only; the facts
+    // are STASHED here and committed (gated) at `read symbols` — NOT eagerly —
+    // so the per-pass `--option <id> on|off` flags (emitted by the CLI before
+    // `read symbols`) are in effect when the commit runs (the deferred fix for
+    // conflict #4, analysis-port-log.md). Bound to the real-ELF path ONLY — the
+    // XML <binaryimage> bootstrap never runs these, so the datatest parity oracle
+    // is structurally untouched.
+    let pending_analysis =
+        kuna_analysis::passes::run_default_analyses_per_pass(&bytes, &loader, sleigh.base().unwrap());
 
     // readLoaderSymbols (the ELF FUNC symbols) BEFORE handing the loader off.
     let symbols = read_loader_symbols_generic(&loader);
@@ -499,13 +574,25 @@ pub fn bootstrap_from_elf(
 
     let description = sleigh.base().unwrap().get_description().to_string();
 
-    let mut prog = ConsoleProgram { arch: sleigh, registry, symbols, description };
+    let mut prog = ConsoleProgram {
+        arch: sleigh,
+        registry,
+        symbols,
+        description,
+        // Stash the per-pass analysis facts + the code space for the gated commit
+        // at `read symbols` (IfcReadSymbols -> commit_analysis_passes).
+        pending_analysis,
+        analysis_code_space: Some(Rc::clone(&code_space)),
+    };
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
+    // The deferred analysis commit at `read symbols` REQUIRES this to have run
+    // first (no-return/callfixup address+name resolution finds the funcsyms).
     prog.read_loader_symbols()?;
 
     // Apply the collected read-only ranges to the symbol table property map
     // (C++ symboltab->setPropertyRange(Varnode::readonly, *iter)), now that prog
-    // owns the architecture.
+    // owns the architecture. This is NOT a gated analysis pass (it is loader
+    // markup), so it stays eager here, before any analysis commit.
     for (first, last_open) in &readonly_ranges {
         prog.arch_mut().symboltab.set_property_range(
             kuna_decomp::varnode::varnode_flags::readonly,
@@ -514,11 +601,9 @@ pub fn bootstrap_from_elf(
         );
     }
 
-    // Commit the analysis-pass facts into the engine (additive; never
-    // authoritative). AFTER read_loader_symbols so no-return name resolution
-    // (query_global_function) finds the just-installed FunctionSymbols.
-    commit_analysis_output(&mut prog, &code_space, analysis_out)?;
-
+    // NB: the analysis-pass facts are committed later, gated, in
+    // `commit_analysis_passes` (called from `IfcReadSymbols`), after the per-pass
+    // `--option` flags are applied. See `ConsoleProgram::pending_analysis`.
     Ok(prog)
 }
 

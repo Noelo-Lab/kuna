@@ -48,7 +48,7 @@ fn discovered_main_decompiles_without_supplied_address() {
         None => return,
     };
 
-    let prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let mut prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(
@@ -59,6 +59,12 @@ fn discovered_main_decompiles_without_supplied_address() {
             return;
         }
     };
+
+    // (kuna) The analysis-pass facts are now committed at `read symbols` (gated by
+    // the per-pass `--option <id> on|off` flags), not eagerly at bootstrap — so a
+    // direct `bootstrap_from_elf` consumer must trigger the commit before the
+    // entry symbols are visible. This is exactly what `IfcReadSymbols` does.
+    prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     // The discovery pass + commit seam registered the entries by their angr-style
     // names. `main` (0x1405) and the ELF entry `_start` (0x1160) are present even
