@@ -147,7 +147,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `s1-rust-golang-noreturn` | Rust + **Go** no-return list selection (`noReturnFunctionConstraints.xml` `rustc` + `golang` arms) | easy | `RustFunctionsThatDoNotReturn` (Increment 7) **and** `GolangFunctionsThatDoNotReturn` (Increment 14) vendored + parsed per detected compiler; `ZN4core9panicking5panic17h*` flagged for Rust-only, `runtime.gopanic`/`runtime.throw`/`runtime.goexit.abi0` for Go-only, neither for a C ELF |
 | 🟡 | `ruststring` | Rust str-slice split (`RustStringAnalyzer`) | med | **detection ported** (shares `s1_sourcelang`); the **split is infeasible-at-tier** (needs post-disasm interior refs + a populated ReferenceManager — same wall as `FindNoReturnFunctionsAnalyzer`). Documented, no split code (Increment 7) |
 | ✅ | `arm-mips-markers` | ARM `$t`/`$a`+STT_FUNC-LSB → `TMode` (`ARM_ElfExtension`/`ArmSymbolAnalyzer`); MIPS `$gp` | hard | **ARM done** (Increments 8/17/18): `arm_thumb_le32.o` → `TMode=1` for `$t.0`@`0x0` + STT_FUNC LSB normalized to `0x0`/`0x14`; commit-arm paints `TMode` via `set_variable`, no-ops on non-ARM (fauxware byte-identical); Thumb-FUNC re-home (Increment 17). **Decode e2e now done in-container** (Increment 18): the LINKED `arm_thumb_linked_le32` ET_EXEC (`arm-linux-gnueabihf-gcc` in `kuna-dev`) Thumb-decodes `compute` → `a0 * 3 + 7` and `_start`'s CALL to the even entry resolves to `compute(` — no wiring fix needed. **MIPS `$gp`** done (Increment 17); **MIPS16 `ISA_MODE` out of scope** (needs a MIPS16 fixture) |
-| ✅ | `s1-formatstring` (A+B) | printf/scanf varargs typing (`FormatStringParser` + `FormatStringAnalyzer`) | xhard | **A done** (Increment 9) — `s1_formatstring::parse_output_types("%d %s")` ⇒ `[Int, CharPtr]`, full conversion+length-modifier tables, `*`/`%%`/positional `%n$`, malformed no-panic. **B done** (Increment 14) — the decompile→inspect→override→re-decompile loop in `IfcDecompile`: walks `CALL` ops, classifies printf/scanf callees (`apply::classify_variadic_call`), reads the format constant at the format slot, builds a per-call-site `PrototypePieces` override (`apply::build_override_pieces`), re-decompiles. **Gated OFF** (`--option formatstring on`, Ghidra `setDefaultEnablement(false)`). `fmt_x86_64`: `printf("%d %s\n",a0,(char *)*a1)` typed vs default `(uint8)a0,*a1` |
+| ✅ | `s1-formatstring` (A+B) | printf/scanf varargs typing (`FormatStringParser` + `FormatStringAnalyzer`) | xhard | **A done** (Increment 9) — `s1_formatstring::parse_output_types("%d %s")` ⇒ `[Int, CharPtr]`, full conversion+length-modifier tables, `*`/`%%`/positional `%n$`, malformed no-panic. **B done** (Increment 14) — the decompile→inspect→override→re-decompile loop in `IfcDecompile`: walks `CALL` ops, classifies printf/scanf callees (`apply::classify_variadic_call`), reads the format constant at the format slot, builds a per-call-site `PrototypePieces` override (`apply::build_override_pieces`), re-decompiles. **Gated OFF** (`--option formatstring on`, Ghidra `setDefaultEnablement(false)`). `fmt_x86_64`: `printf("%d %s\n",a0,(char *)*a1)` typed vs default `(uint8)a0,*a1`. **Cross-arch done** (Increment 25) — `fmt_aarch64`/`fmt_arm`/`fmt_riscv64` all type identically with one `--option formatstring on`; AArch64/RISC-V worked unchanged, ARM needed a scoped `readonlypropagate` flip (its format pointer is a read-only literal-pool LOAD), still under the `formatstring` gate (`verify_formatstring_crossarch.rs`) |
 | 🟡 | `addrtable` | Absolute address-table discovery (`AddressTableAnalyzer`) | med | implemented + tested but **disabled by default** (Ghidra `setDefaultEnablement(false)` + false-positive risk); scanner finds the 8-entry table @ `0x402008` in `switchtab_x86_64`. See Increment 4 |
 | ✅ | `callfixup` | Auto-apply cspec call-fixups (`CallFixupAnalyzer`, install half) | med | `mcount_x86_64`: `main`'s `-pg` `call mcount` is **dissolved** — body becomes `return 0;` + `Function: mcount replaced with injection: mcount`. Pass matches FUNC names to cspec `<callfixup><target>`; commit tags inject id (the inherited inject/weave path applies it). Flow-repair half infeasible-at-tier (LOSS). See Increment 8 |
 | 🟡 | `switch-recovery` | `DecompilerSwitchAnalyzer` | — | the engine **is** this (S2 jump-tables ported) |
@@ -1726,3 +1726,63 @@ unchanged), so the XML datatest oracle is structurally untouched.
 
 - **Tests:** `kuna-console` +1 (`verify_arm_thumb_decode::arm_thumb_compute_decodes_in_thumb_mode`).
   New fixture `arm_thumb_linked_le32` (+ source). No engine/option/catalog change.
+
+### Increment 25 — format-string varargs typing: cross-arch coverage (AArch64/ARM/RISC-V) ✅
+
+Closes the Increment 16 follow-up — its half-B override loop was an "x86-64 ELF first cut"
+("the call-arg-slot read is arch-generic via the recovered proto"). This increment proves
+(and, for ARM, fixes) `--option formatstring on` on the other three first-class arches.
+
+**Three new fixtures, same C as `fmt_x86_64`** (`int main(int argc,char**argv){
+printf("%d %s\n", argc, argv[0]); return 0;}`), built in the `kuna-dev` container,
+**un**stripped: `fmt_aarch64` (`aarch64-linux-gnu-gcc`), `fmt_arm` (32-bit Thumb,
+`arm-linux-gnueabihf-gcc`), `fmt_riscv64` (RVC/lp64d, `riscv64-linux-gnu-gcc`), all
+`-O0 -fno-stack-protector` (gcc 11.4.0). The RISC-V dev package (`crt1.o` + headers) is not
+in the base image — the build recipe `apt-get update && apt-get install
+libc6-dev-riscv64-cross` (README provenance). Pinned consts per arch: AArch64 `main`=0x754,
+`printf@plt`=0x630, format `.rodata` vma 0x7a8 (`adrp x0,0; add x0,x0,#0x7a8`); ARM
+`main`=0x504, `printf@plt`=0x3e4, format vma 0x5cc (`ldr r3,[pc,#20]`→`.word 0xb0`@0x52c;
+`add r3,pc`: pc 0x51c + 0xb0); RISC-V `main`=0x668, `printf@plt`=0x5a0, format vma 0x6a8
+(`auipc a0,0x0; addi a0,a0,32`: pc 0x688 + 32).
+
+**Finding — AArch64 and RISC-V worked unchanged.** Both materialize the format address
+directly into a register (`adrp+add` / `auipc+addi`), so the call's format-arg varnode is
+already a constant pointer and the Increment-16 `resolve_const_pointer` (through
+PTRSUB/PTRADD/COPY/CAST/INT_ADD) reads it as-is. `--option formatstring on` ⇒
+`printf("%d %s\n",a0,(char *)*a1)` on the first try (default-off: AArch64
+`printf("%d %s\n",(uint8)a0,*a1)`, RISC-V `printf("%d %s\n",(int8)a0,*a1)`).
+
+**ARM needed a fix — the read-only literal-pool addressing form.** On ARM the format address
+is loaded *PC-relatively from a read-only literal pool* (`ldr r3,[pc,#k]; add r3,pc`), so the
+format-arg varnode is a memory LOAD, not a constant; default-off it renders the unresolved
+`printf((char *)(dat_52c + 0x51c),a0,*a1)`. The literal-pool LOAD only constant-folds under
+`readonlypropagate` (`Funcdata::fillin_read_only`) — with `--option readonly on` the first
+decompile already produces `u0x… = ->(#0x0,#0x5cc)` (a clean PTRSUB the existing resolver
+handles). This is **not** a `resolve_const_pointer` gap — the value is genuinely a read-only
+memory load the engine declined to fold.
+
+**The fix (small, additive, gated under `formatstring`).** `IfcDecompile` now enables
+`readonlypropagate` *for the duration of a `formatstring`-on decompile* and restores the prior
+value afterward (and on the `has_no_code` early-return). This is faithful to Ghidra's
+`FormatStringAnalyzer`, whose decompile reads constant strings out of read-only memory; it
+keeps the feature self-contained on ARM with a single `--option formatstring on` (no separate
+`--option readonly on`). **Gate-safe:** the toggle is inert (value unchanged) unless
+`formatstring` is on (default off), so every parity gate — which never sets `formatstring` —
+is byte-identical. With the fix, ARM `--option formatstring on` ⇒
+`printf("%d %s\n",a0,(char *)*a1)`.
+
+**Result — all four arches type correctly with a single `--option formatstring on`:**
+`printf("%d %s\n",(uint8)a0,*a1)` (or the arch's untyped default) → `printf("%d
+%s\n",a0,(char *)*a1)` (the `%d` arg a plain `int`, no widening cast; the `%s` arg cast to
+`char *`).
+
+- **Tests:** a new console e2e gate
+  [`verify_formatstring_crossarch.rs`](../decompiler/crates/kuna-console/tests/verify_formatstring_crossarch.rs)
+  — 6 tests (off+on × AArch64/ARM/RISC-V), **all ran** (the per-arch `.sla` are built; the
+  specs-less skip guard was not hit). The existing `verify_s1_formatstring` (x86-64) still
+  passes. No new option/catalog surface (reuses the existing `formatstring` + `readonly`
+  flags). `make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**;
+  `make rust-test` green; `kuna catalog --check` **catalog OK**.
+- **Fixtures:** `fmt_aarch64`, `fmt_arm`, `fmt_riscv64` (+ sources, README provenance).
+- **Engine change:** one scoped `readonlypropagate` flip in `kuna-console`'s `IfcDecompile`,
+  entirely under the `formatstring` gate.
