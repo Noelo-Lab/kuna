@@ -1,5 +1,105 @@
 # kuna Progress Log
 
+## Session (2026-06-23) — analyzer-tier deferred frontier complete (Increments 14–17)
+
+Took on the whole deferred frontier from `docs/analysis-port-plan.md` (+ a completeness sweep
+for any other feasible analysis) as 4 parallel worktree sub-agents, integrated sequentially with
+all gates green. **Every deferred-frontier item that is feasible in-env is now done; the analyzer
+tier is essentially complete.**
+- **DWARF subtask-3 — named/typed stack locals** (Increment 14): the `ScopeLocal` seam was
+  reachable via the existing `seed_mapped_symbols`/`map addr` path; DWARF `DW_OP_fbreg` locals
+  (name + type + CFA-adjusted offset) now install as typelocked stack vars →
+  `int4 accumulator`/`counter` instead of `local_10` (fixture `stacklocal_x86_64`).
+- **Golang no-return + completeness sweep** (Increment 15): `GolangFunctionsThatDoNotReturn`
+  gated on Go detection (Go ELF built at test runtime). The sweep confirms **every feasible-at-tier
+  ELF analyzer is ported** (ELF matches base+rustc+golang no-return lists); the only feasible
+  remainder is the cosmetic `_INIT_`/`_FINI_` array-element naming (addresses already discovered).
+- **format-string-B — varargs typing** (Increment 16, gated off): `--option formatstring on`
+  reads the printf format constant at the call site, parses it, installs a per-call-site proto
+  override, re-decompiles → `printf("%d %s\n",a0,(char *)*a1)`. Default-off → byte-identical.
+- **MIPS `$gp` recovery + ARM Thumb-FUNC re-home** (Increment 17): tracked-register seam
+  (`create_set`/`TrackedContext`/`ActionConstbase`); seeds `t9 = func_entry` (MIPS PIC ABI) so
+  `$gp`-relative GOT loads resolve (fixture `mips_gp_le32`, built with `mipsel-linux-gnu-gcc`).
+  ARM Thumb FUNCs are now also known at their even entry. **ARM decode e2e remains off-host
+  blocked** (no ARM linker in-env) — the only remaining frontier gap, plus the cosmetic init-array
+  naming.
+- New options (settables 31→33): `formatstring` (default off), `mips_gp` (default on). New
+  fixtures: `stacklocal_x86_64`, `fmt_x86_64`, `mips_gp_le32` (+ runtime-built Go). All gates held
+  675/675, 158/158, `make rust-test`, `kuna catalog --check`. PR #10 (branch
+  `analysis-port-noreturn`) carries Increments 1–17.
+
+## Session (2026-06-23) — DWARF stack-local recovery (subtask 3, Increment 14)
+
+Resolved the last deferred DWARF piece — per-function **named, typed stack locals** — without a
+shared-engine-path change. **Spike:** the `ScopeLocal` install seam IS cleanly reachable. A
+function's `ScopeLocal` is per-`Funcdata` and rebuilt each decompile, but the console already
+carries hand-typed `map addr` stack symbols across that rebuild
+(`mapped_symbol_specs`→`seed_mapped_symbols`→`ScopeLocal::add_symbol`, threaded as the
+`mapped_symbols` arg of `decompile_func_full_with_override_dyn`); DWARF locals plug straight in.
+**Impl:** new `LocalFact{func_addr,name,type_,stack_offset}` + `AnalysisOutput.locals`; `DwarfPass`
+decodes single-`DW_OP_fbreg` locations (+ a self-contained SLEB128 reader), types each via the
+existing DIE→`Datatype` mapper, and applies the per-arch static `call_frame_cfa`
+(`stack_offset = cfa + fbreg`; x86-64=8, faithful to `x86-64.dwarf`); the commit parks them by
+entry VMA on `ConsoleProgram.dwarf_locals` and `IfcDecompile` appends `dwarf_locals_for(entry)` to
+`mapped_symbols` as `typelock|namelock` stack symbols. Gated real-ELF DWARF only; no `HashMap`.
+New `stacklocal_x86_64` fixture (address-taken local that survives) renders `int accumulator`/
+`int counter` instead of `local_10`/`local_c`; cet_pie's own locals are spill slots the engine
+eliminates (install correct, no Varnode binds — documented). `make test` 675/675, `make test-stages`
+158/158, `make rust-test` green, `kuna catalog --check` clean. Detail: `analysis-port-log.md` Inc 14.
+
+## Session (2026-06-23) — analyzer-tier Wave 2 + Wave 3 (engine seams)
+
+Continued the analyzer-tier port (`docs/analysis-port-plan.md`) through Waves 2 and 3, again as
+parallel worktree sub-agents integrated sequentially with all-three-gates after each. **10
+analyzer-tier increments total now (Increments 4–13 in `docs/analysis-port-log.md`).**
+
+- **Wave 2** (engine/console-touching passes): **arch-markers** (`s1_loader::arm_markers`, Inc 8) —
+  ARM/Thumb `$t`/STT_FUNC-LSB → a new `ContextPaint` fact + `set_variable` commit arm that paints
+  `TMode`, **no-ops on non-ARM** (fauxware byte-identical); **format-string parser A** (`s1_formatstring`,
+  Inc 9) — full printf/scanf spec→arg-type parser, 36 tests, B deferred; **callfixup**
+  (`s1_callfixup`, Inc 10) — auto-tags cspec `<callfixup>` targets so `mcount` dissolves e2e.
+- **Wave 3** (the engine seams): **no-return × demangle** (Inc 11) — `AnalysisOutput.noreturn` now
+  carries the **address** (resolved via PLT stubs + `find_function_across_scopes`), so demangled C++
+  no-return symbols (`std::terminate`/`__cxa_throw`) flag correctly; **printer change + `s1_strings`
+  re-enabled** (Inc 12) — the SPACEBASE arm renders a pointer-to-readonly-char-array symbol as the
+  string literal (Ghidra behavior), so `puts("Username: ")` works *with the strings pass on* and even
+  non-libproto strings render — **675/675 + 158/158 byte-identical** (the parity-escalation contract
+  was satisfied, not triggered); **per-run `--option` gating** (Inc 13, resolves conflict #4) — the
+  analysis commit moved from `bootstrap_from_elf` to `IfcReadSymbols` (after the CLI's `option` lines),
+  each pass id registered as a flippable `--option` in `kuna catalog` (settables 23→31), default-on
+  (addrtable off). `--option noreturn_known off` per-run gate proven.
+- New fixtures: `arm_thumb_le32.o` (.o-unit-only, no host ARM linker), `mcount_x86_64` (static -pg),
+  `cpp_noreturn_x86_64`. Every increment held `make test` 675/675, `make test-stages` 158/158,
+  `make rust-test` green, `kuna catalog --check` clean.
+- **Remaining frontier (deferred, the plan's gate-off/spike items):** format-string-B (decompile-loop
+  varargs override wiring), DWARF subtask-3 (stack-local ScopeLocal map — engine spike), and the
+  arch-markers decode e2e / MIPS `$gp` (need off-host ARM/MIPS LINKED fixtures).
+
+## Session (2026-06-22) — analyzer-tier Wave 1: DWARF + entry-discovery + source-lang + addrtable
+
+Rebased the analysis-tier branch onto `main` (#8 perf + #9 test-stages fix → test-stages now
+158/158 PARITY OK, no regression from this work), then executed **Wave 1** of
+`docs/analysis-port-plan.md` as **4 parallel worktree sub-agents**, integrated sequentially with
+all-three-gates after each:
+- **DWARF** (`s1_dwarf`, gimli 0.33): function names + **typed signatures** from `.debug_*`.
+  `cet_pie` → `elaborate_debug_symbol(char *a0)` (the DWARF `char*` param flows to callers);
+  `dwarf_stripped` (new fixture, `.symtab` emptied via `objcopy --wildcard --strip-symbol='*'`)
+  → names with no symbol table. Subtask-3 (stack locals, engine change) deferred.
+- **Entry discovery + `.eh_frame`** (`s1_entry`): e_entry + init/fini arrays + FDE pcBegin +
+  `_start`→`main` idiom + prologue patterns → `AnalysisOutput.entries`. `stripped_dynamic` →
+  `sub_1405` (main) decompiles **without `--addr`**.
+- **Source-language + Rust** (`s1_sourcelang`): compiler detection (`.comment`/mangled/rodata)
+  gates the vendored **Rust no-return wildcard list** (`RustFunctionsThatDoNotReturn`); rust-str
+  split documented infeasible-at-tier.
+- **Address-tables** (`s1_addrtable`, **disabled by default** like strings) + doc-only ⛔
+  decisions for AIF and the operand-reference family.
+- All wave-1 passes use **existing commit arms** (entries/symbols/prototypes) — zero `engine.rs`
+  change, so structurally parity-safe. Every increment held `make test` 675/675, `make test-stages`
+  158/158, `make rust-test` green. ~8 of the ELF-relevant analyzers now ported (see
+  `docs/analysis-port-log.md` Increments 4–7 + the 142-analyzer inventory).
+- **Deferred to Wave 2/3** (engine seams): printer-change-to-re-enable-strings, per-run `--option`
+  gating, no-return×demangle seam, DWARF stack-locals, arch-markers, callfixup, format-string.
+
 ## Session (2026-06-22) — close out the final two: test-stages 158/158 PARITY OK
 
 The last two test-stages failures, resolved — **`tests/stages` is now fully green (158/158, REGRESSED 0, PARITY OK)**.
@@ -7,6 +107,58 @@ The last two test-stages failures, resolved — **`tests/stages` is now fully gr
 - **KUNA-RESTARTS #1 — discarded as obsolete.** It expected the upstream multistage jump-table restart hint, on the premise that switchmulti's table is only partially recovered during flow (forcing `Override::insertMultistageJump` + a restart). kuna's value/flow analysis recovers switchmulti's FULL 7-entry table in a SINGLE pass — verified: `restarts` reports none, and the upstream switchmulti datatest (which checks all 7 case bodies) passes. The restart the test observed is an upstream two-pass artifact kuna's more-complete one-pass recovery makes unnecessary; reproducing it would regress that (correct) recovery. (`matchModel`/`checkForMultistage`'s restart accounting is also still a W4 SEAM.) Removed #1 from the test + baseline with a HISTORY note; #2 (the never-restarts empty path) stays and passes.
 
 - **gh6904 — fixed for real (the e500 `<truncate_space>` was never applied).** Root cause was neither the SLEIGH spec nor a heritage bug, but a **missing port wiring**: the e500 ldefs carries `<truncate_space space="ram" size="4"/>` (a 32-bit Book E core whose GPRs/`ram` are modeled 64-bit only for SPE), and kuna had the faithful `LanguageDatabase::modify_spaces` (C++ `SleighArchitecture::modifySpaces`) but **never called it**. So `ram` stayed 8 bytes → `void*`/`void**` were 8 bytes → the locked `void **ptr` param didn't fit the 4-byte `_r3` input pentry, fell through to the stack, shifted `call` into `_r3` (the param swap), and the resulting `r3:8`-over-`_r3:4` register overlap threw `"Overlapping input varnodes"` in heritage → the empty degraded body. Fix: call `db.modify_spaces(langindex, arch)` right after `build_translator` on both engine-assembly paths (`kuna-console/engine.rs`, `kuna-harness/corpus.rs`), exactly where C++ `Architecture::restoreFromSpec` calls `modifySpaces` — before the type factory reads `getDefaultDataSpace()->getAddrSize()` for the default pointer width. e500 `ram` now truncates to 4 → `void*` is a 32-bit pointer → `ptr`→`_r3`, `call`→`_r4`, no overlap. `some_funcptr_func` decompiles to `void some_funcptr_func(void **ptr,int4 call)` with `if (ptr != (void **)0x0)` (the remaining `CONCAT44` is over the funcptr return, matching the C++ reference). **Verified against the upstream C++ decompiler built at `GHIDRA_REV`** — it assigns `ptr` as size-4 in `_r3` and passes #1/#2/#3 too, confirming a faithful restoration. A general fix (also affects e500mc/quicciii, AARCH64 ilp32, MIPS 64-32addr — none in the 675 corpus, so a no-op there). No `.sla`/`.sinc`/`.cspec` change. The gh6904 graceful-degradation net (session-f) stays as a robustness backstop but is no longer triggered here.
+
+## Session (2026-06-22) — analysis-tier port: foundation seam + no-return (increment 1)
+
+Began porting Ghidra's Java **analyzer/loader tier** (the "Run Analysis" layer) into the
+`kuna-analysis` crate, feature by feature, each with a testcase. Driven by a research
+fan-out (5 agents mapping the engine commit APIs + deep-reading `StringsAnalyzer`/
+demangler/`NoReturnFunctionAnalyzer` + an expanded work-list + a downstream-compat
+analysis). Process log: **`docs/analysis-port-log.md`**; gap inventory: `docs/missing-analyses.md`.
+
+- **Foundation — generic `AnalysisOutput` commit seam.** `bootstrap_from_elf` now reads
+  the image bytes once, runs `kuna_analysis::passes::run_default_analyses`, applies
+  read-only markup (new on the ELF path — load-bearing for future string rendering), and
+  commits the merged facts via the new `engine.rs::commit_analysis_output` (function /
+  data / entry / no-return fact kinds all wired; verified against the real engine APIs).
+  Bound to the real-ELF path ONLY — the XML datatest path never runs analyses, so 675/675
+  parity is structurally untouched.
+- **`noreturn_known`** ported from `NoReturnFunctionAnalyzer` ("Known") + the verbatim
+  `ElfFunctionsThatDoNotReturn` list (vendored at `kuna-analysis/data/`). Faithful matcher
+  (strip ALL leading `_`, exact-then-wildcard, namespace guard). fauxware `rejected`
+  collapsed from a wall of dead fall-through to `printf(...); exit(1);` (+ the "Subroutine
+  does not return" warning). The flow-based "Discovered" analyzer is documented infeasible
+  at this tier (no pre-decompile listing/flow model).
+- **Downstream compat (the drop-in question):** adding analyzer passes does NOT break kuna
+  as a Ghidra-front-end drop-in, because the C++ decompiler protocol is pull-based
+  (`ArchitectureGhidra` queries the client and forbids inventing symbols) and kuna's passes
+  are bound to the standalone ELF path the protocol never uses. Recorded in the log.
+- **Increment 2 — demangle + strings (fanned out to parallel worktree agents).**
+  `s1-demangle`: port of `GnuDemanglerAnalyzer` via `cpp_demangle` + `rustc-demangle` crates
+  (faithful — Ghidra itself shells out to libiberty; nothing to transcribe for Itanium),
+  name-only reduction for kuna's `::` splitter, applied at funcsym build. `s1-strings`: port
+  of `StringsAnalyzer` (matcher + char[N] typing). **Engine fix demangle uncovered:**
+  call resolution (`query_call` + variants) only searched the GLOBAL scope, so a namespaced
+  callee rendered `sub_<addr>`; added `Database::find_function_across_scopes` + qualified-name
+  + cross-scope no-return/inline/inject, matching C++ `queryFunction(Address)`. Now
+  `cpp_mangled` `main` renders `foo::Bar::baz(&v1,0x2a)`.
+- **Increment 3 — library prototypes + the strings/printer finding.** `s1-libproto`: port of
+  `ApplyDataArchiveAnalyzer` via a built-in table of ~25 libc signatures (`puts(char*)`, …)
+  parked on callees via `set_function_prototype_pieces`. **This is what renders string
+  literals in kuna** (typing the arg `char*` → printer's char-constant path + readonly +
+  StringManager): fauxware `main` now prints `puts("Username: ")` / `puts("Password: ")`,
+  `rejected` prints `printf("Go away!")`. **Finding:** Ghidra's StringsAnalyzer plants a
+  string *data object*; kuna's printer renders a constant mapping to a *named* symbol as the
+  name (`s_400915`), which *shadows* the literal — so the `s1-strings` plant-a-symbol pass
+  *blocks* the literal and is kept but disabled-by-default (re-enabling needs a printer change
+  to render string-symbol refs as literals). A/B verified. kuna achieves the literal by a more
+  native route (type-driven), not Ghidra's data-object route.
+- **Net:** 4 analyses ported (no-return, demangle, libproto, + PLT already) + 1 engine fix
+  (cross-scope resolution); `s1-strings` implemented/disabled. `kuna-analysis` 34 unit tests;
+  every increment held `make test` PARITY OK (675/675) + `make rust-test` green.
+- **Deferred (next):** DWARF, entry discovery, the printer change that re-enables `s1-strings`,
+  per-run `--option` gating of passes (conflict #4 in the log), the no-return×demangle
+  cross-pass seam. Full work-list + downstream-compat analysis in `docs/analysis-port-log.md`.
 
 ## Session (2026-06-21f) — grind the deep tail one-by-one: 128 → 157/159 (REGRESSED 31 → 2)
 

@@ -92,44 +92,28 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call(&self, entry: &Address) -> Option<String> {
         let arch = self.arch();
         // C++ FlowInfo::queryCall -> getScopeLocal()->getParent()->queryFunction(entry):
-        // resolve the callee's display name from the global symbol table (populated
-        // by readLoaderSymbols at load).
-        let scope = arch.symboltab.get_global_scope()?;
-        let sid = arch.symboltab.find_function(scope, entry)?;
-        let name = arch.symboltab.symbol(sid).get_display_name();
-        if name.is_empty() {
-            None
-        } else {
-            Some(name.to_string())
-        }
+        // resolve the callee's display name from the symbol table (populated by
+        // readLoaderSymbols + the analysis passes at load).  Resolved across scopes
+        // so a namespaced (demangled) callee like `foo::Bar::baz` renders its
+        // qualified name instead of `sub_<addr>` (C++ queryFunction spans the
+        // scope tree; kuna's per-scope maptable otherwise hides it).
+        arch.symboltab.function_display_name_across_scopes(entry)
     }
     fn query_call_no_return(&self, entry: &Address) -> bool {
         // C++ `queryCall` copies the callee proto's `isNoReturn()` flow effect;
-        // the flag is set by `option noreturn <name>` (OptionNoReturn) on the
-        // resolved FunctionSymbol.
-        let arch = self.arch();
-        match arch.symboltab.get_global_scope() {
-            Some(scope) => arch.symboltab.function_is_no_return(scope, entry),
-            None => false,
-        }
+        // the flag is set by `option noreturn <name>` (OptionNoReturn) or the
+        // no-return analysis pass on the resolved FunctionSymbol.
+        self.arch().symboltab.function_is_no_return_across_scopes(entry)
     }
     fn query_call_inline(&self, entry: &Address) -> bool {
         // C++ `queryCall` copies the callee proto's `isInline()` flow effect; the
         // flag is set by `option inline <name>` (OptionInline) on the resolved
         // FunctionSymbol.
-        let arch = self.arch();
-        match arch.symboltab.get_global_scope() {
-            Some(scope) => arch.symboltab.function_is_inline(scope, entry),
-            None => false,
-        }
+        self.arch().symboltab.function_is_inline_across_scopes(entry)
     }
     fn query_call_inject_id(&self, entry: &Address) -> int4 {
         // The callee's parked inject id (IfcFixupApply); -1 for none.
-        let arch = self.arch();
-        match arch.symboltab.get_global_scope() {
-            Some(scope) => arch.symboltab.function_inject_id(scope, entry),
-            None => -1,
-        }
+        self.arch().symboltab.function_inject_id_across_scopes(entry)
     }
     fn build_inline_funcdata(&self, entry: &Address) -> KunaResult<Option<Funcdata>> {
         // C++ `Funcdata::inlineFlow` builds a fresh FlowInfo over the queried

@@ -2621,6 +2621,19 @@ impl Database {
         }
     }
 
+    /// The `FuncProto::injectid` parked on the FunctionSymbol `sid` (C++
+    /// `fd->getFuncProto().getInjectId()`), or `-1` if `sid` is not a Function
+    /// symbol (or carries no inject id). The by-id companion of
+    /// [`Database::set_function_inject_id`], used by the call-fixup commit seam to
+    /// replicate Ghidra's `getCallFixup()==null` guard — only auto-apply a fixup
+    /// when none is already set (`CallFixupAnalyzer.java:89`).
+    pub fn function_inject_id_for_symbol(&self, sid: SymbolId) -> int4 {
+        match self.symbols[sid].kind {
+            SymbolKind::Function { inject_id, .. } => inject_id,
+            _ => -1,
+        }
+    }
+
     /// Park the source-declared prototype pieces on a FunctionSymbol (C++
     /// `Architecture::setPrototype` → `queryFunction(name)->getFuncProto()` with the
     /// parsed declaration; here stashed for re-seeding at `ActionDefaultParams`).
@@ -2686,6 +2699,81 @@ impl Database {
                 matches!(self.symbols[sid].kind, SymbolKind::Function { no_return: true, .. })
             }
             None => false,
+        }
+    }
+
+    /// Resolve the FunctionSymbol at `addr` across **all** scopes, returning the
+    /// symbol and the scope it lives in.  C++ `Scope::queryFunction(Address)`
+    /// resolves through the scope tree (`mapScope`/`findFunction`); kuna keeps a
+    /// per-scope address `maptable`, so [`Self::find_function`] only sees the one
+    /// queried scope.  A function installed in a *namespace* scope — e.g. a
+    /// demangled `foo::Bar::baz` placed by `find_create_scope_from_symbol_name`,
+    /// or any `::`-qualified loader symbol — is therefore invisible to the
+    /// global-scope-only call resolver and renders `sub_<addr>`.  This searches the
+    /// global scope first (the common case), then every other scope.
+    pub fn find_function_across_scopes(&self, addr: &Address) -> Option<(SymbolId, ScopeId)> {
+        if let Some(g) = self.get_global_scope() {
+            if let Some(sid) = self.find_function(g, addr) {
+                return Some((sid, g));
+            }
+        }
+        for (scope, _) in self.scopes.iter() {
+            if let Some(sid) = self.find_function(scope, addr) {
+                return Some((sid, scope));
+            }
+        }
+        None
+    }
+
+    /// The fully-qualified display name (`namespace::path::base`) of the
+    /// FunctionSymbol at `addr`, resolved across scopes, or `None` if no function
+    /// starts there.  For a global function the namespace path is empty, so this
+    /// returns the bare display name (identical to the prior global-only behavior);
+    /// for a namespaced function (a demangled C++ symbol) it returns the qualified
+    /// name so the call site renders `foo::Bar::baz(...)` rather than `sub_<addr>`.
+    pub fn function_display_name_across_scopes(&self, addr: &Address) -> Option<String> {
+        let (sid, scope) = self.find_function_across_scopes(addr)?;
+        let base = self.symbols[sid].get_display_name();
+        if base.is_empty() {
+            return None;
+        }
+        let prefix = self.get_full_name(scope);
+        if prefix.is_empty() {
+            Some(base.to_string())
+        } else {
+            Some(format!("{prefix}::{base}"))
+        }
+    }
+
+    /// Cross-scope variant of [`Self::function_is_no_return`] (see
+    /// [`Self::find_function_across_scopes`]).
+    pub fn function_is_no_return_across_scopes(&self, addr: &Address) -> bool {
+        match self.find_function_across_scopes(addr) {
+            Some((sid, _)) => {
+                matches!(self.symbols[sid].kind, SymbolKind::Function { no_return: true, .. })
+            }
+            None => false,
+        }
+    }
+
+    /// Cross-scope variant of [`Self::function_is_inline`].
+    pub fn function_is_inline_across_scopes(&self, addr: &Address) -> bool {
+        match self.find_function_across_scopes(addr) {
+            Some((sid, _)) => {
+                matches!(self.symbols[sid].kind, SymbolKind::Function { inline_func: true, .. })
+            }
+            None => false,
+        }
+    }
+
+    /// Cross-scope variant of [`Self::function_inject_id`].
+    pub fn function_inject_id_across_scopes(&self, addr: &Address) -> int4 {
+        match self.find_function_across_scopes(addr) {
+            Some((sid, _)) => match self.symbols[sid].kind {
+                SymbolKind::Function { inject_id, .. } => inject_id,
+                _ => -1,
+            },
+            None => -1,
         }
     }
 

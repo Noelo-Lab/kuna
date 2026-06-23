@@ -5,7 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=90, settable=23.
+# Counts (asserted in tests): group=39, substage=40, surface=90, settable=31
+# (23 stage-model knobs + 8 analysis-pass gates).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -1647,3 +1648,174 @@ change_kind = "presentation-default"
 live_field = "realtypes"
 live_true = "on"
 live_false = "off"
+
+# ---------------------------------------------------------------------------
+# Analysis-pass gates (8 rows): per-run `--option <id> on|off` enablement of the
+# `kuna_analysis` passes. The option id IS the pass's `AnalysisPass::id()`. The
+# console's `commit_analysis_output` (run at `read symbols`, after these options
+# are applied) consults the matching `analysis_*` flag on the Architecture and
+# skips a disabled pass's facts. Real-ELF analysis tier only — the XML datatest
+# path never produces analysis facts, so these are structurally inert there
+# (faithful to Ghidra's per-analyzer `setDefaultEnablement`). No `live_field`:
+# they flip a plain bool, not a printer/engine "live value" reader; the live
+# state is surfaced console-side via `kuna_live_value`. See docs/missing-analyses.md.
+[[settable]]
+option = "noreturn_known"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S1"
+substage = "external-refinement"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-noreturn"
+summary = "Run the known-no-return analysis pass: mark exit/abort/_Unwind_Resume/std::terminate-style functions no-return (the kuna analog of Ghidra's NoReturnFunctionAnalyzer, plus the Rust panic/handle_alloc_error list)."
+use_when = "On (default) suppresses dead fall-through after a no-return call; off leaves the call rendering as if it returns (dead code reappears)."
+example = "option noreturn_known off"
+source_decompiler = "kuna"
+inspiration = "Ghidra NoReturnFunctionAnalyzer (Known) + the analyzer default-on/off model"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "libproto"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S1"
+substage = "external-refinement"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-libproto"
+summary = "Run the library-prototype analysis pass: seed common libc signatures (puts(char*), printf(char*,...), ...) onto matching imports so call arguments get typed (the kuna analog of Ghidra's ApplyDataArchiveAnalyzer)."
+use_when = "On (default) types call arguments so string literals render (puts(\"...\")); off leaves the bare constant/untyped argument."
+example = "option libproto off"
+source_decompiler = "kuna"
+inspiration = "Ghidra ApplyDataArchiveAnalyzer (.gdt library archives)"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "strings"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S1"
+substage = "code-data-partition"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-strings"
+summary = "Run the string-literal analysis pass: detect NUL-terminated ASCII strings (min length 5) and plant a typelocked char[N] data symbol at each (the kuna analog of Ghidra's StringsAnalyzer)."
+use_when = "On (default) lays char[N] data at detected strings; off leaves those addresses undefined."
+example = "option strings off"
+source_decompiler = "kuna"
+inspiration = "Ghidra StringsAnalyzer"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "entry_disc"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S1"
+substage = "code-data-partition"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-entry"
+summary = "Run the entry-discovery analysis pass: find function entry points for stripped targets (e_entry, DT_INIT/FINI + INIT_ARRAY tables, .eh_frame FDE starts, the _start->main libc idiom, prologue patterns)."
+use_when = "On (default) discovers + names extra entry points; off limits functions to the symbol stream."
+example = "option entry_disc off"
+source_decompiler = "kuna"
+inspiration = "Ghidra EntryPointAnalyzer/FunctionStartAnalyzer/GccExceptionAnalyzer (.eh_frame)"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "arm_markers"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S1"
+substage = "code-data-partition"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-armmarkers"
+summary = "Run the ARM/Thumb decode-mode marker pass: paint the SLEIGH TMode context from ARM mapping symbols ($t/$a) + the STT_FUNC odd-address (LSB=1 => Thumb) convention so Thumb code decodes as Thumb. ARM-only; a no-op on every other language."
+use_when = "On (default) decodes Thumb regions as Thumb on ARM; off leaves the default (ARM) decode mode."
+example = "option arm_markers off"
+source_decompiler = "kuna"
+inspiration = "Ghidra ARM_ElfExtension.evaluateElfSymbol + ArmSymbolAnalyzer"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "mips_gp"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S1"
+substage = "code-data-partition"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-mipsgp"
+summary = "Run the MIPS $gp-recovery pass: seed t9 = func_entry as a tracked register value at each MIPS function entry (the PIC jalr t9 ABI convention) so a PIC prologue's addu gp,gp,t9 folds to the real $gp and $gp-relative GOT/.sdata loads resolve. MIPS-only; a no-op on every other language."
+use_when = "On (default) resolves $gp-relative loads on MIPS; off leaves the raw $gp (unresolved *(gp + offset))."
+example = "option mips_gp off"
+source_decompiler = "kuna"
+inspiration = "Ghidra MipsAddressAnalyzer (assumeT9EntryAddress + checkForGlobalGP)"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "dwarf"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S1"
+substage = "external-refinement"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-dwarf"
+summary = "Run the DWARF recovery analysis pass: recover function/global names and typed signatures from .debug_* sections (the kuna analog of Ghidra's DWARFAnalyzer). Skips cleanly on a non-DWARF binary."
+use_when = "On (default) applies DWARF names/types; off ignores debug info (names/types come from symbols + inference only)."
+example = "option dwarf off"
+source_decompiler = "kuna"
+inspiration = "Ghidra DWARFAnalyzer"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "callfixup"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S1"
+substage = "external-refinement"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-callfixup"
+summary = "Run the call-fixup analysis pass: tag each function whose name matches a cspec call-fixup <target> (e.g. the -pg mcount/__fentry__ profiling stubs) so the engine replaces the CALL with the fixup body (the kuna analog of Ghidra's CallFixupAnalyzer)."
+use_when = "On (default) dissolves matched fixup calls; off leaves the raw CALL (e.g. the mcount call stays)."
+example = "option callfixup off"
+source_decompiler = "kuna"
+inspiration = "Ghidra CallFixupAnalyzer"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "addrtable"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S1"
+substage = "code-data-partition"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-addrtable"
+summary = "Run the address-table analysis pass: scan .rodata/.data for a run of pointer-width values landing inside an executable section (an absolute address/jump table) and emit Data symbols + a readonly range. DISABLED by default (matches Ghidra AddressTableAnalyzer.setDefaultEnablement(false); the pointer-run scanner over-accepts)."
+use_when = "Off (default, parity + over-acceptance risk); flip on to recover absolute pointer tables in a stripped target."
+example = "option addrtable on"
+source_decompiler = "kuna"
+inspiration = "Ghidra AddressTableAnalyzer (default-off)"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "formatstring"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S1"
+substage = "external-refinement"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-formatstring"
+summary = "Type printf/scanf-family variadic arguments per call site (FormatStringAnalyzer half B, DecompilerDependent): after the first decompile, read the format-string constant at each printf/scanf call, parse its specifiers, and install a per-call-site prototype override (fixed types = format-derived, varargs closed), then re-decompile so the variadic args render typed. DISABLED by default (matches Ghidra FormatStringAnalyzer.setDefaultEnablement(false))."
+use_when = "Off (default; the decompile→override→re-decompile loop is inert and every parity gate is byte-identical). Flip on to recover typed printf/scanf varargs (e.g. %d→int, %s→char*) in a real-ELF target."
+example = "option formatstring on"
+source_decompiler = "kuna"
+inspiration = "Ghidra FormatStringAnalyzer (Variadic Function Signature Override, default-off)"
+change_kind = "analysis-enablement"

@@ -5212,7 +5212,15 @@ impl PrintC {
                                 .get(op)
                                 .map(|o| o.get_addr().clone())
                                 .unwrap_or_default();
-                            if self.push_ptr_char_constant_ir(arch, off, &ct, &sub, &point, op, vn) {
+                            if self.push_ptr_char_constant_ir(
+                                arch,
+                                off,
+                                ct.get_size(),
+                                &sub,
+                                &point,
+                                op,
+                                vn,
+                            ) {
                                 return;
                             }
                         }
@@ -5831,6 +5839,53 @@ impl PrintC {
                 }
             }
 
+            // Readonly char-array string-literal coexistence (the kuna analog of
+            // C++ `PrintC::pushConstant`'s TYPE_PTR -> `pushPtrCharConstant` arm,
+            // printc.cc:1842-1880).  In upstream Ghidra a constant pointer to a
+            // readonly char-printable object renders as the quoted literal even
+            // when a data Symbol covers the address — the constant reaches
+            // `pushConstant` and short-circuits to `pushPtrCharConstant` BEFORE any
+            // symbol-name render.  kuna's analysis tier (StringLiteralPass /
+            // ActionMapGlobals) instead promotes the same constant into a global
+            // SPACEBASE `PTRSUB(spacebase, 0xADDR)` reference whose bound Symbol is
+            // the planted `char[N]`, so the value arrives at THIS arm rather than
+            // the `pushConstant` pointer arm — and the bare `pushSymbol` name
+            // (`s_400915`) would SHADOW the literal.  To keep the data Symbol and
+            // the literal coexisting (the Ghidra-observable behavior), route a
+            // whole-symbol (`sym_off == 0`), pointer-value (`!arrayvalue`) reference
+            // whose Symbol is a READONLY char-printable ARRAY through the same
+            // `push_ptr_char_constant_ir` literal path the constant arm uses.
+            // Guarded TIGHTLY (readonly + TYPE_ARRAY + char-printable element +
+            // off==0 + printing-ptr) so every other symbol reference renders
+            // EXACTLY as before — the XML datatest corpus never reaches this branch
+            // with a readonly char-array spacebase symbol.
+            if sym_off == 0 && !arrayvalue {
+                if let Some(st) = &sym_type {
+                    if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
+                        if let Some(elem) = st.get_array_base() {
+                            if elem.is_char_print() {
+                                let point = fd
+                                    .obank()
+                                    .get(op)
+                                    .map(|o| o.get_addr().clone())
+                                    .unwrap_or_default();
+                                if self.push_ptr_char_constant_ir(
+                                    arch,
+                                    in1const,
+                                    ptr_size,
+                                    &elem,
+                                    &point,
+                                    op,
+                                    in1.unwrap_or_default(),
+                                ) {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if !valueon {
                 // EMIT  &name  (printc.cc:1095)
                 self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
@@ -6180,7 +6235,7 @@ impl PrintC {
         &mut self,
         arch: &Architecture,
         val: uintb,
-        ct: &crate::dtype::Datatype,
+        ptr_size: int4,
         subct: &std::rc::Rc<crate::dtype::Datatype>,
         point: &Address,
         op: OpId,
@@ -6192,9 +6247,10 @@ impl PrintC {
             None => return false,
         };
         // Address stringaddr = glb->resolveConstant(spc,val,ct->getSize(),point,...)
+        // `ptr_size` is the pointer-constant's width (C++ `ct->getSize()`).
         let mut full_encoding: uintb = 0;
         let stringaddr =
-            match arch.resolve_constant(&spc, val, ct.get_size(), point, &mut full_encoding) {
+            match arch.resolve_constant(&spc, val, ptr_size, point, &mut full_encoding) {
                 Ok(a) => a,
                 Err(_) => return false,
             };

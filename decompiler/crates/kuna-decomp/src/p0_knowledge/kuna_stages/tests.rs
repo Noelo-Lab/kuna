@@ -1,8 +1,9 @@
 //! Unit tests for the kuna stage registry (`kuna_stages.rs`).
 //!
 //! Parity targets transcribed from `decompiler/cpp/kuna_stages.cc`:
-//! group=39, substage=40, surface=90, settable=23, plus the stage-code helpers,
-//! the lookup API, the typed `OptionValues` defaults, and the catalog emitter.
+//! group=39, substage=40, surface=90, settable=33 (23 stage-model knobs + 10
+//! kuna analysis-pass gates), plus the stage-code helpers, the lookup API, the
+//! typed `OptionValues` defaults, and the catalog emitter.
 
 use super::*;
 
@@ -27,9 +28,13 @@ fn surface_count_is_90() {
 }
 
 #[test]
-fn settable_count_is_23() {
-    assert_eq!(kuna_num_settables(), 23);
-    assert_eq!(SETTABLE_TABLE.len(), 23);
+fn settable_count_is_33() {
+    // 23 stage-model knobs + 10 analysis-tier gates: 8 per-run analysis-pass
+    // enablement (noreturn_known/libproto/strings/entry_disc/arm_markers/dwarf/
+    // callfixup/mips_gp) + the `formatstring` DecompilerDependent varargs-typing
+    // gate. (mips_gp added with MIPS $gp recovery; formatstring with half B.)
+    assert_eq!(kuna_num_settables(), 33);
+    assert_eq!(SETTABLE_TABLE.len(), 33);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -208,11 +213,25 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_20_suppressed_for_3() {
+fn option_values_live_value_present_for_20_suppressed_for_12() {
     let ov = OptionValues::default();
-    // 20 options have a live reader (realtypes joins the field-backed group); the
-    // live_value returns the current value for them and None for
-    // loweredswitch/stackguard/namestyle.
+    // 20 options have a codegen live reader (realtypes joins the field-backed
+    // group); the live_value returns the current value for them and None for
+    // loweredswitch/stackguard/namestyle PLUS the 10 analysis-tier gates (which
+    // have no `live_field` — their live state is read console-side via the
+    // hand-written `kuna_live_value`, not the codegen `live_value`).
+    const PASS_GATES: &[&str] = &[
+        "noreturn_known",
+        "libproto",
+        "strings",
+        "entry_disc",
+        "arm_markers",
+        "mips_gp",
+        "dwarf",
+        "callfixup",
+        "addrtable",
+        "formatstring",
+    ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
         let st = kuna_settable_by_index(i);
@@ -223,7 +242,8 @@ fn option_values_live_value_present_for_20_suppressed_for_3() {
             }
             None => {
                 assert!(
-                    matches!(st.option, "loweredswitch" | "stackguard" | "namestyle"),
+                    matches!(st.option, "loweredswitch" | "stackguard" | "namestyle")
+                        || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
                 );
@@ -295,8 +315,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 23 rows: 22 trailing commas (the last has none).
-    assert_eq!(json.matches("},\n").count(), 22);
+    // 33 rows: 32 trailing commas (the last has none).
+    assert_eq!(json.matches("},\n").count(), 32);
 }
 
 #[test]

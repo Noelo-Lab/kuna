@@ -40,19 +40,36 @@ Each analysis implements **`kuna_analysis::pass::AnalysisPass`** — the
 generalization of the de-facto `elf_plt` contract: a focused module that reads
 the object and produces a flat, deduplicated `AnalysisOutput` of *facts*
 (symbols, entries, no-return names, read-only ranges), never panicking and never
-failing — it only ever contributes more knowledge. `run_analyses()` merges all
-enabled passes; the merged output is then committed once into the engine at the
-bootstrap seam (`kuna-console`'s `engine::bootstrap_from_elf`). Each pass's
-`id()` registers in `stages.toml` like the `kuna_*` sub-stage fixes, so it
-appears in `kuna catalog --json` and is flippable per-decompilation via
-`--option <id> on|off` (and can default off, keeping the XML datatest gate — which
-never constructs an `ObjectLoadImage` — untouched).
+failing — it only ever contributes more knowledge. Each pass's `id()` registers
+in `stages.toml` as a settable option (and in `KUNA_OPTION_NAMES`), so it appears
+in `kuna catalog --json` and is **flippable per-decompilation via `--option <id>
+on|off`** — implemented as of the analysis-port "option-gating" Increment. The
+passes are **default-on** (faithful to Ghidra's default-on analyzers), except
+`addrtable`, which ships **off** (Ghidra `AddressTableAnalyzer` parity).
 
-> Status: the crate, the `AnalysisPass` interface, and the relocated PLT/GOT path
-> (`elf_plt` + `loadimage_object` + fixtures, moved out of `kuna-sleigh`) are in
-> place. The PLT path still commits inline in `loadimage_object`; lifting it onto
-> the `AnalysisPass`/`commit` seam lands with the first new pass (string-literal
-> detection). The per-analysis roadmap with testcases is at the bottom of this file.
+The gating's commit timing: `bootstrap_from_elf` runs
+`run_default_analyses_per_pass` and **stashes** the per-pass `AnalysisOutput` on
+the `ConsoleProgram` at load (it does NOT commit eagerly). The commit is deferred
+to `read symbols` (`IfcReadSymbols::commit_pending_analysis`), which runs AFTER
+the CLI's `option` lines (the `build_script` emits `option …` before `read
+symbols`), so a per-run gate is in effect: each pass's enable flag
+(`Architecture::analysis_*`) is consulted and a disabled pass's facts are
+dropped. The XML datatest path stashes nothing, so the gated commit is a no-op
+there — the parity gate (which never constructs an `ObjectLoadImage`) is
+structurally untouched.
+
+> Status: the crate, the `AnalysisPass` interface, the relocated PLT/GOT path,
+> the generic commit seam, **and per-run `--option` gating of every pass are in
+> place**. `bootstrap_from_elf` stashes the per-pass `AnalysisOutput` and commits
+> it (gated) via `engine.rs::commit_analysis_output` at `read symbols`
+> (function/data/entry/no-return/strings/prototypes/context/call-fixup fact kinds
+> wired). All Wave-1/2/3 passes are done (no-return, demangle, strings, libproto,
+> entry-disc, ARM markers, DWARF, call-fixup) and the printer renders
+> readonly-char-array symbols as string literals. The PLT path still commits
+> inline in `loadimage_object` (lifting it onto the pass list is cosmetic and
+> deferred). The running process log is
+> **[`analysis-port-log.md`](analysis-port-log.md)**; the per-analysis roadmap
+> with testcases is at the bottom of this file.
 
 ## Legend
 
@@ -118,6 +135,17 @@ listing has functions even where no symbol exists.
 It does not hunt for unlabeled functions. For a stripped binary the user must
 supply addresses.
 
+**Aggressive Instruction Finder (`AggressiveInstructionFinderAnalyzer`) — ⛔
+infeasible-at-tier.** AIF is a *speculative* extension of entry discovery: it guesses
+code in undefined gaps via instruction-mask fingerprinting + recursive-descent
+PseudoDisassembly. It is **off-by-default upstream** (`setDefaultEnablement(false)`,
+warns "MAY CREATE A LOT OF BAD CODE!") and requires a post-disassembly
+Listing/FunctionManager (≥20 found functions) + a PseudoDisassembler — none of which
+exist at the kuna-analysis tier (which runs before decompilation). Its sound output (new
+entries) is subsumed by `s1-entry-disc` + `s1-eh-frame` for kuna's given-entries model.
+Documented ⛔ out-of-scope (see [`analysis-port-log.md`](analysis-port-log.md) Increment 4),
+the same call as `FindNoReturnFunctionsAnalyzer`.
+
 ## 5. Demangling (C++ / Rust / Go / Swift) — ⛔ Gap
 
 **Ghidra:** the demangler analyzers turn `_ZN3foo3barEv` → `foo::bar()`.
@@ -126,7 +154,9 @@ supply addresses.
 `beanstalk_cpp` fixture would show mangled import names.) Note: kuna's loader
 splits names on `::` into namespaces, so an *already-demangled* name nests
 correctly — but kuna does no demangling itself. C imports (`puts`, `read`) are
-unaffected.
+unaffected. **Status:** ✅ done (Increment 2 — Itanium C++ + Rust). The Rust
+*source-language* detection that gates Rust-specific behavior (e.g. the Rust
+no-return list) is a separate piece, ✅ done in Increment 4 (`s1_sourcelang`).
 
 ## 6. String-literal detection — ⛔ Gap (partly masked by the engine)
 
@@ -137,12 +167,44 @@ types the references as `char *`, so the decompiler prints `puts("Username: ")`.
 typed `0x400915` as a string. The engine's type inference (🟡, below) can turn a
 pointer into `char *` from *usage*, but it does not materialize the literal text.
 
+**Operand/scalar reference markup (`OperandReferenceAnalyzer` family) — ⛔
+out-of-scope-at-tier.** Ghidra's operand-reference analyzers (`OperandReferenceAnalyzer`,
+`DataOperandReferenceAnalyzer`, `ScalarOperandAnalyzer`, `ElfScalarOperandAnalyzer`) create
+listing *references* — strings, pointers, address tables — from disassembled operands. They
+need the disassembled Listing + ReferenceManager, neither of which exists at this tier, and
+references never reach kuna's decompiler (it reads loadimage bytes + the symbol/type tables,
+not the ReferenceManager). Their products are already covered: strings → `s1-strings`
+(disabled, this section), address/switch tables → §7, function creation → §4 (`s1-entry-disc`).
+`ScalarOperandAnalyzer` is even default-OFF for ELF upstream, and `ElfScalarOperandAnalyzer`
+only *removes* bad `.got`/`.plt` references (which `elf_plt.rs` already names correctly). The
+one relevant idea — typing a scalar that points at a `.rodata` string as `char*` — is blocked
+by the same printer/MapGlobals shadowing that disables `s1-strings`, and is already delivered
+by `s1-libproto` + S5 usage. Documented ⛔ (see
+[`analysis-port-log.md`](analysis-port-log.md) Increment 4).
+
 ## 7. Switch / jump-table recovery — 🟡 Inherited (core) / ⛔ refinement gap
 
 The decompiler's jump-table machinery is ported (it is part of the engine, S2 +
 feedback). What Ghidra adds at the application layer is *re-running* table
 recovery after type recovery to refine case ranges with aggregate-type info; that
 post-typing refinement loop is not part of the standalone engine.
+
+**Two distinct application-layer items, both classified (do not conflate with the
+inherited core):**
+
+- **Absolute address-table discovery (`AddressTableAnalyzer`) — 🟡
+  ported-but-disabled.** A *byte-level data scan*: walk `.rodata`/`.data` for a run of
+  consecutive pointer-width values that all land in an executable section (an absolute
+  jump/function-pointer table) and lay down data labels. This is **NOT** switch recovery
+  (that is the inherited engine machinery above) and **NOT** the post-typing refinement
+  loop below. Faithfully ported in `s1_addrtable` (the scanner finds the 8-entry table @
+  `0x402008` in the `switchtab_x86_64` fixture) but **disabled by default** — Ghidra ships
+  it `setDefaultEnablement(false)` and a pointer-run scanner over-accepts (false-positive
+  risk). See [`analysis-port-log.md`](analysis-port-log.md) Increment 4.
+- **Post-typing refinement loop (roadmap #9) — ⛔ engine S2, not analyzer-tier.** The
+  decompiler-internal multistage re-recovery (`recover_count > 1`), gated behind the
+  `Override::queryMultistageJumptable` engine seam. It is an *engine* (S2-feedback) change,
+  not a `kuna-analysis` pass; deferred as a separate future engine task.
 
 ## 8. Library prototype seeding (signatures for `printf`, `malloc`, …) — ⛔ Gap
 
@@ -178,24 +240,36 @@ debug-format reader or a discovery loop). Vendored fixtures live in
 | # | Analysis | Stage | Diff | Concrete testcase (fixture → assertion) |
 |---|----------|-------|------|------------------------------------------|
 | ✅ | PLT/GOT import names | S1 | done | **fauxware**: `0x400510→puts`, no symbol at `0x0`, no `@` in names (`kuna-analysis` tests + console e2e) |
-| 1 | String-literal detection + `char*` typing | S1 | easy-med | **fauxware**: `kuna decompile fauxware main` stdout contains `"Username: "`, `"Password: "` (not raw `0x40xxxx`) |
-| 2 | Demangling (Itanium C++ / Rust) | S1 | easy-med | unit: `demangle("_Z3fooi") == "foo(int)"`; + small `g++ -c` fixture → mangled symbol resolves to its demangled form |
-| 3 | No-return detection | S1 | easy | **fauxware** `authenticate` calls `exit`: no dead fall-through after the call; unit: `exit`/`abort` flagged from the import-name set |
-| 4 | DWARF debug-info | S1 | hard | **cet_pie_x86_64** (has `.debug_info`): recovered function names + ≥1 typed parameter appear (not `param_1`) |
-| 5 | Library prototype seeding | S1/P0 | med | **fauxware**: first `printf` arg typed `char *` from a seeded libc signature (composes with #1 → `printf("Password: ")`) |
-| 6 | Function-start / entry discovery | S1 | hard | **stripped_dynamic_x86_64**: discovered entry set includes the real `main`/entry, decompilable without a supplied address |
+| ✅ | **Foundation: generic commit seam** | S1 | done | `bootstrap_from_elf` runs `run_default_analyses` + `commit_analysis_output`; no funcsym regression (`make test` PARITY OK) |
+| ✅ | **No-return detection** | S1 | done | **fauxware** `rejected` calls `exit`: no dead fall-through after `exit(1)` (5 unit tests + e2e). See [`analysis-port-log.md`](analysis-port-log.md) increment 1 |
+| ✅ | **Demangling** (Itanium C++ / Rust) | S1 | done | `cpp_mangled` `main` renders `foo::Bar::baz(...)` (cpp_demangle + rustc-demangle; needed the cross-scope call-resolution fix). Increment 2 |
+| ✅ | **Library prototype seeding** | S1 | done | **fauxware** `main`: `puts("Username: ")`, `puts("Password: ")` (libproto types arg `char*`; the route that actually renders literals in kuna). Increment 3 |
+| 🟡 | String-literal detection | S1 | n/a | implemented + tested but **disabled by default**: kuna's printer renders a named `char[]` symbol as its name (`s_400915`), shadowing the literal; literals come from prototype/usage `char*` typing instead. Increment 3 |
+| ✅ | **DWARF debug-info** (`DWARFAnalyzer`) | S1 | done | **cet_pie_x86_64**: `elaborate_debug_symbol`'s param recovered as `char *binary` (gimli); **dwarf_stripped**: names with no `.symtab`. Subtask-3 stack-locals deferred. Increment 6 |
+| ✅ | **Function-start / entry discovery** (`EntryPointAnalyzer`) | S1 | done | **stripped_dynamic_x86_64**: `sub_1405` (main) decompiles without `--addr` (e_entry + init arrays + `.eh_frame` FDEs + `_start`→`main` idiom + prologues). Increment 5 |
+| ✅ | **`.eh_frame` FDE starts** (`GccExceptionAnalyzer`, entry oracle) | S1 | done | **fauxware**: 7 FDE starts ⊇ the funcsyms; feeds entry discovery. Increment 5 |
+| ✅ | **Source-language detection** (`SourceLanguageAnalyzer`) | S1 | done | **rust_hello_x86_64** ⇒ `Compiler::Rustc` (`.comment` `rustc version` + `_ZN…17h…E`); **fauxware**/**cpp_mangled** ⇒ `Gcc`. Gates the Rust no-return list. Increment 7 |
+| ✅ | **Rust no-return list** (`RustFunctionsThatDoNotReturn`) | S1 | done | vendored + matched only when compiler==Rustc: `ZN4core9panicking5panic17h*` flagged for Rust, not for a C ELF. Increment 7 |
+| ✅ | **Golang no-return list** (`GolangFunctionsThatDoNotReturn`) | S1 | done | vendored + matched only when compiler==Go (`noReturnFunctionConstraints.xml` `golang` arm): `runtime.gopanic`/`runtime.throw`/`runtime.goexit.abi0` flagged for Go, not for a C/Rust ELF. Real-Go e2e built at test runtime (Go ELFs are ~1.1 MB — not vendored); hermetic matching tests. Increment 14 |
+| 🟡 | **Rust str-slice split** (`RustStringAnalyzer`) | S1 | n/a | detection ported (shares the source-lang detector); the **split is infeasible-at-tier** — needs post-disasm interior reference destinations + a ReferenceManager (same wall as no-return-discovered/entry-disc), and even with boundaries the printer would shadow the literal. Documented, no split code. Increment 7 |
+| 🟡 | Absolute address-table discovery (`AddressTableAnalyzer`) | S1 | n/a | implemented + tested but **disabled by default** (Ghidra parity + false-positive risk): **switchtab_x86_64** — `scan_address_tables` finds the 8-entry table @ `0x402008`, all elements in `.text`. NOT switch recovery (inherited S2) and NOT #9 below. Increment 4 |
+| ⛔ | Aggressive Instruction Finder (`AggressiveInstructionFinderAnalyzer` + ARM) | S1 | n/a | infeasible-at-tier: needs post-disasm Listing/FunctionManager/PseudoDisassembler + ≥20 found functions; off-by-default upstream; subsumed by entry-disc + eh-frame. Increment 4 |
+| ⛔ | Operand/scalar reference markup (`OperandReferenceAnalyzer` family) | S1 | n/a | out-of-scope-at-tier: no Listing/ReferenceManager; products subsumed by strings/jumptables/entry-disc; scalar→`char*` blocked by the same printer/MapGlobals shadowing as strings. Increment 4 |
 | 7 | External / thunk object model | S1 | hard | **fauxware**: PLT thunk to `puts` modeled as a thunk (tail-call inlined), not a standalone `sub_` |
 | 8 | Arch markers (ARM/Thumb `$t`, MIPS `$gp`, x86 purge) | S1 | med | needs an ARM/MIPS fixture (not yet vendored): a Thumb function decodes as Thumb from its `$t` mapping symbol |
 | 9 | Jump-table post-typing refinement | S2 (feedback) | hard | needs a switch-heavy fixture (not yet vendored): refined case count matches the typed table after a second pass |
 
-### Do first (the simplest-to-easy, highest-impact)
+### Do first — ✅ all three done (increments 1–3)
 
-1. **String-literal detection** (#1) — highest output-quality-per-effort; a
-   `.rodata` NUL-terminated scan + a `char[]` typed-data symbol; no new dependency.
-2. **Demangling** (#2) — a self-contained name transform; unit-testable with no
-   binary; composes with kuna's existing `::` namespace split.
-3. **No-return detection** (#3) — a fixed libc import-name set + the existing
-   `FuncProto` no-return flag; removes spurious dead code after `exit`/`abort`.
+1. ~~**No-return detection**~~ — ✅ done (increment 1).
+2. ~~**Demangling**~~ — ✅ done (increment 2; needed the cross-scope call-resolution fix).
+3. ~~**String literals**~~ — ✅ achieved (increment 3) via **library-prototype seeding**
+   (`char*` arg typing + readonly + StringManager), *not* via planting `char[]` data
+   symbols — kuna's printer prefers a symbol name over the literal, so the plant-a-symbol
+   `StringsAnalyzer` mechanism is implemented but disabled. See
+   [`analysis-port-log.md`](analysis-port-log.md) Increment 3 for the full finding.
 
-All three are easy/easy-med, test against already-vendored fixtures (or pure unit
-tests), and never touch the XML datatest parity path — both gates stay green.
+DWARF, entry discovery, the printer change that re-enables the strings pass, and **per-run
+option gating** (each pass flippable via `--option <id> on|off`, conflict #4) are all DONE —
+see [`analysis-port-log.md`](analysis-port-log.md) Increments 5–13. None of the work touches
+the XML datatest parity path — both gates stay green.

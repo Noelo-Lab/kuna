@@ -28,6 +28,10 @@
 //! - [`s1_loader`] -- S1 loader analyses: PLT/GOT import-name resolution
 //!   ([`s1_loader::elf_plt`]); future: `.symtab`/`.dynsym` symbol reader,
 //!   no-return detection.
+//! - [`s1_sourcelang`] -- source-language / compiler detection
+//!   (`detect_compiler`: Gcc/Clang/Rustc/Go), the kuna analog of Ghidra's
+//!   `SourceLanguageAnalyzer`; gates Rust-specific behavior (the Rust no-return
+//!   wildcard list in [`s1_loader::noreturn`]).
 //! - [`pass`] -- the [`pass::AnalysisPass`] interface a new analysis implements
 //!   (a focused, additive, never-failing producer of facts), plus the driver
 //!   that merges pass outputs before they are committed to the engine.
@@ -40,5 +44,15 @@
 //! Lints are inherited from the workspace (`[lints] workspace = true`).
 
 pub mod pass;
+pub mod passes;
 pub mod loadimage_object;
 pub mod s1_loader;
+pub mod s1_sourcelang;
+pub mod s1_demangle;
+pub mod s1_strings;
+pub mod s1_protos;
+pub mod s1_addrtable;
+pub mod s1_entry;
+pub mod s1_dwarf;
+pub mod s1_formatstring;
+pub mod s1_callfixup;

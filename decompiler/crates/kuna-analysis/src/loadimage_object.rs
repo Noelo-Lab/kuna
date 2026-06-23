@@ -68,6 +68,24 @@ use kuna_sleigh::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageS
 /// Default read-buffer size (C++ `LoadImageBfd::bufsize`, `loadimage_bfd.cc:36`).
 const BUFSIZE: usize = 512;
 
+/// Demangle a loader funcsym name (the kuna analog of Ghidra's
+/// `GnuDemanglerAnalyzer`; see [`crate::s1_demangle`]).  Applied to every
+/// `.symtab` / PLT / `.dynsym` name *after* `@VERSION` stripping and *before* it
+/// is installed as a `FunctionSymbol`, so `_ZN3foo3barEv` -> `foo::bar` and
+/// kuna's `::`-namespace splitter nests the call.  Operates on the byte-string
+/// name: a non-UTF-8 name (or one that is not a recognized mangled symbol) is
+/// returned unchanged.  Reduces to the qualified name only (no signature /
+/// template args), which is a hard requirement of the scope splitter.
+fn demangle_funcsym_name(name: Vec<u8>) -> Vec<u8> {
+    match std::str::from_utf8(&name) {
+        Ok(s) => match crate::s1_demangle::demangle_name(s) {
+            Some(d) => d.into_bytes(),
+            None => name,
+        },
+        Err(_) => name, // not a textual symbol; leave the raw bytes
+    }
+}
+
 /// One loadable region of the image (the analog of a BFD `asection` for the
 /// purpose of [`ObjectLoadImage::find_section`]/`loadFill`): a vma, the bytes
 /// that live there, and BFD-style section flags.
@@ -226,6 +244,7 @@ impl ObjectLoadImage {
             if name.is_empty() {
                 continue;
             }
+            let name = demangle_funcsym_name(name);
             if seen.insert(addr) {
                 funcsyms.push(FuncSym { addr, name });
             }
@@ -234,7 +253,7 @@ impl ObjectLoadImage {
         // 2. PLT stubs → imported library names.
         for p in crate::s1_loader::elf_plt::resolve_plt_imports(&file) {
             if seen.insert(p.addr) {
-                funcsyms.push(FuncSym { addr: p.addr, name: p.name });
+                funcsyms.push(FuncSym { addr: p.addr, name: demangle_funcsym_name(p.name) });
             }
         }
 
@@ -256,6 +275,7 @@ impl ObjectLoadImage {
             if name.is_empty() {
                 continue;
             }
+            let name = demangle_funcsym_name(name);
             if seen.insert(addr) {
                 funcsyms.push(FuncSym { addr, name });
             }
@@ -933,5 +953,31 @@ mod tests {
             assert!(syms.values().any(|n| n == want), "missing import {want}");
         }
         assert!(!syms.contains_key(&0));
+    }
+
+    #[test]
+    fn cpp_mangled_symbol_is_demangled_name_only() {
+        // The kuna `GnuDemanglerAnalyzer` analog (`s1_demangle`): a defined C++
+        // method `_ZN3foo3Bar3bazEi` must surface in the funcsym stream as the
+        // demangled NAME-ONLY form `foo::Bar::baz` — not the raw mangled symbol,
+        // and not the full c++filt signature `foo::Bar::baz(int)` (the trailing
+        // `(int)` would corrupt kuna's `::` scope splitter).
+        let syms = fixture_funcsyms("cpp_mangled_x86_64");
+        assert!(
+            syms.values().any(|n| n == "foo::Bar::baz"),
+            "demangled name-only `foo::Bar::baz` expected; got {syms:?}"
+        );
+        // The raw mangled symbol must NOT survive into the stream...
+        assert!(
+            !syms.values().any(|n| n.starts_with("_ZN3foo3Bar3baz")),
+            "raw mangled symbol must be demangled"
+        );
+        // ...and no signature tail leaked through the name-only reduction.
+        assert!(
+            !syms.values().any(|n| n.contains('(') || n.contains('<')),
+            "no signature / template leakage in funcsym names"
+        );
+        // `main` is a plain C-ABI name: not mangled, passes through unchanged.
+        assert!(syms.values().any(|n| n == "main"), "main passes through");
     }
 }

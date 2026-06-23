@@ -76,9 +76,11 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_23_settables() {
-    // One `"option":` per settable row.
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 23);
+fn fixture_has_all_32_settables() {
+    // One `"option":` per settable row: 23 stage-model knobs + 10 analysis-tier
+    // gates (8 per-run analysis-pass enablement + the `formatstring`
+    // DecompilerDependent varargs-typing gate + the `mips_gp` recovery gate).
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 33);
 }
 
 #[test]

@@ -338,6 +338,45 @@ pub struct Architecture {
     /// (C++ `preserve_thumb_funcptr`).
     pub preserve_thumb_funcptr: bool,
 
+    // --- kuna analysis-pass gates (per-run `--option <id> on|off`) ----------
+    // One boolean per `kuna_analysis::passes` pass id; the console's
+    // `commit_analysis_output` consults these at `read symbols` and skips a
+    // disabled pass's facts.  The kuna analog of Ghidra's
+    // `AbstractAnalyzer.setDefaultEnablement` per-analyzer enablement (a Run
+    // Analysis on/off toggle), bound to the real-ELF path only (the XML datatest
+    // path never produces analysis facts, so these are structurally inert there).
+    // Default-on (matching Ghidra's default-on analyzers) except `addrtable`,
+    // which Ghidra ships off (`AddressTableAnalyzer.setDefaultEnablement(false)`).
+    /// (kuna) Gate the no-return-known pass (`noreturn_known`); default on.
+    pub analysis_noreturn_known: bool,
+    /// (kuna) Gate the library-prototype pass (`libproto`); default on.
+    pub analysis_libproto: bool,
+    /// (kuna) Gate the string-literal pass (`strings`); default on.
+    pub analysis_strings: bool,
+    /// (kuna) Gate the entry-discovery pass (`entry_disc`); default on.
+    pub analysis_entry_disc: bool,
+    /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
+    pub analysis_arm_markers: bool,
+    /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
+    pub analysis_mips_gp: bool,
+    /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
+    pub analysis_dwarf: bool,
+    /// (kuna) Gate the call-fixup pass (`callfixup`); default on.
+    pub analysis_callfixup: bool,
+    /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
+    /// Ghidra `AddressTableAnalyzer.setDefaultEnablement(false)`).
+    pub analysis_addrtable: bool,
+    /// (kuna) Gate the format-string varargs-typing behavior (`formatstring`,
+    /// `FormatStringAnalyzer` half B); default **off** (matches Ghidra
+    /// `FormatStringAnalyzer.setDefaultEnablement(false)`).  Unlike the other
+    /// `analysis_*` flags this does NOT gate a load-time `AnalysisOutput` pass:
+    /// `FormatStringAnalyzer` is `DecompilerDependent`, so the console's
+    /// `IfcDecompile` reads this flag *after* the first decompile to decide
+    /// whether to run the per-call-site printf/scanf varargs override loop and
+    /// re-decompile.  Default-off ⇒ the loop is inert and every parity gate is
+    /// byte-identical.
+    pub analysis_formatstring: bool,
+
     // --- Owned subsystems (architecture.hh:211-233) -----------------------
     /// Memory map of global variables and functions (C++ `symboltab`).
     pub symboltab: Database,
@@ -520,6 +559,18 @@ impl Architecture {
             present_lessequal: false,
             preserve_thumb_funcptr: false,
 
+            // Analysis-pass gates: real defaults set by reset_defaults_internal.
+            analysis_noreturn_known: false,
+            analysis_libproto: false,
+            analysis_strings: false,
+            analysis_entry_disc: false,
+            analysis_arm_markers: false,
+            analysis_mips_gp: false,
+            analysis_dwarf: false,
+            analysis_callfixup: false,
+            analysis_addrtable: false,
+            analysis_formatstring: false,
+
             symboltab,
             options: OptionDatabase::new(),
             allacts: ActionDatabase::new(),
@@ -597,6 +648,20 @@ impl Architecture {
         self.split_datatype_config =
             split_datatype::OPTION_STRUCT | split_datatype::OPTION_ARRAY | split_datatype::OPTION_POINTER;
         self.max_jumptable_size = 1024;
+
+        // (kuna) Analysis-pass gates — default-on (matching Ghidra's default-on
+        // analyzers), except addrtable which Ghidra ships off. Bound to the
+        // real-ELF analysis tier; inert on the XML datatest path.
+        self.analysis_noreturn_known = true;
+        self.analysis_libproto = true;
+        self.analysis_strings = true;
+        self.analysis_entry_disc = true;
+        self.analysis_arm_markers = true;
+        self.analysis_mips_gp = true;
+        self.analysis_dwarf = true;
+        self.analysis_callfixup = true;
+        self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
+        self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
     }
 
     /// Apply a kuna stage-model option (`option <name> <value>`), the analogue of
@@ -682,6 +747,23 @@ impl Architecture {
                 Ok(msg)
             }
             "realtypes" => on_off!(realtypes, "Real-C-type rendering for unknowns"),
+            // (kuna) Analysis-pass gates: one boolean per `kuna_analysis::passes`
+            // pass id. The console's `commit_analysis_output` (run at `read
+            // symbols`, after the options below have been applied) consults the
+            // matching flag and skips a disabled pass's facts. The option id IS
+            // the pass's `AnalysisPass::id()` string. Real-ELF path only.
+            "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
+            "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
+            "strings" => on_off!(analysis_strings, "String-literal analysis pass"),
+            "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
+            "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
+            "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
+            "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
+            "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
+            "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),
+            "formatstring" => {
+                on_off!(analysis_formatstring, "Format-string varargs-typing pass")
+            }
             other => Err(KunaError::parse(format!("Unknown kuna option: {other}"))),
         }
     }

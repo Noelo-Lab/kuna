@@ -13,6 +13,9 @@ kuna-num.workspace = true
 kuna-sleigh.workspace = true
 kuna-decomp.workspace = true
 object.workspace = true
+cpp_demangle.workspace = true
+rustc-demangle.workspace = true
+gimli.workspace = true
 
 [lints]
 workspace = true
