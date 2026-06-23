@@ -206,6 +206,25 @@ pub struct AnalysisOutput {
     pub symbols: Vec<SymFact>,
     /// Discovered function entry points (for stripped targets).
     pub entries: Vec<u64>,
+    /// Optional Ghidra-faithful names for a *subset* of [`Self::entries`], keyed by
+    /// VMA. An overlay the commit seam consults: when a discovered entry VMA appears
+    /// here, the commit names the function with the supplied name (e.g. `_INIT_0`,
+    /// `_FINI_0`, `_DT_INIT`) instead of the generic `name_function` `sub_<addr>`;
+    /// an entry absent from the overlay is named generically, exactly as before.
+    ///
+    /// This is the kuna analog of `ElfProgramBuilder.createDynamicEntryPoints`, which
+    /// names each `DT_INIT`/`DT_FINI` array element `_INIT_<i>` / `_FINI_<i>` /
+    /// `_PREINIT_<i>` (i = the element's index in the array) and the single
+    /// `DT_INIT`/`DT_FINI` entries `_DT_INIT` / `_DT_FINI`. Produced ONLY by
+    /// [`crate::s1_entry`]'s dynamic oracle (oracle 2); the other oracles leave the
+    /// overlay empty so their entries keep the generic `sub_<addr>` name. Kept as a
+    /// parallel overlay (NOT folded into [`Self::entries`]) so the *discovery* set —
+    /// WHICH VMAs are found — is byte-identical to before this overlay existed.
+    ///
+    /// The commit keeps its idempotent `find_function` no-op, so a non-stripped
+    /// binary's real `.symtab`/`.dynsym` name still wins — only a genuinely new
+    /// (never-symboled) array-element start receives the `_INIT_<i>` name.
+    pub entry_names: Vec<(u64, String)>,
     /// Functions that do not return (`exit`, `abort`, ...), by `(addr, name)`.
     /// The commit resolves each by ADDRESS (stable across demangling), falling
     /// back to the name path. See [`NoReturnFact`].
@@ -256,6 +275,7 @@ impl AnalysisOutput {
     pub fn merge(&mut self, other: AnalysisOutput) {
         self.symbols.extend(other.symbols);
         self.entries.extend(other.entries);
+        self.entry_names.extend(other.entry_names);
         self.noreturn.extend(other.noreturn);
         self.readonly.extend(other.readonly);
         self.strings.extend(other.strings);
