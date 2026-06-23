@@ -88,18 +88,24 @@ structurally untouched.
 and turn each PLT stub into a thunk to an external function. The decompiler then
 sees the import name at the call site.
 
-**kuna now:** [`kuna-sleigh/src/elf_plt.rs`](../decompiler/crates/kuna-sleigh/src/elf_plt.rs)
+**kuna now:** [`kuna-analysis/src/s1_loader/elf_plt.rs`](../decompiler/crates/kuna-analysis/src/s1_loader/elf_plt.rs)
 reconstructs `got_slot → name` from the dynamic relocations and decodes each
 `.plt*` stub's GOT reference per architecture (x86-64, x86-32, AArch64, ARM32,
-RISC-V; classic, CET `.plt.sec`, PIE, and stripped layouts). Matches feed the
+RISC-V; classic, CET `.plt.sec`, PIE, and stripped layouts). PowerPC64 ELFv2 has
+no `.plt` *code* section, so its TOC-relative call stubs (synthesized inline in
+`.text`) are decoded out of band (`decode_ppc_text`/`decode_ppc64_stubs`: TOC base
+= `.got` vma + `0x8000`, slot = `TOC + (addis@ha << 16) + ld@l`). Matches feed the
 existing loader symbol stream as named `FunctionSymbol`s, so `query_call`
 resolves them. Model depth is "correct names"; the full external-location/thunk
 object model (below) is deferred.
 
 **Still a gap within this area:**
-- PPC64 (ELFv2 `.plt` is a data table; call stubs are synthesized in `.text`) and
-  MIPS (`.MIPS.stubs` + `$gp`-relative GOT) have no regular decodable `.plt` code
-  section — left as documented seams (names not recovered, behavior unchanged).
+- PPC64 ELFv2's `.text`-synthesized call stubs **are now resolved** (Increment 26):
+  it was grouped here as a seam but turned out tractable — the stub's
+  `addis r12,r2,@ha; ld r12,@l(r12)` pair statically reconstructs the `.plt` slot
+  (`TOC + (@ha<<16) + @l`) whose `R_PPC64_JMP_SLOT` reloc names the import.
+- MIPS (`.MIPS.stubs` + `$gp`-relative GOT) has no regular decodable `.plt` code
+  section — left as a documented seam (names not recovered, behavior unchanged).
 - x86-32 **PIC** veneers (`jmp *disp(%ebx)`) are not statically decodable without
   the runtime `%ebx` GOT pointer — skipped.
 - The external/thunk **object model** (Ghidra's `ExternalLocation` + thunk

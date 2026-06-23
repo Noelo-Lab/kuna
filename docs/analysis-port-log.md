@@ -133,7 +133,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 
 | St | Pass id | Analysis (Ghidra) | Diff | Testcase |
 |----|---------|-------------------|------|----------|
-| ✅ | `plt-got` | PLT/GOT import names (`ElfDefaultGotPltMarkup`) | — | x86: fauxware `0x400510→puts`; **AArch64 e2e (Increment 19)**: linked `plt_aarch64`, `main` `bl 0x4004d0`/`0x4004e0` render `puts("hello")`/`printf("%d\n",…)` (the `adrp x16;ldr x17` veneer decode) |
+| ✅ | `plt-got` | PLT/GOT import names (`ElfDefaultGotPltMarkup`) | — | x86: fauxware `0x400510→puts`; **AArch64 e2e (Increment 19)**: linked `plt_aarch64`, `main` `bl 0x4004d0`/`0x4004e0` render `puts("hello")`/`printf("%d\n",…)` (the `adrp x16;ldr x17` veneer decode); **PPC64 ELFv2 e2e (Increment 26)**: linked `plt_ppc64le`, `main` `bl 0x680`/`0x660` render `puts(...)`/`printf(...)` (the `.text`-synthesized `addis r12,r2,@ha; ld r12,@l` TOC-relative stub decode) |
 | ✅ | `symtab-dynsym` | `.symtab`/`.dynsym` function reader | — | `fixture_funcsyms` |
 | ✅ | `foundation` | generic `AnalysisOutput` commit seam | med | bootstrap_from_elf commits with no funcsym regression |
 | ✅ | `noreturn_known` | No-return known list (`NoReturnFunctionAnalyzer`) | easy | fauxware `rejected`: no dead code after `exit(1)` |
@@ -1726,3 +1726,75 @@ unchanged), so the XML datatest oracle is structurally untouched.
 
 - **Tests:** `kuna-console` +1 (`verify_arm_thumb_decode::arm_thumb_compute_decodes_in_thumb_mode`).
   New fixture `arm_thumb_linked_le32` (+ source). No engine/option/catalog change.
+
+### Increment 26 — PowerPC64 PLT import-name recovery (clean port, not a seam) ✅
+
+Recover **PPC64 ELFv2 (little-endian)** libc import names so a call renders `puts`/`printf`,
+not `sub_<addr>`. PowerPC was listed in `docs/missing-analyses.md` §1 as a *documented seam*
+("ELFv2 `.plt` is a data table; call stubs are synthesized in `.text`") — but, like SPARC
+(PR #20), investigating the real layout showed it is **fully tractable at the static load
+tier**. This is a clean port, not a documented seam.
+
+**The layout (why it looked like a seam, and why it isn't).** On PPC64 ELFv2 there is no `.plt`
+*code* section: `readelf -S` shows `.plt` as **NOBITS** (the runtime GOT for imports), and the
+`.rela.plt` `R_PPC64_JMP_SLOT` relocations name `.plt` *data* slots (`0x1fef0`=puts,
+`0x1fef8`=printf in the fixture). The call stubs are synthesized inline in `.text` by the linker.
+`main` (`0x8bc`) `bl`s to a stub at `0x680` (puts) / `0x660` (printf), each of the canonical
+ELFv2 shape:
+
+```
+    std   r2,24(r1)         ; 0xf8410018  save caller TOC
+    addis r12,r2,off@ha     ; r12 = TOC_base + (off@ha << 16)
+    ld    r12,off@l(r12)    ; r12 = *(.plt slot) = *(TOC + (off@ha<<16) + off@l)
+    mtctr r12
+    bctr
+```
+
+The decoded `.plt` slot ties straight back to the `R_PPC64_JMP_SLOT` name. The one piece the
+other arches don't need is the **TOC base**: ELFv2 fixes `r2` at `.got + 0x8000` (the `.TOC.`
+symbol). For the fixture `.got`=`0x1ff00`, so TOC=`0x27f00`, and the puts stub's
+`addis r12,r2,-1; ld r12,32752(r12)` reconstructs `0x27f00 + (-1<<16) + 32752 = 0x1fef0` —
+exactly the JMP_SLOT offset. No `.TOC.` symbol lookup is needed; `.got + 0x8000` is the ELFv2
+invariant.
+
+**The decoder (`s1_loader/elf_plt.rs`).** `resolve_plt_imports` already builds `got_slot → name`
+from *all* symbol-bearing dynamic relocations (the JMP_SLOTs are in it — `object` 0.39 parses the
+PPC64 relocs as `kind=Unknown target=sym#N` at the slot offset, which the existing
+`build_got_name_map` handles unchanged). Added a PowerPC arm: after the `.plt*`-section scan,
+`decode_ppc_text` computes the TOC base (`.got` vma + `0x8000`), reads `.text`, and
+`decode_ppc64_stubs` scans for the 5-instruction stub (`std r2,24(r1)` + `addis r12,r2` +
+`ld r12,(r12)` DS-form + `mtctr r12` + `bctr`), reconstructs the slot, and `record`s the stub
+entry (the `std r2,24(r1)` address — what `bl` targets) against the matched name. It reads words
+honoring file endianness (`is_little_endian`), so a PPC32/BE arm can slot in later; the gating is
+`arch == PowerPc64` only (PPC32 secure-PLT has a different stub shape — left a seam).
+
+**Why it integrates cleanly.** The `.symtab` carries synthetic `0000001b.plt_call.puts@@…`
+symbols *at the stub addresses*, but `object` classifies them `SymbolKind::Unknown` (not `Text`),
+so `loadimage_object` step 1 skips them — leaving the stub addresses free for the PLT decoder
+(step 2) to register the clean `puts`/`printf`. No name collision, no ordering hazard.
+
+**Fixture (LINKED dynamic PPC64le ELFv2 PIE).** `plt_ppc64le` (~21 KB), built in-container:
+`powerpc64le-linux-gnu-gcc -O0 plt_ppc64le.c -o plt_ppc64le` (libc6-dev-ppc64el-cross installed
+`--user root` for crt1/headers). `main` calls `puts("hello")` + `printf("%d\n", argc)`. Source +
+provenance vendored in `tests/fixtures/`.
+
+**e2e (`kuna-console/tests/verify_ppc64_plt.rs`).** Modeled on `verify_riscv64_plt.rs`: auto-detect
+`PowerPC:LE:64:default` → `bootstrap_from_elf` → `load function main` → `decompile` → `print C`,
+with the same specs-absent skip guard. The test **ran a real decode** (the `ppc_64_le.sla` is built;
+the skip was not hit) and asserts `main` resolves, `puts(`/`printf(` are named, and `sub_680`/`sub_660`
+are gone.
+
+**BEFORE → AFTER** (`kuna decompile plt_ppc64le main`):
+```
+  before:  sub_680(v1 + 0x17c);            sub_660(v2 + -0x274c0,(int8)a0);
+  after:   puts((char *)(v1 + 0x17c));     printf((char *)(v2 + -0x274c0),(int8)a0);
+```
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**;
+`make rust-test` green (incl. the new `verify_ppc64_plt` + the `ppc64_plt_decode` unit test). Purely
+additive on the real-ELF path (new PowerPC arm + new fixture + new console test); the XML datatest
+oracle is structurally untouched.
+
+- **Tests:** `kuna-analysis` +1 unit (`elf_plt::tests::ppc64_plt_decode`, LE real-fixture bytes +
+  a BE word-layout case). `kuna-console` +1 e2e (`verify_ppc64_plt`). New fixture `plt_ppc64le`
+  (+ source). No engine/option/catalog change.
