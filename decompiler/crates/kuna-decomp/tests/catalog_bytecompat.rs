@@ -76,11 +76,12 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_32_settables() {
-    // One `"option":` per settable row: 23 stage-model knobs + 10 analysis-tier
-    // gates (8 per-run analysis-pass enablement + the `formatstring`
-    // DecompilerDependent varargs-typing gate + the `mips_gp` recovery gate).
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 33);
+fn fixture_has_all_34_settables() {
+    // One `"option":` per settable row: 23 stage-model knobs + 11 analysis-tier
+    // gates (10 per-run analysis-pass enablement — including the `mips_gp` $gp
+    // recovery gate and the `mips_isa` MIPS16 ISA_MODE painting gate — plus the
+    // `formatstring` DecompilerDependent varargs-typing gate).
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 34);
 }
 
 #[test]

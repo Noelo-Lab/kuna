@@ -230,6 +230,13 @@ already work:
 
 ## Port roadmap (ranked, with testcases)
 
+> For the analyzers declared **infeasible-at-tier**, **non-ELF**, or **huge
+> subsystem** below (AIF, the operand/reference markup family, Go pclntab, FID,
+> PE/Mach-O loaders, …), the dependency-ordered build-plan — what kuna would have
+> to BUILD first to make each feasible (notably a post-disassembly Listing tier),
+> with effort sizing and verdicts — is in
+> [`analysis-port-buildplan.md`](analysis-port-buildplan.md).
+
 Each row is a future `AnalysisPass` (or extension) under `kuna-analysis/src/s1_*`.
 Difficulty: **easy** = self-contained byte/string transform, no new heavy dep;
 **med** = needs an engine API or a parser; **hard** = a new subsystem (a

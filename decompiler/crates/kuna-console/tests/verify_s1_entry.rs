@@ -112,3 +112,88 @@ fn discovered_main_decompiles_without_supplied_address() {
         "sub_1405 should resolve to a function, got:\n{out}"
     );
 }
+
+/// The dynamic INIT/FINI array elements are named like Ghidra's loader
+/// (`ElfProgramBuilder.createDynamicEntryPoints`): each `.init_array` /
+/// `.fini_array` pointer becomes `_INIT_<i>` / `_FINI_<i>` instead of the generic
+/// `sub_<addr>`. On this stripped PIE:
+///   - `.init_array` (`DT_INIT_ARRAY` @0x3d78, 1 ptr) → 0x1240 → `_INIT_0`
+///   - `.fini_array` (`DT_FINI_ARRAY` @0x3d80, 1 ptr) → 0x1200 → `_FINI_0`
+///   - the single `DT_INIT` @0x1000 → `_DT_INIT`, `DT_FINI` @0x1464 → `_DT_FINI`
+/// Neither 0x1240/0x1200/0x1000/0x1464 has any `.symtab` symbol here, so the name
+/// comes purely from the entry-discovery + naming overlay.
+#[test]
+fn dynamic_init_fini_elements_get_ghidra_names() {
+    let root = repo_root();
+    let specs = root.join("specs");
+    let spec_roots = vec![specs.to_str().unwrap().to_string()];
+
+    let bin = stripped_dynamic();
+    let bin = match bin.to_str() {
+        Some(s) => s.to_string(),
+        None => return,
+    };
+
+    let mut prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "verify_s1_entry: skipping (bootstrap failed, build `.sla` with \
+                 `make specs`): {}",
+                e.explain()
+            );
+            return;
+        }
+    };
+    prog.commit_pending_analysis().expect("analysis commit succeeds");
+
+    // The array-element starts resolve under their Ghidra names, NOT `sub_<addr>`.
+    assert!(
+        prog.lookup_symbol("_INIT_0").is_some(),
+        "INIT_ARRAY[0] (0x1240) should register as `_INIT_0` (Ghidra naming)"
+    );
+    assert!(
+        prog.lookup_symbol("_FINI_0").is_some(),
+        "FINI_ARRAY[0] (0x1200) should register as `_FINI_0` (Ghidra naming)"
+    );
+    // The single DT_INIT/DT_FINI entries take `_DT_INIT`/`_DT_FINI`.
+    assert!(
+        prog.lookup_symbol("_DT_INIT").is_some(),
+        "DT_INIT (0x1000) should register as `_DT_INIT`"
+    );
+    assert!(
+        prog.lookup_symbol("_DT_FINI").is_some(),
+        "DT_FINI (0x1464) should register as `_DT_FINI`"
+    );
+    // The named array element is NOT also registered under the generic name.
+    assert!(
+        prog.lookup_symbol("sub_1240").is_none(),
+        "0x1240 should be `_INIT_0`, not the generic `sub_1240`"
+    );
+
+    // It is a real, decompilable function under its Ghidra name (no --addr).
+    let cmds: Vec<String> = ["load function _INIT_0", "decompile", "print C"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let count = cmds.len();
+    let mut status = ConsoleCommands::into_status(cmds);
+    register_decomp_commands(&mut status);
+    {
+        let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+        let dcp = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+        dcp.conf = Some(prog);
+    }
+    for _ in 0..count {
+        execute(&mut status);
+    }
+    let out = status.optr.clone();
+    assert!(
+        out.contains("_INIT_0"),
+        "expected a decompiled body for `_INIT_0`, got:\n{out}"
+    );
+    assert!(
+        !out.contains("Unknown function") && !out.contains("no function"),
+        "_INIT_0 should resolve to a function, got:\n{out}"
+    );
+}

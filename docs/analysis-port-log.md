@@ -133,7 +133,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 
 | St | Pass id | Analysis (Ghidra) | Diff | Testcase |
 |----|---------|-------------------|------|----------|
-| ✅ | `plt-got` | PLT/GOT import names (`ElfDefaultGotPltMarkup`) | — | fauxware `0x400510→puts` |
+| ✅ | `plt-got` | PLT/GOT import names (`ElfDefaultGotPltMarkup`) | — | x86: fauxware `0x400510→puts`; **AArch64 e2e (Increment 19)**: linked `plt_aarch64`, `main` `bl 0x4004d0`/`0x4004e0` render `puts("hello")`/`printf("%d\n",…)` (the `adrp x16;ldr x17` veneer decode) |
 | ✅ | `symtab-dynsym` | `.symtab`/`.dynsym` function reader | — | `fixture_funcsyms` |
 | ✅ | `foundation` | generic `AnalysisOutput` commit seam | med | bootstrap_from_elf commits with no funcsym regression |
 | ✅ | `noreturn_known` | No-return known list (`NoReturnFunctionAnalyzer`) | easy | fauxware `rejected`: no dead code after `exit(1)` |
@@ -141,12 +141,12 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `s1-libproto` | Library prototype seeding (`ApplyDataArchiveAnalyzer`) | med | fauxware `main`: `puts("Username: ")`, `puts("Password: ")`; `rejected`: `printf("Go away!")` |
 | ✅ | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | ENABLED by default since the printer change — its planted `char[N]` symbol coexists with the literal: the printer renders a pointer to a readonly char-printable array symbol as the literal (Ghidra behavior). fauxware `main`: `puts("Username: ")`/`puts("Password: ")` with `s_400915` registered. See Increment 12 |
 | ✅ | `s1-dwarf` | DWARF names+types (`DWARFAnalyzer`) via gimli | hard | dwarf_stripped: `add_values`/`compute`/`main` recovered (no .symtab); cet_pie: `elaborate_debug_symbol`'s param typed `char *` (subtasks 1+2; **subtask-3 stack-locals deferred**, engine change) |
-| ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5); cross-arch `_start`→`main` idiom for AArch64/ARM/RISC-V — stripped `main` recovered + decompiled, ARM via the discovery-derived Thumb `TMode=1` paint (Increment 23) |
+| ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5); dynamic INIT/FINI elements named `_INIT_<i>`/`_FINI_<i>`/`_DT_INIT` per `ElfProgramBuilder` (Increment 22); cross-arch `_start`→`main` idiom for AArch64/ARM/RISC-V — stripped `main` recovered + decompiled, ARM via the discovery-derived Thumb `TMode=1` paint (Increment 23) |
 | ✅ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle, `GccExceptionAnalyzer`) | hard | fauxware: FDE starts ⊆ discovered entries (7 starts incl. `_start`/`main`) (Increment 5) |
 | ✅ | `sourcelang` | Source-language / compiler detection (`SourceLanguageAnalyzer`) | easy | `s1_sourcelang::detect_compiler`: `rust_hello` ⇒ `Rustc` (`.comment` + `_ZN…17h…E`), `fauxware`/`cpp_mangled` ⇒ `Gcc` (Increment 7) |
 | ✅ | `s1-rust-golang-noreturn` | Rust + **Go** no-return list selection (`noReturnFunctionConstraints.xml` `rustc` + `golang` arms) | easy | `RustFunctionsThatDoNotReturn` (Increment 7) **and** `GolangFunctionsThatDoNotReturn` (Increment 14) vendored + parsed per detected compiler; `ZN4core9panicking5panic17h*` flagged for Rust-only, `runtime.gopanic`/`runtime.throw`/`runtime.goexit.abi0` for Go-only, neither for a C ELF |
 | 🟡 | `ruststring` | Rust str-slice split (`RustStringAnalyzer`) | med | **detection ported** (shares `s1_sourcelang`); the **split is infeasible-at-tier** (needs post-disasm interior refs + a populated ReferenceManager — same wall as `FindNoReturnFunctionsAnalyzer`). Documented, no split code (Increment 7) |
-| 🟡 | `arm-mips-markers` | ARM `$t`/`$a`+STT_FUNC-LSB → `TMode` (`ARM_ElfExtension`/`ArmSymbolAnalyzer`); MIPS `$gp` | hard | **ARM half done** (Increment 8): `arm_thumb_le32.o` → `TMode=1` for `$t.0`@`0x0` + STT_FUNC LSB normalized to `0x0`/`0x14`; commit-arm paints `TMode` via `set_variable`, no-ops on non-ARM (fauxware byte-identical). **`.o`-unit-only** (no ARM linker on host → decode e2e + Thumb-FUNC re-home deferred); **MIPS `$gp`/`ISA_MODE` out of scope** (tracked-register, not decode-mode) |
+| ✅ | `arm-mips-markers` | ARM `$t`/`$a`+STT_FUNC-LSB → `TMode` (`ARM_ElfExtension`/`ArmSymbolAnalyzer`); MIPS `$gp` | hard | **ARM done** (Increments 8/17/18): `arm_thumb_le32.o` → `TMode=1` for `$t.0`@`0x0` + STT_FUNC LSB normalized to `0x0`/`0x14`; commit-arm paints `TMode` via `set_variable`, no-ops on non-ARM (fauxware byte-identical); Thumb-FUNC re-home (Increment 17). **Decode e2e now done in-container** (Increment 18): the LINKED `arm_thumb_linked_le32` ET_EXEC (`arm-linux-gnueabihf-gcc` in `kuna-dev`) Thumb-decodes `compute` → `a0 * 3 + 7` and `_start`'s CALL to the even entry resolves to `compute(` — no wiring fix needed. **MIPS `$gp`** done (Increment 17); **MIPS16 `ISA_MODE` out of scope** (needs a MIPS16 fixture) |
 | ✅ | `s1-formatstring` (A+B) | printf/scanf varargs typing (`FormatStringParser` + `FormatStringAnalyzer`) | xhard | **A done** (Increment 9) — `s1_formatstring::parse_output_types("%d %s")` ⇒ `[Int, CharPtr]`, full conversion+length-modifier tables, `*`/`%%`/positional `%n$`, malformed no-panic. **B done** (Increment 14) — the decompile→inspect→override→re-decompile loop in `IfcDecompile`: walks `CALL` ops, classifies printf/scanf callees (`apply::classify_variadic_call`), reads the format constant at the format slot, builds a per-call-site `PrototypePieces` override (`apply::build_override_pieces`), re-decompiles. **Gated OFF** (`--option formatstring on`, Ghidra `setDefaultEnablement(false)`). `fmt_x86_64`: `printf("%d %s\n",a0,(char *)*a1)` typed vs default `(uint8)a0,*a1` |
 | 🟡 | `addrtable` | Absolute address-table discovery (`AddressTableAnalyzer`) | med | implemented + tested but **disabled by default** (Ghidra `setDefaultEnablement(false)` + false-positive risk); scanner finds the 8-entry table @ `0x402008` in `switchtab_x86_64`. See Increment 4 |
 | ✅ | `callfixup` | Auto-apply cspec call-fixups (`CallFixupAnalyzer`, install half) | med | `mcount_x86_64`: `main`'s `-pg` `call mcount` is **dissolved** — body becomes `return 0;` + `Function: mcount replaced with injection: mcount`. Pass matches FUNC names to cspec `<callfixup><target>`; commit tags inject id (the inherited inject/weave path applies it). Flow-repair half infeasible-at-tier (LOSS). See Increment 8 |
@@ -1418,7 +1418,155 @@ catalog --check` **catalog OK**.
   registration). `kuna-decomp` count tests bumped (settable 31→32) + `stage_catalog.json`
   fixture regenerated.
 
+### Increment 22 — `_INIT_<i>`/`_FINI_<i>` array-element naming ✅
+
+**`s1-entry-disc`** — the cosmetic follow-up flagged by the Increment 15 completeness sweep:
+give the dynamic INIT/FINI entries their Ghidra loader names instead of the generic `sub_<addr>`,
+faithful to `ElfProgramBuilder.createDynamicEntryPoints`:
+
+- `DT_INIT_ARRAY` element `i` → `_INIT_<i>`, `DT_FINI_ARRAY` element `i` → `_FINI_<i>`
+  (Ghidra's `baseName + i`, where `i` is the element index in the array);
+- the single `DT_INIT`/`DT_FINI` → `_DT_INIT`/`_DT_FINI` (Ghidra's `"_" + dynamicEntryType.name`).
+
+`DT_PREINIT_ARRAY` (`_PREINIT_<i>`) is wired as the faithful seam (constant + `base_name`
+threading) but emits nothing — kuna does not currently *discover* preinit-array elements as
+code entries, and adding that would change the discovery set (out of scope here).
+
+**Shape choice — additive overlay, NOT a reshape.** `AnalysisOutput.entries` stays `Vec<u64>`;
+a new parallel `entry_names: Vec<(u64, String)>` overlay carries the names (`pass.rs`, `merge`
+extended). `s1_entry::collect_entries` is **byte-identical** — the discovery seam is untouched —
+and `dynamic_entry_points` is now exactly `dynamic_entry_points_named(file).map(|(a,_)| a)`, a
+guaranteed-equal projection (unit-tested: `dynamic_entry_points_is_named_projection`). The
+overlay is filtered to the VMAs that actually survive collection, so a name for a dropped
+(funcsym-covered) entry is never emitted. This is the lowest-risk shape: WHICH entries are found
+provably does not change, so the 675/158 XML oracles (which never construct an `ObjectLoadImage`)
+are structurally untouched, and the five other oracles + the address-table pass leave the overlay
+empty (→ existing `sub_<addr>` behavior).
+
+**Commit seam** (`engine.rs::commit_analysis_output` step 2): each discovered VMA consults the
+overlay; a hit names the function with the Ghidra name, a miss falls back to `name_function`
+(`sub_<addr>`) exactly as before. The idempotent `find_function` no-op is kept, so a non-stripped
+binary's real `.symtab`/`.dynsym` name still wins — only genuinely new, never-symboled
+array-element starts take the `_INIT_<i>` names.
+
+**Flag.** Purely additive on the always-on `entry_disc` pass (no new option, no settable-count
+bump): `--option entry_disc off` disables the whole discovery pass (names and all) as before.
+
+**Result (the proof).** On the vendored stripped PIE `stripped_dynamic_x86_64` (`.symtab`
+stripped): `.init_array`[0]→0x1240 and `.fini_array`[0]→0x1200 now register as `_INIT_0` /
+`_FINI_0`, and `DT_INIT`@0x1000 / `DT_FINI`@0x1464 as `_DT_INIT` / `_DT_FINI`. BEFORE,
+`kuna decompile stripped_dynamic_x86_64 sub_1240` resolved; AFTER it errors (`no function
+"sub_1240"`) and `kuna decompile … _INIT_0` decompiles a real body. `make test` **675/675 PARITY
+OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test` green.
+
+- **Tests:** `kuna-analysis` +3 (`dynamic_entry_names_stripped`,
+  `collect_entry_names_matches_collected_entries`, `dynamic_entry_points_is_named_projection`);
+  the existing `dynamic_entry_points_stripped` / `collect_entries_*` discovery tests pass
+  **unchanged** (byte-identical discovery). `kuna-console` +1 e2e
+  (`verify_s1_entry::dynamic_init_fini_elements_get_ghidra_names`: `_INIT_0`/`_FINI_0`/`_DT_INIT`/
+  `_DT_FINI` resolve and `_INIT_0` decompiles; `sub_1240` no longer resolves).
+### Increment 20 — RISC-V64 PLT import-name end-to-end (linked fixture) ✅
+
+Proves the `elf_plt.rs` RISC-V PLT-veneer decoder end-to-end on a **real, linked,
+dynamically-linked RISC-V64 executable**. Increment 1 (`plt-got`) already carried the RISC-V
+(RV32/RV64) arm of the per-arch PLT decoder (`decode_riscv`: the 16-byte
+`auipc t3,hi; l[wd] t3,lo(t3); jalr t1,t3; nop` GNU `ld` import veneer) plus a synthetic
+unit test pinning its arithmetic (`riscv_plt_decode`, positive + sign-extended-negative lo12),
+but the proof had run only on x86 fixtures — no linked RISC-V binary existed in-tree to
+exercise the full ELF parse → GOT-name-map → stub-decode → funcsym install → decode → print
+path. A dev container now carries a RISC-V64 toolchain + linker, so this increment vendors a
+linked fixture and adds the e2e gate.
+
+**No `elf_plt.rs` change was needed.** The RISC-V decoder, the `build_got_name_map`
+(`R_RISCV_JUMP_SLOT` → `.dynsym` name), and the `bootstrap_from_elf` arch auto-detect
+(`RISCV:LE:64:default` → `riscv.lp64d.sla`) all resolve the imports as-is. The increment is
+purely **additive coverage** (one linked fixture + one console e2e), so the XML datatest oracle
+is structurally untouched (the `<binaryimage>` path never constructs an `ObjectLoadImage`).
+
+**Fixture (`plt_riscv64`, 8520 bytes, source `plt_riscv64.c` vendored alongside).** A dynamic
+RISC-V64 PIE built with `riscv64-linux-gnu-gcc 11.4.0` (`-O0`, not stripped). `main` (`0x6b8`)
+calls `puts("hello")` (`puts@plt`=`0x5e0` → GOT slot `0x2020`) and `printf("%d\n", argc)`
+(`printf@plt`=`0x5f0` → GOT slot `0x2028`); both are `R_RISCV_JUMP_SLOT` relocations in
+`.rela.plt` naming `puts`/`printf`, and the stubs are the textbook
+`auipc t3,0x2; ld t3,-N(t3); jalr t1,t3; nop` veneer the decoder recognizes (the compressed
+`main` body also decodes — RVC). The build host's `kuna-dev` image ships `libc6-riscv64-cross`
+(shared libs) but not the dev package; the fixture build installs `libc6-dev-riscv64-cross`
+(headers + crt1) in the same root container invocation (see fixtures/README.md provenance).
+
+**Result (the proof).** `kuna decompile plt_riscv64 main`:
+
+```c
+unsigned long main(int4 a0)
+
+{
+  puts("hello");
+  printf("%d\n",(int8)a0);
+  return 0;
+}
+```
+
+The PLT imports render as `puts`/`printf` (not `sub_5e0`/`sub_5f0`), and the `.rodata` string
+constants are recovered too. `make test` **675/675 PARITY OK**; `make test-stages`
+**158/158 PARITY OK**; `make rust-test` green.
+
+- **Tests:** `kuna-console` +1 e2e (`verify_riscv64_plt.rs`,
+  `riscv64_plt_calls_are_named_in_decompiled_c`) — modeled on `verify_w11_elf_plt_names.rs`
+  (x86), same specs-absent skip guard; it asserts `main` decoded (real, not skipped) and that
+  `puts(`/`printf(` are named while `sub_5e0`/`sub_5f0` are gone. This retires the
+  RISC-V half of the "decode e2e proven only on x86" caveat; the ARM-link e2e remains the lone
+  off-host blocker (no in-env ARM linker).
+### Increment 19 — AArch64 PLT import-name end-to-end (linked fixture) ✅
+
+**What.** Proved the `elf_plt` AArch64 path (`src/s1_loader/elf_plt.rs::decode_aarch64`) resolves
+imports **end-to-end on a real, linked, dynamic AArch64 executable** — until now that decoder was
+only unit-tested against synthetic veneer bytes (the x86 paths had a real-binary console gate,
+`verify_w11_elf_plt_names`, but AArch64 had no linked fixture). A dev container with the AArch64
+toolchain + linker (`aarch64-linux-gnu-gcc 11.4.0`) finally makes the linked build possible in-env
+(unlike the still-blocked **ARM** decode e2e — no ARM/Thumb linker on host).
+
+**Fixture.** `decompiler/crates/kuna-analysis/tests/fixtures/plt_aarch64` (9056 bytes, ET_EXEC,
+Machine AArch64, dynamic — has `.plt` + `.rela.plt` + DT_PLTGOT), built from the vendored
+`plt_aarch64.c` (`main` calls `puts("hello")` then `printf("%d\n", argc)`):
+`aarch64-linux-gnu-gcc -O0 -no-pie plt_aarch64.c -o plt_aarch64`. Standard GNU `ld` 16-byte
+veneer (`adrp x16, GOT_page; ldr x17,[x16,#lo12]; add x16,x16,#lo12; br x17`). Pinned VMAs:
+`main`=`0x400604`, `puts@plt`=`0x4004d0` (GOT `0x411018`), `printf@plt`=`0x4004e0` (GOT
+`0x411020`); both `R_AARCH64_JUMP_SLOT` in `.rela.plt`.
+
+**e2e.** `decompiler/crates/kuna-console/tests/verify_aarch64_plt.rs`, modeled on the x86 gate:
+`bootstrap_from_elf(plt_aarch64, "", [specs])` (the ELF machine → `AARCH64:LE:64:v8A` resolves
+automatically) → `load function main` → `decompile` → `print C`; asserts the body names `puts(`
+and `printf(` and the old `sub_4004d0`/`sub_4004e0` PLT-stub placeholders are gone. Same
+specs-absent skip guard (needs the built `AARCH64.sla`). The test **actually decodes** (does not
+skip) on a tree with the spec compiled — it exercises the A64 decoder over `main`.
+
+**No `elf_plt.rs` fix needed.** The existing `decode_aarch64` already handled this binary's
+veneer layout correctly; the increment is purely additive (new fixture + new e2e + doc/log). The
+BEFORE/AFTER was confirmed by temporarily stubbing the AArch64 arm: with it disabled `main`
+renders `sub_4004d0("hello"); sub_4004e0(0x400670,a0);`; with it enabled (the shipped behavior)
+`puts("hello"); printf("%d\n",(uint8)a0);`.
+
+**Result (the proof).**
+```c
+unsigned long main(uint4 a0)
+{
+  puts("hello");
+  printf("%d\n",(uint8)a0);
+  return 0;
+}
+```
+`make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test`
+green. Additive real-ELF-path change → the XML datatest/stage gates are structurally untouched
+(the `<binaryimage>` bootstrap never runs the ELF loader). `kuna-console` +1 test
+(`verify_aarch64_plt`).
+
 ### Remaining work (essentially complete)
+
+> The build-plan for the analyzers that stay out of reach at this tier
+> (infeasible-at-tier, non-ELF, or huge-subsystem — AIF, the operand/reference
+> markup family, Go pclntab, FID, PE/Mach-O loaders) — i.e. what kuna would have
+> to BUILD first (notably a shared post-disassembly Listing tier), with effort
+> sizing, engine seams, and verdicts — is in
+> [`analysis-port-buildplan.md`](analysis-port-buildplan.md).
 
 Waves 1–3 (Increments 4–13) **and the entire deferred frontier are done**: DWARF subtask-3
 stack locals (14), Golang no-return + completeness sweep (15), format-string-B varargs typing
@@ -1426,14 +1574,17 @@ stack locals (14), Golang no-return + completeness sweep (15), format-string-B v
 confirms **every feasible-at-tier, decompiler-relevant ELF analyzer is ported** (ELF matches all
 three `noReturnFunctionConstraints.xml` lists; the per-compiler/per-arch passes cover the rest).
 
-Only two items remain, both **non-engine / off-host**:
-- **ARM decode e2e** — ✅ resolved in Increment 23: the `kuna-dev` container has the
-  `arm-linux-gnueabihf` toolchain, so a LINKED ARM/Thumb PIE (`entrymain_arm`) is now built
-  in-env; `verify_crossarch_entry_main.rs` runs the full Thumb decode e2e (the `s1_loader::arm_markers`
-  pass + `.o` unit test were already done — the linked-fixture gap is closed).
-- **`_INIT_<i>`/`_FINI_<i>` array-element naming** — cosmetic: `s1_entry` already *discovers*
-  those addresses; only the Ghidra-style names differ (vs `sub_<addr>`), and delivering them
-  needs reshaping the `entries` fact. Low payoff, documented follow-up.
+The deferred frontier is now closed:
+- **ARM decode e2e** — ✅ **done in-container** (Increment 18, reinforced by Increment 23). The
+  earlier off-host block (no ARM linker on the build host) is lifted by the `kuna-dev`
+  container's `arm-linux-gnueabihf-gcc`: the LINKED `arm_thumb_linked_le32` ET_EXEC fixture
+  Thumb-decodes `compute` (`a0 * 3 + 7`) through the full pipeline (`verify_arm_thumb_decode.rs`),
+  proving the `arm_markers` `TMode` paint + Thumb-FUNC re-home drive a correct decode — no wiring
+  fix was needed. Increment 23 additionally exercises the linked ARM/Thumb decode through the
+  cross-arch `_start`→`main` path (`entrymain_arm`, `verify_crossarch_entry_main.rs`).
+- **`_INIT_<i>`/`_FINI_<i>` array-element naming** — ✅ **done (Increment 22)**: the array-element
+  naming follow-up flagged by the Increment 15 sweep, delivered as an additive `entry_names`
+  overlay (no reshape of the `entries` fact).
 
 Everything else is inherited by the engine or genuinely out-of-scope for an ELF decompiler
 (non-ELF formats, Go pclntab, FID — see the table + inventory).
@@ -1497,3 +1648,136 @@ resolved VMA is validated inside an executable section before emitting; additive
   | AArch64 | `0x600` | `adrp x0;ldr x0,[x0,#4080]` | `0x10ff0` (RELA addend) | `0x714` | `unsigned int sub_714(unsigned int a0){return a0;}` |
   | ARM/Thumb | `0x3dd` | `.got`+`0x28` GOT-rel `ldr r0` + `TMode=1` | `0x10ff8` (REL in-place) | `0x4d8` | `unsigned int sub_4d8(unsigned int a0){return a0;}` |
   | RISC-V | `0x550` | `auipc a0;ld a0,-1318(a0)` | `0x2030` (RELA addend) | `0x608` | `int8 sub_608(int4 a0){return (int8)a0;}` |
+
+### Increment 21 — MIPS16 ISA_MODE decode-mode painting ✅
+
+Closes the last sibling of the Increment 8 `arch-markers` frontier: MIPS16 `ISA_MODE` painting
+— the exact MIPS analog of ARM Thumb `TMode` (a decode-mode context BIT, unlike Increment 17's
+`$gp`/`t9` tracked-register VALUE). Increment 17 deferred it for lack of a MIPS16 fixture; the
+dev container now ships `mips-linux-gnu-gcc 10.3.0` (with `-mips16`).
+
+**Spec finding — `ISA_MODE` exists and is reachable on the default MIPS language.** The MIPS
+SLEIGH `contextreg` (`mips.sinc:411`) defines `ISA_MODE=(1,1)` ("=1 Decode using alternate
+ISA, variable") behind `@ifdef ISA_VARIANT`. The `mips32{le,be}.slaspec` BOTH `@define
+ISA_VARIANT` and `@include "mips16.sinc"`, so the `.sla` carries MIPS16 decode. The MIPS16
+constructors gate on `ISA_MODE=1 & RELP=1` (`mips16.sinc:227+`); MIPS32 on `ISA_MODE=0`
+(`mips32Instructions.sinc:11`, `@define AMODE "ISA_MODE=0"`). **Crucially `RELP=1` is already
+fixed globally** by the default `mips32.pspec` (`<set name="RELP" val="1">`), so painting only
+`ISA_MODE=1` at a function entry is sufficient to flip THAT function to MIPS16 — exactly the
+Thumb `TMode` situation. A bare MIPS ELF resolves to `MIPS:{BE,LE}:32:default:default`
+(`loadimage_object.rs:598`) → `mips32{be,le}.sla`, which has all this. **The context var name
+is `ISA_MODE`** (no gap; the spec fully supports MIPS16 decode).
+
+**Toolchain finding — modern binutils marks MIPS16 via `st_other`, not the LSB.** Unlike the
+ARM-Thumb `entry|1` assumption in the task brief, `mips-linux-gnu-gcc 10.3.0`'s linker records a
+`__attribute__((mips16))` function's STT_FUNC at the **even** entry with `st_other & 0xf0 ==
+STO_MIPS_MIPS16 (0xf0)` (the `[MIPS16]` readelf flag), NOT an LSB-set odd value. This is exactly
+the upstream `MIPS_ElfExtension.applyIsaMode` (`:412-432`), which enables `ISA_MODE=1` for
+EITHER an LSB-set symbol value (re-homed to even) OR `st_other & 0xf0` ∈ {STO_MIPS_MIPS16,
+STO_MIPS_MICROMIPS}. **Both branches ported** — faithful to `applyIsaMode`.
+
+**New pass** [`MipsIsaModePass`](../decompiler/crates/kuna-analysis/src/s1_loader/mips_markers.rs)
+(sibling of `MipsMarkerPass` in the same module), `AnalysisPass` id `mips_isa`, stage S1,
+registered always-on in `passes_for` after `MipsMarkerPass`. **Gated on MIPS**
+(`object::Architecture::Mips|Mips64`), the analog of `MIPS_ElfExtension.canHandle ==
+processor==MIPS`: empty output on every other language. For each defined STT_FUNC carrying the
+alternate-ISA marker it emits `ContextPaint { addr: entry & !1, var: "ISA_MODE", value: 1, end:
+None }` — **REUSING the existing context-paint commit arm** (`engine.rs::commit_analysis_output`
+step 6, the same arm the ARM `TMode` paints use; the Err-swallow makes it a no-op off-MIPS where
+`ISA_MODE` is unregistered) — and, for the LSB-set form only, a re-home `SymFact { addr: entry &
+!1, name, kind: Function }` (the MIPS analog of Increment 17's Thumb-FUNC re-home; the
+`st_other` form already records the symbol at the even value, so no re-home is needed there).
+`st_other` is read through the generic `ObjectSymbol::flags()` → `SymbolFlags::Elf { st_other }`.
+
+**Registration (per the `mips_gp` precedent exactly).** `stages.toml` row (`mips_isa`,
+default-on, S1/code-data-partition) + `KUNA_OPTION_NAMES` + `analysis_mips_isa` flag on
+`Architecture` (default-on in `reset_defaults_internal`) + the `set_kuna_option` arm + the
+`engine.rs` `analysis_pass_enabled` arm + the console `kuna_live_value` arm. Count tests bumped
+(settable 33→34; `},\n` 32→33; PASS_GATES +`mips_isa`) + `stage_catalog.json` fixture
+regenerated (34 rows) + `docs/assertions.md` regenerated. `kuna catalog --check` **catalog OK**.
+
+**Fixture (LINKED, e2e works in-env).** Built
+[`mips16_le32`](../decompiler/crates/kuna-analysis/tests/fixtures/mips16_le32) (1584-byte
+freestanding ET_EXEC, big-endian, `mips-linux-gnu-gcc -mips16 -O1 -no-pie -nostdlib
+-ffreestanding`, source vendored). Freestanding because the container has the MIPS runtime libc
+but no `libc6-dev` (no `crt1.o`/headers); a decode fixture needs no runtime. `m16_square` is a
+genuine MIPS16 leaf (`mult a0,a0; mflo v0; jr ra; addiu v0,3`, 8 bytes) at even entry `0x400130`
+with `st_other = STO_MIPS_MIPS16`.
+
+**The proof.** `kuna-console/tests/verify_mips16_isa.rs` bootstraps the fixture against the MIPS
+spec, commits the analysis (the `ISA_MODE` paint), loads + decompiles `m16_square`:
+
+```c
+// AFTER (mips_isa on, MIPS16-decoded):        // BEFORE (mips_isa off, MIPS32 misdecode):
+int4 m16_square(int4 a0)                       void m16_square(void)
+{                                              {
+  return a0 * a0 + 3;                            return;
+}                                              }
+```
+
+The painted form cleanly recovers `a0 * a0 + 3`; the un-painted form reads the 8 MIPS16 bytes as
+2 garbage MIPS32 words and produces an empty `void` body. The two renderings DIFFER — the option
+genuinely flips the decode. **The e2e actually decoded MIPS16 (not skipped).**
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**;
+`make rust-test` green; `kuna catalog --check` **catalog OK**. Additive real-ELF-path change —
+the XML datatest gates are structurally untouched (the `<binaryimage>` path never runs analysis
+passes).
+
+- **Tests:** `kuna-analysis` +2 (`mips_markers`: the MIPS16 paint at the even entry, the
+  st_other-no-rehome check; the non-MIPS-emits-no-ISA-paints gate; `passes` arch-marker
+  registration updated). `kuna-console` +2 (`verify_mips16_isa`: the MIPS16-decode assertion +
+  the on/off-differs toggle). `kuna-decomp` count tests bumped (settable 33→34) +
+  `stage_catalog.json` fixture regenerated.
+
+With this, **all three `arm-mips-markers` siblings are done** (ARM `TMode`, MIPS `$gp`, MIPS16
+`ISA_MODE`); the work-list row is 🟢. The only remaining arch-marker item is the ARM decode e2e
+(blocked off-host — no ARM linker).
+### Increment 18 — ARM Thumb decode end-to-end (linked fixture) ✅
+
+The deferred Increment-8/17 e2e: prove the analysis-tier `arm_markers` `TMode` paint +
+Thumb-FUNC re-home actually drive a **correct Thumb decode through the full pipeline** on a
+**LINKED** ARM executable (not the bare `.o` the unit test used). Increments 8 and 17 proved
+the *paint* (`$t`/`$a`+STT_FUNC-LSB → `TMode=1` `set_variable`) and the *re-home* (even-address
+`SymFact`) only on `arm_thumb_le32.o` (ET_REL); the decode e2e was blocked because the build
+host had no ARM linker. The **`kuna-dev` container** now provides `arm-linux-gnueabihf-gcc`, so
+the e2e is no longer off-host.
+
+**Fixture (LINKED ET_EXEC).** `arm_thumb_linked_le32` (1080 bytes), built in-container:
+`arm-linux-gnueabihf-gcc -mthumb -static -nostdlib -e _start arm_thumb_linked_le32.c -o
+arm_thumb_linked_le32` (arm-linux-gnueabihf-gcc 11.4.0). `readelf -h`: Type **EXEC**, Machine
+**ARM**; `readelf -l`: one **LOAD R E** segment at `0x10000` (so kuna's `ObjectLoadImage`, which
+reads only segments, loads it — unlike the bare `.o`). `readelf --syms`: the `$t` mapping symbol
+@`0x100b8` (NOTYPE LOCAL), `compute` FUNC @`0x100b9` (LSB-set Thumb `entry|1` → even decode
+`0x100b8`), `_start` FUNC @`0x100d7` (→ even `0x100d6`). `compute` is non-trivial (`x*3 + 7`: the
+Thumb `lsls #1; add; adds #7`) so a correct Thumb decode is visibly distinct from an ARM-mode
+(A32) misdecode of the same bytes (garbage). Source vendored alongside; provenance line added to
+`tests/fixtures/README.md`.
+
+**The e2e (`kuna-console/tests/verify_arm_thumb_decode.rs`).** Modeled on
+`verify_w11_elf_plt_names.rs` (same `bootstrap_from_elf` → `load function` → `decompile` → `print
+C` drive + the specs-absent skip guard). Two proofs in one gate:
+1. **TMode paint** — `load function compute` (which fires `commit_pending_analysis`, painting the
+   stashed `TMode=1` over the ContextDatabase **before** the decode) Thumb-decodes to
+   `return a0 * 3 + 7;`. The arithmetic IS the Thumb-mode proof (an A32 misdecode can't produce it).
+2. **Thumb-FUNC re-home** — `load function _start` renders the `bl` to `compute`'s **even** entry
+   (`0x100b8`, where execution lands) by name as `compute(5)`. Without the re-home's even-address
+   `SymFact` the engine symbol table would only know `compute` at the odd `0x100b9`, so the CALL
+   would render an anonymous `sub_<addr>`. The test asserts `compute(` is present and `sub_100b8`
+   is not. (The loader-symbol list `lookup_symbol` still returns the raw odd `entry|1` — the test
+   pins that real behavior too; the decode at the odd address still lands on the even bytes with
+   `TMode=1` painted.)
+
+**No wiring fix needed.** The `arm_markers` pass + the commit seam (`commit_analysis_output`
+step 6, `set_variable` over the ContextDatabase) + the SLEIGH translator already decode Thumb
+correctly end-to-end. The test ran a **real decode** (the ARM `ARM8_le.sla` is built; the skip
+guard was not hit). Equivalently via the CLI: `kuna decompile arm_thumb_linked_le32 compute` →
+`return a0 * 3 + 7;` and `… _start` → `compute(5)`.
+
+**Result (the proof).** `make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY
+OK**; `make rust-test` green (incl. the new `verify_arm_thumb_decode`). The change is purely
+additive on the real-ELF path (a new fixture + a new console test + the `arm_markers`/commit code
+unchanged), so the XML datatest oracle is structurally untouched.
+
+- **Tests:** `kuna-console` +1 (`verify_arm_thumb_decode::arm_thumb_compute_decodes_in_thumb_mode`).
+  New fixture `arm_thumb_linked_le32` (+ source). No engine/option/catalog change.

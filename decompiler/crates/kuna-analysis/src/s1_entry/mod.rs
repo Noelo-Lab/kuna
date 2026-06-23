@@ -39,7 +39,12 @@
 //!
 //! 1. **ELF entry point** (`e_entry`) — `EntryPointAnalyzer` external entry.
 //! 2. **`DT_INIT`/`DT_FINI` + `DT_INIT_ARRAY`/`DT_FINI_ARRAY`** pointer tables —
-//!    the loader-seeded external entry points (`ElfProgramBuilder`).
+//!    the loader-seeded external entry points (`ElfProgramBuilder`). These carry
+//!    Ghidra-faithful **names** through the `entry_names` overlay (`_INIT_<i>` /
+//!    `_FINI_<i>` per array element, `_DT_INIT`/`_DT_FINI` for the single tags) so
+//!    the commit seam names them like `ElfProgramBuilder.createDynamicEntryPoints`
+//!    instead of the generic `sub_<addr>`; the naming is additive and never changes
+//!    which VMAs are discovered.
 //! 3. **`.eh_frame` FDE `pcBegin`** addresses — [`scan_eh_frame_starts`].
 //! 4. **`_start`→`main` libc-start idiom** (x86-64 / AArch64 / ARM / RISC-V): the
 //!    arg-setup instructions that load `main` into the platform's first integer-arg
@@ -105,6 +110,12 @@ impl AnalysisPass for EntryDiscoveryPass {
         // emits a degenerate function. The exact analog of `arm_markers`'
         // STT_FUNC-LSB → `TMode=1` paint, derived here from the GOT pointer LSB.
         out.context_paints = thumb_entry_paints(ctx.file);
+        // Ghidra-faithful names for the dynamic INIT/FINI entries (oracle 2 only),
+        // restricted to the VMAs that actually survived into `out.entries` (a named
+        // entry already covered by a funcsym is filtered out above, so its name is
+        // moot). The commit seam consults this overlay; entries absent from it keep
+        // the generic `sub_<addr>` name. See `AnalysisOutput::entry_names`.
+        out.entry_names = collect_entry_names(ctx.file, &out.entries);
         out
     }
 }
@@ -167,6 +178,39 @@ pub fn collect_entries(file: &object::File) -> Vec<u64> {
     }
     out.sort_unstable();
     out.dedup();
+    out
+}
+
+/// Ghidra-faithful names for the *dynamic* INIT/FINI entries (oracle 2), as an
+/// `(addr, name)` overlay the commit seam consults. Faithful to
+/// `ElfProgramBuilder.createDynamicEntryPoints`:
+///
+/// - single `DT_INIT` / `DT_FINI` → `_DT_INIT` / `_DT_FINI` (Ghidra's
+///   `"_" + dynamicEntryType.name`),
+/// - each `DT_INIT_ARRAY` element `i` → `_INIT_<i>`,
+/// - each `DT_FINI_ARRAY` element `i` → `_FINI_<i>`
+///
+/// (and `DT_PREINIT_ARRAY` element `i` → `_PREINIT_<i>` — the constant is wired
+/// for faithfulness, but kuna's discovery does not currently emit PREINIT_ARRAY
+/// entries, so none are produced here; adding PREINIT_ARRAY *discovery* is a
+/// separate follow-up that would change the discovery set).
+///
+/// Only oracle 2 names anything (the other four oracles leave their entries
+/// generic `sub_<addr>`). The result is filtered to `kept` — the VMAs that
+/// actually survived [`collect_entries`]'s funcsym-skip/dedup — so a name for an
+/// entry that was dropped (e.g. it duplicates a real funcsym) is never emitted.
+/// This is purely additive: it never changes WHICH entries are discovered.
+pub fn collect_entry_names(file: &object::File, kept: &[u64]) -> Vec<(u64, String)> {
+    let mut out: Vec<(u64, String)> = Vec::new();
+    for (addr, name) in dynamic_entry_names(file) {
+        if kept.contains(&addr) {
+            out.push((addr, name));
+        }
+    }
+    // A VMA can be named by at most one dynamic source (INIT vs FINI tables are
+    // disjoint pointer arrays); dedup defensively to keep the overlay a clean map.
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out.dedup_by(|a, b| a.0 == b.0);
     out
 }
 
@@ -241,17 +285,56 @@ const DT_INIT_ARRAY: u64 = 25;
 const DT_FINI_ARRAY: u64 = 26;
 const DT_INIT_ARRAYSZ: u64 = 27;
 const DT_FINI_ARRAYSZ: u64 = 28;
+// Ghidra also seeds `DT_PREINIT_ARRAY` (named `_PREINIT_<i>`), but kuna does not
+// currently *discover* preinit-array elements as code entries. Adding that would
+// change the discovery set (which VMAs are found), out of scope for this purely
+// additive naming pass — wired here as the faithful follow-up seam (the
+// `read_pointer_table` `base_name` would just be `"_PREINIT_"`).
+#[allow(dead_code)]
+const DT_PREINIT_ARRAY: u64 = 32;
+#[allow(dead_code)]
+const DT_PREINIT_ARRAYSZ: u64 = 33;
 
-/// The loader-seeded external entry points from the `.dynamic` table:
+/// The loader-seeded external entry-point VMAs from the `.dynamic` table:
 /// `DT_INIT`/`DT_FINI` (one each) plus every pointer in the `DT_INIT_ARRAY` /
 /// `DT_FINI_ARRAY` tables (faithful to `ElfProgramBuilder` marking these as
-/// external entry points). The dynamic table is read from the `.dynamic` section
-/// bytes as `Elf{32,64}_Dyn` (tag/val) pairs — robust without the typed-view
-/// plumbing, and the array bytes come from whichever section contains the array
+/// external entry points). The address-only projection of
+/// [`dynamic_entry_points_named`] (which also documents the table decode); the
+/// Ghidra-faithful names ride the additive overlay (`dynamic_entry_names`).
+fn dynamic_entry_points(file: &object::File) -> Vec<u64> {
+    // The address-only projection of the named oracle. Discovery (WHICH VMAs) is
+    // defined here; the names are an additive overlay (see `dynamic_entry_names`).
+    dynamic_entry_points_named(file).into_iter().map(|(addr, _name)| addr).collect()
+}
+
+/// The dynamic INIT/FINI names overlay (oracle 2): the `(addr, name)` pairs for
+/// every entry [`dynamic_entry_points_named`] could name. See
+/// [`collect_entry_names`] for the Ghidra naming.
+fn dynamic_entry_names(file: &object::File) -> Vec<(u64, String)> {
+    dynamic_entry_points_named(file)
+        .into_iter()
+        .filter_map(|(addr, name)| name.map(|n| (addr, n)))
+        .collect()
+}
+
+/// The loader-seeded external entry points from the `.dynamic` table, each paired
+/// with its Ghidra-faithful name (or `None` for the unnamed single-`DT_INIT`/
+/// `DT_FINI` shape — see below). The *addresses* are the single source of truth
+/// for discovery (`dynamic_entry_points` is exactly `.map(|(a,_)| a)`); the names
+/// feed the additive overlay (`dynamic_entry_names`).
+///
+/// Faithful to `ElfProgramBuilder.createDynamicEntryPoints`:
+///   - `DT_INIT`/`DT_FINI` → one entry each, named `_DT_INIT`/`_DT_FINI`
+///     (Ghidra's single-entry `"_" + dynamicEntryType.name`),
+///   - `DT_INIT_ARRAY`/`DT_FINI_ARRAY` → every nonzero pointer in the table, the
+///     `i`-th named `_INIT_<i>`/`_FINI_<i>` (Ghidra's `baseName + i`).
+///
+/// The dynamic table is read from the `.dynamic` section bytes as `Elf{32,64}_Dyn`
+/// (tag/val) pairs; the array bytes come from whichever section contains the array
 /// vma (the static-image base-0 assumption: a PIE array pointer is already the
 /// file vma, no load bias).
-fn dynamic_entry_points(file: &object::File) -> Vec<u64> {
-    let mut out: Vec<u64> = Vec::new();
+fn dynamic_entry_points_named(file: &object::File) -> Vec<(u64, Option<String>)> {
+    let mut out: Vec<(u64, Option<String>)> = Vec::new();
 
     let Some(dynsec) = file.section_by_name(".dynamic") else {
         return out;
@@ -281,7 +364,12 @@ fn dynamic_entry_points(file: &object::File) -> Vec<u64> {
             break;
         }
         match tag {
-            DT_INIT | DT_FINI => out.push(val),
+            // Single DT_INIT/DT_FINI: Ghidra names these `_DT_INIT`/`_DT_FINI`
+            // (createDynamicEntryPoints's `"_" + dynamicEntryType.name`). The VMA
+            // is pushed unconditionally (byte-identical to the prior `out.push(val)`);
+            // the name rides as the overlay.
+            DT_INIT => out.push((val, Some("_DT_INIT".to_string()))),
+            DT_FINI => out.push((val, Some("_DT_FINI".to_string()))),
             DT_INIT_ARRAY => init_array = Some(val),
             DT_INIT_ARRAYSZ => init_array_sz = val,
             DT_FINI_ARRAY => fini_array = Some(val),
@@ -291,17 +379,33 @@ fn dynamic_entry_points(file: &object::File) -> Vec<u64> {
     }
 
     let ptr = if is64 { 8usize } else { 4usize };
-    for (base, sz) in [(init_array, init_array_sz), (fini_array, fini_array_sz)] {
+    // Order preserved from the prior implementation: INIT_ARRAY pointers then
+    // FINI_ARRAY pointers. The element index `i` drives the `_INIT_<i>`/`_FINI_<i>`
+    // name (Ghidra's `baseName + i`).
+    for (base, sz, base_name) in
+        [(init_array, init_array_sz, "_INIT_"), (fini_array, fini_array_sz, "_FINI_")]
+    {
         let Some(base) = base else { continue };
-        out.extend(read_pointer_table(file, base, sz, ptr, le));
+        out.extend(read_pointer_table(file, base, sz, ptr, le, base_name));
     }
 
     out
 }
 
 /// Read `sz / ptr` pointers from the array at vma `base` by slicing the section
-/// that contains `base`. Each decoded pointer is itself a function entry.
-fn read_pointer_table(file: &object::File, base: u64, sz: u64, ptr: usize, le: bool) -> Vec<u64> {
+/// that contains `base`. Each nonzero decoded pointer is itself a function entry;
+/// the `i`-th surviving element is named `<base_name><i>` (Ghidra's `baseName + i`,
+/// where `i` is the element's index in the array — note Ghidra increments `i` over
+/// ALL array slots, but a zero pointer is `continue`d, so the named survivors carry
+/// their original array index, which we mirror).
+fn read_pointer_table(
+    file: &object::File,
+    base: u64,
+    sz: u64,
+    ptr: usize,
+    le: bool,
+    base_name: &str,
+) -> Vec<(u64, Option<String>)> {
     let mut out = Vec::new();
     let Some((sec_addr, data)) = section_bytes_containing(file, base) else {
         return out;
@@ -315,7 +419,8 @@ fn read_pointer_table(file: &object::File, base: u64, sz: u64, ptr: usize, le: b
         }
         let p = if ptr == 8 { read_u64(&data[o..], le) } else { read_u32(&data[o..], le) as u64 };
         if p != 0 {
-            out.push(p);
+            // Ghidra names the element by its array index `i` (`baseName + i`).
+            out.push((p, Some(format!("{base_name}{i}"))));
         }
     }
     out
@@ -1178,6 +1283,61 @@ mod tests {
         // INIT_ARRAY (1 ptr @0x3d78 → 0x1240 frame_dummy), FINI_ARRAY (→ 0x1200).
         assert!(eps.contains(&0x1240), "INIT_ARRAY ptr 0x1240 missing from {eps:#x?}");
         assert!(eps.contains(&0x1200), "FINI_ARRAY ptr 0x1200 missing from {eps:#x?}");
+    }
+
+    // -- Oracle 2 naming overlay: Ghidra `_INIT_<i>`/`_FINI_<i>`/`_DT_INIT` --------
+
+    #[test]
+    fn dynamic_entry_names_stripped() {
+        let bytes = fixture("stripped_dynamic_x86_64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse stripped_dynamic");
+        let names = dynamic_entry_names(&file);
+        // Single DT_INIT/DT_FINI → `_DT_INIT`/`_DT_FINI` ("_" + ElfDynamicType.name).
+        assert!(
+            names.contains(&(0x1000, "_DT_INIT".to_string())),
+            "DT_INIT 0x1000 should be named _DT_INIT, got {names:#x?}"
+        );
+        assert!(
+            names.contains(&(0x1464, "_DT_FINI".to_string())),
+            "DT_FINI 0x1464 should be named _DT_FINI, got {names:#x?}"
+        );
+        // Array element 0 → `_INIT_0` / `_FINI_0` (baseName + i).
+        assert!(
+            names.contains(&(0x1240, "_INIT_0".to_string())),
+            "INIT_ARRAY[0] 0x1240 should be named _INIT_0, got {names:#x?}"
+        );
+        assert!(
+            names.contains(&(0x1200, "_FINI_0".to_string())),
+            "FINI_ARRAY[0] 0x1200 should be named _FINI_0, got {names:#x?}"
+        );
+    }
+
+    // The names overlay is filtered to entries that actually survive collection,
+    // and pairs every name with a discovered VMA (the headline e2e fact).
+    #[test]
+    fn collect_entry_names_matches_collected_entries() {
+        let bytes = fixture("stripped_dynamic_x86_64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse stripped_dynamic");
+        let entries = collect_entries(&file);
+        let names = collect_entry_names(&file, &entries);
+        // The array-element starts survive into the entry set and carry their names.
+        assert!(names.contains(&(0x1240, "_INIT_0".to_string())), "_INIT_0 missing");
+        assert!(names.contains(&(0x1200, "_FINI_0".to_string())), "_FINI_0 missing");
+        // Every named VMA is a genuinely-discovered entry (overlay never invents).
+        for (addr, _name) in &names {
+            assert!(entries.contains(addr), "named entry {addr:#x} not in discovered set");
+        }
+    }
+
+    // The address-only projection is byte-identical to the named oracle's addrs
+    // (the byte-identical-discovery contract: naming is purely additive).
+    #[test]
+    fn dynamic_entry_points_is_named_projection() {
+        let bytes = fixture("stripped_dynamic_x86_64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse stripped_dynamic");
+        let addrs = dynamic_entry_points(&file);
+        let named: Vec<u64> = dynamic_entry_points_named(&file).into_iter().map(|(a, _)| a).collect();
+        assert_eq!(addrs, named, "dynamic_entry_points must equal the named oracle's addresses");
     }
 
     // -- Oracle 4: _start -> main idiom (stripped_dynamic) --------------------

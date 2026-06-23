@@ -276,6 +276,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "entry_disc",
     "arm_markers",
     "mips_gp",
+    "mips_isa",
     "dwarf",
     "callfixup",
     "addrtable",

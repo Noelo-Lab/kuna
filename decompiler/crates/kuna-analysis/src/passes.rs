@@ -93,6 +93,21 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // untouched). Always-on, like noreturn/libproto/entry/arm_markers;
         // `--option mips_gp off` restores the un-tracked (raw `$gp`) rendering.
         Box::new(crate::s1_loader::mips_markers::MipsMarkerPass),
+        // S1 MIPS16 ISA_MODE decode-mode markers: paint the SLEIGH `ISA_MODE`
+        // context variable at each MIPS16e/microMIPS function entry (marked by the
+        // STT_FUNC LSB-set address OR `st_other & 0xf0` = STO_MIPS_MIPS16/MICROMIPS)
+        // so the body decodes in the alternate ISA instead of being misdecoded as
+        // MIPS32. The exact MIPS analog of ARM's `$t`/STT_FUNC-LSB → `TMode`
+        // painting (arm_markers) — a decode-mode context BIT, not a register value
+        // like `mips_gp`'s `t9`. The kuna analog of Ghidra's
+        // `MIPS_ElfExtension.applyIsaMode`. MIPS-only: the pass returns an empty
+        // output on every other language (its `processor==MIPS` gate), and the
+        // commit seam additionally swallows an "ISA_MODE not registered" error
+        // (the same context-paint arm the ARM `TMode` paints use), so this is a
+        // strict no-op for every non-MIPS binary (the parity gates are structurally
+        // untouched). Always-on, like arm_markers/mips_gp; `--option mips_isa off`
+        // restores the un-painted (MIPS32-misdecoded) rendering.
+        Box::new(crate::s1_loader::mips_markers::MipsIsaModePass),
         // S1 DWARF: recover function/global names and TYPED function signatures
         // from `.debug_*` sections (the kuna analog of Ghidra's `DWARFAnalyzer`).
         // Registered AFTER LibProtoPass so for any name both emit, the DWARF
@@ -222,13 +237,15 @@ mod tests {
         }
     }
 
-    /// The arch-marker passes are registered (always-on): ARM `TMode` painting and
-    /// MIPS `$gp` (`t9`) recovery. Both gate internally on their architecture, so
-    /// listing them here is safe on every binary.
+    /// The arch-marker passes are registered (always-on): ARM `TMode` painting,
+    /// MIPS `$gp` (`t9`) recovery, and MIPS16 `ISA_MODE` painting. All gate
+    /// internally on their architecture, so listing them here is safe on every
+    /// binary.
     #[test]
     fn arch_marker_passes_registered() {
         let d = ids(&default_passes());
         assert!(d.contains(&"arm_markers"), "arm_markers must be registered");
         assert!(d.contains(&"mips_gp"), "mips_gp must be registered");
+        assert!(d.contains(&"mips_isa"), "mips_isa must be registered");
     }
 }
