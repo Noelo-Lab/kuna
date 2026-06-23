@@ -1420,6 +1420,13 @@ catalog --check` **catalog OK**.
 
 ### Remaining work (essentially complete)
 
+> The build-plan for the analyzers that stay out of reach at this tier
+> (infeasible-at-tier, non-ELF, or huge-subsystem — AIF, the operand/reference
+> markup family, Go pclntab, FID, PE/Mach-O loaders) — i.e. what kuna would have
+> to BUILD first (notably a shared post-disassembly Listing tier), with effort
+> sizing, engine seams, and verdicts — is in
+> [`analysis-port-buildplan.md`](analysis-port-buildplan.md).
+
 Waves 1–3 (Increments 4–13) **and the entire deferred frontier are done**: DWARF subtask-3
 stack locals (14), Golang no-return + completeness sweep (15), format-string-B varargs typing
 (16, gated off), and MIPS `$gp` recovery + ARM Thumb-FUNC re-home (17). The completeness sweep
