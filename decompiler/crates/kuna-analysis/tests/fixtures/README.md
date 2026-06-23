@@ -18,6 +18,7 @@ real ELF parser.
 | `cet_pie_x86_64` | PIE x86-64 with CET (`.plt.sec`) | `endbr64; FF 25` CET stubs, naming at the `.plt.sec` call target |
 | `stripped_dynamic_x86_64` | PIE x86-64, `.symtab` stripped (only `.dynsym`) | PLT resolution with no `.symtab` (dynsym/rela.plt only); entry discovery (`s1_entry`): `e_entry`=0x1160, `DT_INIT`=0x1000, `DT_FINI`=0x1464, INIT/FINI_ARRAY ptrs, `_start`→`main` idiom → 0x1405, `.eh_frame` FDE starts — `sub_1405` (main) decompiles without `--addr` |
 | `cpp_mangled_x86_64` | non-PIE x86-64 C++, not stripped | symbol demangling (`s1_demangle`): a defined `.symtab` C++ method `_ZN3foo3Bar3bazEi` must surface name-only as `foo::Bar::baz` |
+| `cpp_noreturn_x86_64` | non-PIE x86-64 C++, not stripped (source `cpp_noreturn_x86_64.cpp`) | the **no-return × demangle cross-pass seam** (`s1_loader::noreturn` + `s1_demangle`): `.dynsym` carries the mangled no-return imports `_ZSt9terminatev` (demangled `std::terminate`) and `__cxa_throw`, both UND (`.dynsym` address 0) — their real FunctionSymbols are installed at the PLT stubs `_ZSt9terminatev@plt`=`0x401070`, `__cxa_throw@plt`=`0x4010a0`. The no-return scan emits those **stub addresses** under the raw names, so the commit resolves the *demangled* funcsym **by address** (`find_function_across_scopes`); a name lookup of the mangled string would miss. e2e: `fail()` (`_Z4failv`=`0x401196`, demangled `fail`) tail-calls `std::terminate()` → `void fail(void)` with the `Subroutine does not return` warning and no dead fall-through; `main`=`0x4011a3` |
 | `dwarf_stripped_x86_64` | non-PIE x86-64, **`.symtab`/`.dynsym` FUNC names removed but `.debug_*` kept** | DWARF recovery (`s1_dwarf`): names + typed signatures of `add_values`/`compute`/`main` come **only** from `.debug_info` (the funcsym stream has none) |
 | `switchtab_x86_64` | non-PIE x86-64, dense `switch(x){0..7}` | address/jump tables (`addrtable`): an absolute 8-byte jump table in `.rodata` at vma `0x402008` (`jmp *0x402008(,%rdi,8)`) |
 | `rust_hello_x86_64` | tiny `#![no_std]` rustc PIE (x86-64), **not stripped** | source-language detection (`s1_sourcelang`): `.comment` carries `rustc version 1.90.0 …` (the faithful `ElfRustSourceLanguage` comment path) AND `.symtab` carries a Rust-mangled symbol `_ZN5nostd1m12rusty_helper17h…E` (the legacy `_ZN…17h<hex>E` heuristic) — both detection paths fire |
@@ -29,7 +30,11 @@ verbatim from `bs-artifacts/binaries/` (`fauxware`, `debug_symbol`,
 `debug_symbol_mod_stripped` respectively). `cpp_mangled_x86_64` was built locally
 with `g++ -O0 -no-pie -fno-pic` from a tiny `namespace foo { struct Bar { void
 baz(int); }; } void foo::Bar::baz(int){...} int main(){...}` source.
-`dwarf_stripped_x86_64`: `cc -g -O0 -no-pie -fno-pic t.c -o x` then
+`cpp_noreturn_x86_64`: `g++ -O0 -no-pie -fno-pic -o cpp_noreturn_x86_64
+cpp_noreturn_x86_64.cpp` (source vendored alongside) — a `fail()` that tail-calls
+`std::terminate()` plus a `throw` (→ `__cxa_throw`); both are mangled no-return
+`.dynsym` imports the demangle pass renames, so they verify the address-resolved
+no-return commit. `dwarf_stripped_x86_64`: `cc -g -O0 -no-pie -fno-pic t.c -o x` then
 `objcopy --wildcard --strip-symbol='*' x dwarf_stripped_x86_64` (empties the symbol
 table, keeps `.debug_*` — so DWARF is the sole name source; `t.c` = three funcs
 `add_values`/`compute`/`main`). `switchtab_x86_64`: `gcc -O1 -no-pie -fno-pic s.c`

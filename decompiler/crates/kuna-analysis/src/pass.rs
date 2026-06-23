@@ -91,6 +91,30 @@ pub struct ContextPaint {
     pub value: u32,
 }
 
+/// A function the known-no-return list matched: the engine should mark its
+/// FunctionSymbol no-return. Produced by [`crate::s1_loader::noreturn`] (the kuna
+/// analog of Ghidra's `NoReturnFunctionAnalyzer`, "Known").
+///
+/// Carries the symbol **address** as well as the matched name. The address is the
+/// stable key: demangling renames the funcsym before it is installed (a mangled
+/// C++ no-return symbol like `_ZSt9terminatev` becomes `std::terminate` in scope
+/// `std`), so a name-based commit (`query_global_function("_ZSt9terminatev")`)
+/// misses it. The commit instead resolves the FunctionSymbol by address
+/// (`Database::find_function_across_scopes(addr)`) — the same address the funcsym
+/// was installed at — and only falls back to the name path when the address does
+/// not resolve. Mirrors how `CallFixupAnalyzer`/`NoReturnFunctionAnalyzer` operate
+/// on the already-installed function object, not on the raw symbol string.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NoReturnFact {
+    /// Virtual address of the matched function symbol (the install address; stable
+    /// across demangling).
+    pub addr: u64,
+    /// The matched function's original (pre-demangle) symbol name — the fallback
+    /// resolution key when no function is installed at `addr` (e.g. an import that
+    /// only exists as a PLT-named stub).
+    pub name: String,
+}
+
 /// A function whose name matched a cspec call-fixup `<target>`: the engine should
 /// tag it with that fixup's inject id so the CALL is replaced by the fixup body.
 /// Produced by [`crate::s1_callfixup`] (the kuna analog of Ghidra's
@@ -115,8 +139,10 @@ pub struct AnalysisOutput {
     pub symbols: Vec<SymFact>,
     /// Discovered function entry points (for stripped targets).
     pub entries: Vec<u64>,
-    /// Functions that do not return (`exit`, `abort`, ...), by name.
-    pub noreturn: Vec<String>,
+    /// Functions that do not return (`exit`, `abort`, ...), by `(addr, name)`.
+    /// The commit resolves each by ADDRESS (stable across demangling), falling
+    /// back to the name path. See [`NoReturnFact`].
+    pub noreturn: Vec<NoReturnFact>,
     /// Extra read-only address ranges (e.g. `.got` after relocation).
     pub readonly: Vec<(u64, u64)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).

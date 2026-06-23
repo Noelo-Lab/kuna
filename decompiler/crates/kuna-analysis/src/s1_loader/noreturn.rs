@@ -35,7 +35,7 @@
 use object::read::{Object, ObjectSymbol};
 use object::SymbolKind;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Stage};
 
 /// The known-no-return name list, vendored verbatim from Ghidra
 /// `Ghidra/Features/Base/data/ElfFunctionsThatDoNotReturn`.
@@ -126,9 +126,13 @@ fn name_matches(name: &str, exact: &[String], wildcard: &[String]) -> bool {
 }
 
 /// Scan an ELF object's FUNC symbols (`.symtab` + `.dynsym`) for known no-return
-/// names. Emits the **original installed name** (not the stripped form) for each
-/// hit so the commit's `query_global_function` resolves the FunctionSymbol that
-/// actually exists. Shared by [`AnalysisPass::run`] and the unit tests.
+/// names. Emits a [`NoReturnFact`] carrying the symbol **address** alongside its
+/// **original installed name** (not the stripped form) for each hit. The address
+/// is the stable resolution key: the demangle pass renames the funcsym before it
+/// is installed, so a mangled C++ no-return symbol (`_ZSt9terminatev`) is
+/// installed as `std::terminate` — the commit resolves it by address
+/// (`find_function_across_scopes`) and falls back to the name only when nothing is
+/// installed at that address. Shared by [`AnalysisPass::run`] and the unit tests.
 ///
 /// `rust` adds the vendored `RustFunctionsThatDoNotReturn` wildcard list to the
 /// match set (faithful to `noReturnFunctionConstraints.xml`'s `rustc` arm).
@@ -146,20 +150,47 @@ fn scan_noreturn(file: &object::File, rust: bool) -> AnalysisOutput {
         wildcard.extend(r_wildcard);
     }
     let mut seen = std::collections::HashSet::new();
-    // The same FUNC streams `loadimage_object::from_bytes` installs as
-    // FunctionSymbols: a dynamic import like `exit` exists only in `.dynsym` /
-    // as a PLT stub named by `elf_plt`, so both streams must be scanned.
+    let mut emit = |out: &mut AnalysisOutput, addr: u64, n: String| {
+        if name_matches(&n, &exact, &wildcard) && seen.insert((addr, n.clone())) {
+            out.noreturn.push(NoReturnFact { addr, name: n });
+        }
+    };
+
+    // Mirror exactly the three FUNC streams `loadimage_object::from_bytes`
+    // installs as FunctionSymbols, so the emitted ADDRESS is the install address
+    // the commit's `find_function_across_scopes` resolves against.
+    //
+    // 1. `.symtab` + `.dynsym` **defined** functions (`sym.address()`). A defined
+    //    C++ no-return method surfaces here at its real code address. A UND import
+    //    entry has `address()==0` (the funcsym install skips these too); its real
+    //    FunctionSymbol comes from the PLT stub (arm 2), so skip the 0 address
+    //    here rather than emit a useless `addr==0` fact.
     for sym in file.symbols().chain(file.dynamic_symbols()) {
         if sym.kind() != SymbolKind::Text {
             continue;
+        }
+        let addr = sym.address();
+        if addr == 0 {
+            continue; // UND / absolute import stub, not a code address
         }
         let Ok(n) = sym.name() else { continue };
         let Ok(n) = String::from_utf8(crate::s1_loader::elf_plt::strip_version(n.as_bytes())) else {
             continue;
         };
-        if name_matches(&n, &exact, &wildcard) && seen.insert(n.clone()) {
-            out.noreturn.push(n);
-        }
+        emit(&mut out, addr, n);
+    }
+
+    // 2. PLT stubs (`elf_plt::resolve_plt_imports`): a dynamic import like `exit`
+    //    or `_ZSt9terminatev` has a UND (`address()==0`) `.dynsym` entry — its
+    //    only real FunctionSymbol is the PLT stub `elf_plt` names. Emitting the
+    //    STUB address (not 0) is what lets the address path resolve a *demangled*
+    //    import: `_ZSt9terminatev` is installed at the stub as `std::terminate`,
+    //    so a name lookup of the raw mangled string misses, but the stub address
+    //    matches. The name is matched on the raw (pre-demangle) `.dynstr` form,
+    //    exactly as the `.symtab`/`.dynsym` arm does.
+    for p in crate::s1_loader::elf_plt::resolve_plt_imports(file) {
+        let Ok(n) = String::from_utf8(p.name) else { continue };
+        emit(&mut out, p.addr, n);
     }
     out
 }
@@ -236,9 +267,57 @@ mod tests {
         let bytes = std::fs::read(path).expect("read fauxware fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
         let out = scan_noreturn(&file, false);
-        assert!(out.noreturn.iter().any(|n| n == "exit"), "exit must be flagged");
-        assert!(!out.noreturn.iter().any(|n| n == "puts"), "puts must not be flagged");
-        assert!(!out.noreturn.iter().any(|n| n == "read"), "read must not be flagged");
+        let exit = out.noreturn.iter().find(|f| f.name == "exit").expect("exit must be flagged");
+        // The emitted address is the PLT-stub install address (a real code
+        // address, never the UND `.dynsym` 0), so the commit resolves it by
+        // address as well as by name.
+        assert_ne!(exit.addr, 0, "exit fact must carry the PLT-stub install address");
+        assert!(!out.noreturn.iter().any(|f| f.name == "puts"), "puts must not be flagged");
+        assert!(!out.noreturn.iter().any(|f| f.name == "read"), "read must not be flagged");
+    }
+
+    /// The cross-pass seam fix: a C++ binary whose `.dynsym` carries the mangled
+    /// no-return import `_ZSt9terminatev` (demangled `std::terminate`) and
+    /// `__cxa_throw`. Both are UND in `.dynsym` (address 0); their real
+    /// FunctionSymbols are installed at the PLT stub addresses (by `elf_plt`,
+    /// then demangled). The scan must therefore emit each fact with the **stub
+    /// install address** (non-zero) under its raw (pre-demangle) name, so the
+    /// commit's address path resolves the renamed `std::terminate` funcsym. A
+    /// name-only commit (`query_global_function("_ZSt9terminatev")`) would miss it.
+    #[test]
+    fn cpp_mangled_noreturn_emits_plt_stub_address() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/cpp_noreturn_x86_64");
+        let bytes = std::fs::read(path).expect("read cpp_noreturn fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse cpp_noreturn");
+        let out = scan_noreturn(&file, false);
+
+        // The mangled std::terminate import is flagged under its RAW name (the
+        // funcsym is later demangled to `std::terminate`; the scan matches the
+        // raw `.dynstr` form against the vendored list entry `ZSt9terminatev`).
+        let term = out
+            .noreturn
+            .iter()
+            .find(|f| f.name == "_ZSt9terminatev")
+            .expect("_ZSt9terminatev must be flagged no-return");
+        // PINNED: the `_ZSt9terminatev@plt` stub is at 0x401070 in this fixture
+        // (objdump -d -j .plt). Emitting this address (not the UND 0) is the fix.
+        assert_eq!(term.addr, 0x401070, "must carry the terminate PLT-stub address");
+
+        // __cxa_throw (raw `__cxa_throw` -> `cxa_throw` in the list) likewise.
+        let throw = out
+            .noreturn
+            .iter()
+            .find(|f| f.name == "__cxa_throw")
+            .expect("__cxa_throw must be flagged no-return");
+        assert_eq!(throw.addr, 0x4010a0, "must carry the __cxa_throw PLT-stub address");
+
+        // No spurious flags (e.g. main / fail / the C++ method must not be hit).
+        for spurious in ["main", "_Z4failv", "_ZN3app5Guard8throw_itEi"] {
+            assert!(
+                !out.noreturn.iter().any(|f| f.name == spurious),
+                "{spurious} must not be flagged"
+            );
+        }
     }
 
     /// The Rust wildcard list must match a Rust panic symbol ONLY when the pass

@@ -42,7 +42,7 @@ binding is also what keeps kuna a faithful drop-in for a Ghidra front-end (see
 |---|---|---|
 | function symbol | `find_create_scope_from_symbol_name` → `find_function` (dedup) → `add_function` + `ConsoleProgram::register_symbol` | the existing funcsym path; idempotent overlap no-op |
 | data symbol / string | `types().get_type_char(get_size_of_char())?` → `get_type_array(len, ch)?` → `add_symbol_mapped` → `set_attribute(typelock)` | all `TypeFactory` methods are **fallible** (`?`) |
-| no-return | `query_global_function(name)?` → `Database::set_function_no_return(sid, true)` | NOT the private `Architecture::set_function_no_return(name,..)` |
+| no-return | `find_function_across_scopes(addr)` (by **address**) → `Database::set_function_no_return(sid, true)`, name path `query_global_function(name)` as fallback | address is stable across demangle (Increment 11); NOT the private `Architecture::set_function_no_return(name,..)` |
 | readonly range | `Database::set_property_range(varnode_flags::readonly, a1, a2_open)` | now applied on the ELF path too (was XML-only); load-bearing for string rendering |
 | entry point | `name_function(addr)` → `add_function` + `register_symbol` (the `map function` recipe) | commit side is solved; *discovery* is the hard part |
 | call-fixup | rebuild target→fixup map from `arch.pcodeinjectlib.injection` → `pcodeinjectlib.base.get_payload_id(CALLFIXUP_TYPE, fixup)` → `query_global_function(name)?` → guard `Database::function_inject_id_for_symbol(sid) < 0` → `Database::set_function_inject_id(sid, injectid)` | the `IfcFixupApply` body driven by the analyzer; the `<0` guard is Ghidra's `getCallFixup()==null`; the inherited inject/weave path then applies the fixup at flow time |
@@ -294,13 +294,14 @@ namespaced callee resolved to `sub_<addr>` (worse than the mangled name). C++
 (fully-qualified) and `__stack_chk_fail()` is correctly no-return. Identical for flat
 global names, so the 675 datatests are unaffected.
 
-- **Known cross-pass seam:** the no-return pass matches on *raw object-symbol* names
-  while demangle renames the *funcsym*; a no-return C++ symbol (e.g. `_ZSt9terminatev`)
-  would be installed as `std::terminate`, so the no-return commit's
-  `query_global_function("_ZSt9terminatev")` would miss it. Harmless for the common
-  case (C libc no-return imports are unmangled). Documented for a later fix (match
-  on the installed/demangled name, or resolve no-return across scopes by the demangled
-  name).
+- **Known cross-pass seam (RESOLVED in Increment 11):** the no-return pass matched on
+  *raw object-symbol* names while demangle renamed the *funcsym*; a no-return C++ symbol
+  (e.g. `_ZSt9terminatev`) is installed as `std::terminate`, so the no-return commit's
+  `query_global_function("_ZSt9terminatev")` missed it. Harmless for the common case
+  (C libc no-return imports are unmangled), but real for C++. **Fixed by approach (A):**
+  the fact now carries the symbol **address** (`NoReturnFact { addr, name }`) and the
+  commit resolves by address via `find_function_across_scopes` (stable across demangling),
+  with the name path as a fallback. See Increment 11.
 
 - **Tests:** `kuna-analysis` 32 tests pass (noreturn 5 + strings + demangle 11 +
   fixtures); `make test` **PARITY OK** (675/675, including after the engine
@@ -890,14 +891,71 @@ way to a dissolved call.
   +1 e2e gate (`verify_s1_callfixup`). `make test` **PARITY OK** (675/675);
   `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
 
+### Increment 11 — resolve no-return by address (the no-return × demangle seam) ✅
+
+Closes the **Known cross-pass seam** flagged in Increment 2: the no-return pass matched on
+*raw object-symbol* names while demangle renamed the *funcsym* before install, so a mangled
+C++ no-return import (e.g. `_ZSt9terminatev`, installed as `std::terminate` in scope `std`)
+never attached — the commit's `query_global_function("_ZSt9terminatev")` missed the renamed
+symbol.
+
+**Approach (A) — resolve by ADDRESS (chosen).** The address is the stable key: demangling
+only changes the *name*, never the install address. Approach (B) (re-demangle the name in the
+commit + match across scopes) was rejected as fragile — it duplicates the demangle logic in a
+second place and still relies on string equality through two spellings. Address resolution
+reuses the exact cross-scope, address-keyed resolver the call resolver already uses
+(`Database::find_function_across_scopes`, added in Increment 2), so it is the minimal,
+faithful fix.
+
+- **`pass.rs`** — `AnalysisOutput::noreturn` changed from `Vec<String>` to
+  `Vec<NoReturnFact>` where `NoReturnFact { addr: u64, name: String }`. `merge()` is unchanged
+  (still `extend`). The fact carries the original (pre-demangle) name as the fallback key.
+- **`s1_loader/noreturn.rs`** — `scan_noreturn` now emits the **install address** alongside
+  the name. The matcher (strip leading `_`, exact + wildcard, `std`-only namespace guard) is
+  unchanged. The decisive detail: a no-return *import* like `exit` / `_ZSt9terminatev` is
+  **UND** in `.symtab`/`.dynsym` (`address()==0`); its real FunctionSymbol is installed at the
+  **PLT stub** by `elf_plt`. So the scan now mirrors the loader's three install streams: the
+  defined `.symtab`/`.dynsym` funcs (skipping `addr==0`, as the loader does) **plus**
+  `elf_plt::resolve_plt_imports` (emitting the **stub** address under the raw `.dynstr` name).
+  That stub address is exactly where the demangled `std::terminate` funcsym lives.
+- **`engine.rs::commit_analysis_output`** (no-return arm) — resolve by address first
+  (`find_function_across_scopes(addr)` → sid), falling back to the name path
+  (`query_global_function(name)`) only when nothing is installed at `addr` (or `addr==0`).
+  Address resolution finds the demangled/namespaced funcsym; the name fallback preserves the
+  old behavior for any future emitter that has only a name. The `s1_sourcelang` Rust-no-return
+  wiring is untouched (it flows through the same fact shape) and the fauxware `exit` regression
+  still works (now resolved by its PLT-stub address, with the name path as belt-and-braces).
+
+**Fixture.** Vendored `tests/fixtures/cpp_noreturn_x86_64` (+ source
+`cpp_noreturn_x86_64.cpp`), built `g++ -O0 -no-pie -fno-pic`. `fail()` (`_Z4failv` →
+demangled `fail`, `0x401196`) tail-calls `std::terminate()`; `main` also has a `throw` (→
+`__cxa_throw`). `nm`/`objdump` confirm `_ZSt9terminatev`/`__cxa_throw` are UND `.dynsym`
+imports whose PLT stubs are `_ZSt9terminatev@plt`=`0x401070`, `__cxa_throw@plt`=`0x4010a0`.
+
+**Proof (the fix is load-bearing).** With the address path the unit test
+`noreturn::tests::cpp_mangled_noreturn_emits_plt_stub_address` asserts the facts carry the
+stub addresses (`0x401070`/`0x4010a0`) under the raw names; the e2e
+`verify_noreturn_demangle.rs` decompiles `fail` and gets `void fail(void)` with the
+`Subroutine does not return` warning on `std::terminate()` and **no** dead fall-through.
+Manually disabling the address path (forcing the old name-only resolution) regresses to `int4
+fail(int4)` with `std::terminate()` returning and spurious dead code after it — the contrast
+that confirms the seam.
+
+- **Divergence / scope.** Same always-on, not-`--option`-flippable status as every Wave-1/2
+  pass (the deferred per-run gating, conflict #4) — no change here.
+- **Tests:** `kuna-analysis` +1 unit (`cpp_mangled_noreturn_emits_plt_stub_address`) and a
+  hardened fauxware assertion (the `exit` fact now carries a non-zero PLT-stub address);
+  `kuna-console` +1 e2e gate (`verify_noreturn_demangle`). `make test` **PARITY OK**
+  (675/675); `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+
 ### Next candidates (Wave 3 — engine seams, deferred)
 
 Wave 1 complete (Increments 4–7). **Wave 2 complete** (Increments 8–10): ARM/Thumb context
 painting, the format-string parser half (A), and cspec call-fixup auto-apply.
 What remains is **Wave 3**, per [`analysis-port-plan.md`](analysis-port-plan.md), all
 engine-touching: the **printer change** to let `s1-strings` render literals (re-enables it),
-the **per-run `--option` gating** of all passes (deferred conflict #4), the **no-return ×
-demangle** cross-pass seam fix, the **DWARF subtask-3** stack-local map, **format-string-B**
-(the decompile-loop varargs override wiring, building on Increment 9's parser), and the
-**arch-markers e2e + Thumb-FUNC re-home / MIPS `$gp`** follow-ups (need a LINKED ARM / MIPS
-fixture). Inherited/out-of-scope items need no work (see table + inventory).
+the **per-run `--option` gating** of all passes (deferred conflict #4), the **DWARF subtask-3**
+stack-local map, **format-string-B** (the decompile-loop varargs override wiring, building on
+Increment 9's parser), and the **arch-markers e2e + Thumb-FUNC re-home / MIPS `$gp`**
+follow-ups (need a LINKED ARM / MIPS fixture). The **no-return × demangle** cross-pass seam is
+now closed (Increment 11). Inherited/out-of-scope items need no work (see table + inventory).

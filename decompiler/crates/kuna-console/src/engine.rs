@@ -595,17 +595,40 @@ fn commit_analysis_output(
         prog.register_symbol(&name, addr);
     }
 
-    // 3. No-return functions: resolve each name to its global FunctionSymbol and
-    //    set the no-return flag (the batch form of OptionNoReturn::apply). A name
-    //    with no matching function is the faithful no-op — Ghidra only iterates
-    //    existing symbols. NOTE: query_global_function (public) then the public
-    //    Database method, NOT the private Architecture::set_function_no_return.
+    // 3. No-return functions: resolve each matched function and set the no-return
+    //    flag (the batch form of OptionNoReturn::apply). A fact with no matching
+    //    function is the faithful no-op — Ghidra only iterates existing symbols.
+    //
+    //    Resolution is by **address** (find_function_across_scopes, the same
+    //    cross-scope resolver the call resolver uses): the address is the stable
+    //    key. The demangle pass renames the funcsym before it is installed, so a
+    //    mangled C++ no-return symbol (`_ZSt9terminatev`) is installed as
+    //    `std::terminate` in scope `std` — a name lookup of the raw mangled string
+    //    would miss it, but the funcsym is still at the same address the no-return
+    //    scan saw. The name path is the fallback for an import that exists only as
+    //    a differently-addressed PLT stub (e.g. when the scan's `.dynsym` address
+    //    is 0 / unmapped but the PLT-named FunctionSymbol resolves by name).
+    //    NOTE: the public Database method, NOT the private
+    //    Architecture::set_function_no_return.
     let mut nr = out.noreturn.clone();
-    nr.sort();
+    nr.sort_by(|a, b| (a.addr, &a.name).cmp(&(b.addr, &b.name)));
     nr.dedup();
-    for name in &nr {
-        let resolved = prog.arch().query_global_function(name);
-        if let Ok(sid) = resolved {
+    for fact in &nr {
+        // Address path (preferred): resolves a demangled/namespaced funcsym.
+        let by_addr = if fact.addr != 0 {
+            let addr = Address::new(Rc::clone(code_space), fact.addr);
+            prog.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid)
+        } else {
+            None
+        };
+        let sid = match by_addr {
+            Some(sid) => Some(sid),
+            // Name fallback: an import with no function installed at `fact.addr`
+            // (e.g. an undefined-address `.dynsym` entry whose only installed
+            // FunctionSymbol is the PLT stub, resolved by its installed name).
+            None => prog.arch().query_global_function(&fact.name).ok(),
+        };
+        if let Some(sid) = sid {
             prog.arch_mut().symboltab.set_function_no_return(sid, true);
         }
     }
