@@ -23,10 +23,12 @@ real ELF parser.
 | `switchtab_x86_64` | non-PIE x86-64, dense `switch(x){0..7}` | address/jump tables (`addrtable`): an absolute 8-byte jump table in `.rodata` at vma `0x402008` (`jmp *0x402008(,%rdi,8)`) |
 | `rust_hello_x86_64` | tiny `#![no_std]` rustc PIE (x86-64), **not stripped** | source-language detection (`s1_sourcelang`): `.comment` carries `rustc version 1.90.0 …` (the faithful `ElfRustSourceLanguage` comment path) AND `.symtab` carries a Rust-mangled symbol `_ZN5nostd1m12rusty_helper17h…E` (the legacy `_ZN…17h<hex>E` heuristic) — both detection paths fire |
 | `arm_thumb_le32.o` | bare ARM Thumb **`.o`** (ET_REL, EABI5, LE) — **not linked** (no PT_LOAD; see note) | ARM/Thumb decode-mode markers (`s1_loader::arm_markers`): `.symtab` carries the `$t.0` Thumb mapping symbol at `.text+0x0` AND STT_FUNC syms `thumb_add`@`0x1` / `_start`@`0x15` (LSB-set, the Thumb odd-address convention). The pass emits a `TMode=1` paint for `$t.0` (at `0x0`) and for each LSB-set FUNC normalized to even (`0x0`, `0x14`) |
+| `arm_thumb_linked_le32` | **LINKED** ARM Thumb ET_EXEC (LE, `-static -nostdlib`) — one PT_LOAD R E at `0x10000` (so `ObjectLoadImage` loads it, unlike the bare `.o`) | ARM/Thumb decode **e2e** (`s1_loader::arm_markers` + the commit seam, `kuna-console/tests/verify_arm_thumb_decode.rs`): the `$t`@`0x100b8` mapping symbol + the LSB-set FUNCs `compute`@`0x100b9` (→ even `0x100b8`) / `_start`@`0x100d7` (→ even `0x100d6`) drive a `TMode=1` paint, so `load function compute` Thumb-decodes `compute(x)` to `return a0 * 3 + 7;` (an ARM-mode misdecode of the same bytes is garbage), and the Thumb-FUNC re-home makes `_start`'s `bl` to compute's even entry render `compute(5)`. **The deferred Increment-8/17 decode e2e, now built in-container** |
 | `mcount_x86_64` | static, non-PIE x86-64, `gcc -pg` (`-O0`), `.debug_*` stripped | call-fixup auto-apply (`s1_callfixup`): the `-pg` prologue emits a direct `call mcount` to the weak `mcount` FUNC symbol (0x44a710); `main` is at 0x401795. The cspec (`x86-64-gcc.cspec`) registers `<callfixup name="mcount"><target name="mcount"/>` (body `temp:1 = 0;`), so tagging `main`'s `mcount` callee with that fixup's inject id dissolves the profiling call — `kuna decompile … main` then shows no `mcount();` line. Also carries `__fentry__` (0x44a770, the `fentry`-fixup target) |
 | `fmt_x86_64` | non-PIE x86-64, `gcc -O0`, not stripped (source `fmt_x86_64.c`) | format-string varargs typing (`s1_formatstring` half B, `FormatStringAnalyzer`, **gated off** by default): `main`=0x401136 calls `printf("%d %s\n", argc, argv[0])` (`printf@plt`=0x401040; the `"%d %s\n"` format constant is at `.rodata` vma 0x402004). With `--option formatstring on`, the console reads the format constant at the `printf` call's format slot, parses `%d`→int / `%s`→char\*, installs a per-call-site prototype override, and re-decompiles so the call renders `printf("%d %s\n",a0,(char *)*a1)` (the `%d` arg as a plain `int`, the `%s` arg cast to `char *`) instead of the default untyped `printf("%d %s\n",(uint8)a0,*a1)` |
 | `plt_riscv64` | dynamically-linked RISC-V64 PIE (RVC, lp64d), not stripped (source `plt_riscv64.c`) | RISC-V PLT/GOT import naming end-to-end (`elf_plt::decode_riscv`): `main`=`0x6b8` calls `puts@plt`=`0x5e0` (`auipc t3,0x2; ld t3,-1472(t3); jalr t1,t3; nop` → GOT slot `0x2020`) and `printf@plt`=`0x5f0` (→ GOT `0x2028`); both are `R_RISCV_JUMP_SLOT` relocs in `.rela.plt` naming `puts`/`printf`. **Linked dynamic exe with PT_LOAD** (the RISC-V analog of the x86 `fauxware` PLT e2e and the MIPS linked fixture) — drives `kuna-console/tests/verify_riscv64_plt.rs`, which decompiles `main` to `puts("hello"); printf("%d\n",(int8)a0);` (not `sub_5e0`/`sub_5f0`) |
 | `mips_gp_le32` | dynamically-linked MIPS32 **LE** ET_DYN (`-O1 -no-pie`), not stripped | MIPS `$gp` recovery via per-function `t9` tracking (`s1_loader::mips_markers`): the PIC `_init`@`0x4004cc` / `_fini`@`0x400800` compute `gp = _gp_disp + t9` (`lui gp; addiu gp; addu gp,gp,t9`); without `t9` the `$gp`-relative GOT load reads `*(int4 *)(v1 /* t9 */ + 0x10b94)` (unresolved). The pass seeds `t9 = func_entry` per function (`assumeT9EntryAddress`), so the commit's tracked-register arm + `ActionConstbase` fold gp and the load resolves to a concrete GOT slot (`dat_411060`). `main`@`0x400704`, `bump`@`0x4006f0`. `_gp` symbol = `0x419030` = `.got`(`0x411040`) + `0x7ff0` (the MIPS GP bias) — cross-checked by `recover_gp_value`. **Linked ET_DYN with PT_LOAD** (unlike the ARM `.o`): the decode e2e works in-env (this host has a MIPS toolchain) |
+| `plt_aarch64` | linked, dynamic AArch64 ET_EXEC (`-no-pie`), not stripped (source `plt_aarch64.c`) | AArch64 PLT/import-name resolution end-to-end (`s1_loader::elf_plt::decode_aarch64`): the standard GNU `ld` 16-byte veneer (`adrp x16, GOT_page; ldr x17,[x16,#lo12]; add x16,x16,#lo12; br x17`). `main`@`0x400604` calls `puts("hello")` (`puts@plt`@`0x4004d0`, GOT slot `0x411018`) and `printf("%d\n", argc)` (`printf@plt`@`0x4004e0`, GOT slot `0x411020`); both `R_AARCH64_JUMP_SLOT` in `.rela.plt`. The console e2e (`kuna-console/tests/verify_aarch64_plt.rs`) asserts the call sites render `puts(`/`printf(` not `sub_4004d0`/`sub_4004e0` — the first **linked** AArch64 PLT proof (the decoder was previously synthetic-byte-unit-only). **Linked ET_EXEC with PT_LOAD** (unlike the ARM `.o`): the decode e2e works in-env (this container has the AArch64 toolchain + linker) |
 
 Provenance: `fauxware`, `cet_pie_x86_64`, `stripped_dynamic_x86_64` copied
 verbatim from `bs-artifacts/binaries/` (`fauxware`, `debug_symbol`,
@@ -59,9 +61,20 @@ FUNC symbols carry the LSB-set st_value Thumb convention. **It is a bare ET_REL
 `.o`, NOT a linked executable** — this build host has no ARM linker (no lld;
 gold/mold are x86-only builds; system `ld` rejects `armelf_linux_eabi`). The
 symbol scan unit-tests against the `.o` (which `object` parses fine); the decode
-**e2e** (`kuna decompile arm_thumb… main` producing valid Thumb-decoded C) is a
-documented follow-up that needs a LINKED ARM exe (ET_EXEC/ET_DYN with PT_LOAD —
-`ObjectLoadImage` reads only segments), built off-host.
+**e2e** uses the LINKED `arm_thumb_linked_le32` (below).
+
+`arm_thumb_linked_le32` (1080 bytes, source vendored alongside as
+`arm_thumb_linked_le32.c`): the LINKED counterpart to the bare `.o`, built **in
+the `kuna-dev` container** (arm-linux-gnueabihf-gcc 11.4.0) with
+`arm-linux-gnueabihf-gcc -mthumb -static -nostdlib -e _start arm_thumb_linked_le32.c -o arm_thumb_linked_le32`.
+`-mthumb` forces Thumb codegen (the assembler lays the `$t` mapping symbol; the
+linker records the STT_FUNC symbols at `entry|1`); `-static -nostdlib -e _start`
+keeps it tiny and self-contained. It is a real **ET_EXEC with a PT_LOAD R E
+segment** (`readelf -h` Type EXEC / Machine ARM; `readelf -l` one LOAD R E at
+`0x10000`), so `ObjectLoadImage` (segments-only) loads it — the property the bare
+`.o` lacked. `compute` is `x*3 + 7` (non-trivial Thumb arithmetic) so a correct
+Thumb decode is visibly distinct from an ARM-mode misdecode. Drives the deferred
+Increment-8/17 decode **e2e** (`kuna-console/tests/verify_arm_thumb_decode.rs`).
 
 `mcount_x86_64`: `gcc -pg -static -O0 -o mcount_x86_64 t.c` (t.c = `int
 main(){return 0;}`), then `strip --strip-debug` (drops `.debug_*` but keeps
@@ -107,6 +120,17 @@ addu gp,gp,t9` in `_init`/`_fini`) and a `lw t9,-N(gp)` GOT call in `main` — t
 also works but is ~672 KB (static glibc), so the dynamic form is vendored. `t9.c`
 uses a global `counter` + a `printf` call so the prologue sets `$gp`. The `_gp`
 LOCAL symbol survives (not stripped) so `recover_gp_value` can read it.
+`plt_aarch64` (9056 bytes, source vendored alongside as `plt_aarch64.c`): built
+with `aarch64-linux-gnu-gcc -O0 -no-pie plt_aarch64.c -o plt_aarch64` (Ubuntu
+aarch64-linux-gnu-gcc 11.4.0, in the `kuna-dev` container —
+`docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc 'aarch64-linux-gnu-gcc -O0
+-no-pie decompiler/crates/kuna-analysis/tests/fixtures/plt_aarch64.c -o
+decompiler/crates/kuna-analysis/tests/fixtures/plt_aarch64'`). The `-no-pie` keeps
+it ET_EXEC with fixed PLT/GOT VMAs so the pinned stub/GOT consts in
+`verify_aarch64_plt.rs` are deterministic; `main`/`puts`/`printf` are kept
+**un**stripped so the local `main` resolves and the `.dynsym` import names back the
+PLT veneers. Drives the AArch64 PLT import-name console gate
+(`kuna-console/tests/verify_aarch64_plt.rs`).
 
 `plt_riscv64` (8520 bytes, source vendored alongside as `plt_riscv64.c`): built
 with `riscv64-linux-gnu-gcc -O0 plt_riscv64.c -o plt_riscv64`
