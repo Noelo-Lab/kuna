@@ -28,11 +28,11 @@ fn surface_count_is_90() {
 }
 
 #[test]
-fn settable_count_is_31() {
-    // 23 stage-model knobs + 8 analysis-pass gates (per-run `--option <id>
-    // on|off` enablement of the kuna_analysis passes).
-    assert_eq!(kuna_num_settables(), 31);
-    assert_eq!(SETTABLE_TABLE.len(), 31);
+fn settable_count_is_32() {
+    // 23 stage-model knobs + 9 analysis-tier gates (8 per-run analysis-pass
+    // enablement + the `formatstring` DecompilerDependent varargs-typing gate).
+    assert_eq!(kuna_num_settables(), 32);
+    assert_eq!(SETTABLE_TABLE.len(), 32);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -211,11 +211,11 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_20_suppressed_for_11() {
+fn option_values_live_value_present_for_20_suppressed_for_12() {
     let ov = OptionValues::default();
     // 20 options have a codegen live reader (realtypes joins the field-backed
     // group); the live_value returns the current value for them and None for
-    // loweredswitch/stackguard/namestyle PLUS the 8 analysis-pass gates (which
+    // loweredswitch/stackguard/namestyle PLUS the 9 analysis-tier gates (which
     // have no `live_field` — their live state is read console-side via the
     // hand-written `kuna_live_value`, not the codegen `live_value`).
     const PASS_GATES: &[&str] = &[
@@ -227,6 +227,7 @@ fn option_values_live_value_present_for_20_suppressed_for_11() {
         "dwarf",
         "callfixup",
         "addrtable",
+        "formatstring",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -311,8 +312,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 31 rows: 30 trailing commas (the last has none).
-    assert_eq!(json.matches("},\n").count(), 30);
+    // 32 rows: 31 trailing commas (the last has none).
+    assert_eq!(json.matches("},\n").count(), 31);
 }
 
 #[test]

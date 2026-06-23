@@ -364,6 +364,16 @@ pub struct Architecture {
     /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
     /// Ghidra `AddressTableAnalyzer.setDefaultEnablement(false)`).
     pub analysis_addrtable: bool,
+    /// (kuna) Gate the format-string varargs-typing behavior (`formatstring`,
+    /// `FormatStringAnalyzer` half B); default **off** (matches Ghidra
+    /// `FormatStringAnalyzer.setDefaultEnablement(false)`).  Unlike the other
+    /// `analysis_*` flags this does NOT gate a load-time `AnalysisOutput` pass:
+    /// `FormatStringAnalyzer` is `DecompilerDependent`, so the console's
+    /// `IfcDecompile` reads this flag *after* the first decompile to decide
+    /// whether to run the per-call-site printf/scanf varargs override loop and
+    /// re-decompile.  Default-off ⇒ the loop is inert and every parity gate is
+    /// byte-identical.
+    pub analysis_formatstring: bool,
 
     // --- Owned subsystems (architecture.hh:211-233) -----------------------
     /// Memory map of global variables and functions (C++ `symboltab`).
@@ -556,6 +566,7 @@ impl Architecture {
             analysis_dwarf: false,
             analysis_callfixup: false,
             analysis_addrtable: false,
+            analysis_formatstring: false,
 
             symboltab,
             options: OptionDatabase::new(),
@@ -646,6 +657,7 @@ impl Architecture {
         self.analysis_dwarf = true;
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
+        self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
     }
 
     /// Apply a kuna stage-model option (`option <name> <value>`), the analogue of
@@ -744,6 +756,9 @@ impl Architecture {
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
             "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
             "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),
+            "formatstring" => {
+                on_off!(analysis_formatstring, "Format-string varargs-typing pass")
+            }
             other => Err(KunaError::parse(format!("Unknown kuna option: {other}"))),
         }
     }

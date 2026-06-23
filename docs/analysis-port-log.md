@@ -147,7 +147,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `s1-rust-golang-noreturn` | Rust + **Go** no-return list selection (`noReturnFunctionConstraints.xml` `rustc` + `golang` arms) | easy | `RustFunctionsThatDoNotReturn` (Increment 7) **and** `GolangFunctionsThatDoNotReturn` (Increment 14) vendored + parsed per detected compiler; `ZN4core9panicking5panic17h*` flagged for Rust-only, `runtime.gopanic`/`runtime.throw`/`runtime.goexit.abi0` for Go-only, neither for a C ELF |
 | 🟡 | `ruststring` | Rust str-slice split (`RustStringAnalyzer`) | med | **detection ported** (shares `s1_sourcelang`); the **split is infeasible-at-tier** (needs post-disasm interior refs + a populated ReferenceManager — same wall as `FindNoReturnFunctionsAnalyzer`). Documented, no split code (Increment 7) |
 | 🟡 | `arm-mips-markers` | ARM `$t`/`$a`+STT_FUNC-LSB → `TMode` (`ARM_ElfExtension`/`ArmSymbolAnalyzer`); MIPS `$gp` | hard | **ARM half done** (Increment 8): `arm_thumb_le32.o` → `TMode=1` for `$t.0`@`0x0` + STT_FUNC LSB normalized to `0x0`/`0x14`; commit-arm paints `TMode` via `set_variable`, no-ops on non-ARM (fauxware byte-identical). **`.o`-unit-only** (no ARM linker on host → decode e2e + Thumb-FUNC re-home deferred); **MIPS `$gp`/`ISA_MODE` out of scope** (tracked-register, not decode-mode) |
-| ✅ | `s1-formatstring` (A) | printf/scanf format-spec parser (`FormatStringParser`) | xhard | **parser half A done** (Increment 9) — `s1_formatstring::parse_output_types("%d %s")` ⇒ `[Int, CharPtr]`, full conversion+length-modifier tables, `*`/`%%`/positional `%n$`, malformed no-panic; 36 unit tests. **B (decompile-loop varargs override wiring) deferred** — engine-driver change, DecompilerDependent, gate OFF |
+| ✅ | `s1-formatstring` (A+B) | printf/scanf varargs typing (`FormatStringParser` + `FormatStringAnalyzer`) | xhard | **A done** (Increment 9) — `s1_formatstring::parse_output_types("%d %s")` ⇒ `[Int, CharPtr]`, full conversion+length-modifier tables, `*`/`%%`/positional `%n$`, malformed no-panic. **B done** (Increment 14) — the decompile→inspect→override→re-decompile loop in `IfcDecompile`: walks `CALL` ops, classifies printf/scanf callees (`apply::classify_variadic_call`), reads the format constant at the format slot, builds a per-call-site `PrototypePieces` override (`apply::build_override_pieces`), re-decompiles. **Gated OFF** (`--option formatstring on`, Ghidra `setDefaultEnablement(false)`). `fmt_x86_64`: `printf("%d %s\n",a0,(char *)*a1)` typed vs default `(uint8)a0,*a1` |
 | 🟡 | `addrtable` | Absolute address-table discovery (`AddressTableAnalyzer`) | med | implemented + tested but **disabled by default** (Ghidra `setDefaultEnablement(false)` + false-positive risk); scanner finds the 8-entry table @ `0x402008` in `switchtab_x86_64`. See Increment 4 |
 | ✅ | `callfixup` | Auto-apply cspec call-fixups (`CallFixupAnalyzer`, install half) | med | `mcount_x86_64`: `main`'s `-pg` `call mcount` is **dissolved** — body becomes `return 0;` + `Function: mcount replaced with injection: mcount`. Pass matches FUNC names to cspec `<callfixup><target>`; commit tags inject id (the inherited inject/weave path applies it). Flow-repair half infeasible-at-tier (LOSS). See Increment 8 |
 | 🟡 | `switch-recovery` | `DecompilerSwitchAnalyzer` | — | the engine **is** this (S2 jump-tables ported) |
@@ -1247,6 +1247,68 @@ multi-program resolution). Nothing else is both feasible at this tier and worth 
   `real_go_binary_detected_and_flags_runtime_gopanic`, and the generalized
   `all_compilers_have_same_pass_ids`). `make test` **PARITY OK** (675/675); `make test-stages`
   **PARITY OK** (158/158); `make rust-test` green; `kuna catalog --check` **catalog OK**.
+
+### Increment 16 — format-string varargs typing (`FormatStringAnalyzer`, half B, gated off) ✅
+
+The deferred half of Increment 9: the decompile→inspect→override→re-decompile loop that
+*applies* the parser's output to a printf/scanf call's variadic arguments. `FormatStringAnalyzer`
+is genuinely **DecompilerDependent** — the per-call-site format-string constant + which arg is
+the format only exist after the caller is lifted to p-code — so this is the console-driver loop
+(the kuna analog of Ghidra's `ParallelDecompiler` + `PcodeFunctionParser` +
+`HighFunctionDBUtil.writeOverride`), **not** a load-time `AnalysisOutput` pass.
+
+**SPIKE finding: the override + re-decompile seam is cleanly reachable.** Every primitive
+already existed (the `override prototype <addr> <decl>` console command is the hand-driven
+analog): `pending_proto_overrides` (ifacedecomp.rs, `fn-name → [(callpoint Address,
+PrototypePieces)]`) → `Override::insert_proto_override` (overrides.rs) → `applyPrototype` at
+flow time (flow.rs `build_call_specs`). The only new code is the pcode-walk + the parse + the
+loop. **No new fspec/override surface, no engine-internal action — the parity gates' XML
+datatest path never touches this loop.**
+
+**What landed:**
+- **Application logic** (pure, unit-tested) in
+  [`s1_formatstring/apply.rs`](../decompiler/crates/kuna-analysis/src/s1_formatstring/apply.rs):
+  `classify_variadic_call(name)` — Ghidra `VARIADIC_SUBSTRINGS = {"printf","scanf"}` substring
+  test + the `INPUT_FUNCTION_SUBSTRING = "scanf"` output/input choice (`FormatStringAnalyzer.java`
+  `:42`/`:59`/`:127`/`:273`); `build_override_pieces(name, outtype, fixed_param_types,
+  format_specs, types, word_size)` — the analog of `createParameters`/`initSignature` (`:292`/`:313`):
+  callee fixed params ++ format-derived types, `first_var_arg_slot = -1` (the override is the now
+  *fixed* signature, no longer varargs — matching the plain `FunctionDefinitionDataType` Ghidra
+  installs via `writeOverride`).
+- **The decompile loop** in `kuna-console`'s `IfcDecompile`
+  (`extract_format_string_overrides` + the gated re-decompile): after the first decompile, walk
+  the Funcdata's `CALL` ops (`obank().iter_alive` / `FuncCallSpecs`), classify each callee,
+  require `is_dotdotdot()` + a fixed format param, read the format constant at the format slot
+  (`getInput(getParameterCount())`, `PcodeFunctionParser.java:99`) — resolving the kuna IR's
+  derived format-pointer varnode through its defining `PTRSUB`/`PTRADD`/`COPY`/`CAST`/`INT_ADD`
+  op (`resolve_const_pointer`) — read the NUL-terminated bytes via `read_loadimage_value`
+  (`read_cstring`), parse with Increment 9, build the per-call-site override, push it onto
+  `pending_proto_overrides`, and re-decompile once.
+- **Gate** `formatstring` (default **off**, Ghidra `FormatStringAnalyzer.setDefaultEnablement(false)`):
+  a new `Architecture::analysis_formatstring` bool (architecture.rs), registered in `stages.toml`
+  (`change_kind = "analysis-enablement"`) + `KUNA_OPTION_NAMES` + `set_kuna_option`. **Unlike the
+  other `analysis_*` flags it does not gate a load-time pass** — `IfcDecompile` reads it after the
+  first decompile to decide whether to run the loop. Default-off ⇒ the loop is skipped entirely
+  and the decompile is byte-identical.
+
+**LOSS:** per-call-site override only (no listing-data markup / bookmarks); `size_t`/`intmax_t`
+width-approximated (inherited from Increment 9's `spec_to_datatype`, kuna has no `.gdt` typedefs);
+the format constant must survive as a constant pointer into readable memory at the call site
+(Ghidra's `searchForHiddenFormatStrings` non-constant path is not ported — those calls get no
+override, the faithful "no override" outcome). x86-64 ELF first cut; the call-arg-slot read is
+arch-generic via the recovered proto.
+
+- **Fixture:** `fmt_x86_64` (vendored, source + README) — `int main(int argc,char**argv){
+  printf("%d %s\n", argc, argv[0]); return 0;}`, `gcc -no-pie -fno-stack-protector -O0`, not
+  stripped (`main`=0x401136, `printf@plt`=0x401040, `"%d %s\n"` @ `.rodata` 0x402004).
+- **Tests:** `kuna-analysis` 92 (the 3 new `classify_variadic_call` cases + Increment 9's parser);
+  a new `kuna-console` e2e gate
+  [`verify_s1_formatstring.rs`](../decompiler/crates/kuna-console/tests/verify_s1_formatstring.rs):
+  `--option formatstring on` ⇒ `printf("%d %s\n",a0,(char *)*a1)` (the `%d` arg an `int` with no
+  `(uint8)` widening, the `%s` arg cast to `char *`); default-off ⇒ the untyped
+  `printf("%d %s\n",(uint8)a0,*a1)`. `make test` **PARITY OK** (675/675); `make test-stages`
+  **PARITY OK** (158/158); `make rust-test` green; `kuna catalog --check` **catalog OK** (the new
+  `formatstring` option discoverable, default `off`).
 
 ### Next candidates (remaining engine seams)
 

@@ -77,6 +77,13 @@
 //! `getIntegralPointerType` width choice Ghidra's fabricated typedefs wrap) — a
 //! documented stand-in matching the existing `s1_protos` libc-prototype table.
 
+/// The **application half (B)** of `FormatStringAnalyzer`: the pure,
+/// unit-testable call-site classification ([`apply::classify_variadic_call`])
+/// and per-call-site override-pieces builder ([`apply::build_override_pieces`])
+/// that the parser (this module) feeds.  The Funcdata pcode-walk + the
+/// decompile→override→re-decompile loop live in the `kuna-console` driver.
+pub mod apply;
+
 use std::rc::Rc;
 
 use kuna_base::error::KunaResult;

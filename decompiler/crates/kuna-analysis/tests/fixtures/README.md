@@ -24,6 +24,7 @@ real ELF parser.
 | `rust_hello_x86_64` | tiny `#![no_std]` rustc PIE (x86-64), **not stripped** | source-language detection (`s1_sourcelang`): `.comment` carries `rustc version 1.90.0 …` (the faithful `ElfRustSourceLanguage` comment path) AND `.symtab` carries a Rust-mangled symbol `_ZN5nostd1m12rusty_helper17h…E` (the legacy `_ZN…17h<hex>E` heuristic) — both detection paths fire |
 | `arm_thumb_le32.o` | bare ARM Thumb **`.o`** (ET_REL, EABI5, LE) — **not linked** (no PT_LOAD; see note) | ARM/Thumb decode-mode markers (`s1_loader::arm_markers`): `.symtab` carries the `$t.0` Thumb mapping symbol at `.text+0x0` AND STT_FUNC syms `thumb_add`@`0x1` / `_start`@`0x15` (LSB-set, the Thumb odd-address convention). The pass emits a `TMode=1` paint for `$t.0` (at `0x0`) and for each LSB-set FUNC normalized to even (`0x0`, `0x14`) |
 | `mcount_x86_64` | static, non-PIE x86-64, `gcc -pg` (`-O0`), `.debug_*` stripped | call-fixup auto-apply (`s1_callfixup`): the `-pg` prologue emits a direct `call mcount` to the weak `mcount` FUNC symbol (0x44a710); `main` is at 0x401795. The cspec (`x86-64-gcc.cspec`) registers `<callfixup name="mcount"><target name="mcount"/>` (body `temp:1 = 0;`), so tagging `main`'s `mcount` callee with that fixup's inject id dissolves the profiling call — `kuna decompile … main` then shows no `mcount();` line. Also carries `__fentry__` (0x44a770, the `fentry`-fixup target) |
+| `fmt_x86_64` | non-PIE x86-64, `gcc -O0`, not stripped (source `fmt_x86_64.c`) | format-string varargs typing (`s1_formatstring` half B, `FormatStringAnalyzer`, **gated off** by default): `main`=0x401136 calls `printf("%d %s\n", argc, argv[0])` (`printf@plt`=0x401040; the `"%d %s\n"` format constant is at `.rodata` vma 0x402004). With `--option formatstring on`, the console reads the format constant at the `printf` call's format slot, parses `%d`→int / `%s`→char\*, installs a per-call-site prototype override, and re-decompiles so the call renders `printf("%d %s\n",a0,(char *)*a1)` (the `%d` arg as a plain `int`, the `%s` arg cast to `char *`) instead of the default untyped `printf("%d %s\n",(uint8)a0,*a1)` |
 
 Provenance: `fauxware`, `cet_pie_x86_64`, `stripped_dynamic_x86_64` copied
 verbatim from `bs-artifacts/binaries/` (`fauxware`, `debug_symbol`,
@@ -70,7 +71,7 @@ direct `call mcount` to a real `mcount` FUNC symbol. Static glibc makes this
 fixture larger (~896 KB) than the others; that size is the unavoidable cost of a
 self-contained direct-`call mcount` target.
 
-**No Go fixture is vendored** (the Golang no-return list, Increment 14). Go ELF
+**No Go fixture is vendored** (the Golang no-return list, Increment 15). Go ELF
 binaries are unavoidably large — `go build` emits **~1.1 MB** un-stripped (the
 whole runtime is statically embedded) and **~750 KB** stripped — and the
 coverage tradeoff is forced: a *stripped* Go binary keeps `.go.buildinfo` (so
@@ -86,6 +87,15 @@ AND `runtime.gopanic`/`runtime.throw`/`runtime.goexit.abi0` flagged no-return
 under the Go arm but not the C arm. The list-parse/matching logic itself is pinned
 hermetically (no fixture, always runs) by `golang_list_gated_on_go_detection` and
 the `s1_sourcelang` list tests.
+
+`fmt_x86_64` (~16 KB, source vendored alongside as `fmt_x86_64.c`): built with
+`gcc -no-pie -fno-stack-protector -O0 -o fmt_x86_64 fmt_x86_64.c` where
+`fmt_x86_64.c` = `int main(int argc,char**argv){printf("%d %s\n", argc,
+argv[0]); return 0;}` (kept **un**stripped so `main`/`printf` resolve by name).
+The `-no-pie` keeps the format-string constant a fixed absolute address
+(`.rodata` vma 0x402004) so the per-call-site format-constant read is
+deterministic. Drives the `FormatStringAnalyzer` half-B console gate
+(`kuna-console/tests/verify_s1_formatstring.rs`).
 
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via
