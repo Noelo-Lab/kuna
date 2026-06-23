@@ -173,6 +173,9 @@ fn decode_plt_section(
         Architecture::Riscv64 | Architecture::Riscv32 => {
             decode_riscv(vma, data, map, out, named_got)
         }
+        Architecture::Sparc | Architecture::Sparc32Plus | Architecture::Sparc64 => {
+            decode_sparc(vma, data, map, out, named_got)
+        }
         // PPC64 (ELFv2 `.plt` is a data table; call stubs are synthesized in
         // `.text`) and MIPS (`.MIPS.stubs` + `$gp`-relative GOT) have no regular
         // decodable `.plt` code section — left as documented seams (names not
@@ -460,6 +463,55 @@ fn decode_riscv(
     }
 }
 
+// ---------------------------------------------------------------------------
+// SPARC (SPARC v9 / 32-bit, big-endian)
+// ---------------------------------------------------------------------------
+
+/// SPARC PLT import veneer (32-byte entry, big-endian fixed 32-bit insns):
+/// ```text
+///     sethi  %hi(entry_offset), %g1   ; 0x03______  — relocation index marker
+///     b,a    %xcc, <PLT0 resolver>    ; 0x30 6f ____ — branch to the header stub
+///     nop ; nop ; nop ; nop ; nop ; nop
+/// ```
+/// Unlike every other arch, SPARC's `.rela.plt` `R_SPARC_JMP_SLOT` relocation
+/// `r_offset` **is the PLT entry address itself** (the linker rewrites the
+/// in-place stub at resolution time — see Ghidra's `SPARC*_ElfRelocationHandler`),
+/// not a separate `.got` slot.  So the "got_slot → name" map ([`build_got_name_map`])
+/// is already keyed on the call target the decompiler sees: the decoder just walks
+/// the section in 32-byte strides and records any entry whose address is a known
+/// symbol-bearing relocation.  The 4-slot (`0x80`-byte) reserved PLT0 header and
+/// the non-symbol `__gmon_start__`/IRELATIVE slots are not relocation keys, so they
+/// fall out of the map automatically (same self-correcting cross-check as the
+/// other arches; here `stub == got`).
+fn decode_sparc(
+    vma: u64,
+    data: &[u8],
+    map: &HashMap<u64, Vec<u8>>,
+    out: &mut Vec<PltSym>,
+    named_got: &mut HashSet<u64>,
+) {
+    // SPARC `.plt` entries are 32 bytes; the first instruction of an import
+    // veneer is `sethi %hi(...), %g1` (top byte 0x03 big-endian).  Stride by the
+    // 32-byte entry size, and gate on both the `sethi %g1` opcode and the map
+    // membership so a non-PLT section never produces spurious names.
+    const ENTRY: usize = 32;
+    let mut off = 0usize;
+    while off + 4 <= data.len() {
+        // First word, big-endian.  `sethi rd, imm22`: op=00 (bits[31:30]),
+        // op2=100 (bits[24:22]), rd=bits[29:25]; rd==1 (%g1) and op2==0b100 give
+        // the canonical `sethi %hi(...),%g1` = 0x03xxxxxx import-veneer head.
+        let w0 = u32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
+        let is_sethi_g1 = (w0 >> 30) == 0b00 && ((w0 >> 25) & 0x1f) == 1 && ((w0 >> 22) & 0x7) == 0b100;
+        if is_sethi_g1 {
+            let entry = vma.wrapping_add(off as u64);
+            // SPARC: the JMP_SLOT relocation offset == the PLT entry address, so
+            // the stub and the GOT-name-map key are one and the same.
+            record(entry, entry, map, out, named_got);
+        }
+        off += ENTRY;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! Synthetic per-architecture decoder tests.  Each builds a `.plt`-shaped
@@ -562,5 +614,44 @@ mod tests {
         assert_eq!(out2.len(), 1);
         assert_eq!(out2[0].addr, auipc_addr);
         assert_eq!(out2[0].name, b"write".to_vec());
+    }
+
+    #[test]
+    fn sparc_plt_decode() {
+        // Real `plt_sparc64` bytes: a 4-slot (0x80-byte) reserved PLT0 header,
+        // then 32-byte import veneers each headed by `sethi %hi(...),%g1` (BE
+        // 0x03xxxxxx) + `b,a %xcc,<resolver>`.  On SPARC the JMP_SLOT relocation
+        // offset IS the entry address, so the name map is keyed on the entry vma.
+        let vma = 0x202100u64;
+        let entry = |i: usize| vma + 0x80 + (i as u64) * 32;
+        let veneer = |hi: u32, ba: u32| -> [u8; 32] {
+            let mut e = [0u8; 32];
+            e[0..4].copy_from_slice(&hi.to_be_bytes()); // sethi %hi(...),%g1
+            e[4..8].copy_from_slice(&ba.to_be_bytes()); // b,a %xcc,<resolver>
+            // remaining 6 words are `nop` (0x01000000); zeros are fine for decode.
+            e
+        };
+
+        let mut data = vec![0u8; 0x80]; // reserved PLT0 header (4 slots)
+        data.extend_from_slice(&veneer(0x03000080, 0x306fffe7)); // __libc_start_main@plt
+        data.extend_from_slice(&veneer(0x030000a0, 0x306fffdf)); // printf@plt
+        data.extend_from_slice(&veneer(0x030000c0, 0x306fffd7)); // puts@plt
+
+        // Only printf/puts are symbol-bearing relocations; __libc_start_main is
+        // present too but here we name just the two libc imports the e2e asserts.
+        let mut map: HashMap<u64, Vec<u8>> = HashMap::new();
+        map.insert(entry(1), b"printf".to_vec());
+        map.insert(entry(2), b"puts".to_vec());
+
+        let mut out: Vec<PltSym> = Vec::new();
+        let mut named: HashSet<u64> = HashSet::new();
+        decode_sparc(vma, &data, &map, &mut out, &mut named);
+
+        // The PLT0 header and the unmapped entry(0) fall out; printf+puts named
+        // at their own entry addresses (stub == reloc offset).
+        assert_eq!(out.len(), 2);
+        let mut got: Vec<(u64, Vec<u8>)> = out.iter().map(|p| (p.addr, p.name.clone())).collect();
+        got.sort();
+        assert_eq!(got, vec![(entry(1), b"printf".to_vec()), (entry(2), b"puts".to_vec())]);
     }
 }

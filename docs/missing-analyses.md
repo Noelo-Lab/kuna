@@ -88,18 +88,23 @@ structurally untouched.
 and turn each PLT stub into a thunk to an external function. The decompiler then
 sees the import name at the call site.
 
-**kuna now:** [`kuna-sleigh/src/elf_plt.rs`](../decompiler/crates/kuna-sleigh/src/elf_plt.rs)
+**kuna now:** [`kuna-analysis/src/s1_loader/elf_plt.rs`](../decompiler/crates/kuna-analysis/src/s1_loader/elf_plt.rs)
 reconstructs `got_slot → name` from the dynamic relocations and decodes each
 `.plt*` stub's GOT reference per architecture (x86-64, x86-32, AArch64, ARM32,
-RISC-V; classic, CET `.plt.sec`, PIE, and stripped layouts). Matches feed the
-existing loader symbol stream as named `FunctionSymbol`s, so `query_call`
-resolves them. Model depth is "correct names"; the full external-location/thunk
-object model (below) is deferred.
+RISC-V, SPARC; classic, CET `.plt.sec`, PIE, and stripped layouts). Matches feed
+the existing loader symbol stream as named `FunctionSymbol`s, so `query_call`
+resolves them. SPARC is the one decoder where the stub address and the name-map
+key coincide: its `R_SPARC_JMP_SLOT` `r_offset` is the PLT entry itself (the linker
+rewrites the in-place 32-byte `sethi/b,a` stub at resolution time), so
+`decode_sparc` just strides the `.plt` and records any `sethi %g1`-headed entry that
+is a known relocation (Increment 24, `plt_sparc64` e2e). Model depth is "correct
+names"; the full external-location/thunk object model (below) is deferred.
 
 **Still a gap within this area:**
 - PPC64 (ELFv2 `.plt` is a data table; call stubs are synthesized in `.text`) and
   MIPS (`.MIPS.stubs` + `$gp`-relative GOT) have no regular decodable `.plt` code
   section — left as documented seams (names not recovered, behavior unchanged).
+  (SPARC, which earlier shared this row, is now decoded — see above.)
 - x86-32 **PIC** veneers (`jmp *disp(%ebx)`) are not statically decodable without
   the runtime `%ebx` GOT pointer — skipped.
 - The external/thunk **object model** (Ghidra's `ExternalLocation` + thunk
