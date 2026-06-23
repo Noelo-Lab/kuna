@@ -1,5 +1,33 @@
 # kuna Progress Log
 
+## Session (2026-06-23) — analyzer-tier Wave 2 + Wave 3 (engine seams)
+
+Continued the analyzer-tier port (`docs/analysis-port-plan.md`) through Waves 2 and 3, again as
+parallel worktree sub-agents integrated sequentially with all-three-gates after each. **10
+analyzer-tier increments total now (Increments 4–13 in `docs/analysis-port-log.md`).**
+
+- **Wave 2** (engine/console-touching passes): **arch-markers** (`s1_loader::arm_markers`, Inc 8) —
+  ARM/Thumb `$t`/STT_FUNC-LSB → a new `ContextPaint` fact + `set_variable` commit arm that paints
+  `TMode`, **no-ops on non-ARM** (fauxware byte-identical); **format-string parser A** (`s1_formatstring`,
+  Inc 9) — full printf/scanf spec→arg-type parser, 36 tests, B deferred; **callfixup**
+  (`s1_callfixup`, Inc 10) — auto-tags cspec `<callfixup>` targets so `mcount` dissolves e2e.
+- **Wave 3** (the engine seams): **no-return × demangle** (Inc 11) — `AnalysisOutput.noreturn` now
+  carries the **address** (resolved via PLT stubs + `find_function_across_scopes`), so demangled C++
+  no-return symbols (`std::terminate`/`__cxa_throw`) flag correctly; **printer change + `s1_strings`
+  re-enabled** (Inc 12) — the SPACEBASE arm renders a pointer-to-readonly-char-array symbol as the
+  string literal (Ghidra behavior), so `puts("Username: ")` works *with the strings pass on* and even
+  non-libproto strings render — **675/675 + 158/158 byte-identical** (the parity-escalation contract
+  was satisfied, not triggered); **per-run `--option` gating** (Inc 13, resolves conflict #4) — the
+  analysis commit moved from `bootstrap_from_elf` to `IfcReadSymbols` (after the CLI's `option` lines),
+  each pass id registered as a flippable `--option` in `kuna catalog` (settables 23→31), default-on
+  (addrtable off). `--option noreturn_known off` per-run gate proven.
+- New fixtures: `arm_thumb_le32.o` (.o-unit-only, no host ARM linker), `mcount_x86_64` (static -pg),
+  `cpp_noreturn_x86_64`. Every increment held `make test` 675/675, `make test-stages` 158/158,
+  `make rust-test` green, `kuna catalog --check` clean.
+- **Remaining frontier (deferred, the plan's gate-off/spike items):** format-string-B (decompile-loop
+  varargs override wiring), DWARF subtask-3 (stack-local ScopeLocal map — engine spike), and the
+  arch-markers decode e2e / MIPS `$gp` (need off-host ARM/MIPS LINKED fixtures).
+
 ## Session (2026-06-22) — analyzer-tier Wave 1: DWARF + entry-discovery + source-lang + addrtable
 
 Rebased the analysis-tier branch onto `main` (#8 perf + #9 test-stages fix → test-stages now
