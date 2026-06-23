@@ -32,18 +32,18 @@ pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
 /// [`Compiler`]. This is the kuna analog of Ghidra's source-language-gated
 /// analyzer selection (`SourceLanguageAnalyzer` records the IDs;
 /// language-specific analyzers gate on them). Today the only gate is the
-/// no-return list widening for Rust (`noReturnFunctionConstraints.xml`'s `rustc`
-/// arm); future Rust/Go-specific passes plug in here with one line.
+/// no-return list widening (`noReturnFunctionConstraints.xml`'s per-`<compiler>`
+/// arms: the `rustc` arm adds the Rust list, the `golang` arm adds the Go list);
+/// future Rust/Go-specific passes plug in here with one line.
 pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
     vec![
         // S1 loader: known no-return functions (exit/abort/…). Mirrors Ghidra's
         // default-on `NoReturnFunctionAnalyzer`. For a Rust binary, also match the
-        // Rust wildcard list (panic/handle_alloc_error/rust_begin_unwind/…).
-        Box::new(if compiler.is_rust() {
-            crate::s1_loader::noreturn::NoReturnKnownPass::rust()
-        } else {
-            crate::s1_loader::noreturn::NoReturnKnownPass::elf()
-        }),
+        // Rust wildcard list (panic/handle_alloc_error/rust_begin_unwind/…); for a
+        // Go binary, also match the Golang list (runtime.gopanic/throw/goexit/…).
+        // `for_compiler` selects the matching `<compiler>` arm
+        // (noReturnFunctionConstraints.xml), base ELF list only otherwise.
+        Box::new(crate::s1_loader::noreturn::NoReturnKnownPass::for_compiler(compiler)),
         // S1 strings (StringLiteralPass): NUL-terminated ASCII string-literal
         // detection. Mirrors Ghidra's `StringsAnalyzer` (min length 5,
         // require-NUL-end). Plants a typelocked `char[N]` data symbol (`s_<addr>`)
@@ -198,10 +198,14 @@ mod tests {
         }
     }
 
-    /// Rust vs non-Rust selection differs ONLY in the no-return pass variant, not
-    /// the pass set — the same ids in the same order.
+    /// Rust/Go vs non-Rust/Go selection differs ONLY in the no-return pass
+    /// variant (the per-compiler list it folds in), not the pass set — the same
+    /// ids in the same order across all detected compilers.
     #[test]
-    fn rust_and_non_rust_have_same_pass_ids() {
-        assert_eq!(ids(&passes_for(Compiler::Rustc)), ids(&passes_for(Compiler::Gcc)));
+    fn all_compilers_have_same_pass_ids() {
+        let base = ids(&passes_for(Compiler::Gcc));
+        for c in [Compiler::Rustc, Compiler::Go, Compiler::Clang, Compiler::Unknown] {
+            assert_eq!(ids(&passes_for(c)), base, "{c:?} pass ids must match the base set");
+        }
     }
 }

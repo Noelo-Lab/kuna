@@ -56,8 +56,10 @@ accounting (every one of the 142 falls in exactly one bucket):
 
 ### Core program-analysis tier — `Features/{Base,Decompiler,GnuDemangler,FunctionID,DecompilerDependent}` (~57)
 
-**Ported (5) + PLT:** `NoReturnFunctionAnalyzer`, `GnuDemanglerAnalyzer`,
-`ApplyDataArchiveAnalyzer`, `StringsAnalyzer` (disabled — see Increment 3),
+**Ported (5) + PLT:** `NoReturnFunctionAnalyzer` (base ELF list + **all** ELF
+per-compiler arms of `noReturnFunctionConstraints.xml`: Rust — Increment 7, Go —
+Increment 14), `GnuDemanglerAnalyzer`, `ApplyDataArchiveAnalyzer`, `StringsAnalyzer`
+(re-enabled by default since the printer change — see Increment 12),
 `SourceLanguageAnalyzer` (detection half — see Increment 4); plus
 `ElfDefaultGotPltMarkup` (loader code, done pre-this-effort).
 
@@ -142,7 +144,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5) |
 | ✅ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle, `GccExceptionAnalyzer`) | hard | fauxware: FDE starts ⊆ discovered entries (7 starts incl. `_start`/`main`) (Increment 5) |
 | ✅ | `sourcelang` | Source-language / compiler detection (`SourceLanguageAnalyzer`) | easy | `s1_sourcelang::detect_compiler`: `rust_hello` ⇒ `Rustc` (`.comment` + `_ZN…17h…E`), `fauxware`/`cpp_mangled` ⇒ `Gcc` (Increment 7) |
-| ✅ | `s1-rust-golang-noreturn` | Rust no-return list selection (`noReturnFunctionConstraints.xml` `rustc` arm) | easy | `RustFunctionsThatDoNotReturn` vendored + parsed only when compiler==Rustc; `ZN4core9panicking5panic17h*` flagged for Rust, not C ELF (Increment 7) |
+| ✅ | `s1-rust-golang-noreturn` | Rust + **Go** no-return list selection (`noReturnFunctionConstraints.xml` `rustc` + `golang` arms) | easy | `RustFunctionsThatDoNotReturn` (Increment 7) **and** `GolangFunctionsThatDoNotReturn` (Increment 14) vendored + parsed per detected compiler; `ZN4core9panicking5panic17h*` flagged for Rust-only, `runtime.gopanic`/`runtime.throw`/`runtime.goexit.abi0` for Go-only, neither for a C ELF |
 | 🟡 | `ruststring` | Rust str-slice split (`RustStringAnalyzer`) | med | **detection ported** (shares `s1_sourcelang`); the **split is infeasible-at-tier** (needs post-disasm interior refs + a populated ReferenceManager — same wall as `FindNoReturnFunctionsAnalyzer`). Documented, no split code (Increment 7) |
 | 🟡 | `arm-mips-markers` | ARM `$t`/`$a`+STT_FUNC-LSB → `TMode` (`ARM_ElfExtension`/`ArmSymbolAnalyzer`); MIPS `$gp` | hard | **ARM half done** (Increment 8): `arm_thumb_le32.o` → `TMode=1` for `$t.0`@`0x0` + STT_FUNC LSB normalized to `0x0`/`0x14`; commit-arm paints `TMode` via `set_variable`, no-ops on non-ARM (fauxware byte-identical). **`.o`-unit-only** (no ARM linker on host → decode e2e + Thumb-FUNC re-home deferred); **MIPS `$gp`/`ISA_MODE` out of scope** (tracked-register, not decode-mode) |
 | ✅ | `s1-formatstring` (A) | printf/scanf format-spec parser (`FormatStringParser`) | xhard | **parser half A done** (Increment 9) — `s1_formatstring::parse_output_types("%d %s")` ⇒ `[Int, CharPtr]`, full conversion+length-modifier tables, `*`/`%%`/positional `%n$`, malformed no-panic; 36 unit tests. **B (decompile-loop varargs override wiring) deferred** — engine-driver change, DecompilerDependent, gate OFF |
@@ -1132,15 +1134,131 @@ dedicated fixture proves the render.
   renders `int accumulator`/`int counter`, no `local_10`/`local_c`).
   `kuna-analysis` 91 tests pass; `verify_s1_dwarf` 3/3; `make test` **PARITY OK**
   (675/675); `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+### Increment 15 — Golang no-return list + completeness sweep ✅
 
-### Next candidates (Wave 3 — remaining engine seams)
+Mirrors the Rust no-return work (Increment 7) for **Go**, then sweeps the full analyzer
+inventory one more time for any remaining feasible-at-tier ELF analysis.
 
-Wave 1 complete (Increments 4–7). **Wave 2 complete** (Increments 8–10): ARM/Thumb context
-painting, the format-string parser half (A), and cspec call-fixup auto-apply. **Wave 3:** the
-**no-return × demangle** seam (Increment 11), the **printer change** that re-enables
-`s1-strings` (Increment 12), the **per-run `--option` gating** of all passes (Increment 13
-— conflict #4 RESOLVED), and the **DWARF subtask-3** stack-local map (Increment 14) are DONE.
-What remains, per [`analysis-port-plan.md`](analysis-port-plan.md): **format-string-B** (the
-decompile-loop varargs override wiring, building on Increment 9's parser), and the
-**arch-markers e2e + Thumb-FUNC re-home / MIPS `$gp`** follow-ups (need a LINKED ARM / MIPS
-fixture). Inherited/out-of-scope items need no work (see table + inventory).
+**`s1-rust-golang-noreturn` (the Go half) — now done.** The Golang no-return list
+(`Ghidra/Features/Base/data/GolangFunctionsThatDoNotReturn`, vendored verbatim at
+[`data/GolangFunctionsThatDoNotReturn`](../decompiler/crates/kuna-analysis/data/GolangFunctionsThatDoNotReturn))
+is parsed **in addition** to the base ELF list when `detect_compiler == Go`, faithful to
+`noReturnFunctionConstraints.xml`'s `compiler id="golang"` arm for the ELF executable format
+(the exact structural sibling of the `compiler name="rustc"` arm). The list is all **exact**
+dotted `runtime.*` names (`runtime.gopanic`, `runtime.throw`, `runtime.goexit.abi0`,
+`runtime.fatalthrow`, `runtime.goPanicIndex`, `runtime.abort`, `runtime.sigpanic`, … — **no**
+`*` wildcards, unlike the Rust list); the existing `noreturn.rs` list parser handles them
+unchanged (they land in the `exact` set). Go's dotted names carry no `::`, so the namespace
+guard never fires — `runtime.gopanic` matches as a whole-string exact name.
+
+**Wiring (generalized, not bolted-on).** The previous `NoReturnKnownPass { rust: bool }` was
+generalized to `NoReturnKnownPass { compiler: Compiler }` so the per-compiler list selection
+mirrors Ghidra's per-`<compiler>` arm selection exactly: `Rustc` → Rust list, `Go` → Go list,
+`Gcc`/`Clang`/`Unknown` → base ELF list only. New constructors `::golang()` / `::for_compiler(c)`
+join `::elf()` / `::rust()` (kept). `passes.rs::passes_for` now builds the pass with
+`NoReturnKnownPass::for_compiler(compiler)` (one line, replacing the `if is_rust()` ternary —
+the same pass id `noreturn_known`, so the Increment-13 `--option noreturn_known on|off` gate
+and `kuna catalog` are untouched; Go vs Rust is an internal data-file selection keyed on
+detection, faithful to Ghidra running one analyzer with per-compiler data files).
+`s1_sourcelang` exposes `golang_noreturn_list()` next to `rust_noreturn_list()`; `Compiler`
+now derives `Default` (= `Unknown`) so the pass struct can `#[derive(Default)]`.
+
+**Fixture decision: runtime-built real-Go e2e (no vendored fixture), + hermetic synthetic
+matching tests.** Go ELF binaries are unavoidably large — a `go build` output is **~1.1 MB**
+un-stripped (the whole runtime is statically embedded) and still **~750 KB** stripped. Worse,
+the size/coverage tradeoff is forced: a *stripped* Go binary keeps `.go.buildinfo` (so
+detection fires) but drops `.symtab` entirely (so there is **no** `runtime.gopanic` FUNC symbol
+for the matcher to flag), while only the *un-stripped* 1.1 MB build carries both. Rather than
+vendor a 1.1 MB blob (3× the largest existing fixture, `mcount_x86_64` at 896 KB), the e2e
+**builds a tiny real Go program at test runtime** (`go build` into an isolated temp dir with a
+private GOCACHE/GOPATH; `go 1.18.1` is on the host) — guarded on `go` being on PATH and on the
+build succeeding, **skipping cleanly** otherwise (the same "needs an off-host toolchain" posture
+as the ARM-link e2e follow-up in Increment 8). On a genuine Go binary it asserts **both** halves:
+`detect_compiler == Go` AND `runtime.gopanic` (+ `runtime.throw`, `runtime.goexit.abi0`) flagged
+no-return **under the Go arm** carrying real code addresses, but **NOT** under the C arm (the
+gating contract) and `main.main` never flagged (no over-acceptance). The list-parse/matching
+logic itself is pinned **hermetically** (no fixture, always runs) by
+`golang_list_gated_on_go_detection` (a `runtime.*` name spread flagged under the Go arm, never
+under the C/Rust arms) + `golang_noreturn_list_carries_runtime_names` +
+`compiler_field_selects_extra_list`. So the merge-blocking gates need no `go` and no fixture;
+the real-binary proof runs wherever `go` is present (it is here, and the e2e passed).
+
+**Completeness sweep (the user's "any other analyses to do?").** Cross-checked the full
+inventory (this doc's "Is this every Ghidra analyzer?" §) against the ported set
+(Increments 1–14) by re-reading the candidate Ghidra Java sources at `GHIDRA_REV`. Findings:
+
+- **Implemented here:** the Golang no-return list (above) — the last per-compiler ELF
+  no-return arm. ELF now matches **all three** `noReturnFunctionConstraints.xml` ELF lists
+  (base + rustc + golang).
+- **One near-miss, REPORTED as a follow-up (not implemented — cosmetic, not small):** Ghidra's
+  ELF loader names each `.init_array`/`.fini_array`/`.preinit_array` **element** `_INIT_<i>` /
+  `_FINI_<i>` / `_PREINIT_<i>` (`ElfProgramBuilder.createDynamicEntryPoints`). kuna's `s1_entry`
+  oracle 2 **already discovers** those element addresses as entry points (Increment 5) — it just
+  names them `sub_<addr>` (the generic commit-seam name) instead of `_INIT_<i>`. Delivering the
+  Ghidra names would require changing the `AnalysisOutput.entries` fact from `Vec<u64>` to a
+  named-entry shape (`Vec<(addr, Option<name>)>` or a new fact kind) **and** the commit seam,
+  touching all five oracles + their tests — a cross-cutting fact-type change, **not** purely
+  additive/small. Its payoff is listing-cosmetic: it only renames a handful of *stripped*-binary
+  init/fini thunks (on a non-stripped binary those already have real `.symtab` names, which
+  `collect_entries` correctly skips); the decompiled C **body** is identical either way. This is
+  the same "listing-naming nicety, deferrable" class as the `$d` data-run markup (Increment 8)
+  and the source-info comments (Increment 6). Left as a documented follow-up.
+- **Confirmed already-covered / nothing-to-do:** `ExternalEntryFunctionAnalyzer` (its
+  external-entry *set* is what the ELF loader seeds + `s1_entry` discovers; its disassembly-
+  validation half is post-disasm — infeasible at tier); symbol-versioning `.gnu.version`/`_d`/
+  `_r` (Ghidra lays it as listing **comments** only and keeps the *base* name — kuna's
+  `elf_plt::strip_version` already captures the sole decompiler-relevant behavior; VERDEF/VERNEED
+  are never parsed for naming); `STT_GNU_IFUNC` (Ghidra has **no** special handling — type 10 is
+  unrecognized, no `_ifunc` marking — so there is nothing to port); IRELATIVE/COPY relocations
+  (Ghidra creates no symbol from them; reloc-driven naming does not exist — the equivalent value
+  is captured by plain symbol-table emission, already done); `__libc_csu_init` (an ordinary
+  `.symtab` symbol, no special case); TLS / `STT_TLS` (Ghidra itself skips it —
+  "Unsupported Thread-Local Symbol not loaded").
+- **Confirmed out-of-scope / infeasible (unchanged):** `MachOFunctionsThatDoNotReturn` /
+  `PEFunctionsThatDoNotReturn` (non-ELF — the XML scopes them to Mach-O/DYLD/PE; ELF never uses
+  them); `ExternalSymbolResolverAnalyzer` (multi-program Ghidra-project operation — links to
+  *sibling* library programs; a single-object load tier has no such context); the GOT/PLT
+  disassembly engine in `ElfDefaultGotPltMarkup.process` (post-disasm Listing/PseudoDisassembler
+  — kuna already does the feasible PLT/GOT **naming** at load); `EmbeddedMediaAnalyzer` (feasible
+  at tier but decompiler-irrelevant — image-byte markup); and the large/listing-coupled
+  subsystems already classified ⛔ (Go pclntab name recovery `Golang{String,Symbol}Analyzer`,
+  FID, `FindNoReturnFunctionsAnalyzer`, AIF, the operand/reference markup family).
+
+**Bottom line of the sweep:** with the Go no-return list in, **every feasible-at-tier,
+decompiler-relevant ELF analyzer is ported.** The only remaining items are (a) the one
+cosmetic init/fini-array **naming** follow-up above, (b) the previously-documented engine-side
+deferrals (DWARF subtask-3 stack-locals, format-string-B varargs override loop, the ARM e2e /
+Thumb-FUNC re-home / MIPS `$gp` — all needing an engine change or an off-host fixture), and
+(c) the genuinely out-of-scope/huge subsystems (Go pclntab recovery, FID, non-ELF formats,
+multi-program resolution). Nothing else is both feasible at this tier and worth implementing.
+
+- **LOSS / scope.** Same as the Rust arm: only the **Known** name-based no-return matching is
+  ported. The Golang list's leading comment notes some entries (`runtime.abort`,
+  `runtime.systemstack_switch`) "have bytes that can cause undefined instruction errors in
+  Ghidra" — a *disassembly*-side concern with no analog at the (pre-disasm) load tier; kuna marks
+  them no-return by name regardless, which is the intended effect. The upstream file's six
+  trailing-whitespace duplicate lines (e.g. `runtime.panicIndex ` next to `runtime.panicIndex`)
+  are vendored **verbatim** and harmlessly collapse to the same entry under the parser's
+  per-line `.trim()` (idempotent — the `exact` set is membership-tested, not counted).
+- **Divergence:** none to the parity oracles — the Go list only widens matching on a real Go
+  ELF (the XML datatest path runs no analyses), and the pass id / option / catalog are unchanged.
+- **Tests:** `kuna-analysis` **93 tests pass** (88 + 5 new: `golang_noreturn_list_carries_runtime_names`,
+  `golang_list_gated_on_go_detection`, `compiler_field_selects_extra_list`,
+  `real_go_binary_detected_and_flags_runtime_gopanic`, and the generalized
+  `all_compilers_have_same_pass_ids`). `make test` **PARITY OK** (675/675); `make test-stages`
+  **PARITY OK** (158/158); `make rust-test` green; `kuna catalog --check` **catalog OK**.
+
+### Next candidates (remaining engine seams)
+
+Waves 1–3 are complete (Increments 4–13), plus the deferred-frontier items: **DWARF subtask-3**
+stack locals (Increment 14) and the **Golang no-return list + completeness sweep** (Increment
+15). The completeness sweep confirms **every feasible-at-tier, decompiler-relevant ELF analyzer
+is ported** (ELF now matches all three `noReturnFunctionConstraints.xml` lists: base + rustc +
+golang).
+
+Remaining work, all engine-spike or off-host-fixture follow-ups: **format-string-B** (the
+decompile-loop varargs override wiring, building on Increment 9's parser), **MIPS `$gp`**
+recovery (tracked-register), the **arch-markers ARM decode e2e + Thumb-FUNC re-home** (the
+ARM decode e2e is blocked off-host — this build host has no ARM linker), and the cosmetic
+`_INIT_<i>`/`_FINI_<i>` array-element naming (the addresses are already discovered by `s1_entry`;
+only the names differ). Inherited/out-of-scope items need no work (see table + inventory).

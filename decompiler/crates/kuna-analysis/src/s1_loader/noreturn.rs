@@ -20,22 +20,27 @@
 //! - name set: `Ghidra/Features/Base/data/ElfFunctionsThatDoNotReturn`, vendored
 //!   verbatim at `decompiler/crates/kuna-analysis/data/ElfFunctionsThatDoNotReturn`.
 //! - source-language selection: `Ghidra/Features/Base/data/noReturnFunctionConstraints.xml`
-//!   adds `RustFunctionsThatDoNotReturn` to the match set for an ELF whose
-//!   compiler is detected as `rustc`. kuna mirrors this: when
-//!   [`crate::s1_sourcelang::detect_compiler`] reports `Rustc`, the Rust wildcard
-//!   list (vendored at `data/RustFunctionsThatDoNotReturn`) is parsed **in
-//!   addition** to the base ELF list. See [`NoReturnKnownPass::rust`].
+//!   adds a per-compiler list to the match set for an ELF whose compiler is
+//!   detected. The `compiler name="rustc"` arm adds `RustFunctionsThatDoNotReturn`;
+//!   the `compiler id="golang"` arm adds `GolangFunctionsThatDoNotReturn`; the base
+//!   `ElfFunctionsThatDoNotReturn` always applies. kuna mirrors this: when
+//!   [`crate::s1_sourcelang::detect_compiler`] reports `Rustc` (resp. `Go`), the
+//!   Rust wildcard list (vendored at `data/RustFunctionsThatDoNotReturn`) (resp.
+//!   the Go list at `data/GolangFunctionsThatDoNotReturn`) is parsed **in addition**
+//!   to the base ELF list. See [`NoReturnKnownPass::for_compiler`].
 //!
 //! Effect: marking `exit`/`abort`/… no-return inserts an artificial halt at the
 //! call site (the engine's `flow.rs` artificialHalt path), so the dead
 //! fall-through after a tail `exit()` disappears from the decompiled output. For
 //! a Rust binary this additionally elides the dead code after a tail
-//! `core::panicking::panic` / `handle_alloc_error` / `rust_begin_unwind`.
+//! `core::panicking::panic` / `handle_alloc_error` / `rust_begin_unwind`; for a Go
+//! binary, after a tail `runtime.gopanic` / `runtime.throw` / `runtime.goexit`.
 
 use object::read::{Object, ObjectSymbol};
 use object::SymbolKind;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Stage};
+use crate::s1_sourcelang::Compiler;
 
 /// The known-no-return name list, vendored verbatim from Ghidra
 /// `Ghidra/Features/Base/data/ElfFunctionsThatDoNotReturn`.
@@ -44,26 +49,46 @@ const ELF_NORETURN_LIST: &str = include_str!("../../data/ElfFunctionsThatDoNotRe
 /// Port of `NoReturnFunctionAnalyzer` ("Known"): flag every imported/defined
 /// function whose name matches the shipped ELF no-return list.
 ///
-/// `rust` selects whether the Rust no-return wildcard list is matched **in
-/// addition** to the base ELF list — set it when the source language is detected
-/// as Rust (faithful to `noReturnFunctionConstraints.xml`'s `compiler
-/// name="rustc"` arm). The default ([`NoReturnKnownPass::elf`]) matches only the
-/// base ELF list, as Ghidra does for a non-Rust ELF.
+/// `compiler` selects which (if any) per-compiler no-return list is matched **in
+/// addition** to the base ELF list, faithful to `noReturnFunctionConstraints.xml`'s
+/// per-`<compiler>` arms for the ELF executable format:
+/// - [`Compiler::Rustc`] → also match `RustFunctionsThatDoNotReturn`
+///   (`compiler name="rustc"`),
+/// - [`Compiler::Go`] → also match `GolangFunctionsThatDoNotReturn`
+///   (`compiler id="golang"`),
+/// - everything else (`Gcc`/`Clang`/`Unknown`) → base ELF list only, as Ghidra
+///   does for an ELF with no per-compiler arm.
+///
+/// The default ([`NoReturnKnownPass::elf`]) matches only the base ELF list.
 #[derive(Clone, Copy, Default)]
 pub struct NoReturnKnownPass {
-    /// Also match the vendored `RustFunctionsThatDoNotReturn` wildcard list.
-    pub rust: bool,
+    /// The detected source-language compiler, selecting the extra per-compiler
+    /// no-return list (Rust / Golang) to fold into the base ELF list.
+    pub compiler: Compiler,
 }
 
 impl NoReturnKnownPass {
-    /// The base ELF pass (no Rust list) — Ghidra's default for a non-Rust ELF.
+    /// The base ELF pass (no per-compiler list) — Ghidra's default for an ELF
+    /// with no matching `<compiler>` arm. Equivalent to
+    /// [`NoReturnKnownPass::for_compiler`] with `Gcc`/`Clang`/`Unknown`.
     pub fn elf() -> Self {
-        NoReturnKnownPass { rust: false }
+        NoReturnKnownPass { compiler: Compiler::Unknown }
     }
 
     /// The pass for a Rust-detected ELF: base ELF list + the Rust wildcard list.
     pub fn rust() -> Self {
-        NoReturnKnownPass { rust: true }
+        NoReturnKnownPass { compiler: Compiler::Rustc }
+    }
+
+    /// The pass for a Go-detected ELF: base ELF list + the Golang list.
+    pub fn golang() -> Self {
+        NoReturnKnownPass { compiler: Compiler::Go }
+    }
+
+    /// The pass for the given detected [`Compiler`] — the kuna analog of selecting
+    /// the matching `<compiler>` arm of `noReturnFunctionConstraints.xml`.
+    pub fn for_compiler(compiler: Compiler) -> Self {
+        NoReturnKnownPass { compiler }
     }
 }
 
@@ -134,20 +159,30 @@ fn name_matches(name: &str, exact: &[String], wildcard: &[String]) -> bool {
 /// (`find_function_across_scopes`) and falls back to the name only when nothing is
 /// installed at that address. Shared by [`AnalysisPass::run`] and the unit tests.
 ///
-/// `rust` adds the vendored `RustFunctionsThatDoNotReturn` wildcard list to the
-/// match set (faithful to `noReturnFunctionConstraints.xml`'s `rustc` arm).
-fn scan_noreturn(file: &object::File, rust: bool) -> AnalysisOutput {
+/// `compiler` selects the extra per-compiler no-return list to fold into the base
+/// ELF list (faithful to `noReturnFunctionConstraints.xml`'s per-`<compiler>`
+/// arms): `Rustc` → `RustFunctionsThatDoNotReturn`, `Go` →
+/// `GolangFunctionsThatDoNotReturn`, everything else → base ELF list only.
+fn scan_noreturn(file: &object::File, compiler: Compiler) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     // ELF-only list; only fires on ELF objects (the only format kuna loads).
     if !matches!(file.format(), object::BinaryFormat::Elf) {
         return out;
     }
     let (mut exact, mut wildcard) = parse_list(ELF_NORETURN_LIST);
-    // Rust source language: append the Rust wildcard list (panic/abort/oom/…).
-    if rust {
-        let (r_exact, r_wildcard) = parse_list(crate::s1_sourcelang::rust_noreturn_list());
-        exact.extend(r_exact);
-        wildcard.extend(r_wildcard);
+    // Per-compiler source language: append the matching list, faithful to the
+    // `<compiler>` arms of noReturnFunctionConstraints.xml for the ELF format.
+    if let Some(list) = match compiler {
+        // Rust: the panic/abort/oom wildcard list.
+        Compiler::Rustc => Some(crate::s1_sourcelang::rust_noreturn_list()),
+        // Go: the runtime.gopanic/throw/goexit/… exact-name list.
+        Compiler::Go => Some(crate::s1_sourcelang::golang_noreturn_list()),
+        // No per-compiler arm for the ELF format (Gcc/Clang/Unknown).
+        Compiler::Gcc | Compiler::Clang | Compiler::Unknown => None,
+    } {
+        let (extra_exact, extra_wildcard) = parse_list(list);
+        exact.extend(extra_exact);
+        wildcard.extend(extra_wildcard);
     }
     let mut seen = std::collections::HashSet::new();
     let mut emit = |out: &mut AnalysisOutput, addr: u64, n: String| {
@@ -205,7 +240,7 @@ impl AnalysisPass for NoReturnKnownPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        scan_noreturn(ctx.file, self.rust)
+        scan_noreturn(ctx.file, self.compiler)
     }
 }
 
@@ -262,11 +297,12 @@ mod tests {
     fn run_over_fauxware_flags_exit_only() {
         // Drive the full scan over the vendored fauxware bytes: it must surface
         // `exit` (a dynamic import named by elf_plt) and nothing spurious. The
-        // base ELF pass (rust=false) is what fauxware (a C binary) gets.
+        // base ELF pass (Gcc — no per-compiler list) is what fauxware (a C
+        // binary) gets.
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
         let bytes = std::fs::read(path).expect("read fauxware fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
-        let out = scan_noreturn(&file, false);
+        let out = scan_noreturn(&file, Compiler::Gcc);
         let exit = out.noreturn.iter().find(|f| f.name == "exit").expect("exit must be flagged");
         // The emitted address is the PLT-stub install address (a real code
         // address, never the UND `.dynsym` 0), so the commit resolves it by
@@ -289,7 +325,7 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/cpp_noreturn_x86_64");
         let bytes = std::fs::read(path).expect("read cpp_noreturn fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse cpp_noreturn");
-        let out = scan_noreturn(&file, false);
+        let out = scan_noreturn(&file, Compiler::Gcc);
 
         // The mangled std::terminate import is flagged under its RAW name (the
         // funcsym is later demangled to `std::terminate`; the scan matches the
@@ -350,5 +386,186 @@ mod tests {
 
         // an ordinary Rust function (no panic/abort) is never flagged
         assert!(!name_matches("ZN5nostd1m12rusty_helper17h76f46bb3af543e7bE", &e_rust, &w_rust));
+    }
+
+    /// The Golang no-return list must match a `runtime.*` panic/throw/exit symbol
+    /// ONLY when the pass is in Go mode (compiler detected as Go) — never for a C
+    /// ELF and never under the Rust arm. The Go gating contract, mirroring
+    /// `rust_list_gated_on_rust_detection`.
+    #[test]
+    fn golang_list_gated_on_go_detection() {
+        // A representative spread of Go runtime no-return names (the dotted form
+        // Go's `.symtab`/`.gopclntab` uses — no `::`, so the namespace guard does
+        // not fire; the whole string is matched against the exact set).
+        let go_names = [
+            "runtime.gopanic",
+            "runtime.goPanicIndex",
+            "runtime.throw",
+            "runtime.fatalthrow",
+            "runtime.goexit.abi0",
+            "runtime.abort.abi0",
+            "runtime.sigpanic",
+            "runtime.panicmem",
+        ];
+
+        // Base ELF list (a C ELF): none of the Go runtime names are flagged.
+        let (e_elf, w_elf) = parse_list(ELF_NORETURN_LIST);
+        for n in go_names {
+            assert!(!name_matches(n, &e_elf, &w_elf), "C ELF must not flag {n}");
+        }
+
+        // ELF + Rust list (a Rust ELF): still none of the Go runtime names match
+        // (the Go list is selected only under the Go arm — the gating is
+        // per-compiler, not "all extra lists at once").
+        let (r_exact, r_wildcard) = parse_list(crate::s1_sourcelang::rust_noreturn_list());
+        let mut e_rust = e_elf.clone();
+        let mut w_rust = w_elf.clone();
+        e_rust.extend(r_exact);
+        w_rust.extend(r_wildcard);
+        for n in go_names {
+            assert!(!name_matches(n, &e_rust, &w_rust), "Rust ELF must not flag {n}");
+        }
+
+        // ELF + Golang list (a Go ELF): every runtime no-return name is flagged.
+        let (g_exact, g_wildcard) = parse_list(crate::s1_sourcelang::golang_noreturn_list());
+        let mut e_go = e_elf.clone();
+        let mut w_go = w_elf.clone();
+        e_go.extend(g_exact);
+        w_go.extend(g_wildcard);
+        for n in go_names {
+            assert!(name_matches(n, &e_go, &w_go), "Go ELF must flag {n}");
+        }
+        // the leading-underscore strip still applies (a `_`-prefixed dotted name
+        // is rare in Go, but the parser/matcher are uniform).
+        assert!(name_matches("_runtime.gopanic", &e_go, &w_go));
+
+        // an ordinary Go user function (not in the runtime list) is never flagged,
+        // even in Go mode (no over-acceptance from the dotted-name shape).
+        assert!(!name_matches("main.main", &e_go, &w_go));
+        assert!(!name_matches("runtime.printlock", &e_go, &w_go));
+        // the base ELF entries still apply under the Go arm (exit/abort/…).
+        assert!(name_matches("exit", &e_go, &w_go));
+    }
+
+    /// The per-compiler selector wires the right list into `scan_noreturn`: the
+    /// `compiler` field on `NoReturnKnownPass` picks Rust vs Go vs base. This pins
+    /// the constructor contract (`for_compiler`/`golang`/`rust`/`elf`).
+    #[test]
+    fn compiler_field_selects_extra_list() {
+        use crate::s1_sourcelang::Compiler;
+        assert_eq!(NoReturnKnownPass::elf().compiler, Compiler::Unknown);
+        assert_eq!(NoReturnKnownPass::rust().compiler, Compiler::Rustc);
+        assert_eq!(NoReturnKnownPass::golang().compiler, Compiler::Go);
+        assert_eq!(NoReturnKnownPass::for_compiler(Compiler::Go).compiler, Compiler::Go);
+        // default is the base ELF pass (no per-compiler list).
+        assert_eq!(NoReturnKnownPass::default().compiler, Compiler::Unknown);
+    }
+
+    // --- real-Go end-to-end (hermetic via runtime `go build`, skips if absent) ---
+    //
+    // Go ELF binaries are unavoidably large (~1.1 MB un-stripped — they embed the
+    // whole runtime), too large to vendor comfortably; a *stripped* Go binary
+    // (~750 KB) keeps `.go.buildinfo` (so detection fires) but drops `.symtab`
+    // entirely (so there is no `runtime.gopanic` FUNC symbol for the matcher to
+    // flag). So instead of vendoring a fixture, this test BUILDS a tiny real Go
+    // program at runtime (guarded on `go` being on PATH — skips cleanly otherwise),
+    // proving both halves on a genuine Go binary: detection (`Compiler::Go`) AND
+    // matching (`runtime.gopanic` flagged under the Go arm, NOT under the C arm).
+    // The list-parse/matching logic itself is pinned hermetically by
+    // `golang_list_gated_on_go_detection` (no fixture, always runs).
+
+    /// `true` if a runnable `go` toolchain is on PATH (so the runtime build can
+    /// proceed; otherwise the e2e test is skipped, like the ARM-link follow-up).
+    fn go_available() -> bool {
+        std::process::Command::new("go")
+            .arg("version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn real_go_binary_detected_and_flags_runtime_gopanic() {
+        if !go_available() {
+            eprintln!("skipping real-Go e2e: `go` not on PATH");
+            return;
+        }
+        use crate::s1_sourcelang::detect_compiler;
+
+        // Build a tiny, self-contained Go program in an isolated temp dir, with a
+        // private GOCACHE/GOPATH so the build is hermetic and never touches the
+        // user's environment. Un-stripped (the default) so `runtime.*` FUNC
+        // symbols survive in `.symtab` for the matcher.
+        let dir = std::env::temp_dir().join(format!("kuna_go_noreturn_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mkdir temp go dir");
+        std::fs::write(dir.join("main.go"), "package main\nfunc main() { println(\"hi\") }\n")
+            .expect("write main.go");
+        let out_bin = dir.join("go_hello");
+
+        let status = std::process::Command::new("go")
+            .args(["build", "-o"])
+            .arg(&out_bin)
+            .arg("main.go")
+            .current_dir(&dir)
+            .env("GOOS", "linux")
+            .env("GOARCH", "amd64")
+            .env("GOCACHE", dir.join(".gocache"))
+            .env("GOPATH", dir.join(".gopath"))
+            .env("CGO_ENABLED", "0")
+            .status();
+
+        // A build failure (e.g. a sandboxed `go` that can't write its cache) is a
+        // skip, not a test failure — the hermetic matching contract is covered
+        // elsewhere. Only proceed when we actually produced a binary.
+        let built = matches!(&status, Ok(s) if s.success()) && out_bin.exists();
+        if !built {
+            eprintln!("skipping real-Go e2e: `go build` did not produce a binary ({status:?})");
+            let _ = std::fs::remove_dir_all(&dir);
+            return;
+        }
+
+        let bytes = std::fs::read(&out_bin).expect("read built go binary");
+        let file = object::File::parse(bytes.as_slice()).expect("parse go binary");
+
+        // (1) Detection: a real Go ELF must detect as `Compiler::Go`
+        // (`.go.buildinfo` / `.note.go.buildid`).
+        assert_eq!(detect_compiler(&file), Compiler::Go, "go binary must detect as Go");
+
+        // (2) Matching under the Go arm: `runtime.gopanic` (a defined FUNC in
+        // `.symtab`) is flagged no-return, carrying its real code address.
+        let go_out = scan_noreturn(&file, Compiler::Go);
+        let gopanic = go_out
+            .noreturn
+            .iter()
+            .find(|f| f.name == "runtime.gopanic")
+            .expect("runtime.gopanic must be flagged no-return under the Go arm");
+        assert_ne!(gopanic.addr, 0, "runtime.gopanic fact must carry its code address");
+        // a few more headline runtime no-return names are present too.
+        for n in ["runtime.throw", "runtime.goexit.abi0"] {
+            assert!(
+                go_out.noreturn.iter().any(|f| f.name == n),
+                "{n} must be flagged under the Go arm"
+            );
+        }
+        // an ordinary Go user function is NOT flagged (no over-acceptance).
+        assert!(
+            !go_out.noreturn.iter().any(|f| f.name == "main.main"),
+            "main.main must not be flagged"
+        );
+
+        // (3) The C arm (Gcc — no per-compiler list) does NOT flag the Go runtime
+        // names: the widening is gated on Go detection. (The base ELF list could
+        // in principle still match a name like `exit`, but `runtime.gopanic` is
+        // Go-only, so this isolates the gating.)
+        let c_out = scan_noreturn(&file, Compiler::Gcc);
+        assert!(
+            !c_out.noreturn.iter().any(|f| f.name == "runtime.gopanic"),
+            "runtime.gopanic must NOT be flagged under the C arm (Go list is gated)"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

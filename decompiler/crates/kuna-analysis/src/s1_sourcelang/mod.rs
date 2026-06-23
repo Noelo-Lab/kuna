@@ -53,6 +53,14 @@ use object::SymbolKind;
 /// reports [`Compiler::Rustc`].
 const RUST_NORETURN_LIST: &str = include_str!("../../data/RustFunctionsThatDoNotReturn");
 
+/// The Golang no-return list, vendored verbatim from Ghidra
+/// `Ghidra/Features/Base/data/GolangFunctionsThatDoNotReturn` (the
+/// `compiler id="golang"` arm of `noReturnFunctionConstraints.xml`). Applied
+/// **in addition** to `ElfFunctionsThatDoNotReturn` when [`detect_compiler`]
+/// reports [`Compiler::Go`]. Unlike the Rust list these are all **exact**
+/// dotted `runtime.*` names (no `*` wildcards); the same list parser handles them.
+const GOLANG_NORETURN_LIST: &str = include_str!("../../data/GolangFunctionsThatDoNotReturn");
+
 /// The Rust `.rodata` byte signatures, ported verbatim from
 /// `RustConstants.java:29-33` (`RustConstants.RUST_SIGNATURES`). Used as the
 /// fallback detection path when the `.comment` `rustc version` record is absent
@@ -70,7 +78,7 @@ const GO_SECTIONS: [&str; 2] = [".go.buildinfo", ".note.go.buildid"];
 /// string (Ghidra has no generic C SourceLanguage). `Unknown` is the default
 /// when no signal is present (matching `SourceLanguageService.find` returning an
 /// empty set).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Compiler {
     /// GCC (from a `GCC: (...)` `.comment` record) — kuna convenience.
     Gcc,
@@ -81,6 +89,7 @@ pub enum Compiler {
     /// Go (faithful — `.go.buildinfo` / `.note.go.buildid` present).
     Go,
     /// No recognized toolchain signal.
+    #[default]
     Unknown,
 }
 
@@ -254,6 +263,16 @@ pub fn rust_noreturn_list() -> &'static str {
     RUST_NORETURN_LIST
 }
 
+/// The Golang no-return list text, for the no-return pass to parse and add to its
+/// match set when the compiler is detected as Go. The text is the vendored
+/// `GolangFunctionsThatDoNotReturn` (Ghidra's `compiler id="golang"` arm); it is
+/// parsed by the same `noreturn.rs` list parser — the entries are all exact
+/// dotted names (`runtime.gopanic`, `runtime.throw`, `runtime.goexit.abi0`, …)
+/// with no `*` wildcards, so they land in the parser's `exact` set.
+pub fn golang_noreturn_list() -> &'static str {
+    GOLANG_NORETURN_LIST
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,6 +348,26 @@ mod tests {
         assert!(text.contains("ZN4core9panicking5panic17h*"));
         assert!(text.contains("ZN5alloc5alloc18handle_alloc_error17h*"));
         assert!(text.contains("rust_begin_unwind"));
+    }
+
+    #[test]
+    fn golang_noreturn_list_carries_runtime_names() {
+        let text = golang_noreturn_list();
+        // sanity: the vendored Golang list carries the headline runtime no-return
+        // names (all exact, dotted, no `*` wildcards).
+        for want in [
+            "runtime.gopanic",
+            "runtime.goPanicIndex",
+            "runtime.goexit.abi0",
+            "runtime.fatalthrow",
+            "runtime.throw",
+            "runtime.abort",
+            "runtime.sigpanic",
+        ] {
+            assert!(text.contains(want), "Golang list missing {want}");
+        }
+        // it is NOT the Rust list (no `*` wildcards / no `ZN…panic` forms).
+        assert!(!text.contains("ZN4core9panicking5panic17h*"));
     }
 
     // --- fixture-backed tests (the real vendored rust binary) ---

@@ -70,6 +70,23 @@ direct `call mcount` to a real `mcount` FUNC symbol. Static glibc makes this
 fixture larger (~896 KB) than the others; that size is the unavoidable cost of a
 self-contained direct-`call mcount` target.
 
+**No Go fixture is vendored** (the Golang no-return list, Increment 14). Go ELF
+binaries are unavoidably large — `go build` emits **~1.1 MB** un-stripped (the
+whole runtime is statically embedded) and **~750 KB** stripped — and the
+coverage tradeoff is forced: a *stripped* Go binary keeps `.go.buildinfo` (so
+`detect_compiler` ⇒ `Go`) but drops `.symtab` entirely (so there is no
+`runtime.gopanic` FUNC symbol for the no-return matcher), while only the
+*un-stripped* 1.1 MB build carries both. Rather than vendor a 1.1 MB blob, the Go
+e2e (`s1_loader::noreturn::tests::real_go_binary_detected_and_flags_runtime_gopanic`)
+**builds a tiny real Go program at test runtime** (`go build` into an isolated
+temp dir with a private GOCACHE/GOPATH), **guarded on `go` being on PATH** —
+skipping cleanly otherwise (the same off-host-toolchain posture as the ARM-link
+follow-up). It asserts both halves on a genuine Go binary: `detect_compiler == Go`
+AND `runtime.gopanic`/`runtime.throw`/`runtime.goexit.abi0` flagged no-return
+under the Go arm but not the C arm. The list-parse/matching logic itself is pinned
+hermetically (no fixture, always runs) by `golang_list_gated_on_go_detection` and
+the `s1_sourcelang` list tests.
+
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via
 `objdump`/`readelf` at build time) — addresses shift across toolchains.
