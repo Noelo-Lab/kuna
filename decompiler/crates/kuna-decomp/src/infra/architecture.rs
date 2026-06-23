@@ -357,6 +357,8 @@ pub struct Architecture {
     pub analysis_entry_disc: bool,
     /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
     pub analysis_arm_markers: bool,
+    /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
+    pub analysis_mips_gp: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
     pub analysis_dwarf: bool,
     /// (kuna) Gate the call-fixup pass (`callfixup`); default on.
@@ -563,6 +565,7 @@ impl Architecture {
             analysis_strings: false,
             analysis_entry_disc: false,
             analysis_arm_markers: false,
+            analysis_mips_gp: false,
             analysis_dwarf: false,
             analysis_callfixup: false,
             analysis_addrtable: false,
@@ -654,6 +657,7 @@ impl Architecture {
         self.analysis_strings = true;
         self.analysis_entry_disc = true;
         self.analysis_arm_markers = true;
+        self.analysis_mips_gp = true;
         self.analysis_dwarf = true;
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
@@ -753,6 +757,7 @@ impl Architecture {
             "strings" => on_off!(analysis_strings, "String-literal analysis pass"),
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
             "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
+            "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
             "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
             "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),

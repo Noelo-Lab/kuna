@@ -80,6 +80,19 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // this is a strict no-op for every non-ARM binary (the parity gates are
         // structurally untouched). Always-on, like noreturn/libproto/entry.
         Box::new(crate::s1_loader::arm_markers::ArmMarkerPass),
+        // S1 MIPS `$gp` recovery: seed `t9 = func_entry` as a tracked register
+        // value at each MIPS function entry (the PIC `jalr t9` ABI convention), so
+        // a PIC prologue's `addu gp,gp,t9` folds to the real `$gp` and
+        // `$gp`-relative GOT/`.sdata` loads resolve. The kuna analog of Ghidra's
+        // `MipsAddressAnalyzer` (the `assumeT9EntryAddress` default-on path). Unlike
+        // ARM markers this is a register-VALUE seed (TrackedSet/TrackedContext), not
+        // a decode-mode context bit. MIPS-only: the pass returns an empty output on
+        // every other language (its `canAnalyze == processor==MIPS` gate), and the
+        // commit seam additionally swallows a "t9 not found" error, so this is a
+        // strict no-op for every non-MIPS binary (the parity gates are structurally
+        // untouched). Always-on, like noreturn/libproto/entry/arm_markers;
+        // `--option mips_gp off` restores the un-tracked (raw `$gp`) rendering.
+        Box::new(crate::s1_loader::mips_markers::MipsMarkerPass),
         // S1 DWARF: recover function/global names and TYPED function signatures
         // from `.debug_*` sections (the kuna analog of Ghidra's `DWARFAnalyzer`).
         // Registered AFTER LibProtoPass so for any name both emit, the DWARF
@@ -207,5 +220,15 @@ mod tests {
         for c in [Compiler::Rustc, Compiler::Go, Compiler::Clang, Compiler::Unknown] {
             assert_eq!(ids(&passes_for(c)), base, "{c:?} pass ids must match the base set");
         }
+    }
+
+    /// The arch-marker passes are registered (always-on): ARM `TMode` painting and
+    /// MIPS `$gp` (`t9`) recovery. Both gate internally on their architecture, so
+    /// listing them here is safe on every binary.
+    #[test]
+    fn arch_marker_passes_registered() {
+        let d = ids(&default_passes());
+        assert!(d.contains(&"arm_markers"), "arm_markers must be registered");
+        assert!(d.contains(&"mips_gp"), "mips_gp must be registered");
     }
 }

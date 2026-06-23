@@ -1310,17 +1310,129 @@ arch-generic via the recovered proto.
   **PARITY OK** (158/158); `make rust-test` green; `kuna catalog --check` **catalog OK** (the new
   `formatstring` option discoverable, default `off`).
 
-### Next candidates (remaining engine seams)
+### Increment 17 — MIPS `$gp` recovery (`t9` tracking) + the ARM Thumb-FUNC re-home ✅
 
-Waves 1–3 are complete (Increments 4–13), plus the deferred-frontier items: **DWARF subtask-3**
-stack locals (Increment 14) and the **Golang no-return list + completeness sweep** (Increment
-15). The completeness sweep confirms **every feasible-at-tier, decompiler-relevant ELF analyzer
-is ported** (ELF now matches all three `noReturnFunctionConstraints.xml` lists: base + rustc +
-golang).
+Closes the two deferred siblings of the Increment 8 `arch-markers` frontier: MIPS `$gp`
+recovery (the register-VALUE tracking case) and the ARM Thumb-FUNC address re-home.
 
-Remaining work, all engine-spike or off-host-fixture follow-ups: **format-string-B** (the
-decompile-loop varargs override wiring, building on Increment 9's parser), **MIPS `$gp`**
-recovery (tracked-register), the **arch-markers ARM decode e2e + Thumb-FUNC re-home** (the
-ARM decode e2e is blocked off-host — this build host has no ARM linker), and the cosmetic
-`_INIT_<i>`/`_FINI_<i>` array-element naming (the addresses are already discovered by `s1_entry`;
-only the names differ). Inherited/out-of-scope items need no work (see table + inventory).
+**SPIKE finding — the tracked-register-VALUE API is fully present and reachable.** kuna ports
+Ghidra's `TrackedSet`/`TrackedContext`/`ContextDatabase` register-value machinery 1:1
+(`kuna-sleigh/src/globalcontext.rs`): `get_tracked_default()`, `create_set(addr1,addr2)`,
+`get_tracked_set(addr)`, `clone_trackbase()`. The console `set track <reg> <val> [start end]`
+(`ifacedecomp.rs` `IfcSettrackedrange`) drives it; the per-function `build_arch_handle`
+snapshots the track base into the seam (`seam.tracked_sets = clone_trackbase()`,
+`architecture.rs`), and **`ActionConstbase`** (S3, `s3_dataflow/coreaction_early.rs`) consumes
+it — emitting `COPY #val -> reg` at the entry block for each tracked register, which constant
+propagation then folds. This is **distinct** from the context-BIT machinery Increment 8 used
+(`set_variable`/`TMode` decode-mode painting); it seeds a register *value*, not a decode mode.
+There is even an existing datatest (`tests/datatests/gp.xml`) that drives it by hand
+(`set track t9 0x0 …` → recovers `printf("Hello",a0)`). **Reachable from the commit/bootstrap
+path**: `commit_analysis_output` runs at `read symbols`, before any `load function` decode, so
+seeding the track base there is correctly timed for the per-function snapshot.
+
+**Why `t9 = func_entry`, not `gp = _gp` (the key design call).** Ghidra's `MipsAddressAnalyzer`
+recovers `$gp` with two register-value mechanisms: (1) seed `gp = _gp` per function
+(`checkForGlobalGP` + `flowConstants:243`, default-on), and (2) the `assumeT9EntryAddress`
+default-true convention (`unknownValue:481-494`) — an *unknown* `t9` read is assumed to be the
+function entry (`t9 == entry` because a MIPS function is reached via `jalr t9`). kuna ports
+**(2)**: seed `t9 = func_entry` per function, so a PIC prologue's `lui gp; addiu gp; addu
+gp,gp,t9` folds to the real `$gp`. **(1) is deliberately NOT ported** here, because kuna's
+`ActionConstbase` is the *unconditional* `COPY #val -> reg` form (it lacks Ghidra's *lazy*
+`unknownValue` propagator that only assumes a value when the register is genuinely unknown and
+`clearRegister`s it after a PIC call). Empirically, an unconditional `COPY #_gp -> gp` at entry
+is **counterproductive on a PIC function**: such a function recomputes `gp` from `t9`, and a
+pre-seeded `gp` poisons the value (the `$gp`-relative load then fails to resolve). Seeding `t9`
+is always correct (the ABI guarantees `t9 == entry` on entry) and never poisons a non-PIC
+function (which ignores `t9`). The `gp`-direct seam (for a non-PIC function that loads `$gp` off
+the stack and never recomputes it) is a documented LOSS — it needs the lazy-`unknownValue`
+propagator.
+
+**New module** [`s1_loader/mips_markers.rs`](../decompiler/crates/kuna-analysis/src/s1_loader/mips_markers.rs)
+(sibling of `arm_markers.rs`), `AnalysisPass` id `mips_gp`, stage S1, registered always-on in
+`passes_for` after `ArmMarkerPass`. **Gated on MIPS** (`object::Architecture::Mips|Mips64`),
+the faithful analog of `MipsAddressAnalyzer.canAnalyze == processor==MIPS`: empty output on
+every other language. Emits one `TrackedRegFact { func_addr, reg:"t9", value:func_addr }` per
+defined STT_FUNC (UND/zero-address imports skipped). `recover_gp_value` additionally reads the
+`_mips_gp_value`/`_gp`/`_GP` symbol (`checkForGlobalGP`) and the MIPS GP-bias invariant
+`_gp == .got + 0x7ff0` is cross-checked — exposed for the documented `gp`-direct follow-up.
+
+**New fact kind + commit arm.** `pass.rs` gains `struct TrackedRegFact { func_addr, reg, value }`
++ `pub tracked_regs: Vec<TrackedRegFact>` on `AnalysisOutput` (+ `merge`). `engine.rs`
+`commit_analysis_output` gains **step 7**: for each fact, resolve the register varnode
+(`get_register_varnode`) and seed the value over `[func_addr, func_addr+1)` via `create_set` +
+`TrackedContext` push — the exact `IfcSettrackedrange` body. **CRITICAL gate-safety** (same
+shape as the Increment-8 context-paint swallow): `get_register_varnode` returns Err when the
+register is undefined by the active language (`t9` on x86-64); the arm `continue`s on that Err —
+a faithful no-op, belt-and-suspenders on top of the pass-level MIPS gate.
+
+**Fixture (LINKED, e2e works in-env).** Built
+[`mips_gp_le32`](../decompiler/crates/kuna-analysis/tests/fixtures/mips_gp_le32) (7684-byte
+dynamic ET_DYN, `mipsel-linux-gnu-gcc -O1 -no-pie`, source vendored). Unlike the ARM `.o`, this
+host **has** a MIPS toolchain, so the decode e2e runs in-env. **The proof**: `kuna decompile
+mips_gp_le32 _init` — the PIC `_init`@`0x4004cc` computes `gp = _gp_disp + t9`; with `mips_gp`
+**on** (default) the `$gp`-relative GOT load resolves (`*(int4 *)(v1 /* t9 */ + 0x10b94)` →
+`dat_411060`, a concrete GOT slot); with **`--option mips_gp off`** it regresses to the
+unresolved `*(int4 *)(v1 + 0x10b94)`. (`main`/`bump` have a local `lui gp; addiu gp` so their
+output is unchanged either way — gp is already constant-folded.)
+
+**ARM Thumb-FUNC re-home (the second deferred sibling).** `arm_markers.rs` now *also* emits a
+`SymFact { addr: entry & !1, name, kind: Function }` for each LSB-set STT_FUNC, so a Thumb
+function recorded at `entry|1` is **also** known at the even `entry` — the address the `TMode=1`
+paint and the engine's decode use — so `load function <name>` / a CALL resolves there. Ghidra
+*moves* the symbol (`moveFunction`/`setElfSymbolAddress`); kuna's additive `SymFact` makes the
+even entry known without removing the odd-address install (the commit seam's symbol arm is
+idempotent — it skips an already-installed function — so the two coexist with no double-symbol
+collision). Verified on `arm_thumb_le32.o`: `thumb_add`@`0x1` re-homed to `0x0`, `_start`@`0x15`
+to `0x14`. The Increment-8 "paint-only (v1)" LOSS is now resolved.
+
+**ARM decode e2e remains BLOCKED off-host.** This host has NO ARM linker (no lld/aarch64-ld/
+arm-ld), so a LINKED ARM ET_EXEC/ET_DYN with PT_LOAD cannot be built in-env (`ObjectLoadImage`
+reads only segments). The ARM `.o` unit test stands; the linked-exe Thumb-decode e2e is an
+off-host follow-up. (The MIPS e2e, by contrast, runs in-env because the MIPS toolchain — incl.
+a linker — is present.)
+
+**Option / catalog.** `mips_gp` (default-on) added like the other analysis-pass gates:
+`stages.toml` row + `KUNA_OPTION_NAMES` + the `analysis_mips_gp` flag (`architecture.rs`,
+default-on in `reset_defaults_internal`) + the `engine.rs` `analysis_pass_enabled` arm.
+`kuna catalog --check` **catalog OK** (settable count 31→32; `stage_catalog.json` fixture +
+the two count tests regenerated). `docs/assertions.md` regenerated (single-line addition).
+
+**LOSS / divergences:**
+- **The `gp`-direct seam is not ported.** Only `t9 = func_entry` is seeded (see the design
+  note). A non-PIC MIPS function that loads `$gp` off the stack and never recomputes it would
+  need the `gp = _gp` seed, which needs Ghidra's lazy-`unknownValue` propagator (kuna's
+  `ActionConstbase` is unconditional and would poison PIC functions). `recover_gp_value` is in
+  place for when that propagator lands. Documented LOSS in `mips_markers.rs`.
+- **MIPS16 `ISA_MODE` still out of scope** (the exact ARM `$t`/STT_FUNC-LSB analog — a *context
+  bit*, `MIPS_ElfExtension.applyIsaMode`); deferred, needs a MIPS16 fixture (documented in
+  `arm_markers.rs`).
+
+**Result (the proof).** `kuna decompile mips_gp_le32 _init` resolves the `$gp`-relative load
+(`dat_411060`); `--option mips_gp off` regresses it (unresolved). `kuna decompile fauxware main`
+(x86-64) — byte-identical (the MIPS pass is a no-op on a non-MIPS object). `make test`
+**675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test` green; `kuna
+catalog --check` **catalog OK**.
+
+- **Tests:** `kuna-analysis` +5 (3 `mips_markers`: the `t9` scan, `_gp`/bias recovery, the
+  non-MIPS-emits-nothing gate; 1 `arm_markers` re-home assertion; 1 `passes` arch-marker
+  registration). `kuna-decomp` count tests bumped (settable 31→32) + `stage_catalog.json`
+  fixture regenerated.
+
+### Remaining work (essentially complete)
+
+Waves 1–3 (Increments 4–13) **and the entire deferred frontier are done**: DWARF subtask-3
+stack locals (14), Golang no-return + completeness sweep (15), format-string-B varargs typing
+(16, gated off), and MIPS `$gp` recovery + ARM Thumb-FUNC re-home (17). The completeness sweep
+confirms **every feasible-at-tier, decompiler-relevant ELF analyzer is ported** (ELF matches all
+three `noReturnFunctionConstraints.xml` lists; the per-compiler/per-arch passes cover the rest).
+
+Only two items remain, both **non-engine / off-host**:
+- **ARM decode e2e** — blocked off-host: this build host has no ARM linker (no lld/aarch64-ld/
+  arm-ld), so a LINKED ARM exe can't be built in-env. The `s1_loader::arm_markers` pass + its
+  `.o` unit test are done; the full decode e2e needs an off-host-built linked ARM fixture.
+- **`_INIT_<i>`/`_FINI_<i>` array-element naming** — cosmetic: `s1_entry` already *discovers*
+  those addresses; only the Ghidra-style names differ (vs `sub_<addr>`), and delivering them
+  needs reshaping the `entries` fact. Low payoff, documented follow-up.
+
+Everything else is inherited by the engine or genuinely out-of-scope for an ELF decompiler
+(non-ELF formats, Go pclntab, FID — see the table + inventory).

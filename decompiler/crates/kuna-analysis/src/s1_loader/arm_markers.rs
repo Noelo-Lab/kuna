@@ -43,13 +43,14 @@
 //!   `createUndefinedData` equivalent at this tier, and the protection has
 //!   negligible decompiler payoff (it only matters for the listing view). We do
 //!   not emit a fact for `$d`/`$b`. Documented LOSS.
-//! - **The Thumb-FUNC address shift is paint-only (v1).** Ghidra *moves* a Thumb
+//! - **The Thumb-FUNC address shift is now re-homed.** Ghidra *moves* a Thumb
 //!   `FUNC` symbol from `entry|1` to `entry` (`moveFunction`/`setElfSymbolAddress`)
 //!   and renames it; kuna's `read_loader_symbols` installs the `FUNC` at the odd
-//!   address. The conservative v1 here emits only the `TMode=1` paint at the
-//!   normalized (even) address and does NOT re-home the function symbol (that
-//!   risks double-symbols). The function-address normalization is a documented
-//!   follow-up.
+//!   address. This pass additionally emits a [`SymFact`] (`SymKind::Function`) at
+//!   the normalized (even) entry — the address the `TMode=1` paint and the engine's
+//!   decode use — so `load function <name>` and a CALL resolve there. The commit
+//!   seam's symbol arm is idempotent (it skips an already-installed function), so
+//!   the odd- and even-address installs coexist without a double-symbol collision.
 //! - **MIPS `$gp` / MIPS16 `ISA_MODE` are out of scope.** MIPS `$gp` is not a
 //!   decode-mode context paint at all — it is a *tracked register value* set at
 //!   each function entry (`MipsAddressAnalyzer.flowConstants`,
@@ -62,7 +63,7 @@
 use object::read::{Object, ObjectSymbol};
 use object::SymbolKind;
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Stage};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Stage, SymFact, SymKind};
 
 /// The SLEIGH processor-context variable steering ARM/Thumb instruction decode.
 /// Defined by the ARM `.pspec` (`ARMt.pspec` `<context_data>`); `0` = ARM (A32),
@@ -135,15 +136,28 @@ fn scan_arm_markers(file: &object::File) -> AnalysisOutput {
         // (2) STT_FUNC with the Thumb odd-address (LSB) convention. ARM records a
         // Thumb function symbol at `entry|1`. ARM_ElfExtension.java:197-204 (the
         // STT_FUNC fallback) + creatingFunction:117-141 mask the LSB and set
-        // TMode=1 at the even entry. We paint only (the function-symbol re-home
-        // is a documented follow-up).
+        // TMode=1 at the even entry, AND *move* the FUNC symbol from `entry|1` to
+        // `entry` (moveFunction/setElfSymbolAddress).
         if sym.kind() == SymbolKind::Text && (addr & 1) != 0 {
-            out.context_paints.push(ContextPaint {
-                addr: addr & !1,
-                end: None,
-                var: TMODE,
-                value: 1,
-            });
+            let even = addr & !1;
+            out.context_paints.push(ContextPaint { addr: even, end: None, var: TMODE, value: 1 });
+            // Thumb-FUNC re-home: emit the FunctionSymbol at the EVEN entry so
+            // `load function <name>` / a CALL resolves at the address the `TMode`
+            // paint uses (the engine decodes at the even address). Ghidra moves the
+            // symbol; kuna's `read_loader_symbols` installs it at the ODD address,
+            // so this additive SymFact makes the even entry known too. The commit
+            // seam's symbol arm is idempotent (it skips an already-installed
+            // function), so the odd-address install and this even-address one
+            // coexist without a double-symbol collision. Named symbols only — an
+            // unnamed `.symtab` entry has no name to re-home (a NUL name is skipped
+            // by the `is_empty` guard, exactly as Ghidra leaves an unnamed FUNC).
+            if !name.is_empty() {
+                out.symbols.push(SymFact {
+                    addr: even,
+                    name: name.to_string(),
+                    kind: SymKind::Function,
+                });
+            }
         }
     }
 
@@ -234,6 +248,22 @@ mod tests {
         assert!(
             out.context_paints.iter().all(|p| p.addr & 1 == 0),
             "function addresses must be normalized to even (LSB masked)"
+        );
+
+        // Thumb-FUNC re-home: each LSB-set STT_FUNC also surfaces as a Function
+        // SymFact at the NORMALIZED even entry (thumb_add@0x1 -> 0x0, _start@0x15 ->
+        // 0x14), so `load function <name>` resolves at the even decode address.
+        let homed = |a: u64, n: &str| {
+            out.symbols.iter().any(|s| {
+                s.addr == a && s.name == n && s.kind == SymKind::Function
+            })
+        };
+        assert!(homed(0x0, "thumb_add"), "thumb_add re-homed to even 0x0");
+        assert!(homed(0x14, "_start"), "_start re-homed to even 0x14");
+        // Every re-homed function symbol is at an even address.
+        assert!(
+            out.symbols.iter().all(|s| s.addr & 1 == 0),
+            "re-homed function symbols must be at even addresses"
         );
     }
 

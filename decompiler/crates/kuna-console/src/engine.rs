@@ -275,6 +275,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "strings" => arch.analysis_strings,
         "entry_disc" => arch.analysis_entry_disc,
         "arm_markers" => arch.analysis_arm_markers,
+        "mips_gp" => arch.analysis_mips_gp,
         "dwarf" => arch.analysis_dwarf,
         "callfixup" => arch.analysis_callfixup,
         "addrtable" => arch.analysis_addrtable,
@@ -856,7 +857,45 @@ fn commit_analysis_output(
         });
     }
 
-    // 7. Call-fixups (the kuna analog of CallFixupAnalyzer's install loop): for
+    // 7. Tracked register VALUES (the kuna analog of MipsAddressAnalyzer's
+    //    per-function register-value seeding / the console `set track <reg> <val>
+    //    <start> <end>`). For each fact, resolve the register varnode and seed the
+    //    constant over `[func_addr, func_addr+1)` via `create_set` — the exact
+    //    `IfcSettrackedrange` recipe (ifacedecomp.rs IfcSettrackedrange). The
+    //    per-function `build_arch_handle` then snapshots the track base into the
+    //    seam (`seam.tracked_sets = clone_trackbase()`), and `ActionConstbase` (S3)
+    //    emits `COPY #val -> reg` at the entry block, which constant propagation
+    //    consumes (so a MIPS PIC `$gp`-relative load resolves). Committed here, at
+    //    `read symbols`, BEFORE any `load function` decode — the correct timing.
+    //
+    //    CRITICAL gate-safety (same shape as the context paints above):
+    //    `get_register_varnode` returns Err when the named register is NOT defined
+    //    by the active language (e.g. `t9` on x86-64). That MUST be a SILENT no-op —
+    //    otherwise a non-MIPS decompile would regress. The producing pass already
+    //    gates on the object being MIPS (so on a non-MIPS binary `out.tracked_regs`
+    //    is empty), and this swallow is the belt-and-suspenders second guard.
+    for fact in &out.tracked_regs {
+        let Ok(loc) = prog.arch().get_register_varnode(fact.reg.as_bytes()) else {
+            // Register not defined by this language (non-MIPS): faithful no-op.
+            continue;
+        };
+        let begin = Address::new(Rc::clone(code_space), fact.func_addr);
+        // `[func_addr, func_addr+1)` — the per-function point range Ghidra uses
+        // (setRegisterValue(funcAddr, funcAddr, …)); +1 makes the [addr1, addr2)
+        // create_set range non-empty (addr2 > addr1, as IfcSettrackedrange requires).
+        let end = Address::new(Rc::clone(code_space), fact.func_addr.wrapping_add(1));
+        let val = fact.value;
+        prog.arch().with_context_db_mut(|db| {
+            // C++ createSet(addr1,addr2); track = def (copy default as base); push —
+            // the exact IfcSettrackedrange body for a ranged `set track`.
+            let def = db.get_tracked_default().clone();
+            let track = db.create_set(&begin, &end);
+            *track = def;
+            track.push(kuna_sleigh::globalcontext::TrackedContext { loc, val });
+        });
+    }
+
+    // 8. Call-fixups (the kuna analog of CallFixupAnalyzer's install loop): for
     //    each function the pass matched to a cspec call-fixup `<target>`, tag it
     //    with that fixup's inject id so the engine replaces the CALL with the fixup
     //    body (e.g. the `-pg` `mcount`/`__fentry__` profiling call dissolves). This

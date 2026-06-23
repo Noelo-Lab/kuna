@@ -151,6 +151,37 @@ pub struct LocalFact {
     pub stack_offset: i64,
 }
 
+/// A tracked register **value** to seed at a function entry: at `func_addr`, the
+/// register named `reg` holds the constant `value`. Distinct from
+/// [`ContextPaint`] (which steers SLEIGH instruction *decode* via a context BIT):
+/// this seeds a register-VALUE the decompiler's constant analysis propagates (the
+/// kuna analog of Ghidra's `ProgramContext.setRegisterValue` / the console
+/// `set track <reg> <val> <start> <end>`). Produced by
+/// [`crate::s1_loader::mips_markers`] (the kuna analog of Ghidra's
+/// `MipsAddressAnalyzer`), which seeds `t9 = func_addr` per function — the MIPS PIC
+/// ABI convention (a function is reached via `jalr t9`, so on entry `t9` holds the
+/// callee entry). That lets a PIC prologue's `addu gp,gp,t9` fold to the real `$gp`,
+/// so `$gp`-relative GOT/`.sdata` loads resolve to concrete addresses.
+///
+/// The commit seam (`engine.rs::commit_analysis_output`) resolves `reg` to its
+/// register varnode and calls `create_set(func_addr, func_addr+1)` + pushes a
+/// `TrackedContext{loc, val}` — the exact `IfcSettrackedrange` recipe. The
+/// per-function `build_arch_handle` then snapshots the track base into the seam,
+/// and `ActionConstbase` (S3) emits `COPY #val -> reg` at the entry block, feeding
+/// constant propagation. `reg` is a `&'static str` because the only producer names
+/// SLEIGH registers known at compile time (`"t9"`); the commit seam swallows a
+/// "register not found" error so seeding a register the active language does not
+/// define is a faithful no-op (belt-and-suspenders on top of the MIPS-only gate).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TrackedRegFact {
+    /// Virtual address of the function entry the value is seeded at.
+    pub func_addr: u64,
+    /// The SLEIGH register name to seed (e.g. `"t9"`).
+    pub reg: &'static str,
+    /// The constant value the register holds at `func_addr`.
+    pub value: u64,
+}
+
 /// A function whose name matched a cspec call-fixup `<target>`: the engine should
 /// tag it with that fixup's inject id so the CALL is replaced by the fixup body.
 /// Produced by [`crate::s1_callfixup`] (the kuna analog of Ghidra's
@@ -196,6 +227,15 @@ pub struct AnalysisOutput {
     /// decoded, steering ARM/Thumb instruction decode. Produced only on the ARM
     /// path (see [`crate::s1_loader::arm_markers`]); empty otherwise.
     pub context_paints: Vec<ContextPaint>,
+    /// Tracked register-values to seed at function entries (the kuna analog of
+    /// Ghidra's `MipsAddressAnalyzer` `ProgramContext.setRegisterValue` / the
+    /// console `set track <reg> <val> <start> <end>`). The commit seam resolves
+    /// each register and seeds the value over `[func_addr, func_addr+1)`; the
+    /// per-function `build_arch_handle` snapshots it and `ActionConstbase` emits
+    /// `COPY #val -> reg` at the entry, which constant propagation consumes (so a
+    /// MIPS PIC `$gp`-relative load resolves). Produced only on the MIPS path (see
+    /// [`crate::s1_loader::mips_markers`]); empty otherwise.
+    pub tracked_regs: Vec<TrackedRegFact>,
     /// Functions whose names matched a cspec call-fixup `<target>` (e.g. the `-pg`
     /// `mcount`/`__fentry__` profiling stubs). The commit seam tags each with the
     /// matched fixup's inject id so the engine replaces the CALL with the fixup
@@ -221,6 +261,7 @@ impl AnalysisOutput {
         self.strings.extend(other.strings);
         self.prototypes.extend(other.prototypes);
         self.context_paints.extend(other.context_paints);
+        self.tracked_regs.extend(other.tracked_regs);
         self.call_fixups.extend(other.call_fixups);
         self.locals.extend(other.locals);
     }
