@@ -144,6 +144,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `s1-rust-golang-noreturn` | Rust no-return list selection (`noReturnFunctionConstraints.xml` `rustc` arm) | easy | `RustFunctionsThatDoNotReturn` vendored + parsed only when compiler==Rustc; `ZN4core9panicking5panic17h*` flagged for Rust, not C ELF (Increment 7) |
 | 🟡 | `ruststring` | Rust str-slice split (`RustStringAnalyzer`) | med | **detection ported** (shares `s1_sourcelang`); the **split is infeasible-at-tier** (needs post-disasm interior refs + a populated ReferenceManager — same wall as `FindNoReturnFunctionsAnalyzer`). Documented, no split code (Increment 7) |
 | 🟡 | `arm-mips-markers` | ARM `$t`/`$a`+STT_FUNC-LSB → `TMode` (`ARM_ElfExtension`/`ArmSymbolAnalyzer`); MIPS `$gp` | hard | **ARM half done** (Increment 8): `arm_thumb_le32.o` → `TMode=1` for `$t.0`@`0x0` + STT_FUNC LSB normalized to `0x0`/`0x14`; commit-arm paints `TMode` via `set_variable`, no-ops on non-ARM (fauxware byte-identical). **`.o`-unit-only** (no ARM linker on host → decode e2e + Thumb-FUNC re-home deferred); **MIPS `$gp`/`ISA_MODE` out of scope** (tracked-register, not decode-mode) |
+| ✅ | `s1-formatstring` (A) | printf/scanf format-spec parser (`FormatStringParser`) | xhard | **parser half A done** (Increment 9) — `s1_formatstring::parse_output_types("%d %s")` ⇒ `[Int, CharPtr]`, full conversion+length-modifier tables, `*`/`%%`/positional `%n$`, malformed no-panic; 36 unit tests. **B (decompile-loop varargs override wiring) deferred** — engine-driver change, DecompilerDependent, gate OFF |
 | 🟡 | `addrtable` | Absolute address-table discovery (`AddressTableAnalyzer`) | med | implemented + tested but **disabled by default** (Ghidra `setDefaultEnablement(false)` + false-positive risk); scanner finds the 8-entry table @ `0x402008` in `switchtab_x86_64`. See Increment 4 |
 | 🟡 | `switch-recovery` | `DecompilerSwitchAnalyzer` | — | the engine **is** this (S2 jump-tables ported) |
 | 🟡 | `const-prop` | `ConstantPropagationAnalyzer` | — | engine does its own SSA const-prop (S3) |
@@ -735,15 +736,87 @@ A non-ARM object (fauxware) emits zero paints (`non_arm_object_emits_nothing`).
   Thumb-fact scan over the `.o`, the non-ARM-emits-nothing gate); `kuna-console` green.
   `make test` **PARITY OK** (675/675); `make test-stages` **PARITY OK** (158/158);
   `make rust-test` green.
+### Increment 9 — format-string specifier parser (`FormatStringAnalyzer`, parser half A) ✅
+
+`s1-formatstring` is split into **A (this increment — the pure parser)** and **B (the
+deferred decompile-loop wiring)**, because `FormatStringAnalyzer` is genuinely
+**DecompilerDependent**: typing a `printf`/`scanf` call's varargs needs the per-call-site
+format-string *constant* + which arg is the format, neither of which exists at the load-time
+`AnalysisCtx`/`AnalysisOutput` seam — they only materialize after the caller is lifted to
+p-code. See [`analysis-port-plan.md`](analysis-port-plan.md) §`s1-formatstring`.
+
+**A (done) — `s1_formatstring`** — a line-faithful port of the *pure logic* of
+`Ghidra/Features/DecompilerDependent/.../variadic/FormatStringParser.java` (and the
+`(lengthModifier, conversionSpecifier)` pair `FormatArgument.java`). New module
+[`s1_formatstring/mod.rs`](../decompiler/crates/kuna-analysis/src/s1_formatstring/mod.rs),
+registered only as `pub mod s1_formatstring;` in `lib.rs` (it emits **no**
+`AnalysisOutput` facts and is intentionally **not** in `passes.rs` — it is a library the
+future B calls). Faithful transcription of `parseFormatString` → `convertToFormatArguments`
+(the length-modifier + conversion-specifier state machine, incl. `preprocessChar`,
+`handleOutput/InputConversionArgument`, `skipFlags`/`skipIntegers`) →
+`convertToOutputDataTypes`/`convertToInputDataTypes` →
+`convertPairToDataType`/`conversionSpecifierToDataType` + the length-modification handlers
+(`short/char/long/longLong/intmax_t/size_t/ptrdiff_t/longDouble`), plus the positional
+`%n$` path `analyzeFormatStringWithParameters` (Ghidra's `Map<Integer,FormatArgument>`
+replaced by a sparse `Vec<Option<FmtArg>>` — no `HashMap` — reproducing `convertMapToList`'s
+1..=size / null-on-gap contract exactly).
+
+Public API:
+- `parse_output_types(&str) -> Vec<Spec>` (`printf`-family; `*` width/precision → an `Int`),
+- `parse_input_types(&str) -> Vec<Spec>` (`scanf`-family; non-pointer values wrapped in an
+  extra pointer, `*` suppresses the following arg — `convertToInputDataTypes`, `:597`),
+- `parse_format_specifiers(&str)` (the brief's named alias = `parse_output_types`),
+- `convert_to_format_argument_list(&str, is_output_type)` (the `FmtArg` intermediate),
+- `spec_to_datatype(Spec, &dyn TypeFactory, word_size)` (the kuna `Datatype` builder, the
+  analog of `s1_protos::build_ty`).
+
+`Spec` enum = the result space of `convertPairToDataType` (Int/UInt/Short/UShort/Char/UChar/
+Long/ULong/LongLong/ULongLong/Double/LongDouble/CharPtr/WideCharPtr/VoidPtr/IntPtr + the
+widened `*Ptr` cousins for `%n` + the typedef-backed IntMaxT/UIntMaxT/SizeT/PtrDiffT(+Ptr)).
+On any of Ghidra's "undefined behavior" branches (truncated/malformed specs, positional
+gaps, double `*`) the parser returns an **empty** `Vec` (Ghidra returns `null` → no
+override) — it never panics. Indexing is over a `Vec<char>` so multi-byte literal text never
+corrupts the ASCII index arithmetic.
+
+Faithfulness note found while porting: `convertPairToDataType`'s guard (`:622`) returns via
+`conversionSpecifierToDataType` *before* the length-modifier switch for `s`/`c`/`S`/`C`, so
+`%ls`/`%lc` map to `char *` / `unsigned char` (the wide-char branch in
+`longLengthModification` is dead for the printf path) — the unit test pins this faithful
+behavior, not the intuitive one. **LOSS:** kuna has no `.gdt` typedef archive, so the
+extended-precision typedefs are lowered to their integer fallback per
+`getIntegralPointerType`/the fabricated-typedef base type (documented stand-in matching the
+`s1_protos` libc table); the scanf `double*`/`void**` second-level pointers are modeled as
+`void*`.
+
+**B (deferred — wave-3 engine change, NOT in this increment).** The
+decompile→inspect→override→re-decompile loop (the analog of Ghidra's `ParallelDecompiler` +
+`PcodeFunctionParser` + `HighFunctionDBUtil.writeOverride`): after the first decompile of a
+caller, walk the `CALL` ops, read the format-string constant from the call arg at the
+callee's fixed-param slot (`PcodeFunctionParser.java:99`), parse it with **this** module,
+build a per-call-site `PrototypePieces` (callee fixed params ++ parsed varargs,
+`first_var_arg_slot = -1`) and install it via the existing `pending_proto_overrides` →
+`Override::insert_proto_override` plumbing, then re-decompile. That is an engine-driver
+change, gate it OFF by default (matching `FormatStringAnalyzer.setDefaultEnablement(false)`),
+and it needs A (this) merged first. **This increment touched ZERO engine/console/passes
+surface** — `s1_formatstring/mod.rs` + one `pub mod` line + this log only.
+
+- **Tests:** `kuna-analysis` 80 tests pass (44 + 36 new `s1_formatstring`: the brief's spec
+  examples `%d %s`→[Int,CharPtr], `%5.2f`→[Double], `%ld%%%p`→[Long,VoidPtr],
+  `%*d`→[Int,Int], `%2$s %1$d` positional; the full conversion + length-modifier tables; `*`
+  width/precision; `%%` literal; scanf wrapping/`*`-suppression; and a malformed/truncated/
+  Unicode no-panic sweep). `make test` **PARITY OK** (675/675); `make test-stages` **PARITY
+  OK** (158/158); `make rust-test` green. (A is pure-additive, so the three parity gates are
+  structurally untouched — formalities, all green.)
 
 ### Next candidates (Wave 2/3 — engine seams, deferred)
 
-Wave 1 is complete (Increments 4–7: addrtable, entry-disc/eh-frame, DWARF, source-lang/Rust);
-Increment 8 added the first **processor-context** fact (ARM/Thumb `TMode`).
+Wave 1 complete (Increments 4–7: addrtable, entry-disc/eh-frame, DWARF, source-lang/Rust).
+Wave 2: Increment 8 added the first **processor-context** fact (ARM/Thumb `TMode`); Increment 9
+the **format-string parser half (A)**; callfixup follows.
 What remains, per [`analysis-port-plan.md`](analysis-port-plan.md), all engine-touching:
 the **printer change** to let `s1-strings` render literals (re-enables it), the **per-run
 `--option` gating** of all passes (deferred conflict #4), the **no-return × demangle**
-cross-pass seam fix, the **DWARF subtask-3** stack-local map (engine change), the
-**arch-markers e2e + Thumb-FUNC re-home** follow-up (needs a LINKED ARM fixture) and its
-**MIPS `$gp`/`ISA_MODE`** sibling, **callfixup**, and **format-string** varargs
-typing. Inherited/out-of-scope items need no work (see table + inventory).
+cross-pass seam fix, the **DWARF subtask-3** stack-local map (engine change), **format-string-B**
+(the decompile-loop varargs override wiring, building on Increment 9's parser), and the
+**arch-markers e2e + Thumb-FUNC re-home / MIPS `$gp`** follow-ups (need a LINKED ARM / MIPS
+fixture). Inherited/out-of-scope items need no work (see table + inventory).
