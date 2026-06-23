@@ -2621,6 +2621,19 @@ impl Database {
         }
     }
 
+    /// The `FuncProto::injectid` parked on the FunctionSymbol `sid` (C++
+    /// `fd->getFuncProto().getInjectId()`), or `-1` if `sid` is not a Function
+    /// symbol (or carries no inject id). The by-id companion of
+    /// [`Database::set_function_inject_id`], used by the call-fixup commit seam to
+    /// replicate Ghidra's `getCallFixup()==null` guard — only auto-apply a fixup
+    /// when none is already set (`CallFixupAnalyzer.java:89`).
+    pub fn function_inject_id_for_symbol(&self, sid: SymbolId) -> int4 {
+        match self.symbols[sid].kind {
+            SymbolKind::Function { inject_id, .. } => inject_id,
+            _ => -1,
+        }
+    }
+
     /// Park the source-declared prototype pieces on a FunctionSymbol (C++
     /// `Architecture::setPrototype` → `queryFunction(name)->getFuncProto()` with the
     /// parsed declaration; here stashed for re-seeding at `ActionDefaultParams`).

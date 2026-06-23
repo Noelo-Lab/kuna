@@ -22,6 +22,7 @@ real ELF parser.
 | `switchtab_x86_64` | non-PIE x86-64, dense `switch(x){0..7}` | address/jump tables (`addrtable`): an absolute 8-byte jump table in `.rodata` at vma `0x402008` (`jmp *0x402008(,%rdi,8)`) |
 | `rust_hello_x86_64` | tiny `#![no_std]` rustc PIE (x86-64), **not stripped** | source-language detection (`s1_sourcelang`): `.comment` carries `rustc version 1.90.0 …` (the faithful `ElfRustSourceLanguage` comment path) AND `.symtab` carries a Rust-mangled symbol `_ZN5nostd1m12rusty_helper17h…E` (the legacy `_ZN…17h<hex>E` heuristic) — both detection paths fire |
 | `arm_thumb_le32.o` | bare ARM Thumb **`.o`** (ET_REL, EABI5, LE) — **not linked** (no PT_LOAD; see note) | ARM/Thumb decode-mode markers (`s1_loader::arm_markers`): `.symtab` carries the `$t.0` Thumb mapping symbol at `.text+0x0` AND STT_FUNC syms `thumb_add`@`0x1` / `_start`@`0x15` (LSB-set, the Thumb odd-address convention). The pass emits a `TMode=1` paint for `$t.0` (at `0x0`) and for each LSB-set FUNC normalized to even (`0x0`, `0x14`) |
+| `mcount_x86_64` | static, non-PIE x86-64, `gcc -pg` (`-O0`), `.debug_*` stripped | call-fixup auto-apply (`s1_callfixup`): the `-pg` prologue emits a direct `call mcount` to the weak `mcount` FUNC symbol (0x44a710); `main` is at 0x401795. The cspec (`x86-64-gcc.cspec`) registers `<callfixup name="mcount"><target name="mcount"/>` (body `temp:1 = 0;`), so tagging `main`'s `mcount` callee with that fixup's inject id dissolves the profiling call — `kuna decompile … main` then shows no `mcount();` line. Also carries `__fentry__` (0x44a770, the `fentry`-fixup target) |
 
 Provenance: `fauxware`, `cet_pie_x86_64`, `stripped_dynamic_x86_64` copied
 verbatim from `bs-artifacts/binaries/` (`fauxware`, `debug_symbol`,
@@ -40,10 +41,7 @@ where `tiny.rs` defines a `#[panic_handler]`, a `#[no_mangle] black_box`, a
 `mod m { #[inline(never)] pub fn rusty_helper(x:u64)->u64 {…} }`, and a
 `#[no_mangle] _start`. The `#![no_std]` form keeps it tiny (2576 bytes, kept
 **un**stripped so the Rust-mangled symbol survives) while still emitting the
-`rustc version` `.comment` record and a `_ZN…17h<hex>E` symbol. They are checked
-in (each well under 32 KB) so the gates are hermetic and reproducible. **Pin
-load-bearing VMAs as test consts** (read via `objdump`/`readelf` at build time) —
-addresses shift across toolchains.
+`rustc version` `.comment` record and a `_ZN…17h<hex>E` symbol.
 
 `arm_thumb_le32.o` (904 bytes, source vendored alongside as `arm_thumb_le32.c`):
 built with `clang --target=arm-linux-gnueabihf -mthumb -nostdlib -c
@@ -56,3 +54,17 @@ symbol scan unit-tests against the `.o` (which `object` parses fine); the decode
 **e2e** (`kuna decompile arm_thumb… main` producing valid Thumb-decoded C) is a
 documented follow-up that needs a LINKED ARM exe (ET_EXEC/ET_DYN with PT_LOAD —
 `ObjectLoadImage` reads only segments), built off-host.
+
+`mcount_x86_64`: `gcc -pg -static -O0 -o mcount_x86_64 t.c` (t.c = `int
+main(){return 0;}`), then `strip --strip-debug` (drops `.debug_*` but keeps
+`.symtab`, so the `mcount`/`__fentry__`/`main` FUNC symbols survive). It is
+**static** on purpose: a dynamic `-pg` build resolves `mcount` to an *indirect*
+GOT call (`call *0x…(%rip)`), which has no named-`mcount` FunctionSymbol at the
+call target, so the name-matched fixup cannot bind — only the static build emits a
+direct `call mcount` to a real `mcount` FUNC symbol. Static glibc makes this
+fixture larger (~896 KB) than the others; that size is the unavoidable cost of a
+self-contained direct-`call mcount` target.
+
+All other fixtures are checked in well under 32 KB so the gates are hermetic and
+reproducible. **Pin load-bearing VMAs as test consts** (read via
+`objdump`/`readelf` at build time) — addresses shift across toolchains.

@@ -79,6 +79,15 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // Skips cleanly on a non-DWARF binary. Subtask-3 (DW_OP_fbreg stack-local
         // ScopeLocal map) is a deferred engine change — see s1_dwarf docs.
         Box::new(crate::s1_dwarf::DwarfPass),
+        // S1 call-fixups: tag each function whose name matches a cspec call-fixup
+        // `<target>` (e.g. the `-pg` `mcount`/`__fentry__` profiling stubs) so the
+        // engine replaces the CALL with the fixup body. The kuna analog of Ghidra's
+        // default-on `CallFixupAnalyzer` (the install half; the flow-repair half is
+        // engine-internal at this tier — see s1_callfixup docs). After LibProtoPass
+        // (the fixup tags the *callee* function, independent of prototype seeding).
+        // Always-on, like noreturn/libproto/entry; `--option callfixup off` restores
+        // the un-fixed rendering.
+        Box::new(crate::s1_callfixup::CallFixupPass),
         // S1 strings (StringLiteralPass) is implemented + tested but **disabled by
         // default**: kuna's printer renders a constant that maps to a *named* global
         // symbol as that symbol's NAME (`s_400915`), which SHADOWS the string-literal

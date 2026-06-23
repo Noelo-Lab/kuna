@@ -20,7 +20,7 @@ sub-agent briefs + fixtures + fan-out protocol) is
 
 Each analysis is an [`AnalysisPass`](../decompiler/crates/kuna-analysis/src/pass.rs):
 a focused, read-only, never-failing producer of *facts*
-(`AnalysisOutput { symbols, entries, noreturn, readonly }`) over an
+(`AnalysisOutput { symbols, entries, noreturn, readonly, strings, prototypes, call_fixups }`) over an
 `AnalysisCtx { file: &object::File, image: &ObjectLoadImage, arch: &Architecture }`.
 `kuna_analysis::passes::default_passes()` lists the enabled passes;
 `run_default_analyses(bytes, image, arch)` runs them and returns the merged
@@ -45,6 +45,7 @@ binding is also what keeps kuna a faithful drop-in for a Ghidra front-end (see
 | no-return | `query_global_function(name)?` → `Database::set_function_no_return(sid, true)` | NOT the private `Architecture::set_function_no_return(name,..)` |
 | readonly range | `Database::set_property_range(varnode_flags::readonly, a1, a2_open)` | now applied on the ELF path too (was XML-only); load-bearing for string rendering |
 | entry point | `name_function(addr)` → `add_function` + `register_symbol` (the `map function` recipe) | commit side is solved; *discovery* is the hard part |
+| call-fixup | rebuild target→fixup map from `arch.pcodeinjectlib.injection` → `pcodeinjectlib.base.get_payload_id(CALLFIXUP_TYPE, fixup)` → `query_global_function(name)?` → guard `Database::function_inject_id_for_symbol(sid) < 0` → `Database::set_function_inject_id(sid, injectid)` | the `IfcFixupApply` body driven by the analyzer; the `<0` guard is Ghidra's `getCallFixup()==null`; the inherited inject/weave path then applies the fixup at flow time |
 
 ## Is this every Ghidra analyzer? (complete inventory)
 
@@ -146,6 +147,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | 🟡 | `arm-mips-markers` | ARM `$t`/`$a`+STT_FUNC-LSB → `TMode` (`ARM_ElfExtension`/`ArmSymbolAnalyzer`); MIPS `$gp` | hard | **ARM half done** (Increment 8): `arm_thumb_le32.o` → `TMode=1` for `$t.0`@`0x0` + STT_FUNC LSB normalized to `0x0`/`0x14`; commit-arm paints `TMode` via `set_variable`, no-ops on non-ARM (fauxware byte-identical). **`.o`-unit-only** (no ARM linker on host → decode e2e + Thumb-FUNC re-home deferred); **MIPS `$gp`/`ISA_MODE` out of scope** (tracked-register, not decode-mode) |
 | ✅ | `s1-formatstring` (A) | printf/scanf format-spec parser (`FormatStringParser`) | xhard | **parser half A done** (Increment 9) — `s1_formatstring::parse_output_types("%d %s")` ⇒ `[Int, CharPtr]`, full conversion+length-modifier tables, `*`/`%%`/positional `%n$`, malformed no-panic; 36 unit tests. **B (decompile-loop varargs override wiring) deferred** — engine-driver change, DecompilerDependent, gate OFF |
 | 🟡 | `addrtable` | Absolute address-table discovery (`AddressTableAnalyzer`) | med | implemented + tested but **disabled by default** (Ghidra `setDefaultEnablement(false)` + false-positive risk); scanner finds the 8-entry table @ `0x402008` in `switchtab_x86_64`. See Increment 4 |
+| ✅ | `callfixup` | Auto-apply cspec call-fixups (`CallFixupAnalyzer`, install half) | med | `mcount_x86_64`: `main`'s `-pg` `call mcount` is **dissolved** — body becomes `return 0;` + `Function: mcount replaced with injection: mcount`. Pass matches FUNC names to cspec `<callfixup><target>`; commit tags inject id (the inherited inject/weave path applies it). Flow-repair half infeasible-at-tier (LOSS). See Increment 8 |
 | 🟡 | `switch-recovery` | `DecompilerSwitchAnalyzer` | — | the engine **is** this (S2 jump-tables ported) |
 | 🟡 | `const-prop` | `ConstantPropagationAnalyzer` | — | engine does its own SSA const-prop (S3) |
 | ⛔ | `s1-aif` | Aggressive Instruction Finder (`AggressiveInstructionFinderAnalyzer` + ARM) | xhard | needs post-disassembly Listing/FunctionManager/PseudoDisassembler + ≥20 found functions — not at this tier; off-by-default upstream; folds into `s1-entry-disc` + `s1-eh-frame`. Increment 4 |
@@ -807,16 +809,95 @@ surface** — `s1_formatstring/mod.rs` + one `pub mod` line + this log only.
   Unicode no-panic sweep). `make test` **PARITY OK** (675/675); `make test-stages` **PARITY
   OK** (158/158); `make rust-test` green. (A is pure-additive, so the three parity gates are
   structurally untouched — formalities, all green.)
+### Increment 10 — auto-apply cspec call-fixups (`CallFixupAnalyzer`) ✅
 
-### Next candidates (Wave 2/3 — engine seams, deferred)
+Port of Ghidra's default-on `CallFixupAnalyzer` (the **install half** only): tag every
+program function whose name matches a cspec call-fixup `<target>` so the engine replaces the
+CALL with the fixup body. The headline case is the gcc `-pg` profiling stub — `<callfixup
+name="mcount"><target name="mcount"/>` (body `temp:1 = 0;`), the `mcount`/`__fentry__`
+prologue call that should dissolve out of the decompiled output.
 
-Wave 1 complete (Increments 4–7: addrtable, entry-disc/eh-frame, DWARF, source-lang/Rust).
-Wave 2: Increment 8 added the first **processor-context** fact (ARM/Thumb `TMode`); Increment 9
-the **format-string parser half (A)**; callfixup follows.
-What remains, per [`analysis-port-plan.md`](analysis-port-plan.md), all engine-touching:
-the **printer change** to let `s1-strings` render literals (re-enables it), the **per-run
-`--option` gating** of all passes (deferred conflict #4), the **no-return × demangle**
-cross-pass seam fix, the **DWARF subtask-3** stack-local map (engine change), **format-string-B**
+**Inherited vs the gap (the whole point).** kuna already had the entire *apply* path: the
+cspec `<callfixup><target>` decode at bootstrap (`architecture.rs::decode_call_fixups`),
+per-payload `target_symbol_names` retention on `SleighPayload::Callfixup`
+(`inject_sleigh.rs`), the inject/weave flow (`func_inject_id → FuncProto::set_inject_id →
+inject_sub_function`, `seams.rs`/`flow.rs`), and the per-function applier primitive
+`Database::set_function_inject_id` (`database.rs`) — already driven by hand in the console
+`fixup apply <fixup> <function>` command (`IfcFixupApply`, `ifacedecomp.rs`). **The gap**:
+nothing auto-iterated the registered fixups' `<target>` names and tagged matching
+FunctionSymbols at load. That auto-installer is exactly `CallFixupAnalyzer`; this increment
+ports it and wires it to the inherited applier.
+
+**`s1_callfixup`** — new module
+[`s1_callfixup/mod.rs`](../decompiler/crates/kuna-analysis/src/s1_callfixup/mod.rs). A pure
+`CallFixupPass` (`stage()=S1`, `id()="callfixup"`):
+- `target_fixup_map(arch)` — the port of `getTargetFixupMap` (`CallFixupAnalyzer.java:436-459`):
+  iterate `arch.pcodeinjectlib.injection`, for each `SleighPayload::Callfixup` read its
+  `payload.core.name` (the fixup name) and `target_symbol_names`, build a `Vec<(target,
+  fixup)>` (no `HashMap`, per convention).
+- `call_fixup_name_for_function(name, map)` — the port of `getCallFixupNameForFunction`
+  (`CallFixupAnalyzer.java:200-222`): strip a leading `libID_conflict_`, then probe the map
+  with `name`, `"_"+name`, `"__"+name` (the underscore retries), first hit wins.
+- The scan walks the same `.symtab`+`.dynsym` FUNC streams as `noreturn` (version suffixes
+  stripped) and emits a `CallFixupFact { func_name }` per match (the *installed* name, so the
+  commit's `query_global_function` resolves the real symbol — same contract as `noreturn`).
+
+**Fact + commit.** New `AnalysisOutput::call_fixups: Vec<CallFixupFact>` (+ `merge`),
+`CallFixupFact { func_name: String }` in `pass.rs`. Commit step 6 in
+`engine.rs::commit_analysis_output` mirrors `IfcFixupApply` driven by the analyzer: rebuild
+the target map, re-derive the fixup name, `get_payload_id(CALLFIXUP_TYPE, fixup)` → inject
+id, `query_global_function(name)` → sid, **guard** `function_inject_id_for_symbol(sid) < 0`
+(Ghidra's `getCallFixup()==null`, `CallFixupAnalyzer.java:89` — never clobber a hand-applied
+fixup), then `set_function_inject_id(sid, injectid)`. A name with no registered fixup or no
+matching FunctionSymbol or an already-set fixup is a silent no-op. One tiny additive engine
+accessor added: `Database::function_inject_id_for_symbol(sid)` (the by-id companion of the
+existing setter, for the guard).
+
+**Registration.** `Box::new(crate::s1_callfixup::CallFixupPass)` in `passes_for`, always-on
+(Ghidra `setDefaultEnablement(true)`, `CallFixupAnalyzer.java:51`).
+
+**Fixture.** Vendored `tests/fixtures/mcount_x86_64` — a static, non-PIE `gcc -pg -O0`
+binary (`.debug_*` stripped, `.symtab` kept) whose `main` (0x401795) prologue emits a direct
+`call mcount` to the weak `mcount` FUNC (0x44a710); also carries `__fentry__` (0x44a770).
+**Static on purpose**: a *dynamic* `-pg` build resolves `mcount` to an *indirect* GOT call
+(`call *…(%rip)`) with no named-`mcount` symbol at the target, so the name-matched fixup
+can't bind — only the static build emits a direct `call mcount` to a real symbol. Static
+glibc makes it ~896 KB (larger than the other fixtures; unavoidable for a self-contained
+direct-`call mcount` target).
+
+**e2e proof.** `verify_s1_callfixup.rs`: bootstrap the fixture (runs the pass + commit), then
+`load function main` → `decompile` → `print C`. Before the fixup `main` shows `mcount();`;
+after (the default) the body is `return 0;` with the engine marker `Function: mcount replaced
+with injection: mcount`. The test asserts the marker is present AND no `mcount();` call line
+survives. This is the one place the "inject machinery is inherited" claim is proven all the
+way to a dissolved call.
+
+- **LOSS / scope.** Only the *install* half is ported. The flow-repair half
+  (`setNoFallThru`/`clearAndRepairFlows`/non-returning fallthrough clearing,
+  `CallFixupAnalyzer.java:93-175,234-434`) and thunk-following (`addInThunkedFunctionsToList`,
+  177-198) are **post-disassembly listing/FlowOverride** work with no pre-decompile Listing at
+  this tier — kuna handles fixup fallthrough inside the engine's flow path. Same constraint as
+  `FindNoReturnFunctionsAnalyzer` (`noreturn.rs:9-15`). Documented in the module doc comment.
+- **Divergence (no LOSS to parity).** The analysis-tier passes are always-on and **not**
+  individually flippable via `--option` — they have an `id()` for the pass interface, but no
+  pass id (`noreturn_known`/`libproto`/`callfixup`/…) is in
+  `kuna_decomp::options::KUNA_OPTION_NAMES` (those are all S2+ decompiler sub-stage
+  assertions). So `--option callfixup off` is silently ignored, like `--option
+  noreturn_known off` would be — consistent with every Wave-1 pass. Per-run pass gating is the
+  separately-tracked deferred decision (open architectural decision §, conflict #4).
+
+- **Tests:** `kuna-analysis` 49 tests pass (44 + 5 new `s1_callfixup`); `kuna-console`
+  +1 e2e gate (`verify_s1_callfixup`). `make test` **PARITY OK** (675/675);
+  `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+
+### Next candidates (Wave 3 — engine seams, deferred)
+
+Wave 1 complete (Increments 4–7). **Wave 2 complete** (Increments 8–10): ARM/Thumb context
+painting, the format-string parser half (A), and cspec call-fixup auto-apply.
+What remains is **Wave 3**, per [`analysis-port-plan.md`](analysis-port-plan.md), all
+engine-touching: the **printer change** to let `s1-strings` render literals (re-enables it),
+the **per-run `--option` gating** of all passes (deferred conflict #4), the **no-return ×
+demangle** cross-pass seam fix, the **DWARF subtask-3** stack-local map, **format-string-B**
 (the decompile-loop varargs override wiring, building on Increment 9's parser), and the
 **arch-markers e2e + Thumb-FUNC re-home / MIPS `$gp`** follow-ups (need a LINKED ARM / MIPS
 fixture). Inherited/out-of-scope items need no work (see table + inventory).

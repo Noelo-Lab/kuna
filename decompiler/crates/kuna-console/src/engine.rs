@@ -695,6 +695,47 @@ fn commit_analysis_output(
         });
     }
 
+    // 7. Call-fixups (the kuna analog of CallFixupAnalyzer's install loop): for
+    //    each function the pass matched to a cspec call-fixup `<target>`, tag it
+    //    with that fixup's inject id so the engine replaces the CALL with the fixup
+    //    body (e.g. the `-pg` `mcount`/`__fentry__` profiling call dissolves). This
+    //    is precisely the `IfcFixupApply` body (resolve fixup name → inject id;
+    //    resolve function name → sid; set_function_inject_id), driven by the
+    //    analyzer instead of by hand — and guarded by Ghidra's `getCallFixup()==null`
+    //    check (`CallFixupAnalyzer.java:89`): only set when no fixup is already
+    //    parked, so a hand-applied `fixup apply` is never clobbered. A name with no
+    //    registered fixup or no matching FunctionSymbol is a silent no-op.
+    if !out.call_fixups.is_empty() {
+        // Rebuild the same target→fixup map the pass used (the fact carries only
+        // the function name; the fixup is re-derived from the live pcodeinjectlib).
+        let map = kuna_analysis::s1_callfixup::target_fixup_map(prog.arch());
+        for fact in &out.call_fixups {
+            let Some(fixup_name) =
+                kuna_analysis::s1_callfixup::call_fixup_name_for_function(&fact.func_name, &map)
+            else {
+                continue;
+            };
+            // fixup name → inject id (CALLFIXUP_TYPE); -1 if unknown (no-op).
+            let injectid = prog
+                .arch()
+                .pcodeinjectlib
+                .base
+                .get_payload_id(kuna_decomp::pcodeinject::CALLFIXUP_TYPE, fixup_name.as_bytes());
+            if injectid < 0 {
+                continue;
+            }
+            // function name → FunctionSymbol id; skip if it no longer resolves.
+            let Ok(sid) = prog.arch().query_global_function(&fact.func_name) else {
+                continue;
+            };
+            // getCallFixup()==null guard: only auto-apply when no fixup is set.
+            if prog.arch().symboltab.function_inject_id_for_symbol(sid) >= 0 {
+                continue;
+            }
+            prog.arch_mut().symboltab.set_function_inject_id(sid, injectid);
+        }
+    }
+
     Ok(())
 }
 

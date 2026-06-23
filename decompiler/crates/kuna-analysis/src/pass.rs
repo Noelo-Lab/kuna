@@ -91,6 +91,22 @@ pub struct ContextPaint {
     pub value: u32,
 }
 
+/// A function whose name matched a cspec call-fixup `<target>`: the engine should
+/// tag it with that fixup's inject id so the CALL is replaced by the fixup body.
+/// Produced by [`crate::s1_callfixup`] (the kuna analog of Ghidra's
+/// `CallFixupAnalyzer`).
+///
+/// Carries the **original installed name** (not the matched fixup name), like
+/// [`AnalysisOutput::noreturn`] does: the commit seam resolves the real
+/// FunctionSymbol via `query_global_function(func_name)` and re-derives the fixup
+/// the same way the pass did. A name that no longer resolves (or already carries a
+/// fixup) is the faithful no-op (Ghidra only sets when `getCallFixup()==null`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CallFixupFact {
+    /// The matched function's installed name (e.g. `mcount`, `__fentry__`).
+    pub func_name: String,
+}
+
 /// The facts one analysis contributes. Every field is additive and may be empty;
 /// merging two outputs is concatenation (the driver dedups by address).
 #[derive(Default, Debug)]
@@ -118,6 +134,11 @@ pub struct AnalysisOutput {
     /// decoded, steering ARM/Thumb instruction decode. Produced only on the ARM
     /// path (see [`crate::s1_loader::arm_markers`]); empty otherwise.
     pub context_paints: Vec<ContextPaint>,
+    /// Functions whose names matched a cspec call-fixup `<target>` (e.g. the `-pg`
+    /// `mcount`/`__fentry__` profiling stubs). The commit seam tags each with the
+    /// matched fixup's inject id so the engine replaces the CALL with the fixup
+    /// body. The kuna analog of Ghidra's `CallFixupAnalyzer` install loop.
+    pub call_fixups: Vec<CallFixupFact>,
 }
 
 impl AnalysisOutput {
@@ -130,6 +151,7 @@ impl AnalysisOutput {
         self.strings.extend(other.strings);
         self.prototypes.extend(other.prototypes);
         self.context_paints.extend(other.context_paints);
+        self.call_fixups.extend(other.call_fixups);
     }
 }
 
