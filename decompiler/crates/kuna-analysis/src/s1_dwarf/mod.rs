@@ -18,6 +18,13 @@
 //!     [`PrototypePieces`] built from its return-type DIE + `DW_TAG_formal_parameter`
 //!     children, mapping each DWARF type DIE to a kuna [`Datatype`] via the
 //!     architecture's [`TypeFactory`].
+//!   * **subtask 3 (named, typed stack locals)** — each defined subprogram's
+//!     direct `DW_TAG_variable`/`DW_TAG_formal_parameter` children that carry a
+//!     single `DW_OP_fbreg` (frame-base-relative) stack location emit a
+//!     [`crate::pass::LocalFact`] at stack offset `call_frame_cfa + fbreg`, typed
+//!     by the same DIE→[`Datatype`] mapper. The commit re-seeds each into the
+//!     function's `ScopeLocal` (the `map addr`/`seed_mapped_symbols` path) so the
+//!     decompiler renders `FILE *file` instead of `local_18`.
 //!
 //! ## Origin (upstream Ghidra, the tree kuna was ported from)
 //!
@@ -48,11 +55,17 @@
 //!
 //! ## Scope / faithful losses (DOC)
 //!
-//! - **subtask 3 (stack-local `ScopeLocal` map) is DEFERRED.** Per-local
-//!   `DW_OP_fbreg` stack-variable naming+typing (`DWARFVariable.readLocalVariableStorage`)
-//!   needs a new `locals` fact + an engine-side commit path mapping each into the
-//!   function's `ScopeLocal` with a typelock — a wave-3 engine change. Left as a
-//!   documented follow-up (parallel to the deferred `FindNoReturnFunctionsAnalyzer`).
+//! - **subtask 3 (stack-local `ScopeLocal` map) is now DONE.** Each defined
+//!   subprogram's direct `DW_OP_fbreg` `DW_TAG_variable`/`DW_TAG_formal_parameter`
+//!   children emit a [`crate::pass::LocalFact`]; the commit re-seeds each as a
+//!   typelock|namelock stack symbol in the function's `ScopeLocal` (the proven
+//!   `map addr`/`seed_mapped_symbols` path — no shared-engine-path change). The
+//!   `DW_OP_fbreg`→stack-offset conversion applies the per-arch `call_frame_cfa`
+//!   constant ([`call_frame_cfa`], faithful to Ghidra's per-language `.dwarf`
+//!   `<call_frame_cfa>`). LOSS: only **direct** children (a lexical-block- or
+//!   inlined-subroutine-nested local is skipped, the same listing-cosmetic scope as
+//!   the labels/call-sites below), and only the **single-`DW_OP_fbreg`** location
+//!   form (a composite/register/multi-op location is left to the engine).
 //! - We skip `DW_TAG_label`, `DW_TAG_call_site`, inlined-subroutine, lexical-block
 //!   comments, and source-info/plate comments — all listing cosmetics with zero
 //!   decompiler-output payoff (the same scope as the strings/demangle losses).
@@ -96,6 +109,34 @@ type Reader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;
 /// cap we fall back to a void pointer / void so the prototype still builds.
 const MAX_TYPE_DEPTH: u32 = 3;
 
+/// The per-architecture **static `call_frame_cfa` offset** — the constant that
+/// turns a `DW_AT_frame_base = DW_OP_call_frame_cfa` expression into a concrete
+/// stack offset (`DWARFExpressionEvaluator` pushes a stack varnode at this value
+/// for `DW_OP_call_frame_cfa`, then `DW_OP_fbreg` adds the per-variable offset, so
+/// `stack_offset = call_frame_cfa + fbreg`). Ghidra reads it per-language from the
+/// processor's `<arch>.dwarf` `<call_frame_cfa value="N"/>` element
+/// (`DWARFRegisterMappings.getCallFrameCFA`); this is the faithful subset for the
+/// ELF architectures kuna can produce here, transcribed from those files:
+///
+/// - x86-64 (`x86-64.dwarf`): 8 — push of return addr below the entry-SP CFA.
+/// - x86 32-bit (`x86.dwarf`): 4.
+/// - AArch64/ARM/SPARC/PowerPC: 0 — frame-base already at the CFA, no SP-adjust.
+/// - RISC-V 64 (`riscv64.dwarf`): 8.
+///
+/// `None` for any architecture whose constant kuna does not vend; the DWARF
+/// stack-local recovery then SKIPS `DW_OP_fbreg` locals for that target (additive,
+/// faithful — we never guess a frame offset we can't ground in upstream's table).
+fn call_frame_cfa(arch: object::Architecture) -> Option<i64> {
+    use object::Architecture as A;
+    match arch {
+        A::X86_64 | A::X86_64_X32 => Some(8),
+        A::I386 => Some(4),
+        A::Aarch64 | A::Arm | A::Sparc64 | A::PowerPc | A::PowerPc64 => Some(0),
+        A::Riscv64 => Some(8),
+        _ => None,
+    }
+}
+
 /// Port of `DWARFAnalyzer`: install DWARF function/global names and typed
 /// function signatures from the program's `.debug_*` sections.
 pub struct DwarfPass;
@@ -128,6 +169,10 @@ struct DieSnap {
     has_location: bool,
     /// `DW_OP_addr` operand of a simple `DW_AT_location`, if that is its form.
     addr_location: Option<u64>,
+    /// The signed `DW_OP_fbreg <off>` operand of a single-op `DW_AT_location`, if
+    /// that is its form (a frame-base-relative stack local — subtask 3). `None`
+    /// for any other location form (`DW_OP_addr`, register, multi-op).
+    fbreg_location: Option<i64>,
     /// Depth in the DIE tree (root unit DIE = 0).
     depth: isize,
     /// Offsets of this DIE's direct children, in order.
@@ -149,6 +194,7 @@ impl DieSnap {
             declaration: false,
             has_location: false,
             addr_location: None,
+            fbreg_location: None,
             depth,
             children: Vec::new(),
         }
@@ -224,6 +270,7 @@ fn snapshot_unit(
         if let Some(loc) = entry.attr_value(gimli::DW_AT_location) {
             snap.has_location = true;
             snap.addr_location = simple_addr_location(&loc);
+            snap.fbreg_location = simple_fbreg_location(&loc);
         }
 
         map.insert(off, snap);
@@ -236,8 +283,9 @@ fn snapshot_unit(
 
 /// Decode a `DW_AT_location` that is a single `DW_OP_addr <vma>` expression (the
 /// only global-variable location form this pass handles), returning the VMA.
-/// Anything else (`DW_OP_fbreg`, register, multi-op) returns `None` — those are
-/// stack/register locals, the deferred subtask-3 territory.
+/// Anything else (`DW_OP_fbreg`, register, multi-op) returns `None` — a
+/// `DW_OP_fbreg` stack local is handled separately by [`simple_fbreg_location`]
+/// (subtask 3); a register/multi-op location has no static address.
 fn simple_addr_location(loc: &gimli::AttributeValue<Reader<'_>>) -> Option<u64> {
     let expr = match loc {
         gimli::AttributeValue::Exprloc(e) => e.clone(),
@@ -257,6 +305,62 @@ fn simple_addr_location(loc: &gimli::AttributeValue<Reader<'_>>) -> Option<u64> 
             bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8],
         ])),
         _ => None,
+    }
+}
+
+/// Decode a `DW_AT_location` that is a single `DW_OP_fbreg <sleb128>` expression
+/// (the frame-base-relative stack-local form — subtask 3), returning the SIGNED
+/// frame-base offset. Anything else (`DW_OP_addr`, register, multi-op) returns
+/// `None`. The whole expression must be exactly the one opcode + its SLEB128
+/// operand (we deliberately do NOT handle composite/piece locations — a single
+/// `DW_OP_fbreg` is what `-O0`/`-g` emits for a plain stack slot, and is what
+/// Ghidra's `DWARFExpressionEvaluator` resolves to a stack varnode via the frame
+/// base set to the CFA, `DWARFExpressionEvaluator.java:403`).
+fn simple_fbreg_location(loc: &gimli::AttributeValue<Reader<'_>>) -> Option<i64> {
+    let expr = match loc {
+        gimli::AttributeValue::Exprloc(e) => e.clone(),
+        gimli::AttributeValue::Block(b) => gimli::Expression(b.clone()),
+        _ => return None,
+    };
+    let bytes = expr.0.slice();
+    // DW_OP_fbreg == 0x91, followed by a single SLEB128 operand.
+    if bytes.first() != Some(&0x91) {
+        return None;
+    }
+    let (off, consumed) = read_sleb128(&bytes[1..])?;
+    // Reject any trailing opcodes (a composite/multi-op location is not a plain
+    // stack slot — leave it to the engine, faithful to the single-op case only).
+    if 1 + consumed != bytes.len() {
+        return None;
+    }
+    Some(off)
+}
+
+/// Decode a little-endian SLEB128 (DWARF signed LEB128) from `buf`, returning the
+/// value and the number of bytes consumed. `None` if `buf` is truncated. A tiny
+/// self-contained reader (gimli exposes SLEB128 only on its streaming cursor, not
+/// on a raw `&[u8]`), faithful to the DWARF spec's sign-extension rule.
+fn read_sleb128(buf: &[u8]) -> Option<(i64, usize)> {
+    let mut result: i64 = 0;
+    let mut shift: u32 = 0;
+    let mut i = 0;
+    loop {
+        let byte = *buf.get(i)?;
+        i += 1;
+        result |= ((byte & 0x7f) as i64) << shift;
+        shift += 7;
+        if byte & 0x80 == 0 {
+            // Sign-extend if the sign bit of the final group is set and we have
+            // not filled all 64 bits.
+            if shift < 64 && (byte & 0x40) != 0 {
+                result |= -1i64 << shift;
+            }
+            return Some((result, i));
+        }
+        if shift >= 64 {
+            // Malformed (overlong); refuse rather than overflow.
+            return None;
+        }
     }
 }
 
@@ -392,6 +496,51 @@ fn build_pieces(
     })
 }
 
+/// Collect the named, typed stack LOCALS of a defined subprogram (subtask 3): each
+/// direct `DW_TAG_variable` / `DW_TAG_formal_parameter` child carrying a single
+/// `DW_OP_fbreg <off>` location becomes a [`LocalFact`] at stack offset
+/// `cfa + off`, with its type mapped from `DW_AT_type` by [`build_datatype`].
+///
+/// Faithful reduction of `DWARFFunctionImporter.processSubprogram` →
+/// `DWARFFunction.getLocalVarStorage` (the loop over `dfunc.localVarErrors` and the
+/// parameter list) + `DWARFVariable.readLocalVariableStorage` (the
+/// `DW_OP_fbreg`→stack-varnode resolution). A child we cannot fully ground (no
+/// fbreg location, no `DW_AT_type`, an unbuildable type, an empty name) is SKIPPED
+/// — never a failure (the names+types of subtasks 1+2 are unaffected).
+///
+/// We restrict to **direct** children of the subprogram DIE: a lexical-block- or
+/// inlined-subroutine-nested local is a documented loss (the same listing-cosmetic
+/// scope as the skipped `DW_TAG_label`/`DW_TAG_call_site`), and a plain `-O0`/`-g`
+/// function carries its locals as direct children.
+fn collect_fbreg_locals(
+    func_addr: u64,
+    sub: &DieSnap,
+    dies: &BTreeMap<usize, DieSnap>,
+    types: &dyn TypeFactory,
+    word_size: uint4,
+    cfa: i64,
+    out: &mut Vec<crate::pass::LocalFact>,
+) {
+    for &coff in &sub.children {
+        let Some(child) = dies.get(&coff) else { continue };
+        if !matches!(child.tag, gimli::DW_TAG_variable | gimli::DW_TAG_formal_parameter) {
+            continue;
+        }
+        if child.name.is_empty() {
+            continue;
+        }
+        let Some(fbreg) = child.fbreg_location else { continue };
+        let Some(ty) = build_datatype(child.type_ref, dies, types, word_size, 0) else { continue };
+        out.push(crate::pass::LocalFact {
+            func_addr,
+            name: child.name.clone(),
+            type_: ty,
+            // stack_offset = call_frame_cfa + fbreg (DWARFExpressionEvaluator).
+            stack_offset: cfa.wrapping_add(fbreg),
+        });
+    }
+}
+
 impl AnalysisPass for DwarfPass {
     fn stage(&self) -> Stage {
         Stage::S1
@@ -432,6 +581,11 @@ impl AnalysisPass for DwarfPass {
 
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
+        // subtask 3: the per-arch static CFA constant that turns a `DW_OP_fbreg`
+        // frame-base offset into a kuna stack-space offset (`stack = cfa + fbreg`).
+        // `None` => this target's CFA is not in kuna's table; skip fbreg locals
+        // (additive — the names+types from subtasks 1+2 still apply).
+        let cfa = call_frame_cfa(ctx.file.architecture());
 
         let mut units = dwarf.units();
         while let Ok(Some(header)) = units.next() {
@@ -458,6 +612,17 @@ impl AnalysisPass for DwarfPass {
                             build_pieces(&snap.name, snap, &dies, types, word_size)
                         {
                             out.prototypes.push(pieces);
+                        }
+                        // subtask 3: named, typed stack LOCALS. Each direct
+                        // `DW_TAG_variable`/`DW_TAG_formal_parameter` child with a
+                        // single `DW_OP_fbreg` location (a plain stack slot) maps to
+                        // a `LocalFact` at `cfa + fbreg`. Mirrors
+                        // `DWARFFunctionImporter.processSubprogram`'s commit of
+                        // `dfunc.localVarErrors`/params via
+                        // `DWARFVariable.readLocalVariableStorage` -> stack varnode.
+                        // Only when the arch's CFA constant is known.
+                        if let Some(cfa) = cfa {
+                            collect_fbreg_locals(low_pc, snap, &dies, types, word_size, cfa, &mut out.locals);
                         }
                     }
                     gimli::DW_TAG_variable => {
@@ -600,5 +765,75 @@ mod tests {
             }
         }
         assert!(found_charptr, "elaborate_debug_symbol's first param should be char *");
+    }
+
+    #[test]
+    fn sleb128_decodes_signed_values() {
+        // DWARF SLEB128 (the DW_OP_fbreg operand encoding). cet_pie's locals use
+        // 0x58 = -40, 0x60 = -32, 0x68 = -24 (single-byte negatives).
+        assert_eq!(read_sleb128(&[0x58]), Some((-40, 1)));
+        assert_eq!(read_sleb128(&[0x60]), Some((-32, 1)));
+        assert_eq!(read_sleb128(&[0x68]), Some((-24, 1)));
+        // Positive and zero.
+        assert_eq!(read_sleb128(&[0x00]), Some((0, 1)));
+        assert_eq!(read_sleb128(&[0x02]), Some((2, 1)));
+        // Multi-byte: -129 = 0xFF 0x7E, 127 = 0xFF 0x00.
+        assert_eq!(read_sleb128(&[0xFF, 0x7E]), Some((-129, 2)));
+        assert_eq!(read_sleb128(&[0xFF, 0x00]), Some((127, 2)));
+        // Truncated -> None (never panics).
+        assert_eq!(read_sleb128(&[0x80]), None);
+        assert_eq!(read_sleb128(&[]), None);
+    }
+
+    /// Snapshot-parse cet_pie and confirm `elaborate_debug_symbol`'s three
+    /// `DW_OP_fbreg` locals decode to the expected frame-base offsets, and that
+    /// applying the x86-64 CFA constant (8) lands each at the kuna stack offset that
+    /// the disassembly confirms (`-0x18`/`-0x10`/`-0x8` off `%rbp`, i.e. CFA-relative
+    /// -32/-24/-16). This is the offset math the commit then wraps onto the stack
+    /// space; the full name+type install render is the e2e `verify_s1_dwarf.rs` gate.
+    #[test]
+    fn cet_pie_fbreg_locals_and_cfa_offsets() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/cet_pie_x86_64");
+        let bytes = std::fs::read(path).unwrap();
+        let file = object::File::parse(bytes.as_slice()).unwrap();
+        // The fixture is x86-64 ⇒ static CFA = 8 (x86-64.dwarf `<call_frame_cfa>`).
+        assert_eq!(call_frame_cfa(file.architecture()), Some(8), "x86-64 CFA == 8");
+        let cfa = 8i64;
+
+        let endian = gimli::RunTimeEndian::Little;
+        let load = |id: gimli::SectionId| -> Result<Vec<u8>, gimli::Error> {
+            Ok(file
+                .section_by_name(id.name())
+                .and_then(|s| s.uncompressed_data().ok())
+                .map(|d| d.into_owned())
+                .unwrap_or_default())
+        };
+        let sections = gimli::DwarfSections::load(load).unwrap();
+        let dwarf = sections.borrow(|b| gimli::EndianSlice::new(b, endian));
+        let mut units = dwarf.units();
+        // (name, raw fbreg, cfa-adjusted stack offset).
+        let mut found: Vec<(String, i64, i64)> = Vec::new();
+        while let Ok(Some(header)) = units.next() {
+            let unit = dwarf.unit(header).unwrap();
+            let dies = snapshot_unit(&dwarf, &unit);
+            for snap in dies.values() {
+                if snap.tag == gimli::DW_TAG_subprogram && snap.name == "elaborate_debug_symbol" {
+                    for &coff in &snap.children {
+                        let c = &dies[&coff];
+                        if matches!(c.tag, gimli::DW_TAG_variable | gimli::DW_TAG_formal_parameter) {
+                            if let Some(fb) = c.fbreg_location {
+                                found.push((c.name.clone(), fb, cfa.wrapping_add(fb)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let by_name: BTreeMap<_, _> =
+            found.iter().map(|(n, fb, off)| (n.clone(), (*fb, *off))).collect();
+        // binary: fbreg -40 -> stack -32; file: -32 -> -24; elf_header: -24 -> -16.
+        assert_eq!(by_name.get("binary"), Some(&(-40, -32)), "binary fbreg/offset");
+        assert_eq!(by_name.get("file"), Some(&(-32, -24)), "file fbreg/offset");
+        assert_eq!(by_name.get("elf_header"), Some(&(-24, -16)), "elf_header fbreg/offset");
     }
 }

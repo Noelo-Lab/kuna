@@ -571,14 +571,14 @@ declared 4-byte `int` parameter passed in an 8-byte register stays `int8` after
 propagation (standard engine width behavior, not a DWARF-application failure — the
 return-type lock and pointer typing both verifiably apply).
 
-**Subtask 3 (DEFERRED — stack-local `ScopeLocal` map).** Per-local `DW_OP_fbreg`
-stack-variable naming+typing (`DWARFVariable.readLocalVariableStorage`) needs a
-new `locals` fact + an engine-side commit path mapping each into the function's
-`ScopeLocal` stack space with a typelock — a wave-3 engine change (database/console
-wiring). Left as a documented follow-up, parallel to the deferred
-`FindNoReturnFunctionsAnalyzer`. The `DwarfPass` already decodes `DW_OP_fbreg`
-locations to `None` (only `DW_OP_addr` globals are emitted), so wiring subtask-3
-is purely additive.
+**Subtask 3 (DONE — named, typed stack locals; see Increment 14).** Originally
+deferred; now resolved without a shared-engine-path change. Each defined
+subprogram's direct `DW_OP_fbreg` `DW_TAG_variable`/`DW_TAG_formal_parameter`
+children emit a `LocalFact{func_addr, name, type_, stack_offset}`
+(`stack_offset = call_frame_cfa + fbreg`); the commit parks them by function entry
+VMA and `IfcDecompile` re-seeds each into the rebuilt `Funcdata`'s `ScopeLocal` as
+a `typelock|namelock` stack symbol via the existing `map addr`/`seed_mapped_symbols`
+carry-across path. Full write-up in **Increment 14** below.
 
 **Faithful losses (DOC).** Skip `DW_TAG_label`, `DW_TAG_call_site`,
 inlined-subroutine, lexical-block comments, source-info/plate comments (listing
@@ -1062,15 +1062,85 @@ clean `exit(1)` terminator). `kuna catalog --json` lists all 8 pass options; `ku
   test` **PARITY OK** (675/675); `make test-stages` **PARITY OK** (158/158); `make rust-test`
   green; `kuna catalog --check` **catalog OK**.
 
+### Increment 14 — DWARF named, typed stack locals (`s1-dwarf` subtask 3) ✅
+
+The deferred third DWARF subtask, now resolved. Each defined `DW_TAG_subprogram`'s
+direct `DW_TAG_variable`/`DW_TAG_formal_parameter` children that carry a single
+`DW_OP_fbreg` (frame-base-relative) stack location are recovered as named, typed
+stack locals and installed into the owning function's `ScopeLocal`, so a `-g`
+binary's `int accumulator` renders instead of `local_10`. Port of
+`DWARFFunctionImporter.processSubprogram`'s commit of `dfunc`'s locals +
+`DWARFVariable.readLocalVariableStorage` (the `DW_OP_fbreg`→stack-varnode
+resolution).
+
+**Spike finding — the install seam IS cleanly reachable (no shared-engine-path
+change).** A function's `ScopeLocal` (`varmap.rs`) is per-`Funcdata` and rebuilt
+fresh each decompile — there is *no* persistent function-local scope in the global
+symboltab. BUT the kuna console already carries hand-typed `map addr` stack symbols
+across that rebuild: it snapshots them off the old `Funcdata` (`mapped_symbol_specs`)
+and re-installs each into the freshly-built scope via
+`Funcdata::seed_mapped_symbols` → `ScopeLocal::add_symbol(name, type, stackAddr,
+usepoint)` + `set_attribute(typelock|namelock)`, threaded through
+`decompile_func_full_with_override_dyn`'s `mapped_symbols` argument
+(`infra/decompile_drive.rs`). The DWARF locals plug straight into that proven path —
+they are just more `(name, type, stackAddr, flags)` entries in `mapped_symbols`. So
+subtask 3 needed **zero** change to `decompile_drive`/`Funcdata`/`ScopeLocal`; only
+a new fact + a console park/lookup.
+
+**The `DW_OP_fbreg`→stack-offset conversion (faithful).** `cet_pie`'s
+`DW_AT_frame_base` is `DW_OP_call_frame_cfa`, so a `DW_OP_fbreg N` location is
+`CFA + N`. Ghidra's `DWARFExpressionEvaluator` resolves `DW_OP_call_frame_cfa` to a
+stack varnode at the per-language **static `call_frame_cfa`** constant
+(`DWARFRegisterMappings.getCallFrameCFA`, read from the processor's `<arch>.dwarf`
+`<call_frame_cfa value="N"/>`), then `DW_OP_fbreg` adds `N`:
+`stack_offset = call_frame_cfa + fbreg`. kuna transcribes the constant table for the
+ELF arches it can produce (x86-64=8 — verified against `x86-64.dwarf`; x86=4;
+AArch64/ARM/SPARC/PowerPC=0; RISC-V64=8); an arch with no entry SKIPS fbreg locals
+(additive — names+types still apply). Grounded on `cet_pie`: `binary` fbreg -40 →
+stack -32, `file` -32 → -24, `elf_header` -24 → -16, matching the disassembly's
+`-0x18`/`-0x10`/`-0x8(%rbp)` slots (CFA = rbp+16).
+
+**Wiring.** New `LocalFact{func_addr, name, type_, stack_offset}` +
+`AnalysisOutput.locals` (`pass.rs`). `DwarfPass` (`s1_dwarf/mod.rs`) decodes the
+single-`DW_OP_fbreg` location (a new `simple_fbreg_location` + a self-contained
+SLEB128 reader — gimli exposes SLEB128 only on its streaming cursor), applies the
+arch CFA, types each via the existing DIE→`Datatype` mapper, and emits a `LocalFact`
+per direct fbreg child (`collect_fbreg_locals`). The commit (`engine.rs`
+`commit_analysis_output` arm 8) parks them on `ConsoleProgram.dwarf_locals` keyed by
+entry VMA; `ConsoleProgram::dwarf_locals_for(addr)` builds the stack-space `Address`
+(wrapping the signed offset, the `map addr s0xffff…e4` convention) into the
+`map addr` spec shape; `IfcDecompile` appends `dwarf_locals_for(entry)` to
+`mapped_symbols` before the decompile drive runs. A hand-set `map addr` still wins
+(`add_symbol`'s overlap arm skips an already-mapped slot). Gated on the `dwarf` pass
+flag → real-ELF DWARF path only; the XML datatest path parks none (parity
+structurally untouched). No `HashMap` (a `Vec` keyed by linear filter).
+
+**Faithful losses (DOC).** Only **direct** children (a lexical-block-/
+inlined-subroutine-nested local is skipped — the same listing-cosmetic scope as the
+already-skipped labels/call-sites) and only the **single-`DW_OP_fbreg`** location
+form (a composite/register/multi-op location is left to the engine). A local whose
+stack slot the engine eliminates never renders — which is exactly what happens to
+`cet_pie`'s own locals: they are write-once spill slots the stack/copy analysis
+removes (their DWARF symbols install correctly but bind no Varnode). Hence a
+dedicated fixture proves the render.
+
+- **Tests:** new `stacklocal_x86_64` fixture (`+.c`) — `compute_sum` with an
+  address-taken local that survives; new `s1_dwarf` unit tests (`read_sleb128`
+  signed-LEB128 decode; `cet_pie_fbreg_locals_and_cfa_offsets` asserts the three
+  fbreg→stack offsets + the x86-64 CFA constant); new e2e
+  `verify_s1_dwarf::stacklocal_renders_dwarf_named_typed_locals` (`compute_sum`
+  renders `int accumulator`/`int counter`, no `local_10`/`local_c`).
+  `kuna-analysis` 91 tests pass; `verify_s1_dwarf` 3/3; `make test` **PARITY OK**
+  (675/675); `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+
 ### Next candidates (Wave 3 — remaining engine seams)
 
 Wave 1 complete (Increments 4–7). **Wave 2 complete** (Increments 8–10): ARM/Thumb context
 painting, the format-string parser half (A), and cspec call-fixup auto-apply. **Wave 3:** the
 **no-return × demangle** seam (Increment 11), the **printer change** that re-enables
-`s1-strings` (Increment 12), and the **per-run `--option` gating** of all passes (Increment 13
-— conflict #4 RESOLVED) are DONE. What remains, per
-[`analysis-port-plan.md`](analysis-port-plan.md): the **DWARF subtask-3** stack-local map
-(engine change), **format-string-B** (the decompile-loop varargs override wiring, building on
-Increment 9's parser), and the **arch-markers e2e + Thumb-FUNC re-home / MIPS `$gp`**
-follow-ups (need a LINKED ARM / MIPS fixture). Inherited/out-of-scope items need no work (see
-table + inventory).
+`s1-strings` (Increment 12), the **per-run `--option` gating** of all passes (Increment 13
+— conflict #4 RESOLVED), and the **DWARF subtask-3** stack-local map (Increment 14) are DONE.
+What remains, per [`analysis-port-plan.md`](analysis-port-plan.md): **format-string-B** (the
+decompile-loop varargs override wiring, building on Increment 9's parser), and the
+**arch-markers e2e + Thumb-FUNC re-home / MIPS `$gp`** follow-ups (need a LINKED ARM / MIPS
+fixture). Inherited/out-of-scope items need no work (see table + inventory).

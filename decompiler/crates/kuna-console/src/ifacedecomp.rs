@@ -1620,7 +1620,7 @@ decomp_command!(
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         // Read the per-function values + take the program out so the engine work
         // borrows neither `status` nor `dcp` while the console output is written.
-        let (name, has_no_code, proc_started, entry, size, mapped_symbols, usepoint_symbols, dynamic_symbols, pending_proto, all_pending_protos, mut prog) = {
+        let (name, has_no_code, proc_started, entry, size, mut mapped_symbols, usepoint_symbols, dynamic_symbols, pending_proto, all_pending_protos, mut prog) = {
             let dcp = dcp_mut(status)?;
             let (name, has_no_code, proc_started, entry, size, mapped_symbols, usepoint_symbols, dynamic_symbols) = match &dcp.fd {
                 None => return Err(IfaceError::execution("No function selected")),
@@ -1659,6 +1659,16 @@ decomp_command!(
                 }
             }
         };
+        // (kuna DWARF subtask 3) Append the DWARF stack LOCALS parked on this
+        // function (by entry VMA) to the `mapped_symbols` re-seeded into the rebuilt
+        // `Funcdata`'s `ScopeLocal` — each as a `typelock|namelock` stack symbol via
+        // the same `seed_mapped_symbols` path a hand-typed `map addr` uses. So a
+        // `-g` binary's `FILE *file` renders by its DWARF name+type instead of
+        // `local_18`. Empty (no-op) for a function with no DWARF locals or the XML
+        // datatest path (which parks none). A function-local `map addr` the user set
+        // by hand still wins: `seed_mapped_symbols` skips an address already mapped
+        // (`add_symbol`'s overlap arm), and the hand-mapped symbols come first.
+        mapped_symbols.extend(prog.dwarf_locals_for(entry.get_offset()));
         // Re-park every parsed callee prototype on its global FunctionSymbol so the
         // pipeline's `ActionDefaultParams` copies the locked callee proto into the
         // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).

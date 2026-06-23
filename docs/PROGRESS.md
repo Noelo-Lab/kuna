@@ -1,5 +1,24 @@
 # kuna Progress Log
 
+## Session (2026-06-23) — DWARF stack-local recovery (subtask 3, Increment 14)
+
+Resolved the last deferred DWARF piece — per-function **named, typed stack locals** — without a
+shared-engine-path change. **Spike:** the `ScopeLocal` install seam IS cleanly reachable. A
+function's `ScopeLocal` is per-`Funcdata` and rebuilt each decompile, but the console already
+carries hand-typed `map addr` stack symbols across that rebuild
+(`mapped_symbol_specs`→`seed_mapped_symbols`→`ScopeLocal::add_symbol`, threaded as the
+`mapped_symbols` arg of `decompile_func_full_with_override_dyn`); DWARF locals plug straight in.
+**Impl:** new `LocalFact{func_addr,name,type_,stack_offset}` + `AnalysisOutput.locals`; `DwarfPass`
+decodes single-`DW_OP_fbreg` locations (+ a self-contained SLEB128 reader), types each via the
+existing DIE→`Datatype` mapper, and applies the per-arch static `call_frame_cfa`
+(`stack_offset = cfa + fbreg`; x86-64=8, faithful to `x86-64.dwarf`); the commit parks them by
+entry VMA on `ConsoleProgram.dwarf_locals` and `IfcDecompile` appends `dwarf_locals_for(entry)` to
+`mapped_symbols` as `typelock|namelock` stack symbols. Gated real-ELF DWARF only; no `HashMap`.
+New `stacklocal_x86_64` fixture (address-taken local that survives) renders `int accumulator`/
+`int counter` instead of `local_10`/`local_c`; cet_pie's own locals are spill slots the engine
+eliminates (install correct, no Varnode binds — documented). `make test` 675/675, `make test-stages`
+158/158, `make rust-test` green, `kuna catalog --check` clean. Detail: `analysis-port-log.md` Inc 14.
+
 ## Session (2026-06-23) — analyzer-tier Wave 2 + Wave 3 (engine seams)
 
 Continued the analyzer-tier port (`docs/analysis-port-plan.md`) through Waves 2 and 3, again as

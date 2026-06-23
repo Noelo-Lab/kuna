@@ -14,6 +14,14 @@
 //!    decompiled signature must show a `char *` parameter (the DWARF type) rather
 //!    than the engine's default `undefined8`/`long`.
 //!
+//! 3. **Named, typed stack local (subtask 3)** — `stacklocal_x86_64`'s
+//!    `compute_sum` has two `DW_OP_fbreg` stack locals; `accumulator` is
+//!    address-taken (`scanf("%d", &accumulator)`) so it survives as an addrtied
+//!    stack slot. The DWARF name+type must bind: the body renders
+//!    `int accumulator`/`int counter` instead of `local_10`/`local_c`. (cet_pie's
+//!    own locals are write-once spill slots the engine eliminates, so they never
+//!    render — the dedicated fixture is what proves the install path.)
+//!
 //! ## `.sla` precondition
 //!
 //! Like the sibling `verify_w11_*` gates, bootstrapping needs the built `x86`
@@ -108,5 +116,38 @@ fn cet_pie_typed_signature_has_char_ptr() {
     assert!(
         out.contains("char *"),
         "expected a DWARF-typed `char *` parameter in the signature, got:\n{out}"
+    );
+}
+
+#[test]
+fn stacklocal_renders_dwarf_named_typed_locals() {
+    // subtask 3: compute_sum's `accumulator` is address-taken (passed to scanf), so
+    // it survives as an addrtied stack slot — the DWARF name+type must bind, naming
+    // the local `accumulator` (an `int`) rather than the engine's `local_*`.
+    let Some(out) = decompile_c("stacklocal_x86_64", "compute_sum") else {
+        return;
+    };
+    assert!(
+        out.contains("compute_sum"),
+        "expected the function name in the output, got:\n{out}"
+    );
+    // The DWARF local names bind to the surviving stack slots.
+    assert!(
+        out.contains("accumulator"),
+        "expected the DWARF-named stack local `accumulator`, got:\n{out}"
+    );
+    assert!(
+        out.contains("counter"),
+        "expected the DWARF-named stack local `counter`, got:\n{out}"
+    );
+    // And they carry the DWARF `int` type, declared as a local (not the param).
+    assert!(
+        out.contains("int4 accumulator") || out.contains("int accumulator"),
+        "expected `accumulator` typed as int, got:\n{out}"
+    );
+    // The placeholder local names must be gone for these slots (the whole point).
+    assert!(
+        !out.contains("local_10") && !out.contains("local_c"),
+        "the DWARF-named slots should not render as `local_*`, got:\n{out}"
     );
 }

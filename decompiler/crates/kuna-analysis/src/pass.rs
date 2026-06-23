@@ -115,6 +115,42 @@ pub struct NoReturnFact {
     pub name: String,
 }
 
+/// A named, typed function-LOCAL recovered from DWARF (`DW_TAG_variable` /
+/// `DW_TAG_formal_parameter` with a `DW_OP_fbreg` stack location), to be installed
+/// in the owning function's stack scope so the decompiler renders `int count`
+/// instead of `local_1c`. Produced by [`crate::s1_dwarf`] (subtask 3 — the kuna
+/// analog of `DWARFFunctionImporter.processSubprogram`'s `commitLocal` loop +
+/// `DWARFVariable.readLocalVariableStorage`).
+///
+/// `stack_offset` is already in **kuna stack-space coordinates** (the same space
+/// the console `map addr s<off> ...` directive addresses): the producing pass has
+/// applied the per-arch `call_frame_cfa` constant to the raw `DW_OP_fbreg` offset
+/// (`stack_offset = call_frame_cfa + fbreg`, faithful to Ghidra's
+/// `DWARFExpressionEvaluator` — `DW_OP_call_frame_cfa` pushes a stack varnode at
+/// `getCallFrameCFA()`, then `DW_OP_fbreg` adds the LEB128 offset; see
+/// `x86-64.dwarf` `<call_frame_cfa value="8"/>`). It is the raw (signed) stack
+/// offset; the commit seam wraps it to the stack space's unsigned address.
+///
+/// The commit parks each fact on its owning function (keyed by `func_addr`) and
+/// re-seeds it into the freshly-rebuilt `Funcdata`'s `ScopeLocal` at decompile
+/// time via the same `seed_mapped_symbols` path the console `map addr` directive
+/// uses — a typelock|namelock stack symbol. Bound to the real-ELF DWARF path
+/// (gated on the `dwarf` pass flag); the XML datatest path never produces one.
+#[derive(Clone, Debug)]
+pub struct LocalFact {
+    /// Virtual address of the OWNING function's entry (`DW_AT_low_pc`); the key the
+    /// commit uses to attach the local to the right function's stack scope.
+    pub func_addr: u64,
+    /// The DWARF source name of the local (e.g. `file`, `elf_header`).
+    pub name: String,
+    /// The recovered kuna [`Datatype`] (mapped from the variable's `DW_AT_type` DIE
+    /// by the same DIE→Datatype mapper the typed-signature path uses).
+    pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
+    /// The stack offset in kuna stack-space coordinates (`call_frame_cfa + fbreg`),
+    /// signed; the commit wraps it to the unsigned stack address.
+    pub stack_offset: i64,
+}
+
 /// A function whose name matched a cspec call-fixup `<target>`: the engine should
 /// tag it with that fixup's inject id so the CALL is replaced by the fixup body.
 /// Produced by [`crate::s1_callfixup`] (the kuna analog of Ghidra's
@@ -165,6 +201,14 @@ pub struct AnalysisOutput {
     /// matched fixup's inject id so the engine replaces the CALL with the fixup
     /// body. The kuna analog of Ghidra's `CallFixupAnalyzer` install loop.
     pub call_fixups: Vec<CallFixupFact>,
+    /// Named, typed stack LOCALS recovered from DWARF (`DW_OP_fbreg` variables /
+    /// parameters), each to be installed in its owning function's stack scope so the
+    /// decompiler renders the source name+type instead of `local_*`/`iVar*`. The
+    /// commit parks each by `func_addr` and re-seeds it into the rebuilt `Funcdata`'s
+    /// `ScopeLocal` at decompile time (the `map addr` / `seed_mapped_symbols` path).
+    /// Produced only by the DWARF pass (subtask 3); empty otherwise. See
+    /// [`LocalFact`].
+    pub locals: Vec<LocalFact>,
 }
 
 impl AnalysisOutput {
@@ -178,6 +222,7 @@ impl AnalysisOutput {
         self.prototypes.extend(other.prototypes);
         self.context_paints.extend(other.context_paints);
         self.call_fixups.extend(other.call_fixups);
+        self.locals.extend(other.locals);
     }
 }
 

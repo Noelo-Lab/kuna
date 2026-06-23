@@ -99,6 +99,16 @@ pub struct ConsoleProgram {
     /// (kuna) The engine default code space captured at load, used to build the
     /// `Address`es when the stashed analysis facts are committed at `read symbols`.
     analysis_code_space: Option<Rc<AddrSpace>>,
+    /// (kuna) DWARF stack-LOCAL recommendations parked at the analysis commit
+    /// (`commit_analysis_output`, DWARF subtask 3), keyed by owning-function entry
+    /// VMA. Each is `(name, type, stack_offset)`; the entry's `Vec` is the function's
+    /// locals. `IfcDecompile` looks the function up by its entry address and appends
+    /// these (built into stack-space `map addr` symbol specs by [`Self::dwarf_locals_for`])
+    /// to the `mapped_symbols` it threads through `decompile_func_full_with_override_dyn`,
+    /// so the rebuilt `Funcdata`'s `ScopeLocal` is re-seeded with each as a
+    /// typelock|namelock stack symbol — the same path the console `map addr` directive
+    /// uses. Real-ELF DWARF path only (empty on the XML datatest path).
+    dwarf_locals: Vec<(u64, String, Rc<kuna_decomp::dtype::Datatype>, i64)>,
 }
 
 impl ConsoleProgram {
@@ -180,6 +190,47 @@ impl ConsoleProgram {
     pub fn register_symbol(&mut self, name: &str, addr: Address) {
         self.symbols.retain(|s| s.name != name);
         self.symbols.push(ProgramSymbol { name: name.to_string(), addr });
+    }
+
+    /// (kuna) Build the `map addr`-shaped stack-symbol specs for the DWARF stack
+    /// LOCALS parked on the function whose entry VMA is `func_addr` (DWARF subtask 3).
+    ///
+    /// Returns `(name, type, stack_Address, flags)` tuples in the exact shape
+    /// `Funcdata::seed_mapped_symbols` consumes — `IfcDecompile` appends them to the
+    /// `mapped_symbols` it threads into the decompile drive, so each parked DWARF
+    /// local is re-seeded into the rebuilt `Funcdata`'s `ScopeLocal` as a
+    /// `typelock|namelock` stack symbol (the typelock keeps the DWARF type through
+    /// propagation; the namelock keeps the DWARF name). The stack `Address` is built
+    /// here against the live stack space (`getStackSpace`), wrapping the signed
+    /// `stack_offset` to the space's unsigned offset (the same convention as the
+    /// console `map addr s<off>` directive — e.g. copytrim.xml's
+    /// `map addr s0xffffffffffffffe4`). Empty when the function has no parked locals
+    /// or the architecture has no stack space.
+    pub fn dwarf_locals_for(
+        &self,
+        func_addr: u64,
+    ) -> Vec<(String, Rc<kuna_decomp::dtype::Datatype>, Address, kuna_base::types::uint4)> {
+        use kuna_decomp::varnode::varnode_flags;
+        let Some(stack) = self.arch().manage().get_stack_space() else {
+            return Vec::new();
+        };
+        let flags = varnode_flags::typelock | varnode_flags::namelock;
+        self.dwarf_locals
+            .iter()
+            .filter(|(addr, _, _, _)| *addr == func_addr)
+            .map(|(_, name, ty, off)| {
+                // Wrap the signed stack offset to the stack space's unsigned address
+                // (negative locals live at the high end of the unsigned range, the
+                // `map addr s0xffff...` convention).
+                let waddr = stack.wrap_offset(*off as u64);
+                (
+                    name.clone(),
+                    Rc::clone(ty),
+                    Address::new(Rc::clone(stack), waddr),
+                    flags,
+                )
+            })
+            .collect()
     }
 
     /// (kuna) Commit the stashed per-pass analysis facts, gated by the per-pass
@@ -466,6 +517,7 @@ pub fn bootstrap_program(
         description,
         pending_analysis: Vec::new(),
         analysis_code_space: None,
+        dwarf_locals: Vec::new(),
     };
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
@@ -583,6 +635,7 @@ pub fn bootstrap_from_elf(
         // at `read symbols` (IfcReadSymbols -> commit_analysis_passes).
         pending_analysis,
         analysis_code_space: Some(Rc::clone(&code_space)),
+        dwarf_locals: Vec::new(),
     };
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run
@@ -842,6 +895,23 @@ fn commit_analysis_output(
             }
             prog.arch_mut().symboltab.set_function_inject_id(sid, injectid);
         }
+    }
+
+    // 8. DWARF stack LOCALS (the kuna analog of `DWARFFunctionImporter`'s
+    //    `commitLocal` loop — DWARF subtask 3): park each named, typed
+    //    `DW_OP_fbreg` local on its owning function (by entry VMA). Unlike the
+    //    other arms, a local is NOT installed into a persistent symbol table here:
+    //    a function's `ScopeLocal` is built fresh per-decompile (it is owned by the
+    //    transient `Funcdata`, not the global symboltab). So these are stashed and
+    //    re-seeded into the rebuilt `Funcdata`'s stack scope at decompile time by
+    //    `IfcDecompile` (via `dwarf_locals_for` -> the `map addr`/`seed_mapped_symbols`
+    //    path) — exactly how the console carries a hand-typed `map addr` stack
+    //    symbol across the IR rebuild. `stack_offset` is already in stack-space
+    //    coordinates (`call_frame_cfa + fbreg`); the Address is built lazily at
+    //    lookup so it binds the live stack space.
+    for fact in out.locals {
+        prog.dwarf_locals
+            .push((fact.func_addr, fact.name, fact.type_, fact.stack_offset));
     }
 
     Ok(())
