@@ -1594,6 +1594,90 @@ Only one item remains, **non-engine / cosmetic**:
 Everything else is inherited by the engine or genuinely out-of-scope for an ELF decompiler
 (non-ELF formats, Go pclntab, FID — see the table + inventory).
 
+### Increment 21 — MIPS16 ISA_MODE decode-mode painting ✅
+
+Closes the last sibling of the Increment 8 `arch-markers` frontier: MIPS16 `ISA_MODE` painting
+— the exact MIPS analog of ARM Thumb `TMode` (a decode-mode context BIT, unlike Increment 17's
+`$gp`/`t9` tracked-register VALUE). Increment 17 deferred it for lack of a MIPS16 fixture; the
+dev container now ships `mips-linux-gnu-gcc 10.3.0` (with `-mips16`).
+
+**Spec finding — `ISA_MODE` exists and is reachable on the default MIPS language.** The MIPS
+SLEIGH `contextreg` (`mips.sinc:411`) defines `ISA_MODE=(1,1)` ("=1 Decode using alternate
+ISA, variable") behind `@ifdef ISA_VARIANT`. The `mips32{le,be}.slaspec` BOTH `@define
+ISA_VARIANT` and `@include "mips16.sinc"`, so the `.sla` carries MIPS16 decode. The MIPS16
+constructors gate on `ISA_MODE=1 & RELP=1` (`mips16.sinc:227+`); MIPS32 on `ISA_MODE=0`
+(`mips32Instructions.sinc:11`, `@define AMODE "ISA_MODE=0"`). **Crucially `RELP=1` is already
+fixed globally** by the default `mips32.pspec` (`<set name="RELP" val="1">`), so painting only
+`ISA_MODE=1` at a function entry is sufficient to flip THAT function to MIPS16 — exactly the
+Thumb `TMode` situation. A bare MIPS ELF resolves to `MIPS:{BE,LE}:32:default:default`
+(`loadimage_object.rs:598`) → `mips32{be,le}.sla`, which has all this. **The context var name
+is `ISA_MODE`** (no gap; the spec fully supports MIPS16 decode).
+
+**Toolchain finding — modern binutils marks MIPS16 via `st_other`, not the LSB.** Unlike the
+ARM-Thumb `entry|1` assumption in the task brief, `mips-linux-gnu-gcc 10.3.0`'s linker records a
+`__attribute__((mips16))` function's STT_FUNC at the **even** entry with `st_other & 0xf0 ==
+STO_MIPS_MIPS16 (0xf0)` (the `[MIPS16]` readelf flag), NOT an LSB-set odd value. This is exactly
+the upstream `MIPS_ElfExtension.applyIsaMode` (`:412-432`), which enables `ISA_MODE=1` for
+EITHER an LSB-set symbol value (re-homed to even) OR `st_other & 0xf0` ∈ {STO_MIPS_MIPS16,
+STO_MIPS_MICROMIPS}. **Both branches ported** — faithful to `applyIsaMode`.
+
+**New pass** [`MipsIsaModePass`](../decompiler/crates/kuna-analysis/src/s1_loader/mips_markers.rs)
+(sibling of `MipsMarkerPass` in the same module), `AnalysisPass` id `mips_isa`, stage S1,
+registered always-on in `passes_for` after `MipsMarkerPass`. **Gated on MIPS**
+(`object::Architecture::Mips|Mips64`), the analog of `MIPS_ElfExtension.canHandle ==
+processor==MIPS`: empty output on every other language. For each defined STT_FUNC carrying the
+alternate-ISA marker it emits `ContextPaint { addr: entry & !1, var: "ISA_MODE", value: 1, end:
+None }` — **REUSING the existing context-paint commit arm** (`engine.rs::commit_analysis_output`
+step 6, the same arm the ARM `TMode` paints use; the Err-swallow makes it a no-op off-MIPS where
+`ISA_MODE` is unregistered) — and, for the LSB-set form only, a re-home `SymFact { addr: entry &
+!1, name, kind: Function }` (the MIPS analog of Increment 17's Thumb-FUNC re-home; the
+`st_other` form already records the symbol at the even value, so no re-home is needed there).
+`st_other` is read through the generic `ObjectSymbol::flags()` → `SymbolFlags::Elf { st_other }`.
+
+**Registration (per the `mips_gp` precedent exactly).** `stages.toml` row (`mips_isa`,
+default-on, S1/code-data-partition) + `KUNA_OPTION_NAMES` + `analysis_mips_isa` flag on
+`Architecture` (default-on in `reset_defaults_internal`) + the `set_kuna_option` arm + the
+`engine.rs` `analysis_pass_enabled` arm + the console `kuna_live_value` arm. Count tests bumped
+(settable 33→34; `},\n` 32→33; PASS_GATES +`mips_isa`) + `stage_catalog.json` fixture
+regenerated (34 rows) + `docs/assertions.md` regenerated. `kuna catalog --check` **catalog OK**.
+
+**Fixture (LINKED, e2e works in-env).** Built
+[`mips16_le32`](../decompiler/crates/kuna-analysis/tests/fixtures/mips16_le32) (1584-byte
+freestanding ET_EXEC, big-endian, `mips-linux-gnu-gcc -mips16 -O1 -no-pie -nostdlib
+-ffreestanding`, source vendored). Freestanding because the container has the MIPS runtime libc
+but no `libc6-dev` (no `crt1.o`/headers); a decode fixture needs no runtime. `m16_square` is a
+genuine MIPS16 leaf (`mult a0,a0; mflo v0; jr ra; addiu v0,3`, 8 bytes) at even entry `0x400130`
+with `st_other = STO_MIPS_MIPS16`.
+
+**The proof.** `kuna-console/tests/verify_mips16_isa.rs` bootstraps the fixture against the MIPS
+spec, commits the analysis (the `ISA_MODE` paint), loads + decompiles `m16_square`:
+
+```c
+// AFTER (mips_isa on, MIPS16-decoded):        // BEFORE (mips_isa off, MIPS32 misdecode):
+int4 m16_square(int4 a0)                       void m16_square(void)
+{                                              {
+  return a0 * a0 + 3;                            return;
+}                                              }
+```
+
+The painted form cleanly recovers `a0 * a0 + 3`; the un-painted form reads the 8 MIPS16 bytes as
+2 garbage MIPS32 words and produces an empty `void` body. The two renderings DIFFER — the option
+genuinely flips the decode. **The e2e actually decoded MIPS16 (not skipped).**
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**;
+`make rust-test` green; `kuna catalog --check` **catalog OK**. Additive real-ELF-path change —
+the XML datatest gates are structurally untouched (the `<binaryimage>` path never runs analysis
+passes).
+
+- **Tests:** `kuna-analysis` +2 (`mips_markers`: the MIPS16 paint at the even entry, the
+  st_other-no-rehome check; the non-MIPS-emits-no-ISA-paints gate; `passes` arch-marker
+  registration updated). `kuna-console` +2 (`verify_mips16_isa`: the MIPS16-decode assertion +
+  the on/off-differs toggle). `kuna-decomp` count tests bumped (settable 33→34) +
+  `stage_catalog.json` fixture regenerated.
+
+With this, **all three `arm-mips-markers` siblings are done** (ARM `TMode`, MIPS `$gp`, MIPS16
+`ISA_MODE`); the work-list row is 🟢. The only remaining arch-marker item is the ARM decode e2e
+(blocked off-host — no ARM linker).
 ### Increment 18 — ARM Thumb decode end-to-end (linked fixture) ✅
 
 The deferred Increment-8/17 e2e: prove the analysis-tier `arm_markers` `TMode` paint +

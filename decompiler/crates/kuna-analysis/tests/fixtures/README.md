@@ -120,6 +120,23 @@ addu gp,gp,t9` in `_init`/`_fini`) and a `lw t9,-N(gp)` GOT call in `main` — t
 also works but is ~672 KB (static glibc), so the dynamic form is vendored. `t9.c`
 uses a global `counter` + a `printf` call so the prologue sets `$gp`. The `_gp`
 LOCAL symbol survives (not stripped) so `recover_gp_value` can read it.
+`mips16_le32` (1584 bytes, source vendored alongside as `mips16_le32.c`): built
+in the dev container with
+`mips-linux-gnu-gcc -mips16 -O1 -no-pie -nostdlib -ffreestanding mips16_le32.c -o mips16_le32`
+(Ubuntu mips-linux-gnu-gcc 10.3.0; big-endian — the `_le32` name follows the
+sibling `mips_gp_le32`'s convention, endianness is in the ELF header).
+**Freestanding** because the container ships the MIPS *runtime* libc but no
+`libc6-dev` (no `crt1.o`/headers), so a normal libc link fails — and a decode
+fixture needs no runtime, only a decodable MIPS16 body. `m16_square` is
+`__attribute__((mips16)) int m16_square(int n){return n*n+3;}` (8 bytes:
+`mult a0,a0; mflo v0; jr ra; addiu v0,3`); on this toolchain its STT_FUNC is
+recorded at the EVEN entry (`0x400130`) with `st_other & 0xf0 == STO_MIPS_MIPS16`
+(the binutils MIPS16 marker) — **not** an LSB-set odd address — exactly the
+`MIPS_ElfExtension.applyIsaMode` st_other branch. Drives the MIPS16 `ISA_MODE`
+painting unit tests (`s1_loader::mips_markers`) + the console e2e gate
+(`kuna-console/tests/verify_mips16_isa.rs`), where it decodes to
+`return a0 * a0 + 3;` (MIPS16) vs an empty `void` body (MIPS32 misdecode, the
+BEFORE state).
 `plt_aarch64` (9056 bytes, source vendored alongside as `plt_aarch64.c`): built
 with `aarch64-linux-gnu-gcc -O0 -no-pie plt_aarch64.c -o plt_aarch64` (Ubuntu
 aarch64-linux-gnu-gcc 11.4.0, in the `kuna-dev` container —
