@@ -6,7 +6,10 @@ crate, feature by feature, each with a testcase. This is the *process* log (what
 done); the gap inventory is [`missing-analyses.md`](missing-analyses.md); the
 **execution plan for the remaining gaps** (dependency-ordered waves + per-task
 sub-agent briefs + fixtures + fan-out protocol) is
-[`analysis-port-plan.md`](analysis-port-plan.md). Crate design: its `lib.rs` / `pass.rs`.
+[`analysis-port-plan.md`](analysis-port-plan.md); the **exhaustive remaining-work
+backlog** — every one of Ghidra's 142 analyzers not yet ported, recorded as
+actionable future work ("eventually do them all") — is
+[`analysis-port-backlog.md`](analysis-port-backlog.md). Crate design: its `lib.rs` / `pass.rs`.
 
 > **Why this exists.** kuna ports Ghidra's *decompiler* (the SLEIGH "deep
 > decompiler"). The Ghidra application additionally runs ~140 Java analyzers that
