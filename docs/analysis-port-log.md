@@ -1726,3 +1726,100 @@ unchanged), so the XML datatest oracle is structurally untouched.
 
 - **Tests:** `kuna-console` +1 (`verify_arm_thumb_decode::arm_thumb_compute_decodes_in_thumb_mode`).
   New fixture `arm_thumb_linked_le32` (+ source). No engine/option/catalog change.
+
+### Increment 27 — MIPS PLT/stub import-name recovery (linked fixture) ✅
+
+**Goal.** Recover MIPS libc import names so a call renders `puts`/`printf`, not
+`sub_<addr>`. The other arches (x86-64/32, AArch64, ARM32, RISC-V; SPARC in PR
+#20) decode a regular `.plt` code section whose stub references a
+`got_slot → name` map built from the dynamic relocations. **MIPS o32 has neither:**
+the GNU toolchain emits **no `.plt` and no `R_MIPS_JUMP_SLOT` relocations** — it
+uses the classic `.MIPS.stubs` + `$gp`-relative GOT lazy-binding layout.
+
+**What the toolchain produced (investigated, not assumed).** `mips-linux-gnu-gcc
+-O0` on a `main` calling `puts`/`printf` → big-endian MIPS32 ET_EXEC with:
+`readelf -r` = *"There are no relocations in this file."*; a `.MIPS.stubs` PROGBITS
+section of `lw $t9,-32752($gp); move $t7,$ra; jalr $t9; li $t8,<dynidx>` lazy
+resolver stubs; and the `DT_MIPS_*` dynamic tags `DT_MIPS_LOCAL_GOTNO=6`,
+`DT_MIPS_GOTSYM=5`, `DT_PLTGOT=0x411020`. So this is layout **(b)** from the task
+brief (classic `.MIPS.stubs`), NOT a modern regular-`.plt` + `R_MIPS_JUMP_SLOT`
+build. **This is a clean port, not a documented seam** — the names ARE recoverable
+statically.
+
+**The MIPS GOT correspondence (the cr0.org "MIPS Multi-GOT" layout Ghidra cites).**
+The dynamic linker resolves a positional slice of the GOT in symbol-table order:
+dynamic symbols `[GOTSYM, dynsym_count)` map 1:1, in order, to GOT entries starting
+at index `LOCAL_GOTNO`: `got_index(i) = LOCAL_GOTNO + (i - GOTSYM)`. For an
+undefined FUNC import the GOT slot's **static contents** are the address of that
+import's `.MIPS.stubs` stub (and that same stub address is the symbol's
+`st_value`). A call site is `lw $t9, off($gp); jalr $t9` — an indirect call through
+the GOT slot. Cross-checked on the fixture: `puts` (dynidx 7 → got_index 8 → slot
+`0x411040`) holds `0x400800`; `printf` (dynidx 8 → got_index 9 → slot `0x411044`)
+holds `0x4007f0` — exactly the `dat_411040`/`dat_411044` the decompiler reads.
+
+**The port — two halves, both faithful to `MIPS_ElfExtension`
+(`Ghidra/Processors/MIPS/.../elf/extend/MIPS_ElfExtension.java`).**
+1. **Naming** (`elf_plt::resolve_mips_imports`, the `fixupGot` analog): walk the
+   external-symbol GOT window, read each FUNC import's GOT slot, and name the
+   **stub address** (the slot's static contents = `refAddr` in Ghidra's
+   `createExternalFunctionLinkage(symName, refAddr, gotEntryAddr)`). Gated on
+   `Mips | Mips64`, runs *before* the relocation-driven path (which would early-
+   return on MIPS's empty `build_got_name_map`). Off-MIPS: empty, no-op.
+   (In practice the `.symtab`/`.dynsym` UND-import path already registers the stub
+   address too — `object` reports the MIPS UND import with a nonzero `st_value`
+   pointing at the stub — so the two agree on the same `addr → name`.)
+2. **Constant-folding the indirect call** (`elf_plt::mips_got_const_ranges` +
+   `ObjectLoadImage::const_ranges` → `get_readonly`, the `setConstant` analog): the
+   GOT external slots are reported as constant ranges so the engine can fold the
+   `lw $t9, off($gp)` load (whose address is already `$gp`-constant from Increment
+   17's `$gp` recovery) to the stub address; `bootstrap_from_elf` turns on
+   `readonlypropagate` **for MIPS only** so `ActionVarnodeProps::fillinReadOnly`
+   performs the fold and `ActionDeindirect` resolves the now-constant call target
+   to the named stub function. Scoped to MIPS (`arch_type.starts_with("MIPS:")`),
+   so non-MIPS ELF output is unchanged, and `option readonly off` restores the raw
+   `(*(code *)(dat_411040 & ...))(...)` GOT-load rendering.
+
+**BEFORE / AFTER (`kuna decompile plt_mips32 main`).**
+```text
+before:  (*(code *)(dat_411040 & 0xfffffffe))("hello");
+         (*(code *)(dat_411044 & 0xfffffffe))(0x400888,v1);
+after:   puts("hello");
+         printf(0x400888,v1);
+```
+(The `printf` format-string pointer `0x400888` not rendering as a string literal
+is a separate string-rendering concern, independent of import naming; `puts`'s
+`"hello"` already renders.)
+
+**Fixture (LINKED ET_EXEC, big-endian).** `plt_mips32` (7580 bytes), built in the
+`kuna-dev` container: `mips-linux-gnu-gcc -O0 plt_mips32.c -o plt_mips32` (the
+`-O0` keeps the calls **plain** `puts`/`printf`; `-O1`+ pulls in glibc's fortified
+`__printf_chk`). `libc6-dev-mips-cross` is installed in the build container (the
+image ships only the runtime libc). `main`@`0x400700`, `puts` stub `0x400800`,
+`printf` stub `0x4007f0`. Source + the exact single-invocation build command
+vendored in `tests/fixtures/README.md`.
+
+**The e2e (`kuna-console/tests/verify_mips_plt.rs`).** Modeled on
+`verify_riscv64_plt.rs` (same `bootstrap_from_elf` → `load function main` →
+`decompile` → `print C` drive + the specs-absent skip guard). Asserts the loader
+resolves `puts`/`printf`/`main`, the body decodes (`out.contains("main")` — a real
+big-endian MIPS decode, not a skip), the call sites render `puts(`/`printf(`, and
+the raw `dat_411040`/`dat_411044` GOT-slot loads are gone. **The test RAN (not
+skipped)** — `mips32be.sla` is built.
+
+**Result (the proof).** `make test` **675/675 PARITY OK**; `make test-stages`
+**158/158 PARITY OK**; `make rust-test` green (incl. the new `verify_mips_plt` +
+two `loadimage_object` MIPS unit tests). Purely additive on the real-ELF path (a
+new fixture + a new console test + the MIPS arm in `elf_plt`/`loadimage_object` +
+the MIPS-only `readonlypropagate` toggle in `bootstrap_from_elf`), so the XML
+datatest oracle is structurally untouched (no XML path constructs an
+`ObjectLoadImage` or reaches `bootstrap_from_elf`).
+
+- **Engine:** `elf_plt.rs` (+`resolve_mips_imports`/`mips_got_const_ranges`/
+  `mips_external_got_entries`/`read_mips_dynamic_tags`/`read_word_at_vma`),
+  `loadimage_object.rs` (+`const_ranges` field, threaded through `get_readonly`
+  /`adjust_vma`), `engine.rs` (MIPS-only `readonlypropagate = true`). No
+  option/catalog change (`readonly` is a pre-existing `option`; the MIPS default is
+  set in the loader path, user-overridable via `option readonly off`).
+- **Tests:** `kuna-console` +1 (`verify_mips_plt`); `kuna-analysis` +2
+  (`mips_stub_imports_resolve_to_named_functions`,
+  `mips_got_const_ranges_cover_external_slots`). New fixture `plt_mips32` (+ source).

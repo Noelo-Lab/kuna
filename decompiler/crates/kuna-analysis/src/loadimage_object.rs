@@ -139,6 +139,12 @@ pub struct ObjectLoadImage {
     sections: Vec<SectionInfo>,
     /// Function symbols, in symbol-table order.
     funcsyms: Vec<FuncSym>,
+    /// (kuna) Extra `[start, stop]` (inclusive) byte ranges to treat as *constant*
+    /// (read-only) beyond the section-flag scan — the MIPS GOT external slots,
+    /// whose static contents (the `.MIPS.stubs` stub addresses) the engine folds
+    /// so a `lw $t9, off($gp); jalr $t9` indirect call resolves to the import name.
+    /// Empty off-MIPS.  See [`crate::s1_loader::elf_plt::mips_got_const_ranges`].
+    const_ranges: Vec<(u64, u64)>,
     /// The address space the file bytes map to (C++ `spaceid`, null until
     /// `attachToSpace`).
     spaceid: Option<Rc<AddrSpace>>,
@@ -281,12 +287,19 @@ impl ObjectLoadImage {
             }
         }
 
+        // (kuna) MIPS GOT external slots → constant ranges, so the engine folds the
+        // `lw $t9, off($gp)` indirect-call load to the stub address and resolves the
+        // call to the import name (the analog of Ghidra's `setConstant` on the GOT
+        // pointer entries in `MIPS_ElfExtension.fixupGot`).  Empty off-MIPS.
+        let const_ranges = crate::s1_loader::elf_plt::mips_got_const_ranges(&file);
+
         Ok(ObjectLoadImage {
             filename: filename.to_string(),
             archtype,
             segments,
             sections,
             funcsyms,
+            const_ranges,
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
             bufoffset: RefCell::new(!0u64), // ~((uintb)0)
@@ -494,6 +507,12 @@ impl LoadImage for ObjectLoadImage {
         let Some(space) = self.spaceid.as_ref() else {
             return;
         };
+        // (kuna) The MIPS GOT external slots, marked constant so the engine folds
+        // the `lw $t9, off($gp)` indirect-call load to the stub address (the analog
+        // of Ghidra's `setConstant` on the GOT pointer entries).  Empty off-MIPS.
+        for &(start, stop) in &self.const_ranges {
+            list.insert_range(Rc::clone(space), start, stop);
+        }
         for sec in &self.sections {
             if sec.flags & section_flags::READONLY != 0 {
                 if sec.size == 0 {
@@ -526,6 +545,10 @@ impl LoadImage for ObjectLoadImage {
         }
         for s in &mut self.funcsyms {
             s.addr = s.addr.wadd(badjust);
+        }
+        for r in &mut self.const_ranges {
+            r.0 = r.0.wadd(badjust);
+            r.1 = r.1.wadd(badjust);
         }
         // A shifted segment set may no longer be vma-sorted only if `badjust`
         // wraps a subset past the top of the space; for a real ELF every vma
@@ -953,6 +976,48 @@ mod tests {
             assert!(syms.values().any(|n| n == want), "missing import {want}");
         }
         assert!(!syms.contains_key(&0));
+    }
+
+    #[test]
+    fn mips_stub_imports_resolve_to_named_functions() {
+        // MIPS o32 (`plt_mips32`, big-endian, `-O0`): no `.plt`/`R_MIPS_JUMP_SLOT`.
+        // The import stub→name correspondence comes from the dynamic-symbol GOT
+        // layout (`DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`); `resolve_mips_imports`
+        // names each import's `.MIPS.stubs` stub address (= the dynsym `st_value`).
+        let syms = fixture_funcsyms("plt_mips32");
+        // `puts`/`printf` are the user-visible imports.  (`__libc_start_main`'s stub
+        // at 0x4007e0 == the `.MIPS.stubs` section start, so the `.symtab`
+        // `_MIPS_STUBS_` section label is registered there first and wins the dedup
+        // — a faithful, harmless overlap with a startup-only import.)
+        for (addr, want) in [(0x400800u64, "puts"), (0x4007f0, "printf")] {
+            assert_eq!(
+                syms.get(&addr).map(String::as_str),
+                Some(want),
+                "MIPS import at {addr:#x}"
+            );
+        }
+        // The defined `.symtab`/`.dynsym` `main` still resolves.
+        assert_eq!(syms.get(&0x400700u64).map(String::as_str), Some("main"));
+        // No symbol at 0x0 and no `@VERSION` leakage.
+        assert!(!syms.contains_key(&0), "no function should be registered at 0x0");
+        assert!(syms.values().all(|n| !n.contains('@')), "no @VERSION in names");
+    }
+
+    #[test]
+    fn mips_got_const_ranges_cover_external_slots() {
+        // The GOT external slots that hold the stub addresses must be reported as
+        // constant ranges (so the engine folds the `lw $t9, off($gp)` indirect
+        // load).  Layout: PLTGOT=0x411020, LOCAL_GOTNO=6, GOTSYM=5, ptr=4 →
+        // got_index(i)=6+(i-5); puts(dynidx7)→slot 0x411040, printf(dynidx8)→0x411044.
+        let path = format!("{}/tests/fixtures/plt_mips32", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).unwrap();
+        let file = object::File::parse(&*bytes).unwrap();
+        let ranges = crate::s1_loader::elf_plt::mips_got_const_ranges(&file);
+        // Each range is a single 4-byte pointer slot.
+        assert!(ranges.iter().all(|&(a, b)| b == a + 3), "4-byte slot ranges: {ranges:?}");
+        let starts: std::collections::HashSet<u64> = ranges.iter().map(|&(a, _)| a).collect();
+        assert!(starts.contains(&0x411040), "puts GOT slot 0x411040 in {ranges:?}");
+        assert!(starts.contains(&0x411044), "printf GOT slot 0x411044 in {ranges:?}");
     }
 
     #[test]
