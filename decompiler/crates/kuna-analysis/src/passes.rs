@@ -44,8 +44,16 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         } else {
             crate::s1_loader::noreturn::NoReturnKnownPass::elf()
         }),
-        // S1 strings: NUL-terminated ASCII string-literal detection. Mirrors
-        // Ghidra's `StringsAnalyzer` (min length 5, require-NUL-end).
+        // S1 strings (StringLiteralPass): NUL-terminated ASCII string-literal
+        // detection. Mirrors Ghidra's `StringsAnalyzer` (min length 5,
+        // require-NUL-end). Plants a typelocked `char[N]` data symbol (`s_<addr>`)
+        // at each detected `.rodata` string. ENABLED by default since the printer
+        // change (the readonly-char-array literal route in
+        // `s9_emit/printc.rs::op_ptrsub_ir`): a pointer to a readonly char-printable
+        // array symbol now renders as the string LITERAL (Ghidra behavior), so the
+        // data symbol and the literal coexist instead of the symbol name shadowing
+        // it. See docs/analysis-port-log.md (the strings/printer increment).
+        Box::new(crate::s1_strings::StringLiteralPass { min_len: 5 }),
         // S1 library prototypes: seed common libc signatures (puts(char*), …) so
         // call arguments get typed. Mirrors Ghidra's `ApplyDataArchiveAnalyzer`.
         // THIS is what renders string literals in kuna: typing a call argument
@@ -88,16 +96,6 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // Always-on, like noreturn/libproto/entry; `--option callfixup off` restores
         // the un-fixed rendering.
         Box::new(crate::s1_callfixup::CallFixupPass),
-        // S1 strings (StringLiteralPass) is implemented + tested but **disabled by
-        // default**: kuna's printer renders a constant that maps to a *named* global
-        // symbol as that symbol's NAME (`s_400915`), which SHADOWS the string-literal
-        // path. So planting a `char[N]` data symbol (Ghidra's StringsAnalyzer
-        // mechanism) actually *blocks* `puts("Username: ")` in kuna, where the literal
-        // instead comes from type-driven rendering (libproto/usage `char *` typing +
-        // readonly + StringManager). Re-enabling it requires teaching the printer to
-        // render a pointer to a readonly char-array symbol as the literal (the Ghidra
-        // behavior) — a deferred printer change. See docs/analysis-port-log.md.
-        // Box::new(crate::s1_strings::StringLiteralPass { min_len: 5 }),
 
         // S1 address tables (AddrTablePass) is implemented + tested but **disabled
         // by default**, matching Ghidra's `AddressTableAnalyzer.setDefaultEnablement(false)`.

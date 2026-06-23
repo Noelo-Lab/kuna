@@ -137,7 +137,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `noreturn_known` | No-return known list (`NoReturnFunctionAnalyzer`) | easy | fauxware `rejected`: no dead code after `exit(1)` |
 | ✅ | `s1-demangle` | Demangling (`GnuDemanglerAnalyzer` + Rust) | easy | `cpp_mangled` `main`: call renders `foo::Bar::baz(...)` |
 | ✅ | `s1-libproto` | Library prototype seeding (`ApplyDataArchiveAnalyzer`) | med | fauxware `main`: `puts("Username: ")`, `puts("Password: ")`; `rejected`: `printf("Go away!")` |
-| 🟡 | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | implemented + tested but **disabled by default** — its named `char[]` symbol *blocks* literal rendering in kuna's printer; literals come from `s1-libproto` instead (see Increment 3) |
+| ✅ | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | ENABLED by default since the printer change — its planted `char[N]` symbol coexists with the literal: the printer renders a pointer to a readonly char-printable array symbol as the literal (Ghidra behavior). fauxware `main`: `puts("Username: ")`/`puts("Password: ")` with `s_400915` registered. See Increment 12 |
 | ✅ | `s1-dwarf` | DWARF names+types (`DWARFAnalyzer`) via gimli | hard | dwarf_stripped: `add_values`/`compute`/`main` recovered (no .symtab); cet_pie: `elaborate_debug_symbol`'s param typed `char *` (subtasks 1+2; **subtask-3 stack-locals deferred**, engine change) |
 | ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5) |
 | ✅ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle, `GccExceptionAnalyzer`) | hard | fauxware: FDE starts ⊆ discovered entries (7 starts incl. `_start`/`main`) (Increment 5) |
@@ -947,15 +947,72 @@ that confirms the seam.
   hardened fauxware assertion (the `exit` fact now carries a non-zero PLT-stub address);
   `kuna-console` +1 e2e gate (`verify_noreturn_demangle`). `make test` **PARITY OK**
   (675/675); `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
+### Increment 12 — printer renders a pointer-to-readonly-char-array symbol as a string literal; re-enable `s1-strings` ✅
 
-### Next candidates (Wave 3 — engine seams, deferred)
+The Wave-3 printer change that resolves the Increment 3 finding: re-enable `StringLiteralPass`
+by teaching the C printer to render a pointer to a readonly char-printable **array symbol** as
+the string LITERAL (Ghidra behavior), so the planted `char[N]` data symbol and the literal
+**coexist** instead of the symbol name shadowing it.
+
+**A/B root-cause pin (done before any edit).** Built the merge-base `kuna`, instrumented the
+three candidate render arms in `s9_emit/printc.rs` (the constant-pointer arm in
+`push_vn_explicit_ir`, the HighVariable-bound-name arm, the SPACEBASE `op_ptrsub_ir` arm) plus
+`push_ptr_char_constant_ir`, and ran fauxware `main` with `StringLiteralPass` **OFF vs ON**:
+- **OFF:** the `puts` argument is a plain constant pointer; it reaches the **constant-pointer
+  arm** (`TYPE_PTR`, `sub.is_char_print()==true`) → `push_ptr_char_constant_ir`
+  (`readonly==true`) → `puts("Username: ")`.
+- **ON:** the planted typelocked `char[N]` symbol (`s_400915`) promotes the same constant into
+  a global SPACEBASE `PTRSUB(spacebase, 0x400915)` reference (confirmed in `print raw`:
+  `->(#0x0,#0x400915)`), so the value now arrives at the **SPACEBASE arm**
+  (`name=s_400915, sym_off=0, sym_type=TYPE_ARRAY`), whose `sym_off<=0` branch emits the bare
+  `pushSymbol` name → `puts(s_400915)`. **The SPACEBASE arm was the exact shadowing point** —
+  not the HighVariable arm (the plan's other candidate). The constant-pointer arm and
+  `push_ptr_char_constant_ir` were genuinely never reached when strings is ON.
+
+**The faithful fix (mirrors C++ `PrintC::pushConstant`'s TYPE_PTR → `pushPtrCharConstant`
+arm, `decompiler/cpp/printc.cc:1842-1880`).** In `op_ptrsub_ir`'s SPACEBASE arm
+(`s9_emit/printc.rs`), before the bare-name `pushSymbol`, add a TIGHTLY-guarded literal route:
+when the reference is a whole-symbol (`sym_off==0`), pointer-value (`!arrayvalue`) reference
+whose Symbol is a **readonly** (`is_read_only`) char-printable (`is_char_print()` on the array
+**element**) **TYPE_ARRAY**, route through the same `push_ptr_char_constant_ir` literal path
+the constant arm uses; on success, return (no `&`, no subscript, no name). Every other symbol
+render is byte-unchanged — the guard fires only for a readonly char-printable array spacebase
+symbol, which the XML datatest corpus never produces (it runs no analyses, plants no such
+symbol). `push_ptr_char_constant_ir` was refactored to take the pointer width as `ptr_size:
+int4` (was `ct: &Datatype` used only for `ct.get_size()`) so the SPACEBASE arm can pass the
+spacebase varnode's width; the one existing caller passes `ct.get_size()` — render-identical.
+
+**Re-enable.** Uncommented `Box::new(crate::s1_strings::StringLiteralPass { min_len: 5 })` in
+`passes.rs::passes_for` (now ENABLED, always-on like the other Wave-1/2 passes) and updated the
+disabled-rationale comment.
+
+**Result (the win).** With `StringLiteralPass` ON: fauxware `main` → `puts("Username: ")` /
+`puts("Password: ")`, `accepted` → `puts("Welcome to the admin console, trusted user!")`,
+`rejected` → `printf("Go away!")` — all literals, with the `s_400915`/`s_400920` data symbols
+registered in the symbol table (coexistence). And — proving the literal comes from the planted
+symbol via the SPACEBASE route, NOT from libproto's `char*` typing — a string passed to a
+**non-libproto'd** function (a hand-built `myhandler("a non-prototyped readonly string", …)`
+fixture, `myhandler` absent from the libproto table) ALSO renders as the literal. Before this
+change that same call would have rendered the bare `s_<addr>` name.
+
+- **Divergence/LOSS:** none to the parity oracles — all three gates byte-identical. The change
+  is a render-coexistence fix only; `StringLiteralPass` logic is unchanged. The render is now
+  closer to Ghidra (literal AND data symbol coexist) than the prior libproto-only route, but
+  the *output* for the covered cases is identical to the strings-OFF render, so no datatest /
+  stage assertion moves.
+- **Tests:** new `kuna-console` e2e gate `verify_s1_strings.rs` (asserts `s_400915` is in the
+  symbol table AND `puts("Username: ")`/`puts("Password: ")` render, NOT `puts(s_4009…)`);
+  `kuna-analysis` 88 tests pass. `make test` **PARITY OK** (675/675 — byte-identical);
+  `make test-stages` **PARITY OK** (158/158 — byte-identical); `make rust-test` green.
+
+### Next candidates (Wave 3 — remaining engine seams)
 
 Wave 1 complete (Increments 4–7). **Wave 2 complete** (Increments 8–10): ARM/Thumb context
-painting, the format-string parser half (A), and cspec call-fixup auto-apply.
-What remains is **Wave 3**, per [`analysis-port-plan.md`](analysis-port-plan.md), all
-engine-touching: the **printer change** to let `s1-strings` render literals (re-enables it),
-the **per-run `--option` gating** of all passes (deferred conflict #4), the **DWARF subtask-3**
-stack-local map, **format-string-B** (the decompile-loop varargs override wiring, building on
-Increment 9's parser), and the **arch-markers e2e + Thumb-FUNC re-home / MIPS `$gp`**
-follow-ups (need a LINKED ARM / MIPS fixture). The **no-return × demangle** cross-pass seam is
-now closed (Increment 11). Inherited/out-of-scope items need no work (see table + inventory).
+painting, the format-string parser half (A), and cspec call-fixup auto-apply. **Wave 3 in
+progress:** the **no-return × demangle** seam (Increment 11) and the **printer change** that
+re-enables `s1-strings` (Increment 12) are DONE. What remains, per
+[`analysis-port-plan.md`](analysis-port-plan.md): the **per-run `--option` gating** of all
+passes (deferred conflict #4), the **DWARF subtask-3** stack-local map (engine change),
+**format-string-B** (the decompile-loop varargs override wiring, building on Increment 9's
+parser), and the **arch-markers e2e + Thumb-FUNC re-home / MIPS `$gp`** follow-ups (need a
+LINKED ARM / MIPS fixture). Inherited/out-of-scope items need no work (see table + inventory).
