@@ -133,7 +133,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 
 | St | Pass id | Analysis (Ghidra) | Diff | Testcase |
 |----|---------|-------------------|------|----------|
-| ✅ | `plt-got` | PLT/GOT import names (`ElfDefaultGotPltMarkup`) | — | fauxware `0x400510→puts` |
+| ✅ | `plt-got` | PLT/GOT import names (`ElfDefaultGotPltMarkup`) | — | x86: fauxware `0x400510→puts`; **AArch64 e2e (Increment 19)**: linked `plt_aarch64`, `main` `bl 0x4004d0`/`0x4004e0` render `puts("hello")`/`printf("%d\n",…)` (the `adrp x16;ldr x17` veneer decode) |
 | ✅ | `symtab-dynsym` | `.symtab`/`.dynsym` function reader | — | `fixture_funcsyms` |
 | ✅ | `foundation` | generic `AnalysisOutput` commit seam | med | bootstrap_from_elf commits with no funcsym regression |
 | ✅ | `noreturn_known` | No-return known list (`NoReturnFunctionAnalyzer`) | easy | fauxware `rejected`: no dead code after `exit(1)` |
@@ -1417,6 +1417,50 @@ catalog --check` **catalog OK**.
   non-MIPS-emits-nothing gate; 1 `arm_markers` re-home assertion; 1 `passes` arch-marker
   registration). `kuna-decomp` count tests bumped (settable 31→32) + `stage_catalog.json`
   fixture regenerated.
+
+### Increment 19 — AArch64 PLT import-name end-to-end (linked fixture) ✅
+
+**What.** Proved the `elf_plt` AArch64 path (`src/s1_loader/elf_plt.rs::decode_aarch64`) resolves
+imports **end-to-end on a real, linked, dynamic AArch64 executable** — until now that decoder was
+only unit-tested against synthetic veneer bytes (the x86 paths had a real-binary console gate,
+`verify_w11_elf_plt_names`, but AArch64 had no linked fixture). A dev container with the AArch64
+toolchain + linker (`aarch64-linux-gnu-gcc 11.4.0`) finally makes the linked build possible in-env
+(unlike the still-blocked **ARM** decode e2e — no ARM/Thumb linker on host).
+
+**Fixture.** `decompiler/crates/kuna-analysis/tests/fixtures/plt_aarch64` (9056 bytes, ET_EXEC,
+Machine AArch64, dynamic — has `.plt` + `.rela.plt` + DT_PLTGOT), built from the vendored
+`plt_aarch64.c` (`main` calls `puts("hello")` then `printf("%d\n", argc)`):
+`aarch64-linux-gnu-gcc -O0 -no-pie plt_aarch64.c -o plt_aarch64`. Standard GNU `ld` 16-byte
+veneer (`adrp x16, GOT_page; ldr x17,[x16,#lo12]; add x16,x16,#lo12; br x17`). Pinned VMAs:
+`main`=`0x400604`, `puts@plt`=`0x4004d0` (GOT `0x411018`), `printf@plt`=`0x4004e0` (GOT
+`0x411020`); both `R_AARCH64_JUMP_SLOT` in `.rela.plt`.
+
+**e2e.** `decompiler/crates/kuna-console/tests/verify_aarch64_plt.rs`, modeled on the x86 gate:
+`bootstrap_from_elf(plt_aarch64, "", [specs])` (the ELF machine → `AARCH64:LE:64:v8A` resolves
+automatically) → `load function main` → `decompile` → `print C`; asserts the body names `puts(`
+and `printf(` and the old `sub_4004d0`/`sub_4004e0` PLT-stub placeholders are gone. Same
+specs-absent skip guard (needs the built `AARCH64.sla`). The test **actually decodes** (does not
+skip) on a tree with the spec compiled — it exercises the A64 decoder over `main`.
+
+**No `elf_plt.rs` fix needed.** The existing `decode_aarch64` already handled this binary's
+veneer layout correctly; the increment is purely additive (new fixture + new e2e + doc/log). The
+BEFORE/AFTER was confirmed by temporarily stubbing the AArch64 arm: with it disabled `main`
+renders `sub_4004d0("hello"); sub_4004e0(0x400670,a0);`; with it enabled (the shipped behavior)
+`puts("hello"); printf("%d\n",(uint8)a0);`.
+
+**Result (the proof).**
+```c
+unsigned long main(uint4 a0)
+{
+  puts("hello");
+  printf("%d\n",(uint8)a0);
+  return 0;
+}
+```
+`make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test`
+green. Additive real-ELF-path change → the XML datatest/stage gates are structurally untouched
+(the `<binaryimage>` bootstrap never runs the ELF loader). `kuna-console` +1 test
+(`verify_aarch64_plt`).
 
 ### Remaining work (essentially complete)
 
