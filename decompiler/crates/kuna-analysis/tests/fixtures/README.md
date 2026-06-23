@@ -25,6 +25,7 @@ real ELF parser.
 | `arm_thumb_le32.o` | bare ARM Thumb **`.o`** (ET_REL, EABI5, LE) — **not linked** (no PT_LOAD; see note) | ARM/Thumb decode-mode markers (`s1_loader::arm_markers`): `.symtab` carries the `$t.0` Thumb mapping symbol at `.text+0x0` AND STT_FUNC syms `thumb_add`@`0x1` / `_start`@`0x15` (LSB-set, the Thumb odd-address convention). The pass emits a `TMode=1` paint for `$t.0` (at `0x0`) and for each LSB-set FUNC normalized to even (`0x0`, `0x14`) |
 | `mcount_x86_64` | static, non-PIE x86-64, `gcc -pg` (`-O0`), `.debug_*` stripped | call-fixup auto-apply (`s1_callfixup`): the `-pg` prologue emits a direct `call mcount` to the weak `mcount` FUNC symbol (0x44a710); `main` is at 0x401795. The cspec (`x86-64-gcc.cspec`) registers `<callfixup name="mcount"><target name="mcount"/>` (body `temp:1 = 0;`), so tagging `main`'s `mcount` callee with that fixup's inject id dissolves the profiling call — `kuna decompile … main` then shows no `mcount();` line. Also carries `__fentry__` (0x44a770, the `fentry`-fixup target) |
 | `fmt_x86_64` | non-PIE x86-64, `gcc -O0`, not stripped (source `fmt_x86_64.c`) | format-string varargs typing (`s1_formatstring` half B, `FormatStringAnalyzer`, **gated off** by default): `main`=0x401136 calls `printf("%d %s\n", argc, argv[0])` (`printf@plt`=0x401040; the `"%d %s\n"` format constant is at `.rodata` vma 0x402004). With `--option formatstring on`, the console reads the format constant at the `printf` call's format slot, parses `%d`→int / `%s`→char\*, installs a per-call-site prototype override, and re-decompiles so the call renders `printf("%d %s\n",a0,(char *)*a1)` (the `%d` arg as a plain `int`, the `%s` arg cast to `char *`) instead of the default untyped `printf("%d %s\n",(uint8)a0,*a1)` |
+| `plt_riscv64` | dynamically-linked RISC-V64 PIE (RVC, lp64d), not stripped (source `plt_riscv64.c`) | RISC-V PLT/GOT import naming end-to-end (`elf_plt::decode_riscv`): `main`=`0x6b8` calls `puts@plt`=`0x5e0` (`auipc t3,0x2; ld t3,-1472(t3); jalr t1,t3; nop` → GOT slot `0x2020`) and `printf@plt`=`0x5f0` (→ GOT `0x2028`); both are `R_RISCV_JUMP_SLOT` relocs in `.rela.plt` naming `puts`/`printf`. **Linked dynamic exe with PT_LOAD** (the RISC-V analog of the x86 `fauxware` PLT e2e and the MIPS linked fixture) — drives `kuna-console/tests/verify_riscv64_plt.rs`, which decompiles `main` to `puts("hello"); printf("%d\n",(int8)a0);` (not `sub_5e0`/`sub_5f0`) |
 | `mips_gp_le32` | dynamically-linked MIPS32 **LE** ET_DYN (`-O1 -no-pie`), not stripped | MIPS `$gp` recovery via per-function `t9` tracking (`s1_loader::mips_markers`): the PIC `_init`@`0x4004cc` / `_fini`@`0x400800` compute `gp = _gp_disp + t9` (`lui gp; addiu gp; addu gp,gp,t9`); without `t9` the `$gp`-relative GOT load reads `*(int4 *)(v1 /* t9 */ + 0x10b94)` (unresolved). The pass seeds `t9 = func_entry` per function (`assumeT9EntryAddress`), so the commit's tracked-register arm + `ActionConstbase` fold gp and the load resolves to a concrete GOT slot (`dat_411060`). `main`@`0x400704`, `bump`@`0x4006f0`. `_gp` symbol = `0x419030` = `.got`(`0x411040`) + `0x7ff0` (the MIPS GP bias) — cross-checked by `recover_gp_value`. **Linked ET_DYN with PT_LOAD** (unlike the ARM `.o`): the decode e2e works in-env (this host has a MIPS toolchain) |
 
 Provenance: `fauxware`, `cet_pie_x86_64`, `stripped_dynamic_x86_64` copied
@@ -106,6 +107,25 @@ addu gp,gp,t9` in `_init`/`_fini`) and a `lw t9,-N(gp)` GOT call in `main` — t
 also works but is ~672 KB (static glibc), so the dynamic form is vendored. `t9.c`
 uses a global `counter` + a `printf` call so the prologue sets `$gp`. The `_gp`
 LOCAL symbol survives (not stripped) so `recover_gp_value` can read it.
+
+`plt_riscv64` (8520 bytes, source vendored alongside as `plt_riscv64.c`): built
+with `riscv64-linux-gnu-gcc -O0 plt_riscv64.c -o plt_riscv64`
+(`riscv64-linux-gnu-gcc 11.4.0`). `plt_riscv64.c` =
+`int main(int argc,char**argv){ puts("hello"); printf("%d\n", argc); return 0; }`
+— a normal dynamic RISC-V64 PIE (RVC, lp64d ABI), kept **un**stripped so `main`
+resolves by name. It has a real `.plt` + `.rela.plt` (`DT_PLTGOT`=`0x2008`); the
+`puts`/`printf` `R_RISCV_JUMP_SLOT` relocations name the GOT slots `0x2020`/`0x2028`,
+and the 16-byte `auipc t3; ld t3,lo(t3); jalr t1,t3; nop` PLT veneers
+(`puts@plt`=`0x5e0`, `printf@plt`=`0x5f0`) are exactly the form `elf_plt::decode_riscv`
+recognizes. Drives the RISC-V PLT import-name console e2e
+(`kuna-console/tests/verify_riscv64_plt.rs`). The build host's `kuna-dev` image ships
+`libc6-riscv64-cross` (the shared libs) but not the dev package, so the cross-link needs
+`libc6-dev-riscv64-cross` (headers + `crt1.o`) installed in the build container —
+the exact build command (single root container invocation) is:
+`docker run --rm --user root -v "$PWD":/w -w /w kuna-dev bash -lc 'apt-get update >/dev/null
+&& apt-get install -y --no-install-recommends libc6-dev-riscv64-cross >/dev/null
+&& riscv64-linux-gnu-gcc -O0 decompiler/crates/kuna-analysis/tests/fixtures/plt_riscv64.c
+-o decompiler/crates/kuna-analysis/tests/fixtures/plt_riscv64'`.
 
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via
