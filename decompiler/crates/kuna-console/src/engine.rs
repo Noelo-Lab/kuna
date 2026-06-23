@@ -717,9 +717,22 @@ fn commit_analysis_output(
 
     // 2. Discovered entry points (stripped targets): name + add_function +
     //    register_symbol (the `map function` recipe).
+    //
+    //    Naming: an entry that carries a Ghidra-faithful name in the `entry_names`
+    //    overlay (the dynamic INIT/FINI array elements — `_INIT_<i>` / `_FINI_<i>`,
+    //    and the single `_DT_INIT`/`_DT_FINI`, per `ElfProgramBuilder`) is named
+    //    with it; every other discovered VMA falls back to the generic
+    //    `name_function` (`sub_<addr>`), exactly as before. The idempotent
+    //    `find_function` no-op below still lets a real `.symtab`/`.dynsym` name win
+    //    on a non-stripped binary — only genuinely new starts take the overlay name.
     for &vma in &out.entries {
         let addr = Address::new(Rc::clone(code_space), vma);
-        let name = prog.arch().name_function(&addr);
+        let name = out
+            .entry_names
+            .iter()
+            .find(|(a, _)| *a == vma)
+            .map(|(_, n)| n.clone())
+            .unwrap_or_else(|| prog.arch().name_function(&addr));
         let type_code = prog.arch().types().get_type_code()?;
         let min_size = prog.arch().min_funcsymbol_size;
         {

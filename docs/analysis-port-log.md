@@ -141,7 +141,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `s1-libproto` | Library prototype seeding (`ApplyDataArchiveAnalyzer`) | med | fauxware `main`: `puts("Username: ")`, `puts("Password: ")`; `rejected`: `printf("Go away!")` |
 | ✅ | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | ENABLED by default since the printer change — its planted `char[N]` symbol coexists with the literal: the printer renders a pointer to a readonly char-printable array symbol as the literal (Ghidra behavior). fauxware `main`: `puts("Username: ")`/`puts("Password: ")` with `s_400915` registered. See Increment 12 |
 | ✅ | `s1-dwarf` | DWARF names+types (`DWARFAnalyzer`) via gimli | hard | dwarf_stripped: `add_values`/`compute`/`main` recovered (no .symtab); cet_pie: `elaborate_debug_symbol`'s param typed `char *` (subtasks 1+2; **subtask-3 stack-locals deferred**, engine change) |
-| ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5) |
+| ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5); dynamic INIT/FINI elements named `_INIT_<i>`/`_FINI_<i>`/`_DT_INIT` per `ElfProgramBuilder` (Increment 22) |
 | ✅ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle, `GccExceptionAnalyzer`) | hard | fauxware: FDE starts ⊆ discovered entries (7 starts incl. `_start`/`main`) (Increment 5) |
 | ✅ | `sourcelang` | Source-language / compiler detection (`SourceLanguageAnalyzer`) | easy | `s1_sourcelang::detect_compiler`: `rust_hello` ⇒ `Rustc` (`.comment` + `_ZN…17h…E`), `fauxware`/`cpp_mangled` ⇒ `Gcc` (Increment 7) |
 | ✅ | `s1-rust-golang-noreturn` | Rust + **Go** no-return list selection (`noReturnFunctionConstraints.xml` `rustc` + `golang` arms) | easy | `RustFunctionsThatDoNotReturn` (Increment 7) **and** `GolangFunctionsThatDoNotReturn` (Increment 14) vendored + parsed per detected compiler; `ZN4core9panicking5panic17h*` flagged for Rust-only, `runtime.gopanic`/`runtime.throw`/`runtime.goexit.abi0` for Go-only, neither for a C ELF |
@@ -1418,6 +1418,53 @@ catalog --check` **catalog OK**.
   registration). `kuna-decomp` count tests bumped (settable 31→32) + `stage_catalog.json`
   fixture regenerated.
 
+### Increment 22 — `_INIT_<i>`/`_FINI_<i>` array-element naming ✅
+
+**`s1-entry-disc`** — the cosmetic follow-up flagged by the Increment 15 completeness sweep:
+give the dynamic INIT/FINI entries their Ghidra loader names instead of the generic `sub_<addr>`,
+faithful to `ElfProgramBuilder.createDynamicEntryPoints`:
+
+- `DT_INIT_ARRAY` element `i` → `_INIT_<i>`, `DT_FINI_ARRAY` element `i` → `_FINI_<i>`
+  (Ghidra's `baseName + i`, where `i` is the element index in the array);
+- the single `DT_INIT`/`DT_FINI` → `_DT_INIT`/`_DT_FINI` (Ghidra's `"_" + dynamicEntryType.name`).
+
+`DT_PREINIT_ARRAY` (`_PREINIT_<i>`) is wired as the faithful seam (constant + `base_name`
+threading) but emits nothing — kuna does not currently *discover* preinit-array elements as
+code entries, and adding that would change the discovery set (out of scope here).
+
+**Shape choice — additive overlay, NOT a reshape.** `AnalysisOutput.entries` stays `Vec<u64>`;
+a new parallel `entry_names: Vec<(u64, String)>` overlay carries the names (`pass.rs`, `merge`
+extended). `s1_entry::collect_entries` is **byte-identical** — the discovery seam is untouched —
+and `dynamic_entry_points` is now exactly `dynamic_entry_points_named(file).map(|(a,_)| a)`, a
+guaranteed-equal projection (unit-tested: `dynamic_entry_points_is_named_projection`). The
+overlay is filtered to the VMAs that actually survive collection, so a name for a dropped
+(funcsym-covered) entry is never emitted. This is the lowest-risk shape: WHICH entries are found
+provably does not change, so the 675/158 XML oracles (which never construct an `ObjectLoadImage`)
+are structurally untouched, and the five other oracles + the address-table pass leave the overlay
+empty (→ existing `sub_<addr>` behavior).
+
+**Commit seam** (`engine.rs::commit_analysis_output` step 2): each discovered VMA consults the
+overlay; a hit names the function with the Ghidra name, a miss falls back to `name_function`
+(`sub_<addr>`) exactly as before. The idempotent `find_function` no-op is kept, so a non-stripped
+binary's real `.symtab`/`.dynsym` name still wins — only genuinely new, never-symboled
+array-element starts take the `_INIT_<i>` names.
+
+**Flag.** Purely additive on the always-on `entry_disc` pass (no new option, no settable-count
+bump): `--option entry_disc off` disables the whole discovery pass (names and all) as before.
+
+**Result (the proof).** On the vendored stripped PIE `stripped_dynamic_x86_64` (`.symtab`
+stripped): `.init_array`[0]→0x1240 and `.fini_array`[0]→0x1200 now register as `_INIT_0` /
+`_FINI_0`, and `DT_INIT`@0x1000 / `DT_FINI`@0x1464 as `_DT_INIT` / `_DT_FINI`. BEFORE,
+`kuna decompile stripped_dynamic_x86_64 sub_1240` resolved; AFTER it errors (`no function
+"sub_1240"`) and `kuna decompile … _INIT_0` decompiles a real body. `make test` **675/675 PARITY
+OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test` green.
+
+- **Tests:** `kuna-analysis` +3 (`dynamic_entry_names_stripped`,
+  `collect_entry_names_matches_collected_entries`, `dynamic_entry_points_is_named_projection`);
+  the existing `dynamic_entry_points_stripped` / `collect_entries_*` discovery tests pass
+  **unchanged** (byte-identical discovery). `kuna-console` +1 e2e
+  (`verify_s1_entry::dynamic_init_fini_elements_get_ghidra_names`: `_INIT_0`/`_FINI_0`/`_DT_INIT`/
+  `_DT_FINI` resolve and `_INIT_0` decompiles; `sub_1240` no longer resolves).
 ### Increment 20 — RISC-V64 PLT import-name end-to-end (linked fixture) ✅
 
 Proves the `elf_plt.rs` RISC-V PLT-veneer decoder end-to-end on a **real, linked,
@@ -1527,6 +1574,13 @@ stack locals (14), Golang no-return + completeness sweep (15), format-string-B v
 confirms **every feasible-at-tier, decompiler-relevant ELF analyzer is ported** (ELF matches all
 three `noReturnFunctionConstraints.xml` lists; the per-compiler/per-arch passes cover the rest).
 
+Only one item remains, **non-engine / off-host**:
+- **ARM decode e2e** — blocked off-host: this build host has no ARM linker (no lld/aarch64-ld/
+  arm-ld), so a LINKED ARM exe can't be built in-env. The `s1_loader::arm_markers` pass + its
+  `.o` unit test are done; the full decode e2e needs an off-host-built linked ARM fixture.
+
+The `_INIT_<i>`/`_FINI_<i>` array-element naming follow-up flagged by the Increment 15 sweep is
+**done — Increment 22** (an additive `entry_names` overlay, no reshape of the `entries` fact).
 Only one item remains, **non-engine / cosmetic**:
 - **ARM decode e2e** — ✅ **done in-container** (Increment 18). The earlier off-host block (no
   ARM linker on the build host) is lifted by the `kuna-dev` container's `arm-linux-gnueabihf-gcc`:
