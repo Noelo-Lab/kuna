@@ -141,7 +141,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `s1-libproto` | Library prototype seeding (`ApplyDataArchiveAnalyzer`) | med | fauxware `main`: `puts("Username: ")`, `puts("Password: ")`; `rejected`: `printf("Go away!")` |
 | ✅ | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | ENABLED by default since the printer change — its planted `char[N]` symbol coexists with the literal: the printer renders a pointer to a readonly char-printable array symbol as the literal (Ghidra behavior). fauxware `main`: `puts("Username: ")`/`puts("Password: ")` with `s_400915` registered. See Increment 12 |
 | ✅ | `s1-dwarf` | DWARF names+types (`DWARFAnalyzer`) via gimli | hard | dwarf_stripped: `add_values`/`compute`/`main` recovered (no .symtab); cet_pie: `elaborate_debug_symbol`'s param typed `char *` (subtasks 1+2; **subtask-3 stack-locals deferred**, engine change) |
-| ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5) |
+| ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5); cross-arch `_start`→`main` idiom for AArch64/ARM/RISC-V — stripped `main` recovered + decompiled, ARM via the discovery-derived Thumb `TMode=1` paint (Increment 23) |
 | ✅ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle, `GccExceptionAnalyzer`) | hard | fauxware: FDE starts ⊆ discovered entries (7 starts incl. `_start`/`main`) (Increment 5) |
 | ✅ | `sourcelang` | Source-language / compiler detection (`SourceLanguageAnalyzer`) | easy | `s1_sourcelang::detect_compiler`: `rust_hello` ⇒ `Rustc` (`.comment` + `_ZN…17h…E`), `fauxware`/`cpp_mangled` ⇒ `Gcc` (Increment 7) |
 | ✅ | `s1-rust-golang-noreturn` | Rust + **Go** no-return list selection (`noReturnFunctionConstraints.xml` `rustc` + `golang` arms) | easy | `RustFunctionsThatDoNotReturn` (Increment 7) **and** `GolangFunctionsThatDoNotReturn` (Increment 14) vendored + parsed per detected compiler; `ZN4core9panicking5panic17h*` flagged for Rust-only, `runtime.gopanic`/`runtime.throw`/`runtime.goexit.abi0` for Go-only, neither for a C ELF |
@@ -1427,12 +1427,73 @@ confirms **every feasible-at-tier, decompiler-relevant ELF analyzer is ported** 
 three `noReturnFunctionConstraints.xml` lists; the per-compiler/per-arch passes cover the rest).
 
 Only two items remain, both **non-engine / off-host**:
-- **ARM decode e2e** — blocked off-host: this build host has no ARM linker (no lld/aarch64-ld/
-  arm-ld), so a LINKED ARM exe can't be built in-env. The `s1_loader::arm_markers` pass + its
-  `.o` unit test are done; the full decode e2e needs an off-host-built linked ARM fixture.
+- **ARM decode e2e** — ✅ resolved in Increment 23: the `kuna-dev` container has the
+  `arm-linux-gnueabihf` toolchain, so a LINKED ARM/Thumb PIE (`entrymain_arm`) is now built
+  in-env; `verify_crossarch_entry_main.rs` runs the full Thumb decode e2e (the `s1_loader::arm_markers`
+  pass + `.o` unit test were already done — the linked-fixture gap is closed).
 - **`_INIT_<i>`/`_FINI_<i>` array-element naming** — cosmetic: `s1_entry` already *discovers*
   those addresses; only the Ghidra-style names differ (vs `sub_<addr>`), and delivering them
   needs reshaping the `entries` fact. Low payoff, documented follow-up.
 
 Everything else is inherited by the engine or genuinely out-of-scope for an ELF decompiler
 (non-ELF formats, Go pclntab, FID — see the table + inventory).
+
+### Increment 23 — cross-arch `_start`→`main` idiom (AArch64/ARM/RISC-V) ✅
+
+**`s1-entry-disc` oracle 4** — extend the `_start`→`main` libc-start idiom (previously x86-64-only,
+a documented LOSS) to **AArch64, ARM/Thumb, and RISC-V**, so a STRIPPED non-x86 PIE (where
+`.eh_frame` may be absent or not cover `main`) still recovers `main` without a symbol. Same
+disassembly-free, targeted-byte-decode style; gated per arch on `file.architecture()`; the
+resolved VMA is validated inside an executable section before emitting; additive to
+`AnalysisOutput.entries` (real-ELF path only — rides the always-on `entry_disc` pass, no new flag).
+
+- **The shared modern-PIE shape.** Unlike x86-64 (which carries `main` as a PC-relative
+  *immediate* in `lea rdi,[rip+disp]`), the PIE crt1 of all three other arches loads `main`
+  *indirectly* from a GOT slot bearing an `R_*_RELATIVE` relocation whose **target is `main`'s
+  VMA**. So the cross-arch decode is two steps: (1) byte-decode the arg0-setup in `_start` to the
+  GOT-slot VMA, (2) resolve it through a `got_slot → relative_target` map (`relative_targets`):
+  the RELA `addend` (AArch64/RISC-V) or the in-place GOT word for ARM REL (`has_implicit_addend`).
+  - **AArch64** (`main` in x0): `adrp x0,page ; ldr x0,[x0,#lo12]` → slot
+    `(adrp&!0xfff)+page_off+lo12` (the A64 `adrp`/`ldr` decode mirrors `elf_plt::decode_aarch64`,
+    keyed to x0). Fixture: slot `0x10ff0` → `main`@`0x714`.
+  - **RISC-V** (`main` in a0): `auipc a0,hi20 ; ld a0,lo12(a0)` → slot `auipc+((hi20<<12)+sext(lo12))`
+    (mirrors `elf_plt::decode_riscv`, keyed to a0=x10; scanned at 2-byte steps for the RVC mix).
+    Fixture: slot `0x2030` → `main`@`0x608`.
+  - **ARM/Thumb** (`main` in r0): GOT-relative `ldr r0,[GOT_base,r0]`. Rather than simulate the
+    fragile two-load+add GOT-base computation, use the invariant that the GOT base **is** the
+    `.got` section address: for each small PC-relative literal-pool word in the `_start` window,
+    candidate slot `= .got + off`; if that slot's RELATIVE target lands in an exec section it is
+    `main` (the RELATIVE-map + exec-section cross-check is self-validating — a unique winner only).
+    The ARM `main` pointer carries the **Thumb mode bit** in bit 0 (`main|1`); masked to `0x4d8`
+    for the entry, AND the discovery pass emits a `TMode=1` `ContextPaint` at `0x4d8` (the analog
+    of `arm_markers`' STT_FUNC-LSB → `TMode=1`, derived from the GOT pointer LSB — a stripped
+    binary has no `$t` mapping symbol). Without that paint the engine decodes the Thumb body as
+    A32 and emits a degenerate `void {return;}` stub.
+
+- **Fixtures (vendored, <7 KB each, shared source `entrymain.c`).** `entrymain_{aarch64,arm,riscv64}`,
+  built in `kuna-dev` (`<triple>-gcc -O0 -fno-asynchronous-unwind-tables -fno-unwind-tables
+  -fvisibility=hidden … && strip`). Two non-obvious flags are load-bearing: `-fvisibility=hidden`
+  (without it `main` is a `.dynsym` GLOBAL FUNC — strip removes it on AArch64/ARM but NOT on
+  RISC-V, where `.dynsym` survives strip, so oracle 4 couldn't be shown to contribute it);
+  `-fno-*-unwind-tables` isolates oracle 4 from the FDE oracle (AArch64/RISC-V keep crt1 FDEs but
+  none cover `main`; ARM's `.eh_frame` is empty). RISC-V needs `libc6-dev-riscv64-cross` installed
+  in-container first (documented in the fixtures README provenance).
+
+- **Tests.** `kuna-analysis` +4 unit tests (`libc_start_main_idiom_{aarch64,arm,riscv}` — each
+  pins the GOT slot + RELATIVE target + recovered `main`; `collect_entries_crossarch_includes_main`
+  — proves oracle 4 specifically contributes `main` for each arch, `main` is non-funcsym + in an
+  exec section). e2e `kuna-console/tests/verify_crossarch_entry_main.rs` (+3, actually run — not
+  skipped): bootstrap each stripped fixture, commit analysis, `load function sub_<main>` →
+  `decompile` → `print C` with NO `--addr` → a real `return a0` body. The x86-64 oracle-4 path
+  (`libc_start_main_idiom_stripped`, `verify_s1_entry`) is unchanged (now dispatched through the
+  per-arch `libc_start_main_target`).
+
+- **Coverage / LOSS.** All three target arches succeed end-to-end (stripped `main` recovered AND
+  decompiled). MIPS/PPC `_start` idioms remain a follow-up (those arches no-op). Oracle 5
+  (prologue patterns) stays x86-64-only. Oracles 1–3 are arch-independent.
+
+  | arch | `_start` | idiom | GOT slot | `main` | e2e body |
+  |---|---|---|---|---|---|
+  | AArch64 | `0x600` | `adrp x0;ldr x0,[x0,#4080]` | `0x10ff0` (RELA addend) | `0x714` | `unsigned int sub_714(unsigned int a0){return a0;}` |
+  | ARM/Thumb | `0x3dd` | `.got`+`0x28` GOT-rel `ldr r0` + `TMode=1` | `0x10ff8` (REL in-place) | `0x4d8` | `unsigned int sub_4d8(unsigned int a0){return a0;}` |
+  | RISC-V | `0x550` | `auipc a0;ld a0,-1318(a0)` | `0x2030` (RELA addend) | `0x608` | `int8 sub_608(int4 a0){return (int8)a0;}` |

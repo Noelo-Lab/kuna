@@ -41,11 +41,14 @@
 //! 2. **`DT_INIT`/`DT_FINI` + `DT_INIT_ARRAY`/`DT_FINI_ARRAY`** pointer tables —
 //!    the loader-seeded external entry points (`ElfProgramBuilder`).
 //! 3. **`.eh_frame` FDE `pcBegin`** addresses — [`scan_eh_frame_starts`].
-//! 4. **`_start`→`main` libc-start idiom** (x86-64): the `lea rdi,[rip+disp]`
-//!    immediately before `call *__libc_start_main@GOT` carries `main`. The
-//!    disassembly-free stand-in for the general call-target sweep, which is
-//!    infeasible at the analyzer tier (no Listing) — we recover the single
-//!    highest-value call target.
+//! 4. **`_start`→`main` libc-start idiom** (x86-64 / AArch64 / ARM / RISC-V): the
+//!    arg-setup instructions that load `main` into the platform's first integer-arg
+//!    register right before the `__libc_start_main` call. x86-64 carries `main` as
+//!    a PC-relative immediate (`lea rdi,[rip+disp]`); the PIE crt1 of AArch64/ARM/
+//!    RISC-V loads it *indirectly* from a GOT slot bearing an `R_*_RELATIVE`
+//!    relocation whose target is `main`. The disassembly-free stand-in for the
+//!    general call-target sweep, which is infeasible at the analyzer tier (no
+//!    Listing) — we recover the single highest-value call target.
 //! 5. **Prologue byte patterns** (x86-64 gcc): the `FunctionStartAnalyzer` port,
 //!    a conservative subset.
 //!
@@ -56,8 +59,10 @@
 //!   patterns (oracle 5).
 //! - The `after="defined"` / `validcode` pattern post-rules are dropped (no
 //!   PseudoDisassembler); only bare `<funcstart/>` patterns are ported.
-//! - Oracles 4 and 5 are **x86-64-only** in v1 (other arches no-op — a documented
-//!   seam; the patternconstraints.xml for ARM/AARCH64/MIPS/PPC are a follow-up).
+//! - Oracle 4 (`_start`→`main`) covers x86-64 + AArch64 + ARM/Thumb + RISC-V
+//!   (Increment 23). MIPS/PPC `_start` idioms are a follow-up (those arches no-op).
+//!   Oracle 5 (prologue patterns) remains **x86-64-only** in v1 (the
+//!   patternconstraints.xml for ARM/AARCH64/MIPS/PPC are a follow-up).
 //!   Oracles 1–3 are arch-independent.
 //! - Static-image base-0 PIE assumption for array-pointer / absptr decode: kuna's
 //!   `ObjectLoadImage` loads at the file's native vmas and never rebases, so the
@@ -66,7 +71,7 @@
 use object::read::{Object, ObjectSection, ObjectSymbol};
 use object::{SectionKind, SymbolKind};
 
-use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Stage};
 
 // ===========================================================================
 // The pass
@@ -93,6 +98,13 @@ impl AnalysisPass for EntryDiscoveryPass {
             return out;
         }
         out.entries = collect_entries(ctx.file);
+        // ARM/Thumb: a discovered `main` whose libc-start GOT pointer had the
+        // Thumb LSB set needs a `TMode=1` decode-mode paint at its (even) entry —
+        // this stripped binary carries no `$t` mapping symbol for `arm_markers` to
+        // paint from, so without it the engine decodes the Thumb body as A32 and
+        // emits a degenerate function. The exact analog of `arm_markers`'
+        // STT_FUNC-LSB → `TMode=1` paint, derived here from the GOT pointer LSB.
+        out.context_paints = thumb_entry_paints(ctx.file);
         out
     }
 }
@@ -124,13 +136,17 @@ pub fn collect_entries(file: &object::File) -> Vec<u64> {
     // Oracle 3: .eh_frame FDE pcBegin addresses.
     cand.extend(scan_eh_frame_starts(file));
 
-    // Oracles 4 + 5: x86-64-only (other arches are a clean no-op).
+    // Oracle 4: _start -> main via the libc-start idiom. x86-64 uses the direct
+    // `lea rdi,[rip+disp]` immediate; AArch64/ARM/RISC-V PIE crt1 instead loads
+    // `main` *indirectly* from a GOT slot that carries an `R_*_RELATIVE`
+    // relocation whose target is `main` (Increment 23) — `libc_start_main_target`
+    // dispatches on the architecture.
+    if let Some(main) = libc_start_main_target(file, entry) {
+        cand.push(main);
+    }
+    // Oracle 5: prologue byte patterns — x86-64-only (the vendored gcc pattern
+    // subset; the ARM/AARCH64/MIPS/PPC patternconstraints are a follow-up).
     if file.architecture() == object::Architecture::X86_64 {
-        // Oracle 4: _start -> main via the libc-start idiom.
-        if let Some(main) = libc_start_main_target(file, entry) {
-            cand.push(main);
-        }
-        // Oracle 5: prologue byte patterns over executable section bytes.
         cand.extend(prologue_pattern_starts(&execs));
     }
 
@@ -324,21 +340,54 @@ fn section_bytes_containing(file: &object::File, vma: u64) -> Option<(u64, Vec<u
 }
 
 // ===========================================================================
-// Oracle 4: _start -> main via the libc-start idiom (x86-64)
+// Oracle 4: _start -> main via the libc-start idiom (per-architecture)
 // ===========================================================================
 
-/// Recover `main` from the x86-64 SysV `_start` idiom: `main` is loaded into
-/// `rdi` (`lea rdi,[rip+disp]`, bytes `48 8d 3d <disp32>`) immediately before the
-/// `call *__libc_start_main@GOT`. We scan a small window at `e_entry` for that
-/// `lea rdi` and compute `main = (lea_addr + 7) + sign_extend(disp32)`.
+/// Recover `main` from the `_start`→`__libc_start_main(main, …)` idiom — the
+/// disassembly-free stand-in for the general call-target sweep (a pre-decompile
+/// Listing is unavailable at the analyzer tier — the same wall `noreturn.rs`
+/// documents): kuna recovers the *one* highest-value call target by byte-decoding
+/// the instructions that load `main` into the platform's first integer-arg
+/// register right before the `__libc_start_main` call.
 ///
-/// This is the disassembly-free stand-in for the general call-target sweep (a
-/// pre-decompile Listing is unavailable at the analyzer tier — the same wall
-/// `noreturn.rs` documents): kuna recovers the *one* highest-value call target.
+/// The decode is **architecture-dispatched** (each path gated on
+/// `file.architecture()`, additive — an unrecognized arch returns `None`):
+///
+/// - **x86-64** (`main` in `rdi`): `lea rdi,[rip+disp]` (`48 8d 3d <disp32>`)
+///   carries `main` as a PC-relative *immediate* — [`x86_64_main_target`].
+/// - **AArch64** (`main` in `x0`) / **RISC-V** (`main` in `a0`): PIE crt1 loads
+///   `main` *indirectly* from a GOT slot (`adrp x0; ldr x0,[x0,#off]` /
+///   `auipc a0; ld a0,off(a0)`). The slot carries an `R_*_RELATIVE` relocation
+///   whose target is `main`'s VMA — [`aarch64_main_target`] /
+///   [`riscv_main_target`] decode the slot, then resolve it through the
+///   RELATIVE-target map ([`relative_targets`]).
+/// - **ARM/Thumb** (`main` in `r0`): GOT-relative load
+///   (`ldr r0,[GOT_base, #off]`); the GOT slot is `.got + off`, again carrying an
+///   `R_ARM_RELATIVE` whose in-place target is `main` (with the Thumb LSB set,
+///   masked off) — [`arm_main_target`].
+///
+/// All non-x86 paths cross-check the decoded slot against the RELATIVE-target map
+/// and validate the resolved VMA is inside an executable section *before*
+/// emitting, so a misdecode yields `None` rather than a bogus entry.
 fn libc_start_main_target(file: &object::File, entry: u64) -> Option<u64> {
     if entry == 0 {
         return None;
     }
+    use object::Architecture as A;
+    match file.architecture() {
+        A::X86_64 | A::X86_64_X32 => x86_64_main_target(file, entry),
+        A::Aarch64 | A::Aarch64_Ilp32 => aarch64_main_target(file, entry),
+        A::Arm => arm_main_target(file, entry),
+        A::Riscv64 | A::Riscv32 => riscv_main_target(file, entry),
+        _ => None,
+    }
+}
+
+/// x86-64 SysV `_start` idiom: `main` is loaded into `rdi` (`lea rdi,[rip+disp]`,
+/// bytes `48 8d 3d <disp32>`) immediately before the `call *__libc_start_main@GOT`.
+/// Scan a small window at `e_entry` for that `lea rdi` and compute
+/// `main = (lea_addr + 7) + sign_extend(disp32)`.
+fn x86_64_main_target(file: &object::File, entry: u64) -> Option<u64> {
     let (sec_addr, data) = section_bytes_containing(file, entry)?;
     let start = (entry - sec_addr) as usize;
     // Scan a 64-byte window from _start for `48 8d 3d <disp32>` (lea rdi,[rip+d]).
@@ -355,6 +404,269 @@ fn libc_start_main_target(file: &object::File, entry: u64) -> Option<u64> {
         i += 1;
     }
     None
+}
+
+/// AArch64 PIE `_start` idiom: `main` is loaded into `x0` from a GOT slot via the
+/// `adrp x0, page ; ldr x0,[x0,#lo12]` pair before the `bl __libc_start_main@plt`.
+/// Decode the slot VMA `= (adrp_addr & !0xFFF) + page_off + lo12` (the same A64
+/// `adrp`/`ldr` decode `elf_plt::decode_aarch64` uses, here keyed to `x0`), then
+/// resolve it through the RELATIVE-target map → `main`.
+fn aarch64_main_target(file: &object::File, entry: u64) -> Option<u64> {
+    let (sec_addr, data) = section_bytes_containing(file, entry)?;
+    let start = (entry - sec_addr) as usize;
+    let win_end = (start + 0x80).min(data.len());
+    let window = data.get(start..win_end)?;
+    let rel = relative_targets(file);
+
+    // A64 is fixed 32-bit LE; scan the `adrp x0` + `ldr x0,[x0,#imm]` pair.
+    let mut off = 0usize;
+    while off + 8 <= window.len() {
+        let adrp = u32::from_le_bytes([
+            window[off],
+            window[off + 1],
+            window[off + 2],
+            window[off + 3],
+        ]);
+        let ldr = u32::from_le_bytes([
+            window[off + 4],
+            window[off + 5],
+            window[off + 6],
+            window[off + 7],
+        ]);
+        // adrp Xd, imm: bit31=1, bits[28:24]=10000; immlo=bits[30:29],
+        // immhi=bits[23:5], Rd=bits[4:0].
+        let is_adrp = (adrp >> 31) & 1 == 1 && (adrp >> 24) & 0x1f == 0b1_0000;
+        let adrp_rd = adrp & 0x1f;
+        // ldr Xt,[Xn,#imm] 64-bit unsigned offset: size=11(bits[31:30]),
+        // bits[29:24]=111001, opc=01(bits[23:22]), imm12=bits[21:10], Rn=bits[9:5].
+        let is_ldr = (ldr >> 30) & 0x3 == 0b11
+            && (ldr >> 24) & 0x3f == 0b11_1001
+            && (ldr >> 22) & 0x3 == 0b01;
+        let ldr_rn = (ldr >> 5) & 0x1f;
+        let ldr_rt = ldr & 0x1f;
+        // The pair must target x0 (the SysV first integer arg = `main`).
+        if is_adrp && adrp_rd == 0 && is_ldr && ldr_rn == 0 && ldr_rt == 0 {
+            let immlo = ((adrp >> 29) & 0x3) as i64;
+            let immhi = ((adrp >> 5) & 0x7_ffff) as i64; // 19 bits
+            let mut imm21 = (immhi << 2) | immlo;
+            if imm21 & (1 << 20) != 0 {
+                imm21 -= 1 << 21; // sign-extend the 21-bit page offset
+            }
+            let page_off = imm21 << 12;
+            let ldr_off = (((ldr >> 10) & 0xfff) as u64) * 8; // 64-bit scale
+            let adrp_addr = sec_addr + (start + off) as u64;
+            let slot = (adrp_addr & !0xFFF).wrapping_add(page_off as u64).wrapping_add(ldr_off);
+            if let Some(&target) = rel.get(&slot) {
+                return Some(target & !1); // mask any thumb-style LSB (defensive)
+            }
+        }
+        off += 4;
+    }
+    None
+}
+
+/// RISC-V PIE `_start` idiom: `main` is loaded into `a0` from a GOT slot via the
+/// `auipc a0, hi20 ; ld a0, lo12(a0)` pair before the `jal __libc_start_main@plt`.
+/// Decode the slot VMA `= auipc_addr + (hi20<<12) + sign_extend(lo12)` (the same
+/// `auipc`/`ld` decode `elf_plt::decode_riscv` uses, here keyed to `a0`=x10), then
+/// resolve it through the RELATIVE-target map → `main`.
+fn riscv_main_target(file: &object::File, entry: u64) -> Option<u64> {
+    let (sec_addr, data) = section_bytes_containing(file, entry)?;
+    let start = (entry - sec_addr) as usize;
+    let win_end = (start + 0x80).min(data.len());
+    let window = data.get(start..win_end)?;
+    let rel = relative_targets(file);
+
+    // RISC-V mixes 2- and 4-byte (compressed) insns; the auipc/ld pair is a
+    // 32-bit `auipc` immediately followed by a 32-bit `ld`. Scan at 2-byte steps
+    // (the minimal insn granularity) so the pair is found regardless of any
+    // preceding compressed insns.
+    let mut off = 0usize;
+    while off + 8 <= window.len() {
+        let auipc = u32::from_le_bytes([
+            window[off],
+            window[off + 1],
+            window[off + 2],
+            window[off + 3],
+        ]);
+        // auipc a0, imm: opcode 0x17 (bits[6:0]), rd 10/a0 (bits[11:7]).
+        if (auipc & 0x7f) == 0x17 && ((auipc >> 7) & 0x1f) == 10 {
+            let load = u32::from_le_bytes([
+                window[off + 4],
+                window[off + 5],
+                window[off + 6],
+                window[off + 7],
+            ]);
+            // ld a0, lo12(a0): opcode 0x03, funct3 3 (ld) [or 2 (lw, RV32)], rd 10,
+            // rs1 10.
+            let funct3 = (load >> 12) & 0x7;
+            let load_ok = (load & 0x7f) == 0x03
+                && (funct3 == 2 || funct3 == 3)
+                && ((load >> 7) & 0x1f) == 10
+                && ((load >> 15) & 0x1f) == 10;
+            if load_ok {
+                let hi20 = (auipc >> 12) & 0xf_ffff;
+                let imm12 = (load >> 20) & 0xfff;
+                let lo12 = ((imm12 as i32) << 20) >> 20; // sign-extend 12-bit
+                let auipc_addr = sec_addr + (start + off) as u64;
+                let slot = auipc_addr
+                    .wrapping_add((hi20 as u64) << 12)
+                    .wrapping_add(lo12 as i64 as u64);
+                if let Some(&target) = rel.get(&slot) {
+                    return Some(target & !1);
+                }
+            }
+        }
+        off += 2;
+    }
+    None
+}
+
+/// ARM/Thumb PIE `_start` idiom: `main` is loaded into `r0` GOT-*relatively*
+/// (`ldr.w r0,[GOT_base, r0]`, the GOT base computed from the literal pool, the
+/// index a small per-symbol GOT offset). Rather than fully simulate the
+/// two-load+add GOT-base computation (toolchain-fragile), we use the invariant
+/// that the GOT base **is** the `.got` section address: for each PC-relative
+/// literal-pool word the `_start` window references that is a *small* offset, the
+/// candidate slot `= .got_addr + off`; if that slot carries a RELATIVE relocation
+/// whose target is in an executable section, that target is `main` (the Thumb LSB
+/// masked off). The RELATIVE-map + exec-section cross-check makes the heuristic
+/// self-validating (a wrong offset simply misses the map).
+fn arm_main_target(file: &object::File, entry: u64) -> Option<u64> {
+    // The public oracle masks the Thumb LSB; the raw helper keeps it so the
+    // decode-mode paint can tell Thumb (`main|1`) from A32 (`main`).
+    arm_main_target_raw(file, entry).map(|raw| raw & !1)
+}
+
+/// As [`arm_main_target`] but returns the GOT pointer **un-masked** — the ARM
+/// libc-start `main` pointer carries the Thumb mode bit in bit 0 (`main|1` for a
+/// Thumb function). The caller masks it for the entry VMA; [`thumb_entry_paints`]
+/// inspects it to decide whether to paint `TMode=1`.
+fn arm_main_target_raw(file: &object::File, entry: u64) -> Option<u64> {
+    // _start's entry LSB is the Thumb mode bit; the bytes live at the even VMA.
+    let start_vma = entry & !1;
+    let (sec_addr, data) = section_bytes_containing(file, start_vma)?;
+    let start = (start_vma - sec_addr) as usize;
+    let win_end = (start + 0x80).min(data.len());
+    let window = data.get(start..win_end)?;
+
+    let got_addr = file.section_by_name(".got").map(|s| s.address())?;
+    let rel = relative_targets(file);
+    let execs = executable_sections(file);
+
+    // Collect every aligned 32-bit word in the _start window that, read as a
+    // little-endian u32, is a plausible *small* GOT offset (< the .got size, or a
+    // modest cap). Each is a candidate `off` for slot = got_addr + off.
+    let got_size = file.section_by_name(".got").map(|s| s.size()).unwrap_or(0);
+    let cap = got_size.max(0x1000);
+    let mut best: Option<u64> = None;
+    let mut found = 0usize;
+    let mut w = 0usize;
+    while w + 4 <= window.len() {
+        if (start + w) % 4 == 0 {
+            let off = read_u32(&window[w..], true) as u64;
+            if off != 0 && off < cap {
+                let slot = got_addr.wrapping_add(off);
+                if let Some(&target) = rel.get(&slot) {
+                    // Validate the *masked* (even) VMA is in an exec section, but
+                    // keep the RAW target so the LSB (Thumb mode) survives.
+                    if in_executable_section(&execs, target & !1) {
+                        // Unique winner: only emit if the GOT-offset literal
+                        // resolves to exactly one exec-section RELATIVE target, so
+                        // an ambiguous decode is a clean miss (None).
+                        if best.is_none() {
+                            best = Some(target);
+                        }
+                        found += 1;
+                    }
+                }
+            }
+        }
+        w += 2; // Thumb literal pools are halfword-stepped; align-check gates it.
+    }
+    if found == 1 {
+        best
+    } else {
+        None
+    }
+}
+
+/// Decode-mode (`TMode`) paints for ARM-discovered Thumb entries — the analog of
+/// `arm_markers`' STT_FUNC-LSB → `TMode=1` paint, but derived from the libc-start
+/// `main` GOT pointer's Thumb LSB (a stripped binary has no `$t`/FUNC-LSB symbol
+/// for `arm_markers`). Emits `TMode=1` at the discovered `main`'s even VMA when
+/// its pointer had bit 0 set (a Thumb function). Empty on every non-ARM arch and
+/// when `main` is A32 (the default `TMode=0` already decodes it).
+fn thumb_entry_paints(file: &object::File) -> Vec<ContextPaint> {
+    let mut out = Vec::new();
+    if file.architecture() != object::Architecture::Arm {
+        return out;
+    }
+    let entry = file.entry();
+    if entry == 0 {
+        return out;
+    }
+    if let Some(raw) = arm_main_target_raw(file, entry) {
+        if raw & 1 == 1 {
+            // Thumb `main`: paint TMode=1 at the even (decode) VMA. `end: None` is
+            // the point-set shape `arm_markers`/`ArmSymbolAnalyzer` use.
+            out.push(ContextPaint { addr: raw & !1, end: None, var: "TMode", value: 1 });
+        }
+    }
+    out
+}
+
+/// Build `got_slot_vma → relative_target_vma` from the dynamic `R_*_RELATIVE`
+/// relocations. The "RELATIVE" relocs are the ones `object` surfaces as
+/// [`object::RelocationTarget::Absolute`] (no symbol): their *target* is a fixed
+/// in-image VMA (an init/fini pointer, a vtable slot, or — for our purposes — the
+/// `main` pointer the PIE `_start` loads). The target value is the RELA `addend`
+/// when present (AArch64/RISC-V), else the in-place value stored at the slot (ARM
+/// REL, `has_implicit_addend`), read from the containing section's bytes.
+fn relative_targets(file: &object::File) -> std::collections::HashMap<u64, u64> {
+    use object::read::Object;
+    use object::RelocationTarget;
+    let mut map: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
+    let le = file.is_little_endian();
+    let is64 = file.is_64();
+    let Some(relocs) = file.dynamic_relocations() else {
+        return map;
+    };
+    for (slot, reloc) in relocs {
+        // RELATIVE = a non-symbolic (Absolute) dynamic reloc.
+        if !matches!(reloc.target(), RelocationTarget::Absolute) {
+            continue;
+        }
+        let target: u64 = if reloc.has_implicit_addend() {
+            // REL (e.g. ARM): the addend is the value already stored at the slot.
+            let Some((sec_addr, bytes)) = section_bytes_containing(file, slot) else {
+                continue;
+            };
+            let o = (slot - sec_addr) as usize;
+            if is64 {
+                if o + 8 > bytes.len() {
+                    continue;
+                }
+                read_u64(&bytes[o..], le)
+            } else {
+                if o + 4 > bytes.len() {
+                    continue;
+                }
+                read_u32(&bytes[o..], le) as u64
+            }
+        } else {
+            // RELA: the addend carries the target VMA directly.
+            let a = reloc.addend();
+            if a < 0 {
+                continue;
+            }
+            a as u64
+        };
+        if target != 0 {
+            map.insert(slot, target);
+        }
+    }
+    map
 }
 
 // ===========================================================================
@@ -877,6 +1189,100 @@ mod tests {
         let main = libc_start_main_target(&file, file.entry());
         // lea rdi at 0x1178, disp 0x286 → 0x117f + 0x286 = 0x1405 = main.
         assert_eq!(main, Some(0x1405), "libc-start idiom should recover main at 0x1405");
+    }
+
+    // -- Oracle 4 cross-arch: _start -> main idiom (Increment 23) --------------
+    //
+    // Each fixture is a tiny `int main(int,char**){return argc;}` built DYNAMIC
+    // (real crt1 `_start` → `__libc_start_main(main,…)`), `-fno-*-unwind-tables`,
+    // `-fvisibility=hidden` (so `main` is NOT in `.dynsym`), and stripped — so
+    // `main` is discoverable ONLY via the `_start`→`main` idiom, never via a
+    // symbol. The load-bearing VMAs are pinned (read via the container objdump/
+    // readelf at build time; see the fixtures README provenance).
+
+    /// AArch64: `_start` (0x600) loads `main` (0x714) into `x0` via
+    /// `adrp x0,0x10000 ; ldr x0,[x0,#4080]` → GOT slot 0x10ff0, whose
+    /// `R_AARCH64_RELATIVE` addend is 0x714.
+    #[test]
+    fn libc_start_main_idiom_aarch64() {
+        let bytes = fixture("entrymain_aarch64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse entrymain_aarch64");
+        assert_eq!(file.architecture(), object::Architecture::Aarch64);
+        assert_eq!(file.entry(), 0x600, "aarch64 _start (e_entry)");
+        // The GOT slot 0x10ff0 resolves to main (0x714) via the RELATIVE map.
+        let rel = relative_targets(&file);
+        assert_eq!(rel.get(&0x10ff0).copied(), Some(0x714), "RELATIVE @0x10ff0 → main");
+        let main = libc_start_main_target(&file, file.entry());
+        assert_eq!(main, Some(0x714), "aarch64 idiom should recover main at 0x714");
+    }
+
+    /// ARM/Thumb: `_start` (0x3dd, Thumb @0x3dc) loads `main` (0x4d8) into `r0`
+    /// GOT-relatively (`.got`@0x10fd0 + 0x28 = slot 0x10ff8, whose `R_ARM_RELATIVE`
+    /// in-place value is 0x4d9 — main with the Thumb LSB set, masked to 0x4d8).
+    #[test]
+    fn libc_start_main_idiom_arm() {
+        let bytes = fixture("entrymain_arm");
+        let file = object::File::parse(bytes.as_slice()).expect("parse entrymain_arm");
+        assert_eq!(file.architecture(), object::Architecture::Arm);
+        assert_eq!(file.entry(), 0x3dd, "arm _start (Thumb, LSB set)");
+        // The RELATIVE map carries the GOT slot 0x10ff8 → 0x4d9 (Thumb LSB).
+        let rel = relative_targets(&file);
+        assert_eq!(rel.get(&0x10ff8).copied(), Some(0x4d9), "RELATIVE @0x10ff8 → main|1");
+        let main = libc_start_main_target(&file, file.entry());
+        assert_eq!(main, Some(0x4d8), "arm idiom should recover main at 0x4d8 (LSB masked)");
+    }
+
+    /// RISC-V: `_start` (0x550) loads `main` (0x608) into `a0` via
+    /// `auipc a0,0x2 ; ld a0,-1318(a0)` → GOT slot 0x2030, whose
+    /// `R_RISCV_RELATIVE` addend is 0x608.
+    #[test]
+    fn libc_start_main_idiom_riscv() {
+        let bytes = fixture("entrymain_riscv64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse entrymain_riscv64");
+        assert_eq!(file.architecture(), object::Architecture::Riscv64);
+        assert_eq!(file.entry(), 0x550, "riscv _start (e_entry)");
+        let rel = relative_targets(&file);
+        assert_eq!(rel.get(&0x2030).copied(), Some(0x608), "RELATIVE @0x2030 → main");
+        let main = libc_start_main_target(&file, file.entry());
+        assert_eq!(main, Some(0x608), "riscv idiom should recover main at 0x608");
+    }
+
+    /// The fused core proves oracle 4 SPECIFICALLY contributes `main` on each
+    /// arch: `main`'s VMA is in `collect_entries`, is in an executable section,
+    /// and is NOT covered by any pre-existing funcsym (the discovery property).
+    #[test]
+    fn collect_entries_crossarch_includes_main() {
+        // `want_entry` is the raw `e_entry` oracle-1 emits — ARM's is Thumb-odd
+        // (0x3dd); the `main` recovery still uses the even bytes.
+        for (name, want_entry, want_main) in [
+            ("entrymain_aarch64", 0x600u64, 0x714u64),
+            ("entrymain_arm", 0x3dd, 0x4d8),
+            ("entrymain_riscv64", 0x550, 0x608),
+        ] {
+            let bytes = fixture(name);
+            let file = object::File::parse(bytes.as_slice()).expect("parse fixture");
+            let entries = collect_entries(&file);
+            let funcsyms = existing_function_addrs(&file);
+            // main is genuinely never named in this stripped, hidden-visibility build.
+            assert!(
+                funcsyms.binary_search(&want_main).is_err(),
+                "{name}: main {want_main:#x} unexpectedly already a funcsym"
+            );
+            assert!(
+                entries.contains(&want_main),
+                "{name}: oracle 4 should contribute main {want_main:#x}, got {entries:#x?}"
+            );
+            // The ELF entry (_start) is also discovered (oracle 1), at the even VMA.
+            assert!(
+                entries.contains(&want_entry),
+                "{name}: _start {want_entry:#x} should be discovered, got {entries:#x?}"
+            );
+            let execs = executable_sections(&file);
+            assert!(
+                in_executable_section(&execs, want_main),
+                "{name}: main {want_main:#x} must be inside an exec section"
+            );
+        }
     }
 
     // -- The fused core: collect_entries (stripped_dynamic, the headline) -----
