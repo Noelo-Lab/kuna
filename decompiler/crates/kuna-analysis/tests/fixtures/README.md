@@ -21,6 +21,7 @@ real ELF parser.
 | `dwarf_stripped_x86_64` | non-PIE x86-64, **`.symtab`/`.dynsym` FUNC names removed but `.debug_*` kept** | DWARF recovery (`s1_dwarf`): names + typed signatures of `add_values`/`compute`/`main` come **only** from `.debug_info` (the funcsym stream has none) |
 | `switchtab_x86_64` | non-PIE x86-64, dense `switch(x){0..7}` | address/jump tables (`addrtable`): an absolute 8-byte jump table in `.rodata` at vma `0x402008` (`jmp *0x402008(,%rdi,8)`) |
 | `rust_hello_x86_64` | tiny `#![no_std]` rustc PIE (x86-64), **not stripped** | source-language detection (`s1_sourcelang`): `.comment` carries `rustc version 1.90.0 …` (the faithful `ElfRustSourceLanguage` comment path) AND `.symtab` carries a Rust-mangled symbol `_ZN5nostd1m12rusty_helper17h…E` (the legacy `_ZN…17h<hex>E` heuristic) — both detection paths fire |
+| `arm_thumb_le32.o` | bare ARM Thumb **`.o`** (ET_REL, EABI5, LE) — **not linked** (no PT_LOAD; see note) | ARM/Thumb decode-mode markers (`s1_loader::arm_markers`): `.symtab` carries the `$t.0` Thumb mapping symbol at `.text+0x0` AND STT_FUNC syms `thumb_add`@`0x1` / `_start`@`0x15` (LSB-set, the Thumb odd-address convention). The pass emits a `TMode=1` paint for `$t.0` (at `0x0`) and for each LSB-set FUNC normalized to even (`0x0`, `0x14`) |
 
 Provenance: `fauxware`, `cet_pie_x86_64`, `stripped_dynamic_x86_64` copied
 verbatim from `bs-artifacts/binaries/` (`fauxware`, `debug_symbol`,
@@ -43,3 +44,15 @@ where `tiny.rs` defines a `#[panic_handler]`, a `#[no_mangle] black_box`, a
 in (each well under 32 KB) so the gates are hermetic and reproducible. **Pin
 load-bearing VMAs as test consts** (read via `objdump`/`readelf` at build time) —
 addresses shift across toolchains.
+
+`arm_thumb_le32.o` (904 bytes, source vendored alongside as `arm_thumb_le32.c`):
+built with `clang --target=arm-linux-gnueabihf -mthumb -nostdlib -c
+arm_thumb_le32.c -o arm_thumb_le32.o`. The two `__attribute__((target("thumb")))`
+functions force Thumb codegen so the assembler lays the `$t` mapping symbol; the
+FUNC symbols carry the LSB-set st_value Thumb convention. **It is a bare ET_REL
+`.o`, NOT a linked executable** — this build host has no ARM linker (no lld;
+gold/mold are x86-only builds; system `ld` rejects `armelf_linux_eabi`). The
+symbol scan unit-tests against the `.o` (which `object` parses fine); the decode
+**e2e** (`kuna decompile arm_thumb… main` producing valid Thumb-decoded C) is a
+documented follow-up that needs a LINKED ARM exe (ET_EXEC/ET_DYN with PT_LOAD —
+`ObjectLoadImage` reads only segments), built off-host.

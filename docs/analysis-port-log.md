@@ -143,7 +143,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `sourcelang` | Source-language / compiler detection (`SourceLanguageAnalyzer`) | easy | `s1_sourcelang::detect_compiler`: `rust_hello` ⇒ `Rustc` (`.comment` + `_ZN…17h…E`), `fauxware`/`cpp_mangled` ⇒ `Gcc` (Increment 7) |
 | ✅ | `s1-rust-golang-noreturn` | Rust no-return list selection (`noReturnFunctionConstraints.xml` `rustc` arm) | easy | `RustFunctionsThatDoNotReturn` vendored + parsed only when compiler==Rustc; `ZN4core9panicking5panic17h*` flagged for Rust, not C ELF (Increment 7) |
 | 🟡 | `ruststring` | Rust str-slice split (`RustStringAnalyzer`) | med | **detection ported** (shares `s1_sourcelang`); the **split is infeasible-at-tier** (needs post-disasm interior refs + a populated ReferenceManager — same wall as `FindNoReturnFunctionsAnalyzer`). Documented, no split code (Increment 7) |
-| ⬜ | `arm-mips-markers` | ARM `$t`/MIPS `$gp` mapping symbols | med | (needs ARM/MIPS fixture, not vendored) |
+| 🟡 | `arm-mips-markers` | ARM `$t`/`$a`+STT_FUNC-LSB → `TMode` (`ARM_ElfExtension`/`ArmSymbolAnalyzer`); MIPS `$gp` | hard | **ARM half done** (Increment 8): `arm_thumb_le32.o` → `TMode=1` for `$t.0`@`0x0` + STT_FUNC LSB normalized to `0x0`/`0x14`; commit-arm paints `TMode` via `set_variable`, no-ops on non-ARM (fauxware byte-identical). **`.o`-unit-only** (no ARM linker on host → decode e2e + Thumb-FUNC re-home deferred); **MIPS `$gp`/`ISA_MODE` out of scope** (tracked-register, not decode-mode) |
 | 🟡 | `addrtable` | Absolute address-table discovery (`AddressTableAnalyzer`) | med | implemented + tested but **disabled by default** (Ghidra `setDefaultEnablement(false)` + false-positive risk); scanner finds the 8-entry table @ `0x402008` in `switchtab_x86_64`. See Increment 4 |
 | 🟡 | `switch-recovery` | `DecompilerSwitchAnalyzer` | — | the engine **is** this (S2 jump-tables ported) |
 | 🟡 | `const-prop` | `ConstantPropagationAnalyzer` | — | engine does its own SSA const-prop (S3) |
@@ -658,12 +658,92 @@ than this minimal no_std fixture.)
   Rust-gating, 2 `passes` selection guards). `make test` **PARITY OK** (675/675);
   `make test-stages` **PARITY OK** (158/158); `make rust-test` green.
 
+### Increment 8 — ARM/Thumb mapping-symbol decode-mode painting (`arch-markers`) ✅
+
+Port of the **ARM/Thumb decode-mode (`TMode`) painting** — the first analysis-tier fact
+that touches the engine's *processor context* (not its symbol/type tables). Two distinct
+upstream mechanisms, both ported as additive `ContextPaint` facts:
+
+- **ARM mapping symbols** (`$t`/`$a`/`$d`, the ARM ELF ABI). `$t`/`$t.` marks the start of a
+  Thumb run, `$a`/`$a.` an ARM (A32) run. Faithful to
+  `Ghidra/Processors/ARM/.../elf/extend/ARM_ElfExtension.java:166-196`
+  `evaluateElfSymbol` (`$t` → `programContext.setValue(TMode, addr, addr, 1)`; `$a` →
+  `TMode=0`). Matched by **name**, regardless of `st_type` (the ABI records them as
+  `STT_NOTYPE` local symbols).
+- **The STT_FUNC odd-address (LSB) convention**: a Thumb function symbol is recorded at
+  `entry|1`. Faithful to `ARM_ElfExtension.java:197-204` (the STT_FUNC fallback) +
+  `creatingFunction:117-141` + the later `ArmSymbolAnalyzer.java:48-100` — mask the LSB and
+  set `TMode=1` at the (even) entry. Emits `ContextPaint{addr: value & !1, "TMode", 1}`.
+
+**New module** [`s1_loader/arm_markers.rs`](../decompiler/crates/kuna-analysis/src/s1_loader/arm_markers.rs)
+(sibling of `noreturn.rs`), `AnalysisPass` id `arm_markers`, stage S1, registered always-on
+in `passes_for` after `EntryDiscoveryPass`. **Gated on ARM** (`object::Architecture::Arm`),
+the faithful analog of `ArmSymbolAnalyzer.canAnalyze:172-177` (processor==ARM &&
+getRegister("TMode")!=null): on every other language the pass returns an empty output.
+
+**New fact kind + commit arm.** `pass.rs` gains `struct ContextPaint { addr, end, var, value }`
++ `pub context_paints: Vec<ContextPaint>` on `AnalysisOutput` (+ `merge`). `engine.rs`
+`commit_analysis_output` gains **step 6**: for each paint, resolve the code-space `Address`
+and call `prog.arch().with_context_db_mut(|db| db.set_variable(var, &addr, value))` (or
+`set_variable_region` when `end` is `Some`) — the exact analog of Ghidra's
+`programContext.setValue(TMode, …)` (the same API the console `set context` command drives,
+`ifacedecomp.rs:1933-1948`). `TMode` is registered by the ARM `.pspec` (`ARMt.pspec`
+`<context_data><set name="TMode" val="0">`, applied by `parse_processor_config`) so painting
+1 = Thumb. **Timing is correct**: the commit runs inside `bootstrap_from_elf` before any
+`load function` decode (kuna decodes on demand).
+
+**CRITICAL gate-safety** (the regression risk the plan flags). `set_variable` returns `Err`
+when `TMode` is not registered (every non-ARM language). The commit arm **swallows the Err**
+(`let _ = …`) — a faithful no-op mirroring `canAnalyze == false`. This is belt-and-suspenders
+on top of the pass-level ARM gate (so `out.context_paints` is already empty for a non-ARM
+binary). Verified non-regressing: `make test` **675/675 PARITY OK**, `make test-stages`
+**158/158 PARITY OK**, `make rust-test` green — all untouched (the paint only fires on the
+real-ELF ARM path; the XML datatest gates never run passes), and a non-ARM (x86-64)
+`fauxware main` `decomp_dbg` decompile is **byte-identical** pre/post change (verified by
+diffing against a merge-base build).
+
+**Fixture: `.o`-unit-only (the e2e is a documented follow-up).** Built
+`arm_thumb_le32.o` (904 bytes) with `clang --target=arm-linux-gnueabihf -mthumb -nostdlib
+-c` (one `__attribute__((target("thumb")))` `thumb_add` + a `_start` caller; source vendored
+at `tests/fixtures/arm_thumb_le32.c`). Its `.symtab` carries the `$t.0` mapping symbol at
+`0x0` and STT_FUNC syms `thumb_add@0x1`, `_start@0x15` (LSB set). **No linked ARM exe** — this
+host has NO ARM linker (no lld; gold/mold are x86-only builds; system `ld` rejects
+`armelf_linux_eabi`), so the decode **e2e** (`kuna decompile arm_thumb… main` producing valid
+Thumb-decoded C) is a documented follow-up requiring an off-host LINKED ET_EXEC/ET_DYN with
+PT_LOAD (`ObjectLoadImage` reads only segments). The **symbol-scan unit test** is the
+merge-blocking gate and passes: the bare `.o` (ET_REL) parses fine and the pass emits
+`TMode=1` for `$t.0` (at `0x0`) and for each LSB-set FUNC normalized to even (`0x0`, `0x14`).
+A non-ARM object (fauxware) emits zero paints (`non_arm_object_emits_nothing`).
+
+**LOSS / divergences:**
+- **`$d` data runs are a no-op.** Ghidra's `$d` branch lays *undefined data* (listing markup
+  protecting bytes from disassembly); kuna has no `createUndefinedData` at this tier and the
+  decompiler payoff is negligible. No fact emitted for `$d`/`$b`. Documented LOSS.
+- **Thumb-FUNC address shift is paint-only (v1).** Ghidra *moves* a Thumb `FUNC` from
+  `entry|1` to `entry` (`moveFunction`); kuna's `read_loader_symbols` installs it at the odd
+  address. v1 emits only the `TMode=1` paint at the normalized even address (re-homing the
+  function symbol risks double-symbols) — the function-address normalization is a follow-up.
+- **MIPS `$gp` / MIPS16 `ISA_MODE` out of scope.** MIPS `$gp` is not a decode-mode paint at
+  all — it is a *tracked register value* set per function entry
+  (`MipsAddressAnalyzer.flowConstants`, sourced from `_mips_gp_value`), needing
+  `create_set`/`get_tracked_default` at per-function granularity + a MIPS fixture (separate
+  task). MIPS16 `ISA_MODE` is the exact `$t`/STT_FUNC-LSB analog
+  (`MIPS_ElfExtension.applyIsaMode`) and could be added here with the identical mechanism
+  (var `"ISA_MODE"`) given a MIPS16 fixture. Documented seam in `arm_markers.rs`.
+
+- **Tests:** `kuna-analysis` 65 tests pass (3 new `arm_markers`: name classification, the
+  Thumb-fact scan over the `.o`, the non-ARM-emits-nothing gate); `kuna-console` green.
+  `make test` **PARITY OK** (675/675); `make test-stages` **PARITY OK** (158/158);
+  `make rust-test` green.
+
 ### Next candidates (Wave 2/3 — engine seams, deferred)
 
-Wave 1 is complete (Increments 4–7: addrtable, entry-disc/eh-frame, DWARF, source-lang/Rust).
+Wave 1 is complete (Increments 4–7: addrtable, entry-disc/eh-frame, DWARF, source-lang/Rust);
+Increment 8 added the first **processor-context** fact (ARM/Thumb `TMode`).
 What remains, per [`analysis-port-plan.md`](analysis-port-plan.md), all engine-touching:
 the **printer change** to let `s1-strings` render literals (re-enables it), the **per-run
 `--option` gating** of all passes (deferred conflict #4), the **no-return × demangle**
-cross-pass seam fix, the **DWARF subtask-3** stack-local map (engine change),
-**arch-markers** (ARM Thumb decode mode), **callfixup**, and **format-string** varargs
+cross-pass seam fix, the **DWARF subtask-3** stack-local map (engine change), the
+**arch-markers e2e + Thumb-FUNC re-home** follow-up (needs a LINKED ARM fixture) and its
+**MIPS `$gp`/`ISA_MODE`** sibling, **callfixup**, and **format-string** varargs
 typing. Inherited/out-of-scope items need no work (see table + inventory).

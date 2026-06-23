@@ -667,6 +667,34 @@ fn commit_analysis_output(
         prog.arch_mut().set_function_prototype_pieces(&name, pieces);
     }
 
+    // 6. Processor-context decode-mode paints (the kuna analog of ARM's
+    //    `ARM_ElfExtension`/`ArmSymbolAnalyzer` `programContext.setValue(TMode,…)`).
+    //    Paint each over the engine's ContextDatabase BEFORE any instruction is
+    //    decoded (we are still inside bootstrap_from_elf, before any `load
+    //    function` decode — the timing the ARM Thumb mode requires). `end: None`
+    //    is the single-address point set (paint-to-next-change-point, Ghidra's
+    //    per-symbol `setValue(v,a,a,val)` shape); `Some(end)` paints the explicit
+    //    `[addr, end)` range (the `$t`-run form).
+    //
+    //    CRITICAL gate-safety: `set_variable`/`set_variable_region` return Err when
+    //    the named context variable is NOT registered by the active language (e.g.
+    //    `TMode` on x86-64). That MUST be a SILENT no-op — otherwise every non-ARM
+    //    ELF decompile would regress. The producing pass already gates on the
+    //    object being ARM (so on a non-ARM binary `out.context_paints` is empty),
+    //    and this swallow is the belt-and-suspenders second guard.
+    for paint in &out.context_paints {
+        let begin = Address::new(Rc::clone(code_space), paint.addr);
+        // Drop the Result: an unregistered context variable (non-ARM language) is
+        // a faithful no-op, mirroring ArmSymbolAnalyzer.canAnalyze == false.
+        let _ = prog.arch().with_context_db_mut(|db| match paint.end {
+            Some(end) => {
+                let endad = Address::new(Rc::clone(code_space), end);
+                db.set_variable_region(paint.var.as_bytes(), &begin, &endad, paint.value)
+            }
+            None => db.set_variable(paint.var.as_bytes(), &begin, paint.value),
+        });
+    }
+
     Ok(())
 }
 

@@ -62,6 +62,16 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // idempotent against the funcsym stream). After LibProtoPass so prototypes
         // are seeded first. Always-on, like noreturn/libproto.
         Box::new(crate::s1_entry::EntryDiscoveryPass),
+        // S1 ARM/Thumb decode-mode markers: paint the SLEIGH `TMode` context
+        // variable from ARM mapping symbols (`$t`/`$a`) + the STT_FUNC odd-address
+        // (LSB=1 ⇒ Thumb) convention, so Thumb code decodes as Thumb. The kuna
+        // analog of ARM's `ARM_ElfExtension.evaluateElfSymbol` + the later
+        // `ArmSymbolAnalyzer`. ARM-only: the pass returns an empty output on every
+        // other language (its `canAnalyze == processor==ARM` gate), and the
+        // commit seam additionally swallows a "TMode not registered" error, so
+        // this is a strict no-op for every non-ARM binary (the parity gates are
+        // structurally untouched). Always-on, like noreturn/libproto/entry.
+        Box::new(crate::s1_loader::arm_markers::ArmMarkerPass),
         // S1 DWARF: recover function/global names and TYPED function signatures
         // from `.debug_*` sections (the kuna analog of Ghidra's `DWARFAnalyzer`).
         // Registered AFTER LibProtoPass so for any name both emit, the DWARF

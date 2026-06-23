@@ -64,6 +64,33 @@ pub struct StringFact {
     pub len: u32,
 }
 
+/// A processor-context decode-mode paint: set context variable `var` to `value`
+/// starting at `addr` (up to the next change point, or — if `end` is set — over
+/// the explicit `[addr, end)` range). Produced by [`crate::s1_loader::arm_markers`]
+/// (the kuna analog of ARM's `ARM_ElfExtension`/`ArmSymbolAnalyzer` `TMode`
+/// painting) and applied by the console's `commit_analysis_output` via the
+/// engine's `ContextDatabase` (`set_variable` / `set_variable_region`, the exact
+/// analog of Ghidra's `programContext.setValue(TMode, …)`).
+///
+/// `var` is a `&'static str` because the only producer paints SLEIGH-defined
+/// context registers known at compile time (`"TMode"`); the commit seam swallows
+/// a "variable not registered" error so painting a var the active language does
+/// not define (e.g. `TMode` on x86-64) is a faithful no-op.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContextPaint {
+    /// Virtual address the paint starts at (already normalized — e.g. the Thumb
+    /// FUNC LSB is masked off before this is emitted).
+    pub addr: u64,
+    /// Optional explicit end (exclusive) of the painted range. `None` paints from
+    /// `addr` to the next change point (Ghidra's per-symbol `setValue(v,a,a,val)`
+    /// point-set shape); `Some(end)` paints the bounded range `[addr, end)`.
+    pub end: Option<u64>,
+    /// The SLEIGH context variable name to paint (e.g. `"TMode"`).
+    pub var: &'static str,
+    /// The (unshifted) value to set.
+    pub value: u32,
+}
+
 /// The facts one analysis contributes. Every field is additive and may be empty;
 /// merging two outputs is concatenation (the driver dedups by address).
 #[derive(Default, Debug)]
@@ -84,6 +111,13 @@ pub struct AnalysisOutput {
     /// copies the callee signature and the argument constants get typed (e.g.
     /// `puts(char*)` types `0x400915` as `char*`, rendering the string literal).
     pub prototypes: Vec<kuna_decomp::fspec::PrototypePieces>,
+    /// Processor-context decode-mode paints (the kuna analog of ARM's
+    /// `ARM_ElfExtension`/`ArmSymbolAnalyzer` `programContext.setValue(TMode,…)`).
+    /// Each sets a SLEIGH context variable over an address range; the commit seam
+    /// applies them to the engine's `ContextDatabase` BEFORE any instruction is
+    /// decoded, steering ARM/Thumb instruction decode. Produced only on the ARM
+    /// path (see [`crate::s1_loader::arm_markers`]); empty otherwise.
+    pub context_paints: Vec<ContextPaint>,
 }
 
 impl AnalysisOutput {
@@ -95,6 +129,7 @@ impl AnalysisOutput {
         self.readonly.extend(other.readonly);
         self.strings.extend(other.strings);
         self.prototypes.extend(other.prototypes);
+        self.context_paints.extend(other.context_paints);
     }
 }
 
