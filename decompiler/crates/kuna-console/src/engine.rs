@@ -280,6 +280,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "dwarf" => arch.analysis_dwarf,
         "callfixup" => arch.analysis_callfixup,
         "addrtable" => arch.analysis_addrtable,
+        "listing" => arch.analysis_listing,
         _ => true,
     }
 }

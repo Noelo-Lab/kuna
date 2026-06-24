@@ -172,7 +172,7 @@ pub fn run_default_analyses(
     // pass list (the kuna analog of `SourceLanguageAnalyzer` running early and
     // gating the language-specific analyzers).
     let compiler = crate::s1_sourcelang::detect_compiler(&file);
-    let ctx = AnalysisCtx { file: &file, image, arch };
+    let ctx = AnalysisCtx { file: &file, image, arch, listing: None };
     run_analyses(&ctx, &passes_for(compiler))
 }
 
@@ -194,7 +194,7 @@ pub fn run_default_analyses_per_pass(
         return Vec::new();
     };
     let compiler = crate::s1_sourcelang::detect_compiler(&file);
-    let ctx = AnalysisCtx { file: &file, image, arch };
+    let ctx = AnalysisCtx { file: &file, image, arch, listing: None };
     passes_for(compiler)
         .iter()
         .map(|pass| (pass.id(), pass.run(&ctx)))
