@@ -133,7 +133,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 
 | St | Pass id | Analysis (Ghidra) | Diff | Testcase |
 |----|---------|-------------------|------|----------|
-| ✅ | `plt-got` | PLT/GOT import names (`ElfDefaultGotPltMarkup`) | — | x86: fauxware `0x400510→puts`; **AArch64 e2e (Increment 19)**: linked `plt_aarch64`, `main` `bl 0x4004d0`/`0x4004e0` render `puts("hello")`/`printf("%d\n",…)` (the `adrp x16;ldr x17` veneer decode) |
+| ✅ | `plt-got` | PLT/GOT import names (`ElfDefaultGotPltMarkup`) | — | x86: fauxware `0x400510→puts`; **AArch64 e2e (Increment 19)**: linked `plt_aarch64`, `main` `bl 0x4004d0`/`0x4004e0` render `puts("hello")`/`printf("%d\n",…)` (the `adrp x16;ldr x17` veneer decode); RISC-V (Increment 20); ARM (Increment 18); **SPARC e2e (Increment 24)**: linked `plt_sparc64`, `main` calls `0x2021c0`/`0x2021a0` render `puts("hello")`/`printf("%d\n",…)` (the `sethi %g1` veneer; SPARC's JMP_SLOT `r_offset` IS the stub addr); **PPC64 ELFv2 e2e (Increment 26)**: linked `plt_ppc64le`, `main` `bl 0x680`/`0x660` render `puts(...)`/`printf(...)` (the `.text`-synthesized `addis r12,r2,@ha; ld r12,@l` TOC-relative stub decode); **MIPS o32 e2e (Increment 27)**: linked `plt_mips32`, `main`'s `$gp`-relative GOT calls render `puts(...)`/`printf(...)` (no `.plt`/`R_MIPS_JUMP_SLOT`; the dynamic-symbol GOT layout `DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`/`DT_PLTGOT` names the `.MIPS.stubs` stub) |
 | ✅ | `symtab-dynsym` | `.symtab`/`.dynsym` function reader | — | `fixture_funcsyms` |
 | ✅ | `foundation` | generic `AnalysisOutput` commit seam | med | bootstrap_from_elf commits with no funcsym regression |
 | ✅ | `noreturn_known` | No-return known list (`NoReturnFunctionAnalyzer`) | easy | fauxware `rejected`: no dead code after `exit(1)` |
@@ -141,7 +141,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ✅ | `s1-libproto` | Library prototype seeding (`ApplyDataArchiveAnalyzer`) | med | fauxware `main`: `puts("Username: ")`, `puts("Password: ")`; `rejected`: `printf("Go away!")` |
 | ✅ | `s1-strings` | String-literal detection (`StringsAnalyzer`) | med | ENABLED by default since the printer change — its planted `char[N]` symbol coexists with the literal: the printer renders a pointer to a readonly char-printable array symbol as the literal (Ghidra behavior). fauxware `main`: `puts("Username: ")`/`puts("Password: ")` with `s_400915` registered. See Increment 12 |
 | ✅ | `s1-dwarf` | DWARF names+types (`DWARFAnalyzer`) via gimli | hard | dwarf_stripped: `add_values`/`compute`/`main` recovered (no .symtab); cet_pie: `elaborate_debug_symbol`'s param typed `char *` (subtasks 1+2; **subtask-3 stack-locals deferred**, engine change) |
-| ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5); dynamic INIT/FINI elements named `_INIT_<i>`/`_FINI_<i>`/`_DT_INIT` per `ElfProgramBuilder` (Increment 22) |
+| ✅ | `s1-entry-disc` | Function entry discovery (`EntryPointAnalyzer`/`FunctionStartAnalyzer`) | hard | stripped_dynamic: `sub_1405` (main) decompiles without `--addr` (Increment 5); dynamic INIT/FINI elements named `_INIT_<i>`/`_FINI_<i>`/`_DT_INIT` per `ElfProgramBuilder` (Increment 22); cross-arch `_start`→`main` idiom for AArch64/ARM/RISC-V — stripped `main` recovered + decompiled, ARM via the discovery-derived Thumb `TMode=1` paint (Increment 23) |
 | ✅ | `s1-eh-frame` | `.eh_frame` FDE starts (entry oracle, `GccExceptionAnalyzer`) | hard | fauxware: FDE starts ⊆ discovered entries (7 starts incl. `_start`/`main`) (Increment 5) |
 | ✅ | `sourcelang` | Source-language / compiler detection (`SourceLanguageAnalyzer`) | easy | `s1_sourcelang::detect_compiler`: `rust_hello` ⇒ `Rustc` (`.comment` + `_ZN…17h…E`), `fauxware`/`cpp_mangled` ⇒ `Gcc` (Increment 7) |
 | ✅ | `s1-rust-golang-noreturn` | Rust + **Go** no-return list selection (`noReturnFunctionConstraints.xml` `rustc` + `golang` arms) | easy | `RustFunctionsThatDoNotReturn` (Increment 7) **and** `GolangFunctionsThatDoNotReturn` (Increment 14) vendored + parsed per detected compiler; `ZN4core9panicking5panic17h*` flagged for Rust-only, `runtime.gopanic`/`runtime.throw`/`runtime.goexit.abi0` for Go-only, neither for a C ELF |
@@ -1574,25 +1574,80 @@ stack locals (14), Golang no-return + completeness sweep (15), format-string-B v
 confirms **every feasible-at-tier, decompiler-relevant ELF analyzer is ported** (ELF matches all
 three `noReturnFunctionConstraints.xml` lists; the per-compiler/per-arch passes cover the rest).
 
-Only one item remains, **non-engine / off-host**:
-- **ARM decode e2e** — blocked off-host: this build host has no ARM linker (no lld/aarch64-ld/
-  arm-ld), so a LINKED ARM exe can't be built in-env. The `s1_loader::arm_markers` pass + its
-  `.o` unit test are done; the full decode e2e needs an off-host-built linked ARM fixture.
-
-The `_INIT_<i>`/`_FINI_<i>` array-element naming follow-up flagged by the Increment 15 sweep is
-**done — Increment 22** (an additive `entry_names` overlay, no reshape of the `entries` fact).
-Only one item remains, **non-engine / cosmetic**:
-- **ARM decode e2e** — ✅ **done in-container** (Increment 18). The earlier off-host block (no
-  ARM linker on the build host) is lifted by the `kuna-dev` container's `arm-linux-gnueabihf-gcc`:
-  the LINKED `arm_thumb_linked_le32` ET_EXEC fixture Thumb-decodes `compute` (`a0 * 3 + 7`)
-  through the full pipeline (`verify_arm_thumb_decode.rs`), proving the `arm_markers` `TMode`
-  paint + Thumb-FUNC re-home drive a correct decode — no wiring fix was needed.
-- **`_INIT_<i>`/`_FINI_<i>` array-element naming** — cosmetic: `s1_entry` already *discovers*
-  those addresses; only the Ghidra-style names differ (vs `sub_<addr>`), and delivering them
-  needs reshaping the `entries` fact. Low payoff, documented follow-up.
+The deferred frontier is now closed:
+- **ARM decode e2e** — ✅ **done in-container** (Increment 18, reinforced by Increment 23). The
+  earlier off-host block (no ARM linker on the build host) is lifted by the `kuna-dev`
+  container's `arm-linux-gnueabihf-gcc`: the LINKED `arm_thumb_linked_le32` ET_EXEC fixture
+  Thumb-decodes `compute` (`a0 * 3 + 7`) through the full pipeline (`verify_arm_thumb_decode.rs`),
+  proving the `arm_markers` `TMode` paint + Thumb-FUNC re-home drive a correct decode — no wiring
+  fix was needed. Increment 23 additionally exercises the linked ARM/Thumb decode through the
+  cross-arch `_start`→`main` path (`entrymain_arm`, `verify_crossarch_entry_main.rs`).
+- **`_INIT_<i>`/`_FINI_<i>` array-element naming** — ✅ **done (Increment 22)**: the array-element
+  naming follow-up flagged by the Increment 15 sweep, delivered as an additive `entry_names`
+  overlay (no reshape of the `entries` fact).
 
 Everything else is inherited by the engine or genuinely out-of-scope for an ELF decompiler
 (non-ELF formats, Go pclntab, FID — see the table + inventory).
+
+### Increment 23 — cross-arch `_start`→`main` idiom (AArch64/ARM/RISC-V) ✅
+
+**`s1-entry-disc` oracle 4** — extend the `_start`→`main` libc-start idiom (previously x86-64-only,
+a documented LOSS) to **AArch64, ARM/Thumb, and RISC-V**, so a STRIPPED non-x86 PIE (where
+`.eh_frame` may be absent or not cover `main`) still recovers `main` without a symbol. Same
+disassembly-free, targeted-byte-decode style; gated per arch on `file.architecture()`; the
+resolved VMA is validated inside an executable section before emitting; additive to
+`AnalysisOutput.entries` (real-ELF path only — rides the always-on `entry_disc` pass, no new flag).
+
+- **The shared modern-PIE shape.** Unlike x86-64 (which carries `main` as a PC-relative
+  *immediate* in `lea rdi,[rip+disp]`), the PIE crt1 of all three other arches loads `main`
+  *indirectly* from a GOT slot bearing an `R_*_RELATIVE` relocation whose **target is `main`'s
+  VMA**. So the cross-arch decode is two steps: (1) byte-decode the arg0-setup in `_start` to the
+  GOT-slot VMA, (2) resolve it through a `got_slot → relative_target` map (`relative_targets`):
+  the RELA `addend` (AArch64/RISC-V) or the in-place GOT word for ARM REL (`has_implicit_addend`).
+  - **AArch64** (`main` in x0): `adrp x0,page ; ldr x0,[x0,#lo12]` → slot
+    `(adrp&!0xfff)+page_off+lo12` (the A64 `adrp`/`ldr` decode mirrors `elf_plt::decode_aarch64`,
+    keyed to x0). Fixture: slot `0x10ff0` → `main`@`0x714`.
+  - **RISC-V** (`main` in a0): `auipc a0,hi20 ; ld a0,lo12(a0)` → slot `auipc+((hi20<<12)+sext(lo12))`
+    (mirrors `elf_plt::decode_riscv`, keyed to a0=x10; scanned at 2-byte steps for the RVC mix).
+    Fixture: slot `0x2030` → `main`@`0x608`.
+  - **ARM/Thumb** (`main` in r0): GOT-relative `ldr r0,[GOT_base,r0]`. Rather than simulate the
+    fragile two-load+add GOT-base computation, use the invariant that the GOT base **is** the
+    `.got` section address: for each small PC-relative literal-pool word in the `_start` window,
+    candidate slot `= .got + off`; if that slot's RELATIVE target lands in an exec section it is
+    `main` (the RELATIVE-map + exec-section cross-check is self-validating — a unique winner only).
+    The ARM `main` pointer carries the **Thumb mode bit** in bit 0 (`main|1`); masked to `0x4d8`
+    for the entry, AND the discovery pass emits a `TMode=1` `ContextPaint` at `0x4d8` (the analog
+    of `arm_markers`' STT_FUNC-LSB → `TMode=1`, derived from the GOT pointer LSB — a stripped
+    binary has no `$t` mapping symbol). Without that paint the engine decodes the Thumb body as
+    A32 and emits a degenerate `void {return;}` stub.
+
+- **Fixtures (vendored, <7 KB each, shared source `entrymain.c`).** `entrymain_{aarch64,arm,riscv64}`,
+  built in `kuna-dev` (`<triple>-gcc -O0 -fno-asynchronous-unwind-tables -fno-unwind-tables
+  -fvisibility=hidden … && strip`). Two non-obvious flags are load-bearing: `-fvisibility=hidden`
+  (without it `main` is a `.dynsym` GLOBAL FUNC — strip removes it on AArch64/ARM but NOT on
+  RISC-V, where `.dynsym` survives strip, so oracle 4 couldn't be shown to contribute it);
+  `-fno-*-unwind-tables` isolates oracle 4 from the FDE oracle (AArch64/RISC-V keep crt1 FDEs but
+  none cover `main`; ARM's `.eh_frame` is empty). RISC-V needs `libc6-dev-riscv64-cross` installed
+  in-container first (documented in the fixtures README provenance).
+
+- **Tests.** `kuna-analysis` +4 unit tests (`libc_start_main_idiom_{aarch64,arm,riscv}` — each
+  pins the GOT slot + RELATIVE target + recovered `main`; `collect_entries_crossarch_includes_main`
+  — proves oracle 4 specifically contributes `main` for each arch, `main` is non-funcsym + in an
+  exec section). e2e `kuna-console/tests/verify_crossarch_entry_main.rs` (+3, actually run — not
+  skipped): bootstrap each stripped fixture, commit analysis, `load function sub_<main>` →
+  `decompile` → `print C` with NO `--addr` → a real `return a0` body. The x86-64 oracle-4 path
+  (`libc_start_main_idiom_stripped`, `verify_s1_entry`) is unchanged (now dispatched through the
+  per-arch `libc_start_main_target`).
+
+- **Coverage / LOSS.** All three target arches succeed end-to-end (stripped `main` recovered AND
+  decompiled). MIPS/PPC `_start` idioms remain a follow-up (those arches no-op). Oracle 5
+  (prologue patterns) stays x86-64-only. Oracles 1–3 are arch-independent.
+
+  | arch | `_start` | idiom | GOT slot | `main` | e2e body |
+  |---|---|---|---|---|---|
+  | AArch64 | `0x600` | `adrp x0;ldr x0,[x0,#4080]` | `0x10ff0` (RELA addend) | `0x714` | `unsigned int sub_714(unsigned int a0){return a0;}` |
+  | ARM/Thumb | `0x3dd` | `.got`+`0x28` GOT-rel `ldr r0` + `TMode=1` | `0x10ff8` (REL in-place) | `0x4d8` | `unsigned int sub_4d8(unsigned int a0){return a0;}` |
+  | RISC-V | `0x550` | `auipc a0;ld a0,-1318(a0)` | `0x2030` (RELA addend) | `0x608` | `int8 sub_608(int4 a0){return (int8)a0;}` |
 
 ### Increment 21 — MIPS16 ISA_MODE decode-mode painting ✅
 
@@ -1727,6 +1782,77 @@ unchanged), so the XML datatest oracle is structurally untouched.
 - **Tests:** `kuna-console` +1 (`verify_arm_thumb_decode::arm_thumb_compute_decodes_in_thumb_mode`).
   New fixture `arm_thumb_linked_le32` (+ source). No engine/option/catalog change.
 
+### Increment 24 — SPARC PLT import-name recovery ✅
+
+Adds SPARC (SPARC v9, 64-bit, big-endian) to the per-arch PLT decoder in
+`elf_plt.rs` (`decode_sparc`) and proves it end-to-end on a **real, linked,
+dynamically-linked SPARC64 executable**. SPARC was the last common Linux/SysV
+machine with a regular `.plt` whose imports kuna still rendered as `sub_<addr>`;
+its arch auto-detect (`sparc:BE:64:default` → the SPARC `.sla`) was already wired
+in `loadimage_object::language_id_for`, but `decode_plt_section` had no SPARC arm
+(it hit the `_ => {}` PPC/MIPS seam fallthrough), so the GOT-name map never reached
+the call targets.
+
+**Why SPARC is the odd one out (and why the decoder is the simplest of the set).**
+Every other supported arch decodes the stub's indirect jump to find a *separate*
+`.got` slot, then matches that slot against `build_got_name_map`. SPARC doesn't
+work that way: its `.rela.plt` `R_SPARC_JMP_SLOT` relocation `r_offset` **is the
+PLT entry address itself** — the dynamic linker rewrites the in-place 32-byte stub
+at resolution time rather than redirecting through a GOT word (confirmed against
+Ghidra's `SPARC64_ElfRelocationHandler`, which materializes the resolved
+`sethi/or/sllx/jmpl` sequence directly into the relocation address). So
+`build_got_name_map`'s keys are *already* the call targets the decompiler sees.
+`decode_sparc` walks the `.plt` in 32-byte strides, gates each entry on the
+canonical `sethi %hi(...),%g1` veneer head (BE `0x03xxxxxx`: op=00, rd=%g1,
+op2=0b100), and records any entry that is a known relocation — the stub address
+and the map key are one and the same (`record(entry, entry, …)`). The 4-slot
+(`0x80`-byte) reserved PLT0 header and the non-symbol `__gmon_start__` slot are not
+relocation keys, so they fall out by the same self-correcting cross-check the other
+arches use.
+
+**Fixture (`plt_sparc64`, source `plt_sparc64.c` vendored alongside).** A dynamic
+SPARC v9 / ELF64 / big-endian **EXEC** built with `sparc64-linux-gnu-gcc -O0` (not
+stripped). `main` (`0x100750`) calls `puts("hello")` (`puts@plt`=`0x2021c0`) and
+`printf("%d\n", argc)` (`printf@plt`=`0x2021a0`); both are `R_SPARC_JMP_SLOT`
+relocations in `.rela.plt` whose `r_offset` equals the entry address, and each
+`.plt` entry is the textbook 32-byte `sethi %hi(...),%g1; b,a %xcc,<resolver>;
+nop*6` veneer the decoder recognizes (the 4-slot `0x80`-byte PLT0 header precedes
+the imports). The `kuna-dev` image ships `sparc64-linux-gnu-gcc` but not the SPARC
+libc dev package; the fixture build installs `libc6-dev-sparc64-cross` (headers +
+crt1) in a single `--user root` container invocation (see fixtures/README.md
+provenance), exactly as the RISC-V port did.
+
+**Result (the proof).** `kuna decompile plt_sparc64 main`:
+
+```c
+unsigned long long main(int4 a0)
+
+{
+  puts("hello");
+  printf("%d\n",(int8)a0);
+  return 0;
+}
+```
+
+The PLT imports render as `puts`/`printf` (not `sub_2021c0`/`sub_2021a0`), and the
+`.rodata` string constants are recovered too. This is a **clean win**, not a
+documented seam — SPARC's `.plt` is regular and statically decodable. `make test`
+**675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test`
+green (incl. the new `verify_sparc_plt` + the `sparc_plt_decode` unit test). The
+change is purely additive on the real-ELF path (a new `decode_sparc` arm + a new
+fixture + a new console e2e), so the XML datatest oracle is structurally untouched
+(the `<binaryimage>` path never constructs an `ObjectLoadImage`).
+
+- **Tests:** `kuna-analysis` +1 unit (`elf_plt::tests::sparc_plt_decode`, the
+  32-byte strider over a header + three synthetic veneers); `kuna-console` +1 e2e
+  (`verify_sparc_plt.rs::sparc_plt_calls_are_named_in_decompiled_c`) modeled on
+  `verify_riscv64_plt.rs`/`verify_w11_elf_plt_names.rs`, same specs-absent skip
+  guard, asserting `main` decoded (real, not skipped) and `puts(`/`printf(` named
+  while `sub_2021c0`/`sub_2021a0` are gone. New fixture `plt_sparc64` (+ source).
+  No engine/option/catalog change. This retires the SPARC `sub_<addr>` row in the
+  `plt-got` work-list and the SPARC line of missing-analyses §1.
+
+
 ### Increment 25 — format-string varargs typing: cross-arch coverage (AArch64/ARM/RISC-V) ✅
 
 Closes the Increment 16 follow-up — its half-B override loop was an "x86-64 ELF first cut"
@@ -1786,3 +1912,174 @@ is byte-identical. With the fix, ARM `--option formatstring on` ⇒
 - **Fixtures:** `fmt_aarch64`, `fmt_arm`, `fmt_riscv64` (+ sources, README provenance).
 - **Engine change:** one scoped `readonlypropagate` flip in `kuna-console`'s `IfcDecompile`,
   entirely under the `formatstring` gate.
+
+
+### Increment 26 — PowerPC64 PLT import-name recovery (clean port, not a seam) ✅
+
+Recover **PPC64 ELFv2 (little-endian)** libc import names so a call renders `puts`/`printf`,
+not `sub_<addr>`. PowerPC was listed in `docs/missing-analyses.md` §1 as a *documented seam*
+("ELFv2 `.plt` is a data table; call stubs are synthesized in `.text`") — but, like SPARC
+(PR #20), investigating the real layout showed it is **fully tractable at the static load
+tier**. This is a clean port, not a documented seam.
+
+**The layout (why it looked like a seam, and why it isn't).** On PPC64 ELFv2 there is no `.plt`
+*code* section: `readelf -S` shows `.plt` as **NOBITS** (the runtime GOT for imports), and the
+`.rela.plt` `R_PPC64_JMP_SLOT` relocations name `.plt` *data* slots (`0x1fef0`=puts,
+`0x1fef8`=printf in the fixture). The call stubs are synthesized inline in `.text` by the linker.
+`main` (`0x8bc`) `bl`s to a stub at `0x680` (puts) / `0x660` (printf), each of the canonical
+ELFv2 shape:
+
+```
+    std   r2,24(r1)         ; 0xf8410018  save caller TOC
+    addis r12,r2,off@ha     ; r12 = TOC_base + (off@ha << 16)
+    ld    r12,off@l(r12)    ; r12 = *(.plt slot) = *(TOC + (off@ha<<16) + off@l)
+    mtctr r12
+    bctr
+```
+
+The decoded `.plt` slot ties straight back to the `R_PPC64_JMP_SLOT` name. The one piece the
+other arches don't need is the **TOC base**: ELFv2 fixes `r2` at `.got + 0x8000` (the `.TOC.`
+symbol). For the fixture `.got`=`0x1ff00`, so TOC=`0x27f00`, and the puts stub's
+`addis r12,r2,-1; ld r12,32752(r12)` reconstructs `0x27f00 + (-1<<16) + 32752 = 0x1fef0` —
+exactly the JMP_SLOT offset. No `.TOC.` symbol lookup is needed; `.got + 0x8000` is the ELFv2
+invariant.
+
+**The decoder (`s1_loader/elf_plt.rs`).** `resolve_plt_imports` already builds `got_slot → name`
+from *all* symbol-bearing dynamic relocations (the JMP_SLOTs are in it — `object` 0.39 parses the
+PPC64 relocs as `kind=Unknown target=sym#N` at the slot offset, which the existing
+`build_got_name_map` handles unchanged). Added a PowerPC arm: after the `.plt*`-section scan,
+`decode_ppc_text` computes the TOC base (`.got` vma + `0x8000`), reads `.text`, and
+`decode_ppc64_stubs` scans for the 5-instruction stub (`std r2,24(r1)` + `addis r12,r2` +
+`ld r12,(r12)` DS-form + `mtctr r12` + `bctr`), reconstructs the slot, and `record`s the stub
+entry (the `std r2,24(r1)` address — what `bl` targets) against the matched name. It reads words
+honoring file endianness (`is_little_endian`), so a PPC32/BE arm can slot in later; the gating is
+`arch == PowerPc64` only (PPC32 secure-PLT has a different stub shape — left a seam).
+
+**Why it integrates cleanly.** The `.symtab` carries synthetic `0000001b.plt_call.puts@@…`
+symbols *at the stub addresses*, but `object` classifies them `SymbolKind::Unknown` (not `Text`),
+so `loadimage_object` step 1 skips them — leaving the stub addresses free for the PLT decoder
+(step 2) to register the clean `puts`/`printf`. No name collision, no ordering hazard.
+
+**Fixture (LINKED dynamic PPC64le ELFv2 PIE).** `plt_ppc64le` (~21 KB), built in-container:
+`powerpc64le-linux-gnu-gcc -O0 plt_ppc64le.c -o plt_ppc64le` (libc6-dev-ppc64el-cross installed
+`--user root` for crt1/headers). `main` calls `puts("hello")` + `printf("%d\n", argc)`. Source +
+provenance vendored in `tests/fixtures/`.
+
+**e2e (`kuna-console/tests/verify_ppc64_plt.rs`).** Modeled on `verify_riscv64_plt.rs`: auto-detect
+`PowerPC:LE:64:default` → `bootstrap_from_elf` → `load function main` → `decompile` → `print C`,
+with the same specs-absent skip guard. The test **ran a real decode** (the `ppc_64_le.sla` is built;
+the skip was not hit) and asserts `main` resolves, `puts(`/`printf(` are named, and `sub_680`/`sub_660`
+are gone.
+
+**BEFORE → AFTER** (`kuna decompile plt_ppc64le main`):
+```
+  before:  sub_680(v1 + 0x17c);            sub_660(v2 + -0x274c0,(int8)a0);
+  after:   puts((char *)(v1 + 0x17c));     printf((char *)(v2 + -0x274c0),(int8)a0);
+```
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**;
+`make rust-test` green (incl. the new `verify_ppc64_plt` + the `ppc64_plt_decode` unit test). Purely
+additive on the real-ELF path (new PowerPC arm + new fixture + new console test); the XML datatest
+oracle is structurally untouched.
+
+- **Tests:** `kuna-analysis` +1 unit (`elf_plt::tests::ppc64_plt_decode`, LE real-fixture bytes +
+  a BE word-layout case). `kuna-console` +1 e2e (`verify_ppc64_plt`). New fixture `plt_ppc64le`
+  (+ source). No engine/option/catalog change.
+
+
+### Increment 27 — MIPS PLT/stub import-name recovery (linked fixture) ✅
+
+**Goal.** Recover MIPS libc import names so a call renders `puts`/`printf`, not
+`sub_<addr>`. The other arches (x86-64/32, AArch64, ARM32, RISC-V; SPARC in PR
+#20) decode a regular `.plt` code section whose stub references a
+`got_slot → name` map built from the dynamic relocations. **MIPS o32 has neither:**
+the GNU toolchain emits **no `.plt` and no `R_MIPS_JUMP_SLOT` relocations** — it
+uses the classic `.MIPS.stubs` + `$gp`-relative GOT lazy-binding layout.
+
+**What the toolchain produced (investigated, not assumed).** `mips-linux-gnu-gcc
+-O0` on a `main` calling `puts`/`printf` → big-endian MIPS32 ET_EXEC with:
+`readelf -r` = *"There are no relocations in this file."*; a `.MIPS.stubs` PROGBITS
+section of `lw $t9,-32752($gp); move $t7,$ra; jalr $t9; li $t8,<dynidx>` lazy
+resolver stubs; and the `DT_MIPS_*` dynamic tags `DT_MIPS_LOCAL_GOTNO=6`,
+`DT_MIPS_GOTSYM=5`, `DT_PLTGOT=0x411020`. So this is layout **(b)** from the task
+brief (classic `.MIPS.stubs`), NOT a modern regular-`.plt` + `R_MIPS_JUMP_SLOT`
+build. **This is a clean port, not a documented seam** — the names ARE recoverable
+statically.
+
+**The MIPS GOT correspondence (the cr0.org "MIPS Multi-GOT" layout Ghidra cites).**
+The dynamic linker resolves a positional slice of the GOT in symbol-table order:
+dynamic symbols `[GOTSYM, dynsym_count)` map 1:1, in order, to GOT entries starting
+at index `LOCAL_GOTNO`: `got_index(i) = LOCAL_GOTNO + (i - GOTSYM)`. For an
+undefined FUNC import the GOT slot's **static contents** are the address of that
+import's `.MIPS.stubs` stub (and that same stub address is the symbol's
+`st_value`). A call site is `lw $t9, off($gp); jalr $t9` — an indirect call through
+the GOT slot. Cross-checked on the fixture: `puts` (dynidx 7 → got_index 8 → slot
+`0x411040`) holds `0x400800`; `printf` (dynidx 8 → got_index 9 → slot `0x411044`)
+holds `0x4007f0` — exactly the `dat_411040`/`dat_411044` the decompiler reads.
+
+**The port — two halves, both faithful to `MIPS_ElfExtension`
+(`Ghidra/Processors/MIPS/.../elf/extend/MIPS_ElfExtension.java`).**
+1. **Naming** (`elf_plt::resolve_mips_imports`, the `fixupGot` analog): walk the
+   external-symbol GOT window, read each FUNC import's GOT slot, and name the
+   **stub address** (the slot's static contents = `refAddr` in Ghidra's
+   `createExternalFunctionLinkage(symName, refAddr, gotEntryAddr)`). Gated on
+   `Mips | Mips64`, runs *before* the relocation-driven path (which would early-
+   return on MIPS's empty `build_got_name_map`). Off-MIPS: empty, no-op.
+   (In practice the `.symtab`/`.dynsym` UND-import path already registers the stub
+   address too — `object` reports the MIPS UND import with a nonzero `st_value`
+   pointing at the stub — so the two agree on the same `addr → name`.)
+2. **Constant-folding the indirect call** (`elf_plt::mips_got_const_ranges` +
+   `ObjectLoadImage::const_ranges` → `get_readonly`, the `setConstant` analog): the
+   GOT external slots are reported as constant ranges so the engine can fold the
+   `lw $t9, off($gp)` load (whose address is already `$gp`-constant from Increment
+   17's `$gp` recovery) to the stub address; `bootstrap_from_elf` turns on
+   `readonlypropagate` **for MIPS only** so `ActionVarnodeProps::fillinReadOnly`
+   performs the fold and `ActionDeindirect` resolves the now-constant call target
+   to the named stub function. Scoped to MIPS (`arch_type.starts_with("MIPS:")`),
+   so non-MIPS ELF output is unchanged, and `option readonly off` restores the raw
+   `(*(code *)(dat_411040 & ...))(...)` GOT-load rendering.
+
+**BEFORE / AFTER (`kuna decompile plt_mips32 main`).**
+```text
+before:  (*(code *)(dat_411040 & 0xfffffffe))("hello");
+         (*(code *)(dat_411044 & 0xfffffffe))(0x400888,v1);
+after:   puts("hello");
+         printf(0x400888,v1);
+```
+(The `printf` format-string pointer `0x400888` not rendering as a string literal
+is a separate string-rendering concern, independent of import naming; `puts`'s
+`"hello"` already renders.)
+
+**Fixture (LINKED ET_EXEC, big-endian).** `plt_mips32` (7580 bytes), built in the
+`kuna-dev` container: `mips-linux-gnu-gcc -O0 plt_mips32.c -o plt_mips32` (the
+`-O0` keeps the calls **plain** `puts`/`printf`; `-O1`+ pulls in glibc's fortified
+`__printf_chk`). `libc6-dev-mips-cross` is installed in the build container (the
+image ships only the runtime libc). `main`@`0x400700`, `puts` stub `0x400800`,
+`printf` stub `0x4007f0`. Source + the exact single-invocation build command
+vendored in `tests/fixtures/README.md`.
+
+**The e2e (`kuna-console/tests/verify_mips_plt.rs`).** Modeled on
+`verify_riscv64_plt.rs` (same `bootstrap_from_elf` → `load function main` →
+`decompile` → `print C` drive + the specs-absent skip guard). Asserts the loader
+resolves `puts`/`printf`/`main`, the body decodes (`out.contains("main")` — a real
+big-endian MIPS decode, not a skip), the call sites render `puts(`/`printf(`, and
+the raw `dat_411040`/`dat_411044` GOT-slot loads are gone. **The test RAN (not
+skipped)** — `mips32be.sla` is built.
+
+**Result (the proof).** `make test` **675/675 PARITY OK**; `make test-stages`
+**158/158 PARITY OK**; `make rust-test` green (incl. the new `verify_mips_plt` +
+two `loadimage_object` MIPS unit tests). Purely additive on the real-ELF path (a
+new fixture + a new console test + the MIPS arm in `elf_plt`/`loadimage_object` +
+the MIPS-only `readonlypropagate` toggle in `bootstrap_from_elf`), so the XML
+datatest oracle is structurally untouched (no XML path constructs an
+`ObjectLoadImage` or reaches `bootstrap_from_elf`).
+
+- **Engine:** `elf_plt.rs` (+`resolve_mips_imports`/`mips_got_const_ranges`/
+  `mips_external_got_entries`/`read_mips_dynamic_tags`/`read_word_at_vma`),
+  `loadimage_object.rs` (+`const_ranges` field, threaded through `get_readonly`
+  /`adjust_vma`), `engine.rs` (MIPS-only `readonlypropagate = true`). No
+  option/catalog change (`readonly` is a pre-existing `option`; the MIPS default is
+  set in the loader path, user-overridable via `option readonly off`).
+- **Tests:** `kuna-console` +1 (`verify_mips_plt`); `kuna-analysis` +2
+  (`mips_stub_imports_resolve_to_named_functions`,
+  `mips_got_const_ranges_cover_external_slots`). New fixture `plt_mips32` (+ source).

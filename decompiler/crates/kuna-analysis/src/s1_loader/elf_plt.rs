@@ -54,11 +54,22 @@ pub(crate) struct PltSym {
 /// has no dynamic imports, an unsupported architecture, or stubs this decoder
 /// does not recognize.
 pub(crate) fn resolve_plt_imports(file: &object::File) -> Vec<PltSym> {
+    let arch = file.architecture();
+
+    // MIPS has no regular `.plt` code section and emits NO `R_MIPS_JUMP_SLOT`
+    // relocations for its lazy imports: the stub→name correspondence is carried by
+    // the dynamic table's GOT layout (`DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`), not
+    // by relocations.  It therefore runs its own resolver (`resolve_mips_imports`)
+    // *before* the relocation-driven path below, which would otherwise early-return
+    // on the empty `build_got_name_map`.  See [`resolve_mips_imports`].
+    if matches!(arch, Architecture::Mips | Architecture::Mips64) {
+        return resolve_mips_imports(file);
+    }
+
     let got_to_name = build_got_name_map(file);
     if got_to_name.is_empty() {
         return Vec::new();
     }
-    let arch = file.architecture();
 
     let mut out: Vec<PltSym> = Vec::new();
     // GOT slots already named, so an import that appears in both `.plt.sec` (the
@@ -88,6 +99,15 @@ pub(crate) fn resolve_plt_imports(file: &object::File) -> Vec<PltSym> {
 
     for (vma, data, _) in plt_secs {
         decode_plt_section(arch, vma, data, &got_to_name, &mut out, &mut named_got);
+    }
+
+    // PowerPC ELFv2 (and the older `bss-plt` ABI) has no decodable `.plt` *code*
+    // section: `.plt` is a NOBITS data table (the runtime GOT for imports) and the
+    // linker synthesizes the call stubs inline in `.text`.  Resolve those stubs
+    // separately — they are TOC-relative, so they need the TOC base, which the
+    // per-section scan above does not carry.  See [`decode_ppc64_text`].
+    if matches!(arch, Architecture::PowerPc64 | Architecture::PowerPc) {
+        decode_ppc_text(file, arch, &got_to_name, &mut out, &mut named_got);
     }
 
     out
@@ -173,10 +193,16 @@ fn decode_plt_section(
         Architecture::Riscv64 | Architecture::Riscv32 => {
             decode_riscv(vma, data, map, out, named_got)
         }
-        // PPC64 (ELFv2 `.plt` is a data table; call stubs are synthesized in
-        // `.text`) and MIPS (`.MIPS.stubs` + `$gp`-relative GOT) have no regular
-        // decodable `.plt` code section — left as documented seams (names not
-        // recovered; behavior unchanged).  See docs/missing-analyses.md.
+        Architecture::Sparc | Architecture::Sparc32Plus | Architecture::Sparc64 => {
+            decode_sparc(vma, data, map, out, named_got)
+        }
+        // PowerPC's stubs are not in a `.plt*` *code* section (`.plt` is a NOBITS
+        // data table; the call stubs live in `.text`), so they are resolved out of
+        // band in [`resolve_plt_imports`] via [`decode_ppc_text`], not here.
+        //
+        // MIPS has no `.plt` code section either (`.MIPS.stubs` + `$gp`-relative
+        // GOT); it is resolved out of band by [`resolve_mips_imports`] before this
+        // point (the GOT layout carries the names).  See docs/missing-analyses.md.
         _ => {}
     }
 }
@@ -460,6 +486,408 @@ fn decode_riscv(
     }
 }
 
+// ---------------------------------------------------------------------------
+// PowerPC64 ELFv2 (and PPC32) — TOC-relative `.text` call stubs
+// ---------------------------------------------------------------------------
+
+/// Resolve PowerPC PLT-call stubs, which the linker synthesizes inline in
+/// `.text` (there is no `.plt` *code* section — `.plt` is a NOBITS data table,
+/// the runtime GOT for imports).
+///
+/// On PPC64 ELFv2 a call to an imported function `bl`s to a stub of the form
+/// ```text
+///     std   r2,24(r1)        ; save the caller TOC (0xf8410018)
+///     addis r12,r2,off@ha    ; r12 = TOC_base + (ha << 16)
+///     ld    r12,off@l(r12)   ; r12 = *(.plt slot) = *(TOC_base + (ha<<16) + lo)
+///     mtctr r12
+///     bctr
+/// ```
+/// The loaded address is a `.plt` slot whose `R_PPC64_JMP_SLOT` relocation names
+/// the import — exactly the `got_slot → name` map [`build_got_name_map`] already
+/// built (every symbol-bearing dynamic reloc is included, so the JMP_SLOTs are in
+/// it).  We decode the `addis`/`ld` pair, reconstruct the slot
+/// `TOC_base + (ha << 16) + sign_extend16(lo)`, and record the stub entry (the
+/// `std r2,24(r1)` — the address `bl` targets) against the matched name.
+///
+/// **TOC base.**  The ELFv2 ABI fixes the TOC pointer (`r2`) at
+/// `.got + 0x8000` (equivalently the `.TOC.` symbol); using `.got + 0x8000`
+/// avoids relying on a `.TOC.` symbol being present.  If there is no `.got`
+/// section the binary has no TOC-relative imports and we resolve nothing.
+///
+/// PPC32 (`Architecture::PowerPc`, big-endian) uses a different secure-PLT stub
+/// shape that this routine does not model, so it no-ops there — left as a seam
+/// (`decode_ppc_text` reads words honoring endianness, so a future PPC32 arm can
+/// slot in here).
+fn decode_ppc_text(
+    file: &object::File,
+    arch: Architecture,
+    map: &HashMap<u64, Vec<u8>>,
+    out: &mut Vec<PltSym>,
+    named_got: &mut HashSet<u64>,
+) {
+    // ELFv2 PPC64 is the only PowerPC ABI whose `.text` stubs we decode.
+    if arch != Architecture::PowerPc64 {
+        return;
+    }
+    let little = file.is_little_endian();
+
+    // TOC base = `.got` vma + 0x8000 (ELFv2). No `.got` → no TOC-relative imports.
+    let got_vma = match file.sections().find(|s| s.name() == Ok(".got")) {
+        Some(s) => s.address(),
+        None => return,
+    };
+    let toc_base = got_vma.wrapping_add(0x8000);
+
+    // The stubs are inline in `.text`.
+    let text = match file.sections().find(|s| s.name() == Ok(".text")) {
+        Some(s) => s,
+        None => return,
+    };
+    let vma = text.address();
+    let data = match text.data() {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+
+    decode_ppc64_stubs(vma, data, little, toc_base, map, out, named_got);
+}
+
+/// Decode the PPC64-ELFv2 `std/addis/ld/mtctr/bctr` PLT stubs in a `.text` blob.
+/// Pulled out from [`decode_ppc_text`] so the arithmetic is unit-testable without
+/// an `object::File`.  `toc_base` is the ELFv2 TOC pointer (`.got + 0x8000`).
+fn decode_ppc64_stubs(
+    vma: u64,
+    data: &[u8],
+    little: bool,
+    toc_base: u64,
+    map: &HashMap<u64, Vec<u8>>,
+    out: &mut Vec<PltSym>,
+    named_got: &mut HashSet<u64>,
+) {
+    let word = |off: usize| -> Option<u32> {
+        let b = data.get(off..off + 4)?;
+        let arr = [b[0], b[1], b[2], b[3]];
+        Some(if little { u32::from_le_bytes(arr) } else { u32::from_be_bytes(arr) })
+    };
+
+    // Instruction fields (big-endian instruction semantics regardless of byte
+    // order in the file): opcode = bits[0:6], RT = bits[6:11], RA = bits[11:16].
+    let opcode = |w: u32| (w >> 26) & 0x3f;
+    let rt = |w: u32| (w >> 21) & 0x1f;
+    let ra = |w: u32| (w >> 16) & 0x1f;
+
+    let mut off = 0usize;
+    while off + 20 <= data.len() {
+        let (w0, w1, w2, w3, w4) = match (
+            word(off),
+            word(off + 4),
+            word(off + 8),
+            word(off + 12),
+            word(off + 16),
+        ) {
+            (Some(a), Some(b), Some(c), Some(d), Some(e)) => (a, b, c, d, e),
+            _ => break,
+        };
+
+        // std r2,24(r1)         = 0xf8410018  (DS-form, opcode 62, RT=2, RA=1)
+        // addis r12,r2,off@ha   opcode 15, RT=12, RA=2
+        // ld    r12,off@l(r12)  DS-form, opcode 58, XO=0, RT=12, RA=12
+        // mtctr r12             = 0x7d8903a6
+        // bctr                  = 0x4e800420
+        let is_std_r2 = w0 == 0xf8410018;
+        let is_addis = opcode(w1) == 15 && rt(w1) == 12 && ra(w1) == 2;
+        let is_ld = opcode(w2) == 58 && (w2 & 0x3) == 0 && rt(w2) == 12 && ra(w2) == 12;
+        let is_mtctr = w3 == 0x7d8903a6;
+        let is_bctr = w4 == 0x4e800420;
+
+        if is_std_r2 && is_addis && is_ld && is_mtctr && is_bctr {
+            // addis @ha: sign-extend the 16-bit field, then << 16.
+            let ha = ((w1 & 0xffff) as i16) as i64;
+            // ld DS-form: the 14-bit DS displacement is the low 16 bits with the
+            // bottom two bits forced to the XO (0 for `ld`); sign-extend it.
+            let lo = ((w2 & 0xfffc) as i16) as i64;
+            let slot = toc_base
+                .wrapping_add((ha << 16) as u64)
+                .wrapping_add(lo as u64);
+            let stub = vma.wrapping_add(off as u64);
+            record(stub, slot, map, out, named_got);
+            off += 20; // skip past this 5-instruction stub
+            continue;
+        }
+        off += 4;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SPARC (SPARC v9 / 32-bit, big-endian)
+// ---------------------------------------------------------------------------
+
+/// SPARC PLT import veneer (32-byte entry, big-endian fixed 32-bit insns):
+/// ```text
+///     sethi  %hi(entry_offset), %g1   ; 0x03______  — relocation index marker
+///     b,a    %xcc, <PLT0 resolver>    ; 0x30 6f ____ — branch to the header stub
+///     nop ; nop ; nop ; nop ; nop ; nop
+/// ```
+/// Unlike every other arch, SPARC's `.rela.plt` `R_SPARC_JMP_SLOT` relocation
+/// `r_offset` **is the PLT entry address itself** (the linker rewrites the
+/// in-place stub at resolution time — see Ghidra's `SPARC*_ElfRelocationHandler`),
+/// not a separate `.got` slot.  So the "got_slot → name" map ([`build_got_name_map`])
+/// is already keyed on the call target the decompiler sees: the decoder just walks
+/// the section in 32-byte strides and records any entry whose address is a known
+/// symbol-bearing relocation.  The 4-slot (`0x80`-byte) reserved PLT0 header and
+/// the non-symbol `__gmon_start__`/IRELATIVE slots are not relocation keys, so they
+/// fall out of the map automatically (same self-correcting cross-check as the
+/// other arches; here `stub == got`).
+fn decode_sparc(
+    vma: u64,
+    data: &[u8],
+    map: &HashMap<u64, Vec<u8>>,
+    out: &mut Vec<PltSym>,
+    named_got: &mut HashSet<u64>,
+) {
+    // SPARC `.plt` entries are 32 bytes; the first instruction of an import
+    // veneer is `sethi %hi(...), %g1` (top byte 0x03 big-endian).  Stride by the
+    // 32-byte entry size, and gate on both the `sethi %g1` opcode and the map
+    // membership so a non-PLT section never produces spurious names.
+    const ENTRY: usize = 32;
+    let mut off = 0usize;
+    while off + 4 <= data.len() {
+        // First word, big-endian.  `sethi rd, imm22`: op=00 (bits[31:30]),
+        // op2=100 (bits[24:22]), rd=bits[29:25]; rd==1 (%g1) and op2==0b100 give
+        // the canonical `sethi %hi(...),%g1` = 0x03xxxxxx import-veneer head.
+        let w0 = u32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
+        let is_sethi_g1 = (w0 >> 30) == 0b00 && ((w0 >> 25) & 0x1f) == 1 && ((w0 >> 22) & 0x7) == 0b100;
+        if is_sethi_g1 {
+            let entry = vma.wrapping_add(off as u64);
+            // SPARC: the JMP_SLOT relocation offset == the PLT entry address, so
+            // the stub and the GOT-name-map key are one and the same.
+            record(entry, entry, map, out, named_got);
+        }
+        off += ENTRY;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MIPS (.MIPS.stubs / GOT layout)
+// ---------------------------------------------------------------------------
+
+/// Resolve MIPS import names from the dynamic-symbol GOT layout — the kuna analog
+/// of Ghidra's `MIPS_ElfExtension.fixupGot` + `processMipsStubsSection`
+/// (`Ghidra/Processors/MIPS/.../elf/extend/MIPS_ElfExtension.java`).
+///
+/// ## Why MIPS is different
+///
+/// Unlike x86/ARM/RISC-V, the GNU MIPS o32 toolchain emits **no `.plt` code
+/// section and no `R_MIPS_JUMP_SLOT` relocations** for its lazy imports.  Instead
+/// the dynamic linker resolves a fixed slice of the GOT in *symbol-table order*:
+/// the doc anchor is the "MIPS Multi-GOT" layout (the cr0.org
+/// `mips.elf.external.resolution.txt` paper that Ghidra cites).  The
+/// correspondence is purely positional:
+///
+/// * `DT_MIPS_LOCAL_GOTNO` (0x7000000a) — the count of *local* GOT entries that
+///   precede the first global (external-symbol) GOT entry.
+/// * `DT_MIPS_GOTSYM` (0x70000013) — the **first** dynamic-symbol index that has a
+///   GOT entry.  Dynamic symbols `[GOTSYM .. dynsym_count)` map 1:1, in order, to
+///   GOT entries starting at index `LOCAL_GOTNO`:
+///
+///   ```text
+///     got_index(i) = LOCAL_GOTNO + (i - GOTSYM)        for i >= GOTSYM
+///   ```
+///
+/// * `DT_PLTGOT` (3) — the GOT base address (`gotBaseOffset`).
+///
+/// For an **undefined FUNC** dynamic symbol (an import), the GOT slot is
+/// initialized to the address of that import's lazy-binding stub in `.MIPS.stubs`
+/// (and that same stub address is the symbol's `st_value`).  At a MIPS call site
+/// the compiler emits `lw $t9, off($gp); jalr $t9` — an indirect call through the
+/// GOT slot.  With kuna's `$gp` recovery (Increment 17) the engine constant-folds
+/// the GOT load to that slot's contents (the stub address), so naming the **stub
+/// address** as a `FunctionSymbol` makes the call render `puts(...)` instead of
+/// `sub_<addr>` — exactly mirroring `createExternalFunctionLinkage(symName,
+/// refAddr, gotEntryAddr)` where `refAddr` is the GOT-slot contents (the stub).
+///
+/// Both naming targets are emitted: the **stub address** (`refAddr`, the indirect
+/// call target the decompiler sees) and, defensively, the **GOT slot address**
+/// itself (in case a future pass names the slot directly).  Everything degrades
+/// gracefully: a missing `DT_MIPS_*` tag, a missing GOT, or a 0 slot yields fewer
+/// (or zero) entries and leaves behavior unchanged — this never panics or errors.
+fn resolve_mips_imports(file: &object::File) -> Vec<PltSym> {
+    let mut out: Vec<PltSym> = Vec::new();
+    for ext in mips_external_got_entries(file) {
+        // The GOT slot's static contents = the `.MIPS.stubs` stub address (the
+        // import's `refAddr`); this is the indirect call target the decompiler
+        // resolves after $gp recovery.  Skip a 0 slot (unresolvable).
+        if ext.stub_addr != 0 {
+            out.push(PltSym { addr: ext.stub_addr, name: ext.name });
+        }
+    }
+    out
+}
+
+/// The MIPS GOT external slots' `[start, stop]` (inclusive) byte ranges, to be
+/// marked **constant** so the engine folds the `lw $t9, off($gp)` indirect-call
+/// load to the stub address (the analog of `setConstant` on the GOT pointer
+/// entries in Ghidra's `MIPS_ElfExtension.fixupGot`).  Empty off-MIPS or when the
+/// `DT_MIPS_*` tags are absent.  One slot per external dynamic symbol (FUNC or
+/// not — a constant GOT pointer is harmless for non-FUNC slots and matches
+/// Ghidra, which `setConstant`s every external GOT entry).
+pub(crate) fn mips_got_const_ranges(file: &object::File) -> Vec<(u64, u64)> {
+    if !matches!(file.architecture(), Architecture::Mips | Architecture::Mips64) {
+        return Vec::new();
+    }
+    let ptr = if file.is_64() { 8u64 } else { 4u64 };
+    mips_external_got_entries(file)
+        .into_iter()
+        .map(|e| (e.slot_addr, e.slot_addr.wrapping_add(ptr - 1)))
+        .collect()
+}
+
+/// One external-symbol GOT entry on MIPS: the dynsym name, the GOT slot address,
+/// and the slot's static contents (the `.MIPS.stubs` stub address it points at).
+struct MipsExtGot {
+    name: Vec<u8>,
+    slot_addr: u64,
+    stub_addr: u64,
+}
+
+/// Walk the MIPS external-symbol GOT window — dynsym indices `[GOTSYM, count)`
+/// map 1:1, in order, to GOT entries starting at index `LOCAL_GOTNO`
+/// (`got_index(i) = LOCAL_GOTNO + (i - GOTSYM)`).  Yields one [`MipsExtGot`] per
+/// **undefined FUNC** import (Ghidra's `isFunction() && sectionHeaderIndex == 0`).
+/// Empty when the `DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`/`DT_PLTGOT` tags are
+/// absent.  Shared by [`resolve_mips_imports`] (naming) and
+/// [`mips_got_const_ranges`] (constant-folding); never panics or errors.
+fn mips_external_got_entries(file: &object::File) -> Vec<MipsExtGot> {
+    let mut out: Vec<MipsExtGot> = Vec::new();
+
+    // The dynamic table tags we need, read straight from the `.dynamic` bytes.
+    let Some((local_gotno, gotsym, got_base)) = read_mips_dynamic_tags(file) else {
+        return out;
+    };
+
+    // The dynamic symbols, by index (the positional GOT correspondence is by
+    // `.dynsym` index).
+    let mut dynsyms: Vec<(usize, object::read::Symbol)> = Vec::new();
+    for s in file.dynamic_symbols() {
+        dynsyms.push((s.index().0, s));
+    }
+    if dynsyms.is_empty() {
+        return out;
+    }
+    let dynsym_count = dynsyms.iter().map(|(i, _)| *i).max().unwrap_or(0) + 1;
+
+    let ptr = if file.is_64() { 8usize } else { 4usize };
+    let le = file.is_little_endian();
+
+    for &(idx, ref sym) in &dynsyms {
+        if idx < gotsym as usize || idx >= dynsym_count {
+            continue;
+        }
+        // Only undefined FUNC imports name a stub.
+        if sym.kind() != object::SymbolKind::Text || !sym.is_undefined() {
+            continue;
+        }
+        let name = match sym.name_bytes() {
+            Ok(n) if !n.is_empty() => strip_version(n),
+            _ => continue,
+        };
+        let got_index = local_gotno + (idx as u64 - gotsym);
+        let slot_addr = got_base.wrapping_add(got_index * ptr as u64);
+        let stub_addr = read_word_at_vma(file, slot_addr, ptr, le).unwrap_or(0);
+        out.push(MipsExtGot { name, slot_addr, stub_addr });
+    }
+
+    out
+}
+
+/// Read `(DT_MIPS_LOCAL_GOTNO, DT_MIPS_GOTSYM, DT_PLTGOT)` from the `.dynamic`
+/// section, or `None` if any is absent.  Tags/vals are `Elf{32,64}_Dyn` pairs.
+fn read_mips_dynamic_tags(file: &object::File) -> Option<(u64, u64, u64)> {
+    const DT_NULL: u64 = 0;
+    const DT_PLTGOT: u64 = 3;
+    const DT_MIPS_LOCAL_GOTNO: u64 = 0x7000_000a;
+    const DT_MIPS_GOTSYM: u64 = 0x7000_0013;
+
+    let data = file.section_by_name(".dynamic")?.data().ok()?;
+    let is64 = file.is_64();
+    let le = file.is_little_endian();
+    let entsz = if is64 { 16usize } else { 8usize };
+
+    let mut local_gotno: Option<u64> = None;
+    let mut gotsym: Option<u64> = None;
+    let mut pltgot: Option<u64> = None;
+
+    let mut off = 0usize;
+    while off + entsz <= data.len() {
+        let (tag, val) = if is64 {
+            (read_u64_le(&data[off..], le), read_u64_le(&data[off + 8..], le))
+        } else {
+            (read_u32_le(&data[off..], le) as u64, read_u32_le(&data[off + 4..], le) as u64)
+        };
+        off += entsz;
+        if tag == DT_NULL {
+            break;
+        }
+        match tag {
+            DT_PLTGOT => pltgot = Some(val),
+            DT_MIPS_LOCAL_GOTNO => local_gotno = Some(val),
+            DT_MIPS_GOTSYM => gotsym = Some(val),
+            _ => {}
+        }
+    }
+    Some((local_gotno?, gotsym?, pltgot?))
+}
+
+/// Read a `ptr`-byte little/big-endian word from the section that contains `vma`
+/// (the static-image base-0 assumption: the GOT vma is the file vma).  `None` if
+/// no section covers it.
+fn read_word_at_vma(file: &object::File, vma: u64, ptr: usize, le: bool) -> Option<u64> {
+    for sec in file.sections() {
+        let addr = sec.address();
+        let size = sec.size();
+        if size == 0 || vma < addr || vma >= addr.wrapping_add(size) {
+            continue;
+        }
+        let data = sec.data().ok()?;
+        let o = (vma - addr) as usize;
+        if o + ptr > data.len() {
+            return None;
+        }
+        return Some(if ptr == 8 {
+            read_u64_le(&data[o..], le)
+        } else {
+            read_u32_le(&data[o..], le) as u64
+        });
+    }
+    None
+}
+
+/// Read a 4-byte word honoring endianness (`le`); 0 on a short slice.
+fn read_u32_le(b: &[u8], le: bool) -> u32 {
+    if b.len() < 4 {
+        return 0;
+    }
+    let a = [b[0], b[1], b[2], b[3]];
+    if le {
+        u32::from_le_bytes(a)
+    } else {
+        u32::from_be_bytes(a)
+    }
+}
+
+/// Read an 8-byte word honoring endianness (`le`); 0 on a short slice.
+fn read_u64_le(b: &[u8], le: bool) -> u64 {
+    if b.len() < 8 {
+        return 0;
+    }
+    let a = [b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
+    if le {
+        u64::from_le_bytes(a)
+    } else {
+        u64::from_be_bytes(a)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! Synthetic per-architecture decoder tests.  Each builds a `.plt`-shaped
@@ -525,6 +953,58 @@ mod tests {
     }
 
     #[test]
+    fn ppc64_plt_decode() {
+        // Real bytes from a `powerpc64le-linux-gnu-gcc -O0` ELFv2 stub (the
+        // `puts@plt` call stub at 0x680 of fixtures/plt_ppc64le):
+        //   std   r2,24(r1)        f8 41 00 18
+        //   addis r12,r2,-1        3d 82 ff ff
+        //   ld    r12,32752(r12)   e9 8c 7f f0
+        //   mtctr r12              7d 89 03 a6
+        //   bctr                   4e 80 04 20
+        // File is little-endian (ELFv2 LE), so each word is stored byte-reversed.
+        let mut stub: Vec<u8> = Vec::new();
+        for w in [0xf8410018u32, 0x3d82ffff, 0xe98c7ff0, 0x7d8903a6, 0x4e800420] {
+            stub.extend_from_slice(&w.to_le_bytes());
+        }
+        let mut data = vec![0u8; 16]; // a little leading `.text` padding
+        data.extend_from_slice(&stub);
+
+        let vma = 0x620u64; // `.text` base from the real fixture
+        let stub_addr = vma + 16;
+        // TOC base = .got(0x1ff00) + 0x8000 = 0x27f00; slot = TOC + (-1<<16) + 32752.
+        let toc_base = 0x27f00u64;
+        let expected_slot = toc_base.wrapping_add(((-1i64) << 16) as u64) + 32752;
+        assert_eq!(expected_slot, 0x1fef0); // matches the R_PPC64_JMP_SLOT offset
+
+        let mut map: HashMap<u64, Vec<u8>> = HashMap::new();
+        map.insert(expected_slot, b"puts".to_vec());
+        let mut out: Vec<PltSym> = Vec::new();
+        let mut named: HashSet<u64> = HashSet::new();
+        decode_ppc64_stubs(vma, &data, /*little*/ true, toc_base, &map, &mut out, &mut named);
+
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].addr, stub_addr);
+        assert_eq!(out[0].name, b"puts".to_vec());
+
+        // Big-endian word layout decodes identically (the stub shape is shared by
+        // ELFv2 BE); a positive @ha exercises the other sign of the page offset.
+        let mut data_be = vec![0u8; 0];
+        for w in [0xf8410018u32, 0x3d820002, 0xe98c0010, 0x7d8903a6, 0x4e800420] {
+            data_be.extend_from_slice(&w.to_be_bytes());
+        }
+        let toc_be = 0x40000u64;
+        let expected_be = toc_be + (2u64 << 16) + 0x10;
+        let mut map_be: HashMap<u64, Vec<u8>> = HashMap::new();
+        map_be.insert(expected_be, b"printf".to_vec());
+        let mut out_be: Vec<PltSym> = Vec::new();
+        let mut named_be: HashSet<u64> = HashSet::new();
+        decode_ppc64_stubs(0x1000, &data_be, /*little*/ false, toc_be, &map_be, &mut out_be, &mut named_be);
+        assert_eq!(out_be.len(), 1);
+        assert_eq!(out_be[0].addr, 0x1000);
+        assert_eq!(out_be[0].name, b"printf".to_vec());
+    }
+
+    #[test]
     fn riscv_plt_decode() {
         let vma = 0x10000u64;
 
@@ -562,5 +1042,44 @@ mod tests {
         assert_eq!(out2.len(), 1);
         assert_eq!(out2[0].addr, auipc_addr);
         assert_eq!(out2[0].name, b"write".to_vec());
+    }
+
+    #[test]
+    fn sparc_plt_decode() {
+        // Real `plt_sparc64` bytes: a 4-slot (0x80-byte) reserved PLT0 header,
+        // then 32-byte import veneers each headed by `sethi %hi(...),%g1` (BE
+        // 0x03xxxxxx) + `b,a %xcc,<resolver>`.  On SPARC the JMP_SLOT relocation
+        // offset IS the entry address, so the name map is keyed on the entry vma.
+        let vma = 0x202100u64;
+        let entry = |i: usize| vma + 0x80 + (i as u64) * 32;
+        let veneer = |hi: u32, ba: u32| -> [u8; 32] {
+            let mut e = [0u8; 32];
+            e[0..4].copy_from_slice(&hi.to_be_bytes()); // sethi %hi(...),%g1
+            e[4..8].copy_from_slice(&ba.to_be_bytes()); // b,a %xcc,<resolver>
+            // remaining 6 words are `nop` (0x01000000); zeros are fine for decode.
+            e
+        };
+
+        let mut data = vec![0u8; 0x80]; // reserved PLT0 header (4 slots)
+        data.extend_from_slice(&veneer(0x03000080, 0x306fffe7)); // __libc_start_main@plt
+        data.extend_from_slice(&veneer(0x030000a0, 0x306fffdf)); // printf@plt
+        data.extend_from_slice(&veneer(0x030000c0, 0x306fffd7)); // puts@plt
+
+        // Only printf/puts are symbol-bearing relocations; __libc_start_main is
+        // present too but here we name just the two libc imports the e2e asserts.
+        let mut map: HashMap<u64, Vec<u8>> = HashMap::new();
+        map.insert(entry(1), b"printf".to_vec());
+        map.insert(entry(2), b"puts".to_vec());
+
+        let mut out: Vec<PltSym> = Vec::new();
+        let mut named: HashSet<u64> = HashSet::new();
+        decode_sparc(vma, &data, &map, &mut out, &mut named);
+
+        // The PLT0 header and the unmapped entry(0) fall out; printf+puts named
+        // at their own entry addresses (stub == reloc offset).
+        assert_eq!(out.len(), 2);
+        let mut got: Vec<(u64, Vec<u8>)> = out.iter().map(|p| (p.addr, p.name.clone())).collect();
+        got.sort();
+        assert_eq!(got, vec![(entry(1), b"printf".to_vec()), (entry(2), b"puts".to_vec())]);
     }
 }

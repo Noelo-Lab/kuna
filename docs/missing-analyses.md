@@ -88,18 +88,40 @@ structurally untouched.
 and turn each PLT stub into a thunk to an external function. The decompiler then
 sees the import name at the call site.
 
-**kuna now:** [`kuna-sleigh/src/elf_plt.rs`](../decompiler/crates/kuna-sleigh/src/elf_plt.rs)
+**kuna now:** [`kuna-analysis/src/s1_loader/elf_plt.rs`](../decompiler/crates/kuna-analysis/src/s1_loader/elf_plt.rs)
 reconstructs `got_slot → name` from the dynamic relocations and decodes each
 `.plt*` stub's GOT reference per architecture (x86-64, x86-32, AArch64, ARM32,
-RISC-V; classic, CET `.plt.sec`, PIE, and stripped layouts). Matches feed the
-existing loader symbol stream as named `FunctionSymbol`s, so `query_call`
+RISC-V, SPARC; classic, CET `.plt.sec`, PIE, and stripped layouts). SPARC is the
+one decoder where the stub address and the name-map key coincide: its
+`R_SPARC_JMP_SLOT` `r_offset` is the PLT entry itself (the linker rewrites the
+in-place 32-byte `sethi/b,a` stub at resolution time), so `decode_sparc` just
+strides the `.plt` and records any `sethi %g1`-headed entry that is a known
+relocation (Increment 24, `plt_sparc64` e2e). PowerPC64 ELFv2 has no `.plt`
+*code* section, so its TOC-relative call stubs (synthesized inline in `.text`)
+are decoded out of band (`decode_ppc_text`/`decode_ppc64_stubs`: TOC base =
+`.got` vma + `0x8000`, slot = `TOC + (addis@ha << 16) + ld@l`; Increment 26,
+`plt_ppc64le` e2e). **MIPS** has its own resolver
+(`resolve_mips_imports`, Increment 27): the o32 ABI has no `.plt` and no
+`R_MIPS_JUMP_SLOT`, so the stub→name correspondence comes from the dynamic-symbol
+GOT layout (`DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`/`DT_PLTGOT`,
+`got_index(i)=LOCAL_GOTNO+(i-GOTSYM)`), the analog of Ghidra's
+`MIPS_ElfExtension.fixupGot`/`processMipsStubsSection` (`plt_mips32` e2e). Matches
+feed the existing loader symbol stream as named `FunctionSymbol`s, so `query_call`
 resolves them. Model depth is "correct names"; the full external-location/thunk
 object model (below) is deferred.
 
 **Still a gap within this area:**
-- PPC64 (ELFv2 `.plt` is a data table; call stubs are synthesized in `.text`) and
-  MIPS (`.MIPS.stubs` + `$gp`-relative GOT) have no regular decodable `.plt` code
-  section — left as documented seams (names not recovered, behavior unchanged).
+- SPARC's regular `.plt` **is now decoded** (Increment 24) — it earlier shared the
+  seam row below but turned out tractable (its `R_SPARC_JMP_SLOT` `r_offset` IS the
+  stub address).
+- PPC64 ELFv2's `.text`-synthesized call stubs **are now resolved** (Increment 26):
+  it was grouped here as a seam but turned out tractable — the stub's
+  `addis r12,r2,@ha; ld r12,@l(r12)` pair statically reconstructs the `.plt` slot
+  (`TOC + (@ha<<16) + @l`) whose `R_PPC64_JMP_SLOT` reloc names the import.
+- MIPS (`.MIPS.stubs` + `$gp`-relative GOT) **is now resolved** (Increment 27):
+  although it has no regular `.plt` code section, the dynamic-symbol GOT layout
+  (`resolve_mips_imports`, above) recovers the import names — it earlier shared
+  this seam row but turned out tractable.
 - x86-32 **PIC** veneers (`jmp *disp(%ebx)`) are not statically decodable without
   the runtime `%ebx` GOT pointer — skipped.
 - The external/thunk **object model** (Ghidra's `ExternalLocation` + thunk
@@ -246,7 +268,7 @@ debug-format reader or a discovery loop). Vendored fixtures live in
 
 | # | Analysis | Stage | Diff | Concrete testcase (fixture → assertion) |
 |---|----------|-------|------|------------------------------------------|
-| ✅ | PLT/GOT import names | S1 | done | **fauxware**: `0x400510→puts`, no symbol at `0x0`, no `@` in names (`kuna-analysis` tests + console e2e) |
+| ✅ | PLT/GOT import names | S1 | done | **fauxware**: `0x400510→puts`, no symbol at `0x0`, no `@` in names (`kuna-analysis` tests + console e2e). Per-arch e2e: x86-64 (`verify_w11_elf_plt_names`), AArch64 (`verify_aarch64_plt`), RISC-V64 (`verify_riscv64_plt`), **MIPS32** (`verify_mips_plt`: `plt_mips32` `puts`/`printf` via the `.MIPS.stubs`/GOT layout — Increment 27) |
 | ✅ | **Foundation: generic commit seam** | S1 | done | `bootstrap_from_elf` runs `run_default_analyses` + `commit_analysis_output`; no funcsym regression (`make test` PARITY OK) |
 | ✅ | **No-return detection** | S1 | done | **fauxware** `rejected` calls `exit`: no dead fall-through after `exit(1)` (5 unit tests + e2e). See [`analysis-port-log.md`](analysis-port-log.md) increment 1 |
 | ✅ | **Demangling** (Itanium C++ / Rust) | S1 | done | `cpp_mangled` `main` renders `foo::Bar::baz(...)` (cpp_demangle + rustc-demangle; needed the cross-scope call-resolution fix). Increment 2 |
