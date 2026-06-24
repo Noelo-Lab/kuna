@@ -2083,3 +2083,88 @@ datatest oracle is structurally untouched (no XML path constructs an
 - **Tests:** `kuna-console` +1 (`verify_mips_plt`); `kuna-analysis` +2
   (`mips_stub_imports_resolve_to_named_functions`,
   `mips_got_const_ranges_cover_external_slots`). New fixture `plt_mips32` (+ source).
+
+### Increment 28 — Listing/xref tier PR0: recursive-descent core + instruction/flow/xref/function model ✅
+
+**Goal.** Land the **keystone** of "scope-B": a post-disassembly,
+program-wide **recursive-descent disassembler** + an instruction / cross-reference
+/ discovered-function model, built by *reusing* the ported SLEIGH decoder and a
+*lifted copy* of the S2 flow classifier. This is the first PR of a multi-PR tier
+whose canonical spec is the new **`docs/listing-tier-design.md`** (transcribed
+from the design fan-out). The keystone unlocks Ghidra analyzers kuna cannot port
+today (foremost the "Discovered" `FindNoReturnFunctionsAnalyzer`), which need a
+disassembled `Listing`/`ReferenceManager`/`FunctionManager` the analysis tier has
+never had.
+
+**Scope (PR0 ONLY).** The core lands as a self-contained module
+`kuna-analysis/src/listing/` and is **not wired into the engine**: no
+`--option listing` flag (PR1), no `AnalysisCtx::listing` field / driver build
+(PR1-PR2), no `context.rs` ARM/MIPS decode-paint (PR5). The CodeUnit partition
+*queries* are PR3, but the `CodeUnit` type and the `covered`/`exec_ranges` fields
+are defined now. So this PR touches **no engine path the XML datatests use** — the
+module is dormant until a later PR invokes it.
+
+**The subsystem.**
+- `model.rs` — the §2 data model: `Insn` (addr/len/fall_through/flow/flows/
+  mnemonic/lazy-pcode), `FlowType` (the faithful `FlowType` predicate set:
+  is_call/is_jump/is_terminal/is_computed/is_indirect/is_conditional/
+  has_fallthrough) + `FlowKind`, `RawOp`, `Reference`/`RefKind` (Call/Code
+  populated; Data/Read/Write reserved), `DiscoveredFunction` (ordered
+  `BTreeMap` model), `CodeUnit` (Instruction/Data/Undefined partition class).
+- `decode.rs::decode_one` — drives `Translate::one_instruction` (`translate.rs:472`)
+  with a capturing `PcodeEmit` (`translate.rs:166`) for `(len, ops)` and
+  `print_assembly` (`translate.rs:481`) with a capturing `AssemblyEmit` for the
+  mnemonic; builds the `Address` in the default code space.
+- `classify.rs::classify` — a faithful transliteration of
+  `s2_lift/flow.rs::xref_control_flow` (`flow.rs:1039-1185`), honoring the three
+  gotchas: (1) a constant-space `in0` is p-code-relative (tested via
+  `is_constant()` first — never a VMA target); (2) fall-through is decided by the
+  **last** op (BRANCH/BRANCHIND/RETURN ⇒ no fall-through); (3) delay slots are
+  already folded into `len` (no re-decode). BRANCHIND/CALLIND are recorded as
+  computed/indirect with NO static target (deferred jump-table resolution).
+- `walk.rs` — the two-level recursive-descent: an outer function worklist
+  (CALL/CALLIND direct targets become new function entries + `RefKind::Call`
+  edges) and an inner per-function instruction worklist (branch/fall-through →
+  same-function successors + `RefKind::Code` edges), with `BTreeMap`-membership
+  dedup, an exec-range bounds gate, and decode-error = stop-this-path.
+- `mod.rs` — the `Listing` facade + `Listing::build(file, image, arch, translate,
+  seeds)` and the read-only query API (instruction/xref/ordered-function).
+
+The `s1_entry` seed helpers `executable_sections`/`existing_function_addrs`/
+`in_executable_section` were promoted to `pub(crate)` so PR2 can build the seed set.
+
+**Tests (both layers REAL, not skipped).**
+- **Classifier unit tests** (`classify.rs`, 9 cases): hand-built `RawOp` lists
+  (no Translate) pin `classify` against the `flow.rs` rules — CBRANCH (two
+  successors, ConditionalBranch, is_conditional), unconditional BRANCH (target,
+  no fall-through), CALL (target, is_call, falls through), RETURN (terminal),
+  BRANCHIND (computed/indirect, no static target), CALLIND (computed, falls
+  through), a **constant-space BRANCH in0** (intra-insn, NOT a target), and the
+  last-op fall-through rule.
+- **Real-decode integration test** (`kuna-console/tests/verify_listing_core.rs`,
+  modeled on the `verify_*.rs` bootstrap pattern): `bootstrap_from_elf` over the
+  vendored x86-64 `fauxware` fixture gives a built `Translate`
+  (`prog.arch().translate()`) + code space (`prog.arch().manage()`); seeds =
+  `collect_entries ∪ {main}`; `Listing::build` is driven end-to-end and the §7
+  PR0 criteria asserted: `instruction_at(main)` has a plausible len + non-empty
+  mnemonic; the `je`@0x4007bb yields two successors and `ConditionalBranch`; the
+  `ret`@0x4007d4 is terminal (`fall_through == None`); the `call`@0x4007ae records
+  a `RefKind::Call` edge to `authenticate`@0x400664 and seeds it as a function;
+  `function_count() >= seeds`. **The test RAN (not skipped)** — `x86-64.sla` is
+  built; it recovered **108 instructions, 11 functions, 16 call edges** from 2
+  seeds, with `0x40071d: PUSH` (Fallthrough), `0x4007ae: CALL → 0x400664`,
+  `0x4007bb: JZ` (ConditionalBranch, target 0x4007c9, fall 0x4007bd),
+  `0x4007d4: RET` (Return).
+
+**Result (the proof).** `make test` **675/675 PARITY OK**; `make test-stages`
+**158/158 PARITY OK**; `make rust-test` green (incl. the 9 classifier unit tests
++ the new `verify_listing_core` console test). Structurally additive on a dormant
+module (no engine invocation, no flag, no `AnalysisCtx` change), so the XML
+datatest oracle is untouched — the keystone is not yet on any decompilation path.
+
+- **New:** `docs/listing-tier-design.md` (the tier spec); `kuna-analysis/src/listing/`
+  (`mod.rs`/`model.rs`/`decode.rs`/`classify.rs`/`walk.rs`) + `pub mod listing;`
+  in `lib.rs`; `kuna-console/tests/verify_listing_core.rs` (+ `object` dev-dep).
+- **Changed:** `s1_entry/mod.rs` — three seed helpers promoted to `pub(crate)`.
+- **Behind the (forthcoming) `--option listing` flag** (PR1) and **not yet wired
+  into the engine** (PR2).
