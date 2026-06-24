@@ -133,7 +133,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 
 | St | Pass id | Analysis (Ghidra) | Diff | Testcase |
 |----|---------|-------------------|------|----------|
-| ✅ | `plt-got` | PLT/GOT import names (`ElfDefaultGotPltMarkup`) | — | x86: fauxware `0x400510→puts`; **AArch64 e2e (Increment 19)**: linked `plt_aarch64`, `main` `bl 0x4004d0`/`0x4004e0` render `puts("hello")`/`printf("%d\n",…)` (the `adrp x16;ldr x17` veneer decode) |
+| ✅ | `plt-got` | PLT/GOT import names (`ElfDefaultGotPltMarkup`) | — | x86: fauxware `0x400510→puts`; **AArch64 e2e (Increment 19)**: linked `plt_aarch64`, `main` `bl 0x4004d0`/`0x4004e0` render `puts("hello")`/`printf("%d\n",…)` (the `adrp x16;ldr x17` veneer decode); RISC-V (Increment 20); ARM (Increment 18); **SPARC e2e (Increment 24)**: linked `plt_sparc64`, `main` calls `0x2021c0`/`0x2021a0` render `puts("hello")`/`printf("%d\n",…)` (the `sethi %g1` veneer; SPARC's JMP_SLOT `r_offset` IS the stub addr) |
 | ✅ | `symtab-dynsym` | `.symtab`/`.dynsym` function reader | — | `fixture_funcsyms` |
 | ✅ | `foundation` | generic `AnalysisOutput` commit seam | med | bootstrap_from_elf commits with no funcsym regression |
 | ✅ | `noreturn_known` | No-return known list (`NoReturnFunctionAnalyzer`) | easy | fauxware `rejected`: no dead code after `exit(1)` |
@@ -1781,3 +1781,73 @@ unchanged), so the XML datatest oracle is structurally untouched.
 
 - **Tests:** `kuna-console` +1 (`verify_arm_thumb_decode::arm_thumb_compute_decodes_in_thumb_mode`).
   New fixture `arm_thumb_linked_le32` (+ source). No engine/option/catalog change.
+
+### Increment 24 — SPARC PLT import-name recovery ✅
+
+Adds SPARC (SPARC v9, 64-bit, big-endian) to the per-arch PLT decoder in
+`elf_plt.rs` (`decode_sparc`) and proves it end-to-end on a **real, linked,
+dynamically-linked SPARC64 executable**. SPARC was the last common Linux/SysV
+machine with a regular `.plt` whose imports kuna still rendered as `sub_<addr>`;
+its arch auto-detect (`sparc:BE:64:default` → the SPARC `.sla`) was already wired
+in `loadimage_object::language_id_for`, but `decode_plt_section` had no SPARC arm
+(it hit the `_ => {}` PPC/MIPS seam fallthrough), so the GOT-name map never reached
+the call targets.
+
+**Why SPARC is the odd one out (and why the decoder is the simplest of the set).**
+Every other supported arch decodes the stub's indirect jump to find a *separate*
+`.got` slot, then matches that slot against `build_got_name_map`. SPARC doesn't
+work that way: its `.rela.plt` `R_SPARC_JMP_SLOT` relocation `r_offset` **is the
+PLT entry address itself** — the dynamic linker rewrites the in-place 32-byte stub
+at resolution time rather than redirecting through a GOT word (confirmed against
+Ghidra's `SPARC64_ElfRelocationHandler`, which materializes the resolved
+`sethi/or/sllx/jmpl` sequence directly into the relocation address). So
+`build_got_name_map`'s keys are *already* the call targets the decompiler sees.
+`decode_sparc` walks the `.plt` in 32-byte strides, gates each entry on the
+canonical `sethi %hi(...),%g1` veneer head (BE `0x03xxxxxx`: op=00, rd=%g1,
+op2=0b100), and records any entry that is a known relocation — the stub address
+and the map key are one and the same (`record(entry, entry, …)`). The 4-slot
+(`0x80`-byte) reserved PLT0 header and the non-symbol `__gmon_start__` slot are not
+relocation keys, so they fall out by the same self-correcting cross-check the other
+arches use.
+
+**Fixture (`plt_sparc64`, source `plt_sparc64.c` vendored alongside).** A dynamic
+SPARC v9 / ELF64 / big-endian **EXEC** built with `sparc64-linux-gnu-gcc -O0` (not
+stripped). `main` (`0x100750`) calls `puts("hello")` (`puts@plt`=`0x2021c0`) and
+`printf("%d\n", argc)` (`printf@plt`=`0x2021a0`); both are `R_SPARC_JMP_SLOT`
+relocations in `.rela.plt` whose `r_offset` equals the entry address, and each
+`.plt` entry is the textbook 32-byte `sethi %hi(...),%g1; b,a %xcc,<resolver>;
+nop*6` veneer the decoder recognizes (the 4-slot `0x80`-byte PLT0 header precedes
+the imports). The `kuna-dev` image ships `sparc64-linux-gnu-gcc` but not the SPARC
+libc dev package; the fixture build installs `libc6-dev-sparc64-cross` (headers +
+crt1) in a single `--user root` container invocation (see fixtures/README.md
+provenance), exactly as the RISC-V port did.
+
+**Result (the proof).** `kuna decompile plt_sparc64 main`:
+
+```c
+unsigned long long main(int4 a0)
+
+{
+  puts("hello");
+  printf("%d\n",(int8)a0);
+  return 0;
+}
+```
+
+The PLT imports render as `puts`/`printf` (not `sub_2021c0`/`sub_2021a0`), and the
+`.rodata` string constants are recovered too. This is a **clean win**, not a
+documented seam — SPARC's `.plt` is regular and statically decodable. `make test`
+**675/675 PARITY OK**; `make test-stages` **158/158 PARITY OK**; `make rust-test`
+green (incl. the new `verify_sparc_plt` + the `sparc_plt_decode` unit test). The
+change is purely additive on the real-ELF path (a new `decode_sparc` arm + a new
+fixture + a new console e2e), so the XML datatest oracle is structurally untouched
+(the `<binaryimage>` path never constructs an `ObjectLoadImage`).
+
+- **Tests:** `kuna-analysis` +1 unit (`elf_plt::tests::sparc_plt_decode`, the
+  32-byte strider over a header + three synthetic veneers); `kuna-console` +1 e2e
+  (`verify_sparc_plt.rs::sparc_plt_calls_are_named_in_decompiled_c`) modeled on
+  `verify_riscv64_plt.rs`/`verify_w11_elf_plt_names.rs`, same specs-absent skip
+  guard, asserting `main` decoded (real, not skipped) and `puts(`/`printf(` named
+  while `sub_2021c0`/`sub_2021a0` are gone. New fixture `plt_sparc64` (+ source).
+  No engine/option/catalog change. This retires the SPARC `sub_<addr>` row in the
+  `plt-got` work-list and the SPARC line of missing-analyses §1.
