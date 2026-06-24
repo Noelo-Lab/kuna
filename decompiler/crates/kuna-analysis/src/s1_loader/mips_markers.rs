@@ -211,7 +211,7 @@ pub struct MipsIsaModePass;
 /// Faithful to `applyIsaMode`'s gate + the `setValue(ISA_MODE, addr, addr, 1)`:
 /// gated on a MIPS ELF object, one paint per STT_FUNC carrying the alternate-ISA
 /// marker. Undefined imports (`.dynsym` UND, address 0) are skipped (no body).
-fn scan_mips_isa_markers(file: &object::File) -> AnalysisOutput {
+pub(crate) fn scan_mips_isa_markers(file: &object::File) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     // canHandle gate: MIPS only (the analog of MIPS_ElfExtension.canHandle:331,
     // e_machine == EM_MIPS). MIPS32 and MIPS64 both report Architecture::Mips /

@@ -22,6 +22,7 @@
 //! `covered`/`exec_ranges` fields are defined here now.
 
 pub mod classify;
+pub mod context;
 pub mod decode;
 pub mod model;
 pub mod walk;
@@ -129,7 +130,14 @@ impl Listing {
             );
         }
 
-        let st = walk::walk(translate, &code_space, &exec_ranges, seeds, &seed_funcs);
+        // Resolve the decode-mode context (ARM TMode / MIPS ISA_MODE) by reusing
+        // the marker logic (design §4.2 / PR5). On x86-64 (and any language with no
+        // decode-mode context) this painter is empty and the walk decodes exactly
+        // as before; on ARM/MIPS it paints Thumb/MIPS16 mode so alt-ISA functions
+        // decode correctly instead of as A32/MIPS32 garbage.
+        let painter = context::ContextPainter::new(file);
+
+        let st = walk::walk(translate, arch, &code_space, &exec_ranges, seeds, &seed_funcs, &painter);
 
         let mut refs_to = st.refs_to;
         let mut refs_from = st.refs_from;

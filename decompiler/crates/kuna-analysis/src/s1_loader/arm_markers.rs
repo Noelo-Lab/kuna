@@ -101,7 +101,7 @@ fn is_arm_marker(name: &str) -> bool {
 ///    documented no-op (no `createUndefinedData` at this tier).
 /// 2. **STT_FUNC with `st_value & 1`** (the Thumb odd-address convention): emit
 ///    `TMode=1` at the normalized even address `value & !1`.
-fn scan_arm_markers(file: &object::File) -> AnalysisOutput {
+pub(crate) fn scan_arm_markers(file: &object::File) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     // canAnalyze gate: ARM only. Mirrors ArmSymbolAnalyzer.canAnalyze:172-177
     // (processor==ARM && getRegister("TMode")!=null). On any other language the

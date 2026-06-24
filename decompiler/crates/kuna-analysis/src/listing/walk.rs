@@ -20,9 +20,11 @@ use std::rc::Rc;
 
 use kuna_base::address::RangeList;
 use kuna_base::space::AddrSpace;
+use kuna_decomp::architecture::Architecture;
 use kuna_sleigh::translate::Translate;
 
 use super::classify::classify;
+use super::context::ContextPainter;
 use super::decode::decode_one;
 use super::model::{DiscoveredFunction, Insn, Reference, RefKind};
 
@@ -72,14 +74,30 @@ fn in_exec(exec_ranges: &[(u64, u64)], vma: u64) -> bool {
 /// [`DiscoveredFunction`] metadata for each seed (name / from_symbol); seeds
 /// without an entry there get a generic discovered record. `exec_ranges` bounds
 /// every decode (out-of-bounds = stop-this-path). `code_space` is the space the
-/// `Address`es are built in.
+/// `Address`es are built in. `arch` exposes the engine's `ContextDatabase`, into
+/// which `painter` paints the per-address decode mode (ARM `TMode` / MIPS
+/// `ISA_MODE`) **before** any [`decode_one`] runs (design §4.2 / PR5) — without
+/// it a Thumb/MIPS16 function misdecodes as A32/MIPS32. On x86-64 (no decode-mode
+/// context) the painter is empty and this is a no-op.
 pub(super) fn walk(
     translate: &dyn Translate,
+    arch: &Architecture,
     code_space: &Rc<AddrSpace>,
     exec_ranges: &[(u64, u64)],
     seeds: &[u64],
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
+    painter: &ContextPainter,
 ) -> WalkState {
+    // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
+    // ContextDatabase BEFORE we decode a single instruction — the timing the
+    // alternate ISAs require (the same ordering `commit_analysis_output` uses).
+    // `set_variable` fills each mode from its marker up to the next change point,
+    // so painting once here covers every address the walk visits. A no-op when
+    // `painter` is empty (x86-64 / any language with no decode-mode context).
+    if !painter.is_empty() {
+        painter.paint_all(arch, code_space);
+    }
+
     let mut st = WalkState::new();
 
     // Function-entry worklist, seeded from the root set.
