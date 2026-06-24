@@ -285,6 +285,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // printf/scanf varargs per call site, then re-decompiles.  Default-off
     // (Ghidra `FormatStringAnalyzer.setDefaultEnablement(false)`).
     "formatstring",
+    // (kuna) Listing/xref disassembly tier: a program-wide recursive-descent
+    // Listing/xref model built once at load (real-ELF path only) and shared
+    // read-only with consumer passes.  Default-off (the Listing is never built).
+    "listing",
 ];
 
 // ---------------------------------------------------------------------------

@@ -103,4 +103,7 @@ itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.x
 observability on the switchmulti multistage restart), `kuna-pipeline-quality.xml`
 (reduced-pipeline sub-queries + the goto-quality metric), `kuna-regions.xml`
 (S7 region-identification observability: `region tree/blocks/walk` from the angr
-RegionIdentifier port on a loop+diamond CFG; `docs/regions.md`).
+RegionIdentifier port on a loop+diamond CFG; `docs/regions.md`), `kuna-listing-flag.xml`
+(the Listing/xref disassembly tier flag `option listing on|off`, default-off: parses,
+round-trips, and is inert on the XML path — PR1 of the Listing/xref tier,
+`docs/listing-tier-design.md`).

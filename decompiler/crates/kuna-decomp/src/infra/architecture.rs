@@ -378,6 +378,12 @@ pub struct Architecture {
     /// re-decompile.  Default-off ⇒ the loop is inert and every parity gate is
     /// byte-identical.
     pub analysis_formatstring: bool,
+    /// (kuna) Gate the Listing/xref disassembly tier (`listing`); default
+    /// **off**. When on (real-ELF path only), a program-wide recursive-descent
+    /// disassembly Listing/xref model is built once at load and shared read-only
+    /// with the consumer analysis passes. Default-off ⇒ the Listing is never
+    /// built and every parity gate is byte-identical.
+    pub analysis_listing: bool,
 
     // --- Owned subsystems (architecture.hh:211-233) -----------------------
     /// Memory map of global variables and functions (C++ `symboltab`).
@@ -573,6 +579,7 @@ impl Architecture {
             analysis_callfixup: false,
             analysis_addrtable: false,
             analysis_formatstring: false,
+            analysis_listing: false,
 
             symboltab,
             options: OptionDatabase::new(),
@@ -666,6 +673,7 @@ impl Architecture {
         self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
         self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
+        self.analysis_listing = false; // Listing/xref tier default-off
     }
 
     /// Apply a kuna stage-model option (`option <name> <value>`), the analogue of
@@ -769,6 +777,7 @@ impl Architecture {
             "formatstring" => {
                 on_off!(analysis_formatstring, "Format-string varargs-typing pass")
             }
+            "listing" => on_off!(analysis_listing, "Listing/xref disassembly tier"),
             other => Err(KunaError::parse(format!("Unknown kuna option: {other}"))),
         }
     }

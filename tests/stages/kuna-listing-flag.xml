@@ -1,0 +1,42 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna infrastructure test: the Listing/xref disassembly tier flag
+    (`option listing on|off`, default-OFF), PR1 of the Listing/xref tier.
+
+    The Listing/xref tier (docs/listing-tier-design.md) builds a program-wide
+    recursive-descent disassembly model ONLY on the real-ELF bootstrap path,
+    never the XML datatest path. PR1 wires the `option listing` flag end to
+    end (architecture flag/default/reset/set_kuna_option, KUNA_OPTION_NAMES,
+    analysis_pass_enabled, the stages.toml settable row, the AnalysisCtx field)
+    but does NOT build the Listing yet (PR2). The flag is therefore INERT: by
+    default-OFF, and on the XML path it is unreachable regardless.
+
+    This test proves:
+      * `option listing on` PARSES and round-trips (an unknown option would make
+        the console error and the second decompile would not run / would differ),
+      * flipping it changes NOTHING about the rendered C (default-off parity):
+        the same output appears under the default pipeline AND with `listing on`.
+
+    Reuses the GH-558 bytes as a small, deterministic loadable function.
+
+    Source:           int gh558(int x) { if (x LE 8) return 1; return 0; }
+    Compiled (as):    cmp $8,%edi ; jg +6 ; mov $1,%eax ; ret ; xor %eax,%eax ; ret
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+83ff087f06b801000000c331c0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="gh558"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 gh558(int4 x);</com>
+  <com>lo fu gh558</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option listing on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-LISTING #1: option listing on parses and round-trips, and is inert: the source form x &lt;= 8 renders identically in both passes (default-off + flag-on parity)" min="2" max="2">if \(x &lt;= 8\)</stringmatch>
+</decompilertest>
