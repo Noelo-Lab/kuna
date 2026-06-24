@@ -159,6 +159,33 @@ impl Listing {
         }
     }
 
+    /// Seed the discovered-function model's `has_no_return` / `call_fixup` flags
+    /// from the load-time Known passes (the `noreturn_known` / `callfixup` pass
+    /// outputs, by entry VMA), so a Listing consumer can skip already-modeled
+    /// callees and treat a Known-no-return callee as terminal evidence.
+    ///
+    /// Consumes and returns `self` (a builder-style post-build refinement): the
+    /// keystone walk does not know the Known/fixup facts (they come from sibling
+    /// passes), so they are layered on after `build`. A seed VMA with no matching
+    /// `DiscoveredFunction` is ignored (additive, never fails).
+    #[must_use]
+    pub fn with_noreturn_seeds(mut self, noreturn: &[u64], callfixup: &[u64]) -> Listing {
+        for &addr in noreturn {
+            if let Some(f) = self.funcs.get_mut(&addr) {
+                f.has_no_return = true;
+            }
+        }
+        for &addr in callfixup {
+            if let Some(f) = self.funcs.get_mut(&addr) {
+                // A nonempty marker is all the consumer reads (`call_fixup.is_some()`).
+                if f.call_fixup.is_none() {
+                    f.call_fixup = Some(String::new());
+                }
+            }
+        }
+        self
+    }
+
     // ---- instruction model ----
 
     /// The instruction starting exactly at `vma`, if one was decoded.

@@ -1,7 +1,7 @@
 //! Unit tests for the kuna stage registry (`kuna_stages.rs`).
 //!
 //! Parity targets transcribed from `decompiler/cpp/kuna_stages.cc`:
-//! group=39, substage=40, surface=90, settable=35 (23 stage-model knobs + 12
+//! group=39, substage=40, surface=90, settable=36 (23 stage-model knobs + 13
 //! kuna analysis-tier gates), plus the stage-code helpers, the lookup API, the
 //! typed `OptionValues` defaults, and the catalog emitter.
 
@@ -28,16 +28,17 @@ fn surface_count_is_90() {
 }
 
 #[test]
-fn settable_count_is_35() {
-    // 23 stage-model knobs + 12 analysis-tier gates: 10 per-run analysis-pass
+fn settable_count_is_36() {
+    // 23 stage-model knobs + 13 analysis-tier gates: 10 per-run analysis-pass
     // enablement (noreturn_known/libproto/strings/entry_disc/arm_markers/mips_gp/
     // mips_isa/dwarf/callfixup/addrtable) + the `formatstring` DecompilerDependent
-    // varargs-typing gate + the `listing` Listing/xref disassembly tier gate.
+    // varargs-typing gate + the `listing` Listing/xref disassembly tier gate +
+    // the `noreturn_disc` discovered-no-return Listing consumer gate.
     // (mips_isa added with MIPS16 ISA_MODE painting, Increment 21; mips_gp with
     // MIPS $gp recovery; formatstring with half B; listing with the Listing/xref
-    // tier, Increment 29.)
-    assert_eq!(kuna_num_settables(), 35);
-    assert_eq!(SETTABLE_TABLE.len(), 35);
+    // tier, Increment 29; noreturn_disc with the first Listing consumer, Increment 33.)
+    assert_eq!(kuna_num_settables(), 36);
+    assert_eq!(SETTABLE_TABLE.len(), 36);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -216,11 +217,11 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_20_suppressed_for_13() {
+fn option_values_live_value_present_for_20_suppressed_for_14() {
     let ov = OptionValues::default();
     // 20 options have a codegen live reader (realtypes joins the field-backed
     // group); the live_value returns the current value for them and None for
-    // loweredswitch/stackguard/namestyle PLUS the 12 analysis-tier gates (which
+    // loweredswitch/stackguard/namestyle PLUS the 13 analysis-tier gates (which
     // have no `live_field` — their live state is read console-side via the
     // hand-written `kuna_live_value`, not the codegen `live_value`).
     const PASS_GATES: &[&str] = &[
@@ -236,6 +237,7 @@ fn option_values_live_value_present_for_20_suppressed_for_13() {
         "addrtable",
         "formatstring",
         "listing",
+        "noreturn_disc",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -320,8 +322,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 35 rows: 34 trailing commas (the last has none).
-    assert_eq!(json.matches("},\n").count(), 34);
+    // 36 rows: 35 trailing commas (the last has none).
+    assert_eq!(json.matches("},\n").count(), 35);
 }
 
 #[test]

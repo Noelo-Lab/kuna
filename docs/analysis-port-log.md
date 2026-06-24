@@ -2418,3 +2418,109 @@ structurally untouched (no new `--option`, catalog unchanged).
   `kuna-analysis/src/s1_loader/mips_markers.rs` (`scan_mips_isa_markers` → `pub(crate)`).
 - **New:** `kuna-analysis/src/listing/context.rs`,
   `kuna-console/tests/verify_listing_context.rs`.
+
+### Increment 33 — Listing/xref tier PR6: discovered-no-return consumer (the first Listing consumer) ✅
+
+The payoff. The first analyzer built on the Listing/xref model — the kuna analog of
+Ghidra's `FindNoReturnFunctionsAnalyzer` ("Non-Returning Functions — Discovered").
+It finds **custom** no-return wrappers the static name-lists cannot catch (a local
+`die()` that tail-calls `exit`), by **flow evidence** over the program-wide Listing,
+and marks them no-return through the EXISTING `NoReturnFact` commit seam. Two parts:
+a build-timing fix (PART A) + the consumer (PART B).
+
+**PART A — the build-timing fix (the mechanism).** PR2 flagged it: the live CLI emits
+`option listing on` *after* `load file`, but the analysis driver
+(`run_default_analyses_per_pass`) runs *at load*, so a Listing gated on
+`arch.analysis_listing` never builds through the CLI (the flag is still default-off
+at load). The fix mirrors the **Increment 13** deferred-commit precedent. At load,
+`bootstrap_from_elf` now also **stashes the image bytes + path** on `ConsoleProgram`
+(`analysis_image`); the *build* of the Listing — and the run of any Listing-consumer
+pass — is **deferred to `commit_pending_analysis`** (reached at `read symbols`, AFTER
+the CLI's `option` lines). There, gated on `arch.analysis_listing` (now in effect),
+the stashed bytes are re-parsed, the Listing is built with funcsym names +
+Known-no-return seed metadata (`Listing::with_noreturn_seeds`), the new
+`passes::run_listing_consumers` runs the consumer over it, and its (per-pass gated)
+facts merge into the same `AnalysisOutput` the deferred commit already commits. The
+consumer's facts thus flow through the **unchanged** `commit_analysis_output`
+no-return arm (`find_function_across_scopes`/`query_global_function` →
+`set_function_no_return`); flow-repair / dead-code elimination is INHERITED from the
+engine. Default (listing off) ⇒ the whole deferred block is skipped ⇒ byte-identical
+to today; the XML path stashes no image ⇒ structural no-op.
+
+**PART B — the consumer (`s1_noreturn_disc`, id `noreturn_disc`, default-OFF).** A
+new gated `AnalysisPass` whose `run` short-circuits to empty when
+`ctx.listing.is_none()`. The evidence-tally fixpoint over the Listing (design §6 +
+Ghidra):
+- **Rule 1 (call-site evidence):** a callee is no-return when **≥3** of its call
+  sites (`refs_to(callee)` Call edges) show *no valid fall-through* — the byte after
+  `call` is not a decoded instruction start (`!is_instruction_start`), or is data
+  (`is_data`), or is *another* function's entry (`function_at(fall)`), or the call
+  itself has no fall-through (a lowered tail jump). (Ghidra's evidence threshold = 3.)
+- **Rule 2 (fixpoint promotion):** a function whose every terminal path is a call to
+  an already-discovered-no-return function, *with no returning path* (no `RETURN`
+  instruction in its span), is itself no-return — so a wrapper-of-a-wrapper converges.
+- Skips callees already modeled no-return (`function_at(t).has_no_return`, seeded from
+  the Known pass) or call-fixup'd. Emits `NoReturnFact { addr, name }` (NO new commit
+  arm).
+
+**The END-TO-END (the whole point — real, not faked).** Fixture
+`noreturn_disc_x86_64` (`+.c`), `gcc -O1 -no-pie -fno-pic`: a `static void
+die(const char*)` that `fprintf`s then `exit(1)`, NOT marked
+`__attribute__((noreturn))`, called from **four** functions (`compute_a/b/c/d`). At
+`-O1` gcc emits nothing after each `call die` — the byte after the call is the next
+function's entry — so all four call sites show no-valid-fall-through (≥3). `compute_a`,
+decompiled:
+
+*BEFORE (default, flags off)* — `die` is treated as returning, so the decompiler
+follows the fall-through past `call die` through `compute_b`/`compute_c`/`compute_d`
+into `main` (massive dead code merged into one body):
+```c
+undefined16 compute_a(int4 a0,void *a1,unsigned long a2)
+{ ... if (0 <= a0) { ...; return v3; }
+  v13 = 0x40200f;
+  die();                       /* treated as returning */
+  if (v13 != 0) { ... return v9; }
+  v14 = "b: zero"; die("b: zero");
+  ...                          /* compute_c, compute_d, main bodies all inlined */
+  v5 = compute_a(); ... __printf_chk(1,"%d %d %d %d\n",...); return v2 << 0x40; }
+```
+
+*AFTER (`--option listing on --option noreturn_disc on`)* — `die` is concluded
+no-return; the engine's inherited repair eliminates the dead code:
+```c
+int4 compute_a(int4 a0)
+{ if (0 <= a0) { return a0 * 2; }
+                    /* WARNING: Subroutine does not return */
+  die("a: negative"); }
+```
+
+**Gating invariants (the parity proof).** Verified directly: `noreturn_disc on` +
+`listing off` ⇒ identical to default (no Listing to read); `listing on` +
+`noreturn_disc off` ⇒ identical to default (Listing built, consumer gated off). Only
+BOTH flags on changes output. So the default path is byte-identical to today.
+
+**Result (specs built; tests ran, not skipped).** New e2e
+`verify_noreturn_disc.rs` (3/3): the before/after assertion (output differs,
+flags-on carries the no-return terminator, default does not), the flags-off baseline,
+and the `die`-tail-calls-`exit` sanity. `make test` **675/675 PARITY OK**;
+`make test-stages` **159/159 PARITY OK**; `make rust-test` green; `kuna catalog
+--check` **catalog OK**. settable_count **35 → 36** (the `noreturn_disc` gate);
+`stage_catalog.json` fixture + `docs/assertions.md` regenerated; the count-fixture
+ripple (kuna_stages `settable_count_is_36`, `…suppressed_for_14`,
+`…brackets_and_commas` 35 commas, `catalog_bytecompat` 36) updated.
+
+- **Divergence/LOSS:** none to the parity oracles — default behavior unchanged
+  (default-OFF, real-ELF-path-only, gated by BOTH `listing` and `noreturn_disc`). The
+  consumer is a flow heuristic, hence default-off behind its own flag (faithful to
+  Ghidra's `FindNoReturnFunctionsAnalyzer.setDefaultEnablement(false)`). Computed/
+  indirect calls contribute no evidence (no static callee); jump-table resolution
+  stays deferred (design §8).
+- **New:** `kuna-analysis/src/s1_noreturn_disc/mod.rs`,
+  `kuna-console/tests/verify_noreturn_disc.rs`, the `noreturn_disc_x86_64` fixture
+  (`+.c`).
+- **Changed:** `kuna-analysis/src/{lib.rs, passes.rs, listing/mod.rs}`,
+  `kuna-console/src/engine.rs`, `kuna-decomp/src/infra/architecture.rs`,
+  `kuna-decomp/src/p0_knowledge/options.rs`, `kuna-decomp/stages.toml`,
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs`,
+  `kuna-decomp/tests/{catalog_bytecompat.rs, fixtures/stage_catalog.json}`,
+  `docs/assertions.md`.

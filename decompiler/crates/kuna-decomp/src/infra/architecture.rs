@@ -384,6 +384,14 @@ pub struct Architecture {
     /// with the consumer analysis passes. Default-off ⇒ the Listing is never
     /// built and every parity gate is byte-identical.
     pub analysis_listing: bool,
+    /// (kuna) Gate the discovered-no-return consumer (`noreturn_disc`), the first
+    /// Listing/xref consumer; default **off**. It is a flow heuristic (a callee is
+    /// no-return if ≥3 of its call sites show no valid fall-through, iterated to a
+    /// fixpoint over the Listing) that can be wrong, so it ships behind its own
+    /// flag — the kuna analog of Ghidra's `FindNoReturnFunctionsAnalyzer`. Reads
+    /// the Listing (`--option listing on` builds it); a no-op when the Listing is
+    /// absent. Default-off ⇒ every parity gate is byte-identical.
+    pub analysis_noreturn_disc: bool,
 
     // --- Owned subsystems (architecture.hh:211-233) -----------------------
     /// Memory map of global variables and functions (C++ `symboltab`).
@@ -580,6 +588,7 @@ impl Architecture {
             analysis_addrtable: false,
             analysis_formatstring: false,
             analysis_listing: false,
+            analysis_noreturn_disc: false,
 
             symboltab,
             options: OptionDatabase::new(),
@@ -674,6 +683,7 @@ impl Architecture {
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
         self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
         self.analysis_listing = false; // Listing/xref tier default-off
+        self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
     }
 
     /// Apply a kuna stage-model option (`option <name> <value>`), the analogue of
@@ -778,6 +788,9 @@ impl Architecture {
                 on_off!(analysis_formatstring, "Format-string varargs-typing pass")
             }
             "listing" => on_off!(analysis_listing, "Listing/xref disassembly tier"),
+            "noreturn_disc" => {
+                on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
+            }
             other => Err(KunaError::parse(format!("Unknown kuna option: {other}"))),
         }
     }

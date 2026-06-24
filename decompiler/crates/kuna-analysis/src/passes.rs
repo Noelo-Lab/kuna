@@ -178,6 +178,101 @@ pub fn listing_seeds(file: &object::File) -> Vec<u64> {
     seeds
 }
 
+/// The Listing/xref-tier **consumer** passes — those that read the built Listing
+/// (`ctx.listing`) instead of (or in addition to) the parsed object. They are
+/// kept OUT of [`passes_for`] because they only run when the Listing has been
+/// built, which (per the build-timing fix) happens at the deferred commit point
+/// (`read symbols`), not at load — see [`run_listing_consumers`].
+///
+/// Today the only consumer is the discovered-no-return analyzer (`noreturn_disc`,
+/// the kuna analog of Ghidra's `FindNoReturnFunctionsAnalyzer`). Each is still
+/// gated by its own `--option <id> on|off` flag at commit time
+/// (`engine.rs::analysis_pass_enabled`), so a default run skips it.
+fn listing_consumer_passes() -> Vec<Box<dyn AnalysisPass>> {
+    vec![Box::new(crate::s1_noreturn_disc::NoReturnDiscoveredPass)]
+}
+
+/// Build the Listing/xref tier and run the Listing **consumer** passes over it,
+/// returning each consumer's output keyed by its [`AnalysisPass::id`] (the same
+/// per-pass-split shape as [`run_default_analyses_per_pass`]).
+///
+/// This is the deferred half of the build-timing fix (PR6). The non-Listing
+/// passes run at load (`run_default_analyses_per_pass`), but the Listing build is
+/// gated on `--option listing on`, a flag the live CLI sets *after* `load file`
+/// (before `read symbols`). So the Listing — and any pass that reads it — must be
+/// built/run at the deferred commit point, when the flag is finally in effect.
+/// The console calls this from `commit_pending_analysis` (reached at `read
+/// symbols`), gated on `arch.analysis_listing`; it parses `bytes`, builds the
+/// Listing with funcsym names + Known-no-return/call-fixup seed metadata, and runs
+/// every [`listing_consumer_passes`] pass.
+///
+/// A parse failure (or no exec ranges) yields an empty list (additive, never
+/// fails). Bound to the real-ELF path: the XML datatest path never calls this, so
+/// the parity oracles are structurally untouched.
+///
+/// `noreturn_seeds`/`callfixup_seeds` are the addresses the load-time Known
+/// no-return / call-fixup passes flagged (so the Listing's `DiscoveredFunction`s
+/// carry `has_no_return`/`call_fixup`, letting the consumer skip already-modeled
+/// callees and seed the fixpoint's terminal set faithfully).
+pub fn run_listing_consumers(
+    bytes: &[u8],
+    image: &ObjectLoadImage,
+    arch: &Architecture,
+    translate: &dyn Translate,
+    noreturn_seeds: &[u64],
+    callfixup_seeds: &[u64],
+) -> Vec<(&'static str, AnalysisOutput)> {
+    let Ok(file) = object::File::parse(bytes) else {
+        return Vec::new();
+    };
+    let seeds = listing_seeds(&file);
+    let seed_names = funcsym_names(&file);
+    let funcsym_seeds = crate::s1_entry::existing_function_addrs(&file);
+    let listing = crate::listing::Listing::build_with_meta(
+        &file,
+        image,
+        arch,
+        translate,
+        &seeds,
+        &funcsym_seeds,
+        &seed_names,
+    );
+    // Seed the function model's no-return / call-fixup flags from the load-time
+    // Known passes so the consumer skips already-modeled callees and the fixpoint
+    // treats a Known-no-return callee as terminal.
+    let listing = listing.with_noreturn_seeds(noreturn_seeds, callfixup_seeds);
+    let ctx = AnalysisCtx { file: &file, image, arch, listing: Some(&listing) };
+    listing_consumer_passes()
+        .iter()
+        .map(|pass| (pass.id(), pass.run(&ctx)))
+        .collect()
+}
+
+/// Extract `(addr, name)` for every text/function symbol in the object — the name
+/// overlay the Listing seeds its `DiscoveredFunction`s with, so a discovered
+/// callee resolves to its real name (e.g. the static `die` wrapper) instead of
+/// `sub_<addr>`. ASCII/UTF-8 names only (a non-UTF-8 name is skipped).
+fn funcsym_names(file: &object::File) -> Vec<(u64, String)> {
+    use object::read::{Object, ObjectSymbol};
+    use object::SymbolKind;
+    let mut out: Vec<(u64, String)> = Vec::new();
+    for sym in file.symbols().chain(file.dynamic_symbols()) {
+        if sym.kind() != SymbolKind::Text {
+            continue;
+        }
+        let addr = sym.address();
+        if addr == 0 {
+            continue;
+        }
+        if let Ok(name) = sym.name() {
+            if !name.is_empty() {
+                out.push((addr, name.to_string()));
+            }
+        }
+    }
+    out
+}
+
 /// Parse `bytes` as an object file, build an [`AnalysisCtx`], and run every
 /// [`default_passes`] pass, returning the merged [`AnalysisOutput`].
 ///
