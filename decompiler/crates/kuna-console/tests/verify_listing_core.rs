@@ -205,3 +205,80 @@ fn listing_build_recovers_instructions_flow_and_functions() {
         }
     }
 }
+
+/// PR2 build-through-engine proof: build the Listing the way the analysis driver
+/// (`run_default_analyses_per_pass`) does — seed set =
+/// `existing_function_addrs ∪ collect_entries` (exec-filtered, sorted/deduped),
+/// driven by the engine's real `Translate` (which reads bytes through the loader
+/// the bootstrap attached, not a throwaway loadimage). This is the path PR2 wires
+/// behind `--option listing on`; here we exercise it directly and confirm it
+/// populates a non-empty function/instruction model. (The runtime `ctx.listing`
+/// population through the live driver is exercised by PR6, the first consumer;
+/// PR2's job is the wiring + this proof + the flag-on==flag-off parity, see
+/// `verify_listing_parity.rs`.)
+#[test]
+fn listing_build_through_engine_driver_seeds() {
+    let root = repo_root();
+    let specs = root.join("specs");
+    let spec_roots = vec![specs.to_str().unwrap().to_string()];
+
+    let bin = match fauxware().to_str() {
+        Some(s) => s.to_string(),
+        None => return,
+    };
+
+    let prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "verify_listing_core: skipping (bootstrap failed, build the x86 `.sla` with \
+                 `make specs`): {}",
+                e.explain()
+            );
+            return;
+        }
+    };
+
+    let bytes = std::fs::read(&bin).expect("read fixture bytes");
+    let file = object::File::parse(&*bytes).expect("parse fixture ELF");
+
+    // The driver's exact seed set (design §3.1): existing funcsyms ∪ discovered
+    // entries, restricted to executable sections, sorted/deduped — the very
+    // helper the live driver calls (`passes::listing_seeds`).
+    let seeds = kuna_analysis::passes::listing_seeds(&file);
+    assert!(!seeds.is_empty(), "the driver seed set must be non-empty for fauxware");
+
+    let arch = prog.arch();
+    let translate = arch.translate(); // the engine's real `&dyn Translate`
+    // `image` is part of the contract but the decode reads through the engine's
+    // attached loader (driven by `translate`), so any loadimage over the bytes
+    // satisfies it (decode.rs).
+    let image = kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(&bin, &bytes)
+        .expect("open loadimage");
+
+    let listing = Listing::build(&file, &image, arch, translate, &seeds);
+
+    // The build-through-engine path populates the model: at least the seeds
+    // become functions, and the entry decodes to an instruction.
+    assert!(
+        listing.function_count() > 0,
+        "engine-driven Listing::build must discover/seed functions, got {}",
+        listing.function_count()
+    );
+    let entry = seeds[0];
+    assert!(
+        listing.instruction_at(entry).is_some(),
+        "engine-driven Listing::build must decode an instruction at the first seed {entry:#x}"
+    );
+    // `main` is a seed; it must decode too.
+    assert!(
+        listing.instruction_at(MAIN).is_some(),
+        "engine-driven Listing::build must decode an instruction at main ({MAIN:#x})"
+    );
+    eprintln!(
+        "verify_listing_core (driver path): {} seeds -> {} functions, {} instructions",
+        seeds.len(),
+        listing.function_count(),
+        listing.num_instructions()
+    );
+}
