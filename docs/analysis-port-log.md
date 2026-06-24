@@ -2169,6 +2169,64 @@ datatest oracle is untouched — the keystone is not yet on any decompilation pa
 - **Behind the (forthcoming) `--option listing` flag** (PR1) and **not yet wired
   into the engine** (PR2).
 
+### Increment 29 — Listing/xref tier PR1: the `--option listing` flag (default-off) ✅
+
+PR1 of the Listing/xref tier (`docs/listing-tier-design.md` §5.1, §7 PR1): wire
+the `--option listing` flag end-to-end, default-OFF, as pure plumbing. No Listing
+is built yet (PR2 invokes the keystone from the engine); the flag is inert.
+
+**What's wired (the `addrtable`/`formatstring` template, followed exactly).**
+- `infra/architecture.rs`: the `analysis_listing: bool` field (in the `analysis_*`
+  block after `analysis_formatstring`), `false` in the constructor, `self.analysis_listing
+  = false;` in `reset_defaults_internal`, and the
+  `"listing" => on_off!(analysis_listing, "Listing/xref disassembly tier")` arm in
+  `set_kuna_option`.
+- `p0_knowledge/options.rs`: `"listing"` added to `KUNA_OPTION_NAMES`.
+- `kuna-console/src/engine.rs`: `"listing" => arch.analysis_listing,` in
+  `analysis_pass_enabled` (explicit — the match fails OPEN with `_ => true`).
+- `kuna-console/src/kuna_console.rs`: `"listing" => on_off(conf.analysis_listing),`
+  in `kuna_live_value` (the console-side live `current` reader for the catalog),
+  matching the analysis-pass-gate block.
+- `kuna-decomp/stages.toml`: a `[[settable]]` analysis-enablement row
+  (`option="listing"`, `values="on|off"`, `default="off"`,
+  `change_kind="analysis-enablement"`, no `live_field`); the stale header count
+  comment fixed (`settable=31` → `35`).
+- `kuna-analysis/src/pass.rs`: `pub listing: Option<&'a Listing>` added to
+  `AnalysisCtx` (imported from `crate::listing::Listing`); always `None` for now —
+  both `AnalysisCtx { ... }` construction sites in `passes.rs` set `listing: None`.
+- `kuna_stages/tests.rs`: `settable_count_is_34` → `settable_count_is_35` (35 =
+  23 stage-model knobs + 12 analysis-tier gates); the `live_value` suppressed-set
+  test (PASS_GATES + 11→12 comment) and the `emit_catalog_json` trailing-comma
+  count (33 → 34) updated.
+- `docs/assertions.md` regenerated via `kuna catalog --markdown` (the new
+  `listing` row appended).
+
+**Proof.**
+- `kuna catalog --check` → **catalog OK** (the catalog documents exactly the 35
+  registered kuna options; cross-checks against `KUNA_OPTION_NAMES` in-process).
+  Settable count: **34 → 35**.
+- The bumped `settable_count_is_35` unit test passes; all 22 `kuna_stages` tests
+  green.
+- New stages testcase `tests/stages/kuna-listing-flag.xml` (an infra test):
+  decompiles the GH-558 fixture twice — once under the default pipeline, once with
+  `option listing on` — and asserts the source-form C (`if (x <= 8)`) renders
+  **identically** in both passes (default-off parity; the flag parses, round-trips,
+  and is inert on the XML path). `docs/baseline-stages.json` regenerated
+  (158 → 159 passing keys; only the new `KUNA-LISTING #1` key added).
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159
+PARITY OK**; `make rust-test` green; `kuna catalog --check` **OK**. Pure plumbing
++ default-off ⇒ the engine paths are byte-identical (the Listing is never built;
+`ctx.listing` is always `None`), so the 675/675 datatest oracle and the real-ELF
+bootstrap are untouched. The flag is inert until PR2 builds the Listing.
+
+- **Changed:** `infra/architecture.rs`, `p0_knowledge/options.rs`,
+  `p0_knowledge/kuna_stages/tests.rs`, `kuna-decomp/stages.toml`,
+  `kuna-console/src/engine.rs`, `kuna-console/src/kuna_console.rs`,
+  `kuna-analysis/src/pass.rs`, `kuna-analysis/src/passes.rs`, `docs/assertions.md`,
+  `docs/baseline-stages.json`, `tests/stages/README.md`.
+- **New:** `tests/stages/kuna-listing-flag.xml`.
+
 ### Increment 30 — Listing/xref tier read API (code-unit partition + function model + xref queries)
 
 **What.** The read/query surface over the PR0-built `Listing` — design

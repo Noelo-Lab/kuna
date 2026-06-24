@@ -123,6 +123,7 @@
     "data:KUNA-CONSOLE #6: stage map resolves the GH-558 sub-stage",
     "data:KUNA-CONSOLE #7: stage status reports the active pipeline variant",
     "data:KUNA-CONSOLE #8: stage status reports kuna sub-stage option defaults (DIV-2: original)",
+    "data:KUNA-LISTING #1: option listing on parses and round-trips, and is inert: the source form x <= 8 renders identically in both passes (default-off + flag-on parity)",
     "data:KUNA-PIPELINE #1: pipeline list names the variants with decompile current",
     "data:KUNA-PIPELINE #2: reduced normalize variant produces no structuring",
     "data:KUNA-QUALITY #1: full pipeline reports the single if-goto edge (before and after the sub-query)",
@@ -133,6 +134,11 @@
     "data:KUNA-REGIONS #4: the recursive walker visits the entry block exactly once",
     "data:KUNA-REGIONS #5: stage map routes region tree to S7 loop-refinement",
     "data:KUNA-RESTARTS #2: a function that never restarts reports none",
+    "data:REALTYPES #1: signature uses real C types, not xunknown8",
+    "data:REALTYPES #2: 1-byte stack buffer is char[8], not xunknown1[8]",
+    "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",
+    "data:REALTYPES #4: no xunknown placeholder remains",
+    "data:REALTYPES #5: no undefined placeholder remains",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-LoweredSwitch #2: default present",
     "data:angr-LoweredSwitch #3: case 0x70 (p) recovered",
@@ -156,12 +162,7 @@
     "data:namestyle #4 default: global data renders as dat_<addr> (lowercase, no leading zeros)",
     "data:namestyle #5 ghidra restores: argument renders as param_N",
     "data:namestyle #6 ghidra restores: local renders as iVar with no location comment",
-    "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>",
-    "data:REALTYPES #1: signature uses real C types, not xunknown8",
-    "data:REALTYPES #2: 1-byte stack buffer is char[8], not xunknown1[8]",
-    "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",
-    "data:REALTYPES #4: no xunknown placeholder remains",
-    "data:REALTYPES #5: no undefined placeholder remains"
+    "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>"
   ],
   "returncode": 0,
   "unit_footer": null

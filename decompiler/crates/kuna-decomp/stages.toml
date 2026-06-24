@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=90, settable=31
-# (23 stage-model knobs + 8 analysis-pass gates).
+# Counts (asserted in tests): group=39, substage=40, surface=90, settable=35
+# (23 stage-model knobs + 12 analysis-tier gates).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -1834,4 +1834,20 @@ use_when = "Off (default; the decompile→override→re-decompile loop is inert 
 example = "option formatstring on"
 source_decompiler = "kuna"
 inspiration = "Ghidra FormatStringAnalyzer (Variadic Function Signature Override, default-off)"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "listing"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S1"
+substage = "code-data-partition"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-listing"
+summary = "Build the Listing/xref disassembly tier: a program-wide recursive-descent disassembly over the loadimage bytes (reusing the SLEIGH decoder + the lifted S2 flow classifier) producing three read-only sub-models (instruction / cross-reference / discovered-function) shared with the consumer analysis passes. DISABLED by default (the Listing is never built; real-ELF path only, so every parity gate is byte-identical)."
+use_when = "Off (default; the Listing is not built and there is zero decode cost). Flip on to make the program-wide instruction/xref/function model available to consumer passes (e.g. discovered-no-return) on a real-ELF target."
+example = "option listing on"
+source_decompiler = "kuna"
+inspiration = "Ghidra Listing / ReferenceManager / FunctionManager (recursive-descent disassembly)"
 change_kind = "analysis-enablement"

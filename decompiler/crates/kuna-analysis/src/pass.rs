@@ -14,6 +14,7 @@
 
 use kuna_decomp::architecture::Architecture;
 
+use crate::listing::Listing;
 use crate::loadimage_object::ObjectLoadImage;
 
 /// The stage a pass feeds, mirroring the kuna stage model (`docs/stages.md`).
@@ -296,6 +297,10 @@ pub struct AnalysisCtx<'a> {
     pub image: &'a ObjectLoadImage,
     /// The engine architecture (read access to types/spaces/options).
     pub arch: &'a Architecture,
+    /// The optional Listing/xref disassembly model (`--option listing on`,
+    /// default-off). `None` unless the Listing tier is enabled and built at load
+    /// (real-ELF path only). PR1 always leaves this `None`; PR2 builds it.
+    pub listing: Option<&'a Listing>,
 }
 
 /// One program-prep analysis. Implementors mirror the `elf_plt` contract: pure
