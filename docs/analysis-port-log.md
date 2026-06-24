@@ -2293,3 +2293,68 @@ untouched; the keystone is not yet on any decompilation path.
 - **Changed:** `kuna-analysis/src/listing/mod.rs` — the partition / function-model
   / xref read API + the build-time `finalize_refs` ordering/dedup; `exec_ranges`
   sorted at build.
+
+### Increment 31 — Listing/xref tier PR2: engine-invoke (build the Listing at bootstrap, flag-gated)
+
+PR2 of the Listing/xref tier (`docs/listing-tier-design.md` §1.3, §7 PR2): invoke
+the keystone from the engine at bootstrap, flag-gated. PR0 built `Listing::build`
+(unit-tested in isolation); PR1 wired the `--option listing` flag end-to-end with
+`AnalysisCtx.listing: Option<&Listing>` always `None`. PR2 makes the build fire —
+behind the default-OFF flag — and populates `ctx.listing`.
+
+**What's wired.**
+- `kuna-analysis/src/passes.rs`: threaded `translate: &dyn Translate` into both
+  drivers — the live `run_default_analyses_per_pass` and (for signature symmetry)
+  `run_default_analyses`. In each, before the pass loop:
+  `let listing = arch.analysis_listing.then(|| Listing::build(&file, image, arch, translate, &seeds));`
+  then `ctx.listing = listing.as_ref()` (replacing PR1's literal `listing: None`).
+  The `Listing` is owned by the driver and outlives the pass loop (same lifetime
+  shape as `file`), borrowed read-only via `ctx.listing`.
+- The seed set is a new `pub fn listing_seeds(file)` =
+  `existing_function_addrs(file) ∪ collect_entries(file)`, `in_executable_section`
+  -filtered, sorted/deduped (design §3.1), built from the `pub(crate)` `s1_entry`
+  helpers. Exposed `pub` so the cross-crate `verify_listing_*` gates can build the
+  *exact* seed set the live driver uses.
+- `kuna-console/src/engine.rs`: the driver call (`bootstrap_from_elf`) passes the
+  engine's real decoder as the 4th arg — `sleigh.base().unwrap().translate()`
+  (a `&Sleigh`, coerced to `&dyn Translate`; `Sleigh: Translate`). The `.sla` is
+  loaded and the loadimage attached at this point, so a flag-gated build can decode
+  through it. The decode reads bytes through the engine's attached loader (driven by
+  `translate`), not through the `image` parameter (which stays unused, `_image`).
+
+**Parity safety (the key proof).** `arch.analysis_listing` defaults `false`, so
+`.then(...)` is `None` ⇒ no decode work, `ctx.listing == None`, byte-identical to
+today. With the flag on the Listing is built but **no pass consumes it yet** (the
+first consumer is PR6), so the decompiler output is unchanged. The build runs only
+on the real-ELF bootstrap path (`run_default_analyses_per_pass`'s sole caller is
+`bootstrap_from_elf`); the XML datatest path never reaches the analysis driver, so
+the 675/675 and 159/159 oracles are structurally untouched.
+
+**Build-at-load timing (honest note).** The analysis driver runs once inside
+`bootstrap_from_elf` (`load file`), and the live CLI emits `option listing on`
+*after* `load file` (the `--option` lines precede `read symbols`, not `load file`),
+so the build-at-load does not fire through the live CLI today. Wiring the flag to
+fire the build is PR6's concern (the first consumer). PR2's job is the wiring +
+the parity proof + a direct exercise of the build-at-load body through the engine's
+real `Translate`.
+
+**Proof (specs built; tests ran, not skipped).**
+- `verify_listing_core.rs` — new test `listing_build_through_engine_driver_seeds`:
+  bootstraps `fauxware`, builds the driver's exact seed set via `listing_seeds`, and
+  runs `Listing::build` through the engine's real `&dyn Translate`. Result:
+  **21 seeds → 21 functions, 228 instructions**; `function_count() > 0` and
+  `instruction_at(entry).is_some()` (and `instruction_at(main).is_some()`) all hold.
+  This proves the engine-driven build path (vs PR0's throwaway-loadimage test).
+- `verify_listing_parity.rs` — new test `listing_on_is_byte_identical_to_off`:
+  decompiles `fauxware main → print C` with the flag off (default) and with
+  `--option listing on`, and asserts the C is **byte-identical** (437 bytes,
+  identical). The Listing is built behind the flag but consumed by no pass yet.
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159 PARITY
+OK**; `make rust-test` green; `kuna catalog --check` **OK**. The flag is default-off
+so the parity oracles are structurally untouched; with the flag on the build runs
+but changes no output (payoff comes with the first consumer, PR6).
+
+- **Changed:** `kuna-analysis/src/passes.rs`, `kuna-console/src/engine.rs`,
+  `kuna-console/tests/verify_listing_core.rs`.
+- **New:** `kuna-console/tests/verify_listing_parity.rs`.

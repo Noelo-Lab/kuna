@@ -632,8 +632,16 @@ pub fn bootstrap_from_elf(
     // conflict #4, analysis-port-log.md). Bound to the real-ELF path ONLY — the
     // XML <binaryimage> bootstrap never runs these, so the datatest parity oracle
     // is structurally untouched.
-    let pending_analysis =
-        kuna_analysis::passes::run_default_analyses_per_pass(&bytes, &loader, sleigh.base().unwrap());
+    let pending_analysis = kuna_analysis::passes::run_default_analyses_per_pass(
+        &bytes,
+        &loader,
+        sleigh.base().unwrap(),
+        // The Listing/xref tier's decoder: the engine's `Translate` (the same
+        // `Sleigh` the decompile drives), coerced to `&dyn Translate`. The
+        // `.sla` is loaded and the loadimage attached (above), so a flag-gated
+        // `Listing::build` can decode through it. Default-off ⇒ unused.
+        sleigh.base().unwrap().translate(),
+    );
 
     // readLoaderSymbols (the ELF FUNC symbols) BEFORE handing the loader off.
     let symbols = read_loader_symbols_generic(&loader);

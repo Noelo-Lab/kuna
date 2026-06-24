@@ -10,6 +10,7 @@
 //! `docs/missing-analyses.md`.
 
 use kuna_decomp::architecture::Architecture;
+use kuna_sleigh::translate::Translate;
 
 use crate::loadimage_object::ObjectLoadImage;
 use crate::pass::{run_analyses, AnalysisCtx, AnalysisOutput, AnalysisPass};
@@ -152,6 +153,31 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
     ]
 }
 
+/// Build the Listing/xref tier's seed set from a parsed object: the union of
+/// the real funcsym entries (`s1_entry::existing_function_addrs`) and the
+/// discovered entry points (`s1_entry::collect_entries`), restricted to
+/// executable sections, sorted and deduped (design §3.1).
+///
+/// Both halves are already exec-section-filtered upstream (`collect_entries`
+/// filters; `existing_function_addrs` are real FUNC syms), but we apply the
+/// `in_executable_section` gate to both to be robust against a funcsym pointing
+/// at a non-exec address.
+///
+/// `pub` so the cross-crate `verify_listing_*` gates can build the *exact* seed
+/// set the live driver uses (the build-through-engine proof), instead of
+/// reconstructing it from the `pub(crate)` `s1_entry` helpers.
+pub fn listing_seeds(file: &object::File) -> Vec<u64> {
+    let execs = crate::s1_entry::executable_sections(file);
+    let mut seeds: Vec<u64> = crate::s1_entry::existing_function_addrs(file)
+        .into_iter()
+        .chain(crate::s1_entry::collect_entries(file))
+        .filter(|&vma| crate::s1_entry::in_executable_section(&execs, vma))
+        .collect();
+    seeds.sort_unstable();
+    seeds.dedup();
+    seeds
+}
+
 /// Parse `bytes` as an object file, build an [`AnalysisCtx`], and run every
 /// [`default_passes`] pass, returning the merged [`AnalysisOutput`].
 ///
@@ -164,6 +190,7 @@ pub fn run_default_analyses(
     bytes: &[u8],
     image: &ObjectLoadImage,
     arch: &Architecture,
+    translate: &dyn Translate,
 ) -> AnalysisOutput {
     let Ok(file) = object::File::parse(bytes) else {
         return AnalysisOutput::default();
@@ -172,7 +199,15 @@ pub fn run_default_analyses(
     // pass list (the kuna analog of `SourceLanguageAnalyzer` running early and
     // gating the language-specific analyzers).
     let compiler = crate::s1_sourcelang::detect_compiler(&file);
-    let ctx = AnalysisCtx { file: &file, image, arch, listing: None };
+    // Listing/xref tier (design §1.3): built once, before the pass loop, only
+    // when `--option listing on` (default-off ⇒ `None` ⇒ no decode work, byte
+    // -identical to today). Owned here so it outlives the pass loop, borrowed
+    // read-only by every consumer pass via `ctx.listing`.
+    let seeds = listing_seeds(&file);
+    let listing = arch
+        .analysis_listing
+        .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
+    let ctx = AnalysisCtx { file: &file, image, arch, listing: listing.as_ref() };
     run_analyses(&ctx, &passes_for(compiler))
 }
 
@@ -189,12 +224,23 @@ pub fn run_default_analyses_per_pass(
     bytes: &[u8],
     image: &ObjectLoadImage,
     arch: &Architecture,
+    translate: &dyn Translate,
 ) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(file) = object::File::parse(bytes) else {
         return Vec::new();
     };
     let compiler = crate::s1_sourcelang::detect_compiler(&file);
-    let ctx = AnalysisCtx { file: &file, image, arch, listing: None };
+    // Listing/xref tier (design §1.3): built once, before the pass loop, only
+    // when `arch.analysis_listing` (i.e. `--option listing on`). Default-off ⇒
+    // `.then(...)` is `None` ⇒ no decode work, `ctx.listing == None`, and the
+    // real-ELF bootstrap is byte-identical to today. The `Listing` is owned here
+    // (same lifetime shape as `file`), outlives the pass loop, and is borrowed
+    // read-only by every consumer pass via `ctx.listing`.
+    let seeds = listing_seeds(&file);
+    let listing = arch
+        .analysis_listing
+        .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
+    let ctx = AnalysisCtx { file: &file, image, arch, listing: listing.as_ref() };
     passes_for(compiler)
         .iter()
         .map(|pass| (pass.id(), pass.run(&ctx)))
