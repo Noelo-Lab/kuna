@@ -91,15 +91,23 @@ sees the import name at the call site.
 **kuna now:** [`kuna-analysis/src/s1_loader/elf_plt.rs`](../decompiler/crates/kuna-analysis/src/s1_loader/elf_plt.rs)
 reconstructs `got_slot → name` from the dynamic relocations and decodes each
 `.plt*` stub's GOT reference per architecture (x86-64, x86-32, AArch64, ARM32,
-RISC-V; classic, CET `.plt.sec`, PIE, and stripped layouts). PowerPC64 ELFv2 has
-no `.plt` *code* section, so its TOC-relative call stubs (synthesized inline in
-`.text`) are decoded out of band (`decode_ppc_text`/`decode_ppc64_stubs`: TOC base
-= `.got` vma + `0x8000`, slot = `TOC + (addis@ha << 16) + ld@l`). Matches feed the
-existing loader symbol stream as named `FunctionSymbol`s, so `query_call`
-resolves them. Model depth is "correct names"; the full external-location/thunk
-object model (below) is deferred.
+RISC-V, SPARC; classic, CET `.plt.sec`, PIE, and stripped layouts). SPARC is the
+one decoder where the stub address and the name-map key coincide: its
+`R_SPARC_JMP_SLOT` `r_offset` is the PLT entry itself (the linker rewrites the
+in-place 32-byte `sethi/b,a` stub at resolution time), so `decode_sparc` just
+strides the `.plt` and records any `sethi %g1`-headed entry that is a known
+relocation (Increment 24, `plt_sparc64` e2e). PowerPC64 ELFv2 has no `.plt`
+*code* section, so its TOC-relative call stubs (synthesized inline in `.text`)
+are decoded out of band (`decode_ppc_text`/`decode_ppc64_stubs`: TOC base =
+`.got` vma + `0x8000`, slot = `TOC + (addis@ha << 16) + ld@l`; Increment 26,
+`plt_ppc64le` e2e). Matches feed the existing loader symbol stream as named
+`FunctionSymbol`s, so `query_call` resolves them. Model depth is "correct
+names"; the full external-location/thunk object model (below) is deferred.
 
 **Still a gap within this area:**
+- SPARC's regular `.plt` **is now decoded** (Increment 24) — it earlier shared the
+  seam row below but turned out tractable (its `R_SPARC_JMP_SLOT` `r_offset` IS the
+  stub address).
 - PPC64 ELFv2's `.text`-synthesized call stubs **are now resolved** (Increment 26):
   it was grouped here as a seam but turned out tractable — the stub's
   `addis r12,r2,@ha; ld r12,@l(r12)` pair statically reconstructs the `.plt` slot
