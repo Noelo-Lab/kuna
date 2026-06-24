@@ -50,10 +50,9 @@ pub struct Listing {
     /// Discovered/seeded functions, keyed by entry VMA (ordered).
     funcs: BTreeMap<u64, DiscoveredFunction>,
     /// Instruction-byte coverage (`[vma, vma+len-1]` per decoded insn).
-    #[allow(dead_code)] // gap = exec_ranges - covered: queried in PR3/PR7.
+    #[allow(dead_code)] // gap = exec_ranges - covered: a PR7 (AIF) consumer.
     covered: RangeList,
-    /// The coverage universe for the partition / gap walk.
-    #[allow(dead_code)] // partition / gap queries are PR3/PR7.
+    /// The coverage universe for the partition / gap walk (sorted, disjoint).
     exec_ranges: Vec<(u64, u64)>,
 }
 
@@ -89,11 +88,13 @@ impl Listing {
         funcsym_seeds: &[u64],
         seed_names: &[(u64, String)],
     ) -> Listing {
-        // The executable-range universe (design §2.4 / §3.4 out-of-bounds gate).
-        let exec_ranges: Vec<(u64, u64)> = crate::s1_entry::executable_sections(file)
+        // The executable-range universe (design §2.4 / §3.4 out-of-bounds gate),
+        // sorted by low VMA so the partition / gap queries can binary-search it.
+        let mut exec_ranges: Vec<(u64, u64)> = crate::s1_entry::executable_sections(file)
             .into_iter()
             .map(|(lo, hi, _data)| (lo, hi))
             .collect();
+        exec_ranges.sort_unstable();
 
         // The code space the Addresses are built in.
         let code_space = match arch.manage().get_default_code_space() {
@@ -130,10 +131,20 @@ impl Listing {
 
         let st = walk::walk(translate, &code_space, &exec_ranges, seeds, &seed_funcs);
 
+        let mut refs_to = st.refs_to;
+        let mut refs_from = st.refs_from;
+        // Lock the xref read-API ordering/dedup semantics (design §6 / PR4): each
+        // bucket is sorted (refs_to by source VMA then kind, refs_from by target
+        // VMA then kind) and de-duplicated on `(from, to, kind)`, so a target
+        // referenced twice from the same call site contributes one edge and
+        // `ref_count_to` equals the number of distinct referencing sites.
+        finalize_refs(&mut refs_to, /* by_source = */ true);
+        finalize_refs(&mut refs_from, /* by_source = */ false);
+
         Listing {
             insns: st.insns,
-            refs_to: st.refs_to,
-            refs_from: st.refs_from,
+            refs_to,
+            refs_from,
             funcs: st.funcs,
             covered: st.covered,
             exec_ranges,
@@ -162,28 +173,144 @@ impl Listing {
         self.insns.iter()
     }
 
-    // ---- xref model (read-only) ----
+    /// The decoded instruction whose `[addr, addr+len)` byte span contains `vma`
+    /// (its start *or* interior), if any (ordered interior lookup).
+    fn instruction_covering(&self, vma: u64) -> Option<&Insn> {
+        let (_, insn) = self.insns.range(..=vma).next_back()?;
+        let end = insn.addr.wrapping_add(insn.len as u64);
+        (vma >= insn.addr && vma < end).then_some(insn)
+    }
 
-    /// Incoming references to `to` (callers / branch sources).
+    // ---- code-unit partition (design §2.4 / §6) ----
+
+    /// The code/data partition class of `vma` (design §2.4): the start-or-interior
+    /// of a decoded instruction is [`CodeUnit::Instruction`]; any other VMA inside
+    /// an executable range is [`CodeUnit::Undefined`]; everything outside the
+    /// executable ranges is conservatively [`CodeUnit::Data`].
+    ///
+    /// This is the partition the walk leaves behind (`partition_code_units` in the
+    /// design): the keystone has no per-byte symbol-typed-data model, so "Data"
+    /// here means "not in an executable range" — the conservative split the two
+    /// relevant consumers need (A's "fell into data" is `!is_instruction_start`;
+    /// AIF's gap walk is `first_undefined_after`).
+    pub fn code_unit_at(&self, vma: u64) -> CodeUnit {
+        if let Some(insn) = self.instruction_covering(vma) {
+            return CodeUnit::Instruction(insn.addr);
+        }
+        if self.in_exec(vma) {
+            CodeUnit::Undefined
+        } else {
+            CodeUnit::Data(vma, 0)
+        }
+    }
+
+    /// True iff `code_unit_at(vma)` is [`CodeUnit::Data`] (A's "fell into data").
+    pub fn is_data(&self, vma: u64) -> bool {
+        matches!(self.code_unit_at(vma), CodeUnit::Data(..))
+    }
+
+    /// True iff `code_unit_at(vma)` is [`CodeUnit::Undefined`] — an executable-range
+    /// VMA that is neither code nor typed data.
+    pub fn is_undefined(&self, vma: u64) -> bool {
+        matches!(self.code_unit_at(vma), CodeUnit::Undefined)
+    }
+
+    /// The first [`CodeUnit::Undefined`] VMA strictly after `vma` (AIF gap walk).
+    ///
+    /// Scans forward from `vma + 1`, skipping over each decoded instruction's byte
+    /// span; returns the first executable-range address that is not covered by an
+    /// instruction, or `None` if every executable byte after `vma` is covered.
+    pub fn first_undefined_after(&self, vma: u64) -> Option<u64> {
+        let mut probe = vma.checked_add(1)?;
+        loop {
+            // Advance past any executable range we have already fallen off the end
+            // of, snapping `probe` up to the next range's low bound.
+            let (lo, hi) = self.range_containing_or_after(probe)?;
+            if probe < lo {
+                probe = lo;
+            }
+            // Within [lo, hi): if covered by an instruction, jump to its end and
+            // retry; otherwise this is the first undefined byte.
+            match self.instruction_covering(probe) {
+                Some(insn) => {
+                    let end = insn.addr.wrapping_add(insn.len as u64);
+                    if end <= probe {
+                        return Some(probe); // degenerate; avoid a non-advancing loop
+                    }
+                    probe = end;
+                    if probe >= hi {
+                        // Fell off this range; continue with the next range.
+                        probe = hi;
+                    }
+                }
+                None => return Some(probe),
+            }
+        }
+    }
+
+    /// True iff `vma` lands inside any executable range `[lo, hi)`.
+    fn in_exec(&self, vma: u64) -> bool {
+        self.exec_ranges.iter().any(|&(lo, hi)| vma >= lo && vma < hi)
+    }
+
+    /// The executable range containing `vma`, else the first range starting at-or
+    /// -after `vma` (exec ranges are sorted by low bound).
+    fn range_containing_or_after(&self, vma: u64) -> Option<(u64, u64)> {
+        self.exec_ranges.iter().copied().find(|&(_, hi)| vma < hi)
+    }
+
+    // ---- xref model (read-only, design §6 / PR4) ----
+
+    /// Incoming references to `to` (callers / branch sources), sorted by source
+    /// VMA then kind, de-duplicated on `(from, to, kind)`.
     pub fn refs_to(&self, to: u64) -> &[Reference] {
         self.refs_to.get(&to).map(Vec::as_slice).unwrap_or(&[])
     }
 
-    /// Outgoing references from `from`.
+    /// Outgoing references from `from`, sorted by target VMA then kind,
+    /// de-duplicated on `(from, to, kind)`.
     pub fn refs_from(&self, from: u64) -> &[Reference] {
         self.refs_from.get(&from).map(Vec::as_slice).unwrap_or(&[])
     }
 
-    // ---- function model (ordered) ----
+    /// Iterate every distinct reference *source* VMA in address order (the
+    /// call-site / reference worklist a consumer drives).
+    pub fn ref_source_iter(&self) -> impl Iterator<Item = u64> + '_ {
+        self.refs_from.keys().copied()
+    }
+
+    /// True iff anything references `to`.
+    pub fn has_refs_to(&self, to: u64) -> bool {
+        self.refs_to.get(&to).is_some_and(|v| !v.is_empty())
+    }
+
+    /// The number of (distinct) references to `to` — equal to the number of
+    /// distinct referencing sites after dedup.
+    pub fn ref_count_to(&self, to: u64) -> usize {
+        self.refs_to.get(&to).map_or(0, Vec::len)
+    }
+
+    // ---- function model (ordered, design §6 / PR3) ----
 
     /// The function entry at exactly `vma`, if any.
     pub fn function_at(&self, vma: u64) -> Option<&DiscoveredFunction> {
         self.funcs.get(&vma)
     }
 
+    /// The function whose entry is the greatest `<= vma` — the function *containing*
+    /// `vma` (ordered interval lookup, `range(..=vma).next_back()`, the faithful
+    /// analog of Ghidra's ordered FunctionManager).
+    ///
+    /// Note this is an entry-ordered containment: it returns the nearest preceding
+    /// function entry; it does not bound `vma` by that function's extent (the
+    /// keystone tracks entries, not function bodies).
+    pub fn function_containing(&self, vma: u64) -> Option<&DiscoveredFunction> {
+        self.funcs.range(..=vma).next_back().map(|(_, f)| f)
+    }
+
     /// The next function strictly after `vma`, by address (ordered query).
     pub fn next_function_after(&self, vma: u64) -> Option<&DiscoveredFunction> {
-        self.funcs.range(vma + 1..).next().map(|(_, f)| f)
+        self.funcs.range(vma.checked_add(1)?..).next().map(|(_, f)| f)
     }
 
     /// The number of discovered/seeded functions.
@@ -194,5 +321,32 @@ impl Listing {
     /// Iterate the functions in address order.
     pub fn functions(&self) -> impl Iterator<Item = (&u64, &DiscoveredFunction)> {
         self.funcs.iter()
+    }
+}
+
+/// Numeric rank of a [`RefKind`] for a stable secondary sort key.
+fn ref_kind_ord(k: RefKind) -> u8 {
+    match k {
+        RefKind::Call => 0,
+        RefKind::Code => 1,
+        RefKind::Data => 2,
+        RefKind::Read => 3,
+        RefKind::Write => 4,
+    }
+}
+
+/// Sort + dedup one direction of the xref multimap, locking the read-API ordering
+/// (design §6 / PR4). `by_source` sorts each bucket by source VMA (the `refs_to`
+/// direction, where the bucket key is the target); otherwise by target VMA (the
+/// `refs_from` direction, where the bucket key is the source). Kind is the
+/// secondary key. Dedup is on the full `(from, to, kind)` triple.
+fn finalize_refs(map: &mut BTreeMap<u64, Vec<Reference>>, by_source: bool) {
+    for refs in map.values_mut() {
+        refs.sort_by(|a, b| {
+            let pa = if by_source { a.from } else { a.to };
+            let pb = if by_source { b.from } else { b.to };
+            pa.cmp(&pb).then_with(|| ref_kind_ord(a.kind).cmp(&ref_kind_ord(b.kind)))
+        });
+        refs.dedup_by(|a, b| a.from == b.from && a.to == b.to && a.kind == b.kind);
     }
 }

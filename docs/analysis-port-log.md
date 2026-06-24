@@ -2227,6 +2227,73 @@ bootstrap are untouched. The flag is inert until PR2 builds the Listing.
   `docs/baseline-stages.json`, `tests/stages/README.md`.
 - **New:** `tests/stages/kuna-listing-flag.xml`.
 
+### Increment 30 — Listing/xref tier read API (code-unit partition + function model + xref queries)
+
+**What.** The read/query surface over the PR0-built `Listing` — design
+`docs/listing-tier-design.md` §6 (consumer API) + §7 **PR3** (code-unit partition
++ ordered function model) **and PR4** (xref read API), combined into one increment
+since both finalize read queries over the already-built model and would otherwise
+self-conflict on `listing/mod.rs`. Purely additive read API: no engine path
+touched, still no `--option` flag (PR1) and no engine invocation (PR2) — the
+module stays dormant. The walk (PR0) already fills the `insns`/`refs_to`/
+`refs_from`/`funcs` maps + `covered`/`exec_ranges`; this increment locks the
+public read API on top.
+
+**Code-unit partition (PR3).** `code_unit_at(vma)` is the partition the walk
+leaves behind (the design's `partition_code_units`): the start-or-interior of a
+decoded instruction is `CodeUnit::Instruction(start)` (ordered interior lookup,
+`insns.range(..=vma).next_back()` + an `[addr, addr+len)` span test); any other
+VMA inside an `executable_sections` range is `CodeUnit::Undefined`; everything
+outside the exec ranges is conservatively `CodeUnit::Data` (the keystone has no
+per-byte symbol-typed-data model, so "Data" = "not in an exec range" — the
+conservative split A's "fell into data" / AIF's gap walk need). Plus
+`is_data`/`is_undefined`/`num_instructions` and `first_undefined_after(vma)` (a
+forward scan skipping each instruction's byte span — the AIF gap walk). `exec_ranges`
+is now sorted at build for the forward scan.
+
+**Ordered function model (PR3).** `function_containing(vma)` is the ordered
+interval lookup `funcs.range(..=vma).next_back()` (nearest preceding function
+*entry*, the faithful analog of Ghidra's ordered FunctionManager); `function_at`
+(exact entry), `next_function_after(vma)` (`range(vma+1..).next()`), `function_count`.
+
+**Xref read API (PR4).** `refs_to`/`refs_from` (slices over the bidirectional
+multimap), `ref_source_iter()` (every distinct reference *source* VMA, ascending —
+the call-site worklist), `has_refs_to`, `ref_count_to`. Ordering/dedup is **locked
+at build**: each bucket is sorted (`refs_to` by source VMA then kind, `refs_from`
+by target VMA then kind) and de-duplicated on the full `(from, to, kind)` triple,
+so a target referenced twice from one site contributes one edge and `ref_count_to`
+equals the number of distinct referencing sites. Signatures match §6 verbatim so
+the future discovered-no-return consumer transliterates cleanly.
+
+**Testcase.** New `kuna-console/tests/verify_listing_queries.rs` reuses the PR0
+`fauxware` bootstrap/fixture, seeds `collect_entries ∪ {main, __libc_csu_init}`,
+builds the `Listing`, and asserts §7 PR3 + PR4: **partition** — `code_unit_at(main
+0x40071d)=Instruction`, an interior byte of the 3-byte `mov %rsp,%rbp`@0x40071e
+maps to that insn, the non-exec image base 0x400000 is `Data`, and
+`first_undefined_after(main)` (if Some) is genuinely Undefined / not an insn start;
+**function model** — `function_containing(0x40073e)=main 0x40071d`,
+`next_function_after(main)=__libc_csu_init 0x4007e0` (self-consistent with the
+ordered function set), `function_count==functions().count()`; **xref** —
+`refs_to(authenticate 0x400664)=[0x4007ae Call]`, `ref_source_iter()` includes the
+call site and is strictly ascending, `ref_count_to(authenticate)` Call count == 1
+(the sole call site), `refs_from(0x4007ae)` carries the outgoing Call, and the
+terminal `ret`@0x4007d4 files no outgoing edge. **The test RAN (not skipped)** —
+built `x86-64.sla`; it recovered **185 instructions, 16 functions, 169 ref
+sources**, with `function_containing(0x40073e)=0x40071d`,
+`next_function_after(0x40071d)=0x4007e0`, `refs_to(0x400664)=[(0x4007ae, Call)]`,
+`ref_count_to(authenticate)=1`.
+
+**Result (the proof).** `make test` **675/675 PARITY OK**; `make test-stages`
+**158/158 PARITY OK**; `make rust-test` green (incl. the new `verify_listing_queries`
+console test). Structurally additive read API on a dormant module (no engine
+invocation, no flag, no `AnalysisCtx` change) — the XML datatest oracle is
+untouched; the keystone is not yet on any decompilation path.
+
+- **New:** `kuna-console/tests/verify_listing_queries.rs`.
+- **Changed:** `kuna-analysis/src/listing/mod.rs` — the partition / function-model
+  / xref read API + the build-time `finalize_refs` ordering/dedup; `exec_ranges`
+  sorted at build.
+
 ### Increment 31 — Listing/xref tier PR2: engine-invoke (build the Listing at bootstrap, flag-gated)
 
 PR2 of the Listing/xref tier (`docs/listing-tier-design.md` §1.3, §7 PR2): invoke
