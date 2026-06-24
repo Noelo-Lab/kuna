@@ -2358,3 +2358,63 @@ but changes no output (payoff comes with the first consumer, PR6).
 - **Changed:** `kuna-analysis/src/passes.rs`, `kuna-console/src/engine.rs`,
   `kuna-console/tests/verify_listing_core.rs`.
 - **New:** `kuna-console/tests/verify_listing_parity.rs`.
+
+### Increment 32 — Listing/xref tier PR5: ARM/MIPS context-paint in the walker
+
+The Listing's recursive-descent walker decodes through `Translate::one_instruction`
+**outside** the decompiler's normal `commit_analysis_output` paint path, so an
+alternate-ISA function (ARM Thumb / MIPS16) was misdecoded: a Thumb `compute` read
+as A32, a MIPS16 `m16_square` read as MIPS32 — garbage. PR5 paints the correct
+decode-mode context (`TMode` / `ISA_MODE`) into the engine's `ContextDatabase`
+**before** the walk decodes, so alt-ISA functions decode correctly. Internal to
+`Listing::build` (default-OFF behind `--option listing`), so it is parity-safe and
+only active when the Listing is built. x86-64 (no decode-mode context) is untouched.
+
+**How the per-address decode mode is obtained (reused, not re-derived).**
+`listing/context.rs::ContextPainter::new(file)` **calls into the existing marker
+logic** — `s1_loader::arm_markers::scan_arm_markers` (ARM `$t`/`$a` mapping symbols
++ STT_FUNC-LSB → `TMode`) and `s1_loader::mips_markers::scan_mips_isa_markers`
+(STT_FUNC-LSB / `STO_MIPS_MIPS16` `st_other` → `ISA_MODE`) — and reuses their
+`ContextPaint` facts verbatim. Both scans were promoted `fn` → `pub(crate)`; they
+self-gate on the object architecture (ARM-only / MIPS-only), so on x86-64 the
+painter collects **zero** paints and is a no-op.
+
+**Mechanism (mirrors the commit seam exactly).** `ContextPainter::paint_all` applies
+every collected paint via `Architecture::with_context_db_mut` →
+`db.set_variable(var, addr, value)` / `set_variable_region(...)` — the *same* calls
+`engine.rs::commit_analysis_output` step 6 makes. `set_variable` fills each mode
+from its marker up to the next change point, so painting only the markers covers
+every address the walk visits. The walk paints once at its start (before any
+`decode_one`), then decodes against the already-painted context DB. Gate-safe: an
+unregistered context variable (a faithful no-op for a language that does not define
+it) is swallowed via the dropped `Result`, the same swallow the commit seam relies on.
+
+**Wiring.** `walk::walk` takes `arch: &Architecture` + `painter: &ContextPainter`
+and paints before the worklist loop; `Listing::build_with_meta` constructs the
+painter from the `object::File` and threads both into the walk.
+
+**Proof (specs built with `make specs`; the gate RAN, not skipped).**
+`kuna-console/tests/verify_listing_context.rs` bootstraps each fixture for a real
+`Translate`, builds the Listing seeded at the alt-ISA function's entry, and asserts
+the seed decodes in the alternate ISA — with a **control**: the same seed decoded
+through a fresh bootstrap's raw `Translate` (no Listing, no paint = the default
+mode), asserting the painted decode DIFFERS.
+- **ARM Thumb** (`arm_thumb_linked_le32`, `compute` @ 0x100b8): the Listing decodes
+  `push` (len **2**, Thumb); the un-painted A32 control reads `addlt` (len **4**) —
+  a different, garbage instruction. The body carries the `*3` shift (`lsl`).
+- **MIPS16** (`mips16_le32`, `m16_square` @ 0x400130): the Listing decodes `mult`
+  (len **2**, MIPS16) → `mflo` (2) → `jr`+delay-slot (4, the §4.3-gotcha-3 fold) =
+  the 8-byte body; the un-painted MIPS32 control **fails to decode the bytes at all**
+  ("Unable to resolve constructor") — the strongest control: they simply are not
+  MIPS32.
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159 PARITY
+OK**; `make rust-test` green (incl. the 2 new `verify_listing_context` cases). The
+paint is internal to the default-OFF Listing build, so the parity oracles are
+structurally untouched (no new `--option`, catalog unchanged).
+
+- **Changed:** `kuna-analysis/src/listing/mod.rs`, `kuna-analysis/src/listing/walk.rs`,
+  `kuna-analysis/src/s1_loader/arm_markers.rs` (`scan_arm_markers` → `pub(crate)`),
+  `kuna-analysis/src/s1_loader/mips_markers.rs` (`scan_mips_isa_markers` → `pub(crate)`).
+- **New:** `kuna-analysis/src/listing/context.rs`,
+  `kuna-console/tests/verify_listing_context.rs`.
