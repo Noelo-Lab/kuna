@@ -1911,8 +1911,34 @@ decomp_command!(
         // (`--option formatstring on`)?  Read once, up front; default-off ⇒ the
         // whole loop below is skipped and the decompile is byte-identical.
         let formatstring_enabled = prog.arch().analysis_formatstring;
+        // (kuna) Read-only propagation, scoped to the format-string decompile.
+        //
+        // To *type* a variadic format call we must first *read* its format-string
+        // constant at the call's format-arg slot.  On x86-64/AArch64/RISC-V the
+        // format address is materialized directly into a register (`lea` /
+        // `adrp+add` / `auipc+addi`), so the format-arg varnode is already a
+        // constant pointer and `resolve_const_pointer` resolves it as-is.  On ARM,
+        // however, the address is loaded *PC-relatively from a read-only literal
+        // pool* (`ldr r3,[pc,#k]; add r3,pc`): the format-arg varnode is then a
+        // memory LOAD that only constant-folds when `readonlypropagate` is on
+        // (`Funcdata::fillin_read_only`), so without it the format pointer renders
+        // as the unresolved `dat_… + pc` and no override is built.  Ghidra's
+        // `FormatStringAnalyzer` decompile likewise reads constant strings out of
+        // read-only memory.  So, *only when the format-string feature is enabled*
+        // (default off), enable read-only propagation for this function's
+        // decompile and restore the prior value afterward — keeping the feature
+        // self-contained on ARM without a separate `--option readonly on`.
+        // Gate-safe: this toggle is inert (the value is unchanged) unless
+        // `--option formatstring on`, so every parity gate — which never sets
+        // `formatstring` — is byte-identical.
+        let saved_readonlypropagate = prog.arch().readonlypropagate;
+        if formatstring_enabled {
+            prog.arch_mut().readonlypropagate = true;
+        }
         if has_no_code {
-            // Restore the program before the early return.
+            // Restore the scoped read-only-propagation flip and the program before
+            // the early return (no decompile ran, so the flip was a no-op here).
+            prog.arch_mut().readonlypropagate = saved_readonlypropagate;
             dcp_mut(status)?.conf = Some(prog);
             status.out(&format!("No code for {name}\n"));
             return Ok(());
@@ -1988,7 +2014,10 @@ decomp_command!(
                 }
             }
         }
-        // Restore the program (and the fresh Funcdata on success) regardless.
+        // Restore the scoped read-only-propagation flip (no-op unless the
+        // format-string feature was enabled above), then restore the program (and
+        // the fresh Funcdata on success) regardless.
+        prog.arch_mut().readonlypropagate = saved_readonlypropagate;
         let dcp = dcp_mut(status)?;
         dcp.conf = Some(prog);
         match result {
