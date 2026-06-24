@@ -575,6 +575,21 @@ pub fn bootstrap_from_elf(
     // buildSpecFile -> buildTranslator -> the Architecture::init tail (shared).
     build_engine_and_init(&mut sleigh, &db)?;
 
+    // (kuna) MIPS import-name recovery (Increment 27): the o32 ABI calls libc
+    // imports indirectly through a GOT slot (`lw $t9, off($gp); jalr $t9`), with no
+    // `.plt` code section and no `R_MIPS_JUMP_SLOT` relocations.  `elf_plt` names
+    // each import's `.MIPS.stubs` stub and marks the GOT external slots constant
+    // (`ObjectLoadImage::const_ranges` → `get_readonly`); turning on
+    // `readonlypropagate` for MIPS lets `ActionVarnodeProps::fillinReadOnly` fold
+    // the GOT load to the stub address so the call resolves to the import name
+    // (`puts`/`printf`) instead of `sub_<addr>`.  Scoped to MIPS so non-MIPS
+    // ELF output is unchanged; `option readonly off` restores the raw GOT load.
+    // The XML datatest path never reaches `bootstrap_from_elf`, so the parity
+    // oracles are structurally untouched.
+    if arch_type.starts_with("MIPS:") {
+        sleigh.base_mut().unwrap().readonlypropagate = true;
+    }
+
     // postSpecFile: attach the engine's default code space to the loader so its
     // loadFill/getNextSymbol build Addresses in the right space (C++
     // `RawBinaryArchitecture::postSpecFile`'s `attachToSpace(getDefaultCodeSpace())`).

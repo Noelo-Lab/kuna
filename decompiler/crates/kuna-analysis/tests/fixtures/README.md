@@ -34,6 +34,7 @@ real ELF parser.
 | `entrymain_riscv64` | stripped DYNAMIC PIE RISC-V RV64GC (same source), no unwind tables, `-fvisibility=hidden` | cross-arch `_start`→`main` idiom (`s1_entry` oracle 4): `main` in no symbol table (hidden visibility — a plain build leaves `main` a `.dynsym` GLOBAL FUNC that strip cannot remove). `_start`@`0x550` loads `a0` via `auipc a0,0x2; ld a0,-1318(a0)` → GOT slot `0x2030` whose `R_RISCV_RELATIVE` addend is `main`@`0x608`. e2e: `sub_608` → `int8 sub_608(int4 a0){return (int8)a0;}` |
 | `plt_aarch64` | linked, dynamic AArch64 ET_EXEC (`-no-pie`), not stripped (source `plt_aarch64.c`) | AArch64 PLT/import-name resolution end-to-end (`s1_loader::elf_plt::decode_aarch64`): the standard GNU `ld` 16-byte veneer (`adrp x16, GOT_page; ldr x17,[x16,#lo12]; add x16,x16,#lo12; br x17`). `main`@`0x400604` calls `puts("hello")` (`puts@plt`@`0x4004d0`, GOT slot `0x411018`) and `printf("%d\n", argc)` (`printf@plt`@`0x4004e0`, GOT slot `0x411020`); both `R_AARCH64_JUMP_SLOT` in `.rela.plt`. The console e2e (`kuna-console/tests/verify_aarch64_plt.rs`) asserts the call sites render `puts(`/`printf(` not `sub_4004d0`/`sub_4004e0` — the first **linked** AArch64 PLT proof (the decoder was previously synthetic-byte-unit-only). **Linked ET_EXEC with PT_LOAD** (unlike the ARM `.o`): the decode e2e works in-env (this container has the AArch64 toolchain + linker) |
 | `plt_sparc64` | linked, dynamic SPARC v9 / ELF64 **big-endian** ET_EXEC, not stripped (source `plt_sparc64.c`) | SPARC PLT/import-name resolution end-to-end (`s1_loader::elf_plt::decode_sparc`): the standard 32-byte SPARC veneer (`sethi %hi(...),%g1; b,a %xcc,<resolver>; nop*6`), preceded by a 4-slot (`0x80`-byte) reserved PLT0 header. SPARC's `R_SPARC_JMP_SLOT` `r_offset` **is** the PLT entry address (the linker rewrites the in-place stub at resolution time), so the decoder strides the `.plt` in 32-byte steps and records any `sethi %g1`-headed entry whose address is a known relocation — stub == name-map key. `main`@`0x100750` calls `puts("hello")` (`puts@plt`@`0x2021c0`) and `printf("%d\n", argc)` (`printf@plt`@`0x2021a0`); both `R_SPARC_JMP_SLOT` in `.rela.plt` naming `puts`/`printf`. The console e2e (`kuna-console/tests/verify_sparc_plt.rs`) asserts the call sites render `puts(`/`printf(` not `sub_2021c0`/`sub_2021a0` — the first **linked** SPARC PLT proof. **Linked ET_EXEC with PT_LOAD**: the decode e2e works in-env (this container has the SPARC toolchain + linker) |
+| `plt_mips32` | linked, dynamic MIPS32 **big-endian** ET_EXEC (`-O0`), not stripped (source `plt_mips32.c`) | MIPS o32 import-name resolution end-to-end (`s1_loader::elf_plt::resolve_mips_imports`, Increment 27): **no `.plt` / no `R_MIPS_JUMP_SLOT`** — the o32 ABI calls libc imports indirectly through a `$gp`-relative GOT slot (`lw $t9, off($gp); jalr $t9`). The stub→name correspondence is the dynamic-symbol GOT layout (`DT_MIPS_LOCAL_GOTNO`=6, `DT_MIPS_GOTSYM`=5, `DT_PLTGOT`=`0x411020`): `got_index(i)=6+(i-5)`. `main`@`0x400700` calls `puts` (dynidx 7 → GOT slot `0x411040` → stub `0x400800`) and `printf` (dynidx 8 → GOT slot `0x411044` → stub `0x4007f0`). `resolve_mips_imports` names each `.MIPS.stubs` stub (= the GOT slot's static contents = the dynsym `st_value`) and marks the GOT external slots constant; `bootstrap_from_elf` turns on `readonlypropagate` for MIPS so the GOT load folds and the call resolves. The console e2e (`kuna-console/tests/verify_mips_plt.rs`) asserts the call sites render `puts(`/`printf(` not `(*(code *)(dat_411040 & ...))(...)`. **Linked ET_EXEC with PT_LOAD**: the decode e2e works in-env (the container has the MIPS toolchain) |
 
 Provenance: `fauxware`, `cet_pie_x86_64`, `stripped_dynamic_x86_64` copied
 verbatim from `bs-artifacts/binaries/` (`fauxware`, `debug_symbol`,
@@ -240,6 +241,26 @@ the exact build command (single root container invocation) is:
 && apt-get install -y --no-install-recommends libc6-dev-ppc64el-cross >/dev/null
 && powerpc64le-linux-gnu-gcc -O0 decompiler/crates/kuna-analysis/tests/fixtures/plt_ppc64le.c
 -o decompiler/crates/kuna-analysis/tests/fixtures/plt_ppc64le'`.
+
+`plt_mips32` (7580 bytes, source vendored alongside as `plt_mips32.c`): built with
+`mips-linux-gnu-gcc -O0 plt_mips32.c -o plt_mips32` (Ubuntu mips-linux-gnu-gcc
+10.3.0, big-endian). `plt_mips32.c` =
+`int main(int argc,char**argv){ puts("hello"); printf("%d\n", argc); return 0; }`
+— a normal dynamic MIPS32 executable, kept **un**stripped so `main` resolves by
+name. `-O0` keeps the libc calls **plain** `puts`/`printf` (an `-O1`+ build pulls
+in glibc's fortified `__printf_chk`). It has **no `.plt` and no `R_MIPS_JUMP_SLOT`
+relocations** — the o32 lazy-binding layout uses `.MIPS.stubs` + a `$gp`-relative
+GOT, so import names come from the dynamic-symbol GOT correspondence
+(`DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`/`DT_PLTGOT`), exactly the form
+`elf_plt::resolve_mips_imports` decodes. Drives the MIPS import-name console e2e
+(`kuna-console/tests/verify_mips_plt.rs`). The build host's `kuna-dev` image ships
+`libc6-mips-cross` (the shared libs) but not the dev package, so the cross-link
+needs `libc6-dev-mips-cross` (headers + `crt1.o`) installed in the build
+container — the exact build command (single root container invocation) is:
+`docker run --rm --user root -v "$PWD":/w -w /w kuna-dev bash -lc 'apt-get update >/dev/null
+&& apt-get install -y --no-install-recommends libc6-dev-mips-cross >/dev/null
+&& mips-linux-gnu-gcc -O0 decompiler/crates/kuna-analysis/tests/fixtures/plt_mips32.c
+-o decompiler/crates/kuna-analysis/tests/fixtures/plt_mips32'`.
 
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via

@@ -54,11 +54,22 @@ pub(crate) struct PltSym {
 /// has no dynamic imports, an unsupported architecture, or stubs this decoder
 /// does not recognize.
 pub(crate) fn resolve_plt_imports(file: &object::File) -> Vec<PltSym> {
+    let arch = file.architecture();
+
+    // MIPS has no regular `.plt` code section and emits NO `R_MIPS_JUMP_SLOT`
+    // relocations for its lazy imports: the stub→name correspondence is carried by
+    // the dynamic table's GOT layout (`DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`), not
+    // by relocations.  It therefore runs its own resolver (`resolve_mips_imports`)
+    // *before* the relocation-driven path below, which would otherwise early-return
+    // on the empty `build_got_name_map`.  See [`resolve_mips_imports`].
+    if matches!(arch, Architecture::Mips | Architecture::Mips64) {
+        return resolve_mips_imports(file);
+    }
+
     let got_to_name = build_got_name_map(file);
     if got_to_name.is_empty() {
         return Vec::new();
     }
-    let arch = file.architecture();
 
     let mut out: Vec<PltSym> = Vec::new();
     // GOT slots already named, so an import that appears in both `.plt.sec` (the
@@ -189,9 +200,9 @@ fn decode_plt_section(
         // data table; the call stubs live in `.text`), so they are resolved out of
         // band in [`resolve_plt_imports`] via [`decode_ppc_text`], not here.
         //
-        // MIPS (`.MIPS.stubs` + `$gp`-relative GOT) has no regular decodable `.plt`
-        // code section either — left as a documented seam (names not recovered;
-        // behavior unchanged).  See docs/missing-analyses.md.
+        // MIPS has no `.plt` code section either (`.MIPS.stubs` + `$gp`-relative
+        // GOT); it is resolved out of band by [`resolve_mips_imports`] before this
+        // point (the GOT layout carries the names).  See docs/missing-analyses.md.
         _ => {}
     }
 }
@@ -653,6 +664,227 @@ fn decode_sparc(
             record(entry, entry, map, out, named_got);
         }
         off += ENTRY;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MIPS (.MIPS.stubs / GOT layout)
+// ---------------------------------------------------------------------------
+
+/// Resolve MIPS import names from the dynamic-symbol GOT layout — the kuna analog
+/// of Ghidra's `MIPS_ElfExtension.fixupGot` + `processMipsStubsSection`
+/// (`Ghidra/Processors/MIPS/.../elf/extend/MIPS_ElfExtension.java`).
+///
+/// ## Why MIPS is different
+///
+/// Unlike x86/ARM/RISC-V, the GNU MIPS o32 toolchain emits **no `.plt` code
+/// section and no `R_MIPS_JUMP_SLOT` relocations** for its lazy imports.  Instead
+/// the dynamic linker resolves a fixed slice of the GOT in *symbol-table order*:
+/// the doc anchor is the "MIPS Multi-GOT" layout (the cr0.org
+/// `mips.elf.external.resolution.txt` paper that Ghidra cites).  The
+/// correspondence is purely positional:
+///
+/// * `DT_MIPS_LOCAL_GOTNO` (0x7000000a) — the count of *local* GOT entries that
+///   precede the first global (external-symbol) GOT entry.
+/// * `DT_MIPS_GOTSYM` (0x70000013) — the **first** dynamic-symbol index that has a
+///   GOT entry.  Dynamic symbols `[GOTSYM .. dynsym_count)` map 1:1, in order, to
+///   GOT entries starting at index `LOCAL_GOTNO`:
+///
+///   ```text
+///     got_index(i) = LOCAL_GOTNO + (i - GOTSYM)        for i >= GOTSYM
+///   ```
+///
+/// * `DT_PLTGOT` (3) — the GOT base address (`gotBaseOffset`).
+///
+/// For an **undefined FUNC** dynamic symbol (an import), the GOT slot is
+/// initialized to the address of that import's lazy-binding stub in `.MIPS.stubs`
+/// (and that same stub address is the symbol's `st_value`).  At a MIPS call site
+/// the compiler emits `lw $t9, off($gp); jalr $t9` — an indirect call through the
+/// GOT slot.  With kuna's `$gp` recovery (Increment 17) the engine constant-folds
+/// the GOT load to that slot's contents (the stub address), so naming the **stub
+/// address** as a `FunctionSymbol` makes the call render `puts(...)` instead of
+/// `sub_<addr>` — exactly mirroring `createExternalFunctionLinkage(symName,
+/// refAddr, gotEntryAddr)` where `refAddr` is the GOT-slot contents (the stub).
+///
+/// Both naming targets are emitted: the **stub address** (`refAddr`, the indirect
+/// call target the decompiler sees) and, defensively, the **GOT slot address**
+/// itself (in case a future pass names the slot directly).  Everything degrades
+/// gracefully: a missing `DT_MIPS_*` tag, a missing GOT, or a 0 slot yields fewer
+/// (or zero) entries and leaves behavior unchanged — this never panics or errors.
+fn resolve_mips_imports(file: &object::File) -> Vec<PltSym> {
+    let mut out: Vec<PltSym> = Vec::new();
+    for ext in mips_external_got_entries(file) {
+        // The GOT slot's static contents = the `.MIPS.stubs` stub address (the
+        // import's `refAddr`); this is the indirect call target the decompiler
+        // resolves after $gp recovery.  Skip a 0 slot (unresolvable).
+        if ext.stub_addr != 0 {
+            out.push(PltSym { addr: ext.stub_addr, name: ext.name });
+        }
+    }
+    out
+}
+
+/// The MIPS GOT external slots' `[start, stop]` (inclusive) byte ranges, to be
+/// marked **constant** so the engine folds the `lw $t9, off($gp)` indirect-call
+/// load to the stub address (the analog of `setConstant` on the GOT pointer
+/// entries in Ghidra's `MIPS_ElfExtension.fixupGot`).  Empty off-MIPS or when the
+/// `DT_MIPS_*` tags are absent.  One slot per external dynamic symbol (FUNC or
+/// not — a constant GOT pointer is harmless for non-FUNC slots and matches
+/// Ghidra, which `setConstant`s every external GOT entry).
+pub(crate) fn mips_got_const_ranges(file: &object::File) -> Vec<(u64, u64)> {
+    if !matches!(file.architecture(), Architecture::Mips | Architecture::Mips64) {
+        return Vec::new();
+    }
+    let ptr = if file.is_64() { 8u64 } else { 4u64 };
+    mips_external_got_entries(file)
+        .into_iter()
+        .map(|e| (e.slot_addr, e.slot_addr.wrapping_add(ptr - 1)))
+        .collect()
+}
+
+/// One external-symbol GOT entry on MIPS: the dynsym name, the GOT slot address,
+/// and the slot's static contents (the `.MIPS.stubs` stub address it points at).
+struct MipsExtGot {
+    name: Vec<u8>,
+    slot_addr: u64,
+    stub_addr: u64,
+}
+
+/// Walk the MIPS external-symbol GOT window — dynsym indices `[GOTSYM, count)`
+/// map 1:1, in order, to GOT entries starting at index `LOCAL_GOTNO`
+/// (`got_index(i) = LOCAL_GOTNO + (i - GOTSYM)`).  Yields one [`MipsExtGot`] per
+/// **undefined FUNC** import (Ghidra's `isFunction() && sectionHeaderIndex == 0`).
+/// Empty when the `DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`/`DT_PLTGOT` tags are
+/// absent.  Shared by [`resolve_mips_imports`] (naming) and
+/// [`mips_got_const_ranges`] (constant-folding); never panics or errors.
+fn mips_external_got_entries(file: &object::File) -> Vec<MipsExtGot> {
+    let mut out: Vec<MipsExtGot> = Vec::new();
+
+    // The dynamic table tags we need, read straight from the `.dynamic` bytes.
+    let Some((local_gotno, gotsym, got_base)) = read_mips_dynamic_tags(file) else {
+        return out;
+    };
+
+    // The dynamic symbols, by index (the positional GOT correspondence is by
+    // `.dynsym` index).
+    let mut dynsyms: Vec<(usize, object::read::Symbol)> = Vec::new();
+    for s in file.dynamic_symbols() {
+        dynsyms.push((s.index().0, s));
+    }
+    if dynsyms.is_empty() {
+        return out;
+    }
+    let dynsym_count = dynsyms.iter().map(|(i, _)| *i).max().unwrap_or(0) + 1;
+
+    let ptr = if file.is_64() { 8usize } else { 4usize };
+    let le = file.is_little_endian();
+
+    for &(idx, ref sym) in &dynsyms {
+        if idx < gotsym as usize || idx >= dynsym_count {
+            continue;
+        }
+        // Only undefined FUNC imports name a stub.
+        if sym.kind() != object::SymbolKind::Text || !sym.is_undefined() {
+            continue;
+        }
+        let name = match sym.name_bytes() {
+            Ok(n) if !n.is_empty() => strip_version(n),
+            _ => continue,
+        };
+        let got_index = local_gotno + (idx as u64 - gotsym);
+        let slot_addr = got_base.wrapping_add(got_index * ptr as u64);
+        let stub_addr = read_word_at_vma(file, slot_addr, ptr, le).unwrap_or(0);
+        out.push(MipsExtGot { name, slot_addr, stub_addr });
+    }
+
+    out
+}
+
+/// Read `(DT_MIPS_LOCAL_GOTNO, DT_MIPS_GOTSYM, DT_PLTGOT)` from the `.dynamic`
+/// section, or `None` if any is absent.  Tags/vals are `Elf{32,64}_Dyn` pairs.
+fn read_mips_dynamic_tags(file: &object::File) -> Option<(u64, u64, u64)> {
+    const DT_NULL: u64 = 0;
+    const DT_PLTGOT: u64 = 3;
+    const DT_MIPS_LOCAL_GOTNO: u64 = 0x7000_000a;
+    const DT_MIPS_GOTSYM: u64 = 0x7000_0013;
+
+    let data = file.section_by_name(".dynamic")?.data().ok()?;
+    let is64 = file.is_64();
+    let le = file.is_little_endian();
+    let entsz = if is64 { 16usize } else { 8usize };
+
+    let mut local_gotno: Option<u64> = None;
+    let mut gotsym: Option<u64> = None;
+    let mut pltgot: Option<u64> = None;
+
+    let mut off = 0usize;
+    while off + entsz <= data.len() {
+        let (tag, val) = if is64 {
+            (read_u64_le(&data[off..], le), read_u64_le(&data[off + 8..], le))
+        } else {
+            (read_u32_le(&data[off..], le) as u64, read_u32_le(&data[off + 4..], le) as u64)
+        };
+        off += entsz;
+        if tag == DT_NULL {
+            break;
+        }
+        match tag {
+            DT_PLTGOT => pltgot = Some(val),
+            DT_MIPS_LOCAL_GOTNO => local_gotno = Some(val),
+            DT_MIPS_GOTSYM => gotsym = Some(val),
+            _ => {}
+        }
+    }
+    Some((local_gotno?, gotsym?, pltgot?))
+}
+
+/// Read a `ptr`-byte little/big-endian word from the section that contains `vma`
+/// (the static-image base-0 assumption: the GOT vma is the file vma).  `None` if
+/// no section covers it.
+fn read_word_at_vma(file: &object::File, vma: u64, ptr: usize, le: bool) -> Option<u64> {
+    for sec in file.sections() {
+        let addr = sec.address();
+        let size = sec.size();
+        if size == 0 || vma < addr || vma >= addr.wrapping_add(size) {
+            continue;
+        }
+        let data = sec.data().ok()?;
+        let o = (vma - addr) as usize;
+        if o + ptr > data.len() {
+            return None;
+        }
+        return Some(if ptr == 8 {
+            read_u64_le(&data[o..], le)
+        } else {
+            read_u32_le(&data[o..], le) as u64
+        });
+    }
+    None
+}
+
+/// Read a 4-byte word honoring endianness (`le`); 0 on a short slice.
+fn read_u32_le(b: &[u8], le: bool) -> u32 {
+    if b.len() < 4 {
+        return 0;
+    }
+    let a = [b[0], b[1], b[2], b[3]];
+    if le {
+        u32::from_le_bytes(a)
+    } else {
+        u32::from_be_bytes(a)
+    }
+}
+
+/// Read an 8-byte word honoring endianness (`le`); 0 on a short slice.
+fn read_u64_le(b: &[u8], le: bool) -> u64 {
+    if b.len() < 8 {
+        return 0;
+    }
+    let a = [b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
+    if le {
+        u64::from_le_bytes(a)
+    } else {
+        u64::from_be_bytes(a)
     }
 }
 
