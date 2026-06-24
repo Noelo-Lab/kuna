@@ -221,7 +221,7 @@ pub fn collect_entry_names(file: &object::File, kept: &[u64]) -> Vec<(u64, Strin
 /// `(address, address+size, data)` for every executable section. SHF_EXECINSTR
 /// or the high-level `SectionKind::Text` (`.text`/`.init`/`.fini`/`.plt`). Used
 /// both as the prologue-sweep target and the "is this VMA plausible code?" oracle.
-fn executable_sections(file: &object::File) -> Vec<(u64, u64, Vec<u8>)> {
+pub(crate) fn executable_sections(file: &object::File) -> Vec<(u64, u64, Vec<u8>)> {
     // ELF section header flag: SHF_EXECINSTR (the section holds machine code).
     const SHF_EXECINSTR: u64 = 0x4;
 
@@ -246,7 +246,7 @@ fn executable_sections(file: &object::File) -> Vec<(u64, u64, Vec<u8>)> {
 }
 
 /// True if `vma` lands inside any executable section's `[address, address+size)`.
-fn in_executable_section(execs: &[(u64, u64, Vec<u8>)], vma: u64) -> bool {
+pub(crate) fn in_executable_section(execs: &[(u64, u64, Vec<u8>)], vma: u64) -> bool {
     execs.iter().any(|&(lo, hi, _)| vma >= lo && vma < hi)
 }
 
@@ -254,7 +254,7 @@ fn in_executable_section(execs: &[(u64, u64, Vec<u8>)], vma: u64) -> bool {
 /// FUNC symbols (UND imports have `st_value == 0`) plus PLT import stubs. The
 /// commit seam's `find_function` already no-ops a covered address, but skipping
 /// these here keeps the emitted set to genuinely *new* starts.
-fn existing_function_addrs(file: &object::File) -> Vec<u64> {
+pub(crate) fn existing_function_addrs(file: &object::File) -> Vec<u64> {
     let mut out: Vec<u64> = Vec::new();
     for sym in file.symbols().chain(file.dynamic_symbols()) {
         if sym.kind() != SymbolKind::Text {

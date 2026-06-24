@@ -14,6 +14,11 @@ kuna-num.workspace = true
 kuna-sleigh.workspace = true
 kuna-analysis.workspace = true
 
+[dev-dependencies]
+# The Listing/xref tier integration test (`tests/verify_listing_core.rs`) parses
+# the fixture ELF into an `object::File` to drive `Listing::build`.
+object.workspace = true
+
 [lints]
 workspace = true
 
