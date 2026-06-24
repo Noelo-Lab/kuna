@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=90, settable=35
-# (23 stage-model knobs + 12 analysis-tier gates).
+# Counts (asserted in tests): group=39, substage=40, surface=90, settable=36
+# (23 stage-model knobs + 13 analysis-tier gates).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -1850,4 +1850,20 @@ use_when = "Off (default; the Listing is not built and there is zero decode cost
 example = "option listing on"
 source_decompiler = "kuna"
 inspiration = "Ghidra Listing / ReferenceManager / FunctionManager (recursive-descent disassembly)"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "noreturn_disc"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S1"
+substage = "external-refinement"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-noreturn-disc"
+summary = "Run the discovered-no-return consumer (the first Listing/xref consumer): the evidence-tally fixpoint over the Listing — a call target is no-return when at least 3 of its call sites show no valid fall-through (the instruction after the call is not a valid instruction start / fell into data / is another function's entry), iterated to a fixpoint (a function whose last act is a call to an already-discovered-no-return function is itself no-return). The kuna analog of Ghidra's FindNoReturnFunctionsAnalyzer. Requires the Listing (option listing on) — a no-op when the Listing is absent. DISABLED by default (a flow heuristic that can be wrong; real-ELF path only, so every parity gate is byte-identical)."
+use_when = "Off (default; no Listing consumer runs and there is zero behavior change). Flip on (with option listing on) to mark custom/tail-calling no-return wrappers — that the static name lists do not know — no-return, eliminating the post-call dead code, on a real-ELF target."
+example = "option listing on --option noreturn_disc on"
+source_decompiler = "kuna"
+inspiration = "Ghidra FindNoReturnFunctionsAnalyzer (discovered no-return, evidence threshold)"
 change_kind = "analysis-enablement"

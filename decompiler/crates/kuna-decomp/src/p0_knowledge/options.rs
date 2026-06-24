@@ -289,6 +289,12 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // Listing/xref model built once at load (real-ELF path only) and shared
     // read-only with consumer passes.  Default-off (the Listing is never built).
     "listing",
+    // (kuna) Discovered-no-return consumer: the first Listing/xref consumer, a flow
+    // heuristic (callee no-return if ≥3 call sites show no valid fall-through,
+    // iterated to a fixpoint over the Listing).  The kuna analog of Ghidra's
+    // `FindNoReturnFunctionsAnalyzer`.  Default-off (a heuristic that can be wrong;
+    // also requires `--option listing on` to build the Listing it reads).
+    "noreturn_disc",
 ];
 
 // ---------------------------------------------------------------------------

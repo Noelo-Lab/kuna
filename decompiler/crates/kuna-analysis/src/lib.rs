@@ -56,4 +56,5 @@ pub mod s1_entry;
 pub mod s1_dwarf;
 pub mod s1_formatstring;
 pub mod s1_callfixup;
+pub mod s1_noreturn_disc;
 pub mod listing;

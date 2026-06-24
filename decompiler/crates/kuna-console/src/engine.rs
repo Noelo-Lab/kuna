@@ -109,6 +109,16 @@ pub struct ConsoleProgram {
     /// typelock|namelock stack symbol — the same path the console `map addr` directive
     /// uses. Real-ELF DWARF path only (empty on the XML datatest path).
     dwarf_locals: Vec<(u64, String, Rc<kuna_decomp::dtype::Datatype>, i64)>,
+    /// (kuna) The image bytes + path stashed at load for the **deferred Listing
+    /// build** (the Listing/xref PR6 build-timing fix). The Listing is gated on
+    /// `--option listing on`, a flag the live CLI sets AFTER `load file` (before
+    /// `read symbols`), so it cannot be built at load (the flag is still default-off
+    /// there). Instead `commit_pending_analysis` (reached at `read symbols`, after
+    /// the flag is applied) re-parses these bytes, builds the Listing, and runs the
+    /// Listing-consumer passes (e.g. discovered-no-return). `None` on the XML
+    /// datatest path (no Listing tier), so the gated build is a structural no-op
+    /// there. Empty/`None` when the listing flag is off ⇒ zero cost.
+    analysis_image: Option<(String, Vec<u8>)>,
 }
 
 impl ConsoleProgram {
@@ -243,16 +253,37 @@ impl ConsoleProgram {
     /// only the **enabled** passes' outputs in pass order, and commits the merged
     /// [`AnalysisOutput`] via [`commit_analysis_output`]. A no-op when nothing is
     /// stashed (the XML datatest path — parity is structurally untouched).
+    ///
+    /// (kuna, PR6) This is also the **deferred Listing build** point: the Listing
+    /// is gated on `--option listing on`, a flag the CLI sets after `load file`,
+    /// so the Listing — and any pass that reads it (e.g. discovered-no-return) —
+    /// is built/run HERE (when the flag is finally in effect), not at load. When
+    /// `arch.analysis_listing` is on, the stashed image bytes are re-parsed, the
+    /// Listing is built, and the Listing-consumer passes run; their (per-pass
+    /// gated) facts merge into the same `merged` output committed below. Default
+    /// (listing off) ⇒ this whole block is skipped ⇒ byte-identical to today.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
         if self.pending_analysis.is_empty() {
+            // Drop the deferred-Listing stash too: nothing to commit against, and
+            // a session with no analysis tier (XML path) must not build a Listing.
+            self.analysis_image = None;
             return Ok(());
         }
         let pending = std::mem::take(&mut self.pending_analysis);
         let Some(code_space) = self.analysis_code_space.take() else {
             // No code space captured (should not happen on the ELF path); nothing
             // to commit against.
+            self.analysis_image = None;
             return Ok(());
         };
+        // The addresses the load-time Known passes flagged no-return / call-fixup'd
+        // (read off the pending split before it is consumed) — seed metadata the
+        // deferred Listing build hands to the discovered-no-return consumer so it
+        // skips already-modeled callees and seeds the fixpoint's terminal set.
+        let noreturn_seed_addrs: Vec<u64> = pending
+            .iter()
+            .flat_map(|(_, out)| out.noreturn.iter().map(|f| f.addr))
+            .collect();
         // Filter by the per-pass enable flags (default-on, set by the user's
         // `--option <id> on|off`), then merge the survivors in pass order.
         let mut merged = kuna_analysis::pass::AnalysisOutput::default();
@@ -260,6 +291,43 @@ impl ConsoleProgram {
             if analysis_pass_enabled(self.arch(), id) {
                 merged.merge(out);
             }
+        }
+        // (kuna, PR6) Deferred Listing build + consumer run, gated on the listing
+        // flag (now in effect). Default-off ⇒ skipped ⇒ zero cost. Real-ELF path
+        // only (the XML path stashes no image). The call-fixup seed list is the
+        // names the load-time pass flagged resolved to addresses via the (already
+        // installed) symbol table.
+        if self.arch().analysis_listing {
+            if let Some((path, bytes)) = self.analysis_image.take() {
+                // A throwaway loadimage just to satisfy `Listing::build`'s contract
+                // (its `image` arg is unused — the decode reads through `translate`);
+                // a parse failure makes the Listing step a graceful no-op.
+                if let Ok(image) = kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(
+                    &path, &bytes,
+                ) {
+                    let arch = self.arch();
+                    // The call-fixup seed list is empty: a fixup'd callee is also
+                    // skipped via the consumer's no-return-disc `function_at(..)`
+                    // checks, and there is no fixup-address index here. The
+                    // no-return seeds (above) are the load-bearing skip set.
+                    let consumer_out = kuna_analysis::passes::run_listing_consumers(
+                        &bytes,
+                        &image,
+                        arch,
+                        arch.translate(),
+                        &noreturn_seed_addrs,
+                        &[],
+                    );
+                    for (id, out) in consumer_out {
+                        if analysis_pass_enabled(self.arch(), id) {
+                            merged.merge(out);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Listing off: drop the stash (no deferred build).
+            self.analysis_image = None;
         }
         commit_analysis_output(self, &code_space, merged)
     }
@@ -281,6 +349,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "callfixup" => arch.analysis_callfixup,
         "addrtable" => arch.analysis_addrtable,
         "listing" => arch.analysis_listing,
+        "noreturn_disc" => arch.analysis_noreturn_disc,
         _ => true,
     }
 }
@@ -521,6 +590,7 @@ pub fn bootstrap_program(
         pending_analysis: Vec::new(),
         analysis_code_space: None,
         dwarf_locals: Vec::new(),
+        analysis_image: None,
     };
     // C++ `conf->readLoaderSymbols("::")` (testfunction.cc:160 / consolemain.cc:104):
     // install the binaryimage symbols as FunctionSymbols so a CALL to one resolves
@@ -662,6 +732,12 @@ pub fn bootstrap_from_elf(
         pending_analysis,
         analysis_code_space: Some(Rc::clone(&code_space)),
         dwarf_locals: Vec::new(),
+        // Stash the image bytes + path for the DEFERRED Listing build (PR6
+        // build-timing fix): the Listing is gated on `--option listing on`, set
+        // by the CLI after `load file`, so it is built at the deferred commit
+        // (`read symbols`) when the flag is known — not at load. `bytes` is moved
+        // here (it is unused below this point).
+        analysis_image: Some((path.to_string(), bytes)),
     };
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run
