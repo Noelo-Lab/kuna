@@ -35,9 +35,9 @@
 //! Section flags are identical to PE (both key off the COFF `Characteristics`
 //! field), so this impl reuses [`crate::s1_loader::format::pe::coff_section_bits`].
 //!
-//! All non-ELF magics (COFF's `IMAGE_FILE_MACHINE_*` prefix included) are gated
-//! behind `--experimental-formats` at the engine dispatch, so this code is
-//! unreachable on the default path and the ELF/XML oracles are untouched.
+//! All object-format magics (COFF's `IMAGE_FILE_MACHINE_*` prefix included) are
+//! admitted by the engine dispatch unconditionally; the XML/datatest corpus never
+//! carries a COFF prefix, so the ELF/XML oracles are untouched.
 
 use object::{Architecture, SectionFlags, SectionKind};
 

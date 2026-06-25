@@ -1,6 +1,6 @@
 //! Multi-format-loader PR-9 e2e gate: a pre-link **COFF object carrying MSVC C++
-//! mangled symbols** (`msvc_mangled.obj`, `?foo@Bar@@QEAAHH@Z` …) loads under
-//! `--experimental-formats`, the loader's MSVC demangle arm rewrites each
+//! mangled symbols** (`msvc_mangled.obj`, `?foo@Bar@@QEAAHH@Z` …) loads (multi-
+//! format support is unconditional), the loader's MSVC demangle arm rewrites each
 //! `?`-prefixed `cl.exe` symbol to its readable qualified name, and the function
 //! decompiles its real body **resolved by that demangled name** — the MSVC arm of
 //! the symbol-name pass (design §5.5, §8 PR-9).
@@ -33,12 +33,11 @@
 //! loader level by `loadimage_object::tests::msvc_mangled_coff_symbols_are_demangled_name_only`
 //! and by the `s1_demangle` unit tests (the merge gate, no toolchain needed).
 //!
-//! ## Flag gating (default-off ⇒ byte-identical on ELF)
+//! ## Default-on multi-format dispatch
 //!
-//! The `.obj` only loads when `KUNA_EXPERIMENTAL_FORMATS` is set (the
-//! `--experimental-formats` CLI flag); with it unset the same fixture is rejected
-//! (the default-off, byte-identical-dispatch proof shared with the sibling COFF
-//! gate).
+//! The `.obj` loads through the default `load file` dispatch with no flag — multi-
+//! format support is unconditional. The COFF magic routes straight to the object
+//! loader (no XML "not recognized" rejection), the same as ELF.
 //!
 //! ## `.sla` precondition
 //!
@@ -47,19 +46,12 @@
 //! the test prints that and returns early (a visible skip, never a false green).
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
-
-/// `KUNA_EXPERIMENTAL_FORMATS` is a process-global env var both tests in this file
-/// toggle; serialize their env-sensitive bodies so the default-off check never
-/// races the experimental-on bootstrap (cargo runs tests in parallel in one
-/// process).
-static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -90,15 +82,14 @@ fn decompile_func(prog: ConsoleProgram, func_cmd: &str) -> String {
     status.optr.clone()
 }
 
-/// Bootstrap the MSVC COFF object under `--experimental-formats`, returning `None`
-/// (a visible skip) when the `.sla` is absent.
+/// Bootstrap the MSVC COFF object (multi-format loading is unconditional),
+/// returning `None` (a visible skip) when the `.sla` is absent.
 fn boot() -> Option<ConsoleProgram> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("msvc_mangled.obj");
     assert!(path.exists(), "missing fixture {path:?}");
 
-    std::env::set_var("KUNA_EXPERIMENTAL_FORMATS", "1");
     match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
         Ok(p) => Some(p),
         Err(e) => {
@@ -107,7 +98,6 @@ fn boot() -> Option<ConsoleProgram> {
                  `make specs`): {}",
                 e.explain()
             );
-            std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
             None
         }
     }
@@ -118,18 +108,21 @@ fn boot() -> Option<ConsoleProgram> {
 /// `x + 42` resolved *by its demangled name*.
 #[test]
 fn msvc_coff_demangles_and_decompiles() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("msvc_mangled.obj");
 
-    // (before / default-off proof) Without the flag the `.obj` must NOT load.
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
-    let off = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots);
-    assert!(
-        off.is_err(),
-        "default-off: a COFF object must NOT load without --experimental-formats"
-    );
+    // (default-on proof) The binary loads through the *default* `load file`
+    // dispatch with no flag — multi-format support is unconditional. A `.sla`-
+    // absent environment surfaces as a load error; here we only assert the
+    // dispatch ROUTES to the object loader (no XML "not recognized" rejection).
+    if let Err(e) = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots) {
+        let msg = e.explain();
+        assert!(
+            !msg.contains("Unable to recognize") && !msg.contains("XML"),
+            "default-on: the binary must route to the object loader (got: {msg})"
+        );
+    }
 
     let Some(prog) = boot() else { return };
 
@@ -156,7 +149,6 @@ fn msvc_coff_demangles_and_decompiles() {
 
     // `kuna decompile msvc_mangled.obj freefunc` (by demangled name) → `x + 42`.
     let out = decompile_func(prog, "load function freefunc");
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     assert!(
         out.contains("freefunc"),

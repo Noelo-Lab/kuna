@@ -284,6 +284,10 @@ pub struct Architecture {
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
+    /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
+    /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
+    /// flowing into the callee (`option tailcalljump`, default off).
+    pub tail_call_jumps: bool,
     /// (kuna GH-6882) Let a SPARC struct-return post-call `unimp` fall through
     /// (C++ `sparc_struct_return`).
     pub sparc_struct_return: bool,
@@ -311,6 +315,10 @@ pub struct Architecture {
     /// (kuna GH-9191) Bound a modulo/and-mask LOAD-table jumptable index
     /// (C++ `switch_modulo_bound`).
     pub switch_modulo_bound: bool,
+    /// (kuna, angr `test_decompiling_missing_function_call`) Bound a LOAD-table
+    /// jumptable index by an out-of-band CBRANCH range guard the basic model's
+    /// guard analysis could not turn into a bound (C++ `switch_guard_bound`).
+    pub switch_guard_bound: bool,
     /// (kuna GH-8500) Hold a store-through-a-stack-pointer-alias across the
     /// deadcode race (C++ `stack_alias_deadstore`).
     pub stack_alias_deadstore: bool,
@@ -320,6 +328,14 @@ pub struct Architecture {
     /// (kuna) Reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`).
     pub recover_lowered_switch: bool,
+    /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
+    /// `goto` source so the cross-edge becomes a structured early return
+    /// (`reduce_return_gotos`).
+    pub reduce_return_gotos: bool,
+    /// (kuna) Lower loop-exit `goto <successor>` edges to structured `break;`
+    /// (a port of Ghidra `BlockGraph::scopeBreak`; option `loopbreak_recovery`,
+    /// DIV-10 default-on).
+    pub recover_loop_break: bool,
     /// (kuna) Fold an order-safe single-use call return into its use site
     /// (`fold_call_returns`, opt-in default-off; angr "call return variable
     /// folding").
@@ -438,6 +454,18 @@ pub struct Architecture {
     /// instead of `sub_<addr>`). Real-ELF Go path only ⇒ the XML datatest oracle is
     /// structurally untouched.
     pub analysis_gopclntab: bool,
+    /// (kuna) Gate the Mach-O arm64e Apple-Silicon SLEIGH-spec selection
+    /// (`macho-arm64e`); default **off** (design §3.7, opt-in until proven). When
+    /// on, an arm64e Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) loads with the
+    /// `AARCH64:LE:64:AppleSilicon` pointer-auth spec instead of the generic
+    /// `v8A`; pointer-auth does NOT change import naming or symbols, only the
+    /// spec. NB: spec selection happens at *load* (`language_id_for`), before any
+    /// console `option` command runs, so the actual gate is read live from the
+    /// `KUNA_MACHO_ARM64E` env var the CLI exports for `--option macho-arm64e on`;
+    /// this field exists for catalog/registration consistency (a recognized
+    /// option name) and records the requested state. Default-off ⇒ every parity
+    /// gate is byte-identical and a non-arm64e / non-Mach-O target is untouched.
+    pub macho_arm64e: bool,
 
     // --- Owned subsystems (architecture.hh:211-233) -----------------------
     /// Memory map of global variables and functions (C++ `symboltab`).
@@ -603,6 +631,7 @@ impl Architecture {
             memset_recover: false,
             add_carry_chain: false,
             v850_indirect_branch: false,
+            tail_call_jumps: false,
             sparc_struct_return: false,
             ov_less_simplify: false,
             fold_boolean_mask: false,
@@ -612,9 +641,12 @@ impl Architecture {
             model_stack_probe_loop: false,
             fold_flag_compare: false,
             switch_modulo_bound: false,
+            switch_guard_bound: false,
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
+            reduce_return_gotos: false,
+            recover_loop_break: false,
             fold_call_returns: false,
             strip_stack_guard: false,
             branch_flip: false,
@@ -641,6 +673,7 @@ impl Architecture {
             analysis_noreturn_disc: false,
             analysis_noreturn_propagate: false,
             analysis_gopclntab: false,
+            macho_arm64e: false,
 
             symboltab,
             options: OptionDatabase::new(),
@@ -693,6 +726,7 @@ impl Architecture {
         self.return_single = false; // (kuna) default: upstream (join register pairs)
         self.memset_recover = true; // (kuna) DIV-2 default-on (GH-9230/1537)
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
+        self.tail_call_jumps = false; // (kuna) default-OFF opt-in: default-on regresses 2 datatests (Long double #1/#2); tee-O2 tail-jumps
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
@@ -700,9 +734,12 @@ impl Architecture {
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
+        self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
+        self.reduce_return_gotos = false; // (kuna) default-off opt-in (angr SAILR goto-reduction)
+        self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.branch_flip = false; // (kuna) default-off: upstream branch polarity (angr opt-in, branchflip)
@@ -742,6 +779,7 @@ impl Architecture {
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
         self.analysis_noreturn_propagate = false; // no-return propagation consumer default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
+        self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
 
     /// Apply a kuna stage-model option (`option <name> <value>`), the analogue of
@@ -798,6 +836,7 @@ impl Architecture {
             "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
             "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
             "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
+            "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
             "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
             "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
             "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
@@ -815,9 +854,16 @@ impl Architecture {
                 Ok(msg)
             }
             "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
+            "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
                 self.recover_lowered_switch = val;
+                Ok(msg)
+            }
+            "gotoreduce" => {
+                let (val, msg) =
+                    crate::s8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
+                self.reduce_return_gotos = val;
                 Ok(msg)
             }
             "foldcallret" => {
@@ -827,6 +873,12 @@ impl Architecture {
             }
             "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
             "branchflip" => on_off!(branch_flip, "Negated-guard branch flipping for linearity"),
+            "loopbreak_recovery" => {
+                let (val, msg) =
+                    crate::kuna_loopbreak_recovery::OptionLoopBreakRecovery.apply(p1)?;
+                self.recover_loop_break = val;
+                Ok(msg)
+            }
             "namestyle" => {
                 let (val, msg) = crate::kuna_naming::OptionNameStyle.apply(p1)?;
                 self.name_style_angr = val;
@@ -897,6 +949,14 @@ impl Architecture {
                     if val { "on" } else { "off" }
                 ))
             }
+            // (kuna §3.7) arm64e Apple-Silicon spec selection. Unlike the
+            // analysis-pass gates this affects the *load-time* SLEIGH-spec choice
+            // (`language_id_for`), which runs before this console `option` command;
+            // the live gate is the `KUNA_MACHO_ARM64E` env var the CLI exports for
+            // `--option macho-arm64e on`. This arm records the requested state on
+            // the Architecture so the option is a recognized name (catalog
+            // consistency) and a kassert can read it back. Default-off.
+            "macho-arm64e" => on_off!(macho_arm64e, "Mach-O arm64e Apple-Silicon spec selection"),
             other => Err(KunaError::parse(format!("Unknown kuna option: {other}"))),
         }
     }
@@ -1136,6 +1196,8 @@ impl Architecture {
         seam.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         seam.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
+        seam.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
+        seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard
         seam.branch_flip = self.branch_flip; // branchflip (negated-guard branch flipping)
@@ -1168,6 +1230,9 @@ impl Architecture {
         // (kuna) GH-9191: carry the modulo/and-mask jump-table index-bound gate
         // (`option switchmodbound`) so `JumpBasic::recoverModel` reaches it.
         seam.switch_modulo_bound = self.switch_modulo_bound;
+        // (kuna, angr) carry the CBRANCH-guard jump-table index-bound gate
+        // (`option switchguardbound`) so `JumpBasic::recoverModel` reaches it.
+        seam.switch_guard_bound = self.switch_guard_bound;
         seam.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate

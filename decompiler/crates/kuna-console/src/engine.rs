@@ -607,8 +607,8 @@ pub fn bootstrap_program(
 ///
 /// Format-neutral by construction: it drives the `object`-crate
 /// [`ObjectLoadImage`] (which funnels every format-specific decision through the
-/// `ObjectFormat` seam) in place of the XML loader, so it serves ELF today and
-/// PE/Mach-O/COFF behind `--experimental-formats`. Open the object (parse
+/// `ObjectFormat` seam) in place of the XML loader, so it serves ELF, PE,
+/// Mach-O and COFF uniformly. Open the object (parse
 /// machine/segments/symbols), take the SLEIGH language id straight off the
 /// loader's `getArchType()` (the `resolveArchitecture` loader branch — C++
 /// `loader->getArchType()`), build the engine, attach the default code space to
@@ -631,6 +631,15 @@ pub fn bootstrap_from_object(
     // object::File view (the analyzers need a parsed object the loader drops).
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?;
+    // (PR-8) Mach-O fat / universal (`0xcafebabe`) peel: `object::File::parse`
+    // is a thin, single-arch view and cannot parse a fat header, so a universal
+    // binary is reduced to ONE arch slice's bytes here — the single, canonical
+    // slice-selection point (design §3.4). Everything downstream (the loader, the
+    // analysis passes, the deferred-Listing stash) then sees the SAME thin slice,
+    // exactly as for a thin Mach-O. The slice preference is `--slice` (env
+    // `KUNA_MACHO_SLICE`) or the `--target` stem, else x86-64 → arm64 → first.
+    // Non-fat input is untouched (the peel returns the bytes verbatim).
+    let bytes = select_macho_slice(bytes, target);
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
     let mut loader = ObjectLoadImage::from_bytes(path, &bytes)?;
 
@@ -1124,27 +1133,14 @@ const COFF_MACHINES: &[u16] = &[
     0xaa64, // IMAGE_FILE_MACHINE_ARM64
 ];
 
-/// Whether non-ELF object formats (PE / Mach-O / COFF) are admitted by
-/// [`is_object_binary`]. Default **off** — only `\x7fELF` reaches the object
-/// loader, so default behavior is byte-identical to the ELF-only era and the
-/// XML / datatest oracles are structurally untouched. Turned on by the
-/// `KUNA_EXPERIMENTAL_FORMATS` env var (set to any non-empty value), which the
-/// `kuna decompile --experimental-formats` flag exports onto the `decomp_dbg`
-/// subprocess. Read live (per `load file`) so a test can toggle it in-process.
-fn experimental_formats_enabled() -> bool {
-    std::env::var_os("KUNA_EXPERIMENTAL_FORMATS")
-        .map(|v| !v.is_empty())
-        .unwrap_or(false)
-}
-
 /// Does `bytes` look like an object-format binary the [`ObjectLoadImage`] loader
-/// can drive (design §1.4)? By **default** this admits **only ELF**, so the
-/// default `load file` dispatch is byte-identical to before — every non-ELF
-/// input still routes to the XML branch exactly as it did. When
-/// `--experimental-formats` is set ([`experimental_formats_enabled`]), it also
-/// admits Mach-O (`0xfeedfac*` / fat `0xcafebabe`), PE (`MZ` DOS stub — the
-/// typed parser validates the PE header downstream), and a bare COFF object (a
-/// leading `IMAGE_FILE_MACHINE_*` `u16`).
+/// can drive (design §1.4)? This admits **all** the supported object formats
+/// unconditionally — ELF, Mach-O (`0xfeedfac*` / fat `0xcafebabe`), PE (`MZ` DOS
+/// stub — the typed parser validates the PE header downstream), and a bare COFF
+/// object (a leading `IMAGE_FILE_MACHINE_*` `u16`). Anything else routes to the
+/// XML branch. (Multi-format support was promoted from the former
+/// `--experimental-formats` flag to the default in increment 46; the XML/datatest
+/// corpus never carries a PE/Mach-O/COFF magic, so its dispatch is unchanged.)
 fn is_object_binary(bytes: &[u8]) -> bool {
     if bytes.len() < 4 {
         return false;
@@ -1152,9 +1148,6 @@ fn is_object_binary(bytes: &[u8]) -> bool {
     let m: [u8; 4] = [bytes[0], bytes[1], bytes[2], bytes[3]];
     if m == ELF_MAGIC {
         return true; // ELF — always admitted (the established path).
-    }
-    if !experimental_formats_enabled() {
-        return false; // default: ELF-only ⇒ byte-identical dispatch.
     }
     // Mach-O thin (any of the four byte orders) or fat/universal.
     if matches!(m, MACHO_LE64 | MACHO_LE32 | MACHO_BE64 | MACHO_BE32 | MACHO_FAT) {
@@ -1173,6 +1166,43 @@ fn is_object_binary(bytes: &[u8]) -> bool {
     COFF_MACHINES.contains(&machine)
 }
 
+/// The environment-variable name carrying a Mach-O fat-slice override
+/// (`--slice <arch>`). Read live (per `load file`) so a test can set it
+/// in-process; empty/unset selects the deterministic default slice.
+const MACHO_SLICE_ENV: &str = "KUNA_MACHO_SLICE";
+
+/// Reduce a Mach-O fat / universal binary to one arch slice's bytes — the single,
+/// canonical slice-selection point at dispatch (design §3.4 / §8 PR-8). For a
+/// thin (non-fat) input the `bytes` are returned **verbatim** (an exact, zero-copy
+/// move), so the ELF / thin-Mach-O / PE / COFF paths are byte-identical.
+///
+/// The slice preference is, in order: an explicit `--slice <arch>` (the
+/// [`MACHO_SLICE_ENV`] env var the CLI exports), then the `--target` token's
+/// leading arch stem (so the existing language-override flag also steers the
+/// slice), else the deterministic default (x86-64 → arm64 → first arch present).
+/// A fat header that cannot be peeled (unparsable, or no usable slice) is left
+/// untouched, so the downstream `object::File::parse` produces the existing
+/// "Unsupported file format" error rather than this silently mis-loading.
+fn select_macho_slice(bytes: Vec<u8>, target: &str) -> Vec<u8> {
+    use kuna_analysis::s1_loader::macho_fat::{is_fat, select_fat_slice, SlicePref};
+    if !is_fat(&bytes) {
+        return bytes; // thin / ELF / PE / COFF — verbatim, no copy of a slice.
+    }
+    // `--slice` (env) wins; else fall back to the `--target` arch stem.
+    let slice_token = std::env::var(MACHO_SLICE_ENV).unwrap_or_default();
+    let pref = if !slice_token.trim().is_empty() {
+        SlicePref::parse(&slice_token)
+    } else if !target.trim().is_empty() {
+        SlicePref::parse(target)
+    } else {
+        SlicePref::default()
+    };
+    match select_fat_slice(&bytes, pref) {
+        Some(slice) => slice.to_vec(),
+        None => bytes, // unpeelable fat: leave it for object::File::parse to reject.
+    }
+}
+
 /// Bootstrap from a file path (the `decomp_dbg` `load file [<target>] <path>`
 /// body).  Detects the format by its leading bytes: an object-format magic
 /// ([`is_object_binary`]) routes to the real-binary [`ObjectLoadImage`] path;
@@ -1185,10 +1215,9 @@ fn is_object_binary(bytes: &[u8]) -> bool {
 /// token (the C++ BFD target / an explicit SLEIGH language id); it is honored on
 /// the object path and ignored on the XML path (the XML carries its own `arch`).
 ///
-/// By default [`is_object_binary`] admits only ELF, so this dispatch — and the
-/// XML / datatest oracles — are byte-identical to the ELF-only era. PE/Mach-O/
-/// COFF are admitted only under `--experimental-formats`
-/// (`KUNA_EXPERIMENTAL_FORMATS`).
+/// [`is_object_binary`] admits ELF, PE, Mach-O and COFF; the XML / datatest
+/// corpus never carries an object-format magic, so its dispatch routes to the XML
+/// branch exactly as before.
 pub fn bootstrap_from_file(
     path: &str,
     target: &str,
@@ -1197,8 +1226,8 @@ pub fn bootstrap_from_file(
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to recognize imagefile {path}: {e}")))?;
     if is_object_binary(&bytes) {
-        // Real object-format binary (ELF always; PE/Mach-O/COFF under the flag):
-        // drive the object-crate loader.
+        // Real object-format binary (ELF / PE / Mach-O / COFF): drive the
+        // object-crate loader.
         return bootstrap_from_object(path, target, spec_roots);
     }
     let mut store = DocumentStorage::new();

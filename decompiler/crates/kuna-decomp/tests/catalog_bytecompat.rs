@@ -76,21 +76,26 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_43_settables() {
-    // One `"option":` per settable row: 25 stage-model knobs (incl. the `foldcallret`
-    // call-return variable-folding gate and the `dedupvardecls` duplicate-scalar-
-    // declaration collapse gate, DIV-7) + 15 analysis-tier gates (10 per-run
+fn fixture_has_all_48_settables() {
+    // One `"option":` per settable row: 30 stage-model knobs (incl. the `foldcallret`
+    // call-return variable-folding gate, the `dedupvardecls` duplicate-scalar-
+    // declaration collapse gate, DIV-7, the `loopbreak_recovery` loop-exit-goto
+    // break recovery gate, DIV-10, the `gotoreduce` angr SAILR return-tail
+    // goto-reduction gate, the `switchguardbound` guard-bounded GCC PIC
+    // jump-table recovery gate, angr test_decompiling_missing_function_call,
+    // the `tailcalljump` angr -O2 tail-jump S2 flow-classification gate,
+    // and the `branchflip` angr SAILR negated-guard S8 branch-flip gate)
+    // + 15 analysis-tier gates (10 per-run
     // analysis-pass enablement — including the `mips_gp` $gp recovery gate and the
     // `mips_isa` MIPS16 ISA_MODE painting gate — plus the `formatstring`
     // DecompilerDependent varargs-typing gate, the `listing` Listing/xref
     // disassembly tier gate, the `noreturn_disc` discovered-no-return Listing
     // consumer gate, the `noreturn_propagate` no-return propagation Listing consumer
     // gate, and the `gopclntab` Go pclntab function-name recovery gate)
-    // + 2 loader-tier capabilities (the `relocobjects` ET_REL relocatable-object
-    // loader, DIV-8, and the `i386_pie_plt` i386-PIE PLT-stub decode gate, DIV-9)
-    // + 1 S8 readability knob (the `branchflip` negated-guard branch-flip option,
-    // angr-style `if (x)` vs `if (x == 0)`, opt-in default-off).
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 43);
+    // + 3 loader-tier capabilities (the `relocobjects` ET_REL relocatable-object
+    // loader, DIV-8; the `i386_pie_plt` i386-PIE PLT-stub decode gate, DIV-9; and
+    // the `macho-arm64e` Mach-O arm64e Apple-Silicon spec-selection gate, PR-8).
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 48);
 }
 
 #[test]

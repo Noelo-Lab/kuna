@@ -3532,3 +3532,201 @@ PARITY OK**, `make test-stages` **159/159 PARITY OK**, `make rust-test` **green*
   `kuna-analysis/src/passes.rs` + `kuna-analysis/src/s1_loader/noreturn.rs`
   (`detect_compiler(&file, bytes)` call-site signature), `docs/analysis-port-log.md`.
 
+### Increment 45 — Multi-format loader PR-8: Mach-O fat/universal slice selection + arm64e spec
+
+**Premise.** PR-6/7 (Increment 39) made a **thin** linked Mach-O load + decompile +
+name its imports. But a real macOS distribution ships **fat / universal** binaries
+(`0xcafebabe`) wrapping several arch slices, and `object::File::parse` is a *thin,
+single-arch* view that cannot parse a fat header (its `File::parse` has no
+`MachOFat*` arm — it returns "Unsupported file format"). So a fat Mach-O failed to
+load entirely on the main path. PR-7 had already added per-slice selection inside
+the `__stubs` import walk (`macho_stubs`), but the loadimage itself never got a
+slice. This increment makes the **single, canonical slice-selection point at
+dispatch** so a fat binary loads (loadimage + imports + entry discovery all
+single-arch as for a thin Mach-O), plus the gated **arm64e** Apple-Silicon spec
+selection. Design §3.4 (fat) + §3.7 (arm64e) + §8 PR-8.
+
+**The slice peel (one point, at dispatch).** A new `s1_loader/macho_fat.rs` is the
+canonical selector: `select_fat_slice(bytes, SlicePref)` peels a universal binary
+to one arch slice's sub-bytes (32- and 64-bit fat readers share one
+`select_fat_arch` policy via the `object` `FatArch` trait), and `is_fat(bytes)` is
+the cheap magic pre-check. The engine's `bootstrap_from_object` calls
+`select_macho_slice(bytes, target)` right after reading the file and *before*
+`ObjectLoadImage::from_bytes`, replacing `bytes` with the chosen slice — so the
+loader, the analysis passes, and the deferred-Listing stash all see the **same**
+thin slice. A non-fat input passes through verbatim (zero-copy move), so ELF / thin
+Mach-O / PE / COFF are byte-identical. `macho_stubs`'s own fat arms now delegate to
+the same `select_fat_slice` (the duplicate `select_fat_slice_32/64/select_fat_arch`
+were removed), so the import walk and the loadimage can never drift onto different
+slices.
+
+**The override.** Selection preference is, in order: `--slice <arch>` (the new CLI
+flag, exported as `KUNA_MACHO_SLICE`, read live at the peel) → the `--target`
+token's leading arch stem (so the existing language override also steers the slice)
+→ the deterministic default **x86-64 → arm64 → first present** (host-relevant in
+this container). `SlicePref::parse` recognizes the `lipo`/`file` arch spellings and
+SLEIGH-id stems (using the `:64:` size field to disambiguate `x86`).
+
+**arm64e (§3.7, gated).** Pointer authentication does **not** change import naming
+or symbols — only the spec. `object` collapses arm64 and arm64e to the same
+`Architecture::Aarch64`, so the cpusubtype is read from a typed re-parse:
+`macho::is_arm64e(bytes)` checks `cpusubtype & !CPU_SUBTYPE_MASK == CPU_SUBTYPE_ARM64E`
+(the high capability byte stripped). `macho::apple_silicon_id(fmt, arch, bytes)`
+returns `AARCH64:LE:64:AppleSilicon:default` **only** when format=Mach-O +
+arch=AArch64 + the gate on + the image is arm64e; `language_id_for` consults it
+before composing the generic `v8A` id. Spec selection is a **load-time** decision
+(before any console `option` command), so the live gate is the `KUNA_MACHO_ARM64E`
+env var the CLI exports for `--option macho-arm64e on`; the option is also a
+registered settable (catalog consistency, recorded on the `Architecture`).
+Default-**off** ⇒ an arm64e Mach-O loads with the generic `v8A` spec exactly as any
+arm64.
+
+**Before → after.**
+- *Fat `macho_fat`* (2-slice x86-64 + arm64): before, "not in recognized object
+  file format" (fat header unparsable) **→** loads the **x86-64** slice (default),
+  decompiles `_main`, renders `printf(`; `--slice arm64` selects the arm64 slice.
+- *arm64e* (gate on): `AARCH64:LE:64:v8A` **→** `AARCH64:LE:64:AppleSilicon`; gate
+  off ⇒ unchanged (`v8A`).
+
+**Fixtures (hand-built; no `lipo` in-container).** `macho_fat` is a 2-slice
+universal binary emitted by hand from the existing thin slices `macho_imports`
+(x86-64) + `macho_imports_arm64` (arm64), behind a big-endian `fat_header` + two
+`fat_arch` records — `llvm-lipo`/`lipo` are absent in the container, so the simple
+fat wrapper was constructed directly from the two real slices. `macho_arm64e` is
+the `macho_imports_arm64` fixture with its header cpusubtype flipped to
+`CPU_SUBTYPE_ARM64E` (arm64e is binary-compatible arm64 — same encodings plus PAC —
+so the real arm64 code disassembles under the AppleSilicon v8.5-A superset spec);
+the *load + spec-selection path is real*, only the binary's provenance is
+synthesized. A genuine Apple-toolchain `-arch arm64e` fixture is a follow-up.
+
+**Tests (all RAN, none skipped).** Unit: `macho_fat` (slice-pref parse + non-fat
+reject), `format::macho` (`is_arm64e` subtype detection + the gated
+`apple_silicon_id` mapping) — hermetic, no `.sla`. E2e
+(`kuna-console/tests/verify_macho_fat.rs`, 5 tests, real load through the built
+`.sla`): the fat binary loads its default x86-64 slice and names `printf`;
+`--slice arm64` selects the other slice; arm64e gate-on selects the **AppleSilicon**
+spec (description asserted) and still names `printf`; gate-off uses generic `v8A`;
+default-off rejects the fat binary. The existing `verify_macho_imports` /
+`verify_object_formats` / `verify_multiformat_entry` gates still pass (the
+`macho_stubs` delegation is behavior-identical). **Speed:** the fat slice peel is a
+header read + a sub-slice (negligible); the CLI `kuna decompile macho_fat _main
+--experimental-formats` completes in **~0.34 s** end-to-end (the arm64e variant
+~0.29 s).
+
+**Gating / parity.** Default-off ⇒ a fat binary needs `--experimental-formats` to
+load at all, the arm64e spec needs `--option macho-arm64e on`, and a non-fat /
+non-arm64e target is byte-identical (the slice peel is a pass-through for thin
+inputs). The XML datatest path never reaches the object loader, so the parity
+oracles are structurally untouched. Gates: `make test` **675/675 PARITY OK**,
+`make test-stages` **159/159 PARITY OK**, `make rust-test` **green**;
+`kuna catalog --check` **OK** (this PR adds the `macho-arm64e` row; after merging
+`main`'s concurrent `foldcallret` + `dedupvardecls` settables the catalog carries
+**40** rows total).
+
+- **Divergence/LOSS:** none to the parity oracles. The fat/arm64e fixtures are
+  hand-built (no in-container Apple linker / `lipo`); the arm64e fixture's
+  cpusubtype is synthesized over real arm64 code (a genuine arm64e binary is a
+  follow-up).
+- **New:** `kuna-analysis/src/s1_loader/macho_fat.rs`,
+  `kuna-console/tests/verify_macho_fat.rs`,
+  `kuna-analysis/tests/fixtures/macho_fat`,
+  `kuna-analysis/tests/fixtures/macho_arm64e`.
+- **Changed:** `kuna-console/src/engine.rs` (`select_macho_slice` peel at
+  dispatch), `kuna-analysis/src/loadimage_object.rs` (`language_id_for` arm64e
+  hook), `kuna-analysis/src/s1_loader/format/macho.rs` (`is_arm64e` /
+  `apple_silicon_id` + tests), `kuna-analysis/src/s1_loader/macho_stubs.rs`
+  (delegate to the canonical selector), `kuna-analysis/src/s1_loader/mod.rs`,
+  `kuna-decomp/src/infra/architecture.rs` (`macho_arm64e` field + `set_kuna_option`
+  arm), `kuna-decomp/src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`),
+  `kuna-decomp/stages.toml` (the `macho-arm64e` settable),
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs` (count bumps),
+  `kuna-console/src/kuna_console.rs` (`kuna_live_value` arm),
+  `kuna-cli/src/{main,decompile}.rs` (`--slice` + the arm64e env export),
+  `docs/assertions.md`, `docs/analysis-port-log.md`.
+
+### Increment 46 — Multi-format support is now unconditional (the --experimental-formats flag removed)
+
+The multi-format build-out (Increments 36–45: PE/Mach-O/COFF parsing, import
+naming, entry discovery, demangling, DWARF, compiler detection, fat-slice
+selection) shipped each format behind a `--experimental-formats` flag — proven
+green PR by PR while the default dispatch stayed ELF-only and byte-identical. With
+all four formats proven, this increment **promotes multi-format to the default and
+removes the flag entirely** (user directive: "Flip it on and remove the flag. We
+should always support it."). PE/Mach-O/COFF now load exactly like ELF — no flag, no
+env var, no opt-in.
+
+**The mechanism removed.** The gate was a single chokepoint: `is_object_binary`
+(`kuna-console/src/engine.rs`) admitted the non-ELF magics only when
+`experimental_formats_enabled()` returned true, which read the
+`KUNA_EXPERIMENTAL_FORMATS` env var. The `kuna decompile --experimental-formats`
+CLI flag exported that env var onto the spawned `decomp_dbg`. All three are gone:
+`is_object_binary` now admits ELF + Mach-O (`0xfeedfac*` / fat `0xcafebabe`) + PE
+(`MZ`) + a bare COFF (`IMAGE_FILE_MACHINE_*` prefix) **unconditionally**; the
+`experimental_formats_enabled()` helper and the env-var read are deleted; the CLI
+flag definition + its env export are deleted.
+
+**The headline (the whole point).** With **NO flag**, a real PE and a real Mach-O
+now decompile straight off `kuna decompile`:
+
+```text
+$ kuna decompile decompiler/crates/kuna-analysis/tests/fixtures/pe_imports.exe main
+unsigned long long main(uint4 a0)
+{
+  __main();
+  puts("hello");
+  printf("%d\n",(uint8)a0);
+  return 0;
+}
+
+$ kuna decompile decompiler/crates/kuna-analysis/tests/fixtures/macho_imports _main
+unsigned long _main(int4 a0)
+{
+  printf("%d\n",(uint8)(a0 * 3 + 7));
+  return 0;
+}
+```
+
+Before this increment those exact commands errored ("Unable to recognize
+imagefile") unless you added `--experimental-formats`; now they just work. And the
+flag is gone — `kuna decompile … --experimental-formats` now reports
+`error: unknown option --experimental-formats`.
+
+**Why this is parity-safe (the load-bearing invariant).** The XML datatest path
+(`bootstrap_program`, the 675/675 corpus) and the stage corpus dispatch on the XML
+`<bi…>` document / ELF magic and **never** carry a PE/Mach-O/COFF magic, so
+`is_object_binary` returns false for every datatest input regardless of the gate —
+removing the gate cannot perturb their dispatch. The ELF arm is unchanged. The only
+behavior change is that a real PE/Mach-O/COFF binary now decompiles by default
+instead of erroring — exactly the intended, user-directed default change (an
+output-changing change that is, per the directive, deliberately NOT behind a flag).
+
+**Tests.** Every multi-format e2e gate (`verify_pe_imports`, `verify_macho_imports`,
+`verify_coff_object`, `verify_object_formats`, `verify_multiformat_entry`,
+`verify_multiformat_passes`, `verify_multiformat_dwarf`, `verify_macho_fat`,
+`verify_msvc_demangle`) was de-flagged: the `KUNA_EXPERIMENTAL_FORMATS` set/remove
+toggling is gone, the per-file `ENV_LOCK` that only serialized that process-global
+toggle is removed where no env is touched anymore (kept in `verify_macho_fat`,
+which still toggles the separate `KUNA_MACHO_SLICE`/`KUNA_MACHO_ARM64E`), and each
+former "default-off: must NOT load without the flag" negative assertion is inverted
+to a "loads by default through `bootstrap_from_file`" positive — so the suite now
+exercises the now-default path. `kuna catalog --check` is unchanged
+(`--experimental-formats` was never a settable; the catalog/count is identical).
+
+**Gating / parity.** Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**PARITY OK** (count unchanged from the prior increment), `make rust-test`
+**green** (all multi-format e2e tests pass with no flag), `kuna catalog --check`
+**OK**.
+
+- **Divergence/LOSS:** none to the parity oracles. This is an intentional,
+  user-directed default change: a real PE/Mach-O/COFF binary now decompiles by
+  default. It is deliberately not behind a flag (per the directive). The XML/ELF
+  oracles are byte-identical.
+- **Changed:** `kuna-console/src/engine.rs` (drop `experimental_formats_enabled()`
+  + the `KUNA_EXPERIMENTAL_FORMATS` read; `is_object_binary` admits all magics
+  unconditionally), `kuna-cli/src/{main,decompile}.rs` (remove the
+  `--experimental-formats` flag + its env export + the `experimental_formats`
+  field), `decompiler/Cargo.toml` (comment), `kuna-analysis/src/s1_loader/format/{mod,pe,macho,coff}.rs`
+  + `kuna-analysis/src/s1_strings/mod.rs` (doc comments), `kuna-decomp/stages.toml`
+  + `docs/assertions.md` (the `macho-arm64e` `use_when`/`example` drop the flag
+  mention), `kuna-console/tests/verify_{pe_imports,macho_imports,coff_object,object_formats,multiformat_entry,multiformat_passes,multiformat_dwarf,macho_fat,msvc_demangle}.rs`
+  (de-flagged), `docs/multiformat-loader-design.md`, `docs/analysis-port-log.md`.

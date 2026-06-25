@@ -92,12 +92,30 @@ pub struct KunaRegionNode {
     chain: Vec<KunaNodeId>,
     /// `k_region`: the collapsed region payload (C++ `KunaGraphRegion *region`).
     region: Option<RegionPayloadId>,
+    /// `k_block`: does the wrapped block end with `CPUI_BRANCHIND`/`CPUI_CBRANCH`?
+    ///
+    /// SEAM(W7): the C++ `endsWithBranchindOrCbranch` reaches
+    /// `FlowBlock::lastOp()->code()` live; the basic-block CFG never mutates
+    /// during region identification, so the block-graph adapter
+    /// ([`crate::kuna_regionid::KunaRegionIdentifier::build_from_block_graph`])
+    /// precomputes the predicate once per real block and parks it here.  Always
+    /// `false` for synthetic test nodes (no block); for `k_multi`/`k_region`
+    /// wrappers the predicate consults the last chain member's flag, not this.
+    branchy: bool,
 }
 
 impl KunaRegionNode {
     /// Construct a node (C++ `KunaRegionNode(node_kind,uintb,uint4)`).
     pub fn new(kind: NodeKind, addr: uintb, ident: uint4) -> KunaRegionNode {
-        KunaRegionNode { kind, addr, ident, block: None, chain: Vec::new(), region: None }
+        KunaRegionNode {
+            kind,
+            addr,
+            ident,
+            block: None,
+            chain: Vec::new(),
+            region: None,
+            branchy: false,
+        }
     }
 
     /// Get the node kind (C++ `getKind`).
@@ -119,6 +137,16 @@ impl KunaRegionNode {
     /// Set the wrapped block (C++ pool fills `block` after construction).
     pub fn set_block(&mut self, block: BlockId) {
         self.block = Some(block);
+    }
+    /// `k_block`: does the wrapped block end with `CPUI_BRANCHIND`/`CPUI_CBRANCH`?
+    /// (SEAM(W7) precomputed predicate, see [`KunaRegionNode::branchy`]).
+    pub fn ends_with_branchind_or_cbranch(&self) -> bool {
+        self.branchy
+    }
+    /// Record the `endsWithBranchindOrCbranch` predicate for a real block (the
+    /// block-graph adapter sets this once per leaf block).
+    pub fn set_branchy(&mut self, branchy: bool) {
+        self.branchy = branchy;
     }
     /// `k_multi`: members (C++ `getChain`).
     pub fn get_chain(&self) -> &[KunaNodeId] {

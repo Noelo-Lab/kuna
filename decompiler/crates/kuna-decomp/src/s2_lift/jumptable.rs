@@ -56,9 +56,10 @@
 //! wrapping); containers follow ADR 0002 (`BTreeSet` for the override address
 //! set, transcribing the `set<Address>` order).
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
-use kuna_base::address::{coveringmask, count_leading_zeros, mostsigbit_set, Address};
+use kuna_base::address::{calc_mask, coveringmask, count_leading_zeros, mostsigbit_set, Address};
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::{
     AttributeId, Decoder, ElementId, Encoder, ATTRIB_FORMAT, ATTRIB_SIZE,
@@ -1449,6 +1450,126 @@ impl JumpModel for JumpModelTrivial {
 // JumpBasic static helpers (jumptable.hh:374, jumptable.cc:425-547)
 // ---------------------------------------------------------------------------
 
+/// (kuna) Concrete-evaluate a guard boolean expression as a function of the
+/// chosen switch-index value `v` (helper for `JumpBasic::scan_guard_tree`).
+///
+/// `offmap` maps the meld index varnode (and its constant-offset register-reused
+/// relatives) to `v + off`; every other leaf must be a constant or be reachable
+/// through evaluable arithmetic / comparison / boolean ops.  Returns the value of
+/// `vn` (masked to its width), or `None` when the expression cannot be evaluated
+/// (an unmodelled op or an unresolved input) — in which case the caller declines
+/// the bound.  `budget` bounds the recursion (a DAG-evaluation backstop).
+fn eval_guard_expr(
+    fd: &Funcdata,
+    vn: VarnodeId,
+    offmap: &BTreeMap<VarnodeId, uintb>,
+    v: uintb,
+    budget: &mut i64,
+) -> Option<uintb> {
+    if *budget <= 0 {
+        return None;
+    }
+    *budget -= 1;
+    let vr = fd.vbank().get(vn)?;
+    let size = vr.get_size();
+    let mask = calc_mask(size);
+    if let Some(&off) = offmap.get(&vn) {
+        return Some(v.wrapping_add(off) & mask);
+    }
+    if vr.is_constant() {
+        return Some(vr.get_offset() & mask);
+    }
+    let def = vr.get_def()?;
+    let op = fd.obank().get(def)?;
+    let code = op.code();
+    // Sign-extend a value of `insize` bytes to a full `i64`.
+    let sext = |val: uintb, insize: int4| -> i64 {
+        let bits = (insize as u32) * 8;
+        if bits == 0 || bits >= 64 {
+            val as i64
+        } else {
+            let shift = 64 - bits;
+            ((val << shift) as i64) >> shift
+        }
+    };
+    let insize = |slot: int4| -> int4 {
+        op.get_in(slot)
+            .and_then(|x| fd.vbank().get(x))
+            .map(|x| x.get_size())
+            .unwrap_or(0)
+    };
+    let ev = |slot: int4, budget: &mut i64| -> Option<uintb> {
+        eval_guard_expr(fd, op.get_in(slot)?, offmap, v, budget)
+    };
+    match code {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INT_ZEXT => {
+            ev(0, budget).map(|a| a & mask)
+        }
+        OpCode::CPUI_INT_SEXT => {
+            let a = ev(0, budget)?;
+            Some((sext(a, insize(0)) as uintb) & mask)
+        }
+        OpCode::CPUI_SUBPIECE => {
+            let a = ev(0, budget)?;
+            let shift = op
+                .get_in(1)
+                .and_then(|c| fd.vbank().get(c))
+                .map(|c| c.get_offset())
+                .unwrap_or(0);
+            Some((a >> (shift * 8)) & mask)
+        }
+        OpCode::CPUI_INT_ADD => Some(ev(0, budget)?.wrapping_add(ev(1, budget)?) & mask),
+        OpCode::CPUI_INT_SUB => Some(ev(0, budget)?.wrapping_sub(ev(1, budget)?) & mask),
+        OpCode::CPUI_INT_MULT => Some(ev(0, budget)?.wrapping_mul(ev(1, budget)?) & mask),
+        OpCode::CPUI_INT_AND => Some((ev(0, budget)? & ev(1, budget)?) & mask),
+        OpCode::CPUI_INT_OR => Some((ev(0, budget)? | ev(1, budget)?) & mask),
+        OpCode::CPUI_INT_XOR => Some((ev(0, budget)? ^ ev(1, budget)?) & mask),
+        OpCode::CPUI_INT_NEGATE => Some((!ev(0, budget)?) & mask),
+        OpCode::CPUI_INT_2COMP => Some(ev(0, budget)?.wrapping_neg() & mask),
+        OpCode::CPUI_INT_LEFT => Some((ev(0, budget)? << (ev(1, budget)? & 63)) & mask),
+        OpCode::CPUI_INT_RIGHT => Some(ev(0, budget)? >> (ev(1, budget)? & 63)),
+        OpCode::CPUI_INT_EQUAL => Some((ev(0, budget)? == ev(1, budget)?) as uintb),
+        OpCode::CPUI_INT_NOTEQUAL => Some((ev(0, budget)? != ev(1, budget)?) as uintb),
+        OpCode::CPUI_INT_LESS => Some((ev(0, budget)? < ev(1, budget)?) as uintb),
+        OpCode::CPUI_INT_LESSEQUAL => Some((ev(0, budget)? <= ev(1, budget)?) as uintb),
+        OpCode::CPUI_INT_SLESS => {
+            let (a, b) = (ev(0, budget)?, ev(1, budget)?);
+            Some((sext(a, insize(0)) < sext(b, insize(1))) as uintb)
+        }
+        OpCode::CPUI_INT_SLESSEQUAL => {
+            let (a, b) = (ev(0, budget)?, ev(1, budget)?);
+            Some((sext(a, insize(0)) <= sext(b, insize(1))) as uintb)
+        }
+        OpCode::CPUI_INT_CARRY => {
+            let (a, b) = (ev(0, budget)?, ev(1, budget)?);
+            Some((a.checked_add(b).is_none() || (a.wrapping_add(b) & calc_mask(insize(0))) < a) as uintb)
+        }
+        OpCode::CPUI_INT_SBORROW => {
+            let (a, b) = (ev(0, budget)?, ev(1, budget)?);
+            let (sa, sb) = (sext(a, insize(0)), sext(b, insize(0)));
+            Some((sa.checked_sub(sb).map(|d| d != sext((sa.wrapping_sub(sb)) as uintb, insize(0))).unwrap_or(true)) as uintb)
+        }
+        OpCode::CPUI_BOOL_AND => Some((ev(0, budget)? & ev(1, budget)?) & 1),
+        OpCode::CPUI_BOOL_OR => Some((ev(0, budget)? | ev(1, budget)?) & 1),
+        OpCode::CPUI_BOOL_XOR => Some((ev(0, budget)? ^ ev(1, budget)?) & 1),
+        OpCode::CPUI_BOOL_NEGATE => Some((ev(0, budget)? & 1) ^ 1),
+        OpCode::CPUI_MULTIEQUAL => {
+            // A phi is only evaluable if every input agrees on the value.
+            let mut acc: Option<uintb> = None;
+            for s in 0..op.num_input() {
+                let val = eval_guard_expr(fd, op.get_in(s)?, offmap, v, budget)? & mask;
+                match acc {
+                    None => acc = Some(val),
+                    Some(p) if p == val => {}
+                    Some(_) => return None,
+                }
+            }
+            acc
+        }
+        _ => None,
+    }
+}
+
 /// Pull a [`CircleRange`] back through a given PcodeOp (C++
 /// `CircleRange::pullBack(PcodeOp*,Varnode**,bool)`, `rangeutil.cc:1022`).
 ///
@@ -2110,6 +2231,17 @@ impl JumpBasicModel {
                 self.mark_foldable_guards(fd);
                 return Ok(true);
             }
+            // (kuna, angr `test_decompiling_missing_function_call`) When
+            // `option switchguardbound on`, look for an out-of-band CBRANCH range
+            // guard the guard analysis could not turn into a bound (e.g. a GCC
+            // `sub LOW; ja DEFAULT` dispatch with the index spilled to the stack)
+            // and re-bound the table to [0, N).
+            if fd.get_arch().switch_guard_bound
+                && self.kuna_try_guard_bound_table(fd, maxtablesize)
+            {
+                self.mark_foldable_guards(fd);
+                return Ok(true);
+            }
             return Ok(false);
         }
         self.mark_foldable_guards(fd);
@@ -2277,6 +2409,334 @@ impl JumpBasicModel {
         jr.set_start_vn(bound_out);
         jr.set_start_op(startop);
         true
+    }
+
+    /// (kuna, angr `test_decompiling_missing_function_call`) Bound a LOAD-table
+    /// jumptable index by an out-of-band CBRANCH **range guard** the basic
+    /// model's guard analysis could not turn into a bound.  Gated by
+    /// `option switchguardbound`.
+    ///
+    /// Sibling of [`kuna_try_modulo_bound_table`](Self::kuna_try_modulo_bound_table):
+    /// invoked from [`recover_model_basic`](Self::recover_model_basic) only after
+    /// the normal model — and the modulo/and-mask extension — fail to bound the
+    /// table (`jrange.size > maxtablesize`).  This is the case GCC's
+    /// `switch (idx) { ... }` lowering produces when the dispatch is guarded by a
+    /// `sub LOW; ja DEFAULT` range check (`idx <=u K`) that, on the early
+    /// partial/truncated function jump-table recovery runs over, is still in
+    /// unsimplified x86 flag form — so `circlerange_pull_back` cannot extract the
+    /// `<= K` bound (the captured guard range stays full) — and where the switch
+    /// variable is additionally spilled to the stack between the guard and the
+    /// table load, so the guarded varnode never `value_match`es the normalized
+    /// index.
+    ///
+    /// Strategy: walk each guard CBRANCH's boolean def-tree, collect unsigned
+    /// range comparisons (`iv < K` / `iv <= K`) and equalities (`iv == K`) whose
+    /// non-constant operand resolves — through value-preserving ops — to a meld
+    /// common varnode `iv` (a switch-index candidate), derive the exclusive table
+    /// bound `N` (`K+1` for an inclusive `<= K` test, i.e. when `iv == K` is also
+    /// a switch-path value; `K` for a strict `< K`), and — when `N ∈
+    /// [2, maxtablesize]` — re-bind the table index to `[0, N)` exactly as the
+    /// modulo extension does (`jrange` start = `iv`, `varnodeIndex` = its meld
+    /// position).  The normal `buildAddresses` emulation then enumerates the case
+    /// targets.  Returns `true` iff a bound was installed; on any mismatch the
+    /// `jrange` is left untouched and the caller declines exactly as before
+    /// (gate-off path is therefore byte-identical to upstream).
+    fn kuna_try_guard_bound_table(&mut self, fd: &mut Funcdata, maxtablesize: uint4) -> bool {
+        // Phase 1 (read-only): find (index varnode, its meld position, bound).
+        let mut found: Option<(VarnodeId, int4, uintb)> = None;
+        let mut seen_branch: Vec<OpId> = Vec::new();
+        for gi in 0..self.selectguards.len() {
+            let br = match self.selectguards[gi].get_branch() {
+                Some(b) => b,
+                None => continue,
+            };
+            if seen_branch.contains(&br) {
+                continue;
+            }
+            seen_branch.push(br);
+            // The CBRANCH boolean condition is input slot 1.
+            let cond = match fd.obank().get(br).and_then(|o| o.get_in(1)) {
+                Some(c) => c,
+                None => continue,
+            };
+            if let Some(hit) = self.scan_guard_tree(fd, cond, maxtablesize) {
+                found = Some(hit);
+                break;
+            }
+        }
+        let (iv, pos, bound) = match found {
+            Some(x) => x,
+            None => return false,
+        };
+
+        // Phase 2 (mutate): re-bind the index range to [0, bound).
+        let vsize = match fd.vbank().get(iv) {
+            Some(v) => v.get_size(),
+            None => return false,
+        };
+        if vsize == 0 {
+            return false;
+        }
+        let startop = match self.path_meld.get_earliest_op(pos) {
+            Some(o) => o,
+            None => return false,
+        };
+        self.varnode_index = pos;
+        let jr = self.jrange_range_mut();
+        jr.set_range(CircleRange::new(0, bound, vsize, 1));
+        jr.set_start_vn(iv);
+        jr.set_start_op(startop);
+        true
+    }
+
+    /// (kuna) Find a contiguous `[0, N)` switch-index bound a guard CBRANCH
+    /// imposes, by EVALUATING the guard boolean as a function of a candidate
+    /// index varnode (helper for [`kuna_try_guard_bound_table`]).
+    ///
+    /// The guard may be in unsimplified flag form and may reference, at the same
+    /// (register-reused) storage, several SSA values linearly related to the
+    /// index (e.g. the raw `getopt` result `m` and the normalized index
+    /// `idx = m - 0x3f`).  Rather than pattern-match the comparison constants —
+    /// which the simplifier may have re-expressed (`idx > 0x36` ⇒
+    /// `idx > 0x35 && m != 0x75`) — we treat a candidate meld index varnode `iv`
+    /// as a free variable `v`, evaluate the boolean for `v = 0, 1, …` (resolving
+    /// sibling meld varnodes through a linear-offset map), and take `N` = the
+    /// first `v` whose routing flips from `v = 0`'s.  GCC normalizes the table to
+    /// start at index 0 (`sub LOW`), so the switch values form the prefix
+    /// `[0, N)`.
+    ///
+    /// Returns `(index varnode, meld position, exclusive bound N)` with
+    /// `N ∈ [2, maxtablesize]`, or `None` if no candidate yields a clean prefix.
+    fn scan_guard_tree(
+        &self,
+        fd: &Funcdata,
+        cond: VarnodeId,
+        maxtablesize: uint4,
+    ) -> Option<(VarnodeId, int4, uintb)> {
+        // Collect candidate index positions: meld common varnodes appearing as a
+        // comparison operand in the guard's boolean tree.
+        let mut cand: BTreeSet<int4> = BTreeSet::new();
+        let mut stack: Vec<VarnodeId> = vec![cond];
+        let mut visited: BTreeSet<OpId> = BTreeSet::new();
+        let mut budget = 64;
+        while let Some(vn) = stack.pop() {
+            if budget == 0 {
+                break;
+            }
+            budget -= 1;
+            let v = match fd.vbank().get(vn) {
+                Some(v) => v,
+                None => continue,
+            };
+            if v.is_constant() || !v.is_written() {
+                continue;
+            }
+            let def = match v.get_def() {
+                Some(d) => d,
+                None => continue,
+            };
+            if !visited.insert(def) {
+                continue;
+            }
+            let op = fd.obank().get(def).unwrap();
+            match op.code() {
+                // Boolean / bit glue and value-preserving ops: descend.
+                OpCode::CPUI_BOOL_AND
+                | OpCode::CPUI_BOOL_OR
+                | OpCode::CPUI_BOOL_XOR
+                | OpCode::CPUI_BOOL_NEGATE
+                | OpCode::CPUI_INT_AND
+                | OpCode::CPUI_INT_OR
+                | OpCode::CPUI_INT_XOR
+                | OpCode::CPUI_INT_NEGATE
+                | OpCode::CPUI_INT_2COMP
+                | OpCode::CPUI_COPY
+                | OpCode::CPUI_CAST
+                | OpCode::CPUI_SUBPIECE
+                | OpCode::CPUI_INT_ZEXT
+                | OpCode::CPUI_INT_SEXT
+                | OpCode::CPUI_MULTIEQUAL => {
+                    for s in 0..op.num_input() {
+                        if let Some(inv) = op.get_in(s) {
+                            if !fd.vbank().get(inv).map(|x| x.is_constant()).unwrap_or(true) {
+                                stack.push(inv);
+                            }
+                        }
+                    }
+                }
+                // Comparisons: their meld operands are the index candidates.
+                OpCode::CPUI_INT_LESS
+                | OpCode::CPUI_INT_LESSEQUAL
+                | OpCode::CPUI_INT_SLESS
+                | OpCode::CPUI_INT_SLESSEQUAL
+                | OpCode::CPUI_INT_EQUAL
+                | OpCode::CPUI_INT_NOTEQUAL
+                | OpCode::CPUI_INT_CARRY
+                | OpCode::CPUI_INT_SCARRY
+                | OpCode::CPUI_INT_SBORROW => {
+                    for s in 0..op.num_input() {
+                        if let Some(inv) = op.get_in(s) {
+                            if let Some((_, pos)) = self.resolve_to_meld(fd, inv) {
+                                cand.insert(pos);
+                            }
+                        }
+                    }
+                }
+                // Anything else terminates this branch of the walk.
+                _ => {}
+            }
+        }
+
+        // Try each candidate index, closest to the table LOAD first (the lowest
+        // meld position).  The correct index is the one the guard bounds to a
+        // contiguous switch prefix `[0, N)`.
+        for &pos in cand.iter() {
+            let iv = self.path_meld.get_varnode(pos);
+            let offmap = self.build_offset_map(fd, iv);
+            // The guard boolean's routing at the start of the prefix (`v = 0`).
+            let mut b0 = 4096i64;
+            let sv = match eval_guard_expr(fd, cond, &offmap, 0, &mut b0) {
+                Some(x) => x & 1,
+                None => continue,
+            };
+            // Scan upward for the first value whose routing flips: that is N.
+            let cap = maxtablesize as uintb;
+            let mut n: Option<uintb> = None;
+            let mut v: uintb = 1;
+            let mut ok = true;
+            while v <= cap {
+                let mut b = 4096i64;
+                match eval_guard_expr(fd, cond, &offmap, v, &mut b) {
+                    Some(cv) => {
+                        if (cv & 1) != sv {
+                            n = Some(v);
+                            break;
+                        }
+                    }
+                    None => {
+                        ok = false;
+                        break;
+                    }
+                }
+                v += 1;
+            }
+            if !ok {
+                continue;
+            }
+            if let Some(n) = n {
+                if n >= 2 && n <= cap {
+                    return Some((iv, pos, n));
+                }
+            }
+        }
+        None
+    }
+
+    /// (kuna) Build a linear-offset map `meld varnode -> off` such that the
+    /// varnode's value equals `v + off` when the chosen index `iv` holds `v`
+    /// (helper for [`scan_guard_tree`]).  Only constant-offset siblings reachable
+    /// through a single `INT_ADD`/`INT_SUB` by a constant are mapped — exactly the
+    /// register-reused relatives of the index (`m = idx + 0x3f`).
+    ///
+    /// [`scan_guard_tree`]: Self::scan_guard_tree
+    fn build_offset_map(&self, fd: &Funcdata, iv: VarnodeId) -> BTreeMap<VarnodeId, uintb> {
+        let mut map: BTreeMap<VarnodeId, uintb> = BTreeMap::new();
+        map.insert(iv, 0);
+        // x = INT_ADD/SUB(iv, c)  ->  off recorded on x.
+        let add_const = |fd: &Funcdata, op: OpId| -> Option<(VarnodeId, uintb, bool)> {
+            // Returns (non-const operand, const value, const_in_slot1).
+            let o = fd.obank().get(op)?;
+            let a = o.get_in(0)?;
+            let b = o.get_in(1)?;
+            let ca = fd.vbank().get(a)?.is_constant();
+            let cb = fd.vbank().get(b)?.is_constant();
+            if cb && !ca {
+                Some((a, fd.vbank().get(b)?.get_offset(), true))
+            } else if ca && !cb {
+                Some((b, fd.vbank().get(a)?.get_offset(), false))
+            } else {
+                None
+            }
+        };
+        let iv_def = fd.vbank().get(iv).and_then(|v| v.get_def());
+        for i in 0..self.path_meld.num_common_varnode() {
+            let x = self.path_meld.get_varnode(i);
+            if x == iv {
+                continue;
+            }
+            // Case A: x = iv + c  (x's def is INT_ADD/SUB on iv).
+            if let Some(xd) = fd.vbank().get(x).and_then(|v| v.get_def()) {
+                let code = fd.obank().get(xd).map(|o| o.code());
+                if let Some((other, c, slot1)) = add_const(fd, xd) {
+                    if other == iv {
+                        let off = match code {
+                            Some(OpCode::CPUI_INT_ADD) => c,
+                            Some(OpCode::CPUI_INT_SUB) if slot1 => c.wrapping_neg(),
+                            _ => {
+                                continue;
+                            }
+                        };
+                        map.entry(x).or_insert(off);
+                        continue;
+                    }
+                }
+            }
+            // Case B: iv = x + c  (iv's def is INT_ADD/SUB on x)  ->  x = iv - c.
+            if let Some(ivd) = iv_def {
+                let code = fd.obank().get(ivd).map(|o| o.code());
+                if let Some((other, c, slot1)) = add_const(fd, ivd) {
+                    if other == x {
+                        let off = match code {
+                            Some(OpCode::CPUI_INT_ADD) => c.wrapping_neg(),
+                            Some(OpCode::CPUI_INT_SUB) if slot1 => c,
+                            _ => {
+                                continue;
+                            }
+                        };
+                        map.entry(x).or_insert(off);
+                    }
+                }
+            }
+        }
+        map
+    }
+
+    /// (kuna) Resolve `vn` to a meld common varnode (and its position), tracing
+    /// through value-preserving ops (helper for [`scan_guard_tree`]).
+    ///
+    /// [`scan_guard_tree`]: Self::scan_guard_tree
+    fn resolve_to_meld(&self, fd: &Funcdata, mut vn: VarnodeId) -> Option<(VarnodeId, int4)> {
+        for _ in 0..8 {
+            for i in 0..self.path_meld.num_common_varnode() {
+                if self.path_meld.get_varnode(i) == vn {
+                    return Some((vn, i));
+                }
+            }
+            let v = fd.vbank().get(vn)?;
+            if !v.is_written() {
+                return None;
+            }
+            let def = v.get_def()?;
+            let op = fd.obank().get(def)?;
+            match op.code() {
+                OpCode::CPUI_COPY
+                | OpCode::CPUI_CAST
+                | OpCode::CPUI_INT_ZEXT
+                | OpCode::CPUI_INT_SEXT => {
+                    vn = op.get_in(0)?;
+                }
+                OpCode::CPUI_SUBPIECE => {
+                    // Only a zero-offset truncation preserves the low-index value.
+                    let off = op.get_in(1).and_then(|c| fd.vbank().get(c)).map(|c| c.get_offset());
+                    if off != Some(0) {
+                        return None;
+                    }
+                    vn = op.get_in(0)?;
+                }
+                _ => return None,
+            }
+        }
+        None
     }
 
     /// Build the explicit address table by emulating the switch calculation for

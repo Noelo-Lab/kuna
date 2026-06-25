@@ -1,0 +1,279 @@
+==============================================================================
+test_decompiling_missing_function_call :: main   (angr 9.2.213 @ 0x408e40)
+==============================================================================
+
+--- angr ---
+typedef struct FILE {
+} FILE;
+
+extern void client_data;
+extern unsigned long long emaillist;
+extern unsigned long long maillist;
+extern unsigned long optarg;
+extern char optopt;
+extern unsigned int port;
+extern unsigned long stderr;
+extern unsigned long stdin;
+extern unsigned long long userlist;
+
+unsigned int main(int a0, long long *a1)
+{
+    unsigned int v0;  // [bp-0x7c]
+    FILE **v1;  // [bp-0x78]
+    unsigned int v2;  // [bp-0x6c]
+    unsigned int v3;  // [bp-0x68]
+    unsigned int v4;  // [bp-0x64]
+    unsigned int v5;  // [bp-0x5c]
+    unsigned int v6;  // [bp-0x58]
+    unsigned int v7;  // [bp-0x54]
+    unsigned long v8;  // [bp-0x50]
+    char v9;  // [bp-0x48]
+    char *v10;  // [bp-0x38]
+    unsigned int v11;  // [bp-0x30]
+    unsigned int v12;  // [bp-0x2c]
+    unsigned int v13;  // [bp-0x28]
+    unsigned int v14;  // [bp-0x24]
+    unsigned int v15;  // [bp-0x20]
+    unsigned int v16;  // [bp-0x1c]
+    unsigned int flag;  // [bp-0xc]
+
+    flag = 0;
+    assert_execution_on_testbed();
+    v14 = 0;
+    v13 = 0;
+    v12 = 0;
+    v11 = 0;
+    v10 = getenv("PORT");
+    if (v10)
+        port = atoi(v10);
+    else
+        port = 1337;
+    memset(&client_data, 0, 376);
+    while (true)
+    {
+        v16 = getopt(a0, a1, "e:m:u:p:s");
+        if (v16 == 4294967295)
+            break;
+        v8 = v16 - 63;
+        v7 = (unsigned int)v8 - 54;
+        switch ((unsigned int)v8)
+        {
+        case 0:
+            if (*((int *)&optopt) != 101 && *((int *)&optopt) != 117)
+            {
+                v3 = fprintf(stderr, "Unknown option\n");
+                usage(*(a1), a1); /* do not return */
+            }
+            v4 = fprintf(stderr, "-%c argument required\n", (char)*((int *)&optopt));
+            usage(*(a1)); /* do not return */
+        case 38:
+            if (v13)
+            {
+                v6 = fprintf(stderr, "Only one -e option permitted\n");
+                usage(*(a1), a1); /* do not return */
+            }
+            v13 = 1;
+            emaillist = strdup(optarg);
+            if (!emaillist)
+            {
+                flag = 1;
+                return flag;
+            }
+        case 46:
+            if (v12)
+            {
+                v5 = fprintf(stderr, "Only one -m option permitted\n");
+                usage(*(a1), a1); /* do not return */
+            }
+            v12 = 1;
+            maillist = strdup(optarg);
+            if (!maillist)
+            {
+                flag = 1;
+                return flag;
+            }
+        case 49:
+            port = atoi(optarg);
+            break;
+        case 52:
+            v14 = 1;
+            break;
+        case 54:
+            if (v11)
+                usage(*(a1)); /* do not return */
+            v11 = 1;
+            userlist = strdup(optarg);
+            if (!userlist)
+            {
+                flag = 1;
+                return flag;
+            }
+        default:
+            abort(); /* do not return */
+        }
+    }
+    if (!ingest_emaillist())
+    {
+        flag = 0;
+        return flag;
+    }
+    if (!v14)
+    {
+        v15 = setup_socket(port);
+        if (v15 < 0)
+            exit(1); /* do not return */
+        v2 = accept_loop(v15);
+    }
+    else
+    {
+        v1 = &stdin;
+        memset(&v9, 0, 16);
+        v0 = read_loop(fileno(*(v1)) & 4294967295, &v9);
+    }
+    flag = 0;
+    return flag;
+}
+
+
+--- kuna (name mode) ---
+unsigned long main(int4 a0,unsigned long a1)
+
+{
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  int4 c; // stack - 0xc
+  unsigned long e; // stack - 0x18
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 fd; // stack - 0x10
+  int4 m; // stack - 0x1c
+  int4 m; // stack - 0x1c
+  int4 m; // stack - 0x1c
+  int4 m; // stack - 0x1c
+  int4 m; // stack - 0x1c
+  int4 m; // stack - 0x1c
+  int4 m; // stack - 0x1c
+  int4 m; // stack - 0x1c
+  int4 m; // stack - 0x1c
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  unsigned int t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 t; // stack - 0x28
+  int4 u; // stack - 0x20
+  int4 u; // stack - 0x20
+  int4 v1; // eax
+  unsigned long v2; // rax
+  char v3 [16];
+  char *v4; // stack - 0x38
+  unsigned int v5; // stack - 0x30
+  unsigned int v6; // stack - 0x2c
+  
+  c = 0;
+  assert_execution_on_testbed();
+  t._4_4_ = 0;
+  t._0_4_ = 0;
+  v6 = 0;
+  v5 = 0;
+  v4 = (char *)getenv(0xa037);
+  if (v4 == (char *)0x0) {
+    dat_20b230 = 0x539;
+  }
+  else {
+    EAX = atoi(v4);
+  }
+  memset(client_data,0,0x178);
+  m = getopt(fd,e,"e:m:u:p:s");
+  if (m == -1) {
+    v1 = ingest_emaillist();
+    if (v1 != 0) {
+      if (t._4_4_ == 0) {
+        u = setup_socket(dat_20b230);
+        if (u <= -1) {
+                    /* WARNING: Subroutine does not return */
+          exit(1);
+        }
+        accept_loop(u);
+      }
+      else {
+        memset(v3,0,0x10);
+        v1 = fileno(*Unique10000152);
+        read_loop(v1,(sockaddr_in *)v3);
+      }
+    }
+    return 0;
+  }
+  if (0x36 <= (uint4)(m - 0x3fU) && m != 0x75) {
+                    /* WARNING: Subroutine does not return */
+    abort();
+  }
+                    /* WARNING: Treating indirect jump as call */
+  v2 = (*(code *)((int8)*(int4 *)((uint8)(uint4)(m - 0x3fU) * 4 + 0x96ac) + 0x96ac))();
+  return v2;
+}
+
+--- metrics (reference | kuna) ---
+  loc           127 | 123 
+  gotos           0 | 0   
+  labels          0 | 0   
+  switches        1 | 0   
+  cases           6 | 0   
+  ifs            12 | 6   
+  loops           1 | 0   
+  ternaries       0 | 0   
+  casts           0 | 0   
+
+--- signals (candidate 'reference is better' hints) ---
+  * ref recovered a switch kuna did not (1 vs 0)
+  * ref recovered more loops (1 vs 0)
+  * kuna emitted a recovery-failure marker

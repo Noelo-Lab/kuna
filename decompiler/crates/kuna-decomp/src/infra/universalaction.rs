@@ -722,6 +722,9 @@ pub fn universal_sched(
             act!(ActionNameVars::boxed("merge")),
             act!(ActionSetCasts::boxed("casts")),
             act!(ActionFinalStructure::boxed("blockrecovery")),
+            // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`,
+            // default-OFF).  Runs after the tree is final + goto targets labelled.
+            act!(crate::s8_structure::kuna_gotoreduce::ActionGotoReduce::boxed("blockrecovery")),
             act!(ActionPrototypeWarnings::boxed("protorecovery")),
             act!(ActionStop::boxed("base")),
         ],

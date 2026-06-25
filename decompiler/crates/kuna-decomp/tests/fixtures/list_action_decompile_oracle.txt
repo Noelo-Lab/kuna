@@ -257,5 +257,6 @@
 0250        !         namevars
 0251        !         setcasts
 0252                  finalstructure
-0253        !         prototypewarnings
-0254                  stop
+0253                  gotoreduce
+0254        !         prototypewarnings
+0255                  stop

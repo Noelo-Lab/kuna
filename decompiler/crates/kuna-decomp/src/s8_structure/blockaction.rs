@@ -3568,6 +3568,16 @@ impl Action for ActionFinalStructure {
         // Recorded as losses.
         data.finalize_switch_printing();
         data.finalize_forloop_printing();
+        // graph.scopeBreak(-1,-1): lower loop-exit `goto <successor>` edges to
+        // structured `break;` (a port of Ghidra `BlockGraph::scopeBreak`, the
+        // `scopeBreak` SEAM filled by `kuna_loopbreak_recovery`).  Gated by the
+        // `loopbreak_recovery` P0 assertion (`recover_loop_break`, opt-in
+        // default-off); must run BEFORE `markUnstructured` so a converted break's
+        // target is no longer marked as an unstructured goto label.  (kuna)
+        if data.get_arch().recover_loop_break {
+            let sroot = data.sblocks_root();
+            crate::kuna_loopbreak_recovery::kuna_scope_break(data.sblocks_mut(), sroot);
+        }
         // graph.markUnstructured(): flag goto targets so the printer emits a label
         // line for them (and a clause carrying one suppresses the `else if`
         // collapse).  The graph-side recursion is faithful; the op-flag print-prep

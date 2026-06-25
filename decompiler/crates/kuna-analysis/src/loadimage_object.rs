@@ -213,7 +213,7 @@ impl ObjectLoadImage {
         // here), so no behavior changes.
         let fmt = crate::s1_loader::format::detect(&file)?;
 
-        let archtype = language_id_for(&file, fmt.as_ref(), filename)?;
+        let archtype = language_id_for(&file, fmt.as_ref(), bytes, filename)?;
         // (kuna §2.2) The default-model fallback id: the same arch/endian stem
         // with the model dropped to the per-arch default. If the format's chosen
         // model (e.g. PE's `:windows`) isn't vendored for this arch, the engine
@@ -726,11 +726,21 @@ impl LoadImage for ObjectLoadImage {
 fn language_id_for(
     file: &object::File,
     fmt: &dyn crate::s1_loader::format::ObjectFormat,
+    bytes: &[u8],
     filename: &str,
 ) -> KunaResult<Vec<u8>> {
     let little = file.is_little_endian();
     let endian = if little { "LE" } else { "BE" };
     let arch = file.architecture();
+    // (PR-8 §3.7) Pointer-auth arm64e spec selection, GATED + opt-in: an arm64e
+    // Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) selects the Apple-Silicon SLEIGH
+    // spec (`AARCH64:LE:64:AppleSilicon`) instead of the generic v8A. This is the
+    // ONLY thing arm64e changes (import naming / symbols are unaffected). Off by
+    // default (the `macho-arm64e` gate); when on and the binary is an arm64e
+    // Mach-O, the AppleSilicon id wins over the composed `v8A` id below.
+    if let Some(apple_id) = crate::s1_loader::format::macho::apple_silicon_id(fmt, arch, bytes) {
+        return Ok(apple_id.into_bytes());
+    }
     // The format's default-ABI compiler model for this arch.  For ELF this is
     // `gcc` (x86/RISCV) / `default` (everything else), reproducing the old
     // hard-coded id strings exactly.

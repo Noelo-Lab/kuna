@@ -531,6 +531,15 @@ pub struct Architecture {
     /// (C++ `recover_lowered_switch`, default-on).  Read by the
     /// [`crate::kuna_loweredswitch`] detect/install actions.
     pub recover_lowered_switch: bool,
+    /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
+    /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
+    /// [`crate::s8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
+    pub reduce_return_gotos: bool,
+    /// (kuna) lower loop-exit `goto <successor>` edges to structured `break;`
+    /// (a port of Ghidra `BlockGraph::scopeBreak`, DIV-10 default-on).  Read by
+    /// [`ActionFinalStructure`](crate::blockaction::ActionFinalStructure) to gate
+    /// [`crate::kuna_loopbreak_recovery::kuna_scope_break`].
+    pub recover_loop_break: bool,
     /// (kuna) fold an order-safe single-use call return into its use site
     /// (`fold_call_returns`, opt-in default-off).  Read by `base_explicit`
     /// (`ActionMarkExplicit`) via [`crate::kuna_callretfold::call_output_foldable`].
@@ -598,6 +607,13 @@ pub struct Architecture {
     /// architecture.  Read by `JumpBasic::recoverModel` before
     /// `kunaTryModuloBoundTable`.  `false` (default off / upstream byte-identical).
     pub switch_modulo_bound: bool,
+    /// (kuna) Bound a LOAD-table jumptable by an out-of-band CBRANCH range guard
+    /// when the basic model's guard analysis could not (C++
+    /// `Architecture::switch_guard_bound`, flipped by `option switchguardbound`,
+    /// angr `test_decompiling_missing_function_call`), shared from the real
+    /// architecture.  Read by `JumpBasic::recoverModel` before
+    /// `kuna_try_guard_bound_table`.  `false` (default off / upstream byte-identical).
+    pub switch_guard_bound: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -721,6 +737,8 @@ impl Architecture {
             memset_recover: false,       // GH-9230/1537 memsetrecover
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
+            reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
+            recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             branch_flip: false,          // branchflip (opt-in default-off)
@@ -742,6 +760,7 @@ impl Architecture {
             // the thumb guard never fires regardless of this flag.
             preserve_thumb_funcptr: true,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
+            switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.

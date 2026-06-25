@@ -1,5 +1,5 @@
-//! Multi-format-loader PR-2 e2e gate: with `--experimental-formats` on, the
-//! console object loader parses a **PE/COFF object** (`pe_min.obj`) and a
+//! Multi-format-loader PR-2 e2e gate: multi-format loading is unconditional, so
+//! the console object loader parses a **PE/COFF object** (`pe_min.obj`) and a
 //! **Mach-O object** (`macho_min.o`), maps their sections with the right
 //! exec/readonly bits, selects the correct SLEIGH spec per format, and
 //! disassembles real instructions out of `.text`/`__text`.
@@ -19,12 +19,13 @@
 //! Imports are **empty** (PR-2 skeletons; IAT/`__stubs` naming is PR-4/PR-7) —
 //! this gate asserts load + map + spec + disassemble, not named calls.
 //!
-//! ## Flag gating
+//! ## Multi-format is the default
 //!
-//! The fixtures only load when `KUNA_EXPERIMENTAL_FORMATS` is set (the
-//! `--experimental-formats` CLI flag's mechanism). The test sets it for the
-//! object arm and confirms that with it **unset** the same fixture is rejected
-//! as not-XML (the default-off, byte-identical-dispatch proof).
+//! Multi-format (PE/Mach-O/COFF) loading is **unconditional** — the same as ELF.
+//! `is_object_binary` admits these magics by default, so a bare `load file`
+//! routes a PE/Mach-O fixture to the object loader with no flag. Each test below
+//! also proves the *default* dispatch routes to the object loader (no XML
+//! "not recognized" rejection).
 //!
 //! ## `.sla` precondition
 //!
@@ -128,18 +129,17 @@ fn pe_object_loads_maps_and_disassembles() {
     let path = fixtures().join("pe_min.obj");
     assert!(path.exists(), "missing fixture {path:?}");
 
-    // (default-off proof) Without the flag, the PE object is NOT admitted by
-    // `is_object_binary`, so `bootstrap_from_file` routes it to the XML branch
-    // (which fails to parse it as XML). The object loader is never reached.
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
-    let off = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots);
-    assert!(
-        off.is_err(),
-        "default-off: a PE object must NOT load without --experimental-formats"
-    );
-
-    // (flag on) Admit non-ELF magics.
-    std::env::set_var("KUNA_EXPERIMENTAL_FORMATS", "1");
+    // (default-on proof) The object loads through the *default* `load file`
+    // dispatch with no flag — multi-format support is unconditional. A `.sla`-
+    // absent environment surfaces as a load error; here we only assert the
+    // dispatch ROUTES to the object loader (no XML "not recognized" rejection).
+    if let Err(e) = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots) {
+        let msg = e.explain();
+        assert!(
+            !msg.contains("Unable to recognize") && !msg.contains("XML"),
+            "default-on: the object must route to the object loader (got: {msg})"
+        );
+    }
 
     // (1) Parses + (3) right spec. Use bootstrap_from_object directly (the arm
     // `is_object_binary` routes to) so the assertion is unambiguous.
@@ -151,7 +151,6 @@ fn pe_object_loads_maps_and_disassembles() {
                  `make specs`): {}",
                 e.explain()
             );
-            std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
             return;
         }
     };
@@ -184,8 +183,6 @@ fn pe_object_loads_maps_and_disassembles() {
         !out.contains("not an ELF object"),
         "PE: loader rejected the object as not-ELF:\n{out}"
     );
-
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 }
 
 #[test]
@@ -195,15 +192,17 @@ fn macho_object_loads_maps_and_disassembles() {
     let path = fixtures().join("macho_min.o");
     assert!(path.exists(), "missing fixture {path:?}");
 
-    // (default-off proof) Mach-O magic not admitted without the flag.
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
-    let off = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots);
-    assert!(
-        off.is_err(),
-        "default-off: a Mach-O object must NOT load without --experimental-formats"
-    );
-
-    std::env::set_var("KUNA_EXPERIMENTAL_FORMATS", "1");
+    // (default-on proof) The object loads through the *default* `load file`
+    // dispatch with no flag — multi-format support is unconditional. A `.sla`-
+    // absent environment surfaces as a load error; here we only assert the
+    // dispatch ROUTES to the object loader (no XML "not recognized" rejection).
+    if let Err(e) = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots) {
+        let msg = e.explain();
+        assert!(
+            !msg.contains("Unable to recognize") && !msg.contains("XML"),
+            "default-on: the object must route to the object loader (got: {msg})"
+        );
+    }
 
     let prog = match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
         Ok(p) => p,
@@ -213,7 +212,6 @@ fn macho_object_loads_maps_and_disassembles() {
                  `make specs`): {}",
                 e.explain()
             );
-            std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
             return;
         }
     };
@@ -255,6 +253,4 @@ fn macho_object_loads_maps_and_disassembles() {
         !out.contains("not an ELF object"),
         "Mach-O: loader rejected the object as not-ELF:\n{out}"
     );
-
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 }

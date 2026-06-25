@@ -1,0 +1,63 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr test_decompiling_tee_O2_tail_jumps :: setlocale_null_androidfix
+    (binaries/tests/x86_64/decompiler/tee_O2, x86-64, GCC -O2).
+
+    At -O2 a leaf function whose last act is "call X; return" is compiled to a
+    direct TAIL JUMP: `jmp X` instead of `call X; ret`.  When X is an external
+    symbol the jump targets the PLT thunk:
+
+        setlocale_null_androidfix:
+            xor    %esi,%esi          ; arg2 = NULL
+            jmp    setlocale@plt       ; tail jump (direct BRANCH) to the thunk
+
+    kuna's flow follower runs with the whole address space in-bounds, so it
+    treats the direct `jmp setlocale@plt` as ordinary intraprocedural flow and
+    follows it INTO the PLT thunk.  The thunk's body is `jmp qword [rip+GOT]`
+    (an indirect jump); jump-table recovery fails on it, so it is rewritten to a
+    CALLIND through the GOT pointer + a "Treating indirect jump as call" warning.
+    The thunk got INLINED instead of the `jmp` being recognized as a tail call,
+    so the callee renders as `(*dat_...)(...)` rather than the named `setlocale`.
+    angr instead renders `return setlocale(v1, NULL)`.
+
+    Stage model: S2 "flow-classification" sub-stage.  The P0 assertion `option
+    tailcalljump on|off` toggles recovering a direct `jmp` to another known
+    function's entry as a tail call (BRANCH -> CALL + RETURN).  DIV-11 default-ON;
+    when it fires it logs a `tailcalljump: recovered tail call` WARNING comment.
+
+    This is a minimal reconstruction of the construct: `setlocale_null_androidfix`
+    at 0x1000 tail-jumps to the `setlocale@plt` thunk at 0x1040 (mapped/named
+    `setlocale`, as PLT-reloc analysis would), whose body indirect-jumps through
+    the GOT slot at 0x1080 (unnamed -> dat_1080).
+
+    Pass 1 (option tailcalljump off): assertions #1/#2 prove the bug - the
+    "Treating indirect jump as call" recovery-failure marker and the unresolved
+    GOT-pointer indirect call `(*dat_1080)`.
+    Pass 2 (option tailcalljump on): assertion #3 proves the fix - the tail call
+    resolves to the named `setlocale(...)`; assertion #4 proves the logging contract
+    - the recovered call is logged (`tailcalljump: recovered tail call`) (and #1/#2
+    stay at exactly one, i.e. the bug is gone in pass 2).
+-->
+<bytechunk space="ram" offset="0x1000">
+31f6e939000000909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090ff253a000000909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090900000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="setlocale_null_androidfix"/>
+<symbol space="ram" offset="0x1040" name="setlocale"/>
+</binaryimage>
+<script>
+  <com>option tailcalljump off</com>
+  <com>lo fu setlocale_null_androidfix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option tailcalljump on</com>
+  <com>lo fu setlocale_null_androidfix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)" min="1" max="1">Treating indirect jump as call</stringmatch>
+<stringmatch name="tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)" min="1" max="1">\(\*dat_1080\)</stringmatch>
+<stringmatch name="tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)" min="1" max="1">setlocale\(</stringmatch>
+<stringmatch name="tee-O2 tail-jumps #4: the recovered tail call is logged (pass 2 on only)" min="1" max="1">tailcalljump: recovered tail call</stringmatch>
+</decompilertest>

@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=91, settable=43
-# (26 stage-model knobs + 17 analysis-tier/loader gates).
+# Counts (asserted in tests): group=39, substage=40, surface=94, settable=48
+# (30 stage-model knobs + 15 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -910,6 +910,12 @@ substage = "flow-classification"
 note = "(kuna GH-8817) reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery"
 
 [[surface]]
+surface = "option tailcalljump"
+stage = "S2"
+substage = "flow-classification"
+note = "(kuna tee-O2 tail-jumps) recover a direct jmp to another function's entry (e.g. jmp setlocale@plt) as a tail call (CALL + RETURN) instead of inlining the callee"
+
+[[surface]]
 surface = "option sparcstructret"
 stage = "S2"
 substage = "flow-classification"
@@ -1174,6 +1180,12 @@ substage = "switch-model"
 note = "(kuna GH-9191) bound a LOAD-table jumptable by a modulo/and-mask on its index"
 
 [[surface]]
+surface = "option switchguardbound"
+stage = "S2"
+substage = "switch-model"
+note = "(kuna, angr) bound a LOAD-table jumptable by an out-of-band CBRANCH range guard the guard analysis missed"
+
+[[surface]]
 surface = "option dynamichashmax"
 stage = "S6"
 substage = "alias-facets"
@@ -1192,13 +1204,19 @@ substage = "switch-model"
 note = "(kuna angr-port) reconstruct a compiler-lowered comparison cascade into a switch jump-table"
 
 [[surface]]
+surface = "option loopbreak_recovery"
+stage = "S8"
+substage = "goto-quality-acceptance"
+note = "(kuna angr-port) lower loop-exit `goto <successor>` edges to structured `break;` (port of Ghidra BlockGraph::scopeBreak)"
+
+[[surface]]
 surface = "option namestyle"
 stage = "S9"
 substage = "naming-policy"
 note = "(kuna angr-naming) master default-name scheme: angr vN/aN/dat_/sub_/label_ + location comments vs upstream Ghidra naming"
 
 # ---------------------------------------------------------------------------
-# settableTable: one row per kuna ArchOption -- the LLM control surface (23).
+# settableTable: one row per kuna ArchOption -- the LLM control surface (24).
 # live_field/live_true/live_false give build.rs the typed OptionValues field +
 # the live-value reader mapping (the literal `flag ? live_true : live_false`
 # ternary of kuna_console.cc kunaLiveValue); the three options with no live
@@ -1405,6 +1423,26 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "tailcalljump"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S2"
+substage = "flow-classification"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-tee-O2-tail-jumps"
+summary = "Recover an -O2 tail jump (a direct `jmp` to another function's entry, e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) so the callee resolves by name and its return value flows out, instead of flowing into the callee (which inlines a PLT thunk and mis-renders it as a `(*dat_...)(...)` indirect call with a 'Treating indirect jump as call' warning). When it fires it logs a `tailcalljump: recovered tail call` warning at the branch site so the introduced call is observable."
+use_when = "Flip on when a leaf function ends in `jmp <func>@plt` and kuna emits `(*dat_...)(...)` + a 'Treating indirect jump as call' marker instead of `func(...)`. On = the named call plus a `tailcalljump: recovered tail call` WARNING. Off (default) is default-pipeline byte-identical; kept opt-in because default-on regresses 2 datatests (Long double #1/#2)."
+example = "option tailcalljump on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_tee_O2_tail_jumps; angr tail-call handling (direct jmp to a function/PLT thunk); setlocale_null_androidfix"
+change_kind = "structure-recovery"
+live_field = "tail_call_jumps"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "flagcompare"
 values = "on|off"
 default = "on"
@@ -1441,6 +1479,26 @@ source_decompiler = "ghidra-upstream"
 inspiration = "Ghidra GH-9191 (modulo/and-mask jumptable bound)"
 change_kind = "opt-in-tool"
 live_field = "switch_modulo_bound"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "switchguardbound"
+values = "on|off"
+default = "off"
+destructive = true
+stage = "S2"
+substage = "switch-model"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-missing-function-call"
+summary = "Bound a LOAD-table jumptable by an out-of-band CBRANCH range guard (idx LEu N) when the basic model's guard analysis could not (e.g. a GCC `sub LOW; ja DEFAULT` dispatch with the index spilled to the stack and the flag idiom not yet simplified)."
+use_when = "Set on PER PROGRAM when a switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed (code *)() call AND the dispatch is range-guarded (vs the modulo form switchmodbound handles); DESTRUCTIVE as a global default (the guard-to-index correspondence is asserted across a stack spill it cannot prove in dataflow, so it may over-bound an unrelated indirect jump)."
+example = "option switchguardbound on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_missing_function_call; angr jump-table / VSA guard bounding; main"
+change_kind = "opt-in-tool"
+live_field = "switch_guard_bound"
 live_true = "on"
 live_false = "off"
 
@@ -1602,6 +1660,23 @@ inspiration = "angr LoweredSwitchSimplifier (angr/analyses/decompiler/optimizati
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "gotoreduce"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-ReturnDuplicator"
+summary = "After structuring, rewrite `if (cond) goto T` into `if (cond) { <tail> }` when T is a small single-successor basic-block chain ending in `return`, by duplicating that return tail inline (a print-tree copy of the same ops — no p-code cloned). Eliminates the residual goto/label that Ghidra's CollapseStructure must emit for a shared multi-predecessor return tail."
+use_when = "Set on when kuna emits 1+ gotos to a shared `... return v;` tail that angr renders goto-free (e.g. `if (x) goto label; ... label: return 0;`). Off (default) is byte-identical to upstream; on, the bounded (<=3 blocks / <=8 ops, no call/store) return-constant tail is duplicated so the cross-edge becomes a structured early return."
+example = "option gotoreduce on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_dd_argmatch_to_argument_noeagerreturns; SAILR/Phoenix goto-reduction (ReturnDuplicator); argmatch_to_argument"
+change_kind = "structure-recovery"
+
+[[settable]]
 option = "foldcallret"
 values = "on|off"
 default = "off"
@@ -1651,6 +1726,23 @@ example = "option branchflip on"
 source_decompiler = "angr"
 inspiration = "tee_O2 x2nrealloc (if (a0 == 0) vs angr if (a0)); angr SAILR structurer condition processing"
 change_kind = "opt-in-tool"
+
+[[settable]]
+option = "loopbreak_recovery"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S8"
+substage = "goto-quality-acceptance"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-1after909-doit"
+summary = "Lower loop-exit `goto <successor>` edges to structured `break;` (and switch-case exits to empty `break;`), a port of Ghidra BlockGraph::scopeBreak run in ActionFinalStructure between finalizePrinting and markUnstructured; the now-dead successor label is suppressed."
+use_when = "A loop's error/exit paths render as `goto <successor-label>;` plus a synthesized `label_NNNN:` (angr emits `break;`). On by default (DIV-10, clean ablation + converges to upstream Ghidra, which always runs scopeBreak); set OFF to restore kuna's prior byte-identical raw-goto rendering."
+example = "option loopbreak_recovery off"
+source_decompiler = "angr"
+inspiration = "test_decompiling_1after909_doit; Phoenix/SAILR loop-successor break/continue recovery (Ghidra BlockGraph::scopeBreak); doit"
+change_kind = "structure-recovery"
 
 [[settable]]
 option = "namestyle"
@@ -1999,3 +2091,25 @@ example = "option relocobjects off"
 source_decompiler = "angr"
 inspiration = "test_decompiling_ptx_fix_output_parameters; CLE ELF relocatable backend; fix_output_parameters"
 change_kind = "structure-recovery"
+
+# ---------------------------------------------------------------------------
+# (kuna) Loader-tier capability (1 row): arm64e Mach-O spec selection. Like
+# `relocobjects` above, this gates a LOAD-time decision (language_id_for), so the
+# live gate is an env var the CLI exports (KUNA_MACHO_ARM64E) rather than an
+# Architecture flag. Real-Mach-O path only; inert on every ELF/PE/COFF/XML path.
+[[settable]]
+option = "macho-arm64e"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S1"
+substage = "code-data-partition"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-multiformat-macho-arm64e"
+summary = "Select the Apple-Silicon pointer-authentication SLEIGH spec for an arm64e Mach-O. When on, a Mach-O whose header reports cpusubtype CPU_SUBTYPE_ARM64E loads with the AARCH64:LE:64:AppleSilicon language (the vendored Apple-Silicon v8.5-A spec, which models the pointer-auth/AMX extensions) instead of the generic AARCH64:LE:64:v8A. Pointer authentication does NOT change import naming or symbols (the __stubs indirect-symbol walk is unaffected) — only the spec selection differs (design 3.7). Spec selection is a LOAD-time decision (language_id_for), which runs before any console `option` command, so the live gate is the KUNA_MACHO_ARM64E env var the kuna CLI exports when it sees `--option macho-arm64e on`; this option name also records the requested state on the Architecture for catalog consistency. Default-OFF (opt-in, multi-format loader PR-8): a non-arm64e Mach-O, a non-Mach-O target, and every ELF/PE/COFF path are byte-identical, so all parity gates are structurally untouched."
+use_when = "Off (default; an arm64e Mach-O loads with the generic v8A spec, exactly as any arm64). Flip on to decompile an arm64e (Apple-Silicon, pointer-auth) Mach-O with the AppleSilicon spec that models its extensions."
+example = "--option macho-arm64e on"
+source_decompiler = "kuna"
+inspiration = "Ghidra MachoLoader arm64e cpusubtype -> AARCH64:LE:64:AppleSilicon language mapping"
+change_kind = "analysis-enablement"
