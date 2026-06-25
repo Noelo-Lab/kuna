@@ -38,6 +38,22 @@ is asserted across a memory spill it cannot prove in dataflow). New module
 (two passes: off = the computed-call bug, on = the recovered switch incl. the boundary
 `case 0x36`). See `docs/features/missing-function-call-1101b1/`.
 
+**Perf review follow-up (PR #60, after merging main):** profiled the "incredibly slow"
+concern. Slope-isolated per-decompile cost (cancels the fixed load) is off ≈ 23.9 ms / on
+≈ 63.2 ms (**+164 %**, ~2.6×) — the +34 % PR figure was the same effect diluted by the
+~190 ms shared load. **Root cause is downstream and inherent, not the heuristic:**
+`kuna_try_guard_bound_table` runs 3×/~7 µs (~22 µs, <0.1 % of the gap; 0× gate-off,
+confirmed). The cost is that the gate-ON path keeps the real 55-entry switch + getopt loop
+and structures/types a ~2.6× larger function, instead of truncating to one `CALLIND`. No
+O(n²)/per-op/region-rebuild defect (ruled out, cf. the ActionPool regression). No localized
+fix → kept **default-OFF opt-in** per the speed gate. Separately documented the "too many
+declared variables on top": a pre-existing artifact already mitigated on `main` by
+`dedupvardecls` (DIV-7, default-on, post-branch) — one stack slot maps to many un-merged
+same-named scalar `HighVariable`s (loop/switch SSA phis); `dedupvardecls` collapses the
+identical *rendered* lines, the underlying over-fragmentation is a `s6_merge` follow-up. See
+`docs/features/missing-function-call-1101b1/analysis.md` + `record.json`
+(`speed_investigation`).
+
 ## Session (2026-06-25) — dd-argmatch-to-argument-noea-9e6e8b (option gotoreduce)
 
 angr testcase `test_decompiling_dd_argmatch_to_argument_noeagerreturns::argmatch_to_argument`

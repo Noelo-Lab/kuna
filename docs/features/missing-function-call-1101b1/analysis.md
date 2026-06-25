@@ -88,3 +88,98 @@ unsigned comparison constant `K` from the (possibly flag-form) guard CBRANCH and
 table index to `[0, K+1)`, then let the normal `buildAddresses` emulation enumerate the
 targets. Gate off ⇒ byte-identical to today (the method is only reached in the
 already-failed branch). See `plan.md`.
+
+## Performance investigation (post-merge, 2026-06-25)
+
+The reviewer flagged the feature as "incredibly slow." Measured on the target
+(`adams`/`main`, x86-64) with a **slope** method that cancels the fixed per-run load cost
+(load the binary once in a single `decomp_dbg` session, decompile `main` N times, take the
+per-decompile slope `(T(N₂)−T(N₁))/(N₂−N₁)`; 5-rep median):
+
+| | per-decompile (slope-isolated) |
+|---|---|
+| `switchguardbound off` | **≈ 23.9 ms** |
+| `switchguardbound on`  | **≈ 63.2 ms** (**+164 %**, ~2.6×) |
+
+(The PR body's wall-clock figure — off ≈ 192.9 ms, on ≈ 259.1 ms, +34 % — is the same
+effect *diluted* by the ~190 ms fixed process-spawn + `load file` + SLEIGH-mmap cost that
+OFF and ON share; the slope number above is the honest *marginal* decompile cost.)
+
+### Root cause: the cost is downstream and **inherent**, not the heuristic
+
+Instrumented (`std::time::Instant` around `kuna_try_guard_bound_table`, the only new
+hot-path code): over a full `main` decompile the heuristic is invoked **3 times, ~7 µs
+each (~22 µs total)** — i.e. **< 0.1 %** of the ~40 ms ON↔OFF gap. With the gate OFF it is
+invoked **0 times** (confirmed). So the new model-extension itself is essentially free; the
+slow-down is **entirely downstream**.
+
+The reason is structural, and is the whole point of the feature: with the gate OFF the
+basic model fails, `recoverAddresses` throws *"Too many branches"*, and
+`truncate_indirect_jump` rewrites the `BRANCHIND` into a single `CALLIND` — collapsing the
+**entire 55-entry switch and the surrounding getopt `while` loop** (six fully-bodied cases:
+`strdup`/`fprintf`/`atoi`/`usage`/…) into one bogus computed `(*(code*)…)()` call. With the
+gate ON the table is bounded and the switch survives, so the rest of the pipeline (CFG
+build, dataflow simplification, **structuring**, and **type inference**) now processes a
+~2.6× larger, real function instead of a truncated stub. That is the cost of *correctness*,
+not an algorithmic defect.
+
+We specifically ruled out the failure modes the reviewer worried about (cf. the prior
+`ActionPool` O(N²) regression): the heuristic is **not** called per-op or per-CFG-node (3
+calls total), there is no O(n²)/O(n³) scan, no redundant per-op recomputation, and no
+repeated dominator/region rebuild. `scan_guard_tree`'s inner work is already triple-bounded
+(64-step tree walk, 4096-step `eval_guard_expr` budget, and the `v`-loop capped at
+`maxtablesize`=1024), and empirically resolves in microseconds.
+
+### Disposition
+
+There is **no localized algorithmic fix** — the extra time is the decompiler correctly
+doing ~2.6× the work to recover the real switch+loop. Per the speed gate (budget +5 %), the
+option therefore stays **DEFAULT-OFF, opt-in** (`speed_forced_off = true`), which also
+matches its risk profile: the guard-to-index correspondence is asserted across a stack spill
+it cannot prove in dataflow, so a loose match could over-bound an unrelated indirect jump.
+Flip it per program (`option switchguardbound on`) when a switch renders as a computed call
+with *"Could not recover jumptable … Too many branches"*. Output is byte-identical with the
+gate off (675/675 datatests unchanged), so there is no `docs/divergences.md` entry.
+
+## "Too many declared variables on top" — duplicated declarations (context for a follow-up)
+
+The reviewer noted the PR's *before* snapshot has a wall of identical declarations at the
+top of `main` (e.g. `int4 c; // stack - 0xc` ×16, `int4 fd; // stack - 0x10` ×15,
+`int4 t; // stack - 0x28` ×30). This is **not** caused by `switchguardbound`; it is a
+pre-existing rendering artifact, and is now **already mitigated on `main`** by the
+`dedupvardecls` option (DIV-7, **default-on**), which landed *after* this branch was cut.
+The PR body's *before*/*after* blocks were captured pre-merge, before `dedupvardecls`
+existed.
+
+Measured on the post-merge tree (`adams`/`main`):
+
+- With `option dedupvardecls off` (i.e. the old behavior the PR body shows), `switchguardbound on`
+  renders **67× `int4 t`, 34× `int4 m`, 34× `int4 c`, 33× `int4 fd`** — even worse than the
+  PR snapshot, because the recovered switch+loop has more SSA merge points for the same
+  stack slots.
+- With `dedupvardecls` **on** (the current default), the same decompile's declaration block
+  collapses to a clean ~12 lines; the only residual repeat is `int4 t; // stack - 0x28`
+  **twice**.
+
+### Why it is over-defined (hypothesis)
+
+Each named stack slot is mapped onto **many distinct same-named scalar `HighVariable`s** —
+one per SSA-merge point that the HighVariable-merging pass did not unify. The getopt `while`
+loop and the 6-case switch create many back-edges / case-join `MULTIEQUAL` phis writing the
+*same* stack slot; the merge heuristic leaves them as separate `HighVariable`s (separate
+`Symbol`-less locals that happen to print the same `type name; // stack - off` line). The
+printer emits one declaration per `HighVariable`, so N un-merged copies ⇒ N identical
+declaration lines. `dedupvardecls` is a **render-side** collapse (it de-dups *identical
+fully-rendered lines*), not a fix of the underlying over-fragmentation — so it hides the
+symptom but the engine still carries N HighVariables.
+
+The residual `int4 t; // stack - 0x28` **×2** is a *different*, legitimate case: the 8-byte
+slot at `-0x28` is split into two genuine 4-byte sub-field HighVariables, used in the body as
+`t._0_4_` and `t._4_4_`. They share the printed name `t` but are distinct sub-pieces, so
+`dedupvardecls` correctly does *not* collapse them — this one is not a bug.
+
+Follow-up (separate agent, out of scope here): investigate the HighVariable-merge pass
+(`Merge::mergeAdjacent*` / the intersection test in `s6_merge`) for why same-slot
+loop/switch-phi locals are not unified into one HighVariable, which would fix the
+over-definition at the source rather than at the printer. The `int4 t` sub-piece split is
+expected and should be left alone.
