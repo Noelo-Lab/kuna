@@ -3374,6 +3374,78 @@ Itanium/Rust/C/ELF symbol has one), and PE/COFF only load under
   (1 new loader test), `kuna-analysis/tests/fixtures/README.md`,
   `docs/rust-port/losses.md`, `docs/analysis-port-log.md`.
 
+### Increment 43 — Multi-format loader PR-11: DWARF on Mach-O + MinGW-PE
+
+**Premise.** `s1_dwarf` (the kuna analog of Ghidra's `DWARFAnalyzer`, gimli-based)
+recovers function names / params / types from the `.debug_*` sections, but its
+`run` opened with `if !matches!(ctx.file.format(), BinaryFormat::Elf) { return }`
+(`s1_dwarf/mod.rs:555`) — DWARF was ELF-only, so a `-g` PE or Mach-O recovered
+nothing. gimli is **format-neutral** (it parses the DWARF byte stream, not the
+container); the only container coupling is the *section-name lookup*. Design §5.2 /
+§8 PR-11.
+
+**The change (the whole PR is `s1_dwarf/mod.rs`).** Drop the ELF gate, and resolve
+the debug sections through a new `dwarf_section_data(file, SectionId)` helper that
+keys off `object`'s **format-aware** `section_by_name`. The key finding: `object`
+already does the per-format name translation, so a single `section_by_name(id.name())`
+covers all three formats — gimli's ELF-flavoured ids map cleanly:
+
+| Format | gimli `SectionId::DebugInfo.name()` | section `object` finds | how |
+|---|---|---|---|
+| ELF (today) | `.debug_info` | `.debug_info` | verbatim (unchanged) |
+| **MinGW-PE** | `.debug_info` | `.debug_info` | MinGW emits the standard `.debug_*` names verbatim |
+| **Mach-O** | `.debug_info` | `__debug_info` (in the `__DWARF` segment) | `object`'s documented Mach-O rule maps `.debug_info`→`__debug_info` (and `.debug_str_offsets`→`__debug_str_offs`) |
+
+The helper adds an explicit Mach-O `__`-prefixed fallback (`.debug_info`→
+`__debug_info`) as a belt-and-suspenders guard, a no-op when `object`'s auto-map
+already hit. Everything downstream — the DIE→Datatype mapper (`build_datatype`),
+`build_pieces`, `collect_fbreg_locals`, the SymFact/prototype/local commit — is
+**unchanged**. PE-MSVC PDB is out of scope (no `.debug_info` ⇒ falls out cleanly).
+
+**Before → after.** Both fixtures are the per-format analog of the ELF
+`dwarf_stripped_x86_64`: function names live ONLY in the debug sections (PE
+COFF-symtab FUNC entries `--strip-symbol`-removed; Mach-O FUNC entries
+`--redefine-sym`-renamed — `.debug_*` kept), so a recovery by name is unambiguously
+DWARF-sourced. Source body: `int first_byte(char *label){return label[0];}` +
+`int add(int,int)`.
+
+```text
+            before (no DWARF / by raw address)     after (DWARF name + type recovered)
+  PE        sub_140001550(...)                     int4 first_byte(char *a0)
+  Mach-O    sub_0(...)                             int4 first_byte(char *a0)
+```
+
+`first_byte`/`add` recover **by their DWARF names** on both formats (the symtab no
+longer carries them) with the DWARF-typed `char *` parameter; a `load addr`
+decompile of the same code (the in-test no-DWARF-name baseline) renders the
+engine's `sub_<addr>` placeholder. The existing ELF DWARF gates
+(`verify_s1_dwarf` — names, typed `char *`, stack locals) pass **unchanged**.
+
+**Speed.** Full `decompile` + `print C` of `first_byte` by its DWARF name
+(`--experimental-formats`, release): **Mach-O ~36 ms**, **PE ~136 ms** (the PE is
+a full MinGW exe whose `.debug_info` is ~280 KB — the larger DWARF CU is the cost;
+the Mach-O object's CU is ~130 bytes). Recorded in the e2e via `Instant`.
+
+**Gating / parity.** Default-off ⇒ ELF byte-identical: the pass only *drops a
+format gate* and the ELF section names are identical, so the ELF path is unchanged
+(the 4 `s1_dwarf` unit tests + 3 `verify_s1_dwarf` e2e tests pass verbatim), and
+the non-ELF arm is reachable only under `--experimental-formats`
+(`KUNA_EXPERIMENTAL_FORMATS`). The XML datatest path never reaches the object
+loader. Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**159/159 PARITY OK**, `make rust-test` **green** (incl. the new e2e, 3 tests, not
+skipped — `.sla` built).
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is
+  flag-gated; the XML datatest path never reaches the object loader). The
+  dependency-substitution LOSS (gimli wholesale for Ghidra's hand-rolled DWARF
+  reader) is unchanged — this PR only generalizes the *container* lookup.
+- **New:** `kuna-console/tests/verify_multiformat_dwarf.rs` (3 tests),
+  `kuna-analysis/tests/fixtures/{pe_dwarf.exe, pe_dwarf.c, macho_dwarf.o,
+  macho_dwarf.c}` (recipes recorded in the fixtures README).
+- **Changed:** `kuna-analysis/src/s1_dwarf/mod.rs` (drop the `BinaryFormat::Elf`
+  gate; new `dwarf_section_data` per-format section lookup),
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
 ### Increment 44 — Multi-format loader PR-14: per-format compiler/source-language detection (PE/Mach-O)
 
 **Premise.** `s1_sourcelang::detect_compiler` is kuna's analog of Ghidra's
@@ -3459,3 +3531,4 @@ PARITY OK**, `make test-stages` **159/159 PARITY OK**, `make rust-test` **green*
   PE `Rich`/`GCC:` + Mach-O `LC_BUILD_VERSION` arms + 6 tests),
   `kuna-analysis/src/passes.rs` + `kuna-analysis/src/s1_loader/noreturn.rs`
   (`detect_compiler(&file, bytes)` call-site signature), `docs/analysis-port-log.md`.
+

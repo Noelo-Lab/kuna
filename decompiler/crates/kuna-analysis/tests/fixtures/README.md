@@ -427,6 +427,50 @@ above are reused, plus one new stripped Mach-O:
   stripped)]`. `collect_entries` skips the symboled `_main` and **discovers
   `0x100000590`** — the never-symboled `helper` — the load-bearing PR-13 proof.
 
+## DWARF on MinGW-PE / Mach-O (PR-11)
+
+The multi-format **DWARF** gate (`kuna-console/tests/verify_multiformat_dwarf.rs`,
+design §5.2 / §8 PR-11) proves the `s1_dwarf` pass (gimli) recovers DWARF function
+names + typed signatures on PE and Mach-O, not just ELF. Both fixtures are the
+per-format analog of `dwarf_stripped_x86_64`: the function names live **only** in
+the debug sections (the symtab FUNC entries are stripped/renamed, `.debug_*` kept),
+so a recovery by name is unambiguously DWARF-sourced. Shared source (no headers,
+so it cross-compiles to macOS without an SDK; `pe_dwarf.c` / `macho_dwarf.c` carry
+the identical bodies + their build recipes):
+`int first_byte(char *label){return label[0];} int add(int a,int b){return a+b;} int main(void){return first_byte("kuna")+add(2,3);}`.
+
+- **`pe_dwarf.exe`** (MinGW `-g`, ~70 KB): MinGW emits standard `.debug_*` sections
+  in the PE, which `object::section_by_name(".debug_info")` finds verbatim. Built
+  in the `kuna-dev` container, then the COFF-symtab FUNC entries removed (keeping
+  `.debug_*`):
+
+  ```bash
+  x86_64-w64-mingw32-gcc -g -O0 pe_dwarf.c -o pe_g.exe
+  x86_64-w64-mingw32-objcopy --strip-symbol first_byte --strip-symbol add \
+      --strip-symbol main  pe_g.exe  pe_dwarf.exe
+  ```
+
+  Pinned VMAs (ImageBase `0x140000000`): `first_byte`@`0x140001550`,
+  `add`@`0x140001564`. DWARF recovers `int4 first_byte(char *a0)` by name; a
+  by-`load addr 0x140001550` decompile (the no-DWARF-name baseline) renders the
+  engine's `sub_140001550` placeholder.
+
+- **`macho_dwarf.o`** (clang `-g`, relocatable, ~2 KB): the DWARF lands in the
+  `__DWARF,__debug_*` sections; `object` maps gimli's `.debug_info` → the Mach-O
+  short-name `__debug_info` (its documented rule), so the *same* section loader
+  reads it. A Mach-O object with `SUBSECTIONS_VIA_SYMBOLS` won't let strip drop
+  its FUNC symbols (they delimit subsections), so `--redefine-sym` **renames** them
+  instead (`_first_byte`→`_l0`, `_add`→`_l1`) — DWARF still names them, the symtab
+  no longer does:
+
+  ```bash
+  clang -target x86_64-apple-macos11 -g -O0 -c macho_dwarf.c -o macho_dwarf.o
+  llvm-objcopy --redefine-sym _first_byte=_l0 --redefine-sym _add=_l1 macho_dwarf.o
+  ```
+
+  Pinned VMAs (section-relative in the object): `first_byte`@`0x0`, `add`@`0x20`.
+  Same DWARF recovery + `char *` type; `load addr 0x0` is the `sub_0` baseline.
+
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via
 `objdump`/`readelf` at build time) — addresses shift across toolchains.
