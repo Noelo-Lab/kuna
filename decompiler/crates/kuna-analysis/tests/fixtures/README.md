@@ -317,6 +317,28 @@ exe is the only non-ELF binary in this tree large enough to statically link the
 MinGW CRT (≈0.5 MB), on par with the existing `mcount_x86_64` (0.9 MB).
 **Pin the VMAs as test consts** (`x86_64-w64-mingw32-objdump -d/-p`).
 
+`coff_obj.obj` (Intel amd64 COFF object, <1 KB) is a **pre-link COFF object** for
+the PR-5 object-loader gate (`kuna-console/tests/verify_coff_object.rs`,
+design §3.6). Built (no new packages — `clang` ships in `kuna-dev`):
+
+```bash
+docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc \
+  'clang -target x86_64-pc-windows-gnu -O1 -c coff_obj.c \
+     -o decompiler/crates/kuna-analysis/tests/fixtures/coff_obj.obj'
+```
+
+`coff_obj.c` =
+`int compute(int x){ return x*3+1; }` /
+`int run(int n){ const char *s="hi"; puts(s); return compute(n)+(int)s[0]; }`.
+COFF symtab (`objdump -t`): `compute`@`.text`+0x0, `run`@+0x10, `puts` an
+**undefined** external (section 0) — a pre-link object has no IAT, so `puts` is an
+unresolved *symbol*, not an address (`CoffFormat::resolve_imports` empty, §3.6).
+The `"hi"` literal lands in `.rdata` (the format-agnostic string pass's input).
+`compute` sits at `.text`+0, exercising the defined-function-at-VMA-0 case the
+loader's `is_undefined()` funcsym skip handles (an `addr == 0` skip would have
+dropped it). Proves a COFF `.obj` loads and decompiles a function **resolved by
+its COFF-symtab name**.
+
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via
 `objdump`/`readelf` at build time) — addresses shift across toolchains.
