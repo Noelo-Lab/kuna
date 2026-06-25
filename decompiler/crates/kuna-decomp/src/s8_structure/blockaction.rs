@@ -3343,6 +3343,70 @@ impl Action for ActionPreferComplement {
     }
 }
 
+/// \brief (kuna, option `branchflip`) Flip negated-guard `if/else` branches for
+/// linearity — the angr-SAILR-style condition-polarity normalization that turns
+/// `if (x == 0) {A} else {B}` into the positive complement `if (x != 0) {B} else {A}`.
+///
+/// Sits next to [`ActionPreferComplement`] in the structuring schedule and reuses
+/// the same dual-arena flip machinery; the only difference is the accepted flip
+/// class — it rewrites the *equality-to-zero / negated* guard
+/// (`split_flip_in_place_test == 1`) that `preferComplement` leaves alone.  Gated
+/// off the per-function `Architecture::branch_flip` seam flag (option
+/// `branchflip`, default-off); a no-op unless the flag is set.  Each flip is
+/// logged via [`Funcdata::warning`] at the guard's CBRANCH.
+pub struct ActionBranchFlip {
+    base: ActionBase,
+    /// Are p-code ops allowed to be modified by this action (C++ `allowOpMods`).
+    allow_op_mods: bool,
+}
+
+impl ActionBranchFlip {
+    /// Construct in group `g`.
+    pub fn boxed(g: impl Into<String>, allow_mods: bool) -> Box<dyn Action> {
+        Box::new(ActionBranchFlip {
+            base: ActionBase::new(0, "branchflip", g),
+            allow_op_mods: allow_mods,
+        })
+    }
+}
+
+impl Action for ActionBranchFlip {
+    fn base(&self) -> &ActionBase {
+        &self.base
+    }
+    fn base_mut(&mut self) -> &mut ActionBase {
+        &mut self.base
+    }
+    fn clone_filtered(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Action>> {
+        if !grouplist.contains(self.get_group()) {
+            return None;
+        }
+        Some(Box::new(ActionBranchFlip {
+            base: self.base.clone(),
+            allow_op_mods: self.allow_op_mods,
+        }))
+    }
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // Gate: per-function `branch_flip` flag (option `branchflip`, default-off).
+        // Carried into the `ArchSeam` by `build_arch_handle`; absent => no-op so
+        // the 675-datatest parity and the default rendering are untouched.
+        if !data.get_arch().branch_flip {
+            return 0;
+        }
+        match data.branch_flip_complement(self.allow_op_mods) {
+            Ok(count) => {
+                self.base.count += count;
+            }
+            Err(_e) => {
+                // A residual flip seam degrades to "no change made" rather than
+                // aborting (the honest-partial-parity stance, matching
+                // `ActionPreferComplement`).
+            }
+        }
+        0
+    }
+}
+
 /// \brief Structure control-flow using standard high-level code constructs (C++
 /// `ActionBlockStructure`).  Drives [`CollapseStructure`].
 pub struct ActionBlockStructure {
@@ -3386,6 +3450,34 @@ impl Action for ActionBlockStructure {
         // `copy` field points back at the bblocks block so the printer can walk
         // its op list).
         data.seed_sblocks_copy();
+        // (kuna) Region-based (Phoenix/SAILR) structurer — `option regionstructure
+        // on` (default-off, parity-safe).  When ON, replace Ghidra's
+        // `CollapseStructure` with the region-driven structurer
+        // (`run_region_structurer`): it runs the KunaRegionIdentifier over the real
+        // CFG and structures the seeded `sblocks` graph with the acyclic-sequence
+        // schema + SAILR-ordered virtualize-to-goto fallback.  Honest-partial-safe:
+        // if it cannot collapse the graph to a single root (an un-virtualizable
+        // knot or the hang-guard), re-seed `sblocks` and fall through to the
+        // unchanged `CollapseStructure` path.  OFF (default) skips this entirely and
+        // output is byte-identical.
+        if data.get_arch().region_structure {
+            match crate::s8_structure::region_structurer::run_region_structurer(data) {
+                Ok(true) => {
+                    // Structured by the region structurer; the change count is the
+                    // structuring activity (one per collapse round is not tracked
+                    // here — report a single change so the ActionPool sees progress,
+                    // matching the spirit of `collapse.getChangeCount() > 0`).
+                    self.base_mut().count += 1;
+                    return 0;
+                }
+                Ok(false) | Err(_) => {
+                    // Could not converge: discard the partially-structured sblocks
+                    // and re-seed a clean BlockCopy mirror for the CollapseStructure
+                    // fallback (never abort — honest-partial parity).
+                    data.reseed_sblocks_copy();
+                }
+            }
+        }
         // Precompute BlockBasic::isComplex over the live op lists (the structuring
         // graph is a BlockCopy mirror without op ownership), keyed by the bblocks
         // id each BlockCopy's `copy` pointer references.  ruleBlockOr/whileDo read

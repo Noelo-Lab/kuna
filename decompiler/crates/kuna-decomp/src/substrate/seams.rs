@@ -531,6 +531,12 @@ pub struct Architecture {
     /// (C++ `recover_lowered_switch`, default-on).  Read by the
     /// [`crate::kuna_loweredswitch`] detect/install actions.
     pub recover_lowered_switch: bool,
+    /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
+    /// walking the [`KunaRegionIdentifier`](crate::s7_regions::kuna_regionid)
+    /// region tree and matching Phoenix acyclic schemas instead of running
+    /// Ghidra's `CollapseStructure` (`region_structure`, opt-in default-off).
+    /// Read by [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
+    pub region_structure: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
     /// [`crate::s8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
@@ -548,6 +554,10 @@ pub struct Architecture {
     /// `strip_stack_guard`, opt-in default-off).  Read by
     /// [`crate::kuna_stackguard`]'s `ActionStripStackGuard`.
     pub strip_stack_guard: bool,
+    /// (kuna) flip negated-guard if/else branches for linearity (option
+    /// `branchflip`, opt-in default-off).  Read by
+    /// [`crate::s8_structure::kuna_branchflip`]'s `ActionBranchFlip`.
+    pub branch_flip: bool,
     /// (kuna) GH-9203: when set, `ActionConditionalConst::handlePhiNodes` declines
     /// to materialize a propagated constant as a COPY inside a loop predecessor
     /// block (which would render as a spurious `= 0` in the do/while body).  C++
@@ -733,10 +743,12 @@ impl Architecture {
             memset_recover: false,       // GH-9230/1537 memsetrecover
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
+            region_structure: false,     // regionstructure (opt-in default-off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
+            branch_flip: false,          // branchflip (opt-in default-off)
             // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.
             condexe_block_placement: true,
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).

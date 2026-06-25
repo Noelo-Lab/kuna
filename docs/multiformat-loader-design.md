@@ -119,7 +119,7 @@ fn is_object_binary(bytes: &[u8]) -> bool {
 }
 ```
 
-The XML fallback (which `object` cannot parse) stays the else-branch. **Behind a flag initially** (`--experimental-formats` / env): until each format's path is proven, the default `is_object_binary` admits only ELF, so default behavior is byte-identical. Each format-PR flips its magic on once green.
+The XML fallback (which `object` cannot parse) stays the else-branch. The format build-out shipped behind a `--experimental-formats` flag initially — each format-PR flipped its magic on once green — and once all four were proven the flag was **removed in increment 46**: `is_object_binary` now admits ELF / PE / Mach-O / COFF unconditionally (multi-format is the default, like ELF). The XML/datatest corpus never carries an object-format magic, so its dispatch is byte-identical regardless.
 
 ---
 
@@ -330,12 +330,14 @@ Fixtures only need to **parse + decompile**, never run — a freestanding stub o
 
 1. **The XML oracles never reach the object path** (Invariant 1). `bootstrap_from_file` (`engine.rs:1097`) routes XML to `bootstrap_from_root`/`bootstrap_program` (`:1110`), never to `bootstrap_from_object`. No PR touches that branch or the XML loader. 675/675 + 158/158 are structurally immune.
 2. **The ELF arm is today's code lifted verbatim** (Invariant 2). PR-1's `ElfFormat` is the existing `section_kind_flags`/`resolve_plt_imports`/`:gcc` logic behind a trait; the 30+ ELF fixtures prove byte-identical behavior. No `if format ==` branches are sprinkled through shared passes — format knowledge lives in the four `ObjectFormat` impls.
-3. **New formats are new dispatch arms**, gated behind `--experimental-formats` until each is proven, so default behavior is byte-identical at every PR boundary.
+3. **New formats are new dispatch arms.** During the build-out each was gated behind `--experimental-formats` until proven; once all four were proven the flag was removed (increment 46) and PE/Mach-O/COFF are admitted unconditionally. Default behavior is byte-identical regardless — the XML/datatest corpus carries no object-format magic, so `is_object_binary` returns false for it and dispatch routes to the XML branch exactly as before.
 4. **Three gates green per PR:** `make test` (PARITY OK 675/675), `make test-stages` (no new failures beyond the 2 known), `make rust-test` (workspace + golden + `.sla` parity). Run all three before every commit (per AGENTS.md).
 
 ---
 
 ## 8. Ordered PR breakdown
+
+> **Superseded note (increment 46):** the PR entries below are the *as-planned/as-shipped* record from when each format lived behind `--experimental-formats`. That flag has since been **removed** — multi-format is now the unconditional default (see §1's note and `docs/analysis-port-log.md` Increment 46). References to the flag below are historical.
 
 Each PR: small, one fixture testcase, all three gates green, risky resolvers off-by-flag first. Dependencies noted.
 

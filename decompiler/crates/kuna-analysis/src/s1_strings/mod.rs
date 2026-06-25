@@ -92,12 +92,10 @@ fn scan_run(data: &[u8], vma: u64, min_len: usize) -> Vec<StringFact> {
 /// string literal (`getLoadedAndInitializedAddressSet`)?
 ///
 /// This is the per-format arm of the "allocated + initialized" test. The
-/// **ELF arm is byte-identical to before** (`SHF_ALLOC`, the only path that runs
-/// on the default — non-experimental — pipeline), so ELF output is unchanged. The
-/// PE/COFF and Mach-O arms (reachable only under `--experimental-formats`)
-/// generalize the same notion through the neutral [`SectionKind`] + each format's
-/// flag bits, so a PE `.rdata` / Mach-O `__cstring` is scanned and a PE
-/// `puts("hello")` recovers its literal.
+/// **ELF arm is byte-identical to before** (`SHF_ALLOC`), so ELF output is
+/// unchanged. The PE/COFF and Mach-O arms generalize the same notion through the
+/// neutral [`SectionKind`] + each format's flag bits, so a PE `.rdata` / Mach-O
+/// `__cstring` is scanned and a PE `puts("hello")` recovers its literal.
 fn is_loaded_initialized<'a>(sec: &impl ObjectSection<'a>) -> bool {
     // `.bss`-style uninitialized memory has no file content to scan, on every
     // format (the neutral signal `object` derives from the section type/flags).

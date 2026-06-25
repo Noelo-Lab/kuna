@@ -16,3 +16,4 @@ pub mod kuna_switchguardbound;
 pub mod kuna_sparcstructret;
 pub mod kuna_stackprobeloop;
 pub mod kuna_loweredswitch;
+pub mod kuna_tailcalljump;

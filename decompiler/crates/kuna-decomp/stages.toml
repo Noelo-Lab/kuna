@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=91, settable=45
-# (27 stage-model knobs + 15 analysis-tier gates + 3 loader-tier capabilities).
+# Counts (asserted in tests): group=39, substage=40, surface=94, settable=49
+# (31 stage-model knobs + 15 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -910,6 +910,12 @@ substage = "flow-classification"
 note = "(kuna GH-8817) reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery"
 
 [[surface]]
+surface = "option tailcalljump"
+stage = "S2"
+substage = "flow-classification"
+note = "(kuna tee-O2 tail-jumps) recover a direct jmp to another function's entry (e.g. jmp setlocale@plt) as a tail call (CALL + RETURN) instead of inlining the callee"
+
+[[surface]]
 surface = "option sparcstructret"
 stage = "S2"
 substage = "flow-classification"
@@ -956,6 +962,12 @@ surface = "option stackguard"
 stage = "S7"
 substage = "edge-virtualization"
 note = "(kuna angr-port) strip the -fstack-protector canary epilogue so the shared-return goto is eliminated"
+
+[[surface]]
+surface = "option branchflip"
+stage = "S8"
+substage = "readability-rewrites"
+note = "(kuna angr-port) flip negated-guard if/else branches for linearity (if (x==0) -> if (x!=0), arms swapped)"
 
 [[surface]]
 surface = "force goto"
@@ -1411,6 +1423,26 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "tailcalljump"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S2"
+substage = "flow-classification"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-tee-O2-tail-jumps"
+summary = "Recover an -O2 tail jump (a direct `jmp` to another function's entry, e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) so the callee resolves by name and its return value flows out, instead of flowing into the callee (which inlines a PLT thunk and mis-renders it as a `(*dat_...)(...)` indirect call with a 'Treating indirect jump as call' warning). When it fires it logs a `tailcalljump: recovered tail call` warning at the branch site so the introduced call is observable."
+use_when = "Flip on when a leaf function ends in `jmp <func>@plt` and kuna emits `(*dat_...)(...)` + a 'Treating indirect jump as call' marker instead of `func(...)`. On = the named call plus a `tailcalljump: recovered tail call` WARNING. Off (default) is default-pipeline byte-identical; kept opt-in because default-on regresses 2 datatests (Long double #1/#2)."
+example = "option tailcalljump on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_tee_O2_tail_jumps; angr tail-call handling (direct jmp to a function/PLT thunk); setlocale_null_androidfix"
+change_kind = "structure-recovery"
+live_field = "tail_call_jumps"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "flagcompare"
 values = "on|off"
 default = "on"
@@ -1628,6 +1660,23 @@ inspiration = "angr LoweredSwitchSimplifier (angr/analyses/decompiler/optimizati
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "regionstructure"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-region-structurer"
+summary = "Structure the CFG by walking the KunaRegionIdentifier region tree and matching angr Phoenix/SAILR acyclic schemas (acyclic sequence + virtualize-to-goto fallback with SAILR H1/H3 edge ordering) instead of running Ghidra's CollapseStructure. Inc 1 PoC: collapses single-pred/single-succ chains into BlockLists and emits a goto for every remaining edge, folding join->tail sequence edges that Ghidra gotos."
+use_when = "Set on when an `if(c){A}else{B}` join->tail edge renders as a `goto` that angr folds into a straight-line sequence. Off (default) is upstream byte-identical (Ghidra CollapseStructure path). On replaces the whole structuring engine with the region-driven structurer; Inc 1 only structures acyclic sequences (loops/switches/if-else are gated to later increments and fall back to gotos), so on can emit MORE gotos on loop/switch-heavy functions."
+example = "option regionstructure on"
+source_decompiler = "angr"
+inspiration = "angr Phoenix/SAILR structurer (angr/analyses/decompiler/structuring/{recursive_structurer,phoenix,sailr}.py); _match_acyclic_sequence, _virtualize_edge, _order_virtualizable_edges"
+change_kind = "structure-recovery"
+
+[[settable]]
 option = "gotoreduce"
 values = "on|off"
 default = "off"
@@ -1676,6 +1725,23 @@ use_when = "Set on to remove compiler-inserted stack-protector boilerplate and t
 example = "option stackguard on"
 source_decompiler = "angr"
 inspiration = "test_ite_region_converter_missing_break_statement; angr StackCanarySimplifier (angr/analyses/decompiler/optimization_passes/stack_canary_simplifier.py); authenticate"
+change_kind = "opt-in-tool"
+
+[[settable]]
+option = "branchflip"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "readability-rewrites"
+strength = "HINT"
+rewind = "S8"
+issue = "angr-SAILR-condition-polarity"
+summary = "Flip a negated-guard if/else for linearity: when an `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped in place, rewrite it to the positive complement `if (x != 0) {B} else {A}` so the common path reads top-to-bottom (angr-style positive guard vs `if (x == 0)`)."
+use_when = "Set on for angr-style positive guards (the non-negated comparison becomes the `if` condition, the if/else arms swap to match); off (default) keeps Ghidra's polarity. A flip is logged as a `branchflip:` warning comment at the if. Only fires on `if/else` (3-component) blocks whose condition flips cleanly in place."
+example = "option branchflip on"
+source_decompiler = "angr"
+inspiration = "tee_O2 x2nrealloc (if (a0 == 0) vs angr if (a0)); angr SAILR structurer condition processing"
 change_kind = "opt-in-tool"
 
 [[settable]]
@@ -2059,8 +2125,8 @@ strength = "HARD"
 rewind = "S1"
 issue = "kuna-multiformat-macho-arm64e"
 summary = "Select the Apple-Silicon pointer-authentication SLEIGH spec for an arm64e Mach-O. When on, a Mach-O whose header reports cpusubtype CPU_SUBTYPE_ARM64E loads with the AARCH64:LE:64:AppleSilicon language (the vendored Apple-Silicon v8.5-A spec, which models the pointer-auth/AMX extensions) instead of the generic AARCH64:LE:64:v8A. Pointer authentication does NOT change import naming or symbols (the __stubs indirect-symbol walk is unaffected) — only the spec selection differs (design 3.7). Spec selection is a LOAD-time decision (language_id_for), which runs before any console `option` command, so the live gate is the KUNA_MACHO_ARM64E env var the kuna CLI exports when it sees `--option macho-arm64e on`; this option name also records the requested state on the Architecture for catalog consistency. Default-OFF (opt-in, multi-format loader PR-8): a non-arm64e Mach-O, a non-Mach-O target, and every ELF/PE/COFF path are byte-identical, so all parity gates are structurally untouched."
-use_when = "Off (default; an arm64e Mach-O loads with the generic v8A spec, exactly as any arm64). Flip on, with --experimental-formats, to decompile an arm64e (Apple-Silicon, pointer-auth) Mach-O with the AppleSilicon spec that models its extensions."
-example = "--experimental-formats --option macho-arm64e on"
+use_when = "Off (default; an arm64e Mach-O loads with the generic v8A spec, exactly as any arm64). Flip on to decompile an arm64e (Apple-Silicon, pointer-auth) Mach-O with the AppleSilicon spec that models its extensions."
+example = "--option macho-arm64e on"
 source_decompiler = "kuna"
 inspiration = "Ghidra MachoLoader arm64e cpusubtype -> AARCH64:LE:64:AppleSilicon language mapping"
 change_kind = "analysis-enablement"

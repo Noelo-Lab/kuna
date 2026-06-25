@@ -3643,3 +3643,90 @@ oracles are structurally untouched. Gates: `make test` **675/675 PARITY OK**,
   `kuna-console/src/kuna_console.rs` (`kuna_live_value` arm),
   `kuna-cli/src/{main,decompile}.rs` (`--slice` + the arm64e env export),
   `docs/assertions.md`, `docs/analysis-port-log.md`.
+
+### Increment 46 — Multi-format support is now unconditional (the --experimental-formats flag removed)
+
+The multi-format build-out (Increments 36–45: PE/Mach-O/COFF parsing, import
+naming, entry discovery, demangling, DWARF, compiler detection, fat-slice
+selection) shipped each format behind a `--experimental-formats` flag — proven
+green PR by PR while the default dispatch stayed ELF-only and byte-identical. With
+all four formats proven, this increment **promotes multi-format to the default and
+removes the flag entirely** (user directive: "Flip it on and remove the flag. We
+should always support it."). PE/Mach-O/COFF now load exactly like ELF — no flag, no
+env var, no opt-in.
+
+**The mechanism removed.** The gate was a single chokepoint: `is_object_binary`
+(`kuna-console/src/engine.rs`) admitted the non-ELF magics only when
+`experimental_formats_enabled()` returned true, which read the
+`KUNA_EXPERIMENTAL_FORMATS` env var. The `kuna decompile --experimental-formats`
+CLI flag exported that env var onto the spawned `decomp_dbg`. All three are gone:
+`is_object_binary` now admits ELF + Mach-O (`0xfeedfac*` / fat `0xcafebabe`) + PE
+(`MZ`) + a bare COFF (`IMAGE_FILE_MACHINE_*` prefix) **unconditionally**; the
+`experimental_formats_enabled()` helper and the env-var read are deleted; the CLI
+flag definition + its env export are deleted.
+
+**The headline (the whole point).** With **NO flag**, a real PE and a real Mach-O
+now decompile straight off `kuna decompile`:
+
+```text
+$ kuna decompile decompiler/crates/kuna-analysis/tests/fixtures/pe_imports.exe main
+unsigned long long main(uint4 a0)
+{
+  __main();
+  puts("hello");
+  printf("%d\n",(uint8)a0);
+  return 0;
+}
+
+$ kuna decompile decompiler/crates/kuna-analysis/tests/fixtures/macho_imports _main
+unsigned long _main(int4 a0)
+{
+  printf("%d\n",(uint8)(a0 * 3 + 7));
+  return 0;
+}
+```
+
+Before this increment those exact commands errored ("Unable to recognize
+imagefile") unless you added `--experimental-formats`; now they just work. And the
+flag is gone — `kuna decompile … --experimental-formats` now reports
+`error: unknown option --experimental-formats`.
+
+**Why this is parity-safe (the load-bearing invariant).** The XML datatest path
+(`bootstrap_program`, the 675/675 corpus) and the stage corpus dispatch on the XML
+`<bi…>` document / ELF magic and **never** carry a PE/Mach-O/COFF magic, so
+`is_object_binary` returns false for every datatest input regardless of the gate —
+removing the gate cannot perturb their dispatch. The ELF arm is unchanged. The only
+behavior change is that a real PE/Mach-O/COFF binary now decompiles by default
+instead of erroring — exactly the intended, user-directed default change (an
+output-changing change that is, per the directive, deliberately NOT behind a flag).
+
+**Tests.** Every multi-format e2e gate (`verify_pe_imports`, `verify_macho_imports`,
+`verify_coff_object`, `verify_object_formats`, `verify_multiformat_entry`,
+`verify_multiformat_passes`, `verify_multiformat_dwarf`, `verify_macho_fat`,
+`verify_msvc_demangle`) was de-flagged: the `KUNA_EXPERIMENTAL_FORMATS` set/remove
+toggling is gone, the per-file `ENV_LOCK` that only serialized that process-global
+toggle is removed where no env is touched anymore (kept in `verify_macho_fat`,
+which still toggles the separate `KUNA_MACHO_SLICE`/`KUNA_MACHO_ARM64E`), and each
+former "default-off: must NOT load without the flag" negative assertion is inverted
+to a "loads by default through `bootstrap_from_file`" positive — so the suite now
+exercises the now-default path. `kuna catalog --check` is unchanged
+(`--experimental-formats` was never a settable; the catalog/count is identical).
+
+**Gating / parity.** Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**PARITY OK** (count unchanged from the prior increment), `make rust-test`
+**green** (all multi-format e2e tests pass with no flag), `kuna catalog --check`
+**OK**.
+
+- **Divergence/LOSS:** none to the parity oracles. This is an intentional,
+  user-directed default change: a real PE/Mach-O/COFF binary now decompiles by
+  default. It is deliberately not behind a flag (per the directive). The XML/ELF
+  oracles are byte-identical.
+- **Changed:** `kuna-console/src/engine.rs` (drop `experimental_formats_enabled()`
+  + the `KUNA_EXPERIMENTAL_FORMATS` read; `is_object_binary` admits all magics
+  unconditionally), `kuna-cli/src/{main,decompile}.rs` (remove the
+  `--experimental-formats` flag + its env export + the `experimental_formats`
+  field), `decompiler/Cargo.toml` (comment), `kuna-analysis/src/s1_loader/format/{mod,pe,macho,coff}.rs`
+  + `kuna-analysis/src/s1_strings/mod.rs` (doc comments), `kuna-decomp/stages.toml`
+  + `docs/assertions.md` (the `macho-arm64e` `use_when`/`example` drop the flag
+  mention), `kuna-console/tests/verify_{pe_imports,macho_imports,coff_object,object_formats,multiformat_entry,multiformat_passes,multiformat_dwarf,macho_fat,msvc_demangle}.rs`
+  (de-flagged), `docs/multiformat-loader-design.md`, `docs/analysis-port-log.md`.

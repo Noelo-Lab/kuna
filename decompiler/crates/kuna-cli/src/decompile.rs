@@ -24,11 +24,6 @@ pub struct DecompileArgs {
     pub kasserts: Vec<String>,
     pub decomp_dbg: Option<String>,
     pub sleighpath: Option<String>,
-    /// Admit non-ELF object formats (PE / Mach-O / COFF) on the `load file`
-    /// dispatch. Off by default ⇒ ELF-only, byte-identical to the established
-    /// behavior. When set, exports `KUNA_EXPERIMENTAL_FORMATS=1` onto the
-    /// `decomp_dbg` subprocess so its `is_object_binary` admits the extra magics.
-    pub experimental_formats: bool,
     /// Mach-O fat / universal slice override (`--slice <arch>`, e.g. `x86_64` /
     /// `arm64`). Picks which arch slice of a universal binary is loaded; absent
     /// ⇒ the deterministic default (x86-64 → arm64 → first present). Exported as
@@ -211,10 +206,6 @@ fn decompile(args: &DecompileArgs) -> Result<(String, Option<String>), String> {
         cmd.arg("-s").arg(&specs).env("SLEIGHHOME", &specs);
         if let Some(v) = reloc_env {
             cmd.env(kuna_decomp::options::RELOC_OBJECTS_ENV, v);
-        }
-        if args.experimental_formats {
-            // Admit PE/Mach-O/COFF on the subprocess's `load file` dispatch.
-            cmd.env("KUNA_EXPERIMENTAL_FORMATS", "1");
         }
         if let Some(slice) = args.slice.as_deref().filter(|s| !s.trim().is_empty()) {
             // Mach-O fat / universal slice override: read at the dispatch peel.

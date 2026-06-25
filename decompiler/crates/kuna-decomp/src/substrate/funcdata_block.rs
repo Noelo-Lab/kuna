@@ -3247,6 +3247,114 @@ impl Funcdata {
         Ok(count)
     }
 
+    /// (kuna, option `branchflip`) Flip negated-guard `if/else` branches for
+    /// linearity — the angr-SAILR-style condition-polarity normalization.
+    ///
+    /// This is the *complement* of [`Self::prefer_complement`]: where
+    /// `preferComplement` rearranges only when the flip **removes** negation
+    /// (`split_flip_in_place_test == 0`, e.g. `!=` / `BOOL_NEGATE` / non-constant
+    /// `<`), this rearranges the residual `if/else` blocks whose guard is the
+    /// *negated / equality-to-zero* form (`split_flip_in_place_test == 1`, i.e.
+    /// `==` / `== 0` / a constant-operand `<` / `<=`).  Flipping those yields the
+    /// positive-complement `if (x != 0) {else-body} else {if-body}` reading angr
+    /// prefers (`if (a0 != 0)` vs `if (a0 == 0)` on tee_O2's `x2nrealloc`).
+    ///
+    /// Each flip reuses the proven in-place machinery (`split_flip_in_place_*` +
+    /// `op_flip_in_place_execute` + `swap_blocks(sif,1,2)`) and is logged as a
+    /// `branchflip:` warning comment at the guard's CBRANCH so the rewrite is
+    /// observable.  Returns the number of `if/else` blocks flipped.
+    pub fn branch_flip_complement(&mut self, allow_op_mods: bool) -> KunaResult<int4> {
+        use crate::block::BlockType;
+        if self.sblocks_get_size() == 0 {
+            return Ok(0);
+        }
+        let root = self.sblocks_root();
+        if self.sblocks_ref().block(root).has_final_transform() {
+            return Ok(0);
+        }
+        let mut count = 0;
+        // BFS the BlockGraph nodes (skip t_copy/t_basic leaves), same walk as
+        // `prefer_complement`.
+        let mut vec: Vec<BlockId> = vec![root];
+        let mut pos = 0;
+        while pos < vec.len() {
+            let curbl = vec[pos];
+            pos += 1;
+            let sz = self.sblocks_ref().block(curbl).get_size();
+            for i in 0..sz {
+                let childbl = self.sblocks_ref().block(curbl).get_block(i);
+                let bt = self.sblocks_ref().block(childbl).get_type();
+                if bt == BlockType::Copy || bt == BlockType::Basic {
+                    continue;
+                }
+                vec.push(childbl);
+            }
+            if self.sblocks_ref().block(curbl).get_type() == BlockType::If
+                && self.block_if_flip_negated_guard(curbl, allow_op_mods)?
+            {
+                count += 1;
+            }
+        }
+        self.clear_dead_ops();
+        Ok(count)
+    }
+
+    /// (kuna, option `branchflip`) The per-`BlockIf` half of
+    /// [`Self::branch_flip_complement`]: flip a 3-component `if/else` whose guard
+    /// is the negated / equality-to-zero form to its positive complement.
+    ///
+    /// Mirrors [`Self::block_if_prefer_complement`] but accepts the *denormalizing*
+    /// flip class (`split_flip_in_place_test == 1`) instead of the normalizing one
+    /// (`== 0`).  Result `1` is exactly the equality-to-zero / `==` / constant-
+    /// compare guard that `preferComplement` leaves alone — the one whose positive
+    /// reading angr produces.  `sif` is the sblocks `BlockIf`.  Returns `true` if a
+    /// flip was made (and logs a `branchflip:` warning at the guard).
+    fn block_if_flip_negated_guard(&mut self, sif: BlockId, allow_op_removal: bool) -> KunaResult<bool> {
+        // Only if/else (3-component) collapses can swap arms in place.
+        if self.sblocks_ref().block(sif).get_size() != 3 {
+            return Ok(false);
+        }
+        let cond = self.sblocks_ref().block(sif).get_block(0);
+        let split = match self.get_split_point(cond) {
+            Some(s) => s,
+            None => return Ok(false),
+        };
+        // Accept ONLY the denormalizing flip (== 1): the negated / equality-to-zero
+        // guard.  `0` (already-positive, `preferComplement`'s job) and `2` (can't
+        // flip) are both left untouched.
+        let mut fliplist: Vec<OpId> = Vec::new();
+        if self.split_flip_in_place_test(split, &mut fliplist, allow_op_removal) != 1 {
+            return Ok(false);
+        }
+        // Log the flip at the guard's CBRANCH address (observable in `print C`).
+        let warn_addr = self.split_point_addr(split);
+        if let Some(ad) = warn_addr {
+            self.warning(
+                "branchflip: flipped negated guard for linearity (positive condition, if/else arms swapped)",
+                &ad,
+            );
+        }
+        // split->flipInPlaceExecute(); data.opFlipInPlaceExecute(fliplist);
+        self.split_flip_in_place_execute(split);
+        self.op_flip_in_place_execute(&fliplist)?;
+        // swapBlocks(1,2);  -- swap the BlockIf's true/false children to match.
+        self.sblocks_mut().swap_blocks(sif, 1, 2);
+        Ok(true)
+    }
+
+    /// The address of a split point's guard op (the bblocks `BlockBasic`'s tail
+    /// CBRANCH), used to key the `branchflip` warning comment.  Returns `None` for
+    /// a short-circuit `BlockCondition` (no single guard address).
+    fn split_point_addr(&self, split: SplitPoint) -> Option<Address> {
+        match split {
+            SplitPoint::Basic(bb) => {
+                let lastop = self.bb_op_tail(bb)?;
+                Some(self.obank().get(lastop)?.get_addr().clone())
+            }
+            SplitPoint::Condition(_) => None,
+        }
+    }
+
     /// Reset `sblocks` to a fresh empty graph (C++ `sblocks.clear()`).
     fn clear_sblocks(&mut self) {
         use crate::block::{BlockGraph, FlowBlock};

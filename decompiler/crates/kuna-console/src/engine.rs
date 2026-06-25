@@ -607,8 +607,8 @@ pub fn bootstrap_program(
 ///
 /// Format-neutral by construction: it drives the `object`-crate
 /// [`ObjectLoadImage`] (which funnels every format-specific decision through the
-/// `ObjectFormat` seam) in place of the XML loader, so it serves ELF today and
-/// PE/Mach-O/COFF behind `--experimental-formats`. Open the object (parse
+/// `ObjectFormat` seam) in place of the XML loader, so it serves ELF, PE,
+/// Mach-O and COFF uniformly. Open the object (parse
 /// machine/segments/symbols), take the SLEIGH language id straight off the
 /// loader's `getArchType()` (the `resolveArchitecture` loader branch — C++
 /// `loader->getArchType()`), build the engine, attach the default code space to
@@ -1133,27 +1133,14 @@ const COFF_MACHINES: &[u16] = &[
     0xaa64, // IMAGE_FILE_MACHINE_ARM64
 ];
 
-/// Whether non-ELF object formats (PE / Mach-O / COFF) are admitted by
-/// [`is_object_binary`]. Default **off** — only `\x7fELF` reaches the object
-/// loader, so default behavior is byte-identical to the ELF-only era and the
-/// XML / datatest oracles are structurally untouched. Turned on by the
-/// `KUNA_EXPERIMENTAL_FORMATS` env var (set to any non-empty value), which the
-/// `kuna decompile --experimental-formats` flag exports onto the `decomp_dbg`
-/// subprocess. Read live (per `load file`) so a test can toggle it in-process.
-fn experimental_formats_enabled() -> bool {
-    std::env::var_os("KUNA_EXPERIMENTAL_FORMATS")
-        .map(|v| !v.is_empty())
-        .unwrap_or(false)
-}
-
 /// Does `bytes` look like an object-format binary the [`ObjectLoadImage`] loader
-/// can drive (design §1.4)? By **default** this admits **only ELF**, so the
-/// default `load file` dispatch is byte-identical to before — every non-ELF
-/// input still routes to the XML branch exactly as it did. When
-/// `--experimental-formats` is set ([`experimental_formats_enabled`]), it also
-/// admits Mach-O (`0xfeedfac*` / fat `0xcafebabe`), PE (`MZ` DOS stub — the
-/// typed parser validates the PE header downstream), and a bare COFF object (a
-/// leading `IMAGE_FILE_MACHINE_*` `u16`).
+/// can drive (design §1.4)? This admits **all** the supported object formats
+/// unconditionally — ELF, Mach-O (`0xfeedfac*` / fat `0xcafebabe`), PE (`MZ` DOS
+/// stub — the typed parser validates the PE header downstream), and a bare COFF
+/// object (a leading `IMAGE_FILE_MACHINE_*` `u16`). Anything else routes to the
+/// XML branch. (Multi-format support was promoted from the former
+/// `--experimental-formats` flag to the default in increment 46; the XML/datatest
+/// corpus never carries a PE/Mach-O/COFF magic, so its dispatch is unchanged.)
 fn is_object_binary(bytes: &[u8]) -> bool {
     if bytes.len() < 4 {
         return false;
@@ -1161,9 +1148,6 @@ fn is_object_binary(bytes: &[u8]) -> bool {
     let m: [u8; 4] = [bytes[0], bytes[1], bytes[2], bytes[3]];
     if m == ELF_MAGIC {
         return true; // ELF — always admitted (the established path).
-    }
-    if !experimental_formats_enabled() {
-        return false; // default: ELF-only ⇒ byte-identical dispatch.
     }
     // Mach-O thin (any of the four byte orders) or fat/universal.
     if matches!(m, MACHO_LE64 | MACHO_LE32 | MACHO_BE64 | MACHO_BE32 | MACHO_FAT) {
@@ -1231,10 +1215,9 @@ fn select_macho_slice(bytes: Vec<u8>, target: &str) -> Vec<u8> {
 /// token (the C++ BFD target / an explicit SLEIGH language id); it is honored on
 /// the object path and ignored on the XML path (the XML carries its own `arch`).
 ///
-/// By default [`is_object_binary`] admits only ELF, so this dispatch — and the
-/// XML / datatest oracles — are byte-identical to the ELF-only era. PE/Mach-O/
-/// COFF are admitted only under `--experimental-formats`
-/// (`KUNA_EXPERIMENTAL_FORMATS`).
+/// [`is_object_binary`] admits ELF, PE, Mach-O and COFF; the XML / datatest
+/// corpus never carries an object-format magic, so its dispatch routes to the XML
+/// branch exactly as before.
 pub fn bootstrap_from_file(
     path: &str,
     target: &str,
@@ -1243,8 +1226,8 @@ pub fn bootstrap_from_file(
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to recognize imagefile {path}: {e}")))?;
     if is_object_binary(&bytes) {
-        // Real object-format binary (ELF always; PE/Mach-O/COFF under the flag):
-        // drive the object-crate loader.
+        // Real object-format binary (ELF / PE / Mach-O / COFF): drive the
+        // object-crate loader.
         return bootstrap_from_object(path, target, spec_roots);
     }
     let mut store = DocumentStorage::new();

@@ -284,6 +284,10 @@ pub struct Architecture {
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
+    /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
+    /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
+    /// flowing into the callee (`option tailcalljump`, default off).
+    pub tail_call_jumps: bool,
     /// (kuna GH-6882) Let a SPARC struct-return post-call `unimp` fall through
     /// (C++ `sparc_struct_return`).
     pub sparc_struct_return: bool,
@@ -324,6 +328,11 @@ pub struct Architecture {
     /// (kuna) Reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`).
     pub recover_lowered_switch: bool,
+    /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
+    /// walking the [`KunaRegionIdentifier`](crate::s7_regions::kuna_regionid)
+    /// region tree and matching Phoenix acyclic schemas instead of running
+    /// Ghidra's `CollapseStructure` (option `regionstructure`, opt-in default-off).
+    pub region_structure: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source so the cross-edge becomes a structured early return
     /// (`reduce_return_gotos`).
@@ -339,6 +348,12 @@ pub struct Architecture {
     /// (kuna) Strip the glibc -fstack-protector canary epilogue
     /// (C++ `strip_stack_guard`).
     pub strip_stack_guard: bool,
+    /// (kuna) Flip negated-guard if/else branches for linearity: when an
+    /// `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped
+    /// in place, rewrite it to the positive `if (x) {B} else {A}` so the common
+    /// path reads top-to-bottom (angr-style `if (x)` vs `if (x == 0)`).  Default
+    /// OFF (option `branchflip`); read by `ActionBranchFlip` (S8).
+    pub branch_flip: bool,
     /// (kuna) Use angr-style default naming (vN/aN/dat_/sub_/label_ + comments)
     /// (C++ `name_style_angr`).
     pub name_style_angr: bool,
@@ -621,6 +636,7 @@ impl Architecture {
             memset_recover: false,
             add_carry_chain: false,
             v850_indirect_branch: false,
+            tail_call_jumps: false,
             sparc_struct_return: false,
             ov_less_simplify: false,
             fold_boolean_mask: false,
@@ -634,10 +650,12 @@ impl Architecture {
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
+            region_structure: false,
             reduce_return_gotos: false,
             recover_loop_break: false,
             fold_call_returns: false,
             strip_stack_guard: false,
+            branch_flip: false,
             name_style_angr: false,
             dedup_var_decls: false,
             realtypes: false,
@@ -714,6 +732,7 @@ impl Architecture {
         self.return_single = false; // (kuna) default: upstream (join register pairs)
         self.memset_recover = true; // (kuna) DIV-2 default-on (GH-9230/1537)
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
+        self.tail_call_jumps = false; // (kuna) default-OFF opt-in: default-on regresses 2 datatests (Long double #1/#2); tee-O2 tail-jumps
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
@@ -725,10 +744,12 @@ impl Architecture {
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
+        self.region_structure = false; // (kuna) default-off opt-in (region-based Phoenix/SAILR structurer)
         self.reduce_return_gotos = false; // (kuna) default-off opt-in (angr SAILR goto-reduction)
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
+        self.branch_flip = false; // (kuna) default-off: upstream branch polarity (angr opt-in, branchflip)
         self.name_style_angr = true; // (kuna) default-on: angr-style default naming
         self.dedup_var_decls = true; // (kuna) DIV-7 default-on: collapse duplicate local decls (angr)
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
@@ -822,6 +843,7 @@ impl Architecture {
             "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
             "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
             "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
+            "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
             "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
             "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
             "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
@@ -845,6 +867,12 @@ impl Architecture {
                 self.recover_lowered_switch = val;
                 Ok(msg)
             }
+            "regionstructure" => {
+                let (val, msg) =
+                    crate::s8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
+                self.region_structure = val;
+                Ok(msg)
+            }
             "gotoreduce" => {
                 let (val, msg) =
                     crate::s8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
@@ -857,6 +885,7 @@ impl Architecture {
                 Ok(msg)
             }
             "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
+            "branchflip" => on_off!(branch_flip, "Negated-guard branch flipping for linearity"),
             "loopbreak_recovery" => {
                 let (val, msg) =
                     crate::kuna_loopbreak_recovery::OptionLoopBreakRecovery.apply(p1)?;
@@ -1180,10 +1209,12 @@ impl Architecture {
         seam.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         seam.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
+        seam.region_structure = self.region_structure; // regionstructure
         seam.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
         seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard
+        seam.branch_flip = self.branch_flip; // branchflip (negated-guard branch flipping)
         // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
         // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.
         seam.condexe_block_placement = self.condexe_block_placement;

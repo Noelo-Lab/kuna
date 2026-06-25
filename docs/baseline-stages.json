@@ -1,9 +1,12 @@
 {
   "data_footer": [
-    179,
-    179
+    190,
+    190
   ],
   "passing": [
+    "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
+    "data:BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)",
+    "data:BRANCHFLIP #3: the flip is logged so its effect is observable",
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
     "data:GH1243 #2: buggy truncated-carry result P1 = 0 absent",
     "data:GH1243 #3: already-correct case still holds, P0 = 1",
@@ -111,9 +114,9 @@
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
-    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, switchguardbound)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce)",
-    "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound)",
+    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, switchguardbound, tailcalljump, regionstructure)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, tailcalljump, regionstructure)",
+    "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +branchflip)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: stage list shows Band B membership",
     "data:KUNA-CONSOLE #2: stage list includes the S3 dead-definition gate sub-stage",
@@ -182,7 +185,15 @@
     "data:namestyle #4 default: global data renders as dat_<addr> (lowercase, no leading zeros)",
     "data:namestyle #5 ghidra restores: argument renders as param_N",
     "data:namestyle #6 ghidra restores: local renders as iVar with no location comment",
-    "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>"
+    "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>",
+    "data:regionstructure #1: the if/else diamond is structured (true clause), both passes",
+    "data:regionstructure #2: the else clause is structured, both passes",
+    "data:regionstructure #3: the join sequence + tail return is recovered, both passes",
+    "data:regionstructure #4: ZERO gotos  -  region structurer matches Ghidra's acyclic structuring (parity)",
+    "data:tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)",
+    "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
+    "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",
+    "data:tee-O2 tail-jumps #4: the recovered tail call is logged (pass 2 on only)"
   ],
   "returncode": 0,
   "unit_footer": null

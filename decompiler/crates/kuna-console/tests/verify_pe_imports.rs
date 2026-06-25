@@ -29,12 +29,12 @@
 //!    correctly stays `sub_<addr>` in the stripped binary — naming only what is
 //!    genuinely an import.
 //!
-//! ## Flag gating (default-off ⇒ byte-identical on ELF)
+//! ## Multi-format loading (unconditional)
 //!
-//! The PE only loads when `KUNA_EXPERIMENTAL_FORMATS` is set (the
-//! `--experimental-formats` CLI flag). The test sets it for the PE arm and
-//! confirms that with it **unset** the same fixture is rejected (the default-off,
-//! byte-identical-dispatch proof shared with `verify_object_formats`).
+//! PE/Mach-O/COFF load unconditionally now — like ELF, with no flag. The test
+//! confirms the same fixture routes through the default `load file` dispatch to
+//! the object loader (the byte-identical-dispatch proof shared with
+//! `verify_object_formats`).
 //!
 //! ## `.sla` precondition
 //!
@@ -44,19 +44,12 @@
 //! green).
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
-
-/// `KUNA_EXPERIMENTAL_FORMATS` is a process-global env var both tests in this
-/// file toggle; serialize their env-sensitive bodies so the default-off check in
-/// one never races the experimental-on bootstrap in the other (cargo runs the
-/// two tests in parallel within one process).
-static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -100,15 +93,14 @@ fn decompile_func(prog: ConsoleProgram, func_cmd: &str) -> String {
     status.optr.clone()
 }
 
-/// Bootstrap a fixture under `--experimental-formats`, returning `None` (a visible
-/// skip) when the `.sla` is absent.
+/// Bootstrap a fixture, returning `None` (a visible skip) when the `.sla` is
+/// absent.
 fn boot(name: &str) -> Option<ConsoleProgram> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join(name);
     assert!(path.exists(), "missing fixture {path:?}");
 
-    std::env::set_var("KUNA_EXPERIMENTAL_FORMATS", "1");
     match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
         Ok(p) => Some(p),
         Err(e) => {
@@ -117,7 +109,6 @@ fn boot(name: &str) -> Option<ConsoleProgram> {
                  `make specs`): {}",
                 e.explain()
             );
-            std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
             None
         }
     }
@@ -127,19 +118,25 @@ fn boot(name: &str) -> Option<ConsoleProgram> {
 /// its libc calls render `puts(`/`printf(`.
 #[test]
 fn pe_linked_exe_decompiles_with_named_imports() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("pe_imports.exe");
 
-    // (default-off proof) Without the flag a PE must NOT load — it routes to the
-    // XML branch, which cannot parse it.
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
-    let off = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots);
-    assert!(
-        off.is_err(),
-        "default-off: a PE exe must NOT load without --experimental-formats"
-    );
+    // (default-on proof) The object loads through the *default* `load file`
+    // dispatch with no flag — multi-format support is unconditional. (A `.sla`-
+    // absent environment surfaces as a load error; the main body's skip covers
+    // that, so here we only assert the dispatch ROUTES to the object loader, i.e.
+    // it does not fail with the XML "not recognized" error.)
+    let dflt = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots);
+    if let Err(e) = &dflt {
+        // Only acceptable failure is a missing-`.sla` bootstrap error, never an
+        // "unrecognized format" rejection (that would mean the magic wasn't admitted).
+        let msg = e.explain();
+        assert!(
+            !msg.contains("Unable to recognize") && !msg.contains("XML"),
+            "default-on: the object must route to the object loader (got: {msg})"
+        );
+    }
 
     let Some(prog) = boot("pe_imports.exe") else { return };
 
@@ -151,7 +148,6 @@ fn pe_linked_exe_decompiles_with_named_imports() {
     assert!(prog.lookup_symbol("puts").is_some(), "PE: `puts` not resolved by the loader");
 
     let out = decompile_func(prog, "load function main");
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     assert!(out.contains("puts("), "PE: expected a `puts(` call, got:\n{out}");
     assert!(out.contains("printf("), "PE: expected a `printf(` call, got:\n{out}");
@@ -166,12 +162,10 @@ fn pe_linked_exe_decompiles_with_named_imports() {
 /// named ONLY because the IAT walk + `FF 25` thunk decode named the thunk veneer.
 #[test]
 fn pe_stripped_exe_names_puts_via_iat_thunk() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let Some(prog) = boot("pe_imports_stripped.exe") else { return };
 
     // No `main` symbol in a stripped PE — decompile by address.
     let out = decompile_func(prog, &format!("load addr 0x{MAIN_VMA:x}"));
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     // The puts thunk (0x140007240), with no COFF symbol, is named via the IAT
     // walk + thunk decode — the call renders `puts(`, not `sub_140007240(`.

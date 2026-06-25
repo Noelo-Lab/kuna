@@ -317,6 +317,30 @@ impl FlowEnvironment for ArchFlowEnv {
             },
         )
     }
+
+    fn is_tail_call_branch(&self, fd: &Funcdata, op: crate::seams::OpId, dest: &Address) -> bool {
+        // (kuna) tee-O2 tail-jump: wire the ported `kuna_is_tail_call_branch`
+        // predicate.  The gate is the architecture-owned `tail_call_jumps` flag
+        // (`option tailcalljump on|off`, default-off opt-in / default-pipeline
+        // byte-identical — default-on regresses 2 datatests, Long double #1/#2).
+        // The callee resolution is `query_call(dest).is_some()` (is `dest` a known
+        // function entry, incl. a PLT thunk?) and the self-entry check is
+        // `dest == fd.getAddress()`.
+        let arch = self.arch();
+        if !arch.tail_call_jumps {
+            // Fast-path the default-off gate without touching the IR.
+            return false;
+        }
+        let dest_is_known_function = self.query_call(dest).is_some();
+        let dest_is_self = dest == fd.get_address();
+        crate::kuna_tailcalljump::kuna_is_tail_call_branch(
+            fd,
+            op,
+            arch.tail_call_jumps,
+            dest_is_known_function,
+            dest_is_self,
+        )
+    }
 }
 
 /// Build a [`Funcdata`] for the function `name` at `entry` and follow its flow,
@@ -551,6 +575,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         }
         total += r;
         if !(reflow_requested && fd.has_restart_pending()) {
+            drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
         // Re-follow flow against the same Funcdata (its Override — incl. the
@@ -561,7 +586,20 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
     }
     // Exceeded the cross-flow restart budget; keep the last analyzed IR.
     fd.set_restart_pending(false);
+    drain_pipeline_comments(arch, fd);
     Ok(total)
+}
+
+/// Flush any analysis comments the **action pipeline** buffered on the `Funcdata`
+/// (e.g. the `branchflip:` warning that `ActionBranchFlip` records at S8) into the
+/// comment database for emit.  The flow-time `Funcdata::warning`s are drained in
+/// `follow_flow_on_fd` before the pipeline runs; warnings raised *inside* the
+/// pipeline land here.  No-op when nothing was buffered.
+fn drain_pipeline_comments(arch: &mut Architecture, fd: &mut Funcdata) {
+    let func_addr = fd.get_address().clone();
+    for (tp, ad, txt) in fd.drain_pending_comments() {
+        arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
+    }
 }
 
 /// Re-follow flow on an existing, already-analyzed `fd` after a restart request
