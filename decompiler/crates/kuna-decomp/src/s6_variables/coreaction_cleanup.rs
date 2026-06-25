@@ -728,7 +728,15 @@ fn base_explicit(data: &Funcdata, vn: crate::seams::VarnodeId, mut maxref: int4)
             if dop.code() == OpCode::CPUI_NEW && dop.num_input() == 1 {
                 return -2; // Explicit, but may need special printing
             }
-            return -1;
+            // (kuna) foldcallret: when on, let an order-safe single-use call
+            // output fall through to the implied path so the printer inlines the
+            // call expression at its use (angr "call return variable folding").
+            // Off (default) => byte-identical upstream (always explicit).
+            if !(data.get_arch().fold_call_returns
+                && crate::kuna_callretfold::call_output_foldable(data, vn))
+            {
+                return -1;
+            }
         }
     }
     // high->numInstances()>1 -> must not be merged at all -> explicit (C++

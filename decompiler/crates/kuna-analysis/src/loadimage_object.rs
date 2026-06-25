@@ -68,6 +68,19 @@ use kuna_sleigh::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageS
 /// Default read-buffer size (C++ `LoadImageBfd::bufsize`, `loadimage_bfd.cc:36`).
 const BUFSIZE: usize = 512;
 
+/// (kuna) Whether the ET_REL relocatable-object load path is enabled (the
+/// `relocobjects` option, default ON).  The loader runs at `load file`, upstream
+/// of the per-function option machinery, so the toggle is bridged across layers
+/// by the [`RELOC_OBJECTS_ENV`](kuna_decomp::options::RELOC_OBJECTS_ENV) process
+/// env var that `Architecture::set_kuna_option("relocobjects", ...)` writes — any
+/// of `0`/`off`/`false`/`no` disables it; anything else (or unset) is ON.
+fn reloc_objects_enabled() -> bool {
+    match std::env::var(kuna_decomp::options::RELOC_OBJECTS_ENV) {
+        Ok(v) => !matches!(v.trim(), "0" | "off" | "false" | "no" | "OFF"),
+        Err(_) => true,
+    }
+}
+
 /// Demangle a loader funcsym name (the kuna analog of Ghidra's
 /// `GnuDemanglerAnalyzer`; see [`crate::s1_demangle`]).  Applied to every
 /// `.symtab` / PLT / `.dynsym` name *after* `@VERSION` stripping and *before* it
@@ -207,6 +220,21 @@ impl ObjectLoadImage {
         // retries with this before erroring.
         let fallback_archtype = fallback_language_id(&file, &archtype);
 
+        // (kuna) ET_REL relocatable-object (`.o`) path: a relocatable object has
+        // no `PT_LOAD` program headers, so `file.segments()` is empty and the
+        // linked path below would map zero bytes (every function failing with
+        // "Unable to load N bytes").  Synthesize a section layout, apply the
+        // `.rela.*` relocations, and rebase symbols instead — the angr CLE `ELF`
+        // relocatable backend's job.  Gated on the file type (linked
+        // ET_EXEC/ET_DYN images are byte-identical) plus the `relocobjects`
+        // off-switch.  See [`crate::s1_loader::elf_reloc`].
+        if reloc_objects_enabled()
+            && file.kind() == object::ObjectKind::Relocatable
+            && file.segments().next().is_none()
+        {
+            return Self::from_relocatable(filename, &file, fmt.as_ref(), archtype);
+        }
+
         // Snapshot the loadable segments (PT_LOAD), copying their RAM bytes.
         // `data()` returns only the file-backed bytes; a segment's `size()`
         // (its RAM footprint) may exceed that for `.bss`-style tails, which the
@@ -334,6 +362,77 @@ impl ObjectLoadImage {
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
             bufoffset: RefCell::new(!0u64), // ~((uintb)0)
+            cursymbol: RefCell::new(0),
+            cursection: RefCell::new(0),
+        })
+    }
+
+    /// (kuna) Build the image from a **relocatable object** (`ET_REL`): lay the
+    /// `SHF_ALLOC` sections out above [`elf_reloc::RELOC_BASE`], apply the
+    /// `.rela.*` relocations, and rebase / extern-bind the symbols — producing
+    /// the same `(segments, sections, funcsyms)` triple the linked `PT_LOAD` path
+    /// produces.  Funcsym names are demangled + deduped exactly as on the linked
+    /// path.  See [`crate::s1_loader::elf_reloc`].
+    fn from_relocatable(
+        filename: &str,
+        file: &object::File,
+        fmt: &dyn crate::s1_loader::format::ObjectFormat,
+        archtype: Vec<u8>,
+    ) -> KunaResult<ObjectLoadImage> {
+        use crate::s1_loader::elf_reloc;
+
+        let layout = elf_reloc::layout_relocatable(file, fmt);
+
+        let mut segments: Vec<Segment> =
+            layout.segments.into_iter().map(|(vma, data)| Segment { vma, data }).collect();
+        segments.sort_by_key(|s| s.vma);
+
+        let sections: Vec<SectionInfo> = layout
+            .sections
+            .into_iter()
+            .map(|(vma, size, flags)| SectionInfo { vma, size, flags })
+            .collect();
+
+        // Defined functions (rebased) + extern call targets, demangled + deduped
+        // by address — the same `seen`/`demangle_funcsym_name` discipline the
+        // linked path's `.symtab` loop uses.
+        let mut funcsyms: Vec<FuncSym> = Vec::new();
+        let mut seen: HashSet<u64> = HashSet::new();
+        for (addr, name) in layout.funcsyms {
+            if addr == 0 {
+                continue;
+            }
+            let name = crate::s1_loader::elf_plt::strip_version(&name);
+            if name.is_empty() {
+                continue;
+            }
+            let name = demangle_funcsym_name(name);
+            if seen.insert(addr) {
+                funcsyms.push(FuncSym { addr, name });
+            }
+        }
+
+        // Non-fatal loader diagnostics (an unhandled relocation kind, an
+        // unresolved symbol): logged, never fatal — the load still succeeds.
+        for w in &layout.warnings {
+            eprintln!("[kuna ET_REL loader] {filename}: {w}");
+        }
+
+        // (kuna §2.2) Same default-model fallback id as the linked path: the
+        // arch/endian stem with the model dropped to the per-arch default.
+        let fallback_archtype = fallback_language_id(file, &archtype);
+
+        Ok(ObjectLoadImage {
+            filename: filename.to_string(),
+            archtype,
+            fallback_archtype,
+            segments,
+            sections,
+            funcsyms,
+            const_ranges: Vec::new(),
+            spaceid: None,
+            buffer: RefCell::new(vec![0u8; BUFSIZE]),
+            bufoffset: RefCell::new(!0u64),
             cursymbol: RefCell::new(0),
             cursection: RefCell::new(0),
         })
@@ -1202,6 +1301,40 @@ mod tests {
     }
 
     #[test]
+    fn et_rel_ptx_fix_output_parameters_loads_and_rebases() {
+        // (kuna) The ET_REL relocatable-object path on the real testcase binary
+        // (angr `test_decompiling_ptx_fix_output_parameters`). Before this
+        // feature, `ptx.o` (a `.o` with no PT_LOAD segments) mapped zero bytes
+        // and every function failed with "Unable to load N bytes". Now the
+        // SHF_ALLOC sections are laid out above RELOC_BASE (0x400000) and the
+        // symbols rebased.
+        let syms = fixture_funcsyms("ptx.o");
+        // `fix_output_parameters` is a LOCAL FUNC at .text+0x660; .text is the
+        // first SHF_ALLOC section -> RELOC_BASE, so it rebases to 0x400660
+        // (matching angr's CLE default layout).
+        assert_eq!(
+            syms.get(&0x400660).map(String::as_str),
+            Some("fix_output_parameters"),
+            "fix_output_parameters must rebase to 0x400660"
+        );
+        // Undefined externals referenced by the `.rela.text` calls are bound to
+        // synthetic call targets and named, so calls render by name.
+        for want in ["strlen", "dcgettext", "error"] {
+            assert!(syms.values().any(|n| n == want), "missing extern {want}");
+        }
+        // The bytes at `fix_output_parameters` actually load now (the original
+        // bug was the DataUnavailError out of `load_fill`).
+        let path = format!("{}/tests/fixtures/ptx.o", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).unwrap();
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+        img.attach_to_space(Rc::clone(&ram));
+        let got = img.load(4, &Address::new(Rc::clone(&ram), 0x400660));
+        assert!(got.is_ok(), "fix_output_parameters bytes must load: {got:?}");
+    }
+
+    #[test]
     fn cpp_mangled_symbol_is_demangled_name_only() {
         // The kuna `GnuDemanglerAnalyzer` analog (`s1_demangle`): a defined C++
         // method `_ZN3foo3Bar3bazEi` must surface in the funcsym stream as the
@@ -1225,6 +1358,40 @@ mod tests {
         );
         // `main` is a plain C-ABI name: not mangled, passes through unchanged.
         assert!(syms.values().any(|n| n == "main"), "main passes through");
+    }
+
+    #[test]
+    fn msvc_mangled_coff_symbols_are_demangled_name_only() {
+        // Multi-format loader PR-9: the loader's `demangle_funcsym_name` now feeds
+        // the MSVC arm, so a `?`-prefixed `cl.exe` symbol from a COFF object
+        // surfaces in the funcsym stream as the demangled NAME-ONLY form — not the
+        // raw `?foo@Bar@@QEAAHH@Z`, and not the full `Bar::foo(int)` signature.
+        // (`msvc_mangled.obj`: clang `-target x86_64-pc-windows-msvc`; cl.exe is
+        // unavailable on Linux but the windows-msvc target emits real MSVC
+        // mangling — see tests/fixtures/msvc_mangled.cpp.)
+        let syms = fixture_funcsyms("msvc_mangled.obj");
+        assert!(
+            syms.values().any(|n| n == "Bar::foo"),
+            "demangled name-only `Bar::foo` (from ?foo@Bar@@QEAAHH@Z) expected; got {syms:?}"
+        );
+        assert!(
+            syms.values().any(|n| n == "ns::g"),
+            "demangled name-only `ns::g` (from ?g@ns@@YAHHH@Z) expected; got {syms:?}"
+        );
+        assert!(
+            syms.values().any(|n| n == "freefunc"),
+            "demangled name-only `freefunc` (from ?freefunc@@YAHH@Z) expected; got {syms:?}"
+        );
+        // No raw `?`-mangled symbol survives, and no signature/template tail leaks
+        // through the name-only reduction (it would corrupt the `::` scope splitter).
+        assert!(
+            !syms.values().any(|n| n.starts_with('?')),
+            "raw MSVC-mangled symbol must be demangled, not passed through: {syms:?}"
+        );
+        assert!(
+            !syms.values().any(|n| n.contains('(') || n.contains('@')),
+            "no signature / raw-`@` leakage in funcsym names: {syms:?}"
+        );
     }
 
     /// §2.2 fallback composition: a PE id (`...:windows`) pairs with the

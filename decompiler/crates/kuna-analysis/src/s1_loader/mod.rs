@@ -32,6 +32,8 @@
 
 pub mod arm_markers;
 pub mod elf_plt;
+// (kuna) ET_REL relocatable-object (`.o`) load-layout + relocation engine.
+pub mod elf_reloc;
 pub mod format;
 pub mod macho_stubs;
 pub mod mips_markers;

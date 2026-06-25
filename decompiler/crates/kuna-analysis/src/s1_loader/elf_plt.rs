@@ -97,8 +97,23 @@ pub(crate) fn resolve_plt_imports(file: &object::File) -> Vec<PltSym> {
     }
     plt_secs.sort_by_key(|&(_, _, prio)| prio);
 
+    // (kuna) i386-PIE PLT stubs are GOT-relative (`jmp *disp(%ebx)`, `FF A3
+    // <disp32>`), so decoding them needs the GOT base that `%ebx` holds at the
+    // call site.  Derive it once (gated by the default-on `i386_pie_plt` option —
+    // angr `test_decompiling_nl_i386_pie`) and thread it to `decode_i386`; `None`
+    // off-i386, with the option off, or when no GOT anchor exists (non-PIC i386),
+    // in which case `decode_i386` decodes only the non-PIC `FF 25 <abs32>` form
+    // exactly as before.
+    let i386_got_base = if matches!(arch, Architecture::I386)
+        && kuna_decomp::kuna_i386_pie_plt::i386_pie_plt_enabled()
+    {
+        i386_got_base(file)
+    } else {
+        None
+    };
+
     for (vma, data, _) in plt_secs {
-        decode_plt_section(arch, vma, data, &got_to_name, &mut out, &mut named_got);
+        decode_plt_section(arch, vma, data, i386_got_base, &got_to_name, &mut out, &mut named_got);
     }
 
     // PowerPC ELFv2 (and the older `bss-plt` ABI) has no decodable `.plt` *code*
@@ -164,7 +179,16 @@ fn build_got_name_map(file: &object::File) -> HashMap<u64, Vec<u8>> {
 /// raw `.dynstr` string is usually already clean (`puts`); this is defensive for
 /// symbol-versioned libraries that fold the version into the string.  Shared with
 /// [`crate::loadimage_object`] for the `.symtab`/`.dynsym` paths.
+///
+/// MSVC C++ mangling (multi-format loader PR-9) uses `@` *structurally* as the
+/// namespace/type separator (`?foo@Bar@@QEAAHH@Z`), so a leading-`?` name is
+/// returned verbatim — truncating at the first `@` would corrupt every MSVC
+/// COFF/PE symbol before the demangler ever sees it. No glibc-versioned symbol
+/// ever starts with `?`, so this guard never changes the ELF behavior.
 pub(crate) fn strip_version(name: &[u8]) -> Vec<u8> {
+    if name.first() == Some(&b'?') {
+        return name.to_vec();
+    }
     match name.iter().position(|&b| b == b'@') {
         Some(p) => name[..p].to_vec(),
         None => name.to_vec(),
@@ -177,6 +201,7 @@ fn decode_plt_section(
     arch: Architecture,
     vma: u64,
     data: &[u8],
+    i386_got_base: Option<u64>,
     map: &HashMap<u64, Vec<u8>>,
     out: &mut Vec<PltSym>,
     named_got: &mut HashSet<u64>,
@@ -185,7 +210,7 @@ fn decode_plt_section(
         Architecture::X86_64 | Architecture::X86_64_X32 => {
             decode_x86_64(vma, data, map, out, named_got)
         }
-        Architecture::I386 => decode_i386(vma, data, map, out, named_got),
+        Architecture::I386 => decode_i386(vma, data, i386_got_base, map, out, named_got),
         Architecture::Aarch64 | Architecture::Aarch64_Ilp32 => {
             decode_aarch64(vma, data, map, out, named_got)
         }
@@ -254,13 +279,25 @@ fn decode_x86_64(
     }
 }
 
-/// x86-32 PLT stub.  Non-PIC: `[endbr32] FF 25 <abs32>` = `jmp *abs32` where the
-/// disp32 is the absolute GOT slot address.  PIC stubs use `FF A3 <disp(%ebx)>`
-/// (`jmp *disp(%ebx)`) whose target depends on the runtime `%ebx` GOT pointer and
-/// is not statically decodable — skipped (documented seam).
+/// x86-32 PLT stub.  Two forms:
+///
+/// * **Non-PIC**: `[endbr32] FF 25 <abs32>` = `jmp *abs32` where the disp32 is
+///   the absolute GOT slot address (operand IS the slot).
+/// * **PIE / PIC** (`i386_got_base = Some(base)`): `[endbr32] FF A3 <disp32>` =
+///   `jmp *disp32(%ebx)`, GOT-relative, where `%ebx` holds the GOT base (the PIC
+///   prologue's `call __x86.get_pc_thunk.bx; add $_,%ebx` sets it to
+///   `_GLOBAL_OFFSET_TABLE_`).  The slot is `base + sign(disp32)`.  This is the
+///   i386-PIE analog of [`decode_x86_64`] (RIP-relative) / [`decode_aarch64`]
+///   (adrp/ldr veneer); naming these stubs lets the no-return pass flag `exit`
+///   and collapses the spurious fall-through loop (angr
+///   `test_decompiling_nl_i386_pie`).  `i386_got_base` is `None` when the GOT
+///   base could not be derived or the `i386_pie_plt` option is off, in which case
+///   the `FF A3` form is skipped (byte-identical to the pre-fix behavior); the
+///   non-PIC `FF 25` arm is unaffected either way.
 fn decode_i386(
     vma: u64,
     data: &[u8],
+    i386_got_base: Option<u64>,
     map: &HashMap<u64, Vec<u8>>,
     out: &mut Vec<PltSym>,
     named_got: &mut HashSet<u64>,
@@ -273,10 +310,50 @@ fn decode_i386(
             let stub = vma + x86_stub_start(data, i, /*endbr32*/ &[0xF3, 0x0F, 0x1E, 0xFB]) as u64;
             record(stub, got, map, out, named_got);
             i += 6;
+        } else if data[i] == 0xFF && data[i + 1] == 0xA3 {
+            // PIE / PIC: `jmp *disp32(%ebx)`, slot = GOT_base + sign(disp32).
+            // Only resolvable with the derived GOT base (option-gated); without
+            // it the stub is left to the `sub_<addr>` fallback (pre-fix behavior).
+            if let Some(base) = i386_got_base {
+                let disp =
+                    i32::from_le_bytes([data[i + 2], data[i + 3], data[i + 4], data[i + 5]]);
+                let got = base.wrapping_add(disp as i64 as u64);
+                let stub = vma + x86_stub_start(data, i, /*endbr32*/ &[0xF3, 0x0F, 0x1E, 0xFB]) as u64;
+                record(stub, got, map, out, named_got);
+            }
+            i += 6;
         } else {
             i += 1;
         }
     }
+}
+
+/// Derive the i386 PIC GOT base (the value `%ebx` holds) for resolving the PIE
+/// `jmp *disp(%ebx)` (`FF A3 <disp32>`) PLT stubs: prefer the
+/// `_GLOBAL_OFFSET_TABLE_` symbol value, falling back to the `.got.plt` then
+/// `.got` section address.  `None` when no GOT anchor is present (a non-PIC i386
+/// binary, where the `FF A3` form does not occur).  The i386 analog of
+/// [`decode_ppc_text`]'s `.got + 0x8000` TOC-base derivation.
+fn i386_got_base(file: &object::File) -> Option<u64> {
+    // `_GLOBAL_OFFSET_TABLE_` is the exact base `%ebx` is set to; it may live in
+    // `.symtab` (LOCAL) or `.dynsym`.
+    for sym in file.symbols() {
+        if sym.name_bytes() == Ok(&b"_GLOBAL_OFFSET_TABLE_"[..]) {
+            return Some(sym.address());
+        }
+    }
+    for sym in file.dynamic_symbols() {
+        if sym.name_bytes() == Ok(&b"_GLOBAL_OFFSET_TABLE_"[..]) {
+            return Some(sym.address());
+        }
+    }
+    // Stripped of the GOT symbol: the section base is the same anchor.
+    for name in [".got.plt", ".got"] {
+        if let Some(s) = file.sections().find(|s| s.name() == Ok(name)) {
+            return Some(s.address());
+        }
+    }
+    None
 }
 
 /// Compute the stub entry start (section-relative) for an x86 `FF 25` at index
@@ -1042,6 +1119,62 @@ mod tests {
         assert_eq!(out2.len(), 1);
         assert_eq!(out2[0].addr, auipc_addr);
         assert_eq!(out2[0].name, b"write".to_vec());
+    }
+
+    #[test]
+    fn i386_pie_plt_decode() {
+        // Real `i386/nl` PIE stub shape: a PLT0 header (`push 0x4(%ebx);
+        // jmp *0x8(%ebx)`) then 16-byte entries headed by `jmp *disp(%ebx)`
+        // (`FF A3 <disp32>`).  GOT base = `_GLOBAL_OFFSET_TABLE_` = 0x9edc;
+        // `_exit@plt` `jmp *0x14(%ebx)` → slot 0x9edc + 0x14 = 0x9ef0 (the
+        // R_386_JUMP_SLOT r_offset for `_exit`, verified on the fixture).
+        let base = 0x9edcu64;
+        let vma = 0xe10u64;
+        // PLT0: push 0x4(%ebx) = FF B3 04000000 ; jmp *0x8(%ebx) = FF A3 08000000.
+        let mut data: Vec<u8> = vec![0xFF, 0xB3, 0x04, 0x00, 0x00, 0x00, 0xFF, 0xA3, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        // entry @ vma+0x30 (0xe40): `jmp *0x14(%ebx)` then push/jmp padding.
+        let entry_off = 0x30usize;
+        data.resize(entry_off, 0x00);
+        data.extend_from_slice(&[0xFF, 0xA3, 0x14, 0x00, 0x00, 0x00]); // jmp *0x14(%ebx)
+        data.extend_from_slice(&[0x68, 0x10, 0x00, 0x00, 0x00]); // push $0x10
+        data.extend_from_slice(&[0xE9, 0xc0, 0xff, 0xff, 0xff]); // jmp .plt
+
+        let entry = vma + entry_off as u64; // 0xe40
+        let slot = base + 0x14; // 0x9ef0
+
+        let mut map: HashMap<u64, Vec<u8>> = HashMap::new();
+        map.insert(slot, b"_exit".to_vec());
+        // The PLT0 resolver slot (base+8 = 0x9ee4) is NOT a symbol-bearing reloc,
+        // so it must fall out of the map (self-correcting cross-check).
+
+        // With the GOT base (option on): the stub at its entry is named `_exit`.
+        let mut out: Vec<PltSym> = Vec::new();
+        let mut named: HashSet<u64> = HashSet::new();
+        decode_i386(vma, &data, Some(base), &map, &mut out, &mut named);
+        assert_eq!(out.len(), 1, "exactly the symbol-bearing PIE stub is named");
+        assert_eq!(out[0].addr, entry);
+        assert_eq!(out[0].name, b"_exit".to_vec());
+
+        // Option OFF (i386_got_base = None): the `FF A3` form is skipped entirely
+        // (byte-identical to the pre-fix behavior — no PIE stub is named).
+        let mut out_off: Vec<PltSym> = Vec::new();
+        let mut named_off: HashSet<u64> = HashSet::new();
+        decode_i386(vma, &data, None, &map, &mut out_off, &mut named_off);
+        assert!(out_off.is_empty(), "FF A3 skipped when GOT base is absent");
+
+        // The non-PIC `FF 25 <abs32>` arm is unaffected by the new param: an
+        // absolute stub still resolves with either `i386_got_base` value.
+        let abs_slot = 0x404000u64;
+        let mut abs = abs_slot.to_le_bytes()[..4].to_vec();
+        let mut data25 = vec![0xFF, 0x25];
+        data25.append(&mut abs);
+        let mut map25: HashMap<u64, Vec<u8>> = HashMap::new();
+        map25.insert(abs_slot, b"puts".to_vec());
+        let mut out25: Vec<PltSym> = Vec::new();
+        let mut named25: HashSet<u64> = HashSet::new();
+        decode_i386(0x500, &data25, None, &map25, &mut out25, &mut named25);
+        assert_eq!(out25.len(), 1);
+        assert_eq!(out25[0].name, b"puts".to_vec());
     }
 
     #[test]

@@ -69,15 +69,24 @@ impl ObjectFormat for MachOFormat {
         }
         // READONLY: Mach-O section flags carry no per-section write bit (it lives
         // in the segment initprot). Use the neutral `SectionKind`: a read-only
-        // data / text section is readonly; writable data is not.
-        if matches!(kind, SectionKind::ReadOnlyData | SectionKind::Text) {
+        // data / text / string section is readonly; writable data is not.
+        // `__cstring` is `SectionKind::ReadOnlyString` — marking it READONLY is
+        // what lets the printer's constant-string route read a `char *` arg's
+        // bytes and render `printf("%d\n", …)` (PR-10).
+        if matches!(
+            kind,
+            SectionKind::ReadOnlyData | SectionKind::ReadOnlyString | SectionKind::Text
+        ) {
             out |= section_flags::READONLY;
         }
         // CODE: a `__text`-kind section or a pure-instructions section.
         if pure_instr || matches!(kind, SectionKind::Text) {
             out |= section_flags::CODE;
         }
-        if matches!(kind, SectionKind::Data | SectionKind::ReadOnlyData) {
+        if matches!(
+            kind,
+            SectionKind::Data | SectionKind::ReadOnlyData | SectionKind::ReadOnlyString
+        ) {
             out |= section_flags::DATA;
         }
         out

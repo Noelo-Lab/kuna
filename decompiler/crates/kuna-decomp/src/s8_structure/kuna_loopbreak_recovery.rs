@@ -74,7 +74,7 @@ use kuna_base::marshal::ElementId;
 
 /// Marshaling element `<loopbreakrecovery>` (kuna).  ElementIds live in the
 /// 4000+ range.
-pub const ELEM_LOOPBREAK_RECOVERY: ElementId = ElementId::new("loopbreakrecovery", 4091);
+pub const ELEM_LOOPBREAK_RECOVERY: ElementId = ElementId::new("loopbreakrecovery", 4092);
 
 //===========================================================================
 // scopeBreak: the structured-tree walk that lowers loop-exit gotos to breaks.
