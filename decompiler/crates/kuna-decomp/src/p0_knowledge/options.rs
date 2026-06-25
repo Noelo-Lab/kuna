@@ -262,6 +262,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "switchmodbound",
     "loweredswitch",
     "stackguard",
+    "loopbreak_recovery",
     "namestyle",
     "realtypes",
     // (kuna) Analysis-pass gates (per-run `--option <id> on|off`): one settable

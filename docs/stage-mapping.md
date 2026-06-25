@@ -82,6 +82,7 @@ Straddler notes (placement by dominant owned artifact; see `docs/stage-model.md`
 | `kuna_stackguard` | S7 | strip the -fstack-protector canary epilogue (angr StackCanarySimplifier port; `option stackguard`, default-off) so the shared-return goto is eliminated |
 | `kuna_regiongraph` | S7 | graph substrate for the angr RegionIdentifier port (mutable digraph, dominators, incremental frontiers) |
 | `kuna_regionid` | S7 | angr RegionIdentifier port: analysis-only nested region tree over bblocks; `region tree/blocks/walk` (`docs/regions.md`) |
+| `kuna_loopbreak_recovery` | S8 | lower loop-exit `goto <successor>` edges to structured `break;` (port of Ghidra `BlockGraph::scopeBreak`, run in `ActionFinalStructure` before `markUnstructured`; `option loopbreak_recovery`, DIV-7 default-on) |
 
 ---
 

@@ -4,3 +4,4 @@
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
 pub mod blockaction;
+pub mod kuna_loopbreak_recovery;

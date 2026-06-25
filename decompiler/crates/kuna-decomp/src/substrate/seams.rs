@@ -526,6 +526,11 @@ pub struct Architecture {
     /// (C++ `recover_lowered_switch`, default-on).  Read by the
     /// [`crate::kuna_loweredswitch`] detect/install actions.
     pub recover_lowered_switch: bool,
+    /// (kuna) lower loop-exit `goto <successor>` edges to structured `break;`
+    /// (a port of Ghidra `BlockGraph::scopeBreak`, DIV-7 default-on).  Read by
+    /// [`ActionFinalStructure`](crate::blockaction::ActionFinalStructure) to gate
+    /// [`crate::kuna_loopbreak_recovery::kuna_scope_break`].
+    pub recover_loop_break: bool,
     /// (kuna) strip the glibc -fstack-protector canary epilogue (C++
     /// `strip_stack_guard`, opt-in default-off).  Read by
     /// [`crate::kuna_stackguard`]'s `ActionStripStackGuard`.
@@ -705,6 +710,7 @@ impl Architecture {
             memset_recover: false,       // GH-9230/1537 memsetrecover
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
+            recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.
             condexe_block_placement: true,

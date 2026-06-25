@@ -200,3 +200,37 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   option-toggle runtime write-path is an unimplemented seam on this tree, so the off-pass is
   exercised by the printc unit test `realtypes_relabels_unknown_bases` instead.
 - **Date**: 2026-06-21.
+
+## DIV-7: loop-exit gotos become structured `break;`
+
+- **Flip**: `loopbreak_recovery` → **on** (a port of Ghidra `BlockGraph::scopeBreak`). An edge
+  that leaves a loop to the loop's single successor — and a switch case that exits straight to
+  the switch successor — is the semantic `break;`. kuna's port had left `scopeBreak` an explicit
+  SEAM stub (`docs/rust-port/losses.md`), so every such loop-exit edge rendered as a raw `goto
+  <successor-label>;` plus a synthesized `label_NNNN:` on the successor. The pass retags those
+  edges `f_goto_goto → f_break_goto`; the printer then emits `break;` and `markUnstructured`
+  (which runs after) skips the now-dead label. `option loopbreak_recovery off` restores the
+  raw-`goto` rendering. Unlike DIV-1..3 this is **not a correctness fix** — it is a deliberate
+  structure-recovery / readability default (angr Phoenix/SAILR loop-successor refinement),
+  recorded here because it changes default output. Note it *converges* kuna toward upstream
+  Ghidra, which runs `scopeBreak` unconditionally; kuna had simply not ported it.
+- **Changed upstream assertions: 0 of 675** (`make test` stays PARITY OK without regeneration;
+  `make rust-test` — the cargo unit + golden differential + `.sla` suite — also green with the
+  flip on). The corpus has no `<stringmatch>` asserting a loop-exit `goto`/`break`/`label`
+  rendering, so the retag is invisible to it. The two `tests/stages/kuna-catalog.xml` provenance
+  meta-assertions (`source_decompiler: angr`, `change_kind: structure-recovery`) were bumped in
+  place for the new 24th settable.
+- **Mechanism**: a per-`Architecture` flag `recover_loop_break` (default on, set in
+  `resetDefaults`, copied into the per-function seam in `build_arch_handle`) read by
+  `ActionFinalStructure::apply`, which calls `kuna_scope_break` (the faithful `scopeBreak`
+  recursion over the structured tree) between `finalizePrinting` and `markUnstructured`. Pure
+  print-prep: it only flips `gototype` flags on already-structured `BlockGoto`/`BlockIf`/
+  `BlockSwitch` nodes — no CFG/SSA/type change. See `PROGRESS.md` and
+  `kuna_loopbreak_recovery.rs`.
+- **Speed**: median decompile of `1after909::doit` is 440.2 ms off vs 440.7 ms on (+0.12%, well
+  within the 5% budget) — one extra O(blocks) tree walk at finalize time.
+- **Stage-testcase**: `tests/stages/ghangr-1after909-doit-73591e.xml` (`1after909`/`doit`) runs
+  pass 1 `option loopbreak_recovery off` (asserts the nine `goto label_239f;` + the `label_239f:`
+  line, the bug) and pass 2 `option loopbreak_recovery on` (asserts they become `break;` and the
+  label is suppressed). `docs/baseline-stages.json` (+2 assertions).
+- **Date**: 2026-06-25.

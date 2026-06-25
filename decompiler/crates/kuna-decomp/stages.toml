@@ -1186,13 +1186,19 @@ substage = "switch-model"
 note = "(kuna angr-port) reconstruct a compiler-lowered comparison cascade into a switch jump-table"
 
 [[surface]]
+surface = "option loopbreak_recovery"
+stage = "S8"
+substage = "goto-quality-acceptance"
+note = "(kuna angr-port) lower loop-exit `goto <successor>` edges to structured `break;` (port of Ghidra BlockGraph::scopeBreak)"
+
+[[surface]]
 surface = "option namestyle"
 stage = "S9"
 substage = "naming-policy"
 note = "(kuna angr-naming) master default-name scheme: angr vN/aN/dat_/sub_/label_ + location comments vs upstream Ghidra naming"
 
 # ---------------------------------------------------------------------------
-# settableTable: one row per kuna ArchOption -- the LLM control surface (23).
+# settableTable: one row per kuna ArchOption -- the LLM control surface (24).
 # live_field/live_true/live_false give build.rs the typed OptionValues field +
 # the live-value reader mapping (the literal `flag ? live_true : live_false`
 # ternary of kuna_console.cc kunaLiveValue); the three options with no live
@@ -1611,6 +1617,23 @@ example = "option stackguard on"
 source_decompiler = "angr"
 inspiration = "test_ite_region_converter_missing_break_statement; angr StackCanarySimplifier (angr/analyses/decompiler/optimization_passes/stack_canary_simplifier.py); authenticate"
 change_kind = "opt-in-tool"
+
+[[settable]]
+option = "loopbreak_recovery"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S8"
+substage = "goto-quality-acceptance"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-1after909-doit"
+summary = "Lower loop-exit `goto <successor>` edges to structured `break;` (and switch-case exits to empty `break;`), a port of Ghidra BlockGraph::scopeBreak run in ActionFinalStructure between finalizePrinting and markUnstructured; the now-dead successor label is suppressed."
+use_when = "A loop's error/exit paths render as `goto <successor-label>;` plus a synthesized `label_NNNN:` (angr emits `break;`). On by default (DIV-7, clean ablation + converges to upstream Ghidra, which always runs scopeBreak); set OFF to restore kuna's prior byte-identical raw-goto rendering."
+example = "option loopbreak_recovery off"
+source_decompiler = "angr"
+inspiration = "test_decompiling_1after909_doit; Phoenix/SAILR loop-successor break/continue recovery (Ghidra BlockGraph::scopeBreak); doit"
+change_kind = "structure-recovery"
 
 [[settable]]
 option = "namestyle"
