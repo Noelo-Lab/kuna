@@ -322,7 +322,7 @@ pub trait AnalysisPass {
 /// Run every enabled pass over the same context and merge their outputs.
 ///
 /// The merged [`AnalysisOutput`] is then committed into the engine in one place
-/// (the bootstrap, `kuna-console`'s `engine::bootstrap_from_elf`). Committing is
+/// (the bootstrap, `kuna-console`'s `engine::bootstrap_from_object`). Committing is
 /// added alongside the first pass that seeds the symbol/type tables; today the
 /// PLT/GOT path still commits inline in [`crate::loadimage_object`].
 pub fn run_analyses(ctx: &AnalysisCtx, passes: &[Box<dyn AnalysisPass>]) -> AnalysisOutput {

@@ -31,7 +31,7 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
 
@@ -53,7 +53,7 @@ fn decompile_c(fixture_name: &str, func: &str) -> Option<String> {
     let bin = fixture(fixture_name);
     let bin = bin.to_str()?.to_string();
 
-    let prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(

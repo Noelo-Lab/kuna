@@ -34,7 +34,7 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
 
@@ -62,7 +62,7 @@ fn ppc64_plt_calls_are_named_in_decompiled_c() {
     // The arch is auto-detected from the ELF machine (PowerPC64, little-endian);
     // the loader picks the `PowerPC:LE:64:default` language and bootstrap resolves
     // `ppc_64_le.sla`.
-    let prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(

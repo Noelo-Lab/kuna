@@ -39,7 +39,7 @@ use std::rc::Rc;
 
 use kuna_analysis::listing::Listing;
 use kuna_base::address::Address;
-use kuna_console::engine::{bootstrap_from_elf, ConsoleProgram};
+use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_sleigh::translate::{AssemblyEmit, PcodeEmit};
 
 fn repo_root() -> PathBuf {
@@ -76,7 +76,7 @@ const M16_SQUARE_ENTRY: u64 = 0x400130;
 /// Bootstrap a fixture for a real `Translate`, or return `None` (a visible skip)
 /// if the `.sla` is absent.
 fn boot(bin: &str, who: &str) -> Option<ConsoleProgram> {
-    match bootstrap_from_elf(bin, "", &spec_roots()) {
+    match bootstrap_from_object(bin, "", &spec_roots()) {
         Ok(p) => Some(p),
         Err(e) => {
             eprintln!("{who}: skipping (bootstrap failed, build the `.sla` with `make specs`): {}", e.explain());

@@ -6,7 +6,7 @@
 //! (`decode_riscv`: `auipc t3,hi; l[wd] t3,lo(t3); jalr t1,t3; nop`), and a
 //! synthetic unit test pins its arithmetic. This gate proves it end-to-end on a
 //! **real, linked, dynamically-linked RISC-V64 executable**: it drives the full
-//! `bootstrap_from_elf` → `load function main` → `decompile` → `print C` path and
+//! `bootstrap_from_object` → `load function main` → `decompile` → `print C` path and
 //! asserts the decompiled body names the libc PLT imports (`puts(`, `printf(`)
 //! instead of `sub_<addr>` placeholders.
 //!
@@ -33,7 +33,7 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
 
@@ -60,7 +60,7 @@ fn riscv64_plt_calls_are_named_in_decompiled_c() {
 
     // The arch is auto-detected from the ELF machine (RISC-V64); the loader picks
     // the `RISCV:LE:64:default` language and bootstrap resolves `riscv.lp64d.sla`.
-    let prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(

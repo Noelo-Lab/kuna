@@ -25,9 +25,12 @@ slotmap = "1.0"
 # The real-ELF LoadImage backend (W11 / `loadimage_object.rs`) substitutes the
 # `object` crate for the C++ console's GNU BFD dependency (LoadImageBfd /
 # loadimage_bfd.cc); see docs/rust-port/losses.md (the BFD dependency-substitution
-# LOSS).  Read-only ELF parsing only -- no_default_features keeps the surface to
-# `read_core` + `elf`.
-object = { version = "0.39", default-features = false, features = ["read_core", "elf", "std"] }
+# LOSS).  Read-only parsing only -- no_default_features keeps the surface to the
+# explicit format readers.  `elf` is the established path; `pe`/`macho`/`coff`
+# are the multi-format expansion (docs/multiformat-loader-design.md), enabling
+# `object::File::parse` to recognize PE/Mach-O/COFF — gated on the load path
+# behind `--experimental-formats` so default behavior stays ELF-only.
+object = { version = "0.39", default-features = false, features = ["read_core", "elf", "pe", "macho", "coff", "std"] }
 # Dev-only (kuna-harness): the datatest <stringmatch> engine.  std::regex
 # (ECMAScript) has no Rust equivalent; the regex crate is the documented
 # substitution (LOSS-007).  Used by the harness crate only -- never the engine.

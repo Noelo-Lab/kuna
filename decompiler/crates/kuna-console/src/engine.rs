@@ -88,7 +88,7 @@ pub struct ConsoleProgram {
     /// (kuna) Per-pass analysis facts stashed at load (real-ELF path only),
     /// keyed by `AnalysisPass::id`, awaiting the gated commit at `read symbols`.
     ///
-    /// The commit is **deferred** out of `bootstrap_from_elf` so it runs AFTER the
+    /// The commit is **deferred** out of `bootstrap_from_object` so it runs AFTER the
     /// per-pass `--option <id> on|off` flags are applied (the CLI emits the
     /// `option` lines before `read symbols`). `IfcReadSymbols` consults each pass's
     /// enable flag on the `Architecture` and commits only the enabled passes'
@@ -600,23 +600,26 @@ pub fn bootstrap_program(
     Ok(prog)
 }
 
-/// Bootstrap a [`ConsoleProgram`] from a **real ELF** binary on disk (the kuna
-/// analog of the C++ console's BFD path: `LoadImageBfd` + `RawBinaryArchitecture`/
-/// the resolved arch).
+/// Bootstrap a [`ConsoleProgram`] from a **real object-format** binary on disk
+/// (the kuna analog of the C++ console's BFD path: `LoadImageBfd` +
+/// `RawBinaryArchitecture`/the resolved arch).
 ///
-/// Mirrors `bootstrap_program` but with the ELF [`ObjectLoadImage`] in place of
-/// the XML loader: open the ELF (parse machine/segments/symbols), take the
-/// SLEIGH language id straight off the loader's `getArchType()` (the
-/// `resolveArchitecture` loader branch — C++ `loader->getArchType()`), build the
-/// engine, attach the default code space to the loader (the C++
-/// `RawBinaryArchitecture::postSpecFile` / `LoadImageBfd::attachToSpace` tail),
-/// read the ELF function symbols, then hand the loader to the engine.
+/// Format-neutral by construction: it drives the `object`-crate
+/// [`ObjectLoadImage`] (which funnels every format-specific decision through the
+/// `ObjectFormat` seam) in place of the XML loader, so it serves ELF today and
+/// PE/Mach-O/COFF behind `--experimental-formats`. Open the object (parse
+/// machine/segments/symbols), take the SLEIGH language id straight off the
+/// loader's `getArchType()` (the `resolveArchitecture` loader branch — C++
+/// `loader->getArchType()`), build the engine, attach the default code space to
+/// the loader (the C++ `RawBinaryArchitecture::postSpecFile` /
+/// `LoadImageBfd::attachToSpace` tail), read the function symbols, then hand the
+/// loader to the engine.
 ///
 /// `target` is an optional explicit language id (the `load file <target> <path>`
-/// first token, C++ BFD target): when non-empty it overrides the ELF-derived id
-/// (so an unmapped machine can still be driven), exactly as the C++
+/// first token, C++ BFD target): when non-empty it overrides the object-derived
+/// id (so an unmapped machine can still be driven), exactly as the C++
 /// `getTarget()` path takes precedence over the loader's arch type.
-pub fn bootstrap_from_elf(
+pub fn bootstrap_from_object(
     path: &str,
     target: &str,
     spec_roots: &[String],
@@ -630,7 +633,7 @@ pub fn bootstrap_from_elf(
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
     let mut loader = ObjectLoadImage::from_bytes(path, &bytes)?;
 
-    // resolveArchitecture: the arch id is the loader's getArchType() (the ELF
+    // resolveArchitecture: the arch id is the loader's getArchType() (the object
     // machine → SLEIGH language id), unless an explicit target overrides it.
     let arch_type = String::from_utf8_lossy(&loader.get_arch_type()).into_owned();
     let mut sleigh = SleighArchitecture::new(path, target);
@@ -638,6 +641,22 @@ pub fn bootstrap_from_elf(
     // SleighArchitecture::resolveArchitecture: if target is set it wins (archid
     // stays empty here so the base resolve uses target||arch_type).
     sleigh.resolve_architecture(&db, &arch_type)?;
+    // (kuna §2.2) Compiler-model fallback: if the format's chosen id (e.g. a PE's
+    // `...:windows`) is not vendored for this arch *and* no explicit --target was
+    // given, retry with the per-arch default-model id (`...:gcc`/`...:default`)
+    // before erroring — wrong calling-convention details beat no decompile.
+    // ELF carries no fallback (its primary already uses the default model), so
+    // the established path is unaffected.
+    if sleigh.language_index() < 0 && target.is_empty() {
+        if let Some(fb) = loader.fallback_arch_id() {
+            let fb = String::from_utf8_lossy(fb).into_owned();
+            let mut retry = SleighArchitecture::new(path, "");
+            retry.resolve_architecture(&db, &fb)?;
+            if retry.language_index() >= 0 {
+                sleigh = retry;
+            }
+        }
+    }
     if sleigh.language_index() < 0 {
         return Err(KunaError::lowlevel(format!(
             "No sleigh specification for architecture {arch_type}"
@@ -656,7 +675,7 @@ pub fn bootstrap_from_elf(
     // the GOT load to the stub address so the call resolves to the import name
     // (`puts`/`printf`) instead of `sub_<addr>`.  Scoped to MIPS so non-MIPS
     // ELF output is unchanged; `option readonly off` restores the raw GOT load.
-    // The XML datatest path never reaches `bootstrap_from_elf`, so the parity
+    // The XML datatest path never reaches `bootstrap_from_object`, so the parity
     // oracles are structurally untouched.
     if arch_type.starts_with("MIPS:") {
         sleigh.base_mut().unwrap().readonlypropagate = true;
@@ -947,7 +966,7 @@ fn commit_analysis_output(
     // 6. Processor-context decode-mode paints (the kuna analog of ARM's
     //    `ARM_ElfExtension`/`ArmSymbolAnalyzer` `programContext.setValue(TMode,…)`).
     //    Paint each over the engine's ContextDatabase BEFORE any instruction is
-    //    decoded (we are still inside bootstrap_from_elf, before any `load
+    //    decoded (we are still inside bootstrap_from_object, before any `load
     //    function` decode — the timing the ARM Thumb mode requires). `end: None`
     //    is the single-address point set (paint-to-next-change-point, Ghidra's
     //    per-symbol `setValue(v,a,a,val)` shape); `Some(end)` paints the explicit
@@ -1084,17 +1103,91 @@ pub fn bootstrap_from_root(root: &Rc<Element>, spec_roots: &[String]) -> KunaRes
 
 /// The ELF magic (`\x7fELF`), used to route `load file` to the real-binary path.
 const ELF_MAGIC: [u8; 4] = [0x7f, b'E', b'L', b'F'];
+// Mach-O magics (design §1.4). On-disk byte orders of `MH_MAGIC*`/`FAT_MAGIC`.
+const MACHO_LE64: [u8; 4] = [0xcf, 0xfa, 0xed, 0xfe]; // 0xfeedfacf, little-endian
+const MACHO_LE32: [u8; 4] = [0xce, 0xfa, 0xed, 0xfe]; // 0xfeedface, little-endian
+const MACHO_BE64: [u8; 4] = [0xfe, 0xed, 0xfa, 0xcf]; // 0xfeedfacf, big-endian
+const MACHO_BE32: [u8; 4] = [0xfe, 0xed, 0xfa, 0xce]; // 0xfeedface, big-endian
+const MACHO_FAT: [u8; 4] = [0xca, 0xfe, 0xba, 0xbe]; // FAT_MAGIC (big-endian on disk)
+
+/// The COFF `IMAGE_FILE_MACHINE_*` values that begin a bare COFF object — the
+/// leading little-endian `u16` of a relocatable `.obj`/`.o` (no `MZ`/`PE` header).
+/// Limited to the machines kuna ships a `.sla` for (mirrors the design's
+/// "COFF machine-type prefix" set); an unknown machine simply isn't claimed as a
+/// COFF object and falls through to the XML branch (or `object`'s own reject).
+const COFF_MACHINES: &[u16] = &[
+    0x014c, // IMAGE_FILE_MACHINE_I386
+    0x8664, // IMAGE_FILE_MACHINE_AMD64
+    0x01c0, // IMAGE_FILE_MACHINE_ARM
+    0x01c4, // IMAGE_FILE_MACHINE_ARMNT (Thumb-2)
+    0xaa64, // IMAGE_FILE_MACHINE_ARM64
+];
+
+/// Whether non-ELF object formats (PE / Mach-O / COFF) are admitted by
+/// [`is_object_binary`]. Default **off** — only `\x7fELF` reaches the object
+/// loader, so default behavior is byte-identical to the ELF-only era and the
+/// XML / datatest oracles are structurally untouched. Turned on by the
+/// `KUNA_EXPERIMENTAL_FORMATS` env var (set to any non-empty value), which the
+/// `kuna decompile --experimental-formats` flag exports onto the `decomp_dbg`
+/// subprocess. Read live (per `load file`) so a test can toggle it in-process.
+fn experimental_formats_enabled() -> bool {
+    std::env::var_os("KUNA_EXPERIMENTAL_FORMATS")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
+}
+
+/// Does `bytes` look like an object-format binary the [`ObjectLoadImage`] loader
+/// can drive (design §1.4)? By **default** this admits **only ELF**, so the
+/// default `load file` dispatch is byte-identical to before — every non-ELF
+/// input still routes to the XML branch exactly as it did. When
+/// `--experimental-formats` is set ([`experimental_formats_enabled`]), it also
+/// admits Mach-O (`0xfeedfac*` / fat `0xcafebabe`), PE (`MZ` DOS stub — the
+/// typed parser validates the PE header downstream), and a bare COFF object (a
+/// leading `IMAGE_FILE_MACHINE_*` `u16`).
+fn is_object_binary(bytes: &[u8]) -> bool {
+    if bytes.len() < 4 {
+        return false;
+    }
+    let m: [u8; 4] = [bytes[0], bytes[1], bytes[2], bytes[3]];
+    if m == ELF_MAGIC {
+        return true; // ELF — always admitted (the established path).
+    }
+    if !experimental_formats_enabled() {
+        return false; // default: ELF-only ⇒ byte-identical dispatch.
+    }
+    // Mach-O thin (any of the four byte orders) or fat/universal.
+    if matches!(m, MACHO_LE64 | MACHO_LE32 | MACHO_BE64 | MACHO_BE32 | MACHO_FAT) {
+        return true;
+    }
+    // PE: the `MZ` DOS stub. `object`'s typed PE parser validates the `PE\0\0`
+    // header at the e_lfanew offset; a bare `MZ` that isn't a real PE will be
+    // rejected there with a clean error (not silently mis-loaded).
+    if &bytes[..2] == b"MZ" {
+        return true;
+    }
+    // Bare COFF object: a leading little-endian `IMAGE_FILE_MACHINE_*` machine
+    // type (no DOS stub). Restricted to known machines so a coincidental 2-byte
+    // prefix on XML/other input doesn't get mis-claimed.
+    let machine = u16::from_le_bytes([bytes[0], bytes[1]]);
+    COFF_MACHINES.contains(&machine)
+}
 
 /// Bootstrap from a file path (the `decomp_dbg` `load file [<target>] <path>`
-/// body).  Detects the format by its leading bytes: a `\x7fELF` magic routes to
-/// the real-ELF [`ObjectLoadImage`] path; anything else is parsed as the XML
-/// `<binaryimage>`/`<decompilertest>` corpus format.
+/// body).  Detects the format by its leading bytes: an object-format magic
+/// ([`is_object_binary`]) routes to the real-binary [`ObjectLoadImage`] path;
+/// anything else is parsed as the XML `<binaryimage>`/`<decompilertest>` corpus
+/// format.
 ///
 /// This mirrors the C++ `ArchitectureCapability::findCapability` dispatch: the
 /// `xml` capability's `isFileMatch` claims a `<bi…` document, otherwise the BFD
 /// path handles the real binary.  `target` is the optional `load file` target
 /// token (the C++ BFD target / an explicit SLEIGH language id); it is honored on
-/// the ELF path and ignored on the XML path (the XML carries its own `arch`).
+/// the object path and ignored on the XML path (the XML carries its own `arch`).
+///
+/// By default [`is_object_binary`] admits only ELF, so this dispatch — and the
+/// XML / datatest oracles — are byte-identical to the ELF-only era. PE/Mach-O/
+/// COFF are admitted only under `--experimental-formats`
+/// (`KUNA_EXPERIMENTAL_FORMATS`).
 pub fn bootstrap_from_file(
     path: &str,
     target: &str,
@@ -1102,9 +1195,10 @@ pub fn bootstrap_from_file(
 ) -> KunaResult<ConsoleProgram> {
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to recognize imagefile {path}: {e}")))?;
-    if bytes.len() >= 4 && bytes[..4] == ELF_MAGIC {
-        // Real ELF binary: drive the object-crate loader.
-        return bootstrap_from_elf(path, target, spec_roots);
+    if is_object_binary(&bytes) {
+        // Real object-format binary (ELF always; PE/Mach-O/COFF under the flag):
+        // drive the object-crate loader.
+        return bootstrap_from_object(path, target, spec_roots);
     }
     let mut store = DocumentStorage::new();
     let root = store.parse_document(&bytes)?.get_root().clone();

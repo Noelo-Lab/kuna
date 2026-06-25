@@ -10,7 +10,7 @@
 //! Obtaining a real `Translate` is the whole point: `Listing::build` decodes
 //! through the SLEIGH engine, which needs the `.sla` loaded and the loadimage
 //! attached. The realistic place is here (a `kuna-console` integration test):
-//! `bootstrap_from_elf` gives a fully-built `ConsoleProgram`, and
+//! `bootstrap_from_object` gives a fully-built `ConsoleProgram`, and
 //! `prog.arch().translate()` is the `&dyn Translate` the keystone drives, with
 //! `prog.arch().manage()` supplying the default code space.
 //!
@@ -24,7 +24,7 @@
 use std::path::PathBuf;
 
 use kuna_analysis::listing::{FlowKind, Listing, RefKind};
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -59,7 +59,7 @@ fn listing_build_recovers_instructions_flow_and_functions() {
         None => return,
     };
 
-    let prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(
@@ -227,7 +227,7 @@ fn listing_build_through_engine_driver_seeds() {
         None => return,
     };
 
-    let prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(

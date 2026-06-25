@@ -35,7 +35,7 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::{bootstrap_from_elf, ConsoleProgram};
+use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
 
@@ -59,7 +59,7 @@ fn decompile_m16(turn_off: bool) -> Option<String> {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let bin = mips16().to_str()?.to_string();
 
-    let mut prog: ConsoleProgram = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let mut prog: ConsoleProgram = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(

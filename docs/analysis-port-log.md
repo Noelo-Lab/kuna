@@ -2594,6 +2594,112 @@ x86-64/x86-32/ARM/AArch64/MIPS/RISCV/SPARC/PPC, both endiannesses where the vend
 - **Changed:** `kuna-analysis/src/{loadimage_object.rs, pass.rs, passes.rs,
   s1_loader/mod.rs, s1_loader/noreturn.rs, s1_entry/mod.rs}`,
   `kuna-console/tests/{verify_listing_core.rs, verify_listing_queries.rs}`.
+
+### Increment 36 — Multi-format loader PR-2: object PE/Mach-O/COFF features + format dispatch (behind --experimental-formats)
+
+**Premise.** PR-1 (Increment 35) lifted the ELF-only load logic behind the
+`ObjectFormat` seam with ELF the only constructible impl. This is **PR-2**: turn
+on `object`'s PE/Mach-O/COFF readers, add the three sibling format skeletons, and
+wire the engine dispatch to route their magics to the object loader — all
+**behind `--experimental-formats`** so the default path stays ELF-only and
+byte-identical. The `object` parse features were the hard blocker (chokepoint A,
+design §1.1); flipping them on + the dispatch is the scaffolding every later
+format-PR plugs into.
+
+**`object` features (chokepoint A).** `decompiler/Cargo.toml`: the `object` crate
+features `["read_core","elf","std"]` → `+["pe","macho","coff"]`, so
+`object::File::parse` physically recognizes PE/Mach-O/COFF. **`Cargo.lock`
+unchanged** — the new features pull no new crate versions or transitive deps (the
+PE/Mach-O/COFF readers share `object`'s existing deps), the offline-gate-safe
+outcome. `cargo build --offline` confirms zero downloads.
+
+**The three skeletons** (`s1_loader/format/{pe,macho,coff}.rs`). Each implements
+the four `ObjectFormat` methods: `kind()`; `compiler_model()` per §2 — `PeFormat`
+→ `windows`, `MachOFormat` → `gcc` (x86-64 is System V AMD64, the *same* cspec
+Ghidra labels `gcc` — NOT an invented token) / `default` (arm64), `CoffFormat`
+→ `windows` (COFF objects are overwhelmingly MSVC); `section_bits()` — PE/COFF
+share a `coff_section_bits` helper keyed on the COFF `Characteristics`
+(`IMAGE_SCN_MEM_EXECUTE`/`_WRITE`/`CNT_UNINITIALIZED_DATA`/`CNT_CODE`), Mach-O
+keys on the neutral `SectionKind` + the section-type/`S_ATTR_PURE_INSTRUCTIONS`
+bits (Mach-O carries no per-section RWX — that lives in the segment initprot);
+`resolve_imports()` returns **empty** (real IAT/`__stubs` naming is PR-4/PR-7).
+`detect()` now constructs all four (the PR-1 todo/error arms removed).
+
+**Dispatch (chokepoint E).** `engine.rs`: `bootstrap_from_elf` → renamed
+`bootstrap_from_object` (it was already 95% format-neutral; all callers + doc
+references updated, incl. the cross-crate `verify_*` test imports). The bare
+`ELF_MAGIC` test → `is_object_binary(&bytes)` per §1.4 (ELF + the four Mach-O
+byte-orders + fat `0xcafebabe` + `MZ` for PE + a known-`IMAGE_FILE_MACHINE_*`
+prefix for bare COFF). **By default `is_object_binary` admits ONLY ELF** — the
+non-ELF magics are gated on `experimental_formats_enabled()` (the
+`KUNA_EXPERIMENTAL_FORMATS` env var). So the default `load file` dispatch is
+byte-identical: every non-ELF input still routes to the XML branch exactly as
+before, and the XML/`bootstrap_program` branch (Invariant 1) is untouched.
+
+**The flag.** `--experimental-formats` is exposed two ways for one mechanism: the
+`KUNA_EXPERIMENTAL_FORMATS` env var (read live in `bootstrap_from_file`, so the
+in-process e2e and the `decomp_dbg`/`decomp_test_dbg` binaries all honor it), and
+a `kuna decompile --experimental-formats` CLI flag that exports it onto the spawned
+`decomp_dbg` subprocess. The env var is the clean seam across the subprocess
+boundary the CLI driver uses.
+
+**Compiler-model fallback (§2.2).** If a format's chosen model id isn't vendored
+for an arch (e.g. a hypothetical `ARM:...:windows` with no `ARM_win.cspec`), the
+loader composes a *fallback* id (the same stem with the model dropped to the
+per-arch default), exposed via `ObjectLoadImage::fallback_arch_id()`;
+`bootstrap_from_object` retries with it when the primary doesn't resolve and no
+explicit `--target` was given — wrong calling-convention details beat no
+decompile. ELF carries no fallback (its primary already uses the default model),
+so the established path is unaffected. (For the four headline arches every
+PE/Mach-O id resolves *directly* — the fallback is the safety net, not the path.)
+
+**Fixtures (built in-container today, no new packages).** `pe_min.obj` (`clang
+-target x86_64-pc-windows-gnu -c` → an Intel amd64 COFF object, `format=Coff`) and
+`macho_min.o` (`clang -target x86_64-apple-macos11 -c` → a relocatable Mach-O,
+`format=MachO`), both in `kuna-analysis/tests/fixtures/`. Section flags + function
+offsets pinned from the `object`-crate view (`the_answer`@0x0, `helper`@0x60 PE /
+`_helper`@0x50 Mach-O).
+
+**Tests (both ran, not skipped — the `x86` `.sla` is built).**
+- **Format unit tests** (in `pe.rs`/`macho.rs`/`coff.rs`): each `compiler_model`
+  returns the right token per arch; each `section_bits` maps an exec section to
+  CODE|READONLY and a writable section to not-READONLY (8 tests).
+- **Language-id resolves gate** (`verify_elf_language_ids.rs`, extended): every id
+  the PE/Mach-O/COFF loaders produce resolves in `scan_language_database` (or its
+  §2.2 fallback does), and the headline ids resolve *directly* — PE/COFF →
+  `x86:LE:64:default:windows`, Mach-O → `x86:LE:64:default:gcc` /
+  `AARCH64:LE:64:v8A:default`. New producers `pe_language_ids`/`macho_language_ids`
+  /`coff_language_ids` derived from the same `compose_language_id` the loader uses.
+- **e2e** (`kuna-console/tests/verify_object_formats.rs`, 2 tests): with the flag
+  on, each fixture (1) parses (no "not an ELF object"), (2) maps sections —
+  `section_snapshot()` shows a CODE|READONLY `.text`/`__text`, (3) selects the
+  right spec (PE→windows, Mach-O→`gcc`, asserted on the exact id), (4) disassembles
+  real x86-64 mnemonics out of `.text`/`__text`. Imports empty (PR-4/PR-7). Each
+  test also proves the **default-off** path: with the env var unset the same
+  fixture is rejected (routed to the XML branch), confirming the gating.
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159 PARITY
+OK**; `make rust-test` green (incl. the 8 unit + 2 language-id + 2 e2e tests). The
+default `kuna decompile` on an ELF (`fauxware main`) is **byte-identical** with and
+without `--experimental-formats` — the flag is a pure no-op on ELF (ELF is always
+admitted).
+
+- **Divergence/LOSS:** none to the parity oracles — the XML datatest path never
+  reaches the object loader (Invariant 1, untouched), and the non-ELF magics are
+  flag-gated off by default, so default dispatch is byte-identical. The PR-1 reject
+  message and the new PE/Mach-O/COFF arms are reachable only under
+  `--experimental-formats`.
+- **New:** `kuna-analysis/src/s1_loader/format/{pe,macho,coff}.rs`,
+  `kuna-console/tests/verify_object_formats.rs`,
+  `kuna-analysis/tests/fixtures/{pe_min.obj, macho_min.o}`.
+- **Changed:** `decompiler/Cargo.toml`,
+  `kuna-analysis/src/{loadimage_object.rs, s1_loader/format/mod.rs}`,
+  `kuna-console/src/engine.rs`, `kuna-cli/src/{main.rs, decompile.rs}`,
+  `kuna-console/tests/verify_elf_language_ids.rs`, the `bootstrap_from_elf`→
+  `bootstrap_from_object` rename across `kuna-console/{src/ifacedecomp.rs,
+  tests/verify_*.rs}` + `kuna-analysis/src/{pass.rs, listing/decode.rs}` +
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
 ### Increment 34 — Go pclntab function-name recovery (GolangSymbolAnalyzer)
 
 The kuna analog of Ghidra's `GolangSymbolAnalyzer` (the **name-recovery** half).
