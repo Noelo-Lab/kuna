@@ -278,6 +278,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "entry_disc",
     "arm_markers",
     "mips_gp",
+    // (kuna) i386-PIE PLT-stub decode (angr test_decompiling_nl_i386_pie). A
+    // loader-tier gate read via the `kuna_i386_pie_plt` env var (not committed
+    // through `OptionDatabase`); routes to `Architecture::set_kuna_option`.
+    "i386_pie_plt",
     "mips_isa",
     "dwarf",
     "callfixup",
@@ -297,12 +301,31 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // `FindNoReturnFunctionsAnalyzer`.  Default-off (a heuristic that can be wrong;
     // also requires `--option listing on` to build the Listing it reads).
     "noreturn_disc",
+    // (kuna) Structural no-return propagation consumer: the kuna analog of angr's
+    // CFGFast call-graph no-return propagation.  Seeds from the Known no-return set
+    // and concludes a function no-return when its last real instruction (skipping
+    // trailing NOP padding) is a call/tail-jump to an already-no-return callee,
+    // with no returning path — iterated to a fixpoint, with NO evidence threshold
+    // (unlike `noreturn_disc`).  Catches custom no-return wrappers (e.g.
+    // `xalloc_die`) the name list misses and the ≥3-evidence rule does not reach.
+    // Default-off (a heuristic that can be wrong; also requires `--option listing
+    // on` to build the Listing it reads).
+    "noreturn_propagate",
     // (kuna) Go pclntab function-name recovery: parse the embedded pclntab of a Go
     // binary and name each Go function (`main.main`/`runtime.*` instead of
     // `sub_<addr>`).  The kuna analog of Ghidra's `GolangSymbolAnalyzer`
     // (name-recovery half).  Default-on, but the pass is registered ONLY for a Go
     // binary, so it is a structural no-op on every non-Go target.
     "gopclntab",
+    // (kuna) ET_REL relocatable-object (`.o`) loader capability: load a
+    // relocatable object (no PT_LOAD segments) by synthesizing a section layout,
+    // applying `.rela.*` relocations, and rebasing symbols. Default ON (it only
+    // affects `.o` files, which the PT_LOAD-only loader cannot load at all).
+    // Unlike the per-function options, this gates the *loader* (run at `load
+    // file`, before any `option` command), so it is bridged across the layer via
+    // the `RELOC_OBJECTS_ENV` process env var the console handler writes; see
+    // `kuna_analysis::loadimage_object::reloc_objects_enabled`.
+    "relocobjects",
     // (kuna §3.7) Mach-O arm64e Apple-Silicon SLEIGH-spec selection: an arm64e
     // Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) loads with the
     // `AARCH64:LE:64:AppleSilicon` pointer-auth spec instead of the generic v8A.
@@ -313,6 +336,13 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // non-arm64e / non-Mach-O target is untouched.
     "macho-arm64e",
 ];
+
+/// (kuna) Process env var bridging the `relocobjects` console option to the
+/// ET_REL loader, which runs at `load file` — upstream of the per-function
+/// option machinery, so a flag on `Architecture` would not reach it in time.
+/// `Architecture::set_kuna_option("relocobjects", on|off)` writes `"1"`/`"0"`
+/// here; the loader reads it at `from_bytes` time (default ON when unset).
+pub const RELOC_OBJECTS_ENV: &str = "KUNA_RELOC_OBJECTS";
 
 // ---------------------------------------------------------------------------
 // Typed enums for the option-parsing knobs whose target subsystem is W5+.

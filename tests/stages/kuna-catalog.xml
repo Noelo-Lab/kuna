@@ -36,8 +36,8 @@
 <stringmatch name="KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in" min="2" max="2">"option": "returnpair", "values": \["pair", "single"\], "default": "pair", "current": "pair", "destructive_as_default": true</stringmatch>
 <stringmatch name="KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)" min="1" max="1">"option": "v850indirectbranch", "values": \["on", "off"\], "default": "off", "current": "off", "destructive_as_default": true</stringmatch>
 <stringmatch name="KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator" min="10" max="50">"use_when": </stringmatch>
-<stringmatch name="KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, foldcallret, dedupvardecls)" min="5" max="5">"source_decompiler": "angr"</stringmatch>
-<stringmatch name="KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array reconstructors (loweredswitch, arraystride)" min="2" max="2">"change_kind": "structure-recovery"</stringmatch>
+<stringmatch name="KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate)" min="8" max="8">"source_decompiler": "angr"</stringmatch>
+<stringmatch name="KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate)" min="4" max="4">"change_kind": "structure-recovery"</stringmatch>
 <stringmatch name="KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice)" min="7" max="7">"change_kind": "opt-in-tool"</stringmatch>
 <stringmatch name="KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility" min="10" max="50">"change_kind": </stringmatch>
 </decompilertest>

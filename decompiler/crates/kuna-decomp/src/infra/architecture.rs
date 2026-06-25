@@ -368,6 +368,16 @@ pub struct Architecture {
     pub analysis_arm_markers: bool,
     /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
     pub analysis_mips_gp: bool,
+    /// (kuna) Gate the i386-PIE PLT-stub decode (`i386_pie_plt`); default on. The
+    /// loader (`kuna-analysis::s1_loader::elf_plt::decode_i386`) decodes the
+    /// GOT-relative `jmp *disp(%ebx)` (`FF A3 <disp32>`) PIE stub form so dynamic
+    /// imports (`exit`/`dcgettext`/…) are named and `exit` is flagged no-return
+    /// (collapsing the spurious fall-through loop). i386-only; a no-op on every
+    /// other language. NOTE: the loader reads this through the
+    /// [`crate::kuna_i386_pie_plt`] **env var** (the PLT map is baked at `load
+    /// file`, upstream of `option`); this bool exists only for catalog visibility
+    /// and the `stage catalog` live `current` field.
+    pub analysis_i386_pie_plt: bool,
     /// (kuna) Gate the MIPS16 `ISA_MODE` decode-mode marker pass (`mips_isa`); default on.
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
@@ -401,6 +411,18 @@ pub struct Architecture {
     /// the Listing (`--option listing on` builds it); a no-op when the Listing is
     /// absent. Default-off ⇒ every parity gate is byte-identical.
     pub analysis_noreturn_disc: bool,
+    /// (kuna) Gate the structural no-return **propagation** consumer
+    /// (`noreturn_propagate`), the second Listing/xref consumer; default **off**.
+    /// The kuna analog of angr's CFGFast call-graph no-return propagation: seed
+    /// from the Known no-return set and conclude a function no-return when its last
+    /// real instruction (skipping trailing NOP padding) is a call/tail-jump to an
+    /// already-no-return callee, with no returning path — iterated to a fixpoint,
+    /// with NO evidence threshold (unlike `noreturn_disc`). Catches custom
+    /// no-return wrappers (e.g. `xalloc_die`) that the name list misses and the ≥3
+    /// evidence rule does not reach. Reads the Listing (`--option listing on`
+    /// builds it); a no-op when the Listing is absent. Default-off ⇒ every parity
+    /// gate is byte-identical.
+    pub analysis_noreturn_propagate: bool,
     /// (kuna) Gate the Go `pclntab` function-name recovery pass (`gopclntab`); the
     /// kuna analog of Ghidra's `GolangSymbolAnalyzer` (name-recovery half). Default
     /// **on**, but the pass is registered ONLY for a Go binary
@@ -614,6 +636,7 @@ impl Architecture {
             analysis_entry_disc: false,
             analysis_arm_markers: false,
             analysis_mips_gp: false,
+            analysis_i386_pie_plt: false,
             analysis_mips_isa: false,
             analysis_dwarf: false,
             analysis_callfixup: false,
@@ -621,6 +644,7 @@ impl Architecture {
             analysis_formatstring: false,
             analysis_listing: false,
             analysis_noreturn_disc: false,
+            analysis_noreturn_propagate: false,
             analysis_gopclntab: false,
             macho_arm64e: false,
 
@@ -713,6 +737,7 @@ impl Architecture {
         self.analysis_entry_disc = true;
         self.analysis_arm_markers = true;
         self.analysis_mips_gp = true;
+        self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
         self.analysis_callfixup = true;
@@ -720,6 +745,7 @@ impl Architecture {
         self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
+        self.analysis_noreturn_propagate = false; // no-return propagation consumer default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
@@ -828,6 +854,19 @@ impl Architecture {
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
             "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
             "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
+            // (kuna) Loader-tier gate: also bridge to the env var the loader reads
+            // (the PLT map is baked at `load file`, upstream of this `option`), so
+            // an `option i386_pie_plt off` *before* `load file` in the same process
+            // takes effect. The CLI sets the env directly on the subprocess too.
+            "i386_pie_plt" => {
+                let val = on_or_off(p1)?;
+                self.analysis_i386_pie_plt = val;
+                crate::kuna_i386_pie_plt::set_i386_pie_plt_env(val);
+                Ok(format!(
+                    "i386-PIE PLT-stub decode turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
             "mips_isa" => on_off!(analysis_mips_isa, "MIPS16 ISA_MODE decode-mode marker pass"),
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
             "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
@@ -839,8 +878,29 @@ impl Architecture {
             "noreturn_disc" => {
                 on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
             }
+            "noreturn_propagate" => {
+                on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
+            }
             "gopclntab" => {
                 on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
+            }
+            // (kuna) ET_REL relocatable-object (`.o`) loader capability. Unlike
+            // every other kuna option this gates the *loader* (run at `load
+            // file`, before any `option` command is processed), so a flag on this
+            // `Architecture` would be read too late. The toggle is bridged across
+            // the layer by a process env var the loader reads at `from_bytes`
+            // time; flipping it here affects a subsequent `load file` of a `.o`.
+            // See `kuna_analysis::loadimage_object::reloc_objects_enabled`.
+            "relocobjects" => {
+                let val = on_or_off(p1)?;
+                std::env::set_var(
+                    crate::options::RELOC_OBJECTS_ENV,
+                    if val { "1" } else { "0" },
+                );
+                Ok(format!(
+                    "ET_REL relocatable-object loading turned {}",
+                    if val { "on" } else { "off" }
+                ))
             }
             // (kuna §3.7) arm64e Apple-Silicon spec selection. Unlike the
             // analysis-pass gates this affects the *load-time* SLEIGH-spec choice

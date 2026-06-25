@@ -76,17 +76,20 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_40_settables() {
+fn fixture_has_all_43_settables() {
     // One `"option":` per settable row: 25 stage-model knobs (incl. the `foldcallret`
     // call-return variable-folding gate and the `dedupvardecls` duplicate-scalar-
-    // declaration collapse gate, DIV-7) + 15 analysis/loader-tier gates (10 per-run
+    // declaration collapse gate, DIV-7) + 15 analysis-tier gates (10 per-run
     // analysis-pass enablement — including the `mips_gp` $gp recovery gate and the
     // `mips_isa` MIPS16 ISA_MODE painting gate — plus the `formatstring`
     // DecompilerDependent varargs-typing gate, the `listing` Listing/xref
     // disassembly tier gate, the `noreturn_disc` discovered-no-return Listing
-    // consumer gate, the `gopclntab` Go pclntab function-name recovery gate, and
-    // the `macho-arm64e` Mach-O arm64e Apple-Silicon spec-selection gate).
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 40);
+    // consumer gate, the `noreturn_propagate` no-return propagation Listing consumer
+    // gate, and the `gopclntab` Go pclntab function-name recovery gate)
+    // + 3 loader-tier capabilities (the `relocobjects` ET_REL relocatable-object
+    // loader, DIV-8; the `i386_pie_plt` i386-PIE PLT-stub decode gate, DIV-9; and
+    // the `macho-arm64e` Mach-O arm64e Apple-Silicon spec-selection gate, PR-8).
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 43);
 }
 
 #[test]
