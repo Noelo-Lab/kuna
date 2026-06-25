@@ -370,6 +370,38 @@ Pinned VMAs (x86-64): `_compute`@`0x1000005a0`, `_main`@`0x1000005b0`, the
 from the `file.symbols()` funcsym source, not the stub resolver). **Pin the VMAs
 as test consts** (`llvm-objdump --macho -d` / `llvm-otool -Iv`).
 
+## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
+
+The multi-format **entry-discovery** gate
+(`kuna-console/tests/verify_multiformat_entry.rs`, design §4.1 / §5.3) proves a
+*stripped* PE/Mach-O recovers its function starts with **no `--addr`**, exactly
+as a stripped ELF does (`verify_s1_entry`). The two PE/Mach-O *import* fixtures
+above are reused, plus one new stripped Mach-O:
+
+- **PE:** `pe_imports_stripped.exe` (already above) — fully stripped (0 symbols,
+  0 exports). The `s1_entry` PE oracles recover its functions from the entry
+  point (`AddressOfEntryPoint`@`0x1400014f0`) and the **`.pdata`** exception
+  directory (97 `RUNTIME_FUNCTION` records — the `.eh_frame` analog), incl.
+  `main`@`0x140001592`. A bare load finds nothing; the oracles find dozens.
+
+- **Mach-O:** `macho_func_starts_stripped` (x86-64, 16 KB) is a **stripped**
+  Mach-O whose `helper`@`0x100000590` is `static` (file-local), so `ld64.lld -x`
+  removes its symbol — leaving **`LC_FUNCTION_STARTS`** as the only source that
+  recovers it. `macho_func_starts_stripped.c` =
+  `static int helper(int n){return n*7+3;} int main(int argc,char**argv){ printf("%d\n", helper(argc)); return 0; }`.
+
+  ```bash
+  LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+  clang -target x86_64-apple-macos11 -O0 -fno-inline -c macho_func_starts_stripped.c -o m.o
+  "$LLD" -arch x86_64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -e _main -x -dead_strip -o macho_func_starts_stripped m.o
+  ```
+
+  `LC_FUNCTION_STARTS` decodes (ULEB128 deltas off `__TEXT`@`0x100000000`) to
+  `[0x100000550 (_main, still symboled — the entry), 0x100000590 (helper,
+  stripped)]`. `collect_entries` skips the symboled `_main` and **discovers
+  `0x100000590`** — the never-symboled `helper` — the load-bearing PR-13 proof.
+
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via
 `objdump`/`readelf` at build time) — addresses shift across toolchains.
