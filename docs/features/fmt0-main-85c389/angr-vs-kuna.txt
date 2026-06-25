@@ -1,0 +1,359 @@
+==============================================================================
+test_decompiling_fmt0_main :: main   (angr 9.2.213 @ 0x4019b0)
+==============================================================================
+
+--- angr ---
+typedef struct option {
+    char * name;
+    int has_arg;
+    char padding_c[4];
+    int * flag;
+    int val;
+} option;
+
+extern long long Version;
+extern char crown;
+extern char g_407aa1;
+extern unsigned int goal_width;
+extern option long_options;
+extern unsigned int max_width;
+extern long long optarg;
+extern unsigned int optind;
+extern unsigned long long prefix;
+extern unsigned int prefix_full_length;
+extern unsigned int prefix_lead_space;
+extern unsigned int prefix_length;
+extern char split;
+extern long long stdin;
+extern long long stdout;
+extern char tagged;
+extern char uniform;
+
+int main(int a0, void* a1)
+{
+    int v3;  // ebp
+    void* cur;  // rbx
+    int *err;  // rax
+    int *err;  // rax
+    char v5[2];  // rax
+    int v6;  // ecx
+    unsigned int v7;  // eax
+    char v8;  // r13b
+    unsigned int v9;  // r12d
+    char v10[2];  // r15
+    unsigned long fp;  // rax
+    char *v12;  // rax
+    long long v0;  // [bp-0x48], Other Possible Types: unsigned long, unsigned long long
+    long long v1;  // [bp-0x40]
+
+    v3 = a0;
+    cur = a1;
+    set_program_name(*((long long *)a1));
+    setlocale(6, &g_407aa1);
+    bindtextdomain("coreutils", "/usr/local/share/locale");
+    textdomain("coreutils");
+    atexit(close_stdout);
+    uniform = 0;
+    split = 0;
+    tagged = 0;
+    crown = 0;
+    max_width = 75;
+    prefix = &g_407aa1;
+    prefix_full_length = 0;
+    prefix_lead_space = 0;
+    prefix_length = 0;
+    v0 = 0;
+    if (v3 > 1)
+    {
+        v5 = (long long)cur[8];
+        if (v5[0] == 45 && v5[1] - 48 <= 9)
+        {
+            cur += 8;
+            v3 -= 1;
+            v0 = &v5[1];
+            *((long long *)cur) = (long long)cur[8];
+        }
+    }
+    v1 = 0;
+    while (true)
+    {
+        v6 = getopt_long(v3, cur, "0123456789cstuw:p:g:", &long_options.name, NULL);
+        if (v6 == -1)
+            break;
+        if (v6 > 119)
+            goto LABEL_401d6a;
+        if (v6 > 98)
+        {
+            switch (v6)
+            {
+            case 99:
+                crown = 1;
+                break;
+            case 103:
+                v1 = optarg;
+                break;
+            case 112:
+                set_prefix(optarg);
+                break;
+            case 115:
+                split = 1;
+                break;
+            case 116:
+                tagged = 1;
+                break;
+            case 117:
+                uniform = 1;
+                break;
+            case 119:
+                v0 = optarg;
+                break;
+            default:
+LABEL_401d6a:
+                if (v6 - 48 <= 9)
+                {
+                    *((int *)&v0) = v6;
+                    error(0, 0, dcgettext(NULL, "invalid option -- %c; -WIDTH is recognized only when it is the first\noption; use -w N instead", 5));
+                }
+                usage(1); /* do not return */
+            }
+        }
+        else if (v6 == -131)
+        {
+            version_etc(stdout, "fmt", "GNU coreutils", Version, "Ross Paterson", 0);
+            exit(0); /* do not return */
+        }
+        else if (v6 == -130)
+        {
+            usage(0); /* do not return */
+        }
+    }
+    if (v0)
+    {
+        max_width = xdectoumax(v0, 0, 2500, &g_407aa1, dcgettext(NULL, "invalid width", 5), 0);
+        if (!v1)
+            goto LABEL_401d4d;
+        goal_width = xdectoumax(v1, 0, max_width, &g_407aa1, dcgettext(NULL, "invalid width", 5), 0);
+    }
+    else if (!v1)
+    {
+LABEL_401d4d:
+        goal_width = max_width * 187 / 200;
+    }
+    else
+    {
+        goal_width = xdectoumax(v1, 0, 75, &g_407aa1, dcgettext(NULL, "invalid width", 5), 0);
+        max_width = goal_width + 10;
+    }
+    v7 = optind;
+    if (optind != v3)
+    {
+        v8 = 0;
+        v9 = 1;
+        if (optind < v3)
+        {
+            do
+            {
+                v10 = *((long long *)((char *)cur + 8 * v7));
+                if (v10[0] == 45 && !v10[1])
+                {
+                    v8 = 1;
+                    v9 &= fmt(stdin, v10);
+                }
+                else
+                {
+                    fp = fopen(v10, "r");
+                    if (fp)
+                    {
+                        v9 &= fmt(fp, v10);
+                    }
+                    else
+                    {
+                        v0 = quotearg_style(4);
+                        v12 = dcgettext(NULL, "cannot open %s for reading", 5);
+                        err = __errno_location();
+                        v9 = 0;
+                        error(0, *(err), v12);
+                    }
+                }
+            } while ((v7 = optind + 1, optind = v7, v7 < v3));
+            if (v8)
+                goto LABEL_401cd7;
+        }
+    }
+    else
+    {
+        v9 = fmt(stdin, "-");
+LABEL_401cd7:
+        if (rpl_fclose(stdin))
+        {
+            dcgettext(NULL, "closing standard input", 5);
+            err = __errno_location();
+            error(1, *(err), "%s");
+        }
+    }
+    return (char)v9 ^ 1;
+}
+
+
+--- kuna (name mode) ---
+uint1 main(int4 a0,void *a1)
+
+{
+  _IO_FILE *f; // rax
+  bool v1;
+  unsigned long v10; // rax
+  void *v11; // rax
+  unsigned long v12; // rdx
+  void *v13;
+  char *v14 [2]; // stack - 0x40
+  char *v15; // stack - 0x48
+  char *v2;
+  bool v3; // al
+  bool v4; // al
+  int4 v5;
+  char *v6; // rax
+  char *v7;
+  char *v8;
+  uint8 v9; // rax
+  
+  set_program_name((char *)*a1);
+  setlocale(6,0x7aa1);
+  bindtextdomain(0x7492,"/usr/local/share/locale");
+  textdomain(0x7492);
+  atexit(close_stdout);
+  uniform = 0;
+  split = 0;
+  tagged = 0;
+  crown = 0;
+  dat_216120 = 0x4b;
+  dat_216128 = "";
+  dat_21611c = 0;
+  dat_216118 = 0;
+  dat_216114 = 0;
+  v15 = (char *)0x0;
+  v8 = "";
+  if ((2 <= a0) && (v7 = (char *)a1[1], v13 = a1, v2 = "", v8 = dat_216128, *v7 == '-')) goto label_1ba7;
+                    /* WARNING: Subroutine does not return */
+  while (dat_216128 = v8, v14[0] = (char *)0x0
+  while (v5 = getopt_long(a0,a1,"0123456789cstuw:p:g:",long_options,0)
+  if v5 == -1 {
+    if v15 == (char *)0x0 {
+      if v14[0] != (char *)0x0 goto label_1d7c;
+    }
+    elsev8 = (char *)dcgettext(0,"invalid width",5), v9 = xdectoumax(v15,0,0x9c4,"",v8,0), v5 = (int4)v9, Unique100006a0 = v5 if v14[0] != (char *)0x0 {v8 = (char *)dcgettext(0,"invalid width",5), v9 = xdectoumax(v14[0],0,(int8)v5,"",v8,0), EAX = (int4)v9
+      goto label_1c4f;
+    }EAX = (dat_216120 * 0xbb) / 200
+    goto label_1c4f;
+  }
+  if 0x77 < v5 goto label_1d6a;99 <= v5) {
+    switch(v5) {
+      case 99:crown = 1
+        break;
+      default:
+        goto label_1d6a;
+      case 0x67:v14[0] = dat_20b0a0
+        break;
+      case 0x70:set_prefix(dat_20b0a0)
+        break;
+      case 0x73:split = 1
+        break;
+      case 0x74:tagged = 1
+        break;
+      case 0x75:uniform = 1
+        break;
+      case 0x77:v15 = dat_20b0a0
+      
+    }
+  }
+  if v5 == -0x83 {version_etc(dat_20b088,"fmt","GNU coreutils",dat_20b010,"Ross Paterson",0), exit(0)
+  }v5 == -0x82) {
+    usage(0);
+    v7 = v6;
+    v13 = a1;
+    v2 = dat_216128;
+label_1ba7:
+    dat_216128 = v2;
+    a1 = v13;
+    v8 = dat_216128;
+    if ((uint4)((int4)v7[1] - 0x30U) <= 9) {
+      v15 = &v7[1];
+      a1 = &v13[1];
+      a0 = a0 + -1;
+      *a1 = *v13;
+    }
+  }
+label_1d6a:
+  if ((uint4)(v5 - 0x30U) <= 9) {
+    v15 = (char *)CONCAT44(v15._4_4_,v5);
+    v10 = dcgettext(0,"invalid option -- %c; -WIDTH is recognized only when it is the first\noption; use -w N instead",5);
+    error(0,0,v10,v5);
+  }
+  usage(1);
+label_1d7c:
+  v8 = (char *)dcgettext(0,"invalid width",5);
+  v9 = xdectoumax(v14[0],0,0x4b,"",v8,0);
+  EAX = (int4)v9;
+  EAX = EAX + 10;
+label_1c4f:
+  if (dat_20b098 == a0) {
+    v4 = fmt(dat_20b090,"-");
+  }
+  else {
+    v1 = 0;
+    v4 = 1;
+    v5 = dat_20b098;
+    if (a0 <= dat_20b098) goto label_1ceb;
+    do {
+      v8 = (char *)a1[v5];
+      if ((*v8 == '-') && (v8[1] == '\0')) {
+        v1 = 1;
+        v3 = fmt(dat_20b090,v8);
+        v4 = (bool)(v4 & v3);
+      }
+      else {
+        f = fopen(v8,"r");
+        if (f == (_IO_FILE *)0x0) {
+          v15 = quotearg_style(4,v8);
+          v10 = dcgettext(0,"cannot open %s for reading",5);
+          v11 = (void *)__errno_location();
+          v4 = 0;
+          error(0,*v11,v10,v15);
+        }
+        else {
+          v3 = fmt(f,v8);
+          v4 = (bool)(v4 & v3);
+        }
+      }
+      v5 = dat_20b098 + 1;
+      Unique10000690 = v5;
+    } while (v5 < a0);
+    if (!v1) goto label_1ceb;
+  }
+  v5 = rpl_fclose(dat_20b090);
+  if (v5 != 0) {
+    v10 = dcgettext(0,"closing standard input",5);
+    v11 = (void *)__errno_location();
+    error(1,*v11,0x7613,v10);
+    (*dat_20afd0)(main,v15,v14,__libc_csu_init,__libc_csu_fini,v12);
+    do {
+    } while( true );
+  }
+label_1ceb:
+  return v4 ^ 1;
+}
+
+--- metrics (reference | kuna) ---
+  loc           187 | 142 
+  gotos           3 | 8   
+  labels          3 | 5   
+  switches        1 | 1   
+  cases           7 | 7   
+  ifs            17 | 9   
+  loops           2 | 4   
+  ternaries       0 | 0   
+  casts           0 | 0   
+
+--- signals (candidate 'reference is better' hints) ---
+  * ref has fewer gotos (3 vs 8)
+  * ref has fewer labels (3 vs 5)
+  * kuna emitted a recovery-failure marker

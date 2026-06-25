@@ -1,0 +1,30 @@
+{
+  "opportunity": "test_decompiling_fmt0_main::main",
+  "test_name": "test_decompiling_fmt0_main",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/fmt_0",
+  "selector": "main",
+  "func_addr": "0x4019b0",
+  "angr_version": "9.2.213",
+  "option": "irreducibleloops",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_fmt0_main; angr RegionIdentifier + PhoenixStructurer (SAILR) condition-based structuring / cyclic refinement; main",
+  "scope": "large",
+  "proposal": true,
+  "parity": "n/a (proposal, no implementation)",
+  "decisions": [
+    {
+      "question": "Can this gap be closed by one small option-gated Action/Rule, or is it LARGE (proposal fork)?",
+      "decider": "Plan subagent (opus)",
+      "verdict": {
+        "scope": "large",
+        "reason": "The gap is a failure of the S7/S8 structurer+printer on an irreducible (multi-entry) loop, not a missing consumable artifact. Fixing it requires either replacing/augmenting the Ghidra collapse-based BlockGraph structurer (blockaction.rs, 3635 lines whose only irreducibility response is markUnstructured->gotos) or wiring the parallel, read-only kuna_regionid/kuna_regiongraph port (4218 lines) to actually drive the sblocks tree and a new condition-based printer path. Both options need new pass infrastructure and touch S7 structuring/S8/S9 emit far beyond a single gated early-return, blowing the >3 anchor-file and >1 new-module limits. This cannot be modeled as a single manufacture-an-artifact Action.",
+        "owning_stage": "S7 (region structuring) / S8 (block structuring) with an S9 (emit) printer path",
+        "why_not_single_action": "loweredswitch works because it MANUFACTURES a missing S2 JumpTable artifact that the existing collapse structurer already knows how to render as a switch - the structurer was already correct, only the input was missing. Here the structurer itself is wrong on irreducible loops: there is no S2/S7 artifact you can pre-build that makes Ghidra's collapse engine emit a valid multi-entry loop, because the collapse algorithm fundamentally resolves irreducibility by marking edges unstructured (the gotos and the broken incomplete while( side-effecting condition blocks seen in the output). No early-return-gated manufacture step can substitute for the missing SAILR/Phoenix condition-based structuring+goto/loop-refinement that angr uses.",
+        "proposed_option_name": "irreducibleloops",
+        "implementation_sketch": "Promote kuna_regiongraph/kuna_regionid from a read-only console surface to an emit-capable producer with a SAILR/Phoenix condition-based structuring/goto-refinement layer; lower the structured region tree into sblocks (BlockGraph) or a sibling structured rep; add an S9 printer path for the new node types; gate the whole alternate path behind option irreducibleloops (default OFF, byte-identical) routing only detected cyclic+multi-entry functions; add the binary->func testcase and record speed. Spans S7+S8+S9, multiple new modules, >3 anchor files.",
+        "speed_risk": "Moderate: default path unchanged (gated OFF, byte-identical), but the regionid/condition-structuring layer adds work for functions routed onto it; must measure per-function decompile time on the irreducible path."
+      }
+    }
+  ]
+}
