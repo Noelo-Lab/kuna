@@ -320,6 +320,10 @@ pub struct Architecture {
     /// (kuna) Reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`).
     pub recover_lowered_switch: bool,
+    /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
+    /// `goto` source so the cross-edge becomes a structured early return
+    /// (`reduce_return_gotos`).
+    pub reduce_return_gotos: bool,
     /// (kuna) Lower loop-exit `goto <successor>` edges to structured `break;`
     /// (a port of Ghidra `BlockGraph::scopeBreak`; option `loopbreak_recovery`,
     /// DIV-10 default-on).
@@ -625,6 +629,7 @@ impl Architecture {
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
+            reduce_return_gotos: false,
             recover_loop_break: false,
             fold_call_returns: false,
             strip_stack_guard: false,
@@ -714,6 +719,7 @@ impl Architecture {
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
+        self.reduce_return_gotos = false; // (kuna) default-off opt-in (angr SAILR goto-reduction)
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
@@ -830,6 +836,12 @@ impl Architecture {
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
                 self.recover_lowered_switch = val;
+                Ok(msg)
+            }
+            "gotoreduce" => {
+                let (val, msg) =
+                    crate::s8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
+                self.reduce_return_gotos = val;
                 Ok(msg)
             }
             "foldcallret" => {
@@ -1161,6 +1173,7 @@ impl Architecture {
         seam.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         seam.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
+        seam.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
         seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard

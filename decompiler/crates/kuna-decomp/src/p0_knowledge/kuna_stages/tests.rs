@@ -1,7 +1,7 @@
 //! Unit tests for the kuna stage registry (`kuna_stages.rs`).
 //!
 //! Parity targets transcribed from `decompiler/cpp/kuna_stages.cc`:
-//! group=39, substage=40, surface=91, settable=44 (26 stage-model knobs + 15
+//! group=39, substage=40, surface=91, settable=45 (27 stage-model knobs + 15
 //! kuna analysis-tier gates + 3 loader-tier capabilities
 //! `relocobjects`/`i386_pie_plt`/`macho-arm64e`), plus the stage-code helpers,
 //! the lookup API, the
@@ -46,14 +46,15 @@ fn settable_count_is_43() {
     // gopclntab with Go pclntab name recovery, Increment 34;
     // dedupvardecls with duplicate-scalar-declaration collapse, DIV-7;
     // loopbreak_recovery with loop-exit-goto break recovery, DIV-10;
+    // gotoreduce with the angr SAILR return-tail goto-reduction pass;
     // noreturn_propagate with angr-style structural no-return propagation.)
     // + 3 loader-tier capabilities: the `relocobjects` ET_REL relocatable-object
     // loader (DIV-8), the `i386_pie_plt` i386-PIE PLT-stub decode gate
     // (DIV-9, angr test_decompiling_nl_i386_pie), and the `macho-arm64e` Mach-O
     // arm64e Apple-Silicon spec-selection gate (multi-format loader PR-8) —
     // settables that gate the loader rather than a per-function pass.
-    assert_eq!(kuna_num_settables(), 44);
-    assert_eq!(SETTABLE_TABLE.len(), 44);
+    assert_eq!(kuna_num_settables(), 45);
+    assert_eq!(SETTABLE_TABLE.len(), 45);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -280,6 +281,7 @@ fn option_values_live_value_present_for_21_suppressed_for_22() {
                             | "stackguard"
                             | "namestyle"
                             | "foldcallret"
+                            | "gotoreduce"
                             | "loopbreak_recovery"
                             | "relocobjects"
                     ) || PASS_GATES.contains(&st.option),
@@ -354,8 +356,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 44 rows: 43 trailing commas (the last, macho-arm64e, has none).
-    assert_eq!(json.matches("},\n").count(), 43);
+    // 45 rows: 44 trailing commas (the last, macho-arm64e, has none).
+    assert_eq!(json.matches("},\n").count(), 44);
 }
 
 #[test]

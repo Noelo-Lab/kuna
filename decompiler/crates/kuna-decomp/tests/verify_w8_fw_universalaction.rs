@@ -154,8 +154,9 @@ fn w8_fw_universalaction_empty_or_unmatched_filter_drops_whole_tree() {
 //
 //    C++ universalAction registers 252 addAction/addRule calls.  Every one is
 //    now ported (UNPORTED_ALLOWLIST empty), so all 252 leaves render.  Plus the
-//    7 container headers (universal, fullloop, mainloop, stackstall, oppool1,
-//    oppool2, cleanup) => 259 non-blank lines.
+//    1 kuna leaf (gotoreduce, after finalstructure) and the 7 container headers
+//    (universal, fullloop, mainloop, stackstall, oppool1, oppool2, cleanup)
+//    => 260 non-blank lines.
 //
 //    Re-pinned to the C++ ORACLE: 259 is the non-blank `list action` line count
 //    of the FULL universal tree captured from the main-tree decomp_dbg by taking
@@ -188,8 +189,8 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 259,
-        "full universal tree must render 252 leaves + 7 container headers"
+        nonblank, 260,
+        "full universal tree must render 252 C++ leaves + 1 kuna (gotoreduce) + 7 container headers"
     );
 
     // Head: the universal restart-group prelude, in C++ order.  Note
@@ -208,7 +209,9 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     // Tail: the S9 fixation/naming/cast suffix, ending at `stop`.
     let tail: Vec<&str> =
         lines.iter().rev().take(4).map(|l| name_of(l)).collect::<Vec<_>>().into_iter().rev().collect();
-    assert_eq!(tail, vec!["setcasts", "finalstructure", "prototypewarnings", "stop"]);
+    // (kuna) ActionGotoReduce is registered after ActionFinalStructure, so the
+    // gotoreduce leaf sits between finalstructure and prototypewarnings.
+    assert_eq!(tail, vec!["finalstructure", "gotoreduce", "prototypewarnings", "stop"]);
 
     // `directwrite` (protorecovery_b) appears 3x total (protorecovery_a twice +
     // protorecovery_b once is 4x by class, but protorecovery_b instances are the

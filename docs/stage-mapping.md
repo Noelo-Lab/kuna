@@ -41,7 +41,7 @@ This document maps every upstream Ghidra decompiler source module — the C++ tr
 | **S5** *(Band B)* | `type`, `typeop`, `unionresolve`, `rangeutil`, `double`, `bitfield`, `constseq`, `prefersplit` |
 | **S6** *(Band B)* | `varmap`, `variable`, `merge`, `cover`, `dynamic` |
 | **S7** | `blockaction` (spans S8: structuring actions own the region tree AND the schema matching — §15 straddler) |
-| **S8** | — (no dedicated file; schema matching and goto selection live in `blockaction`, quality signal in kuna's `quality` metric) |
+| **S8** | `kuna_gotoreduce` (opt-in goto-reduction by return-tail duplication); schema matching and goto selection otherwise live in `blockaction`, quality signal in kuna's `quality` metric |
 | **S9** | `printlanguage`, `cast`, `printc`, `printjava`, `stringmanage`, `prettyprint`, `comment` |
 | **INFRA** | everything in the legacy Infrastructure table except `database`/`override`/`options` (promoted to P0): serialization (`xml`, `marshal`, `slaformat`, `compression`, `crc32`, `filemanage`, `multiprecision`), framework (`architecture`, `action`, `coreaction`, `capability`, `graph`, `cpool`, `callgraph`, `libdecomp`), console (`interface`, `ifacedecomp`, `ifaceterm`, `consolemain`, `codedata`), SLEIGH compiler (`semantics`, `pcodecompile`, `pcodeparse`, `grammar`, `slgh_compile`, `slghparse`, `slghscan`, `slghsymbol`, `slghpatexpress`, `slghpattern`, `rulecompile`, `unify`), injection (`inject_sleigh`, `inject_ghidra`), Ghidra-IPC glue (`ghidra_*`, `comment_ghidra`, `cpool_ghidra`, `database_ghidra`, `loadimage_ghidra`, `string_ghidra`, `typegrp_ghidra`, `signature_ghidra`), emulator (`emulate`, `emulateutil`, `memstate`), signatures (`signature`, `analyzesigs`, `paramid`), tests (`test`, `testfunction`, `sleighexample`) |
 
@@ -83,7 +83,8 @@ Straddler notes (placement by dominant owned artifact; see `docs/stage-model.md`
 | `kuna_stackguard` | S7 | strip the -fstack-protector canary epilogue (angr StackCanarySimplifier port; `option stackguard`, default-off) so the shared-return goto is eliminated |
 | `kuna_regiongraph` | S7 | graph substrate for the angr RegionIdentifier port (mutable digraph, dominators, incremental frontiers) |
 | `kuna_regionid` | S7 | angr RegionIdentifier port: analysis-only nested region tree over bblocks; `region tree/blocks/walk` (`docs/regions.md`) |
-| `kuna_loopbreak_recovery` | S8 | lower loop-exit `goto <successor>` edges to structured `break;` (port of Ghidra `BlockGraph::scopeBreak`, run in `ActionFinalStructure` before `markUnstructured`; `option loopbreak_recovery`, DIV-7 default-on) |
+| `kuna_loopbreak_recovery` | S8 | lower loop-exit `goto <successor>` edges to structured `break;` (port of Ghidra `BlockGraph::scopeBreak`, run in `ActionFinalStructure` before `markUnstructured`; `option loopbreak_recovery`, DIV-10 default-on) |
+| `kuna_gotoreduce` | S8 | angr SAILR/Phoenix goto-reduction (ReturnDuplicator) port: after `ActionFinalStructure`, duplicate a small return tail into an `if`-goto so the cross-edge becomes a structured early return (`option gotoreduce`, default-off) |
 
 ---
 

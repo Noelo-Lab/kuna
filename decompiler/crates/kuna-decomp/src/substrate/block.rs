@@ -2161,6 +2161,42 @@ impl BlockGraph {
         ret_id
     }
 
+    /// (kuna) Inline a duplicated return-tail into a `BlockIf` that currently
+    /// renders as `if (cond) goto T`, turning it into `if (cond) { <chain> }`.
+    ///
+    /// `bbchain` is a single-successor run of *bblocks* [`BlockId`]s (the same
+    /// arena a [`BlockKind::Copy`] points into) ending in a block whose last op
+    /// is a `return` — the SAILR / `ReturnDuplicator` return-tail.  A fresh
+    /// `BlockCopy` leaf is minted for each so the printer re-emits its ops on
+    /// this path, then they are wrapped in a `BlockList` and attached as the
+    /// `if`'s true clause, and the `if`'s goto target is dropped.  The caller
+    /// ([`crate::s8_structure::kuna_gotoreduce`], option-gated) has verified the
+    /// chain is bounded and side-effect-safe.  Edges are intentionally not
+    /// rewired — this runs after `ActionFinalStructure`, and the C printer walks
+    /// only components / copy pointers (never edges) below the `if`.
+    pub fn kuna_inline_return_tail(&mut self, if_id: BlockId, bbchain: &[BlockId]) {
+        // Mint a BlockCopy leaf per bblock in the duplicated tail (flags cleared
+        // so no spurious label/goto annotation rides along on the copy).
+        let mut leaves: Vec<BlockId> = Vec::with_capacity(bbchain.len());
+        for &bb in bbchain {
+            let leaf = FlowBlock::new_kind(BlockKind::Copy { copy: Some(bb) });
+            leaves.push(self.arena.insert(leaf));
+        }
+        // Wrap the leaves in a BlockList so the `if` body is a single component.
+        let body = self.arena.insert(FlowBlock::new_kind(BlockKind::Ls));
+        for &lf in &leaves {
+            self.arena[lf].parent = Some(body);
+            self.arena[body].list.push(lf);
+        }
+        // Attach the body as the if's true clause and drop the goto target so
+        // the printer emits the braced body instead of the `goto`.
+        self.arena[body].parent = Some(if_id);
+        self.arena[if_id].list.push(body);
+        if let BlockKind::If { gototarget, .. } = &mut self.arena[if_id].kind {
+            *gototarget = None;
+        }
+    }
+
     /// Build a new BlockGoto incorporating the given FlowBlock
     /// (C++ `BlockGraph::newBlockGoto`, `block.cc:1705`).
     pub fn new_block_goto(&mut self, graph_id: BlockId, bl: BlockId) -> BlockId {
