@@ -1,7 +1,7 @@
 //! Unit tests for the kuna stage registry (`kuna_stages.rs`).
 //!
 //! Parity targets transcribed from `decompiler/cpp/kuna_stages.cc`:
-//! group=39, substage=40, surface=91, settable=45 (27 stage-model knobs + 15
+//! group=39, substage=40, surface=91, settable=46 (28 stage-model knobs + 15
 //! kuna analysis-tier gates + 3 loader-tier capabilities
 //! `relocobjects`/`i386_pie_plt`/`macho-arm64e`), plus the stage-code helpers,
 //! the lookup API, the
@@ -33,11 +33,13 @@ fn surface_count_is_94() {
 }
 
 #[test]
-fn settable_count_is_48() {
-    // 30 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
+fn settable_count_is_49() {
+    // 31 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
+    // + `gotoreduce`
     // + `switchguardbound`, angr test_decompiling_missing_function_call
     // + `tailcalljump`, angr tee-O2 tail-jumps
-    // + `branchflip`, angr SAILR negated-guard branch flip, S8 readability)
+    // + `branchflip`, angr SAILR negated-guard branch flip, S8 readability
+    // + `regionstructure`, region-based Phoenix/SAILR structurer, Inc 1)
     // + 15 analysis-tier
     // gates: 10 per-run analysis-pass
     // enablement (noreturn_known/libproto/strings/entry_disc/arm_markers/mips_gp/
@@ -54,6 +56,7 @@ fn settable_count_is_48() {
     // loopbreak_recovery with loop-exit-goto break recovery, DIV-10;
     // gotoreduce with the angr SAILR return-tail goto-reduction pass;
     // switchguardbound with guard-bounded GCC PIC jump-table recovery;
+    // regionstructure with the region-based Phoenix/SAILR structurer (Inc 1);
     // noreturn_propagate with angr-style structural no-return propagation.)
     // + 3 loader-tier capabilities: the `relocobjects` ET_REL relocatable-object
     // loader (DIV-8), the `i386_pie_plt` i386-PIE PLT-stub decode gate
@@ -62,9 +65,10 @@ fn settable_count_is_48() {
     // settables that gate the loader rather than a per-function pass.
     // (+1 for `tailcalljump`, the angr tee-O2 tail-jump S2 flow-classification
     // knob, default-off opt-in; +1 for `branchflip`, the angr SAILR negated-guard
-    // S8 branch-flip readability knob, default-off opt-in.)
-    assert_eq!(kuna_num_settables(), 48);
-    assert_eq!(SETTABLE_TABLE.len(), 48);
+    // S8 branch-flip readability knob, default-off opt-in; +1 for `regionstructure`,
+    // the region-based Phoenix/SAILR structurer Inc 1 knob, default-off opt-in.)
+    assert_eq!(kuna_num_settables(), 49);
+    assert_eq!(SETTABLE_TABLE.len(), 49);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -290,6 +294,7 @@ fn option_values_live_value_present_for_23_suppressed_for_25() {
                     matches!(
                         st.option,
                         "loweredswitch"
+                            | "regionstructure"
                             | "stackguard"
                             | "branchflip"
                             | "namestyle"
@@ -369,10 +374,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 48 rows: 47 trailing commas (the last, macho-arm64e, has none;
-    // switchguardbound's and tailcalljump's S2 rows and branchflip's S8 row
-    // sit mid-table, so they do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 47);
+    // 49 rows: 48 trailing commas (the last, macho-arm64e, has none;
+    // switchguardbound's and tailcalljump's S2 rows, branchflip's S8 row,
+    // and regionstructure's S8 row sit mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 48);
 }
 
 #[test]

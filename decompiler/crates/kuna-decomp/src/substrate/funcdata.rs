@@ -1453,6 +1453,21 @@ impl Funcdata {
         }
     }
 
+    /// (kuna) Discard a partially-structured `sblocks` graph and rebuild a fresh
+    /// `BlockCopy` mirror of `bblocks`.  Used only by the region-based structurer
+    /// fallback (`option regionstructure`): when the region structurer cannot
+    /// collapse the graph to a single root it leaves `sblocks` half-structured, so
+    /// this resets it to a clean seed before `CollapseStructure` runs.  Replaces
+    /// `sblocks` with a fresh empty `BlockGraph` (the half-structured arena is
+    /// dropped) and re-runs [`seed_sblocks_copy`](Self::seed_sblocks_copy).
+    pub(crate) fn reseed_sblocks_copy(&mut self) {
+        let mut sb = BlockGraph::new();
+        let sroot = sb.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
+        sb.root = Some(sroot);
+        self.sblocks = sb;
+        self.seed_sblocks_copy();
+    }
+
     // -----------------------------------------------------------------------
     // Jump-table identity (W4 contents seamed out)
     // -----------------------------------------------------------------------

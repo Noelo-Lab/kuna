@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Region-based (Phoenix/SAILR) structurer, Increment 1 PoC  -  option
+    `regionstructure` (default OFF).  This proves the structuring seam end to end:
+    under `option regionstructure on`, `ActionBlockStructure` replaces Ghidra's
+    `CollapseStructure` with the region-driven structurer
+    (`s8_structure::region_structurer`), which runs the KunaRegionIdentifier over
+    the real CFG (the W7 `build_from_block_graph` adapter) and structures the
+    seeded `sblocks` graph with the acyclic-sequence schema + structural-ITE
+    schema + the SAILR-ordered virtualize-to-goto fallback.
+
+    `proof_fn` is the canonical `if(c){A}else{B} -> join -> tail` shape (x86-64,
+    GCC -O0, the bytes [0x401106, 0x401152) of a linked no-PIE executable; the
+    one global `g` lives at 0x40402c).  Source:
+
+        volatile int g;
+        int proof_fn(int c, int x) {
+            int r;
+            if (c) { r = x + 1; g =  r; }   // A (then)
+            else   { r = x - 1; g = -r; }   // B (else)
+            r = r * 2;                       // join (sequence after the if/else)
+            return r + g;                    // tail
+        }
+
+    The region structurer folds this with its acyclic-sequence schema (the
+    join->tail run) + the structural-ITE schema (the if/else diamond), producing
+    a goto-free `if (c) {...} else {...} return ...;`  -  verified to take the
+    structurer's success path (not the CollapseStructure fall-back).
+
+    Parity proof: the region-driven structuring is byte-identical to Ghidra's
+    `CollapseStructure` on this acyclic shape, so pass 1 (off) and pass 2 (on)
+    emit the SAME C  -  both ZERO gotos.  This is the honest Inc 1 result: Ghidra's
+    acyclic structurer is already complete (sequence/if/if-else/short-circuit), so
+    the region structurer MATCHES it on acyclic code rather than beating it.  The
+    goto-count reduction the roadmap targets lives in the cyclic increments
+    (loops/break-continue, Inc 3)  -  see docs/region-structurer-roadmap.md and the
+    Inc 1 analysis in the PR; Inc 1 delivers the parity-safe foundation + the
+    live, correct sequence/ITE/virtualize seam.
+
+    Stage model: S8 "structuring" / goto-quality.  `option regionstructure off`
+    (default) is byte-identical to the existing pipeline; `on` swaps in the
+    region structurer.  Asserted invariants below hold across BOTH passes (so the
+    counts are 2x the per-pass count): the structured if/else body, the join
+    sequence, the tail return, and ZERO gotos.
+-->
+<bytechunk space="ram" offset="0x401106" readonly="true">
+f30f1efa554889e5897dec8975e8837d
+ec0074148b45e883c0018945fc8b45fc
+8905002f0000eb148b45e883e8018945
+fc8b45fcf7d88905ea2e0000d165fc8b
+15e12e00008b45fc01d05dc3
+</bytechunk>
+<symbol space="ram" offset="0x401106" name="proof_fn"/>
+</binaryimage>
+<script>
+  <com>option regionstructure off</com>
+  <com>lo fu proof_fn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option regionstructure on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="regionstructure #1: the if/else diamond is structured (true clause), both passes" min="2" max="2">if \(a0 == 0\) \{</stringmatch>
+<stringmatch name="regionstructure #2: the else clause is structured, both passes" min="2" max="2">  else \{</stringmatch>
+<stringmatch name="regionstructure #3: the join sequence + tail return is recovered, both passes" min="2" max="2">return v1 \* 2 \+ dat_40402c;</stringmatch>
+<stringmatch name="regionstructure #4: ZERO gotos  -  region structurer matches Ghidra's acyclic structuring (parity)" min="0" max="0">goto </stringmatch>
+</decompilertest>

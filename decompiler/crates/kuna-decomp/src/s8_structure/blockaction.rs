@@ -3450,6 +3450,34 @@ impl Action for ActionBlockStructure {
         // `copy` field points back at the bblocks block so the printer can walk
         // its op list).
         data.seed_sblocks_copy();
+        // (kuna) Region-based (Phoenix/SAILR) structurer — `option regionstructure
+        // on` (default-off, parity-safe).  When ON, replace Ghidra's
+        // `CollapseStructure` with the region-driven structurer
+        // (`run_region_structurer`): it runs the KunaRegionIdentifier over the real
+        // CFG and structures the seeded `sblocks` graph with the acyclic-sequence
+        // schema + SAILR-ordered virtualize-to-goto fallback.  Honest-partial-safe:
+        // if it cannot collapse the graph to a single root (an un-virtualizable
+        // knot or the hang-guard), re-seed `sblocks` and fall through to the
+        // unchanged `CollapseStructure` path.  OFF (default) skips this entirely and
+        // output is byte-identical.
+        if data.get_arch().region_structure {
+            match crate::s8_structure::region_structurer::run_region_structurer(data) {
+                Ok(true) => {
+                    // Structured by the region structurer; the change count is the
+                    // structuring activity (one per collapse round is not tracked
+                    // here — report a single change so the ActionPool sees progress,
+                    // matching the spirit of `collapse.getChangeCount() > 0`).
+                    self.base_mut().count += 1;
+                    return 0;
+                }
+                Ok(false) | Err(_) => {
+                    // Could not converge: discard the partially-structured sblocks
+                    // and re-seed a clean BlockCopy mirror for the CollapseStructure
+                    // fallback (never abort — honest-partial parity).
+                    data.reseed_sblocks_copy();
+                }
+            }
+        }
         // Precompute BlockBasic::isComplex over the live op lists (the structuring
         // graph is a BlockCopy mirror without op ownership), keyed by the bblocks
         // id each BlockCopy's `copy` pointer references.  ruleBlockOr/whileDo read
