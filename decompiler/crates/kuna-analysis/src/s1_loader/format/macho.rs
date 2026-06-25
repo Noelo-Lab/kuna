@@ -1,13 +1,12 @@
-//! The Mach-O [`ObjectFormat`] — the Apple object/exe arm of the loader seam
-//! (PR-2 skeleton).
+//! The Mach-O [`ObjectFormat`] — the Apple object/exe arm of the loader seam.
 //!
-//! This PR enables `object`'s `macho` reader and wires Mach-O through the seam
-//! so a Mach-O image **parses, maps its sections, and selects the right SLEIGH
-//! spec** (`gcc` for x86-64 — macOS x86-64 follows the System V AMD64 ABI, the
-//! same cspec Ghidra labels `gcc`; `default` for arm64). Import naming
-//! (`__stubs` / the indirect-symbol table) is out of scope here —
-//! [`MachOFormat::resolve_imports`] returns empty; the real walk lands in PR-7
-//! (`s1_loader/macho_stubs.rs`, design §3.3).
+//! This wires Mach-O through the seam so a Mach-O image **parses, maps its
+//! sections, selects the right SLEIGH spec** (`gcc` for x86-64 — macOS x86-64
+//! follows the System V AMD64 ABI, the same cspec Ghidra labels `gcc`;
+//! `default` for arm64), and **names its imports** (PR-7): a `bl`/`callq`
+//! targeting a `__TEXT,__stubs` entry renders `printf(` rather than
+//! `sub_<addr>`, via the `LC_DYSYMTAB` indirect-symbol walk in
+//! [`crate::s1_loader::macho_stubs`] (design §3.3).
 //!
 //! ## Section flags
 //!
@@ -84,11 +83,15 @@ impl ObjectFormat for MachOFormat {
         out
     }
 
-    fn resolve_imports(&self, _file: &object::File, _bytes: &[u8]) -> Vec<ImportSym> {
-        // Skeleton: Mach-O import naming (the `__stubs` indirect-symbol walk) is
-        // PR-7 (`s1_loader/macho_stubs.rs`, design §3.3). Until then imports are
-        // empty — `bl` targets render `sub_<stub>`, the correct skeleton state.
-        Vec::new()
+    fn resolve_imports(&self, file: &object::File, bytes: &[u8]) -> Vec<ImportSym> {
+        // Mach-O import naming: walk the `LC_DYSYMTAB` indirect-symbol table,
+        // naming each `__stubs` entry a `bl`/`callq` targets directly + each
+        // symbol-pointer slot (the GOT analog) a folded indirect call resolves,
+        // and register the exports — all in `s1_loader/macho_stubs.rs` (design
+        // §3.3). Arch-independent (section metadata, no instruction decode).
+        // Pure & total: a non-Mach-O / no-LC_DYSYMTAB / unparsable layout yields
+        // an empty `Vec`.
+        crate::s1_loader::macho_stubs::resolve_macho_imports(file, bytes)
     }
 }
 

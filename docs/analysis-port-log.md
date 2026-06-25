@@ -2998,3 +2998,106 @@ ripple (`settable_count_is_37`, `…suppressed_for_15` PASS_GATES +1,
   `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs`,
   `kuna-decomp/tests/{catalog_bytecompat.rs, fixtures/stage_catalog.json}`,
   `docs/{assertions.md, analysis-port-log.md}`.
+
+### Increment 39 — Multi-format loader PR-6+7: Mach-O linked loading + __stubs import naming (the Mach-O headline)
+
+**Premise.** PR-2 (Increment 36) proved Mach-O *objects* parse + map + select the
+right spec behind `--experimental-formats`, with imports empty. This is the
+**Mach-O headline** (PR-6 ∪ PR-7): a **linked Mach-O** exe loads and decompiles a
+function, and its libc import renders **named** (`printf`) — the second non-ELF
+binary kuna names imports on (after PE), and the simplest analog. PR-6 (loader
+proof) needed **no new loadimage fix** — `object` surfaces the Mach-O
+`vmaddr`/`LC_MAIN` transparently, so the linked exe loads through the same
+`bootstrap_from_object` path the Mach-O object did, and PR-2's
+`MachOFormat::{section_bits, compiler_model}` (x86-64→`gcc`, the System V AMD64
+cspec; arm64→`default`) were already finalized. PR-7 (the `__stubs` walk) is the
+real new logic, in a new `s1_loader/macho_stubs.rs`.
+
+**The `__stubs` walk (`s1_loader/macho_stubs.rs`, design §3.3).**
+`MachOFormat::resolve_imports` (was empty) now calls `resolve_macho_imports(file,
+bytes)`. It branches on `FileKind` (`MachO64`/`MachO32`; a fat `0xcafebabe`/`bf`
+selects one slice — prefer x86-64, then arm64, then first — and re-dispatches,
+design §3.4) and re-parses with the typed `MachHeader64`/`32` (the neutral
+`object::File` view drops the section `reserved1`/`reserved2` and the flat
+indirect-symbol slice the walk needs). One pass over the load commands harvests
+`LC_SYMTAB` (names), `LC_DYSYMTAB` (the indirect-symbol index array), and every
+`LC_SEGMENT`'s sections (canonical `Segment::from_command` / `command.symtab()` /
+`command.dysymtab()` dispatch). For each `S_SYMBOL_STUBS` section it names the
+stub *entry* at `sec.addr + i*reserved2`; for each `S_LAZY/NON_LAZY_SYMBOL_POINTERS`
+section (the GOT analog) it names the pointer slot at `sec.addr + i*ptr`. The
+name is the `LC_SYMTAB` symbol at the indirect index (via the built-in
+`Section::indirect_symbols` window). Filtering matches Ghidra
+`processIndirectSymbols`: skip `INDIRECT_SYMBOL_LOCAL|ABS` and `n_strx == 0`,
+strip the leading `_` (`_printf`→`printf`, the `strip_version` analog).
+Pure/total/never-error: non-Mach-O / no `LC_DYSYMTAB` / unparsable → empty `Vec`.
+`file.exports()` are appended additively (underscore-stripped). **Arch-independent
+— no instruction decode**: the named address is pure section metadata.
+
+**How `main` reaches `printf` (and why naming the stub entry suffices).** Unlike
+the PE IAT slot / ELF GOT slot (a pointer the engine constant-folds), a Mach-O
+`bl`/`callq` targets the `__stubs` entry **directly** — verified on both
+fixtures: x86-64 `callq 0x1000005cc`, arm64 `bl 0x1000005a0`. So there is no
+pointer to fold and no per-arch stub decode; naming the stub *entry* turns
+`sub_<stub>(` into `printf(`. (The `__la_symbol_ptr`/`__got` slot naming is the
+defensive ELF-GOT-slot mirror, for a `-fno-plt`-style folded indirect call.)
+
+**Fixtures (linked in-container with `ld64.lld`, not vendored-prebuilt).** Bare
+`clang` (no macOS SDK) compiles the Mach-O object today; for the *link* the
+rustup-bundled `ld64.lld` (an LLD darwin flavor) produces a classic
+`S_SYMBOL_STUBS` indirect-symbol layout — so no vendored-prebuilt stub was needed
+(the design's fallback). `macho_imports.c` = `int compute(int n){return n*3+7;}
+int main(int argc,char**argv){ printf("%d\n", compute(argc)); return 0; }`,
+linked for two arches (`-undefined dynamic_lookup -e _main`):
+- `macho_imports` (x86-64, 16 KB): `_compute`@`0x1000005a0`, `_main`@`0x1000005b0`,
+  `printf` stub@`0x1000005cc`.
+- `macho_imports_arm64` (arm64, 49 KB): same source, proving arch-independence.
+
+**Before → after** (the headline; `kuna decompile … --experimental-formats`),
+x86-64 `_main`:
+```c
+// BEFORE (resolve_imports empty)        // AFTER (PR-7 __stubs naming)
+sub_1000005cc(0x1000005ee,a0 * 3 + 7);   printf(0x1000005ee,a0 * 3 + 7);
+return 0;                                return 0;
+```
+arm64 `_main` renders `printf(0x1000005d0)` identically (named the same way; the
+arm64 codegen folds the arg differently). The defined `_main` keeps its leading
+`_` (it comes from the `file.symbols()` funcsym source, not the stub resolver).
+
+**Decompile speed.** `macho_imports _main`: **~0.3–0.8 s** wall (`time kuna
+decompile`, end-to-end incl. the `decomp_dbg` subprocess spawn + the `.sla`
+load), **~0.10 s user** CPU for the decompile itself; `macho_imports_arm64`
+~0.35 s wall. On par with the ELF/PE baselines — both dominated by process
+startup + the tiny function. The `__stubs` walk is a single load-command pass +
+per-section indirect-table slice (O(load cmds + indirect entries), once at load),
+materially cheaper than the PE IAT walk (no `FF 25` `.text` sweep — Mach-O calls
+the stub directly).
+
+**Tests (the e2e RAN, not skipped — the `x86`/`AARCH64` `.sla` are built).**
+- **`macho_stubs` unit tests** (synthetic, mirroring `elf_plt.rs`/`pe_iat.rs`, 3):
+  the leading-underscore strip (`_printf`→`printf`, `__Znwm`→`_Znwm`, no-op on a
+  clean name); the stub-entry naming + `INDIRECT_SYMBOL_LOCAL` filtering against a
+  synthetic `S_SYMBOL_STUBS` window (modeling the x86-64 fixture: base
+  `0x1000005cc`, `reserved2`=6); the symbol-pointer-slot naming (`base + i*ptr`).
+- **e2e** (`kuna-console/tests/verify_macho_imports.rs`, 3): (1) the x86-64 linked
+  exe loads (SysV/gcc spec), resolves `_main`/`printf`, decompiles `_main` to
+  `printf(`; (2) decompiling `_main` **by VMA** (no symtab reliance) still names
+  the `0x1000005cc` stub — the clean PR-7 proof; (3) the arm64 exe names `printf`
+  identically (arch-independence). Test 1 also proves the **default-off** path
+  (Mach-O rejected without the flag). A `Mutex` serializes the env-var-sensitive
+  bodies (`KUNA_EXPERIMENTAL_FORMATS` is process-global).
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159
+PARITY OK**; `make rust-test` green (incl. the 3 unit + 3 e2e). Default-off ⇒ ELF
+byte-identical (the Mach-O path is unreachable without `--experimental-formats`;
+the ELF/XML oracles never reach the object loader — Invariant 1). **After this,
+PR-8 (fat/universal + arm64e) and the on-by-default flip for Mach-O are the
+remaining Mach-O-arm work.** No loadimage fix was needed.
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is
+  flag-gated; the XML datatest path never reaches the object loader).
+- **New:** `kuna-analysis/src/s1_loader/macho_stubs.rs`,
+  `kuna-console/tests/verify_macho_imports.rs`,
+  `kuna-analysis/tests/fixtures/{macho_imports, macho_imports_arm64}` (+ the
+  `macho_imports.c` source recorded in the fixtures README).
+- **Changed:** `kuna-analysis/src/s1_loader/{mod.rs, format/macho.rs}`,
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
