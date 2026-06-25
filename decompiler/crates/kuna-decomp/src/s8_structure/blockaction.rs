@@ -3398,15 +3398,20 @@ impl Action for ActionBlockStructure {
         // output is byte-identical.
         if data.get_arch().region_structure {
             match crate::s8_structure::region_structurer::run_region_structurer(data) {
-                Ok(true) => {
-                    // Structured by the region structurer; the change count is the
-                    // structuring activity (one per collapse round is not tracked
-                    // here — report a single change so the ActionPool sees progress,
-                    // matching the spirit of `collapse.getChangeCount() > 0`).
+                Ok((true, flips)) => {
+                    // Realize the deferred data-flow half of the loop-condition
+                    // `negateCondition`s the region structurer recorded (the same
+                    // CBRANCH `boolean_flip`/`fallthru_true` toggle the
+                    // CollapseStructure path applies via `take_pending_flips`).
+                    for bb in flips {
+                        data.block_basic_negate_lastop(bb);
+                    }
+                    // Structured by the region structurer; report a single change so
+                    // the ActionPool sees progress (spirit of `getChangeCount() > 0`).
                     self.base_mut().count += 1;
                     return 0;
                 }
-                Ok(false) | Err(_) => {
+                Ok((false, _)) | Err(_) => {
                     // Could not converge: discard the partially-structured sblocks
                     // and re-seed a clean BlockCopy mirror for the CollapseStructure
                     // fallback (never abort — honest-partial parity).
