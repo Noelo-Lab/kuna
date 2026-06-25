@@ -24,12 +24,12 @@
 //!   after  (PR-12/13):   lookup_symbol("sub_140001592") -> Some  (decompiles by name)
 //! ```
 //!
-//! ## Flag gating (default-off ⇒ byte-identical on ELF)
+//! ## Multi-format is the default (ELF stays byte-identical)
 //!
-//! The PE/Mach-O only load under `KUNA_EXPERIMENTAL_FORMATS` (the
-//! `--experimental-formats` CLI flag); the ELF entry path (`verify_s1_entry`) is
-//! untouched. The discovery oracles are no-ops on ELF (format-dispatched), so the
-//! 675/675 + stage gates are structurally immune.
+//! PE/Mach-O load unconditionally — the same default `load file` dispatch as ELF,
+//! with no flag. The ELF entry path (`verify_s1_entry`) is untouched: the
+//! discovery oracles are no-ops on ELF (format-dispatched), so the 675/675 +
+//! stage gates are structurally immune.
 //!
 //! ## `.sla` precondition
 //!
@@ -38,18 +38,12 @@
 //! the test prints that and returns early (a visible skip, never a false green).
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
-
-/// `KUNA_EXPERIMENTAL_FORMATS` is a process-global env var the tests toggle;
-/// serialize the env-sensitive bodies so a default-off check never races an
-/// experimental-on bootstrap (cargo runs the tests in parallel in one process).
-static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -59,16 +53,15 @@ fn fixtures() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures")
 }
 
-/// Bootstrap a fixture under `--experimental-formats`, commit the analysis facts
-/// (so the discovered entries become visible symbols), and return the program —
-/// `None` (a visible skip) when the `.sla` is absent.
+/// Bootstrap a fixture (multi-format loading is unconditional), commit the
+/// analysis facts (so the discovered entries become visible symbols), and return
+/// the program — `None` (a visible skip) when the `.sla` is absent.
 fn boot_committed(name: &str) -> Option<ConsoleProgram> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join(name);
     assert!(path.exists(), "missing fixture {path:?}");
 
-    std::env::set_var("KUNA_EXPERIMENTAL_FORMATS", "1");
     let mut prog = match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
@@ -77,7 +70,6 @@ fn boot_committed(name: &str) -> Option<ConsoleProgram> {
                  with `make specs`): {}",
                 e.explain()
             );
-            std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
             return None;
         }
     };
@@ -111,7 +103,6 @@ fn decompile_func(prog: ConsoleProgram, func_cmd: &str) -> String {
 /// `sub_140001592` resolves and decompiles with NO supplied address.
 #[test]
 fn pe_stripped_discovers_main_without_addr() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let Some(prog) = boot_committed("pe_imports_stripped.exe") else { return };
 
     // `main`@0x140001592 is `.pdata`-covered; the angr-style name is `sub_140001592`.
@@ -128,7 +119,6 @@ fn pe_stripped_discovers_main_without_addr() {
     );
 
     let out = decompile_func(prog, "load function sub_140001592");
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     // A real decompilation of a discovered, never-symboled function: it names the
     // function and emits a C body — not the "no function" error.
@@ -148,7 +138,6 @@ fn pe_stripped_discovers_main_without_addr() {
 /// `sub_100000590` resolves and decompiles with NO supplied address.
 #[test]
 fn macho_stripped_discovers_helper_via_function_starts() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let Some(prog) = boot_committed("macho_func_starts_stripped") else { return };
 
     // `helper`@0x100000590 has NO symbol (stripped); only LC_FUNCTION_STARTS lists
@@ -160,7 +149,6 @@ fn macho_stripped_discovers_helper_via_function_starts() {
     );
 
     let out = decompile_func(prog, "load function sub_100000590");
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     assert!(out.contains("sub_100000590"), "expected a body for sub_100000590, got:\n{out}");
     assert!(out.contains('{') && out.contains('}'), "expected a C body, got:\n{out}");
@@ -170,22 +158,26 @@ fn macho_stripped_discovers_helper_via_function_starts() {
     );
 }
 
-/// The default-off guarantee: without `--experimental-formats` neither a stripped
-/// PE nor a stripped Mach-O loads (the ELF arm and the 675/158 oracles are
-/// structurally immune to the new entry oracles).
+/// Multi-format is the default: a bare `load file` of a stripped PE / Mach-O
+/// routes to the object loader with no flag (the ELF arm and the 675/158 oracles
+/// are structurally immune to the new entry oracles). A `.sla`-absent environment
+/// surfaces as a load error; we only assert the dispatch ROUTES to the object
+/// loader (no XML "not recognized" rejection).
 #[test]
-fn default_off_rejects_stripped_pe_and_macho() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+fn default_on_loads_stripped_pe_and_macho() {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
 
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
     for name in ["pe_imports_stripped.exe", "macho_func_starts_stripped"] {
         let path = fixtures().join(name);
-        let r = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots);
-        assert!(
-            r.is_err(),
-            "default-off: {name} must NOT load without --experimental-formats"
-        );
+        if let Err(e) =
+            kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots)
+        {
+            let msg = e.explain();
+            assert!(
+                !msg.contains("Unable to recognize") && !msg.contains("XML"),
+                "default-on: {name} must route to the object loader (got: {msg})"
+            );
+        }
     }
 }

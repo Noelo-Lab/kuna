@@ -28,8 +28,8 @@ slotmap = "1.0"
 # LOSS).  Read-only parsing only -- no_default_features keeps the surface to the
 # explicit format readers.  `elf` is the established path; `pe`/`macho`/`coff`
 # are the multi-format expansion (docs/multiformat-loader-design.md), enabling
-# `object::File::parse` to recognize PE/Mach-O/COFF — gated on the load path
-# behind `--experimental-formats` so default behavior stays ELF-only.
+# `object::File::parse` to recognize PE/Mach-O/COFF — admitted on the load path
+# unconditionally (multi-format is the default, increment 46).
 object = { version = "0.39", default-features = false, features = ["read_core", "elf", "pe", "macho", "coff", "std"] }
 # Dev-only (kuna-harness): the datatest <stringmatch> engine.  std::regex
 # (ECMAScript) has no Rust equivalent; the regex crate is the documented

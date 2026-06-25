@@ -1,5 +1,148 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — branch-flipping for linearity (option `branchflip`)
+
+Follow-up to PR #52 / the `tee_O2 x2nrealloc` case. angr's SAILR structurer flips a branch
+guarded by a **negative** test (`x == 0`, `!cond`) so the **positive** condition heads the
+`if` and the common path reads top-to-bottom; kuna kept Ghidra's polarity (`if (x == 0)`).
+A new S8 structuring pass `ActionBranchFlip` (option `branchflip`, opt-in **default-off**,
+ElementId-free / `set_kuna_option`-routed like `stackguard`) adds the angr-style flip: on a
+3-component `if/else` whose guard is the negated / equality-to-zero form, it rewrites
+`if (x == 0) {A} else {B}` to the positive complement `if (x != 0) {B} else {A}`.
+
+**Mechanism.** The polarity is decided entirely in S8 (S9/`printc.rs` faithfully renders the
+`boolean_flip` flag + edge order). The cost oracle `op_flip_in_place_test` classifies a flip
+as `0` (removes negation, `ActionPreferComplement`'s job) or `1` (adds negation in Ghidra's
+model — `==`/`== 0`/constant compare). `branchflip` is the **mirror of `prefer_complement`**:
+it takes the residual `1` class `prefer_complement` leaves alone and reuses the same proven
+dual-arena machinery (`split_flip_in_place_execute` + `op_flip_in_place_execute` +
+`swap_blocks(sif,1,2)`); `Funcdata::branch_flip_complement`/`block_if_flip_negated_guard` in
+`substrate/funcdata_block.rs`. Registered after the final `prefer_complement` in
+`universalaction.rs`. Each flip is logged as a `branchflip:` warning comment at the guard
+(new `drain_pipeline_comments` in `decompile_drive.rs` flushes pipeline-time warnings).
+
+**Scope (honest).** The motivating `x2nrealloc` guards (`if (a0 == 0) break;` if-goto and a
+2-armed `if (v3 == 0)`) are **not** flippable in place — no `else` arm to swap into; their
+fix is the region structurer + the separate `noreturn_propagate`. `branchflip` is scoped to
+the polarity normalization it can do faithfully (3-component `if/else`); it fires cleanly on
+e.g. tee_O2 `usage`/`close_stream`/`main`. Default-off (the flip changes rendering, so not a
+0/675 no-op → not default-on eligible; no DIV). Speed: one BFS, in the noise (off==on at
+0.167s on `x2nrealloc`; 0.173 vs 0.172s on `usage` which flips). Testcase
+`tests/stages/branchflip-negated-guard.xml`; writeup `docs/features/branchflip/analysis.md`.
+`make test` 675/675 PARITY OK, `make test-stages` 166/166 PARITY OK, `make rust-test` green,
+`kuna catalog --check` OK.
+
+## Session (2026-06-25) — tee-o2-tail-jumps (option tailcalljump)
+
+angr testcase `test_decompiling_tee_O2_tail_jumps` :: `setlocale_null_androidfix`
+(`binaries/tests/x86_64/decompiler/tee_O2`, x86-64 PIE, `-O2`).
+
+- **Why angr was better:** at `-O2` a leaf function whose last act is "call X; return" is
+  compiled to a direct **tail jump** (`jmp X` instead of `call X; ret`); when X is an external
+  symbol it targets the PLT thunk (`xor %esi,%esi; jmp setlocale@plt`). angr renders
+  `return setlocale(v1, NULL)`. kuna's flow follower (whole address space in-bounds) treated the
+  direct `jmp setlocale@plt` as ordinary intraprocedural flow and followed it INTO the PLT thunk;
+  the thunk's `jmp qword [GOT]` then failed jump-table recovery and became a `CALLIND` through the
+  GOT pointer + a `"Treating indirect jump as call"` warning — so kuna emitted
+  `void f(...){ /* WARNING: Treating indirect jump as call */ (*dat_209f68)(a0,0); return; }`
+  (the thunk got inlined instead of the `jmp` being recognized as a tail call).
+- **Mechanism:** new S2 flow-classification predicate `kuna_is_tail_call_branch`
+  (`kuna_tailcalljump.rs`, ELEM 4100), modeled on `kuna_v850indbranch`. In
+  `FlowInfo::xref_control_flow`'s `CPUI_BRANCH` arm, when the option is on and a direct branch's
+  target is the entry of another known function (`query_call(dest).is_some()`, incl. PLT thunks)
+  and not the function's own entry, the `BRANCH` is rewritten to a `CPUI_CALL` + an artificial
+  `RETURN` (the `truncate_indirect_jump` halt-insert idiom + the `CPUI_CALL`-arm cursor re-derive),
+  instead of flowing into the callee. Result with the option on: `setlocale(a0,0); return;` — the
+  callee resolves by name and the spurious warning/`(*dat_...)` indirect call are gone. (The
+  remaining `void`/`return;` vs angr's `return setlocale(...)` is an S4 return-value-recovery
+  concern — the OFF path is *also* void, so it is inherent to kuna's wrapper-return recovery, not
+  introduced or fixable by this S2 change.)
+- **Ablation:** default-OFF is byte-identical (675/675 PARITY OK). Default-ON regresses **2**
+  upstream datatests (`Long double #1/#2`), so the feature ships **default-OFF opt-in** (no DIV
+  entry). Speed: off 259.0 ms / on 264.9 ms (+2.26%, within the 5% budget).
+- **On/off default decision:** default-OFF opt-in (ablation not clean if default-on).
+
+### Reviewer follow-up (2026-06-25) — add logger; default stays OFF (ablation not clean)
+
+Per PR #59 reviewer ("this feature should be on by default, but still have a logger saying
+that it ran and introduced a new call here"):
+
+- **Added the logger.** When the pass rewrites a tail `jmp <func>` into a `CALL`, it now emits a
+  `Funcdata::warning` at the branch site — `tailcalljump: recovered tail call -> introduced call
+  to <dest>`, rendered as a `/* WARNING: ... */` comment. This satisfies the
+  output-changing-feature logging contract: the *new* call is attributable in the output. New
+  stage-test assertion #4 asserts the WARNING.
+- **Re-attempted DEFAULT-ON on the merged tree, but it is NOT parity-safe.** Flipping
+  `tail_call_jumps` default-true in `Architecture::reset_defaults_internal` regresses **2** of the
+  675 upstream datatest assertions (`Long double #1` / `Long double #2`) — exactly as the original
+  PR's ablation predicted. Per the standing rule (NEVER modify `docs/baseline.json`; if default-on
+  changes any datatest assertion it must stay default-off), the feature **remains default-OFF
+  opt-in** (`option tailcalljump on`). No DIV entry. The logger ships regardless of the default
+  (it only fires when the option is on).
+- **ElementId 4100 → 4101.** On merge with `main`, `gotoreduce` had taken ElementId 4100; the
+  collision is resolved by renumbering `tailcalljump` to **4101**.
+- **Gates (merged tree, default-off + logger):** `make test` PARITY OK 675/675; `make test-stages`
+  PARITY OK 175/175 (incl. the new WARNING assertion #4); `make rust-test` green (catalog
+  byte-compat fixture + the `stages.toml` count tests bumped 91→92 surfaces / 45→46 settables /
+  21→22 live-readers, and the xml-corpus file-count 137→138); `kuna catalog --check` OK. Speed
+  (`tee_O2::setlocale_null_androidfix`, end-to-end median of 9): off ≈ on (within noise, well under
+  the 5% budget). With the option on, the function now renders `setlocale(a0,0)` + a
+  `/* WARNING: tailcalljump: recovered tail call -> introduced call to 0x... */` comment.
+
+## Session (2026-06-25) — missing-function-call (option `switchguardbound`)
+
+angr `test_decompiling_missing_function_call` (binary `adams`, `main`, x86-64 GCC PIE).
+angr recovers `main`'s getopt() dispatch as a `switch` (6 cases + default); kuna fails to
+recover the jump table and emits `/* WARNING: Treating indirect jump as call */`,
+collapsing the whole switch **and** the surrounding getopt loop into one bogus computed
+`(*(code *)…)()` call (so `strdup`/the `-e`/`-m`/`-u` cases vanish).
+
+**Why angr was better / root cause (instrumented):** the table at `0x96ac` is a textbook
+GCC PIC jump table whose index is range-guarded by `sub 0x36; ja DEFAULT` (`idx LEu 0x36`,
+55 entries) and **spilled to the stack** before the table load. kuna's jump-table recovery
+runs early on the partial/truncated function, before the `sub;ja` flag idiom is simplified
+and before the stack spill is collapsed, so `JumpBasic::analyzeGuards` cannot bound the
+index (the captured guard range stays full, `jrange.size = 2^31 GT maxtablesize`). The basic
+model is declined, `recoverAddresses` throws *"Too many branches"*, and
+`truncateIndirectJump` rewrites the BRANCHIND into a CALLIND.
+
+**Mechanism (`option switchguardbound`, S2 switch-model):** a new gated `JumpBasic`
+model-extension `kuna_try_guard_bound_table`, sibling of the GH-9191 `switchmodbound`
+modulo bound, invoked from `recover_model_basic` after the normal model (and the modulo
+extension) fail. It EVALUATES the guard boolean as a function of the index varnode `v`
+(resolving register-reused siblings like `m = v + 0x3f` via a linear-offset map) and takes
+`N` = the first `v` whose routing flips from `v = 0`'s — composing the simplifier's
+`idx GT 0x35 and m != 0x75` form to the correct `N = 0x37` (55, including the boundary `'u'`
+case at idx 0x36, which a naive constant scan would miss). It then re-binds the table index
+to `[0, N)` and the normal `buildAddresses`/structurer emit the switch.
+
+**Ablation / default:** flag default-ON over the 675 datatests → **0 assertions changed**
+(the heuristic over-bounds no corpus switch). But the target decompile is +34% slower with
+the option ON (recovering the switch+loop vs truncating to a call; the gate-OFF path is
+byte-identical, ~193 ms), over the +5% speed budget. So per the speed gate the option ships
+**default-OFF opt-in** (`speed_forced_off`; no DIV entry — output byte-identical when off),
+exactly the precedent + risk profile of `switchmodbound` (the guard-to-index correspondence
+is asserted across a memory spill it cannot prove in dataflow). New module
+`kuna_switchguardbound.rs` (ELEM 4022); stage test `tests/stages/ghangr-missing-function-call-1101b1.xml`
+(two passes: off = the computed-call bug, on = the recovered switch incl. the boundary
+`case 0x36`). See `docs/features/missing-function-call-1101b1/`.
+
+**Perf review follow-up (PR #60, after merging main):** profiled the "incredibly slow"
+concern. Slope-isolated per-decompile cost (cancels the fixed load) is off ≈ 23.9 ms / on
+≈ 63.2 ms (**+164 %**, ~2.6×) — the +34 % PR figure was the same effect diluted by the
+~190 ms shared load. **Root cause is downstream and inherent, not the heuristic:**
+`kuna_try_guard_bound_table` runs 3×/~7 µs (~22 µs, <0.1 % of the gap; 0× gate-off,
+confirmed). The cost is that the gate-ON path keeps the real 55-entry switch + getopt loop
+and structures/types a ~2.6× larger function, instead of truncating to one `CALLIND`. No
+O(n²)/per-op/region-rebuild defect (ruled out, cf. the ActionPool regression). No localized
+fix → kept **default-OFF opt-in** per the speed gate. Separately documented the "too many
+declared variables on top": a pre-existing artifact already mitigated on `main` by
+`dedupvardecls` (DIV-7, default-on, post-branch) — one stack slot maps to many un-merged
+same-named scalar `HighVariable`s (loop/switch SSA phis); `dedupvardecls` collapses the
+identical *rendered* lines, the underlying over-fragmentation is a `s6_merge` follow-up. See
+`docs/features/missing-function-call-1101b1/analysis.md` + `record.json`
+(`speed_investigation`).
+
 ## Session (2026-06-25) — dd-argmatch-to-argument-noea-9e6e8b (option gotoreduce)
 
 angr testcase `test_decompiling_dd_argmatch_to_argument_noeagerreturns::argmatch_to_argument`

@@ -1,6 +1,6 @@
 //! Multi-format-loader PR-5 e2e gate: a pre-link **COFF object** (`coff_obj.obj`,
-//! a `.obj` from clang `-target x86_64-pc-windows-gnu`) loads under
-//! `--experimental-formats` and a **named** defined function resolves *by name*
+//! a `.obj` from clang `-target x86_64-pc-windows-gnu`) loads (multi-format
+//! support is unconditional) and a **named** defined function resolves *by name*
 //! from the COFF symbol table and decompiles its real body — the object-file arm
 //! of the loader seam (design §3.6, §4, §8 PR-5).
 //!
@@ -36,12 +36,12 @@
 //! instead, registering `compute` while still dropping the undefined `puts`
 //! placeholder (loadimage_object.rs source #1).
 //!
-//! ## Flag gating (default-off ⇒ byte-identical on ELF)
+//! ## Multi-format loading (unconditional)
 //!
-//! The `.obj` only loads when `KUNA_EXPERIMENTAL_FORMATS` is set (the
-//! `--experimental-formats` CLI flag). The test confirms that with it **unset**
-//! the same fixture is rejected (the default-off, byte-identical-dispatch proof
-//! shared with `verify_object_formats` / `verify_pe_imports`).
+//! PE/Mach-O/COFF load unconditionally now — like ELF, with no flag. The test
+//! confirms the `.obj` routes through the default `load file` dispatch to the
+//! object loader (the byte-identical-dispatch proof shared with
+//! `verify_object_formats` / `verify_pe_imports`).
 //!
 //! ## `.sla` precondition
 //!
@@ -51,19 +51,12 @@
 //! green).
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
-
-/// `KUNA_EXPERIMENTAL_FORMATS` is a process-global env var both tests in this file
-/// toggle; serialize their env-sensitive bodies so the default-off check in one
-/// never races the experimental-on bootstrap in the other (cargo runs the two
-/// tests in parallel within one process).
-static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -94,15 +87,14 @@ fn decompile_func(prog: ConsoleProgram, func_cmd: &str) -> String {
     status.optr.clone()
 }
 
-/// Bootstrap the COFF object under `--experimental-formats`, returning `None` (a
-/// visible skip) when the `.sla` is absent.
+/// Bootstrap the COFF object, returning `None` (a visible skip) when the `.sla`
+/// is absent.
 fn boot() -> Option<ConsoleProgram> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("coff_obj.obj");
     assert!(path.exists(), "missing fixture {path:?}");
 
-    std::env::set_var("KUNA_EXPERIMENTAL_FORMATS", "1");
     match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
         Ok(p) => Some(p),
         Err(e) => {
@@ -111,7 +103,6 @@ fn boot() -> Option<ConsoleProgram> {
                  `make specs`): {}",
                 e.explain()
             );
-            std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
             None
         }
     }
@@ -121,20 +112,25 @@ fn boot() -> Option<ConsoleProgram> {
 /// resolves *by name* from the COFF symbol table, and decompiles to `x*3+1`.
 #[test]
 fn coff_object_decompiles_named_function() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("coff_obj.obj");
 
-    // (before / default-off proof) Without the flag the `.obj` must NOT load — it
-    // routes to the XML branch, which cannot parse it (the pre-PR-2/PR-5 "not an
-    // ELF object" rejection).
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
-    let off = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots);
-    assert!(
-        off.is_err(),
-        "default-off: a COFF object must NOT load without --experimental-formats"
-    );
+    // (default-on proof) The object loads through the *default* `load file`
+    // dispatch with no flag — multi-format support is unconditional. (A `.sla`-
+    // absent environment surfaces as a load error; the main body's skip covers
+    // that, so here we only assert the dispatch ROUTES to the object loader, i.e.
+    // it does not fail with the XML "not recognized" error.)
+    let dflt = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots);
+    if let Err(e) = &dflt {
+        // Only acceptable failure is a missing-`.sla` bootstrap error, never an
+        // "unrecognized format" rejection (that would mean the magic wasn't admitted).
+        let msg = e.explain();
+        assert!(
+            !msg.contains("Unable to recognize") && !msg.contains("XML"),
+            "default-on: the object must route to the object loader (got: {msg})"
+        );
+    }
 
     let Some(prog) = boot() else { return };
 
@@ -162,7 +158,6 @@ fn coff_object_decompiles_named_function() {
 
     // `kuna decompile coff_obj.obj compute` (by name) → the real body `x*3+1`.
     let out = decompile_func(prog, "load function compute");
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     // The function is named `compute` (COFF-symtab name resolved), not `FUN_*`.
     assert!(
@@ -186,11 +181,9 @@ fn coff_object_decompiles_named_function() {
 /// symbol-source table), not just the first.
 #[test]
 fn coff_object_decompiles_second_named_function() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let Some(prog) = boot() else { return };
 
     let out = decompile_func(prog, "load function run");
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     assert!(
         out.contains("run"),

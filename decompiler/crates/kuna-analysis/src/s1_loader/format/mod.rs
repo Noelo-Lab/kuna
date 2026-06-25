@@ -101,13 +101,11 @@ pub trait ObjectFormat {
 
 /// Select the [`ObjectFormat`] for a parsed object.
 ///
-/// As of PR-2 all four formats are constructible — `object`'s `pe`/`macho`/`coff`
-/// readers are enabled, and the engine dispatch ([`is_object_binary`]) routes
-/// PE/Mach-O/COFF magics here *when `--experimental-formats` is on*. By default
-/// only `\x7fELF` reaches the object loader, so in practice `detect` is only ever
-/// called on an ELF unless the experimental flag is set. PR-2's PE/Mach-O/COFF
-/// impls are skeletons (correct section flags + spec selection; empty imports —
-/// import naming is PR-4/PR-7).
+/// All four formats are constructible — `object`'s `pe`/`macho`/`coff` readers
+/// are enabled, and the engine dispatch ([`is_object_binary`]) routes ELF / PE /
+/// Mach-O / COFF magics here unconditionally (multi-format is the default since
+/// increment 46). The XML/datatest corpus never carries an object-format magic,
+/// so in practice `detect` is only ever called on a real object binary.
 ///
 /// [`is_object_binary`]: ../../../../../kuna_console/engine/fn.is_object_binary.html
 pub fn detect(file: &object::File) -> KunaResult<Box<dyn ObjectFormat>> {
