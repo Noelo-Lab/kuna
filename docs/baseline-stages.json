@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    171,
-    171
+    175,
+    175
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -174,7 +174,11 @@
     "data:namestyle #4 default: global data renders as dat_<addr> (lowercase, no leading zeros)",
     "data:namestyle #5 ghidra restores: argument renders as param_N",
     "data:namestyle #6 ghidra restores: local renders as iVar with no location comment",
-    "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>"
+    "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>",
+    "data:regionstructure #1: the if/else diamond is structured (true clause), both passes",
+    "data:regionstructure #2: the else clause is structured, both passes",
+    "data:regionstructure #3: the join sequence + tail return is recovered, both passes",
+    "data:regionstructure #4: ZERO gotos  -  region structurer matches Ghidra's acyclic structuring (parity)"
   ],
   "returncode": 0,
   "unit_footer": null

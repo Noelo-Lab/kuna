@@ -171,6 +171,16 @@ impl<'a> RegionStructurer<'a> {
             if self.match_acyclic_sequence()? {
                 continue;
             }
+            // (a2) structural ITE schema (phoenix._match_acyclic_ite): fold a
+            //      2-out condition whose true/false clauses reconverge into a
+            //      BlockIf.  kuna's structural form (the condition lives on the
+            //      block's terminal CBRANCH) needs no claripy — only the
+            //      true-edge orientation Ghidra's `negateCondition` would supply,
+            //      so the false-clause-only if-then case is left to virtualize
+            //      (honest-partial; the full negate path is a later increment).
+            if self.match_acyclic_ite()? {
+                continue;
+            }
             // (b) wrap any already-marked goto edges (phoenix: BlockGoto/IfGoto).
             if self.rule_block_goto()? {
                 continue;
@@ -263,6 +273,113 @@ impl<'a> RegionStructurer<'a> {
             nodes.push(outblock);
         }
         Some(nodes)
+    }
+
+    // -----------------------------------------------------------------------
+    // (a2) structural ITE schema — phoenix._match_acyclic_ite (kuna structural
+    //      form: the condition is the block's terminal CBRANCH; no claripy)
+    // -----------------------------------------------------------------------
+
+    /// Fold a 2-out condition node whose true/false clauses reconverge into a
+    /// [`BlockIf`](crate::block::BlockKind::If).
+    ///
+    /// Mirrors the structural detection of Ghidra `CollapseStructure::ruleBlockIfElse`
+    /// (the full if/else, both clauses present) and `ruleBlockIf` (if-then, one
+    /// clause).  This is the kuna analog of angr `phoenix._match_acyclic_ite`,
+    /// realized over kuna's `BlockIf` builders — the edge condition lives on the
+    /// block's terminal CBRANCH so no claripy/condition-processor is needed.  The
+    /// if-then case is only taken when the clause is on the **true** edge (the
+    /// false-clause if-then needs Ghidra's `negateCondition` data-flow flip — a
+    /// later increment); otherwise the node is left to virtualize (honest-partial).
+    fn match_acyclic_ite(&mut self) -> KunaResult<bool> {
+        let n = self.size();
+        for i in 0..n {
+            let bl = self.component(i);
+            if self.try_if_else(bl)? {
+                return Ok(true);
+            }
+            if self.try_if_then_true_clause(bl)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// If/else: a 2-out condition whose true and false clauses each have a single
+    /// in-edge and a single out-edge, both exiting to the same `outblock`, with no
+    /// goto/switch on any edge.  Mirrors Ghidra `ruleBlockIfElse`.  No condition
+    /// negation needed — the true/false clauses go to `new_block_if_else` in
+    /// edge-true/edge-false order, exactly as Ghidra passes them.
+    fn try_if_else(&mut self, bl: BlockId) -> KunaResult<bool> {
+        let b = self.graph.block(bl);
+        if b.size_out() != 2 || b.is_switch_out() {
+            return Ok(false);
+        }
+        if !b.is_decision_out(0) || !b.is_decision_out(1) {
+            return Ok(false);
+        }
+        let tc = b.get_true_out();
+        let fc = b.get_false_out();
+        if tc == bl || fc == bl {
+            return Ok(false); // no loops
+        }
+        let tcb = self.graph.block(tc);
+        let fcb = self.graph.block(fc);
+        if tcb.size_in() != 1 || fcb.size_in() != 1 {
+            return Ok(false); // nothing else may hit a clause
+        }
+        if tcb.size_out() != 1 || fcb.size_out() != 1 {
+            return Ok(false); // single exit from each clause
+        }
+        if tcb.is_switch_out() || fcb.is_switch_out() {
+            return Ok(false);
+        }
+        if tcb.is_goto_out(0) || fcb.is_goto_out(0) {
+            return Ok(false); // clauses must exit structurally
+        }
+        let out_t = tcb.get_out(0);
+        let out_f = fcb.get_out(0);
+        if out_t == bl || out_t != out_f {
+            return Ok(false); // clauses must reconverge to the same block
+        }
+        let graph_id = self.graph_id;
+        self.graph.new_block_if_else(graph_id, bl, tc, fc);
+        Ok(true)
+    }
+
+    /// If-then (true-clause only): a 2-out condition where the **true** clause has
+    /// a single in/out edge and exits to the **false** successor (so the false edge
+    /// is the after-if path).  Mirrors Ghidra `ruleBlockIf`'s `i == 1` (true-edge)
+    /// arm, which needs no `negateCondition`.  The false-clause arm (`i == 0`,
+    /// needing the data-flow condition flip) is deferred to a later increment.
+    fn try_if_then_true_clause(&mut self, bl: BlockId) -> KunaResult<bool> {
+        let b = self.graph.block(bl);
+        if b.size_out() != 2 || b.is_switch_out() {
+            return Ok(false);
+        }
+        if b.get_out(0) == bl || b.get_out(1) == bl {
+            return Ok(false); // no loops
+        }
+        if b.is_goto_out(0) || b.is_goto_out(1) || !b.is_decision_out(1) {
+            return Ok(false);
+        }
+        // Only the true-edge clause (i == 1): the clause is the true successor,
+        // and after the clause control reaches the false successor.
+        let clause = b.get_true_out();
+        let after = b.get_false_out();
+        let cb = self.graph.block(clause);
+        if cb.size_in() != 1 || cb.size_out() != 1 {
+            return Ok(false);
+        }
+        if cb.is_switch_out() || cb.is_goto_out(0) {
+            return Ok(false);
+        }
+        if cb.get_out(0) != after {
+            return Ok(false); // path after the clause must be the other branch
+        }
+        let graph_id = self.graph_id;
+        self.graph.new_block_if(graph_id, bl, clause);
+        Ok(true)
     }
 
     // -----------------------------------------------------------------------
