@@ -38,6 +38,246 @@ is asserted across a memory spill it cannot prove in dataflow). New module
 (two passes: off = the computed-call bug, on = the recovered switch incl. the boundary
 `case 0x36`). See `docs/features/missing-function-call-1101b1/`.
 
+## Session (2026-06-25) — dd-argmatch-to-argument-noea-9e6e8b (option gotoreduce)
+
+angr testcase `test_decompiling_dd_argmatch_to_argument_noeagerreturns::argmatch_to_argument`
+(coreutils `dd` x86-64 @ 0x40a640). **Why angr was better:** the only structural diff was a
+single residual `goto label_40a6a3;` + `label_40a6a3:` — a shared `v2 = 0;` → `return v2;`
+return tail with two predecessors (the entry `if (v2==0)` true-arm and an in-loop `if (v2==0)`
+edge) that Ghidra's `CollapseStructure` must express as one unstructured edge. angr emits **0**
+gotos by duplicating the constant return tail into the in-loop edge (SAILR/Phoenix
+`ReturnDuplicator`).
+
+**Mechanism (new S8 pass, `kuna_gotoreduce.rs`).** `ActionGotoReduce` runs once after
+`ActionFinalStructure`: it finds every `BlockIf` rendering as `if (cond) goto T` whose target
+`T` is a small single-successor basic-block chain ending in `return` (≤3 blocks / ≤8 ops, no
+call/store), and rewrites it to `if (cond) { <tail> }` by minting fresh `BlockCopy` leaves over
+the *same* underlying basic blocks (a print-tree duplication — the printer re-emits their ops;
+no p-code is cloned, so SSA/def-use is untouched), then clears `T`'s now-unused label. Only
+genuine surgery is one `(kuna)` method `BlockGraph::kuna_inline_return_tail` in `block.rs`; the
+rest is the new module + the standard option anchors (architecture/seam flag
+`reduce_return_gotos`, `options.rs`, `universalaction.rs`, `stages.toml`). ElementId 4100.
+
+**Ablation:** clean — **0/675** datatest assertions change with the feature default-ON, and the
+speed gate passes (target ~within noise, on ≤ off). Despite the clean ablation it ships
+**default-OFF opt-in** (`option gotoreduce on`): per the approved proposal this is the first
+S8 structured-tree mutation on the verbatim-ported collapse engine and is rated high-risk, so
+it stays opt-in pending broader validation (no DIV entry; default output is byte-identical).
+Stage test `tests/stages/ghangr-dd-argmatch-to-argument-noea-9e6e8b.xml` (off = goto+label
+present; on = goto/label gone, return tail duplicated). Same SAILR goto-reduction family as the
+parked `morton`/`newburry`/`tr-build` proposals — this is the minimal `return <const>` variant.
+## Session (2026-06-25) — 1after909-doit-73591e (option loopbreak_recovery, DIV-10)
+
+Closed the angr-vs-kuna gap on `test_decompiling_1after909_doit::doit`: angr renders the
+command-processing `while` loop with **0 gotos / 0 labels** (every error/`quit` path is a
+structured `break;`), where kuna emitted **10 gotos / 2 labels** — nine of them
+`goto label_239f;` to the loop's shared cleanup successor (semantic `break;`) plus the
+synthesized `label_239f:`.
+- **Why angr was better**: angr's Phoenix/SAILR structurer runs loop-successor refinement
+  (break/continue recovery). The upstream equivalent is Ghidra `BlockGraph::scopeBreak(-1,-1)`,
+  called in `ActionFinalStructure` between `finalizePrinting` and `markUnstructured` — which
+  kuna's port had left an explicit SEAM stub (`docs/rust-port/losses.md`).
+- **Mechanism**: new `s8_structure/kuna_loopbreak_recovery.rs` ports `scopeBreak` and every
+  per-block override (`BlockGraph`/`BlockGoto`/`BlockIf`/`BlockSwitch`/`BlockWhileDo`/`BlockDoWhile`/
+  `BlockInfLoop`/`BlockMultiGoto`/`BlockCondition`) as a single recursive walk over the structured
+  tree, carrying `curexit` (fall-through block) and `curloopexit` (innermost loop successor). A
+  goto whose target equals `curloopexit` is retagged `f_goto_goto → f_break_goto`; the printer
+  already emits `break;` for that flag, and `markUnstructured` (run after) then suppresses the
+  now-dead successor label. `BlockId` equality is the faithful analog of the C++ `getIndex()`
+  identity. Gated by `Architecture::recover_loop_break` (`option loopbreak_recovery`, ElementId
+  4092), called from `ActionFinalStructure::apply`.
+- **Ablation → default**: 0 of 675 datatest assertions change with the flip on (PARITY OK without
+  regeneration), and `make rust-test` (unit + golden differential + `.sla`) is green with it on.
+  Speed +0.12% (440.2→440.7 ms median on `doit`, within the 5% budget). Clean on all gates and it
+  converges kuna toward upstream Ghidra (which always runs `scopeBreak`) ⇒ shipped **DIV-7
+  default-on**; `option loopbreak_recovery off` restores the byte-identical raw-`goto` rendering.
+- **Result on `doit`**: the nine `goto label_239f;` become `break;` and `label_239f:` disappears
+  (10/2 → 1/1 gotos/labels; the lone remaining `goto label_1dca` is a forward jump into the loop
+  head, a separate structural gap, correctly untouched).
+- **Tests (both ran)**: `tests/stages/ghangr-1after909-doit-73591e.xml` (two-pass off/on),
+  `docs/baseline-stages.json` +2; the `kuna-catalog.xml` provenance counts bumped for the new 24th
+  settable. See `docs/features/1after909-doit-73591e/`.
+
+## Session (2026-06-25) — structural no-return propagation (option `noreturn_propagate`)
+
+Closes the angr gap `test_decompiling_tee_O2_x2nrealloc::x2nrealloc` (coreutils `tee_O2`,
+x86_64). **Why angr is better:** angr renders `x2nrealloc` cleanly; kuna emits **invalid C**
+— a spurious `while(true)` loop + `goto label_5813` + dead stack-spill artifacts, 38% longer
+(39 vs 24 loc). **Root cause:** `xalloc_die` is structurally no-return (its body
+unconditionally ends in `error(...)` then `abort()`, and kuna already models `abort`
+no-return) but kuna never *propagates* that to `xalloc_die`, so the `call xalloc_die` in
+`x2nrealloc` is assumed to return and the -O2 cold-path bytes after it become a spurious
+fall-through back-edge. (`option noreturn xalloc_die` by hand collapses the output to the
+angr shape — the mechanism is exactly no-return propagation.)
+
+**Mechanism (the angr CFGFast no-return propagation analog).** A new `kuna-analysis`
+Listing-consumer pass `s1_noreturn_propagate::NoReturnPropagatePass` (gate id
+`noreturn_propagate`, default-OFF, requires `option listing on`). It seeds the terminal set
+from the **Known** no-return list and concludes a function no-return when its **last real
+instruction** (last by address, skipping trailing NOP alignment padding) is a `CALL`/tail
+`JMP` to an already-no-return callee, with **no `RETURN` path, no computed jump, and no
+branch escaping the reachable body** — iterated to a fixpoint, with **no evidence threshold**
+(the key difference from `noreturn_disc`, whose ≥3-call-site rule + "valid fall-through after
+the call" predicate both miss `xalloc_die`: one cold call site, and `call abort` is followed
+by valid NOP padding). It emits the existing `NoReturnFact` → the existing
+`set_function_no_return` commit seam → the inherited `flow.rs` artificial-halt path: **no new
+commit arm, no S7 work**. Soundness: with no `RETURN` and the only reachable exit a call/jump
+to an already-no-return function, the function cannot return (strictly more conservative than
+angr's propagation).
+
+**Why a [PROPOSAL] (large) and not a one-pass `kuna_<slug>.rs`:** the no-return flag is
+consumed pre-pipeline during initial flow generation (`s2_lift/flow.rs:1838`,
+`query_call_no_return`, `&self`), so a `kuna_loweredswitch.rs`-style in-pipeline Action runs
+too late; and the mandated firing `tests/stages/*.xml` cannot be authored because the XML
+bytechunk path never runs analysis passes or builds the Listing (exactly why
+`noreturn_known`/`noreturn_disc` have no stages XML test). Approved proposal
+(`docs/features/tee-o2-x2nrealloc-6981e7/proposal.md`).
+
+**Testing (no stages XML — analysis tier):** a vendored differential fixture
+`noreturn_propagate_x86_64` (a custom `my_die()` wrapper called **once** — below
+`noreturn_disc`'s ≥3 threshold — ending in `call abort` + NOP padding) drives the cross-crate
+e2e gate `verify_noreturn_propagate.rs` (3 assertions: propagation eliminates the dead code;
+the *existing* `noreturn_disc` consumer does **not** fix it — the differential; the wrapper
+itself is concluded no-return), plus `kuna-analysis` pass-identity unit tests.
+
+**Ablation / default decision:** the XML datatest path never runs analysis passes, so the
+ablation is structurally 0/675 and `make test` stays **PARITY OK**. Kept **default-OFF
+opt-in** (real-ELF-only flow heuristic, listing-gated), matching `noreturn_disc` — **no DIV
+entry** (output byte-identical by default). Speed: `x2nrealloc` off=154.6 ms / on=151.1 ms
+(−2.21%, within the 5% budget; the pass is one bounded call-graph fixpoint over an already-
+built Listing). The two `KUNA-CATALOG` provenance-count assertions were re-pinned
+(`source_decompiler="angr"` 3→4, `change_kind="structure-recovery"` 2→3) and the catalog
+count tests bumped (37→38 settables); `baseline-stages.json` regenerated.
+
+## Session (2026-06-25) — nl-i386-pie-b7d555 (option i386_pie_plt, DIV-9)
+
+- **angr testcase**: `test_decompiling_nl_i386_pie::usage` (binary `i386/nl`, an i386 **PIE**
+  ELF; angr 9.2.213). angr emits ~80 clean loc with named libc calls; kuna emitted ~209 loc of
+  broken C — a spurious `do{}while(true)` loop, a `goto`, three un-unified `// esp` stack
+  values, explicit frame stores, dropped call args, a recovery-failure marker, and `sub_<addr>`
+  call names.
+- **Why angr was better**: angr resolves PLT/GOT imports during CLE load and consults a libc
+  no-return database, so `exit` is flagged no-return and the dead fall-through never loops. kuna
+  has the equivalent machinery (`resolve_plt_imports` + `NoReturnKnownPass` + the engine
+  flow-halt) but `decode_i386` decoded only the non-PIC `FF 25 <abs32>` stub form and **skipped**
+  the i386-PIE `FF A3 <disp32>` (`jmp *disp(%ebx)`, GOT-relative) form, so no PIE import was named
+  → `exit` never no-return → the whole structural failure cascaded.
+- **Mechanism**: `kuna-analysis::s1_loader::elf_plt::decode_i386` now also decodes `FF A3 <disp32>`,
+  computing `slot = GOT_base + sign(disp32)` (`GOT_base` = `_GLOBAL_OFFSET_TABLE_` symbol value,
+  fallback `.got.plt`/`.got` section base — the value the PIC prologue loads into `%ebx`). The
+  i386-PIE analog of the shipped x86-64 RIP-relative / aarch64 veneer decoders. The non-PIC arm
+  is untouched. Naming `exit@plt` lets the pre-existing no-return pass collapse the spurious loop
+  and restore stack recovery.
+- **Gating**: loader-tier (the PLT→name map is baked at `load file`, upstream of `option`), so
+  the gate is the `KUNA_I386_PIE_PLT` env var (`kuna_decomp::kuna_i386_pie_plt`), set by the CLI
+  on the `decomp_dbg` subprocess; the `Architecture::analysis_i386_pie_plt` bool is for catalog
+  visibility. `option i386_pie_plt` (default-on), `source_decompiler = "angr"`,
+  `change_kind = "correctness-fix"`.
+- **Ablation**: 0 of 675 datatest assertions change with the feature default-ON (the bytechunk
+  corpus never reaches `resolve_plt_imports`; no i386-PIE binary present) ⇒ **default-on**, DIV-7.
+  `make test` stays PARITY OK (datatests 675/675); `make test-stages` PARITY OK (the KUNA-CATALOG
+  #6 angr-provenance count 3→4). **Speed**: the collapsed loop makes the target *faster* —
+  `usage` 130 ms on vs 422 ms off (−69%), within budget.
+- **Testing deviation** (loader feature): the `tests/stages/*.xml` bytechunk harness cannot carry
+  `.rel.plt`/`.dynsym`/GOT structure, so the gate is a cargo integration test
+  (`kuna-console/tests/verify_i386_pie_plt.rs`, over the vendored i386-PIE `nl` fixture) plus the
+  decoder unit test `elf_plt.rs::tests::i386_pie_plt_decode`, in lieu of a stage XML.
+
+## Session (2026-06-25) — ELF relocatable-object (`ET_REL` / `.o`) loader (option `relocobjects`, DIV-8)
+
+**angr testcase:** `test_decompiling_ptx_fix_output_parameters::fix_output_parameters`
+(`ptx.o`, angr 9.2.213).
+
+**Why angr was better:** `ptx.o` is a **relocatable ELF object** (`ET_REL`) with no `PT_LOAD`
+program headers. kuna's faithful `LoadImageBfd` port (`kuna-analysis/loadimage_object.rs`) builds
+its byte map only from `PT_LOAD` segments, so a `.o` mapped **zero bytes** and *every* function
+failed to lift (`Unable to load N bytes at ...`) — kuna produced **no output at all**, while angr
+(CLE's ELF relocatable backend) decompiled `fix_output_parameters` fully with resolved names.
+
+**Mechanism:** a new kuna file `kuna-analysis/src/s1_loader/elf_reloc.rs`. For an `ET_REL` object
+(`kind()==Relocatable` + empty `segments()`), `ObjectLoadImage::from_bytes` takes a new
+`from_relocatable` path that (1) lays each `SHF_ALLOC` section out at a non-overlapping VMA above
+`0x400000` (angr's CLE default, so `fix_output_parameters` lands at `0x400660` as in angr),
+(2) applies the `.rela.*` relocations (`R_X86_64_PC32`/`PLT32`/`32`/`32S`/`64`; unknown kinds
+degrade with a logged warning), (3) rebases defined symbols and binds undefined externs — PLT-
+relative call targets are named even when gcc emits them `STT_NOTYPE` — to synthetic addresses, so
+calls render `strlen(...)`, `__sprintf_chk(...)`, `__ctype_b_loc(...)`, etc. The linked
+`ET_EXEC`/`ET_DYN` `PT_LOAD` path is untouched (byte-identical).
+
+**Option / wiring:** `relocobjects` (default **on**). The loader runs at `load file`, *upstream* of
+the per-function option machinery (the image is opened before any `option` command), so the toggle
+is bridged to the loader by the `KUNA_RELOC_OBJECTS` (`RELOC_OBJECTS_ENV`) process env var that
+`set_kuna_option` and `kuna decompile` set; `--option relocobjects off` (or `KUNA_RELOC_OBJECTS=0`)
+restores the upstream `PT_LOAD`-only loader.
+
+**Ablation / default:** **0 of 675** upstream datatest assertions change (the XML datatest path
+never constructs an `ObjectLoadImage`, and the linked-ELF path is byte-identical) and speed is
+within budget (`-6.97%` on the target; off measures the fast-fail error path). Shipped **default-on**
+as a pure capability → **DIV-8**. `make test` PARITY OK, `make test-stages` PARITY OK; the
+two `kuna-catalog.xml` provenance counts bumped 5→6 angr / 2→3 structure-recovery for the new row.
+
+**Tests:** loader cargo tests (no XML stage test is possible — the datatest path bypasses the ELF
+object loader): a hand-assembled `ET_REL` exercising layout + each relocation kind + symbol
+rebasing, and the real `ptx.o` fixture asserting `fix_output_parameters` rebases to `0x400660`, its
+bytes load, and externs (`strlen`/`dcgettext`/`error`) resolve.
+
+**Pre-existing note:** `make rust-test` has one failure on this branch — `verify_w10_proto_unlock`'s
+const-return direction-check, a stale DIV-6 oracle assertion that fails identically on the base
+commit and is unrelated to this feature; left untouched (no drive-by).
+
+## Session (2026-06-25) — angr duplicate-declaration collapse (option dedupvardecls, DIV-7)
+
+Closed the angr-vs-kuna gap on `test_decompiling_x8664_cvs::main` (x86_64/cvs): kuna emitted a
+**wall of duplicate local-variable declarations** — the single stack slot `stack - 0x3c`
+(`option_index`) was declared **166 times**, `stack - 0x38` 53×, etc. — where angr declares each
+local once. This was the dominant cause of kuna's main being ~30% longer than angr (677 vs 472 loc).
+
+- **Why angr is better:** angr's variable recovery yields one variable per storage location, so its
+  declaration block lists each local once. kuna's C printer walks **HighVariables** (the W4
+  `ScopeLocal` Symbol walk is the missing surface), so when the angr-style naming maps many distinct
+  scalar HighVariables sharing one stack slot to the same name+type+storage, kuna emits one
+  declaration line *per high* — textually identical, and (strictly) invalid C re-declarations.
+- **Mechanism (S9 emit):** `option dedupvardecls` + arch flag `dedup_var_decls` (DIV-7 default-on,
+  carried into the `ArchSeam`). `emit_local_var_decls` now skips a declaration whose fully-rendered
+  signature (final declarator type + name + array adornment + storage comment) is byte-identical to
+  one already emitted — the scalar analogue of the composite-symbol collapse kuna already performs.
+  New module `s9_emit/kuna_dedupvardecls.rs` (option parser + `DeclDedup` signature tracker);
+  ElementId 4091. Pure presentation: body markup, naming, and which highs exist are unchanged; only
+  redundant declaration *lines* are removed (provably lossless).
+- **Ablation:** 0 of 675 datatest assertions change with the feature default-ON (`make test` PARITY
+  OK without regeneration); **speed +0.14%** on the target (off 2236 ms → on 2239 ms, budget 5%) —
+  an O(decls) HashSet pass. Clean ablation + within-budget speed ⇒ shipped **default-ON** (DIV-7).
+- **Effect on target:** cvs `main` 680 → 461 loc with the flag on (angr is 472).
+- **Testcase:** `tests/stages/ghangr-x8664-cvs-863633.xml` (+2 assertions, `docs/baseline-stages.json`);
+  the `kuna-catalog.xml` angr-provenance count moved 3→4.
+
+## Session (2026-06-25) — call-return variable folding (option `foldcallret`)
+
+Closed an angr-better gap from `test_call_return_variable_folding`
+(`x86_64/decompiler/ls_gcc_O0::print_long_format`, angr 9.2.213).
+
+- **Why angr was better:** angr inlines a call's return value into its single use
+  site (`if (timespec_cmp(...) <= -1)`, `... && localtime_rz(...) != NULL ...`),
+  whereas kuna spills *every* call return to a named local first
+  (`v5 = timespec_cmp(); if (v5 <= -1)`). Root cause: S6 `ActionMarkExplicit`
+  (`baseExplicit`, `coreaction.cc:3105`) forces every call output **explicit**
+  (`if (op->isCall()) return -1;`) — conservative because making a call output
+  *implied* moves the call's evaluation to the use site.
+- **Mechanism:** new option `foldcallret` (S6 explicit-marking sub-stage, opt-in
+  default-OFF). New module
+  `decompiler/crates/kuna-decomp/src/s6_variables/kuna_callretfold.rs` exposes the
+  order-safety predicate `call_output_foldable` (decider-refined): fold only when
+  the call output has exactly one **non-marker** use, in the **same basic block**,
+  with **no intervening** call/load/store between the call and its use — so the
+  call's evaluation order is preserved. `baseExplicit`'s `is_call()` arm falls
+  through to the implied path when the flag is on and the predicate holds.
+- **Ablation:** default-OFF byte-identical (`make test` 675/675 PARITY OK). Flipping
+  default-ON changes 5/675 datatest assertions (Deindirect Output #1, Inlining #8,
+  Local cross #2, Modified conditional constant #2/#3), so it stays **opt-in**
+  (no DIV entry). Speed: off 650.95 ms / on 630.17 ms (−3.19%, within the 5% budget).
+- **On/off:** `kuna decompile <bin> <fn> --option foldcallret on`; off (default) is
+  upstream byte-identical.
+
 ## Session (2026-06-25) — Go pclntab function-name recovery (Increment 34)
 
 Ported the **name-recovery half** of Ghidra's `GolangSymbolAnalyzer` (`golang-symbols`,

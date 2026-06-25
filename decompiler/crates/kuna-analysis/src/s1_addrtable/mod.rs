@@ -116,17 +116,31 @@ pub struct AddrTable {
 /// `[start, end)` half-open executable-section range.
 type ExecRange = (u64, u64);
 
-/// Collect the `[address, address+size)` ranges of every executable
-/// (`SHF_EXECINSTR`) section — the set a table element must point into. Mirrors
-/// the "target must be in code memory" check of `AddressTable.getEntry`.
+/// Is `sec` an executable (code) section — the set a table element must point
+/// into ("target must be in code memory", `AddressTable.getEntry`)? Per-format
+/// (PR-10): ELF `SHF_EXECINSTR` (unchanged), PE/COFF `IMAGE_SCN_MEM_EXECUTE`,
+/// Mach-O `S_ATTR_PURE_INSTRUCTIONS` / the neutral `SectionKind::Text`.
+fn is_executable_section<'a>(sec: &impl object::read::ObjectSection<'a>) -> bool {
+    match sec.flags() {
+        object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_EXECINSTR != 0,
+        object::SectionFlags::Coff { characteristics } => {
+            characteristics & object::pe::IMAGE_SCN_MEM_EXECUTE != 0
+        }
+        object::SectionFlags::MachO { flags } => {
+            flags & object::macho::S_ATTR_PURE_INSTRUCTIONS != 0
+                || matches!(sec.kind(), SectionKind::Text)
+        }
+        _ => matches!(sec.kind(), SectionKind::Text),
+    }
+}
+
+/// Collect the `[address, address+size)` ranges of every executable section — the
+/// set a table element must point into. Mirrors the "target must be in code
+/// memory" check of `AddressTable.getEntry`.
 fn exec_ranges(file: &object::File) -> Vec<ExecRange> {
     let mut out = Vec::new();
     for sec in file.sections() {
-        let sh_flags = match sec.flags() {
-            object::SectionFlags::Elf { sh_flags } => sh_flags,
-            _ => continue,
-        };
-        if sh_flags & SHF_EXECINSTR == 0 {
+        if !is_executable_section(&sec) {
             continue;
         }
         let a = sec.address();
@@ -191,18 +205,29 @@ fn read_ptr(data: &[u8], off: usize, ptr_size: usize, little: bool) -> Option<u6
 /// sections worth scanning for a pointer table — allocated + initialized
 /// read-only/data (`.rodata`, `.data`, `.data.rel.ro`, `.got` analogues). `.bss`
 /// (uninitialized) and non-allocated metadata (`.symtab`, `.comment`) are skipped.
-fn is_searchable_section(sec: &object::Section) -> bool {
+fn is_searchable_section<'a>(sec: &impl object::read::ObjectSection<'a>) -> bool {
     if matches!(sec.kind(), SectionKind::UninitializedData) {
         return false;
     }
-    let sh_flags = match sec.flags() {
-        object::SectionFlags::Elf { sh_flags } => sh_flags,
-        _ => return false,
-    };
-    // Must be in the runtime image and not executable (a table lives in data,
-    // not code). Read-only OR writable data both qualify (vtables in .data.rel.ro,
-    // GOT, .rodata switch tables); execute is the disqualifier.
-    sh_flags & SHF_ALLOC != 0 && sh_flags & SHF_EXECINSTR == 0
+    // Executable sections hold code, not data tables — the disqualifier on every
+    // format.
+    if is_executable_section(sec) {
+        return false;
+    }
+    // Must be in the runtime image. Read-only OR writable data both qualify
+    // (vtables in .data.rel.ro, GOT, .rodata switch tables). Per-format (PR-10):
+    // ELF SHF_ALLOC (unchanged); a PE/COFF section is mapped iff readable+
+    // initialized; a Mach-O section is mapped unless it is zero-fill (already
+    // excluded by the `SectionKind` guard above).
+    match sec.flags() {
+        object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_ALLOC != 0,
+        object::SectionFlags::Coff { characteristics } => {
+            characteristics & object::pe::IMAGE_SCN_CNT_UNINITIALIZED_DATA == 0
+                && characteristics & object::pe::IMAGE_SCN_MEM_READ != 0
+        }
+        object::SectionFlags::MachO { .. } => true,
+        _ => false,
+    }
 }
 
 /// `checkTable` string guard (AddressTable.java): a run that is actually a
@@ -398,10 +423,11 @@ impl AnalysisPass for AddrTablePass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        // ELF-only (the only format kuna loads).
-        if !matches!(ctx.file.format(), object::BinaryFormat::Elf) {
-            return AnalysisOutput::default();
-        }
+        // Format-agnostic (PR-10): the scan keys off the neutral pointer-run +
+        // executable-target heuristic (per-format exec/searchable section arms),
+        // so it works on ELF/PE/COFF/Mach-O. (Still off by default — registered
+        // commented-out, matching Ghidra's `setDefaultEnablement(false)`.) The
+        // relocation guard already keys on the neutral `file.kind()`.
         let ptr_size = ptr_width(ctx.file);
         let tables = scan_address_tables(ctx.file, self.min_run, ptr_size);
         emit_facts(&tables, ptr_size)
@@ -518,6 +544,29 @@ mod tests {
             !tables.iter().any(|t| t.addr == EXPECTED_TABLE_VMA),
             "an 8-entry table must be rejected when min_run=64"
         );
+    }
+
+    #[test]
+    fn scan_runs_over_pe_and_macho() {
+        // PR-10: the scanner is format-agnostic — `exec_ranges` finds the PE
+        // `.text` (`IMAGE_SCN_MEM_EXECUTE`) and the searchable `.rdata`/`.data`,
+        // and the scan completes (no ELF early return, no panic). We do not pin a
+        // specific table (the pass is off by default and these fixtures carry no
+        // dense pointer table); we prove the per-format flag arms resolve.
+        let pe = load("pe_imports.exe");
+        let pe_file = object::File::parse(pe.as_slice()).expect("parse pe");
+        assert_eq!(pe_file.format(), object::BinaryFormat::Pe);
+        let pe_exec = exec_ranges(&pe_file);
+        assert!(!pe_exec.is_empty(), "PE .text must be found as an exec range");
+        // The scan runs to completion over the PE (the old gate returned early).
+        let _ = scan_address_tables(&pe_file, 2, ptr_width(&pe_file));
+
+        let mo = load("macho_imports");
+        let mo_file = object::File::parse(mo.as_slice()).expect("parse macho");
+        assert_eq!(mo_file.format(), object::BinaryFormat::MachO);
+        let mo_exec = exec_ranges(&mo_file);
+        assert!(!mo_exec.is_empty(), "Mach-O __text must be found as an exec range");
+        let _ = scan_address_tables(&mo_file, 2, ptr_width(&mo_file));
     }
 
     #[test]

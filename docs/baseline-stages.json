@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    164,
-    164
+    176,
+    176
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -111,8 +111,8 @@
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
-    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, switchguardbound)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array reconstructors (loweredswitch, arraystride)",
+    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, switchguardbound)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: stage list shows Band B membership",
@@ -133,6 +133,9 @@
     "data:KUNA-REGIONS #3: region blocks lists the single-block loop region on its own",
     "data:KUNA-REGIONS #4: the recursive walker visits the entry block exactly once",
     "data:KUNA-REGIONS #5: stage map routes region tree to S7 loop-refinement",
+    "data:KUNA-REGIONS #6: the real-CFG top region keeps the CBRANCH entry, the nested region, and the early-out as three nodes",
+    "data:KUNA-REGIONS #7: the loop's enclosing acyclic region pairs the cyclic self-loop with its 0x40a exit block",
+    "data:KUNA-REGIONS #8: the cyclic self-loop region wraps exactly the single 0x3e0 block",
     "data:KUNA-RESTARTS #2: a function that never restarts reports none",
     "data:REALTYPES #1: signature uses real C types, not xunknown8",
     "data:REALTYPES #2: 1-byte stack buffer is char[8], not xunknown1[8]",
@@ -150,6 +153,13 @@
     "data:angr-StackGuard #2: bug -- a goto is emitted only with option off",
     "data:angr-StackGuard #3: bug -- label (goto target + definition) emitted only with option off",
     "data:angr-StackGuard #4: fix -- only the option-on pass inlines the deep match path as a direct return 1",
+    "data:angr-dedupvardecls #1: slot 0x58 declared 4x (off, the bug) + 1x (on, the fix) = 5 total",
+    "data:angr-dedupvardecls #2: slot 0x3c declared 2x (off) + 1x (on) = 3 total",
+    "data:angr-gotoreduce #1 (bug, off): one residual goto to the shared return tail",
+    "data:angr-gotoreduce #2 (bug, off): goto label reference + label definition present, none on",
+    "data:angr-gotoreduce #3 (fix, on): return tail duplicated (1 return off + 2 returns on)",
+    "data:angr-loopbreak #1: nine loop-exit gotos (pass1 off only; pass2 on recovers all)",
+    "data:angr-loopbreak #2: synthesized cleanup label present in pass1, suppressed in pass2",
     "data:angr-missing-function-call #1: fix recovers a switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-missing-function-call #2: bug renders the unrecovered jump as a computed call (pass 1 off only)",
     "data:angr-missing-function-call #3: boundary case 0x36 (u/userlist) recovered, proving bound N==0x37 not 0x36",
@@ -161,6 +171,8 @@
     "data:angr-mv #4: case 0x74 (116 t) recovered",
     "data:angr-mv #5: case 0x53 (83 S) recovered",
     "data:angr-mv #6: case 0x80 (128) recovered",
+    "data:foldcallret #1: spilled call return (only pass 1, off)",
+    "data:foldcallret #2: call folded into condition (only pass 2, on)",
     "data:namestyle #1 default: argument renders as aN",
     "data:namestyle #2 default: local renders as vN with a register source-location comment",
     "data:namestyle #3 default: unnamed call target renders as sub_<addr>",
