@@ -1,0 +1,863 @@
+==============================================================================
+test_decompiling_abnormal_switch_case_case3 :: 0x18003c330   (angr 9.2.213 @ 0x18003c330)
+==============================================================================
+
+--- angr ---
+extern unsigned int g_1800e1758;
+
+void* memmove(void* addr, void* a1, unsigned long long ptr6)
+{
+    void* i;  // r10
+    void* v4;  // rdx
+    unsigned long long v11;  // r9
+    unsigned long long m;  // r9
+    void* ptr10;  // rcx
+    void* v14;  // rdx
+    void* v16;  // rcx
+    void* cur;  // rcx
+    uint128_t v18;  // xmm0
+    unsigned long long v19;  // r8
+    void* ptr11;  // rcx
+    void* node;  // rcx
+    unsigned long long v21;  // r9
+    unsigned long long v22;  // r9
+    uint128_t v23;  // xmm0
+    int v24;  // xmm1
+    int v25;  // xmm1
+    int v27;  // xmm1
+    uint128_t v28;  // xmm1
+    uint128_t v29;  // xmm0
+    uint128_t v30;  // xmm0
+    unsigned long long v6;  // r9
+    unsigned long long v31;  // r9
+    unsigned long long i0;  // r9
+    unsigned long long v34;  // rdi
+    unsigned long long v35;  // rsi
+    void* ptr9;  // rdi
+    void* ptr13;  // rcx
+    void* v38;  // rcx
+    void* ptr8;  // rcx
+    unsigned long long n;  // r9
+    void* ptr5;  // rcx
+    unsigned long long v43;  // r9
+    unsigned long long k;  // r9
+    unsigned long v45;  // r10
+    unsigned long v46;  // r10
+    unsigned long long v48;  // r9
+    unsigned long long j;  // r9
+    unsigned long v8;  // r10
+    int v51;  // xmm0
+    void* iter;  // rcx
+    unsigned long long v53;  // r8
+    unsigned long long v54;  // r9
+    unsigned long long v55;  // r9
+    int v56;  // xmm0, Other Possible Types: uint128_t
+    int v57;  // xmm1
+    int v58;  // xmm1
+    int v60;  // xmm1
+    uint128_t v61;  // xmm1
+    uint128_t v62;  // xmm0
+    uint128_t v63;  // xmm0
+    unsigned long long v64;  // r9
+    unsigned long long l;  // r9
+    void* ptr12;  // rcx
+    unsigned long v9;  // r10
+    int v68;  // xmm1
+    void* ptr;  // r10
+    void* p;  // rdx
+    unsigned short v72;  // cx
+    unsigned int v73;  // ecx
+    unsigned int v74;  // ecx
+    unsigned short v75;  // cx
+    unsigned int v76;  // edx
+    unsigned long v77;  // rcx
+    unsigned long v78;  // rcx
+    unsigned short v79;  // cx
+    unsigned long v80;  // rdx
+    unsigned long long v81;  // rcx
+    unsigned int v82;  // ecx
+    unsigned long long v83;  // rdx
+    unsigned int v84;  // ecx
+    unsigned long long v85;  // rdx
+    unsigned short v86;  // ax
+    unsigned int v87;  // ecx
+    unsigned long long v88;  // rdx
+    unsigned long long v0;  // [bp-0x10]
+    unsigned long long v1;  // [bp-0x8]
+
+    i = a1;
+    if (ptr6 > 16)
+    {
+        v4 = a1 - addr;
+        if (a1 >= addr || addr >= i + ptr6)
+        {
+            if (((char)(g_1800e1758 >> 1) & 1))
+            {
+                v1 = v34;
+                v0 = v35;
+                for (ptr9 = addr; ptr6; i += 1)
+                {
+                    ptr6 -= 1;
+                    *((char *)ptr9) = *((char *)i);
+                    ptr9 += 1;
+                }
+                return addr;
+            }
+            if (!((char)(g_1800e1758 >> 2) & 1))
+            {
+                ptr13 = addr;
+                if ((*((char *)&ptr13) & 7))
+                {
+                    v38 = addr;
+                    if ((*((char *)&v38) & 1))
+                    {
+                        ptr6 -= 1;
+                        *((char *)addr) = *((char *)(v4 + addr));
+                        v38 = addr + 1;
+                    }
+                    ptr8 = v38;
+                    if ((*((char *)&ptr8) & 2))
+                    {
+                        ptr6 -= 2;
+                        *((short *)ptr8) = *((short *)(v4 + ptr8));
+                        ptr8 += 2;
+                    }
+                    ptr13 = ptr8;
+                    if ((*((char *)&ptr13) & 4))
+                    {
+                        ptr6 -= 4;
+                        *((int *)ptr8) = *((int *)(v4 + ptr8));
+                        ptr13 = ptr8 + 4;
+                    }
+                }
+                ptr5 = ptr13;
+                v43 = ptr6;
+                k = v43 >> 5;
+                if (v43 >> 5)
+                {
+                    do
+                    {
+                        v45 = *((long long *)(v4 + ptr5 + 8));
+                        ptr5 += 32;
+                        *((long long *)&ptr5[32]) = *((long long *)(v4 + ptr5));
+                        *((unsigned long *)&ptr5[24]) = v45;
+                        v46 = *((long long *)(v4 + ptr5 - 8));
+                        *((long long *)&ptr5[16]) = *((long long *)(v4 + ptr5 - 16));
+                        *((unsigned long *)&ptr5[8]) = v46;
+                        k -= 1;
+                    } while (k != 1);
+                    ptr6 &= 31;
+                }
+                v48 = ptr6;
+                j = v48 >> 3;
+                if (v48 >> 3)
+                {
+                    do
+                    {
+                        *((long long *)ptr5) = *((long long *)(v4 + ptr5));
+                        ptr5 += 8;
+                        j -= 1;
+                    } while (j != 1);
+                    ptr6 &= 7;
+                }
+                if (!ptr6)
+                    return addr;
+                v14 = v4 + ptr5;
+                ptr10 = ptr5;
+            }
+            else
+            {
+                if (ptr6 > 32)
+                {
+                    if (!(*((char *)&addr) & 15))
+                    {
+                        v51 = (int)*((int128_t *)(v4 + addr));
+                        iter = addr + 16;
+                        v53 = ptr6 - 16;
+                    }
+                    else
+                    {
+                        iter = (void*)_INSERT(addr + 32, 0, *((char *)&addr + 32) & 240);
+                        v51 = (int)*((int128_t *)(v4 + iter - 16));
+                        *((int128_t *)addr) = *((int128_t *)(v4 + addr));
+                        v53 = ptr6 - (iter - addr);
+                    }
+                    v54 = v53;
+                    v55 = v54 >> 7;
+                    v56 = v51;
+                    if (v54 >> 7)
+                    {
+                        iter[16] = v51;
+                        while (true)
+                        {
+                            v57 = (int)*((int128_t *)(v4 + iter + 16));
+                            iter += 128;
+                            *((int128_t *)&iter[128]) = *((int128_t *)(v4 + iter));
+                            iter[112] = v57;
+                            v58 = (int)*((int128_t *)(v4 + iter - 80));
+                            *((int128_t *)&iter[96]) = *((int128_t *)(v4 + iter - 96));
+                            iter[80] = v58;
+                            v60 = (int)*((int128_t *)(v4 + iter - 48));
+                            *((int128_t *)&iter[64]) = *((int128_t *)(v4 + iter - 64));
+                            iter[48] = v60;
+                            v61 = *((int128_t *)(v4 + iter - 16));
+                            if (v55 == 1)
+                                break;
+                            *((int128_t *)&iter[32]) = *((int128_t *)(v4 + iter - 32));
+                            *((uint128_t *)&iter[16]) = v62;
+                            v55 -= 1;
+                        }
+                        *((int128_t *)&iter[32]) = *((int128_t *)(v4 + iter - 32));
+                        v53 &= 127;
+                        v62 = v61;
+                        v56 = (int)v63;
+                    }
+                    v64 = v53;
+                    l = v64 >> 4;
+                    if (v64 >> 4)
+                    {
+                        do
+                        {
+                            *((uint128_t *)&iter[16]) = v56;
+                            v56 = (int)*((int128_t *)(v4 + iter));
+                            iter += 16;
+                            l -= 1;
+                        } while (l != 1);
+                    }
+                    if (((char)v53 & 15))
+                        *((int128_t *)(-16 + (v53 & 15) + (char *)iter)) = *((int128_t *)(v4 + (v53 & 15) + iter - 16));
+                    *((uint128_t *)&iter[16]) = v56;
+                    return addr;
+                }
+                else
+                {
+                    ptr12 = ptr6 + addr - 16;
+                    v68 = (int)*((int128_t *)(v4 + ptr12));
+                    *((int128_t *)addr) = *((int128_t *)i);
+                    *(ptr12) = v68;
+                    return addr;
+                }
+            }
+        }
+        else if (!((char)(g_1800e1758 >> 2) & 1))
+        {
+            node = addr + ptr6;
+            if ((*((char *)&node) & 7))
+            {
+                if ((*((char *)&node) & 1))
+                {
+                    node -= 1;
+                    ptr6 -= 1;
+                    *((char *)node) = *((char *)(v4 + node));
+                }
+                if ((*((char *)&node) & 2))
+                {
+                    node -= 2;
+                    ptr6 -= 2;
+                    *((short *)node) = *((short *)(v4 + node));
+                }
+                if ((*((char *)&node) & 4))
+                {
+                    node -= 4;
+                    ptr6 -= 4;
+                    *((int *)node) = *((int *)(v4 + node));
+                }
+            }
+            v6 = ptr6;
+            n = v6 >> 5;
+            if (v6 >> 5)
+            {
+                do
+                {
+                    v8 = *((long long *)(v4 + node - 16));
+                    node -= 32;
+                    *((long long *)&node[24]) = *((long long *)(v4 + node - 8));
+                    *((unsigned long *)&node[16]) = v8;
+                    v9 = *((long long *)(v4 + node));
+                    *((long long *)&node[8]) = *((long long *)(v4 + node + 8));
+                    *((unsigned long *)node) = v9;
+                    n -= 1;
+                } while (n != 1);
+                ptr6 &= 31;
+            }
+            v11 = ptr6;
+            m = v11 >> 3;
+            ptr10 = node;
+            v14 = v4;
+            if (v11 >> 3)
+            {
+                do
+                {
+                    node -= 8;
+                    *((long long *)node) = *((long long *)(v4 + node));
+                    m -= 1;
+                } while (m != 1);
+                ptr6 &= 7;
+                ptr10 = node;
+                v14 = v4;
+            }
+        }
+        else if (ptr6 <= 32)
+        {
+            ptr12 = ptr6 + addr - 16;
+            v68 = (int)*((int128_t *)(v4 + ptr12));
+            *((int128_t *)addr) = *((int128_t *)i);
+            *(ptr12) = v68;
+            return addr;
+        }
+        else
+        {
+            v16 = addr + ptr6;
+            if (!(*((char *)&v16) & 15))
+            {
+                cur = v16 - 16;
+                v18 = *((int128_t *)(v4 + cur));
+                v19 = ptr6 - 16;
+            }
+            else
+            {
+                ptr11 = v16 - 16;
+                cur = (void*)_INSERT(ptr11, 0, *((char *)&ptr11) & 240);
+                v18 = *((int128_t *)(v4 + cur));
+                *((int128_t *)ptr11) = *((int128_t *)(v4 + ptr11));
+                v19 = cur - addr;
+            }
+            v21 = v19;
+            v22 = v21 >> 7;
+            v23 = v18;
+            if (v21 >> 7)
+            {
+                *((uint128_t *)cur) = v18;
+                while (true)
+                {
+                    v24 = (int)*((int128_t *)(v4 + cur - 32));
+                    cur -= 128;
+                    *((int128_t *)&cur[112]) = *((int128_t *)(v4 + cur - 16));
+                    cur[96] = v24;
+                    v25 = (int)*((int128_t *)(v4 + cur + 64));
+                    *((int128_t *)&cur[80]) = *((int128_t *)(v4 + cur + 80));
+                    cur[64] = v25;
+                    v27 = (int)*((int128_t *)(v4 + cur + 32));
+                    *((int128_t *)&cur[48]) = *((int128_t *)(v4 + cur + 48));
+                    cur[32] = v27;
+                    v28 = *((int128_t *)(v4 + cur));
+                    if (v22 == 1)
+                        break;
+                    *((int128_t *)&cur[16]) = *((int128_t *)(v4 + cur + 16));
+                    *((uint128_t *)cur) = v29;
+                    v22 -= 1;
+                }
+                *((int128_t *)&cur[16]) = *((int128_t *)(v4 + cur + 16));
+                v19 &= 127;
+                v29 = v28;
+                v23 = v30;
+            }
+            v31 = v19;
+            i0 = v31 >> 4;
+            if (v31 >> 4)
+            {
+                do
+                {
+                    *((uint128_t *)cur) = v23;
+                    cur -= 16;
+                    v23 = *((int128_t *)(v4 + cur));
+                    i0 -= 1;
+                } while (i0 != 1);
+            }
+            if (((char)v19 & 15))
+                *((int128_t *)addr) = *((int128_t *)i);
+            *((uint128_t *)cur) = v23;
+            return addr;
+        }
+    }
+    else
+    {
+        ptr10 = addr;
+        v14 = a1;
+    }
+    if (!ptr6)
+        return addr;
+    ptr = ptr10 - ptr6;
+    p = v14 + ptr;
+    switch (ptr6)
+    {
+    case 0:
+        return addr;
+    case 1:
+        *((char *)ptr) = *((char *)p);
+        return addr;
+    case 2:
+        *((short *)ptr) = *((short *)p);
+        return addr;
+    case 3:
+        v72 = (short)p[1];
+        *((char *)ptr) = *((char *)p);
+        *((unsigned short *)&ptr[1]) = v72;
+        return addr;
+    case 4:
+        *((int *)ptr) = *((int *)p);
+        return addr;
+    case 5:
+        v73 = (int)p[1];
+        *((char *)ptr) = *((char *)p);
+        *((unsigned int *)&ptr[1]) = v73;
+        return addr;
+    case 6:
+        v74 = (int)p[2];
+        *((short *)ptr) = *((short *)p);
+        *((unsigned int *)&ptr[2]) = v74;
+        return addr;
+    case 7:
+        v75 = (short)p[1];
+        v76 = (int)p[3];
+        *((char *)ptr) = *((char *)p);
+        *((unsigned short *)&ptr[1]) = v75;
+        *((unsigned int *)&ptr[3]) = v76;
+        return addr;
+    case 8:
+        *((long long *)ptr) = *((long long *)p);
+        return addr;
+    case 9:
+        v77 = (long long)p[1];
+        *((char *)ptr) = *((char *)p);
+        *((unsigned long *)&ptr[1]) = v77;
+        return addr;
+    case 10:
+        v78 = (long long)p[2];
+        *((short *)ptr) = *((short *)p);
+        *((unsigned long *)&ptr[2]) = v78;
+        return addr;
+    case 11:
+        v79 = (short)p[1];
+        v80 = (long long)p[3];
+        *((char *)ptr) = *((char *)p);
+        *((unsigned short *)&ptr[1]) = v79;
+        *((unsigned long *)&ptr[3]) = v80;
+        return addr;
+    case 12:
+        v81 = (long long)p[4];
+        *((int *)ptr) = *((int *)p);
+        *((unsigned long long *)&ptr[4]) = v81;
+        return addr;
+    case 13:
+        v82 = (int)p[1];
+        v83 = (long long)p[5];
+        *((char *)ptr) = *((char *)p);
+        *((unsigned int *)&ptr[1]) = v82;
+        *((unsigned long long *)&ptr[5]) = v83;
+        return addr;
+    case 14:
+        v84 = (int)p[2];
+        v85 = (long long)p[6];
+        *((short *)ptr) = *((short *)p);
+        *((unsigned int *)&ptr[2]) = v84;
+        *((unsigned long long *)&ptr[6]) = v85;
+        return addr;
+    case 15:
+        v86 = (short)p[1];
+        v87 = (int)p[3];
+        v88 = (long long)p[7];
+        *((char *)ptr) = *((char *)p);
+        *((unsigned short *)&ptr[1]) = v86;
+        *((unsigned int *)&ptr[3]) = v87;
+        *((unsigned long long *)&ptr[7]) = v88;
+        return addr;
+    case 16:
+        *((int128_t *)ptr) = *((int128_t *)p);
+        return addr;
+    }
+}
+
+
+--- kuna (addr mode) ---
+  (no output: addr-mode: could not build an architecture for /home/mahaloz/github/angr-dev/binaries/tests/x86_64/windows/msvcr120.dll (unsupported/!recognized binary))
+
+==========================================================
+KUNA (bytechunk @ 0x18003c330, x86:LE:64:default:windows) — the switch is LOST:
+==========================================================
+
+==========================================================
+KUNA (bytechunk @ 0x18003c330, x86:LE:64:default:windows) — the switch is LOST:
+==========================================================
+[decomp]> load file /tmp/mm.xml
+Unable to recognize imagefile /tmp/mm.xml: No such file or directory (os error 2)
+Could not create architecture
+[decomp]> lo fu memmove
+Execution error: No image loaded
+[decomp]> decompile
+Execution error: No function selected
+[decomp]> print C
+Execution error: No function selected
+[decomp]> quit
+
+==========================================================
+KUNA (bytechunk @ 0x18003c330, x86:LE:64:default:windows) — the switch is LOST:
+==========================================================
+[decomp]> load file /tmp/mm.xml
+/tmp/mm.xml successfully loaded: x86:LE:64:default:windows
+[decomp]> lo fu memmove
+[decomp]> decompile
+Clearing old decompilation
+Decompiling memmove
+Decompilation complete
+[decomp]> print C
+
+void * memmove(void *a0,void *a1,uint8 a2)
+
+{
+  void *v1;
+  uint8 v13;
+  unsigned int v14;
+  unsigned int v15;
+  unsigned int v16;
+  unsigned int v17;
+  void *v2;
+  void *v3;
+  unsigned long long v4;
+  unsigned long long v5;
+  unsigned long long v6;
+  
+  if (0x11 <= a2) {
+    v12 = (int8)a1 - (int8)a0;
+    if ((a1 < a0) && ((int8)a0 < (int8)((int8)a1 + a2))) {
+      if ((dat_1800e1758 >> 2 & 1) != 0) {
+        if (0x21 <= a2) {
+          v9 = (void *)((int8)a0 + a2);
+          if (((uint8)v9 & 0xf) == 0) {
+            v10 = (void *)&v9[-0x10];
+            v11 = (void *)(v12 + (int8)v10);
+            v14 = *v11;
+            v15 = v11[1];
+            v16 = v11[2];
+            v17 = v11[3];
+            a2 = a2 - 0x10;
+          }
+          else {
+            v7 = (void *)&v9[-0x10];
+            v4 = ((void *)(v12 + (int8)v7))[1];
+            v10 = (void *)((uint8)v7 & 0xfffffffffffffff0);
+            v11 = (void *)(v12 + (int8)v10);
+            v14 = *v11;
+            v15 = v11[1];
+            v16 = v11[2];
+            v17 = v11[3];
+            *v7 = *(void *)(v12 + (int8)v7);
+            *(void *)&v9[-8] = v4;
+            a2 = (int8)v10 - (int8)a0;
+          }
+          v13 = a2 >> 7;
+          if (v13 != 0) {
+            *v10 = v14;
+            v10[1] = v15;
+            v10[2] = v16;
+            v10[3] = v17;
+            v11 = v10;
+            while( true ) {
+              v7 = (void *)(v12 + -0x10 + (int8)v11);
+              v4 = v7[1];
+              v8 = (void *)(v12 + -0x20 + (int8)v11);
+              v5 = *v8;
+              v6 = v8[1];
+              v10 = &v11[-0x20];
+              *(void *)&v11[-4] = *v7;
+              *(void *)&v11[-2] = v4;
+              *(void *)&v11[-8] = v5;
+              *(void *)&v11[-6] = v6;
+              v7 = (void *)(v12 + 0x50 + (int8)v10);
+              v4 = v7[1];
+              v8 = (void *)(v12 + 0x40 + (int8)v10);
+              v5 = *v8;
+              v6 = v8[1];
+              v13 = v13 - 1;
+              *(void *)&v11[-0xc] = *v7;
+              *(void *)&v11[-10] = v4;
+              *(void *)&v11[-0x10] = v5;
+              *(void *)&v11[-0xe] = v6;
+              v7 = (void *)(v12 + 0x30 + (int8)v10);
+              v4 = v7[1];
+              v8 = (void *)(v12 + 0x20 + (int8)v10);
+              v5 = *v8;
+              v6 = v8[1];
+              *(void *)&v11[-0x14] = *v7;
+              *(void *)&v11[-0x12] = v4;
+              *(void *)&v11[-0x18] = v5;
+              *(void *)&v11[-0x16] = v6;
+              v7 = (void *)(v12 + 0x10 + (int8)v10);
+              v4 = *v7;
+              v5 = v7[1];
+              v1 = (void *)(v12 + (int8)v10);
+              v14 = *v1;
+              v15 = v1[1];
+              v16 = v1[2];
+              v17 = v1[3];
+              if (v13 == 0) break;
+              *(void *)&v11[-0x1c] = v4;
+              *(void *)&v11[-0x1a] = v5;
+              *v10 = v14;
+              v11[-0x1f] = v15;
+              v11[-0x1e] = v16;
+              v11[-0x1d] = v17;
+              v11 = v10;
+            }
+            *(void *)&v11[-0x1c] = v4;
+            *(void *)&v11[-0x1a] = v5;
+            a2 = a2 & 0x7f;
+          }
+          for (v13 = a2 >> 4; v13 != 0; v13 = v13 - 1) {
+            *v10 = v14;
+            v10[1] = v15;
+            v10[2] = v16;
+            v10[3] = v17;
+            v10 = &v10[-4];
+            v11 = (void *)(v12 + (int8)v10);
+            v14 = *v11;
+            v15 = v11[1];
+            v16 = v11[2];
+            v17 = v11[3];
+          }
+          if ((a2 & 0xf) != 0) {
+            v4 = a1[1];
+            *a0 = *a1;
+            a0[1] = v4;
+          }
+          *v10 = v14;
+          v10[1] = v15;
+          v10[2] = v16;
+          v10[3] = v17;
+          return a0;
+        }
+label_18003c6c0:
+        v4 = a1[1];
+        v7 = (void *)((a2 - 0x10) + (int8)a0);
+        v5 = *(void *)(v12 + (int8)v7);
+        v6 = ((void *)(v12 + (int8)v7))[1];
+        *a0 = *a1;
+        a0[1] = v4;
+        *v7 = v5;
+        v7[1] = v6;
+        return a0;
+      }
+      v7 = (void *)((int8)a0 + a2);
+      if (((uint8)v7 & 7) != 0) {
+        if (((uint8)v7 & 1) != 0) {
+          v7 = (void *)((int8)v7 + -1);
+          a2 = a2 - 1;
+          *(void *)v7 = *(void *)(v12 + (int8)v7);
+        }
+        if (((uint8)v7 & 2) != 0) {
+          v7 = (void *)((int8)v7 + -2);
+          a2 = a2 - 2;
+          *(void *)v7 = *(void *)(v12 + (int8)v7);
+        }
+        if (((uint8)v7 & 4) != 0) {
+          v7 = (void *)((int8)v7 + -4);
+          a2 = a2 - 4;
+          *(void *)v7 = *(void *)(v12 + (int8)v7);
+        }
+      }
+      v13 = a2 >> 5;
+      v8 = v7;
+      if (v13 != 0) {
+        do {
+          v4 = *(void *)(v12 + -0x10 + (int8)v8);
+          v7 = &v8[-4];
+          v8[-1] = *(void *)(v12 + -8 + (int8)v8);
+          v8[-2] = v4;
+          v4 = *(void *)(v12 + (int8)v7);
+          v13 = v13 - 1;
+          v8[-3] = *(void *)(v12 + 8 + (int8)v7);
+          *v7 = v4;
+          v8 = v7;
+        } while (v13 != 0);
+        a2 = a2 & 0x1f;
+      }
+      v13 = a2 >> 3;
+      if (v13 != 0) {
+        do {
+          v7 = &v7[-1];
+          v13 = v13 - 1;
+          *v7 = *(void *)(v12 + (int8)v7);
+        } while (v13 != 0);
+        a2 = a2 & 7;
+      }
+      if (a2 == 0) {
+        return a0;
+      }
+      a0 = (void *)((int8)v7 - a2);
+      a1 = (void *)(v12 + (int8)a0);
+    }
+    else {
+      if ((dat_1800e1758 >> 1 & 1) != 0) {
+        v7 = a0;
+        while (a2 != 0) {
+          v3 = (void *)((int8)v7 + 1);
+          v8 = (void *)((int8)a1 + 1);
+          *(void *)v7 = *(void *)a1;
+          a2 = a2 - 1;
+          a1 = v8;
+          v7 = v3;
+        }
+        return a0;
+      }
+      if ((dat_1800e1758 >> 2 & 1) != 0) {
+        if (0x21 <= a2) {
+          if (((uint8)a0 & 0xf) == 0) {
+            v11 = (void *)(v12 + (int8)a0);
+            v14 = *v11;
+            v15 = v11[1];
+            v16 = v11[2];
+            v17 = v11[3];
+            v7 = &a0[2];
+            a2 = a2 - 0x10;
+          }
+          else {
+            v4 = ((void *)(v12 + (int8)a0))[1];
+            v7 = (void *)((uint8)&a0[4] & 0xfffffffffffffff0);
+            v11 = (void *)(v12 + -0x10 + (int8)v7);
+            v14 = *v11;
+            v15 = v11[1];
+            v16 = v11[2];
+            v17 = v11[3];
+            *a0 = *(void *)(v12 + (int8)a0);
+            a0[1] = v4;
+            a2 = a2 - ((int8)v7 - (int8)a0);
+          }
+          v13 = a2 >> 7;
+          if (v13 != 0) {
+            *(void *)&v7[-2] = v14;
+            *(void *)((int8)v7 + -0xc) = v15;
+            *(void *)&v7[-1] = v16;
+            *(void *)((int8)v7 + -4) = v17;
+            v8 = v7;
+            while( true ) {
+              v4 = ((void *)(v12 + (int8)v8))[1];
+              v7 = (void *)(v12 + 0x10 + (int8)v8);
+              v5 = *v7;
+              v6 = v7[1];
+              v7 = &v8[0x10];
+              *v8 = *(void *)(v12 + (int8)v8);
+              v8[1] = v4;
+              v8[2] = v5;
+              v8[3] = v6;
+              v3 = (void *)(v12 + -0x60 + (int8)v7);
+              v4 = v3[1];
+              v2 = (void *)(v12 + -0x50 + (int8)v7);
+              v5 = *v2;
+              v6 = v2[1];
+              v13 = v13 - 1;
+              v8[4] = *v3;
+              v8[5] = v4;
+              v8[6] = v5;
+              v8[7] = v6;
+              v3 = (void *)(v12 + -0x40 + (int8)v7);
+              v4 = v3[1];
+              v2 = (void *)(v12 + -0x30 + (int8)v7);
+              v5 = *v2;
+              v6 = v2[1];
+              v8[8] = *v3;
+              v8[9] = v4;
+              v8[10] = v5;
+              v8[0xb] = v6;
+              v3 = (void *)(v12 + -0x20 + (int8)v7);
+              v4 = *v3;
+              v5 = v3[1];
+              v11 = (void *)(v12 + -0x10 + (int8)v7);
+              v14 = *v11;
+              v15 = v11[1];
+              v16 = v11[2];
+              v17 = v11[3];
+              if (v13 == 0) break;
+              v8[0xc] = v4;
+              v8[0xd] = v5;
+              *(void *)&v8[0xe] = v14;
+              *(void *)((int8)v8 + 0x74) = v15;
+              *(void *)&v8[0xf] = v16;
+              *(void *)((int8)v8 + 0x7c) = v17;
+              v8 = v7;
+            }
+            v8[0xc] = v4;
+            v8[0xd] = v5;
+            a2 = a2 & 0x7f;
+          }
+          for (v13 = a2 >> 4; v13 != 0; v13 = v13 - 1) {
+            *(void *)&v7[-2] = v14;
+            *(void *)((int8)v7 + -0xc) = v15;
+            *(void *)&v7[-1] = v16;
+            *(void *)((int8)v7 + -4) = v17;
+            v11 = (void *)(v12 + (int8)v7);
+            v14 = *v11;
+            v15 = v11[1];
+            v16 = v11[2];
+            v17 = v11[3];
+            v7 = &v7[2];
+          }
+          a2 = a2 & 0xf;
+          if (a2 != 0) {
+            v8 = (void *)((int8)v7 + v12 + -0x10 + a2);
+            v4 = v8[1];
+            *(void *)((int8)v7 + (a2 - 0x10)) = *v8;
+            *(void *)((int8)v7 + (a2 - 8)) = v4;
+          }
+          *(void *)&v7[-2] = v14;
+          *(void *)((int8)v7 + -0xc) = v15;
+          *(void *)&v7[-1] = v16;
+          *(void *)((int8)v7 + -4) = v17;
+          return a0;
+        }
+        goto label_18003c6c0;
+      }
+      v7 = a0;
+      if (((uint8)a0 & 7) != 0) {
+        if (((uint8)a0 & 1) != 0) {
+          a2 = a2 - 1;
+          *(void *)a0 = *(void *)(v12 + (int8)a0);
+          v7 = (void *)((int8)a0 + 1);
+        }
+        if (((uint8)v7 & 2) != 0) {
+          a2 = a2 - 2;
+          *(void *)v7 = *(void *)(v12 + (int8)v7);
+          v7 = (void *)((int8)v7 + 2);
+        }
+        if (((uint8)v7 & 4) != 0) {
+          a2 = a2 - 4;
+          *(void *)v7 = *(void *)(v12 + (int8)v7);
+          v7 = (void *)((int8)v7 + 4);
+        }
+      }
+      v13 = a2 >> 5;
+      v8 = v7;
+      if (v13 != 0) {
+        do {
+          v4 = *(void *)(v12 + 8 + (int8)v8);
+          v7 = &v8[4];
+          *v8 = *(void *)(v12 + (int8)v8);
+          v8[1] = v4;
+          v4 = *(void *)(v12 + -8 + (int8)v7);
+          v13 = v13 - 1;
+          v8[2] = *(void *)(v12 + -0x10 + (int8)v7);
+          v8[3] = v4;
+          v8 = v7;
+        } while (v13 != 0);
+        a2 = a2 & 0x1f;
+      }
+      v13 = a2 >> 3;
+      if (v13 != 0) {
+        do {
+          *v7 = *(void *)(v12 + (int8)v7);
+          v7 = &v7[1];
+          v13 = v13 - 1;
+        } while (v13 != 0);
+        a2 = a2 & 7;
+      }
+      if (a2 == 0) {
+        return a0;
+      }
+      a1 = (void *)(v12 + (int8)v7);
+      a0 = v7;
+    }
+  }
+                    /* WARNING: Treating indirect jump as call */
+  v7 = (void *)(*(code *)((uint8)*(uint4 *)(a2 * 4 + 0x18003c410) + 0x180000000))(a0,a1);
+  return v7;
+}
+[decomp]> quit

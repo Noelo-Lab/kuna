@@ -1,0 +1,23 @@
+{
+  "opportunity": "test_decompiling_abnormal_switch_case_case3::0x18003c330",
+  "test_name": "test_decompiling_abnormal_switch_case_case3",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/windows/msvcr120.dll",
+  "selector": "0x18003c330",
+  "func_addr": "0x18003c330",
+  "angr_version": "9.2.213",
+  "option": "abnormalswitch",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_abnormal_switch_case_case3; JumpTableResolver / abnormal switch case (checkUnrolledGuard); 0x18003c330",
+  "scope": "large",
+  "proposal": true,
+  "parity": "OK",
+  "decisions": [
+    {
+      "question": "Is closing this gap a single option-gated Action/Rule (small) or deep S2 jump-table-recovery infrastructure (large)?",
+      "decider_verdict": "scope: large",
+      "decider_justification": "kuna's basic jump-table recovery bounds the table by JumpBasicModel::analyze_guards (jumptable.rs:1896), which walks backward from the BRANCHIND's parent through single-predecessor blocks for the dominating cmp/jbe guard. In this memmove the dispatch block at 0x18003c3fc is entered from two predecessors (0x18003c3f9 fallthrough bounded by cmp $0x10, and 0x18003c77a jmp bounded by a different and $0x7), so size_in() > 1 short-circuits the walk into check_unrolled_guard, an explicitly unimplemented SEAM (jumptable.rs:2080, 'checkCommonCbranch + findMultiequal + liftVerifyUnroll'). With no bound found, find_normalized leaves jrange.size > maxtablesize, recover_model_basic returns false (jumptable.rs:2113), and truncate_indirect_jump emits 'Treating indirect jump as call' (flow.rs:2719). Even the existing image-base-relative readonly-LOAD path is never reached. Closing this means implementing the missing multi-predecessor unrolled-guard analysis (checkCommonCbranch + findMultiequal + liftVerifyUnroll) - a genuine S2 jump-table-recovery infrastructure addition that modifies JumpBasicModel core, not a single gated early-return. kuna_switchmodbound presupposes the guard walk already succeeded; kuna_loweredswitch manufactures from a comparison cascade that does not exist here. Additionally kuna's loader is ELF-only so the PE cannot be loaded by the standard pipeline (load file -> 'Could not create architecture'); the testcase needs a bespoke raw-bytechunk harness. Trips Hard Rule 7 on multiple counts.",
+      "recommendation": "File a [PROPOSAL] draft PR; scope it as porting the upstream multi-predecessor unrolled-guard recovery behind an option, flag the PE-loader/raw-bytechunk-harness prerequisite as a human go/no-go item."
+    }
+  ]
+}
