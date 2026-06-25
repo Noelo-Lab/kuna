@@ -339,6 +339,31 @@ loader's `is_undefined()` funcsym skip handles (an `addr == 0` skip would have
 dropped it). Proves a COFF `.obj` loads and decompiles a function **resolved by
 its COFF-symtab name**.
 
+`msvc_mangled.obj` (Intel amd64 COFF object, <1 KB) is a **COFF object carrying
+MSVC C++ mangled symbols** for the PR-9 demangler gate
+(`kuna-console/tests/verify_msvc_demangle.rs` +
+`loadimage_object::tests::msvc_mangled_coff_symbols_are_demangled_name_only`,
+design §5.5). `cl.exe` is unavailable on Linux, but `clang -target
+x86_64-pc-windows-msvc` emits the *same* `?`-prefixed MSVC mangling (the MSVC C++
+ABI — verified `objdump -t`), so this is a **real** MSVC fixture, not a hand-faked
+symtab. Built (no new packages — `clang` ships in `kuna-dev`):
+
+```bash
+docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc \
+  'clang -target x86_64-pc-windows-msvc -O1 -c msvc_mangled.cpp \
+     -o decompiler/crates/kuna-analysis/tests/fixtures/msvc_mangled.obj'
+```
+
+`msvc_mangled.cpp` =
+`int Bar::foo(int x){ return x*3+1; }` (member, `?foo@Bar@@QEAAHH@Z`) /
+`int ns::g(int a,int b){ return a*b+7; }` (namespaced, `?g@ns@@YAHHH@Z`) /
+`int freefunc(int x){ return x+42; }` (free, `?freefunc@@YAHH@Z`). The loader's
+MSVC demangle arm rewrites each `?`-symbol to its qualified name-only form
+(`Bar::foo`, `ns::g`, `freefunc`); `freefunc` decompiles to `a0 + 0x2a` resolved
+by that demangled name. Note `strip_version` (the glibc `@@VERSION` stripper) is
+guarded to NOT truncate a leading-`?` name (MSVC uses `@` structurally), or every
+MSVC symbol would arrive at the demangler cut to `?foo`.
+
 ## Mach-O (Apple) fixtures — the multi-format loader (PR-6+7, the Mach-O headline)
 
 `macho_imports` (x86-64, 16 KB) and `macho_imports_arm64` (arm64, 49 KB) are

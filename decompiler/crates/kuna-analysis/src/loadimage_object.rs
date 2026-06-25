@@ -1227,6 +1227,40 @@ mod tests {
         assert!(syms.values().any(|n| n == "main"), "main passes through");
     }
 
+    #[test]
+    fn msvc_mangled_coff_symbols_are_demangled_name_only() {
+        // Multi-format loader PR-9: the loader's `demangle_funcsym_name` now feeds
+        // the MSVC arm, so a `?`-prefixed `cl.exe` symbol from a COFF object
+        // surfaces in the funcsym stream as the demangled NAME-ONLY form — not the
+        // raw `?foo@Bar@@QEAAHH@Z`, and not the full `Bar::foo(int)` signature.
+        // (`msvc_mangled.obj`: clang `-target x86_64-pc-windows-msvc`; cl.exe is
+        // unavailable on Linux but the windows-msvc target emits real MSVC
+        // mangling — see tests/fixtures/msvc_mangled.cpp.)
+        let syms = fixture_funcsyms("msvc_mangled.obj");
+        assert!(
+            syms.values().any(|n| n == "Bar::foo"),
+            "demangled name-only `Bar::foo` (from ?foo@Bar@@QEAAHH@Z) expected; got {syms:?}"
+        );
+        assert!(
+            syms.values().any(|n| n == "ns::g"),
+            "demangled name-only `ns::g` (from ?g@ns@@YAHHH@Z) expected; got {syms:?}"
+        );
+        assert!(
+            syms.values().any(|n| n == "freefunc"),
+            "demangled name-only `freefunc` (from ?freefunc@@YAHH@Z) expected; got {syms:?}"
+        );
+        // No raw `?`-mangled symbol survives, and no signature/template tail leaks
+        // through the name-only reduction (it would corrupt the `::` scope splitter).
+        assert!(
+            !syms.values().any(|n| n.starts_with('?')),
+            "raw MSVC-mangled symbol must be demangled, not passed through: {syms:?}"
+        );
+        assert!(
+            !syms.values().any(|n| n.contains('(') || n.contains('@')),
+            "no signature / raw-`@` leakage in funcsym names: {syms:?}"
+        );
+    }
+
     /// §2.2 fallback composition: a PE id (`...:windows`) pairs with the
     /// default-model fallback (`...:gcc`/`...:default`), and a Mach-O x86-64 id
     /// (`...:gcc`, already the arch default) pairs with `None` (primary == the

@@ -15,6 +15,22 @@
 //! dependency is replaced by the permissive [`cpp_demangle`] (Itanium C++) and
 //! [`rustc_demangle`] (Rust legacy `_ZN` + v0 `_R`) crates.
 //!
+//! ## The MSVC arm (multi-format loader PR-9)
+//!
+//! Itanium (`cpp_demangle`) covers ELF/Mach-O C++ and MinGW-PE; Rust
+//! (`rustc_demangle`) covers Rust. Neither recognizes **MSVC** mangling — the
+//! `cl.exe` scheme that starts with `?` (`?foo@Bar@@QEAAXXZ`), carried by MSVC
+//! PE/COFF objects (`docs/multiformat-loader-design.md` §5.5). Ghidra demangles
+//! it with `MicrosoftDemangler` (the hand-rolled `MDMang` C++ grammar, again not
+//! Java to transcribe), so the faithful move is identical: substitute a
+//! permissive crate — here [`msvc_demangler`] — and consume its string. This is
+//! the same dependency-substitution LOSS as the Itanium/Rust deps, recorded in
+//! `docs/rust-port/losses.md`. The MSVC arm fires only when `raw` starts with
+//! `?`, which no Itanium/Rust/C symbol ever does, so it is a pure additive arm
+//! (ELF output byte-identical). `msvc_demangler`'s `NAME_ONLY` flag yields the
+//! qualified-name-only form directly — already free of the signature/template
+//! `::` the scope splitter must not see (the same name-only contract below).
+//!
 //! Origin (upstream Ghidra, the tree kuna was ported from):
 //! - analyzer: `Ghidra/Features/GnuDemangler/.../GnuDemanglerAnalyzer.java`
 //! - the pre-filter ported here: `GnuDemangler.skip`
@@ -66,6 +82,16 @@ const GLOBAL_PREFIX: &str = "_GLOBAL_";
 /// `demangleOnlyKnownPatterns()` branch) so plain C names (`puts`, `main`) and
 /// other false positives are never mangled.
 fn skip(raw: &str) -> bool {
+    // MSVC C++ (multi-format loader PR-9): the `cl.exe` scheme is the only one
+    // that starts with `?` (`?foo@Bar@@QEAAXXZ`). It must be recognized BEFORE
+    // the `@`-version check below — MSVC names embed `@` structurally (namespace
+    // / type separators), so the version heuristic would otherwise reject every
+    // MSVC symbol. No Itanium/Rust/C symbol ever starts with `?`, so this is a
+    // clean early gate that never reorders the existing behavior.
+    if raw.starts_with('?') {
+        return false;
+    }
+
     // Ignore versioned symbols (`foo@GLIBC_2.2.5`), generally duplicated at the
     // same address. `indexOf("@") > 0`: an '@' must be present and not leading.
     if let Some(p) = raw.find('@') {
@@ -126,6 +152,19 @@ pub fn demangle_raw(raw: &str) -> Option<String> {
         return None;
     }
 
+    // MSVC C++ (PR-9): a leading `?` is exclusive to the `cl.exe` scheme, which
+    // the Itanium/Rust crates reject, so try it first when present.
+    // `DemangleFlags::COMPLETE` gives the full `public: void __cdecl Bar::foo(void)`
+    // form (the MSVC analog of the c++filt-like Itanium output).
+    if raw.starts_with('?') {
+        if let Ok(d) = msvc_demangler::demangle(raw, msvc_demangler::DemangleFlags::COMPLETE) {
+            if !d.is_empty() && d != raw {
+                return Some(d);
+            }
+        }
+        return None;
+    }
+
     // Itanium C++ first.
     if let Ok(sym) = cpp_demangle::Symbol::new(raw) {
         if let Ok(d) = sym.demangle() {
@@ -160,6 +199,21 @@ pub fn demangle_raw(raw: &str) -> Option<String> {
 /// signature, but [`strip_bracket_groups`] is applied uniformly for safety.
 pub fn demangle_name(raw: &str) -> Option<String> {
     if skip(raw) {
+        return None;
+    }
+
+    // MSVC C++ (PR-9): a leading `?` is exclusive to the `cl.exe` scheme.
+    // `DemangleFlags::NAME_ONLY` returns the qualified-name-only form directly
+    // (`?foo@Bar@@QEAAXXZ` -> `Bar::foo`), already free of signature/template
+    // text; `strip_bracket_groups` is applied uniformly for safety (a templated
+    // name-only form could still carry `<...>`).
+    if raw.starts_with('?') {
+        if let Ok(d) = msvc_demangler::demangle(raw, msvc_demangler::DemangleFlags::NAME_ONLY) {
+            let reduced = strip_bracket_groups(&d);
+            if !reduced.is_empty() && reduced != raw {
+                return Some(reduced);
+            }
+        }
         return None;
     }
 
@@ -315,6 +369,79 @@ mod tests {
         // ...but a normal trailing scope is kept (not a 17-char `h<hex>`).
         assert_eq!(strip_legacy_rust_hash("foo::bar"), "foo::bar");
         assert_eq!(strip_legacy_rust_hash("foo::helper"), "foo::helper");
+    }
+
+    // ---- MSVC C++ arm (multi-format loader PR-9) ----------------------------
+    //
+    // These are the merge gate: `cl.exe` is unavailable on Linux, so the MSVC
+    // path is proven entirely by these hermetic asserts on known mangled strings
+    // (the raw forms come straight from `clang -target x86_64-pc-windows-msvc`'s
+    // COFF symtab — `?foo@Bar@@QEAAXXZ` etc.).
+
+    #[test]
+    fn msvc_member_function_name_only() {
+        // `?foo@Bar@@QEAAXXZ` = `public: void __cdecl Bar::foo(void)`.
+        // The headline before -> after: raw mangled -> `Bar::foo` (name-only).
+        assert_eq!(demangle_name("?foo@Bar@@QEAAXXZ"), Some("Bar::foo".to_string()));
+    }
+
+    #[test]
+    fn msvc_raw_keeps_full_form() {
+        // `demangle_raw` retains the full MSVC form (the c++filt-like analog).
+        assert_eq!(
+            demangle_raw("?foo@Bar@@QEAAXXZ"),
+            Some("public: void __cdecl Bar::foo(void)".to_string())
+        );
+    }
+
+    #[test]
+    fn msvc_free_function() {
+        // `?freefunc@@YAXH@Z` = `void __cdecl freefunc(int)` — a non-namespaced
+        // free function reduces to the bare name (no junk `::` scope).
+        assert_eq!(demangle_name("?freefunc@@YAXH@Z"), Some("freefunc".to_string()));
+        assert_eq!(
+            demangle_raw("?freefunc@@YAXH@Z"),
+            Some("void __cdecl freefunc(int)".to_string())
+        );
+    }
+
+    #[test]
+    fn msvc_namespaced_function() {
+        // `?g@ns@@YAHHH@Z` = `int __cdecl ns::g(int, int)`. The MSVC `@`-encoded
+        // namespace nests as a single `::` scope; the params (which carry the
+        // structural `@`s) are dropped by NAME_ONLY.
+        assert_eq!(demangle_name("?g@ns@@YAHHH@Z"), Some("ns::g".to_string()));
+    }
+
+    #[test]
+    fn msvc_deeply_nested_and_constructor() {
+        // Deep nesting `?baz@A@B@C@@QEAAHHH@Z` = `C::B::A::baz(int, int)` — every
+        // `@`-segment becomes a `::` scope; no signature leakage.
+        let n = demangle_name("?baz@A@B@C@@QEAAHHH@Z").expect("nested MSVC demangles");
+        assert_eq!(n, "C::B::A::baz");
+        assert!(!n.contains('('), "no signature leakage: {n}");
+        assert!(!n.contains('@'), "no raw `@` leakage into the scope name: {n}");
+        // A constructor `??0Bar@@QEAA@XZ` = `Bar::Bar(void)`.
+        assert_eq!(demangle_name("??0Bar@@QEAA@XZ"), Some("Bar::Bar".to_string()));
+    }
+
+    #[test]
+    fn msvc_data_symbol() {
+        // `?x@@3HA` = `int x` — a global variable (not a function). NAME_ONLY
+        // yields the bare name; the raw form keeps the type.
+        assert_eq!(demangle_name("?x@@3HA"), Some("x".to_string()));
+        assert_eq!(demangle_raw("?x@@3HA"), Some("int x".to_string()));
+    }
+
+    #[test]
+    fn msvc_question_mark_not_routed_to_itanium() {
+        // Regression guard: a leading `?` is recognized by `skip()` as MSVC (NOT
+        // treated as a versioned `@` symbol, even though MSVC names embed `@`),
+        // and the Itanium/Rust crates never see it. A non-MSVC `?`-garbage string
+        // still yields None (msvc-demangler rejects it), never a panic.
+        assert!(!skip("?foo@Bar@@QEAAXXZ"), "MSVC name must not be skipped");
+        assert_eq!(demangle_name("?not a real mangled name"), None);
+        assert_eq!(demangle_raw("?"), None);
     }
 
     #[test]

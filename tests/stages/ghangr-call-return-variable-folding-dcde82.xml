@@ -1,0 +1,59 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr "call return variable folding" (test_call_return_variable_folding,
+    x86_64/decompiler/ls_gcc_O0::print_long_format).
+
+    angr inlines a call's return value into its single use site, e.g.
+      if (timespec_cmp(...) <= -1) { ... }
+    Ghidra/kuna instead force EVERY call output to be `explicit` in
+    ActionMarkExplicit::baseExplicit (coreaction.cc:3105, the
+    `if (op->isCall()) return -1;` arm), so a single-use call result always
+    spills to its own named local:
+      iVar = helper();
+      if (iVar < 1) { ... }
+    Forcing call outputs explicit is conservative: making a call output implied
+    moves the call's evaluation to the use site, which would reorder it past any
+    intervening side-effecting statement.
+
+    The kuna `foldcallret` option (S6 explicit-marking sub-stage, opt-in
+    default-off) relaxes that rule for call outputs that are order-safe to fold:
+    exactly one non-marker use, in the same basic block, with no intervening
+    call/load/store between the call and its use.
+
+    Synthetic minimiser (x86-64, gcc layout): `target` calls `helper`, tests its
+    return once, and conditionally calls `sink`.  The helper return is used
+    exactly once (the `test eax,eax; jle`), in the same block, with no
+    intervening side effect (the canonical foldable case).
+
+      target:  sub rsp,8 / call helper / test eax,eax / jle .skip
+               / call sink / .skip: add rsp,8 / ret
+      helper:  mov eax,5 / ret
+      sink:    xor eax,eax / ret
+
+    Pass 1 (option foldcallret off, the default): the call return spills to a
+    named local then is used in the `if` -> assertion #1 (`= helper()` as a
+    standalone assignment).
+    Pass 2 (option foldcallret on): the call is folded into the condition ->
+    assertion #2 (`if (helper()` ...), and the standalone spill is gone.
+-->
+<bytechunk space="ram" offset="0x1000">
+4883ec08e80e00000085c07e05e80b0000004883c408c3b805000000c331c0c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="target"/>
+<symbol space="ram" offset="0x1017" name="helper"/>
+<symbol space="ram" offset="0x101d" name="sink"/>
+</binaryimage>
+<script>
+  <com>option foldcallret off</com>
+  <com>lo fu target</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option foldcallret on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="foldcallret #1: spilled call return (only pass 1, off)" min="1" max="1">= helper\(\)</stringmatch>
+<stringmatch name="foldcallret #2: call folded into condition (only pass 2, on)" min="1" max="1">\(int4\)helper\(\)</stringmatch>
+</decompilertest>
