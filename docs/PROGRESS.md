@@ -1,5 +1,32 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — call-return variable folding (option `foldcallret`)
+
+Closed an angr-better gap from `test_call_return_variable_folding`
+(`x86_64/decompiler/ls_gcc_O0::print_long_format`, angr 9.2.213).
+
+- **Why angr was better:** angr inlines a call's return value into its single use
+  site (`if (timespec_cmp(...) <= -1)`, `... && localtime_rz(...) != NULL ...`),
+  whereas kuna spills *every* call return to a named local first
+  (`v5 = timespec_cmp(); if (v5 <= -1)`). Root cause: S6 `ActionMarkExplicit`
+  (`baseExplicit`, `coreaction.cc:3105`) forces every call output **explicit**
+  (`if (op->isCall()) return -1;`) — conservative because making a call output
+  *implied* moves the call's evaluation to the use site.
+- **Mechanism:** new option `foldcallret` (S6 explicit-marking sub-stage, opt-in
+  default-OFF). New module
+  `decompiler/crates/kuna-decomp/src/s6_variables/kuna_callretfold.rs` exposes the
+  order-safety predicate `call_output_foldable` (decider-refined): fold only when
+  the call output has exactly one **non-marker** use, in the **same basic block**,
+  with **no intervening** call/load/store between the call and its use — so the
+  call's evaluation order is preserved. `baseExplicit`'s `is_call()` arm falls
+  through to the implied path when the flag is on and the predicate holds.
+- **Ablation:** default-OFF byte-identical (`make test` 675/675 PARITY OK). Flipping
+  default-ON changes 5/675 datatest assertions (Deindirect Output #1, Inlining #8,
+  Local cross #2, Modified conditional constant #2/#3), so it stays **opt-in**
+  (no DIV entry). Speed: off 650.95 ms / on 630.17 ms (−3.19%, within the 5% budget).
+- **On/off:** `kuna decompile <bin> <fn> --option foldcallret on`; off (default) is
+  upstream byte-identical.
+
 ## Session (2026-06-25) — Go pclntab function-name recovery (Increment 34)
 
 Ported the **name-recovery half** of Ghidra's `GolangSymbolAnalyzer` (`golang-symbols`,

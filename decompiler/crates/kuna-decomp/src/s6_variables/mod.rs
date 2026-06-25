@@ -12,6 +12,7 @@ pub mod merge;
 pub mod kuna_stackalias;
 pub mod varmap;
 pub mod coreaction_cleanup;
+pub mod kuna_callretfold;
 pub mod dynamic;
 pub mod kuna_dynamichashmax;
 pub mod coreaction_stackptr;
