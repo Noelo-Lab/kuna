@@ -201,7 +201,83 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   exercised by the printc unit test `realtypes_relabels_unknown_bases` instead.
 - **Date**: 2026-06-21.
 
-## DIV-7: i386-PIE PLT imports are named (and `exit` flagged no-return) by default
+## DIV-7: duplicate scalar local declarations are collapsed
+
+- **Flip**: `dedupvardecls` → **on** (`option dedupvardecls off` restores the upstream
+  one-declaration-per-HighVariable rendering). kuna's C printer walks **HighVariables**
+  (the W4 `ScopeLocal` Symbol walk is the missing surface), so when the angr-style naming
+  maps many distinct scalar HighVariables that share one stack slot to the **same name +
+  type + storage**, kuna emits one declaration line *per high* — a wall of textually
+  identical declarations (on x86_64/cvs `main` the single slot `stack - 0x3c` is declared
+  166×). The function body refers to all of them by the one shared name, so the duplicate
+  declaration *lines* are pure noise and, strictly, invalid C re-declarations. With the
+  flag on, a declaration is suppressed when its **fully-rendered signature** (final
+  declarator type + name + array adornment + storage comment) is byte-identical to one
+  already emitted — the scalar analogue of the composite-symbol declaration collapse kuna
+  already performs (arrays/structs/unions), approximating Ghidra's once-per-Symbol
+  `emitScopeVarDecls` walk. Inspired by the angr decompiler (one variable per storage
+  location, declared once), opportunity `test_decompiling_x8664_cvs::main`.
+- **Mechanism**: a per-`Architecture` flag `dedup_var_decls` (default on, set in
+  `resetDefaults`, carried into the `ArchSeam`) read by `PrintC::emit_local_var_decls`
+  (`s9_emit/printc.rs`); the option parser + the `DeclDedup` signature tracker live in
+  `s9_emit/kuna_dedupvardecls.rs`. Pure presentation: only redundant declaration *lines*
+  are removed — the statement body markup, naming, and which HighVariables exist are all
+  unchanged. The collapse is provably lossless (it removes only lines whose emitted bytes
+  are character-identical to an already-emitted one).
+- **Changed upstream assertions: 0 of 675** (`make test` stays PARITY OK without
+  regeneration) — the corpus has no function where multiple same-named scalar highs share a
+  slot, so the collapse is invisible to it.
+- **Speed**: target `main` of x86_64/cvs measured at +0.14% (off 2236 ms → on 2239 ms,
+  budget 5%) — an O(decls) HashSet pass, well within budget.
+- **Stage-testcase**: `tests/stages/ghangr-x8664-cvs-863633.xml` decompiles cvs `main`
+  from its own .text bytes (two passes: `dedupvardecls off` then `on`) and asserts the slot
+  `stack - 0x58` is declared 4× off + 1× on (= 5) and `stack - 0x3c` 2× off + 1× on (= 3),
+  proving both the bug and the collapse. `docs/baseline-stages.json` (+2 assertions; the
+  `kuna-catalog.xml` provenance count moved 3→4 angr-derived options).
+- **Date**: 2026-06-25.
+
+---
+
+## DIV-8: ELF relocatable objects (`ET_REL` / `.o`) load by default
+
+- **Flip**: `relocobjects` → **on**. The faithful `LoadImageBfd` port
+  (`kuna_analysis::loadimage_object`) builds its byte map only from `PT_LOAD` program headers,
+  so a **relocatable object** (`ET_REL` — a `.o`, which has no program headers) mapped zero
+  bytes and **every** function failed to lift (`Unable to load N bytes at ...`) — i.e. kuna
+  produced *no output at all* for a `.o`. Default-on, kuna now takes a new load path for
+  `ET_REL`: lay the `SHF_ALLOC` sections out above `0x40_0000` (angr's CLE default), apply the
+  `.rela.*` relocations (`R_X86_64_PC32`/`PLT32`/`32`/`32S`/`64`), rebase defined symbols, and
+  bind undefined externs to synthetic named call targets. The kuna analog of angr CLE's ELF
+  relocatable backend. `option relocobjects off` (or env `KUNA_RELOC_OBJECTS=0`) restores the
+  upstream `PT_LOAD`-only loader (a `.o` then errors again).
+- **Unlike DIV-1..6 this is a loader *capability*, not a rendering change**: it produces output
+  where upstream produced an *error*, and it does not alter the rendering of any file that
+  already loaded. Linked `ET_EXEC`/`ET_DYN` images keep the `PT_LOAD` path **byte-for-byte**
+  (the new path is guarded on `kind()==Relocatable` *and* empty `segments()`).
+- **Changed upstream assertions: 0 of 675** (`make test` PARITY OK without regeneration) and
+  **0 of the stage corpus** beyond the two `kuna-catalog.xml` provenance counts, which were
+  bumped in place (`source_decompiler="angr"` 5→6, `change_kind="structure-recovery"` 2→3) to
+  include the new settable. The XML datatest path never constructs an `ObjectLoadImage`, so the
+  corpus is structurally immune to the new loader path.
+- **Mechanism**: a load-time branch in `ObjectLoadImage::from_bytes` →
+  `from_relocatable` → `s1_loader::elf_reloc::layout_relocatable`. Because the loader runs at
+  `load file` — *upstream* of the per-function option machinery (the image is opened before any
+  `option` command) — the `relocobjects` toggle is bridged to the loader by the
+  `RELOC_OBJECTS_ENV` (`KUNA_RELOC_OBJECTS`) process env var the console / CLI sets, rather than
+  by an `Architecture` flag that would be read too late.
+- **Tests**: loader unit tests (a hand-assembled `ET_REL` exercising layout + each relocation
+  kind + symbol rebasing, and the real `ptx.o` fixture asserting `fix_output_parameters`
+  rebases to `0x400660` and its bytes load) in `kuna-analysis` (`make rust-test`). No XML stage
+  test: the datatest path bypasses the ELF object loader entirely, so a loader capability cannot
+  be expressed as an XML `decompilertest`; the cargo suite is the gate.
+- **Speed**: layout + relocation patching is a one-time O(sections + relocations) pass at load,
+  negligible vs decompilation; the target's measured on-decompile wall-time is within budget
+  (and faster than the off/error path).
+- **Date**: 2026-06-25.
+
+---
+
+## DIV-9: i386-PIE PLT imports are named (and `exit` flagged no-return) by default
 
 - **Flip**: `i386_pie_plt` → **on** (loader-tier gate; `option i386_pie_plt off` restores the
   pre-fix rendering where i386-PIE GOT-relative PLT stubs stay `sub_<addr>`). Closes angr
@@ -241,5 +317,5 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   i386-PIE `nl` ELF → `load function usage` → `print C`, asserting the named libc calls and the
   absence of the spurious `do{}while(true)`/`goto`/`sub_<addr>`), plus the decoder unit test
   `elf_plt.rs::tests::i386_pie_plt_decode`. The catalog byte-compat fixture was regenerated to
-  carry the new 38th settable.
+  carry the new 41st settable.
 - **Date**: 2026-06-25.

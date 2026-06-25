@@ -1,4 +1,4 @@
-# nl-i386-pie-b7d555: i386-PIE PLT import resolution (`option i386_pie_plt`, DIV-7)
+# nl-i386-pie-b7d555: i386-PIE PLT import resolution (`option i386_pie_plt`, DIV-9)
 
 Closes the gap behind angr `test_decompiling_nl_i386_pie::usage`: kuna decompiled `usage` in
 `i386/nl` (an i386 **PIE** ELF) into ~209 loc of broken C — a spurious `do{}while(true)` loop, a
@@ -47,7 +47,7 @@ provenance (`source_decompiler = angr`, `change_kind = correctness-fix`) and is 
 
 - **0 of 675** datatest assertions change with the feature default-ON (the bytechunk corpus never
   reaches the ELF loader / `resolve_plt_imports`, and has no i386-PIE binary) ⇒ shipped
-  **default-on** with a [`docs/divergences.md`](../../divergences.md) **DIV-7** entry. `make test`
+  **default-on** with a [`docs/divergences.md`](../../divergences.md) **DIV-9** entry. `make test`
   stays **PARITY OK** (datatests 675/675); `make test-stages` **PARITY OK** (the KUNA-CATALOG #6
   angr-provenance count bumped 3→4).
 - **Speed**: the collapsed spurious loop makes the target *faster* — `usage` **130 ms on vs
