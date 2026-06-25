@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    159,
-    159
+    161,
+    161
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -111,7 +111,7 @@
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
-    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard)",
+    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, foldcallret)",
     "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array reconstructors (loweredswitch, arraystride)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
@@ -156,6 +156,8 @@
     "data:angr-mv #4: case 0x74 (116 t) recovered",
     "data:angr-mv #5: case 0x53 (83 S) recovered",
     "data:angr-mv #6: case 0x80 (128) recovered",
+    "data:foldcallret #1: spilled call return (only pass 1, off)",
+    "data:foldcallret #2: call folded into condition (only pass 2, on)",
     "data:namestyle #1 default: argument renders as aN",
     "data:namestyle #2 default: local renders as vN with a register source-location comment",
     "data:namestyle #3 default: unnamed call target renders as sub_<addr>",
