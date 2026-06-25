@@ -1,0 +1,34 @@
+{
+  "opportunity": "test_decompiling_printenv_main::main",
+  "test_name": "test_decompiling_printenv_main",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/printenv.o",
+  "selector": "main",
+  "func_addr": "0x4007a0",
+  "angr_version": "9.2.213",
+  "scope": "large",
+  "proposal": true,
+  "option": "loopsubgraphreturn",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_printenv_main; angr Phoenix structurer _analyze loop-subgraph return (phoenix.py:221-226, cyclic_ancestor vs _last_resort_refinement); main",
+  "owning_stage": "S7 structuring / blockaction (TraceDAG collapse, blockaction.cc:2170)",
+  "blocked_on": "Noelo-Lab/kuna#37 (ET_REL elf-reloc-objects loader gap; printenv.o is ET_REL, kuna PT_LOAD-only loader cannot load it)",
+  "kuna_goto_count": 7,
+  "angr_goto_count": 0,
+  "reproduction": "loader-blocked (ET_REL); decompiler gap reproduced via link-to-ELF bypass (stub UND symbols, gcc -no-pie -nostdlib -static), kuna decompile ./synth main -> 7 gotos incl. goto label_4011ef cluster",
+  "decisions": [
+    {
+      "question": "Is closing this gap a small single-pass option-gated feature, or LARGE? proposal vs negative?",
+      "decider": "general-purpose (opus)",
+      "verdict": {
+        "scope": "large",
+        "outcome": "proposal",
+        "rationale": "The fix is a deep S7 structuring change: it must invent angr's Phoenix loop-subgraph-return behavior inside Ghidra's TraceDAG collapse engine, which has no cyclic_ancestor/_last_resort_refinement analog, so it cannot be a single gated early-return Action/Rule (fails hard rule 7 LARGE). It is nonetheless a real, bounded, citable mechanism (angr phoenix.py:221-226) that demonstrably materializes the exact 7-goto / goto label_4011ef continue-cluster in kuna today via link-bypass, so it merits a human go/no-go rather than a silent drop. It is also gated on the ET_REL loader (#37) for true end-to-end reproduction, which is itself a proposal-stage dependency, not a reason to discard the distinct structuring finding.",
+        "owning_stage": "S7 structuring/blockaction (TraceDAG collapse, blockaction.cc:2170)",
+        "proposed_option_name": "loopsubgraphreturn",
+        "is_distinct_from_existing_proposals": true,
+        "distinctness_note": "Distinct from #37 (ET_REL elf-reloc-objects loader gap — a prerequisite for full-pipeline repro, not the structuring fix) and from #39 (condfold, a SAILR condition-folding / crossing-edge goto-reduction mechanism). This is a different SAILR/Phoenix mechanism: returning an unmade-progress acyclic subgraph with a cyclic ancestor to its enclosing loop region instead of last-resort edge-deletion, yielding continue/structured exits. Should be its own tracked draft [PROPOSAL] PR, explicitly blocked-on/gated-behind #37 for end-to-end reproduction, not folded into #39."
+      }
+    }
+  ]
+}

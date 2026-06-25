@@ -1,0 +1,189 @@
+================ angr (test_decompiling_printenv_main :: main) ================
+# angr asserts: "goto " NOT in output. angr output (from compare):
+# (angr produced a goto-free but heavily-incomplete main; assertion is goto-absence)
+
+================ kuna (via link-to-ELF loader bypass; .o is ET_REL) ============
+# NOTE: printenv.o is ET_REL — kuna's PT_LOAD-only loader cannot load it directly
+# (Unable to load 512 bytes at r0x004007a0). Linked to standalone ELF to bypass.
+
+uint1 main(uint4 a0,void *a1)
+
+{
+  char *v1;
+  void *v10; // rbx
+  unsigned long v11; // stack - 0xf0
+  int4 v12; // r9d
+  unsigned long v13;
+  int8 v14; // r15
+  int8 v15; // fs_offset
+  bool v16; // al
+  char *v17; // stack - 0xe8
+  char *v18; // stack - 0xe0
+  char *v19; // stack - 0xd8
+  char v2;
+  char *v20; // stack - 0xd0
+  char *v21; // stack - 0xc8
+  char *v22; // stack - 0xc0
+  char *v23; // stack - 0xb8
+  char *v24; // stack - 0xb0
+  char *v25; // stack - 0xa8
+  char *v26; // stack - 0xa0
+  char *v27; // stack - 0x98
+  unsigned long v28; // stack - 0x90
+  unsigned long v29; // stack - 0x88
+  void *v3;
+  int8 v30; // stack - 0x78
+  void *v31; // stack - 0x70
+  uint8 v32; // stack - 0x68
+  char *v33; // stack - 0x60
+  unsigned long v34; // stack - 0x58
+  code *v35; // stack - 0x50
+  int8 *v36; // stack - 0x40
+  char v4;
+  int4 v5; // eax
+  char *v6;
+  unsigned long v7; // rax
+  char *v8;
+  int8 *v9;
+  
+  v13 = 0;
+  v35 = (code *)0x401030;
+  set_program_name(*a1);
+  v35 = (code *)0x401041;
+  setlocale(6,0x40207e);
+  v35 = (code *)0x401050;
+  bindtextdomain(0x402083,"/usr/local/share/locale");
+  v35 = (code *)0x40105f;
+  textdomain(0x402083);
+  v35 = (code *)0x401064;
+  initialize_exit_failure.constprop.0();
+  v35 = (code *)0x401070;
+  atexit(close_stdout);
+  do {
+    v35 = (code *)0x401083;
+    v5 = getopt_long(a0,a1,"+iu:0",longopts);
+    if (v5 == -1) {
+      v14 = (int8)dat_404000;
+      if (dat_404000 < (int4)a0) {
+        v5 = 0;
+        do {
+          v35 = (code *)0x40117c;
+          v6 = strchr((char *)a1[v14],0x3d);
+          if (v6 == (char *)0x0) {
+            v12 = 0;
+            for (v9 = dat_404008; v6 = (char *)*v9, v6 != (char *)0x0; v9 = &v9[1]) {
+              v4 = *v6;
+              v8 = (char *)a1[v14];
+              if (v4 != '\0') {
+                while (v2 = *v8, v2 != '\0') {
+                  v1 = &v6[1];
+                  v8 = &v8[1];
+                  if (v4 != v2) goto label_4011ef;
+                  v4 = v6[1];
+                  if (v4 == '=') {
+                    if (*v8 == '\0') {
+                      v35 = (code *)0x4011e4;
+                      v36 = v9;
+                      __printf_chk(1,0x4020eb,&v6[2],-((char)v13 == '\0') & 10);
+                      v12 = 1;
+                      v9 = v36;
+                      goto label_4011ef;
+                    }
+                  }
+                  else if (v4 == '\0') goto label_4011ef;
+                  v6 = v1;
+                }
+              }
+label_4011ef:
+            }
+            v5 = v5 + v12;
+          }
+          v14 = v14 + 1;
+        } while ((int4)v14 < (int4)a0);
+        v16 = a0 - dat_404000 == v5;
+      }
+      else {
+        for (v9 = dat_404008; *v9 != 0; v9 = &v9[1]) {
+          v35 = (code *)0x401124;
+          __printf_chk(1,0x4020eb,*v9,-((char)v13 == '\0') & 10);
+        }
+        v16 = 1;
+      }
+      return v16 ^ 1;
+    }
+    if (v5 == -0x82) {
+      v35 = (code *)0x401215;
+      usage(0);
+      v35 = longopts;
+      v33 = "+iu:0";
+      v30 = *(int8 *)(v15 + 0x28);
+      v22 = "sha256sum";
+      v24 = "sha384sum";
+      v26 = "sha512sum";
+      v28 = 0;
+      v29 = 0;
+      v11 = 0x402009;
+      v17 = "test invocation";
+      v18 = "coreutils";
+      v19 = "Multi-call invocation";
+      v20 = "sha224sum";
+      v21 = "sha2 utilities";
+      v23 = "sha2 utilities";
+      v25 = "sha2 utilities";
+      v27 = "sha2 utilities";
+      v3 = &v11;
+      v31 = a1;
+      v32 = (uint8)a0;
+      v34 = v13;
+      goto label_4012d0;
+    }
+    v13 = 1;
+    if (v5 != 0x30) {
+      if (v5 != -0x83) {
+        v35 = (code *)0x4010af;
+        usage(2);
+      }
+      v34 = 0;
+      v33 = (char *)0x4010e7;
+      version_etc(dat_404018,"printenv","GNU coreutils",dat_4023ef,"David MacKenzie","Richard Mlynarik");
+                    /* WARNING: Subroutine does not return */
+      v33 = "Lc=\v/";
+      exit(0);
+    }
+  } while( true );
+  while (v5 = strcmp("printenv",*(char **)&v10[0x10]), v3 = (void *)&v10[0x10], v5 != 0) {
+label_4012d0:
+    v10 = (void *)v3;
+    if (*(char **)&v10[0x10] == (char *)0x0) goto label_4012e9;
+  }
+label_4012e9:
+  if (*(int8 *)&v10[0x18] == 0) {
+    v13 = dcgettext(0,"\n%s online help: <%s>\n",5);
+    __printf_chk(1,v13,"GNU coreutils","https://www.gnu.org/software/coreutils/");
+    v6 = (char *)setlocale(5,0);
+    if ((v6 == (char *)0x0) || (v5 = strncmp(v6,"en_",3), v5 == 0)) {
+      v13 = dcgettext(0,"Full documentation <%s%s>\n",5);
+      __printf_chk(1,v13,"https://www.gnu.org/software/coreutils/","printenv");
+      goto label_401393;
+    }
+label_401430:
+    v13 = dat_404018;
+    v7 = dcgettext(0,"Report any translation bugs to <https://translationproject.org/team/>\n",5);
+    fputs_unlocked(v7,v13);
+  }
+  else {
+    v13 = dcgettext(0,"\n%s online help: <%s>\n",5);
+    __printf_chk(1,v13,"GNU coreutils","https://www.gnu.org/software/coreutils/");
+    v6 = (char *)setlocale(5,0);
+    if ((v6 != (char *)0x0) && (v5 = strncmp(v6,"en_",3), v5 != 0)) goto label_401430;
+  }
+  v13 = dcgettext(0,"Full documentation <%s%s>\n",5);
+  __printf_chk(1,v13,"https://www.gnu.org/software/coreutils/","printenv");
+label_401393:
+  dcgettext(0,"or available locally via: info \'(coreutils) %s%s\'\n",5);
+  if (v30 != *(int8 *)(v15 + 0x28)) {
+                    /* WARNING: Subroutine does not return */
+    __stack_chk_fail();
+  }
+  return 0;
+}
