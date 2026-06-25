@@ -1,0 +1,27 @@
+{
+  "opportunity": "test_decompiling_tr_O2_parse_str::parse_str",
+  "test_name": "test_decompiling_tr_O2_parse_str",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/tr_O2.o",
+  "selector": "parse_str",
+  "func_addr": "0xa20",
+  "scope": "large",
+  "proposal": true,
+  "option": "relocatable_object_loader",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_tr_O2_parse_str; cle.backends.elf relocatable-object loading + ELF relocation engine (R_X86_64_PC32/PLT32); parse_str",
+  "root_cause": "kuna-analysis/src/loadimage_object.rs builds its byte map only from PT_LOAD program-header segments (file.segments()); an ELF ET_REL object has no program headers, so the segment list is empty, find_section always returns None, and every byte load fails ('Unable to load 512 bytes at r0x00000a20'). No relocation application exists.",
+  "decisions": [
+    {
+      "question": "Is closing the tr_O2.o::parse_str gap small (one option-gated kuna-decomp Action/Rule) or large (loader infrastructure requiring a proposal + human go/no-go)?",
+      "decider_verdict": {
+        "scope": "large",
+        "owning_stage": "kuna-analysis (loader/analysis tier — loadimage_object.rs, the LoadImageBfd analog); no S1-S9 decompiler stage owns this",
+        "approach": "Add an ET_REL code path in ObjectLoadImage: when file.segments() is empty, synthesize the byte map from allocatable PROGBITS/NOBITS sections, assigning each a distinct non-overlapping base address (since all sh_addr=0); record per-section bases so symbol vmas map consistently; then apply ELF relocations (.rela.text R_X86_64_PC32/PLT32/64/32S, with PLT/GOT stubs synthesized for undefined externs like xmalloc/strncmp/dcgettext) by patching the loaded bytes; build funcsym/section info off the same layout. This is a new relocation+layout subsystem, not an Action/Rule.",
+        "why": "The gap is entirely in byte loading and relocation in the analysis tier - there is no decompiler pass that could fix it via a gated early-return, so the kuna-decomp one-file Action/Rule model does not apply. It needs a new layout/relocation engine (a new pass type and >1 new module: section layout + reloc application + symbol mapping), squarely tripping Hard Rule 7. It also carries genuine correctness/design choices (layout policy, PLT-stub synthesis, per-arch reloc tables) that warrant human go/no-go.",
+        "proposed_option_name": "relocatable_object_loader",
+        "risk": "Moderate-to-high: must not perturb the existing ET_EXEC/ET_DYN (PT_LOAD) path (default output byte-identical for current binaries); reloc tables are per-architecture (start x86_64-only, others a seam); layout/PLT-stub address choices affect every downstream symbol/xref, so getting symbol-vma consistency wrong silently corrupts call resolution rather than failing loudly. Gate behind --option and default off until validated against the angr tr_O2 testcase."
+      }
+    }
+  ]
+}
