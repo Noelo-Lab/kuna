@@ -3,7 +3,7 @@
 //! which lived in the old `kuna/` Python package and were removed after the port):
 //!
 //! ```text
-//!   kuna decompile <binary> <func> [--addr] [--option NAME VALUE]... [--kassert ARGS]...
+//!   kuna decompile <binary> <func> [--addr] [--experimental-formats] [--option NAME VALUE]... [--kassert ARGS]...
 //!   kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F]
 //!             [--save-baseline F] [--json] [--binary P] [--sleighpath D]
 //!   kuna catalog [--json|--markdown|--check] [--option NAME]
@@ -58,7 +58,7 @@ fn usage() {
     eprintln!(
         "usage: kuna <decompile|test|catalog|specs> ...\n\
          \n\
-         kuna decompile <binary> <func> [--addr] [--option NAME VALUE]... [--kassert ARGS]...\n\
+         kuna decompile <binary> <func> [--addr] [--experimental-formats] [--option NAME VALUE]... [--kassert ARGS]...\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
          kuna catalog [--json|--markdown|--check] [--option NAME]\n\
          kuna specs [-a <dir>] [<slaspec>...] [--diff]"
@@ -89,6 +89,7 @@ fn cmd_decompile(argv: &[String]) -> i32 {
     let mut decomp_dbg: Option<String> = None;
     let mut engine: Option<String> = None;
     let mut sleighpath: Option<String> = None;
+    let mut experimental_formats = false;
 
     let mut i = 0;
     while i < argv.len() {
@@ -97,6 +98,7 @@ fn cmd_decompile(argv: &[String]) -> i32 {
             "--addr" => addr = true,
             "--raw" => raw = true,
             "--regions" => regions = true,
+            "--experimental-formats" => experimental_formats = true,
             "--target" => {
                 bfd_target = take_value(argv, &mut i, "--target");
             }
@@ -161,6 +163,7 @@ fn cmd_decompile(argv: &[String]) -> i32 {
         kasserts,
         decomp_dbg,
         sleighpath,
+        experimental_formats,
     };
     decompile::run(&dargs)
 }

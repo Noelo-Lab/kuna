@@ -8,7 +8,7 @@
 //! bare ARM `.o` UNIT test — the linked-executable Thumb-decode e2e was blocked
 //! because the build host had no ARM linker. The kuna-dev container now provides
 //! `arm-linux-gnueabihf-gcc`, so the fixture is a genuine ET_EXEC and this gate
-//! drives the full `bootstrap_from_elf` → `load function compute` → `decompile`
+//! drives the full `bootstrap_from_object` → `load function compute` → `decompile`
 //! → `print C` path against it.
 //!
 //! It proves the analysis-tier paint actually drives a CORRECT Thumb decode
@@ -31,7 +31,7 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
 
@@ -90,7 +90,7 @@ fn arm_thumb_compute_decodes_in_thumb_mode() {
         None => return,
     };
 
-    let prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(
@@ -134,7 +134,7 @@ fn arm_thumb_compute_decodes_in_thumb_mode() {
     // re-home installed the FunctionSymbol at the even address; without it the
     // CALL target would be anonymous.
     let prog2 =
-        bootstrap_from_elf(&bin, "", &spec_roots).expect("re-bootstrap for the _start drive");
+        bootstrap_from_object(&bin, "", &spec_roots).expect("re-bootstrap for the _start drive");
     let out_start = drive(prog2, "_start");
     assert!(
         out_start.contains("compute("),

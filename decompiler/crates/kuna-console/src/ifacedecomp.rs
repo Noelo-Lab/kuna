@@ -991,7 +991,7 @@ decomp_command!(
         // symbols are already available.
         //
         // (kuna) This is also the gated-commit point for the kuna_analysis passes:
-        // `bootstrap_from_elf` STASHES the per-pass facts at load (no longer
+        // `bootstrap_from_object` STASHES the per-pass facts at load (no longer
         // commits them eagerly) so they can be committed here, AFTER the per-pass
         // `--option <id> on|off` flags have been applied — the CLI `build_script`
         // emits the `option` lines BEFORE `read symbols`. A disabled pass's facts

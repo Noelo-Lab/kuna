@@ -28,7 +28,10 @@ use object::{Architecture, BinaryFormat, SectionFlags, SectionKind};
 
 use kuna_base::error::{KunaError, KunaResult};
 
+pub mod coff;
 pub mod elf;
+pub mod macho;
+pub mod pe;
 
 /// One resolved imported symbol: the address a CALL to this import resolves to
 /// (a code stub the disassembler sees, or a data slot the engine constant-folds)
@@ -98,18 +101,24 @@ pub trait ObjectFormat {
 
 /// Select the [`ObjectFormat`] for a parsed object.
 ///
-/// Only ELF is constructible today: the PE/Mach-O/COFF arms are present so the
-/// match is exhaustive over the formats this seam will grow into, but they
-/// return an `unsupported` error (and their `object` parse features are not even
-/// enabled), so a real PE/Mach-O/COFF binary cannot reach a non-ELF impl. The
-/// dispatch in `kuna-console`'s engine still routes only `\x7fELF` to the object
-/// loader, so in practice `detect` is only ever called on an ELF.
+/// As of PR-2 all four formats are constructible — `object`'s `pe`/`macho`/`coff`
+/// readers are enabled, and the engine dispatch ([`is_object_binary`]) routes
+/// PE/Mach-O/COFF magics here *when `--experimental-formats` is on*. By default
+/// only `\x7fELF` reaches the object loader, so in practice `detect` is only ever
+/// called on an ELF unless the experimental flag is set. PR-2's PE/Mach-O/COFF
+/// impls are skeletons (correct section flags + spec selection; empty imports —
+/// import naming is PR-4/PR-7).
+///
+/// [`is_object_binary`]: ../../../../../kuna_console/engine/fn.is_object_binary.html
 pub fn detect(file: &object::File) -> KunaResult<Box<dyn ObjectFormat>> {
     match file.format() {
         BinaryFormat::Elf => Ok(Box::new(elf::ElfFormat)),
+        BinaryFormat::Pe => Ok(Box::new(pe::PeFormat)),
+        BinaryFormat::MachO => Ok(Box::new(macho::MachOFormat)),
+        BinaryFormat::Coff => Ok(Box::new(coff::CoffFormat)),
         other => Err(KunaError::lowlevel(format!(
-            "unsupported object format {other:?} (kuna currently supports ELF; \
-             PE/Mach-O/COFF are not yet enabled)"
+            "unsupported object format {other:?} \
+             (kuna supports ELF/PE/Mach-O/COFF)"
         ))),
     }
 }

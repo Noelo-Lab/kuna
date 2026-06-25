@@ -132,6 +132,13 @@ pub struct ObjectLoadImage {
     filename: String,
     /// The resolved SLEIGH language id (the `getArchType` payload).
     archtype: Vec<u8>,
+    /// The per-arch *default-model* fallback language id (design §2.2): the same
+    /// arch/endian stem with the compiler model forced to the arch default
+    /// (`gcc`/`default`). Used by the engine when [`Self::archtype`] (which may
+    /// carry a format-specific model like `:windows`) does not resolve in the
+    /// vendored SLEIGH DB — wrong calling-convention details beat no decompile.
+    /// `None` when the fallback equals the primary (the common ELF case).
+    fallback_archtype: Option<Vec<u8>>,
     /// Loadable regions, in *ascending vma order* (the BFD section list, used by
     /// `find_section`/`loadFill`).
     segments: Vec<Segment>,
@@ -194,6 +201,11 @@ impl ObjectLoadImage {
         let fmt = crate::s1_loader::format::detect(&file)?;
 
         let archtype = language_id_for(&file, fmt.as_ref(), filename)?;
+        // (kuna §2.2) The default-model fallback id: the same arch/endian stem
+        // with the model dropped to the per-arch default. If the format's chosen
+        // model (e.g. PE's `:windows`) isn't vendored for this arch, the engine
+        // retries with this before erroring.
+        let fallback_archtype = fallback_language_id(&file, &archtype);
 
         // Snapshot the loadable segments (PT_LOAD), copying their RAM bytes.
         // `data()` returns only the file-backed bytes; a segment's `size()`
@@ -304,6 +316,7 @@ impl ObjectLoadImage {
         Ok(ObjectLoadImage {
             filename: filename.to_string(),
             archtype,
+            fallback_archtype,
             segments,
             sections,
             funcsyms,
@@ -325,6 +338,24 @@ impl ObjectLoadImage {
     /// The resolved SLEIGH language id (also returned by [`LoadImage::get_arch_type`]).
     pub fn arch_id(&self) -> &[u8] {
         &self.archtype
+    }
+
+    /// The per-arch default-model fallback language id (design §2.2), if it
+    /// differs from [`Self::arch_id`]. The engine tries this when the primary id
+    /// — which may carry a format-specific compiler model (e.g. PE `:windows`) —
+    /// does not resolve in the vendored SLEIGH DB.
+    pub fn fallback_arch_id(&self) -> Option<&[u8]> {
+        self.fallback_archtype.as_deref()
+    }
+
+    /// The mapped sections as `(vma, size, section_flags)` triples (the snapshot
+    /// the `get_readonly`/`getNextSection` info walks ride). Exposed so a
+    /// cross-crate gate can assert the per-format `section_bits` produced the
+    /// right exec (`CODE`) / `READONLY` / `NOLOAD` bits on a real PE/Mach-O/ELF
+    /// without re-parsing the object. The flags are
+    /// `kuna_sleigh::loadimage::section_flags::*`.
+    pub fn section_snapshot(&self) -> Vec<(u64, u64, u32)> {
+        self.sections.iter().map(|s| (s.vma, s.size, s.flags)).collect()
     }
 
     /// Find the segment containing `offset`, or the closest segment above it
@@ -607,6 +638,27 @@ fn language_id_for(
     Ok(id.into_bytes())
 }
 
+/// The per-arch *default-model* fallback language id (design §2.2): the same
+/// arch/endian stem as `primary`, but with the compiler model dropped to the
+/// per-arch default (`compose_language_id(arch, endian, None)` — `gcc` for
+/// x86/RISCV, `default` elsewhere). Returns `Some` only when it differs from
+/// `primary` (so an ELF, whose primary already uses the default model, gets
+/// `None` — no behavior change on the established path).
+///
+/// The engine uses this as a one-step retry: if a format's chosen model (e.g.
+/// PE's `:windows`) is not vendored for this arch, falling back to the arch
+/// default beats erroring out — wrong calling-convention details still yield a
+/// decompile.
+fn fallback_language_id(file: &object::File, primary: &[u8]) -> Option<Vec<u8>> {
+    let endian = if file.is_little_endian() { "LE" } else { "BE" };
+    let fallback = compose_language_id(file.architecture(), endian, None)?;
+    if fallback.as_bytes() == primary {
+        None
+    } else {
+        Some(fallback.into_bytes())
+    }
+}
+
 /// Compose the SLEIGH language id from the format-neutral `arch` + `endian`
 /// stem and the per-format compiler `model`. `None` for an arch kuna has no
 /// `.sla` stem for. The single source of truth for the id string shape, shared
@@ -677,6 +729,83 @@ pub fn elf_language_ids() -> Vec<String> {
     out.sort();
     out.dedup();
     out
+}
+
+/// Every SLEIGH language id a given [`crate::s1_loader::format::ObjectFormat`]
+/// produces over `arches`, paired with the *fallback* id [`fallback_language_id`]
+/// would compute for the same arch/endian (design §2.2). The console gate
+/// (`verify_object_language_ids`) asserts that for every entry **either the
+/// primary or the fallback resolves** in the SLEIGH DB — proving the per-format
+/// `compiler_model` tokens are real, vendored ids (or that the fallback rule
+/// saves a non-vendored model from erroring). Derived from the same
+/// [`compose_language_id`] the loader uses, so it cannot drift from the producer.
+///
+/// `arches` is `(arch, endians, machine-is-LE/BE-on-disk)`; the third flag is
+/// what `is_little_endian()` would report (it drives the fallback's endian), so
+/// the enumerated pair is exactly what a real binary of that arch produces.
+pub fn format_language_ids(
+    fmt: &dyn crate::s1_loader::format::ObjectFormat,
+    arches: &[(Architecture, &[&str])],
+) -> Vec<(String, Option<String>)> {
+    let mut out = Vec::new();
+    for &(arch, endians) in arches {
+        for &endian in endians {
+            if let Some(primary) = compose_language_id(arch, endian, fmt.compiler_model(arch)) {
+                // The §2.2 fallback for the same stem: the default-model id, if it
+                // differs from the primary.
+                let fallback = compose_language_id(arch, endian, None)
+                    .filter(|fb| *fb != primary);
+                out.push((primary, fallback));
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// The arch/endian set a **PE** image realistically carries (the Windows arches
+/// kuna ships a `.sla` for): x86 (LE only), ARM/AArch64 (LE only on Windows).
+pub fn pe_language_ids() -> Vec<(String, Option<String>)> {
+    use crate::s1_loader::format::pe::PeFormat;
+    format_language_ids(
+        &PeFormat,
+        &[
+            (Architecture::X86_64, &["LE"]),
+            (Architecture::I386, &["LE"]),
+            (Architecture::Aarch64, &["LE"]),
+            (Architecture::Arm, &["LE"]),
+        ],
+    )
+}
+
+/// The arch/endian set a **Mach-O** image realistically carries: x86-64 (LE) and
+/// arm64 (LE) — the two macOS arches.
+pub fn macho_language_ids() -> Vec<(String, Option<String>)> {
+    use crate::s1_loader::format::macho::MachOFormat;
+    format_language_ids(
+        &MachOFormat,
+        &[
+            (Architecture::X86_64, &["LE"]),
+            (Architecture::I386, &["LE"]),
+            (Architecture::Aarch64, &["LE"]),
+        ],
+    )
+}
+
+/// The arch/endian set a **COFF object** realistically carries (the MSVC/clang
+/// Windows-object arches): x86 (LE), ARM/AArch64 (LE).
+pub fn coff_language_ids() -> Vec<(String, Option<String>)> {
+    use crate::s1_loader::format::coff::CoffFormat;
+    format_language_ids(
+        &CoffFormat,
+        &[
+            (Architecture::X86_64, &["LE"]),
+            (Architecture::I386, &["LE"]),
+            (Architecture::Aarch64, &["LE"]),
+            (Architecture::Arm, &["LE"]),
+        ],
+    )
 }
 
 #[cfg(test)]
@@ -1086,5 +1215,35 @@ mod tests {
         );
         // `main` is a plain C-ABI name: not mangled, passes through unchanged.
         assert!(syms.values().any(|n| n == "main"), "main passes through");
+    }
+
+    /// §2.2 fallback composition: a PE id (`...:windows`) pairs with the
+    /// default-model fallback (`...:gcc`/`...:default`), and a Mach-O x86-64 id
+    /// (`...:gcc`, already the arch default) pairs with `None` (primary == the
+    /// default, so no fallback is needed).
+    #[test]
+    fn format_language_ids_pair_with_default_model_fallback() {
+        let pe = pe_language_ids();
+        // x86-64 PE: primary windows, fallback gcc.
+        let x64 = pe
+            .iter()
+            .find(|(p, _)| p == "x86:LE:64:default:windows")
+            .expect("PE x86-64 windows id present");
+        assert_eq!(
+            x64.1.as_deref(),
+            Some("x86:LE:64:default:gcc"),
+            "PE windows must fall back to the gcc default model"
+        );
+
+        let macho = macho_language_ids();
+        // x86-64 Mach-O: primary gcc IS the default → no fallback.
+        let mx64 = macho
+            .iter()
+            .find(|(p, _)| p == "x86:LE:64:default:gcc")
+            .expect("Mach-O x86-64 gcc id present");
+        assert_eq!(
+            mx64.1, None,
+            "Mach-O x86-64 gcc is already the default model — no fallback"
+        );
     }
 }
