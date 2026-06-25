@@ -1,0 +1,24 @@
+{
+  "opportunity": "test_decompiling_x8664_mv_O2::main",
+  "test_name": "test_decompiling_x8664_mv_O2",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/mv_-O2",
+  "selector": "main",
+  "func_addr": "0x402b40",
+  "angr_version": "9.2.213",
+  "scope": "large",
+  "proposal": true,
+  "option": "jumptable-augment",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_x8664_mv_O2; angr SAILR structurer (loop refinement + switch-break recovery) + LoweredSwitchSimplifier; main",
+  "parity": "OK",
+  "decisions": [
+    {
+      "question": "Is closing the mv -O2 main gap a small (one option-gated Action/Rule) or large (PROPOSAL fork) feature?",
+      "decider_verdict": "scope: large",
+      "decider_justification": "The clean angr shape is the aggregate product of at least three distinct structuring transforms - loop head/latch recovery + block reordering (S7/S8), switch-break recovery (S8 BlockGraph), and jump-table augmentation (S2/case absorption) - each touching different ported-core region/structuring code beyond a single gated early-return. No single Varnode-Rule or single Action manufactures this form (unlike kuna_loweredswitch.rs, which produces one jump table from one Action); the gap is irreducibly multi-pass and crosses the S7-region/S8-structuring boundary that Hard rule 7 explicitly fences off. It therefore fails the 'ONE option-gated pass modeled on a single Action/Rule' test and must become a [PROPOSAL] draft PR.",
+      "best_standalone_candidate": "Sub-gap #1 (switch case-exit-to-follow-block -> break) is the natural single-Action S8 transform and the strongest standalone candidate in general. But it is NOT cleanly isolatable in this specific function: the post-switch convergence block label_2c88 is simultaneously the getopt loop latch (the back-edge target). Emitting break there is only correct/clean once the enclosing while(true) loop is recovered - without loop recovery, a break has no loop to break out of and would be semantically wrong. So #1 is entangled with the unrecovered loop (#2) here and cannot deliver a correct, meaningful win in isolation. It should be re-attempted as a small feature only against a function where the switch-follow block is a genuine post-loop join, not the latch itself.",
+      "recommendation": "Approve step 1 (jumptable-augment) as the first standalone implementation worker - closest to a single Action (builds on kuna_loweredswitch.rs), narrowest blast radius, measurable win (3 recovered cases). Defer the loop-recovery / switch-break / tail-condense steps."
+    }
+  ]
+}

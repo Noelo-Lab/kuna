@@ -1,0 +1,608 @@
+==============================================================================
+test_decompiling_x8664_mv_O2 :: main   (angr 9.2.213 @ 0x402b40)
+==============================================================================
+
+--- angr ---
+typedef struct option {
+    char * name;
+    int has_arg;
+    char padding_c[4];
+    int * flag;
+    int val;
+} option;
+
+extern long long Version;
+extern char g_4158f3;
+extern option long_options;
+extern long long optarg;
+extern unsigned int optind;
+extern long long stdout;
+
+int main(int a0, long long *a1)
+{
+    char v27;  // r14b
+    long long v28;  // r15
+    unsigned int v37;  // eax
+    int *err;  // rax
+    char *v39;  // rax
+    unsigned long long v40;  // r13
+    unsigned int v42;  // eax
+    long long v43;  // rdi
+    long long v44;  // rsi
+    long long v45;  // rdx
+    char v29;  // r13b
+    long long v46;  // rcx
+    long long v47;  // r8
+    long long v48;  // r9
+    unsigned int v49;  // r14d
+    int i;  // ebp
+    long long ptr[3];  // r12
+    long long v53;  // r13
+    char *v54;  // rsi
+    char *v55;  // rsi
+    int v30;  // eax
+    long long v32;  // rax
+    int flag;  // ebx
+    long long v34[3];  // rbp
+    char *v35;  // rax
+    int *err;  // rax
+    char v0;  // [bp-0xd0], Other Possible Types: long long
+    char *v1;  // [bp-0xc8], Other Possible Types: long long
+    char *v2;  // [bp-0xc0]
+    long long v3;  // [bp-0xb8]
+    unsigned int v4;  // [bp-0xac]
+    long long v5;  // [bp-0xa0]
+    char v6;  // [bp-0x98], Other Possible Types: unsigned int
+    unsigned int v7;  // [bp-0x94]
+    unsigned long long v8;  // [bp-0x90]
+    unsigned long long flag12;  // [bp-0x88]
+    unsigned short flag8;  // [bp-0x80]
+    unsigned int v11;  // [bp-0x7c]
+    char flag6;  // [bp-0x78]
+    unsigned long long flag11;  // [bp-0x70]
+    unsigned long long v14;  // [bp-0x68]
+    unsigned short flag4;  // [bp-0x60]
+    char flag7;  // [bp-0x5e]
+    unsigned short flag2;  // [bp-0x5d], Other Possible Types: char
+    char choice;  // [bp-0x5c]
+    char v19;  // [bp-0x5b]
+    char flag3;  // [bp-0x5a]
+    char v21;  // [bp-0x59]
+    unsigned int v22;  // [bp-0x58]
+    unsigned int flag5;  // [bp-0x54]
+    unsigned long long flag9;  // [bp-0x50]
+    unsigned long long flag10;  // [bp-0x48]
+
+    set_program_name(*(a1));
+    setlocale(6, &g_4158f3);
+    bindtextdomain("coreutils", "/usr/local/share/locale");
+    textdomain("coreutils");
+    atexit(close_stdin);
+    v2 = &v6;
+    cp_options_default(&v6);
+    v14 = 1099511628033;
+    flag4 = 1;
+    flag5 = 1;
+    v11 = 0x1010100;
+    flag6 = 0;
+    flag11 = 0;
+    flag7 = 0;
+    v7 = 2;
+    v8 = 8589934596;
+    flag12 = 0;
+    flag8 = 1;
+    flag3 = 0;
+    v0 = 0;
+    v19 = isatty(0);
+    v27 = 0;
+    v28 = 0;
+    flag2 = 0;
+    v29 = 0;
+    flag9 = 0;
+    flag10 = 0;
+    v1 = 0;
+    v3 = 0;
+    while (true)
+    {
+        v30 = getopt_long(a0, a1, "bfint:uvS:TZ", &long_options.name, NULL);
+        if (v30 == -1)
+            break;
+        switch (v30)
+        {
+        case 102:
+            *((unsigned int *)&v8) = 1;
+            break;
+        case 116:
+            if (!v28)
+            {
+                v28 = optarg;
+                break;
+            }
+            else
+            {
+                error(1, 0, dcgettext(NULL, "multiple target directories specified", 5));
+            }
+        case 83:
+            v0 = 1;
+            v3 = optarg;
+            break;
+        case 118:
+            choice = 1;
+            break;
+        case 105:
+            *((unsigned int *)&v8) = 3;
+            break;
+        case 90:
+            break;
+        case 4294967165:
+            version_etc(stdout, "mv", "GNU coreutils", Version, "Mike Parker", "David MacKenzie", "Jim Meyering", 0);
+            exit(0); /* do not return */
+        case 117:
+            flag2 = 1;
+            break;
+        case 110:
+            *((unsigned int *)&v8) = 2;
+            break;
+        case 98:
+            v0 = 1;
+            if (!optarg)
+                v32 = v1;
+            else
+                v32 = optarg;
+            v1 = v32;
+            break;
+        case 4294967166:
+            usage(0); /* do not return */
+        case 128:
+            v29 = 1;
+            break;
+        case 84:
+            v27 = 1;
+            break;
+        default:
+            usage(1); /* do not return */
+        }
+    }
+    flag = a0 - optind;
+    v34 = &a1[optind];
+    if ((!v28) >= flag)
+    {
+        if (flag == 1)
+        {
+            quotearg_style(4, v34[0]);
+            v55 = "missing destination file operand after %s";
+            goto LABEL_403172;
+        }
+        else
+        {
+            v54 = "missing file operand";
+LABEL_40319b:
+            error(0, 0, dcgettext(NULL, v54, 5));
+            usage(1); /* do not return */
+        }
+    }
+    if (!v27)
+    {
+        if (v28)
+        {
+            v4 = target_directory_operand(v28);
+            if (!v4 + 1)
+            {
+                quotearg_style(4, v28);
+                v35 = dcgettext(NULL, "target directory %s", 5);
+                err = __errno_location();
+                error(1, *(err), v35);
+            }
+            goto LABEL_402e6a;
+        }
+        v28 = v34[1 + flag];
+        if (flag == 2)
+        {
+            v37 = renameatu(4294967196, v34[0], 4294967196, v28, 1);
+            if (v37)
+                v37 = *(__errno_location());
+            v22 = v37;
+        }
+        if (!v22)
+            goto LABEL_402f9c;
+        v4 = target_directory_operand(v28);
+        if (v4 + 1)
+        {
+            v22 = 4294967295;
+            flag -= 1;
+            if (v29 && flag)
+            {
+LABEL_403012:
+                v40 = 0;
+                do
+                {
+                    strip_trailing_slashes(v34[v40]);
+                    v40 += 1;
+                } while (flag > (unsigned int)v40);
+            }
+LABEL_402e73:
+            if ((unsigned int)v8 == 2)
+            {
+                flag2 = 0;
+                if (v0)
+                {
+                    v54 = "options --backup and --no-clobber are mutually exclusive";
+                    goto LABEL_40319b;
+                }
+            }
+            else if (v0)
+            {
+                v42 = xget_version(dcgettext(NULL, "backup type", 5), v1);
+                goto LABEL_402ea9;
+            }
+            v42 = 0;
+LABEL_402ea9:
+            v6 = v42;
+            set_simple_backup_suffix(v3);
+            hash_init(v43, v44, v45, v46, v47, v48);
+            if (!v28)
+            {
+                v21 = 1;
+                v49 = do_move(v34[0], v34[1], 4294967196, v34[1], v2);
+            }
+            else if (flag <= 1)
+            {
+                if (flag == 1)
+                    goto LABEL_402ed4;
+                v49 = 1;
+            }
+            else
+            {
+                dest_info_init(v2);
+LABEL_402ed4:
+                v49 = 1;
+                i = 0;
+                v1 = &v5;
+                do
+                {
+                    ptr = v34;
+                    i += 1;
+                    v21 = i == flag;
+                    v0 = ptr[0];
+                    v53 = file_name_concat(v28, last_component(ptr[0]), v1);
+                    strip_trailing_slashes(v5);
+                    v49 &= do_move(v0, v53, v4, v5, v2);
+                    rpl_free(v53);
+                    v34 = &ptr[1];
+                } while (i < flag);
+            }
+        }
+        else
+        {
+            if (flag > 2)
+            {
+                err = __errno_location();
+                quotearg_style(4, v28);
+                v39 = dcgettext(NULL, "target %s", 5);
+                error(1, *(err), v39);
+            }
+LABEL_402f9c:
+            v4 = 4294967196;
+            v28 = 0;
+LABEL_402e6a:
+            if (v29)
+                goto LABEL_403012;
+            goto LABEL_402e73;
+        }
+    }
+    else
+    {
+        if (v28)
+            error(1, 0, dcgettext(NULL, "cannot combine --target-directory (-t) and --no-target-directory (-T)", 5));
+        if (flag > 2)
+        {
+            quotearg_style(4, v34[2]);
+            v55 = "extra operand %s";
+LABEL_403172:
+            error(0, 0, dcgettext(NULL, v55, 5));
+            usage(1); /* do not return */
+        }
+        goto LABEL_402f9c;
+    }
+    return (char)v49 ^ 1;
+}
+
+
+--- kuna (name mode) ---
+uint4 main(uint8 a0,char *a1)
+
+{
+  char $$undef0000000f; // stack - 0x5d
+  char **dst;
+  int8 v1;
+  char *v10; // rax
+  void *v11; // rax
+  unsigned long v12; // rdx
+  uint4 v13; // eax
+  int4 v14 [6]; // stack - 0x98
+  char *v15; // stack - 0xa0
+  char *v16; // stack - 0xd0
+  int4 v17; // eax
+  int8 v19; // r13
+  unsigned int v2;
+  int8 v20; // fs_offset
+  unsigned long v21; // stack - 0xd8
+  char **v22; // stack - 0xc8
+  cp_options *v23; // stack - 0xc0
+  char **v24; // stack - 0xb8
+  int4 v25; // stack - 0xac
+  unsigned short v26; // stack - 0x80
+  unsigned int v27; // stack - 0x7c
+  char v28; // stack - 0x78
+  unsigned long v29; // stack - 0x70
+  bool v3;
+  unsigned long v30; // stack - 0x68
+  unsigned short v31; // stack - 0x60
+  char v32; // stack - 0x5e
+  uint2 v33; // stack - 0x5d
+  char v34; // stack - 0x5b
+  char v35; // stack - 0x5a
+  char v36; // stack - 0x59
+  int4 v37; // stack - 0x58
+  unsigned int v38; // stack - 0x54
+  unsigned long v39; // stack - 0x50
+  int4 v4;
+  unsigned long v40; // stack - 0x48
+  int8 v41; // stack - 0x40
+  int4 v5; // eax
+  uint4 v6; // eax
+  char **v7;
+  int4 *v8; // rax
+  unsigned long v9; // rax
+  
+label_2ca8:
+  v7 = v22;
+  switch(v4) {
+    default:
+      do {
+label_2d41:
+        usage(1);
+        if (v5 == -0x83) {
+          version_etc(dat_21b0c8,"mv","GNU coreutils",dat_21b020,"Mike Parker","David MacKenzie");
+                    /* WARNING: Subroutine does not return */
+          exit(0);
+        }
+      } while (v5 != -0x82);
+      usage(0);
+      goto label_2dc0;
+    case 0x53:
+      v24 = dat_21b0e0;
+      v16 = (char *)CONCAT71(v16._1_7_,1);
+      goto label_2c88;
+    case 0x54:
+label_2dc0:
+      v3 = 1;
+      v7 = v22;
+      goto label_2c88;
+    case 0x5a:
+      goto label_2c88;
+    case 0x62:
+      v16 = (char *)CONCAT71(v16._1_7_,1);
+      v7 = dat_21b0e0;
+      if (dat_21b0e0 == (char **)0x0) {
+      }
+      goto label_2c88;
+    case 0x66:
+      v14[2] = 1;
+      goto label_2c88;
+    case 0x69:
+      v14[2] = 3;
+      goto label_2c88;
+    case 0x6e:
+      v14[2] = 2;
+      goto label_2c88;
+    case 0x74:
+      if (dst == (char **)0x0) {
+        dst = dat_21b0e0;
+        goto label_2c88;
+      }
+      v9 = dcgettext(0,"multiple target directories specified",5);
+      error(1,0,v9);
+label_3111:
+      a1 = quotearg_style(4,(char *)dst);
+      v10 = (char *)dcgettext(0,"target directory %s",5);
+      v11 = (void *)__errno_location();
+      error(1,*v11,v10,a1);
+label_3150:
+      v13 = (int4)v10 - 1;
+      v10 = (char *)(uint8)v13;
+      if (v13 == 0) {
+        v10 = quotearg_style(4,*(char **)a1);
+        v18 = "missing destination file operand after %s";
+label_3172:
+        v9 = dcgettext(0,v18,5);
+        error(0,0,v9,v10);
+      }
+      else {
+        v18 = "missing file operand";
+label_319b:
+        v9 = dcgettext(0,v18,5);
+        error(0,0,v9);
+      }
+      goto label_2d41;
+    case 0x76:
+      v33 = CONCAT11(1,(char)$$undef0000000f);
+      break;
+    case 0x80:
+      v19 = 1;
+    
+  }
+  goto label_2c88;
+  v10 = (char *)(a0 & 0xffffffff);
+  v41 = *(int8 *)(v20 + 0x28);
+  set_program_name(*(char **)a1);
+  setlocale(6,0x158f3);
+  bindtextdomain(0x14160,"/usr/local/share/locale");
+  textdomain(0x14160);
+  atexit(close_stdin);
+  v23 = (cp_options *)v14;
+  cp_options_default(v23);
+  v30 = 0x10000000101;
+  v31 = 1;
+  v38 = 1;
+  v27 = 0x1010100;
+  v28 = 0;
+  v29 = 0;
+  v32 = 0;
+  v14[1] = 2;
+  v14[2] = 4;
+  v14[3] = 2;
+  v14[4] = 0;
+  v14[5] = 0;
+  v26 = 1;
+  v4 = isatty(0);
+  v35 = 0;
+  v34 = v4 != 0;
+  v16 = (char *)((uint8)v16 & 0xffffffffffffff00);
+  v3 = 0;
+  v33 = 0;
+  v19 = 0;
+  v39 = 0;
+  v40 = 0;
+  v22 = (char **)0x0;
+  v24 = (char **)0x0;
+  dst = (char **)0x0;
+  v7 = v22;
+label_2c88:
+  v22 = v7;
+  v4 = getopt_long((uint8)v10 & 0xffffffff,a1,"bfint:uvS:TZ",long_options,0);
+  if (v4 != -1) goto label_2ca8;
+  v13 = (int4)v10 - dat_21b0d8;
+  v10 = (char *)(uint8)v13;
+  a1 = &a1[(int8)dat_21b0d8 * 8];
+  if ((int4)v13 <= (int4)(uint4)(dst == (char **)0x0)) goto label_3150;
+  if (v3) {
+    if (dst != (char **)0x0) {
+      v9 = dcgettext(0,"cannot combine --target-directory (-t) and --no-target-directory (-T)",5);
+      error(1,0,v9);
+      (*dat_21afd8)(main,v21,&v16,__libc_csu_init,__libc_csu_fini,v12);
+      do {
+      } while( true );
+    }
+    if ((int4)v13 <= 2) goto label_2f9c;
+    v10 = quotearg_style(4,*(char **)&a1[0x10]);
+    v18 = "extra operand %s";
+    goto label_3172;
+  }
+  if (dst != (char **)0x0) {
+    v25 = target_directory_operand((char *)dst);
+    if (v25 != -1) goto label_2e6a;
+    goto label_3111;
+  }
+  dst = *(char ***)&a1[(int8)(int4)v13 * 8 + -8];
+  v4 = v37;
+  if (v13 == 2) {
+    v17 = renameatu(-100,*(char **)a1,-100,(char *)dst,1);
+    v4 = 0;
+    if (v17 != 0) {
+      v8 = (int4 *)__errno_location();
+      v4 = *v8;
+    }
+  }
+  v37 = v4;
+  if (v37 == 0) {
+label_2f9c:
+    v25 = -100;
+    dst = (char **)0x0;
+label_2e6a:
+    if ((char)v19 != '\0') {
+label_3012:
+      v19 = 0;
+      do {
+        v1 = v19 * 8;
+        v19 = v19 + 1;
+        strip_trailing_slashes(*(char **)&a1[v1]);
+      } while ((int4)v19 < (int4)v10);
+    }
+  }
+  else {
+    v4 = target_directory_operand((char *)dst);
+    v25 = v4;
+    if (v4 == -1) {
+      if ((int4)v13 <= 2) goto label_2f9c;
+      v11 = (void *)__errno_location();
+      v2 = *v11;
+      v10 = quotearg_style(4,(char *)dst);
+      v9 = dcgettext(0,"target %s",5);
+      error(1,v2,v9,v10);
+      goto label_30e8;
+    }
+    v37 = -1;
+    v10 = (char *)(uint8)(v13 - 1);
+    if (((char)v19 != '\0') && (v13 - 1 != 0)) goto label_3012;
+  }
+  if (v14[2] == 2) {
+    v33 = v33 & 0xff00;
+    if ((char)v16 == '\0') goto label_2fbc;
+    v18 = "options --backup and --no-clobber are mutually exclusive";
+    goto label_319b;
+  }
+  if ((char)v16 == '\0') {
+label_2fbc:
+    v14[0] = 0;
+  }
+  else {
+    v18 = (char *)dcgettext(0,"backup type",5);
+    v14[0] = xget_version(v18,(char *)v22);
+  }
+  set_simple_backup_suffix((char *)v24);
+  hash_init();
+  if (dst == (char **)0x0) {
+    v36 = 1;
+    v13 = do_move(*(void *)a1,*(void *)&a1[8],0xffffff9c,*(void *)&a1[8],v23);
+    goto label_2f59;
+  }
+  v4 = (int4)v10;
+  if (v4 <= 1) {
+    if (v4 != 1) {
+      v13 = 1;
+      goto label_2f59;
+    }
+  }
+  else {
+    dest_info_init(v23);
+  }
+  v13 = 1;
+  v17 = 0;
+  v22 = &v15;
+  do {
+    v16 = *(char **)a1;
+    v17 = v17 + 1;
+    v36 = v17 == v4;
+    a1 = &a1[8];
+    v10 = last_component(v16);
+    v10 = file_name_concat((char *)dst,v10,v22);
+    strip_trailing_slashes(v15);
+    v6 = do_move(v16,v10,v25,v15,v23);
+    v13 = v13 & v6;
+    rpl_free(v10);
+  } while (v17 < v4);
+label_2f59:
+  if (v41 == *(int8 *)(v20 + 0x28)) {
+    return (v13 ^ 1) & 0xff;
+  }
+label_30e8:
+                    /* WARNING: Subroutine does not return */
+  __stack_chk_fail();
+}
+
+--- metrics (reference | kuna) ---
+  loc           300 | 278 
+  gotos           9 | 24  
+  labels          8 | 14  
+  switches        1 | 1   
+  cases          13 | 10  
+  ifs            23 | 25  
+  loops           3 | 4   
+  ternaries       0 | 0   
+  casts           0 | 0   
+
+--- signals (candidate 'reference is better' hints) ---
+  * ref has fewer gotos (9 vs 24)
+  * ref has fewer labels (8 vs 14)
+  * kuna emitted a recovery-failure marker
