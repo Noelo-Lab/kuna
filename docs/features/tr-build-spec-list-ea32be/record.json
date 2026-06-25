@@ -1,0 +1,33 @@
+{
+  "opportunity": "test_decompiling_tr_build_spec_list::build_spec_list",
+  "test_name": "test_decompiling_tr_build_spec_list",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/tr.o",
+  "selector": "build_spec_list",
+  "func_addr": "0xbc0",
+  "arch": "x86_64",
+  "angr_version": "9.2.213",
+  "option": "condfold",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_tr_build_spec_list; angr SAILR Phoenix condition folding + CrossJumpReverter (angr/analyses/decompiler/structuring/phoenix.py, optimization_passes/cross_jump_reverter.py); build_spec_list",
+  "scope": "large",
+  "proposal": true,
+  "covered_by_existing": null,
+  "notes": "Target tr.o is ET_REL — kuna's PT_LOAD-only loader cannot load it (loader gap, proposal PR #37). Fair comparison done via a linked standalone non-PIE ELF (stubs.c -> tr_synth.elf). Full-pipeline kuna output is structurally close to angr; remaining diffs: (1) canary shown -> COVERED by option stackguard, (2) 11 gotos vs angr's 4 via SAILR condition folding -> LARGE S7 structuring (this proposal), (3) duplicate/undeclared variables -> generic non-angr S9 emit bug.",
+  "decisions": [
+    {
+      "question": "Which ONE structural gap to target, and is the fix small or large?",
+      "decider_verdict": {
+        "target_gap": "angr collapses short-circuit && / || compound conditions and crossing-edge gotos (SAILR-style condition folding / goto reduction); kuna emits 11 gotos and nested if/else where angr emits 4 gotos with folded conditions",
+        "rationale": "This is the only difference that is a genuine angr algorithmic strength rather than a generic kuna defect or an already-covered option. Difference 1 (canary) is covered by stackguard, and difference 3 (triple-declared v12, undeclared v5/v14/v15) is a generic correctness bug in kuna's declaration/emit layer, not something angr does via a smarter algorithm. Folding short-circuit conditions and eliminating crossing-edge gotos is exactly SAILR's contribution and the clearest 'angr decompiles it better' signal.",
+        "owning_stage": "S7",
+        "scope": "large",
+        "scope_reason": "Condition folding and goto reduction require new control-flow structuring logic (region condition synthesis, short-circuit && / || recovery, crossing-edge goto virtualization) that lives deep in S7 region/structuring code. This is far beyond a single option-gated detect+install Action with one gated early-return: it is a new pass/infrastructure touching the structuring core, violating Hard Rule 7 (S7 structuring beyond a gated early-return, new pass type, >1 module).",
+        "covered_by_existing": null,
+        "is_angr_inspired": true,
+        "recommended_action": "proposal",
+        "feature_sketch": null
+      }
+    }
+  ]
+}
