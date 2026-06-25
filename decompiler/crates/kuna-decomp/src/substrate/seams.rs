@@ -489,6 +489,11 @@ pub struct Architecture {
     /// `Architecture::name_style_angr`, default-on).  Read by the call-spec
     /// printed-name resolution ([`FuncCallSpecs::fspec_printed_name`]).
     pub name_style_angr: bool,
+    /// (kuna) Collapse local-variable declarations whose fully-rendered line is
+    /// identical (the scalar analogue of the composite-symbol decl collapse).  Read
+    /// by [`PrintC::emit_local_var_decls`](crate::printc); `option dedupvardecls`,
+    /// default-off (angr-inspired, S9).
+    pub dedup_var_decls: bool,
     /// (kuna) GH-558: present canonicalized `INT_LESS(x, c+1)` comparisons in
     /// their original `x <= c` form (C++ `present_lessequal`, DIV-2 default-on).
     /// Read by [`ActionPresentCompareForm`](crate::kuna_compareform::ActionPresentCompareForm).
@@ -526,6 +531,10 @@ pub struct Architecture {
     /// (C++ `recover_lowered_switch`, default-on).  Read by the
     /// [`crate::kuna_loweredswitch`] detect/install actions.
     pub recover_lowered_switch: bool,
+    /// (kuna) fold an order-safe single-use call return into its use site
+    /// (`fold_call_returns`, opt-in default-off).  Read by `base_explicit`
+    /// (`ActionMarkExplicit`) via [`crate::kuna_callretfold::call_output_foldable`].
+    pub fold_call_returns: bool,
     /// (kuna) strip the glibc -fstack-protector canary epilogue (C++
     /// `strip_stack_guard`, opt-in default-off).  Read by
     /// [`crate::kuna_stackguard`]'s `ActionStripStackGuard`.
@@ -691,6 +700,9 @@ impl Architecture {
             input_varnode_adjust: true,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
+            // (kuna) default-off opt-in; the real value is copied from the engine
+            // Architecture in `build_arch_handle` (`option dedupvardecls`).
+            dedup_var_decls: false,
             // (kuna) DIV-2 default-on (GH-558): resetDefaults sets present_lessequal=true.
             present_lessequal: true,
             // (kuna) the real arch overwrites each of these in `build_arch_handle`;
@@ -705,6 +717,7 @@ impl Architecture {
             memset_recover: false,       // GH-9230/1537 memsetrecover
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
+            fold_call_returns: false, // foldcallret (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.
             condexe_block_placement: true,

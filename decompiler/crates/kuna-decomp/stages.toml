@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=90, settable=37
-# (23 stage-model knobs + 14 analysis-tier gates).
+# Counts (asserted in tests): group=39, substage=40, surface=90, settable=39
+# (25 stage-model knobs + 14 analysis-tier gates).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -1596,6 +1596,23 @@ inspiration = "angr LoweredSwitchSimplifier (angr/analyses/decompiler/optimizati
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "foldcallret"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S6"
+substage = "explicit-marking"
+rewind = "S6"
+strength = "HINT"
+issue = "angr-call-return-variable-folding"
+summary = "Fold an order-safe single-use call return value into its use site, inlining the call expression instead of spilling it to a named temporary (e.g. `if (timespec_cmp(...) <= -1)` instead of `v5 = timespec_cmp(); if (v5 <= -1)`)."
+use_when = "Set on to match angr's call-return folding when kuna spills a call result to a `vN = call(); use(vN)` pair that is used exactly once. Off (default) is upstream byte-identical (Ghidra forces every call output explicit). Only folds when the single use is in the same block with no intervening call/load/store, so the call's evaluation order is preserved."
+example = "option foldcallret on"
+source_decompiler = "angr"
+inspiration = "test_call_return_variable_folding; angr call-return variable folding (expression folding in angr/analyses/decompiler); print_long_format"
+change_kind = "presentation-default"
+
+[[settable]]
 option = "stackguard"
 values = "on|off"
 default = "off"
@@ -1646,6 +1663,26 @@ source_decompiler = "kuna"
 inspiration = "user request: drop fake unknownN types in favour of size-correct C types"
 change_kind = "presentation-default"
 live_field = "realtypes"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "dedupvardecls"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S9"
+substage = "naming-policy"
+strength = "HARD"
+rewind = "S9"
+issue = "angr-duplicate-decls"
+summary = "Collapse local-variable declarations whose fully-rendered line (type + name + array adornment + storage comment) is identical, so a stack slot mapped onto many same-named scalar HighVariables is declared once instead of one line per high (the scalar analogue of the existing composite-symbol declaration collapse)."
+use_when = "On by default (DIV-7): a stack slot is declared once even when many same-named scalar HighVariables share it (e.g. x86_64/cvs main, where the per-high rendering repeats `int4 option_index; // stack - 0x3c` ~200x). Set OFF to restore the one-declaration-per-high rendering."
+example = "option dedupvardecls off"
+source_decompiler = "angr"
+inspiration = "test_decompiling_x8664_cvs; angr variable recovery (one variable per storage location, declared once); main"
+change_kind = "presentation-default"
+live_field = "dedup_var_decls"
 live_true = "on"
 live_false = "off"
 

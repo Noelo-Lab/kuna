@@ -1,5 +1,58 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — angr duplicate-declaration collapse (option dedupvardecls, DIV-7)
+
+Closed the angr-vs-kuna gap on `test_decompiling_x8664_cvs::main` (x86_64/cvs): kuna emitted a
+**wall of duplicate local-variable declarations** — the single stack slot `stack - 0x3c`
+(`option_index`) was declared **166 times**, `stack - 0x38` 53×, etc. — where angr declares each
+local once. This was the dominant cause of kuna's main being ~30% longer than angr (677 vs 472 loc).
+
+- **Why angr is better:** angr's variable recovery yields one variable per storage location, so its
+  declaration block lists each local once. kuna's C printer walks **HighVariables** (the W4
+  `ScopeLocal` Symbol walk is the missing surface), so when the angr-style naming maps many distinct
+  scalar HighVariables sharing one stack slot to the same name+type+storage, kuna emits one
+  declaration line *per high* — textually identical, and (strictly) invalid C re-declarations.
+- **Mechanism (S9 emit):** `option dedupvardecls` + arch flag `dedup_var_decls` (DIV-7 default-on,
+  carried into the `ArchSeam`). `emit_local_var_decls` now skips a declaration whose fully-rendered
+  signature (final declarator type + name + array adornment + storage comment) is byte-identical to
+  one already emitted — the scalar analogue of the composite-symbol collapse kuna already performs.
+  New module `s9_emit/kuna_dedupvardecls.rs` (option parser + `DeclDedup` signature tracker);
+  ElementId 4091. Pure presentation: body markup, naming, and which highs exist are unchanged; only
+  redundant declaration *lines* are removed (provably lossless).
+- **Ablation:** 0 of 675 datatest assertions change with the feature default-ON (`make test` PARITY
+  OK without regeneration); **speed +0.14%** on the target (off 2236 ms → on 2239 ms, budget 5%) —
+  an O(decls) HashSet pass. Clean ablation + within-budget speed ⇒ shipped **default-ON** (DIV-7).
+- **Effect on target:** cvs `main` 680 → 461 loc with the flag on (angr is 472).
+- **Testcase:** `tests/stages/ghangr-x8664-cvs-863633.xml` (+2 assertions, `docs/baseline-stages.json`);
+  the `kuna-catalog.xml` angr-provenance count moved 3→4.
+
+## Session (2026-06-25) — call-return variable folding (option `foldcallret`)
+
+Closed an angr-better gap from `test_call_return_variable_folding`
+(`x86_64/decompiler/ls_gcc_O0::print_long_format`, angr 9.2.213).
+
+- **Why angr was better:** angr inlines a call's return value into its single use
+  site (`if (timespec_cmp(...) <= -1)`, `... && localtime_rz(...) != NULL ...`),
+  whereas kuna spills *every* call return to a named local first
+  (`v5 = timespec_cmp(); if (v5 <= -1)`). Root cause: S6 `ActionMarkExplicit`
+  (`baseExplicit`, `coreaction.cc:3105`) forces every call output **explicit**
+  (`if (op->isCall()) return -1;`) — conservative because making a call output
+  *implied* moves the call's evaluation to the use site.
+- **Mechanism:** new option `foldcallret` (S6 explicit-marking sub-stage, opt-in
+  default-OFF). New module
+  `decompiler/crates/kuna-decomp/src/s6_variables/kuna_callretfold.rs` exposes the
+  order-safety predicate `call_output_foldable` (decider-refined): fold only when
+  the call output has exactly one **non-marker** use, in the **same basic block**,
+  with **no intervening** call/load/store between the call and its use — so the
+  call's evaluation order is preserved. `baseExplicit`'s `is_call()` arm falls
+  through to the implied path when the flag is on and the predicate holds.
+- **Ablation:** default-OFF byte-identical (`make test` 675/675 PARITY OK). Flipping
+  default-ON changes 5/675 datatest assertions (Deindirect Output #1, Inlining #8,
+  Local cross #2, Modified conditional constant #2/#3), so it stays **opt-in**
+  (no DIV entry). Speed: off 650.95 ms / on 630.17 ms (−3.19%, within the 5% budget).
+- **On/off:** `kuna decompile <bin> <fn> --option foldcallret on`; off (default) is
+  upstream byte-identical.
+
 ## Session (2026-06-25) — Go pclntab function-name recovery (Increment 34)
 
 Ported the **name-recovery half** of Ghidra's `GolangSymbolAnalyzer` (`golang-symbols`,

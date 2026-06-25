@@ -3292,6 +3292,246 @@ kuna-analysis unit tests).
   `collect_entries`; `executable_sections` PE/Mach-O exec tests; 2 new core
   tests), `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
 
+### Increment 42 — Multi-format loader PR-9: MSVC C++ demangler arm
+
+**Premise.** `s1_demangle` (the `GnuDemanglerAnalyzer` analog) covered three
+schemes — Itanium C++ (`cpp_demangle`: ELF/Mach-O C++ + MinGW-PE), Rust legacy
+`_ZN`/v0 `_R` (`rustc_demangle`) — but **not MSVC** mangling, the `cl.exe` scheme
+that starts with `?` (`?foo@Bar@@QEAAHH@Z`), carried by MSVC-ABI PE/COFF binaries.
+On those, every C++ symbol surfaced as the raw mangled string. This increment adds
+the **MSVC arm** so they render readable (design §5.5, §8 PR-9). Itanium/Rust/C
+symbols never start with `?`, so the arm is **purely additive** — the ELF path is
+byte-identical.
+
+**The demangler dep (`msvc-demangler` 0.11, MIT).** Ghidra's MSVC demangler is the
+JNI/Java `MicrosoftDemangler` (the hand-rolled `MDMang` C++ grammar), a peer of
+`GnuDemangler` (the libiberty shell-out) — never part of the deep-decompiler C++
+tree, so there is nothing to transcribe. Identical to the Itanium/Rust deps (and
+LOSS-005 BFD→`object`), the faithful move is "call a permissive demangler crate and
+consume its string". Recorded as **LOSS-250** (`docs/rust-port/losses.md`).
+`msvc_demangler`'s `NAME_ONLY` flag returns the qualified-name-only form directly
+(`Bar::foo`, `ns::g`) — already free of the signature/template `::` the scope
+splitter must not see (the same name-only contract as the Itanium path);
+`COMPLETE` gives the full c++filt-like form for `demangle_raw`.
+
+**`s1_demangle/mod.rs`.** `skip()` gains a leading-`?` early-accept that runs
+**before** the existing `@`-version heuristic — MSVC embeds `@` *structurally*
+(namespace/type separators), so the version heuristic would otherwise reject every
+MSVC symbol. `demangle_raw`/`demangle_name` each gain a `?`-gated MSVC arm
+(`demangle_name` runs the `NAME_ONLY` output through `strip_bracket_groups` for
+template safety, identical to the Itanium reduction).
+
+**The `strip_version` truncation bug (the load-bearing loader fix).** The loader
+funcsym path applies `elf_plt::strip_version` (the glibc `@@VERSION` stripper)
+*before* demangling. It cut at the first `@`, so `?foo@Bar@@QEAAHH@Z` arrived at
+the demangler already truncated to `?foo` (proven by the first run of the
+loader-level test). `strip_version` now returns a leading-`?` name verbatim — no
+glibc-versioned symbol ever starts with `?`, so ELF behavior is unchanged.
+
+**Before → after (the payoff).** A real MSVC-mangled COFF object
+(`msvc_mangled.obj`, `clang -target x86_64-pc-windows-msvc` — the windows-msvc
+target emits the *same* `?`-scheme as `cl.exe`, which is unavailable on Linux):
+- *before:* funcsym stream carries the raw `?foo@Bar@@QEAAHH@Z` (worse:
+  `strip_version`-truncated to `?foo`); no readable name.
+- *after:* `?foo@Bar@@QEAAHH@Z` → `Bar::foo`, `?g@ns@@YAHHH@Z` → `ns::g`,
+  `?freefunc@@YAHH@Z` → `freefunc`. `kuna decompile msvc_mangled.obj freefunc`
+  (by demangled name, `--experimental-formats`) yields
+  `int4 freefunc(int4 a0){ return a0 + 0x2a; }` — resolved by its **demangled**
+  name, not the raw `?`-symbol.
+
+**The e2e is REAL (not unit-only).** `cl.exe` is unavailable, but
+`clang -target x86_64-pc-windows-msvc` produces a genuine MSVC-ABI COFF object
+with `?`-mangled symbols (verified `objdump -t`), so `verify_msvc_demangle.rs`
+loads + decompiles a real fixture, not a hand-faked symtab. The nested names
+(`Bar::foo`/`ns::g`) nest into scopes via the `::`-splitter, so the flat
+`load function` resolves the bare free function `freefunc` in the e2e; the
+namespaced demangle is pinned at the loader level
+(`loadimage_object::tests::msvc_mangled_coff_symbols_are_demangled_name_only`) and
+by the `s1_demangle::tests::msvc_*` unit tests (the merge gate, no toolchain
+needed).
+
+**Speed.** Full `kuna decompile msvc_mangled.obj freefunc` (release,
+`--experimental-formats`): **0.15s** (50 MB RSS). The e2e test
+(`verify_msvc_demangle`, release) runs in 0.15s (not skipped — `.sla` built).
+
+**Gating / parity.** The MSVC arm fires only on a leading `?` (no
+Itanium/Rust/C/ELF symbol has one), and PE/COFF only load under
+`--experimental-formats`, so the ELF demangle path is byte-identical. Gates:
+`make test` **675/675 PARITY OK**, `make test-stages` **159/159 PARITY OK**,
+`make rust-test` **green** (incl. the e2e + 8 new MSVC unit/loader tests).
+
+- **Divergence/LOSS:** LOSS-250 (`MicrosoftDemangler` → `msvc-demangler`,
+  dependency-substitution; same kind as the Itanium/Rust/BFD deps). No parity
+  divergence (the MSVC arm is additive; the XML datatest path never reaches the
+  object loader).
+- **New:** `kuna-console/tests/verify_msvc_demangle.rs`,
+  `kuna-analysis/tests/fixtures/msvc_mangled.obj` (+ its `.cpp` source, recorded in
+  the fixtures README), the LOSS-250 entry.
+- **Changed:** `decompiler/Cargo.toml` + `crates/kuna-analysis/Cargo.toml`
+  (`msvc-demangler` dep), `Cargo.lock`, `kuna-analysis/src/s1_demangle/mod.rs`
+  (skip `?` + the MSVC arms + 7 unit tests), `kuna-analysis/src/s1_loader/elf_plt.rs`
+  (`strip_version` leading-`?` guard), `kuna-analysis/src/loadimage_object.rs`
+  (1 new loader test), `kuna-analysis/tests/fixtures/README.md`,
+  `docs/rust-port/losses.md`, `docs/analysis-port-log.md`.
+
+### Increment 43 — Multi-format loader PR-11: DWARF on Mach-O + MinGW-PE
+
+**Premise.** `s1_dwarf` (the kuna analog of Ghidra's `DWARFAnalyzer`, gimli-based)
+recovers function names / params / types from the `.debug_*` sections, but its
+`run` opened with `if !matches!(ctx.file.format(), BinaryFormat::Elf) { return }`
+(`s1_dwarf/mod.rs:555`) — DWARF was ELF-only, so a `-g` PE or Mach-O recovered
+nothing. gimli is **format-neutral** (it parses the DWARF byte stream, not the
+container); the only container coupling is the *section-name lookup*. Design §5.2 /
+§8 PR-11.
+
+**The change (the whole PR is `s1_dwarf/mod.rs`).** Drop the ELF gate, and resolve
+the debug sections through a new `dwarf_section_data(file, SectionId)` helper that
+keys off `object`'s **format-aware** `section_by_name`. The key finding: `object`
+already does the per-format name translation, so a single `section_by_name(id.name())`
+covers all three formats — gimli's ELF-flavoured ids map cleanly:
+
+| Format | gimli `SectionId::DebugInfo.name()` | section `object` finds | how |
+|---|---|---|---|
+| ELF (today) | `.debug_info` | `.debug_info` | verbatim (unchanged) |
+| **MinGW-PE** | `.debug_info` | `.debug_info` | MinGW emits the standard `.debug_*` names verbatim |
+| **Mach-O** | `.debug_info` | `__debug_info` (in the `__DWARF` segment) | `object`'s documented Mach-O rule maps `.debug_info`→`__debug_info` (and `.debug_str_offsets`→`__debug_str_offs`) |
+
+The helper adds an explicit Mach-O `__`-prefixed fallback (`.debug_info`→
+`__debug_info`) as a belt-and-suspenders guard, a no-op when `object`'s auto-map
+already hit. Everything downstream — the DIE→Datatype mapper (`build_datatype`),
+`build_pieces`, `collect_fbreg_locals`, the SymFact/prototype/local commit — is
+**unchanged**. PE-MSVC PDB is out of scope (no `.debug_info` ⇒ falls out cleanly).
+
+**Before → after.** Both fixtures are the per-format analog of the ELF
+`dwarf_stripped_x86_64`: function names live ONLY in the debug sections (PE
+COFF-symtab FUNC entries `--strip-symbol`-removed; Mach-O FUNC entries
+`--redefine-sym`-renamed — `.debug_*` kept), so a recovery by name is unambiguously
+DWARF-sourced. Source body: `int first_byte(char *label){return label[0];}` +
+`int add(int,int)`.
+
+```text
+            before (no DWARF / by raw address)     after (DWARF name + type recovered)
+  PE        sub_140001550(...)                     int4 first_byte(char *a0)
+  Mach-O    sub_0(...)                             int4 first_byte(char *a0)
+```
+
+`first_byte`/`add` recover **by their DWARF names** on both formats (the symtab no
+longer carries them) with the DWARF-typed `char *` parameter; a `load addr`
+decompile of the same code (the in-test no-DWARF-name baseline) renders the
+engine's `sub_<addr>` placeholder. The existing ELF DWARF gates
+(`verify_s1_dwarf` — names, typed `char *`, stack locals) pass **unchanged**.
+
+**Speed.** Full `decompile` + `print C` of `first_byte` by its DWARF name
+(`--experimental-formats`, release): **Mach-O ~36 ms**, **PE ~136 ms** (the PE is
+a full MinGW exe whose `.debug_info` is ~280 KB — the larger DWARF CU is the cost;
+the Mach-O object's CU is ~130 bytes). Recorded in the e2e via `Instant`.
+
+**Gating / parity.** Default-off ⇒ ELF byte-identical: the pass only *drops a
+format gate* and the ELF section names are identical, so the ELF path is unchanged
+(the 4 `s1_dwarf` unit tests + 3 `verify_s1_dwarf` e2e tests pass verbatim), and
+the non-ELF arm is reachable only under `--experimental-formats`
+(`KUNA_EXPERIMENTAL_FORMATS`). The XML datatest path never reaches the object
+loader. Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**159/159 PARITY OK**, `make rust-test` **green** (incl. the new e2e, 3 tests, not
+skipped — `.sla` built).
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is
+  flag-gated; the XML datatest path never reaches the object loader). The
+  dependency-substitution LOSS (gimli wholesale for Ghidra's hand-rolled DWARF
+  reader) is unchanged — this PR only generalizes the *container* lookup.
+- **New:** `kuna-console/tests/verify_multiformat_dwarf.rs` (3 tests),
+  `kuna-analysis/tests/fixtures/{pe_dwarf.exe, pe_dwarf.c, macho_dwarf.o,
+  macho_dwarf.c}` (recipes recorded in the fixtures README).
+- **Changed:** `kuna-analysis/src/s1_dwarf/mod.rs` (drop the `BinaryFormat::Elf`
+  gate; new `dwarf_section_data` per-format section lookup),
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 44 — Multi-format loader PR-14: per-format compiler/source-language detection (PE/Mach-O)
+
+**Premise.** `s1_sourcelang::detect_compiler` is kuna's analog of Ghidra's
+`SourceLanguageAnalyzer` — it fingerprints the producing toolchain
+(`Gcc`/`Clang`/`Rustc`/`Go`) and that value **gates language-specific behavior**:
+the Rust no-return list, the Golang no-return list (`s1_loader/noreturn.rs`), and
+the Go pclntab function-name pass (`s1_pclntab`). It was wired to short-circuit to
+`Unknown` for any non-ELF input (the detection signals were ELF-specific: the
+`.comment` section, `.go.buildinfo`/`.note.go.buildid`). This increment
+generalizes the *signal sources* per format while keeping the *contract* (and the
+ELF path) byte-identical. Design §5.3 / §8 PR-14.
+
+**The format dispatch (`s1_sourcelang/mod.rs`).** `detect_compiler(file)` →
+`detect_compiler(file, bytes)` (the raw image is needed for the PE `Rich` header
+and the Mach-O load commands — `object::File` surfaces neither) and now branches
+on `file.format()`:
+- **ELF** — `detect_compiler_elf`, the original logic lifted **verbatim** into a
+  standalone fn (so the ELF path is provably unchanged: Go-section → `rustc
+  version`/mangled-symbol/`.rodata`-signature → `clang version` → `GCC:`).
+- **PE** (`detect_compiler_pe`) — the MSVC `Rich` header / `@comp.id` records
+  (the obfuscated toolchain block MSVC's linker stamps between the DOS stub and
+  the PE header: XOR-decode from the `Rich` tag + key back to the `DanS` marker,
+  read the `@comp.id` product ids → clang-cl vs `cl.exe`), **plus** the MinGW
+  `GCC: (…)` path. MinGW emits **no `.comment` section** in a PE — the `GCC: (GNU)
+  …` records live NUL-delimited in `.rdata` — so the PE arm scans `.rdata`/
+  `.comment` with the same NUL-record reader. kuna has no distinct `Msvc`
+  `Compiler` variant (nothing gates on one); an MSVC `Rich` header reports the
+  closest convenience, `Clang`, only to lift the binary out of `Unknown`.
+- **Mach-O** (`detect_compiler_macho`) — `LC_BUILD_VERSION` / the legacy
+  `LC_VERSION_MIN_*` family (walked with the typed `MachHeader` parsers, the same
+  pattern as `s1_entry/macho_entry.rs`, peeling fat slices). An Apple platform ⇒
+  the clang/LLVM toolchain ⇒ `Clang`. Also scans a `__comment`/`__DWARF`-analog
+  section for embedded `clang version`/`GCC:` text when present.
+- **COFF object / other** — `detect_compiler_generic`: honour only the universal
+  Rust/Go signals, else `Unknown` (a pre-link `.obj` has no toolchain stamp).
+
+**The format-neutral Rust/Go paths (the payoff).** The Rust-mangled-symbol path
+(`symbols_indicate_rust` over `file.symbols()`/`dynamic_symbols()` — both neutral
+in `object`) and the Go build-info-section path (`golang_section_present`, widened
+to also match Mach-O's `__go_buildinfo` alongside ELF's `.go.buildinfo`/
+`.note.go.buildid`) are **shared by all three arms**. So a Rust or Go PE/Mach-O
+trips the same `Rustc`/`Go` detection an ELF would — which automatically enables
+the Rust/Go no-return lists and the Go pclntab pass on those formats (the gate is
+the format-neutral `Compiler` value, not the format; `passes.rs`/`noreturn.rs`
+already consume the enum format-agnostically).
+
+**Before → after.**
+- *MinGW PE* (`pe_imports.exe`): before, `detect_compiler` returned `Unknown`
+  (non-ELF short-circuit); after, it scans the `.rdata` `GCC: (GNU) 9.3-win32 …`
+  records → **`Gcc`**.
+- *Mach-O* (`macho_imports` x86-64 + `macho_imports_arm64`): before `Unknown`;
+  after, the `LC_BUILD_VERSION` (PLATFORM_MACOS) load command → **`Clang`**.
+- *Rust/Go non-ELF*: a Rust-mangled `_R…`/`_ZN…17h…E` symbol or a `__go_buildinfo`
+  section now reports `Rustc`/`Go` on a PE/Mach-O → the Rust/Go no-return list +
+  Go pclntab activate (previously dead on non-ELF).
+
+**Tests (all RAN, none skipped).** `s1_sourcelang` gained 6 hermetic/fixture unit
+tests (PE→`Gcc`, Mach-O x86-64+arm64+object→`Clang`, the synthetic-buffer `Rich`
+-header MSVC-vs-clang split, COFF-object→`Unknown`) — 13/13 pass. New e2e
+`kuna-console/tests/verify_multiformat_sourcelang.rs` (5 tests) loads the real PE/
+Mach-O fixtures and asserts the detection + the cross-format pass-activation
+consequence; it reaches the analysis tier directly (`object::File` over the
+fixture bytes) so it needs **no `.sla`** and never skips. **Speed:** detection is
+a section/load-command scan — PE `pe_imports.exe` and each Mach-O fixture
+`detect_compiler` complete in **< 100 µs** (the e2e's 5 tests run in < 0.01s
+total).
+
+**Gating / parity.** Detection is pure and **detection-only** — nothing in the
+output changes unless a language-specific pass acts, and those act only for
+`Rustc`/`Go`. A PE/Mach-O detecting as `Gcc`/`Clang`/`Unknown` is byte-identical,
+and the ELF arm is the original logic verbatim. Gates: `make test` **675/675
+PARITY OK**, `make test-stages` **159/159 PARITY OK**, `make rust-test` **green**
+(incl. the 6 new `s1_sourcelang` unit tests + the new 5-test e2e).
+
+- **Divergence/LOSS:** none to the parity oracles (the XML datatest path never
+  reaches the object loader; the ELF detection is unchanged). The PE `Rich`-header
+  product-id table keys off only the small stable clang/LLVM subset and defaults
+  any other populated `Rich` header to MSVC (reported as `Clang`) — an imperfect
+  MSVC-vs-clang split that is safe because nothing downstream gates on `Clang` vs
+  `Gcc` vs MSVC (detection-only).
+- **New:** `kuna-console/tests/verify_multiformat_sourcelang.rs`.
+- **Changed:** `kuna-analysis/src/s1_sourcelang/mod.rs` (per-format dispatch +
+  PE `Rich`/`GCC:` + Mach-O `LC_BUILD_VERSION` arms + 6 tests),
+  `kuna-analysis/src/passes.rs` + `kuna-analysis/src/s1_loader/noreturn.rs`
+  (`detect_compiler(&file, bytes)` call-site signature), `docs/analysis-port-log.md`.
+
 ### Increment 45 — Multi-format loader PR-8: Mach-O fat/universal slice selection + arm64e spec
 
 **Premise.** PR-6/7 (Increment 39) made a **thin** linked Mach-O load + decompile +
@@ -3379,7 +3619,9 @@ non-arm64e target is byte-identical (the slice peel is a pass-through for thin
 inputs). The XML datatest path never reaches the object loader, so the parity
 oracles are structurally untouched. Gates: `make test` **675/675 PARITY OK**,
 `make test-stages` **159/159 PARITY OK**, `make rust-test` **green**;
-`kuna catalog --check` **OK** (settable count 37 → 38, the `macho-arm64e` row).
+`kuna catalog --check` **OK** (this PR adds the `macho-arm64e` row; after merging
+`main`'s concurrent `foldcallret` + `dedupvardecls` settables the catalog carries
+**40** rows total).
 
 - **Divergence/LOSS:** none to the parity oracles. The fat/arm64e fixtures are
   hand-built (no in-container Apple linker / `lipo`); the arm64e fixture's

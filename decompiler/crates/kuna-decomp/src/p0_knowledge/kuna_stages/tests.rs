@@ -1,8 +1,9 @@
 //! Unit tests for the kuna stage registry (`kuna_stages.rs`).
 //!
 //! Parity targets transcribed from `decompiler/cpp/kuna_stages.cc`:
-//! group=39, substage=40, surface=90, settable=37 (23 stage-model knobs + 14
-//! kuna analysis-tier gates), plus the stage-code helpers, the lookup API, the
+//! group=39, substage=40, surface=90, settable=40 (25 stage-model knobs — incl.
+//! `foldcallret` + `dedupvardecls` — plus 15 kuna analysis/loader-tier gates,
+//! incl. `macho-arm64e`), plus the stage-code helpers, the lookup API, the
 //! typed `OptionValues` defaults, and the catalog emitter.
 
 use super::*;
@@ -28,8 +29,9 @@ fn surface_count_is_90() {
 }
 
 #[test]
-fn settable_count_is_38() {
-    // 23 stage-model knobs + 15 analysis/loader-tier gates: 10 per-run analysis-pass
+fn settable_count_is_40() {
+    // 25 stage-model knobs (incl. `foldcallret` + `dedupvardecls`) + 15
+    // analysis/loader-tier gates: 10 per-run analysis-pass
     // enablement (noreturn_known/libproto/strings/entry_disc/arm_markers/mips_gp/
     // mips_isa/dwarf/callfixup/addrtable) + the `formatstring` DecompilerDependent
     // varargs-typing gate + the `listing` Listing/xref disassembly tier gate +
@@ -39,10 +41,12 @@ fn settable_count_is_38() {
     // (mips_isa added with MIPS16 ISA_MODE painting, Increment 21; mips_gp with
     // MIPS $gp recovery; formatstring with half B; listing with the Listing/xref
     // tier, Increment 29; noreturn_disc with the first Listing consumer, Increment 33;
-    // gopclntab with Go pclntab name recovery, Increment 34; macho-arm64e with the
-    // multi-format loader PR-8 fat/universal + arm64e increment.)
-    assert_eq!(kuna_num_settables(), 38);
-    assert_eq!(SETTABLE_TABLE.len(), 38);
+    // gopclntab with Go pclntab name recovery, Increment 34;
+    // dedupvardecls with duplicate-scalar-declaration collapse, DIV-7;
+    // macho-arm64e with the multi-format loader PR-8 fat/universal + arm64e
+    // increment, Increment 45.)
+    assert_eq!(kuna_num_settables(), 40);
+    assert_eq!(SETTABLE_TABLE.len(), 40);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -221,13 +225,14 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_20_suppressed_for_18() {
+fn option_values_live_value_present_for_21_suppressed_for_19() {
     let ov = OptionValues::default();
-    // 20 options have a codegen live reader (realtypes joins the field-backed
-    // group); the live_value returns the current value for them and None for
-    // loweredswitch/stackguard/namestyle PLUS the 15 analysis/loader-tier gates
-    // (which have no `live_field` — their live state is read console-side via the
-    // hand-written `kuna_live_value` / an env gate, not the codegen `live_value`).
+    // 21 options have a codegen live reader (realtypes + dedupvardecls join the
+    // field-backed group); the live_value returns the current value for them and
+    // None for loweredswitch/stackguard/namestyle/foldcallret PLUS the 15
+    // analysis/loader-tier gates (which have no `live_field` — their live state is
+    // read console-side via the hand-written `kuna_live_value` / an env gate, not
+    // the codegen `live_value`).
     const PASS_GATES: &[&str] = &[
         "noreturn_known",
         "libproto",
@@ -257,7 +262,7 @@ fn option_values_live_value_present_for_20_suppressed_for_18() {
             }
             None => {
                 assert!(
-                    matches!(st.option, "loweredswitch" | "stackguard" | "namestyle")
+                    matches!(st.option, "loweredswitch" | "stackguard" | "namestyle" | "foldcallret")
                         || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
@@ -265,7 +270,7 @@ fn option_values_live_value_present_for_20_suppressed_for_18() {
             }
         }
     }
-    assert_eq!(with_live, 20);
+    assert_eq!(with_live, 21);
 }
 
 #[test]
@@ -330,8 +335,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 38 rows: 37 trailing commas (the last has none).
-    assert_eq!(json.matches("},\n").count(), 37);
+    // 40 rows: 39 trailing commas (the last has none).
+    assert_eq!(json.matches("},\n").count(), 39);
 }
 
 #[test]
