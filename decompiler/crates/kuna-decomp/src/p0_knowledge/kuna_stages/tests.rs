@@ -1,8 +1,9 @@
 //! Unit tests for the kuna stage registry (`kuna_stages.rs`).
 //!
 //! Parity targets transcribed from `decompiler/cpp/kuna_stages.cc`:
-//! group=39, substage=40, surface=90, settable=39 (25 stage-model knobs + 14
-//! kuna analysis-tier gates), plus the stage-code helpers, the lookup API, the
+//! group=39, substage=40, surface=90, settable=40 (25 stage-model knobs + 14
+//! kuna analysis-tier gates + 1 loader-tier capability `relocobjects`), plus the
+//! stage-code helpers, the lookup API, the
 //! typed `OptionValues` defaults, and the catalog emitter.
 
 use super::*;
@@ -41,8 +42,11 @@ fn settable_count_is_37() {
     // tier, Increment 29; noreturn_disc with the first Listing consumer, Increment 33;
     // gopclntab with Go pclntab name recovery, Increment 34;
     // dedupvardecls with duplicate-scalar-declaration collapse, DIV-7.)
-    assert_eq!(kuna_num_settables(), 39);
-    assert_eq!(SETTABLE_TABLE.len(), 39);
+    // + 1 loader-tier capability: the `relocobjects` ET_REL relocatable-object
+    // loader (DIV-8), the only settable that gates the loader rather than a
+    // per-function pass.
+    assert_eq!(kuna_num_settables(), 40);
+    assert_eq!(SETTABLE_TABLE.len(), 40);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -221,13 +225,15 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_20_suppressed_for_15() {
+fn option_values_live_value_present_for_20_suppressed_for_18() {
     let ov = OptionValues::default();
     // 21 options have a codegen live reader (realtypes joins the field-backed
     // group); the live_value returns the current value for them and None for
-    // loweredswitch/stackguard/namestyle/foldcallret PLUS the 14 analysis-tier
-    // gates (which have no `live_field` — their live state is read console-side
-    // via the hand-written `kuna_live_value`, not the codegen `live_value`).
+    // loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the 14
+    // analysis-tier gates (which have no `live_field` — their live state is read
+    // console-side via the hand-written `kuna_live_value`, not the codegen
+    // `live_value`). `relocobjects` (DIV-8) gates the loader, not a printer/engine
+    // flag, so it too has no codegen live reader.
     const PASS_GATES: &[&str] = &[
         "noreturn_known",
         "libproto",
@@ -254,8 +260,14 @@ fn option_values_live_value_present_for_20_suppressed_for_15() {
             }
             None => {
                 assert!(
-                    matches!(st.option, "loweredswitch" | "stackguard" | "namestyle" | "foldcallret")
-                        || PASS_GATES.contains(&st.option),
+                    matches!(
+                        st.option,
+                        "loweredswitch"
+                            | "stackguard"
+                            | "namestyle"
+                            | "foldcallret"
+                            | "relocobjects"
+                    ) || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
                 );
@@ -327,8 +339,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 38 rows: 37 trailing commas (the last has none).
-    assert_eq!(json.matches("},\n").count(), 37);
+    // 40 rows: 39 trailing commas (the last, relocobjects, has none).
+    assert_eq!(json.matches("},\n").count(), 39);
 }
 
 #[test]
