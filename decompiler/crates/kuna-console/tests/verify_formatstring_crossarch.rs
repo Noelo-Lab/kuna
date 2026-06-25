@@ -44,7 +44,7 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
 
@@ -70,7 +70,7 @@ fn decompile_main(arch: &str, formatstring_on: bool) -> Option<String> {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = fmt_bin(arch).to_str()?.to_string();
-    let mut prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(

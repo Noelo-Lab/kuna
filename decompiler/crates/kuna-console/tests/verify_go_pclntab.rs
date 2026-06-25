@@ -27,7 +27,7 @@
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -100,7 +100,7 @@ fn build_go(dir: &std::path::Path, out_bin: &std::path::Path, strip: bool) -> bo
 fn bootstrap(bin: &str) -> Option<kuna_console::engine::ConsoleProgram> {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_elf(bin, "", &spec_roots) {
+    let mut prog = match bootstrap_from_object(bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(
@@ -186,7 +186,7 @@ fn gopclntab_off_suppresses_recovery() {
 
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("verify_go_pclntab: skipping (bootstrap failed): {}", e.explain());

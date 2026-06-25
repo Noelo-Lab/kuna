@@ -37,7 +37,7 @@ real ELF parser.
 | `entrymain_riscv64` | stripped DYNAMIC PIE RISC-V RV64GC (same source), no unwind tables, `-fvisibility=hidden` | cross-arch `_start`→`main` idiom (`s1_entry` oracle 4): `main` in no symbol table (hidden visibility — a plain build leaves `main` a `.dynsym` GLOBAL FUNC that strip cannot remove). `_start`@`0x550` loads `a0` via `auipc a0,0x2; ld a0,-1318(a0)` → GOT slot `0x2030` whose `R_RISCV_RELATIVE` addend is `main`@`0x608`. e2e: `sub_608` → `int8 sub_608(int4 a0){return (int8)a0;}` |
 | `plt_aarch64` | linked, dynamic AArch64 ET_EXEC (`-no-pie`), not stripped (source `plt_aarch64.c`) | AArch64 PLT/import-name resolution end-to-end (`s1_loader::elf_plt::decode_aarch64`): the standard GNU `ld` 16-byte veneer (`adrp x16, GOT_page; ldr x17,[x16,#lo12]; add x16,x16,#lo12; br x17`). `main`@`0x400604` calls `puts("hello")` (`puts@plt`@`0x4004d0`, GOT slot `0x411018`) and `printf("%d\n", argc)` (`printf@plt`@`0x4004e0`, GOT slot `0x411020`); both `R_AARCH64_JUMP_SLOT` in `.rela.plt`. The console e2e (`kuna-console/tests/verify_aarch64_plt.rs`) asserts the call sites render `puts(`/`printf(` not `sub_4004d0`/`sub_4004e0` — the first **linked** AArch64 PLT proof (the decoder was previously synthetic-byte-unit-only). **Linked ET_EXEC with PT_LOAD** (unlike the ARM `.o`): the decode e2e works in-env (this container has the AArch64 toolchain + linker) |
 | `plt_sparc64` | linked, dynamic SPARC v9 / ELF64 **big-endian** ET_EXEC, not stripped (source `plt_sparc64.c`) | SPARC PLT/import-name resolution end-to-end (`s1_loader::elf_plt::decode_sparc`): the standard 32-byte SPARC veneer (`sethi %hi(...),%g1; b,a %xcc,<resolver>; nop*6`), preceded by a 4-slot (`0x80`-byte) reserved PLT0 header. SPARC's `R_SPARC_JMP_SLOT` `r_offset` **is** the PLT entry address (the linker rewrites the in-place stub at resolution time), so the decoder strides the `.plt` in 32-byte steps and records any `sethi %g1`-headed entry whose address is a known relocation — stub == name-map key. `main`@`0x100750` calls `puts("hello")` (`puts@plt`@`0x2021c0`) and `printf("%d\n", argc)` (`printf@plt`@`0x2021a0`); both `R_SPARC_JMP_SLOT` in `.rela.plt` naming `puts`/`printf`. The console e2e (`kuna-console/tests/verify_sparc_plt.rs`) asserts the call sites render `puts(`/`printf(` not `sub_2021c0`/`sub_2021a0` — the first **linked** SPARC PLT proof. **Linked ET_EXEC with PT_LOAD**: the decode e2e works in-env (this container has the SPARC toolchain + linker) |
-| `plt_mips32` | linked, dynamic MIPS32 **big-endian** ET_EXEC (`-O0`), not stripped (source `plt_mips32.c`) | MIPS o32 import-name resolution end-to-end (`s1_loader::elf_plt::resolve_mips_imports`, Increment 27): **no `.plt` / no `R_MIPS_JUMP_SLOT`** — the o32 ABI calls libc imports indirectly through a `$gp`-relative GOT slot (`lw $t9, off($gp); jalr $t9`). The stub→name correspondence is the dynamic-symbol GOT layout (`DT_MIPS_LOCAL_GOTNO`=6, `DT_MIPS_GOTSYM`=5, `DT_PLTGOT`=`0x411020`): `got_index(i)=6+(i-5)`. `main`@`0x400700` calls `puts` (dynidx 7 → GOT slot `0x411040` → stub `0x400800`) and `printf` (dynidx 8 → GOT slot `0x411044` → stub `0x4007f0`). `resolve_mips_imports` names each `.MIPS.stubs` stub (= the GOT slot's static contents = the dynsym `st_value`) and marks the GOT external slots constant; `bootstrap_from_elf` turns on `readonlypropagate` for MIPS so the GOT load folds and the call resolves. The console e2e (`kuna-console/tests/verify_mips_plt.rs`) asserts the call sites render `puts(`/`printf(` not `(*(code *)(dat_411040 & ...))(...)`. **Linked ET_EXEC with PT_LOAD**: the decode e2e works in-env (the container has the MIPS toolchain) |
+| `plt_mips32` | linked, dynamic MIPS32 **big-endian** ET_EXEC (`-O0`), not stripped (source `plt_mips32.c`) | MIPS o32 import-name resolution end-to-end (`s1_loader::elf_plt::resolve_mips_imports`, Increment 27): **no `.plt` / no `R_MIPS_JUMP_SLOT`** — the o32 ABI calls libc imports indirectly through a `$gp`-relative GOT slot (`lw $t9, off($gp); jalr $t9`). The stub→name correspondence is the dynamic-symbol GOT layout (`DT_MIPS_LOCAL_GOTNO`=6, `DT_MIPS_GOTSYM`=5, `DT_PLTGOT`=`0x411020`): `got_index(i)=6+(i-5)`. `main`@`0x400700` calls `puts` (dynidx 7 → GOT slot `0x411040` → stub `0x400800`) and `printf` (dynidx 8 → GOT slot `0x411044` → stub `0x4007f0`). `resolve_mips_imports` names each `.MIPS.stubs` stub (= the GOT slot's static contents = the dynsym `st_value`) and marks the GOT external slots constant; `bootstrap_from_object` turns on `readonlypropagate` for MIPS so the GOT load folds and the call resolves. The console e2e (`kuna-console/tests/verify_mips_plt.rs`) asserts the call sites render `puts(`/`printf(` not `(*(code *)(dat_411040 & ...))(...)`. **Linked ET_EXEC with PT_LOAD**: the decode e2e works in-env (the container has the MIPS toolchain) |
 
 Provenance: `fauxware`, `cet_pie_x86_64`, `stripped_dynamic_x86_64` copied
 verbatim from `bs-artifacts/binaries/` (`fauxware`, `debug_symbol`,
@@ -286,6 +286,190 @@ container — the exact build command (single root container invocation) is:
 && apt-get install -y --no-install-recommends libc6-dev-mips-cross >/dev/null
 && mips-linux-gnu-gcc -O0 decompiler/crates/kuna-analysis/tests/fixtures/plt_mips32.c
 -o decompiler/crates/kuna-analysis/tests/fixtures/plt_mips32'`.
+
+## PE (Windows) fixtures — the multi-format loader (PR-3+4)
+
+`pe_imports.exe` (non-stripped, 487 KB) and `pe_imports_stripped.exe` (`-s`,
+38 KB) are **linked Windows PE32+** executables for the PE import-naming gate
+(`kuna-console/tests/verify_pe_imports.rs`, design §3.2). Both are built from
+`pe_imports.c` =
+`int main(int argc,char**argv){ puts("hello"); printf("%d\n", argc); return 0; }`
+with MinGW-w64 in the `kuna-dev` container (`x86_64-w64-mingw32-gcc`, shipped by
+the dev image):
+
+```bash
+docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc \
+  'x86_64-w64-mingw32-gcc -O1 pe_imports.c \
+     -o decompiler/crates/kuna-analysis/tests/fixtures/pe_imports.exe'
+# stripped variant (the PR-4 IAT-naming proof): add `-s`.
+```
+
+ImageBase `0x140000000`. `main`@`0x140001592` calls `puts` through a MinGW thunk
+veneer@`0x140007240` (`FF 25` `jmp [rip+disp]` → the `__imp_puts` IAT slot
+@`0x14000d33c`) and a *local* MinGW `printf` wrapper@`0x140001550` (a `.text`
+function, **not** an import — it internally calls `vfprintf`). In the
+**non-stripped** exe the COFF symtab names the thunk (`puts`) and the wrapper
+(`printf`); in the **stripped** exe those names are gone, so the `puts` call is
+named **only** by `s1_loader::pe_iat`'s Import-Directory walk + `FF 25` thunk
+decode — that's the load-bearing PR-4 proof. The local `printf` wrapper stays
+`sub_<addr>` in the stripped binary (correctly — it is not an import). The PE
+exe is the only non-ELF binary in this tree large enough to statically link the
+MinGW CRT (≈0.5 MB), on par with the existing `mcount_x86_64` (0.9 MB).
+**Pin the VMAs as test consts** (`x86_64-w64-mingw32-objdump -d/-p`).
+
+`coff_obj.obj` (Intel amd64 COFF object, <1 KB) is a **pre-link COFF object** for
+the PR-5 object-loader gate (`kuna-console/tests/verify_coff_object.rs`,
+design §3.6). Built (no new packages — `clang` ships in `kuna-dev`):
+
+```bash
+docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc \
+  'clang -target x86_64-pc-windows-gnu -O1 -c coff_obj.c \
+     -o decompiler/crates/kuna-analysis/tests/fixtures/coff_obj.obj'
+```
+
+`coff_obj.c` =
+`int compute(int x){ return x*3+1; }` /
+`int run(int n){ const char *s="hi"; puts(s); return compute(n)+(int)s[0]; }`.
+COFF symtab (`objdump -t`): `compute`@`.text`+0x0, `run`@+0x10, `puts` an
+**undefined** external (section 0) — a pre-link object has no IAT, so `puts` is an
+unresolved *symbol*, not an address (`CoffFormat::resolve_imports` empty, §3.6).
+The `"hi"` literal lands in `.rdata` (the format-agnostic string pass's input).
+`compute` sits at `.text`+0, exercising the defined-function-at-VMA-0 case the
+loader's `is_undefined()` funcsym skip handles (an `addr == 0` skip would have
+dropped it). Proves a COFF `.obj` loads and decompiles a function **resolved by
+its COFF-symtab name**.
+
+`msvc_mangled.obj` (Intel amd64 COFF object, <1 KB) is a **COFF object carrying
+MSVC C++ mangled symbols** for the PR-9 demangler gate
+(`kuna-console/tests/verify_msvc_demangle.rs` +
+`loadimage_object::tests::msvc_mangled_coff_symbols_are_demangled_name_only`,
+design §5.5). `cl.exe` is unavailable on Linux, but `clang -target
+x86_64-pc-windows-msvc` emits the *same* `?`-prefixed MSVC mangling (the MSVC C++
+ABI — verified `objdump -t`), so this is a **real** MSVC fixture, not a hand-faked
+symtab. Built (no new packages — `clang` ships in `kuna-dev`):
+
+```bash
+docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc \
+  'clang -target x86_64-pc-windows-msvc -O1 -c msvc_mangled.cpp \
+     -o decompiler/crates/kuna-analysis/tests/fixtures/msvc_mangled.obj'
+```
+
+`msvc_mangled.cpp` =
+`int Bar::foo(int x){ return x*3+1; }` (member, `?foo@Bar@@QEAAHH@Z`) /
+`int ns::g(int a,int b){ return a*b+7; }` (namespaced, `?g@ns@@YAHHH@Z`) /
+`int freefunc(int x){ return x+42; }` (free, `?freefunc@@YAHH@Z`). The loader's
+MSVC demangle arm rewrites each `?`-symbol to its qualified name-only form
+(`Bar::foo`, `ns::g`, `freefunc`); `freefunc` decompiles to `a0 + 0x2a` resolved
+by that demangled name. Note `strip_version` (the glibc `@@VERSION` stripper) is
+guarded to NOT truncate a leading-`?` name (MSVC uses `@` structurally), or every
+MSVC symbol would arrive at the demangler cut to `?foo`.
+
+## Mach-O (Apple) fixtures — the multi-format loader (PR-6+7, the Mach-O headline)
+
+`macho_imports` (x86-64, 16 KB) and `macho_imports_arm64` (arm64, 49 KB) are
+**linked Mach-O** executables for the Mach-O import-naming gate
+(`kuna-console/tests/verify_macho_imports.rs`, design §3.3). Both are the *same*
+source `macho_imports.c` =
+`int compute(int n){return n*3+7;} int main(int argc,char**argv){ printf("%d\n", compute(argc)); return 0; }`
+(`printf` declared, no header) linked for two arches — proving the `__stubs`
+naming is arch-independent. Built in the `kuna-dev` container with bare `clang`
+(no macOS SDK) + the rustup-bundled `ld64.lld` (an LLD darwin flavor); the
+classic `S_SYMBOL_STUBS` indirect-symbol layout PR-7 walks is what `ld64.lld`
+emits. `-undefined dynamic_lookup` lets `_printf` stay external:
+
+```bash
+# (x86_64; arm64 = -target arm64-apple-macos11 + -arch arm64)
+clang -target x86_64-apple-macos11 -O1 -c macho_imports.c -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch x86_64 -platform_version macos 11.0 11.0 \
+       -undefined dynamic_lookup -e _main -o macho_imports m.o
+```
+
+ImageBase `0x100000000` (PIE). `main` reaches `printf` by a **direct branch to
+the `__TEXT,__stubs` entry** — x86-64 `callq 0x1000005cc`, arm64
+`bl 0x1000005a0` — so there is no slot to constant-fold; naming the stub entry
+(`sec.addr + i*reserved2`) is enough and arch-independent. The name comes from
+the `LC_DYSYMTAB` indirect-symbol table → `LC_SYMTAB` (`_printf`, `_` stripped).
+Pinned VMAs (x86-64): `_compute`@`0x1000005a0`, `_main`@`0x1000005b0`, the
+`printf` stub@`0x1000005cc`. The defined `_main` keeps its leading `_` (it comes
+from the `file.symbols()` funcsym source, not the stub resolver). **Pin the VMAs
+as test consts** (`llvm-objdump --macho -d` / `llvm-otool -Iv`).
+
+## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
+
+The multi-format **entry-discovery** gate
+(`kuna-console/tests/verify_multiformat_entry.rs`, design §4.1 / §5.3) proves a
+*stripped* PE/Mach-O recovers its function starts with **no `--addr`**, exactly
+as a stripped ELF does (`verify_s1_entry`). The two PE/Mach-O *import* fixtures
+above are reused, plus one new stripped Mach-O:
+
+- **PE:** `pe_imports_stripped.exe` (already above) — fully stripped (0 symbols,
+  0 exports). The `s1_entry` PE oracles recover its functions from the entry
+  point (`AddressOfEntryPoint`@`0x1400014f0`) and the **`.pdata`** exception
+  directory (97 `RUNTIME_FUNCTION` records — the `.eh_frame` analog), incl.
+  `main`@`0x140001592`. A bare load finds nothing; the oracles find dozens.
+
+- **Mach-O:** `macho_func_starts_stripped` (x86-64, 16 KB) is a **stripped**
+  Mach-O whose `helper`@`0x100000590` is `static` (file-local), so `ld64.lld -x`
+  removes its symbol — leaving **`LC_FUNCTION_STARTS`** as the only source that
+  recovers it. `macho_func_starts_stripped.c` =
+  `static int helper(int n){return n*7+3;} int main(int argc,char**argv){ printf("%d\n", helper(argc)); return 0; }`.
+
+  ```bash
+  LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+  clang -target x86_64-apple-macos11 -O0 -fno-inline -c macho_func_starts_stripped.c -o m.o
+  "$LLD" -arch x86_64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -e _main -x -dead_strip -o macho_func_starts_stripped m.o
+  ```
+
+  `LC_FUNCTION_STARTS` decodes (ULEB128 deltas off `__TEXT`@`0x100000000`) to
+  `[0x100000550 (_main, still symboled — the entry), 0x100000590 (helper,
+  stripped)]`. `collect_entries` skips the symboled `_main` and **discovers
+  `0x100000590`** — the never-symboled `helper` — the load-bearing PR-13 proof.
+
+## DWARF on MinGW-PE / Mach-O (PR-11)
+
+The multi-format **DWARF** gate (`kuna-console/tests/verify_multiformat_dwarf.rs`,
+design §5.2 / §8 PR-11) proves the `s1_dwarf` pass (gimli) recovers DWARF function
+names + typed signatures on PE and Mach-O, not just ELF. Both fixtures are the
+per-format analog of `dwarf_stripped_x86_64`: the function names live **only** in
+the debug sections (the symtab FUNC entries are stripped/renamed, `.debug_*` kept),
+so a recovery by name is unambiguously DWARF-sourced. Shared source (no headers,
+so it cross-compiles to macOS without an SDK; `pe_dwarf.c` / `macho_dwarf.c` carry
+the identical bodies + their build recipes):
+`int first_byte(char *label){return label[0];} int add(int a,int b){return a+b;} int main(void){return first_byte("kuna")+add(2,3);}`.
+
+- **`pe_dwarf.exe`** (MinGW `-g`, ~70 KB): MinGW emits standard `.debug_*` sections
+  in the PE, which `object::section_by_name(".debug_info")` finds verbatim. Built
+  in the `kuna-dev` container, then the COFF-symtab FUNC entries removed (keeping
+  `.debug_*`):
+
+  ```bash
+  x86_64-w64-mingw32-gcc -g -O0 pe_dwarf.c -o pe_g.exe
+  x86_64-w64-mingw32-objcopy --strip-symbol first_byte --strip-symbol add \
+      --strip-symbol main  pe_g.exe  pe_dwarf.exe
+  ```
+
+  Pinned VMAs (ImageBase `0x140000000`): `first_byte`@`0x140001550`,
+  `add`@`0x140001564`. DWARF recovers `int4 first_byte(char *a0)` by name; a
+  by-`load addr 0x140001550` decompile (the no-DWARF-name baseline) renders the
+  engine's `sub_140001550` placeholder.
+
+- **`macho_dwarf.o`** (clang `-g`, relocatable, ~2 KB): the DWARF lands in the
+  `__DWARF,__debug_*` sections; `object` maps gimli's `.debug_info` → the Mach-O
+  short-name `__debug_info` (its documented rule), so the *same* section loader
+  reads it. A Mach-O object with `SUBSECTIONS_VIA_SYMBOLS` won't let strip drop
+  its FUNC symbols (they delimit subsections), so `--redefine-sym` **renames** them
+  instead (`_first_byte`→`_l0`, `_add`→`_l1`) — DWARF still names them, the symtab
+  no longer does:
+
+  ```bash
+  clang -target x86_64-apple-macos11 -g -O0 -c macho_dwarf.c -o macho_dwarf.o
+  llvm-objcopy --redefine-sym _first_byte=_l0 --redefine-sym _add=_l1 macho_dwarf.o
+  ```
+
+  Pinned VMAs (section-relative in the object): `first_byte`@`0x0`, `add`@`0x20`.
+  Same DWARF recovery + `char *` type; `load addr 0x0` is the `sub_0` baseline.
 
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via

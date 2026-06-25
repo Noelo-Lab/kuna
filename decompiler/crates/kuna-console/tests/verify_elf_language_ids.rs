@@ -84,3 +84,75 @@ fn every_elf_language_id_resolves_in_the_database() {
         );
     }
 }
+
+/// Multi-format-loader PR-2 gate: every SLEIGH language id the **PE / Mach-O /
+/// COFF** loaders produce (`PeFormat`/`MachOFormat`/`CoffFormat::compiler_model`
+/// + `compose_language_id`) must resolve in the SLEIGH database — **or** its
+/// §2.2 default-model fallback must, since the engine retries with the fallback
+/// before erroring. This proves the per-format compiler-model tokens
+/// (`windows` / `gcc` / `default`) are real, vendored ids and that no format ever
+/// composes an id that would dead-end with "No sleigh specification".
+#[test]
+fn every_object_format_language_id_resolves_in_the_database() {
+    let specs = repo_root().join("specs");
+    let registry = build_registry();
+    let mut db = LanguageDatabase::new();
+    db.scan_for_sleigh_directories(specs.to_str().unwrap());
+    if let Err(e) = db.get_descriptions(&registry) {
+        eprintln!(
+            "verify_object_language_ids: skipping (no specs tree / .ldefs load failed): {}",
+            e.explain()
+        );
+        return;
+    }
+
+    // (primary, fallback) per format. A format passes if, for every pair, the
+    // primary resolves OR the fallback resolves (the §2.2 retry path).
+    let resolves = |db: &LanguageDatabase, id: &str| -> bool {
+        let mut sleigh = SleighArchitecture::new("t", "");
+        sleigh.set_archid(id);
+        sleigh.resolve_architecture(db, id).is_ok() && sleigh.language_index() >= 0
+    };
+
+    let suites: &[(&str, Vec<(String, Option<String>)>, &[&str])] = &[
+        (
+            "PE",
+            kuna_analysis::loadimage_object::pe_language_ids(),
+            &["x86:LE:64:default:windows", "x86:LE:32:default:windows"],
+        ),
+        (
+            "Mach-O",
+            kuna_analysis::loadimage_object::macho_language_ids(),
+            &["x86:LE:64:default:gcc", "AARCH64:LE:64:v8A:default"],
+        ),
+        (
+            "COFF",
+            kuna_analysis::loadimage_object::coff_language_ids(),
+            &["x86:LE:64:default:windows"],
+        ),
+    ];
+
+    for (fmt_name, ids, expected) in suites {
+        assert!(!ids.is_empty(), "{fmt_name} id producer must enumerate at least one id");
+        for (primary, fallback) in ids {
+            let ok = resolves(&db, primary)
+                || fallback.as_deref().map(|fb| resolves(&db, fb)).unwrap_or(false);
+            assert!(
+                ok,
+                "{fmt_name} language id {primary:?} (fallback {fallback:?}) failed to resolve"
+            );
+        }
+        // The headline per-format ids must be in the enumerated set and resolve
+        // *directly* (not via fallback) — the spec-selection proof for PR-2.
+        for want in *expected {
+            assert!(
+                ids.iter().any(|(p, _)| p == want),
+                "{fmt_name}: expected {want:?} in enumerated ids {ids:?}"
+            );
+            assert!(
+                resolves(&db, want),
+                "{fmt_name}: headline id {want:?} must resolve directly"
+            );
+        }
+    }
+}

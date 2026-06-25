@@ -25,7 +25,7 @@
 use std::path::PathBuf;
 
 use kuna_analysis::listing::{CodeUnit, Listing, RefKind};
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -55,7 +55,7 @@ fn listing_query_surface_partition_functions_and_xrefs() {
         None => return,
     };
 
-    let prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(

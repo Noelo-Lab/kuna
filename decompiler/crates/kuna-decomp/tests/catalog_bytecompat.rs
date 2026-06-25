@@ -76,16 +76,18 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_38_settables() {
-    // One `"option":` per settable row: 23 stage-model knobs + 14 analysis-tier
-    // gates (10 per-run analysis-pass enablement — including the `mips_gp` $gp
-    // recovery gate and the `mips_isa` MIPS16 ISA_MODE painting gate — plus the
-    // `formatstring` DecompilerDependent varargs-typing gate, the `listing`
-    // Listing/xref disassembly tier gate, the `noreturn_disc` discovered-
-    // no-return Listing consumer gate, and the `gopclntab` Go pclntab
-    // function-name recovery gate) + 1 loader-tier capability (the `relocobjects`
-    // ET_REL relocatable-object loader, DIV-7).
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 38);
+fn fixture_has_all_40_settables() {
+    // One `"option":` per settable row: 25 stage-model knobs (incl. the `foldcallret`
+    // call-return variable-folding gate and the `dedupvardecls` duplicate-scalar-
+    // declaration collapse gate, DIV-7) + 14 analysis-tier gates (10 per-run
+    // analysis-pass enablement — including the `mips_gp` $gp recovery gate and the
+    // `mips_isa` MIPS16 ISA_MODE painting gate — plus the `formatstring`
+    // DecompilerDependent varargs-typing gate, the `listing` Listing/xref
+    // disassembly tier gate, the `noreturn_disc` discovered-no-return Listing
+    // consumer gate, and the `gopclntab` Go pclntab function-name recovery gate)
+    // + 1 loader-tier capability (the `relocobjects` ET_REL relocatable-object
+    // loader, DIV-8).
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 40);
 }
 
 #[test]

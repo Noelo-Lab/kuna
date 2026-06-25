@@ -103,6 +103,33 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Stage, SymFact, Sym
 /// gimli's section reader: a byte slice tagged with the run-time endianness.
 type Reader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;
 
+/// Resolve a gimli [`SectionId`](gimli::SectionId) to its (uncompressed) bytes in
+/// `file`, picking the right section name **per object format** — the one piece of
+/// container coupling in this otherwise format-neutral pass.
+///
+/// gimli ids are ELF-flavoured (`SectionId::name()` → `.debug_info`). `object`'s
+/// `section_by_name` already maps that to each format's real name (documented in
+/// `object::read::traits` — ELF `.debug_info`, Mach-O `__debug_info` in the
+/// `__DWARF` segment, with `.debug_str_offsets`→`__debug_str_offs`; PE/COFF keep
+/// the `.debug_*` names that MinGW emits), so a single `section_by_name(id.name())`
+/// covers ELF, Mach-O **and** MinGW-PE. We add an explicit Mach-O `__`-prefixed
+/// fallback (`.debug_info`→`__debug_info`) purely as a belt-and-suspenders guard
+/// for any `object` version whose auto-mapping misses an id — it is a no-op when
+/// the primary lookup already hit. `None` => the format has no such section.
+fn dwarf_section_data(file: &object::File, id: gimli::SectionId) -> Option<Vec<u8>> {
+    if let Some(sec) = file.section_by_name(id.name()) {
+        return sec.uncompressed_data().map(|d| d.into_owned()).ok();
+    }
+    // Mach-O `__DWARF` segment short-names: `.debug_info` → `__debug_info`.
+    if file.format() == object::BinaryFormat::MachO {
+        let macho_name = format!("__{}", id.name().trim_start_matches('.'));
+        if let Some(sec) = file.section_by_name(&macho_name) {
+            return sec.uncompressed_data().map(|d| d.into_owned()).ok();
+        }
+    }
+    None
+}
+
 /// Recursion cap for the DIE -> [`Datatype`] mapper, the port of Ghidra's
 /// `DWARFDataTypeImporter` `trackRecursion` guard (`DWARFDataTypeImporter.java`).
 /// Struct -> pointer -> struct DWARF cycles would otherwise loop forever; at the
@@ -552,11 +579,22 @@ impl AnalysisPass for DwarfPass {
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
-        if !matches!(ctx.file.format(), object::BinaryFormat::Elf) {
-            return out;
-        }
-        // DWARFProgram.isDWARF: no .debug_info => not a DWARF program, empty out.
-        if ctx.file.section_by_name(".debug_info").is_none() {
+        // gimli is **format-neutral** — it parses the DWARF byte stream, not the
+        // container. The only container coupling is the *section-name lookup*, and
+        // that is delegated to `object`'s format-aware `section_by_name`
+        // ([`dwarf_section_data`]), which already maps gimli's ELF-style ids to
+        // each format's real debug-section name: ELF `.debug_info` (verbatim),
+        // **Mach-O `__DWARF,__debug_info`** (the `__debug_*` short names in the
+        // `__DWARF` segment — `object` translates `.debug_info`→`__debug_info` and
+        // `.debug_str_offsets`→`__debug_str_offs` per its documented Mach-O rule),
+        // and **MinGW-PE `.debug_info`** (MinGW emits the standard `.debug_*`
+        // names verbatim). So the ELF gate is dropped: any ELF/Mach-O/PE/COFF
+        // object that carries `.debug_info` is read. (PE-MSVC carries PDB, not
+        // DWARF — no `.debug_info` section — so it falls out here cleanly; PDB is
+        // separate future work, not DWARF.)
+        //
+        // DWARFProgram.isDWARF: no `.debug_info` => not a DWARF program, empty out.
+        if dwarf_section_data(ctx.file, gimli::SectionId::DebugInfo).is_none() {
             return out;
         }
 
@@ -568,11 +606,9 @@ impl AnalysisPass for DwarfPass {
 
         // Own every section's bytes so the gimli readers can borrow them. A
         // missing section reads as empty (gimli treats that as "section absent").
+        // [`dwarf_section_data`] does the per-format section-name resolution.
         let load = |id: gimli::SectionId| -> Result<Vec<u8>, gimli::Error> {
-            match ctx.file.section_by_name(id.name()) {
-                Some(sec) => Ok(sec.uncompressed_data().map(|d| d.into_owned()).unwrap_or_default()),
-                None => Ok(Vec::new()),
-            }
+            Ok(dwarf_section_data(ctx.file, id).unwrap_or_default())
         };
         let Ok(sections) = gimli::DwarfSections::load(load) else {
             return out;

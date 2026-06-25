@@ -12,7 +12,7 @@
 //!    `load file`, so the flag flips on the live arch).
 //!
 //! Note on build-at-load timing: the analysis driver (which would build the
-//! Listing) runs once inside `bootstrap_from_elf` (`load file`), and the live
+//! Listing) runs once inside `bootstrap_from_object` (`load file`), and the live
 //! CLI emits `option listing on` *after* `load file`, so the build-at-load does
 //! not fire through the live CLI today — wiring it to fire is PR6's concern (the
 //! first consumer). The build-at-load *body* (the flag-on path) is exercised
@@ -29,7 +29,7 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
 
@@ -60,7 +60,7 @@ fn decompile_main(mode: ListingMode) -> Option<String> {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = fauxware().to_str()?.to_string();
-    let mut prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(

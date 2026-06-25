@@ -20,7 +20,7 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
 
@@ -147,12 +147,12 @@ fn real_elf_decompiles_under_engine() {
     let code = [0x8d, 0x04, 0x37, 0xc3];
     let elf = build_x86_64_elf(0x401000, &code, "add");
 
-    // Write to a temp file so `bootstrap_from_elf` exercises the real path.
+    // Write to a temp file so `bootstrap_from_object` exercises the real path.
     let mut path = std::env::temp_dir();
     path.push(format!("kuna_w11_elf_{}.elf", std::process::id()));
     std::fs::write(&path, &elf).unwrap();
 
-    let prog = match bootstrap_from_elf(path.to_str().unwrap(), "", &spec_roots) {
+    let prog = match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(
