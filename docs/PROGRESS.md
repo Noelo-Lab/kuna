@@ -1,5 +1,34 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — dd-argmatch-to-argument-noea-9e6e8b (option gotoreduce)
+
+angr testcase `test_decompiling_dd_argmatch_to_argument_noeagerreturns::argmatch_to_argument`
+(coreutils `dd` x86-64 @ 0x40a640). **Why angr was better:** the only structural diff was a
+single residual `goto label_40a6a3;` + `label_40a6a3:` — a shared `v2 = 0;` → `return v2;`
+return tail with two predecessors (the entry `if (v2==0)` true-arm and an in-loop `if (v2==0)`
+edge) that Ghidra's `CollapseStructure` must express as one unstructured edge. angr emits **0**
+gotos by duplicating the constant return tail into the in-loop edge (SAILR/Phoenix
+`ReturnDuplicator`).
+
+**Mechanism (new S8 pass, `kuna_gotoreduce.rs`).** `ActionGotoReduce` runs once after
+`ActionFinalStructure`: it finds every `BlockIf` rendering as `if (cond) goto T` whose target
+`T` is a small single-successor basic-block chain ending in `return` (≤3 blocks / ≤8 ops, no
+call/store), and rewrites it to `if (cond) { <tail> }` by minting fresh `BlockCopy` leaves over
+the *same* underlying basic blocks (a print-tree duplication — the printer re-emits their ops;
+no p-code is cloned, so SSA/def-use is untouched), then clears `T`'s now-unused label. Only
+genuine surgery is one `(kuna)` method `BlockGraph::kuna_inline_return_tail` in `block.rs`; the
+rest is the new module + the standard option anchors (architecture/seam flag
+`reduce_return_gotos`, `options.rs`, `universalaction.rs`, `stages.toml`). ElementId 4100.
+
+**Ablation:** clean — **0/675** datatest assertions change with the feature default-ON, and the
+speed gate passes (target ~within noise, on ≤ off). Despite the clean ablation it ships
+**default-OFF opt-in** (`option gotoreduce on`): per the approved proposal this is the first
+S8 structured-tree mutation on the verbatim-ported collapse engine and is rated high-risk, so
+it stays opt-in pending broader validation (no DIV entry; default output is byte-identical).
+Stage test `tests/stages/ghangr-dd-argmatch-to-argument-noea-9e6e8b.xml` (off = goto+label
+present; on = goto/label gone, return tail duplicated). Same SAILR goto-reduction family as the
+parked `morton`/`newburry`/`tr-build` proposals — this is the minimal `return <const>` variant.
+
 ## Session (2026-06-25) — Go pclntab function-name recovery (Increment 34)
 
 Ported the **name-recovery half** of Ghidra's `GolangSymbolAnalyzer` (`golang-symbols`,

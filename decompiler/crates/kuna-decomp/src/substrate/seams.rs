@@ -526,6 +526,10 @@ pub struct Architecture {
     /// (C++ `recover_lowered_switch`, default-on).  Read by the
     /// [`crate::kuna_loweredswitch`] detect/install actions.
     pub recover_lowered_switch: bool,
+    /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
+    /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
+    /// [`crate::s8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
+    pub reduce_return_gotos: bool,
     /// (kuna) strip the glibc -fstack-protector canary epilogue (C++
     /// `strip_stack_guard`, opt-in default-off).  Read by
     /// [`crate::kuna_stackguard`]'s `ActionStripStackGuard`.
@@ -705,6 +709,7 @@ impl Architecture {
             memset_recover: false,       // GH-9230/1537 memsetrecover
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
+            reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.
             condexe_block_placement: true,

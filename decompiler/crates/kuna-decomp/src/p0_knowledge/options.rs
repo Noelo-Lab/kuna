@@ -261,6 +261,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "memsetrecover",
     "switchmodbound",
     "loweredswitch",
+    "gotoreduce",
     "stackguard",
     "namestyle",
     "realtypes",

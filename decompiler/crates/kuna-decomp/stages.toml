@@ -1596,6 +1596,23 @@ inspiration = "angr LoweredSwitchSimplifier (angr/analyses/decompiler/optimizati
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "gotoreduce"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-ReturnDuplicator"
+summary = "After structuring, rewrite `if (cond) goto T` into `if (cond) { <tail> }` when T is a small single-successor basic-block chain ending in `return`, by duplicating that return tail inline (a print-tree copy of the same ops — no p-code cloned). Eliminates the residual goto/label that Ghidra's CollapseStructure must emit for a shared multi-predecessor return tail."
+use_when = "Set on when kuna emits 1+ gotos to a shared `... return v;` tail that angr renders goto-free (e.g. `if (x) goto label; ... label: return 0;`). Off (default) is byte-identical to upstream; on, the bounded (<=3 blocks / <=8 ops, no call/store) return-constant tail is duplicated so the cross-edge becomes a structured early return."
+example = "option gotoreduce on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_dd_argmatch_to_argument_noeagerreturns; SAILR/Phoenix goto-reduction (ReturnDuplicator); argmatch_to_argument"
+change_kind = "structure-recovery"
+
+[[settable]]
 option = "stackguard"
 values = "on|off"
 default = "off"

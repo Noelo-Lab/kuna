@@ -39,8 +39,9 @@ fn settable_count_is_37() {
     // MIPS $gp recovery; formatstring with half B; listing with the Listing/xref
     // tier, Increment 29; noreturn_disc with the first Listing consumer, Increment 33;
     // gopclntab with Go pclntab name recovery, Increment 34.)
-    assert_eq!(kuna_num_settables(), 37);
-    assert_eq!(SETTABLE_TABLE.len(), 37);
+    // (gotoreduce added with the angr SAILR return-tail goto-reduction pass.)
+    assert_eq!(kuna_num_settables(), 38);
+    assert_eq!(SETTABLE_TABLE.len(), 38);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -252,7 +253,7 @@ fn option_values_live_value_present_for_20_suppressed_for_15() {
             }
             None => {
                 assert!(
-                    matches!(st.option, "loweredswitch" | "stackguard" | "namestyle")
+                    matches!(st.option, "loweredswitch" | "stackguard" | "namestyle" | "gotoreduce")
                         || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
@@ -325,8 +326,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 37 rows: 36 trailing commas (the last has none).
-    assert_eq!(json.matches("},\n").count(), 36);
+    // 38 rows: 37 trailing commas (the last has none).
+    assert_eq!(json.matches("},\n").count(), 37);
 }
 
 #[test]
