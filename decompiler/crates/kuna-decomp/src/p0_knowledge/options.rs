@@ -260,6 +260,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "stackprobeloop",
     "memsetrecover",
     "switchmodbound",
+    "switchguardbound",
     "loweredswitch",
     "gotoreduce",
     "foldcallret",

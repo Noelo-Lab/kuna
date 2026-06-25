@@ -1,5 +1,59 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — missing-function-call (option `switchguardbound`)
+
+angr `test_decompiling_missing_function_call` (binary `adams`, `main`, x86-64 GCC PIE).
+angr recovers `main`'s getopt() dispatch as a `switch` (6 cases + default); kuna fails to
+recover the jump table and emits `/* WARNING: Treating indirect jump as call */`,
+collapsing the whole switch **and** the surrounding getopt loop into one bogus computed
+`(*(code *)…)()` call (so `strdup`/the `-e`/`-m`/`-u` cases vanish).
+
+**Why angr was better / root cause (instrumented):** the table at `0x96ac` is a textbook
+GCC PIC jump table whose index is range-guarded by `sub 0x36; ja DEFAULT` (`idx LEu 0x36`,
+55 entries) and **spilled to the stack** before the table load. kuna's jump-table recovery
+runs early on the partial/truncated function, before the `sub;ja` flag idiom is simplified
+and before the stack spill is collapsed, so `JumpBasic::analyzeGuards` cannot bound the
+index (the captured guard range stays full, `jrange.size = 2^31 GT maxtablesize`). The basic
+model is declined, `recoverAddresses` throws *"Too many branches"*, and
+`truncateIndirectJump` rewrites the BRANCHIND into a CALLIND.
+
+**Mechanism (`option switchguardbound`, S2 switch-model):** a new gated `JumpBasic`
+model-extension `kuna_try_guard_bound_table`, sibling of the GH-9191 `switchmodbound`
+modulo bound, invoked from `recover_model_basic` after the normal model (and the modulo
+extension) fail. It EVALUATES the guard boolean as a function of the index varnode `v`
+(resolving register-reused siblings like `m = v + 0x3f` via a linear-offset map) and takes
+`N` = the first `v` whose routing flips from `v = 0`'s — composing the simplifier's
+`idx GT 0x35 and m != 0x75` form to the correct `N = 0x37` (55, including the boundary `'u'`
+case at idx 0x36, which a naive constant scan would miss). It then re-binds the table index
+to `[0, N)` and the normal `buildAddresses`/structurer emit the switch.
+
+**Ablation / default:** flag default-ON over the 675 datatests → **0 assertions changed**
+(the heuristic over-bounds no corpus switch). But the target decompile is +34% slower with
+the option ON (recovering the switch+loop vs truncating to a call; the gate-OFF path is
+byte-identical, ~193 ms), over the +5% speed budget. So per the speed gate the option ships
+**default-OFF opt-in** (`speed_forced_off`; no DIV entry — output byte-identical when off),
+exactly the precedent + risk profile of `switchmodbound` (the guard-to-index correspondence
+is asserted across a memory spill it cannot prove in dataflow). New module
+`kuna_switchguardbound.rs` (ELEM 4022); stage test `tests/stages/ghangr-missing-function-call-1101b1.xml`
+(two passes: off = the computed-call bug, on = the recovered switch incl. the boundary
+`case 0x36`). See `docs/features/missing-function-call-1101b1/`.
+
+**Perf review follow-up (PR #60, after merging main):** profiled the "incredibly slow"
+concern. Slope-isolated per-decompile cost (cancels the fixed load) is off ≈ 23.9 ms / on
+≈ 63.2 ms (**+164 %**, ~2.6×) — the +34 % PR figure was the same effect diluted by the
+~190 ms shared load. **Root cause is downstream and inherent, not the heuristic:**
+`kuna_try_guard_bound_table` runs 3×/~7 µs (~22 µs, <0.1 % of the gap; 0× gate-off,
+confirmed). The cost is that the gate-ON path keeps the real 55-entry switch + getopt loop
+and structures/types a ~2.6× larger function, instead of truncating to one `CALLIND`. No
+O(n²)/per-op/region-rebuild defect (ruled out, cf. the ActionPool regression). No localized
+fix → kept **default-OFF opt-in** per the speed gate. Separately documented the "too many
+declared variables on top": a pre-existing artifact already mitigated on `main` by
+`dedupvardecls` (DIV-7, default-on, post-branch) — one stack slot maps to many un-merged
+same-named scalar `HighVariable`s (loop/switch SSA phis); `dedupvardecls` collapses the
+identical *rendered* lines, the underlying over-fragmentation is a `s6_merge` follow-up. See
+`docs/features/missing-function-call-1101b1/analysis.md` + `record.json`
+(`speed_investigation`).
+
 ## Session (2026-06-25) — dd-argmatch-to-argument-noea-9e6e8b (option gotoreduce)
 
 angr testcase `test_decompiling_dd_argmatch_to_argument_noeagerreturns::argmatch_to_argument`

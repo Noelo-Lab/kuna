@@ -1,0 +1,69 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr test_decompiling_missing_function_call (binary `adams`, function `main`,
+    x86-64 GCC PIE).  main's getopt() dispatch is a textbook GCC PIC jump table:
+
+        idx = m - 0x3f ; sub 0x36 ; ja DEFAULT     (range guard, idx LEu 0x36)
+        idx spilled to the stack, reloaded for the table load
+        movslq (table + idx*4) ; add table_base ; jmp   (table at 0x96ac, 55
+        self-relative entries)
+
+    kuna's jump-table recovery runs early on the partial/truncated function,
+    before the `sub;ja` flag idiom is simplified and before the stack spill is
+    collapsed, so JumpBasic::analyzeGuards cannot bound the index.  The basic
+    model is declined, JumpTable::recoverAddresses throws "Too many branches",
+    and FlowInfo::truncateIndirectJump rewrites the BRANCHIND into a CALLIND
+    (the "Treating indirect jump as call" marker)  -  collapsing the whole switch
+    AND the surrounding getopt loop into one bogus computed call.  angr recovers
+    the switch (6 cases plus default); the test asserts the call to fileno() and
+    the -e/strdup case do not go missing.
+
+    Stage model: S2 "switch-model" sub-stage.  The kuna gate `option
+    switchguardbound on` makes JumpBasic::recoverModel, after the normal model
+    (and the modulo/and-mask extension) fail to bound the table, EVALUATE the
+    range guard as a function of the index and re-bound the table to [0, N).  The
+    boundary case 0x36 (m == 0x75, 'u'/userlist) requires N == 0x37 (55), proving
+    the bound merges the simplified `idx GT 0x35 and m != 0x75` form, not just the
+    naive `idx LT 0x36`.  Default OFF (opt-in; the heuristic asserts a value
+    correspondence across a memory spill it cannot prove in dataflow).
+
+    Only main is decompiled.  main's code (0x8e40, 880 bytes) and the read-only
+    jump table (0x96ac, 55 4-byte entries) are embedded; the case targets are all
+    inside main.  Callees are named to bound main's flow; data refs render dat_.
+
+    Pass 1 (option switchguardbound off): the bug  -  no switch, the BRANCHIND
+    renders as a computed (code *) call.
+    Pass 2 (option switchguardbound on): the fix  -  a single switch with the
+    recovered getopt case labels (including the boundary case 0x36) plus default.
+-->
+<bytechunk space="ram" offset="0x8e40">
+554889e54881ec80000000c745fc00000000897df8488975f0b000e850030000c745e400000000c745e000000000c745dc00000000c745d800000000488d3db4110000e80882ffff488945d048837dd0000f8414000000488b7dd0e83084ffff89058a232000e90a000000c7057b23200039050000488d057c23200031f6b97801000089ca4889c7e8d382ffff8b7df8488b75f0488d1561110000e8d083ffff8945ec83f8ff0f84240200008b45ec83c0c189c183e83648894db88945b40f8702020000488d05a1070000488b4db8486314884801c2ffe2837de0000f8427000000488b05cf202000488b38488d3513110000b000e8c682ffff488b75f0488b3e8945b0e8b7feffff488b0580202000c745e001000000488b38e8b183ffff4889052a22200048833d22222000000f850c000000c745fc01000000e924020000e986010000837ddc000f8427000000488b0562202000488b38488d35c4100000b000e85982ffff488b75f0488b3e8945ace84afeffff488b0513202000c745dc01000000488b38e84483ffff488905cd21200048833dc5212000000f850c000000c745fc01000000e9b7010000e919010000837dd8000f8427000000488b45f0488b38e8f8fdffff488b05e91f2000488b38488d3569100000b000e8e081ffff8945a8488b05a61f2000c745d801000000488b38e8d782ffff4889055821200048833d50212000000f850c000000c745fc01000000e94a010000e9ac000000488b056a1f2000488b38e86282ffff8905bc212000e992000000c745e401000000e986000000488b05541f20008338650f8410000000488b05441f20008338750f8535000000488b05341f2000488b0d451f2000488b398b10488d35e10f0000b000e83a81ffff488b4df0488b398945a4e82bfdffffe927000000488b05171f2000488b38488d35cc0f0000b000e80e81ffff488b75f0488b3e8945a0e8fffcffffe900000000e8d57fffffe9bdfdffffe87b91ffff83f8000f850c000000c745fc00000000e97a000000837de4000f85320000008b3df6202000e85193ffff8945e8837de8000f8d0a000000bf01000000e89a81ffff8b7de8e8e2fbffff89459ce937000000488b05531e200031f6b91000000089ca488d7dc048894590e81d80ffff488b4590488b38e8a180ffff89c7488d75c0e8d6f5ffff89458cc745fc000000008b45fc4881c4800000005dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x96ac">
+d9f9ffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff6cf8ffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffff5afaffffd9f8ffff5afaffff5afaffffb3f9ffff5afaffff5afaffffcdf9ffff5afaffff46f9ffff
+</bytechunk>
+<symbol space="ram" offset="0x8e40" name="main"/>
+<symbol space="ram" offset="0x8e00" name="usage"/>
+<symbol space="ram" offset="0x91b0" name="assert_execution_on_testbed"/>
+<symbol space="ram" offset="0x8d40" name="accept_loop"/>
+<symbol space="ram" offset="0x8770" name="read_loop"/>
+<symbol space="ram" offset="0x2490" name="setup_socket"/>
+<symbol space="ram" offset="0x2290" name="ingest_emaillist"/>
+</binaryimage>
+<script>
+  <com>option switchguardbound off</com>
+  <com>lo fu main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchguardbound on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="angr-missing-function-call #1: fix recovers a switch (none in pass 1 off, one in pass 2 on)" min="1" max="1">switch\(</stringmatch>
+<stringmatch name="angr-missing-function-call #2: bug renders the unrecovered jump as a computed call (pass 1 off only)" min="1" max="1">\(code \*\)</stringmatch>
+<stringmatch name="angr-missing-function-call #3: boundary case 0x36 (u/userlist) recovered, proving bound N==0x37 not 0x36" min="1" max="1">case 0x36:</stringmatch>
+<stringmatch name="angr-missing-function-call #4: case 0x26 (e/emaillist) recovered" min="1" max="1">case 0x26:</stringmatch>
+<stringmatch name="angr-missing-function-call #5: case 0x2e (m/maillist) recovered" min="1" max="1">case 0x2e:</stringmatch>
+</decompilertest>

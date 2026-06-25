@@ -24,14 +24,15 @@ fn substage_count_is_40() {
 }
 
 #[test]
-fn surface_count_is_91() {
-    assert_eq!(kuna_num_surfaces(), 91);
-    assert_eq!(SURFACE_TABLE.len(), 91);
+fn surface_count_is_92() {
+    assert_eq!(kuna_num_surfaces(), 92);
+    assert_eq!(SURFACE_TABLE.len(), 92);
 }
 
 #[test]
-fn settable_count_is_43() {
-    // 26 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`)
+fn settable_count_is_46() {
+    // 27 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
+    // + `switchguardbound`, angr test_decompiling_missing_function_call)
     // + 15 analysis-tier
     // gates: 10 per-run analysis-pass
     // enablement (noreturn_known/libproto/strings/entry_disc/arm_markers/mips_gp/
@@ -47,14 +48,15 @@ fn settable_count_is_43() {
     // dedupvardecls with duplicate-scalar-declaration collapse, DIV-7;
     // loopbreak_recovery with loop-exit-goto break recovery, DIV-10;
     // gotoreduce with the angr SAILR return-tail goto-reduction pass;
+    // switchguardbound with guard-bounded GCC PIC jump-table recovery;
     // noreturn_propagate with angr-style structural no-return propagation.)
     // + 3 loader-tier capabilities: the `relocobjects` ET_REL relocatable-object
     // loader (DIV-8), the `i386_pie_plt` i386-PIE PLT-stub decode gate
     // (DIV-9, angr test_decompiling_nl_i386_pie), and the `macho-arm64e` Mach-O
     // arm64e Apple-Silicon spec-selection gate (multi-format loader PR-8) —
     // settables that gate the loader rather than a per-function pass.
-    assert_eq!(kuna_num_settables(), 45);
-    assert_eq!(SETTABLE_TABLE.len(), 45);
+    assert_eq!(kuna_num_settables(), 46);
+    assert_eq!(SETTABLE_TABLE.len(), 46);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -233,11 +235,12 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_21_suppressed_for_22() {
+fn option_values_live_value_present_for_22_suppressed_for_24() {
     let ov = OptionValues::default();
-    // 21 options have a codegen live reader (realtypes + dedupvardecls join the
-    // field-backed group); the live_value returns the current value for them and
-    // None for loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the
+    // 22 options have a codegen live reader (realtypes + dedupvardecls join the
+    // field-backed group; switchguardbound is field-backed via switch_guard_bound);
+    // the live_value returns the current value for them and None for
+    // loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the
     // 17 analysis/loader-tier gates (which have no `live_field` — their live state
     // is read console-side via the hand-written `kuna_live_value` / an env gate,
     // not the codegen `live_value`). `relocobjects` (DIV-8) gates the loader, not a
@@ -291,7 +294,7 @@ fn option_values_live_value_present_for_21_suppressed_for_22() {
             }
         }
     }
-    assert_eq!(with_live, 21);
+    assert_eq!(with_live, 22);
 }
 
 #[test]
@@ -356,8 +359,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 45 rows: 44 trailing commas (the last, macho-arm64e, has none).
-    assert_eq!(json.matches("},\n").count(), 44);
+    // 46 rows: 45 trailing commas (the last, macho-arm64e, has none).
+    assert_eq!(json.matches("},\n").count(), 45);
 }
 
 #[test]
