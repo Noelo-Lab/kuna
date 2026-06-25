@@ -531,6 +531,12 @@ pub struct Architecture {
     /// (C++ `recover_lowered_switch`, default-on).  Read by the
     /// [`crate::kuna_loweredswitch`] detect/install actions.
     pub recover_lowered_switch: bool,
+    /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
+    /// walking the [`KunaRegionIdentifier`](crate::s7_regions::kuna_regionid)
+    /// region tree and matching Phoenix acyclic schemas instead of running
+    /// Ghidra's `CollapseStructure` (`region_structure`, opt-in default-off).
+    /// Read by [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
+    pub region_structure: bool,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
     /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
     /// [`crate::s8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
@@ -726,6 +732,7 @@ impl Architecture {
             memset_recover: false,       // GH-9230/1537 memsetrecover
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
+            region_structure: false,     // regionstructure (opt-in default-off)
             reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (opt-in default-off)

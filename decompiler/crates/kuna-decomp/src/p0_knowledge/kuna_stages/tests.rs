@@ -31,7 +31,8 @@ fn surface_count_is_91() {
 
 #[test]
 fn settable_count_is_43() {
-    // 26 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`)
+    // 27 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
+    // + `regionstructure`)
     // + 15 analysis-tier
     // gates: 10 per-run analysis-pass
     // enablement (noreturn_known/libproto/strings/entry_disc/arm_markers/mips_gp/
@@ -47,14 +48,15 @@ fn settable_count_is_43() {
     // dedupvardecls with duplicate-scalar-declaration collapse, DIV-7;
     // loopbreak_recovery with loop-exit-goto break recovery, DIV-10;
     // gotoreduce with the angr SAILR return-tail goto-reduction pass;
+    // regionstructure with the region-based Phoenix/SAILR structurer (Inc 1);
     // noreturn_propagate with angr-style structural no-return propagation.)
     // + 3 loader-tier capabilities: the `relocobjects` ET_REL relocatable-object
     // loader (DIV-8), the `i386_pie_plt` i386-PIE PLT-stub decode gate
     // (DIV-9, angr test_decompiling_nl_i386_pie), and the `macho-arm64e` Mach-O
     // arm64e Apple-Silicon spec-selection gate (multi-format loader PR-8) —
     // settables that gate the loader rather than a per-function pass.
-    assert_eq!(kuna_num_settables(), 45);
-    assert_eq!(SETTABLE_TABLE.len(), 45);
+    assert_eq!(kuna_num_settables(), 46);
+    assert_eq!(SETTABLE_TABLE.len(), 46);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------

@@ -1602,6 +1602,23 @@ inspiration = "angr LoweredSwitchSimplifier (angr/analyses/decompiler/optimizati
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "regionstructure"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-region-structurer"
+summary = "Structure the CFG by walking the KunaRegionIdentifier region tree and matching angr Phoenix/SAILR acyclic schemas (acyclic sequence + virtualize-to-goto fallback with SAILR H1/H3 edge ordering) instead of running Ghidra's CollapseStructure. Inc 1 PoC: collapses single-pred/single-succ chains into BlockLists and emits a goto for every remaining edge, folding join->tail sequence edges that Ghidra gotos."
+use_when = "Set on when an `if(c){A}else{B}` join->tail edge renders as a `goto` that angr folds into a straight-line sequence. Off (default) is upstream byte-identical (Ghidra CollapseStructure path). On replaces the whole structuring engine with the region-driven structurer; Inc 1 only structures acyclic sequences (loops/switches/if-else are gated to later increments and fall back to gotos), so on can emit MORE gotos on loop/switch-heavy functions."
+example = "option regionstructure on"
+source_decompiler = "angr"
+inspiration = "angr Phoenix/SAILR structurer (angr/analyses/decompiler/structuring/{recursive_structurer,phoenix,sailr}.py); _match_acyclic_sequence, _virtualize_edge, _order_virtualizable_edges"
+change_kind = "structure-recovery"
+
+[[settable]]
 option = "gotoreduce"
 values = "on|off"
 default = "off"

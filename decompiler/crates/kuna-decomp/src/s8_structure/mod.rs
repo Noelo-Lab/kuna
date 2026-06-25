@@ -6,3 +6,4 @@
 pub mod blockaction;
 pub mod kuna_gotoreduce;
 pub mod kuna_loopbreak_recovery;
+pub mod region_structurer;
