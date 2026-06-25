@@ -24,12 +24,13 @@ re-proposed the correct mechanism instead (PROPOSAL v2: `noreturn_body`).
   + `case -0x82: usage(0);`. The whole fix runs through existing flow consumption; no S2 /
   structurer change. kuna just cannot *infer* `usage`-noreturn (known-list misses the local;
   discovered-tally is defeated by GCC placing the comparisons after the call sites).
-- **Outcome:** step-1 abandoned (adversarially confirmed mis-shaped). Revised proposal
-  `docs/features/x8664-mv-o2-e752a1/proposal-v2.md`: a default-OFF, Listing-gated
-  **noreturn-by-body** inference pass (`noreturn_body`) — the angr no-return-propagation
-  analog, corpus-safe (no-op when the Listing is absent). Awaiting human go/no-go. Full
-  evidence: `findings.md`; record `record.json`. No DIV entry, no baseline change, no shipped
-  code.
+- **Outcome:** step-1 abandoned (adversarially confirmed mis-shaped). The real fix —
+  noreturn-by-body inference — is **already proposed** as **`noreturn_propagate`** (draft
+  **PR #52**, from `xalloc_die`/tee_O2); this `usage`/mv_-O2 case is a **second witness** for
+  that exact feature. Per Hard rule 5 (don't duplicate a covered gap) no competing proposal was
+  created; opportunity closed as *covered by `noreturn_propagate` (PR #52)*. Evidence:
+  `docs/features/x8664-mv-o2-e752a1/{findings,proposal-v2}.md`; record `record.json`. No DIV
+  entry, no baseline change, no shipped code.
 
 ## Session (2026-06-25) — Go pclntab function-name recovery (Increment 34)
 

@@ -1,10 +1,18 @@
-# [PROPOSAL v2] noreturn-by-body inference — the real fix for `mv -O2 main` case recovery
+# noreturn-by-body inference — the real fix for `mv -O2 main` case recovery
+
+> **⚠️ COVERED BY AN EXISTING PROPOSAL — do NOT spin up a separate feature.** The mechanism
+> below is exactly the already-proposed **`noreturn_propagate`** (draft **PR #52**, branch
+> `feat/angr-tee-o2-x2nrealloc-6981e7`), found independently via `xalloc_die` in coreutils
+> `tee -O2`. This `mv -O2` / `usage()` case is a **second witness** for the same feature and
+> same fix. Per Hard rule 5 (don't duplicate a covered gap), this opportunity is closed as
+> *covered by `noreturn_propagate`*; this document is retained as supporting evidence to fold
+> into PR #52, not as a competing proposal. The original step-1 `jumptable-augment` is
+> abandoned as mis-shaped (`findings.md`).
 
 **Supersedes step-1 (`jumptable-augment`) of `proposal.md`.** Implementation of step-1
-revealed it is mis-shaped for this function (full evidence: `findings.md`). This v2 proposes
-the mechanism that actually closes the case-recovery sub-gap, validated by ablation. It needs
-human go/no-go because it is a **new analysis pass** (Hard rule 7: new pass *type*, P0/S1
-analysis tier) rather than the previously-approved S2 jump-table Action.
+revealed it is mis-shaped for this function (full evidence: `findings.md`). The mechanism that
+actually closes the case-recovery sub-gap (validated by ablation) is a **new analysis pass**
+(Hard rule 7: new pass *type*, P0/S1 analysis tier) — i.e. `noreturn_propagate` / PR #52.
 
 - Opportunity: `test_decompiling_x8664_mv_O2::main`
 - Binary: `/home/mahaloz/github/angr-dev/binaries/tests/x86_64/mv_-O2`, `main` @ `0x402b40`, x86_64
@@ -75,15 +83,17 @@ by this feature.)
 3. **Speed.** Adds a Listing pass; measure against the +5% budget on `mv -O2 main` and keep
    opt-in if it regresses (it is default-OFF regardless until an ablation is clean).
 
-## Recommended option
+## The covering feature
 
-`noreturn_body` · `change_kind = analysis-enablement` · `source_decompiler = angr`
-(inspiration: angr no-return propagation; Ghidra `FindNoReturnFunctionsAnalyzer` body half).
-Default-OFF; pairs with `option listing on`.
+This is the already-proposed **`noreturn_propagate`** (draft **PR #52**) · `change_kind =
+analysis-enablement` · `source_decompiler = angr` (inspiration: angr CFGFast no-return
+call-graph propagation; Ghidra `FindNoReturnFunctionsAnalyzer` body half). Default-OFF; pairs
+with `option listing on`. The two witnesses now on record:
+- **PR #52 / tee_O2:** `xalloc_die` (body ends `error(); abort();`) → spurious `while(true)`.
+- **This / mv_-O2:** `usage` (body reaches `exit`) → 3 unrecovered switch cases (`-0x83`/`-0x82`).
 
 ## Recommendation
 
-Approve `noreturn_body` as the replacement for step-1. It is the mechanism that actually
-closes sub-gap #3, is corpus-safe, and reuses existing flow consumption. Steps #1/#2/#4 of
-the original proposal (the `while(true)` loop + switch-break + tail condensing — the S7/S8
-SAILR structuring work) remain deferred and unchanged.
+Approve **`noreturn_propagate` (PR #52)**, which closes this gap too — no separate feature is
+needed. Steps #1/#2/#4 of the original proposal (the `while(true)` loop + switch-break + tail
+condensing — the S7/S8 SAILR structuring work) remain deferred and unchanged.

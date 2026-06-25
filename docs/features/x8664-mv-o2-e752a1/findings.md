@@ -103,7 +103,25 @@ storage-address heuristic (treat the post-`usage` cascade var as the switch var 
 live in EAX) is an unsafe semantic gamble (asserts EAX is unclobbered across an arbitrary
 call) and not worth shipping even default-OFF.
 
-## Conclusion
+## Conclusion — covered by an existing proposal
 
 `jumptable-augment` does not close this gap. The case-recovery sub-gap (#3 in `proposal.md`)
-is a **noreturn-by-body inference** gap. Revised proposal: `proposal-v2.md`.
+is a **noreturn-by-body inference** gap — and that fix is **already proposed** as
+**`noreturn_propagate`** (draft **PR #52**, branch `feat/angr-tee-o2-x2nrealloc-6981e7`),
+derived independently from `xalloc_die` in coreutils `tee -O2`. The mechanism is identical:
+a kuna-analysis Listing-consumer fixpoint pass (no ≥3-evidence gate, unlike `noreturn_disc`)
+that marks a function no-return when its last reachable instruction calls a no-return callee,
+seeded from the Known/discovered set.
+
+Architectural note (from PR #52's record): the no-return flag is consumed **pre-S2-flow** at
+`s2_lift/flow.rs` `query_call_no_return` (an `&self` seam reading
+`symboltab.function_is_no_return_across_scopes`), so the fix must set the symbol flag in the
+`kuna-analysis` tier (where `noreturn_known`/`noreturn_disc` live) — it cannot be a
+`kuna_loweredswitch.rs`-style Action. That tier runs only on the real-ELF `load file` path, so
+such a feature cannot have a firing two-pass `tests/stages/*.xml` test (the bytechunk path runs
+no analysis passes) — covered instead by kuna-analysis unit tests + a real-ELF testcase.
+
+**Per Hard rule 5 (do not duplicate a covered gap), no competing proposal was created.** This
+`mv -O2` / `usage()` case is recorded as a **second witness** for `noreturn_propagate` and
+folded toward PR #52. The original step-1 `jumptable-augment` (this branch / PR #45) is closed
+as mis-shaped; `proposal-v2.md` is retained as supporting evidence.
