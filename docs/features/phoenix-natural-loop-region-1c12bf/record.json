@@ -1,0 +1,30 @@
+{
+  "opportunity": "test_decompiling_phoenix_natural_loop_region_head_in_body::0x442300",
+  "test_name": "test_decompiling_phoenix_natural_loop_region_head_in_body",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/windows/059ef54d0a97345369d236aafb051917c50680020a1bc532236072f4d341d9e3",
+  "selector": "0x442300",
+  "func_addr": "0x442300",
+  "arch": "x86_64",
+  "angr_version": "9.2.213",
+  "option": "naturalloophead",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_phoenix_natural_loop_region_head_in_body; RegionIdentifier (Phoenix); 0x442300",
+  "scope": "large",
+  "proposal": true,
+  "parity": "OK (no engine change)",
+  "gap_summary": "angr structures sub_442300 as a single clean while(true) with continue and ONE goto; kuna emits 31 goto/label tokens, rendering the natural-loop head at 0x4425a0 as label_4425a0 with goto back-edges instead of recovering it as a loop header.",
+  "owning_stage": "S7/S8 region-and-loop structuring (s8_structure/blockaction.rs CollapseStructure/LoopBody/TraceDAG; the C printer is collapse-based, not region-identifier based)",
+  "decisions": [
+    {
+      "question": "Can this gap be closed as a single option-gated Action/Rule (small), or does it require S7 structuring infrastructure (large)?",
+      "decider_verdict": {
+        "scope": "large",
+        "reasoning": "The gap lives entirely in S7/S8 loop-and-region structuring: kuna's printed C comes from Ghidra's collapse-based structurer (blockaction.rs CollapseStructure/LoopBody/TraceDAG), and fixing the head-in-body natural loop means either modifying that collapse loop-detection (touching S7 structuring core well beyond a single gated early-return) or wiring the analysis-only s7_regions/kuna_regionid.rs RegionIdentifier port into the emit path (a new pass type plus new emit infrastructure). Both violate the hard rule (>3 anchor files / new pass-type / S7 structuring touch). Unlike loweredswitch, there is no upstream single artifact (e.g. a manufactured jumptable) to inject that lets the existing structurer+printer produce the clean loop, so it cannot be reduced to one option-gated Action/Rule.",
+        "if_small_hook": "",
+        "proposed_option_name": "naturalloophead",
+        "recommended_path": "Stop and open a [PROPOSAL] draft PR scoping whether to (a) extend the collapse structurer's loop detection or (b) wire the existing RegionIdentifier port into emit, for human go/no-go."
+      }
+    }
+  ]
+}

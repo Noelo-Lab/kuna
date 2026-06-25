@@ -1,0 +1,243 @@
+void sub_442300(uint8 a0,unsigned long long a1,int8 a2,int8 a3)
+
+{
+  uint8 v1;
+  uint8 v13;
+  void *v14;
+  void *v15;
+  void *v16;
+  void *v17;
+  uint8 v19;
+  char v2; // al
+  int8 v20;
+  int8 v21; // gs_offset
+  bool v22; // zf
+  char *v4; // rax
+  void *v5; // rax
+  unsigned long long v6;
+  
+label_4425a0:
+  if (a3 <= v7) goto label_44232c;
+  v11 = *(int8 *)(a2 + v7 * 8);
+  v13 = *(uint8 *)(v11 + 8);
+  if (v13 == v19) {
+    *(int8 *)&v14[-0x50] = v7;
+    *(int8 *)&v14[-0x30] = v11;
+    *(void *)&v14[-0x98] = 0x4425ce;
+    v2 = runtime.memequal(v13);
+    if (v2 == '\0') {
+      v7 = *(int8 *)&v14[-0x50];
+      v19 = *(uint8 *)&v14[-0x60];
+      a2 = *(int8 *)&v14[-0x18];
+      a3 = *(int8 *)&v14[-0x48];
+      a0 = *(uint8 *)&v14[0x18];
+    }
+    else {
+      v6 = *(void *)&v14[-0x70];
+      *(void *)&v14[-0x98] = 0x44260e;
+      v7 = runtime.atoi64();
+      v22 = v7 == (int4)v7;
+      v9 = 0;
+      if (v22) {
+        v9 = (int4)v7;
+      }
+      if ((v22 & (uint1)v6) == 0) {
+        a0 = *(uint8 *)&v14[0x18];
+      }
+      else {
+        a0 = *(uint8 *)&v14[0x18];
+        if (a0 == 0) {
+          v7 = *(int8 *)&v14[-0x30];
+          if (*(int4 **)(v7 + 0x10) != (int4 *)0x0) {
+            **(int4 **)(v7 + 0x10) = v9;
+            goto label_442661;
+          }
+        }
+        else {
+          v7 = *(int8 *)&v14[-0x30];
+        }
+        if (*(int4 **)(v7 + 0x18) != (int4 *)0x0) {
+          LOCK();
+          **(int4 **)(v7 + 0x18) = v9;
+          UNLOCK();
+        }
+      }
+label_442661:
+      v7 = *(int8 *)&v14[-0x50];
+      v19 = *(uint8 *)&v14[-0x60];
+      a2 = *(int8 *)&v14[-0x18];
+      a3 = *(int8 *)&v14[-0x48];
+    }
+  }
+label_442597:
+  v7 = v7 + 1;
+  goto label_4425a0;
+label_4426ad:
+  v19 = (uint8)*(uint1 *)(v3 + v18);
+  v13 = v18;
+  if (*(uint1 *)(v3 + v18) != 0x2c) goto label_4426a8;
+  if ((int8)v18 < 0) {
+label_4426e6:
+    v18 = 0;
+    v7 = 0;
+  }
+  else {
+    if (v12 < v18) goto label_442705;
+    if (v12 < v10) {
+      *(void *)&v14[-0x98] = 0x442705;
+      runtime.panicSliceB(v12);
+label_442705:
+      *(void *)&v14[-0x98] = 0x442710;
+      a0 = v18;
+      v3 = runtime.panicSliceAlen(v18,v12);
+      goto label_442711;
+    }
+    v12 = (v12 - v18) - 1;
+    v19 = (int8)-v12 >> 0x3f;
+    v11 = (v10 & v19) + v3;
+    v7 = v3;
+    v3 = v11;
+  }
+  v13 = v12;
+label_4423d8:
+  *(uint8 *)&v14[-0x58] = v12;
+  *(int8 *)&v14[-0x20] = v3;
+  *(uint8 *)&v14[-0x40] = v18;
+  *(int8 *)&v14[-0x10] = v7;
+  *(int8 *)&v14[-0x90] = v3;
+  *(uint8 *)&v14[-0x88] = v12;
+  v14[-0x80] = 0x3d;
+  *(void *)&v14[-0x98] = 0x442405;
+  internal/bytealg.IndexByteString.abi0();
+  v20 = **(int8 **)(v21 + dat_5635a8);
+  v1 = *(uint8 *)&v14[-0x78];
+  if (0 <= (int8)v1) {
+    v10 = *(uint8 *)&v14[-0x58];
+    if (v1 <= v10) {
+      if (v1 + 1 <= v10) {
+        *(uint8 *)&v14[-0x60] = v1;
+        *(uint8 *)&v14[-0x48] = v1 + 1;
+        *(void *)&v14[-0x98] = 0x44247c;
+        v4 = (char *)runtime.mapaccess1_faststr(*(void *)&v14[-0x20]);
+        v19 = *(uint8 *)&v14[-0x60];
+        v11 = (*(int8 *)&v14[-0x58] - v19) + -1;
+        v8 = *(int8 **)&v14[-0x20];
+        v7 = (*(uint8 *)&v14[-0x48] & -v11 >> 0x3f) + (int8)v8;
+        if (*v4 != '\0') {
+          a0 = *(uint8 *)&v14[0x18];
+          goto label_44232c;
+        }
+        *(int8 *)&v14[-0x70] = v11;
+        *(int8 *)&v14[-0x38] = v7;
+        v22 = *(int8 *)&v14[0x18] == 0;
+        a0 = 0;
+        if (!v22) {
+          *(void *)&v14[-0x98] = 0x4424df;
+          v5 = (void *)runtime.mapassign_faststr();
+          *v5 = 1;
+          v22 = *(int8 *)&v14[0x18] == 0;
+          v8 = *(int8 **)&v14[-0x20];
+          v7 = *(int8 *)&v14[-0x38];
+          v11 = *(int8 *)&v14[-0x70];
+          a0 = *(uint8 *)&v14[0x18];
+          v19 = *(uint8 *)&v14[-0x60];
+        }
+        if ((((!v22) || (v19 != 0xe)) || (a2 = 0x69666f72706d656d, *v8 != 0x69666f72706d656d)) || (((int4)v8[1] != 0x6172656c || (*(int2 *)((int8)v8 + 0xc) != 0x6574)))) {
+          *(int8 *)&v14[-0x18] = dat_4dc600;
+          *(int8 *)&v14[-0x48] = dat_4dc608;
+          v7 = 0;
+          a2 = dat_4dc600;
+          a3 = dat_4dc608;
+          goto label_4425a0;
+        }
+        *(void *)&v14[-0x98] = 0x44253e;
+        v6 = runtime.atoi64(v8,v7);
+        if ((char)v11 != '\0') {
+          Unique100002b6 = v6;
+        }
+        a0 = *(uint8 *)&v14[0x18];
+        goto label_44232c;
+      }
+      *(void *)&v14[-0x98] = 0x442691;
+      runtime.panicSliceB(v10);
+    }
+    *(void *)&v14[-0x98] = 0x442696;
+    runtime.panicSliceAlen();
+label_442696:
+    *(void *)&v14[-0x98] = 0x44269e;
+    runtime.panicSliceB(v10);
+label_4426a0:
+    *(void *)&v14[-0x98] = 0x4426a5;
+    v3 = runtime.panicSliceAlen();
+    v12 = v13;
+    v13 = v18;
+    goto label_4426a8;
+  }
+  a0 = *(uint8 *)&v14[0x18];
+label_44232c:
+  v3 = *(int8 *)&v14[-0x10];
+  v13 = *(uint8 *)&v14[-0x40];
+  v18 = a0;
+  goto label_442340;
+  v14 = PTRSUB(RSP,0);
+  while (v15 = v14, v17 = v16, &v14[-0x10] <= *(void **)(v20 + 0x10)) {
+label_442711:
+    *(int8 *)&v15[8] = v3;
+    *(uint8 *)&v15[0x10] = v12;
+    *(uint8 *)&v15[0x18] = a0;
+    *(void *)&v15[-8] = 0x442725;
+    runtime.morestack_noctxt.abi0();
+    v3 = *(int8 *)&v15[8];
+    v12 = *(uint8 *)&v15[0x10];
+    a0 = *(uint8 *)&v15[0x18];
+    v14 = v15;
+    v16 = v17;
+  }
+  v17 = &v14[-8];
+  *(void **)&v14[-8] = v16;
+  v15 = &v14[-0x90];
+  *(int8 *)&v14[8] = v3;
+  *(uint8 *)&v14[0x18] = a0;
+  v13 = v12;
+label_442340:
+  if (v13 == 0) {
+    if (2 <= dat_5638c0) {
+      *(void *)&v14[-0x98] = 0x442597;
+      v7 = runtime.throw();
+      a0 = v18;
+      goto label_442597;
+    }
+    return;
+  }
+  v12 = v13;
+  if (a0 == 0) {
+    *(uint8 *)&v14[-0x68] = v13;
+    *(int8 *)&v14[-0x28] = v3;
+    *(int8 *)&v14[-0x90] = v3;
+    *(uint8 *)&v14[-0x88] = v13;
+    v14[-0x80] = 0x2c;
+    *(void *)&v14[-0x98] = 0x442374;
+    internal/bytealg.IndexByteString.abi0();
+    v20 = **(int8 **)(v21 + dat_5635a8);
+    v12 = *(uint8 *)&v14[-0x78];
+    if (0 <= (int8)v12) {
+      v10 = *(uint8 *)&v14[-0x68];
+      if (v10 < v12) goto label_4426a0;
+      if (v10 < v12 + 1) goto label_442696;
+      v18 = (v10 - v12) - 1;
+      v3 = *(int8 *)&v14[-0x28];
+      v7 = (v12 + 1 & (int8)-v18 >> 0x3f) + v3;
+      goto label_4423d8;
+    }
+    v3 = *(int8 *)&v14[-0x28];
+    v18 = 0;
+    v7 = 0;
+    v12 = *(uint8 *)&v14[-0x68];
+    goto label_4423d8;
+  }
+label_4426a8:
+  v10 = v13;
+  v18 = v10 - 1;
+  if (0 <= (int8)v18) goto label_4426ad;
+  goto label_4426e6;
+}

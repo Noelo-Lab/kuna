@@ -1,0 +1,222 @@
+==============================================================================
+test_decompiling_phoenix_natural_loop_region_head_in_body :: 0x442300   (angr 9.2.213 @ 0x442300)
+==============================================================================
+
+--- angr ---
+typedef struct struct_0 {
+    unsigned long long field_0;
+    unsigned int field_8;
+    unsigned short field_c;
+} struct_0;
+
+typedef struct struct_1 {
+    char padding_0[16];
+    struct struct_2 *field_10;
+    unsigned long long field_18;
+} struct_1;
+
+typedef struct struct_2 {
+    unsigned int field_0;
+} struct_2;
+
+extern unsigned long long g_4db2e0;
+extern unsigned long long g_4dc600;
+extern long long g_4dc608;
+extern int g_5638c0;
+
+struct_0 * sub_442300(unsigned long long a0, unsigned long a1, unsigned long long ptr, long long a3)
+{
+    unsigned long v21;  // r14
+    struct_0 *v22;  // rax
+    struct_0 *v28;  // rdx
+    long long v29;  // rcx
+    struct_0 *v30;  // rax
+    long long v31;  // rdx
+    long long v32;  // rax
+    long long v33;  // rdx
+    long long v34;  // rcx
+    long long v35;  // rax
+    long long v36;  // rbx
+    struct_0 *v37;  // rcx
+    unsigned long v38;  // rax
+    long long index;  // rax
+    unsigned long long v23;  // rsi
+    long long v24;  // rdi
+    unsigned long long v25;  // rcx
+    long long v26;  // rsi
+    long long v27;  // rdx
+    struct_0 *v0;  // [bp-0x90]
+    long long v1;  // [bp-0x88]
+    char v2;  // [bp-0x80]
+    long long v3;  // [bp-0x78]
+    long long v4;  // [bp-0x70]
+    long long v5;  // [bp-0x68]
+    long long v6;  // [bp-0x60]
+    long long v7;  // [bp-0x58]
+    long long v9;  // [bp-0x48]
+    long long v10;  // [bp-0x40]
+    long long v11;  // [bp-0x40]
+    struct_0 *v12;  // [bp-0x38]
+    struct_0 *v14;  // [bp-0x28]
+    struct_0 *v15;  // [bp-0x20]
+    unsigned long long v16;  // [bp-0x18]
+    int <0x442300[is_1]|Stack bp-0x10, 1 B>;  // [bp-0x10]
+    struct_0 *v17;  // [bp-0x10]
+    struct_0 *v18;  // [bp+0x8]
+    long long v19;  // [bp+0x10]
+    unsigned long long v20;  // [bp+0x18]
+
+    if (&<0x442300[is_1]|Stack bp-0x10, 1 B> <= *((long long *)(v21 + 16)))
+    {
+        v18 = v30;
+        v19 = v10;
+        v20 = a0;
+        sub_459da0(); /* do not return */
+    }
+    v18 = v22;
+    v20 = a0;
+    while (true)
+    {
+        v25 = a0;
+        v10 = v11;
+        v30 = v17;
+        if (!v10)
+        {
+            if (g_5638c0 <= 1)
+                return v30;
+            index = sub_430840();
+        }
+        if (v25)
+        {
+            v26 = v10 - 1;
+            while (true)
+            {
+                if (v26 >= 0)
+                {
+                    v24 = *((char *)v30 + v26);
+                    if ((char)v24 != 44)
+                    {
+                        v26 -= 1;
+                    }
+                    else if (v26 >= 0)
+                    {
+                        if (v26 <= v10)
+                        {
+                            v27 = v26 + 1;
+                            if (v10 < v27)
+                                sub_45c0e0(v10);
+                            v24 = -(v10 - v26 - 1) >> 63;
+                            v28 = (v27 & v24) + (char *)v30;
+                            break;
+                        }
+                        else
+                        {
+                            sub_45c060(v26, v10);
+                        }
+                    }
+                }
+                else
+                {
+                    v26 = 0;
+                    v28 = v30;
+                    v30 = NULL;
+                    break;
+                }
+            }
+            v29 = v10;
+        }
+        else
+        {
+            v5 = v10;
+            v14 = v30;
+            v0 = v30;
+            v1 = v10;
+            v2 = 44;
+            sub_402960();
+            v29 = v3;
+            if (v29 < 0)
+            {
+                v28 = v14;
+                v26 = 0;
+                v30 = NULL;
+                v29 = v5;
+            }
+            else
+            {
+                v31 = v5;
+                if (v31 < v29)
+                    sub_45c060();
+                v32 = v29 + 1;
+                if (v31 < v32)
+                    sub_45c0e0(v31);
+                v33 = v31 - v29 - 1;
+                v26 = v33;
+                v28 = v14;
+                v30 = (v32 & -(v33) >> 63) + (char *)v28;
+            }
+        }
+        v7 = v29;
+        v15 = v28;
+        v10 = v26;
+        v0 = v28;
+        v1 = v29;
+        v2 = 61;
+        sub_402960(v29, v28);
+        v34 = v3;
+        if (v34 < 0)
+        {
+            v23 = v20;
+            continue;
+        }
+        if (v7 < v34)
+            sub_45c060();
+        v35 = v34 + 1;
+        if (v7 < v35)
+            sub_45c0e0(v7);
+        v6 = v34;
+        v9 = v35;
+        v24 = v6;
+        v36 = v7 - v24 - 1;
+        v37 = v15;
+        if (*((char *)sub_40ed20(v15)))
+        {
+            v23 = v20;
+            continue;
+        }
+        v4 = v36;
+        v12 = (v9 & -(v36) >> 63) + (char *)v37;
+        v23 = v20;
+        if (v23)
+        {
+            *((char *)sub_40f0e0()) = 1;
+            v37 = v15;
+            v36 = v4;
+            v23 = v20;
+            v24 = v6;
+            goto LABEL_442558;
+        }
+        else if (!v23 && v24 == 14 && !((ptr = 7594880358910092653, v37->field_0 != 7594880358910092653 || v37->field_8 != 1634887020 || v37->field_c != 25972)))
+        {
+            v38 = sub_448d40();
+            if ((char)v36)
+                g_4db2e0 = v38;
+            v23 = v20;
+            v17 = v30;
+            v11 = v10;
+            a0 = v23;
+        }
+        else
+        {
+LABEL_442558:
+            ptr = g_4dc600;
+            v16 = g_4dc600;
+            a3 = g_4dc608;
+            v9 = g_4dc608;
+            index = 0;
+        }
+    }
+}
+
+
+--- kuna (addr mode) ---
+  (no output: addr-mode: could not build an architecture for /home/mahaloz/github/angr-dev/binaries/tests/x86_64/windows/059ef54d0a97345369d236aafb051917c50680020a1bc532236072f4d341d9e3 (unsupported/!recognized binary))
