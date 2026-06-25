@@ -87,11 +87,13 @@ impl ObjectFormat for PeFormat {
         coff_section_bits(kind, flags)
     }
 
-    fn resolve_imports(&self, _file: &object::File, _bytes: &[u8]) -> Vec<ImportSym> {
-        // Skeleton: PE import naming (IAT/INT parallel walk) is PR-4
-        // (`s1_loader/pe_iat.rs`, design §3.2). Until then imports are empty —
-        // calls render `sub_<addr>`, which is the correct skeleton behavior.
-        Vec::new()
+    fn resolve_imports(&self, file: &object::File, bytes: &[u8]) -> Vec<ImportSym> {
+        // PE import naming: walk the Import Directory (INT/IAT lockstep), name
+        // each IAT slot the engine constant-folds, decode the MinGW `FF 25` thunk
+        // veneers that a direct `call` targets, and register the exports — all in
+        // `s1_loader/pe_iat.rs` (design §3.2). Pure & total: a non-PE / no-import
+        // / unparsable layout yields an empty `Vec`.
+        crate::s1_loader::pe_iat::resolve_pe_imports(file, bytes)
     }
 }
 

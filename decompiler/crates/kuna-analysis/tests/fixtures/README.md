@@ -287,6 +287,36 @@ container — the exact build command (single root container invocation) is:
 && mips-linux-gnu-gcc -O0 decompiler/crates/kuna-analysis/tests/fixtures/plt_mips32.c
 -o decompiler/crates/kuna-analysis/tests/fixtures/plt_mips32'`.
 
+## PE (Windows) fixtures — the multi-format loader (PR-3+4)
+
+`pe_imports.exe` (non-stripped, 487 KB) and `pe_imports_stripped.exe` (`-s`,
+38 KB) are **linked Windows PE32+** executables for the PE import-naming gate
+(`kuna-console/tests/verify_pe_imports.rs`, design §3.2). Both are built from
+`pe_imports.c` =
+`int main(int argc,char**argv){ puts("hello"); printf("%d\n", argc); return 0; }`
+with MinGW-w64 in the `kuna-dev` container (`x86_64-w64-mingw32-gcc`, shipped by
+the dev image):
+
+```bash
+docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc \
+  'x86_64-w64-mingw32-gcc -O1 pe_imports.c \
+     -o decompiler/crates/kuna-analysis/tests/fixtures/pe_imports.exe'
+# stripped variant (the PR-4 IAT-naming proof): add `-s`.
+```
+
+ImageBase `0x140000000`. `main`@`0x140001592` calls `puts` through a MinGW thunk
+veneer@`0x140007240` (`FF 25` `jmp [rip+disp]` → the `__imp_puts` IAT slot
+@`0x14000d33c`) and a *local* MinGW `printf` wrapper@`0x140001550` (a `.text`
+function, **not** an import — it internally calls `vfprintf`). In the
+**non-stripped** exe the COFF symtab names the thunk (`puts`) and the wrapper
+(`printf`); in the **stripped** exe those names are gone, so the `puts` call is
+named **only** by `s1_loader::pe_iat`'s Import-Directory walk + `FF 25` thunk
+decode — that's the load-bearing PR-4 proof. The local `printf` wrapper stays
+`sub_<addr>` in the stripped binary (correctly — it is not an import). The PE
+exe is the only non-ELF binary in this tree large enough to statically link the
+MinGW CRT (≈0.5 MB), on par with the existing `mcount_x86_64` (0.9 MB).
+**Pin the VMAs as test consts** (`x86_64-w64-mingw32-objdump -d/-p`).
+
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via
 `objdump`/`readelf` at build time) — addresses shift across toolchains.
