@@ -392,6 +392,15 @@ pub struct Architecture {
     /// the Listing (`--option listing on` builds it); a no-op when the Listing is
     /// absent. Default-off ⇒ every parity gate is byte-identical.
     pub analysis_noreturn_disc: bool,
+    /// (kuna) Gate the Go `pclntab` function-name recovery pass (`gopclntab`); the
+    /// kuna analog of Ghidra's `GolangSymbolAnalyzer` (name-recovery half). Default
+    /// **on**, but the pass is registered ONLY for a Go binary
+    /// (`detect_compiler == Go`), so on every non-Go binary it is structurally
+    /// absent regardless of this flag. Parses the embedded pclntab and emits a
+    /// function symbol per Go function (so `main.main`/`runtime.*` render named
+    /// instead of `sub_<addr>`). Real-ELF Go path only ⇒ the XML datatest oracle is
+    /// structurally untouched.
+    pub analysis_gopclntab: bool,
 
     // --- Owned subsystems (architecture.hh:211-233) -----------------------
     /// Memory map of global variables and functions (C++ `symboltab`).
@@ -589,6 +598,7 @@ impl Architecture {
             analysis_formatstring: false,
             analysis_listing: false,
             analysis_noreturn_disc: false,
+            analysis_gopclntab: false,
 
             symboltab,
             options: OptionDatabase::new(),
@@ -684,6 +694,7 @@ impl Architecture {
         self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
+        self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
     }
 
     /// Apply a kuna stage-model option (`option <name> <value>`), the analogue of
@@ -790,6 +801,9 @@ impl Architecture {
             "listing" => on_off!(analysis_listing, "Listing/xref disassembly tier"),
             "noreturn_disc" => {
                 on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
+            }
+            "gopclntab" => {
+                on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
             }
             other => Err(KunaError::parse(format!("Unknown kuna option: {other}"))),
         }

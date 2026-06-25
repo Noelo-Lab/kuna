@@ -157,7 +157,7 @@ Status: ✅ done · ⬜ gap (to port) · 🟡 inherited (engine already does it)
 | ⛔ | `s1-noreturn-discovered` | `FindNoReturnFunctionsAnalyzer` (flow heuristic) | hard | needs pre-decompile listing/flow — not at this tier |
 | ⛔ | `thunk-model` | thunk/external object model | hard | needs `ExternalLocation`/S2-S4 internals |
 | ⛔ | `x86-purge` | `X86FunctionPurgeAnalyzer` | — | Linux ELF x86 is cdecl; engine infers `extrapop=0` |
-| ⛔ | `golang-symbols` | Go pclntab names | hard | large subsystem; Go-only |
+| ✅ | `golang-symbols` | Go pclntab function-name recovery (`GolangSymbolAnalyzer`, name half) | hard | Increment 34: `s1_pclntab::GoPclntabPass` parses the embedded pclntab (go1.2/1.16/1.18/1.20 magics) and emits a `SymFact{Function}` per Go function, so `main.main`/`runtime.*`/package fns render named instead of `sub_<addr>`. Go-gated (registered only for `Compiler::Go`, like the Go no-return list); reuses the existing symbol commit arm (no new arm). Name-recovery half only — the RTTI/type/signature subsystems stay out of scope |
 | ⛔ | `extern-resolver` | `ExternalSymbolResolverAnalyzer` | — | needs multi-program Ghidra project context |
 | ⛔ | `filler-bytes` | `CondenseFillerBytesAnalyzer` | — | listing cosmetics; never reaches decompiler output |
 | ⛔ | format-specific | Swift/ObjC/PDB/RTTI/Mach-O/PE | — | out of scope for an ELF decompiler |
@@ -2524,3 +2524,108 @@ ripple (kuna_stages `settable_count_is_36`, `…suppressed_for_14`,
   `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs`,
   `kuna-decomp/tests/{catalog_bytecompat.rs, fixtures/stage_catalog.json}`,
   `docs/assertions.md`.
+
+### Increment 34 — Go pclntab function-name recovery (GolangSymbolAnalyzer)
+
+The kuna analog of Ghidra's `GolangSymbolAnalyzer` (the **name-recovery** half).
+Previously `golang-symbols` was classified ⛔ ("large subsystem, Go-only");
+greenlit and now done. A Go binary embeds a `pclntab` (the "PC → line/name"
+table) so the runtime can produce stack traces; because the runtime needs it, it
+**survives stripping**. Without parsing it, every Go function decompiles as
+`sub_<addr>`.
+
+**BEFORE.** A (stripped) Go binary's functions render `sub_<addr>` — kuna never
+parsed the pclntab, and a `-ldflags=-s -w` build has no `.symtab` at all, so
+there is no name source for `main.main`, `main.compute`, `runtime.*`, ….
+
+**AFTER.** `main.main`, `main.compute`, and the `runtime.*` set render NAMED,
+recovered from the pclntab — even on a stripped binary where the pclntab is the
+*only* possible name source.
+
+**The pass (`s1_pclntab::GoPclntabPass`, id `gopclntab`, default-ON).** A new
+`AnalysisPass`:
+- **Locate the header:** the `.gopclntab`/`gopclntab` section start; else the
+  `runtime.pclntab` symbol; else a validated byte scan of `.rodata`/
+  `.data.rel.ro`/`.noptrdata`/`.data` (the kuna analog of
+  `GoPcHeader.getPcHeaderAddress` + `findPcHeaderAddress`). Each candidate is
+  confirmed by `probe_header` (the `isPcHeader` predicate: pad bytes 0,
+  `minLC ∈ {1,2,4}`, `ptrSize ∈ {4,8}`, magic matches a known version read
+  LE-then-BE — that LE/BE probe is also how endianness is recovered).
+- **Parse across versions:** the four header magics — go1.2 `0xfffffffb`, go1.16
+  `0xfffffffa`, go1.18 `0xfffffff0`, go1.20 `0xfffffff1` (1.19/1.21+ share the
+  1.20 magic and layout). The layout differs by family:
+  - **go1.18+:** the header carries `textStart`; the functab is `(entryoff: u32,
+    funcoff: u32)` pairs (stride 8); entry PC = `textStart + entryoff`; the
+    `_func` at `funcdata_base + funcoff` has `nameoff: i32` at offset 4 (after the
+    `entryoff: u32`).
+  - **go1.16/1.17:** no `textStart`; the functab is `(entry: uintptr, funcoff:
+    uintptr)` (stride `2*ptrSize`); entry PC is the **absolute** `entry`; `nameoff`
+    is at offset `ptrSize` in the `_func`.
+  - **go1.2…1.15:** the legacy direct-functab layout — 8-byte header, `nfunc`
+    (uintptr) at +8, then the `(entry, funcoff)` pairs; the name table IS the
+    pclntab blob (no separate `funcnametab`), `nameoff` indexing the whole blob.
+  Names are NUL-terminated UTF-8 read from `funcnametab + nameoff`. Inline
+  sentinels (`entryoff == 0xffffffff`) and the `go:buildid`/`go.buildid` names are
+  dropped (`GoFuncData.isInline` / `FUNCNAMES_TO_IGNORE`). The byte layouts were
+  taken from Ghidra's `GoPcHeader`/`GoModuledata`/`GoFunctabEntry`/`GoFuncData` and
+  cross-checked against the Go runtime source (`runtime/symtab.go`,
+  `runtime/runtime2.go`) at go1.18.
+- **Defensive (the never-fail contract):** an unknown magic, a malformed header,
+  an out-of-range offset, a truncated table, or a missing section all yield an
+  **empty** output — never a panic, never an error. An `nfunc` cap (2M) and
+  checked-add arithmetic guard a corrupt header.
+- **Emits** a `SymFact { addr: func_entry, name, kind: Function }` per function via
+  the **EXISTING** symbol commit arm (engine.rs `commit_analysis_output`, no new
+  arm). That arm is idempotent (`find_function(..).is_none()`), so a non-stripped
+  Go binary's real `.symtab` name still wins — only a *stripped* binary's
+  `sub_<addr>` functions take the recovered name.
+
+**Gating (the parity proof).** Registered in `passes_for` **only when**
+`detect_compiler == Go` (the same `.go.buildinfo`/`.note.go.buildid` gate the Go
+no-return list uses, Increment 15) — so on every non-Go binary the pass is
+*structurally absent* from the pass set, not merely a runtime no-op. The pass is
+additionally a settable (`--option gopclntab on|off`, default-on); off suppresses
+the recovery. Real-ELF Go path only ⇒ the XML datatest oracle is **structurally
+untouched** (no XML binary is Go; the analysis tier never runs on the
+`<binaryimage>` path).
+
+**Tests (both ran, not skipped).**
+- **Hermetic parser units** (`s1_pclntab/tests.rs`, 12 tests, no `go` needed —
+  the merge-blocking gate): header probe (all four magics, LE+BE, the four
+  malformation rejections), full functab→`_func`→`funcnametab` decode for
+  **go1.18** (relative `entryoff`), **go1.16** (absolute `entry`), and **go1.2**
+  (legacy blob-indexed names), inline-sentinel + `go:buildid` skipping, big-endian
+  decode, and the truncated-table / unknown-magic defensiveness.
+- **Real-Go e2e** (`kuna-console/tests/verify_go_pclntab.rs`, 2 tests): builds a
+  tiny Go program (`func compute(x int) int` called from `main`) at runtime via
+  `go build -ldflags=-s -w` (STRIPPED) in an isolated temp dir with a private
+  `GOCACHE`/`GOPATH` (hermetic; guarded on `go` on PATH + the build succeeding,
+  **skips cleanly** otherwise — Increment 15's pattern). Asserts `main.main`,
+  `main.compute`, and `runtime.main` are recovered as NAMED functions from the
+  pclntab on the stripped binary (where the pclntab is the only name source), and
+  that `--option gopclntab off` suppresses the recovery (`main.compute` absent).
+  **The e2e RAN (not skipped)** with go1.18 + the built x86 `.sla`.
+
+**Result.** `make test` 675/675 PARITY OK; `make test-stages` 159/159 PARITY OK;
+`make rust-test` green (incl. the 12 parser units + the 2-test e2e); `kuna catalog
+--check` catalog OK. settable_count **36 → 37** (the `gopclntab` gate);
+`stage_catalog.json` fixture + `docs/assertions.md` regenerated; the count-fixture
+ripple (`settable_count_is_37`, `…suppressed_for_15` PASS_GATES +1,
+`emit_catalog_json_static_form_brackets_and_commas` 36 commas,
+`fixture_has_all_37_settables`) updated.
+
+- **Divergence/LOSS:** none to the parity oracles — the pass is Go-gated and
+  real-ELF-path-only, so the default (non-Go) path is byte-identical to before. The
+  scope is the **name-recovery** half only; Ghidra's `GolangSymbolAnalyzer` also
+  recovers RTTI types, method definitions, stack-trace signatures, and source-file
+  maps — those subsystems stay out of scope (an ELF decompiler needs the
+  entry-PC→name mapping; the rest is Go-runtime-specific markup).
+- **New:** `kuna-analysis/src/s1_pclntab/{mod.rs, tests.rs}`,
+  `kuna-console/tests/verify_go_pclntab.rs`.
+- **Changed:** `kuna-analysis/src/{lib.rs, passes.rs}`,
+  `kuna-console/src/{engine.rs, kuna_console.rs}`,
+  `kuna-decomp/src/infra/architecture.rs`,
+  `kuna-decomp/src/p0_knowledge/options.rs`, `kuna-decomp/stages.toml`,
+  `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs`,
+  `kuna-decomp/tests/{catalog_bytecompat.rs, fixtures/stage_catalog.json}`,
+  `docs/{assertions.md, analysis-port-log.md}`.

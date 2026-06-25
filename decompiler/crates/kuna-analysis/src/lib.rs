@@ -57,4 +57,5 @@ pub mod s1_dwarf;
 pub mod s1_formatstring;
 pub mod s1_callfixup;
 pub mod s1_noreturn_disc;
+pub mod s1_pclntab;
 pub mod listing;

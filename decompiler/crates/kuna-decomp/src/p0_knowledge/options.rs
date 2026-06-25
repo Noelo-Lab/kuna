@@ -295,6 +295,12 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // `FindNoReturnFunctionsAnalyzer`.  Default-off (a heuristic that can be wrong;
     // also requires `--option listing on` to build the Listing it reads).
     "noreturn_disc",
+    // (kuna) Go pclntab function-name recovery: parse the embedded pclntab of a Go
+    // binary and name each Go function (`main.main`/`runtime.*` instead of
+    // `sub_<addr>`).  The kuna analog of Ghidra's `GolangSymbolAnalyzer`
+    // (name-recovery half).  Default-on, but the pass is registered ONLY for a Go
+    // binary, so it is a structural no-op on every non-Go target.
+    "gopclntab",
 ];
 
 // ---------------------------------------------------------------------------
