@@ -1,0 +1,33 @@
+{
+  "opportunity": "test_decompiling_nl_i386_pie::usage",
+  "test_name": "test_decompiling_nl_i386_pie",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/i386/nl",
+  "selector": "usage",
+  "func_addr": "0x1f60",
+  "angr_version": "9.2.213",
+  "option": "i386_pie_plt",
+  "change_kind": "correctness-fix",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_nl_i386_pie; angr CLE PLT/GOT import resolution + libc no-return database; usage",
+  "scope": "large",
+  "proposal": true,
+  "fix_location": "decompiler/crates/kuna-analysis/src/s1_loader/elf_plt.rs:decode_i386",
+  "gating_template": "mips_gp (if gated) OR decode_x86_64/decode_aarch64 (if unconditional loader fidelity)",
+  "decisions": [
+    {
+      "question": "Is closing test_decompiling_nl_i386_pie::usage a small (one option-gated change in the existing machinery) or large (needs human-approved proposal) feature, and what is the implementation path?",
+      "decider_verdict": {
+        "scope": "small",
+        "fix_location": "decompiler/crates/kuna-analysis/src/s1_loader/elf_plt.rs:decode_i386",
+        "gating_template": "none — model on the existing x86_64/aarch64 PLT decoders (decode_x86_64 / decode_aarch64), which ship unconditionally as pure loader fidelity with no option flag and no settableTable row; mips_gp is the wrong template here because PLT import naming is not option-gated in kuna",
+        "option_name_suggestion": "none (no flag needed); if a reviewer insists on a gate, 'i386_pie_plt' following the mips_gp settableTable template would slot in, but it is not warranted",
+        "testability": "A Rust integration test in decompiler/crates/kuna-console/tests/ (exact precedent: verify_aarch64_plt.rs / verify_w11_elf_plt_names.rs) that drives bootstrap_from_object over a real linked i386-PIE ELF fixture, then `load function usage`/`main` -> decompile -> print C and asserts the libc calls render named (exit(/fputs_unlocked(/__printf_chk() instead of sub_fb0()/sub_eb0()) AND that the spurious do{}while(true)/goto are gone (exit marked no-return collapses the back-edge). The tests/stages/*.xml harness CANNOT exercise this: it only accepts <binaryimage> bytechunks (raw p-code bytes), which carry no .rel.plt/.dynsym/GOT structure, so a stage XML can never reach the PLT path. Fixture: vendor the small (48 KB) nl binary, or build a minimal i386 PIE fixture (gcc -m32 -fpie -pie) under kuna-analysis/tests/fixtures/, matching the plt_aarch64 fixture pattern. A direct unit test on resolve_plt_imports over the fixture (asserting exit@plt stub -> 'exit') is the focused half, mirroring noreturn.rs's run_over_fauxware_flags_exit_only.",
+        "blast_radius": "Zero datatest impact. All 83 datatests use <binaryimage> bytechunks and never call run_default_analyses / resolve_plt_imports. The change only adds an additional recognized stub form (FF A3 disp32) to decode_i386; the module invariant is 'never errors, only ever produces more names', so a non-PIE i386 binary (FF 25 abs32) is untouched. No i386-PIE binary exists in the datatest corpus to perturb.",
+        "default_on_recommended": true,
+        "rationale": "One-function loader-fidelity fix, the precise i386-PIE analog of the already-shipped x86_64 RIP-relative and aarch64 veneer decoders (which ship unconditionally, no flag). decode_i386 already handles the non-PIC FF 25 <abs32> form and merely needs the PIE FF A3 <disp32> form, got = GOT_base(.got.plt / _GLOBAL_OFFSET_TABLE_) + disp32 (verified: GOT base 0x9edc + _exit disp 0x14 = 0x9ef0 = the R_386_JUMP_SLOT r_offset). The downstream no-return cascade is pre-existing machinery that just needs the name. Both gating (no flag, like sibling decoders) and testing (real-ELF integration test, verify_aarch64_plt.rs) have direct precedent; blast radius is provably zero. Fits one session as a normal PR — not a [PROPOSAL]."
+      },
+      "worker_decision": "Routed to a [PROPOSAL] draft PR for human go/no-go DESPITE the decider's 'small' verdict. The fix is small, but it (1) lives in the analysis-tier loader, not a kuna-decomp Action/Rule, so it cannot carry the prescribed kuna_<slug>.rs / Architecture-flag / ElementId shape; (2) changes DEFAULT decompiler output unconditionally for an entire binary class (all i386 PIE); and (3) CANNOT be tested by the prescribed tests/stages/*.xml bytechunk harness (needs a vendored i386-PIE ELF fixture + a kuna-console integration test). Per Hard Rule 7 ('not modelable as one Action/Rule') and the standing 'output-changing => --option-flaggable + end-to-end testcase' requirement, these deviations from the Definition of Done warrant human approval before an implementation worker is spent. Two open sub-decisions deferred to the human: (A) ship unconditionally vs gate behind a default-on option modeled on mips_gp; (B) approve the vendored-fixture + integration-test mechanism in lieu of a stage test."
+    }
+  ],
+  "parity": "OK (unchanged; no code modified in this proposal phase)"
+}
