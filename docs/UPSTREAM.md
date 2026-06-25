@@ -64,6 +64,8 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/userop.hh/.cc` | GH-9230: `BUILTIN_MEMSET` (0x10000006) id + `registerBuiltin` case (`void *memset(void*,int,int)`) |
 | `decompiler/cpp/constseq.hh` | GH-9230: `StringSequence` members widened private→protected (reused by `MemsetSequence`) |
 | `decompiler/cpp/architecture.cc`, `decompiler/cpp/printc.cc` | DIV-2: eight kuna option defaults flipped ON (`docs/divergences.md`) |
+| `decompiler/cpp/architecture.{hh,cc}` (Rust: `infra/architecture.rs`) | (kuna) additive `analysis_noreturn_propagate` flag (default-off in reset) + `set_kuna_option "noreturn_propagate"` arm, gating the angr-style no-return propagation analysis pass. Purely additive, default-off ⇒ no vendored behavior change. |
+| `decompiler/cpp/options.cc` (Rust: `p0_knowledge/options.rs`) | (kuna) registers the `noreturn_propagate` option name in `KUNA_OPTION_NAMES`. Additive. |
 | `tests/datatests/` (15 files, 22 assertions) | DIV-2: regexes re-pinned to kuna default output (compareform/arraynotation renderings); old forms in git history |
 | `decompiler/cpp/testfunction.cc` | (kuna) `<cstdlib>` include + env-gated `KUNA_DUMP` block in `runTests` that echoes the captured console output (triage/repro aid; default-off ⇒ no behavior change) |
 | `decompiler/unittests/testkunaregion.cc` | (kuna) **added** kuna-owned file inside the vendored unittests dir: unit tests for the angr RegionIdentifier port (`kuna_regionid.cc`; ports of angr `test_region_identifier_0/1` + a loop case). The port itself needed **zero** upstream anchor edits (console registration rides the existing `IfaceKunaCapability`). |

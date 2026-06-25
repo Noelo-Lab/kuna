@@ -201,12 +201,17 @@ pub fn listing_seeds(file: &object::File, bytes: &[u8]) -> Vec<u64> {
 /// built, which (per the build-timing fix) happens at the deferred commit point
 /// (`read symbols`), not at load — see [`run_listing_consumers`].
 ///
-/// Today the only consumer is the discovered-no-return analyzer (`noreturn_disc`,
-/// the kuna analog of Ghidra's `FindNoReturnFunctionsAnalyzer`). Each is still
-/// gated by its own `--option <id> on|off` flag at commit time
+/// The consumers are the discovered-no-return analyzer (`noreturn_disc`, the kuna
+/// analog of Ghidra's `FindNoReturnFunctionsAnalyzer`) and the structural
+/// no-return propagation analyzer (`noreturn_propagate`, the kuna analog of angr's
+/// CFGFast call-graph no-return propagation). Each is still gated by its own
+/// `--option <id> on|off` flag at commit time
 /// (`engine.rs::analysis_pass_enabled`), so a default run skips it.
 fn listing_consumer_passes() -> Vec<Box<dyn AnalysisPass>> {
-    vec![Box::new(crate::s1_noreturn_disc::NoReturnDiscoveredPass)]
+    vec![
+        Box::new(crate::s1_noreturn_disc::NoReturnDiscoveredPass),
+        Box::new(crate::s1_noreturn_propagate::NoReturnPropagatePass),
+    ]
 }
 
 /// Build the Listing/xref tier and run the Listing **consumer** passes over it,

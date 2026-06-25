@@ -295,6 +295,16 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // `FindNoReturnFunctionsAnalyzer`.  Default-off (a heuristic that can be wrong;
     // also requires `--option listing on` to build the Listing it reads).
     "noreturn_disc",
+    // (kuna) Structural no-return propagation consumer: the kuna analog of angr's
+    // CFGFast call-graph no-return propagation.  Seeds from the Known no-return set
+    // and concludes a function no-return when its last real instruction (skipping
+    // trailing NOP padding) is a call/tail-jump to an already-no-return callee,
+    // with no returning path — iterated to a fixpoint, with NO evidence threshold
+    // (unlike `noreturn_disc`).  Catches custom no-return wrappers (e.g.
+    // `xalloc_die`) the name list misses and the ≥3-evidence rule does not reach.
+    // Default-off (a heuristic that can be wrong; also requires `--option listing
+    // on` to build the Listing it reads).
+    "noreturn_propagate",
     // (kuna) Go pclntab function-name recovery: parse the embedded pclntab of a Go
     // binary and name each Go function (`main.main`/`runtime.*` instead of
     // `sub_<addr>`).  The kuna analog of Ghidra's `GolangSymbolAnalyzer`

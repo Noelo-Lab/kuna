@@ -1,5 +1,56 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — structural no-return propagation (option `noreturn_propagate`)
+
+Closes the angr gap `test_decompiling_tee_O2_x2nrealloc::x2nrealloc` (coreutils `tee_O2`,
+x86_64). **Why angr is better:** angr renders `x2nrealloc` cleanly; kuna emits **invalid C**
+— a spurious `while(true)` loop + `goto label_5813` + dead stack-spill artifacts, 38% longer
+(39 vs 24 loc). **Root cause:** `xalloc_die` is structurally no-return (its body
+unconditionally ends in `error(...)` then `abort()`, and kuna already models `abort`
+no-return) but kuna never *propagates* that to `xalloc_die`, so the `call xalloc_die` in
+`x2nrealloc` is assumed to return and the -O2 cold-path bytes after it become a spurious
+fall-through back-edge. (`option noreturn xalloc_die` by hand collapses the output to the
+angr shape — the mechanism is exactly no-return propagation.)
+
+**Mechanism (the angr CFGFast no-return propagation analog).** A new `kuna-analysis`
+Listing-consumer pass `s1_noreturn_propagate::NoReturnPropagatePass` (gate id
+`noreturn_propagate`, default-OFF, requires `option listing on`). It seeds the terminal set
+from the **Known** no-return list and concludes a function no-return when its **last real
+instruction** (last by address, skipping trailing NOP alignment padding) is a `CALL`/tail
+`JMP` to an already-no-return callee, with **no `RETURN` path, no computed jump, and no
+branch escaping the reachable body** — iterated to a fixpoint, with **no evidence threshold**
+(the key difference from `noreturn_disc`, whose ≥3-call-site rule + "valid fall-through after
+the call" predicate both miss `xalloc_die`: one cold call site, and `call abort` is followed
+by valid NOP padding). It emits the existing `NoReturnFact` → the existing
+`set_function_no_return` commit seam → the inherited `flow.rs` artificial-halt path: **no new
+commit arm, no S7 work**. Soundness: with no `RETURN` and the only reachable exit a call/jump
+to an already-no-return function, the function cannot return (strictly more conservative than
+angr's propagation).
+
+**Why a [PROPOSAL] (large) and not a one-pass `kuna_<slug>.rs`:** the no-return flag is
+consumed pre-pipeline during initial flow generation (`s2_lift/flow.rs:1838`,
+`query_call_no_return`, `&self`), so a `kuna_loweredswitch.rs`-style in-pipeline Action runs
+too late; and the mandated firing `tests/stages/*.xml` cannot be authored because the XML
+bytechunk path never runs analysis passes or builds the Listing (exactly why
+`noreturn_known`/`noreturn_disc` have no stages XML test). Approved proposal
+(`docs/features/tee-o2-x2nrealloc-6981e7/proposal.md`).
+
+**Testing (no stages XML — analysis tier):** a vendored differential fixture
+`noreturn_propagate_x86_64` (a custom `my_die()` wrapper called **once** — below
+`noreturn_disc`'s ≥3 threshold — ending in `call abort` + NOP padding) drives the cross-crate
+e2e gate `verify_noreturn_propagate.rs` (3 assertions: propagation eliminates the dead code;
+the *existing* `noreturn_disc` consumer does **not** fix it — the differential; the wrapper
+itself is concluded no-return), plus `kuna-analysis` pass-identity unit tests.
+
+**Ablation / default decision:** the XML datatest path never runs analysis passes, so the
+ablation is structurally 0/675 and `make test` stays **PARITY OK**. Kept **default-OFF
+opt-in** (real-ELF-only flow heuristic, listing-gated), matching `noreturn_disc` — **no DIV
+entry** (output byte-identical by default). Speed: `x2nrealloc` off=154.6 ms / on=151.1 ms
+(−2.21%, within the 5% budget; the pass is one bounded call-graph fixpoint over an already-
+built Listing). The two `KUNA-CATALOG` provenance-count assertions were re-pinned
+(`source_decompiler="angr"` 3→4, `change_kind="structure-recovery"` 2→3) and the catalog
+count tests bumped (37→38 settables); `baseline-stages.json` regenerated.
+
 ## Session (2026-06-25) — Go pclntab function-name recovery (Increment 34)
 
 Ported the **name-recovery half** of Ghidra's `GolangSymbolAnalyzer` (`golang-symbols`,

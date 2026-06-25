@@ -8,11 +8,16 @@
   "scope": "large",
   "proposal": true,
   "option": "noreturn_propagate",
+  "flag": "analysis_noreturn_propagate",
+  "element_id": null,
+  "module": "decompiler/crates/kuna-analysis/src/s1_noreturn_propagate/mod.rs",
   "change_kind": "structure-recovery",
   "source_decompiler": "angr",
-  "inspiration": "test_decompiling_tee_O2_x2nrealloc; angr CFGFast no-return call-graph propagation; x2nrealloc",
+  "inspiration": "test_decompiling_tee_O2_x2nrealloc; angr CFGFast no-return propagation (returning / _iteratively_analyze_function_features); x2nrealloc",
   "root_cause": "xalloc_die is structurally no-return (body unconditionally ends in error(); abort()); kuna knows abort is no-return but does not propagate to xalloc_die, so the call is assumed to return and at -O2 the bytes after it form a spurious fall-through back-edge -> invalid while(true) loop + goto + dead stack spills. Manual 'option noreturn xalloc_die' (after read symbols) collapses output to the angr shape, confirming the mechanism.",
   "owning_stage": "S2 flow classification (noreturn kills fall-through); flag consumed at s2_lift/flow.rs:1838 query_call_no_return, populated pre-decompile by the kuna-analysis tier",
+  "mechanism": "New kuna-analysis Listing-consumer pass (NoReturnPropagatePass, gate id noreturn_propagate): seed the terminal set from the Known no-return list and conclude a function no-return when its last real instruction (skipping trailing NOP alignment padding) is a CALL or tail JMP to an already-no-return callee, with no RETURN path, no computed jump, and no branch escaping the reachable body -- iterated to a fixpoint, with NO evidence threshold (unlike noreturn_disc's >=3 call sites). Emits the existing NoReturnFact -> the existing set_function_no_return commit seam (no new commit arm, no S7 work). Requires option listing on; default-OFF.",
+  "requires": "option listing on",
   "decisions": [
     {
       "question": "Is closing this gap a small (one option-gated pass) or large (proposal) feature?",
@@ -25,9 +30,26 @@
         "recommended_option_name": "noreturn_propagate"
       },
       "justification": "Fails the small contract on two independent hard rules and a soft one: (1) cross-function fixpoint propagation in the analysis tier is a new pass type and the confirmed query_call_no_return seam is &self/pre-S2-flow, making a single kuna_<slug>.rs Action/Rule architecturally impossible; (2) the mandated firing two-pass tests/stages XML cannot be authored because the XML decomp_test_dbg path never runs analysis passes or builds the Listing (which is why the existing noreturn_known/noreturn_disc options have no stages XML test); (3) cross-crate footprint (new kuna-analysis module + registration + option/flag arm in kuna-decomp architecture.rs/options.rs + stages.toml). Feature is correct and broadly general (any no-return wrapper like xalloc_die/verror benefits), so it should go through a [PROPOSAL] draft PR for human go/no-go."
+    },
+    {
+      "question": "How to cover the feature given no firing stages XML is possible at the analysis tier?",
+      "decision": "Cross-crate real-ELF e2e gate (decompiler/crates/kuna-console/tests/verify_noreturn_propagate.rs) over a vendored differential fixture (noreturn_propagate_x86_64: a custom my_die() no-return wrapper called ONCE, below noreturn_disc's >=3 threshold, ending in `call abort` + NOP padding) + kuna-analysis pass-identity unit tests. The fixture's THIRD test asserts the existing noreturn_disc consumer does NOT fix it -- the differential that justifies a new option. baseline-stages.json is unchanged except the two KUNA-CATALOG provenance-count assertions (source_decompiler=angr 3->4, change_kind=structure-recovery 2->3) re-pinned to include the new row."
     }
   ],
+  "tests": [
+    "decompiler/crates/kuna-console/tests/verify_noreturn_propagate.rs (3 e2e assertions over the vendored fixture)",
+    "decompiler/crates/kuna-analysis/src/s1_noreturn_propagate/mod.rs (pass-identity unit tests)"
+  ],
+  "ablation_changed": 0,
   "parity": "OK",
   "default_on": false,
+  "speed_off_ms": 154.55,
+  "speed_on_ms": 151.14,
+  "speed_delta_pct": -2.21,
+  "speed_samples": 5,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_note": "timeit flips only --option noreturn_propagate; with option listing off the pass is inert, so the measured delta (-2.21%, within noise) reflects the default path. The feature's real incremental cost is one bounded call-graph fixpoint over an already-built Listing (itself gated by the default-off `listing` option).",
   "evidence": "docs/features/tee-o2-x2nrealloc-6981e7/angr-vs-kuna.txt"
 }
