@@ -571,7 +571,7 @@ mod tests {
 
         // (1) Detection: a real Go ELF must detect as `Compiler::Go`
         // (`.go.buildinfo` / `.note.go.buildid`).
-        assert_eq!(detect_compiler(&file), Compiler::Go, "go binary must detect as Go");
+        assert_eq!(detect_compiler(&file, &bytes), Compiler::Go, "go binary must detect as Go");
 
         // (2) Matching under the Go arm: `runtime.gopanic` (a defined FUNC in
         // `.symtab`) is flagged no-return, carrying its real code address.
