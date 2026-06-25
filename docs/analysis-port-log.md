@@ -2700,6 +2700,102 @@ admitted).
   tests/verify_*.rs}` + `kuna-analysis/src/{pass.rs, listing/decode.rs}` +
   `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
 
+### Increment 37 — Multi-format loader PR-3+4: PE linked-exe loading + IAT import naming (the PE headline)
+
+**Premise.** PR-2 (Increment 36) proved PE/Mach-O *objects* parse + map + select
+the right spec behind `--experimental-formats`, with imports empty. This is the
+**PE headline** (PR-3 ∪ PR-4): a **linked Windows PE32+** exe loads and decompiles
+a function, and its libc imports render **named** (`puts`/`printf`) — the first
+non-ELF binary kuna names imports on. PR-3 (loader proof) needed no new loadimage
+fix — `object` surfaces the PE ImageBase+RVA transparently, so the linked exe
+loads through the same `bootstrap_from_object` path the PE object did; PR-4 (IAT
+naming) is the real new logic, in a new `s1_loader/pe_iat.rs`.
+
+**The IAT walk (`s1_loader/pe_iat.rs`, design §3.2).** `PeFormat::resolve_imports`
+(was empty) now calls `resolve_pe_imports(file, bytes)`. It branches on
+`FileKind::Pe32`/`Pe64` to re-parse with the typed `PeFile32`/`PeFile64` (the
+neutral `object::File::imports()` gives name+library but **no slot address** — the
+typed parser is required, design §3.2 risk row), then walks the Import Directory
+pairing the INT (`original_first_thunk`, the names) and IAT (`first_thunk`, the
+slot table) **in lockstep**: the `i`-th name belongs to the slot at
+`image_base + first_thunk_rva + i*ptr` (`ptr`=8 for PE32+, 4 for PE32). Each slot
+→ `ImportSym { addr: slot_va, name }` — exactly the ELF GOT-slot analog, so the
+engine constant-folds a `call [slot]` to the name (arch-independent, no per-arch
+stub decode). `Import::Ordinal(n)` synthesizes `<DLL-stem>_Ordinal_<n>` (§3.5).
+`file.exports()` are registered additively as funcsyms. Pure/total/never-error:
+non-PE / no-import-dir / unparsable → empty `Vec`.
+
+**The MinGW thunk wrinkle (the load-bearing PR-4 piece).** MinGW routes a *direct*
+`call thunk` to a one-instruction veneer `jmp [rip+disp]` (`FF 25 <disp32>`) that
+jumps through the IAT slot — so naming only the slot leaves `call thunk` rendering
+`sub_<thunk>`. `pe_iat` therefore *also* decodes the `FF 25` veneers over the
+executable sections and names the **thunk entry** with its target slot's import
+name. The decode is the same `FF 25` recovery as the ELF x86-64 PLT
+(`elf_plt::decode_x86_64`): x64 RIP-relative (`slot = next_insn + disp32`) / x86
+absolute (`slot = disp32`), self-correcting (a veneer whose target isn't a known
+import is left alone). x86-only (the opcode is x86); other arches no-op the thunk
+pass (the IAT-slot naming still covers their indirect calls).
+
+**Fixtures (MinGW, in-container — `x86_64-w64-mingw32-gcc` shipped by `kuna-dev`).**
+`pe_imports.c` = a `main` that calls `puts("hello")` + `printf("%d\n", argc)`.
+- `pe_imports.exe` (non-stripped, `-O1`) — the headline. ImageBase `0x140000000`,
+  `main`@`0x140001592`, the `puts` thunk@`0x140007240` (`FF 25` → `__imp_puts`
+  IAT slot@`0x14000d33c`), the local MinGW `printf` wrapper@`0x140001550`.
+- `pe_imports_stripped.exe` (`-s`) — the PR-4 proof: symbols gone, so the call to
+  the `puts` thunk is named **only** by the IAT walk + thunk decode.
+
+**Before → after** (the headline; `kuna decompile … --experimental-formats`):
+On the **stripped** PE (the clean PR-4 delta — `main` at `0x140001592 --addr`):
+```c
+// BEFORE (resolve_imports empty)        // AFTER (PR-4 IAT/thunk naming)
+sub_140007240(0x140009000);              puts(0x140009000);
+sub_140001550(0x140009006,a0);           sub_140001550(0x140009006,a0);  // local printf wrapper, not an import — correctly unnamed
+```
+On the **non-stripped** `pe_imports.exe` (`main` by name) the call renders
+`puts(0x140009000)` / `printf(0x140009006,a0)` — here the COFF symtab already
+names the thunk/wrapper, and PR-4 is additive (it covers the IAT-slot path a
+`call [slot]` form would take). `main` calls `puts` **via the `0x140007240` thunk**
+(a direct `call thunk`), named by the `FF 25` veneer decode → `__imp_puts` slot
+→ `puts`; `printf` is a *local* MinGW wrapper (named from the symtab, not an
+import).
+
+**Decompile speed.** `pe_imports.exe main`: **~0.12–0.25 s** wall (`time kuna
+decompile`, end-to-end incl. the `decomp_dbg` subprocess spawn); the stripped
+`main` by addr is the same range. On par with the ELF baseline (`fauxware main`,
+~0.15 s on the same box) — both are dominated by process startup + the tiny
+function's decompile, and the timings overlap inside the measurement noise. PE
+loading is **not** materially slower than ELF: the IAT walk is a single
+Import-Directory scan + one `FF 25` sweep over `.text` (O(imports + text bytes),
+once at load).
+
+**Tests (the e2e RAN, not skipped — the `x86` `.sla` is built).**
+- **`pe_iat` unit tests** (synthetic, mirroring `elf_plt.rs`'s decoder tests, 4):
+  the `FF 25` thunk decode both widths (x64 RIP-relative + x86 absolute), an
+  unknown-slot veneer left alone, and the ordinal-name synthesis
+  (`ws2_32.dll`+115 → `ws2_32_Ordinal_115`).
+- **e2e** (`kuna-console/tests/verify_pe_imports.rs`, 2): (1) the non-stripped
+  linked exe loads (Windows x86-64 spec), resolves `main`/`puts`, and decompiles
+  `main` to `puts(`/`printf(`; (2) the stripped exe names the `puts` thunk via the
+  IAT walk (renders `puts(`, not `sub_140007240`) while leaving the local `printf`
+  wrapper `sub_<addr>`. Test 1 also proves the **default-off** path (PE rejected
+  without the flag). A `Mutex` serializes the two tests' env-var-sensitive bodies
+  (`KUNA_EXPERIMENTAL_FORMATS` is process-global).
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159 PARITY
+OK**; `make rust-test` green (incl. the 4 unit + 2 e2e). Default-off ⇒ ELF
+byte-identical (the PE path is unreachable without `--experimental-formats`; the
+ELF/XML oracles never reach the object loader — Invariant 1). **After this, PR-5
+(COFF) and the on-by-default flip for PE are the remaining PE-arm work.**
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is
+  flag-gated; the XML datatest path never reaches the object loader).
+- **New:** `kuna-analysis/src/s1_loader/pe_iat.rs`,
+  `kuna-console/tests/verify_pe_imports.rs`,
+  `kuna-analysis/tests/fixtures/{pe_imports.exe, pe_imports_stripped.exe}` (+ the
+  `pe_imports.c` source recorded in the fixtures README).
+- **Changed:** `kuna-analysis/src/s1_loader/{mod.rs, format/pe.rs}`,
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
 ### Increment 34 — Go pclntab function-name recovery (GolangSymbolAnalyzer)
 
 The kuna analog of Ghidra's `GolangSymbolAnalyzer` (the **name-recovery** half).
