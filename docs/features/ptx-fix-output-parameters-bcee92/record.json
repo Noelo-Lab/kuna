@@ -1,0 +1,23 @@
+{
+  "opportunity": "test_decompiling_ptx_fix_output_parameters::fix_output_parameters",
+  "test_name": "test_decompiling_ptx_fix_output_parameters",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/ptx.o",
+  "selector": "fix_output_parameters",
+  "func_addr": "0x400660",
+  "angr_version": "9.2.213",
+  "option": "elf-reloc-objects",
+  "scope": "large",
+  "proposal": true,
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_ptx_fix_output_parameters; CLE ELF relocatable backend; fix_output_parameters",
+  "root_cause": "kuna-analysis loadimage_object.rs builds its memory map only from PT_LOAD segments; ET_REL .o files have no program headers, so the map is empty and every function fails with 'Unable to load N bytes'.",
+  "decisions": [
+    {
+      "question": "Is closing this gap a small single option-gated decompiler Action/Rule, or a large loader-infrastructure feature?",
+      "decider": "general-purpose (opus)",
+      "verdict": "large",
+      "justification": "The gap lives entirely in the kuna-analysis loader tier (loadimage_object.rs), upstream of the kuna-decomp S1-S9 pass pipeline; it is structurally not an Action/Rule and cannot be gated like kuna_loweredswitch.rs. Reaching angr parity needs three pieces of new loader infrastructure: (1) lay out SHF_ALLOC sections at synthetic non-overlapping addresses to replace the empty PT_LOAD-derived map, (2) parse and apply .rela.* relocations, (3) rebase/bind local+global symbols. Skipping any (e.g. mapping sections but not relocating) yields degenerate output where every call/global-ref targets 0. This is new infrastructure + structural edits to a ported-core loader file beyond a single gated early-return, satisfying Hard rule 7 LARGE on multiple counts; route through a [PROPOSAL] draft PR."
+    }
+  ]
+}
