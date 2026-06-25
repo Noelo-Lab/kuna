@@ -184,6 +184,18 @@ fn decompile(args: &DecompileArgs) -> Result<(String, Option<String>), String> {
             // Admit PE/Mach-O/COFF on the subprocess's `load file` dispatch.
             cmd.env("KUNA_EXPERIMENTAL_FORMATS", "1");
         }
+        // (kuna) Loader-tier `i386_pie_plt` gate: the PLT→name map is baked at
+        // `load file`, *before* the `option` lines in the script run, so an
+        // `--option i386_pie_plt off` must reach the loader via the env var
+        // (`kuna_i386_pie_plt::I386_PIE_PLT_ENV`) set on the subprocess up front.
+        // (The harmless `option i386_pie_plt …` line still runs for the catalog
+        // confirmation; it just can't retro-resolve the already-loaded image.)
+        for (name, value) in &args.options {
+            if name == "i386_pie_plt" {
+                let on = !matches!(value.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false");
+                cmd.env("KUNA_I386_PIE_PLT", if on { "on" } else { "off" });
+            }
+        }
         let output = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
