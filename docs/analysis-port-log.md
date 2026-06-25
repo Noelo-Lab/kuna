@@ -2796,6 +2796,104 @@ ELF/XML oracles never reach the object loader — Invariant 1). **After this, PR
 - **Changed:** `kuna-analysis/src/s1_loader/{mod.rs, format/pe.rs}`,
   `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
 
+### Increment 38 — Multi-format loader PR-5: COFF object support
+
+**Premise.** PR-3+4 (Increment 37) delivered the PE *image* headline (a linked PE32+
+loads + names IAT imports). PR-5 closes the PE arm with the **object** case: a
+pre-link **COFF object** (`.obj`) loads under `--experimental-formats` and
+decompiles a function **resolved by its COFF-symbol-table name**. A COFF object has
+**no IAT and no resolved imports** — externals are unresolved *symbols*, not
+addresses — so the value here is the COFF symtab (defined function names) + the
+format-agnostic passes (strings / demangle / no-return-name / protos) riding a COFF
+object, **not** import naming.
+
+**Object vs image (design §3.6, documented in the `CoffFormat` module doc).**
+`object` reports two things as `BinaryFormat::Coff`: a pre-link **object**
+(`.obj`/`.o`, the common case and what `CoffFormat` is for) and, rarely, a
+COFF-flavored **image**. A *normal* linked PE reports as `BinaryFormat::Pe` and
+routes through the PE arm (`PeFormat`, the IAT-naming path) — never reaching
+`CoffFormat`. `CoffFormat::resolve_imports` returns **empty** by design (the PR-2
+skeleton, now finalized): a pre-link object has nothing to resolve imports *to*, so
+the undefined external (a `puts` symbol) is simply absent from the funcsym set.
+Section flags reuse the PE arm (`pe::coff_section_bits` — PE and COFF share the
+COFF `Characteristics` model); `compiler_model` → `windows` (COFF objects are
+MSVC-flavored), with the `compose_language_id` fallback to `gcc`/`default` if an
+arch lacks a `windows` id.
+
+**The one real code change — the defined-function-at-VMA-0 fix.** A relocatable
+`.obj` places its first defined function at section-relative VMA 0
+(`compute @ .text+0`). The defined-funcsym source in `loadimage_object.rs` (source
+#1) used to skip import placeholders on `addr == 0` (the ELF UND convention,
+`st_value == 0`) — which would **silently drop** `compute`. The skip now keys off
+`Symbol::is_undefined()` instead: the format-faithful predicate that still drops the
+undefined `puts` external while keeping a legitimately-defined COFF function at VMA
+0. **Byte-identical on every ELF** — verified against the `object`-crate view of
+`fauxware` (all UND import syms `puts@@GLIBC`/`printf@@GLIBC`/… are exactly the
+`is_undefined()` ones, every defined function is `is_undefined()==false`) and the
+relocatable-ELF object `arm_thumb_le32.o` (first function at `0x1`, not 0). Applied
+to the `.dynsym` source (#3) too for consistency (no behavioral effect — COFF has no
+dynamic symbols, and ELF dynsym UND entries are `is_undefined()`). The 13
+`loadimage_object` ELF funcsym units pass unchanged.
+
+**Fixture (`coff_obj.obj`, Intel amd64 COFF, <1 KB — `clang` in `kuna-dev`, no new
+packages).** `clang -target x86_64-pc-windows-gnu -O1 -c coff_obj.c`. `coff_obj.c`
+= `int compute(int x){ return x*3+1; }` / `int run(int n){ const char *s="hi";
+puts(s); return compute(n)+(int)s[0]; }`. Confirmed via container
+`x86_64-w64-mingw32-objdump -t`/`-d`: COFF symtab carries `compute`@`.text`+0x0
+(`lea (rcx,rcx,2),eax; add 1` = `x*3+1`, Windows x64 first arg in rcx), `run`@+0x10,
+`puts` an **undefined** external (section 0, an `IMAGE_REL_AMD64_REL32` `puts`
+reloc on the `call`), and the `"hi"` literal in `.rdata` (size 3, the string pass's
+input).
+
+**Before → after** (`kuna decompile coff_obj.obj compute --experimental-formats`):
+```c
+// BEFORE (PR-2/PR-5 absent)              // AFTER (this PR)
+.obj → "not an ELF object" (rejected)     int4 compute(int4 a0) { return a0 * 3 + 1; }
+```
+The `.obj` was rejected (without the flag it still routes to the XML branch, which
+cannot parse it — the default-off proof). After PR-5 it loads with the Windows
+x86-64 spec, and `compute`/`run` resolve **by COFF-symtab name** and decompile
+(`run` → `a0 * 3 + 0x69`; the `puts(s)` external call has no resolved address/proto
+so the unresolved-side const-folds, faithful for a pre-link object).
+
+**Decompile speed.** `coff_obj.obj compute` (by name): **~0.15–0.16 s** wall
+(`/usr/bin/time kuna decompile`, end-to-end incl. the `decomp_dbg` subprocess spawn,
+3-run median 0.16 s, 51 MB RSS). On par with the ELF baseline (`fauxware main`,
+~0.15 s) and the PE headline (Increment 37, ~0.12–0.25 s) — dominated by process
+startup + spec load + the tiny function's decompile; COFF-object load is a single
+section/symbol snapshot (no IAT walk), so it adds nothing over ELF.
+
+**Tests (the e2e RAN, not skipped — the `x86` `.sla` is built).**
+- **e2e** (`kuna-console/tests/verify_coff_object.rs`, 2 tests): (1) the COFF object
+  loads (Windows x86-64 spec), `compute`/`run` resolve as funcsyms, the **undefined
+  `puts` does NOT** (no IAT, §3.6), and `load function compute` → `print C`
+  decompiles `compute` named to `* 3 + 1`; (1) also proves the **default-off** path
+  (the `.obj` rejected without `--experimental-formats`). (2) the second defined
+  function `run` also resolves by name + decompiles (the §4 symbol-source table
+  carries *every* defined function, not just the first). A `Mutex` serializes the
+  two tests' `KUNA_EXPERIMENTAL_FORMATS`-sensitive bodies (process-global env).
+- The existing `verify_object_formats.rs` (PR-2) already covers `pe_min.obj`
+  parse/map/disassemble; this gate adds the **named-function-by-symtab** half PR-5
+  is about.
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159 PARITY
+OK**; `make rust-test` green (incl. the new 2-test e2e). Default-off ⇒ ELF
+byte-identical (the COFF path is unreachable without `--experimental-formats`; the
+XML datatest path never reaches the object loader — Invariant 1; the
+`is_undefined()` funcsym change is byte-identical on every ELF). **This completes
+the PE arm of the multi-format loader (PE image + PE/COFF object); Mach-O is the
+remaining format.**
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is flag-gated;
+  the XML datatest path never reaches the object loader; the funcsym predicate
+  change is ELF-byte-identical).
+- **New:** `kuna-console/tests/verify_coff_object.rs`,
+  `kuna-analysis/tests/fixtures/coff_obj.obj` (+ the `coff_obj.c` source recorded in
+  the fixtures README).
+- **Changed:** `kuna-analysis/src/loadimage_object.rs` (the `is_undefined()`
+  funcsym skip), `kuna-analysis/src/s1_loader/format/coff.rs` (module doc finalized),
+  `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
 ### Increment 34 — Go pclntab function-name recovery (GolangSymbolAnalyzer)
 
 The kuna analog of Ghidra's `GolangSymbolAnalyzer` (the **name-recovery** half).

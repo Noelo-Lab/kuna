@@ -248,17 +248,27 @@ impl ObjectLoadImage {
         let mut funcsyms: Vec<FuncSym> = Vec::new();
         let mut seen: HashSet<u64> = HashSet::new();
 
-        // 1. `.symtab` defined functions.  Skip UND import entries (`st_value == 0`,
-        //    e.g. `puts@@GLIBC_2.2.5`), which are not real code addresses, and
-        //    strip any `@VERSION` suffix.
+        // 1. `.symtab` defined functions.  Skip *undefined* (import-placeholder)
+        //    entries — e.g. the ELF UND `puts@@GLIBC_2.2.5` (`st_value == 0`),
+        //    whose real address comes from the §3 import resolver, not the symbol
+        //    table — and strip any `@VERSION` suffix.
+        //
+        //    The skip keys off `is_undefined()`, *not* `addr == 0`: a relocatable
+        //    COFF object (PR-5) places its first defined function at section-
+        //    relative VMA 0 (`compute @ .text+0`), so an `addr == 0` skip would
+        //    silently drop it.  `is_undefined()` is the format-faithful predicate —
+        //    for every ELF the two agree (UND syms are exactly the `addr == 0`
+        //    ones, and no defined ELF/relocatable-ELF symbol sits at VMA 0), so
+        //    this is behavior-identical on the ELF arm and additionally admits a
+        //    COFF object's defined-at-0 function (design §3.6 object-vs-image).
         for sym in file.symbols() {
             if sym.kind() != SymbolKind::Text {
                 continue;
             }
-            let addr = sym.address();
-            if addr == 0 {
-                continue; // UND / absolute import stub, not a code address
+            if sym.is_undefined() {
+                continue; // UND / import placeholder, not a real code address
             }
+            let addr = sym.address();
             let name = match sym.name_bytes() {
                 Ok(n) if !n.is_empty() => crate::s1_loader::elf_plt::strip_version(n),
                 _ => continue, // a->name != (const char *)0
@@ -289,10 +299,10 @@ impl ObjectLoadImage {
             if sym.kind() != SymbolKind::Text {
                 continue;
             }
-            let addr = sym.address();
-            if addr == 0 {
-                continue;
+            if sym.is_undefined() {
+                continue; // UND import placeholder (mirrors source #1)
             }
+            let addr = sym.address();
             let name = match sym.name_bytes() {
                 Ok(n) if !n.is_empty() => crate::s1_loader::elf_plt::strip_version(n),
                 _ => continue,

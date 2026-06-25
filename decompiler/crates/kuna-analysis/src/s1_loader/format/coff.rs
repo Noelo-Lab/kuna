@@ -1,23 +1,43 @@
 //! The COFF [`ObjectFormat`] — the relocatable-object arm of the loader seam
-//! (PR-2 skeleton).
+//! (PR-5; the PR-2 skeleton, now exercised end-to-end by `coff_obj.obj`).
 //!
-//! ## COFF object vs COFF image
+//! ## COFF object vs COFF image (design §3.6)
 //!
-//! `object` reports two things as [`object::BinaryFormat::Coff`]: a **COFF
-//! object** (a pre-link `.obj`/`.o`) and, historically, a COFF-flavored image.
-//! A *linked* PE reports as `BinaryFormat::Pe` and routes through
-//! [`crate::s1_loader::format::pe::PeFormat`]. So [`CoffFormat`] is specifically
-//! the **object-file** case: pre-link, no IAT, externals are unresolved
-//! *symbols* (in the COFF symbol table), not addresses. Its value is symbols +
-//! strings + (rarely) DWARF, not import naming — so [`CoffFormat::resolve_imports`]
-//! returns empty by design (design §3.6).
+//! `object` reports two things as [`object::BinaryFormat::Coff`]:
+//!
+//! - a **COFF object** — a pre-link `.obj`/`.o` (the common case, and what
+//!   [`CoffFormat`] is for): sections sit at section-relative VMAs, there is no
+//!   IAT and no resolved imports, and externals are unresolved *symbols* in the
+//!   COFF symbol table, not addresses;
+//! - a **COFF image** — a linked binary `object` happens to classify as
+//!   COFF-flavored (rare). A *normal* linked PE reports as
+//!   [`object::BinaryFormat::Pe`] and routes through
+//!   [`crate::s1_loader::format::pe::PeFormat`] (the IAT-naming arm), so it never
+//!   reaches here.
+//!
+//! So [`CoffFormat`]'s value is the COFF symbol table (defined function names) +
+//! the format-agnostic passes (strings / demangle / no-return-name / protos)
+//! riding a COFF object — **not** import naming. A pre-link object has nothing to
+//! resolve imports *to*, so [`CoffFormat::resolve_imports`] returns empty by
+//! design (design §3.6); the unresolved external (e.g. a `puts` symbol) is simply
+//! absent from the funcsym set.
+//!
+//! ## Defined-function-at-VMA-0
+//!
+//! A relocatable `.obj` places its first defined function at section-relative
+//! VMA 0 (`compute @ .text+0`). The defined-funcsym source in
+//! [`crate::loadimage_object`] therefore skips import placeholders on
+//! `is_undefined()` rather than `addr == 0` — the format-faithful predicate that
+//! still drops the undefined external while keeping a legitimately-defined COFF
+//! function that happens to live at VMA 0 (behavior-identical on every ELF, where
+//! the two predicates coincide).
 //!
 //! Section flags are identical to PE (both key off the COFF `Characteristics`
 //! field), so this impl reuses [`crate::s1_loader::format::pe::coff_section_bits`].
 //!
 //! All non-ELF magics (COFF's `IMAGE_FILE_MACHINE_*` prefix included) are gated
 //! behind `--experimental-formats` at the engine dispatch, so this code is
-//! unreachable on the default path.
+//! unreachable on the default path and the ELF/XML oracles are untouched.
 
 use object::{Architecture, SectionFlags, SectionKind};
 
