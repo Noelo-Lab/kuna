@@ -1596,6 +1596,23 @@ inspiration = "angr LoweredSwitchSimplifier (angr/analyses/decompiler/optimizati
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "foldcallret"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S6"
+substage = "explicit-marking"
+rewind = "S6"
+strength = "HINT"
+issue = "angr-call-return-variable-folding"
+summary = "Fold an order-safe single-use call return value into its use site, inlining the call expression instead of spilling it to a named temporary (e.g. `if (timespec_cmp(...) <= -1)` instead of `v5 = timespec_cmp(); if (v5 <= -1)`)."
+use_when = "Set on to match angr's call-return folding when kuna spills a call result to a `vN = call(); use(vN)` pair that is used exactly once. Off (default) is upstream byte-identical (Ghidra forces every call output explicit). Only folds when the single use is in the same block with no intervening call/load/store, so the call's evaluation order is preserved."
+example = "option foldcallret on"
+source_decompiler = "angr"
+inspiration = "test_call_return_variable_folding; angr call-return variable folding (expression folding in angr/analyses/decompiler); print_long_format"
+change_kind = "presentation-default"
+
+[[settable]]
 option = "stackguard"
 values = "on|off"
 default = "off"
