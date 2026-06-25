@@ -284,6 +284,10 @@ pub struct Architecture {
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
+    /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
+    /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
+    /// flowing into the callee (`option tailcalljump`, default off).
+    pub tail_call_jumps: bool,
     /// (kuna GH-6882) Let a SPARC struct-return post-call `unimp` fall through
     /// (C++ `sparc_struct_return`).
     pub sparc_struct_return: bool,
@@ -621,6 +625,7 @@ impl Architecture {
             memset_recover: false,
             add_carry_chain: false,
             v850_indirect_branch: false,
+            tail_call_jumps: false,
             sparc_struct_return: false,
             ov_less_simplify: false,
             fold_boolean_mask: false,
@@ -714,6 +719,7 @@ impl Architecture {
         self.return_single = false; // (kuna) default: upstream (join register pairs)
         self.memset_recover = true; // (kuna) DIV-2 default-on (GH-9230/1537)
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
+        self.tail_call_jumps = false; // (kuna) default-OFF opt-in: default-on regresses 2 datatests (Long double #1/#2); tee-O2 tail-jumps
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
@@ -822,6 +828,7 @@ impl Architecture {
             "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
             "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
             "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
+            "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
             "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
             "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
             "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),

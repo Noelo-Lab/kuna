@@ -1,5 +1,62 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — tee-o2-tail-jumps (option tailcalljump)
+
+angr testcase `test_decompiling_tee_O2_tail_jumps` :: `setlocale_null_androidfix`
+(`binaries/tests/x86_64/decompiler/tee_O2`, x86-64 PIE, `-O2`).
+
+- **Why angr was better:** at `-O2` a leaf function whose last act is "call X; return" is
+  compiled to a direct **tail jump** (`jmp X` instead of `call X; ret`); when X is an external
+  symbol it targets the PLT thunk (`xor %esi,%esi; jmp setlocale@plt`). angr renders
+  `return setlocale(v1, NULL)`. kuna's flow follower (whole address space in-bounds) treated the
+  direct `jmp setlocale@plt` as ordinary intraprocedural flow and followed it INTO the PLT thunk;
+  the thunk's `jmp qword [GOT]` then failed jump-table recovery and became a `CALLIND` through the
+  GOT pointer + a `"Treating indirect jump as call"` warning — so kuna emitted
+  `void f(...){ /* WARNING: Treating indirect jump as call */ (*dat_209f68)(a0,0); return; }`
+  (the thunk got inlined instead of the `jmp` being recognized as a tail call).
+- **Mechanism:** new S2 flow-classification predicate `kuna_is_tail_call_branch`
+  (`kuna_tailcalljump.rs`, ELEM 4100), modeled on `kuna_v850indbranch`. In
+  `FlowInfo::xref_control_flow`'s `CPUI_BRANCH` arm, when the option is on and a direct branch's
+  target is the entry of another known function (`query_call(dest).is_some()`, incl. PLT thunks)
+  and not the function's own entry, the `BRANCH` is rewritten to a `CPUI_CALL` + an artificial
+  `RETURN` (the `truncate_indirect_jump` halt-insert idiom + the `CPUI_CALL`-arm cursor re-derive),
+  instead of flowing into the callee. Result with the option on: `setlocale(a0,0); return;` — the
+  callee resolves by name and the spurious warning/`(*dat_...)` indirect call are gone. (The
+  remaining `void`/`return;` vs angr's `return setlocale(...)` is an S4 return-value-recovery
+  concern — the OFF path is *also* void, so it is inherent to kuna's wrapper-return recovery, not
+  introduced or fixable by this S2 change.)
+- **Ablation:** default-OFF is byte-identical (675/675 PARITY OK). Default-ON regresses **2**
+  upstream datatests (`Long double #1/#2`), so the feature ships **default-OFF opt-in** (no DIV
+  entry). Speed: off 259.0 ms / on 264.9 ms (+2.26%, within the 5% budget).
+- **On/off default decision:** default-OFF opt-in (ablation not clean if default-on).
+
+### Reviewer follow-up (2026-06-25) — add logger; default stays OFF (ablation not clean)
+
+Per PR #59 reviewer ("this feature should be on by default, but still have a logger saying
+that it ran and introduced a new call here"):
+
+- **Added the logger.** When the pass rewrites a tail `jmp <func>` into a `CALL`, it now emits a
+  `Funcdata::warning` at the branch site — `tailcalljump: recovered tail call -> introduced call
+  to <dest>`, rendered as a `/* WARNING: ... */` comment. This satisfies the
+  output-changing-feature logging contract: the *new* call is attributable in the output. New
+  stage-test assertion #4 asserts the WARNING.
+- **Re-attempted DEFAULT-ON on the merged tree, but it is NOT parity-safe.** Flipping
+  `tail_call_jumps` default-true in `Architecture::reset_defaults_internal` regresses **2** of the
+  675 upstream datatest assertions (`Long double #1` / `Long double #2`) — exactly as the original
+  PR's ablation predicted. Per the standing rule (NEVER modify `docs/baseline.json`; if default-on
+  changes any datatest assertion it must stay default-off), the feature **remains default-OFF
+  opt-in** (`option tailcalljump on`). No DIV entry. The logger ships regardless of the default
+  (it only fires when the option is on).
+- **ElementId 4100 → 4101.** On merge with `main`, `gotoreduce` had taken ElementId 4100; the
+  collision is resolved by renumbering `tailcalljump` to **4101**.
+- **Gates (merged tree, default-off + logger):** `make test` PARITY OK 675/675; `make test-stages`
+  PARITY OK 175/175 (incl. the new WARNING assertion #4); `make rust-test` green (catalog
+  byte-compat fixture + the `stages.toml` count tests bumped 91→92 surfaces / 45→46 settables /
+  21→22 live-readers, and the xml-corpus file-count 137→138); `kuna catalog --check` OK. Speed
+  (`tee_O2::setlocale_null_androidfix`, end-to-end median of 9): off ≈ on (within noise, well under
+  the 5% budget). With the option on, the function now renders `setlocale(a0,0)` + a
+  `/* WARNING: tailcalljump: recovered tail call -> introduced call to 0x... */` comment.
+
 ## Session (2026-06-25) — missing-function-call (option `switchguardbound`)
 
 angr `test_decompiling_missing_function_call` (binary `adams`, `main`, x86-64 GCC PIE).

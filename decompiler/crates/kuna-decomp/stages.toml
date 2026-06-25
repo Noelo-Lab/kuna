@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=91, settable=45
-# (27 stage-model knobs + 15 analysis-tier gates + 3 loader-tier capabilities).
+# Counts (asserted in tests): group=39, substage=40, surface=93, settable=47
+# (29 stage-model knobs + 15 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -910,6 +910,12 @@ substage = "flow-classification"
 note = "(kuna GH-8817) reclassify V850 jmp [reg] CALLIND -> BRANCHIND for switch recovery"
 
 [[surface]]
+surface = "option tailcalljump"
+stage = "S2"
+substage = "flow-classification"
+note = "(kuna tee-O2 tail-jumps) recover a direct jmp to another function's entry (e.g. jmp setlocale@plt) as a tail call (CALL + RETURN) instead of inlining the callee"
+
+[[surface]]
 surface = "option sparcstructret"
 stage = "S2"
 substage = "flow-classification"
@@ -1407,6 +1413,26 @@ source_decompiler = "ghidra-upstream"
 inspiration = "Ghidra GH-8817 (V850 jmp[reg] flow classification)"
 change_kind = "opt-in-tool"
 live_field = "v850_indirect_branch"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "tailcalljump"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S2"
+substage = "flow-classification"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-tee-O2-tail-jumps"
+summary = "Recover an -O2 tail jump (a direct `jmp` to another function's entry, e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) so the callee resolves by name and its return value flows out, instead of flowing into the callee (which inlines a PLT thunk and mis-renders it as a `(*dat_...)(...)` indirect call with a 'Treating indirect jump as call' warning). When it fires it logs a `tailcalljump: recovered tail call` warning at the branch site so the introduced call is observable."
+use_when = "Flip on when a leaf function ends in `jmp <func>@plt` and kuna emits `(*dat_...)(...)` + a 'Treating indirect jump as call' marker instead of `func(...)`. On = the named call plus a `tailcalljump: recovered tail call` WARNING. Off (default) is default-pipeline byte-identical; kept opt-in because default-on regresses 2 datatests (Long double #1/#2)."
+example = "option tailcalljump on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_tee_O2_tail_jumps; angr tail-call handling (direct jmp to a function/PLT thunk); setlocale_null_androidfix"
+change_kind = "structure-recovery"
+live_field = "tail_call_jumps"
 live_true = "on"
 live_false = "off"
 
