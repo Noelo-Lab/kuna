@@ -274,3 +274,48 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   negligible vs decompilation; the target's measured on-decompile wall-time is within budget
   (and faster than the off/error path).
 - **Date**: 2026-06-25.
+
+---
+
+## DIV-9: i386-PIE PLT imports are named (and `exit` flagged no-return) by default
+
+- **Flip**: `i386_pie_plt` → **on** (loader-tier gate; `option i386_pie_plt off` restores the
+  pre-fix rendering where i386-PIE GOT-relative PLT stubs stay `sub_<addr>`). Closes angr
+  `test_decompiling_nl_i386_pie::usage`. Unlike DIV-4/5/6 this **is a correctness fix** (the
+  i386-PIE analog of the already-unconditional x86-64/aarch64 PLT decoders), recorded here
+  because it changes default output for an entire binary class (every i386 PIE ELF).
+- **Problem**: `kuna-analysis::s1_loader::elf_plt::decode_i386` decoded only the non-PIC
+  `FF 25 <abs32>` (`jmp *abs32`) stub form and skipped the PIE `FF A3 <disp32>`
+  (`jmp *disp32(%ebx)`, GOT-relative) form. So **no** i386-PIE dynamic import was named, and
+  in particular `exit@plt` was never resolved → never flagged no-return by `NoReturnKnownPass`
+  → its `call exit` was assumed to fall through, manufacturing a bogus back-edge → a spurious
+  `do{}while(true)` + `goto` + an unresolvable stack-pointer MULTIEQUAL cycle (`// esp`
+  un-unified locals, explicit frame stores, dropped call args, a recovery-failure marker).
+- **Mechanism**: `decode_i386` now also matches `FF A3 <disp32>` and computes
+  `slot = GOT_base + sign(disp32)`, where `GOT_base` is the `_GLOBAL_OFFSET_TABLE_` symbol
+  value (fallback `.got.plt`/`.got` section base) — the value the PIC prologue
+  (`call __x86.get_pc_thunk.bx; add $_,%ebx`) loads into `%ebx`. The decoded slot is matched
+  against the dynamic-reloc GOT-name map exactly as the `FF 25` arm does (an unmatched target
+  is simply not recorded), so the resolver/IRELATIVE slots fall out automatically. The non-PIC
+  `FF 25` arm is untouched (non-PIE i386 stays byte-identical). The whole downstream cascade
+  (import naming → `exit` no-return → loop collapse → stack recovery) is pre-existing machinery
+  that merely lacked the stub→name mapping.
+- **Why a flag at all** (the sibling x86-64/aarch64 decoders ship unconditionally): the
+  standing "output-changing ⇒ `--option`-flaggable" requirement. The gate is **default-on**
+  (loader fidelity); `option i386_pie_plt off` is the escape hatch / before-image. Because the
+  PLT→name map is baked at `load file` (upstream of every per-function `option`), the loader
+  reads the gate through the `KUNA_I386_PIE_PLT` env var (`kuna_decomp::kuna_i386_pie_plt`),
+  which the `kuna` CLI sets on the `decomp_dbg` subprocess; the `Architecture`
+  `analysis_i386_pie_plt` bool exists only for catalog visibility.
+- **Changed upstream assertions: 0 of 675** (`make test` stays PARITY OK without regeneration):
+  the XML datatest corpus uses `<binaryimage>` bytechunks that never reach the ELF loader /
+  `resolve_plt_imports`, and contains no i386-PIE binary. Speed: the collapsed spurious loop
+  makes the target **faster** (`usage`: 130 ms on vs 422 ms off, −69%).
+- **Testcase**: the `tests/stages/*.xml` bytechunk harness cannot carry `.rel.plt`/`.dynsym`/GOT
+  structure, so this is gated by a cargo integration test instead —
+  `kuna-console/tests/verify_i386_pie_plt.rs` (drives `bootstrap_from_object` over a vendored
+  i386-PIE `nl` ELF → `load function usage` → `print C`, asserting the named libc calls and the
+  absence of the spurious `do{}while(true)`/`goto`/`sub_<addr>`), plus the decoder unit test
+  `elf_plt.rs::tests::i386_pie_plt_decode`. The catalog byte-compat fixture was regenerated to
+  carry the new 41st settable.
+- **Date**: 2026-06-25.

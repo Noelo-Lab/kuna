@@ -278,6 +278,10 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "entry_disc",
     "arm_markers",
     "mips_gp",
+    // (kuna) i386-PIE PLT-stub decode (angr test_decompiling_nl_i386_pie). A
+    // loader-tier gate read via the `kuna_i386_pie_plt` env var (not committed
+    // through `OptionDatabase`); routes to `Architecture::set_kuna_option`.
+    "i386_pie_plt",
     "mips_isa",
     "dwarf",
     "callfixup",

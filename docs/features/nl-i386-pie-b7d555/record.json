@@ -1,0 +1,53 @@
+{
+  "opportunity": "test_decompiling_nl_i386_pie::usage",
+  "test_name": "test_decompiling_nl_i386_pie",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/i386/nl",
+  "selector": "usage",
+  "func_addr": "0x1f60",
+  "angr_version": "9.2.213",
+  "option": "i386_pie_plt",
+  "flag": "analysis_i386_pie_plt",
+  "element_id": null,
+  "change_kind": "correctness-fix",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_nl_i386_pie; angr CLE PLT/GOT import resolution + libc no-return database; usage",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "speed_off_ms": 421.68,
+  "speed_on_ms": 129.55,
+  "speed_delta_pct": -69.28,
+  "speed_samples": 5,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "div": "DIV-7",
+  "fix_location": "decompiler/crates/kuna-analysis/src/s1_loader/elf_plt.rs:decode_i386",
+  "module": "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_i386_pie_plt.rs",
+  "tests": [
+    "decompiler/crates/kuna-console/tests/verify_i386_pie_plt.rs",
+    "decompiler/crates/kuna-analysis/src/s1_loader/elf_plt.rs::tests::i386_pie_plt_decode"
+  ],
+  "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl",
+  "testing_deviation": "No tests/stages/ghangr-*.xml: the bytechunk stage harness cannot carry .rel.plt/.dynsym/GOT structure to reach the PLT/no-return loader path. Gated instead by a kuna-console integration test over a vendored i386-PIE ELF fixture + an elf_plt decoder unit test (approved proposal sub-decision B).",
+  "scope": "small (one loader-function fix + option wiring), routed via [PROPOSAL] for human go/no-go due to: analysis-tier loader (not a kuna-decomp Action/Rule), default-behavior change for the i386-PIE binary class, and the stage-harness gap. Approved; implemented default-on gated.",
+  "decisions": [
+    {
+      "question": "Sub-decision A: ship the i386-PIE PLT decode unconditionally (like the sibling x86-64/aarch64 decoders) or gate it behind a default-on option?",
+      "resolution": "Gated, default-ON, option `i386_pie_plt`. Honors the standing 'output-changing => --option-flaggable' requirement and the worker's LLM-discoverable-option Definition of Done, while default-on matches the decider's loader-fidelity recommendation. The OFF path restores byte-identical pre-fix output (the before-image / escape hatch). Because the PLT->name map is baked at `load file` (upstream of `option`), the loader reads the gate via the `KUNA_I386_PIE_PLT` env var; the `Architecture::analysis_i386_pie_plt` bool is for catalog visibility only."
+    },
+    {
+      "question": "Sub-decision B: how to test a loader-tier feature the stage XML harness cannot reach?",
+      "resolution": "Vendored i386-PIE `nl` ELF fixture (decompiler/crates/kuna-analysis/tests/fixtures/i386_pie_nl, 48 KB) + a kuna-console integration test (verify_i386_pie_plt.rs, precedent verify_aarch64_plt.rs) asserting named libc calls and the absence of the spurious do{}while(true)/goto/sub_<addr>, plus a focused decoder unit test (elf_plt.rs::tests::i386_pie_plt_decode covering the FF A3 on/off paths and the unchanged FF 25 arm)."
+    },
+    {
+      "question": "Original scope decider verdict (verbatim, from the approved proposal).",
+      "decider_verdict": {
+        "scope": "small",
+        "fix_location": "decompiler/crates/kuna-analysis/src/s1_loader/elf_plt.rs:decode_i386",
+        "default_on_recommended": true,
+        "rationale": "One-function loader-fidelity fix, the precise i386-PIE analog of the already-shipped x86-64 RIP-relative and aarch64 veneer decoders. decode_i386 already handles the non-PIC FF 25 <abs32> form and merely needs the PIE FF A3 <disp32> form, got = GOT_base(_GLOBAL_OFFSET_TABLE_ / .got.plt) + disp32 (verified: 0x9edc + _exit disp 0x14 = 0x9ef0 = the R_386_JUMP_SLOT r_offset). The downstream no-return cascade is pre-existing machinery that just needs the name. Blast radius on the 675 datatests is provably zero."
+      }
+    }
+  ]
+}

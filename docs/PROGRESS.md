@@ -1,5 +1,39 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — nl-i386-pie-b7d555 (option i386_pie_plt, DIV-9)
+
+- **angr testcase**: `test_decompiling_nl_i386_pie::usage` (binary `i386/nl`, an i386 **PIE**
+  ELF; angr 9.2.213). angr emits ~80 clean loc with named libc calls; kuna emitted ~209 loc of
+  broken C — a spurious `do{}while(true)` loop, a `goto`, three un-unified `// esp` stack
+  values, explicit frame stores, dropped call args, a recovery-failure marker, and `sub_<addr>`
+  call names.
+- **Why angr was better**: angr resolves PLT/GOT imports during CLE load and consults a libc
+  no-return database, so `exit` is flagged no-return and the dead fall-through never loops. kuna
+  has the equivalent machinery (`resolve_plt_imports` + `NoReturnKnownPass` + the engine
+  flow-halt) but `decode_i386` decoded only the non-PIC `FF 25 <abs32>` stub form and **skipped**
+  the i386-PIE `FF A3 <disp32>` (`jmp *disp(%ebx)`, GOT-relative) form, so no PIE import was named
+  → `exit` never no-return → the whole structural failure cascaded.
+- **Mechanism**: `kuna-analysis::s1_loader::elf_plt::decode_i386` now also decodes `FF A3 <disp32>`,
+  computing `slot = GOT_base + sign(disp32)` (`GOT_base` = `_GLOBAL_OFFSET_TABLE_` symbol value,
+  fallback `.got.plt`/`.got` section base — the value the PIC prologue loads into `%ebx`). The
+  i386-PIE analog of the shipped x86-64 RIP-relative / aarch64 veneer decoders. The non-PIC arm
+  is untouched. Naming `exit@plt` lets the pre-existing no-return pass collapse the spurious loop
+  and restore stack recovery.
+- **Gating**: loader-tier (the PLT→name map is baked at `load file`, upstream of `option`), so
+  the gate is the `KUNA_I386_PIE_PLT` env var (`kuna_decomp::kuna_i386_pie_plt`), set by the CLI
+  on the `decomp_dbg` subprocess; the `Architecture::analysis_i386_pie_plt` bool is for catalog
+  visibility. `option i386_pie_plt` (default-on), `source_decompiler = "angr"`,
+  `change_kind = "correctness-fix"`.
+- **Ablation**: 0 of 675 datatest assertions change with the feature default-ON (the bytechunk
+  corpus never reaches `resolve_plt_imports`; no i386-PIE binary present) ⇒ **default-on**, DIV-7.
+  `make test` stays PARITY OK (datatests 675/675); `make test-stages` PARITY OK (the KUNA-CATALOG
+  #6 angr-provenance count 3→4). **Speed**: the collapsed loop makes the target *faster* —
+  `usage` 130 ms on vs 422 ms off (−69%), within budget.
+- **Testing deviation** (loader feature): the `tests/stages/*.xml` bytechunk harness cannot carry
+  `.rel.plt`/`.dynsym`/GOT structure, so the gate is a cargo integration test
+  (`kuna-console/tests/verify_i386_pie_plt.rs`, over the vendored i386-PIE `nl` fixture) plus the
+  decoder unit test `elf_plt.rs::tests::i386_pie_plt_decode`, in lieu of a stage XML.
+
 ## Session (2026-06-25) — ELF relocatable-object (`ET_REL` / `.o`) loader (option `relocobjects`, DIV-8)
 
 **angr testcase:** `test_decompiling_ptx_fix_output_parameters::fix_output_parameters`

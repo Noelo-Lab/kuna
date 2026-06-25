@@ -1,9 +1,9 @@
 //! Unit tests for the kuna stage registry (`kuna_stages.rs`).
 //!
 //! Parity targets transcribed from `decompiler/cpp/kuna_stages.cc`:
-//! group=39, substage=40, surface=90, settable=40 (25 stage-model knobs + 14
-//! kuna analysis-tier gates + 1 loader-tier capability `relocobjects`), plus the
-//! stage-code helpers, the lookup API, the
+//! group=39, substage=40, surface=90, settable=41 (25 stage-model knobs + 14
+//! kuna analysis-tier gates + 2 loader-tier capabilities `relocobjects`/`i386_pie_plt`),
+//! plus the stage-code helpers, the lookup API, the
 //! typed `OptionValues` defaults, and the catalog emitter.
 
 use super::*;
@@ -42,11 +42,12 @@ fn settable_count_is_37() {
     // tier, Increment 29; noreturn_disc with the first Listing consumer, Increment 33;
     // gopclntab with Go pclntab name recovery, Increment 34;
     // dedupvardecls with duplicate-scalar-declaration collapse, DIV-7.)
-    // + 1 loader-tier capability: the `relocobjects` ET_REL relocatable-object
-    // loader (DIV-8), the only settable that gates the loader rather than a
-    // per-function pass.
-    assert_eq!(kuna_num_settables(), 40);
-    assert_eq!(SETTABLE_TABLE.len(), 40);
+    // + 2 loader-tier capabilities: the `relocobjects` ET_REL relocatable-object
+    // loader (DIV-8) and the `i386_pie_plt` i386-PIE PLT-stub decode gate
+    // (DIV-9, angr test_decompiling_nl_i386_pie) — settables that gate the loader
+    // rather than a per-function pass.
+    assert_eq!(kuna_num_settables(), 41);
+    assert_eq!(SETTABLE_TABLE.len(), 41);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -249,6 +250,9 @@ fn option_values_live_value_present_for_20_suppressed_for_18() {
         "listing",
         "noreturn_disc",
         "gopclntab",
+        // (kuna) loader-tier gate, no codegen live reader (read console-side via
+        // kuna_live_value), same as the analysis-pass gates above.
+        "i386_pie_plt",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -339,8 +343,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 40 rows: 39 trailing commas (the last, relocobjects, has none).
-    assert_eq!(json.matches("},\n").count(), 39);
+    // 41 rows: 40 trailing commas (the last, relocobjects, has none).
+    assert_eq!(json.matches("},\n").count(), 40);
 }
 
 #[test]
