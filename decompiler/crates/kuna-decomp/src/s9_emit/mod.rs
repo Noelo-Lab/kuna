@@ -13,4 +13,5 @@ pub mod cast;
 pub mod stringmanage;
 pub mod kuna_naming;
 pub mod kuna_arraynotation;
+pub mod kuna_dedupvardecls;
 pub mod coreaction_render;

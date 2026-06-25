@@ -1649,6 +1649,26 @@ live_field = "realtypes"
 live_true = "on"
 live_false = "off"
 
+[[settable]]
+option = "dedupvardecls"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S9"
+substage = "naming-policy"
+strength = "HARD"
+rewind = "S9"
+issue = "angr-duplicate-decls"
+summary = "Collapse local-variable declarations whose fully-rendered line (type + name + array adornment + storage comment) is identical, so a stack slot mapped onto many same-named scalar HighVariables is declared once instead of one line per high (the scalar analogue of the existing composite-symbol declaration collapse)."
+use_when = "On by default (DIV-7): a stack slot is declared once even when many same-named scalar HighVariables share it (e.g. x86_64/cvs main, where the per-high rendering repeats `int4 option_index; // stack - 0x3c` ~200x). Set OFF to restore the one-declaration-per-high rendering."
+example = "option dedupvardecls off"
+source_decompiler = "angr"
+inspiration = "test_decompiling_x8664_cvs; angr variable recovery (one variable per storage location, declared once); main"
+change_kind = "presentation-default"
+live_field = "dedup_var_decls"
+live_true = "on"
+live_false = "off"
+
 # ---------------------------------------------------------------------------
 # Analysis-pass gates (8 rows): per-run `--option <id> on|off` enablement of the
 # `kuna_analysis` passes. The option id IS the pass's `AnalysisPass::id()`. The
