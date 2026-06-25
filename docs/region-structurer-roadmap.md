@@ -112,14 +112,25 @@ gets loop-edge marks and `immed_dom`/`index` for free), plus a port of
 `CollapseStructure::negate_condition_rec` so a loop-condition orientation flip (the `i==0`
 do-while/while-do arm) records a deferred **pending-flip** that `run_region_structurer` returns
 and `ActionBlockStructure` realizes via `block_basic_negate_lastop` — identical to the
-`CollapseStructure` `take_pending_flips` path. A **multi-latch / multi-exit refinement**
-(`refine_loop_edges`, the kuna analog of `_refine_cyclic_core`) virtualizes the secondary
-back-edges / exits / mid-body entries to gotos so the body collapses to the clean self-loop the
-fold rules accept; a multi-entry head (irreducible at the head) bails so the caller falls back
-rather than spinning. Honest-partial-safe throughout: a loop class that doesn't match falls back
-to `CollapseStructure` (never a panic). Default-OFF ⇒ 675/675 datatests byte-identical; ON-vs-OFF
-decompile speed is within noise on loop-heavy functions (the worst case, a ~21-round refinement
-that ultimately falls back, costs no measurable time).
+`CollapseStructure` `take_pending_flips` path. The `BlockWhileDo` fold carries Ghidra's
+`ruleBlockWhileDo` **interior-goto-target guard**: a loop whose head is the target of a
+virtualized continue/goto is NOT foldable as a top-tested `while` (that would render a `label:`
+*inside* the `while (...)` condition — malformed C); such a loop folds as `BlockInfLoop` or falls
+back. Honest-partial-safe throughout: a loop class that doesn't match falls back to
+`CollapseStructure` (never a panic, never malformed). Default-OFF ⇒ 675/675 datatests
+byte-identical; ON-vs-OFF decompile speed is within noise on loop-heavy functions.
+
+A **multi-latch / multi-exit refinement** (`refine_loop_edges`, the kuna analog of
+`_refine_cyclic_core` — virtualize the secondary back-edges/exits/mid-body entries so a
+not-yet-clean loop collapses) is implemented but **deliberately NOT run in Inc 3**: a 262-binary
+corpus sweep showed it produces **no goto reduction** over Ghidra's `select_goto`/`TraceDAG` *and*
+its edge choice can render a worse (extra-goto) or — for a continue-goto into the head condition —
+malformed loop. Inc 3 therefore folds only the **directly-foldable** loops (the clean reducible
+shapes, which need no edge virtualization at all — verified: do-while/while/for/inf-loop and
+nested loops fold with zero refinement rounds) and leaves everything else to the
+virtualize-fallback → `CollapseStructure`, which **guarantees ON-output is never worse than OFF**.
+The refinement machinery is retained (behind `#[allow(dead_code)]`) for an increment that pairs it
+with a post-dominator exit analysis (Inc 5).
 
 **break/continue:** angr emits `BreakNode`/`ContinueNode` directly in the structurer. kuna instead
 determines break/continue in a **separate, opt-in** pass (`kuna_loopbreak_recovery::kuna_scope_break`,

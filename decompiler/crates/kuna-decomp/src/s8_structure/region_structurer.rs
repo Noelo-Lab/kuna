@@ -511,24 +511,28 @@ impl<'a> RegionStructurer<'a> {
             }
         }
         for &head in heads.iter() {
-            // (1) Try to fold a loop that is already in a foldable structural shape
-            //     — its body has collapsed to a single block that loops to `head`.
+            // Try to fold a loop that is already in a foldable structural shape —
+            // its body has collapsed (via the acyclic sequence/ITE schemas) to a
+            // single block that loops to `head` with at most one structural exit.
             if self.try_fold_loop(head)? {
                 if dbg {
                     eprintln!("[rs] folded loop head");
                 }
                 return Ok(true);
             }
-            // (2) Otherwise refine: mark secondary back-edges/exits as
-            //     continue/break gotos so the body collapses to a self-loop.  Only
-            //     act on the innermost head (no live loop head strictly inside).
-            if self.is_innermost_loop_head(head)? && self.refine_loop_edges(head)? {
-                if dbg {
-                    eprintln!("[rs] refined loop edges");
-                }
-                return Ok(true);
-            }
         }
+        // No directly-foldable loop.  A speculative `refine_loop_edges` (virtualizing
+        // secondary latches / exits to gotos so a not-yet-clean loop collapses) is
+        // intentionally NOT run: empirically it yields no goto reduction Ghidra's
+        // `select_goto`/`TraceDAG` doesn't already achieve, and on multi-exit /
+        // multi-latch loops its edge choice can render a *worse* (extra-goto) or
+        // — for a continue-goto into the head condition — malformed loop.  Leaving
+        // the loop unfolded lets the structurer fall through to the virtualize
+        // fallback and ultimately back to `CollapseStructure` (proven optimal on
+        // reducible loops), guaranteeing ON-output is never worse than OFF.  The
+        // refinement machinery (`refine_loop_edges` & friends) is retained for a
+        // future increment that pairs it with a proper exit-block / post-dominator
+        // analysis (roadmap Inc 5).
         Ok(false)
     }
 
@@ -557,6 +561,10 @@ impl<'a> RegionStructurer<'a> {
     /// nodes that reach a latch of `head` without leaving the dominator subtree of
     /// `head`) contains no *other* live loop head?  Mirrors the inside-out order
     /// `CollapseStructure` gets from its depth-sorted `loopbody`.
+    ///
+    /// (Retained for a future increment: the speculative `refine_loop_edges`
+    /// machinery this supports is not run in Inc 3 — see `match_cyclic_schemas`.)
+    #[allow(dead_code)]
     fn is_innermost_loop_head(&self, head: BlockId) -> KunaResult<bool> {
         let body = self.natural_loop_body(head);
         for &bl in body.iter() {
@@ -672,6 +680,18 @@ impl<'a> RegionStructurer<'a> {
         // back to head; the other leaves the loop
         // (`CollapseStructure::ruleBlockWhileDo`).  The clause must be the TRUE
         // exit of head; if it is the FALSE exit (i == 0) we flip the condition.
+        //
+        // Crucial guard (`ruleBlockWhileDo` `blockaction.cc:1535`): the head must
+        // NOT be an interior-goto target.  If a virtualized continue-goto (or any
+        // other goto edge) targets the head, folding it as a top-tested while-do
+        // would render the head's condition with a `label:` *inside* the
+        // `while (...)` expression — malformed C.  Such a loop is really an
+        // infinite loop with the head-condition as an `if (...) break;` in the
+        // body; rejecting here lets `refine_loop_edges` virtualize the head's exit
+        // edge so the loop folds as a `BlockInfLoop` instead (the OFF/Ghidra form).
+        if self.graph.block(head).is_interior_goto_target() {
+            return Ok(false);
+        }
         for i in 0..2 {
             let clause = self.graph.block(head).get_out(i);
             if clause == head {
@@ -721,6 +741,12 @@ impl<'a> RegionStructurer<'a> {
     /// *without* `force_loop_single_exit`, one secondary exit may legitimately
     /// remain a single goto — that's acceptable and still strictly fewer gotos
     /// than Ghidra's per-latch virtualization.
+    ///
+    /// NOTE: NOT invoked in Inc 3 (see `match_cyclic_schemas`) — empirically its
+    /// edge choice yields no goto reduction over Ghidra's `select_goto` and can
+    /// render a worse-or-malformed loop on multi-exit/multi-latch shapes.  Retained
+    /// for a future increment that pairs it with a post-dominator exit analysis.
+    #[allow(dead_code)]
     fn refine_loop_edges(&mut self, head: BlockId) -> KunaResult<bool> {
         let body = self.natural_loop_body(head);
         let in_body: std::collections::BTreeSet<BlockId> = body.iter().copied().collect();
@@ -884,6 +910,7 @@ impl<'a> RegionStructurer<'a> {
     /// loop: prefer an exit whose source is the loop head (so the head's natural
     /// 2-out condition remains the loop test → a clean while/do-while), else the
     /// earliest exit edge by `(src index, dst index)`.  Returns `(src, edge)`.
+    #[allow(dead_code)] // Inc 5 refinement helper (see `refine_loop_edges`).
     fn choose_structural_exit(
         &self,
         head: BlockId,
@@ -929,6 +956,7 @@ impl<'a> RegionStructurer<'a> {
     /// `bblocks` — `block_get_start` does not resolve through a cross-arena
     /// `BlockCopy`, so `index` is the reliable deterministic key here).  Mirrors
     /// angr `_refine_cyclic_core`'s successor pick.
+    #[allow(dead_code)] // Inc 5 refinement helper (see `refine_loop_edges`).
     fn choose_normal_exit(&self, exit_edges: &[(BlockId, int4, BlockId)]) -> Option<BlockId> {
         if exit_edges.is_empty() {
             return None;
@@ -958,6 +986,7 @@ impl<'a> RegionStructurer<'a> {
     /// means the loop is multi-entry at the head (irreducible) — these schemas
     /// cannot reduce it and the caller must fall back.  (A normal single-entry
     /// loop has exactly one such edge: the loop preheader; we tolerate up to one.)
+    #[allow(dead_code)] // Inc 5 refinement helper (see `refine_loop_edges`).
     fn head_extra_entries(
         &self,
         head: BlockId,
