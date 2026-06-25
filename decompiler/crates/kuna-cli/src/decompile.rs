@@ -29,6 +29,18 @@ pub struct DecompileArgs {
     /// behavior. When set, exports `KUNA_EXPERIMENTAL_FORMATS=1` onto the
     /// `decomp_dbg` subprocess so its `is_object_binary` admits the extra magics.
     pub experimental_formats: bool,
+    /// Mach-O fat / universal slice override (`--slice <arch>`, e.g. `x86_64` /
+    /// `arm64`). Picks which arch slice of a universal binary is loaded; absent
+    /// ⇒ the deterministic default (x86-64 → arm64 → first present). Exported as
+    /// `KUNA_MACHO_SLICE` onto the subprocess (read at the dispatch slice peel).
+    pub slice: Option<String>,
+}
+
+/// Whether an `--option` value selects the "on" state (the `on_or_off` token set
+/// the console accepts), used to decide whether `macho-arm64e` exports its
+/// load-time env gate.
+fn is_on(value: &str) -> bool {
+    matches!(value.trim().to_ascii_lowercase().as_str(), "on" | "true" | "1" | "yes")
 }
 
 /// A 0x-prefixed token auto-selects address mode (a bare hex-looking token is a
@@ -178,11 +190,60 @@ fn decompile(args: &DecompileArgs) -> Result<(String, Option<String>), String> {
             regions_path.as_deref(),
         );
 
+        // (kuna) The `relocobjects` option gates the ET_REL loader, which runs at
+        // `load file` — before the `option` lines in the script are processed.
+        // Bridge it to the subprocess env var the loader reads at load time so the
+        // off-switch (and the before/after demo) work for the single-shot CLI.
+        let reloc_env: Option<&'static str> = args
+            .options
+            .iter()
+            .rev()
+            .find(|(n, _)| n == "relocobjects")
+            .map(|(_, v)| {
+                if matches!(v.trim(), "0" | "off" | "false" | "no" | "OFF") {
+                    "0"
+                } else {
+                    "1"
+                }
+            });
+
         let mut cmd = Command::new(&bin_path);
         cmd.arg("-s").arg(&specs).env("SLEIGHHOME", &specs);
+        if let Some(v) = reloc_env {
+            cmd.env(kuna_decomp::options::RELOC_OBJECTS_ENV, v);
+        }
         if args.experimental_formats {
             // Admit PE/Mach-O/COFF on the subprocess's `load file` dispatch.
             cmd.env("KUNA_EXPERIMENTAL_FORMATS", "1");
+        }
+        if let Some(slice) = args.slice.as_deref().filter(|s| !s.trim().is_empty()) {
+            // Mach-O fat / universal slice override: read at the dispatch peel.
+            cmd.env("KUNA_MACHO_SLICE", slice);
+        }
+        // (PR-8 §3.7) Mach-O arm64e Apple-Silicon spec selection is a LOAD-time
+        // decision (the spec is chosen before any console `option` command runs),
+        // so `--option macho-arm64e on` must reach the subprocess as an env gate,
+        // not just a console `option` line. Export it when requested; the
+        // `option macho-arm64e on` line still flows (so the option is recognized
+        // and recorded), but the env var is what makes the spec selection live.
+        if args
+            .options
+            .iter()
+            .any(|(n, v)| n == "macho-arm64e" && is_on(v))
+        {
+            cmd.env("KUNA_MACHO_ARM64E", "1");
+        }
+        // (kuna) Loader-tier `i386_pie_plt` gate: the PLT→name map is baked at
+        // `load file`, *before* the `option` lines in the script run, so an
+        // `--option i386_pie_plt off` must reach the loader via the env var
+        // (`kuna_i386_pie_plt::I386_PIE_PLT_ENV`) set on the subprocess up front.
+        // (The harmless `option i386_pie_plt …` line still runs for the catalog
+        // confirmation; it just can't retro-resolve the already-loaded image.)
+        for (name, value) in &args.options {
+            if name == "i386_pie_plt" {
+                let on = !matches!(value.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false");
+                cmd.env("KUNA_I386_PIE_PLT", if on { "on" } else { "off" });
+            }
         }
         let output = cmd
             .stdin(std::process::Stdio::piped())

@@ -324,12 +324,25 @@ pub struct Architecture {
     /// `goto` source so the cross-edge becomes a structured early return
     /// (`reduce_return_gotos`).
     pub reduce_return_gotos: bool,
+    /// (kuna) Lower loop-exit `goto <successor>` edges to structured `break;`
+    /// (a port of Ghidra `BlockGraph::scopeBreak`; option `loopbreak_recovery`,
+    /// DIV-10 default-on).
+    pub recover_loop_break: bool,
+    /// (kuna) Fold an order-safe single-use call return into its use site
+    /// (`fold_call_returns`, opt-in default-off; angr "call return variable
+    /// folding").
+    pub fold_call_returns: bool,
     /// (kuna) Strip the glibc -fstack-protector canary epilogue
     /// (C++ `strip_stack_guard`).
     pub strip_stack_guard: bool,
     /// (kuna) Use angr-style default naming (vN/aN/dat_/sub_/label_ + comments)
     /// (C++ `name_style_angr`).
     pub name_style_angr: bool,
+    /// (kuna) Collapse local-variable declarations whose fully-rendered line is
+    /// identical (the scalar analogue of the composite-symbol decl collapse), so a
+    /// stack slot mapped onto many same-named HighVariables is declared once
+    /// (`option dedupvardecls`; angr-inspired, S9).
+    pub dedup_var_decls: bool,
     /// (kuna DIV-6) Render residual `TYPE_UNKNOWN` (`xunknownN`) values as real C
     /// types by size — 1→`char`, 2/4/8→unsigned ints, pointer-to-unknown→`void *` —
     /// instead of the `xunknownN`/`undefined<N>` placeholder.  Default-on; read by
@@ -363,6 +376,16 @@ pub struct Architecture {
     pub analysis_arm_markers: bool,
     /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
     pub analysis_mips_gp: bool,
+    /// (kuna) Gate the i386-PIE PLT-stub decode (`i386_pie_plt`); default on. The
+    /// loader (`kuna-analysis::s1_loader::elf_plt::decode_i386`) decodes the
+    /// GOT-relative `jmp *disp(%ebx)` (`FF A3 <disp32>`) PIE stub form so dynamic
+    /// imports (`exit`/`dcgettext`/…) are named and `exit` is flagged no-return
+    /// (collapsing the spurious fall-through loop). i386-only; a no-op on every
+    /// other language. NOTE: the loader reads this through the
+    /// [`crate::kuna_i386_pie_plt`] **env var** (the PLT map is baked at `load
+    /// file`, upstream of `option`); this bool exists only for catalog visibility
+    /// and the `stage catalog` live `current` field.
+    pub analysis_i386_pie_plt: bool,
     /// (kuna) Gate the MIPS16 `ISA_MODE` decode-mode marker pass (`mips_isa`); default on.
     pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
@@ -396,6 +419,18 @@ pub struct Architecture {
     /// the Listing (`--option listing on` builds it); a no-op when the Listing is
     /// absent. Default-off ⇒ every parity gate is byte-identical.
     pub analysis_noreturn_disc: bool,
+    /// (kuna) Gate the structural no-return **propagation** consumer
+    /// (`noreturn_propagate`), the second Listing/xref consumer; default **off**.
+    /// The kuna analog of angr's CFGFast call-graph no-return propagation: seed
+    /// from the Known no-return set and conclude a function no-return when its last
+    /// real instruction (skipping trailing NOP padding) is a call/tail-jump to an
+    /// already-no-return callee, with no returning path — iterated to a fixpoint,
+    /// with NO evidence threshold (unlike `noreturn_disc`). Catches custom
+    /// no-return wrappers (e.g. `xalloc_die`) that the name list misses and the ≥3
+    /// evidence rule does not reach. Reads the Listing (`--option listing on`
+    /// builds it); a no-op when the Listing is absent. Default-off ⇒ every parity
+    /// gate is byte-identical.
+    pub analysis_noreturn_propagate: bool,
     /// (kuna) Gate the Go `pclntab` function-name recovery pass (`gopclntab`); the
     /// kuna analog of Ghidra's `GolangSymbolAnalyzer` (name-recovery half). Default
     /// **on**, but the pass is registered ONLY for a Go binary
@@ -405,6 +440,18 @@ pub struct Architecture {
     /// instead of `sub_<addr>`). Real-ELF Go path only ⇒ the XML datatest oracle is
     /// structurally untouched.
     pub analysis_gopclntab: bool,
+    /// (kuna) Gate the Mach-O arm64e Apple-Silicon SLEIGH-spec selection
+    /// (`macho-arm64e`); default **off** (design §3.7, opt-in until proven). When
+    /// on, an arm64e Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) loads with the
+    /// `AARCH64:LE:64:AppleSilicon` pointer-auth spec instead of the generic
+    /// `v8A`; pointer-auth does NOT change import naming or symbols, only the
+    /// spec. NB: spec selection happens at *load* (`language_id_for`), before any
+    /// console `option` command runs, so the actual gate is read live from the
+    /// `KUNA_MACHO_ARM64E` env var the CLI exports for `--option macho-arm64e on`;
+    /// this field exists for catalog/registration consistency (a recognized
+    /// option name) and records the requested state. Default-off ⇒ every parity
+    /// gate is byte-identical and a non-arm64e / non-Mach-O target is untouched.
+    pub macho_arm64e: bool,
 
     // --- Owned subsystems (architecture.hh:211-233) -----------------------
     /// Memory map of global variables and functions (C++ `symboltab`).
@@ -583,8 +630,11 @@ impl Architecture {
             recover_array_stride: false,
             recover_lowered_switch: false,
             reduce_return_gotos: false,
+            recover_loop_break: false,
+            fold_call_returns: false,
             strip_stack_guard: false,
             name_style_angr: false,
+            dedup_var_decls: false,
             realtypes: false,
             present_lessequal: false,
             preserve_thumb_funcptr: false,
@@ -596,6 +646,7 @@ impl Architecture {
             analysis_entry_disc: false,
             analysis_arm_markers: false,
             analysis_mips_gp: false,
+            analysis_i386_pie_plt: false,
             analysis_mips_isa: false,
             analysis_dwarf: false,
             analysis_callfixup: false,
@@ -603,7 +654,9 @@ impl Architecture {
             analysis_formatstring: false,
             analysis_listing: false,
             analysis_noreturn_disc: false,
+            analysis_noreturn_propagate: false,
             analysis_gopclntab: false,
+            macho_arm64e: false,
 
             symboltab,
             options: OptionDatabase::new(),
@@ -667,8 +720,11 @@ impl Architecture {
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.reduce_return_gotos = false; // (kuna) default-off opt-in (angr SAILR goto-reduction)
+        self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
+        self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.name_style_angr = true; // (kuna) default-on: angr-style default naming
+        self.dedup_var_decls = true; // (kuna) DIV-7 default-on: collapse duplicate local decls (angr)
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
@@ -693,6 +749,7 @@ impl Architecture {
         self.analysis_entry_disc = true;
         self.analysis_arm_markers = true;
         self.analysis_mips_gp = true;
+        self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
         self.analysis_callfixup = true;
@@ -700,7 +757,9 @@ impl Architecture {
         self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
+        self.analysis_noreturn_propagate = false; // no-return propagation consumer default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
+        self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
 
     /// Apply a kuna stage-model option (`option <name> <value>`), the analogue of
@@ -785,13 +844,29 @@ impl Architecture {
                 self.reduce_return_gotos = val;
                 Ok(msg)
             }
+            "foldcallret" => {
+                let (val, msg) = crate::kuna_callretfold::OptionFoldCallRet.apply(p1)?;
+                self.fold_call_returns = val;
+                Ok(msg)
+            }
             "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
+            "loopbreak_recovery" => {
+                let (val, msg) =
+                    crate::kuna_loopbreak_recovery::OptionLoopBreakRecovery.apply(p1)?;
+                self.recover_loop_break = val;
+                Ok(msg)
+            }
             "namestyle" => {
                 let (val, msg) = crate::kuna_naming::OptionNameStyle.apply(p1)?;
                 self.name_style_angr = val;
                 Ok(msg)
             }
             "realtypes" => on_off!(realtypes, "Real-C-type rendering for unknowns"),
+            "dedupvardecls" => {
+                let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
+                self.dedup_var_decls = val;
+                Ok(msg)
+            }
             // (kuna) Analysis-pass gates: one boolean per `kuna_analysis::passes`
             // pass id. The console's `commit_analysis_output` (run at `read
             // symbols`, after the options below have been applied) consults the
@@ -803,6 +878,19 @@ impl Architecture {
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
             "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
             "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
+            // (kuna) Loader-tier gate: also bridge to the env var the loader reads
+            // (the PLT map is baked at `load file`, upstream of this `option`), so
+            // an `option i386_pie_plt off` *before* `load file` in the same process
+            // takes effect. The CLI sets the env directly on the subprocess too.
+            "i386_pie_plt" => {
+                let val = on_or_off(p1)?;
+                self.analysis_i386_pie_plt = val;
+                crate::kuna_i386_pie_plt::set_i386_pie_plt_env(val);
+                Ok(format!(
+                    "i386-PIE PLT-stub decode turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
             "mips_isa" => on_off!(analysis_mips_isa, "MIPS16 ISA_MODE decode-mode marker pass"),
             "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
             "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
@@ -814,9 +902,38 @@ impl Architecture {
             "noreturn_disc" => {
                 on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
             }
+            "noreturn_propagate" => {
+                on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
+            }
             "gopclntab" => {
                 on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
             }
+            // (kuna) ET_REL relocatable-object (`.o`) loader capability. Unlike
+            // every other kuna option this gates the *loader* (run at `load
+            // file`, before any `option` command is processed), so a flag on this
+            // `Architecture` would be read too late. The toggle is bridged across
+            // the layer by a process env var the loader reads at `from_bytes`
+            // time; flipping it here affects a subsequent `load file` of a `.o`.
+            // See `kuna_analysis::loadimage_object::reloc_objects_enabled`.
+            "relocobjects" => {
+                let val = on_or_off(p1)?;
+                std::env::set_var(
+                    crate::options::RELOC_OBJECTS_ENV,
+                    if val { "1" } else { "0" },
+                );
+                Ok(format!(
+                    "ET_REL relocatable-object loading turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
+            // (kuna §3.7) arm64e Apple-Silicon spec selection. Unlike the
+            // analysis-pass gates this affects the *load-time* SLEIGH-spec choice
+            // (`language_id_for`), which runs before this console `option` command;
+            // the live gate is the `KUNA_MACHO_ARM64E` env var the CLI exports for
+            // `--option macho-arm64e on`. This arm records the requested state on
+            // the Architecture so the option is a recognized name (catalog
+            // consistency) and a kassert can read it back. Default-off.
+            "macho-arm64e" => on_off!(macho_arm64e, "Mach-O arm64e Apple-Silicon spec selection"),
             other => Err(KunaError::parse(format!("Unknown kuna option: {other}"))),
         }
     }
@@ -1037,6 +1154,9 @@ impl Architecture {
         // `ActionUnjustifiedParams` reaches it via `glb`.
         seam.input_varnode_adjust = self.input_varnode_adjust;
         seam.name_style_angr = self.name_style_angr;
+        // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`
+        // (which reads the seam `arch`) sees `option dedupvardecls`.
+        seam.dedup_var_decls = self.dedup_var_decls;
         // (kuna GH-558) carry the comparison-presentation gate so the
         // `compareform canonical|original` option reaches
         // `ActionPresentCompareForm` via `glb` (the seam read site).
@@ -1054,6 +1174,8 @@ impl Architecture {
         seam.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         seam.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
+        seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
+        seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard
         // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
         // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.

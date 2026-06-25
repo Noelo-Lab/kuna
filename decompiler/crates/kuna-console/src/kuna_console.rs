@@ -198,12 +198,17 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "entry_disc" => on_off(conf.analysis_entry_disc),
         "arm_markers" => on_off(conf.analysis_arm_markers),
         "mips_gp" => on_off(conf.analysis_mips_gp),
+        "i386_pie_plt" => on_off(conf.analysis_i386_pie_plt),
         "mips_isa" => on_off(conf.analysis_mips_isa),
         "dwarf" => on_off(conf.analysis_dwarf),
         "callfixup" => on_off(conf.analysis_callfixup),
         "addrtable" => on_off(conf.analysis_addrtable),
         "listing" => on_off(conf.analysis_listing),
         "gopclntab" => on_off(conf.analysis_gopclntab),
+        // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested
+        // state (the live spec-selection gate is the load-time env var, but the
+        // catalog `current` mirrors the `option macho-arm64e on|off` request).
+        "macho-arm64e" => on_off(conf.macho_arm64e),
         // C++: return ""; -> no current field.
         _ => return None,
     })

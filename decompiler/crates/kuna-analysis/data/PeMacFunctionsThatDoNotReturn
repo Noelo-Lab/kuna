@@ -1,0 +1,23 @@
+# PE (Windows) / Mach-O (macOS) function names which do not return.
+# (names should not start with '_' since these are stripped during checking)
+#
+# The PE/Mach-O analog of ElfFunctionsThatDoNotReturn — the per-object-format
+# arm of NoReturnFunctionAnalyzer's name set. The base C names (exit/abort/…) are
+# the same family the ELF list carries; this list adds the Windows-CRT- and
+# macOS-specific no-return functions that the ELF list does not name.
+#
+# Selected for a PE/COFF/Mach-O object in s1_loader/noreturn.rs (the kuna analog
+# of noReturnFunctionConstraints.xml selecting a list per executable format).
+exit
+quick_exit
+abort
+# `_exit` strips its leading underscore to `exit`, but list it for clarity.
+exit
+# Windows CRT fast-fail / Watson crash reporting (never return).
+fastfail
+invoke_watson
+# Microsoft `__fastfail` intrinsic wrapper and the secure-CRT invalid-parameter
+# handler family that terminates the process.
+invalid_parameter_noinfo_noreturn
+terminate
+abort_handler4

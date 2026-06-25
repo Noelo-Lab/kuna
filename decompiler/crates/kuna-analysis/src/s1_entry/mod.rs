@@ -1,6 +1,15 @@
-//! Function-entry / function-start discovery for stripped ELFs — the kuna
+//! Function-entry / function-start discovery for stripped binaries — the kuna
 //! analog of Ghidra's entry-point + function-start analyzers, fused with the
 //! `.eh_frame` FDE oracle into ONE additive discovery pass.
+//!
+//! **Multi-format (PR-12+13):** the ELF oracles below are the original core;
+//! [`run`](EntryDiscoveryPass::run) / [`collect_entries`] now **dispatch on the
+//! object format** (the `ObjectFormat` seam), running the PE analogs
+//! (`.pdata`/TLS/entry — [`pe_entry`]) for a PE and the Mach-O analogs
+//! (`LC_FUNCTION_STARTS`/`LC_MAIN`/`__mod_init_func` — [`macho_entry`]) for a
+//! Mach-O, so a stripped PE/Mach-O recovers its functions too. The ELF oracles
+//! stay unchanged and the PE/Mach-O oracles are no-ops on ELF; the arch-specific
+//! oracles (4: libc-start, 5: prologue patterns) are reused where applicable.
 //!
 //! Ghidra recovers function entries with several cooperating analyzers; this
 //! pass ports the **feasible subset** of each (the analyzer tier has only the
@@ -77,6 +86,10 @@ use object::read::{Object, ObjectSection, ObjectSymbol};
 use object::{SectionKind, SymbolKind};
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Stage};
+use crate::s1_loader::format::FormatKind;
+
+mod macho_entry;
+mod pe_entry;
 
 // ===========================================================================
 // The pass
@@ -97,9 +110,16 @@ impl AnalysisPass for EntryDiscoveryPass {
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
-        // ELF-only (the oracles are all ELF/eh_frame structures). Additive
-        // contract: never fail — an empty output on any anomaly.
-        if !matches!(ctx.file.format(), object::BinaryFormat::Elf) {
+        // Format-dispatched (PR-12/13): ELF runs the eh_frame/dynamic oracles, PE
+        // the `.pdata`/TLS/entry oracles, Mach-O the `LC_FUNCTION_STARTS`/`LC_MAIN`
+        // oracles. An unsupported format yields an empty output. The oracle
+        // *selection* lives in `collect_entries`; here we only gate the whole pass
+        // off for formats with no entry oracle at all. Additive contract: never
+        // fail — an empty output on any anomaly.
+        if !matches!(
+            crate::s1_loader::format::detect(ctx.file).map(|f| f.kind()),
+            Ok(FormatKind::Elf | FormatKind::Pe | FormatKind::MachO)
+        ) {
             return out;
         }
         out.entries = collect_entries(ctx.file, ctx.bytes);
@@ -133,30 +153,45 @@ pub fn collect_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
     let execs = executable_sections(file);
     let funcsyms = existing_function_addrs(file, bytes);
 
+    let kind = crate::s1_loader::format::detect(file).map(|f| f.kind()).ok();
     let mut cand: Vec<u64> = Vec::new();
 
-    // Oracle 1: ELF entry point (e_entry). EntryPointAnalyzer external entry.
-    let entry = file.entry();
-    if entry != 0 {
-        cand.push(entry);
+    match kind {
+        // ELF: e_entry, the dynamic INIT/FINI tables, .eh_frame FDEs, and the
+        // libc-start idiom (the original oracles, unchanged).
+        Some(FormatKind::Elf) => {
+            // Oracle 1: ELF entry point (e_entry). EntryPointAnalyzer external entry.
+            let entry = file.entry();
+            if entry != 0 {
+                cand.push(entry);
+            }
+            // Oracle 2: DT_INIT/DT_FINI + INIT_ARRAY/FINI_ARRAY pointer tables.
+            cand.extend(dynamic_entry_points(file));
+            // Oracle 3: .eh_frame FDE pcBegin addresses.
+            cand.extend(scan_eh_frame_starts(file));
+            // Oracle 4: _start -> main via the libc-start idiom (arch-dispatched).
+            if let Some(main) = libc_start_main_target(file, entry) {
+                cand.push(main);
+            }
+        }
+        // PE: entry (AddressOfEntryPoint+ImageBase), `.pdata` RUNTIME_FUNCTION
+        // begins (the `.eh_frame` analog), TLS callbacks, and exports (PR-12).
+        Some(FormatKind::Pe) => {
+            cand.extend(pe_entry::pe_entry_candidates(file, bytes));
+        }
+        // Mach-O: entry (`LC_MAIN`/`LC_UNIXTHREAD`), `LC_FUNCTION_STARTS` (the
+        // richest, stripped-surviving source), `__mod_init_func`, and exports
+        // (PR-13).
+        Some(FormatKind::MachO) => {
+            cand.extend(macho_entry::macho_entry_candidates(file, bytes));
+        }
+        // COFF objects (pre-link) and unknown formats: no entry oracle.
+        _ => {}
     }
 
-    // Oracle 2: DT_INIT/DT_FINI + INIT_ARRAY/FINI_ARRAY pointer tables.
-    cand.extend(dynamic_entry_points(file));
-
-    // Oracle 3: .eh_frame FDE pcBegin addresses.
-    cand.extend(scan_eh_frame_starts(file));
-
-    // Oracle 4: _start -> main via the libc-start idiom. x86-64 uses the direct
-    // `lea rdi,[rip+disp]` immediate; AArch64/ARM/RISC-V PIE crt1 instead loads
-    // `main` *indirectly* from a GOT slot that carries an `R_*_RELATIVE`
-    // relocation whose target is `main` (Increment 23) — `libc_start_main_target`
-    // dispatches on the architecture.
-    if let Some(main) = libc_start_main_target(file, entry) {
-        cand.push(main);
-    }
-    // Oracle 5: prologue byte patterns — x86-64-only (the vendored gcc pattern
-    // subset; the ARM/AARCH64/MIPS/PPC patternconstraints are a follow-up).
+    // Oracle 5: prologue byte patterns — x86-64-only, format-neutral (it scans
+    // the executable-section bytes). The vendored gcc pattern subset; the
+    // ARM/AARCH64/MIPS/PPC patternconstraints are a follow-up.
     if file.architecture() == object::Architecture::X86_64 {
         cand.extend(prologue_pattern_starts(&execs));
     }
@@ -224,11 +259,24 @@ pub fn collect_entry_names(file: &object::File, kept: &[u64]) -> Vec<(u64, Strin
 pub(crate) fn executable_sections(file: &object::File) -> Vec<(u64, u64, Vec<u8>)> {
     // ELF section header flag: SHF_EXECINSTR (the section holds machine code).
     const SHF_EXECINSTR: u64 = 0x4;
+    // Mach-O section attribute: S_ATTR_PURE_INSTRUCTIONS / S_ATTR_SOME_INSTRUCTIONS.
+    const S_ATTR_PURE_INSTRUCTIONS: u32 = 0x8000_0000;
+    const S_ATTR_SOME_INSTRUCTIONS: u32 = 0x0000_0400;
 
     let mut out = Vec::new();
     for sec in file.sections() {
+        // Per-format executable test (PR-12/13): ELF SHF_EXECINSTR, PE COFF
+        // IMAGE_SCN_MEM_EXECUTE, Mach-O instruction attributes — each falling
+        // back to the neutral `SectionKind::Text` (`.text`/`__text`/`.plt`/…).
         let exec = match sec.flags() {
             object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_EXECINSTR != 0,
+            object::SectionFlags::Coff { characteristics } => {
+                characteristics & object::pe::IMAGE_SCN_MEM_EXECUTE != 0
+            }
+            object::SectionFlags::MachO { flags } => {
+                flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
+                    || sec.kind() == SectionKind::Text
+            }
             _ => sec.kind() == SectionKind::Text,
         };
         if !exec {
@@ -1481,6 +1529,61 @@ mod tests {
         // An FDE-derived start that is NOT a funcsym (e.g. _start 0x400500) is
         // recovered; main/authenticate (funcsyms) are correctly skipped here.
         assert!(entries.contains(&0x400500), "_start 0x400500 should be discovered");
+    }
+
+    // -- The fused core, PE (the PR-12 headline): a stripped PE finds functions ---
+
+    /// A stripped PE32+ (`pe_imports_stripped.exe`, no symbols/exports) recovers
+    /// its functions through the format-dispatched PE oracles: the entry and the
+    /// `.pdata` RUNTIME_FUNCTION begins. `main` (0x140001592) and the entry
+    /// (0x1400014f0) survive into the discovered set, both inside an exec section
+    /// and non-zero, even though the binary has no `.symtab`.
+    #[test]
+    fn collect_entries_pe_stripped_finds_functions() {
+        let bytes = fixture("pe_imports_stripped.exe");
+        let file = object::File::parse(bytes.as_slice()).expect("parse stripped PE");
+        let entries = collect_entries(&file, bytes.as_slice());
+        assert!(entries.contains(&0x1400014f0), "entry 0x1400014f0 missing from {entries:#x?}");
+        assert!(entries.contains(&0x140001592), "main 0x140001592 missing (.pdata)");
+        // A bare load (no oracles) finds nothing in a stripped PE; the oracles
+        // recover dozens.
+        assert!(entries.len() >= 50, ".pdata should recover many functions, got {}", entries.len());
+        let execs = executable_sections(&file);
+        for &e in &entries {
+            assert!(e != 0, "no zero entry");
+            assert!(in_executable_section(&execs, e), "entry {e:#x} outside exec section");
+        }
+    }
+
+    // -- The fused core, Mach-O (the PR-13 headline) ---------------------------
+
+    /// A linked Mach-O recovers `_compute`/`_main` via `LC_FUNCTION_STARTS` +
+    /// `LC_MAIN` — the source that survives stripping. On `macho_imports` the two
+    /// are also symboled, so `collect_entries` skips them as funcsyms (correct:
+    /// the discovery is additive); we assert the *function-starts oracle itself*
+    /// found them (via the candidate set before the funcsym-skip), proving a
+    /// stripped Mach-O would discover them.
+    #[test]
+    fn collect_entries_macho_function_starts_oracle() {
+        for (name, compute, main) in [
+            ("macho_imports", 0x1000005a0u64, 0x1000005b0u64),
+            ("macho_imports_arm64", 0x100000560, 0x10000056c),
+        ] {
+            let bytes = fixture(name);
+            let file = object::File::parse(bytes.as_slice()).expect("parse macho fixture");
+            // The raw candidate set (the oracle output before the funcsym-skip)
+            // carries both starts — the stripped-survivable discovery fact.
+            let cands = macho_entry::macho_entry_candidates(&file, bytes.as_slice());
+            assert!(cands.contains(&compute), "{name}: _compute {compute:#x} not in function-starts");
+            assert!(cands.contains(&main), "{name}: _main {main:#x} not in function-starts");
+            // Every emitted entry (post-filter) lands in an exec section, non-zero.
+            let entries = collect_entries(&file, bytes.as_slice());
+            let execs = executable_sections(&file);
+            for &e in &entries {
+                assert!(e != 0, "{name}: no zero entry");
+                assert!(in_executable_section(&execs, e), "{name}: entry {e:#x} outside exec section");
+            }
+        }
     }
 
     // -- The matcher core ------------------------------------------------------

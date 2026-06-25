@@ -1630,8 +1630,8 @@ mod tests {
                 count += 1;
             }
         }
-        // 83 datatests + 51 stage testcases (+1: ghangr-dd-argmatch-to-argument-noea, gotoreduce)
-        assert_eq!(count, 134, "corpus file count drifted");
+        // 83 datatests + 54 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea, gotoreduce)
+        assert_eq!(count, 137, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

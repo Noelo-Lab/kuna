@@ -47,6 +47,16 @@ regex = "1"
 # (MIT/Apache).  Used by kuna-analysis only -- never the engine.
 cpp_demangle = "0.5"
 rustc-demangle = "0.1"
+# MSVC C++ demangling (kuna-analysis / `s1_demangle/`), the MSVC arm of the same
+# `GnuDemanglerAnalyzer` analog.  Ghidra's MSVC demangler (`MicrosoftDemangler`,
+# the `MDMang` engine) is a large hand-rolled C++ grammar in
+# `Ghidra/Features/MicrosoftDemangler/.../*`.  cpp_demangle/rustc-demangle do NOT
+# recognize the MSVC `?`-prefixed scheme (`?foo@Bar@@QEAAXXZ`), so the
+# multi-format loader's MSVC/COFF arm (docs/multiformat-loader-design.md §5.5,
+# PR-9) substitutes the permissive `msvc-demangler` crate (MIT) for it -- the same
+# dependency-substitution LOSS the BFD/Itanium/Rust/DWARF deps take (see
+# docs/rust-port/losses.md).  Used by kuna-analysis only -- never the engine.
+msvc-demangler = "0.11"
 # DWARF debug-info parsing (kuna-analysis / `s1_dwarf/`), the kuna analog of
 # Ghidra's `DWARFAnalyzer`.  Ghidra hand-rolls a complete DWARF reader in
 # `ghidra.app.util.bin.format.dwarf.*` (DWARFProgram, DebugInfoEntry,
