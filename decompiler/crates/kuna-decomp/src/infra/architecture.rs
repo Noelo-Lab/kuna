@@ -411,6 +411,18 @@ pub struct Architecture {
     /// the Listing (`--option listing on` builds it); a no-op when the Listing is
     /// absent. Default-off ⇒ every parity gate is byte-identical.
     pub analysis_noreturn_disc: bool,
+    /// (kuna) Gate the structural no-return **propagation** consumer
+    /// (`noreturn_propagate`), the second Listing/xref consumer; default **off**.
+    /// The kuna analog of angr's CFGFast call-graph no-return propagation: seed
+    /// from the Known no-return set and conclude a function no-return when its last
+    /// real instruction (skipping trailing NOP padding) is a call/tail-jump to an
+    /// already-no-return callee, with no returning path — iterated to a fixpoint,
+    /// with NO evidence threshold (unlike `noreturn_disc`). Catches custom
+    /// no-return wrappers (e.g. `xalloc_die`) that the name list misses and the ≥3
+    /// evidence rule does not reach. Reads the Listing (`--option listing on`
+    /// builds it); a no-op when the Listing is absent. Default-off ⇒ every parity
+    /// gate is byte-identical.
+    pub analysis_noreturn_propagate: bool,
     /// (kuna) Gate the Go `pclntab` function-name recovery pass (`gopclntab`); the
     /// kuna analog of Ghidra's `GolangSymbolAnalyzer` (name-recovery half). Default
     /// **on**, but the pass is registered ONLY for a Go binary
@@ -620,6 +632,7 @@ impl Architecture {
             analysis_formatstring: false,
             analysis_listing: false,
             analysis_noreturn_disc: false,
+            analysis_noreturn_propagate: false,
             analysis_gopclntab: false,
 
             symboltab,
@@ -719,6 +732,7 @@ impl Architecture {
         self.analysis_formatstring = false; // Ghidra FormatStringAnalyzer default-off
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
+        self.analysis_noreturn_propagate = false; // no-return propagation consumer default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
     }
 
@@ -849,6 +863,9 @@ impl Architecture {
             "listing" => on_off!(analysis_listing, "Listing/xref disassembly tier"),
             "noreturn_disc" => {
                 on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
+            }
+            "noreturn_propagate" => {
+                on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
             }
             "gopclntab" => {
                 on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
