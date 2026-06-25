@@ -1,7 +1,7 @@
 //! Unit tests for the kuna stage registry (`kuna_stages.rs`).
 //!
 //! Parity targets transcribed from `decompiler/cpp/kuna_stages.cc`:
-//! group=39, substage=40, surface=91, settable=45 (27 stage-model knobs + 15
+//! group=39, substage=40, surface=91, settable=46 (28 stage-model knobs + 15
 //! kuna analysis-tier gates + 3 loader-tier capabilities
 //! `relocobjects`/`i386_pie_plt`/`macho-arm64e`), plus the stage-code helpers,
 //! the lookup API, the
@@ -31,8 +31,8 @@ fn surface_count_is_91() {
 
 #[test]
 fn settable_count_is_43() {
-    // 27 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
-    // + `regionstructure`)
+    // 28 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
+    // + `gotoreduce` + `regionstructure`)
     // + 15 analysis-tier
     // gates: 10 per-run analysis-pass
     // enablement (noreturn_known/libproto/strings/entry_disc/arm_markers/mips_gp/
@@ -280,6 +280,7 @@ fn option_values_live_value_present_for_21_suppressed_for_22() {
                     matches!(
                         st.option,
                         "loweredswitch"
+                            | "regionstructure"
                             | "stackguard"
                             | "namestyle"
                             | "foldcallret"
@@ -358,8 +359,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 45 rows: 44 trailing commas (the last, macho-arm64e, has none).
-    assert_eq!(json.matches("},\n").count(), 44);
+    // 46 rows: 45 trailing commas (the last, macho-arm64e, has none).
+    assert_eq!(json.matches("},\n").count(), 45);
 }
 
 #[test]
