@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    161,
-    161
+    164,
+    164
   ],
   "passing": [
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
@@ -133,6 +133,9 @@
     "data:KUNA-REGIONS #3: region blocks lists the single-block loop region on its own",
     "data:KUNA-REGIONS #4: the recursive walker visits the entry block exactly once",
     "data:KUNA-REGIONS #5: stage map routes region tree to S7 loop-refinement",
+    "data:KUNA-REGIONS #6: the real-CFG top region keeps the CBRANCH entry, the nested region, and the early-out as three nodes",
+    "data:KUNA-REGIONS #7: the loop's enclosing acyclic region pairs the cyclic self-loop with its 0x40a exit block",
+    "data:KUNA-REGIONS #8: the cyclic self-loop region wraps exactly the single 0x3e0 block",
     "data:KUNA-RESTARTS #2: a function that never restarts reports none",
     "data:REALTYPES #1: signature uses real C types, not xunknown8",
     "data:REALTYPES #2: 1-byte stack buffer is char[8], not xunknown1[8]",
