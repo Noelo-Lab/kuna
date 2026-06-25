@@ -320,6 +320,10 @@ pub struct Architecture {
     /// (kuna) Reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`).
     pub recover_lowered_switch: bool,
+    /// (kuna) Lower loop-exit `goto <successor>` edges to structured `break;`
+    /// (a port of Ghidra `BlockGraph::scopeBreak`; option `loopbreak_recovery`,
+    /// DIV-10 default-on).
+    pub recover_loop_break: bool,
     /// (kuna) Fold an order-safe single-use call return into its use site
     /// (`fold_call_returns`, opt-in default-off; angr "call return variable
     /// folding").
@@ -621,6 +625,7 @@ impl Architecture {
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
+            recover_loop_break: false,
             fold_call_returns: false,
             strip_stack_guard: false,
             name_style_angr: false,
@@ -709,6 +714,7 @@ impl Architecture {
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
+        self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.name_style_angr = true; // (kuna) default-on: angr-style default naming
@@ -832,6 +838,12 @@ impl Architecture {
                 Ok(msg)
             }
             "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
+            "loopbreak_recovery" => {
+                let (val, msg) =
+                    crate::kuna_loopbreak_recovery::OptionLoopBreakRecovery.apply(p1)?;
+                self.recover_loop_break = val;
+                Ok(msg)
+            }
             "namestyle" => {
                 let (val, msg) = crate::kuna_naming::OptionNameStyle.apply(p1)?;
                 self.name_style_angr = val;
@@ -1149,6 +1161,7 @@ impl Architecture {
         seam.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         seam.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
+        seam.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard
         // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the

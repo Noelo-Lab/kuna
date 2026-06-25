@@ -263,6 +263,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "loweredswitch",
     "foldcallret",
     "stackguard",
+    "loopbreak_recovery",
     "namestyle",
     "realtypes",
     "dedupvardecls",
