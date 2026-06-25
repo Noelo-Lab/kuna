@@ -1,0 +1,236 @@
+=== angr (cstyle_ifs=False) — skip @ od_gccO2.o ===
+if (!cur) return 1; as FIRST stmt, body de-indented (no else)
+
+--- angr ---
+typedef struct FILE {
+} FILE;
+
+typedef struct stat {
+    unsigned int st_mode;
+    char padding_4[4];
+    unsigned int st_ino;
+    char padding_c[4];
+    char st_dev;
+    char padding_11[7];
+    unsigned int st_nlink;
+    unsigned int st_uid;
+    unsigned int st_gid;
+    char padding_24[4];
+    int st_size;
+    char padding_2c[4];
+    int st_atime;
+    char padding_34[4];
+    int st_mtime;
+    char padding_3c[4];
+    int st_ctime;
+} stat;
+
+extern unsigned long in_stream;
+extern unsigned long input_filename;
+
+unsigned int skip(long long cur)
+{
+    unsigned int v3;  // r13d
+    unsigned int v4;  // r12d
+    long long v13;  // rdi
+    long long v14;  // rsi
+    long long v15;  // rdx
+    long long v16;  // rcx
+    long long v17;  // r8
+    long long v18;  // r9
+    char v5;  // al
+    long long v6;  // rdx
+    long long v7;  // rcx
+    long long v8;  // rbx
+    long long v9;  // rbx
+    long long count;  // rax
+    int *err;  // rax
+    unsigned int v12;  // eax
+    stat v0;  // [bp-0x20c8]
+    char v1;  // [bp-0x2038]
+
+    if (!cur)
+        return 1;
+    v3 = 0;
+    v4 = 1;
+    while (in_stream)
+    {
+        if (!fstat(fileno(in_stream), &v0))
+        {
+            v5 = usable_st_size.isra.0(v0.st_nlink);
+            if (v5)
+            {
+                v6 = 0x200;
+                v7 = *((unsigned long long *)((void*)&v0 + 48));
+                if (*((unsigned long long *)((void*)&v0 + 56)) - 1 <= 2305843009213693951)
+                    v6 = *((unsigned long long *)((void*)&v0 + 56));
+                if (v7 > v6)
+                {
+                    if (v7 < cur)
+                    {
+                        cur -= v7;
+                    }
+                    else if ((int)rpl_fseeko(in_stream, cur, 1))
+                    {
+                        v4 = 0;
+                        cur = 0;
+                        v3 = *(__errno_location());
+                    }
+                    else
+                    {
+                        cur = 0;
+                    }
+LABEL_4020d0:
+                    if (!cur)
+                        break;
+                    else
+                        goto LABEL_4020d9;
+                }
+            }
+            if (v5 || (int)rpl_fseeko(in_stream, cur, 1))
+            {
+                v8 = 0x2000;
+                while (cur)
+                {
+                    if (v8 > cur)
+                        v9 = cur;
+                    else
+                        v9 = v8;
+                    v8 = v9;
+                    count = __fread_unlocked_chk(&v1, 0x2000, 1, v8, in_stream);
+                    cur -= count;
+                    if (v8 == count)
+                        continue;
+                    if (ferror_unlocked(in_stream))
+                    {
+                        v4 = 0;
+                        cur = 0;
+                        v3 = *(__errno_location());
+                        break;
+                    }
+                    else if (feof_unlocked(in_stream))
+                    {
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                cur = 0;
+                goto LABEL_4020d0;
+            }
+        }
+        else
+
+=== kuna (synth-ELF link-bypass of ET_REL loader) — skip ===
+uint1 skip(uint8 a0)
+
+{
+  bool v1; // al
+  int8 v10; // rdx
+  uint8 v11; // rbx
+  char v12 [24];
+  char v13 [8200];
+  uint1 v14; // r12b
+  int4 v15;
+  int8 v16; // fs_offset
+  int8 v17; // fs_offset
+  unsigned int v18; // stack - 0x20b0
+  unsigned int v18; // stack - 0x20b0
+  uint8 v19; // stack - 0x2098
+  uint8 v19; // stack - 0x2098
+  bool v2; // al
+  int8 v20; // stack - 0x2090
+  int8 v20; // stack - 0x2090
+  int8 v21; // stack - 0x30
+  char v3; // al
+  unsigned int v4; // eax
+  int4 v5; // eax
+  int4 *v6; // rax
+  uint8 v7; // rax
+  void *v8; // rax
+  unsigned long v9; // rax
+  
+  v21 = *(int8 *)(v16 + 0x28);
+  if (a0 != 0) {
+    v15 = 0;
+    v14 = 1;
+    while (dat_4090c8 != 0) {
+      v4 = fileno(dat_4090c8);
+      v5 = fstat(v4,v12);
+      if (v5 == 0) {
+        v3 = usable_st_size.isra.0(v18);
+        if (v3 == '\0') {
+label_403bb0:
+          if ((v3 == '\0') && (v5 = rpl_fseeko(Unique1000026c,a0,1), v5 == 0)) {
+            a0 = 0;
+          }
+          else {
+            v11 = 0x2000;
+            do {
+              do {
+                if (a0 == 0) goto label_403c40;
+                if (a0 < v11) {
+                }
+                v7 = __fread_unlocked_chk(v13,0x2000,1,v11,dat_4090c8);
+                a0 = a0 - v7;
+              } while (v11 == v7);
+              v5 = ferror_unlocked(dat_4090c8);
+              if (v5 != 0) {
+                v6 = (int4 *)__errno_location();
+                v14 = 0;
+                a0 = 0;
+                v15 = *v6;
+                goto label_403c40;
+              }
+              v5 = feof_unlocked(Unique10000264);
+            } while (v5 == 0);
+          }
+        }
+        else {
+          v10 = 0x200;
+          if ((uint8)(v20 - 1U) <= 0x1fffffffffffffff) {
+          }
+          if ((int8)v19 <= v10) goto label_403bb0;
+          if (v19 < a0) {
+            a0 = a0 - v19;
+          }
+          else {
+            v5 = rpl_fseeko(Unique1000026c,a0,1);
+            if (v5 == 0) {
+              a0 = 0;
+            }
+            else {
+              v6 = (int4 *)__errno_location();
+              v14 = 0;
+              a0 = 0;
+              v15 = *v6;
+            }
+          }
+        }
+label_403c40:
+        if (a0 == 0) goto label_403d20;
+      }
+      else {
+        v9 = quotearg_n_style_colon(0,3,dat_4090d8);
+        v8 = (void *)__errno_location();
+        v14 = 0;
+        error(0,*v8,0x406273,v9);
+      }
+      v1 = check_and_close(v15);
+      v2 = open_next_file();
+      v14 = v14 & v1 & v2;
+    }
+label_403d20:
+    if (a0 == 0) goto label_403d25;
+    v9 = dcgettext(0,"cannot skip past end of combined input",5);
+    error(1,0,v9);
+  }
+  v14 = 1;
+label_403d25:
+  if (v21 != *(int8 *)(v17 + 0x28)) {
+                    /* WARNING: Subroutine does not return */
+    __stack_chk_fail();
+  }
+  return v14;
+}

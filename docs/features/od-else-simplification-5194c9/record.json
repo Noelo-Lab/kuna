@@ -1,0 +1,27 @@
+{
+  "opportunity": "test_od_else_simplification::skip",
+  "test_name": "test_od_else_simplification",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/od_gccO2.o",
+  "selector": "skip",
+  "func_addr": "0x401fc0",
+  "angr_version": "angr-dev (local checkout)",
+  "option": "earlyreturn",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_od_else_simplification; IfElseFlattener (region_simplifiers/ifelse.py) + return_duplicator_*.py; skip",
+  "scope": "large",
+  "proposal": true,
+  "decisions": [
+    {
+      "question": "Is early-return guard hoisting ('else simplification') a small (one gated Action/Rule) or large feature in kuna?",
+      "decider_verdict": {
+        "scope": "large",
+        "owning_stage": "S8 structuring (block-graph Structurer, blockaction.rs) — angr maps this to its S7 region recovery",
+        "rationale": "The if/else shape kuna emits is decided by Ghidra's block-graph collapse Structurer (CollapseStructure/rule_block_if_else in s8_structure/blockaction.rs, ~3635 lines), which has no angr-style mutable region tree to re-parent at emit time. Reproducing angr's output requires both halves of angr's mechanism — return duplication (synthesizing a duplicated canary+return epilogue into the !a0 guard path so the true-branch terminates) and IfElseFlattener (removing the else and de-indenting the body) — which is new structuring logic woven into the collapse Structurer plus a likely emit-side change, well beyond a single gated early-return. This is the same S7/S8 region-structuring class consistently parked LARGE in the five prior ET_REL opportunities (condfold etc.), and unlike the small template kuna_loweredswitch.rs which is an S2 detection pass.",
+        "if_large_proposal_option_name": "earlyreturn",
+        "if_small_plan": ""
+      }
+    }
+  ],
+  "loader_note": "od_gccO2.o is ET_REL; kuna's PT_LOAD-only loader cannot map it (loader gap, proposal PR #37). kuna side isolated via link-bypass into a standalone ELF to expose the structuring gap."
+}
