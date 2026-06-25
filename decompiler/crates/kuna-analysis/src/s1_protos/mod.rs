@@ -76,6 +76,7 @@ const LIBC: &[(&str, Sig)] = &[
     ("sscanf", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::CharPtr], vararg: 2 }),
     ("perror", Sig { ret: Ty::Void, params: &[Ty::CharPtr], vararg: -1 }),
     ("fopen", Sig { ret: Ty::VoidPtr, params: &[Ty::CharPtr, Ty::CharPtr], vararg: -1 }),
+    ("setlocale", Sig { ret: Ty::CharPtr, params: &[Ty::Int, Ty::CharPtr], vararg: -1 }),
     // string.h
     ("strlen", Sig { ret: Ty::Size, params: &[Ty::CharPtr], vararg: -1 }),
     ("strcmp", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::CharPtr], vararg: -1 }),

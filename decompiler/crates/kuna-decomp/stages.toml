@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=91, settable=45
-# (27 stage-model knobs + 15 analysis-tier gates + 3 loader-tier capabilities).
+# Counts (asserted in tests): group=39, substage=40, surface=93, settable=47
+# (29 stage-model knobs + 15 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -1174,6 +1174,12 @@ substage = "switch-model"
 note = "(kuna GH-9191) bound a LOAD-table jumptable by a modulo/and-mask on its index"
 
 [[surface]]
+surface = "option switchguardbound"
+stage = "S2"
+substage = "switch-model"
+note = "(kuna, angr) bound a LOAD-table jumptable by an out-of-band CBRANCH range guard the guard analysis missed"
+
+[[surface]]
 surface = "option dynamichashmax"
 stage = "S6"
 substage = "alias-facets"
@@ -1467,6 +1473,26 @@ source_decompiler = "ghidra-upstream"
 inspiration = "Ghidra GH-9191 (modulo/and-mask jumptable bound)"
 change_kind = "opt-in-tool"
 live_field = "switch_modulo_bound"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "switchguardbound"
+values = "on|off"
+default = "off"
+destructive = true
+stage = "S2"
+substage = "switch-model"
+strength = "HARD"
+rewind = "S2"
+issue = "angr-missing-function-call"
+summary = "Bound a LOAD-table jumptable by an out-of-band CBRANCH range guard (idx LEu N) when the basic model's guard analysis could not (e.g. a GCC `sub LOW; ja DEFAULT` dispatch with the index spilled to the stack and the flag idiom not yet simplified)."
+use_when = "Set on PER PROGRAM when a switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed (code *)() call AND the dispatch is range-guarded (vs the modulo form switchmodbound handles); DESTRUCTIVE as a global default (the guard-to-index correspondence is asserted across a stack spill it cannot prove in dataflow, so it may over-bound an unrelated indirect jump)."
+example = "option switchguardbound on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_missing_function_call; angr jump-table / VSA guard bounding; main"
+change_kind = "opt-in-tool"
+live_field = "switch_guard_bound"
 live_true = "on"
 live_false = "off"
 

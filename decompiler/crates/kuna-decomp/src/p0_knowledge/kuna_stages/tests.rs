@@ -24,15 +24,18 @@ fn substage_count_is_40() {
 }
 
 #[test]
-fn surface_count_is_92() {
+fn surface_count_is_93() {
+    // +1 for the `option switchguardbound` surface row (angr missing-function-call),
     // +1 for the `option tailcalljump` surface row (angr tee-O2 tail-jumps).
-    assert_eq!(kuna_num_surfaces(), 92);
-    assert_eq!(SURFACE_TABLE.len(), 92);
+    assert_eq!(kuna_num_surfaces(), 93);
+    assert_eq!(SURFACE_TABLE.len(), 93);
 }
 
 #[test]
-fn settable_count_is_46() {
-    // 26 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`)
+fn settable_count_is_47() {
+    // 29 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
+    // + `switchguardbound`, angr test_decompiling_missing_function_call
+    // + `tailcalljump`, angr tee-O2 tail-jumps)
     // + 15 analysis-tier
     // gates: 10 per-run analysis-pass
     // enablement (noreturn_known/libproto/strings/entry_disc/arm_markers/mips_gp/
@@ -48,6 +51,7 @@ fn settable_count_is_46() {
     // dedupvardecls with duplicate-scalar-declaration collapse, DIV-7;
     // loopbreak_recovery with loop-exit-goto break recovery, DIV-10;
     // gotoreduce with the angr SAILR return-tail goto-reduction pass;
+    // switchguardbound with guard-bounded GCC PIC jump-table recovery;
     // noreturn_propagate with angr-style structural no-return propagation.)
     // + 3 loader-tier capabilities: the `relocobjects` ET_REL relocatable-object
     // loader (DIV-8), the `i386_pie_plt` i386-PIE PLT-stub decode gate
@@ -56,8 +60,8 @@ fn settable_count_is_46() {
     // settables that gate the loader rather than a per-function pass.
     // (+1 for `tailcalljump`, the angr tee-O2 tail-jump S2 flow-classification
     // knob, default-off opt-in.)
-    assert_eq!(kuna_num_settables(), 46);
-    assert_eq!(SETTABLE_TABLE.len(), 46);
+    assert_eq!(kuna_num_settables(), 47);
+    assert_eq!(SETTABLE_TABLE.len(), 47);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -236,12 +240,13 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_22_suppressed_for_24() {
+fn option_values_live_value_present_for_23_suppressed_for_24() {
     let ov = OptionValues::default();
-    // 22 options have a codegen live reader (realtypes + dedupvardecls join the
-    // field-backed group; +1 for `tailcalljump`, whose `live_field` is
-    // `tail_call_jumps`); the live_value returns the current value for them and
-    // None for loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the
+    // 23 options have a codegen live reader (realtypes + dedupvardecls join the
+    // field-backed group; switchguardbound is field-backed via switch_guard_bound;
+    // +1 for `tailcalljump`, whose `live_field` is `tail_call_jumps`); the
+    // live_value returns the current value for them and None for
+    // loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the
     // 17 analysis/loader-tier gates (which have no `live_field` — their live state
     // is read console-side via the hand-written `kuna_live_value` / an env gate,
     // not the codegen `live_value`). `relocobjects` (DIV-8) gates the loader, not a
@@ -295,7 +300,7 @@ fn option_values_live_value_present_for_22_suppressed_for_24() {
             }
         }
     }
-    assert_eq!(with_live, 22);
+    assert_eq!(with_live, 23);
 }
 
 #[test]
@@ -360,9 +365,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 46 rows: 45 trailing commas (the last, macho-arm64e, has none;
-    // tailcalljump's S2 row sits mid-table, so it does not move the tail).
-    assert_eq!(json.matches("},\n").count(), 45);
+    // 47 rows: 46 trailing commas (the last, macho-arm64e, has none;
+    // switchguardbound's and tailcalljump's S2 rows sit mid-table, so they
+    // do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 46);
 }
 
 #[test]

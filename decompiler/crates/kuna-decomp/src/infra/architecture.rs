@@ -315,6 +315,10 @@ pub struct Architecture {
     /// (kuna GH-9191) Bound a modulo/and-mask LOAD-table jumptable index
     /// (C++ `switch_modulo_bound`).
     pub switch_modulo_bound: bool,
+    /// (kuna, angr `test_decompiling_missing_function_call`) Bound a LOAD-table
+    /// jumptable index by an out-of-band CBRANCH range guard the basic model's
+    /// guard analysis could not turn into a bound (C++ `switch_guard_bound`).
+    pub switch_guard_bound: bool,
     /// (kuna GH-8500) Hold a store-through-a-stack-pointer-alias across the
     /// deadcode race (C++ `stack_alias_deadstore`).
     pub stack_alias_deadstore: bool,
@@ -631,6 +635,7 @@ impl Architecture {
             model_stack_probe_loop: false,
             fold_flag_compare: false,
             switch_modulo_bound: false,
+            switch_guard_bound: false,
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
@@ -722,6 +727,7 @@ impl Architecture {
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
+        self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
@@ -840,6 +846,7 @@ impl Architecture {
                 Ok(msg)
             }
             "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
+            "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
                 self.recover_lowered_switch = val;
@@ -1213,6 +1220,9 @@ impl Architecture {
         // (kuna) GH-9191: carry the modulo/and-mask jump-table index-bound gate
         // (`option switchmodbound`) so `JumpBasic::recoverModel` reaches it.
         seam.switch_modulo_bound = self.switch_modulo_bound;
+        // (kuna, angr) carry the CBRANCH-guard jump-table index-bound gate
+        // (`option switchguardbound`) so `JumpBasic::recoverModel` reaches it.
+        seam.switch_guard_bound = self.switch_guard_bound;
         seam.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate
