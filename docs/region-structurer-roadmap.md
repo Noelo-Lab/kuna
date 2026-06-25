@@ -98,3 +98,59 @@ shape (the success path, not the fall-back) and is **byte-identical to Ghidra** 
 parity result), rather than a goto delta. The "one fewer goto" verifiable delta should be the
 success metric for **Inc 3** (loops), not Inc 1 — Inc 1 delivers the live, parity-safe
 sequence/ITE/virtualize foundation the cyclic schemas build on.
+
+## Inc 3 — implementation status & findings (cyclic/loop recovery, option `regionstructure`)
+
+**Landed (parity-safe, 3 gates green):** the region structurer now recovers the three loop
+classes — **do-while** (`BlockDoWhile`), **while/for** (`BlockWhileDo`), and **infinite-loop +
+CBRANCH break** (`BlockInfLoop`) — porting angr `phoenix._analyze_cyclic` +
+`_match_cyclic_{while,dowhile,natural_loop}` structurally over kuna's loop builders
+(`new_block_{do_while,while_do,inf_loop}`). The schemas lean on the **back-edges + dominators
+already marked on the seeded `sblocks` `BlockCopy`s** (`structure_loops`/`calc_forward_dominator`
+run on `bblocks` in `structure_reset`, copied verbatim by `build_copy_from` — so the structurer
+gets loop-edge marks and `immed_dom`/`index` for free), plus a port of
+`CollapseStructure::negate_condition_rec` so a loop-condition orientation flip (the `i==0`
+do-while/while-do arm) records a deferred **pending-flip** that `run_region_structurer` returns
+and `ActionBlockStructure` realizes via `block_basic_negate_lastop` — identical to the
+`CollapseStructure` `take_pending_flips` path. A **multi-latch / multi-exit refinement**
+(`refine_loop_edges`, the kuna analog of `_refine_cyclic_core`) virtualizes the secondary
+back-edges / exits / mid-body entries to gotos so the body collapses to the clean self-loop the
+fold rules accept; a multi-entry head (irreducible at the head) bails so the caller falls back
+rather than spinning. Honest-partial-safe throughout: a loop class that doesn't match falls back
+to `CollapseStructure` (never a panic). Default-OFF ⇒ 675/675 datatests byte-identical; ON-vs-OFF
+decompile speed is within noise on loop-heavy functions (the worst case, a ~21-round refinement
+that ultimately falls back, costs no measurable time).
+
+**break/continue:** angr emits `BreakNode`/`ContinueNode` directly in the structurer. kuna instead
+determines break/continue in a **separate, opt-in** pass (`kuna_loopbreak_recovery::kuna_scope_break`,
+gated by `option loopbreak_recovery`, default-OFF) that runs in `ActionFinalStructure` *after*
+structuring and lowers loop-exit `goto <successor>` edges to `break;` once the loop scope is
+finalized. The region structurer therefore marks every virtualized loop edge as a **plain goto**
+(`set_goto_branch`) — setting `f_break_goto`/`f_continue_goto` before that pass mis-renders the
+loop — and the gated scope-break pass converts them, exactly as it does for the CollapseStructure
+path. This keeps the loop recovery parity-safe and renderer-correct.
+
+**Empirical finding (the goto-reduction is IRREDUCIBLE-only, as Inc 1 predicted):** across 40+
+hand-crafted loop shapes (gcc/clang -O0/-O1/-O2: clean do-while/while/for/inf-loop, multi-continue,
+multi-break, two-latch with side effects, nested loops, head-in-body two-entry, and goto-spaghetti
+loops) **Ghidra's `CollapseStructure` already emits the minimal goto count** — ZERO for every
+*reducible* loop (it has comma-folding into the condition, a complete while/do-while/inf-loop rule
+set, and a good `select_goto`), and exactly ONE for a genuinely *irreducible* loop (a 2-entry
+natural loop *needs* a goto to enter, and Ghidra's single goto is already minimal). The region
+structurer **matches** this: it folds the reducible loops byte-identically (`tests/stages/`
+`regionstructure-loop.xml` asserts the three-class success path + ZERO gotos, the honest parity
+result, mirroring Inc 1's acyclic finding) and falls back on the irreducible / nested-interlock
+ones (e.g. fmt's `get_space`, where an inlined-`getc` interlock yields 2 gotos that both Ghidra and
+the region structurer leave). The roadmap's multi-goto target — the **PR #44 head-in-body**
+function — lives in a **Windows PE** binary the kuna loader does not yet accept (`kuna decompile`
+rejects PE32+; that loader is a separate in-flight effort), so that specific over-virtualization
+could not be reproduced in-tree. No constructible-in-C or available-x86-64-ELF loop in the corpus
+exhibits a Ghidra over-virtualization the flat schemas can beat.
+
+**Consequence for the roadmap:** Inc 3 delivers **live, correct, parity-safe loop recovery**
+(all three classes folded via the cyclic schemas, proven on the success path) — the structural
+foundation the goto-reduction needs — but the **measurable goto delta** on a loop awaits either
+(a) the PE loader, to reach the PR #44 / `1after909`-family irreducible regions, or (b) Inc 5's
+post-dom (H2) refinement, which restructures the irreducible interlocks (`get_space`) Ghidra and
+the flat cyclic schemas both leave as gotos. The cyclic schemas + the break/continue plumbing are
+in place for both.
