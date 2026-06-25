@@ -24,18 +24,20 @@ fn substage_count_is_40() {
 }
 
 #[test]
-fn surface_count_is_93() {
+fn surface_count_is_94() {
     // +1 for the `option switchguardbound` surface row (angr missing-function-call),
-    // +1 for the `option tailcalljump` surface row (angr tee-O2 tail-jumps).
-    assert_eq!(kuna_num_surfaces(), 93);
-    assert_eq!(SURFACE_TABLE.len(), 93);
+    // +1 for the `option tailcalljump` surface row (angr tee-O2 tail-jumps),
+    // +1 for the `option branchflip` surface row (angr SAILR condition polarity).
+    assert_eq!(kuna_num_surfaces(), 94);
+    assert_eq!(SURFACE_TABLE.len(), 94);
 }
 
 #[test]
-fn settable_count_is_47() {
-    // 29 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
+fn settable_count_is_48() {
+    // 30 stage-model knobs (incl. `foldcallret` + `dedupvardecls` + `loopbreak_recovery`
     // + `switchguardbound`, angr test_decompiling_missing_function_call
-    // + `tailcalljump`, angr tee-O2 tail-jumps)
+    // + `tailcalljump`, angr tee-O2 tail-jumps
+    // + `branchflip`, angr SAILR negated-guard branch flip, S8 readability)
     // + 15 analysis-tier
     // gates: 10 per-run analysis-pass
     // enablement (noreturn_known/libproto/strings/entry_disc/arm_markers/mips_gp/
@@ -59,9 +61,10 @@ fn settable_count_is_47() {
     // arm64e Apple-Silicon spec-selection gate (multi-format loader PR-8) —
     // settables that gate the loader rather than a per-function pass.
     // (+1 for `tailcalljump`, the angr tee-O2 tail-jump S2 flow-classification
-    // knob, default-off opt-in.)
-    assert_eq!(kuna_num_settables(), 47);
-    assert_eq!(SETTABLE_TABLE.len(), 47);
+    // knob, default-off opt-in; +1 for `branchflip`, the angr SAILR negated-guard
+    // S8 branch-flip readability knob, default-off opt-in.)
+    assert_eq!(kuna_num_settables(), 48);
+    assert_eq!(SETTABLE_TABLE.len(), 48);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -240,7 +243,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_23_suppressed_for_24() {
+fn option_values_live_value_present_for_23_suppressed_for_25() {
     let ov = OptionValues::default();
     // 23 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -288,6 +291,7 @@ fn option_values_live_value_present_for_23_suppressed_for_24() {
                         st.option,
                         "loweredswitch"
                             | "stackguard"
+                            | "branchflip"
                             | "namestyle"
                             | "foldcallret"
                             | "gotoreduce"
@@ -365,10 +369,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 47 rows: 46 trailing commas (the last, macho-arm64e, has none;
-    // switchguardbound's and tailcalljump's S2 rows sit mid-table, so they
-    // do not move the tail).
-    assert_eq!(json.matches("},\n").count(), 46);
+    // 48 rows: 47 trailing commas (the last, macho-arm64e, has none;
+    // switchguardbound's and tailcalljump's S2 rows and branchflip's S8 row
+    // sit mid-table, so they do not move the tail).
+    assert_eq!(json.matches("},\n").count(), 47);
 }
 
 #[test]

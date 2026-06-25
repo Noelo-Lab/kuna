@@ -248,14 +248,15 @@
 0241                  blockstructure
 0242                  prefercomplement
 0243                  structuretransform
-0244                  presentcompareform
-0245        !         outputprototype
-0246        !         inputprototype
-0247        !         mapglobals
-0248        !         dynamicsymbols
-0249        !         namevars
-0250        !         setcasts
-0251                  finalstructure
-0252                  gotoreduce
-0253        !         prototypewarnings
-0254                  stop
+0244                  branchflip
+0245                  presentcompareform
+0246        !         outputprototype
+0247        !         inputprototype
+0248        !         mapglobals
+0249        !         dynamicsymbols
+0250        !         namevars
+0251        !         setcasts
+0252                  finalstructure
+0253                  gotoreduce
+0254        !         prototypewarnings
+0255                  stop

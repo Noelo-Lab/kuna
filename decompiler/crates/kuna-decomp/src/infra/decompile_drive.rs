@@ -575,6 +575,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         }
         total += r;
         if !(reflow_requested && fd.has_restart_pending()) {
+            drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
         // Re-follow flow against the same Funcdata (its Override — incl. the
@@ -585,7 +586,20 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
     }
     // Exceeded the cross-flow restart budget; keep the last analyzed IR.
     fd.set_restart_pending(false);
+    drain_pipeline_comments(arch, fd);
     Ok(total)
+}
+
+/// Flush any analysis comments the **action pipeline** buffered on the `Funcdata`
+/// (e.g. the `branchflip:` warning that `ActionBranchFlip` records at S8) into the
+/// comment database for emit.  The flow-time `Funcdata::warning`s are drained in
+/// `follow_flow_on_fd` before the pipeline runs; warnings raised *inside* the
+/// pipeline land here.  No-op when nothing was buffered.
+fn drain_pipeline_comments(arch: &mut Architecture, fd: &mut Funcdata) {
+    let func_addr = fd.get_address().clone();
+    for (tp, ad, txt) in fd.drain_pending_comments() {
+        arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
+    }
 }
 
 /// Re-follow flow on an existing, already-analyzed `fd` after a restart request

@@ -266,6 +266,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "gotoreduce",
     "foldcallret",
     "stackguard",
+    "branchflip",
     "loopbreak_recovery",
     "namestyle",
     "realtypes",

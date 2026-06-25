@@ -1,5 +1,37 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — branch-flipping for linearity (option `branchflip`)
+
+Follow-up to PR #52 / the `tee_O2 x2nrealloc` case. angr's SAILR structurer flips a branch
+guarded by a **negative** test (`x == 0`, `!cond`) so the **positive** condition heads the
+`if` and the common path reads top-to-bottom; kuna kept Ghidra's polarity (`if (x == 0)`).
+A new S8 structuring pass `ActionBranchFlip` (option `branchflip`, opt-in **default-off**,
+ElementId-free / `set_kuna_option`-routed like `stackguard`) adds the angr-style flip: on a
+3-component `if/else` whose guard is the negated / equality-to-zero form, it rewrites
+`if (x == 0) {A} else {B}` to the positive complement `if (x != 0) {B} else {A}`.
+
+**Mechanism.** The polarity is decided entirely in S8 (S9/`printc.rs` faithfully renders the
+`boolean_flip` flag + edge order). The cost oracle `op_flip_in_place_test` classifies a flip
+as `0` (removes negation, `ActionPreferComplement`'s job) or `1` (adds negation in Ghidra's
+model — `==`/`== 0`/constant compare). `branchflip` is the **mirror of `prefer_complement`**:
+it takes the residual `1` class `prefer_complement` leaves alone and reuses the same proven
+dual-arena machinery (`split_flip_in_place_execute` + `op_flip_in_place_execute` +
+`swap_blocks(sif,1,2)`); `Funcdata::branch_flip_complement`/`block_if_flip_negated_guard` in
+`substrate/funcdata_block.rs`. Registered after the final `prefer_complement` in
+`universalaction.rs`. Each flip is logged as a `branchflip:` warning comment at the guard
+(new `drain_pipeline_comments` in `decompile_drive.rs` flushes pipeline-time warnings).
+
+**Scope (honest).** The motivating `x2nrealloc` guards (`if (a0 == 0) break;` if-goto and a
+2-armed `if (v3 == 0)`) are **not** flippable in place — no `else` arm to swap into; their
+fix is the region structurer + the separate `noreturn_propagate`. `branchflip` is scoped to
+the polarity normalization it can do faithfully (3-component `if/else`); it fires cleanly on
+e.g. tee_O2 `usage`/`close_stream`/`main`. Default-off (the flip changes rendering, so not a
+0/675 no-op → not default-on eligible; no DIV). Speed: one BFS, in the noise (off==on at
+0.167s on `x2nrealloc`; 0.173 vs 0.172s on `usage` which flips). Testcase
+`tests/stages/branchflip-negated-guard.xml`; writeup `docs/features/branchflip/analysis.md`.
+`make test` 675/675 PARITY OK, `make test-stages` 166/166 PARITY OK, `make rust-test` green,
+`kuna catalog --check` OK.
+
 ## Session (2026-06-25) — tee-o2-tail-jumps (option tailcalljump)
 
 angr testcase `test_decompiling_tee_O2_tail_jumps` :: `setlocale_null_androidfix`

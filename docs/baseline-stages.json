@@ -1,9 +1,12 @@
 {
   "data_footer": [
-    180,
-    180
+    183,
+    183
   ],
   "passing": [
+    "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
+    "data:BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)",
+    "data:BRANCHFLIP #3: the flip is logged so its effect is observable",
     "data:GH1243 #1: ADDC carry-out preserved, P1 = 2",
     "data:GH1243 #2: buggy truncated-carry result P1 = 0 absent",
     "data:GH1243 #3: already-correct case still holds, P0 = 1",
@@ -111,9 +114,9 @@
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
     "data:KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
-    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, switchguardbound, tailcalljump)",
+    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, switchguardbound, tailcalljump)",
     "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, tailcalljump)",
-    "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound)",
+    "data:KUNA-CATALOG #8: the opt-in-tool change_kind aligns with the destructive options (returnpair counted twice; +switchguardbound, +branchflip)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONSOLE #1: stage list shows Band B membership",
     "data:KUNA-CONSOLE #2: stage list includes the S3 dead-definition gate sub-stage",

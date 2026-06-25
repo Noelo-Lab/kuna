@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    branchflip: flip negated-guard if/else branches for linearity
+    (angr-style `if (x)` vs the Ghidra `if (x == 0)`).
+
+    Follow-up to PR #52 / the tee_O2 `x2nrealloc` case (`if (a0 == (void*)0x0)`
+    vs the angr `if (a0)`).  The angr SAILR structurer / condition processing flips a
+    branch guarded by a *negative* test (`x == 0`, `!cond`) and swaps the if/else
+    arms so the common path reads top-to-bottom.  kuna does the equivalent here as
+    an S8 structuring pass, `ActionBranchFlip`, gated by `option branchflip on`.
+
+    Source (a clean diamond with a shared merge block, so it structures as a
+    3-component BlockIf, the only shape that can be flipped *in place*):
+
+        int bf(int x, int *p) {
+            int r;
+            if (x == 0) { p[0] = 7; r = p[1]; }
+            else        { p[0] = 9; r = p[2]; }
+            p[3] = r;
+            return r * 5;
+        }
+
+    Compiled at gcc -O0 (no stack protector / no CET): the body is
+        cmpl $0,x ; jne ELSE ; [then] ; jmp MERGE ; ELSE: [else] ; MERGE: ...
+    i.e. the `==0` guard takes the THEN arm on equality.
+
+    Default output (assert #1):  if (x == 0) { ...7... } else { ...9... }
+        Ghidra/kuna keep the source polarity; the `== 0` guard renders verbatim.
+
+    With `option branchflip on` (asserts #2/#3):
+        if (x != 0) { ...9... } else { ...7... }
+        ActionBranchFlip detects that the if/else guard is the negated /
+        equality-to-zero form (`split_flip_in_place_test == 1`, the denormalizing
+        flip class `ActionPreferComplement` leaves alone), flips the condition to
+        its positive complement via the proven dual-arena machinery
+        (`split_flip_in_place_execute` + `op_flip_in_place_execute` +
+        `swapBlocks(1,2)`), and logs a `branchflip:` warning so the rewrite is
+        observable.  The arms swap to preserve semantics.
+
+    Stage model: this is an S8 readability-rewrites decision (`option branchflip
+    on` / `off`, opt-in default-off, source_decompiler angr).  Default-off keeps
+    the 675-datatest parity untouched; on requests the angr-style positive guard.
+
+    The script decompiles the function twice in one bulk `print C` stream: pass 1
+    under the default pipeline (assert #1: the issue / Ghidra polarity), pass 2
+    with the option set (asserts #2/#3: the flipped positive form + the log).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+554889e5897dec488975e0837dec007516488b45e0c70007000000488b45e08b40048945fceb14488b45e0c70009000000488b45e08b40088945fc488b45e0488d500c8b45fc89028b55fc89d0c1e00201d05dc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="bf"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 bf(int4 x, int4 *p);</com>
+  <com>lo fu bf</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option branchflip on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)" min="1" max="1">if \(x == 0\)</stringmatch>
+<stringmatch name="BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)" min="1" max="1">if \(x != 0\)</stringmatch>
+<stringmatch name="BRANCHFLIP #3: the flip is logged so its effect is observable" min="1" max="1">branchflip: flipped negated guard</stringmatch>
+</decompilertest>
