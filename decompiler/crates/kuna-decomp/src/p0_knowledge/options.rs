@@ -251,6 +251,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "booleanmask",
     "flagcompare",
     "v850indirectbranch",
+    "tailcalljump",
     "inputvarnodeadjust",
     "condexeplace",
     "sparcstructret",

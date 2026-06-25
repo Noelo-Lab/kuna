@@ -70,6 +70,7 @@ Straddler notes (placement by dominant owned artifact; see `docs/stage-model.md`
 | `kuna_booleanmask` / `kuna_ovlesssimplify` / `kuna_addcarrychain` | S3/S5 | simplification-quiescence rules (GH-1282 / GH-7190 / GH-8913) |
 | `kuna_memsetsequence` | S5 | const-sequence memset recovery (GH-9230/1537) |
 | `kuna_v850indbranch` | S2 | flow-classification reclassify (GH-8817) |
+| `kuna_tailcalljump` | S2 | flow-classification: recover an -O2 tail jump (direct `jmp` to another function's entry, e.g. `jmp setlocale@plt`) as a tail call — BRANCH→CALL+RETURN (angr tee-O2 tail-jumps; `option tailcalljump`, default-off) |
 | `kuna_flagcompare` | S3 | flag-modelled-compare folding — `(b<<k)s<0`, N==V SBORROW (GH-1276/8777) |
 | `kuna_switchmodbound` | S2 | modulo/and-mask LOAD-table jumptable index bound (GH-9191) |
 | `kuna_stackprobeloop` | S2/S6 | stack-pointer normalization across a stack-probe loop (GH-8017) |

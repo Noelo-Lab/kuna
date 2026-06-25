@@ -1,5 +1,35 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — tee-o2-tail-jumps (option tailcalljump)
+
+angr testcase `test_decompiling_tee_O2_tail_jumps` :: `setlocale_null_androidfix`
+(`binaries/tests/x86_64/decompiler/tee_O2`, x86-64 PIE, `-O2`).
+
+- **Why angr was better:** at `-O2` a leaf function whose last act is "call X; return" is
+  compiled to a direct **tail jump** (`jmp X` instead of `call X; ret`); when X is an external
+  symbol it targets the PLT thunk (`xor %esi,%esi; jmp setlocale@plt`). angr renders
+  `return setlocale(v1, NULL)`. kuna's flow follower (whole address space in-bounds) treated the
+  direct `jmp setlocale@plt` as ordinary intraprocedural flow and followed it INTO the PLT thunk;
+  the thunk's `jmp qword [GOT]` then failed jump-table recovery and became a `CALLIND` through the
+  GOT pointer + a `"Treating indirect jump as call"` warning — so kuna emitted
+  `void f(...){ /* WARNING: Treating indirect jump as call */ (*dat_209f68)(a0,0); return; }`
+  (the thunk got inlined instead of the `jmp` being recognized as a tail call).
+- **Mechanism:** new S2 flow-classification predicate `kuna_is_tail_call_branch`
+  (`kuna_tailcalljump.rs`, ELEM 4100), modeled on `kuna_v850indbranch`. In
+  `FlowInfo::xref_control_flow`'s `CPUI_BRANCH` arm, when the option is on and a direct branch's
+  target is the entry of another known function (`query_call(dest).is_some()`, incl. PLT thunks)
+  and not the function's own entry, the `BRANCH` is rewritten to a `CPUI_CALL` + an artificial
+  `RETURN` (the `truncate_indirect_jump` halt-insert idiom + the `CPUI_CALL`-arm cursor re-derive),
+  instead of flowing into the callee. Result with the option on: `setlocale(a0,0); return;` — the
+  callee resolves by name and the spurious warning/`(*dat_...)` indirect call are gone. (The
+  remaining `void`/`return;` vs angr's `return setlocale(...)` is an S4 return-value-recovery
+  concern — the OFF path is *also* void, so it is inherent to kuna's wrapper-return recovery, not
+  introduced or fixable by this S2 change.)
+- **Ablation:** default-OFF is byte-identical (675/675 PARITY OK). Default-ON regresses **2**
+  upstream datatests (`Long double #1/#2`), so the feature ships **default-OFF opt-in** (no DIV
+  entry). Speed: off 259.0 ms / on 264.9 ms (+2.26%, within the 5% budget).
+- **On/off default decision:** default-OFF opt-in (ablation not clean if default-on).
+
 ## Session (2026-06-25) — Go pclntab function-name recovery (Increment 34)
 
 Ported the **name-recovery half** of Ghidra's `GolangSymbolAnalyzer` (`golang-symbols`,

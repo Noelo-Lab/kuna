@@ -322,6 +322,17 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna) tee-O2 tail-jump: is the direct `CPUI_BRANCH` `op`, whose target is
+    /// `dest`, an `-O2` tail call to another known function's entry (and so should
+    /// be recovered as a `CALL` + `RETURN` rather than flow-followed into the
+    /// callee)?  See [`kuna_tailcalljump`](crate::kuna_tailcalljump).
+    ///
+    /// // SEAM(W4): ArchOption tailcalljump — gated on `option tailcalljump
+    /// on|off`, default \b false (default-pipeline byte-identical).
+    fn is_tail_call_branch(&self, _fd: &Funcdata, _op: OpId, _dest: &Address) -> bool {
+        false
+    }
+
     /// Resolve a direct-call entry address to its callee symbol (C++
     /// `FlowInfo::queryCall` → `Scope::queryFunction(entryaddr)`,
     /// `flow.cc:674`): return the callee's display name (so the call renders
@@ -1097,15 +1108,52 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         } else {
                             *isfallthru = true;
                         }
+                        // if (op->getTime() >= maxtime) { deleteRemainingOps; ... }
+                        if self.data.obank().get(curop).expect("xref").get_time() >= maxtime {
+                            self.delete_remaining_ops(cursor)?;
+                            cursor = None;
+                        }
+                        *startbasic = true;
+                    } else if self.env.is_tail_call_branch(&self.data, curop, &destaddr) {
+                        // (kuna) tee-O2 tail-jump: a direct `jmp` to another known
+                        // function's entry is a tail call.  Rewrite BRANCH -> CALL
+                        // (so the callee resolves by name and its return value
+                        // flows out) + an artificial RETURN, instead of
+                        // new_address()-following the jump INTO the callee (which
+                        // would inline a PLT thunk and mis-render it as a
+                        // `(*dat_...)(...)` indirect call).  The rewrite + halt-
+                        // insert + cursor re-derive mirror the CPUI_CALL arm and
+                        // `truncate_indirect_jump` / `setup_callind_specs`.
+                        self.data.op_set_opcode_code(curop, OpCode::CPUI_CALL);
+                        let no_return = self.setup_call_specs(curop)?;
+                        if !no_return {
+                            // Terminate flow with a normal return after the tail
+                            // call (a noreturn callee already had its halt planted
+                            // by check_for_flow_modification).
+                            let addr = self
+                                .data
+                                .obank()
+                                .get(curop)
+                                .expect("tail-call: stale call op")
+                                .get_addr()
+                                .clone();
+                            let truncop = self.artificial_halt(&addr, 0)?;
+                            self.data.op_dead_insert_after(truncop, curop);
+                        }
+                        // Re-derive the successor AFTER the halt insertion so the
+                        // next iteration picks up the planted RETURN (the CPUI_CALL
+                        // arm's `cursor = dead_next(curop)` idiom).
+                        cursor = self.dead_next(curop);
+                        *startbasic = true;
                     } else {
                         self.new_address(curop, &destaddr)?;
+                        // if (op->getTime() >= maxtime) { deleteRemainingOps; ... }
+                        if self.data.obank().get(curop).expect("xref").get_time() >= maxtime {
+                            self.delete_remaining_ops(cursor)?;
+                            cursor = None;
+                        }
+                        *startbasic = true;
                     }
-                    // if (op->getTime() >= maxtime) { deleteRemainingOps(oiter); oiter=endDead(); }
-                    if self.data.obank().get(curop).expect("xref").get_time() >= maxtime {
-                        self.delete_remaining_ops(cursor)?;
-                        cursor = None;
-                    }
-                    *startbasic = true;
                 }
                 OpCode::CPUI_BRANCHIND => {
                     // (kuna) GH-6882: SPARC struct-return `unimp` after a call.
