@@ -3291,3 +3291,89 @@ kuna-analysis unit tests).
 - **Changed:** `kuna-analysis/src/s1_entry/mod.rs` (format dispatch in `run` +
   `collect_entries`; `executable_sections` PE/Mach-O exec tests; 2 new core
   tests), `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 44 — Multi-format loader PR-14: per-format compiler/source-language detection (PE/Mach-O)
+
+**Premise.** `s1_sourcelang::detect_compiler` is kuna's analog of Ghidra's
+`SourceLanguageAnalyzer` — it fingerprints the producing toolchain
+(`Gcc`/`Clang`/`Rustc`/`Go`) and that value **gates language-specific behavior**:
+the Rust no-return list, the Golang no-return list (`s1_loader/noreturn.rs`), and
+the Go pclntab function-name pass (`s1_pclntab`). It was wired to short-circuit to
+`Unknown` for any non-ELF input (the detection signals were ELF-specific: the
+`.comment` section, `.go.buildinfo`/`.note.go.buildid`). This increment
+generalizes the *signal sources* per format while keeping the *contract* (and the
+ELF path) byte-identical. Design §5.3 / §8 PR-14.
+
+**The format dispatch (`s1_sourcelang/mod.rs`).** `detect_compiler(file)` →
+`detect_compiler(file, bytes)` (the raw image is needed for the PE `Rich` header
+and the Mach-O load commands — `object::File` surfaces neither) and now branches
+on `file.format()`:
+- **ELF** — `detect_compiler_elf`, the original logic lifted **verbatim** into a
+  standalone fn (so the ELF path is provably unchanged: Go-section → `rustc
+  version`/mangled-symbol/`.rodata`-signature → `clang version` → `GCC:`).
+- **PE** (`detect_compiler_pe`) — the MSVC `Rich` header / `@comp.id` records
+  (the obfuscated toolchain block MSVC's linker stamps between the DOS stub and
+  the PE header: XOR-decode from the `Rich` tag + key back to the `DanS` marker,
+  read the `@comp.id` product ids → clang-cl vs `cl.exe`), **plus** the MinGW
+  `GCC: (…)` path. MinGW emits **no `.comment` section** in a PE — the `GCC: (GNU)
+  …` records live NUL-delimited in `.rdata` — so the PE arm scans `.rdata`/
+  `.comment` with the same NUL-record reader. kuna has no distinct `Msvc`
+  `Compiler` variant (nothing gates on one); an MSVC `Rich` header reports the
+  closest convenience, `Clang`, only to lift the binary out of `Unknown`.
+- **Mach-O** (`detect_compiler_macho`) — `LC_BUILD_VERSION` / the legacy
+  `LC_VERSION_MIN_*` family (walked with the typed `MachHeader` parsers, the same
+  pattern as `s1_entry/macho_entry.rs`, peeling fat slices). An Apple platform ⇒
+  the clang/LLVM toolchain ⇒ `Clang`. Also scans a `__comment`/`__DWARF`-analog
+  section for embedded `clang version`/`GCC:` text when present.
+- **COFF object / other** — `detect_compiler_generic`: honour only the universal
+  Rust/Go signals, else `Unknown` (a pre-link `.obj` has no toolchain stamp).
+
+**The format-neutral Rust/Go paths (the payoff).** The Rust-mangled-symbol path
+(`symbols_indicate_rust` over `file.symbols()`/`dynamic_symbols()` — both neutral
+in `object`) and the Go build-info-section path (`golang_section_present`, widened
+to also match Mach-O's `__go_buildinfo` alongside ELF's `.go.buildinfo`/
+`.note.go.buildid`) are **shared by all three arms**. So a Rust or Go PE/Mach-O
+trips the same `Rustc`/`Go` detection an ELF would — which automatically enables
+the Rust/Go no-return lists and the Go pclntab pass on those formats (the gate is
+the format-neutral `Compiler` value, not the format; `passes.rs`/`noreturn.rs`
+already consume the enum format-agnostically).
+
+**Before → after.**
+- *MinGW PE* (`pe_imports.exe`): before, `detect_compiler` returned `Unknown`
+  (non-ELF short-circuit); after, it scans the `.rdata` `GCC: (GNU) 9.3-win32 …`
+  records → **`Gcc`**.
+- *Mach-O* (`macho_imports` x86-64 + `macho_imports_arm64`): before `Unknown`;
+  after, the `LC_BUILD_VERSION` (PLATFORM_MACOS) load command → **`Clang`**.
+- *Rust/Go non-ELF*: a Rust-mangled `_R…`/`_ZN…17h…E` symbol or a `__go_buildinfo`
+  section now reports `Rustc`/`Go` on a PE/Mach-O → the Rust/Go no-return list +
+  Go pclntab activate (previously dead on non-ELF).
+
+**Tests (all RAN, none skipped).** `s1_sourcelang` gained 6 hermetic/fixture unit
+tests (PE→`Gcc`, Mach-O x86-64+arm64+object→`Clang`, the synthetic-buffer `Rich`
+-header MSVC-vs-clang split, COFF-object→`Unknown`) — 13/13 pass. New e2e
+`kuna-console/tests/verify_multiformat_sourcelang.rs` (5 tests) loads the real PE/
+Mach-O fixtures and asserts the detection + the cross-format pass-activation
+consequence; it reaches the analysis tier directly (`object::File` over the
+fixture bytes) so it needs **no `.sla`** and never skips. **Speed:** detection is
+a section/load-command scan — PE `pe_imports.exe` and each Mach-O fixture
+`detect_compiler` complete in **< 100 µs** (the e2e's 5 tests run in < 0.01s
+total).
+
+**Gating / parity.** Detection is pure and **detection-only** — nothing in the
+output changes unless a language-specific pass acts, and those act only for
+`Rustc`/`Go`. A PE/Mach-O detecting as `Gcc`/`Clang`/`Unknown` is byte-identical,
+and the ELF arm is the original logic verbatim. Gates: `make test` **675/675
+PARITY OK**, `make test-stages` **159/159 PARITY OK**, `make rust-test` **green**
+(incl. the 6 new `s1_sourcelang` unit tests + the new 5-test e2e).
+
+- **Divergence/LOSS:** none to the parity oracles (the XML datatest path never
+  reaches the object loader; the ELF detection is unchanged). The PE `Rich`-header
+  product-id table keys off only the small stable clang/LLVM subset and defaults
+  any other populated `Rich` header to MSVC (reported as `Clang`) — an imperfect
+  MSVC-vs-clang split that is safe because nothing downstream gates on `Clang` vs
+  `Gcc` vs MSVC (detection-only).
+- **New:** `kuna-console/tests/verify_multiformat_sourcelang.rs`.
+- **Changed:** `kuna-analysis/src/s1_sourcelang/mod.rs` (per-format dispatch +
+  PE `Rich`/`GCC:` + Mach-O `LC_BUILD_VERSION` arms + 6 tests),
+  `kuna-analysis/src/passes.rs` + `kuna-analysis/src/s1_loader/noreturn.rs`
+  (`detect_compiler(&file, bytes)` call-site signature), `docs/analysis-port-log.md`.
