@@ -163,7 +163,7 @@ fn name_matches(name: &str, exact: &[String], wildcard: &[String]) -> bool {
 /// ELF list (faithful to `noReturnFunctionConstraints.xml`'s per-`<compiler>`
 /// arms): `Rustc` → `RustFunctionsThatDoNotReturn`, `Go` →
 /// `GolangFunctionsThatDoNotReturn`, everything else → base ELF list only.
-fn scan_noreturn(file: &object::File, compiler: Compiler) -> AnalysisOutput {
+fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     // ELF-only list; only fires on ELF objects (the only format kuna loads).
     if !matches!(file.format(), object::BinaryFormat::Elf) {
@@ -223,7 +223,7 @@ fn scan_noreturn(file: &object::File, compiler: Compiler) -> AnalysisOutput {
     //    so a name lookup of the raw mangled string misses, but the stub address
     //    matches. The name is matched on the raw (pre-demangle) `.dynstr` form,
     //    exactly as the `.symtab`/`.dynsym` arm does.
-    for p in crate::s1_loader::elf_plt::resolve_plt_imports(file) {
+    for p in crate::s1_loader::format::resolve_imports(file, bytes) {
         let Ok(n) = String::from_utf8(p.name) else { continue };
         emit(&mut out, p.addr, n);
     }
@@ -240,7 +240,7 @@ impl AnalysisPass for NoReturnKnownPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        scan_noreturn(ctx.file, self.compiler)
+        scan_noreturn(ctx.file, ctx.bytes, self.compiler)
     }
 }
 
@@ -302,7 +302,7 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
         let bytes = std::fs::read(path).expect("read fauxware fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
-        let out = scan_noreturn(&file, Compiler::Gcc);
+        let out = scan_noreturn(&file, &bytes, Compiler::Gcc);
         let exit = out.noreturn.iter().find(|f| f.name == "exit").expect("exit must be flagged");
         // The emitted address is the PLT-stub install address (a real code
         // address, never the UND `.dynsym` 0), so the commit resolves it by
@@ -325,7 +325,7 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/cpp_noreturn_x86_64");
         let bytes = std::fs::read(path).expect("read cpp_noreturn fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse cpp_noreturn");
-        let out = scan_noreturn(&file, Compiler::Gcc);
+        let out = scan_noreturn(&file, &bytes, Compiler::Gcc);
 
         // The mangled std::terminate import is flagged under its RAW name (the
         // funcsym is later demangled to `std::terminate`; the scan matches the
@@ -536,7 +536,7 @@ mod tests {
 
         // (2) Matching under the Go arm: `runtime.gopanic` (a defined FUNC in
         // `.symtab`) is flagged no-return, carrying its real code address.
-        let go_out = scan_noreturn(&file, Compiler::Go);
+        let go_out = scan_noreturn(&file, &bytes, Compiler::Go);
         let gopanic = go_out
             .noreturn
             .iter()
@@ -560,7 +560,7 @@ mod tests {
         // names: the widening is gated on Go detection. (The base ELF list could
         // in principle still match a name like `exit`, but `runtime.gopanic` is
         // Go-only, so this isolates the gating.)
-        let c_out = scan_noreturn(&file, Compiler::Gcc);
+        let c_out = scan_noreturn(&file, &bytes, Compiler::Gcc);
         assert!(
             !c_out.noreturn.iter().any(|f| f.name == "runtime.gopanic"),
             "runtime.gopanic must NOT be flagged under the C arm (Go list is gated)"

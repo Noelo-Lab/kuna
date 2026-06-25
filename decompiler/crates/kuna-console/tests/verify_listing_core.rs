@@ -78,7 +78,7 @@ fn listing_build_recovers_instructions_flow_and_functions() {
     let bytes = std::fs::read(&bin).expect("read fixture bytes");
     let file = object::File::parse(&*bytes).expect("parse fixture ELF");
 
-    let mut seeds = kuna_analysis::s1_entry::collect_entries(&file);
+    let mut seeds = kuna_analysis::s1_entry::collect_entries(&file, &bytes);
     seeds.push(MAIN);
     seeds.sort_unstable();
     seeds.dedup();
@@ -245,7 +245,7 @@ fn listing_build_through_engine_driver_seeds() {
     // The driver's exact seed set (design §3.1): existing funcsyms ∪ discovered
     // entries, restricted to executable sections, sorted/deduped — the very
     // helper the live driver calls (`passes::listing_seeds`).
-    let seeds = kuna_analysis::passes::listing_seeds(&file);
+    let seeds = kuna_analysis::passes::listing_seeds(&file, &bytes);
     assert!(!seeds.is_empty(), "the driver seed set must be non-empty for fauxware");
 
     let arch = prog.arch();

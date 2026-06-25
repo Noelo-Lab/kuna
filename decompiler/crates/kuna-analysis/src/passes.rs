@@ -183,11 +183,11 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
 /// `pub` so the cross-crate `verify_listing_*` gates can build the *exact* seed
 /// set the live driver uses (the build-through-engine proof), instead of
 /// reconstructing it from the `pub(crate)` `s1_entry` helpers.
-pub fn listing_seeds(file: &object::File) -> Vec<u64> {
+pub fn listing_seeds(file: &object::File, bytes: &[u8]) -> Vec<u64> {
     let execs = crate::s1_entry::executable_sections(file);
-    let mut seeds: Vec<u64> = crate::s1_entry::existing_function_addrs(file)
+    let mut seeds: Vec<u64> = crate::s1_entry::existing_function_addrs(file, bytes)
         .into_iter()
-        .chain(crate::s1_entry::collect_entries(file))
+        .chain(crate::s1_entry::collect_entries(file, bytes))
         .filter(|&vma| crate::s1_entry::in_executable_section(&execs, vma))
         .collect();
     seeds.sort_unstable();
@@ -242,9 +242,9 @@ pub fn run_listing_consumers(
     let Ok(file) = object::File::parse(bytes) else {
         return Vec::new();
     };
-    let seeds = listing_seeds(&file);
+    let seeds = listing_seeds(&file, bytes);
     let seed_names = funcsym_names(&file);
-    let funcsym_seeds = crate::s1_entry::existing_function_addrs(&file);
+    let funcsym_seeds = crate::s1_entry::existing_function_addrs(&file, bytes);
     let listing = crate::listing::Listing::build_with_meta(
         &file,
         image,
@@ -258,7 +258,7 @@ pub fn run_listing_consumers(
     // Known passes so the consumer skips already-modeled callees and the fixpoint
     // treats a Known-no-return callee as terminal.
     let listing = listing.with_noreturn_seeds(noreturn_seeds, callfixup_seeds);
-    let ctx = AnalysisCtx { file: &file, image, arch, listing: Some(&listing) };
+    let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: Some(&listing) };
     listing_consumer_passes()
         .iter()
         .map(|pass| (pass.id(), pass.run(&ctx)))
@@ -315,11 +315,11 @@ pub fn run_default_analyses(
     // when `--option listing on` (default-off ⇒ `None` ⇒ no decode work, byte
     // -identical to today). Owned here so it outlives the pass loop, borrowed
     // read-only by every consumer pass via `ctx.listing`.
-    let seeds = listing_seeds(&file);
+    let seeds = listing_seeds(&file, bytes);
     let listing = arch
         .analysis_listing
         .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
-    let ctx = AnalysisCtx { file: &file, image, arch, listing: listing.as_ref() };
+    let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: listing.as_ref() };
     run_analyses(&ctx, &passes_for(compiler))
 }
 
@@ -348,11 +348,11 @@ pub fn run_default_analyses_per_pass(
     // real-ELF bootstrap is byte-identical to today. The `Listing` is owned here
     // (same lifetime shape as `file`), outlives the pass loop, and is borrowed
     // read-only by every consumer pass via `ctx.listing`.
-    let seeds = listing_seeds(&file);
+    let seeds = listing_seeds(&file, bytes);
     let listing = arch
         .analysis_listing
         .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
-    let ctx = AnalysisCtx { file: &file, image, arch, listing: listing.as_ref() };
+    let ctx = AnalysisCtx { file: &file, bytes, image, arch, listing: listing.as_ref() };
     passes_for(compiler)
         .iter()
         .map(|pass| (pass.id(), pass.run(&ctx)))

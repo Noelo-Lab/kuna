@@ -293,6 +293,10 @@ impl AnalysisOutput {
 pub struct AnalysisCtx<'a> {
     /// The parsed object file (read-only `object` crate view).
     pub file: &'a object::File<'a>,
+    /// The raw image bytes `file` was parsed from. Threaded to the import seam
+    /// (`format::resolve_imports`), which some formats (PE/Mach-O) re-parse with a
+    /// typed parser; the ELF impl ignores it.
+    pub bytes: &'a [u8],
     /// The loaded image backing byte reads at a vma.
     pub image: &'a ObjectLoadImage,
     /// The engine architecture (read access to types/spaces/options).

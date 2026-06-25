@@ -102,7 +102,7 @@ impl AnalysisPass for EntryDiscoveryPass {
         if !matches!(ctx.file.format(), object::BinaryFormat::Elf) {
             return out;
         }
-        out.entries = collect_entries(ctx.file);
+        out.entries = collect_entries(ctx.file, ctx.bytes);
         // ARM/Thumb: a discovered `main` whose libc-start GOT pointer had the
         // Thumb LSB set needs a `TMode=1` decode-mode paint at its (even) entry —
         // this stripped binary carries no `$t` mapping symbol for `arm_markers` to
@@ -129,9 +129,9 @@ impl AnalysisPass for EntryDiscoveryPass {
 /// a real funcsym, and dedup. The returned vec is sorted (stable output).
 ///
 /// This is the testable seam (drive it over fixture bytes).
-pub fn collect_entries(file: &object::File) -> Vec<u64> {
+pub fn collect_entries(file: &object::File, bytes: &[u8]) -> Vec<u64> {
     let execs = executable_sections(file);
-    let funcsyms = existing_function_addrs(file);
+    let funcsyms = existing_function_addrs(file, bytes);
 
     let mut cand: Vec<u64> = Vec::new();
 
@@ -254,7 +254,7 @@ pub(crate) fn in_executable_section(execs: &[(u64, u64, Vec<u8>)], vma: u64) -> 
 /// FUNC symbols (UND imports have `st_value == 0`) plus PLT import stubs. The
 /// commit seam's `find_function` already no-ops a covered address, but skipping
 /// these here keeps the emitted set to genuinely *new* starts.
-pub(crate) fn existing_function_addrs(file: &object::File) -> Vec<u64> {
+pub(crate) fn existing_function_addrs(file: &object::File, bytes: &[u8]) -> Vec<u64> {
     let mut out: Vec<u64> = Vec::new();
     for sym in file.symbols().chain(file.dynamic_symbols()) {
         if sym.kind() != SymbolKind::Text {
@@ -265,7 +265,9 @@ pub(crate) fn existing_function_addrs(file: &object::File) -> Vec<u64> {
             out.push(addr);
         }
     }
-    for p in crate::s1_loader::elf_plt::resolve_plt_imports(file) {
+    // Import stubs, through the format seam (ELF: PLT/GOT). `bytes` is unused for
+    // ELF; PE/Mach-O re-parse it inside their `resolve_imports`.
+    for p in crate::s1_loader::format::resolve_imports(file, bytes) {
         out.push(p.addr);
     }
     out.sort_unstable();
@@ -1318,7 +1320,7 @@ mod tests {
     fn collect_entry_names_matches_collected_entries() {
         let bytes = fixture("stripped_dynamic_x86_64");
         let file = object::File::parse(bytes.as_slice()).expect("parse stripped_dynamic");
-        let entries = collect_entries(&file);
+        let entries = collect_entries(&file, bytes.as_slice());
         let names = collect_entry_names(&file, &entries);
         // The array-element starts survive into the entry set and carry their names.
         assert!(names.contains(&(0x1240, "_INIT_0".to_string())), "_INIT_0 missing");
@@ -1421,8 +1423,8 @@ mod tests {
         ] {
             let bytes = fixture(name);
             let file = object::File::parse(bytes.as_slice()).expect("parse fixture");
-            let entries = collect_entries(&file);
-            let funcsyms = existing_function_addrs(&file);
+            let entries = collect_entries(&file, bytes.as_slice());
+            let funcsyms = existing_function_addrs(&file, bytes.as_slice());
             // main is genuinely never named in this stripped, hidden-visibility build.
             assert!(
                 funcsyms.binary_search(&want_main).is_err(),
@@ -1451,7 +1453,7 @@ mod tests {
     fn collect_entries_stripped_includes_entry_and_main() {
         let bytes = fixture("stripped_dynamic_x86_64");
         let file = object::File::parse(bytes.as_slice()).expect("parse stripped_dynamic");
-        let entries = collect_entries(&file);
+        let entries = collect_entries(&file, bytes.as_slice());
         assert!(entries.contains(&0x1160), "e_entry (_start) 0x1160 missing");
         assert!(entries.contains(&0x1000), "DT_INIT 0x1000 missing");
         assert!(entries.contains(&0x1464), "DT_FINI 0x1464 missing");
@@ -1470,8 +1472,8 @@ mod tests {
     fn collect_entries_fauxware_skips_named_functions() {
         let bytes = fixture("fauxware");
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
-        let entries = collect_entries(&file);
-        let named = existing_function_addrs(&file);
+        let entries = collect_entries(&file, bytes.as_slice());
+        let named = existing_function_addrs(&file, bytes.as_slice());
         // No emitted entry coincides with an already-named function.
         for &e in &entries {
             assert!(named.binary_search(&e).is_err(), "entry {e:#x} duplicates a funcsym");
