@@ -20,8 +20,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # NOTE: each `gcc-<triple>` package depends on `binutils-<triple>`, so the
 # cross *linkers* (e.g. arm-linux-gnueabihf-ld) come in for free — that is the
 # key unblock: this image can LINK cross-arch ELFs, not just assemble objects.
-# Non-ELF toolchains (mingw-w64 / osxcross) are intentionally out of scope; an
-# agent can `sudo apt-get install` them later if scope expands (docs note this).
+#
+# Non-ELF toolchains for the multi-format loader work:
+#   - `gcc-mingw-w64` => x86_64-/i686-w64-mingw32-gcc: builds idiomatic PE/PE32+
+#     executables that IMPORT from DLLs (msvcrt puts/printf) and carry DWARF +
+#     Itanium-mangled C++ — needed for the PE import-naming + PE DWARF fixtures.
+#   - `lld` (below) ships ld64.lld (Mach-O) and lld-link (PE), so a Mach-O
+#     executable can be linked in-container later.
+# (osxcross / a full Apple SDK for cross-building Mach-O from C is still out of
+# scope — not packaged in apt; build from source if/when needed.)
 # ---------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
         # core build
@@ -44,6 +51,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc-mips64el-linux-gnuabi64 \
         gcc-powerpc64le-linux-gnu \
         gcc-sparc64-linux-gnu \
+        # Windows/PE cross toolchain (x86_64-/i686-w64-mingw32-gcc + binutils:
+        # links importing PE/PE32+ exes for the multi-format loader fixtures)
+        gcc-mingw-w64 \
         # binary inspection
         binutils-multiarch \
         file \

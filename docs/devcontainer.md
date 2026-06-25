@@ -2,8 +2,9 @@
 
 `.devcontainer/` provides a fully reproducible environment for (a) building and testing
 kuna and (b) building cross-architecture ELF test fixtures (x86-64, ARM32/Thumb, AArch64,
-RISC-V64, MIPS/MIPSel/MIPS64el, PPC64le, SPARC64) **including their linkers**, plus Go and
-a pinned Rust toolchain.
+RISC-V64, MIPS/MIPSel/MIPS64el, PPC64le, SPARC64) **including their linkers**, plus
+**Windows/PE** (mingw-w64) and **Mach-O** (lld) fixtures for the multi-format loader work,
+Go, and a pinned Rust toolchain.
 
 The single most important thing this container fixes: the original build host had **no ARM
 linker**, which blocked the documented "ARM decode end-to-end test" (see
@@ -99,6 +100,39 @@ powerpc64le-linux-gnu-gcc   -static -nostdlib -e _start /tmp/x.c -o /tmp/ppc64le
 sparc64-linux-gnu-gcc       -static -nostdlib -e _start /tmp/x.c -o /tmp/sparc64_linked
 ```
 
+## Build a PE / Mach-O fixture (the multi-format loader unblock)
+
+The mingw-w64 cross GCC builds an idiomatic **PE32+** executable that actually *imports* from
+DLLs (msvcrt `puts`/`printf`) — the fixture shape the PE import-naming and PE DWARF loader
+work needs:
+
+```bash
+printf '#include <stdio.h>\nint main(){puts("hi");printf("%d",1);return 0;}' > /tmp/p.c
+x86_64-w64-mingw32-gcc /tmp/p.c -o /tmp/p.exe
+file /tmp/p.exe                                     # PE32+ executable (console) x86-64
+x86_64-w64-mingw32-objdump -p /tmp/p.exe | sed -n '/DLL Name: msvcrt.dll/,/^$/p'
+```
+
+Verified: `/tmp/p.exe` is a `PE32+ executable (console) x86-64`, and its import table lists
+`msvcrt.dll` with `puts`, `fprintf`/`vfprintf` (mingw routes `printf` through these),
+alongside the `KERNEL32.dll` CRT-startup imports. Swap the driver to `i686-w64-mingw32-gcc`
+for a 32-bit `PE32`.
+
+`lld` ships the Mach-O backend, so a **Mach-O executable** can be linked in-container — clang
+emits the Mach-O object, `ld64.lld-14` links it (no Apple SDK needed for a freestanding test):
+
+```bash
+printf 'int _start(void){return 0;}\n' > /tmp/m.c
+clang --target=arm64-apple-macos11 -c /tmp/m.c -o /tmp/m.o
+ld64.lld-14 -arch arm64 -platform_version macos 11.0 11.0 -e _start \
+    -undefined dynamic_lookup -o /tmp/m.macho /tmp/m.o
+file /tmp/m.macho   # Mach-O 64-bit arm64 executable
+```
+
+(`ld.lld -flavor darwin …` reaches the same backend; the unversioned `ld64.lld` symlink is
+not shipped by the 22.04 `lld` package, only the versioned `ld64.lld-14` — see *Package-name
+notes* below.)
+
 ## Toolchain inventory
 
 | Category | Packages / commands |
@@ -111,6 +145,8 @@ sparc64-linux-gnu-gcc       -static -nostdlib -e _start /tmp/x.c -o /tmp/sparc64
 | MIPS | `gcc-mips-linux-gnu`, `gcc-mipsel-linux-gnu`, `gcc-mips64el-linux-gnuabi64` → `mips[-/el/64el]-…-{gcc,ld}` |
 | PPC64le | `gcc-powerpc64le-linux-gnu` → `powerpc64le-linux-gnu-{gcc,ld}` |
 | SPARC64 | `gcc-sparc64-linux-gnu` → `sparc64-linux-gnu-{gcc,ld}` |
+| Windows / PE | `gcc-mingw-w64` → `x86_64-w64-mingw32-{gcc,g++,objdump,...}` + `i686-w64-mingw32-…` (links importing PE/PE32+ exes) |
+| Mach-O / PE link | `lld` → `ld.lld` (ELF), `lld-link` (PE), and the Mach-O backend (`ld64.lld-14`, or `ld.lld -flavor darwin`) — links a Mach-O executable in-container |
 | Binary inspection | `binutils-multiarch` (multiarch `readelf`/`objdump`), `file` |
 | Languages / tools | `golang-go` (Go 1.18), `python3` + `python3-pip`, `git`, `curl`, `wget`, `ca-certificates`, `gnupg`, `unzip`, `xz-utils`, `gdb`, `sudo`, `less`, `vim` |
 
@@ -125,19 +161,29 @@ for free — that is what unblocks producing *linked* cross-arch ELFs, not just 
 
 ## Out of scope (add later if scope expands)
 
-Non-ELF toolchains are **not** installed, because non-ELF formats are out of the current
-analysis-port scope:
+- **osxcross / a full Apple SDK** (cross-*building* a real macOS binary from C against the
+  system frameworks) — not packaged in apt; build from source. `lld`'s Mach-O backend lets
+  the container *link* a Mach-O executable today (above); a full SDK is only needed to
+  compile against Apple's headers/dylibs.
 
-- **mingw-w64** (PE / Windows) — `sudo apt-get install -y gcc-mingw-w64 g++-mingw-w64`
-- **osxcross** (Mach-O / macOS) — not packaged in apt; build from source.
-
-Because the container has passwordless sudo and is privileged, an agent can install these (or
-anything else) at runtime when PE/Mach-O loader work begins, without changing the image.
+Because the container has passwordless sudo and is privileged, an agent can install this (or
+anything else) at runtime without changing the image.
 
 ## Package-name notes / substitutions
 
 No substitutions were required — every requested `gcc-<triple>` package exists in the
-`ubuntu:22.04` archive under the exact name. The only thing worth recording is the MIPS cross
-GCCs being 10.3.0 vs 11.4.0 for the others (stock packaging, above). If a future arch's
-package name differs, find it with `apt-cache search gcc-<arch>` and note the substitution
-here.
+`ubuntu:22.04` archive under the exact name. Two things worth recording:
+
+- The MIPS cross GCCs are 10.3.0 vs 11.4.0 for the others (stock packaging, above).
+- **mingw-w64**: the single `gcc-mingw-w64` package provides both the 64-bit
+  (`x86_64-w64-mingw32-*`) and 32-bit (`i686-w64-mingw32-*`) drivers + their binutils; the
+  cross GCC is **10-win32**. (`g++-mingw-w64` would add the C++ drivers; not installed — the
+  fixtures are C, and `gcc-mingw-w64` already pulls the binutils that produce the import
+  table.)
+- **lld / `ld64.lld`**: the 22.04 `lld` package does **not** ship an unversioned `ld64.lld`
+  symlink — only the versioned `ld64.lld-14` binary (`ld.lld`/`lld-link` *are* symlinked
+  unversioned). The Mach-O backend is also reachable as `ld.lld -flavor darwin`. Use
+  `ld64.lld-14` (or the flavor form) rather than a bare `ld64.lld`.
+
+If a future arch's package name differs, find it with `apt-cache search gcc-<arch>` and note
+the substitution here.
