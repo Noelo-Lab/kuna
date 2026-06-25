@@ -5,19 +5,53 @@
   "selector": "fix_output_parameters",
   "func_addr": "0x400660",
   "angr_version": "9.2.213",
-  "option": "elf-reloc-objects",
+  "option": "relocobjects",
+  "flag": "RELOC_OBJECTS_ENV (KUNA_RELOC_OBJECTS); env-var bridge, not an Architecture flag",
+  "element_id": null,
   "scope": "large",
-  "proposal": true,
+  "proposal": false,
   "change_kind": "structure-recovery",
   "source_decompiler": "angr",
   "inspiration": "test_decompiling_ptx_fix_output_parameters; CLE ELF relocatable backend; fix_output_parameters",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "speed_off_ms": 1089.32,
+  "speed_on_ms": 1013.4,
+  "speed_delta_pct": -6.97,
+  "speed_samples": 5,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
   "root_cause": "kuna-analysis loadimage_object.rs builds its memory map only from PT_LOAD segments; ET_REL .o files have no program headers, so the map is empty and every function fails with 'Unable to load N bytes'.",
+  "mechanism": "New kuna file kuna-analysis/src/s1_loader/elf_reloc.rs lays SHF_ALLOC sections out above 0x400000 (angr CLE default), applies .rela.* relocations (R_X86_64_PC32/PLT32/32/32S/64), rebases defined symbols, and binds undefined externs (PLT-relative call targets named even when STT_NOTYPE) to synthetic addresses. ObjectLoadImage::from_bytes branches to from_relocatable for kind()==Relocatable with empty segments(). Default-on; gated on the file type (linked ET_EXEC/ET_DYN byte-identical).",
   "decisions": [
     {
       "question": "Is closing this gap a small single option-gated decompiler Action/Rule, or a large loader-infrastructure feature?",
       "decider": "general-purpose (opus)",
       "verdict": "large",
       "justification": "The gap lives entirely in the kuna-analysis loader tier (loadimage_object.rs), upstream of the kuna-decomp S1-S9 pass pipeline; it is structurally not an Action/Rule and cannot be gated like kuna_loweredswitch.rs. Reaching angr parity needs three pieces of new loader infrastructure: (1) lay out SHF_ALLOC sections at synthetic non-overlapping addresses to replace the empty PT_LOAD-derived map, (2) parse and apply .rela.* relocations, (3) rebase/bind local+global symbols. Skipping any (e.g. mapping sections but not relocating) yields degenerate output where every call/global-ref targets 0. This is new infrastructure + structural edits to a ported-core loader file beyond a single gated early-return, satisfying Hard rule 7 LARGE on multiple counts; route through a [PROPOSAL] draft PR."
+    },
+    {
+      "question": "Where does the new logic live, given the worker template assumes a kuna-decomp/src/kuna_<slug>.rs Action/Rule?",
+      "verdict": "kuna-analysis/src/s1_loader/elf_reloc.rs (new module) + a guarded branch in loadimage_object.rs::from_bytes",
+      "justification": "This is a loader-tier (kuna-analysis) capability, not a kuna-decomp pass. The template's module path is for decompiler Actions; the faithful placement for a loader feature is the analysis crate. The kuna-decomp edits are confined to the option anchor (options.rs name + env const, architecture.rs set_kuna_option arm) and stages.toml."
+    },
+    {
+      "question": "How is the on/off option wired, since the loader runs at `load file` BEFORE any console `option` command (the image is opened before options are applied)?",
+      "verdict": "A process env var (KUNA_RELOC_OBJECTS / RELOC_OBJECTS_ENV) that ObjectLoadImage::from_bytes reads at load time; set_kuna_option and `kuna decompile` write it.",
+      "justification": "kuna-analysis depends on kuna-decomp but the loader runs upstream of the per-function option machinery, so an Architecture flag would be read too late. The env var is the only honest load-time switch. kuna-cli/decompile.rs maps `--option relocobjects off` to the env var on the subprocess so the off-switch (and the auto-generated before/after demo) work end-to-end."
+    },
+    {
+      "question": "Why no tests/stages XML decompilertest, when the template requires one?",
+      "verdict": "Not feasible for a loader feature; the cargo unit suite is the gate instead.",
+      "justification": "The XML datatest path constructs a LoadImageXml over an embedded <bytechunk> and NEVER builds an ObjectLoadImage, so an XML decompilertest cannot exercise the ELF object loader at all. The honest gate is the cargo workspace suite (make rust-test): a hand-assembled ET_REL exercising layout + each relocation kind + symbol rebasing (elf_reloc.rs), plus the real ptx.o fixture asserting fix_output_parameters rebases to 0x400660 and its bytes load (loadimage_object.rs)."
+    },
+    {
+      "question": "Option name: the proposal suggested `elf-reloc-objects`.",
+      "verdict": "relocobjects",
+      "justification": "Single token, no hyphens (matches the no-separator console-option convention: loweredswitch/stackguard/namestyle), avoids any whitespace/parse ambiguity in `option NAME VALUE`."
     }
-  ]
+  ],
+  "notes": "make test PARITY OK (675/675). make test-stages PARITY OK (159/159; kuna-catalog.xml provenance counts bumped 3->4 angr, 2->3 structure-recovery). make rust-test: new loader tests pass; the sole failure (verify_w10_proto_unlock::w10_proto_unlock_const_return_collapses_no_tied_roundtrip) PRE-EXISTS on the branch base (a stale DIV-6 oracle direction-check), is unrelated to this feature, and was left untouched (Hard rule 1, no drive-by). DIV-7 added."
 }

@@ -1,5 +1,47 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — ELF relocatable-object (`ET_REL` / `.o`) loader (option `relocobjects`, DIV-7)
+
+**angr testcase:** `test_decompiling_ptx_fix_output_parameters::fix_output_parameters`
+(`ptx.o`, angr 9.2.213).
+
+**Why angr was better:** `ptx.o` is a **relocatable ELF object** (`ET_REL`) with no `PT_LOAD`
+program headers. kuna's faithful `LoadImageBfd` port (`kuna-analysis/loadimage_object.rs`) builds
+its byte map only from `PT_LOAD` segments, so a `.o` mapped **zero bytes** and *every* function
+failed to lift (`Unable to load N bytes at ...`) — kuna produced **no output at all**, while angr
+(CLE's ELF relocatable backend) decompiled `fix_output_parameters` fully with resolved names.
+
+**Mechanism:** a new kuna file `kuna-analysis/src/s1_loader/elf_reloc.rs`. For an `ET_REL` object
+(`kind()==Relocatable` + empty `segments()`), `ObjectLoadImage::from_bytes` takes a new
+`from_relocatable` path that (1) lays each `SHF_ALLOC` section out at a non-overlapping VMA above
+`0x400000` (angr's CLE default, so `fix_output_parameters` lands at `0x400660` as in angr),
+(2) applies the `.rela.*` relocations (`R_X86_64_PC32`/`PLT32`/`32`/`32S`/`64`; unknown kinds
+degrade with a logged warning), (3) rebases defined symbols and binds undefined externs — PLT-
+relative call targets are named even when gcc emits them `STT_NOTYPE` — to synthetic addresses, so
+calls render `strlen(...)`, `__sprintf_chk(...)`, `__ctype_b_loc(...)`, etc. The linked
+`ET_EXEC`/`ET_DYN` `PT_LOAD` path is untouched (byte-identical).
+
+**Option / wiring:** `relocobjects` (default **on**). The loader runs at `load file`, *upstream* of
+the per-function option machinery (the image is opened before any `option` command), so the toggle
+is bridged to the loader by the `KUNA_RELOC_OBJECTS` (`RELOC_OBJECTS_ENV`) process env var that
+`set_kuna_option` and `kuna decompile` set; `--option relocobjects off` (or `KUNA_RELOC_OBJECTS=0`)
+restores the upstream `PT_LOAD`-only loader.
+
+**Ablation / default:** **0 of 675** upstream datatest assertions change (the XML datatest path
+never constructs an `ObjectLoadImage`, and the linked-ELF path is byte-identical) and speed is
+within budget (`-6.97%` on the target; off measures the fast-fail error path). Shipped **default-on**
+as a pure capability → **DIV-7**. `make test` PARITY OK, `make test-stages` PARITY OK (159/159; the
+two `kuna-catalog.xml` provenance counts bumped 3→4 angr / 2→3 structure-recovery for the new row).
+
+**Tests:** loader cargo tests (no XML stage test is possible — the datatest path bypasses the ELF
+object loader): a hand-assembled `ET_REL` exercising layout + each relocation kind + symbol
+rebasing, and the real `ptx.o` fixture asserting `fix_output_parameters` rebases to `0x400660`, its
+bytes load, and externs (`strlen`/`dcgettext`/`error`) resolve.
+
+**Pre-existing note:** `make rust-test` has one failure on this branch — `verify_w10_proto_unlock`'s
+const-return direction-check, a stale DIV-6 oracle assertion that fails identically on the base
+commit and is unrelated to this feature; left untouched (no drive-by).
+
 ## Session (2026-06-25) — Go pclntab function-name recovery (Increment 34)
 
 Ported the **name-recovery half** of Ghidra's `GolangSymbolAnalyzer` (`golang-symbols`,

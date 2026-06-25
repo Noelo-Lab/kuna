@@ -805,6 +805,24 @@ impl Architecture {
             "gopclntab" => {
                 on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
             }
+            // (kuna) ET_REL relocatable-object (`.o`) loader capability. Unlike
+            // every other kuna option this gates the *loader* (run at `load
+            // file`, before any `option` command is processed), so a flag on this
+            // `Architecture` would be read too late. The toggle is bridged across
+            // the layer by a process env var the loader reads at `from_bytes`
+            // time; flipping it here affects a subsequent `load file` of a `.o`.
+            // See `kuna_analysis::loadimage_object::reloc_objects_enabled`.
+            "relocobjects" => {
+                let val = on_or_off(p1)?;
+                std::env::set_var(
+                    crate::options::RELOC_OBJECTS_ENV,
+                    if val { "1" } else { "0" },
+                );
+                Ok(format!(
+                    "ET_REL relocatable-object loading turned {}",
+                    if val { "on" } else { "off" }
+                ))
+            }
             other => Err(KunaError::parse(format!("Unknown kuna option: {other}"))),
         }
     }

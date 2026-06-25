@@ -173,10 +173,29 @@ fn decompile(args: &DecompileArgs) -> Result<(String, Option<String>), String> {
             regions_path.as_deref(),
         );
 
-        let output = Command::new(&bin_path)
-            .arg("-s")
-            .arg(&specs)
-            .env("SLEIGHHOME", &specs)
+        // (kuna) The `relocobjects` option gates the ET_REL loader, which runs at
+        // `load file` — before the `option` lines in the script are processed.
+        // Bridge it to the subprocess env var the loader reads at load time so the
+        // off-switch (and the before/after demo) work for the single-shot CLI.
+        let reloc_env: Option<&'static str> = args
+            .options
+            .iter()
+            .rev()
+            .find(|(n, _)| n == "relocobjects")
+            .map(|(_, v)| {
+                if matches!(v.trim(), "0" | "off" | "false" | "no" | "OFF") {
+                    "0"
+                } else {
+                    "1"
+                }
+            });
+
+        let mut cmd = Command::new(&bin_path);
+        cmd.arg("-s").arg(&specs).env("SLEIGHHOME", &specs);
+        if let Some(v) = reloc_env {
+            cmd.env(kuna_decomp::options::RELOC_OBJECTS_ENV, v);
+        }
+        let output = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

@@ -301,7 +301,23 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // (name-recovery half).  Default-on, but the pass is registered ONLY for a Go
     // binary, so it is a structural no-op on every non-Go target.
     "gopclntab",
+    // (kuna) ET_REL relocatable-object (`.o`) loader capability: load a
+    // relocatable object (no PT_LOAD segments) by synthesizing a section layout,
+    // applying `.rela.*` relocations, and rebasing symbols. Default ON (it only
+    // affects `.o` files, which the PT_LOAD-only loader cannot load at all).
+    // Unlike the per-function options, this gates the *loader* (run at `load
+    // file`, before any `option` command), so it is bridged across the layer via
+    // the `RELOC_OBJECTS_ENV` process env var the console handler writes; see
+    // `kuna_analysis::loadimage_object::reloc_objects_enabled`.
+    "relocobjects",
 ];
+
+/// (kuna) Process env var bridging the `relocobjects` console option to the
+/// ET_REL loader, which runs at `load file` — upstream of the per-function
+/// option machinery, so a flag on `Architecture` would not reach it in time.
+/// `Architecture::set_kuna_option("relocobjects", on|off)` writes `"1"`/`"0"`
+/// here; the loader reads it at `from_bytes` time (default ON when unset).
+pub const RELOC_OBJECTS_ENV: &str = "KUNA_RELOC_OBJECTS";
 
 // ---------------------------------------------------------------------------
 // Typed enums for the option-parsing knobs whose target subsystem is W5+.
