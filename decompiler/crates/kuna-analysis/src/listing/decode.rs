@@ -8,7 +8,7 @@
 //! `AssemblyEmit`, returning `(len, ops, mnemonic)`.
 //!
 //! The decode reads bytes through the loader the engine already has attached
-//! (the same loader `bootstrap_from_elf` installed), so no extra setup is needed
+//! (the same loader `bootstrap_from_object` installed), so no extra setup is needed
 //! beyond a live [`Translate`].
 
 use std::rc::Rc;

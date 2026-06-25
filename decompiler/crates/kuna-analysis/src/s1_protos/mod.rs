@@ -137,10 +137,20 @@ fn build_pieces(
     })
 }
 
-/// Collect the set of FUNC symbol names present in the object (`.symtab` +
-/// `.dynsym`, `@VERSION` stripped) — the names the prototype table is matched
-/// against. libc names are unmangled, so demangling is a no-op here.
-fn present_function_names(file: &object::File) -> std::collections::HashSet<String> {
+/// Collect the set of FUNC symbol names present in the object — the names the
+/// prototype table is matched against. Two format-neutral sources, unioned:
+///
+/// 1. defined/declared FUNC symbols (`.symtab` + `.dynsym` on ELF; the COFF
+///    symtab on PE/COFF; `LC_SYMTAB` on Mach-O), `@VERSION` stripped;
+/// 2. the §3 import resolver (`resolve_imports`): PE IAT/INT, Mach-O `__stubs`.
+///    This is the source that matters on a **stripped** PE (no symtab `puts`)
+///    and on Mach-O (the import `printf` is named by the `__stubs` walk, not a
+///    `SymbolKind::Text` entry) — `ApplyDataArchiveAnalyzer` matches archive
+///    entries to the program's *functions*, which on these formats include the
+///    resolved imports.
+///
+/// libc/msvcrt names are unmangled, so demangling is a no-op here.
+fn present_function_names(file: &object::File, bytes: &[u8]) -> std::collections::HashSet<String> {
     let mut present = std::collections::HashSet::new();
     for sym in file.symbols().chain(file.dynamic_symbols()) {
         if sym.kind() != SymbolKind::Text {
@@ -151,6 +161,14 @@ fn present_function_names(file: &object::File) -> std::collections::HashSet<Stri
             {
                 present.insert(n);
             }
+        }
+    }
+    // The resolved imports (PE IAT, Mach-O __stubs). On ELF this overlaps the
+    // `.dynsym` set already collected (`elf_plt` names the PLT stub by the same
+    // `.dynstr` name), so the union is a no-op there — ELF behavior unchanged.
+    for imp in crate::s1_loader::format::resolve_imports(file, bytes) {
+        if let Ok(n) = String::from_utf8(imp.name) {
+            present.insert(n);
         }
     }
     present
@@ -166,11 +184,13 @@ impl AnalysisPass for LibProtoPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
+        // Format-agnostic (PR-10): the libc/msvcrt name match reads neutral data
+        // (`present_function_names` unions the FUNC symbols with the §3 import
+        // resolver's names), so it fires on ELF/PE/COFF/Mach-O alike — no format
+        // branch. On a PE a `printf` import then types its first arg `char *`, so
+        // `printf("%d\n", …)` renders the literal instead of `printf(0x…, …)`.
         let mut out = AnalysisOutput::default();
-        if !matches!(ctx.file.format(), object::BinaryFormat::Elf) {
-            return out;
-        }
-        let present = present_function_names(ctx.file);
+        let present = present_function_names(ctx.file, ctx.bytes);
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();
         for (name, sig) in LIBC {
@@ -213,10 +233,53 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
         let bytes = std::fs::read(path).expect("read fauxware fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
-        let present = present_function_names(&file);
+        let present = present_function_names(&file, &bytes);
         for want in ["puts", "printf", "strcmp"] {
             assert!(present.contains(want), "fauxware should import {want}");
             assert!(LIBC.iter().any(|(n, _)| n == &want), "table should know {want}");
         }
+    }
+
+    #[test]
+    fn pe_present_names_include_imports_for_proto_typing() {
+        // PR-10: on a PE the libc imports must be in `present_function_names` (so
+        // their prototypes seed and the call args type `char *`). In the linked
+        // MinGW PE `puts`/`printf` are in the COFF symtab; the resolver also names
+        // them via the IAT — either way they are present, so `printf("%d\n", …)`
+        // can render the literal.
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/pe_imports.exe");
+        let bytes = std::fs::read(path).expect("read pe_imports.exe");
+        let file = object::File::parse(bytes.as_slice()).expect("parse pe_imports.exe");
+        assert_eq!(file.format(), object::BinaryFormat::Pe, "fixture is a PE");
+        let present = present_function_names(&file, &bytes);
+        for want in ["puts", "printf"] {
+            assert!(present.contains(want), "PE present-names must include {want}: {present:?}");
+            assert!(LIBC.iter().any(|(n, _)| n == &want), "table should know {want}");
+        }
+    }
+
+    #[test]
+    fn stripped_pe_present_names_from_resolver_only() {
+        // The IAT-resolver half: in a *stripped* PE there is no COFF symtab `puts`,
+        // so the import names come purely from `resolve_imports`. They must still
+        // be present so the prototype seeds (the stripped-binary proof).
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/pe_imports_stripped.exe");
+        let bytes = std::fs::read(path).expect("read pe_imports_stripped.exe");
+        let file = object::File::parse(bytes.as_slice()).expect("parse stripped PE");
+        let present = present_function_names(&file, &bytes);
+        assert!(present.contains("puts"), "stripped PE must name `puts` via the IAT: {present:?}");
+    }
+
+    #[test]
+    fn macho_present_names_include_stub_import() {
+        // Mach-O: the `printf` import is named by the `__stubs` indirect-symbol
+        // walk (not a `SymbolKind::Text` entry), so the resolver-union is what
+        // makes it present for prototype typing.
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_imports");
+        let bytes = std::fs::read(path).expect("read macho_imports");
+        let file = object::File::parse(bytes.as_slice()).expect("parse macho_imports");
+        assert_eq!(file.format(), object::BinaryFormat::MachO, "fixture is Mach-O");
+        let present = present_function_names(&file, &bytes);
+        assert!(present.contains("printf"), "Mach-O must name `printf` via __stubs: {present:?}");
     }
 }

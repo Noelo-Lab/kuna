@@ -28,7 +28,7 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
@@ -56,7 +56,7 @@ fn assert_discovered_main_decompiles(fixture_name: &str, main_vma: u64) -> bool 
         None => return false,
     };
 
-    let mut prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(

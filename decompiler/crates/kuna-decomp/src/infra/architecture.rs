@@ -320,6 +320,10 @@ pub struct Architecture {
     /// (kuna) Reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`).
     pub recover_lowered_switch: bool,
+    /// (kuna) Fold an order-safe single-use call return into its use site
+    /// (`fold_call_returns`, opt-in default-off; angr "call return variable
+    /// folding").
+    pub fold_call_returns: bool,
     /// (kuna) Strip the glibc -fstack-protector canary epilogue
     /// (C++ `strip_stack_guard`).
     pub strip_stack_guard: bool,
@@ -583,6 +587,7 @@ impl Architecture {
             stack_alias_deadstore: false,
             recover_array_stride: false,
             recover_lowered_switch: false,
+            fold_call_returns: false,
             strip_stack_guard: false,
             name_style_angr: false,
             dedup_var_decls: false,
@@ -667,6 +672,7 @@ impl Architecture {
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
+        self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.name_style_angr = true; // (kuna) default-on: angr-style default naming
         self.dedup_var_decls = true; // (kuna) DIV-7 default-on: collapse duplicate local decls (angr)
@@ -778,6 +784,11 @@ impl Architecture {
             "loweredswitch" => {
                 let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
                 self.recover_lowered_switch = val;
+                Ok(msg)
+            }
+            "foldcallret" => {
+                let (val, msg) = crate::kuna_callretfold::OptionFoldCallRet.apply(p1)?;
+                self.fold_call_returns = val;
                 Ok(msg)
             }
             "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
@@ -1056,6 +1067,7 @@ impl Architecture {
         seam.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
         seam.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
+        seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard
         // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
         // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.

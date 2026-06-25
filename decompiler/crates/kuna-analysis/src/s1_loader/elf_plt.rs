@@ -164,7 +164,16 @@ fn build_got_name_map(file: &object::File) -> HashMap<u64, Vec<u8>> {
 /// raw `.dynstr` string is usually already clean (`puts`); this is defensive for
 /// symbol-versioned libraries that fold the version into the string.  Shared with
 /// [`crate::loadimage_object`] for the `.symtab`/`.dynsym` paths.
+///
+/// MSVC C++ mangling (multi-format loader PR-9) uses `@` *structurally* as the
+/// namespace/type separator (`?foo@Bar@@QEAAHH@Z`), so a leading-`?` name is
+/// returned verbatim — truncating at the first `@` would corrupt every MSVC
+/// COFF/PE symbol before the demangler ever sees it. No glibc-versioned symbol
+/// ever starts with `?`, so this guard never changes the ELF behavior.
 pub(crate) fn strip_version(name: &[u8]) -> Vec<u8> {
+    if name.first() == Some(&b'?') {
+        return name.to_vec();
+    }
     match name.iter().position(|&b| b == b'@') {
         Some(p) => name[..p].to_vec(),
         None => name.to_vec(),

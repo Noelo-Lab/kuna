@@ -23,7 +23,7 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
 
@@ -48,7 +48,7 @@ fn discovered_main_decompiles_without_supplied_address() {
         None => return,
     };
 
-    let mut prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(
@@ -62,7 +62,7 @@ fn discovered_main_decompiles_without_supplied_address() {
 
     // (kuna) The analysis-pass facts are now committed at `read symbols` (gated by
     // the per-pass `--option <id> on|off` flags), not eagerly at bootstrap — so a
-    // direct `bootstrap_from_elf` consumer must trigger the commit before the
+    // direct `bootstrap_from_object` consumer must trigger the commit before the
     // entry symbols are visible. This is exactly what `IfcReadSymbols` does.
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
@@ -134,7 +134,7 @@ fn dynamic_init_fini_elements_get_ghidra_names() {
         None => return,
     };
 
-    let mut prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(

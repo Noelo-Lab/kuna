@@ -37,7 +37,7 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
 
@@ -65,7 +65,7 @@ fn sparc_plt_calls_are_named_in_decompiled_c() {
     // The arch is auto-detected from the ELF machine (SPARC v9, ELF64, BE); the
     // loader picks the `sparc:BE:64:default` language and bootstrap resolves the
     // SPARC `.sla`.
-    let prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(

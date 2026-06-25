@@ -15,6 +15,7 @@ kuna-decomp.workspace = true
 object.workspace = true
 cpp_demangle.workspace = true
 rustc-demangle.workspace = true
+msvc-demangler.workspace = true
 gimli.workspace = true
 
 [lints]

@@ -6,6 +6,12 @@
 //!   decode each `.plt*` stub so library call sites render as `puts(...)` rather
 //!   than `sub_400510(...)`.
 //!
+//! - [`pe_iat`] -- PE IAT/INT import-name resolution (the kuna analog of Ghidra's
+//!   `PeLoader.processImports`): walk the Import Directory pairing the INT (names)
+//!   and IAT (slot addresses) in lockstep, name each IAT slot (the GOT-slot
+//!   analog), and name the MinGW `FF 25` thunk veneers that jump through them, so
+//!   a Windows PE's library calls render `puts(...)` instead of `sub_<addr>(...)`.
+//!
 //! - [`noreturn`] -- known-no-return detection (the kuna analog of Ghidra's
 //!   `NoReturnFunctionAnalyzer`): mark `exit`/`abort`/… so the dead fall-through
 //!   after a tail `exit()` disappears.
@@ -27,5 +33,7 @@
 pub mod arm_markers;
 pub mod elf_plt;
 pub mod format;
+pub mod macho_stubs;
 pub mod mips_markers;
 pub mod noreturn;
+pub mod pe_iat;

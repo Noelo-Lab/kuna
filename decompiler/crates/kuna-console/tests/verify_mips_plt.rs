@@ -10,7 +10,7 @@
 //! the dynamic-symbol GOT layout (`DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`), not by
 //! relocations.  `elf_plt::resolve_mips_imports` names each import's `.MIPS.stubs`
 //! stub (the GOT slot's static contents) and marks the GOT external slots
-//! **constant** (`ObjectLoadImage::const_ranges` → `get_readonly`); `bootstrap_from_elf`
+//! **constant** (`ObjectLoadImage::const_ranges` → `get_readonly`); `bootstrap_from_object`
 //! turns on `readonlypropagate` for MIPS so the engine folds the GOT load to the
 //! stub address and resolves the call to the import name:
 //!
@@ -37,7 +37,7 @@
 
 use std::path::PathBuf;
 
-use kuna_console::engine::bootstrap_from_elf;
+use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
 
@@ -64,7 +64,7 @@ fn mips32_imports_are_named_in_decompiled_c() {
 
     // The arch is auto-detected from the ELF machine (MIPS, big-endian); the loader
     // picks `MIPS:BE:32:default:default` and bootstrap resolves `mips32be.sla`.
-    let prog = match bootstrap_from_elf(&bin, "", &spec_roots) {
+    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
         Ok(p) => p,
         Err(e) => {
             eprintln!(

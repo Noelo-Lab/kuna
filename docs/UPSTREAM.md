@@ -48,6 +48,7 @@ Makefile's `$(wildcard *.cc)`), with minimal anchor edits in vendored files.
 | `decompiler/cpp/architecture.hh/.cc` | `present_lessequal` flag (default false) |
 | `decompiler/cpp/options.cc` | registers kuna options (`compareform`, `arraynotation`) |
 | `decompiler/cpp/printc.hh/.cc` | `option_arraynotation` (+ getter) + `&base[index]` mode in `opPtradd` |
+| `decompiler/cpp/coreaction.cc` | angr call-return variable folding port: `ActionMarkExplicit::baseExplicit` `isCall()` arm gated to fall through for an order-safe single-use call output (kuna `kuna_callretfold::call_output_foldable`); `architecture.{hh,cc}` flag `fold_call_returns`, `options.cc` registerOption, `kuna_stages.cc` row — all `(kuna)`, `option foldcallret` (opt-in default-off; no DIV, output byte-identical when off) |
 | `decompiler/cpp/heritage.cc` | include + 2 recorder calls in `bumpDeadcodeDelay` (restart observability) |
 | `decompiler/cpp/jumptable.cc` | include + 1 recorder call at the multistage-jump restart site |
 | `decompiler/cpp/fspec.cc` | include + 2 recorder calls (`deindirect`/`forceSet` late-prototype restarts) |
