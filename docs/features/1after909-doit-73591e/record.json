@@ -1,0 +1,28 @@
+{
+  "opportunity": "test_decompiling_1after909_doit::doit",
+  "test_name": "test_decompiling_1after909_doit",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/1after909",
+  "selector": "doit",
+  "func_addr": "0x401869",
+  "angr_version": "9.2.213",
+  "option": "loopbreak_recovery",
+  "flag": "loopbreak_recovery",
+  "element_id": 4091,
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_1after909_doit; Phoenix/SAILR loop-successor break/continue recovery (Ghidra BlockGraph::scopeBreak); doit",
+  "scope": "large",
+  "proposal": true,
+  "decisions": [
+    {
+      "question": "Is closing the goto->break gap on 1after909::doit SMALL (one option-gated Action/Rule) or LARGE (proposal fork)?",
+      "decider": "general-purpose (opus)",
+      "decision": "large",
+      "rationale": "Two HARD RULE 7 triggers fire: (1) closing the gap requires porting Ghidra's BlockGraph::scopeBreak(-1,-1) -- an explicitly-recorded SEAM stub (losses.md; blockaction.rs:3493/3502) that is a recursive walk over the already-collapsed structured tree re-tagging loop-exit BlockGoto edges with f_break_goto/f_continue_goto -- which is touching S8 structuring code inside ActionFinalStructure::apply well beyond a single gated early-return; (2) it needs new ported-core methods in block.rs (scopeBreak, getExitLeaf, scope/loop-bottom plumbing) plus a printer change in printc.rs, i.e. >1 new module-level addition mutating structured-tree state, not modelable as one isolated Rule. The region/loop structure is already recovered (BlockWhileDo + f_loop_exit_edge exist), so this restores a missing upstream print-prep pass rather than inventing new condition refinement -- but it is still a structuring-stage port, which precedent (every prior S8 gap) and the rule both classify as a proposal.",
+      "owning_stage": "S8 structuring -- decompiler/crates/kuna-decomp/src/s8_structure/blockaction.rs (ActionFinalStructure::apply, the graph.scopeBreak(-1,-1) SEAM at ~line 3493-3512) plus the supporting recursive method in decompiler/crates/kuna-decomp/src/substrate/block.rs and the print-emit in s9_emit/printc.rs",
+      "angr_reference": "angr Phoenix/SAILR structurer break/continue recovery (loop successor refinement that lowers loop-exit gotos to break/continue); upstream-equivalent is Ghidra BlockGraph::scopeBreak",
+      "recommended_option_name": "loopbreak_recovery",
+      "speed_risk": "Negligible: one extra single-pass O(blocks) recursive walk of the structured block tree at finalize time, run once per function."
+    }
+  ]
+}
