@@ -327,6 +327,15 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     // the `RELOC_OBJECTS_ENV` process env var the console handler writes; see
     // `kuna_analysis::loadimage_object::reloc_objects_enabled`.
     "relocobjects",
+    // (kuna §3.7) Mach-O arm64e Apple-Silicon SLEIGH-spec selection: an arm64e
+    // Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) loads with the
+    // `AARCH64:LE:64:AppleSilicon` pointer-auth spec instead of the generic v8A.
+    // Spec selection is a LOAD-time decision (`language_id_for`), so the live gate
+    // is the `KUNA_MACHO_ARM64E` env var the CLI exports for `--option
+    // macho-arm64e on`; this option name records the requested state on the
+    // Architecture (catalog consistency). Default-OFF (opt-in until proven); a
+    // non-arm64e / non-Mach-O target is untouched.
+    "macho-arm64e",
 ];
 
 /// (kuna) Process env var bridging the `relocobjects` console option to the

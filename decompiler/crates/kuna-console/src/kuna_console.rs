@@ -205,6 +205,10 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "addrtable" => on_off(conf.analysis_addrtable),
         "listing" => on_off(conf.analysis_listing),
         "gopclntab" => on_off(conf.analysis_gopclntab),
+        // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested
+        // state (the live spec-selection gate is the load-time env var, but the
+        // catalog `current` mirrors the `option macho-arm64e on|off` request).
+        "macho-arm64e" => on_off(conf.macho_arm64e),
         // C++: return ""; -> no current field.
         _ => return None,
     })
