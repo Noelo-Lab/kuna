@@ -1,0 +1,191 @@
+==============================================================================
+test_decompiling_morton_my_message_callback :: my_message_callback   (angr 9.2.213 @ 0x403de7)
+==============================================================================
+
+--- angr ---
+typedef struct struct_0 {
+    char padding_0[8];
+    long long field_8;
+    char *field_10;
+    char padding_18[8];
+    char field_20;
+} struct_0;
+
+extern char *cfg;
+extern char g_40d00a;
+extern char g_41316f;
+extern long long last_mid;
+extern char process_messages;
+
+void my_message_callback(long long a0, unsigned long long a1, struct_0 *a2, unsigned long long a3)
+{
+    unsigned long len;  // rax
+    unsigned long len;  // rax
+    unsigned long len;  // rax
+    unsigned long long v0;  // [bp-0x78]
+    unsigned long long v1;  // [bp-0x68]
+    unsigned int v2;  // [bp-0x50]
+    unsigned int v3;  // [bp-0x4c]
+    unsigned int v4;  // [bp-0x48]
+    unsigned int v5;  // [bp-0x44]
+    char *tok;  // [bp-0x40]
+    unsigned long tok;  // [bp-0x38]
+    unsigned long v8;  // [bp-0x30]
+    unsigned long v9;  // [bp-0x28]
+    unsigned long ptr;  // [bp-0x20]
+
+    v1 = a1;
+    v0 = a3;
+    tok = strtok(a2->field_10, " ");
+    tok = strtok(NULL, &g_40d00a);
+    v8 = "Invalid Topic";
+    v9 = "Invalid Command";
+    ptr = malloc(strlen(cfg) + 44);
+    v2 = 0;
+    v3 = 0;
+    v4 = 0;
+    v5 = 0;
+    if (process_messages != 1)
+    {
+        free(ptr);
+        return;
+    }
+    if (g_41316f && a2->field_20)
+        mosquitto_publish(a0, &last_mid, a2->field_8, 0, 0, 1, 1);
+    if (tok && !mosquitto_pub_topic_check(tok))
+    {
+        if (!tok)
+        {
+            v5 = mosquitto_publish(a0, 0, "app/error", strlen(v9) & 4294967295, v9, 1, 0);
+            free(ptr);
+            return;
+        }
+        if (!strcmp(tok, "temperature"))
+        {
+            v2 = generate_random(68, 82);
+            len = strlen(cfg);
+            snprintf(ptr, len + 43, "%s recorded a temperature of %d degrees", cfg, v2);
+        }
+        else if (!strcmp(tok, "humidity"))
+        {
+            v3 = generate_random(50, 100);
+            len = strlen(cfg);
+            snprintf(ptr, len + 34, "%s recorded a humidity of %d%%", cfg, v3);
+        }
+        else if (!strcmp(tok, "UV"))
+        {
+            v4 = generate_random(0, 11);
+            len = strlen(cfg);
+            snprintf(ptr, len + 32, "%s recorded a UV index of %d", cfg, v4);
+        }
+        else
+        {
+            v5 = mosquitto_publish(a0, 0, "app/error", strlen(v9) & 4294967295, v9, 1, 0);
+            free(ptr);
+            return;
+        }
+        puts(ptr);
+        v5 = mosquitto_publish(a0, 0, tok, strlen(ptr) & 4294967295, ptr, 1, 0);
+        if (!v5)
+        {
+            free(ptr);
+            return;
+        }
+        printf("Error Publishing rc = %i\n", v5);
+        mosquitto_publish(a0, 0, "app/error", strlen(v8) & 4294967295, v8, 1, 0);
+        free(ptr);
+        return;
+    }
+    v5 = mosquitto_publish(a0, 0, "app/error", strlen(v8) & 4294967295, v8, 1, 0);
+    if (v5)
+        printf("Error Publishing rc = %d\n", v5);
+    free(ptr);
+    return;
+}
+
+
+--- kuna (name mode) ---
+void my_message_callback(unsigned long a0,unsigned long a1,int8 a2)
+
+{
+  int4 v1; // eax
+  uint4 v2; // eax
+  char *v3; // rax
+  int8 v4; // rax
+  uint8 v5; // rax
+  char *v6; // rax
+  
+  v3 = (char *)strtok(*(void *)(a2 + 0x10),0xd008);
+  v4 = strtok(0,0xd00a);
+  v5 = strlen(dat_13040);
+  v6 = malloc(v5 + 0x2c);
+  if (dat_13010 == '\x01') {
+    if ((dat_1316f != '\0') && (*(char *)(a2 + 0x20) != '\0')) {
+      mosquitto_publish(a0,0x13238,*(void *)(a2 + 8),0,0,1);
+    }
+    if ((v4 == 0) || (v1 = mosquitto_pub_topic_check(v4), v1 != 0)) {
+      v5 = strlen("Invalid Topic");
+      v2 = mosquitto_publish(a0,0,"app/error",v5 & 0xffffffff,"Invalid Topic",1);
+      if (v2 != 0) {
+        printf("Error Publishing rc = %d\n",(uint8)v2);
+      }
+    }
+    else if (v3 == (char *)0x0) {
+      v5 = strlen("Invalid Command");
+      mosquitto_publish(a0,0,"app/error",v5 & 0xffffffff,"Invalid Command",1);
+    }
+    else {
+      v1 = strcmp(v3,"temperature");
+      if (v1 == 0) {
+        v2 = generate_random(0x44,0x52);
+        v5 = strlen(dat_13040);
+        snprintf(v6,v5 + 0x2b,"%s recorded a temperature of %d degrees",Unique1000034a,(uint8)v2);
+      }
+      else {
+        v1 = strcmp(v3,"humidity");
+        if (v1 == 0) {
+          v2 = generate_random(0x32,100);
+          v5 = strlen(dat_13040);
+          snprintf(v6,v5 + 0x22,"%s recorded a humidity of %d%%",Unique10000352,(uint8)v2);
+        }
+        else {
+          v1 = strcmp(v3,"UV");
+          if (v1 != 0) {
+            v5 = strlen("Invalid Command");
+            mosquitto_publish(a0,0,"app/error",v5 & 0xffffffff,"Invalid Command",1);
+            goto label_41d6;
+          }
+          v2 = generate_random(0,0xb);
+          v5 = strlen(dat_13040);
+          snprintf(v6,v5 + 0x20,"%s recorded a UV index of %d",Unique1000035a,(uint8)v2);
+        }
+      }
+      puts(v6);
+      v5 = strlen(v6);
+      v2 = mosquitto_publish(a0,0,v4,v5 & 0xffffffff,v6,1);
+      if (v2 != 0) {
+        printf("Error Publishing rc = %i\n",(uint8)v2);
+        v5 = strlen("Invalid Topic");
+        mosquitto_publish(a0,0,"app/error",v5 & 0xffffffff,"Invalid Topic",1);
+      }
+    }
+  }
+label_41d6:
+  free(v6);
+  return;
+}
+
+--- metrics (reference | kuna) ---
+  loc            96 | 67  
+  gotos           0 | 1   
+  labels          0 | 1   
+  switches        0 | 0   
+  cases           0 | 0   
+  ifs             9 | 9   
+  loops           0 | 0   
+  ternaries       0 | 0   
+  casts           0 | 0   
+
+--- signals (candidate 'reference is better' hints) ---
+  * ref has fewer gotos (0 vs 1)
+  * ref has fewer labels (0 vs 1)

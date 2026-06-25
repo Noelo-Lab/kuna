@@ -1,0 +1,28 @@
+{
+  "opportunity": "test_decompiling_morton_my_message_callback::my_message_callback",
+  "test_name": "test_decompiling_morton_my_message_callback",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/morton",
+  "selector": "my_message_callback",
+  "func_addr": "0x403de7",
+  "arch": "x86_64",
+  "angr_version": "9.2.213",
+  "option": "gotoreduce",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_morton_my_message_callback; SAILR/Phoenix goto-reduction (tail duplication / DuplicationOptimizer); my_message_callback",
+  "scope": "large",
+  "proposal": true,
+  "gap_summary": "kuna emits 1 goto + 1 label to a shared `free(v6); return;` epilogue; angr emits 0 gotos by tail-duplicating the epilogue into each arm. The only structural diff (9 ifs / 0 loops / 0 switches both).",
+  "owning_stage": "S8 (s8_structure/blockaction.rs — verbatim CollapseStructure/TraceDAG)",
+  "decisions": [
+    {
+      "question": "Is closing this goto-reduction gap a small (single Action/Rule) feature or large (proposal-required)?",
+      "decider_verdict": {
+        "scope": "large",
+        "reason": "Eliminating the goto requires SAILR/Phoenix tail-duplication of the shared epilogue into each arm — a new CFG-rewriting transform inside/after the verbatim CollapseStructure engine, not a single gated early-return Action like loweredswitch.",
+        "owning_stage": "S8",
+        "why_not_small": "Needs a new goto-reduction/tail-duplication pass type touching S8 structuring beyond a gated early-return; cannot manufacture an S2 artifact for the existing structurer the way loweredswitch does."
+      }
+    }
+  ]
+}
