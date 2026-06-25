@@ -630,6 +630,15 @@ pub fn bootstrap_from_object(
     // object::File view (the analyzers need a parsed object the loader drops).
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?;
+    // (PR-8) Mach-O fat / universal (`0xcafebabe`) peel: `object::File::parse`
+    // is a thin, single-arch view and cannot parse a fat header, so a universal
+    // binary is reduced to ONE arch slice's bytes here — the single, canonical
+    // slice-selection point (design §3.4). Everything downstream (the loader, the
+    // analysis passes, the deferred-Listing stash) then sees the SAME thin slice,
+    // exactly as for a thin Mach-O. The slice preference is `--slice` (env
+    // `KUNA_MACHO_SLICE`) or the `--target` stem, else x86-64 → arm64 → first.
+    // Non-fat input is untouched (the peel returns the bytes verbatim).
+    let bytes = select_macho_slice(bytes, target);
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
     let mut loader = ObjectLoadImage::from_bytes(path, &bytes)?;
 
@@ -1170,6 +1179,43 @@ fn is_object_binary(bytes: &[u8]) -> bool {
     // prefix on XML/other input doesn't get mis-claimed.
     let machine = u16::from_le_bytes([bytes[0], bytes[1]]);
     COFF_MACHINES.contains(&machine)
+}
+
+/// The environment-variable name carrying a Mach-O fat-slice override
+/// (`--slice <arch>`). Read live (per `load file`) so a test can set it
+/// in-process; empty/unset selects the deterministic default slice.
+const MACHO_SLICE_ENV: &str = "KUNA_MACHO_SLICE";
+
+/// Reduce a Mach-O fat / universal binary to one arch slice's bytes — the single,
+/// canonical slice-selection point at dispatch (design §3.4 / §8 PR-8). For a
+/// thin (non-fat) input the `bytes` are returned **verbatim** (an exact, zero-copy
+/// move), so the ELF / thin-Mach-O / PE / COFF paths are byte-identical.
+///
+/// The slice preference is, in order: an explicit `--slice <arch>` (the
+/// [`MACHO_SLICE_ENV`] env var the CLI exports), then the `--target` token's
+/// leading arch stem (so the existing language-override flag also steers the
+/// slice), else the deterministic default (x86-64 → arm64 → first arch present).
+/// A fat header that cannot be peeled (unparsable, or no usable slice) is left
+/// untouched, so the downstream `object::File::parse` produces the existing
+/// "Unsupported file format" error rather than this silently mis-loading.
+fn select_macho_slice(bytes: Vec<u8>, target: &str) -> Vec<u8> {
+    use kuna_analysis::s1_loader::macho_fat::{is_fat, select_fat_slice, SlicePref};
+    if !is_fat(&bytes) {
+        return bytes; // thin / ELF / PE / COFF — verbatim, no copy of a slice.
+    }
+    // `--slice` (env) wins; else fall back to the `--target` arch stem.
+    let slice_token = std::env::var(MACHO_SLICE_ENV).unwrap_or_default();
+    let pref = if !slice_token.trim().is_empty() {
+        SlicePref::parse(&slice_token)
+    } else if !target.trim().is_empty() {
+        SlicePref::parse(target)
+    } else {
+        SlicePref::default()
+    };
+    match select_fat_slice(&bytes, pref) {
+        Some(slice) => slice.to_vec(),
+        None => bytes, // unpeelable fat: leave it for object::File::parse to reject.
+    }
 }
 
 /// Bootstrap from a file path (the `decomp_dbg` `load file [<target>] <path>`

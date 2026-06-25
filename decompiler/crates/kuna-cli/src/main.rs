@@ -58,7 +58,7 @@ fn usage() {
     eprintln!(
         "usage: kuna <decompile|test|catalog|specs> ...\n\
          \n\
-         kuna decompile <binary> <func> [--addr] [--experimental-formats] [--option NAME VALUE]... [--kassert ARGS]...\n\
+         kuna decompile <binary> <func> [--addr] [--experimental-formats] [--slice ARCH] [--option NAME VALUE]... [--kassert ARGS]...\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
          kuna catalog [--json|--markdown|--check] [--option NAME]\n\
          kuna specs [-a <dir>] [<slaspec>...] [--diff]"
@@ -90,6 +90,7 @@ fn cmd_decompile(argv: &[String]) -> i32 {
     let mut engine: Option<String> = None;
     let mut sleighpath: Option<String> = None;
     let mut experimental_formats = false;
+    let mut slice: Option<String> = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -99,6 +100,7 @@ fn cmd_decompile(argv: &[String]) -> i32 {
             "--raw" => raw = true,
             "--regions" => regions = true,
             "--experimental-formats" => experimental_formats = true,
+            "--slice" => slice = take_value(argv, &mut i, "--slice"),
             "--target" => {
                 bfd_target = take_value(argv, &mut i, "--target");
             }
@@ -164,6 +166,7 @@ fn cmd_decompile(argv: &[String]) -> i32 {
         decomp_dbg,
         sleighpath,
         experimental_formats,
+        slice,
     };
     decompile::run(&dargs)
 }

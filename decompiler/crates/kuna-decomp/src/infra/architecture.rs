@@ -401,6 +401,18 @@ pub struct Architecture {
     /// instead of `sub_<addr>`). Real-ELF Go path only ⇒ the XML datatest oracle is
     /// structurally untouched.
     pub analysis_gopclntab: bool,
+    /// (kuna) Gate the Mach-O arm64e Apple-Silicon SLEIGH-spec selection
+    /// (`macho-arm64e`); default **off** (design §3.7, opt-in until proven). When
+    /// on, an arm64e Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) loads with the
+    /// `AARCH64:LE:64:AppleSilicon` pointer-auth spec instead of the generic
+    /// `v8A`; pointer-auth does NOT change import naming or symbols, only the
+    /// spec. NB: spec selection happens at *load* (`language_id_for`), before any
+    /// console `option` command runs, so the actual gate is read live from the
+    /// `KUNA_MACHO_ARM64E` env var the CLI exports for `--option macho-arm64e on`;
+    /// this field exists for catalog/registration consistency (a recognized
+    /// option name) and records the requested state. Default-off ⇒ every parity
+    /// gate is byte-identical and a non-arm64e / non-Mach-O target is untouched.
+    pub macho_arm64e: bool,
 
     // --- Owned subsystems (architecture.hh:211-233) -----------------------
     /// Memory map of global variables and functions (C++ `symboltab`).
@@ -599,6 +611,7 @@ impl Architecture {
             analysis_listing: false,
             analysis_noreturn_disc: false,
             analysis_gopclntab: false,
+            macho_arm64e: false,
 
             symboltab,
             options: OptionDatabase::new(),
@@ -695,6 +708,7 @@ impl Architecture {
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_noreturn_disc = false; // discovered-no-return consumer default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
+        self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
 
     /// Apply a kuna stage-model option (`option <name> <value>`), the analogue of
@@ -805,6 +819,14 @@ impl Architecture {
             "gopclntab" => {
                 on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
             }
+            // (kuna §3.7) arm64e Apple-Silicon spec selection. Unlike the
+            // analysis-pass gates this affects the *load-time* SLEIGH-spec choice
+            // (`language_id_for`), which runs before this console `option` command;
+            // the live gate is the `KUNA_MACHO_ARM64E` env var the CLI exports for
+            // `--option macho-arm64e on`. This arm records the requested state on
+            // the Architecture so the option is a recognized name (catalog
+            // consistency) and a kassert can read it back. Default-off.
+            "macho-arm64e" => on_off!(macho_arm64e, "Mach-O arm64e Apple-Silicon spec selection"),
             other => Err(KunaError::parse(format!("Unknown kuna option: {other}"))),
         }
     }
