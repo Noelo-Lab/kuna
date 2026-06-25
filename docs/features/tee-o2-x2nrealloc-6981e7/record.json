@@ -1,0 +1,33 @@
+{
+  "opportunity": "test_decompiling_tee_O2_x2nrealloc::x2nrealloc",
+  "test_name": "test_decompiling_tee_O2_x2nrealloc",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/tee_O2",
+  "selector": "x2nrealloc",
+  "func_addr": "0x4057f0",
+  "angr_version": "9.2.213",
+  "scope": "large",
+  "proposal": true,
+  "option": "noreturn_propagate",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_tee_O2_x2nrealloc; angr CFGFast no-return call-graph propagation; x2nrealloc",
+  "root_cause": "xalloc_die is structurally no-return (body unconditionally ends in error(); abort()); kuna knows abort is no-return but does not propagate to xalloc_die, so the call is assumed to return and at -O2 the bytes after it form a spurious fall-through back-edge -> invalid while(true) loop + goto + dead stack spills. Manual 'option noreturn xalloc_die' (after read symbols) collapses output to the angr shape, confirming the mechanism.",
+  "owning_stage": "S2 flow classification (noreturn kills fall-through); flag consumed at s2_lift/flow.rs:1838 query_call_no_return, populated pre-decompile by the kuna-analysis tier",
+  "decisions": [
+    {
+      "question": "Is closing this gap a small (one option-gated pass) or large (proposal) feature?",
+      "decider_verdict": {
+        "scope": "large",
+        "hook_stage": "P0/analysis-tier (kuna-analysis no-return discovery, pre-S2 flow; flag consumed at s2_lift/flow.rs:1838 query_call_no_return)",
+        "generalizes": true,
+        "reason": "Cross-function no-return call-graph propagation is a new analysis-tier pass type, not an in-pipeline Action/Rule, and the pre-flow &self seam forbids the loweredswitch shape.",
+        "testability": "No firing tests/stages/*.xml is possible -- the XML bytechunk path never runs analysis/Listing, so auto-discovery propagation can only be covered by kuna-analysis unit tests + a real-ELF testcase, never the mandated two-pass stages XML.",
+        "recommended_option_name": "noreturn_propagate"
+      },
+      "justification": "Fails the small contract on two independent hard rules and a soft one: (1) cross-function fixpoint propagation in the analysis tier is a new pass type and the confirmed query_call_no_return seam is &self/pre-S2-flow, making a single kuna_<slug>.rs Action/Rule architecturally impossible; (2) the mandated firing two-pass tests/stages XML cannot be authored because the XML decomp_test_dbg path never runs analysis passes or builds the Listing (which is why the existing noreturn_known/noreturn_disc options have no stages XML test); (3) cross-crate footprint (new kuna-analysis module + registration + option/flag arm in kuna-decomp architecture.rs/options.rs + stages.toml). Feature is correct and broadly general (any no-return wrapper like xalloc_die/verror benefits), so it should go through a [PROPOSAL] draft PR for human go/no-go."
+    }
+  ],
+  "parity": "OK",
+  "default_on": false,
+  "evidence": "docs/features/tee-o2-x2nrealloc-6981e7/angr-vs-kuna.txt"
+}
