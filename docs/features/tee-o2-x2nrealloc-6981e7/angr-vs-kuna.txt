@@ -1,0 +1,123 @@
+==============================================================================
+test_decompiling_tee_O2_x2nrealloc :: x2nrealloc   (angr 9.2.213 @ 0x4057f0)
+==============================================================================
+
+--- angr ---
+unsigned long long x2nrealloc(unsigned long long a0, unsigned long long *ptr, unsigned long long a2)
+{
+    unsigned long long v1;  // rbx
+    unsigned long v2;  // rax
+    unsigned long long v4;  // rbx
+    unsigned long long ptr;  // rax
+
+    v1 = *(ptr);
+    if (a0)
+    {
+        v2 = (v1 >> 1) + 1;
+        v4 = v1 + v2;
+        if ((char)__CFADD__(v1, v2))
+            xalloc_die(); /* do not return */
+    }
+    else
+    {
+        v4 = v1;
+        if (!v4)
+            v4 = (unsigned long long)(128 / a2) + (a2 > 128);
+    }
+    ptr = xreallocarray();
+    *(ptr) = v4;
+    return ptr;
+}
+
+
+--- kuna (name mode) ---
+void x2nrealloc(void *a0,uint8 *a1,uint8 a2)
+
+{
+  char v1 [16];
+  uint8 v2; // rax
+  uint8 v3;
+  void *v4;
+  void *v5; // rsp
+  uint8 *v6;
+  bool v8; // cf
+  
+  v4 = PTRSUB(RSP,0);
+  while( true ) {
+    v7 = a1;
+    *(uint8 **)&v4[-8] = v6;
+    *(uint8 *)&v4[-0x10] = v3;
+    v5 = &v4[-0x18];
+    v3 = *v7;
+    if (a0 == (void *)0x0) break;
+    v2 = (v3 >> 1) + 1;
+    v8 = CARRY8(v3,v2);
+    v3 = v3 + v2;
+    if (!v8) goto label_5813;
+    *(void *)&v4[-0x20] = 0x5856;
+    a1 = v7;
+    xalloc_die(v4[-0x20]);
+    a2 = 1;
+    v4 = v5;
+    v6 = v7;
+  }
+  if (v3 == 0) {
+    v1[8] = 0;
+    v1[0] = a2;
+    v3 = SUB168((ZEXT816(0) << 0x40 | ZEXT816(0x80)) / v1,0) + (uint8)(0x81 <= a2);
+  }
+label_5813:
+  *(void *)&v4[-0x20] = 0x581e;
+  xreallocarray(a0,v3,a2,v4[-0x20]);
+  *v7 = v3;
+  return;
+}
+
+--- metrics (reference | kuna) ---
+  loc            24 | 39  
+  gotos           0 | 1   
+  labels          0 | 1   
+  switches        0 | 0   
+  cases           0 | 0   
+  ifs             3 | 3   
+  loops           0 | 1   
+  ternaries       0 | 0   
+  casts           0 | 0   
+
+--- signals (candidate 'reference is better' hints) ---
+  * ref has fewer gotos (0 vs 1)
+  * ref has fewer labels (0 vs 1)
+  * ref is 38% shorter (24 vs 39 loc)
+
+==============================================================================
+kuna WITH manual 'option noreturn xalloc_die' (proves root cause = noreturn)
+==============================================================================
+void x2nrealloc(void *a0,uint8 *a1,uint8 a2)
+
+{
+  uint8 n;
+  char v1 [16];
+  uint8 v2; // rax
+  bool v3; // cf
+  
+  n = *a1;
+  if (a0 == (void *)0x0) {
+    if (n == 0) {
+      v1[8] = 0;
+      v1[0] = a2;
+      n = SUB168((ZEXT816(0) << 0x40 | ZEXT816(0x80)) / v1,0) + (uint8)(0x81 <= a2);
+    }
+  }
+  else {
+    v2 = (n >> 1) + 1;
+    v3 = CARRY8(n,v2);
+    n = n + v2;
+    if (v3) {
+                    /* WARNING: Subroutine does not return */
+      xalloc_die();
+    }
+  }
+  xreallocarray(a0,n,a2);
+  *a1 = n;
+  return;
+}

@@ -24,9 +24,16 @@ from .. import decompile as kdecompile
 _FENCE = "```"
 
 
-def _kuna(binary, selector, func_addr, option, value):
-    """Decompile in kuna with one option flipped; name-first, address-fallback."""
-    opts = [(option, value)]
+def _kuna(binary, selector, func_addr, option, value, extra_options=None):
+    """Decompile in kuna with one option flipped; name-first, address-fallback.
+
+    ``extra_options`` (a list of ``[name, value]`` pairs) are applied to BOTH the
+    before and after renderings — companion flags a feature requires to be active
+    at all (e.g. a Listing-tier consumer that needs ``listing on`` to build the
+    Listing it reads). Applied identically on both sides so the demo isolates the
+    feature option's own effect (the companion alone changes nothing).
+    """
+    opts = [(o, v) for o, v in (extra_options or [])] + [(option, value)]
     name_sel = selector and not str(selector).lower().startswith("0x") and selector != "@entry"
     if name_sel:
         try:
@@ -94,7 +101,7 @@ def _speed_row(record):
 
 def generate(record=None, *, option=None, binary=None, selector=None, func_addr=None,
              default_on=False, source_decompiler="angr", inspiration="", test_name="",
-             with_angr=True):
+             extra_options=None, with_angr=True):
     speed_row = _speed_row(record)
     if record is not None:
         option = record.get("option")
@@ -105,12 +112,15 @@ def generate(record=None, *, option=None, binary=None, selector=None, func_addr=
         source_decompiler = record.get("source_decompiler", "angr")
         inspiration = record.get("inspiration", "")
         test_name = record.get("test_name", "")
+        # Companion flags the feature requires to be active (e.g. a Listing-tier
+        # consumer needs `listing on`); applied to BOTH before and after.
+        extra_options = record.get("demo_extra_options", extra_options)
 
     func = selector
     binbase = os.path.basename(binary) if binary else "?"
 
-    before = _kuna(binary, selector, func_addr, option, "off")
-    after = _kuna(binary, selector, func_addr, option, "on")
+    before = _kuna(binary, selector, func_addr, option, "off", extra_options)
+    after = _kuna(binary, selector, func_addr, option, "on", extra_options)
     mb, ma = metrics(before), metrics(after)
 
     default_lbl_off = " *(default)*" if not default_on else ""

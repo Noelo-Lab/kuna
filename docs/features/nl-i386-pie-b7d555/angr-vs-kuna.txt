@@ -1,0 +1,319 @@
+==============================================================================
+test_decompiling_nl_i386_pie :: usage   (angr 9.2.213 @ 0x401f60)
+==============================================================================
+
+--- angr ---
+typedef struct FILE {
+} FILE;
+
+extern unsigned int program_name;
+extern unsigned int stderr;
+extern unsigned int stdout;
+
+void usage(int a0)
+{
+    unsigned int v6;  // edi
+    unsigned int v7;  // esi
+    char *v22;  // eax
+    char *v23;  // eax
+    unsigned int v8;  // ebx
+    unsigned int v24;  // edx
+    int v25;  // eax
+    unsigned int v26;  // eax
+    unsigned int v29;  // eax
+    char *v9;  // eax
+    unsigned int v0;  // [bp-0x40]
+    unsigned int v1;  // [bp-0x30]
+    unsigned int v2;  // [bp-0x20]
+    unsigned int v3;  // [bp-0x10]
+    unsigned int v4;  // [bp-0xc]
+    unsigned int v5;  // [bp-0x8]
+
+    v5 = v6;
+    v4 = v7;
+    v3 = v8;
+    if (a0)
+    {
+        v1 = v29;
+        v9 = dcgettext(NULL, "Try `%s --help' for more information.\n", 5);
+        v0 = program_name;
+        __fprintf_chk(stderr, 0x1, v9);
+    }
+    else
+    {
+        v1 = v29;
+        __printf_chk(1, dcgettext(NULL, "Usage: %s [OPTION]... [FILE]...\n", 5));
+        v2 = stdout;
+        fputs_unlocked(dcgettext(NULL, "Write each FILE to standard output, with line numbers added.\nWith no FILE, or when FILE is -, read standard input.\n\n", 5), v2);
+        v2 = stdout;
+        fputs_unlocked(dcgettext(NULL, "Mandatory arguments to long options are mandatory for short options too.\n", 5), v2);
+        v2 = stdout;
+        fputs_unlocked(dcgettext(NULL, "  -b, --body-numbering=STYLE      use STYLE for numbering body lines\n  -d, --section-delimiter=CC      use CC for separating logical pages\n  -f, --footer-numbering=STYLE    use STYLE for numbering footer lines\n", 5), v2);
+        v2 = stdout;
+        fputs_unlocked(dcgettext(NULL, "  -h, --header-numbering=STYLE    use STYLE for numbering header lines\n  -i, --line-increment=NUMBER     line number increment at each line\n  -l, --join-blank-lines=NUMBER   group of NUMBER empty lines counted as one\n  -n, --number-format=FORMAT      insert line numbers according to FORMAT\n  -p, --no-renumber               do not reset line numbers at logical pages\n  -s, --number-separator=STRING   add STRING after (possible) line number\n", 5), v2);
+        v2 = stdout;
+        fputs_unlocked(dcgettext(NULL, "  -v, --starting-line-number=NUMBER  first line number on each logical page\n  -w, --number-width=NUMBER       use NUMBER columns for line numbers\n", 5), v2);
+        v2 = stdout;
+        fputs_unlocked(dcgettext(NULL, "      --help     display this help and exit\n", 5), v2);
+        v2 = stdout;
+        fputs_unlocked(dcgettext(NULL, "      --version  output version information and exit\n", 5), v2);
+        v2 = stdout;
+        fputs_unlocked(dcgettext(NULL, "\nBy default, selects -v1 -i1 -l1 -sTAB -w6 -nrn -hn -bt -fn.  CC are\ntwo delimiter characters for separating logical pages, a missing\nsecond character implies :.  Type \\\\ for \\.  STYLE is one of:\n", 5), v2);
+        v2 = stdout;
+        fputs_unlocked(dcgettext(NULL, "\n  a         number all lines\n  t         number only nonempty lines\n  n         number no lines\n  pBRE      number only lines that contain a match for the basic regular\n            expression, BRE\n\nFORMAT is one of:\n\n  ln   left justified, no leading zeros\n  rn   right justified, no leading zeros\n  rz   right justified, leading zeros\n\n", 5), v2);
+        v2 = last_component(program_name);
+        v0 = "bug-coreutils@gnu.org";
+        __printf_chk(1, dcgettext(NULL, "\nReport %s bugs to %s\n", 5));
+        v0 = "http://www.gnu.org/software/coreutils/";
+        __printf_chk(1, dcgettext(NULL, "%s home page: <%s>\n", 5));
+        v22 = dcgettext(NULL, "General help using GNU software: <http://www.gnu.org/gethelp/>\n", 5);
+        fputs_unlocked(v22, stdout);
+        v23 = setlocale(5, NULL);
+        if (v23)
+        {
+            v1 = v24;
+            v25 = strncmp(v23, "en_", 3);
+            v26 = last_component(program_name);
+            if (v25)
+            {
+                v2 = v26;
+                v1 = v26;
+                __printf_chk(1, dcgettext(NULL, "Report %s translation bugs to <http://translationproject.org/team/>\n", 5));
+            }
+        }
+        last_component(program_name);
+        __printf_chk(1, dcgettext(NULL, "For complete documentation, run: info coreutils '%s invocation'\n", 5));
+    }
+    exit(a0); /* do not return */
+}
+
+
+--- kuna (name mode) ---
+/* WARNING: Function: __x86.get_pc_thunk.bx replaced with injection: get_pc_thunk_bx */
+void usage(int4 a0)
+
+{
+  unsigned int v1; // eax
+  void *v10; // esp
+  void *v11; // esp
+  void *v12; // esp
+  unsigned int v13; // stack - 0x14
+  unsigned int v2;
+  unsigned int v3; // eax
+  int4 v4; // eax
+  int4 v5; // eax
+  unsigned int v6; // edx
+  char v7 [24];
+  void *v8; // esp
+  void *v9; // esp
+  
+  v13 = 0x1f69;
+  v8 = v7;
+  if (a0 == 0) goto label_1fb0;
+  sub_eb0();
+  sub_10f0();
+  v9 = v7;
+  do {
+    v11 = &v10[-0x10];
+    *(int4 *)&v10[-0x10] = a0;
+    *(void *)&v10[-0x14] = 0x1fb0;
+    v2 = sub_fb0();
+label_1fb0:
+    *(void *)&v12[-4] = v2;
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "Usage: %s [OPTION]... [FILE]...\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x1fc1;
+    v2 = sub_eb0();
+    *(void *)&v12[-8] = ESI;
+    *(void *)&v12[-0xc] = v2;
+    *(void *)&v12[-0x10] = 1;
+    *(void *)&v12[-0x14] = 0x1fcd;
+    sub_1060();
+    *(void *)&v12[0xc] = *dat_9fdc;
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "Write each FILE to standard output, with line numbers added.\nWith no FILE, or when FILE is -, read standard input.\n\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x1fec;
+    v2 = sub_eb0();
+    *(void *)&v12[-0xc] = *(void *)&v12[0xc];
+    *(void *)&v12[-0x10] = v2;
+    *(void *)&v12[-0x14] = 0x1ff9;
+    sub_fc0();
+    *(void *)&v12[0xc] = *Unique1000035e;
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "Mandatory arguments to long options are mandatory for short options too.\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x2012;
+    v2 = sub_eb0();
+    *(void *)&v12[-0xc] = *(void *)&v12[0xc];
+    *(void *)&v12[-0x10] = v2;
+    *(void *)&v12[-0x14] = 0x201f;
+    sub_fc0();
+    *(void *)&v12[0xc] = *Unique1000035e;
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "  -b, --body-numbering=STYLE      use STYLE for numbering body lines\n  -d, --section-delimiter=CC      use CC for separating logical pages\n  -f, --footer-numbering=STYLE    use STYLE for numbering footer lines\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x2038;
+    v2 = sub_eb0();
+    *(void *)&v12[-0xc] = *(void *)&v12[0xc];
+    *(void *)&v12[-0x10] = v2;
+    *(void *)&v12[-0x14] = 0x2045;
+    sub_fc0();
+    *(void *)&v12[0xc] = *Unique1000035e;
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "  -h, --header-numbering=STYLE    use STYLE for numbering header lines\n  -i, --line-increment=NUMBER     line number increment at each line\n  -l, --join-blank-lines=NUMBER   group of NUMBER empty lines counted as one\n  -n, --number-format=FORMAT      insert line numbers according to FORMAT\n  -p, --no-renumber               do not reset line numbers at logical pages\n  -s, --number-separator=STRING   add STRING after (possible) line number\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x205e;
+    v2 = sub_eb0();
+    *(void *)&v12[-0xc] = *(void *)&v12[0xc];
+    *(void *)&v12[-0x10] = v2;
+    *(void *)&v12[-0x14] = 0x206b;
+    sub_fc0();
+    *(void *)&v12[0xc] = *Unique1000035e;
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "  -v, --starting-line-number=NUMBER  first line number on each logical page\n  -w, --number-width=NUMBER       use NUMBER columns for line numbers\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x2084;
+    v2 = sub_eb0();
+    *(void *)&v12[-0xc] = *(void *)&v12[0xc];
+    *(void *)&v12[-0x10] = v2;
+    *(void *)&v12[-0x14] = 0x2091;
+    sub_fc0();
+    *(void *)&v12[0xc] = *Unique1000035e;
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "      --help     display this help and exit\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x20aa;
+    v2 = sub_eb0();
+    *(void *)&v12[-0xc] = *(void *)&v12[0xc];
+    *(void *)&v12[-0x10] = v2;
+    *(void *)&v12[-0x14] = 0x20b7;
+    sub_fc0();
+    *(void *)&v12[0xc] = *Unique1000035e;
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "      --version  output version information and exit\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x20d0;
+    v2 = sub_eb0();
+    *(void *)&v12[-0xc] = *(void *)&v12[0xc];
+    *(void *)&v12[-0x10] = v2;
+    *(void *)&v12[-0x14] = 0x20dd;
+    sub_fc0();
+    *(void *)&v12[0xc] = *Unique1000035e;
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "\nBy default, selects -v1 -i1 -l1 -sTAB -w6 -nrn -hn -bt -fn.  CC are\ntwo delimiter characters for separating logical pages, a missing\nsecond character implies :.  Type \\\\ for \\.  STYLE is one of:\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x20f6;
+    v2 = sub_eb0();
+    *(void *)&v12[-0xc] = *(void *)&v12[0xc];
+    *(void *)&v12[-0x10] = v2;
+    *(void *)&v12[-0x14] = 0x2103;
+    sub_fc0();
+    *(void *)&v12[0xc] = *Unique1000035e;
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "\n  a         number all lines\n  t         number only nonempty lines\n  n         number no lines\n  pBRE      number only lines that contain a match for the basic regular\n            expression, BRE\n\nFORMAT is one of:\n\n  ln   left justified, no leading zeros\n  rn   right justified, no leading zeros\n  rz   right justified, leading zeros\n\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x211c;
+    v2 = sub_eb0();
+    *(void *)&v12[-0xc] = *(void *)&v12[0xc];
+    *(void *)&v12[-0x10] = v2;
+    *(void *)&v12[-0x14] = 0x2129;
+    sub_fc0();
+    *(void *)&v12[-0x10] = dat_a44c;
+    *(void *)&v12[-0x14] = 0x2131;
+    v2 = last_component();
+    *(void *)&v12[0xc] = v2;
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "\nReport %s bugs to %s\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x2148;
+    v2 = sub_eb0();
+    *(char **)&v12[-0x14] = "bug-coreutils@gnu.org";
+    *(void *)&v12[-0x18] = *(void *)&v12[0xc];
+    *(void *)&v12[-0x1c] = v2;
+    *(void *)&v12[-0x20] = 1;
+    *(void *)&v12[-0x24] = 0x215c;
+    sub_1060();
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "%s home page: <%s>\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x216f;
+    v2 = sub_eb0();
+    *(char **)&v12[-0x14] = "http://www.gnu.org/software/coreutils/";
+    *(char **)&v12[-0x18] = "GNU coreutils";
+    *(void *)&v12[-0x1c] = v2;
+    *(void *)&v12[-0x20] = 1;
+    *(void *)&v12[-0x24] = 0x2185;
+    sub_1060();
+    v2 = *Unique1000035e;
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "General help using GNU software: <http://www.gnu.org/gethelp/>\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x219a;
+    v3 = sub_eb0();
+    *(void *)&v12[-0xc] = v2;
+    *(void *)&v12[-0x10] = v3;
+    *(void *)&v12[-0x14] = 0x21a3;
+    sub_fc0();
+    *(void *)&v12[-0xc] = 0;
+    *(void *)&v12[-0x10] = 5;
+    *(void *)&v12[-0x14] = 0x21ae;
+    sub_1080();
+    if (v4 != 0) {
+      *(void *)&v12[-4] = v6;
+      *(void *)&v12[-8] = 3;
+      *(void *)&v12[-0xc] = 0x5bac;
+      *(int4 *)&v12[-0x10] = v4;
+      *(void *)&v12[-0x14] = 0x21c5;
+      v5 = sub_1120();
+      *(void *)&v12[-0x10] = dat_a44c;
+      *(void *)&v12[-0x14] = 0x21cf;
+      v2 = last_component();
+      if (v5 != 0) {
+        *(void *)&v12[0xc] = v2;
+        *(void *)&v12[-4] = v2;
+        *(void *)&v12[-8] = 5;
+        *(char **)&v12[-0xc] = "Report %s translation bugs to <http://translationproject.org/team/>\n";
+        *(void *)&v12[-0x10] = 0;
+        *(void *)&v12[-0x14] = 0x221e;
+        v2 = sub_eb0();
+        *(void *)&v12[-8] = *(void *)&v12[0xc];
+        *(void *)&v12[-0xc] = v2;
+        *(void *)&v12[-0x10] = 1;
+        *(void *)&v12[-0x14] = 0x222e;
+        sub_1060();
+      }
+    }
+    *(void *)&v12[-0x10] = dat_a44c;
+    *(void *)&v12[-0x14] = 0x21e0;
+    EAX = last_component();
+    *(void *)&v12[-8] = 5;
+    *(char **)&v12[-0xc] = "For complete documentation, run: info coreutils \'%s invocation\'\n";
+    *(void *)&v12[-0x10] = 0;
+    *(void *)&v12[-0x14] = 0x21f5;
+    v2 = sub_eb0();
+    *(void *)&v12[-8] = EAX;
+    *(void *)&v12[-0xc] = v2;
+    *(void *)&v12[-0x10] = 1;
+    *(void *)&v12[-0x14] = 0x2201;
+    sub_1060();
+  } while( true );
+}
+
+--- metrics (reference | kuna) ---
+  loc            80 | 209 
+  gotos           0 | 1   
+  labels          0 | 1   
+  switches        0 | 0   
+  cases           0 | 0   
+  ifs             3 | 3   
+  loops           0 | 1   
+  ternaries       0 | 0   
+  casts           0 | 0   
+
+--- signals (candidate 'reference is better' hints) ---
+  * ref has fewer gotos (0 vs 1)
+  * ref has fewer labels (0 vs 1)
+  * ref is 62% shorter (80 vs 209 loc)
+  * kuna emitted a recovery-failure marker

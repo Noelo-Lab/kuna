@@ -1,0 +1,50 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    angr SAILR / Phoenix goto-reduction via return-tail duplication
+    (Basque et al., USENIX Security 2024 "SAILR"; ReturnDuplicator).
+
+    coreutils dd 'argmatch_to_argument' (x86-64, GCC) @ 0x40a640.  A shared
+    return tail (`v2 = 0;` falling through to the single `return v2;`) has two
+    predecessors (the initial `if (v2 == 0)` true-arm and an in-loop
+    `if (v2 == 0)` edge), so Ghidra's CollapseStructure must express the second
+    edge as an unstructured `goto label;` (CollapseStructure has no schema that
+    duplicates a tail to avoid a goto).  angr emits zero gotos by duplicating the
+    constant return tail into the in-loop edge, turning the cross-edge into a
+    structured early return.
+
+    Stage model: S8 "goto-quality" sub-stage.  The option-gated
+    `ActionGotoReduce` (option `gotoreduce`, default-OFF) runs after
+    ActionFinalStructure: it finds `if (cond) goto T` where T is a small
+    single-successor basic-block chain ending in `return`, and rewrites it to
+    `if (cond) { tail }` (a print-tree copy of the same ops, no p-code cloned and
+    def/use untouched), then clears T's now-unused label.
+
+    The bcmp@plt call target (0x402360) is outside this single-function chunk, so
+    it renders as an unnamed sub call; that is irrelevant to the goto metric.
+
+    Pass 1 (option gotoreduce off): assertions prove the bug; one `goto label_`
+    and the `label_:` definition are present (the residual unstructured edge).
+    Pass 2 (option gotoreduce on): the goto and label are gone and the constant
+    return tail is duplicated, so the combined `return ` count rises from one
+    (pass 1) to three (one in pass 1 plus two in pass 2).
+-->
+<bytechunk space="ram" offset="0x40a640">
+4157415641554154534c8b2e4d85ed74524989ce4989d74889f34989fc4889d64889cae8f87cffff85c0743a4d01f74883c308662e0f1f8400000000000f1f004c8b2b4d85ed741b4c89e74c89fe4c89f2e8ca7cffff4d01f74883c30885c075dfeb034531ed4c89e85b415c415d415e415fc3
+</bytechunk>
+<symbol space="ram" offset="0x40a640" name="argmatch_to_argument"/>
+</binaryimage>
+<script>
+  <com>option gotoreduce off</com>
+  <com>lo fu argmatch_to_argument</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option gotoreduce on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="angr-gotoreduce #1 (bug, off): one residual goto to the shared return tail" min="1" max="1">goto label_</stringmatch>
+<stringmatch name="angr-gotoreduce #2 (bug, off): goto label reference + label definition present, none on" min="2" max="2">label_</stringmatch>
+<stringmatch name="angr-gotoreduce #3 (fix, on): return tail duplicated (1 return off + 2 returns on)" min="3" max="3">return </stringmatch>
+</decompilertest>

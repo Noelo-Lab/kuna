@@ -395,6 +395,33 @@ Pinned VMAs (x86-64): `_compute`@`0x1000005a0`, `_main`@`0x1000005b0`, the
 from the `file.symbols()` funcsym source, not the stub resolver). **Pin the VMAs
 as test consts** (`llvm-objdump --macho -d` / `llvm-otool -Iv`).
 
+## Mach-O fat/universal + arm64e (PR-8)
+
+The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, design
+§3.4 / §3.7) reuses the two thin `macho_imports*` slices above:
+
+- **`macho_fat`** (2-slice universal, ~97 KB) wraps `macho_imports` (x86-64,
+  slice 0) + `macho_imports_arm64` (arm64, slice 1) behind a big-endian
+  `fat_header` + two `fat_arch` records. `llvm-lipo`/`lipo` are **absent** in the
+  container, so the fat wrapper is **hand-built** directly from the two real thin
+  slices (the fat format is just a header + per-slice
+  `{cputype,cpusubtype,offset,size,align}`; both slices page-aligned at
+  `2^14`). The dispatch peels one slice (default x86-64; `--slice arm64` selects
+  the other) before `object::File::parse`, which cannot parse a fat header.
+  Rebuild: the Python snippet in `Increment 45` of `docs/analysis-port-log.md`
+  (read each thin slice's header, emit the wrapper) — or `llvm-lipo a b -create
+  -output macho_fat` if a `lipo` is available.
+
+- **`macho_arm64e`** (~49 KB) is the `macho_imports_arm64` fixture with its header
+  `cpusubtype` flipped to `CPU_SUBTYPE_ARM64E` (2). arm64e is binary-compatible
+  arm64 (same encodings plus PAC), so the real arm64 code decodes under the
+  AppleSilicon v8.5-A superset spec. With `--option macho-arm64e on` the loader
+  selects `AARCH64:LE:64:AppleSilicon`; off ⇒ generic `v8A`. The **load +
+  spec-selection path is real**; only the cpusubtype is synthesized (no
+  `clang -arch arm64e` SDK in-container — a genuine Apple-toolchain arm64e binary
+  is a follow-up). Rebuild: copy `macho_imports_arm64` and overwrite the 4-byte
+  cpusubtype at offset 8 with little-endian `2`.
+
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
 The multi-format **entry-discovery** gate
