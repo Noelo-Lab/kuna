@@ -51,6 +51,135 @@ built Listing). The two `KUNA-CATALOG` provenance-count assertions were re-pinne
 (`source_decompiler="angr"` 3→4, `change_kind="structure-recovery"` 2→3) and the catalog
 count tests bumped (37→38 settables); `baseline-stages.json` regenerated.
 
+## Session (2026-06-25) — nl-i386-pie-b7d555 (option i386_pie_plt, DIV-9)
+
+- **angr testcase**: `test_decompiling_nl_i386_pie::usage` (binary `i386/nl`, an i386 **PIE**
+  ELF; angr 9.2.213). angr emits ~80 clean loc with named libc calls; kuna emitted ~209 loc of
+  broken C — a spurious `do{}while(true)` loop, a `goto`, three un-unified `// esp` stack
+  values, explicit frame stores, dropped call args, a recovery-failure marker, and `sub_<addr>`
+  call names.
+- **Why angr was better**: angr resolves PLT/GOT imports during CLE load and consults a libc
+  no-return database, so `exit` is flagged no-return and the dead fall-through never loops. kuna
+  has the equivalent machinery (`resolve_plt_imports` + `NoReturnKnownPass` + the engine
+  flow-halt) but `decode_i386` decoded only the non-PIC `FF 25 <abs32>` stub form and **skipped**
+  the i386-PIE `FF A3 <disp32>` (`jmp *disp(%ebx)`, GOT-relative) form, so no PIE import was named
+  → `exit` never no-return → the whole structural failure cascaded.
+- **Mechanism**: `kuna-analysis::s1_loader::elf_plt::decode_i386` now also decodes `FF A3 <disp32>`,
+  computing `slot = GOT_base + sign(disp32)` (`GOT_base` = `_GLOBAL_OFFSET_TABLE_` symbol value,
+  fallback `.got.plt`/`.got` section base — the value the PIC prologue loads into `%ebx`). The
+  i386-PIE analog of the shipped x86-64 RIP-relative / aarch64 veneer decoders. The non-PIC arm
+  is untouched. Naming `exit@plt` lets the pre-existing no-return pass collapse the spurious loop
+  and restore stack recovery.
+- **Gating**: loader-tier (the PLT→name map is baked at `load file`, upstream of `option`), so
+  the gate is the `KUNA_I386_PIE_PLT` env var (`kuna_decomp::kuna_i386_pie_plt`), set by the CLI
+  on the `decomp_dbg` subprocess; the `Architecture::analysis_i386_pie_plt` bool is for catalog
+  visibility. `option i386_pie_plt` (default-on), `source_decompiler = "angr"`,
+  `change_kind = "correctness-fix"`.
+- **Ablation**: 0 of 675 datatest assertions change with the feature default-ON (the bytechunk
+  corpus never reaches `resolve_plt_imports`; no i386-PIE binary present) ⇒ **default-on**, DIV-7.
+  `make test` stays PARITY OK (datatests 675/675); `make test-stages` PARITY OK (the KUNA-CATALOG
+  #6 angr-provenance count 3→4). **Speed**: the collapsed loop makes the target *faster* —
+  `usage` 130 ms on vs 422 ms off (−69%), within budget.
+- **Testing deviation** (loader feature): the `tests/stages/*.xml` bytechunk harness cannot carry
+  `.rel.plt`/`.dynsym`/GOT structure, so the gate is a cargo integration test
+  (`kuna-console/tests/verify_i386_pie_plt.rs`, over the vendored i386-PIE `nl` fixture) plus the
+  decoder unit test `elf_plt.rs::tests::i386_pie_plt_decode`, in lieu of a stage XML.
+
+## Session (2026-06-25) — ELF relocatable-object (`ET_REL` / `.o`) loader (option `relocobjects`, DIV-8)
+
+**angr testcase:** `test_decompiling_ptx_fix_output_parameters::fix_output_parameters`
+(`ptx.o`, angr 9.2.213).
+
+**Why angr was better:** `ptx.o` is a **relocatable ELF object** (`ET_REL`) with no `PT_LOAD`
+program headers. kuna's faithful `LoadImageBfd` port (`kuna-analysis/loadimage_object.rs`) builds
+its byte map only from `PT_LOAD` segments, so a `.o` mapped **zero bytes** and *every* function
+failed to lift (`Unable to load N bytes at ...`) — kuna produced **no output at all**, while angr
+(CLE's ELF relocatable backend) decompiled `fix_output_parameters` fully with resolved names.
+
+**Mechanism:** a new kuna file `kuna-analysis/src/s1_loader/elf_reloc.rs`. For an `ET_REL` object
+(`kind()==Relocatable` + empty `segments()`), `ObjectLoadImage::from_bytes` takes a new
+`from_relocatable` path that (1) lays each `SHF_ALLOC` section out at a non-overlapping VMA above
+`0x400000` (angr's CLE default, so `fix_output_parameters` lands at `0x400660` as in angr),
+(2) applies the `.rela.*` relocations (`R_X86_64_PC32`/`PLT32`/`32`/`32S`/`64`; unknown kinds
+degrade with a logged warning), (3) rebases defined symbols and binds undefined externs — PLT-
+relative call targets are named even when gcc emits them `STT_NOTYPE` — to synthetic addresses, so
+calls render `strlen(...)`, `__sprintf_chk(...)`, `__ctype_b_loc(...)`, etc. The linked
+`ET_EXEC`/`ET_DYN` `PT_LOAD` path is untouched (byte-identical).
+
+**Option / wiring:** `relocobjects` (default **on**). The loader runs at `load file`, *upstream* of
+the per-function option machinery (the image is opened before any `option` command), so the toggle
+is bridged to the loader by the `KUNA_RELOC_OBJECTS` (`RELOC_OBJECTS_ENV`) process env var that
+`set_kuna_option` and `kuna decompile` set; `--option relocobjects off` (or `KUNA_RELOC_OBJECTS=0`)
+restores the upstream `PT_LOAD`-only loader.
+
+**Ablation / default:** **0 of 675** upstream datatest assertions change (the XML datatest path
+never constructs an `ObjectLoadImage`, and the linked-ELF path is byte-identical) and speed is
+within budget (`-6.97%` on the target; off measures the fast-fail error path). Shipped **default-on**
+as a pure capability → **DIV-8**. `make test` PARITY OK, `make test-stages` PARITY OK; the
+two `kuna-catalog.xml` provenance counts bumped 5→6 angr / 2→3 structure-recovery for the new row.
+
+**Tests:** loader cargo tests (no XML stage test is possible — the datatest path bypasses the ELF
+object loader): a hand-assembled `ET_REL` exercising layout + each relocation kind + symbol
+rebasing, and the real `ptx.o` fixture asserting `fix_output_parameters` rebases to `0x400660`, its
+bytes load, and externs (`strlen`/`dcgettext`/`error`) resolve.
+
+**Pre-existing note:** `make rust-test` has one failure on this branch — `verify_w10_proto_unlock`'s
+const-return direction-check, a stale DIV-6 oracle assertion that fails identically on the base
+commit and is unrelated to this feature; left untouched (no drive-by).
+
+## Session (2026-06-25) — angr duplicate-declaration collapse (option dedupvardecls, DIV-7)
+
+Closed the angr-vs-kuna gap on `test_decompiling_x8664_cvs::main` (x86_64/cvs): kuna emitted a
+**wall of duplicate local-variable declarations** — the single stack slot `stack - 0x3c`
+(`option_index`) was declared **166 times**, `stack - 0x38` 53×, etc. — where angr declares each
+local once. This was the dominant cause of kuna's main being ~30% longer than angr (677 vs 472 loc).
+
+- **Why angr is better:** angr's variable recovery yields one variable per storage location, so its
+  declaration block lists each local once. kuna's C printer walks **HighVariables** (the W4
+  `ScopeLocal` Symbol walk is the missing surface), so when the angr-style naming maps many distinct
+  scalar HighVariables sharing one stack slot to the same name+type+storage, kuna emits one
+  declaration line *per high* — textually identical, and (strictly) invalid C re-declarations.
+- **Mechanism (S9 emit):** `option dedupvardecls` + arch flag `dedup_var_decls` (DIV-7 default-on,
+  carried into the `ArchSeam`). `emit_local_var_decls` now skips a declaration whose fully-rendered
+  signature (final declarator type + name + array adornment + storage comment) is byte-identical to
+  one already emitted — the scalar analogue of the composite-symbol collapse kuna already performs.
+  New module `s9_emit/kuna_dedupvardecls.rs` (option parser + `DeclDedup` signature tracker);
+  ElementId 4091. Pure presentation: body markup, naming, and which highs exist are unchanged; only
+  redundant declaration *lines* are removed (provably lossless).
+- **Ablation:** 0 of 675 datatest assertions change with the feature default-ON (`make test` PARITY
+  OK without regeneration); **speed +0.14%** on the target (off 2236 ms → on 2239 ms, budget 5%) —
+  an O(decls) HashSet pass. Clean ablation + within-budget speed ⇒ shipped **default-ON** (DIV-7).
+- **Effect on target:** cvs `main` 680 → 461 loc with the flag on (angr is 472).
+- **Testcase:** `tests/stages/ghangr-x8664-cvs-863633.xml` (+2 assertions, `docs/baseline-stages.json`);
+  the `kuna-catalog.xml` angr-provenance count moved 3→4.
+
+## Session (2026-06-25) — call-return variable folding (option `foldcallret`)
+
+Closed an angr-better gap from `test_call_return_variable_folding`
+(`x86_64/decompiler/ls_gcc_O0::print_long_format`, angr 9.2.213).
+
+- **Why angr was better:** angr inlines a call's return value into its single use
+  site (`if (timespec_cmp(...) <= -1)`, `... && localtime_rz(...) != NULL ...`),
+  whereas kuna spills *every* call return to a named local first
+  (`v5 = timespec_cmp(); if (v5 <= -1)`). Root cause: S6 `ActionMarkExplicit`
+  (`baseExplicit`, `coreaction.cc:3105`) forces every call output **explicit**
+  (`if (op->isCall()) return -1;`) — conservative because making a call output
+  *implied* moves the call's evaluation to the use site.
+- **Mechanism:** new option `foldcallret` (S6 explicit-marking sub-stage, opt-in
+  default-OFF). New module
+  `decompiler/crates/kuna-decomp/src/s6_variables/kuna_callretfold.rs` exposes the
+  order-safety predicate `call_output_foldable` (decider-refined): fold only when
+  the call output has exactly one **non-marker** use, in the **same basic block**,
+  with **no intervening** call/load/store between the call and its use — so the
+  call's evaluation order is preserved. `baseExplicit`'s `is_call()` arm falls
+  through to the implied path when the flag is on and the predicate holds.
+- **Ablation:** default-OFF byte-identical (`make test` 675/675 PARITY OK). Flipping
+  default-ON changes 5/675 datatest assertions (Deindirect Output #1, Inlining #8,
+  Local cross #2, Modified conditional constant #2/#3), so it stays **opt-in**
+  (no DIV entry). Speed: off 650.95 ms / on 630.17 ms (−3.19%, within the 5% budget).
+- **On/off:** `kuna decompile <bin> <fn> --option foldcallret on`; off (default) is
+  upstream byte-identical.
+
 ## Session (2026-06-25) — Go pclntab function-name recovery (Increment 34)
 
 Ported the **name-recovery half** of Ghidra's `GolangSymbolAnalyzer` (`golang-symbols`,

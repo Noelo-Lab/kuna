@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=90, settable=37
-# (23 stage-model knobs + 14 analysis-tier gates).
+# Counts (asserted in tests): group=39, substage=40, surface=90, settable=39
+# (25 stage-model knobs + 14 analysis-tier gates).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -1596,6 +1596,23 @@ inspiration = "angr LoweredSwitchSimplifier (angr/analyses/decompiler/optimizati
 change_kind = "structure-recovery"
 
 [[settable]]
+option = "foldcallret"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S6"
+substage = "explicit-marking"
+rewind = "S6"
+strength = "HINT"
+issue = "angr-call-return-variable-folding"
+summary = "Fold an order-safe single-use call return value into its use site, inlining the call expression instead of spilling it to a named temporary (e.g. `if (timespec_cmp(...) <= -1)` instead of `v5 = timespec_cmp(); if (v5 <= -1)`)."
+use_when = "Set on to match angr's call-return folding when kuna spills a call result to a `vN = call(); use(vN)` pair that is used exactly once. Off (default) is upstream byte-identical (Ghidra forces every call output explicit). Only folds when the single use is in the same block with no intervening call/load/store, so the call's evaluation order is preserved."
+example = "option foldcallret on"
+source_decompiler = "angr"
+inspiration = "test_call_return_variable_folding; angr call-return variable folding (expression folding in angr/analyses/decompiler); print_long_format"
+change_kind = "presentation-default"
+
+[[settable]]
 option = "stackguard"
 values = "on|off"
 default = "off"
@@ -1646,6 +1663,26 @@ source_decompiler = "kuna"
 inspiration = "user request: drop fake unknownN types in favour of size-correct C types"
 change_kind = "presentation-default"
 live_field = "realtypes"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
+option = "dedupvardecls"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S9"
+substage = "naming-policy"
+strength = "HARD"
+rewind = "S9"
+issue = "angr-duplicate-decls"
+summary = "Collapse local-variable declarations whose fully-rendered line (type + name + array adornment + storage comment) is identical, so a stack slot mapped onto many same-named scalar HighVariables is declared once instead of one line per high (the scalar analogue of the existing composite-symbol declaration collapse)."
+use_when = "On by default (DIV-7): a stack slot is declared once even when many same-named scalar HighVariables share it (e.g. x86_64/cvs main, where the per-high rendering repeats `int4 option_index; // stack - 0x3c` ~200x). Set OFF to restore the one-declaration-per-high rendering."
+example = "option dedupvardecls off"
+source_decompiler = "angr"
+inspiration = "test_decompiling_x8664_cvs; angr variable recovery (one variable per storage location, declared once); main"
+change_kind = "presentation-default"
+live_field = "dedup_var_decls"
 live_true = "on"
 live_false = "off"
 
@@ -1755,6 +1792,22 @@ example = "option mips_gp off"
 source_decompiler = "kuna"
 inspiration = "Ghidra MipsAddressAnalyzer (assumeT9EntryAddress + checkForGlobalGP)"
 change_kind = "analysis-enablement"
+[[settable]]
+option = "i386_pie_plt"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S1"
+substage = "external-refinement"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-i386pieplt"
+summary = "Decode i386 PIE GOT-relative (jmp *disp(%ebx), FF A3 <disp32>) PLT stubs so dynamic imports (exit/dcgettext/__printf_chk/...) are named and known-no-return functions (exit) are flagged. The i386-PIE analog of the x86-64/aarch64 PLT decoders; i386-only, a no-op on every other language. Loader-tier: read via the kuna_i386_pie_plt env var (the PLT->name map is baked at load file)."
+use_when = "On (default) names i386-PIE libc calls and lets exit be marked no-return (collapsing the spurious do{}while(true)/goto and restoring stack recovery); off leaves the GOT-relative stubs as sub_<addr> and the bogus fall-through loop (the pre-fix rendering)."
+example = "option i386_pie_plt off"
+source_decompiler = "angr"
+inspiration = "test_decompiling_nl_i386_pie; angr CLE PLT/GOT import resolution + libc no-return database; usage"
+change_kind = "correctness-fix"
 [[settable]]
 option = "mips_isa"
 values = "on|off"
@@ -1899,3 +1952,27 @@ example = "option gopclntab off"
 source_decompiler = "kuna"
 inspiration = "Ghidra GolangSymbolAnalyzer (pclntab / GoPcHeader / GoModuledata / GoFuncData)"
 change_kind = "analysis-enablement"
+
+# ---------------------------------------------------------------------------
+# (kuna) Loader-tier capability (1 row): ET_REL relocatable-object support. Unlike
+# the analysis-pass gates above, this gates the LOADER (run at `load file`, before
+# any `option` is processed), so the on/off toggle is bridged to the loader via a
+# process env var (`RELOC_OBJECTS_ENV`) rather than an Architecture flag — this row
+# exists for LLM discoverability + the off-switch. Real-ELF (object) path only; the
+# XML datatest path never constructs an ObjectLoadImage, so it is inert there.
+[[settable]]
+option = "relocobjects"
+values = "on|off"
+default = "on"
+destructive = false
+stage = "S1"
+substage = "code-data-partition"
+strength = "HARD"
+rewind = "S1"
+issue = "angr-CLE-ET_REL"
+summary = "Load ELF relocatable objects (ET_REL `.o` files, which have no PT_LOAD program headers and so map zero bytes under the upstream loader): synthesize a section layout above 0x400000, apply the `.rela.*` relocations (R_X86_64_PC32/PLT32/32/32S/64), rebase defined symbols, and bind undefined externs to synthetic call targets — so a `.o` decompiles instead of failing with 'Unable to load N bytes at ...'. The kuna analog of angr CLE's ELF relocatable backend."
+use_when = "On by default (a pure capability: linked ET_EXEC/ET_DYN images are byte-identical — they keep the PT_LOAD path — and only a `.o`, which today produces ZERO output, takes the new path). Set off to restore the upstream PT_LOAD-only loader (a `.o` then errors). NB: this gates the loader, which runs at `load file` BEFORE per-function options, so flip it (or set env KUNA_RELOC_OBJECTS=0) before loading the `.o`."
+example = "option relocobjects off"
+source_decompiler = "angr"
+inspiration = "test_decompiling_ptx_fix_output_parameters; CLE ELF relocatable backend; fix_output_parameters"
+change_kind = "structure-recovery"
