@@ -355,3 +355,48 @@ gh558-experiment protocol: run the 204+675 upstream assertions, list every chang
   line, the bug) and pass 2 `option loopbreak_recovery on` (asserts they become `break;` and the
   label is suppressed). `docs/baseline-stages.json` (+2 assertions).
 - **Date**: 2026-06-25.
+
+---
+
+## DIV-11: `setlocale` gets its `char *` libc prototype by default
+
+- **Flip**: `kuna-analysis::s1_protos` (the `ApplyDataArchiveAnalyzer` analog: the built-in libc
+  prototype table) now curates `char *setlocale(int category, const char *locale)`. Any object
+  that imports `setlocale` gets the call typed: its result is a `char *` and a NULL `locale`
+  argument renders `(char *)0x0` instead of a bare `0`. This is a **correctness fix** (the
+  signature is the standard `<locale.h>` declaration), recorded here because it changes the
+  default rendering of every binary that calls `setlocale` (e.g. coreutils' `tee_O2`:
+  `main` goes from `setlocale(6,0x6dc1)` to `setlocale(6,"")`). There is **no option flag** —
+  like the other LIBC table entries (`puts`, `strchr`, `malloc`, …) the prototype is
+  unconditional; `setlocale` was simply missing from the table.
+- **Problem**: with no prototype, a `setlocale(...)` call's result was an untyped `undefined8`,
+  so the standard `setlocale(LC_ALL, "")` idiom lost its `char *` and the string literal, and a
+  wrapper that stored/typed the result was typed against an undefined. This surfaced on angr
+  `test_decompiling_tee_O2_tail_jumps` (gnulib `setlocale_null_androidfix`), whose body is
+  `return setlocale(category, NULL);`.
+- **Mechanism**: one entry added to the `LIBC` table in
+  `kuna-analysis/src/s1_protos/mod.rs` (`ret: char *`, params `(int, const char *)`,
+  non-variadic). The pass already matches table names against the object's FUNC/import symbols
+  and parks each `PrototypePieces` on its callee via
+  `Architecture::set_function_prototype_pieces`, which `ActionDefaultParams` reads when typing
+  callers. Nothing else changed.
+- **Changed upstream assertions: 0 of 675** (`make test` stays PARITY OK without regeneration):
+  the XML datatest `<binaryimage>` bytechunks never reach the ELF loader / the libproto pass,
+  and no datatest imports `setlocale`. `make rust-test` green (new unit test
+  `s1_protos::tests::setlocale_signature_is_char_ptr_int_char_ptr` pins the entry's shape).
+  Speed: typing one extra call is in the noise (no measurable change on `tee_O2`).
+- **Scope note — what this does *not* fix**: when a wrapper's *whole* body is
+  `return setlocale(...);` and the compiler emits a tail-position `call setlocale; ret` (or an
+  `-O2` tail `jmp`) with **no intervening use of the return register**, kuna does not thread the
+  callee's result into the function's own return (the wrapper stays `void` with a bare `return;`).
+  That is a **general** return-value-recovery characteristic — it affects any `return libcfn(...)`
+  in that shape (e.g. `return strchr(s,c);`), with or without the correct prototype — rooted in
+  `AncestorRealistic` rejecting a return register defined only by the trailing call
+  (`killedbycall`). It is a separate follow-up, documented in
+  `docs/features/setlocale-rettype/analysis.md`; this DIV pins only the prototype/type half.
+- **Testcase**: `tests/stages/ghangr-setlocale-rettype.xml` declares the same prototype the
+  libproto table seeds (inline via `parse line`, since the stage harness does not run the
+  analysis tier) and decompiles a `call setlocale; ret` wrapper, asserting the NULL `locale`
+  argument types `(char *)0x0` and the call resolves to the named `setlocale` (the pre-fix shape
+  rendered a bare `0`). `docs/baseline-stages.json` (+3 assertions, 176 → 179).
+- **Date**: 2026-06-25.

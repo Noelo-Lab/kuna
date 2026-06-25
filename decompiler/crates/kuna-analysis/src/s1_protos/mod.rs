@@ -76,6 +76,12 @@ const LIBC: &[(&str, Sig)] = &[
     ("sscanf", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::CharPtr], vararg: 2 }),
     ("perror", Sig { ret: Ty::Void, params: &[Ty::CharPtr], vararg: -1 }),
     ("fopen", Sig { ret: Ty::VoidPtr, params: &[Ty::CharPtr, Ty::CharPtr], vararg: -1 }),
+    // locale.h — `char *setlocale(int category, const char *locale)`.  Without
+    // this prototype the call's result is an untyped `undefined8`, so a wrapper
+    // whose last act is `return setlocale(cat, NULL);` (e.g. gnulib's
+    // `setlocale_null_androidfix`, a tail call at -O2) loses both the recovered
+    // return value and the `char *` type.  See docs/features/setlocale-rettype/.
+    ("setlocale", Sig { ret: Ty::CharPtr, params: &[Ty::Int, Ty::CharPtr], vararg: -1 }),
     // string.h
     ("strlen", Sig { ret: Ty::Size, params: &[Ty::CharPtr], vararg: -1 }),
     ("strcmp", Sig { ret: Ty::Int, params: &[Ty::CharPtr, Ty::CharPtr], vararg: -1 }),
@@ -223,6 +229,23 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn setlocale_signature_is_char_ptr_int_char_ptr() {
+        // `char *setlocale(int category, const char *locale)`.  Curating this
+        // entry is the fix for the `-O2` setlocale wrapper (gnulib
+        // `setlocale_null_androidfix`): without it the call's result is an
+        // untyped `undefined8`, so the wrapper's signature comes out `void`
+        // instead of `char *` and the return value is lost.  Pin the shape so a
+        // future edit cannot silently demote the return type back to `int`/`void`.
+        let entry = LIBC.iter().find(|(n, _)| *n == "setlocale");
+        let (_, sig) = entry.expect("table must know setlocale");
+        assert!(matches!(sig.ret, Ty::CharPtr), "setlocale returns char *");
+        assert_eq!(sig.params.len(), 2, "setlocale takes (int, const char *)");
+        assert!(matches!(sig.params[0], Ty::Int), "category is int");
+        assert!(matches!(sig.params[1], Ty::CharPtr), "locale is const char *");
+        assert_eq!(sig.vararg, -1, "setlocale is not variadic");
     }
 
     #[test]
