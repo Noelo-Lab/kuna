@@ -2036,6 +2036,15 @@ impl PrintC {
         if decls.is_empty() {
             return false;
         }
+        // (kuna) `option dedupvardecls`: collapse declarations whose fully-rendered
+        // line is identical (the scalar analogue of the composite-symbol collapse
+        // above).  Off (default) => no deduper => byte-identical output.  See
+        // `crate::kuna_dedupvardecls`.
+        let mut dedup = if arch.dedup_var_decls {
+            Some(crate::kuna_dedupvardecls::DeclDedup::new())
+        } else {
+            None
+        };
         let markup = MarkupRef::none();
         for (high, name) in &decls {
             // Type: the high's recovered type name (W8-unknown -> `undefined<N>`).
@@ -2085,9 +2094,26 @@ impl PrintC {
                     let v = decl_rep_varnode(fd, *high).and_then(|vn| fd.vbank().get(vn))?;
                     array_decl_parts(v.get_type(), rt)
                 });
+            let decl_type = array_count.as_ref().map(|(t, _)| t.clone()).unwrap_or(type_name);
+            // (kuna) dedupvardecls: skip a declaration whose fully-rendered signature
+            // (final declarator type, name, array adornment, storage comment) was
+            // already emitted — a duplicate line carries no information and is, strictly,
+            // an invalid C re-declaration.  The comment only renders under angr naming,
+            // so it joins the signature only then (otherwise two slots merge wrongly).
+            if let Some(dedup) = dedup.as_mut() {
+                let array_sig = array_count.as_ref().map(|(t, c)| (t.clone(), *c));
+                let comment_sig = if arch.name_style_angr {
+                    comment.as_ref().map(|(c, _, off)| (c.clone(), *off))
+                } else {
+                    None
+                };
+                let sig = (decl_type.clone(), name.clone(), array_sig, comment_sig);
+                if dedup.is_duplicate(sig) {
+                    continue;
+                }
+            }
             self.emit.tag_line();
             let id = self.emit.begin_var_decl(&markup);
-            let decl_type = array_count.as_ref().map(|(t, _)| t.clone()).unwrap_or(type_name);
             self.emit.tag_type(&decl_type, SyntaxHighlight::TypeColor, &markup);
             // C++ `ptr_expr` glues the `*` directly to the identifier (no space);
             // every other base type gets the single `type_expr_space`.  A pointer

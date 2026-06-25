@@ -198,12 +198,17 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "entry_disc" => on_off(conf.analysis_entry_disc),
         "arm_markers" => on_off(conf.analysis_arm_markers),
         "mips_gp" => on_off(conf.analysis_mips_gp),
+        "i386_pie_plt" => on_off(conf.analysis_i386_pie_plt),
         "mips_isa" => on_off(conf.analysis_mips_isa),
         "dwarf" => on_off(conf.analysis_dwarf),
         "callfixup" => on_off(conf.analysis_callfixup),
         "addrtable" => on_off(conf.analysis_addrtable),
         "listing" => on_off(conf.analysis_listing),
         "gopclntab" => on_off(conf.analysis_gopclntab),
+        // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested
+        // state (the live spec-selection gate is the load-time env var, but the
+        // catalog `current` mirrors the `option macho-arm64e on|off` request).
+        "macho-arm64e" => on_off(conf.macho_arm64e),
         // C++: return ""; -> no current field.
         _ => return None,
     })
@@ -989,53 +994,23 @@ impl IfaceCommandAction for IfcKunaQuality {
 /// region hierarchy (C++ `IfcKunaRegion*` from `kuna_regionid.cc`; registered by
 /// the kuna capability in `kuna_console.cc`).
 ///
-/// The region identifier itself is ported (`kuna_decomp::kuna_regionid`), but
-/// its `buildFromBlockGraph` block-graph adapter — which these console commands
-/// drive — is explicitly `SEAM(W7)` (it needs `FlowBlock::getStart()`/`lastOp()`
-/// over a decompiled function). So the three commands register under their token
-/// sequences (the prefix surface the datatests rely on) and route through
-/// [`engine_unavailable`] after the `No function selected` guard.
+/// The region identifier is ported (`kuna_decomp::kuna_regionid`); its
+/// `buildFromBlockGraph` block-graph adapter (the W7 seam) is now closed
+/// ([`KunaRegionIdentifier::build_from_block_graph`]), so these three commands
+/// drive it over the real decompiled `bblocks` CFG (block start addresses, the
+/// CFG out-edges, and the per-block `endsWithBranchindOrCbranch` `lastOp` probe).
 ///
 /// Build a [`KunaRegionIdentifier`] from the current function's basic-block
-/// graph (the C++ `IfcKunaRegion*` `buildFromBlockGraph` adapter): one synthetic
-/// node per basic block (keyed on its start address) and one synthetic edge per
-/// CFG out-edge; the entry address is block 0's start.  Returns the computed
-/// identifier ready for tree/blocks/walk rendering.
+/// graph (the C++ `IfcKunaRegion*` `buildFromBlockGraph` adapter): one `k_block`
+/// node per basic block (keyed on its start address, carrying the real block)
+/// and one edge per CFG out-edge; the entry address is block 0's start.  Returns
+/// the computed identifier ready for tree/blocks/walk rendering.
 fn build_region_identifier(
     fd: &kuna_decomp::funcdata::Funcdata,
 ) -> IfaceResult<KunaRegionIdentifier> {
-    use std::collections::HashMap;
-    let bg = fd.bblocks_ref();
     let mut ri = KunaRegionIdentifier::new();
-    let size = fd.bblocks_get_size();
-    // First pass: one synthetic node per basic block, tracking BlockId -> node.
-    let mut node: HashMap<kuna_decomp::seams::BlockId, kuna_decomp::kuna_regiongraph::KunaNodeId> =
-        HashMap::new();
-    let mut entry_addr: Option<u64> = None;
-    for i in 0..size {
-        let bl = fd.bblocks_get_block(i);
-        let addr = fd.bblocks_block_start(bl).get_offset();
-        if i == 0 {
-            entry_addr = Some(addr);
-        }
-        let n = ri.add_synthetic_block(addr);
-        node.insert(bl, n);
-    }
-    // Second pass: one synthetic edge per CFG out-edge.
-    for i in 0..size {
-        let bl = fd.bblocks_get_block(i);
-        let block = bg.block(bl);
-        let from = node[&bl];
-        for j in 0..block.size_out() {
-            let out = block.get_out(j);
-            if let Some(&to) = node.get(&out) {
-                ri.add_synthetic_edge(from, to);
-            }
-        }
-    }
-    if let Some(addr) = entry_addr {
-        ri.set_entry_addr(addr);
-    }
+    ri.build_from_block_graph(fd)
+        .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
     ri.compute().map_err(|e| IfaceError::execution(e.explain().to_string()))?;
     Ok(ri)
 }

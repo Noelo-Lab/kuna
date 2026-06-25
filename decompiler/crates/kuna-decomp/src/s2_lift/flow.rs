@@ -1125,6 +1125,27 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         // insert + cursor re-derive mirror the CPUI_CALL arm and
                         // `truncate_indirect_jump` / `setup_callind_specs`.
                         self.data.op_set_opcode_code(curop, OpCode::CPUI_CALL);
+                        // (kuna) logging contract: this option-gated pass is
+                        // output-changing — it introduces a *new* CALL where the
+                        // jump used to flow into the callee.  Emit an observable
+                        // warning at the branch site so the recovered tail call is
+                        // attributable in the output (`WARNING:` comment) and in the
+                        // restart/warning log.
+                        let site = self
+                            .data
+                            .obank()
+                            .get(curop)
+                            .expect("tail-call: stale call op")
+                            .get_addr()
+                            .clone();
+                        let mut destbuf = String::new();
+                        let _ = destaddr.print_raw(&mut destbuf);
+                        self.data.warning(
+                            &format!(
+                                "tailcalljump: recovered tail call -> introduced call to {destbuf}"
+                            ),
+                            &site,
+                        );
                         let no_return = self.setup_call_specs(curop)?;
                         if !no_return {
                             // Terminate flow with a normal return after the tail

@@ -1,0 +1,46 @@
+{
+  "opportunity": "test_decompiling_1after909_doit::doit",
+  "test_name": "test_decompiling_1after909_doit",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/1after909",
+  "selector": "doit",
+  "func_addr": "0x1869",
+  "angr_version": "9.2.213",
+  "option": "loopbreak_recovery",
+  "flag": "recover_loop_break",
+  "element_id": 4091,
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_1after909_doit; Phoenix/SAILR loop-successor break/continue recovery (Ghidra BlockGraph::scopeBreak); doit",
+  "scope": "large",
+  "proposal": false,
+  "implemented": true,
+  "default_on": true,
+  "div": "DIV-7",
+  "ablation_changed": 0,
+  "parity": "OK",
+  "speed_off_ms": 440.22,
+  "speed_on_ms": 440.73,
+  "speed_delta_pct": 0.12,
+  "speed_samples": 5,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "decisions": [
+    {
+      "question": "Is closing the goto->break gap on 1after909::doit SMALL (one option-gated Action/Rule) or LARGE (proposal fork)?",
+      "decider": "general-purpose (opus)",
+      "decision": "large",
+      "rationale": "Two HARD RULE 7 triggers fire: (1) closing the gap requires porting Ghidra's BlockGraph::scopeBreak(-1,-1) -- an explicitly-recorded SEAM stub (losses.md; blockaction.rs:3493/3502) that is a recursive walk over the already-collapsed structured tree re-tagging loop-exit BlockGoto edges with f_break_goto/f_continue_goto -- which is touching S8 structuring code inside ActionFinalStructure::apply well beyond a single gated early-return; (2) it needs new ported-core methods in block.rs (scopeBreak, getExitLeaf, scope/loop-bottom plumbing) plus a printer change in printc.rs, i.e. >1 new module-level addition mutating structured-tree state, not modelable as one isolated Rule. The region/loop structure is already recovered (BlockWhileDo + f_loop_exit_edge exist), so this restores a missing upstream print-prep pass rather than inventing new condition refinement -- but it is still a structuring-stage port, which precedent (every prior S8 gap) and the rule both classify as a proposal.",
+      "owning_stage": "S8 structuring -- decompiler/crates/kuna-decomp/src/s8_structure/blockaction.rs (ActionFinalStructure::apply, the graph.scopeBreak(-1,-1) SEAM at ~line 3493-3512) plus the supporting recursive method in decompiler/crates/kuna-decomp/src/substrate/block.rs and the print-emit in s9_emit/printc.rs",
+      "angr_reference": "angr Phoenix/SAILR structurer break/continue recovery (loop successor refinement that lowers loop-exit gotos to break/continue); upstream-equivalent is Ghidra BlockGraph::scopeBreak",
+      "recommended_option_name": "loopbreak_recovery",
+      "speed_risk": "Negligible: one extra single-pass O(blocks) recursive walk of the structured block tree at finalize time, run once per function."
+    },
+    {
+      "question": "Implementation finding: where do scopeBreak's three planned touch-points actually land?",
+      "decider": "impl-scopebreak (opus)",
+      "decision": "The port turned out smaller than the proposal feared: the printer already emits break;/continue; for f_break_goto/f_continue_goto (printc.rs:2949 emit_goto_statement, reached by the BlockGoto/BlockIf/BlockSwitch emit sites), and substrate/block.rs already had next_flow_after + get_exit_leaf + the flag constants. So NO printc.rs change and NO block.rs edit were needed. The whole scopeBreak recursion lives in the new module s8_structure/kuna_loopbreak_recovery.rs as free functions over &mut BlockGraph (via the public block(), block_mut(), kind_mut() accessors), and the only ported-core edits are the gated one-line call in ActionFinalStructure::apply plus the flag/option wiring (architecture.rs, seams.rs, options.rs, stages.toml). BlockId equality is the faithful analog of the C++ getIndex() identity.",
+      "rationale": "scopeBreak only sets f_break_goto (continue is established earlier during loop construction), and the print path for break was already complete, so the structuring-stage change collapsed to a print-prep flag retag invoked from a single gated call site."
+    }
+  ]
+}

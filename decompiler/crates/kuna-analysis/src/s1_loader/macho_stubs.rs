@@ -54,10 +54,10 @@
 //! produces *more* names (design §3.3, §8 PR-7).
 
 use object::macho::{INDIRECT_SYMBOL_ABS, INDIRECT_SYMBOL_LOCAL};
-use object::read::macho::{
-    FatArch, MachHeader, MachOFatFile32, MachOFatFile64, Nlist, Section, Segment, SymbolTable,
-};
-use object::{Architecture, FileKind};
+use object::read::macho::{MachHeader, Nlist, Section, Segment, SymbolTable};
+use object::FileKind;
+
+use super::macho_fat::{select_fat_slice, SlicePref};
 
 use super::format::ImportSym;
 
@@ -79,15 +79,19 @@ pub(crate) fn resolve_macho_imports(file: &object::File, bytes: &[u8]) -> Vec<Im
             collect::<object::macho::MachHeader32<Endianness>>(file, bytes)
         }
         // A fat / universal binary (`0xcafebabe` / `0xcafebabf`): select one
-        // slice, then re-dispatch on that slice's thin magic (design §3.4).
-        Ok(FileKind::MachOFat32) => match select_fat_slice_32(bytes) {
-            Some(slice) => resolve_macho_imports(file, slice),
-            None => Vec::new(),
-        },
-        Ok(FileKind::MachOFat64) => match select_fat_slice_64(bytes) {
-            Some(slice) => resolve_macho_imports(file, slice),
-            None => Vec::new(),
-        },
+        // slice through the *canonical* slice selector (so the import walk can
+        // never drift onto a different slice than the loadimage), then re-dispatch
+        // on that slice's thin magic (design §3.4). On the live path the engine
+        // (`bootstrap_from_object`) has already peeled the slice before this runs,
+        // so `bytes` is thin here and these arms are a defensive fallback for any
+        // caller that still hands fat bytes; they use the default preference (the
+        // engine's `--slice`/`--target` override applies at the dispatch peel).
+        Ok(FileKind::MachOFat32 | FileKind::MachOFat64) => {
+            match select_fat_slice(bytes, SlicePref::default()) {
+                Some(slice) => resolve_macho_imports(file, slice),
+                None => Vec::new(),
+            }
+        }
         _ => Vec::new(),
     }
 }
@@ -252,29 +256,10 @@ fn strip_leading_underscore(name: &[u8]) -> Vec<u8> {
     }
 }
 
-/// Select one slice of a 32-bit fat header, returning the sub-slice `bytes`
-/// covering it. Prefers x86-64, then arm64, else the first arch (design §3.4).
-fn select_fat_slice_32(bytes: &[u8]) -> Option<&[u8]> {
-    let fat = MachOFatFile32::parse(bytes).ok()?;
-    select_fat_arch(fat.arches()).and_then(|a| a.data(bytes).ok())
-}
-
-/// Select one slice of a 64-bit fat header (design §3.4).
-fn select_fat_slice_64(bytes: &[u8]) -> Option<&[u8]> {
-    let fat = MachOFatFile64::parse(bytes).ok()?;
-    select_fat_arch(fat.arches()).and_then(|a| a.data(bytes).ok())
-}
-
-/// Deterministic fat-slice preference: x86-64 first (host-relevant in this
-/// container), then arm64, then the first arch present. `--target` would be the
-/// manual override, but the import walk only needs *a* consistent slice.
-fn select_fat_arch<Fat: FatArch>(arches: &[Fat]) -> Option<&Fat> {
-    arches
-        .iter()
-        .find(|a| a.architecture() == Architecture::X86_64)
-        .or_else(|| arches.iter().find(|a| a.architecture() == Architecture::Aarch64))
-        .or_else(|| arches.first())
-}
+// Fat-slice selection (`select_fat_slice` / the arch-preference policy) lives in
+// the canonical `super::macho_fat` module — the single slice-selection point the
+// engine dispatch and this import walk both route through (so they can never pick
+// different slices).
 
 #[cfg(test)]
 mod tests {

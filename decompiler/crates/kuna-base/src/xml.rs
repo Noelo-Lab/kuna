@@ -1630,8 +1630,9 @@ mod tests {
                 count += 1;
             }
         }
-        // 83 datatests + 50 stage testcases
-        assert_eq!(count, 133, "corpus file count drifted");
+        // 83 datatests + 55 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce
+        // and ghangr-tee-o2-tail-jumps-4a1f49 / tailcalljump)
+        assert_eq!(count, 138, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

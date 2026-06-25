@@ -339,6 +339,31 @@ loader's `is_undefined()` funcsym skip handles (an `addr == 0` skip would have
 dropped it). Proves a COFF `.obj` loads and decompiles a function **resolved by
 its COFF-symtab name**.
 
+`msvc_mangled.obj` (Intel amd64 COFF object, <1 KB) is a **COFF object carrying
+MSVC C++ mangled symbols** for the PR-9 demangler gate
+(`kuna-console/tests/verify_msvc_demangle.rs` +
+`loadimage_object::tests::msvc_mangled_coff_symbols_are_demangled_name_only`,
+design §5.5). `cl.exe` is unavailable on Linux, but `clang -target
+x86_64-pc-windows-msvc` emits the *same* `?`-prefixed MSVC mangling (the MSVC C++
+ABI — verified `objdump -t`), so this is a **real** MSVC fixture, not a hand-faked
+symtab. Built (no new packages — `clang` ships in `kuna-dev`):
+
+```bash
+docker run --rm -v "$PWD":/w -w /w kuna-dev bash -lc \
+  'clang -target x86_64-pc-windows-msvc -O1 -c msvc_mangled.cpp \
+     -o decompiler/crates/kuna-analysis/tests/fixtures/msvc_mangled.obj'
+```
+
+`msvc_mangled.cpp` =
+`int Bar::foo(int x){ return x*3+1; }` (member, `?foo@Bar@@QEAAHH@Z`) /
+`int ns::g(int a,int b){ return a*b+7; }` (namespaced, `?g@ns@@YAHHH@Z`) /
+`int freefunc(int x){ return x+42; }` (free, `?freefunc@@YAHH@Z`). The loader's
+MSVC demangle arm rewrites each `?`-symbol to its qualified name-only form
+(`Bar::foo`, `ns::g`, `freefunc`); `freefunc` decompiles to `a0 + 0x2a` resolved
+by that demangled name. Note `strip_version` (the glibc `@@VERSION` stripper) is
+guarded to NOT truncate a leading-`?` name (MSVC uses `@` structurally), or every
+MSVC symbol would arrive at the demangler cut to `?foo`.
+
 ## Mach-O (Apple) fixtures — the multi-format loader (PR-6+7, the Mach-O headline)
 
 `macho_imports` (x86-64, 16 KB) and `macho_imports_arm64` (arm64, 49 KB) are
@@ -369,6 +394,109 @@ Pinned VMAs (x86-64): `_compute`@`0x1000005a0`, `_main`@`0x1000005b0`, the
 `printf` stub@`0x1000005cc`. The defined `_main` keeps its leading `_` (it comes
 from the `file.symbols()` funcsym source, not the stub resolver). **Pin the VMAs
 as test consts** (`llvm-objdump --macho -d` / `llvm-otool -Iv`).
+
+## Mach-O fat/universal + arm64e (PR-8)
+
+The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, design
+§3.4 / §3.7) reuses the two thin `macho_imports*` slices above:
+
+- **`macho_fat`** (2-slice universal, ~97 KB) wraps `macho_imports` (x86-64,
+  slice 0) + `macho_imports_arm64` (arm64, slice 1) behind a big-endian
+  `fat_header` + two `fat_arch` records. `llvm-lipo`/`lipo` are **absent** in the
+  container, so the fat wrapper is **hand-built** directly from the two real thin
+  slices (the fat format is just a header + per-slice
+  `{cputype,cpusubtype,offset,size,align}`; both slices page-aligned at
+  `2^14`). The dispatch peels one slice (default x86-64; `--slice arm64` selects
+  the other) before `object::File::parse`, which cannot parse a fat header.
+  Rebuild: the Python snippet in `Increment 45` of `docs/analysis-port-log.md`
+  (read each thin slice's header, emit the wrapper) — or `llvm-lipo a b -create
+  -output macho_fat` if a `lipo` is available.
+
+- **`macho_arm64e`** (~49 KB) is the `macho_imports_arm64` fixture with its header
+  `cpusubtype` flipped to `CPU_SUBTYPE_ARM64E` (2). arm64e is binary-compatible
+  arm64 (same encodings plus PAC), so the real arm64 code decodes under the
+  AppleSilicon v8.5-A superset spec. With `--option macho-arm64e on` the loader
+  selects `AARCH64:LE:64:AppleSilicon`; off ⇒ generic `v8A`. The **load +
+  spec-selection path is real**; only the cpusubtype is synthesized (no
+  `clang -arch arm64e` SDK in-container — a genuine Apple-toolchain arm64e binary
+  is a follow-up). Rebuild: copy `macho_imports_arm64` and overwrite the 4-byte
+  cpusubtype at offset 8 with little-endian `2`.
+
+## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
+
+The multi-format **entry-discovery** gate
+(`kuna-console/tests/verify_multiformat_entry.rs`, design §4.1 / §5.3) proves a
+*stripped* PE/Mach-O recovers its function starts with **no `--addr`**, exactly
+as a stripped ELF does (`verify_s1_entry`). The two PE/Mach-O *import* fixtures
+above are reused, plus one new stripped Mach-O:
+
+- **PE:** `pe_imports_stripped.exe` (already above) — fully stripped (0 symbols,
+  0 exports). The `s1_entry` PE oracles recover its functions from the entry
+  point (`AddressOfEntryPoint`@`0x1400014f0`) and the **`.pdata`** exception
+  directory (97 `RUNTIME_FUNCTION` records — the `.eh_frame` analog), incl.
+  `main`@`0x140001592`. A bare load finds nothing; the oracles find dozens.
+
+- **Mach-O:** `macho_func_starts_stripped` (x86-64, 16 KB) is a **stripped**
+  Mach-O whose `helper`@`0x100000590` is `static` (file-local), so `ld64.lld -x`
+  removes its symbol — leaving **`LC_FUNCTION_STARTS`** as the only source that
+  recovers it. `macho_func_starts_stripped.c` =
+  `static int helper(int n){return n*7+3;} int main(int argc,char**argv){ printf("%d\n", helper(argc)); return 0; }`.
+
+  ```bash
+  LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+  clang -target x86_64-apple-macos11 -O0 -fno-inline -c macho_func_starts_stripped.c -o m.o
+  "$LLD" -arch x86_64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+         -e _main -x -dead_strip -o macho_func_starts_stripped m.o
+  ```
+
+  `LC_FUNCTION_STARTS` decodes (ULEB128 deltas off `__TEXT`@`0x100000000`) to
+  `[0x100000550 (_main, still symboled — the entry), 0x100000590 (helper,
+  stripped)]`. `collect_entries` skips the symboled `_main` and **discovers
+  `0x100000590`** — the never-symboled `helper` — the load-bearing PR-13 proof.
+
+## DWARF on MinGW-PE / Mach-O (PR-11)
+
+The multi-format **DWARF** gate (`kuna-console/tests/verify_multiformat_dwarf.rs`,
+design §5.2 / §8 PR-11) proves the `s1_dwarf` pass (gimli) recovers DWARF function
+names + typed signatures on PE and Mach-O, not just ELF. Both fixtures are the
+per-format analog of `dwarf_stripped_x86_64`: the function names live **only** in
+the debug sections (the symtab FUNC entries are stripped/renamed, `.debug_*` kept),
+so a recovery by name is unambiguously DWARF-sourced. Shared source (no headers,
+so it cross-compiles to macOS without an SDK; `pe_dwarf.c` / `macho_dwarf.c` carry
+the identical bodies + their build recipes):
+`int first_byte(char *label){return label[0];} int add(int a,int b){return a+b;} int main(void){return first_byte("kuna")+add(2,3);}`.
+
+- **`pe_dwarf.exe`** (MinGW `-g`, ~70 KB): MinGW emits standard `.debug_*` sections
+  in the PE, which `object::section_by_name(".debug_info")` finds verbatim. Built
+  in the `kuna-dev` container, then the COFF-symtab FUNC entries removed (keeping
+  `.debug_*`):
+
+  ```bash
+  x86_64-w64-mingw32-gcc -g -O0 pe_dwarf.c -o pe_g.exe
+  x86_64-w64-mingw32-objcopy --strip-symbol first_byte --strip-symbol add \
+      --strip-symbol main  pe_g.exe  pe_dwarf.exe
+  ```
+
+  Pinned VMAs (ImageBase `0x140000000`): `first_byte`@`0x140001550`,
+  `add`@`0x140001564`. DWARF recovers `int4 first_byte(char *a0)` by name; a
+  by-`load addr 0x140001550` decompile (the no-DWARF-name baseline) renders the
+  engine's `sub_140001550` placeholder.
+
+- **`macho_dwarf.o`** (clang `-g`, relocatable, ~2 KB): the DWARF lands in the
+  `__DWARF,__debug_*` sections; `object` maps gimli's `.debug_info` → the Mach-O
+  short-name `__debug_info` (its documented rule), so the *same* section loader
+  reads it. A Mach-O object with `SUBSECTIONS_VIA_SYMBOLS` won't let strip drop
+  its FUNC symbols (they delimit subsections), so `--redefine-sym` **renames** them
+  instead (`_first_byte`→`_l0`, `_add`→`_l1`) — DWARF still names them, the symtab
+  no longer does:
+
+  ```bash
+  clang -target x86_64-apple-macos11 -g -O0 -c macho_dwarf.c -o macho_dwarf.o
+  llvm-objcopy --redefine-sym _first_byte=_l0 --redefine-sym _add=_l1 macho_dwarf.o
+  ```
+
+  Pinned VMAs (section-relative in the object): `first_byte`@`0x0`, `add`@`0x20`.
+  Same DWARF recovery + `char *` type; `load addr 0x0` is the `sub_0` baseline.
 
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via

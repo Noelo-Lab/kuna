@@ -41,7 +41,7 @@ This document maps every upstream Ghidra decompiler source module — the C++ tr
 | **S5** *(Band B)* | `type`, `typeop`, `unionresolve`, `rangeutil`, `double`, `bitfield`, `constseq`, `prefersplit` |
 | **S6** *(Band B)* | `varmap`, `variable`, `merge`, `cover`, `dynamic` |
 | **S7** | `blockaction` (spans S8: structuring actions own the region tree AND the schema matching — §15 straddler) |
-| **S8** | — (no dedicated file; schema matching and goto selection live in `blockaction`, quality signal in kuna's `quality` metric) |
+| **S8** | `kuna_gotoreduce` (opt-in goto-reduction by return-tail duplication); schema matching and goto selection otherwise live in `blockaction`, quality signal in kuna's `quality` metric |
 | **S9** | `printlanguage`, `cast`, `printc`, `printjava`, `stringmanage`, `prettyprint`, `comment` |
 | **INFRA** | everything in the legacy Infrastructure table except `database`/`override`/`options` (promoted to P0): serialization (`xml`, `marshal`, `slaformat`, `compression`, `crc32`, `filemanage`, `multiprecision`), framework (`architecture`, `action`, `coreaction`, `capability`, `graph`, `cpool`, `callgraph`, `libdecomp`), console (`interface`, `ifacedecomp`, `ifaceterm`, `consolemain`, `codedata`), SLEIGH compiler (`semantics`, `pcodecompile`, `pcodeparse`, `grammar`, `slgh_compile`, `slghparse`, `slghscan`, `slghsymbol`, `slghpatexpress`, `slghpattern`, `rulecompile`, `unify`), injection (`inject_sleigh`, `inject_ghidra`), Ghidra-IPC glue (`ghidra_*`, `comment_ghidra`, `cpool_ghidra`, `database_ghidra`, `loadimage_ghidra`, `string_ghidra`, `typegrp_ghidra`, `signature_ghidra`), emulator (`emulate`, `emulateutil`, `memstate`), signatures (`signature`, `analyzesigs`, `paramid`), tests (`test`, `testfunction`, `sleighexample`) |
 
@@ -65,6 +65,7 @@ Straddler notes (placement by dominant owned artifact; see `docs/stage-model.md`
 | `kuna_restartlog` | P0 | restart observability side table (mechanism c reasons) |
 | `kuna_compareform` | S3→S9 | GH-558 comparison-canonicalization sub-stage split (`canonicalcompare`/`presentcompare`) |
 | `kuna_arraynotation` | S9 | GH-558 pointer-notation sub-stage (`option arraynotation`) |
+| `kuna_dedupvardecls` | S9 | naming-policy sub-stage: collapse duplicate scalar local declarations (`option dedupvardecls`, angr/DIV-7) |
 | `kuna_thumbfuncptr` / `kuna_inferfuncentry` | S5 | const-pointer inference (GH-8471 / GH-6930) |
 | `kuna_returnpair` | S4 | trial-finalization return-register join (GH-6990) |
 | `kuna_booleanmask` / `kuna_ovlesssimplify` / `kuna_addcarrychain` | S3/S5 | simplification-quiescence rules (GH-1282 / GH-7190 / GH-8913) |
@@ -83,6 +84,8 @@ Straddler notes (placement by dominant owned artifact; see `docs/stage-model.md`
 | `kuna_stackguard` | S7 | strip the -fstack-protector canary epilogue (angr StackCanarySimplifier port; `option stackguard`, default-off) so the shared-return goto is eliminated |
 | `kuna_regiongraph` | S7 | graph substrate for the angr RegionIdentifier port (mutable digraph, dominators, incremental frontiers) |
 | `kuna_regionid` | S7 | angr RegionIdentifier port: analysis-only nested region tree over bblocks; `region tree/blocks/walk` (`docs/regions.md`) |
+| `kuna_loopbreak_recovery` | S8 | lower loop-exit `goto <successor>` edges to structured `break;` (port of Ghidra `BlockGraph::scopeBreak`, run in `ActionFinalStructure` before `markUnstructured`; `option loopbreak_recovery`, DIV-10 default-on) |
+| `kuna_gotoreduce` | S8 | angr SAILR/Phoenix goto-reduction (ReturnDuplicator) port: after `ActionFinalStructure`, duplicate a small return tail into an `if`-goto so the cross-edge becomes a structured early return (`option gotoreduce`, default-off) |
 
 ---
 
@@ -95,6 +98,7 @@ Straddler notes (placement by dominant owned artifact; see `docs/stage-model.md`
 | loadimage | `LoadImage` abstract interface (loadFill/getNextSymbol/getNextSection) plus simple `RawLoadImage`; supplies raw executable bytes by address to the decoder. | `loadimage.hh:73` class LoadImage; loadFill() `loadimage.hh:80` |
 | loadimage_xml | `LoadImageXml`: LoadImage backed by an XML `<binaryimage>` schema (byte chunks, symbols, readonly ranges). | `loadimage_xml.hh:35` class LoadImageXml : public LoadImage |
 | loadimage_bfd | `LoadImageBfd`: LoadImage using GNU BFD to parse real object/executable files and serve bytes by address. | `loadimage_bfd.hh:59` class LoadImageBfd : public LoadImage |
+| loadimage_bfd (kuna ext) | **(kuna, DIV-8)** `kuna-analysis::loadimage_object::ObjectLoadImage` adds an `ET_REL` relocatable-object (`.o`) path (`from_relocatable` → `s1_loader::elf_reloc`): section layout above `0x400000` + `.rela.*` relocation application + symbol rebasing/externs. Gated by the file type + `option relocobjects` (env `KUNA_RELOC_OBJECTS`, default on). | `s1_loader/elf_reloc.rs::layout_relocatable` |
 | raw_arch | `RawBinaryArchitecture`: capability wiring a flat raw binary into a SleighArchitecture via `buildLoader()`. | `raw_arch.hh:42`; buildLoader() |
 | xml_arch | `XmlArchitecture`: capability loading an executable from an XML save-file, building a `LoadImageXml`. | `xml_arch.hh:42`; buildLoader() |
 | bfd_arch | `BfdArchitecture`: capability loading executables via BFD, building `LoadImageBfd` and resolving the arch. | `bfd_arch.hh:43`; buildLoader() |

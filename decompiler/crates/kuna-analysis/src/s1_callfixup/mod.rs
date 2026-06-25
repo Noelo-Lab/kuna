@@ -144,10 +144,11 @@ pub fn call_fixup_name_for_function<'a>(
 /// [`AnalysisPass::run`] and the unit tests.
 fn scan_call_fixups(file: &object::File, arch: &Architecture) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
-    // cspec call-fixups target ELF functions; only fires on ELF objects.
-    if !matches!(file.format(), object::BinaryFormat::Elf) {
-        return out;
-    }
+    // Format-agnostic (PR-10): a cspec `<callfixup>` `<target>` is a function NAME
+    // (`mcount`/`__fentry__`/`__x86_indirect_thunk_*`), matched against the object's
+    // FUNC symbols — neutral data on every format. The map comes from the loaded
+    // arch's cspec (the Windows cspec ships its own fixups), so this fires on a
+    // PE/Mach-O whose toolchain emitted a fixup'd stub, with no format branch.
     let map = target_fixup_map(arch);
     if map.is_empty() {
         return out;
@@ -297,5 +298,37 @@ mod tests {
             !hits.iter().any(|n| n == "__libc_start_main"),
             "__libc_start_main must not be flagged"
         );
+    }
+
+    /// PR-10: the FUNC-symbol scan reaches the matcher on a PE (no ELF early
+    /// return). A synthetic target matching a real PE symbol name (`__main`, a
+    /// MinGW CRT function present in `pe_imports.exe`) is flagged — proving the
+    /// pass is format-agnostic. (The real cspec map needs a bootstrapped
+    /// Architecture; the e2e bootstrap covers that path. This pins the scan runs
+    /// on a non-ELF object at all, which the old gate blocked.)
+    #[test]
+    fn scan_runs_over_pe_symbols() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/pe_imports.exe");
+        let bytes = std::fs::read(path).expect("read pe_imports fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse pe_imports fixture");
+        assert_eq!(file.format(), object::BinaryFormat::Pe, "fixture is a PE");
+
+        // A synthetic fixup whose target is a real PE FUNC symbol (`__main`).
+        let map = vec![("__main".to_string(), "synthetic_fixup".to_string())];
+        let mut flagged = false;
+        for sym in file.symbols().chain(file.dynamic_symbols()) {
+            if sym.kind() != SymbolKind::Text {
+                continue;
+            }
+            let Ok(n) = sym.name() else { continue };
+            let Ok(n) = String::from_utf8(crate::s1_loader::elf_plt::strip_version(n.as_bytes()))
+            else {
+                continue;
+            };
+            if call_fixup_name_for_function(&n, &map).is_some() {
+                flagged = true;
+            }
+        }
+        assert!(flagged, "the PE FUNC-symbol scan must reach the matcher (no ELF early return)");
     }
 }

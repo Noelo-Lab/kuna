@@ -321,10 +321,11 @@ impl FlowEnvironment for ArchFlowEnv {
     fn is_tail_call_branch(&self, fd: &Funcdata, op: crate::seams::OpId, dest: &Address) -> bool {
         // (kuna) tee-O2 tail-jump: wire the ported `kuna_is_tail_call_branch`
         // predicate.  The gate is the architecture-owned `tail_call_jumps` flag
-        // (`option tailcalljump on|off`, default off / default-pipeline byte-
-        // identical).  The callee resolution is `query_call(dest).is_some()` (is
-        // `dest` a known function entry, incl. a PLT thunk?) and the self-entry
-        // check is `dest == fd.getAddress()`.
+        // (`option tailcalljump on|off`, default-off opt-in / default-pipeline
+        // byte-identical — default-on regresses 2 datatests, Long double #1/#2).
+        // The callee resolution is `query_call(dest).is_some()` (is `dest` a known
+        // function entry, incl. a PLT thunk?) and the self-entry check is
+        // `dest == fd.getAddress()`.
         let arch = self.arch();
         if !arch.tail_call_jumps {
             // Fast-path the default-off gate without touching the IR.

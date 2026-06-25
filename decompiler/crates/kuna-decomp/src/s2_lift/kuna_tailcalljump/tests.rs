@@ -118,7 +118,8 @@ fn call_returns_false() {
 
 #[test]
 fn option_default_is_off_and_apply_flips() {
-    // Shipped default: option tailcalljump off (default-pipeline byte-identical).
+    // Shipped default: option tailcalljump off (kept opt-in; default-on regresses
+    // 2 datatests, Long double #1/#2).
     let mut opt = TailCallJumpOption::default();
     assert!(!opt.is_enabled());
     let msg = opt.apply(true);

@@ -201,12 +201,17 @@ pub fn listing_seeds(file: &object::File, bytes: &[u8]) -> Vec<u64> {
 /// built, which (per the build-timing fix) happens at the deferred commit point
 /// (`read symbols`), not at load — see [`run_listing_consumers`].
 ///
-/// Today the only consumer is the discovered-no-return analyzer (`noreturn_disc`,
-/// the kuna analog of Ghidra's `FindNoReturnFunctionsAnalyzer`). Each is still
-/// gated by its own `--option <id> on|off` flag at commit time
+/// The consumers are the discovered-no-return analyzer (`noreturn_disc`, the kuna
+/// analog of Ghidra's `FindNoReturnFunctionsAnalyzer`) and the structural
+/// no-return propagation analyzer (`noreturn_propagate`, the kuna analog of angr's
+/// CFGFast call-graph no-return propagation). Each is still gated by its own
+/// `--option <id> on|off` flag at commit time
 /// (`engine.rs::analysis_pass_enabled`), so a default run skips it.
 fn listing_consumer_passes() -> Vec<Box<dyn AnalysisPass>> {
-    vec![Box::new(crate::s1_noreturn_disc::NoReturnDiscoveredPass)]
+    vec![
+        Box::new(crate::s1_noreturn_disc::NoReturnDiscoveredPass),
+        Box::new(crate::s1_noreturn_propagate::NoReturnPropagatePass),
+    ]
 }
 
 /// Build the Listing/xref tier and run the Listing **consumer** passes over it,
@@ -310,7 +315,7 @@ pub fn run_default_analyses(
     // Source-language detection runs once, before pass selection, and shapes the
     // pass list (the kuna analog of `SourceLanguageAnalyzer` running early and
     // gating the language-specific analyzers).
-    let compiler = crate::s1_sourcelang::detect_compiler(&file);
+    let compiler = crate::s1_sourcelang::detect_compiler(&file, bytes);
     // Listing/xref tier (design §1.3): built once, before the pass loop, only
     // when `--option listing on` (default-off ⇒ `None` ⇒ no decode work, byte
     // -identical to today). Owned here so it outlives the pass loop, borrowed
@@ -341,7 +346,7 @@ pub fn run_default_analyses_per_pass(
     let Ok(file) = object::File::parse(bytes) else {
         return Vec::new();
     };
-    let compiler = crate::s1_sourcelang::detect_compiler(&file);
+    let compiler = crate::s1_sourcelang::detect_compiler(&file, bytes);
     // Listing/xref tier (design §1.3): built once, before the pass loop, only
     // when `arch.analysis_listing` (i.e. `--option listing on`). Default-off ⇒
     // `.then(...)` is `None` ⇒ no decode work, `ctx.listing == None`, and the

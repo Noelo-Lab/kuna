@@ -49,14 +49,15 @@ use kuna_base::marshal::ElementId;
 use kuna_num::opcodes::OpCode;
 
 /// Marshaling element `<tailcalljump>` (kuna).  ElementIds live in the 4000+
-/// range (next free above `loweredswitch`'s 4019 / the 40xx block: 4100).
-pub const ELEM_TAILCALLJUMP: ElementId = ElementId::new("tailcalljump", 4100);
+/// range (next free above `gotoreduce`'s 4100 in the 40xx block: 4101).
+pub const ELEM_TAILCALLJUMP: ElementId = ElementId::new("tailcalljump", 4101);
 
 /// (kuna) Toggle `-O2` tail-jump recognition: `tailcalljump on|off`.
 ///
-/// SEAM(W4): the flag is carried as a plain `bool` whose [`Default`] is the
-/// *shipped* default (`option tailcalljump off`, i.e. \b false — upstream /
-/// default-pipeline byte-identical).  W9's option dispatch flips
+/// SEAM(W4): the flag is carried as a plain `bool` whose [`Default`] mirrors the
+/// *shipped* default (`option tailcalljump off`, i.e. \b false — kept opt-in
+/// default-off because default-on regresses 2 datatests (`Long double #1/#2`),
+/// matching `Architecture::reset_defaults_internal`).  W9's option dispatch flips
 /// `Architecture::tail_call_jumps`; [`apply`](TailCallJumpOption::apply)
 /// transcribes the `onOrOff(p1)` body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,7 +68,9 @@ pub struct TailCallJumpOption {
 }
 
 impl Default for TailCallJumpOption {
-    /// Shipped default: `option tailcalljump off` (default-pipeline byte-identical).
+    /// Shipped default: `option tailcalljump off` (kept opt-in because default-on
+    /// regresses 2 datatests, `Long double #1/#2`; `option tailcalljump on`
+    /// recovers the tail call and logs the introduced call).
     fn default() -> Self {
         TailCallJumpOption { enabled: false }
     }
@@ -115,7 +118,7 @@ pub fn kuna_is_tail_call_branch(
     dest_is_known_function: bool,
     dest_is_self: bool,
 ) -> bool {
-    // if (!glb->tail_call_jumps) return false;  // default-off gate
+    // if (!glb->tail_call_jumps) return false;  // gate (default-off opt-in)
     if !gate {
         return false;
     }

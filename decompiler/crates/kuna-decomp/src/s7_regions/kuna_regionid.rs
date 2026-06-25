@@ -42,6 +42,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, int8, uintb};
 
+use crate::funcdata::Funcdata;
 use crate::kuna_regiongraph::{
     kuna_dfs_back_edges, kuna_dfs_postorder_deterministic, kuna_immediate_dominators,
     kuna_quasi_topo_sort, kuna_subgraph_between_nodes, KunaIncrementalDominators, KunaNodeId,
@@ -279,6 +280,94 @@ impl KunaRegionIdentifier {
         self.work_graph.add_edge(&self.pool, a, b);
     }
 
+    /// Input A: build the working graph from a real basic-block CFG
+    /// (C++ `KunaRegionIdentifier::buildFromBlockGraph`).
+    ///
+    /// SEAM(W7): closes the block-graph adapter the C++ exposes for the
+    /// `IfcKunaRegion*` console commands.  Reads the decompiler's `bblocks`
+    /// read-only — never mutated by this analysis-only pass — emitting one
+    /// `k_block` node per basic block (keyed on its start address, carrying the
+    /// real [`crate::seams::BlockId`]) and one edge per CFG out-edge, with the
+    /// entry address set to the first block's start.
+    ///
+    /// Each node parks `endsWithBranchindOrCbranch` (the `lastOp()->code()`
+    /// probe over the block's tail op) so [`make_supergraph`](Self::make_supergraph)
+    /// can consult it during `compute()` without re-borrowing the function.  The
+    /// tail op is `bb_op_tail` (`BlockBasic::lastOp`); the block CFG is immutable
+    /// across identification, so the precompute is equivalent to the C++ live
+    /// probe and deterministic (block iteration is in CFG index order, op tail is
+    /// the unique last op under `(addr, ident)` ordering).
+    ///
+    /// Must be called on a fresh identifier (before `compute`); the working graph
+    /// must be empty.  Returns an error if `bblocks` is empty (no entry block).
+    pub fn build_from_block_graph(&mut self, fd: &Funcdata) -> KunaResult<()> {
+        use std::collections::BTreeMap as StdBTreeMap;
+        use kuna_num::opcodes::OpCode;
+
+        if self.work_graph.num_nodes() != 0 {
+            return Err(KunaError::lowlevel(
+                "kuna regionid: build_from_block_graph on a non-empty working graph",
+            ));
+        }
+        let size = fd.bblocks_get_size();
+        if size == 0 {
+            return Err(KunaError::lowlevel(
+                "kuna regionid: build_from_block_graph on a function with no basic blocks",
+            ));
+        }
+
+        // First pass: one k_block node per basic block, in CFG index order.  The
+        // node carries the real BlockId and the precomputed branchy predicate;
+        // map BlockId -> node so the edge pass can resolve CFG out-edges.
+        let mut node: StdBTreeMap<crate::seams::BlockId, KunaNodeId> = StdBTreeMap::new();
+        let mut entry_addr: Option<uintb> = None;
+        for i in 0..size {
+            let bl = fd.bblocks_get_block(i);
+            let addr = fd.bblocks_block_start(bl).get_offset();
+            if i == 0 {
+                entry_addr = Some(addr);
+            }
+            let n = self.new_node(NodeKind::Block, addr);
+            {
+                let nm = self.pool.get_mut(n);
+                nm.set_block(bl);
+                // endsWithBranchindOrCbranch: probe the block's tail op
+                // (FlowBlock::lastOp).  Empty blocks (no tail op) are not branchy.
+                let branchy = match fd.bb_op_tail(bl) {
+                    Some(op) => matches!(
+                        fd.obank().get(op).map(|o| o.code()),
+                        Some(OpCode::CPUI_BRANCHIND) | Some(OpCode::CPUI_CBRANCH)
+                    ),
+                    None => false,
+                };
+                nm.set_branchy(branchy);
+            }
+            self.work_graph.add_node(&self.pool, n);
+            node.insert(bl, n);
+        }
+
+        // Second pass: one edge per CFG out-edge.  Out-edge order is the block's
+        // own out-edge list (deterministic; the supergraph and node-order plumbing
+        // re-sort under KunaNodeOrder where it matters).
+        let bg = fd.bblocks_ref();
+        for i in 0..size {
+            let bl = fd.bblocks_get_block(i);
+            let block = bg.block(bl);
+            let from = node[&bl];
+            for j in 0..block.size_out() {
+                let out = block.get_out(j);
+                if let Some(&to) = node.get(&out) {
+                    self.work_graph.add_edge(&self.pool, from, to);
+                }
+            }
+        }
+
+        if let Some(addr) = entry_addr {
+            self.set_entry_addr(addr);
+        }
+        Ok(())
+    }
+
     //
     // Driver
     //
@@ -395,11 +484,17 @@ impl KunaRegionIdentifier {
     /// angr `_block_ends_with_indirect_jump_or_call`
     /// (C++ `endsWithBranchindOrCbranch`).
     ///
-    /// SEAM(W7): the C++ reaches `FlowBlock::lastOp()->code()` to test for
-    /// `CPUI_BRANCHIND`/`CPUI_CBRANCH`.  Synthetic test nodes have no block (the
-    /// C++ returns `false` for them), and the block-graph adapter that would
-    /// supply real blocks is itself seamed (see module docs).  With no block,
-    /// the answer is always `false`, exactly the C++ synthetic-node path.
+    /// The C++ reaches `FlowBlock::lastOp()->code()` to test for
+    /// `CPUI_BRANCHIND`/`CPUI_CBRANCH`.  The basic-block CFG is immutable across
+    /// region identification, so [`build_from_block_graph`] precomputes that
+    /// `lastOp` probe once per real block (deterministically, via `bb_op_tail` —
+    /// the block's tail op under `(addr, ident)` ordering) and parks it on the
+    /// node ([`crate::kuna_regiongraph::KunaRegionNode::branchy`]); here we read
+    /// the parked flag.  Synthetic test nodes have no block and never set the
+    /// flag, so the answer is `false` for them — exactly the C++
+    /// synthetic-node path the unit tests drive.
+    ///
+    /// [`build_from_block_graph`]: KunaRegionIdentifier::build_from_block_graph
     fn ends_with_branchind_or_cbranch(&self, n: KunaNodeId) -> bool {
         let node = self.pool.get(n);
         let last = if node.is_multi() {
@@ -415,13 +510,7 @@ impl KunaRegionIdentifier {
         if last_node.get_kind() != NodeKind::Block {
             return false;
         }
-        // Synthetic test node: no statements (angr: empty Block) -> false.
-        // SEAM(W7): real `FlowBlock::lastOp()` probe is unavailable; blocks are
-        // always `None` on the synthetic path this port supports.
-        match last_node.get_block() {
-            None => false,
-            Some(_) => false, // SEAM(W7): no lastOp() accessor yet
-        }
+        last_node.ends_with_branchind_or_cbranch()
     }
 
     /// Merge `a -> b` into a `k_multi` (C++ `mergeNodes`).
@@ -2241,6 +2330,171 @@ mod tests {
         let got = sorted(&col.addrs);
         for i in 0..4 {
             assert_eq!(got[i], (i + 1) as uintb);
+        }
+    }
+
+    //
+    // SEAM(W7) block-graph adapter coverage (Input A: build_from_block_graph)
+    //
+
+    mod block_graph {
+        use std::rc::Rc;
+
+        use kuna_base::address::Address;
+        use kuna_base::space::{
+            addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
+        };
+        use kuna_num::opcodes::OpCode;
+
+        use crate::funcdata::Funcdata;
+        use crate::kuna_regionid::KunaRegionIdentifier;
+        use crate::op::pcodeop_flags;
+        use crate::seams::{Architecture, BlockId, TypeOp};
+
+        fn build_manager() -> AddrSpaceManager {
+            let mut m = AddrSpaceManager::new();
+            m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+            m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+            m.insert_space(Rc::new(AddrSpace::new(
+                spacetype::IPTR_PROCESSOR,
+                "ram",
+                false,
+                8,
+                1,
+                2,
+                addrspace_flags::hasphysical,
+                1,
+                1,
+            )))
+            .unwrap();
+            m
+        }
+
+        fn build_fd() -> Funcdata {
+            let manage = build_manager();
+            let glb = Rc::new(Architecture::new(manage));
+            let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+            let addr = Address::new(ram, 0x1000);
+            Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
+        }
+
+        fn ramspace(fd: &Funcdata) -> Rc<AddrSpace> {
+            Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap())
+        }
+
+        fn addr(rs: &Rc<AddrSpace>, off: u64) -> Address {
+            Address::new(Rc::clone(rs), off)
+        }
+
+        /// Append a terminating op of `opc` at `pc` into block `bl`.
+        fn term_op(fd: &mut Funcdata, bl: BlockId, opc: OpCode, pc: Address) {
+            let op = fd.obank_mut().create_at(1, pc);
+            fd.obank_mut()
+                .change_opcode(op, TypeOp::new(opc, pcodeop_flags::branch, format!("{opc:?}")));
+            fd.obank_mut().mark_alive(op);
+            fd.bb_insert_op(op, bl, None);
+        }
+
+        /// Real-CFG analog of the synthetic `regionid_diamond0`: a diamond
+        ///   entry(0x1000, CBRANCH) -> {a(0x1100), b(0x1200)} -> join(0x1300, RETURN)
+        /// built over real `bblocks` and driven through
+        /// [`KunaRegionIdentifier::build_from_block_graph`] (Input A, the W7 seam).
+        #[test]
+        fn build_from_block_graph_diamond() {
+            let mut fd = build_fd();
+            let rs = ramspace(&fd);
+            let root = fd.bblocks_root_pub();
+            let entry = fd.bblocks_mut().new_block_basic(root);
+            let a = fd.bblocks_mut().new_block_basic(root);
+            let b = fd.bblocks_mut().new_block_basic(root);
+            let join = fd.bblocks_mut().new_block_basic(root);
+            fd.bblocks_mut().add_edge(entry, a);
+            fd.bblocks_mut().add_edge(entry, b);
+            fd.bblocks_mut().add_edge(a, join);
+            fd.bblocks_mut().add_edge(b, join);
+            fd.bblocks_mut().set_start_block(root, entry);
+            // Distinct start addresses (bblocks_block_start reads the block cover).
+            fd.set_basic_block_range(entry, &addr(&rs, 0x1000), &addr(&rs, 0x100f));
+            fd.set_basic_block_range(a, &addr(&rs, 0x1100), &addr(&rs, 0x110f));
+            fd.set_basic_block_range(b, &addr(&rs, 0x1200), &addr(&rs, 0x120f));
+            fd.set_basic_block_range(join, &addr(&rs, 0x1300), &addr(&rs, 0x130f));
+            // Tail ops: the entry forks on a CBRANCH; the join is a plain RETURN.
+            term_op(&mut fd, entry, OpCode::CPUI_CBRANCH, addr(&rs, 0x100c));
+            term_op(&mut fd, join, OpCode::CPUI_RETURN, addr(&rs, 0x130c));
+
+            let mut ri = KunaRegionIdentifier::new();
+            ri.build_from_block_graph(&fd).unwrap();
+            let top = ri.compute().unwrap();
+
+            let region = ri.region(top);
+            // Same shape the synthetic diamond asserts: the top region collapses
+            // to two nodes (the entry head + one nested sub-region).
+            assert_eq!(region.get_graph().num_nodes(), 2);
+            let head = region.get_head().unwrap();
+            assert_eq!(ri.pool.get(head).get_addr(), 0x1000);
+            assert!(!region.is_cyclic());
+            let mut region_count = 0;
+            for key in region.get_graph().node_keys() {
+                if ri.pool.get(key.id).is_region() {
+                    region_count += 1;
+                }
+            }
+            assert_eq!(region_count, 1);
+
+            // The walker exposes the real BlockId payload for every leaf block
+            // (carried through build_from_block_graph), exactly once each.
+            let mut col = super::Collector::default();
+            ri.walk_blocks(&mut col).unwrap();
+            assert_eq!(col.addrs.len(), 4);
+            let got = super::sorted(&col.addrs);
+            assert_eq!(got, vec![0x1000, 0x1100, 0x1200, 0x1300]);
+            assert_eq!(col.cyclics.len(), 0);
+        }
+
+        /// The CBRANCH-ending block keeps `endsWithBranchindOrCbranch` true and is
+        /// therefore NOT merged into a supernode by `make_supergraph`; a plain
+        /// (non-branchy) chain still merges.  Drives the seam end-to-end: a real
+        /// `lastOp()->code()` probe parked on the node steers the supergraph.
+        #[test]
+        fn build_from_block_graph_supergraph_respects_branchind_cbranch() {
+            // Chain: entry(CBRANCH) -> mid(plain) -> tail(RETURN), single in/out.
+            let mut fd = build_fd();
+            let rs = ramspace(&fd);
+            let root = fd.bblocks_root_pub();
+            let entry = fd.bblocks_mut().new_block_basic(root);
+            let mid = fd.bblocks_mut().new_block_basic(root);
+            let tail = fd.bblocks_mut().new_block_basic(root);
+            fd.bblocks_mut().add_edge(entry, mid);
+            fd.bblocks_mut().add_edge(mid, tail);
+            fd.bblocks_mut().set_start_block(root, entry);
+            fd.set_basic_block_range(entry, &addr(&rs, 0x1000), &addr(&rs, 0x100f));
+            fd.set_basic_block_range(mid, &addr(&rs, 0x1100), &addr(&rs, 0x110f));
+            fd.set_basic_block_range(tail, &addr(&rs, 0x1200), &addr(&rs, 0x120f));
+            // The entry block ends in CBRANCH; the supergraph must NOT merge `mid`
+            // INTO `entry` while it would (single out / single in) absent the flag.
+            term_op(&mut fd, entry, OpCode::CPUI_CBRANCH, addr(&rs, 0x100c));
+            term_op(&mut fd, mid, OpCode::CPUI_COPY, addr(&rs, 0x1108));
+            term_op(&mut fd, tail, OpCode::CPUI_RETURN, addr(&rs, 0x120c));
+
+            let mut ri = KunaRegionIdentifier::new();
+            ri.build_from_block_graph(&fd).unwrap();
+            ri.compute().unwrap();
+
+            // All three blocks are walked exactly once regardless of merge shape.
+            let mut col = super::Collector::default();
+            ri.walk_blocks(&mut col).unwrap();
+            let got = super::sorted(&col.addrs);
+            assert_eq!(got, vec![0x1000, 0x1100, 0x1200]);
+        }
+
+        /// `build_from_block_graph` rejects a non-empty working graph (it must run
+        /// on a fresh identifier, before any synthetic input or compute).
+        #[test]
+        fn build_from_block_graph_rejects_non_empty() {
+            let fd = build_fd();
+            let mut ri = KunaRegionIdentifier::new();
+            ri.add_synthetic_block(0x10);
+            assert!(ri.build_from_block_graph(&fd).is_err());
         }
     }
 }
