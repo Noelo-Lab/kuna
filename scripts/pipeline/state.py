@@ -12,7 +12,12 @@ CLI (called by the driver shell and by workers to heartbeat):
     python -m scripts.pipeline.state claim     --worker ID --opportunity O      # exit 0 claimed / 1 taken
     python -m scripts.pipeline.state done      --worker ID --opportunity O --pr URL
     python -m scripts.pipeline.state remove    --worker ID
-    python -m scripts.pipeline.state list [--json]
+    python -m scripts.pipeline.state list [--json] [--proposals]
+
+Large-feature proposal flow (requirement #5: confirm big features before implementing):
+    python -m scripts.pipeline.state proposal       --worker ID --opportunity O --pr URL --branch B
+    python -m scripts.pipeline.state approve        --opportunity O [--by NAME]   # user said go
+    python -m scripts.pipeline.state claim-approved --worker ID --opportunity O   # exit 0 (prints branch) / 1
 """
 from __future__ import annotations
 
@@ -28,8 +33,9 @@ from . import config
 
 # Ordered worker phases (for display + progress sense).
 # Feature workers use: analyze, design, code, build, test, docs, commit, pr.
+# "proposal" = a large feature paused on a draft PR awaiting the user's go/no-go.
 PHASES = ["queued", "setup", "analyze", "design", "code", "build",
-          "test", "docs", "commit", "pr", "done", "failed"]
+          "test", "docs", "commit", "pr", "proposal", "done", "failed"]
 
 
 def _state_dir():
@@ -59,18 +65,23 @@ def _locked():
         fh.close()
 
 
+def _empty():
+    # proposals: opp_id -> {worker, slug, branch, pr_url, ts} (large feature awaiting go/no-go)
+    # approved:  opp_id -> {branch, pr_url, approved_by, ts}   (user said go; ready to implement)
+    return {"workers": {}, "claims": {}, "done": {}, "proposals": {}, "approved": {}}
+
+
 def _load():
     p = _inventory_path()
     if not os.path.exists(p):
-        return {"workers": {}, "claims": {}, "done": {}}
+        return _empty()
     try:
         with open(p) as fh:
             data = json.load(fh)
     except (json.JSONDecodeError, OSError):
-        return {"workers": {}, "claims": {}, "done": {}}
-    data.setdefault("workers", {})
-    data.setdefault("claims", {})
-    data.setdefault("done", {})
+        return _empty()
+    for k, v in _empty().items():
+        data.setdefault(k, v)
     return data
 
 
@@ -162,6 +173,67 @@ def mark_done(worker, opportunity, pr_url=None):
         _save(data)
 
 
+# --- large-feature proposal flow (requirement #5) ---------------------------
+
+def mark_proposal(worker, opportunity, pr_url, branch, slug=None):
+    """A large feature opened a draft PR and stopped. Park it for human go/no-go.
+
+    The opportunity leaves ``claims`` and enters ``proposals`` so it is neither re-picked as a
+    fresh gap nor counted as done. The worker is left as phase/status ``proposal``.
+    """
+    now = time.time()
+    with _locked():
+        data = _load()
+        data["claims"].pop(opportunity, None)
+        data["proposals"][opportunity] = {
+            "worker": worker, "slug": slug, "branch": branch,
+            "pr_url": pr_url, "ts": now,
+        }
+        w = data["workers"].get(worker)
+        if w:
+            w["phase"] = "proposal"
+            w["status"] = "proposal"
+            w["pr_url"] = pr_url
+            w["updated_at"] = now
+        _save(data)
+
+
+def approve_proposal(opportunity, *, approved_by="user"):
+    """User approved a parked proposal: move it proposals -> approved (ready to implement)."""
+    now = time.time()
+    with _locked():
+        data = _load()
+        prop = data["proposals"].pop(opportunity, None)
+        if prop is None:
+            return False
+        data["approved"][opportunity] = {
+            "branch": prop.get("branch"), "pr_url": prop.get("pr_url"),
+            "slug": prop.get("slug"), "approved_by": approved_by, "ts": now,
+        }
+        _save(data)
+        return True
+
+
+def claim_approved(worker, opportunity):
+    """Atomically claim an approved proposal for an implementation worker.
+
+    Returns the proposal's branch (to resume) on success, or None if it isn't approved or is
+    already claimed by another worker.
+    """
+    now = time.time()
+    with _locked():
+        data = _load()
+        appr = data["approved"].get(opportunity)
+        if appr is None:
+            return None
+        held = data["claims"].get(opportunity)
+        if held and held.get("worker") != worker:
+            return None
+        data["claims"][opportunity] = {"worker": worker, "ts": now}
+        _save(data)
+        return appr.get("branch")
+
+
 def snapshot():
     with _locked():
         return _load()
@@ -170,6 +242,17 @@ def snapshot():
 def claimed_or_done():
     data = snapshot()
     return set(data["claims"].keys()) | set(data["done"].keys())
+
+
+def taken():
+    """Everything a fresh-gap selector must skip: claimed, done, proposed, or approved.
+
+    Proposed/approved opportunities are driven by the orchestrator (human-in-the-loop), never
+    auto-picked as a fresh gap, so they belong in the skip set.
+    """
+    data = snapshot()
+    return (set(data["claims"]) | set(data["done"])
+            | set(data["proposals"]) | set(data["approved"]))
 
 
 def main(argv=None):
@@ -201,8 +284,25 @@ def main(argv=None):
     sp = sub.add_parser("remove")
     sp.add_argument("--worker", required=True)
 
+    sp = sub.add_parser("proposal")
+    sp.add_argument("--worker", required=True)
+    sp.add_argument("--opportunity", required=True)
+    sp.add_argument("--pr", required=True)
+    sp.add_argument("--branch", required=True)
+    sp.add_argument("--slug", default=None)
+
+    sp = sub.add_parser("approve")
+    sp.add_argument("--opportunity", required=True)
+    sp.add_argument("--by", default="user")
+
+    sp = sub.add_parser("claim-approved")
+    sp.add_argument("--worker", required=True)
+    sp.add_argument("--opportunity", required=True)
+
     sp = sub.add_parser("list")
     sp.add_argument("--json", action="store_true")
+    sp.add_argument("--proposals", action="store_true",
+                    help="show only parked proposals + approved (ready-to-implement)")
 
     args = p.parse_args(argv)
 
@@ -218,10 +318,28 @@ def main(argv=None):
         mark_done(args.worker, args.opportunity, args.pr)
     elif args.cmd == "remove":
         remove(args.worker)
+    elif args.cmd == "proposal":
+        mark_proposal(args.worker, args.opportunity, args.pr, args.branch, slug=args.slug)
+    elif args.cmd == "approve":
+        ok = approve_proposal(args.opportunity, approved_by=args.by)
+        if not ok:
+            print("no parked proposal for %r" % args.opportunity, file=sys.stderr)
+        return 0 if ok else 1
+    elif args.cmd == "claim-approved":
+        branch = claim_approved(args.worker, args.opportunity)
+        if branch is None:
+            return 1
+        print(branch)
+        return 0
     elif args.cmd == "list":
         data = snapshot()
         if args.json:
             print(json.dumps(data, indent=2))
+        elif args.proposals:
+            for oid, p_ in data["proposals"].items():
+                print("proposal  %-40s [%s]  %s" % (oid[:40], p_.get("branch"), p_.get("pr_url")))
+            for oid, a_ in data["approved"].items():
+                print("approved  %-40s [%s]  %s" % (oid[:40], a_.get("branch"), a_.get("pr_url")))
         else:
             for w in data["workers"].values():
                 print("%-16s %-10s %-8s %s" % (

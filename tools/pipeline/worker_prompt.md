@@ -7,6 +7,8 @@ feature to the **Rust** engine, verifying it, and opening a PR — then stop. A 
 will resume this exact session on the PR, so leave the workspace and the per-feature record
 complete and honest.
 
+{{RESUME_PROPOSAL}}
+
 ## Your target
 
 - Worker id: `{{WORKER_ID}}`
@@ -54,6 +56,17 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 5. **If an existing option already covers this gap** (check `kuna catalog --json`), do NOT
    duplicate it. Record that finding in `docs/features/{{SLUG}}/record.json`, set state `--status failed
    --note "covered by <option>"`, and stop without a PR.
+6. **Measure speed — speed is critical.** Before opening the PR, record the median decompile
+   wall-time of `{{SELECTOR}}` in `{{BINARY}}` with your option OFF vs ON (Phase 4 step). A feature
+   that the ablation would let ship default-ON but which regresses the target beyond the speed
+   budget (default +5%, `KUNA_PIPELINE_SPEED_BUDGET_PCT`) stays **default-OFF opt-in** instead.
+   Always record the number even when within budget.
+7. **Large/multi-part features go through a draft `[PROPOSAL]` PR first — do NOT implement.**
+   If closing this gap needs more than one option-gated pass — a new pass *type* or infrastructure
+   (not modelable as one Action/Rule like `kuna_loweredswitch.rs`), touching S7 structuring/region
+   code beyond a single gated early-return, or >3 ported-core anchor files / >1 new module — STOP at
+   design and follow the Phase-2 proposal fork. A human approves it before any implementation worker
+   is spent. (In IMPLEMENTATION MODE, this gap is already approved — implement it.)
 
 ## Protocol
 
@@ -77,6 +90,22 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
   developing). For any genuine judgment call (which stage to hook, whether the construct generalizes, scope),
   spawn a **decider subagent** (use the Task/Agent tool) to make and justify the call, and record its decision
   verbatim in `docs/features/{{SLUG}}/record.json` under `"decisions"`. Write `docs/features/{{SLUG}}/plan.md`.
+- **Scope check (the proposal gate, Hard rule 7).** Ask the decider to return `scope: small|large`.
+  Treat as **large** if: the decider says `large`; OR it needs a new pass *type*/infrastructure (not one
+  Action/Rule like `kuna_loweredswitch.rs`); OR it must touch S7 structuring/region code beyond a single
+  gated early-return; OR it needs >3 ported-core anchor files / >1 new module.
+  - **If large — STOP. Do NOT implement.** Write `docs/features/{{SLUG}}/proposal.md` (the problem; the angr
+    reference pass/class; the multi-step implementation plan; a speed/risk assessment; the proposed option
+    name) and a partial `record.json` (`"scope":"large"`, `"proposal":true`, plus `option`, `binary`,
+    `selector`, `func_addr`, `change_kind`, `decisions`). `git add -A && git commit` (same trailer). Open a
+    **draft** PR and park the opportunity:
+    ```
+    tools/pipeline/open_pr.sh --draft {{BRANCH}} "[PROPOSAL] angr-{{SLUG}}: <one line>" docs/features/{{SLUG}}/proposal.md
+    {{KUNA_PY}} -m scripts.pipeline.state proposal --worker {{WORKER_ID}} --opportunity "{{OPPORTUNITY_ID}}" --pr "<url>" --branch {{BRANCH}} --slug {{SLUG}}
+    ```
+    Then STOP (no further phases). A supervising session surfaces the draft PR for the user's go/no-go and,
+    on approval, re-dispatches an implementation worker on this branch.
+  - **If small (the default) — continue to Phase 3** exactly as below.
 
 ### 3. code — implement + register
 - Create `kuna_{{SLUG}}.rs` (an Action/Rule modeled on `kuna_loweredswitch.rs`), add a `bool`
@@ -91,13 +120,25 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
   (angr-like rendering). Use a self-contained bytechunk or the testcase binary's bytes; map/name neighbour symbols.
 - `make test-stages` must pass. Regenerate the stage baseline:
   `kuna test --datatests --datatests-dir tests/stages --save-baseline docs/baseline-stages.json`.
+- **Measure speed (always — Hard rule 6).** With the feature working, time the target off vs on:
+  `{{KUNA_PY}} -m scripts.pipeline.timeit --option {{SLUG}} --binary {{BINARY}} --selector {{SELECTOR}} --repeat 5`
+  (add `--func-addr <addr>` if name selection is unreliable). Splice the printed JSON
+  (`speed_off_ms`, `speed_on_ms`, `speed_delta_pct`, `speed_samples`, `speed_budget_pct`,
+  `speed_within_budget`) into `docs/features/{{SLUG}}/record.json` — or pass `--record <record.json>`
+  once it exists and the tool writes them for you.
 
-### 5. ablation → default decision
+### 5. ablation → default decision (gated by speed)
 - Run the full ablation: `kuna test --all --baseline docs/baseline.json`.
-- **If 0/675 upstream assertions change with the feature default-ON**, flip the option default to ON (set the
+- **If 0/675 upstream assertions change with the feature default-ON _and_ the speed gate passes**
+  (`speed_within_budget` true, i.e. `speed_delta_pct` ≤ the budget), flip the option default to ON (set the
   flag default in the architecture reset path, `shipped` in the `settableTable` row), add a `docs/divergences.md`
-  DIV-N entry, and re-verify PARITY OK. **Otherwise** keep it default-OFF (opt-in) — output stays byte-identical,
-  no DIV entry. Either way the run MUST end at **PARITY OK** (you never re-pin `docs/baseline.json`).
+  DIV-N entry, and re-verify PARITY OK.
+- **If the ablation is clean but the speed gate FAILS** (over budget or unmeasured), keep it **default-OFF
+  opt-in**, set `"speed_forced_off": true` in `record.json`, and note the regression in the PR body +
+  `docs/PROGRESS.md` (no DIV entry — output stays byte-identical).
+- **Otherwise** (ablation changes >0) keep it default-OFF (opt-in), no DIV entry.
+- Either way the run MUST end at **PARITY OK** (you never re-pin `docs/baseline.json`). The speed gate can only
+  ever push a feature from default-ON to opt-in; it never touches the baseline.
 
 ### 6. gates (all must be green before committing)
 - `kuna catalog --check`  → "catalog OK"
@@ -112,7 +153,9 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
   why angr was better, the mechanism, the ablation result, on/off default decision.
 - Finalise `docs/features/{{SLUG}}/record.json`: `{ "opportunity": "{{OPPORTUNITY_ID}}", "test_name", "binary",
   "selector", "func_addr", "angr_version", "option", "flag", "element_id", "change_kind", "source_decompiler":"angr",
-  "inspiration", "default_on": bool, "ablation_changed": N, "parity": "OK", "decisions": [...] }`.
+  "inspiration", "default_on": bool, "ablation_changed": N, "parity": "OK",
+  "speed_off_ms", "speed_on_ms", "speed_delta_pct", "speed_samples", "speed_budget_pct", "speed_within_budget",
+  "speed_forced_off": bool, "decisions": [...] }`.
 
 ### 8. commit + PR
 - `git add -A && git commit` with a descriptive subject `{{SLUG}}: <one line>` and the trailer

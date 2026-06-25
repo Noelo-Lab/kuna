@@ -90,7 +90,11 @@ the defaults are recorded in `docs/divergences.md`.
 
 The still-Python feature pipeline (`scripts/pipeline/`, out of scope for the engine) imports
 the thin library shim `scripts/decompile.py::decompile`. There is no installable package —
-run it from the repo root (`python -m scripts.pipeline.<mod>`). See `docs/pipeline.md`.
+run it from the repo root (`python -m scripts.pipeline.<mod>`). See `docs/pipeline.md`. It
+obeys five **standing requirements** (one PR/feature; end-to-end binary→addr/func testcase;
+output-changing ⇒ logged + `--option`-flaggable; always measure+record decompile speed;
+large/multi-part features go through a `[PROPOSAL]` draft PR for human go/no-go) — see
+`docs/pipeline.md` → *Standing requirements*.
 
 ## Tests
 

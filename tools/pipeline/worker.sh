@@ -34,7 +34,15 @@ export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
 # state into the worktree's own .kuna-pipeline and the main-tree status would go stale.
 export KUNA_PIPELINE_STATE_DIR="$REPO/.kuna-pipeline"
 
-BRANCH="feat/angr-${SLUG}"
+# Normal mode opens a fresh branch off main. Implementation mode (IMPL_PROPOSAL=1) resumes
+# an APPROVED proposal's existing branch (RESUME_BRANCH) instead of branching fresh.
+IMPL_PROPOSAL="${IMPL_PROPOSAL:-0}"
+RESUME_BRANCH="${RESUME_BRANCH:-}"
+if [ "$IMPL_PROPOSAL" = 1 ] && [ -n "$RESUME_BRANCH" ]; then
+  BRANCH="$RESUME_BRANCH"
+else
+  BRANCH="feat/angr-${SLUG}"
+fi
 WT_ROOT="$REPO/.kuna-pipeline/worktrees"
 WT="$WT_ROOT/$WORKER_ID"
 LOG_DIR="$REPO/.kuna-pipeline/logs"
@@ -46,15 +54,23 @@ LOG="$LOG_DIR/$WORKER_ID.log"
 
 log() { echo "[$(date +%H:%M:%S)] worker $WORKER_ID: $*" | tee -a "$LOG"; }
 
-# --- 1. isolated worktree on a fresh feature branch ------------------------
-log "creating worktree $WT on $BRANCH (base $BASE_BRANCH)"
-git -C "$REPO" worktree add -b "$BRANCH" "$WT" "$BASE_BRANCH" >>"$LOG" 2>&1 || {
-  log "worktree add failed (branch may exist); trying detached reuse"
-  git -C "$REPO" worktree add "$WT" "$BASE_BRANCH" >>"$LOG" 2>&1 || {
-    "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "worktree add failed"
+# --- 1. isolated worktree (fresh branch, or an approved proposal's branch) --
+if [ "$IMPL_PROPOSAL" = 1 ]; then
+  log "resuming approved proposal on existing branch $BRANCH"
+  git -C "$REPO" worktree add "$WT" "$BRANCH" >>"$LOG" 2>&1 || {
+    "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "resume worktree add failed"
     exit 1
   }
-}
+else
+  log "creating worktree $WT on $BRANCH (base $BASE_BRANCH)"
+  git -C "$REPO" worktree add -b "$BRANCH" "$WT" "$BASE_BRANCH" >>"$LOG" 2>&1 || {
+    log "worktree add failed (branch may exist); trying detached reuse"
+    git -C "$REPO" worktree add "$WT" "$BASE_BRANCH" >>"$LOG" 2>&1 || {
+      "$KUNA_PY" -m scripts.pipeline.state update --worker "$WORKER_ID" --status failed --note "worktree add failed"
+      exit 1
+    }
+  }
+fi
 
 "$KUNA_PY" -m scripts.pipeline.state register --worker "$WORKER_ID" --slug "$SLUG" \
   --branch "$BRANCH" --opportunity "$OPP_ID" >>"$LOG" 2>&1
@@ -76,6 +92,13 @@ log "building binaries in worktree (initial)"
 }
 
 # --- 4. render the worker prompt -------------------------------------------
+# {{RESUME_PROPOSAL}} is a single-line directive: empty for a normal feature, or the
+# implementation-mode preamble when resuming an approved proposal.
+if [ "$IMPL_PROPOSAL" = 1 ]; then
+  RESUME_PROPOSAL_LINE="IMPLEMENTATION MODE — this branch has an APPROVED docs/features/$SLUG/proposal.md. Read it and implement that plan starting at Phase 3 (skip analyze/design — they are approved). At Phase 8, after the PR is updated, mark it ready: tools/pipeline/open_pr.sh --undraft $BRANCH"
+else
+  RESUME_PROPOSAL_LINE=""
+fi
 PROMPT_FILE="$LOG_DIR/$WORKER_ID.prompt.md"
 sed \
   -e "s|{{WORKER_ID}}|$WORKER_ID|g" \
@@ -89,6 +112,7 @@ sed \
   -e "s|{{WORKTREE}}|$WT|g" \
   -e "s|{{KUNA_PY}}|$KUNA_PY|g" \
   -e "s|{{DATE}}|$DATE|g" \
+  -e "s|{{RESUME_PROPOSAL}}|$RESUME_PROPOSAL_LINE|g" \
   "$PROMPT_TMPL" > "$PROMPT_FILE"
 
 # --- 5. headless Claude session (highest-effort model), in the worktree -----

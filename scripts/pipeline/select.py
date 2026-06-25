@@ -33,20 +33,47 @@ def _opp_id(opp):
     return "%s::%s" % (opp.get("test_name", ""), opp.get("selector"))
 
 
-def load_backlog():
-    path = config.pipeline_docs_dir() / "opportunities.json"
+def _read_ranked(name):
+    path = config.pipeline_docs_dir() / name
     if not path.exists():
         return []
-    with open(path) as fh:
-        return json.load(fh).get("ranked", [])
+    try:
+        with open(path) as fh:
+            return json.load(fh).get("ranked", [])
+    except (json.JSONDecodeError, OSError):
+        return []
 
 
-def pick(*, skip_custom=False, min_score=1):
-    taken = state.claimed_or_done()
+def load_backlog():
+    """The combined backlog: the structural matrix + the small-units worklist.
+
+    units.json is kept separate from opportunities.json so a re-sweep (which regenerates
+    opportunities.json) never wipes the small-units. Highest score first across both.
+    """
+    combined = _read_ranked("opportunities.json") + _read_ranked("units.json")
+    combined.sort(key=lambda o: o.get("score", 0), reverse=True)
+    return combined
+
+
+def _matches_kind(opp, kind):
+    if not kind:
+        return True
+    kinds = opp.get("kinds", []) or []
+    if kind == "small-unit":
+        return "small-unit" in kinds
+    if kind == "structural":
+        return "small-unit" not in kinds  # everything in the structural matrix
+    return kind in kinds
+
+
+def pick(*, skip_custom=False, min_score=1, kind=None):
+    taken = state.taken()
     for opp in load_backlog():  # already sorted by rank/score
         if opp.get("score", 0) < min_score:
             continue
         if not opp.get("comparable"):
+            continue
+        if not _matches_kind(opp, kind):
             continue
         oid = _opp_id(opp)
         if oid in taken:
@@ -64,9 +91,11 @@ def main(argv=None):
     p.add_argument("--json", action="store_true")
     p.add_argument("--skip-custom", action="store_true")
     p.add_argument("--min-score", type=int, default=1)
+    p.add_argument("--kind", choices=["small-unit", "structural"], default=None,
+                   help="restrict to small self-contained units or structural-matrix gaps")
     args = p.parse_args(argv)
 
-    opp = pick(skip_custom=args.skip_custom, min_score=args.min_score)
+    opp = pick(skip_custom=args.skip_custom, min_score=args.min_score, kind=args.kind)
     if opp is None:
         if not (args.shell or args.json):
             print("no remaining opportunities", file=sys.stderr)

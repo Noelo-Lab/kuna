@@ -1,5 +1,34 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — Go pclntab function-name recovery (Increment 34)
+
+Ported the **name-recovery half** of Ghidra's `GolangSymbolAnalyzer` (`golang-symbols`,
+previously ⛔ "large subsystem, Go-only" — greenlit). A new `AnalysisPass`
+(`s1_pclntab::GoPclntabPass`, id `gopclntab`, default-ON) that, when the binary is Go,
+locates and parses the embedded `pclntab` and emits a function symbol per Go function — so
+`main.main`/`main.compute`/`runtime.*` render NAMED instead of `sub_<addr>` (the table survives
+stripping, so this works even on a `-ldflags=-s -w` binary with no `.symtab`).
+- **Locate:** `.gopclntab` section → `runtime.pclntab` symbol → validated `.rodata`/`.data.rel.ro`
+  byte scan (Ghidra `GoPcHeader.getPcHeaderAddress`/`findPcHeaderAddress`); endianness via the
+  LE-then-BE magic probe.
+- **Parse all four magics:** go1.2 `0xfffffffb` (legacy direct-functab), go1.16 `0xfffffffa`
+  (absolute `entry`), go1.18 `0xfffffff0` / go1.20 `0xfffffff1` (32-bit PC-relative `entryoff`
+  from `textStart`). Layouts from Ghidra's `GoPcHeader`/`GoModuledata`/`GoFunctabEntry`/
+  `GoFuncData`, cross-checked against the Go runtime source at go1.18. Defensive: any malformation
+  ⇒ empty output, never a panic (the never-fail contract).
+- **Gate:** registered only for `Compiler::Go` (the `.go.buildinfo` gate the Go no-return list uses),
+  so non-Go binaries are structurally unaffected; reuses the EXISTING symbol commit arm (idempotent —
+  a real `.symtab` name still wins). Settable `--option gopclntab on|off`, default-on.
+- **Tests (both ran):** 12 hermetic parser units (no `go` — the merge gate; go1.18/1.16/1.2 decode,
+  LE+BE, malformation/defensiveness) + a real-Go e2e (`verify_go_pclntab.rs`) that `go build
+  -ldflags=-s -w`s a `compute()`-calls-`main()` program at runtime and asserts `main.main`/
+  `main.compute`/`runtime.main` are recovered as NAMED on the STRIPPED binary, and that
+  `--option gopclntab off` suppresses it. The e2e RAN (go1.18 + built x86 `.sla`), not skipped.
+- **Gates:** `make test` 675/675 PARITY OK; `make test-stages` 159/159 PARITY OK; `make rust-test`
+  green; `kuna catalog --check` OK. settable_count 36 → 37 (catalog fixture + `docs/assertions.md`
+  regenerated; count fixtures updated). `golang-symbols` reclassified ⛔→✅ in
+  `docs/analysis-port-log.md` (Increment 34). No divergence to the parity oracles.
+
 ## Session (2026-06-23) — analyzer-tier deferred frontier complete (Increments 14–17)
 
 Took on the whole deferred frontier from `docs/analysis-port-plan.md` (+ a completeness sweep
