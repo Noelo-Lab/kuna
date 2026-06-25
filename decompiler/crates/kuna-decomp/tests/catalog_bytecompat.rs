@@ -76,14 +76,15 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_36_settables() {
-    // One `"option":` per settable row: 23 stage-model knobs + 13 analysis-tier
+fn fixture_has_all_37_settables() {
+    // One `"option":` per settable row: 23 stage-model knobs + 14 analysis-tier
     // gates (10 per-run analysis-pass enablement — including the `mips_gp` $gp
     // recovery gate and the `mips_isa` MIPS16 ISA_MODE painting gate — plus the
     // `formatstring` DecompilerDependent varargs-typing gate, the `listing`
-    // Listing/xref disassembly tier gate, and the `noreturn_disc` discovered-
-    // no-return Listing consumer gate).
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 36);
+    // Listing/xref disassembly tier gate, the `noreturn_disc` discovered-
+    // no-return Listing consumer gate, and the `gopclntab` Go pclntab
+    // function-name recovery gate).
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 37);
 }
 
 #[test]

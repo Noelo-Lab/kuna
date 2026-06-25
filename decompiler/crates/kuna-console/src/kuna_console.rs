@@ -203,6 +203,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<&'static str
         "callfixup" => on_off(conf.analysis_callfixup),
         "addrtable" => on_off(conf.analysis_addrtable),
         "listing" => on_off(conf.analysis_listing),
+        "gopclntab" => on_off(conf.analysis_gopclntab),
         // C++: return ""; -> no current field.
         _ => return None,
     })

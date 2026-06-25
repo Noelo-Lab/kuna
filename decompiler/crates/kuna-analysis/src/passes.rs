@@ -37,7 +37,7 @@ pub fn default_passes() -> Vec<Box<dyn AnalysisPass>> {
 /// arms: the `rustc` arm adds the Rust list, the `golang` arm adds the Go list);
 /// future Rust/Go-specific passes plug in here with one line.
 pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
-    vec![
+    let mut passes: Vec<Box<dyn AnalysisPass>> = vec![
         // S1 loader: known no-return functions (exit/abort/…). Mirrors Ghidra's
         // default-on `NoReturnFunctionAnalyzer`. For a Rust binary, also match the
         // Rust wildcard list (panic/handle_alloc_error/rust_begin_unwind/…); for a
@@ -150,7 +150,24 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // subsumed by `s1-entry-disc` + `s1-eh-frame`. Documented ⛔ infeasible-at-tier,
         // same as `FindNoReturnFunctionsAnalyzer` (see s1_loader/noreturn.rs and
         // docs/analysis-port-log.md). No `AnalysisPass` impl exists for it.
-    ]
+    ];
+
+    // S1 Go pclntab function-name recovery (GoPclntabPass): when the binary is Go
+    // (`detect_compiler == Go`, via `.go.buildinfo`/`.note.go.buildid` — the same
+    // gate the Go no-return list uses), parse the embedded `pclntab` and emit a
+    // `SymFact { kind: Function }` per Go function, so `main.main`/`runtime.*`/
+    // package functions render NAMED instead of `sub_<addr>`. The kuna analog of
+    // Ghidra's `GolangSymbolAnalyzer` (name-recovery half). Go-only: registered
+    // ONLY for `Compiler::Go`, so every non-Go binary's pass set is byte-identical
+    // to before (the no-op is structural, not a runtime check). `--option
+    // gopclntab off` suppresses it; the existing symbol commit arm installs the
+    // facts idempotently (a real `.symtab` name still wins, so only a *stripped*
+    // Go binary's `sub_<addr>` functions take the recovered name).
+    if compiler.is_golang() {
+        passes.push(Box::new(crate::s1_pclntab::GoPclntabPass));
+    }
+
+    passes
 }
 
 /// Build the Listing/xref tier's seed set from a parsed object: the union of
@@ -367,14 +384,30 @@ mod tests {
         }
     }
 
-    /// Rust/Go vs non-Rust/Go selection differs ONLY in the no-return pass
-    /// variant (the per-compiler list it folds in), not the pass set — the same
-    /// ids in the same order across all detected compilers.
+    /// All NON-Go compilers select the same pass set (Rust differs only in the
+    /// no-return pass's folded-in list, not the pass *ids*). Go additionally
+    /// carries the `gopclntab` pass (Go-only, appended last); every other compiler
+    /// is byte-identical to the Gcc base.
     #[test]
-    fn all_compilers_have_same_pass_ids() {
+    fn non_go_compilers_have_same_pass_ids() {
         let base = ids(&passes_for(Compiler::Gcc));
-        for c in [Compiler::Rustc, Compiler::Go, Compiler::Clang, Compiler::Unknown] {
+        for c in [Compiler::Rustc, Compiler::Clang, Compiler::Unknown] {
             assert_eq!(ids(&passes_for(c)), base, "{c:?} pass ids must match the base set");
+        }
+    }
+
+    /// The Go pass set is exactly the base set plus the `gopclntab` pass appended
+    /// (the Go-only function-name recovery); no other compiler carries it.
+    #[test]
+    fn go_adds_only_gopclntab_pass() {
+        let base = ids(&passes_for(Compiler::Gcc));
+        let go = ids(&passes_for(Compiler::Go));
+        assert_eq!(&go[..base.len()], &base[..], "Go set is the base set + extras");
+        assert_eq!(go.last(), Some(&"gopclntab"), "Go appends the gopclntab pass");
+        assert_eq!(go.len(), base.len() + 1, "Go adds exactly one pass");
+        // No non-Go compiler carries the gopclntab pass.
+        for c in [Compiler::Gcc, Compiler::Rustc, Compiler::Clang, Compiler::Unknown] {
+            assert!(!ids(&passes_for(c)).contains(&"gopclntab"), "{c:?} must not carry gopclntab");
         }
     }
 
