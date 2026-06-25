@@ -2524,3 +2524,73 @@ ripple (kuna_stages `settable_count_is_36`, `…suppressed_for_14`,
   `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs`,
   `kuna-decomp/tests/{catalog_bytecompat.rs, fixtures/stage_catalog.json}`,
   `docs/assertions.md`.
+
+### Increment 35 — Multi-format loader PR-1: the `ObjectFormat` seam (ELF lifted verbatim)
+
+**Premise.** kuna is ELF-only; the goal is "a decompiler for most file formats"
+(PE/Mach-O/COFF). The canonical spec for the whole expansion is now
+`docs/multiformat-loader-design.md` (the per-format PR plan, §0–§9, every file:line
+re-verified against the live tree). This is **PR-1**: a PURE REFACTOR that lifts
+today's ELF-only load logic behind a trait with ZERO behavioral change — the
+foundation every later format-PR plugs into.
+
+**The seam.** New `kuna-analysis/src/s1_loader/format/` — `mod.rs` (the
+`ObjectFormat` trait, `FormatKind`, `ImportSym`, `detect()`, and a free
+`resolve_imports(file, bytes)` dispatch fn) and `elf.rs` (`ElfFormat`). `ElfFormat`
+is **today's logic moved verbatim**: `section_bits` = the old `section_kind_flags`
+body; `resolve_imports` calls the unchanged `elf_plt::resolve_plt_imports`;
+`compiler_model` returns the same `gcc`/`default` tokens; `const_ranges` =
+`mips_got_const_ranges`. Format knowledge lives in the impl, not sprinkled through
+shared passes.
+
+**The three substituted points in `ObjectLoadImage::from_bytes`** (everything else
+verbatim): (B) the non-ELF reject → `let fmt = format::detect(&file)?;`; (C) the
+section snapshot → `fmt.section_bits(...)`; (F) the PLT call → `fmt.resolve_imports(
+&file, bytes)` (plus the MIPS const-ranges → `fmt.const_ranges(...)`). (D) `language_id_for`
+now threads the `compiler_model` from the seam — but the ELF id strings are
+**byte-identical** (ELF→`gcc`/`default`), so it's a structural change with no output
+change. The arch→stem match and `strip_version`/MIPS arms are unchanged. The id-string
+shape is now composed by a shared `compose_language_id`, reused by `language_id_for`
+and the new `elf_language_ids()` enumerator so the resolve-in-DB gate cannot drift.
+
+**The two other call sites** — `s1_entry::existing_function_addrs` and
+`s1_loader::noreturn::scan_noreturn` — now call the free `format::resolve_imports(
+file, bytes)` (no format branch; just the dispatch fn). `bytes` is threaded via a new
+`AnalysisCtx.bytes` field (all three ctx-construction sites already owned `bytes`) and
+a `bytes` param on `existing_function_addrs`/`collect_entries`/`listing_seeds`; the ELF
+resolver ignores it (it reads sections off `file`), but the seam carries it for the
+PE/Mach-O typed-reparse PR-2 needs.
+
+**ELF-only-reachable.** `detect()` rejects everything but ELF (PE/Mach-O/COFF impls
+and the `object` pe/macho/coff features are PR-2), and the engine dispatch still routes
+only `\x7fELF` to the object loader — so the rejected arm is unreachable on the live
+path and nothing PE/Mach-O is constructible from a real binary yet.
+
+**Faithfulness proof (the whole point).** `make test` **675/675 PARITY OK**;
+`make test-stages` **159/159 PARITY OK**; `make rust-test` green — all UNCHANGED. Every
+existing ELF fixture (`fauxware`, `cet_pie_x86_64`, `stripped_dynamic_x86_64`,
+`plt_mips32`, `cpp_mangled_x86_64`, the cross-arch entry/plt fixtures, …) now runs
+through the trait path and is byte-identical. New tests: a kuna-analysis unit
+(`ElfFormat::compiler_model`/`section_bits` reproduce the old tokens/bits exactly) and
+a console gate `verify_elf_language_ids.rs` (every id `language_id_for` can produce —
+x86-64/x86-32/ARM/AArch64/MIPS/RISCV/SPARC/PPC, both endiannesses where the vendored
+`.ldefs` declare a stem — resolves in `scan_language_database`).
+
+- **Divergence/LOSS:** none to the parity oracles — the XML datatest path never reaches
+  the object loader, and the ELF arm is the old code lifted verbatim. The only textual
+  change is the non-ELF reject message (`detect()`'s "unsupported object format" vs the
+  old "not an ELF object"), and that arm is unreachable on the live path (the engine
+  never hands a non-ELF to the object loader), so no output changes.
+- **One chokepoint that didn't lift as cleanly as the plan expected:** §1.3 framed the
+  free `resolve_imports(file, bytes)` as a drop-in at the two non-`from_bytes` call
+  sites, but `bytes` was not in scope at `existing_function_addrs`/`scan_noreturn`
+  (their callers carry `file`-only). Threading it required an `AnalysisCtx.bytes` field
+  + a `bytes` param down `existing_function_addrs`/`collect_entries`/`listing_seeds`
+  (and the cross-crate `verify_listing_*` callers). Mechanical, faithful (ELF ignores
+  `bytes`), and exactly the "thread bytes as needed" the plan called for — just a wider
+  ripple than the "three substituted lines" framing suggested.
+- **New:** `kuna-analysis/src/s1_loader/format/{mod,elf}.rs`,
+  `kuna-console/tests/verify_elf_language_ids.rs`, `docs/multiformat-loader-design.md`.
+- **Changed:** `kuna-analysis/src/{loadimage_object.rs, pass.rs, passes.rs,
+  s1_loader/mod.rs, s1_loader/noreturn.rs, s1_entry/mod.rs}`,
+  `kuna-console/tests/{verify_listing_core.rs, verify_listing_queries.rs}`.

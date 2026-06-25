@@ -26,5 +26,6 @@
 
 pub mod arm_markers;
 pub mod elf_plt;
+pub mod format;
 pub mod mips_markers;
 pub mod noreturn;

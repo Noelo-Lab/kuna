@@ -56,7 +56,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
-use object::{Architecture, SectionFlags, SectionKind, SymbolKind};
+use object::{Architecture, SymbolKind};
 
 use kuna_base::address::{Address, RangeList};
 use kuna_base::error::{KunaError, KunaResult};
@@ -184,15 +184,16 @@ impl ObjectLoadImage {
                 "File: {filename} : not in recognized object file format: {e}"
             ))
         })?;
-        // ELF-only (the BFD loader handles every BFD target; kuna's substitution
-        // is scoped to ELF — the only format the W11 task requires).
-        if !matches!(file.format(), object::BinaryFormat::Elf) {
-            return Err(KunaError::lowlevel(format!(
-                "File: {filename} : not an ELF object (kuna ELF loader is ELF-only)"
-            )));
-        }
+        // (B) Select the per-format `ObjectFormat` behind the seam. Today only ELF
+        // is constructible (`detect` rejects everything else, and the engine
+        // dispatch only routes `\x7fELF` here), so this is the verbatim ELF path;
+        // PE/Mach-O/COFF impls land behind this same call in later PRs. The error
+        // text differs from the old "not an ELF object" string, but the rejected
+        // arm is unreachable on the live path (the engine never hands a non-ELF
+        // here), so no behavior changes.
+        let fmt = crate::s1_loader::format::detect(&file)?;
 
-        let archtype = language_id_for(&file, filename)?;
+        let archtype = language_id_for(&file, fmt.as_ref(), filename)?;
 
         // Snapshot the loadable segments (PT_LOAD), copying their RAM bytes.
         // `data()` returns only the file-backed bytes; a segment's `size()`
@@ -216,9 +217,12 @@ impl ObjectLoadImage {
         segments.sort_by_key(|s| s.vma);
 
         // Snapshot the sections for the info walks (the BFD `asection` list).
+        // (C) The per-format section-flag translation goes through the seam; for
+        // ELF this is the old `section_kind_flags` body, lifted verbatim into
+        // `ElfFormat::section_bits`.
         let mut sections: Vec<SectionInfo> = Vec::new();
         for sec in file.sections() {
-            let flags = section_kind_flags(sec.kind(), sec.flags());
+            let flags = fmt.section_bits(sec.kind(), sec.flags());
             sections.push(SectionInfo { vma: sec.address(), size: sec.size(), flags });
         }
 
@@ -257,7 +261,10 @@ impl ObjectLoadImage {
         }
 
         // 2. PLT stubs → imported library names.
-        for p in crate::s1_loader::elf_plt::resolve_plt_imports(&file) {
+        // (F) Per-format import resolution goes through the seam; for ELF
+        // `ElfFormat::resolve_imports` just calls the unchanged
+        // `elf_plt::resolve_plt_imports`.
+        for p in fmt.resolve_imports(&file, bytes) {
             if seen.insert(p.addr) {
                 funcsyms.push(FuncSym { addr: p.addr, name: demangle_funcsym_name(p.name) });
             }
@@ -291,7 +298,8 @@ impl ObjectLoadImage {
         // `lw $t9, off($gp)` indirect-call load to the stub address and resolves the
         // call to the import name (the analog of Ghidra's `setConstant` on the GOT
         // pointer entries in `MIPS_ElfExtension.fixupGot`).  Empty off-MIPS.
-        let const_ranges = crate::s1_loader::elf_plt::mips_got_const_ranges(&file);
+        // Through the seam: `ElfFormat::const_ranges` is `mips_got_const_ranges`.
+        let const_ranges = fmt.const_ranges(&file, bytes);
 
         Ok(ObjectLoadImage {
             filename: filename.to_string(),
@@ -557,84 +565,118 @@ impl LoadImage for ObjectLoadImage {
     }
 }
 
-/// Translate an [`object`] section kind + flags into the kuna
-/// [`section_flags`] bitset, mirroring the BFD `SEC_*` -> `LoadImageSection`
-/// translation in `LoadImageBfd::getNextSection` (`loadimage_bfd.cc:261`).
-fn section_kind_flags(kind: SectionKind, flags: SectionFlags) -> u32 {
-    // ELF section header flags (the BFD `SEC_*` bits derive from these).
-    const SHF_WRITE: u64 = 0x1;
-    const SHF_ALLOC: u64 = 0x2;
-    const SHF_EXECINSTR: u64 = 0x4;
-
-    let sh_flags = match flags {
-        SectionFlags::Elf { sh_flags } => sh_flags,
-        _ => 0,
-    };
-    let alloc = sh_flags & SHF_ALLOC != 0;
-    let exec = sh_flags & SHF_EXECINSTR != 0;
-    let write = sh_flags & SHF_WRITE != 0;
-
-    let mut out = 0u32;
-    // (SEC_ALLOC)==0 -> unalloc
-    if !alloc {
-        out |= section_flags::UNALLOC;
-    }
-    // SEC_LOAD is set for allocated sections with file contents; an
-    // uninitialized (.bss-style) section is NOLOAD.  `SectionKind::UninitializedData`
-    // is exactly BFD's `!SEC_LOAD` allocated section.
-    if matches!(kind, SectionKind::UninitializedData) || !alloc {
-        out |= section_flags::NOLOAD;
-    }
-    // SEC_READONLY: an allocated, non-writable section (the BFD readonly bit).
-    if alloc && !write {
-        out |= section_flags::READONLY;
-    }
-    // SEC_CODE / SEC_DATA.
-    if exec || matches!(kind, SectionKind::Text) {
-        out |= section_flags::CODE;
-    }
-    if matches!(kind, SectionKind::Data | SectionKind::ReadOnlyData) {
-        out |= section_flags::DATA;
-    }
-    out
-}
-
-/// Resolve the SLEIGH **language id** for an ELF object (the `getArchType`
-/// payload).  This is the kuna substitution for the Ghidra Java-side
-/// BFD-name -> language map: it reads the ELF machine + endianness + class
-/// directly and returns the id `SleighArchitecture::resolveArchitecture`
-/// consumes (e.g. `x86:LE:64:default:gcc`).
+/// Resolve the SLEIGH **language id** for an object (the `getArchType` payload).
+/// This is the kuna substitution for the Ghidra Java-side BFD-name -> language
+/// map: it reads the machine + endianness + class directly and returns the id
+/// `SleighArchitecture::resolveArchitecture` consumes (e.g.
+/// `x86:LE:64:default:gcc`).
 ///
-/// PARTIAL: covers the common Linux/SysV machines kuna ships a `.sla` for.  An
-/// unmapped machine is a `LowlevelError` naming it (the caller falls back to an
-/// explicit `--target` language id).
-fn language_id_for(file: &object::File, filename: &str) -> KunaResult<Vec<u8>> {
+/// The arch -> language-stem match is format-independent (`object` collapses
+/// `e_machine`/`IMAGE_FILE_MACHINE_*`/Mach-O `cputype` into one
+/// [`Architecture`]).  The **only** per-format variation is the compiler-model
+/// field, which comes from [`ObjectFormat::compiler_model`]: for ELF this is the
+/// same `gcc`/`default` token the function baked in before, so every produced id
+/// string is **byte-identical to today** — this is a structural change with no
+/// output change.  An arch with no `compiler_model` opinion falls back to the
+/// per-arch default (`gcc`/`default`) the id strings already used.
+///
+/// PARTIAL: covers the common machines kuna ships a `.sla` for.  An unmapped
+/// machine is a `LowlevelError` naming it (the caller falls back to an explicit
+/// `--target` language id).
+fn language_id_for(
+    file: &object::File,
+    fmt: &dyn crate::s1_loader::format::ObjectFormat,
+    filename: &str,
+) -> KunaResult<Vec<u8>> {
     let little = file.is_little_endian();
     let endian = if little { "LE" } else { "BE" };
-    // The Linux/SysV ELF ABI default compiler model is gcc; this is the only
-    // ABI a bare ELF identifies (Windows PE / golang are seams).
-    let id: String = match file.architecture() {
-        Architecture::X86_64 => "x86:LE:64:default:gcc".to_string(),
-        Architecture::I386 => "x86:LE:32:default:gcc".to_string(),
-        Architecture::Aarch64 => format!("AARCH64:{endian}:64:v8A:default"),
-        Architecture::Arm => format!("ARM:{endian}:32:v8:default"),
-        Architecture::Mips => format!("MIPS:{endian}:32:default:default"),
-        Architecture::PowerPc => format!("PowerPC:{endian}:32:default:default"),
-        Architecture::PowerPc64 => format!("PowerPC:{endian}:64:default:default"),
-        Architecture::Riscv64 => format!("RISCV:{endian}:64:RV64GC:gcc"),
-        Architecture::Riscv32 => format!("RISCV:{endian}:32:RV32GC:gcc"),
-        Architecture::Sparc | Architecture::Sparc32Plus => {
-            format!("sparc:{endian}:32:default:default")
-        }
-        Architecture::Sparc64 => format!("sparc:{endian}:64:default:default"),
-        other => {
+    let arch = file.architecture();
+    // The format's default-ABI compiler model for this arch.  For ELF this is
+    // `gcc` (x86/RISCV) / `default` (everything else), reproducing the old
+    // hard-coded id strings exactly.
+    let model = fmt.compiler_model(arch);
+    let id: String = match compose_language_id(arch, endian, model) {
+        Some(id) => id,
+        None => {
             return Err(KunaError::lowlevel(format!(
-                "File: {filename} : unsupported ELF machine {other:?} \
+                "File: {filename} : unsupported machine {arch:?} \
                  (no kuna SLEIGH language; pass an explicit --target language id)"
             )));
         }
     };
     Ok(id.into_bytes())
+}
+
+/// Compose the SLEIGH language id from the format-neutral `arch` + `endian`
+/// stem and the per-format compiler `model`. `None` for an arch kuna has no
+/// `.sla` stem for. The single source of truth for the id string shape, shared
+/// by [`language_id_for`] and [`elf_language_ids`] so the resolves-in-the-DB
+/// test cannot drift from the producer.
+fn compose_language_id(arch: Architecture, endian: &str, model: Option<&str>) -> Option<String> {
+    Some(match arch {
+        Architecture::X86_64 => format!("x86:LE:64:default:{}", model.unwrap_or("gcc")),
+        Architecture::I386 => format!("x86:LE:32:default:{}", model.unwrap_or("gcc")),
+        Architecture::Aarch64 => format!("AARCH64:{endian}:64:v8A:{}", model.unwrap_or("default")),
+        Architecture::Arm => format!("ARM:{endian}:32:v8:{}", model.unwrap_or("default")),
+        Architecture::Mips => format!("MIPS:{endian}:32:default:{}", model.unwrap_or("default")),
+        Architecture::PowerPc => {
+            format!("PowerPC:{endian}:32:default:{}", model.unwrap_or("default"))
+        }
+        Architecture::PowerPc64 => {
+            format!("PowerPC:{endian}:64:default:{}", model.unwrap_or("default"))
+        }
+        Architecture::Riscv64 => format!("RISCV:{endian}:64:RV64GC:{}", model.unwrap_or("gcc")),
+        Architecture::Riscv32 => format!("RISCV:{endian}:32:RV32GC:{}", model.unwrap_or("gcc")),
+        Architecture::Sparc | Architecture::Sparc32Plus => {
+            format!("sparc:{endian}:32:default:{}", model.unwrap_or("default"))
+        }
+        Architecture::Sparc64 => format!("sparc:{endian}:64:default:{}", model.unwrap_or("default")),
+        _ => return None,
+    })
+}
+
+/// Every SLEIGH language id the **ELF** loader (`ElfFormat` + [`language_id_for`])
+/// can produce, for both endiannesses, over the supported ELF machines. This is
+/// the exact set a real ELF resolves to today — exposed so the cross-crate
+/// console gate (`verify_elf_language_ids`) can assert every one of them resolves
+/// in the SLEIGH language database (`scan_language_database`), proving the §2.2
+/// `compiler_model` refactor still yields only valid, vendored ids. Derived from
+/// the same [`compose_language_id`] + [`crate::s1_loader::format::elf::ElfFormat`]
+/// the loader uses, so it cannot drift from the producer.
+pub fn elf_language_ids() -> Vec<String> {
+    use crate::s1_loader::format::elf::ElfFormat;
+    use crate::s1_loader::format::ObjectFormat;
+    let fmt = ElfFormat;
+    // Per arch, the endiannesses a real ELF actually carries *and* the vendored
+    // `.ldefs` declare a stem for (so each enumerated id is one a real binary
+    // resolves to): x86 is LE-only; RISC-V is LE-only; SPARC is BE-only; the
+    // bi-endian arches (ARM/AArch64/MIPS/PowerPC) ship both. `language_id_for`
+    // composes the id from the binary's real endianness, so this is exactly the
+    // reachable id set, not a cartesian over-generation.
+    let arches: &[(Architecture, &[&str])] = &[
+        (Architecture::X86_64, &["LE"]),
+        (Architecture::I386, &["LE"]),
+        (Architecture::Aarch64, &["LE", "BE"]),
+        (Architecture::Arm, &["LE", "BE"]),
+        (Architecture::Mips, &["LE", "BE"]),
+        (Architecture::PowerPc, &["LE", "BE"]),
+        (Architecture::PowerPc64, &["LE", "BE"]),
+        (Architecture::Riscv64, &["LE"]),
+        (Architecture::Riscv32, &["LE"]),
+        (Architecture::Sparc, &["BE"]),
+        (Architecture::Sparc64, &["BE"]),
+    ];
+    let mut out = Vec::new();
+    for &(arch, endians) in arches {
+        for &endian in endians {
+            if let Some(id) = compose_language_id(arch, endian, fmt.compiler_model(arch)) {
+                out.push(id);
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
 }
 
 #[cfg(test)]
