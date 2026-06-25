@@ -179,7 +179,7 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
     // a PE still flags `exit`/`abort`). The names are format-neutral; only *which*
     // shipped list applies differs — the kuna analog of
     // noReturnFunctionConstraints.xml's per-executable-format arms.
-    let (mut exact, mut wildcard) = match file.format() {
+    let (exact, wildcard) = match file.format() {
         object::BinaryFormat::Elf => {
             let (mut e, mut w) = parse_list(ELF_NORETURN_LIST);
             // Per-compiler source language (ELF only): append the matching list,
