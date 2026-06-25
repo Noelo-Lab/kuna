@@ -88,29 +88,66 @@ fn scan_run(data: &[u8], vma: u64, min_len: usize) -> Vec<StringFact> {
     out
 }
 
+/// Is `sec` part of the loaded+initialized image — i.e. worth scanning for a
+/// string literal (`getLoadedAndInitializedAddressSet`)?
+///
+/// This is the per-format arm of the "allocated + initialized" test. The
+/// **ELF arm is byte-identical to before** (`SHF_ALLOC`, the only path that runs
+/// on the default — non-experimental — pipeline), so ELF output is unchanged. The
+/// PE/COFF and Mach-O arms (reachable only under `--experimental-formats`)
+/// generalize the same notion through the neutral [`SectionKind`] + each format's
+/// flag bits, so a PE `.rdata` / Mach-O `__cstring` is scanned and a PE
+/// `puts("hello")` recovers its literal.
+fn is_loaded_initialized<'a>(sec: &impl ObjectSection<'a>) -> bool {
+    // `.bss`-style uninitialized memory has no file content to scan, on every
+    // format (the neutral signal `object` derives from the section type/flags).
+    if matches!(sec.kind(), SectionKind::UninitializedData) {
+        return false;
+    }
+    match sec.flags() {
+        // ELF: SHF_ALLOC (the section occupies memory at runtime) — unchanged, so
+        // the default ELF path is byte-identical. A non-allocated section
+        // (`.comment`, a non-ALLOC `.symtab`) is not scanned.
+        object::SectionFlags::Elf { sh_flags } => {
+            const SHF_ALLOC: u64 = 0x2;
+            sh_flags & SHF_ALLOC != 0
+        }
+        // PE / COFF: every section in a PE/COFF image is mapped (there is no
+        // SHF_ALLOC analog), so an initialized, readable section is in the loaded
+        // image. Skip uninitialized-data sections via the COFF flag too (the
+        // `SectionKind` guard above already caught `.bss`).
+        object::SectionFlags::Coff { characteristics } => {
+            use object::pe::{IMAGE_SCN_CNT_UNINITIALIZED_DATA, IMAGE_SCN_MEM_READ};
+            characteristics & IMAGE_SCN_CNT_UNINITIALIZED_DATA == 0
+                && characteristics & IMAGE_SCN_MEM_READ != 0
+        }
+        // Mach-O: section R/W/X permissions live in the enclosing segment, not the
+        // section flags — but the section *type* marks the zero-fill (`.bss`)
+        // sections, already excluded by the `SectionKind` guard above. So any
+        // non-zero-fill Mach-O section with file content is in the loaded image
+        // (`__cstring`, `__text`, `__const`, `__data`, …).
+        object::SectionFlags::MachO { flags } => {
+            use object::macho::{S_GB_ZEROFILL, S_ZEROFILL, SECTION_TYPE};
+            let sec_type = flags & SECTION_TYPE;
+            sec_type != S_ZEROFILL && sec_type != S_GB_ZEROFILL
+        }
+        // Any other format flag set: be conservative and skip (no string scan).
+        _ => false,
+    }
+}
+
 /// Scan every allocated + initialized section of `file` for NUL-terminated ASCII
 /// strings ≥ `min_len` visible chars (`getLoadedAndInitializedAddressSet`).
 ///
-/// Included iff the section is `SHF_ALLOC` and initialized: `.bss`
-/// ([`SectionKind::UninitializedData`]) and any section whose `data()` is empty
-/// or unreadable is skipped. The string addresses are `section_vma + run_start`.
+/// Included iff the section is in the loaded+initialized image
+/// ([`is_loaded_initialized`]) and its `data()` is non-empty: `.bss`
+/// ([`SectionKind::UninitializedData`]) and any non-loaded metadata section is
+/// skipped. The string addresses are `section_vma + run_start`. Format-agnostic
+/// (ELF/PE/COFF/Mach-O), with the ELF path byte-identical to before.
 fn scan_strings(file: &object::File, min_len: usize) -> Vec<StringFact> {
-    // ELF section header flag: SHF_ALLOC (the section occupies memory at runtime).
-    const SHF_ALLOC: u64 = 0x2;
-
     let mut out = Vec::new();
     for sec in file.sections() {
-        // Skip .bss-style uninitialized memory: no file contents to scan.
-        if matches!(sec.kind(), SectionKind::UninitializedData) {
-            continue;
-        }
-        // Allocated-only (`getLoadedAndInitializedAddressSet`): a section not in
-        // the runtime image (no SHF_ALLOC — e.g. .comment, .symtab) is not scanned.
-        let allocated = match sec.flags() {
-            object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_ALLOC != 0,
-            _ => false,
-        };
-        if !allocated {
+        if !is_loaded_initialized(&sec) {
             continue;
         }
         let data = match sec.data() {
@@ -230,5 +267,48 @@ mod tests {
         assert!(has(0x400915, 11), "\"Username: \" @ 0x400915 len 11 not detected: {out:?}");
         // "Password: " @ 0x400920 (10 visible + NUL = 11)
         assert!(has(0x400920, 11), "\"Password: \" @ 0x400920 len 11 not detected: {out:?}");
+    }
+
+    #[test]
+    fn scan_strings_over_pe_finds_hello() {
+        // PR-10: the format-agnostic string scan must fire on a PE — the
+        // `puts("hello")` literal lives in `.rdata` (`SectionKind::ReadOnlyData`,
+        // `SectionFlags::Coff`), which the generalized `is_loaded_initialized`
+        // now scans (the old `SHF_ALLOC`-only gate skipped every non-ELF section).
+        // "hello" @ 0x140009000 (5 visible + NUL = 6).
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/pe_imports.exe");
+        let bytes = std::fs::read(path).expect("read pe_imports.exe");
+        let file = object::File::parse(bytes.as_slice()).expect("parse pe_imports.exe");
+        assert_eq!(file.format(), object::BinaryFormat::Pe, "fixture is a PE");
+        let out = scan_strings(&file, DEFAULT_MIN_LEN);
+        assert!(
+            out.contains(&StringFact { addr: 0x140009000, len: 6 }),
+            "\"hello\" @ 0x140009000 len 6 not detected in PE .rdata: {out:?}"
+        );
+    }
+
+    #[test]
+    fn elf_section_selection_is_unchanged() {
+        // Parity guard: the ELF arm of `is_loaded_initialized` must match the old
+        // `SHF_ALLOC`-only test exactly (the default ELF path is byte-identical).
+        // Every SHF_ALLOC fauxware section is selected; `.comment` (no ALLOC) and
+        // `.bss` (UninitializedData) are not.
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
+        let bytes = std::fs::read(path).expect("read fauxware fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
+        const SHF_ALLOC: u64 = 0x2;
+        for sec in file.sections() {
+            let old = !matches!(sec.kind(), SectionKind::UninitializedData)
+                && match sec.flags() {
+                    object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_ALLOC != 0,
+                    _ => false,
+                };
+            assert_eq!(
+                is_loaded_initialized(&sec),
+                old,
+                "ELF section selection changed for {:?}",
+                sec.name()
+            );
+        }
     }
 }
