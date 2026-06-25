@@ -1,9 +1,10 @@
 //! Unit tests for the kuna stage registry (`kuna_stages.rs`).
 //!
 //! Parity targets transcribed from `decompiler/cpp/kuna_stages.cc`:
-//! group=39, substage=40, surface=90, settable=42 (25 stage-model knobs + 15
-//! kuna analysis-tier gates + 2 loader-tier capabilities `relocobjects`/`i386_pie_plt`),
-//! plus the stage-code helpers, the lookup API, the
+//! group=39, substage=40, surface=90, settable=43 (25 stage-model knobs + 15
+//! kuna analysis-tier gates + 3 loader-tier capabilities
+//! `relocobjects`/`i386_pie_plt`/`macho-arm64e`), plus the stage-code helpers,
+//! the lookup API, the
 //! typed `OptionValues` defaults, and the catalog emitter.
 
 use super::*;
@@ -29,7 +30,7 @@ fn surface_count_is_90() {
 }
 
 #[test]
-fn settable_count_is_37() {
+fn settable_count_is_43() {
     // 25 stage-model knobs (incl. `foldcallret` + `dedupvardecls`) + 15 analysis-tier
     // gates: 10 per-run analysis-pass
     // enablement (noreturn_known/libproto/strings/entry_disc/arm_markers/mips_gp/
@@ -44,12 +45,13 @@ fn settable_count_is_37() {
     // gopclntab with Go pclntab name recovery, Increment 34;
     // dedupvardecls with duplicate-scalar-declaration collapse, DIV-7;
     // noreturn_propagate with angr-style structural no-return propagation.)
-    // + 2 loader-tier capabilities: the `relocobjects` ET_REL relocatable-object
-    // loader (DIV-8) and the `i386_pie_plt` i386-PIE PLT-stub decode gate
-    // (DIV-9, angr test_decompiling_nl_i386_pie) — settables that gate the loader
-    // rather than a per-function pass.
-    assert_eq!(kuna_num_settables(), 42);
-    assert_eq!(SETTABLE_TABLE.len(), 42);
+    // + 3 loader-tier capabilities: the `relocobjects` ET_REL relocatable-object
+    // loader (DIV-8), the `i386_pie_plt` i386-PIE PLT-stub decode gate
+    // (DIV-9, angr test_decompiling_nl_i386_pie), and the `macho-arm64e` Mach-O
+    // arm64e Apple-Silicon spec-selection gate (multi-format loader PR-8) —
+    // settables that gate the loader rather than a per-function pass.
+    assert_eq!(kuna_num_settables(), 43);
+    assert_eq!(SETTABLE_TABLE.len(), 43);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -228,15 +230,15 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_20_suppressed_for_18() {
+fn option_values_live_value_present_for_21_suppressed_for_22() {
     let ov = OptionValues::default();
-    // 21 options have a codegen live reader (realtypes joins the field-backed
-    // group); the live_value returns the current value for them and None for
-    // loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the 15
-    // analysis-tier gates (which have no `live_field` — their live state is read
-    // console-side via the hand-written `kuna_live_value`, not the codegen
-    // `live_value`). `relocobjects` (DIV-8) gates the loader, not a printer/engine
-    // flag, so it too has no codegen live reader.
+    // 21 options have a codegen live reader (realtypes + dedupvardecls join the
+    // field-backed group); the live_value returns the current value for them and
+    // None for loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the
+    // 17 analysis/loader-tier gates (which have no `live_field` — their live state
+    // is read console-side via the hand-written `kuna_live_value` / an env gate,
+    // not the codegen `live_value`). `relocobjects` (DIV-8) gates the loader, not a
+    // printer/engine flag, so it too has no codegen live reader.
     const PASS_GATES: &[&str] = &[
         "noreturn_known",
         "libproto",
@@ -256,6 +258,9 @@ fn option_values_live_value_present_for_20_suppressed_for_18() {
         // (kuna) loader-tier gate, no codegen live reader (read console-side via
         // kuna_live_value), same as the analysis-pass gates above.
         "i386_pie_plt",
+        // (PR-8) Mach-O arm64e spec selection: a load-time (pre-`option`) gate read
+        // from the `KUNA_MACHO_ARM64E` env var, so it too has no codegen live_value.
+        "macho-arm64e",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -346,8 +351,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 42 rows: 41 trailing commas (the last, relocobjects, has none).
-    assert_eq!(json.matches("},\n").count(), 41);
+    // 43 rows: 42 trailing commas (the last, macho-arm64e, has none).
+    assert_eq!(json.matches("},\n").count(), 42);
 }
 
 #[test]
