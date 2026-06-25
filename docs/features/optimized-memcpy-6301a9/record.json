@@ -1,0 +1,28 @@
+{
+  "opportunity": "test_decompiling_optimized_memcpy::0x42cca0",
+  "test_name": "test_decompiling_optimized_memcpy",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/i386/windows/736cb27201273f6c4f83da362c9595b50d12333362e02bc7a77dd327cc6b045a",
+  "selector": "0x42cca0",
+  "func_addr": "0x42cca0",
+  "angr_version": "9.2.213",
+  "option": "unrolledguard",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_optimized_memcpy; JumpBasic::checkUnrolledGuard / angr JumpTableResolver; 0x42cca0",
+  "scope": "large",
+  "proposal": true,
+  "decisions": [
+    {
+      "question": "Is closing this gap (kuna recovering the 6 failed MSVC-memcpy jump tables to reach angr's 7 switches) small (one option-gated Action/Rule) or large (proposal fork)?",
+      "decider": "general-purpose subagent (opus)",
+      "decision": "large",
+      "approach": "Complete core JumpBasic recovery: port check_unrolled_guard (checkCommonCbranch + findMultiequal/liftVerifyUnroll/noInterveningStatement/unblockedMulti) and its BlockBasic SSA deps. NOT the loweredswitch-style manufacturing Action.",
+      "reasoning": "The JumpBasic chain is mostly ported and works (analyze_guards, find_normalized, calc_range, circlerange_pull_back value-set, recover_model_basic, build_addresses_basic via live EmulateFunction, find_unnormalized_basic which already handles the INT_ADD/SUB/AND/ZEXT/SEXT index transforms). The single hole is check_unrolled_guard (jumptable.rs:2075), a // SEAM(structuring) stub reached from analyze_guards (line ~1897/1927) when a guard block has size_in()>1 — the Duff's-device unrolled-ladder merge points in this memcpy. Stubbed, analyze_guards returns without the bounding guard, the range stays unbounded, find_normalized can't size the table, and recovery degrades to truncateIndirectJump->CALLIND. Filling it is LARGE under Hard Rule 7: it edits S2 jumptable-core analyze_guards/find_normalized beyond a gated early-return AND requires new infrastructure (the unported // SEAM(W7) BlockBasic SSA helpers findMultiequal/noInterveningStatement/unblockedMulti/liftVerifyUnroll in block.rs), i.e. >1 new surface across >3 core anchor files. Candidate 2 (a loweredswitch-style manufacturing Action) is even larger: it duplicates working recovery and the mid-block Duff's-device targets force CFG block-splitting plus its own bounds inference and loadimage table reads.",
+      "risks": "Porting findMultiequal/liftVerifyUnroll/noInterveningStatement faithfully is the standard W7 SSA-helper effort and touches block.rs/funcdata; the bound must be verified across all 6 transformed tables (negative stride -4, offset (a2-4)*4, mask &3). Because it edits core recovery (not an opt-in Action) it cannot be cleanly gated default-off, so make test / test-stages parity (and not regressing the 1 already-recovered switch) is the gate."
+    }
+  ],
+  "kuna_baseline_switch_count": 1,
+  "angr_switch_count": 7,
+  "parity": "OK",
+  "default_on": false
+}

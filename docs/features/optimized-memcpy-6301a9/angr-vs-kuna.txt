@@ -1,0 +1,344 @@
+### angr (reference, recovers 7 switches) ###
+
+--- angr ---
+extern unsigned int g_42ce14[4];
+extern unsigned int g_42cfb0[4];
+extern unsigned int g_45acd0;
+
+void* sub_42cca0(void* a0, void* a1, unsigned int a2)
+{
+    void* v2;  // esi
+    void* v3;  // edi
+    unsigned int v12;  // ecx
+    unsigned int v13;  // edx
+    unsigned int v14;  // ecx
+    void* node;  // esi
+    void* iter;  // edi
+    unsigned int v6;  // ecx
+    unsigned int v7;  // edx
+    unsigned int v8;  // ecx
+    unsigned int v9;  // ecx
+    void* cur;  // edi
+    void* ptr3;  // esi
+    void* v0;  // [bp-0x14]
+    void* v1;  // [bp-0x10]
+
+    v2 = a1;
+    v3 = a0;
+    if (v3 > v2 && v3 < a2 + v2)
+    {
+        node = a2 + v2 - 4;
+        iter = a2 + v3 - 4;
+        if (!((char)iter & 3))
+        {
+            v6 = a2 >> 2;
+            v7 = a2 & 3;
+        }
+        else
+        {
+            switch (a2)
+            {
+            case 0:
+                break;
+            case 1:
+                goto LABEL_42cfc8;
+            case 2:
+                goto LABEL_42cfd8;
+            case 3:
+                goto LABEL_42cfec;
+            default:
+                v8 = a2 - (iter & 3);
+                switch (iter & 3)
+                {
+                case 1:
+                    v7 = 3 & v8;
+                    *((char *)&iter[3]) = (char)node[3];
+                    node -= 1;
+                    v6 = v8 >> 2;
+                    iter -= 1;
+                    break;
+                case 2:
+                    v7 = 3 & v8;
+                    *((char *)&iter[3]) = (char)node[3];
+                    v6 = v8 >> 2;
+                    *((char *)&iter[2]) = (char)node[2];
+                    node -= 2;
+                    iter -= 2;
+                    break;
+                case 3:
+                    v7 = 3 & v8;
+                    *((char *)&iter[3]) = (char)node[3];
+                    *((char *)&iter[2]) = (char)node[2];
+                    v6 = v8 >> 2;
+                    *((char *)&iter[1]) = (char)node[1];
+                    node -= 3;
+                    iter -= 3;
+                    break;
+                }
+            }
+        }
+        switch (v6)
+        {
+        case 0:
+            *((int *)(28 + (char *)iter + 4 * v9)) = *((int *)(28 + (char *)node + 4 * v9));
+        case 1:
+            *((int *)(24 + (char *)iter + 4 * v9)) = *((int *)(24 + (char *)node + 4 * v9));
+            break;
+        case 2:
+            *((int *)(20 + (char *)iter + 4 * v9)) = *((int *)(20 + (char *)node + 4 * v9));
+            goto LABEL_42cf7c;
+        case 3:
+LABEL_42cf7c:
+            *((int *)(16 + (char *)iter + 4 * v9)) = *((int *)(16 + (char *)node + 4 * v9));
+            goto LABEL_42cf84;
+        case 4:
+LABEL_42cf84:
+            *((int *)(12 + (char *)iter + 4 * v9)) = *((int *)(12 + (char *)node + 4 * v9));
+            goto LABEL_42cf8c;
+        case 5:
+LABEL_42cf8c:
+            *((int *)(8 + (char *)iter + 4 * v9)) = *((int *)(8 + (char *)node + 4 * v9));
+            goto LABEL_42cf94;
+        case 6:
+LABEL_42cf94:
+            *((int *)(4 + (char *)iter + 4 * v9)) = *((int *)(4 + (char *)node + 4 * v9));
+            goto LABEL_42cfa7;
+        case 7:
+LABEL_42cfa7:
+            goto g_42cfb0[v7];
+        default:
+            for (; v6; node += 0xfffffffc)
+            {
+                v6 -= 1;
+                *((int *)iter) = *((int *)node);
+                iter += 0xfffffffc;
+            }
+            switch (v7)
+            {
+            case 0:
+                return a0;
+            case 1:
+LABEL_42cfc8:
+                *((char *)&iter[3]) = (char)node[3];
+                return a0;
+            case 2:
+LABEL_42cfd8:
+                *((char *)&iter[3]) = (char)node[3];
+                *((char *)&iter[2]) = (char)node[2];
+                return a0;
+            case 3:
+LABEL_42cfec:
+                *((char *)&iter[3]) = (char)node[3];
+                *((char *)&iter[2]) = (char)node[2];
+                *((char *)&iter[1]) = (char)node[1];
+                return a0;
+            }
+        }
+    }
+    cur = v3;
+    ptr3 = v2;
+    if (a2 >= 0x100)
+    {
+        cur = v3;
+        ptr3 = v2;
+        if (g_45acd0)
+        {
+            v1 = v3;
+            v0 = v2;
+            cur = v1;
+            ptr3 = v0;
+            if ((v3 & 15) == (v2 & 15))
+                return sub_439674();
+        }
+    }
+    if (!((char)cur & 3))
+    {
+        v12 = a2 >> 2;
+        v13 = a2 & 3;
+    }
+    else
+    {
+        switch (a2)
+        {
+        case 0:
+            return a0;
+        case 1:
+            *((char *)cur) = *((char *)ptr3);
+            return a0;
+        case 2:
+            *((char *)cur) = *((char *)ptr3);
+            *((char *)&cur[1]) = (char)ptr3[1];
+            return a0;
+        case 3:
+            *((char *)cur) = *((char *)ptr3);
+            *((char *)&cur[1]) = (char)ptr3[1];
+            *((char *)&cur[2]) = (char)ptr3[2];
+            return a0;
+        default:
+            v14 = a2 - 4 + (cur & 3);
+            switch (cur & 3)
+            {
+            case 0:
+                break;
+            case 1:
+                v13 = 3 & v14;
+                *((char *)cur) = *((char *)ptr3);
+                *((char *)&cur[1]) = (char)ptr3[1];
+                v12 = v14 >> 2;
+                *((char *)&cur[2]) = (char)ptr3[2];
+                ptr3 += 3;
+                cur += 3;
+                break;
+            case 2:
+                v13 = 3 & v14;
+                *((char *)cur) = *((char *)ptr3);
+                v12 = v14 >> 2;
+                *((char *)&cur[1]) = (char)ptr3[1];
+                ptr3 += 2;
+                cur += 2;
+                break;
+            case 3:
+                v13 = 3 & v14;
+                *((char *)cur) = *((char *)ptr3);
+                ptr3 += 1;
+                v12 = v14 >> 2;
+                cur += 1;
+                break;
+            }
+        }
+    }
+    switch (v12)
+    {
+    case 7:
+        *((int *)(-28 + (char *)cur + 4 * v12)) = *((int *)(-28 + (char *)ptr3 + 4 * v12));
+    case 6:
+        *((int *)(-24 + (char *)cur + 4 * v12)) = *((int *)(-24 + (char *)ptr3 + 4 * v12));
+        break;
+    case 5:
+        *((int *)(-20 + (char *)cur + 4 * v12)) = *((int *)(-20 + (char *)ptr3 + 4 * v12));
+        goto LABEL_42cde0;
+    case 4:
+LABEL_42cde0:
+        *((int *)(-16 + (char *)cur + 4 * v12)) = *((int *)(-16 + (char *)ptr3 + 4 * v12));
+        goto LABEL_42cde8;
+    case 3:
+LABEL_42cde8:
+        *((int *)(-12 + (char *)cur + 4 * v12)) = *((int *)(-12 + (char *)ptr3 + 4 * v12));
+        goto LABEL_42cdf0;
+    case 2:
+LABEL_42cdf0:
+        *((int *)(-8 + (char *)cur + 4 * v12)) = *((int *)(-8 + (char *)ptr3 + 4 * v12));
+        goto LABEL_42cdf8;
+    case 1:
+LABEL_42cdf8:
+        *((int *)(-4 + (char *)cur + 4 * v12)) = *((int *)(-4 + (char *)ptr3 + 4 * v12));
+        goto LABEL_42ce0b;
+    case 0:
+LABEL_42ce0b:
+        goto g_42ce14[v13];
+    default:
+        for (; v12; ptr3 += 4)
+        {
+            v12 -= 1;
+            *((int *)cur) = *((int *)ptr3);
+            cur += 4;
+        }
+        goto g_42ce14[v13];
+    }
+}
+
+
+--- kuna (addr mode) ---
+
+### kuna (bytechunk @0x42cca0, recovers ONLY 1 switch; 6 indirect jumps degrade to call) ###
+
+===KUNA_DUMP_BEGIN /tmp/probe/memcpy_probe.xml===
+
+void * memcpy_opt(void *a0,void *a1,uint4 a2)
+
+{
+  void *v1;
+  uint4 v2; // ecx
+  void *v3;
+  void *v4;
+  void *v5; // edi
+  
+  if ((a1 < a0) && (a0 < (void *)(a2 + (int4)a1))) {
+    v1 = (void *)((a2 - 4) + (int4)a1);
+    v4 = (void *)((a2 - 4) + (int4)a0);
+    if (((uint4)v4 & 3) != 0) {
+      if (a2 <= 3) {
+                    /* WARNING: Treating indirect jump as call */
+        v1 = (void *)(**(code **)(a2 * 4 + 0x42cfb0))();
+        return v1;
+      }
+                    /* WARNING: Treating indirect jump as call */
+      v1 = (void *)(**(code **)(((uint4)v4 & 3) * 4 + 0x42ceb4))();
+      return v1;
+    }
+    v2 = a2 >> 2;
+    if (v2 <= 7) {
+                    /* WARNING: Treating indirect jump as call */
+      v1 = (void *)(**(code **)(v2 * -4 + 0x42cf60))();
+      return v1;
+    }
+    while (v2 != 0) {
+      v5 = &v4[-1];
+      v3 = &v1[-1];
+      *v4 = *v1;
+      v2 = v2 - 1;
+      v1 = v3;
+      v4 = v5;
+    }
+                    /* WARNING: Treating indirect jump as call */
+    v1 = (void *)(**(code **)((a2 & 3) * 4 + 0x42cfb0))();
+    return v1;
+  }
+  if (((0x100 <= a2) && (dat_45acd0 != 0)) && (((uint4)a0 & 0xf) == ((uint4)a1 & 0xf))) {
+    return (void *)(a2 + (int4)a1);
+  }
+  if (((uint4)a0 & 3) == 0) {
+    v2 = a2 >> 2;
+    v1 = a0;
+    if (v2 <= 7) {
+                    /* WARNING: Treating indirect jump as call */
+      v1 = (void *)(**(code **)(v2 * 4 + 0x42cda8))();
+      return v1;
+    }
+    while (v2 != 0) {
+      v3 = &v1[1];
+      v4 = &a1[1];
+      *v1 = *a1;
+      v2 = v2 - 1;
+      a1 = v4;
+      v1 = v3;
+    }
+    switch(a2 & 3) {
+      case 0:
+        return a0;
+      case 1:
+        *(void *)v1 = *(void *)a1;
+        return a0;
+      case 2:
+        *(void *)v1 = *(void *)a1;
+        *(void *)((int4)v1 + 1) = *(void *)((int4)a1 + 1);
+        return a0;
+      case 3:
+        *(void *)v1 = *(void *)a1;
+        *(void *)((int4)v1 + 1) = *(void *)((int4)a1 + 1);
+        *(void *)((int4)v1 + 2) = *(void *)((int4)a1 + 2);
+        return a0;
+      
+    }
+  }
+  if (a2 <= 3) {
+                    /* WARNING: Treating indirect jump as call */
+    v1 = (void *)(**(code **)((a2 - 4) * 4 + 0x42ce24))();
+    return v1;
+  }
+                    /* WARNING: Treating indirect jump as call */
+  v1 = (void *)(**(code **)(((uint4)a0 & 3) * 4 + 0x42cd28))();
+  return v1;
+}
+
+===KUNA_DUMP_MID===
