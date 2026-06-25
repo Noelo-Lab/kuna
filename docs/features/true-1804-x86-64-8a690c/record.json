@@ -1,0 +1,28 @@
+{
+  "opportunity": "test_decompiling_true_1804_x86_64::usage",
+  "test_name": "test_decompiling_true_1804_x86_64",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/true_ubuntu1804",
+  "selector": "usage",
+  "func_addr": "0x401610",
+  "angr_version": "9.2.213",
+  "option": "dedup-ite-tail",
+  "flag": "dedup_ite_tail",
+  "element_id": 4100,
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_true_1804_x86_64; angr structurer condition-processing / ITE region deduplication (RegionSimplifier); usage",
+  "scope": "large",
+  "proposal": true,
+  "default_on": false,
+  "summary": "On usage(), angr deduplicates the trailing if/else tail (shared online-help printf + setlocale + strncmp + Full-documentation printf emitted once and converged via labels) and emits the rep-cmps loop with a break instead of a goto, beating kuna 112loc/2goto/2label/6if vs 121/3/3/9. Both are products of kuna's S8 blockaction CollapseStructure/TraceDAG region-collapse engine cloning shared continuations rather than converging predecessors onto one labelled block. There is no manufacturable upstream CFG artifact (unlike kuna_loweredswitch's synthetic BRANCHIND+JumpTable), so closing the gap needs a new condition-aware ITE region-dedup pass touching S7/S8 structuring => LARGE / proposal per Hard rule 7.",
+  "decisions": [
+    {
+      "agent": "decider",
+      "question": "Can closing the usage() tail-duplication / loop-goto structuring gap (kuna 121loc/3goto/3label/9if vs angr 112loc/2goto/2label/6if) be done as a SINGLE option-gated Action/Rule modeled on kuna_loweredswitch.rs, or does it require S7/S8 structuring-region changes / new infrastructure?",
+      "scope": "large",
+      "decision": "Both differences are products of kuna's S8 blockaction structurer (CollapseStructure/TraceDAG/NodeJoin and its goto-vs-break schema selection), not of the pre-structuring dataflow. The duplicated if/else tail exists because Ghidra's collapse-based structurer clones a shared continuation instead of converging two predecessors onto one labeled block; sharing it is a condition-aware ITE region-dedup capability (angr's structurer) that has no schema in Ghidra's goto-and-collapse engine and cannot be manufactured as an upstream CFG artifact the way kuna_loweredswitch fabricates a BRANCHIND+JumpTable. Fixing it means a new pass type touching s8_structure/blockaction.rs region collapse - exactly HARD RULE 7's new-infrastructure and S7/S8-structuring triggers.",
+      "recommended_option_name": "dedup-ite-tail",
+      "proposal_required": true
+    }
+  ]
+}

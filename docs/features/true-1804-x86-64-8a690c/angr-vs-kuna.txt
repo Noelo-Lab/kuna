@@ -1,0 +1,263 @@
+==============================================================================
+test_decompiling_true_1804_x86_64 :: usage   (angr 9.2.213 @ 0x401610)
+==============================================================================
+
+--- angr ---
+typedef struct struct_0 {
+    char field_0;
+    char padding_1[15];
+    unsigned long long field_10;
+} struct_0;
+
+typedef struct FILE {
+} FILE;
+
+extern FILE *stdout;
+
+void usage(int a0)
+{
+    unsigned long long v13;  // r13
+    unsigned long long v14;  // r12
+    struct_0 *cur;  // rdx
+    unsigned long long v24;  // rdi
+    unsigned long v25;  // cc_ndep
+    unsigned long v26;  // 4132
+    unsigned long v27;  // 4135
+    unsigned long long v28;  // r12
+    char *v30;  // rax
+    unsigned long long v15;  // rbx
+    char *v32;  // rax
+    char *v33;  // rax
+    unsigned long ptr;  // fs
+    char *v19;  // rax
+    char *v20;  // rax
+    unsigned long long v22;  // rdi
+    int v0;  // [bp-0xa8], Other Possible Types: char
+    unsigned long long v1;  // [bp-0x70]
+    unsigned long long v2;  // [bp-0x68]
+    unsigned long long v3;  // [bp-0x60]
+    unsigned long long v4;  // [bp-0x58]
+    unsigned long long v5;  // [bp-0x50]
+    unsigned long long flag;  // [bp-0x48]
+    unsigned long long choice;  // [bp-0x40]
+    unsigned long v8;  // [bp-0x30]
+    unsigned long long v9;  // [bp-0x20]
+    unsigned long long v10;  // [bp-0x10]
+    unsigned long long v11;  // [bp-0x8]
+
+    v11 = v13;
+    v10 = v14;
+    v9 = v15;
+    v8 = *((long long *)(40 + ptr));
+    __printf_chk(1, dcgettext(NULL, "Usage: %s [ignored command line arguments]\n  or:  %s OPTION\n", 5));
+    __printf_chk(1, "%s\n\n", dcgettext(NULL, "Exit with a status code indicating success.", 5));
+    v19 = dcgettext(NULL, "      --help     display this help and exit\n", 5);
+    fputs_unlocked(v19, stdout);
+    v20 = dcgettext(NULL, "      --version  output version information and exit\n", 5);
+    fputs_unlocked(v20, stdout);
+    __printf_chk(1, dcgettext(NULL, "\nNOTE: your shell may have its own version of %s, which usually supersedes\nthe version described here.  Please refer to your shell's documentation\nfor details about the options it supports.\n", 5));
+    v22 = "coreutils";
+    flag = 0;
+    choice = 0;
+    cur = &v0;
+    v0 = (int)_INSERT(v0 CONCAT 0, 0, "[");
+    *((char **)&(&v0)[48]) = "sha256sum";
+    *((char **)&(&v0)[16]) = "coreutils";
+    *((char **)&(&v0)[8]) = "test invocation";
+    v2 = "sha384sum";
+    *((char **)&(&v0)[24]) = "Multi-call invocation";
+    v4 = "sha512sum";
+    *((char **)&(&v0)[32]) = "sha224sum";
+    *((char **)&(&v0)[40]) = "sha2 utilities";
+    v1 = "sha2 utilities";
+    v3 = "sha2 utilities";
+    v5 = "sha2 utilities";
+    while (true)
+    {
+        cur = &cur->field_10;
+        if (!v22)
+            break;
+        v24 = v22;
+        do
+        {
+            if (false)
+                break;
+        } while (*((char *)v24) == 116);
+        v26 = _ccall(7, 20, v22, 0, v25);
+        v27 = _ccall(20, v22, 0, v25);
+        if (!(char)((char)v26 - 0) - ((char)v27 & 1))
+            break;
+        v22 = cur->field_10;
+    }
+    v28 = *((long long *)&cur->padding_1[7]);
+    if (v28)
+    {
+        __printf_chk(1, dcgettext(NULL, "\n%s online help: <%s>\n", 5));
+        v30 = setlocale(5, NULL);
+        if (!v30 || !strncmp(v30, "en_", 3))
+            goto LABEL_401822;
+        goto LABEL_4018e8;
+    }
+    else
+    {
+        __printf_chk(1, dcgettext(NULL, "\n%s online help: <%s>\n", 5));
+        v32 = setlocale(5, NULL);
+        if (v32 && strncmp(v32, "en_", 3))
+        {
+            v28 = "true";
+LABEL_4018e8:
+            v33 = dcgettext(NULL, "Report any translation bugs to <https://translationproject.org/team/>\n", 5);
+            fputs_unlocked(v33, stdout);
+LABEL_401822:
+            __printf_chk(1, dcgettext(NULL, "Full documentation <%s%s>\n", 5));
+        }
+        else
+        {
+            __printf_chk(1, dcgettext(NULL, "Full documentation <%s%s>\n", 5));
+        }
+    }
+    __printf_chk(1, dcgettext(NULL, "or available locally via: info '(coreutils) %s%s'\n", 5));
+    exit(a0); /* do not return */
+}
+
+
+--- kuna (name mode) ---
+void usage(unsigned int a0)
+
+{
+  int4 v1; // eax
+  uint1 *v10; // rsi
+  uint1 *v11;
+  uint1 *v12; // rdi
+  int8 v13; // fs_offset
+  bool v14; // cf
+  bool v15;
+  uint1 v16; // df
+  char *v17; // stack - 0xa0
+  char *v18; // stack - 0x98
+  char *v19; // stack - 0x90
+  unsigned long v2; // rax
+  char *v20; // stack - 0x88
+  char *v21; // stack - 0x80
+  char *v22; // stack - 0x78
+  char *v23; // stack - 0x70
+  char *v24; // stack - 0x68
+  char *v25; // stack - 0x60
+  char *v26; // stack - 0x58
+  char *v27; // stack - 0x50
+  unsigned long v28; // stack - 0x48
+  unsigned long v29; // stack - 0x40
+  char *v3;
+  unsigned long v30; // stack - 0x30
+  int8 v4;
+  void *v5; // rdx
+  void *v6; // rdx
+  unsigned long v7; // stack - 0xa8
+  void *v8; // rsp
+  uint1 *v9; // rsi
+  
+  v16 = 0;
+  v8 = &v7;
+  v30 = *(void *)(v13 + 0x28);
+  v2 = dcgettext(0,"Usage: %s [ignored command line arguments]\n  or:  %s OPTION\n",5);
+  __printf_chk(1,v2,dat_2070c0,dat_2070c0);
+  v2 = dcgettext(0,"Exit with a status code indicating success.",5);
+  __printf_chk(1,0x4769,v2);
+  v2 = dcgettext(0,"      --help     display this help and exit\n",5);
+  fputs_unlocked(v2,Unique10000399);
+  v2 = dcgettext(0,"      --version  output version information and exit\n",5);
+  fputs_unlocked(v2,Unique100003a1);
+  v2 = dcgettext(0,"\nNOTE: your shell may have its own version of %s, which usually supersedes\nthe version described here.  Please refer to your shell\'s documentation\nfor details about the options it supports.\n",5);
+  __printf_chk(1,v2,0x4764);
+  v3 = "coreutils";
+  v28 = 0;
+  v29 = 0;
+  v7 = 0x476e;
+  v22 = "sha256sum";
+  v18 = "coreutils";
+  v17 = "test invocation";
+  v24 = "sha384sum";
+  v19 = "Multi-call invocation";
+  v26 = "sha512sum";
+  v20 = "sha224sum";
+  v21 = "sha2 utilities";
+  v23 = "sha2 utilities";
+  v25 = "sha2 utilities";
+  v27 = "sha2 utilities";
+  while( true ) {
+    v5 = &v6[0x10];
+    v14 = 0;
+    if (v11 == (uint1 *)0x0) break;
+    v4 = 5;
+    v9 = (uint1 *)0x4764;
+    v15 = 0;
+    do {
+      if (v4 == 0) goto label_17af;
+      v4 = v4 + -1;
+      v12 = &v11[(uint8)v16 * -2 + 1];
+      v10 = &v9[(uint8)v16 * -2 + 1];
+      v14 = *v9 < *v11;
+      v15 = *v9 == *v11;
+    } while (v15);
+label_17af:
+    if ((!v14 && !v15) == v14) goto label_17b8;
+    v11 = *(uint1 **)&v6[0x20];
+  }
+label_17b8:
+  v4 = *(int8 *)&v6[0x18];
+  if (v4 == 0) {
+    v2 = dcgettext(0,"\n%s online help: <%s>\n",5);
+    __printf_chk(1,v2,"GNU coreutils","https://www.gnu.org/software/coreutils/");
+    v3 = (char *)setlocale(5,0);
+    if (v3 != (char *)0x0) {
+      v1 = strncmp(v3,"en_",3);
+      if (v1 != 0) {
+        v4 = 0x4764;
+        goto label_18e8;
+      }
+    }
+    v4 = 0x4764;
+    v3 = " invocation";
+    v2 = dcgettext(0,"Full documentation <%s%s>\n",5);
+    __printf_chk(1,v2,"https://www.gnu.org/software/coreutils/",0x4764);
+  }
+  else {
+    v2 = dcgettext(0,"\n%s online help: <%s>\n",5);
+    __printf_chk(1,v2,"GNU coreutils","https://www.gnu.org/software/coreutils/");
+    v3 = (char *)setlocale(5,0);
+    if (v3 != (char *)0x0) {
+      v1 = strncmp(v3,"en_",3);
+      if (v1 != 0) {
+label_18e8:
+        v2 = dcgettext(0,"Report any translation bugs to <https://translationproject.org/team/>\n",5);
+        fputs_unlocked(v2,Unique100003a9);
+      }
+    }
+    v2 = dcgettext(0,"Full documentation <%s%s>\n",5);
+    __printf_chk(1,v2,"https://www.gnu.org/software/coreutils/",0x4764);
+    v3 = "";
+    if (v4 == 0x4764) {
+      v3 = " invocation";
+    }
+  }
+  v2 = dcgettext(0,"or available locally via: info \'(coreutils) %s%s\'\n",5);
+  __printf_chk(1,v2,v4,v3);
+                    /* WARNING: Subroutine does not return */
+  exit(a0);
+}
+
+--- metrics (reference | kuna) ---
+  loc           112 | 121 
+  gotos           2 | 3   
+  labels          2 | 3   
+  switches        0 | 0   
+  cases           0 | 0   
+  ifs             6 | 9   
+  loops           2 | 2   
+  ternaries       0 | 0   
+  casts           0 | 0   
+
+--- signals (candidate 'reference is better' hints) ---
+  * ref has fewer gotos (2 vs 3)
+  * ref has fewer labels (2 vs 3)
+  * kuna emitted a recovery-failure marker
