@@ -3199,3 +3199,95 @@ flag arm is unchanged). **After this, the agnostic-pass bucket (§5.2) is done; 
   `kuna-analysis/src/s1_loader/format/macho.rs`,
   `kuna-analysis/src/s1_callfixup/mod.rs`,
   `kuna-analysis/src/s1_addrtable/mod.rs`, `docs/analysis-port-log.md`.
+
+### Increment 41 — Multi-format loader PR-12+13: PE/Mach-O entry discovery (stripped binaries find functions)
+
+**Premise.** PR-3/4 (Increment 37) + PR-6/7 (Increment 39) made a linked PE/Mach-O
+**load + decompile a function + name its imports**, but only the *entry* oracle of
+`s1_entry` was format-neutral (`file.entry()`) — oracles 2/3 (`.dynamic` DT_INIT,
+`.eh_frame` FDEs) are ELF-section-specific, so a **stripped** PE/Mach-O (no
+`.symtab`) still found nothing by name: the only function the loader knew was
+whatever `--addr` named. This increment ports the **PE and Mach-O analogs of the
+ELF entry oracles** so a stripped PE/Mach-O recovers its function starts
+automatically, exactly as a stripped ELF does (`verify_s1_entry`). Design §4.1 /
+§5.3 / §8 PR-12+13.
+
+**The format dispatch (`s1_entry/mod.rs`).** `EntryDiscoveryPass::run` was
+ELF-only (early-return on any non-ELF). It now dispatches via the `ObjectFormat`
+seam (`format::detect(file).kind()`): ELF runs the original eh_frame/dynamic
+oracles unchanged; PE runs the new `pe_entry` oracles; Mach-O the `macho_entry`
+oracles; COFF/unknown no-op. The pure-core `collect_entries` keeps the same
+union → exec-section filter → funcsym-dedup → sort/dedup pipeline (the discovery
+contract is **purely additive** — it only ever adds genuinely-new starts); only
+the *oracle selection* branches on the format. `executable_sections` learned the
+PE COFF (`IMAGE_SCN_MEM_EXECUTE`) and Mach-O (`S_ATTR_*_INSTRUCTIONS`) executable
+tests (it was ELF-`SHF_EXECINSTR`-or-`SectionKind::Text` only). Oracle 5 (the
+x86-64 prologue patterns) was already format-neutral and is reused for all three.
+
+**PE entry oracles (`s1_entry/pe_entry.rs`, design §4.1/§5.3).** Four sources,
+all surviving `-s`: (1) the **entry point** (`file.entry()` already returns the
+rebased VMA for PE — verified); (2) **`.pdata`** — the x64 SEH `RUNTIME_FUNCTION`
+table (the `.eh_frame` analog): each 12-byte `{BeginAddress,End,Unwind}` record's
+`BeginAddress` (RVA→VMA) is a function start. The richest PE source — **97
+records** in `pe_imports_stripped.exe`, one per non-leaf function. Ghidra's
+`PdataDirectory`. (3) **TLS callbacks** — the TLS directory's `AddressOfCallBacks`
+array (NULL-terminated absolute VAs the loader runs before entry; Ghidra
+`TLSDataDirectory`); (4) **exports** (`file.exports()`). The ELF `_start`→`main`
+libc-start idiom is **not** reused — it is glibc-crt1-specific; `.pdata` recovers
+`main` directly, so the idiom is redundant for PE.
+
+**Mach-O entry oracles (`s1_entry/macho_entry.rs`, design §4.1/§5.3).** Four
+sources: (1) the **entry** — `LC_MAIN`'s `entryoff` is a `__TEXT`-relative offset,
+NOT a VMA (`object`'s `file.entry()` returns the raw `entryoff` for Mach-O, unlike
+PE — verified), so the VMA is `__TEXT.vmaddr + entryoff`; `LC_UNIXTHREAD` handled
+too; (2) **`LC_FUNCTION_STARTS`** — the headline source: a ULEB128 **delta-encoded**
+table of *every* function start (first delta off `__TEXT` base, each subsequent
+off the prior start), emitted by `ld64` and surviving `strip`/`-x` (it lives in
+linkedit, not the symbol table). Ghidra's `markupFunctionStarts`. (3)
+**`__DATA,__mod_init_func`** — the C++ static-initializer pointer array (the
+`.init_array` analog); (4) **exports**. `__eh_frame`/`__unwind_info` starts are a
+*subset* of what `LC_FUNCTION_STARTS` already yields (both derive from the same
+function set), so they add nothing and are not re-derived. Fat/universal binaries
+select one slice (x86-64→arm64→first), mirroring `macho_stubs`.
+
+**Before → after (the payoff).**
+- *Stripped PE* (`pe_imports_stripped.exe`, 0 symbols / 0 exports): before, a
+  bare load knows no function by name (`no function "sub_140001592"` with
+  `entry_disc off`); after, the entry + `.pdata` recover **dozens** incl.
+  `main`@`0x140001592` → `kuna decompile … sub_140001592` (no `--addr`) yields
+  `sub_140001592(uint a0){ … puts(…); … }` — the discovered function decompiles
+  by name **and** its IAT-named `puts` import renders (PR-4 + PR-12 together).
+- *Stripped Mach-O* (`macho_func_starts_stripped`, `helper` is file-local so
+  `ld64.lld -x` removed its symbol): `LC_FUNCTION_STARTS` =
+  `[0x100000550 (_main, the entry), 0x100000590 (helper, stripped)]`; before,
+  `helper` is invisible; after, `collect_entries` skips the symboled `_main` and
+  **discovers `0x100000590`** → `kuna decompile … sub_100000590` (no `--addr`)
+  yields `int4 sub_100000590(int4 a0){ return a0 * 7 + 3; }` — proving
+  `LC_FUNCTION_STARTS`, not the symtab, is the source.
+
+**Speed.** Full `kuna decompile` of a discovered function, no `--addr`
+(`--experimental-formats`, release): stripped-PE `main` (`sub_140001592`,
+`.pdata`-discovered) **0.11s** (51 MB RSS); stripped-Mach-O `helper`
+(`sub_100000590`, FUNCTION_STARTS-discovered) **0.16s**. The new e2e gate
+(`verify_multiformat_entry`, 3 tests) runs in 1.64s (not skipped — `.sla` built).
+
+**Gating / parity.** The new oracles are **no-ops on ELF** (format-dispatched),
+and PE/Mach-O only load under `--experimental-formats`, so the ELF entry path is
+byte-identical: `verify_s1_entry` + `verify_crossarch_entry_main` pass unchanged.
+The discovery is gateable (`--option entry_disc off` restores the no-function
+behavior). Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**159/159 PARITY OK**, `make rust-test` **green** (incl. the new e2e + 4 new
+kuna-analysis unit tests).
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is
+  flag-gated; the XML datatest path never reaches the object loader). Note: the
+  design §4.1 claim that `file.entry()` is "already format-neutral" holds for PE
+  but **not** Mach-O `LC_MAIN` in `object` 0.39 (it returns the un-rebased
+  `entryoff`) — handled in `macho_entry::walk` (`__TEXT.vmaddr + entryoff`).
+- **New:** `kuna-analysis/src/s1_entry/{pe_entry.rs, macho_entry.rs}`,
+  `kuna-console/tests/verify_multiformat_entry.rs`,
+  `kuna-analysis/tests/fixtures/macho_func_starts_stripped` (+ its
+  `.c` source recorded in the fixtures README).
+- **Changed:** `kuna-analysis/src/s1_entry/mod.rs` (format dispatch in `run` +
+  `collect_entries`; `executable_sections` PE/Mach-O exec tests; 2 new core
+  tests), `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
