@@ -37,10 +37,28 @@
 //!    ([`s9_emit::printc`](crate::printc)) and `ActionFinalStructure`'s
 //!    `mark_unstructured` are happy.
 //!
-//! Loops, if/else (ITE), switches and short-circuit folding are **later
-//! increments**; in Inc 1 they fall back to virtualized gotos (honest-partial,
-//! never a panic).  Because the virtualize fallback always removes one edge, the
-//! loop always converges to a single structured root — there is no "stuck" state.
+//! # Increment 4 scope (switch-case recovery)
+//!
+//! [`match_acyclic_switch_cases`](RegionStructurer::match_acyclic_switch_cases)
+//! recovers resolved jump-table switches natively: it matches the `f_switch_out`
+//! head (the kuna analog of angr
+//! `phoenix._match_acyclic_switch_cases_address_computed` →
+//! `_switch_build_cases` → `_make_switch_cases_core`), resolves the recovered
+//! [`JumpTable`](crate::jumptable::JumpTable) via the precomputed
+//! `switch_blocks`/`switch_case_edges` maps (the same data Ghidra's
+//! `CollapseStructure::ruleBlockSwitch` consumes), and folds it into a
+//! [`BlockSwitch`](crate::block::BlockKind::Switch) carrying the
+//! [`CaseOrder`](crate::block::CaseOrder) descriptors
+//! `ActionFinalStructure::finalize_switch_printing` expects.  This is what lets a
+//! switch region structure natively instead of forcing the whole function back to
+//! `CollapseStructure` — the prerequisite for loop+switch (getopt-style) functions
+//! getting the loop win once the cyclic schemas land.
+//!
+//! Loops (the cyclic schemas) and short-circuit folding are **later increments**;
+//! a region the matched schemas cannot fold falls back to virtualized gotos
+//! (honest-partial, never a panic).  Because the virtualize fallback always removes
+//! one edge, the loop always converges to a single structured root — there is no
+//! "stuck" state.
 //!
 //! # Honest-partial safety
 //!

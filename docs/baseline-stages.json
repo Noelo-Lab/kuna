@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    190,
-    190
+    196,
+    196
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -190,6 +190,12 @@
     "data:regionstructure #2: the else clause is structured, both passes",
     "data:regionstructure #3: the join sequence + tail return is recovered, both passes",
     "data:regionstructure #4: ZERO gotos  -  region structurer matches Ghidra's acyclic structuring (parity)",
+    "data:regionstructure-switch #1: the switch head is recovered, both passes",
+    "data:regionstructure-switch #2: case 0, both passes",
+    "data:regionstructure-switch #3: case 3 (middle of the dense table), both passes",
+    "data:regionstructure-switch #4: case 6 (last case), both passes",
+    "data:regionstructure-switch #5: the default case is recovered, both passes",
+    "data:regionstructure-switch #6: ZERO gotos  -  region structurer recovers the switch natively (parity with Ghidra)",
     "data:tee-O2 tail-jumps #1: indirect-jump-as-call marker (pass 1 off only)",
     "data:tee-O2 tail-jumps #2: unresolved GOT-pointer indirect call (pass 1 off only)",
     "data:tee-O2 tail-jumps #3: tail call resolves to named setlocale (pass 2 on only)",
