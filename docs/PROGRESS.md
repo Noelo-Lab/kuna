@@ -1,5 +1,42 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — `setlocale` `char *` prototype (DIV-11; follow-up on PR #59)
+
+Follow-up to the reviewer's note on PR #59 (`tee_O2` `setlocale_null_androidfix`):
+*"why are we not returning the setlocale call? Why is our function type wrong? It should
+be `char *`."* Investigated on `binaries/tests/x86_64/decompiler/tee_O2`.
+
+**Two independent defects behind the one report:**
+
+1. **Missing libc prototype (the *type* half) — FIXED.** kuna's `ApplyDataArchiveAnalyzer`
+   analog (`kuna-analysis::s1_protos`, the built-in `LIBC` table) had no `setlocale` entry,
+   so the call's result was an untyped `undefined8`: `category` came out `unsigned long`
+   not `int`, the NULL `locale` arg rendered bare `0`, and `main`'s `setlocale(LC_ALL,"")`
+   idiom rendered `setlocale(6,0x6dc1)` (string literal lost). **Fix:** one row,
+   `char *setlocale(int, const char *)`. The pass already parks the `PrototypePieces` on
+   the callee and `ActionDefaultParams` types the callers. Now `main` → `setlocale(6,"")`,
+   the NULL arg → `(char *)0x0`, and any wrapper that keeps the result alive returns
+   `char *`. Parity-safe (0/675), default-on, **DIV-11**.
+
+2. **Tail-position `return F()` value not threaded (the *return* half) — NOT fixed; a
+   larger separate follow-up.** When a function's whole body is `return F();` and the
+   compiler emits `call F; ret` (or the `-O2` tail `jmp` PR #59 recovers) with **no
+   intervening use of the return register**, kuna leaves it `void` + bare `return;` and
+   drops the call output. This is **general** (reproduces with `return strchr(s,c);` and
+   any already-typed libc fn, NOT prototype-related), and is a faithful port of Ghidra's
+   `AncestorRealistic` `killedbycall` rejection of a return register defined only by the
+   trailing call. Fixing it is a new return-recovery heuristic (output-changing, own
+   option/ablation) and entangled with PR #59's artificial `RETURN` — documented as a
+   recommended follow-up in `docs/features/setlocale-rettype/analysis.md`, not forced in.
+
+**Tests/gates:** unit `s1_protos::tests::setlocale_signature_is_char_ptr_int_char_ptr`;
+stage `tests/stages/ghangr-setlocale-rettype.xml` (asserts the NULL arg types `(char *)0x0`
+and the call resolves to named `setlocale`, vs pre-fix bare `0`; `parse line` stands in for
+the analysis-tier seeding the stage harness does not run). `make test` PARITY OK 675/675,
+`make test-stages` 179/179 (+3), `make rust-test` green (corpus file-count bumped to 139 in
+`kuna-base/src/xml.rs`), `kuna catalog --check` OK (no new option). See
+`docs/features/setlocale-rettype/`.
+
 ## Session (2026-06-25) — branch-flipping for linearity (option `branchflip`)
 
 Follow-up to PR #52 / the `tee_O2 x2nrealloc` case. angr's SAILR structurer flips a branch

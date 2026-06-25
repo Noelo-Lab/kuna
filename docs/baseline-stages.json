@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    187,
-    187
+    190,
+    190
   ],
   "passing": [
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
@@ -145,6 +145,9 @@
     "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",
     "data:REALTYPES #4: no xunknown placeholder remains",
     "data:REALTYPES #5: no undefined placeholder remains",
+    "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
+    "data:SETLOCALE RETTYPE #2: no untyped indirect call",
+    "data:SETLOCALE RETTYPE #3: call is the named setlocale",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-LoweredSwitch #2: default present",
     "data:angr-LoweredSwitch #3: case 0x70 (p) recovered",
