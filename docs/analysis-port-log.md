@@ -3291,3 +3291,85 @@ kuna-analysis unit tests).
 - **Changed:** `kuna-analysis/src/s1_entry/mod.rs` (format dispatch in `run` +
   `collect_entries`; `executable_sections` PE/Mach-O exec tests; 2 new core
   tests), `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 42 — Multi-format loader PR-9: MSVC C++ demangler arm
+
+**Premise.** `s1_demangle` (the `GnuDemanglerAnalyzer` analog) covered three
+schemes — Itanium C++ (`cpp_demangle`: ELF/Mach-O C++ + MinGW-PE), Rust legacy
+`_ZN`/v0 `_R` (`rustc_demangle`) — but **not MSVC** mangling, the `cl.exe` scheme
+that starts with `?` (`?foo@Bar@@QEAAHH@Z`), carried by MSVC-ABI PE/COFF binaries.
+On those, every C++ symbol surfaced as the raw mangled string. This increment adds
+the **MSVC arm** so they render readable (design §5.5, §8 PR-9). Itanium/Rust/C
+symbols never start with `?`, so the arm is **purely additive** — the ELF path is
+byte-identical.
+
+**The demangler dep (`msvc-demangler` 0.11, MIT).** Ghidra's MSVC demangler is the
+JNI/Java `MicrosoftDemangler` (the hand-rolled `MDMang` C++ grammar), a peer of
+`GnuDemangler` (the libiberty shell-out) — never part of the deep-decompiler C++
+tree, so there is nothing to transcribe. Identical to the Itanium/Rust deps (and
+LOSS-005 BFD→`object`), the faithful move is "call a permissive demangler crate and
+consume its string". Recorded as **LOSS-250** (`docs/rust-port/losses.md`).
+`msvc_demangler`'s `NAME_ONLY` flag returns the qualified-name-only form directly
+(`Bar::foo`, `ns::g`) — already free of the signature/template `::` the scope
+splitter must not see (the same name-only contract as the Itanium path);
+`COMPLETE` gives the full c++filt-like form for `demangle_raw`.
+
+**`s1_demangle/mod.rs`.** `skip()` gains a leading-`?` early-accept that runs
+**before** the existing `@`-version heuristic — MSVC embeds `@` *structurally*
+(namespace/type separators), so the version heuristic would otherwise reject every
+MSVC symbol. `demangle_raw`/`demangle_name` each gain a `?`-gated MSVC arm
+(`demangle_name` runs the `NAME_ONLY` output through `strip_bracket_groups` for
+template safety, identical to the Itanium reduction).
+
+**The `strip_version` truncation bug (the load-bearing loader fix).** The loader
+funcsym path applies `elf_plt::strip_version` (the glibc `@@VERSION` stripper)
+*before* demangling. It cut at the first `@`, so `?foo@Bar@@QEAAHH@Z` arrived at
+the demangler already truncated to `?foo` (proven by the first run of the
+loader-level test). `strip_version` now returns a leading-`?` name verbatim — no
+glibc-versioned symbol ever starts with `?`, so ELF behavior is unchanged.
+
+**Before → after (the payoff).** A real MSVC-mangled COFF object
+(`msvc_mangled.obj`, `clang -target x86_64-pc-windows-msvc` — the windows-msvc
+target emits the *same* `?`-scheme as `cl.exe`, which is unavailable on Linux):
+- *before:* funcsym stream carries the raw `?foo@Bar@@QEAAHH@Z` (worse:
+  `strip_version`-truncated to `?foo`); no readable name.
+- *after:* `?foo@Bar@@QEAAHH@Z` → `Bar::foo`, `?g@ns@@YAHHH@Z` → `ns::g`,
+  `?freefunc@@YAHH@Z` → `freefunc`. `kuna decompile msvc_mangled.obj freefunc`
+  (by demangled name, `--experimental-formats`) yields
+  `int4 freefunc(int4 a0){ return a0 + 0x2a; }` — resolved by its **demangled**
+  name, not the raw `?`-symbol.
+
+**The e2e is REAL (not unit-only).** `cl.exe` is unavailable, but
+`clang -target x86_64-pc-windows-msvc` produces a genuine MSVC-ABI COFF object
+with `?`-mangled symbols (verified `objdump -t`), so `verify_msvc_demangle.rs`
+loads + decompiles a real fixture, not a hand-faked symtab. The nested names
+(`Bar::foo`/`ns::g`) nest into scopes via the `::`-splitter, so the flat
+`load function` resolves the bare free function `freefunc` in the e2e; the
+namespaced demangle is pinned at the loader level
+(`loadimage_object::tests::msvc_mangled_coff_symbols_are_demangled_name_only`) and
+by the `s1_demangle::tests::msvc_*` unit tests (the merge gate, no toolchain
+needed).
+
+**Speed.** Full `kuna decompile msvc_mangled.obj freefunc` (release,
+`--experimental-formats`): **0.15s** (50 MB RSS). The e2e test
+(`verify_msvc_demangle`, release) runs in 0.15s (not skipped — `.sla` built).
+
+**Gating / parity.** The MSVC arm fires only on a leading `?` (no
+Itanium/Rust/C/ELF symbol has one), and PE/COFF only load under
+`--experimental-formats`, so the ELF demangle path is byte-identical. Gates:
+`make test` **675/675 PARITY OK**, `make test-stages` **159/159 PARITY OK**,
+`make rust-test` **green** (incl. the e2e + 8 new MSVC unit/loader tests).
+
+- **Divergence/LOSS:** LOSS-250 (`MicrosoftDemangler` → `msvc-demangler`,
+  dependency-substitution; same kind as the Itanium/Rust/BFD deps). No parity
+  divergence (the MSVC arm is additive; the XML datatest path never reaches the
+  object loader).
+- **New:** `kuna-console/tests/verify_msvc_demangle.rs`,
+  `kuna-analysis/tests/fixtures/msvc_mangled.obj` (+ its `.cpp` source, recorded in
+  the fixtures README), the LOSS-250 entry.
+- **Changed:** `decompiler/Cargo.toml` + `crates/kuna-analysis/Cargo.toml`
+  (`msvc-demangler` dep), `Cargo.lock`, `kuna-analysis/src/s1_demangle/mod.rs`
+  (skip `?` + the MSVC arms + 7 unit tests), `kuna-analysis/src/s1_loader/elf_plt.rs`
+  (`strip_version` leading-`?` guard), `kuna-analysis/src/loadimage_object.rs`
+  (1 new loader test), `kuna-analysis/tests/fixtures/README.md`,
+  `docs/rust-port/losses.md`, `docs/analysis-port-log.md`.
