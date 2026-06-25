@@ -8,9 +8,9 @@
 //! IAT walk lands in PR-4 (`s1_loader/pe_iat.rs`, design §3.2). Until then a
 //! PE's calls render as `sub_<addr>`, which is the correct skeleton behavior.
 //!
-//! All non-ELF magics (PE included) are gated behind `--experimental-formats`
-//! at the engine dispatch (`is_object_binary`), so this code is unreachable on
-//! the default path and the ELF/XML oracles are structurally untouched.
+//! All object-format magics (PE included) are admitted by the engine dispatch
+//! (`is_object_binary`) unconditionally; the XML/datatest corpus never carries a
+//! PE magic, so the ELF/XML oracles are structurally untouched.
 
 use object::pe::{
     IMAGE_SCN_CNT_CODE, IMAGE_SCN_CNT_UNINITIALIZED_DATA, IMAGE_SCN_MEM_EXECUTE,

@@ -19,9 +19,9 @@
 //! segment+section), using the section-type/attributes for the NOLOAD/CODE
 //! refinements. This is the faithful Mach-O analog of the BFD `SEC_*` mapping.
 //!
-//! All non-ELF magics (Mach-O's `0xfeedfac*` / fat `0xcafebabe` included) are
-//! gated behind `--experimental-formats` at the engine dispatch, so this code is
-//! unreachable on the default path.
+//! All object-format magics (Mach-O's `0xfeedfac*` / fat `0xcafebabe` included)
+//! are admitted by the engine dispatch unconditionally; the XML/datatest corpus
+//! never carries a Mach-O magic, so the ELF/XML oracles are untouched.
 
 use object::macho::{S_ATTR_PURE_INSTRUCTIONS, S_GB_ZEROFILL, S_ZEROFILL, SECTION_TYPE};
 use object::macho::{CPU_SUBTYPE_ARM64E, CPU_SUBTYPE_MASK};
