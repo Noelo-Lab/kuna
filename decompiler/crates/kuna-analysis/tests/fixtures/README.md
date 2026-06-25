@@ -317,6 +317,37 @@ exe is the only non-ELF binary in this tree large enough to statically link the
 MinGW CRT (≈0.5 MB), on par with the existing `mcount_x86_64` (0.9 MB).
 **Pin the VMAs as test consts** (`x86_64-w64-mingw32-objdump -d/-p`).
 
+## Mach-O (Apple) fixtures — the multi-format loader (PR-6+7, the Mach-O headline)
+
+`macho_imports` (x86-64, 16 KB) and `macho_imports_arm64` (arm64, 49 KB) are
+**linked Mach-O** executables for the Mach-O import-naming gate
+(`kuna-console/tests/verify_macho_imports.rs`, design §3.3). Both are the *same*
+source `macho_imports.c` =
+`int compute(int n){return n*3+7;} int main(int argc,char**argv){ printf("%d\n", compute(argc)); return 0; }`
+(`printf` declared, no header) linked for two arches — proving the `__stubs`
+naming is arch-independent. Built in the `kuna-dev` container with bare `clang`
+(no macOS SDK) + the rustup-bundled `ld64.lld` (an LLD darwin flavor); the
+classic `S_SYMBOL_STUBS` indirect-symbol layout PR-7 walks is what `ld64.lld`
+emits. `-undefined dynamic_lookup` lets `_printf` stay external:
+
+```bash
+# (x86_64; arm64 = -target arm64-apple-macos11 + -arch arm64)
+clang -target x86_64-apple-macos11 -O1 -c macho_imports.c -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch x86_64 -platform_version macos 11.0 11.0 \
+       -undefined dynamic_lookup -e _main -o macho_imports m.o
+```
+
+ImageBase `0x100000000` (PIE). `main` reaches `printf` by a **direct branch to
+the `__TEXT,__stubs` entry** — x86-64 `callq 0x1000005cc`, arm64
+`bl 0x1000005a0` — so there is no slot to constant-fold; naming the stub entry
+(`sec.addr + i*reserved2`) is enough and arch-independent. The name comes from
+the `LC_DYSYMTAB` indirect-symbol table → `LC_SYMTAB` (`_printf`, `_` stripped).
+Pinned VMAs (x86-64): `_compute`@`0x1000005a0`, `_main`@`0x1000005b0`, the
+`printf` stub@`0x1000005cc`. The defined `_main` keeps its leading `_` (it comes
+from the `file.symbols()` funcsym source, not the stub resolver). **Pin the VMAs
+as test consts** (`llvm-objdump --macho -d` / `llvm-otool -Iv`).
+
 All other fixtures are checked in well under 32 KB so the gates are hermetic and
 reproducible. **Pin load-bearing VMAs as test consts** (read via
 `objdump`/`readelf` at build time) — addresses shift across toolchains.

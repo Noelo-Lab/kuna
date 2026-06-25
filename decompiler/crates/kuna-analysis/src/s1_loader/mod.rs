@@ -33,6 +33,7 @@
 pub mod arm_markers;
 pub mod elf_plt;
 pub mod format;
+pub mod macho_stubs;
 pub mod mips_markers;
 pub mod noreturn;
 pub mod pe_iat;
