@@ -1,0 +1,27 @@
+{
+  "opportunity": "test_decompiling_newburry_main::main",
+  "test_name": "test_decompiling_newburry_main",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/newbury",
+  "selector": "main",
+  "func_addr": "0x40f696",
+  "angr_version": "9.2.213",
+  "option": "gotoreduce",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_newburry_main; SAILR/Phoenix RegionIdentifier condition-based structurer (guard inversion + join fall-through); main",
+  "scope": "large",
+  "proposal": true,
+  "is_member_of_known_family": "gotoreduce",
+  "decisions": [
+    {
+      "question": "Is closing the newburry/main goto+label gap small (one option-gated Action/Rule) or large (new S8/S7 structuring infrastructure)?",
+      "decider_verdict": {
+        "scope": "large",
+        "owning_stage": "S8",
+        "rationale": "The lone goto+label is emitted by blockaction.rs, a verbatim port of Ghidra CollapseStructure/TraceDAG. Matching angr requires INVERTING the guard conditions so the exceptional fputs;return -1 path nests and BODY becomes the fall-through join — condition-based block-graph restructuring (the SAILR/Phoenix layer), not a value-level Action. loweredswitch is an S2 pcode Rule, not a structuring template, so it doesn't apply. No existing schema inverts a guard or re-parents a join, and a single gated early-return can't synthesize that shape byte-identically. This is the same root as gotoreduce/irreducible-loop: it needs the separately-funded SAILR emit-path structurer (promoting read-only kuna_regionid into the emit path). Per Hard rule 7 and the family directive, STOP-and-propose.",
+        "is_member_of_known_family": "gotoreduce",
+        "recommended_action": "propose"
+      }
+    }
+  ]
+}
