@@ -28,6 +28,36 @@ Nothing ever lands on `main` without a human-reviewed PR.
   assertions, else default-OFF opt-in. The loop never re-pins `docs/baseline.json`.
 - **PRs**: `gh` (installed no-root via `tools/pipeline/install_gh.sh`), on `feat/angr-<slug>`.
 
+## Standing requirements (every pipeline PR MUST satisfy these)
+
+Non-negotiable rules; the worker prompt enforces them per-feature and the orchestrator
+re-queues anything that violates one.
+
+1. **One PR per ported feature.** Exactly one `kuna_<slug>.rs` + one option + one stage test
+   + one `docs/features/<slug>/` bundle per PR. No drive-by changes; no two features in a branch.
+2. **End-to-end testcase.** Every feature ships `tests/stages/ghangr-<slug>.xml` that drives a
+   real binary → decompilation of a specific function/address (two-pass: `option <slug> off` =
+   the bug, default = the fix). It must exercise the full `binary → decompile(addr|func)` path;
+   a self-contained bytechunk is allowed only when it reproduces the same construct.
+3. **Output-changing ⇒ logged + flaggable.** Any feature that can change emitted C MUST sit
+   behind a runtime `--option <name>` (registered in `stages.toml` settableTable + `options.rs`)
+   and be recorded in `docs/PROGRESS.md` and `docs/divergences.md` (a DIV-N entry iff default-ON).
+   No silent output change ever reaches default.
+4. **Always measure + record speed (speed is critical).** Every `record.json` carries a speed
+   block — median decompile wall-time of the target function with the option OFF vs ON (≥5 runs
+   each) as `speed_off_ms` / `speed_on_ms` / `speed_delta_pct`, measured by
+   `scripts.pipeline.timeit`. A clean-ablation feature that regresses the target beyond
+   `KUNA_PIPELINE_SPEED_BUDGET_PCT` (default +5%) is held to default-OFF opt-in rather than
+   shipping default-ON. The speed gate can only push default-ON → opt-in; it never re-pins
+   `docs/baseline.json`.
+5. **Large/multi-part features go through a draft-PR `[PROPOSAL]` first.** If a gap needs more
+   than one option-gated pass (new infrastructure, structuring/region work, or >1 new pass), the
+   worker does NOT open a normal PR. It commits only `analysis.md` + `proposal.md` + a partial
+   `record.json`, opens a **draft** PR titled `[PROPOSAL] angr-<slug>: …`, parks the opportunity
+   (`state proposal`), and stops. The orchestrator surfaces every `[PROPOSAL]` draft to the user
+   for an explicit go/no-go; on approval an implementation worker resumes the branch
+   (`IMPL_PROPOSAL=1 RESUME_BRANCH=feat/angr-<slug>`) and un-drafts the PR when green.
+
 ## Components
 
 | Piece | What |
@@ -36,9 +66,11 @@ Nothing ever lands on `main` without a human-reviewed PR.
 | `scripts/pipeline/worklist.py` | AST-parses angr's `test_decompiler.py` into `(binary, function)` targets (captures `arch`/`load_debug_info`/custom-options). → `docs/pipeline/worklist.json`. |
 | `scripts/pipeline/compare.py` | Reference vs kuna on the SAME function; structural metrics (gotos/labels/switch/loops/loc) + "where the reference is better" signals. Structural, never raw-text (kuna emits `sub_<addr>` / different names). |
 | `scripts/pipeline/sweep.py` + `rank.py` | Run `compare` across the corpus (concurrent), rank the gaps. → `docs/pipeline/opportunities.json` + `docs/pipeline/matrix.md`. |
-| `scripts/pipeline/select.py` | Pick the next unclaimed, highest-score opportunity for a worker. |
-| `scripts/pipeline/state.py` | flock-guarded worker inventory + opportunity claims (dedup) + heartbeats. Lives in `.kuna-pipeline/` (gitignored). |
-| `scripts/pipeline/status.py` | Live observability: worker table + count, worktrees, open PRs. |
+| `scripts/pipeline/units.py` | Source-parse angr's `peephole_optimizations/` + `optimization_passes/` into a **small-units** worklist (self-contained 1-PR ports). → `docs/pipeline/units.json` (read alongside `opportunities.json` by `select.py`). |
+| `scripts/pipeline/select.py` | Pick the next unclaimed, highest-score opportunity for a worker; `--kind small-unit\|structural` enforces the small/structural mix. |
+| `scripts/pipeline/timeit.py` | Measure a feature option's decompile-speed impact (OFF vs ON median + delta%); writes the `record.json` speed block (requirement #4). |
+| `scripts/pipeline/state.py` | flock-guarded worker inventory + opportunity claims (dedup) + heartbeats + the large-feature **proposal/approve/claim-approved** flow. Lives in `.kuna-pipeline/` (gitignored). |
+| `scripts/pipeline/status.py` | Live observability: worker table + count, worktrees, open PRs, proposals awaiting confirmation (`--proposals`). |
 | `tools/pipeline/worker_prompt.md` | The templated one-feature iteration prompt (the definition-of-done). |
 | `tools/pipeline/worker.sh` | Launch ONE worker: worktree + initial build + headless `claude -p` (highest-effort model). |
 | `tools/pipeline/run.sh` | The driver loop: keep N workers running until the backlog/time budget is exhausted; GC merged worktrees. |

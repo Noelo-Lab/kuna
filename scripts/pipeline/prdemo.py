@@ -76,9 +76,26 @@ def _metric_row(name, before, after):
     return "| %s | %s | %s%s |" % (name, b, a, arrow)
 
 
+def _speed_row(record):
+    """A '| speed | off ms | on ms |' row from the record's speed_* block, or None."""
+    if not record:
+        return None
+    off, on = record.get("speed_off_ms"), record.get("speed_on_ms")
+    if off is None and on is None:
+        return None  # older record without a speed block
+    delta = record.get("speed_delta_pct")
+    budget = record.get("speed_budget_pct")
+    note = ""
+    if delta is not None and budget is not None and delta > budget:
+        note = " ⚠️ over budget → opt-in" if record.get("speed_forced_off") else " ⚠️ over budget"
+    delta_txt = ("Δ %s%% (budget %s%%)%s" % (delta, budget, note)) if delta is not None else "unmeasured"
+    return "| speed | %s ms | %s ms — %s |" % (off, on, delta_txt)
+
+
 def generate(record=None, *, option=None, binary=None, selector=None, func_addr=None,
              default_on=False, source_decompiler="angr", inspiration="", test_name="",
              with_angr=True):
+    speed_row = _speed_row(record)
     if record is not None:
         option = record.get("option")
         binary = record.get("binary")
@@ -111,6 +128,8 @@ def generate(record=None, *, option=None, binary=None, selector=None, func_addr=
     out.append("|---|---|---|")
     for m in ("gotos", "labels", "loc", "switches"):
         out.append(_metric_row(m, mb, ma))
+    if speed_row:
+        out.append(speed_row)
     out.append("")
     out.append("<details open><summary><b>kuna — before (<code>option %s off</code>)</b></summary>\n" % option)
     out.append("%sc\n%s\n%s" % (_FENCE, before.strip(), _FENCE))

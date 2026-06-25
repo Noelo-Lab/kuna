@@ -77,5 +77,15 @@ def state_dir() -> Path:
 ANGR_TIMEOUT = int(os.environ.get("KUNA_PIPELINE_ANGR_TIMEOUT", "180"))
 KUNA_TIMEOUT = int(os.environ.get("KUNA_PIPELINE_KUNA_TIMEOUT", "120"))
 
+# --- speed budget (requirement: speed is critical) --------------------------
+#
+# Every feature records the decompile-time impact of its option (off vs on) on its target
+# function. The OFF/ON delta cancels the fixed subprocess+load cost, so it isolates the
+# option's marginal cost without any engine change. A default-ON-eligible feature (0/675
+# ablation) that regresses the target beyond SPEED_BUDGET_PCT is held to default-OFF opt-in
+# instead -- the speed gate can only ever push ON -> opt-in, it never re-pins the baseline.
+SPEED_BUDGET_PCT = float(os.environ.get("KUNA_PIPELINE_SPEED_BUDGET_PCT", "5"))
+SPEED_REPEAT = int(os.environ.get("KUNA_PIPELINE_SPEED_REPEAT", "5"))
+
 # The reference structurer to pin for deterministic single-valued output (angr default).
 DEFAULT_STRUCTURER = os.environ.get("KUNA_PIPELINE_STRUCTURER", "")  # "" -> angr default (sailr)

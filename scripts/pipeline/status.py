@@ -74,6 +74,8 @@ def collect():
         "active": len(active),
         "claims": data["claims"],
         "done": data["done"],
+        "proposals": data.get("proposals", {}),
+        "approved": data.get("approved", {}),
         "worktrees": _git_worktrees(),
         "prs": _open_prs(),
         "ts": now,
@@ -116,6 +118,17 @@ def render(snap):
     lines.append("  worktrees: %d" % len(wts))
     for t in wts:
         lines.append("    %s  [%s]" % (t["path"], t.get("branch", "?")))
+    props, appr = snap.get("proposals", {}), snap.get("approved", {})
+    if props or appr:
+        lines.append("-" * 92)
+        if props:
+            lines.append("  proposals awaiting confirmation: %d" % len(props))
+            for oid, p_ in props.items():
+                lines.append("    %-38s [%s]  %s" % (oid[:38], p_.get("branch", "?"), p_.get("pr_url") or "-"))
+        if appr:
+            lines.append("  approved (ready to implement): %d" % len(appr))
+            for oid, a_ in appr.items():
+                lines.append("    %-38s [%s]  %s" % (oid[:38], a_.get("branch", "?"), a_.get("pr_url") or "-"))
     if snap["prs"] is not None:
         lines.append("  open PRs: %d" % len(snap["prs"]))
         for pr in snap["prs"]:
@@ -125,15 +138,34 @@ def render(snap):
     return "\n".join(lines)
 
 
+def render_proposals(snap):
+    """Just the human-in-the-loop section (for `--proposals`)."""
+    lines = []
+    props, appr = snap.get("proposals", {}), snap.get("approved", {})
+    lines.append("proposals awaiting confirmation: %d" % len(props))
+    for oid, p_ in props.items():
+        lines.append("  %-40s [%s]  %s" % (oid[:40], p_.get("branch", "?"), p_.get("pr_url") or "-"))
+    lines.append("approved (ready to implement): %d" % len(appr))
+    for oid, a_ in appr.items():
+        lines.append("  %-40s [%s]  %s" % (oid[:40], a_.get("branch", "?"), a_.get("pr_url") or "-"))
+    return "\n".join(lines)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m scripts.pipeline.status")
     p.add_argument("--watch", action="store_true", help="refresh continuously")
     p.add_argument("--interval", type=float, default=2.0)
     p.add_argument("--json", action="store_true")
+    p.add_argument("--proposals", action="store_true",
+                   help="show only the proposals/approved (human-in-the-loop) section")
     args = p.parse_args(argv)
 
     if args.json and not args.watch:
         print(json.dumps(collect(), indent=2, default=str))
+        return 0
+
+    if args.proposals and not args.watch:
+        print(render_proposals(collect()))
         return 0
 
     if not args.watch:
