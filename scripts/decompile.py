@@ -165,10 +165,17 @@ def _build_script(binary, target, by_address, bfd_target, raw, out_path,
     else:
         lines.append("load file %s" % binary)
 
-    lines.append("read symbols")
-
+    # `option` lines MUST precede `read symbols` (match the Rust `kuna decompile`
+    # CLI, kuna-cli/src/decompile.rs): the kuna_analysis passes are committed —
+    # gated by the per-pass `--option <id> on|off` flags — inside `read symbols`
+    # (IfcReadSymbols -> commit_pending_analysis). An analysis-tier option set
+    # *after* `read symbols` (e.g. `listing on` / `noreturn_propagate on`) is too
+    # late to take effect; the upstream/printer options are order-independent
+    # here, so emitting all options first is correct for every option.
     for name, value in (options or []):
         lines.append("option %s %s" % (name, value))
+
+    lines.append("read symbols")
 
     if by_address:
         addr = target if (target.startswith("0x") or target.startswith("0X")) else "0x" + target

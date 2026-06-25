@@ -12,6 +12,7 @@
   "element_id": null,
   "module": "decompiler/crates/kuna-analysis/src/s1_noreturn_propagate/mod.rs",
   "change_kind": "structure-recovery",
+  "demo_extra_options": [["listing", "on"]],
   "source_decompiler": "angr",
   "inspiration": "test_decompiling_tee_O2_x2nrealloc; angr CFGFast no-return propagation (returning / _iteratively_analyze_function_features); x2nrealloc",
   "root_cause": "xalloc_die is structurally no-return (body unconditionally ends in error(); abort()); kuna knows abort is no-return but does not propagate to xalloc_die, so the call is assumed to return and at -O2 the bytes after it form a spurious fall-through back-edge -> invalid while(true) loop + goto + dead stack spills. Manual 'option noreturn xalloc_die' (after read symbols) collapses output to the angr shape, confirming the mechanism.",
