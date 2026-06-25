@@ -1,5 +1,31 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — angr duplicate-declaration collapse (option dedupvardecls, DIV-7)
+
+Closed the angr-vs-kuna gap on `test_decompiling_x8664_cvs::main` (x86_64/cvs): kuna emitted a
+**wall of duplicate local-variable declarations** — the single stack slot `stack - 0x3c`
+(`option_index`) was declared **166 times**, `stack - 0x38` 53×, etc. — where angr declares each
+local once. This was the dominant cause of kuna's main being ~30% longer than angr (677 vs 472 loc).
+
+- **Why angr is better:** angr's variable recovery yields one variable per storage location, so its
+  declaration block lists each local once. kuna's C printer walks **HighVariables** (the W4
+  `ScopeLocal` Symbol walk is the missing surface), so when the angr-style naming maps many distinct
+  scalar HighVariables sharing one stack slot to the same name+type+storage, kuna emits one
+  declaration line *per high* — textually identical, and (strictly) invalid C re-declarations.
+- **Mechanism (S9 emit):** `option dedupvardecls` + arch flag `dedup_var_decls` (DIV-7 default-on,
+  carried into the `ArchSeam`). `emit_local_var_decls` now skips a declaration whose fully-rendered
+  signature (final declarator type + name + array adornment + storage comment) is byte-identical to
+  one already emitted — the scalar analogue of the composite-symbol collapse kuna already performs.
+  New module `s9_emit/kuna_dedupvardecls.rs` (option parser + `DeclDedup` signature tracker);
+  ElementId 4091. Pure presentation: body markup, naming, and which highs exist are unchanged; only
+  redundant declaration *lines* are removed (provably lossless).
+- **Ablation:** 0 of 675 datatest assertions change with the feature default-ON (`make test` PARITY
+  OK without regeneration); **speed +0.14%** on the target (off 2236 ms → on 2239 ms, budget 5%) —
+  an O(decls) HashSet pass. Clean ablation + within-budget speed ⇒ shipped **default-ON** (DIV-7).
+- **Effect on target:** cvs `main` 680 → 461 loc with the flag on (angr is 472).
+- **Testcase:** `tests/stages/ghangr-x8664-cvs-863633.xml` (+2 assertions, `docs/baseline-stages.json`);
+  the `kuna-catalog.xml` angr-provenance count moved 3→4.
+
 ## Session (2026-06-25) — call-return variable folding (option `foldcallret`)
 
 Closed an angr-better gap from `test_call_return_variable_folding`

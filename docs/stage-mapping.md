@@ -65,6 +65,7 @@ Straddler notes (placement by dominant owned artifact; see `docs/stage-model.md`
 | `kuna_restartlog` | P0 | restart observability side table (mechanism c reasons) |
 | `kuna_compareform` | S3→S9 | GH-558 comparison-canonicalization sub-stage split (`canonicalcompare`/`presentcompare`) |
 | `kuna_arraynotation` | S9 | GH-558 pointer-notation sub-stage (`option arraynotation`) |
+| `kuna_dedupvardecls` | S9 | naming-policy sub-stage: collapse duplicate scalar local declarations (`option dedupvardecls`, angr/DIV-7) |
 | `kuna_thumbfuncptr` / `kuna_inferfuncentry` | S5 | const-pointer inference (GH-8471 / GH-6930) |
 | `kuna_returnpair` | S4 | trial-finalization return-register join (GH-6990) |
 | `kuna_booleanmask` / `kuna_ovlesssimplify` / `kuna_addcarrychain` | S3/S5 | simplification-quiescence rules (GH-1282 / GH-7190 / GH-8913) |

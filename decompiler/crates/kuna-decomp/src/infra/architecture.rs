@@ -330,6 +330,11 @@ pub struct Architecture {
     /// (kuna) Use angr-style default naming (vN/aN/dat_/sub_/label_ + comments)
     /// (C++ `name_style_angr`).
     pub name_style_angr: bool,
+    /// (kuna) Collapse local-variable declarations whose fully-rendered line is
+    /// identical (the scalar analogue of the composite-symbol decl collapse), so a
+    /// stack slot mapped onto many same-named HighVariables is declared once
+    /// (`option dedupvardecls`; angr-inspired, S9).
+    pub dedup_var_decls: bool,
     /// (kuna DIV-6) Render residual `TYPE_UNKNOWN` (`xunknownN`) values as real C
     /// types by size — 1→`char`, 2/4/8→unsigned ints, pointer-to-unknown→`void *` —
     /// instead of the `xunknownN`/`undefined<N>` placeholder.  Default-on; read by
@@ -585,6 +590,7 @@ impl Architecture {
             fold_call_returns: false,
             strip_stack_guard: false,
             name_style_angr: false,
+            dedup_var_decls: false,
             realtypes: false,
             present_lessequal: false,
             preserve_thumb_funcptr: false,
@@ -669,6 +675,7 @@ impl Architecture {
         self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.name_style_angr = true; // (kuna) default-on: angr-style default naming
+        self.dedup_var_decls = true; // (kuna) DIV-7 default-on: collapse duplicate local decls (angr)
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
@@ -791,6 +798,11 @@ impl Architecture {
                 Ok(msg)
             }
             "realtypes" => on_off!(realtypes, "Real-C-type rendering for unknowns"),
+            "dedupvardecls" => {
+                let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
+                self.dedup_var_decls = val;
+                Ok(msg)
+            }
             // (kuna) Analysis-pass gates: one boolean per `kuna_analysis::passes`
             // pass id. The console's `commit_analysis_output` (run at `read
             // symbols`, after the options below have been applied) consults the
@@ -1036,6 +1048,9 @@ impl Architecture {
         // `ActionUnjustifiedParams` reaches it via `glb`.
         seam.input_varnode_adjust = self.input_varnode_adjust;
         seam.name_style_angr = self.name_style_angr;
+        // (kuna) carry the duplicate-declaration collapse gate so `emit_local_var_decls`
+        // (which reads the seam `arch`) sees `option dedupvardecls`.
+        seam.dedup_var_decls = self.dedup_var_decls;
         // (kuna GH-558) carry the comparison-presentation gate so the
         // `compareform canonical|original` option reaches
         // `ActionPresentCompareForm` via `glb` (the seam read site).
