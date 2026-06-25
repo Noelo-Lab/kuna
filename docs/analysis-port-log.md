@@ -3101,3 +3101,101 @@ remaining Mach-O-arm work.** No loadimage fix was needed.
   `macho_imports.c` source recorded in the fixtures README).
 - **Changed:** `kuna-analysis/src/s1_loader/{mod.rs, format/macho.rs}`,
   `kuna-analysis/tests/fixtures/README.md`, `docs/analysis-port-log.md`.
+
+### Increment 40 — Multi-format loader PR-10: un-gate the format-agnostic passes for PE/Mach-O
+
+**Premise.** PRs 3+4 (PE) and 6+7 (Mach-O) named imports on non-ELF binaries, but
+the binary still rendered like a wire dump: `puts(0x140009000)`, `printf(0x…, a0)`,
+dead code after a tail `exit`. The *logic* of several S1 analysis passes is
+format-agnostic — they were merely **gated** `BinaryFormat::Elf` (or keyed on a raw
+`SHF_*` flag the `object` crate only fills for ELF). PR-10 drops those gates and
+generalizes the flag checks so a PE/Mach-O gets **string literals**, **typed libc
+args**, and **no dead code** — not just named imports. **One pass per commit**, each
+with a fixture assertion; ELF byte-identical (the default, non-experimental path).
+
+**The headline before/after (PE — `pe_imports.exe`, `int main(){ puts("hello");
+printf("%d\n", argc); }`).**
+
+```text
+                                  before (PR-7)          after (PR-10)
+  string literal (s1_strings):    puts(0x140009000)      puts("hello")
+  typed arg     (s1_protos):      printf(0x140009006,a0) printf("%d\n", a0 & 0xffffffff)
+```
+
+`s1_strings` recovers the `.rodata`/`.rdata` "hello" (≥5 chars) as a typelocked
+`char[6]` symbol; `s1_protos` types `printf`'s first arg `char *`, so even the
+short `"%d\n"` (3 chars, below the string-scan min-5) renders via the printer's
+constant-string route. **Mach-O** (`macho_imports`, `printf("%d\n", compute(argc))`)
+renders `printf("%d\n", …)` (was `printf(0x1000005ee, …)`) — the typed `char *` arg
+plus marking `__cstring` READONLY. **No-return on a PE**: `__tmainCRTStartup`'s tail
+`exit(…)` is on the new PeMac no-return list, so it is marked `/* WARNING:
+Subroutine does not return */` and the dead fall-through after it is elided
+(`--option noreturn_known off` restores the dead `*dat… = 1; v14 =
+__tmainCRTStartup(); return v14;`).
+
+**Per-pass status (each verified against the live code).**
+
+| Pass | §5.2 gate today | PR-10 change | Status |
+|---|---|---|---|
+| `s1_strings` | `SectionFlags::Elf { sh_flags } & SHF_ALLOC` | per-format `is_loaded_initialized` (ELF `SHF_ALLOC` unchanged; PE/COFF mapped+readable; Mach-O non-zero-fill) | **un-gated cleanly** |
+| `s1_protos` | `BinaryFormat::Elf` early-return | drop gate; union `present_function_names` with the §3 `resolve_imports` names (stripped-PE / Mach-O `__stubs` imports) | **un-gated cleanly** |
+| `noreturn.rs` (Known) | `BinaryFormat::Elf` early-return | per-format base list: ELF list (+Rust/Go) vs a new vendored `PeMacFunctionsThatDoNotReturn` (exit/abort/quick_exit + `__fastfail`/`_invoke_watson`/…) | **un-gated + new list** |
+| `s1_callfixup` | `BinaryFormat::Elf` early-return | drop gate (a `<callfixup>` `<target>` is a function NAME; the map comes from the loaded arch's cspec) | **un-gated cleanly** |
+| `s1_addrtable` | `BinaryFormat::Elf` early-return + `SectionFlags::Elf` exec/searchable | drop gate; per-format `is_executable_section`/`is_searchable_section` (ELF `SHF_*` unchanged; PE `IMAGE_SCN_MEM_EXECUTE`/readable; Mach-O `S_ATTR_PURE_INSTRUCTIONS`/`SectionKind::Text`). Still off-by-default (Ghidra parity). | **un-gated cleanly** |
+| `s1_noreturn_disc` | (format-neutral; consumes the Listing) | confirmed it runs on a PE — the Listing builds on a PE/Mach-O because `s1_entry::executable_sections` already falls through to `SectionKind::Text` for non-ELF | **already neutral, confirmed** |
+
+**One small loader touch-up (not a gate-drop).** The Mach-O `__cstring`
+(`SectionKind::ReadOnlyString`) was not marked READONLY by
+`MachOFormat::section_bits` (PR-6 only handled `ReadOnlyData`/`Text`), so the
+printer's constant-string route could not read a typed `char *` arg's bytes.
+Adding the `ReadOnlyString` arm (a read-only string section *is* read-only) is the
+prerequisite that completes the Mach-O `printf("%d\n", …)` literal — folded into
+the `s1_protos` commit.
+
+**Residual gaps (documented, not forced).** None block the headline.
+- The Mach-O `%d\n` is below the string-scan min-5, so `s1_strings` never plants a
+  symbol for it; it renders only via the typed-`char *` route. The Mach-O *string-
+  literal* half of `s1_strings` is therefore not directly proven by a fixture
+  (no Mach-O fixture carries a ≥5-char literal); the **logic** is exercised by the
+  PE literal + the shared `is_loaded_initialized` Mach-O arm unit-covered.
+- `s1_addrtable` stays **off by default** (Ghidra `setDefaultEnablement(false)`),
+  so its generalization is logic-only (no default output change on any format).
+- The deeper `s1_entry` entry-oracles (`.pdata`/TLS for PE, `LC_MAIN`/`__eh_frame`
+  for Mach-O) remain §5.3 / PR-12+PR-13 work — out of scope here; the Listing tier
+  only needs `executable_sections`, which already falls through to `SectionKind::Text`.
+
+**Decompile speed.** `pe_imports.exe main`: **~0.25–0.44 s** wall (`time kuna
+decompile`, incl. the `decomp_dbg` subprocess spawn + `.sla` load); ELF
+`fauxware main` ~0.22–0.46 s — on par. The PR-10 passes add only an extra
+`resolve_imports` call in `s1_protos`'s name union (already computed for naming)
+and the per-format flag branches (O(sections)); no measurable overhead.
+
+**Tests (the e2e RAN, not skipped — the `x86`/`AARCH64` `.sla` are built).**
+- **Unit tests** (per pass, in-crate): `s1_strings` finds "hello" in the PE `.rdata`
+  + an ELF-section-selection-unchanged parity guard over fauxware; `s1_protos` PE/
+  stripped-PE/Mach-O present-name coverage; `noreturn` PeMac-list matching
+  (`__fastfail`/`_invoke_watson`/`_exit`→`exit`); `s1_callfixup` scan-runs-over-PE;
+  `s1_addrtable` scan-runs-over-PE+Mach-O (exec ranges resolve).
+- **e2e** (`kuna-console/tests/verify_multiformat_passes.rs`, 4, all RAN): the PE
+  headline (`puts("hello")` + `printf("%d\n", …)`); the Mach-O `printf("%d\n", …)`;
+  the PE `exit` dead-code elision + `noreturn_known off` restore; `s1_noreturn_disc`
+  runs on a PE (Listing builds, consumer completes). A `Mutex` serializes the
+  `KUNA_EXPERIMENTAL_FORMATS` (process-global) bodies.
+
+**Result.** `make test` **675/675 PARITY OK**; `make test-stages` **159/159 PARITY
+OK**; `make rust-test` green (incl. the new unit + 4 e2e). Default-off ⇒ ELF
+byte-identical (the non-ELF path is unreachable without `--experimental-formats`;
+the XML datatest path never reaches the object loader — Invariant 1; every ELF
+flag arm is unchanged). **After this, the agnostic-pass bucket (§5.2) is done; PR-11
+(`s1_dwarf` for Mach-O/MinGW-PE), PR-12/13 (`s1_entry` per-format), and PR-14
+(`s1_sourcelang` per-format) are the remaining quality follow-ups.**
+
+- **Divergence/LOSS:** none to the parity oracles (the non-ELF path is flag-gated).
+- **New:** `kuna-analysis/data/PeMacFunctionsThatDoNotReturn`,
+  `kuna-console/tests/verify_multiformat_passes.rs`.
+- **Changed:** `kuna-analysis/src/s1_strings/mod.rs`,
+  `kuna-analysis/src/s1_protos/mod.rs`,
+  `kuna-analysis/src/s1_loader/noreturn.rs`,
+  `kuna-analysis/src/s1_loader/format/macho.rs`,
+  `kuna-analysis/src/s1_callfixup/mod.rs`,
+  `kuna-analysis/src/s1_addrtable/mod.rs`, `docs/analysis-port-log.md`.

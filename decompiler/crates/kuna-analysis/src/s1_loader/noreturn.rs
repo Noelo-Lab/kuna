@@ -46,6 +46,14 @@ use crate::s1_sourcelang::Compiler;
 /// `Ghidra/Features/Base/data/ElfFunctionsThatDoNotReturn`.
 const ELF_NORETURN_LIST: &str = include_str!("../../data/ElfFunctionsThatDoNotReturn");
 
+/// The PE (Windows-CRT) / Mach-O (macOS) no-return name list — the per-format arm
+/// of `noReturnFunctionConstraints.xml` for the non-ELF executable formats. The
+/// shared C names (`exit`/`abort`/…) also appear in [`ELF_NORETURN_LIST`], but a
+/// PE/COFF/Mach-O selects THIS list instead of the ELF one (the base C names are
+/// duplicated here so a PE still flags `exit`), plus the Windows-CRT specifics
+/// (`__fastfail`/`_invoke_watson`/`quick_exit`/…) the ELF list does not name.
+const PE_MAC_NORETURN_LIST: &str = include_str!("../../data/PeMacFunctionsThatDoNotReturn");
+
 /// Port of `NoReturnFunctionAnalyzer` ("Known"): flag every imported/defined
 /// function whose name matches the shipped ELF no-return list.
 ///
@@ -165,25 +173,38 @@ fn name_matches(name: &str, exact: &[String], wildcard: &[String]) -> bool {
 /// `GolangFunctionsThatDoNotReturn`, everything else → base ELF list only.
 fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
-    // ELF-only list; only fires on ELF objects (the only format kuna loads).
-    if !matches!(file.format(), object::BinaryFormat::Elf) {
-        return out;
-    }
-    let (mut exact, mut wildcard) = parse_list(ELF_NORETURN_LIST);
-    // Per-compiler source language: append the matching list, faithful to the
-    // `<compiler>` arms of noReturnFunctionConstraints.xml for the ELF format.
-    if let Some(list) = match compiler {
-        // Rust: the panic/abort/oom wildcard list.
-        Compiler::Rustc => Some(crate::s1_sourcelang::rust_noreturn_list()),
-        // Go: the runtime.gopanic/throw/goexit/… exact-name list.
-        Compiler::Go => Some(crate::s1_sourcelang::golang_noreturn_list()),
-        // No per-compiler arm for the ELF format (Gcc/Clang/Unknown).
-        Compiler::Gcc | Compiler::Clang | Compiler::Unknown => None,
-    } {
-        let (extra_exact, extra_wildcard) = parse_list(list);
-        exact.extend(extra_exact);
-        wildcard.extend(extra_wildcard);
-    }
+    // Per-format base list (PR-10): an ELF gets the vendored ELF list (+ the
+    // per-compiler Rust/Go widening); a PE/COFF/Mach-O gets the PE/Mac list
+    // (Windows-CRT + macOS no-return names, with the shared C names duplicated so
+    // a PE still flags `exit`/`abort`). The names are format-neutral; only *which*
+    // shipped list applies differs — the kuna analog of
+    // noReturnFunctionConstraints.xml's per-executable-format arms.
+    let (exact, wildcard) = match file.format() {
+        object::BinaryFormat::Elf => {
+            let (mut e, mut w) = parse_list(ELF_NORETURN_LIST);
+            // Per-compiler source language (ELF only): append the matching list,
+            // faithful to the `<compiler>` arms of noReturnFunctionConstraints.xml.
+            if let Some(list) = match compiler {
+                // Rust: the panic/abort/oom wildcard list.
+                Compiler::Rustc => Some(crate::s1_sourcelang::rust_noreturn_list()),
+                // Go: the runtime.gopanic/throw/goexit/… exact-name list.
+                Compiler::Go => Some(crate::s1_sourcelang::golang_noreturn_list()),
+                // No per-compiler arm for the ELF format (Gcc/Clang/Unknown).
+                Compiler::Gcc | Compiler::Clang | Compiler::Unknown => None,
+            } {
+                let (extra_exact, extra_wildcard) = parse_list(list);
+                e.extend(extra_exact);
+                w.extend(extra_wildcard);
+            }
+            (e, w)
+        }
+        // PE / COFF / Mach-O: the Windows-CRT + macOS no-return list.
+        object::BinaryFormat::Pe
+        | object::BinaryFormat::Coff
+        | object::BinaryFormat::MachO => parse_list(PE_MAC_NORETURN_LIST),
+        // Any other (unsupported) format: no list, no facts.
+        _ => return out,
+    };
     let mut seen = std::collections::HashSet::new();
     let mut emit = |out: &mut AnalysisOutput, addr: u64, n: String| {
         if name_matches(&n, &exact, &wildcard) && seen.insert((addr, n.clone())) {
@@ -273,6 +294,24 @@ mod tests {
         assert!(name_matches("_exit", &exact, &wildcard));
         assert!(name_matches("__stack_chk_fail", &exact, &wildcard)); // -> stack_chk_fail
         assert!(name_matches("__assert_fail", &exact, &wildcard)); // -> assert_fail
+    }
+
+    #[test]
+    fn pe_mac_list_flags_windows_and_shared_noreturns() {
+        // PR-10: the PE/Mac list flags the shared C no-returns (exit/abort/
+        // quick_exit) AND the Windows-CRT specifics (__fastfail/_invoke_watson),
+        // and the leading-underscore strip applies (`_exit` -> `exit`).
+        let (exact, wildcard) = parse_list(PE_MAC_NORETURN_LIST);
+        for want in ["exit", "abort", "quick_exit"] {
+            assert!(name_matches(want, &exact, &wildcard), "PE/Mac list must flag {want}");
+        }
+        // The Windows-CRT fast-fail / Watson names (leading `__`/`_` stripped).
+        assert!(name_matches("__fastfail", &exact, &wildcard), "must flag __fastfail");
+        assert!(name_matches("_invoke_watson", &exact, &wildcard), "must flag _invoke_watson");
+        assert!(name_matches("_exit", &exact, &wildcard), "_exit must strip to exit");
+        // An ordinary function is never flagged.
+        assert!(!name_matches("printf", &exact, &wildcard), "printf must not be flagged");
+        assert!(!name_matches("main", &exact, &wildcard), "main must not be flagged");
     }
 
     #[test]
