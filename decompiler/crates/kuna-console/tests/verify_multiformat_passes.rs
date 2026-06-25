@@ -37,25 +37,20 @@
 //! it is genuinely *active* on a PE — the Listing builds with functions and the
 //! consumer runs to completion — under `--option listing on --option noreturn_disc on`.
 //!
-//! ## Flag gating + `.sla` precondition
+//! ## Multi-format is the default + `.sla` precondition
 //!
-//! Non-ELF only loads under `--experimental-formats` (`KUNA_EXPERIMENTAL_FORMATS`).
-//! Bootstrapping needs the built `x86`/`AARCH64` `.sla` under `specs/` (gitignored;
-//! `make specs`); when absent the bootstrap fails and the test prints that and
-//! returns early (a visible skip, never a false green).
+//! Non-ELF loads unconditionally — the same default `load file` dispatch as ELF,
+//! with no flag. Bootstrapping needs the built `x86`/`AARCH64` `.sla` under
+//! `specs/` (gitignored; `make specs`); when absent the bootstrap fails and the
+//! test prints that and returns early (a visible skip, never a false green).
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
-
-/// `KUNA_EXPERIMENTAL_FORMATS` is a process-global env var; serialize the
-/// env-sensitive bodies so the experimental-on bootstraps never race.
-static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -83,15 +78,14 @@ fn decompile_func(prog: ConsoleProgram, setup: &[&str]) -> String {
     status.optr.clone()
 }
 
-/// Bootstrap a fixture under `--experimental-formats`, returning `None` (a visible
-/// skip) when the `.sla` is absent.
+/// Bootstrap a fixture (multi-format loading is unconditional), returning `None`
+/// (a visible skip) when the `.sla` is absent.
 fn boot(name: &str) -> Option<ConsoleProgram> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join(name);
     assert!(path.exists(), "missing fixture {path:?}");
 
-    std::env::set_var("KUNA_EXPERIMENTAL_FORMATS", "1");
     match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
         Ok(p) => Some(p),
         Err(e) => {
@@ -100,7 +94,6 @@ fn boot(name: &str) -> Option<ConsoleProgram> {
                  with `make specs`): {}",
                 e.explain()
             );
-            std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
             None
         }
     }
@@ -111,11 +104,9 @@ fn boot(name: &str) -> Option<ConsoleProgram> {
 /// `puts(0x…)` / `printf(0x…, …)`.
 #[test]
 fn pe_renders_string_literal_and_typed_args() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let Some(prog) = boot("pe_imports.exe") else { return };
 
     let out = decompile_func(prog, &["load function main", "decompile", "print C"]);
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     // s1_strings: the `.rdata` "hello" recovers as a literal (was `0x140009000`).
     assert!(out.contains("puts(\"hello\")"), "PE: expected puts(\"hello\"), got:\n{out}");
@@ -136,11 +127,9 @@ fn pe_renders_string_literal_and_typed_args() {
 /// `printf("%d\n", …)` literal (was `printf(0x1000005ee, …)`).
 #[test]
 fn macho_renders_typed_printf_literal() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let Some(prog) = boot("macho_imports") else { return };
 
     let out = decompile_func(prog, &["load function _main", "decompile", "print C"]);
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     assert!(out.contains("printf(\"%d\\n\""), "Mach-O: expected printf(\"%d\\n\", …), got:\n{out}");
     assert!(
@@ -154,7 +143,6 @@ fn macho_renders_typed_printf_literal() {
 /// it (the per-pass before/after, on a PE).
 #[test]
 fn pe_exit_eliminates_dead_code_via_noreturn_list() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let Some(prog) = boot("pe_imports.exe") else { return };
 
     // ON (default): exit is no-return → WARNING terminator, no fall-through after.
@@ -171,7 +159,6 @@ fn pe_exit_eliminates_dead_code_via_noreturn_list() {
             "print C",
         ],
     );
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     assert!(on.contains("exit("), "PE: the tail call must be named exit(:\n{on}");
     assert!(
@@ -196,7 +183,6 @@ fn pe_exit_eliminates_dead_code_via_noreturn_list() {
 /// (not inert) on a non-ELF binary — the format-neutrality claim.
 #[test]
 fn noreturn_disc_runs_on_pe() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let Some(prog) = boot("pe_imports.exe") else { return };
 
     let out = decompile_func(
@@ -209,7 +195,6 @@ fn noreturn_disc_runs_on_pe() {
             "print C",
         ],
     );
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     // The decompile completed (the Listing built + the consumer ran on the PE).
     assert!(

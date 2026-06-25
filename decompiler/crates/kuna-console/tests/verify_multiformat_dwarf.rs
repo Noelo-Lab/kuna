@@ -35,9 +35,8 @@
 //!
 //! The pass is default behaviour for any `.debug_info`-carrying object now; the
 //! existing ELF DWARF gate (`verify_s1_dwarf.rs`) is unaffected (this PR only drops
-//! the format gate, the ELF section names are identical). The non-ELF arm is only
-//! reachable under `--experimental-formats` (`KUNA_EXPERIMENTAL_FORMATS`), so the
-//! default (ELF) pipeline is byte-identical.
+//! the format gate, the ELF section names are identical). Multi-format (PE/Mach-O)
+//! loading is unconditional — the same default pipeline reads the non-ELF DWARF.
 //!
 //! ## `.sla` precondition
 //!
@@ -47,7 +46,6 @@
 //! specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::time::Instant;
 
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
@@ -55,10 +53,6 @@ use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
-
-/// `KUNA_EXPERIMENTAL_FORMATS` is a process-global env var; serialize the
-/// env-sensitive bodies so the experimental-on bootstraps never race.
-static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -68,15 +62,14 @@ fn fixtures() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures")
 }
 
-/// Bootstrap a fixture under `--experimental-formats`, returning `None` (a visible
-/// skip) when the `.sla` is absent.
+/// Bootstrap a fixture (multi-format loading is unconditional), returning `None`
+/// (a visible skip) when the `.sla` is absent.
 fn boot(name: &str) -> Option<ConsoleProgram> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join(name);
     assert!(path.exists(), "missing fixture {path:?}");
 
-    std::env::set_var("KUNA_EXPERIMENTAL_FORMATS", "1");
     match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
         Ok(p) => Some(p),
         Err(e) => {
@@ -85,7 +78,6 @@ fn boot(name: &str) -> Option<ConsoleProgram> {
                  with `make specs`): {}",
                 e.explain()
             );
-            std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
             None
         }
     }
@@ -113,8 +105,6 @@ fn decompile(prog: ConsoleProgram, setup: &[&str]) -> String {
 /// (`sub_<addr>`), proving `s1_dwarf` read the PE's `.debug_*` sections.
 #[test]
 fn pe_dwarf_recovers_name_and_typed_signature() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-
     // AFTER: load by the DWARF name (the COFF symtab no longer carries it).
     let Some(prog) = boot("pe_dwarf.exe") else { return };
     let t0 = Instant::now();
@@ -126,7 +116,6 @@ fn pe_dwarf_recovers_name_and_typed_signature() {
     // DWARF/symtab name → the engine's `sub_<addr>` placeholder.
     let Some(prog_b) = boot("pe_dwarf.exe") else { return };
     let before = decompile(prog_b, &["load addr 0x140001550", "decompile", "print C"]);
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     // The DWARF name resolved (and is NOT a placeholder for itself).
     assert!(
@@ -159,8 +148,6 @@ fn pe_dwarf_recovers_name_and_typed_signature() {
 /// section loader read it.
 #[test]
 fn macho_dwarf_recovers_name_and_typed_signature() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-
     // AFTER: the DWARF name `first_byte` (the Mach-O symtab FUNC entry was renamed
     // to `_l0`, so this name is DWARF-only).
     let Some(prog) = boot("macho_dwarf.o") else { return };
@@ -172,7 +159,6 @@ fn macho_dwarf_recovers_name_and_typed_signature() {
     // BEFORE: the same code by raw address → `sub_0` placeholder.
     let Some(prog_b) = boot("macho_dwarf.o") else { return };
     let before = decompile(prog_b, &["load addr 0x0", "decompile", "print C"]);
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     assert!(
         after.contains("first_byte"),
@@ -201,14 +187,11 @@ fn macho_dwarf_recovers_name_and_typed_signature() {
 /// `__DWARF,__debug_*` section lookups resolve the whole CU.
 #[test]
 fn both_formats_recover_a_second_dwarf_only_function() {
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-
     let Some(pe) = boot("pe_dwarf.exe") else { return };
     let pe_add = decompile(pe, &["load function add", "decompile", "print C"]);
 
     let Some(macho) = boot("macho_dwarf.o") else { return };
     let macho_add = decompile(macho, &["load function add", "decompile", "print C"]);
-    std::env::remove_var("KUNA_EXPERIMENTAL_FORMATS");
 
     assert!(
         pe_add.contains("add") && !pe_add.contains("sub_140001564"),
