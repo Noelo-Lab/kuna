@@ -7,11 +7,23 @@
   "angr_version": "9.2.213",
   "scope": "large",
   "proposal": true,
-  "option": "jumptable-augment",
-  "change_kind": "structure-recovery",
+  "proposal_revised": true,
+  "option": "noreturn_body",
+  "superseded_option": "jumptable-augment",
+  "change_kind": "analysis-enablement",
   "source_decompiler": "angr",
-  "inspiration": "test_decompiling_x8664_mv_O2; angr SAILR structurer (loop refinement + switch-break recovery) + LoweredSwitchSimplifier; main",
+  "inspiration": "test_decompiling_x8664_mv_O2; angr no-return propagation (callee-body) / Ghidra FindNoReturnFunctionsAnalyzer body half; main",
   "parity": "OK",
+  "status": "re-proposed",
+  "note": "Approved step-1 (jumptable-augment) taken to Phase 3; IR reproduction showed it is mis-shaped for this function. The real, ablation-validated fix is noreturn-by-body inference for usage(). See findings.md / proposal-v2.md. No code shipped; awaiting human go/no-go on the revised proposal.",
+  "ablation_validated_fix": {
+    "mechanism": "option noreturn usage true (set AFTER load function), then decompile",
+    "cases_before": 10,
+    "cases_after": 12,
+    "gotos_before": 24,
+    "gotos_after": 17,
+    "recovered_cases": ["-0x83 (--version: version_etc(); exit(0))", "-0x82 (--help: usage(0))"]
+  },
   "decisions": [
     {
       "question": "Is closing the mv -O2 main gap a small (one option-gated Action/Rule) or large (PROPOSAL fork) feature?",
@@ -19,6 +31,14 @@
       "decider_justification": "The clean angr shape is the aggregate product of at least three distinct structuring transforms - loop head/latch recovery + block reordering (S7/S8), switch-break recovery (S8 BlockGraph), and jump-table augmentation (S2/case absorption) - each touching different ported-core region/structuring code beyond a single gated early-return. No single Varnode-Rule or single Action manufactures this form (unlike kuna_loweredswitch.rs, which produces one jump table from one Action); the gap is irreducibly multi-pass and crosses the S7-region/S8-structuring boundary that Hard rule 7 explicitly fences off. It therefore fails the 'ONE option-gated pass modeled on a single Action/Rule' test and must become a [PROPOSAL] draft PR.",
       "best_standalone_candidate": "Sub-gap #1 (switch case-exit-to-follow-block -> break) is the natural single-Action S8 transform and the strongest standalone candidate in general. But it is NOT cleanly isolatable in this specific function: the post-switch convergence block label_2c88 is simultaneously the getopt loop latch (the back-edge target). Emitting break there is only correct/clean once the enclosing while(true) loop is recovered - without loop recovery, a break has no loop to break out of and would be semantically wrong. So #1 is entangled with the unrecovered loop (#2) here and cannot deliver a correct, meaningful win in isolation. It should be re-attempted as a small feature only against a function where the switch-follow block is a genuine post-loop join, not the latch itself.",
       "recommendation": "Approve step 1 (jumptable-augment) as the first standalone implementation worker - closest to a single Action (builds on kuna_loweredswitch.rs), narrowest blast radius, measurable win (3 recovered cases). Defer the loop-recovery / switch-break / tail-condense steps."
+    },
+    {
+      "question": "Implementation phase: can step-1 (jumptable-augment) fire correctly as a single S2 Action on this function?",
+      "decider_role": "adversarial reviewer tasked to REFUTE infeasibility",
+      "decider_verdict": "CONFIRM-infeasible (jumptable-augment is mis-shaped); the real fix is noreturn-by-body inference",
+      "decider_justification": "Confirmed at IR ground truth: the residual cascade tests EAX(0x2d46:eee) - usage's modeled return (a call-output [create]) - NOT the switch var EAX(0x2c9a:dc); canon_switch_var cannot bridge a call-output, so the cascade-augment detector cannot fire. Also corrected a bad worker ablation: `option noreturn usage true` does NOT no-op - set AFTER load it re-splits the block at the usage call, prunes the dead cascade, and surfaces the native jump-table cases -0x83/-0x82 (clean 12-case switch). The -0x83/-0x82 entries are already native jump-table targets shadowed by a live default block; the defect is flow-time shadowing, not a missing table entry. Correct recovery is gated on usage being no-return, established today only via the explicit `option noreturn` override (flow-time block re-split). kuna has no body-based no-return inference (only known-list + the defeated discovered-tally heuristic). The faithful path is noreturn-by-body inference for usage (a callee all of whose return paths reach a known-no-return like exit) - a P0/S1 analysis feature, not an S2 jump-table augment - a different, cleaner single-feature candidate worth proposing in place of step 1.",
+      "risk_note": "A storage-address heuristic augment (treat the post-usage cascade var as the switch var because both live in EAX) is an unsafe semantic gamble - it asserts EAX is unclobbered across an arbitrary call, false in general - and would risk the 675-datatest parity corpus; not worth shipping even default-OFF.",
+      "outcome": "Step-1 design abandoned. Revised proposal noreturn_body written (proposal-v2.md). Awaiting human go/no-go."
     }
   ]
 }

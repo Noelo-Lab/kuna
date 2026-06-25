@@ -1,5 +1,36 @@
 # kuna Progress Log
 
+## Session (2026-06-25) — x8664-mv-o2-e752a1: jumptable-augment mis-shaped → re-proposed `noreturn_body`
+
+Implementation worker for `test_decompiling_x8664_mv_O2::main` (the APPROVED step-1
+`jumptable-augment` proposal). Took it to Phase 3 and reproduced the gap at IR level; the
+approved design is mis-shaped for this function and **no code was shipped** — the worker
+re-proposed the correct mechanism instead (PROPOSAL v2: `noreturn_body`).
+
+- **Why angr was better:** angr renders the `getopt` dispatch as a clean 13-case `switch`;
+  kuna renders 10 cases and leaves `--version` (`-0x83`) / `--help` (`-0x82`) as a residual
+  `cmp %eax` cascade folded inside `default:`.
+- **Root cause (the real one):** GCC's jump-table + residual-comparison idiom, where the
+  jump-table default sink `usage(1)` is **no-return** (its body always reaches `exit`). kuna
+  models `usage` as returning, so it keeps the call and the residual comparisons in one block,
+  the cascade reads `usage`'s clobbered return (`EAX(0x2d46:eee)`, a call-output `[create]`)
+  instead of the switch var (`EAX(0x2c9a:dc)`), and the native jump-table cases `-0x83`/`-0x82`
+  are shadowed by the live default block. `jumptable-augment` (cascade-augment) cannot fire:
+  the cascade does not test the switch var, and the cases are not missing from the table —
+  they are flow-time shadowed.
+- **Mechanism / ablation:** marking `usage` no-return (`option noreturn usage true`, set
+  AFTER load) re-splits the block at the call, prunes the dead cascade, and surfaces the
+  native cases — **12 cases (from 10), 17 gotos (from 24)**, `case -0x83: version_etc(); exit(0);`
+  + `case -0x82: usage(0);`. The whole fix runs through existing flow consumption; no S2 /
+  structurer change. kuna just cannot *infer* `usage`-noreturn (known-list misses the local;
+  discovered-tally is defeated by GCC placing the comparisons after the call sites).
+- **Outcome:** step-1 abandoned (adversarially confirmed mis-shaped). Revised proposal
+  `docs/features/x8664-mv-o2-e752a1/proposal-v2.md`: a default-OFF, Listing-gated
+  **noreturn-by-body** inference pass (`noreturn_body`) — the angr no-return-propagation
+  analog, corpus-safe (no-op when the Listing is absent). Awaiting human go/no-go. Full
+  evidence: `findings.md`; record `record.json`. No DIV entry, no baseline change, no shipped
+  code.
+
 ## Session (2026-06-25) — Go pclntab function-name recovery (Increment 34)
 
 Ported the **name-recovery half** of Ghidra's `GolangSymbolAnalyzer` (`golang-symbols`,
