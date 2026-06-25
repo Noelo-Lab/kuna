@@ -3343,6 +3343,70 @@ impl Action for ActionPreferComplement {
     }
 }
 
+/// \brief (kuna, option `branchflip`) Flip negated-guard `if/else` branches for
+/// linearity — the angr-SAILR-style condition-polarity normalization that turns
+/// `if (x == 0) {A} else {B}` into the positive complement `if (x != 0) {B} else {A}`.
+///
+/// Sits next to [`ActionPreferComplement`] in the structuring schedule and reuses
+/// the same dual-arena flip machinery; the only difference is the accepted flip
+/// class — it rewrites the *equality-to-zero / negated* guard
+/// (`split_flip_in_place_test == 1`) that `preferComplement` leaves alone.  Gated
+/// off the per-function `Architecture::branch_flip` seam flag (option
+/// `branchflip`, default-off); a no-op unless the flag is set.  Each flip is
+/// logged via [`Funcdata::warning`] at the guard's CBRANCH.
+pub struct ActionBranchFlip {
+    base: ActionBase,
+    /// Are p-code ops allowed to be modified by this action (C++ `allowOpMods`).
+    allow_op_mods: bool,
+}
+
+impl ActionBranchFlip {
+    /// Construct in group `g`.
+    pub fn boxed(g: impl Into<String>, allow_mods: bool) -> Box<dyn Action> {
+        Box::new(ActionBranchFlip {
+            base: ActionBase::new(0, "branchflip", g),
+            allow_op_mods: allow_mods,
+        })
+    }
+}
+
+impl Action for ActionBranchFlip {
+    fn base(&self) -> &ActionBase {
+        &self.base
+    }
+    fn base_mut(&mut self) -> &mut ActionBase {
+        &mut self.base
+    }
+    fn clone_filtered(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Action>> {
+        if !grouplist.contains(self.get_group()) {
+            return None;
+        }
+        Some(Box::new(ActionBranchFlip {
+            base: self.base.clone(),
+            allow_op_mods: self.allow_op_mods,
+        }))
+    }
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        // Gate: per-function `branch_flip` flag (option `branchflip`, default-off).
+        // Carried into the `ArchSeam` by `build_arch_handle`; absent => no-op so
+        // the 675-datatest parity and the default rendering are untouched.
+        if !data.get_arch().branch_flip {
+            return 0;
+        }
+        match data.branch_flip_complement(self.allow_op_mods) {
+            Ok(count) => {
+                self.base.count += count;
+            }
+            Err(_e) => {
+                // A residual flip seam degrades to "no change made" rather than
+                // aborting (the honest-partial-parity stance, matching
+                // `ActionPreferComplement`).
+            }
+        }
+        0
+    }
+}
+
 /// \brief Structure control-flow using standard high-level code constructs (C++
 /// `ActionBlockStructure`).  Drives [`CollapseStructure`].
 pub struct ActionBlockStructure {

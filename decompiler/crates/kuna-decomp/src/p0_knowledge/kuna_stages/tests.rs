@@ -24,8 +24,8 @@ fn substage_count_is_40() {
 
 #[test]
 fn surface_count_is_90() {
-    assert_eq!(kuna_num_surfaces(), 90);
-    assert_eq!(SURFACE_TABLE.len(), 90);
+    assert_eq!(kuna_num_surfaces(), 91);
+    assert_eq!(SURFACE_TABLE.len(), 91);
 }
 
 #[test]
@@ -48,8 +48,10 @@ fn settable_count_is_37() {
     // loader (DIV-8) and the `i386_pie_plt` i386-PIE PLT-stub decode gate
     // (DIV-9, angr test_decompiling_nl_i386_pie) — settables that gate the loader
     // rather than a per-function pass.
-    assert_eq!(kuna_num_settables(), 42);
-    assert_eq!(SETTABLE_TABLE.len(), 42);
+    // + 1 S8 readability knob: the `branchflip` negated-guard branch-flip option
+    // (angr-style `if (x)` vs `if (x == 0)`, opt-in default-off).
+    assert_eq!(kuna_num_settables(), 43);
+    assert_eq!(SETTABLE_TABLE.len(), 43);
 }
 
 // --- Stage helpers (kunaStageCode/Name/Artifact/InBandB/FromCode) ------------
@@ -271,6 +273,7 @@ fn option_values_live_value_present_for_20_suppressed_for_18() {
                         st.option,
                         "loweredswitch"
                             | "stackguard"
+                            | "branchflip"
                             | "namestyle"
                             | "foldcallret"
                             | "relocobjects"
@@ -346,8 +349,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     let json = emit_catalog_json(|_| None);
     assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
     assert!(json.ends_with("}\n]\n"));
-    // 42 rows: 41 trailing commas (the last, relocobjects, has none).
-    assert_eq!(json.matches("},\n").count(), 41);
+    // 43 rows: 42 trailing commas (the last, relocobjects, has none).
+    assert_eq!(json.matches("},\n").count(), 42);
 }
 
 #[test]

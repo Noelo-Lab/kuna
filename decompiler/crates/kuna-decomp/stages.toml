@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=90, settable=39
-# (25 stage-model knobs + 14 analysis-tier gates).
+# Counts (asserted in tests): group=39, substage=40, surface=91, settable=43
+# (26 stage-model knobs + 17 analysis-tier/loader gates).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -958,6 +958,12 @@ substage = "edge-virtualization"
 note = "(kuna angr-port) strip the -fstack-protector canary epilogue so the shared-return goto is eliminated"
 
 [[surface]]
+surface = "option branchflip"
+stage = "S8"
+substage = "readability-rewrites"
+note = "(kuna angr-port) flip negated-guard if/else branches for linearity (if (x==0) -> if (x!=0), arms swapped)"
+
+[[surface]]
 surface = "force goto"
 stage = "S7"
 substage = "edge-virtualization"
@@ -1627,6 +1633,23 @@ use_when = "Set on to remove compiler-inserted stack-protector boilerplate and t
 example = "option stackguard on"
 source_decompiler = "angr"
 inspiration = "test_ite_region_converter_missing_break_statement; angr StackCanarySimplifier (angr/analyses/decompiler/optimization_passes/stack_canary_simplifier.py); authenticate"
+change_kind = "opt-in-tool"
+
+[[settable]]
+option = "branchflip"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "readability-rewrites"
+strength = "HINT"
+rewind = "S8"
+issue = "angr-SAILR-condition-polarity"
+summary = "Flip a negated-guard if/else for linearity: when an `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped in place, rewrite it to the positive complement `if (x != 0) {B} else {A}` so the common path reads top-to-bottom (angr-style positive guard vs `if (x == 0)`)."
+use_when = "Set on for angr-style positive guards (the non-negated comparison becomes the `if` condition, the if/else arms swap to match); off (default) keeps Ghidra's polarity. A flip is logged as a `branchflip:` warning comment at the if. Only fires on `if/else` (3-component) blocks whose condition flips cleanly in place."
+example = "option branchflip on"
+source_decompiler = "angr"
+inspiration = "tee_O2 x2nrealloc (if (a0 == 0) vs angr if (a0)); angr SAILR structurer condition processing"
 change_kind = "opt-in-tool"
 
 [[settable]]

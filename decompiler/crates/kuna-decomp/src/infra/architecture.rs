@@ -327,6 +327,12 @@ pub struct Architecture {
     /// (kuna) Strip the glibc -fstack-protector canary epilogue
     /// (C++ `strip_stack_guard`).
     pub strip_stack_guard: bool,
+    /// (kuna) Flip negated-guard if/else branches for linearity: when an
+    /// `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped
+    /// in place, rewrite it to the positive `if (x) {B} else {A}` so the common
+    /// path reads top-to-bottom (angr-style `if (x)` vs `if (x == 0)`).  Default
+    /// OFF (option `branchflip`); read by `ActionBranchFlip` (S8).
+    pub branch_flip: bool,
     /// (kuna) Use angr-style default naming (vN/aN/dat_/sub_/label_ + comments)
     /// (C++ `name_style_angr`).
     pub name_style_angr: bool,
@@ -611,6 +617,7 @@ impl Architecture {
             recover_lowered_switch: false,
             fold_call_returns: false,
             strip_stack_guard: false,
+            branch_flip: false,
             name_style_angr: false,
             dedup_var_decls: false,
             realtypes: false,
@@ -698,6 +705,7 @@ impl Architecture {
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.fold_call_returns = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.strip_stack_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
+        self.branch_flip = false; // (kuna) default-off: upstream branch polarity (angr opt-in, branchflip)
         self.name_style_angr = true; // (kuna) default-on: angr-style default naming
         self.dedup_var_decls = true; // (kuna) DIV-7 default-on: collapse duplicate local decls (angr)
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
@@ -818,6 +826,7 @@ impl Architecture {
                 Ok(msg)
             }
             "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
+            "branchflip" => on_off!(branch_flip, "Negated-guard branch flipping for linearity"),
             "namestyle" => {
                 let (val, msg) = crate::kuna_naming::OptionNameStyle.apply(p1)?;
                 self.name_style_angr = val;
@@ -1129,6 +1138,7 @@ impl Architecture {
         seam.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         seam.fold_call_returns = self.fold_call_returns; // foldcallret
         seam.strip_stack_guard = self.strip_stack_guard; // stackguard
+        seam.branch_flip = self.branch_flip; // branchflip (negated-guard branch flipping)
         // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
         // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.
         seam.condexe_block_placement = self.condexe_block_placement;

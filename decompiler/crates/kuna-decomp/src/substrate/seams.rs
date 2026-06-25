@@ -539,6 +539,10 @@ pub struct Architecture {
     /// `strip_stack_guard`, opt-in default-off).  Read by
     /// [`crate::kuna_stackguard`]'s `ActionStripStackGuard`.
     pub strip_stack_guard: bool,
+    /// (kuna) flip negated-guard if/else branches for linearity (option
+    /// `branchflip`, opt-in default-off).  Read by
+    /// [`crate::s8_structure::kuna_branchflip`]'s `ActionBranchFlip`.
+    pub branch_flip: bool,
     /// (kuna) GH-9203: when set, `ActionConditionalConst::handlePhiNodes` declines
     /// to materialize a propagated constant as a COPY inside a loop predecessor
     /// block (which would render as a spurious `= 0` in the do/while body).  C++
@@ -719,6 +723,7 @@ impl Architecture {
             recover_lowered_switch: false, // loweredswitch
             fold_call_returns: false, // foldcallret (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
+            branch_flip: false,          // branchflip (opt-in default-off)
             // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.
             condexe_block_placement: true,
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).

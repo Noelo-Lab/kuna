@@ -76,7 +76,7 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_42_settables() {
+fn fixture_has_all_43_settables() {
     // One `"option":` per settable row: 25 stage-model knobs (incl. the `foldcallret`
     // call-return variable-folding gate and the `dedupvardecls` duplicate-scalar-
     // declaration collapse gate, DIV-7) + 15 analysis-tier gates (10 per-run
@@ -87,8 +87,10 @@ fn fixture_has_all_42_settables() {
     // consumer gate, the `noreturn_propagate` no-return propagation Listing consumer
     // gate, and the `gopclntab` Go pclntab function-name recovery gate)
     // + 2 loader-tier capabilities (the `relocobjects` ET_REL relocatable-object
-    // loader, DIV-8, and the `i386_pie_plt` i386-PIE PLT-stub decode gate, DIV-9).
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 42);
+    // loader, DIV-8, and the `i386_pie_plt` i386-PIE PLT-stub decode gate, DIV-9)
+    // + 1 S8 readability knob (the `branchflip` negated-guard branch-flip option,
+    // angr-style `if (x)` vs `if (x == 0)`, opt-in default-off).
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 43);
 }
 
 #[test]
