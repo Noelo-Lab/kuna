@@ -1,0 +1,27 @@
+{
+  "opportunity": "test_decompiling_mv0_main::main",
+  "test_name": "test_decompiling_mv0_main",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/mv_0",
+  "selector": "main",
+  "func_addr": "0x402c40",
+  "angr_version": "9.2.213",
+  "scope": "large",
+  "proposal": true,
+  "option": "multilatchloop",
+  "element_id": 4021,
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_decompiling_mv0_main; RegionIdentifier/Structurer loop refinement (single-latch normalization); main",
+  "decisions": [
+    {
+      "question": "Is recovering the multi-back-edge getopt loop as a structured while-loop (switch kept inside, no goto-hoist) a SMALL (one option-gated Action/Rule) or LARGE (proposal) feature under Hard rule 7?",
+      "decider_model": "opus-4.8",
+      "scope": "large",
+      "confidence": "high",
+      "justification": "The gap lives entirely in S8 blockaction.rs — Ghidra's CollapseStructure/TraceDAG/LoopBody fixed-point graph reduction (ruleBlockWhileDo, emitLikelyEdges, LoopBody back-edge handling). The getopt loop has one header but many latches (each switch case back-edges to the getopt call); ruleBlockWhileDo can only collapse a loop with a single structured back-edge, so emitLikelyEdges/TraceDAG mark the extra back-edges unstructured (the 29 gotos) and the switch cannot nest under a BlockWhileDo, forcing the hoist-to-bottom. Fixing it means changing how latches are unified/normalized before loop collapse (a pre-header/latch-merge transform, or refactoring ruleBlockWhileDo to accept multi-latch loops) plus the switch-nesting path — core S7/S8 structuring rework, not a peephole, not a single gated early-return, and likely >3 anchor files. A no-op gated Action cannot force the existing collapse to keep the switch inside the loop.",
+      "angr_reference": "RegionIdentifier (ported as kuna_regionid.rs/kuna_regiongraph.rs in S7) plus Phoenix/Dream-style Structurer/RegionSimplifier loop refinement (_refine_loop, break/continue insertion, single-latch normalization).",
+      "speed_risk": "medium — latch unification runs inside the S8 collapse fixed point on every function with a loop; a naive per-loop-header back-edge scan/merge risks re-triggering the fixed point and adding passes over the block graph.",
+      "proposed_option_name": "multilatchloop"
+    }
+  ]
+}
