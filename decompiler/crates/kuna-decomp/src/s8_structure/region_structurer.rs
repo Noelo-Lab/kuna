@@ -152,11 +152,22 @@ pub fn run_region_structurer(data: &mut Funcdata) -> KunaResult<(bool, Vec<Block
     // in/out edges structuring never severs) before the `sblocks_mut` borrow.
     let (switch_blocks, switch_case_edges) = compute_switch_maps(data);
 
+    // ---- 1c. Precompute BlockBasic::isComplex over bblocks (Inc 5) -----------
+    // The short-circuit/condition-fold schema (`match_acyclic_short_circuit_conditions`,
+    // a port of `CollapseStructure::ruleBlockOr`) gates the fold on the
+    // `next_cond`/`orblock` being *non-complex* (a bare CBRANCH, no real
+    // statements) — C++ `BlockBasic::isComplex`.  Mirror `ActionBlockStructure`'s
+    // precomputation: a bblocks `BlockBasic` is complex when `bb_is_complex`
+    // (more than one non-trivial statement); keyed by bblocks id, the same id each
+    // `sblocks` `BlockCopy`'s `copy` references.
+    let complex_blocks = compute_complex_blocks(data);
+
     // ---- 2. Structure the seeded sblocks graph -------------------------------
     let sroot = data.sblocks_root();
     let graph = data.sblocks_mut();
     let mut st = RegionStructurer::new(graph, sroot)
-        .with_switch_maps(switch_blocks, switch_case_edges);
+        .with_switch_maps(switch_blocks, switch_case_edges)
+        .with_complex_blocks(complex_blocks);
     let ok = st.structure()?;
     let flips = if ok { st.take_pending_flips() } else { Vec::new() };
     if std::env::var_os("KUNA_RS_DEBUG").is_some() {
@@ -209,6 +220,29 @@ fn compute_switch_maps(
     (switch_blocks, switch_case_edges)
 }
 
+/// Precompute the set of bblocks `BlockBasic` ids that are *complex* (Inc 5).
+///
+/// A mirror of the `complex_blocks` precomputation in
+/// [`ActionBlockStructure::apply`](crate::blockaction::ActionBlockStructure): the
+/// structuring graph is a `BlockCopy` mirror without op ownership, so
+/// `BlockBasic::isComplex` is read here against the live `bblocks` op lists
+/// (`Funcdata::bb_is_complex`) and keyed by the bblocks id each `BlockCopy`'s
+/// `copy` pointer references.  The short-circuit/condition-fold schema reads it
+/// through [`RegionStructurer::is_complex`] (the kuna analog of
+/// `CollapseStructure::is_complex`, gating `ruleBlockOr`).
+fn compute_complex_blocks(data: &Funcdata) -> std::collections::BTreeSet<BlockId> {
+    let mut complex_blocks: std::collections::BTreeSet<BlockId> =
+        std::collections::BTreeSet::new();
+    let nbb = data.bblocks_get_size();
+    for i in 0..nbb {
+        let bb = data.bblocks_get_block(i);
+        if data.bb_is_complex(bb) {
+            complex_blocks.insert(bb);
+        }
+    }
+    complex_blocks
+}
+
 /// The acyclic sequence + virtualize structuring engine, operating on the
 /// seeded `sblocks` [`BlockGraph`] (the `BlockCopy` mirror of `bblocks`).
 struct RegionStructurer<'a> {
@@ -225,6 +259,14 @@ struct RegionStructurer<'a> {
     /// isdefault)` over bblocks (Inc 4), fed to [`BlockGraph::new_block_switch`]
     /// (C++ `BlockSwitch::addCase`).
     switch_case_edges: std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
+    /// The set of `bblocks` `BlockBasic` ids that are *complex* (C++
+    /// `BlockBasic::isComplex` — more than one non-trivial statement), keyed by the
+    /// bblocks id each structuring `BlockCopy`'s `copy` references (Inc 5).  Read
+    /// through [`RegionStructurer::is_complex`] by the short-circuit/condition-fold
+    /// schema (the kuna analog of `CollapseStructure::is_complex`, which gates
+    /// `ruleBlockOr`).  Empty ⇒ every block is treated as complex (conservative,
+    /// never folds), so an unset map is honest-partial-safe.
+    complex_blocks: std::collections::BTreeSet<BlockId>,
     /// `bblocks` `BlockBasic` ids whose CBRANCH op must have its
     /// `boolean_flip`/`fallthru_true` toggled (the deferred data-flow half of
     /// `BlockBasic::negateCondition`) — mirrors `CollapseStructure::pending_flips`.
@@ -238,6 +280,7 @@ impl<'a> RegionStructurer<'a> {
             graph_id,
             switch_blocks: std::collections::BTreeMap::new(),
             switch_case_edges: std::collections::BTreeMap::new(),
+            complex_blocks: std::collections::BTreeSet::new(),
             pending_flips: Vec::new(),
         }
     }
@@ -250,6 +293,17 @@ impl<'a> RegionStructurer<'a> {
     ) -> Self {
         self.switch_blocks = switch_blocks;
         self.switch_case_edges = switch_case_edges;
+        self
+    }
+
+    /// Attach the precomputed `BlockBasic::isComplex` set (Inc 5 short-circuit
+    /// schema), keyed by bblocks `BlockBasic` id.  Mirrors
+    /// [`CollapseStructure::with_complex_blocks`](crate::blockaction::CollapseStructure).
+    fn with_complex_blocks(
+        mut self,
+        complex_blocks: std::collections::BTreeSet<BlockId>,
+    ) -> Self {
+        self.complex_blocks = complex_blocks;
         self
     }
 
@@ -323,6 +377,26 @@ impl<'a> RegionStructurer<'a> {
         self.graph.clear_visit_count(self.graph_id);
 
         let cap = round_cap(self.size());
+
+        // (a1 pre-pass) short-circuit / condition folding (Inc 5).  Ghidra
+        // `CollapseStructure::collapseAll` runs `collapseConditions` — which is
+        // *only* `ruleBlockOr`, to a fixpoint — BEFORE the if/sequence/loop
+        // cascade, so cascading conditions (`if (A) { if (B) … }`) fold to a single
+        // compound `A && B` / `A || B` `BlockCondition` first.  We mirror that here:
+        // run `match_acyclic_short_circuit_conditions` to a fixpoint up front,
+        // before the main schema loop.  Each fold removes one component, so the loop
+        // is bounded by `cap`.
+        let mut precond_rounds: i64 = 0;
+        loop {
+            precond_rounds += 1;
+            if precond_rounds > cap {
+                break; // hang-guard; main loop's fallback still converges
+            }
+            if !self.match_acyclic_short_circuit_conditions()? {
+                break;
+            }
+        }
+
         let mut rounds: i64 = 0;
         while self.size() > 1 {
             rounds += 1;
@@ -566,6 +640,150 @@ impl<'a> RegionStructurer<'a> {
         let graph_id = self.graph_id;
         self.graph.new_block_if(graph_id, bl, clause);
         Ok(true)
+    }
+
+    // -----------------------------------------------------------------------
+    // (a1) short-circuit / condition-fold schema — phoenix
+    //      ._match_acyclic_short_circuit_conditions (types a–d), realized over
+    //      kuna's `BlockCondition` builder exactly as Ghidra
+    //      `CollapseStructure::ruleBlockOr` (`blockaction.cc:1321`) does.
+    // -----------------------------------------------------------------------
+
+    /// Is `bl` too complex to be folded as a *cascading* condition clause (C++
+    /// `FlowBlock::isComplex` virtual dispatch)?
+    ///
+    /// The base returns `true`; `BlockList`/`BlockCopy` delegate down to the front
+    /// `BlockBasic`, whose statement count is the real test.  Resolves `bl` to its
+    /// front-leaf `BlockCopy` and reads the precomputed per-BlockBasic complexity
+    /// (`complex_blocks`, keyed by the `copy` pointer).  A block that does not
+    /// resolve to a `BlockCopy`/`BlockBasic` falls back to the conservative `true`
+    /// (so it never participates in a fold — honest-partial).  Identical to
+    /// [`CollapseStructure::is_complex`](crate::blockaction::CollapseStructure).
+    fn is_complex(&self, bl: BlockId) -> bool {
+        let leaf = match self.graph.get_front_leaf(bl) {
+            Some(l) => l,
+            None => return true, // base FlowBlock::isComplex
+        };
+        match self.graph.block(leaf).get_copy() {
+            Some(basic) => self.complex_blocks.contains(&basic),
+            None => true,
+        }
+    }
+
+    /// Fold cascading short-circuit conditions (`if (A) { if (B) … }` /
+    /// `if (A) goto X; if (B) goto X;` and the `||`/`&&`-with-else shapes) into a
+    /// single [`BlockCondition`](crate::block::BlockKind::Condition) carrying a
+    /// compound `A && B` / `A || B` condition.
+    ///
+    /// This is the kuna analog of angr `phoenix._match_acyclic_short_circuit_conditions`
+    /// (types a–d), realized as a faithful port of Ghidra
+    /// `CollapseStructure::ruleBlockOr` (`blockaction.cc:1321`) over kuna's
+    /// `BlockCondition` builder — so the folded condition is byte-identical to the
+    /// `CollapseStructure` (default-OFF) form.  `new_block_condition` picks
+    /// `CPUI_INT_OR`/`CPUI_INT_AND` from the edge orientation (the false-out of `b1`
+    /// being `b2` ⇒ `||`, else `&&`), exactly Ghidra's choice; the renderer
+    /// lowers those to `||`/`&&`.
+    ///
+    /// Mirrors Ghidra's pass order: `CollapseStructure::collapseAll` runs
+    /// `collapseConditions` (which is *only* `ruleBlockOr`, to a fixpoint) **before**
+    /// the if/sequence/loop cascade.  The region structurer therefore runs this
+    /// schema before the sequence/ITE schemas (see [`structure`]).
+    ///
+    /// Honest-partial: a 2-out node whose successor is not a single-in, non-complex,
+    /// 2-out condition reconverging through the shared clause is left untouched and
+    /// flows to the sequence/ITE schemas (and ultimately the virtualize fallback).
+    fn match_acyclic_short_circuit_conditions(&mut self) -> KunaResult<bool> {
+        let n = self.size();
+        for i in 0..n {
+            let bl = self.component(i);
+            if self.try_block_or(bl)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Attempt to fold the cascading condition rooted at `bl` (port of Ghidra
+    /// `CollapseStructure::ruleBlockOr`, `blockaction.cc:1321`).
+    ///
+    /// `bl` and its successor `orblock` are both binary (2-out) conditions; `orblock`
+    /// is single-in (nothing else reaches it), non-complex (a bare CBRANCH), and not
+    /// a goto/switch target; one of `orblock`'s out-edges (the shared `clauseblock`)
+    /// is also a direct out-edge of `bl`.  We orient `orblock` onto `bl`'s false out
+    /// (and `clauseblock` onto `orblock`'s true out) via `negate_condition_rec`
+    /// (recording the deferred data-flow flips), then fold the pair into a
+    /// `BlockCondition`.
+    fn try_block_or(&mut self, bl: BlockId) -> KunaResult<bool> {
+        if self.graph.block(bl).size_out() != 2 {
+            return Ok(false);
+        }
+        if self.graph.block(bl).is_goto_out(0) {
+            return Ok(false);
+        }
+        if self.graph.block(bl).is_goto_out(1) {
+            return Ok(false);
+        }
+        if self.graph.block(bl).is_switch_out() {
+            return Ok(false);
+        }
+        for i in 0..2 {
+            let orblock = self.graph.block(bl).get_out(i); // False out is other part of OR
+            if orblock == bl {
+                continue; // orblock cannot be same block
+            }
+            if self.graph.block(orblock).size_in() != 1 {
+                continue; // Nothing else can hit orblock
+            }
+            if self.graph.block(orblock).size_out() != 2 {
+                continue; // orblock must also be binary condition
+            }
+            if self.graph.block(orblock).is_interior_goto_target() {
+                continue; // No unstructured jumps into or
+            }
+            if self.graph.block(orblock).is_switch_out() {
+                continue;
+            }
+            if self.graph.block(bl).is_back_edge_out(i) {
+                continue; // Don't use loop branch to get to orblock
+            }
+            if self.is_complex(orblock) {
+                continue;
+            }
+            let clauseblock = self.graph.block(bl).get_out(1 - i);
+            if clauseblock == bl {
+                continue; // No looping
+            }
+            if clauseblock == orblock {
+                continue;
+            }
+            let mut j = 0;
+            while j < 2 {
+                if clauseblock == self.graph.block(orblock).get_out(j) {
+                    break;
+                }
+                j += 1;
+            }
+            if j == 2 {
+                continue;
+            }
+            if self.graph.block(orblock).get_out(1 - j) == bl {
+                continue; // No looping
+            }
+
+            if i == 1 {
+                // orblock needs to be false out of bl
+                self.negate_condition_rec(bl, true);
+            }
+            if j == 0 {
+                // clauseblock needs to be true out of orblock
+                self.negate_condition_rec(orblock, true);
+            }
+
+            let graph_id = self.graph_id;
+            self.graph.new_block_condition(graph_id, bl, orblock)?;
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     // -----------------------------------------------------------------------
