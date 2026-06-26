@@ -4034,3 +4034,74 @@ the single `funcstart_patterns` row; the byte-for-byte fixture was regenerated, 
   `kuna-decomp/tests/fixtures/stage_catalog.json`,
   `kuna-analysis/tests/fixtures/README.md`, `docs/assertions.md`,
   `docs/analysis-port-log.md`.
+
+### Increment 50 — FID PR1: SLEIGH instruction-mask accessor (the fingerprinting prerequisite)
+
+The first PR of the FID (Function-ID fingerprinting) port — the **SLEIGH
+instruction-mask accessor** that every FID hash consumes. FID's hashes are
+*operand-independent*: they fingerprint a function by the bits SLEIGH pins to a
+constant (opcode / addressing-mode bits) while masking out the bits that carry
+operand values (immediates, displacements, register selectors). kuna had no way
+to ask "which bits of this decoded instruction are fixed?" — the decoder discards
+the matched `DisjointPattern` after `DecisionNode::resolve`. This increment adds
+that accessor. The whole-feature design lives in `docs/fid-design.md` (landed
+this PR); PR1 is **the accessor only** — no FID hashing/DB/pass.
+
+**Purely additive, zero decode-behavior change.** PR1 touches the proven
+`kuna-sleigh` core but adds **only** a new `DecisionNode` method and a new
+`Sleigh` accessor — no existing decode path is modified. The new `instruction_mask`
+re-uses `obtain_context` verbatim and then *reads* the resolved constructor tree;
+it never alters resolution. Proof: `make test` **675/675 PARITY OK** and
+`make rust-test`'s `.sla` content-parity + datatest parity are **byte-identical**.
+
+**Two additions.**
+1. **`DecisionNode::resolve_matched`** (`slghsymbol.rs`, beside `resolve`) — a
+   variant of `resolve` that walks the decision tree byte-for-byte identically
+   (same context/instruction-bit dispatch, same `BadDataError`) but at the
+   terminal node returns the matched **`(DisjointPattern, ct)` pair** (re-running
+   `pat.is_match` to capture the specific leaf), not just the ct id. A convenience
+   `SubtableSymbol::resolve_matched` forwards to it. No decode path calls these.
+2. **`Sleigh::instruction_mask`** (`sleigh.rs`, beside `instruction_length`) →
+   `InsnMask { bytes, fixed_mask, length, operands }` (+ `OperandView`, `OpObject`
+   {Scalar/Register/Address}). It MUST live inside `sleigh.rs` because
+   `obtain_context`/`ParserContext`/`ConstructState`/`ParserWalker` are private.
+   It `obtain_context`s at `Pcode` state (so operand handles are resolved for
+   classification), then walks the matched `ConstructState` arena: per node it
+   re-runs `resolve_matched` to recover the leaf pattern and ORs the pattern's
+   **fixed instruction bits** into `fixed_mask`, shifted by the node's byte
+   `offset`, byte-by-byte via `get_mask(bit, 8, context=false)`. Per operand it
+   computes the value (operand-bit) mask and classifies the resolved
+   `FixedHandle` (constant-space → `Scalar`, register-space → `Register`, else
+   `Address`).
+
+**Gotchas honored.** Multi-word / variable-length masks are walked byte-by-byte
+respecting each node's `offset` (`get_mask` returns ≤32 bits per call); the
+context stream is **never** folded into the byte mask (`context=false` only — the
+context register has no instruction-byte position); `MAX_INSTRUCTION_LEN=16` caps
+the buffer/mask; the per-`addr` accessor naturally fingerprints one instruction
+(the FID extent walker steps by `len` for delay slots).
+
+**Sample (hand-checked vs `objdump`).** `add eax,0x12345678` = `05 78 56 34 12`
+→ `fixed_mask = [ff,00,00,00,00]` (opcode pinned, imm32 zeroed) + a
+`Scalar{0x12345678}`. `mov ecx,imm32` = `b9 …` → `[f8,00,00,00,00]` — the `b8+rd`
+opcode correctly leaves the low-3 register-selector bits free. `add eax,ecx` =
+`01 c8` → `[ff,c0]` (modrm reg/rm selectors are operand bits). `mov
+eax,[rbx+disp32]` = `8b 83 78 56 34 12` → `[ff,c0,00,00,00,00]` (disp32 zeroed) +
+a `Scalar{0x12345678}`.
+
+**Gates:** `make test` **675/675 PARITY OK**, `make test-stages` **PARITY OK**
+(203/203, raised by the concurrent worker), `make rust-test` **green** including
+the `.sla` content-parity tests. The new `instruction_mask` unit gate (4 x86-64
+cases) RAN (4 passed, 0 ignored).
+
+- **New:** `docs/fid-design.md` (the whole-FID design doc),
+  `kuna-sleigh/tests/instruction_mask.rs` (the 4-case unit gate).
+- **Changed:** `kuna-sleigh/src/slghsymbol.rs` (`DecisionNode::resolve_matched`
+  + `SubtableSymbol::resolve_matched`), `kuna-sleigh/src/sleigh.rs`
+  (`InsnMask`/`OperandView`/`OpObject` + `Sleigh::instruction_mask` +
+  `classify_handle` + `ParserWalker::set_point`), `docs/analysis-port-log.md`.
+- **Note:** RIP-relative `[rip+disp32]` forms (mod=00 rm=101) need address
+  arithmetic the minimal standalone test harness does not supply, so the disp32
+  test uses the register-base `mov reg,[base+disp32]` form — a harness limitation,
+  not an accessor limitation (the same harness would fail RIP-relative in
+  `print_assembly`). PR2+ (the hasher / DB / pass) build on this accessor.

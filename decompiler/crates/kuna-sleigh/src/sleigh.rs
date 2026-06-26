@@ -32,7 +32,7 @@ use std::rc::Rc;
 
 use kuna_base::address::{calc_mask, Address};
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::space::{AddrSpace, AddrSpaceManager, RegisterLookup, VarnodeStorage};
+use kuna_base::space::{spacetype, AddrSpace, AddrSpaceManager, RegisterLookup, VarnodeStorage};
 use kuna_base::xml::DocumentStorage;
 
 use kuna_num::opcodes::OpCode;
@@ -446,6 +446,17 @@ impl<'a> ParserWalker<'a> {
     /// C++ `baseState`.
     fn base_state(&mut self) {
         self.cur.point = Some(self.ctx.base_state);
+        self.cur.depth = 0;
+        self.cur.breadcrumb[0] = 0;
+    }
+
+    /// Position the walker directly at an arena node (used by
+    /// `Sleigh::instruction_mask`, which iterates the resolved `ConstructState`
+    /// arena and needs the bit-reading seam methods — `get_instruction_bits`,
+    /// `get_instruction_bytes` — to read at that node's byte `offset`).  Only
+    /// the point feeds those reads; `resolve_matched` consults no breadcrumb.
+    fn set_point(&mut self, idx: usize) {
+        self.cur.point = Some(idx);
         self.cur.depth = 0;
         self.cur.breadcrumb[0] = 0;
     }
@@ -1468,6 +1479,57 @@ pub struct Sleigh {
     cache: RefCell<ContextCache>,
 }
 
+// ---------------------------------------------------------------------------
+// Instruction-mask accessor (FID / AIF fingerprinting prerequisite)
+// ---------------------------------------------------------------------------
+
+/// A decoded instruction's *fixed-bit mask*: which encoding bits SLEIGH pins to
+/// a constant (opcode / addressing-mode bits) versus which carry operand values
+/// (immediates, displacements, register selectors).  Produced by
+/// [`Sleigh::instruction_mask`]; consumed by FID-family operand-independent
+/// fingerprinting.
+///
+/// Invariant: `fixed_mask.len() == bytes.len() == length as usize`.  The FID
+/// "full mask" of byte `i` is `bytes[i] & fixed_mask[i]`; the operand (variable)
+/// mask is `!fixed_mask[i]`.  This is purely an *accessor* — it does not alter
+/// the decode in any way.
+#[derive(Debug, Clone)]
+pub struct InsnMask {
+    /// The raw instruction bytes (length `length`).
+    pub bytes: Vec<u8>,
+    /// `fixed_mask[i]` has a 1 wherever SLEIGH pins a fixed encoding bit, 0
+    /// where the bit belongs to an operand value (`operand_mask = !fixed_mask`).
+    pub fixed_mask: Vec<u8>,
+    /// The instruction length in bytes (C++ `instructionLength`).
+    pub length: i32,
+    /// Per-operand views: the value-bit range and the classified op-objects.
+    pub operands: Vec<OperandView>,
+}
+
+/// One operand of a decoded instruction, as seen by the mask accessor.
+#[derive(Debug, Clone)]
+pub struct OperandView {
+    /// Byte mask (length = instruction length) selecting this operand's value
+    /// bits — the bits SLEIGH did *not* pin within the operand's byte span.
+    pub value_mask: Vec<u8>,
+    /// The classified objects the operand resolves to (a register, a scalar
+    /// immediate, or a code/data address).
+    pub objects: Vec<OpObject>,
+}
+
+/// A classified operand object (the FID `OperandValue`/`Varnode` analog): what
+/// the operand's resolved [`FixedHandle`] turned out to denote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpObject {
+    /// A scalar/immediate (constant-space handle).  `signed` is the resolved
+    /// value; `is_address` marks a scalar SLEIGH flagged as a code address.
+    Scalar { signed: i64, whole_operand: bool, is_address: bool },
+    /// A register (register-space handle) at the given register-space offset.
+    Register { offset: u64 },
+    /// A code/data address (any other resolved space).
+    Address,
+}
+
 impl Sleigh {
     /// C++ `Sleigh(LoadImage *ld,ContextDatabase *c_db)`.
     pub fn new(loader: Box<dyn LoadImage>, context_db: Box<dyn ContextDatabase>) -> Sleigh {
@@ -1896,6 +1958,30 @@ impl Sleigh {
     }
 }
 
+/// Classify a resolved operand [`FixedHandle`] (Pcode state) into an
+/// [`OpObject`] for the instruction-mask accessor.  A constant-space handle is
+/// a scalar immediate; a register-space handle is a register at its offset;
+/// anything else is a code/data address.  `is_code_address` carries SLEIGH's
+/// own marking for scalars that denote a code address.
+fn classify_handle(hand: &FixedHandle, is_code_address: bool) -> OpObject {
+    match hand.space.as_ref() {
+        Some(space) if space.get_type() == spacetype::IPTR_CONSTANT => OpObject::Scalar {
+            // The handle offset holds the resolved constant; reinterpret as
+            // signed (FID's operand sub-hash truncates to i32 downstream).
+            signed: hand.offset_offset as i64,
+            whole_operand: true,
+            is_address: is_code_address,
+        },
+        Some(space) if space.get_name() == "register" => {
+            OpObject::Register { offset: hand.offset_offset }
+        }
+        Some(_) => OpObject::Address,
+        // No resolved space (dynamic/unresolved handle): treat as an address —
+        // FID hashes it as a non-scalar placeholder.
+        None => OpObject::Address,
+    }
+}
+
 /// Helper: borrow a [`SubtableSymbol`] by symbol id (C++ blind cast).
 fn subtable_ref(table: &SymbolTable, id: u32) -> KunaResult<&crate::slghsymbol::SubtableSymbol> {
     let sym = table
@@ -2022,6 +2108,145 @@ impl Sleigh {
     pub fn instruction_length(&self, baseaddr: &Address) -> KunaResult<i32> {
         let pos = self.obtain_context(baseaddr, ParseState::Disassembly)?;
         Ok(pos.get_length())
+    }
+
+    /// Decode the instruction at `baseaddr` and return its *fixed-bit mask*
+    /// (the FID / AIF fingerprinting prerequisite).  This re-uses the proven
+    /// decode (`obtain_context`) verbatim — it adds no decode behavior and
+    /// changes none — and then *reads* the resolved constructor tree to compute
+    /// which encoding bits SLEIGH pinned to a constant (opcode/addressing-mode)
+    /// versus which carry operand values.
+    ///
+    /// `fixed_mask[i]` has a 1 wherever a matched constructor pattern fixes a
+    /// bit; `operand_mask = !fixed_mask`.  The operand views carry, per operand,
+    /// the operand's value-bit mask and the classified [`OpObject`]s (register /
+    /// scalar / address) from the resolved [`FixedHandle`]s.
+    ///
+    /// Must live on `Sleigh` because `obtain_context`/`ParserContext`/
+    /// `ConstructState`/`ParserWalker` are all private to this module.
+    pub fn instruction_mask(&self, baseaddr: &Address) -> KunaResult<InsnMask> {
+        // Pcode state so operand handles are resolved (classification reads
+        // them); the fixed-mask tree walk works at either parse state.
+        let pos = self.obtain_context(baseaddr, ParseState::Pcode)?;
+        let len = pos.get_length();
+        if len <= 0 || len > MAX_INSTRUCTION_LEN {
+            return Err(KunaError::bad_data(format!(
+                "instruction_mask: out-of-range length {len} (cap {MAX_INSTRUCTION_LEN})"
+            )));
+        }
+        let ulen = len as usize;
+        // The raw bytes are already in the context buffer (loadFill'd by
+        // `resolve`); copy from there rather than re-reading the loadimage.
+        let bytes: Vec<u8> = pos.buf[..ulen].to_vec();
+
+        let table = &self.base.symtab;
+        let mut fixed = vec![0u8; ulen];
+
+        // --- Tree walk: OR each matched constructor's fixed bits into the mask.
+        // Iterate the resolved ConstructState arena reachable from base_state
+        // (each populated node holds the constructor that matched and its
+        // absolute byte `offset`).  For every such node we re-run the subtable's
+        // decision tree (`resolve_matched`) to recover the *specific* leaf
+        // DisjointPattern, then OR its fixed bits — context bits are NEVER
+        // folded in (`context=false`), since the context stream has no
+        // instruction-byte position.
+        let mut stack = vec![pos.base_state];
+        let mut operands: Vec<OperandView> = Vec::new();
+        while let Some(node_idx) = stack.pop() {
+            let node = &pos.state[node_idx];
+            let Some(ctref) = node.ct else { continue };
+            let node_off = node.offset as usize;
+
+            // Position a read-only walker at this node so the pattern's
+            // bit/byte reads (and `resolve_matched`'s decision dispatch) read at
+            // the node's byte offset.
+            let mut walker = ParserWalker::new(&pos, table, self);
+            walker.set_point(node_idx);
+            let subtable = subtable_ref(table, ctref.table_id)?;
+            let (dp, _ct) = {
+                let reader: &dyn SymbolWalker = &walker;
+                subtable.resolve_matched(reader)?
+            };
+            // Pattern length is relative to the node start (already offset-
+            // resolved by decode); OR byte-by-byte, capping at the instruction
+            // length (multi-word patterns return <=32 bits per get_mask call).
+            let patlen = dp.get_length(false); // false == instruction stream only
+            let mut b = 0i32;
+            while b < patlen {
+                let abs = node_off + b as usize;
+                if abs >= ulen {
+                    break; // never write past the decoded instruction
+                }
+                // get_mask(startbit,size,context): startbit is bit position
+                // relative to the node start; context=false reads the
+                // instruction-byte mask. Take 8 bits per byte.
+                let m = dp.get_mask(b * 8, 8, false) as u8;
+                fixed[abs] |= m;
+                b += 1;
+            }
+
+            // --- Operand classification for this constructor's operands.
+            let ct = table.get_constructor(ctref)?;
+            let numoper = ct.get_num_operands();
+            for oper in 0..numoper {
+                let opid = ct.get_operand(oper)?;
+                let opsym = table
+                    .find_symbol_by_id(opid)
+                    .ok_or_else(|| KunaError::sleigh("instruction_mask: operand undefined"))?;
+                let SymbolKind::Operand(op) = opsym.kind() else {
+                    return Err(KunaError::sleigh("instruction_mask: not an operand symbol"));
+                };
+
+                // Compute the operand's byte span within the instruction.  An
+                // operand defined by a subtable lives in its own child node (we
+                // visit that child separately for the fixed bits); the operand
+                // *value* span is [child.offset, child.offset+child.length) when
+                // resolved, else the constructor-relative [node_off+rel, +min).
+                let child_idx = node.resolve.get(oper as usize).copied().flatten();
+                let (span_off, span_len) = match child_idx {
+                    Some(ci) => {
+                        let c = &pos.state[ci];
+                        (c.offset as usize, c.length.max(0) as usize)
+                    }
+                    None => {
+                        // A local/expression operand (no resolved child node):
+                        // approximate its span as constructor-relative
+                        // [node_off + reloffset, +minimumLength).  This feeds
+                        // FID's operand sub-hash; the fixed_mask (above) is the
+                        // load-bearing output.
+                        let off = node_off + op.get_relative_offset() as usize;
+                        (off, op.get_minimum_length().max(0) as usize)
+                    }
+                };
+
+                // The operand's value mask = bits in its span NOT pinned fixed.
+                // (We defer the actual fixed bits of sub-constructor operands to
+                // their own node visit; here we expose the complement over the
+                // span, which is what FID's operand sub-hash consumes.)
+                let mut value_mask = vec![0u8; ulen];
+                for i in 0..span_len {
+                    let abs = span_off + i;
+                    if abs < ulen {
+                        value_mask[abs] = !fixed[abs];
+                    }
+                }
+
+                // Classify the resolved handle (Pcode state) into an OpObject.
+                let mut objects: Vec<OpObject> = Vec::new();
+                if let Some(ci) = child_idx {
+                    let hand = &pos.state[ci].hand;
+                    objects.push(classify_handle(hand, op.is_code_address()));
+                }
+                operands.push(OperandView { value_mask, objects });
+            }
+
+            // Descend into resolved children (subtable operands).
+            for child in node.resolve.iter().flatten() {
+                stack.push(*child);
+            }
+        }
+
+        Ok(InsnMask { bytes, fixed_mask: fixed, length: len, operands })
     }
 
     /// C++ `Translate::printAssembly`.
