@@ -87,6 +87,21 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // instructions are NOT recovered — kuna's S5/S7 frame analysis already
         // recovers the stack frame from the code, so CFI is inherited, not rebuilt.
         Box::new(crate::s1_entry::EhFrameLsdaPass),
+        // S1 full byte-pattern function starts (FuncStartPatternPass): the faithful
+        // port of Ghidra's `FunctionStartAnalyzer` over the ENTIRE vendored pattern
+        // corpus (`s1_entry/patterns/*.xml`: the `<patternpairs>` pre/post sequences
+        // + bare `<funcstart/>` patterns, x86/x86-64 headline + AArch64/ARM/RISC-V/
+        // MIPS/PPC). Unlike `EntryDiscoveryPass`'s always-on minimal oracle 5 (three
+        // bare x86-64 prologues), this applies the full set with the upstream
+        // pre/post matching: a candidate is a start iff a postpattern matches at it
+        // AND a prepattern matches the bytes immediately before it. Default-**OFF**
+        // (output-changing: discovers more functions): registered always, but its
+        // facts are dropped at commit unless `--option funcstart_patterns on`
+        // (`engine.rs::analysis_pass_enabled` reads `arch.analysis_funcstart_patterns`,
+        // default false), so a default run is byte-identical. After EntryDiscoveryPass
+        // (its discoveries are a superset; the commit seam dedups against the entries
+        // EntryDiscoveryPass already emits). See `s1_entry::FuncStartPatternPass`.
+        Box::new(crate::s1_entry::FuncStartPatternPass),
         // S1 ARM/Thumb decode-mode markers: paint the SLEIGH `TMode` context
         // variable from ARM mapping symbols (`$t`/`$a`) + the STT_FUNC odd-address
         // (LSB=1 ⇒ Thumb) convention, so Thumb code decodes as Thumb. The kuna

@@ -3913,3 +3913,124 @@ adds a one-time whole-`.text` linear sweep (~0.3 s on fauxware, within noise).
   (max bump); goldens `stage_catalog.json` + `docs/assertions.md`; new fixture
   `tests/fixtures/operand_refs_x86_64`(`.c`) + README; new e2e gate
   `kuna-console/tests/verify_operand_refs.rs`.
+
+### Increment 49 — The FULL byte-pattern function-start set (FunctionStartAnalyzer)
+
+`s1_entry` already ports Ghidra's `DittedBitSequence` matcher and a *minimal*,
+hand-written set of three bare x86-64 prologues (oracle 5,
+`prologue_pattern_starts`, always-on inside `EntryDiscoveryPass`). This increment
+vendors and parses the **entire upstream pattern corpus** and applies it with the
+upstream pre/post matching semantics, as a **separate, default-OFF** analysis pass
+(`funcstart_patterns`), so a stripped binary recovers many more function starts.
+
+**What was vendored.** The complete
+`Ghidra/Processors/{x86,AARCH64,ARM,RISCV,MIPS,PowerPC}/data/patterns/*.xml`
+(28 files) into `kuna-analysis/src/s1_entry/patterns/` — verbatim from upstream
+(`GHIDRA_REV=cef869af04c4740a71ad31a55704045b1b0d1644`, `docs/UPSTREAM.md`),
+embedded via `include_str!` (the analyzer tier has no spec-root handle). The new
+`s1_entry/patterns/mod.rs` is the faithful port of two upstream classes:
+`DittedBitSequence.initFromDittedStringData` (the full hex+binary ditted parser,
+incl. the `*` mark-offset) and `PatternPairSet.createFinalPatterns`/`restoreXml`
+(the pre/post pairing).
+
+**The matcher (the high-value half).** Faithful to `PatternPairSet`: a candidate
+is a function start iff a **postpattern** (the prologue shape) matches **at** it
+AND a **prepattern** (the preceding context — a RET/JMP/NOP/…) matches the bytes
+**immediately before** it (the concat's mark is `prepattern.getSize()`), at the
+instruction alignment (`FunctionStartAnalyzer.applyActionToSet`'s
+`addr % getInstructionAlignment() != 0` reject). Bare `<pattern>` blocks with an
+unconditional `<funcstart/>` (incl. the `*`-marked x86-64win MSVC shapes, where the
+bytes before the `*` are context) are also matched. This is pure byte matching —
+no disassembler — so it ports cleanly at the analyzer tier. Arches with an
+unconditional-`<funcstart/>` patternpair yield a set: **x86-64 / x86-32 / ARM /
+RISC-V / MIPS**. AArch64 and PPC carry only `<possiblefuncstart/>` patternpairs
+(`PossibleFunctionStartAction` writes a *separate* `potentialFuncResult` set that
+Ghidra confirms later via the Listing), so they yield **no** set — a documented
+LOSS at this disassembler-free tier, not a bug.
+
+**LOSS (unchanged wall).** The `after="defined"` / `validcode="N"` /
+`<possiblefuncstart/>` / `thunk` / `label` / `section` post-rules all need a
+`PseudoDisassembler`/`Listing` (is there defined code/data right before? do N valid
+instructions disassemble here?) the analyzer tier does not have — dropped, the same
+wall `s1_entry`'s oracle-5 docs and `noreturn.rs` record. Only the
+byte-decidable `<patternpairs>` `<funcstart/>` + bare unconditional `<funcstart/>`
+are ported.
+
+**The gate (default-OFF, output-changing).** Because the pass discovers MORE
+functions, it ships as a *separate* `AnalysisPass` (`FuncStartPatternPass`,
+`id() == "funcstart_patterns"`) gated default-off — NOT folded into the always-on
+`entry_disc`. The mechanism mirrors every other analysis-pass gate exactly: the
+pass `run`s unconditionally at bootstrap (it reads only `ctx.file`), is keyed by
+`id()`, and the console's deferred commit (`engine.rs::analysis_pass_enabled`,
+reached at `read symbols` after the `--option` lines are applied) keeps its facts
+only when `arch.analysis_funcstart_patterns` is true. The `_ => true` fail-open in
+`analysis_pass_enabled` made an explicit `"funcstart_patterns" =>` arm load-bearing
+for the default-off contract. End-to-end wiring: `stages.toml` (the
+`funcstart_patterns` settable, `default = "off"`) + `KUNA_OPTION_NAMES`
+(`options.rs`) + `architecture.rs` (the `analysis_funcstart_patterns` bool +
+`reset_defaults_internal` false + `set_kuna_option` arm) +
+`engine.rs::analysis_pass_enabled` (explicit id) + the settable-count tests
+(`kuna_stages/tests.rs` 49→50, `catalog_bytecompat.rs` 49→50) + the goldens
+(`stage_catalog.json` regenerated, `docs/assertions.md` via `kuna catalog
+--markdown` — a single additive row).
+
+**The headline (the extra-function proof).** The fixture
+`funcstart_patterns_x86_64` (stripped x86-64 ELF) has a `static` helper `widget`
+@`0x401130` whose `-O2` prologue is `push rbx; mov rbx,rdi` (`53 48 89 fb`),
+preceded by gcc's 8-byte NOP pad — the FULL `<patternpairs>` postpattern
+`0x534889fb` gated by the prepattern `0x0f1f840000000000`, a shape the minimal
+oracle misses. `widget` has no symbol (stripped, `static`), no `.eh_frame` FDE
+(`-fno-asynchronous-unwind-tables`), and is not `e_entry`/INIT/FINI/`main`, so it
+is discoverable ONLY via the full set:
+
+```text
+$ kuna decompile funcstart_patterns_x86_64 sub_401130 --option funcstart_patterns on
+int8 sub_401130(int8 a0)
+{
+  return a0 * 7 + 9;
+}
+
+$ kuna decompile funcstart_patterns_x86_64 sub_401130     # default off
+error: no function "sub_401130" in …; for a stripped binary pass an address with --addr
+```
+
+`kuna-console/tests/verify_funcstart_patterns.rs` asserts both halves
+(`lookup_symbol("sub_401130")` is `Some` only with the option on) plus the pure-core
+seam (`full_pattern_starts` includes `widget`, default `collect_entries` does not);
+the `patterns` module unit-tests the ditted parser (hex/binary/`*`-mark), the
+pre/post matching (a `push rbx` hit needs the NOP prepattern; no prepattern ⇒ no
+hit), and the per-arch set selection.
+
+**Speed.** The full-pattern sweep runs once at load (O(exec-section-bytes ×
+patterns), not per-function); end-to-end `kuna decompile … --option
+funcstart_patterns on` is ~0.31 s on the fixture vs ~0.2–0.6 s default-off — no
+measurable slowdown (the pattern set is parsed once, cached per arch via
+`OnceLock`).
+
+**Gating / parity.** Default-off ⇒ the pass's facts are dropped at commit and every
+decompilation is byte-identical to the `entry_disc`-only baseline; the XML datatest
+path never reaches the object analysis tier, so the parity oracles are structurally
+untouched. Gates: `make test` **675/675 PARITY OK**, `make test-stages` **PARITY
+OK**, `make rust-test` **green**; `kuna catalog --check` **OK** (the catalog adds
+the single `funcstart_patterns` row; the byte-for-byte fixture was regenerated, no
+`current` field).
+
+- **Divergence/LOSS:** the `after`/`validcode`/`<possiblefuncstart/>`/thunk/label
+  pattern rules are dropped (disassembler-gated), so AArch64/PPC (whose patternpairs
+  are all `<possiblefuncstart/>`) and the conditioned x86 bare patterns contribute
+  nothing — the same `s1_entry` analyzer-tier wall. No parity-oracle divergence
+  (default-off).
+- **New:** `kuna-analysis/src/s1_entry/patterns/` (the 28 vendored XMLs +
+  `mod.rs`), `kuna-console/tests/verify_funcstart_patterns.rs`,
+  `kuna-analysis/tests/fixtures/funcstart_patterns_x86_64{,.c}`.
+- **Changed:** `kuna-analysis/src/s1_entry/mod.rs` (`FuncStartPatternPass` +
+  `full_pattern_starts` + the `mod patterns`), `kuna-analysis/src/passes.rs`
+  (register the pass), `kuna-decomp/src/infra/architecture.rs`
+  (`analysis_funcstart_patterns` field + default + `set_kuna_option`),
+  `kuna-decomp/src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`),
+  `kuna-decomp/stages.toml` (the settable), `kuna-console/src/engine.rs`
+  (`analysis_pass_enabled` arm), `kuna-decomp/src/p0_knowledge/kuna_stages/tests.rs`
+  + `kuna-decomp/tests/catalog_bytecompat.rs` (count 49→50),
+  `kuna-decomp/tests/fixtures/stage_catalog.json`,
+  `kuna-analysis/tests/fixtures/README.md`, `docs/assertions.md`,
+  `docs/analysis-port-log.md`.

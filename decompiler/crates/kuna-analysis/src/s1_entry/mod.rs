@@ -89,6 +89,7 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Stage
 use crate::s1_loader::format::FormatKind;
 
 mod macho_entry;
+pub mod patterns;
 mod pe_entry;
 
 // ===========================================================================
@@ -184,6 +185,129 @@ impl AnalysisPass for EhFrameLsdaPass {
         out.entries = collect_landing_pad_entries(ctx.file, ctx.bytes);
         out
     }
+}
+
+/// (kuna) The **full upstream byte-pattern function-start** pass — the faithful
+/// port of Ghidra's `FunctionStartAnalyzer` over the entire vendored pattern
+/// corpus (`s1_entry/patterns/*.xml`, `<patternpairs>` pre/post + bare
+/// `<funcstart/>`), as a *separate*, default-**OFF** analysis pass.
+///
+/// ## Why a separate pass (not an extra oracle inside `EntryDiscoveryPass`)
+///
+/// `EntryDiscoveryPass` runs at **bootstrap** (`run_default_analyses_per_pass`),
+/// while the `--option funcstart_patterns on|off` flag is applied **later**
+/// (before `read symbols`). A pass cannot read its own gate at run time — so kuna
+/// gates whole passes at *commit* time: each pass `run`s unconditionally at
+/// bootstrap, and the console's `commit_analysis_output` keeps only the enabled
+/// passes' facts (`engine.rs::analysis_pass_enabled`, keyed by `id()`). Mirroring
+/// that exactly, this is its own `AnalysisPass` with `id() == "funcstart_patterns"`
+/// and an `analysis_funcstart_patterns` gate that defaults **off**, so its extra
+/// discoveries are dropped at commit unless the user turns it on — keeping every
+/// default-off run byte-identical (the parity contract).
+///
+/// ## What it adds
+///
+/// The existing oracle 5 (`prologue_pattern_starts`, always-on inside
+/// `EntryDiscoveryPass`) matches a hand-written **minimal** set of three bare
+/// x86-64 prologues at any aligned offset. This pass instead applies the **full**
+/// upstream pattern set with the upstream **pre/post** semantics: a candidate is a
+/// function start iff a postpattern matches at it AND a prepattern matches the
+/// bytes immediately before it (after a RET/JMP/NOP/…). That gate makes the much
+/// larger pattern set both broader (every gcc/clang/MSVC prologue shape) and more
+/// precise (the prepattern context). x86/x86-64 are the headline; AArch64/ARM/
+/// RISC-V/MIPS/PPC sets are vendored + parsed too (their `<patternpairs>` use the
+/// identical mechanism). See [`patterns`].
+///
+/// The discovered VMAs are emitted into [`AnalysisOutput::entries`] exactly like
+/// `EntryDiscoveryPass`, so the same commit seam (`commit_analysis_output` step 2:
+/// `name_function` + `add_function`, idempotent against the funcsym stream + any
+/// already-discovered entry) names + adds each as `sub_<addr>`. Purely additive:
+/// it only ever *adds* new, unnamed starts.
+pub struct FuncStartPatternPass;
+
+impl AnalysisPass for FuncStartPatternPass {
+    fn stage(&self) -> Stage {
+        Stage::S1
+    }
+
+    fn id(&self) -> &'static str {
+        "funcstart_patterns"
+    }
+
+    fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
+        let mut out = AnalysisOutput::default();
+        // Only ELF/PE/Mach-O carry executable sections we sweep; the same format
+        // gate `EntryDiscoveryPass` uses. Additive: never fail.
+        if !matches!(
+            crate::s1_loader::format::detect(ctx.file).map(|f| f.kind()),
+            Ok(FormatKind::Elf | FormatKind::Pe | FormatKind::MachO)
+        ) {
+            return out;
+        }
+        out.entries = full_pattern_starts(ctx.file);
+        out
+    }
+}
+
+/// Discover function starts via the full vendored pattern set, filtered to the
+/// genuinely-new starts (inside an executable section, not already a funcsym, not
+/// the `e_entry`/dynamic/eh-frame/idiom entries `EntryDiscoveryPass` already
+/// emits). The returned vec is sorted/deduped.
+///
+/// This is the testable seam (drive it over fixture bytes); it parallels
+/// [`collect_entries`] but is the *full-pattern* superset, gated default-off.
+pub fn full_pattern_starts(file: &object::File) -> Vec<u64> {
+    let Some(set) =
+        patterns::for_arch(file.architecture(), file.is_little_endian())
+    else {
+        return Vec::new();
+    };
+    let execs = executable_sections(file);
+    let funcsyms = existing_function_addrs_for_file(file);
+
+    // Sweep every executable section with the full pattern set.
+    let mut cand: Vec<u64> = Vec::new();
+    for (addr, _hi, data) in &execs {
+        cand.extend(set.scan(*addr, data));
+    }
+
+    let mut out: Vec<u64> = Vec::new();
+    for vma in cand {
+        if vma == 0 {
+            continue;
+        }
+        if !in_executable_section(&execs, vma) {
+            continue;
+        }
+        if funcsyms.binary_search(&vma).is_ok() {
+            continue;
+        }
+        out.push(vma);
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// `existing_function_addrs` over a parsed `object::File` only (the pattern pass
+/// has no separate `bytes` slice handy for the PE/Mach-O `resolve_imports` re-parse
+/// — but those formats' funcsym addresses are already covered by the symbol/PLT
+/// scan here, and the commit seam's `find_function` overlap check is the final
+/// idempotency guard). Sorted/deduped to support `binary_search`.
+fn existing_function_addrs_for_file(file: &object::File) -> Vec<u64> {
+    let mut out: Vec<u64> = Vec::new();
+    for sym in file.symbols().chain(file.dynamic_symbols()) {
+        if sym.kind() != SymbolKind::Text {
+            continue;
+        }
+        let addr = sym.address();
+        if addr != 0 {
+            out.push(addr);
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
 }
 
 // ===========================================================================

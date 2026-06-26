@@ -397,6 +397,20 @@ pub struct Architecture {
     /// `.gcc_except_table` markup); default **off** (output-changing: adds the
     /// discovered exception-handler landing pads as function entries).
     pub analysis_eh_frame_full: bool,
+    /// (kuna) Gate the **full byte-pattern function-start** pass
+    /// (`funcstart_patterns`); default **off** (output-changing: it discovers more
+    /// functions). The faithful port of Ghidra's `FunctionStartAnalyzer` over the
+    /// entire vendored pattern corpus (`s1_entry/patterns/*.xml`, the
+    /// `<patternpairs>` pre/post sequences + bare `<funcstart/>` patterns), as a
+    /// SEPARATE pass from `entry_disc` (whose always-on oracle 5 ports only a
+    /// minimal three-prologue subset). When on, a stripped binary recovers many
+    /// more function starts (e.g. `push rbx; mov rbx,rdi` after NOP padding); the
+    /// commit seam adds each as `sub_<addr>`, idempotent against the funcsym stream
+    /// + the `entry_disc` entries. Default-off ⇒ the pass's facts are dropped at
+    /// commit (`engine.rs::analysis_pass_enabled`) and every parity gate is
+    /// byte-identical. Real-ELF/PE/Mach-O path only ⇒ the XML datatest oracle is
+    /// structurally untouched.
+    pub analysis_funcstart_patterns: bool,
     /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
     pub analysis_arm_markers: bool,
     /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
@@ -686,6 +700,7 @@ impl Architecture {
             analysis_strings: false,
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
+            analysis_funcstart_patterns: false,
             analysis_arm_markers: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
@@ -797,6 +812,7 @@ impl Architecture {
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
         // output-changing: adds the discovered exception landing pads as entries).
         self.analysis_eh_frame_full = false;
+        self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
         self.analysis_arm_markers = true;
         self.analysis_mips_gp = true;
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
@@ -938,6 +954,9 @@ impl Architecture {
             "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
             "eh_frame_full" => {
                 on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
+            }
+            "funcstart_patterns" => {
+                on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
             }
             "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
             "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),

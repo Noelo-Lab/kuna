@@ -372,6 +372,12 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (output-changing: adds entries), so a default run never commits them and
         // the discovery set is byte-identical to FDE-pcBegin-only.
         "eh_frame_full" => arch.analysis_eh_frame_full,
+        // (kuna) The full byte-pattern function-start pass — default-OFF
+        // (output-changing). The `_ => true` fail-open below would otherwise run it
+        // by default, so this explicit arm reading the (default-false)
+        // `analysis_funcstart_patterns` flag is load-bearing for the default-off
+        // contract.
+        "funcstart_patterns" => arch.analysis_funcstart_patterns,
         "arm_markers" => arch.analysis_arm_markers,
         "mips_gp" => arch.analysis_mips_gp,
         "mips_isa" => arch.analysis_mips_isa,
