@@ -5,7 +5,7 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=94, settable=49
+# Counts (asserted in tests): group=39, substage=40, surface=94, settable=50
 # (31 stage-model knobs + 15 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
@@ -1691,6 +1691,23 @@ use_when = "Set on when kuna emits 1+ gotos to a shared `... return v;` tail tha
 example = "option gotoreduce on"
 source_decompiler = "angr"
 inspiration = "test_decompiling_dd_argmatch_to_argument_noeagerreturns; SAILR/Phoenix goto-reduction (ReturnDuplicator); argmatch_to_argument"
+change_kind = "structure-recovery"
+
+[[settable]]
+option = "crossjumprevert"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S8"
+substage = "goto-quality"
+strength = "HARD"
+rewind = "S8"
+issue = "angr-CrossJumpReverter"
+summary = "After structuring, revert compiler cross-jumping (Irreducible Statement Condensing): rewrite `if (cond) goto T` into `if (cond) { <tail> }` when T is a small single-successor *non-return* basic block that falls through to a successor S, by duplicating that cross-jump tail inline (a print-tree copy of the same ops — no p-code cloned). Only fires when the if's own structured fall-through also converges on S (a next_flow_after convergence precondition), so duplication is semantics-preserving. Sibling of gotoreduce (return tails) for the non-return fall-through case."
+use_when = "Set on when kuna emits 1+ gotos to a shared, condensed *non-return* tail that angr's CrossJumpReverter renders goto-free (e.g. `else if (c) { f(); goto label; } ... else { label: v = *p; } if (v == 2) ...`). Off (default) is byte-identical to upstream; on, the bounded (one tail block, <=8 printed ops, no STORE, <=1 call) cross-jump tail is duplicated back into the goto source so both paths fall straight through and the goto/label vanish. Each duplication is logged (`crossjumprevert:`). Runs after gotoreduce (last deoptimization)."
+example = "option crossjumprevert on"
+source_decompiler = "angr"
+inspiration = "test_who_condensing_opt_reversion; SAILR CrossJumpReverter/ReturnDuplicatorLow (angr/analyses/decompiler/optimization_passes/cross_jump_reverter.py); who.o scan_entries"
 change_kind = "structure-recovery"
 
 [[settable]]
