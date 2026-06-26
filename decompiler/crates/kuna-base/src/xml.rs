@@ -1641,8 +1641,10 @@ mod tests {
         // ghangr-who-condensing-opt-reversion-72e518 / crossjumprevert,
         // ghangr-setlocale-rettype / DIV-11,
         // ghangr-noreturn_extern / noreturn_extern, angr test_tail_tail_bytes_ret_dup,
-        // and ghangr-incorrect-duplication-chcon-a0e113 / noreturn_externmatch, DIV-13)
-        assert_eq!(count, 151, "corpus file count drifted");
+        // ghangr-incorrect-duplication-chcon-a0e113 / noreturn_externmatch, DIV-13,
+        // and ghangr-switchmultipred-memmove / switchmultipred, angr
+        // test_decompiling_abnormal_switch_case_case3)
+        assert_eq!(count, 152, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
