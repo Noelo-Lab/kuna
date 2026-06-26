@@ -18,6 +18,7 @@
 
 mod catalog;
 mod decompile;
+mod fid;
 mod jsonfmt;
 mod paths;
 mod specs;
@@ -41,6 +42,7 @@ fn main() -> ExitCode {
         "test" => cmd_test(rest),
         "catalog" => cmd_catalog(rest),
         "specs" => specs::run(rest),
+        "fid" => fid::run(rest),
         "-h" | "--help" | "help" => {
             usage();
             0
@@ -56,12 +58,13 @@ fn main() -> ExitCode {
 
 fn usage() {
     eprintln!(
-        "usage: kuna <decompile|test|catalog|specs> ...\n\
+        "usage: kuna <decompile|test|catalog|specs|fid> ...\n\
          \n\
          kuna decompile <binary> <func> [--addr] [--slice ARCH] [--option NAME VALUE]... [--kassert ARGS]...\n\
          kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
          kuna catalog [--json|--markdown|--check] [--option NAME]\n\
-         kuna specs [-a <dir>] [<slaspec>...] [--diff]"
+         kuna specs [-a <dir>] [<slaspec>...] [--diff]\n\
+         kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>"
     );
 }
 

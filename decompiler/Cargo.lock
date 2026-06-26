@@ -99,7 +99,10 @@ dependencies = [
 name = "kuna-cli"
 version = "0.1.0"
 dependencies = [
+ "kuna-analysis",
+ "kuna-console",
  "kuna-decomp",
+ "object",
 ]
 
 [[package]]
