@@ -165,3 +165,42 @@ foundation the goto-reduction needs — but the **measurable goto delta** on a l
 post-dom (H2) refinement, which restructures the irreducible interlocks (`get_space`) Ghidra and
 the flat cyclic schemas both leave as gotos. The cyclic schemas + the break/continue plumbing are
 in place for both.
+
+## Inc 5 — implementation status & findings (short-circuit / condition folding, option `regionstructure`)
+
+**Landed (parity-safe, 3 gates green):** the region structurer now folds **cascading
+short-circuit conditions** into a single compound `&&`/`||` condition, matching Ghidra
+byte-for-byte. `region_structurer::match_acyclic_short_circuit_conditions` (→ `try_block_or`)
+is a faithful port of Ghidra `CollapseStructure::ruleBlockOr` (`blockaction.cc:1321`) — the
+kuna analog of angr `phoenix._match_acyclic_short_circuit_conditions` (types a–d). When a 2-out
+condition `bl` has a single-in, non-complex, 2-out successor `orblock` that reconverges through
+a shared clause, the pair folds into a [`BlockCondition`](../decompiler/crates/kuna-decomp/src/substrate/block.rs)
+via `new_block_condition`, which picks `CPUI_INT_AND`/`CPUI_INT_OR` from the edge orientation
+*exactly* as Ghidra does (so the rendered `&&`/`||` is byte-identical). The `isComplex` gate
+reuses `BlockBasic::isComplex` (precomputed `complex_blocks`, the same set `CollapseStructure`
+consumes), and the condition orientation uses the existing `negate_condition_rec` (recording the
+deferred data-flow flips into `pending_flips`). It runs as an **up-front fixpoint** before the
+sequence/ITE/loop cascade, mirroring Ghidra's `collapseAll` order (`collapseConditions` — which
+is *only* `ruleBlockOr` — runs before `collapseInternal`).
+
+**This closes the default-on blocker.** The single datatest where the region structurer (`on`)
+diverged from Ghidra was `elseif.xml` *Else-if #14*: the `if (b==0xc9) { if (a<=299) { … } }`
+cascade rendered as a nested `if` under `regionstructure on` instead of Ghidra's folded
+`else if ((b == 0xc9) && (a <= 299))`. Inc 5 makes the region structurer produce the **identical**
+folded `&&` form. With the option temporarily flipped default-ON, **the whole 675-assertion
+datatest suite is byte-identical to default-OFF (0/675 divergences, PARITY OK)** — so the future
+Inc 6 default-on flip is clean. `tests/stages/regionstructure-shortcircuit.xml` asserts the
+`&&`-folded form across BOTH passes (off=CollapseStructure, on=region structurer) on the upstream
+`testElseIf` binary; the full per-function C output is byte-identical between the two passes.
+
+**Honest-partial-safe:** a 2-out node whose successor is not a single-in, non-complex, 2-out
+condition reconverging through the shared clause is left untouched and flows to the
+sequence/ITE/virtualize schemas (never a panic, never a whole-function abort). Default-OFF ⇒
+675/675 byte-identical; ON-vs-OFF decompile speed is unchanged (the fold only runs under the
+option, and the up-front fixpoint is bounded by the same `round_cap` as the main loop).
+
+**Not in this increment:** the SAILR **H2** post-dominator virtualization heuristic (the
+`postdom_max_edges`/`postdom_max_graph_size`-capped refinement that would restructure the
+irreducible `get_space`-style interlocks Inc 3 leaves as gotos) is still future work — Inc 5 here
+delivers the **short-circuit `&&`/`||` folding** half of the roadmap's Inc 5, which is the piece
+that unblocks the clean default-on flip; the H2 post-dom refinement remains for a later pass.
