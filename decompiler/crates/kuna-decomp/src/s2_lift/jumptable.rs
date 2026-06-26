@@ -2216,19 +2216,306 @@ impl JumpBasicModel {
         true
     }
 
-    /// SEAM(structuring): unrolled-guard detection needs `BlockBasic::
-    /// findMultiequal`/`liftVerifyUnroll` (structuring helpers not yet ported).
-    /// A guard duplicated across multiple incoming blocks is left undetected; the
-    /// switch still recovers via the straight-line path (the unrolled guard only
-    /// adds an extra range constraint).  Recorded as a loss.
+    /// (kuna) For incoming edge `slot` of block `bl`, walk back through any
+    /// pure single-in / single-out "trampoline" blocks (an empty block or one
+    /// ending in an unconditional BRANCH) to the nearest block ending in a
+    /// CBRANCH guard.  Returns `(cbranch_op, toward_switch_outslot)` where
+    /// `toward_switch_outslot` is the CBRANCH out-edge index whose path reaches
+    /// `bl` (the upstream `getInRevIndex` of the edge leaving the guard).
+    ///
+    /// (kuna extension of upstream `checkCommonCbranch`, which peels exactly one
+    /// level — x86 compilers frequently interpose a BRANCH thunk between the
+    /// bound guard and the multi-entry dispatch block, as in
+    /// `test_decompiling_abnormal_switch_case_case3`.)
+    fn guard_cbranch_for_edge(fd: &Funcdata, bl: BlockId, slot: int4) -> Option<(OpId, int4)> {
+        // `child` is the block on the chain that `cur` flows into (toward `bl`);
+        // its rev-index gives the toward-switch out-slot of a CBRANCH `cur`.
+        let mut child = bl;
+        let mut child_revslot = slot;
+        let mut cur = fd.bblocks_ref().block(bl).get_in(slot);
+        // Cap the peel depth to keep the walk bounded.
+        for _ in 0..4 {
+            if let Some(t) = fd.bb_op_tail(cur) {
+                if fd.obank().get(t)?.code() == OpCode::CPUI_CBRANCH {
+                    // The toward-switch out-slot at `cur` is the rev-index of the
+                    // edge (cur -> child) as recorded on `child`.
+                    let outslot = fd.bblocks_ref().block(child).get_in_rev_index(child_revslot);
+                    return Some((t, outslot));
+                }
+            }
+            // Only peel pure trampolines: exactly one in, exactly one out.
+            if fd.bblocks_ref().block(cur).size_in() != 1
+                || fd.bblocks_ref().block(cur).size_out() != 1
+            {
+                return None;
+            }
+            child = cur;
+            child_revslot = 0; // single-in: the only incoming edge
+            cur = fd.bblocks_ref().block(cur).get_in(0);
+        }
+        None
+    }
+
+    /// (kuna, angr `test_decompiling_abnormal_switch_case_case3`) Check that all
+    /// incoming edges of `bl` reach (through trampolines) a CBRANCH guard that
+    /// selects the switch path in the same way (C++
+    /// `JumpBasic::checkCommonCbranch`, `jumptable.cc:1322`, extended to peel
+    /// single-in/single-out trampoline blocks).
+    ///
+    /// Each guard CBRANCH, in addition to flowing toward `bl`, must also flow to
+    /// another block, and each boolean value must select the switch path in the
+    /// same sense (same flip, same toward-switch out-slot).  Returns the per-edge
+    /// boolean Varnode inputs to each CBRANCH (one per incoming edge, in edge
+    /// order) and the toward-switch out-slot; otherwise `None`.  Gated by
+    /// `option switchmultipred`.
+    fn check_common_cbranch(fd: &Funcdata, bl: BlockId) -> Option<(Vec<VarnodeId>, int4, OpId)> {
+        let size_in = fd.bblocks_ref().block(bl).size_in();
+        if size_in < 2 {
+            return None;
+        }
+        let mut var_array: Vec<VarnodeId> = Vec::new();
+        let (op0, outslot0) = Self::guard_cbranch_for_edge(fd, bl, 0)?;
+        let is_op_flip = fd.obank().get(op0)?.is_boolean_flip();
+        var_array.push(fd.obank().get(op0)?.get_in(1)?); // boolean input to CBRANCH
+        let first_cbranch = op0;
+        for i in 1..size_in {
+            let (op, outslot) = match Self::guard_cbranch_for_edge(fd, bl, i) {
+                Some(p) => p,
+                None => return None, // all edges must reach a CBRANCH guard
+            };
+            if fd.obank().get(op)?.is_boolean_flip() != is_op_flip {
+                return None;
+            }
+            if outslot != outslot0 {
+                return None; // boolean value must have some meaning
+            }
+            var_array.push(fd.obank().get(op)?.get_in(1)?);
+        }
+        Some((var_array, outslot0, first_cbranch))
+    }
+
+    /// (kuna) Are all elements of `arr` the same Varnode (C++
+    /// `JumpBasic::duplicateVarnodes`, `jumptable.cc:1305`)?
+    fn duplicate_varnodes(arr: &[VarnodeId]) -> bool {
+        let first = match arr.first() {
+            Some(v) => *v,
+            None => return false,
+        };
+        arr.iter().all(|&v| v == first)
+    }
+
+    /// (kuna) If there exists a MULTIEQUAL PcodeOp in block `bl` that takes the
+    /// given exact list of Varnodes as its inputs, return it (C++
+    /// `BlockBasic::findMultiequal`, `block.cc:2801`).  Otherwise `None`.
+    fn find_multiequal(fd: &Funcdata, bl: BlockId, var_array: &[VarnodeId]) -> Option<OpId> {
+        let vn = *var_array.first()?;
+        for op in fd.descend_snapshot(vn) {
+            let o = fd.obank().get(op)?;
+            if o.code() != OpCode::CPUI_MULTIEQUAL {
+                continue;
+            }
+            if o.get_parent() != Some(bl) {
+                continue;
+            }
+            if o.num_input() as usize != var_array.len() {
+                continue;
+            }
+            let mut matched = true;
+            for (i, &want) in var_array.iter().enumerate() {
+                if o.get_in(i as int4) != Some(want) {
+                    matched = false;
+                    break;
+                }
+            }
+            if matched {
+                return Some(op);
+            }
+        }
+        None
+    }
+
+    /// (kuna) Pull each Varnode in `var_array` back through its defining op,
+    /// requiring every element be defined by a PcodeOp with the same OpCode (and,
+    /// for binary ops, the same constant in the non-`slot` input) — replacing the
+    /// element with the input Varnode in `slot` (C++
+    /// `BlockBasic::liftVerifyUnroll`, `block.cc:2850`).  Returns `true` if all
+    /// the Varnodes are defined in the same way (and `var_array` was advanced).
+    fn lift_verify_unroll(fd: &Funcdata, var_array: &mut [VarnodeId], slot: int4) -> bool {
+        let vn0 = var_array[0];
+        let v0 = match fd.vbank().get(vn0) {
+            Some(v) => v,
+            None => return false,
+        };
+        if !v0.is_written() {
+            return false;
+        }
+        let op0 = v0.get_def().unwrap();
+        let opc = match fd.obank().get(op0) {
+            Some(o) => o.code(),
+            None => return false,
+        };
+        // For a binary op, the non-`slot` input must be a constant (record it to
+        // require the same constant on every path).
+        let cvn: Option<VarnodeId> = if fd.obank().get(op0).unwrap().num_input() == 2 {
+            let c = match fd.obank().get(op0).unwrap().get_in(1 - slot) {
+                Some(c) => c,
+                None => return false,
+            };
+            if !fd.vbank().get(c).map(|v| v.is_constant()).unwrap_or(false) {
+                return false;
+            }
+            Some(c)
+        } else {
+            None
+        };
+        let new0 = match fd.obank().get(op0).unwrap().get_in(slot) {
+            Some(v) => v,
+            None => return false,
+        };
+        // Verify the remaining paths before mutating the array (upstream mutates
+        // in place; we replicate that only after every check passes for an entry).
+        for i in 1..var_array.len() {
+            let vni = var_array[i];
+            let vi = match fd.vbank().get(vni) {
+                Some(v) => v,
+                None => return false,
+            };
+            if !vi.is_written() {
+                return false;
+            }
+            let opi = vi.get_def().unwrap();
+            let oi = match fd.obank().get(opi) {
+                Some(o) => o,
+                None => return false,
+            };
+            if oi.code() != opc {
+                return false;
+            }
+            if let Some(cvn) = cvn {
+                let cvn2 = match oi.get_in(1 - slot) {
+                    Some(c) => c,
+                    None => return false,
+                };
+                let (c1, c2) = match (fd.vbank().get(cvn), fd.vbank().get(cvn2)) {
+                    (Some(a), Some(b)) => (a, b),
+                    _ => return false,
+                };
+                if !c2.is_constant() {
+                    return false;
+                }
+                if c1.get_size() != c2.get_size() {
+                    return false;
+                }
+                if c1.get_offset() != c2.get_offset() {
+                    return false;
+                }
+            }
+            let newi = match oi.get_in(slot) {
+                Some(v) => v,
+                None => return false,
+            };
+            var_array[i] = newi;
+        }
+        var_array[0] = new0;
+        true
+    }
+
+    /// (kuna, angr `test_decompiling_abnormal_switch_case_case3`) Check for a
+    /// guard that has been unrolled across multiple blocks (C++
+    /// `JumpBasic::checkUnrolledGuard`, `jumptable.cc:1355`).
+    ///
+    /// A guard calculation can be duplicated across multiple blocks that all
+    /// branch to the basic block performing the final BRANCHIND.  In this case the
+    /// switch variable is also duplicated across multiple Varnodes that are all
+    /// inputs to a MULTIEQUAL whose output is used for the final BRANCHIND
+    /// calculation.  This looks for that situation and creates a `GuardRecord`
+    /// associated with the MULTIEQUAL output (so `calcRange` later intersects the
+    /// bound range onto the melded switch variable and the table is bounded).
+    ///
+    /// Gated by `option switchmultipred` (default off / upstream byte-identical):
+    /// when the gate is off the method is a no-op, exactly as the old SEAM stub.
     fn check_unrolled_guard(
         &mut self,
-        _fd: &Funcdata,
-        _bl: BlockId,
-        _maxpullback: int4,
-        _usenzmask: bool,
+        fd: &Funcdata,
+        bl: BlockId,
+        maxpullback: int4,
+        usenzmask: bool,
     ) {
-        // SEAM(structuring): checkCommonCbranch + findMultiequal + liftVerifyUnroll
+        if !fd.get_arch().switch_multi_pred {
+            // SEAM default: unrolled-guard detection stays off; upstream
+            // byte-identical (the guard duplicated across predecessors is left
+            // undetected exactly as before).
+            return;
+        }
+        // The faithful upstream lockstep walk below records a GuardRecord on the
+        // collapsed Varnode / MULTIEQUAL output only when the SAME guard is
+        // duplicated across predecessors.  The x86 abnormal-switch shape has
+        // semantically DIFFERENT per-path guards, so it records nothing here; the
+        // `kuna_try_multipred_guard_table` fallback in `recoverModel` then bounds
+        // the table by unioning the per-path guard prefixes across the dispatch
+        // MULTIEQUAL instead.
+        let (mut var_array, indpath, cbranch) = match Self::check_common_cbranch(fd, bl) {
+            Some(v) => v,
+            None => return,
+        };
+        let mut toswitchval = indpath == 1;
+        if fd.obank().get(cbranch).unwrap().is_boolean_flip() {
+            toswitchval = !toswitchval;
+        }
+        let mut rng = CircleRange::new_bool(toswitchval);
+        // The guard CBRANCH's parent block records whether its out-edges were
+        // flipped during structuring (C++ `cbranch parent block getFlipPath`).
+        let cbranch_block = fd.obank().get(cbranch).unwrap().get_parent().unwrap();
+        let indpathstore = if fd.bblocks_ref().block(cbranch_block).get_flip_path() {
+            1 - indpath
+        } else {
+            indpath
+        };
+        // Upstream uses `readOp = cbranch` for every guard push: the inner
+        // `PcodeOp *readOp = vn->getDef()` shadows it (a deliberate upstream
+        // quirk), so the outer guard read-op is always the CBRANCH.  The shadowed
+        // (inner) def op is only used for `getSlot` in `liftVerifyUnroll`.
+        //
+        // Upstream's lockstep machinery (`liftVerifyUnroll` requires every path's
+        // guard to share an identical op chain) only fires when the SAME guard is
+        // duplicated.  When that holds (a true unrolled copy), record the
+        // GuardRecord on the collapsed Varnode / MULTIEQUAL output exactly as
+        // upstream.  When it does NOT (the x86 abnormal-switch shape, where the
+        // entry guard `count<=16` and the back-copy guard `count&7!=0` are
+        // SEMANTICALLY DIFFERENT comparisons), the lockstep walk yields nothing;
+        // the `kuna_try_multipred_guard_table` fallback in `recoverModel` then
+        // unions the per-input bounds across the dispatch MULTIEQUAL instead.
+        let read_op = cbranch;
+        for _j in 0..maxpullback {
+            if Self::duplicate_varnodes(&var_array) {
+                self.selectguards.push(GuardRecord::new(
+                    fd, cbranch, read_op, indpathstore, rng.clone(), var_array[0], true,
+                ));
+            } else if let Some(multi_op) = Self::find_multiequal(fd, bl, &var_array) {
+                let out = fd.obank().get(multi_op).unwrap().get_out().unwrap();
+                self.selectguards.push(GuardRecord::new(
+                    fd, cbranch, read_op, indpathstore, rng.clone(), out, true,
+                ));
+            }
+            let vn = var_array[0];
+            if !fd.vbank().get(vn).unwrap().is_written() {
+                break;
+            }
+            let def_op = fd.vbank().get(vn).unwrap().get_def().unwrap(); // inner (shadows readOp)
+            let newvn = match circlerange_pull_back(fd, &mut rng, def_op, usenzmask) {
+                Some(v) => v,
+                None => break,
+            };
+            if rng.is_empty() {
+                break;
+            }
+            // The slot the pulled-back Varnode occupies in its defining op (C++
+            // `readOp->getSlot(vn)` where `readOp` is the inner def op).
+            let slot = fd.obank().get(def_op).unwrap().get_slot(newvn);
+            if !Self::lift_verify_unroll(fd, &mut var_array, slot) {
+                break;
+            }
+        }
     }
 
     /// Recover details of the model from the BRANCHIND (C++
@@ -2273,6 +2560,19 @@ impl JumpBasicModel {
             // the guarded load index and re-run findNormalized.
             if fd.get_arch().switch_shared_case
                 && self.kuna_try_loop_carried_guard_table(fd, indop, matchsize, maxtablesize)?
+            {
+                self.mark_foldable_guards(fd);
+                return Ok(true);
+            }
+            // (kuna, angr `test_decompiling_abnormal_switch_case_case3`) When
+            // `option switchmultipred on`, the dispatch index is a MULTIEQUAL
+            // whose bound is "unrolled" across multiple predecessor guards
+            // (`checkUnrolledGuard` above recorded the per-edge guards but the
+            // lockstep walk could not collapse them because the guards are
+            // semantically different).  Union the per-input bounds across the
+            // MULTIEQUAL and re-bound the table to [0, N).
+            if fd.get_arch().switch_multi_pred
+                && self.kuna_try_multipred_guard_table(fd, indop, maxtablesize)
             {
                 self.mark_foldable_guards(fd);
                 return Ok(true);
@@ -2443,6 +2743,179 @@ impl JumpBasicModel {
         jr.set_range(CircleRange::new(0, bound, vsize, 1));
         jr.set_start_vn(bound_out);
         jr.set_start_op(startop);
+        true
+    }
+
+    /// (kuna, angr `test_decompiling_abnormal_switch_case_case3`) Bound a jump
+    /// table whose dispatch index is a MULTIEQUAL fed from MULTIPLE predecessor
+    /// blocks, each bounding the index with its OWN (possibly semantically
+    /// different) guard CBRANCH -- the "abnormal switch case" / unrolled-guard
+    /// shape.  Gated by `option switchmultipred`.
+    ///
+    /// Sibling of [`kuna_try_guard_bound_table`](Self::kuna_try_guard_bound_table);
+    /// invoked from [`recover_model_basic`](Self::recover_model_basic) only after
+    /// the normal model and the other extensions fail to bound the table
+    /// (`jrange.size > maxtablesize`).  The single-predecessor guard walk in
+    /// `analyzeGuards` short-circuited to `checkUnrolledGuard` at the multi-entry
+    /// dispatch block, so no dominating guard bounded the table; the entry guard
+    /// (`count <= 16`) and the back-copy guard (`count & 7 != 0`) live on
+    /// different paths and meet only at the dispatch MULTIEQUAL.
+    ///
+    /// Strategy: locate the dispatch-index MULTIEQUAL `M` (a melded
+    /// switch-variable candidate whose def is a MULTIEQUAL in the dispatch block).
+    /// For each input `inK` of `M`, find the guarding CBRANCH on predecessor edge
+    /// `K` (peeling trampoline blocks) and evaluate that guard as a function of
+    /// `inK` (the free index `v`): the contiguous prefix `[0, N_K)` over which the
+    /// guard's routing is constant (= its `v = 0` routing).  `M`'s reachable index
+    /// set is the UNION of the per-path prefixes, so the table's exclusive bound is
+    /// `N = max_K N_K` (the widest path -- here the entry guard's `[0, 17)` --
+    /// dominates; the narrower back-copy paths feed a subset).  When `N in
+    /// [2, maxtablesize]`, re-bind the table index to `[0, N)` on `M`; the existing
+    /// image-base-relative readonly-LOAD table model then reads the `N` RVAs.  The
+    /// bound is validated downstream: the table emulation reads exactly `N` RVA
+    /// entries, so an over-bound would surface invalid switch targets.
+    ///
+    /// Returns `true` if the table was re-bound, `false` otherwise.
+    fn kuna_try_multipred_guard_table(
+        &mut self,
+        fd: &Funcdata,
+        indop: OpId,
+        maxtablesize: uint4,
+    ) -> bool {
+        let cap = maxtablesize as uintb;
+
+        // Find a melded switch-variable candidate whose def is a MULTIEQUAL (the
+        // dispatch index joined across the predecessor paths), closest to the
+        // table LOAD (lowest meld position).
+        let mut found: Option<(VarnodeId, int4, OpId)> = None; // (M, pos, multiequal op)
+        for pos in 0..self.path_meld.num_common_varnode() {
+            let vn = self.path_meld.get_varnode(pos);
+            let v = match fd.vbank().get(vn) {
+                Some(v) => v,
+                None => continue,
+            };
+            if !v.is_written() {
+                continue;
+            }
+            let def = v.get_def().unwrap();
+            if fd.obank().get(def).map(|o| o.code()) == Some(OpCode::CPUI_MULTIEQUAL) {
+                found = Some((vn, pos, def));
+                break;
+            }
+        }
+        let (mvn, pos, multiop) = match found {
+            Some(x) => x,
+            None => return false,
+        };
+
+        // The MULTIEQUAL must live in the BRANCHIND's dispatch block so its input
+        // slot `K` corresponds to incoming edge `K` of that block.
+        let mblock = match fd.obank().get(multiop).and_then(|o| o.get_parent()) {
+            Some(b) => b,
+            None => return false,
+        };
+        let dispatch_block = match fd.obank().get(indop).and_then(|o| o.get_parent()) {
+            Some(b) => b,
+            None => return false,
+        };
+        if mblock != dispatch_block {
+            return false;
+        }
+        let ninput = fd.obank().get(multiop).unwrap().num_input();
+        if (ninput as int4) != fd.bblocks_ref().block(mblock).size_in() {
+            return false;
+        }
+
+        // For each MULTIEQUAL input, evaluate its edge's guard as a function of
+        // the input and take the per-path contiguous [0, N_K) prefix; the table
+        // bound is the union (max) over paths.
+        let mut union_bound: uintb = 0;
+        for k in 0..ninput {
+            let invn = match fd.obank().get(multiop).unwrap().get_in(k) {
+                Some(v) => v,
+                None => return false,
+            };
+            let (cbranch, _indslot) = match Self::guard_cbranch_for_edge(fd, mblock, k) {
+                Some(p) => p,
+                None => return false,
+            };
+            let cond = match fd.obank().get(cbranch).and_then(|o| o.get_in(1)) {
+                Some(c) => c,
+                None => return false,
+            };
+            // `offmap`: the MULTIEQUAL input is the free index `v` (offset 0).
+            let mut offmap: BTreeMap<VarnodeId, uintb> = BTreeMap::new();
+            offmap.insert(invn, 0);
+            // Routing truth at v=0; the prefix [0, N_K) is the contiguous run of
+            // `v` whose routing matches v=0's (where index 0 -- always a valid case
+            // -- reaches the dispatch).  N_K = first v whose routing flips.
+            let mut b0 = 4096i64;
+            let sv = match eval_guard_expr(fd, cond, &offmap, 0, &mut b0) {
+                Some(x) => x & 1,
+                None => return false,
+            };
+            let mut nk: Option<uintb> = None;
+            let mut v: uintb = 1;
+            while v <= cap {
+                let mut b = 4096i64;
+                match eval_guard_expr(fd, cond, &offmap, v, &mut b) {
+                    Some(cv) => {
+                        if (cv & 1) != sv {
+                            nk = Some(v);
+                            break;
+                        }
+                    }
+                    None => return false,
+                }
+                v += 1;
+            }
+            let nk = match nk {
+                Some(n) => n,
+                None => return false, // guard never flips within the cap
+            };
+            if nk > union_bound {
+                union_bound = nk;
+            }
+        }
+        if union_bound < 2 || union_bound > cap {
+            return false;
+        }
+
+        // Re-bind the table index range to [0, union_bound) on the MULTIEQUAL
+        // output `M`.
+        let vsize = match fd.vbank().get(mvn) {
+            Some(v) => v.get_size(),
+            None => return false,
+        };
+        if vsize == 0 {
+            return false;
+        }
+        let startop = match self.path_meld.get_earliest_op(pos) {
+            Some(o) => o,
+            None => return false,
+        };
+        self.varnode_index = pos;
+        {
+            let jr = self.jrange_range_mut();
+            jr.set_range(CircleRange::new(0, union_bound, vsize, 1));
+            jr.set_start_vn(mvn);
+            jr.set_start_op(startop);
+        }
+        // (kuna) Log the recovery (standing requirement: "Log when it recovers the
+        // table").  Only ever printed with `option switchmultipred on`, so it
+        // never reaches the default datatest run.
+        let addr = fd
+            .obank()
+            .get(indop)
+            .map(|o| o.get_addr().clone())
+            .unwrap_or_default();
+        eprintln!(
+            "[kuna switchmultipred] recovered multi-predecessor unrolled-guard jump \
+             table at 0x{:x}: {} predecessor guards, union bound [0,{})",
+            addr.get_offset(),
+            ninput,
+            union_bound,
+        );
         true
     }
 
