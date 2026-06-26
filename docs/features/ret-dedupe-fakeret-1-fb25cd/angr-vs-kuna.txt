@@ -1,0 +1,45 @@
+==============================================================================
+test_ret_dedupe_fakeret_1 :: sort_found_occurs   (angr 9.2.213 @ 0x400440)
+==============================================================================
+
+--- angr ---
+extern unsigned long number_of_occurs;
+
+void sort_found_occurs(void)
+{
+    if (number_of_occurs)
+        qsort();
+    return;
+}
+
+
+--- kuna (addr mode) ---
+  (no output: addr-mode: no C output for '0x400440' in /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/ptx.o; decompiler said:
+[decomp]> load file /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/ptx.o
+/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/ptx.o successfully loaded: x86:LE:64:default:gcc
+[decomp]> read symbols
+[decomp]> load addr 0x400440
+Execution error: Unable to load 512 bytes at r0x00407210
+[decomp]> decompile
+Execution error: No function selected
+[decomp]> openfile write /tmp/kuna_c_yn5wslq9.c
+[decomp]> print C
+Execution error: No function selected
+[decomp]> closefile
+[decomp]> quit
+
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/ptx.o: reloc at 0x404280+0x7d: unhandled kind GotRelative (skipped) (name-mode: no C output for 'sort_found_occurs' in /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/ptx.o; decompiler said:
+[decomp]> load file /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/ptx.o
+/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/ptx.o successfully loaded: x86:LE:64:default:gcc
+[decomp]> read symbols
+[decomp]> load function sort_found_occurs
+Execution error: Unable to load 512 bytes at r0x00407210
+[decomp]> decompile
+Execution error: No function selected
+[decomp]> openfile write /tmp/kuna_c_3m9e3mlq.c
+[decomp]> print C
+Execution error: No function selected
+[decomp]> closefile
+[decomp]> quit
+
+[kuna ET_REL loader] /home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/ptx.o: reloc at 0x404280+0x7d: unhandled kind GotRelative (skipped)))

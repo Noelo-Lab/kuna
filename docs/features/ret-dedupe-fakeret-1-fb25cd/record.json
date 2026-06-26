@@ -1,0 +1,23 @@
+{
+  "opportunity": "test_ret_dedupe_fakeret_1::sort_found_occurs",
+  "test_name": "test_ret_dedupe_fakeret_1",
+  "binary": "/home/mahaloz/github/angr-dev/binaries/tests/x86_64/decompiler/ptx.o",
+  "selector": "sort_found_occurs",
+  "func_addr": "0x400440",
+  "angr_version": "9.2.213",
+  "option": "etrel_extern_tailcall",
+  "change_kind": "structure-recovery",
+  "source_decompiler": "angr",
+  "inspiration": "test_ret_dedupe_fakeret_1; ReturnDeduplicator / CFGFast tail-call + extern resolution; sort_found_occurs",
+  "scope": "large",
+  "proposal": true,
+  "parity": "OK",
+  "decisions": [
+    {
+      "question": "Route: implement a single option-gated ret-deduplication Action, open a proposal, or declare negative?",
+      "decision": "large / proposal",
+      "reasoning": "(i) No single-Action/Rule, single-option decompiler feature closes this gap: the function never decompiles on ptx.o because the S1 decoder aborts (Unable to load 512 bytes) before any Action/Rule pass runs, so a structuring Rule has nothing to operate on. (ii) The nominal ret-deduplication feature is already covered - on a linked ELF kuna emits the deduplicated guard-clause form `if(!c) return; qsort_equiv(); return;`, semantically identical to angr's target; porting angr's ReturnDeduplicator would be a verified no-op since kuna never produces the `if(c){...return x;} return x;` pattern it folds. (iii) The real defect is a cross-tier loader/flow gap (undefined external mapped to an empty region + the decoder following a direct `jmp` to an undefined external as intraprocedural flow); fixes (loader thunk synthesis, or decode-time tail-call terminator classification) span the loader and S1/S2 and are multi-step - proposal-scope, adjacent to the relocobjects/DIV-7 ET_REL track.",
+      "decider": "general-purpose subagent (Opus 4.8)"
+    }
+  ]
+}
