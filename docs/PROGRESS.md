@@ -1,5 +1,47 @@
 # kuna Progress Log
 
+## Session (2026-06-26) — loop-carried-guard jump tables (`option switchsharedcase`)
+
+Finished the WIP on `feat/switchguard-sharedcase`: recover the `b2sum::main`
+`getopt_long` option-dispatch switch (angr `test_switch_case_shared_case_nodes_b2sum_digest`).
+Third sibling of `switchmodbound`/`switchguardbound` — same surface failure (`JumpBasic`
+cannot bound the LOAD-table index, `recoverAddresses` aborts *"Too many branches"*, the
+`BRANCHIND` downgrades to a `CALLIND` and the switch + its loop collapse to goto spaghetti).
+
+**Root cause (S2 switch-model).** A textbook GCC PIC relative-offset table
+`target = base + sext32(load4(base + idx*4))` whose `lea .rodata, %rbp` base is set **before**
+the getopt `while` while the `BRANCHIND` is **inside** it. The base reaches the jump through a
+loop-header `MULTIEQUAL` and feeds *both* the table-load address and the final add, so
+`findDeterminingVarnodes` melds the two paths down to the single final `INT_ADD`; the
+normalized index (`sub $0x62`) the out-of-band `cmp $0x22; ja DEFAULT` guard bounds never
+enters the meld, `findSmallestNormal` leaves it unbounded, and no model is built.
+
+**Fix (`option switchsharedcase`, default-OFF opt-in).** When the normal model and the
+modulo/CBRANCH-guard extensions all fail, `JumpBasic::kuna_try_loop_carried_guard_table` walks
+the index path from the `BRANCHIND` down through the realigning ops and the one table `LOAD` to
+the guarded load index, resolves the loop-invariant `lea .rodata` base seed, rebuilds the meld
+as a clean single path to that index, seeds the base into emulation, and re-runs
+`findNormalized` so the table sizes at 35 and the switch structures. On any mismatch the model
+state restores and the caller declines — gate-off is byte-identical to upstream.
+
+**Before → after (b2sum `main`):** off = `/* WARNING: Treating indirect jump as call */`,
+computed `(*pcVar)()` dispatch with goto spaghetti; on = a single bounded `switch(...)` with the
+35-entry table recovered (`[kuna switchsharedcase] recovered ... at 0x401105: base=0x403d60
+entries=35`).
+
+**Speed:** measured on the b2sum testcase, decomp_test_dbg user-CPU, 40 iters —
+off ≈ 0.306 s/run, on ≈ 0.390 s/run (**+27%**). Recovering the real switch keeps the full
+getopt dispatch + all case bodies alive through the rest of the pipeline (inherently more work),
+so it ships **default-off opt-in** like `switchguardbound`; flip per program.
+
+**Tests/gates:** stage `tests/stages/switchsharedcase-b2sum.xml` (off ⇒ indirect-call marker;
+on ⇒ recovered `switch`, exactly once on the on-pass). `make test` PARITY OK 675/675 (baseline
+untouched), `make test-stages` PARITY OK 205/205, `make rust-test` green, `kuna catalog --check`
+OK. Also regenerated `tests/fixtures/stage_catalog.json` — it carried a **pre-existing** drift
+from the PR #85 `regionstructure` default-on merge (fixture said `default: off`, `stages.toml`
+said `on`), so `catalog_bytecompat` was already red on the branch parent; the regen fixes that
+drift *and* adds the `switchsharedcase` row. ElementId `4103` (unique in the 4000+ range).
+
 ## Session (2026-06-25) — `setlocale` `char *` prototype (DIV-11; follow-up on PR #59)
 
 Follow-up to the reviewer's note on PR #59 (`tee_O2` `setlocale_null_androidfix`):
