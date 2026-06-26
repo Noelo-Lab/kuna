@@ -16,4 +16,6 @@ pub mod kuna_switchguardbound;
 pub mod kuna_sparcstructret;
 pub mod kuna_stackprobeloop;
 pub mod kuna_loweredswitch;
+pub mod kuna_noreturn_externmatch; // (kuna) angr incorrect-duplication-chcon: name-matched extern no-return
+pub mod kuna_noreturnextern; // (kuna) angr tail-tail-bytes-ret-dup: undefined-extern name-based no-return
 pub mod kuna_tailcalljump;

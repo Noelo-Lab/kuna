@@ -103,7 +103,37 @@ impl FlowEnvironment for ArchFlowEnv {
         // C++ `queryCall` copies the callee proto's `isNoReturn()` flow effect;
         // the flag is set by `option noreturn <name>` (OptionNoReturn) or the
         // no-return analysis pass on the resolved FunctionSymbol.
-        self.arch().symboltab.function_is_no_return_across_scopes(entry)
+        let arch = self.arch();
+        if arch.symboltab.function_is_no_return_across_scopes(entry) {
+            return true;
+        }
+        // (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) When
+        // `option noreturn_externmatch on` (DIV-13 default-on), also report no-return
+        // for a callee whose *name* matches the vendored ELF known-no-return list —
+        // closing the ET_REL `.o` gap where the address-keyed `noreturn_known` scan
+        // emitted no fact for an undefined extern (`__stack_chk_fail`), so flow stops
+        // at the call instead of decoding the trailing alignment padding. A no-op on a
+        // normal ELF (the proto flag above is already set). See
+        // `kuna_noreturn_externmatch`.
+        if arch.noreturn_extern_match {
+            if let Some(name) = arch.symboltab.function_display_name_across_scopes(entry) {
+                if crate::kuna_noreturn_externmatch::is_known_noreturn_name(&name) {
+                    return true;
+                }
+            }
+        }
+        // (kuna) noreturn_extern: when the address-keyed flag is unset, fall back
+        // to a name match against the known ELF no-return list.  This catches an
+        // **undefined external** no-return (`__stack_chk_fail` in an ET_REL `.o`)
+        // that the analysis-tier `noreturn_known` pass — which keys on a *defined*
+        // FUNC symbol's address — never marks, so flow would otherwise run off the
+        // function's end into the next one.  Default off (`option noreturn_extern`).
+        if arch.noreturn_extern_calls {
+            if let Some(name) = self.query_call(entry) {
+                return crate::kuna_noreturnextern::matches_noreturn_extern_name(&name);
+            }
+        }
+        false
     }
     fn query_call_inline(&self, entry: &Address) -> bool {
         // C++ `queryCall` copies the callee proto's `isInline()` flow effect; the

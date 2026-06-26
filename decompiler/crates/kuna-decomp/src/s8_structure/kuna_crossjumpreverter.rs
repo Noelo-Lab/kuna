@@ -78,8 +78,9 @@ use crate::seams::BlockId;
 use kuna_base::marshal::ElementId;
 
 /// Marshaling element `<crossjumprevert>` (kuna).  ElementIds live in the 4000+ range
-/// (4100 gotoreduce, 4101 tailcalljump, 4102 regionstructure are taken; this is 4103).
-pub const ELEM_CROSSJUMPREVERT: ElementId = ElementId::new("crossjumprevert", 4103);
+/// (4100 gotoreduce, 4101 tailcalljump, 4102 regionstructure, 4103 noreturn_extern,
+/// 4104 noreturn_externmatch are taken; this is 4105).
+pub const ELEM_CROSSJUMPREVERT: ElementId = ElementId::new("crossjumprevert", 4105);
 
 /// Maximum number of printed p-code ops in the duplicated cross-jump tail block.
 pub const MAX_TAIL_OPS: usize = 8;

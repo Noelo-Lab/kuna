@@ -1,5 +1,90 @@
 # kuna Progress Log
 
+## Session (2026-06-26) — name-matched extern no-return in ET_REL `.o` (option `noreturn_externmatch`, DIV-13)
+
+**angr testcase**: `test_decompiling_incorrect_duplication_chcon_main` (coreutils `chcon.o`, an
+ET_REL `.o`, function `main`).
+
+**Why angr was better**: kuna emitted ~90 lines of garbage after the no-return
+`__stack_chk_fail()` call — the inter-function alignment padding (`00 00 …` decoded as
+`add byte ptr [rax], al`) decompiled as live code. angr emits none (313 loc / 33 gotos kuna vs
+223 / 7 angr).
+
+**Root cause**: `stack_chk_fail` is in kuna's vendored ELF known-no-return list
+(`option noreturn_known`, default-on), but in an ET_REL `.o` `__stack_chk_fail` is an *undefined
+extern* — `.symtab` `address()==0`, no PLT — so the address-keyed scan
+(`s1_loader/noreturn.rs::scan_noreturn`) emits no `NoReturnFact`. The `relocobjects` loader
+installs a `FunctionSymbol` named `__stack_chk_fail` at a synthetic target (the call *prints* the
+name) but no no-return flag is set, so flow runs off the end into the padding.
+
+**Mechanism**: new `option noreturn_externmatch` (S2 flow-follow, ElementId 4104). The
+`FlowEnvironment::query_call_no_return` seam (`infra/decompile_drive.rs`) also reports no-return
+when the callee *name* matches the vendored list — `flow.rs` ORs it at the artificial-halt site, so
+the halt is planted and the padding never decoded. The matcher
+(`s2_lift/kuna_noreturn_externmatch.rs`) `include_str!`s the *same* list `noreturn_known` uses and
+applies the *same* leading-`_` strip + global/`std` namespace guard, so it adds no risk class beyond
+the already-default-on `noreturn_known`. A no-op on a normal ELF (proto flag already set).
+
+**Ablation**: clean — 0/675 upstream datatest assertions change with the feature default-ON, and
+it is **23% faster** on the target (`chcon.o::main` 449.8 ms → 344.3 ms, n=5; less dead padding to
+decompile). **Decision**: ship **default-ON** (DIV-13). One interaction noted: `option
+noreturn_known off` no longer alone restores the post-`exit` dead code (the PE multiformat test now
+disables both name-based gates).
+
+**Testcase**: `tests/stages/ghangr-incorrect-duplication-chcon-a0e113.xml` (self-contained
+bytechunk; the ET_REL relocation cannot be applied in the bytechunk model). Pass 1 (off) asserts the
+dead `0xdeadbeef` after the call survives; pass 2 (on) asserts the call is flagged no-return and the
+dead code is gone. `docs/baseline-stages.json` +3. All gates green (catalog OK, datatest
+PARITY OK, test-stages PARITY OK, rust-test green). (Merged after PR #90's `noreturn_extern`,
+so ElementId 4104 and DIV-13 — both renumbered up one from the value in the original PR.)
+
+## Session (2026-06-26) — undefined-extern no-return (option `noreturn_extern`, default-off opt-in)
+
+**angr testcase**: `test_tail_tail_bytes_ret_dup` :: `tail_bytes`
+(`binaries/tests/x86_64/decompiler/tail.o`, x86-64, ELF **relocatable object**).
+
+**Why angr was better.** kuna decompiled `tail_bytes` (a 615-byte function,
+`0x401e80..0x4020e7`) as **326 lines / 9 gotos**, running far past the function end and
+swallowing several adjacent functions (`tail_lines` + its `pipe_lines`/`start_lines`/
+`file_lines`, a `fstatfs`/`is_local_fs_type`/`__assert_fail` function, an `lstat` loop, a
+`raise`/`exit`/`poll`/`die_pipe` function), even synthesizing a bogus
+`do { ... } while (dat_4045a1 == '\0')` outer loop. angr renders **96 lines / 1 goto**:
+it knows the canary epilogue's `__stack_chk_fail()` never returns and bounds the function
+there.
+
+**Root cause.** In a `.o`, `__stack_chk_fail` is an **undefined external** symbol (`UND`,
+`NOTYPE`, size 0). kuna's analysis-tier known-no-return pass (`noreturn_known`, default on)
+keys its facts on the **address** of a *defined* `FUNC` symbol, so it never marks the UND
+extern - even though its base name is on the shipped ELF no-return list. At flow time the
+call resolves to a display name but the symbol's no-return flag is false, so
+`FlowEnvironment::query_call_no_return` returns false, no `artificialHalt(noreturn)` is
+planted, and flow runs off the end into the next function. (Proof: the manual
+`option noreturn __stack_chk_fail` override chops it 328 -> 87 lines.)
+
+**Mechanism.** A name-based fallback in the flow seam `ArchFlowEnv::query_call_no_return`
+(`infra/decompile_drive.rs`): when the address-keyed check is false **and** the gate is on,
+resolve the callee display name and return true if `kuna_noreturnextern::
+matches_noreturn_extern_name` matches the known ELF no-return list (mirrors the
+analysis-tier `name_matches`: leading-`_` strip + `std`-only namespace guard, exact match
+against a closed set). Plants the existing artificial halt -> flow stops -> function bounded.
+New module `kuna_noreturnextern.rs` (ElementId 4103), Architecture flag
+`noreturn_extern_calls`, modelled on `tail_call_jumps`. No new pass type, no S7 change.
+
+**Ablation / default.** The 675-datatest ablation with the gate on is **byte-identical
+(0/675)**, and the target is **37% faster** with the gate (299 ms -> 188 ms median, less
+code decoded). I initially shipped default-ON, but `make rust-test` caught a real
+interaction: `verify_multiformat_passes::pe_exit_eliminates_dead_code_via_noreturn_list`
+asserts that `option noreturn_known off` restores the dead fall-through after a PE `exit`
+tail call — but the name-based fallback *independently* catches `exit`, so default-on would
+make `noreturn_known off` no longer restore it (the bytechunk-only 675 corpus never
+exercises this). The name match overlaps `noreturn_known`'s for defined/imported symbols,
+so I shipped it **default-OFF opt-in** (like `tailcalljump`/`gotoreduce`/`stackguard`) — no
+DIV, default output byte-identical. `kuna decompile tail.o tail_bytes --option noreturn_extern on`
+-> **326 -> 87 lines**; default (off) keeps the old rendering. Test
+`tests/stages/ghangr-noreturn_extern.xml` (+2, baseline-stages 190 -> 192).
+All gates green: `make test` PARITY OK 675/675, `make test-stages` 192/192,
+`make rust-test` green, `catalog --check` OK.
+
 ## Session (2026-06-25) — `setlocale` `char *` prototype (DIV-11; follow-up on PR #59)
 
 Follow-up to the reviewer's note on PR #59 (`tee_O2` `setlocale_null_androidfix`):
