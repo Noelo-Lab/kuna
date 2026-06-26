@@ -214,6 +214,120 @@ fn add_reg_reg_classifies_register() {
     );
 }
 
+// --- x86-64 REX-prefixed forms (the FID PR1-fix regression gate) ---------
+//
+// These exercise the multi-phase x86-64 decode: a REX prefix (0x40..0x4f)
+// advances the parser's `instrPhase` context to a second phase before the
+// real opcode is decoded.  Before the fix, `instruction_mask`'s post-decode
+// decision-tree re-walk read the *final* (advanced) context and could not
+// re-resolve the constructor — every REX form errored "Unable to resolve
+// constructor".  With the matched pattern captured DURING decode (correct
+// per-phase context), the mask is computed from the real leaf and these pass.
+// (They FAIL on `main` / pre-fix; the four 32-bit-style forms above always
+// passed — x86-64.sla, no REX prefix.)
+
+#[test]
+fn rex_add_r64_r64_masks_modrm_pins_opcode_and_rexw() {
+    // add rsi, rdi == 48 01 fe
+    //   48   = REX prefix, REX.W set (64-bit operand size)
+    //   01   = opcode ADD r/m64, r64
+    //   fe   = modrm mod=11 reg=111(rdi) rm=110(rsi)  (register-direct)
+    let code = [0x48, 0x01, 0xfe];
+    let sleigh = build_x86_64(&code);
+    let m = sleigh
+        .instruction_mask(&code_addr(&sleigh, VMA))
+        .expect("instruction_mask must succeed on a REX-prefixed x86-64 insn");
+
+    eprintln!("REX add rsi,rdi: len={} bytes={:02x?} fixed={:02x?}", m.length, m.bytes, m.fixed_mask);
+    assert_eq!(m.length, 3, "add rsi,rdi (REX.W) is 3 bytes");
+    assert_eq!(m.bytes, code);
+    // REX byte: the prefix marker + REX.W (high 5 bits) are PINNED; the low 3
+    // bits (REX.R/X/B register-extension selectors) are operand bits — so the
+    // byte is partially pinned, never fully fixed and never fully free.
+    assert_ne!(m.fixed_mask[0], 0x00, "REX prefix marker / REX.W must be pinned");
+    assert_ne!(m.fixed_mask[0], 0xff, "REX.R/X/B register-extension bits are operand bits");
+    assert_eq!(m.fixed_mask[0] & 0x08, 0x08, "REX.W bit (0x08) must be pinned");
+    // Opcode byte fully pinned.
+    assert_eq!(m.fixed_mask[1], 0xff, "the ADD opcode (01) must be fully pinned");
+    // modrm: mod bits (top 2) pinned, reg/rm register selectors are operand.
+    assert_ne!(m.fixed_mask[2], 0x00, "modrm mod bits must be pinned");
+    assert_ne!(m.fixed_mask[2], 0xff, "modrm reg/rm selector bits must be operand bits");
+
+    // Both register-direct operands classify as registers.
+    let regs: Vec<&OpObject> = m
+        .operands
+        .iter()
+        .flat_map(|o| o.objects.iter())
+        .filter(|o| matches!(o, OpObject::Register { .. }))
+        .collect();
+    assert!(!regs.is_empty(), "expected Register operands for add r64,r64; got {:?}", m.operands);
+}
+
+#[test]
+fn rex_mov_r64_imm64_zeroes_imm64() {
+    // mov rax, 0x8877665544332211 == 48 b8 11 22 33 44 55 66 77 88
+    //   48   = REX.W
+    //   b8+rd= mov r64, imm64 (rd selects rax)
+    //   imm64 little-endian follows
+    let code = [0x48, 0xb8, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+    let sleigh = build_x86_64(&code);
+    let m = sleigh
+        .instruction_mask(&code_addr(&sleigh, VMA))
+        .expect("instruction_mask must succeed on REX mov r64,imm64");
+
+    eprintln!("REX mov rax,imm64: len={} bytes={:02x?} fixed={:02x?}", m.length, m.bytes, m.fixed_mask);
+    assert_eq!(m.length, 10, "mov r64,imm64 (REX.W) is 10 bytes");
+    // REX.W pinned, opcode high bits pinned, register selector (low 3 of b8+rd)
+    // free; the imm64 (bytes 2..10) is the operand and must be fully zeroed.
+    assert_eq!(m.fixed_mask[0] & 0x08, 0x08, "REX.W (0x08) must be pinned");
+    assert_ne!(m.fixed_mask[1], 0x00, "the b8+rd opcode bits must be pinned");
+    assert_eq!(
+        &m.fixed_mask[2..10],
+        &[0, 0, 0, 0, 0, 0, 0, 0],
+        "the imm64 operand bytes must be fully zeroed"
+    );
+
+    // The imm64 classifies a Scalar carrying the real value (0x8877665544332211
+    // == -8613303245920329199 as i64).
+    assert!(
+        m.operands
+            .iter()
+            .flat_map(|o| o.objects.iter())
+            .any(|o| matches!(o, OpObject::Scalar { signed: -8613303245920329199, .. })),
+        "expected a Scalar operand == 0x8877665544332211, got {:?}",
+        m.operands
+    );
+}
+
+#[test]
+fn rex_mov_r64_r64_classifies_both_registers() {
+    // mov rsi, rdi == 48 89 fe  (REX.W + opcode 89 MOV r/m64,r64 + modrm fe)
+    let code = [0x48, 0x89, 0xfe];
+    let sleigh = build_x86_64(&code);
+    let m = sleigh
+        .instruction_mask(&code_addr(&sleigh, VMA))
+        .expect("instruction_mask must succeed on REX mov r64,r64");
+
+    eprintln!("REX mov rsi,rdi: len={} bytes={:02x?} fixed={:02x?}", m.length, m.bytes, m.fixed_mask);
+    assert_eq!(m.length, 3, "mov rsi,rdi (REX.W) is 3 bytes");
+    assert_eq!(m.fixed_mask[0] & 0x08, 0x08, "REX.W (0x08) must be pinned");
+    assert_eq!(m.fixed_mask[1], 0xff, "the MOV opcode (89) must be fully pinned");
+    assert_ne!(m.fixed_mask[2], 0xff, "modrm reg/rm selectors are operand bits");
+
+    // A register-to-register form: both operands classify as registers.
+    let regs: Vec<&OpObject> = m
+        .operands
+        .iter()
+        .flat_map(|o| o.objects.iter())
+        .filter(|o| matches!(o, OpObject::Register { .. }))
+        .collect();
+    assert!(
+        regs.len() >= 2,
+        "expected both operands to be registers for mov r64,r64; got {:?}",
+        m.operands
+    );
+}
+
 #[test]
 fn mov_mem_disp32_masks_displacement() {
     // mov eax, dword ptr [rbx+0x12345678] == 8b 83 78 56 34 12

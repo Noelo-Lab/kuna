@@ -44,6 +44,7 @@ use crate::loadimage::LoadImage;
 use crate::semantics::{ConstructTpl, OpTpl, PcodeBuilder, VField, VarnodeTpl};
 use crate::sleighbase::SleighBase;
 use crate::slghpatexpress::{PatternExpression, PatternExpressionContext};
+use crate::slghpattern::DisjointPattern;
 use crate::slghsymbol::{
     ConstructorRef, SymbolKind, SymbolTable, SymbolType, SymbolWalker, SymbolWalkerChange,
 };
@@ -82,6 +83,18 @@ struct ConstructState {
     length: i32,
     /// Absolute offset from start of instruction (C++ `offset`).
     offset: u32,
+    /// kuna-only (not in C++): the specific `DisjointPattern` leaf whose
+    /// `is_match` succeeded when this node's constructor was chosen during
+    /// decode.  Captured at the resolution point, where the per-node context
+    /// (the multi-phase parser context — REX/prefix `instrPhase` etc.) is the
+    /// one that actually selected the constructor.  Read back by
+    /// [`Sleigh::instruction_mask`] to compute the fixed-bit mask without
+    /// re-walking the decision tree post-decode (the post-decode re-walk reads
+    /// the *final* context and so misresolves multi-phase encodings — the FID
+    /// PR1 bug this captures around).  Purely additive: it retains a pattern
+    /// the decode already computed and never affects which constructor is
+    /// chosen, the length, the handles, or any p-code.
+    matched_pattern: Option<DisjointPattern>,
 }
 
 impl ConstructState {
@@ -94,6 +107,7 @@ impl ConstructState {
             parent: None,
             length: 0,
             offset: 0,
+            matched_pattern: None,
         }
     }
 }
@@ -450,17 +464,6 @@ impl<'a> ParserWalker<'a> {
         self.cur.breadcrumb[0] = 0;
     }
 
-    /// Position the walker directly at an arena node (used by
-    /// `Sleigh::instruction_mask`, which iterates the resolved `ConstructState`
-    /// arena and needs the bit-reading seam methods — `get_instruction_bits`,
-    /// `get_instruction_bytes` — to read at that node's byte `offset`).  Only
-    /// the point feeds those reads; `resolve_matched` consults no breadcrumb.
-    fn set_point(&mut self, idx: usize) {
-        self.cur.point = Some(idx);
-        self.cur.depth = 0;
-        self.cur.breadcrumb[0] = 0;
-    }
-
     /// Current point index (panics on null — C++ would deref a null pointer).
     fn point(&self) -> usize {
         self.cur.point.expect("ParserWalker: point is null (C++ UB)")
@@ -754,6 +757,14 @@ impl<'a> ParserWalkerChange<'a> {
     fn set_constructor(&mut self, c: ConstructorRef) {
         let p = self.point();
         self.ctx.state[p].ct = Some(c);
+    }
+
+    /// kuna-only: stash the matched `DisjointPattern` leaf for the current
+    /// node, captured at decode time (correct per-node context).  Read back by
+    /// [`Sleigh::instruction_mask`].  Additive — no decode effect.
+    fn set_matched_pattern(&mut self, pat: DisjointPattern) {
+        let p = self.point();
+        self.ctx.state[p].matched_pattern = Some(pat);
     }
 
     /// C++ `ParserWalkerChange::setCurrentLength`.
@@ -1733,14 +1744,20 @@ impl Sleigh {
         let mut walker = ParserWalkerChange::new(pos, table, self);
         walker.deallocate_state();
         walker.set_offset(0);
-        // ct = root->resolve(walker)
+        // ct = root->resolve(walker).  We use the `resolve_matched` variant
+        // (identical decision walk) so we can ALSO capture the matched
+        // DisjointPattern leaf here, where the per-node context is the one that
+        // selected the constructor — and stash it on this node for the FID
+        // instruction-mask accessor.  The chosen constructor is unchanged.
         let subtable = subtable_ref(table, root)?;
-        let root_ct_id = {
+        let (root_ct_id, root_pat) = {
             let reader = walker.as_reader();
-            subtable.resolve(&reader)?
+            let (pat, ct) = subtable.resolve_matched(&reader)?;
+            (*ct, pat.clone())
         };
         let root_ref = ConstructorRef { table_id: root, ct_id: root_ct_id };
         walker.set_constructor(root_ref);
+        walker.set_matched_pattern(root_pat);
         apply_context(table, root_ref, &mut walker)?;
 
         while walker.is_state() {
@@ -1763,13 +1780,21 @@ impl Sleigh {
                 let triple = op.get_defining_symbol();
                 let mut descended = false;
                 if let Some(tsym) = triple {
-                    let subct = {
+                    // `resolve_triple_matched` is the `resolve_triple` walk plus
+                    // the matched DisjointPattern leaf (None for non-subtable
+                    // triples).  Captured here under the correct per-node
+                    // context; stashed on the child node we just allocated, for
+                    // the FID instruction-mask accessor.  Same constructor.
+                    let (subct, subpat) = {
                         let reader = walker.as_reader();
-                        resolve_triple(table, tsym, &reader)?
+                        resolve_triple_matched(table, tsym, &reader)?
                     };
                     if let Some(subct_id) = subct {
                         let subct_ref = ConstructorRef { table_id: tsym, ct_id: subct_id };
                         walker.set_constructor(subct_ref);
+                        if let Some(pat) = subpat {
+                            walker.set_matched_pattern(pat);
+                        }
                         apply_context(table, subct_ref, &mut walker)?;
                         descended = true;
                     }
@@ -1993,17 +2018,21 @@ fn subtable_ref(table: &SymbolTable, id: u32) -> KunaResult<&crate::slghsymbol::
     }
 }
 
-/// C++ `TripleSymbol::resolve`: `Some(ct_id)` for a subtable, `None` for the
-/// table-driven validators / base no-ops.
-fn resolve_triple(
+/// C++ `TripleSymbol::resolve`, plus (kuna-only) the matched `DisjointPattern`
+/// leaf alongside the constructor id: `(Some(ct_id), Some(pattern))` for a
+/// subtable triple, `(None, None)` for the table-driven validators / base
+/// no-ops.  Identical decision walk to upstream `TripleSymbol::resolve`; the
+/// pattern is captured for the FID instruction-mask accessor and changes no
+/// decode behavior.
+fn resolve_triple_matched(
     table: &SymbolTable,
     id: u32,
     walker: &ParserWalker<'_>,
-) -> KunaResult<Option<u32>> {
+) -> KunaResult<(Option<u32>, Option<DisjointPattern>)> {
     let sym = table
         .find_symbol_by_id(id)
         .ok_or_else(|| KunaError::sleigh("triple symbol undefined"))?;
-    sym.resolve(walker)
+    sym.resolve_matched(walker)
 }
 
 /// C++ `Constructor::applyContext` via the symbol table + mutating walker.
@@ -2144,12 +2173,18 @@ impl Sleigh {
 
         // --- Tree walk: OR each matched constructor's fixed bits into the mask.
         // Iterate the resolved ConstructState arena reachable from base_state
-        // (each populated node holds the constructor that matched and its
-        // absolute byte `offset`).  For every such node we re-run the subtable's
-        // decision tree (`resolve_matched`) to recover the *specific* leaf
-        // DisjointPattern, then OR its fixed bits — context bits are NEVER
-        // folded in (`context=false`), since the context stream has no
-        // instruction-byte position.
+        // (each populated node holds the constructor that matched, its absolute
+        // byte `offset`, and — captured DURING decode under the correct per-node
+        // multi-phase context — its matched `DisjointPattern` leaf).  For every
+        // such node we read the stashed pattern and OR its fixed bits.  Context
+        // bits are NEVER folded in (`context=false`), since the context stream
+        // has no instruction-byte position.
+        //
+        // Reading the decode-time pattern (rather than re-walking the decision
+        // tree post-decode) is the FID PR1 fix: the post-decode re-walk reads
+        // the *final* parser context (`instrPhase` already advanced past the
+        // x86 REX / prefix phases) and misresolves multi-phase encodings; the
+        // stashed pattern is the leaf decode actually matched.
         let mut stack = vec![pos.base_state];
         let mut operands: Vec<OperandView> = Vec::new();
         while let Some(node_idx) = stack.pop() {
@@ -2157,16 +2192,9 @@ impl Sleigh {
             let Some(ctref) = node.ct else { continue };
             let node_off = node.offset as usize;
 
-            // Position a read-only walker at this node so the pattern's
-            // bit/byte reads (and `resolve_matched`'s decision dispatch) read at
-            // the node's byte offset.
-            let mut walker = ParserWalker::new(&pos, table, self);
-            walker.set_point(node_idx);
-            let subtable = subtable_ref(table, ctref.table_id)?;
-            let (dp, _ct) = {
-                let reader: &dyn SymbolWalker = &walker;
-                subtable.resolve_matched(reader)?
-            };
+            let dp = node.matched_pattern.as_ref().ok_or_else(|| {
+                KunaError::sleigh("instruction_mask: node has no captured pattern")
+            })?;
             // Pattern length is relative to the node start (already offset-
             // resolved by decode); OR byte-by-byte, capping at the instruction
             // length (multi-word patterns return <=32 bits per get_mask call).
