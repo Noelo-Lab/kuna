@@ -5,8 +5,8 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, substage=40, surface=94, settable=49
-# (31 stage-model knobs + 15 analysis-tier gates + 3 loader-tier capabilities).
+# Counts (asserted in tests): group=39, substage=40, surface=94, settable=50
+# (31 stage-model knobs + 16 analysis-tier gates + 3 loader-tier capabilities).
 
 # ---------------------------------------------------------------------------
 # groupTable: every action/rule GROUP name -> its dominant stage (39 rows).
@@ -1891,6 +1891,22 @@ use_when = "On (default) discovers + names extra entry points; off limits functi
 example = "option entry_disc off"
 source_decompiler = "kuna"
 inspiration = "Ghidra EntryPointAnalyzer/FunctionStartAnalyzer/GccExceptionAnalyzer (.eh_frame)"
+change_kind = "analysis-enablement"
+[[settable]]
+option = "eh_frame_full"
+values = "on|off"
+default = "off"
+destructive = false
+stage = "S1"
+substage = "code-data-partition"
+strength = "HARD"
+rewind = "S1"
+issue = "kuna-analysis-ehframe-lsda"
+summary = "Extend the always-on entry-discovery pass with full .eh_frame + .gcc_except_table (LSDA) markup (GccExceptionAnalyzer): for each FDE, follow the CIE 'L' augmentation to its LSDA pointer in .gcc_except_table, decode the call-site table, and emit each exception landing-pad PC (lpStart + non-zero cs_landing_pad) as a discovered function entry. A landing pad is a real code target reached only by the unwinder, so a stripped C++ binary's entry-disc otherwise misses it. The DW_CFA_* call-frame instructions are NOT recovered at the decompiler tier (kuna's own S5/S7 frame analysis already recovers the stack frame from the code) — CFI is inherited, not rebuilt. Output-changing (adds entries), so default-OFF: a default run is byte-identical to before."
+use_when = "Off (default) limits .eh_frame use to FDE pcBegin function starts. Flip on to also discover exception-handler landing pads (catch/cleanup blocks) from the .gcc_except_table LSDA in a C++ try/catch binary."
+example = "--option eh_frame_full on"
+source_decompiler = "kuna"
+inspiration = "Ghidra GccExceptionAnalyzer + ghidra.app.plugin.exceptionhandlers.gcc.* (Cie/Fde 'L' augmentation -> LSDAHeader/LSDACallSiteTable landing pads)"
 change_kind = "analysis-enablement"
 [[settable]]
 option = "arm_markers"

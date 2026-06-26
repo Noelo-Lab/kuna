@@ -71,6 +71,22 @@ pub fn passes_for(compiler: Compiler) -> Vec<Box<dyn AnalysisPass>> {
         // idempotent against the funcsym stream). After LibProtoPass so prototypes
         // are seeded first. Always-on, like noreturn/libproto.
         Box::new(crate::s1_entry::EntryDiscoveryPass),
+        // S1 `.eh_frame` LSDA landing-pad discovery (`eh_frame_full`): the
+        // GccExceptionAnalyzer full `.gcc_except_table` markup. For each FDE, follow
+        // the CIE `L` augmentation to its LSDA pointer in `.gcc_except_table`,
+        // decode the call-site table, and emit each exception-handler landing pad
+        // (catch/cleanup block, reached only by the unwinder) as a discovered
+        // function entry — net-new code targets `EntryDiscoveryPass`'s FDE-pcBegin /
+        // prologue / libc-start oracles never see (a landing pad sits mid-function).
+        // Registered always (the facts are computed + stashed at load), but the
+        // commit is GATED by `--option eh_frame_full on` (default-OFF,
+        // output-changing: it ADDS entries) via `engine.rs::analysis_pass_enabled`.
+        // A default run therefore commits nothing here and the discovery set is
+        // byte-identical to the FDE-pcBegin-only behavior. After EntryDiscoveryPass
+        // (this is the deeper `.eh_frame` markup). The DW_CFA_* call-frame
+        // instructions are NOT recovered — kuna's S5/S7 frame analysis already
+        // recovers the stack frame from the code, so CFI is inherited, not rebuilt.
+        Box::new(crate::s1_entry::EhFrameLsdaPass),
         // S1 ARM/Thumb decode-mode markers: paint the SLEIGH `TMode` context
         // variable from ARM mapping symbols (`$t`/`$a`) + the STT_FUNC odd-address
         // (LSB=1 ⇒ Thumb) convention, so Thumb code decodes as Thumb. The kuna

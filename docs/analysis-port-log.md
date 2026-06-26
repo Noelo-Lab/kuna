@@ -3730,3 +3730,90 @@ exercises the now-default path. `kuna catalog --check` is unchanged
   + `docs/assertions.md` (the `macho-arm64e` `use_when`/`example` drop the flag
   mention), `kuna-console/tests/verify_{pe_imports,macho_imports,coff_object,object_formats,multiformat_entry,multiformat_passes,multiformat_dwarf,macho_fat,msvc_demangle}.rs`
   (de-flagged), `docs/multiformat-loader-design.md`, `docs/analysis-port-log.md`.
+
+### Increment 47 — `.eh_frame` LSDA landing-pad discovery + CFI assessment (GccExceptionAnalyzer) ✅
+
+Increment 5 mined the `.eh_frame` FDE `pcBegin` addresses (function STARTS) as an
+entry oracle. This increment ports the **rest** of Ghidra's `GccExceptionAnalyzer`:
+the **`.gcc_except_table` LSDA call-site table** → exception-handler **landing
+pads**. A landing pad (a `catch`/cleanup block) is a real code target reached
+*only* by the unwinder — it sits mid-function, so the FDE-pcBegin / prologue /
+libc-start oracles never see it, and a stripped C++ binary's entry-disc misses it.
+Output-changing (it ADDS entries), so it is **gated behind `--option eh_frame_full
+on`, default-OFF** — a default run is byte-identical to FDE-pcBegin-only.
+
+**Product 1 — LSDA landing pads → entries (the decompiler-relevant arm).** A new
+`EhFrameLsdaPass` (id `eh_frame_full`, `s1_entry/mod.rs`) walks `.eh_frame`: for
+each CIE it decodes the `zPLR` augmentation (the `L` char's LSDA pointer encoding
+alongside the `R` FDE encoding and `P` personality — `Cie.processAugmentationInfo`);
+for each FDE whose CIE has an `L`, it reads the FDE augmentation-data LSDA pointer
+(after `pcBegin`/`pcRange`/`augLen` — `FrameDescriptionEntry.createLsda`), follows
+it into `.gcc_except_table`, and decodes the LSDA header
+(`[lpStartEnc][lpStart?][ttypeEnc][ttypeOff?][callSiteEnc][callSiteLen]` —
+`LSDAHeader.create`) and the call-site table
+(`[cs_start][cs_len][cs_lp][cs_action]*` — `LSDACallSiteRecord.create`). Each
+non-zero landing pad is `lpStart + cs_lp` (with `lpStart` defaulting to the FDE's
+`pcBegin` when `lpStartEnc == omit`; `cs_lp == 0` ⇒ no landing pad). Faithful to
+`GccExceptionAnalyzer.processCallSiteRecord`, which disassembles each non-zero
+landing pad — our `AnalysisOutput.entries` fact, put through the same exec-section
++ funcsym-skip + dedup filter every oracle uses. The pass runs at load (the facts
+are stashed per-pass) but **commits** only when the gate is on
+(`engine.rs::analysis_pass_enabled` → `arch.analysis_eh_frame_full`), so a default
+run computes nothing visible.
+
+**Product 2 — CFI assessment (built vs inherited).** The CIE/FDE `DW_CFA_*`
+call-frame instructions give the CFA + saved-register rules. kuna's engine recovers
+the stack frame *from the code itself* — S5 type inference + S7 frame analysis
+(`coreaction_infertypes` / the stack-frame restructuring) reconstruct locals, the
+saved-register set, and the frame layout from the lifted p-code, exactly as Ghidra's
+decompiler does. The CFA/register-save rules therefore add **nothing** at the
+decompiler tier (they are an unwinder runtime concern, not a source-recovery one).
+**CFI is INHERITED, not rebuilt** — no DW_CFA decoder is ported (a no-op pass would
+be the wrong thing to add). The one cheap confirmation CFI *could* offer — the frame
+register (`DW_CFA_def_cfa: r7`) — is already recovered identically by the engine's
+frame analysis, so there is no win to bank. This is documented here per the brief.
+
+**Fixture + e2e.** `eh_lsda_x86_64` (vendored, `g++ -O1 -no-pie -fexceptions` +
+`strip`): a `guarded()` with two `catch` arms over an out-of-line throwing
+`may_throw()`. Landing pads (pinned, hand-decoded + `objdump`/`readelf`
+cross-checked, all `endbr64`, all mid-function): `may_throw` → `0x4012bf`;
+`guarded` → `0x4012e2` (catch dispatch), `0x401352`, `0x401366` (cleanup). The
+LSDA pointers (`0x40218c`/`0x402198`) come from the FDE augmentation data
+`8c 21 40 00`/`98 21 40 00` (`udata4`). Unit tests
+(`s1_entry::tests`): the call-site-table parse over both the real fixture and
+synthetic bytes, plus a proof that the landing pads are NOT FDE starts and that a
+no-`.gcc_except_table` binary (`fauxware`) yields none. e2e
+(`verify_eh_frame_full`): `--option eh_frame_full on` discovers `sub_4012e2`
+(decompilable by name, no `--addr`); default-off it is absent.
+
+**Speed.** The LSDA scan is one linear walk of two tiny sections, run once at load
+— sub-millisecond, below measurement resolution. End-to-end decompile (interleaved
+OFF/ON, 8 runs each on `eh_lsda_x86_64`): OFF mean 0.493 s, ON mean 0.526 s —
+within subprocess-spawn noise (the LSDA work itself is negligible; the small delta
+is the extra discovered functions the engine sees, not the scan).
+
+**Gating / parity.** Gates: `make test` **675/675 PARITY OK**, `make test-stages`
+**194/194 PARITY OK**, `make rust-test` **green**, `kuna catalog --check` **OK**
+(byte-identical default-off; the new settable raised the count 49 → 50). The
+`kuna-catalog.xml` stage test's `use_when`/`change_kind` count bounds were bumped
+`max 50 → 60` (the catalog now emits 50 settables + 1 from the single-`returnpair`
+catalog probe = 51 > the old 50 bound).
+
+- **Divergence/LOSS:** none to the parity oracles (the option is default-off, so
+  the discovery set is byte-identical to before). LOSS, inherited from the Increment-5
+  FDE scan: a forward-referencing CIE (CIE after its FDE) is missed (gcc never emits
+  this); the `indirect` DW_EH_PE bit (`0x80`) is unresolvable without a runtime
+  relocation; 64-bit `0xffffffff`-extended `.eh_frame` records are skipped. CFI is
+  inherited (see Product 2). SJLJ (setjmp/longjmp) exception tables are not handled
+  (the standard DWARF call-site table is the GNU C++ default and the only form in
+  the fixtures).
+- **Changed:** `kuna-analysis/src/s1_entry/mod.rs` (the `EhFrameLsdaPass` +
+  `scan_eh_frame_landing_pads` / `decode_lsda_landing_pads` / `parse_cie_aug` /
+  `collect_landing_pad_entries` + unit tests), `kuna-analysis/src/passes.rs`
+  (register the pass), `kuna-console/src/engine.rs` + `kuna_console.rs` (the commit
+  gate + live-value arm), `kuna-decomp/{stages.toml, src/p0_knowledge/options.rs,
+  src/infra/architecture.rs}` (the settable + the `analysis_eh_frame_full` flag),
+  the settable-count tests (`kuna_stages/tests.rs`, `catalog_bytecompat.rs`,
+  `stage_catalog.json`, `docs/assertions.md`), `tests/stages/kuna-catalog.xml`
+  (count bounds), `kuna-console/tests/verify_eh_frame_full.rs` (e2e), the vendored
+  fixture `eh_lsda_x86_64` (+ source + README), `docs/analysis-port-log.md`.
